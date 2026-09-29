@@ -1,5 +1,6 @@
 import asyncio
 import json
+import os
 import shlex
 import subprocess
 from pathlib import Path
@@ -68,25 +69,33 @@ async def test_remote_and_tracking_reads(git_ws, repo_path):
 
 
 GAPS = Path(__file__).resolve().parents[6] / 'integ/fixtures/git/gaps.sh'
+ENV = {
+    **os.environ, 'LC_ALL': 'C',
+    'LANG': 'C',
+    'GIT_CONFIG_GLOBAL': '/dev/null',
+    'GIT_CONFIG_NOSYSTEM': '1'
+}
 
 
-@pytest.fixture
-def gaps_repo(tmp_path):
-    path = tmp_path / 'gaps'
+@pytest.fixture(scope='module')
+def gaps_repo(tmp_path_factory):
+    path = tmp_path_factory.mktemp('gaps') / 'repo'
     subprocess.run(['bash', str(GAPS), str(path)],
                    check=True,
-                   capture_output=True)
+                   capture_output=True,
+                   env=ENV)
     return path
 
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize('command',
                          json.loads(GAPS.with_suffix('.json').read_text()))
-async def test_issue_1338_git_conformance(gaps_repo, command):
+async def test_inspection_forms_match_git(gaps_repo, command):
     native = await asyncio.to_thread(
         subprocess.run,
         ['git', '-C', str(gaps_repo), *shlex.split(command)],
-        capture_output=True)
+        capture_output=True,
+        env=ENV)
     with mounted_rw(gaps_repo) as ws:
         actual = await ws.shell('git -C /repo ' + command)
     assert (actual.exit_code, actual.stdout or b'', actual.stderr
@@ -124,3 +133,11 @@ async def test_rev_parse_toplevel_from_subdirectory(git_ws, repo_path):
         'cd /repo/nested && git rev-parse --show-toplevel')
     assert result.exit_code == 0
     assert result.stdout == b'/repo\n'
+
+
+@pytest.mark.asyncio
+async def test_rev_parse_prints_toplevel_in_line_order(git_ws):
+    head = (await git_ws.shell('git -C /repo rev-parse HEAD')).stdout
+    result = await git_ws.shell(
+        'git -C /repo rev-parse HEAD --show-toplevel HEAD')
+    assert result.stdout == head + b'/repo\n' + head

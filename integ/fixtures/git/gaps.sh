@@ -10,7 +10,9 @@ git init -q -b main
 printf 'one\n' > README.md
 printf 'int f(void)\n{\n\tint a = 1;\n\tint b = 2;\n\treturn a;\n}\n\nint g(void)\n{\n\treturn 3;\n}\n' > f.c
 printf '*.log\ncache/\nempty/\n' > .gitignore
-printf 'Alice Smith <alice@example.com>\nRobert <robert@example.org> Bob <bob@example.com>\n' > .mailmap
+printf '%s\n' 'Alice Smith <alice@example.com>' 'Bobby <bob@example.com>' \
+  'Robert <robert@example.org> Bob <bob@example.com>' \
+  '<rob@example.org> Bob <bob@example.com>' > .mailmap
 mkdir docs
 printf 'nested\n' > docs/note.txt
 for function in first middle last; do
@@ -28,6 +30,8 @@ export GIT_COMMITTER_NAME=Bob GIT_COMMITTER_EMAIL=bob@example.com
 sed 's/return 1/return 2/' functions.c > tmp.c
 mv tmp.c functions.c
 git commit -qam second
+git update-ref --create-reflog -m 'fetch: fast-forward' refs/remotes/origin/main HEAD~1
+git tag v1 HEAD~1
 printf 'ignored\n' > debug.log
 mkdir cache empty
 printf 'ignored\n' > cache/file

@@ -12,8 +12,12 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import subprocess
+
 import pytest
 
+from mirage.commands.cli import walk
+from mirage.commands.cli.builtin.git import GIT
 from mirage.commands.cli.builtin.git.errors import (  # yapf: disable
     FATAL_EXIT, BadConfigValueError, NotARepositoryError, UnknownSwitchError)
 from mirage.commands.cli.builtin.git.util import (  # yapf: disable
@@ -228,3 +232,23 @@ def test_the_last_occurrence_wins():
 def test_every_occurrence_is_parsed():
     with pytest.raises(BadConfigValueError):
         git_bool([b"maybe", b"true"], "core.bare", False)
+
+
+def test_a_later_relative_c_lands_under_the_one_before_it():
+    result = walk("git", GIT, ["-C", "/repo", "-C", "docs", "status"], "/")
+    assert result.group_flags["-C"] == "/repo/docs"
+
+
+@pytest.mark.asyncio
+async def test_chained_c_runs_the_verb_in_the_composed_directory(
+        git_ws, repo_path):
+    (repo_path / "docs").mkdir()
+    (repo_path / "docs" / "new.txt").write_text("new\n")
+    native = subprocess.run(
+        ["git", "-C",
+         str(repo_path), "-C", "docs", "status", "--short"],
+        capture_output=True)
+    result = await git_ws.shell("git -C /repo -C docs status --short")
+    assert (result.exit_code, result.stdout) == (native.returncode,
+                                                 native.stdout)
+    assert result.stdout == b"?? ./\n"

@@ -1,6 +1,5 @@
 import { readHead, loadRefs } from './refs.ts'
 import git from 'isomorphic-git'
-import { GitConfigManager } from 'isomorphic-git/managers'
 import { VERSION } from '../../../../version.ts'
 
 import { translateClasses } from '../../../../utils/posix.ts'
@@ -12,11 +11,13 @@ import type { CLIInvocation } from '../../types.ts'
 import { GitError, NoWorkspaceError } from './errors.ts'
 import { parseFlags, refCommits, select } from './history.ts'
 import { opened, repoArgs } from './repo.ts'
+import { configLines } from './fs.ts'
 import { readFile, readOptional } from './io.ts'
 import { splitRevisions, resolveObject } from './revparse.ts'
 import { checkOperands, escaped, fatal, startPoint } from './util.ts'
 
 const ENC = new TextEncoder()
+const SHOW_TOPLEVEL = '--show-toplevel'
 
 export async function remote(inv: CLIInvocation): Promise<CommandFnResult> {
   const fl = new FlagView(inv.flags)
@@ -49,36 +50,50 @@ export async function remote(inv: CLIInvocation): Promise<CommandFnResult> {
   }
 }
 
+/**
+ * The per-user config files `--global` reads, in git's order.
+ *
+ * `$GIT_CONFIG_GLOBAL` alone when set, else the XDG file then `~/.gitconfig`,
+ * each read through the dispatcher from the session's own `HOME` so the answer
+ * is the workspace's and never the host's. Only `--list` refuses when neither
+ * exists.
+ */
+async function globalSources(
+  inv: CLIInvocation,
+  listing: boolean,
+): Promise<{ source: string; data: Uint8Array }[]> {
+  const dispatch = inv.doors?.dispatch
+  if (!dispatch) throw new NoWorkspaceError()
+  const home = inv.env.HOME ?? ''
+  const override = inv.env.GIT_CONFIG_GLOBAL
+  if (override === undefined && !home) throw new GitError('$HOME not set')
+  const target = override ?? `${home}/.gitconfig`
+  const configured = inv.env.XDG_CONFIG_HOME ?? ''
+  const xdg = configured === '' ? `${home}/.config` : configured
+  const sources: { source: string; data: Uint8Array }[] = []
+  for (const source of override === undefined ? [`${xdg}/git/config`, target] : [target]) {
+    const data = await readOptional(dispatch, source)
+    if (data !== null) sources.push({ source, data })
+  }
+  if (!sources.length && listing)
+    throw new GitError(`unable to read config file '${target}': No such file or directory`)
+  return sources
+}
+
 export async function config(inv: CLIInvocation): Promise<CommandFnResult> {
   const fl = new FlagView(inv.flags)
   try {
-    const sources: { source: string; data: Uint8Array }[] = []
-    if (fl.asBool('global')) {
-      const dispatch = inv.doors?.dispatch
-      if (!dispatch) throw new NoWorkspaceError()
-      const home = inv.env.HOME ?? ''
-      const override = inv.env.GIT_CONFIG_GLOBAL
-      if (override === undefined && !home) throw new GitError('$HOME not set')
-      const target = override ?? `${home}/.gitconfig`
-      const configuredXdg = inv.env.XDG_CONFIG_HOME ?? ''
-      const xdg = configuredXdg === '' ? `${home}/.config` : configuredXdg
-      for (const source of override === undefined ? [`${xdg}/git/config`, target] : [target]) {
-        const data = await readOptional(dispatch, source)
-        if (data !== null) sources.push({ source, data })
-      }
-      if (!sources.length && fl.asBool('list'))
-        throw new GitError(`unable to read config file '${target}': No such file or directory`)
-    } else {
+    let sources: { source: string; data: Uint8Array }[]
+    if (fl.asBool('global')) sources = await globalSources(inv, fl.asBool('list'))
+    else {
       const repo = await opened(fl, inv.doors ?? {})
-      const source =
+      const path = `${repo.location.commondir}/config`
+      const ordinary =
         repo.location.commondir === repo.location.worktree + '/.git' &&
         startPoint(fl) === repo.location.worktree
-          ? '.git/config'
-          : repo.location.commondir + '/config'
-      sources.push({
-        source,
-        data: await readFile(repo.dispatch, `${repo.location.commondir}/config`),
-      })
+      sources = [
+        { source: ordinary ? '.git/config' : path, data: await readFile(repo.dispatch, path) },
+      ]
     }
     const listing = fl.asBool('list'),
       regexp = fl.asBool('get_regexp'),
@@ -101,36 +116,9 @@ export async function config(inv: CLIInvocation): Promise<CommandFnResult> {
     }
     const values: [string, string, string][] = []
     for (const { source, data } of sources) {
-      const text = new TextDecoder().decode(data)
-      const parsed = await GitConfigManager.get({
-        fs: { read: () => Promise.resolve(text) } as never,
-        gitdir: '/',
-      })
-      let section = ''
-      const keys: string[] = []
-      for (const line of text.split('\n')) {
-        const header = /^\s*\[([\w.-]+)(?:\s+"((?:[^"\\]|\\.)*)")?\]/.exec(line)
-        if (header) {
-          section =
-            (header[1] ?? '').toLowerCase() +
-            (header[2] === undefined ? '' : '.' + header[2].replace(/\\(.)/g, '$1'))
-          continue
-        }
-        const entry = /^\s*([\w-]+)\s*(?:=|$)/.exec(line)
-        if (entry && section) keys.push(section + '.' + (entry[1] ?? '').toLowerCase())
-      }
-      const seen = new Map<string, number>(),
-        cache = new Map<string, (string | boolean)[]>()
-      for (const name of keys) {
-        const at = seen.get(name) ?? 0
-        seen.set(name, at + 1)
-        if (!(listing || (pattern ? pattern.test(name) : name === configKey(key)))) continue
-        let held = cache.get(name)
-        if (!held) {
-          held = (await parsed.getall(name)) as (string | boolean)[]
-          cache.set(name, held)
-        }
-        values.push([source, name, String(held[at] ?? '')])
+      for (const line of await configLines(new TextDecoder().decode(data))) {
+        if (listing || (pattern ? pattern.test(line.path) : line.path === configKey(key)))
+          values.push([source, line.path, line.value ?? ''])
       }
     }
     const chosen = listing || regexp ? values : values.slice(-1)
@@ -216,22 +204,36 @@ function configKey(key: string): string {
 }
 
 /** Resolve object ids or abbreviated symbolic reference names. */
+/**
+ * How many revisions rev-parse prints ahead of one of its options.
+ *
+ * rev-parse answers its arguments in line order, so `HEAD --show-toplevel`
+ * prints the id first. Every word after the option that is not a dash word is
+ * one of the later revisions.
+ */
+function revisionsBefore(argv: readonly string[], count: number, option: string): number {
+  const at = argv.indexOf(option)
+  if (at < 0) return 0
+  return count - argv.slice(at + 1).filter((word) => !word.startsWith('-')).length
+}
+
 export async function revParse(inv: CLIInvocation): Promise<CommandFnResult> {
   const fl = new FlagView(inv.flags)
   try {
     checkOperands(inv.texts, undefined, escaped(inv.argv))
-    const repo = await opened(fl, inv.doors ?? {}, fl.asBool('show_toplevel'))
+    const toplevel = fl.asBool('show_toplevel')
+    const repo = await opened(fl, inv.doors ?? {}, toplevel)
     const head = await readHead(repo.dispatch, repo.location.gitdir)
     const refs = await loadRefs(repo.dispatch, repo.location.gitdir, repo.location.commondir)
-    let out = fl.asBool('show_toplevel') ? repo.location.worktree + '\n' : ''
+    const rows: string[] = []
     for (const revision of inv.texts) {
       const obj = await resolveObject(repo, revision)
       if (!fl.asBool('abbrev_ref')) {
-        out += obj.oid + '\n'
+        rows.push(obj.oid + '\n')
         continue
       }
       if (revision === 'HEAD') {
-        out += (head.ref?.replace(/^refs\/heads\//, '') ?? 'HEAD') + '\n'
+        rows.push((head.ref?.replace(/^refs\/heads\//, '') ?? 'HEAD') + '\n')
         continue
       }
       const name = [
@@ -241,9 +243,15 @@ export async function revParse(inv: CLIInvocation): Promise<CommandFnResult> {
         'refs/heads/' + revision,
         'refs/remotes/' + revision,
       ].find((name) => refs.has(name))
-      if (name !== undefined) out += name.replace(/^refs\/(heads|tags|remotes)\//, '') + '\n'
+      rows.push(name === undefined ? '' : name.replace(/^refs\/(heads|tags|remotes)\//, '') + '\n')
     }
-    return [new TextEncoder().encode(out), new IOResult()]
+    if (toplevel)
+      rows.splice(
+        revisionsBefore(inv.argv, rows.length, SHOW_TOPLEVEL),
+        0,
+        `${repo.location.worktree}\n`,
+      )
+    return [ENC.encode(rows.join('')), new IOResult()]
   } catch (err) {
     if (err instanceof GitError) return fatal(err)
     throw err

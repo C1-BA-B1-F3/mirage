@@ -27,10 +27,26 @@ const ENC = new TextEncoder()
 const DEC = new TextDecoder()
 
 /** The fields of one line of isomorphic-git's parsed config that a raw read needs. */
-interface ConfigLine {
+export interface ConfigLine {
   readonly path: string
   readonly name: string | null
   readonly value: string | null
+}
+
+/**
+ * The variables of one config file's text, in file order, as isomorphic-git
+ * parses them: `path` is the dotted key, section and name folded, and `value`
+ * the raw string git prints. Read from text rather than a git directory
+ * because `--global` names files that are not called `config`.
+ *
+ * @param text the file's contents
+ */
+export async function configLines(text: string): Promise<readonly ConfigLine[]> {
+  const config = await GitConfigManager.get({
+    fs: { read: () => Promise.resolve(text) } as never,
+    gitdir: '',
+  })
+  return (config.parsedConfig as readonly ConfigLine[]).filter((line) => line.name !== null)
 }
 
 /**

@@ -17,7 +17,7 @@ from dulwich.objects import Commit
 from dulwich.repo import Repo
 
 from mirage.commands.cli.builtin.git import GIT
-from mirage.commands.cli.builtin.git.errors import BadDateError
+from mirage.commands.cli.builtin.git.errors import BadDateError, GitError
 from mirage.commands.cli.builtin.git.format import subject
 from mirage.commands.cli.builtin.git.history import parse_flags, select
 from mirage.commands.spec import parse_command, parse_to_kwargs
@@ -202,3 +202,44 @@ def test_author_and_grep_must_both_match(repo_path):
     assert log_subjects(repo_path,
                         ["--author=Test", "--grep=second"]) == ["second"]
     assert log_subjects(repo_path, ["--author=absent", "--grep=second"]) == []
+
+
+@pytest.mark.parametrize("argv,expected", [
+    (["-E", "--grep=first|third"], ["third", "first"]),
+    (["-E", "-F", "--grep=first|third"], []),
+    (["-F", "-E", "--grep=first|third"], ["third", "first"]),
+    (["--basic-regexp", "--grep=first|third"], []),
+    (["-P", r"--grep=^\p{Ll}hird$"], ["third"]),
+    (["-P", r"--grep=[\d]"], []),
+    (["-P", "--grep=[[:alpha:]]irst"], ["first"]),
+    (["-P", "--grep=f(?=irst)"], ["first"]),
+    (["-P", "-i", "--grep=^THIRD$"], ["third"]),
+    (["-P", "--grep=(?i)^THIRD$"], ["third"]),
+    (["-P", r"--grep=\Athird\z"], ["third"]),
+])
+def test_the_last_pattern_syntax_reads_every_pattern(repo_path, argv,
+                                                     expected):
+    assert log_subjects(repo_path, argv) == expected
+
+
+@pytest.mark.parametrize("argv,message", [
+    (["--grep=\\("], "command line, '\\(': Unmatched ( or \\("),
+    (["--author=\\("], "header, '\\(': Unmatched ( or \\("),
+    (["--committer=\\("], "header, '\\(': Unmatched ( or \\("),
+])
+def test_a_refused_pattern_names_where_it_came_from(argv, message):
+    spec = next(node for node in GIT.subcommands if node.name == "log")
+    kwargs = parse_to_kwargs(parse_command(spec, argv, "/"))
+    with pytest.raises(GitError) as caught:
+        parse_flags(FlagView(kwargs))
+    assert str(caught.value) == message
+
+
+@pytest.mark.parametrize("pattern,line", [
+    (r"a\-b\_c\ d", "a-b_c d"),
+    ("[]x]", "]"),
+    ("a{x}", "a{x}"),
+])
+def test_perl_punctuation_escapes_are_literal(pattern, line):
+    flags = parse_flags(FlagView({"perl_regexp": True, "grep": [pattern]}))
+    assert flags.greps[0].search(line)

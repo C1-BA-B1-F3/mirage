@@ -54,8 +54,6 @@ function walk(root: string, base = root): string[] {
   return out
 }
 
-/** What the real git binary prints for the same line, as the truth to match. */
-
 async function run(line: string): Promise<[number, string, string]> {
   const result = await ws.shell(`git -C /repo ${line}`)
   return [result.exitCode, DEC.decode(result.stdout), DEC.decode(result.stderr)]
@@ -90,20 +88,37 @@ afterAll(() => {
   rmSync(tmp, { recursive: true, force: true })
 })
 
-const forms = JSON.parse(readFileSync(BUILDER.replace('.sh', '.json'), 'utf8')) as string[]
-it.each(forms)('matches native Git: %s', async (form) => {
-  const native = spawnSync('bash', ['-c', `git -C "$1" ${form}`, 'native-git', repoPath], {
-    env: {
-      ...process.env,
-      LC_ALL: 'C',
-      LANG: 'C',
-      GIT_CONFIG_GLOBAL: '/dev/null',
-      GIT_CONFIG_NOSYSTEM: '1',
-    },
+const NATIVE_ENV = {
+  ...process.env,
+  LC_ALL: 'C',
+  LANG: 'C',
+  GIT_CONFIG_GLOBAL: '/dev/null',
+  GIT_CONFIG_NOSYSTEM: '1',
+}
+
+/** What the real git binary prints for the same line, as the truth to match. */
+function native(dir: string, form: string): [number | null, string, string] {
+  const done = spawnSync('bash', ['-c', `git -C "$1" ${form}`, 'native-git', dir], {
+    env: NATIVE_ENV,
     encoding: 'utf8',
   })
-  expect(await run(form)).toEqual([native.status, native.stdout, native.stderr])
+  return [done.status, done.stdout, done.stderr]
+}
+
+const forms = JSON.parse(readFileSync(BUILDER.replace('.sh', '.json'), 'utf8')) as string[]
+it.each(forms)('matches native Git: %s', async (form) => {
+  expect(await run(form)).toEqual(native(repoPath, form))
 })
+
+it.each(['ls-files', 'ls-files ..', "ls-files '*.txt'", 'ls-files ../f.c', 'ls-files -s ..'])(
+  'lists the index from a subdirectory as native Git: %s',
+  async (form) => {
+    const result = await ws.shell(`cd /repo/docs && git ${form}`)
+    expect([result.exitCode, DEC.decode(result.stdout), DEC.decode(result.stderr)]).toEqual(
+      native(join(repoPath, 'docs'), form),
+    )
+  },
+)
 
 it('reads global config through virtual HOME without repository discovery', async () => {
   await ws.shell('mkdir -p /repo/home/.config/git')
@@ -126,8 +141,15 @@ it('reads global config through virtual HOME without repository discovery', asyn
     "fatal: unable to read config file '/repo/missing/.gitconfig': No such file or directory\n",
   )
 })
+
 it('reports the virtual worktree root from a subdirectory', async () => {
   const result = await ws.shell('cd /repo/docs && git rev-parse --show-toplevel')
   expect(result.exitCode).toBe(0)
   expect(DEC.decode(result.stdout)).toBe('/repo\n')
+})
+
+it('prints the worktree root in line order among revisions', async () => {
+  const head = DEC.decode((await ws.shell('git -C /repo rev-parse HEAD')).stdout)
+  const result = await ws.shell('git -C /repo rev-parse HEAD --show-toplevel HEAD')
+  expect(DEC.decode(result.stdout)).toBe(`${head}/repo\n${head}`)
 })

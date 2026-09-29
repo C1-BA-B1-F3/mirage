@@ -51,6 +51,7 @@ dependencies = [
     "dulwich>=1.2.5",
     "tenacity>=9.1.4",
     "mcp>=1.28.1",
+    "regex>=2026.4.4",
 ]
 
 [project.urls]

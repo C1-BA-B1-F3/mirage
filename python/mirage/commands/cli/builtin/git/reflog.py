@@ -15,11 +15,13 @@
 import asyncio
 import posixpath
 
+from mirage.commands.cli.builtin.git.constants import HEAD
 from mirage.commands.cli.builtin.git.errors import GitError
 from mirage.commands.cli.builtin.git.io import read_optional, write_file
 from mirage.commands.cli.builtin.git.objects import abbrev_for
 from mirage.commands.cli.builtin.git.revparse import resolve_commit
 from mirage.commands.cli.builtin.git.session import opened
+from mirage.commands.cli.builtin.git.types import RepoLocation
 from mirage.commands.cli.builtin.git.util import fatal
 from mirage.commands.cli.types import CLIDoors, CLIInvocation
 from mirage.commands.spec.flag_view import FlagView
@@ -103,6 +105,45 @@ async def record(dispatch: DispatchFn, gitdir: str, commondir: str,
         await append(dispatch, commondir, posixpath.join(LOGS_DIR, ref), line)
 
 
+async def _log_of(dispatch: DispatchFn, location: RepoLocation,
+                  ref: str) -> bytes | None:
+    """A ref's reflog, from the git directory that owns it.
+
+    Args:
+        dispatch (DispatchFn): workspace op dispatcher.
+        location (RepoLocation): the discovered repository.
+        ref (str): the ref name, ``HEAD`` or a full ``refs/`` name.
+    """
+    root = location.gitdir if ref == HEAD else location.commondir
+    return await read_optional(dispatch, posixpath.join(root, LOGS_DIR, ref))
+
+
+async def _named_log(dispatch: DispatchFn, location: RepoLocation,
+                     revision: str) -> tuple[str, bytes | None]:
+    """The log a reflog walk reads, and the name its rows print.
+
+    As git's ``read_complete_reflog`` then ``dwim_log``: the name as
+    typed, then under ``refs/`` and ``refs/heads/``, keep the spelling;
+    only a log found by the full rev-parse rules (a tag, a remote) is
+    printed by its full name (git 2.47.3 and 2.50.1).
+
+    Args:
+        dispatch (DispatchFn): workspace op dispatcher.
+        location (RepoLocation): the discovered repository.
+        revision (str): the ref as typed.
+    """
+    for ref in (revision, f"refs/{revision}", f"refs/heads/{revision}"):
+        data = await _log_of(dispatch, location, ref)
+        if data:
+            return revision, data
+    for ref in (f"refs/tags/{revision}", f"refs/remotes/{revision}",
+                f"refs/remotes/{revision}/HEAD"):
+        data = await _log_of(dispatch, location, ref)
+        if data:
+            return ref, data
+    return revision, None
+
+
 async def reflog(
         inv: CLIInvocation[None]) -> tuple[ByteSource | None, IOResult]:
     """Read a ref's log newest first through the dispatcher.
@@ -115,29 +156,21 @@ async def reflog(
         doors = inv.doors or CLIDoors()
         repo, location = await opened(fl, doors)
         assert doors.dispatch is not None
-        texts = inv.texts[1:] if inv.texts[:1] == ('show', ) else inv.texts
-        revision = texts[0] if texts else 'HEAD'
+        texts = inv.texts[1:] if inv.texts[:1] == ("show", ) else inv.texts
+        revision = texts[0] if texts else HEAD
         await asyncio.to_thread(resolve_commit, repo, revision)
-        refs = await asyncio.to_thread(repo.refs.allkeys)
-        ref = next(
-            (name
-             for name in (revision, 'refs/' + revision, 'refs/heads/' +
-                          revision, 'refs/tags/' + revision, 'refs/remotes/' +
-                          revision) if name.encode() in refs), revision)
-        root = location.gitdir if ref == 'HEAD' else location.commondir
-        data = await read_optional(doors.dispatch, f'{root}/logs/{ref}')
-        width = abbrev_for(repo)
-        rows = list(reversed((data or b'').splitlines()))
-        limit = fl.as_int('max_count')
+        name, data = await _named_log(doors.dispatch, location, revision)
+        rows = list(reversed((data or b"").splitlines()))
+        limit = fl.as_int("max_count")
         if limit is not None and limit >= 0:
             rows = rows[:limit]
-        name = ref.removeprefix('refs/heads/').removeprefix('refs/remotes/')
+        width = abbrev_for(repo)
         out = []
         for index, row in enumerate(rows):
-            record, _, message = row.partition(b'\t')
-            oid = record.split(b' ')[1]
-            out.append(f'{oid.decode()[:width]} {name}@{{{index}}}: '
-                       f'{message.decode("utf-8", "replace")}\n')
-        return ''.join(out).encode(), IOResult()
+            record, _, message = row.partition(b"\t")
+            oid = record.split(b" ")[1]
+            out.append(f"{oid.decode()[:width]} {name}@{{{index}}}: "
+                       f"{message.decode('utf-8', 'replace')}\n")
+        return "".join(out).encode(), IOResult()
     except GitError as exc:
         return fatal(exc)

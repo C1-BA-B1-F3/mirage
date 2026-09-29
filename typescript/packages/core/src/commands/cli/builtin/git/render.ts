@@ -311,20 +311,23 @@ export function longFormat(
   return lines.map((line) => `${line}\n`).join('')
 }
 
+/** A repository-relative path spelled from a directory inside the work tree. */
+export function relativePath(path: string, prefix: string): string {
+  if (prefix === '') return path
+  const base = prefix.split('/')
+  const parts = path.split('/').filter((part) => part !== '')
+  let shared = 0
+  while (shared < base.length && base[shared] === parts[shared]) shared++
+  const name = [...base.slice(shared).map(() => '..'), ...parts.slice(shared)].join('/') || '.'
+  return name + (path.endsWith('/') ? '/' : '')
+}
+
 /** Render status paths relative to an invocation inside the work tree. */
 export function relativeEntries(rows: StatusEntry[], prefix: string): StatusEntry[] {
   if (prefix === '') return rows
-  const base = prefix.split('/')
-  const relative = (path: string): string => {
-    const parts = path.split('/').filter((part) => part !== '')
-    let shared = 0
-    while (shared < base.length && base[shared] === parts[shared]) shared++
-    const name = [...base.slice(shared).map(() => '..'), ...parts.slice(shared)].join('/') || '.'
-    return name + (path.endsWith('/') ? '/' : '')
-  }
   return rows.map((row) => ({
     ...row,
-    path: relative(row.path),
-    original: row.original === null ? null : relative(row.original),
+    path: relativePath(row.path, prefix),
+    original: row.original === null ? null : relativePath(row.original, prefix),
   }))
 }

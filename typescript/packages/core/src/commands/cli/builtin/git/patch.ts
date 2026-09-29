@@ -145,9 +145,7 @@ function hunks(
   let searched = -1
   const codes = getOpcodes(old, fresh)
   const groups = groupOpcodes(codes, count)
-  for (const group of functionContext
-    ? functionGroups(old, getOpcodes(old, fresh), groups)
-    : groups) {
+  for (const group of functionContext ? functionGroups(old, codes, groups) : groups) {
     const first = group[0],
       last = group.at(-1)
     if (first === undefined || last === undefined) continue

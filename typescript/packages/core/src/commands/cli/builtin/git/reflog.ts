@@ -1,12 +1,3 @@
-import { IOResult } from '../../../../io/types.ts'
-import type { CommandFnResult } from '../../../config.ts'
-import { FlagView } from '../../../spec/flag_view.ts'
-import type { CLIInvocation } from '../../types.ts'
-import { GitError } from './errors.ts'
-import { resolveCommit } from './revparse.ts'
-import { loadRefs } from './refs.ts'
-import { opened } from './repo.ts'
-import { fatal } from './util.ts'
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -21,8 +12,17 @@ import { fatal } from './util.ts'
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import { IOResult } from '../../../../io/types.ts'
+import type { CommandFnResult } from '../../../config.ts'
+import { FlagView } from '../../../spec/flag_view.ts'
+import type { CLIInvocation } from '../../types.ts'
+import { GitError } from './errors.ts'
+import { resolveCommit } from './revparse.ts'
+import { opened } from './repo.ts'
+import { fatal } from './util.ts'
 import { readOptional, under, writeFile } from './io.ts'
-import type { Dispatch } from './types.ts'
+import { HEAD } from './constants.ts'
+import type { Dispatch, RepoLocation } from './types.ts'
 
 const LOGS_DIR = 'logs'
 const HEAD_LOG = 'logs/HEAD'
@@ -109,24 +109,53 @@ export async function record(
   if (ref !== null) await append(dispatch, commondir, `${LOGS_DIR}/${ref}`, line)
 }
 
+/** A ref's reflog, from the git directory that owns it. */
+async function logOf(
+  dispatch: Dispatch,
+  location: RepoLocation,
+  ref: string,
+): Promise<Uint8Array | null> {
+  const root = ref === HEAD ? location.gitdir : location.commondir
+  return readOptional(dispatch, `${root}/${LOGS_DIR}/${ref}`)
+}
+
+/**
+ * The log a reflog walk reads, and the name its rows print.
+ *
+ * As git's `read_complete_reflog` then `dwim_log`: the name as typed, then
+ * under `refs/` and `refs/heads/`, keep the spelling; only a log found by the
+ * full rev-parse rules (a tag, a remote) is printed by its full name (git
+ * 2.47.3 and 2.50.1).
+ */
+async function namedLog(
+  dispatch: Dispatch,
+  location: RepoLocation,
+  revision: string,
+): Promise<[string, Uint8Array | null]> {
+  for (const ref of [revision, `refs/${revision}`, `refs/heads/${revision}`]) {
+    const data = await logOf(dispatch, location, ref)
+    if (data?.length) return [revision, data]
+  }
+  for (const ref of [
+    `refs/tags/${revision}`,
+    `refs/remotes/${revision}`,
+    `refs/remotes/${revision}/HEAD`,
+  ]) {
+    const data = await logOf(dispatch, location, ref)
+    if (data?.length) return [ref, data]
+  }
+  return [revision, null]
+}
+
+/** Read a ref's log newest first through the dispatcher. */
 export async function reflog(inv: CLIInvocation): Promise<CommandFnResult> {
   const fl = new FlagView(inv.flags)
   try {
     const repo = await opened(fl, inv.doors ?? {})
     const texts = inv.texts[0] === 'show' ? inv.texts.slice(1) : inv.texts
-    const revision = texts[0] ?? 'HEAD'
+    const revision = texts[0] ?? HEAD
     await resolveCommit(repo, revision)
-    const refs = await loadRefs(repo.dispatch, repo.location.gitdir, repo.location.commondir)
-    const ref =
-      [
-        revision,
-        'refs/' + revision,
-        'refs/heads/' + revision,
-        'refs/tags/' + revision,
-        'refs/remotes/' + revision,
-      ].find((name) => refs.has(name)) ?? revision
-    const root = ref === 'HEAD' ? repo.location.gitdir : repo.location.commondir
-    const data = await readOptional(repo.dispatch, `${root}/logs/${ref}`)
+    const [name, data] = await namedLog(repo.dispatch, repo.location, revision)
     let rows = new TextDecoder()
       .decode(data ?? new Uint8Array())
       .split('\n')
@@ -134,7 +163,6 @@ export async function reflog(inv: CLIInvocation): Promise<CommandFnResult> {
       .reverse()
     const limit = fl.asInt('max_count')
     if (limit !== undefined && limit >= 0) rows = rows.slice(0, limit)
-    const name = ref.replace(/^refs\/(heads|remotes)\//, '')
     const out = rows
       .map((row, index) => {
         const tab = row.indexOf('\t')
@@ -142,7 +170,7 @@ export async function reflog(inv: CLIInvocation): Promise<CommandFnResult> {
         return `${oid.slice(0, repo.abbrev)} ${name}@{${String(index)}}: ${row.slice(tab + 1)}\n`
       })
       .join('')
-    return [new TextEncoder().encode(out), new IOResult()]
+    return [ENC.encode(out), new IOResult()]
   } catch (err) {
     if (err instanceof GitError) return fatal(err)
     throw err

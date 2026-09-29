@@ -4705,6 +4705,34 @@
       }
     },
     {
+      "id": "git_c_chains_onto_the_previous_c",
+      "seq": 567933,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "git -C /repo -C docs ls-files",
+      "expect": {
+        "exit": 0,
+        "stdout": "readme.md\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "git_c_chains_back_out_with_dot_dot",
+      "seq": 567934,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "git -C /repo/docs -C .. ls-files",
+      "expect": {
+        "exit": 0,
+        "stdout": "docs/readme.md\nletters.txt\nnumbers.txt\n",
+        "stderr": ""
+      }
+    },
+    {
       "id": "git_history_casefold_message_author",
       "seq": 1326100,
       "targets": [

@@ -1,6 +1,3 @@
-import { lsFiles } from './ls_files.ts'
-import { forEachRef } from './for_each_ref.ts'
-import { reflog } from './reflog.ts'
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -15,6 +12,9 @@ import { reflog } from './reflog.ts'
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import { lsFiles } from './ls_files.ts'
+import { forEachRef } from './for_each_ref.ts'
+import { reflog } from './reflog.ts'
 import { Operand, Option } from '../../../spec/types.ts'
 import { CLISpec } from '../../types.ts'
 import { UsageStyle } from '../../../spec/types.ts'
@@ -46,7 +46,8 @@ import { tag } from './tag.ts'
 // `-C` is git's own before-anything-else option, so it sits on the root and
 // every verb inherits it. The "." default is load-bearing: a PATH default lands
 // as if typed, so an absent -C resolves to the session cwd and the leaves need
-// no separate working-directory fact.
+// no separate working-directory fact. The root names it its operand base, so a
+// later relative -C lands under the one before it.
 const DIRECTORY_OPTION = new Option({
   short: '-C',
   type: 'path',
@@ -477,6 +478,7 @@ export const GIT = new CLISpec({
   name: 'git',
   description: 'Content tracker',
   usageStyle: UsageStyle.GIT,
+  operandBase: '-C',
   options: [
     DIRECTORY_OPTION,
     new Option({

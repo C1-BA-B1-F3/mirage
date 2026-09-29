@@ -1,7 +1,7 @@
 {
   "cases": [
     {
-      "id": "git_1338_blob_parent",
+      "id": "git_show_blob_parent",
       "seq": 567900,
       "targets": [
         "git-disk",
@@ -15,7 +15,7 @@
       }
     },
     {
-      "id": "git_1338_blob_caret",
+      "id": "git_show_blob_caret",
       "seq": 567901,
       "targets": [
         "git-disk",
@@ -29,7 +29,7 @@
       }
     },
     {
-      "id": "git_1338_ls_files",
+      "id": "git_ls_files",
       "seq": 567902,
       "targets": [
         "git-disk",
@@ -43,7 +43,7 @@
       }
     },
     {
-      "id": "git_1338_for_each_ref",
+      "id": "git_for_each_ref_format",
       "seq": 567903,
       "targets": [
         "git-disk",
@@ -57,7 +57,7 @@
       }
     },
     {
-      "id": "git_1338_reflog",
+      "id": "git_reflog_head",
       "seq": 567904,
       "targets": [
         "git-disk",
@@ -71,7 +71,7 @@
       }
     },
     {
-      "id": "git_1338_regexp",
+      "id": "git_log_extended_regexp",
       "seq": 567905,
       "targets": [
         "git-disk",
@@ -85,7 +85,7 @@
       }
     },
     {
-      "id": "git_1338_toplevel",
+      "id": "git_rev_parse_show_toplevel",
       "seq": 567906,
       "targets": [
         "git-disk",
@@ -99,7 +99,105 @@
       }
     },
     {
-      "id": "git_1338_mailmap",
+      "id": "git_for_each_ref_star_stops_at_slash",
+      "seq": 567907,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "git -C /repo for-each-ref 'refs/*'",
+      "expect": {
+        "exit": 0,
+        "stdout": "",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "git_for_each_ref_path_glob",
+      "seq": 567908,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "git -C /repo for-each-ref --format='%(refname:short)' 'refs/*/*'",
+      "expect": {
+        "exit": 0,
+        "stdout": "main\ntopic\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "git_ls_files_parent_pathspec",
+      "seq": 567909,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "git -C /repo/docs ls-files ..",
+      "expect": {
+        "exit": 0,
+        "stdout": "readme.md\n../letters.txt\n../numbers.txt\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "git_reflog_full_ref_name",
+      "seq": 567910,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "git -C /repo reflog -1 refs/heads/main | cut -d \" \" -f 2-",
+      "expect": {
+        "exit": 0,
+        "stdout": "refs/heads/main@{0}: commit: add two\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "git_rev_parse_show_toplevel_in_order",
+      "seq": 567911,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "git -C /repo rev-parse HEAD --show-toplevel",
+      "expect": {
+        "exit": 0,
+        "stdout": "8ef25423772bbfe671c8e285ae1d63991d59db19\n/repo\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "git_log_perl_regexp_property",
+      "seq": 567912,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "git -C /repo log -P --grep='^add \\p{Ll}{4}$' --format=%s",
+      "expect": {
+        "exit": 0,
+        "stdout": "add docs\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "git_log_grep_refusal_names_pattern",
+      "seq": 567913,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "git -C /repo log --grep='\\(' --format=%s",
+      "expect": {
+        "exit": 128,
+        "stdout": "",
+        "stderr": "fatal: command line, '\\(': Unmatched ( or \\(\n"
+      }
+    },
+    {
+      "id": "git_log_mailmap_placeholder",
       "seq": 568900,
       "targets": [
         "git-disk",
@@ -113,7 +211,7 @@
       }
     },
     {
-      "id": "git_1338_global",
+      "id": "git_config_global_override",
       "seq": 568901,
       "targets": [
         "git-disk",
@@ -127,7 +225,7 @@
       }
     },
     {
-      "id": "git_1338_global_missing",
+      "id": "git_config_global_missing",
       "seq": 568902,
       "targets": [
         "git-disk",
@@ -141,16 +239,30 @@
       }
     },
     {
-      "id": "git_1338_ignored",
+      "id": "git_status_short_ignored",
       "seq": 568903,
       "targets": [
         "git-disk",
         "git-ram"
       ],
-      "command": "printf '*.log\\n' > /repo/.gitignore && echo ignored > /repo/issue1338.log && git -C /repo status --short --ignored | grep '^!! issue1338.log'",
+      "command": "printf '*.log\\n' > /repo/.gitignore && echo ignored > /repo/debug.log && git -C /repo status --short --ignored | grep '^!! debug.log'",
       "expect": {
         "exit": 0,
-        "stdout": "!! issue1338.log\n",
+        "stdout": "!! debug.log\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "git_mailmap_name_and_email_entry_wins",
+      "seq": 568904,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "printf 'Simple <integ@example.com>\\n<canonical@example.com> Integ Author <integ@example.com>\\n' > /repo/.mailmap && git -C /repo log -1 --format='%aN <%aE>' 98b4ffe",
+      "expect": {
+        "exit": 0,
+        "stdout": "Integ Author <canonical@example.com>\n",
         "stderr": ""
       }
     }

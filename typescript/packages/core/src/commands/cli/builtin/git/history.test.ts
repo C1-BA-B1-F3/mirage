@@ -57,3 +57,30 @@ it.each([[['-i']], [['--regexp-ignore-case']]])(
     expect(flags.authors[0]?.test('Bob <bob@example.com>')).toBe(true)
   },
 )
+
+it.each([
+  [['-E', '--grep=first|third'], 'third', true],
+  [['-E', '-F', '--grep=first|third'], 'third', false],
+  [['-F', '-E', '--grep=first|third'], 'third', true],
+  [['--basic-regexp', '--grep=first|third'], 'third', false],
+  [['-P', '--grep=^\\p{Ll}hird$'], 'third', true],
+  [['-P', '--grep=[\\d]'], 'second', false],
+  [['-P', '--grep=[[:alpha:]]irst'], 'first', true],
+  [['-P', '--grep=f(?=irst)'], 'first', true],
+  [['-P', '-i', '--grep=^THIRD$'], 'third', true],
+  [['-P', '--grep=(?i)^THIRD$'], 'third', true],
+  [['-P', '--grep=\\Athird\\z'], 'third', true],
+  [['-P', '--grep=a\\-b\\_c\\ d'], 'a-b_c d', true],
+  [['-P', '--grep=[]x]'], ']', true],
+  [['-P', '--grep=a{x}'], 'a{x}', true],
+])('reads every pattern with the last syntax in %j', (argv, line, expected) => {
+  expect(logFlags(argv).greps[0]?.test(line)).toBe(expected)
+})
+
+it.each([
+  [['--grep=\\('], "command line, '\\(': Unmatched ( or \\("],
+  [['--author=\\('], "header, '\\(': Unmatched ( or \\("],
+  [['--committer=\\('], "header, '\\(': Unmatched ( or \\("],
+])('names where a refused pattern came from in %j', (argv, message) => {
+  expect(() => logFlags(argv)).toThrow(message)
+})

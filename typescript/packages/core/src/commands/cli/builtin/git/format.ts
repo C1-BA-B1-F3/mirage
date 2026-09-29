@@ -1,4 +1,3 @@
-import { mappedIdentity, type MailmapEntry } from './mailmap.ts'
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -13,6 +12,7 @@ import { mappedIdentity, type MailmapEntry } from './mailmap.ts'
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import { mappedIdentity, type MailmapEntry } from './mailmap.ts'
 import { byteChar } from '../../../../shell/bytes.ts'
 import { BadPrettyError, UnsupportedPrettyError } from './errors.ts'
 
@@ -258,25 +258,19 @@ export function presetBlock(
   date = 'default',
   mailmap: readonly MailmapEntry[] = [],
 ): string[] {
-  if (kind === 'medium') return entry(commit, length, date, mailmap)
-  const author = mappedIdentity(
-    `${commit.authorName} <${commit.authorEmail}>`,
-    kind === 'raw' ? [] : mailmap,
-  )
-  const committer = mappedIdentity(
-    `${commit.committerName} <${commit.committerEmail}>`,
-    kind === 'raw' ? [] : mailmap,
-  )
   if (kind === 'raw')
     return [
       `commit ${commit.oid}`,
       `tree ${commit.tree}`,
       ...commit.parents.map((p) => `parent ${p}`),
-      `author ${author} ${gitDate(commit.authorTime, commit.authorTimezoneMinutes, 'raw')}`,
-      `committer ${committer} ${gitDate(commit.committerTime, commit.committerTimezoneMinutes, 'raw')}`,
+      `author ${commit.authorName} <${commit.authorEmail}> ${gitDate(commit.authorTime, commit.authorTimezoneMinutes, 'raw')}`,
+      `committer ${commit.committerName} <${commit.committerEmail}> ${gitDate(commit.committerTime, commit.committerTimezoneMinutes, 'raw')}`,
       '',
       ...messageBlock(commit),
     ]
+  if (kind === 'medium') return entry(commit, length, date, mailmap)
+  const author = mappedIdentity(`${commit.authorName} <${commit.authorEmail}>`, mailmap)
+  const committer = mappedIdentity(`${commit.committerName} <${commit.committerEmail}>`, mailmap)
   const lines = [`commit ${commit.oid}`, ...mergeLine(commit, length)]
   if (kind === 'short') {
     lines.push(`Author: ${author}`, '', `${INDENT}${subject(commit)}`)

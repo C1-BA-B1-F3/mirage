@@ -1,3 +1,17 @@
+# ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
+
 import re
 from dataclasses import dataclass
 
@@ -6,9 +20,24 @@ from mirage.commands.cli.builtin.git.types import RepoLocation
 from mirage.commands.spec.flag_view import FlagView
 from mirage.runtime.types import DispatchFn
 
+MAILMAP_LINE = re.compile(
+    r"^\s*([^<>]*?)\s*<([^<>]+)>(?:\s*([^<>]*?)\s*<([^<>]*)>)?")
+IDENTITY = re.compile(r"(.*?)\s*<([^<>]*)>")
+
 
 @dataclass(frozen=True, slots=True)
 class MailmapEntry:
+    """One ``.mailmap`` line: the identity it matches and what it maps to.
+
+    Args:
+        email (str): the recorded email it matches, lowercased.
+        name (str | None): the recorded name it also requires,
+            lowercased; None for an entry that matches the email alone.
+        mapped_name (str | None): the canonical name, None to keep the
+            recorded one.
+        mapped_email (str | None): the canonical email, None to keep
+            the recorded one.
+    """
     email: str
     name: str | None
     mapped_name: str | None
@@ -18,48 +47,57 @@ class MailmapEntry:
 def parse_mailmap(text: str) -> tuple[MailmapEntry, ...]:
     """Read Git's four mailmap identity forms.
 
+    Pinned against git 2.47.3 (Debian stable) and 2.50.1: only a ``#``
+    in the first column starts a comment, and the second email may be
+    empty (``<>``) while the first may not.
+
     Args:
         text (str): worktree mailmap contents.
     """
     entries = []
     for line in text.splitlines():
-        if line.lstrip().startswith('#'):
+        if line.startswith("#"):
             continue
-        match = re.match(
-            r"^\s*([^<>]*?)\s*<([^<>]+)>(?:\s*([^<>]*?)\s*<([^<>]+)>)?", line)
+        match = MAILMAP_LINE.match(line)
         if match is None:
             continue
         name, email, old_name, old_email = match.groups()
         entries.append(
-            MailmapEntry((old_email or email).lower(),
-                         old_name.strip().lower()
-                         if old_name and old_name.strip() else None,
-                         name.strip() or None, email if old_email else None))
+            MailmapEntry((email if old_email is None else old_email).lower(),
+                         old_name.lower() if old_name else None, name or None,
+                         None if old_email is None else email))
     return tuple(entries)
 
 
 def mapped_identity(identity: str, entries: tuple[MailmapEntry, ...]) -> str:
-    """Apply email-wide mappings, then more specific name-and-email mappings.
+    """Map one ``Name <email>`` identity the way git's ``map_user`` does.
+
+    An entry naming both the recorded name and email wins outright, the
+    last such line replacing any earlier one. Without one, the entries
+    naming the email alone apply, each later line overriding the part
+    it spells.
 
     Args:
         identity (str): recorded name and email.
         entries (tuple[MailmapEntry, ...]): mailmap entries in file order.
     """
-    match = re.match(r"(.*?)\s*<([^<>]*)>", identity)
+    match = IDENTITY.match(identity)
     if match is None:
         return identity
     name, email = match.groups()
-    chosen_name, chosen_email = name, email
-    for specific in (False, True):
-        for entry in entries:
-            if (entry.name
-                    is not None) != specific or entry.email != email.lower():
-                continue
-            if entry.name is not None and entry.name != name.lower():
-                continue
-            chosen_name = entry.mapped_name or chosen_name
-            chosen_email = entry.mapped_email or chosen_email
-    return f"{chosen_name} <{chosen_email}>"
+    simple_name = simple_email = None
+    specific: MailmapEntry | None = None
+    for entry in entries:
+        if entry.email != email.lower():
+            continue
+        if entry.name is None:
+            simple_name = entry.mapped_name or simple_name
+            simple_email = entry.mapped_email or simple_email
+        elif entry.name == name.lower():
+            specific = entry
+    if specific is not None:
+        simple_name, simple_email = specific.mapped_name, specific.mapped_email
+    return f"{simple_name or name} <{simple_email or email}>"
 
 
 async def load_mailmap(dispatch: DispatchFn,
@@ -71,7 +109,7 @@ async def load_mailmap(dispatch: DispatchFn,
         location (RepoLocation): discovered repository.
     """
     data = await read_optional(dispatch, f"{location.worktree}/.mailmap")
-    return parse_mailmap((data or b"").decode('utf-8', 'replace'))
+    return parse_mailmap((data or b"").decode("utf-8", "replace"))
 
 
 def use_mailmap(fl: FlagView, enabled: bool) -> bool:
@@ -81,7 +119,7 @@ def use_mailmap(fl: FlagView, enabled: bool) -> bool:
         fl (FlagView): spec-bound options.
         enabled (bool): configured default.
     """
-    for key, _ in fl.occurrences('mailmap', 'use_mailmap', 'no_mailmap',
-                                 'no_use_mailmap'):
-        enabled = not key.startswith('no_')
+    for key, _ in fl.occurrences("mailmap", "use_mailmap", "no_mailmap",
+                                 "no_use_mailmap"):
+        enabled = not key.startswith("no_")
     return enabled

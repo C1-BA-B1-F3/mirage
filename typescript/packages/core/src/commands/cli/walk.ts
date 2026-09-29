@@ -334,10 +334,19 @@ function recordBool(flags: WalkFlagBag, cs: CompiledSpec, spelling: string): voi
   }
 }
 
-/** Record a value occurrence under its canonical dashed spelling. */
+/**
+ * Record a value occurrence under its canonical dashed spelling. The node's
+ * `operandBase` option moves the way a chdir does, as the flat parser's does
+ * for tar: each occurrence lands relative to the one before it, so
+ * `git -C /repo -C docs` is `/repo/docs`. The composed path may stay relative
+ * until `resolveGroupPaths` puts it against the working directory.
+ */
 function recordValue(flags: WalkFlagBag, cs: CompiledSpec, spelling: string, value: string): void {
   const dest = cs.destOf(spelling)
-  if (cs.multipleDests.has(dest)) {
+  const previous = flags[dest]
+  if (dest === cs.baseDest && typeof previous === 'string') {
+    flags[dest] = previous === '' ? value : resolvePath(value, previous)
+  } else if (cs.multipleDests.has(dest)) {
     const prev = flags[dest]
     if (Array.isArray(prev)) {
       prev.push(value)

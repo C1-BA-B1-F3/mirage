@@ -383,6 +383,7 @@ def file_patch(repo: BaseRepo,
         width (int): how many hex digits the index line keeps.
         fully (bool): ``core.quotePath``.
         context (int): the requested number of context lines.
+        function_context (bool): ``-W``, widen hunks to whole functions.
     """
     old, new = row.old, row.new
     if old and new and old[0] & 0o170000 != new[0] & 0o170000:
@@ -451,17 +452,17 @@ def hunks(old: list[bytes],
         old (list[bytes]): the old side's lines, newlines kept.
         new (list[bytes]): the new side's lines, newlines kept.
         count (int): the requested number of context lines.
+        function_context (bool): ``-W``, widen each hunk to the whole
+            function around its change.
     """
     out = []
     context = b''
     searched = -1
     matcher = SequenceMatcher(a=old, b=new, autojunk=False)
+    codes = list(matcher.get_opcodes())
     groups = list(matcher.get_grouped_opcodes(count))
     if function_context:
-        groups = _function_groups(
-            old,
-            SequenceMatcher(a=old, b=new, autojunk=False).get_opcodes(),
-            groups)
+        groups = _function_groups(old, codes, groups)
     for group in groups:
         start, stop = group[0][1], group[-1][2]
         found = next((old[k] for k in range(start - 1, searched, -1)

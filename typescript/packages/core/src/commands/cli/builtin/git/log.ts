@@ -1,4 +1,3 @@
-import { loadMailmap, useMailmap } from './mailmap.ts'
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -13,6 +12,7 @@ import { loadMailmap, useMailmap } from './mailmap.ts'
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import { loadMailmap, useMailmap } from './mailmap.ts'
 import { IOResult } from '../../../../io/types.ts'
 import type { CommandFnResult } from '../../../config.ts'
 import { FlagView } from '../../../spec/flag_view.ts'
@@ -87,15 +87,10 @@ function rendered(
     return entries.join('\n')
   }
   const lines: string[] = []
+  const mailmap = flags.useMailmap ? flags.mailmap : []
   commits.forEach((commit, index) => {
     if (index > 0) lines.push('')
-    const block = presetBlock(
-      commit,
-      fmt.kind,
-      width,
-      flags.date,
-      flags.useMailmap ? flags.mailmap : [],
-    )
+    const block = presetBlock(commit, fmt.kind, width, flags.date, mailmap)
     if (flags.decorate && block[0]?.startsWith('commit '))
       block[0] += renderTemplate('%d', commit, width, decor)
     lines.push(...block)
@@ -137,6 +132,7 @@ async function graphed(
 ): Promise<string> {
   const width = repo.abbrev
   const graph = new CommitGraph((oid) => walk.interesting.has(oid), flags.firstParent)
+  const mailmap = flags.useMailmap ? flags.mailmap : []
   const fmt = flags.pretty
   const user = fmt.kind === 'format' || fmt.kind === 'tformat'
   const terminated = fmt.kind === 'oneline' || fmt.kind === 'tformat'
@@ -170,13 +166,7 @@ async function graphed(
       } else if (user) {
         text = renderTemplate(fmt.template ?? '', commit, width, decor, flags.date, flags.mailmap)
       } else {
-        const [head = '', ...rest] = presetBlock(
-          commit,
-          fmt.kind,
-          width,
-          flags.date,
-          flags.useMailmap ? flags.mailmap : [],
-        )
+        const [head = '', ...rest] = presetBlock(commit, fmt.kind, width, flags.date, mailmap)
         out += `${head}${from}${labels}\n${graph.nextLine()[0]}`
         text = rest.map((line) => `${line}\n`).join('')
       }
@@ -216,9 +206,10 @@ export async function log(inv: CLIInvocation): Promise<CommandFnResult> {
   const fl = new FlagView(inv.flags)
   try {
     checkOperands(texts, undefined, escaped(inv.argv))
+    const flags = parseFlags(fl)
     const repo = await opened(fl, doors)
     const parsed = {
-      ...parseFlags(fl),
+      ...flags,
       mailmap: await loadMailmap(repo.dispatch, repo.location),
       useMailmap: useMailmap(fl, await configBool(repo, 'log.mailmap', true)),
     }

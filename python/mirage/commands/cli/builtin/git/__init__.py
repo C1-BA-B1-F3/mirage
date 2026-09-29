@@ -44,7 +44,8 @@ from mirage.io.types import IOResult
 # `-C` is git's own before-anything-else option, so it sits on the root
 # and every verb inherits it. The "." default is load-bearing: a PATH
 # default lands as if typed, so an absent -C resolves to the session cwd
-# and the leaves need no separate working-directory fact.
+# and the leaves need no separate working-directory fact. The root names it
+# its operand base, so a later relative -C lands under the one before it.
 DIRECTORY_OPTION = Option(short="-C",
                           type="path",
                           default=".",
@@ -422,6 +423,7 @@ GIT = CLISpec(
     name="git",
     description="Content tracker",
     usage_style=UsageStyle.GIT,
+    operand_base="-C",
     options=(DIRECTORY_OPTION,
              Option(long="--git-dir",
                     type="str",

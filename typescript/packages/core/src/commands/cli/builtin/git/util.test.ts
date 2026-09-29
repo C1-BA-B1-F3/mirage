@@ -16,6 +16,8 @@ import { describe, expect, it } from 'vitest'
 
 import { BadConfigValueError } from './errors.ts'
 import { gitBool } from './util.ts'
+import { walk } from '../../walk.ts'
+import { GIT } from './index.ts'
 
 describe('gitBool', () => {
   it.each([
@@ -70,4 +72,9 @@ describe('gitBool', () => {
   it('parses every occurrence', () => {
     expect(() => gitBool(['maybe', 'true'], 'core.bare', false)).toThrow(BadConfigValueError)
   })
+})
+
+it('lands a later relative -C under the one before it', () => {
+  const result = walk('git', GIT, ['-C', '/repo', '-C', 'docs', 'status'], '/')
+  expect(result.groupFlags['-C']).toBe('/repo/docs')
 })

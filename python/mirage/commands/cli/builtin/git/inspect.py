@@ -22,6 +22,8 @@ from mirage.io.types import ByteSource, IOResult
 from mirage.utils.posix import translate_classes
 from mirage.version import __version__
 
+SHOW_TOPLEVEL = "--show-toplevel"
+
 
 async def repo_config(inv: CLIInvocation[None], fl: FlagView) -> ConfigFile:
     doors = inv.doors or CLIDoors()
@@ -57,40 +59,58 @@ async def remote(
         return fatal(exc)
 
 
+async def _global_sources(inv: CLIInvocation[None],
+                          listing: bool) -> list[tuple[str, ConfigFile]]:
+    """The per-user config files ``--global`` reads, in git's order.
+
+    ``$GIT_CONFIG_GLOBAL`` alone when set, else the XDG file then
+    ``~/.gitconfig``, each read through the dispatcher from the
+    session's own ``HOME`` so the answer is the workspace's and never
+    the host's. Only ``--list`` refuses when neither exists.
+
+    Args:
+        inv (CLIInvocation[None]): the invocation, for its env and doors.
+        listing (bool): ``--list`` was given.
+    """
+    dispatch = inv.doors.dispatch if inv.doors is not None else None
+    if dispatch is None:
+        raise NoWorkspaceError()
+    home = inv.env.get("HOME", "")
+    override = inv.env.get("GIT_CONFIG_GLOBAL")
+    if override is None and not home:
+        raise GitError("$HOME not set")
+    target = override or posixpath.join(home, ".gitconfig")
+    xdg = inv.env.get("XDG_CONFIG_HOME") or posixpath.join(home, ".config")
+    paths = [target] if override is not None else [
+        posixpath.join(xdg, "git/config"), target
+    ]
+    sources = []
+    for source in paths:
+        data = await read_optional(dispatch, source)
+        if data is not None:
+            sources.append((source, ConfigFile.from_file(BytesIO(data))))
+    if not sources and listing:
+        raise GitError(f"unable to read config file '{target}': "
+                       "No such file or directory")
+    return sources
+
+
 async def config(
         inv: CLIInvocation[None]) -> tuple[ByteSource | None, IOResult]:
     fl = FlagView(inv.flags)
     try:
-        doors = inv.doors or CLIDoors()
-        sources: list[tuple[str, ConfigFile]] = []
-        if fl.as_bool('global'):
-            if doors.dispatch is None:
-                raise NoWorkspaceError()
-            home = inv.env.get('HOME', '')
-            override = inv.env.get('GIT_CONFIG_GLOBAL')
-            if override is None and not home:
-                raise GitError('$HOME not set')
-            target = override or posixpath.join(home, '.gitconfig')
-            xdg = inv.env.get('XDG_CONFIG_HOME') or posixpath.join(
-                home, '.config')
-            paths = [target] if override is not None else [
-                posixpath.join(xdg, 'git/config'), target
-            ]
-            for source in paths:
-                data = await read_optional(doors.dispatch, source)
-                if data is not None:
-                    sources.append(
-                        (source, ConfigFile.from_file(BytesIO(data))))
-            if not sources and fl.as_bool('list'):
-                raise GitError(f"unable to read config file '{target}': "
-                               "No such file or directory")
+        if fl.as_bool("global"):
+            sources = await _global_sources(inv, fl.as_bool("list"))
         else:
+            doors = inv.doors or CLIDoors()
             _, location = await opened(fl, doors)
+            assert doors.dispatch is not None
             source = f"{location.commondir}/config"
-            ordinary = location.commondir == location.worktree + '/.git'
+            data = await read_file(doors.dispatch, source)
+            ordinary = location.commondir == location.worktree + "/.git"
             if ordinary and start_point(fl) == location.worktree:
-                source = '.git/config'
-            sources.append((source, await repo_config(inv, fl)))
+                source = ".git/config"
+            sources = [(source, ConfigFile.from_file(BytesIO(data)))]
         listing = fl.as_bool("list")
         regexp = fl.as_bool("get_regexp")
         origin = fl.as_bool("show_origin")
@@ -116,7 +136,7 @@ async def config(
         if not listing and not regexp:
             values = values[-1:]
         lines = [
-            (f"file:{source}\t" if origin else '') +
+            (f"file:{source}\t" if origin else "") +
             (name + ("=" if listing else " ") if listing or regexp else "") +
             value + "\n" for source, name, value in values
         ]
@@ -212,6 +232,24 @@ def _parse_revision(repo: BaseRepo, revision: str, abbrev: bool,
     return b''
 
 
+def _revisions_before(argv: tuple[str, ...], count: int, option: str) -> int:
+    """How many revisions rev-parse prints ahead of one of its options.
+
+    rev-parse answers its arguments in line order, so ``HEAD
+    --show-toplevel`` prints the id first. Every word after the option
+    that is not a dash word is one of the later revisions.
+
+    Args:
+        argv (tuple[str, ...]): the line's verbatim tokens.
+        count (int): how many revisions the line names.
+        option (str): the option's spelling.
+    """
+    if option not in argv:
+        return 0
+    after = argv[argv.index(option) + 1:]
+    return count - sum(1 for word in after if not word.startswith("-"))
+
+
 async def rev_parse(
         inv: CLIInvocation[None]) -> tuple[ByteSource | None, IOResult]:
     """Resolve revisions supplied to rev-parse.
@@ -223,16 +261,18 @@ async def rev_parse(
     try:
         check_operands(inv.texts, marked=escaped(inv.argv))
         doors = inv.doors or CLIDoors()
-        repo, location = await opened(fl,
-                                      doors,
-                                      work_tree=fl.as_bool("show_toplevel"))
+        toplevel = fl.as_bool("show_toplevel")
+        repo, location = await opened(fl, doors, work_tree=toplevel)
         assert doors.dispatch is not None
         head = await read_head(doors.dispatch, location.gitdir)
-        out = (location.worktree +
-               '\n').encode() if fl.as_bool('show_toplevel') else b''
-        for revision in inv.texts:
-            out += await asyncio.to_thread(_parse_revision, repo, revision,
-                                           fl.as_bool('abbrev_ref'), head.ref)
-        return out, IOResult()
+        rows = [
+            await asyncio.to_thread(_parse_revision, repo, revision,
+                                    fl.as_bool("abbrev_ref"), head.ref)
+            for revision in inv.texts
+        ]
+        if toplevel:
+            rows.insert(_revisions_before(inv.argv, len(rows), SHOW_TOPLEVEL),
+                        f"{location.worktree}\n".encode())
+        return b"".join(rows), IOResult()
     except GitError as exc:
         return fatal(exc)

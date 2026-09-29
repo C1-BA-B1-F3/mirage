@@ -393,6 +393,12 @@ def _record_value(flags: WalkFlagBag, cs: CompiledSpec, spelling: str,
                   value: str) -> None:
     """Record a value occurrence under its canonical dashed spelling.
 
+    The node's ``operand_base`` option moves the way a chdir does, as the
+    flat parser's does for tar: each occurrence lands relative to the one
+    before it, so ``git -C /repo -C docs`` is ``/repo/docs``. The
+    composed path may stay relative until ``_resolve_group_paths`` puts
+    it against the working directory.
+
     Args:
         flags (WalkFlagBag): accumulated group flags.
         cs (CompiledSpec): the node's compiled tables.
@@ -400,7 +406,10 @@ def _record_value(flags: WalkFlagBag, cs: CompiledSpec, spelling: str,
         value (str): the flag's value.
     """
     dest = cs.dest_of(spelling)
-    if dest in cs.multiple_dests:
+    previous = flags.get(dest)
+    if dest == cs.base_dest and isinstance(previous, str):
+        flags[dest] = resolve_path(value, previous) if previous else value
+    elif dest in cs.multiple_dests:
         prev = flags.get(dest)
         if isinstance(prev, list):
             prev.append(value)

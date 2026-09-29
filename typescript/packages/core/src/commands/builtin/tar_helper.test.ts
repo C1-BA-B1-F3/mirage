@@ -19,6 +19,29 @@ const ENC = new TextEncoder()
 const DEC = new TextDecoder()
 
 describe('tar_helper', () => {
+  it('reads a raw header whose checksum ends with NUL then newline', async () => {
+    const archive = new Uint8Array(2048)
+    archive.set(ENC.encode('a.txt'), 0)
+    archive.set(ENC.encode('0000644\0'), 100)
+    archive.set(ENC.encode('0000000\0'), 108)
+    archive.set(ENC.encode('0000000\0'), 116)
+    archive.set(ENC.encode('00000000006\0'), 124)
+    archive.set(ENC.encode('00000000000\0'), 136)
+    archive.fill(32, 148, 156)
+    archive.set(ENC.encode('0'), 156)
+    archive.set(ENC.encode('ustar\0'), 257)
+    archive.set(ENC.encode('00'), 263)
+    const checksum = archive.subarray(0, 512).reduce((sum, byte) => sum + byte, 0)
+    archive.set(ENC.encode(`${checksum.toString(8).padStart(6, '0')}\0\n`), 148)
+    archive.set(ENC.encode('hello\n'), 512)
+
+    const entries = await readTar(archive)
+    expect(entries).toHaveLength(1)
+    expect(entries[0]?.name).toBe('a.txt')
+    expect(entries[0]?.isFile).toBe(true)
+    expect(DEC.decode(entries[0]?.data)).toBe('hello\n')
+  })
+
   it('accepts a complete member without EOF padding and ignores data after EOF', async () => {
     const archive = await writeTar([{ name: 'a.txt', data: ENC.encode('aaa\n'), isFile: true }])
     const withTail = new Uint8Array(archive.length + 4)

@@ -62,7 +62,7 @@ export async function readTar(data: Uint8Array): Promise<TarEntry[]> {
   // after checking the header checksum (including old signed checksums).
   const block = data.subarray(0, 512)
   if (block.some((byte) => byte !== 0)) {
-    const field = new TextDecoder().decode(block.subarray(148, 156)).replace(/\0.*$/, '').trim()
+    const field = new TextDecoder().decode(block.subarray(148, 156)).split('\0')[0]?.trim() ?? ''
     let unsigned = 0
     let signed = 0
     for (const [index, byte] of block.entries()) {

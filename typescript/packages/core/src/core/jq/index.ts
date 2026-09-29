@@ -23,7 +23,7 @@ export {
   streamEvents,
   streamReads,
 } from './eval.ts'
-export { concatBytes, errorReport, formatJqOutput } from './format.ts'
+export { concatBytes, errorReport, formatJqOutput, haltReport } from './format.ts'
 export { InputPositions } from './position.ts'
 export {
   evalJsonlStream,

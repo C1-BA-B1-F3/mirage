@@ -15,7 +15,7 @@
 from mirage.core.jq.errors import JqCompileError
 from mirage.core.jq.eval import (args_object, halts, jq_check, jq_eval, jq_run,
                                  references_args, stream_events, stream_reads)
-from mirage.core.jq.format import error_report, format_jq_output
+from mirage.core.jq.format import error_report, format_jq_output, halt_report
 from mirage.core.jq.position import InputPositions
 from mirage.core.jq.stream import (eval_jsonl_stream, is_jsonl_path,
                                    is_streamable_jsonl_expr, parse_json_auto,
@@ -42,6 +42,7 @@ __all__ = [
     "error_report",
     "eval_jsonl_stream",
     "format_jq_output",
+    "halt_report",
     "halts",
     "is_jsonl_path",
     "is_streamable_jsonl_expr",

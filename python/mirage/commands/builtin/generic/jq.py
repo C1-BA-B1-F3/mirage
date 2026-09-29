@@ -10,14 +10,17 @@ from mirage.commands.errors import UsageError
 from mirage.commands.spec import SPECS
 from mirage.commands.spec.flag_view import FlagView
 from mirage.commands.spec.types import FlagValue
-from mirage.core.jq import (DEFAULT_INDENT, STDIN_NAME, UNKNOWN_POSITION,
-                            InputPositions, JqCompileError, JqError, JqHalt,
-                            JqOptions, JqRun, StreamReads, args_object,
-                            error_report, eval_jsonl_stream, format_jq_output,
-                            halts, is_jsonl_path, is_streamable_jsonl_expr,
-                            jq_check, jq_run, parse_json_docs, parse_json_text,
+from mirage.core.jq import (args_object, error_report, eval_jsonl_stream,
+                            format_jq_output, halt_report, halts,
+                            is_jsonl_path, is_streamable_jsonl_expr, jq_check,
+                            jq_run, parse_json_docs, parse_json_text,
                             parse_seq_text, references_args, split_raw_text,
                             stream_events, stream_reads)
+from mirage.core.jq.errors import JqCompileError
+from mirage.core.jq.position import InputPositions
+from mirage.core.jq.types import (DEFAULT_INDENT, STDIN_NAME, UNKNOWN_POSITION,
+                                  JqError, JqHalt, JqOptions, JqRun,
+                                  StreamReads)
 from mirage.io.types import ByteSource, IOResult
 from mirage.types import JsonValue, PathSpec
 
@@ -421,7 +424,7 @@ async def jq(
                 error_report(run_position(positions, reads, first, taken),
                              run.stop))
         elif isinstance(run.stop, JqHalt):
-            reports.append(run.stop.text)
+            reports.append(halt_report(run.stop))
             return True
         return False
 

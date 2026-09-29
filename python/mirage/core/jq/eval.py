@@ -14,15 +14,15 @@
 
 import logging
 import re
+import uuid
 from collections.abc import Iterable, Mapping, Sequence
 from typing import Any
 
 import jq as _libjq
 
 from mirage.core.jq.errors import JqCompileError
-from mirage.core.jq.types import (ARGS_VAR, ERROR_KEY, HALT_KEY, INPUTS_VAR,
-                                  JqError, JqHalt, JqOptions, JqRun,
-                                  StreamReads)
+from mirage.core.jq.types import (ARGS_VAR, INPUTS_VAR, JqError, JqHalt,
+                                  JqOptions, JqRun, StreamReads)
 from mirage.types import JsonValue
 
 logger = logging.getLogger(__name__)
@@ -40,26 +40,36 @@ INTERP = "\\("
 OPENERS = "([{"
 CLOSERS = ")]}"
 
+# The keys the prelude hands a run's stop back under: the error no `try`
+# caught, and the halt `halt` or `halt_error` asked for. Each carries a
+# token drawn once per process, so no output of a program can pass for
+# one.
+_TOKEN = uuid.uuid4().hex
+ERROR_KEY = f"__mirage_jq_error_{_TOKEN}"
+HALT_KEY = f"__mirage_jq_halt_{_TOKEN}"
+
 # `halt` and `halt_error` stop jq itself, which libjq's binding reports as
-# nothing but the end of the outputs, so the prelude redefines both to
-# hand the stop back first: the text jq writes to stderr for it (a string
-# as it is, null as nothing, anything else dumped on a line of its own)
-# and the exit code. The builtins stay reachable under names of their
-# own, which is also how a code that is not a number meets halt_error's
-# own refusal.
-_STOPS = ("def __mirage_jq_halt: halt; "
-          "def __mirage_jq_halt_error($code): halt_error($code); "
-          'def halt: {"' + HALT_KEY + '": [null, ""]}, __mirage_jq_halt; '
-          'def halt_error($code): if ($code | type) == "number" then {"' +
-          HALT_KEY + '": [$code, (if type == "string" then . '
-          'elif . == null then "" else tojson + "\\n" end)]}, '
-          "__mirage_jq_halt else __mirage_jq_halt_error($code) end; "
+# nothing but the end of the outputs. So the prelude redefines both to
+# raise an error the top-level `catch` hands back as the halt: halt_error's
+# input as jq prints it (a string as it is, null as nothing, anything else
+# in jq's compact dump), whether it was a string, and the exit code. An
+# error leaves any collector it is raised in (`[halt_error]`, `map`), as
+# the real halt does. halt_error's own refusal of a code that is not a
+# number stays the builtin's. The one cost: a `try` in the program catches
+# the halt, which jq's cannot.
+_STOPS = ("def __mirage_jq_halt_error($code): halt_error($code); "
+          'def halt: error({"' + HALT_KEY + '": [null, null, false]}); '
+          'def halt_error($code): if ($code | type) == "number" then '
+          'error({"' + HALT_KEY + '": [$code, (if . == null then null '
+          'elif type == "string" then . else tojson end), '
+          '(type == "string")]}) else __mirage_jq_halt_error($code) end; '
           "def halt_error: halt_error(5); ")
 
 # The error no `try` inside the program caught: whether it was a string,
-# and its text as jq prints it.
-_CATCH = (' catch {"' + ERROR_KEY + '": [(type == "string"), '
-          '(if type == "string" then . else tojson end)]}')
+# and its text as jq prints it, unless it is the halt the prelude raised.
+_CATCH = (' catch (if type == "object" and has("' + HALT_KEY +
+          '") then . else {"' + ERROR_KEY + '": [(type == "string"), '
+          '(if type == "string" then . else tojson end)]} end)')
 
 
 def code_only(expr: str) -> str:
@@ -263,11 +273,12 @@ def _stop_of(value: JsonValue) -> JqError | JqHalt | None:
     if isinstance(error, list) and len(error) == 2:
         return JqError(str(error[1]), error[0] is True)
     halt = value.get(HALT_KEY)
-    if isinstance(halt, list) and len(halt) == 2:
-        code = halt[0]
+    if isinstance(halt, list) and len(halt) == 3:
+        code, message, string = halt
+        text = message if isinstance(message, str) else None
         if isinstance(code, bool) or not isinstance(code, (int, float)):
-            return JqHalt(str(halt[1]), None)
-        return JqHalt(str(halt[1]), code)
+            return JqHalt(text, string is True, None)
+        return JqHalt(text, string is True, code)
     return None
 
 

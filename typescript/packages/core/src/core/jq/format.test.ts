@@ -14,7 +14,7 @@
 
 import { describe, expect, it } from 'vitest'
 import { jqEval } from './eval.ts'
-import { concatBytes, errorReport, formatJqOutput } from './format.ts'
+import { concatBytes, errorReport, formatJqOutput, haltReport } from './format.ts'
 import { jqOptions } from './types.ts'
 
 const DEC = new TextDecoder()
@@ -142,5 +142,15 @@ describe('errorReport', () => {
     expect(errorReport('f:0', { kind: 'error', text: 'a\0b', string: true })).toBe(
       'jq: error (at f:0): a\n',
     )
+  })
+})
+
+describe('haltReport', () => {
+  it.each([
+    ['bye\n', true, 'bye\n'],
+    ['{"a":1}', false, '{"a":1}\n'],
+    [null, false, ''],
+  ])('writes %j (a string: %s) as %j', (message, string, expected) => {
+    expect(haltReport({ kind: 'halt', message, string, code: 5 })).toBe(expected)
   })
 })

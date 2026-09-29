@@ -188,10 +188,16 @@ def test_references_args_ignores_strings_and_comments():
     ('error("null")', JqRun([], JqError("null", True))),
     (".a | .b",
      JqRun([], JqError('Cannot index number with string ("b")', True))),
-    ('"bye\\n" | halt_error', JqRun([], JqHalt("bye\n", 5))),
-    ("[1] | halt_error(2)", JqRun([], JqHalt("[1]\n", 2))),
-    ("null | halt_error", JqRun([], JqHalt("", 5))),
-    ('"a", halt', JqRun(["a"], JqHalt("", None))),
+    ('"bye\\n" | halt_error', JqRun([], JqHalt("bye\n", True, 5))),
+    ("[1] | halt_error(2)", JqRun([], JqHalt("[1]", False, 2))),
+    ("null | halt_error", JqRun([], JqHalt(None, False, 5))),
+    ('"a", halt', JqRun(["a"], JqHalt(None, False, None))),
+    ("1, [halt_error(2)], 3", JqRun([1], JqHalt('{"a":1}', False, 2))),
+    ("[.a] | map(halt_error(4))", JqRun([], JqHalt("1", False, 4))),
+    ('{"__mirage_jq_error": [true, "x"]}',
+     JqRun([{
+         "__mirage_jq_error": [True, "x"]
+     }])),
     ('try error("x") catch .', JqRun(["x"])),
 ])
 def test_a_run_hands_back_what_stopped_it(expr, run):

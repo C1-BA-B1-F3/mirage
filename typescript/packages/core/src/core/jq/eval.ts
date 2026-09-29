@@ -16,8 +16,6 @@ import * as jqWasm from 'jq-wasm'
 import { JqCompileError } from './errors.ts'
 import {
   ARGS_VAR,
-  ERROR_KEY,
-  HALT_KEY,
   INPUTS_VAR,
   NAMED_VAR,
   VALUE_VAR,
@@ -192,26 +190,36 @@ function streamDefs(expr: string): string {
   )
 }
 
-// `halt` and `halt_error` stop jq itself, and jq-wasm reports that as the
-// plain end of the outputs and an exit code, so the prelude redefines both
-// to hand the stop back first: the text jq writes to stderr for it (a
-// string as it is, null as nothing, anything else dumped on a line of its
-// own) and the exit code. The builtins stay reachable under names of their
-// own, which is also how a code that is not a number meets halt_error's
-// own refusal.
+// The keys the prelude hands a run's stop back under: the error no `try`
+// caught, and the halt `halt` or `halt_error` asked for. Each carries a
+// token drawn once per process, so no output of a program can pass for one.
+const TOKEN = crypto.randomUUID().replaceAll('-', '')
+const ERROR_KEY = `__mirage_jq_error_${TOKEN}`
+const HALT_KEY = `__mirage_jq_halt_${TOKEN}`
+
+// `halt` and `halt_error` stop jq itself, which jq-wasm reports as nothing
+// but the end of the outputs and an exit code. So the prelude redefines both
+// to raise an error the top-level `catch` hands back as the halt: halt_error's
+// input as jq prints it (a string as it is, null as nothing, anything else in
+// jq's compact dump), whether it was a string, and the exit code. An error
+// leaves any collector it is raised in (`[halt_error]`, `map`), as the real
+// halt does. halt_error's own refusal of a code that is not a number stays the
+// builtin's. The one cost: a `try` in the program catches the halt, which
+// jq's cannot.
 const STOPS =
-  'def __mirage_jq_halt: halt; ' +
   'def __mirage_jq_halt_error($code): halt_error($code); ' +
-  `def halt: {"${HALT_KEY}": [null, ""]}, __mirage_jq_halt; ` +
-  `def halt_error($code): if ($code | type) == "number" then {"${HALT_KEY}": ` +
-  '[$code, (if type == "string" then . elif . == null then "" else tojson + "\\n" end)]}, ' +
-  '__mirage_jq_halt else __mirage_jq_halt_error($code) end; ' +
+  `def halt: error({"${HALT_KEY}": [null, null, false]}); ` +
+  'def halt_error($code): if ($code | type) == "number" then ' +
+  `error({"${HALT_KEY}": [$code, (if . == null then null ` +
+  'elif type == "string" then . else tojson end), (type == "string")]}) ' +
+  'else __mirage_jq_halt_error($code) end; ' +
   'def halt_error: halt_error(5); '
 
 // The error no `try` inside the program caught: whether it was a string,
-// and its text as jq prints it.
+// and its text as jq prints it, unless it is the halt the prelude raised.
 const CATCH =
-  ` catch {"${ERROR_KEY}": [(type == "string"), ` + '(if type == "string" then . else tojson end)]}'
+  ` catch (if type == "object" and has("${HALT_KEY}") then . else {"${ERROR_KEY}": ` +
+  '[(type == "string"), (if type == "string" then . else tojson end)]} end)'
 
 // How jq-wasm's jq reports an error no `try` caught, which only a program
 // the prelude could not wrap leaves to it.
@@ -324,9 +332,14 @@ function stopOf(value: unknown): JqError | JqHalt | null {
     return { kind: 'error', text: String(error[1]), string: error[0] === true }
   }
   const halt = record[HALT_KEY]
-  if (Array.isArray(halt) && halt.length === 2) {
-    const code: unknown = halt[0]
-    return { kind: 'halt', text: String(halt[1]), code: typeof code === 'number' ? code : null }
+  if (Array.isArray(halt) && halt.length === 3) {
+    const [code, message, string] = halt as unknown[]
+    return {
+      kind: 'halt',
+      message: typeof message === 'string' ? message : null,
+      string: string === true,
+      code: typeof code === 'number' ? code : null,
+    }
   }
   return null
 }

@@ -29,12 +29,6 @@ export const VALUE_VAR = '__mirage_jq_value'
 // The --arg / --argjson / --rawfile / --slurpfile bindings, by name.
 export const NAMED_VAR = '__mirage_jq_named'
 
-// The keys a run's prelude hands its stop back under: the error no `try`
-// caught, and the halt `halt` or `halt_error` asked for. Spelled so a
-// user program never prints one by accident.
-export const ERROR_KEY = '__mirage_jq_error'
-export const HALT_KEY = '__mirage_jq_halt'
-
 // What jq names standard input when it reports where it stands, and what
 // it reports before it has read any input at all.
 export const STDIN_NAME = '<stdin>'
@@ -57,8 +51,13 @@ export interface JqError {
 /** `halt` or `halt_error`, which end the whole invocation. */
 export interface JqHalt {
   readonly kind: 'halt'
-  /** What jq writes to stderr for it, as it is. */
-  readonly text: string
+  /** halt_error's input as jq prints it (a string as it is, anything else
+   * in jq's compact dump), or null for `halt` and for a null input, which
+   * print nothing. */
+  readonly message: string | null
+  /** Whether that input was a string, which jq prints with no newline of
+   * its own. */
+  readonly string: boolean
   /** The exit code `halt_error` named, or null for `halt`. */
   readonly code: number | null
 }

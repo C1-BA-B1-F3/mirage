@@ -161,7 +161,7 @@ def test_exit_status_looks_back_past_runs_that_printed_nothing():
     (300, False, 44),
 ])
 def test_a_halt_exits_with_its_own_code(code, exit_status, expected):
-    status = run_status(JqRun([False], JqHalt("", code)))
+    status = run_status(JqRun([False], JqHalt(None, False, code)))
     assert exit_code([status], JqOptions(exit_status=exit_status)) == expected
 
 
@@ -450,6 +450,14 @@ async def test_a_halt_ends_the_whole_invocation():
                                                                   b"bye\n", 3)
     assert await _ran("/d/four.json",
                       "if . == 3 then halt else . end") == (b"1\n2\n", b"", 0)
+
+
+@pytest.mark.asyncio
+async def test_a_halt_inside_a_collector_halts_as_from_the_top():
+    assert await _ran("/d/four.json",
+                      "if . == 2 then [halt_error(3)] else . end") == (b"1\n",
+                                                                       b"2\n",
+                                                                       3)
 
 
 @pytest.mark.asyncio

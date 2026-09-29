@@ -350,6 +350,45 @@
         "stdout": "1: jq: error (at <stdin>:0): 1000\n819: jq: error (at <stdin>:1): 1818\n",
         "stderr": ""
       }
+    },
+    {
+      "id": "jq_halt_error_inside_a_collector_halts_the_command",
+      "seq": 700975,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "printf '1 2 3' | jq -c 'if . == 2 then [halt_error(3)] else . end'",
+      "expect": {
+        "exit": 3,
+        "stdout": "1\n",
+        "stderr": "2\n"
+      },
+      "flags": [
+        "c"
+      ]
+    },
+    {
+      "id": "jq_output_shaped_like_a_stop_prints_as_output",
+      "seq": 700976,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "jq -n -c '{\"__mirage_jq_error\": [true, \"x\"]}, {\"__mirage_jq_halt\": [null, \"\"]}'",
+      "expect": {
+        "exit": 0,
+        "stdout": "{\"__mirage_jq_error\":[true,\"x\"]}\n{\"__mirage_jq_halt\":[null,\"\"]}\n",
+        "stderr": ""
+      },
+      "flags": [
+        "n",
+        "c"
+      ]
     }
   ]
 }

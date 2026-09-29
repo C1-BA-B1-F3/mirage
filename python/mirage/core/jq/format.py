@@ -16,7 +16,7 @@ import json
 
 import orjson
 
-from mirage.core.jq.types import DEFAULT_INDENT, RS, JqError, JqOptions
+from mirage.core.jq.types import DEFAULT_INDENT, RS, JqError, JqHalt, JqOptions
 from mirage.types import JsonValue
 
 NUL = b"\x00"
@@ -105,3 +105,15 @@ def error_report(position: str, error: JqError) -> str:
         text = error.text.split("\0", 1)[0]
         return f"jq: error (at {position}): {text}\n"
     return f"jq: error (at {position}) (not a string): {error.text}\n"
+
+
+def halt_report(halt: JqHalt) -> str:
+    """What jq writes to stderr for a halt: a string as it is, anything
+    else dumped on a line of its own, and nothing for `halt` or a null.
+
+    Args:
+        halt (JqHalt): the halt.
+    """
+    if halt.message is None:
+        return ""
+    return halt.message if halt.string else f"{halt.message}\n"

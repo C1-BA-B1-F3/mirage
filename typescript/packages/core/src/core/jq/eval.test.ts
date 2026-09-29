@@ -502,10 +502,34 @@ describe('jqRun', () => {
         stop: { kind: 'error', text: 'Cannot index number with string ("b")', string: true },
       },
     ],
-    ['"bye\\n" | halt_error', { outputs: [], stop: { kind: 'halt', text: 'bye\n', code: 5 } }],
-    ['[1] | halt_error(2)', { outputs: [], stop: { kind: 'halt', text: '[1]\n', code: 2 } }],
-    ['null | halt_error', { outputs: [], stop: { kind: 'halt', text: '', code: 5 } }],
-    ['"a", halt', { outputs: ['a'], stop: { kind: 'halt', text: '', code: null } }],
+    [
+      '"bye\\n" | halt_error',
+      { outputs: [], stop: { kind: 'halt', message: 'bye\n', string: true, code: 5 } },
+    ],
+    [
+      '[1] | halt_error(2)',
+      { outputs: [], stop: { kind: 'halt', message: '[1]', string: false, code: 2 } },
+    ],
+    [
+      'null | halt_error',
+      { outputs: [], stop: { kind: 'halt', message: null, string: false, code: 5 } },
+    ],
+    [
+      '"a", halt',
+      { outputs: ['a'], stop: { kind: 'halt', message: null, string: false, code: null } },
+    ],
+    [
+      '1, [halt_error(2)], 3',
+      { outputs: [1], stop: { kind: 'halt', message: '{"a":1}', string: false, code: 2 } },
+    ],
+    [
+      '[.a] | map(halt_error(4))',
+      { outputs: [], stop: { kind: 'halt', message: '1', string: false, code: 4 } },
+    ],
+    [
+      '{"__mirage_jq_error": [true, "x"]}',
+      { outputs: [{ __mirage_jq_error: [true, 'x'] }], stop: null },
+    ],
     ['try error("x") catch .', { outputs: ['x'], stop: null }],
   ])('hands back what stopped %s', async (expr, run) => {
     expect(await jqRun({ a: 1 }, expr)).toEqual(run)

@@ -24,6 +24,7 @@ import {
   errorReport,
   evalJsonlStream,
   formatJqOutput,
+  haltReport,
   halts,
   isJsonlPath,
   isStreamableJsonlExpr,
@@ -406,7 +407,7 @@ export async function jqGeneric(
     if (run.stop?.kind === 'error') {
       reports.push(errorReport(runPosition(positions, reads, at, taken), run.stop))
     } else if (run.stop?.kind === 'halt') {
-      reports.push(run.stop.text)
+      reports.push(haltReport(run.stop))
       return true
     }
     return false

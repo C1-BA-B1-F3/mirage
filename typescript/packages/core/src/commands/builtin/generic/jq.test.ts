@@ -194,7 +194,10 @@ describe('exitCode', () => {
     [1.5, false, 1],
     [300, false, 44],
   ])('exits a halt with code %s (-e %s) as %s', (code, exitStatus, expected) => {
-    const status = runStatus({ outputs: [false], stop: { kind: 'halt', text: '', code } })
+    const status = runStatus({
+      outputs: [false],
+      stop: { kind: 'halt', message: null, string: false, code },
+    })
     expect(exitCode([status], jqOptions({ exitStatus }))).toBe(expected)
   })
 })
@@ -325,6 +328,14 @@ describe('jqGeneric runs that stop early', () => {
       stdout: '1\n2\n',
       stderr: '',
       exitCode: 0,
+    })
+  })
+
+  it('halts from inside a collector as from the top', async () => {
+    expect(await ran('/d/four.json', 'if . == 2 then [halt_error(3)] else . end')).toEqual({
+      stdout: '1\n',
+      stderr: '2\n',
+      exitCode: 3,
     })
   })
 

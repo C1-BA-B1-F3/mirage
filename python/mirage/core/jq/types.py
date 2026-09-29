@@ -29,12 +29,6 @@ INPUTS_VAR = "__mirage_jq_inputs"
 # The value the `$ARGS` prelude rebinds.
 ARGS_VAR = "__mirage_jq_args"
 
-# The keys a run's prelude hands its stop back under: the error no `try`
-# caught, and the halt `halt` or `halt_error` asked for. Spelled so a
-# user program never prints one by accident.
-ERROR_KEY = "__mirage_jq_error"
-HALT_KEY = "__mirage_jq_halt"
-
 # What jq names standard input when it reports where it stands, and what
 # it reports before it has read any input at all.
 STDIN_NAME = "<stdin>"
@@ -62,12 +56,17 @@ class JqHalt:
     """`halt` or `halt_error`, which end the whole invocation.
 
     Args:
-        text (str): what jq writes to stderr for it, as it is.
+        message (str | None): halt_error's input as jq prints it (a
+            string as it is, anything else in jq's compact dump), or None
+            for `halt` and for a null input, which print nothing.
+        string (bool): whether that input was a string, which jq prints
+            with no newline of its own.
         code (float | None): the exit code `halt_error` named, or None
             for `halt`.
     """
 
-    text: str
+    message: str | None
+    string: bool
     code: float | None
 
 

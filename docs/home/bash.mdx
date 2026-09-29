@@ -240,9 +240,11 @@ text before the first one silently where jq names it on stderr. Error
 positions follow the same model, so a run that takes some other count than
 the idioms above reports a different position than jq, and `--stream`
 reports every event where its whole document ends, not where jq's
-incremental parser hands each one over. A `.[]` program over a `.jsonl`
-file runs a line at a time as the file streams in, and there the first
-error ends the command with status 1 instead of going on.
+incremental parser hands each one over. A `halt` or `halt_error` inside a
+`try` (or `?`, or the left side of `//`) is caught there, where jq's
+halt cannot be caught. A `.[]` program over a `.jsonl` file runs a line at
+a time as the file streams in, and there the first error ends the command
+with status 1 instead of going on.
 
 Not implemented, and reported as an unknown option rather than quietly
 ignored: `-C` (colorized output, which an agent would only have to strip

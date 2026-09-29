@@ -10,8 +10,8 @@ from mirage.commands.builtin.generic.archive.extract import (ensure_dir,
 from mirage.commands.builtin.generic.archive.walk import (DirProbe, StatFn,
                                                           WalkFn)
 from mirage.commands.builtin.generic.tar.constants import (  # yapf: disable
-    CHILD_STATUS, CREATE_ERROR_EXIT, ERROR_TRAILER, FATAL_TRAILER,
-    INVALID_ARCHIVE, READ_MODES, TAPE_START, WRITE_MODES)
+    CHILD_NAME, CHILD_STATUS, CREATE_ERROR_EXIT, EMPTY_PIPE, ERROR_TRAILER,
+    FATAL_TRAILER, INVALID_ARCHIVE, READ_MODES, TAPE_START, WRITE_MODES)
 from mirage.commands.builtin.generic.tar.create import plan_create
 from mirage.commands.builtin.generic.tar.types import (CompressionSuffix,
                                                        CreateResult, Member,
@@ -25,7 +25,7 @@ from mirage.io.types import ByteSource, IOResult
 from mirage.ops.types import LinkView, MountView
 from mirage.types import PathSpec
 from mirage.utils.compress import GZIP_MAGIC, gunzip_partial
-from mirage.utils.errors import FS_ERRORS, GzipDataError, fs_strerror
+from mirage.utils.errors import FS_ERRORS, GzipDataError, eisdir, fs_strerror
 
 logger = logging.getLogger(__name__)
 
@@ -100,7 +100,7 @@ def _child_failure(failure: GzipDataError, lines: list[str]) -> bytes:
         failure (GzipDataError): why gzip stopped.
         lines (list[str]): tar's own stderr lines from the run.
     """
-    return failure.render("gzip", "stdin").encode() + _stderr(
+    return failure.render("stdin").encode() + _stderr(
         lines + [CHILD_STATUS.format(failure.exit_code), FATAL_TRAILER])
 
 
@@ -234,44 +234,83 @@ async def _create_archive(
     except FS_ERRORS as exc:
         # GNU opens the archive before it reads a member, so an archive
         # it cannot create is the whole run's one fatal line.
-        shown = archive_path.raw_path
-        return None, IOResult(exit_code=CREATE_ERROR_EXIT,
-                              stderr=_stderr([
-                                  f"tar: {shown}: Cannot open: "
-                                  f"{fs_strerror(exc)}", FATAL_TRAILER
-                              ]))
+        return None, _open_failure(archive_path.raw_path, exc, mode_suffix,
+                                   False)
     stdout = ("\n".join(names) + "\n").encode() if verbose and names else None
     return stdout, IOResult(writes={archive_path.mount_path: archive},
                             stderr=_stderr(notices),
                             exit_code=exit_code)
 
 
-async def _read_archive(
-        archive_path: PathSpec,
-        read_bytes: Callable[..., Awaitable[bytes]]) -> bytes | IOResult:
-    """The archive's bytes, or the run's one fatal line when GNU would stop.
+def _voiced(line: str, who: str) -> str:
+    """One of tar's own lines, spoken by ``who`` instead of ``tar``.
+
+    Args:
+        line (str): a line that starts with ``tar:``.
+        who (str): the program name to put in its place.
+    """
+    return who + line[len("tar"):]
+
+
+def _open_failure(shown: str, exc: OSError, suffix: CompressionSuffix,
+                  reading: bool) -> IOResult:
+    """The run's fatal lines for an archive tar cannot open or read.
 
     GNU opens the archive before it reads a member, so one it cannot open
     (missing, the empty name, a link loop) ends the run as ``Cannot
     open``; a directory opens and then fails the first read, which GNU
-    words as ``Cannot read`` at the beginning of the tape. Exit 2 both
-    ways, named as typed (tar 1.35).
+    words as ``Cannot read`` at the beginning of the tape. With a
+    compressor the archive is opened by tar's child, which names itself
+    on each of those lines, and tar then reports the child's status. A
+    reading child has already spawned the compressor, which meets an
+    empty pipe and says so, unless the name was missing. Exit 2 every
+    way, named as typed (tar 1.35, gzip 1.13, xz 5.4).
+
+    Args:
+        shown (str): the archive as typed.
+        exc (OSError): why it could not be opened or read.
+        suffix (CompressionSuffix): the compressor, empty for none.
+        reading (bool): whether the run lists or extracts.
+    """
+    who = CHILD_NAME if suffix else "tar"
+    if reading and isinstance(exc, IsADirectoryError):
+        lines = [
+            f"{who}: {shown}: Cannot read: {fs_strerror(exc)}",
+            _voiced(TAPE_START, who)
+        ]
+    else:
+        lines = [f"{who}: {shown}: Cannot open: {fs_strerror(exc)}"]
+    lines.append(_voiced(FATAL_TRAILER, who))
+    if suffix:
+        if reading and not isinstance(exc, FileNotFoundError):
+            lines.extend(EMPTY_PIPE.get(suffix, ()))
+        lines += [CHILD_STATUS.format(CREATE_ERROR_EXIT), FATAL_TRAILER]
+    return IOResult(exit_code=CREATE_ERROR_EXIT, stderr=_stderr(lines))
+
+
+async def _read_archive(archive_path: PathSpec,
+                        read_bytes: Callable[..., Awaitable[bytes]],
+                        is_dir: DirProbe,
+                        suffix: CompressionSuffix) -> bytes | IOResult:
+    """The archive's bytes, or the run's fatal lines when GNU would stop.
 
     Args:
         archive_path (PathSpec): the ``-f`` operand.
         read_bytes (Callable[..., Awaitable[bytes]]): the backend read.
+        is_dir (DirProbe): whether a path is a directory, asked only once
+            the read failed: a backend that keys files alone reports a
+            directory as absent, where GNU opens it and fails the read.
+        suffix (CompressionSuffix): the compressor, empty for none.
     """
     try:
         return await read_bytes(archive_path)
     except FS_ERRORS as exc:
-        shown = archive_path.raw_path
-        lines = ([
-            f"tar: {shown}: Cannot read: {fs_strerror(exc)}", TAPE_START,
-            FATAL_TRAILER
-        ] if isinstance(exc, IsADirectoryError) else [
-            f"tar: {shown}: Cannot open: {fs_strerror(exc)}", FATAL_TRAILER
-        ])
-        return IOResult(exit_code=CREATE_ERROR_EXIT, stderr=_stderr(lines))
+        failure: OSError = exc
+        if (isinstance(exc, FileNotFoundError)
+                and archive_path.walk_error is None
+                and await is_dir(archive_path)):
+            failure = eisdir(archive_path)
+        return _open_failure(archive_path.raw_path, failure, suffix, True)
 
 
 async def _list_archive(
@@ -279,9 +318,10 @@ async def _list_archive(
     mode_suffix: CompressionSuffix,
     selectors: list[str],
     read_bytes: Callable[..., Awaitable[bytes]],
+    is_dir: DirProbe,
 ) -> tuple[ByteSource | None, IOResult]:
     names: list[str] = []
-    data = await _read_archive(archive_path, read_bytes)
+    data = await _read_archive(archive_path, read_bytes, is_dir, mode_suffix)
     if isinstance(data, IOResult):
         return None, data
     with _open_archive(data, mode_suffix) as result:
@@ -317,6 +357,7 @@ async def _extract_archive(
     write_bytes: Callable[..., Awaitable[None]],
     mkdir_fn: Callable[..., Awaitable[None]],
     stat: StatFn,
+    is_dir: DirProbe,
 ) -> tuple[ByteSource | None, IOResult]:
     writes: dict[str, ByteSource] = {}
     names: list[str] = []
@@ -328,7 +369,7 @@ async def _extract_archive(
     # reported by its own name and the run goes on to the next one,
     # closing with the one trailer and exit 2.
     failed = False
-    data = await _read_archive(archive_path, read_bytes)
+    data = await _read_archive(archive_path, read_bytes, is_dir, mode_suffix)
     if isinstance(data, IOResult):
         return None, data
     with _open_archive(data, mode_suffix) as result:
@@ -490,13 +531,14 @@ async def tar(
     if t:
         if archive is None:
             raise ValueError("tar: -f is required")
-        return await _list_archive(archive, mode_suffix, chosen, read_bytes)
+        return await _list_archive(archive, mode_suffix, chosen, read_bytes,
+                                   is_dir)
     if x:
         if archive is None:
             raise ValueError("tar: -f is required")
         return await _extract_archive(archive, dest_path, mode_suffix, strip_n,
                                       v, to_stdout, chosen, relay, read_bytes,
-                                      write_bytes, mkdir_fn, stat)
+                                      write_bytes, mkdir_fn, stat, is_dir)
     raise ValueError("tar: must specify -c, -x, or -t")
 
 

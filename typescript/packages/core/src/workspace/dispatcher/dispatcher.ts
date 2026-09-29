@@ -27,6 +27,7 @@ import {
   eexist,
   einval,
   enoent,
+  eisdir,
   enotdir,
   enotempty,
   isEnotdir,
@@ -918,6 +919,12 @@ export class Dispatcher {
       // and synthesize the directories above it.
       const refusal = await this.parentRefusal(dst, issuer)
       if (refusal !== null) throw refusal
+      if (!this.namespace.isLink(dst.virtual)) {
+        const kind = await this.entryType(dst.virtual, issuer)
+        if (kind === FileType.DIRECTORY) throw eisdir(dst)
+        if (kind !== null)
+          await this.dispatch('unlink', dst, [], issuer === undefined ? {} : { issuer })
+      }
       await this.namespace.unlink(dst.virtual)
       await this.namespace.rename(path.virtual, dst.virtual)
     } else if (opName === 'symlink') {

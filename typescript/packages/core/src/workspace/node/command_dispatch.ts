@@ -73,7 +73,9 @@ import {
   handleReadlink,
   handleSetfattr,
   handleTouch,
+  followDirectoryLinks,
   prepareMv,
+  settleMoves,
   stripLinkOperands,
 } from '../executor/builtins/index.ts'
 import { BUILTINS } from '../executor/builtins/table.ts'
@@ -88,6 +90,7 @@ import {
   SLASH_KEEPS_LAST,
   UNSUPPORTED_BUILTINS,
   followsLastComponent,
+  lsLinkMode,
 } from '../lookup/index.ts'
 import { Admitted, admit } from './admission.ts'
 import type { SessionState } from '../session/session.ts'
@@ -766,12 +769,16 @@ async function routeArgv(
   // (`walkError`) rather than failing the line: the command meets ELOOP at
   // its op and words it per operand.
   if (namespace.nodes.size > 0 && operands.length > 0) {
+    const lsMode = name === 'ls' ? lsLinkMode(argv.words) : null
     operands = followPaths(
       namespace,
       operands,
-      followsLastComponent(name, argv.words),
+      lsMode !== null ? lsMode === 'all' : followsLastComponent(name, argv.words),
       !SLASH_KEEPS_LAST.has(name),
     )
+    // ls resolves a command-line link only when it leads to a directory, and
+    // only a stat can tell where it leads.
+    if (lsMode === 'directory') operands = await followDirectoryLinks(namespace, dispatch, operands)
     argv = argv.withOperands(operands)
   }
 
@@ -817,8 +824,6 @@ async function routeArgv(
 
   // Symlink-aware dispatch: reads follow links (open(2)); rm/mv act on
   // the link entry itself (lstat semantics).
-  let postUnlink: string | null = null
-  let postRename: [string, string] | null = null
   let linkErrors: string[] = []
   let dispatchArgv = argv
   if (namespace.nodes.size > 0) {
@@ -857,8 +862,6 @@ async function routeArgv(
       } else if (name === 'mv') {
         const prepared = await prepareMv(namespace, dispatch, operands, argv.args, session.cwd)
         operands = prepared.items
-        postUnlink = prepared.postUnlink
-        postRename = prepared.postRename
         if (prepared.early !== null) return prepared.early
       }
     } catch (err) {
@@ -926,19 +929,8 @@ async function routeArgv(
         }
       }
     }
-    if (postUnlink !== null) {
-      // The landing is replaced the way rename(2) replaces it, node and
-      // subtree alike, and then the source's own node and subtree land on it.
-      // The same four steps the dispatcher takes for a rename it forwards
-      // itself.
-      await namespace.unlink(postUnlink)
-      await namespace.purgeUnder(postUnlink)
-    }
-    if (postRename !== null) {
-      await namespace.rename(postRename[0], postRename[1])
-      await namespace.renameUnder(postRename[0], postRename[1])
-    }
   }
+  if (name === 'mv' && io.renames.length > 0) await settleMoves(namespace, io.renames)
   if (linkErrors.length > 0) {
     // A refused link operand fails the line the way a refused backend
     // operand does: its lines lead (they were reported first) and any

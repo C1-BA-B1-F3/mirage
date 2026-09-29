@@ -119,6 +119,18 @@ export const SPLIT_DIGITS = /^[0-9]+$/
 export const SPLIT_HEX_DIGITS = /^[0-9a-f]+$/
 export const SPLIT_TRY_HELP = "\nTry 'split --help' for more information."
 
+// gzip 1.13's file naming. The suffix gzip writes and looks for unless -S
+// names another; the suffixes it always recognizes on a name it
+// decompresses, compared without regard to ASCII case; the ones it tries in
+// turn on a name that does not exist, the -S suffix first; and the longest
+// -S suffix it accepts, in bytes.
+export const GZIP_SUFFIX = '.gz'
+export const GZIP_KNOWN_SUFFIXES = ['.gz', '.z', '.taz', '.tgz', '-gz', '-z', '_z'] as const
+export const GZIP_RETRY_SUFFIXES = ['.gz', '.z', '-z', '.Z'] as const
+// The suffixes gzip -d turns into .tar rather than dropping.
+export const GZIP_TAR_SUFFIXES = ['.tgz', '.taz'] as const
+export const GZIP_MAX_SUFFIX = 30
+
 // GNU answers a missing script with its whole thirty-nine line usage block
 // and exit 1; mirage names the problem in one line instead, because the
 // block is GNU's own prose and reproducing it buys a mirage user nothing.

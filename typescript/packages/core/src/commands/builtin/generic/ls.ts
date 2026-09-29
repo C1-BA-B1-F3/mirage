@@ -16,7 +16,15 @@ import { specOf } from '../../spec/builtins.ts'
 import { FlagView } from '../../spec/flag_view.ts'
 import { mountKey, mountPrefixOf, underPath } from '../../../utils/key_prefix.ts'
 import { IOResult, type ByteSource } from '../../../io/types.ts'
-import { FileStat, FileType, PathSpec, type LsSortBy, type LsTimeKind } from '../../../types.ts'
+import {
+  FileStat,
+  FileType,
+  PathSpec,
+  type LsIndicator,
+  type LsLinkMode,
+  type LsSortBy,
+  type LsTimeKind,
+} from '../../../types.ts'
 import type { CommandFnResult, CommandOpts } from '../../config.ts'
 import type { ChildMounts, LinkView, MountView, StatPath } from '../../../ops/types.ts'
 import {
@@ -75,6 +83,9 @@ interface WalkOpts {
   // dereferenced directory link then carries FileType.DIRECTORY, which
   // is what makes -R descend it.
   deref: boolean
+  // The command line's links were resolved on request (-L, -H), so one that
+  // loops is an error rather than a link to list.
+  followArgs: boolean
   // Session-filtered child-mount names: the other half of namespace
   // structure beside links, merged as directory rows in every listing.
   // GNU lists a mountpoint as an ordinary entry of its parent, -R or
@@ -130,17 +141,84 @@ function childSpec(entryPath: string, prefix: string): PathSpec {
   })
 }
 
-// GNU -F suffixes: a directory gets "/", a symlink "@". The link mark
-// rides the row's type, so it needs no separate lookup.
-const CLASSIFY_SUFFIX: Partial<Record<FileType, string>> = {
-  [FileType.DIRECTORY]: '/',
-  [FileType.SYMLINK]: '@',
+/**
+ * The mark GNU appends to a name for a style (ls.c's get_type_indicator,
+ * coreutils 9.7). A directory is `/` in every style but none; `slash` marks
+ * nothing else. A link is `@` and a FIFO `|`; an executable regular file is
+ * `*`, but only under classify. The mark rides the row's own type and mode, so
+ * it needs no separate lookup; a row nothing could stat (a dangling link's
+ * target) takes none. Mirrors Python's type_indicator.
+ */
+export function typeIndicator(entry: FileStat | null, style: LsIndicator): string {
+  if (entry === null || style === 'none') return ''
+  if (entry.type === FileType.DIRECTORY) return '/'
+  if (style === 'slash') return ''
+  if (entry.type === FileType.SYMLINK) return '@'
+  if (entry.type === FileType.FIFO) return '|'
+  if (
+    style === 'classify' &&
+    entry.type === FileType.FILE &&
+    entry.mode !== null &&
+    (entry.mode & 0o111) !== 0
+  )
+    return '*'
+  return ''
 }
 
-// Short rows: the name, -F's mark, and -i/-Z's lead.
-function formatShort(s: FileStat, classify: boolean, columns: LsColumns, name?: string): string {
-  const suffix = (classify ? CLASSIFY_SUFFIX[s.type] : undefined) ?? ''
-  return `${lsPrefix(columns)}${name ?? s.name}${suffix}`
+// Short rows: the name, the indicator style's mark, and -i/-Z's lead.
+function formatShort(
+  s: FileStat,
+  indicator: LsIndicator,
+  columns: LsColumns,
+  name?: string,
+): string {
+  return `${lsPrefix(columns)}${name ?? s.name}${typeIndicator(s, indicator)}`
+}
+
+/**
+ * The long format's name column with the indicator style's marks. GNU marks
+ * a row after its name, but a link after its target, with the target's own
+ * mark, and only under file-type and classify: `dl -> sub/`, `dang ->
+ * nowhere` (coreutils 9.7). Null when no mark is asked for, so the row's own
+ * column stands. Mirrors Python's long_names.
+ */
+function longNames(
+  stats: readonly FileStat[],
+  names: readonly string[] | null,
+  indicator: LsIndicator,
+  targets: readonly (FileStat | null)[],
+): string[] | null {
+  if (indicator === 'none') return names === null ? null : [...names]
+  return stats.map((s, i) => {
+    const name = names?.[i] ?? lsName(s)
+    if (s.type !== FileType.SYMLINK) return name + typeIndicator(s, indicator)
+    if (indicator === 'slash') return name
+    return name + typeIndicator(targets[i] ?? null, indicator)
+  })
+}
+
+// What each link row leads to, when the long format marks it. Mirrors
+// Python's link_targets.
+async function linkTargets(
+  stats: readonly FileStat[],
+  virtuals: readonly string[],
+  links: LinkView | null,
+  render: RenderOpts,
+): Promise<(FileStat | null)[]> {
+  const wanted =
+    render.long &&
+    links !== null &&
+    (render.indicator === 'file-type' || render.indicator === 'classify')
+  const out: (FileStat | null)[] = []
+  for (const [i, s] of stats.entries()) {
+    const virtual = virtuals[i]
+    out.push(
+      wanted && virtual !== undefined && s.type === FileType.SYMLINK
+        ? await links.targetStat(virtual)
+        : null,
+    )
+  }
+  return out
 }
 
 // A name wrapped in the OSC 8 hyperlink GNU emits under --hyperlink,
@@ -169,7 +247,7 @@ export function uriEscape(path: string): string {
 interface RenderOpts {
   long: boolean
   human: boolean
-  classify: boolean
+  indicator: LsIndicator
   identity: Identity
   columns: LsColumns
 }
@@ -179,6 +257,7 @@ function appendListing(
   render: RenderOpts,
   lines: string[],
   hrefs: readonly string[] | null = null,
+  targets: readonly (FileStat | null)[] = [],
 ): void {
   const names =
     hrefs === null
@@ -188,16 +267,17 @@ function appendListing(
           return render.long ? lsName(s.with({ name: linked })) : linked
         })
   if (render.long) {
+    const marked = longNames(stats, names, render.indicator, targets)
     const opts = {
       human: render.human,
       identity: render.identity,
       columns: render.columns,
-      ...(names !== null ? { names } : {}),
+      ...(marked !== null ? { names: marked } : {}),
     }
     for (const line of formatLsLong(stats, opts)) lines.push(line)
     return
   }
-  stats.forEach((s, i) => lines.push(formatShort(s, render.classify, render.columns, names?.[i])))
+  stats.forEach((s, i) => lines.push(formatShort(s, render.indicator, render.columns, names?.[i])))
 }
 
 const isDigit = (c: number | undefined): boolean => c !== undefined && c >= 0x30 && c <= 0x39
@@ -576,14 +656,16 @@ async function probeOperand(
     // The operand did not resolve, so neither the path it simplifies to
     // nor a link standing there answers for it. A command-line link whose
     // stat loops is the exception: GNU lstats it then and lists the link
-    // itself, unless -L asked for the target (ls.c's gobble_file,
+    // itself, unless -L or -H asked for the target (ls.c's gobble_file,
     // coreutils 9.7).
     const walkRefused = isDotWalkError(err)
     const looped = walkRefused && (err as { code?: string }).code === 'ELOOP'
     const row = walkRefused ? null : await fileEntry(stat, path)
     if (row !== null) return { path, row, groups: [] }
     const link =
-      !walkRefused || (looped && commandLineArg && !opts.deref) ? linkRow(path, opts.links) : null
+      !walkRefused || (looped && commandLineArg && !opts.followArgs)
+        ? linkRow(path, opts.links)
+        : null
     if (link !== null) return { path, row: link, groups: [] }
     // GNU words a directory it may not read differently from one it
     // cannot stat: the entry is there, opening it is what failed.
@@ -673,10 +755,11 @@ export interface LsFlags {
   readonly showDotEntries: boolean
   readonly human: boolean
   readonly reverse: boolean
-  readonly classify: boolean
+  readonly indicator: LsIndicator
   readonly recursive: boolean
   readonly listDir: boolean
   readonly deref: boolean
+  readonly followArgs: boolean
   readonly sortBy: SortBy
   readonly timeKind: LsTimeKind
   readonly groupDirsFirst: boolean
@@ -716,11 +799,22 @@ const TIME_KINDS: Readonly<Record<string, LsTimeKind>> = {
   mtime: 'mtime',
   birth: 'birth',
 }
-const HYPERLINK_GROUPS: readonly (readonly string[])[] = [
+// GNU's `when` words, shared by --hyperlink and --classify.
+const WHEN_GROUPS: readonly (readonly string[])[] = [
   ['always', 'yes', 'force'],
   ['never', 'no', 'none'],
   ['auto', 'tty', 'if-tty'],
 ]
+const INDICATOR_STYLES: readonly LsIndicator[] = ['none', 'slash', 'file-type', 'classify']
+const INDICATOR_GROUPS: readonly (readonly string[])[] = INDICATOR_STYLES.map((w) => [w])
+// The four spellings of an indicator style; the last one typed wins.
+const INDICATOR_DESTS = ['classify', 'file_type', 'p', 'indicator_style'] as const
+// The three spellings of a command-line link policy; the last one wins.
+const DEREF_DESTS = [
+  'dereference',
+  'dereference_command_line',
+  'dereference_command_line_symlink_to_dir',
+] as const
 
 // GNU's ARGMATCH refusal for an option whose values have aliases, listed
 // one group per line (--time, --hyperlink); exit 1, as ls answers it. The
@@ -806,11 +900,68 @@ function hyperlinkFlag(fl: FlagView): boolean {
   if (raw === undefined || raw === null || raw === false) return false
   if (raw === true) return true
   const word = typeof raw === 'string' ? raw : ''
-  const match = argmatch(word, HYPERLINK_GROUPS)
+  const match = argmatch(word, WHEN_GROUPS)
   if (!match.matched) {
-    throw groupedArgumentError('--hyperlink', word, HYPERLINK_GROUPS, match.kind)
+    throw groupedArgumentError('--hyperlink', word, WHEN_GROUPS, match.kind)
   }
   return match.word === 'always'
+}
+
+// The style one indicator option asks for, checked as GNU checks it: -F and a
+// bare --classify classify; --classify=WHEN does for `always` and never
+// otherwise, since output here is never a terminal. A refused value is GNU's
+// ARGMATCH refusal, exit 1. Mirrors Python's _indicator_word.
+function indicatorWord(fl: FlagView, dest: (typeof INDICATOR_DESTS)[number]): LsIndicator {
+  if (dest === 'p') return 'slash'
+  if (dest === 'file_type') return 'file-type'
+  const raw: unknown = fl.raw(dest)
+  if (dest === 'classify' && raw === true) return 'classify'
+  const word = typeof raw === 'string' ? raw : ''
+  const option = dest === 'classify' ? '--classify' : '--indicator-style'
+  const groups = dest === 'classify' ? WHEN_GROUPS : INDICATOR_GROUPS
+  const match = argmatch(word, groups)
+  if (!match.matched) throw groupedArgumentError(option, word, groups, match.kind)
+  if (dest === 'indicator_style') return match.word as LsIndicator
+  return match.word === 'always' ? 'classify' : 'none'
+}
+
+/**
+ * The indicator style a line asks for: the last of -F/--classify[=WHEN], -p,
+ * --file-type and --indicator-style wins, and every one is checked on the
+ * way, as GNU checks each value while it reads the options (coreutils 9.7).
+ * Mirrors Python's indicator_flag.
+ */
+export function indicatorFlag(fl: FlagView): LsIndicator {
+  let style: LsIndicator = 'none'
+  for (const dest of fl.typedOrder(...INDICATOR_DESTS)) {
+    style = indicatorWord(fl, dest as (typeof INDICATOR_DESTS)[number])
+  }
+  return style
+}
+
+/**
+ * Which command-line links GNU ls resolves before it lists them. ls.c settles
+ * it once: the last of -L, -H and --dereference-command-line-symlink-to-dir
+ * wins, and with none of them -d, a long format or the classify style resolve
+ * no link while anything else resolves one that leads to a directory
+ * (coreutils 9.7). A value the command refuses leaves the style unclassified,
+ * since that line fails before it lists anything. Mirrors Python's link_mode.
+ */
+export function linkMode(fl: FlagView): LsLinkMode {
+  const typed = fl.typedOrder(...DEREF_DESTS)
+  const last = typed.at(-1)
+  if (last !== undefined) {
+    return last === 'dereference_command_line_symlink_to_dir' ? 'directory' : 'all'
+  }
+  const long = ['args_l', 'g', 'o', 'numeric_uid_gid'].some((dest) => fl.asBool(dest))
+  let classify = false
+  try {
+    classify = indicatorFlag(fl) === 'classify'
+  } catch (err) {
+    // The command refuses this line itself, before it lists anything.
+    if (!(err instanceof UsageError)) throw err
+  }
+  return fl.asBool('directory') || long || classify ? 'none' : 'directory'
 }
 
 // Parse the ls flag bag once into a frozen struct. GNU's rules that are
@@ -871,10 +1022,13 @@ export function parseFlags(fl: FlagView): LsFlags {
     showDotEntries: fl.asBool('all'),
     human: fl.asBool('human_readable'),
     reverse: fl.asBool('reverse'),
-    classify: fl.asBool('classify'),
+    indicator: indicatorFlag(fl),
     recursive: fl.asBool('recursive'),
     listDir: fl.asBool('directory'),
-    deref: fl.asBool('dereference'),
+    // -L alone dereferences what a listing finds; -H and its sibling stop at
+    // the command line, and the last of the three wins.
+    deref: fl.typedOrder(...DEREF_DESTS).at(-1) === 'dereference',
+    followArgs: linkMode(fl) === 'all',
     sortBy,
     timeKind,
     groupDirsFirst: fl.asBool('group_directories_first'),
@@ -898,7 +1052,7 @@ function statNeeded(flags: LsFlags): boolean {
     flags.columns.context ||
     flags.hyperlink ||
     flags.recursive ||
-    flags.classify ||
+    flags.indicator !== 'none' ||
     flags.groupDirsFirst
   )
 }
@@ -937,17 +1091,18 @@ export async function lsGeneric(
     all,
     human,
     reverse,
-    classify,
+    indicator,
     recursive,
     sortBy,
     timeKind,
     groupDirsFirst,
     deref,
+    followArgs,
   } = flags
   const listDirItself = flags.listDir
   const links = opts.ns?.links ?? null
   const identity = identityOf(opts)
-  const render: RenderOpts = { long, human, classify, identity, columns: flags.columns }
+  const render: RenderOpts = { long, human, indicator, identity, columns: flags.columns }
   const warnings: LsWarning[] = []
   const lines: string[] = []
 
@@ -993,7 +1148,14 @@ export async function lsGeneric(
             groupDirsFirst,
           )
         : collected.map((c) => c.row)
-    appendListing(rows, render, lines, flags.hyperlink ? rows.map((r) => byRow.get(r) ?? '') : null)
+    const rowPaths = rows.map((r) => byRow.get(r) ?? '')
+    appendListing(
+      rows,
+      render,
+      lines,
+      flags.hyperlink ? rowPaths : null,
+      await linkTargets(rows, rowPaths, links, render),
+    )
     return finish(lines, warnings)
   }
 
@@ -1006,6 +1168,7 @@ export async function lsGeneric(
     recursive,
     links,
     deref,
+    followArgs,
     childMounts: opts.ns?.childMounts ?? null,
     mounts: opts.ns?.mounts ?? null,
     statPath: opts.statPath ?? null,
@@ -1023,7 +1186,14 @@ export async function lsGeneric(
   const headed = recursive || targets.length > 1
   const rowed = operands.filter((o) => o.row !== null)
   const rows = rowed.flatMap((o) => (o.row !== null ? [o.row] : []))
-  appendListing(rows, render, lines, flags.hyperlink ? rowed.map((o) => o.path.virtual) : null)
+  const rowPaths = rowed.map((o) => o.path.virtual)
+  appendListing(
+    rows,
+    render,
+    lines,
+    flags.hyperlink ? rowPaths : null,
+    await linkTargets(rows, rowPaths, links, render),
+  )
   let printed = rows.length > 0
   for (const operand of operands) {
     for (const [dirSpec, group] of operand.groups) {
@@ -1062,11 +1232,13 @@ export async function lsGeneric(
       }
       // GNU 9.7 prints allocated blocks; VFS has no allocation metadata.
       if (long) lines.push(entries.length > 0 ? 'total ?' : 'total 0')
+      const entryPaths = entries.map((e) => `${rstripSlash(dirSpec.virtual)}/${e.name}`)
       appendListing(
         entries,
         render,
         lines,
-        flags.hyperlink ? entries.map((e) => `${rstripSlash(dirSpec.virtual)}/${e.name}`) : null,
+        flags.hyperlink ? entryPaths : null,
+        await linkTargets(entries, entryPaths, links, render),
       )
       printed = true
     }

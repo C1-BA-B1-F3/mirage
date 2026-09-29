@@ -20,9 +20,15 @@ import { specOf } from '../spec/builtins.ts'
 import { FlagView } from '../spec/flag_view.ts'
 import type { FlagValue } from '../spec/types.ts'
 import { parseFlags, rgGeneric, walkFilter } from './generic/rg.ts'
-import { enoent } from '../../utils/errors.ts'
+import { eacces, enoent } from '../../utils/errors.ts'
 import { decodeLine } from './grep_offsets.ts'
-import { type WalkFilter, walkCandidates } from './rg_scan.ts'
+import {
+  type WalkFilter,
+  openErrorLine,
+  osErrorText,
+  walkCandidates,
+  walkErrorLine,
+} from './rg_scan.ts'
 
 // The keywords the scan used to take, which these cases were written
 // against.
@@ -994,6 +1000,25 @@ describe('rgFull warnings', () => {
       p === '/db/b.txt' ? Promise.reject(enoent(p)) : readBytesFn(p)
     const out = await rgFull(readdirFn, statFn, readSome, '/db', 'Graph', opts(), warnings)
     expect(out).toEqual(['/db/a.txt:Graph', '/db/a.txt:Graph again'])
-    expect(warnings).toEqual(['rg: /db/b.txt: No such file or directory'])
+    expect(warnings).toEqual(['rg: /db/b.txt: No such file or directory (os error 2)'])
+  })
+})
+
+describe('ripgrep error lines', () => {
+  it('numbers what the vocabulary names', () => {
+    // Rust's io::Error display: the strerror, then Linux's errno. A failure
+    // the vocabulary cannot number keeps its own words.
+    expect(osErrorText(enoent('x'))).toBe('No such file or directory (os error 2)')
+    expect(osErrorText(new Error('Server disconnected'))).toBe('Server disconnected')
+  })
+
+  it("takes ripgrep's two shapes", () => {
+    // ripgrep 14.1.1: the walker names the path twice, the searcher once.
+    expect(walkErrorLine('nope', enoent('nope'))).toBe(
+      'rg: nope: IO error for operation on nope: No such file or directory (os error 2)',
+    )
+    expect(openErrorLine('locked', eacces('locked'))).toBe(
+      'rg: locked: Permission denied (os error 13)',
+    )
   })
 })

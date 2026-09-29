@@ -199,12 +199,14 @@ def load_cases(root: Path) -> list[dict]:
 
 
 def validate_cases(root: Path, cases: list[dict]) -> None:
-    """Fail loudly on the two ways a case silently stops being tested.
+    """Fail loudly on the ways a case silently stops being tested.
 
     A duplicate id collides in the parity runner, which keys rows by
     (target, id), so one of the pair is dropped from the py/ts diff
     without a word. A target id that matches no manifest entry means the
-    case never runs anywhere, which reads as "passing" everywhere.
+    case never runs anywhere, which reads as "passing" everywhere. A
+    `mount_read` without a `read` is routed as an ordinary case, where
+    the override is never applied.
 
     Args:
         root (Path): the integ directory.
@@ -220,6 +222,9 @@ def validate_cases(root: Path, cases: list[dict]) -> None:
                 not isinstance(target, str) for target in targets):
             raise ValueError(
                 f"case {case['id']}: targets must be a nonempty string list")
+        if "mount_read" in case and "read" not in case:
+            raise ValueError(f"case {case['id']}: mount_read needs read, "
+                             "the policy every other mount inherits")
         first = seen.get(case["id"])
         if first is not None:
             duplicates.append(f"{case['id']} ({first} and {case['_source']})")

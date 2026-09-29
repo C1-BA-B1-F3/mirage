@@ -233,13 +233,16 @@ export async function listingError(
  * header naming a method or flag gzip does not support, is reported and the
  * run moves on to the next operand, while a truncated or corrupt one ends the
  * run, as does a CRC or length mismatch unless `-t` is only testing. A
- * mismatch in both carries both reasons, in gzip's order. Each reason holds
- * `{}` where the input's name goes. `keepsOutput` says the bytes decoded
- * before the failure are whole members: after a refusal of a later member, of
- * trailing garbage, or of a trailer. An in-place run still writes them when
- * the refusal is not fatal, and tar reads them whatever gzip does. The gzip front ends render the reasons under their own name, where GNU's
- * (shell scripts over gzip) say `gzip:` and put a blank line before most
- * diagnostics. Mirrors Python's GzipDataError.
+ * mismatch in both carries both reasons, in gzip's order. `keepsOutput` says
+ * the bytes decoded before the failure are whole members: after a refusal of
+ * a later member, of trailing garbage, or of a trailer. An in-place run still
+ * writes them when the refusal is not fatal, and tar reads them whatever gzip
+ * does. `firstHeader` says gzip stopped inside its first member's header,
+ * before it would create an output file or read a body; on stdin that ends
+ * the run, as gzip exits there. The reasons are gzip's own lines, each with
+ * `{}` where the input's name goes, the program name and any leading newline
+ * included, since gunzip, zcat, zgrep and tar's child all run gzip. Mirrors
+ * Python's GzipDataError.
  */
 export class GzipDataError extends Error {
   readonly reasons: readonly string[]
@@ -250,6 +253,7 @@ export class GzipDataError extends Error {
     fatal: boolean,
     readonly exitCode = 1,
     readonly keepsOutput = false,
+    readonly firstHeader = false,
   ) {
     super(reasons.join('\n'))
     this.name = 'GzipDataError'
@@ -257,9 +261,9 @@ export class GzipDataError extends Error {
     this.fatal = fatal
   }
 
-  /** One `command: ...` line per reason, the input named `label`. */
-  render(command: string, label: string): string {
-    return this.reasons.map((reason) => `${command}: ${reason.split('{}').join(label)}\n`).join('')
+  /** gzip's lines for the failure, the input named `label`. */
+  render(label: string): string {
+    return this.reasons.map((reason) => `${reason.split('{}').join(label)}\n`).join('')
   }
 }
 

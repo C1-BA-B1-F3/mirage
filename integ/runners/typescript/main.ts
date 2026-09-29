@@ -28,6 +28,7 @@ import {
   loadServices,
   loadTargets,
   missingEnv,
+  mountReadOf,
   parseAllowSkip,
   bindMount,
   ruleReasons,
@@ -291,7 +292,11 @@ export async function runTarget(
     // would otherwise run the bounded scenario and report it green, which
     // is the silent downgrade this suite exists to catch.
     const spec: ReadSpec = resolveReadSpec(c.read, c.ttl)
-    const run = await runConsistencyCase(() => openConsistency(target, spec), c, target)
+    const run = await runConsistencyCase(
+      () => openConsistency(target, spec, mountReadOf(c)),
+      c,
+      target,
+    )
     // Loud on purpose, and a failure: an adapter that cannot build a shadow
     // workspace used to drop every scenario case for its target without a
     // word, and after that to skip them with one line and exit 0.

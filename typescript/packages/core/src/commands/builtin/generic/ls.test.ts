@@ -25,13 +25,17 @@ import {
   LS_OK,
   exitStatusFor,
   filevercmp,
+  indicatorFlag,
   lsGeneric,
   parseFlags,
   sortStats,
+  typeIndicator,
 } from './ls.ts'
 import { CommandTimeoutError, UsageError } from '../../errors.ts'
 import { specOf } from '../../spec/builtins.ts'
 import { FlagView } from '../../spec/flag_view.ts'
+import { SPECS, parseCommand } from '../../spec/index.ts'
+import { parseToKwargs } from '../../spec/parser.ts'
 import { type FlagValue } from '../../spec/types.ts'
 
 const DEC = new TextDecoder()
@@ -1258,4 +1262,61 @@ describe('dot entries respect mount boundaries', () => {
       )
     }
   }
+})
+
+function lsView(...argv: string[]): FlagView {
+  const spec = SPECS.ls
+  if (spec === undefined) throw new Error('no ls spec')
+  return new FlagView(parseToKwargs(parseCommand(spec, argv, '/', 'ls')), spec)
+}
+
+describe('indicatorFlag', () => {
+  // coreutils 9.7: -F, --classify[=WHEN], -p, --file-type and
+  // --indicator-style all set the one style, so the last one wins; a
+  // --classify that is not always has no terminal to be auto on. Mirrors
+  // test_ls.py.
+  it.each([
+    [[], 'none'],
+    [['-F'], 'classify'],
+    [['--classify=always'], 'classify'],
+    [['--classify=never'], 'none'],
+    [['--classify=auto'], 'none'],
+    [['-p'], 'slash'],
+    [['--file-type'], 'file-type'],
+    [['--indicator-style=classify'], 'classify'],
+    [['-F', '-p'], 'slash'],
+    [['-p', '-F'], 'classify'],
+    [['--file-type', '--indicator-style=none'], 'none'],
+  ] as const)('reads %j as %s', (argv, style) => {
+    expect(indicatorFlag(lsView(...argv))).toBe(style)
+  })
+
+  // GNU checks each value while it reads the options, so a bad one before a
+  // good one is still refused.
+  it.each([['--indicator-style=bogus'], ['--classify=bogus'], ['--indicator-style=bogus', '-F']])(
+    'refuses %s',
+    (...argv) => {
+      expect(() => indicatorFlag(lsView(...argv))).toThrow(/^ls: invalid argument 'bogus' for/)
+    },
+  )
+})
+
+describe('typeIndicator', () => {
+  // ls.c get_type_indicator: slash marks only directories, and only classify
+  // marks an executable. Mirrors test_ls.py.
+  it.each([
+    [FileType.DIRECTORY, null, ['', '/', '/', '/']],
+    [FileType.SYMLINK, null, ['', '', '@', '@']],
+    [FileType.FIFO, null, ['', '', '|', '|']],
+    [FileType.FILE, 0o755, ['', '', '', '*']],
+    [FileType.FILE, 0o644, ['', '', '', '']],
+  ] as const)('marks %s (mode %s) by style', (type, mode, marks) => {
+    const entry = new FileStat({ name: 'x', type, mode })
+    const styles = ['none', 'slash', 'file-type', 'classify'] as const
+    expect(styles.map((s) => typeIndicator(entry, s))).toEqual(marks)
+  })
+
+  it('marks nothing it could not stat', () => {
+    expect(typeIndicator(null, 'classify')).toBe('')
+  })
 })

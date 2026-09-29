@@ -13,6 +13,7 @@ from mirage.commands.builtin.grep_scan import exit_code_for
 from mirage.commands.builtin.rg_filetypes import FileTypes, type_listing
 from mirage.commands.builtin.rg_glob import Overrides
 from mirage.commands.builtin.rg_scan import (Haystack, WalkFilter,
+                                             open_error_line, walk_error_line,
                                              walk_haystacks)
 from mirage.commands.builtin.rg_search import (RgFlags, Tally,
                                                host_named_groups,
@@ -34,8 +35,7 @@ from mirage.commands.spec.types import FlagValue
 from mirage.io.types import ByteSource, IOResult
 from mirage.ops.types import MountIsRoot
 from mirage.types import FileStat, FileType, PathSpec
-from mirage.utils.errors import (FS_ERRORS, WALK_ERRORS, fs_strerror,
-                                 walk_refusal)
+from mirage.utils.errors import FS_ERRORS, WALK_ERRORS, walk_refusal
 from mirage.utils.key_prefix import mount_prefix_of
 
 # ripgrep's own words for a line with no pattern, exit 2 (14.1.1).
@@ -710,7 +710,7 @@ async def _single(
         # The probes below go by `virtual`, which cannot carry the walk's
         # verdict: the empty name would read as the cwd and walk it.
         if p.walk_error is not None:
-            return _refused(p, walk_refusal(p), f)
+            return _refused(walk_error_line(p.raw_path, walk_refusal(p)), f)
         try:
             s = await st(p.virtual)
         except WALK_ERRORS as exc:
@@ -718,7 +718,7 @@ async def _single(
                 await rd(p.virtual)
                 return None
             except WALK_ERRORS:
-                return _refused(p, exc, f)
+                return _refused(walk_error_line(p.raw_path, exc), f)
         if s.type == FileType.DIRECTORY:
             return None
     name = printed_path(operand_name(p), f)
@@ -729,30 +729,31 @@ async def _single(
     elif read_stream is not None:
         source = read_stream(p)
     else:
-        source = _wrap_bytes(await rb(p.virtual))
+        try:
+            source = _wrap_bytes(await rb(p.virtual))
+        except FS_ERRORS as exc:
+            return _refused(open_error_line(p.raw_path, exc), f)
     io = IOResult(exit_code=1)
     tally = Tally()
     return _settled(search_haystack(source, pat, f, name, label, tally), f,
-                    label, tally, io), io
+                    label, tally, io, p.raw_path), io
 
 
-def _refused(p: PathSpec, exc: Exception,
-             f: RgFlags) -> tuple[ByteSource | None, IOResult]:
+def _refused(line: str, f: RgFlags) -> tuple[ByteSource | None, IOResult]:
     """ripgrep's own refusal of an operand it cannot open, exit 2 rather
     than the shared handler's 1.
 
     Args:
-        p (PathSpec): the operand.
-        exc (Exception): why it could not be opened.
+        line (str): ripgrep's line for the failure.
         f (RgFlags): the parsed flags, read for --no-messages.
     """
-    stderr = (None if f.no_messages else
-              f"rg: {p.raw_path}: {fs_strerror(exc)}\n".encode())
+    stderr = None if f.no_messages else f"{line}\n".encode()
     return b"", IOResult(exit_code=2, stderr=stderr)
 
 
 async def _settled(chunks: AsyncIterator[bytes], f: RgFlags, label: str | None,
-                   tally: Tally, io: IOResult) -> AsyncIterator[bytes]:
+                   tally: Tally, io: IOResult,
+                   shown: str) -> AsyncIterator[bytes]:
     """One streamed haystack's output, headed when --heading names it,
     with the exit status settled as it goes.
 
@@ -762,14 +763,23 @@ async def _settled(chunks: AsyncIterator[bytes], f: RgFlags, label: str | None,
         label (str | None): the haystack's label.
         tally (Tally): what the search selected.
         io (IOResult): receives the exit status.
+        shown (str): the operand as typed, which a failed read names.
     """
     printed = False
-    async for chunk in chunks:
-        if not printed and label is not None and _headed(f):
-            yield encode_line(label) + (b"\0"
-                                        if f.null or f.null_data else b"\n")
-        printed = True
-        yield chunk
+    try:
+        async for chunk in chunks:
+            if not printed and label is not None and _headed(f):
+                yield encode_line(label) + (b"\0" if f.null or f.null_data else
+                                            b"\n")
+            printed = True
+            yield chunk
+    except FS_ERRORS as exc:
+        # A read that fails once the stream is open is the searcher's to
+        # report, exit 2, as ripgrep reports it for any file it searches.
+        io.stderr = (None if f.no_messages else
+                     f"{open_error_line(shown, exc)}\n".encode())
+        io.exit_code = 2
+        return
     listed = printed if f.files_without_match and not f.quiet else None
     selected = tally.selected if listed is None else listed
     io.exit_code = 0 if selected else 1
@@ -856,8 +866,7 @@ async def _haystacks(paths: list[PathSpec], rd: Callable[[str],
                            p)
             continue
         if p.walk_error is not None:
-            warnings.append(
-                f"rg: {p.raw_path}: {fs_strerror(walk_refusal(p))}")
+            warnings.append(walk_error_line(p.raw_path, walk_refusal(p)))
             continue
         is_dir = False
         s: FileStat | None = None
@@ -871,7 +880,7 @@ async def _haystacks(paths: list[PathSpec], rd: Callable[[str],
                 await rd(p.virtual)
                 is_dir = True
             except WALK_ERRORS:
-                warnings.append(f"rg: {p.raw_path}: {fs_strerror(exc)}")
+                warnings.append(walk_error_line(p.raw_path, exc))
                 continue
         if not is_dir:
             yield Haystack(p.virtual, p.raw_path, s, p)
@@ -956,7 +965,7 @@ async def _search_all(found: AsyncIterator[Haystack], paths: list[PathSpec],
             ]
         except FS_ERRORS as exc:
             # ripgrep reports the failed input and keeps searching the rest.
-            warnings.append(f"rg: {h.shown}: {fs_strerror(exc)}")
+            warnings.append(open_error_line(h.shown, exc))
             continue
         selected = selected or tally.selected
         if chunks:

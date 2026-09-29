@@ -16,7 +16,8 @@ import errno
 
 import pytest
 
-from mirage.errors.posix import POSIX, gnu_phrase, posix_errno
+from mirage.errors.posix import (LINUX_ERRNO, POSIX, gnu_phrase, linux_errno,
+                                 posix_errno)
 from mirage.errors.types import FsCondition
 
 
@@ -73,3 +74,14 @@ def test_every_row_has_a_positive_number_and_a_phrase():
         row = POSIX[cond]
         assert row.errno > 0
         assert row.phrase
+
+
+def test_linux_errno_numbers_every_condition_as_linux_does():
+    # A program imitating a Linux binary prints Linux's number (ripgrep's
+    # `(os error 40)` for a loop), which the host table does not give on
+    # macOS, where ELOOP is 62.
+    assert set(LINUX_ERRNO) == set(FsCondition)
+    assert linux_errno(FsCondition.ENOENT) == 2
+    assert linux_errno(FsCondition.EACCES) == 13
+    assert linux_errno(FsCondition.ENOTDIR) == 20
+    assert linux_errno(FsCondition.ELOOP) == 40

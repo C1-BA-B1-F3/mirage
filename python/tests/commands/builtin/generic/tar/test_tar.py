@@ -56,14 +56,14 @@ async def test_a_non_gzip_archive_is_gzips_refusal_then_tars():
     # GNU tar 1.35 reads -z through a gzip -d child and dies when it
     # fails, after gzip's own line.
     r = await _shell("tar -tzf /data/c.tgz", {"/data/c.tgz": b"corrupted\n"})
-    assert r == (2, b"", b"gzip: stdin: not in gzip format\n" + CHILD_FAILED)
+    assert r == (2, b"", b"\ngzip: stdin: not in gzip format\n" + CHILD_FAILED)
 
 
 @pytest.mark.asyncio
 async def test_a_damaged_trailer_still_yields_every_member():
     seed = {"/data/bad.tgz": DAMAGED}
-    reasons = (b"gzip: stdin: invalid compressed data--crc error\n"
-               b"gzip: stdin: invalid compressed data--length error\n")
+    reasons = (b"\ngzip: stdin: invalid compressed data--crc error\n"
+               b"\ngzip: stdin: invalid compressed data--length error\n")
     assert await _shell("tar -tzf /data/bad.tgz nomatch",
                         seed) == (2, b"", reasons + CHILD_FAILED)
     r = await _shell("tar -xzf /data/bad.tgz -C /data; cat /data/d/*", seed)
@@ -74,7 +74,7 @@ async def test_a_damaged_trailer_still_yields_every_member():
 async def test_the_gzip_magic_takes_the_same_road_without_z():
     r = await _shell("tar -tf /data/junk.tgz", {"/data/junk.tgz": OK + b"xy"})
     assert r == (2, b"d/a.txt\nd/b.txt\n",
-                 b"gzip: stdin: decompression OK, trailing garbage ignored\n"
+                 b"\ngzip: stdin: decompression OK, trailing garbage ignored\n"
                  b"tar: Child returned status 2\n"
                  b"tar: Error is not recoverable: exiting now\n")
 
@@ -83,7 +83,7 @@ async def test_the_gzip_magic_takes_the_same_road_without_z():
 async def test_a_member_cut_short_yields_nothing():
     r = await _shell("tar -tzf /data/cut.tgz", {"/data/cut.tgz": OK[:-40]})
     assert r == (2, b"",
-                 b"gzip: stdin: unexpected end of file\n" + CHILD_FAILED)
+                 b"\ngzip: stdin: unexpected end of file\n" + CHILD_FAILED)
 
 
 @pytest.mark.asyncio
@@ -94,7 +94,7 @@ async def test_a_truncated_gzip_wrapper_keeps_complete_tar_members(
     out = b"hello\nbee\n" if flags == "-xOzf" else b"d/a.txt\nd/b.txt\n"
     r = await _shell(f"tar {flags} /data/cut.tgz", {"/data/cut.tgz": data})
     assert r == (2, out,
-                 b"gzip: stdin: unexpected end of file\n" + CHILD_FAILED)
+                 b"\ngzip: stdin: unexpected end of file\n" + CHILD_FAILED)
 
 
 @pytest.mark.asyncio
@@ -102,7 +102,7 @@ async def test_a_truncated_gzip_trailer_still_extracts_to_disk():
     r = await _shell("tar -xzf /data/cut.tgz -C /data; cat /data/d/*",
                      {"/data/cut.tgz": OK[:-3]})
     assert r == (0, b"hello\nbee\n",
-                 b"gzip: stdin: unexpected end of file\n" + CHILD_FAILED)
+                 b"\ngzip: stdin: unexpected end of file\n" + CHILD_FAILED)
 
 
 @pytest.mark.asyncio
@@ -113,8 +113,8 @@ async def test_a_tar_parse_error_does_not_mask_the_gzip_failure(flags, size):
     notices = (b"tar: This does not look like a tar archive\n"
                b"tar: Skipping to next header\n") if size >= 512 else b""
     r = await _shell(f"tar {flags} /data/bad.tgz", {"/data/bad.tgz": bad})
-    assert r == (2, b"", b"gzip: stdin: invalid compressed data--crc error\n"
-                 b"gzip: stdin: invalid compressed data--length error\n" +
+    assert r == (2, b"", b"\ngzip: stdin: invalid compressed data--crc error\n"
+                 b"\ngzip: stdin: invalid compressed data--length error\n" +
                  notices + CHILD_FAILED)
 
 

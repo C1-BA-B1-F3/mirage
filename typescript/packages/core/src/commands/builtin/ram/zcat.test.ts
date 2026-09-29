@@ -95,7 +95,7 @@ describe('zcat on inputs gzip refuses', () => {
       '/data/plain.txt': ENC.encode('hello\n'),
       '/data/h.gz': await gzip(ENC.encode('hi\n')),
     })
-    expect(r).toEqual(['hi\n', 'zcat: /data/plain.txt: not in gzip format\n', 1])
+    expect(r).toEqual(['hi\n', '\ngzip: /data/plain.txt: not in gzip format\n', 1])
   })
 
   it('stops at a truncated archive', async () => {
@@ -104,17 +104,17 @@ describe('zcat on inputs gzip refuses', () => {
       '/data/cut.gz': cut,
       '/data/h.gz': await gzip(ENC.encode('hi\n')),
     })
-    expect(r).toEqual(['', 'zcat: /data/cut.gz: unexpected end of file\n', 1])
+    expect(r).toEqual(['', '\ngzip: /data/cut.gz: unexpected end of file\n', 1])
   })
 
   it('reads a dash after a refused operand', async () => {
     const r = await shell('cd /data && zcat plain.txt -', await gzip(ENC.encode('hi\n')), {
       '/data/plain.txt': ENC.encode('hello\n'),
     })
-    expect(r).toEqual(['hi\n', 'zcat: plain.txt: not in gzip format\n', 1])
+    expect(r).toEqual(['hi\n', '\ngzip: plain.txt: not in gzip format\n', 1])
   })
 
   it('calls empty stdin an unexpected end', async () => {
-    expect(await shell('zcat')).toEqual(['', 'zcat: stdin: unexpected end of file\n', 1])
+    expect(await shell('zcat')).toEqual(['', '\ngzip: stdin: unexpected end of file\n', 1])
   })
 })

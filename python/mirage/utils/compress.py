@@ -19,15 +19,20 @@ from enum import Enum
 from mirage.utils.errors import GzipDataError
 
 GZIP_MAGIC = b"\x1f\x8b"
-# gzip 1.13's words for the inputs ``gzip -d`` refuses, ``{}`` standing
-# for the input's name.
-GZIP_NOT_GZIP = "{}: not in gzip format"
-GZIP_EOF = "{}: unexpected end of file"
-GZIP_CORRUPT = "{}: invalid compressed data--format violated"
-GZIP_CRC = "{}: invalid compressed data--crc error"
-GZIP_LENGTH = "{}: invalid compressed data--length error"
-GZIP_ENCRYPTED = "{} is encrypted -- not supported"
-GZIP_TRAILING = "{}: decompression OK, trailing garbage ignored"
+# gzip 1.13's lines for the inputs ``gzip -d`` refuses, ``{}`` standing
+# for the input's name. gzip starts the ones its read, inflate and member
+# checks print with a newline, and none of its header refusals.
+GZIP_NOT_GZIP = "\ngzip: {}: not in gzip format"
+GZIP_EOF = "\ngzip: {}: unexpected end of file"
+GZIP_CORRUPT = "\ngzip: {}: invalid compressed data--format violated"
+GZIP_CRC = "\ngzip: {}: invalid compressed data--crc error"
+GZIP_LENGTH = "\ngzip: {}: invalid compressed data--length error"
+GZIP_TRAILING = "\ngzip: {}: decompression OK, trailing garbage ignored"
+GZIP_METHOD = "gzip: {{}}: unknown method {} -- not supported"
+GZIP_ENCRYPTED = "gzip: {} is encrypted -- not supported"
+GZIP_FLAGS = "gzip: {{}} has flags 0x{:x} -- not supported"
+GZIP_HEADER_CHECKSUM = ("gzip: {{}}: header checksum 0x{:04x} "
+                        "!= computed checksum 0x{:04x}")
 # The member layout of gzip.h: method 8 is deflate, the flag bits
 # announce the optional header fields, and the CRC-32 and the length
 # modulo 2**32 of the decoded bytes close the member.
@@ -95,14 +100,20 @@ class GzipDecoder:
     diagnostic and not the data. gzip ends the run on a mismatch unless
     it is only testing (``gzip -t``), and then moves to the next input.
     A header gzip does not support skips the input, and keeps the
-    members before it when it is not the first.
+    members before it when it is not the first. Under ``passthrough``
+    (``gzip -cdf``, and so zcat -f and zgrep) whatever does not open with
+    the gzip magic where a member could start is copied as it is, from
+    there to the end: a plain file, or the trailing bytes after a member.
 
     Args:
         test (bool): whether the run only tests its inputs.
+        passthrough (bool): whether input that is not gzip is copied.
     """
 
-    def __init__(self, test: bool = False) -> None:
+    def __init__(self, test: bool = False, passthrough: bool = False) -> None:
         self._test = test
+        self._passthrough = passthrough
+        self._copying = False
         self._part = MemberPart.HEADER
         self._inflater = zlib.decompressobj(-zlib.MAX_WBITS)
         self._crc = 0
@@ -122,7 +133,8 @@ class GzipDecoder:
             reason (str): gzip's description, ``{}`` for the name.
             exit_code (int): One for an error, two for trailing garbage.
         """
-        return GzipDataError((reason, ), False, exit_code, self._seen)
+        return GzipDataError((reason, ), False, exit_code, self._seen,
+                             not self._seen)
 
     def _read_header(self, data: bytes) -> int | None:
         """Consume header fields incrementally, retaining only fixed fields.
@@ -144,16 +156,14 @@ class GzipDecoder:
                     raise (self._refusal(GZIP_TRAILING, 2)
                            if self._seen else self._refusal(GZIP_NOT_GZIP))
                 if available >= 3 and data[2] != GZIP_DEFLATED:
-                    raise self._refusal(
-                        f"{{}}: unknown method {data[2]} -- not supported")
+                    raise self._refusal(GZIP_METHOD.format(data[2]))
                 if available >= 4:
                     self._header_flags = data[3]
                     if self._header_flags & GZIP_ENCRYPTED_FLAG:
                         raise self._refusal(GZIP_ENCRYPTED)
                     if self._header_flags & GZIP_RESERVED:
                         raise self._refusal(
-                            f"{{}} has flags 0x{self._header_flags:x} "
-                            "-- not supported")
+                            GZIP_FLAGS.format(self._header_flags))
                 if available < GZIP_FIXED_HEADER:
                     self._pending = data[offset:]
                     return None
@@ -195,8 +205,7 @@ class GzipDecoder:
                     computed = self._header_crc & 0xFFFF
                     if stored != computed:
                         raise self._refusal(
-                            f"{{}}: header checksum 0x{stored:04x} "
-                            f"!= computed checksum 0x{computed:04x}")
+                            GZIP_HEADER_CHECKSUM.format(stored, computed))
                     offset += 2
                 self._header_part = HeaderPart.DONE
             if part is not HeaderPart.CRC:
@@ -215,13 +224,23 @@ class GzipDecoder:
         data = self._pending + data
         self._pending = b""
         while data:
+            if self._copying:
+                yield data
+                return
             if self._part is MemberPart.HEADER:
-                if (self._header_part is HeaderPart.FIXED and self._seen
-                        and (self._padding or data[0] == 0)):
-                    self._padding = True
-                    if any(data):
-                        raise self._refusal(GZIP_TRAILING, 2)
-                    return
+                if self._header_part is HeaderPart.FIXED:
+                    if self._passthrough:
+                        if len(data) < len(GZIP_MAGIC):
+                            self._pending = data
+                            return
+                        if not data.startswith(GZIP_MAGIC):
+                            self._copying = True
+                            continue
+                    elif self._seen and (self._padding or data[0] == 0):
+                        self._padding = True
+                        if any(data):
+                            raise self._refusal(GZIP_TRAILING, 2)
+                        return
                 end = self._read_header(data)
                 if end is None:
                     return
@@ -284,49 +303,71 @@ class GzipDecoder:
         if reasons:
             raise GzipDataError(tuple(reasons), not self._test, 1, True)
 
-    def finish(self) -> None:
+    def finish(self) -> bytes:
         """Reject an absent header or an unfinished member at EOF.
 
         GNU gzip 1.13 also treats exactly one trailing nonzero byte as
         fatal EOF, even when it cannot start a member. Two junk bytes
         instead trigger the nonfatal trailing-garbage warning in feed.
         A missing trailer or a partial next header leaves complete decoded
-        bodies for tar, but remains fatal for in-place gzip.
+        bodies for tar, but remains fatal for in-place gzip. A
+        pass-through run owes nothing for an empty input, and copies a
+        lone byte where a member could start, since it cannot be the magic.
+
+        Returns:
+            bytes: the input a pass-through run still has to copy.
         """
-        if (not self._seen or self._part is not MemberPart.HEADER
-                or self._pending or self._header_part is not HeaderPart.FIXED):
+        boundary = (self._part is MemberPart.HEADER
+                    and self._header_part is HeaderPart.FIXED)
+        if self._copying or (self._passthrough and boundary
+                             and len(self._pending) < len(GZIP_MAGIC)):
+            tail, self._pending = self._pending, b""
+            return tail
+        if not self._seen or not boundary or self._pending:
             whole = (self._part is MemberPart.TRAILER
                      or self._part is MemberPart.HEADER and self._seen)
-            raise GzipDataError((GZIP_EOF, ), True, keeps_output=whole)
+            first = not self._seen and self._part is MemberPart.HEADER
+            raise GzipDataError((GZIP_EOF, ),
+                                True,
+                                keeps_output=whole,
+                                first_header=first)
+        return b""
 
 
 async def gunzip_stream(source: AsyncIterator[bytes],
-                        test: bool = False) -> AsyncIterator[bytes]:
+                        test: bool = False,
+                        passthrough: bool = False) -> AsyncIterator[bytes]:
     """Decode concatenated members, yielding before reading more input.
 
     Args:
         source (AsyncIterator[bytes]): Compressed input chunks.
         test (bool): whether the run only tests its inputs.
+        passthrough (bool): whether input that is not gzip is copied.
     """
-    decoder = GzipDecoder(test)
+    decoder = GzipDecoder(test, passthrough)
     async for chunk in source:
         for out in decoder.feed(chunk):
             yield out
-    decoder.finish()
+    tail = decoder.finish()
+    if tail:
+        yield tail
 
 
-def gunzip_partial(data: bytes) -> tuple[bytes, GzipDataError | None]:
+def gunzip_partial(
+        data: bytes,
+        passthrough: bool = False) -> tuple[bytes, GzipDataError | None]:
     """What ``gzip -d`` writes from ``data`` before it stops, and why.
 
     Args:
         data (bytes): Compressed input.
+        passthrough (bool): whether input that is not gzip is copied.
     """
-    decoder = GzipDecoder()
+    decoder = GzipDecoder(passthrough=passthrough)
     parts: list[bytes] = []
     try:
         for part in decoder.feed(data):
             parts.append(part)
-        decoder.finish()
+        parts.append(decoder.finish())
     except GzipDataError as exc:
         return b"".join(parts), exc
     return b"".join(parts), None

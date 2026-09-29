@@ -16,7 +16,7 @@ from mirage.commands.spec.flag_view import FlagView
 from mirage.commands.spec.types import FlagValue
 from mirage.io.types import ByteSource, IOResult
 from mirage.types import PathSpec
-from mirage.utils.compress import GZIP_MAGIC, gunzip_partial
+from mirage.utils.compress import gunzip_partial
 
 
 async def _read_plain(
@@ -179,13 +179,11 @@ async def zgrep(
     for p in paths or [STDIN_OPERAND]:
         raw = await read(p)
         # zgrep decompresses with `gzip -cdfq`, which passes an input with
-        # no gzip header through as it is; a bad archive is an error.
-        data = raw
-        if raw.startswith(GZIP_MAGIC):
-            data, failure = gunzip_partial(raw)
-            if failure is not None:
-                errors.append(
-                    failure.render("zgrep", operand_label(p, "stdin")))
+        # no gzip header through as it is, the bytes after a member too,
+        # and reports a bad archive in gzip's own lines.
+        data, failure = gunzip_partial(raw, passthrough=True)
+        if failure is not None:
+            errors.append(failure.render(operand_label(p, "stdin")))
         if compiled is None:
             if f.files_without_match:
                 all_results.append(p.raw_path)

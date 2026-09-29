@@ -18,7 +18,7 @@ import { FlagView } from '../../../spec/flag_view.ts'
 import { readBytesOp, statOp } from '../../generic/crossmount/utils.ts'
 import { tarGeneric } from '../../generic/tar.ts'
 import { type Builder, requireOp, resolveGlobOf } from '../adapter.ts'
-import { isDirOf, walkOf } from '../archive_io.ts'
+import { isDirOf, relayIsDirOf, walkOf } from '../archive_io.ts'
 
 export const TAR_BUILDER: Builder = {
   name: 'tar',
@@ -54,7 +54,7 @@ export const TAR_BUILDER: Builder = {
           },
           stat: statOp(dispatch),
           walk: walkOf(ops, accessor, idx),
-          isDir: () => Promise.resolve(false),
+          isDir: relayIsDirOf(dispatch),
         },
         true,
       )

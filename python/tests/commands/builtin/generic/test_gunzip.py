@@ -50,7 +50,7 @@ async def test_a_read_only_mount_refuses_gunzip_at_the_write(line: str):
     before = dict(vfs._store.files)
     result = await ws.shell(line)
     assert result.exit_code == 1
-    assert result.stderr == b"gunzip: /ro/f.txt: Read-only file system\n"
+    assert result.stderr == b"\ngzip: /ro/f.txt: Read-only file system\n"
     assert vfs._store.files == before
 
 
@@ -74,7 +74,7 @@ async def test_a_plain_file_is_reported_and_left_in_place():
     r = await ws.shell("cd /data && gzip b.txt && gunzip p.gz b.txt.gz; ls")
     assert await r.materialize_stdout() == b"b.txt\np.gz\n"
     assert await r.materialize_stderr(
-    ) == b"gunzip: p.gz: not in gzip format\n"
+    ) == b"\ngzip: p.gz: not in gzip format\n"
 
 
 @pytest.mark.asyncio
@@ -84,7 +84,7 @@ async def test_plain_stdin_is_not_in_gzip_format():
     r = await ws.shell("gunzip", stdin=b"hello\n")
     assert r.exit_code == 1
     assert await r.materialize_stderr(
-    ) == b"gunzip: stdin: not in gzip format\n"
+    ) == b"\ngzip: stdin: not in gzip format\n"
 
 
 # gzip -n of "hello\n" with its CRC-32 and length trailer zeroed.
@@ -101,8 +101,8 @@ async def test_a_damaged_trailer_keeps_the_inflated_bytes():
     assert r.exit_code == 1
     assert await r.materialize_stdout() == b"hello\n"
     assert await r.materialize_stderr() == (
-        b"gunzip: /data/bad.gz: invalid compressed data--crc error\n"
-        b"gunzip: /data/bad.gz: invalid compressed data--length error\n")
+        b"\ngzip: /data/bad.gz: invalid compressed data--crc error\n"
+        b"\ngzip: /data/bad.gz: invalid compressed data--length error\n")
     r = await ws.shell("gunzip -t /data/bad.gz /data/ok.gz; ls /data")
     assert await r.materialize_stdout() == b"bad.gz\nok.gz\n"
 
@@ -117,4 +117,4 @@ async def test_a_later_members_bad_header_keeps_the_members_before_it():
     r = await ws.shell("cd /data && gunzip two.gz; ls; cat two")
     assert await r.materialize_stdout() == b"two\nhello\n"
     assert await r.materialize_stderr() == (
-        b"gunzip: two.gz: unknown method 7 -- not supported\n")
+        b"gzip: two.gz: unknown method 7 -- not supported\n")

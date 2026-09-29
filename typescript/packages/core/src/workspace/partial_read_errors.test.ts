@@ -320,7 +320,7 @@ describe('rest of the read family keeps partial output past missing', () => {
       'zcat /a/z1.txt.gz /a/missing.gz',
     ])
     expect(out).toBe('z\n')
-    expect(err).toBe('zcat: /a/missing.gz: No such file or directory\n')
+    expect(err).toBe('gzip: /a/missing.gz: No such file or directory\n')
     expect(code).toBe(1)
   })
 

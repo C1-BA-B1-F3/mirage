@@ -17,7 +17,7 @@ import { cacheAwareStream } from '../../../cache/read_through.ts'
 import { mountParentReaddir, mountParentStat } from '../utils/operands.ts'
 import { IOResult } from '../../../io/types.ts'
 import { FileStat, FileType, PathSpec } from '../../../types.ts'
-import { fsStrerror, isFsError, isWalkError, walkRefusal } from '../../../utils/errors.ts'
+import { isFsError, isWalkError, walkRefusal } from '../../../utils/errors.ts'
 import type { CommandFnResult, CommandOpts } from '../../config.ts'
 import { UsageError } from '../../errors.ts'
 import { specOf } from '../../spec/builtins.ts'
@@ -28,7 +28,13 @@ import { buildPatternStr, resolvePattern } from '../grep_pattern.ts'
 import { exitCodeFor } from '../grep_scan.ts'
 import { FileTypes, typeListing, type TypeChange, type TypeSelection } from '../rg_filetypes.ts'
 import { Overrides } from '../rg_glob.ts'
-import { type Haystack, WalkFilter, walkHaystacks } from '../rg_scan.ts'
+import {
+  type Haystack,
+  WalkFilter,
+  openErrorLine,
+  walkErrorLine,
+  walkHaystacks,
+} from '../rg_scan.ts'
 import {
   hostNamedGroups,
   printsContext,
@@ -577,8 +583,8 @@ async function* replay(found: readonly Haystack[]): AsyncGenerator<Haystack> {
 
 // ripgrep's own refusal of an operand it cannot open, exit 2 rather than the
 // shared handler's 1.
-function refused(p: PathSpec, err: unknown, f: RgFlags): CommandFnResult {
-  const stderr = f.noMessages ? null : ENC.encode(`rg: ${p.rawPath}: ${String(fsStrerror(err))}\n`)
+function refused(line: string, f: RgFlags): CommandFnResult {
+  const stderr = f.noMessages ? null : ENC.encode(`${line}\n`)
   return [new Uint8Array(0), new IOResult({ exitCode: 2, stderr })]
 }
 
@@ -596,7 +602,7 @@ async function searchSingle(
   if (!isStdin(p)) {
     // The probes below go by `virtual`, which cannot carry the walk's verdict:
     // the empty name would read as the cwd and walk it.
-    if (p.walkError !== null) return refused(p, walkRefusal(p), f)
+    if (p.walkError !== null) return refused(walkErrorLine(p.rawPath, walkRefusal(p)), f)
     let s: FileStat
     try {
       s = await st(p.virtual)
@@ -607,7 +613,7 @@ async function searchSingle(
         return null
       } catch (inner) {
         if (!isWalkError(inner)) throw inner
-        return refused(p, err, f)
+        return refused(walkErrorLine(p.rawPath, err), f)
       }
     }
     if (s.type === FileType.DIRECTORY) return null
@@ -617,7 +623,14 @@ async function searchSingle(
   const io = new IOResult({ exitCode: 1 })
   const tally: Tally = { selected: false }
   return [
-    settled(searchHaystack(stream(p), pat, f, name, label, tally, signal), f, label, tally, io),
+    settled(
+      searchHaystack(stream(p), pat, f, name, label, tally, signal),
+      f,
+      label,
+      tally,
+      io,
+      p.rawPath,
+    ),
     io,
   ]
 }
@@ -630,13 +643,24 @@ async function* settled(
   label: string | null,
   tally: Tally,
   io: IOResult,
+  // The operand as typed, which a failed read names.
+  shown: string,
 ): AsyncGenerator<Uint8Array> {
   let printed = false
-  for await (const chunk of chunks) {
-    if (!printed && label !== null && headed(f))
-      yield encodeLine(label + (f.null || f.nullData ? '\0' : '\n'))
-    printed = true
-    yield chunk
+  try {
+    for await (const chunk of chunks) {
+      if (!printed && label !== null && headed(f))
+        yield encodeLine(label + (f.null || f.nullData ? '\0' : '\n'))
+      printed = true
+      yield chunk
+    }
+  } catch (err) {
+    if (!isFsError(err)) throw err
+    // A read that fails once the stream is open is the searcher's to report,
+    // exit 2, as ripgrep reports it for any file it searches.
+    io.stderr = f.noMessages ? null : ENC.encode(`${openErrorLine(shown, err)}\n`)
+    io.exitCode = 2
+    return
   }
   const listed = f.filesWithoutMatch && !f.quiet ? printed : null
   io.exitCode = (listed ?? tally.selected) ? 0 : 1
@@ -697,7 +721,7 @@ async function* haystacks(
       continue
     }
     if (p.walkError !== null) {
-      warnings.push(`rg: ${p.rawPath}: ${String(fsStrerror(walkRefusal(p)))}`)
+      warnings.push(walkErrorLine(p.rawPath, walkRefusal(p)))
       continue
     }
     let isDir = false
@@ -714,7 +738,7 @@ async function* haystacks(
         isDir = true
       } catch (inner) {
         if (!isWalkError(inner)) throw inner
-        warnings.push(`rg: ${p.rawPath}: ${String(fsStrerror(err))}`)
+        warnings.push(walkErrorLine(p.rawPath, err))
         continue
       }
     }
@@ -808,7 +832,7 @@ async function searchAll(
     } catch (err) {
       if (!isFsError(err)) throw err
       // ripgrep reports the failed input and keeps searching the rest.
-      warnings.push(`rg: ${h.shown}: ${String(fsStrerror(err))}`)
+      warnings.push(openErrorLine(h.shown, err))
       continue
     }
     selected ||= tally.selected

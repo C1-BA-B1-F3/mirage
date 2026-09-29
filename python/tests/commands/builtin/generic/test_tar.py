@@ -637,3 +637,35 @@ async def test_a_read_only_mount_refuses_tar_at_the_write(
     result = await ws.shell(line)
     assert (result.exit_code, result.stderr) == (2, stderr)
     assert vfs._store.files == before
+
+
+_FATAL = "tar: Error is not recoverable: exiting now\n"
+_CHILD_FATAL = ("tar (child): Error is not recoverable: exiting now\n",
+                "tar: Child returned status 2\n" + _FATAL)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("line, want", [
+    ("tar -tf nope.tar",
+     "tar: nope.tar: Cannot open: No such file or directory\n" + _FATAL),
+    ("tar -xf d", "tar: d: Cannot read: Is a directory\n"
+     "tar: At beginning of tape, quitting now\n" + _FATAL),
+    ("tar -tzf nope.tgz",
+     "tar (child): nope.tgz: Cannot open: No such file or directory\n" +
+     _CHILD_FATAL[0] + _CHILD_FATAL[1]),
+    ("tar -tzf d", "tar (child): d: Cannot read: Is a directory\n"
+     "tar (child): At beginning of tape, quitting now\n" + _CHILD_FATAL[0] +
+     "\ngzip: stdin: unexpected end of file\n" + _CHILD_FATAL[1]),
+    ("tar -czf d a", "tar (child): d: Cannot open: Is a directory\n" +
+     _CHILD_FATAL[0] + _CHILD_FATAL[1]),
+])
+async def test_an_archive_tar_cannot_open_is_named_as_typed(line, want):
+    # tar 1.35 names -f as typed. A directory opens and fails the first
+    # read, where a backend keying files alone reports it absent. With a
+    # compressor tar's child speaks, the reading one's gzip meets an empty
+    # pipe unless the name was missing, and tar reports the child's status.
+    ws = Workspace({"/data": RAMVFS()}, mode=MountMode.WRITE)
+    await ws.shell("mkdir -p /data/d && printf a > /data/a")
+    r = await ws.shell(f"cd /data && {line}")
+    assert r.exit_code == 2
+    assert await r.stderr_str() == want

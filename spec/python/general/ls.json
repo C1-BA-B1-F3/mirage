@@ -385,11 +385,34 @@
     {
       "long": "--classify",
       "short": "-F",
+      "short_value": false,
+      "type": "str",
+      "value_optional": true
+    },
+    {
+      "short": "-p",
       "type": "bool"
+    },
+    {
+      "long": "--file-type",
+      "type": "bool"
+    },
+    {
+      "long": "--indicator-style",
+      "type": "str"
     },
     {
       "long": "--dereference",
       "short": "-L",
+      "type": "bool"
+    },
+    {
+      "long": "--dereference-command-line",
+      "short": "-H",
+      "type": "bool"
+    },
+    {
+      "long": "--dereference-command-line-symlink-to-dir",
       "type": "bool"
     },
     {

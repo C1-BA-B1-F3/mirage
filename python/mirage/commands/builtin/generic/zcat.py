@@ -1,8 +1,11 @@
 from collections.abc import AsyncIterator, Awaitable, Callable
 
+from mirage.commands.builtin.constants import GZIP_SUFFIX
 from mirage.commands.builtin.generic.decompress import decompress_inputs
 from mirage.commands.builtin.utils.operands import normalized_read
 from mirage.commands.config import CommandOpts
+from mirage.commands.spec import SPECS
+from mirage.commands.spec.flag_view import FlagView
 from mirage.io.types import ByteSource, IOResult
 from mirage.types import FileType, PathSpec, PolymorphicReadFn, StatFn
 
@@ -14,7 +17,6 @@ async def zcat(
     stdin: ByteSource | None = None,
 ) -> tuple[ByteSource | None, IOResult]:
     return await decompress_inputs(paths,
-                                   command="zcat",
                                    read=read_bytes,
                                    stdin=stdin,
                                    to_stdout=True)
@@ -29,6 +31,9 @@ async def zcat_generic(
 ) -> tuple[ByteSource | None, IOResult]:
     """Run zcat over resolved operands; mirrors zcatGeneric.
 
+    zcat is ``gzip -cd``, so -f copies input that is not gzip, -q drops
+    the warnings, and -S names the suffix a missing name is retried with.
+
     Args:
         paths (list[PathSpec]): Glob-resolved operands, empty for stdin.
         texts (list[str]): Non-path words, unused by zcat.
@@ -37,6 +42,8 @@ async def zcat_generic(
         stream (PolymorphicReadFn): Bound reader called as
             ``stream(path)``.
     """
+    fl = FlagView(opts.flags, spec=SPECS["zcat"])
+    suffix = fl.as_str("S")
     read_stream = normalized_read(stream)
 
     async def read(path: PathSpec) -> AsyncIterator[bytes]:
@@ -45,11 +52,14 @@ async def zcat_generic(
         async for chunk in read_stream(path):
             yield chunk
 
-    return await decompress_inputs(paths,
-                                   command="zcat",
-                                   read=read,
-                                   stdin=opts.stdin,
-                                   to_stdout=True)
+    return await decompress_inputs(
+        paths,
+        read=read,
+        stdin=opts.stdin,
+        to_stdout=True,
+        force=fl.as_bool("f"),
+        quiet=fl.as_bool("q"),
+        suffix=GZIP_SUFFIX if suffix is None else suffix)
 
 
 __all__ = ["zcat", "zcat_generic"]

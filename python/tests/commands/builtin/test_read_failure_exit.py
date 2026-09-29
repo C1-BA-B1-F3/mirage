@@ -68,7 +68,9 @@ GNU_READ_EXIT = {
     "awk '{{print}}' {p}": (2, 2),
     "jq . {p}": (2, 2),
     "grep x {p}": (2, 2),
-    "cmp {p} {p}": (2, 2),
+    # One file named twice is equal unread, so the second operand is
+    # another file.
+    "cmp {p} /ram/dir/inner.txt": (2, 2),
     "sed -n p {p}": (4, 2),
     "gzip -c {p}": (2, 1),
     "gunzip -c {p}": (2, 1),
@@ -80,8 +82,9 @@ GNU_READ_EXIT = {
 # Is a directory`, `sort: read failed: dir: Is a directory`, `rev:
 # fgetwc() failed: Is a directory`, `fmt: read error` with no errno at
 # all, `strings: Warning: 'dir' is a directory`, and `gzip: dir is a
-# directory -- ignored`. mirage says the step in GNU's words only where
-# that still names the operand (``FAILURE_WORDING``: head, tail and uniq
+# directory -- ignored`, which the gzip family prints as GNU does. mirage
+# says the step in GNU's words only where that still names the operand
+# (``FAILURE_WORDING``: head, tail and uniq
 # say `error reading 'dir'`, tac and tsort `dir: read error`, sed `read
 # error on dir`; sort's steps come from `sort_die`, whose `read failed:
 # dir: Is a directory` still holds the house style) and keeps `<cmd>:
@@ -134,7 +137,8 @@ async def test_directory_read_says_is_a_directory(template):
     assert ("/ram/dir: Is a directory" in stderr
             or "/ram/dir: read error: Is a directory" in stderr
             or "error reading '/ram/dir': Is a directory" in stderr
-            or 'cannot open "/ram/dir" (Is a directory)' in stderr)
+            or 'cannot open "/ram/dir" (Is a directory)' in stderr
+            or "gzip: /ram/dir is a directory -- ignored" in stderr)
     assert "No such file" not in stderr
 
 
@@ -163,17 +167,19 @@ GNU_SED_MULTI = [
      "sort: read failed: /ram/dir: Is a directory\n"),
     ("cat /ram/ok.txt /ram/dir /ram/ok2.txt", 1, "a\nb\nc\nd\n",
      "cat: /ram/dir: Is a directory\n"),
-    ("zcat /ram/dir /ram/nope", 1, "", "zcat: /ram/dir: Is a directory\n"
-     "zcat: /ram/nope: No such file or directory\n"),
+    ("zcat /ram/dir /ram/nope", 1, "",
+     "gzip: /ram/dir is a directory -- ignored\n"
+     "gzip: /ram/nope.gz: No such file or directory\n"),
     # gzip's error outranks its warning in EITHER order, so the reversed
     # line is 1 too: `progerror` assigns ERROR outright while `WARN`
     # assigns only when nothing has failed yet. Two warnings and no error
     # stay 2.
     ("zcat /ram/nope /ram/dir", 1, "",
-     "zcat: /ram/nope: No such file or directory\n"
-     "zcat: /ram/dir: Is a directory\n"),
-    ("zcat /ram/dir /ram/dir", 2, "", "zcat: /ram/dir: Is a directory\n"
-     "zcat: /ram/dir: Is a directory\n"),
+     "gzip: /ram/nope.gz: No such file or directory\n"
+     "gzip: /ram/dir is a directory -- ignored\n"),
+    ("zcat /ram/dir /ram/dir", 2, "",
+     "gzip: /ram/dir is a directory -- ignored\n"
+     "gzip: /ram/dir is a directory -- ignored\n"),
 ]
 
 

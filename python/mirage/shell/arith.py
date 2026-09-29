@@ -18,7 +18,7 @@ from typing import Any
 from mirage.shell.constants import (ARITH_ASSIGN_OPS, ARITH_ELEM,
                                     ARITH_MAX_DEPTH, ARITH_NAME, ARITH_SIGN,
                                     ARITH_TOKEN, ARITH_WRAP)
-from mirage.shell.errors import ArithError
+from mirage.shell.errors import ArithError, UnboundVariable
 from mirage.shell.types import ArithResult, ArithWrite, ElementOps
 
 
@@ -353,7 +353,8 @@ class ArithEvaluator:
                  depth: int,
                  elements: ElementOps | None,
                  read_var: Callable[[str], str | None] | None,
-                 wrote_var: Callable[[str, str], None] | None = None) -> None:
+                 wrote_var: Callable[[str, str], None] | None = None,
+                 nounset: bool = False) -> None:
         self.env = env
         self.updates = updates
         self.elem_updates = elem_updates
@@ -362,6 +363,7 @@ class ArithEvaluator:
         self.elements = elements
         self.read_var = read_var
         self.wrote_var = wrote_var
+        self.nounset = nounset
 
     def _merged_env(self) -> dict[str, str]:
         merged = {
@@ -399,7 +401,7 @@ class ArithEvaluator:
                              f'token is "{raw}")')
         nested = ArithEvaluator(self.env, self.updates, self.elem_updates,
                                 self.writes, self.depth + 1, self.elements,
-                                self.read_var, self.wrote_var)
+                                self.read_var, self.wrote_var, self.nounset)
         return nested.run(ArithParser(_tokenize(raw)).parse())
 
     def lookup(self, name: str) -> int:
@@ -419,6 +421,13 @@ class ArithEvaluator:
                 # `$((a))` is 4); the env holds scalars only, so the
                 # element resolver answers for the arrays.
                 value = self.elements.read(name, "0")
+            # Under `set -u` a name no variable holds is fatal, as
+            # bash's expr_streval has it; an array counts whatever its
+            # element 0 holds.
+            if value is None and self.nounset and not (
+                    self.elements is not None and self.elements.holds_array
+                    is not None and self.elements.holds_array(name)):
+                raise UnboundVariable(name)
             raw = "" if value is None else str(value)
         return self._coerce(raw)
 
@@ -593,13 +602,13 @@ class ArithEvaluator:
         raise ArithError(f'unsupported operator "{op}"')
 
 
-def evaluate_arith(
-        expr: str,
-        env: Mapping[str, str],
-        depth: int = 0,
-        elements: ElementOps | None = None,
-        read_var: Callable[[str], str | None] | None = None,
-        wrote_var: Callable[[str, str], None] | None = None) -> ArithResult:
+def evaluate_arith(expr: str,
+                   env: Mapping[str, str],
+                   depth: int = 0,
+                   elements: ElementOps | None = None,
+                   read_var: Callable[[str], str | None] | None = None,
+                   wrote_var: Callable[[str, str], None] | None = None,
+                   nounset: bool = False) -> ArithResult:
     """Evaluate a bash arithmetic expression.
 
     Implements bash's arithmetic grammar over 64-bit wrapping integers:
@@ -631,6 +640,9 @@ def evaluate_arith(
             name's reader can act on it at once (bash seeds ``RANDOM`` at
             the assignment, and the reads after it draw from the seed)
             where the caller lands the assignments only afterwards.
+        nounset (bool): ``set -u`` for the names the expression reads:
+            one that no variable holds raises UnboundVariable instead of
+            reading 0.
 
     Returns:
         ArithResult: the value plus the assignments made, in order, for
@@ -649,7 +661,8 @@ def evaluate_arith(
     writes: dict[tuple[str, str | None], str] = {}
     try:
         value = ArithEvaluator(env, updates, elem_updates, writes, depth,
-                               elements, read_var, wrote_var).run(node)
+                               elements, read_var, wrote_var,
+                               nounset).run(node)
     except ArithError as exc:
         exc.writes = _arith_writes(writes)
         raise

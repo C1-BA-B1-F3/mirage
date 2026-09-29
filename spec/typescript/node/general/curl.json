@@ -53,6 +53,12 @@
       "type": "path"
     },
     {
+      "description": "Write the received headers to the given file, - for stdout.",
+      "long": "--dump-header",
+      "short": "-D",
+      "type": "path"
+    },
+    {
       "description": "Follow HTTP redirects.",
       "long": "--location",
       "short": "-L",
@@ -117,6 +123,12 @@
       "long": "--max-time",
       "short": "-m",
       "type": "float"
+    },
+    {
+      "description": "Skip verification of the server certificate.",
+      "long": "--insecure",
+      "short": "-k",
+      "type": "bool"
     }
   ],
   "positional": [

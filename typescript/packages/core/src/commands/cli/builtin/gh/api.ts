@@ -18,6 +18,7 @@ import type { CommandFnResult } from '../../../config.ts'
 import type { CLIInvocation } from '../../types.ts'
 import { expand } from '../../../../core/github/placeholder.ts'
 import type { GhConfig } from '../../../../core/github/config.ts'
+import { GRAPHQL_PATH } from '../../../../core/github/constants.ts'
 import { GitHubApiError, type GitHubResponse } from '../../../../core/github/client.ts'
 import { ghTransport, jqLines, readCliFile, textOut } from './accessor.ts'
 
@@ -191,7 +192,8 @@ export async function api(inv: CLIInvocation): Promise<CommandFnResult> {
   const method = fl.asStr('method') ?? (Object.keys(values).length > 0 || hasInput ? 'POST' : 'GET')
   const upper = method.toUpperCase()
   const expanded = expand(endpoint, inv.config as GhConfig)
-  const path = expanded.startsWith('/') ? expanded : `/${expanded}`
+  const path =
+    expanded === GRAPHQL_PATH ? expanded : expanded.startsWith('/') ? expanded : `/${expanded}`
 
   let body: unknown
   let params: Record<string, string> | undefined

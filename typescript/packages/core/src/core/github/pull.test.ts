@@ -14,6 +14,7 @@
 
 import { describe, expect, it } from 'vitest'
 import type { GitHubTransport } from './client.ts'
+import { GRAPHQL_PATH } from './constants.ts'
 import {
   commentPull,
   commitStatuses,
@@ -31,7 +32,7 @@ function graphqlTransport(
   return {
     get: () => Promise.reject(new Error('unexpected GET')),
     request: (_method, path, body) => {
-      if (path !== '/graphql') return Promise.reject(new Error(`unexpected ${path}`))
+      if (path !== GRAPHQL_PATH) return Promise.reject(new Error(`unexpected ${path}`))
       sent.push(body as { query: string; variables: Record<string, unknown> })
       return Promise.resolve(replies.shift())
     },

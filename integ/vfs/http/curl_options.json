@@ -259,6 +259,84 @@
         "stdout": "> GET /redirect HTTP/1.1\r\n< HTTP/1.1 302 Found\r\n> GET /hello HTTP/1.1\r\n< HTTP/1.1 200 OK\r\n",
         "stderr": ""
       }
+    },
+    {
+      "id": "curl_dump_header_to_stdout_leads_the_body",
+      "seq": 330060,
+      "targets": [
+        "http-ram"
+      ],
+      "command": "curl -sS -D - {http}/hello | sed -n '1p;$p'",
+      "expect": {
+        "exit": 0,
+        "stdout": "HTTP/1.1 200 OK\r\nhello from http\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "curl_dump_header_long_spelling",
+      "seq": 330061,
+      "targets": [
+        "http-ram"
+      ],
+      "command": "curl -s --dump-header - {http}/hello | head -n 1",
+      "expect": {
+        "exit": 0,
+        "stdout": "HTTP/1.1 200 OK\r\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "curl_dump_header_to_a_file",
+      "seq": 330062,
+      "targets": [
+        "http-ram"
+      ],
+      "command": "curl -s -D /data/headers.txt {http}/hello && head -n 1 /data/headers.txt",
+      "expect": {
+        "exit": 0,
+        "stdout": "hello from http\nHTTP/1.1 200 OK\r\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "curl_dump_header_beside_output",
+      "seq": 330063,
+      "targets": [
+        "http-ram"
+      ],
+      "command": "curl -s -D - -o /data/body.txt {http}/hello | head -n 1; cat /data/body.txt",
+      "expect": {
+        "exit": 0,
+        "stdout": "HTTP/1.1 200 OK\r\nhello from http\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "curl_dump_header_survives_fail",
+      "seq": 330064,
+      "targets": [
+        "http-ram"
+      ],
+      "command": "curl -s -f -D - {http}/missing | head -n 1",
+      "expect": {
+        "exit": 0,
+        "stdout": "HTTP/1.1 404 Not Found\r\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "curl_insecure_is_accepted",
+      "seq": 330065,
+      "targets": [
+        "http-ram"
+      ],
+      "command": "curl -sk {http}/hello; curl -s --insecure {http}/hello",
+      "expect": {
+        "exit": 0,
+        "stdout": "hello from http\nhello from http\n",
+        "stderr": ""
+      }
     }
   ]
 }

@@ -245,16 +245,16 @@ async def main():
             print(f"  {line[:150]}")
 
     # ── jq ───────────────────────────────────────────
-    print(f"\n=== jq '.[] | .user' {target} ===")
-    r = await ws.shell(f'jq ".[] | .user" "{file_path}"')
+    print(f"\n=== jq '.user' {target} ===")
+    r = await ws.shell(f'jq ".user" "{file_path}"')
     print(f"  exit={r.exit_code}")
     out = (await r.stdout_str()).strip()
     if out:
         for line in out.splitlines()[:5]:
             print(f"  {line}")
 
-    print(f"\n=== cat {target} | jq -r '.[] | .text' | head -n 5 ===")
-    r = await ws.shell(f'cat "{file_path}" | jq -r ".[] | .text" | head -n 5')
+    print(f"\n=== cat {target} | jq -r '.text' | head -n 5 ===")
+    r = await ws.shell(f'cat "{file_path}" | jq -r ".text" | head -n 5')
     print(f"  exit={r.exit_code}")
     out = (await r.stdout_str()).strip()
     if out:

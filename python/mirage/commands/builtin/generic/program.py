@@ -8,6 +8,7 @@ from mirage.commands.builtin.utils.stream import is_stdin, resolve_source
 from mirage.commands.spec import SPECS
 from mirage.commands.spec.flag_view import FlagView
 from mirage.commands.spec.types import FlagValue
+from mirage.core.jq import load_failure
 from mirage.io.types import ByteSource, IOResult, materialize
 from mirage.runtime.types import DispatchFn
 from mirage.types import FileType, PathSpec
@@ -61,8 +62,7 @@ def program_file_refusal(name: str, path: PathSpec,
             return f"awk: read error ({strerror})\n", 2
         return f'awk: cannot open "{shown}" ({strerror})\n', 2
     if name == "jq":
-        reason = "It's a directory" if read_failed else strerror
-        return f"jq: Could not open {shown}: {reason}\n", 2
+        return f"jq: {load_failure(shown, exc)}\n", 2
     if name == "rg":
         gap = "" if read_failed else " "
         return f"rg: {shown}:{gap}{os_error_text(exc)}\n", 2
@@ -171,10 +171,13 @@ async def prepare_program(
         out[key] = []
         out[PATTERN_KEYS[name]] = [] if pattern is None else [pattern]
     elif name == "sed":
+        expressions = iter(fl.as_list("e"))
+        scripts = iter(
+            data.decode(errors="replace").removesuffix("\n")
+            for data in pieces)
         out["e"] = [
-            *fl.as_list("e"),
-            *(data.decode(errors="replace").removesuffix("\n")
-              for data in pieces)
+            next(expressions) if kind == "e" else next(scripts)
+            for kind, _ in fl.occurrences("e", "f")
         ]
     else:
         texts = [

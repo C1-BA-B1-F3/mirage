@@ -101,9 +101,10 @@ config = BoxConfig(
 
 ## Cache
 
-The Box VFS caches directory listings via `IndexCacheStore` (24-hour
-TTL) to hold the path → id mapping and reduce repeated API calls during
-traversal; file reads go through the standard read cache
+The Box VFS caches directory listings via `IndexCacheStore` to hold the
+path → id mapping and reduce repeated API calls during traversal;
+listings live for the mount's `ttl` (600 s by default), at most 24
+hours. File reads go through the standard read cache
 (`caches_reads = True`). Writes invalidate the affected listings so subsequent
 reads see the new state.
 

@@ -128,8 +128,8 @@ async def main():
     print("JQ over rows.jsonl (slice with head first to stay under guard)")
     print("=" * 60)
 
-    await _run(ws, f'head -n 20 "{fp}" | jq -r ".[] | .id"')
-    await _run(ws, f'head -n 20 "{fp}" | jq -r ".[] | .file_name"')
+    await _run(ws, f'head -n 20 "{fp}" | jq -r ".id"')
+    await _run(ws, f'head -n 20 "{fp}" | jq -r ".file_name"')
 
     print("\n" + "=" * 60)
     print("FIND")

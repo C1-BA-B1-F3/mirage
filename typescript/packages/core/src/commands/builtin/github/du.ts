@@ -16,6 +16,7 @@ import type { GitHubAccessor } from '../../../accessor/github.ts'
 import { size as githubDu, entries as githubDuAll } from '../../../core/github/du/index.ts'
 import { resolveGlobOf } from '../generic_bind/index.ts'
 import { GITHUB_IO } from './io.ts'
+import { ensureLiveTree } from '../../../core/github/tree.ts'
 import { VFSName, type PathSpec } from '../../../types.ts'
 import { command, type CommandFnResult, type CommandOpts } from '../../config.ts'
 import { specOf } from '../../spec/builtins.ts'
@@ -32,13 +33,31 @@ async function duCommand(
   opts: CommandOpts,
 ): Promise<CommandFnResult> {
   const idx = opts.index ?? undefined
+  // Sizes come from accessor.tree, so the first callback brings it live,
+  // after du has validated its flags: an invalid line must cost no fetch.
+  // Once per line, so one du reads one tree.
+  let probe: Promise<void> | undefined
+  const live = (): Promise<void> =>
+    (probe ??= ensureLiveTree(accessor, idx, opts.mountPrefix ?? ''))
   const out = await runDu(
     paths,
     opts,
-    (targets) => resolveGlob(accessor, targets, idx),
-    (p) => GITHUB_IO.stat(accessor, p, idx),
-    (p) => githubDu(accessor, p, idx),
-    (p) => githubDuAll(accessor, p, idx),
+    async (targets) => {
+      await live()
+      return resolveGlob(accessor, targets, idx)
+    },
+    async (p) => {
+      await live()
+      return GITHUB_IO.stat(accessor, p, idx)
+    },
+    async (p) => {
+      await live()
+      return githubDu(accessor, p, idx)
+    },
+    async (p) => {
+      await live()
+      return githubDuAll(accessor, p, idx)
+    },
   )
   return [out.stdout, new IOResult({ stderr: out.stderr, exitCode: out.exitCode })]
 }

@@ -18,23 +18,35 @@ export {
   halts,
   jqCheck,
   jqEval,
+  jqRaised,
   jqRun,
   referencesArgs,
-  streamEvents,
   streamReads,
 } from './eval.ts'
-export { concatBytes, errorReport, formatJqOutput, haltReport } from './format.ts'
-export { InputPositions } from './position.ts'
 export {
-  evalJsonlStream,
-  isJsonlPath,
-  isStreamableJsonlExpr,
-  parseJsonDocs,
-  parseJsonText,
-  parseSeqDocs,
-  parseSeqText,
-  splitRawLines,
-  splitRawText,
-} from './stream.ts'
-export { DEFAULT_INDENT, STDIN_NAME, UNKNOWN_POSITION, jqOptions } from './types.ts'
-export type { JqError, JqHalt, JqOptions, JqRun, StreamReads } from './types.ts'
+  concatBytes,
+  errorReport,
+  formatJqOutput,
+  formatOne,
+  haltReport,
+  loadFailure,
+} from './format.ts'
+export { JqParser, decodeUtf8 } from './parse.ts'
+export { InputReader, isJsonlPath, parseValue, readValues } from './stream.ts'
+export {
+  DEFAULT_INDENT,
+  JqParseError,
+  NO_VALUE,
+  STDIN_NAME,
+  UNKNOWN_POSITION,
+  jqOptions,
+} from './types.ts'
+export type {
+  InputSource,
+  JqError,
+  JqHalt,
+  JqOptions,
+  JqRun,
+  NoValue,
+  StreamReads,
+} from './types.ts'

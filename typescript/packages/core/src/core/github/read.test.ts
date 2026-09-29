@@ -18,7 +18,7 @@ import { LookupStatus } from '../../cache/index/config.ts'
 import { RAMIndexCacheStore } from '../../cache/index/ram.ts'
 import { runWithRecording } from '../../observe/context.ts'
 import { PathSpec } from '../../types.ts'
-import { populateIndex, refillIndex } from './tree.ts'
+import { populateIndex, refillSnapshot } from './tree.ts'
 import { read, stream } from './read.ts'
 import { stat } from './stat.ts'
 import type { GitHubTransport } from './client.ts'
@@ -177,7 +177,7 @@ describe('a read against the wire', () => {
       const gh = serve({ 'docs/sub/b.txt': 'bravo' })
       const index = raceIndex(kind)
       const accessor = servedAccessor()
-      await refillIndex(accessor, index, '/gh')
+      await refillSnapshot(accessor, index, '/gh')
       index.accessor = accessor
       index.fired = false
       gh.log.length = 0
@@ -190,7 +190,7 @@ describe('a read against the wire', () => {
     const gh = serve({ 'docs/a.txt': 'alpha' })
     const index = new RAMIndexCacheStore()
     const accessor = servedAccessor()
-    await refillIndex(accessor, index, '/gh')
+    await refillSnapshot(accessor, index, '/gh')
     await index.clear()
     gh.log.length = 0
     expect(DEC.decode(await read(accessor, at('docs/a.txt', '/gh'), index))).toBe('alpha')
@@ -219,10 +219,10 @@ describe('a read against the wire', () => {
     const gh = serve({ 'a.txt': 'old' })
     const accessor = servedAccessor()
     const index = new RAMIndexCacheStore()
-    await refillIndex(accessor, index, '/gh')
+    await refillSnapshot(accessor, index, '/gh')
     gh.set('a.txt', 'reseated')
     // A refill on some other index reseats the accessor's tree only.
-    await refillIndex(accessor, new RAMIndexCacheStore(), '/gh')
+    await refillSnapshot(accessor, new RAMIndexCacheStore(), '/gh')
     expect(accessor.tree['a.txt']?.sha).toBe(await blobSha('reseated'))
     gh.set('a.txt', 'live')
     const [data, records] = await runWithRecording(() => read(accessor, at('a.txt', '/gh'), index))

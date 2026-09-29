@@ -195,3 +195,27 @@ def test_reach_is_process():
     # workspace gate never sees, so a world holding this runtime may
     # not claim a sandbox.
     assert LocalRuntime.reach == "process"
+
+
+TRACEBACK_CASES = json.loads(
+    (Path(__file__).resolve().parents[4] /
+     "integ/fixtures/runtime/python_errors.json").read_text())
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("case", TRACEBACK_CASES)
+async def test_user_tracebacks_match_cpython(case):
+    runtime = LocalRuntime()
+    try:
+        result = await runtime.run(RunArgs(code=case["code"]))
+        assert result.exit_code == 1
+        native = await asyncio.create_subprocess_exec(
+            sys.executable,
+            "-c",
+            case["code"],
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE)
+        _, stderr = await native.communicate()
+        assert result.stderr == stderr
+    finally:
+        await runtime.close()

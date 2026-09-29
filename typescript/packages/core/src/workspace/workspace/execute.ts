@@ -28,6 +28,7 @@ import { asyncContextIsolatesTasks } from '../../utils/async_context.ts'
 import { getCurrentSessionFor, runWithSession } from '../../context/session_context.ts'
 import type { JobTable } from '../../shell/job_table/index.ts'
 import {
+  syntaxErrorMessage,
   findSyntaxError,
   findUnterminatedBacktick,
   type ShellParser,
@@ -123,12 +124,8 @@ interface NestedRefusal {
   latest: Refusal | null
 }
 
-function syntaxErrorResult(offending: string): ExecuteResult {
-  const snippet = offending.trim()
-  const errMsg =
-    snippet.length > 0
-      ? `mirage: syntax error near '${snippet}'\n`
-      : 'mirage: syntax error in command\n'
+function syntaxErrorResult(offending: string, root: TSNodeLike): ExecuteResult {
+  const errMsg = syntaxErrorMessage(offending, root)
   return new ExecuteResult(new Uint8Array(), new TextEncoder().encode(errMsg), 2)
 }
 
@@ -278,7 +275,7 @@ async function runLine(
     // The gate runs before the provision branch, mirroring Python: a
     // provision run of unparseable input reports the syntax error
     // instead of walking the ERROR tree.
-    return syntaxErrorResult(offending)
+    return syntaxErrorResult(offending, root)
   }
   if (options.provision === true) {
     // The plan is judged as this line's caller: the effective session

@@ -29,6 +29,9 @@ import { buildMountArgs, toStateDict } from '../workspace/snapshot/state.ts'
 import { Workspace } from '../workspace/workspace/workspace.ts'
 import { GenericVFS, type GenericVFSOptions } from './generic.ts'
 import { rstripSlash } from '../utils/slash.ts'
+import { RAMIndexCacheStore } from '../cache/index/ram.ts'
+import type { IndexCacheStore } from '../cache/index/store.ts'
+import { RAMVFS } from './ram/ram.ts'
 
 const ENC = new TextEncoder()
 
@@ -427,5 +430,67 @@ describe('custom VFS capability fallbacks', () => {
     } finally {
       await ws.close()
     }
+  })
+})
+
+describe('BoundVFS glob and stat index', () => {
+  function capturing(): [RAMVFS, unknown[]] {
+    const vfs = new RAMVFS()
+    const seen: unknown[] = []
+    const io = vfs.io
+    ;(vfs as unknown as { io: CommandIO<RAMAccessor> }).io = {
+      ...io,
+      readdir: (accessor: RAMAccessor, path: PathSpec, index?: IndexCacheStore) => {
+        seen.push(index)
+        return io.readdir(accessor, path, index)
+      },
+      stat: (accessor: RAMAccessor, path: PathSpec, index?: IndexCacheStore) => {
+        seen.push(index)
+        return io.stat(accessor, path, index)
+      },
+    }
+    return [vfs, seen]
+  }
+
+  const word = (): PathSpec =>
+    new PathSpec({
+      vfsPath: '*.txt',
+      virtual: '/*.txt',
+      directory: '/',
+      pattern: '*.txt',
+      resolved: false,
+    })
+
+  it('falls back to its own index when none is passed', async () => {
+    const [vfs, seen] = capturing()
+    await vfs.glob([word()])
+    expect(seen.length).toBeGreaterThan(0)
+    expect(seen.every((index) => index === vfs.index)).toBe(true)
+  })
+
+  it('uses exactly the index it is handed, even an empty one', async () => {
+    const [vfs, seen] = capturing()
+    const passed = new RAMIndexCacheStore()
+    await vfs.glob([word()], '', passed)
+    expect(seen.length).toBeGreaterThan(0)
+    expect(seen.every((index) => index === passed)).toBe(true)
+  })
+
+  const root = (): PathSpec => PathSpec.fromStrPath('/')
+
+  it('stats through its own index when none is passed', async () => {
+    const [vfs, seen] = capturing()
+    await vfs.stat(root())
+    expect(vfs.index).toBeDefined()
+    expect(seen.length).toBe(1)
+    expect(seen[0]).toBe(vfs.index)
+  })
+
+  it('stats through exactly the index it is handed', async () => {
+    const [vfs, seen] = capturing()
+    const passed = new RAMIndexCacheStore()
+    await vfs.stat(root(), passed)
+    expect(seen.length).toBe(1)
+    expect(seen[0]).toBe(passed)
   })
 })

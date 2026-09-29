@@ -134,12 +134,12 @@ async def main():
 
     await _run(
         ws,
-        'jq ".[] | .input" '
+        'jq ".input" '
         '"/langfuse/datasets/qa-eval/items.jsonl"',
     )
     await _run(
         ws,
-        'jq -r ".[] | .expected_output.answer" '
+        'jq -r ".expected_output.answer" '
         '"/langfuse/datasets/qa-eval/items.jsonl"',
     )
 

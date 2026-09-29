@@ -212,10 +212,7 @@ export const ReadPolicy = Object.freeze({
 
 export type ReadPolicy = (typeof ReadPolicy)[keyof typeof ReadPolicy]
 
-/**
- * Seconds. Matches IndexConfig.ttl (cache/index/config.ts) so bodies and
- * listings expire together out of the box.
- */
+/** Maximum lifetime in seconds for cached bodies and listings. */
 export const DEFAULT_READ_TTL = 600
 
 /**

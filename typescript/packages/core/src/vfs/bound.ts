@@ -1,4 +1,5 @@
 import type { Accessor } from '../accessor/base.ts'
+import type { IndexCacheStore } from '../cache/index/store.ts'
 import { resolveGlobOf, type CommandIO } from '../commands/builtin/generic_bind/adapter.ts'
 import { PathSpec, type FileStat } from '../types.ts'
 import { mountKey, mountPrefixOf } from '../utils/key_prefix.ts'
@@ -69,7 +70,7 @@ export abstract class BoundVFS<A extends Accessor = Accessor> extends BaseVFS {
       this.find = (p, o) => find(this.accessor, p, o ?? {})
   }
 
-  glob(paths: readonly PathSpec[], prefix = ''): Promise<PathSpec[]> {
+  glob(paths: readonly PathSpec[], prefix = '', index?: IndexCacheStore): Promise<PathSpec[]> {
     const effective = prefix
       ? paths.map((p) =>
           mountPrefixOf(p.virtual, p.vfsPath)
@@ -83,7 +84,7 @@ export abstract class BoundVFS<A extends Accessor = Accessor> extends BaseVFS {
               }),
         )
       : paths
-    return resolveGlobOf(this.io)(this.accessor, effective, this.index)
+    return resolveGlobOf(this.io)(this.accessor, effective, index ?? this.index)
   }
   readFile(path: PathSpec): Promise<Uint8Array> {
     return this.io.readBytes(this.accessor, path, this.index)
@@ -93,8 +94,8 @@ export abstract class BoundVFS<A extends Accessor = Accessor> extends BaseVFS {
     return this.io.readdir(this.accessor, path, this.index)
   }
 
-  stat(path: PathSpec): Promise<FileStat> {
-    return this.io.stat(this.accessor, path, this.index)
+  stat(path: PathSpec, index?: IndexCacheStore): Promise<FileStat> {
+    return this.io.stat(this.accessor, path, index ?? this.index)
   }
 
   streamPath(path: PathSpec): AsyncIterable<Uint8Array> {

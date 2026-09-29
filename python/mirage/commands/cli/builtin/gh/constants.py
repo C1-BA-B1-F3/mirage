@@ -181,3 +181,15 @@ TEMPLATE_TOKEN = re.compile(r'"(?:\\.|[^"\\])*"|`[^`]*`|[^\s|]+|\|')
 TEMPLATE_ACTION = re.compile(r'{{(-?)\s*(.*?)\s*(-?)}}', re.S)
 TEMPLATE_DECLARATION = re.compile(r'(\$\w+)\s*(?:,\s*(\$\w+)\s*)?(:?=)\s*(.*)',
                                   re.S)
+
+# The builtins gojq writes in jq, so each fails through `error` itself,
+# where jq 1.8.2's fail as builtins do: jq's message for each, and the one
+# gojq raises (gojq v0.12.17 builtin.jq).
+GOJQ_RAISED = {
+    "limit doesn't support negative count":
+    "limit doesn't support negative count",
+    "skip doesn't support negative count":
+    "skip doesn't support negative count",
+    "nth doesn't support negative indices":
+    "nth doesn't support negative index",
+}

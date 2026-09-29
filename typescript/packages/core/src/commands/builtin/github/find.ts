@@ -21,6 +21,7 @@ import { findGeneric } from '../generic/find.ts'
 import { resolveGlobOf } from '../generic_bind/index.ts'
 import { metadataProvision } from './_provision.ts'
 import { GITHUB_IO } from './io.ts'
+import { ensureLiveTree } from '../../../core/github/tree.ts'
 
 const resolveGlob = resolveGlobOf(GITHUB_IO)
 
@@ -30,6 +31,7 @@ async function findCommand(
   texts: string[],
   opts: CommandOpts,
 ): Promise<CommandFnResult> {
+  await ensureLiveTree(accessor, opts.index ?? undefined, opts.mountPrefix ?? '')
   // The dispatcher hands a pattern over whole; the wrapper resolves it,
   // as python's does, before the walk names anything.
   const resolved = await resolveGlob(accessor, paths, opts.index ?? undefined)

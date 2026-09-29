@@ -54,24 +54,25 @@ export async function sedGeneric(
 ): Promise<CommandFnResult> {
   const fl = new FlagView(opts.flags, specOf('sed'))
   if (!fl.asBool('i')) stream = stdinStream(stream, opts.stdin)
-  // The script comes from -e expressions and -f script files (joined with
-  // newlines, -e then -f as grep does) when any were given, otherwise from the
-  // first positional operand.
-  const eList = fl.asList('e')
-  const fList = fl.asList('f')
-  const scriptParts = [...eList]
+  const scripts = fl.occurrences('e', 'f')
+  const scriptParts: string[] = []
   const firstPath = paths[0]
   const scriptPrefix =
     (firstPath === undefined ? undefined : mountPrefixOf(firstPath.virtual, firstPath.vfsPath)) ??
     opts.mountPrefix ??
     ''
-  for (const filePath of fList) {
+  for (const [name, value] of scripts) {
+    const filePath = String(value)
+    if (name === 'e') {
+      scriptParts.push(filePath)
+      continue
+    }
     const spec = PathSpec.fromStrPath(filePath, mountKey(filePath, scriptPrefix))
     let text = DEC.decode(await materialize(stream(spec)))
     if (text.endsWith('\n')) text = text.slice(0, -1)
     scriptParts.push(text)
   }
-  const flagScript = eList.length > 0 || fList.length > 0
+  const flagScript = scripts.length > 0
   if (!flagScript && texts[0] !== undefined) scriptParts.push(texts[0])
   const script = scriptParts.length > 0 ? scriptParts.join('\n') : undefined
   if (script === undefined) {

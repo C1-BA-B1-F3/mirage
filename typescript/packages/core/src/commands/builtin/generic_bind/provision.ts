@@ -14,7 +14,7 @@
 
 import type { Accessor } from '../../../accessor/base.ts'
 import type { IndexCacheStore } from '../../../cache/index/index.ts'
-import { isJsonlPath, isStreamableJsonlExpr } from '../../../core/jq/index.ts'
+import { isJsonlPath, streamReads } from '../../../core/jq/index.ts'
 import { Precision, ProvisionResult } from '../../../provision/types.ts'
 import { FileType, PathSpec } from '../../../types.ts'
 import { rekey } from '../../../utils/key_prefix.ts'
@@ -277,7 +277,6 @@ export function metadataProvision(
   )
 }
 
-/** Provision for jq: streamable jsonl reads a range, else the whole file. */
 export function exactZeroProvision(
   _accessor: Accessor,
   _paths: PathSpec[],
@@ -326,6 +325,7 @@ export async function indexHitReadProvision(
   })
 }
 
+/** Provision for jq: JSON Lines it runs a line at a time reads a range, else the whole file. */
 export function makeJqProvision<A extends Accessor>(stat: StatOp<A>): ProvisionFn<A> {
   return async (accessor: A, paths: PathSpec[], texts: string[], opts: CommandOpts) => {
     const p = paths[0]
@@ -353,7 +353,11 @@ export function makeJqProvision<A extends Accessor>(stat: StatOp<A>): ProvisionF
       })
     }
     const fileSize = fileStat.size
-    if (isJsonlPath(p.mountPath) && isStreamableJsonlExpr(expr)) {
+    // A program runs on each line as it streams in, so a reader that stops
+    // early leaves the rest unread, unless -s or `input` and `inputs` read
+    // the whole stream before the first run.
+    const reads = streamReads(expr)
+    if (isJsonlPath(p.mountPath) && flagOf(opts, '-s') !== true && !reads.input && !reads.inputs) {
       return new ProvisionResult({
         command: rendered,
         networkReadLow: 0,

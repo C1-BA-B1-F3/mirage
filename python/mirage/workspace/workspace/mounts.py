@@ -143,7 +143,8 @@ def install_mounts(registry: MountRegistry, specs: list[MountSpec],
     A workspace-level ``index`` is installed on every VFS, its TTL
     included: the config names the store the whole workspace shares, so
     a VFS that declares ``index_ttl = 0`` caches its listings for the
-    workspace's TTL under it (the redis index example relies on exactly
+    workspace's TTL under it, capped like every listing by each mount's
+    read ``ttl`` (the redis index example relies on exactly
     that to share a RAM mount's listing between two processes). With no
     workspace config a VFS keeps the index it was constructed with
     or given through ``set_index``, as the TypeScript workspace does;

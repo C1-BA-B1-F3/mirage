@@ -772,7 +772,7 @@
       "expect": {
         "exit": 2,
         "stdout": "",
-        "stderr": "jq: --indent takes a number between -1 and 7\nUse jq --help for help with command-line options,\nor see the jq manpage, or online docs  at https://jqlang.github.io/jq\n"
+        "stderr": "jq: --indent takes a number between -1 and 7\nUse jq --help for help with command-line options,\nor see the jq manpage, or online docs at https://jqlang.org\n"
       },
       "flags": [
         "indent"
@@ -791,7 +791,7 @@
       "expect": {
         "exit": 2,
         "stdout": "",
-        "stderr": "jq: invalid JSON text passed to --argjson\nUse jq --help for help with command-line options,\nor see the jq manpage, or online docs  at https://jqlang.github.io/jq\n"
+        "stderr": "jq: invalid JSON text passed to --argjson\nUse jq --help for help with command-line options,\nor see the jq manpage, or online docs at https://jqlang.org\n"
       },
       "flags": [
         "argjson"
@@ -810,7 +810,7 @@
       "expect": {
         "exit": 2,
         "stdout": "",
-        "stderr": "jq: invalid JSON text passed to --jsonargs\nUse jq --help for help with command-line options,\nor see the jq manpage, or online docs  at https://jqlang.github.io/jq\n"
+        "stderr": "jq: invalid JSON text passed to --jsonargs\nUse jq --help for help with command-line options,\nor see the jq manpage, or online docs at https://jqlang.org\n"
       },
       "flags": [
         "jsonargs"

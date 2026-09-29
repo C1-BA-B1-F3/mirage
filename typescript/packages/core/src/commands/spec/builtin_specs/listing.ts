@@ -96,6 +96,7 @@ export const SPECS: Record<string, CommandSpec> = {
   ls: new CommandSpec({
     options: [
       new Option({ short: '-l' }),
+      new Option({ short: '-b', long: '--escape' }),
       new Option({ short: '-a', long: '--all' }),
       new Option({ short: '-A', long: '--almost-all' }),
       new Option({ short: '-h', long: '--human-readable' }),

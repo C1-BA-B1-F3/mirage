@@ -131,6 +131,12 @@ export class IndexEntry {
   }
 }
 
+/** Entry rows and directory children from one refill. */
+export interface IndexSnapshot {
+  readonly entries: ReadonlyMap<string, IndexEntry>
+  readonly children: ReadonlyMap<string, readonly string[]>
+}
+
 export interface LookupResult {
   entry?: IndexEntry | null
   status?: LookupStatus | null

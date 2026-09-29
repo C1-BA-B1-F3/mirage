@@ -272,8 +272,8 @@ async function main(): Promise<void> {
     }
 
     // ── jq ─────────────────────────────────────────────
-    console.log(`\n=== jq '.[] | .user' ${target} ===`)
-    r = await ws.shell(`jq ".[] | .user" "${filePath}"`)
+    console.log(`\n=== jq '.user' ${target} ===`)
+    r = await ws.shell(`jq ".user" "${filePath}"`)
     console.log(`  exit=${String(r.exitCode)}`)
     const jqOut = r.stdoutText.trim()
     if (jqOut !== '') {
@@ -282,8 +282,8 @@ async function main(): Promise<void> {
       }
     }
 
-    console.log(`\n=== cat ${target} | jq -r '.[] | .text' | head -n 5 ===`)
-    r = await ws.shell(`cat "${filePath}" | jq -r ".[] | .text" | head -n 5`)
+    console.log(`\n=== cat ${target} | jq -r '.text' | head -n 5 ===`)
+    r = await ws.shell(`cat "${filePath}" | jq -r ".text" | head -n 5`)
     console.log(`  exit=${String(r.exitCode)}`)
     const jqTextOut = r.stdoutText.trim()
     if (jqTextOut !== '') {

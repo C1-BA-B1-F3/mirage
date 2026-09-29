@@ -14,8 +14,9 @@
 
 import { describe, expect, it } from 'vitest'
 import { jqEval } from './eval.ts'
-import { concatBytes, errorReport, formatJqOutput, haltReport } from './format.ts'
+import { concatBytes, errorReport, formatJqOutput, haltReport, loadFailure } from './format.ts'
 import { jqOptions } from './types.ts'
+import { eacces, eisdir, enoent } from '../../utils/errors.ts'
 
 const DEC = new TextDecoder()
 const PRETTY = jqOptions()
@@ -152,5 +153,15 @@ describe('haltReport', () => {
     [null, false, ''],
   ])('writes %j (a string: %s) as %j', (message, string, expected) => {
     expect(haltReport({ kind: 'halt', message, string, code: 5 })).toBe(expected)
+  })
+})
+
+describe('loadFailure', () => {
+  it.each([
+    [enoent('f'), 'Could not open f: No such file or directory'],
+    [eacces('f'), 'Could not open f: Permission denied'],
+    [eisdir('f'), "Could not open f: It's a directory"],
+  ])('words a file jq could not load (%s)', (error, expected) => {
+    expect(loadFailure('f', error)).toBe(expected)
   })
 })

@@ -129,9 +129,11 @@ class BaseVFS:
     def index(self) -> IndexCacheStore:
         return self._index
 
-    async def resolve_glob(self,
-                           paths: list[PathSpec],
-                           prefix: str = "") -> list[PathSpec]:
+    async def resolve_glob(
+            self,
+            paths: list[PathSpec],
+            prefix: str = "",
+            index: IndexCacheStore | None = None) -> list[PathSpec]:
         """Expand the patterned specs in ``paths`` against this backend.
 
         ``prefix`` is the mount prefix without its trailing slash
@@ -150,6 +152,8 @@ class BaseVFS:
         Args:
             paths (list[PathSpec]): specs to expand, keyed under the mount.
             prefix (str): the owning mount's prefix, no trailing slash.
+            index (IndexCacheStore | None): the index listings are read
+                and written through; None means this VFS's own.
 
         Returns:
             list[PathSpec]: one spec per match.

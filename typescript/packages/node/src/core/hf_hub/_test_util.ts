@@ -15,6 +15,8 @@
 import { createHash } from 'node:crypto'
 import { type IncomingMessage, type Server, type ServerResponse, createServer } from 'node:http'
 import type { AddressInfo } from 'node:net'
+import type { IndexEntry } from '@struktoai/mirage-core/cache/index/config'
+import { RAMIndexCacheStore } from '@struktoai/mirage-core/cache/index/ram'
 import { compareCodePoints } from '@struktoai/mirage-core/utils/sort'
 import { rstripSlash, stripSlash } from '@struktoai/mirage-core/utils/slash'
 
@@ -398,4 +400,41 @@ function error(res: ServerResponse, status: number, code: string, message: strin
 /** Start a fake Hub on a free local port; close it with `hub.close()`. */
 export async function serveHub(hub: FakeHub = new FakeHub()): Promise<FakeHub> {
   return hub.start()
+}
+
+/** Expire every listing immediately except the optional live key. */
+export class ExpiredOnArrival extends RAMIndexCacheStore {
+  constructor(private readonly live: string | null = null) {
+    super({ ttl: 86_400 })
+  }
+
+  private expiryFor(path: string, expiredAt?: Date | null): Date | null | undefined {
+    return path === this.live ? expiredAt : new Date(0)
+  }
+
+  override setDir(
+    path: string,
+    entries: readonly [string, IndexEntry][],
+    expiredAt?: Date | null,
+  ): Promise<void> {
+    return super.setDir(path, entries, this.expiryFor(path, expiredAt))
+  }
+
+  override setPartialDir(
+    path: string,
+    entries: readonly [string, IndexEntry][],
+    expiredAt?: Date | null,
+  ): Promise<void> {
+    return super.setPartialDir(path, entries, this.expiryFor(path, expiredAt))
+  }
+
+  override seed(
+    entries: ReadonlyMap<string, IndexEntry>,
+    children: ReadonlyMap<string, readonly string[]>,
+    expiresAt: Date,
+  ): void {
+    const live = [...children].filter(([path]) => path === this.live)
+    super.seed(entries, new Map([...children].filter(([path]) => path !== this.live)), new Date(0))
+    super.seed(new Map(), new Map(live), expiresAt)
+  }
 }

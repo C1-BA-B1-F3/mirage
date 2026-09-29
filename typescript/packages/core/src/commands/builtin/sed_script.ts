@@ -183,7 +183,7 @@ function readLabelOrBranch(rest: string): [string, string] {
   let label = ''
   while (rest.length > 0) {
     const c: string | undefined = rest[0]
-    if (c === undefined || c === ';' || c === '}') break
+    if (c === undefined || c === ';' || c === '}' || c === '\n') break
     label += c
     rest = rest.slice(1)
   }

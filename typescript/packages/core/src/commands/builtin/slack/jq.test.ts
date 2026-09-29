@@ -53,7 +53,7 @@ async function runJq(
 }
 
 describe('slack jq', () => {
-  it('extracts .text from jsonl messages with .[].text', async () => {
+  it('extracts .text from each jsonl message', async () => {
     const idx = new RAMIndexCacheStore()
     await seedChannel(idx, '/mnt/slack', 'general__C1', 'C1', { dates: ['2024-01-01'] })
     const transport = new FakeSlackTransport((endpoint) => {
@@ -77,7 +77,7 @@ describe('slack jq', () => {
           vfsPath: mountKey('/mnt/slack/channels/general__C1/2024-01-01/chat.jsonl', '/mnt/slack'),
         }),
       ],
-      ['.[].text'],
+      ['.text'],
       { raw_output: true },
       { index: idx, transport },
     )

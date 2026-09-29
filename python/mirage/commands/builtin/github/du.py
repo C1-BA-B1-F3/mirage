@@ -12,6 +12,7 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+from collections.abc import Awaitable, Callable
 from functools import partial
 
 from mirage.accessor.github import GitHubAccessor
@@ -64,24 +65,49 @@ async def du_provision(accessor: GitHubAccessor, paths: list[PathSpec],
         p.virtual if isinstance(p, PathSpec) else p for p in paths))
 
 
-async def _resolve(accessor: GitHubAccessor, index: IndexCacheStore,
+async def _resolve(live: Callable[[], Awaitable[None]],
+                   accessor: GitHubAccessor, index: IndexCacheStore,
                    targets: list[PathSpec]) -> list[PathSpec]:
+    await live()
     return await resolve_glob(accessor, targets, index)
 
 
-async def _stat(accessor: GitHubAccessor, index: IndexCacheStore,
-                path: PathSpec):
+async def _stat(live: Callable[[], Awaitable[None]], accessor: GitHubAccessor,
+                index: IndexCacheStore, path: PathSpec):
+    await live()
     return await IO.stat(accessor, path, index)
+
+
+async def _live_size(live: Callable[[], Awaitable[None]],
+                     accessor: GitHubAccessor, path: PathSpec) -> int:
+    await live()
+    return await _du_size(accessor, path)
+
+
+async def _live_entries(live: Callable[[], Awaitable[None]],
+                        accessor: GitHubAccessor,
+                        path: PathSpec) -> tuple[list[tuple[str, int]], int]:
+    await live()
+    return await _du_entries(accessor, path)
 
 
 @command("du", vfs="github", spec=SPECS["du"], provision=du_provision)
 async def du(accessor: GitHubAccessor, paths: list[PathSpec], texts: list[str],
              opts: CommandOpts) -> tuple[ByteSource | None, IOResult]:
-    # `_subtree` reads accessor.tree directly rather than the index, so
-    # the tree has to be hydrated first; the mount is built without it.
-    await ensure_tree(accessor, opts.index, opts.mount_prefix)
+    checked = False
+
+    # `_subtree` reads accessor.tree rather than the index, so the first
+    # callback brings the tree live, after du has validated its flags: an
+    # invalid line must cost no fetch. Once per line, so one du reads one
+    # tree and a Redis index pays one round trip.
+    async def live() -> None:
+        nonlocal checked
+        if not checked:
+            await ensure_tree(accessor, opts.index, opts.mount_prefix)
+            checked = True
+
     return await du_generic(paths, list(texts), opts,
-                            partial(_resolve, accessor, opts.index),
-                            partial(_stat, accessor, opts.index),
-                            partial(_du_size, accessor),
-                            partial(_du_entries, accessor))
+                            partial(_resolve, live, accessor, opts.index),
+                            partial(_stat, live, accessor, opts.index),
+                            partial(_live_size, live, accessor),
+                            partial(_live_entries, live, accessor))

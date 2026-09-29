@@ -11,7 +11,7 @@ Every `Workspace` ships with a **two-layer cache** so repeated work against remo
 - **Index cache.** Listings and metadata. The first directory walk hits the API; subsequent ones serve from the index until the TTL expires.
 - **File cache.** Object bytes. The first read streams from origin; later pipelines read from cache.
 
-Each mount declares how its cached bytes are served, with `read:` in its mount block. Under `read: fresh`, cached file bytes are checked against live backend metadata before being served, bypassing the index. A changed fingerprint triggers a fresh read; a deleted file is evicted. Under `read: bounded` — the default — cached bytes are trusted without a check, for as long as the mount's `ttl:` allows.
+Each mount declares how its cached bytes are served, with `read:` in its mount block. Under `read: fresh`, cached file bytes are checked against live backend metadata before being served, bypassing the index. A changed fingerprint triggers a fresh read; a deleted file is evicted. Under `read: bounded` — the default — cached bytes are trusted without a check, for as long as the mount's `ttl:` allows. Each listing write is also capped by the mount's `ttl`, under either policy. Existing Redis listings retain their stored expiry until rewritten.
 
 `fresh` is refused at mount time on a backend that cannot honour it: one that does not cache reads has no gate to check at, and one whose `stat` and read stamp different kinds of token could never match. A mount that asked to revalidate and quietly did not is the failure the refusal exists to prevent, so the policy is never silently downgraded. See the [YAML reference](/home/yaml) for the keys and [the VFS matrix](/home/vfs-matrix) for which backends accept `fresh` today.
 
@@ -64,9 +64,9 @@ The two layers are bounded differently:
 | Layer | Holds | Default | Bound | Eviction |
 | --- | --- | --- | --- | --- |
 | **File cache** | object bytes per virtual path | RAM, 512 MB | `cache_limit` (Py) / `cacheLimit` (TS) | LRU: least-recently-used bytes drop once the total exceeds the limit |
-| **Index cache** | directory listings + `FileStat` metadata | RAM, 10-min TTL | `ttl` (seconds) | time-based: entries expire after the TTL, then re-fetch on next access |
+| **Index cache** | directory listings + `FileStat` metadata | RAM, 10-min TTL | backend listing expiry, capped by the mount's `ttl` (seconds) | time-based: entries expire after the TTL, then re-fetch on next access |
 
-Raising the file limit keeps more bytes warm at the cost of memory; lengthening the index TTL serves listings longer between API walks at the cost of staleness.
+Raising the file limit keeps more bytes warm at the cost of memory; lengthening the index TTL reduces API walks at the cost of staleness, up to the mount's `ttl`.
 
 ## Miss/Hit Lifecycle
 

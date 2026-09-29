@@ -23,6 +23,7 @@ import {
   type RedisIndexConfig,
 } from '../cache/index/config.ts'
 import { RedisIndexCacheStore } from '../cache/index/redis.ts'
+import { IndexView } from '../cache/index/view.ts'
 import type { IndexCacheStore } from '../cache/index/store.ts'
 import { mountKey } from '../utils/key_prefix.ts'
 import { globNameMatches, globPattern } from '../utils/glob_walk.ts'
@@ -63,17 +64,21 @@ describe('Workspace lifecycle', () => {
           super()
           this._index = index
         }
-        override async glob(paths: readonly PathSpec[], prefix = ''): Promise<PathSpec[]> {
+        override async glob(
+          paths: readonly PathSpec[],
+          prefix = '',
+          index?: IndexCacheStore,
+        ): Promise<PathSpec[]> {
           const parent = paths[0]?.directory.replace(/\/$/, '') ?? ''
           const directory = parent === '' ? '/' : parent
-          const listing = await this.index.listDir(directory)
+          const listing = await (index ?? this.index).listDir(directory)
           if (listing.entries != null)
             return listing.entries
               .filter((key) =>
                 globNameMatches(key.split('/').at(-1) ?? '', globPattern(paths[0]?.pattern ?? '*')),
               )
               .map((key) => PathSpec.fromStrPath(key, mountKey(key, prefix)))
-          return super.glob(paths, prefix)
+          return super.glob(paths, prefix, index)
         }
       }
       const ancestor = new RAMVFS()
@@ -1216,6 +1221,50 @@ it('unmount drains metadata globs and their index writes', async () => {
   } finally {
     resume()
     await Promise.allSettled([expanding, ...(removing === undefined ? [] : [removing])])
+    await ws.close()
+  }
+})
+
+it('hands glob a lock-held view it can write through', async () => {
+  const vfs = new RAMVFS()
+  // RAM defaults to ttl 0; keep the written row live for the assertion.
+  const ws = new Workspace({ '/data': vfs }, { index: { ttl: 600 } })
+  await ws.resolve('/data')
+  const raw = vfs.index
+  let seen: unknown = undefined
+  let wrote: unknown = 'not called'
+  vi.spyOn(vfs, 'glob').mockImplementation(async (...args: unknown[]) => {
+    seen = args[2]
+    if (seen instanceof IndexView) {
+      wrote = await Promise.race([
+        seen
+          .setDir('/data', [
+            ['row', new IndexEntry({ id: 'row', name: 'row', resourceType: 'file' })],
+          ])
+          .then(() => 'done'),
+        new Promise((resolve) => {
+          setTimeout(() => {
+            resolve('timeout')
+          }, 1000)
+        }),
+      ])
+    }
+    return []
+  })
+  try {
+    await expandOperands(ws.namespace, [
+      new PathSpec({
+        virtual: '/data/*',
+        directory: '/data/',
+        vfsPath: '*',
+        pattern: '*',
+        resolved: false,
+      }),
+    ])
+    expect(seen).toBeInstanceOf(IndexView)
+    expect(wrote).toBe('done')
+    expect((await raw.listDir('/data')).entries).toEqual(['/data/row'])
+  } finally {
     await ws.close()
   }
 })

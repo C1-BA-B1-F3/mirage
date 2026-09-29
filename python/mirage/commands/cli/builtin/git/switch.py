@@ -16,8 +16,11 @@ from dataclasses import dataclass
 
 from dulwich.refs import Ref
 
+from mirage.commands.cli.builtin.git.branch import (remote_branch,
+                                                    set_up_tracking)
 from mirage.commands.cli.builtin.git.checkout import (move_head,
-                                                      previous_position)
+                                                      previous_position,
+                                                      tracking_report)
 from mirage.commands.cli.builtin.git.constants import HEAD
 from mirage.commands.cli.builtin.git.errors import (  # yapf: disable
     BranchExistsError, BranchExpectedError, DetachWithCreateError, GitError,
@@ -161,7 +164,8 @@ async def switch(
             if unborn:
                 await set_head(dispatch, location.gitdir, ref.decode())
                 return yield_bytes(b""), IOResult(
-                    stderr=f"Switched to a new branch '{target}'\n".encode())
+                    stderr=b"" if fl.as_bool("quiet") else
+                    f"Switched to a new branch '{target}'\n".encode())
         else:
             start = None
             target = texts[0] if texts else HEAD
@@ -179,23 +183,31 @@ async def switch(
                 # the shortcut reads it before it answers. Every ref
                 # check above comes first, which is git's own order.
                 refuse_unresolved(await read_index(dispatch, location.gitdir))
-                return None, IOResult(
-                    stderr=f"Already on '{target}'\n".encode())
+                return None, IOResult(stderr=b"" if fl.as_bool("quiet") else
+                                      f"Already on '{target}'\n".encode())
+            # git's --guess, on by default: no such branch here but one
+            # remote has it, so the switch creates it tracking that one.
+            start = None if flags.detach or ref in known else remote_branch(
+                repo, target)
+            creating = start is not None
             try:
-                commit = resolve_commit(repo, target)
+                commit = resolve_commit(repo, start or target)
             except GitError as exc:
                 raise InvalidReferenceError(target) from exc
-            attached = not flags.detach and ref in known
+            attached = creating or (not flags.detach and ref in known)
             if not flags.detach and not attached:
                 raise BranchExpectedError(expected_kind(known, target), target)
         moved = await move_head(dispatch, stat_path, links_of(doors),
                                 mounts_of(doors), repo, location, head, commit,
                                 target, ref if attached else None, creating,
                                 creating and start is None)
+        tracking = await set_up_tracking(dispatch, repo, location, target,
+                                         start) if creating else ""
     except GitError as exc:
         return fatal(exc)
     carried = "".join(f"{letter}\t{path}\n"
                       for path, letter in sorted(moved.carried.items()))
+    carried += tracking
     # Above everything the move says about itself, which is where git
     # puts it: what could not be removed is a fact about the working
     # tree rather than about where HEAD went.
@@ -203,7 +215,11 @@ async def switch(
     if attached:
         verb = "Switched to a new branch" if creating else "Switched to branch"
         note += f"{verb} '{target}'\n"
+        if not creating:
+            carried += await tracking_report(dispatch, location, target)
     else:
         note += (f"HEAD is now at {short(commit.id, abbrev_for(repo))} "
                  f"{subject(commit)}\n")
+    if fl.as_bool("quiet"):
+        return None, IOResult(stderr=moved.warnings.encode())
     return yield_bytes(carried.encode()), IOResult(stderr=note.encode())

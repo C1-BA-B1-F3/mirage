@@ -1123,3 +1123,10 @@ export class BranchUsageError extends GitError {
     )
   }
 }
+
+/** A local path that holds no repository, in clone's words. */
+export class MissingRepositoryError extends GitError {
+  constructor(url: string) {
+    super(`repository '${url}' does not exist`)
+  }
+}

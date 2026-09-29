@@ -49,3 +49,13 @@ export const GIT_SPACE: ReadonlySet<number> = new Set([0x20, 0x09, 0x0a, 0x0d])
 // The directory (or, in a linked worktree, the file) a checkout keeps its
 // repository under.
 export const GIT_DIR = '.git'
+
+// The rules a short ref name is tried against, rev-parse's dwim_ref order.
+export const DWIM_RULES = [
+  '{}',
+  'refs/{}',
+  'refs/tags/{}',
+  'refs/heads/{}',
+  'refs/remotes/{}',
+  'refs/remotes/{}/HEAD',
+]

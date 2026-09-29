@@ -11,7 +11,30 @@ from mirage.commands.cli.builtin.git.util import fatal, start_point
 from mirage.commands.cli.types import CLIInvocation
 from mirage.commands.spec.flag_view import FlagView
 from mirage.io.types import ByteSource, IOResult
+from mirage.runtime.types import DispatchFn
 from mirage.types import FileType
+
+
+async def lay_out(dispatch: DispatchFn, gitdir: str, branch: str,
+                  config: str) -> None:
+    """Write a new git directory's skeleton, keeping what is there.
+
+    Args:
+        dispatch (DispatchFn): workspace op dispatcher.
+        gitdir (str): absolute virtual path of the git directory.
+        branch (str): the branch HEAD starts on.
+        config (str): the config file's contents.
+    """
+    for directory in ("objects/info", "objects/pack", "refs/heads",
+                      "refs/tags", "info"):
+        await ensure_dir(dispatch, f"{gitdir}/{directory}")
+    await write_once(dispatch, f"{gitdir}/HEAD",
+                     f"ref: refs/heads/{branch}\n".encode())
+    await write_once(dispatch, f"{gitdir}/config", config.encode())
+    await write_once(
+        dispatch, f"{gitdir}/description",
+        b"Unnamed repository; edit this file 'description' "
+        b"to name the repository.\n")
 
 
 async def init(inv: CLIInvocation[None]) -> tuple[ByteSource | None, IOResult]:
@@ -56,18 +79,9 @@ async def init(inv: CLIInvocation[None]) -> tuple[ByteSource | None, IOResult]:
                                       fl.as_str("work_tree"))
             gitdir = location.commondir
         existing = await read_optional(dispatch, f"{gitdir}/HEAD") is not None
-        for directory in ("objects/info", "objects/pack", "refs/heads",
-                          "refs/tags", "info"):
-            await ensure_dir(dispatch, f"{gitdir}/{directory}")
-        await write_once(dispatch, f"{gitdir}/HEAD",
-                         f"ref: refs/heads/{branch}\n".encode())
         config = ("[core]\n\trepositoryformatversion = 0\n\tfilemode = true\n"
                   f"\tbare = {'true' if bare else 'false'}\n")
-        await write_once(dispatch, f"{gitdir}/config", config.encode())
-        await write_once(
-            dispatch, f"{gitdir}/description",
-            b"Unnamed repository; edit this file 'description' "
-            b"to name the repository.\n")
+        await lay_out(dispatch, gitdir, branch, config)
         action = "Reinitialized existing" if existing else "Initialized empty"
         text = f"{action} Git repository in {gitdir}/\n"
         warning = ""

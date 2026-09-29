@@ -15,8 +15,10 @@
 from mirage.commands.cli.builtin.git.add import add
 from mirage.commands.cli.builtin.git.branch import branch
 from mirage.commands.cli.builtin.git.checkout import checkout
+from mirage.commands.cli.builtin.git.clone import clone
 from mirage.commands.cli.builtin.git.commit import commit
 from mirage.commands.cli.builtin.git.diff import diff
+from mirage.commands.cli.builtin.git.fetch import fetch
 from mirage.commands.cli.builtin.git.for_each_ref import for_each_ref
 from mirage.commands.cli.builtin.git.fsck import fsck
 from mirage.commands.cli.builtin.git.init import init
@@ -292,6 +294,9 @@ ADD_OPTIONS = (
 )
 
 COMMIT_OPTIONS = (
+    Option(short="-q",
+           long="--quiet",
+           description="Suppress feedback messages"),
     Option(short="-a",
            long="--all",
            description="Stage modified and deleted tracked files first"),
@@ -306,10 +311,17 @@ COMMIT_OPTIONS = (
            description="Override the recorded author"),
 )
 
-CHECKOUT_OPTIONS = (Option(short="-b",
-                           description="Create the branch and switch to it"), )
+CHECKOUT_OPTIONS = (
+    Option(short="-b", description="Create the branch and switch to it"),
+    Option(short="-q",
+           long="--quiet",
+           description="Suppress feedback messages"),
+)
 
 SWITCH_OPTIONS = (
+    Option(short="-q",
+           long="--quiet",
+           description="Suppress feedback messages"),
     Option(short="-c",
            long="--create",
            type="str",
@@ -466,6 +478,50 @@ GIT = CLISpec(
                     Option(short='-c',
                            long='--cached',
                            description='Show cached files'),
+                ),
+                rest=REVISION),
+        CLISpec(name="fetch",
+                fn=fetch,
+                description="Download objects and refs from another "
+                "repository",
+                options=(
+                    Option(short="-q",
+                           long="--quiet",
+                           description="Print nothing but errors"),
+                    Option(short="-v",
+                           long="--verbose",
+                           description="Also list unchanged refs"),
+                    Option(short="-p",
+                           long="--prune",
+                           description="Remove remote-tracking refs the "
+                           "remote no longer has"),
+                    Option(short="-t",
+                           long="--tags",
+                           description="Fetch every tag"),
+                    Option(short="-n",
+                           long="--no-tags",
+                           description="Follow no tags"),
+                ),
+                rest=REVISION),
+        CLISpec(name="clone",
+                fn=clone,
+                description="Clone a repository into a new directory",
+                options=(
+                    Option(short="-q",
+                           long="--quiet",
+                           description="Print nothing but errors"),
+                    Option(short="-b",
+                           long="--branch",
+                           type="str",
+                           description="Check out this branch or tag"),
+                    Option(short="-o",
+                           long="--origin",
+                           type="str",
+                           description="Name the remote this instead of "
+                           "origin"),
+                    Option(short="-n",
+                           long="--no-checkout",
+                           description="Leave the working tree empty"),
                 ),
                 rest=REVISION),
         CLISpec(name="help",

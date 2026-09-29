@@ -26,7 +26,7 @@ import type { Dispatch, RepoLocation } from './types.ts'
 
 const LOGS_DIR = 'logs'
 const HEAD_LOG = 'logs/HEAD'
-const ZERO = '0'.repeat(40)
+export const ZERO = '0'.repeat(40)
 
 const ENC = new TextEncoder()
 
@@ -43,7 +43,7 @@ const ENC = new TextEncoder()
  * @param when epoch seconds
  * @param message what happened, e.g. `commit: add delta`
  */
-function entry(
+export function entry(
   before: string,
   after: string,
   who: string,
@@ -61,7 +61,7 @@ function entry(
  * syntax, but `git branch` reads it to say where a detached HEAD detached from,
  * so an absent log makes a perfectly good checkout read as `(no branch)`.
  */
-async function append(
+export async function append(
   dispatch: Dispatch,
   gitdir: string,
   path: string,

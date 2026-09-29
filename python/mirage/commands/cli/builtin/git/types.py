@@ -67,6 +67,23 @@ class HeadRef:
 
 
 @dataclass(frozen=True, slots=True)
+class Upstream:
+    """A branch's configured upstream, and how far the two have moved.
+
+    Args:
+        label (str): the upstream as git names it, ``origin/main`` or a
+            local branch.
+        ahead (int): commits on the branch the upstream lacks.
+        behind (int): commits on the upstream the branch lacks.
+        gone (bool): the upstream ref is configured but missing.
+    """
+    label: str
+    ahead: int
+    behind: int
+    gone: bool
+
+
+@dataclass(frozen=True, slots=True)
 class HeadMove:
     """What moving HEAD carried across, and what it could not do.
 

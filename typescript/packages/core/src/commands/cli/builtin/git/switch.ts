@@ -18,7 +18,8 @@ import { IOResult } from '../../../../io/types.ts'
 import type { CommandFnResult } from '../../../config.ts'
 import { FlagView } from '../../../spec/flag_view.ts'
 import type { CLIInvocation } from '../../types.ts'
-import { moveHead, previousPosition } from './checkout.ts'
+import { remoteBranch, setUpTracking } from './branch.ts'
+import { moveHead, previousPosition, trackingReport } from './checkout.ts'
 import { HEAD } from './constants.ts'
 import {
   BranchExistsError,
@@ -95,6 +96,7 @@ export async function switchBranch(inv: CLIInvocation): Promise<CommandFnResult>
   const fl = new FlagView(inv.flags)
   let carried: string
   let note: string
+  let warnings = ''
   try {
     const dispatch = doors.dispatch
     const statPath = doors.statPath
@@ -103,7 +105,7 @@ export async function switchBranch(inv: CLIInvocation): Promise<CommandFnResult>
     }
     checkOperands(texts, UnknownSwitchError, escaped(inv.argv), switches(inv))
     const flags = parseFlags(fl)
-    const creating = flags.create !== undefined
+    let creating = flags.create !== undefined
     if (creating && flags.detach) throw new DetachWithCreateError()
     if (texts.length > 1) throw new OneReferenceError()
     const first = texts[0]
@@ -154,7 +156,11 @@ export async function switchBranch(inv: CLIInvocation): Promise<CommandFnResult>
         await setHead(dispatch, repo.location.gitdir, `${BRANCH_PREFIX}${target}`)
         return [
           ENC.encode(''),
-          new IOResult({ stderr: ENC.encode(`Switched to a new branch '${target}'\n`) }),
+          new IOResult({
+            stderr: fl.asBool('quiet')
+              ? new Uint8Array()
+              : ENC.encode(`Switched to a new branch '${target}'\n`),
+          }),
         ]
       }
     } else {
@@ -170,14 +176,27 @@ export async function switchBranch(inv: CLIInvocation): Promise<CommandFnResult>
         // on an unresolved index here too, so the shortcut reads it before it
         // answers. Every ref check above comes first, which is git's own order.
         refuseUnresolved(await readIndex(repo, dispatch))
-        return [null, new IOResult({ stderr: ENC.encode(`Already on '${target}'\n`) })]
+        return [
+          null,
+          new IOResult({
+            stderr: fl.asBool('quiet') ? new Uint8Array() : ENC.encode(`Already on '${target}'\n`),
+          }),
+        ]
       }
+      // git's --guess, on by default: no such branch here but one remote has
+      // it, so the switch creates it tracking that one.
+      const guessed =
+        flags.detach || known.has(`${BRANCH_PREFIX}${target}`)
+          ? null
+          : await remoteBranch(repo, target)
+      creating = guessed !== null
+      startPoint = guessed ?? undefined
       try {
-        oid = await resolveCommit(repo, target)
+        oid = await resolveCommit(repo, guessed ?? target)
       } catch {
         throw new InvalidReferenceError(target)
       }
-      attached = !flags.detach && known.has(`${BRANCH_PREFIX}${target}`)
+      attached = creating || (!flags.detach && known.has(`${BRANCH_PREFIX}${target}`))
       if (!flags.detach && !attached) {
         throw new BranchExpectedError(expectedKind(known, target), target)
       }
@@ -200,13 +219,16 @@ export async function switchBranch(inv: CLIInvocation): Promise<CommandFnResult>
       .sort(([a], [b]) => compareCodePoints(a, b))
       .map(([path, letter]) => `${letter}\t${path}\n`)
       .join('')
+    if (creating) carried += await setUpTracking(repo, target, startPoint ?? null)
     // git writes the warning above everything it says about the move, because
     // the directory it could not remove is a fact about the working tree
     // rather than about where HEAD went.
+    warnings = moved.warnings
     note = moved.warnings + (await previousPosition(repo, head))
     if (attached) {
       const verb = creating ? 'Switched to a new branch' : 'Switched to branch'
       note += `${verb} '${target}'\n`
+      if (!creating) carried += await trackingReport(repo, target)
     } else {
       const { commit } = await git.readCommit({ ...repoArgs(repo), oid })
       const subject = commit.message.split('\n')[0] ?? ''
@@ -216,5 +238,6 @@ export async function switchBranch(inv: CLIInvocation): Promise<CommandFnResult>
     if (err instanceof GitError) return fatal(err)
     throw err
   }
+  if (fl.asBool('quiet')) return [null, new IOResult({ stderr: ENC.encode(warnings) })]
   return [ENC.encode(carried), new IOResult({ stderr: ENC.encode(note) })]
 }

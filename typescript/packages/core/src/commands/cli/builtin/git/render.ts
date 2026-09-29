@@ -14,7 +14,7 @@
 
 import { decodeLine } from '../../../builtin/grep_offsets.ts'
 import { encodeText } from '../../../../shell/bytes.ts'
-import type { StatusEntry } from './types.ts'
+import type { StatusEntry, Upstream } from './types.ts'
 
 const UNCHANGED = ' '
 const UNTRACKED = '?'
@@ -65,7 +65,9 @@ const ESCAPES: Record<number, string> = {
 }
 
 const ON_BRANCH = 'On branch '
-const DETACHED = 'HEAD detached at '
+export const DETACHED_AT = 'HEAD detached at '
+export const DETACHED_FROM = 'HEAD detached from '
+export const NO_BRANCH = 'Not currently on any branch.'
 const NO_COMMITS = 'No commits yet'
 const BRANCH_MARK = '## '
 const NO_COMMITS_BRANCH = 'No commits yet on '
@@ -162,10 +164,53 @@ function shortLine(entry: StatusEntry, fully: boolean): string {
  * @param branch the branch HEAD names, null when detached
  * @param noCommits whether HEAD resolves to nothing yet
  */
-export function branchLine(branch: string | null, noCommits: boolean): string {
+export function branchLine(
+  branch: string | null,
+  noCommits: boolean,
+  upstream: Upstream | null = null,
+): string {
   if (branch === null) return `${BRANCH_MARK}HEAD (no branch)`
   if (noCommits) return `${BRANCH_MARK}${NO_COMMITS_BRANCH}${branch}`
-  return `${BRANCH_MARK}${branch}`
+  if (upstream === null) return `${BRANCH_MARK}${branch}`
+  const counts = upstream.gone ? ['gone'] : []
+  if (upstream.ahead) counts.push(`ahead ${String(upstream.ahead)}`)
+  if (upstream.behind) counts.push(`behind ${String(upstream.behind)}`)
+  const shown = counts.length ? ` [${counts.join(', ')}]` : ''
+  return `${BRANCH_MARK}${branch}...${upstream.label}${shown}`
+}
+
+function commits(count: number): string {
+  return `${String(count)} commit${count === 1 ? '' : 's'}`
+}
+
+/**
+ * What the long status says about a branch and its upstream.
+ *
+ * Pinned against git 2.47.3 and 2.50.1 (`format_tracking_info`).
+ */
+export function trackingLines(upstream: Upstream): string[] {
+  const name = upstream.label
+  if (upstream.gone)
+    return [
+      `Your branch is based on '${name}', but the upstream is gone.`,
+      '  (use "git branch --unset-upstream" to fixup)',
+    ]
+  if (!upstream.ahead && !upstream.behind) return [`Your branch is up to date with '${name}'.`]
+  if (!upstream.behind)
+    return [
+      `Your branch is ahead of '${name}' by ${commits(upstream.ahead)}.`,
+      '  (use "git push" to publish your local commits)',
+    ]
+  if (!upstream.ahead)
+    return [
+      `Your branch is behind '${name}' by ${commits(upstream.behind)}, and can be fast-forwarded.`,
+      '  (use "git pull" to update your local branch)',
+    ]
+  return [
+    `Your branch and '${name}' have diverged,`,
+    `and have ${String(upstream.ahead)} and ${String(upstream.behind)} different commits each, respectively.`,
+    '  (use "git pull" if you want to integrate the remote branch with yours)',
+  ]
 }
 
 /** The whole of `--short` / `--porcelain` output. */
@@ -271,17 +316,19 @@ function trailer(
 export function longFormat(
   rows: readonly StatusEntry[],
   branch: string | null,
-  commit: string | null,
+  detached: string,
   noCommits: boolean,
   merging: boolean,
   hideUntracked: boolean,
   fully = true,
+  upstream: Upstream | null = null,
 ): string {
   const staged = stagedEntries(rows, fully)
   const unmerged = unmergedEntries(rows, fully)
   const work = workEntries(rows, fully)
   const untracked = untrackedEntries(rows, fully)
-  const lines: string[] = [branch !== null ? `${ON_BRANCH}${branch}` : `${DETACHED}${commit ?? ''}`]
+  const lines: string[] = [branch !== null ? `${ON_BRANCH}${branch}` : detached]
+  if (upstream !== null) lines.push(...trackingLines(upstream), '')
   if (noCommits) lines.push('', NO_COMMITS, '')
   if (merging) {
     lines.push(...(unmerged.length > 0 ? CONFLICT_HEADER : RESOLVED_HEADER), '')

@@ -58,7 +58,7 @@ export async function remote(inv: CLIInvocation): Promise<CommandFnResult> {
  * is the workspace's and never the host's. Only `--list` refuses when neither
  * exists.
  */
-async function globalSources(
+export async function globalSources(
   inv: CLIInvocation,
   listing: boolean,
 ): Promise<{ source: string; data: Uint8Array }[]> {

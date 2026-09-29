@@ -51,6 +51,18 @@ export interface RepoLocation {
 }
 
 /** What HEAD points at: a branch, some other ref, or a raw commit. */
+/** A branch's configured upstream, and how far the two have moved. */
+export interface Upstream {
+  /** The upstream as git names it, `origin/main` or a local branch. */
+  readonly label: string
+  /** Commits on the branch the upstream lacks. */
+  readonly ahead: number
+  /** Commits on the upstream the branch lacks. */
+  readonly behind: number
+  /** The upstream ref is configured but missing. */
+  readonly gone: boolean
+}
+
 export interface HeadRef {
   /** Short branch name when HEAD is a symbolic ref under `refs/heads`. */
   readonly branch: string | null

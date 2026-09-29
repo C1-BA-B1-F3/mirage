@@ -13,7 +13,8 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import git from 'isomorphic-git'
-import { HEAD } from './constants.ts'
+import { DWIM_RULES, HEAD } from './constants.ts'
+import { configValues } from './fs.ts'
 
 import { IOResult } from '../../../../io/types.ts'
 import type { CommandFnResult } from '../../../config.ts'
@@ -34,6 +35,7 @@ import {
 } from './errors.ts'
 import { parseFlags, resolvedRefs, select } from './history.ts'
 import { short } from './format.ts'
+import { readOptional, under, writeFile } from './io.ts'
 import {
   blockingRef,
   deleteRef,
@@ -52,7 +54,7 @@ import {
 } from './ref_filter.ts'
 import { commitFacts, opened, repoArgs, type Repo } from './repo.ts'
 import { resolveCommit } from './revparse.ts'
-import type { Dispatch, HeadRef } from './types.ts'
+import type { Dispatch, HeadRef, Upstream } from './types.ts'
 import { checkOperands, escaped, fatal, switches } from './util.ts'
 import { fnmatch } from '../../../../utils/fnmatch.ts'
 import { compareCodePoints } from '../../../../utils/sort.ts'
@@ -85,7 +87,7 @@ async function create(
   refs: ReadonlyMap<string, string>,
   name: string,
   start: string | undefined,
-): Promise<void> {
+): Promise<string> {
   // Before the start point resolves, which is git's order here and the
   // opposite of switch's. A ref is a path below .git, so an unchecked name
   // reaches writeRef as one.
@@ -98,6 +100,54 @@ async function create(
   const held = blockingRef(new Set(refs.keys()), ref)
   if (held !== null) throw new RefLockError(ref, held)
   await writeRef(dispatch, repo.location.commondir, ref, oid)
+  return setUpTracking(repo, name, start ?? null)
+}
+
+/**
+ * The one remote-tracking branch a missing branch name guesses at:
+ * `checkout <name>` and `switch <name>` with no such branch create it from
+ * `<remote>/<name>` when exactly one remote has one.
+ */
+export async function remoteBranch(repo: Repo, name: string): Promise<string | null> {
+  const refs = await loadRefs(repo.dispatch, repo.location.gitdir, repo.location.commondir)
+  const depth = 3 + name.split('/').length - 1
+  const found = [...refs.keys()].filter(
+    (ref) =>
+      ref.startsWith(REMOTES_PREFIX) &&
+      ref.endsWith(`/${name}`) &&
+      ref.split('/').length - 1 === depth,
+  )
+  return found.length === 1 ? (found[0] ?? null) : null
+}
+
+/**
+ * Record a new branch's upstream when it starts at a remote's branch.
+ *
+ * git's `branch.autoSetupMerge` default: a start point naming
+ * `<remote>/<branch>` of a configured remote writes `branch.<new>.remote` and
+ * `.merge` and says so on stdout (pinned against git 2.47.3 and 2.50.1).
+ */
+export async function setUpTracking(
+  repo: Repo,
+  branch: string,
+  start: string | null,
+): Promise<string> {
+  if (start === null) return ''
+  const refs = await loadRefs(repo.dispatch, repo.location.gitdir, repo.location.commondir)
+  const ref = DWIM_RULES.map((rule) => rule.replace('{}', start)).find((name) => refs.has(name))
+  if (!ref?.startsWith(REMOTES_PREFIX)) return ''
+  const rest = ref.slice(REMOTES_PREFIX.length)
+  const slash = rest.indexOf('/')
+  const remote = rest.slice(0, slash)
+  const name = rest.slice(slash + 1)
+  if (slash < 0 || !name || name === HEAD) return ''
+  const configured = await configValues(repo.dispatch, repo.location, `remote.${remote}.url`)
+  if (!configured.length) return ''
+  const path = under(repo.location.commondir, 'config')
+  const data = (await readOptional(repo.dispatch, path)) ?? new Uint8Array()
+  const section = `[branch "${branch}"]\n\tremote = ${remote}\n\tmerge = refs/heads/${name}\n`
+  await writeFile(repo.dispatch, path, new Uint8Array([...data, ...ENC.encode(section)]))
+  return `branch '${branch}' set up to track '${remote}/${name}'.\n`
 }
 
 /**
@@ -227,8 +277,8 @@ export async function branch(inv: CLIInvocation): Promise<CommandFnResult> {
     }
     const first = texts[0]
     if (first !== undefined && !listing) {
-      await create(dispatch, repo, refs, first, texts[1])
-      return [null, new IOResult()]
+      const tracking = await create(dispatch, repo, refs, first, texts[1])
+      return [tracking ? ENC.encode(tracking) : null, new IOResult()]
     }
     shown = await listed(
       repo,
@@ -273,44 +323,67 @@ export async function branch(inv: CLIInvocation): Promise<CommandFnResult> {
   return [ENC.encode(`${lines.join('\n')}\n`), new IOResult()]
 }
 
+/** A branch's upstream from `branch.<name>.remote` and `.merge`. */
+export async function upstreamOf(
+  repo: Repo,
+  branch: string,
+  tip: string,
+): Promise<Upstream | null> {
+  const remote: unknown = await git.getConfig({
+    ...repoArgs(repo),
+    path: `branch.${branch}.remote`,
+  })
+  const merge: unknown = await git.getConfig({ ...repoArgs(repo), path: `branch.${branch}.merge` })
+  if (typeof remote !== 'string' || typeof merge !== 'string') return null
+  const tracked =
+    remote === '.' ? merge : `refs/remotes/${remote}/${merge.replace(/^refs\/heads\//, '')}`
+  const label = tracked.replace(/^refs\/(heads|remotes)\//, '')
+  const refs = await loadRefs(repo.dispatch, repo.location.gitdir, repo.location.commondir)
+  if (!refs.has(tracked)) return { label, ahead: 0, behind: 0, gone: true }
+  const flags = parseFlags(new FlagView())
+  const ours = new Set(
+    (await select(repo, [await commitFacts(repo, tip)], flags)).map((c) => c.oid),
+  )
+  const theirs = new Set(
+    (await select(repo, [await commitFacts(repo, await resolveCommit(repo, tracked))], flags)).map(
+      (c) => c.oid,
+    ),
+  )
+  return {
+    label,
+    ahead: [...ours].filter((id) => !theirs.has(id)).length,
+    behind: [...theirs].filter((id) => !ours.has(id)).length,
+    gone: false,
+  }
+}
+
+/** The current branch's upstream, null when it has none or no commits. */
+export async function branchUpstream(
+  repo: Repo,
+  head: HeadRef,
+  noCommits: boolean,
+): Promise<Upstream | null> {
+  if (head.branch === null || noCommits) return null
+  const refs = await loadRefs(repo.dispatch, repo.location.gitdir, repo.location.commondir)
+  if (!refs.has(`${HEADS_PREFIX}${head.branch}`)) return null
+  const tip = await resolveCommit(repo, `${HEADS_PREFIX}${head.branch}`)
+  return upstreamOf(repo, head.branch, tip)
+}
+
 async function branchDetail(repo: Repo, ref: string, verbose: number): Promise<string> {
   const oid = await resolveCommit(repo, ref)
   const facts = await commitFacts(repo, oid)
   let upstream = ''
-  if (ref.startsWith(HEADS_PREFIX)) {
-    const branch = ref.slice(HEADS_PREFIX.length)
-    const remote: unknown = await git.getConfig({
-      ...repoArgs(repo),
-      path: `branch.${branch}.remote`,
-    })
-    const merge: unknown = await git.getConfig({
-      ...repoArgs(repo),
-      path: `branch.${branch}.merge`,
-    })
-    if (typeof remote === 'string' && typeof merge === 'string') {
-      const tracked =
-        remote === '.' ? merge : `refs/remotes/${remote}/${merge.replace(/^refs\/heads\//, '')}`
-      const label = tracked.replace(/^refs\/(heads|remotes)\//, '')
-      const refs = await loadRefs(repo.dispatch, repo.location.gitdir, repo.location.commondir)
-      const differences: string[] = []
-      if (!refs.has(tracked)) differences.push('gone')
-      else {
-        const flags = parseFlags(new FlagView())
-        const ours = new Set((await select(repo, [facts], flags)).map((c) => c.oid))
-        const theirs = new Set(
-          (
-            await select(repo, [await commitFacts(repo, await resolveCommit(repo, tracked))], flags)
-          ).map((c) => c.oid),
-        )
-        const ahead = [...ours].filter((id) => !theirs.has(id)).length
-        const behind = [...theirs].filter((id) => !ours.has(id)).length
-        if (ahead) differences.push(`ahead ${String(ahead)}`)
-        if (behind) differences.push(`behind ${String(behind)}`)
-      }
-      const counts = differences.join(', ')
-      if (verbose > 1) upstream = ` [${label}${counts ? ': ' + counts : ''}]`
-      else if (counts) upstream = ` [${counts}]`
-    }
+  const found = ref.startsWith(HEADS_PREFIX)
+    ? await upstreamOf(repo, ref.slice(HEADS_PREFIX.length), oid)
+    : null
+  if (found !== null) {
+    const differences = found.gone ? ['gone'] : []
+    if (found.ahead) differences.push(`ahead ${String(found.ahead)}`)
+    if (found.behind) differences.push(`behind ${String(found.behind)}`)
+    const counts = differences.join(', ')
+    if (verbose > 1) upstream = ` [${found.label}${counts ? ': ' + counts : ''}]`
+    else if (counts) upstream = ` [${counts}]`
   }
   return ` ${short(oid, repo.abbrev)}${upstream} ${facts.message.split('\n')[0] ?? ''}`
 }

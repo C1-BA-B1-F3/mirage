@@ -23,7 +23,9 @@ from dulwich.objectspec import parse_commit
 from dulwich.refs import Ref
 from dulwich.repo import BaseRepo
 
-from mirage.commands.cli.builtin.git.branch import head_commit
+from mirage.commands.cli.builtin.git.branch import (branch_upstream,
+                                                    head_commit, remote_branch,
+                                                    set_up_tracking)
 from mirage.commands.cli.builtin.git.changes import (ADDED, DELETED, MODIFIED,
                                                      head_entries,
                                                      work_changes)
@@ -44,6 +46,8 @@ from mirage.commands.cli.builtin.git.reflog import record
 from mirage.commands.cli.builtin.git.refs import (BRANCH_PREFIX, blocking_ref,
                                                   detach_head, read_head,
                                                   set_head, write_ref)
+from mirage.commands.cli.builtin.git.render import tracking_lines
+from mirage.commands.cli.builtin.git.repo import open_repo
 from mirage.commands.cli.builtin.git.reset import restored
 from mirage.commands.cli.builtin.git.revparse import resolve_commit
 from mirage.commands.cli.builtin.git.session import opened
@@ -294,10 +298,10 @@ def _lost_directories(writing: Tree, untracked: list[str]) -> list[str]:
         under(path, name) for path in untracked))
 
 
-async def _switch(dispatch: DispatchFn, stat_path: StatPath, repo: BaseRepo,
-                  location: RepoLocation, before: Tree, after: Tree,
-                  links: LinkView | None,
-                  mounts: MountView | None) -> list[str]:
+async def switch_to(dispatch: DispatchFn, stat_path: StatPath, repo: BaseRepo,
+                    location: RepoLocation, before: Tree, after: Tree,
+                    links: LinkView | None,
+                    mounts: MountView | None) -> list[str]:
     """Make the working tree and index match the tree being switched to.
 
     Only paths the two trees disagree about are touched, so a file that
@@ -586,11 +590,32 @@ async def move_head(dispatch: DispatchFn, stat_path: StatPath,
     lost = _lost_directories(writing, found.untracked)
     if blocked or overwritten or lost:
         raise CheckoutConflictError(blocked, overwritten, lost)
-    notes = await _switch(dispatch, stat_path, repo, location, before, after,
-                          links, mounts)
+    notes = await switch_to(dispatch, stat_path, repo, location, before, after,
+                            links, mounts)
     await _attach(dispatch, repo, location, head, commit, target, ref,
                   creating)
     return HeadMove(carried, "".join(notes))
+
+
+async def tracking_report(dispatch: DispatchFn, location: RepoLocation,
+                          branch: str) -> str:
+    """What a switch onto a branch prints about its upstream, on stdout.
+
+    Read from the repository as it stands after the move, so a branch
+    created by the switch has its ref to count from.
+
+    Args:
+        dispatch (DispatchFn): workspace op dispatcher.
+        location (RepoLocation): the discovered repository.
+        branch (str): the branch HEAD now names.
+    """
+    repo = await open_repo(dispatch, location)
+    upstream = await branch_upstream(
+        dispatch, repo, location, HeadRef(branch, f"refs/heads/{branch}",
+                                          None), False)
+    if upstream is None:
+        return ""
+    return "".join(f"{line}\n" for line in tracking_lines(upstream))
 
 
 async def checkout(
@@ -628,11 +653,15 @@ async def checkout(
         known = repo.refs.allkeys()
         if creating and ref in known:
             raise BranchExistsError(target)
+        guessed = None
         if not creating and ref not in known and target != head.branch:
             try:
                 resolve_commit(repo, target)
             except GitError as exc:
-                raise UnknownPathspecError(target) from exc
+                guessed = remote_branch(repo, target)
+                if guessed is None:
+                    raise UnknownPathspecError(target) from exc
+                creating = True
         if not creating and target == head.branch:
             # The shortcut moves nothing, and that is exactly why it
             # has to read the index: git refuses the line over an
@@ -640,12 +669,14 @@ async def checkout(
             # nothing to do, so a caller cannot read "Already on" as
             # proof the repository is in a state it can build on.
             refuse_unresolved(await read_index(dispatch, location.gitdir))
+            if fl.as_bool("quiet"):
+                return None, IOResult()
             return None, IOResult(stderr=f"Already on '{target}'\n".encode())
         # ``checkout -b <new> [<start>]`` branches from the start point
         # when one is given, HEAD otherwise. Forcing HEAD here put the new
         # branch on the current commit and dropped the operand without a
         # word, so every commit after it landed on the wrong history.
-        start = texts[1] if creating and len(texts) > 1 else None
+        start = guessed or (texts[1] if creating and len(texts) > 1 else None)
         if start is not None:
             try:
                 commit = resolve_commit(repo, start)
@@ -664,10 +695,13 @@ async def checkout(
                                 mounts_of(doors), repo, location, head, commit,
                                 target, ref if attached else None, creating,
                                 creating and start is None)
+        tracking = await set_up_tracking(dispatch, repo, location, target,
+                                         start) if creating else ""
     except GitError as exc:
         return fatal(exc)
     carried = "".join(f"{letter}\t{path}\n"
                       for path, letter in sorted(moved.carried.items()))
+    carried += tracking
     # git writes the warning above everything it says about the move,
     # because the directory it could not remove is a fact about the
     # working tree rather than about where HEAD went.
@@ -675,8 +709,12 @@ async def checkout(
     if attached:
         verb = "Switched to a new branch" if creating else "Switched to branch"
         note += f"{verb} '{target}'\n"
+        if not creating:
+            carried += await tracking_report(dispatch, location, target)
     else:
         note += (f"Note: switching to '{target}'.\n\n{DETACHED_ADVICE}\n"
                  f"HEAD is now at {short(commit.id, abbrev_for(repo))} "
                  f"{subject(commit)}\n")
+    if fl.as_bool("quiet"):
+        return None, IOResult(stderr=moved.warnings.encode())
     return yield_bytes(carried.encode()), IOResult(stderr=note.encode())

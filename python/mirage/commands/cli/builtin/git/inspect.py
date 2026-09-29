@@ -59,8 +59,8 @@ async def remote(
         return fatal(exc)
 
 
-async def _global_sources(inv: CLIInvocation[None],
-                          listing: bool) -> list[tuple[str, ConfigFile]]:
+async def global_sources(inv: CLIInvocation[None],
+                         listing: bool) -> list[tuple[str, ConfigFile]]:
     """The per-user config files ``--global`` reads, in git's order.
 
     ``$GIT_CONFIG_GLOBAL`` alone when set, else the XDG file then
@@ -100,7 +100,7 @@ async def config(
     fl = FlagView(inv.flags)
     try:
         if fl.as_bool("global"):
-            sources = await _global_sources(inv, fl.as_bool("list"))
+            sources = await global_sources(inv, fl.as_bool("list"))
         else:
             doors = inv.doors or CLIDoors()
             _, location = await opened(fl, doors)

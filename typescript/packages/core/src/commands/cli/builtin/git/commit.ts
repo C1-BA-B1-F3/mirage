@@ -268,7 +268,7 @@ export async function commit(inv: CLIInvocation): Promise<CommandFnResult> {
       repo.abbrev,
       before === null,
     )
-    return [encodeText(body), new IOResult()]
+    return [fl.asBool('quiet') ? null : encodeText(body), new IOResult()]
   } catch (err) {
     if (err instanceof GitError) return fatal(err)
     throw err

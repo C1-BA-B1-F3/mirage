@@ -15,6 +15,8 @@
 import { lsFiles } from './ls_files.ts'
 import { forEachRef } from './for_each_ref.ts'
 import { reflog } from './reflog.ts'
+import { fetch } from './fetch.ts'
+import { clone } from './clone.ts'
 import { Operand, Option } from '../../../spec/types.ts'
 import { CLISpec } from '../../types.ts'
 import { UsageStyle } from '../../../spec/types.ts'
@@ -294,6 +296,7 @@ const ADD_OPTIONS = [
 ]
 
 const COMMIT_OPTIONS = [
+  new Option({ short: '-q', long: '--quiet', description: 'Suppress feedback messages' }),
   new Option({
     short: '-a',
     long: '--all',
@@ -307,9 +310,11 @@ const COMMIT_OPTIONS = [
 
 const CHECKOUT_OPTIONS = [
   new Option({ short: '-b', description: 'Create the branch and switch to it' }),
+  new Option({ short: '-q', long: '--quiet', description: 'Suppress feedback messages' }),
 ]
 
 const SWITCH_OPTIONS = [
+  new Option({ short: '-q', long: '--quiet', description: 'Suppress feedback messages' }),
   new Option({
     short: '-c',
     long: '--create',
@@ -528,6 +533,49 @@ export const GIT = new CLISpec({
         new Option({ short: '-z', description: 'Terminate paths with NUL' }),
         new Option({ short: '-s', long: '--stage', description: 'Show staged object metadata' }),
         new Option({ short: '-c', long: '--cached', description: 'Show cached files' }),
+      ],
+      rest: REVISION,
+    }),
+    new CLISpec({
+      name: 'fetch',
+      fn: fetch,
+      description: 'Download objects and refs from another repository',
+      options: [
+        new Option({ short: '-q', long: '--quiet', description: 'Print nothing but errors' }),
+        new Option({ short: '-v', long: '--verbose', description: 'Also list unchanged refs' }),
+        new Option({
+          short: '-p',
+          long: '--prune',
+          description: 'Remove remote-tracking refs the remote no longer has',
+        }),
+        new Option({ short: '-t', long: '--tags', description: 'Fetch every tag' }),
+        new Option({ short: '-n', long: '--no-tags', description: 'Follow no tags' }),
+      ],
+      rest: REVISION,
+    }),
+    new CLISpec({
+      name: 'clone',
+      fn: clone,
+      description: 'Clone a repository into a new directory',
+      options: [
+        new Option({ short: '-q', long: '--quiet', description: 'Print nothing but errors' }),
+        new Option({
+          short: '-b',
+          long: '--branch',
+          type: 'str',
+          description: 'Check out this branch or tag',
+        }),
+        new Option({
+          short: '-o',
+          long: '--origin',
+          type: 'str',
+          description: 'Name the remote this instead of origin',
+        }),
+        new Option({
+          short: '-n',
+          long: '--no-checkout',
+          description: 'Leave the working tree empty',
+        }),
       ],
       rest: REVISION,
     }),

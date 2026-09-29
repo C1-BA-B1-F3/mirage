@@ -210,6 +210,8 @@ async def commit(
                                           tree, fully)
     except GitError as exc:
         return fatal(exc)
+    if fl.as_bool("quiet"):
+        return None, IOResult()
     body = report(written, head.branch, changes, abbrev_for(repo), before
                   is None)
     return yield_bytes(body), IOResult()

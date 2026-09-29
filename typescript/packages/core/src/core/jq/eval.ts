@@ -37,7 +37,6 @@ const HALT_ERROR_REF = /(?<![\w$.:])halt_error(?![\w:])/
 const TOP_LEVEL_LINE = /(at <top-level>, line )(\d+)/g
 const IDENT = /[A-Za-z_][A-Za-z0-9_]*/y
 const NAME = /^[A-Za-z_][A-Za-z0-9_]*$/
-const TO_STREAM = 'tostream'
 const INTERP = '\\('
 const OPENERS = '([{'
 const CLOSERS = ')]}'
@@ -153,31 +152,24 @@ export function argsObject(opts: JqOptions): Record<string, unknown> {
 }
 
 /**
- * The `[path, leaf]` events `--stream` reads a document as.
- *
- * jq's own `tostream` emits exactly the events `--stream` produces for a
- * complete document; the two differ only for input too truncated to
- * parse, which never reaches here because mirage reads whole values.
- */
-export function streamEvents(doc: unknown): Promise<unknown[]> {
-  return jqEval(doc, TO_STREAM)
-}
-
-/**
  * The definitions `input` and `inputs` read the unread documents through.
  *
  * `input` takes the first of them and, once none is left, fails the way jq
  * 1.7 and 1.8 both do, with the error `break`. `inputs` yields the ones
  * after it, or all of them when the program never calls `input`: the
  * stream as the two builtins leave it for each other when `input` runs
- * once, ahead of `inputs`.
+ * once, ahead of `inputs`. When the stream ended in a parse error (`failed`,
+ * bound beside the documents), the reader past the last document meets
+ * that instead, and both raise it as an error the program can catch.
  */
-function streamDefs(expr: string): string {
+function streamDefs(expr: string, failed: boolean): string {
   const docs = `$${INPUTS_VAR}`
   const rest = streamReads(expr).input ? `${docs}[1:]` : docs
+  const end = failed ? `error($${INPUTS_ERROR_VAR})` : 'error("break")'
+  const tail = failed ? `, error($${INPUTS_ERROR_VAR})` : ''
   return (
-    `def input: if (${docs} | length) > 0 then ${docs}[0] else error("break") end; ` +
-    `def inputs: ${rest}[];`
+    `def input: if (${docs} | length) > 0 then ${docs}[0] else ${end} end; ` +
+    `def inputs: ${rest}[]${tail};`
   )
 }
 
@@ -191,6 +183,39 @@ function randomToken(): string {
   return Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('')
 }
 
+/** Whether a value holds a number JSON has no spelling for. */
+function nonFinite(value: unknown): boolean {
+  if (typeof value === 'number') return !Number.isFinite(value)
+  if (Array.isArray(value)) return value.some(nonFinite)
+  if (value !== null && typeof value === 'object') return Object.values(value).some(nonFinite)
+  return false
+}
+
+function spelled(value: unknown): string {
+  if (typeof value === 'number' && !Number.isFinite(value)) {
+    if (Number.isNaN(value)) return 'NaN'
+    return value > 0 ? 'Infinity' : '-Infinity'
+  }
+  if (Array.isArray(value)) return `[${value.map(spelled).join(',')}]`
+  if (value !== null && typeof value === 'object') {
+    const members = Object.entries(value).map(
+      ([key, inner]) => `${JSON.stringify(key)}:${spelled(inner)}`,
+    )
+    return `{${members.join(',')}}`
+  }
+  return JSON.stringify(value)
+}
+
+/**
+ * A value as JSON text for jq-wasm to read back: JSON.stringify's, except
+ * that NaN and the infinities, which it writes as null, are spelled the way
+ * jq's parser reads them, so a run sees the number the input held.
+ */
+function jqText(value: unknown): string {
+  const text = JSON.stringify(value)
+  return text.includes('null') && nonFinite(value) ? spelled(value) : text
+}
+
 // The keys the prelude hands a run's stop back under: the error no `try`
 // caught, the halt `halt` or `halt_error` asked for, and the end of a run
 // that did not halt. Each carries a token drawn once per process, so no
@@ -202,12 +227,13 @@ const DONE_KEY = `__mirage_jq_done_${TOKEN}`
 
 // The variables the prelude binds: the document the program runs on, the
 // --arg / --argjson / --rawfile / --slurpfile bindings by name, the unread
-// documents `input` and `inputs` read, and the value it rebinds `$ARGS` to.
-// They carry the same token, so no `--arg` of the program's own can take
-// one's place.
+// documents `input` and `inputs` read, the parse error they meet past the
+// last of them, and the value it rebinds `$ARGS` to. They carry the same
+// token, so no `--arg` of the program's own can take one's place.
 const VALUE_VAR = `__mirage_jq_value_${TOKEN}`
 const NAMED_VAR = `__mirage_jq_named_${TOKEN}`
 const INPUTS_VAR = `__mirage_jq_inputs_${TOKEN}`
+const INPUTS_ERROR_VAR = `__mirage_jq_inputs_error_${TOKEN}`
 const ARGS_VAR = `__mirage_jq_args_${TOKEN}`
 
 // The error no `try` inside the program caught: whether it was a string,
@@ -283,22 +309,26 @@ function bound(
   namedArgs: Readonly<Record<string, unknown>>,
   inputs: readonly unknown[] | null,
   argsValue: Readonly<Record<string, unknown>> | null,
+  inputsError: string | null,
 ): Bound {
-  const plain = JSON.stringify(obj)
+  const plain = jqText(obj)
   // A name that is not an identifier can never be spelled as a variable,
   // so nothing needs it bound; $ARGS.named still carries it.
   const names = Object.keys(namedArgs).filter((name) => NAME.test(name))
   if (names.length === 0 && inputs === null && argsValue === null) {
     return { steps: [], stdin: plain, plain }
   }
-  const steps = [`. as [$${VALUE_VAR}, $${NAMED_VAR}, $${INPUTS_VAR}, $${ARGS_VAR}] |`]
+  const steps = [
+    `. as [$${VALUE_VAR}, $${NAMED_VAR}, $${INPUTS_VAR}, $${ARGS_VAR}, $${INPUTS_ERROR_VAR}] |`,
+  ]
   for (const name of names) steps.push(`$${NAMED_VAR}[${JSON.stringify(name)}] as $${name} |`)
-  if (inputs !== null) steps.push(streamDefs(expr))
+  if (inputs !== null) steps.push(streamDefs(expr, inputsError !== null))
   // jq defines $ARGS itself, from a command line that no longer carries
   // the bindings, so the only way to serve mirage's own is to rebind it.
   if (argsValue !== null) steps.push(`$${ARGS_VAR} as $ARGS |`)
   steps.push(`$${VALUE_VAR} |`)
-  return { steps, stdin: JSON.stringify([obj, namedArgs, inputs ?? [], argsValue]), plain }
+  const carried = [obj, namedArgs, inputs ?? [], argsValue, inputsError]
+  return { steps, stdin: jqText(carried), plain }
 }
 
 /** A compile error as the program's own lines number it. */
@@ -498,7 +528,8 @@ async function haltOf(bindings: Bound, expr: string, printed: number): Promise<J
  * evaluator is handed one value at a time and owns no input stream, so
  * both builtins are bound as definitions over those documents instead. A
  * user program that defines its own shadows the binding, as it would
- * shadow the builtin.
+ * shadow the builtin. `inputsError` is the parse error the stream ends in,
+ * which `input` and `inputs` raise past the last of `inputs`.
  */
 export async function jqRun(
   obj: unknown,
@@ -506,8 +537,9 @@ export async function jqRun(
   namedArgs: Readonly<Record<string, unknown>> = {},
   inputs: readonly unknown[] | null = null,
   argsValue: Readonly<Record<string, unknown>> | null = null,
+  inputsError: string | null = null,
 ): Promise<JqRun> {
-  const bindings = bound(obj, expr, namedArgs, inputs, argsValue)
+  const bindings = bound(obj, expr, namedArgs, inputs, argsValue, inputsError)
   const [run, ended] = collected(...(await ran(bindings, expr, false)))
   if (ended) return run
   return { outputs: run.outputs, stop: await haltOf(bindings, expr, run.outputs.length) }
@@ -525,7 +557,7 @@ export async function jqCheck(
   inputs: readonly unknown[] | null = null,
   argsValue: Readonly<Record<string, unknown>> | null = null,
 ): Promise<void> {
-  await ran(bound(null, expr, namedArgs, inputs, argsValue), expr, true)
+  await ran(bound(null, expr, namedArgs, inputs, argsValue, null), expr, true)
 }
 
 /**

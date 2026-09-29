@@ -33,6 +33,10 @@ async def _const_bytes(data, accessor, path, index=None):
     return data
 
 
+async def _const_stream(data, accessor, path, index=None):
+    yield data
+
+
 async def _collect_jq(ops, accessor, paths, expr):
     out, _ = await jq_builder(ops, accessor, paths, [expr], CommandOpts())
     if isinstance(out, bytes):
@@ -998,7 +1002,7 @@ class TestJqS3Backend:
     def _run_jq_path(self, data, expr):
         ops = CommandIO(readdir=None,
                         read_bytes=partial(_const_bytes, data),
-                        read_stream=None,
+                        read_stream=partial(_const_stream, data),
                         stat=None,
                         is_mounted=lambda a: True,
                         local=False)

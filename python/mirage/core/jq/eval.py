@@ -35,7 +35,6 @@ HALT_REF = re.compile(r"(?<![\w$.:])halt(?:_error)?(?![\w:])")
 HALT_ERROR_REF = re.compile(r"(?<![\w$.:])halt_error(?![\w:])")
 TOP_LEVEL_LINE = re.compile(r"(at <top-level>, line )(\d+)")
 IDENT = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
-TO_STREAM = "tostream"
 INTERP = "\\("
 OPENERS = "([{"
 CLOSERS = ")]}"
@@ -50,9 +49,11 @@ HALT_KEY = f"__mirage_jq_halt_{_TOKEN}"
 DONE_KEY = f"__mirage_jq_done_{_TOKEN}"
 
 # The named arguments the prelude reads: the unread documents `input` and
-# `inputs` read, and the value it rebinds `$ARGS` to. They carry the same
-# token, so no `--arg` of the program's own can take one's place.
+# `inputs` read, the parse error they meet past the last of them, and the
+# value it rebinds `$ARGS` to. They carry the same token, so no `--arg` of
+# the program's own can take one's place.
 INPUTS_VAR = f"__mirage_jq_inputs_{_TOKEN}"
+INPUTS_ERROR_VAR = f"__mirage_jq_inputs_error_{_TOKEN}"
 ARGS_VAR = f"__mirage_jq_args_{_TOKEN}"
 
 # The error no `try` inside the program caught: whether it was a string,
@@ -195,19 +196,6 @@ def args_object(opts: JqOptions) -> dict[str, Any]:
     }
 
 
-def stream_events(doc: JsonValue) -> list[JsonValue]:
-    """The `[path, leaf]` events `--stream` reads a document as.
-
-    jq's own `tostream` emits exactly the events `--stream` produces for
-    a complete document; the two differ only for input too truncated to
-    parse, which never reaches here because mirage reads whole values.
-
-    Args:
-        doc (object): one parsed input document.
-    """
-    return jq_eval(doc, TO_STREAM)
-
-
 def stream_reads(expr: str) -> StreamReads:
     """Report which of the builtins that read the input stream a program
     calls.
@@ -232,7 +220,7 @@ def stream_reads(expr: str) -> StreamReads:
     )
 
 
-def _stream_defs(expr: str) -> str:
+def _stream_defs(expr: str, failed: bool) -> str:
     """The definitions `input` and `inputs` read the unread documents
     through.
 
@@ -240,15 +228,21 @@ def _stream_defs(expr: str) -> str:
     way jq 1.7 and 1.8 both do, with the error `break`. `inputs` yields
     the ones after it, or all of them when the program never calls
     `input`: the stream as the two builtins leave it for each other when
-    `input` runs once, ahead of `inputs`.
+    `input` runs once, ahead of `inputs`. When the stream ended in a
+    parse error, the reader past the last document meets that instead,
+    and both raise it as an error the program can catch.
 
     Args:
         expr (str): jq program text.
+        failed (bool): whether the stream ended in a parse error, bound
+            as its own named argument.
     """
     docs = f"${INPUTS_VAR}"
     rest = f"{docs}[1:]" if stream_reads(expr).input else docs
+    end = f"error(${INPUTS_ERROR_VAR})" if failed else 'error("break")'
+    tail = f", error(${INPUTS_ERROR_VAR})" if failed else ""
     return (f"def input: if ({docs} | length) > 0 then {docs}[0] "
-            f'else error("break") end; def inputs: {rest}[];')
+            f"else {end} end; def inputs: {rest}[]{tail};")
 
 
 def _unshifted(message: str, shift: int) -> str:
@@ -337,6 +331,7 @@ def _bindings(
     named_args: Mapping[str, Any] | None,
     inputs: Sequence[JsonValue] | None,
     args_value: Mapping[str, Any] | None,
+    inputs_error: str | None = None,
 ) -> tuple[dict[str, Any], list[str]]:
     """The named arguments a run compiles with, and the prelude steps
     that read them.
@@ -346,12 +341,15 @@ def _bindings(
         named_args (Mapping[str, Any] | None): $name bindings.
         inputs (Sequence[JsonValue] | None): the unread documents.
         args_value (Mapping[str, Any] | None): the value of `$ARGS`.
+        inputs_error (str | None): the parse error the stream ends in.
     """
     args: dict[str, Any] = dict(named_args) if named_args else {}
     steps: list[str] = []
     if inputs is not None:
         args[INPUTS_VAR] = list(inputs)
-        steps.append(_stream_defs(expr))
+        if inputs_error is not None:
+            args[INPUTS_ERROR_VAR] = inputs_error
+        steps.append(_stream_defs(expr, inputs_error is not None))
     if args_value is not None:
         args[ARGS_VAR] = dict(args_value)
         steps.append(f"${ARGS_VAR} as $ARGS |")
@@ -442,6 +440,7 @@ def jq_run(
     named_args: Mapping[str, Any] | None = None,
     inputs: Sequence[JsonValue] | None = None,
     args_value: Mapping[str, Any] | None = None,
+    inputs_error: str | None = None,
 ) -> JqRun:
     """Run a jq program on one value using libjq, the way jq's main loop
     runs it on one document.
@@ -476,12 +475,14 @@ def jq_run(
         args_value (Mapping[str, Any] | None): the value `$ARGS` should
             resolve to, bound the same way and for the same reason
             (libjq's binding defines no `$ARGS` of its own).
+        inputs_error (str | None): the parse error the stream ends in,
+            which `input` and `inputs` raise past the last of `inputs`.
 
     Raises:
         JqCompileError: libjq's refusal of the program, its compile
             errors numbered by the program's own lines.
     """
-    args, steps = _bindings(expr, named_args, inputs, args_value)
+    args, steps = _bindings(expr, named_args, inputs, args_value, inputs_error)
     compiled = _wrapped(expr, args, steps, "", f"{_CATCH}){_DONE}")
     if compiled is None:
         return _collected(_typed(expr, args, steps).input_value(obj))[0]

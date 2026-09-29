@@ -20,6 +20,32 @@ export const STDIN_NAME = '<stdin>'
 export const UNKNOWN_POSITION = '<unknown>'
 
 /**
+ * jq's `jv_invalid()` where a value could stand: nothing yet, which is not
+ * the same as null.
+ */
+export const NO_VALUE: unique symbol = Symbol('no-value')
+export type NoValue = typeof NO_VALUE
+
+/**
+ * jq's parser refusing its input: the message, with the line and the column
+ * it had reached, as jq's report words it (e.g. `Unfinished JSON term at EOF
+ * at line 1, column 3`). A class, so no parsed JSON value can pass for one.
+ */
+export class JqParseError {
+  constructor(readonly message: string) {}
+}
+
+/**
+ * One input of the stream jq reads: a file operand or stdin. `name` is the
+ * input as jq reports it, the operand as the command line spelled it or
+ * `<stdin>`.
+ */
+export interface InputSource {
+  readonly name: string
+  readonly chunks: AsyncIterable<Uint8Array>
+}
+
+/**
  * An error no `try` caught, which ends one run: jq reports it and goes on
  * with the next document.
  */

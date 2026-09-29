@@ -66,14 +66,13 @@ export function concatBytes(parts: readonly Uint8Array[]): Uint8Array {
 
 /** Render one output value with its separator. */
 export function formatOne(value: unknown, opts: JqOptions): Uint8Array {
+  const raw = opts.rawOutput && typeof value === 'string'
   // -a beats -r: jq quotes and escapes a string under --ascii-output
   // even when raw output was asked for.
-  const body =
-    opts.rawOutput && !opts.asciiOutput && typeof value === 'string'
-      ? ENC.encode(value)
-      : ENC.encode(dumps(value, opts))
-  // RFC 7464 puts the separator before the value, not after it.
-  const prefix = opts.seq ? RS_BYTES : EMPTY
+  const body = raw && !opts.asciiOutput ? ENC.encode(value) : ENC.encode(dumps(value, opts))
+  // RFC 7464 puts the separator before the value, not after it, and jq
+  // writes none before a string it prints raw, quoted by -a or not.
+  const prefix = opts.seq && !raw ? RS_BYTES : EMPTY
   return concatBytes([prefix, body, terminator(opts)])
 }
 

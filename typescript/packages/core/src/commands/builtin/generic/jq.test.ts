@@ -13,15 +13,15 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import { describe, expect, it } from 'vitest'
-import { jqOptions, type JqOptions } from '../../../core/jq/index.ts'
+import { jqOptions } from '../../../core/jq/index.ts'
 import { materialize } from '../../../io/types.ts'
 import { PathSpec } from '../../../types.ts'
 import type { CommandOpts } from '../../config.ts'
 import { specOf } from '../../spec/builtins.ts'
 import { FlagView } from '../../spec/flag_view.ts'
 import {
-  assembleInputs,
   exitCode,
+  inputName,
   jqGeneric,
   namedArgs,
   parseFlags,
@@ -36,13 +36,20 @@ const DEC = new TextDecoder()
 const FILES: Record<string, string> = {
   '/d/four.json': '1\n2\n3\n4\n',
   '/d/empty.json': '',
+  '/d/bad.json': '{"a":1}\n{"a":2}\n[',
+  '/d/rows.jsonl': '{"a":1}\n{"a":2}\n',
+  '/d/pairs.jsonl': '[1,2]\n[3]\n',
+  '/d/seq.json': '\u001e1\n\u001e[1 2]\n\u001e3\n',
+  '/d/one.json': '1',
+  '/d/two.json': ' 2\n',
 }
 
 async function* read(path: PathSpec): AsyncIterable<Uint8Array> {
   await Promise.resolve()
   const text = FILES[path.virtual]
   if (text === undefined) throw new Error(`no such file: ${path.virtual}`)
-  yield ENC.encode(text)
+  const bytes = ENC.encode(text)
+  for (let at = 0; at < bytes.length; at += 5) yield bytes.subarray(at, at + 5)
 }
 
 interface Ran {
@@ -51,8 +58,12 @@ interface Ran {
   readonly exitCode: number
 }
 
-/** Run jq over one file and return what it printed and how it exited. */
-async function ran(path: string, program: string, flags: CommandOpts['flags'] = {}): Promise<Ran> {
+/** Run jq over files and return what it printed and how it exited. */
+async function ranOver(
+  paths: readonly string[],
+  program: string,
+  flags: CommandOpts['flags'] = {},
+): Promise<Ran> {
   const opts = {
     stdin: null,
     flags: { compact_output: true, ...flags },
@@ -60,7 +71,8 @@ async function ran(path: string, program: string, flags: CommandOpts['flags'] = 
     cwd: '/',
     vfs: { kind: 'ram' } as never,
   } as CommandOpts
-  const result = await jqGeneric([PathSpec.fromStrPath(path)], [program], opts, read)
+  const specs = paths.map((path) => PathSpec.fromStrPath(path))
+  const result = await jqGeneric(specs, [program], opts, read)
   if (result === null) throw new Error('jq returned no result')
   const [out, io] = result
   return {
@@ -68,6 +80,11 @@ async function ran(path: string, program: string, flags: CommandOpts['flags'] = 
     stderr: DEC.decode(await materialize(io.stderr)),
     exitCode: io.exitCode,
   }
+}
+
+/** Run jq over one file and return what it printed and how it exited. */
+async function ran(path: string, program: string, flags: CommandOpts['flags'] = {}): Promise<Ran> {
+  return ranOver([path], program, flags)
 }
 
 /** Run jq over one file and return what it printed. */
@@ -115,48 +132,6 @@ describe('namedArgs', () => {
 })
 
 /** Inputs named the way jq names files, one per text. */
-function sources(...texts: string[]): [string, Uint8Array][] {
-  return texts.map((text, i) => [`f${String(i)}.json`, ENC.encode(text)])
-}
-
-async function docsOf(opts: JqOptions, ...texts: string[]): Promise<unknown[]> {
-  const [docs] = await assembleInputs(sources(...texts), opts)
-  return docs
-}
-
-describe('assembleInputs', () => {
-  it('slurps across every input rather than each one', async () => {
-    expect(await docsOf(jqOptions({ slurp: true }), '{"a":1}', '{"b":2}')).toEqual([
-      [{ a: 1 }, { b: 2 }],
-    ])
-  })
-
-  it('splits raw lines per input', async () => {
-    expect(await docsOf(jqOptions({ rawInput: true }), 'x\ny', 'z\n')).toEqual(['x', 'y', 'z'])
-  })
-
-  it('joins every input into one string when raw and slurped', async () => {
-    const opts = jqOptions({ rawInput: true, slurp: true })
-    expect(await docsOf(opts, 'x\n', 'y\n')).toEqual(['x\ny\n'])
-  })
-
-  it('places each document where jq reads it whole', async () => {
-    const [, positions] = await assembleInputs(sources('1\n2\n', '[3,\n4]\n5'), jqOptions())
-    expect([0, 1, 2, 3].map((doc) => positions.at(doc))).toEqual([
-      'f0.json:1',
-      'f0.json:2',
-      'f1.json:2',
-      'f1.json:2',
-    ])
-    expect(positions.end()).toBe('f1.json:2')
-  })
-
-  it('places a slurp at the end of the last input', async () => {
-    const [, positions] = await assembleInputs(sources('1\n', '2\n3'), jqOptions({ slurp: true }))
-    expect(positions.at(0)).toBe('f1.json:1')
-  })
-})
-
 describe('exitCode', () => {
   const printed = (...outputs: unknown[]): number => runStatus({ outputs, stop: null })
   const failed = runStatus({ outputs: [1], stop: { kind: 'error', text: 'x', string: true } })
@@ -203,14 +178,43 @@ describe('exitCode', () => {
 })
 
 describe('runPosition', () => {
-  it('places a run where the reader stops for it', async () => {
-    const [, positions] = await assembleInputs(sources('1\n2\n3\n'), jqOptions())
+  it('places a run where the reader stops for it', () => {
+    const positions = ['f0.json:1', 'f0.json:2', 'f0.json:3']
+    const end = 'f0.json:3'
     const none = { input: false, inputs: false }
-    expect(runPosition(positions, none, 1, 0)).toBe('f0.json:2')
-    expect(runPosition(positions, none, null, 0)).toBe('<unknown>')
-    expect(runPosition(positions, { input: true, inputs: false }, 0, 1)).toBe('f0.json:2')
-    expect(runPosition(positions, { input: true, inputs: false }, 2, 0)).toBe('f0.json:3')
-    expect(runPosition(positions, { input: false, inputs: true }, 0, 2)).toBe('f0.json:3')
+    expect(runPosition(positions, end, none, 1, 0)).toBe('f0.json:2')
+    expect(runPosition(positions, end, none, null, 0)).toBe('<unknown>')
+    expect(runPosition(positions, end, { input: true, inputs: false }, 0, 1)).toBe('f0.json:2')
+    expect(runPosition(positions, end, { input: true, inputs: false }, 2, 0)).toBe('f0.json:3')
+    expect(runPosition(positions, end, { input: false, inputs: true }, 0, 2)).toBe('f0.json:3')
+  })
+})
+
+describe('inputName', () => {
+  it('names an input as typed, and - as stdin', () => {
+    expect(
+      inputName(
+        new PathSpec({
+          virtual: '/d/a.json',
+          directory: '/d/',
+          vfsPath: 'd/a.json',
+          rawPath: 'a.json',
+        }),
+      ),
+    ).toBe('a.json')
+    expect(
+      inputName(new PathSpec({ virtual: '/d/a.json', directory: '/d/', vfsPath: 'd/a.json' })),
+    ).toBe('/d/a.json')
+    expect(
+      inputName(
+        new PathSpec({
+          virtual: '/dev/stdin',
+          directory: '/dev/',
+          vfsPath: 'dev/stdin',
+          rawPath: '-',
+        }),
+      ),
+    ).toBe('<stdin>')
   })
 })
 
@@ -238,29 +242,6 @@ describe('positionalArgs', () => {
 
   it('is empty without either flag', () => {
     expect(positionalArgs(view({}), ['.', 'a'], false)).toEqual([])
-  })
-})
-
-describe('assembleInputs with --stream and --seq', () => {
-  it('expands documents into events', async () => {
-    expect(await docsOf(jqOptions({ stream: true }), '{"a":1}')).toEqual([[['a'], 1], [['a']]])
-  })
-
-  it('collects the events when slurped', async () => {
-    expect(await docsOf(jqOptions({ stream: true, slurp: true }), '{"a":1}')).toEqual([
-      [[['a'], 1], [['a']]],
-    ])
-  })
-
-  it('reads only RS-introduced values', async () => {
-    expect(await docsOf(jqOptions({ seq: true }), '\u001e{"a":1}\n\u001e{"a":2}\n')).toEqual([
-      { a: 1 },
-      { a: 2 },
-    ])
-  })
-
-  it('drops text before the first separator', async () => {
-    expect(await docsOf(jqOptions({ seq: true }), '{"a":1}\n')).toEqual([])
   })
 })
 
@@ -353,5 +334,103 @@ describe('jqGeneric runs that stop early', () => {
     expect([stdout, exitCode]).toEqual(['', 3])
     expect(stderr).toMatch(/^jq: error: syntax error, .* line 1, column 3:\n {4}1 \+\n/)
     expect(stderr).toMatch(/jq: 1 compile error\n$/)
+  })
+})
+
+describe('jqGeneric over malformed input', () => {
+  it('ends the loop at a parse error, after the documents before it', async () => {
+    expect(await ran('/d/bad.json', '.a')).toEqual({
+      stdout: '1\n2\n',
+      stderr: 'jq: parse error: Unfinished JSON term at EOF at line 3, column 1\n',
+      exitCode: 5,
+    })
+  })
+
+  it('exits five under -e too', async () => {
+    const result = await ran('/d/bad.json', '.a', { exit_status: true })
+    expect([result.stdout, result.exitCode]).toEqual(['1\n2\n', 5])
+  })
+
+  it('prints nothing for a slurp that meets a parse error', async () => {
+    expect(await ran('/d/bad.json', '.', { slurp: true })).toEqual({
+      stdout: '',
+      stderr: 'jq: parse error: Unfinished JSON term at EOF at line 3, column 1\n',
+      exitCode: 5,
+    })
+  })
+
+  it('reports a parse error under --seq and reads on', async () => {
+    expect(await ran('/d/seq.json', '.', { seq: true })).toEqual({
+      stdout: '\u001e1\n\u001e3\n',
+      stderr:
+        'jq: ignoring parse error: Expected separator between values at line 2, ' +
+        'column 6 (need RS to resync)\n',
+      exitCode: 0,
+    })
+  })
+
+  it('raises the parse error inside inputs as a runtime error', async () => {
+    expect(await ran('/d/bad.json', '[inputs]', { null_input: true })).toEqual({
+      stdout: '',
+      stderr: 'jq: error (at /d/bad.json:2): Unfinished JSON term at EOF at line 3, column 1\n',
+      exitCode: 5,
+    })
+    expect(await ran('/d/bad.json', 'try ([inputs]) catch .', { null_input: true })).toEqual({
+      stdout: '"Unfinished JSON term at EOF at line 3, column 1"\n',
+      stderr: '',
+      exitCode: 0,
+    })
+  })
+
+  it('leaves the parse error past input to the main loop', async () => {
+    expect(await ran('/d/bad.json', '[., input]')).toEqual({
+      stdout: '[{"a":1},{"a":2}]\n',
+      stderr: 'jq: parse error: Unfinished JSON term at EOF at line 3, column 1\n',
+      exitCode: 5,
+    })
+  })
+
+  it('ends the command at a halt before the parse error', async () => {
+    expect(await ran('/d/bad.json', '[., input] | halt_error')).toEqual({
+      stdout: '',
+      stderr: '[{"a":1},{"a":2}]\n',
+      exitCode: 5,
+    })
+  })
+
+  it('runs a value on from one input into the next', async () => {
+    expect(await ranOver(['/d/one.json', '/d/two.json'], 'error(tostring)')).toEqual({
+      stdout: '',
+      stderr: 'jq: error (at /d/two.json:1): 1\njq: error (at /d/two.json:1): 2\n',
+      exitCode: 5,
+    })
+  })
+
+  it('runs the program on each line of JSON Lines unchanged', async () => {
+    expect(await run('/d/rows.jsonl', '.[]')).toBe('1\n2\n')
+    expect(await run('/d/pairs.jsonl', '.[] | . + 1')).toBe('2\n3\n4\n')
+    expect(await ran('/d/rows.jsonl', '.[].a')).toEqual({
+      stdout: '',
+      stderr:
+        'jq: error (at /d/rows.jsonl:1): Cannot index number with string ("a")\n' +
+        'jq: error (at /d/rows.jsonl:2): Cannot index number with string ("a")\n',
+      exitCode: 5,
+    })
+  })
+
+  it('refuses a --slurpfile holding bad JSON in jq words', async () => {
+    await expect(
+      ran('/d/four.json', '$x', { null_input: true, slurpfile: ['x', '/d/bad.json'] }),
+    ).rejects.toThrow(
+      'jq: Bad JSON in --slurpfile x /d/bad.json: Unfinished JSON term at EOF at line 3, column 1',
+    )
+  })
+
+  it("reads an --argjson value as jq's parser does", () => {
+    expect(namedArgs(view({ argjson: ['v', '{"a":1}'] }))).toEqual({ v: { a: 1 } })
+    expect(Number.isNaN(namedArgs(view({ argjson: ['v', 'nan'] })).v)).toBe(true)
+    expect(() => namedArgs(view({ argjson: ['v', '1 2'] }))).toThrow(
+      'jq: invalid JSON text passed to --argjson',
+    )
   })
 })

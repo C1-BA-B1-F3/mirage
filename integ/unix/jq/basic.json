@@ -199,9 +199,9 @@
       ],
       "command": "jq \".[].id\" /data/data.jsonl",
       "expect": {
-        "exit": 0,
-        "stdout": "1\n2\n3\n",
-        "stderr": ""
+        "exit": 5,
+        "stdout": "",
+        "stderr": "jq: error (at /data/data.jsonl:1): Cannot index number with string (\"id\")\njq: error (at /data/data.jsonl:2): Cannot index number with string (\"id\")\njq: error (at /data/data.jsonl:3): Cannot index number with string (\"id\")\n"
       }
     },
     {
@@ -509,6 +509,153 @@
         "stdout": "",
         "stderr": ""
       }
+    },
+    {
+      "id": "jq_jsonl_iterates_each_line",
+      "seq": 701024,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "jq -c '.[]' /data/data.jsonl",
+      "expect": {
+        "exit": 0,
+        "stdout": "1\n2\n3\n",
+        "stderr": ""
+      },
+      "flags": [
+        "c"
+      ]
+    },
+    {
+      "id": "jq_jsonl_iterates_each_lines_array",
+      "seq": 701025,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "mkdir -p /data/qjqp && printf '[1,2]\\n[3]\\n' > /data/qjqp/pairs.jsonl && jq -c '.[] | . + 1' /data/qjqp/pairs.jsonl",
+      "expect": {
+        "exit": 0,
+        "stdout": "2\n3\n4\n",
+        "stderr": ""
+      },
+      "flags": [
+        "c"
+      ]
+    },
+    {
+      "id": "jq_jsonl_length_is_each_lines_own",
+      "seq": 701026,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "jq length /data/data.jsonl",
+      "expect": {
+        "exit": 0,
+        "stdout": "1\n1\n1\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "jq_jsonl_slurp_collects_the_lines",
+      "seq": 701027,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "jq -c -s 'map(.id)' /data/data.jsonl",
+      "expect": {
+        "exit": 0,
+        "stdout": "[1,2,3]\n",
+        "stderr": ""
+      },
+      "flags": [
+        "c",
+        "s"
+      ]
+    },
+    {
+      "id": "jq_jsonl_a_document_may_span_lines",
+      "seq": 701028,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "mkdir -p /data/qjqp && printf '{\"a\":1}\\n{\"a\":\\n2}\\n' > /data/qjqp/span.jsonl && jq -c . /data/qjqp/span.jsonl",
+      "expect": {
+        "exit": 0,
+        "stdout": "{\"a\":1}\n{\"a\":2}\n",
+        "stderr": ""
+      },
+      "flags": [
+        "c"
+      ]
     }
   ]
 }

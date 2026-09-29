@@ -26,7 +26,7 @@ from mirage.commands.spec.compile import compile_spec
 from mirage.commands.spec.constants import flag_kwarg_name
 from mirage.commands.spec.flag_view import FlagView
 from mirage.commands.spec.types import CommandSpec, FlagValue
-from mirage.core.jq import is_jsonl_path, is_streamable_jsonl_expr
+from mirage.core.jq import is_jsonl_path, stream_reads
 from mirage.provision.types import Precision, ProvisionResult
 from mirage.types import FileType, PathSpec
 from mirage.utils.key_prefix import rekey
@@ -360,7 +360,8 @@ async def index_hit_read_provision(
 
 
 def make_jq_provision(stat: Callable[..., Any]) -> Callable[..., Any]:
-    """Provision for jq: streamable jsonl reads a range, else whole file."""
+    """Provision for jq: JSON Lines it runs a line at a time reads a
+    range, else the whole file."""
 
     async def jq_provision(
         accessor: Accessor,
@@ -389,7 +390,12 @@ def make_jq_provision(stat: Callable[..., Any]) -> Callable[..., Any]:
                                    read_ops=1,
                                    precision=Precision.UNKNOWN)
         file_size = file_stat.size
-        if is_jsonl_path(key) and is_streamable_jsonl_expr(expr):
+        # A program runs on each line as it streams in, so a reader that
+        # stops early leaves the rest unread, unless -s or `input` and
+        # `inputs` read the whole stream before the first run.
+        reads = stream_reads(expr)
+        if (is_jsonl_path(key) and not _flag_of(opts.spec, "-s", opts.flags)
+                and not reads.input and not reads.inputs):
             return ProvisionResult(
                 command=rendered,
                 network_read_low=0,

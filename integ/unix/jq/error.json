@@ -1378,6 +1378,166 @@
       "flags": [
         "c"
       ]
+    },
+    {
+      "id": "jq_parse_a_run_that_reads_the_error_fails_and_the_loop_reads_on",
+      "seq": 701035,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "printf '1\\n[1 2]\\n3\\n4\\n' | jq -c '[., input]'",
+      "expect": {
+        "exit": 0,
+        "stdout": "[3,4]\n",
+        "stderr": "jq: error (at <stdin>:2): Expected separator between values at line 2, column 5\n"
+      },
+      "flags": [
+        "c"
+      ]
+    },
+    {
+      "id": "jq_parse_inputs_stops_at_the_error_and_the_loop_reads_on",
+      "seq": 701036,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "printf '1\\n[1 2]\\n3\\n4\\n' | jq -c '[., inputs]'",
+      "expect": {
+        "exit": 0,
+        "stdout": "[3,4]\n",
+        "stderr": "jq: error (at <stdin>:2): Expected separator between values at line 2, column 5\n"
+      },
+      "flags": [
+        "c"
+      ]
+    },
+    {
+      "id": "jq_parse_seq_inputs_stops_at_the_error_and_the_loop_reads_on",
+      "seq": 701037,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "printf '\\x1e1\\n\\x1e[1 2]\\n\\x1e3\\n\\x1e4\\n' | jq -c --seq '[., inputs]'",
+      "expect": {
+        "exit": 0,
+        "stdout": "\u001e[3,4]\n",
+        "stderr": "jq: error (at <stdin>:2): Expected separator between values at line 2, column 6 (need RS to resync)\n"
+      },
+      "flags": [
+        "c",
+        "seq"
+      ]
+    },
+    {
+      "id": "jq_parse_seq_the_loop_reads_past_an_error_between_runs",
+      "seq": 701038,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "printf '\\x1e1\\n\\x1e2\\n\\x1e[1 2]\\n\\x1e3\\n\\x1e4\\n' | jq -c --seq '[., input]'",
+      "expect": {
+        "exit": 0,
+        "stdout": "\u001e[1,2]\n\u001e[3,4]\n",
+        "stderr": "jq: ignoring parse error: Expected separator between values at line 3, column 6 (need RS to resync)\n"
+      },
+      "flags": [
+        "c",
+        "seq"
+      ]
+    },
+    {
+      "id": "jq_parse_seq_try_input_catches_the_error_and_reads_on",
+      "seq": 701039,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "printf '\\x1e1\\n\\x1e[1 2]\\n\\x1e2\\n\\x1e3\\n' | jq -c --seq '[., (try input catch .)]'",
+      "expect": {
+        "exit": 0,
+        "stdout": "\u001e[1,\"Expected separator between values at line 2, column 6 (need RS to resync)\"]\n\u001e[2,3]\n",
+        "stderr": ""
+      },
+      "flags": [
+        "c",
+        "seq"
+      ]
+    },
+    {
+      "id": "jq_parse_seq_each_error_ends_the_run_that_reads_it",
+      "seq": 701040,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "printf '\\x1e1\\n\\x1e[1 2]\\n\\x1e3\\n\\x1e{\"a\" 1}\\n\\x1e4\\n' | jq -c --seq '[., inputs]'",
+      "expect": {
+        "exit": 0,
+        "stdout": "\u001e[4]\n",
+        "stderr": "jq: error (at <stdin>:2): Expected separator between values at line 2, column 6 (need RS to resync)\njq: error (at <stdin>:4): Expected separator between values at line 4, column 8 (need RS to resync)\n"
+      },
+      "flags": [
+        "c",
+        "seq"
+      ]
+    },
+    {
+      "id": "jq_parse_seq_null_input_inputs_raises_the_error",
+      "seq": 701041,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "printf '\\x1e1\\n\\x1e[1 2]\\n\\x1e3\\n' | jq -n -c --seq '[inputs]'",
+      "expect": {
+        "exit": 5,
+        "stdout": "",
+        "stderr": "jq: error (at <stdin>:2): Expected separator between values at line 2, column 6 (need RS to resync)\n"
+      },
+      "flags": [
+        "n",
+        "c",
+        "seq"
+      ]
+    },
+    {
+      "id": "jq_parse_seq_a_separator_abandons_an_unfinished_value",
+      "seq": 701042,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "printf '\\x1e1\\n\\x1e[\\n\\x1e2\\n' | jq -n -c --seq '[inputs]'",
+      "expect": {
+        "exit": 0,
+        "stdout": "\u001e[1,2]\n",
+        "stderr": ""
+      },
+      "flags": [
+        "n",
+        "c",
+        "seq"
+      ]
     }
   ]
 }

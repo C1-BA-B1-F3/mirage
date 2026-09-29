@@ -223,10 +223,12 @@ export function exitCode(statuses: readonly number[], opts: JqOptions): number {
 
 /**
  * Where jq's reader stands after a run, for its error report. A run reads
- * its own document (`first`, null under -n), and past it the ones `input`
- * and `inputs` take (`taken`): `inputs` reads to the end, and so does an
- * `input` that finds nothing left. `positions` are where the reader stood
- * once it had read each document, `end` where it stood once it stopped.
+ * its own document (`first`, null under -n), and past it the items `input`
+ * and `inputs` take (`taken`, the last a parse error when `stopped`):
+ * `inputs` reads to the end unless a parse error stops it, and an `input`
+ * that finds nothing left reads to the end too. `positions` are where the
+ * reader stood once it had read each item of the stream, document or parse
+ * error, `end` where it stood once it stopped.
  */
 export function runPosition(
   positions: readonly string[],
@@ -234,9 +236,12 @@ export function runPosition(
   reads: StreamReads,
   first: number | null,
   taken: number,
+  stopped: boolean,
 ): string {
-  if (reads.inputs || (reads.input && taken === 0)) return end
-  if (reads.input) return positions[first === null ? 0 : first + 1] ?? end
+  if ((reads.inputs && !stopped) || (reads.input && taken === 0)) return end
+  if (reads.input || reads.inputs) {
+    return positions[(first === null ? 0 : first + 1) + taken - 1] ?? end
+  }
   return first === null ? UNKNOWN_POSITION : (positions[first] ?? end)
 }
 
@@ -335,66 +340,77 @@ export class MainLoop {
    * `reduce inputs as $x`), and `input` alone takes one (`[., input]` pairs
    * the documents up). A program that takes some other count
    * (`first(inputs)`, an `input` in a branch not taken) leaves real jq a
-   * different remainder for its next run than here. A parse error ends the
-   * documents read ahead: the run that reads past the last of them meets
-   * it, and otherwise the main loop does, unless -n leaves the reading to
-   * the program alone.
+   * different remainder for its next run than here.
+   *
+   * A parse error is an item of the stream like a document. The run whose
+   * `input` or `inputs` reaches it raises it, and the main loop reads on
+   * past it. One the main loop reaches itself ends the stream, or under
+   * --seq is reported and read past. Under -n only the program reads, so an
+   * error past what it read goes unreported.
    */
   async *runStatic(): AsyncIterable<Uint8Array> {
     const reads = this.reads
     const streams = reads.input || reads.inputs
-    const docs: unknown[] = []
+    const items: unknown[] = []
     const positions: string[] = []
-    let failure: JqParseError | null = null
     // -n does not read its inputs at all unless the program asks for them,
     // which is why jq -n never opens a missing file.
     if (!this.opts.nullInput || streams) {
       for (;;) {
         const item = await this.reader.nextInput()
         if (item === NO_VALUE) break
-        if (item instanceof JqParseError) {
-          failure = item
-          break
-        }
-        docs.push(item)
+        items.push(item)
         positions.push(this.reader.position())
       }
     }
     const end = this.reader.position()
-    let consumed = false
     let at = 0
-    while (this.opts.nullInput || at < docs.length) {
+    while (this.opts.nullInput || at < items.length) {
       const first = this.opts.nullInput ? null : at
-      const start = first === null ? 0 : at + 1
-      const rest = streams ? this.unread(docs, start) : []
-      let error: string | null = null
-      if (failure !== null && (reads.inputs || rest.length === 0)) {
-        error = failure.message
-        consumed = true
+      const doc = first === null ? null : items[at]
+      if (doc instanceof JqParseError) {
+        this.fail(doc)
+        if (!this.opts.seq) return
+        at += 1
+        continue
       }
+      const start = first === null ? 0 : at + 1
+      const [rest, failure, taken] = this.taken(items, start)
       const run = await jqRun(
-        first === null ? null : docs[at],
+        doc,
         this.expr,
         this.opts.namedArgs,
         streams ? rest : null,
         this.argsValue,
-        error,
+        failure === null ? null : failure.message,
       )
       if (run.outputs.length > 0) yield formatJqOutput(run.outputs, this.opts)
-      const position = runPosition(positions, end, reads, first, rest.length)
-      if (this.settle(run, position)) return
-      if (first === null) break
-      at = start + rest.length
+      const position = runPosition(positions, end, reads, first, taken, failure !== null)
+      if (this.settle(run, position) || first === null) return
+      at = start + taken
     }
-    // Under -n only the program reads, so a parse error past what it read
-    // goes unreported; otherwise the main loop reads on to it.
-    if (failure !== null && !consumed && !this.opts.nullInput) this.fail(failure)
   }
 
-  // A run sees only the documents it can read: all of the rest when it
-  // calls `inputs`, or the one `input` takes when it calls only that.
-  private unread(docs: readonly unknown[], at: number): unknown[] {
-    return this.reads.inputs ? docs.slice(at) : docs.slice(at, at + 1)
+  // What a run reads past its own document: the documents it is handed, the
+  // parse error it meets past them, and how many items of the stream that
+  // takes. `inputs` reads up to the next parse error, `input` alone the next
+  // item.
+  private taken(
+    items: readonly unknown[],
+    start: number,
+  ): [unknown[], JqParseError | null, number] {
+    if (this.reads.inputs) {
+      const docs: unknown[] = []
+      for (const item of items.slice(start)) {
+        if (item instanceof JqParseError) return [docs, item, docs.length + 1]
+        docs.push(item)
+      }
+      return [docs, null, docs.length]
+    }
+    if (!this.reads.input || start >= items.length) return [[], null, 0]
+    const item = items[start]
+    if (item instanceof JqParseError) return [[], item, 1]
+    return [[item], null, 1]
   }
 
   // Fold one run into the invocation: its answer toward the exit status,

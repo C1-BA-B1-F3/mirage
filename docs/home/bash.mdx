@@ -247,9 +247,10 @@ refuses, with jq's message, line and column. The line and column count bytes,
 across every operand. Under `-s` nothing prints, `--stream` hands over the
 events before the error, and `--seq` reports `jq: ignoring parse error:
 <message>` and reads on. `input` and `inputs` raise the parse error as a
-runtime error, which `try` can catch. A `--slurpfile` holding bad JSON is
-refused with `jq: Bad JSON in --slurpfile <name> <file>: <message>` and status
-2, and `--argjson` and `--jsonargs` accept what jq's parser accepts.
+runtime error, which `try` can catch, and the next run starts past it, with
+or without `--seq`. A `--slurpfile` holding bad JSON is refused with
+`jq: Bad JSON in --slurpfile <name> <file>: <message>` and status 2, and
+`--argjson` and `--jsonargs` accept what jq's parser accepts.
 
 A few limits worth knowing. `input` and `inputs` read the documents
 still unread: `input` takes the next one (and fails with `break` when none

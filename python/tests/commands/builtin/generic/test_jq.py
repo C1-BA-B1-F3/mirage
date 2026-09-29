@@ -27,6 +27,8 @@ FILES = {
     "/d/rows.jsonl": b'{"a":1}\n{"a":2}\n',
     "/d/pairs.jsonl": b"[1,2]\n[3]\n",
     "/d/seq.json": b'\x1e1\n\x1e[1 2]\n\x1e3\n',
+    "/d/seq_mid.json": b'\x1e1\n\x1e2\n\x1e[1 2]\n\x1e3\n\x1e4\n',
+    "/d/mid.json": b"1\n[1 2]\n3\n4\n",
     "/d/one.json": b"1",
     "/d/two.json": b" 2\n",
 }
@@ -140,11 +142,14 @@ def test_a_run_is_placed_where_the_reader_stops_for_it():
     none = StreamReads(input=False, inputs=False)
     one = StreamReads(input=True, inputs=False)
     rest = StreamReads(input=False, inputs=True)
-    assert run_position(positions, end, none, 1, 0) == "f0.json:2"
-    assert run_position(positions, end, none, None, 0) == "<unknown>"
-    assert run_position(positions, end, one, 0, 1) == "f0.json:2"
-    assert run_position(positions, end, one, 2, 0) == "f0.json:3"
-    assert run_position(positions, end, rest, 0, 2) == "f0.json:3"
+    assert run_position(positions, end, none, 1, 0, False) == "f0.json:2"
+    assert run_position(positions, end, none, None, 0, False) == "<unknown>"
+    assert run_position(positions, end, one, 0, 1, False) == "f0.json:2"
+    assert run_position(positions, end, one, 2, 0, False) == "f0.json:3"
+    assert run_position(positions, end, rest, 0, 2, False) == "f0.json:3"
+    # A parse error stops `inputs` where the reader met it.
+    assert run_position(positions, "f0.json:9", rest, 0, 1,
+                        True) == "f0.json:2"
 
 
 def test_an_input_is_named_as_typed_and_dash_as_stdin():
@@ -492,6 +497,35 @@ async def test_input_leaves_the_parse_error_to_the_main_loop():
                               b'[{"a":1},{"a":2}]\n',
                               b"jq: parse error: Unfinished JSON term at EOF "
                               b"at line 3, column 1\n", 5)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("program", ["[., input]", "[., inputs]"])
+async def test_a_run_that_reads_a_parse_error_fails_and_the_loop_reads_on(
+        program):
+    assert await _flagged(["/d/mid.json"], program, compact_output=True) == (
+        b"[3,4]\n", b"jq: error (at /d/mid.json:2): Expected separator "
+        b"between values at line 2, column 5\n", 0)
+
+
+@pytest.mark.asyncio
+async def test_seq_reads_past_a_parse_error_a_run_or_the_loop_meets():
+    assert await _flagged(["/d/seq.json"],
+                          "[., inputs]",
+                          seq=True,
+                          compact_output=True) == (
+                              b"\x1e[3]\n",
+                              b"jq: error (at /d/seq.json:2): Expected "
+                              b"separator between values at line 2, column 6 "
+                              b"(need RS to resync)\n", 0)
+    assert await _flagged(["/d/seq_mid.json"],
+                          "[., input]",
+                          seq=True,
+                          compact_output=True) == (
+                              b"\x1e[1,2]\n\x1e[3,4]\n",
+                              b"jq: ignoring parse error: Expected separator "
+                              b"between values at line 3, column 6 (need RS "
+                              b"to resync)\n", 0)
 
 
 @pytest.mark.asyncio

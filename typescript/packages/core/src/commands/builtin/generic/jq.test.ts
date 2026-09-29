@@ -40,6 +40,8 @@ const FILES: Record<string, string> = {
   '/d/rows.jsonl': '{"a":1}\n{"a":2}\n',
   '/d/pairs.jsonl': '[1,2]\n[3]\n',
   '/d/seq.json': '\u001e1\n\u001e[1 2]\n\u001e3\n',
+  '/d/seq_mid.json': '\u001e1\n\u001e2\n\u001e[1 2]\n\u001e3\n\u001e4\n',
+  '/d/mid.json': '1\n[1 2]\n3\n4\n',
   '/d/one.json': '1',
   '/d/two.json': ' 2\n',
 }
@@ -182,11 +184,15 @@ describe('runPosition', () => {
     const positions = ['f0.json:1', 'f0.json:2', 'f0.json:3']
     const end = 'f0.json:3'
     const none = { input: false, inputs: false }
-    expect(runPosition(positions, end, none, 1, 0)).toBe('f0.json:2')
-    expect(runPosition(positions, end, none, null, 0)).toBe('<unknown>')
-    expect(runPosition(positions, end, { input: true, inputs: false }, 0, 1)).toBe('f0.json:2')
-    expect(runPosition(positions, end, { input: true, inputs: false }, 2, 0)).toBe('f0.json:3')
-    expect(runPosition(positions, end, { input: false, inputs: true }, 0, 2)).toBe('f0.json:3')
+    const one = { input: true, inputs: false }
+    const rest = { input: false, inputs: true }
+    expect(runPosition(positions, end, none, 1, 0, false)).toBe('f0.json:2')
+    expect(runPosition(positions, end, none, null, 0, false)).toBe('<unknown>')
+    expect(runPosition(positions, end, one, 0, 1, false)).toBe('f0.json:2')
+    expect(runPosition(positions, end, one, 2, 0, false)).toBe('f0.json:3')
+    expect(runPosition(positions, end, rest, 0, 2, false)).toBe('f0.json:3')
+    // A parse error stops `inputs` where the reader met it.
+    expect(runPosition(positions, 'f0.json:9', rest, 0, 1, true)).toBe('f0.json:2')
   })
 })
 
@@ -387,6 +393,35 @@ describe('jqGeneric over malformed input', () => {
       stdout: '[{"a":1},{"a":2}]\n',
       stderr: 'jq: parse error: Unfinished JSON term at EOF at line 3, column 1\n',
       exitCode: 5,
+    })
+  })
+
+  it.each(['[., input]', '[., inputs]'])(
+    'fails the run that reads a parse error, and reads on past it (%s)',
+    async (program) => {
+      expect(await ran('/d/mid.json', program)).toEqual({
+        stdout: '[3,4]\n',
+        stderr:
+          'jq: error (at /d/mid.json:2): Expected separator between values at line 2, column 5\n',
+        exitCode: 0,
+      })
+    },
+  )
+
+  it('reads past a parse error under --seq, whether a run or the loop meets it', async () => {
+    expect(await ran('/d/seq.json', '[., inputs]', { seq: true })).toEqual({
+      stdout: '\u001e[3]\n',
+      stderr:
+        'jq: error (at /d/seq.json:2): Expected separator between values at line 2, ' +
+        'column 6 (need RS to resync)\n',
+      exitCode: 0,
+    })
+    expect(await ran('/d/seq_mid.json', '[., input]', { seq: true })).toEqual({
+      stdout: '\u001e[1,2]\n\u001e[3,4]\n',
+      stderr:
+        'jq: ignoring parse error: Expected separator between values at line 3, ' +
+        'column 6 (need RS to resync)\n',
+      exitCode: 0,
     })
   })
 

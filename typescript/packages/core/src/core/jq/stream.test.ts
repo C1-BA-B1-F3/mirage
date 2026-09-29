@@ -129,6 +129,42 @@ describe('InputReader', () => {
     ])
   })
 
+  it.each([
+    ['{\n  "a": [\n    1\n  ]\n}\n', { a: [1] }],
+    ['[\n  1,\n  2\n]\n{\n', [1, 2]],
+    ['{\n"a": 1}\n', { a: 1 }],
+  ])('hands a document over before the input ends (%j)', async (text, value) => {
+    // Nothing past a document's closing line is read before it is handed
+    // over, so an input that has not ended yet still yields it.
+    async function* unending(): AsyncIterable<Uint8Array> {
+      yield bytes(text)
+      await new Promise<never>(() => undefined)
+    }
+    const reader = new InputReader([{ name: 'f0.json', chunks: unending() }], jqOptions())
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const late = new Promise<string>((resolve) => {
+      timer = setTimeout(() => {
+        resolve('still waiting')
+      }, 5000)
+    })
+    expect(await Promise.race([reader.nextInput(), late])).toEqual(value)
+    clearTimeout(timer)
+  })
+
+  it.each([1, 7, 1 << 20])(
+    "sends a document not pretty-printed to jq's parser (chunks of %i)",
+    async (size) => {
+      const data = bytes('{\n"a": 1}\n{\n  "b": 2 }\n[\n  nan\n]\n')
+      const rows = await read(sources([data], size))
+      expect(rows.slice(0, 2)).toEqual([
+        [{ a: 1 }, 'f0.json:2'],
+        [{ b: 2 }, 'f0.json:4'],
+      ])
+      expect(Number.isNaN((rows[2]?.[0] as number[])[0])).toBe(true)
+      expect(rows[2]?.[1]).toBe('f0.json:7')
+    },
+  )
+
   it("reads jq's own numbers and the JSON around them", async () => {
     const got = await values([bytes('[1]\nnan\n{"a":.5}\n')])
     expect(got[0]).toEqual([1])

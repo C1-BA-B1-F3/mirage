@@ -12,6 +12,7 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import asyncio
 import math
 
 import pytest
@@ -123,6 +124,38 @@ async def test_a_pretty_printed_document_reads_whole(size):
     }, "f0.json:6"), ({
         "b": 3
     }, "f0.json:9")]
+
+
+async def _unending(data: bytes):
+    yield data
+    await asyncio.Event().wait()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("data,value", [
+    (b'{\n  "a": [\n    1\n  ]\n}\n', {
+        "a": [1]
+    }),
+    (b'[\n  1,\n  2\n]\n{\n', [1, 2]),
+    (b'{\n"a": 1}\n', {
+        "a": 1
+    }),
+])
+async def test_a_document_is_handed_over_before_the_input_ends(data, value):
+    # Nothing past a document's closing line is read before it is handed
+    # over, so an input that has not ended yet still yields it.
+    reader = InputReader([InputSource("f0.json", _unending(data))],
+                         JqOptions())
+    assert await asyncio.wait_for(reader.next_input(), 5) == value
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("size", [1, 7, 1 << 20])
+async def test_a_document_not_pretty_printed_goes_to_jqs_parser(size):
+    data = b'{\n"a": 1}\n{\n  "b": 2 }\n[\n  nan\n]\n'
+    rows = await _read(_sources(data, size=size))
+    assert rows[:2] == [({"a": 1}, "f0.json:2"), ({"b": 2}, "f0.json:4")]
+    assert math.isnan(rows[2][0][0]) and rows[2][1] == "f0.json:7"
 
 
 @pytest.mark.asyncio

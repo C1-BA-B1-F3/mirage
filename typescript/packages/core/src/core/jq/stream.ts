@@ -42,10 +42,11 @@ import {
 export const READ_CHUNK = 4091
 
 const NEWLINE = 0x0a
+const SPACE = 0x20
+const TAB = 0x09
 const BACKSLASH = 0x5c
-const WHITESPACE = new Set([0x20, 0x09, 0x0d, 0x0a])
+const WHITESPACE = new Set([SPACE, TAB, 0x0d, NEWLINE])
 const CLOSERS = new Set([QUOTE, CLOSE_BRACKET, CLOSE_BRACE])
-const OPENERS = new Set([OPEN_BRACKET, OPEN_BRACE])
 const STRICT = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true })
 
 // JSON.parse takes a lone surrogate escape, which jq refuses or replaces.
@@ -166,6 +167,10 @@ class Pending {
     return found < 0 ? -1 : found + from
   }
 
+  byteAt(index: number): number | undefined {
+    return index < this.length ? this.buf[this.start + index] : undefined
+  }
+
   push(chunk: Uint8Array): void {
     if (this.end + chunk.length > this.buf.length) {
       const live = this.length
@@ -201,8 +206,8 @@ class Pending {
  * lines, which also run on from one input into the next when one lacks its
  * final newline.
  *
- * A value JSON.parse can read, one line of JSON Lines or a whole document,
- * is taken in one step and handed to the parser as read (see fast);
+ * A value JSON.parse can read, one line of JSON Lines or a pretty-printed
+ * document, is taken in one step and handed to the parser as read (see fast);
  * everything else, bad input included, goes through jq's parser. `opts`
  * decides the reading through -R, -s, --seq and --stream.
  */
@@ -218,7 +223,6 @@ export class InputReader {
   private pending = new Pending()
   private drained = false
   private feof = false
-  private wholeTried = false
 
   constructor(sources: readonly InputSource[], opts: JqOptions) {
     this.sources = sources
@@ -314,7 +318,6 @@ export class InputReader {
     this.pending = new Pending()
     this.drained = false
     this.feof = false
-    this.wholeTried = false
   }
 
   private async pull(): Promise<void> {
@@ -363,11 +366,10 @@ export class InputReader {
 
   /**
    * Take the next value in one step when JSON.parse reads it as jq would:
-   * the rest of the line, or else, where the line opens a document it does
-   * not close, the rest of the input. The parser (clean, see
-   * JqParser.clean) is handed the bytes as read and the rest of the last
-   * piece, so the line count, the position and whatever follows are what
-   * jq's parser would have reached.
+   * the rest of the line, or else the pretty-printed document the line
+   * opens (see document). The parser (clean, see JqParser.clean) is handed
+   * the bytes as read and the rest of the last piece, so the line count, the
+   * position and whatever follows are what jq's parser would have reached.
    */
   private async fast(parser: JqParser): Promise<unknown> {
     this.openNext()
@@ -385,22 +387,58 @@ export class InputReader {
     if (newline < 0 && this.opened < this.sources.length) return NO_VALUE
     const end = newline >= 0 ? newline + 1 : pending.length
     const line = pending.view(skip, end)
-    let value = loads(line)
+    const value = loads(line)
     if (value !== NO_VALUE) {
       const stop = completion(line)
       if (stop < 0) return NO_VALUE
       return this.took(parser, value, skip, skip + stop)
     }
-    let first = 0
-    while (first < line.length && WHITESPACE.has(line[first] ?? 0)) first += 1
-    if (this.wholeTried || first >= line.length || !OPENERS.has(line[first] ?? 0)) return NO_VALUE
-    this.wholeTried = true
-    while (!this.drained) await this.pull()
-    const rest = this.pending.view(skip)
-    value = loads(rest)
-    const stop = value === NO_VALUE ? -1 : completion(rest)
-    if (stop < 0) return NO_VALUE
-    return this.took(parser, value, skip, skip + stop)
+    let last = line.length
+    while (last > 0 && WHITESPACE.has(line[last - 1] ?? 0)) last -= 1
+    if (last !== 1 || (line[0] !== OPEN_BRACKET && line[0] !== OPEN_BRACE)) return NO_VALUE
+    return this.document(parser, skip, end)
+  }
+
+  /**
+   * Take a pretty-printed document in one step: one whose opener stands
+   * alone on the first line and whose closer starts a later line, every line
+   * between them indented. `skip` counts the BOM bytes before the opener,
+   * and `start` is where the opener's line ends.
+   *
+   * It reads on only to the first line that is not indented. The closer
+   * there completes the document, and anything else hands it to jq's parser.
+   * So it reads no further than jq's reader does before the document
+   * completes, and never past one document of a stream.
+   */
+  private async document(parser: JqParser, skip: number, start: number): Promise<unknown> {
+    const pending = this.pending
+    const closer = pending.byteAt(skip) === OPEN_BRACE ? CLOSE_BRACE : CLOSE_BRACKET
+    let at = start - 1
+    let stop = -1
+    while (stop < 0) {
+      const newline = pending.indexOf(NEWLINE, at)
+      const next = newline < 0 ? undefined : pending.byteAt(newline + 1)
+      if (next === undefined) {
+        if (this.drained) return NO_VALUE
+        at = newline < 0 ? pending.length : newline
+        await this.pull()
+      } else if (next === SPACE || next === TAB) {
+        at = newline + 1
+      } else {
+        stop = newline + 1
+      }
+    }
+    if (pending.byteAt(stop) !== closer) return NO_VALUE
+    let newline = pending.indexOf(NEWLINE, stop)
+    while (newline < 0 && !this.drained) {
+      const searched = pending.length
+      await this.pull()
+      newline = pending.indexOf(NEWLINE, searched)
+    }
+    if (newline < 0 && this.opened < this.sources.length) return NO_VALUE
+    const value = loads(pending.view(skip, stop + 1))
+    if (value === NO_VALUE) return NO_VALUE
+    return this.took(parser, value, skip, stop)
   }
 
   private took(parser: JqParser, value: unknown, skip: number, stop: number): unknown {

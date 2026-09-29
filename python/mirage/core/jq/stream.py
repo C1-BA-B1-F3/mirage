@@ -18,8 +18,7 @@ from collections.abc import AsyncIterator, Sequence
 import orjson
 
 from mirage.core.jq.parse import (CLOSE_BRACE, CLOSE_BRACKET, OPEN_BRACE,
-                                  OPEN_BRACKET, QUOTE, JqParser, decode_utf8,
-                                  utf8_missing)
+                                  QUOTE, JqParser, decode_utf8, utf8_missing)
 from mirage.core.jq.types import (NO_VALUE, UNKNOWN_POSITION, InputSource,
                                   JqOptions, JqParseError, NoValue)
 from mirage.types import JsonValue
@@ -32,7 +31,11 @@ READ_CHUNK = 4091
 
 WHITESPACE = b" \t\r\n"
 CLOSERS = frozenset((QUOTE, CLOSE_BRACKET, CLOSE_BRACE))
-OPENERS = frozenset((OPEN_BRACKET, OPEN_BRACE))
+
+# The line a pretty-printed document opens on, and the start of a line that
+# is not indented: in such a document, the line it closes on.
+OPENER_LINES = frozenset((b"[", b"{"))
+UNINDENTED_LINE = re.compile(rb"\n[^ \t]")
 
 # orjson reads an integer past 64 bits as a float, where jq keeps every
 # digit, so text holding one is left to jq's own parser. Only a whole
@@ -117,9 +120,9 @@ class InputReader:
     the pieces make up the lines, which also run on from one input into
     the next when one lacks its final newline.
 
-    A value orjson can read, one line of JSON Lines or a whole document,
-    is taken in one step and handed to the parser as read (see _fast);
-    everything else, bad input included, goes through jq's parser.
+    A value orjson can read, one line of JSON Lines or a pretty-printed
+    document, is taken in one step and handed to the parser as read (see
+    _fast); everything else, bad input included, goes through jq's parser.
 
     Args:
         sources (Sequence[InputSource]): the inputs, in order.
@@ -143,7 +146,6 @@ class InputReader:
         self._pending = bytearray()
         self._drained = False
         self._feof = False
-        self._whole_tried = False
 
     def position(self) -> str:
         """Where jq's reader stands, as its error reports word it: the
@@ -224,7 +226,6 @@ class InputReader:
             self._pending = bytearray()
             self._drained = False
             self._feof = False
-            self._whole_tried = False
 
     async def _pull(self) -> None:
         assert self._chunks is not None
@@ -272,11 +273,11 @@ class InputReader:
 
     async def _fast(self, parser: JqParser) -> "JsonValue | NoValue":
         """Take the next value in one step when orjson reads it as jq
-        would: the rest of the line, or else, where the line opens a
-        document it does not close, the rest of the input. The parser is
-        handed the bytes as read and the rest of the last piece, so the
-        line count, the position and whatever follows are what jq's parser
-        would have reached.
+        would: the rest of the line, or else the pretty-printed document
+        the line opens (see _document). The parser is handed the bytes as
+        read and the rest of the last piece, so the line count, the
+        position and whatever follows are what jq's parser would have
+        reached.
 
         Args:
             parser (JqParser): the stream's parser, clean (JqParser.clean).
@@ -305,20 +306,50 @@ class InputReader:
             if stop < 0:
                 return NO_VALUE
             return self._took(parser, value, skip, skip + stop)
-        first = line.lstrip(WHITESPACE)[:1]
-        if self._whole_tried or not first or first[0] not in OPENERS:
+        if line.rstrip(WHITESPACE) not in OPENER_LINES:
             return NO_VALUE
-        self._whole_tried = True
-        while not self._drained:
+        return await self._document(parser, skip, end)
+
+    async def _document(self, parser: JqParser, skip: int,
+                        start: int) -> "JsonValue | NoValue":
+        """Take a pretty-printed document in one step: one whose opener
+        stands alone on the first line and whose closer starts a later
+        line, every line between them indented.
+
+        It reads on only to the first line that is not indented. The
+        closer there completes the document, and anything else hands it
+        to jq's parser. So it reads no further than jq's reader does
+        before the document completes, and never past one document of a
+        stream.
+
+        Args:
+            parser (JqParser): the stream's parser, clean.
+            skip (int): the BOM bytes before the opener.
+            start (int): where the opener's line ends.
+        """
+        pending = self._pending
+        closer = (CLOSE_BRACE
+                  if pending[skip] == OPEN_BRACE else CLOSE_BRACKET)
+        at = start - 1
+        found = UNINDENTED_LINE.search(pending, at)
+        while found is None and not self._drained:
+            at = max(at, len(pending) - 1)
             await self._pull()
-        rest = bytes(self._pending[skip:])
-        value = _loads(rest)
+            found = UNINDENTED_LINE.search(pending, at)
+        if found is None or pending[found.end() - 1] != closer:
+            return NO_VALUE
+        stop = found.end() - 1
+        newline = pending.find(b"\n", stop)
+        while newline < 0 and not self._drained:
+            searched = len(pending)
+            await self._pull()
+            newline = pending.find(b"\n", searched)
+        if newline < 0 and self._opened < len(self._sources):
+            return NO_VALUE
+        value = _loads(bytes(pending[skip:stop + 1]))
         if value is NO_VALUE:
             return NO_VALUE
-        stop = _completion(rest)
-        if stop < 0:
-            return NO_VALUE
-        return self._took(parser, value, skip, skip + stop)
+        return self._took(parser, value, skip, stop)
 
     def _took(self, parser: JqParser, value: JsonValue, skip: int,
               stop: int) -> JsonValue:

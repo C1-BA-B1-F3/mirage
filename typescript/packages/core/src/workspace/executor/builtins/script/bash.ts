@@ -15,8 +15,10 @@
 import { runAsShell } from '../../../../context/session_context.ts'
 import { materialize, IOResult } from '../../../../io/types.ts'
 import type { ByteSource } from '../../../../io/types.ts'
+import { IFS_DEFAULT } from '../../../../shell/constants.ts'
 import { parseOptionWord } from '../../../../shell/options.ts'
 import type { SessionState } from '../../../session/session.ts'
+import { seedVar } from '../../../session/state.ts'
 import { ExecutionNode } from '../../../types.ts'
 import type { DispatchFn } from '../../../../runtime/types.ts'
 import { BASH_LONG_OPTIONS, BASH_START_FLAGS } from './constants.ts'
@@ -151,6 +153,9 @@ export async function handleBash(
   const saved = session.snapshot()
   session.positionalArgs = positional
   session.scriptName = scriptName
+  // bash starts every shell with the default IFS and never reads one from
+  // its environment, so `IFS=, bash -c ...` splits on blanks.
+  seedVar(session, 'IFS', IFS_DEFAULT)
   // A child shell is outside every `source` its caller is inside, so a
   // top-level `return` in the script it runs is the error bash reports
   // rather than an early exit the program loop absorbs.

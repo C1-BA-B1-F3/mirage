@@ -169,6 +169,40 @@
         "stdout": "aa\n",
         "stderr": "1) aa\n2) bb\n#? "
       }
+    },
+    {
+      "id": "ctl_function_prefix_is_a_scope",
+      "seq": 502176,
+      "targets": [
+        "box",
+        "databricks",
+        "databricks-prefix",
+        "disk",
+        "dropbox",
+        "dropbox-root",
+        "gdrive",
+        "gdrive-folder",
+        "gridfs",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "nextcloud",
+        "onedrive",
+        "opfs",
+        "ram",
+        "redis",
+        "s3",
+        "s3-prefix",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh"
+      ],
+      "command": "(x=old; f() { echo \"in:$x\"; x=changed; }; x=new f; echo \"out:$x\"; u() { unset x; echo \"u:${x-unset}\"; }; x=pre u; echo \"u-out:$x\"; e() { export x; }; x=kept e; echo \"e-out:$x\"; env | grep '^x='; x=old; d() { declare -g x=glob; echo \"d:$x\"; }; x=pre d; echo \"d-out:$x\"; l() { local x; echo \"l:${x-unset}\"; }; x=pre l; nest() { x=n2 inner; echo \"nest:$x\"; }; inner() { echo \"inner:$x\"; x=ch; }; x=n1 nest; echo \"top:$x\"; x=1 x=2 true; echo \"dup:$x\"; g() { local x=g; h; echo \"g:$x\"; }; h() { unset x; echo \"h:$x\"; }; g; echo \"top:$x\")",
+      "expect": {
+        "exit": 0,
+        "stdout": "in:new\nout:old\nu:old\nu-out:old\ne-out:kept\nx=kept\nd:pre\nd-out:glob\nl:pre\ninner:n2\nnest:n1\ntop:glob\ndup:glob\nh:glob\ng:glob\ntop:glob\n",
+        "stderr": ""
+      }
     }
   ]
 }

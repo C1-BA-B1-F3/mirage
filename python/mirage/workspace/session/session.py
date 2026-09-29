@@ -24,8 +24,8 @@ from mirage.policy.types import (AdmissionRules, Decision, HideReason,
 from mirage.process.config import ProcessPermissions
 from mirage.secrets.config import EnvVar
 from mirage.shell.array import ShellArray
-from mirage.shell.constants import (BIN_PREFIX, RANDOM, RANDOM_UNSET,
-                                    SHELL_ARGV0)
+from mirage.shell.constants import (BIN_PREFIX, IFS_DEFAULT, RANDOM,
+                                    RANDOM_UNSET, SHELL_ARGV0)
 from mirage.shell.types import FunctionBody
 from mirage.shell.variable import (ManagedRef, ShellVar, VarAttr,
                                    attrs_from_letters, stored_attrs,
@@ -637,6 +637,10 @@ class SessionState:
         # such as a host interpreter, keeps its own. The one directory here
         # is where every program's file is.
         self.vars.setdefault("PATH", ShellVar(BIN_PREFIX, frozenset()))
+        # bash sets IFS at startup and never exports it, so a fresh shell
+        # reads `${#IFS}` as 3 and `OLDIFS=$IFS ... IFS=$OLDIFS` puts the
+        # default back rather than an empty IFS that splits nothing.
+        self.vars.setdefault("IFS", ShellVar(IFS_DEFAULT, frozenset()))
 
     def fork(self, **overrides: Any) -> "SessionState":
         """Return a copy of this session with overrides applied.

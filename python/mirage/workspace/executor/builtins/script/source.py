@@ -18,6 +18,7 @@ from typing import Any
 from mirage.io import IOResult
 from mirage.io.types import ByteSource
 from mirage.runtime.types import DispatchFn
+from mirage.shell.call_stack import CallStack
 from mirage.types import PathSpec, word_text
 from mirage.utils.errors import FS_ERRORS, fs_strerror
 from mirage.workspace.executor.builtins.scope import _scope_path
@@ -26,6 +27,8 @@ from mirage.workspace.executor.builtins.script.script import (read_script_text,
                                                               script_error)
 from mirage.workspace.executor.builtins.types import BuiltinCall, Result
 from mirage.workspace.session import SessionState
+from mirage.workspace.session.state import (positional_params,
+                                            set_positional_params)
 from mirage.workspace.types import ExecutionNode
 
 
@@ -36,6 +39,7 @@ async def handle_source(
     session: SessionState,
     args: list[str] | None = None,
     stdin: ByteSource | None = None,
+    call_stack: CallStack | None = None,
 ) -> tuple[ByteSource | None, IOResult, ExecutionNode]:
     """Read a script file and execute it in the calling shell.
 
@@ -52,9 +56,13 @@ async def handle_source(
         args (list[str] | None): positional parameters to expose to the
             script. When given they replace ``$1..$#`` for the duration
             of the source and are restored afterwards, matching bash;
-            when omitted the parent's positional parameters are kept.
+            when omitted the parameters in scope are the script's, and
+            a ``shift`` or ``set --`` in it changes them.
         stdin (ByteSource | None): the caller's standard input, which
             the script's statements read in turn.
+        call_stack (CallStack | None): function-call scope, if any; a
+            file sourced inside a function sees the function's
+            parameters.
     """
     raw = _scope_path(path)
     if word_text(path) == "":
@@ -71,10 +79,10 @@ async def handle_source(
                             f"{raw}: {fs_strerror(exc)}",
                             1,
                             command=f"source {raw}")
-    saved_positional: list[str] | None = None
-    if args:
-        saved_positional = session.positional_args
-        session.positional_args = args
+    # The file runs as a line of its own, which reads the shell's
+    # parameters, so the ones in scope stand in for them while it runs.
+    shell_params = session.positional_args
+    session.positional_args = args or positional_params(session, call_stack)
     session.source_depth += 1
     try:
         io = await execute_fn(script,
@@ -82,8 +90,10 @@ async def handle_source(
                               stdin=stdin)
     finally:
         session.source_depth -= 1
-        if saved_positional is not None:
-            session.positional_args = saved_positional
+        scoped = session.positional_args
+        session.positional_args = shell_params
+        if not args:
+            set_positional_params(session, call_stack, scoped)
     return io.stdout, io, ExecutionNode(command=f"source {raw}",
                                         exit_code=io.exit_code)
 
@@ -102,5 +112,5 @@ async def source_builtin(call: BuiltinCall) -> Result:
         return script_error("source", SOURCE_USAGE, 2)
     return await handle_source(call.dispatch, call.execute_fn, operands[0],
                                call.session,
-                               [word_text(o)
-                                for o in operands[1:]], call.stdin)
+                               [word_text(o) for o in operands[1:]],
+                               call.stdin, call.call_stack)

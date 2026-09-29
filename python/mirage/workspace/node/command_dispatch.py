@@ -14,6 +14,7 @@
 
 import asyncio
 import dataclasses
+from collections.abc import Callable
 from functools import partial
 from types import SimpleNamespace
 from typing import Any
@@ -29,7 +30,7 @@ from mirage.runtime.routing import RouteDecision
 from mirage.shell.bytes import encode_text
 from mirage.shell.parse import find_syntax_error, parse, syntax_error_result
 from mirage.shell.types import NodeType as NT
-from mirage.shell.variable import ShellVar, VarAttr
+from mirage.shell.variable import TempEnv, VarAttr
 from mirage.shell.xtrace import trace_command
 from mirage.types import LsLinkMode, PathSpec, Producer, word_text
 from mirage.utils.glob_walk import glob_pattern
@@ -161,8 +162,8 @@ async def execute_command(
     for k, v in prefix_assignments:
         # The hidden gate runs first, as in set_var: calling a hidden
         # name "readonly" would leak that it exists. Both branches
-        # below write session.env raw (a function-call prefix on
-        # purpose never restores), so ungated they would let a
+        # below write session.env raw (an `export` inside a function
+        # keeps its prefix past the call), so ungated they would let a
         # narrowed session clobber the host's value.
         try:
             ensure_var_visible(session, k)
@@ -200,30 +201,41 @@ async def execute_command(
             f"{k}={v}" for k, v in prefix_assignments),
                                                exit_code=0)
 
-    is_function_call = name in session.functions
-    saved_env_overrides: dict[str, ShellVar | None] = {}
-    for k, v in prefix_assignments:
-        if not is_function_call:
-            saved_env_overrides[k] = session.vars.get(k)
-        # Exported for the duration, which is the whole point of the
-        # form: `TOKEN=x printenv TOKEN` prints `x` because bash puts a
-        # prefix assignment in the *command's environment*, not merely in
-        # the shell. Seeding it plain left it invisible to every reader
-        # of `env_snapshot` -- the command's own env, an installed CLI,
-        # a guest runtime -- once that view narrowed to the exported set.
-        # The saved record is put back below, so the attribute does not
-        # outlive the command; a function call deliberately saves nothing
-        # and keeps the assignment, as bash does.
-        seed_var(session, k, v)
-        set_attr(session, k, VarAttr.EXPORT)
+    saved_env_overrides = TempEnv()
+
+    def seed_prefix(command: str) -> None:
+        # Seeded once the command's words are expanded, since bash
+        # expands them with the values from before the assignment:
+        # `x=new echo $x` prints the old x and `IFS=, cmd $v` splits on
+        # the old IFS.
+        for k, v in prefix_assignments:
+            saved_env_overrides.setdefault(k, session.vars.get(k))
+            # Exported for the duration, which is the whole point of the
+            # form: `TOKEN=x printenv TOKEN` prints `x` because bash puts
+            # a prefix assignment in the *command's environment*, not
+            # merely in the shell. Seeding it plain left it invisible to
+            # every reader of `env_snapshot` -- the command's own env, an
+            # installed CLI, a guest runtime -- once that view narrowed
+            # to the exported set. The saved record is put back below, so
+            # neither the value nor the attribute outlives the command.
+            seed_var(session, k, v)
+            set_attr(session, k, VarAttr.EXPORT)
+        if command in session.functions:
+            # A function runs with the prefix as its temporary
+            # environment, a scope under its own locals: `unset` inside
+            # reveals the caller's value and `export` keeps the name.
+            session._local_frames.append(saved_env_overrides)
 
     try:
         return await _dispatch_command_body(recurse, dispatch, registry,
                                             namespace, execute_fn, node, parts,
                                             name, session, stdin, call_stack,
-                                            job_table, cancel,
+                                            job_table, seed_prefix, cancel,
                                             routing_decision, agent_id, handed)
     finally:
+        frames = session._local_frames
+        if frames and frames[-1] is saved_env_overrides:
+            frames.pop()
         for k, prev in saved_env_overrides.items():
             if prev is None:
                 session.vars.pop(k, None)
@@ -244,6 +256,7 @@ async def _dispatch_command_body(
     stdin,
     call_stack,
     job_table,
+    seed_prefix: Callable[[str], None],
     cancel: asyncio.Event | None = None,
     routing_decision: RouteDecision | None = None,
     agent_id: str = "",
@@ -311,6 +324,7 @@ async def _dispatch_command_body(
                                  namespace,
                                  view=session_view(session, registry.policies),
                                  routing=routing_decision)
+        seed_prefix(argv.name)
 
         # Limits resolve against the expanded name, so `$CMD`-style
         # invocations get their real command's policy.

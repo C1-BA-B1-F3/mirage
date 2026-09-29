@@ -16,6 +16,7 @@ import pytest
 
 from mirage.workspace.expand.brace import (expand_template, make_inert,
                                            substitute)
+from mirage.workspace.expand.types import Piece
 
 EXPAND_CASES = [
     ("{a,b,c}", ["a", "b", "c"]),
@@ -93,8 +94,17 @@ def test_inert_prefix_and_suffix_stitch():
 
 def test_substitute_replaces_atoms_in_order():
     word = "x" + make_inert(0) + "y" + make_inert(1)
-    assert substitute(word, ["A", "B"]) == "xAyB"
+    atoms = [[Piece("A", True)], [Piece("B")]]
+    assert substitute(
+        word, atoms) == [Piece("x"),
+                         Piece("A", True),
+                         Piece("y"),
+                         Piece("B")]
 
 
-def test_substitute_without_atoms_is_identity():
-    assert substitute("plain", ["unused"]) == "plain"
+def test_substitute_without_atoms_is_one_literal_piece():
+    assert substitute("plain", [[Piece("unused")]]) == [Piece("plain")]
+
+
+def test_substitute_empty_word_has_no_pieces():
+    assert substitute("", []) == []

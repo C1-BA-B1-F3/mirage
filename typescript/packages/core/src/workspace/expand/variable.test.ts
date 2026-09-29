@@ -17,6 +17,8 @@ import { describe, expect, it } from 'vitest'
 import { CallStack } from '../../shell/call_stack.ts'
 import { NodeType as NT } from '../../shell/types.ts'
 import { SessionState, type SessionInit } from '../session/session.ts'
+import { joinChunks } from './fields.ts'
+import { type Chunk, piece } from './types.ts'
 import { expandBraces, lookupVar } from './variable.ts'
 import type { TSNodeLike } from '../../shell/types.ts'
 
@@ -75,7 +77,7 @@ describe('lookupVar', () => {
   })
 })
 
-const textExpandChild = (c: TSNodeLike): Promise<string> => Promise.resolve(c.text)
+const textExpandChild = (c: TSNodeLike): Promise<Chunk[]> => Promise.resolve([piece(c.text)])
 
 describe('expandBraces', () => {
   it('${VAR} reads from env', async () => {
@@ -87,7 +89,7 @@ describe('expandBraces', () => {
       namedChildren: [varName],
     }
     const s = makeSession({ vars: varsFromEnv({ FOO: 'bar' }) })
-    expect(await expandBraces(node, s, null, textExpandChild)).toBe('bar')
+    expect(joinChunks(await expandBraces(node, s, null, textExpandChild))).toBe('bar')
   })
 
   it('${VAR:-default} falls back when missing', async () => {
@@ -101,7 +103,7 @@ describe('expandBraces', () => {
       namedChildren: [varName, word],
     }
     const s = makeSession()
-    expect(await expandBraces(node, s, null, textExpandChild)).toBe('default')
+    expect(joinChunks(await expandBraces(node, s, null, textExpandChild))).toBe('default')
   })
 
   it('${VAR:-default} uses actual value when present', async () => {
@@ -115,6 +117,6 @@ describe('expandBraces', () => {
       namedChildren: [varName, word],
     }
     const s = makeSession({ vars: varsFromEnv({ FOO: 'real' }) })
-    expect(await expandBraces(node, s, null, textExpandChild)).toBe('real')
+    expect(joinChunks(await expandBraces(node, s, null, textExpandChild))).toBe('real')
   })
 })

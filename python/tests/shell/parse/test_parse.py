@@ -20,7 +20,7 @@ from mirage.shell.helpers import (get_command_name, get_for_parts,
                                   get_if_branches, get_list_parts, get_parts,
                                   get_pipeline_commands, get_redirects,
                                   get_text, get_while_parts)
-from mirage.shell.parse import strip_line_continuation
+from mirage.shell.parse import join_continuations
 from mirage.shell.types import NodeType as NT
 
 
@@ -313,9 +313,33 @@ def test_unrelated_syntax_error_still_reports():
         ("echo a\\\\\\\\", "echo a\\\\\\\\"),
         ("echo a", "echo a"),
         ("echo a\\ b", "echo a\\ b"),
+        # Mid-line, the pair goes wherever the reader sees it.
+        ("echo a\\\nb", "echo ab"),
+        ("echo \"a\\\nb\"", "echo \"ab\""),
+        ("echo $\\\n{x} $((1\\\n+2))", "echo ${x} $((1+2))"),
+        ("ec\\\nho a", "echo a"),
+        ("echo a\\\\\nb", "echo a\\\\\nb"),
+        ("echo a\\\\\\\nb", "echo a\\\\b"),
+        # Single-quoted and ANSI-C text and comments keep theirs.
+        ("echo 'a\\\nb'", "echo 'a\\\nb'"),
+        ("echo $'a\\\nb'", "echo $'a\\\nb'"),
+        ("echo a # c \\\necho b", "echo a # c \\\necho b"),
+        ("echo \"$(echo 'u\\\nv')\"", "echo \"$(echo 'u\\\nv')\""),
+        ("echo \"it's a\\\nb\"", "echo \"it's ab\""),
     ])
-def test_strip_line_continuation(command, expected):
-    assert strip_line_continuation(command) == expected
+def test_join_continuations(command, expected):
+    assert join_continuations(command) == expected
+
+
+def test_quoted_heredoc_body_keeps_its_continuations():
+    root = parse("cat <<'E' | \\\ntr a b\na\\\nb\nE")
+    assert root.text == b'cat <"a\\\\\nb\n" | tr a b\n'
+    assert root.source_text == b"cat <<'E' | \\\ntr a b\na\\\nb\nE"
+
+
+def test_unquoted_heredoc_body_joins_its_lines():
+    root = parse("cat <<E | \\\ntr a b\na\\\nb $x\nE")
+    assert root.text == b'cat <"ab $x\n" | tr a b\n'
 
 
 # tree-sitter-bash 0.25.1 drops a later unbraced `$var` out of its word

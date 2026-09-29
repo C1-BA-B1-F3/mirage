@@ -15,9 +15,15 @@
 import { IOResult } from '../../../../io/types.ts'
 import { ArithError } from '../../../../shell/errors.ts'
 import { PolicyDenied } from '../../../../policy/errors.ts'
-import type { VarAttr } from '../../../../shell/variable.ts'
-import type { SessionState } from '../../../session/session.ts'
-import { envGet, shadowLocal, visibleArrays, visibleAssocs } from '../../../session/state.ts'
+import { VarAttr } from '../../../../shell/variable.ts'
+import { sessionEntry, type SessionState } from '../../../session/session.ts'
+import {
+  envGet,
+  inCallEnv,
+  shadowLocal,
+  visibleArrays,
+  visibleAssocs,
+} from '../../../session/state.ts'
 import type { SessionView } from '../../../../ops/types.ts'
 import { ExecutionNode } from '../../../types.ts'
 import { arithRefusal, readonlyRefusal, refusal, requireView } from '../shared.ts'
@@ -107,7 +113,12 @@ export async function handleLocal(
       }
       if (stored !== null) stored.push(key)
     } else {
-      if (locals !== null) shadowLocal(session, locals, assign)
+      if (locals !== null) {
+        const fresh = !locals.has(assign)
+        shadowLocal(session, locals, assign)
+        const refused = fresh ? await freshLocal(session, view, cmd, assign) : null
+        if (refused !== null) return refused
+      }
       if (
         envGet(session, assign) === null &&
         !(assign in visibleArrays(session)) &&
@@ -135,6 +146,37 @@ export async function handleLocal(
   }
   if (errors.length > 0) return identifierFailure(cmd, errors)
   return [null, new IOResult(), new ExecutionNode({ command: cmd, exitCode: 0 })]
+}
+
+/**
+ * Start a bare `local NAME` unset, as bash 5.2 does.
+ *
+ * Only a name the frame did not shadow yet: a second `local x`, or the
+ * fresh array `local -a x` has already put in place, keeps what the
+ * function holds. The caller's value and attributes stay behind except
+ * the export mark: GNU prints `declare -- x` for `x=1; f() { local x; }`
+ * and `declare -x x` for an exported one, and `local x; x+=y` stores `y`.
+ * A name the call assigned in front is the exception and keeps that value
+ * (`x=1 f` where f runs `local x` reads 1). A readonly name refuses, as
+ * GNU's does.
+ */
+async function freshLocal(
+  session: SessionState,
+  view: SessionView,
+  cmd: string,
+  name: string,
+): Promise<Result | null> {
+  const record = sessionEntry(session.vars, name)
+  if (record === undefined || inCallEnv(session, name)) return null
+  if (view.isReadonly(name)) return readonlyRefusal(cmd, name)
+  try {
+    await view.unset(name, false)
+    if (record.attrs.has(VarAttr.Export)) await view.mark(name, VarAttr.Export, true)
+  } catch (err) {
+    if (err instanceof PolicyDenied) return refusal(cmd, err)
+    throw err
+  }
+  return null
 }
 
 /** The `local` arm. */

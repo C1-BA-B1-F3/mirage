@@ -61,10 +61,10 @@
         "gdrive-folder",
         "box"
       ],
-      "command": "printf 'echo inner=$1\\n' > /data/sb.sh && set -- P1 P2 && source /data/sb.sh QQ && echo after=$1 && rm /data/sb.sh",
+      "command": "printf 'echo inner=$1\\n' > /data/sb.sh && set -- P1 P2 && source /data/sb.sh QQ && echo after=$1 && (sbf() { source /data/sb.sh; . /data/sb.sh R; echo \"sbf=$1\"; }; sbf FA) && rm /data/sb.sh",
       "expect": {
         "exit": 0,
-        "stdout": "inner=QQ\nafter=P1\n",
+        "stdout": "inner=QQ\nafter=P1\ninner=FA\ninner=R\nsbf=FA\n",
         "stderr": ""
       }
     },

@@ -27,10 +27,10 @@
         "gdrive-folder",
         "box"
       ],
-      "command": "echo a\\",
+      "command": "printf \"[%s]\\n\" a\\\nb \"c\\\nd\" 'e\\\nf' $'g\\\nh'; echo a\\",
       "expect": {
         "exit": 0,
-        "stdout": "a\n",
+        "stdout": "[ab]\n[cd]\n[e\\\nf]\n[g\\\nh]\na\n",
         "stderr": ""
       }
     },
@@ -95,10 +95,44 @@
         "gdrive-folder",
         "box"
       ],
-      "command": "echo a\\\\",
+      "command": "printf \"[%s]\\n\" a\\\\\\\nb \"c\\\\\\\nd\"; echo a\\\\",
       "expect": {
         "exit": 0,
-        "stdout": "a\\\n",
+        "stdout": "[a\\b]\n[c\\d]\na\\\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "line_continuation_inside_expansions",
+      "seq": 930135,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "(lcx=1; printf \"[%s]\\n\" $\\\n{lcx} ${\\\nlcx} $(echo q\\\nr) $((1\\\n+2)) ${u:-a\\\nb} `echo s\\\nt`; ec\\\nho done # tail \\\necho after)",
+      "expect": {
+        "exit": 0,
+        "stdout": "[1]\n[1]\n[qr]\n[3]\n[ab]\n[st]\ndone\nafter\n",
         "stderr": ""
       }
     },

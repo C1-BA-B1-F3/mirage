@@ -27,10 +27,10 @@
         "gdrive-folder",
         "box"
       ],
-      "command": "OPTIND=1; set -- -a val -b; while getopts \"a:b\" opt; do case $opt in a) echo \"a=$OPTARG\";; b) echo \"b-set\";; esac; done",
+      "command": "OPTIND=1; set -- -a val -b; while getopts \"a:b\" opt; do case $opt in a) echo \"a=$OPTARG\";; b) echo \"b-set\";; esac; done; (set -- -a; k() { local OPTIND; getopts ab o; echo \"k:$? $o $OPTIND\"; }; k; k -b)",
       "expect": {
         "exit": 0,
-        "stdout": "a=val\nb-set\n",
+        "stdout": "a=val\nb-set\nk:1 ? 1\nk:0 b 2\n",
         "stderr": ""
       }
     },

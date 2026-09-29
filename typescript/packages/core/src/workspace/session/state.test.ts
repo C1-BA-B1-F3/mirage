@@ -15,7 +15,8 @@
 import { varsFromEnv } from '../../workspace/session/session.ts'
 import { setAttr } from '../../workspace/session/state.ts'
 import { ArithError } from '../../shell/errors.ts'
-import { VarAttr, type ShellVar } from '../../shell/variable.ts'
+import { TempEnv, VarAttr, type ShellVar } from '../../shell/variable.ts'
+import { CallStack } from '../../shell/call_stack.ts'
 import { describe, expect, it } from 'vitest'
 import type { SessionView } from '../../ops/types.ts'
 import { PolicyDenied } from '../../policy/errors.ts'
@@ -28,10 +29,14 @@ import {
   envSnapshot,
   gateRendering,
   gateRestoredVars,
+  inCallEnv,
   nextRandom,
+  outliveCall,
+  positionalParams,
   seedVar,
   sessionElements,
   sessionView,
+  setPositionalParams,
   stripKeyQuotes,
   subscriptIndex,
   visibleEnv,
@@ -275,7 +280,7 @@ describe('hidden vars in the session door', () => {
     expect('SLACK_TOKEN' in env).toBe(false)
     expect('AWS_SECRET_KEY' in env).toBe(false)
     expect(env.PUBLIC).toBe('1')
-    expect(Object.keys(env).sort()).toEqual(['PATH', 'PUBLIC', 'PWD'])
+    expect(Object.keys(env).sort()).toEqual(['IFS', 'PATH', 'PUBLIC', 'PWD'])
   })
 })
 
@@ -458,5 +463,62 @@ describe('gateRestoredVars', () => {
     expect(gateRendering({ b: '2', a: '1' })).toBe('1 2')
     expect(gateRendering(['p', 'q'])).toBe('p q')
     expect(gateRendering(null)).toBeNull()
+  })
+})
+
+describe('positional parameters in scope', () => {
+  it("are a function's own even when empty", () => {
+    const session = new SessionState({ sessionId: 's', positionalArgs: ['a', 'b'] })
+    const stack = new CallStack()
+    expect(positionalParams(session, stack)).toEqual(['a', 'b'])
+    stack.push([])
+    expect(positionalParams(session, stack)).toEqual([])
+    setPositionalParams(session, stack, ['x'])
+    expect(stack.getAllPositional()).toEqual(['x'])
+    expect(session.positionalArgs).toEqual(['a', 'b'])
+    stack.pop()
+    setPositionalParams(session, stack, ['y'])
+    expect(session.positionalArgs).toEqual(['y'])
+  })
+})
+
+function inFunction(session: SessionState, temp: TempEnv): Map<string, ShellVar | null> {
+  const locals = new Map<string, ShellVar | null>()
+  session.localFrames.push(temp, locals)
+  session.localVars = locals
+  return locals
+}
+
+describe('scopes on the call path', () => {
+  it('unset reveals what an enclosing scope saved', async () => {
+    const [view, session] = makeView()
+    inFunction(session, new TempEnv([['A', makeVar('old')]]))
+    seedVar(session, 'A', 'pre')
+    await view.unset('A')
+    expect(session.env.A).toBe('old')
+    expect(session.localFrames[0]?.has('A')).toBe(false)
+  })
+
+  it('unset of a local leaves it unset', async () => {
+    const [view, session] = makeView()
+    const locals = inFunction(session, new TempEnv())
+    locals.set('A', makeVar('1'))
+    seedVar(session, 'A', 'local')
+    await view.unset('A')
+    expect('A' in session.env).toBe(false)
+    expect(locals.get('A')?.value).toBe('1')
+  })
+
+  it('outliveCall keeps a temporary-environment name', () => {
+    const session = new SessionState({ sessionId: 's' })
+    const temp = new TempEnv([['A', null]])
+    const locals = inFunction(session, temp)
+    expect(inCallEnv(session, 'A')).toBe(true)
+    locals.set('B', null)
+    outliveCall(session, 'B')
+    expect([...locals.keys()]).toEqual(['B'])
+    outliveCall(session, 'A')
+    expect(temp.size).toBe(0)
+    expect(inCallEnv(session, 'A')).toBe(false)
   })
 })

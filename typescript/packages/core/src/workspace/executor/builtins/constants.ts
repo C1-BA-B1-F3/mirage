@@ -18,3 +18,9 @@ export const IDENTIFIER_RE = /^[A-Za-z_][A-Za-z0-9_]*$/
 // A subscript must be non-empty: bash rejects `a[]` as an invalid
 // identifier, while `a[ ]` is a valid arithmetic 0.
 export const TARGET_RE = /^([A-Za-z_][A-Za-z0-9_]*)(?:\[(.+)\])?$/
+
+// What makes bash's bare `set` single-quote a value: IFS whitespace,
+// quoting and control characters, reserved-word and glob characters, and
+// the expansion introducers (`sh_contains_shell_metas`). A `~` counts at
+// the start or after `=` or `:`, and a `#` only at the start.
+export const SET_QUOTED_CHARS: ReadonlySet<string> = new Set(' \t\n\'"\\|&;()<>!{}*[?]^$`')

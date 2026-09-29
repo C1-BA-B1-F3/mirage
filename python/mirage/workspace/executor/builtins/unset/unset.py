@@ -18,7 +18,6 @@ from mirage.ops.types import SessionView
 from mirage.policy import PolicyDenied
 from mirage.shell.array import array_extent, array_unset
 from mirage.shell.errors import ArithError, ExitSignal
-from mirage.utils.hidden import var_hidden
 from mirage.workspace.executor.builtins.constants import TARGET_RE
 from mirage.workspace.executor.builtins.shared import refusal, require_view
 from mirage.workspace.executor.builtins.types import BuiltinCall, Result
@@ -30,21 +29,16 @@ from mirage.workspace.types import ExecutionNode
 
 
 def _unset_variable(session: SessionState, name: str) -> None:
-    """Clear what the env door does not own after a whole-variable unset.
+    """Clear the getopts residue after a whole-variable unset.
 
-    The scalar half is the view's (``unset`` popped it, or quietly kept
-    it for a hidden name — a direct pop here would undo that refusal);
-    this clears the array storage and the getopts residue. The array
-    pop keeps a hidden name too: the embedder can seed
-    ``session.arrays`` before narrowing, so a hidden array exists and
-    is as much the host's to keep as the scalar the view protected.
+    The record itself is the view's to drop, scalar or array alike: it
+    keeps a hidden name, and inside a function it may put back a value
+    an enclosing scope saved.
 
     Args:
         session (SessionState): shell session state.
         name (str): a bare variable name (no subscript).
     """
-    if not var_hidden(session.hidden_vars, name):
-        session.vars.pop(name, None)
     if name == "OPTIND":
         session._getopts_optind = None
 

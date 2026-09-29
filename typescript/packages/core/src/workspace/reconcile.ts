@@ -13,7 +13,6 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import { RAMIndexCacheStore } from '../cache/index/ram.ts'
-import { NOOPAccessor } from '../accessor/base.ts'
 import type { FileCache } from '../cache/file/mixin.ts'
 import type { OpsRegistry } from '../ops/registry.ts'
 import type { BaseVFS } from '../vfs/base.ts'
@@ -24,7 +23,6 @@ import { rstripSlash } from '../utils/slash.ts'
 import type { MountEntry } from './mount/mount.ts'
 import type { Namespace } from './mount/namespace/namespace.ts'
 
-const NOOP_ACCESSOR = new NOOPAccessor()
 const REVALIDATE_OPS = new Set(['read', 'read_bytes', 'stat'])
 
 enum Verdict {
@@ -84,14 +82,9 @@ export class Reconciler {
     })
     let remoteStat: unknown
     try {
-      remoteStat = await this.opsRegistry.call(
-        'stat',
-        vfs,
-        vfs.accessor ?? NOOP_ACCESSOR,
-        scope,
-        [],
-        { index: new RAMIndexCacheStore() },
-      )
+      remoteStat = await this.opsRegistry.call('stat', vfs, vfs.accessor, scope, [], {
+        index: new RAMIndexCacheStore(),
+      })
     } catch (err) {
       if (isEnoent(err) || isEnotdir(err)) {
         await this.onMissing(path)

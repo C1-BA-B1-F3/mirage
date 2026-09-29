@@ -187,11 +187,6 @@ export async function handleCommandProvision(
       textArgs = scopedParts.slice(1).filter((p): p is string => typeof p === 'string')
     }
 
-    const accessor = mount.vfs.accessor
-    if (accessor === undefined) {
-      return new ProvisionResult({ command: cmdStr, precision: Precision.UNKNOWN })
-    }
-
     const rawIndex = mount.index
     const opts: CommandOpts = {
       flags: flagKwargs,
@@ -204,7 +199,7 @@ export async function handleCommandProvision(
       index: rawIndex,
     }
 
-    const raw = await cmd.provisionFn(accessor, vfsScopes, textArgs, opts)
+    const raw = await cmd.provisionFn(mount.vfs.accessor, vfsScopes, textArgs, opts)
     const result = raw instanceof ProvisionResult ? raw : new ProvisionResult({ command: cmdStr })
     if (result.command === '') {
       result.command = cmdStr

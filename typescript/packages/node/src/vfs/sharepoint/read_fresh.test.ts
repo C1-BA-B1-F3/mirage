@@ -124,7 +124,6 @@ describe('sharepoint under read: fresh', () => {
       const mount = w.mount('/m')
       const accessor = mount.vfs.accessor
       const index = mount.index
-      if (accessor === undefined) throw new Error('a Graph mount has an accessor')
       const items = graph.count('item')
       const listed = (await w.opsRegistry.call(
         'stat',

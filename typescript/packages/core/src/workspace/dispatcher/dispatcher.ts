@@ -13,7 +13,6 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import { RAMIndexCacheStore } from '../../cache/index/ram.ts'
-import { NOOPAccessor } from '../../accessor/base.ts'
 import { applyIo } from '../../cache/file/io.ts'
 import type { FileCache } from '../../cache/file/mixin.ts'
 import { CacheManager } from '../../cache/manager.ts'
@@ -91,8 +90,6 @@ import {
 } from '../../context/session_context.ts'
 import { moveReveals } from '../../utils/hidden.ts'
 import { removeRemnants, visibleBelow, type RemnantChannel } from '../../utils/remnants.ts'
-
-const NOOP_ACCESSOR_INSTANCE = new NOOPAccessor()
 
 /**
  * Drop listing entries the current session's spec hides.
@@ -524,14 +521,7 @@ export class Dispatcher {
                 Promise.resolve(
                   opName === 'setattr'
                     ? this.applySetattr(vfs, scope, p, fullKwargs)
-                    : this.opsRegistry.call(
-                        opName,
-                        vfs,
-                        vfs.accessor ?? NOOP_ACCESSOR_INSTANCE,
-                        scope,
-                        fullArgs,
-                        fullKwargs,
-                      ),
+                    : this.opsRegistry.call(opName, vfs, vfs.accessor, scope, fullArgs, fullKwargs),
                 ),
                 opTimeout,
                 opName,
@@ -700,14 +690,7 @@ export class Dispatcher {
         const answer = await runWithMountContext(
           () =>
             runWithRevisions(mount.revisions.size > 0 ? mount.revisions : null, () =>
-              this.opsRegistry.call(
-                opName,
-                vfs,
-                vfs.accessor ?? NOOP_ACCESSOR_INSTANCE,
-                spec,
-                [],
-                this.indexKwargs(mount),
-              ),
+              this.opsRegistry.call(opName, vfs, vfs.accessor, spec, [], this.indexKwargs(mount)),
             ),
           mount.mountId,
         )
@@ -1155,7 +1138,7 @@ export class Dispatcher {
     const filetype = getExtension(scope.virtual)
     try {
       const call = () =>
-        this.opsRegistry.call(opName, vfs, vfs.accessor ?? NOOP_ACCESSOR_INSTANCE, scope, [], {
+        this.opsRegistry.call(opName, vfs, vfs.accessor, scope, [], {
           ...this.indexKwargs(mount),
           ...(filetype !== null ? { filetype } : {}),
         })
@@ -1255,7 +1238,7 @@ export class Dispatcher {
       const filetype = getExtension(scope.virtual)
       try {
         const found = await mount.use(() =>
-          this.opsRegistry.call('stat', vfs, vfs.accessor ?? NOOP_ACCESSOR_INSTANCE, scope, [], {
+          this.opsRegistry.call('stat', vfs, vfs.accessor, scope, [], {
             ...this.indexKwargs(mount),
             ...(filetype !== null ? { filetype } : {}),
           }),
@@ -1292,14 +1275,7 @@ export class Dispatcher {
     if (this.namespace.isLink(p.virtual) || this.opsRegistry.find('setattr', vfs) === null) {
       return this.overlaySetattr(p, kwargs)
     }
-    const raw = await this.opsRegistry.call(
-      'setattr',
-      vfs,
-      vfs.accessor ?? NOOP_ACCESSOR_INSTANCE,
-      scope,
-      [],
-      kwargs,
-    )
+    const raw = await this.opsRegistry.call('setattr', vfs, vfs.accessor, scope, [], kwargs)
     const residual = raw as Record<string, number | string>
     const applied = SETATTR_KEYS.filter(
       (key) => kwargs[key] !== undefined && kwargs[key] !== null && !(key in residual),

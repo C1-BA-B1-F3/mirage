@@ -12,14 +12,11 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import { NOOPAccessor } from './accessor/base.ts'
 import { RAMIndexCacheStore } from './cache/index/ram.ts'
 import type { IndexCacheStore } from './cache/index/store.ts'
 import type { OpKwargs, RegisteredOp } from './ops/registry.ts'
 import type { FileStat, PathSpec } from './types.ts'
 import type { BaseVFS } from './vfs/base.ts'
-
-const NOOP_ACCESSOR = new NOOPAccessor()
 
 /**
  * A driver's op table, callable the way a mount calls it: the accessor
@@ -55,8 +52,9 @@ export class DriverOps {
     args: readonly unknown[] = [],
     kwargs: OpKwargs = {},
   ): Promise<unknown> {
-    const accessor = this.vfs.accessor ?? NOOP_ACCESSOR
-    return Promise.resolve(this.op(name).fn(accessor, path, args, { index: this.index, ...kwargs }))
+    return Promise.resolve(
+      this.op(name).fn(this.vfs.accessor, path, args, { index: this.index, ...kwargs }),
+    )
   }
 
   read(path: PathSpec, kwargs: OpKwargs = {}): Promise<Uint8Array> {

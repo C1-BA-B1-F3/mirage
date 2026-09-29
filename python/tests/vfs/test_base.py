@@ -167,6 +167,18 @@ def test_base_serves_no_tables():
     assert vfs.commands() == []
 
 
+def test_a_driver_that_brings_no_accessor_runs_over_the_default():
+    # TypeScript's twin defaults to a no-op accessor the same way, so
+    # neither language's mount branches on an absent one.
+    assert isinstance(BaseVFS().accessor, Accessor)
+
+
+def test_a_table_built_driver_keeps_the_accessor_it_was_handed():
+    accessor = WikiAccessor(PAGES)
+    vfs = BaseVFS(name="wiki", accessor=accessor, io=make_io())
+    assert vfs.accessor is accessor
+
+
 def test_base_has_no_storage_location():
     assert BaseVFS().storage_location() is None
 

@@ -13,7 +13,7 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import { describe, expect, it } from 'vitest'
-import { Accessor } from '../accessor/base.ts'
+import { Accessor, NOOPAccessor } from '../accessor/base.ts'
 import { RAMAccessor } from '../accessor/ram.ts'
 import { RAM_IO } from '../commands/builtin/ram/io.ts'
 import type { CommandIO } from '../commands/builtin/generic_bind/index.ts'
@@ -178,6 +178,18 @@ describe('BaseVFS contract', () => {
     const r = new Probe()
     expect(r.ops()).toEqual([])
     expect(r.commands()).toEqual([])
+  })
+
+  // Required, as Python's class attribute is: a caller never branches on
+  // the accessor's absence, and a subclass's `this.accessor` reads as the
+  // type it was declared with.
+  it('runs a driver that brings no accessor over a no-op one', () => {
+    expect(new Probe().accessor).toBeInstanceOf(NOOPAccessor)
+  })
+
+  it('keeps the accessor a table-built driver was handed', () => {
+    const accessor = new WikiAccessor(PAGES)
+    expect(makeVfs({ accessor }).accessor).toBe(accessor)
   })
 
   it('has no storage location', () => {

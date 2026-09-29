@@ -12,7 +12,7 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import type { Accessor } from '../accessor/base.ts'
+import { type Accessor, NOOPAccessor } from '../accessor/base.ts'
 import type { PredNode } from '../commands/builtin/find_eval.ts'
 import { type CommandIO, makeGenericCommands } from '../commands/builtin/generic_bind/index.ts'
 import type { ProvisionFn, RegisteredCommand } from '../commands/config.ts'
@@ -66,6 +66,11 @@ export interface VFSStateBase {
   // rebuilding one. See `vfsStateRequiresOverride`.
   needs_override?: boolean
 }
+
+// The accessor a driver that brings none runs over: the default Python's
+// `BaseVFS.accessor` class attribute carries too, so a mount and a caller
+// never branch on its absence.
+const NO_ACCESSOR = new NOOPAccessor()
 
 /**
  * The brand every driver carries, keyed through the symbol registry so a
@@ -245,7 +250,12 @@ export class BaseVFS<A extends Accessor = Accessor> {
    * Mirrors Python's `BaseVFS.read_revalidatable`.
    */
   readonly readRevalidatable: boolean = false
-  declare readonly accessor?: A
+  /**
+   * The backend handle every core function on the tables takes. A driver
+   * built from a table takes it from its options; a builtin declares and
+   * assigns its own. One that brings none runs over a no-op accessor.
+   */
+  readonly accessor: A
 
   // Whether this driver was built from a table, and the two tables
   // derived from it when it was.
@@ -273,6 +283,7 @@ export class BaseVFS<A extends Accessor = Accessor> {
     const io = (options as { io?: CommandIO<A> | VFSAdapter<A> } | undefined)?.io
     if (options === undefined || io === undefined) {
       this.name = 'base'
+      this.accessor = NO_ACCESSOR as unknown as A
       this.#fromTable = false
       this.#commands = []
       this.#ops = []

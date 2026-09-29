@@ -19,7 +19,6 @@ import { coerceReadPolicy } from './read_policy.ts'
 import { KeyLock } from '../../cache/lock.ts'
 import { buildIndex } from '../../cache/index/factory.ts'
 import type { IndexCacheStore } from '../../cache/index/store.ts'
-import { type Accessor, NOOPAccessor } from '../../accessor/base.ts'
 import type {
   CommandFn,
   CommandFnResult,
@@ -32,7 +31,6 @@ import { ROOT_CWD } from '../../commands/constants.ts'
 import type { OpKwargs } from '../../ops/registry.ts'
 import type { LinkView } from '../../ops/types.ts'
 
-const NOOP_ACCESSOR = new NOOPAccessor()
 import { getExtension } from '../../commands/resolve.ts'
 import { resolveLimit } from '../../policy/index.ts'
 import { runWithTimeout } from '../../commands/builtin/utils/limit.ts'
@@ -220,7 +218,7 @@ export class MountEntry {
     return this.use(async () => {
       const call = async (): Promise<PathSpec[]> => {
         await this.ensureReady()
-        const accessor = this.vfs.accessor ?? NOOP_ACCESSOR
+        const accessor = this.vfs.accessor
         // The raw store, not the cache-scoped view: the walk runs under
         // the cache manager's mutation lock, which the view takes again.
         const kwargs: OpKwargs = { index: this.indexStore }
@@ -625,7 +623,7 @@ export class MountEntry {
       // see them, so expanding here would lose what the handler needs.
       // Python's dispatcher never expands either.
 
-      const accessor = (this.vfs as { accessor?: Accessor }).accessor ?? NOOP_ACCESSOR
+      const accessor = this.vfs.accessor
       const cmdOpts: CommandOpts = {
         stdin: context.stdin ?? null,
         flags: stampedFlags,
@@ -791,7 +789,7 @@ export class MountEntry {
         ...(kwargs.index === undefined ? { index: this.index } : {}),
         ...(filetype !== null && kwargs.filetype === undefined ? { filetype } : {}),
       }
-      const accessor = this.vfs.accessor ?? NOOP_ACCESSOR
+      const accessor = this.vfs.accessor
       // Per-op caps are policy and fire at the op door (postOps); only
       // the timeout stays here, bounding the backend call itself.
       const opOverride = this.commandLimits.get(opName) ?? null

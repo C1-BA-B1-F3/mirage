@@ -880,7 +880,6 @@ async function makeFake(name: string, shape: Shape, data: Uint8Array): Promise<F
     const item = gdriveAdd('a', data, mime)
     const vfs = await buildVfs(name, GDRIVE_CONFIG)
     const accessor = vfs.accessor
-    if (accessor === undefined) throw new Error(`${name} built no accessor`)
     expect(vfs.readRevalidatable).toBe(true)
     // The fake names no owner, so the file lists under shared/. A rewrite
     // moves modifiedTime within the same day, which keeps the name.

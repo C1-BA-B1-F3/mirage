@@ -59,7 +59,9 @@ def test_path_flag_scopes_leaves_a_program_file_out(cmd: str, flag: str):
 
 
 @pytest.mark.parametrize("cmd, argv", [
-    ("curl", ["-o", "/other/body", "http://x.test/"]),
+    ("curl", ["-o", "/other/body", "-D", "/data/h", "http://x.test/"]),
+    ("curl",
+     ["--dump-header", "-", "--output", "/other/body", "http://x.test/"]),
     ("jq", [
         "--slurpfile", "s", "/other/s.json", "--rawfile", "r", "/dev/fd/63",
         "."

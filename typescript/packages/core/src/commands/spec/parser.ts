@@ -37,6 +37,7 @@ import {
   NUMERIC_SHORT,
   SOLE_ARGUMENT_LONG_OPTIONS,
   STDIN_SCRIPT_COMMANDS,
+  STDOUT_DASH_OPTIONS,
 } from './constants.ts'
 import { flagOccurrences } from './flag_view.ts'
 import { expandOldStyle } from './oldstyle.ts'
@@ -1016,7 +1017,7 @@ export function parseCommand(
       flags[flagName] = resolvedList
       pathFlagValues.push(...resolvedList)
     } else if (typeof val === 'string') {
-      if (cmdName === 'wget' && flagName === '-O' && val === '-') continue
+      if (val === '-' && STDOUT_DASH_OPTIONS.get(cmdName) === flagName) continue
       const resolved = resolvePath(val, cwd)
       flags[flagName] = resolved
       pathFlagValues.push(resolved)
@@ -1039,7 +1040,7 @@ export function parseCommand(
     if (
       cs.kindByDest.get(name) === 'path' &&
       typeof value === 'string' &&
-      !(cmdName === 'wget' && name === '-O' && value === '-')
+      !(value === '-' && STDOUT_DASH_OPTIONS.get(cmdName) === name)
     )
       occurrence[1] = resolvePath(value, cwd)
   }

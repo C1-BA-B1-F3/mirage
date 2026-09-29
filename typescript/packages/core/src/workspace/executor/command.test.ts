@@ -211,7 +211,7 @@ describe('the words a handler sees', () => {
 })
 
 describe('door options route nothing', () => {
-  // jq's --rawfile/--slurpfile are read and curl's -o written through
+  // jq's --rawfile/--slurpfile are read and curl's -o/-D written through
   // the dispatcher, so a file on another mount, or a process substitution
   // under /dev, is no cross-mount line (DOOR_FLAG_KEYS). Positional operands
   // still route. Mirrors python's test_door_options_route_nothing.

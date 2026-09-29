@@ -43,14 +43,14 @@ CWD_DEFAULT_RAW = {
 }
 
 # The path options whose file the handler itself reads or writes through
-# the dispatcher, keyed by command, valued by kwarg name: curl's -o, jq's
-# --rawfile and --slurpfile. Like a program file, such a file is no
-# operand of the mount the line runs on, so it routes nothing: the line
-# runs where its positional operands (or the cwd) put it, and
-# `--slurpfile` over a process substitution, or beside an input on
-# another mount, is not cross-mount.
+# the dispatcher, keyed by command, valued by kwarg name: curl's -o and
+# -D, jq's --rawfile and --slurpfile. Like a program file, such a file is
+# no operand of the mount the line runs on, so it routes nothing: the line
+# runs where its positional operands (or the cwd) put it, and `-o` and
+# `-D` on two mounts, or `--slurpfile` over a process substitution, is not
+# cross-mount.
 DOOR_FLAG_KEYS: dict[str, tuple[str, ...]] = {
-    "curl": ("output", ),
+    "curl": ("output", "dump_header"),
     "jq": ("rawfile", "slurpfile"),
 }
 

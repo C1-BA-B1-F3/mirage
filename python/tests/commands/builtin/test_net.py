@@ -48,7 +48,8 @@ def mock_http(monkeypatch):
                       headers=None,
                       data=None,
                       timeout=30,
-                      follow_redirects=False):
+                      follow_redirects=False,
+                      verify=True):
         return HttpResponse(status=200, reason="OK", body=payload, url=url)
 
     def _fake_get(url, headers=None, timeout=30, follow_redirects=True):

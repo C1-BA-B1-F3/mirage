@@ -43,6 +43,11 @@ SPECS: dict[str, CommandSpec] = {
                    long="--output",
                    type="path",
                    description="Write response body to the given file."),
+            Option(short="-D",
+                   long="--dump-header",
+                   type="path",
+                   description="Write the received headers to the given "
+                   "file, - for stdout."),
             Option(short="-L",
                    long="--location",
                    description="Follow HTTP redirects."),
@@ -69,6 +74,10 @@ SPECS: dict[str, CommandSpec] = {
                    long="--max-time",
                    type="float",
                    description="Give up after this many seconds."),
+            Option(short="-k",
+                   long="--insecure",
+                   description="Skip verification of the server "
+                   "certificate."),
         ),
         # A URL slot, not a free-text rest: a textual rest makes the parser
         # keep unknown dash words as operands (the echo/git-log shape), and

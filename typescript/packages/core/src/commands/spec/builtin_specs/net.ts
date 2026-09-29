@@ -54,6 +54,12 @@ export const SPECS: Record<string, CommandSpec> = {
         type: 'path',
         description: 'Write response body to the given file.',
       }),
+      new Option({
+        short: '-D',
+        long: '--dump-header',
+        type: 'path',
+        description: 'Write the received headers to the given file, - for stdout.',
+      }),
       new Option({ short: '-L', long: '--location', description: 'Follow HTTP redirects.' }),
       new Option({
         short: '-f',
@@ -86,6 +92,11 @@ export const SPECS: Record<string, CommandSpec> = {
         long: '--max-time',
         type: 'float',
         description: 'Give up after this many seconds.',
+      }),
+      new Option({
+        short: '-k',
+        long: '--insecure',
+        description: 'Skip verification of the server certificate.',
       }),
     ],
     // A URL slot, not a free-text rest: a textual rest makes the parser keep

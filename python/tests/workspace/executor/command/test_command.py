@@ -49,7 +49,7 @@ async def test_a_handler_sees_the_words_the_line_spelled(line, err):
     assert (r.stderr or b"").decode().startswith(err)
 
 
-# jq's --rawfile/--slurpfile are read and curl's -o written through
+# jq's --rawfile/--slurpfile are read and curl's -o/-D written through
 # the dispatcher, so a file on another mount, or a process substitution
 # under /dev, is no cross-mount line (DOOR_FLAG_KEYS). Positional
 # operands still route.

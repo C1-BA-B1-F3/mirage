@@ -19,7 +19,7 @@ Watching has two independent halves:
 | Nextcloud             | ✓ recursive PROPFIND          | WebDAV ETag       | `webhook_listeners` app (Nextcloud 30+)    |
 | S3 / S3-compatible    | ✓ recursive `ListObjectsV2`   | object ETag       | S3 Event Notifications (SQS/EventBridge)   |
 | GitHub                | ✓ recursive git tree          | blob sha          | repository webhooks                        |
-| Dropbox               | ✓ `list_folder/continue` (walk is reset) | `content_hash` | Dropbox webhooks + cursor delta            |
+| Dropbox               | ✓ `list_folder/continue` (walk is reset) | `content_hash` | [`list_folder/longpoll` + cursor delta](https://github.com/strukto-ai/mirage/blob/main/examples/typescript/dropbox/watch.ts)            |
 | GridFS                | ✓ `fs.files` prefix query     | revision ObjectId | MongoDB change streams                     |
 | Hugging Face          | ✓ recursive tree listing      | Hub ETag          | —                                          |
 | Disk                  | ✓ recursive directory walk    | mtime\|size       | inotify / FSEvents, `DiskEventHook`        |
@@ -141,6 +141,30 @@ writes neither loop itself:
   at all because Drive, Box and Graph resolve a path's id through the index its
   parent's readdir populated; a null index makes every path below the root read
   as absent.
+
+The [Dropbox longpoll example](https://github.com/strukto-ai/mirage/blob/main/examples/typescript/dropbox/watch.ts) owns the loop in the embedding
+program: establish a baseline with `pull`, wait for `list_folder/longpoll`,
+then pull and `notify` each change. No EventHook or library background loop is
+needed. The example extracts the cursor from the **latest** v1 checkpoint
+(`_dbx: 1`, `c`), while passing the entire checkpoint back to `pull`. This is
+Dropbox-specific example code; other consumers should treat checkpoints as opaque.
+On reset, pull with the old checkpoint so the existing hook can relist and diff
+against its saved snapshot. A missing watch root retries after 30 seconds.
+
+Set `DROPBOX_APP_KEY`, `DROPBOX_APP_SECRET`, and `DROPBOX_REFRESH_TOKEN`;
+optionally set `DROPBOX_ROOT_PATH`. From `typescript/`, run
+`pnpm --filter @struktoai/mirage-examples exec tsx dropbox/watch.ts`. Ctrl-C
+stops polling and finishes closing the workspace. Because `DeltaHook.pull`
+has no cancellation parameter, this standalone example then allows one more
+second before exiting with status 130 if an in-flight pull still holds the
+process open. The deadline never interrupts workspace cleanup.
+
+Dropbox's [longpoll endpoint](https://docs.dropboxapi.com/dropbox-api/api-reference/user-endpoints/files/list-folder-longpoll)
+uses the notification host without an Authorization header. Its timeout is
+30–480 seconds; the HTTP timeout must also allow up to 90 seconds of server
+jitter. The returned `backoff` is a required minimum delay before the next
+longpoll, including a response with no changes. The examples let transport or
+unexpected API failures surface and close their resources on cancellation.
 
 Dropbox `pull` already uses `list_folder/continue` and keeps the listing walk
 as the reset path. Box `pull` reads the account's `/events` stream from a

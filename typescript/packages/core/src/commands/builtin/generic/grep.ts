@@ -321,6 +321,7 @@ export async function grepGeneric(
             if (probe.type === FileType.DIRECTORY) continue
           }
           yield* scan(child, true)
+          if (f.quiet && matched) break
         }
         return
       }

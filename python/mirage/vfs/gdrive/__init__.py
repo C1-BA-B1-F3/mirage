@@ -12,12 +12,17 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+from typing import TYPE_CHECKING
+
 from mirage.vfs.gdrive.config import GoogleDriveConfig
+
+if TYPE_CHECKING:
+    from mirage.vfs.gdrive.gdrive import GoogleDriveVFS
 
 __all__ = ["GoogleDriveConfig", "GoogleDriveVFS"]
 
 
-def __getattr__(name: str):
+def __getattr__(name: str) -> "type[GoogleDriveVFS]":
     if name == "GoogleDriveVFS":
         from mirage.vfs.gdrive.gdrive import GoogleDriveVFS
         return GoogleDriveVFS

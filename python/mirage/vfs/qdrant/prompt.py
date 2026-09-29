@@ -15,18 +15,14 @@
 PROMPT = """\
 This mount is a Qdrant vector database exposed as a filesystem.
 
-Layout:
-- At the root, each directory is a Qdrant collection (unless a single collection
-  is pinned in config).
-- Inside a collection, directories are the configured group-by payload fields.
-  Descending narrows a filter, e.g. `ls products/Men/Tshirts` lists points where
-  category=Men, type=Tshirts.
-- Each matching point appears as files named by its id: `<id>.json` (the full
-  payload as JSON), `<id>.txt` (the embedded source text) when a text field is
-  configured, and `<id>.<ext>` (raw blob bytes) when a blob field is configured.
-  `<id>` is the Qdrant point id. The embedding vector itself is never shown.
-- Semantic search is the `search` command: `search "red running shoes"` returns
-  the top matching points as their content file paths with a similarity score.
-
-Use ls/cd/cat/tree/find/grep as usual. Quote queries that contain spaces.\
-"""
+At the root each directory is a collection (unless a single collection is pinned
+in config). Inside a collection, directories are the configured group-by payload
+fields; descending narrows a filter. Each matching point appears as files named
+by its id: <id>.json (the full payload), <id>.txt (the embedded source text)
+when a text field is configured, and <id>.<ext> (raw blob bytes) when a blob
+field is configured, where <id> is the Qdrant point id. The embedding vector is
+never shown. For semantic search use the search command, which returns ranked
+points as their content file paths with a similarity score, e.g.
+search "red running shoes" /mount then cat one of the returned files.
+Use ls/cd/cat/tree/find/wc as usual; grep/rg stay lexical. Quote queries that
+contain spaces."""

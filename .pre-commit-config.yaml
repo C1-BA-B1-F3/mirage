@@ -176,3 +176,9 @@ repos:
         # one change most likely to break it.
         files: ^(python/(mirage|tests)/.*\.py|scripts/check_test_pathspec\.py)$
         pass_filenames: false
+      - id: prompt-parity
+        name: VFS prompt parity
+        entry: python3 scripts/check_prompt_parity.py --selftest
+        language: system
+        files: ^(python/mirage/vfs/.*/prompt\.py|typescript/packages/[^/]+/src/vfs/.*/prompt\.ts|scripts/check_prompt_parity\.py|spec/prompt_exceptions\.json)$
+        pass_filenames: false

@@ -73,16 +73,9 @@ async function decode(out: GrepOut): Promise<string> {
 
 async function runGrep(
   flags: Record<string, string | boolean | number | string[]>,
+  paths: PathSpec[] = [spec('/data')],
 ): Promise<[GrepOut, IOResult]> {
-  const result = await grepGeneric(
-    'grep',
-    [spec('/data')],
-    ['alice'],
-    opts(flags),
-    stat,
-    readdir,
-    stream,
-  )
+  const result = await grepGeneric('grep', paths, ['alice'], opts(flags), stat, readdir, stream)
   const [out, io] = result as [GrepOut, IOResult]
   return [out === null ? null : await materialize(out), io]
 }
@@ -125,8 +118,15 @@ describe('grepGeneric operand errors', () => {
     expect(io.exitCode).toBe(2)
   })
 
-  it('grep -rq lets a match outrank a failed operand', async () => {
-    const [, io] = await runGrep({ r: true, q: true })
+  it('grep -rq skips errors after its first match', async () => {
+    const [out, io] = await runGrep({ r: true, q: true })
+    expect(await decode(out)).toBe('')
+    expect(await decode(io.stderr)).toBe('')
+    expect(io.exitCode).toBe(0)
+  })
+
+  it('grep -rq lets a match outrank an earlier failed operand', async () => {
+    const [, io] = await runGrep({ r: true, q: true }, [spec('/data/bad.txt'), spec('/data')])
     expect(DEC.decode(io.stderr as Uint8Array)).toBe('grep: /data/bad.txt: Permission denied\n')
     expect(io.exitCode).toBe(0)
   })

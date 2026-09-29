@@ -334,7 +334,14 @@ export async function seedIndex(
   await Promise.all([...dirs].map(([parent, rows]) => index.setDir(parent, rows, expires)))
 }
 
-/** Refill the index and report whether it was populated. */
+/**
+ * Refetch the tree and re-seed the index from it.
+ *
+ * The mount fetches the whole tree once and seeds the index with it, so the
+ * index *is* the listing rather than a cache in front of one. That makes a
+ * cleared or expired index indistinguishable from an empty repository, which
+ * is why dropping the index has to mean "refetch".
+ */
 export async function refillIndex(
   accessor: HfHubAccessor,
   index: IndexCacheStore,
@@ -344,7 +351,11 @@ export async function refillIndex(
   return true
 }
 
-/** Refill the index and return the rows written. */
+/**
+ * `refillIndex`, returning the rows it wrote: a reader answers from them
+ * when its re-read of the store has already expired. Mirrors Python's
+ * `refill_snapshot`.
+ */
 export async function refillSnapshot(
   accessor: HfHubAccessor,
   index: IndexCacheStore,
@@ -361,7 +372,15 @@ export async function refillSnapshot(
   return snapshot
 }
 
-/** Refill a missing or expired root listing. */
+/**
+ * Refetch when the root listing is missing or expired.
+ *
+ * Every reader treats a missing listing as a real absence, which is right
+ * against a *live* index and wrong against one that was never filled or has
+ * been dropped. The root listing is what tells the two apart, in one lookup
+ * and no request: the tree is written whole, so while the index is live the
+ * mount root always has a row.
+ */
 export async function ensureLiveIndex(
   accessor: HfHubAccessor,
   index: IndexCacheStore,
@@ -370,7 +389,7 @@ export async function ensureLiveIndex(
   return (await ensureLiveSnapshot(accessor, index, prefix)) !== null
 }
 
-/** Return a refill snapshot when the root is missing or expired. */
+/** `ensureLiveIndex`, returning the rows of the refill it made. Mirrors Python's `ensure_live_snapshot`. */
 export async function ensureLiveSnapshot(
   accessor: HfHubAccessor,
   index: IndexCacheStore,

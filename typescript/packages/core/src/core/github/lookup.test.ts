@@ -24,7 +24,7 @@ import { FakeGitHub, blobSha, raceIndex, servedAccessor } from './_test_util.ts'
 import { locate, lookupRetrying, pointLookup } from './lookup.ts'
 import { read } from './read.ts'
 import { stat } from './stat.ts'
-import { refillIndex } from './tree.ts'
+import { refillSnapshot } from './tree.ts'
 
 const FILES = {
   'README.md': 'hello',
@@ -66,7 +66,7 @@ function asked(route: string): string[] {
 
 async function listed(index: IndexCacheStore = new RAMIndexCacheStore()): Promise<GitHubAccessor> {
   const accessor = servedAccessor()
-  await refillIndex(accessor, index, '/gh')
+  await refillSnapshot(accessor, index, '/gh')
   gh.log.length = 0
   return accessor
 }

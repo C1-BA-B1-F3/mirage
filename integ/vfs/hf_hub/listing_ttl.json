@@ -25,9 +25,6 @@
           }
         },
         {
-          "command": "cat /data/lt/a.txt"
-        },
-        {
           "command": "sleep 2"
         },
         {
@@ -42,10 +39,10 @@
       ],
       "expect": {
         "exit": 0,
-        "stdout": "v1\nv1\n/data/lt/a.txt\nversion two\n12\n",
+        "stdout": "v1\n/data/lt/a.txt\nversion two\n12\n",
         "stderr": ""
       },
-      "note": "Caps the Hub tree's explicit year-long expiry. After ttl, find, cat and stat see the replacement's new size and bytes. Overwriting one name keeps the result stable on the shared fake."
+      "note": "Caps the Hub tree's explicit year-long expiry. After ttl, find, cat and stat see the replacement's new size and bytes. Overwriting one name keeps the result stable on the shared fake. The serve-stale step before expiry is left to read_bounded_serves_stale (integ/unix/consistency/basic.json, ttl 600): with a 1 s ttl it would race the out-of-band commit."
     }
   ]
 }

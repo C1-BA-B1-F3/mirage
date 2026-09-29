@@ -25,9 +25,6 @@
           }
         },
         {
-          "command": "cat /data/lt/a.txt"
-        },
-        {
           "command": "sleep 2"
         },
         {
@@ -42,10 +39,10 @@
       ],
       "expect": {
         "exit": 0,
-        "stdout": "v1\nv1\n/data/lt/a.txt\nversion two\n12\n",
+        "stdout": "v1\n/data/lt/a.txt\nversion two\n12\n",
         "stderr": ""
       },
-      "note": "The first command after expiry is a root find: it must refresh accessor.tree itself, while a subdirectory operand could refresh through stat. The size filter distinguishes the new blob. Overwriting one name and filtering by path keeps the result stable on the shared fake, which retains files between cases."
+      "note": "The first command after expiry is a root find: it must refresh accessor.tree itself, while a subdirectory operand could refresh through stat. The size filter distinguishes the new blob. Overwriting one name and filtering by path keeps the result stable on the shared fake, which retains files between cases. The serve-stale step before expiry is left to read_bounded_serves_stale (integ/unix/consistency/basic.json, ttl 600): with a 1 s ttl it would race the out-of-band commit."
     }
   ]
 }

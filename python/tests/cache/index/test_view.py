@@ -404,7 +404,15 @@ async def test_the_cap_is_taken_after_the_fence_is_entered(clock, kind):
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("kind", ["ram", "fake-redis", "redis"])
-async def test_a_view_reports_its_store_lifetime(kind):
+async def test_a_view_reports_the_lifetime_its_listings_get(kind):
+    # Uncapped, the store's default; capped, whichever is shorter, since
+    # that is how long a listing written through the view lives.
     async with _store(kind, 42) as store:
-        view = IndexView(store, RAMFileCacheStore(), "/data", _owns_all)
-        assert (view.ttl, store.ttl) == (42, 42)
+        cache = RAMFileCacheStore()
+        assert IndexView(store, cache, "/data", _owns_all).ttl == 42
+        assert IndexView(store, cache, "/data", _owns_all,
+                         read_ttl=10).ttl == 10
+        assert IndexView(store, cache, "/data", _owns_all,
+                         read_ttl=600).ttl == 42
+        await store.clear()
+        await store.close()

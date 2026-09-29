@@ -57,7 +57,7 @@ export class IndexView extends IndexCacheStore {
   }
 
   get ttl(): number {
-    return this.inner.ttl
+    return this.readTtl === undefined ? this.inner.ttl : Math.min(this.inner.ttl, this.readTtl)
   }
 
   private fence<T>(fn: () => Promise<T>): Promise<T> {
@@ -66,23 +66,27 @@ export class IndexView extends IndexCacheStore {
 
   /** Cap the expiry, preserving the store default when it is shorter. */
   private deadline(expiredAt: Date | null | undefined): Date | null | undefined {
-    if (this.readTtl === undefined) return expiredAt
-    const cap = Date.now() + this.readTtl * 1000
-    if (expiredAt === null || expiredAt === undefined) {
-      return this.inner.ttl > this.readTtl ? new Date(cap) : expiredAt
-    }
-    return expiredAt.getTime() > cap ? new Date(cap) : expiredAt
+    if (expiredAt !== null && expiredAt !== undefined) return this.cap(expiredAt)
+    if (this.readTtl === undefined || this.inner.ttl <= this.readTtl) return expiredAt
+    return new Date(Date.now() + this.readTtl * 1000)
+  }
+
+  /** Shorten an explicit expiry to this mount's bound. */
+  private cap(at: Date): Date {
+    if (this.readTtl === undefined) return at
+    const bound = Date.now() + this.readTtl * 1000
+    return at.getTime() > bound ? new Date(bound) : at
   }
 
   override scopeSnapshot(snapshot: IndexSnapshot): IndexSnapshot {
-    return this.inner.scopeSnapshot({
+    return {
       entries: new Map([...snapshot.entries].filter(([path]) => this.owns(path))),
       children: new Map(
         [...snapshot.children]
           .filter(([path]) => this.owns(path))
           .map(([path, keys]) => [path, keys.filter((key) => this.owns(key))]),
       ),
-    })
+    }
   }
 
   seed(
@@ -92,7 +96,7 @@ export class IndexView extends IndexCacheStore {
   ): void {
     if (!this.owns(this.prefix)) return
     const snapshot = this.scopeSnapshot({ entries, children })
-    this.inner.seed(snapshot.entries, snapshot.children, this.deadline(expiresAt) ?? expiresAt)
+    this.inner.seed(snapshot.entries, snapshot.children, this.cap(expiresAt))
   }
 
   entries(): Promise<Map<string, IndexEntry>> {

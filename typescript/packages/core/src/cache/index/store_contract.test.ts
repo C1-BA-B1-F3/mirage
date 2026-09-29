@@ -45,10 +45,14 @@ for (const backend of ['ram', 'redis']) {
         expect(store.ttl).toBe(1)
       })
 
-      it('lets a view report its store lifetime', async () => {
+      // Uncapped, the store's default; capped, whichever is shorter, since
+      // that is how long a listing written through the view lives.
+      it('lets a view report the lifetime its listings get', async () => {
         const cache = new RAMFileCacheStore()
         try {
-          expect(new IndexView(store, cache, '/', () => true).ttl).toBe(store.ttl)
+          expect(new IndexView(store, cache, '/', () => true).ttl).toBe(1)
+          expect(new IndexView(store, cache, '/', () => true, { readTtl: 600 }).ttl).toBe(1)
+          expect(new IndexView(store, cache, '/', () => true, { readTtl: 0.5 }).ttl).toBe(0.5)
         } finally {
           await cache.close()
         }

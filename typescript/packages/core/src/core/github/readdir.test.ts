@@ -20,7 +20,7 @@ import { IndexView } from '../../cache/index/view.ts'
 import { RAMFileCacheStore } from '../../cache/file/ram.ts'
 import { IndexEntry } from '../../cache/index/config.ts'
 import { FileType, PathSpec } from '../../types.ts'
-import { populateIndex, refillIndex } from './tree.ts'
+import { populateIndex, refillSnapshot } from './tree.ts'
 import { readdir } from './readdir.ts'
 import { read } from './read.ts'
 import { stat } from './stat.ts'
@@ -404,7 +404,7 @@ describe('github readdir answers from its own refill', () => {
   ])('lists the folder when %s', async (_, live) => {
     const accessor = served(FILES)
     const index = new ExpiredOnArrival(live)
-    await refillIndex(accessor, index, '/gh')
+    await refillSnapshot(accessor, index, '/gh')
     gh.log.length = 0
     expect(await readdir(accessor, under('docs'), index)).toEqual([
       '/gh/docs/a.txt',
@@ -416,7 +416,7 @@ describe('github readdir answers from its own refill', () => {
   it('answers ENOENT for a folder the fresh tree no longer has', async () => {
     const accessor = served(FILES)
     const index = new ExpiredOnArrival()
-    await refillIndex(accessor, index, '/gh')
+    await refillSnapshot(accessor, index, '/gh')
     gh.files.delete('docs/a.txt')
     gh.files.delete('docs/b.txt')
     await index.invalidate()
@@ -446,7 +446,7 @@ describe('github readdir answers from its own refill', () => {
   it('keeps the per-directory fallback when the refill comes back truncated', async () => {
     const accessor = served({ 'docs/a.txt': 'alpha', 'docs/deep/x.txt': 'x', 'top.txt': 'top' })
     const index = new ExpiredOnArrival()
-    await refillIndex(accessor, index, '/gh')
+    await refillSnapshot(accessor, index, '/gh')
     gh.truncatedRecursive = true
     gh.log.length = 0
     expect(await readdir(accessor, under('docs/deep'), index)).toEqual(['/gh/docs/deep/x.txt'])

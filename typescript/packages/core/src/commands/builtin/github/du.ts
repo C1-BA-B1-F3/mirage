@@ -33,9 +33,12 @@ async function duCommand(
   opts: CommandOpts,
 ): Promise<CommandFnResult> {
   const idx = opts.index ?? undefined
-  // Sizes come from accessor.tree, so each callback brings it live, after
-  // du has validated its flags: an invalid line must cost no fetch.
-  const live = (): Promise<void> => ensureLiveTree(accessor, idx, opts.mountPrefix ?? '')
+  // Sizes come from accessor.tree, so the first callback brings it live,
+  // after du has validated its flags: an invalid line must cost no fetch.
+  // Once per line, so one du reads one tree.
+  let probe: Promise<void> | undefined
+  const live = (): Promise<void> =>
+    (probe ??= ensureLiveTree(accessor, idx, opts.mountPrefix ?? ''))
   const out = await runDu(
     paths,
     opts,

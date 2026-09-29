@@ -27,7 +27,7 @@ from aiohttp import web
 from mirage.accessor.github import GitHubAccessor
 from mirage.cache.index import IndexEntry, ListResult, LookupResult
 from mirage.cache.index.ram import RAMIndexCacheStore
-from mirage.core.github.tree import refill_index
+from mirage.core.github.tree import refill_snapshot
 
 SYMLINK = "120000"
 REGULAR = "100644"
@@ -280,7 +280,7 @@ def serve(hub: FakeGitHub | None = None) -> Iterator[FakeGitHub]:
 
 
 # Each hook fires once, on the first listing of the nested parent, so the
-# retry sees real data; a root child would let ensure_live_index's root
+# retry sees real data; a root child would let ensure_live_snapshot's root
 # probe consume it instead.
 class _ClearedAtList(RAMIndexCacheStore):
 
@@ -312,7 +312,7 @@ class _StaleListing(RAMIndexCacheStore):
         self.fired = True
         stale = [k for k in result.entries or [] if k != self.key]
         # Another op refills while this lookup holds the stale listing.
-        await refill_index(self.accessor, self, "/gh")
+        await refill_snapshot(self.accessor, self, "/gh")
         return ListResult(entries=stale, status=result.status)
 
 
@@ -342,7 +342,7 @@ class _ClearedAndReseeded(RAMIndexCacheStore):
         self.fired = True
         await self.clear()
         missed = await super().get(vfs_path)
-        await refill_index(self.accessor, self, "/gh")
+        await refill_snapshot(self.accessor, self, "/gh")
         return missed
 
 

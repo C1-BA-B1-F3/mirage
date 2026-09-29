@@ -16,7 +16,7 @@ import { GitHubAccessor } from '../../accessor/github.ts'
 import type { IndexEntry, ListResult, LookupResult } from '../../cache/index/config.ts'
 import { RAMIndexCacheStore } from '../../cache/index/ram.ts'
 import { HttpGitHubTransport } from './client.ts'
-import { refillIndex } from './tree.ts'
+import { refillSnapshot } from './tree.ts'
 import { compareCodePoints } from '../../utils/sort.ts'
 
 export const BASE = 'http://github.test'
@@ -235,7 +235,7 @@ export function servedAccessor(ref = 'main'): GitHubAccessor {
 }
 
 // Each hook fires once, on the first listing of the nested parent, so the
-// retry sees real data; a root child would let ensureLiveIndex's root probe
+// retry sees real data; a root child would let ensureLiveSnapshot's root probe
 // consume it instead.
 class ClearedAtList extends RAMIndexCacheStore {
   fired = false
@@ -266,7 +266,7 @@ class StaleListing extends RAMIndexCacheStore {
     this.fired = true
     const stale = (result.entries ?? []).filter((k) => k !== this.key)
     // Another op refills while this lookup holds the stale listing.
-    await refillIndex(this.accessor, this, '/gh')
+    await refillSnapshot(this.accessor, this, '/gh')
     return { ...result, entries: stale }
   }
 }
@@ -290,7 +290,7 @@ class ClearedAndReseeded extends RAMIndexCacheStore {
     this.fired = true
     await this.clear()
     const missed = await super.get(path)
-    await refillIndex(this.accessor, this, '/gh')
+    await refillSnapshot(this.accessor, this, '/gh')
     return missed
   }
 }

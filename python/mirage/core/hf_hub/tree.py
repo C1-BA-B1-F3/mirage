@@ -436,12 +436,21 @@ async def refill_index(
     index: IndexCacheStore,
     prefix: str,
 ) -> bool:
-    """Refill the index and report whether it was populated.
+    """Refetch the tree and re-seed the index from it.
+
+    The mount fetches the whole tree once and seeds the index with it, so
+    the index *is* the listing rather than a cache in front of one. That
+    makes a cleared or expired index indistinguishable from an empty
+    repository, which is why dropping the index has to mean "refetch".
 
     Args:
         accessor (HfHubAccessor): the mount's accessor.
-        index (IndexCacheStore): the index to check and fill.
-        prefix (str): mount prefix for the index keys.
+        index (IndexCacheStore): the index to re-seed.
+        prefix (str): the mount prefix the index keys are built against.
+
+    Returns:
+        bool: whether a refill happened; False when there is no index to
+        seed, so a caller does not retry a lookup that cannot change.
     """
     return await refill_snapshot(accessor, index, prefix) is not None
 
@@ -451,12 +460,18 @@ async def refill_snapshot(
     index: IndexCacheStore,
     prefix: str,
 ) -> IndexSnapshot | None:
-    """Refill the index and return the rows written.
+    """``refill_index``, returning the rows it wrote.
+
+    A reader answers from these when its re-read of the store has already
+    expired (it waited on the mutation lock past the mount's ttl).
 
     Args:
         accessor (HfHubAccessor): the mount's accessor.
-        index (IndexCacheStore): the index to check and fill.
-        prefix (str): mount prefix for the index keys.
+        index (IndexCacheStore): the index to re-seed.
+        prefix (str): the mount prefix the index keys are built against.
+
+    Returns:
+        IndexSnapshot | None: the rows seeded; None when there is no index.
     """
     # The caller holds index_lock through replacement and its final lookup.
     if index is NULL_INDEX:
@@ -476,12 +491,21 @@ async def ensure_live_index(
     index: IndexCacheStore,
     prefix: str,
 ) -> bool:
-    """Refill a missing or expired root listing.
+    """Refetch when the root listing is missing or expired.
+
+    Every reader treats a missing listing as a real absence, which is
+    right against a *live* index and wrong against one that was never
+    filled or has been dropped. The root listing is what tells the two
+    apart, in one lookup and no request: the tree is written whole, so
+    while the index is live the mount root always has a row.
 
     Args:
         accessor (HfHubAccessor): the mount's accessor.
         index (IndexCacheStore): the index to check and fill.
-        prefix (str): mount prefix for the index keys.
+        prefix (str): the mount prefix the index keys are built against.
+
+    Returns:
+        bool: whether the index was filled.
     """
     return await ensure_live_snapshot(accessor, index, prefix) is not None
 
@@ -491,12 +515,16 @@ async def ensure_live_snapshot(
     index: IndexCacheStore,
     prefix: str,
 ) -> IndexSnapshot | None:
-    """Return a refill snapshot when the root is missing or expired.
+    """``ensure_live_index``, returning the rows of the refill it made.
 
     Args:
         accessor (HfHubAccessor): the mount's accessor.
         index (IndexCacheStore): the index to check and fill.
-        prefix (str): mount prefix for the index keys.
+        prefix (str): the mount prefix the index keys are built against.
+
+    Returns:
+        IndexSnapshot | None: the refill's rows, or None when none was
+        needed or possible.
     """
     if index is NULL_INDEX:
         return None

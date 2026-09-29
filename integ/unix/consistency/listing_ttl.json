@@ -16,7 +16,7 @@
         "gdrive-folder"
       ],
       "read": "bounded",
-      "ttl": 1,
+      "ttl": 3,
       "scenario": [
         {
           "mutate": {
@@ -48,7 +48,7 @@
           "command": "ls /data/lt1"
         },
         {
-          "command": "sleep 2"
+          "command": "sleep 4"
         },
         {
           "command": "ls /data/lt1"
@@ -83,7 +83,7 @@
         "gdrive-folder"
       ],
       "read": "bounded",
-      "ttl": 1,
+      "ttl": 3,
       "scenario": [
         {
           "mutate": {
@@ -115,7 +115,7 @@
           "command": "ls /data/lt2"
         },
         {
-          "command": "sleep 2"
+          "command": "sleep 4"
         },
         {
           "command": "ls /data/lt2"
@@ -149,7 +149,7 @@
         "gdrive-folder"
       ],
       "read": "fresh",
-      "ttl": 1,
+      "ttl": 3,
       "scenario": [
         {
           "mutate": {
@@ -181,7 +181,7 @@
           "command": "ls /data/lt3"
         },
         {
-          "command": "sleep 2"
+          "command": "sleep 4"
         },
         {
           "command": "ls /data/lt3"

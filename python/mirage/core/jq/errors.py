@@ -12,6 +12,7 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+
 class JqCompileError(ValueError):
     """libjq's refusal of a program, which jq reports on stderr and exits
     3 for.

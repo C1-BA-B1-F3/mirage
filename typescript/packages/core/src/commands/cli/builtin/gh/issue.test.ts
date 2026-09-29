@@ -100,8 +100,15 @@ describe('gh issue view --json', () => {
   it('prints a pull request with the fields only an issue has at their zero', async () => {
     FIELDS.mockResolvedValueOnce({ __typename: 'PullRequest', title: 'docs', id: 'PR_1' })
     expect(
-      json(await viewCmd(inv({ json: 'title,isPinned,stateReason,closedByPullRequestsReferences' }))),
-    ).toEqual({ closedByPullRequestsReferences: [], isPinned: false, stateReason: '', title: 'docs' })
+      json(
+        await viewCmd(inv({ json: 'title,isPinned,stateReason,closedByPullRequestsReferences' })),
+      ),
+    ).toEqual({
+      closedByPullRequestsReferences: [],
+      isPinned: false,
+      stateReason: '',
+      title: 'docs',
+    })
   })
 
   it('pages comments through the half the number turned out to be', async () => {
@@ -122,7 +129,11 @@ describe('gh issue view --json', () => {
   })
 
   it('adds the number and reads project items apart', async () => {
-    FIELDS.mockResolvedValueOnce({ __typename: 'Issue', id: 'I_1', number: 4 }).mockResolvedValueOnce({
+    FIELDS.mockResolvedValueOnce({
+      __typename: 'Issue',
+      id: 'I_1',
+      number: 4,
+    }).mockResolvedValueOnce({
       __typename: 'Issue',
       projectItems: { nodes: [], pageInfo: { hasNextPage: false, endCursor: null } },
     })
@@ -140,7 +151,9 @@ describe('gh issue list --json', () => {
   it('lists over GraphQL with the states and narrowing gh sends', async () => {
     LIST.mockResolvedValueOnce([{ number: 3, stateReason: 'COMPLETED' }])
     const out = json(
-      await listCmd(inv({ json: 'number,stateReason', state: 'all', author: 'me', label: ['bug'] })),
+      await listCmd(
+        inv({ json: 'number,stateReason', state: 'all', author: 'me', label: ['bug'] }),
+      ),
     )
     expect(out).toEqual([{ number: 3, stateReason: 'COMPLETED' }])
     expect(LIST.mock.calls[0]?.[2]).toEqual({

@@ -93,8 +93,8 @@ _REFERENCE = struct(
     ("id", "string"), ("number", "int"),
     ("repository",
      struct(("id", "string"), ("name", "string"),
-            ("owner", struct(("id", "string"), ("login", "string"))))),
-    ("url", "string"))
+            ("owner", struct(("id", "string"),
+                             ("login", "string"))))), ("url", "string"))
 _STATUS = struct(("optionId", "string"), ("name", "string"))
 _PROJECT_CARD = struct(("project", struct(("name", "string"))),
                        ("column", struct(("name", "string"))))
@@ -154,11 +154,10 @@ def nodes(name: str,
           select: str,
           item: Shape,
           pages: Pages | None = None) -> tuple[str, Field]:
-    return name, Field(
-        select,
-        lambda node: exported(record(node.get(name)).get("nodes"),
-                              ListOf(item)),
-        pages=pages)
+    return name, Field(select,
+                       lambda node: exported(
+                           record(node.get(name)).get("nodes"), ListOf(item)),
+                       pages=pages)
 
 
 def paged(name: str, select: Callable[[str], str]) -> Pages:
@@ -179,12 +178,11 @@ def references(name: str) -> tuple[str, Field]:
                 "repository {id,name,owner {id,login}}}"
                 "pageInfo{hasNextPage,endCursor}}")
 
-    return name, Field(select(""),
-                       lambda node: [
-                           exported(item, _REFERENCE)
-                           for item in nodes_of(node.get(name))
-                       ],
-                       pages=paged(name, select))
+    return name, Field(
+        select(""),
+        lambda node:
+        [exported(item, _REFERENCE) for item in nodes_of(node.get(name))],
+        pages=paged(name, select))
 
 
 # The fields issues and pull requests share, as gh 2.85's
@@ -192,8 +190,8 @@ def references(name: str) -> tuple[str, Field]:
 # views; projectCards is asked for as it stands, and each command says
 # whether its view does.
 SHARED_FIELDS: tuple[tuple[str, Field], ...] = (
-    nodes("assignees",
-          "assignees(first:100){nodes{id,login,name},totalCount}", _USER),
+    nodes("assignees", "assignees(first:100){nodes{id,login,name},totalCount}",
+          _USER),
     plain("author", "author", "author{login,...on User{id,name}}"),
     plain("body", "string"),
     plain("closed", "bool"),
@@ -210,9 +208,10 @@ SHARED_FIELDS: tuple[tuple[str, Field], ...] = (
                 ("description", "string"), ("dueOn", "raw")),
         "milestone{number,title,description,dueOn}"),
     plain("number", "int"),
-    nodes("projectCards",
-          "projectCards(first:100){nodes{project{name}column{name}},"
-          "totalCount}", _PROJECT_CARD),
+    nodes(
+        "projectCards",
+        "projectCards(first:100){nodes{project{name}column{name}},"
+        "totalCount}", _PROJECT_CARD),
     ("projectItems",
      Field(_PROJECT_ITEMS,
            _project_items_of,
@@ -294,8 +293,8 @@ async def _project_items_apart(fetch: Fetch, pages: Pages) -> Node:
     return pages.at(node)
 
 
-async def read_rest(table: Mapping[str, Field], node: Node,
-                    fields: list[str], fetch: Fetch) -> Node:
+async def read_rest(table: Mapping[str, Field], node: Node, fields: list[str],
+                    fetch: Fetch) -> Node:
     """Finish reading a view's answer: every connection gh follows read to
     its end, and the fields it reads apart read that way, through
     ``fetch``.

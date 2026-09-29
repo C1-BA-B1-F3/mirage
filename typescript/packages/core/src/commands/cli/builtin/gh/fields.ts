@@ -73,7 +73,12 @@ export function nodesOf(value: unknown): unknown[] {
 
 // gh's CommentAuthor: a comment's or a review's author prints its login alone.
 export const LOGIN = struct(['login', 'string'])
-const USER = struct(['id', 'string'], ['login', 'string'], ['name', 'string'], ['databaseId', 'int'])
+const USER = struct(
+  ['id', 'string'],
+  ['login', 'string'],
+  ['name', 'string'],
+  ['databaseId', 'int'],
+)
 const LABEL = struct(
   ['id', 'string'],
   ['name', 'string'],

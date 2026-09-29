@@ -113,6 +113,4 @@ async def test_project_items_are_read_apart_and_none_without_the_scope():
                          "following scopes: ['read:project'], but")
 
     none = await read_rest(TABLE, {}, ["projectItems"], unscoped)
-    assert exported_node(TABLE, none, ["projectItems"]) == {
-        "projectItems": []
-    }
+    assert exported_node(TABLE, none, ["projectItems"]) == {"projectItems": []}

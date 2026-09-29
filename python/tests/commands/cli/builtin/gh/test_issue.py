@@ -83,9 +83,9 @@ async def test_the_number_is_asked_for_as_an_issue_or_a_pull(monkeypatch):
         "isPinned": True,
         "title": "bug"
     }
-    assert answers.calls == [
-        (4, IssueSelections("title,isPinned,id", "title,id"), None)
-    ]
+    assert answers.calls == [(4,
+                              IssueSelections("title,isPinned,id",
+                                              "title,id"), None)]
 
 
 @pytest.mark.asyncio
@@ -131,9 +131,8 @@ async def test_comments_page_through_the_half_the_number_turned_out_to_be(
 
     out = await _json(await view_cmd(_inv({"json": "comments"})))
 
-    assert [comment["body"] for comment in out["comments"]] == [
-        "first", "second"
-    ]
+    assert [comment["body"]
+            for comment in out["comments"]] == ["first", "second"]
     _, selections, cursor = answers.calls[1]
     assert selections.issue == ""
     assert "comments(first: 100, after: $endCursor)" in selections.pull

@@ -58,9 +58,8 @@ def test_a_piece_reads_on_to_the_end_of_a_character():
 def test_positions_name_each_input_and_its_lines():
     positions = InputPositions(["<stdin>", "b.json"], ["1\n2\n", "3"],
                                [(0, 1), (0, 3), (1, 1)])
-    assert [positions.at(doc) for doc in range(3)] == [
-        "<stdin>:1", "<stdin>:2", "b.json:0"
-    ]
+    assert [positions.at(doc)
+            for doc in range(3)] == ["<stdin>:1", "<stdin>:2", "b.json:0"]
     assert positions.end() == "b.json:0"
 
 

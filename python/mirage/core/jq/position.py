@@ -25,7 +25,6 @@ from mirage.core.jq.types import STDIN_NAME
 # ends in the newline.
 READ_CHUNK = 4091
 
-
 # The characters that complete a value the moment the parser reads them.
 # A number or a literal is complete only at the character after it.
 CLOSERS = '"]}'
@@ -45,7 +44,11 @@ def value_end(text: str, stop: int) -> int:
 
 def _utf8_width(ch: str) -> int:
     point = ord(ch)
-    return 1 if point < 0x80 else 2 if point < 0x800 else 3 if point < 0x10000 else 4
+    if point < 0x80:
+        return 1
+    if point < 0x800:
+        return 2
+    return 3 if point < 0x10000 else 4
 
 
 def _last_piece(text: str, start: int, stop: int) -> int:

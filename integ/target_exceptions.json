@@ -13,6 +13,29 @@
     "integ/crossmount/wc/newline.json": "The case names a file with a newline in it, which GNU wc quotes; ram and disk hold any name, while the object stores and drives restrict or rewrite such a name, so the row would pin their naming rules and not wc's."
   },
   "entries": {
+    "integ/bash/control/scope.json :: ctl_for_long_word_list_leaves_last_value": {
+      "box": "This 300,000-iteration regression exercises shell-local seq expansion and looping. The ram target covers both hosts without repeating the same backend-independent workload.",
+      "databricks": "This 300,000-iteration regression exercises shell-local seq expansion and looping. The ram target covers both hosts without repeating the same backend-independent workload.",
+      "databricks-prefix": "This 300,000-iteration regression exercises shell-local seq expansion and looping. The ram target covers both hosts without repeating the same backend-independent workload.",
+      "disk": "This 300,000-iteration regression exercises shell-local seq expansion and looping. The ram target covers both hosts without repeating the same backend-independent workload.",
+      "dropbox": "This 300,000-iteration regression exercises shell-local seq expansion and looping. The ram target covers both hosts without repeating the same backend-independent workload.",
+      "dropbox-root": "This 300,000-iteration regression exercises shell-local seq expansion and looping. The ram target covers both hosts without repeating the same backend-independent workload.",
+      "gdrive": "This 300,000-iteration regression exercises shell-local seq expansion and looping. The ram target covers both hosts without repeating the same backend-independent workload.",
+      "gdrive-folder": "This 300,000-iteration regression exercises shell-local seq expansion and looping. The ram target covers both hosts without repeating the same backend-independent workload.",
+      "gridfs": "This 300,000-iteration regression exercises shell-local seq expansion and looping. The ram target covers both hosts without repeating the same backend-independent workload.",
+      "gridfs-prefix": "This 300,000-iteration regression exercises shell-local seq expansion and looping. The ram target covers both hosts without repeating the same backend-independent workload.",
+      "hf": "This 300,000-iteration regression exercises shell-local seq expansion and looping. The ram target covers both hosts without repeating the same backend-independent workload.",
+      "hf-prefix": "This 300,000-iteration regression exercises shell-local seq expansion and looping. The ram target covers both hosts without repeating the same backend-independent workload.",
+      "nextcloud": "This 300,000-iteration regression exercises shell-local seq expansion and looping. The ram target covers both hosts without repeating the same backend-independent workload.",
+      "onedrive": "This 300,000-iteration regression exercises shell-local seq expansion and looping. The ram target covers both hosts without repeating the same backend-independent workload.",
+      "opfs": "This 300,000-iteration regression exercises shell-local seq expansion and looping. The ram target covers both hosts without repeating the same backend-independent workload.",
+      "redis": "This 300,000-iteration regression exercises shell-local seq expansion and looping. The ram target covers both hosts without repeating the same backend-independent workload.",
+      "s3": "This 300,000-iteration regression exercises shell-local seq expansion and looping. The ram target covers both hosts without repeating the same backend-independent workload.",
+      "s3-prefix": "This 300,000-iteration regression exercises shell-local seq expansion and looping. The ram target covers both hosts without repeating the same backend-independent workload.",
+      "sharepoint": "This 300,000-iteration regression exercises shell-local seq expansion and looping. The ram target covers both hosts without repeating the same backend-independent workload.",
+      "sharepoint-prefix": "This 300,000-iteration regression exercises shell-local seq expansion and looping. The ram target covers both hosts without repeating the same backend-independent workload.",
+      "ssh": "This 300,000-iteration regression exercises shell-local seq expansion and looping. The ram target covers both hosts without repeating the same backend-independent workload."
+    },
     "integ/unix/ln/flags.json :: ln_backup_suffix_moves_a_file_aside": {
       "hf": "hf holds no empty directory: the service refuses a directory marker client-side (create_dir=false, probed on opendal 0.47.1), and it has no rename op, so a backup that has to move the occupied regular file aside fails with `Operation not supported`, the same limit mv/backup.json and cp/backup.json omit hf for. hf still runs every other ln case in this file, including the backup of a symlink occupant, which moves aside through the namespace table and never asks the backend to rename.",
       "hf-prefix": "hf holds no empty directory: the service refuses a directory marker client-side (create_dir=false, probed on opendal 0.47.1), and it has no rename op, so a backup that has to move the occupied regular file aside fails with `Operation not supported`, the same limit mv/backup.json and cp/backup.json omit hf for. hf still runs every other ln case in this file, including the backup of a symlink occupant, which moves aside through the namespace table and never asks the backend to rename."

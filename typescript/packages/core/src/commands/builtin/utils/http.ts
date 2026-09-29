@@ -92,6 +92,17 @@ function endpoint(url: string): { host: string; port: number } {
 
 let httpProxyBase: string | null = null
 
+// A fetch that does not verify the server's certificate, which curl's -k
+// asks for. fetch itself takes no TLS options, so this runtime-agnostic core
+// cannot build one; a host that can registers it (the node package: undici
+// over an agent with `rejectUnauthorized: false`). The browser registers
+// none, since the platform always verifies, so there -k still verifies.
+let insecureFetch: typeof fetch | null = null
+
+export function registerInsecureFetch(fn: typeof fetch | null): void {
+  insecureFetch = fn
+}
+
 export function setHttpProxyBase(base: string | null): void {
   httpProxyBase = base
 }
@@ -111,10 +122,14 @@ export interface HttpRequestOptions {
   // all (curl's `--max-time 0`).
   timeoutMs?: number | null
   followRedirects?: boolean
+  // False skips certificate verification (curl's -k), where the host
+  // registered a fetch that can (`registerInsecureFetch`).
+  verify?: boolean
 }
 
 async function doFetch(url: string, options: HttpRequestOptions): Promise<HttpResponse> {
   const timeoutMs = options.timeoutMs === undefined ? 30_000 : options.timeoutMs
+  const send = options.verify === false && insecureFetch !== null ? insecureFetch : fetch
   const started = Date.now()
   const controller = new AbortController()
   const timer =
@@ -149,13 +164,13 @@ async function doFetch(url: string, options: HttpRequestOptions): Promise<HttpRe
       let resp: Response
       let buf: ArrayBuffer
       try {
-        resp = await fetch(applyProxy(current), init)
+        resp = await send(applyProxy(current), init)
         if (follow && resp.type === 'opaqueredirect') {
           // A browser answers a manual redirect with an opaque one: status
           // 0, no headers, no Location, so the hops cannot be walked here.
           // The platform follows them instead and the history stays empty,
           // a deliberate divergence from curl, whose -iL shows every hop.
-          resp = await fetch(applyProxy(current), { ...init, redirect: 'follow' })
+          resp = await send(applyProxy(current), { ...init, redirect: 'follow' })
         }
         // The deadline can fire while the body is still arriving, so the
         // body is read inside the same catch, as httpx reads it inside the
@@ -213,6 +228,7 @@ export function httpFormRequest(
     headers?: Record<string, string>
     timeoutMs?: number | null
     followRedirects?: boolean
+    verify?: boolean
   } = {},
 ): Promise<HttpResponse> {
   const method = opts.method ?? 'POST'
@@ -230,6 +246,7 @@ export function httpFormRequest(
     body: new TextEncoder().encode(form.toString()),
     ...(opts.timeoutMs !== undefined ? { timeoutMs: opts.timeoutMs } : {}),
     ...(opts.followRedirects !== undefined ? { followRedirects: opts.followRedirects } : {}),
+    ...(opts.verify !== undefined ? { verify: opts.verify } : {}),
   })
 }
 

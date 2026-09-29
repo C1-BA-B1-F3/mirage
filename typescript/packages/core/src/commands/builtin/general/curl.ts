@@ -197,11 +197,10 @@ async function curlCommand(
   const dumpHeader = fl.asStr('dump_header') ?? null
   const dumpToStdout = dumpHeader === '-' || fl.asPaths('dump_header')[0]?.rawPath === '-'
   const dumpFile = dumpHeader !== null && !dumpToStdout ? dumpHeader : null
-  // -k is accepted and certificates are still verified: a deliberate
-  // divergence. fetch, the one client this runtime-agnostic core has, offers
-  // no switch to skip verification, so a server whose certificate does not
-  // verify still fails here where curl -k would connect. The python twin
-  // honours -k.
+  // -k skips certificate verification through the fetch the host registered
+  // (utils/http.ts); the browser has none, so there certificates are still
+  // verified.
+  const verify = !fl.asBool('insecure')
   const location = fl.asBool('location')
   const failOnError = fl.asBool('fail')
   const verbose = fl.asBool('verbose')
@@ -261,6 +260,7 @@ async function curlCommand(
         headers,
         timeoutMs,
         followRedirects: location,
+        verify,
       })
     } else {
       method = request ?? (head ? 'HEAD' : data !== null ? 'POST' : 'GET')
@@ -276,6 +276,7 @@ async function curlCommand(
         ...(body !== undefined ? { body } : {}),
         timeoutMs,
         followRedirects: location,
+        verify,
       })
     }
   } catch (err) {

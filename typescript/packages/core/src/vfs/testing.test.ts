@@ -1,10 +1,13 @@
 import { describe, expect, it, vi } from 'vitest'
 import { RAMAccessor } from '../accessor/ram.ts'
 import { RAM_IO } from '../commands/builtin/ram/io.ts'
-import { PathSpec } from '../types.ts'
+import type { RegisteredOp } from '../ops/registry.ts'
+import { FileStat, FileType, PathSpec } from '../types.ts'
 import { VFSAdapter } from './adapter.ts'
+import { BaseVFS } from './base.ts'
+import { RAMVFS } from './ram/ram.ts'
 import { RAMStore } from './ram/store.ts'
-import { checkReadContract, type ReadFixture } from './testing.ts'
+import { checkDriverContract, checkReadContract, DriverOps, type ReadFixture } from './testing.ts'
 
 const FILE = new PathSpec({ virtual: '/data/a.txt', directory: '/data', vfsPath: 'a.txt' })
 const fixture: ReadFixture = {
@@ -72,5 +75,73 @@ describe('adapter conformance', () => {
         fixture,
       ),
     ).rejects.toThrow('denied')
+  })
+})
+
+function custom(store: RAMStore, ops: RegisteredOp[] = []): BaseVFS<RAMAccessor> {
+  return new BaseVFS({
+    name: 'custom',
+    accessor: new RAMAccessor(store),
+    io: new VFSAdapter({
+      read: { readdir: RAM_IO.readdir, readBytes: RAM_IO.readBytes, stat: RAM_IO.stat },
+    }),
+    ops,
+  })
+}
+
+async function seeded(content: Uint8Array): Promise<RAMStore> {
+  const store = new RAMStore()
+  await RAM_IO.write?.(new RAMAccessor(store), FILE, content)
+  return store
+}
+
+describe('driver conformance', () => {
+  it('checks a builtin driver through its op table', async () => {
+    const ram = new RAMVFS()
+    await new DriverOps(ram).write(FILE, fixture.content)
+    await checkDriverContract(ram, fixture)
+  })
+
+  it.each(['', 'a', 'é: hello\n'])('checks a table-built driver for %j', async (text) => {
+    const content = new TextEncoder().encode(text)
+    await checkDriverContract(custom(await seeded(content)), { ...fixture, content })
+  })
+
+  it('catches a read op that ignores the window', async () => {
+    const wholeRead: RegisteredOp = {
+      name: 'read',
+      vfs: 'custom',
+      filetype: null,
+      write: false,
+      fn: () => Promise.resolve(fixture.content),
+    }
+    await expect(
+      checkDriverContract(custom(await seeded(fixture.content), [wholeRead]), fixture),
+    ).rejects.toThrow('offset and byte count')
+  })
+
+  it('catches a stat that answers for a missing path', async () => {
+    const lenientStat: RegisteredOp = {
+      name: 'stat',
+      vfs: 'custom',
+      filetype: null,
+      write: false,
+      fn: (accessor, path, _args, kwargs) =>
+        path.vfsPath === fixture.missing.vfsPath
+          ? Promise.resolve(new FileStat({ name: 'missing', type: FileType.FILE, size: 0 }))
+          : RAM_IO.stat(accessor as RAMAccessor, path, kwargs.index),
+    }
+    await expect(
+      checkDriverContract(custom(await seeded(fixture.content), [lenientStat]), fixture),
+    ).rejects.toThrow('missing paths must raise ENOENT')
+  })
+
+  it('calls a driver without a workspace', async () => {
+    const table = new DriverOps(new RAMVFS())
+    await table.write(FILE, new TextEncoder().encode('payload'))
+    expect(new TextDecoder().decode(await table.read(FILE))).toBe('payload')
+    expect(new TextDecoder().decode(await table.read(FILE, { offset: 1, size: 3 }))).toBe('ayl')
+    expect(table.has('glob')).toBe(true)
+    expect(() => table.op('search')).toThrow('no op registered')
   })
 })

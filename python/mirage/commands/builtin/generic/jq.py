@@ -12,8 +12,8 @@ from mirage.commands.spec.flag_view import FlagView
 from mirage.commands.spec.types import FlagValue
 from mirage.core.jq import (args_object, decode_utf8, error_report,
                             format_jq_output, halt_report, jq_check, jq_run,
-                            parse_value, read_values, references_args,
-                            stream_reads)
+                            load_failure, parse_value, read_values,
+                            references_args, stream_reads)
 from mirage.core.jq.errors import JqCompileError
 from mirage.core.jq.stream import InputReader
 from mirage.core.jq.types import (DEFAULT_INDENT, NO_VALUE, STDIN_NAME,
@@ -23,6 +23,7 @@ from mirage.io.stream import yield_bytes
 from mirage.io.types import ByteSource, IOResult
 from mirage.runtime.types import DispatchFn
 from mirage.types import JsonValue, PathSpec
+from mirage.utils.errors import FS_ERRORS
 
 INDENT_MIN = -1
 INDENT_MAX = 7
@@ -35,12 +36,13 @@ OK_NULL_KIND = -1
 OK_NO_OUTPUT = -4
 ERROR_UNKNOWN = 5
 
-# jq's exit status when it refuses the program itself.
+# jq's exit status when it refuses the program itself, and when it could
+# not read one of its inputs, whatever the runs answered.
 ERROR_COMPILE = 3
+ERROR_SYSTEM = 2
 
 USAGE_HINT = ("Use jq --help for help with command-line options,\n"
-              "or see the jq manpage, or online docs  at "
-              "https://jqlang.github.io/jq")
+              "or see the jq manpage, or online docs at https://jqlang.org")
 
 
 def _pair_args(values: Sequence[Any]) -> list[tuple[str, Any]]:
@@ -138,22 +140,48 @@ async def file_args(
         read_bytes (Callable): byte reader for one path.
 
     Raises:
-        UsageError: when a --slurpfile holds bad JSON, reported in jq's
-            words with its parser's message.
+        UsageError: when a file cannot be read, or a --slurpfile holds
+            bad JSON, reported in jq's words.
     """
     args: dict[str, Any] = {}
     for name, path in _pair_flag(fl, "rawfile"):
-        args[name] = decode_utf8(await read_bytes(path))
+        data = await _load_file(read_bytes, "rawfile", name, path)
+        args[name] = decode_utf8(data)
     for name, path in _pair_flag(fl, "slurpfile"):
         shown = input_name(path)
+        data = await _load_file(read_bytes, "slurpfile", name, path)
         values, failure = await read_values(
-            InputSource(shown, yield_bytes(await read_bytes(path))))
+            InputSource(shown, yield_bytes(data)))
         if failure is not None:
             raise UsageError(
                 f"jq: Bad JSON in --slurpfile {name} {shown}: "
-                f"{failure.message}", 2)
+                f"{failure.message}", ERROR_SYSTEM)
         args[name] = values
     return args
+
+
+async def _load_file(read_bytes: Callable[..., Awaitable[bytes]], option: str,
+                     name: str, path: PathSpec) -> bytes:
+    """One --rawfile or --slurpfile file's bytes.
+
+    Args:
+        read_bytes (Callable): byte reader for one path.
+        option (str): the option, without its dashes.
+        name (str): the variable it binds.
+        path (PathSpec): the file.
+
+    Raises:
+        UsageError: when the file cannot be read, which jq words as bad
+            JSON too.
+    """
+    try:
+        data: bytes = await read_bytes(path)
+    except FS_ERRORS as exc:
+        shown = input_name(path)
+        raise UsageError(
+            f"jq: Bad JSON in --{option} {name} {shown}: "
+            f"{load_failure(shown, exc)}", ERROR_SYSTEM) from exc
+    return data
 
 
 def parse_flags(fl: FlagView) -> JqOptions:
@@ -269,26 +297,6 @@ def parse_report(failure: JqParseError, opts: JqOptions) -> str:
     return f"jq: {kind}: {failure.message}\n"
 
 
-async def _opened(chunks: AsyncIterator[bytes]) -> AsyncIterator[bytes]:
-    """Open an input now, so a missing file fails the command before it
-    prints anything, while its bytes still stream as they are read.
-
-    Args:
-        chunks (AsyncIterator[bytes]): the input's bytes.
-    """
-    first = await anext(chunks, None)
-    return _resumed(first, chunks)
-
-
-async def _resumed(first: bytes | None,
-                   rest: AsyncIterator[bytes]) -> AsyncIterator[bytes]:
-    if first is None:
-        return
-    yield first
-    async for chunk in rest:
-        yield chunk
-
-
 class MainLoop:
     """jq's main loop (main.c) over an invocation's input stream.
 
@@ -303,8 +311,14 @@ class MainLoop:
     take before the program runs (see _run), and nothing past it, so the
     loop never reads further ahead than jq's own.
 
+    An input that cannot be opened or read is reported when the reader
+    reaches it, and the reader goes on to the next. The loop checks for
+    such a failure before each document it reads, so it stops after the
+    run of the document the failing read went on to, and the exit status
+    is 2 whatever the runs answered.
+
     Args:
-        reader (InputReader): the input stream.
+        sources (list[InputSource]): the inputs, in order, not yet opened.
         expr (str): jq program text.
         opts (JqOptions): resolved options.
         reads (StreamReads): which stream builtins the program calls.
@@ -312,17 +326,17 @@ class MainLoop:
         io (IOResult): the result to settle.
     """
 
-    def __init__(self, reader: InputReader, expr: str, opts: JqOptions,
+    def __init__(self, sources: list[InputSource], expr: str, opts: JqOptions,
                  reads: StreamReads, args_value: dict[str, Any] | None,
                  io: IOResult) -> None:
-        self._reader = reader
+        self._reports: list[str] = []
+        self._reader = InputReader(sources, opts, self._reports.append)
         self._expr = expr
         self._opts = opts
         self._reads = reads
         self._args_value = args_value
         self._io = io
         self._statuses: list[int] = []
-        self._reports: list[str] = []
 
     async def outputs(self) -> AsyncIterator[bytes]:
         """The invocation's stdout, run by run."""
@@ -333,7 +347,7 @@ class MainLoop:
                     yield format_jq_output(run.outputs, self._opts)
                 self._settle(run, position)
                 return
-            while True:
+            while not self._reader.failures():
                 item = await self._reader.next_input()
                 if item is NO_VALUE:
                     return
@@ -348,7 +362,8 @@ class MainLoop:
                 if self._settle(run, position):
                     return
         finally:
-            self._io.exit_code = exit_code(self._statuses, self._opts)
+            self._io.exit_code = (ERROR_SYSTEM if self._reader.failures() else
+                                  exit_code(self._statuses, self._opts))
             if self._reports:
                 self._io.stderr = "".join(self._reports).encode()
 
@@ -491,18 +506,17 @@ async def jq(
     sources: list[InputSource] = []
     # -n does not read its inputs at all unless the program asks for them
     # through `input` or `inputs`, which is why jq -n never opens a
-    # missing file.
+    # missing file. Each input is opened when the reader reaches it, as
+    # jq opens its files one after another.
     if not opts.null_input or reads_stream:
         if paths:
             for path in paths:
-                sources.append(
-                    InputSource(input_name(path), await
-                                _opened(read_stream(path))))
+                sources.append(InputSource(input_name(path),
+                                           read_stream(path)))
         elif stdin is not None:
             sources.append(InputSource(STDIN_NAME, resolve_source(stdin)))
     io = IOResult()
-    loop = MainLoop(InputReader(sources, opts), expr, opts, reads, args_value,
-                    io)
+    loop = MainLoop(sources, expr, opts, reads, args_value, io)
     return loop.outputs(), io
 
 

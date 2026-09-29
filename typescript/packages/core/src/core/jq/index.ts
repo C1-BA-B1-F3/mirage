@@ -23,7 +23,14 @@ export {
   referencesArgs,
   streamReads,
 } from './eval.ts'
-export { concatBytes, errorReport, formatJqOutput, formatOne, haltReport } from './format.ts'
+export {
+  concatBytes,
+  errorReport,
+  formatJqOutput,
+  formatOne,
+  haltReport,
+  loadFailure,
+} from './format.ts'
 export { JqParser, decodeUtf8 } from './parse.ts'
 export { InputReader, isJsonlPath, parseValue, readValues } from './stream.ts'
 export {

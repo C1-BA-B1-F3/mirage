@@ -65,9 +65,13 @@ const GNU_READ_EXIT: Record<string, [number, number]> = {
 }
 
 // zgrep runs gzip with -q, which keeps a directory's warning to itself, so
-// GNU and mirage both exit 1 there without a word (see the python twin's
-// SILENT_IN_GNU; mirage's jq still reports its directory).
+// GNU and mirage both exit 1 there without a word. jq 1.8.2 opens a
+// directory, fails at its first read and says so without naming it (see the
+// python twin).
 const SILENT_HERE: ReadonlySet<string> = new Set(['zgrep x {p}'])
+const BARE_HERE: ReadonlyMap<string, string> = new Map([
+  ['jq . {p}', 'jq: error: Is a directory\n'],
+])
 
 async function makeWs(): Promise<Workspace> {
   const parser = await getTestParser()
@@ -104,6 +108,11 @@ describe('a read that fails answers like GNU', () => {
       const stderr = io.stderrText
       if (SILENT_HERE.has(template)) {
         expect(stderr).toBe('')
+        return
+      }
+      const bare = BARE_HERE.get(template)
+      if (bare !== undefined) {
+        expect(stderr).toBe(bare)
         return
       }
       // FAILURE_WORDING's commands say the step in GNU's words where that

@@ -22,6 +22,7 @@ import {
   readValues,
 } from './stream.ts'
 import { JqParseError, NO_VALUE, jqOptions, type InputSource, type JqOptions } from './types.ts'
+import { eacces, eisdir, enoent } from '../../utils/errors.ts'
 
 const ENC = new TextEncoder()
 
@@ -293,6 +294,96 @@ describe('InputReader', () => {
     const [doc] = await values([bytes('{"__proto__":1,"a":[]}\n')])
     expect(Object.keys(doc as object)).toEqual(['__proto__', 'a'])
     expect(JSON.stringify(doc)).toBe('{"__proto__":1,"a":[]}')
+  })
+})
+
+async function* failing(
+  error: Error,
+  data: Uint8Array = new Uint8Array(0),
+  size = 1 << 20,
+): AsyncIterable<Uint8Array> {
+  for await (const chunk of chunked(data, size)) yield chunk
+  throw error
+}
+
+async function reported(
+  inputs: InputSource[],
+  opts: JqOptions = jqOptions(),
+): Promise<[unknown[], string[], string, number]> {
+  const reports: string[] = []
+  const reader = new InputReader(inputs, opts, (line) => reports.push(line))
+  const found: unknown[] = []
+  for (;;) {
+    const value = await reader.nextInput()
+    if (value === NO_VALUE) return [found, reports, reader.position(), reader.failures()]
+    found.push(value)
+  }
+}
+
+const MISSING = 'jq: error: Could not open file missing.json: No such file or directory\n'
+
+describe('InputReader over an input it cannot open or read', () => {
+  it.each([1, 1 << 20])(
+    'reports an input that cannot be opened and reads past it (chunks of %i)',
+    async (size) => {
+      // jq's reader names the input fopen refused and goes on to the next,
+      // and a value runs on across it (pinned: `[1,`, missing, `2]`).
+      const inputs = [
+        { name: 'a.json', chunks: chunked(bytes('[1,'), size) },
+        { name: 'missing.json', chunks: failing(enoent('missing')) },
+        { name: 'b.json', chunks: chunked(bytes('2]\n'), size) },
+      ]
+      expect(await reported(inputs)).toEqual([[[1, 2]], [MISSING], 'b.json:1', 1])
+    },
+  )
+
+  it('stands on a failed input it ends on', async () => {
+    // `jq -n input missing.json` fails at missing.json:0 (pinned).
+    const inputs = [{ name: 'missing.json', chunks: failing(enoent('missing')) }]
+    expect(await reported(inputs)).toEqual([[], [MISSING], 'missing.json:0', 1])
+  })
+
+  it('reports a directory, which fails at its read, in bare words', async () => {
+    // jq opens a directory and fails at its first read, which it reports as
+    // the strerror alone (pinned: `jq: error: Is a directory`).
+    const inputs = [{ name: 'd', chunks: failing(eisdir('d')) }, ...sources([bytes('1\n')])]
+    expect(await reported(inputs)).toEqual([[1], ['jq: error: Is a directory\n'], 'f0.json:1', 1])
+  })
+
+  it.each([1, 1 << 20])(
+    'loses the line a read that fails midway was reading (chunks of %i)',
+    async (size) => {
+      // fgets hands out every line before the failed read, and the line it
+      // was reading goes with it: here the `]`, which the next input stands
+      // in for.
+      const inputs = [
+        { name: 'a.json', chunks: failing(eacces('a'), bytes('1\n[\n  2\n]'), size) },
+        ...sources([bytes(',3]\n')]),
+      ]
+      const [found, reports, , failures] = await reported(inputs)
+      expect([found, reports, failures]).toEqual([
+        [1, [2, 3]],
+        ['jq: error: Permission denied\n'],
+        1,
+      ])
+    },
+  )
+
+  it('runs a raw line on across a failed input', async () => {
+    // Pinned: `x`, missing.txt, `y\n` read under -R as "xy".
+    const inputs = [
+      { name: 'a.txt', chunks: chunked(bytes('x'), 8) },
+      { name: 'missing.txt', chunks: failing(enoent('missing')) },
+      { name: 'b.txt', chunks: chunked(bytes('y\n'), 8) },
+    ]
+    const [found, reports] = await reported(inputs, jqOptions({ rawInput: true }))
+    expect(found).toEqual(['xy'])
+    expect(reports).toEqual([MISSING.replace('missing.json', 'missing.txt')])
+  })
+
+  it('raises a failed input without a reporter', async () => {
+    const inputs = [{ name: 'missing.json', chunks: failing(enoent('missing')) }]
+    await expect(read(inputs)).rejects.toMatchObject({ code: 'ENOENT' })
   })
 })
 

@@ -17,7 +17,7 @@ from mirage.core.jq.eval import (args_object, halts, jq_check, jq_eval,
                                  jq_raised, jq_run, references_args,
                                  stream_reads)
 from mirage.core.jq.format import (error_report, format_jq_output, format_one,
-                                   halt_report)
+                                   halt_report, load_failure)
 from mirage.core.jq.parse import JqParser, decode_utf8
 from mirage.core.jq.stream import (InputReader, is_jsonl_path, parse_value,
                                    read_values)
@@ -54,6 +54,7 @@ __all__ = [
     "jq_eval",
     "jq_raised",
     "jq_run",
+    "load_failure",
     "parse_value",
     "read_values",
     "references_args",

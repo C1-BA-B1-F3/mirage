@@ -1558,6 +1558,537 @@
         "c",
         "stream"
       ]
+    },
+    {
+      "id": "jq_open_a_missing_file_is_reported_and_the_next_document_runs",
+      "seq": 701044,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "mkdir -p /data/qjqo && printf '1 2\\n' > /data/qjqo/a.json && jq . /data/qjqo/missing.json /data/qjqo/a.json",
+      "expect": {
+        "exit": 2,
+        "stdout": "1\n",
+        "stderr": "jq: error: Could not open file /data/qjqo/missing.json: No such file or directory\n"
+      }
+    },
+    {
+      "id": "jq_open_the_loop_stops_one_document_past_a_missing_file",
+      "seq": 701045,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "mkdir -p /data/qjqo && printf '1 2\\n' > /data/qjqo/a.json && printf '3 4\\n' > /data/qjqo/b.json && jq . /data/qjqo/a.json /data/qjqo/missing.json /data/qjqo/b.json",
+      "expect": {
+        "exit": 2,
+        "stdout": "1\n2\n3\n",
+        "stderr": "jq: error: Could not open file /data/qjqo/missing.json: No such file or directory\n"
+      }
+    },
+    {
+      "id": "jq_open_a_missing_last_file_after_every_document",
+      "seq": 701046,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "mkdir -p /data/qjqo && printf '1 2\\n' > /data/qjqo/a.json && jq . /data/qjqo/a.json /data/qjqo/missing.json",
+      "expect": {
+        "exit": 2,
+        "stdout": "1\n2\n",
+        "stderr": "jq: error: Could not open file /data/qjqo/missing.json: No such file or directory\n"
+      }
+    },
+    {
+      "id": "jq_open_each_missing_file_before_the_next_document_is_reported",
+      "seq": 701047,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "mkdir -p /data/qjqo && printf '1 2\\n' > /data/qjqo/a.json && jq . /data/qjqo/missing.json /data/qjqo/other.json /data/qjqo/a.json",
+      "expect": {
+        "exit": 2,
+        "stdout": "1\n",
+        "stderr": "jq: error: Could not open file /data/qjqo/missing.json: No such file or directory\njq: error: Could not open file /data/qjqo/other.json: No such file or directory\n"
+      }
+    },
+    {
+      "id": "jq_open_a_missing_file_named_twice_fails_once",
+      "seq": 701048,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "mkdir -p /data/qjqo && printf '1 2\\n' > /data/qjqo/a.json && jq . /data/qjqo/missing.json /data/qjqo/a.json /data/qjqo/missing.json",
+      "expect": {
+        "exit": 2,
+        "stdout": "1\n",
+        "stderr": "jq: error: Could not open file /data/qjqo/missing.json: No such file or directory\n"
+      }
+    },
+    {
+      "id": "jq_open_an_operand_is_named_as_typed",
+      "seq": 701049,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "mkdir -p /data/qjqo && printf '1 2\\n' > /data/qjqo/a.json && (cd /data/qjqo && jq . missing.json a.json)",
+      "expect": {
+        "exit": 2,
+        "stdout": "1\n",
+        "stderr": "jq: error: Could not open file missing.json: No such file or directory\n"
+      }
+    },
+    {
+      "id": "jq_open_slurp_reads_every_file_past_a_missing_one",
+      "seq": 701050,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "mkdir -p /data/qjqo && printf '1\\n' > /data/qjqo/one.json && printf '2\\n' > /data/qjqo/two.json && jq -s -c . /data/qjqo/one.json /data/qjqo/missing.json /data/qjqo/two.json",
+      "expect": {
+        "exit": 2,
+        "stdout": "[1,2]\n",
+        "stderr": "jq: error: Could not open file /data/qjqo/missing.json: No such file or directory\n"
+      },
+      "flags": [
+        "s",
+        "c"
+      ]
+    },
+    {
+      "id": "jq_open_raw_input_reads_the_next_line",
+      "seq": 701051,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "mkdir -p /data/qjqo && printf 'x\\ny\\n' > /data/qjqo/a.txt && jq -R . /data/qjqo/missing.txt /data/qjqo/a.txt",
+      "expect": {
+        "exit": 2,
+        "stdout": "\"x\"\n",
+        "stderr": "jq: error: Could not open file /data/qjqo/missing.txt: No such file or directory\n"
+      },
+      "flags": [
+        "R"
+      ]
+    },
+    {
+      "id": "jq_open_a_raw_line_runs_on_across_a_missing_file",
+      "seq": 701052,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "mkdir -p /data/qjqo && printf 'x' > /data/qjqo/x.txt && printf 'y\\n' > /data/qjqo/y.txt && jq -R . /data/qjqo/x.txt /data/qjqo/missing.txt /data/qjqo/y.txt",
+      "expect": {
+        "exit": 2,
+        "stdout": "\"xy\"\n",
+        "stderr": "jq: error: Could not open file /data/qjqo/missing.txt: No such file or directory\n"
+      },
+      "flags": [
+        "R"
+      ]
+    },
+    {
+      "id": "jq_open_null_input_input_reads_past_a_missing_file",
+      "seq": 701053,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "mkdir -p /data/qjqo && printf '1 2\\n' > /data/qjqo/a.json && jq -n input /data/qjqo/missing.json /data/qjqo/a.json",
+      "expect": {
+        "exit": 2,
+        "stdout": "1\n",
+        "stderr": "jq: error: Could not open file /data/qjqo/missing.json: No such file or directory\n"
+      },
+      "flags": [
+        "n"
+      ]
+    },
+    {
+      "id": "jq_open_null_input_inputs_reads_every_file",
+      "seq": 701054,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "mkdir -p /data/qjqo && printf '1 2\\n' > /data/qjqo/a.json && jq -n -c '[inputs]' /data/qjqo/missing.json /data/qjqo/a.json",
+      "expect": {
+        "exit": 2,
+        "stdout": "[1,2]\n",
+        "stderr": "jq: error: Could not open file /data/qjqo/missing.json: No such file or directory\n"
+      },
+      "flags": [
+        "n",
+        "c"
+      ]
+    },
+    {
+      "id": "jq_open_input_that_finds_nothing_fails_at_the_missing_file",
+      "seq": 701055,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "mkdir -p /data/qjqo && jq -n input /data/qjqo/missing.json",
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "jq: error: Could not open file /data/qjqo/missing.json: No such file or directory\njq: error (at /data/qjqo/missing.json:0): break\n"
+      },
+      "flags": [
+        "n"
+      ]
+    },
+    {
+      "id": "jq_open_null_input_opens_nothing_it_does_not_read",
+      "seq": 701056,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "mkdir -p /data/qjqo && jq -n . /data/qjqo/missing.json",
+      "expect": {
+        "exit": 0,
+        "stdout": "null\n",
+        "stderr": ""
+      },
+      "flags": [
+        "n"
+      ]
+    },
+    {
+      "id": "jq_open_a_run_reads_past_a_missing_file",
+      "seq": 701057,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "mkdir -p /data/qjqo && printf '1 2\\n' > /data/qjqo/a.json && printf '3\\n' > /data/qjqo/b.json && jq -c '[., input]' /data/qjqo/a.json /data/qjqo/missing.json /data/qjqo/b.json",
+      "expect": {
+        "exit": 2,
+        "stdout": "[1,2]\n",
+        "stderr": "jq: error: Could not open file /data/qjqo/missing.json: No such file or directory\njq: error (at /data/qjqo/b.json:1): break\n"
+      },
+      "flags": [
+        "c"
+      ]
+    },
+    {
+      "id": "jq_open_a_missing_file_exits_two_under_exit_status",
+      "seq": 701058,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "mkdir -p /data/qjqo && printf 'false\\n' > /data/qjqo/f.json && jq -e . /data/qjqo/missing.json /data/qjqo/f.json",
+      "expect": {
+        "exit": 2,
+        "stdout": "false\n",
+        "stderr": "jq: error: Could not open file /data/qjqo/missing.json: No such file or directory\n"
+      },
+      "flags": [
+        "e"
+      ]
+    },
+    {
+      "id": "jq_open_a_missing_file_exits_two_after_a_halt",
+      "seq": 701059,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "mkdir -p /data/qjqo && printf '1 2\\n' > /data/qjqo/a.json && jq halt_error /data/qjqo/missing.json /data/qjqo/a.json",
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "jq: error: Could not open file /data/qjqo/missing.json: No such file or directory\n1\n"
+      }
+    },
+    {
+      "id": "jq_open_a_run_error_past_a_missing_file",
+      "seq": 701060,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "mkdir -p /data/qjqo && printf '\"a\" 2\\n' > /data/qjqo/s.json && jq '. + 1' /data/qjqo/missing.json /data/qjqo/s.json",
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "jq: error: Could not open file /data/qjqo/missing.json: No such file or directory\njq: error (at /data/qjqo/s.json:1): string (\"a\") and number (1) cannot be added\n"
+      }
+    },
+    {
+      "id": "jq_open_a_value_runs_on_across_a_missing_file",
+      "seq": 701061,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "mkdir -p /data/qjqo && printf '[1,\\n' > /data/qjqo/h.json && printf '2]\\n' > /data/qjqo/t.json && jq -c . /data/qjqo/h.json /data/qjqo/missing.json /data/qjqo/t.json",
+      "expect": {
+        "exit": 2,
+        "stdout": "[1,2]\n",
+        "stderr": "jq: error: Could not open file /data/qjqo/missing.json: No such file or directory\n"
+      },
+      "flags": [
+        "c"
+      ]
+    },
+    {
+      "id": "jq_open_a_parse_error_past_a_missing_file",
+      "seq": 701062,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "mkdir -p /data/qjqo && printf '[\\n' > /data/qjqo/u.json && jq . /data/qjqo/missing.json /data/qjqo/u.json",
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "jq: error: Could not open file /data/qjqo/missing.json: No such file or directory\njq: parse error: Unfinished JSON term at EOF at line 2, column 0\n"
+      }
+    },
+    {
+      "id": "jq_open_seq_stops_one_document_past_a_missing_file",
+      "seq": 701063,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "mkdir -p /data/qjqo && printf '\\x1e1\\n\\x1e2\\n' > /data/qjqo/q.json && jq -c --seq . /data/qjqo/missing.json /data/qjqo/q.json",
+      "expect": {
+        "exit": 2,
+        "stdout": "\u001e1\n",
+        "stderr": "jq: error: Could not open file /data/qjqo/missing.json: No such file or directory\n"
+      },
+      "flags": [
+        "c",
+        "seq"
+      ]
+    },
+    {
+      "id": "jq_open_stream_stops_one_event_past_a_missing_file",
+      "seq": 701064,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "mkdir -p /data/qjqo && printf '[1,2]\\n' > /data/qjqo/p.json && jq -c --stream . /data/qjqo/missing.json /data/qjqo/p.json",
+      "expect": {
+        "exit": 2,
+        "stdout": "[[0],1]\n",
+        "stderr": "jq: error: Could not open file /data/qjqo/missing.json: No such file or directory\n"
+      },
+      "flags": [
+        "c",
+        "stream"
+      ]
+    },
+    {
+      "id": "jq_open_a_directory_is_reported_in_bare_words",
+      "seq": 701065,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "mkdir -p /data/qjqo && printf '1 2\\n' > /data/qjqo/a.json && mkdir -p /data/qjqo/d && jq . /data/qjqo/d /data/qjqo/a.json",
+      "expect": {
+        "exit": 2,
+        "stdout": "1\n",
+        "stderr": "jq: error: Is a directory\n"
+      }
+    },
+    {
+      "id": "jq_open_input_that_finds_nothing_fails_at_the_directory",
+      "seq": 701066,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "mkdir -p /data/qjqo/d && jq -n input /data/qjqo/d",
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "jq: error: Is a directory\njq: error (at /data/qjqo/d:0): break\n"
+      },
+      "flags": [
+        "n"
+      ]
+    },
+    {
+      "id": "jq_open_slurpfile_that_is_missing",
+      "seq": 701067,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "mkdir -p /data/qjqo && jq -n --slurpfile x /data/qjqo/missing.json '$x'",
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "jq: Bad JSON in --slurpfile x /data/qjqo/missing.json: Could not open /data/qjqo/missing.json: No such file or directory\n"
+      },
+      "flags": [
+        "n",
+        "slurpfile"
+      ]
+    },
+    {
+      "id": "jq_open_rawfile_that_is_missing",
+      "seq": 701068,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "mkdir -p /data/qjqo && jq -n --rawfile x /data/qjqo/missing.json '$x'",
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "jq: Bad JSON in --rawfile x /data/qjqo/missing.json: Could not open /data/qjqo/missing.json: No such file or directory\n"
+      },
+      "flags": [
+        "n",
+        "rawfile"
+      ]
+    },
+    {
+      "id": "jq_open_slurpfile_that_is_a_directory",
+      "seq": 701069,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "mkdir -p /data/qjqo/d && jq -n --slurpfile x /data/qjqo/d '$x'",
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "jq: Bad JSON in --slurpfile x /data/qjqo/d: Could not open /data/qjqo/d: It's a directory\n"
+      },
+      "flags": [
+        "n",
+        "slurpfile"
+      ]
+    },
+    {
+      "id": "jq_open_rawfile_that_is_a_directory",
+      "seq": 701070,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "mkdir -p /data/qjqo/d && jq -n --rawfile x /data/qjqo/d '$x'",
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "jq: Bad JSON in --rawfile x /data/qjqo/d: Could not open /data/qjqo/d: It's a directory\n"
+      },
+      "flags": [
+        "n",
+        "rawfile"
+      ]
+    },
+    {
+      "id": "jq_open_slurpfile_is_named_as_typed",
+      "seq": 701071,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "mkdir -p /data/qjqo && printf '1 [' > /data/qjqo/bad.json && (cd /data/qjqo && jq -n --slurpfile x bad.json '$x')",
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "jq: Bad JSON in --slurpfile x bad.json: Unfinished JSON term at EOF at line 1, column 3\n"
+      },
+      "flags": [
+        "n",
+        "slurpfile"
+      ]
+    },
+    {
+      "id": "jq_open_rawfile_is_named_as_typed",
+      "seq": 701072,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "mkdir -p /data/qjqo && (cd /data/qjqo && jq -n --rawfile x nope.txt '$x')",
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "jq: Bad JSON in --rawfile x nope.txt: Could not open nope.txt: No such file or directory\n"
+      },
+      "flags": [
+        "n",
+        "rawfile"
+      ]
     }
   ]
 }

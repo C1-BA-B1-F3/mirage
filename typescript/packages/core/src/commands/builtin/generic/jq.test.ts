@@ -16,6 +16,7 @@ import { describe, expect, it } from 'vitest'
 import { jqOptions } from '../../../core/jq/index.ts'
 import { materialize, type ByteSource, type IOResult } from '../../../io/types.ts'
 import { PathSpec } from '../../../types.ts'
+import { eisdir, enoent } from '../../../utils/errors.ts'
 import type { CommandOpts } from '../../config.ts'
 import { specOf } from '../../spec/builtins.ts'
 import { FlagView } from '../../spec/flag_view.ts'
@@ -47,8 +48,9 @@ const FILES: Record<string, string> = {
 
 async function* read(path: PathSpec): AsyncIterable<Uint8Array> {
   await Promise.resolve()
+  if (path.virtual === '/d/dir') throw eisdir(path)
   const text = FILES[path.virtual]
-  if (text === undefined) throw new Error(`no such file: ${path.virtual}`)
+  if (text === undefined) throw enoent(path)
   const bytes = ENC.encode(text)
   for (let at = 0; at < bytes.length; at += 5) yield bytes.subarray(at, at + 5)
 }
@@ -508,11 +510,87 @@ describe('jqGeneric over malformed input', () => {
     )
   })
 
+  it('ends a usage error with the hint jq 1.8 gives', () => {
+    expect(() => namedArgs(view({ argjson: ['v', '1 2'] }))).toThrow(
+      'jq: invalid JSON text passed to --argjson\n' +
+        'Use jq --help for help with command-line options,\n' +
+        'or see the jq manpage, or online docs at https://jqlang.org',
+    )
+  })
+
   it("reads an --argjson value as jq's parser does", () => {
     expect(namedArgs(view({ argjson: ['v', '{"a":1}'] }))).toEqual({ v: { a: 1 } })
     expect(Number.isNaN(namedArgs(view({ argjson: ['v', 'nan'] })).v)).toBe(true)
     expect(() => namedArgs(view({ argjson: ['v', '1 2'] }))).toThrow(
       'jq: invalid JSON text passed to --argjson',
     )
+  })
+})
+
+const MISSING = 'jq: error: Could not open file /d/nope.json: No such file or directory\n'
+
+describe('jqGeneric over an input it cannot read', () => {
+  it('reports an input that cannot be opened and reads past it', async () => {
+    // jq reports the file, reads on, and its main loop stops after the
+    // document the reader went on to (pinned: `jq . missing.json a.json`
+    // prints a.json's first document only).
+    expect(await ranOver(['/d/nope.json', '/d/four.json'], '.')).toEqual({
+      stdout: '1\n',
+      stderr: MISSING,
+      exitCode: 2,
+    })
+    expect(await ranOver(['/d/four.json', '/d/nope.json', '/d/rows.jsonl'], '.')).toEqual({
+      stdout: '1\n2\n3\n4\n{"a":1}\n',
+      stderr: MISSING,
+      exitCode: 2,
+    })
+  })
+
+  it('exits 2 whatever the runs answered', async () => {
+    expect(
+      await ranOver(['/d/nope.json', '/d/four.json'], '. == 0', { exit_status: true }),
+    ).toEqual({ stdout: 'false\n', stderr: MISSING, exitCode: 2 })
+    expect(await ranOver(['/d/nope.json', '/d/four.json'], 'halt_error')).toEqual({
+      stdout: '',
+      stderr: `${MISSING}1\n`,
+      exitCode: 2,
+    })
+  })
+
+  it("reports a directory in jq's bare words", async () => {
+    expect(await ranOver(['/d/dir', '/d/four.json'], '.')).toEqual({
+      stdout: '1\n',
+      stderr: 'jq: error: Is a directory\n',
+      exitCode: 2,
+    })
+  })
+
+  it('lets input read past a failed input to the next', async () => {
+    // One that finds nothing more fails where the reader stopped, on the
+    // failed file at line 0 (pinned).
+    expect(await ranOver(['/d/nope.json', '/d/four.json'], 'input', { null_input: true })).toEqual({
+      stdout: '1\n',
+      stderr: MISSING,
+      exitCode: 2,
+    })
+    expect(await ranOver(['/d/nope.json'], 'input', { null_input: true })).toEqual({
+      stdout: '',
+      stderr: `${MISSING}jq: error (at /d/nope.json:0): break\n`,
+      exitCode: 2,
+    })
+  })
+
+  it.each([
+    ['rawfile', '/d/nope.json', 'No such file or directory'],
+    ['slurpfile', '/d/nope.json', 'No such file or directory'],
+    ['rawfile', '/d/dir', "It's a directory"],
+    ['slurpfile', '/d/dir', "It's a directory"],
+  ])("refuses a --%s file it cannot read (%s) in jq's words", async (option, path, reason) => {
+    await expect(
+      ranOver([], '$x', { null_input: true, [option]: ['x', path] }),
+    ).rejects.toMatchObject({
+      message: `jq: Bad JSON in --${option} x ${path}: Could not open ${path}: ${reason}`,
+      exitCode: 2,
+    })
   })
 })

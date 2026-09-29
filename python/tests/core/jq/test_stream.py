@@ -286,6 +286,97 @@ async def test_an_empty_input_holds_no_documents():
     assert await _values(b"  \n\n ") == []
 
 
+async def _failing(exc: OSError, data: bytes = b"", size: int = 1 << 20):
+    async for chunk in _chunks(data, size):
+        yield chunk
+    raise exc
+
+
+async def _reported(
+    sources: list[InputSource], opts: JqOptions = JqOptions()
+) -> tuple[list, list[str], str, int]:
+    reports: list[str] = []
+    reader = InputReader(sources, opts, reports.append)
+    values = []
+    while (value := await reader.next_input()) is not NO_VALUE:
+        values.append(value)
+    return values, reports, reader.position(), reader.failures()
+
+
+MISSING = ("jq: error: Could not open file missing.json: No such file or "
+           "directory\n")
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("size", [1, 1 << 20])
+async def test_an_input_that_cannot_be_opened_is_reported_and_read_past(size):
+    # jq's reader names the input fopen refused and goes on to the next,
+    # and a value runs on across it (pinned: `[1,`, missing, `2]`).
+    sources = [
+        InputSource("a.json", _chunks(b"[1,", size)),
+        InputSource("missing.json", _failing(FileNotFoundError("missing"))),
+        InputSource("b.json", _chunks(b"2]\n", size)),
+    ]
+    assert await _reported(sources) == ([[1, 2]], [MISSING], "b.json:1", 1)
+
+
+@pytest.mark.asyncio
+async def test_the_reader_stands_on_a_failed_input_it_ends_on():
+    # `jq -n input missing.json` fails at missing.json:0 (pinned).
+    missing = InputSource("missing.json",
+                          _failing(FileNotFoundError("missing")))
+    assert await _reported([missing]) == ([], [MISSING], "missing.json:0", 1)
+
+
+@pytest.mark.asyncio
+async def test_a_directory_fails_at_its_read_in_bare_words():
+    # jq opens a directory and fails at its first read, which it reports
+    # as the strerror alone (pinned: `jq: error: Is a directory`).
+    sources = [
+        InputSource("d", _failing(IsADirectoryError("d"))),
+        *_sources(b"1\n"),
+    ]
+    assert await _reported(sources) == ([1], ["jq: error: Is a directory\n"],
+                                        "f0.json:1", 1)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("size", [1, 1 << 20])
+async def test_a_read_that_fails_midway_loses_the_line_it_was_reading(size):
+    # fgets hands out every line before the failed read, and the line it
+    # was reading goes with it: here the `]`, which the next input stands
+    # in for.
+    sources = [
+        InputSource("a.json",
+                    _failing(PermissionError("a"), b'1\n[\n  2\n]', size)),
+        *_sources(b",3]\n"),
+    ]
+    values, reports, _, failures = await _reported(sources)
+    assert (values, reports,
+            failures) == ([1, [2, 3]], ["jq: error: Permission denied\n"], 1)
+
+
+@pytest.mark.asyncio
+async def test_raw_lines_run_on_across_a_failed_input():
+    # Pinned: `x`, missing.txt, `y\n` read under -R as "xy".
+    sources = [
+        InputSource("a.txt", _chunks(b"x", 8)),
+        InputSource("missing.txt", _failing(FileNotFoundError("missing"))),
+        InputSource("b.txt", _chunks(b"y\n", 8)),
+    ]
+    values, reports, _, _ = await _reported(sources, JqOptions(raw_input=True))
+    assert values == ["xy"]
+    assert reports == [MISSING.replace("missing.json", "missing.txt")]
+
+
+@pytest.mark.asyncio
+async def test_without_a_reporter_a_failed_input_raises():
+    missing = InputSource("missing.json",
+                          _failing(FileNotFoundError("missing")))
+    with pytest.raises(FileNotFoundError):
+        await _read([missing])
+
+
 def test_pieces_end_at_a_newline_or_after_4091_bytes():
     data = b"ab\ncd\n"
     assert pieces_through(data, 0) == (3, 1)

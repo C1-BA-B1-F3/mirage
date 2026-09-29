@@ -29,6 +29,7 @@ import {
   jqCheck,
   jqOptions,
   jqRun,
+  loadFailure,
   parseValue,
   readValues,
   referencesArgs,
@@ -41,6 +42,7 @@ import {
 import { yieldBytes } from '../../../io/stream.ts'
 import { IOResult, materialize } from '../../../io/types.ts'
 import { PathSpec } from '../../../types.ts'
+import { isFsError } from '../../../utils/errors.ts'
 import { mountKey, mountPrefixOf } from '../../../utils/key_prefix.ts'
 import type { CommandFnResult, CommandOpts } from '../../config.ts'
 import { UsageError } from '../../errors.ts'
@@ -62,11 +64,13 @@ const OK_NULL_KIND = -1
 const OK_NO_OUTPUT = -4
 const ERROR_UNKNOWN = 5
 
-// jq's exit status when it refuses the program itself.
+// jq's exit status when it refuses the program itself, and when it could not
+// read one of its inputs, whatever the runs answered.
 const ERROR_COMPILE = 3
+const ERROR_SYSTEM = 2
 const USAGE_HINT =
   'Use jq --help for help with command-line options,\n' +
-  'or see the jq manpage, or online docs  at https://jqlang.github.io/jq'
+  'or see the jq manpage, or online docs at https://jqlang.org'
 
 /** Read a pair option's flattened values back as [name, value]. */
 function pairArgs(values: readonly string[]): [string, string][] {
@@ -116,32 +120,81 @@ export function positionalArgs(
 }
 
 /**
+ * A path pair option's [name, file] pairs, each file the PathSpec of the
+ * word that spelled it, or one built from its resolved path.
+ */
+function pathPairs(
+  fl: FlagView,
+  option: string,
+  toSpec: (value: string) => PathSpec,
+): [string, PathSpec][] {
+  const raw = fl.raw(option)
+  if (!Array.isArray(raw)) return []
+  const items: readonly (string | PathSpec)[] = raw
+  const pairs: [string, PathSpec][] = []
+  for (let i = 0; i + 1 < items.length; i += 2) {
+    const name = items[i]
+    const file = items[i + 1]
+    if (typeof name !== 'string' || file === undefined) continue
+    pairs.push([name, file instanceof PathSpec ? file : toSpec(file)])
+  }
+  return pairs
+}
+
+/**
  * Collect the $name bindings that read a file.
  *
  * --rawfile binds the file's text, --slurpfile the array of documents in
  * it, which is the same difference -R draws on the input stream. Both read
- * the bytes the way jq reads its inputs, and a --slurpfile holding bad JSON
- * is refused in jq's words with its parser's message.
+ * the bytes the way jq reads its inputs. A file that cannot be read, and a
+ * --slurpfile holding bad JSON, are refused in jq's words.
  */
 async function fileArgs(
   fl: FlagView,
-  read: (value: string) => Promise<Uint8Array>,
+  toSpec: (value: string) => PathSpec,
+  read: (path: PathSpec) => Promise<Uint8Array>,
 ): Promise<Record<string, unknown>> {
   const args: Record<string, unknown> = {}
-  for (const [name, value] of pairArgs(fl.asList('rawfile'))) {
-    args[name] = decodeUtf8(await read(value))
+  for (const [name, path] of pathPairs(fl, 'rawfile', toSpec)) {
+    args[name] = decodeUtf8(await loadFile(read, 'rawfile', name, path))
   }
-  for (const [name, value] of pairArgs(fl.asList('slurpfile'))) {
+  for (const [name, path] of pathPairs(fl, 'slurpfile', toSpec)) {
+    const shown = inputName(path)
     const [values, failure] = await readValues({
-      name: value,
-      chunks: yieldBytes(await read(value)),
+      name: shown,
+      chunks: yieldBytes(await loadFile(read, 'slurpfile', name, path)),
     })
     if (failure !== null) {
-      throw new UsageError(`jq: Bad JSON in --slurpfile ${name} ${value}: ${failure.message}`, 2)
+      throw new UsageError(
+        `jq: Bad JSON in --slurpfile ${name} ${shown}: ${failure.message}`,
+        ERROR_SYSTEM,
+      )
     }
     args[name] = values
   }
   return args
+}
+
+/**
+ * One --rawfile or --slurpfile file's bytes. One that cannot be read is
+ * refused in the words jq has for it, which call it bad JSON too.
+ */
+async function loadFile(
+  read: (path: PathSpec) => Promise<Uint8Array>,
+  option: string,
+  name: string,
+  path: PathSpec,
+): Promise<Uint8Array> {
+  try {
+    return await read(path)
+  } catch (error) {
+    if (!isFsError(error)) throw error
+    const shown = inputName(path)
+    throw new UsageError(
+      `jq: Bad JSON in --${option} ${name} ${shown}: ${loadFailure(shown, error)}`,
+      ERROR_SYSTEM,
+    )
+  }
 }
 
 /**
@@ -233,29 +286,6 @@ export function parseReport(failure: JqParseError, opts: JqOptions): string {
 }
 
 /**
- * Open an input now, so a missing file fails the command before it prints
- * anything, while its bytes still stream as they are read.
- */
-async function opened(chunks: AsyncIterable<Uint8Array>): Promise<AsyncIterable<Uint8Array>> {
-  const iterator = chunks[Symbol.asyncIterator]()
-  const first = await iterator.next()
-  return resumed(first, iterator)
-}
-
-async function* resumed(
-  first: IteratorResult<Uint8Array>,
-  rest: AsyncIterator<Uint8Array>,
-): AsyncIterable<Uint8Array> {
-  if (first.done === true) return
-  yield first.value
-  for (;;) {
-    const next = await rest.next()
-    if (next.done === true) return
-    yield next.value
-  }
-}
-
-/**
  * jq's main loop (main.c) over an invocation's input stream.
  *
  * Each document runs as soon as the reader parses it, and its outputs stream
@@ -268,19 +298,28 @@ async function* resumed(
  * A run of a program that calls `input` or `inputs` reads what they take
  * before the program runs (see run), and nothing past it, so the loop never
  * reads further ahead than jq's own.
+ *
+ * An input that cannot be opened or read is reported when the reader reaches
+ * it, and the reader goes on to the next. The loop checks for such a failure
+ * before each document it reads, so it stops after the run of the document
+ * the failing read went on to, and the exit status is 2 whatever the runs
+ * answered. `sources` are the inputs, in order, not yet opened.
  */
 export class MainLoop {
   private readonly statuses: number[] = []
   private readonly reports: string[] = []
+  private readonly reader: InputReader
 
   constructor(
-    private readonly reader: InputReader,
+    sources: readonly InputSource[],
     private readonly expr: string,
     private readonly opts: JqOptions,
     private readonly reads: StreamReads,
     private readonly argsValue: Record<string, unknown> | null,
     private readonly io: IOResult,
-  ) {}
+  ) {
+    this.reader = new InputReader(sources, opts, (line) => this.reports.push(line))
+  }
 
   /** The invocation's stdout, run by run. */
   async *outputs(): AsyncIterable<Uint8Array> {
@@ -291,7 +330,7 @@ export class MainLoop {
         this.settle(run, position)
         return
       }
-      for (;;) {
+      while (this.reader.failures() === 0) {
         const item = await this.reader.nextInput()
         if (item === NO_VALUE) return
         if (item instanceof JqParseError) {
@@ -304,7 +343,8 @@ export class MainLoop {
         if (this.settle(run, position)) return
       }
     } finally {
-      this.io.exitCode = exitCode(this.statuses, this.opts)
+      this.io.exitCode =
+        this.reader.failures() > 0 ? ERROR_SYSTEM : exitCode(this.statuses, this.opts)
       if (this.reports.length > 0) this.io.stderr = ENC.encode(this.reports.join(''))
     }
   }
@@ -420,15 +460,14 @@ export async function jqGeneric(
   // only once a reader is in hand. Their files route nothing (the executor's
   // DOOR_FLAG_KEYS), so one may sit on another mount than the operands: it
   // is read through the door, stdin excepted, which is the invocation's own.
-  const readFlagFile = (value: string): Promise<Uint8Array> => {
-    const path = toSpec(value)
+  const readFlagFile = (path: PathSpec): Promise<Uint8Array> => {
     if (opts.dispatch === undefined || isStdin(path)) return materialize(stream(path))
     return readProgramFile('jq', path, opts.dispatch)
   }
   const base = parseFlags(fl)
   const jq: JqOptions = jqOptions({
     ...base,
-    namedArgs: { ...base.namedArgs, ...(await fileArgs(fl, readFlagFile)) },
+    namedArgs: { ...base.namedArgs, ...(await fileArgs(fl, toSpec, readFlagFile)) },
     positionalArgs: positionalArgs(fl, texts, hasProgramFile),
   })
   const argsValue = referencesArgs(expr) ? argsObject(jq) : null
@@ -450,11 +489,12 @@ export async function jqGeneric(
   const sources: InputSource[] = []
   // -n does not read its inputs at all unless the program asks for them
   // through `input` or `inputs`, which is why jq -n never opens a missing
-  // file.
+  // file. Each input is opened when the reader reaches it, as jq opens its
+  // files one after another.
   if (!jq.nullInput || readsStream) {
     if (paths.length > 0) {
       for (const path of paths) {
-        sources.push({ name: inputName(path), chunks: await opened(stream(path)) })
+        sources.push({ name: inputName(path), chunks: stream(path) })
       }
     } else if (opts.stdin !== null) {
       const stdin = opts.stdin
@@ -465,6 +505,6 @@ export async function jqGeneric(
     }
   }
   const io = new IOResult()
-  const loop = new MainLoop(new InputReader(sources, jq), expr, jq, reads, argsValue, io)
+  const loop = new MainLoop(sources, expr, jq, reads, argsValue, io)
   return [loop.outputs(), io]
 }

@@ -1,0 +1,36 @@
+{
+  "cases": [
+    {
+      "id": "onedrive_mkdir_creates_a_missing_mount_root",
+      "seq": 310063,
+      "targets": [
+        "onedrive"
+      ],
+      "read": "bounded",
+      "scenario": [
+        {
+          "mutate": {
+            "command": "mkdir /data/mr2"
+          }
+        },
+        {
+          "mutate": {
+            "command": "mkdir -p /data/mr1/deep"
+          }
+        },
+        {
+          "command": "ls /data/mr1"
+        },
+        {
+          "command": "ls -d /data/mr2"
+        }
+      ],
+      "expect": {
+        "exit": 0,
+        "stdout": "deep\n/data/mr2\n",
+        "stderr": ""
+      },
+      "note": "The first thing the out-of-band workspace does is a plain mkdir, which meets the mount root before anything has created it. A OneDrive mount's root is its key_prefix folder, which a file upload creates as a side effect but a folder create does not, so mkdir under a root nothing has written to yet has to create the prefix chain first. The listing_ttl cases start with mkdir -p on a fresh account, so they cover the -p form."
+    }
+  ]
+}

@@ -21,6 +21,7 @@ from mirage.core.api.client import SessionArg
 from mirage.core.github.client import (GitHubApiError, github_get,
                                        github_request)
 from mirage.core.github.config import GhConfig, GitHubConfig
+from mirage.core.github.constants import GRAPHQL_PATH
 from mirage.core.github.paginate import github_pages
 from mirage.types import JsonValue
 
@@ -160,7 +161,7 @@ async def _graphql_data(config: GhConfig, query: str,
     """
     response = await github_request(config.token,
                                     "POST",
-                                    "/graphql", {
+                                    GRAPHQL_PATH, {
                                         "query": query,
                                         "variables": variables
                                     },

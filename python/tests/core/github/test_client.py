@@ -18,7 +18,7 @@ from aiohttp import web
 
 from mirage.core.github.client import (GitHubApiError, github_headers,
                                        github_request, github_request_response,
-                                       github_url)
+                                       github_url, graphql_url)
 from mirage.core.github.config import GitHubConfig
 
 
@@ -204,3 +204,33 @@ async def test_request_error_preserves_wire_body_and_request_url(
     assert error.data == data
     assert error.url == f"{base_url}/search/issues?q=bad+query"
     assert error.status == 422
+
+
+# gh's GraphQLEndpoint beside its RESTPrefix (cli/cli internal/ghinstance):
+# an Enterprise Server serves GraphQL at /api/graphql, outside /api/v3.
+@pytest.mark.parametrize("base,url", [
+    (None, "https://api.github.com/graphql"),
+    ("https://api.github.com", "https://api.github.com/graphql"),
+    ("https://ghe.example/api/v3", "https://ghe.example/api/graphql"),
+    ("https://ghe.example/api/v3/", "https://ghe.example/api/graphql"),
+    ("http://127.0.0.1:5098", "http://127.0.0.1:5098/graphql"),
+    ("http://127.0.0.1:5098/api/v3x", "http://127.0.0.1:5098/api/v3x/graphql"),
+])
+def test_graphql_url_pairs_with_the_rest_base_as_gh_does(base, url):
+    assert graphql_url(base) == url
+
+
+@pytest.mark.asyncio
+async def test_graphql_goes_outside_an_enterprise_rest_base(base_url):
+    await github_request("t",
+                         "POST",
+                         "/graphql", {"query": "{ viewer { login } }"},
+                         base_url=base_url + "/api/v3")
+    await github_request("t",
+                         "GET",
+                         "/repos/o/r",
+                         base_url=base_url + "/api/v3")
+    assert [(seen["method"], seen["path"]) for seen in SEEN] == [
+        ("POST", "/api/graphql"),
+        ("GET", "/api/v3/repos/o/r"),
+    ]

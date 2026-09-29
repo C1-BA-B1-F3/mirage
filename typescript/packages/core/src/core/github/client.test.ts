@@ -19,6 +19,7 @@ import {
   fetchTree,
   GitHubApiError,
   type GitHubTransport,
+  graphqlUrl,
   HttpGitHubTransport,
   searchCode,
 } from './client.ts'
@@ -66,6 +67,30 @@ beforeEach(() => {
 
 afterEach(() => {
   globalThis.fetch = REAL_FETCH
+})
+
+// gh's GraphQLEndpoint beside its RESTPrefix (cli/cli internal/ghinstance):
+// an Enterprise Server serves GraphQL at /api/graphql, outside /api/v3.
+describe('graphqlUrl', () => {
+  it.each([
+    ['https://api.github.com', 'https://api.github.com/graphql'],
+    ['https://ghe.example/api/v3', 'https://ghe.example/api/graphql'],
+    ['https://ghe.example/api/v3/', 'https://ghe.example/api/graphql'],
+    ['http://127.0.0.1:5098', 'http://127.0.0.1:5098/graphql'],
+    ['http://127.0.0.1:5098/api/v3x', 'http://127.0.0.1:5098/api/v3x/graphql'],
+  ])('%s answers GraphQL at %s', (base, url) => {
+    expect(graphqlUrl(base)).toBe(url)
+  })
+
+  it('sends a GraphQL query outside an Enterprise REST base', async () => {
+    const ghes = new HttpGitHubTransport({ token: 't', baseUrl: 'https://ghe.example/api/v3' })
+    await ghes.request('POST', '/graphql', { query: '{ viewer { login } }' })
+    await ghes.get('/repos/o/r')
+    expect(SEEN.map((seen) => `${seen.method} ${seen.url}`)).toEqual([
+      'POST https://ghe.example/api/graphql',
+      'GET https://ghe.example/api/v3/repos/o/r',
+    ])
+  })
 })
 
 describe('HttpGitHubTransport', () => {

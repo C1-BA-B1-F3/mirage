@@ -16,6 +16,7 @@ from typing import Any, cast
 
 from mirage.core.github.client import github_request
 from mirage.core.github.config import GhConfig
+from mirage.core.github.constants import GRAPHQL_PATH
 from mirage.core.github.paginate import github_pages
 from mirage.core.github.repo import RepoRef
 from mirage.types import JsonValue
@@ -119,7 +120,7 @@ async def issue_comments(config: GhConfig, ref: RepoRef,
     while True:
         response = await github_request(config.token,
                                         "POST",
-                                        "/graphql", {
+                                        GRAPHQL_PATH, {
                                             "query": COMMENTS_QUERY,
                                             "variables": {
                                                 "owner": ref.owner,

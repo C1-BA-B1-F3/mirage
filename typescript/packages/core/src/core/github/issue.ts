@@ -13,6 +13,7 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import type { GitHubTransport } from './client.ts'
+import { GRAPHQL_PATH } from './constants.ts'
 import { githubPages } from './paginate.ts'
 import type { RepoRef } from './repo.ts'
 
@@ -116,7 +117,7 @@ export async function issueComments(
   const rows: Record<string, unknown>[] = []
   let cursor: string | null = null
   for (;;) {
-    const response = (await transport.request('POST', '/graphql', {
+    const response = (await transport.request('POST', GRAPHQL_PATH, {
       query: COMMENTS_QUERY,
       variables: { owner: ref.owner, repo: ref.repo, number, cursor },
     })) as {

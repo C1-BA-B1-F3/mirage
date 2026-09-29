@@ -27,9 +27,10 @@ import {
 const FRESH: ReadSpec = { policy: ReadPolicy.FRESH, ttl: DEFAULT_READ_TTL }
 const BOUNDED: ReadSpec = { policy: ReadPolicy.BOUNDED, ttl: DEFAULT_READ_TTL }
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
-import { GetObjectCommand, HeadObjectCommand } from '@aws-sdk/client-s3'
+import { GetObjectCommand, HeadObjectCommand, ListObjectsV2Command } from '@aws-sdk/client-s3'
 import { applyIo } from '@struktoai/mirage-core/cache/file/io'
 import { IOResult } from '@struktoai/mirage-core/io/types'
+import { Mount } from '@struktoai/mirage-core/workspace/mount/spec'
 import { Workspace } from '../../workspace.ts'
 import type { S3Config } from './config.ts'
 import { installS3Mock, type S3Mock } from './mock.ts'
@@ -193,6 +194,80 @@ describe('S3 cache consistency (mocked)', () => {
       await ws.close()
     }
   })
+
+  // #1101 Design §2: a read policy belongs to the mount. After an out-of-band
+  // change, one line over a fresh and a bounded mount must print v2 and v1,
+  // and only the fresh leg may reach the backend. The python twin in
+  // test_fingerprint_spike.py says what each parameter tells apart.
+  const SHAPES = {
+    siblings: ['/a', '/b', 'grep -r v /a/ /b/'],
+    nested: ['/x', '/x/y', 'grep -r v /x/'],
+    'shared-vfs': ['/a', '/b', 'grep -r v /a/ /b/'],
+  } as const
+  const GRID = Object.keys(SHAPES).flatMap((shape) =>
+    (['first', 'second'] as const).flatMap((freshSide) =>
+      [ReadPolicy.FRESH, ReadPolicy.BOUNDED].map(
+        (fallback) => [shape as keyof typeof SHAPES, freshSide, fallback] as const,
+      ),
+    ),
+  )
+  it.each(GRID)(
+    'one line serves each mount under its own policy (%s, fresh %s, default %s)',
+    async (shape, freshSide, fallback) => {
+      const [first, second, line] = SHAPES[shape]
+      const [fresh, bounded] = freshSide === 'first' ? [first, second] : [second, first]
+      mock.store.set('fresh-bkt', 'f.txt', ENC.encode('v1\n'))
+      mock.store.set('bounded-bkt', 'f.txt', ENC.encode('v1\n'))
+      const freshVfs = new S3VFS({ ...makeConfig(), bucket: 'fresh-bkt' })
+      const boundedVfs =
+        shape === 'shared-vfs' ? freshVfs : new S3VFS({ ...makeConfig(), bucket: 'bounded-bkt' })
+      const mount = (vfs: S3VFS, read: ReadSpec): Mount =>
+        read.policy === fallback
+          ? new Mount(vfs, { mode: MountMode.WRITE })
+          : new Mount(vfs, { mode: MountMode.WRITE, read })
+      const ws = new Workspace(
+        {
+          [`${fresh}/`]: mount(freshVfs, FRESH),
+          [`${bounded}/`]: mount(boundedVfs, { policy: ReadPolicy.BOUNDED, ttl: 900 }),
+        },
+        { mode: MountMode.WRITE, read: { policy: fallback, ttl: DEFAULT_READ_TTL } },
+      )
+      try {
+        await ws.shell(`ls ${first}/ ${second}/`)
+        await ws.shell(`cat ${first}/f.txt`)
+        await ws.shell(`cat ${second}/f.txt`)
+        mock.store.set('fresh-bkt', 'f.txt', ENC.encode('v2\n'))
+        mock.store.set('bounded-bkt', 'f.txt', ENC.encode('v2\n'))
+        mock.resetCalls()
+        const mark = ws.networkRecords.length
+        const result = await ws.shell(line)
+        const version = (prefix: string): string => (prefix === fresh ? 'v2' : 'v1')
+        expect(result.exitCode).toBe(0)
+        expect(DEC.decode(result.stdout)).toBe(
+          `${first}/f.txt:${version(first)}\n${second}/f.txt:${version(second)}\n`,
+        )
+        const ledger = (Bucket: string): number[] => [
+          mock.commandCalls(ListObjectsV2Command, { Bucket }),
+          mock.commandCalls(HeadObjectCommand, { Bucket }),
+          mock.commandCalls(GetObjectCommand, { Bucket }),
+        ]
+        // Any send here means the fresh mount's policy reached the bounded one.
+        expect(ledger('bounded-bkt')).toEqual([0, 0, 0])
+        // A missing HEAD means the fresh leg was served without a check.
+        expect(ledger('fresh-bkt')).toEqual([0, 1, 1])
+        expect(ws.networkRecords.slice(mark).map((r) => [r.op, r.path])).toEqual([
+          ['read', `${fresh}/f.txt`],
+        ])
+        mock.resetCalls()
+        const single = await ws.shell(`cat ${bounded}/f.txt`)
+        expect(DEC.decode(single.stdout)).toBe('v1\n')
+        // v2 or any send here means the routing door read another policy.
+        expect([...ledger('fresh-bkt'), ...ledger('bounded-bkt')]).toEqual([0, 0, 0, 0, 0, 0])
+      } finally {
+        await ws.close()
+      }
+    },
+  )
 
   it('a snapshot-false mount still serves a verified cache', async () => {
     // The supportsSnapshot short-circuit is gone and must stay gone: it

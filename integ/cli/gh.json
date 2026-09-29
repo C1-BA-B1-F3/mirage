@@ -1481,6 +1481,32 @@
         "stdout": "integ-user\n",
         "stderr": ""
       }
+    },
+    {
+      "id": "gh_version",
+      "seq": 569312,
+      "targets": [
+        "cli-gh"
+      ],
+      "command": "gh version | sed -E 's/gh version [^ ]+ /gh version VERSION /'",
+      "expect": {
+        "exit": 0,
+        "stdout": "gh version VERSION (Mirage)\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "gh_version_option",
+      "seq": 569313,
+      "targets": [
+        "cli-gh"
+      ],
+      "command": "gh --version | sed -E 's/gh version [^ ]+ /gh version VERSION /'",
+      "expect": {
+        "exit": 0,
+        "stdout": "gh version VERSION (Mirage)\n",
+        "stderr": ""
+      }
     }
   ]
 }

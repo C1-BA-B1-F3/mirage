@@ -19,6 +19,7 @@ from mirage.commands.cli.builtin.gh import release as release_commands
 from mirage.commands.cli.builtin.gh import repo as repo_commands
 from mirage.commands.cli.builtin.gh.api import api
 from mirage.commands.cli.builtin.gh.search import search_spec
+from mirage.commands.cli.builtin.gh.version import version
 from mirage.commands.cli.types import CLISpec
 from mirage.commands.spec.types import Operand, Option
 from mirage.core.github.config import GhConfig
@@ -411,6 +412,11 @@ GH = CLISpec(
     description="GitHub CLI",
     config_model=GhConfig,
     subcommands=(
+        CLISpec(
+            name="version",
+            aliases=("--version", ),
+            fn=version,
+            description="Show the Mirage GitHub CLI implementation version"),
         CLISpec(name="api",
                 description="Make an authenticated GitHub API request",
                 fn=api,

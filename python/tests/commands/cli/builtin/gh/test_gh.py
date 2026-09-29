@@ -144,7 +144,8 @@ def _inv(texts=(), flags=None,
 def test_registers_itself_under_the_grammar_gh_uses():
     assert cli_spec_for("gh") is GH
     assert [c.name for c in GH.subcommands] == [
-        "api", "issue", "pr", "repo", "release", "run", "workflow", "search"
+        "version", "api", "issue", "pr", "repo", "release", "run", "workflow",
+        "search"
     ]
     repo = next(c for c in GH.subcommands if c.name == "repo")
     assert [c.name for c in repo.subcommands

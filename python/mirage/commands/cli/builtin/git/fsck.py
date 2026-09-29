@@ -1,4 +1,5 @@
 import asyncio
+import hashlib
 
 from dulwich.errors import ChecksumMismatch
 from dulwich.objects import Commit, ObjectID, ShaFile, Tag, Tree
@@ -6,9 +7,11 @@ from dulwich.repo import BaseRepo
 
 from mirage.commands.cli.builtin.git.errors import GitError
 from mirage.commands.cli.builtin.git.index import read_index
-from mirage.commands.cli.builtin.git.io import read_names, read_optional
-from mirage.commands.cli.builtin.git.objects import VfsObjectStore
-from mirage.commands.cli.builtin.git.session import opened
+from mirage.commands.cli.builtin.git.io import (file_size, read_file,
+                                                read_names, read_optional,
+                                                read_range)
+from mirage.commands.cli.builtin.git.repo import open_repo
+from mirage.commands.cli.builtin.git.session import located
 from mirage.commands.cli.builtin.git.util import fatal
 from mirage.commands.cli.types import CLIDoors, CLIInvocation
 from mirage.commands.spec.flag_view import FlagView
@@ -16,6 +19,72 @@ from mirage.io.types import ByteSource, IOResult
 from mirage.ops.types import StatPath
 from mirage.runtime.types import DispatchFn
 from mirage.types import FileType
+from mirage.utils.errors import WALK_ERRORS, fs_strerror
+
+PACK_BLOCK = 1 << 18
+
+
+async def check_pack(dispatch: DispatchFn, path: str, expected: bytes) -> None:
+    """Hash bounded ranges, retaining only the trailing SHA-1 between reads.
+
+    Args:
+        dispatch (DispatchFn): repository dispatcher.
+        path (str): virtual pack path.
+        expected (bytes): pack checksum recorded by the index.
+    """
+    digest = hashlib.sha1()
+    tail = b""
+    offset = 0
+    try:
+        size = await file_size(dispatch, path)
+        while size is None or offset < size:
+            count = PACK_BLOCK if size is None else min(
+                PACK_BLOCK, size - offset)
+            chunk = await read_range(dispatch, path, offset, count)
+            if not chunk:
+                if size is not None and offset < size:
+                    raise GitError(f"truncated pack: {path}")
+                break
+            offset += len(chunk)
+            buffered = tail + chunk
+            if len(buffered) > 20:
+                digest.update(buffered[:-20])
+            tail = buffered[-20:]
+            if size is None and len(chunk) < count:
+                break
+    except WALK_ERRORS as exc:
+        raise GitError(
+            f"cannot read pack {path}: {fs_strerror(exc) or str(exc)}"
+        ) from exc
+    if offset < 32:
+        raise GitError(f"truncated pack: {path}")
+    if digest.digest() != tail or tail != expected:
+        raise GitError(f"pack checksum mismatch: {path}")
+
+
+async def check_packs(dispatch: DispatchFn, commondir: str) -> None:
+    """Validate indexes and stream packs before opening the object database.
+
+    Args:
+        dispatch (DispatchFn): repository dispatcher.
+        commondir (str): shared Git directory.
+    """
+    root = f"{commondir}/objects/pack"
+    for entry in await read_names(dispatch, root):
+        name = entry.rstrip("/").rsplit("/", 1)[-1]
+        if not name.endswith(".idx"):
+            continue
+        path = f"{root}/{name}"
+        try:
+            data = await read_file(dispatch, path)
+        except WALK_ERRORS as exc:
+            detail = fs_strerror(exc) or str(exc)
+            raise GitError(f"cannot read pack index {path}: {detail}") from exc
+        if len(data) < 1064:
+            raise GitError(f"truncated pack index: {path}")
+        if hashlib.sha1(data[:-20]).digest() != data[-20:]:
+            raise GitError(f"pack index checksum mismatch: {path}")
+        await check_pack(dispatch, f"{root}/{name[:-4]}.pack", data[-40:-20])
 
 
 async def log_roots(dispatch: DispatchFn, stat_path: StatPath,
@@ -72,10 +141,6 @@ def check(repo: BaseRepo, roots: set[bytes],
         dangling (bool): report unreferenced tips.
     """
     errors: list[str] = []
-    if isinstance(repo.object_store, VfsObjectStore):
-        for pack in repo.object_store.packs:
-            pack.index.check()
-            pack.data.check()
     objects: dict[bytes, ShaFile] = {}
     referenced = set(roots)
     for oid in sorted(
@@ -109,8 +174,10 @@ async def fsck(inv: CLIInvocation[None]) -> tuple[ByteSource | None, IOResult]:
     try:
         doors = inv.doors or CLIDoors()
         fl = FlagView(inv.flags)
-        repo, location = await opened(fl, doors)
+        location = await located(fl, doors)
         assert doors.dispatch is not None and doors.stat_path is not None
+        await check_packs(doors.dispatch, location.commondir)
+        repo = await open_repo(doors.dispatch, location)
         roots: set[bytes] = set(repo.refs.as_dict().values())
         index = await read_index(doors.dispatch, location.gitdir)
         roots.update(entry.sha for entry in index.entries.values()

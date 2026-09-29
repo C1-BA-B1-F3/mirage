@@ -52,15 +52,27 @@ async def opened(fl: FlagView,
         NoWorkspaceError: a plane this verb needs is not wired.
         NotAWorkTreeError: ``work_tree`` and there is none to enter.
     """
+    location = await located(fl, doors)
+    dispatch, stat_path = doors.dispatch, doors.stat_path
+    assert dispatch is not None and stat_path is not None
+    if work_tree:
+        named = fl.as_str("work_tree") is not None
+        await require_work_tree(dispatch, stat_path, location, named)
+    return await open_repo(dispatch, location), location
+
+
+async def located(fl: FlagView, doors: CLIDoors) -> RepoLocation:
+    """Locate a repository without opening potentially damaged objects.
+
+    Args:
+        fl (FlagView): repository-selection flags.
+        doors (CLIDoors): namespace and dispatcher doors.
+    """
     dispatch = doors.dispatch
     stat_path = doors.stat_path
     mounts = doors.ns.mounts if doors.ns is not None else None
     if stat_path is None or mounts is None or dispatch is None:
         raise NoWorkspaceError()
     chosen = fl.as_str("work_tree")
-    location = await discover(dispatch, stat_path, mounts.root_of,
-                              start_point(fl), fl.as_str("git_dir"), chosen)
-    if work_tree:
-        named = chosen is not None
-        await require_work_tree(dispatch, stat_path, location, named)
-    return await open_repo(dispatch, location), location
+    return await discover(dispatch, stat_path, mounts.root_of, start_point(fl),
+                          fl.as_str("git_dir"), chosen)

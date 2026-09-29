@@ -1,21 +1,68 @@
 import git from 'isomorphic-git'
+import Hash from 'sha.js'
 import type { StatPath } from '../../../../ops/types.ts'
-import { FileType } from '../../../../types.ts'
+import { FileType, PathSpec, type FileStat } from '../../../../types.ts'
 import { IOResult } from '../../../../io/types.ts'
 import { compareCodePoints } from '../../../../utils/sort.ts'
 import { sha1Hex } from '../../../../utils/hash.ts'
+import { isWalkError, gnuStrerror } from '../../../../utils/errors.ts'
 import { toHex } from '../../../../utils/hex.ts'
 import type { CommandFnResult } from '../../../config.ts'
 import { FlagView } from '../../../spec/flag_view.ts'
 import type { CLIInvocation } from '../../types.ts'
 import { GitError, NoWorkspaceError } from './errors.ts'
 import { readIndex } from './index_file.ts'
-import { readFile, readNames, readOptional, under } from './io.ts'
+import { readFile, readNames, readOptional, readRange, under } from './io.ts'
 import { basename } from './path.ts'
 import { loadRefs } from './refs.ts'
 import { opened, repoArgs, type Repo } from './repo.ts'
 import type { Dispatch } from './types.ts'
 import { fatal } from './util.ts'
+
+const PACK_BLOCK = 1 << 18
+
+/** Hash bounded ranges, retaining only the trailing SHA-1 between reads. */
+export async function checkPack(
+  dispatch: Dispatch,
+  path: string,
+  expected: Uint8Array,
+): Promise<void> {
+  const digest = new Hash.sha1()
+  let tail = new Uint8Array()
+  let offset = 0
+  try {
+    const [info] = await dispatch('stat', PathSpec.fromStrPath(path))
+    const size = (info as FileStat | null)?.size ?? null
+    while (size === null || offset < size) {
+      const count = size === null ? PACK_BLOCK : Math.min(PACK_BLOCK, size - offset)
+      const chunk = await readRange(dispatch, path, offset, count)
+      if (chunk.length === 0) {
+        if (size !== null && offset < size) throw new GitError(`truncated pack: ${path}`)
+        break
+      }
+      offset += chunk.length
+      const buffered = new Uint8Array(tail.length + chunk.length)
+      buffered.set(tail)
+      buffered.set(chunk, tail.length)
+      if (buffered.length > 20) digest.update(buffered.subarray(0, -20))
+      tail = buffered.slice(-20)
+      if (offset % (4 * PACK_BLOCK) === 0)
+        await new Promise<void>((resolve) => setTimeout(resolve, 0))
+      if (size === null && chunk.length < count) break
+    }
+  } catch (err) {
+    if (!isWalkError(err)) throw err
+    const detail =
+      gnuStrerror((err as { code?: string }).code) ??
+      (err instanceof Error ? err.message : String(err))
+    const failure = new GitError(`cannot read pack ${path}: ${detail}`)
+    failure.cause = err
+    throw failure
+  }
+  if (offset < 32) throw new GitError(`truncated pack: ${path}`)
+  if (digest.digest('hex') !== toHex(tail) || toHex(tail) !== toHex(expected))
+    throw new GitError(`pack checksum mismatch: ${path}`)
+}
 
 async function objectIds(repo: Repo): Promise<Set<string>> {
   const root = under(repo.location.commondir, 'objects')
@@ -36,14 +83,7 @@ async function objectIds(repo: Repo): Promise<Set<string>> {
     if ((await sha1Hex(data.subarray(0, -20))) !== toHex(data.subarray(-20)))
       throw new GitError(`pack index checksum mismatch: ${name}`)
     const packName = name.slice(0, -4) + '.pack'
-    const pack = await readFile(repo.dispatch, under(root, `pack/${packName}`))
-    if (pack.length < 32) throw new GitError(`truncated pack: ${packName}`)
-    const checksum = toHex(pack.subarray(-20))
-    if (
-      (await sha1Hex(pack.subarray(0, -20))) !== checksum ||
-      toHex(data.subarray(-40, -20)) !== checksum
-    )
-      throw new GitError(`pack checksum mismatch: ${packName}`)
+    await checkPack(repo.dispatch, under(root, `pack/${packName}`), data.subarray(-40, -20))
     const view = new DataView(data.buffer, data.byteOffset, data.length)
     const v2 = view.getUint32(0) === 0xff744f63
     if (v2 && view.getUint32(4) !== 2) throw new GitError(`unsupported pack index: ${name}`)

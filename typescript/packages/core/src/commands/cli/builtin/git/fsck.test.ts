@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import { execFileSync } from 'node:child_process'
 import {
   chmodSync,
@@ -17,6 +18,12 @@ import { createShellParser, type ShellParser } from '../../../../shell/parse/ind
 import { RAMVFS } from '../../../../vfs/ram/ram.ts'
 import { MountMode } from '../../../../types.ts'
 import { Workspace } from '../../../../workspace/workspace/workspace.ts'
+import { checkPack } from './fsck.ts'
+import { GitError } from './errors.ts'
+import type { Dispatch } from './types.ts'
+import { IOResult } from '../../../../io/types.ts'
+import { eacces } from '../../../../utils/errors.ts'
+import { FileStat, FileType } from '../../../../types.ts'
 import { GIT } from './index.ts'
 
 const require = createRequire(import.meta.url)
@@ -81,7 +88,7 @@ it.each([false, true])('checks native loose and packed objects (packed=%s)', asy
     rmSync(root, { recursive: true, force: true })
   }
 })
-it.each(['hash', 'zlib', 'pack', 'pack_content', 'index'])(
+it.each(['hash', 'zlib', 'pack', 'pack_content', 'index', 'missing_pack'])(
   'rejects corrupt objects (%s)',
   async (damage) => {
     const root = mkdtempSync(join(tmpdir(), 'mirage-fsck-'))
@@ -93,7 +100,12 @@ it.each(['hash', 'zlib', 'pack', 'pack_content', 'index'])(
       native(root, ['commit', '-qm', 'first'])
       const oid = native(root, ['rev-parse', 'HEAD:a.txt']).trim()
       let diagnostic = oid
-      if (damage === 'pack' || damage === 'pack_content' || damage === 'index') {
+      if (
+        damage === 'pack' ||
+        damage === 'pack_content' ||
+        damage === 'index' ||
+        damage === 'missing_pack'
+      ) {
         native(root, ['gc', '--prune=now'])
         const suffix = damage === 'index' ? '.idx' : '.pack'
         const folder = join(root, '.git/objects/pack')
@@ -106,6 +118,10 @@ it.each(['hash', 'zlib', 'pack', 'pack_content', 'index'])(
         chmodSync(path, 0o600)
         writeFileSync(path, content)
         diagnostic = 'checksum'
+        if (damage === 'missing_pack') {
+          unlinkSync(path)
+          diagnostic = `cannot read pack /repo/.git/objects/pack/${name}`
+        }
       } else {
         const path = join(root, '.git/objects', oid.slice(0, 2), oid.slice(2))
         chmodSync(path, 0o600)
@@ -122,3 +138,53 @@ it.each(['hash', 'zlib', 'pack', 'pack_content', 'index'])(
     }
   },
 )
+
+it.each([32, (1 << 18) + 5, (1 << 19) + 20])(
+  'checksums bounded ranges (%i bytes)',
+  async (length) => {
+    const body = Uint8Array.from({ length: length - 20 }, (_, index) => index % 251)
+    const checksum = createHash('sha1').update(body).digest()
+    const data = new Uint8Array(length)
+    data.set(body)
+    data.set(checksum, body.length)
+    for (const knownSize of [false, true]) {
+      const reads: [number, number][] = []
+      const dispatch: Dispatch = (op, _path, _args, kwargs) => {
+        if (op === 'stat')
+          return Promise.resolve([
+            new FileStat({
+              name: 'large.pack',
+              type: FileType.FILE,
+              size: knownSize ? data.length : null,
+            }),
+            new IOResult(),
+          ])
+        expect(op).toBe('read')
+        const count = kwargs?.size as number
+        const offset = kwargs?.offset as number
+        expect(count).toBeGreaterThan(0)
+        expect(count).toBeLessThanOrEqual(1 << 18)
+        reads.push([offset, count])
+        return Promise.resolve([data.subarray(offset, offset + count), new IOResult()])
+      }
+      await checkPack(dispatch, '/repo/.git/objects/pack/large.pack', checksum)
+      expect(reads.length).toBeGreaterThanOrEqual(Math.ceil(data.length / (1 << 18)))
+      expect(
+        reads.reduce((sum, [offset, count]) => sum + Math.min(count, data.length - offset), 0),
+      ).toBe(data.length)
+    }
+  },
+)
+it.each(['stat', 'read'])('preserves the path on pack permission errors (%s)', async (failedOp) => {
+  const dispatch: Dispatch = (op, path) => {
+    if (op === failedOp) return Promise.reject(eacces(path))
+    return Promise.resolve([
+      new FileStat({ name: 'denied.pack', type: FileType.FILE, size: 100 }),
+      new IOResult(),
+    ])
+  }
+  await expect(checkPack(dispatch, '/repo/denied.pack', new Uint8Array(20))).rejects.toMatchObject({
+    message: 'cannot read pack /repo/denied.pack: Permission denied',
+    code: new GitError('').code,
+  })
+})

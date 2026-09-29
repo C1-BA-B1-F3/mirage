@@ -241,6 +241,19 @@ def test_requires_name():
         BaseVFS(name="", accessor=WikiAccessor(PAGES), io=make_io())
 
 
+def test_a_table_built_driver_needs_a_name():
+    with pytest.raises(ValueError, match="needs a name"):
+        BaseVFS(accessor=WikiAccessor(PAGES), io=make_io())
+
+
+def test_a_subclass_name_names_a_table_built_driver():
+
+    class Wiki(BaseVFS):
+        name = "wiki"
+
+    assert Wiki(accessor=WikiAccessor(PAGES), io=make_io()).name == "wiki"
+
+
 def test_tables_need_io():
     with pytest.raises(ValueError, match="pass io"):
         BaseVFS(name="wiki", commands=[wiki_hello])

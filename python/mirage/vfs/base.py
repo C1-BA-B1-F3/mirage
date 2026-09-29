@@ -164,7 +164,9 @@ class BaseVFS:
             name (str | None): VFS name commands register under; also
                 the registry key when the class is exposed through
                 ``register_vfs`` or a ``mirage.vfs`` entry point. None
-                keeps the class attribute.
+                keeps the class attribute; a driver built from a table
+                must end up with a name of its own, as TypeScript's
+                ``VFSOptions`` requires.
             accessor (Accessor | None): backend handle passed to every
                 core function.
             io (CommandIO | VFSAdapter | None): the backend's resource
@@ -224,6 +226,10 @@ class BaseVFS:
                     "overrides, commands, ops and provision_overrides "
                     "derive from an io table; pass io")
             return
+        # The base's placeholder would register every generic command
+        # under a VFS no registry or prompt knows.
+        if self.name == BaseVFS.name:
+            raise ValueError("a VFS built from a table needs a name")
         self._from_table = True
         table = io.to_command_io() if isinstance(io, VFSAdapter) else io
         self._commands_table = registered_commands([

@@ -1,13 +1,14 @@
+import asyncio
+
 import pytest
 
 from mirage.commands.builtin.generic.jq import (exit_code, input_name, jq,
                                                 named_args, parse_flags,
-                                                positional_args, run_position,
-                                                run_status)
+                                                positional_args, run_status)
 from mirage.commands.errors import UsageError
 from mirage.commands.spec import SPECS
 from mirage.commands.spec.flag_view import FlagView
-from mirage.core.jq import JqError, JqHalt, JqOptions, JqRun, StreamReads
+from mirage.core.jq import JqError, JqHalt, JqOptions, JqRun
 from mirage.io.types import materialize
 from mirage.types import PathSpec
 
@@ -134,22 +135,6 @@ def test_exit_status_looks_back_past_runs_that_printed_nothing():
 def test_a_halt_exits_with_its_own_code(code, exit_status, expected):
     status = run_status(JqRun([False], JqHalt(None, False, code)))
     assert exit_code([status], JqOptions(exit_status=exit_status)) == expected
-
-
-def test_a_run_is_placed_where_the_reader_stops_for_it():
-    positions = ["f0.json:1", "f0.json:2", "f0.json:3"]
-    end = "f0.json:3"
-    none = StreamReads(input=False, inputs=False)
-    one = StreamReads(input=True, inputs=False)
-    rest = StreamReads(input=False, inputs=True)
-    assert run_position(positions, end, none, 1, 0, False) == "f0.json:2"
-    assert run_position(positions, end, none, None, 0, False) == "<unknown>"
-    assert run_position(positions, end, one, 0, 1, False) == "f0.json:2"
-    assert run_position(positions, end, one, 2, 0, False) == "f0.json:3"
-    assert run_position(positions, end, rest, 0, 2, False) == "f0.json:3"
-    # A parse error stops `inputs` where the reader met it.
-    assert run_position(positions, "f0.json:9", rest, 0, 1,
-                        True) == "f0.json:2"
 
 
 def test_an_input_is_named_as_typed_and_dash_as_stdin():
@@ -526,6 +511,48 @@ async def test_seq_reads_past_a_parse_error_a_run_or_the_loop_meets():
                               b"jq: ignoring parse error: Expected separator "
                               b"between values at line 3, column 6 (need RS "
                               b"to resync)\n", 0)
+
+
+@pytest.mark.asyncio
+async def test_a_run_is_placed_where_its_reads_leave_the_reader():
+    # A run reports where the reader stands once it has read its own
+    # document and whatever `input` or `inputs` took past it.
+    assert await _flagged(["/d/four.json"], "[., input] | error(tojson)") == (
+        b"", b"jq: error (at /d/four.json:2): [1,2]\n"
+        b"jq: error (at /d/four.json:4): [3,4]\n", 5)
+    assert await _flagged(["/d/four.json"], "[., inputs] | error(tojson)") == (
+        b"", b"jq: error (at /d/four.json:4): [1,2,3,4]\n", 5)
+
+
+def _live(data: bytes):
+    # An input that holds `data` and never ends, like a producer that
+    # stays open.
+
+    async def read_stream(path: PathSpec):
+        yield data
+        await asyncio.Event().wait()
+
+    return read_stream
+
+
+@pytest.mark.asyncio
+async def test_a_run_reads_no_further_than_its_input_takes():
+    source, io = await jq([_path("/d/live.json")],
+                          "input",
+                          read_bytes=_read_bytes,
+                          read_stream=_live(b"[1 2]\n"),
+                          null_input=True)
+    assert await asyncio.wait_for(materialize(source), 5) == b""
+    assert (await materialize(io.stderr), io.exit_code) == (
+        b"jq: error (at /d/live.json:1): Expected separator between values "
+        b"at line 1, column 5\n", 5)
+    source, io = await jq([_path("/d/live.json")],
+                          "[., input]",
+                          read_bytes=_read_bytes,
+                          read_stream=_live(b"1\n2\n"),
+                          compact_output=True)
+    assert await asyncio.wait_for(anext(source), 5) == b"[1,2]\n"
+    await source.aclose()
 
 
 @pytest.mark.asyncio

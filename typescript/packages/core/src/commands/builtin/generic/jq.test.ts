@@ -14,7 +14,7 @@
 
 import { describe, expect, it } from 'vitest'
 import { jqOptions } from '../../../core/jq/index.ts'
-import { materialize } from '../../../io/types.ts'
+import { materialize, type ByteSource, type IOResult } from '../../../io/types.ts'
 import { PathSpec } from '../../../types.ts'
 import type { CommandOpts } from '../../config.ts'
 import { specOf } from '../../spec/builtins.ts'
@@ -26,7 +26,6 @@ import {
   namedArgs,
   parseFlags,
   positionalArgs,
-  runPosition,
   runStatus,
 } from './jq.ts'
 
@@ -176,23 +175,6 @@ describe('exitCode', () => {
       stop: { kind: 'halt', message: null, string: false, code },
     })
     expect(exitCode([status], jqOptions({ exitStatus }))).toBe(expected)
-  })
-})
-
-describe('runPosition', () => {
-  it('places a run where the reader stops for it', () => {
-    const positions = ['f0.json:1', 'f0.json:2', 'f0.json:3']
-    const end = 'f0.json:3'
-    const none = { input: false, inputs: false }
-    const one = { input: true, inputs: false }
-    const rest = { input: false, inputs: true }
-    expect(runPosition(positions, end, none, 1, 0, false)).toBe('f0.json:2')
-    expect(runPosition(positions, end, none, null, 0, false)).toBe('<unknown>')
-    expect(runPosition(positions, end, one, 0, 1, false)).toBe('f0.json:2')
-    expect(runPosition(positions, end, one, 2, 0, false)).toBe('f0.json:3')
-    expect(runPosition(positions, end, rest, 0, 2, false)).toBe('f0.json:3')
-    // A parse error stops `inputs` where the reader met it.
-    expect(runPosition(positions, 'f0.json:9', rest, 0, 1, true)).toBe('f0.json:2')
   })
 })
 
@@ -423,6 +405,71 @@ describe('jqGeneric over malformed input', () => {
         'column 6 (need RS to resync)\n',
       exitCode: 0,
     })
+  })
+
+  it('places a run where its reads leave the reader', async () => {
+    // A run reports where the reader stands once it has read its own
+    // document and whatever `input` or `inputs` took past it.
+    expect(await ran('/d/four.json', '[., input] | error(tojson)')).toEqual({
+      stdout: '',
+      stderr: 'jq: error (at /d/four.json:2): [1,2]\njq: error (at /d/four.json:4): [3,4]\n',
+      exitCode: 5,
+    })
+    expect(await ran('/d/four.json', '[., inputs] | error(tojson)')).toEqual({
+      stdout: '',
+      stderr: 'jq: error (at /d/four.json:4): [1,2,3,4]\n',
+      exitCode: 5,
+    })
+  })
+
+  it('reads no further than what input takes', async () => {
+    // An input that holds `text` and never ends, like a producer that stays
+    // open.
+    async function* live(text: string): AsyncIterable<Uint8Array> {
+      yield ENC.encode(text)
+      await new Promise<never>(() => undefined)
+    }
+    async function started(
+      program: string,
+      text: string,
+      flags: CommandOpts['flags'],
+    ): Promise<[ByteSource | null, IOResult]> {
+      const opts = {
+        stdin: null,
+        flags,
+        filetypeFns: null,
+        cwd: '/',
+        vfs: { kind: 'ram' } as never,
+      } as CommandOpts
+      const result = await jqGeneric([PathSpec.fromStrPath('/d/live.json')], [program], opts, () =>
+        live(text),
+      )
+      if (result === null) throw new Error('jq returned no result')
+      return result
+    }
+    function soon<T>(promise: Promise<T>): Promise<T | 'still waiting'> {
+      return Promise.race([
+        promise,
+        new Promise<'still waiting'>((resolve) => {
+          setTimeout(() => {
+            resolve('still waiting')
+          }, 5000).unref()
+        }),
+      ])
+    }
+    const [lone, io] = await started('input', '[1 2]\n', { null_input: true })
+    expect(await soon(materialize(lone))).toEqual(new Uint8Array(0))
+    expect([DEC.decode(await materialize(io.stderr)), io.exitCode]).toEqual([
+      'jq: error (at /d/live.json:1): Expected separator between values at line 1, column 5\n',
+      5,
+    ])
+    const [pairs] = await started('[., input]', '1\n2\n', { compact_output: true })
+    if (pairs === null || pairs instanceof Uint8Array) throw new Error('jq did not stream')
+    const first = await soon(pairs[Symbol.asyncIterator]().next())
+    if (first === 'still waiting' || first.done === true) {
+      throw new Error('jq waited on the rest of the input')
+    }
+    expect(DEC.decode(first.value)).toBe('[1,2]\n')
   })
 
   it('ends the command at a halt before the parse error', async () => {

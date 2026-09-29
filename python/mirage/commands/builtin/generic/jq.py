@@ -16,9 +16,8 @@ from mirage.core.jq import (args_object, decode_utf8, error_report,
 from mirage.core.jq.errors import JqCompileError
 from mirage.core.jq.stream import InputReader
 from mirage.core.jq.types import (DEFAULT_INDENT, NO_VALUE, STDIN_NAME,
-                                  UNKNOWN_POSITION, InputSource, JqError,
-                                  JqHalt, JqOptions, JqParseError, JqRun,
-                                  StreamReads)
+                                  InputSource, JqError, JqHalt, JqOptions,
+                                  JqParseError, JqRun, StreamReads)
 from mirage.io.stream import yield_bytes
 from mirage.io.types import ByteSource, IOResult
 from mirage.types import JsonValue, PathSpec
@@ -256,30 +255,6 @@ def exit_code(statuses: Sequence[int], opts: JqOptions) -> int:
     return code % 256
 
 
-def run_position(positions: Sequence[str], end: str, reads: StreamReads,
-                 first: int | None, taken: int, stopped: bool) -> str:
-    """Where jq's reader stands after a run, for its error report.
-
-    A run reads its own document, and past it what `input` and `inputs`
-    take: `inputs` reads to the end unless a parse error stops it, and
-    an `input` that finds nothing left reads to the end too.
-
-    Args:
-        positions (Sequence[str]): where the reader stood once it had
-            read each item of the stream, document or parse error.
-        end (str): where it stood once it stopped reading.
-        reads (StreamReads): which stream builtins the program calls.
-        first (int | None): the run's own document, None under -n.
-        taken (int): how many more items the run read.
-        stopped (bool): whether the last of them was a parse error.
-    """
-    if reads.inputs and not stopped or reads.input and not taken:
-        return end
-    if reads.input or reads.inputs:
-        return positions[(0 if first is None else first + 1) + taken - 1]
-    return UNKNOWN_POSITION if first is None else positions[first]
-
-
 def parse_report(failure: JqParseError, opts: JqOptions) -> str:
     """jq's report of a parse error its main loop meets: fatal, or under
     --seq a line it prints before reading on.
@@ -318,12 +293,13 @@ class MainLoop:
     Each document runs as soon as the reader parses it, and its outputs
     stream out. A run's error is reported and the next document runs; a
     halt ends the loop; a parse error is reported with status 5 and ends
-    it, except under --seq, which reports it and reads on. The exit
-    status and stderr settle on `io` once the stream is drained.
+    it, except under --seq, which reports it and reads on. Under -n the
+    program runs once, on null. The exit status and stderr settle on `io`
+    once the stream is drained.
 
-    `input` and `inputs` read documents ahead of the loop, so a program
-    that calls either runs over the stream read in full first (see
-    run_static).
+    A run of a program that calls `input` or `inputs` reads what they
+    take before the program runs (see _run), and nothing past it, so the
+    loop never reads further ahead than jq's own.
 
     Args:
         reader (InputReader): the input stream.
@@ -348,113 +324,73 @@ class MainLoop:
 
     async def outputs(self) -> AsyncIterator[bytes]:
         """The invocation's stdout, run by run."""
-        reads = self._reads
         try:
-            if self._opts.null_input or reads.input or reads.inputs:
-                async for chunk in self.run_static():
-                    yield chunk
-            else:
-                async for chunk in self.run_each():
-                    yield chunk
+            if self._opts.null_input:
+                run, position = await self._run(None, self._reader.position())
+                if run.outputs:
+                    yield format_jq_output(run.outputs, self._opts)
+                self._settle(run, position)
+                return
+            while True:
+                item = await self._reader.next_input()
+                if item is NO_VALUE:
+                    return
+                if isinstance(item, JqParseError):
+                    self._fail(item)
+                    if self._opts.seq:
+                        continue
+                    return
+                run, position = await self._run(item, self._reader.position())
+                if run.outputs:
+                    yield format_jq_output(run.outputs, self._opts)
+                if self._settle(run, position):
+                    return
         finally:
             self._io.exit_code = exit_code(self._statuses, self._opts)
             if self._reports:
                 self._io.stderr = "".join(self._reports).encode()
 
-    async def run_each(self) -> AsyncIterator[bytes]:
-        """Run the program on every document as the reader parses it."""
-        while True:
-            item = await self._reader.next_input()
-            if item is NO_VALUE:
-                return
-            if isinstance(item, JqParseError):
-                self._fail(item)
-                if self._opts.seq:
-                    continue
-                return
-            position = self._reader.position()
-            run = jq_run(item, self._expr, self._opts.named_args, None,
-                         self._args_value)
-            if run.outputs:
-                yield format_jq_output(run.outputs, self._opts)
-            if self._settle(run, position):
-                return
+    async def _run(self, doc: JsonValue, position: str) -> tuple[JqRun, str]:
+        """Run the program on one document, and say where the reader
+        stands after it, for its error report.
 
-    async def run_static(self) -> AsyncIterator[bytes]:
-        """Run a program that reads the stream itself, or none under -n.
-
-        `input` and `inputs` consume from the same stream the main loop
-        reads, so each run starts past whatever the one before it took.
+        `input` and `inputs` consume the stream the main loop reads, so a
+        run reads what they take first, and the next run starts past it.
         How much a run takes is a runtime fact libjq's Python binding does
         not report, so mirage assumes what the idioms do: `inputs` drains
         the rest (`[., inputs]`, `reduce inputs as $x`), and `input` alone
         takes one (`[., input]` pairs the documents up). A program that
         takes some other count (`first(inputs)`, an `input` in a branch
         not taken) leaves real jq a different remainder for its next run
-        than here.
+        than here. A parse error stops the reading: the run raises it
+        where `input` or `inputs` would reach it, and the main loop reads
+        on past it.
 
-        A parse error is an item of the stream like a document. The run
-        whose `input` or `inputs` reaches it raises it, and the main loop
-        reads on past it. One the main loop reaches itself ends the
-        stream, or under --seq is reported and read past. Under -n only
-        the program reads, so an error past what it read goes unreported.
+        Args:
+            doc (JsonValue): the run's own document, null under -n.
+            position (str): where the reader stood once it had read it.
         """
         reads = self._reads
-        items: "list[JsonValue | JqParseError]" = []
-        positions: list[str] = []
-        # -n does not read its inputs at all unless the program asks for
-        # them, which is why jq -n never opens a missing file.
-        if not self._opts.null_input or reads.input or reads.inputs:
-            while True:
-                item = await self._reader.next_input()
-                if item is NO_VALUE:
-                    break
-                items.append(item)
-                positions.append(self._reader.position())
-        end = self._reader.position()
-        streams = reads.input or reads.inputs
-        at = 0
-        while self._opts.null_input or at < len(items):
-            first = None if self._opts.null_input else at
-            doc = None if first is None else items[at]
-            if isinstance(doc, JqParseError):
-                self._fail(doc)
-                if not self._opts.seq:
-                    return
-                at += 1
-                continue
-            start = 0 if first is None else at + 1
-            rest, failure, taken = self._taken(items, start)
-            run = jq_run(doc, self._expr, self._opts.named_args,
-                         rest if streams else None, self._args_value,
-                         None if failure is None else failure.message)
-            if run.outputs:
-                yield format_jq_output(run.outputs, self._opts)
-            position = run_position(positions, end, reads, first, taken,
-                                    failure is not None)
-            if self._settle(run, position) or first is None:
-                return
-            at = start + taken
-
-    def _taken(self, items: "list[JsonValue | JqParseError]",
-               start: int) -> tuple[list[JsonValue], JqParseError | None, int]:
-        # What a run reads past its own document: the documents it is
-        # handed, the parse error it meets past them, and how many items
-        # of the stream that takes. `inputs` reads up to the next parse
-        # error, `input` alone the next item.
-        if self._reads.inputs:
-            docs: list[JsonValue] = []
-            for item in items[start:]:
-                if isinstance(item, JqParseError):
-                    return docs, item, len(docs) + 1
-                docs.append(item)
-            return docs, None, len(docs)
-        if not self._reads.input or start >= len(items):
-            return [], None, 0
-        item = items[start]
-        if isinstance(item, JqParseError):
-            return [], item, 1
-        return [item], None, 1
+        if not (reads.input or reads.inputs):
+            return jq_run(doc, self._expr, self._opts.named_args, None,
+                          self._args_value), position
+        docs: list[JsonValue] = []
+        failure: JqParseError | None = None
+        while True:
+            item = await self._reader.next_input()
+            position = self._reader.position()
+            if item is NO_VALUE:
+                break
+            if isinstance(item, JqParseError):
+                failure = item
+                break
+            docs.append(item)
+            if not reads.inputs:
+                break
+        run = jq_run(doc, self._expr, self._opts.named_args, docs,
+                     self._args_value,
+                     None if failure is None else failure.message)
+        return run, position
 
     def _settle(self, run: JqRun, position: str) -> bool:
         # Fold one run into the invocation: its answer toward the exit

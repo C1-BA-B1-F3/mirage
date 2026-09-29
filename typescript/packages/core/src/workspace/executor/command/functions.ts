@@ -31,6 +31,7 @@ import type { JobTable } from '../../../shell/job_table/index.ts'
 import type { HandOff } from '../../../policy/types.ts'
 import type { Decisions } from '../../../policy/decisions.ts'
 import { ReturnSignal } from '../../../shell/errors.ts'
+import { runAsShell } from '../../../context/session_context.ts'
 import type { Result } from './types.ts'
 
 export async function executeShellFunction(
@@ -67,47 +68,51 @@ export async function executeShellFunction(
   const bound = fd0Binding(session)
 
   try {
-    for (const cmd of body) {
-      try {
-        const cmdNode = cmd as Parameters<ExecuteNodeFn>[0]
-        const [rawStdout, io, execNode] = await runStatement(
-          executeNode,
-          cmdNode,
-          session,
-          bodyStdin,
-          bound,
-          cs,
-          jobTable,
-          agentId,
-          handed,
-          decisions,
-        )
-        // $? tracks each statement inside the body, so a bare `return`
-        // (and mid-function $?) sees the last command.
-        const stdout = await finishStatement(rawStdout, io, session, cmdNode)
-        if (stdout !== null) allStdout.push(stdout)
-        mergedIo = await mergedIo.merge(io)
-        lastExec = execNode
-        if (
-          io.exitCode !== 0 &&
-          session.shellOptions.errexit === true &&
-          !ERREXIT_EXEMPT_TYPES.has(cmdNode.type) &&
-          !session.errexitImmune
-        ) {
-          mergedIo.exitCode = io.exitCode
-          break
-        }
-      } catch (err) {
-        if (err instanceof ReturnSignal) {
-          if (err.stderr.length > 0) {
-            mergedIo = await mergedIo.merge(new IOResult({ stderr: err.stderr }))
+    // The body is shell code: the builtins it runs are the shell's,
+    // whatever `xargs` or `env` marked the line that called it.
+    await runAsShell(async () => {
+      for (const cmd of body) {
+        try {
+          const cmdNode = cmd as Parameters<ExecuteNodeFn>[0]
+          const [rawStdout, io, execNode] = await runStatement(
+            executeNode,
+            cmdNode,
+            session,
+            bodyStdin,
+            bound,
+            cs,
+            jobTable,
+            agentId,
+            handed,
+            decisions,
+          )
+          // $? tracks each statement inside the body, so a bare `return`
+          // (and mid-function $?) sees the last command.
+          const stdout = await finishStatement(rawStdout, io, session, cmdNode)
+          if (stdout !== null) allStdout.push(stdout)
+          mergedIo = await mergedIo.merge(io)
+          lastExec = execNode
+          if (
+            io.exitCode !== 0 &&
+            session.shellOptions.errexit === true &&
+            !ERREXIT_EXEMPT_TYPES.has(cmdNode.type) &&
+            !session.errexitImmune
+          ) {
+            mergedIo.exitCode = io.exitCode
+            break
           }
-          mergedIo.exitCode = err.exitCode
-          break
+        } catch (err) {
+          if (err instanceof ReturnSignal) {
+            if (err.stderr.length > 0) {
+              mergedIo = await mergedIo.merge(new IOResult({ stderr: err.stderr }))
+            }
+            mergedIo.exitCode = err.exitCode
+            break
+          }
+          throw err
         }
-        throw err
       }
-    }
+    })
   } finally {
     cs.pop()
     restoreLocals(session, savedLocals)

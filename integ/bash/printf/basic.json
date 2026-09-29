@@ -2411,12 +2411,13 @@
         "gdrive",
         "gdrive-folder"
       ],
-      "command": "echo a b | xargs printf '%%s\\n'",
+      "command": "echo a b | xargs printf '%%s\\n'; ( g() { printf -v r ok; echo \"[$r]\"; }; echo a | xargs g )",
       "expect": {
         "exit": 0,
-        "stdout": "%s\n",
+        "stdout": "%s\n[ok]\n",
         "stderr": "printf: warning: ignoring excess arguments, starting with 'a'\n"
-      }
+      },
+      "note": "GNU xargs execs printf, so it is coreutils' and warns. GNU xargs cannot run a shell function (`xargs: g: No such file or directory`, 127); mirage runs one, and its body is shell code, so `printf -v` there is the builtin and assigns. In a subshell so the battery's shared session keeps no `g`."
     },
     {
       "id": "printf_under_timeout_is_the_program",

@@ -438,6 +438,20 @@ async def test_printf_under_a_command_runner_is_the_program(
     assert io.exit_code == 0
 
 
+# A function one of them runs is shell code, whose printf is the shell's.
+@pytest.mark.asyncio
+@pytest.mark.parametrize("runner",
+                         ["env g", "echo a | xargs g", "timeout 5 g"])
+async def test_printf_in_a_function_a_command_runner_runs_is_the_builtin(
+        runner: str):
+    ws = Workspace({"/data": RAMVFS()}, mode=MountMode.WRITE)
+    io = await ws.shell("g() { printf -v r ok; printf 'x\\n' extra; "
+                        f"echo \"[$r]\"; }}; {runner}")
+    assert await materialize(io.stdout) == b"x\n[ok]\n"
+    assert await materialize(io.stderr) == b""
+    assert io.exit_code == 0
+
+
 # bash 5.2.37: an escape missing its digits writes builtin_error's
 # warning to stderr and leaves the status alone.
 @pytest.mark.asyncio

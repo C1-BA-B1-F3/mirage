@@ -89,4 +89,21 @@ describe('printf under a command runner', () => {
     expect([io.stdoutText, io.stderrText, io.exitCode]).toEqual(['x\n', excess(`'${word}'`), 0])
     await ws.close()
   })
+
+  // A function one of them runs is shell code, whose printf is the shell's.
+  it.each(['env g', 'echo a | xargs g', 'timeout 5 g'])(
+    'a function %s runs has the builtin',
+    async (runner) => {
+      const parser = await getTestParser()
+      const ws = new Workspace(
+        { '/data': new RAMVFS() },
+        { mode: MountMode.WRITE, shellParser: parser },
+      )
+      const io = await ws.shell(
+        `g() { printf -v r ok; printf 'x\\n' extra; echo "[$r]"; }; ${runner}`,
+      )
+      expect([io.stdoutText, io.stderrText, io.exitCode]).toEqual(['x\n[ok]\n', '', 0])
+      await ws.close()
+    },
+  )
 })

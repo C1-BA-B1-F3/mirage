@@ -14,6 +14,7 @@
 
 from typing import Any
 
+from mirage.context import clear_program_invocation, reset_program_invocation
 from mirage.io import IOResult
 from mirage.io.async_line_iterator import share
 from mirage.io.stream import async_chain
@@ -84,6 +85,9 @@ async def run_shell_function(
     outer_locals = session._local_vars
     session._local_vars = saved_locals
     session._local_frames.append(saved_locals)
+    # The body is shell code: the builtins it runs are the shell's,
+    # whatever `xargs` or `env` marked the line that called it.
+    marked = clear_program_invocation()
     try:
         all_stdout: list[Any] = []
         merged_io = IOResult()
@@ -115,6 +119,7 @@ async def run_shell_function(
         last_exec.exit_code = merged_io.exit_code
         return combined, merged_io, last_exec
     finally:
+        reset_program_invocation(marked)
         cs.pop()
         restore_locals(session, saved_locals)
         session._local_frames.pop()

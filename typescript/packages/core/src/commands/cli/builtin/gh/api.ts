@@ -19,8 +19,7 @@ import type { CLIInvocation } from '../../types.ts'
 import { expand } from '../../../../core/github/placeholder.ts'
 import type { GhConfig } from '../../../../core/github/config.ts'
 import { GitHubApiError, type GitHubResponse } from '../../../../core/github/client.ts'
-import { jqEval } from '../../../../core/jq/index.ts'
-import { ghTransport, readCliFile, textOut } from './accessor.ts'
+import { ghTransport, jqValues, readCliFile, textOut } from './accessor.ts'
 
 type Json = null | boolean | number | string | Json[] | { [key: string]: Json }
 const EMPTY_ARRAY = Symbol('empty-array')
@@ -353,7 +352,7 @@ async function renderPages(pages: unknown[], fl: FlagView, failure?: string): Pr
   if (program !== undefined && program !== '') {
     const output: string[] = []
     for (const item of slurp ? [pages] : pages) {
-      for (const value of await jqEval(item, program)) output.push(`${jqLine(value)}\n`)
+      for (const value of await jqValues(item, program)) output.push(`${jqLine(value)}\n`)
     }
     return output.join('') + (failure ?? '')
   }

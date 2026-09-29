@@ -728,6 +728,28 @@ async def test_api_jq_emits_one_line_per_output():
     assert await materialize(out) == b"x\ny\n"
 
 
+# go-gh's gojq ends the output at `halt` and fails at halt_error, pinned
+# against gh: `halt error: <message>`, exit 1 whatever the code.
+@pytest.mark.asyncio
+async def test_api_jq_ends_the_output_at_halt():
+    _reset({"a": "x"})
+    out, _io = await api(_inv(["repos/o/r"], {"jq": ".a, halt, .a"}))
+    assert await materialize(out) == b"x\n"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("program, message", [
+    ('"x" | halt_error(3)', "halt error: x"),
+    ('{"a":1} | halt_error', 'halt error: {"a":1}'),
+    ("[.a] | map({v: .} | halt_error(0))", 'halt error: {"v":"x"}'),
+])
+async def test_api_jq_fails_at_halt_error(program, message):
+    _reset({"a": "x"})
+    with pytest.raises(ValueError) as caught:
+        await api(_inv(["repos/o/r"], {"jq": program}))
+    assert str(caught.value) == message
+
+
 # gh prints two tab-separated header lines and then the README verbatim;
 # with no README there is no `--` separator at all. Probed against 2.85.
 def test_summary_is_gh_s_two_headers_then_the_readme():

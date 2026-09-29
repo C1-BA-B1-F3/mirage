@@ -1728,6 +1728,19 @@
         "stdout": "gh issue view: GraphQL: Projects (classic) is being deprecated in favor of the new Projects experience, see: https://github.blog/changelog/2024-05-23-sunset-notice-projects-classic/. (repository.issue.projectCards)\nexit=1\n",
         "stderr": ""
       }
+    },
+    {
+      "id": "gh_jq_halt_ends_the_output_and_halt_error_fails",
+      "seq": 569331,
+      "targets": [
+        "cli-gh"
+      ],
+      "command": "gh api user --jq '.login, halt, .login'; gh api user --jq '\"x\" | halt_error(3)'; echo \"exit=$?\"",
+      "expect": {
+        "exit": 0,
+        "stdout": "integ-user\nexit=1\n",
+        "stderr": "gh api: halt error: x\n"
+      }
     }
   ]
 }

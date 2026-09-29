@@ -609,6 +609,23 @@ describe('gh api --jq', () => {
     const out = await api(inv(['repos/o/r'], { jq: '.a, .b' }))
     expect(out === null ? '' : text(out)).toBe('x\ny\n')
   })
+
+  // go-gh's gojq ends the output at `halt` and fails at halt_error, pinned
+  // against gh: `halt error: <message>`, exit 1 whatever the code.
+  it('ends the output at halt', async () => {
+    reset({ a: 'x' })
+    const out = await api(inv(['repos/o/r'], { jq: '.a, halt, .a' }))
+    expect(out === null ? '' : text(out)).toBe('x\n')
+  })
+
+  it.each([
+    ['"x" | halt_error(3)', 'halt error: x'],
+    ['{"a":1} | halt_error', 'halt error: {"a":1}'],
+    ['[.a] | map({v: .} | halt_error(0))', 'halt error: {"v":"x"}'],
+  ])('fails at %s', async (program, message) => {
+    reset({ a: 'x' })
+    await expect(api(inv(['repos/o/r'], { jq: program }))).rejects.toThrow(message)
+  })
 })
 
 // gh prints two tab-separated header lines and then the README verbatim;

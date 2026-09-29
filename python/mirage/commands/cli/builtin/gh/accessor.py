@@ -24,7 +24,7 @@ from mirage.commands.spec.flag_view import FlagView
 from mirage.commands.spec.types import FlagValue
 from mirage.core.github.config import GhConfig
 from mirage.core.github.repo import RepoRef, parse_repo
-from mirage.core.jq import jq_eval
+from mirage.core.jq import JqError, JqHalt, jq_run
 from mirage.io.stream import materialize, yield_bytes
 from mirage.io.types import ByteSource, IOResult
 from mirage.types import JsonValue, PathSpec
@@ -243,6 +243,28 @@ def json_fields(fl: FlagView, allowed: Iterable[str]) -> list[str] | None:
     return fields
 
 
+def jq_values(value: JsonValue, program: str) -> list[JsonValue]:
+    """What `--jq` prints of one value, the way go-gh's jq evaluates it.
+
+    An error fails the command. `halt`, and `halt_error` on null, end the
+    output there; any other `halt_error` fails the command as
+    `halt error: <message>`, whatever code it names.
+
+    Args:
+        value (JsonValue): the JSON the program reads.
+        program (str): the `--jq` program.
+
+    Raises:
+        ValueError: the program's error, or its halt_error.
+    """
+    run = jq_run(value, program)
+    if isinstance(run.stop, JqError):
+        raise ValueError(run.stop.text)
+    if isinstance(run.stop, JqHalt) and run.stop.message is not None:
+        raise ValueError(f"halt error: {run.stop.message}")
+    return run.outputs
+
+
 async def typed_out(
         value: Any, fl: FlagView, human: str,
         allowed: Iterable[str]) -> tuple[ByteSource | None, IOResult]:
@@ -256,6 +278,6 @@ async def typed_out(
     selected = _select(value, fields)
     if program:
         lines = "".join(f"{jq_line(item)}\n"
-                        for item in jq_eval(selected, program))
+                        for item in jq_values(selected, program))
         return text_out(lines)
     return json_out(selected)

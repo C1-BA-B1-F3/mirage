@@ -15,7 +15,7 @@
 import { HttpGitHubTransport, type GitHubTransport } from '../../../../core/github/client.ts'
 import type { GhConfig } from '../../../../core/github/config.ts'
 import { parseRepo, type RepoRef } from '../../../../core/github/repo.ts'
-import { jqEval } from '../../../../core/jq/index.ts'
+import { jqRun } from '../../../../core/jq/index.ts'
 import { UsageError } from '../../../errors.ts'
 import type { FlagView } from '../../../spec/flag_view.ts'
 import type { FlagValue } from '../../../spec/types.ts'
@@ -230,6 +230,21 @@ export function jsonFields(fl: FlagView, allowed: readonly string[]): string[] |
   return fields
 }
 
+/**
+ * What `--jq` prints of one value, the way go-gh's jq evaluates it. An error
+ * fails the command. `halt`, and `halt_error` on null, end the output there;
+ * any other `halt_error` fails the command as `halt error: <message>`,
+ * whatever code it names.
+ */
+export async function jqValues(value: unknown, program: string): Promise<unknown[]> {
+  const run = await jqRun(value, program)
+  if (run.stop?.kind === 'error') throw new Error(run.stop.text)
+  if (run.stop?.kind === 'halt' && run.stop.message !== null) {
+    throw new Error(`halt error: ${run.stop.message}`)
+  }
+  return run.outputs
+}
+
 export async function typedOut(
   value: unknown,
   fl: FlagView,
@@ -244,7 +259,7 @@ export async function typedOut(
   }
   const selected = select(value, fields)
   if (program !== undefined && program !== '') {
-    const values = await jqEval(selected, program)
+    const values = await jqValues(selected, program)
     return textOut(values.map((item) => `${jqLine(item)}\n`).join(''))
   }
   return jsonOut(selected)

@@ -17,13 +17,13 @@ import re
 from typing import Any, cast
 from urllib.parse import urlsplit
 
-from mirage.commands.cli.builtin.gh.accessor import read_cli_file, text_out
+from mirage.commands.cli.builtin.gh.accessor import (jq_values, read_cli_file,
+                                                     text_out)
 from mirage.commands.cli.types import CLIInvocation
 from mirage.commands.spec.flag_view import FlagView
 from mirage.core.github.client import GitHubApiError, github_request_response
 from mirage.core.github.config import GhConfig
 from mirage.core.github.placeholder import expand
-from mirage.core.jq import jq_eval
 from mirage.io.types import ByteSource, IOResult
 from mirage.types import JsonValue, PathSpec
 
@@ -369,7 +369,7 @@ def _render_pages(pages: list[Any],
     if program:
         inputs = [pages] if slurp else pages
         return "".join(f"{jq_line(value)}\n" for item in inputs
-                       for value in jq_eval(item, program)) + (failure or "")
+                       for value in jq_values(item, program)) + (failure or "")
     if slurp:
         return "[" + ",".join(map(_body_text, pages)) + "]"
     return _joined_pages(pages, failure is not None) + (failure or "")

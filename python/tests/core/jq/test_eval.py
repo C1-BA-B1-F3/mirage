@@ -15,7 +15,7 @@
 import pytest
 
 from mirage.core.jq.errors import JqCompileError
-from mirage.core.jq.eval import (halts, jq_check, jq_eval, jq_run,
+from mirage.core.jq.eval import (halts, jq_check, jq_eval, jq_raised, jq_run,
                                  references_args, stream_reads)
 from mirage.core.jq.types import JqError, JqHalt, JqRun, StreamReads
 
@@ -249,6 +249,53 @@ def test_named_arguments_named_like_the_preludes_variables_stay_the_programs():
 def test_halt_error_refuses_a_code_that_is_not_a_number_as_jq_does():
     assert jq_run(1, 'halt_error("x")') == JqRun(
         [], JqError("number (1) halt_error/1: number required", True))
+
+
+# gojq tells an error the program raised with `error` from a builtin's,
+# which jq never does; each verdict is gh 2.85's gojq's.
+@pytest.mark.parametrize("expr, raised", [
+    ('.a, error("boom")', True),
+    ('error({"b": 2})', True),
+    ("error(null)", True),
+    ('"x" | error', True),
+    ("try (.a | .b) catch error", True),
+    ('[error("in")]', True),
+    ('first(error("in"))', True),
+    ('label $out | error("in")', True),
+    ('{v:error("tight")}', True),
+    ('def f: error("in f"); try f catch error', True),
+    ('(try error("x") catch .), error("y")', True),
+    ('try error("x") catch error("wrapped: " + .)', True),
+    ('now, error("x")', True),
+    ('[now] | .[0], error("y")', True),
+    ('range(20000), error("many")', True),
+    (".a | .b", False),
+    ("label $out | .a | .b", False),
+    ('try error("x") catch (.a | .b)', False),
+    ('(try error("x") catch .), (.a | .b)', False),
+    (".error, (.a | .b)", False),
+    ('"error" as $e | .a | .b # error', False),
+    ("def error: 7; error | .b", False),
+    ("limit(-1; .a)", False),
+])
+def test_jq_raised_tells_the_programs_own_error_from_a_builtins(expr, raised):
+    run = jq_run({"a": 1}, expr)
+    assert isinstance(run.stop, JqError)
+    assert jq_raised({"a": 1}, expr, run) is raised
+
+
+def test_an_error_no_rerun_can_speak_for_reads_as_a_builtins():
+    # Neither rerun can speak for it: the catch reads the wrapped value
+    # in the first, and the mark rides into the error in the second.
+    expr = '(try error("x") catch .) as $m | error($m + "!")'
+    run = jq_run(None, expr)
+    assert run.stop == JqError("x!", True)
+    assert jq_raised(None, expr, run) is False
+
+
+def test_jq_raised_is_false_for_a_run_no_error_stopped():
+    assert jq_raised(1, '"a", halt', jq_run(1, '"a", halt')) is False
+    assert jq_raised(1, ".", jq_run(1, ".")) is False
 
 
 def test_a_run_keeps_the_programs_own_line_numbers():

@@ -34,6 +34,7 @@ const INPUTS_DEF = /(?<![\w$.:])def\s+inputs\s*[:(]/
 const ARGS_REF = /\$ARGS(?![\w:])/
 const HALT_REF = /(?<![\w$.:])halt(?:_error)?(?![\w:])/
 const HALT_ERROR_REF = /(?<![\w$.:])halt_error(?![\w:])/
+const ERROR_CALL = /(?<![\w$.])(?<!::)error(?!\w)(?!::)/g
 const TOP_LEVEL_LINE = /(at <top-level>, line )(\d+)/g
 const IDENT = /[A-Za-z_][A-Za-z0-9_]*/y
 const NAME = /^[A-Za-z_][A-Za-z0-9_]*$/
@@ -249,6 +250,31 @@ const PRINT =
   'def halt_error($code): if ($code | type) == "number" then ' +
   `${HALT_MARK}, __mirage_jq_halt_error($code) else __mirage_jq_halt_error($code) end; ` +
   'def halt_error: halt_error(5); '
+
+// Whether the program's own `error` raised the error a run stopped at comes
+// from running it again with every `error` it spells renamed to RAISER, so a
+// builtin's error, and the `error` jq compiles `label` and `break` to, stay as
+// they were. The first rerun raises the value wrapped under WRAP_KEY, which
+// leaves any collector the way the error itself would, and the top-level
+// `catch` hands it back under RAISED_KEY; the second prints it under
+// RAISED_KEY just before raising it unchanged, which is what a `catch` of the
+// program's own that reads the value still sees. Either answer counts only
+// when the rerun stops at the same error after as many outputs as the run
+// printed, as a halt's does: the values themselves can differ between the
+// runs (`now`).
+const WRAP_KEY = `__mirage_jq_wrap_${TOKEN}`
+const RAISED_KEY = `__mirage_jq_raised_${TOKEN}`
+const RAISER = '__mirage_jq_raise'
+const RAISED_MARK =
+  `{"${RAISED_KEY}": [(type == "string"), ` + '(if type == "string" then . else tojson end)]}'
+const WRAP =
+  `def ${RAISER}: if type == "object" and has("${WRAP_KEY}") ` +
+  `then error else error({"${WRAP_KEY}": .}) end; ` +
+  `def ${RAISER}(msg): msg | ${RAISER}; `
+const UNWRAP =
+  ` catch (if type == "object" and has("${WRAP_KEY}") ` +
+  `then .["${WRAP_KEY}"] | ${RAISED_MARK} else ${ERROR_MARK} end)`
+const MARK = `def ${RAISER}: ${RAISED_MARK}, error; def ${RAISER}(msg): msg | ${RAISER}; `
 
 // How jq-wasm's jq reports an error no `try` caught, which only a program
 // the prelude could not wrap leaves to it.
@@ -475,6 +501,115 @@ async function haltOf(bindings: Bound, expr: string, printed: number): Promise<J
 }
 
 /**
+ * The program with every `error` it calls, and any it defines, renamed to
+ * RAISER. Only code is renamed, as codeOnly leaves it: a field (`.error`), a
+ * variable (`$error`), an object key or its shorthand (`{error}`), a module
+ * member (`m::error`), a string and a comment all keep theirs.
+ */
+function renamed(expr: string): string {
+  const parts: string[] = []
+  let last = 0
+  for (const match of codeOnly(expr).matchAll(ERROR_CALL)) {
+    parts.push(expr.slice(last, match.index), RAISER)
+    last = match.index + match[0].length
+  }
+  parts.push(expr.slice(last))
+  return parts.join('')
+}
+
+/** The error a rerun hands back under RAISED_KEY, when this output is one. */
+function raisedMark(value: unknown): JqError | null {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) return null
+  if (Object.keys(value).length !== 1) return null
+  const mark = (value as Record<string, unknown>)[RAISED_KEY]
+  if (Array.isArray(mark) && mark.length === 2) {
+    return { kind: 'error', text: String(mark[1]), string: mark[0] === true }
+  }
+  return null
+}
+
+/** Whether a stop is the error a run stopped at. */
+function sameError(stop: JqError | JqHalt | null, run: JqRun): boolean {
+  return (
+    stop?.kind === 'error' &&
+    run.stop?.kind === 'error' &&
+    stop.text === run.stop.text &&
+    stop.string === run.stop.string
+  )
+}
+
+/**
+ * A rerun's outputs as a verdict reads them, or null when jq refused the
+ * program. A verdict only counts the plain outputs, so the lines are read one
+ * at a time, and a line is parsed only when it carries the token every mark,
+ * stop and sentinel carries; any other stands as null.
+ */
+function rerunValues(result: jqWasm.JqResult): Iterable<unknown> | null {
+  return refused(result) ? null : rerunLines(result.stdout)
+}
+
+/** The values behind rerunValues, one line jq-wasm printed at a time. */
+function* rerunLines(stdout: string): Generator {
+  let start = 0
+  while (start < stdout.length) {
+    const newline = stdout.indexOf('\n', start)
+    const end = newline === -1 ? stdout.length : newline
+    const line = stdout.slice(start, end)
+    start = end + 1
+    if (line === '') continue
+    yield line.includes(TOKEN) ? (JSON.parse(line) as unknown) : null
+  }
+}
+
+/**
+ * What the rerun that wraps the program's own errors says of the one a run
+ * stopped at: raised by the program when it hands that error back under
+ * RAISED_KEY, by a builtin when it stops at it as it was, and nothing when it
+ * stops anywhere else, which a `catch` of the program's own that reads a
+ * wrapped value can make it do.
+ */
+function wrappedVerdict(values: Iterable<unknown>, run: JqRun): boolean | null {
+  let printed = 0
+  for (const value of values) {
+    const raised = raisedMark(value)
+    const stop = raised ?? stopOf(value)
+    if (stop !== null) {
+      if (printed !== run.outputs.length || !sameError(stop, run)) return null
+      return raised !== null
+    }
+    if (value !== null && typeof value === 'object' && DONE_KEY in value) return null
+    printed += 1
+  }
+  return null
+}
+
+/**
+ * Whether the rerun that prints each of the program's own errors just before
+ * raising it shows the program raised the one a run stopped at: it printed as
+ * many outputs as the run did, and that error's mark last.
+ */
+function markedVerdict(values: Iterable<unknown>, run: JqRun): boolean | null {
+  let printed = 0
+  let last: JqError | null = null
+  for (const value of values) {
+    const mark = raisedMark(value)
+    if (mark !== null) {
+      last = mark
+      continue
+    }
+    const stop = stopOf(value)
+    if (stop !== null) {
+      const counted = printed === run.outputs.length
+      return counted && sameError(stop, run) && sameError(last, run) ? true : null
+    }
+    if (value !== null && typeof value === 'object' && DONE_KEY in value) return null
+    printed += 1
+    last = null
+  }
+  return null
+}
+
+/**
  * Run a jq program on one value, the way jq's main loop runs it on one
  * document.
  *
@@ -511,6 +646,41 @@ export async function jqRun(
   const [run, ended] = collected(...(await ran(bindings, expr, false)))
   if (ended) return run
   return { outputs: run.outputs, stop: await haltOf(bindings, expr, run.outputs.length) }
+}
+
+/**
+ * Whether the program's own `error` raised the error a run stopped at, rather
+ * than a builtin, which jq itself never tells apart but gojq does. `run` is
+ * what jqRun returned for `obj` and `expr`, with the same bindings.
+ *
+ * Every builtin raises a string, so an error that is not one is the
+ * program's. A string is the program's only when it calls `error` at all, and
+ * then only when a rerun that tells the program's own errors apart shows it
+ * (see WRAP and MARK); a run neither rerun can speak for reads as a builtin's.
+ */
+export async function jqRaised(
+  obj: unknown,
+  expr: string,
+  run: JqRun,
+  namedArgs: Readonly<Record<string, unknown>> = {},
+  inputs: readonly unknown[] | null = null,
+  argsValue: Readonly<Record<string, unknown>> | null = null,
+): Promise<boolean> {
+  if (run.stop?.kind !== 'error') return false
+  if (!run.stop.string) return true
+  const program = renamed(expr)
+  if (program === expr) return false
+  const bindings = bound(obj, expr, namedArgs, inputs, argsValue)
+  const wrapping = wrapped(bindings, program, WRAP, `${UNWRAP})${DONE}`)
+  if (wrapping !== null) {
+    const values = rerunValues(await raw(bindings.stdin, wrapping))
+    const verdict = values === null ? null : wrappedVerdict(values, run)
+    if (verdict !== null) return verdict
+  }
+  const marking = wrapped(bindings, program, MARK, `${CATCH})${DONE}`)
+  if (marking === null) return false
+  const values = rerunValues(await raw(bindings.stdin, marking))
+  return values !== null && markedVerdict(values, run) === true
 }
 
 /**

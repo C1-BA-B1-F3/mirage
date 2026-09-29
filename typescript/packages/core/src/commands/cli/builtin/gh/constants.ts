@@ -368,3 +368,12 @@ export const TEMPLATE_TOKEN = /"(?:\\.|[^"\\])*"|`[^`]*`|[^\s|]+|\|/g
 export const TEMPLATE_ACTION = /{{(-?)\s*(.*?)\s*(-?)}}/gs
 export const TEMPLATE_DECLARATION =
   /^(\$[\p{L}\p{Nd}_]+)\s*(?:,\s*(\$[\p{L}\p{Nd}_]+)\s*)?(:?=)\s*(.*)$/su
+
+// The builtins gojq writes in jq, so each fails through `error` itself,
+// where jq 1.8.2's fail as builtins do: jq's message for each, and the one
+// gojq raises (gojq v0.12.17 builtin.jq).
+export const GOJQ_RAISED: ReadonlyMap<string, string> = new Map([
+  ["limit doesn't support negative count", "limit doesn't support negative count"],
+  ["skip doesn't support negative count", "skip doesn't support negative count"],
+  ["nth doesn't support negative indices", "nth doesn't support negative index"],
+])

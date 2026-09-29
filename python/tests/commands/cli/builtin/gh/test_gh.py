@@ -707,7 +707,8 @@ async def test_api_emits_a_non_json_response_verbatim():
 
 
 # `--jq` renders the way gh 2.85 does, probed live: a string raw, null as
-# an empty line, everything else as compact JSON, one output per line.
+# an empty line, everything else as compact JSON with its keys sorted, one
+# output per line.
 @pytest.mark.asyncio
 async def test_api_jq_prints_a_string_raw():
     _reset({"full_name": "o/r"})
@@ -720,7 +721,51 @@ async def test_api_jq_prints_non_strings_as_compact_json():
     _reset({"name": "r", "count": 2, "ok": True})
     out, _io = await api(
         _inv(["repos/o/r"], {"jq": "{name: .name, count: .count}, .ok"}))
-    assert await materialize(out) == b'{"name":"r","count":2}\ntrue\n'
+    assert await materialize(out) == b'{"count":2,"name":"r"}\ntrue\n'
+
+
+# go-gh prints a number on its own line in fixed notation, whole with no
+# decimals and otherwise with two, rounded half to even as strconv rounds;
+# anything else goes through Go's json.Marshal: keys sorted, <, > and &
+# escaped for HTML and U+2028 and U+2029 for JavaScript, DEL raw, and
+# numbers spelled as ES6 spells them. Pinned against gh 2.85's go-gh with
+# `gh api rate_limit --jq`.
+@pytest.mark.asyncio
+@pytest.mark.parametrize("program, line", [
+    ("1.5", "1.50"),
+    ("0.125", "0.12"),
+    ("0.375", "0.38"),
+    ("-0.125", "-0.12"),
+    ("2.675", "2.67"),
+    ("1e-7", "0.00"),
+    ("3.0", "3"),
+    ("1e21", "1000000000000000000000"),
+    (".n / 3", "1666.67"),
+    ("[.n / 3]", "[1666.6666666666667]"),
+    ("[1.5, 1e21, 1e-7, 0.000001, 100]", "[1.5,1e+21,1e-7,0.000001,100]"),
+    ('{"b": 1, "a": {"d": 2, "c": 3}}', '{"a":{"c":3,"d":2},"b":1}'),
+    ('{"x": "<&>"}', '{"x":"\\u003c\\u0026\\u003e"}'),
+    ('["\\u2028", "\\u2029", "\\u007f", "é", "\\u0001", "\\b"]',
+     '["\\u2028","\\u2029","\x7f","é","\\u0001","\\b"]'),
+    ('[true, null, "x"]', '[true,null,"x"]'),
+])
+async def test_api_jq_prints_each_output_as_go_gh_does(program, line):
+    _reset({"n": 5000})
+    out, _io = await api(_inv(["repos/o/r"], {"jq": program}))
+    assert await materialize(out) == f"{line}\n".encode()
+
+
+# gh prints a computed negative zero as -0, but jq.py hands it to Python as
+# the int 0, so both hosts print 0.
+@pytest.mark.asyncio
+@pytest.mark.parametrize("program, line", [
+    (".n * 0 * -1", "0"),
+    ("[.n * 0 * -1]", "[0]"),
+])
+async def test_api_jq_prints_negative_zero_as_zero(program, line):
+    _reset({"n": 5000})
+    out, _io = await api(_inv(["repos/o/r"], {"jq": program}))
+    assert await materialize(out) == f"{line}\n".encode()
 
 
 @pytest.mark.asyncio
@@ -759,10 +804,47 @@ async def test_api_jq_fails_at_halt_error(program, message):
     assert (str(caught.value), caught.value.stdout) == (message, b"")
 
 
+# gojq reports what the program raised with `error` as `error: <value>`,
+# anything but a string in gojq's own compact JSON (keys sorted), and a
+# builtin's error in words mirage's jq does not share, so jq 1.8.2's stand,
+# except for the builtins gojq writes in jq. Pinned against gh 2.85's
+# gojq with `gh api rate_limit --jq`.
+@pytest.mark.asyncio
+@pytest.mark.parametrize("program, message", [
+    ('error("boom")', "error: boom"),
+    ('"x" | error', "error: x"),
+    ("error(null)", "error: null"),
+    ("error(error)", 'error: {"a":"x"}'),
+    ('error({"b": 1, "a": [2, "x"]})', 'error: {"a":[2,"x"],"b":1}'),
+    ('error(["\\u007f", "é", "<&>", "\\u0001"])',
+     'error: ["\\u007f","é","<&>","\\u0001"]'),
+    ("error(1.0)", "error: 1"),
+    ("error(1e21)", "error: 1e+21"),
+    ("error(0.0000001)", "error: 1e-7"),
+    ('[error("in")]', "error: in"),
+    ('first(error("in"))', "error: in"),
+    ("try (.a | .b) catch error",
+     'error: Cannot index string with string ("b")'),
+    (".a | .b", 'Cannot index string with string ("b")'),
+    ("label $f | .a | .b", 'Cannot index string with string ("b")'),
+    ('def error: 7; error | .b', 'Cannot index number with string ("b")'),
+    ("limit(-1; .a)", "error: limit doesn't support negative count"),
+    ("skip(-1; .a)", "error: skip doesn't support negative count"),
+    ("nth(-1; .a)", "error: nth doesn't support negative index"),
+    ('{"b": 1, "a": 2} | halt_error(1)', 'halt error: {"a":2,"b":1}'),
+])
+async def test_api_jq_fails_the_way_gojq_reports_it(program, message):
+    _reset({"a": "x"})
+    with pytest.raises(PartialOutputError) as caught:
+        await api(_inv(["repos/o/r"], {"jq": program}))
+    assert (str(caught.value), caught.value.stdout) == (message, b"")
+
+
 @pytest.mark.asyncio
 @pytest.mark.parametrize("program, message", [
     ('.a, ("y" | halt_error(1))', "halt error: y"),
-    ('.a, error("boom")', "boom"),
+    ('.a, error("boom")', "error: boom"),
+    ('(try error(.a) catch .), error("y")', "error: y"),
 ])
 async def test_api_jq_keeps_what_it_printed_before_failing(program, message):
     _reset({"a": "x"})
@@ -993,7 +1075,8 @@ async def test_api_later_page_failure_keeps_rendered_pages(
 @pytest.mark.parametrize("program, message", [
     ('if .value == "second" then "y" | halt_error(1) else .value end',
      "halt error: y"),
-    ('if .value == "second" then error("boom") else .value end', "boom"),
+    ('if .value == "second" then error("boom") else .value end',
+     "error: boom"),
 ])
 async def test_api_jq_failure_on_a_later_page_keeps_the_earlier_pages(
         monkeypatch, program, message):

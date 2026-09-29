@@ -880,7 +880,7 @@
       "command": "gh issue view 4 --json comments --jq '.comments | map({author: .author, edited: .includesCreatedEdit, minimized: .isMinimized, reason: .minimizedReason, reactions: .reactionGroups, mine: .viewerDidAuthor})'",
       "expect": {
         "exit": 0,
-        "stdout": "[{\"author\":{\"login\":\"integ-user\"},\"edited\":false,\"minimized\":false,\"reason\":\"\",\"reactions\":[],\"mine\":true}]\n",
+        "stdout": "[{\"author\":{\"login\":\"integ-user\"},\"edited\":false,\"mine\":true,\"minimized\":false,\"reactions\":[],\"reason\":\"\"}]\n",
         "stderr": ""
       }
     },
@@ -1530,7 +1530,7 @@
       "command": "gh pr view 5 --json title,changedFiles,files,commits --jq '[.title, .changedFiles, .files, (.commits | map([.messageHeadline, .authors[0].login]))]'",
       "expect": {
         "exit": 0,
-        "stdout": "[\"merged-title\",1,[{\"path\":\"README.md\",\"additions\":1,\"deletions\":0}],[[\"Update README.md\",\"integ-user\"]]]\n",
+        "stdout": "[\"merged-title\",1,[{\"additions\":1,\"deletions\":0,\"path\":\"README.md\"}],[[\"Update README.md\",\"integ-user\"]]]\n",
         "stderr": ""
       }
     },
@@ -1765,6 +1765,45 @@
       "expect": {
         "exit": 0,
         "stdout": "account integ-user (Mirage configuration)\n  - Active account: true\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "gh_jq_error_reports_as_gojq_does",
+      "seq": 569333,
+      "targets": [
+        "cli-gh"
+      ],
+      "command": "gh api user --jq '.login, error(\"boom\")'; echo \"exit=$?\"; gh api user --jq 'error({\"b\": 1, \"a\": [2, \"x\"]})'; echo \"exit=$?\"; gh api user --jq '(try error(.login) catch .), error(\"y\")'; echo \"exit=$?\"; gh api user --jq '{\"b\": 1, \"a\": 2} | halt_error(1)'; echo \"exit=$?\"",
+      "expect": {
+        "exit": 0,
+        "stdout": "integ-user\nexit=1\nexit=1\ninteg-user\nexit=1\nexit=1\n",
+        "stderr": "gh api: error: boom\ngh api: error: {\"a\":[2,\"x\"],\"b\":1}\ngh api: error: y\ngh api: halt error: {\"a\":2,\"b\":1}\n"
+      }
+    },
+    {
+      "id": "gh_typed_jq_error_reports_as_gojq_does",
+      "seq": 569334,
+      "targets": [
+        "cli-gh"
+      ],
+      "command": "gh issue view 4 --json number --jq '.number, error(\"no \\(.number)\")'; echo \"exit=$?\"; gh issue view 4 --json number --jq '.number, limit(-1; .number)'; echo \"exit=$?\"",
+      "expect": {
+        "exit": 0,
+        "stdout": "4\nexit=1\n4\nexit=1\n",
+        "stderr": "gh issue view: error: no 4\ngh issue view: error: limit doesn't support negative count\n"
+      }
+    },
+    {
+      "id": "gh_jq_prints_each_output_as_go_gh_does",
+      "seq": 569335,
+      "targets": [
+        "cli-gh"
+      ],
+      "command": "gh api user --jq '.login, 1.5, 0.125, -0.125, 1e21, 3.0, {\"b\": 1, \"a\": \"<&>\"}, [1.5, 1e21, 1e-7], true, null'; gh issue view 4 --json number --jq '{third: (.number / 3), number}, .number / 3'",
+      "expect": {
+        "exit": 0,
+        "stdout": "integ-user\n1.50\n0.12\n-0.12\n1000000000000000000000\n3\n{\"a\":\"\\u003c\\u0026\\u003e\",\"b\":1}\n[1.5,1e+21,1e-7]\ntrue\n\n{\"number\":4,\"third\":1.3333333333333333}\n1.33\n",
         "stderr": ""
       }
     }

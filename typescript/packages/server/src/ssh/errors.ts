@@ -35,3 +35,14 @@ export class SFTPStatusError extends Error {
     this.status = status
   }
 }
+
+/** A codex-exec request answered with a JSON-RPC error. */
+export class CodexRPCError extends Error {
+  readonly code: number
+
+  constructor(code: number, message: string) {
+    super(message)
+    this.name = 'CodexRPCError'
+    this.code = code
+  }
+}

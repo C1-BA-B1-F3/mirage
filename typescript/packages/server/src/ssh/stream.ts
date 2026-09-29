@@ -179,9 +179,11 @@ export class ChannelInput {
     this.resume()
   }
 
+  /** `maxLine` bounds what `readline` returns before it answers `Mark.LIMIT`. */
   constructor(
     private readonly channel: ServerChannel,
     tty: boolean,
+    private readonly maxLine: number = MAX_LINE,
   ) {
     this.discipline = tty
       ? new LineDiscipline(
@@ -313,7 +315,7 @@ export class ChannelInput {
         }
         const cut = item.indexOf(LF)
         size += cut < 0 ? item.byteLength : cut
-        if (size > MAX_LINE) return Mark.LIMIT
+        if (size > this.maxLine) return Mark.LIMIT
         if (cut < 0) {
           this.items.shift()
           this.took(item.byteLength)

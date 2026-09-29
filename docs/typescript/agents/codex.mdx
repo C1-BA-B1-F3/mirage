@@ -80,8 +80,40 @@ import { createMirageMcpServer } from '@struktoai/mirage-agents/mcp'
 const server = createMirageMcpServer(workspace)
 ```
 
+## Run Codex's own tools over SSH
+
+Codex can keep its agent on your machine and run every tool call (shell
+commands, file reads, `apply_patch`) in a remote environment. The Mirage
+daemon serves that environment on its [SSH door](/home/ssh#run-codex-in-a-workspace)
+as the `codex-exec` subsystem, so Codex's built-in tools work on the
+workspace with no FUSE driver and no plugin.
+
+1. Turn on the SSH door and create a workspace, as in [SSH Access](/home/ssh#turn-it-on).
+2. Name the environment in `~/.codex/environments.toml`:
+
+   ```toml
+   default = "mirage"
+   include_local = false
+
+   [[environments]]
+   id = "mirage"
+   program = "ssh"
+   args = ["-T", "-p", "2222", "demo@127.0.0.1", "-s", "codex-exec"]
+   ```
+
+3. Start Codex from a directory that exists on your machine, and use absolute workspace paths:
+
+   ```bash
+   codex -C /
+   ```
+
+Codex keeps its UI, sessions, model, approvals and login. Each command runs
+in the login's Mirage session under its key's profile, and file calls follow
+the mounts' modes. This route is for the Codex CLI; the Codex app's SSH
+connections run the agent on the host, so they need Codex installed there.
+
 ## Why MCP instead of a Pi-style extension?
 
 Pi exposes an in-process TypeScript API for registering tools. Codex plugins can package skills and tool integrations, but Codex does not expose an equivalent `registerTool` API. MCP is therefore the supported custom-tool transport, kept behind a thin adapter over Mirage's shared tool operations.
 
-If you want Codex's built-in file tools to see Mirage paths directly, use a [FUSE mount](/typescript/setup/fuse) instead. FUSE has no custom tool namespace, but requires host FUSE setup and does not provide Mirage's agent-level stale-write check.
+If you want Codex's built-in file tools to see Mirage paths directly, use a [FUSE mount](/typescript/setup/fuse) or the [SSH environment](#run-codexs-own-tools-over-ssh) instead. Neither has a custom tool namespace or Mirage's agent-level stale-write check; FUSE needs host FUSE setup, and the SSH environment needs the daemon's SSH door.

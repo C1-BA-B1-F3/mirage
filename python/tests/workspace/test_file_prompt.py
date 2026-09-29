@@ -62,3 +62,21 @@ def test_file_prompt_substitutes_prefix_in_write_prompt():
     prompt = ws.file_prompt
     assert "/home/zecheng/gdocs/owned/<file>.gdoc.json" in prompt
     assert "{prefix}" not in prompt
+
+
+def test_file_prompt_states_each_mount_mode():
+    ws = Workspace(
+        {
+            "/": (RAMVFS(), MountMode.EXEC),
+            "/data": (RAMVFS(), MountMode.READ),
+            "/scratch": (RAMVFS(), MountMode.WRITE),
+        },
+        mode=MountMode.WRITE,
+    )
+    sections = {
+        section.split("\n", 1)[0]: section
+        for section in ws.file_prompt.split("\n\n")[1:]
+    }
+    assert "Mode: read-only; writes are refused." in sections["/data"]
+    assert "Mode: read-write." in sections["/scratch"]
+    assert "Mode: read-write; programs can run." in sections["/"]

@@ -12,19 +12,11 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-
-class SSHConfigError(ValueError):
-    """Raised when the daemon's SSH settings are unusable."""
-
-
-class CodexRPCError(Exception):
-    """A codex-exec request answered with a JSON-RPC error.
-
-    Args:
-        code (int): the JSON-RPC error code.
-        message (str): the error's message.
-    """
-
-    def __init__(self, code: int, message: str) -> None:
-        super().__init__(message)
-        self.code = code
+INTERRUPT = "\x03"
+INTERRUPTED_EXIT_CODE = 130
+DEFAULT_EXEC_YIELD_MS = 10_000
+DEFAULT_WRITE_YIELD_MS = 250
+NO_STDIN = "stdin is not available for this process"
+MOUNTS_INTRO = "The filesystem is a Mirage workspace with these mounts:"
+NOT_MIRAGE_SESSION = (
+    "MirageCapability needs a session from MirageSandboxClient")

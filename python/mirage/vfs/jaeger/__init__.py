@@ -12,12 +12,17 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+from typing import TYPE_CHECKING
+
 from mirage.vfs.jaeger.config import JaegerConfig
+
+if TYPE_CHECKING:
+    from mirage.vfs.jaeger.jaeger import JaegerVFS
 
 __all__ = ["JaegerConfig", "JaegerVFS"]
 
 
-def __getattr__(name: str):
+def __getattr__(name: str) -> "type[JaegerVFS]":
     if name == "JaegerVFS":
         from mirage.vfs.jaeger.jaeger import JaegerVFS
         return JaegerVFS

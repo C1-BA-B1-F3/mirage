@@ -12,10 +12,16 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from mirage.vfs.redis.redis import RedisVFS
+    from mirage.vfs.redis.store import RedisStore
+
 __all__ = ["RedisVFS", "RedisStore"]
 
 
-def __getattr__(name: str):
+def __getattr__(name: str) -> "type[RedisVFS] | type[RedisStore]":
     if name == "RedisVFS":
         from mirage.vfs.redis.redis import RedisVFS
         return RedisVFS

@@ -12,12 +12,18 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+from typing import TYPE_CHECKING
+
 from mirage.accessor.base import Accessor
 from mirage.core.google.client import TokenManager
+
+if TYPE_CHECKING:
+    from mirage.vfs.gdocs.config import GDocsConfig
 
 
 class GDocsAccessor(Accessor):
 
-    def __init__(self, config, token_manager: TokenManager) -> None:
+    def __init__(self, config: "GDocsConfig",
+                 token_manager: TokenManager) -> None:
         self.config = config
         self.token_manager = token_manager

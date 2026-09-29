@@ -12,12 +12,17 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+from typing import TYPE_CHECKING
+
 from mirage.vfs.gmail.config import GmailConfig
+
+if TYPE_CHECKING:
+    from mirage.vfs.gmail.gmail import GmailVFS
 
 __all__ = ["GmailConfig", "GmailVFS"]
 
 
-def __getattr__(name: str):
+def __getattr__(name: str) -> "type[GmailVFS]":
     if name == "GmailVFS":
         from mirage.vfs.gmail.gmail import GmailVFS
         return GmailVFS

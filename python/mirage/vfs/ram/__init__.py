@@ -12,12 +12,17 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+from typing import TYPE_CHECKING
+
 from mirage.vfs.ram.store import RAMStore
+
+if TYPE_CHECKING:
+    from mirage.vfs.ram.ram import RAMVFS
 
 __all__ = ["RAMVFS", "RAMStore"]
 
 
-def __getattr__(name: str):
+def __getattr__(name: str) -> "type[RAMVFS]":
     if name == "RAMVFS":
         from mirage.vfs.ram.ram import RAMVFS
         return RAMVFS

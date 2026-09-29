@@ -12,7 +12,12 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+from typing import TYPE_CHECKING
+
 from mirage.accessor.base import Accessor
+
+if TYPE_CHECKING:
+    from mirage.observe.observer import Observer
 
 
 class HistoryAccessor(Accessor):
@@ -22,5 +27,5 @@ class HistoryAccessor(Accessor):
         observer (Observer): The workspace's hidden recorder.
     """
 
-    def __init__(self, observer) -> None:
+    def __init__(self, observer: "Observer") -> None:
         self.observer = observer

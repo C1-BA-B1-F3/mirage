@@ -12,12 +12,17 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+from typing import TYPE_CHECKING
+
 from mirage.vfs.trello.config import TrelloConfig
+
+if TYPE_CHECKING:
+    from mirage.vfs.trello.trello import TrelloVFS
 
 __all__ = ["TrelloConfig", "TrelloVFS"]
 
 
-def __getattr__(name: str):
+def __getattr__(name: str) -> "type[TrelloVFS]":
     if name == "TrelloVFS":
         from mirage.vfs.trello.trello import TrelloVFS
         return TrelloVFS

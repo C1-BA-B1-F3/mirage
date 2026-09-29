@@ -132,12 +132,6 @@ export function prettyFormat(fl: FlagView): LogFormat {
   return pretty
 }
 
-/** A `--grep` or `--author` pattern: a BRE, case-folded under `-i`. */
-function logPattern(value: string, ignoreCase: boolean): RegExp {
-  const pattern = searchBre(value)
-  return ignoreCase ? new RegExp(pattern.source, `${pattern.flags}i`) : pattern
-}
-
 /** Read the raw log flag kwargs into a frozen struct. */
 export function parseFlags(fl: FlagView): LogFlags {
   const oneline = fl.asBool('oneline')
@@ -152,8 +146,10 @@ export function parseFlags(fl: FlagView): LogFlags {
   let authors: RegExp[]
   let greps: RegExp[]
   try {
-    authors = fl.asList('author').map((value) => logPattern(value, ignoreCase))
-    greps = fl.asList('grep').map((value) => logPattern(value, ignoreCase))
+    authors = fl.asList('author').map((value) => searchBre(value, ignoreCase))
+    greps = fl
+      .asList('grep')
+      .flatMap((values) => values.split('\n').map((value) => searchBre(value, ignoreCase)))
   } catch (err) {
     if (err instanceof BreError) throw new GitError(err.message)
     throw err

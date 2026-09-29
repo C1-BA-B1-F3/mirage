@@ -12,7 +12,7 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import { translateClasses } from '../../utils/posix.ts'
+import { compilePosixRegex, translateClasses } from '../../utils/posix.ts'
 const SIMPLE_CMDS = new Set(['d', 'D', 'p', 'P', 'h', 'H', 'g', 'G', 'x', 'N', 'q'])
 
 type SedAddr = ['line', string] | ['last', ''] | ['regex', string]
@@ -344,7 +344,7 @@ export function breToEre(pat: string): string {
 }
 
 function compilePattern(pat: string, flags: string, extended: boolean): RegExp {
-  return new RegExp(translateClasses(extended ? pat : breToEre(pat), extended), flags)
+  return compilePosixRegex(translateClasses(extended ? pat : breToEre(pat), extended), flags)
 }
 
 function addrMatches(
@@ -362,51 +362,19 @@ function addrMatches(
   return compilePattern(val, '', extended).test(line)
 }
 
-function translateReplacement(repl: string): string {
+/** Expand against the original captures, preserving boundary context and case. */
+function applyReplacement(repl: string, groups: readonly (string | undefined)[]): string {
   let out = ''
   for (let i = 0; i < repl.length; i++) {
     const ch = repl[i]
-    if (ch === '$') {
-      out += '$$'
-      continue
-    }
-    if (ch === '&') {
-      // Unescaped `&` is the whole match (JS `$&`); `\&` (below) is literal.
-      out += '$&'
-      continue
-    }
-    if (ch === '\\' && i + 1 < repl.length) {
-      const next = repl[i + 1]
-      if (next !== undefined && /[0-9]/.test(next)) {
-        out += '$' + next
-        i += 1
-        continue
-      }
-      if (next === '\\') {
-        out += '\\'
-        i += 1
-        continue
-      }
-      if (next === '&') {
-        out += '&'
-        i += 1
-        continue
-      }
-      if (next === 'n') {
-        out += '\n'
-        i += 1
-        continue
-      }
-      if (next === 't') {
-        out += '\t'
-        i += 1
-        continue
-      }
-      out += next ?? ''
-      i += 1
-      continue
-    }
-    out += ch ?? ''
+    if (ch === '&') out += groups[0] ?? ''
+    else if (ch === '\\' && i + 1 < repl.length) {
+      const next = repl[++i] ?? ''
+      if (/[0-9]/.test(next)) out += groups[Number(next)] ?? ''
+      else if (next === 'n') out += '\n'
+      else if (next === 't') out += '\t'
+      else out += next
+    } else out += ch ?? ''
   }
   return out
 }
@@ -419,7 +387,7 @@ function regexReplace(
   global: boolean,
   count = 1,
   extended = false,
-): string {
+): { text: string; substituted: boolean } {
   // The pattern space excludes the line-separator newline (GNU semantics), so
   // `^`/`$` anchor to its content directly — no stripping needed here.
   // `count` is the 1-based occurrence the substitution starts at (GNU sed's
@@ -430,19 +398,25 @@ function regexReplace(
   // "abbb" into "XaX", not "XaXX".
   const baseFlags = ignoreCase ? 'i' : ''
   const erePat = translateClasses(extended ? pat : breToEre(pat), extended)
-  const scan = new RegExp(erePat, baseFlags + 'g')
-  const single = new RegExp(erePat, baseFlags)
-  const jsRepl = translateReplacement(repl)
+  const scan = compilePosixRegex(erePat, baseFlags + 'g')
   let n = 0
   let lastEnd = -1
-  return text.replace(scan, (m: string, ...rest: unknown[]) => {
-    const at = rest.find((arg): arg is number => typeof arg === 'number') ?? 0
+  let substituted = false
+  const result = text.replace(scan, (m: string, ...rest: unknown[]) => {
+    const offsetIndex = rest.findIndex((arg) => typeof arg === 'number')
+    const at = rest[offsetIndex] as number
     if (m === '' && at === lastEnd) return ''
     if (m !== '') lastEnd = at + m.length
     n += 1
     const hit = global ? n >= count : n === count
-    return hit ? m.replace(single, jsRepl) : m
+    if (hit) substituted = true
+    if (!hit) return m
+    const groups = rest
+      .slice(0, offsetIndex)
+      .map((value) => (typeof value === 'string' ? value : undefined))
+    return applyReplacement(repl, [m, ...groups])
   })
+  return { text: result, substituted }
 }
 
 // Split into line contents WITHOUT trailing newlines (the sed pattern space
@@ -548,16 +522,15 @@ export function executeProgram(
           pattern,
           pat,
           repl,
-          ef.includes('i'),
+          /[iI]/.test(ef),
           ef.includes('g'),
           count,
           extended,
         )
-        const changed = newPattern !== pattern
-        if (changed) substituted = true
-        pattern = newPattern
+        if (newPattern.substituted) substituted = true
+        pattern = newPattern.text
         // `s///p` prints the pattern space when a substitution was made.
-        if (changed && ef.includes('p')) output.push(pattern + tailNL(lineno))
+        if (newPattern.substituted && ef.includes('p')) output.push(pattern + tailNL(lineno))
       } else if (c === 'd') {
         deleteFlag = true
         break

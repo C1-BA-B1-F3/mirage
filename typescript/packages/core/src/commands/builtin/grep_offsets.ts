@@ -12,6 +12,7 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import { compilePosixRegex } from '../../utils/posix.ts'
 import { encodeText } from '../../shell/bytes.ts'
 import { byteOffset } from '../../shell/helpers.ts'
 
@@ -135,7 +136,7 @@ export function matchOffset(lineStart: number, line: string, index: number): num
  * each match's code-unit index and text. Mirrors Python's rust_matches.
  */
 export function rustMatches(pat: RegExp, line: string): [number, string][] {
-  const re = new RegExp(pat.source, `${pat.flags.replace(/[gy]/g, '')}g`)
+  const re = compilePosixRegex(pat.source, `${pat.flags.replace(/[gy]/g, '')}g`)
   const matches: [number, string][] = []
   let pos = 0
   let lastEnd = -1

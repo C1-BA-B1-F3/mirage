@@ -19,7 +19,7 @@
 // They are glibc-specific -- POSIX does not word these, and BSD libc words
 // them differently -- so they look unusual on purpose: `expr abc : '\('`
 // really does say `Unmatched ( or \(`.
-import { POSIX_CLASSES } from '../../../utils/posix.ts'
+import { POSIX_CLASSES, compilePosixRegex } from '../../../utils/posix.ts'
 const UNMATCHED_OPEN = 'Unmatched ( or \\('
 const UNMATCHED_CLOSE = 'Unmatched ) or \\)'
 const UNMATCHED_BRACE = 'Unmatched \\{'
@@ -481,10 +481,11 @@ export function compileBre(pattern: string): [RegExp, number] {
 //
 // The group count `compileBre` reports is not returned, because a search only
 // ever asks whether the subject matched.
-export function searchBre(pattern: string): RegExp {
+// Ignore-case searches use the shared ASCII fold, including backreferences.
+export function searchBre(pattern: string, ignoreCase = false): RegExp {
   const [source] = translateBre(pattern)
   try {
-    return new RegExp(source, 's')
+    return compilePosixRegex(source, ignoreCase ? 'si' : 's')
   } catch (err) {
     throw new BreError(INVALID_PATTERN, { cause: err })
   }

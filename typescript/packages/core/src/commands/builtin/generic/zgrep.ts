@@ -12,6 +12,7 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import { compilePosixRegex } from '../../../utils/posix.ts'
 import { specOf } from '../../spec/builtins.ts'
 import { FlagView } from '../../spec/flag_view.ts'
 import { IOResult, materialize, type ByteSource } from '../../../io/types.ts'
@@ -58,7 +59,10 @@ function zgrepSearch(
   const lines = splitLines(decodeLine(data))
   const offsets = opts.byteOffsets ? lineOffsets(lines) : []
   const reGlobal = opts.onlyMatching
-    ? new RegExp(pattern.source, pattern.flags.includes('g') ? pattern.flags : pattern.flags + 'g')
+    ? compilePosixRegex(
+        pattern.source,
+        pattern.flags.includes('g') ? pattern.flags : pattern.flags + 'g',
+      )
     : null
   const matched: [number, number, string][] = []
   for (let i = 0; i < lines.length; i++) {

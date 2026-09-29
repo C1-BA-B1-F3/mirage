@@ -158,6 +158,15 @@ GIT_AUTHOR_NAME=Bob GIT_AUTHOR_EMAIL=bob@example.com git commit -qam 'fix: Remov
 at 2025-08-04T10:00:00Z
 printf 'typo\n' >> cache.txt
 git commit -qam 'docs: FIX typo'
+# Non-ASCII case pairs must stay distinct under the fixed C locale.
+at 2025-08-05T10:00:00Z
+git switch -qc casefold main
+printf 'ÉLAN Aa\n' > casefold.txt
+git add casefold.txt
+GIT_AUTHOR_NAME=Élodie git commit -qm 'ÉLAN Aa'
+at 2025-08-06T10:00:00Z
+printf 'élan aA\n' >> casefold.txt
+GIT_AUTHOR_NAME=élodie git commit -qam 'élan aA'
 git switch -q main
 printf 'staged\n' > staged.txt
 git add staged.txt

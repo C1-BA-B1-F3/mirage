@@ -33,7 +33,9 @@ from tests.commands.cli.builtin.git.conftest import mounted
 FIXTURE = Path(__file__).resolve().parents[6] / 'integ/fixtures/git'
 FORMS = json.loads((FIXTURE / 'read-only.json').read_text())
 ENV = {
-    **os.environ, 'GIT_CONFIG_GLOBAL': '/dev/null',
+    **os.environ, 'LC_ALL': 'C',
+    'LANG': 'C',
+    'GIT_CONFIG_GLOBAL': '/dev/null',
     'GIT_CONFIG_NOSYSTEM': '1'
 }
 

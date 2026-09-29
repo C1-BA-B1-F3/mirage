@@ -412,6 +412,11 @@ serve, and inventing a name would put an unreviewed one into history.
   --pretty format`), not silently misrendered. `--date=` relative
   formats and `--decorate` are absent; decorations render only through
   `%d`/`%D`, matching git's piped default of no decorations.
+- **History searches use ASCII case folding.** `-i` /
+  `--regexp-ignore-case` folds ASCII letters in `--grep`, `--author` and
+  `-S` on both hosts. Non-ASCII letters keep their exact spelling, matching
+  Git's literal searches under `LC_ALL=C`. `--grep` values containing
+  newlines are lists of alternative patterns.
 - **`log` dates are strict.** `--since`/`--until` read ISO-8601 or an
   epoch second; git's relative wording (`2 weeks ago`) is refused
   rather than misread.

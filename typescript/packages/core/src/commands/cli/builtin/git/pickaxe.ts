@@ -12,17 +12,13 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import { foldAscii } from '../../../../utils/posix.ts'
 import git from 'isomorphic-git'
 
 import { repoArgs, type Repo } from './repo.ts'
 import { treeEntries } from './tree.ts'
 
 const DEC = new TextDecoder('utf-8', { fatal: false })
-
-/** Lower-case ASCII letters only, the table git folds a `-S` string through under `-i`. */
-function foldAscii(text: string): string {
-  return text.replace(/[A-Z]+/g, (run) => run.toLowerCase())
-}
 
 /** How many times a string appears in one blob, ASCII case folded when asked. */
 async function occurrences(

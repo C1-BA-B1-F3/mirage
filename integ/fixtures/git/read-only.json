@@ -401,5 +401,19 @@
   "rev-list --all --grep=fix -i",
   "rev-list --max-count=1 HEAD",
   "shortlog -s --all --grep=fix -i",
-  "shortlog -s --all --max-count=2"
+  "shortlog -s --all --max-count=2",
+  "log casefold --format=%s --grep=é -i",
+  "log casefold --format=%s --grep=É --regexp-ignore-case",
+  "log casefold --format=%s --grep=élAN -i --reverse",
+  "log casefold --format=%s --author=éLODIE -i",
+  "log casefold --format=%s --author=ÉLODIE -i",
+  "log casefold --format=%s --grep=é --author=É -i",
+  "log casefold --format=%s --grep=É --grep=é -i --max-count=1 --reverse",
+  "log casefold --format=%s -S élan -i",
+  "log casefold --format=%s -S Élan -i",
+  "rev-list casefold --grep=é -i",
+  "shortlog -s casefold --author=ÉLODIE -i",
+  "shortlog -sn casefold --grep=é -i --max-count=1",
+  "log casefold --format=%s --grep=^$",
+  "log casefold --format=%s --grep='missing\nélan' -i"
 ]

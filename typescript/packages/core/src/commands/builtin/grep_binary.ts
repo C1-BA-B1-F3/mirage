@@ -12,6 +12,7 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import { compilePosixRegex } from '../../utils/posix.ts'
 import { YieldBudget } from '../../io/yield_budget.ts'
 import { closeQuietly } from '../../io/stream.ts'
 import { decodeLine, encodeLine, MatchOffsets, prefixOf } from './grep_offsets.ts'
@@ -226,7 +227,10 @@ export async function* grepInput(
       if (hit) {
         if (f.onlyMatching) {
           if (!f.invert) {
-            const re = new RegExp(pat.source, pat.flags.includes('g') ? pat.flags : pat.flags + 'g')
+            const re = compilePosixRegex(
+              pat.source,
+              pat.flags.includes('g') ? pat.flags : pat.flags + 'g',
+            )
             const offsets = f.byteOffsets ? new MatchOffsets(lineStart, line) : null
             for (const m of line.matchAll(re)) {
               const pending = budget.run()
@@ -329,5 +333,5 @@ function utf8Pattern(pat: RegExp): RegExp {
     } else if (char === '.' && !inClass) pattern += '[^\\n\\udc80-\\udcff]'
     else pattern += char
   }
-  return new RegExp(pattern, pat.flags)
+  return compilePosixRegex(pattern, pat.flags)
 }

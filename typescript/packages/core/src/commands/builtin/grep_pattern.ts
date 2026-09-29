@@ -12,7 +12,7 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import { translateClasses } from '../../utils/posix.ts'
+import { compilePosixRegex, translateClasses } from '../../utils/posix.ts'
 import { BreError, translateBre } from './utils/bre.ts'
 import { UsageError } from '../errors.ts'
 import { mountKey, mountPrefixOf } from '../../utils/key_prefix.ts'
@@ -187,7 +187,7 @@ export function compilePattern(
 ): RegExp {
   const source = buildPatternStr(pattern, fixedString, wholeWord, basic)
   try {
-    return new RegExp(source, ignoreCase ? 'i' : '')
+    return compilePosixRegex(source, ignoreCase ? 'i' : '')
   } catch (err) {
     if (!(err instanceof SyntaxError)) throw err
     // GNU grep 3.11 diagnostics, also used by zgrep. Syntax outside

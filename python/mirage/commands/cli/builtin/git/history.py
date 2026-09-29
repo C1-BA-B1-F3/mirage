@@ -163,20 +163,6 @@ def pretty_format(fl: FlagView) -> LogFormat:
     return pretty
 
 
-def _log_pattern(value: str, ignore_case: bool) -> re.Pattern[str]:
-    """A ``--grep`` or ``--author`` pattern: a BRE, case-folded under
-    ``-i``.
-
-    Args:
-        value (str): the pattern as it arrived on the line.
-        ignore_case (bool): ``-i``.
-    """
-    pattern = search_bre(value)
-    if not ignore_case:
-        return pattern
-    return re.compile(pattern.pattern, pattern.flags | re.IGNORECASE)
-
-
 def parse_flags(fl: FlagView) -> LogFlags:
     """Read the raw log flag kwargs into a frozen struct.
 
@@ -195,9 +181,10 @@ def parse_flags(fl: FlagView) -> LogFlags:
     ignore_case = fl.as_bool("regexp_ignore_case")
     try:
         authors = tuple(
-            _log_pattern(value, ignore_case) for value in fl.as_list("author"))
+            search_bre(value, ignore_case) for value in fl.as_list("author"))
         greps = tuple(
-            _log_pattern(value, ignore_case) for value in fl.as_list("grep"))
+            search_bre(value, ignore_case) for values in fl.as_list("grep")
+            for value in values.split("\n"))
     except BreError as exc:
         raise GitError(str(exc)) from exc
     max_count = fl.as_int("max_count")

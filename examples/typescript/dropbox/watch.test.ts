@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
+import { spawn } from 'node:child_process'
 import { Delta, FileEvent, FileChangeKind, PathSpec } from '@struktoai/mirage-core/types'
-import { cursorOf, longpoll, runLongpoll } from './watch.ts'
+import { cursorOf, longpoll, runLongpoll, runWithShutdown } from './watch.ts'
 
 const checkpoint = (c: string): string => JSON.stringify({ _dbx: 1, c, s: { '/dropbox/a': 'old' } })
 
@@ -15,7 +16,10 @@ test('longpoll refreshes its cursor after every pull and honors idle backoff', a
       {
         pull: async (_root, previous) => {
           checkpoints.push(previous)
-          return new Delta({ changes: [], checkpoint: states[checkpoints.length - 1]! })
+          return new Delta({
+            changes: [],
+            checkpoint: states[checkpoints.length - 1]!,
+          })
         },
       },
       PathSpec.fromStrPath('/dropbox', ''),
@@ -51,11 +55,16 @@ test('longpoll sends no authorization and treats reset as a pull with the old ch
   t.mock.method(globalThis, 'fetch', async (url: string, options: RequestInit) => {
     assert.equal(url, 'https://notify.dropboxapi.com/2/files/list_folder/longpoll')
     calls.push(options)
-    return new Response(JSON.stringify({ error: { '.tag': 'reset' } }), { status: 409 })
+    return new Response(JSON.stringify({ error: { '.tag': 'reset' } }), {
+      status: 409,
+    })
   })
   assert.deepEqual(await longpoll('cursor', new AbortController().signal), [true, 0])
   assert.deepEqual(calls[0]!.headers, { 'Content-Type': 'application/json' })
-  assert.deepEqual(JSON.parse(calls[0]!.body as string), { cursor: 'cursor', timeout: 30 })
+  assert.deepEqual(JSON.parse(calls[0]!.body as string), {
+    cursor: 'cursor',
+    timeout: 30,
+  })
 })
 
 test('unsupported checkpoint versions fail loudly', () => {
@@ -105,3 +114,133 @@ test('a missing root retries, preserves its snapshot, and notifies before pollin
     ['poll', 'recovered'],
   ])
 })
+
+for (const stage of ['baseline', 'delta']) {
+  test(
+    `shutdown closes the workspace and exits during a stalled ${stage} pull`,
+    { timeout: 10_000 },
+    async () => {
+      const code = `
+      import { createServer } from 'node:http'
+      import { runLongpoll, runWithShutdown } from ${JSON.stringify(new URL('./watch.ts', import.meta.url).href)}
+      import { Workspace, PathSpec } from ${JSON.stringify(import.meta.resolve('@struktoai/mirage-node'))}
+      import { Delta } from ${JSON.stringify(import.meta.resolve('@struktoai/mirage-core/types'))}
+      const controller = new AbortController()
+      const ws = new Workspace({})
+      const server = createServer(() => controller.abort())
+      await new Promise(resolve => server.listen(0, '127.0.0.1', resolve))
+      let pulls = 0
+      const hook = { pull: async () => {
+        if (${JSON.stringify(stage)} === 'baseline' || pulls++ > 0) {
+          await fetch('http://127.0.0.1:' + server.address().port)
+          throw new Error('stalled pull unexpectedly completed')
+        }
+        return new Delta({ changes: [], checkpoint: JSON.stringify({ _dbx: 1, c: 'cursor', s: {} }) })
+      } }
+      await runWithShutdown(
+        () => runLongpoll(hook, PathSpec.fromStrPath('/dropbox', ''), async () => {},
+          async () => [true, 0], async () => {}),
+        async () => { await ws.close(); console.log('closed') }, controller.signal)
+    `
+      const child = spawn(
+        process.execPath,
+        ['--import', import.meta.resolve('tsx'), '--input-type=module', '-e', code],
+        { stdio: ['ignore', 'pipe', 'pipe'] },
+      )
+      let out = ''
+      let err = ''
+      child.stdout.on('data', (chunk) => {
+        out += String(chunk)
+      })
+      child.stderr.on('data', (chunk) => {
+        err += String(chunk)
+      })
+      const timer = setTimeout(() => child.kill('SIGKILL'), 8000)
+      try {
+        const exit = await new Promise<number | null>((resolve, reject) => {
+          child.once('error', reject)
+          child.once('close', resolve)
+        })
+        assert.equal(exit, 130, err)
+        assert.equal(out, 'closed\n')
+        assert.equal(err, '')
+      } finally {
+        clearTimeout(timer)
+        if (child.exitCode === null) child.kill('SIGKILL')
+      }
+    },
+  )
+}
+
+test('normal completion and failure both close without forced shutdown', async () => {
+  for (const failure of [false, true]) {
+    let closed = 0
+    const error = new Error('pull failed')
+    const result = runWithShutdown(
+      async () => {
+        if (failure) throw error
+      },
+      async () => {
+        closed++
+      },
+      new AbortController().signal,
+    )
+    if (failure) await assert.rejects(result, (e) => e === error)
+    else await result
+    assert.equal(closed, 1)
+  }
+})
+
+test('an already cancelled watch closes without starting a pull', async () => {
+  const controller = new AbortController()
+  controller.abort()
+  let closed = false
+  await runWithShutdown(
+    async () => {
+      assert.fail('unexpected pull')
+    },
+    async () => {
+      closed = true
+    },
+    controller.signal,
+  )
+  assert.equal(closed, true)
+})
+
+for (const stage of ['baseline', 'poll', 'delta']) {
+  test(`cancellation during ${stage} prevents further pulls and notifications`, async () => {
+    const controller = new AbortController()
+    const root = PathSpec.fromStrPath('/dropbox', '')
+    const change = new FileEvent({
+      kind: FileChangeKind.CREATE,
+      path: root,
+      timestamp: new Date(0),
+    })
+    let pulls = 0
+    await assert.rejects(
+      runLongpoll(
+        {
+          pull: async () => {
+            pulls++
+            if (stage === 'baseline' || pulls === 2) controller.abort()
+            return new Delta({ changes: [change], checkpoint: checkpoint('cursor') })
+          },
+        },
+        root,
+        async () => {
+          assert.fail('notification after cancellation')
+        },
+        async () => {
+          if (stage === 'poll') controller.abort()
+          return [true, 0]
+        },
+        async () => {
+          assert.fail('unexpected pause')
+        },
+        controller.signal,
+      ),
+      (error) => error === controller.signal.reason,
+    )
+    assert.equal(pulls, stage === 'delta' ? 2 : 1)
+  })
+}

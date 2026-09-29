@@ -16,10 +16,18 @@ from tempfile import TemporaryDirectory
 
 REPO = Path(__file__).resolve().parent.parent
 LOAD_TS = """
-import { pathToFileURL } from 'node:url';
+import { readFile } from 'node:fs/promises';
+import { createRequire } from 'node:module';
+const { transpileModule, ModuleKind } =
+  createRequire(process.argv[1])('typescript');
 const result = {};
-for (const path of process.argv.slice(1)) {
-  result[path] = await import(pathToFileURL(path).href);
+for (const path of process.argv.slice(2)) {
+  const source = await readFile(path, 'utf8');
+  const { outputText } = transpileModule(source, {
+    compilerOptions: { module: ModuleKind.ESNext }, fileName: path,
+  });
+  result[path] = await import('data:text/javascript;base64,' +
+    Buffer.from(outputText).toString('base64'));
 }
 process.stdout.write(JSON.stringify(result));
 """
@@ -49,8 +57,8 @@ def python_prompts(path: Path) -> dict[str, str]:
 
 def typescript_prompts(paths: list[Path]) -> dict[str, dict[str, str]]:
     run = subprocess.run([
-        'node', '--experimental-strip-types', '--input-type=module', '-e',
-        LOAD_TS, *map(str, paths)
+        'node', '--input-type=module', '-e', LOAD_TS,
+        str(REPO / 'typescript/package.json'), *map(str, paths)
     ],
                          check=True,
                          capture_output=True,

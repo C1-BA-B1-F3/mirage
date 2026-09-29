@@ -139,6 +139,11 @@ Dropbox-specific example code; other consumers should treat checkpoints as opaqu
 On reset, pull with the old checkpoint so the existing hook can relist and diff
 against its saved snapshot. A missing watch root retries after 30 seconds.
 
+Set `DROPBOX_APP_KEY`, `DROPBOX_APP_SECRET`, and `DROPBOX_REFRESH_TOKEN`;
+optionally set `DROPBOX_ROOT_PATH`. From the repo root, run
+`./python/.venv/bin/python examples/python/dropbox/watch.py`. Ctrl-C cancels
+the current request and closes the HTTP session and workspace.
+
 Dropbox's [longpoll endpoint](https://docs.dropboxapi.com/dropbox-api/api-reference/user-endpoints/files/list-folder-longpoll)
 uses the notification host without an Authorization header. Its timeout is
 30–480 seconds; the HTTP timeout must also allow up to 90 seconds of server

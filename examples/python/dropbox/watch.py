@@ -1,9 +1,3 @@
-"""Consumer-owned Dropbox longpoll -> cursor pull -> workspace notification.
-
-Run with DROPBOX_APP_KEY, DROPBOX_APP_SECRET and DROPBOX_REFRESH_TOKEN set.
-Optionally set DROPBOX_ROOT_PATH. Ctrl-C closes the HTTP session and workspace.
-"""
-
 import asyncio
 import json
 import os
@@ -19,7 +13,7 @@ from mirage.watch.base import DeltaHook
 
 MOUNT = "/dropbox"
 LONGPOLL_URL = "https://notify.dropboxapi.com/2/files/list_folder/longpoll"
-TIMEOUT = 30  # Dropbox permits 30..480 seconds, plus up to 90s of jitter.
+TIMEOUT = 30
 
 
 def cursor_of(checkpoint: str | None) -> str | None:
@@ -29,7 +23,7 @@ def cursor_of(checkpoint: str | None) -> str | None:
     if not isinstance(data, dict):
         raise ValueError("Expected a Dropbox checkpoint object")
     if "_dbx" not in data:
-        return None  # Missing root: the hook currently has a listing snapshot.
+        return None
     if data.get("_dbx") != 1 or not isinstance(data.get("c"), str):
         raise ValueError("Unsupported Dropbox checkpoint format")
     return data["c"] or None
@@ -63,22 +57,19 @@ async def run_longpoll(
 ) -> None:
     checkpoint = (await hook.pull(root, None)).checkpoint
     while True:
-        cursor = cursor_of(
-            checkpoint)  # A pull can replace it, even with no events.
+        cursor = cursor_of(checkpoint)
         if cursor is None:
-            await pause(TIMEOUT
-                        )  # Bounded retry while the root is unavailable.
+            await pause(TIMEOUT)
             changed, backoff = True, 0.0
         else:
             changed, backoff = await poll(cursor)
         if changed:
             delta = await hook.pull(root, checkpoint)
             for change in delta.changes:
-                await notify(change
-                             )  # Invalidates caches before delivering events.
+                await notify(change)
             checkpoint = delta.checkpoint
         if backoff:
-            await pause(backoff)  # Required even when changes == false.
+            await pause(backoff)
 
 
 async def publish(ws: Workspace, change: FileEvent) -> None:

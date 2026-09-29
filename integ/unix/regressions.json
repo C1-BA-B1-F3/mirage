@@ -157,6 +157,129 @@
         "stdout": "quiet=0\nhit\nhit\n2\n2\n",
         "stderr": ""
       }
+    },
+    {
+      "id": "recursive_grep_setup",
+      "seq": 9901904,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "mkdir -p /data/grep-stop/a/deep; printf 'hit\\nhit\\n' > /data/grep-stop/a/deep/first; printf 'hit\\nhit\\n' > /data/grep-stop/a/deep/later; printf 'hit\\nhit\\n' > /data/grep-stop/a/later; printf 'hit\\nhit\\n' > /data/grep-stop/z",
+      "expect": {
+        "exit": 0,
+        "stdout": "",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "recursive_grep_quiet",
+      "seq": 9901905,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "grep -rq hit /data/grep-stop /data/grep-missing",
+      "expect": {
+        "exit": 0,
+        "stdout": "",
+        "stderr": "",
+        "check": "[\"/data/grep-stop/a/deep/first\"]\n"
+      },
+      "clear_cache": true,
+      "check": {
+        "read_paths": true
+      }
+    },
+    {
+      "id": "recursive_grep_quiet_no_match",
+      "seq": 9901906,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "grep -rq absent /data/grep-stop",
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "",
+        "check": "[\"/data/grep-stop/a/deep/first\",\"/data/grep-stop/a/deep/later\",\"/data/grep-stop/a/later\",\"/data/grep-stop/z\"]\n"
+      },
+      "clear_cache": true,
+      "check": {
+        "read_paths": true
+      }
+    },
+    {
+      "id": "recursive_grep_max_count",
+      "seq": 9901907,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "grep -rhm 1 hit /data/grep-stop",
+      "expect": {
+        "exit": 0,
+        "stdout": "hit\nhit\nhit\nhit\n",
+        "stderr": "",
+        "check": "[\"/data/grep-stop/a/deep/first\",\"/data/grep-stop/a/deep/later\",\"/data/grep-stop/a/later\",\"/data/grep-stop/z\"]\n"
+      },
+      "clear_cache": true,
+      "check": {
+        "read_paths": true
+      }
+    },
+    {
+      "id": "recursive_grep_count",
+      "seq": 9901908,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "grep -rch hit /data/grep-stop",
+      "expect": {
+        "exit": 0,
+        "stdout": "2\n2\n2\n2\n",
+        "stderr": "",
+        "check": "[\"/data/grep-stop/a/deep/first\",\"/data/grep-stop/a/deep/later\",\"/data/grep-stop/a/later\",\"/data/grep-stop/z\"]\n"
+      },
+      "clear_cache": true,
+      "check": {
+        "read_paths": true
+      }
+    },
+    {
+      "id": "recursive_grep_quiet_prior_error",
+      "seq": 9901909,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "grep -rq hit /data/grep-missing /data/grep-stop",
+      "expect": {
+        "exit": 0,
+        "stdout": "",
+        "stderr": "grep: /data/grep-missing: No such file or directory\n",
+        "check": "[\"/data/grep-stop/a/deep/first\"]\n"
+      },
+      "clear_cache": true,
+      "check": {
+        "read_paths": true
+      }
+    },
+    {
+      "id": "recursive_grep_cleanup",
+      "seq": 9901910,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "rm -r /data/grep-stop",
+      "expect": {
+        "exit": 0,
+        "stdout": "",
+        "stderr": ""
+      }
     }
   ]
 }

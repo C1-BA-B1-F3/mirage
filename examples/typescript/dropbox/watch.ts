@@ -1,7 +1,3 @@
-/** Consumer-owned Dropbox longpoll -> cursor pull -> workspace notification.
- * Set DROPBOX_APP_KEY, DROPBOX_APP_SECRET, DROPBOX_REFRESH_TOKEN, and optionally
- * DROPBOX_ROOT_PATH. From typescript/, run pnpm --filter @struktoai/mirage-examples exec tsx dropbox/watch.ts. Ctrl-C stops it.
- */
 import { setTimeout as delay } from 'node:timers/promises'
 import { pathToFileURL } from 'node:url'
 import { DropboxVFS, PathSpec, Workspace, type FileEvent } from '@struktoai/mirage-node'
@@ -9,7 +5,7 @@ import type { DeltaHook } from '@struktoai/mirage-core/watch/base'
 
 const MOUNT = '/dropbox'
 const LONGPOLL_URL = 'https://notify.dropboxapi.com/2/files/list_folder/longpoll'
-const TIMEOUT = 30 // Dropbox permits 30..480 seconds, plus up to 90s of jitter.
+const TIMEOUT = 30
 
 export function cursorOf(checkpoint: string | null): string | null {
   // This example knows Dropbox's v1 envelope. Keep the entire checkpoint for
@@ -17,7 +13,7 @@ export function cursorOf(checkpoint: string | null): string | null {
   const data: unknown = checkpoint === null ? {} : JSON.parse(checkpoint)
   if (data === null || typeof data !== 'object')
     throw new Error('Expected a Dropbox checkpoint object')
-  if (!('_dbx' in data)) return null // Missing root: a listing snapshot.
+  if (!('_dbx' in data)) return null
   if (data._dbx !== 1 || !('c' in data) || typeof data.c !== 'string')
     throw new Error('Unsupported Dropbox checkpoint format')
   return data.c || null
@@ -47,26 +43,72 @@ export async function runLongpoll(
   notify: (change: FileEvent) => Promise<void>,
   poll: (cursor: string) => Promise<[boolean, number]>,
   pause: (seconds: number) => Promise<void>,
+  signal?: AbortSignal,
 ): Promise<void> {
+  signal?.throwIfAborted()
   let checkpoint = (await hook.pull(root, null)).checkpoint
   for (;;) {
-    const cursor = cursorOf(checkpoint) // Pull may replace it even without events.
+    signal?.throwIfAborted()
+    const cursor = cursorOf(checkpoint)
     let changed: boolean
     let backoff: number
     if (cursor === null) {
-      await pause(TIMEOUT) // Bounded retry while the root is unavailable.
+      await pause(TIMEOUT)
       changed = true
       backoff = 0
     } else {
       ;[changed, backoff] = await poll(cursor)
     }
+    signal?.throwIfAborted()
     if (changed) {
       // Preserve the old snapshot on reset; the existing hook relists and diffs.
       const delta = await hook.pull(root, checkpoint)
-      for (const change of delta.changes) await notify(change)
+      for (const change of delta.changes) {
+        signal?.throwIfAborted()
+        await notify(change)
+      }
       checkpoint = delta.checkpoint
     }
-    if (backoff) await pause(backoff) // Required even when changes == false.
+    if (backoff) await pause(backoff)
+  }
+}
+
+export async function runWithShutdown(
+  run: () => Promise<void>,
+  close: () => Promise<void>,
+  signal: AbortSignal,
+): Promise<void> {
+  let deadline: ReturnType<typeof setTimeout> | undefined
+  let settled = signal.aborted
+  let closed = false
+  let wake: () => void = () => {}
+  const stopped = new Promise<void>((resolve) => {
+    wake = resolve
+  })
+  const stop = (): void => {
+    // DeltaHook has no cancellation door. This standalone process gives cleanup
+    // one second, then terminates any request still holding the event loop open.
+    deadline = setTimeout(() => process.exit(130), 1000).unref()
+    wake()
+  }
+  const finish = (): void => {
+    settled = true
+    if (closed) clearTimeout(deadline)
+  }
+  signal.addEventListener('abort', stop, { once: true })
+  try {
+    if (signal.aborted) stop()
+    else await Promise.race([run().finally(finish), stopped])
+  } catch (error) {
+    if (!signal.aborted) throw error
+  } finally {
+    try {
+      await close()
+    } finally {
+      closed = true
+      signal.removeEventListener('abort', stop)
+      if (settled) clearTimeout(deadline)
+    }
   }
 }
 
@@ -88,23 +130,28 @@ async function main(): Promise<void> {
   process.once('SIGINT', stop)
   try {
     console.log(`Watching ${MOUNT}; edit files in Dropbox (Ctrl-C to stop)`)
-    await runLongpoll(
-      vfs.deltaHook(),
-      PathSpec.fromStrPath(MOUNT, ''),
-      async (change) => {
-        await ws.notify(change)
-        console.log(`${change.kind}: ${change.path.virtual}`)
-      },
-      (cursor) => longpoll(cursor, controller.signal),
-      async (seconds) => {
-        await delay(seconds * 1000, undefined, { signal: controller.signal })
-      },
+    await runWithShutdown(
+      () =>
+        runLongpoll(
+          vfs.deltaHook(),
+          PathSpec.fromStrPath(MOUNT, ''),
+          async (change) => {
+            await ws.notify(change)
+            console.log(`${change.kind}: ${change.path.virtual}`)
+          },
+          (cursor) => longpoll(cursor, controller.signal),
+          async (seconds) => {
+            await delay(seconds * 1000, undefined, {
+              signal: controller.signal,
+            })
+          },
+          controller.signal,
+        ),
+      () => ws.close(),
+      controller.signal,
     )
-  } catch (error) {
-    if (!controller.signal.aborted) throw error
   } finally {
     process.removeListener('SIGINT', stop)
-    await ws.close()
   }
 }
 

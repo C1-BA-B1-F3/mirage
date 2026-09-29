@@ -14,12 +14,12 @@
 
 from collections.abc import Callable
 from contextlib import AbstractAsyncContextManager, nullcontext
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 
 from mirage.cache.file.io import mutation_lock
 from mirage.cache.file.mixin import FileCacheMixin
-from mirage.cache.index.config import (IndexEntry, ListResult, LookupResult,
-                                       LookupStatus)
+from mirage.cache.index.config import (IndexEntry, IndexSnapshot, ListResult,
+                                       LookupResult, LookupStatus)
 from mirage.cache.index.store import IndexCacheStore
 
 
@@ -37,7 +37,8 @@ class IndexView(IndexCacheStore):
                  prefix: str,
                  owns: Callable[[str], bool],
                  *,
-                 locked: bool = False) -> None:
+                 locked: bool = False,
+                 read_ttl: float | None = None) -> None:
         """Args:
             store (IndexCacheStore): the VFS's own index.
             cache (FileCacheMixin): workspace file cache whose mutation lock
@@ -47,6 +48,7 @@ class IndexView(IndexCacheStore):
                 key.
             locked (bool): skip the non-reentrant mutation lock already
                 held by the caller; the view must not outlive that hold.
+            read_ttl (float | None): listing lifetime cap, or None.
         """
         super().__init__()
         self._store = store
@@ -54,9 +56,32 @@ class IndexView(IndexCacheStore):
         self._prefix = prefix or "/"
         self._owns = owns
         self._locked = locked
+        self._read_ttl = read_ttl
+
+    @property
+    def store(self) -> IndexCacheStore:
+        """The store this view writes through."""
+        return self._store
+
+    @property
+    def ttl(self) -> float:
+        return self._store.ttl
 
     def _fence(self) -> AbstractAsyncContextManager[None]:
         return nullcontext() if self._locked else mutation_lock(self._cache)
+
+    def _deadline(self, expired_at: datetime | None) -> datetime | None:
+        """Cap the expiry, preserving the store's default when it is shorter.
+
+        Args:
+            expired_at (datetime | None): the expiry the writer asked for.
+        """
+        if self._read_ttl is None:
+            return expired_at
+        cap = datetime.now(timezone.utc) + timedelta(seconds=self._read_ttl)
+        if expired_at is None:
+            return cap if self._store.ttl > self._read_ttl else None
+        return min(expired_at, cap)
 
     async def get(self, vfs_path: str) -> LookupResult:
         # A lookup may flush a queued snapshot, so reads share the write fence.
@@ -113,20 +138,30 @@ class IndexView(IndexCacheStore):
                          if self._owns(prefix + name)]
                 setter = (self._store.set_partial_dir
                           if partial else self._store.set_dir)
-                await setter(vfs_path, owned, expired_at)
+                await setter(vfs_path, owned, self._deadline(expired_at))
+
+    def scope_snapshot(self, snapshot: IndexSnapshot) -> IndexSnapshot:
+        return self._store.scope_snapshot(
+            IndexSnapshot(
+                entries={
+                    path: entry
+                    for path, entry in snapshot.entries.items()
+                    if self._owns(path)
+                },
+                children={
+                    path: [key for key in keys if self._owns(key)]
+                    for path, keys in snapshot.children.items()
+                    if self._owns(path)
+                },
+            ))
 
     def seed(self, entries: dict[str, IndexEntry],
              children: dict[str, list[str]], expires_at: datetime) -> None:
         if not self._owns(self._prefix):
             return
-        self._store.seed(
-            {
-                path: entry
-                for path, entry in entries.items() if self._owns(path)
-            }, {
-                path: [key for key in keys if self._owns(key)]
-                for path, keys in children.items() if self._owns(path)
-            }, expires_at)
+        snapshot = self.scope_snapshot(IndexSnapshot(entries, children))
+        self._store.seed(snapshot.entries, snapshot.children,
+                         self._deadline(expires_at) or expires_at)
 
     async def entries(self) -> dict[str, IndexEntry]:
         async with self._fence():

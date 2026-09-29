@@ -16,14 +16,16 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { GitHubAccessor } from '../../accessor/github.ts'
 import { RAMIndexCacheStore } from '../../cache/index/ram.ts'
 import { RedisIndexCacheStore } from '../../cache/index/redis.ts'
+import { IndexView } from '../../cache/index/view.ts'
+import { RAMFileCacheStore } from '../../cache/file/ram.ts'
 import { IndexEntry } from '../../cache/index/config.ts'
 import { FileType, PathSpec } from '../../types.ts'
-import { populateIndex } from './tree.ts'
+import { populateIndex, refillIndex } from './tree.ts'
 import { readdir } from './readdir.ts'
 import { read } from './read.ts'
 import { stat } from './stat.ts'
 import { GitHubApiError, HttpGitHubTransport, type GitHubTransport } from './client.ts'
-import { BASE, FakeGitHub } from './_test_util.ts'
+import { BASE, ExpiredOnArrival, FakeGitHub, servedAccessor } from './_test_util.ts'
 
 const TREE = [
   { path: 'README.md', type: 'blob' as const, sha: 'eee', size: 50 },
@@ -374,5 +376,94 @@ describe('the truncated walk', () => {
     expect((err as GitHubApiError).message).toContain('truncated the tree listing')
     // Nothing partial was cached as the directory's whole listing.
     expect((await index.listDir('/gh/big')).entries ?? null).toBeNull()
+  })
+})
+
+describe('github readdir answers from its own refill', () => {
+  let gh: FakeGitHub
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  function served(files: Record<string, string>): GitHubAccessor {
+    gh = new FakeGitHub(files)
+    vi.stubGlobal('fetch', gh.fetch)
+    return servedAccessor()
+  }
+
+  function under(rel: string): PathSpec {
+    return new PathSpec({ vfsPath: rel, virtual: `/gh/${rel}`, directory: `/gh/${rel}` })
+  }
+
+  const FILES = { 'docs/a.txt': 'alpha', 'docs/b.txt': 'bravo', 'top.txt': 'top' }
+
+  it.each([
+    ['root expired', null],
+    ['root live, folder expired', '/gh'],
+  ])('lists the folder when %s', async (_, live) => {
+    const accessor = served(FILES)
+    const index = new ExpiredOnArrival(live)
+    await refillIndex(accessor, index, '/gh')
+    gh.log.length = 0
+    expect(await readdir(accessor, under('docs'), index)).toEqual([
+      '/gh/docs/a.txt',
+      '/gh/docs/b.txt',
+    ])
+    expect(gh.counts()).toEqual([0, 1, 0])
+  })
+
+  it('answers ENOENT for a folder the fresh tree no longer has', async () => {
+    const accessor = served(FILES)
+    const index = new ExpiredOnArrival()
+    await refillIndex(accessor, index, '/gh')
+    gh.files.delete('docs/a.txt')
+    gh.files.delete('docs/b.txt')
+    await index.invalidate()
+    await expect(readdir(accessor, under('docs'), index)).rejects.toMatchObject({
+      code: 'ENOENT',
+    })
+  })
+
+  it.each<[string, string, (key: string) => boolean]>([
+    ['retiring', '', () => false],
+    ['nested', 'docs', (key) => !key.startsWith('/gh/docs')],
+  ])('answers ENOENT under a view that refuses the folder (%s)', async (_, rel, owns) => {
+    const accessor = served({ 'docs/a.txt': 'alpha', 'top.txt': 'top' })
+    const view = new IndexView(
+      new RAMIndexCacheStore({ ttl: 86_400 }),
+      new RAMFileCacheStore(),
+      '/gh',
+      owns,
+      { readTtl: 600 },
+    )
+    const target =
+      rel === '' ? new PathSpec({ vfsPath: '', virtual: '/gh', directory: '/gh' }) : under(rel)
+    await expect(readdir(accessor, target, view)).rejects.toMatchObject({ code: 'ENOENT' })
+    expect(gh.counts()).toEqual([0, 1, 0])
+  })
+
+  it('keeps the per-directory fallback when the refill comes back truncated', async () => {
+    const accessor = served({ 'docs/a.txt': 'alpha', 'docs/deep/x.txt': 'x', 'top.txt': 'top' })
+    const index = new ExpiredOnArrival()
+    await refillIndex(accessor, index, '/gh')
+    gh.truncatedRecursive = true
+    gh.log.length = 0
+    expect(await readdir(accessor, under('docs/deep'), index)).toEqual(['/gh/docs/deep/x.txt'])
+    expect(accessor.truncated).toBe(true)
+    expect(gh.count('recursive')).toBe(1)
+    expect(gh.count('dir') + gh.count('sha_dir')).toBeGreaterThan(0)
+  })
+
+  it('filters snapshot children owned by another mount', async () => {
+    const accessor = served(FILES)
+    const view = new IndexView(
+      new ExpiredOnArrival(),
+      new RAMFileCacheStore(),
+      '/gh',
+      (key) => key !== '/gh/docs/b.txt',
+    )
+    expect(await readdir(accessor, under('docs'), view)).toEqual(['/gh/docs/a.txt'])
+    expect(gh.counts()).toEqual([0, 1, 0])
   })
 })

@@ -21,6 +21,7 @@ from typing import Any
 from mirage.accessor.hf_hub import HfHubAccessor
 from mirage.cache.index import (NULL_INDEX, IndexCacheStore, IndexEntry,
                                 LookupStatus)
+from mirage.cache.index.config import IndexSnapshot
 from mirage.cache.index.lock import index_lock
 from mirage.core.hf_hub.client import (HfHubError, api_url, hub_get_response,
                                        hub_post, rev_segment)
@@ -413,17 +414,21 @@ def seed_index(
     accessor: HfHubAccessor,
     index: IndexCacheStore,
     prefix: str,
-) -> None:
+) -> IndexSnapshot:
     """Write the accessor's tree into ``index`` under ``prefix``.
 
     Args:
         accessor (HfHubAccessor): the mount's accessor, holding the tree.
         index (IndexCacheStore): the index to seed.
         prefix (str): the mount prefix the keys are built against.
+
+    Returns:
+        IndexSnapshot: the rows it wrote.
     """
     entries, children = index_rows(accessor.tree, prefix)
     index.seed(entries, children,
                datetime.now(timezone.utc) + timedelta(days=365))
+    return IndexSnapshot(entries=entries, children=children)
 
 
 async def refill_index(
@@ -431,25 +436,31 @@ async def refill_index(
     index: IndexCacheStore,
     prefix: str,
 ) -> bool:
-    """Refetch the tree and re-seed the index from it.
-
-    The mount fetches the whole tree once and seeds the index with it, so
-    the index *is* the listing rather than a cache in front of one. That
-    makes a cleared or expired index indistinguishable from an empty
-    repository, which is why dropping the index has to mean "refetch".
+    """Refill the index and report whether it was populated.
 
     Args:
         accessor (HfHubAccessor): the mount's accessor.
-        index (IndexCacheStore): the index to re-seed.
-        prefix (str): the mount prefix the index keys are built against.
+        index (IndexCacheStore): the index to check and fill.
+        prefix (str): mount prefix for the index keys.
+    """
+    return await refill_snapshot(accessor, index, prefix) is not None
 
-    Returns:
-        bool: whether a refill happened; False when there is no index to
-        seed, so a caller does not retry a lookup that cannot change.
+
+async def refill_snapshot(
+    accessor: HfHubAccessor,
+    index: IndexCacheStore,
+    prefix: str,
+) -> IndexSnapshot | None:
+    """Refill the index and return the rows written.
+
+    Args:
+        accessor (HfHubAccessor): the mount's accessor.
+        index (IndexCacheStore): the index to check and fill.
+        prefix (str): mount prefix for the index keys.
     """
     # The caller holds index_lock through replacement and its final lookup.
     if index is NULL_INDEX:
-        return False
+        return None
     tree = await fetch_tree(accessor)
     accessor.tree = tree
     accessor.tree_loaded = True
@@ -457,8 +468,7 @@ async def refill_index(
     accessor.refills += 1
     # Refilling replaces the snapshot; merging would retain deleted paths.
     await index.invalidate_prefix(prefix.rstrip("/") or "/")
-    seed_index(accessor, index, prefix)
-    return True
+    return seed_index(accessor, index, prefix)
 
 
 async def ensure_live_index(
@@ -466,29 +476,35 @@ async def ensure_live_index(
     index: IndexCacheStore,
     prefix: str,
 ) -> bool:
-    """Refetch when the root listing is missing or expired.
-
-    Every reader treats a missing listing as a real absence, which is
-    right against a *live* index and wrong against one that was never
-    filled or has been dropped. The root listing is what tells the two
-    apart, in one lookup and no request: the tree is written whole, so
-    while the index is live the mount root always has a row.
+    """Refill a missing or expired root listing.
 
     Args:
         accessor (HfHubAccessor): the mount's accessor.
         index (IndexCacheStore): the index to check and fill.
-        prefix (str): the mount prefix the index keys are built against.
+        prefix (str): mount prefix for the index keys.
+    """
+    return await ensure_live_snapshot(accessor, index, prefix) is not None
 
-    Returns:
-        bool: whether the index was filled.
+
+async def ensure_live_snapshot(
+    accessor: HfHubAccessor,
+    index: IndexCacheStore,
+    prefix: str,
+) -> IndexSnapshot | None:
+    """Return a refill snapshot when the root is missing or expired.
+
+    Args:
+        accessor (HfHubAccessor): the mount's accessor.
+        index (IndexCacheStore): the index to check and fill.
+        prefix (str): mount prefix for the index keys.
     """
     if index is NULL_INDEX:
-        return False
+        return None
     if (await index.list_dir(prefix.rstrip("/")
                              or "/")).status not in (LookupStatus.NOT_FOUND,
                                                      LookupStatus.EXPIRED):
-        return False
-    return await refill_index(accessor, index, prefix)
+        return None
+    return await refill_snapshot(accessor, index, prefix)
 
 
 async def ensure_tree(

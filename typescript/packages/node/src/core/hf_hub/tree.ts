@@ -13,7 +13,7 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import { withIndexLock } from '@struktoai/mirage-core/cache/index/lock'
-import { IndexEntry } from '@struktoai/mirage-core/cache/index/config'
+import { IndexEntry, type IndexSnapshot } from '@struktoai/mirage-core/cache/index/config'
 import type { IndexCacheStore } from '@struktoai/mirage-core/cache/index/store'
 import { LookupStatus } from '@struktoai/mirage-core/cache/index/config'
 import * as kp from '@struktoai/mirage-core/utils/key_prefix'
@@ -334,48 +334,53 @@ export async function seedIndex(
   await Promise.all([...dirs].map(([parent, rows]) => index.setDir(parent, rows, expires)))
 }
 
-/**
- * Refetch the tree and re-seed the index from it.
- *
- * The mount fetches the whole tree once and seeds the index with it, so the
- * index *is* the listing rather than a cache in front of one. That makes a
- * cleared or expired index indistinguishable from an empty repository, which
- * is why dropping the index has to mean "refetch".
- */
+/** Refill the index and report whether it was populated. */
 export async function refillIndex(
   accessor: HfHubAccessor,
   index: IndexCacheStore,
   prefix: string,
 ): Promise<boolean> {
+  await refillSnapshot(accessor, index, prefix)
+  return true
+}
+
+/** Refill the index and return the rows written. */
+export async function refillSnapshot(
+  accessor: HfHubAccessor,
+  index: IndexCacheStore,
+  prefix: string,
+): Promise<IndexSnapshot> {
   accessor.tree = await fetchTree(accessor)
   accessor.treeLoaded = true
   accessor.rowsCache = null
   accessor.refills += 1
   // Refilling replaces the snapshot; merging would retain deleted paths.
   await index.invalidatePrefix(rstripSlash(prefix) || '/')
+  const snapshot = indexRows(accessor.tree, prefix)
   await seedIndex(accessor, index, prefix)
-  return true
+  return snapshot
 }
 
-/**
- * Refetch when the root listing is missing or expired.
- *
- * Every reader treats a missing listing as a real absence, which is right
- * against a *live* index and wrong against one that was never filled or has
- * been dropped. The root listing is what tells the two apart, in one lookup
- * and no request: the tree is written whole, so while the index is live the
- * mount root always has a row.
- */
+/** Refill a missing or expired root listing. */
 export async function ensureLiveIndex(
   accessor: HfHubAccessor,
   index: IndexCacheStore,
   prefix: string,
 ): Promise<boolean> {
+  return (await ensureLiveSnapshot(accessor, index, prefix)) !== null
+}
+
+/** Return a refill snapshot when the root is missing or expired. */
+export async function ensureLiveSnapshot(
+  accessor: HfHubAccessor,
+  index: IndexCacheStore,
+  prefix: string,
+): Promise<IndexSnapshot | null> {
   const root = rstripSlash(prefix)
   const listing = await index.listDir(root === '' ? '/' : root)
   if (listing.status !== LookupStatus.NOT_FOUND && listing.status !== LookupStatus.EXPIRED)
-    return false
-  return refillIndex(accessor, index, prefix)
+    return null
+  return refillSnapshot(accessor, index, prefix)
 }
 
 /**

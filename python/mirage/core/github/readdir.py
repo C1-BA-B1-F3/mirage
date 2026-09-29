@@ -19,8 +19,8 @@ from mirage.cache.index import (NULL_INDEX, IndexCacheStore, IndexEntry,
                                 LookupStatus)
 from mirage.cache.index.lock import index_lock
 from mirage.core.github.repo import ensure_ref
-from mirage.core.github.tree import (ensure_live_index, fetch_dir_tree,
-                                     refill_index)
+from mirage.core.github.tree import (ensure_live_snapshot, fetch_dir_tree,
+                                     refill_snapshot)
 from mirage.core.github.tree_entry import TreeEntry
 from mirage.types import PathSpec
 from mirage.utils.errors import enoent
@@ -50,14 +50,16 @@ async def _readdir(
     path = (path_spec.dir if path_spec.pattern else path_spec).mount_path
     key = path.strip("/")
     virtual_key = prefix + "/" + key if key else prefix or "/"
-    await ensure_live_index(accessor, index, prefix)
+    refilled = await ensure_live_snapshot(accessor, index, prefix)
     listing = await index.list_dir(virtual_key)
     # The index is the whole listing here, not a cache in front of one, so
     # an *expired* answer means the tree aged out, not that the path is
     # gone. Refetch once and ask again. A NOT_FOUND against a live index
     # is a real absence and must not cost a tree fetch.
-    if listing.status == LookupStatus.EXPIRED and not accessor.truncated:
-        if await refill_index(accessor, index, prefix):
+    if (listing.status == LookupStatus.EXPIRED and not accessor.truncated
+            and refilled is None):
+        refilled = await refill_snapshot(accessor, index, prefix)
+        if refilled is not None:
             listing = await index.list_dir(virtual_key)
     if listing.entries is not None:
         return listing.entries
@@ -65,6 +67,13 @@ async def _readdir(
                                                  LookupStatus.EXPIRED):
         return await _fallback_readdir(accessor, virtual_key, index, virtual,
                                        prefix)
+    # A lock wait can outlast the TTL; use this refill only on EXPIRED.
+    if refilled is not None and listing.status == LookupStatus.EXPIRED:
+        refilled = index.scope_snapshot(refilled)
+        children = refilled.children.get(virtual_key)
+        if children is None:
+            raise enoent(virtual)
+        return list(children)
     if listing.status == LookupStatus.NOT_FOUND:
         raise enoent(virtual)
     return []

@@ -20,10 +20,15 @@ from mirage.commands.builtin.github.grep import grep
 from mirage.commands.builtin.github.pushdown import narrow_scope
 from mirage.commands.builtin.github.rg import rg
 from mirage.commands.config import CommandOpts
+from mirage.core.github.pushdown import is_directory_key
 from mirage.core.github.search import search_code as real_search_code
 from mirage.core.github.tree_entry import TreeEntry
 from mirage.io.stream import materialize
-from mirage.types import PathSpec
+from mirage.types import MountMode, PathSpec, ReadSpec
+from mirage.vfs.registry import build_vfs
+from mirage.workspace import Workspace
+from mirage.workspace.mount import Mount
+from tests.fixtures.github_api import FakeGitHub, serve
 from tests.fixtures.github_mock import MOCK_BLOBS, MOCK_TREE
 
 _NGLOBALS = narrow_scope.__globals__
@@ -485,3 +490,54 @@ async def test_an_answer_that_depends_on_every_file_is_never_narrowed(
                               CommandOpts(index=index, flags=flags))
     await materialize(stdout)
     assert calls == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("prefix,virtual,vfs_path,count", [
+    ("/gh", "/gh", "", 5),
+    ("/gh", "/gh/docs", "docs", 3),
+    ("/r/gh", "/r/gh", "", 5),
+],
+                         ids=["root", "subdir", "nested"])
+async def test_the_scope_count_after_an_expiry_counts_the_refetched_tree(
+        prefix, virtual, vfs_path, count):
+    files = {"docs/a.txt": b"a", "docs/b.txt": b"b", "top.txt": b"t"}
+    with serve(FakeGitHub(files=files)) as hub:
+        vfs = build_vfs(
+            "github", {
+                "token": "t",
+                "owner": "o",
+                "repo": "r",
+                "ref": "main",
+                "base_url": hub.url
+            })
+        ws = Workspace({
+            prefix:
+            Mount(vfs=vfs, mode=MountMode.READ, read=ReadSpec(ttl=600))
+        })
+        try:
+            assert (await ws.shell(f"ls {prefix}/docs")).exit_code == 0
+            hub.files["docs/c.txt"] = b"c"
+            hub.files["new/d.txt"] = b"d"
+            mount = ws._registry.mount_for(prefix)
+            await mount.index.invalidate()
+            hub.log.clear()
+            scope = PathSpec(vfs_path=vfs_path,
+                             virtual=virtual,
+                             directory=virtual,
+                             resolved=False)
+            _, file_count, narrowed = await narrow_scope(vfs.accessor,
+                                                         mount.index, [scope],
+                                                         "x",
+                                                         fixed_string=True,
+                                                         recursive=True,
+                                                         whole_word=False)
+            assert (file_count, narrowed) == (count, False)
+            assert is_directory_key(vfs.accessor.tree, "new")
+            assert hub.counts() == (0, 1, 0)
+            listed = await ws.shell(f"ls {prefix}/docs")
+            out = await listed.materialize_stdout()
+            assert out == b"a.txt\nb.txt\nc.txt\n"
+            assert hub.counts() == (0, 1, 0)
+        finally:
+            await ws.close()

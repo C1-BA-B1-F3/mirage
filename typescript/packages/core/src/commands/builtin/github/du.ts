@@ -16,6 +16,7 @@ import type { GitHubAccessor } from '../../../accessor/github.ts'
 import { size as githubDu, entries as githubDuAll } from '../../../core/github/du/index.ts'
 import { resolveGlobOf } from '../generic_bind/index.ts'
 import { GITHUB_IO } from './io.ts'
+import { ensureLiveTree } from '../../../core/github/tree.ts'
 import { VFSName, type PathSpec } from '../../../types.ts'
 import { command, type CommandFnResult, type CommandOpts } from '../../config.ts'
 import { specOf } from '../../spec/builtins.ts'
@@ -32,6 +33,7 @@ async function duCommand(
   opts: CommandOpts,
 ): Promise<CommandFnResult> {
   const idx = opts.index ?? undefined
+  await ensureLiveTree(accessor, idx, opts.mountPrefix ?? '')
   const out = await runDu(
     paths,
     opts,

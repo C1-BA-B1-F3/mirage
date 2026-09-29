@@ -14,7 +14,13 @@
 
 import { withCacheMutation } from '../file/io.ts'
 import type { FileCache } from '../file/mixin.ts'
-import { LookupStatus, type IndexEntry, type ListResult, type LookupResult } from './config.ts'
+import {
+  LookupStatus,
+  type IndexEntry,
+  type IndexSnapshot,
+  type ListResult,
+  type LookupResult,
+} from './config.ts'
 import { IndexCacheStore } from './store.ts'
 import { rstripSlash } from '../../utils/slash.ts'
 
@@ -24,14 +30,17 @@ interface IndexViewOptions {
    * The view must not outlive that hold.
    */
   readonly locked?: boolean
+  /** Seconds a listing may live under this mount; unset means no cap. */
+  readonly readTtl?: number
 }
 
 /** A mount-owned index view; delayed backend writes retain their original owner. */
 export class IndexView extends IndexCacheStore {
   private readonly locked: boolean
+  private readonly readTtl: number | undefined
 
   constructor(
-    private readonly store: IndexCacheStore,
+    private readonly inner: IndexCacheStore,
     private readonly cache: FileCache,
     private readonly prefix: string,
     private readonly owns: (path: string) => boolean,
@@ -39,10 +48,41 @@ export class IndexView extends IndexCacheStore {
   ) {
     super()
     this.locked = options.locked ?? false
+    this.readTtl = options.readTtl
+  }
+
+  /** The store this view writes through. */
+  get store(): IndexCacheStore {
+    return this.inner
+  }
+
+  get ttl(): number {
+    return this.inner.ttl
   }
 
   private fence<T>(fn: () => Promise<T>): Promise<T> {
     return this.locked ? fn() : withCacheMutation(this.cache, fn)
+  }
+
+  /** Cap the expiry, preserving the store default when it is shorter. */
+  private deadline(expiredAt: Date | null | undefined): Date | null | undefined {
+    if (this.readTtl === undefined) return expiredAt
+    const cap = Date.now() + this.readTtl * 1000
+    if (expiredAt === null || expiredAt === undefined) {
+      return this.inner.ttl > this.readTtl ? new Date(cap) : expiredAt
+    }
+    return expiredAt.getTime() > cap ? new Date(cap) : expiredAt
+  }
+
+  override scopeSnapshot(snapshot: IndexSnapshot): IndexSnapshot {
+    return this.inner.scopeSnapshot({
+      entries: new Map([...snapshot.entries].filter(([path]) => this.owns(path))),
+      children: new Map(
+        [...snapshot.children]
+          .filter(([path]) => this.owns(path))
+          .map(([path, keys]) => [path, keys.filter((key) => this.owns(key))]),
+      ),
+    })
   }
 
   seed(
@@ -51,21 +91,14 @@ export class IndexView extends IndexCacheStore {
     expiresAt: Date,
   ): void {
     if (!this.owns(this.prefix)) return
-    this.store.seed(
-      new Map([...entries].filter(([path]) => this.owns(path))),
-      new Map(
-        [...children]
-          .filter(([path]) => this.owns(path))
-          .map(([path, keys]) => [path, keys.filter((key) => this.owns(key))]),
-      ),
-      expiresAt,
-    )
+    const snapshot = this.scopeSnapshot({ entries, children })
+    this.inner.seed(snapshot.entries, snapshot.children, this.deadline(expiresAt) ?? expiresAt)
   }
 
   entries(): Promise<Map<string, IndexEntry>> {
     return this.fence(async () => {
       if (!this.owns(this.prefix)) return new Map<string, IndexEntry>()
-      const entries = await this.store.entries()
+      const entries = await this.inner.entries()
       return new Map([...entries].filter(([path]) => this.owns(path)))
     })
   }
@@ -74,7 +107,7 @@ export class IndexView extends IndexCacheStore {
     // Index lookups may flush queued state; keep them inside the write fence too.
     return this.fence(async () => {
       if (!this.owns(path)) return { status: LookupStatus.NOT_FOUND }
-      const result = await this.store.get(path)
+      const result = await this.inner.get(path)
       return this.owns(path) ? result : { status: LookupStatus.NOT_FOUND }
     })
   }
@@ -82,7 +115,7 @@ export class IndexView extends IndexCacheStore {
   async listDir(path: string): Promise<ListResult> {
     return this.fence(async () => {
       if (!this.owns(path)) return { status: LookupStatus.NOT_FOUND }
-      const result = await this.store.listDir(path)
+      const result = await this.inner.listDir(path)
       if (!this.owns(path)) return { status: LookupStatus.NOT_FOUND }
       return {
         ...result,
@@ -98,7 +131,7 @@ export class IndexView extends IndexCacheStore {
 
   put(path: string, entry: IndexEntry): Promise<void> {
     return this.fence(async () => {
-      if (this.owns(path)) await this.store.put(path, entry)
+      if (this.owns(path)) await this.inner.put(path, entry)
     })
   }
 
@@ -128,27 +161,28 @@ export class IndexView extends IndexCacheStore {
       if (this.owns(path)) {
         const prefix = rstripSlash(path) + '/'
         const owned = entries.filter(([name]) => this.owns(prefix + name))
-        if (partial) await this.store.setPartialDir(path, owned, expiredAt)
-        else await this.store.setDir(path, owned, expiredAt)
+        const deadline = this.deadline(expiredAt)
+        if (partial) await this.inner.setPartialDir(path, owned, deadline)
+        else await this.inner.setDir(path, owned, deadline)
       }
     })
   }
 
   invalidateDir(path: string): Promise<void> {
     return this.fence(async () => {
-      if (this.owns(path)) await this.store.invalidateDir(path)
+      if (this.owns(path)) await this.inner.invalidateDir(path)
     })
   }
 
   invalidatePrefix(path: string): Promise<void> {
     return this.fence(async () => {
-      if (this.owns(path)) await this.store.invalidatePrefix(path)
+      if (this.owns(path)) await this.inner.invalidatePrefix(path)
     })
   }
 
   invalidate(): Promise<void> {
     return this.fence(async () => {
-      if (this.owns(this.prefix)) await this.store.invalidate()
+      if (this.owns(this.prefix)) await this.inner.invalidate()
     })
   }
 

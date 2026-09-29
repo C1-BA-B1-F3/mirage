@@ -14,7 +14,8 @@
 
 from datetime import datetime
 
-from mirage.cache.index.config import IndexEntry, ListResult, LookupResult
+from mirage.cache.index.config import (IndexEntry, IndexSnapshot, ListResult,
+                                       LookupResult)
 
 
 class IndexCacheStore:
@@ -27,6 +28,19 @@ class IndexCacheStore:
     def __init__(self) -> None:
         super().__init__()
         self._closed = False
+
+    @property
+    def ttl(self) -> float:
+        """Seconds a listing lives when its writer names no expiry."""
+        raise NotImplementedError
+
+    def scope_snapshot(self, snapshot: IndexSnapshot) -> IndexSnapshot:
+        """Apply this index's ownership rules to a refill snapshot.
+
+        Args:
+            snapshot (IndexSnapshot): rows returned by the current refill.
+        """
+        return snapshot
 
     async def get(self, vfs_path: str) -> LookupResult:
         raise NotImplementedError

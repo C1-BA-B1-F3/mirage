@@ -19,12 +19,13 @@ import threading
 from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from typing import Any
 
 from aiohttp import web
 
 from mirage.accessor.github import GitHubAccessor
-from mirage.cache.index import ListResult, LookupResult
+from mirage.cache.index import IndexEntry, ListResult, LookupResult
 from mirage.cache.index.ram import RAMIndexCacheStore
 from mirage.core.github.tree import refill_index
 
@@ -361,3 +362,38 @@ def race_index(kind: str) -> RAMIndexCacheStore:
     if kind == "get":
         return _ClearedMidLookup()
     return _ClearedAndReseeded()
+
+
+_EPOCH = datetime.fromtimestamp(0, timezone.utc)
+
+
+class _ExpiredOnArrival(RAMIndexCacheStore):
+
+    def __init__(self, live: frozenset[str]) -> None:
+        super().__init__()
+        self.live = live
+
+    def seed(self, entries: dict[str, IndexEntry],
+             children: dict[str, list[str]], expires_at: datetime) -> None:
+        super().seed(entries, children, expires_at)
+        for path in children:
+            if path not in self.live:
+                self._expiry[path] = _EPOCH
+
+    async def _set_dir(self, vfs_path: str, entries: list[tuple[str,
+                                                                IndexEntry]],
+                       expired_at: datetime | None, *, partial: bool) -> None:
+        await super()._set_dir(vfs_path,
+                               entries,
+                               expired_at if vfs_path in self.live else _EPOCH,
+                               partial=partial)
+
+
+def expired_on_arrival(*live: str) -> RAMIndexCacheStore:
+    """An index whose listings are already expired when they land.
+
+    Args:
+        live (str): listing keys stored with the expiry their writer asked
+            for, so a test can keep the mount root live.
+    """
+    return _ExpiredOnArrival(frozenset(live))

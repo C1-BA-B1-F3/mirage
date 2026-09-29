@@ -16,7 +16,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { fetchDirTree, fetchTree, GitHubApiError, type GitHubTransport } from './client.ts'
 import { GitHubAccessor } from '../../accessor/github.ts'
 import { RAMIndexCacheStore } from '../../cache/index/ram.ts'
-import { ensureLiveIndex, pointRow, populateIndex } from './tree.ts'
+import { ensureLiveIndex, pointRow, populateIndex, refillIndex } from './tree.ts'
 import { FakeGitHub, blobSha, servedAccessor } from './_test_util.ts'
 
 const ITEMS = [
@@ -95,6 +95,23 @@ describe('ensureLiveIndex', () => {
     expect(await ensureLiveIndex(acc, index, '/gh')).toBe(true)
     expect(calls.n).toBe(2)
     expect((await index.listDir('/gh/data')).entries).toEqual(['/gh/data/keep.txt'])
+  })
+
+  it('refetches an expired root listing', async () => {
+    const calls = { n: 0 }
+    const acc = accessor(calls)
+    const index = new RAMIndexCacheStore({ ttl: 600 })
+    await ensureLiveIndex(acc, index, '/gh')
+    await index.invalidate()
+    expect(await ensureLiveIndex(acc, index, '/gh')).toBe(true)
+    expect(calls.n).toBe(2)
+    expect((await index.listDir('/gh/data')).entries).toEqual(['/gh/data/keep.txt'])
+  })
+
+  it('reports no refill, and sends no request, without an index', async () => {
+    const calls = { n: 0 }
+    expect(await refillIndex(accessor(calls), undefined, '/gh')).toBe(false)
+    expect(calls.n).toBe(0)
   })
 
   it('leaves a live index alone and sends no request', async () => {

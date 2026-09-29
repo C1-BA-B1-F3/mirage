@@ -3,6 +3,8 @@ import { IndexEntry, LookupStatus } from './config.ts'
 import { RAMIndexCacheStore } from './ram.ts'
 import { RedisIndexCacheStore } from './redis.ts'
 import type { IndexCacheStore } from './store.ts'
+import { IndexView } from './view.ts'
+import { RAMFileCacheStore } from '../file/ram.ts'
 
 const REDIS_URL = process.env.REDIS_URL
 
@@ -37,6 +39,19 @@ for (const backend of ['ram', 'redis']) {
       afterEach(async () => {
         await store.clear()
         await store.close()
+      })
+
+      it('reports the lifetime a listing gets when its writer names none', () => {
+        expect(store.ttl).toBe(1)
+      })
+
+      it('lets a view report its store lifetime', async () => {
+        const cache = new RAMFileCacheStore()
+        try {
+          expect(new IndexView(store, cache, '/', () => true).ttl).toBe(store.ttl)
+        } finally {
+          await cache.close()
+        }
       })
 
       it('keeps missing, empty, fresh and expired listings distinct', async () => {

@@ -229,6 +229,20 @@ async def test_ensure_live_index_refetches_a_dropped_listing(mock_get, config):
 
 @pytest.mark.asyncio
 @patch("mirage.core.github.tree.github_get")
+async def test_ensure_live_index_refetches_an_expired_listing(
+        mock_get, config):
+    mock_get.return_value = _tree_payload()
+    index = RAMIndexCacheStore(ttl=600)
+    accessor = _accessor(config)
+    await ensure_live_index(accessor, index, "/gh")
+    await index.invalidate()
+    assert await ensure_live_index(accessor, index, "/gh") is True
+    assert mock_get.await_count == 2
+    assert (await index.list_dir("/gh/data")).entries == ["/gh/data/keep.txt"]
+
+
+@pytest.mark.asyncio
+@patch("mirage.core.github.tree.github_get")
 async def test_ensure_live_index_leaves_a_live_index_alone(mock_get, config):
     mock_get.return_value = _tree_payload()
     index = RAMIndexCacheStore(ttl=600)

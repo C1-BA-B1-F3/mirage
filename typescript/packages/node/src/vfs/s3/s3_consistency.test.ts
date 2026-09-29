@@ -472,3 +472,79 @@ describe('S3 cache consistency (mocked)', () => {
     }
   })
 })
+
+describe('S3 listing lifetime: workspace index ttl meets the mount ttl', () => {
+  let mock: S3Mock
+
+  beforeAll(() => {
+    mock = installS3Mock()
+  })
+
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date('2026-01-01T00:00:00Z'))
+    mock.store.set(BUCKET, 'lt/a.txt', ENC.encode('a'))
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+    for (const b of mock.store.allBuckets()) mock.store.objects(b).clear()
+  })
+
+  afterAll(() => {
+    mock.restore()
+  })
+
+  function ws(indexTtl: number, mountTtl: number): Workspace {
+    return new Workspace(
+      {
+        '/s3/': new Mount(new S3VFS(makeConfig()), {
+          mode: MountMode.WRITE,
+          read: { policy: ReadPolicy.BOUNDED, ttl: mountTtl },
+        }),
+      },
+      { index: { type: IndexType.RAM, ttl: indexTtl } },
+    )
+  }
+
+  async function ls(w: Workspace): Promise<string> {
+    const result = await w.shell('ls /s3/lt/')
+    expect([result.exitCode, DEC.decode(result.stderr)]).toEqual([0, ''])
+    return DEC.decode(result.stdout)
+  }
+
+  it('caps a day-long index at a two-second mount', async () => {
+    const w = ws(86400, 2)
+    try {
+      expect(await ls(w)).toBe('a.txt\n')
+      mock.store.set(BUCKET, 'lt/b.txt', ENC.encode('b'))
+      const t0 = Date.now()
+      // A warm `ls` still pays one LIST: the operand's own directory probe.
+      mock.resetCalls()
+      expect(await ls(w)).toBe('a.txt\n')
+      const warm = mock.commandCalls(ListObjectsV2Command)
+      mock.resetCalls()
+      vi.setSystemTime(t0 + 1000)
+      expect(await ls(w)).toBe('a.txt\n')
+      expect(mock.commandCalls(ListObjectsV2Command)).toBe(warm)
+      mock.resetCalls()
+      vi.setSystemTime(t0 + 3000)
+      expect(await ls(w)).toBe('a.txt\nb.txt\n')
+      expect(mock.commandCalls(ListObjectsV2Command)).toBe(warm + 1)
+    } finally {
+      await w.close()
+    }
+  })
+
+  it('keeps a shorter workspace index lifetime under a longer mount ttl', async () => {
+    const w = ws(5, 600)
+    try {
+      expect(await ls(w)).toBe('a.txt\n')
+      mock.store.set(BUCKET, 'lt/b.txt', ENC.encode('b'))
+      vi.setSystemTime(Date.now() + 6000)
+      expect(await ls(w)).toBe('a.txt\nb.txt\n')
+    } finally {
+      await w.close()
+    }
+  })
+})

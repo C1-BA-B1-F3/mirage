@@ -20,7 +20,7 @@ import { eacces } from '@struktoai/mirage-core/utils/errors'
 import type { HfHubAccessor } from '../../accessor/hf_hub.ts'
 import { HfHubError } from './client.ts'
 import { ABSENT_STATUSES } from './constants.ts'
-import { ensureLiveIndex, fetchPath, indexRows, localRows, refillIndex } from './tree.ts'
+import { ensureLiveSnapshot, fetchPath, indexRows, localRows, refillSnapshot } from './tree.ts'
 import { withIndexLock } from '@struktoai/mirage-core/cache/index/lock'
 import { rstripSlash, stripSlash } from '@struktoai/mirage-core/utils/slash'
 
@@ -64,21 +64,35 @@ export async function lookup(
     return { entry: entries.get(key) ?? null, children: children.get(key) ?? null }
   }
   return withIndexLock(index, keyOf(prefix, ''), async () => {
-    await ensureLiveIndex(accessor, index, prefix)
+    const root = keyOf(prefix, '')
+    const parentKey = rstripSlash(key).replace(/\/[^/]+$/, '') || '/'
+    let refilled = await ensureLiveSnapshot(accessor, index, prefix)
     let result = await index.get(key)
     let listing = await index.listDir(key)
-    const parent =
-      key === keyOf(prefix, '')
-        ? listing
-        : await index.listDir(rstripSlash(key).replace(/\/[^/]+$/, '') || '/')
+    let parent = key === root ? listing : await index.listDir(parentKey)
     // The index is the whole listing rather than a cache in front of one, so an
     // *expired* answer means the tree aged out, not that the path is gone.
     // Refetch once and ask again; a miss against a live index is a real absence
     // and must not cost a tree fetch.
-    if (parent.status === LookupStatus.EXPIRED || listing.status === LookupStatus.EXPIRED) {
-      if (await refillIndex(accessor, index, prefix)) {
-        result = await index.get(key)
-        listing = await index.listDir(key)
+    if (
+      refilled === null &&
+      (parent.status === LookupStatus.EXPIRED || listing.status === LookupStatus.EXPIRED)
+    ) {
+      refilled = await refillSnapshot(accessor, index, prefix)
+      result = await index.get(key)
+      listing = await index.listDir(key)
+      parent = key === root ? listing : await index.listDir(parentKey)
+    }
+    // A lock wait can outlast the TTL; use this refill only on EXPIRED.
+    if (
+      refilled !== null &&
+      (listing.status === LookupStatus.EXPIRED || parent.status === LookupStatus.EXPIRED)
+    ) {
+      refilled = index.scopeSnapshot(refilled)
+      const children = refilled.children.get(key)
+      return {
+        entry: refilled.entries.get(key) ?? null,
+        children: children === undefined ? null : [...children],
       }
     }
     return { entry: result.entry ?? null, children: listing.entries ?? null }

@@ -23,6 +23,7 @@ import aiohttp
 from mirage.accessor.github import GitHubAccessor
 from mirage.cache.index import (NULL_INDEX, IndexCacheStore, IndexEntry,
                                 LookupStatus)
+from mirage.cache.index.config import IndexSnapshot
 from mirage.cache.index.lock import index_lock
 from mirage.core.api.client import SessionArg
 from mirage.core.github.client import GitHubApiError, github_get
@@ -274,13 +275,16 @@ def seed_index(
     accessor: GitHubAccessor,
     index: IndexCacheStore,
     prefix: str,
-) -> None:
+) -> IndexSnapshot:
     """Write the accessor's tree into ``index`` under ``prefix``.
 
     Args:
         accessor (GitHubAccessor): the mount's accessor, holding the tree.
         index (IndexCacheStore): the index to seed.
         prefix (str): the mount prefix the keys are built against.
+
+    Returns:
+        IndexSnapshot: the rows it wrote.
     """
     entries, children = index_rows(accessor.tree, prefix)
     # A truncated response cannot establish that any listing is complete,
@@ -288,6 +292,7 @@ def seed_index(
     expires_at = (datetime.fromtimestamp(0, timezone.utc) if accessor.truncated
                   else datetime.now(timezone.utc) + timedelta(days=365))
     index.seed(entries, children, expires_at)
+    return IndexSnapshot(entries=entries, children=children)
 
 
 async def refill_index(
@@ -295,29 +300,31 @@ async def refill_index(
     index: IndexCacheStore,
     prefix: str,
 ) -> bool:
-    """Refetch the recursive tree and re-seed the index from it.
-
-    The mount fetches the whole tree once and seeds the index with it, so
-    the index is the listing rather than a cache in front of one. That
-    makes a cleared or expired index indistinguishable from an empty
-    repository -- `ls` reported the mount root missing after an
-    invalidation, and reported nothing at all once the day-long TTL
-    lapsed. This is the refill that makes dropping the index mean
-    "refetch", which is what invalidating it was always supposed to mean.
+    """Refill the index and report whether it was populated.
 
     Args:
-        accessor (GitHubAccessor): the mount's accessor, holding the
-            config and the ref to refetch.
-        index (IndexCacheStore): the index to re-seed.
-        prefix (str): the mount prefix the index keys are built against.
+        accessor (GitHubAccessor): the mount's accessor.
+        index (IndexCacheStore): the index to check and fill.
+        prefix (str): mount prefix for the index keys.
+    """
+    return await refill_snapshot(accessor, index, prefix) is not None
 
-    Returns:
-        bool: whether a refill happened; False when there is no index to
-        seed, so a caller does not retry a lookup that cannot change.
+
+async def refill_snapshot(
+    accessor: GitHubAccessor,
+    index: IndexCacheStore,
+    prefix: str,
+) -> IndexSnapshot | None:
+    """Refill the index and return the rows written.
+
+    Args:
+        accessor (GitHubAccessor): the mount's accessor.
+        index (IndexCacheStore): the index to check and fill.
+        prefix (str): mount prefix for the index keys.
     """
     # The caller holds index_lock through replacement and its final lookup.
     if index is NULL_INDEX:
-        return False
+        return None
     ref = await ensure_ref(accessor)
     tree, truncated = await fetch_tree(accessor.config, accessor.owner,
                                        accessor.repo, ref, accessor.pool)
@@ -326,8 +333,7 @@ async def refill_index(
     accessor.tree_loaded = True
     # A refill replaces this mount's snapshot, including paths now absent.
     await index.invalidate_prefix(prefix.rstrip("/") or "/")
-    seed_index(accessor, index, prefix)
-    return True
+    return seed_index(accessor, index, prefix)
 
 
 async def ensure_live_index(
@@ -335,51 +341,41 @@ async def ensure_live_index(
     index: IndexCacheStore,
     prefix: str,
 ) -> bool:
-    """Refetch when the index holds no listing at all.
-
-    Every reader here treats a missing listing as a real absence, which
-    is right against a *live* index and wrong against one that was never
-    filled or has been dropped, and invalidation drops rather than
-    expires: `invalidate_dir` removes the directory's row outright, so
-    the EXPIRED probe each reader already runs never fires. An external
-    change (a watch event is the only thing that invalidates a mount
-    with no write ops) therefore left the whole mount answering ENOENT
-    permanently, since the seeded expiry is a year out.
-
-    The root listing is what tells live from not, in one lookup and no
-    request: the tree is written whole, so while the index is live every
-    directory has a row and the mount root always does. One refill makes
-    it live again, so this cannot cost a fetch per miss, which is what
-    kept the readers from probing on absence in the first place.
-
-    Not live always **refetches**, and never re-seeds the tree the mount
-    was built with. That tree is only true at build time: the first read
-    of a mount can come long after it, and reusing it then served an
-    index built from a repository five external writes ago. It is still
-    what ``accessor.tree`` starts as, so find and du have something to
-    read before any listing happens, and every refill reseats it.
+    """Refill a missing or expired root listing.
 
     Args:
         accessor (GitHubAccessor): the mount's accessor.
         index (IndexCacheStore): the index to check and fill.
-        prefix (str): the mount prefix the index keys are built against.
+        prefix (str): mount prefix for the index keys.
+    """
+    return await ensure_live_snapshot(accessor, index, prefix) is not None
 
-    Returns:
-        bool: whether the index was filled.
+
+async def ensure_live_snapshot(
+    accessor: GitHubAccessor,
+    index: IndexCacheStore,
+    prefix: str,
+) -> IndexSnapshot | None:
+    """Return a refill snapshot when the root is missing or expired.
+
+    Args:
+        accessor (GitHubAccessor): the mount's accessor.
+        index (IndexCacheStore): the index to check and fill.
+        prefix (str): mount prefix for the index keys.
     """
     if index is NULL_INDEX:
-        return False
+        return None
     # The liveness probe comes before anything on the accessor, so a live
     # index still answers every read without one.
-    if (await index.list_dir(prefix.rstrip("/") or "/")).status \
-            != LookupStatus.NOT_FOUND:
-        return False
+    status = (await index.list_dir(prefix.rstrip("/") or "/")).status
+    if status not in (LookupStatus.NOT_FOUND, LookupStatus.EXPIRED):
+        return None
     # A truncated tree is not the whole listing, so the invariant this
     # rests on does not hold and readdir's per-directory fallback owns
     # the miss instead.
     if accessor.truncated:
-        return False
-    return await refill_index(accessor, index, prefix)
+        return None
+    return await refill_snapshot(accessor, index, prefix)
 
 
 async def ensure_tree(
@@ -413,6 +409,10 @@ async def ensure_tree(
         prefix (str): the mount prefix the index keys are built against.
     """
     if accessor.tree_loaded:
+        # Tree walkers bypass listings, so they need their own expiry probe.
+        if index is not NULL_INDEX:
+            async with index_lock(index, prefix.rstrip("/") or "/"):
+                await ensure_live_index(accessor, index, prefix)
         return
     async with accessor.tree_lock:
         if accessor.tree_loaded:

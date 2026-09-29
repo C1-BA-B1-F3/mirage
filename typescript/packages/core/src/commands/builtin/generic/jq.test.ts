@@ -339,6 +339,15 @@ describe('jqGeneric runs that stop early', () => {
     })
   })
 
+  it('ends the command at a halt even inside a try', async () => {
+    const program = 'try (if . == 2 then halt_error(3) else . end) catch "continued"'
+    expect(await ran('/d/four.json', program)).toEqual({
+      stdout: '1\n',
+      stderr: '2\n',
+      exitCode: 3,
+    })
+  })
+
   it('refuses a program that does not compile before it reads a thing', async () => {
     const { stdout, stderr, exitCode } = await ran('/d/missing.json', '1 +')
     expect([stdout, exitCode]).toEqual(['', 3])

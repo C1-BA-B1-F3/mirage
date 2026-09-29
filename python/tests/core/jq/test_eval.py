@@ -194,6 +194,9 @@ def test_references_args_ignores_strings_and_comments():
     ('"a", halt', JqRun(["a"], JqHalt(None, False, None))),
     ("1, [halt_error(2)], 3", JqRun([1], JqHalt('{"a":1}', False, 2))),
     ("[.a] | map(halt_error(4))", JqRun([], JqHalt("1", False, 4))),
+    ('try ("failure" | halt_error(3)) catch "continued"',
+     JqRun([], JqHalt("failure", True, 3))),
+    ('try (.a, halt) catch "c"', JqRun([1], JqHalt(None, False, None))),
     ('{"__mirage_jq_error": [true, "x"]}',
      JqRun([{
          "__mirage_jq_error": [True, "x"]
@@ -202,6 +205,15 @@ def test_references_args_ignores_strings_and_comments():
 ])
 def test_a_run_hands_back_what_stopped_it(expr, run):
     assert jq_run({"a": 1}, expr) == run
+
+
+def test_a_halt_whose_message_no_second_run_recovers_reads_as_the_default():
+    # A halt in the program's own `try` inside a collector still ends the
+    # run, but neither redefinition hands its message back.
+    assert jq_run(1, '[try halt_error(2) catch "c"]') == JqRun([],
+                                                               JqHalt(
+                                                                   None, False,
+                                                                   5))
 
 
 def test_halt_error_refuses_a_code_that_is_not_a_number_as_jq_does():

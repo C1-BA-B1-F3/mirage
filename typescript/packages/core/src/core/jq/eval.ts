@@ -43,6 +43,7 @@ const INPUT_DEF = /(?<![\w$.:])def\s+input\s*[:(]/
 const INPUTS_DEF = /(?<![\w$.:])def\s+inputs\s*[:(]/
 const ARGS_REF = /\$ARGS(?![\w:])/
 const HALT_REF = /(?<![\w$.:])halt(?:_error)?(?![\w:])/
+const HALT_ERROR_REF = /(?<![\w$.:])halt_error(?![\w:])/
 const TOP_LEVEL_LINE = /(at <top-level>, line )(\d+)/g
 const IDENT = /[A-Za-z_][A-Za-z0-9_]*/y
 const NAME = /^[A-Za-z_][A-Za-z0-9_]*$/
@@ -190,43 +191,70 @@ function streamDefs(expr: string): string {
   )
 }
 
+/**
+ * A token drawn from the platform's random source, which, unlike
+ * `crypto.randomUUID`, every browser context has.
+ */
+function randomToken(): string {
+  const bytes = new Uint8Array(16)
+  crypto.getRandomValues(bytes)
+  return Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('')
+}
+
 // The keys the prelude hands a run's stop back under: the error no `try`
-// caught, and the halt `halt` or `halt_error` asked for. Each carries a
-// token drawn once per process, so no output of a program can pass for one.
-const TOKEN = crypto.randomUUID().replaceAll('-', '')
+// caught, the halt `halt` or `halt_error` asked for, and the end of a run
+// that did not halt. Each carries a token drawn once per process, so no
+// output of a program can pass for one.
+const TOKEN = randomToken()
 const ERROR_KEY = `__mirage_jq_error_${TOKEN}`
 const HALT_KEY = `__mirage_jq_halt_${TOKEN}`
-
-// `halt` and `halt_error` stop jq itself, which jq-wasm reports as nothing
-// but the end of the outputs and an exit code. So the prelude redefines both
-// to raise an error the top-level `catch` hands back as the halt: halt_error's
-// input as jq prints it (a string as it is, null as nothing, anything else in
-// jq's compact dump), whether it was a string, and the exit code. An error
-// leaves any collector it is raised in (`[halt_error]`, `map`), as the real
-// halt does. halt_error's own refusal of a code that is not a number stays the
-// builtin's. The one cost: a `try` in the program catches the halt, which
-// jq's cannot.
-const STOPS =
-  'def __mirage_jq_halt_error($code): halt_error($code); ' +
-  `def halt: error({"${HALT_KEY}": [null, null, false]}); ` +
-  'def halt_error($code): if ($code | type) == "number" then ' +
-  `error({"${HALT_KEY}": [$code, (if . == null then null ` +
-  'elif type == "string" then . else tojson end), (type == "string")]}) ' +
-  'else __mirage_jq_halt_error($code) end; ' +
-  'def halt_error: halt_error(5); '
+const DONE_KEY = `__mirage_jq_done_${TOKEN}`
 
 // The error no `try` inside the program caught: whether it was a string,
-// and its text as jq prints it, unless it is the halt the prelude raised.
-const CATCH =
-  ` catch (if type == "object" and has("${HALT_KEY}") then . else {"${ERROR_KEY}": ` +
-  '[(type == "string"), (if type == "string" then . else tojson end)]} end)'
+// and its text as jq prints it.
+const ERROR_MARK =
+  `{"${ERROR_KEY}": [(type == "string"), ` + '(if type == "string" then . else tojson end)]}'
+const CATCH = ` catch ${ERROR_MARK}`
+const DONE = `, {"${DONE_KEY}": true}`
+
+// A run keeps jq's own `halt` and `halt_error`, which no `try` catches and
+// which end the program wherever they are called; one that halted is the run
+// that never reaches the sentinel after the program. jq-wasm reports a halt
+// only as the end of the outputs, an exit code and the stderr jq writes, so
+// its message and code come from running the program again with the two
+// redefined, first to raise them as an error the top-level `catch` hands back
+// (which leaves any collector, `[halt_error]` or `map`), and when a `try` of
+// the program's own caught that, to print them just before the real halt.
+// Either answer counts only when the run printed the same outputs up to it
+// that the first run did, which a `try` that swallows one halt unseen before
+// the program reaches another still gets past.
+const HALT_MARK =
+  `{"${HALT_KEY}": [$code, (if . == null then null ` +
+  'elif type == "string" then . else tojson end), (type == "string")]}'
+const BUILTINS =
+  'def __mirage_jq_halt: halt; def __mirage_jq_halt_error($code): halt_error($code); '
+const RAISE =
+  BUILTINS +
+  `def halt: error({"${HALT_KEY}": [null, null, false]}); ` +
+  'def halt_error($code): if ($code | type) == "number" then ' +
+  `error(${HALT_MARK}) else __mirage_jq_halt_error($code) end; ` +
+  'def halt_error: halt_error(5); '
+const RAISED = ` catch (if type == "object" and has("${HALT_KEY}") then . else ${ERROR_MARK} end)`
+const PRINT =
+  BUILTINS +
+  `def halt: {"${HALT_KEY}": [null, null, false]}, __mirage_jq_halt; ` +
+  'def halt_error($code): if ($code | type) == "number" then ' +
+  `${HALT_MARK}, __mirage_jq_halt_error($code) else __mirage_jq_halt_error($code) end; ` +
+  'def halt_error: halt_error(5); '
 
 // How jq-wasm's jq reports an error no `try` caught, which only a program
 // the prelude could not wrap leaves to it.
 const REPORTED = /jq: error \(at [^)\n]*\)( \(not a string\))?: /g
 
-// jq's exit status when it refuses the program itself.
+// jq's exit status when it refuses the program itself, and the line its
+// refusal ends on: a halt can exit 3 too.
 const ERROR_COMPILE = 3
+const COMPILE_REFUSAL = /jq: \d+ compile errors?\n?$/
 
 /** One run as jq-wasm is handed it: the prelude steps and its stdin. */
 interface Bound {
@@ -279,6 +307,13 @@ function unshifted(message: string, shift: number): string {
   )
 }
 
+/** Whether jq-wasm's jq refused the program rather than running it. */
+function refused(result: jqWasm.JqResult): boolean {
+  return (
+    result.exitCode === ERROR_COMPILE && result.stdout === '' && COMPILE_REFUSAL.test(result.stderr)
+  )
+}
+
 /**
  * Whether every bracket in a program's code closes the one opened last,
  * which is what keeps the program whole inside the prelude's own
@@ -318,10 +353,7 @@ async function raw(stdin: string, program: string): Promise<jqWasm.JqResult> {
   }
 }
 
-/**
- * The stop the prelude hands back as a run's last output, when this output
- * is one (see STOPS and CATCH).
- */
+/** The stop the prelude hands back as a run's output, when this output is one. */
 function stopOf(value: unknown): JqError | JqHalt | null {
   if (value === null || typeof value !== 'object' || Array.isArray(value)) return null
   const keys = Object.keys(value)
@@ -345,58 +377,99 @@ function stopOf(value: unknown): JqError | JqHalt | null {
 }
 
 /**
- * A run's outputs, up to the stop the prelude hands back. Only a program
- * the prelude could not wrap exits with an error, which jq has reported
- * on stderr.
+ * A run's outputs, up to the stop the prelude hands back, and whether the run
+ * ended by itself rather than stopping at a halt: it reached the sentinel,
+ * handed back a stop, or failed. A run with no sentinel ends when jq does;
+ * only a program the prelude could not wrap exits with an error then, which
+ * jq has reported on stderr.
  */
-function collected(result: jqWasm.JqResult): JqRun {
+function collected(result: jqWasm.JqResult, sentinel: boolean): [JqRun, boolean] {
   const outputs: unknown[] = []
   for (const line of result.stdout.split('\n')) {
     if (line === '') continue
     const value = JSON.parse(line) as unknown
+    if (value !== null && typeof value === 'object' && DONE_KEY in value) {
+      return [{ outputs, stop: null }, true]
+    }
     const stop = stopOf(value)
-    if (stop !== null) return { outputs, stop }
+    if (stop !== null) return [{ outputs, stop }, true]
     outputs.push(value)
   }
-  if (result.exitCode === 0) return { outputs, stop: null }
+  if (sentinel) return [{ outputs, stop: null }, false]
+  if (result.exitCode === 0) return [{ outputs, stop: null }, true]
   let text = result.stderr.replace(/\n$/, '') || `jq exited with code ${String(result.exitCode)}`
   let string = true
   for (const match of result.stderr.matchAll(REPORTED)) {
     text = result.stderr.slice(match.index + match[0].length).replace(/\n$/, '')
     string = match[1] === undefined
   }
-  return { outputs, stop: { kind: 'error', text, string } }
+  return [{ outputs, stop: { kind: 'error', text, string } }, true]
 }
 
 /**
- * The program as jq-wasm runs it: inside the prelude that hands its stop
- * back (see jqRun), or as typed behind the same definitions when its code
- * cannot sit whole inside the prelude's parentheses. Throws JqCompileError
- * for libjq's refusal of the program, its compile errors numbered by the
- * program's own lines.
+ * The program inside the prelude (see jqRun), or null when its code cannot
+ * sit whole inside the prelude's parentheses. `stops` are the definitions
+ * `halt` and `halt_error` run as, and `tail` what follows the program: its
+ * `catch`, and the sentinel of a run that keeps the real halts.
  */
-async function ran(bindings: Bound, expr: string, empty: boolean): Promise<jqWasm.JqResult> {
+function wrapped(bindings: Bound, expr: string, stops: string, tail: string): string | null {
   const code = codeOnly(expr)
+  if (code.trim() === '' || !balanced(code)) return null
+  const prelude = stops + bindings.steps.map((step) => `${step} `).join('')
+  return `${prelude}(try (${expr}\n)${tail}`
+}
+
+/**
+ * One run of the program as jq-wasm runs it, and whether it carries the
+ * sentinel: inside the prelude, or, when its code cannot sit whole inside
+ * the prelude's parentheses or the prelude's text is refused, as typed behind
+ * the definitions that print a halt just before it. As typed, the prelude
+ * costs one line, so the line a compile error reports is moved back by it; a
+ * program with no code for jq to run at all goes bare, which keeps jq's own
+ * refusal of an empty program. Throws JqCompileError for libjq's refusal of
+ * the program, its compile errors numbered by the program's own lines.
+ */
+async function ran(
+  bindings: Bound,
+  expr: string,
+  empty: boolean,
+): Promise<[jqWasm.JqResult, boolean]> {
   const stdin = (text: string): string => (empty ? '' : text)
-  if (code.trim() !== '' && balanced(code)) {
-    const prelude = STOPS + bindings.steps.map((step) => `${step} `).join('')
-    const result = await raw(stdin(bindings.stdin), `${prelude}try (${expr}\n)${CATCH}`)
-    // A refusal names the prelude's text; the program as typed, below,
-    // is what says why.
-    if (result.exitCode !== ERROR_COMPILE) return result
+  const program = wrapped(bindings, expr, '', `${CATCH})${DONE}`)
+  if (program !== null) {
+    const result = await raw(stdin(bindings.stdin), program)
+    if (!refused(result)) return [result, true]
   }
-  // As typed, the prelude costs one line, so the line a compile error
-  // reports is moved back by it. A program with no code for jq to run at
-  // all goes bare, which keeps jq's own refusal of an empty program.
-  const shift = code.trim() === '' ? 0 : 1
+  const shift = codeOnly(expr).trim() === '' ? 0 : 1
   const result =
     shift === 0
       ? await raw(stdin(bindings.plain), expr)
-      : await raw(stdin(bindings.stdin), `${STOPS}${bindings.steps.join(' ')}\n${expr}`)
-  if (result.exitCode === ERROR_COMPILE) {
+      : await raw(stdin(bindings.stdin), `${PRINT}${bindings.steps.join(' ')}\n${expr}`)
+  if (refused(result)) {
     throw new JqCompileError(unshifted(result.stderr, shift).replace(/\n$/, ''))
   }
-  return result
+  return [result, false]
+}
+
+/**
+ * The message and code of the halt a run stopped at, from running the
+ * program again with the halts redefined (see RAISE and PRINT).
+ */
+async function haltOf(bindings: Bound, expr: string, outputs: unknown[]): Promise<JqHalt> {
+  const seen = JSON.stringify(outputs)
+  for (const [stops, tail] of [
+    [RAISE, `${RAISED})`],
+    [PRINT, `${CATCH})`],
+  ] as const) {
+    const program = wrapped(bindings, expr, stops, tail)
+    if (program === null) continue
+    const [again] = collected(await raw(bindings.stdin, program), false)
+    if (again.stop?.kind === 'halt' && JSON.stringify(again.outputs) === seen) return again.stop
+  }
+  // A halt caught by the program's own `try` inside a collector keeps its
+  // message from both, so it reads as halt_error's default.
+  const code = HALT_ERROR_REF.test(codeOnly(expr)) ? 5 : null
+  return { kind: 'halt', message: null, string: false, code }
 }
 
 /**
@@ -411,11 +484,11 @@ async function ran(bindings: Bound, expr: string, empty: boolean): Promise<jqWas
  *
  * An error that no `try` catches ends the run, and jq still prints what
  * came before it; `halt` and `halt_error` end the whole invocation. The
- * program runs inside a prelude that catches the error and redefines the
- * two halts, and each hands its stop back as the run's last output, which
- * is how the run knows it whole where jq-wasm would print it. The whole
- * prelude sits on the program's first line, so the program's lines keep
- * their numbers.
+ * program runs inside a prelude that catches the error and hands it back as
+ * the run's last output, which is how the run knows it whole where jq-wasm
+ * would print it, with a sentinel after the program that only a run that did
+ * not halt reaches (see haltOf for what a halt said). The whole prelude sits
+ * on the program's first line, so the program's lines keep their numbers.
  *
  * `namedArgs` are the $name bindings from --arg / --argjson / --rawfile /
  * --slurpfile. `inputs` are the documents still unread at this point in
@@ -432,7 +505,10 @@ export async function jqRun(
   inputs: readonly unknown[] | null = null,
   argsValue: Readonly<Record<string, unknown>> | null = null,
 ): Promise<JqRun> {
-  return collected(await ran(bound(obj, expr, namedArgs, inputs, argsValue), expr, false))
+  const bindings = bound(obj, expr, namedArgs, inputs, argsValue)
+  const [run, ended] = collected(...(await ran(bindings, expr, false)))
+  if (ended) return run
+  return { outputs: run.outputs, stop: await haltOf(bindings, expr, run.outputs) }
 }
 
 /**

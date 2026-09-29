@@ -530,9 +530,26 @@ describe('jqRun', () => {
       '{"__mirage_jq_error": [true, "x"]}',
       { outputs: [{ __mirage_jq_error: [true, 'x'] }], stop: null },
     ],
+    [
+      'try ("failure" | halt_error(3)) catch "continued"',
+      { outputs: [], stop: { kind: 'halt', message: 'failure', string: true, code: 3 } },
+    ],
+    [
+      'try (.a, halt) catch "c"',
+      { outputs: [1], stop: { kind: 'halt', message: null, string: false, code: null } },
+    ],
     ['try error("x") catch .', { outputs: ['x'], stop: null }],
   ])('hands back what stopped %s', async (expr, run) => {
     expect(await jqRun({ a: 1 }, expr)).toEqual(run)
+  })
+
+  it('reads a halt whose message no second run recovers as the default', async () => {
+    // A halt in the program's own `try` inside a collector still ends the
+    // run, but neither redefinition hands its message back.
+    expect(await jqRun(1, '[try halt_error(2) catch "c"]')).toEqual({
+      outputs: [],
+      stop: { kind: 'halt', message: null, string: false, code: 5 },
+    })
   })
 
   it('refuses a halt code that is not a number as jq does', async () => {

@@ -461,6 +461,14 @@ async def test_a_halt_inside_a_collector_halts_as_from_the_top():
 
 
 @pytest.mark.asyncio
+async def test_a_halt_ends_the_command_even_inside_a_try():
+    assert await _ran(
+        "/d/four.json",
+        'try (if . == 2 then halt_error(3) else . end) catch "continued"') == (
+            b"1\n", b"2\n", 3)
+
+
+@pytest.mark.asyncio
 async def test_a_program_that_does_not_compile_is_refused_before_any_read():
     out, err, code = await _ran("/d/missing.json", "1 +")
     assert (out, code) == (b"", 3)

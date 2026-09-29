@@ -389,6 +389,22 @@
         "n",
         "c"
       ]
+    },
+    {
+      "id": "jq_halt_inside_the_programs_own_try_still_ends_the_command",
+      "seq": 700977,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "printf '1 2 3' | jq 'try (if . == 2 then \"failure\\n\" | halt_error(3) else . end) catch \"continued\"'",
+      "expect": {
+        "exit": 3,
+        "stdout": "1\n",
+        "stderr": "failure\n"
+      }
     }
   ]
 }

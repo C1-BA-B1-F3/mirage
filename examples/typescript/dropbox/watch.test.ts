@@ -115,9 +115,13 @@ test('a missing root retries, preserves its snapshot, and notifies before pollin
   ])
 })
 
-for (const stage of ['baseline', 'delta']) {
+for (const [stage, closeDelay] of [
+  ['baseline', 0],
+  ['delta', 0],
+  ['baseline', 1500],
+] as const) {
   test(
-    `shutdown closes the workspace and exits during a stalled ${stage} pull`,
+    `shutdown finishes ${closeDelay}ms cleanup before exiting a stalled ${stage} pull`,
     { timeout: 10_000 },
     async () => {
       const code = `
@@ -140,7 +144,11 @@ for (const stage of ['baseline', 'delta']) {
       await runWithShutdown(
         () => runLongpoll(hook, PathSpec.fromStrPath('/dropbox', ''), async () => {},
           async () => [true, 0], async () => {}),
-        async () => { await ws.close(); console.log('closed') }, controller.signal)
+        async () => {
+          await new Promise(resolve => setTimeout(resolve, ${closeDelay}))
+          await ws.close()
+          console.log('closed')
+        }, controller.signal)
     `
       const child = spawn(
         process.execPath,

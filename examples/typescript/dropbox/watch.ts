@@ -85,12 +85,7 @@ export async function runWithShutdown(
   const stopped = new Promise<void>((resolve) => {
     wake = resolve
   })
-  const stop = (): void => {
-    // DeltaHook has no cancellation door. This standalone process gives cleanup
-    // one second, then terminates any request still holding the event loop open.
-    deadline = setTimeout(() => process.exit(130), 1000).unref()
-    wake()
-  }
+  const stop = (): void => wake()
   const finish = (): void => {
     settled = true
     if (closed) clearTimeout(deadline)
@@ -107,7 +102,9 @@ export async function runWithShutdown(
     } finally {
       closed = true
       signal.removeEventListener('abort', stop)
-      if (settled) clearTimeout(deadline)
+      // Finish workspace cleanup before bounding a pull that cannot be
+      // cancelled through DeltaHook. Slow provider closes must not be cut off.
+      if (signal.aborted && !settled) deadline = setTimeout(() => process.exit(130), 1000).unref()
     }
   }
 }

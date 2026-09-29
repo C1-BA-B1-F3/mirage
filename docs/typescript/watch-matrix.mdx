@@ -154,9 +154,10 @@ against its saved snapshot. A missing watch root retries after 30 seconds.
 Set `DROPBOX_APP_KEY`, `DROPBOX_APP_SECRET`, and `DROPBOX_REFRESH_TOKEN`;
 optionally set `DROPBOX_ROOT_PATH`. From `typescript/`, run
 `pnpm --filter @struktoai/mirage-examples exec tsx dropbox/watch.ts`. Ctrl-C
-stops polling and closes the workspace. Because `DeltaHook.pull` has no
-cancellation parameter, this standalone example exits with status 130 after
-one second if an in-flight pull still holds the process open.
+stops polling and finishes closing the workspace. Because `DeltaHook.pull`
+has no cancellation parameter, this standalone example then allows one more
+second before exiting with status 130 if an in-flight pull still holds the
+process open. The deadline never interrupts workspace cleanup.
 
 Dropbox's [longpoll endpoint](https://docs.dropboxapi.com/dropbox-api/api-reference/user-endpoints/files/list-folder-longpoll)
 uses the notification host without an Authorization header. Its timeout is

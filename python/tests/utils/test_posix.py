@@ -2,7 +2,8 @@ import re
 
 import pytest
 
-from mirage.utils.posix import class_characters, translate_classes
+from mirage.utils.posix import (class_characters, compile_posix_regex,
+                                translate_classes)
 
 
 @pytest.mark.parametrize('name,yes,no', [
@@ -66,3 +67,33 @@ def test_stacked_quantifiers_nest(pattern, nested):
 def test_nested_quantifier_keeps_backtracking():
     assert re.sub(translate_classes('a+?'), 'X', 'aaa', count=1) == 'X'
     assert re.fullmatch(translate_classes('a++a'), 'aaa')
+
+
+@pytest.mark.parametrize("source,text,expected",
+                         [('élan', 'ÉLAN', False), ('Élan', 'ÉLAN', True),
+                          ('σ', 'Σ', False), ('k', 'K', False),
+                          ('i', 'İ', False), ('s', 'ſ', False),
+                          ('[A-Z]+', 'MiXeD', True), ('[^A-Z]', 'a', False),
+                          ('[^a]', 'A', False), ('[Z-a]+', 'ZA[', True),
+                          ('[Z-a]', 'B', False), ('[É]', 'é', False),
+                          ('[^É]', 'é', True), ('\\D[A-Z]', '!a', True),
+                          ('\\x41\\u0042', 'ab', True),
+                          ('([A-Z]+)-\\1', 'Ab-aB', True),
+                          ('(É)-\\1', 'É-é', False), ('(É)-\\1', 'É-É', True)])
+def test_ascii_case_folding(source, text, expected):
+    assert bool(compile_posix_regex(source,
+                                    re.IGNORECASE).fullmatch(text)) == expected
+
+
+def test_ascii_captures_preserve_spelling():
+    pattern = compile_posix_regex(r"(a)(b)", re.IGNORECASE)
+    assert pattern.sub(r"\2\1", "Ab aB") == "bA Ba"
+
+
+@pytest.mark.parametrize("flags", [0, re.IGNORECASE])
+def test_c_locale_whitespace(flags):
+    for source in [r"\s", r"[\s]", r"[^\S]"]:
+        assert compile_posix_regex(source, flags).search(" ")
+        assert not compile_posix_regex(source, flags).search("\u00a0")
+    assert compile_posix_regex(r"\S", flags).search("\u00a0")
+    assert compile_posix_regex(r"\\s", flags).search(r"\s")

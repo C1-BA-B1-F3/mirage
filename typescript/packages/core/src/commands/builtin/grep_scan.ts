@@ -12,6 +12,7 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import { compilePosixRegex } from '../../utils/posix.ts'
 import { type IOResult } from '../../io/types.ts'
 import { lineOffsets, MatchOffsets, prefixOf, rgPieces, rustMatches } from './grep_offsets.ts'
 
@@ -64,7 +65,7 @@ export function grepLines(
   const byteOffsets = opts.byteOffsets === true
   const offsets = byteOffsets ? lineOffsets(data) : []
   const reGlobal = opts.onlyMatching
-    ? new RegExp(
+    ? compilePosixRegex(
         compiled.source,
         compiled.flags.includes('g') ? compiled.flags : compiled.flags + 'g',
       )

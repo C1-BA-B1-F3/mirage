@@ -93,8 +93,14 @@ afterAll(() => {
 
 const forms = JSON.parse(readFileSync(BUILDER.replace('.sh', '.json'), 'utf8')) as string[]
 it.each(forms)('matches native Git: %s', async (form) => {
-  const native = spawnSync('git', ['-C', repoPath, ...form.split(' ')], {
-    env: { ...process.env, GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_NOSYSTEM: '1' },
+  const native = spawnSync('bash', ['-c', `git -C "$1" ${form}`, 'native-git', repoPath], {
+    env: {
+      ...process.env,
+      LC_ALL: 'C',
+      LANG: 'C',
+      GIT_CONFIG_GLOBAL: '/dev/null',
+      GIT_CONFIG_NOSYSTEM: '1',
+    },
     encoding: 'utf8',
   })
   expect(await run(form)).toEqual([native.status, native.stdout, native.stderr])
@@ -116,7 +122,13 @@ it.each(['', '--find-renames', '--no-renames'])(
       const args = ['show', '--format=', '--name-status', ...(flag ? [flag] : []), 'HEAD~2']
       const native = spawnSync('git', ['-C', repoPath, '-c', 'diff.renames=false', ...args], {
         encoding: 'utf8',
-        env: { ...process.env, GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_NOSYSTEM: '1' },
+        env: {
+          ...process.env,
+          LC_ALL: 'C',
+          LANG: 'C',
+          GIT_CONFIG_GLOBAL: '/dev/null',
+          GIT_CONFIG_NOSYSTEM: '1',
+        },
       })
       expect(await run(args.join(' '))).toEqual([native.status, native.stdout, native.stderr])
     } finally {

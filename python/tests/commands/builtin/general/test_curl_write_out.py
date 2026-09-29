@@ -1,13 +1,16 @@
 import json
 from pathlib import Path
-from unittest.mock import Mock
+from unittest.mock import AsyncMock, Mock
 
 import pytest
 
+from mirage.accessor.base import NOOPAccessor
 from mirage.commands.builtin.errors import HttpConnectError, HttpTimeoutError
 from mirage.commands.builtin.general.curl import curl
 from mirage.commands.builtin.general.wget import wget
 from mirage.commands.builtin.utils.http import HttpResponse
+from mirage.commands.config import CommandOpts
+from mirage.commands.errors import UsageError
 from mirage.types import MountMode
 from mirage.vfs.ram import RAMVFS
 from mirage.workspace import Workspace
@@ -38,7 +41,8 @@ async def test_http_shell_regressions(case, monkeypatch):
             '{mount}', '/data').replace('{http}', 'https://example.test'))
         assert result.exit_code == case['expect']['exit']
         assert await result.stdout_str() == case['expect']['stdout']
-        assert await result.stderr_str() == case['expect']['stderr']
+        assert await result.stderr_str() == case['expect']['stderr'].replace(
+            '{mount}', '/data')
 
 
 @pytest.mark.asyncio
@@ -54,3 +58,31 @@ async def test_wget_passes_timeout_and_classifies_failure(
         assert result.exit_code == 4
         assert not result.stderr
         assert request.call_args.kwargs['timeout'] == seconds
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    'failure',
+    [None, FileNotFoundError('/format'),
+     PermissionError('/format')])
+@pytest.mark.parametrize('silent,show_error', [(False, False), (True, False),
+                                               (True, True)])
+async def test_template_failure_refuses_transfer(failure, silent, show_error,
+                                                 monkeypatch):
+    request = Mock()
+    monkeypatch.setitem(curl.__wrapped__.__globals__, 'http_request', request)
+    dispatch = AsyncMock(side_effect=failure) if failure is not None else None
+    opts = CommandOpts(dispatch=dispatch,
+                       flags={
+                           'write_out': '@/format',
+                           'silent': silent,
+                           'show_error': show_error
+                       })
+    with pytest.raises(UsageError) as caught:
+        await curl(NOOPAccessor(), [], ['https://example.test/hello'], opts)
+    assert caught.value.exit_code == 26
+    detail = '' if silent else 'curl: Failed to open /format\n'
+    assert str(caught.value) == (
+        detail + "curl: option -w: error encountered when reading a file\n"
+        "curl: try 'curl --help' or 'curl --manual' for more information")
+    request.assert_not_called()

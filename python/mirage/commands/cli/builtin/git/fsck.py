@@ -1,11 +1,13 @@
 import asyncio
 
+from dulwich.errors import ChecksumMismatch
 from dulwich.objects import Commit, ObjectID, ShaFile, Tag, Tree
 from dulwich.repo import BaseRepo
 
 from mirage.commands.cli.builtin.git.errors import GitError
 from mirage.commands.cli.builtin.git.index import read_index
 from mirage.commands.cli.builtin.git.io import read_names, read_optional
+from mirage.commands.cli.builtin.git.objects import VfsObjectStore
 from mirage.commands.cli.builtin.git.session import opened
 from mirage.commands.cli.builtin.git.util import fatal
 from mirage.commands.cli.types import CLIDoors, CLIInvocation
@@ -70,6 +72,10 @@ def check(repo: BaseRepo, roots: set[bytes],
         dangling (bool): report unreferenced tips.
     """
     errors: list[str] = []
+    if isinstance(repo.object_store, VfsObjectStore):
+        for pack in repo.object_store.packs:
+            pack.index.check()
+            pack.data.check()
     objects: dict[bytes, ShaFile] = {}
     referenced = set(roots)
     for oid in sorted(
@@ -125,3 +131,5 @@ async def fsck(inv: CLIInvocation[None]) -> tuple[ByteSource | None, IOResult]:
         return out, io
     except GitError as exc:
         return fatal(exc)
+    except ChecksumMismatch as exc:
+        return fatal(GitError(str(exc)))

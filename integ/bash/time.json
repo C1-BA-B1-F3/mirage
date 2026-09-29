@@ -133,7 +133,7 @@
         "ram",
         "disk"
       ],
-      "command": "TIMEFORMAT=timed; { time echo hi > {mount}/out; } 2> {mount}/timing; cat {mount}/out {mount}/timing",
+      "command": "TIMEFORMAT=timed; { time echo hi > {mount}/time-redirect-out; } 2> {mount}/time-redirect-timing; cat {mount}/time-redirect-out {mount}/time-redirect-timing; rm {mount}/time-redirect-out {mount}/time-redirect-timing",
       "expect": {
         "exit": 0,
         "stdout": "hi\ntimed\n",

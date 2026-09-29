@@ -41,6 +41,7 @@ EXIT_USAGE = 2
 EXIT_CONNECT = 7
 EXIT_HTTP_ERROR = 22
 EXIT_WRITE = 23
+EXIT_READ = 26
 EXIT_TIMEOUT = 28
 
 DEFAULT_TIMEOUT = 30.0
@@ -204,12 +205,26 @@ async def curl(
         timeout = None if max_time == 0 else max_time
     template = fl.as_str("write_out") or ""
     if template.startswith("@"):
-        if template == "@-":
-            template = (await materialize(opts.stdin)).decode()
-        elif opts.dispatch is not None:
-            content, _ = await opts.dispatch(
-                "read", resolve_target(template[1:], opts.cwd))
-            template = (await materialize(content)).decode()
+        try:
+            if template == "@-":
+                content = opts.stdin
+            else:
+                if opts.dispatch is None:
+                    raise OperationNotSupportedError(
+                        "no filesystem dispatcher")
+                content, _ = await opts.dispatch(
+                    "read", resolve_target(template[1:], opts.cwd))
+            template = (await materialize(content)).decode(errors="replace")
+        except WALK_ERRORS as exc:
+            # curl 8.14.1: -s suppresses only the opening diagnostic; -S
+            # does not restore it. The option error is always printed.
+            # The parsed flags no longer retain the spelling, so use -w.
+            detail = "" if fl.as_bool("silent") else (
+                f"curl: Failed to open {template[1:]}\n")
+            raise UsageError(
+                f"{detail}curl: option -w: error encountered when reading "
+                f"a file\n{HELP_HINT}",
+                exit_code=EXIT_READ) from exc
     started = time.monotonic()
 
     async def finish(

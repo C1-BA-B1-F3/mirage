@@ -26,7 +26,7 @@ import {
   isHttpError,
 } from '../utils/http.ts'
 import { UsageError } from '../../errors.ts'
-import { gnuStrerror, isFsError } from '../../../utils/errors.ts'
+import { gnuStrerror, isFsError, isWalkError, enotsup } from '../../../utils/errors.ts'
 import { rstripSlash, stripSlash } from '../../../utils/slash.ts'
 import { compareCodePoints } from '../../../utils/sort.ts'
 import { FlagView } from '../../spec/flag_view.ts'
@@ -43,6 +43,7 @@ const EXIT_USAGE = 2
 const EXIT_CONNECT = 7
 const EXIT_HTTP_ERROR = 22
 const EXIT_WRITE = 23
+const EXIT_READ = 26
 const EXIT_TIMEOUT = 28
 
 const DEFAULT_TIMEOUT_MS = 30_000
@@ -210,11 +211,25 @@ async function curlCommand(
     maxTime === undefined ? DEFAULT_TIMEOUT_MS : maxTime === 0 ? null : maxTime * 1000
   let template = fl.asStr('write_out') ?? ''
   if (template.startsWith('@')) {
-    if (template === '@-')
-      template = new TextDecoder().decode(await materialize(opts.stdin ?? null))
-    else if (opts.dispatch !== undefined) {
-      const [content] = await opts.dispatch('read', resolveTarget(template.slice(1), opts.cwd), [])
-      template = new TextDecoder().decode(await materialize(content as ByteSource))
+    try {
+      let content: ByteSource | null = opts.stdin ?? null
+      if (template !== '@-') {
+        if (opts.dispatch === undefined) throw enotsup('unavailable', 'read', template.slice(1))
+        const [format] = await opts.dispatch('read', resolveTarget(template.slice(1), opts.cwd), [])
+        content = format as ByteSource
+      }
+      template = new TextDecoder().decode(await materialize(content))
+    } catch (err) {
+      if (!isWalkError(err)) throw err
+      // curl 8.14.1: -s suppresses only the opening diagnostic; -S does
+      // not restore it. Parsed flags lose their spelling, so use -w.
+      const detail = fl.asBool('silent') ? '' : `curl: Failed to open ${template.slice(1)}\n`
+      const failure = new UsageError(
+        `${detail}curl: option -w: error encountered when reading a file\n${HELP_HINT}`,
+        EXIT_READ,
+      )
+      failure.cause = err
+      throw failure
     }
   }
   const started = performance.now()

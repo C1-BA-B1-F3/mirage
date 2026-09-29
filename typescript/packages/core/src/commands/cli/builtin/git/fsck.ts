@@ -33,6 +33,17 @@ async function objectIds(repo: Repo): Promise<Set<string>> {
     if (!name.endsWith('.idx')) continue
     const data = await readFile(repo.dispatch, under(root, `pack/${name}`))
     if (data.length < 1064) throw new GitError(`truncated pack index: ${name}`)
+    if ((await sha1Hex(data.subarray(0, -20))) !== toHex(data.subarray(-20)))
+      throw new GitError(`pack index checksum mismatch: ${name}`)
+    const packName = name.slice(0, -4) + '.pack'
+    const pack = await readFile(repo.dispatch, under(root, `pack/${packName}`))
+    if (pack.length < 32) throw new GitError(`truncated pack: ${packName}`)
+    const checksum = toHex(pack.subarray(-20))
+    if (
+      (await sha1Hex(pack.subarray(0, -20))) !== checksum ||
+      toHex(data.subarray(-40, -20)) !== checksum
+    )
+      throw new GitError(`pack checksum mismatch: ${packName}`)
     const view = new DataView(data.buffer, data.byteOffset, data.length)
     const v2 = view.getUint32(0) === 0xff744f63
     if (v2 && view.getUint32(4) !== 2) throw new GitError(`unsupported pack index: ${name}`)

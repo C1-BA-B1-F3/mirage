@@ -181,6 +181,45 @@
         "stdout": "",
         "stderr": ""
       }
+    },
+    {
+      "id": "curl_write_out_missing",
+      "seq": 330314,
+      "targets": [
+        "http-ram"
+      ],
+      "command": "curl -w @{mount}/missing-write-out-format {http}/hello",
+      "expect": {
+        "exit": 26,
+        "stdout": "",
+        "stderr": "curl: Failed to open {mount}/missing-write-out-format\ncurl: option -w: error encountered when reading a file\ncurl: try 'curl --help' or 'curl --manual' for more information\n"
+      }
+    },
+    {
+      "id": "curl_write_out_missing_silent",
+      "seq": 330315,
+      "targets": [
+        "http-ram"
+      ],
+      "command": "curl -s -w @{mount}/missing-write-out-format {http}/hello",
+      "expect": {
+        "exit": 26,
+        "stdout": "",
+        "stderr": "curl: option -w: error encountered when reading a file\ncurl: try 'curl --help' or 'curl --manual' for more information\n"
+      }
+    },
+    {
+      "id": "curl_write_out_missing_show_error",
+      "seq": 330316,
+      "targets": [
+        "http-ram"
+      ],
+      "command": "curl -sS -w @{mount}/missing-write-out-format {http}/hello",
+      "expect": {
+        "exit": 26,
+        "stdout": "",
+        "stderr": "curl: option -w: error encountered when reading a file\ncurl: try 'curl --help' or 'curl --manual' for more information\n"
+      }
     }
   ]
 }

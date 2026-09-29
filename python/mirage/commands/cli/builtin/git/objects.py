@@ -203,6 +203,11 @@ class VfsObjectStore(PackCapableObjectStore):
         self.object_format = SHA1
 
     @property
+    def packs(self) -> list[Pack]:
+        """The opened packs, for integrity checks over data and indexes."""
+        return self._packs
+
+    @property
     def packed_count(self) -> int:
         """How many objects the packs hold, for the id abbreviation.
 

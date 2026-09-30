@@ -206,10 +206,13 @@ class Operand:
             mount dispatch; textual operands pass through verbatim
             (never "bool": an operand is a value by definition).
         text_when (tuple[str, ...]): flags that make this slot textual
-            even though it is declared "path". jq's ``--args`` turns the
-            operands after the program into positional string values
-            rather than input files, which is a property of the line, not
-            of the slot, so it cannot be spelled in the type alone.
+            even though it is declared "path". tar's ``-x`` turns the
+            operands into member names rather than files, and jq's
+            ``--args`` turns them into positional string values, which is
+            a property of the line, not of the slot, so it cannot be
+            spelled in the type alone. The flag reaches every operand on
+            the line, or only the ones typed after it for a program that
+            files each operand as it reads it (IN_ORDER_OPERANDS, jq).
         provided_by (tuple[str, ...]): flags that supply this operand's
             value. When any is present the slot is skipped and remaining
             args classify as rest (e.g. grep's pattern with -e/-f). This is

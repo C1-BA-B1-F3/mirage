@@ -57,6 +57,64 @@ export const STDIN_SCRIPT_COMMANDS: ReadonlySet<string> = new Set([
   'node',
 ])
 
+// The name an operand goes by on a flag bag's tape. The tape records the
+// operands in scan order among the option occurrences, so a program can tell
+// which options were typed before each one. An operand has no dest, and no
+// option's dest is empty.
+export const OPERAND = ''
+
+// The programs whose option loop files each operand the moment it reads it,
+// so the rest slot's textWhen options turn textual only the operands typed
+// after the first of them, and the operands before it keep the declared kind.
+// jq's main.c walks argv once: a word before any --args or --jsonargs is an
+// input file, and one after either is a positional value (jq 1.8.2 reads
+// `jq -c '[., $ARGS.positional]' f.json --args a` as f.json plus ["a"]). tar
+// reads the whole line first: GNU tar 1.35 lists `d/m` for
+// `tar -f a.tar d/m -t` as it does for `tar -f a.tar -t d/m`. Measured, not
+// derived, like the other per-program rules.
+export const IN_ORDER_OPERANDS: ReadonlySet<string> = new Set(['jq'])
+
+// The programs whose option loop reads a dash-led word as options only when a
+// letter follows the dash, and any other one as an operand where it sits:
+// jq's isoptish() is a dash followed by a second dash or isalpha(). Measured
+// on jq 1.8.2: `jq -n '-1'` runs the program -1, `jq . -1` reads a file named
+// -1, `--jsonargs -1 -.5` reads [-1,-0.5] and `--args - -. '- x'` reads three
+// strings, while `-x` is still refused and `-nan` is -n, -a and -n. The letter
+// is an ASCII one: `-é` is an operand in the POSIX and the C.UTF-8 locale
+// alike.
+export const LETTER_OPTIONS: ReadonlySet<string> = new Set(['jq'])
+
+// The dash-led words such a program reads as options. A `--` word takes the
+// long-option branch before this is asked.
+export const DASH_LETTER = /^-[A-Za-z]/
+
+// The programs that compare a long option's whole word against their own
+// table, as strcmp does, `=` included, so `--name=value` is an unknown option,
+// value and all, rather than the option and its value. Measured on jq 1.8.2:
+// `--indent=3` and `--slurp=1` are each refused as `jq: Unknown option` with
+// the word as typed. jq takes no abbreviation either, which is argparse's
+// allowAbbrev, so its spec declares that instead.
+export const WHOLE_WORD_LONG_OPTIONS: ReadonlySet<string> = new Set(['jq'])
+
+// The programs whose handler runs the option loop: the parser leaves each
+// option it refuses on the tape where it met it, as [REFUSED, word], and
+// nothing ahead of the handler refuses the line or answers --help for it.
+// jq's main.c walks argv once and stops at the first word it cannot take, so
+// a bad --jsonargs value, --indent width or --slurpfile typed first is the
+// one reported, and --help and --version answer where they stand. Measured
+// on jq 1.8.2: `jq -n . --jsonargs '{' --bogus` reports the JSON,
+// `jq -n . --bogus --jsonargs '{'` reports --bogus, and `jq --help --bogus`
+// prints the help.
+export const OWN_OPTION_LOOP: ReadonlySet<string> = new Set(['jq'])
+
+// The name a refused option goes by on the tape of an OWN_OPTION_LOOP
+// program, whose value is the option word as the program names it: the whole
+// word for a long option (`--indent=3`), the dash and the first letter it
+// does not know for a cluster (`-x`), and the option itself when the line
+// ends before its value (`--arg`). No option of such a program is spelled
+// `-?`, so no dest is `?`.
+export const REFUSED = '?'
+
 const AMBIGUOUS_NAMES: Readonly<Record<string, string>> = Object.freeze({
   l: 'args_l',
   O: 'args_O',

@@ -14,8 +14,9 @@
 
 import pytest
 
-from mirage.commands.spec import SPECS
-from mirage.commands.spec.flag_view import FlagView, spec_flag_names
+from mirage.commands.spec import SPECS, parse_command, parse_to_kwargs
+from mirage.commands.spec.constants import OPERAND, REFUSED
+from mirage.commands.spec.flag_view import FlagBag, FlagView, spec_flag_names
 from mirage.commands.spec.types import CommandSpec, Option
 
 
@@ -93,3 +94,47 @@ def test_flag_view_typed_order_follows_bag_insertion():
     assert fl.typed_order("include", "exclude") == ["exclude", "include"]
     assert fl.typed_order("include") == ["include"]
     assert fl.typed_order("color") == []
+
+
+def _jq_view(*words: str) -> FlagView:
+    return FlagView(parse_to_kwargs(
+        parse_command(SPECS["jq"], list(words), "/", "jq")),
+                    spec=SPECS["jq"])
+
+
+def test_occurrences_read_operands_where_they_were_typed():
+    fl = _jq_view("-c", ".", "--args", "a", "--jsonargs", "1")
+    assert fl.occurrences("args", "jsonargs", OPERAND) == [(OPERAND, "."),
+                                                           ("args", True),
+                                                           (OPERAND, "a"),
+                                                           ("jsonargs", True),
+                                                           (OPERAND, "1")]
+    assert fl.occurrences(OPERAND) == [(OPERAND, "."), (OPERAND, "a"),
+                                       (OPERAND, "1")]
+
+
+def test_occurrences_read_refusals_where_they_were_typed():
+    fl = _jq_view("-n", ".", "--bogus", "--args", "a")
+    assert fl.occurrences("args", OPERAND, REFUSED) == [(OPERAND, "."),
+                                                        (REFUSED, "--bogus"),
+                                                        ("args", True),
+                                                        (OPERAND, "a")]
+    assert fl.occurrences("args") == [("args", True)]
+
+
+def test_occurrences_leave_operands_out_unless_asked():
+    fl = _jq_view(".", "--args", "a", "-c")
+    assert fl.occurrences("compact_output",
+                          "args") == [("args", True), ("compact_output", True)]
+
+
+def test_occurrences_of_keyword_flags_have_no_operands():
+    fl = FlagView({"args": True}, spec=SPECS["jq"])
+    assert fl.occurrences("args", OPERAND) == [("args", True)]
+
+
+def test_a_copied_bag_keeps_its_operands():
+    bag = parse_to_kwargs(
+        parse_command(SPECS["jq"], [".", "--args", "a"], "/", "jq"))
+    assert FlagBag(bag).occurrences == [(OPERAND, "."), ("args", True),
+                                        (OPERAND, "a")]

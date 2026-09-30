@@ -12,7 +12,8 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import { awkGeneric } from '../../generic/awk.ts'
+import { awkGeneric, servedHere } from '../../generic/awk.ts'
+import type { CommandOpts } from '../../../config.ts'
 import { splitAssignment } from '../../../../core/awk/index.ts'
 import type { PathSpec } from '../../../../types.ts'
 import { type Builder, resolveGlobOf } from '../adapter.ts'
@@ -20,16 +21,19 @@ import { type Builder, resolveGlobOf } from '../adapter.ts'
 /**
  * Expand awk's file operands, keeping `var=value` ones in place: an
  * assignment operand names no file, so it is never globbed, and awk
- * assigns it when its input reaches it, between the files around it.
+ * assigns it when its input reaches it, between the files around it. An
+ * operand another mount serves arrives expanded and is read through the
+ * dispatcher, so it is left as it is too.
  */
 async function resolveOperands(
   resolve: (paths: PathSpec[]) => Promise<PathSpec[]>,
   paths: readonly PathSpec[],
+  opts: CommandOpts,
 ): Promise<PathSpec[]> {
   const out: PathSpec[] = []
   let run: PathSpec[] = []
   for (const path of paths) {
-    if (splitAssignment(path.rawPath) === null) {
+    if (splitAssignment(path.rawPath) === null && servedHere(opts, path)) {
       run.push(path)
       continue
     }
@@ -47,7 +51,7 @@ export const AWK_BUILDER: Builder = {
   fn: async (ops, accessor, paths, texts, opts) => {
     const idx = opts.index ?? undefined
     const resolve = (run: PathSpec[]): Promise<PathSpec[]> => resolveGlobOf(ops)(accessor, run, idx)
-    const resolved = await resolveOperands(resolve, paths)
+    const resolved = await resolveOperands(resolve, paths, opts)
     return awkGeneric(resolved, texts, opts, (p) => ops.readStream(accessor, p, idx))
   },
 }

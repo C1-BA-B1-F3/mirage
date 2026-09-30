@@ -14,6 +14,7 @@
 
 from mirage.accessor.base import Accessor
 from mirage.commands.builtin.generic.awk import awk as generic_awk
+from mirage.commands.builtin.generic.awk import served_here
 from mirage.commands.builtin.generic_bind.adapter import (Builder, CommandIO,
                                                           bound_op,
                                                           resolve_or_empty)
@@ -30,6 +31,8 @@ async def resolve_operands(ops: CommandIO, accessor: Accessor,
 
     An assignment operand names no file, so it is never globbed: awk
     assigns it when its input reaches it, between the files around it.
+    An operand another mount serves arrives expanded and is read through
+    the dispatcher, so it is left as it is too.
 
     Args:
         ops (CommandIO): Backend I/O bundle.
@@ -40,7 +43,8 @@ async def resolve_operands(ops: CommandIO, accessor: Accessor,
     out: list[PathSpec] = []
     run: list[PathSpec] = []
     for path in paths:
-        if split_assignment(path.raw_path) is None:
+        if (split_assignment(path.raw_path) is None
+                and served_here(opts.ns, opts.mount_prefix, path)):
             run.append(path)
             continue
         out.extend(await resolve_or_empty(ops, accessor, run, opts.index))
@@ -65,6 +69,8 @@ async def awk(ops: CommandIO, accessor: Accessor, paths: list[PathSpec],
         cwd=opts.cwd,
         index=opts.index,
         shell=opts.shell,
+        ns=opts.ns,
+        mount_prefix=opts.mount_prefix,
     )
 
 

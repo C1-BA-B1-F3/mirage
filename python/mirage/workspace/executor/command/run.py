@@ -385,8 +385,10 @@ async def run_on_mount(
         texts (list[str]): Positional text operands.
         flag_kwargs (dict): Parsed flags forwarded to the mount command.
         stdin (ByteSource | None): Standard input for the command.
-        resolve_hint (PathSpec | None): Mount-resolution path when ``paths``
-            is empty (a stream command running in stdin mode).
+        resolve_hint (PathSpec | None): The path whose mount runs the
+            command, ahead of the first of ``paths``: a stream command in
+            stdin mode has none, and awk over operands on several mounts
+            runs where its first file lives.
         mount: Pre-resolved mount; skips resolution and session mode
             checks, which the caller already performed.
         argv (tuple[str, ...]): The words after the command name, as the
@@ -395,7 +397,7 @@ async def run_on_mount(
             handler reaches as ``opts.shell``; None outside a workspace.
     """
     if mount is None:
-        resolve_paths = paths or ([resolve_hint] if resolve_hint else [])
+        resolve_paths = [resolve_hint] if resolve_hint else paths
         try:
             mount = await registry.resolve_mount(cmd_name, resolve_paths,
                                                  session.cwd)

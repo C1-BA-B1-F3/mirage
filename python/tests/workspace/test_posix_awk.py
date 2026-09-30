@@ -66,3 +66,37 @@ async def test_awk_file_output_respects_read_only_mount():
         assert (await ws.shell('test -e /data/out')).exit_code == 1
     finally:
         await ws.close()
+
+
+# mawk 1.3.4 over /m1 and /m2 as two directories: awk keeps every
+# operand's name and position when its operands span mounts.
+CROSS_MOUNT = [
+    ("awk '{print x, $0, FILENAME, FNR, NR}' /m1/a x=5 /m2/b", 0,
+     " 1 /m1/a 1 1\n5 2 /m2/b 1 2\n5 3 /m2/b 2 3\n", ""),
+    ("awk 'FNR==1{getline; print FILENAME, $0, NR, FNR}' /m1/a /m2/b", 0,
+     "/m2/b 2 2 1\n", ""),
+    ("awk 'BEGIN{for(i=0;i<ARGC;i++) print i, ARGV[i]}' /m1/a x=1 /m2/b", 0,
+     "0 awk\n1 /m1/a\n2 x=1\n3 /m2/b\n", ""),
+    ("awk '{print FILENAME \":\" $0}' /m1/nonl /m2/c", 0,
+     "/m1/nonl:x\n/m2/c:y\n", ""),
+    ("awk 'END{print x, NR, FILENAME}' x=3 /m1/a /m2/b", 0, "3 3 /m2/b\n", ""),
+    ("awk '{print; nextfile}' /m1/a /m2/b", 0, "1\n2\n", ""),
+    ("awk '{print}' /m1/a /m2/nope /m2/b", 2, "1\n",
+     "awk: cannot open \"/m2/nope\" (No such file or directory)\n"),
+    ("printf 'in\\n' | awk '{print FILENAME, $0}' /m1/a - /m2/b", 0,
+     "/m1/a 1\n- in\n/m2/b 2\n/m2/b 3\n", ""),
+]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('command,code,out,err', CROSS_MOUNT)
+async def test_awk_keeps_argv_across_mounts(command, code, out, err):
+    ws = Workspace({'/m1': RAMVFS(), '/m2': RAMVFS()}, mode='exec')
+    try:
+        await ws.shell("printf '1\\n' > /m1/a; printf '2\\n3\\n' > /m2/b; "
+                       "printf 'x' > /m1/nonl; printf 'y\\n' > /m2/c")
+        result = await ws.shell(command)
+        assert (result.exit_code, result.stdout.decode(),
+                (result.stderr or b'').decode()) == (code, out, err)
+    finally:
+        await ws.close()

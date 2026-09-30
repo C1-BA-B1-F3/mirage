@@ -14,6 +14,7 @@
 
 import type { ByteSource } from '../../../../../io/types.ts'
 import type { PathSpec } from '../../../../../types.ts'
+import { runAwk } from './awk.ts'
 import { runCmp } from './cmp.ts'
 import { runComm } from './comm.ts'
 import { runCp } from './cp.ts'
@@ -43,6 +44,8 @@ export async function runRelay(
   dispatch: DispatchFn,
   // Single-mount runner: wc counts each operand with its own mount's wc,
   // since a mount can count without reading; only its layout spans the line.
+  // awk runs once on its first file's mount, reading the rest through the
+  // dispatcher, so every operand keeps its own name.
   runSingle: RunSingle,
   // Maps an operand to its storage identity, for the transfer commands
   // that must tell a real move from one whose two prefixes address a
@@ -60,6 +63,7 @@ export async function runRelay(
   // against.
   cwd = '/',
 ): Promise<CrossResult> {
+  if (cmdName === Cmd.AWK) return runAwk(scopes, textArgs, flagKwargs, runSingle, stdin)
   if (cmdName === Cmd.WC) return runWc(scopes, flagKwargs, dispatch, runSingle)
   if (cmdName === Cmd.SORT) return runSort(scopes, flagKwargs, dispatch, stdin)
   if (cmdName === Cmd.LS) return runLs(scopes, flagKwargs, dispatch, ns, sessionView)

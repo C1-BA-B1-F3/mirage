@@ -14,12 +14,12 @@
 
 from mirage.commands.builtin.generic.crossmount.types import Cmd
 
-STREAM_COMMANDS = frozenset({Cmd.CAT, Cmd.NL, Cmd.CUT, Cmd.SED, Cmd.AWK})
+STREAM_COMMANDS = frozenset({Cmd.CAT, Cmd.NL, Cmd.CUT, Cmd.SED})
 # The stream commands that read their input as lines: GNU ends a file's
 # unterminated last line where the next file begins (`sed -n 2p` on `ab`
 # then `cd` prints `cd`), so the merged stream carries that newline.
 # `cat` joins the bytes as they are.
-LINE_STREAM_COMMANDS = frozenset({Cmd.NL, Cmd.CUT, Cmd.SED, Cmd.AWK})
+LINE_STREAM_COMMANDS = frozenset({Cmd.NL, Cmd.CUT, Cmd.SED})
 FANOUT_COMMANDS = frozenset({
     Cmd.REV, Cmd.GREP, Cmd.RG, Cmd.HEAD, Cmd.TAIL, Cmd.DU, Cmd.FILE, Cmd.MD5,
     Cmd.MD5SUM, Cmd.SHA1SUM, Cmd.SHA256SUM, Cmd.SHA384SUM, Cmd.SHA512SUM,
@@ -28,6 +28,6 @@ FANOUT_COMMANDS = frozenset({
 })
 RELAY_COMMANDS = frozenset({
     Cmd.CP, Cmd.MV, Cmd.DIFF, Cmd.CMP, Cmd.PASTE, Cmd.COMM, Cmd.JOIN, Cmd.TAR,
-    Cmd.UNZIP, Cmd.ZIP, Cmd.LS, Cmd.SORT, Cmd.WC
+    Cmd.UNZIP, Cmd.ZIP, Cmd.LS, Cmd.SORT, Cmd.WC, Cmd.AWK
 })
 CROSS_MOUNT_COMMANDS = STREAM_COMMANDS | FANOUT_COMMANDS | RELAY_COMMANDS

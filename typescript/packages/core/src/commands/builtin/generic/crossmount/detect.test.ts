@@ -28,7 +28,7 @@ describe('strategyFor — mirrors tests/commands/builtin/generic/crossmount/test
   })
 
   it('streams the whole-content commands', () => {
-    for (const name of [Cmd.CAT, Cmd.NL, Cmd.CUT, Cmd.AWK]) {
+    for (const name of [Cmd.CAT, Cmd.NL, Cmd.CUT]) {
       expect(strategyFor(name, {})).toBe(Strategy.STREAM)
     }
   })
@@ -43,6 +43,12 @@ describe('strategyFor — mirrors tests/commands/builtin/generic/crossmount/test
     for (const name of [Cmd.CP, Cmd.MV, Cmd.DIFF, Cmd.CMP, Cmd.SORT, Cmd.WC]) {
       expect(strategyFor(name, {})).toBe(Strategy.RELAY)
     }
+  })
+
+  it('relays awk because it tells its operands apart', () => {
+    // FILENAME, FNR, ARGV and a var=value operand between two files all
+    // need each file as its own input, which a merged stream loses.
+    expect(strategyFor(Cmd.AWK, {})).toBe(Strategy.RELAY)
   })
 
   it('relays ls because its layout spans the whole line', () => {

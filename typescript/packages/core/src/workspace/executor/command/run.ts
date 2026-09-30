@@ -248,9 +248,11 @@ export async function dropMountCaches(registry: MountRegistry): Promise<void> {
 // filesystem-error formatting, ls/find post-processing, and read/write key
 // prefixing. handleCommand uses it for the normal path, and passes it (bound)
 // to the cross-mount runners so each operand executes natively on its owning
-// mount. `resolveHint` resolves the mount when `paths` is empty (a stream
-// command running in stdin mode); a pre-resolved `mount` skips resolution and
-// session-mode checks, which the caller already performed.
+// mount. `resolveHint` names the path whose mount runs the command, ahead of
+// the first of `paths`: a stream command in stdin mode has none, and awk over
+// operands on several mounts runs where its first file lives. A pre-resolved
+// `mount` skips resolution and session-mode checks, which the caller already
+// performed.
 export async function runOnMount(
   ctx: RunOnMountCtx,
   cmdName: string,
@@ -264,7 +266,7 @@ export async function runOnMount(
   const hint = opts.resolveHint ?? null
   let mount = opts.mount ?? null
   if (mount === null) {
-    const resolvePaths = paths.length > 0 ? paths : hint !== null ? [hint] : []
+    const resolvePaths = hint !== null ? [hint] : paths
     try {
       mount = await registry.resolveMount(cmdName, resolvePaths, session.cwd)
     } catch (err) {

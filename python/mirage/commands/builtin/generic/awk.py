@@ -1,6 +1,7 @@
 from collections.abc import (AsyncIterator, Awaitable, Callable, Coroutine,
                              Mapping, Sequence)
 from contextlib import aclosing
+from functools import partial
 from typing import Any
 
 from mirage.cache.index import NULL_INDEX, IndexCacheStore
@@ -19,6 +20,7 @@ from mirage.core.awk.value import text as text_value
 from mirage.io.cooperative import chunks
 from mirage.io.stream import materialize
 from mirage.io.types import ByteSource, IOResult
+from mirage.ops.types import NamespaceView
 from mirage.runtime.types import DispatchFn, ShellFn
 from mirage.shell.join import shell_join
 from mirage.types import FileType, PathSpec
@@ -62,6 +64,25 @@ def split_assignments(raw: Sequence[str]) -> dict[str, str]:
     return out
 
 
+def served_here(ns: NamespaceView | None, mount_prefix: str,
+                path: PathSpec) -> bool:
+    """Whether the mount awk runs on serves an operand.
+
+    A line whose operands span mounts runs awk once, on its first file's
+    mount; an operand another mount serves is read through the dispatcher.
+
+    Args:
+        ns (NamespaceView | None): the name plane's facts, None outside a
+            workspace, where every operand is the mount's own.
+        mount_prefix (str): the prefix of the mount awk runs on.
+        path (PathSpec): the operand.
+    """
+    if ns is None or ns.mounts is None:
+        return True
+    home = mount_prefix.rstrip("/")
+    return ns.mounts.root_of(path.virtual).rstrip("/") == home
+
+
 async def _guarded(source: AsyncIterator[bytes]) -> AsyncIterator[bytes]:
     """Relay a stream, a filesystem failure becoming awk's ``AwkIOError``.
 
@@ -81,7 +102,8 @@ class AwkStreams:
     """The files and commands one awk run reaches, through the workspace.
 
     Operands still holding their command-line value read through the
-    mount's own reader, the way they were resolved; every other name
+    mount's own reader, the way they were resolved, unless another mount
+    serves them (a line spanning mounts); every other name
     (``getline < file``, an ARGV slot the program filled) reads through
     the dispatcher, as output redirection writes through it. Every
     stdin reader, a ``-`` operand, ``getline < "-"`` and a command's
@@ -96,12 +118,16 @@ class AwkStreams:
         dispatch (DispatchFn | None): the workspace op door.
         cwd (PathSpec): the directory relative names resolve against.
         shell (ShellFn | None): runs a nested line in the session.
+        local (Callable[[PathSpec], bool]): whether this mount serves an
+            operand.
     """
 
     def __init__(self, operands: Sequence[PathSpec],
                  read_stream: Callable[..., AsyncIterator[bytes]],
                  stdin: ByteSource | None, dispatch: DispatchFn | None,
-                 cwd: PathSpec, shell: ShellFn | None) -> None:
+                 cwd: PathSpec, shell: ShellFn | None,
+                 local: Callable[[PathSpec], bool]) -> None:
+        self.local = local
         self.operands = operands
         self.read_stream = read_stream
         self.stdin = resolve_source(stdin)
@@ -136,8 +162,11 @@ class AwkStreams:
         if index is not None and 0 < index <= len(self.operands):
             operand = self.operands[index - 1]
             if operand.raw_path == name:
-                return _guarded(self.stdin_view(
-                ) if is_stdin(operand) else self.read_stream(operand))
+                if is_stdin(operand):
+                    return _guarded(self.stdin_view())
+                if self.local(operand):
+                    return _guarded(self.read_stream(operand))
+                return _guarded(self.read_path(operand.virtual))
         if name in STDIN_NAMES:
             return _guarded(self.stdin_view())
         return _guarded(self.read_path(name))
@@ -254,6 +283,8 @@ async def awk(
     dispatch: DispatchFn | None = None,
     cwd: PathSpec = ROOT_CWD,
     shell: ShellFn | None = None,
+    ns: NamespaceView | None = None,
+    mount_prefix: str = "",
 ) -> tuple[ByteSource | None, IOResult]:
     """Run an awk program over backend paths or stdin.
 
@@ -279,6 +310,9 @@ async def awk(
         cwd (PathSpec): What relative file names resolve against.
         shell (ShellFn | None): Runs the command of a pipe or
             ``system()``.
+        ns (NamespaceView | None): The name plane's facts, which say
+            which operands another mount serves.
+        mount_prefix (str): The prefix of the mount awk runs on.
 
     Returns:
         tuple[ByteSource | None, IOResult]: Output stream and exit metadata.
@@ -310,7 +344,8 @@ async def awk(
     # An empty operand names no file and mawk skips it, as it does an
     # operand ARGV no longer holds; a `var=value` operand is assigned
     # when the input reaches it. FILENAME reports the operand as typed.
-    streams = AwkStreams(paths, read_stream, stdin, dispatch, cwd, shell)
+    streams = AwkStreams(paths, read_stream, stdin, dispatch, cwd, shell,
+                         partial(served_here, ns, mount_prefix))
     interp = Interpreter(program, streams, [p.raw_path for p in paths],
                          split_assignments(f.assignments))
     if f.field_separator is not None:

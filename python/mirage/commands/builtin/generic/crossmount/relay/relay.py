@@ -14,6 +14,7 @@
 
 from typing import Callable
 
+from mirage.commands.builtin.generic.crossmount.relay.awk import run_awk
 from mirage.commands.builtin.generic.crossmount.relay.cmp import run_cmp
 from mirage.commands.builtin.generic.crossmount.relay.comm import run_comm
 from mirage.commands.builtin.generic.crossmount.relay.cp import run_cp
@@ -54,10 +55,12 @@ async def run_relay(cmd_name: str,
     its primitive mode, so output matches the single-mount commands. wc is
     the one whose operands are counted by their own mount's command, since
     a mount can count without reading; only its layout spans the line.
+    awk runs once on its first file's mount, reading the rest through
+    the dispatcher, so every operand keeps its own name.
 
     Args:
         cmd_name (str): One of cp, mv, diff, cmp, paste, comm, join, tar,
-            unzip, zip, ls, sort, wc.
+            unzip, zip, ls, sort, wc, awk.
         scopes (list[PathSpec]): Path operands in command-line order.
         text_args (list[str]): Positional text operands (tar's member
             selectors, cmp's skips; empty for the transfer and merge
@@ -65,7 +68,7 @@ async def run_relay(cmd_name: str,
         flag_kwargs (dict): Flags parsed against the shared command spec.
         dispatch (DispatchFn): Workspace operation dispatcher.
         run_single (RunSingle): Single-mount runner (wc's per-operand
-            counts).
+            counts, awk's one run).
         storage_key (Callable | None): Maps an operand to its storage
             identity, for the transfer commands that must tell a real
             move from one whose two prefixes address a single store.
@@ -79,6 +82,8 @@ async def run_relay(cmd_name: str,
         cwd (str): The session's working directory, which cp resolves a
             typed link source against.
     """
+    if cmd_name == Cmd.AWK:
+        return await run_awk(scopes, text_args, flag_kwargs, run_single, stdin)
     if cmd_name == Cmd.WC:
         return await run_wc(scopes, flag_kwargs, dispatch, run_single)
     if cmd_name == Cmd.SORT:

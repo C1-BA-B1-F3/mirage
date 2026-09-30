@@ -82,6 +82,19 @@ function isFatal(err: unknown): err is AwkRuntimeError | AwkSyntaxError {
   return err instanceof AwkRuntimeError || err instanceof AwkSyntaxError
 }
 
+/**
+ * Whether the mount awk runs on serves an operand. A line whose operands span
+ * mounts runs awk once, on its first file's mount; an operand another mount
+ * serves is read through the dispatcher. Outside a workspace (no name plane)
+ * every operand is the mount's own.
+ */
+export function servedHere(opts: CommandOpts, path: PathSpec): boolean {
+  const mounts = opts.ns?.mounts
+  if (mounts === undefined) return true
+  const home = (opts.mountPrefix ?? '').replace(/\/+$/, '')
+  return mounts.rootOf(path.virtual).replace(/\/+$/, '') === home
+}
+
 /** Relay a stream, a filesystem failure becoming awk's `AwkIOError`. */
 async function* guarded(source: AsyncIterable<Uint8Array>): AsyncIterable<Uint8Array> {
   try {
@@ -95,7 +108,8 @@ async function* guarded(source: AsyncIterable<Uint8Array>): AsyncIterable<Uint8A
 /**
  * The files and commands one awk run reaches, through the workspace.
  * Operands still holding their command-line value read through the
- * mount's own reader, the way they were resolved; every other name
+ * mount's own reader, the way they were resolved, unless another mount
+ * serves them (a line spanning mounts); every other name
  * (`getline < file`, an ARGV slot the program filled) reads through the
  * dispatcher, as output redirection writes through it. Every stdin
  * reader, a `-` operand, `getline < "-"` and a command's inherited input
@@ -143,7 +157,9 @@ export class AwkStreams implements AwkHost {
     if (index !== null && index > 0 && index <= this.operands.length) {
       const operand = this.operands[index - 1]
       if (operand?.rawPath === name) {
-        return guarded(isStdin(operand) ? this.stdinView() : this.stream(operand))
+        if (isStdin(operand)) return guarded(this.stdinView())
+        if (servedHere(this.opts, operand)) return guarded(this.stream(operand))
+        return guarded(this.readPath(operand.virtual))
       }
     }
     if (STDIN_NAMES.has(name)) return guarded(this.stdinView())
@@ -293,7 +309,13 @@ export async function awkGeneric(
   if (f.fieldSeparator !== null) interp.setVar('FS', text(unescape(f.fieldSeparator)))
 
   const cache = paths
-    .filter((p) => p.rawPath !== '' && !isStdin(p) && splitAssignment(p.rawPath) === null)
+    .filter(
+      (p) =>
+        p.rawPath !== '' &&
+        !isStdin(p) &&
+        splitAssignment(p.rawPath) === null &&
+        servedHere(opts, p),
+    )
     .map((p) => p.mountPath)
   const io = new IOResult({ cache })
   return [awkStream(interp, io), io]

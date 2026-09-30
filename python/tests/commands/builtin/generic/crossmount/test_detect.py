@@ -54,7 +54,7 @@ def test_sets_are_disjoint():
 
 
 def test_strategy_for_stream_commands():
-    for name in ("cat", "nl", "cut", "awk"):
+    for name in ("cat", "nl", "cut"):
         assert strategy_for(name, {}) is Strategy.STREAM
 
 
@@ -66,6 +66,12 @@ def test_strategy_for_fanout_commands():
 def test_strategy_for_relay_commands():
     for name in ("cp", "mv", "diff", "cmp", "sort", "wc"):
         assert strategy_for(name, {}) is Strategy.RELAY
+
+
+def test_awk_relays_because_it_tells_its_operands_apart():
+    # FILENAME, FNR, ARGV and a var=value operand between two files all
+    # need each file as its own input, which a merged stream loses.
+    assert strategy_for("awk", {}) is Strategy.RELAY
 
 
 def test_ls_relays_because_its_layout_spans_the_whole_line():

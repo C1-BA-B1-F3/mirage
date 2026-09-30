@@ -766,3 +766,29 @@ async def test_sed_reads_nothing_after_a_directory_without_last_line():
     assert output == b"one\ntwo\n"
     assert io.exit_code == 4
     assert reads == ["/f", "/d"]
+
+
+@pytest.mark.asyncio
+async def test_sed_separate_reads_nothing_after_a_directory():
+    rb, wb, store = _make_backend({
+        "/f": b"one\ntwo\nthree\n",
+        "/g": b"L1\nL2\n"
+    })
+    reads: list[str] = []
+
+    async def read(path):
+        reads.append(path.virtual)
+        if path.virtual == "/d":
+            raise IsADirectoryError(21, "Is a directory", "/d")
+        return await rb(path)
+
+    output, io = await sed(
+        [_spec("/f"), _spec("/d"), _spec("/g")],
+        "n;p",
+        read_bytes=read,
+        write_bytes=wb,
+        suppress=True,
+        separate=True)
+    assert output == b"two\n"
+    assert io.exit_code == 4
+    assert reads == ["/f", "/d"]

@@ -281,9 +281,9 @@ export async function sedGeneric(
   // reported either. The operands after a directory are still read: the
   // lookahead for `$` opens a directory, finds no data in it and goes on
   // (`sed -n '$p' ok.txt dir ok2.txt` prints ok2.txt's last line, exit 0).
-  // Only `$`, `n` and `N` look ahead, so without one nothing past the
-  // directory is read.
-  const lookAhead = looksAhead(program)
+  // Only `$`, `n` and `N` look ahead, and under -s never into the next
+  // file, so otherwise nothing past the directory is read.
+  const lookAhead = looksAhead(program) && !fl.asBool('separate')
   for (const p of paths) {
     const last = inputs.at(-1)
     if (last !== undefined && 'fatal' in last && last.fatal && !lookAhead) break

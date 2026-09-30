@@ -259,8 +259,9 @@ async def sed(
     # directory are still read: the lookahead for `$` opens a directory,
     # finds no data in it and goes on (`sed -n '$p' ok.txt dir ok2.txt`
     # prints ok2.txt's last line, exit 0). Only `$`, `n` and `N` look
-    # ahead, so without one nothing past the directory is read.
-    look_ahead = looks_ahead(program)
+    # ahead, and under -s never into the next file, so otherwise nothing
+    # past the directory is read.
+    look_ahead = looks_ahead(program) and not separate
     for p in paths:
         if inputs and inputs[-1].fatal and not look_ahead:
             break

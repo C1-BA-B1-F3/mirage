@@ -30,6 +30,7 @@ import {
   blobBySha,
   branchFor,
   directoriesOf,
+  keepRoot,
   keepTree,
   repoIsEmpty,
   resolveRef,
@@ -266,8 +267,8 @@ const putContents = withRepo(async (ctx, repo) => {
   // After the write the same question names a root the ref never reported.
   const parent = await visibleHeadOf(ctx.db, ctx.tenant, repo, branch)
   // Kept for a new path as well as a replaced one: the first write to a
-  // seeded branch is what moves it off its synthesized root, and that root
-  // reads its files back from this snapshot.
+  // seeded branch is what moves it off its synthesized root.
+  await keepRoot(ctx.db, ctx.tenant, repo, branch)
   await keepTree(ctx.db, ctx.tenant, repo, branch)
   await writeFile(ctx.db, ctx.tenant, repo, branch, path, data)
   const message = str(body, 'message') === '' ? `Update ${path}` : str(body, 'message')
@@ -303,6 +304,7 @@ const deleteContents = withRepo(async (ctx, repo) => {
     return fail(409, `${path} does not match`)
   }
   const parent = await visibleHeadOf(ctx.db, ctx.tenant, repo, branch)
+  await keepRoot(ctx.db, ctx.tenant, repo, branch)
   await keepTree(ctx.db, ctx.tenant, repo, branch)
   await ctx.db.githubFile.delete({ where: { pk: row.pk } })
   const message = str(body, 'message') === '' ? `Delete ${path}` : str(body, 'message')

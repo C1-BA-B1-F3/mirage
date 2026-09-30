@@ -228,6 +228,43 @@ export async function keepTree(
   if (files.size > 0) await stageTree(db, tenant, repo, files)
 }
 
+// A branch still on its synthesized root is about to move off it, so the
+// root is stored as a commit: git keeps an object once it exists, and a sha
+// a listing reported must still resolve once no branch stands on it. It is
+// stored with no tree, as the synthesized one has none; its files are the
+// snapshot staged here, which `treeAt` finds by content.
+export async function keepRoot(
+  db: C,
+  tenant: string,
+  repo: RepoRow,
+  branch: string,
+): Promise<void> {
+  if ((await headOf(db, tenant, repo, branch)) !== '') return
+  const files = await treeOfBranch(db, tenant, repo, branch)
+  if (files.size === 0) return
+  await stageTree(db, tenant, repo, files)
+  const root = rootCommit(rootOf(files))
+  const where = { ...scope(tenant), repo: repo.fullName }
+  if ((await db.githubCommit.findFirst({ where: { ...where, sha: root.sha } })) !== null) return
+  const top = await db.githubCommit.findFirst({ where, orderBy: { seq: 'desc' } })
+  await db.githubCommit.create({
+    data: {
+      tenant,
+      repo: repo.fullName,
+      sha: root.sha,
+      parentSha: '',
+      message: root.message,
+      authorLogin: root.authorLogin,
+      date: root.date,
+      filesJson: root.filesJson,
+      treeSha: '',
+      authorJson: '',
+      committerJson: '',
+      seq: top === null ? 0 : top.seq + 1,
+    },
+  })
+}
+
 export async function stageTree(
   db: C,
   tenant: string,

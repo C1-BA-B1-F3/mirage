@@ -276,8 +276,8 @@ async function getWorkflow(ctx: Ctx<C>, repo: RepoRow): Promise<Reply> {
 
 // A dispatch answers 204 with no body, and the run it queues is what the
 // caller polls for afterwards. It runs the workflow as the ref holds it, on
-// that ref's head, and only a workflow whose `on` lists `workflow_dispatch`
-// can be run this way.
+// that ref's head, and only an enabled workflow whose `on` lists
+// `workflow_dispatch` can be run this way.
 async function dispatchWorkflow(ctx: Ctx<C>, repo: RepoRow): Promise<Reply> {
   const workflow = await findWorkflow(ctx, repo, param(ctx, 'workflow'))
   if (workflow === null) return fail(404, 'Not Found')
@@ -285,6 +285,9 @@ async function dispatchWorkflow(ctx: Ctx<C>, repo: RepoRow): Promise<Reply> {
   if (ref === '') return fail(422, 'No ref found')
   const branch = await branchFor(ctx.db, ctx.tenant, repo, ref)
   if (branch === null) return fail(422, `No ref found for: ${ref}`)
+  if (workflow.state !== 'active') {
+    return fail(422, "Cannot trigger a 'workflow_dispatch' on a disabled workflow")
+  }
   const file = (await treeOfBranch(ctx.db, ctx.tenant, repo, branch)).get(workflow.path)
   if (file === undefined || !dispatchable(file)) {
     return fail(422, "Workflow does not have 'workflow_dispatch' trigger")

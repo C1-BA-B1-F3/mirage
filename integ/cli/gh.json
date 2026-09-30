@@ -1873,7 +1873,7 @@
       }
     },
     {
-      "id": "gh_workflow_run_needs_a_dispatch_trigger",
+      "id": "gh_workflow_run_refuses_a_disabled_workflow",
       "seq": 569066,
       "targets": [
         "cli-gh"
@@ -1882,7 +1882,7 @@
       "expect": {
         "exit": 1,
         "stdout": "",
-        "stderr": "gh workflow run: Workflow does not have 'workflow_dispatch' trigger\n"
+        "stderr": "gh workflow run: Cannot trigger a 'workflow_dispatch' on a disabled workflow\n"
       }
     },
     {

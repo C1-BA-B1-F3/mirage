@@ -528,6 +528,56 @@ async function refsNameCommits(at: string): Promise<void> {
   eq("and holds that commit's files", await status(`${repo}/contents/later.txt?ref=old`), 404)
 }
 
+// A seeded branch force-moved onto an unrelated root leaves its own root on
+// no branch, and that sha still names its commit and its files, as git keeps
+// an object once it exists.
+async function abandonedRoot(at: string): Promise<void> {
+  const run = 'abandoned-root'
+  const base = `${at}/_run/${run}`
+  await post(`${base}/reset`, { run, tenants: [TENANT], fixture: 'v1' })
+  const repo = `${base}/repos/${REPO}`
+  const root = String(field(((await get(`${repo}/commits`)) as JsonValue[])[0] ?? null, 'sha'))
+  const tree = await post(`${repo}/git/trees`, {
+    tree: [{ path: 'only.txt', mode: '100644', type: 'blob', content: 'only' }],
+  })
+  const other = await post(`${repo}/git/commits`, {
+    message: 'Unrelated',
+    tree: field(tree.body, 'sha'),
+    parents: [],
+  })
+  const moved = await fetch(`${repo}/git/refs/heads/main`, {
+    method: 'PATCH',
+    headers: HEADERS,
+    body: JSON.stringify({ sha: field(other.body, 'sha'), force: true }),
+  })
+  eq('the branch is forced onto an unrelated root', moved.status, 200)
+  eq(
+    'the old root still names its commit',
+    field(await get(`${repo}/commits/${root.slice(0, 7)}`), 'sha'),
+    root,
+  )
+  const readme = await fetch(`${repo}/contents/README.md?ref=${root.slice(0, 7)}`, {
+    headers: HEADERS,
+  })
+  eq('and its files', readme.status, 200)
+  const dispatch = await fetch(
+    `${base}/repos/integ/repo-cli/actions/workflows/archive.yml/dispatches`,
+    {
+      method: 'POST',
+      headers: HEADERS,
+      body: JSON.stringify({ ref: 'main' }),
+    },
+  )
+  eq('a disabled workflow is not dispatched', await refusalOf(dispatch), [
+    422,
+    "Cannot trigger a 'workflow_dispatch' on a disabled workflow",
+  ])
+}
+
+async function refusalOf(r: Response): Promise<JsonValue> {
+  return [r.status, field((await r.json()) as JsonValue, 'message')]
+}
+
 // Workflows are the repository's files, and the settings routes store what
 // they take and refuse what they do not, before anything is written.
 async function workflowsAndSettings(at: string): Promise<void> {
@@ -636,6 +686,7 @@ async function main(): Promise<void> {
     await seededHistory(at)
     await supersededBlobs(at)
     await refsNameCommits(at)
+    await abandonedRoot(at)
     await workflowsAndSettings(at)
     const reset = await fetch(`${at}/reset`, {
       method: 'POST',

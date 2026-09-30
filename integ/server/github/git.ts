@@ -24,6 +24,7 @@ import {
   commitList,
   commitsBySha,
   headOf,
+  keepRoot,
   keepTree,
   reaches,
   repoIsEmpty,
@@ -238,6 +239,7 @@ const updateRef = withRepo(async (ctx, repo) => {
   if (!reaches(sha, head, byId) && body.force !== true) {
     return fail(422, 'Update is not a fast forward')
   }
+  await keepRoot(ctx.db, ctx.tenant, repo, name)
   await ctx.db.githubBranch.updateMany({
     where: { tenant: ctx.tenant, repo: repo.fullName, name },
     data: { headSha: sha },

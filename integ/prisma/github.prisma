@@ -52,10 +52,8 @@ model GithubRepo {
   // The branch that directory loads into, for a fixture whose repository has a
   // second branch: the python fake spelled this `:into=<branch>`.
   sourceBranch  String  @default("")
-  // The repository's GitHub Pages site as the Pages endpoints set it, a JSON
-  // object, or "" for none. On the row rather than in a table of its own
-  // because a site is one setting of one repository: a rename carries it and a
-  // fork, which is a new row, starts without one, as on GitHub.
+  // The Pages site as JSON, "" for none. On the row so a rename carries it and
+  // a fork, a new row, starts without one, as on GitHub.
   pagesJson     String  @default("")
   seq           Int
 
@@ -277,11 +275,7 @@ model GithubRelease {
   @@index([tenant, repo])
 }
 
-// A workflow GitHub has registered: one per workflow file it has seen on the
-// default branch, keeping the id and state the file itself does not carry.
-// The name is not stored, because it is whatever the file says now. A fixture
-// states a row to pin an id or a state; any other file is registered the first
-// time the fake reads the list.
+// A registered workflow file's id and state; its name is read from the file.
 model GithubWorkflow {
   pk     Int    @id @default(autoincrement())
   tenant String
@@ -316,9 +310,7 @@ model GithubRun {
   createdAt    String
   updatedAt    String
   runStartedAt String?
-  // The run's jobs as a JSON array in the vendor's own field names, each step
-  // carrying `log`, the text its file in the run's log archive holds. A
-  // fixture states them; a dispatched run has none until something runs it.
+  // Jobs in the vendor's field names; each step's `log` is its archive text.
   jobsJson     String  @default("[]")
   seq          Int
 

@@ -1915,6 +1915,39 @@ async function listsProfilesAndForks(at: string): Promise<void> {
     ],
     [1, 0],
   )
+  for (let i = 0; i < 3; i++) {
+    await send('POST', `${repo}/statuses/${forkHead}`, { context: 'shared', state: 'success' })
+  }
+  await send('POST', `${fork}/statuses/${forkHead}`, { context: 'shared', state: 'failure' })
+  const reread = await send('POST', `${base}/graphql`, {
+    query:
+      `{ repository(owner: "integ", name: "repo-v1") { pullRequest(number: ${number}) { ` +
+      'commits(last: 1) { nodes { commit { statusCheckRollup { contexts(first: 10) { nodes { ' +
+      '... on StatusContext { context state } } } } } } } } } }',
+  })
+  eq(
+    'a context set in both repositories rolls up the one set last',
+    field(
+      field(
+        (
+          field(
+            field(field(field(reread.body, 'data'), 'repository'), 'pullRequest'),
+            'commits',
+          ) as { nodes: JsonValue[] }
+        ).nodes[0] ?? null,
+        'commit',
+      ),
+      'statusCheckRollup',
+    ),
+    {
+      contexts: {
+        nodes: [
+          { context: 'fork-ci', state: 'FAILURE' },
+          { context: 'shared', state: 'FAILURE' },
+        ],
+      },
+    },
+  )
 
   // Deleting the source leaves the fork its history, its trees and its tags.
   const history = async (): Promise<JsonValue> =>

@@ -533,6 +533,8 @@ async function checkRuns(ctx: Ctx<C>, repo: RepoRow): Promise<Reply> {
  * Every status set on one commit in the repositories named, newest first: one
  * repository's own for its REST routes, and both sides of a pull request from
  * a fork for its rollup, whose head commit's CI may have reported to either.
+ * A repository counts its own `seq`, so the order they were set in across two
+ * repositories is the table's.
  */
 export async function statusesOf(
   ctx: { db: C; tenant: string },
@@ -541,7 +543,7 @@ export async function statusesOf(
 ): Promise<StatusRow[]> {
   return (await ctx.db.githubStatus.findMany({
     where: { ...scope(ctx.tenant), repo: { in: repos.map((r) => r.fullName) }, sha },
-    orderBy: { seq: 'desc' },
+    orderBy: { pk: 'desc' },
   })) as StatusRow[]
 }
 
@@ -557,7 +559,7 @@ export async function combinedStatus(
   for (const row of await statusesOf(ctx, repos, sha)) {
     if (!latest.has(row.context)) latest.set(row.context, row)
   }
-  const rows = [...latest.values()].sort((a, b) => a.seq - b.seq)
+  const rows = [...latest.values()].reverse()
   const states = new Set(rows.map((r) => r.state))
   let state = 'success'
   if (states.has('error') || states.has('failure')) state = 'failure'

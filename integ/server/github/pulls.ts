@@ -830,7 +830,7 @@ function commitNode(
     },
     statusCheckRollup: {
       contexts: async ({ first, after }: PageArgs) => {
-        const checks = await ctx.db.githubCheck.findMany({ where, orderBy: { seq: 'asc' } })
+        const checks = await ctx.db.githubCheck.findMany({ where, orderBy: { pk: 'asc' } })
         const statuses = (await combinedStatus(ctx, repos, row.sha)).rows
         const contexts = [
           ...checks.map((check) => ({

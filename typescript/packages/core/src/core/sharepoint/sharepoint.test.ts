@@ -4,7 +4,7 @@ import { SharePointAccessor } from '../../accessor/sharepoint.ts'
 import { RAMIndexCacheStore } from '../../cache/index/ram.ts'
 import { runWithRecording } from '../../observe/context.ts'
 import { PathSpec } from '../../types.ts'
-import { create, find, read, readdir, stream, write } from './index.ts'
+import { create, find, mkdir, read, readdir, stream, write } from './index.ts'
 
 function requestUrl(input: URL | RequestInfo): string {
   if (typeof input === 'string') return input
@@ -286,5 +286,64 @@ describe('an unrecorded SharePoint read', () => {
     const data = await read(accessor(), path, undefined, { offset: 2, size: 3 })
     expect(new TextDecoder().decode(data)).toBe('llo')
     expect(calls.at(-1)).toEqual([SP_DOWNLOAD, undefined, 'bytes=2-4'])
+  })
+})
+
+const NOT_FOUND = { error: { code: 'itemNotFound', message: 'x' } }
+
+// Records every folder create and answers each URL from a queue, so the
+// first create of a URL can 404 and its retry succeed.
+function folderFetch(
+  answers: Record<string, number[]>,
+  gets: Record<string, unknown> = {},
+): { posts: string[]; fetch: typeof fetch } {
+  const posts: string[] = []
+  const impl = (input: URL | RequestInfo, init?: RequestInit): Promise<Response> => {
+    const url = (requestUrl(input).split('?')[0] ?? '').replace(/\/$/, '')
+    if ((init?.method ?? 'GET') === 'GET') {
+      return Promise.resolve(new Response(JSON.stringify(gets[url] ?? { value: [] })))
+    }
+    const status = answers[url]?.shift() ?? 201
+    posts.push(`${String(status)} ${url}`)
+    const body = status < 400 ? { id: '1' } : NOT_FOUND
+    return Promise.resolve(new Response(JSON.stringify(body), { status }))
+  }
+  return { posts, fetch: impl as typeof fetch }
+}
+
+describe('SharePoint mkdir under a mount root the drive does not have yet', () => {
+  const api = 'https://graph.microsoft.com/v1.0'
+  const drive = `${api}/drives/drive-1`
+  const gets = {
+    [`${api}/sites`]: {
+      value: [{ id: 'site-1', displayName: 'Engineering', name: 'Engineering' }],
+    },
+    [`${api}/sites/site-1/drives`]: { value: [{ id: 'drive-1', name: 'Documents' }] },
+  }
+  const scoped = (): SharePointAccessor =>
+    new SharePointAccessor({
+      accessToken: 'token',
+      site: 'Engineering',
+      drive: 'Documents',
+      keyPrefix: 'team/root',
+    })
+
+  it('creates the root, then the folder', async () => {
+    const graph = folderFetch({ [`${drive}/root:/team/root:/children`]: [404] }, gets)
+    vi.stubGlobal('fetch', graph.fetch)
+    await mkdir(scoped(), PathSpec.fromStrPath('/sp/lt', 'lt'))
+    expect(graph.posts).toEqual([
+      `404 ${drive}/root:/team/root:/children`,
+      `201 ${drive}/root/children`,
+      `201 ${drive}/root:/team:/children`,
+      `201 ${drive}/root:/team/root:/children`,
+    ])
+  })
+
+  it('does not retry a 404 below the mount root', async () => {
+    const graph = folderFetch({ [`${drive}/root:/team/root/a:/children`]: [404] }, gets)
+    vi.stubGlobal('fetch', graph.fetch)
+    await expect(mkdir(scoped(), PathSpec.fromStrPath('/sp/a/b', 'a/b'))).rejects.toThrow()
+    expect(graph.posts).toEqual([`404 ${drive}/root:/team/root/a:/children`])
   })
 })

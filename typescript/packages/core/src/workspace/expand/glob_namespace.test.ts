@@ -13,7 +13,7 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import { describe, expect, it } from 'vitest'
-import { OpsRegistry } from '../../ops/registry.ts'
+import { OpsRegistry, type RegisteredOp } from '../../ops/registry.ts'
 import { RAMVFS } from '../../vfs/ram/ram.ts'
 import { MountMode } from '../../types.ts'
 import { getTestParser, stdoutStr } from '../fixtures/workspace_fixture.ts'
@@ -319,5 +319,114 @@ describe('trailing-slash globs', () => {
     const line =
       'cd /data/records && for d in */; do for f in "$d"*.txt; do [ -f "$f" ] || continue; cat "$f"; done; done'
     expect(await out(ws, line)).toBe('sample\nsample\n')
+  })
+})
+
+// A RAM mount that answers listings but can stat nothing: no stat op, and
+// no vfs.stat either.
+class NoStatRAM extends RAMVFS {
+  constructor() {
+    super()
+    Object.defineProperty(this, 'stat', { value: undefined })
+  }
+
+  override ops(): readonly RegisteredOp[] {
+    return super.ops().filter((op) => op.name !== 'stat')
+  }
+}
+
+// A custom VFS whose stat lives only in its op table, not as a method.
+class OpsOnlyStatRAM extends RAMVFS {
+  constructor() {
+    super()
+    Object.defineProperty(this, 'stat', { value: undefined })
+  }
+}
+
+async function flatWs(vfs: RAMVFS): Promise<Workspace> {
+  vfs.loadState({
+    type: 'ram',
+    dirs: ['/', '/a', '/b'],
+    files: { '/f': new TextEncoder().encode('x') },
+  })
+  const ws = new Workspace(
+    { '/m': vfs },
+    { mode: MountMode.WRITE, shellParser: await getTestParser() },
+  )
+  ws.createSession('s')
+  return ws
+}
+
+// Twin of python test_trailing_slash_glob_keeps_nothing_a_mount_cannot_stat.
+// A trailing-slash match is a directory only when the stat the dispatcher
+// runs says so, so a match that stat cannot classify -- no stat op at all,
+// or one that answers nothing -- is dropped, and a word left with no match
+// stays literal, as bash leaves one whose matches lstat cannot classify.
+describe('trailing-slash globs on a mount that cannot stat', () => {
+  it.each([
+    ['missing', '/m/*/\n'],
+    ['none', '/m/*/\n'],
+    ['one', '/m/a/ /m/b/\n'],
+  ])('keeps only what stat calls a directory (stat=%s)', async (stat, expected) => {
+    const vfs = stat === 'missing' ? new NoStatRAM() : new RAMVFS()
+    const ws = await flatWs(vfs)
+    if (stat !== 'missing') {
+      const ramStat = vfs.ops().find((op) => op.name === 'stat')
+      ws.opsRegistry.register({
+        name: 'stat',
+        vfs: 'ram',
+        filetype: null,
+        write: false,
+        fn: (accessor, path, args, kwargs) =>
+          stat === 'none' || path.virtual === '/m/f'
+            ? Promise.resolve(undefined)
+            : ramStat?.fn(accessor, path, args, kwargs),
+      })
+    }
+    try {
+      expect(await out(ws, 'echo /m/*')).toBe('/m/a /m/b /m/f\n')
+      expect(await out(ws, 'echo /m/*/')).toBe(expected)
+    } finally {
+      await ws.close()
+    }
+  })
+
+  // A stat op registered for one filetype answers a match with that
+  // extension, as it answers `stat` of the same path: the glob's stat is
+  // stamped with the path's filetype the way dispatch stamps it.
+  it('asks a filetype-scoped stat op for a match with that extension', async () => {
+    const ramStat = new RAMVFS().ops().find((op) => op.name === 'stat')
+    const vfs = new NoStatRAM()
+    vfs.loadState({ type: 'ram', dirs: ['/', '/x.d', '/y'] })
+    const ws = new Workspace(
+      { '/m': vfs },
+      { mode: MountMode.WRITE, shellParser: await getTestParser() },
+    )
+    ws.createSession('s')
+    ws.opsRegistry.register({
+      name: 'stat',
+      vfs: 'ram',
+      filetype: '.d',
+      write: false,
+      fn: (accessor, path, args, kwargs) => ramStat?.fn(accessor, path, args, kwargs),
+    })
+    try {
+      expect(await out(ws, 'stat -c %F /m/x.d')).toBe('directory\n')
+      expect(await out(ws, 'echo /m/*/')).toBe('/m/x.d/\n')
+    } finally {
+      await ws.close()
+    }
+  })
+
+  // The glob asks the op the dispatcher runs, so it agrees with `stat` and
+  // `test -d` on a VFS that registers stat as an op but has no stat method.
+  it('agrees with stat on a VFS whose stat is an op only', async () => {
+    const ws = await flatWs(new OpsOnlyStatRAM())
+    try {
+      expect(await out(ws, 'stat -c %F /m/a; test -d /m/a && echo dir')).toBe('directory\ndir\n')
+      expect(await out(ws, 'echo /m/*/')).toBe('/m/a/ /m/b/\n')
+    } finally {
+      await ws.close()
+    }
   })
 })

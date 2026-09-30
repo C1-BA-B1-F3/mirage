@@ -39,6 +39,7 @@ __all__ = [
     "GraphError",
     "drive_base",
     "drive_ref_path",
+    "full_item_url",
     "graph_delete",
     "graph_get",
     "graph_get_bytes",
@@ -98,15 +99,29 @@ def _full_path(config: OneDriveConfig, path: str) -> str:
     return prefix or p
 
 
-def item_url(config: OneDriveConfig, path: str, action: str = "") -> str:
+def full_item_url(config: OneDriveConfig, full: str, action: str = "") -> str:
+    """Graph URL of a drive item by its path from the drive root.
+
+    Unlike :func:`item_url`, ``full`` is not placed under the mount's
+    ``key_prefix``: this is how the prefix folders themselves are reached.
+
+    Args:
+        config (OneDriveConfig): mount config.
+        full (str): path from the drive root; empty for the root itself.
+        action (str): a trailing Graph segment such as ``/children``.
+    """
     base = drive_base(config)
-    full = _full_path(config, path)
+    full = full.strip("/")
     if not full:
         return f"{base}/root{action}"
     stem = f"{base}/root:/{quote(full, safe='/')}"
     if action:
         return f"{stem}:{action}"
     return stem
+
+
+def item_url(config: OneDriveConfig, path: str, action: str = "") -> str:
+    return full_item_url(config, _full_path(config, path), action)
 
 
 def drive_ref_path(config: OneDriveConfig, folder: str = "") -> str:

@@ -725,7 +725,7 @@ def _flat_ws(vfs: RAMVFS) -> Workspace:
     return ws
 
 
-# Python drops unstatable matches; TypeScript keeps them (existing divergence).
+# A match the mount cannot stat is not a directory, on both hosts.
 @pytest.mark.asyncio
 @pytest.mark.parametrize("stat,expected", [
     ("missing", b"/m/*/\n"),

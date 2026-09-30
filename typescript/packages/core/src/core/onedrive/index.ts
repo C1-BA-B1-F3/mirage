@@ -12,7 +12,7 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import type { OneDriveAccessor } from '../../accessor/onedrive.ts'
+import { oneDriveFullItemUrl, type OneDriveAccessor } from '../../accessor/onedrive.ts'
 import {
   invalidateAfterUnlink,
   invalidateAfterWrite,
@@ -162,9 +162,37 @@ export async function create(accessor: OneDriveAccessor, path: PathSpec): Promis
   await write(accessor, path, new Uint8Array())
 }
 
+// The mount root exists from the agent's side because it is mounted, but on
+// the drive it is a keyPrefix folder chain nothing has created until the
+// first write. A file upload creates its parents; a folder create does not,
+// so mkdir makes the chain, one level at a time, when it finds it missing.
+async function createRoot(accessor: OneDriveAccessor): Promise<void> {
+  let parent = ''
+  for (const name of accessor.config.keyPrefix.split('/')) {
+    await createChildFolder(
+      accessor.config,
+      oneDriveFullItemUrl(accessor.config, parent, '/children'),
+      name,
+    )
+    parent = parent === '' ? name : `${parent}/${name}`
+  }
+}
+
 async function createDir(accessor: OneDriveAccessor, path: string): Promise<void> {
   const parent = parentPath(path)
-  await createChildFolder(accessor.config, accessor.loc(parent).item('/children'), baseName(path))
+  const url = accessor.loc(parent).item('/children')
+  try {
+    await createChildFolder(accessor.config, url, baseName(path))
+  } catch (error) {
+    const missingRoot =
+      error instanceof GraphError &&
+      error.status === 404 &&
+      parent === '' &&
+      accessor.config.keyPrefix !== ''
+    if (!missingRoot) throw error
+    await createRoot(accessor)
+    await createChildFolder(accessor.config, url, baseName(path))
+  }
 }
 
 export async function mkdir(

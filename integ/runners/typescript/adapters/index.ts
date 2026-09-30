@@ -861,7 +861,7 @@ async function boxUpload(
   if (r.status !== 201) throw new Error(`box upload ${name} -> ${String(r.status)}`)
 }
 
-async function openBox(target: Target): Promise<Open> {
+async function openBox(target: Target, options?: OpenOptions): Promise<Open> {
   let endpoint = process.env.BOX_URL ?? ''
   while (endpoint.endsWith('/')) endpoint = endpoint.slice(0, -1)
   if (endpoint === '') throw new Error('box target requires BOX_URL')
@@ -872,12 +872,11 @@ async function openBox(target: Target): Promise<Open> {
   // which isolated runs only as far as a name collision.
   const token = `integ-box-${runId()}`
   const root = integRoot()
-  const mounts: Record<string, BoxVFS> = {}
+  const folders: Record<string, string> = {}
   for (const m of target.mounts) {
-    // Box is read-only through the workspace, so the harness tee-seeding
-    // can't run; the fixture is uploaded over the Box API instead (the folder
-    // id becomes the mount root, mirroring how a real Box app scopes to a
-    // folder).
+    // The fixture is uploaded over the Box API rather than tee-seeded through
+    // the workspace: the folder id becomes the mount root, mirroring how a
+    // real Box app scopes to a folder.
     const folderId = await boxCreateFolder(endpoint, token, '0', String(m.folder))
     if (m.seed !== undefined) {
       const base = join(root, 'fixtures', m.seed)
@@ -902,17 +901,26 @@ async function openBox(target: Target): Promise<Open> {
       // listings must hide it and a direct stat must ENOENT.
       await boxCreateWebLink(endpoint, token, folderId, 'homepage', 'https://example.com/')
     }
-    mounts[m.path] = new BoxVFS({
-      accessToken: token,
-      endpoint,
-      rootFolderId: folderId,
-      // The fake supports name+content search, so exercise grep/rg push-down
-      // narrowing in the battery.
-      contentSearch: true,
-    })
+    folders[m.path] = folderId
   }
-  const ws = new Workspace(mounts, { mode: MountMode.WRITE })
-  return { ws: ws as unknown as ExecWorkspace, cleanup: () => ws.close() }
+  // Seeding runs once; each workspace, the shadow a scenario mutates through
+  // included, gets its own BoxVFS over the same folders.
+  const build = (): MountMap => {
+    const mounts: Record<string, BoxVFS> = {}
+    for (const [path, folderId] of Object.entries(folders)) {
+      mounts[path] = new BoxVFS({
+        accessToken: token,
+        endpoint,
+        rootFolderId: folderId,
+        // The fake supports name+content search, so exercise grep/rg
+        // push-down narrowing in the battery.
+        contentSearch: true,
+      })
+    }
+    return mounts
+  }
+  const opened = openWorkspaces(build, options)
+  return { ws: opened.ws, shadow: opened.shadow, cleanup: () => opened.closeAll() }
 }
 
 async function openDropbox(target: Target, options?: OpenOptions): Promise<Open> {

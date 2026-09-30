@@ -58,6 +58,7 @@ export async function mkdir(accessor: SSHAccessor, p: PathSpec, recursive: boole
       if (isNoSuchFile(err)) throw enoent(p)
       throw err
     }
+    await invalidateAfterWrite(p)
     return
   }
   const cleaned = stripSlash(virtual)

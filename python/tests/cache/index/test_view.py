@@ -102,6 +102,7 @@ async def test_late_index_write_cannot_cross_mount_ownership(
     reading = asyncio.create_task(ws.vfs.readdir("/data"))
     changing = None
     replacement = RAMVFS()
+    replacement.accessor.store.files["/own"] = b"own\n"
     try:
         await asyncio.wait_for(entered.wait(), timeout=5)
         if shadow:
@@ -128,6 +129,13 @@ async def test_late_index_write_cannot_cross_mount_ownership(
             assert "/data/stale" not in ((await
                                           candidate.list_dir("/data")).entries
                                          or [])
+            if method in ("set_dir", "set_partial_dir"):
+                listing = await candidate.list_dir("/data")
+                shares = (candidate is replacement.index
+                          or store_kind == "redis")
+                own = ["/data/own"] if shares else None
+                assert (listing.entries, listing.partial_entries) == (own,
+                                                                      None)
         assert (await replacement.index.get("/data/fresh")).entry.id == "new"
     finally:
         release.set()

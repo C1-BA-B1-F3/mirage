@@ -4,7 +4,7 @@ import { OneDriveAccessor } from '../../accessor/onedrive.ts'
 import { RAMIndexCacheStore } from '../../cache/index/ram.ts'
 import { runWithRecording } from '../../observe/context.ts'
 import { PathSpec } from '../../types.ts'
-import { create, find, read, readdir, stat, stream, write } from './index.ts'
+import { create, find, mkdir, read, readdir, stat, stream, write } from './index.ts'
 
 function requestUrl(input: URL | RequestInfo): string {
   if (typeof input === 'string') return input
@@ -428,5 +428,57 @@ describe('a OneDrive folder served from the index', () => {
     const docs = await stat(accessor, PathSpec.fromStrPath('/od/Docs', 'Docs'), index)
     expect(docs.type).toBe('directory')
     expect(docs.fingerprint).toBeNull()
+  })
+})
+
+const NOT_FOUND = { error: { code: 'itemNotFound', message: 'x' } }
+
+// Records every folder create and answers each URL from a queue, so the
+// first create of a URL can 404 and its retry succeed.
+function folderFetch(answers: Record<string, number[]>): {
+  posts: string[]
+  fetch: typeof fetch
+} {
+  const posts: string[] = []
+  const impl = (input: URL | RequestInfo): Promise<Response> => {
+    const url = (requestUrl(input).split('?')[0] ?? '').replace(/\/$/, '')
+    const status = answers[url]?.shift() ?? 201
+    posts.push(`${String(status)} ${url}`)
+    const body = status < 400 ? { id: '1' } : NOT_FOUND
+    return Promise.resolve(new Response(JSON.stringify(body), { status }))
+  }
+  return { posts, fetch: impl as typeof fetch }
+}
+
+describe('OneDrive mkdir under a mount root the drive does not have yet', () => {
+  const base = 'https://graph.microsoft.com/v1.0/me/drive'
+
+  it.each([false, true])('creates the root, then the folder (parents=%s)', async (parents) => {
+    const graph = folderFetch({ [`${base}/root:/team/root:/children`]: [404] })
+    vi.stubGlobal('fetch', graph.fetch)
+    const accessor = new OneDriveAccessor({ accessToken: 'token', keyPrefix: 'team/root' })
+    await mkdir(accessor, PathSpec.fromStrPath('/od/lt', 'lt'), parents)
+    expect(graph.posts).toEqual([
+      `404 ${base}/root:/team/root:/children`,
+      `201 ${base}/root/children`,
+      `201 ${base}/root:/team:/children`,
+      `201 ${base}/root:/team/root:/children`,
+    ])
+  })
+
+  it('does not retry a 404 below the mount root', async () => {
+    const graph = folderFetch({ [`${base}/root:/team/root/a:/children`]: [404] })
+    vi.stubGlobal('fetch', graph.fetch)
+    const accessor = new OneDriveAccessor({ accessToken: 'token', keyPrefix: 'team/root' })
+    await expect(mkdir(accessor, PathSpec.fromStrPath('/od/a/b', 'a/b'))).rejects.toThrow()
+    expect(graph.posts).toEqual([`404 ${base}/root:/team/root/a:/children`])
+  })
+
+  it('does not retry a 404 without a key prefix', async () => {
+    const graph = folderFetch({ [`${base}/root/children`]: [404] })
+    vi.stubGlobal('fetch', graph.fetch)
+    const accessor = new OneDriveAccessor({ accessToken: 'token' })
+    await expect(mkdir(accessor, PathSpec.fromStrPath('/od/new', 'new'))).rejects.toThrow()
+    expect(graph.posts).toEqual([`404 ${base}/root/children`])
   })
 })

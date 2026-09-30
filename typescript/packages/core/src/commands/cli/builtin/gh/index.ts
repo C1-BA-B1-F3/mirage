@@ -14,6 +14,8 @@
 
 import { searchSpec } from './search.ts'
 import { GhConfigSchema } from '../../../../core/github/config.ts'
+import { REPO_EDIT_FIELDS } from './constants.ts'
+import type { RepoEditField } from './types.ts'
 import { CLISpec } from '../../types.ts'
 import { Operand, Option } from '../../../spec/types.ts'
 import { api } from './api.ts'
@@ -41,6 +43,8 @@ import {
 } from './pull.ts'
 import {
   createCmd as repoCreate,
+  deleteCmd as repoDelete,
+  editCmd as repoEdit,
   fork,
   listCmd as repoList,
   rename,
@@ -77,6 +81,18 @@ const BODY = new Option({ short: '-b', long: '--body', type: 'str' })
 const BODY_FILE = new Option({ short: '-F', long: '--body-file', type: 'path' })
 const TITLE = new Option({ short: '-t', long: '--title', type: 'str' })
 const NUMBER = new Operand({ type: 'str', name: 'NUMBER', required: true })
+
+// The grammar and request mapping consume the same setting definition.
+function repoEditOption(field: RepoEditField): Option {
+  return new Option({
+    short: field.short ?? null,
+    long: field.flag,
+    type: 'str',
+    valueOptional: field.kind !== 'value',
+    choices: field.kind === 'value' ? [...(field.choices ?? [])] : ['true', 'false'],
+    description: field.description,
+  })
+}
 
 function issue(): CLISpec {
   return new CLISpec({
@@ -347,6 +363,43 @@ function repo(): CLISpec {
         positional: [new Operand({ type: 'str', name: 'NEW-NAME', required: true })],
         options: [REPO],
       }),
+      new CLISpec({
+        name: 'edit',
+        description: 'Edit repository settings',
+        fn: repoEdit,
+        write: true,
+        positional: [new Operand({ type: 'str', name: 'REPOSITORY' })],
+        options: [
+          ...REPO_EDIT_FIELDS.map(repoEditOption),
+          new Option({
+            long: '--add-topic',
+            type: 'str',
+            multiple: true,
+            description: 'Add repository topic',
+          }),
+          new Option({
+            long: '--remove-topic',
+            type: 'str',
+            multiple: true,
+            description: 'Remove repository topic',
+          }),
+          new Option({
+            long: '--accept-visibility-change-consequences',
+            description: 'Accept the consequences of changing the repository visibility',
+          }),
+        ],
+      }),
+      new CLISpec({
+        name: 'delete',
+        description: 'Delete a repository',
+        fn: repoDelete,
+        write: true,
+        positional: [new Operand({ type: 'str', name: 'REPOSITORY' })],
+        options: [
+          new Option({ long: '--yes', description: 'Confirm deletion without prompting' }),
+          new Option({ long: '--confirm', description: 'Deprecated: use --yes instead' }),
+        ],
+      }),
     ],
   })
 }
@@ -420,7 +473,20 @@ function run(): CLISpec {
         description: 'View a workflow run',
         fn: runViewCmd,
         positional: [new Operand({ type: 'str', name: 'RUN-ID', required: true })],
-        options: [REPO, JSON_FIELDS, JQ, new Option({ long: '--exit-status' })],
+        options: [
+          REPO,
+          JSON_FIELDS,
+          JQ,
+          new Option({ long: '--exit-status' }),
+          new Option({
+            long: '--log',
+            description: 'View full log for either a run or specific job',
+          }),
+          new Option({
+            long: '--log-failed',
+            description: 'View the log for any failed steps in a run or specific job',
+          }),
+        ],
       }),
       new CLISpec({
         name: 'rerun',
@@ -462,7 +528,17 @@ function workflow(): CLISpec {
         description: 'View a workflow',
         fn: workflowViewCmd,
         positional: [new Operand({ type: 'str', name: 'WORKFLOW', required: true })],
-        options: [REPO],
+        options: [
+          REPO,
+          new Option({ short: '-y', long: '--yaml', description: 'View the workflow yaml file' }),
+          new Option({
+            short: '-r',
+            long: '--ref',
+            type: 'str',
+            description:
+              "The branch or tag name which contains the version of the workflow file you'd like to view",
+          }),
+        ],
       }),
       new CLISpec({
         name: 'run',
@@ -511,6 +587,11 @@ export const GH = new CLISpec({
         new Option({ short: '-f', long: '--raw-field', type: 'str', multiple: true }),
         new Option({ short: '-F', long: '--field', type: 'str', multiple: true }),
         new Option({ short: '-H', long: '--header', type: 'str', multiple: true }),
+        new Option({
+          short: '-i',
+          long: '--include',
+          description: 'Include HTTP response status line and headers in the output',
+        }),
         new Option({ long: '--input', type: 'path' }),
         JQ,
         new Option({ long: '--paginate' }),

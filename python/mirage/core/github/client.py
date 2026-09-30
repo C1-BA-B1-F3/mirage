@@ -14,6 +14,7 @@
 
 import json
 from typing import Any, cast
+from urllib.parse import urlencode
 
 import aiohttp
 from pydantic import SecretStr
@@ -71,6 +72,9 @@ class GitHubApiError(Exception):
         status (int): the HTTP status.
         body (str): the response text, preserved for CLI output.
         url (str): the final request URL, including query parameters.
+        headers (dict[str, str] | None): the response's headers,
+            lowercased, which `gh api -i` prints for a failing response as
+            for any other.
     """
 
     def __init__(self,
@@ -78,15 +82,34 @@ class GitHubApiError(Exception):
                  status: int,
                  *,
                  body: str = "",
-                 url: str = "") -> None:
+                 url: str = "",
+                 headers: dict[str, str] | None = None) -> None:
         super().__init__(message)
         self.status = status
         self.body = body
         self.url = url
+        self.headers = headers or {}
         try:
             self.data: JsonValue = json.loads(body) if body else None
         except ValueError:
             self.data = body
+
+
+class GitHubConnectionError(Exception):
+    """A GitHub call that got no response.
+
+    The connection was refused, the host did not resolve, or the
+    transport failed before any status arrived. It is not a
+    ``GitHubApiError``, because there is no status to report, and it is
+    never retried. The wording is gh's: a host that does not resolve
+    reads "error connecting to HOST" with a pointer at GitHub's status
+    page (gh's ``printError``), a refused connection reads as Go's client
+    reports one, ``Get "URL": dial tcp ADDR: connect: connection
+    refused``, and anything else as the transport said it.
+
+    Args:
+        message (str): the failure, as gh would print it.
+    """
 
 
 async def github_get(token: SecretStr,
@@ -170,24 +193,77 @@ async def github_request_response(token: SecretStr,
             merged.pop(prior)
         merged[key] = value
     present = body is not _NO_BODY
-    response: ApiResponse = await api_request(
-        method.upper(),
-        url,
-        error_of=_error_of,
-        headers=merged,
-        params=params,
-        json_body=None if not present else cast(JsonValue, body),
-        json_body_present=present,
-        read="response",
-        session=session)
-    return response
+    try:
+        raw: ApiResponse = await api_request(
+            method.upper(),
+            url,
+            error_of=_error_of,
+            headers=merged,
+            params=params,
+            json_body=None if not present else cast(JsonValue, body),
+            json_body_present=present,
+            read="bytes_response",
+            session=session)
+    except aiohttp.ClientConnectorDNSError as exc:
+        raise GitHubConnectionError(
+            f"error connecting to {exc.host}\n"
+            "check your internet connection or https://githubstatus.com"
+        ) from exc
+    except aiohttp.ClientConnectorError as exc:
+        if not isinstance(exc.os_error, ConnectionRefusedError):
+            raise GitHubConnectionError(str(exc)) from exc
+        target = (f"{url}{'&' if '?' in url else '?'}{urlencode(params)}"
+                  if params else url)
+        host = f"[{exc.host}]" if ":" in exc.host else exc.host
+        raise GitHubConnectionError(
+            f'{method.capitalize()} "{target}": dial tcp {host}:{exc.port}: '
+            "connect: connection refused") from exc
+    except aiohttp.ClientConnectionError as exc:
+        raise GitHubConnectionError(str(exc)) from exc
+    return ApiResponse(_decoded(raw.data, raw.headers.get("content-type", "")),
+                       raw.status, raw.headers)
+
+
+def _decoded(body: bytes, content_type: str) -> "JsonValue | bytes":
+    """A body as the caller reads it, decided by its type as Octokit does.
+
+    JSON is decoded (and read as text when it does not parse), no type, a
+    text type or a UTF-8 charset reads as text, and anything else, such as
+    a run's log archive, stays bytes. An empty body is None.
+
+    Args:
+        body (bytes): the body as it arrived.
+        content_type (str): the response's Content-Type, empty if none.
+    """
+    if not body:
+        return None
+    mime, _, rest = content_type.partition(";")
+    mime = mime.strip().lower()
+    charset = next((part.split("=", 1)[1].strip().strip('"').lower()
+                    for part in rest.split(";")
+                    if part.strip().lower().startswith("charset=")), "")
+    if not mime:
+        return body.decode("utf-8", errors="replace")
+    if mime in ("application/json", "application/scim+json"):
+        text = body.decode("utf-8", errors="replace")
+        try:
+            return cast(JsonValue, json.loads(text))
+        except ValueError:
+            return text
+    if mime.startswith("text/") or charset == "utf-8":
+        return body.decode("utf-8", errors="replace")
+    return body
 
 
 def _error_of(resp: aiohttp.ClientResponse, text: str) -> Exception:
     return GitHubApiError(_api_message(text, resp.reason),
                           resp.status,
                           body=text,
-                          url=str(resp.url))
+                          url=str(resp.url),
+                          headers={
+                              key.lower(): ", ".join(resp.headers.getall(key))
+                              for key in resp.headers.keys()
+                          })
 
 
 def _api_message(text: str, reason: str | None) -> str:

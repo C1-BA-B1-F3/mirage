@@ -52,6 +52,9 @@ model GithubRepo {
   // The branch that directory loads into, for a fixture whose repository has a
   // second branch: the python fake spelled this `:into=<branch>`.
   sourceBranch  String  @default("")
+  // The Pages site as JSON, "" for none. On the row so a rename carries it and
+  // a fork, a new row, starts without one, as on GitHub.
+  pagesJson     String  @default("")
   seq           Int
 
   branches    GithubBranch[]
@@ -272,12 +275,12 @@ model GithubRelease {
   @@index([tenant, repo])
 }
 
+// A registered workflow file's id and state; its name is read from the file.
 model GithubWorkflow {
   pk     Int    @id @default(autoincrement())
   tenant String
   repo   String
   id     Int
-  name   String
   path   String
   state  String @default("active")
   seq    Int
@@ -307,6 +310,8 @@ model GithubRun {
   createdAt    String
   updatedAt    String
   runStartedAt String?
+  // Jobs in the vendor's field names; each step's `log` is its archive text.
+  jobsJson     String  @default("[]")
   seq          Int
 
   repository GithubRepo @relation(fields: [tenant, repo], references: [tenant, fullName])

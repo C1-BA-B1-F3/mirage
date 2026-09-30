@@ -8,6 +8,86 @@
       "sourceDir": "github/repo-v1"
     }
   ],
+  "workflows": [
+    {
+      "repo": "integ/repo-cli",
+      "id": 101,
+      "path": ".github/workflows/ci.yml"
+    },
+    {
+      "repo": "integ/repo-cli",
+      "id": 102,
+      "path": ".github/workflows/archive.yml",
+      "state": "disabled_manually"
+    }
+  ],
+  "runs": [
+    {
+      "repo": "integ/repo-cli",
+      "id": 201,
+      "name": "CI",
+      "displayTitle": "Initial checks",
+      "workflowId": 101,
+      "runNumber": 1,
+      "runAttempt": 1,
+      "event": "push",
+      "headBranch": "main",
+      "headSha": "b74c57783a47b1129aae98054c381cd45eb6fe06",
+      "status": "completed",
+      "conclusion": "success",
+      "createdAt": "2026-01-01T00:00:00Z",
+      "updatedAt": "2026-01-01T00:01:00Z",
+      "runStartedAt": "2026-01-01T00:00:05Z",
+      "jobsJson": [
+        {
+          "id": 401,
+          "name": "test",
+          "status": "completed",
+          "conclusion": "success",
+          "started_at": "2026-01-01T00:00:05Z",
+          "completed_at": "2026-01-01T00:01:00Z",
+          "steps": [
+            {
+              "name": "Set up job",
+              "number": 1,
+              "status": "completed",
+              "conclusion": "success",
+              "started_at": "2026-01-01T00:00:05Z",
+              "completed_at": "2026-01-01T00:00:06Z",
+              "log": "2026-01-01T00:00:05.0000000Z Current runner version: '2.330.0'\n2026-01-01T00:00:05.1000000Z Operating System\n"
+            },
+            {
+              "name": "Run actions/checkout@v4",
+              "number": 2,
+              "status": "completed",
+              "conclusion": "success",
+              "started_at": "2026-01-01T00:00:06Z",
+              "completed_at": "2026-01-01T00:00:09Z",
+              "log": "2026-01-01T00:00:06.0000000Z ##[group]Run actions/checkout@v4\n2026-01-01T00:00:06.2000000Z Syncing repository: integ/repo-cli\n"
+            },
+            {
+              "name": "Run python -m pytest tests",
+              "number": 3,
+              "status": "completed",
+              "conclusion": "success",
+              "started_at": "2026-01-01T00:00:09Z",
+              "completed_at": "2026-01-01T00:00:58Z",
+              "log": "2026-01-01T00:00:09.0000000Z ##[group]Run python -m pytest tests\n2026-01-01T00:00:58.0000000Z ============================== 6 passed in 48.90s ==============================\n"
+            },
+            {
+              "name": "Complete job",
+              "number": 4,
+              "status": "completed",
+              "conclusion": "success",
+              "started_at": "2026-01-01T00:00:58Z",
+              "completed_at": "2026-01-01T00:01:00Z",
+              "log": "2026-01-01T00:00:58.0000000Z Cleaning up orphan processes\n"
+            }
+          ]
+        }
+      ]
+    }
+  ],
   "settings": [
     {
       "createRepos": false

@@ -14,12 +14,14 @@
 
 import json
 import re
+from dataclasses import dataclass
 from typing import Any, cast
 from urllib.parse import urlsplit
 
-from mirage.commands.cli.builtin.gh.accessor import (jq_lines, read_cli_file,
-                                                     text_out)
+from mirage.commands.cli.builtin.gh.accessor import jq_lines, read_cli_file
+from mirage.commands.cli.builtin.gh.constants import HTTP_REASONS
 from mirage.commands.cli.types import CLIInvocation
+from mirage.commands.errors import PartialOutputError
 from mirage.commands.spec.flag_view import FlagView
 from mirage.core.github.client import GitHubApiError, github_request_response
 from mirage.core.github.config import GhConfig
@@ -34,6 +36,34 @@ KEY_RE = re.compile(r"^([^\[\]]+)((?:\[[^\[\]]*\])*)$")
 
 class _EmptyArray:
     pass
+
+
+@dataclass(frozen=True)
+class _Printed:
+    """One response as ``gh api`` prints it.
+
+    Args:
+        data (Any): the decoded body.
+        head (str): under ``-i`` the status line and headers that go
+            before it, empty otherwise.
+    """
+
+    data: Any
+    head: str
+
+
+@dataclass(frozen=True)
+class _Failure:
+    """A failing response: its body verbatim, and its head as for any
+    other.
+
+    Args:
+        body (str): the body as it arrived.
+        head (str): as ``_Printed.head``.
+    """
+
+    body: str
+    head: str
 
 
 _EMPTY_ARRAY = _EmptyArray()
@@ -216,7 +246,8 @@ async def api(
     else:
         body = fields or None
 
-    pages: list[Any] = []
+    pages: list[_Printed] = []
+    include = fl.as_bool("include")
     current: str | None = path
     first = True
     while current is not None:
@@ -240,21 +271,62 @@ async def api(
                     base_url=inv.config.base_url,
                     headers=_headers(fl) or None)
         except GitHubApiError as exc:
+            head = _response_head(exc.status, exc.headers) if include else ""
             return _failed(
-                pages, fl, exc.body,
+                pages, fl, _Failure(exc.body, head),
                 _server_error(exc.data, exc.status) or f"HTTP {exc.status}")
+        head = (_response_head(response.status, dict(response.headers))
+                if include else "")
         if endpoint == "graphql":
             diagnostic = _server_error(response.data, response.status)
             if diagnostic:
-                return _failed(pages, fl, _body_text(response.data),
-                               diagnostic)
-        pages.append(response.data)
+                text = _body_text(response.data)
+                body = (text.decode("utf-8", "replace") if isinstance(
+                    text, bytes) else text)
+                return _failed(pages, fl, _Failure(body, head), diagnostic)
+        pages.append(_Printed(response.data, head))
         first = False
         current = (_next_path(response.headers.get("link"),
                               inv.config.base_url)
                    if fl.as_bool("paginate") else None)
 
-    return text_out(_render_pages(pages, fl))
+    return _render_pages(pages, fl), IOResult()
+
+
+def _canonical(name: str) -> str:
+    """gh's name for a header: each word capitalized, as Go canonicalizes
+    one.
+
+    Args:
+        name (str): the header's name as it arrived.
+    """
+    return "-".join(word[:1].upper() + word[1:]
+                    for word in name.lower().split("-"))
+
+
+def _response_head(status: int, headers: dict[str, str]) -> str:
+    """The status line and headers ``gh api -i`` prints before a body.
+
+    gh prints the protocol and status Go's client reports, then every
+    header but ``Status`` in name order, each line ending ``\\r\\n``,
+    then a blank ``\\r\\n`` line. Mirage's clients speak HTTP/1.1, and
+    the reason is Go's phrase for the code. The body arrives decoded, so
+    the headers describing its encoded form (``Content-Encoding``,
+    ``Content-Length``) are dropped, which is what Go's transport does
+    when it inflates a body itself.
+
+    Args:
+        status (int): the HTTP status.
+        headers (dict[str, str]): the response's headers, lowercased.
+    """
+    decoded = "content-encoding" in headers
+    dropped = {"Status"} | ({"Content-Encoding", "Content-Length"}
+                            if decoded else set())
+    lines = sorted((_canonical(name), value)
+                   for name, value in headers.items()
+                   if _canonical(name) not in dropped)
+    rows = "".join(f"{name}: {value}\r\n" for name, value in lines)
+    return f"HTTP/1.1 {status} {HTTP_REASONS.get(status, '')}\n{rows}\r\n"
 
 
 def _server_error(data: JsonValue, status: int) -> str:
@@ -289,31 +361,52 @@ def _server_error(data: JsonValue, status: int) -> str:
     return "\n".join(lines)
 
 
-def _failed(pages: list[Any], fl: FlagView, body: str,
+def _failed(pages: list[_Printed], fl: FlagView, failure: _Failure,
             diagnostic: str) -> tuple[ByteSource | None, IOResult]:
-    return _render_pages(pages, fl, body).encode(), IOResult(
+    return _render_pages(pages, fl, failure), IOResult(
         exit_code=1, stderr=f"gh: {diagnostic}\n".encode())
 
 
-def _body_text(page: Any) -> str:
+def _body_text(page: Any) -> str | bytes:
     """A page's body as gh copies it out: verbatim, with no newline added.
 
     The body arrives decoded, and the vendor's JSON is compact, so the
     compact spelling of what arrived is the text it sent. A body that is
-    not JSON is its own text, and a call that answered with none prints
-    nothing.
+    not JSON is its own text, bytes that are not text (a run's log
+    archive) are copied as they came, and a call that answered with none
+    prints nothing.
 
     Args:
         page (Any): the decoded body.
     """
     if page is None:
         return ""
-    if isinstance(page, str):
+    if isinstance(page, (str, bytes)):
         return page
     return json.dumps(page, ensure_ascii=False, separators=(",", ":"))
 
 
-def _joined_pages(pages: list[Any], more: bool) -> str:
+def _bytes_of(parts: list[str | bytes]) -> bytes:
+    return b"".join(part.encode() if isinstance(part, str) else part
+                    for part in parts)
+
+
+def _joined(parts: list[list[str | bytes]], between: str) -> list[str | bytes]:
+    """``parts`` flattened with ``between`` inserted between each two.
+
+    Args:
+        parts (list[list[str | bytes]]): the pieces of each response.
+        between (str): what goes between two responses.
+    """
+    out: list[str | bytes] = []
+    for index, part in enumerate(parts):
+        if index:
+            out.append(between)
+        out.extend(part)
+    return out
+
+
+def _joined_pages(pages: list[Any], more: bool) -> list[str | bytes]:
     """The bodies of ``--paginate`` as gh's paginatedArrayReader streams
     them.
 
@@ -326,42 +419,77 @@ def _joined_pages(pages: list[Any], more: bool) -> str:
         pages (list[Any]): the decoded bodies of the pages that landed.
         more (bool): whether a failing body follows the last page here.
     """
-    texts: list[str] = []
+    texts: list[str | bytes] = []
     for index, page in enumerate(pages):
         text = _body_text(page)
-        if page is not None and not isinstance(page, str):
+        if (page is not None and not isinstance(page, (str, bytes))
+                and isinstance(text, str)):
             if index > 0 and text.startswith("["):
                 text = (" " if text.startswith("[]") else ",") + text[1:]
             if (more or index < len(pages) - 1) and text.endswith("]"):
                 text = text[:-1]
         texts.append(text)
-    return "".join(texts)
+    return texts
 
 
-def _render_pages(pages: list[Any],
+def _render_pages(pages: list[_Printed],
                   fl: FlagView,
-                  failure: str | None = None) -> str:
+                  failure: _Failure | None = None) -> bytes:
     """Render the completed pages, then a failing response's body.
 
     gh copies the failing body out verbatim, past ``--jq``. Under
     ``--slurp`` that body is still the array's last element, even an
     empty one or one that is not JSON, which is gh's own output.
 
+    Under ``-i`` every response's head goes before its body, a newline
+    goes between two responses, and pages print as they came rather than
+    joined into one array. ``--silent`` drops the bodies and keeps the
+    heads, and under ``--slurp`` the array's ``[`` or ``,`` goes before a
+    page's head, since gh's writer opens each page before the head is
+    printed.
+
     Args:
-        pages (list[Any]): the decoded bodies of the pages that landed.
+        pages (list[_Printed]): the pages that landed.
         fl (FlagView): the invocation's flags.
-        failure (str | None): the failing response's body, if one failed.
+        failure (_Failure | None): the failing response, if one failed.
     """
+    include = fl.as_bool("include")
+    between = "\n" if include else ""
+    heads = [page.head for page in pages]
+    failed: list[list[str | bytes]] = ([] if failure is None else
+                                       [[failure.head, failure.body]])
     if fl.as_bool("silent"):
-        return ""
+        every = heads + ([] if failure is None else [failure.head])
+        return _bytes_of(_joined([[head] for head in every], between))
     slurp = fl.as_bool("slurp")
+    printed: list[list[str | bytes]] = [[page.head,
+                                         _body_text(page.data)]
+                                        for page in pages]
     # gh's jsonArrayWriter: every body in one array, a comma between each.
     if slurp and failure is not None:
-        return "[" + ",".join([*map(_body_text, pages), failure]) + "]"
+        return _bytes_of(["[", *_joined(printed + failed, between + ","), "]"])
     program = fl.as_str("jq")
     if program:
-        inputs = [pages] if slurp else pages
-        return jq_lines(inputs, program) + (failure or "")
+        if not include or slurp:
+            data = [page.data for page in pages]
+            return _bytes_of([
+                *_joined([[head] for head in heads], between),
+                jq_lines([data] if slurp else data, program),
+                "" if failure is None else failure.body
+            ])
+        parts: list[list[str | bytes]] = []
+        for page in pages:
+            try:
+                parts.append([page.head, jq_lines([page.data], program)])
+            except PartialOutputError as exc:
+                done = _bytes_of(_joined(parts + [[page.head]], between))
+                raise PartialOutputError(str(exc), done + exc.stdout) from exc
+        return _bytes_of(_joined(parts + failed, between))
     if slurp:
-        return "[" + ",".join(map(_body_text, pages)) + "]"
-    return _joined_pages(pages, failure is not None) + (failure or "")
+        return _bytes_of(["[", *_joined(printed, between + ","), "]"])
+    if include:
+        return _bytes_of(_joined(printed + failed, between))
+    return _bytes_of([
+        *_joined_pages([page.data for page in pages], failure is not None),
+        "" if failure is None else failure.body
+    ])

@@ -123,6 +123,34 @@ def test_a_refused_config_value_is_not_in_the_error():
     assert caught.value.__cause__ is None
 
 
+def test_an_instance_of_the_model_installs_as_it_is():
+    reg = CLIRegistry()
+    config = TokenConfig(token="eng")
+    assert reg.install("prog", tree(TokenConfig), config).config is config
+
+
+@pytest.mark.parametrize("config,message", [
+    (PortConfig(host="h", port=1),
+     "CLI 'prog': config must be a mapping or a TokenConfig, got PortConfig"),
+    ("token",
+     "CLI 'prog': config must be a mapping or a TokenConfig, got str"),
+    (["token"
+      ], "CLI 'prog': config must be a mapping or a TokenConfig, got list"),
+])
+def test_a_config_that_is_neither_is_refused_by_type(config, message):
+    reg = CLIRegistry()
+    with pytest.raises(ValueError) as caught:
+        reg.install("prog", tree(TokenConfig), config)
+    assert str(caught.value) == message
+
+
+def test_a_model_instance_for_a_spec_without_a_model_is_refused():
+    reg = CLIRegistry()
+    with pytest.raises(ValueError,
+                       match="config must be a mapping, got TokenConfig"):
+        reg.install("prog", tree(), TokenConfig(token="x"))
+
+
 def test_config_without_model_is_refused():
     reg = CLIRegistry()
     with pytest.raises(ValueError, match="declares no config_model"):

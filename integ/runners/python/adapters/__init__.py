@@ -1329,35 +1329,31 @@ class SlackService:
 class GitHubService:
     """Points github mounts at the fake api.github.com server.
 
-    The server (integ/server/github) is a kit fake running out of process
-    on GITHUB_URL, mirroring the fake Slack and Google Workspace servers
-    and shared with the typescript host. It used to be out of process by
-    necessity — GitHubVFS fetched the repo tree with a blocking
-    urlopen from its constructor, which would starve an aiohttp fake on
-    the runner's loop. That constraint is gone now that the constructor
-    touches no network and the tree hydrates on first read; sharing one
-    fake across both hosts is why it stays external.
+    Mounts, CLI requests and consistency mutations share one run's URL.
+    Each target seeds its own fixture without resetting another host.
 
     Args:
-        url (str): GITHUB_URL origin the fake is listening on.
+        url (str): GITHUB_URL with the run's path prefix.
     """
 
     def __init__(self, url: str) -> None:
         self.url = url
 
     @classmethod
-    async def create(cls) -> "GitHubService":
-        return cls(os.environ["GITHUB_URL"].rstrip("/"))
+    async def create(cls, run_id: str, fixture: str) -> "GitHubService":
+        """Seed the target's isolated world.
 
-    async def reset(self) -> None:
-        """Drop every write since startup, restoring the seeded state.
-
-        The write battery runs once per host against one shared fake, so it
-        starts from the seed rather than from the other host's writes.
+        Args:
+            run_id (str): The runner's isolation ID.
+            fixture (str): The fixture required by this target's corpus.
         """
+        base = os.environ["GITHUB_URL"].rstrip("/")
+        made = cls(f"{base}/_run/{run_id}")
         async with aiohttp.ClientSession() as session:
-            async with session.post(f"{self.url}/reset") as resp:
+            async with session.post(f"{made.url}/reset",
+                                    json={"fixture": fixture}) as resp:
                 resp.raise_for_status()
+        return made
 
     async def vfs(self, mount: dict) -> GitHubVFS:
         owner, _, repo = mount["repo"].partition("/")
@@ -2710,12 +2706,8 @@ async def make_service(target: dict, run_id: str) -> "Service | None":
     if target.get("service") == "dropbox":
         return await DropboxService.create(run_id)
     if target.get("service") == "github":
-        github = await GitHubService.create()
-        # The write battery runs once per host against one shared fake, so
-        # it starts from the seed rather than from the other host's writes.
-        if "gh" in (target.get("clis") or []):
-            await github.reset()
-        return github
+        fixture = "cli" if "gh" in (target.get("clis") or []) else "v1"
+        return await GitHubService.create(run_id, fixture)
     if target.get("service") == "slack":
         return await SlackService.create(run_id, target.get("dataset", "v1"))
     if target.get("service") == "trello":

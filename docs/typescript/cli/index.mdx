@@ -22,6 +22,10 @@ ws.registerCli('himalaya', HIMALAYA, config)
 await ws.shell('himalaya envelope list --unseen --max 5')
 ```
 
+The config is a plain object, validated through the CLI's config schema; one
+the schema already parsed installs as given. Anything else is refused at
+install time.
+
 In YAML the same install rides the `clis:` section:
 
 ```yaml

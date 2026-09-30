@@ -48,7 +48,7 @@
       "command": "find /repo -type f | wc -l",
       "expect": {
         "exit": 0,
-        "stdout": "119\n",
+        "stdout": "121\n",
         "stderr": ""
       }
     },

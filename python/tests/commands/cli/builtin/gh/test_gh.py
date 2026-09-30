@@ -22,8 +22,9 @@ from mirage.commands.cli.builtin.gh.accessor import (body_value, read_cli_file,
                                                      repo_number)
 from mirage.commands.cli.builtin.gh.api import api
 from mirage.commands.cli.builtin.gh.issue import comments_for, comments_text
-from mirage.commands.cli.builtin.gh.repo import (fork, list_cmd, rename,
-                                                 summary, view)
+from mirage.commands.cli.builtin.gh.repo import (delete_cmd, edit_cmd, fork,
+                                                 list_cmd, rename, summary,
+                                                 view)
 from mirage.commands.cli.specs import cli_spec_for
 from mirage.commands.cli.types import CLIDoors, CLIInvocation
 from mirage.commands.errors import PartialOutputError, UsageError
@@ -31,7 +32,7 @@ from mirage.commands.spec.flag_view import FlagView
 from mirage.core.api.client import ApiResponse
 from mirage.core.github.client import GitHubApiError
 from mirage.core.github.config import GhConfig
-from mirage.core.github.repo import RepoRef, repository_fields
+from mirage.core.github.repo import RepoRef, edit_repo, repository_fields
 from mirage.io.types import materialize
 from mirage.types import PathSpec
 
@@ -116,7 +117,10 @@ def _patch(monkeypatch):
                                base_url=base_url,
                                headers=headers)
         if RESPONSES:
-            return RESPONSES.pop(0)
+            answer = RESPONSES.pop(0)
+            if isinstance(answer, GitHubApiError):
+                raise answer
+            return answer
         return ApiResponse(REPLY, 200, {})
 
     monkeypatch.setitem(view.__globals__, "view_repo", fake_view)
@@ -148,8 +152,9 @@ def test_registers_itself_under_the_grammar_gh_uses():
         "workflow", "search"
     ]
     repo = next(c for c in GH.subcommands if c.name == "repo")
-    assert [c.name for c in repo.subcommands
-            ] == ["list", "view", "create", "fork", "rename"]
+    assert [c.name for c in repo.subcommands] == [
+        "list", "view", "create", "fork", "rename", "edit", "delete"
+    ]
     groups = {
         c.name: [leaf.name for leaf in c.subcommands]
         for c in GH.subcommands if c.subcommands
@@ -462,6 +467,132 @@ async def test_forks_under_the_source_name_when_unnamed():
     assert CALLS[0]["body"] == {}
 
 
+@pytest.fixture()
+def _core_repo(monkeypatch):
+    """Route the core repository calls through the recorder."""
+
+    async def fake_request(token,
+                           method,
+                           path,
+                           body=_MISSING,
+                           params=None,
+                           *,
+                           base_url=None,
+                           headers=None):
+        call = {"method": method, "path": path}
+        if body is not _MISSING:
+            call["body"] = body
+        return _record(**call)
+
+    monkeypatch.setitem(edit_repo.__globals__, "github_request", fake_request)
+
+
+@pytest.mark.asyncio
+async def test_repo_edit_sends_one_patch_and_prints_nothing(_core_repo):
+    _reset({
+        "names": ["old", "keep"],
+        "data": {
+            "repository": {
+                "viewerCanAdminister": True
+            }
+        }
+    })
+    out, _io = await edit_cmd(
+        _inv(
+            ["o/r"], {
+                "description": "d",
+                "enable_wiki": "false",
+                "template": True,
+                "enable_secret_scanning": "false",
+                "add_topic": ["new,keep"],
+                "remove_topic": ["old"],
+            }))
+    assert out == b""
+    assert [(c["method"], c["path"], c.get("body")) for c in CALLS[1:]] == [
+        ("PATCH", "/repos/o/r", {
+            "description": "d",
+            "has_wiki": False,
+            "is_template": True,
+            "security_and_analysis": {
+                "secret_scanning": {
+                    "status": "disabled"
+                }
+            },
+        }),
+        ("GET", "/repos/o/r/topics", None),
+        ("PUT", "/repos/o/r/topics", {
+            "names": ["keep", "new"]
+        }),
+    ]
+    assert CALLS[0]["method"] == "POST"
+
+
+@pytest.mark.asyncio
+async def test_repo_edit_refuses_a_security_edit_it_cannot_administer(
+        _core_repo):
+    _reset({"data": {"repository": {"viewerCanAdminister": False}}})
+    with pytest.raises(ValueError, match="sufficient permissions"):
+        await edit_cmd(_inv(["o/r"], {"enable_secret_scanning": True}))
+    assert [c["method"] for c in CALLS] == ["POST"]
+
+
+@pytest.mark.asyncio
+async def test_repo_edit_leaves_the_topics_alone_when_none_change(_core_repo):
+    _reset({"names": ["keep"]})
+    await edit_cmd(
+        _inv(["o/r"], {
+            "add_topic": ["keep"],
+            "remove_topic": ["gone"]
+        }))
+    assert [f'{c["method"]} {c["path"]}'
+            for c in CALLS] == ["GET /repos/o/r/topics"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("flags,message", [
+    ({}, "specify properties to edit"),
+    ({
+        "visibility": "private"
+    }, "requires --accept-visibility-change-consequences"),
+])
+async def test_repo_edit_refuses_as_gh_does_without_a_terminal(
+        _core_repo, flags, message):
+    with pytest.raises(UsageError, match=message):
+        await edit_cmd(_inv(["o/r"], flags))
+    assert CALLS == []
+
+
+@pytest.mark.asyncio
+async def test_repo_delete_reads_a_bare_name_as_the_viewers(_core_repo):
+    _reset({"login": "me"})
+    out, _io = await delete_cmd(_inv(["tools"], {"yes": True}))
+    assert out == b""
+    assert [f'{c["method"]} {c["path"]}'
+            for c in CALLS] == ["GET /user", "DELETE /repos/me/tools"]
+
+
+@pytest.mark.asyncio
+async def test_repo_delete_warns_that_confirm_is_deprecated(_core_repo):
+    _out, io = await delete_cmd(_inv(["o/r"], {"confirm": True}))
+    assert await materialize(
+        io.stderr
+    ) == (b"Flag --confirm has been deprecated, use `--yes` instead\n")
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("texts,flags,message", [
+    ((), {
+        "yes": True
+    }, "cannot non-interactively delete current repository"),
+    (("o/r", ), {}, "--yes required when not running interactively"),
+])
+async def test_repo_delete_refuses_without_a_terminal(_core_repo, texts, flags,
+                                                      message):
+    with pytest.raises(UsageError, match=message):
+        await delete_cmd(_inv(texts, flags))
+    assert CALLS == []
+
+
 # gh takes the new name as the operand and the repository to rename as -R,
 # which is the reverse of what the shape of the line suggests.
 @pytest.mark.asyncio
@@ -695,6 +826,94 @@ async def test_api_strips_the_enterprise_prefix_from_link_pages():
 async def test_api_silent_suppresses_output():
     out, _io = await api(_inv(["x"], {"method": "POST", "silent": True}))
     assert await materialize(out) == b""
+
+
+@pytest.mark.asyncio
+async def test_api_copies_a_body_that_is_not_text_out_as_its_bytes():
+    RESPONSES.append(ApiResponse(b"PK\xff\x00", 200, {}))
+    out, _io = await api(_inv(["repos/o/r/actions/runs/1/logs"]))
+    assert await materialize(out) == b"PK\xff\x00"
+
+
+# gh 2.85's `-i` (api.go processResponse): the protocol and status, every
+# header but Status in name order ending `\r\n`, a blank `\r\n` line, then
+# the body, for every response, the failing one included.
+_HEADERS = {
+    "x-github-request-id": "AB:CD",
+    "content-type": "application/json; charset=utf-8",
+    "status": "200 OK",
+}
+_HEAD = (b"HTTP/1.1 200 OK\nContent-Type: application/json; charset=utf-8\r\n"
+         b"X-Github-Request-Id: AB:CD\r\n\r\n")
+
+
+@pytest.mark.asyncio
+async def test_api_include_prints_the_status_line_and_headers_first():
+    RESPONSES.append(ApiResponse({"a": 1}, 200, _HEADERS))
+    out, _io = await api(_inv(["x"], {"include": True}))
+    assert await materialize(out) == _HEAD + b'{"a":1}'
+
+
+@pytest.mark.asyncio
+async def test_api_include_drops_the_headers_of_the_encoded_body():
+    RESPONSES.append(
+        ApiResponse(None, 204, {
+            "content-encoding": "gzip",
+            "content-length": "20",
+            "etag": 'W/"1"'
+        }))
+    out, _io = await api(_inv(["x"], {"include": True, "method": "DELETE"}))
+    assert await materialize(out) == (
+        b'HTTP/1.1 204 No Content\nEtag: W/"1"\r\n\r\n')
+
+
+@pytest.mark.asyncio
+async def test_api_include_heads_every_page_and_prints_pages_as_they_came():
+    link = {"link": '<http://fake/x?page=2>; rel="next"'}
+    RESPONSES.extend([ApiResponse([1], 200, link), ApiResponse([2], 200, {})])
+    out, _io = await api(_inv(["x"], {"include": True, "paginate": True}))
+    assert await materialize(out) == (
+        b'HTTP/1.1 200 OK\nLink: <http://fake/x?page=2>; rel="next"\r\n'
+        b"\r\n[1]\nHTTP/1.1 200 OK\n\r\n[2]")
+
+
+@pytest.mark.asyncio
+async def test_api_include_opens_each_slurp_page_before_its_head():
+    link = {"link": '<http://fake/x?page=2>; rel="next"'}
+    RESPONSES.extend([ApiResponse([1], 200, link), ApiResponse([2], 200, {})])
+    out, _io = await api(
+        _inv(["x"], {
+            "include": True,
+            "paginate": True,
+            "slurp": True
+        }))
+    assert await materialize(out) == (
+        b'[HTTP/1.1 200 OK\nLink: <http://fake/x?page=2>; rel="next"\r\n'
+        b"\r\n[1]\n,HTTP/1.1 200 OK\n\r\n[2]]")
+
+
+@pytest.mark.asyncio
+async def test_api_include_keeps_heads_under_silent_and_before_jq():
+    RESPONSES.append(ApiResponse({"a": 1}, 200, _HEADERS))
+    out, _io = await api(_inv(["x"], {"include": True, "silent": True}))
+    assert await materialize(out) == _HEAD
+    RESPONSES.append(ApiResponse({"a": 1}, 200, _HEADERS))
+    out, _io = await api(_inv(["x"], {"include": True, "jq": ".a"}))
+    assert await materialize(out) == _HEAD + b"1\n"
+
+
+@pytest.mark.asyncio
+async def test_api_include_heads_a_failing_response_too():
+    RESPONSES.append(
+        GitHubApiError("Not Found",
+                       404,
+                       body='{"message":"Not Found"}',
+                       headers={"content-type": "application/json"}))
+    out, io = await api(_inv(["x"], {"include": True}))
+    assert await materialize(out) == (
+        b"HTTP/1.1 404 Not Found\nContent-Type: application/json\r\n\r\n"
+        b'{"message":"Not Found"}')
+    assert await materialize(io.stderr) == b"gh: Not Found (HTTP 404)\n"
 
 
 @pytest.mark.asyncio

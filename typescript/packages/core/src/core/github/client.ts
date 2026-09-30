@@ -22,7 +22,17 @@ export const GITHUB_API_BASE = 'https://api.github.com'
 export const GITHUB_API_VERSION = '2022-11-28'
 // A rate limit is a wait, not a failure, but an unbounded wait is a hang;
 // three attempts is what octokit's own docs use for an unattended client.
+// The count rides plugin-retry's own options rather than every request's:
+// its limiter re-sends any failed request whose options carry a count, so a
+// count there sent a 404 or a 422 four times over before reporting it.
 const GITHUB_RETRIES = 3
+// The statuses plugin-retry leaves alone: its own list, plus 500. Octokit
+// reports a request that got no response at all as a 500, so retrying 500
+// spent 14 s on a refused connection before failing anyway, and a real 500
+// is no more worth a retry: gh retries neither.
+const NO_RETRY_STATUSES = [400, 401, 403, 404, 410, 422, 451, 500]
+// The resolver's codes for a host that does not resolve.
+const DNS_FAILURES = new Set(['ENOTFOUND', 'EAI_AGAIN', 'EAI_NONAME'])
 
 export interface GitHubTransport {
   get(path: string, params?: Record<string, string>): Promise<unknown>
@@ -101,7 +111,7 @@ export class HttpGitHubTransport implements GitHubTransport {
     this.kit = new Kit({
       auth: opts.token,
       baseUrl: this.baseUrl,
-      request: { retries: GITHUB_RETRIES },
+      retry: { retries: GITHUB_RETRIES, doNotRetry: NO_RETRY_STATUSES },
       throttle: {
         // The write limiter holds every non-GET a second apart, which is
         // github.com's own guidance and its secondary rate limit. That limit
@@ -165,13 +175,15 @@ export class HttpGitHubTransport implements GitHubTransport {
         ...(body === undefined ? {} : { data: body }),
       })
       // 204 and an empty 202 decode to '' rather than a body; the caller gets
-      // null on a call that worked.
+      // null on a call that worked. A binary body, such as a run's log
+      // archive, arrives as an ArrayBuffer and is handed on as bytes.
       const responseHeaders: Record<string, string> = {}
       for (const [key, value] of Object.entries(r.headers)) {
         if (value !== undefined) responseHeaders[key.toLowerCase()] = String(value)
       }
       return {
-        data: r.data === '' ? null : r.data,
+        data:
+          r.data === '' ? null : r.data instanceof ArrayBuffer ? new Uint8Array(r.data) : r.data,
         status: r.status,
         headers: responseHeaders,
       }
@@ -183,6 +195,7 @@ export class HttpGitHubTransport implements GitHubTransport {
         // reports only the message. Read it off the body rather than
         // trimming the composed string. The body itself travels verbatim,
         // since `gh api` prints it.
+        if (err.response === undefined) throw connectionError(err)
         if (failed === undefined) throw new GitHubApiError(err.message, err.status)
         const body = await failed.text()
         throw new GitHubApiError(
@@ -190,10 +203,64 @@ export class HttpGitHubTransport implements GitHubTransport {
           err.status,
           body,
           failed.url || err.request.url,
+          headersOf(failed.headers),
         )
       }
       throw err
     }
+  }
+}
+
+/** A response's headers, lowercased, as a transport reports them. */
+function headersOf(headers: Headers): Record<string, string> {
+  const out: Record<string, string> = {}
+  for (const [key, value] of headers) out[key.toLowerCase()] = value
+  return out
+}
+
+/**
+ * The error for a call that got no response at all, worded as gh words it.
+ * A host that does not resolve reads "error connecting to HOST" with a
+ * pointer at GitHub's status page (gh's `printError`), a refused connection
+ * reads as Go's client reports one, `Get "URL": dial tcp ADDR: connect:
+ * connection refused`, and anything else as the transport said it.
+ */
+function connectionError(err: RequestError): GitHubConnectionError {
+  const reason = (
+    err.cause as { cause?: { code?: unknown; address?: unknown; port?: unknown } } | undefined
+  )?.cause
+  const code = typeof reason?.code === 'string' ? reason.code : ''
+  if (code === 'ECONNREFUSED' && typeof reason?.address === 'string') {
+    const method = err.request.method
+    const verb = method.charAt(0) + method.slice(1).toLowerCase()
+    const address = reason.address.includes(':') ? `[${reason.address}]` : reason.address
+    return new GitHubConnectionError(
+      `${verb} "${err.request.url}": dial tcp ${address}:${String(reason.port)}: connect: connection refused`,
+    )
+  }
+  if (!DNS_FAILURES.has(code)) return new GitHubConnectionError(err.message)
+  let host = ''
+  try {
+    host = new URL(err.request.url).hostname
+  } catch (parse) {
+    if (!(parse instanceof TypeError)) throw parse
+    host = err.request.url
+  }
+  return new GitHubConnectionError(
+    `error connecting to ${host}\ncheck your internet connection or https://githubstatus.com`,
+  )
+}
+
+/**
+ * A GitHub call that got no response: the connection was refused, the host
+ * did not resolve, or the transport failed before any status arrived. It is
+ * not a `GitHubApiError`, because there is no status to report, and it is
+ * never retried.
+ */
+export class GitHubConnectionError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'GitHubConnectionError'
   }
 }
 
@@ -222,21 +289,30 @@ function apiMessage(body: string, reason: string): string {
  * A GitHub call that answered with a status the caller cannot use.
  *
  * `body` is the response text as it arrived, `data` that text decoded (the
- * text itself when it is not JSON) and `url` the final request URL, query
- * included.
+ * text itself when it is not JSON), `url` the final request URL, query
+ * included, and `headers` the response's, lowercased, which `gh api -i`
+ * prints for a failing response as for any other.
  */
 export class GitHubApiError extends Error {
   readonly status: number
   readonly body: string
   readonly url: string
   readonly data: unknown
-  constructor(message: string, status: number, body = '', url = '') {
+  readonly headers: Record<string, string>
+  constructor(
+    message: string,
+    status: number,
+    body = '',
+    url = '',
+    headers: Record<string, string> = {},
+  ) {
     super(message)
     this.name = 'GitHubApiError'
     this.status = status
     this.body = body
     this.url = url
     this.data = decodedBody(body)
+    this.headers = headers
   }
 }
 

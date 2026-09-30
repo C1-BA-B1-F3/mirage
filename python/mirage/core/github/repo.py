@@ -287,6 +287,54 @@ async def fork_repo(config: GhConfig,
                                 base_url=config.base_url)
 
 
+async def edit_repo(config: GhConfig, ref: RepoRef,
+                    body: dict[str, JsonValue]) -> JsonValue:
+    """Change a repository's settings: the one PATCH ``gh repo edit`` sends.
+
+    Args:
+        config (GhConfig): the install's configuration.
+        ref (RepoRef): the repository.
+        body (dict[str, JsonValue]): the settings to change.
+    """
+    return await github_request(config.token,
+                                "PATCH",
+                                f"/repos/{ref.owner}/{ref.repo}",
+                                body,
+                                base_url=config.base_url)
+
+
+async def repo_topics(config: GhConfig, ref: RepoRef) -> list[str]:
+    """A repository's topics, which GitHub keeps and replaces as one list.
+
+    Args:
+        config (GhConfig): the install's configuration.
+        ref (RepoRef): the repository.
+    """
+    data = await github_request(config.token,
+                                "GET",
+                                f"/repos/{ref.owner}/{ref.repo}/topics",
+                                base_url=config.base_url)
+    names = data.get("names") if isinstance(data, dict) else None
+    return [n for n in names
+            if isinstance(n, str)] if isinstance(names, list) else []
+
+
+async def set_repo_topics(config: GhConfig, ref: RepoRef,
+                          names: list[str]) -> JsonValue:
+    return await github_request(config.token,
+                                "PUT",
+                                f"/repos/{ref.owner}/{ref.repo}/topics",
+                                {"names": cast(JsonValue, names)},
+                                base_url=config.base_url)
+
+
+async def delete_repo(config: GhConfig, ref: RepoRef) -> JsonValue:
+    return await github_request(config.token,
+                                "DELETE",
+                                f"/repos/{ref.owner}/{ref.repo}",
+                                base_url=config.base_url)
+
+
 async def rename_repo(config: GhConfig, ref: RepoRef, name: str) -> JsonValue:
     return await github_request(config.token,
                                 "PATCH",

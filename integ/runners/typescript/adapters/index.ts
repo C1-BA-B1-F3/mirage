@@ -1920,21 +1920,20 @@ async function openSlack(target: Target): Promise<Open> {
 // git remote real gh reads. Seeded by the fake alongside the mounted one.
 const GH_CLI_REPO = 'integ/repo-cli'
 
-// The fake api.github.com server (integ/server/github) is a kit fake, external
-// and shared across both hosts, mirroring the fake Slack server. It used to
-// have to be out of process for the python host, whose GitHubVFS
-// fetched the repo tree with a blocking urlopen from its constructor; that
-// fetch is awaited now, so being shared is the only reason left.
+// Mounts, CLI requests and consistency mutations share one run's URL.
+// Each target seeds its own fixture without resetting another host.
 async function openGitHub(target: Target, options?: OpenOptions): Promise<Open> {
   let base = process.env.GITHUB_URL ?? ''
   while (base.endsWith('/')) base = base.slice(0, -1)
   if (base === '') throw new Error('github target requires GITHUB_URL')
-  // The write battery runs once per host against one shared fake, so it
-  // starts from the seed rather than from the other host's writes.
-  if (target.clis?.includes('gh') === true) {
-    const reset = await fetch(`${base}/reset`, { method: 'POST' })
-    if (!reset.ok) throw new Error(`github /reset failed: ${String(reset.status)}`)
-  }
+  base = `${base}/_run/${runId()}`
+  const fixture = target.clis?.includes('gh') === true ? 'cli' : 'v1'
+  const reset = await fetch(`${base}/reset`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ fixture }),
+  })
+  if (!reset.ok) throw new Error(`github /reset failed: ${String(reset.status)}`)
   const create = async (m: Mount): Promise<GitHubVFS> => {
     const [owner, repo] = String(m.repo).split('/')
     return GitHubVFS.create({

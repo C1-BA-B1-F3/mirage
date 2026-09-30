@@ -467,6 +467,233 @@ async function supersededBlobs(at: string): Promise<void> {
   eq('a sha no tree ever held is not found', await blob('0'.repeat(40)), 404)
 }
 
+// A ref names a branch, or one commit by its full or abbreviated sha, and
+// every read that takes one answers from what it names: a commit's own
+// files, its own history, its own place in a comparison.
+async function refsNameCommits(at: string): Promise<void> {
+  const run = 'refs-name-commits'
+  const base = `${at}/_run/${run}`
+  await post(`${base}/reset`, { run, tenants: [TENANT], fixture: 'v1' })
+  const repo = `${base}/repos/${REPO}`
+  const status = async (url: string, init: RequestInit = {}): Promise<number> =>
+    (await fetch(url, { headers: HEADERS, ...init })).status
+  const put = await fetch(`${repo}/contents/later.txt`, {
+    method: 'PUT',
+    headers: HEADERS,
+    body: JSON.stringify({ message: 'Later', content: Buffer.from('later').toString('base64') }),
+  })
+  eq('a file lands on the seeded branch', put.status, 201)
+  const history = (await get(`${repo}/commits`)) as JsonValue[]
+  const head = String(field(history[0] ?? null, 'sha'))
+  const root = String(field(history.at(-1) ?? null, 'sha'))
+  eq(
+    'four hex digits name the root',
+    field(await get(`${repo}/commits/${root.slice(0, 4)}`), 'sha'),
+    root,
+  )
+  eq('three name nothing', await status(`${repo}/commits/${root.slice(0, 3)}`), 422)
+  eq(
+    'commits?sha= lists from the commit it names',
+    ((await get(`${repo}/commits?sha=${root.slice(0, 7).toUpperCase()}`)) as JsonValue[]).map((c) =>
+      field(c, 'sha'),
+    ),
+    [root],
+  )
+  eq('commits?sha= naming nothing is 404', await status(`${repo}/commits?sha=0000000`), 404)
+  eq(
+    'the root reads its own files',
+    await status(`${repo}/contents/later.txt?ref=${root.slice(0, 7)}`),
+    404,
+  )
+  eq(
+    'the head reads its own',
+    await status(`${repo}/contents/later.txt?ref=${head.slice(0, 7)}`),
+    200,
+  )
+  const paths = async (ref: string): Promise<boolean> =>
+    ((field(await get(`${repo}/git/trees/${ref}?recursive=1`), 'tree') as JsonValue[]) ?? []).some(
+      (row) => field(row, 'path') === 'later.txt',
+    )
+  eq("a tree by the root's short sha is the root's", await paths(root.slice(0, 7)), false)
+  eq("a tree by the head's short sha is the head's", await paths(head.slice(0, 7)), true)
+  const compare = async (spec: string): Promise<JsonValue> => {
+    const body = await get(`${repo}/compare/${spec}`)
+    return [field(body, 'status'), field(body, 'ahead_by'), field(body, 'behind_by')]
+  }
+  eq('the head is ahead of the root', await compare(`${root.slice(0, 7)}...main`), ['ahead', 1, 0])
+  eq('the root is behind the head', await compare(`main...${root.slice(0, 7)}`), ['behind', 0, 1])
+  eq('a branch is identical to itself', await compare('main...main'), ['identical', 0, 0])
+  const made = await post(`${repo}/git/refs`, { ref: 'refs/heads/old', sha: root.slice(0, 7) })
+  eq('a branch starts at a short sha', made.status, 201)
+  eq("and holds that commit's files", await status(`${repo}/contents/later.txt?ref=old`), 404)
+}
+
+// A seeded branch force-moved onto an unrelated root leaves its own root on
+// no branch, and that sha still names its commit and its files, as git keeps
+// an object once it exists.
+async function abandonedRoot(at: string): Promise<void> {
+  const run = 'abandoned-root'
+  const base = `${at}/_run/${run}`
+  await post(`${base}/reset`, { run, tenants: [TENANT], fixture: 'v1' })
+  const repo = `${base}/repos/${REPO}`
+  const root = String(field(((await get(`${repo}/commits`)) as JsonValue[])[0] ?? null, 'sha'))
+  const tree = await post(`${repo}/git/trees`, {
+    tree: [{ path: 'only.txt', mode: '100644', type: 'blob', content: 'only' }],
+  })
+  const other = await post(`${repo}/git/commits`, {
+    message: 'Unrelated',
+    tree: field(tree.body, 'sha'),
+    parents: [],
+  })
+  const moved = await fetch(`${repo}/git/refs/heads/main`, {
+    method: 'PATCH',
+    headers: HEADERS,
+    body: JSON.stringify({ sha: field(other.body, 'sha'), force: true }),
+  })
+  eq('the branch is forced onto an unrelated root', moved.status, 200)
+  eq(
+    'the old root still names its commit',
+    field(await get(`${repo}/commits/${root.slice(0, 7)}`), 'sha'),
+    root,
+  )
+  const readme = await fetch(`${repo}/contents/README.md?ref=${root.slice(0, 7)}`, {
+    headers: HEADERS,
+  })
+  eq('and its files', readme.status, 200)
+  const dispatch = await fetch(
+    `${base}/repos/integ/repo-cli/actions/workflows/archive.yml/dispatches`,
+    {
+      method: 'POST',
+      headers: HEADERS,
+      body: JSON.stringify({ ref: 'main' }),
+    },
+  )
+  eq('a disabled workflow is not dispatched', await refusalOf(dispatch), [
+    422,
+    "Cannot trigger a 'workflow_dispatch' on a disabled workflow",
+  ])
+}
+
+async function refusalOf(r: Response): Promise<JsonValue> {
+  return [r.status, field((await r.json()) as JsonValue, 'message')]
+}
+
+// Workflows are the repository's files, and the settings routes store what
+// they take and refuse what they do not, before anything is written.
+async function workflowsAndSettings(at: string): Promise<void> {
+  const run = 'workflows-and-settings'
+  const base = `${at}/_run/${run}`
+  await post(`${base}/reset`, { run, tenants: [TENANT], fixture: 'v1' })
+  const repo = `${base}/repos/${REPO}`
+  const send = async (method: string, path: string, body?: JsonValue): Promise<number> =>
+    (
+      await fetch(`${repo}${path}`, {
+        method,
+        headers: HEADERS,
+        ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+      })
+    ).status
+  const write = (path: string, text: string): Promise<number> =>
+    send('PUT', `/contents/${path}`, {
+      message: `Add ${path}`,
+      content: Buffer.from(text).toString('base64'),
+    })
+  await write('.github/workflows/nameless.yaml', 'on: push\n')
+  await write('.github/workflows/nested/deep.yml', 'name: Deep\n')
+  await write('.github/workflows/notes.txt', 'name: Notes\n')
+  const listed = async (): Promise<JsonValue> =>
+    ((field(await get(`${repo}/actions/workflows`), 'workflows') as JsonValue[]) ?? []).map((w) => [
+      field(w, 'name'),
+      field(w, 'path'),
+    ])
+  eq('the list is the workflow files, by id', await listed(), [
+    ['Archive', '.github/workflows/archive.yml'],
+    ['CI', '.github/workflows/ci.yml'],
+    ['.github/workflows/nameless.yaml', '.github/workflows/nameless.yaml'],
+  ])
+  eq('a workflow is found by its file', await send('GET', '/actions/workflows/ci.yml'), 200)
+  eq('never by its display name', await send('GET', '/actions/workflows/CI'), 404)
+  eq(
+    'one with no dispatch trigger cannot be dispatched',
+    await send('POST', '/actions/workflows/nameless.yaml/dispatches', { ref: 'main' }),
+    422,
+  )
+  eq(
+    'a dispatch to a ref that is no branch is refused',
+    await send('POST', '/actions/workflows/ci.yml/dispatches', { ref: 'nope' }),
+    422,
+  )
+  const ci = await get(`${repo}/contents/.github/workflows/ci.yml`)
+  await send('DELETE', '/contents/.github/workflows/ci.yml', {
+    message: 'rm',
+    sha: field(ci, 'sha'),
+  })
+  eq('a workflow whose file is gone is not listed', ((await listed()) as JsonValue[]).length, 2)
+  eq(
+    'and cannot be dispatched',
+    await send('POST', '/actions/workflows/ci.yml/dispatches', { ref: 'main' }),
+    404,
+  )
+  eq(
+    'a wrongly typed setting refuses the whole edit',
+    await send('PATCH', '', { description: 'x', has_issues: 'yes' }),
+    422,
+  )
+  eq('and writes none of it', field(await get(repo), 'description'), null)
+  for (const key of ['name', 'default_branch']) {
+    for (const value of [123, null, [], {}]) {
+      eq(
+        `a wrongly typed ${key} refuses the whole edit`,
+        await send('PATCH', '', { description: 'must not land', [key]: value }),
+        422,
+      )
+      eq('the refused edit preserves the repository', field(await get(repo), 'description'), null)
+    }
+  }
+  eq(
+    'an invalid branch type cannot partially rename a repository',
+    await send('PATCH', '', { name: 'must-not-rename', default_branch: false }),
+    422,
+  )
+  eq('the original name still resolves', await send('GET', ''), 200)
+  eq('an unknown visibility is refused', await send('PATCH', '', { visibility: 'secret' }), 422)
+  eq('a legacy site needs a source', await send('POST', '/pages', {}), 422)
+  eq(
+    'a source path is the root or /docs',
+    await send('POST', '/pages', { source: { branch: 'main', path: '/site' } }),
+    422,
+  )
+  eq('no site is updated', await send('PUT', '/pages', { cname: null }), 404)
+  eq('no site is deleted', await send('DELETE', '/pages'), 404)
+  eq(
+    'a workflow site needs no source',
+    await send('POST', '/pages', { build_type: 'workflow' }),
+    201,
+  )
+  eq("and publishes the default branch's root", field(await get(`${repo}/pages`), 'source'), {
+    branch: 'main',
+    path: '/',
+  })
+  eq(
+    'a wrongly typed site edit is refused',
+    await send('PUT', '/pages', { https_enforced: 'yes' }),
+    422,
+  )
+  const logs = await fetch(`${base}/repos/integ/repo-cli/actions/runs/201/logs`, {
+    headers: HEADERS,
+  })
+  eq("a completed run's logs are a zip", logs.headers.get('content-type'), 'application/zip')
+  eq(
+    "one job's log is its steps' text",
+    (
+      await (
+        await fetch(`${base}/repos/integ/repo-cli/actions/jobs/401/logs`, { headers: HEADERS })
+      ).text()
+    ).split('\n')[0] ?? '',
+    "2026-01-01T00:00:05.0000000Z Current runner version: '2.330.0'",
+  )
+}
+
 async function main(): Promise<void> {
   const fake = await launch()
   const at = fake.endpoint
@@ -474,6 +701,9 @@ async function main(): Promise<void> {
     await emptyRepository(at)
     await seededHistory(at)
     await supersededBlobs(at)
+    await refsNameCommits(at)
+    await abandonedRoot(at)
+    await workflowsAndSettings(at)
     const reset = await fetch(`${at}/reset`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },

@@ -17,13 +17,20 @@ import { IndexEntry, ResourceType } from '@struktoai/mirage-core/cache/index/con
 import type { IndexCacheStore } from '@struktoai/mirage-core/cache/index/store'
 import type { PathSpec } from '@struktoai/mirage-core/types'
 import { epochToIso } from '@struktoai/mirage-core/utils/dates'
-import { listingError } from '@struktoai/mirage-core/utils/errors'
+import { eacces, listingError } from '@struktoai/mirage-core/utils/errors'
 import { mountPrefixOf } from '@struktoai/mirage-core/utils/key_prefix'
 import { rstripSlash, stripSlash } from '@struktoai/mirage-core/utils/slash'
 import { compareCodePoints } from '@struktoai/mirage-core/utils/sort'
 import type { SSHAccessor } from '../../accessor/ssh.ts'
 import type { SshAttrs } from './entry.ts'
-import { isDirectoryAttrs, isFileAttrs, isNoSuchFile, joinRoot, stripPrefix } from './utils.ts'
+import {
+  isDirectoryAttrs,
+  isFileAttrs,
+  isNoSuchFile,
+  isPermissionDenied,
+  joinRoot,
+  stripPrefix,
+} from './utils.ts'
 
 async function attrsOrNull(accessor: SSHAccessor, key: string): Promise<Stats | null> {
   const sftp = await accessor.sftp()
@@ -73,7 +80,7 @@ export async function readdir(
     sftp.readdir(remote, (err, entries) => {
       if (err !== undefined) {
         if (isNoSuchFile(err)) resolveFn(null)
-        else rejectFn(err)
+        else rejectFn(isPermissionDenied(err) ? eacces(p) : err)
         return
       }
       resolveFn(entries)

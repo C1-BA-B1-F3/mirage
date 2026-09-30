@@ -81,23 +81,16 @@ function parseRows(blocks: readonly Uint8Array[]): [string, number][] {
 //
 // The blocks are rendered text, which does not say which row is a file and
 // which is a directory, but the shape does: a directory row is an ancestor of
-// some other row. mirage never emits a row for an empty directory (no leaf
-// points at one, the documented divergence), so a row with no descendants is a
-// file. The one exception is a mount root, which is a directory even when the
-// mount is empty, so those are named rather than inferred.
-function leavesOf(
-  rows: readonly [string, number][],
-  mountRoots: readonly string[],
-): [string, number][] {
-  const paths = new Set(rows.map(([p]) => rstrip(p)))
-  const known = new Set(mountRoots.map(rstrip))
+// some other row. A row with no descendants is a file unless it is named a
+// directory: a mount root, or an empty directory a mount reported, both of
+// which print as `0` rows.
+function leavesOf(rows: readonly [string, number][], dirs: readonly string[]): [string, number][] {
+  const paths = new Set(rows.map(([p]) => rstripSlash(p)))
+  const known = new Set(dirs.map(rstripSlash))
   return rows.filter(
-    ([p]) => !known.has(rstrip(p)) && ![...paths].some((o) => o.startsWith(rstrip(p) + '/')),
+    ([p]) =>
+      !known.has(rstripSlash(p)) && ![...paths].some((o) => o.startsWith(rstripSlash(p) + '/')),
   )
-}
-
-function rstrip(path: string): string {
-  return path.endsWith('/') && path !== '/' ? rstripSlash(path) : path
 }
 
 // Fold per-mount du blocks into one tree, GNU's way.
@@ -126,11 +119,15 @@ export function mergeDuBlocks(
     // per-mount runs are asked without it, because the merge needs their
     // leaves and applies it here.
     separateDirs?: boolean
-    mountRoots?: readonly string[]
+    // The rows that are directories whether or not they hold anything: the
+    // descendant mount roots, and the empty directories the mounts reported.
+    // Each prints as a lone `0` row, which the leaf inference would otherwise
+    // read as a zero-byte file and hide.
+    dirs?: readonly string[]
   },
 ): Uint8Array {
-  const mountRoots = opts.mountRoots ?? []
-  const leaves = leavesOf(parseRows(blocks), mountRoots)
+  const dirs = opts.dirs ?? []
+  const leaves = leavesOf(parseRows(blocks), dirs)
   const sum = leaves.reduce((acc, [, size]) => acc + size, 0)
   // -S scopes to the operand's own row; GNU keeps the -c grand total
   // recursive (coreutils 9.7 over a real mount: `du -bSc base` prints
@@ -141,7 +138,7 @@ export function mergeDuBlocks(
     const rows = rollup(leaves, root, {
       all: opts.all,
       maxDepth: opts.maxDepth,
-      dirs: mountRoots,
+      dirs,
       separateDirs: opts.separateDirs === true,
     })
     const shown = respellRaw(

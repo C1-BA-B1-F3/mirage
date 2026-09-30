@@ -68,8 +68,8 @@ describe('discord stat', () => {
       {},
       { index: idx },
     )
-    expect(out.stdout).toContain('name=general__C1')
-    expect(out.stdout).toContain('type=directory')
+    expect(out.stdout).toContain('File: /mnt/discord/My Server__G1/channels/general__C1\n')
+    expect(out.stdout).toContain(' directory\n')
   })
 
   it('formats with -c %n', async () => {

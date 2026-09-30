@@ -29,8 +29,25 @@
     " 1  2 12 /data/hello.txt",
     "",
     "=== stat /data/hello.txt ===",
+    "  File: /data/hello.txt",
     {
-      "re": "name=hello\\.txt\\ size=\\d+\\ modified=\\d+\\-\\d+\\-\\d+T\\d+:\\d+:\\d+\\.\\d+Z\\ type=text"
+      "re": "  Size: \\d+ +\\tBlocks: \\? +IO Block: \\? +regular file"
+    },
+    "Device: ?\tInode: ?           Links: ?",
+    {
+      "re": "Access: \\(0[0-7]{3}/[-rwxstST]{10}\\)  Uid: \\(.*\\)   Gid: \\(.*\\)"
+    },
+    {
+      "re": "Access: (?:-|\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}\\.\\d{9} \\+0000)"
+    },
+    {
+      "re": "Modify: (?:-|\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}\\.\\d{9} \\+0000)"
+    },
+    {
+      "re": "Change: (?:-|\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}\\.\\d{9} \\+0000)"
+    },
+    {
+      "re": " Birth: (?:-|\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}\\.\\d{9} \\+0000)"
     },
     "",
     "=== METADATA (chmod / chown / touch, native) ===",

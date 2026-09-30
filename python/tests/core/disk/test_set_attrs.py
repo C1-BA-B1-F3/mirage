@@ -95,7 +95,7 @@ async def test_set_attrs_mtime_hits_inode(accessor, tmp_path):
                     _spec("/f.txt"),
                     mtime="2026-03-04T12:00:00+00:00")
     result = await stat(accessor, _spec("/f.txt"))
-    assert result.modified == "2026-03-04T12:00:00Z"
+    assert result.modified == "2026-03-04T12:00:00.000Z"
 
 
 @pytest.mark.asyncio
@@ -105,7 +105,7 @@ async def test_set_attrs_atime_hits_inode(accessor):
                                atime="2026-03-04T12:00:00+00:00")
     assert residual == {}
     result = await stat(accessor, _spec("/f.txt"))
-    assert result.atime == "2026-03-04T12:00:00Z"
+    assert result.atime == "2026-03-04T12:00:00.000Z"
 
 
 @pytest.mark.asyncio

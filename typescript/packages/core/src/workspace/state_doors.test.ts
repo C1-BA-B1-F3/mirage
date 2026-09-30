@@ -2206,7 +2206,9 @@ describe('a walk below the operand meets the rule guard', () => {
     const [duCode, duOut, duErr] = await line(ws, 'du -a /data/t')
     expect(duCode).toBe(1)
     expect(duOut).toContain('2\t/data/t/locked/y\n')
-    expect(duOut).not.toContain('sealed')
+    // GNU still prints the row of a directory it may not open, at 0.
+    expect(duOut).toContain('0\t/data/t/sealed\n')
+    expect(duOut).not.toContain('/data/t/sealed/')
     expect(duErr).toBe("du: cannot read directory '/data/t/sealed': Permission denied\n")
     const [cpCode, , cpErr] = await line(ws, 'cp -r /data/t /data/copy')
     expect(cpCode).toBe(1)

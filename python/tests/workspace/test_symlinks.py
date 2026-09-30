@@ -583,11 +583,11 @@ async def test_ls_classify_marks_links_with_an_at_sign():
 async def test_stat_reports_the_link_and_dash_l_reports_the_target():
     ws = await _seeded()
     r = await ws.shell("stat /data/link.txt")
-    assert "type=symlink" in r.stdout.decode()
-    assert f"size={len('/data/dir/real.txt')}" in r.stdout.decode()
+    assert "symbolic link" in r.stdout.decode()
+    assert f"Size: {len('/data/dir/real.txt')} " in r.stdout.decode()
     r = await ws.shell("stat -L /data/link.txt")
-    assert "type=text" in r.stdout.decode()
-    assert "size=6" in r.stdout.decode()
+    assert "regular file" in r.stdout.decode()
+    assert "Size: 6 " in r.stdout.decode()
 
 
 @pytest.mark.asyncio

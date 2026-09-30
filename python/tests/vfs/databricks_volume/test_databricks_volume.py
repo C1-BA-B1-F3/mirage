@@ -619,7 +619,7 @@ async def test_workspace_execute_databricks_volume_stat_and_cat():
     head_io = await ws.shell("head -n 1 /dbx/debug_output.json")
 
     assert stat_io.exit_code == 0
-    assert b"name=debug_output.json" in stat_io.stdout
+    assert b"File: /dbx/debug_output.json" in stat_io.stdout
     assert cat_io.exit_code == 0
     assert b'{"ok": true}' in cat_io.stdout
     assert head_io.exit_code == 0

@@ -410,13 +410,14 @@ describe('S3 cache consistency (mocked)', () => {
     }
   })
 
-  it('keeps stat type=text after tee and touch', async () => {
+  it('keeps text content metadata after tee and touch', async () => {
     const ws = new Workspace({ '/s3': new S3VFS(makeConfig()) }, { mode: MountMode.WRITE })
     try {
       const result = await ws.shell('tee /s3/c.txt <<< x; touch /s3/c.txt; stat /s3/c.txt')
       expect(result.exitCode).toBe(0)
-      expect(DEC.decode(result.stdout)).toContain('name=c.txt size=2')
-      expect(DEC.decode(result.stdout)).toContain('type=text')
+      expect(DEC.decode(result.stdout)).toMatch(/File: .*c\.txt\n {2}Size: 2 /)
+      expect(DEC.decode(result.stdout)).toContain('regular file')
+      expect(await ws.stat('/s3/c.txt')).toMatchObject({ content: 'text' })
     } finally {
       await ws.close()
     }

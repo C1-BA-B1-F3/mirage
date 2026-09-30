@@ -79,9 +79,10 @@
       "command": "du -a /scratch/wk",
       "expect": {
         "exit": 1,
-        "stdout": "2\t/scratch/wk/open/o\n2\t/scratch/wk/open\n2\t/scratch/wk\n",
+        "stdout": "2\t/scratch/wk/open/o\n2\t/scratch/wk/open\n0\t/scratch/wk/sealed\n2\t/scratch/wk\n",
         "stderr": "du: cannot read directory '/scratch/wk/sealed': Permission denied\n"
-      }
+      },
+      "note": "GNU du still prints the row of a directory it may not open, at 0 bytes under -ab since it counted nothing below it."
     },
     {
       "id": "cp_r_copies_the_rest_and_reports_the_refusal",
@@ -180,6 +181,62 @@
         "stdout": "",
         "stderr": "cp: /scratch/locked/y: frozen\n"
       }
+    },
+    {
+      "id": "find_refusal_inside_pipeline_preserves_line",
+      "seq": 923109,
+      "targets": [
+        "ram-commands"
+      ],
+      "command": "echo before; find /scratch/wk -type f 2>/dev/null | cat; echo after=$?",
+      "expect": {
+        "exit": 0,
+        "stdout": "before\n/scratch/wk/open/o\nafter=0\n",
+        "stderr": ""
+      },
+      "session": "frozen"
+    },
+    {
+      "id": "find_refusal_redirection_preserves_status",
+      "seq": 923106,
+      "targets": [
+        "ram-commands"
+      ],
+      "command": "echo before; find /scratch/wk -type f 2>/dev/null; echo after=$?",
+      "expect": {
+        "exit": 0,
+        "stdout": "before\n/scratch/wk/open/o\nafter=1\n",
+        "stderr": ""
+      },
+      "session": "frozen"
+    },
+    {
+      "id": "du_refusal_redirection_preserves_status",
+      "seq": 923107,
+      "targets": [
+        "ram-commands"
+      ],
+      "command": "echo before; du -s /scratch/wk 2>/dev/null; echo after=$?",
+      "expect": {
+        "exit": 0,
+        "stdout": "before\n2\t/scratch/wk\nafter=1\n",
+        "stderr": ""
+      },
+      "session": "frozen"
+    },
+    {
+      "id": "find_depth_limit_skips_sealed_listing",
+      "seq": 923108,
+      "targets": [
+        "ram-commands"
+      ],
+      "command": "find /scratch/wk -maxdepth 1",
+      "expect": {
+        "exit": 0,
+        "stdout": "/scratch/wk\n/scratch/wk/open\n/scratch/wk/sealed\n",
+        "stderr": ""
+      },
+      "session": "frozen"
     }
   ]
 }

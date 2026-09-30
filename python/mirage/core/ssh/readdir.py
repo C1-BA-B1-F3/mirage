@@ -23,7 +23,7 @@ from mirage.core.ssh.client import _abs
 from mirage.core.ssh.constants import SCOPE_ERROR
 from mirage.core.timeutil import epoch_to_iso
 from mirage.types import PathSpec
-from mirage.utils.errors import listing_error
+from mirage.utils.errors import eacces, listing_error
 from mirage.utils.key_prefix import mount_prefix_of
 
 logger = logging.getLogger(__name__)
@@ -115,6 +115,8 @@ async def readdir(accessor: SSHAccessor,
                             if attrs.mtime is not None else "")))
         await index.set_dir(virtual_key, index_entries)
         return virtual_entries
+    except asyncssh.SFTPPermissionDenied as exc:
+        raise eacces(virtual) from exc
     except UNRESOLVED:
         raise await listing_error(virtual, path, partial(_is_file, accessor),
                                   partial(_is_dir, accessor))

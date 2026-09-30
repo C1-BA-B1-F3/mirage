@@ -79,6 +79,11 @@ def test_parse_touch_stamp_date_string():
     assert parse_touch_stamp(None, None) is None
 
 
+def test_parse_touch_stamp_keeps_a_fraction():
+    assert parse_touch_stamp(
+        None, "2024-01-01 00:00:00.5") == "2024-01-01T00:00:00.500000+00:00"
+
+
 def test_parse_touch_stamp_invalid():
     with pytest.raises(ValueError):
         parse_touch_stamp("13011200", "")

@@ -62,7 +62,7 @@ async def test_stat_file(ws):
     await ws.shell('echo "hello" | tee /data/f.txt')
     result = await ws.shell("stat /data/f.txt")
     assert result.exit_code == 0
-    assert b"name=f.txt" in result.stdout
+    assert b"File: /data/f.txt" in result.stdout
 
 
 @pytest.mark.asyncio

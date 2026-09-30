@@ -19,7 +19,7 @@ from mirage.cache.index import NULL_INDEX, IndexCacheStore
 from mirage.core.ssh.client import _abs
 from mirage.core.timeutil import epoch_to_iso
 from mirage.types import FileStat, FileType, PathSpec
-from mirage.utils.errors import enoent
+from mirage.utils.errors import eacces, enoent
 from mirage.utils.filetype import content_type_for_path
 
 
@@ -56,5 +56,7 @@ async def stat(accessor: SSHAccessor,
             atime=(epoch_to_iso(attrs.atime)
                    if attrs.atime is not None else None),
         )
+    except asyncssh.SFTPPermissionDenied as exc:
+        raise eacces(virtual) from exc
     except asyncssh.SFTPNoSuchFile:
         raise enoent(virtual)

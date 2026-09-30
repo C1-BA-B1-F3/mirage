@@ -12,9 +12,13 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+from dataclasses import replace
+
 from mirage.commands.builtin.disk.io import IO as _IO
 from mirage.commands.builtin.generic_bind import make_generic_commands
 
+# Shell traversals need partial results and per-directory errors; the shared
+# readdir/stat walker owns those. Direct VFS aggregate methods remain strict.
 COMMANDS = [
-    *make_generic_commands("disk", _IO),
+    *make_generic_commands("disk", replace(_IO, find=None, du=None)),
 ]

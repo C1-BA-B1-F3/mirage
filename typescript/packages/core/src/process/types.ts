@@ -26,6 +26,7 @@ export interface ProcessView {
   readonly list: () => readonly ProcessInfo[]
   readonly get: (pid: number) => ProcessInfo | null
   readonly checkSpawn: () => void
+  readonly probe: (pid: number) => boolean
   readonly terminate: (pid: number) => boolean
   readonly wait: (pid: number) => Promise<ProcessInfo | null>
   readonly depth?: number

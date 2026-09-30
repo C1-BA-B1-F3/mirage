@@ -21,7 +21,8 @@ from pathlib import Path
 import pytest
 
 from mirage.commands.cli.builtin.git import GIT
-from mirage.commands.cli.builtin.git.fetch import (Refspec, Row, mapped,
+from mirage.commands.cli.builtin.git.fetch import (Refspec, Row, Wanted,
+                                                   ignore_funny, mapped,
                                                    parse_refspec, prettify,
                                                    summary_lines)
 from mirage.types import MountMode
@@ -65,6 +66,20 @@ def test_a_refspec_splits_into_source_destination_and_force(text, expected):
 ])
 def test_a_refspec_maps_a_remote_ref(spec, name, expected):
     assert mapped(parse_refspec(spec), name) == expected
+
+
+def test_a_ref_git_refuses_to_name_locally_is_dropped_with_its_error():
+    oid = "a" * 40
+    wanted = [
+        Wanted("refs/heads/main", oid, "refs/remotes/o/main"),
+        Wanted("refs/tags/../../x", oid, "refs/tags/../../x"),
+        Wanted("refs/heads/main", oid, "HEAD"),
+        Wanted("HEAD", oid, None),
+    ]
+    kept, notes = ignore_funny(wanted)
+    assert kept == [wanted[0], wanted[3]]
+    assert notes == ("error: * Ignoring funny ref 'refs/tags/../../x' "
+                     "locally\nerror: * Ignoring funny ref 'HEAD' locally\n")
 
 
 def test_prettify_strips_the_three_namespaces():

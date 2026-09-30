@@ -34,7 +34,7 @@ import { createShellParser, type ShellParser } from '../../../../shell/parse/ind
 import { MountMode } from '../../../../types.ts'
 import { RAMVFS } from '../../../../vfs/ram/ram.ts'
 import { Workspace } from '../../../../workspace/workspace/workspace.ts'
-import { mapped, parseRefspec, prettify, summaryLines } from './fetch.ts'
+import { ignoreFunny, mapped, parseRefspec, prettify, summaryLines, type Wanted } from './fetch.ts'
 import { GIT } from './index.ts'
 import { ensureDir } from './io.ts'
 import type { Dispatch } from './types.ts'
@@ -140,6 +140,29 @@ it.each([
   ['refs/heads/main', 'refs/heads/main', ''],
 ])('maps %s over %s', (spec, name, expected) => {
   expect(mapped(parseRefspec(spec), name)).toBe(expected)
+})
+
+it('drops a ref git refuses to name locally, with its error', () => {
+  const oid = 'a'.repeat(40)
+  const want = (remote: string, local: string | null): Wanted => ({
+    remote,
+    oid,
+    local,
+    force: false,
+    merge: false,
+    listed: true,
+  })
+  const wants = [
+    want('refs/heads/main', 'refs/remotes/o/main'),
+    want('refs/tags/../../x', 'refs/tags/../../x'),
+    want('refs/heads/main', 'HEAD'),
+    want('HEAD', null),
+  ]
+  expect(ignoreFunny(wants)).toEqual([
+    [wants[0], wants[3]],
+    "error: * Ignoring funny ref 'refs/tags/../../x' locally\n" +
+      "error: * Ignoring funny ref 'HEAD' locally\n",
+  ])
 })
 
 it('strips the three namespaces when prettifying', () => {

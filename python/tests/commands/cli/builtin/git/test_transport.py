@@ -96,16 +96,27 @@ def test_extra_headers_split_name_and_value_later_ones_winning():
     }
 
 
-def _backend(root: Path) -> ThreadingHTTPServer:
+def _backend(
+        root: Path,
+        renames: tuple[tuple[bytes, bytes], ...] = (),
+        seen: list[tuple[str, str | None]] | None = None
+) -> ThreadingHTTPServer:
     """git's own smart HTTP server, as a CGI behind a local listener.
 
     Args:
         root (Path): the directory holding the served repositories.
+        renames (tuple[tuple[bytes, bytes], ...]): ref names rewritten in
+            the advertisement, each to one of the same length so the
+            pkt-line lengths still hold.
+        seen (list[tuple[str, str | None]] | None): collects each
+            request's method and Authorization header.
     """
 
     class Handler(BaseHTTPRequestHandler):
 
         def _cgi(self) -> None:
+            if seen is not None:
+                seen.append((self.command, self.headers.get("Authorization")))
             parts = urlsplit(self.path)
             size = int(self.headers.get("Content-Length") or 0)
             body = self.rfile.read(size)
@@ -131,6 +142,9 @@ def _backend(root: Path) -> ThreadingHTTPServer:
                     status = int(value.split()[0])
                 elif name:
                     headers.append((name, value.strip()))
+            if self.command == "GET":
+                for old, new in renames:
+                    payload = payload.replace(old, new)
             self.send_response(status)
             for name, value in headers:
                 self.send_header(name, value)
@@ -148,8 +162,31 @@ def _backend(root: Path) -> ThreadingHTTPServer:
     return server
 
 
+def _redirector(target: str) -> ThreadingHTTPServer:
+    """A listener that sends every GET on to another origin.
+
+    Args:
+        target (str): the origin redirected to, scheme and host.
+    """
+
+    class Handler(BaseHTTPRequestHandler):
+
+        def do_GET(self) -> None:
+            self.send_response(302)
+            self.send_header("Location", f"{target}{self.path}")
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+
+        def log_message(self, *args: object) -> None:
+            return None
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    return server
+
+
 @pytest.fixture
-def served(tmp_path) -> Iterator[tuple[Path, str]]:
+def repos(tmp_path) -> tuple[Path, Path]:
     if shutil.which("git") is None:
         pytest.skip("git is not installed")
     work, root = tmp_path / "work", tmp_path / "srv"
@@ -162,6 +199,12 @@ def served(tmp_path) -> Iterator[tuple[Path, str]]:
                    check=True,
                    capture_output=True,
                    env=ENV)
+    return work, root
+
+
+@pytest.fixture
+def served(repos) -> Iterator[tuple[Path, str]]:
+    work, root = repos
     server = _backend(root)
     yield work, f"http://127.0.0.1:{server.server_address[1]}/repo.git"
     server.shutdown()
@@ -211,3 +254,58 @@ async def test_a_missing_http_repository_is_not_found(served):
     assert result.stderr == (f"Cloning into 'm'...\nfatal: repository "
                              f"'{url}/nope.git/' not found\n").encode()
     assert left.stdout == b"removed\n"
+
+
+@pytest.mark.asyncio
+async def test_a_ref_named_outside_the_repository_is_ignored(repos):
+    pytest.importorskip("httpx")
+    _, root = repos
+    subprocess.run([
+        "bash", "-ec", "git tag abcdefghijklmnop main && git branch wxyz main"
+    ],
+                   cwd=root / "repo.git",
+                   check=True,
+                   capture_output=True,
+                   env=ENV)
+    server = _backend(
+        root, ((b"refs/tags/abcdefghijklmnop", b"refs/tags/../../../../outs"),
+               (b"refs/heads/wxyz", b"refs/heads/..yz")))
+    url = f"http://127.0.0.1:{server.server_address[1]}/repo.git"
+    try:
+        with Workspace({"/w/": RAMVFS()}, mode=MountMode.WRITE) as ws:
+            ws.register_cli("git", GIT)
+            cloned = await ws.shell(f"cd /w && git clone {url} c")
+            fetched = await ws.shell("cd /w/c && git fetch")
+            refs = await ws.shell(
+                "cd /w/c && git for-each-ref --format='%(refname)'")
+            outside = await ws.shell("test -e /w/outs || echo absent")
+    finally:
+        server.shutdown()
+    assert (cloned.exit_code, cloned.stderr) == (0, (
+        b"Cloning into 'c'...\n"
+        b"error: * Ignoring funny ref 'refs/remotes/origin/..yz' locally\n"
+        b"error: * Ignoring funny ref 'refs/tags/../../../../outs' locally\n"))
+    assert (fetched.exit_code, fetched.stderr) == (
+        0, b"error: * Ignoring funny ref 'refs/remotes/origin/..yz' locally\n")
+    assert refs.stdout == (b"refs/heads/main\nrefs/remotes/origin/HEAD\n"
+                           b"refs/remotes/origin/main\nrefs/tags/v1\n")
+    assert outside.stdout == b"absent\n"
+
+
+@pytest.mark.asyncio
+async def test_url_credentials_stay_with_the_origin_they_were_typed_for(repos):
+    pytest.importorskip("httpx")
+    _, root = repos
+    seen: list[tuple[str, str | None]] = []
+    server = _backend(root, seen=seen)
+    hop = _redirector(f"http://127.0.0.1:{server.server_address[1]}")
+    url = f"http://me:secret@127.0.0.1:{hop.server_address[1]}/repo.git"
+    try:
+        with Workspace({"/w/": RAMVFS()}, mode=MountMode.WRITE) as ws:
+            ws.register_cli("git", GIT)
+            result = await ws.shell(f"cd /w && git clone {url} c")
+    finally:
+        hop.shutdown()
+        server.shutdown()
+    assert result.exit_code == 0, result.stderr
+    assert seen == [("GET", None), ("POST", None)]

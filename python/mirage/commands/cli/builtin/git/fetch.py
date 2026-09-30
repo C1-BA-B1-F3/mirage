@@ -34,14 +34,14 @@ from mirage.commands.cli.builtin.git.io import read_optional, write_file
 from mirage.commands.cli.builtin.git.objects import abbrev_for, store_pack
 from mirage.commands.cli.builtin.git.reflog import ZERO, append, entry
 from mirage.commands.cli.builtin.git.refs import (delete_ref, read_head,
-                                                  write_ref)
+                                                  valid_ref_name, write_ref)
 from mirage.commands.cli.builtin.git.repo import open_repo
 from mirage.commands.cli.builtin.git.session import opened
 from mirage.commands.cli.builtin.git.transport import (  # yapf: disable
     Advertisement, HttpTransport, LocalTransport, display_url, extra_headers,
     open_transport)
 from mirage.commands.cli.builtin.git.types import RepoLocation
-from mirage.commands.cli.builtin.git.util import fatal
+from mirage.commands.cli.builtin.git.util import fatal, multivar
 from mirage.commands.cli.types import CLIDoors, CLIInvocation
 from mirage.commands.spec.flag_view import FlagView
 from mirage.io.types import ByteSource, IOResult
@@ -144,7 +144,10 @@ def mapped(spec: Refspec, name: str) -> str | None:
             or not name.endswith(tail)):
         return None
     middle = name[len(head):len(name) - len(tail)]
-    return spec.dst.replace("*", middle, 1) if spec.dst else ""
+    if not spec.dst:
+        return ""
+    before, star, after = spec.dst.partition("*")
+    return f"{before}{middle}{after}" if star else spec.dst
 
 
 def prettify(ref: str) -> str:
@@ -237,9 +240,36 @@ async def _receive(dispatch: DispatchFn, location: RepoLocation,
     return await open_repo(dispatch, location)
 
 
+def ignore_funny(wanted: list[Wanted]) -> tuple[list[Wanted], str]:
+    """Drop the refs whose local name git refuses, as get_fetch_map does.
+
+    The remote names its refs, so one it advertises as
+    ``refs/tags/../../x`` would land outside ``.git``. git skips such a
+    ref with an error and takes the rest (pinned against git 2.50.1).
+
+    Args:
+        wanted (list[Wanted]): the refs a fetch or clone takes.
+
+    Returns:
+        tuple[list[Wanted], str]: the refs kept, and the errors git
+        prints for the others.
+    """
+    kept, notes = [], ""
+    for want in wanted:
+        if want.local is None or (want.local.startswith("refs/")
+                                  and valid_ref_name(want.local)):
+            kept.append(want)
+        else:
+            notes += f"error: * Ignoring funny ref '{want.local}' locally\n"
+    return kept, notes
+
+
 def followed_tags(repo: BaseRepo, adv: Advertisement,
                   taken: set[str]) -> list[Wanted]:
     """The remote tags git follows: new here, pointing at what is here.
+
+    A tag whose name git refuses is left out. git asks for it by name
+    and dies on the answer; mirage takes the rest instead.
 
     Args:
         repo (BaseRepo): the receiving repository, after the fetch.
@@ -250,7 +280,8 @@ def followed_tags(repo: BaseRepo, adv: Advertisement,
     store = repo.object_store
     follow = []
     for name, oid in adv.refs.items():
-        if not name.startswith(TAGS) or name in taken:
+        if not name.startswith(TAGS) or name in taken or not valid_ref_name(
+                name):
             continue
         if Ref(name.encode()) in local:
             continue
@@ -317,12 +348,13 @@ def _classify(repo: BaseRepo, want: Wanted,
     if local.startswith(TAGS) and not want.force:
         return Row("!", "[rejected]", remote, shown,
                    "would clobber existing tag", True), None
-    span = f"{old.decode()[:width]}..{want.oid[:width]}"
+    ends = (old.decode()[:width], want.oid[:width])
     if _is_ancestor(repo, old, new):
-        return Row(" ", span, remote, shown, counted=True), "fast-forward"
+        return Row(" ", "..".join(ends), remote, shown,
+                   counted=True), "fast-forward"
     if want.force:
-        return Row("+", span.replace("..", "..."), remote, shown,
-                   "forced update", True), "forced-update"
+        return Row("+", "...".join(ends), remote, shown, "forced update",
+                   True), "forced-update"
     return Row("!", "[rejected]", remote, shown, "non-fast-forward",
                True), None
 
@@ -472,21 +504,6 @@ def _config(data: bytes | None) -> ConfigFile:
     return ConfigFile.from_file(BytesIO(data or b""))
 
 
-def _values(config: ConfigFile, section: tuple[bytes, ...],
-            name: bytes) -> list[bytes]:
-    """Every value of one variable, empty when it is not set.
-
-    Args:
-        config (ConfigFile): the parsed config.
-        section (tuple[bytes, ...]): section and subsection.
-        name (bytes): the variable.
-    """
-    try:
-        return list(config.get_multivar(section, name))
-    except KeyError:
-        return []
-
-
 async def configured_headers(inv: CLIInvocation[None],
                              config: ConfigFile | None) -> dict[str, str]:
     """``http.extraHeader`` from the user's config, then the repository's.
@@ -499,9 +516,9 @@ async def configured_headers(inv: CLIInvocation[None],
     values: list[bytes] = []
     if inv.env.get("HOME") or inv.env.get("GIT_CONFIG_GLOBAL") is not None:
         for _, user in await global_sources(inv, False):
-            values += _values(user, (b"http", ), b"extraheader")
+            values += multivar(user, (b"http", ), b"extraheader")
     if config is not None:
-        values += _values(config, (b"http", ), b"extraheader")
+        values += multivar(config, (b"http", ), b"extraheader")
     return extra_headers(values)
 
 
@@ -570,25 +587,25 @@ async def fetch(
             remote = b"origin"
             if branch is not None:
                 remote = next(
-                    iter(_values(config, (b"branch", branch), b"remote")),
+                    iter(multivar(config, (b"branch", branch), b"remote")),
                     b"origin")
             name = remote.decode()
-            if not _values(config, (b"remote", remote), b"url"):
+            if not multivar(config, (b"remote", remote), b"url"):
                 if name == "origin" and not texts:
                     raise GitError(NO_REMOTE)
-        urls = _values(config, (b"remote", name.encode()), b"url")
+        urls = multivar(config, (b"remote", name.encode()), b"url")
         url = urls[-1].decode() if urls else name
         configured = [
             parse_refspec(value.decode())
-            for value in _values(config, (b"remote", name.encode()), b"fetch")
+            for value in multivar(config, (b"remote", name.encode()), b"fetch")
         ] if urls else []
         merge = None
         if head.branch is not None and urls:
-            remotes = _values(config, (b"branch", head.branch.encode()),
-                              b"remote")
+            remotes = multivar(config, (b"branch", head.branch.encode()),
+                               b"remote")
             if remotes and remotes[-1].decode() == name:
-                merges = _values(config, (b"branch", head.branch.encode()),
-                                 b"merge")
+                merges = multivar(config, (b"branch", head.branch.encode()),
+                                  b"merge")
                 merge = merges[-1].decode() if merges else None
         bare = await is_bare(dispatch, location)
         start = location.gitdir if bare else location.worktree
@@ -600,13 +617,14 @@ async def fetch(
                            f"{UNREACHABLE}") from exc
         adv = await transport.advertise()
         typed = [parse_refspec(text) for text in texts[1:]]
-        wanted = _plan(adv, typed, configured, merge, fl.as_bool("tags"))
+        wanted, notes = ignore_funny(
+            _plan(adv, typed, configured, merge, fl.as_bool("tags")))
         checked = None if bare else head.ref
         for want in wanted:
             if want.local is not None and want.local == checked:
                 raise GitError(f"refusing to fetch into branch '{checked}' "
                                f"checked out at '{location.worktree}'")
-        tag_opt = _values(config, (b"remote", name.encode()), b"tagopt")
+        tag_opt = multivar(config, (b"remote", name.encode()), b"tagopt")
         follow = not fl.as_bool("no_tags") and tag_opt[-1:] != [b"--no-tags"]
         repo, taken = await fetch_objects(dispatch, location, transport, adv,
                                           wanted, follow)
@@ -621,8 +639,8 @@ async def fetch(
         shown = pruned + [
             row for row in rows if row.code != "=" or fl.as_bool("verbose")
         ]
-        err = "" if fl.as_bool("quiet") else summary_lines(
-            url, shown, abbrev_for(repo))
+        err = notes + ("" if fl.as_bool("quiet") else summary_lines(
+            url, shown, abbrev_for(repo)))
         return None, IOResult(exit_code=1 if rejected else 0,
                               stderr=err.encode())
     except GitError as exc:

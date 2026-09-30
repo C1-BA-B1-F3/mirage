@@ -83,6 +83,104 @@
         "stdout": "225f39c50d27e015653a38d589474ce2880399e6\t\tbranch 'topic' of /repo/.\n",
         "stderr": "From /repo/.\n * branch            topic      -> FETCH_HEAD\n"
       }
+    },
+    {
+      "id": "git_branch_track_off",
+      "seq": 567920,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "(cd /repo && git clone -q . c && cd c && printf '[branch]\\n\\tautoSetupMerge = false\\n' >> .git/config && git branch t origin/topic && git branch -vv; status=$?; cd /repo && rm -rf c; exit $status)",
+      "expect": {
+        "exit": 0,
+        "stdout": "* main 8ef2542 [origin/main] add two\n  t    225f39c add docs\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "git_branch_track_always_local",
+      "seq": 567921,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "(cd /repo && git clone -q . c && cd c && printf '[branch]\\n\\tautoSetupMerge = always\\n' >> .git/config && git branch l main && git config --get-regexp '^branch\\.l\\.'; status=$?; cd /repo && rm -rf c; exit $status)",
+      "expect": {
+        "exit": 0,
+        "stdout": "branch 'l' set up to track 'main'.\nbranch.l.remote .\nbranch.l.merge refs/heads/main\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "git_branch_track_bad_value",
+      "seq": 567922,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "(cd /repo && git clone -q . c && cd c && printf '[branch]\\n\\tautoSetupMerge = never\\n' >> .git/config && git branch t origin/topic; status=$?; test -e .git/refs/heads/t || echo absent; cd /repo && rm -rf c; exit $status)",
+      "expect": {
+        "exit": 128,
+        "stdout": "absent\n",
+        "stderr": "fatal: bad boolean config value 'never' for 'branch.autosetupmerge'\n"
+      }
+    },
+    {
+      "id": "git_branch_quoted_name_upstream",
+      "seq": 567923,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "(cd /repo && git clone -q . c && cd c && git branch 'q\"x' origin/topic && tail -3 .git/config && git checkout -q 'q\"x' && git status -sb; status=$?; cd /repo && rm -rf c; exit $status)",
+      "expect": {
+        "exit": 0,
+        "stdout": "branch 'q\"x' set up to track 'origin/topic'.\n[branch \"q\\\"x\"]\n\tremote = origin\n\tmerge = refs/heads/topic\n## q\"x...origin/topic\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "git_branch_delete_drops_upstream",
+      "seq": 567924,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "(cd /repo && git clone -q . c && cd c && git branch t origin/topic && git branch -D t && git branch t origin/topic && git config --get-regexp '^branch\\.t\\.'; status=$?; cd /repo && rm -rf c; exit $status)",
+      "expect": {
+        "exit": 0,
+        "stdout": "branch 't' set up to track 'origin/topic'.\nDeleted branch t (was 225f39c).\nbranch 't' set up to track 'origin/topic'.\nbranch.t.remote origin\nbranch.t.merge refs/heads/topic\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "git_clone_failure_keeps_empty_directory",
+      "seq": 567925,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "(cd /repo && mkdir e && git clone -b nosuch . e; status=$?; ls -A e; rmdir e; exit $status)",
+      "expect": {
+        "exit": 128,
+        "stdout": "",
+        "stderr": "Cloning into 'e'...\nfatal: Remote branch nosuch not found in upstream origin\n"
+      }
+    },
+    {
+      "id": "git_clone_invalid_remote_name",
+      "seq": 567926,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "(cd /repo && git clone -o ../x . c; status=$?; test -e c || echo gone; exit $status)",
+      "expect": {
+        "exit": 128,
+        "stdout": "gone\n",
+        "stderr": "Cloning into 'c'...\nfatal: '../x' is not a valid remote name\n"
+      }
     }
   ]
 }

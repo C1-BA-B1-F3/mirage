@@ -49,9 +49,21 @@ let tmp: string
 let server: Server
 let url: string
 
-/** git's own smart HTTP server, as a CGI behind a local listener. */
-function backend(root: string): Server {
+/**
+ * git's own smart HTTP server, as a CGI behind a local listener.
+ *
+ * @param root the directory holding the served repositories
+ * @param renames ref names rewritten in the advertisement, each to one of the
+ *   same length so the pkt-line lengths still hold
+ * @param seen collects each request's method and Authorization header
+ */
+function backend(
+  root: string,
+  renames: readonly [string, string][] = [],
+  seen: [string, string | null][] = [],
+): Server {
   return createServer((req, res) => {
+    seen.push([req.method ?? 'GET', req.headers.authorization ?? null])
     const chunks: Buffer[] = []
     req.on('data', (chunk: Buffer) => chunks.push(chunk))
     req.on('end', () => {
@@ -81,10 +93,43 @@ function backend(root: string): Server {
         if (name.toLowerCase() === 'status') status = Number(value.split(' ')[0])
         else if (name) res.setHeader(name, value)
       }
+      let payload = out.subarray(split + 4)
+      if (req.method === 'GET')
+        for (const [old, renamed] of renames)
+          payload = Buffer.from(payload.toString('latin1').replaceAll(old, renamed), 'latin1')
       res.statusCode = status
-      res.end(out.subarray(split + 4))
+      res.end(payload)
     })
   })
+}
+
+/** A listener that sends every GET on to another origin. */
+function redirector(target: string): Server {
+  return createServer((req, res) => {
+    res.statusCode = 302
+    res.setHeader('Location', `${target}${req.url ?? '/'}`)
+    res.end()
+  })
+}
+
+/** Start a server on a free local port; resolves with its origin. */
+async function listen(listener: Server): Promise<string> {
+  await new Promise<void>((resolve) => listener.listen(0, '127.0.0.1', resolve))
+  return `http://127.0.0.1:${String((listener.address() as AddressInfo).port)}`
+}
+
+/** A fresh bare repository under `<tmp>/<name>/repo.git`, one commit and tag v1 on main. */
+function served(name: string, extra: string): void {
+  execFileSync(
+    'bash',
+    [
+      '-ec',
+      `git init -q -b main ${name}-work && cd ${name}-work && echo one > a && git add a && ` +
+        `git commit -qm first && git tag v1 && git clone -q --bare . ../${name}/repo.git && ` +
+        `cd ../${name}/repo.git && ${extra}`,
+    ],
+    { cwd: tmp, env: ENV, stdio: 'ignore' },
+  )
 }
 
 async function workspace(): Promise<Workspace> {
@@ -113,8 +158,7 @@ beforeAll(async () => {
     { cwd: tmp, env: ENV, stdio: 'ignore' },
   )
   server = backend(join(tmp, 'srv'))
-  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
-  url = `http://127.0.0.1:${String((server.address() as AddressInfo).port)}/repo.git`
+  url = `${await listen(server)}/repo.git`
 })
 
 afterAll(() => {
@@ -209,4 +253,58 @@ it('says a missing http repository is not found and removes the clone', async ()
     `Cloning into 'm'...\nfatal: repository '${url}/nope.git/' not found\n`,
   ])
   expect(DEC.decode(left.stdout)).toBe('removed\n')
+})
+
+it('ignores a ref named outside the repository', async () => {
+  served('funny', 'git tag abcdefghijklmnop main && git branch wxyz main')
+  const funny = backend(join(tmp, 'funny'), [
+    ['refs/tags/abcdefghijklmnop', 'refs/tags/../../../../outs'],
+    ['refs/heads/wxyz', 'refs/heads/..yz'],
+  ])
+  const origin = await listen(funny)
+  try {
+    const ws = await workspace()
+    const cloned = await ws.shell(`cd /w && git clone ${origin}/repo.git c`)
+    const fetched = await ws.shell('cd /w/c && git fetch')
+    const refs = await ws.shell("cd /w/c && git for-each-ref --format='%(refname)'")
+    const outside = await ws.shell('test -e /w/outs || echo absent')
+    expect([cloned.exitCode, DEC.decode(cloned.stderr)]).toEqual([
+      0,
+      "Cloning into 'c'...\n" +
+        "error: * Ignoring funny ref 'refs/remotes/origin/..yz' locally\n" +
+        "error: * Ignoring funny ref 'refs/tags/../../../../outs' locally\n",
+    ])
+    expect([fetched.exitCode, DEC.decode(fetched.stderr)]).toEqual([
+      0,
+      "error: * Ignoring funny ref 'refs/remotes/origin/..yz' locally\n",
+    ])
+    expect(DEC.decode(refs.stdout)).toBe(
+      'refs/heads/main\nrefs/remotes/origin/HEAD\nrefs/remotes/origin/main\nrefs/tags/v1\n',
+    )
+    expect(DEC.decode(outside.stdout)).toBe('absent\n')
+  } finally {
+    funny.close()
+  }
+})
+
+it('keeps url credentials with the origin they were typed for', async () => {
+  served('hop', 'true')
+  const seen: [string, string | null][] = []
+  const target = backend(join(tmp, 'hop'), [], seen)
+  const hop = redirector(await listen(target))
+  const origin = await listen(hop)
+  try {
+    const ws = await workspace()
+    const result = await ws.shell(
+      `cd /w && git clone ${origin.replace('://', '://me:secret@')}/repo.git c`,
+    )
+    expect(result.exitCode).toBe(0)
+    expect(seen).toEqual([
+      ['GET', null],
+      ['POST', null],
+    ])
+  } finally {
+    hop.close()
+    target.close()
+  }
 })

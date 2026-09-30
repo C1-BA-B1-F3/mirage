@@ -18,7 +18,7 @@ import { IOResult } from '../../../../io/types.ts'
 import type { CommandFnResult } from '../../../config.ts'
 import { FlagView } from '../../../spec/flag_view.ts'
 import type { CLIInvocation } from '../../types.ts'
-import { remoteBranch, setUpTracking } from './branch.ts'
+import { remoteBranch, setUpTracking, trackMode } from './branch.ts'
 import { moveHead, previousPosition, trackingReport } from './checkout.ts'
 import { HEAD } from './constants.ts'
 import {
@@ -115,6 +115,7 @@ export async function switchBranch(inv: CLIInvocation): Promise<CommandFnResult>
       throw new MissingBranchArgumentError()
     }
     const repo = await opened(fl, doors, true)
+    const mode = await trackMode(repo)
     const head = await readHead(dispatch, repo.location.gitdir)
     const known = await loadRefs(dispatch, repo.location.gitdir, repo.location.commondir)
     let target: string
@@ -219,12 +220,17 @@ export async function switchBranch(inv: CLIInvocation): Promise<CommandFnResult>
       .sort(([a], [b]) => compareCodePoints(a, b))
       .map(([path, letter]) => `${letter}\t${path}\n`)
       .join('')
-    if (creating) carried += await setUpTracking(repo, target, startPoint ?? null)
+    let warning = ''
+    if (creating) {
+      const [tracking, told] = await setUpTracking(repo, target, startPoint ?? null, mode, head)
+      carried += tracking
+      warning = told
+    }
     // git writes the warning above everything it says about the move, because
     // the directory it could not remove is a fact about the working tree
     // rather than about where HEAD went.
-    warnings = moved.warnings
-    note = moved.warnings + (await previousPosition(repo, head))
+    warnings = moved.warnings + warning
+    note = moved.warnings + (await previousPosition(repo, head)) + warning
     if (attached) {
       const verb = creating ? 'Switched to a new branch' : 'Switched to branch'
       note += `${verb} '${target}'\n`

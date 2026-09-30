@@ -15,7 +15,7 @@
 import { describe, expect, it } from 'vitest'
 
 import { BadConfigValueError } from './errors.ts'
-import { gitBool } from './util.ts'
+import { configSection, gitBool, withoutSection } from './util.ts'
 import { walk } from '../../walk.ts'
 import { GIT } from './index.ts'
 
@@ -77,4 +77,33 @@ describe('gitBool', () => {
 it('lands a later relative -C under the one before it', () => {
   const result = walk('git', GIT, ['-C', '/repo', '-C', 'docs', 'status'], '/')
   expect(result.groupFlags['-C']).toBe('/repo/docs')
+})
+
+describe('configSection', () => {
+  it('escapes its name and quotes a value holding a comment start', () => {
+    expect(
+      configSection('branch', 'q"x', [
+        ['remote', 'origin'],
+        ['merge', 'refs/heads/we#rd'],
+        ['note', ' pad\tend '],
+      ]),
+    ).toBe(
+      '[branch "q\\"x"]\n\tremote = origin\n\tmerge = "refs/heads/we#rd"\n\tnote = " pad\\tend "\n',
+    )
+  })
+})
+
+describe('withoutSection', () => {
+  const text =
+    '[core]\n\tbare = false\n[branch "topic"]\n\tremote = o\n[branch "main"]\n\tremote = o\n' +
+    '[Branch "topic"]\n\tmerge = m\n[branch "q\\"x"]\n\tremote = o\n'
+
+  it('drops every block of that name only', () => {
+    expect(withoutSection(text, 'branch', 'topic')).toBe(
+      '[core]\n\tbare = false\n[branch "main"]\n\tremote = o\n[branch "q\\"x"]\n\tremote = o\n',
+    )
+    expect(withoutSection(text, 'branch', 'q"x').endsWith('[Branch "topic"]\n\tmerge = m\n')).toBe(
+      true,
+    )
+  })
 })

@@ -63,6 +63,21 @@ export interface Upstream {
   readonly gone: boolean
 }
 
+/**
+ * `branch.autoSetupMerge`: the start points that give a new branch an
+ * upstream. Each member is spelled as the config value that picks it: `true`
+ * takes a remote-tracking start point, `always` a local branch too, `simple` a
+ * remote one of the same name, `inherit` copies the start branch's own
+ * upstream, and `false` takes none.
+ */
+export enum Track {
+  OFF = 'false',
+  REMOTE = 'true',
+  ALWAYS = 'always',
+  SIMPLE = 'simple',
+  INHERIT = 'inherit',
+}
+
 export interface HeadRef {
   /** Short branch name when HEAD is a symbolic ref under `refs/heads`. */
   readonly branch: string | null

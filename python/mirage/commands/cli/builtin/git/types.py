@@ -13,6 +13,7 @@
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 from dataclasses import dataclass, field
+from enum import StrEnum
 
 from dulwich.index import ConflictedIndexEntry, IndexEntry
 
@@ -81,6 +82,21 @@ class Upstream:
     ahead: int
     behind: int
     gone: bool
+
+
+class Track(StrEnum):
+    """``branch.autoSetupMerge``: the start points that give an upstream.
+
+    Each member is spelled as the config value that picks it: ``true``
+    takes a remote-tracking start point, ``always`` a local branch too,
+    ``simple`` a remote one of the same name, ``inherit`` copies the
+    start branch's own upstream, and ``false`` takes none.
+    """
+    OFF = "false"
+    REMOTE = "true"
+    ALWAYS = "always"
+    SIMPLE = "simple"
+    INHERIT = "inherit"
 
 
 @dataclass(frozen=True, slots=True)

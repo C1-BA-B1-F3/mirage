@@ -273,16 +273,24 @@ class LocalTransport:
 class HttpTransport:
     """A remote reached over git's smart HTTP protocol, version 0.
 
+    The credentials a URL carried belong to its origin: when the first
+    request is redirected to another one they are dropped, as git reads
+    credentials again from the URL it was sent to. Configured headers go
+    with every request, which is what git does with ``http.extraHeader``.
+
     Args:
         url (str): the repository URL, credentials stripped.
-        headers (dict[str, str]): extra headers for every request,
-            authorization included.
+        headers (dict[str, str]): extra headers for every request.
+        credentials (dict[str, str]): the Authorization header the URL's
+            userinfo spelled, empty for none.
     """
 
-    def __init__(self, url: str, headers: dict[str, str]) -> None:
+    def __init__(self, url: str, headers: dict[str, str],
+                 credentials: dict[str, str]) -> None:
         self._url = url.rstrip("/")
         self._headers = {"User-Agent": USER_AGENT, **headers}
-        self._authorized = "Authorization" in headers
+        self._credentials = credentials
+        self._configured = "Authorization" in headers
 
     async def _request(self, url: str, method: str, headers: dict[str, str],
                        body: bytes | None) -> bytes:
@@ -291,6 +299,7 @@ class HttpTransport:
                                            url,
                                            method, {
                                                **self._headers,
+                                               **self._credentials,
                                                **headers
                                            },
                                            body,
@@ -302,7 +311,7 @@ class HttpTransport:
         except HttpConnectError as exc:
             raise GitError(f"unable to access '{self._url}/': {exc}") from exc
         if resp.status in (401, 403):
-            if self._authorized:
+            if self._configured or self._credentials:
                 raise GitError(f"Authentication failed for '{self._url}/'")
             host = urlunsplit(urlsplit(self._url)._replace(path="", query=""))
             raise GitError(f"could not read Username for '{host}': "
@@ -313,7 +322,10 @@ class HttpTransport:
             raise GitError(f"unable to access '{self._url}/': The requested "
                            f"URL returned error: {resp.status}")
         if method == "GET":
-            self._url = resp.url.split("/info/refs", 1)[0]
+            moved = resp.url.split("/info/refs", 1)[0]
+            if _origin(moved) != _origin(self._url):
+                self._credentials = {}
+            self._url = moved
         return resp.body
 
     async def advertise(self) -> Advertisement:
@@ -362,6 +374,16 @@ class HttpTransport:
                 raise GitError("remote error: " +
                                payload.decode("utf-8", "replace").strip())
         return bytes(pack)
+
+
+def _origin(url: str) -> tuple[str, str]:
+    """A URL's scheme and host, the part credentials are scoped to.
+
+    Args:
+        url (str): an absolute URL.
+    """
+    parts = urlsplit(url)
+    return parts.scheme.lower(), parts.netloc.lower()
 
 
 def _credentials(url: str) -> tuple[str, dict[str, str]]:
@@ -413,7 +435,7 @@ async def open_transport(
     scheme = REMOTE_HELPER.match(url)
     if scheme is not None and scheme.group(1) in ("http", "https"):
         bare, auth = _credentials(url)
-        return HttpTransport(bare, {**headers, **auth})
+        return HttpTransport(bare, headers, auth)
     if scheme is not None and scheme.group(1) != "file":
         raise GitError(f"Unable to find remote helper for '{scheme.group(1)}'")
     if scheme is None and SCP_LIKE.match(url):

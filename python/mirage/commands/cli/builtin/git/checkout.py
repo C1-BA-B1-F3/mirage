@@ -23,9 +23,8 @@ from dulwich.objectspec import parse_commit
 from dulwich.refs import Ref
 from dulwich.repo import BaseRepo
 
-from mirage.commands.cli.builtin.git.branch import (branch_upstream,
-                                                    head_commit, remote_branch,
-                                                    set_up_tracking)
+from mirage.commands.cli.builtin.git.branch import (  # yapf: disable
+    branch_upstream, head_commit, remote_branch, set_up_tracking, track_mode)
 from mirage.commands.cli.builtin.git.changes import (ADDED, DELETED, MODIFIED,
                                                      head_entries,
                                                      work_changes)
@@ -647,6 +646,7 @@ async def checkout(
             raise UnknownPathspecError("")
         target = texts[0]
         repo, location = await opened(fl, doors, work_tree=True)
+        mode = await track_mode(dispatch, location)
         head = await read_head(dispatch, location.gitdir)
         creating = fl.as_bool("b")
         ref = Ref(f"{BRANCH_PREFIX}{target}".encode())
@@ -695,8 +695,9 @@ async def checkout(
                                 mounts_of(doors), repo, location, head, commit,
                                 target, ref if attached else None, creating,
                                 creating and start is None)
-        tracking = await set_up_tracking(dispatch, repo, location, target,
-                                         start) if creating else ""
+        tracking, warning = await set_up_tracking(
+            dispatch, repo, location, target, start, mode,
+            head) if creating else ("", "")
     except GitError as exc:
         return fatal(exc)
     carried = "".join(f"{letter}\t{path}\n"
@@ -705,7 +706,7 @@ async def checkout(
     # git writes the warning above everything it says about the move,
     # because the directory it could not remove is a fact about the
     # working tree rather than about where HEAD went.
-    note = moved.warnings + previous_position(repo, head)
+    note = moved.warnings + previous_position(repo, head) + warning
     if attached:
         verb = "Switched to a new branch" if creating else "Switched to branch"
         note += f"{verb} '{target}'\n"
@@ -716,5 +717,5 @@ async def checkout(
                  f"HEAD is now at {short(commit.id, abbrev_for(repo))} "
                  f"{subject(commit)}\n")
     if fl.as_bool("quiet"):
-        return None, IOResult(stderr=moved.warnings.encode())
+        return None, IOResult(stderr=(moved.warnings + warning).encode())
     return yield_bytes(carried.encode()), IOResult(stderr=note.encode())

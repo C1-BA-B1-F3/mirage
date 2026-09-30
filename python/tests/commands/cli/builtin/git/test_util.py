@@ -21,7 +21,8 @@ from mirage.commands.cli.builtin.git import GIT
 from mirage.commands.cli.builtin.git.errors import (  # yapf: disable
     FATAL_EXIT, BadConfigValueError, NotARepositoryError, UnknownSwitchError)
 from mirage.commands.cli.builtin.git.util import (  # yapf: disable
-    check_operands, escaped, fatal, git_bool, start_point, switches)
+    check_operands, config_section, escaped, fatal, git_bool, start_point,
+    switches, without_section)
 from mirage.commands.cli.types import CLIInvocation, CLISpec
 from mirage.commands.spec.flag_view import FlagView
 from mirage.commands.spec.types import Option
@@ -252,3 +253,23 @@ async def test_chained_c_runs_the_verb_in_the_composed_directory(
     assert (result.exit_code, result.stdout) == (native.returncode,
                                                  native.stdout)
     assert result.stdout == b"?? ./\n"
+
+
+def test_a_config_section_escapes_its_name_and_quotes_comment_values():
+    assert config_section("branch", 'q"x', [
+        ("remote", "origin"), ("merge", "refs/heads/we#rd"),
+        ("note", " pad\tend ")
+    ]) == ('[branch "q\\"x"]\n\tremote = origin\n'
+           '\tmerge = "refs/heads/we#rd"\n\tnote = " pad\\tend "\n')
+
+
+def test_without_section_drops_every_block_of_that_name_only():
+    data = (b'[core]\n\tbare = false\n[branch "topic"]\n\tremote = o\n'
+            b'[branch "main"]\n\tremote = o\n[Branch "topic"]\n\tmerge = m\n'
+            b'[branch "q\\"x"]\n\tremote = o\n')
+    assert without_section(
+        data, "branch",
+        "topic") == (b'[core]\n\tbare = false\n[branch "main"]\n\tremote = o\n'
+                     b'[branch "q\\"x"]\n\tremote = o\n')
+    assert without_section(data, "branch",
+                           'q"x').endswith(b'[Branch "topic"]\n\tmerge = m\n')

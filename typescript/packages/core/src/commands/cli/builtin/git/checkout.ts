@@ -18,7 +18,7 @@ import { IOResult } from '../../../../io/types.ts'
 import type { CommandFnResult } from '../../../config.ts'
 import { FlagView } from '../../../spec/flag_view.ts'
 import type { CLIInvocation } from '../../types.ts'
-import { branchUpstream, headCommit, remoteBranch, setUpTracking } from './branch.ts'
+import { branchUpstream, headCommit, remoteBranch, setUpTracking, trackMode } from './branch.ts'
 import { trackingLines } from './render.ts'
 import { ADDED, DELETED, headEntries, MODIFIED, workChanges } from './changes.ts'
 import {
@@ -554,6 +554,7 @@ export async function checkout(inv: CLIInvocation): Promise<CommandFnResult> {
     const target = texts[0]
     if (target === undefined) throw new UnknownPathspecError('')
     const repo = await opened(fl, doors, true)
+    const mode = await trackMode(repo)
     const head = await readHead(dispatch, repo.location.gitdir)
     let creating = fl.asBool('b')
     const ref = `${BRANCH_PREFIX}${target}`
@@ -621,12 +622,17 @@ export async function checkout(inv: CLIInvocation): Promise<CommandFnResult> {
       .sort(([a], [b]) => compareCodePoints(a, b))
       .map(([path, letter]) => `${letter}\t${path}\n`)
       .join('')
-    if (creating) carried += await setUpTracking(repo, target, startPoint ?? null)
+    let warning = ''
+    if (creating) {
+      const [tracking, told] = await setUpTracking(repo, target, startPoint ?? null, mode, head)
+      carried += tracking
+      warning = told
+    }
     // git writes the warning above everything it says about the move, because
     // the directory it could not remove is a fact about the working tree
     // rather than about where HEAD went.
-    warnings = moved.warnings
-    note = moved.warnings + (await previousPosition(repo, head))
+    warnings = moved.warnings + warning
+    note = moved.warnings + (await previousPosition(repo, head)) + warning
     if (attached) {
       const verb = creating ? 'Switched to a new branch' : 'Switched to branch'
       note += `${verb} '${target}'\n`

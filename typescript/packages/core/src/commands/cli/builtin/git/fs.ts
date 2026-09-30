@@ -33,6 +33,30 @@ export interface ConfigLine {
   readonly value: string | null
 }
 
+/** A parsed line as isomorphic-git leaves it, its subsection still escaped. */
+interface ParsedLine extends ConfigLine {
+  readonly section: string | null
+  readonly subsection?: string | null
+}
+
+/**
+ * The lines that hold a variable, each keyed the way git reads it.
+ *
+ * isomorphic-git keeps a quoted subsection's escapes, so `[branch "q\"x"]`
+ * came back as `branch.q\"x.remote` and a lookup for the branch `q"x` found
+ * nothing; git drops the backslash before any character.
+ */
+function variables(parsed: readonly ParsedLine[]): ConfigLine[] {
+  return parsed
+    .filter((line) => line.name !== null)
+    .map((line) => {
+      const { section, subsection, name } = line
+      if (typeof subsection !== 'string' || section === null || name === null) return line
+      const unescaped = subsection.replace(/\\(.)/g, '$1')
+      return { ...line, path: `${section.toLowerCase()}.${unescaped}.${name.toLowerCase()}` }
+    })
+}
+
 /**
  * The variables of one config file's text, in file order, as isomorphic-git
  * parses them: `path` is the dotted key, section and name folded, and `value`
@@ -46,7 +70,7 @@ export async function configLines(text: string): Promise<readonly ConfigLine[]> 
     fs: { read: () => Promise.resolve(text) } as never,
     gitdir: '',
   })
-  return (config.parsedConfig as readonly ConfigLine[]).filter((line) => line.name !== null)
+  return variables(config.parsedConfig as readonly ParsedLine[])
 }
 
 /**
@@ -211,7 +235,7 @@ export async function configValues(
   const last = path.lastIndexOf('.')
   const key =
     path.slice(0, first).toLowerCase() + path.slice(first, last) + path.slice(last).toLowerCase()
-  return (config.parsedConfig as readonly ConfigLine[])
-    .filter((line) => line.name !== null && line.path === key)
+  return variables(config.parsedConfig as readonly ParsedLine[])
+    .filter((line) => line.path === key)
     .map((line) => line.value ?? '')
 }

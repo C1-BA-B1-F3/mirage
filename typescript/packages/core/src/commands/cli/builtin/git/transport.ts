@@ -246,16 +246,31 @@ export class LocalTransport implements Transport {
   }
 }
 
-/** A remote reached over git's smart HTTP protocol, version 0. */
+/**
+ * A remote reached over git's smart HTTP protocol, version 0.
+ *
+ * The credentials a URL carried belong to its origin: when the first request
+ * is redirected to another one they are dropped, as git reads credentials again
+ * from the URL it was sent to. Configured headers go with every request, which
+ * is what git does with `http.extraHeader`.
+ */
 export class HttpTransport implements Transport {
   private url: string
   private readonly headers: Record<string, string>
-  private readonly authorized: boolean
+  private credentials: Record<string, string>
+  private readonly configured: boolean
 
-  constructor(url: string, headers: Record<string, string>) {
+  /**
+   * @param url the repository URL, credentials stripped
+   * @param headers extra headers for every request
+   * @param credentials the Authorization header the URL's userinfo spelled,
+   *   empty for none
+   */
+  constructor(url: string, headers: Record<string, string>, credentials: Record<string, string>) {
     this.url = url.replace(/\/+$/, '')
     this.headers = { 'User-Agent': USER_AGENT, ...headers }
-    this.authorized = 'Authorization' in headers
+    this.credentials = credentials
+    this.configured = 'Authorization' in headers
   }
 
   private async request(
@@ -268,7 +283,7 @@ export class HttpTransport implements Transport {
     try {
       resp = await httpRequest(url, {
         method,
-        headers: { ...this.headers, ...headers },
+        headers: { ...this.headers, ...this.credentials, ...headers },
         ...(body === undefined ? {} : { body }),
         timeoutMs: null,
         followRedirects: true,
@@ -279,7 +294,8 @@ export class HttpTransport implements Transport {
       throw err
     }
     if (resp.status === 401 || resp.status === 403) {
-      if (this.authorized) throw new GitError(`Authentication failed for '${this.url}/'`)
+      if (this.configured || Object.keys(this.credentials).length)
+        throw new GitError(`Authentication failed for '${this.url}/'`)
       const host = new URL(this.url).origin
       throw new GitError(`could not read Username for '${host}': terminal prompts disabled`)
     }
@@ -288,7 +304,11 @@ export class HttpTransport implements Transport {
       throw new GitError(
         `unable to access '${this.url}/': The requested URL returned error: ${String(resp.status)}`,
       )
-    if (method === 'GET') this.url = resp.url.split('/info/refs')[0] ?? this.url
+    if (method === 'GET') {
+      const moved = resp.url.split('/info/refs')[0] ?? this.url
+      if (new URL(moved).origin !== new URL(this.url).origin) this.credentials = {}
+      this.url = moved
+    }
     return resp.body
   }
 
@@ -399,7 +419,7 @@ export async function openTransport(
   const helper = scheme?.[1] ?? null
   if (helper === 'http' || helper === 'https') {
     const [bare, auth] = credentials(url)
-    return new HttpTransport(bare, { ...headers, ...auth })
+    return new HttpTransport(bare, headers, auth)
   }
   if (helper !== null && helper !== 'file')
     throw new GitError(`Unable to find remote helper for '${helper}'`)

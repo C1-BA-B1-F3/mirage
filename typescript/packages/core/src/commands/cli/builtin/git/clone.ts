@@ -20,16 +20,16 @@ import { FlagView } from '../../../spec/flag_view.ts'
 import type { CLIDoors, CLIInvocation } from '../../types.ts'
 import { DETACHED_ADVICE, IDENTITY, switchTo } from './checkout.ts'
 import { GitError, NoWorkspaceError } from './errors.ts'
-import { configuredHeaders, fetchObjects, HEADS, TAGS, type Wanted } from './fetch.ts'
+import { configuredHeaders, fetchObjects, HEADS, ignoreFunny, TAGS } from './fetch.ts'
 import { layOut } from './init.ts'
 import { readNames, removeTree, under, writeFile } from './io.ts'
 import { append, entry, ZERO } from './reflog.ts'
-import { detachHead, setHead, writeRef } from './refs.ts'
+import { detachHead, setHead, validRefName, writeRef } from './refs.ts'
 import { openRepo } from './repo.ts'
 import { commitEntries } from './tree.ts'
 import { isLocal, openTransport, type Advertisement, type Transport } from './transport.ts'
 import type { RepoLocation } from './types.ts'
-import { fatal, startPoint } from './util.ts'
+import { configSection, fatal, startPoint } from './util.ts'
 
 const ENC = new TextEncoder()
 const DEFAULT_BRANCH = 'master'
@@ -48,10 +48,15 @@ function config(url: string, remote: string, branch: string | null): string {
   let text =
     '[core]\n\trepositoryformatversion = 0\n\tfilemode = true\n\tbare = false\n' +
     '\tlogallrefupdates = true\n' +
-    `[remote "${remote}"]\n\turl = ${url}\n` +
-    `\tfetch = +refs/heads/*:refs/remotes/${remote}/*\n`
+    configSection('remote', remote, [
+      ['url', url],
+      ['fetch', `+refs/heads/*:refs/remotes/${remote}/*`],
+    ])
   if (branch !== null)
-    text += `[branch "${branch}"]\n\tremote = ${remote}\n\tmerge = refs/heads/${branch}\n`
+    text += configSection('branch', branch, [
+      ['remote', remote],
+      ['merge', `${HEADS}${branch}`],
+    ])
   return text
 }
 
@@ -80,8 +85,9 @@ export function remoteHead(
  *
  * A path or `file://` URL is a repository inside the workspace, an `https://`
  * one is fetched over smart HTTP. Every branch lands as a remote-tracking ref
- * and every tag as a tag, the remote's HEAD branch is checked out, and the
- * directory is removed again when the clone fails after creating it.
+ * and every tag as a tag, and the remote's HEAD branch is checked out. A failed
+ * clone removes what it wrote, and keeps a directory that was already there,
+ * empty, as git does.
  */
 export async function clone(inv: CLIInvocation): Promise<CommandFnResult> {
   const fl = new FlagView(inv.flags)
@@ -128,8 +134,14 @@ export async function clone(inv: CLIInvocation): Promise<CommandFnResult> {
   } catch (err) {
     if (!(err instanceof GitError)) throw err
     const { dispatch } = doors
-    if (fresh && dispatch !== undefined)
-      await removeTree(dispatch, target, doors.ns?.links ?? null, doors.ns?.mounts ?? null)
+    const links = doors.ns?.links ?? null
+    const mounts = doors.ns?.mounts ?? null
+    if (fresh && dispatch !== undefined) await removeTree(dispatch, target, links, mounts)
+    else if (dispatch !== undefined)
+      for (const entry of await readNames(dispatch, target)) {
+        const child = entry.replace(/\/+$/, '').split('/').at(-1) ?? ''
+        if (child) await removeTree(dispatch, under(target, child), links, mounts)
+      }
     const refusal = err.prefix === null ? err.message : `${err.prefix}: ${err.message}`
     return [null, new IOResult({ exitCode: err.code, stderr: ENC.encode(`${notes}${refusal}\n`) })]
   }
@@ -151,35 +163,50 @@ async function populate(
   const mounts = doors.ns?.mounts ?? null
   const gitdir = under(target, '.git')
   const remote = fl.asStr('origin') ?? 'origin'
+  if (!validRefName(`refs/remotes/${remote}/test`))
+    throw new GitError(`'${remote}' is not a valid remote name`)
   await layOut(dispatch, gitdir, DEFAULT_BRANCH, '')
-  const adv = await transport.advertise()
+  const advertised = await transport.advertise()
   const location: RepoLocation = {
     gitdir,
     commondir: gitdir,
     worktree: target,
     mountRoot: mounts?.rootOf(target) ?? '/',
   }
+  const [wants, funny] = ignoreFunny(
+    [...advertised.refs]
+      .filter(([ref]) => ref.startsWith(HEADS) || ref.startsWith(TAGS))
+      .map(([ref, oid]) => ({
+        remote: ref,
+        oid,
+        local: ref.startsWith(HEADS) ? `refs/remotes/${remote}/${ref.slice(HEADS.length)}` : ref,
+        force: false,
+        merge: false,
+        listed: true,
+      })),
+  )
+  let notes = funny
+  // Only what survived is a candidate for the branch to check out: a HEAD
+  // naming a refused branch detaches, as git's does.
+  const kept = new Set(wants.map((want) => want.remote))
+  const adv: Advertisement = {
+    refs: new Map([...advertised.refs].filter(([ref]) => kept.has(ref) || ref === 'HEAD')),
+    peeled: new Map([...advertised.peeled].filter(([ref]) => kept.has(ref))),
+    head: advertised.head !== null && kept.has(advertised.head) ? advertised.head : null,
+  }
   const chosen = fl.asStr('branch') ?? null
-  const found = remoteHead(adv, chosen)
-  let branch = found[0]
-  const commit = found[1]
+  const picked = remoteHead(adv, chosen)
+  let branch = picked[0]
+  const commit = picked[1]
   if (chosen !== null && commit === null)
     throw new GitError(`Remote branch ${chosen} not found in upstream ${remote}`)
-  let notes = ''
-  if (!adv.refs.size) {
+  if (!advertised.refs.size) {
     notes += 'warning: You appear to have cloned an empty repository.\n'
-    branch = (adv.head ?? `${HEADS}${DEFAULT_BRANCH}`).slice(HEADS.length)
+    const head = advertised.head
+    branch = (
+      head?.startsWith(HEADS) && validRefName(head) ? head : `${HEADS}${DEFAULT_BRANCH}`
+    ).slice(HEADS.length)
   }
-  const wants: Wanted[] = [...adv.refs]
-    .filter(([ref]) => ref.startsWith(HEADS) || ref.startsWith(TAGS))
-    .map(([ref, oid]) => ({
-      remote: ref,
-      oid,
-      local: ref.startsWith(HEADS) ? `refs/remotes/${remote}/${ref.slice(HEADS.length)}` : ref,
-      force: false,
-      merge: false,
-      listed: true,
-    }))
   const [repo] = await fetchObjects(
     await openRepo(dispatch, location),
     transport,

@@ -54,17 +54,32 @@ import {
 } from './ref_filter.ts'
 import { commitFacts, opened, repoArgs, type Repo } from './repo.ts'
 import { resolveCommit } from './revparse.ts'
-import type { Dispatch, HeadRef, Upstream } from './types.ts'
-import { checkOperands, escaped, fatal, switches } from './util.ts'
+import { Track, type Dispatch, type HeadRef, type Upstream } from './types.ts'
+import {
+  checkOperands,
+  configSection,
+  escaped,
+  fatal,
+  gitBool,
+  switches,
+  withoutSection,
+} from './util.ts'
 import { fnmatch } from '../../../../utils/fnmatch.ts'
 import { compareCodePoints } from '../../../../utils/sort.ts'
 
 const ENC = new TextEncoder()
+const DEC = new TextDecoder()
 const HEADS_PREFIX = 'refs/heads/'
 const REMOTES_PREFIX = 'refs/remotes/'
 const CURRENT = '* '
 const OTHER = '  '
 const REMOTE = 'remotes/'
+const AUTO_SETUP_MERGE = 'branch.autosetupmerge'
+const TRACK_WORDS: ReadonlyMap<string, Track> = new Map([
+  ['always', Track.ALWAYS],
+  ['simple', Track.SIMPLE],
+  ['inherit', Track.INHERIT],
+])
 
 /**
  * The `-> target` a symbolic ref carries in a branch listing.
@@ -87,7 +102,9 @@ async function create(
   refs: ReadonlyMap<string, string>,
   name: string,
   start: string | undefined,
-): Promise<string> {
+  mode: Track,
+  head: HeadRef,
+): Promise<[string, string]> {
   // Before the start point resolves, which is git's order here and the
   // opposite of switch's. A ref is a path below .git, so an unchecked name
   // reaches writeRef as one.
@@ -100,7 +117,7 @@ async function create(
   const held = blockingRef(new Set(refs.keys()), ref)
   if (held !== null) throw new RefLockError(ref, held)
   await writeRef(dispatch, repo.location.commondir, ref, oid)
-  return setUpTracking(repo, name, start ?? null)
+  return setUpTracking(repo, name, start ?? null, mode, head)
 }
 
 /**
@@ -121,33 +138,116 @@ export async function remoteBranch(repo: Repo, name: string): Promise<string | n
 }
 
 /**
- * Record a new branch's upstream when it starts at a remote's branch.
+ * `branch.autoSetupMerge` from the repository's config.
  *
- * git's `branch.autoSetupMerge` default: a start point naming
- * `<remote>/<branch>` of a configured remote writes `branch.<new>.remote` and
- * `.merge` and says so on stdout (pinned against git 2.47.3 and 2.50.1).
+ * The words are case-sensitive and anything else reads as a boolean, so
+ * `never` or `Always` is a bad boolean. git reads the variable before any
+ * command runs, so a verb that can create a branch reads it first and fails
+ * with nothing written (pinned against git 2.50.1).
+ */
+export async function trackMode(repo: Repo): Promise<Track> {
+  let mode = Track.REMOTE
+  for (const value of await configValues(repo.dispatch, repo.location, AUTO_SETUP_MERGE)) {
+    mode =
+      TRACK_WORDS.get(value) ??
+      (gitBool([value], AUTO_SETUP_MERGE, true) ? Track.REMOTE : Track.OFF)
+  }
+  return mode
+}
+
+/**
+ * The upstream a new branch takes from its start ref, as git picks it.
+ *
+ * Returns the remote (`.` for a local branch, null for no upstream), the merge
+ * refs, what the note puts before each one, and a warning. git names a local
+ * upstream bare when it picked the branch itself but `./<branch>` when it
+ * copied the remote from another branch.
+ */
+async function tracked(
+  repo: Repo,
+  ref: string,
+  branch: string,
+  mode: Track,
+): Promise<[string | null, string[], string, string]> {
+  const values = (path: string): Promise<string[]> =>
+    configValues(repo.dispatch, repo.location, path)
+  if (ref.startsWith(HEADS_PREFIX)) {
+    const source = ref.slice(HEADS_PREFIX.length)
+    if (mode === Track.ALWAYS) return ['.', [ref], '', '']
+    if (mode !== Track.INHERIT) return [null, [], '', '']
+    const remotes = await values(`branch.${source}.remote`)
+    const merges = await values(`branch.${source}.merge`)
+    const missing = !remotes.length
+      ? 'no remote is set'
+      : !merges.length
+        ? 'no merge configuration is set'
+        : ''
+    if (missing)
+      return [null, [], '', `warning: asked to inherit tracking from '${source}', but ${missing}\n`]
+    const remote = remotes.at(-1) ?? '.'
+    return [remote, merges, `${remote}/`, '']
+  }
+  if (!ref.startsWith(REMOTES_PREFIX)) return [null, [], '', '']
+  const rest = ref.slice(REMOTES_PREFIX.length)
+  const slash = rest.indexOf('/')
+  const remote = rest.slice(0, slash)
+  const name = rest.slice(slash + 1)
+  if (slash < 0 || !name || name === HEAD) return [null, [], '', '']
+  if (!(await values(`remote.${remote}.url`)).length) return [null, [], '', '']
+  if (mode === Track.INHERIT)
+    return [
+      null,
+      [],
+      '',
+      `warning: asked to inherit tracking from '${ref}', but no remote is set\n`,
+    ]
+  if (mode === Track.SIMPLE && name !== branch) return [null, [], '', '']
+  return [remote, [`${HEADS_PREFIX}${name}`], `${remote}/`, '']
+}
+
+/**
+ * Record a new branch's upstream as `branch.autoSetupMerge` asks.
+ *
+ * A start point naming `<remote>/<branch>` of a configured remote writes
+ * `branch.<new>.remote` and `.merge` unless the mode is `false`; `always` also
+ * tracks a local branch through remote `.`, and no start point means the
+ * branch HEAD was on. Returns the note git prints on stdout and any warning for
+ * stderr (pinned against git 2.47.3 and 2.50.1).
+ *
+ * @param head HEAD before the branch was made, which a missing start point
+ *   stands for
  */
 export async function setUpTracking(
   repo: Repo,
   branch: string,
   start: string | null,
-): Promise<string> {
-  if (start === null) return ''
-  const refs = await loadRefs(repo.dispatch, repo.location.gitdir, repo.location.commondir)
-  const ref = DWIM_RULES.map((rule) => rule.replace('{}', start)).find((name) => refs.has(name))
-  if (!ref?.startsWith(REMOTES_PREFIX)) return ''
-  const rest = ref.slice(REMOTES_PREFIX.length)
-  const slash = rest.indexOf('/')
-  const remote = rest.slice(0, slash)
-  const name = rest.slice(slash + 1)
-  if (slash < 0 || !name || name === HEAD) return ''
-  const configured = await configValues(repo.dispatch, repo.location, `remote.${remote}.url`)
-  if (!configured.length) return ''
+  mode: Track,
+  head: HeadRef,
+): Promise<[string, string]> {
+  if (mode === Track.OFF) return ['', '']
+  const typed = start ?? HEAD
+  let ref: string | null | undefined
+  if (typed === HEAD) ref = head.ref
+  else {
+    const refs = await loadRefs(repo.dispatch, repo.location.gitdir, repo.location.commondir)
+    ref = DWIM_RULES.map((rule) => rule.replace('{}', typed)).find((name) => refs.has(name))
+  }
+  if (ref === null || ref === undefined) return ['', '']
+  const [remote, merges, prefix, warning] = await tracked(repo, ref, branch, mode)
+  if (remote === null) return ['', warning]
   const path = under(repo.location.commondir, 'config')
   const data = (await readOptional(repo.dispatch, path)) ?? new Uint8Array()
-  const section = `[branch "${branch}"]\n\tremote = ${remote}\n\tmerge = refs/heads/${name}\n`
+  const section = configSection('branch', branch, [
+    ['remote', remote],
+    ...merges.map((merge): [string, string] => ['merge', merge]),
+  ])
   await writeFile(repo.dispatch, path, new Uint8Array([...data, ...ENC.encode(section)]))
-  return `branch '${branch}' set up to track '${remote}/${name}'.\n`
+  const labels = merges.map((merge) => `${prefix}${merge.replace(/^refs\/heads\//, '')}`)
+  if (labels.length === 1) return [`branch '${branch}' set up to track '${labels[0] ?? ''}'.\n`, '']
+  return [
+    `branch '${branch}' set up to track:\n${labels.map((label) => `  ${label}\n`).join('')}`,
+    '',
+  ]
 }
 
 /**
@@ -196,6 +296,13 @@ async function remove(
     throw new UnmergedBranchError(name)
   }
   await deleteRef(dispatch, repo.location.commondir, ref)
+  const path = under(repo.location.commondir, 'config')
+  const data = await readOptional(dispatch, path)
+  if (data !== null) {
+    const text = DEC.decode(data)
+    const dropped = withoutSection(text, 'branch', name)
+    if (dropped !== text) await writeFile(dispatch, path, ENC.encode(dropped))
+  }
   return `Deleted branch ${name} (was ${short(sha, repo.abbrev)}).\n`
 }
 
@@ -262,6 +369,7 @@ export async function branch(inv: CLIInvocation): Promise<CommandFnResult> {
     if (dispatch === undefined) throw new NoWorkspaceError()
     checkOperands(texts, UnknownSwitchError, escaped(inv.argv), switches(inv))
     repo = await opened(fl, doors)
+    const mode = await trackMode(repo)
     const filter = await refFilter(repo, words)
     refs = await loadRefs(dispatch, repo.location.gitdir, repo.location.commondir)
     head = await readHead(dispatch, repo.location.gitdir)
@@ -277,8 +385,8 @@ export async function branch(inv: CLIInvocation): Promise<CommandFnResult> {
     }
     const first = texts[0]
     if (first !== undefined && !listing) {
-      const tracking = await create(dispatch, repo, refs, first, texts[1])
-      return [tracking ? ENC.encode(tracking) : null, new IOResult()]
+      const [tracking, warning] = await create(dispatch, repo, refs, first, texts[1], mode, head)
+      return [tracking ? ENC.encode(tracking) : null, new IOResult({ stderr: ENC.encode(warning) })]
     }
     shown = await listed(
       repo,
@@ -329,12 +437,11 @@ export async function upstreamOf(
   branch: string,
   tip: string,
 ): Promise<Upstream | null> {
-  const remote: unknown = await git.getConfig({
-    ...repoArgs(repo),
-    path: `branch.${branch}.remote`,
-  })
-  const merge: unknown = await git.getConfig({ ...repoArgs(repo), path: `branch.${branch}.merge` })
-  if (typeof remote !== 'string' || typeof merge !== 'string') return null
+  const remote = (await configValues(repo.dispatch, repo.location, `branch.${branch}.remote`)).at(
+    -1,
+  )
+  const merge = (await configValues(repo.dispatch, repo.location, `branch.${branch}.merge`)).at(-1)
+  if (remote === undefined || merge === undefined) return null
   const tracked =
     remote === '.' ? merge : `refs/remotes/${remote}/${merge.replace(/^refs\/heads\//, '')}`
   const label = tracked.replace(/^refs\/(heads|remotes)\//, '')

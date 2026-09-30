@@ -25,20 +25,21 @@ from mirage.commands.cli.builtin.git.checkout import (DETACHED_ADVICE,
 from mirage.commands.cli.builtin.git.errors import GitError, NoWorkspaceError
 from mirage.commands.cli.builtin.git.fetch import (HEADS, TAGS, Wanted,
                                                    configured_headers,
-                                                   fetch_objects)
+                                                   fetch_objects, ignore_funny)
 from mirage.commands.cli.builtin.git.init import lay_out
 from mirage.commands.cli.builtin.git.io import (read_names, remove_tree,
                                                 write_file)
 from mirage.commands.cli.builtin.git.reflog import ZERO, append, entry
 from mirage.commands.cli.builtin.git.refs import (detach_head, set_head,
-                                                  write_ref)
+                                                  valid_ref_name, write_ref)
 from mirage.commands.cli.builtin.git.transport import (Advertisement,
                                                        HttpTransport,
                                                        LocalTransport,
                                                        is_local,
                                                        open_transport)
 from mirage.commands.cli.builtin.git.types import RepoLocation
-from mirage.commands.cli.builtin.git.util import (fatal, links_of, mounts_of,
+from mirage.commands.cli.builtin.git.util import (config_section, fatal,
+                                                  links_of, mounts_of,
                                                   start_point)
 from mirage.commands.cli.types import CLIDoors, CLIInvocation
 from mirage.commands.spec.flag_view import FlagView
@@ -72,12 +73,15 @@ def _config(url: str, remote: str, branch: str | None) -> str:
         branch (str | None): the branch checked out, None when detached.
     """
     text = ("[core]\n\trepositoryformatversion = 0\n\tfilemode = true\n"
-            "\tbare = false\n\tlogallrefupdates = true\n"
-            f'[remote "{remote}"]\n\turl = {url}\n'
-            f"\tfetch = +refs/heads/*:refs/remotes/{remote}/*\n")
+            "\tbare = false\n\tlogallrefupdates = true\n" +
+            config_section("remote", remote, [
+                ("url", url),
+                ("fetch", f"+refs/heads/*:refs/remotes/{remote}/*"),
+            ]))
     if branch is not None:
-        text += (f'[branch "{branch}"]\n\tremote = {remote}\n'
-                 f"\tmerge = refs/heads/{branch}\n")
+        text += config_section("branch", branch,
+                               [("remote", remote),
+                                ("merge", f"{HEADS}{branch}")])
     return text
 
 
@@ -109,8 +113,8 @@ async def clone(
     A path or ``file://`` URL is a repository inside the workspace, an
     ``https://`` one is fetched over smart HTTP. Every branch lands as a
     remote-tracking ref and every tag as a tag, the remote's HEAD branch
-    is checked out, and the directory is removed again when the clone
-    fails after creating it.
+    is checked out. A failed clone removes what it wrote, and keeps a
+    directory that was already there, empty, as git does.
 
     Args:
         inv (CLIInvocation[None]): the parsed invocation.
@@ -153,6 +157,11 @@ async def clone(
         if info is None:
             await remove_tree(dispatch, target, links_of(doors),
                               mounts_of(doors))
+        else:
+            for entry in await read_names(dispatch, target):
+                child = posixpath.basename(entry.rstrip("/"))
+                await remove_tree(dispatch, posixpath.join(target, child),
+                                  links_of(doors), mounts_of(doors))
         refusal = str(exc) if exc.prefix is None else f"{exc.prefix}: {exc}"
         return None, IOResult(exit_code=exc.code,
                               stderr=f"{notes}{refusal}\n".encode())
@@ -181,25 +190,41 @@ async def _populate(inv: CLIInvocation[None], doors: CLIDoors,
     mounts = doors.ns.mounts if doors.ns is not None else None
     gitdir = posixpath.join(target, ".git")
     remote = fl.as_str("origin") or "origin"
+    if not valid_ref_name(f"refs/remotes/{remote}/test"):
+        raise GitError(f"'{remote}' is not a valid remote name")
     await lay_out(dispatch, gitdir, DEFAULT_BRANCH, "")
-    adv = await transport.advertise()
+    advertised = await transport.advertise()
     location = RepoLocation(gitdir, gitdir, target,
                             mounts.root_of(target) if mounts else "/")
+    wanted, notes = ignore_funny([
+        Wanted(
+            ref, oid, f"refs/remotes/{remote}/{ref[len(HEADS):]}"
+            if ref.startswith(HEADS) else ref)
+        for ref, oid in advertised.refs.items()
+        if ref.startswith(HEADS) or ref.startswith(TAGS)
+    ])
+    # Only what survived is a candidate for the branch to check out: a
+    # HEAD naming a refused branch detaches, as git's does.
+    kept = {want.remote for want in wanted}
+    adv = Advertisement(
+        {
+            ref: oid
+            for ref, oid in advertised.refs.items()
+            if ref in kept or ref == "HEAD"
+        }, {
+            ref: oid
+            for ref, oid in advertised.peeled.items() if ref in kept
+        }, advertised.head if advertised.head in kept else None)
     branch, commit = remote_head(adv, fl.as_str("branch"))
     if fl.as_str("branch") is not None and commit is None:
         raise GitError(f"Remote branch {branch} not found in upstream "
                        f"{remote}")
-    notes = ""
-    if not adv.refs:
+    if not advertised.refs:
         notes += "warning: You appear to have cloned an empty repository.\n"
-        branch = (adv.head or f"{HEADS}{DEFAULT_BRANCH}")[len(HEADS):]
-    wanted = [
-        Wanted(
-            ref, oid, f"refs/remotes/{remote}/{ref[len(HEADS):]}"
-            if ref.startswith(HEADS) else ref)
-        for ref, oid in adv.refs.items()
-        if ref.startswith(HEADS) or ref.startswith(TAGS)
-    ]
+        head = advertised.head
+        branch = (head if head is not None and head.startswith(HEADS)
+                  and valid_ref_name(head) else
+                  f"{HEADS}{DEFAULT_BRANCH}")[len(HEADS):]
     repo, _ = await fetch_objects(dispatch, location, transport, adv, wanted,
                                   False)
     for want in wanted:

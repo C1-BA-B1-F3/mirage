@@ -27,7 +27,7 @@ import { resolvedRefs } from './history.ts'
 import { globalSources } from './inspect.ts'
 import { under, writeFile } from './io.ts'
 import { append, entry, ZERO } from './reflog.ts'
-import { deleteRef, loadRefs, readHead, SYMREF_PREFIX, writeRef } from './refs.ts'
+import { deleteRef, loadRefs, readHead, SYMREF_PREFIX, validRefName, writeRef } from './refs.ts'
 import { objectType, openRepo, opened, repoArgs, storePack, type Repo } from './repo.ts'
 import { compareCodePoints } from '../../../../utils/sort.ts'
 import {
@@ -134,7 +134,9 @@ export function mapped(spec: Refspec, name: string): string | null {
   if (name.length < head.length + tail.length || !name.startsWith(head) || !name.endsWith(tail))
     return null
   const middle = name.slice(head.length, name.length - tail.length)
-  return spec.dst === null ? '' : spec.dst.replace('*', middle)
+  if (spec.dst === null) return ''
+  const at = spec.dst.indexOf('*')
+  return at < 0 ? spec.dst : `${spec.dst.slice(0, at)}${middle}${spec.dst.slice(at + 1)}`
 }
 
 /** A ref name the way git's fetch summary shortens it. */
@@ -203,7 +205,31 @@ async function receive(repo: Repo, transport: Transport, wants: readonly string[
   return openRepo(repo.dispatch, repo.location)
 }
 
-/** The remote tags git follows: new here, pointing at what is here. */
+/**
+ * Drop the refs whose local name git refuses, as get_fetch_map does.
+ *
+ * The remote names its refs, so one it advertises as `refs/tags/../../x` would
+ * land outside `.git`. git skips such a ref with an error and takes the rest
+ * (pinned against git 2.50.1). Returns the refs kept and the errors git prints
+ * for the others.
+ */
+export function ignoreFunny(wants: readonly Wanted[]): [Wanted[], string] {
+  const kept: Wanted[] = []
+  let notes = ''
+  for (const want of wants) {
+    if (want.local === null || (want.local.startsWith('refs/') && validRefName(want.local)))
+      kept.push(want)
+    else notes += `error: * Ignoring funny ref '${want.local}' locally\n`
+  }
+  return [kept, notes]
+}
+
+/**
+ * The remote tags git follows: new here, pointing at what is here.
+ *
+ * A tag whose name git refuses is left out. git asks for it by name and dies
+ * on the answer; mirage takes the rest instead.
+ */
 async function followedTags(
   repo: Repo,
   adv: Advertisement,
@@ -212,7 +238,8 @@ async function followedTags(
   const local = await resolvedRefs(repo)
   const follow: Wanted[] = []
   for (const [name, oid] of adv.refs) {
-    if (!name.startsWith(TAGS) || taken.has(name) || local.has(name)) continue
+    if (!name.startsWith(TAGS) || taken.has(name) || local.has(name) || !validRefName(name))
+      continue
     if (await holds(repo, adv.peeled.get(name) ?? oid)) follow.push(wanted(name, oid, name))
   }
   return follow
@@ -264,14 +291,11 @@ async function classify(
   }
   if (local.startsWith(TAGS) && !want.force)
     return [row('!', '[rejected]', remote, shown, 'would clobber existing tag', true), null]
-  const span = `${old.slice(0, repo.abbrev)}..${want.oid.slice(0, repo.abbrev)}`
+  const ends = [old.slice(0, repo.abbrev), want.oid.slice(0, repo.abbrev)]
   if (await isAncestor(repo, old, want.oid))
-    return [row(' ', span, remote, shown, '', true), 'fast-forward']
+    return [row(' ', ends.join('..'), remote, shown, '', true), 'fast-forward']
   if (want.force)
-    return [
-      row('+', span.replace('..', '...'), remote, shown, 'forced update', true),
-      'forced-update',
-    ]
+    return [row('+', ends.join('...'), remote, shown, 'forced update', true), 'forced-update']
   return [row('!', '[rejected]', remote, shown, 'non-fast-forward', true), null]
 }
 
@@ -509,7 +533,7 @@ export async function fetch(inv: CLIInvocation): Promise<CommandFnResult> {
     }
     const adv = await transport.advertise()
     const typed = texts.slice(1).map(parseRefspec)
-    const wants = plan(adv, typed, configured, merge, fl.asBool('tags'))
+    const [wants, notes] = ignoreFunny(plan(adv, typed, configured, merge, fl.asBool('tags')))
     const checked = bare ? null : head.ref
     for (const want of wants)
       if (want.local !== null && want.local === checked)
@@ -528,7 +552,7 @@ export async function fetch(inv: CLIInvocation): Promise<CommandFnResult> {
       ENC.encode(fetchHead(url, taken)),
     )
     const shown = [...pruned, ...rows.filter((line) => line.code !== '=' || fl.asBool('verbose'))]
-    const err = fl.asBool('quiet') ? '' : summaryLines(url, shown, fetched.abbrev)
+    const err = notes + (fl.asBool('quiet') ? '' : summaryLines(url, shown, fetched.abbrev))
     return [null, new IOResult({ exitCode: rejected ? 1 : 0, stderr: ENC.encode(err) })]
   } catch (err) {
     if (err instanceof GitError) return fatal(err)

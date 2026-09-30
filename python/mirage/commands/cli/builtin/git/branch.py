@@ -38,12 +38,14 @@ from mirage.commands.cli.builtin.git.ref_filter import (RefFilter,
 from mirage.commands.cli.builtin.git.refs import (blocking_ref, delete_ref,
                                                   read_head, valid_ref_name,
                                                   write_ref)
+from mirage.commands.cli.builtin.git.repo import config_values
 from mirage.commands.cli.builtin.git.revparse import resolve_commit
 from mirage.commands.cli.builtin.git.session import opened
 from mirage.commands.cli.builtin.git.types import (HeadRef, RepoLocation,
-                                                   Upstream)
+                                                   Track, Upstream)
 from mirage.commands.cli.builtin.git.util import (  # yapf: disable
-    check_operands, escaped, fatal, switches)
+    check_operands, config_section, escaped, fatal, git_bool, multivar,
+    switches, without_section)
 from mirage.commands.cli.types import CLIDoors, CLIInvocation
 from mirage.commands.spec.flag_view import FlagView
 from mirage.io.stream import yield_bytes
@@ -56,6 +58,8 @@ SYMREF_PREFIX = b"ref: "
 CURRENT = "* "
 OTHER = "  "
 REMOTE = "remotes/"
+AUTO_SETUP_MERGE = "branch.autosetupmerge"
+TRACK_WORDS = (Track.ALWAYS, Track.SIMPLE, Track.INHERIT)
 
 
 def _symref_suffix(repo: BaseRepo, ref: bytes) -> str:
@@ -79,10 +83,12 @@ def _symref_suffix(repo: BaseRepo, ref: bytes) -> str:
 
 
 async def _create(dispatch: DispatchFn, repo: BaseRepo, location: RepoLocation,
-                  name: str, start: str | None) -> str:
+                  name: str, start: str | None, mode: Track,
+                  head: HeadRef) -> tuple[str, str]:
     """Point a new branch at a commit, refusing to move an existing one.
 
-    Returns what git prints about the upstream it set up, if any.
+    Returns what git prints about the upstream it set up, on stdout and
+    on stderr.
 
     Args:
         dispatch (DispatchFn): workspace op dispatcher.
@@ -90,6 +96,8 @@ async def _create(dispatch: DispatchFn, repo: BaseRepo, location: RepoLocation,
         location (RepoLocation): the discovered repository.
         name (str): the branch name.
         start (str | None): the revision to start it at, HEAD when None.
+        mode (Track): ``branch.autoSetupMerge``.
+        head (HeadRef): what HEAD points at.
     """
     # Before the start point resolves, which is git's order here and
     # the opposite of switch's. A ref is a path below .git, so an
@@ -107,7 +115,8 @@ async def _create(dispatch: DispatchFn, repo: BaseRepo, location: RepoLocation,
     if held is not None:
         raise RefLockError(ref, held)
     await write_ref(dispatch, location.commondir, ref, commit.id)
-    return await set_up_tracking(dispatch, repo, location, name, start)
+    return await set_up_tracking(dispatch, repo, location, name, start, mode,
+                                 head)
 
 
 def remote_branch(repo: BaseRepo, name: str) -> str | None:
@@ -128,15 +137,90 @@ def remote_branch(repo: BaseRepo, name: str) -> str | None:
     return found[0] if len(found) == 1 else None
 
 
+async def track_mode(dispatch: DispatchFn, location: RepoLocation) -> Track:
+    """``branch.autoSetupMerge`` from the repository's config.
+
+    The words are case-sensitive and anything else reads as a boolean,
+    so ``never`` or ``Always`` is a bad boolean. git reads the variable
+    before any command runs, so a verb that can create a branch reads it
+    first and fails with nothing written (pinned against git 2.50.1).
+
+    Args:
+        dispatch (DispatchFn): workspace op dispatcher.
+        location (RepoLocation): the discovered repository.
+
+    Raises:
+        BadConfigValueError: a value that is neither a word nor a boolean.
+    """
+    mode = Track.REMOTE
+    for value in await config_values(dispatch, location, b"branch",
+                                     b"autosetupmerge"):
+        word = value.decode(errors="replace")
+        if word in TRACK_WORDS:
+            mode = Track(word)
+        else:
+            mode = (Track.REMOTE if git_bool([value], AUTO_SETUP_MERGE, True)
+                    else Track.OFF)
+    return mode
+
+
+def _tracked(cfg: ConfigFile, ref: str, branch: str,
+             mode: Track) -> tuple[str | None, list[str], str, str]:
+    """The upstream a new branch takes from its start ref, as git picks it.
+
+    Returns the remote (``.`` for a local branch, None for no upstream),
+    the merge refs, what the note puts before each one, and a warning.
+    git names a local upstream bare when it picked the branch itself but
+    ``./<branch>`` when it copied the remote from another branch.
+
+    Args:
+        cfg (ConfigFile): the repository's config.
+        ref (str): the start point, as a full ref.
+        branch (str): the branch just created.
+        mode (Track): ``branch.autoSetupMerge``.
+    """
+    if ref.startswith(HEADS_PREFIX.decode()):
+        source = ref[len(HEADS_PREFIX):]
+        if mode is Track.ALWAYS:
+            return ".", [ref], "", ""
+        if mode is not Track.INHERIT:
+            return None, [], "", ""
+        section = (b"branch", source.encode())
+        remotes = multivar(cfg, section, b"remote")
+        merges = multivar(cfg, section, b"merge")
+        missing = ("no remote is set" if not remotes else
+                   "no merge configuration is set" if not merges else "")
+        if missing:
+            return None, [], "", (f"warning: asked to inherit tracking from "
+                                  f"'{source}', but {missing}\n")
+        remote = remotes[-1].decode()
+        return remote, [m.decode() for m in merges], f"{remote}/", ""
+    if not ref.startswith(REMOTES_PREFIX.decode()):
+        return None, [], "", ""
+    remote, _, name = ref[len(REMOTES_PREFIX):].partition("/")
+    if not name or name == HEAD or not cfg.has_section(
+        (b"remote", remote.encode())):
+        return None, [], "", ""
+    if mode is Track.INHERIT:
+        return None, [], "", (f"warning: asked to inherit tracking from "
+                              f"'{ref}', but no remote is set\n")
+    if mode is Track.SIMPLE and name != branch:
+        return None, [], "", ""
+    return remote, [f"{HEADS_PREFIX.decode()}{name}"], f"{remote}/", ""
+
+
 async def set_up_tracking(dispatch: DispatchFn, repo: BaseRepo,
                           location: RepoLocation, branch: str,
-                          start: str | None) -> str:
-    """Record a new branch's upstream when it starts at a remote's branch.
+                          start: str | None, mode: Track,
+                          head: HeadRef) -> tuple[str, str]:
+    """Record a new branch's upstream as ``branch.autoSetupMerge`` asks.
 
-    git's ``branch.autoSetupMerge`` default: a start point naming
-    ``<remote>/<branch>`` of a configured remote writes
-    ``branch.<new>.remote`` and ``.merge`` and says so on stdout (pinned
-    against git 2.47.3 and 2.50.1).
+    A start point naming ``<remote>/<branch>`` of a configured remote
+    writes ``branch.<new>.remote`` and ``.merge`` unless the mode is
+    ``false``; ``always`` also tracks a local branch through remote
+    ``.``, and no start point means the branch HEAD was on. Returns the
+    note git prints on stdout and any warning for stderr (pinned against
+    git 2.47.3 and 2.50.1).
 
     Args:
         dispatch (DispatchFn): workspace op dispatcher.
@@ -144,27 +228,40 @@ async def set_up_tracking(dispatch: DispatchFn, repo: BaseRepo,
         location (RepoLocation): the discovered repository.
         branch (str): the branch just created.
         start (str | None): the start point as typed.
+        mode (Track): ``branch.autoSetupMerge``, from ``track_mode``.
+        head (HeadRef): HEAD before the branch was made, which a
+            missing start point stands for.
     """
-    if start is None:
-        return ""
-    known = repo.refs.allkeys()
-    ref = next(
-        (rule.format(start)
-         for rule in DWIM_RULES if Ref(rule.format(start).encode()) in known),
-        None)
-    if ref is None or not ref.startswith(REMOTES_PREFIX.decode()):
-        return ""
-    remote, _, name = ref[len(REMOTES_PREFIX):].partition("/")
+    if mode is Track.OFF:
+        return "", ""
+    typed = start or HEAD
+    ref: str | None
+    if typed == HEAD:
+        ref = head.ref
+    else:
+        known = repo.refs.allkeys()
+        ref = next((rule.format(typed) for rule in DWIM_RULES
+                    if Ref(rule.format(typed).encode()) in known), None)
+    if ref is None:
+        return "", ""
     path = f"{location.commondir}/config"
     data = await read_optional(dispatch, path) or b""
-    cfg = ConfigFile.from_file(BytesIO(data))
-    if not name or name == HEAD or not cfg.has_section(
-        (b"remote", remote.encode())):
-        return ""
-    section = (f'[branch "{branch}"]\n\tremote = {remote}\n'
-               f"\tmerge = refs/heads/{name}\n")
+    remote, merges, prefix, warning = _tracked(
+        ConfigFile.from_file(BytesIO(data)), ref, branch, mode)
+    if remote is None:
+        return "", warning
+    section = config_section("branch", branch,
+                             [("remote", remote)] + [("merge", merge)
+                                                     for merge in merges])
     await write_file(dispatch, path, data + section.encode())
-    return f"branch '{branch}' set up to track '{remote}/{name}'.\n"
+    labels = [
+        f"{prefix}{merge.removeprefix(HEADS_PREFIX.decode())}"
+        for merge in merges
+    ]
+    if len(labels) == 1:
+        return f"branch '{branch}' set up to track '{labels[0]}'.\n", ""
+    return (f"branch '{branch}' set up to track:\n" +
+            "".join(f"  {label}\n" for label in labels)), ""
 
 
 def head_commit(repo: BaseRepo, head: HeadRef) -> bytes | None:
@@ -242,6 +339,12 @@ async def _delete(dispatch: DispatchFn, repo: BaseRepo, location: RepoLocation,
                                                  head_commit(repo, head)):
         raise UnmergedBranchError(name)
     await delete_ref(dispatch, location.commondir, ref.decode())
+    path = f"{location.commondir}/config"
+    data = await read_optional(dispatch, path)
+    if data is not None:
+        dropped = without_section(data, "branch", name)
+        if dropped != data:
+            await write_file(dispatch, path, dropped)
     return (f"Deleted branch {name} "
             f"(was {short(sha, abbrev_for(repo))}).\n").encode()
 
@@ -325,6 +428,7 @@ async def branch(
         check_operands(texts, UnknownSwitchError, escaped(inv.argv),
                        switches(inv))
         repo, location = await opened(fl, doors)
+        mode = await track_mode(dispatch, location)
         filt = await asyncio.to_thread(ref_filter, repo, words)
         head = await read_head(dispatch, location.gitdir)
         if fl.as_bool("show_current"):
@@ -342,10 +446,11 @@ async def branch(
             ])
             return yield_bytes(deleted), IOResult()
         if texts and not listing:
-            tracking = await _create(dispatch, repo, location, texts[0],
-                                     texts[1] if len(texts) > 1 else None)
-            return yield_bytes(
-                tracking.encode()) if tracking else None, IOResult()
+            tracking, warning = await _create(
+                dispatch, repo, location, texts[0],
+                texts[1] if len(texts) > 1 else None, mode, head)
+            return (yield_bytes(tracking.encode()) if tracking else None,
+                    IOResult(stderr=warning.encode()))
         shown = await asyncio.to_thread(_listed, repo, not remotes_only,
                                         include_remotes, texts if listing else
                                         (), filt)

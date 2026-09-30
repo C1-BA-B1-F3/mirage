@@ -30,6 +30,13 @@ const FALSE_WORDS = ['false', 'no', 'off', '']
 const INTEGER = /^[ \t\n\v\f\r]*([-+]?)(0[xX][0-9a-fA-F]+|0[0-7]*|[1-9][0-9]*)([kKmMgG]?)$/
 const UNIT_SHIFTS: Readonly<Record<string, number>> = { '': 0, k: 10, m: 20, g: 30 }
 const INT_BITS = 31
+const VALUE_ESCAPES: Readonly<Record<string, string>> = {
+  '\n': '\\n',
+  '\t': '\\t',
+  '"': '\\"',
+  '\\': '\\\\',
+}
+const SECTION_HEADER = /^[ \t]*\[[ \t]*([A-Za-z0-9.-]+)(?:[ \t]+"((?:[^"\\]|\\.)*)")?[ \t]*\]/
 
 const ENC = new TextEncoder()
 
@@ -212,6 +219,59 @@ export function gitBool(values: readonly string[], key: string, fallback: boolea
     }
   }
   return answer
+}
+
+/**
+ * One `[section "name"]` block the way git's config writer spells it.
+ *
+ * The subsection escapes `"` and `\`; a value escapes those plus newline and
+ * tab, and is quoted when it starts or ends with a space or holds `;` or `#`.
+ * A branch may be named `a"b` or `a#b`, and either one written raw reads back
+ * as a different name (pinned against git 2.50.1).
+ *
+ * @param section the section, e.g. `branch`
+ * @param name the subsection, e.g. the branch name
+ * @param pairs variables and values, in order
+ */
+export function configSection(
+  section: string,
+  name: string,
+  pairs: readonly (readonly [string, string])[],
+): string {
+  const quoted = name.replaceAll('\\', '\\\\').replaceAll('"', '\\"')
+  let text = `[${section} "${quoted}"]\n`
+  for (const [key, value] of pairs) {
+    let body = value.replace(/[\n\t"\\]/g, (ch) => VALUE_ESCAPES[ch] ?? ch)
+    if (value.startsWith(' ') || value.endsWith(' ') || /[;#]/.test(value)) body = `"${body}"`
+    text += `\t${key} = ${body}\n`
+  }
+  return text
+}
+
+/**
+ * A config's text with every `[section "name"]` block taken out.
+ *
+ * `git branch -d` drops the deleted branch's settings this way, so a branch
+ * made again under the same name starts with no upstream rather than with two
+ * (pinned against git 2.50.1).
+ *
+ * @param text the config file's contents
+ * @param section the section, lowercase, e.g. `branch`
+ * @param name the subsection, e.g. the branch name
+ */
+export function withoutSection(text: string, section: string, name: string): string {
+  let dropping = false
+  return text
+    .split(/(?<=\n)/)
+    .filter((line) => {
+      const header = SECTION_HEADER.exec(line)
+      if (header !== null) {
+        dropping =
+          (header[1] ?? '').toLowerCase() === section && header[2]?.replace(/\\(.)/g, '$1') === name
+      }
+      return !dropping
+    })
+    .join('')
 }
 
 /**

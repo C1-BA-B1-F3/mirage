@@ -17,7 +17,8 @@ from dataclasses import dataclass
 from dulwich.refs import Ref
 
 from mirage.commands.cli.builtin.git.branch import (remote_branch,
-                                                    set_up_tracking)
+                                                    set_up_tracking,
+                                                    track_mode)
 from mirage.commands.cli.builtin.git.checkout import (move_head,
                                                       previous_position,
                                                       tracking_report)
@@ -124,6 +125,7 @@ async def switch(
         if not creating and not texts and not flags.detach:
             raise MissingBranchArgumentError()
         repo, location = await opened(fl, doors, work_tree=True)
+        mode = await track_mode(dispatch, location)
         head = await read_head(dispatch, location.gitdir)
         known = repo.refs.allkeys()
         if flags.create is not None:
@@ -201,8 +203,9 @@ async def switch(
                                 mounts_of(doors), repo, location, head, commit,
                                 target, ref if attached else None, creating,
                                 creating and start is None)
-        tracking = await set_up_tracking(dispatch, repo, location, target,
-                                         start) if creating else ""
+        tracking, warning = await set_up_tracking(
+            dispatch, repo, location, target, start, mode,
+            head) if creating else ("", "")
     except GitError as exc:
         return fatal(exc)
     carried = "".join(f"{letter}\t{path}\n"
@@ -211,7 +214,7 @@ async def switch(
     # Above everything the move says about itself, which is where git
     # puts it: what could not be removed is a fact about the working
     # tree rather than about where HEAD went.
-    note = moved.warnings + previous_position(repo, head)
+    note = moved.warnings + previous_position(repo, head) + warning
     if attached:
         verb = "Switched to a new branch" if creating else "Switched to branch"
         note += f"{verb} '{target}'\n"
@@ -221,5 +224,5 @@ async def switch(
         note += (f"HEAD is now at {short(commit.id, abbrev_for(repo))} "
                  f"{subject(commit)}\n")
     if fl.as_bool("quiet"):
-        return None, IOResult(stderr=moved.warnings.encode())
+        return None, IOResult(stderr=(moved.warnings + warning).encode())
     return yield_bytes(carried.encode()), IOResult(stderr=note.encode())

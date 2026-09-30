@@ -721,6 +721,32 @@ async def test_sed_reads_operands_after_a_directory_for_last_line():
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("script,out", [
+    ("n;p", b"two\nL1\n"),
+    ("N;p", b"one\ntwo\nthree\nL1\n"),
+])
+async def test_sed_n_looks_past_a_directory(script, out):
+    rb, wb, store = _make_backend({
+        "/f": b"one\ntwo\nthree\n",
+        "/g": b"L1\nL2\n"
+    })
+
+    async def read(path):
+        if path.virtual == "/d":
+            raise IsADirectoryError(21, "Is a directory", "/d")
+        return await rb(path)
+
+    output, io = await sed(
+        [_spec("/f"), _spec("/d"), _spec("/g")],
+        script,
+        read_bytes=read,
+        write_bytes=wb,
+        suppress=True)
+    assert output == out
+    assert io.exit_code == 0
+
+
+@pytest.mark.asyncio
 async def test_sed_reads_nothing_after_a_directory_without_last_line():
     rb, wb, store = _make_backend({"/f": b"one\ntwo\n", "/g": b"x\n"})
     reads: list[str] = []

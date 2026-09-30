@@ -172,8 +172,8 @@ describe('sed operands after a directory (GNU sed 4.9)', () => {
 
   async function run(script: string): Promise<{ out: string; code: number; reads: string[] }> {
     const files = new Map([
-      ['/f', enc('one\ntwo\n')],
-      ['/g', enc('x\n')],
+      ['/f', enc('one\ntwo\nthree\n')],
+      ['/g', enc('L1\nL2\n')],
     ])
     const reads: string[] = []
     const paths = ['/f', '/d', '/g'].map((p) => PathSpec.fromStrPath(p))
@@ -200,11 +200,15 @@ describe('sed operands after a directory (GNU sed 4.9)', () => {
     return { out, code: result[1].exitCode, reads }
   }
 
-  it('reads past the directory when a $ looks ahead', async () => {
-    expect(await run('$p')).toEqual({ out: 'x\n', code: 0, reads: ['/f', '/d', '/g'] })
+  it.each([
+    ['$p', 'L2\n'],
+    ['n;p', 'two\nL1\n'],
+    ['N;p', 'one\ntwo\nthree\nL1\n'],
+  ])('reads past the directory when %s looks ahead', async (script, out) => {
+    expect(await run(script)).toEqual({ out, code: 0, reads: ['/f', '/d', '/g'] })
   })
 
-  it('reads nothing past the directory without a $', async () => {
-    expect(await run('p')).toEqual({ out: 'one\ntwo\n', code: 4, reads: ['/f', '/d'] })
+  it('reads nothing past the directory without a lookahead', async () => {
+    expect(await run('p')).toEqual({ out: 'one\ntwo\nthree\n', code: 4, reads: ['/f', '/d'] })
   })
 })

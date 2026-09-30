@@ -869,12 +869,17 @@ export function compileScript(pieces: readonly SedScriptPiece[], extended = fals
 }
 
 /**
- * Whether any command is addressed by `$`. Only a `$` makes GNU look past
- * the current file for more input, so only then do the operands after a
- * directory matter.
+ * Whether the script ever asks if more input follows. GNU asks (`test_eof`)
+ * for a `$` address and for `n` and `N`, and that lookahead passes over a
+ * directory to the operands after it; only a new cycle reads the directory
+ * and fails. So only a script that looks ahead needs the operands after a
+ * directory.
  */
-export function usesLastAddress(program: SedProgram): boolean {
-  return program.commands.some((cmd) => cmd.a1?.kind === 'last' || cmd.a2?.kind === 'last')
+export function looksAhead(program: SedProgram): boolean {
+  return program.commands.some(
+    (cmd) =>
+      cmd.cmd === 'n' || cmd.cmd === 'N' || cmd.a1?.kind === 'last' || cmd.a2?.kind === 'last',
+  )
 }
 
 // The highest group an `s` replacement names (`\1`..`\9`), 0 for none.

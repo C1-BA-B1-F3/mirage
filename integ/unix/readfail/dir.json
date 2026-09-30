@@ -1161,6 +1161,48 @@
         "stdout": "one\n/data/sla/d\ntwo\nrc=0\n",
         "stderr": ""
       }
+    },
+    {
+      "id": "readfail_sed_n_looks_past_dir",
+      "seq": 9960307,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "mkdir -p /data/sla/d && printf 'x\\n' > /data/sla/d/in && printf 'one\\ntwo\\nthree\\n' > /data/sla/f && printf 'L1\\nL2\\n' > /data/sla/g && sed -n 'n;p' /data/sla/f /data/sla/d /data/sla/g; echo rc=$?; rm -r /data/sla",
+      "expect": {
+        "exit": 0,
+        "stdout": "two\nL1\nrc=0\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "readfail_sed_N_looks_past_dir",
+      "seq": 9960308,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "mkdir -p /data/sla/d && printf 'x\\n' > /data/sla/d/in && printf 'one\\ntwo\\nthree\\n' > /data/sla/f && printf 'L1\\nL2\\n' > /data/sla/g && sed -n 'N;p' /data/sla/f /data/sla/d /data/sla/g; echo rc=$?; rm -r /data/sla",
+      "expect": {
+        "exit": 0,
+        "stdout": "one\ntwo\nthree\nL1\nrc=0\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "readfail_sed_separate_n_stops_at_dir",
+      "seq": 9960309,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "mkdir -p /data/sla/d && printf 'x\\n' > /data/sla/d/in && printf 'one\\ntwo\\nthree\\n' > /data/sla/f && printf 'L1\\nL2\\n' > /data/sla/g && sed -s -n 'n;p' /data/sla/f /data/sla/d /data/sla/g; echo rc=$?; rm -r /data/sla",
+      "expect": {
+        "exit": 0,
+        "stdout": "two\nrc=4\n",
+        "stderr": "sed: read error on /data/sla/d: Is a directory\n"
+      }
     }
   ]
 }

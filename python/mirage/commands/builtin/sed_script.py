@@ -924,17 +924,21 @@ def compile_script(pieces: Sequence[SedScriptPiece],
     return _Compiler(extended).compile(pieces)
 
 
-def uses_last_address(program: SedProgram) -> bool:
-    """Whether any command is addressed by ``$``.
+def looks_ahead(program: SedProgram) -> bool:
+    """Whether the script ever asks if more input follows.
 
-    Only a ``$`` makes GNU look past the current file for more input, so
-    only then do the operands after a directory matter.
+    GNU asks (``test_eof``) for a ``$`` address and for ``n`` and ``N``,
+    and that lookahead passes over a directory to the operands after it;
+    only a new cycle reads the directory and fails. So only a script that
+    looks ahead needs the operands after a directory.
 
     Args:
         program (SedProgram): the compiled script.
     """
-    return any(addr is not None and addr.kind == "last"
-               for cmd in program.commands for addr in (cmd.a1, cmd.a2))
+    return any(
+        cmd.cmd in ("n", "N") or any(addr is not None and addr.kind == "last"
+                                     for addr in (cmd.a1, cmd.a2))
+        for cmd in program.commands)
 
 
 def _max_reference(replacement: str) -> int:

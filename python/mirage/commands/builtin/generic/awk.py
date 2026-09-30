@@ -6,7 +6,7 @@ from typing import Any
 
 from mirage.cache.index import NULL_INDEX, IndexCacheStore
 from mirage.commands.builtin.generic.awk_types import USAGE, AwkFlags
-from mirage.commands.builtin.utils.paths import dispatch_stat
+from mirage.commands.builtin.utils.paths import dispatch_stat, typed_spec
 from mirage.commands.builtin.utils.stream import is_stdin, resolve_source
 from mirage.commands.constants import ROOT_CWD
 from mirage.commands.errors import UsageError
@@ -25,7 +25,6 @@ from mirage.runtime.types import DispatchFn, ShellFn
 from mirage.shell.join import shell_join
 from mirage.types import FileType, PathSpec
 from mirage.utils.errors import FS_ERRORS, WALK_ERRORS, eisdir, fs_strerror
-from mirage.utils.path import resolve_path
 
 STDIN_NAMES = frozenset({"-", "/dev/stdin"})
 
@@ -139,10 +138,10 @@ class AwkStreams:
         async for chunk in self.stdin:
             yield chunk
 
-    async def read_path(self, name: str) -> AsyncIterator[bytes]:
+    async def read_path(self, name: str | PathSpec) -> AsyncIterator[bytes]:
         if self.dispatch is None:
             raise AwkIOError("No such file or directory")
-        path = PathSpec.from_str_path(resolve_path(name, self.cwd.virtual))
+        path = typed_spec(name, self.cwd.virtual)
         # A keyed store reads a directory as nothing at all, and other
         # backends fail it in their own words, so the stat goes first to
         # fail it the way a POSIX read does.
@@ -166,7 +165,7 @@ class AwkStreams:
                     return _guarded(self.stdin_view())
                 if self.local(operand):
                     return _guarded(self.read_stream(operand))
-                return _guarded(self.read_path(operand.virtual))
+                return _guarded(self.read_path(operand))
         if name in STDIN_NAMES:
             return _guarded(self.stdin_view())
         return _guarded(self.read_path(name))
@@ -181,7 +180,7 @@ class AwkStreams:
         """
         if self.dispatch is None:
             raise AwkRuntimeError("awk: file output requires a workspace")
-        path = PathSpec.from_str_path(resolve_path(name, self.cwd.virtual))
+        path = typed_spec(name, self.cwd.virtual)
         try:
             await self.dispatch("append" if append else "write",
                                 path,

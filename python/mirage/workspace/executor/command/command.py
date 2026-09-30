@@ -381,7 +381,7 @@ async def handle_command(
         # positions instead of subtracting matching path strings afterward.
         cross_scopes = (cross_parsed.paths
                         if cmd_name == "sort" else path_scopes)
-        if strategy_for(cmd_name, cross_parsed.flag_kwargs) is Strategy.RELAY:
+        if strategy_for(cmd_name) is Strategy.RELAY:
             # STREAM and FANOUT run each operand natively on its mount, which
             # expands the operand's glob. RELAY sees every operand at once
             # (wc's layout, cp's sources), so its glob operands must expand
@@ -422,7 +422,8 @@ async def handle_command(
             storage_key=make_storage_key(registry),
             ns=cross_ns,
             session_view=session_view(session, registry.policies),
-            cwd=session.cwd)
+            cwd=session.cwd,
+            argv=spelled_words(parts[1:]))
         if cmd_name == "find":
             stdout = await _finish_find(stdout,
                                         io,

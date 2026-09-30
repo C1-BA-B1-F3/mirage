@@ -29,36 +29,35 @@ describe('strategyFor — mirrors tests/commands/builtin/generic/crossmount/test
 
   it('streams the whole-content commands', () => {
     for (const name of [Cmd.CAT, Cmd.NL, Cmd.CUT]) {
-      expect(strategyFor(name, {})).toBe(Strategy.STREAM)
+      expect(strategyFor(name)).toBe(Strategy.STREAM)
     }
   })
 
   it('fans out the per-operand commands', () => {
     for (const name of [Cmd.GREP, Cmd.SHA256SUM, Cmd.RM, Cmd.TEE, Cmd.REV]) {
-      expect(strategyFor(name, {})).toBe(Strategy.FANOUT)
+      expect(strategyFor(name)).toBe(Strategy.FANOUT)
     }
   })
 
   it('relays the commands whose operands must colocate', () => {
     for (const name of [Cmd.CP, Cmd.MV, Cmd.DIFF, Cmd.CMP, Cmd.SORT, Cmd.WC]) {
-      expect(strategyFor(name, {})).toBe(Strategy.RELAY)
+      expect(strategyFor(name)).toBe(Strategy.RELAY)
     }
   })
 
   it('relays awk because it tells its operands apart', () => {
     // FILENAME, FNR, ARGV and a var=value operand between two files all
     // need each file as its own input, which a merged stream loses.
-    expect(strategyFor(Cmd.AWK, {})).toBe(Strategy.RELAY)
+    expect(strategyFor(Cmd.AWK)).toBe(Strategy.RELAY)
   })
 
   it('relays ls because its layout spans the whole line', () => {
     // A per-operand run sees one operand, so it can neither head its
     // block nor sort against the operands living on other mounts.
-    expect(strategyFor(Cmd.LS, {})).toBe(Strategy.RELAY)
+    expect(strategyFor(Cmd.LS)).toBe(Strategy.RELAY)
   })
 
-  it('streams sed by default but fans it out in place', () => {
-    expect(strategyFor(Cmd.SED, {})).toBe(Strategy.STREAM)
-    expect(strategyFor(Cmd.SED, { i: true })).toBe(Strategy.FANOUT)
+  it('relays sed to keep file boundaries and shared output', () => {
+    expect(strategyFor(Cmd.SED)).toBe(Strategy.RELAY)
   })
 })

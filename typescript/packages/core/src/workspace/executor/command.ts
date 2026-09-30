@@ -453,7 +453,7 @@ export async function handleCommand(
     // The output flag owns a mount for routing, but is not a sort input.
     // Parsed operands preserve aliases, order, and repeated path values.
     let csScopes = cmdName === 'sort' ? csParsed.paths : pathScopes
-    if (strategyFor(cmdName as Cmd, csFlags) === Strategy.RELAY) {
+    if (strategyFor(cmdName as Cmd) === Strategy.RELAY) {
       // STREAM and FANOUT run each operand natively on its mount, which
       // expands the operand's glob. RELAY sees every operand at once (wc's
       // layout, cp's sources), so its glob operands must expand here; an
@@ -508,6 +508,7 @@ export async function handleCommand(
       csNs,
       sessionView(session, registry.policies),
       session.cwd,
+      spelledWords(parts.slice(1)),
     )
     let csStdout = csStdout0
     if (cmdName === 'find') {

@@ -14,7 +14,7 @@ from mirage.commands.builtin.sed_script import (SED_STDERR, SED_STDOUT,
                                                 SedError, SedProgram,
                                                 SedScriptPiece, compile_script,
                                                 looks_ahead)
-from mirage.commands.builtin.utils.paths import dispatch_stat
+from mirage.commands.builtin.utils.paths import dispatch_stat, typed_spec
 from mirage.commands.builtin.utils.stream import (is_stdin, read_stdin_async,
                                                   stdin_bytes)
 from mirage.commands.config import CommandOpts
@@ -53,7 +53,7 @@ class _Doors:
     def spec(self, name: str) -> PathSpec:
         resolved = resolve_path(name, self.cwd)
         if self.dispatch is not None:
-            return PathSpec.from_str_path(resolved)
+            return typed_spec(name, self.cwd)
         slash = resolved.rfind("/")
         return PathSpec(virtual=resolved,
                         directory=resolved[:slash + 1] if slash >= 0 else "/",

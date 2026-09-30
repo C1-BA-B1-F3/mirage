@@ -23,6 +23,7 @@ from mirage.commands.builtin.generic.crossmount.relay.join import run_join
 from mirage.commands.builtin.generic.crossmount.relay.ls import run_ls
 from mirage.commands.builtin.generic.crossmount.relay.mv import run_mv
 from mirage.commands.builtin.generic.crossmount.relay.paste import run_paste
+from mirage.commands.builtin.generic.crossmount.relay.sed import run_sed
 from mirage.commands.builtin.generic.crossmount.relay.sort import run_sort
 from mirage.commands.builtin.generic.crossmount.relay.tar import run_tar
 from mirage.commands.builtin.generic.crossmount.relay.unzip import run_unzip
@@ -47,7 +48,8 @@ async def run_relay(cmd_name: str,
                     ns: NamespaceView | None = None,
                     session_view: SessionView | None = None,
                     stdin: ByteSource | None = None,
-                    cwd: str = "/") -> CrossResult:
+                    cwd: str = "/",
+                    argv: tuple[str, ...] = ()) -> CrossResult:
     """Run a command whose work must see every operand at once.
 
     Pure wiring: every operand is read or written through ``dispatch``
@@ -60,7 +62,7 @@ async def run_relay(cmd_name: str,
 
     Args:
         cmd_name (str): One of cp, mv, diff, cmp, paste, comm, join, tar,
-            unzip, zip, ls, sort, wc, awk.
+            unzip, zip, ls, sort, wc, awk, sed.
         scopes (list[PathSpec]): Path operands in command-line order.
         text_args (list[str]): Positional text operands (tar's member
             selectors, cmp's skips; empty for the transfer and merge
@@ -81,9 +83,13 @@ async def run_relay(cmd_name: str,
             operand reads.
         cwd (str): The session's working directory, which cp resolves a
             typed link source against.
+        argv (tuple[str, ...]): Original argument spellings for diagnostics.
     """
     if cmd_name == Cmd.AWK:
         return await run_awk(scopes, text_args, flag_kwargs, run_single, stdin)
+    if cmd_name == Cmd.SED:
+        return await run_sed(scopes, text_args, flag_kwargs, dispatch, stdin,
+                             cwd, argv)
     if cmd_name == Cmd.WC:
         return await run_wc(scopes, flag_kwargs, dispatch, run_single)
     if cmd_name == Cmd.SORT:

@@ -2568,6 +2568,176 @@
         "stdout": "a\n1\nb\n2\n",
         "stderr": ""
       }
+    },
+    {
+      "id": "awk_getline_missing_dot_parent",
+      "seq": 13470317,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "awk 'BEGIN {print (getline x < \"/data/review-missing/../b.txt\")}'",
+      "expect": {
+        "exit": 0,
+        "stdout": "-1\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "awk_getline_file_dot",
+      "seq": 13470318,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "awk 'BEGIN {print (getline x < \"/data/b.txt/.\")}'",
+      "expect": {
+        "exit": 0,
+        "stdout": "-1\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "awk_argv_missing_dot_parent",
+      "seq": 13470319,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "awk 'BEGIN {ARGV[1]=\"/data/review-missing/../b.txt\"; ARGC=2} {print}'",
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "awk: cannot open \"/data/review-missing/../b.txt\" (No such file or directory)\n"
+      }
+    },
+    {
+      "id": "awk_write_missing_dot_parent",
+      "seq": 13470320,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "awk 'BEGIN {print \"changed\" > \"/data/review-missing/../review-dot-out\"}'",
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "awk: cannot open \"/data/review-missing/../review-dot-out\" for output (No such file or directory)\n"
+      }
+    },
+    {
+      "id": "awk_append_file_dot_parent",
+      "seq": 13470321,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "awk 'BEGIN {print \"changed\" >> \"/data/b.txt/../review-dot-out\"}'",
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "awk: cannot open \"/data/b.txt/../review-dot-out\" for output (Not a directory)\n"
+      }
     }
   ]
 }

@@ -1117,27 +1117,6 @@ class ListModeOnlyError(GitError):
         super().__init__(f"the '{option}' option is only allowed in list mode")
 
 
-class TagLinesError(GitError):
-    """``tag -n<num>`` with a count below the one git reserves.
-
-    ``-n`` carries an optional count, and git's parser starts that
-    count at -1 to mean "not given at all". ``-n-1`` is therefore not a
-    listing flag at all: ``git tag -d -n-1 v`` deletes and
-    ``git tag -n-1 -a v -m m`` creates, where a real ``-n`` refuses
-    both. Anything below -1 is a count, and a count has to be positive,
-    which git discovers while parsing the format it lists with rather
-    than while parsing the option: the list-mode refusal outranks this
-    one, and it fires in a repository holding no tags at all. Pinned
-    against git 2.50.1.
-
-    Args:
-        lines (int): the count as typed.
-    """
-
-    def __init__(self, lines: int) -> None:
-        super().__init__(f"positive value expected contents:lines={lines}")
-
-
 class RefUpdateConflictError(GitError):
     """``tag -d`` naming one tag twice.
 
@@ -1381,3 +1360,77 @@ class MissingRepositoryError(GitError):
 
     def __init__(self, url: str) -> None:
         super().__init__(f"repository '{url}' does not exist")
+
+
+class UnknownDateFormatError(GitError):
+    """A ``--date`` value, or a date atom's argument, git has no style
+    for.
+
+    Named as git's ``parse_date_format`` names it: the whole value, a
+    ``-local`` suffix and all (pinned against git 2.50.1).
+
+    Args:
+        value (str): the value as typed.
+    """
+
+    def __init__(self, value: str) -> None:
+        super().__init__(f"unknown date format {value}")
+
+
+class DateFormatColonError(GitError):
+    """``format`` with no ``:`` before its strftime template.
+
+    Args:
+        value (str): the value as typed.
+    """
+
+    def __init__(self, value: str) -> None:
+        super().__init__(f"date format missing colon separator: {value}")
+
+
+class UnsupportedFieldError(GitError):
+    """A ref field git has but this build does not render.
+
+    ``%(describe)``, ``%(trailers)``, ``%(signature)`` and their kin are
+    real git fields; calling one unknown would gaslight an agent that
+    spelled it right, so the refusal says unsupported instead.
+
+    Args:
+        name (str): the field as typed, e.g. ``contents:trailers``.
+    """
+
+    def __init__(self, name: str) -> None:
+        super().__init__(f"unsupported field name: {name} (this build does "
+                         f"not render it)")
+
+
+class FormatUsageError(GitError):
+    """A ref format or option set a verb refuses with its usage.
+
+    git prints the line, then the verb's usage, and exits 129; the usage
+    is omitted here as it is for every other verb.
+
+    Args:
+        message (str): the line after ``error:``.
+    """
+
+    prefix = "error"
+    code = OPTION_EXIT
+
+
+class UnparsableFormatError(GitError):
+    """``branch`` and ``tag`` given a format with a ``%(`` left open.
+
+    ``for-each-ref`` answers the same format with its usage; these two
+    say it twice instead, once as git's ``error:`` and once as the fatal
+    that follows it (pinned against git 2.50.1).
+
+    Args:
+        rest (str): the format from the unclosed ``%(`` on.
+    """
+
+    prefix = "error"
+
+    def __init__(self, rest: str) -> None:
+        super().__init__(f"malformed format string {rest}\n"
+                         "fatal: unable to parse format string")

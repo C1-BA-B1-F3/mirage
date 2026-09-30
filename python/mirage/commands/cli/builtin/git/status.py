@@ -12,26 +12,17 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import asyncio
-import posixpath
 from dataclasses import dataclass
 
-from dulwich.objects import Tag
-from dulwich.refs import Ref
 from dulwich.repo import BaseRepo
 
 from mirage.commands.cli.builtin.git.branch import branch_upstream
 from mirage.commands.cli.builtin.git.changes import collect
-from mirage.commands.cli.builtin.git.constants import DWIM_RULES
 from mirage.commands.cli.builtin.git.errors import GitError, NoWorkspaceError
-from mirage.commands.cli.builtin.git.format import short
-from mirage.commands.cli.builtin.git.io import read_optional
-from mirage.commands.cli.builtin.git.objects import abbrev_for
 from mirage.commands.cli.builtin.git.pathspec import repo_relative
+from mirage.commands.cli.builtin.git.ref_list import detached_line
 from mirage.commands.cli.builtin.git.refs import read_head
-from mirage.commands.cli.builtin.git.render import (DETACHED_AT, DETACHED_FROM,
-                                                    NO_BRANCH, branch_line,
-                                                    long_format,
+from mirage.commands.cli.builtin.git.render import (branch_line, long_format,
                                                     relative_entries,
                                                     short_format)
 from mirage.commands.cli.builtin.git.repo import config_bool
@@ -110,68 +101,6 @@ async def displayed(dispatch: DispatchFn, location: RepoLocation, start: str,
                              True):
         return rows
     return relative_entries(rows, repo_relative(location, start, "."))
-
-
-CHECKOUT_MOVE = "checkout: moving from "
-
-
-def _detached_label(repo: BaseRepo, target: str, moved: bytes) -> str:
-    """How the status names where a detached HEAD came from.
-
-    The checkout's target when it still names exactly one ref holding
-    that commit (a tag or remote-tracking branch by its short name), the
-    abbreviated id otherwise.
-
-    Args:
-        repo (BaseRepo): the opened repository.
-        target (str): what the checkout was asked for.
-        moved (bytes): the commit it moved HEAD to.
-    """
-    refs = repo.refs.allkeys()
-    found = [
-        name for name in dict.fromkeys(
-            rule.format(target) for rule in DWIM_RULES)
-        if name.encode() in refs
-    ]
-    if target != "HEAD" and len(found) == 1:
-        obj = repo.object_store[repo.refs[Ref(found[0].encode())]]
-        while isinstance(obj, Tag):
-            obj = repo.object_store[obj.object[1]]
-        if obj.id == moved:
-            return found[0].removeprefix("refs/tags/").removeprefix(
-                "refs/remotes/")
-    return short(moved, abbrev_for(repo))
-
-
-async def detached_line(dispatch: DispatchFn, repo: BaseRepo,
-                        location: RepoLocation, head: HeadRef) -> str:
-    """The first line of a status on a detached HEAD, read off the reflog.
-
-    git names the target of the newest ``checkout: moving from`` entry,
-    ``at`` while HEAD is still there and ``from`` once it has moved on,
-    and says it is on no branch when no checkout put it there, which is
-    what a clone of a tag or of a detached HEAD reads (pinned against
-    git 2.47.3 and 2.50.1).
-
-    Args:
-        dispatch (DispatchFn): workspace op dispatcher.
-        repo (BaseRepo): the opened repository.
-        location (RepoLocation): the discovered repository.
-        head (HeadRef): what HEAD points at.
-    """
-    log = await read_optional(dispatch,
-                              posixpath.join(location.gitdir, "logs/HEAD"))
-    for row in reversed((log or b"").splitlines()):
-        record, _, message = row.partition(b"\t")
-        text = message.decode("utf-8", "replace")
-        if not text.startswith(CHECKOUT_MOVE) or " to " not in text:
-            continue
-        target = text[len(CHECKOUT_MOVE):].split(" to ", 1)[1]
-        moved = record.split(b" ")[1]
-        label = await asyncio.to_thread(_detached_label, repo, target, moved)
-        at = head.commit is not None and head.commit.encode() == moved
-        return f"{DETACHED_AT if at else DETACHED_FROM}{label}"
-    return NO_BRANCH
 
 
 async def render_report(dispatch: DispatchFn,

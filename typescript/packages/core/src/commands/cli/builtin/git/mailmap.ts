@@ -14,22 +14,10 @@
 
 import type { FlagView } from '../../../spec/flag_view.ts'
 import { readOptional } from './io.ts'
-import type { Dispatch, RepoLocation } from './types.ts'
+import type { Dispatch, MailmapEntry, RepoLocation } from './types.ts'
 
 const MAILMAP_LINE = /^\s*([^<>]*?)\s*<([^<>]+)>(?:\s*([^<>]*?)\s*<([^<>]*)>)?/
 const IDENTITY = /(.*?)\s*<([^<>]*)>/
-
-/** One `.mailmap` line: the identity it matches and what it maps to. */
-export interface MailmapEntry {
-  /** The recorded email it matches, lowercased. */
-  readonly email: string
-  /** The recorded name it also requires, lowercased; null for email alone. */
-  readonly name: string | null
-  /** The canonical name, null to keep the recorded one. */
-  readonly mappedName: string | null
-  /** The canonical email, null to keep the recorded one. */
-  readonly mappedEmail: string | null
-}
 
 /**
  * Read Git's four mailmap identity forms.

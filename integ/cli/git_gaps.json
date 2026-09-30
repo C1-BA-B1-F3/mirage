@@ -321,6 +321,286 @@
         "stdout": "rc=6\n",
         "stderr": "error: invalid key pattern: user.(?:name)\n"
       }
+    },
+    {
+      "id": "git_for_each_ref_sort_newest_first",
+      "seq": 567880,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "git -C /repo for-each-ref --sort=-committerdate --format='%(refname:short) %(committerdate:iso8601)'",
+      "expect": {
+        "exit": 0,
+        "stdout": "main 2026-01-08 14:45:00 +0000\ntopic 2026-01-07 09:15:00 +0000\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "git_for_each_ref_sort_unknown_key",
+      "seq": 567881,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "git -C /repo for-each-ref --sort=bogus",
+      "expect": {
+        "exit": 128,
+        "stdout": "",
+        "stderr": "fatal: unknown field name: bogus\n"
+      }
+    },
+    {
+      "id": "git_for_each_ref_unknown_option",
+      "seq": 567882,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "git -C /repo for-each-ref --bogus",
+      "expect": {
+        "exit": 129,
+        "stdout": "",
+        "stderr": "error: unknown option `bogus'\n"
+      }
+    },
+    {
+      "id": "git_for_each_ref_person_fields",
+      "seq": 567883,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "git -C /repo for-each-ref --format='%(refname:short)|%(authordate:short)|%(authorname)|%(authoremail:trim)|%(subject)'",
+      "expect": {
+        "exit": 0,
+        "stdout": "main|2026-01-08|Integ Author|integ@example.com|add two\ntopic|2026-01-07|Integ Author|integ@example.com|add docs\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "git_for_each_ref_head_and_strip",
+      "seq": 567884,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "git -C /repo for-each-ref --format='%(HEAD)%(refname:lstrip=-1) %(objectname:short) %(numparent)' refs/heads",
+      "expect": {
+        "exit": 0,
+        "stdout": "*main 8ef2542 1\n topic 225f39c 1\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "git_for_each_ref_count_oldest",
+      "seq": 567885,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "git -C /repo for-each-ref --count=1 --sort=committerdate --format='%(refname)'",
+      "expect": {
+        "exit": 0,
+        "stdout": "refs/heads/topic\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "git_for_each_ref_unknown_date_style",
+      "seq": 567886,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "git -C /repo for-each-ref --format='%(committerdate:bogus)'",
+      "expect": {
+        "exit": 128,
+        "stdout": "",
+        "stderr": "fatal: unknown date format bogus\n"
+      }
+    },
+    {
+      "id": "git_for_each_ref_relative_date",
+      "seq": 567887,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "GIT_TEST_DATE_NOW=1768000000 git -C /repo for-each-ref --format='%(refname:short) %(committerdate:relative)'",
+      "expect": {
+        "exit": 0,
+        "stdout": "main 32 hours ago\ntopic 3 days ago\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "git_for_each_ref_shell_quote",
+      "seq": 567888,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "git -C /repo for-each-ref --shell --format='%(refname) %(subject)'",
+      "expect": {
+        "exit": 0,
+        "stdout": "'refs/heads/main' 'add two'\n'refs/heads/topic' 'add docs'\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "git_for_each_ref_align_and_if",
+      "seq": 567889,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "git -C /repo for-each-ref --format='[%(align:6,right)%(refname:short)%(end)]%(if)%(HEAD)%(then) current%(end)'",
+      "expect": {
+        "exit": 0,
+        "stdout": "[  main] current\n[ topic]\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "git_for_each_ref_date_format",
+      "seq": 567890,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "git -C /repo for-each-ref --format='%(refname:short) %(creatordate:format:%Y/%m/%d %H:%M)'",
+      "expect": {
+        "exit": 0,
+        "stdout": "main 2026/01/08 14:45\ntopic 2026/01/07 09:15\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "git_branch_sort_oldest_first",
+      "seq": 567891,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "git -C /repo branch --sort=committerdate",
+      "expect": {
+        "exit": 0,
+        "stdout": "  topic\n* main\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "git_branch_verbose_sorted",
+      "seq": 567892,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "git -C /repo branch -v --sort=committerdate",
+      "expect": {
+        "exit": 0,
+        "stdout": "  topic 225f39c add docs\n* main  8ef2542 add two\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "git_branch_format",
+      "seq": 567893,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "git -C /repo branch --format='%(refname:short) %(committerdate:short) %(HEAD)'",
+      "expect": {
+        "exit": 0,
+        "stdout": "main 2026-01-08 *\ntopic 2026-01-07  \n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "git_log_date_rfc",
+      "seq": 567894,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "git -C /repo log -2 --date=rfc --format=%ad",
+      "expect": {
+        "exit": 0,
+        "stdout": "Thu, 8 Jan 2026 14:45:00 +0000\nWed, 7 Jan 2026 09:15:00 +0000\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "git_log_date_relative",
+      "seq": 567895,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "GIT_TEST_DATE_NOW=1768000000 git -C /repo log --date=relative --format='%ad|%ar'",
+      "expect": {
+        "exit": 0,
+        "stdout": "32 hours ago|32 hours ago\n3 days ago|3 days ago\n4 days ago|4 days ago\n5 days ago|5 days ago\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "git_log_date_strftime",
+      "seq": 567896,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "git -C /repo log -1 --date=format:'%Y/%m/%d %H:%M' --format=%ad",
+      "expect": {
+        "exit": 0,
+        "stdout": "2026/01/08 14:45\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "git_log_date_unknown_style",
+      "seq": 567897,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "git -C /repo log -1 --date=bogus --format=%ad",
+      "expect": {
+        "exit": 128,
+        "stdout": "",
+        "stderr": "fatal: unknown date format bogus\n"
+      }
+    },
+    {
+      "id": "git_log_date_human",
+      "seq": 567898,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "TZ=UTC GIT_TEST_DATE_NOW=1768000000 git -C /repo log --date=human --format=%ad",
+      "expect": {
+        "exit": 0,
+        "stdout": "Thu 14:45\nWed 09:15\nTue 11:30\nMon 10:00\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "git_log_fixed_date_placeholders",
+      "seq": 567899,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "git -C /repo log -1 --format='%aD|%as|%cs|%at'",
+      "expect": {
+        "exit": 0,
+        "stdout": "Thu, 8 Jan 2026 14:45:00 +0000|2026-01-08|2026-01-08|1767883500\n",
+        "stderr": ""
+      }
     }
   ]
 }

@@ -13,11 +13,31 @@
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 from dataclasses import dataclass, field
+from datetime import tzinfo
 from enum import StrEnum
 
 from dulwich.index import ConflictedIndexEntry, IndexEntry
 
 from mirage.types import FileStat
+
+
+@dataclass(frozen=True, slots=True)
+class MailmapEntry:
+    """One ``.mailmap`` line: the identity it matches and what it maps to.
+
+    Args:
+        email (str): the recorded email it matches, lowercased.
+        name (str | None): the recorded name it also requires,
+            lowercased; None for an entry that matches the email alone.
+        mapped_name (str | None): the canonical name, None to keep the
+            recorded one.
+        mapped_email (str | None): the canonical email, None to keep
+            the recorded one.
+    """
+    email: str
+    name: str | None
+    mapped_name: str | None
+    mapped_email: str | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -205,3 +225,272 @@ class WorkTree:
     files: dict[str, FileStat] = field(default_factory=dict)
     untracked: list[str] = field(default_factory=list)
     ignored: list[str] = field(default_factory=list)
+
+
+class DateKind(StrEnum):
+    """One of git's date styles, spelled as ``--date`` names it."""
+    NORMAL = "default"
+    RELATIVE = "relative"
+    SHORT = "short"
+    ISO8601 = "iso8601"
+    ISO8601_STRICT = "iso8601-strict"
+    RFC2822 = "rfc2822"
+    HUMAN = "human"
+    RAW = "raw"
+    UNIX = "unix"
+    STRFTIME = "format"
+
+
+@dataclass(frozen=True, slots=True)
+class DateMode:
+    """A parsed ``--date`` value, with the clock it is rendered against.
+
+    Args:
+        kind (DateKind): the style.
+        local (bool): the ``-local`` suffix: show the time in the
+            session's zone rather than in the one the date carries.
+        strftime (str): the ``format:`` template, empty otherwise.
+        now (int): the moment ``relative`` and ``human`` count from, in
+            epoch seconds, read once per invocation.
+        zone (tzinfo | None): the session's ``TZ``, None for the host's
+            own zone, which is what a ``-local`` style shows.
+    """
+    kind: DateKind = DateKind.NORMAL
+    local: bool = False
+    strftime: str = ""
+    now: int = 0
+    zone: tzinfo | None = None
+
+
+class FieldCompare(StrEnum):
+    """How a ref field sorts, git's ``cmp_type``: as text, or by the
+    number behind it."""
+    TEXT = "text"
+    NUMBER = "number"
+    TIME = "time"
+
+
+class FieldSource(StrEnum):
+    """Where a ref field's value comes from, git's ``info_source``: the
+    ref alone, the object's content, or its type and size."""
+    REF = "ref"
+    OBJECT = "object"
+    OBJECT_INFO = "object-info"
+
+
+class QuoteStyle(StrEnum):
+    """``--shell``, ``--perl``, ``--python`` and ``--tcl``: how each
+    field is quoted in a listing."""
+    NONE = "none"
+    SHELL = "shell"
+    PERL = "perl"
+    PYTHON = "python"
+    TCL = "tcl"
+
+
+class RefKind(StrEnum):
+    """Which part of the namespace a listed ref lives in."""
+    BRANCH = "branch"
+    REMOTE = "remote"
+    TAG = "tag"
+    DETACHED = "detached"
+    ROOT = "root"
+    OTHER = "other"
+
+
+@dataclass(frozen=True, slots=True)
+class RefField:
+    """One ``%(...)`` field of a ref format or a sort key, parsed.
+
+    Args:
+        name (str): the field as typed, its ``*`` and arguments
+            included; two fields spelled alike are one field.
+        field (str): the field's own name, e.g. ``refname``.
+        deref (bool): the ``*`` prefix: read the object a tag peels to.
+        arg (str | None): the text after the first ``:``, None when
+            there is none or it is empty.
+        compare (FieldCompare): how the field sorts.
+        source (FieldSource): what the field is read from.
+        option (str): the argument the field's parser settled on, e.g.
+            ``short`` or ``lstrip``.
+        number (int): the count an option carries (``lstrip=2``,
+            ``short=10``, ``lines=3``, an ``align`` width).
+        words (frozenset[str]): the flags a list argument set, e.g. an
+            email's ``trim`` and ``mailmap``.
+        text (str): an ``if`` comparand or an ``align`` position.
+    """
+    name: str
+    field: str
+    deref: bool
+    arg: str | None
+    compare: FieldCompare
+    source: FieldSource
+    option: str = ""
+    number: int = 0
+    words: frozenset[str] = frozenset()
+    text: str = ""
+
+
+@dataclass(frozen=True, slots=True)
+class RefFormat:
+    """A ``--format`` string, parsed once for every ref it renders.
+
+    Args:
+        pieces (tuple[str | RefField, ...]): literal text, its escapes
+            already expanded, and fields, in order.
+        quote (QuoteStyle): how each field is quoted.
+    """
+    pieces: tuple[str | RefField, ...]
+    quote: QuoteStyle = QuoteStyle.NONE
+
+
+@dataclass(frozen=True, slots=True)
+class RefSortKey:
+    """One ``--sort`` key.
+
+    Args:
+        field (RefField): the field compared.
+        reverse (bool): the leading ``-``.
+        version (bool): the ``version:`` (``v:``) prefix.
+    """
+    field: RefField
+    reverse: bool = False
+    version: bool = False
+
+
+@dataclass(frozen=True, slots=True)
+class RefObject:
+    """An object as ref fields read it: its id, type and content.
+
+    Args:
+        oid (str): the hex object id.
+        type (str): ``commit``, ``tag``, ``tree`` or ``blob``.
+        raw (bytes): the object's content, headers and all.
+    """
+    oid: str
+    type: str
+    raw: bytes
+
+
+@dataclass(frozen=True, slots=True)
+class RefUpstream:
+    """A branch's upstream as the ``upstream`` field reads it.
+
+    Args:
+        ref (str): the remote-tracking (or local) ref it follows.
+        remote (str): ``branch.<name>.remote``.
+        merge (str): ``branch.<name>.merge``.
+        ahead (int): commits on the branch the upstream lacks.
+        behind (int): commits on the upstream the branch lacks.
+        gone (bool): the upstream ref does not exist.
+    """
+    ref: str
+    remote: str
+    merge: str
+    ahead: int = 0
+    behind: int = 0
+    gone: bool = False
+
+
+@dataclass(frozen=True, slots=True)
+class RefItem:
+    """One listed ref, with what its fields are read from.
+
+    Args:
+        name (str): the full ref name, ``HEAD`` for a detached HEAD.
+        oid (str): the object the ref resolves to.
+        kind (RefKind): which part of the namespace it lives in.
+        symref (str | None): the ref a symbolic ref points at.
+        obj (RefObject | None): the object, when a field reads it.
+        peeled (RefObject | None): what a tag peels to, when a ``*``
+            field reads it.
+        upstream (RefUpstream | None): a branch's upstream, when an
+            ``upstream`` field reads it.
+        worktree (str): the worktree a branch is checked out in.
+    """
+    name: str
+    oid: str
+    kind: RefKind
+    symref: str | None = None
+    obj: RefObject | None = None
+    peeled: RefObject | None = None
+    upstream: RefUpstream | None = None
+    worktree: str = ""
+
+
+@dataclass(frozen=True, slots=True)
+class RefContext:
+    """What a ref's fields read beyond the ref itself, once per listing.
+
+    Args:
+        known (frozenset[str]): every name that resolves, which is what
+            decides whether a shortened name is ambiguous.
+        strict (bool): ``core.warnAmbiguousRefs``: a short name is
+            ambiguous if any other rule finds a ref under it, not only
+            an earlier one.
+        head (str | None): the ref HEAD resolves to, ``HEAD`` when it is
+            detached, None when it names nothing.
+        head_description (str): how a detached HEAD row names itself,
+            e.g. ``(HEAD detached at 1a2b3c4)``.
+        abbrev (int): how many hex digits a short id keeps.
+        mailmap (tuple[MailmapEntry, ...]): for the ``mailmap`` options.
+        date (DateMode): the clock date fields render by.
+        suffixes (tuple[str, ...]): ``versionsort.suffix``.
+    """
+    known: frozenset[str] = frozenset()
+    strict: bool = True
+    head: str | None = None
+    head_description: str = ""
+    abbrev: int = 7
+    mailmap: tuple[MailmapEntry, ...] = ()
+    date: DateMode = DateMode()
+    suffixes: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
+class FieldValue:
+    """A field's value for one ref.
+
+    Args:
+        text (str): what it renders as.
+        number (int): what it sorts by when it sorts as a number.
+    """
+    text: str
+    number: int = 0
+
+
+@dataclass(slots=True)
+class FormatFrame:
+    """One open block while a ref format renders: the whole row, an
+    ``%(align)`` or an ``%(if)``.
+
+    Args:
+        kind (str): ``root``, ``align`` or ``if``.
+        opener (RefField | None): the ``align`` or ``if`` field.
+        out (list[str]): what the block has rendered so far.
+        then_seen (bool): an ``if`` block reached its ``%(then)``.
+        satisfied (bool): what its condition came to.
+        head (FormatFrame | None): for the ``%(else)`` half of an
+            ``if``, the ``if`` it belongs to.
+    """
+    kind: str
+    opener: RefField | None = None
+    out: list[str] = field(default_factory=list)
+    then_seen: bool = False
+    satisfied: bool = False
+    head: "FormatFrame | None" = None
+
+
+@dataclass(frozen=True, slots=True)
+class Refspec:
+    """One ``[+]<src>[:<dst>]`` refspec.
+
+    Args:
+        src (str): the remote ref, or a pattern with one ``*``.
+        dst (str | None): the local ref it lands in, None for
+            FETCH_HEAD alone.
+        force (bool): the leading ``+``, which allows a non-fast-forward.
+    """
+    src: str
+    dst: str | None
+    force: bool

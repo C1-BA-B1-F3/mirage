@@ -19,8 +19,8 @@ from mirage.commands.cli.builtin.git import format as git_format
 from mirage.commands.cli.builtin.git.errors import (BadPrettyError,
                                                     UnsupportedPrettyError)
 from mirage.commands.cli.builtin.git.format import (abbrev_length, entry,
-                                                    git_date, message_block,
-                                                    oneline, short, subject)
+                                                    message_block, oneline,
+                                                    short, subject)
 from mirage.shell.bytes import encode_text
 
 AUTHOR = b"Dev Person <dev@example.com>"
@@ -47,25 +47,6 @@ def _commit(message: bytes,
 
 def test_short_id_is_seven_characters():
     assert short(b"cdd6234342b147880f5d86c55dad6c1fbe222bfe") == "cdd6234"
-
-
-def test_date_matches_gits_default_format():
-    # Pinned against git 2.47.3: the day of the month is not padded,
-    # which rules out strftime's %d.
-    assert git_date(1768561800, 0) == "Fri Jan 16 11:10:00 2026 +0000"
-
-
-def test_single_digit_day_is_not_padded():
-    # git 2.47.3 prints "Mon Jan 5", not "Mon Jan 05" and not "Jan  5".
-    assert git_date(1767603900, 0) == "Mon Jan 5 09:05:00 2026 +0000"
-
-
-def test_date_renders_in_the_authors_own_offset():
-    assert git_date(1768561800, 8 * 3600) == "Fri Jan 16 19:10:00 2026 +0800"
-
-
-def test_negative_offset_renders_with_a_minus():
-    assert git_date(1768561800, -7 * 3600) == "Fri Jan 16 04:10:00 2026 -0700"
 
 
 def test_subject_is_the_first_line():

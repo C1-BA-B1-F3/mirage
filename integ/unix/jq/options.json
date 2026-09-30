@@ -1015,6 +1015,1410 @@
         "argjson",
         "indent"
       ]
+    },
+    {
+      "id": "jq_each_operand_takes_the_last_of_args_and_jsonargs",
+      "seq": 701145,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "jq -n -c '$ARGS.positional' --args a --jsonargs 1 --args b",
+      "expect": {
+        "exit": 0,
+        "stdout": "[\"a\",1,\"b\"]\n",
+        "stderr": ""
+      },
+      "flags": [
+        "n",
+        "c",
+        "args",
+        "jsonargs"
+      ]
+    },
+    {
+      "id": "jq_jsonargs_then_args_reads_json_then_a_string",
+      "seq": 701146,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "jq -n -c '$ARGS.positional' --jsonargs 1 --args a",
+      "expect": {
+        "exit": 0,
+        "stdout": "[1,\"a\"]\n",
+        "stderr": ""
+      },
+      "flags": [
+        "n",
+        "c",
+        "jsonargs",
+        "args"
+      ]
+    },
+    {
+      "id": "jq_an_operand_typed_before_args_stays_an_input_file",
+      "seq": 701147,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "mkdir -p /data/qjqv && printf '{\"k\":1}' > /data/qjqv/f.json && jq -c '[., $ARGS.positional]' /data/qjqv/f.json --args a",
+      "expect": {
+        "exit": 0,
+        "stdout": "[{\"k\":1},[\"a\"]]\n",
+        "stderr": ""
+      },
+      "flags": [
+        "c",
+        "args"
+      ]
+    },
+    {
+      "id": "jq_jsonargs_after_args_reads_the_operands_as_json",
+      "seq": 701148,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "jq -n -c '$ARGS.positional' --args --jsonargs 1",
+      "expect": {
+        "exit": 0,
+        "stdout": "[1]\n",
+        "stderr": ""
+      },
+      "flags": [
+        "n",
+        "c",
+        "args",
+        "jsonargs"
+      ]
+    },
+    {
+      "id": "jq_bad_jsonargs_operand_wins_before_bad_indent",
+      "seq": 701149,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "jq -n . --jsonargs '{' --indent 9",
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "jq: invalid JSON text passed to --jsonargs\nUse jq --help for help with command-line options,\nor see the jq manpage, or online docs at https://jqlang.org\n"
+      },
+      "flags": [
+        "n",
+        "jsonargs",
+        "indent"
+      ]
+    },
+    {
+      "id": "jq_bad_indent_wins_before_bad_jsonargs_operand",
+      "seq": 701150,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "jq -n . --indent 9 --jsonargs '{'",
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "jq: --indent takes a number between -1 and 7\nUse jq --help for help with command-line options,\nor see the jq manpage, or online docs at https://jqlang.org\n"
+      },
+      "flags": [
+        "n",
+        "indent",
+        "jsonargs"
+      ]
+    },
+    {
+      "id": "jq_bad_jsonargs_operand_wins_before_unreadable_slurpfile",
+      "seq": 701151,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "mkdir -p /data/qjqv && jq -n . --jsonargs '{' --slurpfile s /data/qjqv/missing.json",
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "jq: invalid JSON text passed to --jsonargs\nUse jq --help for help with command-line options,\nor see the jq manpage, or online docs at https://jqlang.org\n"
+      },
+      "flags": [
+        "n",
+        "jsonargs",
+        "slurpfile"
+      ]
+    },
+    {
+      "id": "jq_args_keeps_a_json_looking_operand_a_string",
+      "seq": 701152,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "jq -n -c '$ARGS.positional' --args '{' --jsonargs 1",
+      "expect": {
+        "exit": 0,
+        "stdout": "[\"{\",1]\n",
+        "stderr": ""
+      },
+      "flags": [
+        "n",
+        "c",
+        "args",
+        "jsonargs"
+      ]
+    },
+    {
+      "id": "jq_every_file_typed_before_jsonargs_is_read",
+      "seq": 701153,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "mkdir -p /data/qjqv && printf '1\\n' > /data/qjqv/a.json && printf '2\\n' > /data/qjqv/b.json && jq -c '[., $ARGS.positional]' /data/qjqv/a.json /data/qjqv/b.json --jsonargs 3 --args /data/qjqv/a.json",
+      "expect": {
+        "exit": 0,
+        "stdout": "[1,[3,\"/data/qjqv/a.json\"]]\n[2,[3,\"/data/qjqv/a.json\"]]\n",
+        "stderr": ""
+      },
+      "flags": [
+        "c",
+        "jsonargs",
+        "args"
+      ]
+    },
+    {
+      "id": "jq_a_missing_file_typed_before_args_is_reported",
+      "seq": 701154,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "mkdir -p /data/qjqv && jq -c . /data/qjqv/nope.json --args a",
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "jq: error: Could not open file /data/qjqv/nope.json: No such file or directory\n"
+      },
+      "flags": [
+        "c",
+        "args"
+      ]
+    },
+    {
+      "id": "jq_input_reads_a_file_typed_before_args",
+      "seq": 701155,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "mkdir -p /data/qjqv && printf '7' > /data/qjqv/seven.json && jq -c -n '[$ARGS.positional, input]' /data/qjqv/seven.json --args x",
+      "expect": {
+        "exit": 0,
+        "stdout": "[[\"x\"],7]\n",
+        "stderr": ""
+      },
+      "flags": [
+        "c",
+        "n",
+        "args"
+      ]
+    },
+    {
+      "id": "jq_program_typed_after_jsonargs_stays_the_program",
+      "seq": 701156,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "jq -n -c --jsonargs '$ARGS.positional' 1 --args 2 --jsonargs 3",
+      "expect": {
+        "exit": 0,
+        "stdout": "[1,\"2\",3]\n",
+        "stderr": ""
+      },
+      "flags": [
+        "n",
+        "c",
+        "jsonargs",
+        "args"
+      ]
+    },
+    {
+      "id": "jq_from_file_operand_typed_before_args_is_an_input_file",
+      "seq": 701157,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "mkdir -p /data/qjqv && printf '$ARGS.positional' > /data/qjqv/p.jq && jq -n -c -f /data/qjqv/p.jq /data/qjqv/unread.json --args b",
+      "expect": {
+        "exit": 0,
+        "stdout": "[\"b\"]\n",
+        "stderr": ""
+      },
+      "flags": [
+        "n",
+        "c",
+        "f",
+        "args"
+      ]
+    },
+    {
+      "id": "jq_slurpfile_binds_between_jsonargs_operands",
+      "seq": 701158,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "mkdir -p /data/qjqv && printf '1 2' > /data/qjqv/s.json && jq -n -c '[$s, $ARGS.positional]' --jsonargs 0 --slurpfile s /data/qjqv/s.json 3",
+      "expect": {
+        "exit": 0,
+        "stdout": "[[1,2],[0,3]]\n",
+        "stderr": ""
+      },
+      "flags": [
+        "n",
+        "c",
+        "jsonargs",
+        "slurpfile"
+      ]
+    },
+    {
+      "id": "jq_bad_jsonargs_operand_wins_before_bad_argjson",
+      "seq": 701159,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "jq -n . --jsonargs '{' --argjson x '{'",
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "jq: invalid JSON text passed to --jsonargs\nUse jq --help for help with command-line options,\nor see the jq manpage, or online docs at https://jqlang.org\n"
+      },
+      "flags": [
+        "n",
+        "jsonargs",
+        "argjson"
+      ]
+    },
+    {
+      "id": "jq_dash_dash_keeps_the_args_mode",
+      "seq": 701160,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "jq -n -c '$ARGS.positional' --args -- -x --args",
+      "expect": {
+        "exit": 0,
+        "stdout": "[\"-x\",\"--args\"]\n",
+        "stderr": ""
+      },
+      "flags": [
+        "n",
+        "c",
+        "args"
+      ]
+    },
+    {
+      "id": "jq_from_file_program_keeps_the_modes_in_order",
+      "seq": 701161,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "mkdir -p /data/qjqv && printf '$ARGS.positional' > /data/qjqv/p.jq && jq -n -c -f /data/qjqv/p.jq --args a --jsonargs 2",
+      "expect": {
+        "exit": 0,
+        "stdout": "[\"a\",2]\n",
+        "stderr": ""
+      },
+      "flags": [
+        "n",
+        "c",
+        "f",
+        "args",
+        "jsonargs"
+      ]
+    },
+    {
+      "id": "jq_jsonargs_reads_a_negative_number",
+      "seq": 701162,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "jq -n -c '$ARGS.positional' --jsonargs -1",
+      "expect": {
+        "exit": 0,
+        "stdout": "[-1]\n",
+        "stderr": ""
+      },
+      "flags": [
+        "n",
+        "c",
+        "jsonargs"
+      ]
+    },
+    {
+      "id": "jq_jsonargs_reads_each_dash_led_number",
+      "seq": 701163,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "jq -n -c '$ARGS.positional' --jsonargs -1.5 -.5 -0 -1e5",
+      "expect": {
+        "exit": 0,
+        "stdout": "[-1.5,-0.5,-0,-1E+5]\n",
+        "stderr": ""
+      },
+      "flags": [
+        "n",
+        "c",
+        "jsonargs"
+      ]
+    },
+    {
+      "id": "jq_program_may_start_with_a_dash",
+      "seq": 701164,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "jq -n -c '-1'",
+      "expect": {
+        "exit": 0,
+        "stdout": "-1\n",
+        "stderr": ""
+      },
+      "flags": [
+        "n",
+        "c"
+      ]
+    },
+    {
+      "id": "jq_reads_an_input_file_named_like_a_negative_number",
+      "seq": 701165,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "(mkdir -p /data/qjqd/a && printf 3 > /data/qjqd/a/-1 && cd /data/qjqd/a && jq -c . -1)",
+      "expect": {
+        "exit": 0,
+        "stdout": "3\n",
+        "stderr": ""
+      },
+      "flags": [
+        "c"
+      ]
+    },
+    {
+      "id": "jq_args_reads_a_dash_digit_word_as_a_string",
+      "seq": 701166,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "jq -n -c '$ARGS.positional' --args -1a",
+      "expect": {
+        "exit": 0,
+        "stdout": "[\"-1a\"]\n",
+        "stderr": ""
+      },
+      "flags": [
+        "n",
+        "c",
+        "args"
+      ]
+    },
+    {
+      "id": "jq_args_reads_each_dash_word_without_a_letter",
+      "seq": 701167,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "jq -n -c '$ARGS.positional' --args - -. -[ '-{' -@ -_ -0 '- x' -=",
+      "expect": {
+        "exit": 0,
+        "stdout": "[\"-\",\"-.\",\"-[\",\"-{\",\"-@\",\"-_\",\"-0\",\"- x\",\"-=\"]\n",
+        "stderr": ""
+      },
+      "flags": [
+        "n",
+        "c",
+        "args"
+      ]
+    },
+    {
+      "id": "jq_a_non_ascii_letter_after_the_dash_is_an_operand",
+      "seq": 701168,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "jq -n -c '$ARGS.positional' --args -é -λ",
+      "expect": {
+        "exit": 0,
+        "stdout": "[\"-é\",\"-λ\"]\n",
+        "stderr": ""
+      },
+      "flags": [
+        "n",
+        "c",
+        "args"
+      ]
+    },
+    {
+      "id": "jq_jsonargs_refuses_a_dash_led_word_that_is_not_json",
+      "seq": 701169,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "jq -n -c '$ARGS.positional' --jsonargs '-[1]'",
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "jq: invalid JSON text passed to --jsonargs\nUse jq --help for help with command-line options,\nor see the jq manpage, or online docs at https://jqlang.org\n"
+      },
+      "flags": [
+        "n",
+        "c",
+        "jsonargs"
+      ]
+    },
+    {
+      "id": "jq_program_may_negate_a_path",
+      "seq": 701170,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "printf '{\"a\":3}' | jq -c '-.a'",
+      "expect": {
+        "exit": 0,
+        "stdout": "-3\n",
+        "stderr": ""
+      },
+      "flags": [
+        "c"
+      ]
+    },
+    {
+      "id": "jq_program_may_start_with_a_dash_and_a_space",
+      "seq": 701171,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "jq -n '- 1'",
+      "expect": {
+        "exit": 0,
+        "stdout": "-1\n",
+        "stderr": ""
+      },
+      "flags": [
+        "n"
+      ]
+    },
+    {
+      "id": "jq_reads_each_dash_named_input_file",
+      "seq": 701172,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "(mkdir -p /data/qjqd/b && cd /data/qjqd/b && printf '4\\n' > ./-. && printf '5\\n' > ./-1 && jq -c '[., input]' -. -1)",
+      "expect": {
+        "exit": 0,
+        "stdout": "[4,5]\n",
+        "stderr": ""
+      },
+      "flags": [
+        "c"
+      ]
+    },
+    {
+      "id": "jq_reports_a_missing_dash_named_input_file",
+      "seq": 701173,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "(mkdir -p /data/qjqd/c && cd /data/qjqd/c && jq -c . -1)",
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "jq: error: Could not open file -1: No such file or directory\n"
+      },
+      "flags": [
+        "c"
+      ]
+    },
+    {
+      "id": "jq_dash_words_follow_the_last_positional_mode",
+      "seq": 701174,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "jq -n -c '$ARGS.positional' --jsonargs -1 --args -2",
+      "expect": {
+        "exit": 0,
+        "stdout": "[-1,\"-2\"]\n",
+        "stderr": ""
+      },
+      "flags": [
+        "n",
+        "c",
+        "jsonargs",
+        "args"
+      ]
+    },
+    {
+      "id": "jq_arg_binds_between_dash_positionals",
+      "seq": 701175,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "jq -n -c '[$ARGS.positional, $x]' --jsonargs -1 --arg x -2 -3",
+      "expect": {
+        "exit": 0,
+        "stdout": "[[-1,-3],\"-2\"]\n",
+        "stderr": ""
+      },
+      "flags": [
+        "n",
+        "c",
+        "jsonargs",
+        "arg"
+      ]
+    },
+    {
+      "id": "jq_a_letter_after_the_dash_still_makes_an_option",
+      "seq": 701176,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "jq -n -c '$ARGS.positional' --jsonargs -1 -e",
+      "expect": {
+        "exit": 0,
+        "stdout": "[-1]\n",
+        "stderr": ""
+      },
+      "flags": [
+        "n",
+        "c",
+        "jsonargs",
+        "e"
+      ]
+    },
+    {
+      "id": "jq_options_typed_after_a_dash_program_apply",
+      "seq": 701177,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "jq -c -1 -n",
+      "expect": {
+        "exit": 0,
+        "stdout": "-1\n",
+        "stderr": ""
+      },
+      "flags": [
+        "c",
+        "n"
+      ]
+    },
+    {
+      "id": "jq_dash_letter_cluster_after_jsonargs_stays_options",
+      "seq": 701178,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "jq -c '$ARGS.positional' --jsonargs -nan",
+      "expect": {
+        "exit": 0,
+        "stdout": "[]\n",
+        "stderr": ""
+      },
+      "flags": [
+        "c",
+        "jsonargs",
+        "n",
+        "a"
+      ]
+    },
+    {
+      "id": "jq_arg_takes_dash_words_for_its_name_and_value",
+      "seq": 701179,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "jq -n -c '[$ARGS.positional, $ARGS.named]' --args -1 --arg -2 -3 -4",
+      "expect": {
+        "exit": 0,
+        "stdout": "[[\"-1\",\"-4\"],{\"-2\":\"-3\"}]\n",
+        "stderr": ""
+      },
+      "flags": [
+        "n",
+        "c",
+        "args",
+        "arg"
+      ]
+    },
+    {
+      "id": "jq_reads_stdin_for_a_lone_dash",
+      "seq": 701180,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "printf 5 | jq -c . -",
+      "expect": {
+        "exit": 0,
+        "stdout": "5\n",
+        "stderr": ""
+      },
+      "flags": [
+        "c"
+      ]
+    },
+    {
+      "id": "jq_refuses_an_unknown_short_option_in_its_own_words",
+      "seq": 701181,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "jq -n -x .",
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "jq: Unknown option -x\nUse jq --help for help with command-line options,\nor see the jq manpage, or online docs at https://jqlang.org\n"
+      },
+      "flags": [
+        "n",
+        "x"
+      ]
+    },
+    {
+      "id": "jq_refuses_an_unknown_long_option_in_its_own_words",
+      "seq": 701182,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "jq -n --bogus .",
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "jq: Unknown option --bogus\nUse jq --help for help with command-line options,\nor see the jq manpage, or online docs at https://jqlang.org\n"
+      },
+      "flags": [
+        "n",
+        "bogus"
+      ]
+    },
+    {
+      "id": "jq_names_the_first_unknown_letter_of_a_cluster",
+      "seq": 701183,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "jq -nx .",
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "jq: Unknown option -x\nUse jq --help for help with command-line options,\nor see the jq manpage, or online docs at https://jqlang.org\n"
+      },
+      "flags": [
+        "n",
+        "x"
+      ]
+    },
+    {
+      "id": "jq_names_a_digit_in_a_cluster_as_the_unknown_option",
+      "seq": 701184,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "jq -n1 .",
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "jq: Unknown option -1\nUse jq --help for help with command-line options,\nor see the jq manpage, or online docs at https://jqlang.org\n"
+      },
+      "flags": [
+        "n"
+      ]
+    },
+    {
+      "id": "jq_takes_no_abbreviated_long_option",
+      "seq": 701185,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "jq -n --nul .",
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "jq: Unknown option --nul\nUse jq --help for help with command-line options,\nor see the jq manpage, or online docs at https://jqlang.org\n"
+      },
+      "flags": [
+        "n",
+        "nul"
+      ]
+    },
+    {
+      "id": "jq_takes_no_equals_value_on_a_value_option",
+      "seq": 701186,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "jq -n --indent=3 .",
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "jq: Unknown option --indent=3\nUse jq --help for help with command-line options,\nor see the jq manpage, or online docs at https://jqlang.org\n"
+      },
+      "flags": [
+        "n",
+        "indent"
+      ]
+    },
+    {
+      "id": "jq_takes_no_equals_value_on_a_boolean_option",
+      "seq": 701187,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "jq -n --slurp=1 .",
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "jq: Unknown option --slurp=1\nUse jq --help for help with command-line options,\nor see the jq manpage, or online docs at https://jqlang.org\n"
+      },
+      "flags": [
+        "n",
+        "slurp"
+      ]
+    },
+    {
+      "id": "jq_takes_no_equals_form_of_arg",
+      "seq": 701188,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "jq -n --arg=x y .",
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "jq: Unknown option --arg=x\nUse jq --help for help with command-line options,\nor see the jq manpage, or online docs at https://jqlang.org\n"
+      },
+      "flags": [
+        "n",
+        "arg"
+      ]
+    },
+    {
+      "id": "jq_argjson_needs_two_parameters",
+      "seq": 701189,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "jq -n --argjson x",
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "jq: --argjson takes two parameters (e.g. --argjson varname text)\nUse jq --help for help with command-line options,\nor see the jq manpage, or online docs at https://jqlang.org\n"
+      },
+      "flags": [
+        "n",
+        "argjson"
+      ]
+    },
+    {
+      "id": "jq_rawfile_needs_two_parameters",
+      "seq": 701190,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "jq -n --rawfile x",
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "jq: --rawfile takes two parameters (e.g. --rawfile varname filename)\nUse jq --help for help with command-line options,\nor see the jq manpage, or online docs at https://jqlang.org\n"
+      },
+      "flags": [
+        "n",
+        "rawfile"
+      ]
+    },
+    {
+      "id": "jq_slurpfile_needs_two_parameters",
+      "seq": 701191,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "jq -n --slurpfile x",
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "jq: --slurpfile takes two parameters (e.g. --slurpfile varname filename)\nUse jq --help for help with command-line options,\nor see the jq manpage, or online docs at https://jqlang.org\n"
+      },
+      "flags": [
+        "n",
+        "slurpfile"
+      ]
+    },
+    {
+      "id": "jq_indent_needs_a_parameter",
+      "seq": 701192,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "jq -n . --indent",
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "jq: --indent takes one parameter\nUse jq --help for help with command-line options,\nor see the jq manpage, or online docs at https://jqlang.org\n"
+      },
+      "flags": [
+        "n",
+        "indent"
+      ]
+    },
+    {
+      "id": "jq_from_file_with_no_program_prints_the_short_usage",
+      "seq": 701193,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "jq -n -f",
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "jq - commandline JSON processor [version 1.8.2]\n\nUsage:\tjq [options] <jq filter> [file...]\n\tjq [options] --args <jq filter> [strings...]\n\tjq [options] --jsonargs <jq filter> [JSON_TEXTS...]\n\njq is a tool for processing JSON inputs, applying the given filter to\nits JSON text inputs and producing the filter's results as JSON on\nstandard output.\n\nThe simplest filter is ., which copies jq's input to its output\nunmodified except for formatting. For more advanced filters see\nthe jq(1) manpage (\"man jq\") and/or https://jqlang.org/.\n\nExample:\n\n\t$ echo '{\"foo\": 0}' | jq .\n\t{\n\t  \"foo\": 0\n\t}\n\nFor listing the command options, use jq --help.\n"
+      },
+      "flags": [
+        "n",
+        "f"
+      ]
+    },
+    {
+      "id": "jq_bad_jsonargs_value_wins_before_an_unknown_option",
+      "seq": 701194,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "jq -n . --jsonargs '{' --bogus",
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "jq: invalid JSON text passed to --jsonargs\nUse jq --help for help with command-line options,\nor see the jq manpage, or online docs at https://jqlang.org\n"
+      },
+      "flags": [
+        "n",
+        "jsonargs",
+        "bogus"
+      ]
+    },
+    {
+      "id": "jq_unknown_option_wins_before_a_bad_jsonargs_value",
+      "seq": 701195,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "jq -n . --bogus --jsonargs '{'",
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "jq: Unknown option --bogus\nUse jq --help for help with command-line options,\nor see the jq manpage, or online docs at https://jqlang.org\n"
+      },
+      "flags": [
+        "n",
+        "bogus",
+        "jsonargs"
+      ]
+    },
+    {
+      "id": "jq_bad_indent_wins_before_an_unknown_option",
+      "seq": 701196,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "jq -n . --indent 9 --bogus",
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "jq: --indent takes a number between -1 and 7\nUse jq --help for help with command-line options,\nor see the jq manpage, or online docs at https://jqlang.org\n"
+      },
+      "flags": [
+        "n",
+        "indent",
+        "bogus"
+      ]
+    },
+    {
+      "id": "jq_bad_argjson_wins_before_an_arg_short_of_values",
+      "seq": 701197,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "jq -n . --argjson x '{' --arg y",
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "jq: invalid JSON text passed to --argjson\nUse jq --help for help with command-line options,\nor see the jq manpage, or online docs at https://jqlang.org\n"
+      },
+      "flags": [
+        "n",
+        "argjson",
+        "arg"
+      ]
+    },
+    {
+      "id": "jq_arg_takes_an_option_word_as_its_value",
+      "seq": 701198,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "jq -n -c '$ARGS.named' --arg y --argjson",
+      "expect": {
+        "exit": 0,
+        "stdout": "{\"y\":\"--argjson\"}\n",
+        "stderr": ""
+      },
+      "flags": [
+        "n",
+        "c",
+        "arg",
+        "argjson"
+      ]
+    },
+    {
+      "id": "jq_unreadable_slurpfile_wins_before_an_unknown_option",
+      "seq": 701199,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "mkdir -p /data/qjqo && jq -n . --slurpfile s /data/qjqo/missing.json --bogus",
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "jq: Bad JSON in --slurpfile s /data/qjqo/missing.json: Could not open /data/qjqo/missing.json: No such file or directory\n"
+      },
+      "flags": [
+        "n",
+        "slurpfile",
+        "bogus"
+      ]
+    },
+    {
+      "id": "jq_help_typed_first_answers_before_an_unknown_option",
+      "seq": 701200,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "jq --help --bogus > /dev/null; echo rc=$?",
+      "expect": {
+        "exit": 0,
+        "stdout": "rc=0\n",
+        "stderr": ""
+      },
+      "flags": [
+        "help",
+        "bogus"
+      ]
+    },
+    {
+      "id": "jq_unknown_option_typed_first_wins_before_help",
+      "seq": 701201,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "jq --bogus --help > /dev/null; echo rc=$?",
+      "expect": {
+        "exit": 0,
+        "stdout": "rc=2\n",
+        "stderr": "jq: Unknown option --bogus\nUse jq --help for help with command-line options,\nor see the jq manpage, or online docs at https://jqlang.org\n"
+      },
+      "flags": [
+        "bogus",
+        "help"
+      ]
+    },
+    {
+      "id": "jq_bad_jsonargs_value_wins_before_help",
+      "seq": 701202,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "jq -n . --jsonargs '{' --help > /dev/null; echo rc=$?",
+      "expect": {
+        "exit": 0,
+        "stdout": "rc=2\n",
+        "stderr": "jq: invalid JSON text passed to --jsonargs\nUse jq --help for help with command-line options,\nor see the jq manpage, or online docs at https://jqlang.org\n"
+      },
+      "flags": [
+        "n",
+        "jsonargs",
+        "help"
+      ]
+    },
+    {
+      "id": "jq_unknown_option_typed_first_wins_before_version",
+      "seq": 701203,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "jq --bogus --version > /dev/null; echo rc=$?",
+      "expect": {
+        "exit": 0,
+        "stdout": "rc=2\n",
+        "stderr": "jq: Unknown option --bogus\nUse jq --help for help with command-line options,\nor see the jq manpage, or online docs at https://jqlang.org\n"
+      },
+      "flags": [
+        "bogus",
+        "version"
+      ]
+    },
+    {
+      "id": "jq_help_letter_before_an_unknown_letter_answers",
+      "seq": 701204,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "jq -hx > /dev/null; echo rc=$?",
+      "expect": {
+        "exit": 0,
+        "stdout": "rc=0\n",
+        "stderr": ""
+      },
+      "flags": [
+        "h",
+        "x"
+      ]
+    },
+    {
+      "id": "jq_unknown_letter_before_the_help_letter_wins",
+      "seq": 701205,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "jq -xh > /dev/null; echo rc=$?",
+      "expect": {
+        "exit": 0,
+        "stdout": "rc=2\n",
+        "stderr": "jq: Unknown option -x\nUse jq --help for help with command-line options,\nor see the jq manpage, or online docs at https://jqlang.org\n"
+      },
+      "flags": [
+        "x",
+        "h"
+      ]
+    },
+    {
+      "id": "jq_unknown_option_wins_before_a_missing_program_file",
+      "seq": 701206,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "mkdir -p /data/qjqo && jq -n -f /data/qjqo/missing.jq --bogus",
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "jq: Unknown option --bogus\nUse jq --help for help with command-line options,\nor see the jq manpage, or online docs at https://jqlang.org\n"
+      },
+      "flags": [
+        "n",
+        "f",
+        "bogus"
+      ]
+    },
+    {
+      "id": "jq_bad_jsonargs_value_wins_before_a_missing_program_file",
+      "seq": 701207,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "mkdir -p /data/qjqo && jq -n -f /data/qjqo/missing.jq --jsonargs '{'",
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "jq: invalid JSON text passed to --jsonargs\nUse jq --help for help with command-line options,\nor see the jq manpage, or online docs at https://jqlang.org\n"
+      },
+      "flags": [
+        "n",
+        "f",
+        "jsonargs"
+      ]
+    },
+    {
+      "id": "jq_unreadable_slurpfile_wins_before_a_missing_program_file",
+      "seq": 701208,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "mkdir -p /data/qjqo && jq -n -f /data/qjqo/missing.jq --slurpfile s /data/qjqo/missing.json",
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "jq: Bad JSON in --slurpfile s /data/qjqo/missing.json: Could not open /data/qjqo/missing.json: No such file or directory\n"
+      },
+      "flags": [
+        "n",
+        "f",
+        "slurpfile"
+      ]
+    },
+    {
+      "id": "jq_reads_a_program_file_from_dev_stdin",
+      "seq": 701209,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "echo . | jq -n -f /dev/stdin",
+      "expect": {
+        "exit": 0,
+        "stdout": "null\n",
+        "stderr": ""
+      },
+      "flags": [
+        "n",
+        "f"
+      ]
+    },
+    {
+      "id": "jq_refuses_a_program_file_holding_nul",
+      "seq": 701210,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "mkdir -p /data/qjqo && printf '.\\000x' > /data/qjqo/nul.jq && jq -n -f /data/qjqo/nul.jq",
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "jq: program file contains NUL bytes\n"
+      },
+      "flags": [
+        "n",
+        "f"
+      ]
+    },
+    {
+      "id": "jq_opens_a_rawfile_named_dash_as_a_file",
+      "seq": 701211,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "(mkdir -p /data/qjqo/r && cd /data/qjqo/r && echo hi | jq -n --rawfile x - '$x')",
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "jq: Bad JSON in --rawfile x -: Could not open -: No such file or directory\n"
+      },
+      "flags": [
+        "n",
+        "rawfile"
+      ]
+    },
+    {
+      "id": "jq_short_version_option_answers",
+      "seq": 701212,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "jq -n . -V > /dev/null; echo rc=$?",
+      "expect": {
+        "exit": 0,
+        "stdout": "rc=0\n",
+        "stderr": ""
+      },
+      "flags": [
+        "n",
+        "V"
+      ]
     }
   ]
 }

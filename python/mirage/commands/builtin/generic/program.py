@@ -14,7 +14,11 @@ from mirage.runtime.types import DispatchFn
 from mirage.types import FileType, PathSpec
 from mirage.utils.errors import FS_ERRORS, eisdir, fs_error_line, fs_strerror
 
-PROGRAM_FILE_COMMANDS = frozenset({"grep", "rg", "zgrep", "sed", "awk", "jq"})
+# The commands whose program files the executor reads before routing and
+# lowers to their inline form. jq reads its -f file itself, after its
+# option loop (OWN_OPTION_LOOP), so an option it refuses is reported
+# first; FILE_KEYS still names its dest, so routing leaves the file out.
+PROGRAM_FILE_COMMANDS = frozenset({"grep", "rg", "zgrep", "sed", "awk"})
 # The dest each command's spec gives its program file.
 FILE_KEYS = {
     "grep": "file",
@@ -141,7 +145,7 @@ async def prepare_program(
     pieces: list[bytes] = []
     for path in files:
         try:
-            if name != "jq" and is_stdin(path):
+            if is_stdin(path):
                 if name == "rg" and path.raw_path == "-":
                     if taken:
                         return texts, flags, stdin, IOResult(

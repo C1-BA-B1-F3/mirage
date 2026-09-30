@@ -26,18 +26,25 @@ import {
 import {
   ARG_PLACEHOLDER,
   ARGMATCH_CHOICE_OPTIONS,
+  DASH_LETTER,
   DIGIT_OPTIONS,
   EQUALS_SHORT_VALUES,
   FLOAT_VALUE,
   flagKwargName,
+  IN_ORDER_OPERANDS,
   INT_VALUE,
+  LETTER_OPTIONS,
   LONG_OPTION_TABLES,
   LONG_SYNONYMS,
   NO_LONG_OPTIONS,
   NUMERIC_SHORT,
+  OPERAND,
+  OWN_OPTION_LOOP,
+  REFUSED,
   SOLE_ARGUMENT_LONG_OPTIONS,
   STDIN_SCRIPT_COMMANDS,
   STDOUT_DASH_OPTIONS,
+  WHOLE_WORD_LONG_OPTIONS,
 } from './constants.ts'
 import { flagOccurrences } from './flag_view.ts'
 import { expandOldStyle } from './oldstyle.ts'
@@ -379,6 +386,29 @@ function rebase(
   return moved
 }
 
+// The first operand a textWhen option turns textual, or null. Called after
+// the scan, when the bag holds every option the line carried and its tape
+// every option occurrence and operand in scan order. A program that reads its
+// whole line first (tar's -x) turns every operand textual, wherever the option
+// sits; one that files each operand as it reads it (IN_ORDER_OPERANDS) turns
+// only the operands typed after the first such option. `_first_text_operand`
+// in parser.py is the twin.
+function firstTextOperand(
+  flags: Record<string, ParsedFlagValue>,
+  cs: CompiledSpec,
+  textWhen: readonly string[],
+  inOrder: boolean,
+): number | null {
+  const dests = new Set(textWhen.map((name) => cs.destOf(name)))
+  if (!inOrder) return [...dests].some((dest) => dest in flags) ? 0 : null
+  let operands = 0
+  for (const [name] of flagOccurrences(flags)) {
+    if (dests.has(name)) return operands
+    if (name === OPERAND) operands += 1
+  }
+  return null
+}
+
 // Record a boolean flag occurrence under its canonical dest. A count flag
 // accumulates occurrences into a number (`-vvv` and `-v -v -v` both land
 // as 3); every other boolean flag is sticky true.
@@ -551,6 +581,10 @@ export function parseCommand(
   let lenientDashOperands: boolean
   let digitOptions: boolean
   let equalsValues: boolean
+  let inOrderOperands: boolean
+  let letterOptions: boolean
+  let wholeWords: boolean
+  let ownLoop: boolean
   let longTable: readonly (readonly string[])[] | undefined
   const synonyms = new Map<string, string>()
   if (unknownIsOperand) {
@@ -566,6 +600,10 @@ export function parseCommand(
     outsideSoleArgument = false
     digitOptions = false
     equalsValues = false
+    inOrderOperands = false
+    letterOptions = false
+    wholeWords = false
+    ownLoop = false
   } else {
     // getopt_long, with exactly two exceptions, both named rather than derived
     // from the spec because nothing in a declaration tells them apart: see
@@ -592,6 +630,10 @@ export function parseCommand(
     // program's own tables, not facts any declaration states.
     digitOptions = builtin && DIGIT_OPTIONS.has(cmdName)
     equalsValues = builtin && EQUALS_SHORT_VALUES.has(cmdName)
+    inOrderOperands = builtin && IN_ORDER_OPERANDS.has(cmdName)
+    letterOptions = builtin && LETTER_OPTIONS.has(cmdName)
+    wholeWords = builtin && WHOLE_WORD_LONG_OPTIONS.has(cmdName)
+    ownLoop = builtin && OWN_OPTION_LOOP.has(cmdName)
     if (builtin) {
       for (const [key, same] of LONG_SYNONYMS) {
         const [name, spelling] = key.split(' ')
@@ -600,6 +642,15 @@ export function parseCommand(
     }
     longTable = builtin ? LONG_OPTION_TABLES[cmdName] : undefined
   }
+
+  // Leave a refusal on the tape, where a program that runs its own option
+  // loop reports it, and say whether it went there. `refused_on_tape` in
+  // parser.py is the twin.
+  const refusedOnTape = (word: string): boolean => {
+    if (ownLoop) flagOccurrences(flags).push([REFUSED, word])
+    return ownLoop
+  }
+
   let i = 0
   let endOfFlags = false
 
@@ -630,6 +681,7 @@ export function parseCommand(
       rawArgs.push(tok)
       rawIndices.push(scanOrigins[i] ?? -1)
       rawBases.push(base)
+      flagOccurrences(flags).push([OPERAND, tok])
       i += 1
       continue
     }
@@ -643,6 +695,7 @@ export function parseCommand(
         rawArgs.push(tok)
         rawIndices.push(scanOrigins[i] ?? -1)
         rawBases.push(base)
+        flagOccurrences(flags).push([OPERAND, tok])
         i += 1
         continue
       }
@@ -652,7 +705,7 @@ export function parseCommand(
       // with no long-option parser keeps exact-only matching: its unknown
       // dash tokens are operands, not typos. expr inside its window is a
       // real getopt_long call, so `expr --h` does resolve to --help.
-      const eqPos = tok.indexOf('=')
+      const eqPos = wholeWords ? -1 : tok.indexOf('=')
       const typed = eqPos === -1 ? tok : tok.slice(0, eqPos)
       let spelling = typed
       if (!cs.dest.has(typed) && abbreviations !== undefined) {
@@ -715,9 +768,11 @@ export function parseCommand(
         i += 2
       } else if (isPair) {
         if (eqPos === -1) {
-          needsValueOptions.push(spelling)
-          optionErrorKinds.push('needs_value')
-        } else {
+          if (!refusedOnTape(spelling)) {
+            needsValueOptions.push(spelling)
+            optionErrorKinds.push('needs_value')
+          }
+        } else if (!refusedOnTape(tok)) {
           // A two-token option has no `=` form (jq refuses `--arg=name`
           // as an unknown option).
           invalidOptions.push(tok)
@@ -733,12 +788,15 @@ export function parseCommand(
           base = rebase(flags, cs, spelling, tok.slice(eqPos + 1), base)
         } else if (cs.longValueSpellings.has(etok)) {
           // Declared value flag at end of line with no argument.
-          needsValueOptions.push(etok)
-          optionErrorKinds.push('needs_value')
+          if (!refusedOnTape(etok)) {
+            needsValueOptions.push(etok)
+            optionErrorKinds.push('needs_value')
+          }
         } else if (lenientDashOperands) {
           rawArgs.push(tok)
           rawIndices.push(scanOrigins[i] ?? -1)
           rawBases.push(base)
+          flagOccurrences(flags).push([OPERAND, tok])
         } else if (eqPos !== -1 && cs.longBoolSpellings.has(spelling)) {
           // A boolean long handed a value. getopt_long knows the option, so
           // it refuses the VALUE and names the option without it, which is a
@@ -749,9 +807,11 @@ export function parseCommand(
           // the canonical one even for an abbreviation -- `grep --byte=2`
           // answers for --byte-offset -- and because the programs that word
           // this as an unknown option quote the value along with it.
-          invalidOptions.push(spelling + tok.slice(eqPos))
-          optionErrorKinds.push('unexpected_value')
-        } else {
+          if (!refusedOnTape(tok)) {
+            invalidOptions.push(spelling + tok.slice(eqPos))
+            optionErrorKinds.push('unexpected_value')
+          }
+        } else if (!refusedOnTape(tok)) {
           invalidOptions.push(tok)
           optionErrorKinds.push('invalid')
         }
@@ -760,7 +820,9 @@ export function parseCommand(
       continue
     }
 
-    if (tok.startsWith('-') && tok.length > 1) {
+    // A dash word with no letter after the dash is an operand to jq (`-1`,
+    // `-.`, `- x`), so it falls through to the operands below.
+    if (tok.startsWith('-') && tok.length > 1 && (!letterOptions || DASH_LETTER.test(tok))) {
       if (cs.numericDest !== null && NUMERIC_SHORT.test(tok)) {
         flags[cs.numericDest] = tok.slice(1)
         i += 1
@@ -860,25 +922,46 @@ export function parseCommand(
         rawArgs.push(tok)
         rawIndices.push(scanOrigins[i] ?? -1)
         rawBases.push(base)
+        flagOccurrences(flags).push([OPERAND, tok])
       } else if (cs.valueSpellings.includes(tok)) {
         // A declared value flag with no argument left on the line.
-        needsValueOptions.push(tok.slice(1))
-        optionErrorKinds.push('needs_value')
+        if (!refusedOnTape(tok)) {
+          needsValueOptions.push(tok.slice(1))
+          optionErrorKinds.push('needs_value')
+        }
       } else if (mixed !== null && mixed.attached === null) {
         // A cluster ending in a value flag that ran out of line.
-        needsValueOptions.push(mixed.valueFlag.slice(1))
-        optionErrorKinds.push('needs_value')
+        if (ownLoop) {
+          // The loop reads the cluster's letters in turn.
+          for (const name of mixed.bools) setBoolFlag(flags, cs, name)
+        }
+        if (!refusedOnTape(mixed.valueFlag)) {
+          needsValueOptions.push(mixed.valueFlag.slice(1))
+          optionErrorKinds.push('needs_value')
+        }
       } else {
         // GNU reports the first offending character, not the token.
         let bad = tok.slice(1, 2)
+        let before: string[] = []
+        const read: string[] = []
         for (const ch of tok.slice(1)) {
           if (!cs.boolSpellings.has(`-${ch}`) && !cs.valueSpellings.includes(`-${ch}`)) {
             bad = ch
+            before = read
             break
           }
+          read.push(ch)
         }
-        invalidOptions.push(bad)
-        optionErrorKinds.push('invalid')
+        if (ownLoop) {
+          // The letters before it are read first, so jq's `-hx` is help.
+          for (const ch of before) {
+            if (cs.boolSpellings.has(`-${ch}`)) setBoolFlag(flags, cs, `-${ch}`)
+          }
+        }
+        if (!refusedOnTape(`-${bad}`)) {
+          invalidOptions.push(bad)
+          optionErrorKinds.push('invalid')
+        }
       }
       i += 1
       continue
@@ -887,6 +970,7 @@ export function parseCommand(
     rawArgs.push(tok)
     rawIndices.push(scanOrigins[i] ?? -1)
     rawBases.push(base)
+    flagOccurrences(flags).push([OPERAND, tok])
     // The first operand ends option parsing outright under
     // argparse's REMAINDER, so a script's own flags reach the script
     // of being read as the interpreter's.
@@ -955,13 +1039,13 @@ export function parseCommand(
     missingRequiredOperands.push(spec.rest.name === '' ? ARG_PLACEHOLDER : spec.rest.name)
   }
 
-  // A flag can turn the rest slot textual for this line only (jq's
-  // --args makes every later operand a positional string rather than an
-  // input file). Only classification moves: unknown dash tokens stay as
-  // strict as the declared kind makes them.
-  const restKind: ValueType | null = spec.rest?.textWhen.some((name) => cs.destOf(name) in flags)
-    ? 'str'
-    : cs.restKind
+  // A flag can turn the rest slot textual for this line only: tar's -x makes
+  // every operand a member name rather than a file, and jq's --args makes the
+  // operands typed after it positional strings rather than input files. Only
+  // classification moves: unknown dash tokens stay as strict as the declared
+  // kind makes them.
+  const textFrom =
+    spec.rest === null ? null : firstTextOperand(flags, cs, spec.rest.textWhen, inOrderOperands)
 
   // Overflow operands past the declared positional slots pass through
   // classified like the last slot (TEXT when there is none), so a
@@ -978,8 +1062,10 @@ export function parseCommand(
     let kind: ValueType
     if (j < positional.length) {
       kind = positional[j] ?? 'str'
-    } else if (restKind !== null) {
-      kind = restKind
+    } else if (textFrom !== null && j >= textFrom) {
+      kind = 'str'
+    } else if (cs.restKind !== null) {
+      kind = cs.restKind
     } else {
       kind = overflowKind
     }

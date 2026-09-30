@@ -240,6 +240,7 @@
       "wandb"
     ]
   },
+  "allow_abbrev": false,
   "options": [
     {
       "description": "Use null as the single input value",
@@ -375,6 +376,12 @@
       "description": "Show this help and exit",
       "long": "--help",
       "short": "-h",
+      "type": "bool"
+    },
+    {
+      "description": "Show version information and exit",
+      "long": "--version",
+      "short": "-V",
       "type": "bool"
     }
   ],

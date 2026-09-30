@@ -26,6 +26,7 @@ import { ROOT_CWD } from './constants.ts'
 import { isBuiltinGrammar, registeredSpec } from './spec/builtins.ts'
 import {
   HELP_OPTION,
+  OWN_OPTION_LOOP,
   STANDARD_AFTER_SCAN,
   STANDARD_BEFORE_SCAN,
   VERSION_OPTION,
@@ -451,7 +452,9 @@ export function helpPage(name: string, spec: CommandSpec): string {
  * Inject --help / --version and short-circuit them before the handler.
  * Mirrors GNU coreutils: every registered command accepts both flags,
  * prints to stdout, and exits 0 without running the command body.
- * A command declaring its own --version handles that flag itself.
+ * A command declaring its own --version handles that flag itself, and a
+ * program that runs its own option loop (OWN_OPTION_LOOP) answers --help
+ * there too, after any option typed before it.
  */
 function withHelpSupport(
   name: string,
@@ -459,11 +462,12 @@ function withHelpSupport(
   fn: CommandFn,
 ): { spec: CommandSpec; fn: CommandFn } {
   const hasVersion = spec.options.some((o) => o.long === '--version')
+  const ownHelp = isBuiltinGrammar(name, spec) && OWN_OPTION_LOOP.has(name)
   const newSpec = registeredSpec(name, spec)
   const helpText = helpPage(name, spec)
   const versionText = versionLine(name)
   const wrappedFn: CommandFn = async (accessor, paths, texts, opts) => {
-    if (opts.flags.help === true) {
+    if (!ownHelp && opts.flags.help === true) {
       return [HELP_ENC.encode(helpText), new IOResult()]
     }
     if (!hasVersion && opts.flags.version === true) {

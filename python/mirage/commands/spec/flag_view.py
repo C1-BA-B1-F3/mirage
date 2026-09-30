@@ -15,15 +15,23 @@
 from collections.abc import Mapping
 from typing import Generic, TypeVar
 
-from mirage.commands.spec.constants import flag_kwarg_name
+from mirage.commands.spec.constants import OPERAND, REFUSED, flag_kwarg_name
 from mirage.commands.spec.types import CommandSpec, FlagValue
 from mirage.types import PathSpec
 
 T = TypeVar("T")
 
+# The tape names no option declares: they mark operands and refusals.
+_TAPE_ONLY = frozenset({OPERAND, REFUSED})
+
 
 class FlagBag(dict[str, T], Generic[T]):
     """Flag values with a separate tape of occurrences in scan order.
+
+    The tape holds each option occurrence as (dest, value), each operand
+    as (OPERAND, word), and for a program that runs its own option loop
+    each refused option as (REFUSED, word), so it also says which options
+    were typed before an operand or a refusal.
 
     Args:
         values (Mapping[str, T] | None): Values to copy, preserving their tape.
@@ -84,18 +92,27 @@ class FlagView:
     def occurrences(self, *names: str) -> list[tuple[str, FlagValue]]:
         """Read each typed occurrence, then defaults without a typed value.
 
+        OPERAND among the names reads the operands too, each as
+        (OPERAND, word) where it was typed among the options, and REFUSED
+        reads the refused options the same way. Flags with no tape
+        (keywords) have neither on it.
+
         Args:
-            names (str): Spec-bound option names to read.
+            names (str): Spec-bound option names to read, OPERAND and
+                REFUSED.
         """
-        wanted = {self._key(name) for name in names}
+        wanted = {
+            name if name in _TAPE_ONLY else self._key(name)
+            for name in names
+        }
         tape = self._flags.occurrences if isinstance(self._flags,
                                                      FlagBag) else []
         result: list[tuple[str, FlagValue]] = [
             (name, value) for name, value in tape
-            if name in wanted and name in self._flags
+            if name in wanted and (name in _TAPE_ONLY or name in self._flags)
         ]
         seen = {name for name, _ in result}
-        for name in self.typed_order(*names):
+        for name in self.typed_order(*(wanted - _TAPE_ONLY)):
             if name not in seen:
                 value = self._flags[name]
                 if isinstance(value, list):

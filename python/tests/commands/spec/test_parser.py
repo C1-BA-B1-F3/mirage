@@ -1107,6 +1107,143 @@ def test_operands_stay_paths_without_the_args_flags():
     assert parsed.paths() == ["/d/a.json"]
 
 
+def test_jq_operands_typed_before_args_stay_input_files():
+    # jq 1.8.2's option loop files each operand as it reads it: only the
+    # operands after the first --args or --jsonargs are positional values.
+    parsed = parse_command(SPECS["jq"],
+                           [".", "/d/a.json", "--args", "x", "/d/b.json"], "/",
+                           "jq")
+    assert parsed.texts() == [".", "x", "/d/b.json"]
+    assert parsed.paths() == ["/d/a.json"]
+    assert parsed.word_kinds == ["str", "path", "str", "str", "str"]
+
+
+def test_jq_program_typed_after_jsonargs_is_still_the_program():
+    parsed = parse_command(SPECS["jq"],
+                           ["--jsonargs", ".", "1", "--args", "a"], "/", "jq")
+    assert parsed.texts() == [".", "1", "a"]
+    assert parsed.paths() == []
+
+
+def test_jq_operands_after_dash_dash_keep_the_mode():
+    parsed = parse_command(SPECS["jq"],
+                           [".", "--args", "--", "-x", "--jsonargs"], "/",
+                           "jq")
+    assert parsed.texts() == [".", "-x", "--jsonargs"]
+
+
+def test_jq_args_after_dash_dash_is_an_input_file():
+    parsed = parse_command(SPECS["jq"], [".", "--", "--args", "a"], "/", "jq")
+    assert parsed.texts() == ["."]
+    assert parsed.paths() == ["/--args", "/a"]
+
+
+def test_jq_from_file_operand_before_args_is_an_input_file():
+    parsed = parse_command(SPECS["jq"],
+                           ["-f", "p.jq", "in.json", "--args", "b"], "/d",
+                           "jq")
+    assert parsed.paths() == ["/d/in.json"]
+    assert parsed.texts() == ["b"]
+
+
+def test_tar_mode_typed_after_the_names_still_makes_them_members():
+    # GNU tar 1.35 reads the whole line first: `tar -f a.tar d/m -t` lists
+    # d/m, as `tar -f a.tar -t d/m` does.
+    parsed = parse_command(SPECS["tar"], ["-f", "/d/a.tar", "d/m", "-t"], "/",
+                           "tar")
+    assert parsed.texts() == ["d/m"]
+    assert parsed.paths() == []
+
+
+def test_tape_records_each_operand_among_the_options():
+    parsed = parse_command(SPECS["jq"], ["-n", ".", "--args", "a", "--", "-b"],
+                           "/", "jq")
+    assert parsed.flags.occurrences == [("--null-input", True), ("", "."),
+                                        ("--args", True), ("", "a"),
+                                        ("", "-b")]
+    assert parse_to_kwargs(parsed).occurrences == [("null_input", True),
+                                                   ("", "."), ("args", True),
+                                                   ("", "a"), ("", "-b")]
+
+
+# jq 1.8.2's isoptish(): a dash word is an option only when a letter or a
+# second dash follows the dash, so `-1` is a program, a file or a value.
+def test_jq_dash_words_without_a_letter_are_operands():
+    parsed = parse_command(SPECS["jq"],
+                           ["-1", "-.", "--jsonargs", "-1.5", "- x", "-é"],
+                           "/d", "jq")
+    assert parsed.invalid_options == []
+    assert parsed.texts() == ["-1", "-1.5", "- x", "-é"]
+    assert parsed.paths() == ["/d/-."]
+
+
+def test_jq_dash_letter_words_stay_options():
+    parsed = parse_command(SPECS["jq"], [".", "--jsonargs", "-nan", "-x"], "/",
+                           "jq")
+    assert parsed.flags["--null-input"] is True
+    assert parsed.flags["--ascii-output"] is True
+    assert parsed.texts() == ["."]
+    assert parsed.flags.occurrences[-1] == ("?", "-x")
+
+
+# jq's option loop reports what it refuses where it stands, so the parser
+# leaves each refusal on the tape rather than refusing the line.
+def test_jq_leaves_each_refusal_on_the_tape_where_it_was_typed():
+    parsed = parse_command(SPECS["jq"],
+                           ["-n", ".", "--jsonargs", "{", "--bogus", "-Z"],
+                           "/", "jq")
+    assert parsed.option_error_kinds == []
+    assert parsed.invalid_options == []
+    assert parsed.flags.occurrences == [("--null-input", True), ("", "."),
+                                        ("--jsonargs", True), ("", "{"),
+                                        ("?", "--bogus"), ("?", "-Z")]
+
+
+def test_jq_long_options_are_whole_words():
+    # jq compares the whole word with strcmp: no abbreviation, no `=`.
+    parsed = parse_command(SPECS["jq"], ["--nul", "--indent=3", "--slurp=1"],
+                           "/", "jq")
+    assert "--null-input" not in parsed.flags
+    assert "--indent" not in parsed.flags
+    assert [value for name, value in parsed.flags.occurrences
+            if name == "?"] == ["--nul", "--indent=3", "--slurp=1"]
+
+
+def test_jq_leaves_an_option_short_of_its_values_on_the_tape():
+    for words, word in ((["-n", "--arg", "x"], "--arg"),
+                        (["-n", ".", "--indent"], "--indent"), (["-n",
+                                                                 "-f"], "-f")):
+        parsed = parse_command(SPECS["jq"], words, "/", "jq")
+        assert parsed.needs_value_options == []
+        assert [
+            value for name, value in parsed.flags.occurrences if name == "?"
+        ] == [word]
+
+
+def test_jq_reads_a_clusters_letters_before_the_refused_one():
+    parsed = parse_command(SPECS["jq"], ["-hx"], "/", "jq")
+    assert parsed.flags.occurrences == [("--help", True), ("?", "-x")]
+    parsed = parse_command(SPECS["jq"], ["-xh"], "/", "jq")
+    assert parsed.flags.occurrences == [("?", "-x")]
+
+
+def test_a_borrowed_jq_name_keeps_getopt_long_and_its_refusals():
+    spec = CommandSpec(options=(Option(long="--null-input"), ),
+                       rest=Operand(type="str"))
+    parsed = parse_command(spec, ["--nul", "--bogus"], "/", "jq")
+    assert parsed.flags["--null-input"] is True
+    assert parsed.invalid_options == ["--bogus"]
+    assert ("?", "--bogus") not in parsed.flags.occurrences
+
+
+def test_a_dash_digit_is_an_option_outside_jqs_own_grammar():
+    assert parse_command(SPECS["cat"], ["-1"], "/",
+                         "cat").invalid_options == ["1"]
+    spec = CommandSpec(options=(Option(short="-n"), ),
+                       rest=Operand(type="str"))
+    assert parse_command(spec, ["-."], "/", "jq").invalid_options == ["."]
+
+
 def test_tar_old_style_cluster_parses_as_flags():
     parsed = parse_command(SPECS["tar"], ["xzf", "/data/a.tgz"], "/")
     assert parsed.flags["--extract"] is True

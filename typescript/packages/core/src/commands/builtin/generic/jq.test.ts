@@ -17,7 +17,7 @@ import { jqOptions, type JqOptions } from '../../../core/jq/index.ts'
 import { materialize, type ByteSource, type IOResult } from '../../../io/types.ts'
 import { PathSpec } from '../../../types.ts'
 import { eisdir, enoent } from '../../../utils/errors.ts'
-import type { CommandOpts } from '../../config.ts'
+import { helpPage, versionLine, type CommandOpts } from '../../config.ts'
 import { specOf } from '../../spec/builtins.ts'
 import { FlagView } from '../../spec/flag_view.ts'
 import { parseCommand, parseToKwargs } from '../../spec/parser.ts'
@@ -26,8 +26,9 @@ import {
   indentWidth,
   inputName,
   jqGeneric,
+  optionRefusal,
   parseFlags,
-  positionalArgs,
+  positionalValue,
   readOptions,
   runStatus,
 } from './jq.ts'
@@ -46,6 +47,7 @@ const FILES: Record<string, string> = {
   '/d/mid.json': '1\n[1 2]\n3\n4\n',
   '/d/one.json': '1',
   '/d/two.json': ' 2\n',
+  '/d/nul.jq': '.\u0000x',
 }
 
 async function* read(path: PathSpec): AsyncIterable<Uint8Array> {
@@ -123,17 +125,41 @@ async function unread(path: PathSpec): Promise<Uint8Array> {
   throw new Error(`${path.virtual} should not be read`)
 }
 
+/** The options a walk read to, where it cannot have answered --help. */
+function asOptions(result: JqOptions | Uint8Array): JqOptions {
+  if (result instanceof Uint8Array) throw new Error('the walk answered --help or --version')
+  return result
+}
+
+/** What a jq line's option walk answers, its flag files read with `reader`. */
+async function walkLine(
+  words: readonly string[],
+  reader: (path: PathSpec) => Promise<Uint8Array>,
+): Promise<JqOptions | Uint8Array> {
+  const parsed = parseCommand(specOf('jq'), [...words], '/', 'jq')
+  const flags = parseToKwargs(parsed)
+  const fl = new FlagView(flags, specOf('jq'))
+  return readOptions(fl, parsed.texts(), 'from_file' in flags, toSpec, reader)
+}
+
+/** The options a jq line reads to, its flag files read with `reader`. */
+async function readLine(
+  words: readonly string[],
+  reader: (path: PathSpec) => Promise<Uint8Array>,
+): Promise<JqOptions> {
+  return asOptions(await walkLine(words, reader))
+}
+
 /** The options a jq line reads to, its flag files read off FILES. */
 async function options(...words: string[]): Promise<JqOptions> {
-  const fl = new FlagView(parsedFlags(...words), specOf('jq'))
-  return readOptions(fl, toSpec, (path) => materialize(read(path)))
+  return readLine(words, (path) => materialize(read(path)))
 }
 
 /** The bindings a flag record makes, where no file may be read. */
 async function bound(
   flags: Record<string, string | boolean | number | string[]>,
 ): Promise<ReadonlyMap<string, string>> {
-  return (await readOptions(view(flags), toSpec, unread)).namedArgs
+  return asOptions(await readOptions(view(flags), [], false, toSpec, unread)).namedArgs
 }
 
 /** How jq lays an output out under these options. */
@@ -194,7 +220,7 @@ describe('indentWidth', () => {
 
 describe('readOptions', () => {
   it('reads --indent -1 as tab indentation', async () => {
-    const opts = await readOptions(view({ indent: '-1' }), toSpec, unread)
+    const opts = asOptions(await readOptions(view({ indent: '-1' }), [], false, toSpec, unread))
     expect(opts.tab).toBe(true)
     expect(opts.indent).toBe(2)
   })
@@ -279,8 +305,8 @@ describe('readOptions', () => {
     [['--rawfile', 'v', '/d/missing.txt']],
     [['--slurpfile', 'v', '/d/bad.json']],
   ] as const)('never reads a binding of a taken name: %j', async (words) => {
-    const fl = new FlagView(parsedFlags('-n', '--arg', 'v', '1', ...words, '$v'), specOf('jq'))
-    expect((await readOptions(fl, toSpec, unread)).namedArgs).toEqual(new Map([['v', '"1"']]))
+    const opts = await readLine(['-n', '--arg', 'v', '1', ...words, '$v'], unread)
+    expect(opts.namedArgs).toEqual(new Map([['v', '"1"']]))
   })
 
   it.each([
@@ -400,30 +426,234 @@ describe('inputName', () => {
   })
 })
 
-describe('positionalArgs', () => {
-  it('reads the operands after the program as strings', () => {
-    expect(positionalArgs(view({ args: true }), ['.', 'a', '1'], false)).toEqual(['"a"', '"1"'])
-  })
-
-  it('keeps every operand when -f gave the program', () => {
-    expect(positionalArgs(view({ args: true }), ['a', 'b'], true)).toEqual(['"a"', '"b"'])
+describe('positionalValue', () => {
+  it('reads an operand under --args as a string', () => {
+    expect(positionalValue('args', '1')).toBe('"1"')
   })
 
   it('keeps each operand under --jsonargs as the text jq reads', () => {
-    expect(positionalArgs(view({ jsonargs: true }), ['.', '1.0', '{"b":1,"1":2}'], false)).toEqual([
-      '1.0',
-      '{"b":1,"1":2}',
-    ])
+    expect(positionalValue('jsonargs', '1.0')).toBe('1.0')
+    expect(positionalValue('jsonargs', '{"b":1,"1":2}')).toBe('{"b":1,"1":2}')
   })
 
-  it('refuses invalid JSON under --jsonargs', () => {
-    expect(() => positionalArgs(view({ jsonargs: true }), ['.', 'nope'], false)).toThrow(
-      /invalid JSON text/,
+  it("refuses invalid JSON under --jsonargs in jq's words", () => {
+    expect(() => positionalValue('jsonargs', 'nope')).toThrow(
+      `jq: invalid JSON text passed to --jsonargs\n${HINT}`,
+    )
+  })
+})
+
+describe('readOptions over --args and --jsonargs', () => {
+  it.each([
+    [
+      ['--args', 'a', '--jsonargs', '1', '--args', 'b'],
+      ['"a"', '1', '"b"'],
+    ],
+    [
+      ['--jsonargs', '1', '--args', 'a'],
+      ['1', '"a"'],
+    ],
+    [['--args', '--jsonargs', '1'], ['1']],
+    [
+      ['--args', '{', '--jsonargs', '1'],
+      ['"{"', '1'],
+    ],
+    [
+      ['/d/a.json', '--args', 'x', '/d/b.json'],
+      ['"x"', '"/d/b.json"'],
+    ],
+    [
+      ['--jsonargs', '1', '--arg', 'x', 'y', '2'],
+      ['1', '2'],
+    ],
+    [
+      ['--args', '--', '-x', '--jsonargs'],
+      ['"-x"', '"--jsonargs"'],
+    ],
+    [['/d/a.json'], []],
+  ] as const)(
+    'files each operand by the mode typed last before it: %j',
+    async (words, positional) => {
+      expect((await options('-n', '.', ...words)).positionalArgs).toEqual(positional)
+    },
+  )
+
+  it('takes the program first whatever the mode', async () => {
+    const opts = await options('-n', '--jsonargs', '.', '1', '--args', '2', '--jsonargs', '3')
+    expect(opts.positionalArgs).toEqual(['1', '"2"', '3'])
+  })
+
+  it('leaves every operand to the modes when -f gave the program', async () => {
+    const opts = await options(
+      '-n',
+      '-f',
+      '/d/prog.jq',
+      '/d/a.json',
+      '--args',
+      'b',
+      '--jsonargs',
+      '2',
+    )
+    expect(opts.positionalArgs).toEqual(['"b"', '2'])
+  })
+
+  it.each([
+    [['--jsonargs', 'nope', '--indent', 'x'], 'jq: invalid JSON text passed to --jsonargs'],
+    [['--indent', 'x', '--jsonargs', 'nope'], 'jq: --indent takes'],
+    [
+      ['--jsonargs', 'nope', '--argjson', 'a', 'nope'],
+      'jq: invalid JSON text passed to --jsonargs',
+    ],
+    [['--argjson', 'a', 'nope', '--jsonargs', 'nope'], 'jq: invalid JSON text passed to --argjson'],
+    [
+      ['--jsonargs', 'nope', '--slurpfile', 'b', '/d/missing.json'],
+      'jq: invalid JSON text passed to --jsonargs',
+    ],
+    [
+      ['--slurpfile', 'b', '/d/missing.json', '--jsonargs', 'nope'],
+      'jq: Bad JSON in --slurpfile b /d/missing.json',
+    ],
+  ] as const)('refuses a --jsonargs operand where it was typed: %j', async (words, refusal) => {
+    await expect(options('-n', '.', ...words)).rejects.toThrow(refusal)
+  })
+
+  it.each([
+    [{ args: true }, false, ['.', 'a', '1'], ['"a"', '"1"']],
+    [{ args: true }, true, ['a', 'b'], ['"a"', '"b"']],
+    [{ args: true, jsonargs: true }, false, ['.', '1'], ['1']],
+    [{ jsonargs: true, args: true }, false, ['.', '1'], ['"1"']],
+    [{}, false, ['.', 'a'], []],
+  ] as const)(
+    'files the operands of a record with no tape after every option: %j',
+    async (flags, hasProgramFile, texts, positional) => {
+      const opts = asOptions(await readOptions(view(flags), texts, hasProgramFile, toSpec, unread))
+      expect(opts.positionalArgs).toEqual(positional)
+    },
+  )
+
+  it('still reads an input file typed before --args', async () => {
+    const parsed = parseCommand(
+      specOf('jq'),
+      ['-c', '[., $ARGS.positional]', '/d/one.json', '--args', '/d/two.json'],
+      '/',
+      'jq',
+    )
+    const opts = {
+      stdin: null,
+      flags: parseToKwargs(parsed),
+      filetypeFns: null,
+      cwd: '/',
+      vfs: { kind: 'ram' } as never,
+    } as CommandOpts
+    const specs = parsed.paths().map((path) => PathSpec.fromStrPath(path))
+    const result = await jqGeneric(specs, parsed.texts(), opts, read)
+    if (result === null) throw new Error('jq returned no result')
+    const [out, io] = result
+    expect(DEC.decode(await materialize(out))).toBe('[1,["/d/two.json"]]\n')
+    expect(io.exitCode).toBe(0)
+  })
+
+  it('hands dash words to jq as the program and its values', async () => {
+    const parsed = parseCommand(
+      specOf('jq'),
+      ['-n', '-c', '-$ARGS.positional[0], $ARGS.positional', '--jsonargs', '-1', '--args', '-.'],
+      '/',
+      'jq',
+    )
+    const opts = {
+      stdin: null,
+      flags: parseToKwargs(parsed),
+      filetypeFns: null,
+      cwd: '/',
+      vfs: { kind: 'ram' } as never,
+    } as CommandOpts
+    const result = await jqGeneric([], parsed.texts(), opts, read)
+    if (result === null) throw new Error('jq returned no result')
+    const [out, io] = result
+    expect(DEC.decode(await materialize(out))).toBe('1\n[-1,"-."]\n')
+    expect(io.exitCode).toBe(0)
+  })
+})
+
+describe("jq's option loop", () => {
+  it.each([
+    ['-x', 'Unknown option -x'],
+    ['--indent=3', 'Unknown option --indent=3'],
+    ['--arg', '--arg takes two parameters (e.g. --arg varname value)'],
+    ['--slurpfile', '--slurpfile takes two parameters (e.g. --slurpfile varname filename)'],
+    ['--indent', '--indent takes one parameter'],
+  ])('words a refused %s as jq does', (word, line) => {
+    expect(optionRefusal(word).message).toBe(`jq: ${line}\n${HINT}`)
+  })
+
+  it("prints jq's short usage for an -f the line ends at", () => {
+    const refusal = optionRefusal('-f')
+    expect(refusal.message.startsWith('jq - commandline JSON processor [version 1.8.2]\n')).toBe(
+      true,
+    )
+    expect(refusal.message.endsWith('For listing the command options, use jq --help.')).toBe(true)
+    expect(refusal.exitCode).toBe(2)
+  })
+
+  // jq 1.8.2's loop stops at the first word it cannot take, so an option the
+  // parser refused waits its turn behind a bad value typed before it.
+  it.each([
+    [['.', '--jsonargs', '{', '--bogus'], 'invalid JSON text passed to --jsonargs'],
+    [['.', '--bogus', '--jsonargs', '{'], 'Unknown option --bogus'],
+    [['.', '--indent', '9', '--bogus'], '--indent takes a number between -1 and 7'],
+    [['.', '--bogus', '--indent', '9'], 'Unknown option --bogus'],
+    [['.', '--argjson', 'x', '{', '-Z'], 'invalid JSON text passed to --argjson'],
+  ])('reports the first refusal typed in %j', async (words, first) => {
+    await expect(walkLine(['-n', ...words], unread)).rejects.toThrow(`jq: ${first}\n${HINT}`)
+  })
+
+  it('answers --help and --version where the loop reaches them', async () => {
+    const help = ENC.encode(helpPage('jq', specOf('jq')))
+    expect(await walkLine(['--help', '--bogus'], unread)).toEqual(help)
+    expect(await walkLine(['-hx'], unread)).toEqual(help)
+    expect(await walkLine(['-n', '.', '-V', '--jsonargs', '{'], unread)).toEqual(
+      ENC.encode(versionLine('jq')),
+    )
+    await expect(walkLine(['--bogus', '--help'], unread)).rejects.toThrow('Unknown option --bogus')
+    await expect(walkLine(['-n', '.', '--jsonargs', '{', '-V'], unread)).rejects.toThrow(
+      'invalid JSON text passed to --jsonargs',
     )
   })
 
-  it('is empty without either flag', () => {
-    expect(positionalArgs(view({}), ['.', 'a'], false)).toEqual([])
+  /** Run a jq line whose -f file is read off FILES. */
+  async function ranProgramFile(...words: string[]): Promise<Ran> {
+    const opts = {
+      stdin: null,
+      flags: parsedFlags(...words),
+      filetypeFns: null,
+      cwd: '/',
+      vfs: { kind: 'ram' } as never,
+    } as CommandOpts
+    const result = await jqGeneric([], [], opts, read)
+    if (result === null) throw new Error('jq returned no result')
+    const [out, io] = result
+    return {
+      stdout: DEC.decode(await materialize(out)),
+      stderr: DEC.decode(await materialize(io.stderr)),
+      exitCode: io.exitCode,
+    }
+  }
+
+  it('reads the program file after the option loop', async () => {
+    await expect(ranProgramFile('-n', '-f', '/d/missing.jq', '--bogus')).rejects.toThrow(
+      'Unknown option --bogus',
+    )
+    const missing = await ranProgramFile('-n', '-f', '/d/missing.jq')
+    expect(missing.exitCode).toBe(2)
+    expect(missing.stderr).toContain('Could not open')
+  })
+
+  it('refuses a program file holding NUL', async () => {
+    expect(await ranProgramFile('-n', '-f', '/d/nul.jq')).toEqual({
+      stdout: '',
+      stderr: 'jq: program file contains NUL bytes\n',
+      exitCode: 2,
+    })
   })
 })
 

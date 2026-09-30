@@ -12,6 +12,7 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import asyncio
 import errno
 import logging
 import os
@@ -705,6 +706,36 @@ async def test_the_gate_reuses_the_routing_probes_answer():
             assert await rec.may_serve_cached(mount, "/data/f.txt") is True
         assert stat.calls == 1
     finally:
+        await ws.close()
+
+
+@pytest.mark.asyncio
+async def test_a_write_during_a_probe_prevents_reusing_its_answer():
+    ws, mount, stat, rec = await _gated()
+    captured, release = asyncio.Event(), asyncio.Event()
+
+    async def delayed(op, path, **kwargs):
+        result = await stat(op, path, **kwargs)
+        if not captured.is_set():
+            captured.set()
+            await release.wait()
+        return result
+
+    mount.execute_op = delayed
+    try:
+        async with command_scope():
+            probing = asyncio.create_task(
+                rec.reconcile_read(mount, "/data/f.txt"))
+            await captured.wait()
+            await mount.cache_manager.invalidate_after_write(
+                PathSpec.from_str_path("/data/g.txt"))
+            stat.fingerprint = "fp2"
+            release.set()
+            await probing
+            assert await rec.may_serve_cached(mount, "/data/f.txt") is False
+            assert stat.calls == 2
+    finally:
+        release.set()
         await ws.close()
 
 

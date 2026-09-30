@@ -89,6 +89,7 @@ export class Reconciler {
     const manager = mount.cacheManager
     let remoteStat: unknown = manager?.probedStat(scope) ?? null
     if (remoteStat === null) {
+      const generation = manager?.generation
       try {
         remoteStat = await this.opsRegistry.call('stat', vfs, vfs.accessor, scope, [], {
           index: new RAMIndexCacheStore(),
@@ -113,7 +114,9 @@ export class Reconciler {
         }
         throw err
       }
-      if (remoteStat instanceof FileStat) manager?.noteProbed(scope, remoteStat)
+      if (manager !== null && manager.generation === generation && remoteStat instanceof FileStat) {
+        manager.noteProbed(scope, remoteStat)
+      }
     }
     const fp = remoteStat instanceof FileStat ? remoteStat.fingerprint : null
     if (fp === null) {

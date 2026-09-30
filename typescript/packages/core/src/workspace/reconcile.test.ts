@@ -615,6 +615,49 @@ it('a write in the command sends the next probe to the backend', async () => {
 })
 
 describe('the gate reuses what routing got from the backend', () => {
+  it('does not reuse an answer when a write completed during the probe', async () => {
+    const ws = await wsWithOverlay()
+    let captured = (): void => undefined
+    let release = (): void => undefined
+    const capturedPromise = new Promise<void>((resolve) => {
+      captured = resolve
+    })
+    const releasePromise = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    let fingerprint = 'fp1'
+    let calls = 0
+    const registry = {
+      call: async () => {
+        calls += 1
+        const result = new FileStat({ name: 'f.txt', size: 2, type: FileType.FILE, fingerprint })
+        if (calls === 1) {
+          captured()
+          await releasePromise
+        }
+        return result
+      },
+    } as unknown as OpsRegistry
+    try {
+      const mount = withFresh(mountOf(ws, '/data/f.txt'))
+      await ws.cache.set('/data/f.txt', ENC.encode('v1'), { fingerprint: 'fp1' })
+      const rec = new Reconciler(ws.cache, ws.namespace, registry)
+      await runInCommandScope(async () => {
+        const probing = rec.reconcileRead(mount, '/data/f.txt')
+        await capturedPromise
+        await mount.cacheManager?.invalidateAfterWrite(PathSpec.fromStrPath('/data/g.txt'))
+        fingerprint = 'fp2'
+        release()
+        await probing
+        expect(await rec.mayServeCached(mount, '/data/f.txt')).toBe(false)
+        expect(calls).toBe(2)
+      })
+    } finally {
+      release()
+      await ws.close()
+    }
+  })
+
   async function gated(): Promise<{
     ws: Workspace
     mount: MountEntry

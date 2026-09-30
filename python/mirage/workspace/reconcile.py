@@ -86,6 +86,7 @@ class Reconciler:
         spec = PathSpec.from_str_path(path)
         remote_stat = None if manager is None else manager.probed_stat(spec)
         if remote_stat is None:
+            generation = None if manager is None else manager.generation
             # Resolve backend IDs without reusing cached metadata.
             try:
                 remote_stat = await mount.execute_op(
@@ -103,7 +104,8 @@ class Reconciler:
                 await self._cache.remove(path)
                 await mount.index.clear()
                 return Verdict.UNKNOWN
-            if manager is not None and isinstance(remote_stat, FileStat):
+            if (manager is not None and manager.generation == generation
+                    and isinstance(remote_stat, FileStat)):
                 manager.note_probed(spec, remote_stat)
         if remote_stat is None or remote_stat.fingerprint is None:
             await self._cache.remove(path)

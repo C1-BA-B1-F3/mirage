@@ -188,6 +188,11 @@ export class CacheManager {
     this.probed.set(this.cacheKey(path), [tick(), this.readGeneration, stat])
   }
 
+  /** Mutation generation, captured before a freshness probe starts. */
+  get generation(): number {
+    return this.readGeneration
+  }
+
   /**
    * The backend's answer for `path` from this command's probe.
    *

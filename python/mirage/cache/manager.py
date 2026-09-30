@@ -185,6 +185,11 @@ class CacheManager:
             return stamp > started
         return 0 <= _now() - at < LISTING_TRUST_WINDOW
 
+    @property
+    def generation(self) -> int:
+        """Mutation generation, captured before a freshness probe starts."""
+        return self._read_generation
+
     def note_probed(self, path: PathSpec, stat: FileStat) -> None:
         """Remember what the freshness probe got from the backend for ``path``.
 

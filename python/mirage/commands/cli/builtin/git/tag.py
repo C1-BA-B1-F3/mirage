@@ -13,31 +13,36 @@
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import asyncio
-import fnmatch
 import time
 from collections import Counter
 from dataclasses import dataclass
 
-from dulwich.objects import Commit, ObjectID, ShaFile, Tag
+from dulwich.objects import ObjectID, ShaFile, Tag
 from dulwich.refs import Ref
 from dulwich.repo import BaseRepo
 
 from mirage.commands.cli.builtin.git.commit import identity
 from mirage.commands.cli.builtin.git.constants import HEAD
+from mirage.commands.cli.builtin.git.dates import date_clock
 from mirage.commands.cli.builtin.git.errors import GitError  # yapf: disable
 from mirage.commands.cli.builtin.git.errors import (  # yapf: disable
     IncompatibleOptionsError, InvalidTagNameError, ListModeOnlyError,
     MissingTagMessageError, NoWorkspaceError, RefLockError,
-    RefUpdateConflictError, TagExistsError, TagLinesError, TagNotFoundError,
-    TagUsageError, TooManyArgumentsError, UnknownSwitchError,
-    UnresolvedRefError)
+    RefUpdateConflictError, TagExistsError, TagNotFoundError, TagUsageError,
+    TooManyArgumentsError, UnknownSwitchError, UnresolvedRefError)
 from mirage.commands.cli.builtin.git.format import short
 from mirage.commands.cli.builtin.git.objects import abbrev_for
 from mirage.commands.cli.builtin.git.ref_filter import (filter_words,
-                                                        kept_refs,
                                                         list_mode_option,
                                                         ref_filter,
                                                         without_filter_values)
+from mirage.commands.cli.builtin.git.ref_format import (format_refs,
+                                                        listing_format,
+                                                        used_fields)
+from mirage.commands.cli.builtin.git.ref_list import (configured_sort,
+                                                      listing_result,
+                                                      match_short, read_config,
+                                                      ref_listing, sort_keys)
 from mirage.commands.cli.builtin.git.refs import (TAG_PREFIX, blocking_ref,
                                                   delete_ref, valid_ref_name,
                                                   write_ref)
@@ -50,9 +55,10 @@ from mirage.commands.spec.flag_view import FlagView
 from mirage.io.stream import yield_bytes
 from mirage.io.types import ByteSource, IOResult
 
-# git pads a tag name to this width before the message under -n.
-NAME_WIDTH = 15
-CONTINUATION = "    "
+# git's own formats for a tag listing: the name, or under -n<num> the
+# name padded to 15 columns and that many lines of the message.
+NAME_FORMAT = "%(refname:lstrip=2)"
+LINES_FORMAT = "%(align:15)%(refname:lstrip=2)%(end) %(contents:lines={})"
 UTC = 0
 
 
@@ -106,71 +112,6 @@ def parse_flags(fl: FlagView) -> TagFlags:
                     message=message,
                     force=fl.as_bool("force"),
                     lines=lines)
-
-
-def tag_names(known: set[Ref]) -> list[str]:
-    """Every tag name the repository publishes, in git's listing order.
-
-    Args:
-        known (set[Ref]): every ref the repository publishes.
-    """
-    prefix = TAG_PREFIX.encode()
-    return sorted(ref[len(prefix):].decode("utf-8", errors="replace")
-                  for ref in known if ref.startswith(prefix))
-
-
-def selected_names(names: list[str], patterns: tuple[str, ...]) -> list[str]:
-    """The names a ``-l`` pattern list keeps: any pattern, or all.
-
-    Args:
-        names (list[str]): every tag name, already ordered.
-        patterns (tuple[str, ...]): shell patterns as typed.
-    """
-    if not patterns:
-        return names
-    return [
-        name for name in names if any(
-            fnmatch.fnmatchcase(name, pattern) for pattern in patterns)
-    ]
-
-
-def message_lines(repo: BaseRepo, sha: bytes) -> list[str]:
-    """The message ``-n`` prints for a tag: its own, or its commit's.
-
-    An annotated tag carries a message; a lightweight one is a bare
-    pointer, so git shows the message of what it points at. Read on a
-    worker thread, since the objects come through the dispatcher.
-
-    Args:
-        repo (BaseRepo): the opened repository.
-        sha (bytes): what the tag ref holds.
-    """
-    obj = repo.object_store[ObjectID(sha)]
-    if not isinstance(obj, (Tag, Commit)):
-        return []
-    text: str = obj.message.decode("utf-8", errors="replace")
-    return text.splitlines()
-
-
-def render_listing(names: list[str], messages: dict[str, list[str]] | None,
-                   count: int) -> bytes:
-    """One line per tag, with up to ``count`` message lines under -n.
-
-    Args:
-        names (list[str]): the tag names to print, in order.
-        messages (dict[str, list[str]] | None): each tag's message
-            lines, None when ``-n`` was not given.
-        count (int): how many message lines to print per tag.
-    """
-    lines: list[str] = []
-    for name in names:
-        if messages is None:
-            lines.append(name)
-            continue
-        body = messages[name][:count]
-        lines.append(f"{name:<{NAME_WIDTH}} {body[0] if body else ''}")
-        lines.extend(f"{CONTINUATION}{line}" for line in body[1:])
-    return "".join(f"{line}\n" for line in lines).encode()
 
 
 def resolve_target(repo: BaseRepo, known: set[Ref], revision: str) -> ShaFile:
@@ -274,12 +215,9 @@ async def tag(inv: CLIInvocation[None]) -> tuple[ByteSource | None, IOResult]:
         list_only = list_mode_option(words) if flags.delete else None
         if list_only is not None:
             raise ListModeOnlyError(list_only)
-        # git reads the count while parsing the format it lists with,
-        # which is after both usage refusals above and before any ref
-        # is read: a repository holding no tags refuses this one too.
-        if flags.lines is not None and flags.lines < 0:
-            raise TagLinesError(flags.lines)
         repo, location = await opened(fl, doors)
+        cfg = await read_config(dispatch, location)
+        keys = sort_keys(fl, configured_sort(cfg, b"tag"))
         filt = await asyncio.to_thread(ref_filter, repo, words)
         known = repo.refs.allkeys()
         if flags.delete:
@@ -313,25 +251,34 @@ async def tag(inv: CLIInvocation[None]) -> tuple[ByteSource | None, IOResult]:
             return yield_bytes("".join(out).encode()), IOResult(
                 exit_code=1 if err else 0, stderr="".join(err).encode())
         if (flags.listing or flags.lines is not None or filtered or not texts):
-            names = selected_names(tag_names(known), texts)
-            if filt is not None:
-                pairs = [(name, repo.refs[Ref(f"{TAG_PREFIX}{name}".encode())])
-                         for name in names]
-                kept = await asyncio.to_thread(kept_refs, repo, filt, pairs)
-                names = [name for name in names if name in kept]
-            messages = None
-            # -n0 (and any other count that prints no line) is a plain
-            # listing in git, so nothing is read and nothing is padded.
-            if flags.lines is not None and flags.lines > 0:
-                messages = {
-                    name:
-                    await asyncio.to_thread(
-                        message_lines, repo,
-                        repo.refs[Ref(f"{TAG_PREFIX}{name}".encode())])
-                    for name in names
-                }
-            return yield_bytes(
-                render_listing(names, messages, flags.lines or 0)), IOResult()
+            # git reads a -n count while building the format it lists
+            # with, so a count below -1 is refused as the format's own
+            # (after both usage refusals above, and in a repository
+            # holding no tags), and --format drops -n altogether.
+            template = fl.as_str("format")
+            if template is None:
+                template = (LINES_FORMAT.format(flags.lines)
+                            if flags.lines else NAME_FORMAT)
+            fmt = listing_format(template)
+            icase = fl.as_bool("ignore_case")
+
+            def wanted(name: str) -> bool:
+                return name.startswith(TAG_PREFIX) and match_short(
+                    name, texts, icase)
+
+            items, ctx, errors = await ref_listing(
+                dispatch, repo, location, cfg, used_fields(fmt, keys or ()),
+                wanted, filt, date_clock(inv.env))
+            rows, stopped = format_refs(
+                fmt,
+                items,
+                ctx,
+                keys,
+                omit_empty=fl.as_bool("omit_empty"),
+                icase=icase,
+                stream=filt is None
+                or (filt.merged is None and filt.no_merged is None))
+            return listing_result(rows, errors, stopped)
         if len(texts) > 2:
             raise TooManyArgumentsError()
         name = texts[0]

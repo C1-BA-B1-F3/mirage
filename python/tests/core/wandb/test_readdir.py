@@ -4,7 +4,9 @@ from unittest.mock import AsyncMock
 import pytest
 
 from mirage.accessor.wandb import WandbAccessor
-from mirage.cache.index import RAMIndexCacheStore
+from mirage.cache.file.ram import RAMFileCacheStore
+from mirage.cache.index import Evicted, RAMIndexCacheStore
+from mirage.cache.index.view import IndexView
 from mirage.core.wandb.config import WandbConfig
 from mirage.core.wandb.errors import WandbAPIError
 from mirage.core.wandb.readdir import file_entries, readdir
@@ -92,3 +94,42 @@ async def test_catalog_failure_does_not_publish_partial_listing() -> None:
     with pytest.raises(WandbAPIError, match="collision"):
         await readdir(accessor, path("lab/project/run/files"), index)
     assert await index.entries() == {}
+
+
+@pytest.mark.asyncio
+async def test_a_file_relist_hands_what_it_dropped_to_cleanup() -> None:
+    # The catalog is one complete fetch, so a re-list that no longer names
+    # a file or a folder is the backend saying it went away.
+    gone: list[Evicted] = []
+
+    async def on_gone(children: list[Evicted]) -> None:
+        gone.extend(children)
+
+    accessor = WandbAccessor(WandbConfig(entities=["lab"]))
+    accessor.client.run = AsyncMock(return_value={"name": "run"})
+    accessor.client.files = AsyncMock(side_effect=[
+        [{
+            "name": "nested/old.txt",
+            "sizeBytes": 3
+        }, {
+            "name": "deep/sub/file.txt",
+            "sizeBytes": 5
+        }],
+        [{
+            "name": "nested/new.txt",
+            "sizeBytes": 9
+        }],
+    ])
+    store = RAMIndexCacheStore()
+    index = IndexView(store,
+                      RAMFileCacheStore(),
+                      "/wandb",
+                      lambda _key: True,
+                      on_gone=on_gone)
+    root = "lab/project/run/files"
+    await readdir(accessor, path(root), index)
+    await store.invalidate()
+    await readdir(accessor, path(root), index)
+    assert sorted(child.path for child in gone) == [
+        "/wandb/" + root + "/deep", "/wandb/" + root + "/nested/old.txt"
+    ]

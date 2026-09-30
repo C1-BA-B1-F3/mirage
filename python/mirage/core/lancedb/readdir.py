@@ -121,7 +121,8 @@ async def _children(accessor: LanceDBAccessor,
             _rendered_prefix_test(display_prefix) if display_prefix else None)
         names = sorted(map(PATH_SAFE.encode, values))
         return DirListing(entries=[(name, _dir_entry(name)) for name in names],
-                          partial=bool(display_prefix))
+                          partial=bool(display_prefix),
+                          window=True)
     # Select every column except the vector and blob ones (schema order, so
     # the projected rows render byte-identically to the full rows read()
     # fetches). Still one data query; the schema lookup is local metadata on
@@ -133,7 +134,11 @@ async def _children(accessor: LanceDBAccessor,
     prefix = _row_prefix(pattern, config)
     rows = await rows_matching(accessor, table, filters, columns,
                                config.max_rows, config.id_column, prefix)
-    return DirListing(entries=_row_entries(rows, config), partial=bool(prefix))
+    # Read up to max_rows, so a row outside the head of the table is not
+    # gone because a listing no longer names it.
+    return DirListing(entries=_row_entries(rows, config),
+                      partial=bool(prefix),
+                      window=True)
 
 
 async def _list_root(accessor: LanceDBAccessor,

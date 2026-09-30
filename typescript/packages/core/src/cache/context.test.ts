@@ -27,6 +27,10 @@ import {
 } from './context.ts'
 
 class FakeManager {
+  listedSince(_folder: string, _started: number): boolean {
+    return false
+  }
+
   readThrough(_path: PathSpec, fetch: () => Promise<Uint8Array>): Promise<Uint8Array> {
     return fetch()
   }

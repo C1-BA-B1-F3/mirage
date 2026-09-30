@@ -13,7 +13,9 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import { DEFAULT_READ_TTL, ReadPolicy, type ReadSpec } from '../../types.ts'
+import type { IndexConfig } from '../../cache/index/config.ts'
 import type { BaseVFS } from '../../vfs/base.ts'
+import { DevVFS } from '../../vfs/dev/dev.ts'
 
 /**
  * Coerce a declared read policy and bound into a ReadSpec.
@@ -88,9 +90,17 @@ export function resolveReadSpec(policy: unknown, ttl: unknown): ReadSpec {
  * exists to remove, so it is a refusal at mount time rather than a warning at
  * read time.
  *
+ * @param index the index config the mount will be built from, which is the
+ *   listing cache fresh would check; undefined for a RAM store at the
+ *   driver's `indexTtl`
  * @throws if the backend cannot honour the declared policy.
  */
-export function checkReadCapability(prefix: string, vfs: BaseVFS, spec: ReadSpec): void {
+export function checkReadCapability(
+  prefix: string,
+  vfs: BaseVFS,
+  spec: ReadSpec,
+  index?: IndexConfig,
+): void {
   // Coerced, not compared raw. `ReadPolicy` is a string-const object, so a
   // runtime `ReadSpec` carrying `'FRESH'` or `'banana'` -- what an untyped
   // caller reaches the programmatic door with -- matches neither `===`
@@ -122,9 +132,12 @@ export function checkReadCapability(prefix: string, vfs: BaseVFS, spec: ReadSpec
   }
   if (policy !== ReadPolicy.FRESH) return
   if (!vfs.cachesReads) {
+    // No bytes to revalidate, but a listing cache is still something fresh
+    // checks before serving, so that alone makes it honest.
+    if (cachesListings(vfs, index)) return
     throw new Error(
-      `mount '${prefix}': read: fresh needs a resource that caches reads; ` +
-        `${vfs.name} does not, so the freshness check could never run`,
+      `mount '${prefix}': read: fresh needs a resource that caches reads or listings; ` +
+        `${vfs.name} caches neither, so the freshness check could never run`,
     )
   }
   if (!vfs.readRevalidatable) {
@@ -133,4 +146,11 @@ export function checkReadCapability(prefix: string, vfs: BaseVFS, spec: ReadSpec
         `comparable content token on reads; ${vfs.name} does not`,
     )
   }
+}
+
+/** Whether the mount will keep listings long enough to check. */
+function cachesListings(vfs: BaseVFS, index: IndexConfig | undefined): boolean {
+  if (vfs instanceof DevVFS) return false
+  const ttl = index === undefined ? vfs.indexTtl : (index.ttl ?? 600)
+  return ttl > 0
 }

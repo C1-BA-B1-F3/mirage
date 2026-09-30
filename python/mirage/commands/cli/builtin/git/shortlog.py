@@ -6,11 +6,11 @@ from mirage.commands.cli.builtin.git.errors import GitError
 from mirage.commands.cli.builtin.git.format import subject
 from mirage.commands.cli.builtin.git.history import (LogFlags, parse_flags,
                                                      ref_commits, select)
-from mirage.commands.cli.builtin.git.mailmap import (MailmapEntry,
-                                                     load_mailmap,
+from mirage.commands.cli.builtin.git.mailmap import (load_mailmap,
                                                      mapped_identity)
 from mirage.commands.cli.builtin.git.revparse import split_revisions
 from mirage.commands.cli.builtin.git.session import opened
+from mirage.commands.cli.builtin.git.types import MailmapEntry
 from mirage.commands.cli.builtin.git.util import check_operands, escaped, fatal
 from mirage.commands.cli.types import CLIDoors, CLIInvocation
 from mirage.commands.spec.flag_view import FlagView

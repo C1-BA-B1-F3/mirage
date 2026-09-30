@@ -16,6 +16,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { GitHubAccessor } from '../accessor/github.ts'
 import { read as githubRead } from '../core/github/read.ts'
 import { stat as githubStat } from '../core/github/stat.ts'
+import { IndexEntry } from '../cache/index/config.ts'
 import { RAMVFS } from '../vfs/ram/ram.ts'
 import {
   type ReadSpec,
@@ -31,6 +32,7 @@ import type { MountEntry } from './mount/mount.ts'
 const ENC = new TextEncoder()
 import { enotsup } from '../utils/errors.ts'
 import { Reconciler } from './reconcile.ts'
+import { runInCommandScope } from '../cache/index/scope.ts'
 import { ops } from '../test-utils.ts'
 import { Workspace } from './workspace/workspace.ts'
 
@@ -60,6 +62,38 @@ async function wsWithOverlay(): Promise<Workspace> {
 }
 
 describe('Reconciler', () => {
+  it('onGone for a file evicts its bytes and overlay', async () => {
+    const ws = await wsWithOverlay()
+    await ws.cache.set('/data/f.txt', ENC.encode('v1'))
+    await ws.cache.set('/data/f.txt.bak', ENC.encode('keep'))
+    const rec = new Reconciler(ws.cache, ws.namespace, ws.opsRegistry)
+    await rec.onGone([{ path: '/data/f.txt', folder: false }])
+    expect(ws.namespace.metaFor('/data/f.txt')).toBeNull()
+    expect(await ws.cache.exists('/data/f.txt')).toBe(false)
+    expect(await ws.cache.exists('/data/f.txt.bak')).toBe(true)
+    await ws.close()
+  })
+
+  it('onGone for a folder takes its subtree but not links', async () => {
+    const ws = new Workspace({ '/data': new RAMVFS() })
+    await ws.namespace.ensureLoaded()
+    await ws.namespace.setAttrs('/data/sub', { mode: 0o700 })
+    await ws.namespace.setAttrs('/data/sub/x', { mode: 0o600 })
+    await ws.namespace.setAttrs('/data/sub2/x', { mode: 0o600 })
+    await ws.namespace.symlink('/data/sub/link', '/data/t', 1)
+    await ws.cache.set('/data/sub/x', ENC.encode('x'))
+    await ws.cache.set('/data/sub2/x', ENC.encode('keep'))
+    const rec = new Reconciler(ws.cache, ws.namespace, ws.opsRegistry)
+    await rec.onGone([{ path: '/data/sub', folder: true }])
+    expect(ws.namespace.metaFor('/data/sub')).toBeNull()
+    expect(ws.namespace.metaFor('/data/sub/x')).toBeNull()
+    expect(ws.namespace.readlink('/data/sub/link')).toBe('/data/t')
+    expect(ws.namespace.metaFor('/data/sub2/x')).not.toBeNull()
+    expect(await ws.cache.exists('/data/sub/x')).toBe(false)
+    expect(await ws.cache.exists('/data/sub2/x')).toBe(true)
+    await ws.close()
+  })
+
   it('onOpMissing GCs an orphaned overlay on a fresh mount + stat + ENOENT', async () => {
     const ws = await wsWithOverlay()
     const rec = new Reconciler(ws.cache, ws.namespace, ws.opsRegistry)
@@ -108,6 +142,35 @@ describe('Reconciler', () => {
     await rec.onOpMissing(mount, 'stat', '/data/f.txt', new Error('boom'))
     expect(ws.namespace.metaFor('/data/f.txt')).not.toBeNull()
     await ws.close()
+  })
+
+  it('mayServeListing trusts the index under bounded', async () => {
+    const ws = new Workspace({ '/data': new RAMVFS() }, { mode: MountMode.WRITE })
+    const mount = mountOf(ws, '/data/d')
+    const rec = new Reconciler(ws.cache, ws.namespace, ws.opsRegistry)
+    expect(await rec.mayServeListing(mount, '/data/d')).toBe(true)
+    await ws.close()
+  })
+
+  // fresh re-lists anything listed before the command started; a listing
+  // the command itself refreshed is served, so one ls costs one re-list.
+  it("mayServeListing under fresh trusts only this command's writes", async () => {
+    const ws = new Workspace({ '/data': new RAMVFS() }, { mode: MountMode.WRITE })
+    try {
+      const mount = withFresh(mountOf(ws, '/data/d'))
+      const rec = new Reconciler(ws.cache, ws.namespace, ws.opsRegistry)
+      const index = mount.index
+      await index.setDir('/data/d', [])
+      expect(await rec.mayServeListing(mount, '/data/d')).toBe(false)
+      await runInCommandScope(async () => {
+        expect(await rec.mayServeListing(mount, '/data/d')).toBe(false)
+        await index.setDir('/data/d', [])
+        expect(await rec.mayServeListing(mount, '/data/d')).toBe(true)
+        expect(await rec.mayServeListing(mount, '/data/other')).toBe(false)
+      })
+    } finally {
+      await ws.close()
+    }
   })
 
   it('mayServeCached trusts the cache under bounded', async () => {
@@ -395,6 +458,123 @@ it.each(['gate', 'shell'])('reconciles GitHub IDs before the %s reread', async (
     expect(new TextDecoder().decode(await githubRead(accessor, scope, mount.indexStore))).toBe('v2')
   } finally {
     vi.restoreAllMocks()
+    await ws.close()
+  }
+})
+
+it.each([
+  [false, false],
+  [false, true],
+  [true, false],
+  [true, true],
+])(
+  're-list preserves a nested mount subtree (shared=%s, replacement=%s)',
+  async (shared, replacement) => {
+    const parent = new RAMVFS()
+    const ws = new Workspace(
+      { '/data': parent, '/data/sub/nested': shared ? parent : new RAMVFS() },
+      { index: { ttl: 600 } },
+    )
+    try {
+      await ws.namespace.ensureLoaded()
+      const index = ws.mount('/data').index
+      const nested = ws.mount('/data/sub/nested').index
+      await index.setDir('/data', [
+        ['sub', new IndexEntry({ id: 'sub', name: 'sub', resourceType: 'folder' })],
+      ])
+      await nested.setDir('/data/sub/nested', [
+        ['file', new IndexEntry({ id: 'file', name: 'file', resourceType: 'file' })],
+      ])
+      await ws.cache.set('/data/sub/old', ENC.encode('old'))
+      await ws.cache.set('/data/sub/nested/file', ENC.encode('keep'))
+      await ws.namespace.setAttrs('/data/sub/old', { mode: 0o600 })
+      await ws.namespace.setAttrs('/data/sub/nested/file', { mode: 0o640 })
+      await index.setDir(
+        '/data',
+        replacement
+          ? [['sub', new IndexEntry({ id: 'new', name: 'sub', resourceType: 'file' })]]
+          : [],
+      )
+      if (replacement) expect((await index.get('/data/sub')).entry?.id).toBe('new')
+      expect(await ws.cache.get('/data/sub/nested/file')).toEqual(ENC.encode('keep'))
+      expect(ws.namespace.metaFor('/data/sub/nested/file')?.mode).toBe(0o640)
+      expect((await nested.listDir('/data/sub/nested')).entries).toEqual(['/data/sub/nested/file'])
+      expect((await nested.get('/data/sub/nested/file')).entry).toBeDefined()
+      expect(await ws.cache.exists('/data/sub/old')).toBe(false)
+      expect(ws.namespace.metaFor('/data/sub/old')).toBeNull()
+    } finally {
+      await ws.close()
+    }
+  },
+)
+
+it('batches a thousand vanished children in one cleanup', async () => {
+  const ws = new Workspace({ '/data': new RAMVFS() }, { index: { ttl: 600 } })
+  try {
+    await ws.namespace.ensureLoaded()
+    const mount = ws.mount('/data')
+    const rows: [string, IndexEntry][] = Array.from({ length: 1000 }, (_, i) => [
+      `file-${String(i)}`,
+      new IndexEntry({ id: String(i), name: `file-${String(i)}`, resourceType: 'file' }),
+    ])
+    await mount.index.setDir('/data', rows)
+    for (const [name] of rows) {
+      await ws.cache.set(`/data/${name}`, ENC.encode('stale'))
+      await ws.namespace.setAttrs(`/data/${name}`, { mode: 0o600 })
+    }
+    await ws.cache.set('/data/keeper', ENC.encode('keep'))
+    await ws.namespace.setAttrs('/data/keeper', { mode: 0o640 })
+    const manager = mount.cacheManager
+    if (manager === null) throw new Error('mount has no cache manager')
+    const lock = vi.spyOn(manager, 'withMutation')
+    const scans = vi.spyOn(ws.namespace.nodes, Symbol.iterator)
+    await mount.index.setDir('/data', [])
+    expect(lock).toHaveBeenCalledTimes(1)
+    expect(scans).toHaveBeenCalledTimes(1)
+    expect([...ws.namespace.nodes.keys()]).toEqual(['/data/keeper'])
+    expect(await ws.cache.get('/data/keeper')).toEqual(ENC.encode('keep'))
+    expect(await ws.cache.exists('/data/file-0')).toBe(false)
+    expect(await ws.cache.exists('/data/file-999')).toBe(false)
+  } finally {
+    await ws.close()
+  }
+})
+
+it('batches overlapping folders and protects nested mounts', async () => {
+  const ws = new Workspace(
+    { '/data': new RAMVFS(), '/data/tree/nested': new RAMVFS() },
+    { index: { ttl: 600 } },
+  )
+  try {
+    await ws.namespace.ensureLoaded()
+    const removed = ['/data/tree', '/data/tree/sub/old', '/data/tree2/old']
+    const kept = ['/data/tree/nested/keep', '/data/treehouse/keep']
+    for (const path of [...removed, ...kept]) {
+      await ws.cache.set(path, ENC.encode('data'))
+      await ws.namespace.setAttrs(path, { mode: 0o600 })
+    }
+    await ws.namespace.symlink('/data/tree/link', '/data/target', 1)
+    const evict = vi.spyOn(ws.cache, 'evictPrefix')
+    await ws.mount('/data').index.reportGone([
+      { path: '/data/tree/sub', folder: true },
+      { path: '/data/tree/sub/old', folder: false },
+      { path: '/data/tree/', folder: true },
+      { path: '/data/tree', folder: true },
+      { path: '/data/tree2', folder: true },
+      { path: '/data/tree/nested/keep', folder: false },
+    ])
+    expect(evict).toHaveBeenCalledTimes(2)
+    expect(evict.mock.calls.map(([path]) => path).sort()).toEqual(['/data/tree/', '/data/tree2/'])
+    for (const path of removed) {
+      expect(await ws.cache.exists(path)).toBe(false)
+      expect(ws.namespace.metaFor(path)).toBeNull()
+    }
+    for (const path of kept) {
+      expect(await ws.cache.exists(path)).toBe(true)
+      expect(ws.namespace.metaFor(path)).not.toBeNull()
+    }
+    expect(ws.namespace.readlink('/data/tree/link')).toBe('/data/target')
+  } finally {
     await ws.close()
   }
 })

@@ -50,6 +50,7 @@ from mirage.workspace.executor.command.functions import run_shell_function
 from mirage.workspace.executor.command.routing import (CWD_DEFAULT_RAW,
                                                        default_cwd_operand,
                                                        merge_scopes,
+                                                       option_loop_exits,
                                                        path_flag_scopes,
                                                        routable_scopes,
                                                        routed_operands)
@@ -311,14 +312,19 @@ async def handle_command(
     # other operands (or the cwd) put it, and that run's op guards refuse
     # it. A line is not cross-mount because one of its words is empty.
     # A prepared program line already holds its positional operands.
-    routed = routable_scopes(
-        cmd_name, path_scopes if prepared is not None else routed_operands(
-            cmd_name, raw_argv, session.cwd, parts[1:], path_scopes))
-    routing_scopes = [
-        s for s in merge_scopes(
-            routed, path_flag_scopes(cmd_name, raw_argv, session.cwd))
-        if s.walk_error != "ENOENT"
-    ]
+    routing_scopes: list[PathSpec] = []
+    if not option_loop_exits(
+            cmd_name,
+            cmd_mount.spec_for(cmd_name) if cmd_mount else None, raw_argv,
+            session.cwd):
+        routed = routable_scopes(
+            cmd_name, path_scopes if prepared is not None else routed_operands(
+                cmd_name, raw_argv, session.cwd, parts[1:], path_scopes))
+        routing_scopes = [
+            s for s in merge_scopes(
+                routed, path_flag_scopes(cmd_name, raw_argv, session.cwd))
+            if s.walk_error != "ENOENT"
+        ]
 
     find_expr_tokens: list[str] | None = None
     if cmd_name == "find":

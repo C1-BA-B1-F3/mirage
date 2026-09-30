@@ -17,6 +17,7 @@ import { fetchDirTreePage, fetchTree, GitHubApiError } from './client.ts'
 import type { IndexCacheStore } from '../../cache/index/store.ts'
 import { LookupStatus } from '../../cache/index/config.ts'
 import type { IndexEntry, IndexSnapshot } from '../../cache/index/config.ts'
+import { departed } from '../../cache/index/diff.ts'
 import { withIndexLock } from '../../cache/index/lock.ts'
 import type { GitHubTreeItem } from './client.ts'
 import { indexEntryFromTree, makeTreeEntry, type TreeEntry } from './tree_entry.ts'
@@ -29,7 +30,7 @@ export function buildTreeMap(tree: GitHubTreeItem[]): Record<string, TreeEntry> 
   return map
 }
 
-export async function populateIndex(
+export function populateIndex(
   index: IndexCacheStore,
   tree: Record<string, TreeEntry>,
   prefix: string,
@@ -57,8 +58,15 @@ export async function populateIndex(
     arr.push([name, indexEntryFromTree(item)])
     dirs.set(parent, arr)
   }
-  await Promise.all([...dirs].map(([parent, entries]) => index.setDir(parent, entries, expiresAt)))
-  return snapshotOf(dirs)
+  // Seeded, not written per directory: a truncated tree names only some
+  // children, and a complete write would evict the rest.
+  const snapshot = snapshotOf(dirs)
+  index.seed(
+    snapshot.entries,
+    snapshot.children,
+    expiresAt ?? new Date(Date.now() + index.ttl * 1000),
+  )
+  return Promise.resolve(snapshot)
 }
 
 /** The rows `populateIndex` wrote, keyed the way the store keys them. */
@@ -125,6 +133,10 @@ export async function refillSnapshot(
   prefix: string,
 ): Promise<IndexSnapshot | null> {
   if (index === undefined) return null
+  // Only a complete tree can say what is gone; a first fetch compares
+  // against the empty tree the accessor starts with, and a truncated one
+  // names only some paths.
+  const previous = accessor.truncated ? null : { ...accessor.tree }
   const { tree, truncated } = await fetchTree(
     accessor.transport,
     accessor.owner,
@@ -132,10 +144,21 @@ export async function refillSnapshot(
     accessor.ref,
   )
   accessor.truncated = truncated
-  accessor.tree = buildTreeMap(tree)
+  const current = buildTreeMap(tree)
+  accessor.tree = current
   // A refill replaces this mount's snapshot, including paths now absent.
   await index.invalidatePrefix(rstripSlash(prefix) || '/')
-  return seedIndex(accessor, index, prefix)
+  const snapshot = await seedIndex(accessor, index, prefix)
+  if (previous !== null && !truncated) {
+    await index.reportGone(
+      departed(Object.entries(previous), Object.keys(current), prefix, isFolder),
+    )
+  }
+  return snapshot
+}
+
+function isFolder(entry: TreeEntry): boolean {
+  return entry.type === 'tree'
 }
 
 /**

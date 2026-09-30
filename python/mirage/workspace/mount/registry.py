@@ -20,6 +20,7 @@ from weakref import WeakValueDictionary
 
 from mirage.cache.file.mixin import FileCacheMixin
 from mirage.cache.index import NULL_INDEX, IndexCacheStore, IndexConfig
+from mirage.cache.index.config import Evicted
 from mirage.cache.index.factory import build_index
 from mirage.cache.manager import CacheManager
 from mirage.commands.builtin.general import COMMANDS as GENERAL_COMMANDS
@@ -53,6 +54,13 @@ class ReadReconciler(Protocol):
         ...
 
     async def may_serve_cached(self, mount: MountEntry, path: str) -> bool:
+        ...
+
+    async def on_gone(
+        self, gone: list[Evicted], excluded: tuple[str, ...] = ()) -> None:
+        ...
+
+    async def may_serve_listing(self, mount: MountEntry, folder: str) -> bool:
         ...
 
 
@@ -213,10 +221,47 @@ class MountRegistry:
                 raise
             return False
 
+    async def _may_serve_listing(self, m: MountEntry, folder: str) -> bool:
+        """Run the shared listing verdict for one mount's cached listing.
+
+        Mirrors :meth:`_may_serve_cached`: read at call time, a retiring
+        mount answers False without asking, and EBUSY from a mount that
+        began retiring mid-check answers False too.
+
+        Args:
+            m (MountEntry): the mount whose listing is in question.
+            folder (str): mount-absolute listing key.
+        """
+        reconciler = self._reconciler
+        if reconciler is None:
+            return True
+        if m.retiring:
+            return False
+        try:
+            return await reconciler.may_serve_listing(m, folder)
+        except OSError as exc:
+            if exc.errno != errno.EBUSY:
+                raise
+            return False
+
     def _attach_manager(self, m: MountEntry) -> None:
 
         async def gate(key: str) -> bool:
             return await self._may_serve_cached(m, key)
+
+        async def listing_gate(folder: str) -> bool:
+            return await self._may_serve_listing(m, folder)
+
+        async def cleanup(gone: list[Evicted]) -> None:
+            # Read at call time, for the same reason as the gate; a retiring
+            # mount's leftovers go with its teardown instead.
+            reconciler = self._reconciler
+            if reconciler is not None and not m.retiring:
+                await reconciler.on_gone(
+                    gone,
+                    tuple(
+                        e.prefix.rstrip("/")
+                        for e in self.descendant_mounts(m.prefix)))
 
         m.cache_manager = CacheManager(
             self._file_cache,
@@ -225,7 +270,12 @@ class MountRegistry:
             m.vfs.caches_reads,
             lambda path: not m.retiring and self.try_mount_for(path) is m,
             gate,
-            read_ttl=m.read.ttl)
+            read_ttl=m.read.ttl,
+            on_gone=cleanup,
+            may_serve_listing=listing_gate,
+            excluded_prefixes=lambda: tuple(
+                e.prefix.rstrip("/")
+                for e in self.descendant_mounts(m.prefix)))
 
     def check_vfs_available(self, vfs: BaseVFS) -> None:
         """A removed VFS instance cannot start a second lifecycle."""

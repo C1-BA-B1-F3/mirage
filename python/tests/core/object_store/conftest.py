@@ -197,6 +197,9 @@ def make_driver(
 
 class FakeManager:
 
+    def listed_since(self, _folder: str, _started: int) -> bool:
+        return False
+
     def __init__(self) -> None:
         self.writes: list[str] = []
         self.ancestors: list[str] = []

@@ -12,12 +12,18 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+from unittest.mock import patch
+
 import aiohttp
 import pytest
 
-from mirage.core.discord.readdir import readdir
+from mirage.cache.index import IndexEntry
+from mirage.core.discord.readdir import _list_files, readdir
+from mirage.core.hierarchy.readdir import DirListing
+from mirage.core.hierarchy.scope import ScopeMatch
 from mirage.types import PathSpec
 from tests.core.discord.conftest import BROKEN_DAY, DAY, SEALED_DAY
+from tests.fixtures.index_spy import WindowSpy
 
 pytestmark = pytest.mark.asyncio
 
@@ -96,3 +102,36 @@ async def test_a_globbed_channel_listing_is_not_the_directory(
     result = await readdir(accessor, spec(f"/{CHANNEL}"), index)
     assert result[-1] == f"/{CHANNEL}/2024-01-15"
     assert len(result) == 30
+
+
+async def test_a_channel_and_a_sealed_day_are_written_as_windows(
+        api, accessor):
+    # The channel lists the last 30 days, and a 403/404/429 seals an empty
+    # day: neither is the backend saying anything outside it is gone.
+    index = WindowSpy()
+    await readdir(accessor, spec(f"/{CHANNEL}"), index)
+    await readdir(accessor, spec(f"/{CHANNEL}/{SEALED_DAY}"), index)
+    assert index.windows[f"/{CHANNEL}"] is True
+    assert index.windows[f"/{CHANNEL}/{SEALED_DAY}"] is True
+
+
+async def _soft_day_listing(_accessor, _channel_id, _day):
+    return DirListing(entries=[], window=True)
+
+
+async def test_a_soft_error_files_listing_is_a_window_too(accessor):
+    # Reached when the files listing was evicted but the day survived; a
+    # soft error there must not evict the attachments it listed before.
+    own = IndexEntry(id="C001:2026-05-10",
+                     name="files",
+                     resource_type="discord/files",
+                     vfs_name="files",
+                     extra={"channel_id": "C001"})
+
+    match = ScopeMatch(kind="files",
+                       vfs_path=f"{CHANNEL}/2026-05-10/files",
+                       slots={"day": "2026-05-10"})
+    with patch("mirage.core.discord.readdir._day_listing",
+               new=_soft_day_listing):
+        listing = await _list_files(accessor, match, own)
+    assert listing.window is True

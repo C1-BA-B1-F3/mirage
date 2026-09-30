@@ -13,6 +13,7 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import type { PathSpec } from '../types.ts'
+import { commandStarted } from './index/scope.ts'
 import { type ContextCall, createAsyncContext } from '../utils/async_context.ts'
 
 /**
@@ -29,6 +30,7 @@ export interface CacheInvalidator {
   cachedBytes(path: PathSpec): Promise<Uint8Array | null>
   readThrough(path: PathSpec, fetch: () => Promise<Uint8Array>): Promise<Uint8Array>
   cachedSize(path: PathSpec): Promise<number | null>
+  listedSince(folder: string, stamp: number): boolean
 }
 
 interface CacheContextState {
@@ -146,4 +148,11 @@ export async function invalidateAncestors(path: PathSpec): Promise<void> {
   for (const manager of liveManagers()) {
     await manager.invalidateAncestors(path)
   }
+}
+
+/** Whether the active mount refreshed a listing during this command. */
+export function listingRefreshed(folder: string): boolean {
+  const manager = activeCacheManager()
+  const started = commandStarted()
+  return manager !== null && started !== null && manager.listedSince(folder, started)
 }

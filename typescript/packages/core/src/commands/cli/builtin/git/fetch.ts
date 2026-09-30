@@ -27,7 +27,16 @@ import { resolvedRefs } from './history.ts'
 import { globalSources } from './inspect.ts'
 import { under, writeFile } from './io.ts'
 import { append, entry, ZERO } from './reflog.ts'
-import { deleteRef, loadRefs, readHead, SYMREF_PREFIX, validRefName, writeRef } from './refs.ts'
+import {
+  deleteRef,
+  loadRefs,
+  mapped,
+  parseRefspec,
+  readHead,
+  SYMREF_PREFIX,
+  validRefName,
+  writeRef,
+} from './refs.ts'
 import { objectType, openRepo, opened, repoArgs, storePack, type Repo } from './repo.ts'
 import { compareCodePoints } from '../../../../utils/sort.ts'
 import {
@@ -37,6 +46,7 @@ import {
   type Advertisement,
   type Transport,
 } from './transport.ts'
+import type { Refspec } from './types.ts'
 import { fatal } from './util.ts'
 
 const ENC = new TextEncoder()
@@ -54,16 +64,6 @@ const UNREACHABLE =
 const NO_REMOTE =
   'No remote repository specified.  Please, specify either a URL or a\n' +
   'remote name from which new revisions should be fetched.'
-
-/** One `[+]<src>[:<dst>]` refspec. */
-export interface Refspec {
-  /** The remote ref, or a pattern with one `*`. */
-  readonly src: string
-  /** The local ref it lands in, null for FETCH_HEAD alone. */
-  readonly dst: string | null
-  /** The leading `+`, which allows a non-fast-forward. */
-  readonly force: boolean
-}
 
 /** One remote ref a fetch takes, and where it lands. */
 export interface Wanted {
@@ -113,30 +113,6 @@ function row(
   counted = false,
 ): Row {
   return { code, summary, remote, local, error, counted }
-}
-
-/** Split a refspec into its source, destination and force flag. */
-export function parseRefspec(text: string): Refspec {
-  const force = text.startsWith('+')
-  const body = force ? text.slice(1) : text
-  const colon = body.indexOf(':')
-  const src = colon < 0 ? body : body.slice(0, colon)
-  const dst = colon < 0 ? '' : body.slice(colon + 1)
-  return { src, dst: dst || null, force }
-}
-
-/** The local ref a refspec maps a remote ref to, null when unmatched. */
-export function mapped(spec: Refspec, name: string): string | null {
-  if (!spec.src.includes('*')) return name === spec.src ? (spec.dst ?? '') : null
-  const star = spec.src.indexOf('*')
-  const head = spec.src.slice(0, star)
-  const tail = spec.src.slice(star + 1)
-  if (name.length < head.length + tail.length || !name.startsWith(head) || !name.endsWith(tail))
-    return null
-  const middle = name.slice(head.length, name.length - tail.length)
-  if (spec.dst === null) return ''
-  const at = spec.dst.indexOf('*')
-  return at < 0 ? spec.dst : `${spec.dst.slice(0, at)}${middle}${spec.dst.slice(at + 1)}`
 }
 
 /** A ref name the way git's fetch summary shortens it. */

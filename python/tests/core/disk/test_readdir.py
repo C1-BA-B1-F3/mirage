@@ -57,6 +57,21 @@ async def test_directory_with_subdirectories(tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_parent_listing_preserves_a_cached_subdirectory(tmp_path):
+    (tmp_path / "sub").mkdir()
+    (tmp_path / "sub" / "child").write_text("data")
+    (tmp_path / "file.txt").write_text("data")
+    accessor = DiskAccessor(tmp_path)
+    index = RAMIndexCacheStore(ttl=600)
+    children = await readdir(accessor, PathSpec.from_str_path("/sub", "sub"),
+                             index)
+    await readdir(accessor, PathSpec.from_str_path("/", ""), index)
+    assert (await index.list_dir("/sub")).entries == children
+    assert (await index.get("/sub")).entry.resource_type == "folder"
+    assert (await index.get("/file.txt")).entry.resource_type == "file"
+
+
+@pytest.mark.asyncio
 async def test_cache_hit(tmp_path):
     (tmp_path / "a.txt").write_text("a")
     accessor = DiskAccessor(tmp_path)

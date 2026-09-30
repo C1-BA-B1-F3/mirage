@@ -29,6 +29,10 @@ import { DRIVER } from './driver.ts'
 import { write } from './write.ts'
 
 class FakeManager {
+  listedSince(_folder: string, _started: number): boolean {
+    return false
+  }
+
   writes: string[] = []
   ancestors: string[] = []
 

@@ -20,7 +20,7 @@ from enum import StrEnum
 
 from mirage.core.timeutil import epoch_to_iso
 from mirage.types import LINK_TARGET_KEY, FileStat, FileType, MountMode
-from mirage.utils.path import glob_prefix_match, resolve_symlinks
+from mirage.utils.path import ancestors, glob_prefix_match, resolve_symlinks
 from mirage.vfs.base import BaseVFS
 from mirage.workspace.mount.mount import MountEntry
 from mirage.workspace.mount.namespace.ram import RAMNamespaceStore
@@ -386,6 +386,34 @@ class Namespace:
         del self._nodes[path]
         await self._store.delete([path])
         return True
+
+    async def drop_overlays_under(self,
+                                  paths: list[str],
+                                  *,
+                                  excluded: tuple[str, ...] = ()) -> int:
+        """Drop orphaned overlays in one pass, retaining symlinks.
+
+        Args:
+            paths (list[str]): absolute roots reported gone.
+            excluded (tuple[str, ...]): nested mount roots to preserve.
+
+        Returns:
+            int: number of overlay nodes dropped.
+        """
+        roots = {path.rstrip("/") or "/" for path in paths}
+        protected = {path.rstrip("/") or "/" for path in excluded}
+        doomed = []
+        for key, meta in self._nodes.items():
+            if meta.target is not None:
+                continue
+            lineage = ["/", *ancestors(key), key.rstrip("/") or "/"]
+            if not roots.isdisjoint(lineage) and protected.isdisjoint(lineage):
+                doomed.append(key)
+        for key in doomed:
+            del self._nodes[key]
+        if doomed:
+            await self._store.delete(doomed)
+        return len(doomed)
 
     async def clear_times(self,
                           path: str,

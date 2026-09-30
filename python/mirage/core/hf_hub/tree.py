@@ -22,6 +22,7 @@ from mirage.accessor.hf_hub import HfHubAccessor
 from mirage.cache.index import (NULL_INDEX, IndexCacheStore, IndexEntry,
                                 LookupStatus)
 from mirage.cache.index.config import IndexSnapshot
+from mirage.cache.index.diff import departed
 from mirage.cache.index.lock import index_lock
 from mirage.core.hf_hub.client import (HfHubError, api_url, hub_get_response,
                                        hub_post, rev_segment)
@@ -476,6 +477,7 @@ async def refill_snapshot(
     # The caller holds index_lock through replacement and its final lookup.
     if index is NULL_INDEX:
         return None
+    previous = dict(accessor.tree) if accessor.tree_loaded else None
     tree = await fetch_tree(accessor)
     accessor.tree = tree
     accessor.tree_loaded = True
@@ -483,7 +485,15 @@ async def refill_snapshot(
     accessor.refills += 1
     # Refilling replaces the snapshot; merging would retain deleted paths.
     await index.invalidate_prefix(prefix.rstrip("/") or "/")
-    return seed_index(accessor, index, prefix)
+    snapshot = seed_index(accessor, index, prefix)
+    if previous is not None:
+        await index.report_gone(
+            departed(previous.items(), tree, prefix, _is_folder))
+    return snapshot
+
+
+def _is_folder(entry: TreeEntry) -> bool:
+    return entry.is_dir
 
 
 async def ensure_live_index(

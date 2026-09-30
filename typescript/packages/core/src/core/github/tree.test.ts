@@ -15,7 +15,10 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { fetchDirTree, fetchTree, GitHubApiError, type GitHubTransport } from './client.ts'
 import { GitHubAccessor } from '../../accessor/github.ts'
+import { RAMFileCacheStore } from '../../cache/file/ram.ts'
+import { IndexEntry, type Evicted } from '../../cache/index/config.ts'
 import { RAMIndexCacheStore } from '../../cache/index/ram.ts'
+import { IndexView } from '../../cache/index/view.ts'
 import { ensureLiveSnapshot, pointRow, populateIndex, refillSnapshot } from './tree.ts'
 import { FakeGitHub, blobSha, servedAccessor } from './_test_util.ts'
 
@@ -163,6 +166,18 @@ describe('populateIndex', () => {
     await populateIndex(index, {}, '/gh')
     expect((await index.listDir('/gh')).entries).toEqual([])
   })
+
+  // A truncated tree names only some children, so writing it must not evict
+  // the rest of a folder a per-directory fallback listed in full.
+  it('keeps rows a truncated tree does not name', async () => {
+    const index = new RAMIndexCacheStore({ ttl: 600 })
+    await index.setDir('/gh/data', [
+      ['keep.txt', new IndexEntry({ id: 'b1', name: 'keep.txt', resourceType: 'file' })],
+      ['other.txt', new IndexEntry({ id: 'b2', name: 'other.txt', resourceType: 'file' })],
+    ])
+    await populateIndex(index, TREE, '/gh', new Date(0))
+    expect((await index.get('/gh/data/other.txt')).entry?.id).toBe('b2')
+  })
 })
 
 // The same rows as python's test_tree.py: a parent Octokit would rewrite
@@ -276,5 +291,70 @@ describe('the point request', () => {
     expect(err).toBeInstanceOf(GitHubApiError)
     expect((err as GitHubApiError).status).toBe(0)
     expect((err as GitHubApiError).message).toContain('carries no tree')
+  })
+})
+
+function ledgered(): { gone: Evicted[]; index: IndexView } {
+  const gone: Evicted[] = []
+  const index = new IndexView(
+    new RAMIndexCacheStore(),
+    new RAMFileCacheStore(),
+    '/gh',
+    () => true,
+    {
+      onGone: (children) => {
+        gone.push(...children)
+        return Promise.resolve()
+      },
+    },
+  )
+  return { gone, index }
+}
+
+describe('refillSnapshot reports what left the repository', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  // The refill wipes the index before seeding the new tree, so without the
+  // diff a file removed upstream keeps its cached bytes and overlay.
+  it.each([
+    ['a removed file', ['d1/a.txt'], [{ path: '/gh/d1/a.txt', folder: false }]],
+    ['a removed folder once', ['d1/a.txt', 'd1/b.txt'], [{ path: '/gh/d1', folder: true }]],
+  ])('reports %s', async (_label, removed, reported) => {
+    const gh = new FakeGitHub({ 'd1/a.txt': 'a', 'd1/b.txt': 'b', 'top.txt': 't' })
+    vi.stubGlobal('fetch', gh.fetch)
+    const accessor = servedAccessor()
+    const { gone, index } = ledgered()
+    await refillSnapshot(accessor, index, '/gh')
+    for (const path of removed) gh.files.delete(path)
+    await refillSnapshot(accessor, index, '/gh')
+    expect(gone).toEqual(reported)
+  })
+
+  // A truncated tree names only some paths, so a path missing from it is
+  // not a path the repository lost.
+  it.each([
+    [true, false],
+    [false, true],
+  ])('reports nothing when truncated before=%s after=%s', async (before, after) => {
+    const gh = new FakeGitHub({ 'd1/a.txt': 'a', 'top.txt': 't' })
+    gh.truncatedRecursive = before
+    vi.stubGlobal('fetch', gh.fetch)
+    const accessor = servedAccessor()
+    const { gone, index } = ledgered()
+    await refillSnapshot(accessor, index, '/gh')
+    gh.truncatedRecursive = after
+    gh.files.delete('d1/a.txt')
+    await refillSnapshot(accessor, index, '/gh')
+    expect(gone).toEqual([])
+  })
+
+  it('reports nothing on the first refill', async () => {
+    const gh = new FakeGitHub({ 'top.txt': 't' })
+    vi.stubGlobal('fetch', gh.fetch)
+    const { gone, index } = ledgered()
+    await refillSnapshot(servedAccessor(), index, '/gh')
+    expect(gone).toEqual([])
   })
 })

@@ -14,6 +14,7 @@
 
 import git from 'isomorphic-git'
 import { DWIM_RULES, HEAD } from './constants.ts'
+import { dateClock } from './dates.ts'
 import { configValues } from './fs.ts'
 
 import { IOResult } from '../../../../io/types.ts'
@@ -33,28 +34,30 @@ import {
   UnknownSwitchError,
   UnmergedBranchError,
 } from './errors.ts'
-import { parseFlags, resolvedRefs, select } from './history.ts'
+import { parseFlags, select } from './history.ts'
 import { short } from './format.ts'
 import { readOptional, under, writeFile } from './io.ts'
+import { blockingRef, deleteRef, loadRefs, readHead, validRefName, writeRef } from './refs.ts'
+import { filterWords, refFilter, withoutFilterValues, type RefFilter } from './ref_filter.ts'
+import { displayWidth, formatRefs, listingFormat, usedFields } from './ref_format.ts'
 import {
-  blockingRef,
-  deleteRef,
-  loadRefs,
-  readHead,
-  validRefName,
-  writeRef,
-  SYMREF_PREFIX,
-} from './refs.ts'
-import {
-  filterWords,
-  keptRefs,
-  refFilter,
-  withoutFilterValues,
-  type RefFilter,
-} from './ref_filter.ts'
+  configuredSort,
+  headDescription,
+  listingResult,
+  matchShort,
+  refListing,
+  sortKeys,
+} from './ref_list.ts'
 import { commitFacts, opened, repoArgs, type Repo } from './repo.ts'
 import { resolveCommit } from './revparse.ts'
-import { Track, type Dispatch, type HeadRef, type Upstream } from './types.ts'
+import {
+  RefKind,
+  Track,
+  type Dispatch,
+  type HeadRef,
+  type RefItem,
+  type Upstream,
+} from './types.ts'
 import {
   checkOperands,
   configSection,
@@ -64,16 +67,12 @@ import {
   switches,
   withoutSection,
 } from './util.ts'
-import { fnmatch } from '../../../../utils/fnmatch.ts'
-import { compareCodePoints } from '../../../../utils/sort.ts'
 
 const ENC = new TextEncoder()
 const DEC = new TextDecoder()
 const NEWLINE = 0x0a
 const HEADS_PREFIX = 'refs/heads/'
 const REMOTES_PREFIX = 'refs/remotes/'
-const CURRENT = '* '
-const OTHER = '  '
 const REMOTE = 'remotes/'
 const AUTO_SETUP_MERGE = 'branch.autosetupmerge'
 const TRACK_WORDS: ReadonlyMap<string, Track> = new Map([
@@ -81,20 +80,6 @@ const TRACK_WORDS: ReadonlyMap<string, Track> = new Map([
   ['simple', Track.SIMPLE],
   ['inherit', Track.INHERIT],
 ])
-
-/**
- * The `-> target` a symbolic ref carries in a branch listing.
- *
- * `refs/remotes/origin/HEAD` is a pointer, not a branch, and git renders it as
- * `remotes/origin/HEAD -> origin/main`. Empty for an ordinary ref.
- */
-function symrefSuffix(refs: ReadonlyMap<string, string>, ref: string): string {
-  const raw = refs.get(ref)
-  if (!raw?.startsWith(SYMREF_PREFIX)) return ''
-  let target = raw.slice(SYMREF_PREFIX.length).trim()
-  if (target.startsWith(REMOTES_PREFIX)) target = target.slice(REMOTES_PREFIX.length)
-  return ` -> ${target}`
-}
 
 /** Point a new branch at a commit, refusing to move an existing one. */
 async function create(
@@ -309,33 +294,115 @@ async function remove(
 }
 
 /**
- * The refs a listing shows: the kinds `-r`/`-a` asked for, narrowed by the
- * name patterns and the ref filter.
+ * git's `build_format`: the format a branch listing prints with when the line
+ * gives none, colors left out as they are off a terminal.
  *
- * A pattern matches the name as listed without its `remotes/` label
- * (`origin/*`), which is git's reading, and any one pattern keeps a ref.
+ * A local branch is marked `*` when HEAD is on it and `+` when another worktree
+ * is; `-v` pads every name to one column and adds the id, the upstream's
+ * distance and the subject, and `-vv` names the upstream (and a worktree the
+ * branch is out in) as well.
+ *
+ * @param verbose how many `-v`
+ * @param width the name column, from `listWidth`
+ * @param prefix what a remote-tracking branch is labelled with, `remotes/`
+ *   unless only those are listed
  */
-async function listed(
+function buildFormat(verbose: number, width: number, prefix: string): string {
+  const label = prefix.replaceAll('%', '%%')
+  let local = '%(if)%(HEAD)%(then)* %(else)%(if)%(worktreepath)%(then)+ %(else)  %(end)%(end)'
+  let remote = '  '
+  if (verbose) {
+    const oid = '%(objectname:short)'
+    local += `%(align:${String(width)},left)%(refname:lstrip=2)%(end) ${oid} `
+    if (verbose > 1) {
+      local +=
+        '%(if:notequals=*)%(HEAD)%(then)%(if)%(worktreepath)%(then)(%(worktreepath)) %(end)%(end)' +
+        '%(if)%(upstream)%(then)[%(upstream:short)%(if)%(upstream:track)%(then): ' +
+        '%(upstream:track,nobracket)%(end)] %(end)%(contents:subject)'
+    } else {
+      local += '%(if)%(upstream:track)%(then)%(upstream:track) %(end)%(contents:subject)'
+    }
+    remote +=
+      `%(align:${String(width)},left)${label}%(refname:lstrip=2)%(end)` +
+      `%(if)%(symref)%(then) -> %(symref:short)%(else) ${oid} %(contents:subject)%(end)`
+  } else {
+    local += '%(refname:lstrip=2)%(if)%(symref)%(then) -> %(symref:short)%(end)'
+    remote += `${label}%(refname:lstrip=2)%(if)%(symref)%(then) -> %(symref:short)%(end)`
+  }
+  return `%(if:notequals=refs/remotes)%(refname:rstrip=-2)%(then)${local}%(else)${remote}%(end)`
+}
+
+/**
+ * `calc_maxwidth`: the widest name a verbose listing pads to.
+ *
+ * @param bonus the width of the label a remote-tracking branch carries
+ * @param description the detached HEAD row's name
+ */
+function listWidth(items: readonly RefItem[], bonus: number, description: string): number {
+  let widest = 0
+  for (const item of items) {
+    let width: number
+    if (item.kind === RefKind.DETACHED) width = displayWidth(description)
+    else {
+      let name = item.name
+      for (const prefix of [HEADS_PREFIX, REMOTES_PREFIX])
+        if (name.startsWith(prefix)) name = name.slice(prefix.length)
+      width = displayWidth(name) + (item.kind === RefKind.REMOTE ? bonus : 0)
+    }
+    widest = Math.max(widest, width)
+  }
+  return widest
+}
+
+/**
+ * A branch listing, through git's ref-filter as git prints one: the local
+ * branches (`-r` the remote-tracking ones instead, `-a` both) and a detached
+ * HEAD, which leads whatever the sort keys say, each printed through `--format`
+ * or the format `buildFormat` makes.
+ */
+async function listBranches(
+  inv: CLIInvocation,
+  fl: FlagView,
   repo: Repo,
-  refs: ReadonlyMap<string, string>,
-  kinds: { local: boolean; remote: boolean },
+  head: HeadRef,
   patterns: readonly string[],
   filter: RefFilter | null,
-): Promise<string[]> {
-  const shown = [...refs.keys()].sort(compareCodePoints).filter((ref) => {
-    const local = ref.startsWith(HEADS_PREFIX)
-    if (!(kinds.local && local) && !(kinds.remote && ref.startsWith(REMOTES_PREFIX))) return false
-    const name = ref.slice(local ? HEADS_PREFIX.length : REMOTES_PREFIX.length)
-    return patterns.length === 0 || patterns.some((pattern) => fnmatch(name, pattern))
+  remotesOnly: boolean,
+  includeRemotes: boolean,
+): Promise<CommandFnResult> {
+  const keys = sortKeys(fl, await configuredSort(repo, 'branch'))
+  const icase = fl.asBool('ignore_case')
+  const verbose = fl.asInt('verbose') ?? 0
+  const prefix = remotesOnly ? '' : REMOTE
+  const template = fl.asStr('format')
+  const detached = head.commit !== null && !remotesOnly
+  const wanted = (name: string): boolean =>
+    ((name === HEAD && detached) ||
+      (!remotesOnly && name.startsWith(HEADS_PREFIX)) ||
+      (includeRemotes && name.startsWith(REMOTES_PREFIX))) &&
+    matchShort(name, patterns, icase)
+  let fmt = listingFormat(template ?? buildFormat(verbose, 0, prefix))
+  const [items, found, errors] = await refListing(
+    repo,
+    usedFields(fmt, keys ?? []),
+    wanted,
+    filter,
+    dateClock(inv.env),
+  )
+  let ctx = found
+  if (items.some((item) => item.kind === RefKind.DETACHED))
+    ctx = { ...ctx, headDescription: await headDescription(repo, head) }
+  if (template === undefined && verbose)
+    fmt = listingFormat(
+      buildFormat(verbose, listWidth(items, prefix.length, ctx.headDescription), prefix),
+    )
+  const [out, stopped] = formatRefs(fmt, items, ctx, keys, {
+    omitEmpty: fl.asBool('omit_empty'),
+    icase,
+    detachedFirst: true,
+    stream: false,
   })
-  if (filter === null) return shown
-  const resolved = await resolvedRefs(repo)
-  const pairs = shown.flatMap((ref): [string, string][] => {
-    const oid = resolved.get(ref)
-    return oid === undefined ? [] : [[ref, oid]]
-  })
-  const kept = await keptRefs(repo, filter, pairs)
-  return shown.filter((ref) => kept.has(ref))
+  return listingResult(out, errors, stopped)
 }
 
 /**
@@ -362,19 +429,15 @@ export async function branch(inv: CLIInvocation): Promise<CommandFnResult> {
   const remotesOnly = fl.asBool('r')
   const includeRemotes = remotesOnly || fl.asBool('a')
   const listing = words.length > 0 || fl.asBool('list')
-  let refs: ReadonlyMap<string, string>
-  let head: HeadRef
-  let repo: Repo
-  let shown: string[]
   try {
     const dispatch = doors.dispatch
     if (dispatch === undefined) throw new NoWorkspaceError()
     checkOperands(texts, UnknownSwitchError, escaped(inv.argv), switches(inv))
-    repo = await opened(fl, doors)
+    const repo = await opened(fl, doors)
     const mode = await trackMode(repo)
     const filter = await refFilter(repo, words)
-    refs = await loadRefs(dispatch, repo.location.gitdir, repo.location.commondir)
-    head = await readHead(dispatch, repo.location.gitdir)
+    const refs = await loadRefs(dispatch, repo.location.gitdir, repo.location.commondir)
+    const head = await readHead(dispatch, repo.location.gitdir)
     if (fl.asBool('show_current'))
       return [ENC.encode(head.branch ? head.branch + '\n' : ''), new IOResult()]
     const force = fl.asBool('D')
@@ -390,47 +453,20 @@ export async function branch(inv: CLIInvocation): Promise<CommandFnResult> {
       const [tracking, warning] = await create(dispatch, repo, refs, first, texts[1], mode, head)
       return [tracking ? ENC.encode(tracking) : null, new IOResult({ stderr: ENC.encode(warning) })]
     }
-    shown = await listed(
+    return await listBranches(
+      inv,
+      fl,
       repo,
-      refs,
-      { local: !remotesOnly, remote: includeRemotes },
+      head,
       listing ? texts : [],
       filter,
+      remotesOnly,
+      includeRemotes,
     )
   } catch (err) {
     if (err instanceof GitError) return fatal(err)
     throw err
   }
-  const lines: string[] = []
-  const verbose = fl.asInt('verbose') ?? 0
-  const width = Math.max(
-    0,
-    ...shown.map((r) =>
-      r.startsWith(HEADS_PREFIX)
-        ? r.slice(HEADS_PREFIX.length).length
-        : (REMOTE + r.slice(REMOTES_PREFIX.length)).length,
-    ),
-  )
-  if (!remotesOnly) {
-    for (const ref of shown.filter((k) => k.startsWith(HEADS_PREFIX))) {
-      const name = ref.slice(HEADS_PREFIX.length)
-      lines.push(
-        `${name === head.branch ? CURRENT : OTHER}${verbose ? name.padEnd(width) + (await branchDetail(repo, ref, verbose)) : name}`,
-      )
-    }
-  }
-  if (includeRemotes) {
-    for (const ref of shown.filter((k) => k.startsWith(REMOTES_PREFIX))) {
-      const name = ref.slice(REMOTES_PREFIX.length)
-      const label = `${REMOTE}${name}`
-      const suffix = symrefSuffix(refs, ref)
-      lines.push(
-        `${OTHER}${verbose && !suffix ? label.padEnd(width) + (await branchDetail(repo, ref, verbose)) : label + suffix}`,
-      )
-    }
-  }
-  if (lines.length === 0) return [null, new IOResult()]
-  return [ENC.encode(`${lines.join('\n')}\n`), new IOResult()]
 }
 
 /** A branch's upstream from `branch.<name>.remote` and `.merge`. */
@@ -477,22 +513,4 @@ export async function branchUpstream(
   if (!refs.has(`${HEADS_PREFIX}${head.branch}`)) return null
   const tip = await resolveCommit(repo, `${HEADS_PREFIX}${head.branch}`)
   return upstreamOf(repo, head.branch, tip)
-}
-
-async function branchDetail(repo: Repo, ref: string, verbose: number): Promise<string> {
-  const oid = await resolveCommit(repo, ref)
-  const facts = await commitFacts(repo, oid)
-  let upstream = ''
-  const found = ref.startsWith(HEADS_PREFIX)
-    ? await upstreamOf(repo, ref.slice(HEADS_PREFIX.length), oid)
-    : null
-  if (found !== null) {
-    const differences = found.gone ? ['gone'] : []
-    if (found.ahead) differences.push(`ahead ${String(found.ahead)}`)
-    if (found.behind) differences.push(`behind ${String(found.behind)}`)
-    const counts = differences.join(', ')
-    if (verbose > 1) upstream = ` [${found.label}${counts ? ': ' + counts : ''}]`
-    else if (counts) upstream = ` [${counts}]`
-  }
-  return ` ${short(oid, repo.abbrev)}${upstream} ${facts.message.split('\n')[0] ?? ''}`
 }

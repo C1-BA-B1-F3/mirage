@@ -16,6 +16,9 @@ import { findExprTail } from '../../../commands/builtin/find_parse.ts'
 import { FILE_KEYS } from '../../../commands/builtin/generic/program.ts'
 import { walk } from '../../../commands/cli/walk.ts'
 import { SPECS } from '../../../commands/spec/index.ts'
+import { isBuiltinGrammar } from '../../../commands/spec/builtins.ts'
+import { OWN_OPTION_LOOP, REFUSED } from '../../../commands/spec/constants.ts'
+import type { CommandSpec } from '../../../commands/spec/types.ts'
 import { FlagView } from '../../../commands/spec/flag_view.ts'
 import { parseCommand, parseToKwargs } from '../../../commands/spec/parser.ts'
 import { DeviceInput, type ByteSource } from '../../../io/types.ts'
@@ -166,6 +169,20 @@ export function positionalScopes(
         byVirtual.get(value) ??
         new PathSpec({ virtual: value, directory: value, vfsPath: '', rawPath: value }),
     )
+}
+
+/** The handler will answer help, version or a refusal before reading any input files. */
+export function optionLoopExits(
+  cmdName: string,
+  spec: CommandSpec | null,
+  argv: string[],
+  cwd: string,
+): boolean {
+  if (spec === null || !OWN_OPTION_LOOP.has(cmdName) || !isBuiltinGrammar(cmdName, spec))
+    return false
+  const parsed = parseCommand(spec, argv, cwd, cmdName)
+  const fl = new FlagView(parseToKwargs(parsed), spec)
+  return fl.occurrences('help', 'version', REFUSED).length > 0
 }
 
 /**

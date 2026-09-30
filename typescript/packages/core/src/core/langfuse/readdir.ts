@@ -93,12 +93,11 @@ async function listTraces(accessor: LangfuseAccessor, _match: ScopeMatch): Promi
   return { entries: traceEntries(traces), seeds: {}, partial: bounded(accessor, traces) }
 }
 
-async function listSessions(
-  accessor: LangfuseAccessor,
-  _match: ScopeMatch,
-): Promise<[string, IndexEntry][]> {
+async function listSessions(accessor: LangfuseAccessor, _match: ScopeMatch): Promise<DirListing> {
+  // One page of the newest sessions: an older one that drops off it has not
+  // been deleted, so the listing evicts nothing.
   const sessions = await fetchSessions(accessor.transport)
-  return sessions.map((s): [string, IndexEntry] => {
+  const entries = sessions.map((s): [string, IndexEntry] => {
     const sessionId = pickString(s, 'id')
     return [
       sessionId,
@@ -110,6 +109,7 @@ async function listSessions(
       }),
     ]
   })
+  return { entries, seeds: {}, window: true }
 }
 
 async function listSessionTraces(
@@ -127,10 +127,7 @@ async function listSessionTraces(
   return { entries: traceEntries(traces), seeds: {}, partial: bounded(accessor, traces) }
 }
 
-async function listPrompts(
-  accessor: LangfuseAccessor,
-  _match: ScopeMatch,
-): Promise<[string, IndexEntry][]> {
+async function listPrompts(accessor: LangfuseAccessor, _match: ScopeMatch): Promise<DirListing> {
   const prompts = await fetchPrompts(accessor.transport)
   const seen = new Set<string>()
   const entries: [string, IndexEntry][] = []
@@ -148,7 +145,7 @@ async function listPrompts(
       }),
     ])
   }
-  return entries
+  return { entries, seeds: {}, window: true }
 }
 
 async function listPromptVersions(
@@ -178,12 +175,9 @@ async function listPromptVersions(
   return entries
 }
 
-async function listDatasets(
-  accessor: LangfuseAccessor,
-  _match: ScopeMatch,
-): Promise<[string, IndexEntry][]> {
+async function listDatasets(accessor: LangfuseAccessor, _match: ScopeMatch): Promise<DirListing> {
   const datasets = await fetchDatasets(accessor.transport)
-  return datasets.map((d): [string, IndexEntry] => {
+  const entries = datasets.map((d): [string, IndexEntry] => {
     const datasetName = pickString(d, 'name')
     return [
       datasetName,
@@ -195,6 +189,7 @@ async function listDatasets(
       }),
     ]
   })
+  return { entries, seeds: {}, window: true }
 }
 
 async function listDataset(
@@ -229,13 +224,10 @@ async function listDataset(
   ]
 }
 
-async function listDatasetRuns(
-  accessor: LangfuseAccessor,
-  match: ScopeMatch,
-): Promise<[string, IndexEntry][]> {
+async function listDatasetRuns(accessor: LangfuseAccessor, match: ScopeMatch): Promise<DirListing> {
   const datasetName = match.slots.dataset_name ?? ''
   const runs = await fetchDatasetRuns(accessor.transport, datasetName)
-  return runs.map((r): [string, IndexEntry] => {
+  const entries = runs.map((r): [string, IndexEntry] => {
     const runName = pickString(r, 'name')
     const filename = `${runName}.jsonl`
     // The listing already carries the run document read() renders, so each
@@ -251,6 +243,7 @@ async function listDatasetRuns(
       }),
     ]
   })
+  return { entries, seeds: {}, window: true }
 }
 
 export const readdir = makeReaddir<LangfuseAccessor>(detectScope, {

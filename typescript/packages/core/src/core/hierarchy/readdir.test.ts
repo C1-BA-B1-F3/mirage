@@ -14,13 +14,21 @@
 
 import { describe, expect, it } from 'vitest'
 import { Accessor } from '../../accessor/base.ts'
-import { IndexEntry } from '../../cache/index/config.ts'
+import { RAMFileCacheStore } from '../../cache/file/ram.ts'
+import { IndexEntry, type Evicted } from '../../cache/index/config.ts'
 import { RAMIndexCacheStore } from '../../cache/index/ram.ts'
+import { IndexView } from '../../cache/index/view.ts'
 import { ContentType, PathSpec } from '../../types.ts'
 import { enoent } from '../../utils/errors.ts'
 import { stripSlash } from '../../utils/slash.ts'
 import { DATE, JSON_NAME } from './codec.ts'
-import { makeReaddir, type EntryLister, type Guard, type Lister } from './readdir.ts'
+import {
+  makeReaddir,
+  type DirListing,
+  type EntryLister,
+  type Guard,
+  type Lister,
+} from './readdir.ts'
 import { Slot, Scope, makeDetectScope } from './scope.ts'
 
 const SCOPES: readonly Scope[] = [
@@ -402,5 +410,107 @@ describe('a windowed listing honours a glob', () => {
       '/h/rooms/red/z.json',
     ])
     expect(accessor.calls).toEqual(['window:null', 'window:z.json'])
+  })
+})
+
+function room(name: string): [string, IndexEntry] {
+  return [name, new IndexEntry({ id: name, name, resourceType: 'fake/room', vfsName: name })]
+}
+
+function sliding(window: boolean, partial = false) {
+  // First the window holds red and blue, then a newer room pushes red out;
+  // each listing also seeds the room it names first.
+  const pages = [
+    ['red', 'blue'],
+    ['blue', 'green'],
+  ]
+  const lister: Lister<FakeAccessor> = () => {
+    const names = pages.shift() ?? []
+    const first = names[0] ?? ''
+    const listing = {
+      entries: names.map(room),
+      seeds: { [first]: [room(`${first}-a`)] },
+      window,
+      partial,
+    }
+    return Promise.resolve(listing)
+  }
+  return makeReaddir<FakeAccessor>(detectScope, {
+    listers: { rooms: lister },
+    staticRoot: ['rooms'],
+  })
+}
+
+describe('a window listing proves nothing absent', () => {
+  it.each([
+    [true, true],
+    [false, false],
+  ])('a window slide (window=%s) keeps the row that slid out: %s', async (window, survives) => {
+    // The same slide without the flag evicts red, which is what shows the
+    // fixture can tell a window from a complete listing.
+    const readdir = sliding(window)
+    const index = new RAMIndexCacheStore()
+    await readdir(new FakeAccessor(), spec('/rooms'), index)
+    await index.invalidate()
+    await readdir(new FakeAccessor(), spec('/rooms'), index)
+    const red = (await index.get('/h/rooms/red')).entry
+    expect(red !== undefined).toBe(survives)
+    expect((await index.listDir('/h/rooms')).entries).toEqual(['/h/rooms/blue', '/h/rooms/green'])
+  })
+
+  it('a windowed listing seeds windows too', async () => {
+    // A day seeded from a label window names only that window's messages;
+    // it must not evict what a full listing of the day found earlier.
+    const lister: Lister<FakeAccessor> = () => {
+      const listing = { entries: [room('red')], seeds: { red: [room('red-a')] }, window: true }
+      return Promise.resolve(listing)
+    }
+    const readdir = makeReaddir<FakeAccessor>(detectScope, {
+      listers: { rooms: lister },
+      staticRoot: ['rooms'],
+    })
+    const index = new RAMIndexCacheStore()
+    await index.setDir('/h/rooms/red', [room('red-a'), room('red-b')])
+    await readdir(new FakeAccessor(), spec('/rooms'), index)
+    expect((await index.get('/h/rooms/red/red-b')).entry).toBeDefined()
+  })
+
+  it('a partial window stays partial and seeds windows', async () => {
+    const readdir = sliding(true, true)
+    const index = new RAMIndexCacheStore()
+    await index.setDir('/h/rooms/red', [room('red-a'), room('red-z')])
+    await readdir(new FakeAccessor(), spec('/rooms'), index)
+    expect((await index.listDir('/h/rooms')).entries).toBeUndefined()
+    expect((await index.get('/h/rooms/red/red-z')).entry).toBeDefined()
+  })
+
+  it('re-listing an unchanged backend hands nothing to cleanup', async () => {
+    // Every writer here must name every child it names the first time; a
+    // dropped hidden name or a seeded child listing that differs between
+    // two identical fetches would evict rows that still exist.
+    const gone: Evicted[] = []
+    const lister: Lister<FakeAccessor> = () => {
+      const listing: DirListing = {
+        entries: [room('.secret'), room('red'), room('blue')],
+        seeds: { red: [room('red-a'), room('.hidden')] },
+      }
+      return Promise.resolve(listing)
+    }
+    const readdir = makeReaddir<FakeAccessor>(detectScope, {
+      listers: { rooms: lister },
+      staticRoot: ['rooms'],
+    })
+    const store = new RAMIndexCacheStore()
+    const index = new IndexView(store, new RAMFileCacheStore(), '/h', () => true, {
+      onGone: (children) => {
+        gone.push(...children)
+        return Promise.resolve()
+      },
+    })
+    await readdir(new FakeAccessor(), spec('/rooms'), index)
+    await store.invalidate()
+    await readdir(new FakeAccessor(), spec('/rooms'), index)
+    expect(gone).toEqual([])
+    expect((await store.get('/h/rooms/red/red-a')).entry).toBeDefined()
   })
 })

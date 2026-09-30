@@ -293,7 +293,7 @@ class Workspace:
         self._registry.set_reconciler(self._dispatcher.reconciler)
         self._watch = WatchManager(self._registry)
 
-        specs = normalize_mounts(mounts, mode, self._read_default)
+        specs = normalize_mounts(mounts, mode, self._read_default, index)
         self._implicit_root = install_mounts(self._registry, specs, index,
                                              mode, self._read_default)
         # What the workspace and its mounts hide from every session,
@@ -564,7 +564,12 @@ class Workspace:
             raise RuntimeError("Workspace is closed")
         check_vfs(prefix, vfs)
         resolved_read = read if read is not None else self._read_default
-        check_read_capability(prefix, vfs, resolved_read)
+        # An alias keeps the index of the VFS's other mount.
+        alias = next((m for m in self._registry.mounts() if m.vfs is vfs),
+                     None)
+        check_read_capability(
+            prefix, vfs, resolved_read,
+            alias.index_config if alias is not None else self._index_config)
         self._registry.check_vfs_available(vfs)
         previous = self._registry.mounts()
         entry = self._registry.mount(prefix,

@@ -12,28 +12,36 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import { mappedIdentity, type MailmapEntry } from './mailmap.ts'
+import { showDate } from './dates.ts'
+import { mappedIdentity } from './mailmap.ts'
+import { DateKind, type DateMode, type MailmapEntry } from './types.ts'
 import { byteChar } from '../../../../shell/bytes.ts'
 import { BadPrettyError, UnsupportedPrettyError } from './errors.ts'
 
 const SHORT_SHA = 7
 export const FULL_SHA = 40
 const INDENT = '    '
-const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'] as const
-const MONTHS = [
-  'Jan',
-  'Feb',
-  'Mar',
-  'Apr',
-  'May',
-  'Jun',
-  'Jul',
-  'Aug',
-  'Sep',
-  'Oct',
-  'Nov',
-  'Dec',
-] as const
+
+export const DEFAULT_DATE: DateMode = {
+  kind: DateKind.NORMAL,
+  local: false,
+  strftime: '',
+  now: 0,
+  zone: null,
+}
+const RAW_DATE: DateMode = { ...DEFAULT_DATE, kind: DateKind.RAW }
+
+// The ident date placeholders that name a style of their own, whatever --date
+// says: %ad alone follows it.
+const FIXED_DATE_KINDS: ReadonlyMap<string, DateKind> = new Map([
+  ['D', DateKind.RFC2822],
+  ['r', DateKind.RELATIVE],
+  ['t', DateKind.UNIX],
+  ['i', DateKind.ISO8601],
+  ['I', DateKind.ISO8601_STRICT],
+  ['h', DateKind.HUMAN],
+  ['s', DateKind.SHORT],
+])
 
 /** A commit as far as rendering is concerned, whoever read it. */
 export interface CommitFacts {
@@ -146,41 +154,6 @@ export function short(sha: string, length: number = SHORT_SHA): string {
   return sha.slice(0, length)
 }
 
-/**
- * Render a commit time in git's default date format.
- *
- * `Fri Jan 16 11:30:00 2026 +0000`: the day of the month is not padded, which is
- * why this is built by hand. The stored offset is minutes east of UTC and the
- * timestamp is read in that offset, so a commit prints the wall clock its author
- * saw.
- *
- * @param timestamp seconds since the epoch
- * @param offsetMinutes the author's UTC offset in minutes
- */
-function gitDate(timestamp: number, offsetMinutes: number, mode = 'default'): string {
-  const shifted = new Date((timestamp + offsetMinutes * 60) * 1000)
-  const pad = (n: number): string => String(n).padStart(2, '0')
-  const sign = offsetMinutes >= 0 ? '+' : '-'
-  const hours = Math.floor(Math.abs(offsetMinutes) / 60)
-  const minutes = Math.abs(offsetMinutes) % 60
-  const zone = `${sign}${pad(hours)}${pad(minutes)}`
-  const iso = shifted.toISOString().slice(0, 19)
-  if (mode === 'iso' || mode === 'iso8601') return `${iso.replace('T', ' ')} ${zone}`
-  if (mode === 'iso-strict' || mode === 'iso8601-strict')
-    return `${iso}${offsetMinutes === 0 ? 'Z' : zone.slice(0, 3) + ':' + zone.slice(3)}`
-  if (mode === 'short') return iso.slice(0, 10)
-  if (mode === 'unix') return String(timestamp)
-  if (mode === 'raw') return `${String(timestamp)} ${zone}`
-  const day = DAYS[shifted.getUTCDay()] ?? ''
-  const month = MONTHS[shifted.getUTCMonth()] ?? ''
-  return (
-    `${day} ${month} ${String(shifted.getUTCDate())} ` +
-    `${pad(shifted.getUTCHours())}:${pad(shifted.getUTCMinutes())}:` +
-    `${pad(shifted.getUTCSeconds())} ${String(shifted.getUTCFullYear())} ` +
-    `${sign}${pad(hours)}${pad(minutes)}`
-  )
-}
-
 /** The first line of a commit message. */
 export function subject(commit: CommitFacts): string {
   return (commit.message.split('\n', 1)[0] ?? '').replace(/\s+$/, '')
@@ -222,7 +195,7 @@ function messageBlock(commit: CommitFacts): string[] {
 function entry(
   commit: CommitFacts,
   length: number = SHORT_SHA,
-  date = 'default',
+  date: DateMode = DEFAULT_DATE,
   mailmap: readonly MailmapEntry[] = [],
 ): string[] {
   const lines = [`commit ${commit.oid}`]
@@ -231,7 +204,7 @@ function entry(
   }
   lines.push(
     `Author: ${mappedIdentity(`${commit.authorName} <${commit.authorEmail}>`, mailmap)}`,
-    `Date:   ${gitDate(commit.authorTime, commit.authorTimezoneMinutes, date)}`,
+    `Date:   ${showDate(commit.authorTime, commit.authorTimezoneMinutes, date)}`,
     '',
     ...messageBlock(commit),
   )
@@ -255,7 +228,7 @@ export function presetBlock(
   commit: CommitFacts,
   kind: string,
   length: number,
-  date = 'default',
+  date: DateMode = DEFAULT_DATE,
   mailmap: readonly MailmapEntry[] = [],
 ): string[] {
   if (kind === 'raw')
@@ -263,8 +236,8 @@ export function presetBlock(
       `commit ${commit.oid}`,
       `tree ${commit.tree}`,
       ...commit.parents.map((p) => `parent ${p}`),
-      `author ${commit.authorName} <${commit.authorEmail}> ${gitDate(commit.authorTime, commit.authorTimezoneMinutes, 'raw')}`,
-      `committer ${commit.committerName} <${commit.committerEmail}> ${gitDate(commit.committerTime, commit.committerTimezoneMinutes, 'raw')}`,
+      `author ${commit.authorName} <${commit.authorEmail}> ${showDate(commit.authorTime, commit.authorTimezoneMinutes, RAW_DATE)}`,
+      `committer ${commit.committerName} <${commit.committerEmail}> ${showDate(commit.committerTime, commit.committerTimezoneMinutes, RAW_DATE)}`,
       '',
       ...messageBlock(commit),
     ]
@@ -282,9 +255,9 @@ export function presetBlock(
   }
   lines.push(
     `Author:     ${author}`,
-    `AuthorDate: ${gitDate(commit.authorTime, commit.authorTimezoneMinutes, date)}`,
+    `AuthorDate: ${showDate(commit.authorTime, commit.authorTimezoneMinutes, date)}`,
     `Commit:     ${committer}`,
-    `CommitDate: ${gitDate(commit.committerTime, commit.committerTimezoneMinutes, date)}`,
+    `CommitDate: ${showDate(commit.committerTime, commit.committerTimezoneMinutes, date)}`,
     '',
     ...messageBlock(commit),
   )
@@ -321,7 +294,7 @@ export function renderTemplate(
   commit: CommitFacts,
   length: number,
   decor: Decorations | null,
-  date = 'default',
+  date: DateMode = DEFAULT_DATE,
   mailmap: readonly MailmapEntry[] = [],
 ): string {
   const labels = decor?.get(commit.oid) ?? []
@@ -413,7 +386,7 @@ function identPlaceholder(
   who: string,
   field: string,
   commit: CommitFacts,
-  date: string,
+  date: DateMode,
   mailmap: readonly MailmapEntry[],
 ): string | null {
   let name = who === 'a' ? commit.authorName : commit.committerName
@@ -434,14 +407,11 @@ function identPlaceholder(
     case 'E':
       return email
     case 'd':
-      return gitDate(time, zone, date)
-    case 'i':
-      return gitDate(time, zone, 'iso')
-    case 'I':
-      return gitDate(time, zone, 'iso-strict')
-    case 't':
-      return String(time)
-    default:
-      return null
+      return showDate(time, zone, date)
+    default: {
+      const kind = FIXED_DATE_KINDS.get(field)
+      if (kind === undefined) return null
+      return showDate(time, zone, { ...date, kind, local: false, strftime: '' })
+    }
   }
 }

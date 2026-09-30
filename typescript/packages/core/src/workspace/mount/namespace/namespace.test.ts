@@ -258,6 +258,20 @@ describe('Namespace node metadata overlay', () => {
     await ws.close()
   })
 
+  it('dropOverlaysUnder keeps links and siblings', async () => {
+    const ws = new Workspace({ '/data': new RAMVFS() })
+    await ws.namespace.setAttrs('/data/sub', { mode: 0o700 })
+    await ws.namespace.setAttrs('/data/sub/deep/x', { mode: 0o600 })
+    await ws.namespace.setAttrs('/data/sub2', { mode: 0o600 })
+    await ws.namespace.symlink('/data/sub/link', '/t1', 1)
+    expect(await ws.namespace.dropOverlaysUnder(['/data/sub'])).toBe(2)
+    expect(ws.namespace.metaFor('/data/sub')).toBeNull()
+    expect(ws.namespace.metaFor('/data/sub/deep/x')).toBeNull()
+    expect(ws.namespace.metaFor('/data/sub2')).not.toBeNull()
+    expect(ws.namespace.readlink('/data/sub/link')).toBe('/t1')
+    await ws.close()
+  })
+
   it('dropOverlay removes an orphaned overlay but keeps symlinks', async () => {
     const ws = new Workspace({ '/data': new RAMVFS() })
     await ws.namespace.setAttrs('/data/f.txt', { mode: 0o601, uid: 500 })

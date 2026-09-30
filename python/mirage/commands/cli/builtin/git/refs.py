@@ -21,7 +21,7 @@ from mirage.commands.cli.builtin.git.constants import HEAD_REF
 from mirage.commands.cli.builtin.git.io import (read_file, read_names,
                                                 read_optional, remove_file,
                                                 write_file)
-from mirage.commands.cli.builtin.git.types import HeadRef
+from mirage.commands.cli.builtin.git.types import HeadRef, Refspec
 from mirage.runtime.types import DispatchFn
 
 HEAD_FILE = "HEAD"
@@ -305,3 +305,34 @@ def valid_ref_name(name: str) -> bool:
         if part.startswith(".") or part.endswith(LOCK_SUFFIX):
             return False
     return True
+
+
+def parse_refspec(text: str) -> Refspec:
+    """Split a refspec into its source, destination and force flag.
+
+    Args:
+        text (str): the refspec as typed or configured.
+    """
+    force = text.startswith("+")
+    src, colon, dst = text[1 if force else 0:].partition(":")
+    return Refspec(src, dst if colon and dst else None, force)
+
+
+def mapped(spec: Refspec, name: str) -> str | None:
+    """The local ref a refspec maps a remote ref to, None when unmatched.
+
+    Args:
+        spec (Refspec): the refspec.
+        name (str): the remote ref name.
+    """
+    if "*" not in spec.src:
+        return (spec.dst or "") if name == spec.src else None
+    head, tail = spec.src.split("*", 1)
+    if (len(name) < len(head) + len(tail) or not name.startswith(head)
+            or not name.endswith(tail)):
+        return None
+    middle = name[len(head):len(name) - len(tail)]
+    if not spec.dst:
+        return ""
+    before, star, after = spec.dst.partition("*")
+    return f"{before}{middle}{after}" if star else spec.dst

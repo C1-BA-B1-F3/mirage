@@ -334,13 +334,22 @@ SPECS: dict[str, CommandSpec] = {
             Option(short="-h",
                    long="--help",
                    description="Show this help and exit"),
+            # jq answers -h and -V inside its option loop, where they are
+            # typed (OWN_OPTION_LOOP), so it declares both.
+            Option(short="-V",
+                   long="--version",
+                   description="Show version information and exit"),
         ),
         # Without provided_by, `jq -f prog.jq data.json` would take
         # data.json as the filter and never read it as a file.
         positional=(Operand(type="str", provided_by=("-f", )), ),
-        # --args and --jsonargs turn the operands after the program into
-        # $ARGS.positional, so they stop being input files.
+        # --args and --jsonargs turn the operands typed after them into
+        # $ARGS.positional, so those stop being input files
+        # (IN_ORDER_OPERANDS).
         rest=Operand(type="path", text_when=("--args", "--jsonargs")),
+        # jq's main.c compares each long option with strcmp, so `--nul` is
+        # no --null-input (jq 1.8.2: `jq: Unknown option --nul`).
+        allow_abbrev=False,
     ),
     'awk':
     CommandSpec(

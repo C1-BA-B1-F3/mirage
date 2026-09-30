@@ -70,11 +70,13 @@ FORMAT_OPTION = Option(long="--format",
                        value_optional=True,
                        description="Alias of --pretty (requires =value)")
 
+# Free text, read by parse_date_mode: git names a style it lacks in its
+# own fatal, and format:<strftime> is no fixed word.
 DATE_OPTION = Option(long="--date",
                      type="str",
-                     choices=('default', 'iso', 'iso8601', 'iso-strict',
-                              'iso8601-strict', 'short', 'unix', 'raw'),
-                     description="Date display format")
+                     description="Date display format: default, relative, "
+                     "local, iso, iso-strict, rfc, short, raw, unix, human "
+                     "or format:<strftime>")
 
 DIFF_OPTIONS = (
     Option(short='-W',
@@ -260,6 +262,60 @@ REF_FILTER_OPTIONS = (
            description="List only refs that point at the object"),
 )
 
+# git's ref-format options, which `for-each-ref`, `branch` and `tag`
+# share. --sort repeats, the last key given sorting first, and --no-sort
+# drops every key before it, the default refname included.
+FORMAT_OPTION_REF = Option(long="--format",
+                           type="str",
+                           metavar="format",
+                           description="Format each ref: %(fieldname) "
+                           "placeholders, as git for-each-ref")
+SORT_OPTIONS = (
+    Option(long="--sort",
+           type="str",
+           multiple=True,
+           metavar="key",
+           description="Sort on a field, - reversing it and version: "
+           "comparing as versions"),
+    Option(long="--no-sort", description="Drop the sort keys given so far"),
+)
+OMIT_EMPTY_OPTION = Option(
+    long="--omit-empty",
+    description="Print nothing, not even a newline, for an empty row")
+IGNORE_CASE_OPTION = Option(
+    short="-i",
+    long="--ignore-case",
+    description="Sort and match patterns case-insensitively")
+
+FOR_EACH_REF_OPTIONS = (
+    Option(short="-s",
+           long="--shell",
+           description="Quote fields suitably for shells"),
+    Option(short="-p",
+           long="--perl",
+           description="Quote fields suitably for perl"),
+    Option(long="--python", description="Quote fields suitably for python"),
+    Option(long="--tcl", description="Quote fields suitably for Tcl"),
+    OMIT_EMPTY_OPTION,
+    Option(long="--count",
+           type="int",
+           metavar="n",
+           description="Show only the first <n> refs"),
+    FORMAT_OPTION_REF,
+    Option(long="--exclude",
+           type="str",
+           multiple=True,
+           metavar="pattern",
+           description="Leave out refs matching the pattern"),
+    *SORT_OPTIONS,
+    *REF_FILTER_OPTIONS,
+    Option(long="--ignore-case",
+           description="Sort and match patterns case-insensitively"),
+    Option(long="--stdin", description="Read ref patterns from stdin"),
+    Option(long="--include-root-refs",
+           description="Also list HEAD and the other root refs"),
+)
+
 BRANCH_OPTIONS = (
     Option(long="--show-current", description="Show the current branch name"),
     Option(short="-v",
@@ -276,6 +332,10 @@ BRANCH_OPTIONS = (
            long="--list",
            description="List branches matching the patterns"),
     *REF_FILTER_OPTIONS,
+    *SORT_OPTIONS,
+    FORMAT_OPTION_REF,
+    OMIT_EMPTY_OPTION,
+    IGNORE_CASE_OPTION,
 )
 
 PATHSPEC = Operand(type="str")
@@ -385,6 +445,10 @@ TAG_OPTIONS = (
     Option(short="-f", long="--force",
            description="Replace the tag if exists"),
     *REF_FILTER_OPTIONS,
+    *SORT_OPTIONS,
+    FORMAT_OPTION_REF,
+    OMIT_EMPTY_OPTION,
+    IGNORE_CASE_OPTION,
 )
 
 STATUS_OPTIONS = (
@@ -458,14 +522,7 @@ GIT = CLISpec(
         CLISpec(name='for-each-ref',
                 fn=for_each_ref,
                 description='List references with a format',
-                options=(
-                    Option(long='--format',
-                           type='str',
-                           description='Format each reference'),
-                    Option(long='--count',
-                           type='int',
-                           description='Maximum number of references'),
-                ),
+                options=FOR_EACH_REF_OPTIONS,
                 rest=REVISION),
         CLISpec(name='ls-files',
                 fn=ls_files,

@@ -21,6 +21,7 @@ from mirage.cache.index.ram import RAMIndexCacheStore
 from mirage.core.email.readdir import _date_bucket, readdir
 from mirage.core.email.render import message_json_bytes
 from mirage.types import PathSpec
+from tests.fixtures.index_spy import WindowSpy
 
 HEADERS = [{
     "from": {
@@ -154,3 +155,53 @@ def test_date_bucket_keeps_the_calendar_date_as_written():
         "date": "",
         "internal_date": " 7-Aug-2026 02:00:00 +1000",
     }) == "2026-08-07"
+
+
+@pytest.mark.asyncio
+async def test_a_folder_and_its_seeded_days_are_written_as_windows(accessor):
+    # The folder fetch stops at max_messages, so its days, and the days
+    # seeded from it, name only the messages that fit.
+    index = WindowSpy()
+    with (patch("mirage.core.email.readdir.list_folders",
+                new_callable=AsyncMock,
+                return_value=["INBOX"]),
+          patch("mirage.core.email.readdir.list_message_uids",
+                new_callable=AsyncMock,
+                return_value=["101"]),
+          patch("mirage.core.email.readdir.fetch_headers",
+                new_callable=AsyncMock,
+                return_value=HEADERS)):
+        await readdir(
+            accessor,
+            PathSpec(vfs_path="INBOX", virtual="/INBOX", directory="/INBOX"),
+            index)
+    assert index.windows["/INBOX"] is True
+    assert index.windows["/INBOX/2024-01-15"] is True
+
+
+@pytest.mark.asyncio
+async def test_a_day_relisted_after_its_listing_went_is_a_window(accessor):
+    # With the day's own listing dropped, the day lister runs itself rather
+    # than the folder's seed answering for it.
+    index = WindowSpy()
+    with (patch("mirage.core.email.readdir.list_folders",
+                new_callable=AsyncMock,
+                return_value=["INBOX"]),
+          patch("mirage.core.email.readdir.list_message_uids",
+                new_callable=AsyncMock,
+                return_value=["101"]),
+          patch("mirage.core.email.readdir.fetch_headers",
+                new_callable=AsyncMock,
+                return_value=HEADERS)):
+        await readdir(
+            accessor,
+            PathSpec(vfs_path="INBOX", virtual="/INBOX", directory="/INBOX"),
+            index)
+        await index.invalidate_dir("/INBOX/2024-01-15")
+        index.windows.clear()
+        await readdir(
+            accessor,
+            PathSpec(vfs_path="INBOX/2024-01-15",
+                     virtual="/INBOX/2024-01-15",
+                     directory="/INBOX/2024-01-15"), index)
+    assert index.windows["/INBOX/2024-01-15"] is True

@@ -20,6 +20,7 @@ from mirage.cache.index.ram import RAMIndexCacheStore
 from mirage.core.lancedb.readdir import readdir
 from mirage.types import PathSpec
 from mirage.vfs.lancedb.config import LanceDBConfig
+from tests.fixtures.index_spy import WindowSpy
 
 
 def _ps(path: str) -> PathSpec:
@@ -273,3 +274,14 @@ async def test_a_glob_head_cut_inside_an_escape_counts_matches(crowded):
     # LIKE loses nothing, and the cap counts the renderings that really
     # start with ``a⁄`` rather than the rows the LIKE let through.
     assert _names(await readdir(crowded, _globbed("/", "a⁄*"))) == {"a⁄∕x"}
+
+
+@pytest.mark.asyncio
+async def test_a_capped_listing_is_written_as_a_window(accessor):
+    # Groups and rows are read up to max_rows, so a row outside the head of
+    # the table is not gone because a listing no longer names it.
+    index = WindowSpy()
+    await readdir(accessor, _ps("/animals"), index)
+    await readdir(accessor, _ps("/animals/cat/big"), index)
+    assert index.windows["/animals"] is True
+    assert index.windows["/animals/cat/big"] is True

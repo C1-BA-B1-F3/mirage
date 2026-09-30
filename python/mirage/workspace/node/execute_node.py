@@ -18,6 +18,7 @@ from dataclasses import replace
 from functools import partial
 from typing import Any, Callable
 
+from mirage.cache.index.scope import command_scope
 from mirage.context import (program_invocation, reset_program_invocation,
                             set_program_invocation)
 from mirage.io import IOResult
@@ -821,20 +822,21 @@ async def _execute_node(
 
     # ── command ─────────────────────────────────
     if kind == NodeKind.COMMAND:
-        return await execute_command(recurse,
-                                     dispatch,
-                                     registry,
-                                     namespace,
-                                     execute_fn,
-                                     node,
-                                     session,
-                                     stdin,
-                                     cs,
-                                     job_table,
-                                     cancel=cancel,
-                                     routing_decision=routing_decision,
-                                     agent_id=agent_id,
-                                     handed=handed)
+        async with command_scope():
+            return await execute_command(recurse,
+                                         dispatch,
+                                         registry,
+                                         namespace,
+                                         execute_fn,
+                                         node,
+                                         session,
+                                         stdin,
+                                         cs,
+                                         job_table,
+                                         cancel=cancel,
+                                         routing_decision=routing_decision,
+                                         agent_id=agent_id,
+                                         handed=handed)
 
     # ── pipeline ────────────────────────────────
     if kind == NodeKind.PIPELINE:
@@ -1046,21 +1048,22 @@ async def _execute_node(
     # ── for / select ────────────────────────────
     if kind in (NodeKind.FOR, NodeKind.SELECT):
         var, values, body = get_for_parts(node)
-        classified = await expand_and_classify(values,
-                                               session,
-                                               execute_fn,
-                                               registry,
-                                               session.cwd,
-                                               cs,
-                                               view=view)
-        # The loop word list is consumed by the shell (WordPolicy.SHELL):
-        # globs resolve to matches before iteration starts.
-        classified = await resolve_globs(
-            classified,
-            registry,
-            noglob=bool(session.shell_options.get("noglob")),
-            links=namespace,
-            options=glob_options(session))
+        async with command_scope():
+            classified = await expand_and_classify(values,
+                                                   session,
+                                                   execute_fn,
+                                                   registry,
+                                                   session.cwd,
+                                                   cs,
+                                                   view=view)
+            # The loop word list is consumed by the shell (WordPolicy.SHELL):
+            # globs resolve to matches before iteration starts.
+            classified = await resolve_globs(
+                classified,
+                registry,
+                noglob=bool(session.shell_options.get("noglob")),
+                links=namespace,
+                options=glob_options(session))
         if kind == NodeKind.SELECT:
             return await handle_select(stream,
                                        var,
@@ -1151,8 +1154,9 @@ async def _execute_node(
 
     # ── declaration (export/local/declare/readonly) ──
     if kind == NodeKind.DECLARATION:
-        return await execute_declaration(node, session, execute_fn, registry,
-                                         namespace, cs, view)
+        async with command_scope():
+            return await execute_declaration(node, session, execute_fn,
+                                             registry, namespace, cs, view)
 
     # ── unset ───────────────────────────────────
     if kind == NodeKind.UNSET:

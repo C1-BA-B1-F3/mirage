@@ -24,7 +24,6 @@ import {
   PROJECTS_CLASSIC_GONE,
   closedNumbers,
   commitIdentity,
-  commitJson,
   commitSha,
   issueNodeId,
   nodeId,
@@ -38,6 +37,7 @@ import type { CommitRow, PageArgs } from './wire.ts'
 import {
   allRepos,
   branchFor,
+  commitsJson,
   forkOwnedBy,
   nextNumber,
   repoJson,
@@ -407,7 +407,7 @@ async function listPullCommits(ctx: Ctx<C>, repo: RepoRow): Promise<Reply> {
   const row = await found(ctx, repo)
   if (row === null) return fail(404, 'Not Found')
   const { range } = await pullState(ctx, repo, row)
-  return pagedReply(ctx, [...range.ahead].reverse().map(commitJson))
+  return pagedReply(ctx, await commitsJson(ctx.db, ctx.tenant, repo, [...range.ahead].reverse()))
 }
 
 async function editPull(ctx: Ctx<C>, repo: RepoRow): Promise<Reply> {

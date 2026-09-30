@@ -15,19 +15,246 @@
 import { toIsoZ } from '../../utils/dates.ts'
 import { KeyLock } from '../lock.ts'
 import { uuid7 } from '../../utils/ids.ts'
-import { underPath } from '../../utils/key_prefix.ts'
 import { loadOptionalPeer } from '../../utils/optional_peer.ts'
 import { rstripSlash } from '../../utils/slash.ts'
 import {
   IndexDirectorySchema,
   IndexEntry,
   LookupStatus,
+  type Evicted,
   type IndexDirectory,
   type ListResult,
   type LookupResult,
+  type SetDirOptions,
 } from './config.ts'
 import { IndexCacheStore } from './store.ts'
-import { CHILDREN_PREFIX, DEFAULT_KEY_PREFIX, ENTRY_PREFIX, GENERATION_KEY } from './constants.ts'
+import {
+  CHILDREN_PREFIX,
+  DEFAULT_KEY_PREFIX,
+  ENTRY_PREFIX,
+  GENERATION_KEY,
+  PATHS_KEY,
+  TOMBSTONE_PREFIX,
+} from './constants.ts'
+
+const PATH_REGISTRY = `
+local function track(registry, prefixes, paths)
+  for _, path in ipairs(paths) do redis.call('ZADD', registry, 0, path) end
+end
+local function prune(registry, prefixes, path)
+  for _, prefix in ipairs(prefixes) do
+    if redis.call('EXISTS', prefix .. path) == 1 then return end
+  end
+  redis.call('ZREM', registry, path)
+end
+local function subtree(registry, root)
+  root = string.gsub(root, '/+$', '')
+  if root == '' then root = '/' end
+  local lower = root == '/' and '/' or root .. '/'
+  local upper = root == '/' and '0' or root .. '0'
+  local paths = redis.call('ZRANGEBYLEX', registry, '[' .. lower, '(' .. upper)
+  paths[#paths + 1] = root
+  return paths
+end
+`
+
+const TRACK_PATHS =
+  PATH_REGISTRY +
+  `
+local paths = {}
+for i = 5, #ARGV do paths[#paths + 1] = ARGV[i] end
+track(KEYS[1], {ARGV[1], ARGV[2], ARGV[3], ARGV[4]}, paths)
+return 1
+`
+
+const RECOVER_PATHS = `
+local rebuilding = string.char(0)
+if redis.call('ZSCORE', KEYS[1], '') then return {1, ''} end
+if ARGV[2] == 'begin' then
+  redis.call('ZADD', KEYS[1], 'NX', ARGV[1], rebuilding)
+  return {0, redis.call('ZSCORE', KEYS[1], rebuilding)}
+end
+if redis.call('ZSCORE', KEYS[1], rebuilding) ~= ARGV[1] then
+  return {-1, ''}
+end
+if ARGV[2] == 'finish' then
+  redis.call('ZREM', KEYS[1], rebuilding)
+  redis.call('ZADD', KEYS[1], 0, '')
+  return {1, ''}
+end
+for i = 3, #ARGV, 2 do
+  if redis.call('EXISTS', ARGV[i]) == 1 then
+    redis.call('ZADD', KEYS[1], 0, ARGV[i + 1])
+  end
+end
+return {0, ARGV[1]}
+`
+
+const DELETE_PATHS =
+  PATH_REGISTRY +
+  `
+if not redis.call('ZSCORE', KEYS[1], '') then
+  error('MIRAGE_INDEX_REGISTRY_MISSING')
+end
+local prefixes = {ARGV[1], ARGV[2], ARGV[3], ARGV[4]}
+local removed = cjson.decode(ARGV[5])
+local excluded = cjson.decode(ARGV[7])
+local root = string.gsub(ARGV[6], '/+$', '')
+if root == '' then root = '/' end
+local lower = root == '/' and '/' or root .. '/'
+local upper = root == '/' and '0' or root .. '0'
+local after = ARGV[8] == '' and '[' .. lower or '(' .. ARGV[8]
+local paths = redis.call('ZRANGEBYLEX', KEYS[1], after, '(' .. upper,
+  'LIMIT', 0, 128)
+local cursor = #paths == 128 and paths[#paths] or ''
+if ARGV[8] == '' then paths[#paths + 1] = root end
+for _, path in ipairs(paths) do
+  local protected = false
+  for _, excluded_root in ipairs(excluded) do
+    if path == excluded_root
+      or string.sub(path, 1, #excluded_root + 1) == excluded_root .. '/' then
+      protected = true
+      break
+    end
+  end
+  if not protected then
+    for _, prefix in ipairs(removed) do redis.call('DEL', prefix .. path) end
+    prune(KEYS[1], prefixes, path)
+  end
+end
+return cursor
+`
+
+const DELETE_ENTRY =
+  PATH_REGISTRY +
+  `
+local prefixes = {ARGV[1], ARGV[2], ARGV[3], ARGV[4]}
+track(KEYS[1], prefixes, {})
+redis.call('DEL', ARGV[1] .. ARGV[5])
+prune(KEYS[1], prefixes, ARGV[5])
+`
+
+const SWAP_LISTING =
+  PATH_REGISTRY +
+  `
+if not redis.call('ZSCORE', KEYS[3], '') then
+  error('MIRAGE_INDEX_REGISTRY_MISSING')
+end
+track(KEYS[3], {ARGV[2], ARGV[3], ARGV[4], ARGV[5]},
+  {string.sub(KEYS[1], #ARGV[3] + 1)})
+local old = redis.call('GET', KEYS[1])
+local tomb = redis.call('GET', KEYS[2])
+redis.call('DEL', KEYS[2])
+local excluded = cjson.decode(ARGV[6])
+local function protected(path)
+  for _, prefix in ipairs(excluded) do
+    if path == prefix or string.sub(path, 1, #prefix + 1) == prefix .. '/' then
+      return true
+    end
+  end
+  return false
+end
+local named = {}
+for i = 7, #ARGV, 2 do
+  named[ARGV[i]] = cjson.decode(ARGV[i + 1]).resource_type
+end
+local seen, gone, folders = {}, {}, {}
+local function drop(path, buried)
+  if seen[path] or protected(path) then
+    return
+  end
+  local row = redis.call('GET', ARGV[2] .. path)
+  local folder = buried or redis.call('EXISTS', ARGV[3] .. path) == 1
+    or (row ~= false and cjson.decode(row).resource_type == 'folder')
+  if named[path] and not (folder and named[path] == 'file') then
+    return
+  end
+  seen[path] = true
+  redis.call('DEL', ARGV[2] .. path)
+  prune(KEYS[3], {ARGV[2], ARGV[3], ARGV[4], ARGV[5]}, path)
+  gone[#gone + 1] = path
+  folders[#folders + 1] = folder and 1 or 0
+end
+local buried = {}
+local saved = tomb and cjson.decode(tomb) or false
+if saved then
+  for i, path in ipairs(saved.entries) do
+    buried[path] = saved.folders[i] == 1
+  end
+end
+if old then
+  for _, path in ipairs(cjson.decode(old).entries) do
+    drop(path, buried[path] == true)
+  end
+end
+if saved then
+  for _, path in ipairs(saved.entries) do drop(path, buried[path]) end
+end
+for i = 7, #ARGV, 2 do drop(ARGV[i], false) end
+local roots = {}
+for i, path in ipairs(gone) do
+  if folders[i] == 1 then roots[#roots + 1] = path end
+end
+local function remove(path)
+  if protected(path) then return end
+  for _, prefix in ipairs({ARGV[2], ARGV[3], ARGV[4], ARGV[5]}) do
+    redis.call('DEL', prefix .. path)
+  end
+  redis.call('ZREM', KEYS[3], path)
+end
+for _, root in ipairs(roots) do
+  for _, path in ipairs(subtree(KEYS[3], root)) do remove(path) end
+end
+for i = 7, #ARGV, 2 do
+  redis.call('SET', ARGV[2] .. ARGV[i], ARGV[i + 1])
+  redis.call('ZADD', KEYS[3], 0, ARGV[i])
+end
+redis.call('SET', KEYS[1], ARGV[1])
+return {gone, folders}
+`
+
+const BURY_LISTING =
+  PATH_REGISTRY +
+  `
+track(KEYS[4], {ARGV[1], ARGV[2], ARGV[3], ARGV[4]},
+  {string.sub(KEYS[1], #ARGV[2] + 1)})
+local raw = redis.call('GET', KEYS[1])
+if raw then
+  local listing = cjson.decode(raw)
+  local entries, folders, positions = {}, {}, {}
+  if listing.partial then
+    local saved = redis.call('GET', KEYS[2])
+    if saved then
+      local tomb = cjson.decode(saved)
+      for i, path in ipairs(tomb.entries) do
+        entries[#entries + 1] = path
+        folders[#folders + 1] = tomb.folders[i]
+        positions[path] = #entries
+      end
+    end
+  end
+  for _, path in ipairs(listing.entries) do
+    local row = redis.call('GET', ARGV[1] .. path)
+    local folder = redis.call('EXISTS', ARGV[2] .. path) == 1
+      or (row ~= false and cjson.decode(row).resource_type == 'folder')
+    local position = positions[path]
+    if not position then
+      entries[#entries + 1] = path
+      position = #entries
+      positions[path] = position
+    end
+    folders[position] = (folder or folders[position] == 1) and 1 or 0
+    redis.call('DEL', ARGV[1] .. path)
+    prune(KEYS[4], {ARGV[1], ARGV[2], ARGV[3], ARGV[4]}, path)
+  end
+  redis.call('SET', KEYS[2],
+    cjson.encode({entries = entries, folders = folders}))
+end
+redis.call('DEL', KEYS[1])
+redis.call('DEL', KEYS[3])
+prune(KEYS[4], {ARGV[1], ARGV[2], ARGV[3], ARGV[4]},
+  string.sub(KEYS[1], #ARGV[2] + 1))
+`
 
 /**
  * Escape redis MATCH metacharacters in a literal path.
@@ -42,6 +269,7 @@ function globEscape(value: string): string {
 }
 
 interface RedisPipeline {
+  eval: (script: string, options: { keys: string[]; arguments: string[] }) => RedisPipeline
   set: (key: string, value: string, options?: { NX: boolean }) => RedisPipeline
   del: (key: string) => RedisPipeline
   exec: () => Promise<unknown>
@@ -54,7 +282,9 @@ export interface RedisClientLike {
   set: (key: string, value: string, options?: { NX: boolean }) => Promise<unknown>
   del: (key: string | string[]) => Promise<unknown>
   multi: () => RedisPipeline
-  scanIterator: (options: { MATCH: string }) => AsyncIterable<string | string[]>
+  eval: (script: string, options: { keys: string[]; arguments: string[] }) => Promise<unknown>
+  exists: (key: string) => Promise<number>
+  scanIterator: (options: { MATCH: string; COUNT?: number }) => AsyncIterable<string | string[]>
   isOpen: boolean
   quit: () => Promise<unknown>
 }
@@ -67,13 +297,17 @@ export interface RedisIndexCacheOptions {
 }
 
 // Directory records retain stale listings like RAM; Redis maxmemory eviction
-// can still turn any cached fact into a miss.
+// can still turn any cached fact into a miss. A missing path registry is rebuilt
+// in client-side scan batches; prefix invalidation also yields between batches.
 export class RedisIndexCacheStore extends IndexCacheStore {
   readonly ttl: number
   private readonly url: string
   private readonly providedClient: RedisClientLike | null
   private readonly entryPrefix: string
   private readonly childrenPrefix: string
+  private readonly tombstonePrefix: string
+  private readonly keyPrefix: string
+  private readonly pathsKey: string
   private readonly generationKey: string
   private readonly initializingGenerations = new Map<string, Promise<string>>()
   private clientPromise: Promise<RedisClientLike> | null = null
@@ -92,9 +326,12 @@ export class RedisIndexCacheStore extends IndexCacheStore {
     this.url = options.url ?? 'redis://localhost:6379/0'
     this.providedClient = options.client ?? null
     const prefix = options.keyPrefix ?? DEFAULT_KEY_PREFIX
+    this.keyPrefix = prefix
     this.entryPrefix = `${prefix}${ENTRY_PREFIX}`
     this.childrenPrefix = `${prefix}${CHILDREN_PREFIX}`
+    this.tombstonePrefix = `${prefix}${TOMBSTONE_PREFIX}`
     this.generationKey = `${prefix}${GENERATION_KEY}`
+    this.pathsKey = `${prefix}${PATHS_KEY}`
   }
 
   private entryKey(path: string): string {
@@ -143,6 +380,84 @@ export class RedisIndexCacheStore extends IndexCacheStore {
     })
   }
 
+  private trackPaths(pipe: RedisPipeline, paths: readonly string[]): void {
+    pipe.eval(TRACK_PATHS, {
+      keys: [this.pathsKey],
+      arguments: [
+        this.entryPrefix,
+        this.childrenPrefix,
+        this.tombstonePrefix,
+        `${this.generationKey}:`,
+        ...paths,
+      ],
+    })
+  }
+
+  private async recoverPaths(c: RedisClientLike): Promise<void> {
+    const prefixes = [
+      this.entryPrefix,
+      this.childrenPrefix,
+      this.tombstonePrefix,
+      `${this.generationKey}:`,
+    ]
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const candidate = String(Number.parseInt(uuid7().replaceAll('-', '').slice(-12), 16))
+      const [initialStatus, token] = (await c.eval(RECOVER_PATHS, {
+        keys: [this.pathsKey],
+        arguments: [candidate, 'begin'],
+      })) as [number, string]
+      let status = initialStatus
+      if (status === 1) return
+      for await (const batch of c.scanIterator({
+        MATCH: `${globEscape(this.keyPrefix)}mirage:idx:*`,
+        COUNT: 128,
+      })) {
+        const rows: string[] = []
+        for (const key of Array.isArray(batch) ? batch : [batch]) {
+          const prefix = prefixes.find((candidate) => key.startsWith(candidate))
+          if (prefix !== undefined) rows.push(key, key.slice(prefix.length))
+        }
+        for (let start = 0; start < rows.length; start += 256) {
+          ;[status] = (await c.eval(RECOVER_PATHS, {
+            keys: [this.pathsKey],
+            arguments: [token, 'batch', ...rows.slice(start, start + 256)],
+          })) as [number, string]
+          if (status !== 0) break
+        }
+        if (status !== 0) break
+      }
+      if (status === 1) return
+      if (status === -1) continue
+      ;[status] = (await c.eval(RECOVER_PATHS, {
+        keys: [this.pathsKey],
+        arguments: [token, 'finish'],
+      })) as [number, string]
+      if (status === 1) return
+    }
+    throw new Error('Redis repeatedly evicted the index path registry during recovery')
+  }
+
+  private async evalComplete(
+    c: RedisClientLike,
+    script: string,
+    options: { keys: string[]; arguments: string[] },
+  ): Promise<unknown> {
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        return await c.eval(script, options)
+      } catch (error) {
+        if (
+          !(error instanceof Error) ||
+          !error.message.includes('MIRAGE_INDEX_REGISTRY_MISSING') ||
+          attempt === 2
+        )
+          throw error
+        await this.recoverPaths(c)
+      }
+    }
+    throw new Error('Redis index path registry recovery failed')
+  }
+
   private generation(c: RedisClientLike, key: string): Promise<string> {
     const pending = this.initializingGenerations.get(key)
     if (pending !== undefined) return pending
@@ -153,7 +468,14 @@ export class RedisIndexCacheStore extends IndexCacheStore {
       if (current !== null) return current
       // A new token after eviction must never revive an old listing.
       const generation = uuid7()
-      await c.set(key, generation, { NX: true })
+      if (key === this.generationKey) {
+        await c.set(key, generation, { NX: true })
+      } else {
+        const pipe = c.multi()
+        this.trackPaths(pipe, [key.slice(this.generationKey.length + 1)])
+        pipe.set(key, generation, { NX: true })
+        await pipe.exec()
+      }
       // Even when NX loses, keep our attempted token. A later read could adopt
       // a replacement written by an invalidation/refill and revive old data.
       return generation
@@ -184,6 +506,7 @@ export class RedisIndexCacheStore extends IndexCacheStore {
           }
           if (missing.size > 0) {
             const initialize = c.multi()
+            this.trackPaths(initialize, [...missing.keys()])
             for (const [path, token] of missing) {
               initialize.set(`${this.generationKey}:${path}`, token, { NX: true })
             }
@@ -192,6 +515,10 @@ export class RedisIndexCacheStore extends IndexCacheStore {
           }
         }
         const pipe = c.multi()
+        this.trackPaths(
+          pipe,
+          pending.flatMap((seed) => [...seed.entries.keys(), ...seed.children.keys()]),
+        )
         for (const seed of pending) {
           for (const [path, entry] of seed.entries) {
             pipe.set(this.entryKey(path), JSON.stringify(entry))
@@ -238,7 +565,10 @@ export class RedisIndexCacheStore extends IndexCacheStore {
     const c = await this.client()
     const stored =
       entry.indexTime === '' ? entry.copyWith({ indexTime: toIsoZ(new Date()) }) : entry
-    await c.set(this.entryKey(vfsPath), JSON.stringify(stored))
+    const pipe = c.multi()
+    this.trackPaths(pipe, [vfsPath])
+    pipe.set(this.entryKey(vfsPath), JSON.stringify(stored))
+    await pipe.exec()
   }
 
   async listDir(vfsPath: string): Promise<ListResult> {
@@ -265,8 +595,16 @@ export class RedisIndexCacheStore extends IndexCacheStore {
     vfsPath: string,
     entries: readonly [string, IndexEntry][],
     expiredAt?: Date | null,
-  ): Promise<void> {
-    await this.storeDir(vfsPath, entries, expiredAt, false)
+    options: SetDirOptions = {},
+  ): Promise<Evicted[]> {
+    return this.storeDir(
+      vfsPath,
+      entries,
+      expiredAt,
+      false,
+      options.window !== true,
+      options.excluded ?? [],
+    )
   }
 
   override async setPartialDir(
@@ -274,7 +612,7 @@ export class RedisIndexCacheStore extends IndexCacheStore {
     entries: readonly [string, IndexEntry][],
     expiredAt?: Date | null,
   ): Promise<void> {
-    await this.storeDir(vfsPath, entries, expiredAt, true)
+    await this.storeDir(vfsPath, entries, expiredAt, true, false)
   }
 
   private async storeDir(
@@ -282,7 +620,9 @@ export class RedisIndexCacheStore extends IndexCacheStore {
     entries: readonly [string, IndexEntry][],
     expiredAt: Date | null | undefined,
     partial: boolean,
-  ): Promise<void> {
+    evict: boolean,
+    excluded: readonly string[] = [],
+  ): Promise<Evicted[]> {
     await this.flushSeed()
     const c = await this.client()
     const now = new Date()
@@ -290,57 +630,114 @@ export class RedisIndexCacheStore extends IndexCacheStore {
     const prefix = vfsPath === '/' ? '/' : `${vfsPath}/`
     const generation = await this.generation(c, this.generationKey)
     const directory = await this.generation(c, `${this.generationKey}:${vfsPath}`)
-    const pipe = c.multi()
-    const childKeys: string[] = []
+    const rows: [string, string][] = []
     for (const [name, entry] of entries) {
-      const fullPath = prefix + name
       const stored = entry.indexTime === '' ? entry.copyWith({ indexTime: nowIso }) : entry
-      pipe.set(this.entryKey(fullPath), JSON.stringify(stored))
-      childKeys.push(fullPath)
+      rows.push([prefix + name, JSON.stringify(stored)])
     }
     const listing: IndexDirectory = {
-      entries: childKeys,
+      entries: rows.map(([path]) => path),
       generation: `${generation}:${directory}`,
       expires_at: (expiredAt?.getTime() ?? now.getTime() + this.ttl * 1000) / 1000,
       partial,
     }
-    pipe.set(this.childrenKey(vfsPath), JSON.stringify(listing))
-    await pipe.exec()
+    if (!evict) {
+      const pipe = c.multi()
+      this.trackPaths(pipe, [vfsPath, ...rows.map(([path]) => path)])
+      for (const [path, row] of rows) pipe.set(this.entryKey(path), row)
+      pipe.set(this.childrenKey(vfsPath), JSON.stringify(listing))
+      // A window is the new full knowledge; it proves nothing gone and leaves
+      // nothing for a later listing to diff against.
+      if (!partial) pipe.del(this.tombstonePrefix + vfsPath)
+      await pipe.exec()
+      return []
+    }
+    // One script, so no other writer lands between reading the previous
+    // listing and replacing it; the diff is against the true predecessor.
+    const [gone, folders] = (await this.evalComplete(c, SWAP_LISTING, {
+      keys: [this.childrenKey(vfsPath), this.tombstonePrefix + vfsPath, this.pathsKey],
+      arguments: [
+        JSON.stringify(listing),
+        this.entryPrefix,
+        this.childrenPrefix,
+        this.tombstonePrefix,
+        `${this.generationKey}:`,
+        JSON.stringify(excluded.map(rstripSlash)),
+        ...rows.flat(),
+      ],
+    })) as [string[], number[]]
+    const dropped: Evicted[] = []
+    for (const [i, path] of gone.entries()) {
+      dropped.push({ path, folder: folders[i] === 1 })
+    }
+    return dropped
+  }
+
+  async invalidateEntry(vfsPath: string): Promise<void> {
+    await this.flushSeed()
+    const c = await this.client()
+    await c.eval(DELETE_ENTRY, {
+      keys: [this.pathsKey],
+      arguments: [
+        this.entryPrefix,
+        this.childrenPrefix,
+        this.tombstonePrefix,
+        `${this.generationKey}:`,
+        vfsPath,
+      ],
+    })
   }
 
   async invalidateDir(vfsPath: string): Promise<void> {
     await this.flushSeed()
     const c = await this.client()
-    const raw = await c.get(this.childrenKey(vfsPath))
-    const childPaths = raw === null ? [] : IndexDirectorySchema.parse(JSON.parse(raw)).entries
-    const pipe = c.multi()
-    for (const child of childPaths) {
-      pipe.del(this.entryKey(child))
-    }
-    pipe.del(this.childrenKey(vfsPath))
-    pipe.del(`${this.generationKey}:${vfsPath}`)
-    await pipe.exec()
+    // The child list becomes a tombstone, so the next complete listing can
+    // still tell which children went away.
+    await c.eval(BURY_LISTING, {
+      keys: [
+        this.childrenKey(vfsPath),
+        this.tombstonePrefix + vfsPath,
+        `${this.generationKey}:${vfsPath}`,
+        this.pathsKey,
+      ],
+      arguments: [
+        this.entryPrefix,
+        this.childrenPrefix,
+        this.tombstonePrefix,
+        `${this.generationKey}:`,
+      ],
+    })
   }
 
-  private async scanDelete(prefix: string, vfsPath: string): Promise<void> {
+  private async deletePaths(
+    prefixes: readonly string[],
+    vfsPath: string,
+    excluded: readonly string[] = [],
+  ): Promise<void> {
     const c = await this.client()
-    const pattern = `${globEscape(prefix + rstripSlash(vfsPath))}*`
-    const keys: string[] = []
-    for await (const k of c.scanIterator({ MATCH: pattern })) {
-      const batch = Array.isArray(k) ? k : [k]
-      for (const key of batch) {
-        const path = key.slice(prefix.length)
-        if (underPath(path, vfsPath)) keys.push(key)
-      }
-    }
-    if (keys.length > 0) await c.del(keys)
+    let cursor = ''
+    do {
+      cursor = (await this.evalComplete(c, DELETE_PATHS, {
+        keys: [this.pathsKey],
+        arguments: [
+          this.entryPrefix,
+          this.childrenPrefix,
+          this.tombstonePrefix,
+          `${this.generationKey}:`,
+          JSON.stringify(prefixes),
+          vfsPath,
+          JSON.stringify(excluded.map(rstripSlash)),
+          cursor,
+        ],
+      })) as string
+    } while (cursor !== '')
   }
 
-  async invalidatePrefix(vfsPath: string): Promise<void> {
+  async invalidatePrefix(vfsPath: string, excluded: readonly string[] = []): Promise<void> {
     await this.flushSeed()
-    await this.scanDelete(this.entryPrefix, vfsPath)
-    await this.scanDelete(this.childrenPrefix, vfsPath)
-    await this.scanDelete(`${this.generationKey}:`, vfsPath)
+    // Tombstones survive until the next complete listing proves removals.
+    await this.deletePaths([this.entryPrefix], vfsPath, excluded)
+    await this.deletePaths([this.childrenPrefix, `${this.generationKey}:`], vfsPath, excluded)
   }
 
   async invalidate(): Promise<void> {
@@ -353,9 +750,11 @@ export class RedisIndexCacheStore extends IndexCacheStore {
   clear(): Promise<void> {
     return this.seedLock.withLock('seed', async () => {
       this.pendingSeeds.length = 0
-      await this.scanDelete(this.entryPrefix, '/')
-      await this.scanDelete(this.childrenPrefix, '/')
-      await this.scanDelete(`${this.generationKey}:`, '/')
+      await this.deletePaths([this.entryPrefix], '/')
+      await this.deletePaths(
+        [this.childrenPrefix, this.tombstonePrefix, `${this.generationKey}:`],
+        '/',
+      )
       const c = await this.client()
       await c.del(this.generationKey)
     })

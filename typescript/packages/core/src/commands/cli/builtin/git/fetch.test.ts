@@ -34,7 +34,7 @@ import { createShellParser, type ShellParser } from '../../../../shell/parse/ind
 import { MountMode } from '../../../../types.ts'
 import { RAMVFS } from '../../../../vfs/ram/ram.ts'
 import { Workspace } from '../../../../workspace/workspace/workspace.ts'
-import { ignoreFunny, mapped, parseRefspec, prettify, summaryLines, type Wanted } from './fetch.ts'
+import { ignoreFunny, prettify, summaryLines, type Wanted } from './fetch.ts'
 import { GIT } from './index.ts'
 import { ensureDir } from './io.ts'
 import type { Dispatch } from './types.ts'
@@ -119,27 +119,6 @@ beforeAll(async () => {
 
 afterAll(() => {
   rmSync(tmp, { recursive: true, force: true })
-})
-
-it.each([
-  ['main', { src: 'main', dst: null, force: false }],
-  [
-    '+refs/heads/*:refs/remotes/origin/*',
-    { src: 'refs/heads/*', dst: 'refs/remotes/origin/*', force: true },
-  ],
-  ['topic:copy', { src: 'topic', dst: 'copy', force: false }],
-  ['main:', { src: 'main', dst: null, force: false }],
-])('splits the refspec %s', (text, expected) => {
-  expect(parseRefspec(text)).toEqual(expected)
-})
-
-it.each([
-  ['+refs/heads/*:refs/remotes/origin/*', 'refs/heads/feat/x', 'refs/remotes/origin/feat/x'],
-  ['+refs/heads/*:refs/remotes/origin/*', 'refs/tags/v1', null],
-  ['refs/heads/main:refs/heads/copy', 'refs/heads/main', 'refs/heads/copy'],
-  ['refs/heads/main', 'refs/heads/main', ''],
-])('maps %s over %s', (spec, name, expected) => {
-  expect(mapped(parseRefspec(spec), name)).toBe(expected)
 })
 
 it('drops a ref git refuses to name locally, with its error', () => {

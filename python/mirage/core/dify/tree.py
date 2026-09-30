@@ -4,6 +4,7 @@ from typing import Any
 
 from mirage.accessor.dify import DifyAccessor
 from mirage.cache.index import NULL_INDEX, IndexCacheStore, IndexEntry
+from mirage.cache.index.config import IndexSnapshot
 from mirage.core.dify.client import list_all_documents
 from mirage.types import JsonValue
 from mirage.utils.path import gnu_basename, parent
@@ -13,12 +14,33 @@ logger = logging.getLogger(__name__)
 
 async def ensure_tree(accessor: DifyAccessor,
                       index: IndexCacheStore = NULL_INDEX,
-                      prefix: str = "") -> None:
+                      prefix: str = "") -> dict[str, list[str]] | None:
     root_key = mount_root(prefix)
     listing = await index.list_dir(root_key)
     if listing.entries is not None:
-        return
+        return None
 
+    return await refill_tree(accessor, index, prefix)
+
+
+async def refill_tree(accessor: DifyAccessor,
+                      index: IndexCacheStore,
+                      prefix: str = "") -> dict[str, list[str]]:
+    """Refetch the whole tree, write every folder's listing, return its rows.
+
+    The mount's listings all come from this one fetch, so an expired one
+    means the tree aged out rather than that a folder went away. The rows
+    are returned so a reader can answer from them when the index itself
+    will not serve them (fresh refusing every listing outside a command).
+
+    Args:
+        accessor (DifyAccessor): the mount's accessor.
+        index (IndexCacheStore): the index to write.
+        prefix (str): the mount prefix the keys are built against.
+
+    Returns:
+        dict[str, list[str]]: each folder's child keys, as written.
+    """
     # list_all_documents already filters to visible documents.
     documents = await list_all_documents(accessor)
     dir_entries = build_dir_entries(
@@ -26,10 +48,20 @@ async def ensure_tree(accessor: DifyAccessor,
         prefix,
         accessor.config.slug_metadata_name,
     )
+    return await _write_tree(index, dir_entries)
+
+
+async def _write_tree(
+    index: IndexCacheStore,
+    dir_entries: dict[str, list[tuple[str,
+                                      IndexEntry]]]) -> dict[str, list[str]]:
+    children: dict[str, list[str]] = {}
     for directory in sorted(dir_entries):
-        await index.set_dir(
-            directory, sorted(dir_entries[directory],
-                              key=lambda item: item[0]))
+        rows = sorted(dir_entries[directory], key=lambda item: item[0])
+        await index.set_dir(directory, rows)
+        stem = "/" if directory == "/" else directory + "/"
+        children[directory] = [stem + name for name, _ in rows]
+    return index.scope_snapshot(IndexSnapshot({}, children)).children
 
 
 def build_dir_entries(

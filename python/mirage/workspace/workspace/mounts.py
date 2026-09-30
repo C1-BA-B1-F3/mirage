@@ -65,8 +65,10 @@ def check_vfs(prefix: str, vfs: BaseVFS) -> None:
                         f"{type(vfs).__name__}")
 
 
-def normalize_mounts(mounts: dict[str, VFSMount], default_mode: MountMode,
-                     default_read: ReadSpec) -> list[MountSpec]:
+def normalize_mounts(mounts: dict[str, VFSMount],
+                     default_mode: MountMode,
+                     default_read: ReadSpec,
+                     index: IndexConfig | None = None) -> list[MountSpec]:
     """Narrow every accepted ``mounts`` spelling to one shape.
 
     Every spelling converges here, which is why this is where a mount's
@@ -77,6 +79,8 @@ def normalize_mounts(mounts: dict[str, VFSMount], default_mode: MountMode,
         mounts (dict[str, VFSMount]): the constructor mapping.
         default_mode (MountMode): mode for entries that name none.
         default_read (ReadSpec): read policy for entries that name none.
+        index (IndexConfig | None): the workspace index a mount that
+            names none is given, which a listing-only fresh is judged on.
 
     Raises:
         TypeError: a tuple entry is not (VFS, mode) or
@@ -120,9 +124,12 @@ def normalize_mounts(mounts: dict[str, VFSMount], default_mode: MountMode,
                           vfs=value,
                           mode=default_mode,
                           read=default_read))
+    indexes: dict[int, IndexConfig | None] = {}
     for spec in specs:
         check_vfs(spec.prefix, spec.vfs)
-        check_read_capability(spec.prefix, spec.vfs, spec.read)
+        effective = indexes.setdefault(
+            id(spec.vfs), spec.index if spec.index is not None else index)
+        check_read_capability(spec.prefix, spec.vfs, spec.read, effective)
     return specs
 
 

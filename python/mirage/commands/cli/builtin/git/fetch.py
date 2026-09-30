@@ -33,14 +33,15 @@ from mirage.commands.cli.builtin.git.inspect import global_sources
 from mirage.commands.cli.builtin.git.io import read_optional, write_file
 from mirage.commands.cli.builtin.git.objects import abbrev_for, store_pack
 from mirage.commands.cli.builtin.git.reflog import ZERO, append, entry
-from mirage.commands.cli.builtin.git.refs import (delete_ref, read_head,
+from mirage.commands.cli.builtin.git.refs import (delete_ref, mapped,
+                                                  parse_refspec, read_head,
                                                   valid_ref_name, write_ref)
 from mirage.commands.cli.builtin.git.repo import open_repo
 from mirage.commands.cli.builtin.git.session import opened
 from mirage.commands.cli.builtin.git.transport import (  # yapf: disable
     Advertisement, HttpTransport, LocalTransport, display_url, extra_headers,
     open_transport)
-from mirage.commands.cli.builtin.git.types import RepoLocation
+from mirage.commands.cli.builtin.git.types import Refspec, RepoLocation
 from mirage.commands.cli.builtin.git.util import fatal, multivar
 from mirage.commands.cli.types import CLIDoors, CLIInvocation
 from mirage.commands.spec.flag_view import FlagView
@@ -59,21 +60,6 @@ UNREACHABLE = ("fatal: Could not read from remote repository.\n\n"
                "and the repository exists.")
 NO_REMOTE = ("No remote repository specified.  Please, specify either a URL "
              "or a\nremote name from which new revisions should be fetched.")
-
-
-@dataclass(frozen=True, slots=True)
-class Refspec:
-    """One ``[+]<src>[:<dst>]`` refspec.
-
-    Args:
-        src (str): the remote ref, or a pattern with one ``*``.
-        dst (str | None): the local ref it lands in, None for
-            FETCH_HEAD alone.
-        force (bool): the leading ``+``, which allows a non-fast-forward.
-    """
-    src: str
-    dst: str | None
-    force: bool
 
 
 @dataclass(frozen=True, slots=True)
@@ -117,37 +103,6 @@ class Row:
     local: str
     error: str = ""
     counted: bool = False
-
-
-def parse_refspec(text: str) -> Refspec:
-    """Split a refspec into its source, destination and force flag.
-
-    Args:
-        text (str): the refspec as typed or configured.
-    """
-    force = text.startswith("+")
-    src, colon, dst = text[1 if force else 0:].partition(":")
-    return Refspec(src, dst if colon and dst else None, force)
-
-
-def mapped(spec: Refspec, name: str) -> str | None:
-    """The local ref a refspec maps a remote ref to, None when unmatched.
-
-    Args:
-        spec (Refspec): the refspec.
-        name (str): the remote ref name.
-    """
-    if "*" not in spec.src:
-        return (spec.dst or "") if name == spec.src else None
-    head, tail = spec.src.split("*", 1)
-    if (len(name) < len(head) + len(tail) or not name.startswith(head)
-            or not name.endswith(tail)):
-        return None
-    middle = name[len(head):len(name) - len(tail)]
-    if not spec.dst:
-        return ""
-    before, star, after = spec.dst.partition("*")
-    return f"{before}{middle}{after}" if star else spec.dst
 
 
 def prettify(ref: str) -> str:

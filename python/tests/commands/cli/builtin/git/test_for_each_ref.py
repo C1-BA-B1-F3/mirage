@@ -12,28 +12,24 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import asyncio
+import json
+import os
+import shlex
+import subprocess
+from pathlib import Path
+
 import pytest
 
-from mirage.commands.cli.builtin.git.for_each_ref import ref_selected
-from tests.commands.cli.builtin.git.conftest import make_branch
+from tests.commands.cli.builtin.git.conftest import make_branch, mounted_rw
 
-
-@pytest.mark.parametrize("patterns,expected", [
-    ((), True),
-    (("refs/heads/feat/git", ), True),
-    (("refs/heads", ), True),
-    (("refs/heads/", ), True),
-    (("refs/hea", ), False),
-    (("refs/*", ), False),
-    (("refs/*/*", ), False),
-    (("refs/*/*/*", ), True),
-    (("refs/**", ), True),
-    (("**/git", ), True),
-    (("refs/heads/feat/g?t", ), True),
-    (("refs/tags", "refs/heads/*/git"), True),
-])
-def test_a_pattern_selects_by_prefix_or_path_glob(patterns, expected):
-    assert ref_selected("refs/heads/feat/git", patterns) is expected
+REFS = Path(__file__).resolve().parents[6] / "integ/fixtures/git/refs.sh"
+ENV = {
+    **os.environ, "LC_ALL": "C",
+    "LANG": "C",
+    "GIT_CONFIG_GLOBAL": "/dev/null",
+    "GIT_CONFIG_NOSYSTEM": "1"
+}
 
 
 @pytest.mark.asyncio
@@ -54,3 +50,32 @@ async def test_an_unknown_atom_is_fatal(git_ws):
                                 )
     assert (result.exit_code,
             result.stderr) == (128, b"fatal: unknown field name: bogus\n")
+
+
+@pytest.fixture(scope="module")
+def refs_repo(tmp_path_factory):
+    path = tmp_path_factory.mktemp("refs") / "repo"
+    subprocess.run(["bash", str(REFS), str(path)],
+                   check=True,
+                   capture_output=True,
+                   env=ENV)
+    return path
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("command",
+                         json.loads(REFS.with_suffix(".json").read_text()))
+async def test_ref_listings_match_git(refs_repo, command):
+    native = await asyncio.to_thread(
+        subprocess.run,
+        ["git", "-C", str(refs_repo), *shlex.split(command)],
+        capture_output=True,
+        env={
+            **ENV, "GIT_TEST_DATE_NOW": "1700000000",
+            "TZ": "UTC"
+        })
+    with mounted_rw(refs_repo) as ws:
+        actual = await ws.shell("GIT_TEST_DATE_NOW=1700000000 TZ=UTC "
+                                "git -C /repo " + command)
+    assert (actual.exit_code, actual.stdout or b"", actual.stderr
+            or b"") == (native.returncode, native.stdout, native.stderr)

@@ -38,7 +38,7 @@ import { compareCodePoints } from '../../../../utils/sort.ts'
  * tens of thousands of requests. The budget stops the walk and records that the
  * answer is partial.
  */
-class WalkBudget {
+export class WalkBudget {
   private remaining: number | null
   hit = false
   // Paths the walk was refused (a rule denied them below the operand), in
@@ -98,9 +98,9 @@ function accountForWalkError(err: unknown, path: PathSpec, budget: WalkBudget): 
   if (!isMissingPath(err) && !isEnotdir(err)) throw err
 }
 
-async function duWalk(
-  ops: CommandIO,
-  accessor: Accessor,
+async function duWalk<A extends Accessor>(
+  ops: CommandIO<A>,
+  accessor: A,
   index: IndexCacheStore | undefined,
   path: PathSpec,
   budget: WalkBudget,
@@ -144,9 +144,19 @@ async function duWalk(
   return total
 }
 
-async function walkEntries(
-  ops: CommandIO,
-  accessor: Accessor,
+export function walkSize<A extends Accessor>(
+  ops: CommandIO<A>,
+  accessor: A,
+  index: IndexCacheStore | undefined,
+  budget: WalkBudget,
+  path: PathSpec,
+): Promise<number> {
+  return duWalk(ops, accessor, index, path, budget, null)
+}
+
+export async function walkEntries<A extends Accessor>(
+  ops: CommandIO<A>,
+  accessor: A,
   index: IndexCacheStore | undefined,
   budget: WalkBudget,
   path: PathSpec,
@@ -169,7 +179,7 @@ export const DU_BUILDER: Builder = {
     )
     const computeSize: ComputeSize =
       native === undefined
-        ? (p) => duWalk(ops, accessor, idx, p, budget, null)
+        ? (p) => walkSize(ops, accessor, idx, budget, p)
         : (p) => native.size(accessor, p, idx)
     const computeEntries: ComputeEntries =
       native === undefined

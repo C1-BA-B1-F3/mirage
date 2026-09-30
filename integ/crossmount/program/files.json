@@ -615,6 +615,132 @@
         "stdout": "",
         "stderr": "jq: Could not open /data2/opt1311: It's a directory\n"
       }
+    },
+    {
+      "id": "jq_version_before_crossmount_inputs",
+      "seq": 1311026,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "jq --version . /data/a /data2/b > /dev/null; echo rc=$?",
+      "expect": {
+        "exit": 0,
+        "stdout": "rc=0\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "jq_short_version_after_crossmount_inputs",
+      "seq": 1311027,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "jq . /data/a /data2/b -V > /dev/null; echo rc=$?",
+      "expect": {
+        "exit": 0,
+        "stdout": "rc=0\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "jq_help_before_crossmount_inputs",
+      "seq": 1311028,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "jq --help . /data/a /data2/b > /dev/null; echo rc=$?",
+      "expect": {
+        "exit": 0,
+        "stdout": "rc=0\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "jq_version_before_crossmount_refusal",
+      "seq": 1311029,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "jq --version --bogus . /data/a /data2/b > /dev/null; echo rc=$?",
+      "expect": {
+        "exit": 0,
+        "stdout": "rc=0\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "jq_refusal_before_crossmount_version",
+      "seq": 1311030,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "jq --bogus -V . /data/a /data2/b",
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "jq: Unknown option --bogus\nUse jq --help for help with command-line options,\nor see the jq manpage, or online docs at https://jqlang.org\n"
+      }
+    },
+    {
+      "id": "jq_bad_indent_before_crossmount_version",
+      "seq": 1311031,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "jq --indent 9 -V . /data/a /data2/b",
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "jq: --indent takes a number between -1 and 7\nUse jq --help for help with command-line options,\nor see the jq manpage, or online docs at https://jqlang.org\n"
+      }
+    },
+    {
+      "id": "jq_bad_binding_before_crossmount_version",
+      "seq": 1311032,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "jq --argjson x '{' -V . /data/a /data2/b",
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "jq: invalid JSON text passed to --argjson\nUse jq --help for help with command-line options,\nor see the jq manpage, or online docs at https://jqlang.org\n"
+      }
+    },
+    {
+      "id": "jq_file_binding_before_crossmount_version",
+      "seq": 1311033,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "jq --rawfile x /data/missing -V . /data/a /data2/b",
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "jq: Bad JSON in --rawfile x /data/missing: Could not open /data/missing: No such file or directory\n"
+      }
+    },
+    {
+      "id": "jq_version_before_crossmount_program_read",
+      "seq": 1311034,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "jq -f /data/missing -V /data/a /data2/b > /dev/null; echo rc=$?",
+      "expect": {
+        "exit": 0,
+        "stdout": "rc=0\n",
+        "stderr": ""
+      }
     }
   ]
 }

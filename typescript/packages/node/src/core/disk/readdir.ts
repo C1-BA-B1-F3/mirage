@@ -12,6 +12,7 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import type { Dirent } from 'node:fs'
 import type { DiskAccessor } from '../../accessor/disk.ts'
 import { IndexEntry, ResourceType } from '@struktoai/mirage-core/cache/index/config'
 import type { IndexCacheStore } from '@struktoai/mirage-core/cache/index/store'
@@ -46,11 +47,10 @@ export async function readdir(
     }
   }
   const full = await resolveInside(accessor.root, path, virtual)
-  let entries: string[]
+  let entries: Dirent[]
   try {
     // A host symlink is not an entry of the mount (see resolveInside).
-    const listed = await readEntries(full)
-    entries = listed.map((e) => e.name)
+    entries = await readEntries(full)
   } catch (err) {
     // The kernel already separates ENOENT (a component does not exist) from
     // ENOTDIR (a component exists but is not a directory); keep that split
@@ -63,15 +63,15 @@ export async function readdir(
   }
   const base = norm(virtual)
   const dirPrefix = base === '/' ? '/' : `${base}/`
-  const sorted = [...entries].sort(compareCodePoints)
-  const virtualEntries = sorted.map((e) => `${mountPrefix}${dirPrefix}${e}`)
+  const sorted = [...entries].sort((a, b) => compareCodePoints(a.name, b.name))
+  const virtualEntries = sorted.map((e) => `${mountPrefix}${dirPrefix}${e.name}`)
   if (index !== undefined) {
-    const indexEntries: [string, IndexEntry][] = sorted.map((name) => [
-      name,
+    const indexEntries: [string, IndexEntry][] = sorted.map((entry) => [
+      entry.name,
       new IndexEntry({
-        id: `${dirPrefix}${name}`,
-        name,
-        resourceType: ResourceType.FILE,
+        id: `${dirPrefix}${entry.name}`,
+        name: entry.name,
+        resourceType: entry.isDirectory() ? ResourceType.FOLDER : ResourceType.FILE,
       }),
     ])
     await index.setDir(virtualKey, indexEntries)

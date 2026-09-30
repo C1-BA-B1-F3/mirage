@@ -111,6 +111,10 @@ export class FakeGraph {
     })
   }
 
+  remove(drive: string, path: string): void {
+    this.rows.delete(`${drive}|${path}`)
+  }
+
   touch(drive: string, path: string): void {
     const row = this.row(drive, path)
     const n = ++this.seq

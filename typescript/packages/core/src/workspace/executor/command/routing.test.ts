@@ -15,6 +15,8 @@
 import { describe, expect, it } from 'vitest'
 
 import { cliSpecFor } from '../../../commands/cli/specs.ts'
+import { specOf } from '../../../commands/spec/builtins.ts'
+import { CommandSpec, Option } from '../../../commands/spec/types.ts'
 import { DeviceInput } from '../../../io/types.ts'
 import { OpsRegistry } from '../../../ops/registry.ts'
 import { RAMVFS } from '../../../vfs/ram/ram.ts'
@@ -22,7 +24,33 @@ import { MountMode, PathSpec } from '../../../types.ts'
 import { Workspace } from '../../workspace/workspace.ts'
 import { getTestParser } from '../../fixtures/workspace_fixture.ts'
 import { runResult } from '../../fixtures/integration_fixture.ts'
-import { defaultCwdOperand, pathFlagScopes, programTokens, routableScopes } from './routing.ts'
+import {
+  defaultCwdOperand,
+  optionLoopExits,
+  pathFlagScopes,
+  programTokens,
+  routableScopes,
+} from './routing.ts'
+
+describe('optionLoopExits', () => {
+  it.each([
+    [['--version', '.', '/a', '/b'], true],
+    [['.', '/a', '/b', '-V'], true],
+    [['--help', '.', '/a', '/b'], true],
+    [['--bogus', '.', '/a', '/b'], true],
+    [['.', '--', '--version', '/a', '/b'], false],
+    [['--arg', 'x', '--version', '.', '/a', '/b'], false],
+    [['.', '/a', '/b'], false],
+  ] as const)('recognizes only parsed early answers in %j', (argv, expected) => {
+    expect(optionLoopExits('jq', specOf('jq'), [...argv], '/')).toBe(expected)
+  })
+
+  it('does not apply builtin exit rules to custom grammars', () => {
+    const spec = new CommandSpec({ options: [new Option({ long: '--version' })] })
+    expect(optionLoopExits('jq', spec, ['--version'], '/')).toBe(false)
+    expect(optionLoopExits('jq', null, ['--version'], '/')).toBe(false)
+  })
+})
 
 describe('routableScopes', () => {
   it('drops awk assignment operands', () => {

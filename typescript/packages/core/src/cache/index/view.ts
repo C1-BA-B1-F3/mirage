@@ -16,28 +16,44 @@ import { withCacheMutation } from '../file/io.ts'
 import type { FileCache } from '../file/mixin.ts'
 import {
   LookupStatus,
+  type Evicted,
   type IndexEntry,
   type IndexSnapshot,
   type ListResult,
   type LookupResult,
+  type SetDirOptions,
 } from './config.ts'
 import { IndexCacheStore } from './store.ts'
 import { rstripSlash } from '../../utils/slash.ts'
 
 interface IndexViewOptions {
+  readonly excludedPrefixes?: () => readonly string[]
   /**
    * Skip the non-reentrant mutation lock already held by the caller.
    * The view must not outlive that hold.
    */
   readonly locked?: boolean
+  /** The mount's cleanup for a child a re-list found gone. */
+  readonly onGone?: (gone: readonly Evicted[]) => Promise<void>
   /** Seconds a listing may live under this mount; unset means no cap. */
   readonly readTtl?: number
+  /**
+   * The mount's listing gate, asked before a cached listing is served;
+   * unset serves every cached listing.
+   */
+  readonly mayServeListing?: (folder: string) => Promise<boolean>
+  /** Told each folder whose listing this view has just written. */
+  readonly noteWritten?: (folder: string) => void
 }
 
 /** A mount-owned index view; delayed backend writes retain their original owner. */
 export class IndexView extends IndexCacheStore {
   private readonly locked: boolean
   private readonly readTtl: number | undefined
+  private readonly onGone: ((gone: readonly Evicted[]) => Promise<void>) | undefined
+  private readonly mayServeListing: ((folder: string) => Promise<boolean>) | undefined
+  private readonly excludedPrefixes: () => readonly string[]
+  private readonly noteWritten: ((folder: string) => void) | undefined
 
   constructor(
     private readonly inner: IndexCacheStore,
@@ -49,6 +65,10 @@ export class IndexView extends IndexCacheStore {
     super()
     this.locked = options.locked ?? false
     this.readTtl = options.readTtl
+    this.onGone = options.onGone
+    this.mayServeListing = options.mayServeListing
+    this.noteWritten = options.noteWritten
+    this.excludedPrefixes = options.excludedPrefixes ?? (() => [])
   }
 
   /** The store this view writes through. */
@@ -97,6 +117,7 @@ export class IndexView extends IndexCacheStore {
     if (!this.owns(this.prefix)) return
     const snapshot = this.scopeSnapshot({ entries, children })
     this.inner.seed(snapshot.entries, snapshot.children, this.cap(expiresAt))
+    for (const folder of snapshot.children.keys()) this.noted(folder)
   }
 
   entries(): Promise<Map<string, IndexEntry>> {
@@ -117,6 +138,21 @@ export class IndexView extends IndexCacheStore {
   }
 
   async listDir(path: string): Promise<ListResult> {
+    const result = await this.fencedListDir(path)
+    // Asked outside the fence, since a gate may reach the backend, and only
+    // about a listing the store has: a NOT_FOUND must stay one. A refusal
+    // leaves the listing stored for the re-list to diff.
+    if (
+      this.mayServeListing !== undefined &&
+      (result.entries != null || result.partialEntries != null) &&
+      !(await this.mayServeListing(path))
+    ) {
+      return { status: LookupStatus.EXPIRED }
+    }
+    return result
+  }
+
+  private fencedListDir(path: string): Promise<ListResult> {
     return this.fence(async () => {
       if (!this.owns(path)) return { status: LookupStatus.NOT_FOUND }
       const result = await this.inner.listDir(path)
@@ -143,8 +179,19 @@ export class IndexView extends IndexCacheStore {
     path: string,
     entries: readonly [string, IndexEntry][],
     expiredAt?: Date | null,
-  ): Promise<void> {
-    return this.storeDir(path, entries, expiredAt, false)
+    options: SetDirOptions = {},
+  ): Promise<Evicted[]> {
+    return this.storeDir(
+      path,
+      entries,
+      expiredAt,
+      false,
+      options.window === true,
+      options.excluded ?? [],
+    ).then(async (gone) => {
+      await this.reportGone(gone)
+      return gone
+    })
   }
 
   override setPartialDir(
@@ -152,7 +199,7 @@ export class IndexView extends IndexCacheStore {
     entries: readonly [string, IndexEntry][],
     expiredAt?: Date | null,
   ): Promise<void> {
-    return this.storeDir(path, entries, expiredAt, true)
+    return this.storeDir(path, entries, expiredAt, true, false).then(() => undefined)
   }
 
   private storeDir(
@@ -160,15 +207,45 @@ export class IndexView extends IndexCacheStore {
     entries: readonly [string, IndexEntry][],
     expiredAt: Date | null | undefined,
     partial: boolean,
-  ): Promise<void> {
+    window: boolean,
+    excluded: readonly string[] = [],
+  ): Promise<Evicted[]> {
     return this.fence(async () => {
-      if (this.owns(path)) {
-        const prefix = rstripSlash(path) + '/'
-        const owned = entries.filter(([name]) => this.owns(prefix + name))
-        const deadline = this.deadline(expiredAt)
-        if (partial) await this.inner.setPartialDir(path, owned, deadline)
-        else await this.inner.setDir(path, owned, deadline)
+      if (!this.owns(path)) return []
+      const prefix = rstripSlash(path) + '/'
+      const owned = entries.filter(([name]) => this.owns(prefix + name))
+      const deadline = this.deadline(expiredAt)
+      if (partial) {
+        await this.inner.setPartialDir(path, owned, deadline)
+        this.noted(path)
+        return []
       }
+      const gone = await this.inner.setDir(path, owned, deadline, {
+        window,
+        excluded: [...excluded, ...this.excludedPrefixes()],
+      })
+      this.noted(path)
+      return gone.filter((child) => this.owns(child.path))
+    })
+  }
+
+  // After the store holds it, never before: a reader trusting the note must
+  // find the listing the note is about.
+  private noted(path: string): void {
+    this.noteWritten?.(path)
+  }
+
+  // Outside the fence: cleanup evicts file-cache entries, and the mount table
+  // can change after the write, so ownership is asked again at cleanup time.
+  override async reportGone(gone: readonly Evicted[]): Promise<void> {
+    if (this.onGone === undefined) return
+    const owned = gone.filter((child) => this.owns(child.path))
+    if (owned.length > 0) await this.onGone(owned)
+  }
+
+  invalidateEntry(vfsPath: string): Promise<void> {
+    return this.fence(async () => {
+      if (this.owns(vfsPath)) await this.inner.invalidateEntry(vfsPath)
     })
   }
 
@@ -178,9 +255,10 @@ export class IndexView extends IndexCacheStore {
     })
   }
 
-  invalidatePrefix(path: string): Promise<void> {
+  invalidatePrefix(path: string, excluded: readonly string[] = []): Promise<void> {
     return this.fence(async () => {
-      if (this.owns(path)) await this.inner.invalidatePrefix(path)
+      if (this.owns(path))
+        await this.inner.invalidatePrefix(path, [...excluded, ...this.excludedPrefixes()])
     })
   }
 

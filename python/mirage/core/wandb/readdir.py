@@ -81,7 +81,9 @@ async def listing(
         if index is not None:
             root = mount_prefix_of(path.virtual,
                                    path.vfs_path) + "/" + "/".join(ps[:4])
-            await index.invalidate_prefix(root)
+            # No wipe first: each complete set_dir drops what it no longer
+            # names, a dropped folder takes its subtree, and the old lists
+            # are what tells cleanup which files went away.
             await index.put(root, entry("files", True))
             for directory, entries in tree.items():
                 await index.set_dir(

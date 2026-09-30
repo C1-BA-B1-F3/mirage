@@ -13,6 +13,7 @@
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import asyncio
+import threading
 from datetime import datetime, timedelta, timezone
 
 import pytest
@@ -20,8 +21,9 @@ import pytest
 from mirage.cache.index.view import IndexView
 from mirage.core.github.config import GitHubConfig
 from mirage.core.github.tree import fetch_tree
-from mirage.types import MountMode, ReadPolicy, ReadSpec
+from mirage.types import MountMode, PathSpec, ReadPolicy, ReadSpec
 from mirage.vfs.github import GitHubVFS
+from mirage.vfs.ram import RAMVFS
 from mirage.vfs.registry import build_vfs
 from mirage.workspace import Workspace
 from mirage.workspace.mount import Mount
@@ -301,7 +303,11 @@ async def test_a_listing_is_served_until_the_mount_ttl_then_refetched(
         try:
             await _out(ws, first)
             hub.files["docs/c.txt"] = b"charlie\n"
-            assert await _out(ws, "ls /gh/docs") == LISTED
+            # fresh checks the listing, so it sees the add at once; bounded
+            # serves the cached one until the mount's ttl runs out.
+            assert await _out(
+                ws, "ls /gh/docs") == (LISTED if policy is ReadPolicy.BOUNDED
+                                       else GROWN)
             await asyncio.sleep(1.1)
             assert await _out(ws, "ls /gh/docs") == GROWN
         finally:
@@ -380,5 +386,233 @@ async def test_an_invalid_walk_after_an_expiry_fetches_nothing(line):
             assert result.exit_code == 1
             assert await result.stderr_str() != ""
             assert hub.counts() == before
+        finally:
+            await ws.close()
+
+
+def _three() -> FakeGitHub:
+    return FakeGitHub(
+        files={f"d{i}/{n}.txt": b"x\n"
+               for i in (1, 2, 3)
+               for n in "abc"})
+
+
+def _fresh(hub: FakeGitHub, prefix: str = "/gh") -> Workspace:
+    return Workspace({
+        prefix:
+        _mount(_vfs(hub), policy=ReadPolicy.FRESH, ttl=600),
+        "/r": (RAMVFS(), MountMode.WRITE),
+    })
+
+
+# One recursive tree fetch per command: the listing it writes is trusted
+# for the rest of that command, whatever the command reads it for.
+FRESH_BUDGET = [
+    ("ls /gh/d1", (0, 1, 0)),
+    ("ls -R /gh", (0, 1, 0)),
+    ("ls /gh/d1 /gh/d2 /gh/d3", (0, 1, 0)),
+    ("echo /gh/*/*.txt", (0, 1, 0)),
+    ("find /gh", (0, 1, 0)),
+    ("du -a /gh", (0, 1, 0)),
+    ("stat /gh/d1/a.txt", (0, 1, 0)),
+    ("ls -l /gh/d1", (0, 1, 0)),
+    ("ls /gh/d1 | cat", (0, 1, 0)),
+    ("echo /gh/d1/* $(true) /gh/d2/*", (0, 1, 0)),
+    ("for f in /gh/*/*.txt; do echo $f; done", (0, 1, 0)),
+    ("x=(/gh/*/*.txt); echo ${x[@]}", (0, 1, 0)),
+    ("f() { local x=(/gh/*/*.txt); echo ${x[@]}; }; f", (0, 1, 0)),
+    ("select f in /gh/*/*.txt; do break; done </dev/null 2>/dev/null", (0, 1,
+                                                                        0)),
+    ("cp /gh/*/a.txt /r/", (0, 1, 3)),
+]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("line,expected", FRESH_BUDGET)
+async def test_a_fresh_command_refetches_the_tree_once(line, expected):
+    with serve(_three()) as hub:
+        ws = _fresh(hub)
+        try:
+            await _out(ws, "ls /gh")
+            hub.log.clear()
+            await _out(ws, line)
+            assert hub.counts() == expected
+        finally:
+            await ws.close()
+
+
+@pytest.mark.asyncio
+async def test_a_fresh_ls_sees_a_file_added_outside_mirage():
+    # The task's own report: before, the second ls sent nothing and did not
+    # show the file.
+    with serve(_three()) as hub:
+        ws = _fresh(hub)
+        try:
+            assert await _out(ws, "ls /gh/d1") == b"a.txt\nb.txt\nc.txt\n"
+            hub.files["d1/new.txt"] = b"new\n"
+            hub.log.clear()
+            assert await _out(ws,
+                              "ls /gh/d1") == b"a.txt\nb.txt\nc.txt\nnew.txt\n"
+            assert hub.counts() == (0, 1, 0)
+        finally:
+            await ws.close()
+
+
+@pytest.mark.asyncio
+async def test_each_command_of_a_loop_sees_changes_made_before_it():
+    # One line, two commands: a scope per line would serve the second ls
+    # the listing the first one fetched.
+    with serve(_three()) as hub:
+        ws = _fresh(hub)
+        try:
+            await _out(ws, "ls /gh")
+            hub.log.clear()
+            hub.after_recursive = lambda: hub.files.setdefault(
+                "d1/new.txt", b"new\n")
+            out = await _out(ws, "for i in 1 2; do ls /gh/d1; done")
+            assert out.count(b"new.txt") == 1
+            assert hub.counts() == (0, 2, 0)
+        finally:
+            await ws.close()
+
+
+@pytest.mark.asyncio
+async def test_a_bounded_mount_next_to_a_fresh_one_keeps_serving():
+    with serve(_three()) as fresh_hub, serve(_three()) as bounded_hub:
+        ws = Workspace({
+            "/gh":
+            _mount(_vfs(fresh_hub), policy=ReadPolicy.FRESH, ttl=600),
+            "/gb":
+            _mount(_vfs(bounded_hub), ttl=600),
+        })
+        try:
+            await _out(ws, "ls /gh/d1 /gb/d1")
+            fresh_hub.log.clear()
+            bounded_hub.log.clear()
+            await _out(ws, "ls /gh/d1 /gb/d1")
+            assert fresh_hub.counts() == (0, 1, 0)
+            assert bounded_hub.counts() == (0, 0, 0)
+        finally:
+            await ws.close()
+
+
+@pytest.mark.asyncio
+async def test_seven_fresh_sessions_share_one_refetch():
+    # All seven start before the one tree fetch answers, so the refill it
+    # writes lands after every one of their stamps.
+    with serve(_three()) as hub:
+        ws = _fresh(hub)
+        try:
+            ids = _sessions(ws, 7)
+            await _out(ws, "ls /gh")
+            hub.files["d1/new.txt"] = b"new\n"
+            hub.log.clear()
+            hold = threading.Event()
+            hub.hold_recursive = hold
+            reads = asyncio.gather(*(_out(ws, "ls /gh/d1", session_id)
+                                     for session_id in ids))
+            await asyncio.sleep(0.2)
+            hold.set()
+            outs = await asyncio.wait_for(reads, 10)
+            assert all(b"new.txt" in out for out in outs)
+            assert hub.counts() == (0, 1, 0)
+        finally:
+            await ws.close()
+
+
+@pytest.mark.asyncio
+async def test_an_unscoped_read_refetches_every_time():
+    # A FUSE or programmatic read belongs to no command, so nothing it
+    # listed is trusted; Task 1.3 is what makes this cheaper.
+    with serve(_three()) as hub:
+        ws = _fresh(hub)
+        try:
+            await _out(ws, "ls /gh")
+            hub.log.clear()
+            listed, _ = await ws.dispatch(
+                "readdir",
+                PathSpec(virtual="/gh/d1", directory="/gh/d1", vfs_path="d1"))
+            assert listed == ["/gh/d1/a.txt", "/gh/d1/b.txt", "/gh/d1/c.txt"]
+            await ws.dispatch(
+                "stat",
+                PathSpec(virtual="/gh/d1/a.txt",
+                         directory="/gh/d1",
+                         vfs_path="d1/a.txt"))
+            assert hub.counts() == (0, 2, 0)
+        finally:
+            await ws.close()
+
+
+def _truncated() -> FakeGitHub:
+    hub = _three()
+    hub.truncated_recursive = True
+    return hub
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("line", ["find /gh", "du -a /gh"])
+async def test_a_truncated_tree_walk_sees_every_folder_and_an_outside_add(
+        line):
+    # A truncated tree is never refetched and names only the top level, so
+    # walking it misses whole folders; the walk goes folder by folder.
+    with serve(_truncated()) as hub:
+        ws = _fresh(hub)
+        try:
+            await _out(ws, "ls /gh")
+            hub.files["d1/new.txt"] = b"new\n"
+            out = await _out(ws, line)
+            printed = _du_paths(out) if "du" in line else out.decode().split()
+            assert "/gh/d2/b.txt" in printed
+            assert "/gh/d1/new.txt" in printed
+        finally:
+            await ws.close()
+
+
+@pytest.mark.asyncio
+async def test_a_truncated_find_honours_maxdepth():
+    with serve(_truncated()) as hub:
+        ws = _fresh(hub)
+        try:
+            await _out(ws, "ls /gh")
+            out = await _out(ws, "find /gh -maxdepth 1")
+            assert sorted(
+                out.decode().split()) == ["/gh", "/gh/d1", "/gh/d2", "/gh/d3"]
+        finally:
+            await ws.close()
+
+
+@pytest.mark.asyncio
+async def test_a_complete_tree_walk_still_reads_the_tree():
+    # The folder-by-folder walk is only for a truncated tree; a complete one
+    # stays a single refetch with no per-folder listing.
+    with serve(_three()) as hub:
+        ws = _fresh(hub)
+        try:
+            await _out(ws, "ls /gh")
+            hub.log.clear()
+            await _out(ws, "find /gh")
+            assert hub.counts() == (0, 1, 0)
+        finally:
+            await ws.close()
+
+
+@pytest.mark.asyncio
+async def test_fresh_tree_refill_preserves_nested_shared_index():
+    with serve(_hub()) as hub:
+        vfs = _vfs(hub)
+        ws = Workspace({
+            "/gh": _mount(vfs, ReadPolicy.FRESH, 600),
+            "/gh/sub/nested": _mount(vfs, ReadPolicy.FRESH, 600)
+        })
+        try:
+            await _out(ws, "ls /gh")
+            await _out(ws, "ls /gh/sub/nested")
+            index = ws.mount("/gh").index_store
+            before = await index.list_dir("/gh/sub/nested")
+            assert before.entries
+            await _out(ws, "ls /gh")
+            assert (await
+                    index.list_dir("/gh/sub/nested")).entries == before.entries
+            assert (await index.get(before.entries[0])).entry is not None
         finally:
             await ws.close()

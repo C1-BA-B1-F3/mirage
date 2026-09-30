@@ -12,6 +12,7 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import { runInCommandScope } from '../../cache/index/scope.ts'
 import { type ByteSource, IOResult } from '../../io/types.ts'
 import type { CallStack } from '../../shell/call_stack.ts'
 import {
@@ -117,22 +118,26 @@ export async function expandArrayItems(
   namespace: Namespace,
   callStack: CallStack | null,
 ): Promise<string[]> {
-  const classified = await expandAndClassify(
-    arrayNode.namedChildren,
-    session,
-    executeFn,
-    registry,
-    session.cwd,
-    callStack,
-    sessionView(session, registry.policies),
-  )
-  const resolved = await resolveGlobs(
-    classified,
-    registry,
-    session.shellOptions.noglob === true,
-    namespace,
-    globOptions(session),
-  )
+  // A bare assignment is no command, but its glob reads listings all the
+  // same, so it gets a scope of its own.
+  const resolved = await runInCommandScope(async () => {
+    const classified = await expandAndClassify(
+      arrayNode.namedChildren,
+      session,
+      executeFn,
+      registry,
+      session.cwd,
+      callStack,
+      sessionView(session, registry.policies),
+    )
+    return resolveGlobs(
+      classified,
+      registry,
+      session.shellOptions.noglob === true,
+      namespace,
+      globOptions(session),
+    )
+  })
   return resolved.map((w) => wordText(w))
 }
 

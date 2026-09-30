@@ -16,7 +16,7 @@ import asyncio
 import base64
 import hashlib
 import threading
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -25,7 +25,7 @@ from typing import Any
 from aiohttp import web
 
 from mirage.accessor.github import GitHubAccessor
-from mirage.cache.index import IndexEntry, ListResult, LookupResult
+from mirage.cache.index import Evicted, IndexEntry, ListResult, LookupResult
 from mirage.cache.index.ram import RAMIndexCacheStore
 from mirage.core.github.tree import refill_snapshot
 
@@ -72,6 +72,11 @@ class FakeGitHub:
             keeping only top-level rows.
         truncated_dirs (dict): directory to how many rows its shallow
             listing keeps before answering ``truncated``.
+        after_recursive (Callable | None): called once a recursive tree
+            response is built, so a test can change the repository between
+            two fetches of one line.
+        hold_recursive (threading.Event | None): a recursive fetch waits
+            on it before answering, so a test can line readers up.
         fail (dict): route name to ``(status, message)`` it answers.
         log (list): ``(route, raw segment)`` for every request.
     """
@@ -81,6 +86,8 @@ class FakeGitHub:
     ref: str = "main"
     truncated_recursive: bool = False
     truncated_dirs: dict[str, int] = field(default_factory=dict)
+    after_recursive: Callable[[], None] | None = None
+    hold_recursive: threading.Event | None = None
     fail: dict[str, tuple[int, str]] = field(default_factory=dict)
     log: list[tuple[str, str]] = field(default_factory=list)
     blobs: dict[str, bytes] = field(default_factory=dict)
@@ -165,14 +172,19 @@ class FakeGitHub:
             return refused
         if segment != self.ref:
             return web.json_response({"message": "Not Found"}, status=404)
+        if self.hold_recursive is not None:
+            self.hold_recursive.wait(10)
         paths = sorted(list(self.files) + list(self._dirs()))
         if self.truncated_recursive:
             paths = [p for p in paths if "/" not in p]
-        return web.json_response({
+        response = web.json_response({
             "sha": tree_sha(""),
             "tree": [self._row(p, p) for p in paths],
             "truncated": self.truncated_recursive,
         })
+        if self.after_recursive is not None:
+            self.after_recursive()
+        return response
 
     def _point(self, raw: str, segment: str) -> web.Response:
         ref, _, at = segment.partition(":")
@@ -380,13 +392,22 @@ class _ExpiredOnArrival(RAMIndexCacheStore):
             if path not in self.live:
                 self._expiry[path] = _EPOCH
 
-    async def _set_dir(self, vfs_path: str, entries: list[tuple[str,
-                                                                IndexEntry]],
-                       expired_at: datetime | None, *, partial: bool) -> None:
-        await super()._set_dir(vfs_path,
-                               entries,
-                               expired_at if vfs_path in self.live else _EPOCH,
-                               partial=partial)
+    async def _set_dir(
+        self,
+        vfs_path: str,
+        entries: list[tuple[str, IndexEntry]],
+        expired_at: datetime | None,
+        *,
+        partial: bool,
+        evict: bool,
+        excluded: tuple[str, ...] = ()) -> list[Evicted]:
+        return await super()._set_dir(
+            vfs_path,
+            entries,
+            expired_at if vfs_path in self.live else _EPOCH,
+            partial=partial,
+            evict=evict,
+            excluded=excluded)
 
 
 def expired_on_arrival(*live: str) -> RAMIndexCacheStore:

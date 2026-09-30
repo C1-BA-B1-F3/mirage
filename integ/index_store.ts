@@ -95,6 +95,8 @@ async function write(prefix: string): Promise<void> {
     [FILE_NAME, fileEntry],
     [FOLDER_NAME, folderEntry],
   ])
+  await store.setDir(`${DIR}/${FOLDER_NAME}`, [[FILE_NAME, fileEntry]])
+  await store.put(`${DIR}/${FOLDER_NAME}/unlisted`, fileEntry)
   await store.setDir(EMPTY_DIR, [])
   await store.setPartialDir(PARTIAL_DIR, [[FILE_NAME, fileEntry]])
   const listing = await store.listDir(DIR)
@@ -168,6 +170,24 @@ async function read(prefix: string): Promise<void> {
     'ts read: invalidate keeps the entries',
     kept.entry !== null && kept.entry !== undefined,
     JSON.stringify(kept),
+  )
+  await store.setDir(DIR, [
+    [FOLDER_NAME, new IndexEntry({ id: 'replacement', name: FOLDER_NAME, resourceType: 'file' })],
+  ])
+  const replaced = await store.get(`${DIR}/${FOLDER_NAME}`)
+  check(
+    'ts read: replacement file survives foreign subtree eviction',
+    replaced.entry?.resourceType === 'file',
+  )
+  for (const path of [`${DIR}/${FOLDER_NAME}/${FILE_NAME}`, `${DIR}/${FOLDER_NAME}/unlisted`]) {
+    check(
+      'ts read: foreign descendant evicted ' + path,
+      (await store.get(path)).status === LookupStatus.NOT_FOUND,
+    )
+  }
+  check(
+    'ts read: foreign directory listing evicted',
+    (await store.listDir(`${DIR}/${FOLDER_NAME}`)).status === LookupStatus.NOT_FOUND,
   )
   await store.clear()
   const gone = await store.listDir(DIR)

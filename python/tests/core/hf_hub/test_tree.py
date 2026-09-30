@@ -17,8 +17,10 @@ from unittest.mock import patch
 import pytest
 
 from mirage.accessor.hf_hub import HfRepoConfig
-from mirage.cache.index import NULL_INDEX
+from mirage.cache.file.ram import RAMFileCacheStore
+from mirage.cache.index import NULL_INDEX, Evicted
 from mirage.cache.index.ram import RAMIndexCacheStore
+from mirage.cache.index.view import IndexView
 from mirage.core.hf_hub.client import HfHubError
 from mirage.core.hf_hub.tree import (collect, ensure_live_index, ensure_tree,
                                      fetch_path, fetch_tree, index_rows,
@@ -430,3 +432,37 @@ async def test_refill_returns_the_snapshot_it_wrote(mock_fetch, accessor,
     assert snapshot.children["/m"] == ["/m/a.txt"]
     assert snapshot.entries["/m/a.txt"].id == "oid-a.txt"
     assert (await index.list_dir("/m")).entries == ["/m/a.txt"]
+
+
+def _tree(*rows):
+    return {row["path"]: parse_entry(row) for row in rows}
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("after, reported", [
+    (_tree(file_row("d/b.txt"),
+           dir_row("d")), [Evicted("/m/a.txt", folder=False)]),
+    (_tree(file_row("a.txt")), [Evicted("/m/d", folder=True)]),
+])
+@patch("mirage.core.hf_hub.tree.fetch_tree")
+async def test_a_refill_reports_what_left_the_repository(
+        mock_fetch, accessor, after, reported):
+    # The refill wipes the index before seeding the new tree, so without
+    # the diff a file removed upstream keeps its cached bytes and overlay.
+    gone: list[Evicted] = []
+
+    async def on_gone(children: list[Evicted]) -> None:
+        gone.extend(children)
+
+    index = IndexView(RAMIndexCacheStore(),
+                      RAMFileCacheStore(),
+                      "/m",
+                      lambda _key: True,
+                      on_gone=on_gone)
+    mock_fetch.return_value = _tree(file_row("a.txt"), file_row("d/b.txt"),
+                                    dir_row("d"))
+    await refill_snapshot(accessor, index, "/m")
+    assert gone == []
+    mock_fetch.return_value = after
+    await refill_snapshot(accessor, index, "/m")
+    assert gone == reported

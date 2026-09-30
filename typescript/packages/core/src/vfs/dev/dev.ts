@@ -12,6 +12,7 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import type { Evicted } from '../../cache/index/config.ts'
 import { RAMIndexCacheStore } from '../../cache/index/ram.ts'
 import { RAMAccessor } from '../../accessor/ram.ts'
 import { DEV_COMMANDS } from '../../commands/builtin/dev/index.ts'
@@ -35,8 +36,8 @@ export class DevIndex extends RAMIndexCacheStore {
   override put(): Promise<void> {
     return Promise.resolve()
   }
-  override setDir(): Promise<void> {
-    return Promise.resolve()
+  override setDir(): Promise<Evicted[]> {
+    return Promise.resolve([])
   }
 }
 

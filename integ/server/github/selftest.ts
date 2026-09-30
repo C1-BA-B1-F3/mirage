@@ -25,6 +25,9 @@ import type { JsonValue } from '../kit/typescript/types.ts'
 import { start } from '../kit/typescript/serve.ts'
 import { diffTrees, unifiedDiff } from './diff.ts'
 import { githubFake } from './fake.ts'
+import { blobSha } from './wire.ts'
+import { PrismaClient } from '../../generated/github/index.js'
+import { directoryIds, repoByName, stageTree, subtreeOf, treeById } from './store.ts'
 
 // The routes the corpus does not reach, or cannot exercise fully, because the
 // gh battery drives the porcelain against a one-repository fixture. A client
@@ -426,9 +429,11 @@ async function seededHistory(at: string): Promise<void> {
       await get(`${base}/search/commits?q=${encodeURIComponent(`repo:${REPO} first change`)}`),
       'items',
     ) as JsonValue[]
-    eq('the first change names that root as its parent', field(found[0] ?? null, 'parents'), [
-      { sha: root },
-    ])
+    eq(
+      'the first change names that root as its parent',
+      (field(found[0] ?? null, 'parents') as JsonValue[]).map((p) => field(p, 'sha')),
+      [root],
+    )
     const resolved = await fetch(`${repo}/git/commits/${root}`, { headers: HEADERS })
     eq('that root still resolves as a commit', resolved.status, 200)
     const compared = await fetch(`${repo}/compare/${root}...main`, { headers: HEADERS })
@@ -1975,6 +1980,659 @@ async function listsProfilesAndForks(at: string): Promise<void> {
   })
 }
 
+// The git database as a client builds a commit from it and reads one back:
+// one directory of a rev at any depth, with or without `recursive`; a blob
+// written on its own and named by a tree; a rev walked back with `^` and
+// `~<n>`; every commit rendering naming its parents and a tree id that lists
+// that tree; and a Pages site's builds, one per build request and per push to
+// its source branch.
+async function gitDatabase(at: string): Promise<void> {
+  const run = 'git-database'
+  const base = `${at}/_run/${run}`
+  await post(`${base}/reset`, { run, tenants: [TENANT], fixture: 'v1' })
+  const repo = `${base}/repos/${REPO}`
+  // A refusal has no tree, and reads as no rows rather than a crash.
+  const paths = (body: JsonValue): JsonValue[] =>
+    ((field(body, 'tree') ?? []) as JsonValue[]).map((it) => field(it, 'path'))
+
+  const whole = await get(`${repo}/git/trees/main?recursive=1`)
+  const under = paths(whole)
+    .map(String)
+    .filter((p) => p.startsWith('src/'))
+    .map((p) => p.slice('src/'.length))
+  const deep = await get(`${repo}/git/trees/main:src?recursive=1`)
+  eq('a recursive <rev>:<dir> lists everything under it, relative', paths(deep), under)
+  eq('and is whole', field(deep, 'truncated'), false)
+  eq(
+    'a one-level <rev>:<dir> keeps its own rows',
+    paths(await get(`${repo}/git/trees/main:src`)).includes('auth/__init__.py'),
+    false,
+  )
+  const auth = paths(await get(`${repo}/git/trees/main:src/auth`))
+  eq('a nested <dir> sent with plain slashes resolves', auth.length, 9)
+  eq(
+    'and sent encoded, as one segment',
+    paths(await get(`${repo}/git/trees/${encodeURIComponent('main:src/auth')}`)),
+    auth,
+  )
+  eq("a missing nested <dir> is GitHub's 404", await refusal(`${repo}/git/trees/main:src/nope`), [
+    404,
+    'Not Found',
+  ])
+  eq(
+    'a <dir> through a file is 422',
+    await refusal(`${repo}/git/trees/main:src/auth/__init__.py`),
+    [422, 'Invalid object requested. SHA must identify a commit or a tree.'],
+  )
+  const trunc = `${base}/repos/integ/repo-trunc/git/trees/main:src`
+  const cut = await get(`${trunc}?recursive=1`)
+  eq(
+    'a truncated repository cuts a recursive <rev>:<dir> to its own rows',
+    [field(cut, 'truncated'), paths(cut).some((p) => String(p).includes('/'))],
+    [true, false],
+  )
+  eq('but not a one-level one', field(await get(trunc), 'truncated'), false)
+
+  const seededTree = String(field(await get(`${repo}/git/trees/main`), 'sha'))
+  const rootSha = String(field(field(await get(`${repo}/git/ref/heads/main`), 'object'), 'sha'))
+  eq(
+    'a seeded root names the tree its branch lists',
+    field(field(field(await get(`${repo}/commits/main`), 'commit'), 'tree'), 'sha'),
+    seededTree,
+  )
+  eq(
+    'and git reads it the same',
+    field(field(await get(`${repo}/git/commits/${rootSha}`), 'tree'), 'sha'),
+    seededTree,
+  )
+  eq(
+    'and that id lists that tree',
+    paths(await get(`${repo}/git/trees/${seededTree}?recursive=1`)),
+    paths(whole),
+  )
+  eq('a root has no parents', field(await get(`${repo}/commits/${rootSha}`), 'parents'), [])
+
+  const hello = await post(`${repo}/git/blobs`, { content: 'hello', encoding: 'utf-8' })
+  eq(
+    'a blob is written on its own',
+    [hello.status, field(hello.body, 'sha')],
+    [201, 'b6fc4c620b67d95f953a5c1c1230aaab5db5a1b0'],
+  )
+  eq(
+    'at its own url',
+    field(hello.body, 'url'),
+    `https://api.github.com/repos/${REPO}/git/blobs/b6fc4c620b67d95f953a5c1c1230aaab5db5a1b0`,
+  )
+  eq(
+    'and reads back',
+    field(await get(`${repo}/git/blobs/b6fc4c620b67d95f953a5c1c1230aaab5db5a1b0`), 'content'),
+    `${Buffer.from('hello').toString('base64')}\n`,
+  )
+  const bytes = Buffer.from([0, 255, 1, 254])
+  const binary = await post(`${repo}/git/blobs`, {
+    content: bytes.toString('base64'),
+    encoding: 'base64',
+  })
+  eq('a base64 blob is its decoded bytes', field(binary.body, 'sha'), blobSha(bytes))
+  eq(
+    'text is the default encoding',
+    field((await post(`${repo}/git/blobs`, { content: 'hello' })).body, 'sha'),
+    'b6fc4c620b67d95f953a5c1c1230aaab5db5a1b0',
+  )
+  const refused = await Promise.all(
+    [
+      {},
+      { content: 1 },
+      { content: 'x', encoding: 'latin1' },
+      { content: '!', encoding: 'base64' },
+    ].map(async (body) => {
+      const r = await post(`${repo}/git/blobs`, body)
+      return [r.status, field(r.body, 'message')]
+    }),
+  )
+  eq('a blob body it cannot read is refused', refused, [
+    [422, 'Invalid request.\n\n"content" wasn\'t supplied.'],
+    [422, 'Invalid request.\n\n"content" is invalid.'],
+    [422, 'Invalid request.\n\n"encoding" is invalid.'],
+    [422, 'Invalid request.\n\n"content" is invalid.'],
+  ])
+  const named = await post(`${repo}/git/trees`, {
+    base_tree: seededTree,
+    tree: [{ path: 'hello.txt', mode: '100644', type: 'blob', sha: field(hello.body, 'sha') }],
+  })
+  eq('a tree entry names the written blob', named.status, 201)
+  const made = await post(`${repo}/git/commits`, {
+    message: 'Add hello',
+    tree: field(named.body, 'sha'),
+    parents: [rootSha],
+  })
+  eq(
+    'a commit made from it names its parent and tree',
+    [
+      (field(made.body, 'parents') as JsonValue[]).map((p) => field(p, 'sha')),
+      field(field(made.body, 'tree'), 'sha'),
+    ],
+    [[rootSha], field(named.body, 'sha')],
+  )
+  const moved = await send('PATCH', `${repo}/git/refs/heads/main`, { sha: field(made.body, 'sha') })
+  eq('the ref moves onto it', moved.status, 200)
+  eq(
+    'and the file is on the branch',
+    Buffer.from(
+      String(field(await get(`${repo}/contents/hello.txt`), 'content')),
+      'base64',
+    ).toString(),
+    'hello',
+  )
+  const empty = await post(`${base}/user/repos`, { name: 'blank' })
+  eq('an empty repository takes no blob', empty.status, 201)
+  const blank = await post(`${base}/repos/integ-user/blank/git/blobs`, { content: 'x' })
+  eq(
+    'it answers 409',
+    [blank.status, field(blank.body, 'message')],
+    [409, 'Git Repository is empty.'],
+  )
+
+  const put = await send('PUT', `${repo}/contents/two.txt`, {
+    message: 'Add two',
+    content: Buffer.from('two').toString('base64'),
+  })
+  const first = String(field(made.body, 'sha'))
+  const written = field(put.body, 'commit')
+  const head = String(field(written, 'sha'))
+  eq(
+    'a contents write answers the git commit, with its parent',
+    (field(written, 'parents') as JsonValue[]).map((p) => field(p, 'sha')),
+    [first],
+  )
+  eq(
+    'and its tree, the one git reads',
+    field(field(written, 'tree'), 'sha'),
+    field(field(await get(`${repo}/git/commits/${head}`), 'tree'), 'sha'),
+  )
+  const detail = await get(`${repo}/commits/${head}`)
+  eq(
+    'the REST commit names the same tree',
+    field(field(field(detail, 'commit'), 'tree'), 'sha'),
+    field(field(written, 'tree'), 'sha'),
+  )
+  eq('and links its parent there', (field(detail, 'parents') as JsonValue[])[0] ?? null, {
+    sha: first,
+    url: `https://api.github.com/repos/${REPO}/commits/${first}`,
+    html_url: `https://github.com/${REPO}/commit/${first}`,
+  })
+  eq(
+    'git links it among git commits',
+    field(
+      (field(await get(`${repo}/git/commits/${head}`), 'parents') as JsonValue[])[0] ?? null,
+      'url',
+    ),
+    `https://api.github.com/repos/${REPO}/git/commits/${first}`,
+  )
+  eq(
+    'every listed commit names its parents',
+    ((await get(`${repo}/commits`)) as JsonValue[]).map((c) =>
+      (field(c, 'parents') as JsonValue[]).map((p) => field(p, 'sha')),
+    ),
+    [[first], [rootSha], []],
+  )
+  eq(
+    'a written tree id lists that tree',
+    paths(await get(`${repo}/git/trees/${String(field(field(written, 'tree'), 'sha'))}`)).includes(
+      'two.txt',
+    ),
+    true,
+  )
+
+  const shaOf = async (ref: string): Promise<JsonValue> => {
+    const r = await send('GET', `${repo}/commits/${ref}`)
+    return r.status === 200 ? field(r.body, 'sha') : r.status
+  }
+  const walked = await Promise.all(
+    ['main^', 'main~1', 'main~', 'main~2', 'main^^', 'main~1^', `${head.slice(0, 7)}^`].map(shaOf),
+  )
+  eq('^ and ~<n> walk first parents', walked, [
+    first,
+    first,
+    first,
+    rootSha,
+    rootSha,
+    rootSha,
+    first,
+  ])
+  eq(
+    '^0 and ^{} name the commit itself',
+    await Promise.all(['main^0', 'main~0', 'main^{}', 'main^{commit}'].map(shaOf)),
+    [head, head, head, head],
+  )
+  eq(
+    'a walk past the root, a second parent or a bare suffix names nothing',
+    await Promise.all(['main~3', 'main^2', 'main^{tree}', '~1', 'nope~1'].map(shaOf)),
+    [422, 422, 422, 422, 422],
+  )
+  const compare = await get(`${repo}/compare/${head}^...${head}`)
+  eq(
+    'compare reads a suffixed base',
+    [
+      field(compare, 'status'),
+      field(compare, 'ahead_by'),
+      (field(compare, 'files') as JsonValue[]).map((f) => field(f, 'filename')),
+    ],
+    ['ahead', 1, ['two.txt']],
+  )
+  eq('and a suffixed branch', field(await get(`${repo}/compare/main~2...main`), 'ahead_by'), 2)
+  eq(
+    "a suffixed ref reads that commit's files",
+    [
+      (await send('GET', `${repo}/contents/hello.txt?ref=main~1`)).status,
+      (await send('GET', `${repo}/contents/two.txt?ref=main~1`)).status,
+    ],
+    [200, 404],
+  )
+  eq(
+    'and lists history from it',
+    ((await get(`${repo}/commits?sha=main~1`)) as JsonValue[]).map((c) => field(c, 'sha')),
+    [first, rootSha],
+  )
+  eq('and names one directory of it', paths(await get(`${repo}/git/trees/main~2:src/auth`)), auth)
+
+  const pages = `${repo}/pages`
+  const docs = 'https://docs.github.com/rest/pages/pages#'
+  const missing = await Promise.all(
+    [
+      ['GET', 'builds'],
+      ['POST', 'builds'],
+      ['GET', 'builds/latest'],
+      ['GET', 'builds/1'],
+    ].map(async ([method, path]) => {
+      const r = await send(String(method), `${pages}/${String(path)}`)
+      return [r.status, field(r.body, 'documentation_url')]
+    }),
+  )
+  eq("without a site every build endpoint is GitHub's 404", missing, [
+    [404, `${docs}list-apiname-pages-builds`],
+    [404, `${docs}request-a-apiname-pages-build`],
+    [404, `${docs}get-latest-pages-build`],
+    [404, `${docs}get-apiname-pages-build`],
+  ])
+  await post(pages, { source: { branch: 'main', path: '/' } })
+  const latest = await get(`${pages}/builds/latest`)
+  eq(
+    'a new site has been built from its source',
+    [field(latest, 'status'), field(latest, 'commit'), field(field(latest, 'pusher'), 'login')],
+    ['built', head, 'integ-user'],
+  )
+  eq('at its own url', field(latest, 'url'), `https://api.github.com/repos/${REPO}/pages/builds/1`)
+  const requested = await post(`${pages}/builds`, {})
+  eq(
+    'a requested build is queued',
+    [requested.status, requested.body],
+    [201, { url: `https://api.github.com/repos/${REPO}/pages/builds/latest`, status: 'queued' }],
+  )
+  const pushed = await send('PUT', `${repo}/contents/three.txt`, {
+    message: 'Add three',
+    content: Buffer.from('three').toString('base64'),
+  })
+  const third = String(field(field(pushed.body, 'commit'), 'sha'))
+  await post(`${repo}/git/refs`, { ref: 'refs/heads/gh-pages', sha: third })
+  await send('PUT', `${repo}/contents/other.txt`, {
+    message: 'Off the source',
+    branch: 'gh-pages',
+    content: Buffer.from('x').toString('base64'),
+  })
+  const builds = () =>
+    get(`${pages}/builds`).then((b) =>
+      (b as JsonValue[]).map((it) => [field(it, 'url'), field(it, 'commit')]),
+    )
+  const url = (n: number): string =>
+    `https://api.github.com/repos/${REPO}/pages/builds/${String(n)}`
+  eq('a push to the source branch builds again, newest first', await builds(), [
+    [url(3), third],
+    [url(2), head],
+    [url(1), head],
+  ])
+  const firstPage = await send('GET', `${pages}/builds?per_page=1`)
+  eq(
+    'builds page like any list',
+    [
+      (firstPage.body as JsonValue[]).map((it) => field(it, 'url')),
+      firstPage.link.includes('page=2'),
+    ],
+    [[url(3)], true],
+  )
+  eq(
+    'and the next page holds the next build',
+    ((await get(`${pages}/builds?per_page=1&page=2`)) as JsonValue[]).map((it) => field(it, 'url')),
+    [url(2)],
+  )
+  eq('one build by its id', field(await get(`${pages}/builds/2`), 'commit'), head)
+  eq(
+    'an id it never had is 404',
+    await Promise.all(
+      ['9', '0', 'x'].map(async (id) => (await send('GET', `${pages}/builds/${id}`)).status),
+    ),
+    [404, 404, 404],
+  )
+  await send('PUT', pages, { source: { branch: 'gh-pages', path: '/' } })
+  const ghPages = String(field(field(await get(`${repo}/git/ref/heads/gh-pages`), 'object'), 'sha'))
+  eq('a new source is built from', field(await get(`${pages}/builds/latest`), 'commit'), ghPages)
+  await send('DELETE', pages)
+  await post(pages, { build_type: 'workflow' })
+  await send('PUT', `${repo}/contents/four.txt`, {
+    message: 'Add four',
+    content: Buffer.from('four').toString('base64'),
+  })
+  eq(
+    'a site a workflow publishes starts over and is not rebuilt by a push',
+    (await builds()).length,
+    1,
+  )
+
+  const dirId = async (): Promise<string> =>
+    String(
+      field(
+        (field(await get(`${repo}/git/trees/main:src`), 'tree') as JsonValue[]).find(
+          (it) => field(it, 'path') === 'auth',
+        ) ?? null,
+        'sha',
+      ),
+    )
+  const before = await dirId()
+  eq(
+    'the contents API names a directory by the same tree id',
+    field(
+      ((await get(`${repo}/contents/src`)) as JsonValue[]).find(
+        (it) => field(it, 'name') === 'auth',
+      ) ?? null,
+      'sha',
+    ),
+    before,
+  )
+  eq('a directory id lists that directory', paths(await get(`${repo}/git/trees/${before}`)), auth)
+  await send('PUT', `${repo}/contents/src/auth/extra.py`, {
+    message: 'Add extra.py',
+    content: Buffer.from('x = 1\n').toString('base64'),
+  })
+  const after = await dirId()
+  eq('a directory that changed has a new id', after === before, false)
+  eq(
+    'which lists what it holds now',
+    paths(await get(`${repo}/git/trees/${after}`)).includes('extra.py'),
+    true,
+  )
+  eq(
+    'while the old id still lists what it held then',
+    paths(await get(`${repo}/git/trees/${before}`)),
+    auth,
+  )
+  await send('PUT', `${repo}/contents/src/auth/later.py`, {
+    message: 'Add later.py',
+    content: Buffer.from('z = 3\n').toString('base64'),
+  })
+  const kept = paths(await get(`${repo}/git/trees/${after}`))
+  eq(
+    'and an id no branch holds any more reads the snapshot that kept it',
+    [kept.includes('extra.py'), kept.includes('later.py')],
+    [true, false],
+  )
+  const based = await post(`${repo}/git/trees`, {
+    base_tree: before,
+    tree: [{ path: 'added.py', mode: '100644', type: 'blob', content: 'y = 2\n' }],
+  })
+  eq(
+    "and a tree built on it starts from that directory, with none of the root's gitlinks",
+    paths(await get(`${repo}/git/trees/${String(field(based.body, 'sha'))}`)),
+    [...auth, 'added.py'].map(String).sort(),
+  )
+
+  const gitlinks = async (url: string): Promise<JsonValue[]> =>
+    ((field(await get(url), 'tree') ?? []) as JsonValue[])
+      .filter((it) => field(it, 'type') === 'commit')
+      .map((it) => [field(it, 'path'), field(it, 'mode'), field(it, 'sha')])
+  const seeded = await gitlinks(`${repo}/git/trees/main?recursive=1`)
+  eq(
+    'a branch lists the gitlinks its fixture seeds',
+    seeded.map((row) => (row as JsonValue[])[0] ?? null),
+    ['docs/vendored', 'extern'],
+  )
+  const link = 'c0ffee'.padEnd(40, '0')
+  const linked = await post(`${repo}/git/trees`, {
+    base_tree: String(field(await get(`${repo}/git/trees/main`), 'sha')),
+    tree: [
+      { path: 'vendor/nested/library', mode: '160000', type: 'commit', sha: link },
+      { path: 'extern', mode: '160000', type: 'commit', sha: null },
+    ],
+  })
+  const linkedTree = String(field(linked.body, 'sha'))
+  const relinked = [seeded[0] ?? null, ['vendor/nested/library', '160000', link]]
+  eq(
+    'a commit entry is a gitlink of that tree, and a null sha drops one',
+    await gitlinks(`${repo}/git/trees/${linkedTree}?recursive=1`),
+    relinked,
+  )
+  const mainHead = String(field(field(await get(`${repo}/git/ref/heads/main`), 'object'), 'sha'))
+  const linkCommit = await post(`${repo}/git/commits`, {
+    message: 'Link a library',
+    tree: linkedTree,
+    parents: [mainHead],
+  })
+  await post(`${repo}/git/refs`, {
+    ref: 'refs/heads/linked',
+    sha: String(field(linkCommit.body, 'sha')),
+  })
+  eq(
+    "a branch on that commit lists the commit tree's gitlinks",
+    await gitlinks(`${repo}/git/trees/linked?recursive=1`),
+    relinked,
+  )
+  const linkRoot = await get(`${repo}/git/trees/linked`)
+  eq(
+    'a shallow tree lists a directory containing only gitlinks',
+    paths(linkRoot).includes('vendor'),
+    true,
+  )
+  eq(
+    'a recursive tree includes every gitlink-only ancestor',
+    paths(await get(`${repo}/git/trees/linked?recursive=1`)).filter((path) =>
+      String(path).startsWith('vendor'),
+    ),
+    ['vendor', 'vendor/nested', 'vendor/nested/library'],
+  )
+  eq(
+    'a ref with a gitlink-only directory resolves',
+    await gitlinks(`${repo}/git/trees/linked:vendor/nested`),
+    [['library', '160000', link]],
+  )
+  const vendor =
+    ((field(linkRoot, 'tree') ?? []) as JsonValue[]).find(
+      (row) => field(row, 'path') === 'vendor',
+    ) ?? null
+  eq(
+    'the listed gitlink-only directory id is traversable',
+    paths(await get(`${repo}/git/trees/${String(field(vendor, 'sha'))}`)),
+    ['nested'],
+  )
+  await send('PUT', `${repo}/contents/note.txt`, {
+    message: 'Add note.txt',
+    branch: 'linked',
+    content: Buffer.from('note\n').toString('base64'),
+  })
+  eq(
+    'and a write on the branch carries them forward',
+    await gitlinks(`${repo}/git/trees/linked?recursive=1`),
+    relinked,
+  )
+  eq('while main keeps its own', await gitlinks(`${repo}/git/trees/main?recursive=1`), seeded)
+
+  const currentId = await dirId()
+  const currentTree = await get(`${repo}/git/trees/main?recursive=1`)
+  const forked = await post(`${repo}/forks`, { name: 'tree-fork' })
+  eq('a repository with historical directories forks', forked.status, 202)
+  const fork = `${base}/repos/integ-user/tree-fork`
+  eq(
+    'a fork reports the same root and directory ids as its source',
+    await get(`${fork}/git/trees/main?recursive=1`),
+    currentTree,
+  )
+  eq(
+    'a fork resolves a historical directory id from its source',
+    paths(await get(`${fork}/git/trees/${before}`)),
+    auth,
+  )
+  const renamed = await send('PATCH', repo, { name: 'tree-renamed' })
+  eq('a repository with indexed directory snapshots renames', renamed.status, 200)
+  const movedRepo = `${base}/repos/integ/tree-renamed`
+  eq(
+    'a rename preserves root and directory ids',
+    await get(`${movedRepo}/git/trees/main?recursive=1`),
+    currentTree,
+  )
+  for (const target of [movedRepo, fork]) {
+    eq(
+      'a historical directory survives the source rename',
+      paths(await get(`${target}/git/trees/${before}`)),
+      auth,
+    )
+    const fromDirectory = await post(`${target}/git/trees`, { base_tree: before, tree: [] })
+    eq(
+      'a historical directory is the exact base after rename or fork',
+      [fromDirectory.status, field(fromDirectory.body, 'sha')],
+      [201, before],
+    )
+    const directoryCommit = await post(`${target}/git/commits`, {
+      message: 'Commit a shared directory',
+      tree: currentId,
+      parents: [],
+    })
+    eq('a directory can be committed in either network member', directoryCommit.status, 201)
+    eq(
+      'the committed directory retains its own paths',
+      (
+        await send(
+          'GET',
+          `${target}/contents/extra.py?ref=${String(field(directoryCommit.body, 'sha'))}`,
+        )
+      ).status,
+      200,
+    )
+  }
+  const badBase = await post(`${movedRepo}/git/trees`, {
+    base_tree: '0'.repeat(40),
+    tree: [{ path: 'wrong.py', content: 'x = 1' }],
+  })
+  eq('an unknown tree base is refused instead of replaced', badBase.status, 422)
+  eq('the source with indexed trees can be deleted', (await send('DELETE', movedRepo)).status, 204)
+  eq(
+    'a fork keeps historical directories after its source is deleted',
+    paths(await get(`${fork}/git/trees/${before}`)),
+    auth,
+  )
+  eq(
+    'a fork keeps the root tree after its source is deleted',
+    await get(`${fork}/git/trees/${String(field(currentTree, 'sha'))}?recursive=1`),
+    currentTree,
+  )
+  eq(
+    'the last network member deletes its directory index',
+    (await send('DELETE', fork)).status,
+    204,
+  )
+}
+
+async function indexedTrees(): Promise<void> {
+  const home = await start(githubFake, 0)
+  const run = 'indexed-trees'
+  let db: PrismaClient | undefined
+  try {
+    await home.runtime.reset({ run, tenants: [TENANT], fixture: 'v1' })
+    const measured = new PrismaClient({
+      datasourceUrl: `file:${home.runtime.pool.fileFor(run)}`,
+      log: [{ emit: 'event', level: 'query' }],
+    })
+    db = measured
+    let queries = 0
+    measured.$on('query', () => {
+      queries += 1
+    })
+    const repo = await repoByName(measured, TENANT, REPO)
+    if (repo === null) throw new Error('indexed trees fixture has no repository')
+    const old = new Map([['archive/deep/old.txt', Buffer.from('old snapshot')]])
+    const root = await stageTree(measured, TENANT, repo, old, new Map())
+    const directory = directoryIds(old, new Map()).get('archive') ?? ''
+    const lookup = async (): Promise<number> => {
+      queries = 0
+      const hit = await treeById(measured, TENANT, repo, directory)
+      const count = queries
+      eq(
+        'an indexed historical directory loads its original bytes',
+        hit === null
+          ? null
+          : [...subtreeOf(hit, hit.at).files].map(([path, data]) => [path, data.toString()]),
+        [['deep/old.txt', 'old snapshot']],
+      )
+      return count
+    }
+    const short = await lookup()
+    for (let i = 0; i < 24; i += 1) {
+      await stageTree(
+        measured,
+        TENANT,
+        repo,
+        new Map([['archive/new.txt', Buffer.from(String(i))]]),
+        new Map(),
+      )
+    }
+    const long = await lookup()
+    check(
+      'historical lookup query count stays bounded as snapshots grow',
+      short === long && long <= 3,
+      `${short} -> ${long}`,
+    )
+
+    const base = `${home.endpoint}/_run/${run}`
+    const created = await post(`${base}/user/repos`, { name: 'unrelated-trees' })
+    eq('an unrelated repository is created', created.status, 201)
+    const other = await repoByName(measured, TENANT, 'integ-user/unrelated-trees')
+    if (other === null) throw new Error('unrelated repository was not created')
+    eq(
+      'a directory is not visible outside its network',
+      (await treeById(measured, TENANT, other, directory)) === null,
+      true,
+    )
+    eq(
+      'an unrelated repository stores identical content without a collision',
+      await stageTree(measured, TENANT, other, old, new Map()),
+      root,
+    )
+    const duplicate = await treeById(measured, TENANT, other, directory)
+    eq(
+      'its directory resolves in its own network',
+      duplicate?.files.get('archive/deep/old.txt')?.toString() ?? null,
+      'old snapshot',
+    )
+    eq(
+      'deleting one copy of a tree succeeds',
+      (await send('DELETE', `${base}/repos/${REPO}`)).status,
+      204,
+    )
+    const retained = await treeById(measured, TENANT, other, directory)
+    eq(
+      'deletion preserves identical objects in unrelated repositories',
+      retained?.files.get('archive/deep/old.txt')?.toString() ?? null,
+      'old snapshot',
+    )
+    await post(`${base}/reset`, { run, tenants: [TENANT], fixture: 'v1' })
+    eq(
+      'reset removes every directory index row',
+      await measured.githubStagedDir.count({ where: { tenant: TENANT } }),
+      0,
+    )
+  } finally {
+    await db?.$disconnect()
+    await home.close()
+  }
+}
+
 async function main(): Promise<void> {
   const fake = await launch()
   const at = fake.endpoint
@@ -1986,6 +2644,8 @@ async function main(): Promise<void> {
     await supersededBlobs(at)
     await refsNameCommits(at)
     await abandonedRoot(at)
+    await gitDatabase(at)
+    await indexedTrees()
     await workflowsAndSettings(at)
     await diffsSearchAndHistory(at)
     await diffsMatchGit()

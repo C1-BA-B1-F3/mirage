@@ -15,6 +15,7 @@
 import { describe, expect, it } from 'vitest'
 
 import type { QdrantAccessor } from '../../accessor/qdrant.ts'
+import type { Evicted, IndexEntry, SetDirOptions } from '../../cache/index/config.ts'
 import { RAMIndexCacheStore } from '../../cache/index/ram.ts'
 import { resolveQdrantConfig } from '../../vfs/qdrant/config.ts'
 import { PathSpec } from '../../types.ts'
@@ -47,6 +48,20 @@ function accessor(): QdrantAccessor {
     distinct: () => Promise.resolve(['big']),
     rowsMatching: () => Promise.resolve([ROW]),
   } as unknown as QdrantAccessor
+}
+
+class WindowSpy extends RAMIndexCacheStore {
+  readonly windows = new Map<string, boolean>()
+
+  override setDir(
+    vfsPath: string,
+    entries: readonly [string, IndexEntry][],
+    expiredAt?: Date | null,
+    options: SetDirOptions = {},
+  ): Promise<Evicted[]> {
+    this.windows.set(vfsPath, options.window === true)
+    return super.setDir(vfsPath, entries, expiredAt, options)
+  }
 }
 
 function spec(virtual: string): PathSpec {
@@ -294,5 +309,18 @@ describe('qdrant blank and dot-led group values', () => {
     await readdir(edgedAccessor(seen), spec('/⁄'))
     await readdir(edgedAccessor(seen), spec('/⁄.env'))
     expect(seen).toEqual([{ label: '' }, { label: '.env' }])
+  })
+})
+
+describe('qdrant capped listings', () => {
+  it('writes groups and rows as windows', async () => {
+    // Groups and rows are read up to maxRows, so a row outside the head of
+    // the table is not gone because a listing no longer names it.
+    const index = new WindowSpy()
+    const acc = accessor()
+    await readdir(acc, spec('/animals'), index)
+    await readdir(acc, spec('/animals/cat/big'), index)
+    expect(index.windows.get('/animals')).toBe(true)
+    expect(index.windows.get('/animals/cat/big')).toBe(true)
   })
 })

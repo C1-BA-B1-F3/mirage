@@ -57,11 +57,26 @@ vi.mock('./folders.ts', async () => {
   return { ...actual, listFolders: vi.fn(() => Promise.resolve(['INBOX'])) }
 })
 
+import type { Evicted, IndexEntry, SetDirOptions } from '@struktoai/mirage-core/cache/index/config'
 import { RAMIndexCacheStore } from '@struktoai/mirage-core/cache/index/ram'
 import { PathSpec } from '@struktoai/mirage-core/types'
 import type { EmailAccessor } from '../../accessor/email.ts'
 import { dateBucket, readdir } from './readdir.ts'
 import { messageJsonBytes } from './render.ts'
+
+class WindowSpy extends RAMIndexCacheStore {
+  readonly windows = new Map<string, boolean>()
+
+  override setDir(
+    vfsPath: string,
+    entries: readonly [string, IndexEntry][],
+    expiredAt?: Date | null,
+    options: SetDirOptions = {},
+  ): Promise<Evicted[]> {
+    this.windows.set(vfsPath, options.window === true)
+    return super.setDir(vfsPath, entries, expiredAt, options)
+  }
+}
 
 const ACCESSOR = { config: { maxMessages: 50 } } as unknown as EmailAccessor
 
@@ -97,6 +112,34 @@ describe('email readdir', () => {
     const dates = await readdir(ACCESSOR, SPEC, index)
 
     expect(dates).toEqual(['/INBOX/2026-08-07'])
+  })
+})
+
+describe('email readdir windows', () => {
+  it('writes a folder and the days it seeds as windows', async () => {
+    // The folder fetch stops at maxMessages, so its days, and the days
+    // seeded from it, name only the messages that fit.
+    const index = new WindowSpy()
+    await readdir(ACCESSOR, SPEC, index)
+    expect(index.windows.get('/INBOX')).toBe(true)
+    expect(index.windows.get('/INBOX/2024-01-15')).toBe(true)
+  })
+
+  it('writes a day re-listed on its own as a window', async () => {
+    // The folder listing seeds its days, so the day lister runs only once
+    // the day listing is gone while its entry survives.
+    const index = new WindowSpy()
+    await readdir(ACCESSOR, SPEC, index)
+    await index.invalidateDir('/INBOX/2024-01-15')
+    index.windows.clear()
+    const day = new PathSpec({
+      virtual: '/INBOX/2024-01-15',
+      directory: '/INBOX/2024-01-15',
+      vfsPath: 'INBOX/2024-01-15',
+    })
+    expect(await readdir(ACCESSOR, day, index)).toHaveLength(1)
+    expect(index.windows.has('/INBOX')).toBe(false)
+    expect(index.windows.get('/INBOX/2024-01-15')).toBe(true)
   })
 })
 

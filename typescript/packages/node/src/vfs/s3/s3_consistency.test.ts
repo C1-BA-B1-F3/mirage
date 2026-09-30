@@ -117,6 +117,25 @@ describe('S3 cache consistency (mocked)', () => {
     })
   }
 
+  it('fresh re-list keeps the deletion baseline after stat', async () => {
+    mock.store.set(BUCKET, 'sub/a', ENC.encode('a'))
+    mock.store.set(BUCKET, 'sub/b', ENC.encode('b'))
+    const ws = new Workspace({ '/s3': new S3VFS(makeConfig()) }, { read: FRESH })
+    try {
+      for (const command of ['ls /s3/sub', 'cat /s3/sub/a', 'ls /s3']) {
+        expect((await ws.shell(command)).exitCode).toBe(0)
+      }
+      await ws.namespace.setAttrs('/s3/sub/a', { mode: 0o600 })
+      expect(await ws.cache.exists('/s3/sub/a')).toBe(true)
+      mock.store.objects(BUCKET).delete('sub/a')
+      expect(DEC.decode((await ws.shell('ls /s3/sub')).stdout)).toBe('b\n')
+      expect(await ws.cache.exists('/s3/sub/a')).toBe(false)
+      expect(ws.namespace.metaFor('/s3/sub/a')).toBeNull()
+    } finally {
+      await ws.close()
+    }
+  })
+
   it('fresh revalidates a walk and a glob, not just a named operand', async () => {
     // The second door, the one every shell read uses. A recursive walk and
     // a glob never named their files as operands, so the registry's
@@ -253,8 +272,10 @@ describe('S3 cache consistency (mocked)', () => {
         ]
         // Any send here means the fresh mount's policy reached the bounded one.
         expect(ledger('bounded-bkt')).toEqual([0, 0, 0])
-        // A missing HEAD means the fresh leg was served without a check.
-        expect(ledger('fresh-bkt')).toEqual([0, 1, 1])
+        // The fresh leg re-lists its folder once (Task 1.2: fresh checks
+        // listings too), pays its gate probe and one refetch; a missing HEAD
+        // means it was served without a check.
+        expect(ledger('fresh-bkt')).toEqual([1, 1, 1])
         expect(ws.networkRecords.slice(mark).map((r) => [r.op, r.path])).toEqual([
           ['read', `${fresh}/f.txt`],
         ])

@@ -121,7 +121,8 @@ describe('hf_hub under read: fresh', () => {
       const walks = fake.count('tree')
       const listed = DEC.decode(await out(w, 'find /m -type f'))
       expect(listed.split(/\s+/).filter(Boolean)).toEqual(['/m/a.txt', '/m/d/b.txt'])
-      expect(fake.count('tree')).toBe(walks)
+      // find, a new command, re-checks the listing once under fresh.
+      expect(fake.count('tree')).toBe(walks + 1)
     } finally {
       await w.close()
     }
@@ -279,7 +280,9 @@ describe('hf_hub snapshot pins', () => {
 })
 
 // Measured on the first green run, then pinned (test plan T31): each number is
-// one reconcile probe, and a warm read makes no tree walk and no download.
+// one reconcile probe, and a warm read makes no download. The one tree walk is
+// the command re-checking the listing its path resolves through, which fresh
+// does once per command (Task 1.3 makes it cheaper).
 const WARM: [string, number][] = [
   ['cat /m/a.txt', 2],
   ['cat /m/a.txt | head -c 1', 2],
@@ -297,7 +300,7 @@ describe('hf_hub warm read cost', () => {
       await out(w, command)
       expect([fake.count('paths_info'), fake.count('tree'), fake.count('resolve')]).toEqual([
         posts,
-        0,
+        1,
         0,
       ])
     } finally {

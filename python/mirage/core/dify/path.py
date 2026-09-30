@@ -2,8 +2,9 @@ from dataclasses import dataclass
 from typing import Literal, TypeAlias
 
 from mirage.accessor.dify import DifyAccessor
-from mirage.cache.index import NULL_INDEX, IndexCacheStore, IndexEntry
-from mirage.core.dify.tree import ensure_tree
+from mirage.cache.index import (NULL_INDEX, IndexCacheStore, IndexEntry,
+                                LookupStatus)
+from mirage.core.dify.tree import ensure_tree, refill_tree
 from mirage.types import PathSpec
 from mirage.utils.errors import enoent
 from mirage.utils.key_prefix import mount_prefix_of
@@ -14,6 +15,7 @@ class ResolvedDifyDirectory:
     virtual_key: str
     mount_prefix: str
     is_dir: Literal[True] = True
+    children: list[str] | None = None
 
 
 @dataclass(frozen=True)
@@ -32,22 +34,34 @@ async def resolve_path(
         path: PathSpec,
         index: IndexCacheStore = NULL_INDEX) -> ResolvedDifyPath:
     mount_prefix = mount_prefix_of(path.virtual, path.vfs_path) or ""
-    await ensure_tree(accessor, index, mount_prefix)
+    refilled = await ensure_tree(accessor, index, mount_prefix)
     virtual_key = virtual_key_for(path)
     result = await index.get(virtual_key)
     if result.entry is not None:
         if result.entry.resource_type == "folder":
             return ResolvedDifyDirectory(virtual_key=virtual_key,
-                                         mount_prefix=mount_prefix)
+                                         mount_prefix=mount_prefix,
+                                         children=refilled.get(virtual_key)
+                                         if refilled is not None else None)
         return ResolvedDifyFile(
             virtual_key=virtual_key,
             mount_prefix=mount_prefix,
             entry=result.entry,
         )
     listing = await index.list_dir(virtual_key)
+    if listing.entries is None and listing.status == LookupStatus.EXPIRED:
+        if refilled is None:
+            refilled = await refill_tree(accessor, index, mount_prefix)
+        if virtual_key in refilled:
+            return ResolvedDifyDirectory(virtual_key=virtual_key,
+                                         mount_prefix=mount_prefix,
+                                         children=refilled.get(virtual_key)
+                                         if refilled is not None else None)
     if listing.entries is not None:
         return ResolvedDifyDirectory(virtual_key=virtual_key,
-                                     mount_prefix=mount_prefix)
+                                     mount_prefix=mount_prefix,
+                                     children=refilled.get(virtual_key)
+                                     if refilled is not None else None)
     raise enoent(path)
 
 

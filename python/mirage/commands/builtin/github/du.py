@@ -18,6 +18,11 @@ from functools import partial
 from mirage.accessor.github import GitHubAccessor
 from mirage.cache.index import IndexCacheStore
 from mirage.commands.builtin.generic.du import du_generic
+from mirage.commands.builtin.generic_bind.adapter import (with_path_guards,
+                                                          with_policy_guard)
+from mirage.commands.builtin.generic_bind.builders.du import (WalkBudget,
+                                                              walk_entries,
+                                                              walk_size)
 from mirage.commands.builtin.github._provision import metadata_provision
 from mirage.commands.builtin.github.io import IO, resolve_glob
 from mirage.commands.config import CommandOpts
@@ -79,15 +84,25 @@ async def _stat(live: Callable[[], Awaitable[None]], accessor: GitHubAccessor,
 
 
 async def _live_size(live: Callable[[], Awaitable[None]],
-                     accessor: GitHubAccessor, path: PathSpec) -> int:
+                     accessor: GitHubAccessor, index: IndexCacheStore,
+                     budget: WalkBudget, path: PathSpec) -> int:
     await live()
+    # A truncated tree names only some paths and is never refetched, so it
+    # is walked folder by folder, as a backend with no tree would be.
+    if accessor.truncated:
+        return await walk_size(with_policy_guard(with_path_guards(IO)),
+                               accessor, index, budget, path)
     return await _du_size(accessor, path)
 
 
 async def _live_entries(live: Callable[[], Awaitable[None]],
-                        accessor: GitHubAccessor,
+                        accessor: GitHubAccessor, index: IndexCacheStore,
+                        budget: WalkBudget,
                         path: PathSpec) -> tuple[list[tuple[str, int]], int]:
     await live()
+    if accessor.truncated:
+        return await walk_entries(with_policy_guard(with_path_guards(IO)),
+                                  accessor, index, budget, path)
     return await _du_entries(accessor, path)
 
 
@@ -95,6 +110,7 @@ async def _live_entries(live: Callable[[], Awaitable[None]],
 async def du(accessor: GitHubAccessor, paths: list[PathSpec], texts: list[str],
              opts: CommandOpts) -> tuple[ByteSource | None, IOResult]:
     checked = False
+    budget = WalkBudget(IO.max_du_entries)
 
     # `_subtree` reads accessor.tree rather than the index, so the first
     # callback brings the tree live, after du has validated its flags: an
@@ -106,8 +122,15 @@ async def du(accessor: GitHubAccessor, paths: list[PathSpec], texts: list[str],
             await ensure_tree(accessor, opts.index, opts.mount_prefix)
             checked = True
 
-    return await du_generic(paths, list(texts), opts,
+    return await du_generic(paths,
+                            list(texts),
+                            opts,
                             partial(_resolve, live, accessor, opts.index),
                             partial(_stat, live, accessor, opts.index),
-                            partial(_live_size, live, accessor),
-                            partial(_live_entries, live, accessor))
+                            partial(_live_size, live, accessor, opts.index,
+                                    budget),
+                            partial(_live_entries, live, accessor, opts.index,
+                                    budget),
+                            truncated=lambda: budget.hit,
+                            unreadable=lambda: budget.unreadable,
+                            directories=lambda: budget.directories)

@@ -18,6 +18,7 @@ import type { IndexCacheStore } from '../../cache/index/store.ts'
 import { IndexView } from '../../cache/index/view.ts'
 import { FakeGitHub } from '../../core/github/_test_util.ts'
 import { MountMode, ReadPolicy } from '../../types.ts'
+import { RAMVFS } from '../ram/ram.ts'
 import { getTestParser } from '../../workspace/fixtures/workspace_fixture.ts'
 import { Mount } from '../../workspace/mount/spec.ts'
 import { Workspace } from '../../workspace/workspace/workspace.ts'
@@ -310,7 +311,9 @@ describe('github listings respect the mount ttl', () => {
         try {
           await out(w, first)
           gh.set('docs/c.txt', 'charlie\n')
-          expect(await out(w, 'ls /gh/docs')).toBe(OLD_LS)
+          // fresh checks the listing, so it sees the add at once; bounded
+          // serves the cached one until the mount's ttl runs out.
+          expect(await out(w, 'ls /gh/docs')).toBe(policy === ReadPolicy.BOUNDED ? OLD_LS : NEW_LS)
           await sleep(1100)
           expect(await out(w, 'ls /gh/docs')).toBe(NEW_LS)
         } finally {
@@ -430,4 +433,263 @@ describe('an invalid walk after an expiry', () => {
       await w.close()
     }
   })
+})
+
+function three(): void {
+  gh = new FakeGitHub(
+    Object.fromEntries(
+      ['d1', 'd2', 'd3'].flatMap((d) => ['a', 'b', 'c'].map((n) => [`${d}/${n}.txt`, 'x\n'])),
+    ),
+  )
+  vi.stubGlobal('fetch', gh.fetch)
+}
+
+async function freshOf(vfs: GitHubVFS): Promise<Workspace> {
+  return new Workspace(
+    {
+      '/gh': new Mount(vfs, { mode: MountMode.READ, read: { policy: ReadPolicy.FRESH, ttl: 600 } }),
+      '/r': [new RAMVFS(), MountMode.WRITE],
+    },
+    { shellParser: await getTestParser() },
+  )
+}
+
+// One recursive tree fetch per command: the listing it writes is trusted
+// for the rest of that command, whatever the command reads it for.
+const FRESH_BUDGET: [string, [number, number, number]][] = [
+  ['ls /gh/d1', [0, 1, 0]],
+  ['ls -R /gh', [0, 1, 0]],
+  ['ls /gh/d1 /gh/d2 /gh/d3', [0, 1, 0]],
+  ['echo /gh/*/*.txt', [0, 1, 0]],
+  ['find /gh', [0, 1, 0]],
+  ['du -a /gh', [0, 1, 0]],
+  ['stat /gh/d1/a.txt', [0, 1, 0]],
+  ['ls -l /gh/d1', [0, 1, 0]],
+  ['ls /gh/d1 | cat', [0, 1, 0]],
+  ['echo /gh/d1/* $(true) /gh/d2/*', [0, 1, 0]],
+  ['for f in /gh/*/*.txt; do echo $f; done', [0, 1, 0]],
+  ['x=(/gh/*/*.txt); echo ${x[@]}', [0, 1, 0]],
+  ['f() { local x=(/gh/*/*.txt); echo ${x[@]}; }; f', [0, 1, 0]],
+  ['select f in /gh/*/*.txt; do break; done </dev/null 2>/dev/null', [0, 1, 0]],
+  ['cp /gh/*/a.txt /r/', [0, 1, 3]],
+]
+
+describe('a fresh mount re-lists once per command', () => {
+  it.each(FRESH_BUDGET)('%s refetches the tree once', async (line, expected) => {
+    three()
+    const w = await freshOf(await vfsOf())
+    try {
+      await out(w, 'ls /gh')
+      gh.log.length = 0
+      await out(w, line)
+      expect(gh.counts()).toEqual(expected)
+    } finally {
+      await w.close()
+    }
+  })
+
+  // The task's own report: before, the second ls sent nothing and did not
+  // show the file.
+  it('sees a file added outside mirage on the next ls', async () => {
+    three()
+    const w = await freshOf(await vfsOf())
+    try {
+      expect(await out(w, 'ls /gh/d1')).toBe('a.txt\nb.txt\nc.txt\n')
+      gh.set('d1/new.txt', 'new\n')
+      gh.log.length = 0
+      expect(await out(w, 'ls /gh/d1')).toBe('a.txt\nb.txt\nc.txt\nnew.txt\n')
+      expect(gh.counts()).toEqual([0, 1, 0])
+    } finally {
+      await w.close()
+    }
+  })
+
+  // One line, two commands: a scope per line would serve the second ls the
+  // listing the first one fetched.
+  it('lets each command of a loop see changes made before it', async () => {
+    three()
+    const w = await freshOf(await vfsOf())
+    try {
+      await out(w, 'ls /gh')
+      gh.log.length = 0
+      gh.afterRecursive = () => {
+        if (!gh.files.has('d1/new.txt')) gh.set('d1/new.txt', 'new\n')
+      }
+      const listed = await out(w, 'for i in 1 2; do ls /gh/d1; done')
+      expect(listed.split('new.txt').length - 1).toBe(1)
+      expect(gh.counts()).toEqual([0, 2, 0])
+    } finally {
+      await w.close()
+    }
+  })
+
+  it('keeps a bounded mount next to a fresh one serving', async () => {
+    three()
+    const freshHub = gh
+    three()
+    const boundedHub = gh
+    // Two repositories behind one stubbed fetch, told apart by host.
+    const BOUNDED = 'http://bounded.test'
+    const boundedOrigin = new URL(BOUNDED).origin
+    vi.stubGlobal('fetch', (input: RequestInfo | URL, init?: RequestInit) => {
+      const requestUrl = new URL(new Request(input, init).url)
+      return requestUrl.origin === boundedOrigin
+        ? boundedHub.fetch(input, init)
+        : freshHub.fetch(input, init)
+    })
+    const create = (baseUrl: string): Promise<GitHubVFS> =>
+      GitHubVFS.create({ token: 't', owner: 'o', repo: 'r', ref: 'main', baseUrl })
+    const freshVfs = await create(freshHub.url)
+    const boundedVfs = await create(BOUNDED)
+    const w = new Workspace(
+      {
+        '/gh': new Mount(freshVfs, {
+          mode: MountMode.READ,
+          read: { policy: ReadPolicy.FRESH, ttl: 600 },
+        }),
+        '/gb': new Mount(boundedVfs, {
+          mode: MountMode.READ,
+          read: { policy: ReadPolicy.BOUNDED, ttl: 600 },
+        }),
+      },
+      { shellParser: await getTestParser() },
+    )
+    try {
+      await out(w, 'ls /gh/d1 /gb/d1')
+      freshHub.log.length = 0
+      boundedHub.log.length = 0
+      await out(w, 'ls /gh/d1 /gb/d1')
+      expect(freshHub.counts()).toEqual([0, 1, 0])
+      expect(boundedHub.counts()).toEqual([0, 0, 0])
+    } finally {
+      await w.close()
+    }
+  })
+
+  // All seven start before the one tree fetch answers, so the refill it
+  // writes lands after every one of their stamps.
+  it('shares one refetch across seven fresh sessions', async () => {
+    three()
+    const w = await freshOf(await vfsOf())
+    let release = (): void => undefined
+    try {
+      const ids = sessions(w, 7)
+      await out(w, 'ls /gh')
+      gh.set('d1/new.txt', 'new\n')
+      gh.log.length = 0
+      gh.holdRecursive = new Promise<void>((resolve) => {
+        release = resolve
+      })
+      const reads = Promise.all(ids.map((id) => out(w, 'ls /gh/d1', id)))
+      await sleep(200)
+      release()
+      expect(await settleWithin(reads, 10000)).toBe('done')
+      expect((await reads).every((listed) => listed.includes('new.txt'))).toBe(true)
+      expect(gh.counts()).toEqual([0, 1, 0])
+    } finally {
+      release()
+      await w.close()
+    }
+  })
+
+  // A FUSE or programmatic read belongs to no command, so nothing it listed
+  // is trusted; Task 1.3 is what makes this cheaper.
+  it('refetches every time for an unscoped read', async () => {
+    three()
+    const w = await freshOf(await vfsOf())
+    try {
+      await out(w, 'ls /gh')
+      gh.log.length = 0
+      expect(await w.vfs.readdir('/gh/d1')).toEqual([
+        '/gh/d1/a.txt',
+        '/gh/d1/b.txt',
+        '/gh/d1/c.txt',
+      ])
+      await w.vfs.stat('/gh/d1/a.txt')
+      expect(gh.counts()).toEqual([0, 2, 0])
+    } finally {
+      await w.close()
+    }
+  })
+})
+
+function duPaths(printed: string): string[] {
+  return printed
+    .split('\n')
+    .filter((line) => line !== '')
+    .map((line) => line.split('\t', 2)[1] ?? '')
+}
+
+describe('a truncated tree is walked folder by folder', () => {
+  // A truncated tree is never refetched and names only the top level, so
+  // walking it misses whole folders; the walk goes folder by folder.
+  it.each(['find /gh', 'du -a /gh'])('%s sees every folder and an outside add', async (line) => {
+    three()
+    gh.truncatedRecursive = true
+    const w = await freshOf(await vfsOf())
+    try {
+      await out(w, 'ls /gh')
+      gh.set('d1/new.txt', 'new\n')
+      const listed = await out(w, line)
+      const printed = line.startsWith('du') ? duPaths(listed) : listed.split('\n')
+      expect(printed).toContain('/gh/d2/b.txt')
+      expect(printed).toContain('/gh/d1/new.txt')
+    } finally {
+      await w.close()
+    }
+  })
+
+  it('honours find -maxdepth 1', async () => {
+    three()
+    gh.truncatedRecursive = true
+    const w = await freshOf(await vfsOf())
+    try {
+      await out(w, 'ls /gh')
+      const listed = await out(w, 'find /gh -maxdepth 1')
+      expect(
+        listed
+          .split('\n')
+          .filter((l) => l !== '')
+          .sort(),
+      ).toEqual(['/gh', '/gh/d1', '/gh/d2', '/gh/d3'])
+    } finally {
+      await w.close()
+    }
+  })
+
+  // The folder-by-folder walk is only for a truncated tree; a complete one
+  // stays a single refetch with no per-folder listing.
+  it('keeps a complete tree walk on the tree', async () => {
+    three()
+    const w = await freshOf(await vfsOf())
+    try {
+      await out(w, 'ls /gh')
+      gh.log.length = 0
+      await out(w, 'find /gh')
+      expect(gh.counts()).toEqual([0, 1, 0])
+    } finally {
+      await w.close()
+    }
+  })
+})
+
+it('fresh tree refill preserves a nested shared index', async () => {
+  const vfs = await vfsOf()
+  const opts = { mode: MountMode.READ, read: { policy: ReadPolicy.FRESH, ttl: 600 } }
+  const ws = new Workspace(
+    { '/gh': new Mount(vfs, opts), '/gh/sub/nested': new Mount(vfs, opts) },
+    { shellParser: await getTestParser() },
+  )
+  try {
+    await out(ws, 'ls /gh')
+    await out(ws, 'ls /gh/sub/nested')
+    const index = ws.registry.mountFor('/gh').indexStore
+    const before = (await index.listDir('/gh/sub/nested')).entries
+    expect(before?.length).toBeGreaterThan(0)
+    await out(ws, 'ls /gh')
+    expect((await index.listDir('/gh/sub/nested')).entries).toEqual(before)
+    expect((await index.get('/gh/sub/nested/docs')).entry).not.toBeNull()
+  } finally {
+    await ws.close()
+  }
 })

@@ -15,6 +15,7 @@
 import asyncio
 
 import pytest
+from dulwich.pack import Pack
 
 from mirage.commands.cli.builtin.git.objects import (LooseObjects,
                                                      VfsObjectStore,
@@ -133,6 +134,53 @@ async def test_prefix_search_finds_packed_ids_too(repo_path, workspace):
         found = await asyncio.to_thread(
             lambda: list(packed.iter_prefix(sha[:7])))
     assert sha in found
+
+
+@pytest.mark.parametrize("width", [1, 2, 3, 7, 40])
+@pytest.mark.asyncio
+async def test_packed_prefix_search_reads_the_fanout_bucket(
+        repo_path, workspace, width):
+    # The pack half answers from the index's fan-out bucket, odd-length
+    # prefixes included, and finds exactly what a full walk finds.
+    pack_everything(repo_path)
+    with mounted(repo_path) as packed_ws:
+        packed = await load_object_store(packed_ws.dispatch, GITDIR)
+        every = await asyncio.to_thread(lambda: list(packed))
+        prefix = every[0][:width]
+        found = await asyncio.to_thread(
+            lambda: sorted(packed.iter_prefix(prefix)))
+    assert found == sorted(oid for oid in every if oid.startswith(prefix))
+
+
+@pytest.mark.asyncio
+async def test_a_prefix_search_never_walks_a_whole_pack(
+        repo_path, workspace, monkeypatch):
+    # One search per abbreviated id: walking every packed id each time
+    # made a verbose listing of many branches quadratic.
+    pack_everything(repo_path)
+    with mounted(repo_path) as packed_ws:
+        packed = await load_object_store(packed_ws.dispatch, GITDIR)
+        sha = (await asyncio.to_thread(lambda: list(packed)))[0]
+
+        def walked(self):
+            raise AssertionError("walked every id in the pack")
+
+        monkeypatch.setattr(Pack, "__iter__", walked)
+        found = await asyncio.to_thread(
+            lambda: list(packed.iter_prefix(sha[:4])))
+    assert sha in found
+
+
+@pytest.mark.parametrize("prefix", [b"zz", b"ABCD", b"g1"])
+@pytest.mark.asyncio
+async def test_a_prefix_that_is_not_lowercase_hex_names_nothing(
+        repo_path, workspace, prefix):
+    pack_everything(repo_path)
+    with mounted(repo_path) as packed_ws:
+        packed = await load_object_store(packed_ws.dispatch, GITDIR)
+        found = await asyncio.to_thread(
+            lambda: list(packed.iter_prefix(prefix)))
+    assert found == []
 
 
 def test_store_refuses_to_write_a_pack():

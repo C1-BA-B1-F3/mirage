@@ -15,6 +15,7 @@
 import logging
 
 from mirage.accessor.github import GitHubAccessor
+from mirage.cache.context import listing_refreshed
 from mirage.cache.index import (NULL_INDEX, IndexCacheStore, IndexEntry,
                                 LookupStatus)
 from mirage.cache.index.lock import index_lock
@@ -135,8 +136,8 @@ async def _resolve_dir_sha(
 ) -> str | None:
     """Get the tree SHA for a directory path.
 
-    Walks from the current ref, fetching per-directory trees. A cached
-    entry may name an old tree even when its parent's listing is fresh.
+    Descend from the ref, reusing only parents refreshed this command;
+    an older cached row may name a previous branch head.
 
     Args:
         accessor (GitHubAccessor): backend handle.
@@ -151,6 +152,15 @@ async def _resolve_dir_sha(
     current_sha = await ensure_ref(accessor)
     current_path = stem or "/"
     for part in parts:
+        child_path = current_path.rstrip("/") + "/" + part
+        if listing_refreshed(current_path):
+            listing = await index.list_dir(current_path)
+            if listing.entries is not None and child_path in listing.entries:
+                cached = (await index.get(child_path)).entry
+                if cached is not None and cached.resource_type == "folder":
+                    current_sha = cached.id
+                    current_path = child_path
+                    continue
         entries = await fetch_dir_tree(accessor.config, accessor.owner,
                                        accessor.repo, current_sha,
                                        accessor.pool)

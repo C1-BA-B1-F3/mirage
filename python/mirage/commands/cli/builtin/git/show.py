@@ -13,29 +13,32 @@
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import asyncio
+from collections.abc import Mapping
 from dataclasses import dataclass, replace
 
 from dulwich.objects import Blob, Commit, Tree
 from dulwich.repo import BaseRepo
 
+from mirage.commands.cli.builtin.git.dates import date_clock, parse_date_mode
 from mirage.commands.cli.builtin.git.diff_output import (DiffFlags,
                                                          commit_output,
                                                          join_output,
                                                          parse_diff_flags,
                                                          renames_enabled)
 from mirage.commands.cli.builtin.git.errors import GitError, NoWorkspaceError
-from mirage.commands.cli.builtin.git.format import (Decorations, LogFormat,
+from mirage.commands.cli.builtin.git.format import (DEFAULT_DATE, Decorations,
+                                                    LogFormat,
                                                     needs_decorations, oneline,
                                                     preset_block,
                                                     render_template)
 from mirage.commands.cli.builtin.git.history import decorations, pretty_format
-from mirage.commands.cli.builtin.git.mailmap import (MailmapEntry,
-                                                     load_mailmap, use_mailmap)
+from mirage.commands.cli.builtin.git.mailmap import load_mailmap, use_mailmap
 from mirage.commands.cli.builtin.git.objects import abbrev_for
 from mirage.commands.cli.builtin.git.repo import config_bool
 from mirage.commands.cli.builtin.git.revparse import (resolve_commit,
                                                       resolve_object)
 from mirage.commands.cli.builtin.git.session import opened
+from mirage.commands.cli.builtin.git.types import DateMode, MailmapEntry
 from mirage.commands.cli.builtin.git.util import (  # yapf: disable
     check_operands, escaped, fatal, revision_arg)
 from mirage.commands.cli.types import CLIDoors, CLIInvocation
@@ -50,20 +53,23 @@ class ShowFlags:
     """The commit presentation and shared diff options."""
     diff: DiffFlags
     pretty: LogFormat
-    date: str = "default"
+    date: DateMode = DEFAULT_DATE
     mailmap: tuple[MailmapEntry, ...] = ()
     use_mailmap: bool = True
 
 
 def parse_show_flags(fl: FlagView,
                      default_renames: bool = True,
-                     quote_path_fully: bool = True) -> ShowFlags:
+                     quote_path_fully: bool = True,
+                     env: Mapping[str, str] | None = None) -> ShowFlags:
     """Read the raw show flag kwargs into a frozen struct.
 
     Args:
         fl (FlagView): spec-validated view over the raw flag kwargs.
         default_renames (bool): ``diff.renames``.
         quote_path_fully (bool): ``core.quotePath``.
+        env (Mapping[str, str] | None): the command environment, for the
+            clock dates are rendered by.
     """
     pretty = pretty_format(fl)
     return ShowFlags(
@@ -71,7 +77,7 @@ def parse_show_flags(fl: FlagView,
                               default_merge="dense-combined",
                               default_renames=default_renames,
                               quote_path_fully=quote_path_fully),
-        date=fl.as_str("date") or "default",
+        date=parse_date_mode(fl.as_str("date") or "default", date_clock(env)),
         pretty=pretty,
     )
 
@@ -158,7 +164,8 @@ async def show(inv: CLIInvocation[None]) -> tuple[ByteSource | None, IOResult]:
         repo, location = await opened(fl, doors)
         parsed = parse_show_flags(
             fl, await renames_enabled(dispatch, location), await
-            config_bool(dispatch, location, b"core", b"quotepath", True))
+            config_bool(dispatch, location, b"core", b"quotepath",
+                        True), inv.env)
         parsed = replace(parsed,
                          mailmap=await load_mailmap(dispatch, location),
                          use_mailmap=use_mailmap(

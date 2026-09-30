@@ -15,7 +15,7 @@
 import { mountKey } from '../../utils/key_prefix.ts'
 import { describe, expect, it } from 'vitest'
 import { SlackAccessor } from '../../accessor/slack.ts'
-import { IndexEntry } from '../../cache/index/config.ts'
+import { IndexEntry, type Evicted, type SetDirOptions } from '../../cache/index/config.ts'
 import { RAMIndexCacheStore } from '../../cache/index/ram.ts'
 import { PathSpec } from '../../types.ts'
 import type { SlackResponse, SlackTransport } from './client.ts'
@@ -42,6 +42,20 @@ class FakeTransport implements SlackTransport {
       ...(body !== undefined ? { body } : {}),
     })
     return Promise.resolve(this.responder(endpoint, params))
+  }
+}
+
+class WindowSpy extends RAMIndexCacheStore {
+  readonly windows = new Map<string, boolean>()
+
+  override setDir(
+    vfsPath: string,
+    entries: readonly [string, IndexEntry][],
+    expiredAt?: Date | null,
+    options: SetDirOptions = {},
+  ): Promise<Evicted[]> {
+    this.windows.set(vfsPath, options.window === true)
+    return super.setDir(vfsPath, entries, expiredAt, options)
   }
 }
 
@@ -465,5 +479,34 @@ describe('readdir of an end-scoped conversation without a creation time', () => 
       '/mnt/slack/dms/alice__D1/2026-05-31',
       '/mnt/slack/dms/alice__D1/2026-05-30',
     ])
+  })
+})
+
+describe('readdir channel window', () => {
+  it('writes a channel listing as a window', async () => {
+    // The bare listing covers the last 90 days only; a day that falls out
+    // of it still exists and is still readable by path.
+    const created = Date.UTC(2024, 0, 1) / 1000
+    const latest = Date.UTC(2024, 0, 3) / 1000
+    const idx = new WindowSpy()
+    await idx.setDir('/mnt/slack/channels', [
+      [
+        'general__C1',
+        new IndexEntry({
+          id: 'C1',
+          name: 'general',
+          resourceType: 'slack/channel',
+          vfsName: 'general__C1',
+          remoteTime: String(created),
+        }),
+      ],
+    ])
+    const t = new FakeTransport((endpoint) =>
+      endpoint === 'conversations.history'
+        ? { ok: true, messages: [{ ts: String(latest) }] }
+        : { ok: true },
+    )
+    await readdir(new SlackAccessor(t), spec('/mnt/slack/channels/general__C1', '/mnt/slack'), idx)
+    expect(idx.windows.get('/mnt/slack/channels/general__C1')).toBe(true)
   })
 })

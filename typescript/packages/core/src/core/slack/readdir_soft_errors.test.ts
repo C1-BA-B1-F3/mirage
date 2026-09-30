@@ -15,10 +15,11 @@
 import { mountKey } from '../../utils/key_prefix.ts'
 import { describe, expect, it } from 'vitest'
 import { SlackAccessor } from '../../accessor/slack.ts'
+import { IndexEntry, type Evicted, type SetDirOptions } from '../../cache/index/config.ts'
 import { RAMIndexCacheStore } from '../../cache/index/ram.ts'
 import { PathSpec } from '../../types.ts'
 import { SlackApiError, type SlackResponse, type SlackTransport } from './client.ts'
-import { latestMessageTs, readdir } from './readdir.ts'
+import { latestMessageTs, listFiles, readdir } from './readdir.ts'
 
 // Mirrors python/tests/core/slack/test_readdir_soft_errors.py — guards the
 // behavior that Slack history errors like `not_in_channel` / `missing_scope`
@@ -30,6 +31,20 @@ class FakeTransport implements SlackTransport {
     const result = this.responder(endpoint)
     if (result instanceof Error) return Promise.reject(result)
     return Promise.resolve(result)
+  }
+}
+
+class WindowSpy extends RAMIndexCacheStore {
+  readonly windows = new Map<string, boolean>()
+
+  override setDir(
+    vfsPath: string,
+    entries: readonly [string, IndexEntry][],
+    expiredAt?: Date | null,
+    options: SetDirOptions = {},
+  ): Promise<Evicted[]> {
+    this.windows.set(vfsPath, options.window === true)
+    return super.setDir(vfsPath, entries, expiredAt, options)
   }
 }
 
@@ -110,5 +125,63 @@ describe('readdir on inaccessible channel', () => {
       idx,
     )
     expect(dates).toEqual([])
+  })
+})
+
+describe('readdir of a soft-error day', () => {
+  it('writes the empty day as a window', async () => {
+    // An empty day from not_in_channel is not the backend saying the day's
+    // messages are gone, so it must not evict what an earlier listing held.
+    const idx = new WindowSpy()
+    const channelsPage = {
+      ok: true,
+      channels: [{ id: 'C_INACCESSIBLE', name: 'foo', created: 1 }],
+      response_metadata: { next_cursor: '' },
+    }
+    const t = new FakeTransport((endpoint) => {
+      if (endpoint === 'conversations.list') return channelsPage
+      if (endpoint === 'conversations.history') {
+        return new SlackApiError('conversations.history', 'not_in_channel')
+      }
+      throw new Error(`unexpected ${endpoint}`)
+    })
+    const day = '/slack/channels/foo__C_INACCESSIBLE/2026-05-10'
+    const out = await readdir(
+      new SlackAccessor(t),
+      new PathSpec({ virtual: day, directory: day, vfsPath: mountKey(day, '/slack') }),
+      idx,
+    )
+    expect(out).toEqual([])
+    expect(idx.windows.get(day)).toBe(true)
+  })
+})
+
+describe('listFiles of a soft-error day', () => {
+  // Reached when the files listing was evicted but the day survived; a soft
+  // error there must not evict the attachments it listed before.
+  it('writes the files listing as a window too', async () => {
+    const t = new FakeTransport((endpoint) => {
+      if (endpoint === 'conversations.history') {
+        return new SlackApiError('conversations.history', 'not_in_channel')
+      }
+      throw new Error(`unexpected ${endpoint}`)
+    })
+    const own = new IndexEntry({
+      id: 'C1:2026-05-10',
+      name: 'files',
+      resourceType: 'slack/files',
+      vfsName: 'files',
+      extra: { channel_id: 'C1' },
+    })
+    const listing = await listFiles(
+      new SlackAccessor(t),
+      {
+        kind: 'files',
+        vfsPath: 'channels/c__C1/2026-05-10/files',
+        slots: { day: '2026-05-10' },
+      } as never,
+      own,
+    )
+    expect((listing as { window?: boolean }).window).toBe(true)
   })
 })

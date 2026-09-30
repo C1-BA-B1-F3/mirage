@@ -15,10 +15,13 @@
 import pytest
 
 from mirage.commands.cli.specs import cli_spec_for
+from mirage.commands.spec import SPECS
+from mirage.commands.spec.types import CommandSpec, Option
 from mirage.io.types import DeviceInput
 from mirage.types import MountMode, PathSpec
 from mirage.vfs.ram import RAMVFS
 from mirage.workspace import Workspace
+from mirage.workspace.executor.command import routing
 from mirage.workspace.executor.command.routing import (default_cwd_operand,
                                                        merge_scopes,
                                                        path_flag_scopes,
@@ -31,6 +34,25 @@ def _path(virtual: str) -> PathSpec:
                     directory=virtual,
                     vfs_path="",
                     resolved=True)
+
+
+@pytest.mark.parametrize("argv, expected", [
+    (["--version", ".", "/a", "/b"], True),
+    ([".", "/a", "/b", "-V"], True),
+    (["--help", ".", "/a", "/b"], True),
+    (["--bogus", ".", "/a", "/b"], True),
+    ([".", "--", "--version", "/a", "/b"], False),
+    (["--arg", "x", "--version", ".", "/a", "/b"], False),
+    ([".", "/a", "/b"], False),
+])
+def test_option_loop_exits_only_for_a_parsed_early_answer(argv, expected):
+    assert routing.option_loop_exits("jq", SPECS["jq"], argv, "/") is expected
+
+
+def test_option_loop_exit_rules_do_not_apply_to_custom_grammars():
+    spec = CommandSpec(options=(Option(long="--version"), ))
+    assert not routing.option_loop_exits("jq", spec, ["--version"], "/")
+    assert not routing.option_loop_exits("jq", None, ["--version"], "/")
 
 
 def test_merge_scopes_keeps_operand_order_and_dedupes():

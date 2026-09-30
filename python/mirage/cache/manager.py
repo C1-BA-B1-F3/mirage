@@ -17,6 +17,8 @@ from contextlib import asynccontextmanager
 
 from mirage.cache.file.io import latest_fingerprint, mutation_lock
 from mirage.cache.file.mixin import FileCacheMixin
+from mirage.cache.index.config import Evicted
+from mirage.cache.index.scope import tick
 from mirage.cache.index.store import IndexCacheStore
 from mirage.cache.index.view import IndexView
 from mirage.observe.context import active_recorder
@@ -50,15 +52,18 @@ class CacheManager:
     pipeline runs instead of after the whole command tree.
     """
 
-    def __init__(self,
-                 file_cache: FileCacheMixin | None,
-                 index: IndexCacheStore,
-                 prefix: str,
-                 caches_reads: bool,
-                 owns_path: Callable[[str], bool] = lambda _: True,
-                 may_serve_cached: Callable[[str],
-                                            Awaitable[bool]] = _always_serve,
-                 read_ttl: int = DEFAULT_READ_TTL) -> None:
+    def __init__(
+            self,
+            file_cache: FileCacheMixin | None,
+            index: IndexCacheStore,
+            prefix: str,
+            caches_reads: bool,
+            owns_path: Callable[[str], bool] = lambda _: True,
+            may_serve_cached: Callable[[str], Awaitable[bool]] = _always_serve,
+            read_ttl: int = DEFAULT_READ_TTL,
+            on_gone: Callable[[list[Evicted]], Awaitable[None]] | None = None,
+            may_serve_listing: Callable[[str], Awaitable[bool]] | None = None,
+            excluded_prefixes: Callable[[], tuple[str, ...]] = tuple) -> None:
         """Args:
             file_cache (FileCacheMixin | None): Workspace file cache
                 store; entries are keyed by mount-absolute path.
@@ -77,6 +82,14 @@ class CacheManager:
                 still be served; the default trusts the cache.
             read_ttl (int): lifetime of complete backend renders, and the
                 cap on every listing this mount's view writes.
+            on_gone (Callable[[list[Evicted]], Awaitable[None]] | None):
+                cleanup for children a re-list found gone. This keeps the
+                dependency one-way, like the read gate; None cleans nothing.
+            may_serve_listing (Callable[[str], Awaitable[bool]] | None):
+                the listing gate every view of this mount asks before
+                serving a cached listing; None serves them all.
+            excluded_prefixes (Callable[[], tuple[str, ...]]): live nested
+                mount roots protected from recursive deletion.
         """
         self._file_cache = file_cache
         self._index = index
@@ -85,6 +98,10 @@ class CacheManager:
         self._owns_path = owns_path
         self._may_serve_cached = may_serve_cached
         self._read_ttl = read_ttl
+        self._on_gone = on_gone
+        self._excluded_prefixes = excluded_prefixes
+        self._may_serve_listing = may_serve_listing
+        self._written: dict[str, int] = {}
         self._read_generation = 0
         self._view: IndexView | None = None
 
@@ -114,12 +131,38 @@ class CacheManager:
         if self._file_cache is None or isinstance(index, IndexView):
             return index
         if self._view is None or self._view.store is not index:
+            self._written.clear()
             self._view = IndexView(index,
                                    self._file_cache,
                                    self._prefix,
                                    self._owns_path,
-                                   read_ttl=self._read_ttl)
+                                   read_ttl=self._read_ttl,
+                                   on_gone=self._cleanup,
+                                   excluded_prefixes=self._excluded_prefixes,
+                                   may_serve_listing=self._may_serve_listing,
+                                   note_written=self._note_written)
         return self._view
+
+    async def _cleanup(self, gone: list[Evicted]) -> None:
+        async with self.mutation():
+            owned = [child for child in gone if self._owns_path(child.path)]
+            if owned and self._on_gone is not None:
+                await self._on_gone(owned)
+
+    def _note_written(self, folder: str) -> None:
+        self._written[folder] = tick()
+
+    def listed_since(self, folder: str, stamp: int) -> bool:
+        """Whether this mount wrote ``folder``'s listing after ``stamp``.
+
+        Every view of the mount, shared or lock-held, records into one map,
+        so a glob's write counts for the ``ls`` that follows it.
+
+        Args:
+            folder (str): mount-absolute listing key.
+            stamp (int): the running command's start.
+        """
+        return self._written.get(folder, 0) > stamp
 
     def scope_index_locked(self, index: IndexCacheStore) -> IndexCacheStore:
         """A view for a caller already inside ``mutation()``.
@@ -144,7 +187,11 @@ class CacheManager:
                          self._prefix,
                          self._owns_path,
                          locked=True,
-                         read_ttl=self._read_ttl)
+                         read_ttl=self._read_ttl,
+                         on_gone=self._on_gone,
+                         excluded_prefixes=self._excluded_prefixes,
+                         may_serve_listing=self._may_serve_listing,
+                         note_written=self._note_written)
 
     async def _evict_dir(self, key: str) -> None:
         """Drop one directory's cached listing.

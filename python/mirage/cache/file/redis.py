@@ -20,6 +20,7 @@ from typing import Any
 from mirage.cache.file.mixin import FileCacheMixin, validate_max_drain_bytes
 from mirage.cache.file.utils import glob_escape, parse_limit
 from mirage.cache.invalidation import Invalidation
+from mirage.utils.key_prefix import under_path
 from mirage.vfs.redis.redis import RedisVFS
 
 # Shipped next to this module; byte-identical to the TypeScript add.lua.
@@ -164,16 +165,25 @@ class RedisFileCacheStore(RedisVFS, FileCacheMixin):
             if keys:
                 await self._cache_client.delete(*keys)
 
-    async def evict_prefix(self, prefix: str) -> None:
+    async def evict_prefix(self,
+                           prefix: str,
+                           *,
+                           excluded: tuple[str, ...] = ()) -> None:
         self._invalidation.invalidate_all()
-        for key in [k for k in self._drain_tasks if k.startswith(prefix)]:
+        for key in [
+                k for k in self._drain_tasks
+                if k.startswith(prefix) and not any(
+                    under_path(k, p) for p in excluded)
+        ]:
             task = self._drain_tasks.pop(key)
             task.cancel()
         escaped = glob_escape(prefix)
         for base in (self._data_prefix, self._meta_prefix):
             keys: list[Any] = []
             async for k in self._cache_client.scan_iter(f"{base}{escaped}*"):
-                keys.append(k)
+                key = (k.decode() if isinstance(k, bytes) else k)[len(base):]
+                if not any(under_path(key, p) for p in excluded):
+                    keys.append(k)
             if keys:
                 await self._cache_client.delete(*keys)
 

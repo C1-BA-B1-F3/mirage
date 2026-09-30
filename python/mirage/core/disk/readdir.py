@@ -16,7 +16,8 @@ import asyncio
 from pathlib import Path
 
 from mirage.accessor.disk import DiskAccessor
-from mirage.cache.index import NULL_INDEX, IndexCacheStore, IndexEntry
+from mirage.cache.index import (NULL_INDEX, IndexCacheStore, IndexEntry,
+                                ResourceType)
 from mirage.core.disk.errors import disk_error
 from mirage.core.disk.utils import read_entries, resolve_inside
 from mirage.types import PathSpec
@@ -24,15 +25,20 @@ from mirage.utils.errors import enoent, enotdir
 from mirage.utils.key_prefix import mount_prefix_of
 
 
-def _entry_names(p: Path) -> list[str]:
-    """The names in a host directory, less its symlinks.
+def _entry_types(p: Path) -> dict[str, ResourceType]:
+    """The entry names and types in a host directory, less its symlinks.
 
     A host symlink is not an entry of the mount (see ``resolve_inside``).
 
     Args:
         p (Path): the host directory.
     """
-    return [entry.name for entry in read_entries(p)]
+    return {
+        entry.name:
+        ResourceType.FOLDER if entry.is_dir(
+            follow_symlinks=False) else ResourceType.FILE
+        for entry in read_entries(p)
+    }
 
 
 async def readdir(accessor: DiskAccessor,
@@ -59,7 +65,7 @@ async def readdir(accessor: DiskAccessor,
     # that call instead of collapsing both into one errno. Restamped onto the
     # PathSpec so the virtual path, never the real fs path, is reported.
     try:
-        raw = await asyncio.to_thread(_entry_names, p)
+        raw = await asyncio.to_thread(_entry_types, p)
     except FileNotFoundError as exc:
         raise enoent(path_spec) from exc
     except NotADirectoryError as exc:
@@ -71,6 +77,7 @@ async def readdir(accessor: DiskAccessor,
     index_entries = [(e.rsplit("/", 1)[-1],
                       IndexEntry(id=e,
                                  name=e.rsplit("/", 1)[-1],
-                                 resource_type="file")) for e in entries]
+                                 resource_type=raw[e.rsplit("/", 1)[-1]]))
+                     for e in entries]
     await index.set_dir(virtual_key, index_entries)
     return virtual_entries

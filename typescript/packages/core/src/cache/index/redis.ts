@@ -152,16 +152,20 @@ local function drop(path, buried)
   gone[#gone + 1] = path
   folders[#folders + 1] = folder and 1 or 0
 end
-if old then
-  for _, path in ipairs(cjson.decode(old).entries) do
-    drop(path, false)
+local buried = {}
+local saved = tomb and cjson.decode(tomb) or false
+if saved then
+  for i, path in ipairs(saved.entries) do
+    buried[path] = saved.folders[i] == 1
   end
 end
-if tomb then
-  local t = cjson.decode(tomb)
-  for i, path in ipairs(t.entries) do
-    drop(path, t.folders[i] == 1)
+if old then
+  for _, path in ipairs(cjson.decode(old).entries) do
+    drop(path, buried[path] == true)
   end
+end
+if saved then
+  for _, path in ipairs(saved.entries) do drop(path, buried[path]) end
 end
 for i = 7, #ARGV, 2 do drop(ARGV[i], false) end
 local roots = {}
@@ -193,13 +197,30 @@ track(KEYS[4], {ARGV[1], ARGV[2], ARGV[3], ARGV[4]},
   {string.sub(KEYS[1], #ARGV[2] + 1)})
 local raw = redis.call('GET', KEYS[1])
 if raw then
-  local entries = cjson.decode(raw).entries
-  local folders = {}
-  for i, path in ipairs(entries) do
+  local listing = cjson.decode(raw)
+  local entries, folders, positions = {}, {}, {}
+  if listing.partial then
+    local saved = redis.call('GET', KEYS[2])
+    if saved then
+      local tomb = cjson.decode(saved)
+      for i, path in ipairs(tomb.entries) do
+        entries[#entries + 1] = path
+        folders[#folders + 1] = tomb.folders[i]
+        positions[path] = #entries
+      end
+    end
+  end
+  for _, path in ipairs(listing.entries) do
     local row = redis.call('GET', ARGV[1] .. path)
     local folder = redis.call('EXISTS', ARGV[2] .. path) == 1
       or (row ~= false and cjson.decode(row).resource_type == 'folder')
-    folders[i] = folder and 1 or 0
+    local position = positions[path]
+    if not position then
+      entries[#entries + 1] = path
+      position = #entries
+      positions[path] = position
+    end
+    folders[position] = (folder or folders[position] == 1) and 1 or 0
     redis.call('DEL', ARGV[1] .. path)
     prune(KEYS[4], {ARGV[1], ARGV[2], ARGV[3], ARGV[4]}, path)
   end

@@ -186,14 +186,22 @@ export class RAMIndexCacheStore extends IndexCacheStore {
     // still tell which children went away.
     const children = this.children.get(vfsPath)
     if (children !== undefined) {
-      this.tombstones.set(
-        vfsPath,
-        children.map((child) => ({
-          path: child,
-          folder:
+      const buried = new Map(
+        this.partial.has(vfsPath)
+          ? (this.tombstones.get(vfsPath) ?? []).map((child) => [child.path, child.folder])
+          : [],
+      )
+      for (const child of children) {
+        buried.set(
+          child,
+          buried.get(child) === true ||
             this.children.has(child) ||
             this.entryMap.get(child)?.resourceType === ResourceType.FOLDER,
-        })),
+        )
+      }
+      this.tombstones.set(
+        vfsPath,
+        [...buried].map(([path, folder]) => ({ path, folder })),
       )
     }
     for (const child of children ?? []) {

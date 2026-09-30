@@ -406,6 +406,51 @@ for (const backend of ['ram', 'redis']) {
         ])
       })
 
+      it('preserves the full baseline across repeated partial invalidation', async () => {
+        await store.setDir('/dir', [
+          ['a', entry()],
+          ['sub', folder('sub')],
+          ['b', entry('b')],
+        ])
+        await store.setDir('/dir/sub', [['old', entry('old')]])
+        await store.invalidateDir('/dir')
+        await store.setPartialDir('/dir', [
+          ['b', entry('b')],
+          ['c', entry('c')],
+        ])
+        await store.invalidateDir('/dir')
+        const gone = await store.setDir('/dir', [['b', entry('b')]])
+        expect(gone.sort((a, b) => a.path.localeCompare(b.path))).toEqual([
+          { path: '/dir/a', folder: false },
+          { path: '/dir/c', folder: false },
+          { path: '/dir/sub', folder: true },
+        ])
+        expect((await store.get('/dir/sub/old')).status).toBe(LookupStatus.NOT_FOUND)
+        expect((await store.listDir('/dir')).entries).toEqual(['/dir/b'])
+      })
+
+      it.each([
+        [false, false],
+        [false, true],
+        [true, false],
+        [true, true],
+      ])(
+        'preserves folder evidence with repeated invalidation=%s and retained=%s',
+        async (invalidateAgain, retained) => {
+          await store.setDir('/dir', [['sub', folder('sub')]])
+          await store.put('/dir/sub/orphan', entry('orphan'))
+          await store.invalidateDir('/dir')
+          await store.setPartialDir('/dir', [['sub', entry('sub')]])
+          if (invalidateAgain) await store.invalidateDir('/dir')
+          expect(await store.setDir('/dir', retained ? [['sub', entry('sub')]] : [])).toEqual([
+            { path: '/dir/sub', folder: true },
+          ])
+          expect((await store.get('/dir/sub/orphan')).status).toBe(LookupStatus.NOT_FOUND)
+          if (retained) expect((await store.get('/dir/sub')).entry?.resourceType).toBe('file')
+          else expect((await store.get('/dir/sub')).status).toBe(LookupStatus.NOT_FOUND)
+        },
+      )
+
       // A warm resolving a folder drops its parent's listing and then the
       // folder's own prefix before listing it; the evidence has to survive.
       it('keeps an existing tombstone across invalidatePrefix', async () => {

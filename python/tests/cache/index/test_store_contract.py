@@ -382,3 +382,43 @@ async def test_backend_directory_relist_preserves_subtree(
     assert await store.set_dir("/dir",
                                []) == [Evicted("/dir/sub", folder=True)]
     assert (await store.get("/dir/sub/keep")).status == LookupStatus.NOT_FOUND
+
+
+@pytest.mark.asyncio
+async def test_repeated_partial_invalidation_preserves_full_baseline(store):
+    await store.set_dir("/dir", [("a", entry()), ("sub", folder("sub")),
+                                 ("b", entry("b"))])
+    await store.set_dir("/dir/sub", [("old", entry("old"))])
+    await store.invalidate_dir("/dir")
+    await store.set_partial_dir("/dir", [("b", entry("b")), ("c", entry("c"))])
+    await store.invalidate_dir("/dir")
+    gone = await store.set_dir("/dir", [("b", entry("b"))])
+    assert sorted(gone, key=lambda child: child.path) == [
+        Evicted("/dir/a", folder=False),
+        Evicted("/dir/c", folder=False),
+        Evicted("/dir/sub", folder=True)
+    ]
+    assert (await store.get("/dir/sub/old")).status == LookupStatus.NOT_FOUND
+    assert (await store.list_dir("/dir")).entries == ["/dir/b"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("invalidate_again", [False, True])
+@pytest.mark.parametrize("retained", [False, True])
+async def test_repeated_partial_invalidation_preserves_folder_evidence(
+        store, invalidate_again, retained):
+    await store.set_dir("/dir", [("sub", folder("sub"))])
+    await store.put("/dir/sub/orphan", entry("orphan"))
+    await store.invalidate_dir("/dir")
+    await store.set_partial_dir("/dir", [("sub", entry("sub"))])
+    if invalidate_again:
+        await store.invalidate_dir("/dir")
+    rows = [("sub", entry("sub"))] if retained else []
+    assert await store.set_dir("/dir",
+                               rows) == [Evicted("/dir/sub", folder=True)]
+    assert (await
+            store.get("/dir/sub/orphan")).status == LookupStatus.NOT_FOUND
+    if retained:
+        assert (await store.get("/dir/sub")).entry.resource_type == "file"
+    else:
+        assert (await store.get("/dir/sub")).status == LookupStatus.NOT_FOUND

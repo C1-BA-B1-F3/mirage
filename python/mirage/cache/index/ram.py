@@ -189,10 +189,17 @@ class RAMIndexCacheStore(IndexCacheStore, KeyLockMixin):
         # listing can still tell which children went away.
         children = self._children.get(vfs_path)
         if children is not None:
+            buried = {
+                child.path: child.folder
+                for child in self._tombstones.get(vfs_path, [])
+            } if vfs_path in self._partial else {}
+            for child in children:
+                buried[child] = (buried.get(child, False)
+                                 or child in self._children
+                                 or self._is_folder(child))
             self._tombstones[vfs_path] = [
-                Evicted(child,
-                        folder=child in self._children
-                        or self._is_folder(child)) for child in children
+                Evicted(child, folder=folder)
+                for child, folder in buried.items()
             ]
         for child in children or []:
             self._entries.pop(child, None)

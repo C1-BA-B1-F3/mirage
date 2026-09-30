@@ -19,10 +19,12 @@ from mirage.commands.cli.builtin.gh.accessor import (camel, csv_values,
                                                      gh_repo, json_fields,
                                                      list_limit, text_out,
                                                      typed_out)
+from mirage.commands.cli.builtin.gh.constants import REPO_EDIT_FIELDS
 from mirage.commands.cli.builtin.gh.shape import (ListOf, Shape, exported,
                                                   pointer, struct)
 from mirage.commands.cli.types import CLIInvocation
 from mirage.commands.errors import UsageError
+from mirage.commands.spec.constants import flag_kwarg_name
 from mirage.commands.spec.flag_view import FlagView
 from mirage.core.github.config import GhConfig
 from mirage.core.github.repo import (create_repo, delete_repo, edit_repo,
@@ -397,41 +399,6 @@ async def rename(
     return text_out(f"✓ Renamed repository {full}\n")
 
 
-# `gh repo edit`'s value flags and the field each sets in the one PATCH it
-# sends (repo/edit EditRepositoryInput).
-EDIT_VALUES = (("description", "description"), ("homepage", "homepage"),
-               ("default_branch", "default_branch"), ("visibility",
-                                                      "visibility"))
-
-# Its switches, each on bare or with `=true` and off with `=false`.
-EDIT_SWITCHES = (
-    ("template", "is_template"),
-    ("enable_issues", "has_issues"),
-    ("enable_projects", "has_projects"),
-    ("enable_wiki", "has_wiki"),
-    ("enable_discussions", "has_discussions"),
-    ("enable_merge_commit", "allow_merge_commit"),
-    ("enable_squash_merge", "allow_squash_merge"),
-    ("enable_rebase_merge", "allow_rebase_merge"),
-    ("enable_auto_merge", "allow_auto_merge"),
-    ("delete_branch_on_merge", "delete_branch_on_merge"),
-    ("allow_forking", "allow_forking"),
-    ("allow_update_branch", "allow_update_branch"),
-)
-
-# The switches that ride `security_and_analysis` as `{status}` objects.
-EDIT_SECURITY = (
-    ("enable_advanced_security", "advanced_security"),
-    ("enable_secret_scanning", "secret_scanning"),
-    ("enable_secret_scanning_push_protection",
-     "secret_scanning_push_protection"),
-)
-
-
-def _switch_on(fl: FlagView, dest: str) -> bool:
-    return fl.as_bool(dest) or fl.as_str(dest) == "true"
-
-
 async def edit_cmd(
         inv: CLIInvocation[GhConfig]) -> tuple[ByteSource | None, IOResult]:
     """``gh repo edit``.
@@ -445,22 +412,24 @@ async def edit_cmd(
     Args:
         inv (CLIInvocation[GhConfig]): the invocation.
     """
-    fl = FlagView(inv.flags)
+    fl = FlagView(inv.flags, inv.spec)
     ref = gh_repo(inv.config, inv.texts[0] if inv.texts else None)
     body: dict[str, JsonValue] = {}
-    for dest, key in EDIT_VALUES:
-        value = fl.as_str(dest)
-        if value is not None:
-            body[key] = value
-    for dest, key in EDIT_SWITCHES:
-        if fl.raw(dest) is not None:
-            body[key] = _switch_on(fl, dest)
     security: dict[str, JsonValue] = {}
-    for dest, key in EDIT_SECURITY:
-        if fl.raw(dest) is not None:
-            security[key] = {
-                "status": "enabled" if _switch_on(fl, dest) else "disabled"
-            }
+    for field in REPO_EDIT_FIELDS:
+        dest = flag_kwarg_name(field.flag)
+        if fl.raw(dest) is None:
+            continue
+        if field.kind == "value":
+            body[field.field] = fl.as_str(dest)
+        else:
+            enabled = fl.as_bool(dest) or fl.as_str(dest) == "true"
+            if field.kind == "security":
+                security[field.field] = {
+                    "status": "enabled" if enabled else "disabled"
+                }
+            else:
+                body[field.field] = enabled
     adds = csv_values(fl.as_list("add_topic"))
     removes = csv_values(fl.as_list("remove_topic"))
     accepted = fl.as_bool("accept_visibility_change_consequences")

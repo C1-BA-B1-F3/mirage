@@ -640,6 +640,22 @@ async function workflowsAndSettings(at: string): Promise<void> {
     422,
   )
   eq('and writes none of it', field(await get(repo), 'description'), null)
+  for (const key of ['name', 'default_branch']) {
+    for (const value of [123, null, [], {}]) {
+      eq(
+        `a wrongly typed ${key} refuses the whole edit`,
+        await send('PATCH', '', { description: 'must not land', [key]: value }),
+        422,
+      )
+      eq('the refused edit preserves the repository', field(await get(repo), 'description'), null)
+    }
+  }
+  eq(
+    'an invalid branch type cannot partially rename a repository',
+    await send('PATCH', '', { name: 'must-not-rename', default_branch: false }),
+    422,
+  )
+  eq('the original name still resolves', await send('GET', ''), 200)
   eq('an unknown visibility is refused', await send('PATCH', '', { visibility: 'secret' }), 422)
   eq('a legacy site needs a source', await send('POST', '/pages', {}), 422)
   eq(

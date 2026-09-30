@@ -14,6 +14,8 @@
 
 import { searchSpec } from './search.ts'
 import { GhConfigSchema } from '../../../../core/github/config.ts'
+import { REPO_EDIT_FIELDS } from './constants.ts'
+import type { RepoEditField } from './types.ts'
 import { CLISpec } from '../../types.ts'
 import { Operand, Option } from '../../../spec/types.ts'
 import { api } from './api.ts'
@@ -80,15 +82,15 @@ const BODY_FILE = new Option({ short: '-F', long: '--body-file', type: 'path' })
 const TITLE = new Option({ short: '-t', long: '--title', type: 'str' })
 const NUMBER = new Operand({ type: 'str', name: 'NUMBER', required: true })
 
-// A gh boolean flag: on bare or with `=true`, off with `=false`, as pflag
-// reads one.
-function toggle(long: string, description: string): Option {
+// The grammar and request mapping consume the same setting definition.
+function repoEditOption(field: RepoEditField): Option {
   return new Option({
-    long,
+    short: field.short ?? null,
+    long: field.flag,
     type: 'str',
-    valueOptional: true,
-    choices: ['true', 'false'],
-    description,
+    valueOptional: field.kind !== 'value',
+    choices: field.kind === 'value' ? [...(field.choices ?? [])] : ['true', 'false'],
+    description: field.description,
   })
 }
 
@@ -368,50 +370,7 @@ function repo(): CLISpec {
         write: true,
         positional: [new Operand({ type: 'str', name: 'REPOSITORY' })],
         options: [
-          new Option({
-            short: '-d',
-            long: '--description',
-            type: 'str',
-            description: 'Description of the repository',
-          }),
-          new Option({
-            short: '-h',
-            long: '--homepage',
-            type: 'str',
-            description: 'Repository home page URL',
-          }),
-          new Option({
-            long: '--default-branch',
-            type: 'str',
-            description: 'Set the default branch name for the repository',
-          }),
-          new Option({
-            long: '--visibility',
-            type: 'str',
-            choices: ['public', 'private', 'internal'],
-            description: 'Change the visibility of the repository to {public,private,internal}',
-          }),
-          toggle('--template', 'Make the repository available as a template repository'),
-          toggle('--enable-issues', 'Enable issues in the repository'),
-          toggle('--enable-projects', 'Enable projects in the repository'),
-          toggle('--enable-wiki', 'Enable wiki in the repository'),
-          toggle('--enable-discussions', 'Enable discussions in the repository'),
-          toggle('--enable-merge-commit', 'Enable merging pull requests via merge commit'),
-          toggle('--enable-squash-merge', 'Enable merging pull requests via squashed commit'),
-          toggle('--enable-rebase-merge', 'Enable merging pull requests via rebase'),
-          toggle('--enable-auto-merge', 'Enable auto-merge functionality'),
-          toggle('--enable-advanced-security', 'Enable advanced security in the repository'),
-          toggle('--enable-secret-scanning', 'Enable secret scanning in the repository'),
-          toggle(
-            '--enable-secret-scanning-push-protection',
-            'Enable secret scanning push protection in the repository',
-          ),
-          toggle('--delete-branch-on-merge', 'Delete head branch when pull requests are merged'),
-          toggle('--allow-forking', 'Allow forking of an organization repository'),
-          toggle(
-            '--allow-update-branch',
-            'Allow a pull request head branch that is behind its base branch to be updated',
-          ),
+          ...REPO_EDIT_FIELDS.map(repoEditOption),
           new Option({
             long: '--add-topic',
             type: 'str',

@@ -65,8 +65,7 @@
       ],
       "typescript": [
         "GITHUB_URL"
-      ],
-      "shared": true
+      ]
     },
     "gridfs": {
       "python": [],

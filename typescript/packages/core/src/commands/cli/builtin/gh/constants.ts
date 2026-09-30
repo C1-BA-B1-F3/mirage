@@ -12,6 +12,8 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import type { RepoEditField } from './types.ts'
+
 export const SEARCH_FLAGS: Record<string, string[]> = {
   issues: [
     'app',
@@ -444,3 +446,123 @@ export const HTTP_REASONS: Readonly<Record<number, string>> = {
   510: 'Not Extended',
   511: 'Network Authentication Required',
 }
+
+export const REPO_EDIT_FIELDS: readonly RepoEditField[] = [
+  {
+    flag: '--description',
+    field: 'description',
+    kind: 'value',
+    description: 'Description of the repository',
+    short: '-d',
+  },
+  {
+    flag: '--homepage',
+    field: 'homepage',
+    kind: 'value',
+    description: 'Repository home page URL',
+    short: '-h',
+  },
+  {
+    flag: '--default-branch',
+    field: 'default_branch',
+    kind: 'value',
+    description: 'Set the default branch name for the repository',
+  },
+  {
+    flag: '--visibility',
+    field: 'visibility',
+    kind: 'value',
+    description: 'Change the visibility of the repository to {public,private,internal}',
+    choices: ['public', 'private', 'internal'],
+  },
+  {
+    flag: '--template',
+    field: 'is_template',
+    kind: 'toggle',
+    description: 'Make the repository available as a template repository',
+  },
+  {
+    flag: '--enable-issues',
+    field: 'has_issues',
+    kind: 'toggle',
+    description: 'Enable issues in the repository',
+  },
+  {
+    flag: '--enable-projects',
+    field: 'has_projects',
+    kind: 'toggle',
+    description: 'Enable projects in the repository',
+  },
+  {
+    flag: '--enable-wiki',
+    field: 'has_wiki',
+    kind: 'toggle',
+    description: 'Enable wiki in the repository',
+  },
+  {
+    flag: '--enable-discussions',
+    field: 'has_discussions',
+    kind: 'toggle',
+    description: 'Enable discussions in the repository',
+  },
+  {
+    flag: '--enable-merge-commit',
+    field: 'allow_merge_commit',
+    kind: 'toggle',
+    description: 'Enable merging pull requests via merge commit',
+  },
+  {
+    flag: '--enable-squash-merge',
+    field: 'allow_squash_merge',
+    kind: 'toggle',
+    description: 'Enable merging pull requests via squashed commit',
+  },
+  {
+    flag: '--enable-rebase-merge',
+    field: 'allow_rebase_merge',
+    kind: 'toggle',
+    description: 'Enable merging pull requests via rebase',
+  },
+  {
+    flag: '--enable-auto-merge',
+    field: 'allow_auto_merge',
+    kind: 'toggle',
+    description: 'Enable auto-merge functionality',
+  },
+  {
+    flag: '--enable-advanced-security',
+    field: 'advanced_security',
+    kind: 'security',
+    description: 'Enable advanced security in the repository',
+  },
+  {
+    flag: '--enable-secret-scanning',
+    field: 'secret_scanning',
+    kind: 'security',
+    description: 'Enable secret scanning in the repository',
+  },
+  {
+    flag: '--enable-secret-scanning-push-protection',
+    field: 'secret_scanning_push_protection',
+    kind: 'security',
+    description: 'Enable secret scanning push protection in the repository',
+  },
+  {
+    flag: '--delete-branch-on-merge',
+    field: 'delete_branch_on_merge',
+    kind: 'toggle',
+    description: 'Delete head branch when pull requests are merged',
+  },
+  {
+    flag: '--allow-forking',
+    field: 'allow_forking',
+    kind: 'toggle',
+    description: 'Allow forking of an organization repository',
+  },
+  {
+    flag: '--allow-update-branch',
+    field: 'allow_update_branch',
+    kind: 'toggle',
+    description: 'Allow a pull request head branch that is behind its base branch to be updated',
+  },
+]

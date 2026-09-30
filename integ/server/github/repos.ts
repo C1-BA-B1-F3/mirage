@@ -488,13 +488,11 @@ const createRepo: Handler = async (ctx) => {
   return { status: 201, body: repoJson(created) }
 }
 
-// The settings `PATCH /repos/{owner}/{repo}` stores beside `name` and
-// `default_branch`, by the JSON type each takes. They land in the metadata the
-// repository object and GraphQL both read, so an edit shows up everywhere a
-// fixture's own value would. A field the vendor does not take is ignored, as
-// the vendor ignores it; one of the wrong type refuses the whole request before
-// anything is written.
+// Validate every accepted field before writing metadata or moving repository
+// keys. A malformed default_branch must not leave a successful rename behind.
 const EDITABLE: Record<string, 'string' | 'nullable' | 'boolean' | 'object'> = {
+  name: 'string',
+  default_branch: 'string',
   description: 'nullable',
   homepage: 'nullable',
   private: 'boolean',
@@ -556,7 +554,10 @@ const updateRepo: Handler = authed(
     } else if (typeof edits.private === 'boolean') {
       edits.visibility = edits.private ? 'private' : 'public'
     }
-    const name = str(body, 'name').trim()
+    const name = str(edits, 'name').trim()
+    const branch = str(edits, 'default_branch').trim()
+    delete edits.name
+    delete edits.default_branch
     let current = repo
     if (name !== '' && name !== repo.name) {
       const target = `${repo.owner}/${name}`
@@ -565,7 +566,6 @@ const updateRepo: Handler = authed(
       }
       current = (await renameRepo(ctx.db, ctx.tenant, repo, name)) as RepoRow
     }
-    const branch = str(body, 'default_branch').trim()
     const data: { defaultBranch?: string; metaJson?: string } = {}
     if (branch !== '') data.defaultBranch = branch
     if (Object.keys(edits).length > 0) {

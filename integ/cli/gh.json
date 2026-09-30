@@ -1988,6 +1988,110 @@
         "stdout": "[\"CI\",\"Build\"]\n{\"event\":\"workflow_dispatch\",\"status\":\"queued\",\"workflowName\":\"Build\"}\n",
         "stderr": ""
       }
+    },
+    {
+      "id": "gh_repo_edit_maps_values_and_every_toggle",
+      "seq": 569909,
+      "targets": [
+        "cli-gh"
+      ],
+      "command": "gh repo fork integ/repo-cli --fork-name settings > /dev/null && gh repo edit integ-user/settings --description '' --homepage https://example.test --default-branch main --visibility private --accept-visibility-change-consequences --template --enable-issues=false --enable-projects=true --enable-wiki=false --enable-discussions --enable-merge-commit=false --enable-squash-merge=true --enable-rebase-merge=false --enable-auto-merge --delete-branch-on-merge=false --allow-forking=true --allow-update-branch=false && gh api repos/integ-user/settings --jq '[.description, .homepage, .default_branch, .visibility, .private, .is_template, .has_issues, .has_projects, .has_wiki, .has_discussions, .allow_merge_commit, .allow_squash_merge, .allow_rebase_merge, .allow_auto_merge, .delete_branch_on_merge, .allow_forking, .allow_update_branch]'",
+      "expect": {
+        "exit": 0,
+        "stdout": "[\"\",\"https://example.test\",\"main\",\"private\",true,true,false,true,false,true,false,true,false,true,false,true,false]\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "gh_repo_edit_maps_security_switches",
+      "seq": 569910,
+      "targets": [
+        "cli-gh"
+      ],
+      "command": "gh repo edit integ-user/settings --enable-advanced-security --enable-secret-scanning=false --enable-secret-scanning-push-protection=true && gh api repos/integ-user/settings --jq .security_and_analysis",
+      "expect": {
+        "exit": 0,
+        "stdout": "{\"advanced_security\":{\"status\":\"enabled\"},\"secret_scanning\":{\"status\":\"disabled\"},\"secret_scanning_push_protection\":{\"status\":\"enabled\"}}\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "gh_repo_edit_topics_deduplicate_and_remove",
+      "seq": 569911,
+      "targets": [
+        "cli-gh"
+      ],
+      "command": "gh api -X PUT repos/integ-user/settings/topics -f 'names[]=keep' --silent && gh repo edit integ-user/settings --add-topic alpha,beta --add-topic alpha --remove-topic beta && gh repo edit integ-user/settings --add-topic alpha --remove-topic missing && gh api repos/integ-user/settings/topics --jq .names",
+      "expect": {
+        "exit": 0,
+        "stdout": "[\"keep\",\"alpha\"]\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "gh_api_invalid_repository_fields_refuse_before_any_write",
+      "seq": 569912,
+      "targets": [
+        "cli-gh"
+      ],
+      "command": "gh api -X PATCH repos/integ-user/settings -F name=12 -f description=must-not-land --silent; echo status=$?; gh api -X PATCH repos/integ-user/settings -f name=must-not-rename -F default_branch=false --silent; echo status=$?; gh api repos/integ-user/settings --jq '[.name, .description, .default_branch]'",
+      "expect": {
+        "exit": 0,
+        "stdout": "status=1\nstatus=1\n[\"settings\",\"\",\"main\"]\n",
+        "stderr": "gh: Invalid request.\n\nFor 'properties/name', 12 is not a string. (HTTP 422)\ngh: Invalid request.\n\nFor 'properties/default_branch', false is not a string. (HTTP 422)\n"
+      }
+    },
+    {
+      "id": "gh_api_pages_update_is_atomic_and_delete_has_no_body",
+      "seq": 569913,
+      "targets": [
+        "cli-gh"
+      ],
+      "command": "gh api -X POST repos/integ-user/settings/pages -f build_type=workflow --jq '[.build_type, .public]'; gh api -X POST repos/integ-user/settings/pages -f build_type=workflow --silent; echo status=$?; gh api -X PUT repos/integ-user/settings/pages -f 'source[branch]=main' -f 'source[path]=/docs' -f cname=docs.example.test -F https_enforced=false --silent; gh api -X PUT repos/integ-user/settings/pages -f cname=must-not-land -f 'source[branch]=absent' --silent; echo status=$?; gh api repos/integ-user/settings/pages --jq '[.source, .cname, .https_enforced]'; gh api -X DELETE repos/integ-user/settings/pages --include --silent | head -1; gh api repos/integ-user/settings --jq .has_pages",
+      "expect": {
+        "exit": 0,
+        "stdout": "[\"workflow\",false]\nstatus=1\nstatus=1\n[{\"branch\":\"main\",\"path\":\"/docs\"},\"docs.example.test\",false]\nHTTP/1.1 204 No Content\nfalse\n",
+        "stderr": "gh: GitHub Pages is already enabled. (HTTP 409)\ngh: Validation Failed (HTTP 422)\n"
+      }
+    },
+    {
+      "id": "gh_api_include_silent_preserves_headers_on_every_page",
+      "seq": 569914,
+      "targets": [
+        "cli-gh"
+      ],
+      "command": "gh api --include --silent --paginate 'repos/integ/repo-cli/actions/workflows?per_page=1' | grep '^HTTP/'; gh api --include --silent repos/integ-user/settings/pages | head -1",
+      "expect": {
+        "exit": 0,
+        "stdout": "HTTP/1.1 200 OK\nHTTP/1.1 200 OK\nHTTP/1.1 200 OK\nHTTP/1.1 404 Not Found\n",
+        "stderr": "gh: Not Found (HTTP 404)\n"
+      }
+    },
+    {
+      "id": "gh_api_binary_log_archive_survives_redirection_and_unzip",
+      "seq": 568999,
+      "targets": [
+        "cli-gh"
+      ],
+      "command": "gh api repos/integ/repo-cli/actions/runs/201/logs > /scratch/run.zip && unzip -p /scratch/run.zip 0_test.txt | head -1; gh api repos/integ/repo-cli/actions/jobs/401/logs | head -1",
+      "expect": {
+        "exit": 0,
+        "stdout": "2026-01-01T00:00:05.0000000Z Current runner version: '2.330.0'\n2026-01-01T00:00:05.0000000Z Current runner version: '2.330.0'\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "gh_workflow_yaml_reads_the_snapshot_and_keeps_its_id_after_recreation",
+      "seq": 569916,
+      "targets": [
+        "cli-gh"
+      ],
+      "command": "before=$(gh api repos/integ/repo-cli/commits --jq '.[0].sha[0:7]'); workflow=$(gh api repos/integ/repo-cli/actions/workflows/build.yml --jq .id); blob=$(gh api repos/integ/repo-cli/contents/.github/workflows/build.yml --jq .sha); gh api -X PUT repos/integ/repo-cli/contents/.github/workflows/build.yml -f message=rename -f sha=$blob -f content=bmFtZTogUmVuYW1lZApvbjogcHVzaA== --silent && gh workflow view build.yml --yaml | head -1 && gh workflow view build.yml --yaml --ref $before | head -1; gh workflow run build.yml; echo status=$?; blob=$(gh api repos/integ/repo-cli/contents/.github/workflows/build.yml --jq .sha); gh api -X DELETE repos/integ/repo-cli/contents/.github/workflows/build.yml -f message=remove -f sha=$blob --silent && gh workflow list --json name --jq 'map(.name)' && gh api -X PUT repos/integ/repo-cli/contents/.github/workflows/build.yml -f message=restore -f content=bmFtZTogQnVpbGQKb246IHdvcmtmbG93X2Rpc3BhdGNoCg== --silent && test \"$workflow\" = \"$(gh api repos/integ/repo-cli/actions/workflows/build.yml --jq .id)\" && echo same-workflow",
+      "expect": {
+        "exit": 0,
+        "stdout": "name: Renamed\nname: Build\nstatus=1\n[\"CI\"]\nsame-workflow\n",
+        "stderr": "gh workflow run: Workflow does not have 'workflow_dispatch' trigger\n"
+      }
     }
   ]
 }

@@ -14,6 +14,8 @@
 
 import re
 
+from mirage.commands.cli.builtin.gh.types import RepoEditField
+
 SEARCH_FLAGS = {
     'issues': [
         'app', 'archived', 'assignee', 'author', 'closed', 'commenter',
@@ -260,3 +262,95 @@ HTTP_REASONS: dict[int, str] = {
     510: "Not Extended",
     511: "Network Authentication Required",
 }
+
+REPO_EDIT_FIELDS = (
+    RepoEditField(flag='--description',
+                  field='description',
+                  kind='value',
+                  description='Description of the repository',
+                  short='-d'),
+    RepoEditField(flag='--homepage',
+                  field='homepage',
+                  kind='value',
+                  description='Repository home page URL',
+                  short='-h'),
+    RepoEditField(
+        flag='--default-branch',
+        field='default_branch',
+        kind='value',
+        description='Set the default branch name for the repository'),
+    RepoEditField(
+        flag='--visibility',
+        field='visibility',
+        kind='value',
+        description=
+        'Change the visibility of the repository to {public,private,internal}',
+        choices=('public', 'private', 'internal')),
+    RepoEditField(
+        flag='--template',
+        field='is_template',
+        kind='toggle',
+        description='Make the repository available as a template repository'),
+    RepoEditField(flag='--enable-issues',
+                  field='has_issues',
+                  kind='toggle',
+                  description='Enable issues in the repository'),
+    RepoEditField(flag='--enable-projects',
+                  field='has_projects',
+                  kind='toggle',
+                  description='Enable projects in the repository'),
+    RepoEditField(flag='--enable-wiki',
+                  field='has_wiki',
+                  kind='toggle',
+                  description='Enable wiki in the repository'),
+    RepoEditField(flag='--enable-discussions',
+                  field='has_discussions',
+                  kind='toggle',
+                  description='Enable discussions in the repository'),
+    RepoEditField(flag='--enable-merge-commit',
+                  field='allow_merge_commit',
+                  kind='toggle',
+                  description='Enable merging pull requests via merge commit'),
+    RepoEditField(
+        flag='--enable-squash-merge',
+        field='allow_squash_merge',
+        kind='toggle',
+        description='Enable merging pull requests via squashed commit'),
+    RepoEditField(flag='--enable-rebase-merge',
+                  field='allow_rebase_merge',
+                  kind='toggle',
+                  description='Enable merging pull requests via rebase'),
+    RepoEditField(flag='--enable-auto-merge',
+                  field='allow_auto_merge',
+                  kind='toggle',
+                  description='Enable auto-merge functionality'),
+    RepoEditField(flag='--enable-advanced-security',
+                  field='advanced_security',
+                  kind='security',
+                  description='Enable advanced security in the repository'),
+    RepoEditField(flag='--enable-secret-scanning',
+                  field='secret_scanning',
+                  kind='security',
+                  description='Enable secret scanning in the repository'),
+    RepoEditField(
+        flag='--enable-secret-scanning-push-protection',
+        field='secret_scanning_push_protection',
+        kind='security',
+        description='Enable secret scanning push protection in the repository'
+    ),
+    RepoEditField(
+        flag='--delete-branch-on-merge',
+        field='delete_branch_on_merge',
+        kind='toggle',
+        description='Delete head branch when pull requests are merged'),
+    RepoEditField(flag='--allow-forking',
+                  field='allow_forking',
+                  kind='toggle',
+                  description='Allow forking of an organization repository'),
+    RepoEditField(
+        flag='--allow-update-branch',
+        field='allow_update_branch',
+        kind='toggle',
+        description='Allow a pull request head branch that is behind its '
+        'base branch to be updated'),
+)

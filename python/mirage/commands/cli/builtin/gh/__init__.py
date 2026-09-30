@@ -19,7 +19,9 @@ from mirage.commands.cli.builtin.gh import release as release_commands
 from mirage.commands.cli.builtin.gh import repo as repo_commands
 from mirage.commands.cli.builtin.gh.api import api
 from mirage.commands.cli.builtin.gh.auth import status as auth_status
+from mirage.commands.cli.builtin.gh.constants import REPO_EDIT_FIELDS
 from mirage.commands.cli.builtin.gh.search import search_spec
+from mirage.commands.cli.builtin.gh.types import RepoEditField
 from mirage.commands.cli.builtin.gh.version import version
 from mirage.commands.cli.types import CLISpec
 from mirage.commands.spec.types import Operand, Option
@@ -43,19 +45,19 @@ TITLE = Option(short="-t", long="--title", type="str")
 NUMBER = Operand(type="str", name="NUMBER", required=True)
 
 
-def _toggle(long: str, description: str) -> Option:
-    """A gh boolean flag: on bare or with ``=true``, off with ``=false``,
-    as pflag reads one.
+def _repo_edit_option(field: RepoEditField) -> Option:
+    """Build the grammar from the setting consumed by the handler.
 
     Args:
-        long (str): the flag's spelling.
-        description (str): what it does.
+        field (RepoEditField): Repository setting definition.
     """
-    return Option(long=long,
+    return Option(short=field.short,
+                  long=field.flag,
                   type="str",
-                  value_optional=True,
-                  choices=("true", "false"),
-                  description=description)
+                  value_optional=field.kind != "value",
+                  choices=field.choices if field.kind == "value" else
+                  ("true", "false"),
+                  description=field.description)
 
 
 def _issue() -> CLISpec:
@@ -235,50 +237,8 @@ def _pr() -> CLISpec:
                    ))
 
 
-# `gh repo edit`'s flags, each named and described as gh 2.85 has it.
 REPO_EDIT_OPTIONS = (
-    Option(short="-d",
-           long="--description",
-           type="str",
-           description="Description of the repository"),
-    Option(short="-h",
-           long="--homepage",
-           type="str",
-           description="Repository home page URL"),
-    Option(long="--default-branch",
-           type="str",
-           description="Set the default branch name for the repository"),
-    Option(long="--visibility",
-           type="str",
-           choices=("public", "private", "internal"),
-           description="Change the visibility of the repository to "
-           "{public,private,internal}"),
-    _toggle("--template",
-            "Make the repository available as a template repository"),
-    _toggle("--enable-issues", "Enable issues in the repository"),
-    _toggle("--enable-projects", "Enable projects in the repository"),
-    _toggle("--enable-wiki", "Enable wiki in the repository"),
-    _toggle("--enable-discussions", "Enable discussions in the repository"),
-    _toggle("--enable-merge-commit",
-            "Enable merging pull requests via merge commit"),
-    _toggle("--enable-squash-merge",
-            "Enable merging pull requests via squashed commit"),
-    _toggle("--enable-rebase-merge",
-            "Enable merging pull requests via rebase"),
-    _toggle("--enable-auto-merge", "Enable auto-merge functionality"),
-    _toggle("--enable-advanced-security",
-            "Enable advanced security in the repository"),
-    _toggle("--enable-secret-scanning",
-            "Enable secret scanning in the repository"),
-    _toggle("--enable-secret-scanning-push-protection",
-            "Enable secret scanning push protection in the repository"),
-    _toggle("--delete-branch-on-merge",
-            "Delete head branch when pull requests are merged"),
-    _toggle("--allow-forking", "Allow forking of an organization repository"),
-    _toggle(
-        "--allow-update-branch",
-        "Allow a pull request head branch that is behind its base branch to "
-        "be updated"),
+    *(_repo_edit_option(field) for field in REPO_EDIT_FIELDS),
     Option(long="--add-topic",
            type="str",
            multiple=True,

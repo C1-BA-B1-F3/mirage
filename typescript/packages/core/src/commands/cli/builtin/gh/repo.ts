@@ -42,6 +42,8 @@ import {
   textValue,
   typedOut,
 } from './accessor.ts'
+import { REPO_EDIT_FIELDS } from './constants.ts'
+import { flagKwargName } from '../../../spec/constants.ts'
 import { exported, list, pointer, struct, type Shape } from './shape.ts'
 
 const OWNER = struct(['id', 'string'], ['login', 'string'])
@@ -435,42 +437,6 @@ export async function rename(inv: CLIInvocation): Promise<CommandFnResult> {
   return textOut(`✓ Renamed repository ${renamed.full_name ?? name}\n`)
 }
 
-// `gh repo edit`'s value flags and the field each sets in the one `PATCH` it
-// sends (repo/edit EditRepositoryInput).
-const EDIT_VALUES: readonly (readonly [string, string])[] = [
-  ['description', 'description'],
-  ['homepage', 'homepage'],
-  ['default_branch', 'default_branch'],
-  ['visibility', 'visibility'],
-]
-
-// Its switches, each on bare or with `=true` and off with `=false`.
-const EDIT_SWITCHES: readonly (readonly [string, string])[] = [
-  ['template', 'is_template'],
-  ['enable_issues', 'has_issues'],
-  ['enable_projects', 'has_projects'],
-  ['enable_wiki', 'has_wiki'],
-  ['enable_discussions', 'has_discussions'],
-  ['enable_merge_commit', 'allow_merge_commit'],
-  ['enable_squash_merge', 'allow_squash_merge'],
-  ['enable_rebase_merge', 'allow_rebase_merge'],
-  ['enable_auto_merge', 'allow_auto_merge'],
-  ['delete_branch_on_merge', 'delete_branch_on_merge'],
-  ['allow_forking', 'allow_forking'],
-  ['allow_update_branch', 'allow_update_branch'],
-]
-
-// The switches that ride `security_and_analysis` as `{status}` objects.
-const EDIT_SECURITY: readonly (readonly [string, string])[] = [
-  ['enable_advanced_security', 'advanced_security'],
-  ['enable_secret_scanning', 'secret_scanning'],
-  ['enable_secret_scanning_push_protection', 'secret_scanning_push_protection'],
-]
-
-function switchOn(fl: FlagView, dest: string): boolean {
-  return fl.asBool(dest) || fl.asStr(dest) === 'true'
-}
-
 /**
  * `gh repo edit`: the settings named on the line in one `PATCH`, and topics
  * read and replaced whole when `--add-topic` or `--remove-topic` changes
@@ -479,20 +445,22 @@ function switchOn(fl: FlagView, dest: string): boolean {
  * writing to anything but a terminal, success prints nothing.
  */
 export async function editCmd(inv: CLIInvocation): Promise<CommandFnResult> {
-  const fl = new FlagView(inv.flags)
+  const fl = new FlagView(inv.flags, inv.spec)
   const ref = ghRepo(inv.config, inv.texts[0])
   const body: Record<string, unknown> = {}
-  for (const [dest, key] of EDIT_VALUES) {
-    const value = fl.asStr(dest)
-    if (value !== undefined) body[key] = value
-  }
-  for (const [dest, key] of EDIT_SWITCHES) {
-    if (fl.raw(dest) !== undefined) body[key] = switchOn(fl, dest)
-  }
   const security: Record<string, unknown> = {}
-  for (const [dest, key] of EDIT_SECURITY) {
-    if (fl.raw(dest) !== undefined) {
-      security[key] = { status: switchOn(fl, dest) ? 'enabled' : 'disabled' }
+  for (const field of REPO_EDIT_FIELDS) {
+    const dest = flagKwargName(field.flag)
+    if (fl.raw(dest) === undefined) continue
+    if (field.kind === 'value') {
+      body[field.field] = fl.asStr(dest)
+    } else {
+      const enabled = fl.asBool(dest) || fl.asStr(dest) === 'true'
+      if (field.kind === 'security') {
+        security[field.field] = { status: enabled ? 'enabled' : 'disabled' }
+      } else {
+        body[field.field] = enabled
+      }
     }
   }
   const adds = csvValues(fl.asList('add_topic'))

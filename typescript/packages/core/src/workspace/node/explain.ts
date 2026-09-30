@@ -25,7 +25,13 @@ import {
   type Occurrence,
   type Pending,
 } from '../../policy/types.ts'
-import { getParts, getText, literalWord, splitEnvPrefix } from '../../shell/helpers.ts'
+import {
+  inputSubstitutionRedirect,
+  getParts,
+  getText,
+  literalWord,
+  splitEnvPrefix,
+} from '../../shell/helpers.ts'
 import { opaqueReads, referencedNames } from '../../shell/parse/index.ts'
 import { NodeType, type TSNodeLike } from '../../shell/types.ts'
 import type { PathSpec } from '../../types.ts'
@@ -80,6 +86,7 @@ interface Walked {
   readonly redirects: Word[]
   readonly session: SessionState
   readonly occurrence: Occurrence
+  readonly intrinsic?: boolean
 }
 
 /**
@@ -99,6 +106,7 @@ interface Walked {
 interface Judged {
   readonly explanation: Explanation
   readonly occurrence: Occurrence
+  readonly intrinsic?: boolean
   readonly stated: boolean
 }
 
@@ -232,13 +240,14 @@ async function judgeWords(
   redirectWords: readonly Word[] = [],
   stated = true,
   missing: string | null = null,
+  intrinsic = false,
 ): Promise<Judged[]> {
   const head = words[0]
   if (head === undefined) return []
   if (head.text === null) {
     return [{ explanation: unreadableWord(head.raw), occurrence, stated: false }]
   }
-  const literal = stated && words.every((w) => w.text !== null)
+  const literal = stated && [...words, ...redirectWords].every((w) => w.text !== null)
   const name = wordValue(head)
   const args = words.slice(1).map(wordValue)
   const classified = classifiedWords(name, args, session, registry)
@@ -252,13 +261,27 @@ async function judgeWords(
     agentId,
     null,
     redirectPaths(redirectWords, registry, session.cwd),
+    false,
+    intrinsic,
   )
   if (!Array.isArray(gated)) {
-    return [{ explanation: fromRefusal(name, args, gated, missing), occurrence, stated: literal }]
+    return [
+      {
+        explanation: fromRefusal(name, args, gated, missing),
+        occurrence,
+        stated: literal,
+        intrinsic,
+      },
+    ]
   }
   const [ctx, asked] = gated
   const out: Judged[] = [
-    { explanation: await explained(ctx, session, registry, asked), occurrence, stated: literal },
+    {
+      explanation: await explained(ctx, session, registry, asked),
+      occurrence,
+      stated: literal,
+      intrinsic,
+    },
   ]
   for (const inner of innerLines(name, words.slice(1))) {
     if (!innerReadable(inner)) continue
@@ -321,6 +344,27 @@ function wordsOf(node: TSNodeLike, home: string | null): Word[] {
  * "escapes" means, and because `&` is not a wrapper node: it is a token
  * following its command, visible only to whoever holds the sibling list.
  */
+function* walkSubstitution(
+  tree: TSNodeLike,
+  session: SessionState,
+  home: string | null,
+  frame: Frame,
+  reparse: (line: string) => TSNodeLike,
+): Walk {
+  const redirect = inputSubstitutionRedirect(tree)
+  if (redirect === null) return yield* walkNode(tree, session, home, frame, reparse)
+  const target = redirect.targetNode as TSNodeLike
+  yield {
+    words: [{ raw: 'cat', text: 'cat' }],
+    redirects: [{ raw: getText(target), text: literalWord(target, home) }],
+    session,
+    occurrence: occurrenceIn(tree, frame),
+    intrinsic: true,
+  }
+  yield* walkNode(target, session, home, frame, reparse)
+  return session
+}
+
 function* walkNode(
   node: TSNodeLike,
   session: SessionState,
@@ -355,11 +399,15 @@ function* walkNode(
       // pair, parsed on its own, because tree-sitter lexes touching pairs
       // as one node whose subtree is not what runs.
       for (const inner of segments) {
-        yield* walkNode(reparse(inner.text), session, home, inner, reparse)
+        yield* walkSubstitution(reparse(inner.text), session, home, inner, reparse)
       }
       return session
     }
     const inner = bodyFrame(node, frame)
+    if (node.type === NodeType.COMMAND_SUBSTITUTION && inner !== null) {
+      yield* walkSubstitution(reparse(inner.text), session, home, { ...inner, base: 0 }, reparse)
+      return session
+    }
     yield* walkChildren(node, session, home, inner ?? frame, reparse)
     return session
   }
@@ -582,6 +630,9 @@ export async function prejudgeLine(
         agentId,
         reparse,
         item.redirects,
+        true,
+        null,
+        item.intrinsic,
       ),
     ])
   }
@@ -613,6 +664,7 @@ export async function prejudgeLine(
         // that runs the line, and spent when the line ends: one question per
         // run, not per pass.
         { line: handed, occurrence: one.occurrence },
+        one.intrinsic,
       )
       if (!(answered instanceof Admitted)) return answered
       // The host answered this one inline. The rest of the line has not
@@ -663,6 +715,8 @@ async function verdictRefuses(
     agentId,
     null,
     redirects,
+    false,
+    judged.intrinsic,
   )
   if (!Array.isArray(gated)) return true
   const [ctx, asked] = gated
@@ -897,6 +951,8 @@ async function judgeLine(
         reparse,
         item.redirects,
         stated,
+        null,
+        item.intrinsic,
       )),
     )
   }

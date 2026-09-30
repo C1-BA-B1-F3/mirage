@@ -12,20 +12,25 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import { runWithAdmission } from '../../context/session_context.ts'
 import { CommandTimeoutError } from '../../commands/errors.ts'
 import { isControlFlowError } from '../workspace/failure.ts'
 import { guardOutput } from '../../commands/builtin/utils/limit.ts'
 import { postExecuteGate, refusalOf, renderDeny } from '../../policy/index.ts'
-import type { ByteSource, IOResult } from '../../io/types.ts'
-import { materialize } from '../../io/types.ts'
+import type { ByteSource } from '../../io/types.ts'
+import { IOResult, materialize } from '../../io/types.ts'
 import { applyBarrier, BarrierPolicy } from '../../shell/barrier.ts'
 import { inputSubstitutionRedirect } from '../../shell/helpers.ts'
 import { expandRedirects } from '../expand/redirects.ts'
+import { toScope } from '../executor/builtins/scope.ts'
 import { handleRedirect } from '../executor/redirect.ts'
 import { sessionView } from '../session/state.ts'
 import type { SessionState } from '../session/session.ts'
 import type { TSNodeLike } from '../../shell/types.ts'
-import type { ExecutionNode } from '../types.ts'
+import { ExecutionNode } from '../types.ts'
+import { Admitted, admit } from './admission.ts'
+import { claimantFor } from './occurrence.ts'
+import { PathSpec } from '../../types.ts'
 import { executeNode, type ExecuteNodeDeps } from './execute_node.ts'
 
 type Result = [ByteSource | null, IOResult, ExecutionNode]
@@ -50,16 +55,54 @@ export async function runCommandTree(
       null,
       sessionView(session, deps.registry.policies),
     )
-    result = await handleRedirect(
-      (inner, current, input, stack) => executeNode(deps, inner, current, input, stack),
-      deps.dispatch,
-      null,
-      redirects,
+    // Bash's implicit read uses cat's policy identity without invoking
+    // a shadowing function/alias or expanding the filename a second time.
+    const target = redirects[0]?.target
+    const paths =
+      target instanceof PathSpec ? [target] : typeof target === 'string' ? [toScope(target)] : []
+    const verdict = await admit(
+      'cat',
+      [],
+      [],
       session,
-      stdin,
+      deps.registry,
+      deps.namespace,
+      deps.agentId,
       null,
+      paths,
+      deps.signal,
+      claimantFor(node, deps.handed),
       true,
     )
+    if (!(verdict instanceof Admitted)) {
+      result = [
+        null,
+        new IOResult({
+          exitCode: verdict.exitCode,
+          stderr: verdict.stderr,
+          refusal: verdict.refusal,
+        }),
+        new ExecutionNode({
+          command: 'cat',
+          exitCode: verdict.exitCode,
+          stderr: verdict.stderr,
+          refused: true,
+        }),
+      ]
+    } else {
+      result = await runWithAdmission(verdict, () =>
+        handleRedirect(
+          (inner, current, input, stack) => executeNode(deps, inner, current, input, stack),
+          deps.dispatch,
+          null,
+          redirects,
+          session,
+          stdin,
+          null,
+          true,
+        ),
+      )
+    }
   }
   const [stdout, io, execNode] = result
   let materialized: ByteSource | null

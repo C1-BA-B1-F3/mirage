@@ -713,6 +713,40 @@
         "stdout": "[body]\nparent\n",
         "stderr": ""
       }
+    },
+    {
+      "id": "cmdsub_file_process_substitution_heredoc",
+      "seq": 1346041,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "printf \"[%s]\\n\" \"$(< <(cat <<'EOF'\nhello $literal\nEOF\n))\"",
+      "expect": {
+        "exit": 0,
+        "stdout": "[hello $literal]\n",
+        "stderr": ""
+      }
     }
   ]
 }

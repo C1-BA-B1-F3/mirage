@@ -179,7 +179,7 @@
         "gdrive",
         "gdrive-folder"
       ],
-      "command": "printf 'wrong file\\n' > '{mount}/procsub-path\n'; cat < <(cat <<'EOF'\n{mount}/procsub-path\nEOF\n); rm '{mount}/procsub-path\n'",
+      "command": "printf 'wrong file\\n' > '{mount}/procsub-path'; cat < <(cat <<'EOF'\n{mount}/procsub-path\nEOF\n); rm '{mount}/procsub-path'",
       "expect": {
         "exit": 0,
         "stdout": "{mount}/procsub-path\n",

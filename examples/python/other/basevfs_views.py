@@ -2,8 +2,10 @@ import asyncio
 
 from mirage import (NULL_INDEX, Accessor, BaseVFS, CLIInvocation, CLISpec,
                     ContentType, FileStat, FileType, IndexCacheStore, IOResult,
-                    MountMode, Operand, PathSpec, ReadOps, VFSAdapter,
-                    Workspace)
+                    MountMode, Operand, PathSpec, ReadOps, SearchOps,
+                    SearchQuery, VFSAdapter, Workspace)
+from mirage.commands.builtin.grep_pushdown import grep_search_options
+from mirage.commands.builtin.utils.lines import split_lines
 from mirage.runtime.vfs import RuntimeVFS
 
 
@@ -11,6 +13,8 @@ class NotesAccessor(Accessor):
 
     def __init__(self, pages: dict[str, str]) -> None:
         self.pages = dict(pages)
+        self.read_calls = 0
+        self.search_calls = 0
 
 
 def page_bytes(accessor: NotesAccessor, path: PathSpec) -> bytes:
@@ -38,6 +42,7 @@ async def readdir(accessor: NotesAccessor,
 async def read_bytes(accessor: NotesAccessor,
                      path: PathSpec,
                      index: IndexCacheStore = NULL_INDEX) -> bytes:
+    accessor.read_calls += 1
     return page_bytes(accessor, path)
 
 
@@ -53,15 +58,46 @@ async def stat(accessor: NotesAccessor,
                     size=len(page_bytes(accessor, path)))
 
 
+async def search(accessor: NotesAccessor,
+                 path: PathSpec,
+                 query: SearchQuery,
+                 index: IndexCacheStore = NULL_INDEX) -> list[str] | None:
+    """Search one page literally, declining requests that need a scan.
+
+    Args:
+        accessor (NotesAccessor): the notes service.
+        path (PathSpec): the page to search.
+        query (SearchQuery): text and grep integration options.
+        index (IndexCacheStore): the mount's metadata view.
+    """
+    accessor.search_calls += 1
+    options = grep_search_options(query)
+    if (not path.vfs_path.strip("/") or options.ignore_case
+            or options.whole_word):
+        return None
+    text = page_bytes(accessor, path).decode("utf-8")
+    if "\0" in text:
+        return None
+    return [line for line in split_lines(text) if query.query in line]
+
+
 class NotesVFS(BaseVFS):
     """A flat, read-only collection of UTF-8 pages."""
+
+    accessor: NotesAccessor
 
     def __init__(self, pages: dict[str, str]) -> None:
         super().__init__(
             name="notes",
             accessor=NotesAccessor(pages),
-            io=VFSAdapter(read=ReadOps(
-                readdir=readdir, read_bytes=read_bytes, stat=stat)),
+            io=VFSAdapter(
+                read=ReadOps(readdir=readdir, read_bytes=read_bytes,
+                             stat=stat),
+                search=SearchOps(search=search,
+                                 meta={"grep": {
+                                     "mode": "literal"
+                                 }}),
+            ),
             prompt="Read-only notes rendered as UTF-8 text files.",
             sizes_always_known=True,
         )
@@ -93,16 +129,35 @@ async def show(ws: Workspace, line: str) -> None:
     print(f"$ {line}\n{await result.stdout_str()}", end="")
 
 
+async def show_search(ws: Workspace, notes: NotesVFS) -> None:
+    for command in ("grep", "rg"):
+        for flags, pattern, calls in (
+            ("-F", "BaseVFS", (1, 0)),
+            ("-nF", "BaseVFS", (0, 1)),
+            ("-e", "Base.*adapter", (0, 1)),
+            ("-iF", "basevfs", (1, 1)),
+        ):
+            before = (notes.accessor.search_calls, notes.accessor.read_calls)
+            await show(ws, f"{command} {flags} '{pattern}' /notes/todo.txt")
+            assert (notes.accessor.search_calls - before[0],
+                    notes.accessor.read_calls - before[1]) == calls
+        reads_before = notes.accessor.read_calls
+        missing = await ws.shell(f"{command} -F absent /notes/todo.txt")
+        assert (missing.exit_code, await missing.stdout_str(), await
+                missing.stderr_str()) == (1, "", "")
+        assert notes.accessor.read_calls == reads_before
+    print("Native search and scan fallbacks verified for grep and rg.")
+
+
 async def main() -> None:
+    notes = NotesVFS({
+        "welcome.txt": "Hello, café.\n",
+        "todo.txt": "Review the BaseVFS adapter.\n",
+    })
     ws = Workspace(
         {
-            "/notes":
-            NotesVFS({
-                "welcome.txt": "Hello, café.\n",
-                "todo.txt": "Review the BaseVFS adapter.\n",
-            }),
-            "/notes/status":
-            NotesVFS({"health.txt": "ok\n"}),
+            "/notes": notes,
+            "/notes/status": NotesVFS({"health.txt": "ok\n"}),
         },
         mode=MountMode.WRITE,
     )
@@ -124,6 +179,7 @@ async def main() -> None:
                 "note-info /notes/status/health.txt",
         ):
             await show(ws, line)
+        await show_search(ws, notes)
 
         expected = "Hello, café.\n".encode()
         assert await ws.vfs.read("/latest") == expected

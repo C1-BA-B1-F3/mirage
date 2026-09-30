@@ -14,15 +14,20 @@ import {
   Operand,
   type PathSpec,
   RuntimeVFS,
+  type SearchQuery,
   VFSAdapter,
   Workspace,
 } from "@struktoai/mirage-node";
+import { grepSearchOptions } from "@struktoai/mirage-core/commands/builtin/grep_pushdown";
+import { splitLines } from "@struktoai/mirage-core/commands/builtin/utils/lines";
 import { strict as assert } from "node:assert";
 
 const ENC = new TextEncoder();
 
 class NotesAccessor extends Accessor {
   readonly pages: ReadonlyMap<string, string>;
+  readCalls = 0;
+  searchCalls = 0;
 
   constructor(pages: Record<string, string>) {
     super();
@@ -57,6 +62,7 @@ async function readBytes(
   accessor: NotesAccessor,
   path: PathSpec,
 ): Promise<Uint8Array> {
+  accessor.readCalls += 1;
   return pageBytes(accessor, path);
 }
 
@@ -76,13 +82,36 @@ async function stat(
   });
 }
 
+/** Search one page literally, declining requests that need a scan. */
+async function search(
+  accessor: NotesAccessor,
+  path: PathSpec,
+  query: SearchQuery,
+): Promise<string[] | null> {
+  accessor.searchCalls += 1;
+  const options = grepSearchOptions(query);
+  if (
+    path.vfsPath.replace(/^\/+|\/+$/g, "") === "" ||
+    options.ignoreCase ||
+    options.wholeWord
+  ) {
+    return null;
+  }
+  const text = new TextDecoder().decode(pageBytes(accessor, path));
+  if (text.includes("\0")) return null;
+  return splitLines(text).filter((line) => line.includes(query.query));
+}
+
 /** A flat, read-only collection of UTF-8 pages. */
 class NotesVFS extends BaseVFS<NotesAccessor> {
   constructor(pages: Record<string, string>) {
     super({
       name: "notes",
       accessor: new NotesAccessor(pages),
-      io: new VFSAdapter({ read: { readdir, readBytes, stat } }),
+      io: new VFSAdapter({
+        read: { readdir, readBytes, stat },
+        search: { search, meta: { grep: { mode: "literal" } } },
+      }),
       prompt: "Read-only notes rendered as UTF-8 text files.",
       sizesAlwaysKnown: true,
     });
@@ -120,13 +149,43 @@ async function show(ws: Workspace, line: string): Promise<void> {
   process.stdout.write(`$ ${line}\n${result.stdoutText}`);
 }
 
+async function showSearch(ws: Workspace, notes: NotesVFS): Promise<void> {
+  for (const command of ["grep", "rg"]) {
+    for (const [flags, pattern, calls] of [
+      ["-F", "BaseVFS", [1, 0]],
+      ["-nF", "BaseVFS", [0, 1]],
+      ["-e", "Base.*adapter", [0, 1]],
+      ["-iF", "basevfs", [1, 1]],
+    ] as const) {
+      const before = [notes.accessor.searchCalls, notes.accessor.readCalls];
+      await show(ws, `${command} ${flags} '${pattern}' /notes/todo.txt`);
+      assert.deepEqual(
+        [
+          notes.accessor.searchCalls - before[0],
+          notes.accessor.readCalls - before[1],
+        ],
+        calls,
+      );
+    }
+    const readsBefore = notes.accessor.readCalls;
+    const missing = await ws.shell(`${command} -F absent /notes/todo.txt`);
+    assert.deepEqual(
+      [missing.exitCode, missing.stdoutText, missing.stderrText],
+      [1, "", ""],
+    );
+    assert.equal(notes.accessor.readCalls, readsBefore);
+  }
+  console.log("Native search and scan fallbacks verified for grep and rg.");
+}
+
 async function main(): Promise<void> {
+  const notes = new NotesVFS({
+    "welcome.txt": "Hello, café.\n",
+    "todo.txt": "Review the BaseVFS adapter.\n",
+  });
   const ws = new Workspace(
     {
-      "/notes": new NotesVFS({
-        "welcome.txt": "Hello, café.\n",
-        "todo.txt": "Review the BaseVFS adapter.\n",
-      }),
+      "/notes": notes,
       "/notes/status": new NotesVFS({ "health.txt": "ok\n" }),
     },
     { mode: MountMode.WRITE },
@@ -152,6 +211,7 @@ async function main(): Promise<void> {
     ]) {
       await show(ws, line);
     }
+    await showSearch(ws, notes);
 
     const expected = ENC.encode("Hello, café.\n");
     assert.deepEqual(await ws.vfs.readFile("/latest"), expected);

@@ -194,6 +194,11 @@ directly. Expose semantic or service-specific queries through a custom command
 that calls the same callback with its own options. Native traversal and size
 enumeration remain independent capabilities.
 
+`examples/typescript/other/basevfs_views.ts` wires the same literal search callback
+to both commands. Its counters verify that `grep -F` and `rg -F` avoid file reads,
+line numbers and regexes scan, and `-i` scans after the callback returns `null`.
+The example accelerates single-page searches; directory searches also decline.
+
 To make the backend constructible by name (workspace config, snapshots, the daemon), register a factory:
 
 ```ts

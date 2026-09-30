@@ -182,6 +182,11 @@ PostgreSQL, MongoDB and Langfuse use it. Custom resources can implement `search`
 directly. Expose semantic or service-specific queries through a custom command
 that calls the same callback with its own options.
 
+`examples/python/other/basevfs_views.py` wires the same literal search callback
+to both commands. Its counters verify that `grep -F` and `rg -F` avoid file reads,
+line numbers and regexes scan, and `-i` scans after the callback returns `None`.
+The example accelerates single-page searches; directory searches also decline.
+
 Native traversal and size enumeration remain separate capabilities.
 `NativeReadOps(du=DuOps(size=size, entries=entries))` supplies both halves of the
 native size contract.

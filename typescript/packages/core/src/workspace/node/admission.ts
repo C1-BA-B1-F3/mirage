@@ -334,7 +334,8 @@ export function redirectPaths(
  * `commandVisible` nor `isTool` can see it. The word is then judged
  * exactly as the run would judge it: exempt from the allow lists
  * unless a builtin shadows it (`SHELL_NAMES`), and `ctx.tool` false
- * accordingly.
+ * accordingly. `intrinsic` keeps shell-provided operations subject to
+ * tool allow lists even when a function shadows their policy name.
  */
 export async function gate(
   name: string,
@@ -347,8 +348,9 @@ export async function gate(
   stdin: ByteSource | null = null,
   redirects: readonly PathSpec[] = [],
   definedFn = false,
+  intrinsic = false,
 ): Promise<Refused | [CommandContext, Deny | Ask | null]> {
-  const tool = definedFn ? SHELL_NAMES.has(name) : isTool(name, session)
+  const tool = intrinsic || (definedFn ? SHELL_NAMES.has(name) : isTool(name, session))
   if (tool && !listed(name, session)) {
     return {
       stderr: new TextEncoder().encode(`${name}: command not found\n`),
@@ -404,6 +406,8 @@ export async function admit(
   // refusal needs no such care: the record refuses the agent's retry
   // from the ledger either way.
   claimant: Claimant | null = null,
+  // Shell-provided operations keep their tool policy even if a function shadows the name.
+  intrinsic = false,
 ): Promise<Refused | Admitted> {
   const gated = await gate(
     name,
@@ -415,6 +419,8 @@ export async function admit(
     agentId,
     stdin,
     redirects,
+    false,
+    intrinsic,
   )
   if (!Array.isArray(gated)) return gated
   const [ctx, asked] = gated

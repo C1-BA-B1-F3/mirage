@@ -221,6 +221,34 @@
         "stdout": "",
         "stderr": "git: Permission denied\n"
       }
+    },
+    {
+      "id": "cmd_input_substitution_cannot_bypass_allow_list",
+      "seq": 1346035,
+      "targets": [
+        "ram-commands"
+      ],
+      "session": "speaker",
+      "command": "value=$(< /scratch/locked/y)",
+      "expect": {
+        "exit": 127,
+        "stdout": "",
+        "stderr": "cat: command not found\n"
+      }
+    },
+    {
+      "id": "cmd_input_substitution_function_cannot_bypass_allow_list",
+      "seq": 1346036,
+      "targets": [
+        "ram-commands"
+      ],
+      "session": "speaker",
+      "command": "(cat() { echo bypass; }; value=$(< /scratch/locked/y))",
+      "expect": {
+        "exit": 127,
+        "stdout": "",
+        "stderr": "cat: command not found\n"
+      }
     }
   ]
 }

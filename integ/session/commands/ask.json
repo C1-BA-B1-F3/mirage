@@ -212,6 +212,49 @@
         "stdout": "",
         "stderr": "head: Permission denied\n"
       }
+    },
+    {
+      "id": "cmd_input_substitution_requires_approval",
+      "seq": 1346037,
+      "targets": [
+        "ram-commands"
+      ],
+      "session": "spanner",
+      "command": "echo \"$(< /scratch/deep/a/b/c/x)\"",
+      "expect": {
+        "exit": 126,
+        "stdout": "",
+        "stderr": "cat: Permission denied\n"
+      }
+    },
+    {
+      "id": "cmd_input_substitution_uses_one_approval",
+      "seq": 1346038,
+      "targets": [
+        "ram-commands"
+      ],
+      "session": "spanner",
+      "command": "echo \"$(< /scratch/deep/a/b/c/x)\"",
+      "expect": {
+        "exit": 0,
+        "stdout": "d\n",
+        "stderr": ""
+      },
+      "answer": "allow_once"
+    },
+    {
+      "id": "cmd_input_substitution_spends_approval",
+      "seq": 1346039,
+      "targets": [
+        "ram-commands"
+      ],
+      "session": "spanner",
+      "command": "echo \"$(< /scratch/deep/a/b/c/x)\"",
+      "expect": {
+        "exit": 126,
+        "stdout": "",
+        "stderr": "cat: Permission denied\n"
+      }
     }
   ]
 }

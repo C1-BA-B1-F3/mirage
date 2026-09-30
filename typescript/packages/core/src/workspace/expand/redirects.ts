@@ -91,10 +91,11 @@ export async function expandRedirects(
         if (inner !== '') {
           const ioPs = await childLine(session, executeFn, inner, procSubNode)
           innerData = await materialize(ioPs.stdout)
+          session.diagnostics.push(await ioPs.materializeStderr())
         }
         expanded.push(
           new Redirect({
-            fd: 0,
+            fd: r.fd,
             target: innerData,
             kind: RedirectKind.HEREDOC,
             expandVars: false,

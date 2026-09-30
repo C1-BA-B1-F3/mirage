@@ -402,6 +402,20 @@
         "stdout": "1\n",
         "stderr": ""
       }
+    },
+    {
+      "id": "script_deny_reaches_input_substitution",
+      "seq": 1346040,
+      "targets": [
+        "ram-commands"
+      ],
+      "session": "scripted",
+      "command": "echo \"$(< /repo/sealed/k)\"",
+      "expect": {
+        "exit": 126,
+        "stdout": "",
+        "stderr": "cat: Permission denied\n"
+      }
     }
   ]
 }

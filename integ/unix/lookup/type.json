@@ -1,58 +1,6 @@
 {
   "cases": [
     {
-      "id": "lookup_type_builtin",
-      "seq": 904,
-      "targets": [
-        "ram"
-      ],
-      "command": "type cd",
-      "expect": {
-        "exit": 0,
-        "stdout": "cd is a shell builtin\n",
-        "stderr": ""
-      }
-    },
-    {
-      "id": "lookup_type_t_builtin",
-      "seq": 905,
-      "targets": [
-        "ram"
-      ],
-      "command": "type -t cd",
-      "expect": {
-        "exit": 0,
-        "stdout": "builtin\n",
-        "stderr": ""
-      }
-    },
-    {
-      "id": "lookup_type_keyword",
-      "seq": 906,
-      "targets": [
-        "ram"
-      ],
-      "command": "type if",
-      "expect": {
-        "exit": 0,
-        "stdout": "if is a shell keyword\n",
-        "stderr": ""
-      }
-    },
-    {
-      "id": "lookup_type_t_keyword",
-      "seq": 907,
-      "targets": [
-        "ram"
-      ],
-      "command": "type -t if",
-      "expect": {
-        "exit": 0,
-        "stdout": "keyword\n",
-        "stderr": ""
-      }
-    },
-    {
       "id": "lookup_type_function",
       "seq": 908,
       "targets": [

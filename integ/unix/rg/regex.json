@@ -1,0 +1,692 @@
+{
+  "cases": [
+    {
+      "id": "rg_lookbehind_refused",
+      "seq": 13470058,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "box"
+      ],
+      "command": "printf 'id=42 name=x\\n' | rg -o '(?<=id=)\\d+'",
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "rg: regex parse error:\n    (?:(?<=id=)\\d+)\n       ^^^^\nerror: look-around, including look-ahead and look-behind, is not supported\n\nConsider enabling PCRE2 with the --pcre2 flag, which can handle backreferences\nand look-around.\n"
+      },
+      "flags": [
+        "only_matching"
+      ]
+    },
+    {
+      "id": "rg_lookahead_refused",
+      "seq": 13470059,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "box"
+      ],
+      "command": "printf 'id=42 name=x\\n' | rg -o 'id=(?=4)'",
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "rg: regex parse error:\n    (?:id=(?=4))\n          ^^^\nerror: look-around, including look-ahead and look-behind, is not supported\n\nConsider enabling PCRE2 with the --pcre2 flag, which can handle backreferences\nand look-around.\n"
+      },
+      "flags": [
+        "only_matching"
+      ]
+    },
+    {
+      "id": "rg_backref_refused",
+      "seq": 13470060,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "box"
+      ],
+      "command": "printf 'aa ab\\n' | rg -o '(a)\\1'",
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "rg: regex parse error:\n    (?:(a)\\1)\n          ^^\nerror: backreferences are not supported\n\nConsider enabling PCRE2 with the --pcre2 flag, which can handle backreferences\nand look-around.\n"
+      },
+      "flags": [
+        "only_matching"
+      ]
+    },
+    {
+      "id": "rg_lookaround_second_pattern",
+      "seq": 13470061,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "box"
+      ],
+      "command": "printf 'aa\\n' | rg -e a -e '(?=a)'",
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "rg: regex parse error:\n    (?:a)|(?:(?=a))\n             ^^^\nerror: look-around, including look-ahead and look-behind, is not supported\n\nConsider enabling PCRE2 with the --pcre2 flag, which can handle backreferences\nand look-around.\n"
+      },
+      "flags": [
+        "regexp"
+      ]
+    },
+    {
+      "id": "rg_backref_word_display",
+      "seq": 13470062,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "box"
+      ],
+      "command": "printf 'aa\\n' | rg -w '(a)\\1'",
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "rg: regex parse error:\n    (?:(a)\\1)\n          ^^\nerror: backreferences are not supported\n\nConsider enabling PCRE2 with the --pcre2 flag, which can handle backreferences\nand look-around.\n"
+      },
+      "flags": [
+        "word_regexp"
+      ]
+    },
+    {
+      "id": "rg_word_start_end",
+      "seq": 13470063,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "box"
+      ],
+      "command": "printf 'word sword\\n' | rg -o '\\<w[a-z]*|[a-z]*d\\>'",
+      "expect": {
+        "exit": 0,
+        "stdout": "word\nsword\n",
+        "stderr": ""
+      },
+      "flags": [
+        "only_matching"
+      ]
+    },
+    {
+      "id": "rg_word_boundary_braces",
+      "seq": 13470064,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "box"
+      ],
+      "command": "printf 'word sword\\n' | rg -o '\\b{start}w[a-z]*|\\b{start-half}s'",
+      "expect": {
+        "exit": 0,
+        "stdout": "word\ns\n",
+        "stderr": ""
+      },
+      "flags": [
+        "only_matching"
+      ]
+    },
+    {
+      "id": "rg_unicode_word",
+      "seq": 13470065,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "box"
+      ],
+      "command": "printf 'a\\303\\251\\331\\241 x\\n' | rg -o '\\w+'",
+      "expect": {
+        "exit": 0,
+        "stdout": "aé١\nx\n",
+        "stderr": ""
+      },
+      "flags": [
+        "only_matching"
+      ]
+    },
+    {
+      "id": "rg_unicode_digit_space",
+      "seq": 13470066,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "box"
+      ],
+      "command": "printf 'a\\331\\2435 \\302\\240b\\n' | rg -o '\\d+|\\s'",
+      "expect": {
+        "exit": 0,
+        "stdout": "٣5\n \n \n",
+        "stderr": ""
+      },
+      "flags": [
+        "only_matching"
+      ]
+    },
+    {
+      "id": "rg_unicode_boundary",
+      "seq": 13470067,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "box"
+      ],
+      "command": "printf '\\303\\251 b\\n\\303\\251b\\n' | rg -o '\\bb'",
+      "expect": {
+        "exit": 0,
+        "stdout": "b\n",
+        "stderr": ""
+      },
+      "flags": [
+        "only_matching"
+      ]
+    },
+    {
+      "id": "rg_ascii_posix_class",
+      "seq": 13470068,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "box"
+      ],
+      "command": "printf 'a\\303\\2511\\n' | rg -o '[[:alpha:]]+|(?-u:\\w)+'",
+      "expect": {
+        "exit": 0,
+        "stdout": "a\n1\n",
+        "stderr": ""
+      },
+      "flags": [
+        "only_matching"
+      ]
+    },
+    {
+      "id": "rg_hex_escapes",
+      "seq": 13470069,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "box"
+      ],
+      "command": "printf 'A\\302\\240B\\n' | rg -o '\\x41|\\u{42}|\\x{00a0}'",
+      "expect": {
+        "exit": 0,
+        "stdout": "A\n \nB\n",
+        "stderr": ""
+      },
+      "flags": [
+        "only_matching"
+      ]
+    },
+    {
+      "id": "rg_inline_flags",
+      "seq": 13470070,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "box"
+      ],
+      "command": "printf 'Aa\\naA\\n' | rg -o '(?i)a|a(?i)a'",
+      "expect": {
+        "exit": 0,
+        "stdout": "A\na\na\nA\n",
+        "stderr": ""
+      },
+      "flags": [
+        "only_matching"
+      ]
+    },
+    {
+      "id": "rg_named_groups",
+      "seq": 13470071,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "box"
+      ],
+      "command": "printf 'aa\\n' | rg -r '[$x]' '(?P<x>a)'; printf 'aa\\n' | rg -r '<$y>' '(?<y>a)'",
+      "expect": {
+        "exit": 0,
+        "stdout": "[a][a]\n<a><a>\n",
+        "stderr": ""
+      },
+      "flags": [
+        "replace"
+      ]
+    },
+    {
+      "id": "rg_class_set_operations",
+      "seq": 13470072,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "box"
+      ],
+      "command": "printf 'abc\\n' | rg -o '[a-z&&[^b]]|[a-c--b]|[a-c~~b-d]'",
+      "expect": {
+        "exit": 0,
+        "stdout": "a\nc\n",
+        "stderr": ""
+      },
+      "flags": [
+        "only_matching"
+      ]
+    },
+    {
+      "id": "rg_unicode_case_folding",
+      "seq": 13470073,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "box"
+      ],
+      "command": "printf '\\303\\211\\303\\251 K\\342\\204\\252 \\305\\277\\n' | rg -io 'é|k|s'",
+      "expect": {
+        "exit": 0,
+        "stdout": "É\né\nK\nK\nſ\n",
+        "stderr": ""
+      },
+      "flags": [
+        "ignore_case",
+        "only_matching"
+      ]
+    },
+    {
+      "id": "rg_properties",
+      "seq": 13470074,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "box"
+      ],
+      "command": "printf 'a\\303\\2511\\303\\211\\n' | rg -o '\\pL+|\\p{Nd}|\\p{Lu}'",
+      "expect": {
+        "exit": 0,
+        "stdout": "aé\n1\nÉ\n",
+        "stderr": ""
+      },
+      "flags": [
+        "only_matching"
+      ]
+    },
+    {
+      "id": "rg_refusals",
+      "seq": 13470075,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "box"
+      ],
+      "command": "rg '('; rg 'a)'; rg '[a'; rg '*a'; rg 'a{2,1}'; rg 'a{,2}'; echo rc=$?",
+      "expect": {
+        "exit": 0,
+        "stdout": "rc=2\n",
+        "stderr": "rg: regex parse error:\n    (?:()\n    ^\nerror: unclosed group\nrg: regex parse error:\n    (?:a))\n         ^\nerror: unopened group\nrg: regex parse error:\n    (?:[a)\n       ^\nerror: unclosed character class\nrg: regex parse error:\n    (?:*a)\n       ^\nerror: repetition operator missing expression\nrg: regex parse error:\n    (?:a{2,1})\n        ^^^^^\nerror: invalid repetition count range, the start must be <= the end\nrg: regex parse error:\n    (?:a{,2})\n         ^\nerror: repetition quantifier expects a valid decimal\n"
+      }
+    },
+    {
+      "id": "rg_refusals_escapes",
+      "seq": 13470076,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "box"
+      ],
+      "command": "rg '\\d\\Z'; rg '(?z)a'; rg '\\x{110000}'; rg '[z-a]'; rg '[\\d-z]'; echo rc=$?",
+      "expect": {
+        "exit": 0,
+        "stdout": "rc=2\n",
+        "stderr": "rg: regex parse error:\n    (?:\\d\\Z)\n         ^^\nerror: unrecognized escape sequence\nrg: regex parse error:\n    (?:(?z)a)\n         ^\nerror: unrecognized flag\nrg: regex parse error:\n    (?:\\x{110000})\n          ^^^^^^\nerror: hexadecimal literal is not a Unicode scalar value\nrg: regex parse error:\n    (?:[z-a])\n        ^^^\nerror: invalid character class range, the start must be <= the end\nrg: regex parse error:\n    (?:[\\d-z])\n        ^^\nerror: invalid range boundary, must be a literal\n"
+      }
+    },
+    {
+      "id": "rg_refusals_groups",
+      "seq": 13470077,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "box"
+      ],
+      "command": "rg '(?P<x>a)(?P<x>b)'; rg '(?P<>a)'; rg '(?ii)a'; rg -e '(' -e b; echo rc=$?",
+      "expect": {
+        "exit": 0,
+        "stdout": "rc=2\n",
+        "stderr": "rg: regex parse error:\n    (?:(?P<x>a)(?P<x>b))\n           ^       ^\nerror: duplicate capture group name\nrg: regex parse error:\n    (?:(?P<>a))\n           ^\nerror: empty capture group name\nrg: regex parse error:\n    (?:(?ii)a)\n         ^^\nerror: duplicate flag\nrg: regex parse error:\n    (?:()|(?:b)\n    ^\nerror: unclosed group\n"
+      },
+      "flags": [
+        "regexp"
+      ]
+    },
+    {
+      "id": "rg_stacked_repetition",
+      "seq": 13470078,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "box"
+      ],
+      "command": "printf 'xxxxxx\\nab\\n' | rg -o 'x{2}{3}|a++'",
+      "expect": {
+        "exit": 0,
+        "stdout": "xxxxxx\na\n",
+        "stderr": ""
+      },
+      "flags": [
+        "only_matching"
+      ]
+    }
+  ]
+}

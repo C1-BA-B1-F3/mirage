@@ -39,7 +39,7 @@ def query_matcher(query: SearchQuery) -> re.Pattern[str]:
                            ignore_case=options.ignore_case,
                            fixed_string=options.fixed_string,
                            whole_word=options.whole_word,
-                           basic=options.basic)
+                           syntax=options.syntax)
 
 
 Searcher = Callable[[A, ScopeMatch, SearchQuery], Awaitable[list[str]]]

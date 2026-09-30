@@ -14,10 +14,12 @@
 
 import re
 
+from mirage.commands.builtin.utils.bre import (BreError, PosixSyntax,
+                                               translate_ere)
 from mirage.shell.arith import ArithError, evaluate_arith
 from mirage.shell.array import make_array
 from mirage.utils.fnmatch import fnmatch
-from mirage.utils.posix import translate_classes
+from mirage.utils.posix import compile_posix_regex
 from mirage.workspace.executor.builtins.condition.constants import (
     FILE_PAIR_BINARY, INT_COMPARATORS, UNARY_OPS)
 from mirage.workspace.executor.builtins.condition.operators import (
@@ -72,9 +74,12 @@ async def _eval_cond_binary(ctx: CondContext, node: CondBinary) -> bool:
         return not fnmatch(node.left, node.right)
     if node.op == "=~":
         pattern = re.escape(node.right) if node.right_literal else node.right
+        # bash hands the pattern to regcomp(REG_EXTENDED): glibc's
+        # POSIX_EXTENDED syntax, where `\d` is a `d` and `(?` is refused.
         try:
-            match = re.search(translate_classes(pattern), node.left)
-        except re.error:
+            source = translate_ere(pattern, PosixSyntax.EXTENDED)[0]
+            match = compile_posix_regex(source).search(node.left)
+        except (BreError, re.error):
             raise CondError("mirage: syntax error in conditional expression")
         if match is None:
             return False

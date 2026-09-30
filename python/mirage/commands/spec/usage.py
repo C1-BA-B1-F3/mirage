@@ -20,7 +20,8 @@ from mirage.commands.spec.argmatch import ArgmatchChoices, ArgmatchKind
 from mirage.commands.spec.constants import (ARGV_IN_ORDER, OLD_OPTION_EXIT,
                                             OPERAND_EXIT, PYTHON_NAMES,
                                             PYTHON_USAGE, READ_FAIL_EXIT,
-                                            READ_FAIL_EXIT_ISDIR, USAGE_EXIT,
+                                            READ_FAIL_EXIT_ISDIR,
+                                            RG_FLAG_NAMES, USAGE_EXIT,
                                             USAGE_HINT_PREFIX)
 from mirage.commands.spec.types import CommandName
 from mirage.utils.errors import DotWalkLoop, FileTooLargeError, fs_strerror
@@ -187,6 +188,8 @@ def unknown_option_error(cmd_name: str, token: str) -> tuple[bytes, int]:
         dashed = token if token.startswith("-") else f"-{token}"
         line = f"find: unknown predicate `{dashed}'\n"
         return line.encode(), usage_exit_code(cmd_name)
+    if cmd_name == "rg":
+        return rg_unknown_flag(token)
     if cmd_name in PYTHON_NAMES:
         # CPython's own two shapes, which do not match each other: the
         # short form capitalizes and takes a colon, the long form does
@@ -201,6 +204,58 @@ def unknown_option_error(cmd_name: str, token: str) -> tuple[bytes, int]:
         line = f"{cmd_name}: invalid option -- '{token}'\n"
     hint = usage_hint(cmd_name) + "\n"
     return (line + hint).encode(), usage_exit_code(cmd_name)
+
+
+# ripgrep's `find_similar_names` threshold: the share of 3-grams a flag
+# name must have in common with an unknown one to be suggested.
+RG_SUGGEST_THRESHOLD = 0.4
+
+
+def rg_unknown_flag(token: str) -> tuple[bytes, int]:
+    """ripgrep's refusal of a flag it does not have (14.1.1).
+
+    The flag as typed without its value, then the similar flags its own
+    table holds, if any: `rg --colo` suggests `--color, --colors`, and
+    `rg --pcr` suggests nothing. No usage hint follows.
+
+    Args:
+        token (str): the offending token ('--pcr=x') or cluster char.
+    """
+    dashed = token if token.startswith("-") else f"-{token}"
+    name = dashed.split("=", 1)[0]
+    line = f"rg: unrecognized flag {name}\n"
+    if name.startswith("--"):
+        similar = [n for n in similar_rg_flags(name[2:]) if n != name[2:]]
+        if similar:
+            listed = ", ".join(f"--{n}" for n in similar)
+            line += f"\nsimilar flags that are available: {listed}\n"
+    return line.encode(), usage_exit_code("rg")
+
+
+def similar_rg_flags(unrecognized: str) -> list[str]:
+    """ripgrep's `find_similar_names`: its flags whose 3-grams overlap.
+
+    Args:
+        unrecognized (str): the flag name without its dashes.
+    """
+    given = trigrams(unrecognized)
+    out: list[str] = []
+    for name in RG_FLAG_NAMES:
+        bag = trigrams(name)
+        if len(given & bag) / len(given | bag) >= RG_SUGGEST_THRESHOLD:
+            out.append(name)
+    return out
+
+
+def trigrams(name: str) -> frozenset[str]:
+    """The 3-grams of a flag name, padded with ``!`` when shorter.
+
+    Args:
+        name (str): the name.
+    """
+    if len(name) < 3:
+        return frozenset({(name + "!!!")[:3]})
+    return frozenset(name[i:i + 3] for i in range(len(name) - 2))
 
 
 # The programs that do NOT parse with getopt_long, and so answer an

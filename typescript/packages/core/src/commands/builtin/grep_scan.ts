@@ -15,6 +15,7 @@
 import { compilePosixRegex } from '../../utils/posix.ts'
 import { type IOResult } from '../../io/types.ts'
 import { lineOffsets, MatchOffsets, prefixOf, rgPieces, rustMatches } from './grep_offsets.ts'
+import { matchStart, matchText } from './utils/pcre.ts'
 
 export interface GrepLinesOptions {
   invert: boolean
@@ -104,11 +105,13 @@ export function grepLines(
               reGlobal.lastIndex += 1
               continue
             }
+            const text = matchText(m)
+            if (text === '') continue
             const fields = prefixOf(
               opts.lineNumbers ? i + 1 : null,
-              matchOffsets?.at(m.index) ?? null,
+              matchOffsets?.at(matchStart(m)) ?? null,
             )
-            results.push(fields + m[0])
+            results.push(fields + text)
           }
         }
       } else {

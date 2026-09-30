@@ -179,6 +179,11 @@ SEARCH_SHAPES = {
                ['url', 'html_url', 'string']]
 }
 
+# gh 2.85's `diffHeaderRegexp`, the `diff --git` header `--name-only`
+# reads a name from, with Go's `\s` and `.` spelled out so no host widens them.
+DIFF_HEADER = re.compile(
+    r'(?:^|\n)diff[\t\n\f\r ]--git[^\n]*[\t\n\f\r ](["]?)b/([^\n]*)')
+
 TEMPLATE_TOKEN = re.compile(r'"(?:\\.|[^"\\])*"|`[^`]*`|[^\s|]+|\|')
 TEMPLATE_ACTION = re.compile(r'{{(-?)\s*(.*?)\s*(-?)}}', re.S)
 TEMPLATE_DECLARATION = re.compile(r'(\$\w+)\s*(?:,\s*(\$\w+)\s*)?(:?=)\s*(.*)',

@@ -268,3 +268,9 @@ class CommandSpec:
     # every other path-valued flag keeps resolving against the session
     # cwd, which is what GNU does with -f.
     operand_base: str | None = None
+    # argparse's `allow_abbrev`: whether an unambiguous prefix of a long
+    # option stands for it. getopt_long and argparse both expand one by
+    # default; clap and lexopt (ripgrep) do not, so a program parsed with
+    # either declares False and `--pcr` is refused rather than read as
+    # `--pcre2-unicode`.
+    allow_abbrev: bool = True

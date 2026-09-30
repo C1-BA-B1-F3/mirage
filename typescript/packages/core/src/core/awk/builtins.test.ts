@@ -20,11 +20,13 @@ import {
   safeLog,
   safePow,
   safeSqrt,
+  splitAssignment,
   splitRecord,
   sprintf,
   substitute,
   substr,
   takeRecord,
+  unescape,
 } from './builtins.ts'
 import { AwkRuntimeError, AwkSyntaxError } from './errors.ts'
 import { num, strnum, text, type Value } from './value.ts'
@@ -212,5 +214,31 @@ describe('awk math', () => {
       drawn.push(value)
     }
     expect(drawn).toEqual([0.26642920868471265, 0.0003297457005828619, 0.2232720274478197])
+  })
+})
+
+describe('awk assignments', () => {
+  it.each([
+    ['a\\tb', 'a\tb'],
+    ['a\\nb', 'a\nb'],
+    ['a\\\\b', 'a\\b'],
+    ['a\\qb', 'a\\qb'],
+    ['tail\\', 'tail\\'],
+  ])('unescapes %j', (raw, expected) => {
+    expect(unescape(raw)).toBe(expected)
+  })
+
+  it.each([
+    ['x=5', ['x', '5']],
+    ['_a1=', ['_a1', '']],
+    ['x=a=b', ['x', 'a=b']],
+    ['x=/data/f', ['x', '/data/f']],
+    ['x=a\\tb', ['x', 'a\tb']],
+    ['1x=3', null],
+    ['=x', null],
+    ['/data/x=1', null],
+    ['file', null],
+  ])('splits %j', (operand, expected) => {
+    expect(splitAssignment(operand)).toEqual(expected)
   })
 })

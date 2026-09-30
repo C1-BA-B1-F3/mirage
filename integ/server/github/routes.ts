@@ -28,6 +28,7 @@ import { actionRoutes } from './actions.ts'
 import { compareRoutes } from './compare.ts'
 import { pageRoutes } from './pages.ts'
 import { searchRoutes } from './search.ts'
+import { insightRoutes } from './insights.ts'
 import { stripSlash } from '../kit/typescript/index.ts'
 
 // A client reading one file fetches it from the raw host rather than the API,
@@ -69,6 +70,7 @@ export function githubRoutes(): KitRoute<C>[] {
     ...compareRoutes(),
     ...pageRoutes(),
     ...searchRoutes(),
+    ...insightRoutes(),
     route<C>('GET', '/raw/:owner/:repo/:ref/*path', authedRoute(withRepo(rawContent))),
   ]
 }

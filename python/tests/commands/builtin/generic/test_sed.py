@@ -248,10 +248,17 @@ async def test_sed_y_transliterate():
 
 
 @pytest.mark.asyncio
-async def test_sed_y_mismatched_lengths_raises():
+async def test_sed_y_mismatched_lengths_refused():
     rb, wb, _ = _make_backend({})
-    with pytest.raises(ValueError, match="different lengths"):
-        await sed([], "y/ab/x/", read_bytes=rb, write_bytes=wb, stdin=b"a\n")
+    output, io = await sed([],
+                           "y/ab/x/",
+                           read_bytes=rb,
+                           write_bytes=wb,
+                           stdin=b"a\n")
+    assert output is None
+    assert io.exit_code == 1
+    assert io.stderr == (b"sed: -e expression #1, char 7: strings for `y' "
+                         b"command are different lengths\n")
 
 
 @pytest.mark.asyncio
@@ -444,8 +451,14 @@ async def test_sed_escaped_delimiter():
 @pytest.mark.asyncio
 async def test_sed_zero_count_rejected():
     rb, wb, _ = _make_backend({})
-    with pytest.raises(ValueError, match="may not be zero"):
-        await sed([], "s/o/O/0", read_bytes=rb, write_bytes=wb, stdin=b"oo\n")
+    _, io = await sed([],
+                      "s/o/O/0",
+                      read_bytes=rb,
+                      write_bytes=wb,
+                      stdin=b"oo\n")
+    assert io.exit_code == 1
+    assert io.stderr == (b"sed: -e expression #1, char 7: number option to "
+                         b"`s' command may not be zero\n")
 
 
 @pytest.mark.asyncio
@@ -601,10 +614,16 @@ async def test_sed_address_range_with_escaped_delimiters():
 
 
 @pytest.mark.asyncio
-async def test_sed_unterminated_address_raises():
+async def test_sed_unterminated_address_refused():
     rb, wb, _ = _make_backend({})
-    with pytest.raises(ValueError, match="unterminated address regex"):
-        await sed([], "/a\\/b", read_bytes=rb, write_bytes=wb, stdin=b"x\n")
+    _, io = await sed([],
+                      "/a\\/b",
+                      read_bytes=rb,
+                      write_bytes=wb,
+                      stdin=b"x\n")
+    assert io.exit_code == 1
+    assert io.stderr == (b"sed: -e expression #1, char 5: unterminated "
+                         b"address regex\n")
 
 
 @pytest.mark.asyncio
@@ -645,3 +664,131 @@ async def test_sed_inplace_text_escape_above_ascii_writes_raw_byte():
         in_place=True,
     )
     assert store["/a.txt"] == b"x\ny\xff\n"
+
+
+@pytest.mark.asyncio
+async def test_sed_inplace_r_reads_an_earlier_edit():
+    rb, wb, store = _make_backend({"/f": b"one\ntwo\n", "/b": b"b1\nb2\n"})
+    await sed([_spec("/f"), _spec("/b")],
+              "1r /f",
+              read_bytes=rb,
+              write_bytes=wb,
+              in_place=True)
+    assert store["/f"] == b"one\none\ntwo\ntwo\n"
+    assert store["/b"] == b"b1\none\none\ntwo\ntwo\nb2\n"
+
+
+@pytest.mark.asyncio
+async def test_sed_inplace_R_reads_the_file_as_compiled():
+    rb, wb, store = _make_backend({"/f": b"one\ntwo\n", "/b": b"b1\nb2\n"})
+    await sed([_spec("/f"), _spec("/b")],
+              "R /f",
+              read_bytes=rb,
+              write_bytes=wb,
+              in_place=True)
+    assert store["/b"] == b"b1\none\nb2\ntwo\n"
+
+
+@pytest.mark.asyncio
+async def test_sed_inplace_keeps_a_w_file_it_then_edited():
+    rb, wb, store = _make_backend({"/b": b"b1\nb2\n", "/f": b"old\n"})
+    await sed([_spec("/b"), _spec("/f")],
+              "s/b/B/;w /f",
+              read_bytes=rb,
+              write_bytes=wb,
+              in_place=True)
+    assert store["/f"] == b""
+    assert store["/b"] == b"B1\nB2\n"
+
+
+@pytest.mark.asyncio
+async def test_sed_reads_operands_after_a_directory_for_last_line():
+    rb, wb, store = _make_backend({"/f": b"one\ntwo\n", "/g": b"x\n"})
+
+    async def read(path):
+        if path.virtual == "/d":
+            raise IsADirectoryError(21, "Is a directory", "/d")
+        return await rb(path)
+
+    output, io = await sed(
+        [_spec("/f"), _spec("/d"), _spec("/g")],
+        "$p",
+        read_bytes=read,
+        write_bytes=wb,
+        suppress=True)
+    assert output == b"x\n"
+    assert io.exit_code == 0
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("script,out", [
+    ("n;p", b"two\nL1\n"),
+    ("N;p", b"one\ntwo\nthree\nL1\n"),
+])
+async def test_sed_n_looks_past_a_directory(script, out):
+    rb, wb, store = _make_backend({
+        "/f": b"one\ntwo\nthree\n",
+        "/g": b"L1\nL2\n"
+    })
+
+    async def read(path):
+        if path.virtual == "/d":
+            raise IsADirectoryError(21, "Is a directory", "/d")
+        return await rb(path)
+
+    output, io = await sed(
+        [_spec("/f"), _spec("/d"), _spec("/g")],
+        script,
+        read_bytes=read,
+        write_bytes=wb,
+        suppress=True)
+    assert output == out
+    assert io.exit_code == 0
+
+
+@pytest.mark.asyncio
+async def test_sed_reads_nothing_after_a_directory_without_last_line():
+    rb, wb, store = _make_backend({"/f": b"one\ntwo\n", "/g": b"x\n"})
+    reads: list[str] = []
+
+    async def read(path):
+        reads.append(path.virtual)
+        if path.virtual == "/d":
+            raise IsADirectoryError(21, "Is a directory", "/d")
+        return await rb(path)
+
+    output, io = await sed(
+        [_spec("/f"), _spec("/d"), _spec("/g")],
+        "p",
+        read_bytes=read,
+        write_bytes=wb,
+        suppress=True)
+    assert output == b"one\ntwo\n"
+    assert io.exit_code == 4
+    assert reads == ["/f", "/d"]
+
+
+@pytest.mark.asyncio
+async def test_sed_separate_reads_nothing_after_a_directory():
+    rb, wb, store = _make_backend({
+        "/f": b"one\ntwo\nthree\n",
+        "/g": b"L1\nL2\n"
+    })
+    reads: list[str] = []
+
+    async def read(path):
+        reads.append(path.virtual)
+        if path.virtual == "/d":
+            raise IsADirectoryError(21, "Is a directory", "/d")
+        return await rb(path)
+
+    output, io = await sed(
+        [_spec("/f"), _spec("/d"), _spec("/g")],
+        "n;p",
+        read_bytes=read,
+        write_bytes=wb,
+        suppress=True,
+        separate=True)
+    assert output == b"two\n"
+    assert io.exit_code == 4
+    assert reads == ["/f", "/d"]

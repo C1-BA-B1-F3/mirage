@@ -300,7 +300,10 @@ function pr(): CLISpec {
         description: 'View changes in a pull request',
         fn: prDiff,
         positional: [NUMBER],
-        options: [REPO],
+        options: [
+          REPO,
+          new Option({ long: '--name-only', description: 'Display only names of changed files' }),
+        ],
       }),
       new CLISpec({
         name: 'checks',

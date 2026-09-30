@@ -7,6 +7,8 @@ from mirage.commands.builtin.grep_offsets import (MatchOffsets, decode_line,
                                                   encode_line, prefix_of)
 from mirage.commands.builtin.grep_prefilter import required_needles
 from mirage.commands.builtin.grep_select import WalkFilters
+from mirage.commands.builtin.types import RegexSyntax
+from mirage.commands.builtin.utils.pcre import match_start, match_text
 from mirage.io.async_line_iterator import AsyncLineIterator
 from mirage.io.stream import close_quietly
 from mirage.io.types import IOResult, materialize
@@ -25,7 +27,7 @@ class GrepFlags:
     files_without_match: bool
     whole_word: bool
     fixed_string: bool
-    basic_regexp: bool
+    syntax: RegexSyntax
     only_matching: bool
     quiet: bool
     recursive: bool
@@ -239,12 +241,13 @@ async def grep_input(
                             line_start, line) if f.byte_offsets else None
                         for m in pat.finditer(line):
                             await budget.run()
-                            if m.group():
+                            text = match_text(m)
+                            if text:
                                 chunks.append(
                                     output_line(
-                                        encode_line(m.group()), number, True,
-                                        path, show_filename, f,
-                                        offsets.at(m.start())
+                                        encode_line(text), number, True, path,
+                                        show_filename, f,
+                                        offsets.at(match_start(m))
                                         if offsets else 0))
                 else:
                     if has_context:

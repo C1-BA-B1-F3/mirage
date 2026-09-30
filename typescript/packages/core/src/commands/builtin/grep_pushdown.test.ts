@@ -15,6 +15,7 @@
 import { describe, expect, it } from 'vitest'
 import { PathSpec } from '../../types.ts'
 import { PatternType } from './constants.ts'
+import { RegexSyntax } from './types.ts'
 import {
   grepSearchMeta,
   grepSearchOptions,
@@ -63,7 +64,7 @@ describe('extractRequiredLiteral', () => {
     ['(foo){1,2}bar', 'foo'],
     ['(foo)+bar', 'foo'],
     ['a(b(cdef)?g)?h', null],
-    ['(?:foo)?bar', null],
+    ['(?:foo)?bar', 'bar'],
   ])('extracts the longest required literal from %s', (pattern, expected) => {
     expect(extractRequiredLiteral(pattern)).toBe(expected)
   })
@@ -117,8 +118,8 @@ describe('searchQuery', () => {
   it('reads a basic expression in its own dialect', () => {
     // grep reads a basic expression unless -E says otherwise, where the
     // operators are the escaped spellings and bare parens are literal.
-    expect(searchQuery('fo\\(bar\\)\\?baz', false, true)).toBe('baz')
-    expect(searchQuery('(foo)?bar', false, true)).toBe('foo')
+    expect(searchQuery('fo\\(bar\\)\\?baz', false, RegexSyntax.BASIC)).toBe('baz')
+    expect(searchQuery('(foo)?bar', false, RegexSyntax.BASIC)).toBe('foo')
     expect(searchQuery('(foo)?bar', false)).toBe('bar')
   })
   it('never answers for a pattern list', () => {

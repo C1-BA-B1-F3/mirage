@@ -1,0 +1,242 @@
+{
+  "cases": [
+    {
+      "id": "xm_awk_assignment_between_mounts",
+      "seq": 1616,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "awk '{print x, $0, FILENAME, FNR, NR}' /data/b.txt x=5 /data2/xm.txt",
+      "expect": {
+        "exit": 0,
+        "stdout": " 1 /data/b.txt 1 1\n 2 /data/b.txt 2 2\n 3 /data/b.txt 3 3\n5 cross /data2/xm.txt 1 4\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "xm_awk_filename_and_fnr_per_mount",
+      "seq": 1617,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "awk 'FNR==1{print FILENAME, FNR, NR}' /data/a.txt /data2/xm.txt",
+      "expect": {
+        "exit": 0,
+        "stdout": "/data/a.txt 1 1\n/data2/xm.txt 1 6\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "xm_awk_argv_spans_mounts",
+      "seq": 1618,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "awk 'BEGIN{for(i=1;i<ARGC;i++) print i, ARGV[i]}' /data/b.txt x=1 /data2/xm.txt",
+      "expect": {
+        "exit": 0,
+        "stdout": "1 /data/b.txt\n2 x=1\n3 /data2/xm.txt\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "xm_awk_getline_crosses_mounts",
+      "seq": 1619,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "awk 'NR==3{getline; print FILENAME, $0, NR, FNR}' /data/b.txt /data2/xm.txt",
+      "expect": {
+        "exit": 0,
+        "stdout": "/data2/xm.txt cross 4 1\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "xm_awk_nextfile_across_mounts",
+      "seq": 1620,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "awk '{print FILENAME, $0; nextfile}' /data/a.txt /data2/xm.txt",
+      "expect": {
+        "exit": 0,
+        "stdout": "/data/a.txt hello\n/data2/xm.txt cross\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "xm_awk_other_mount_first",
+      "seq": 1621,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "awk '{print x, FILENAME, $0}' x=1 /data2/xm.txt /data/b.txt",
+      "expect": {
+        "exit": 0,
+        "stdout": "1 /data2/xm.txt cross\n1 /data/b.txt 1\n1 /data/b.txt 2\n1 /data/b.txt 3\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "xm_awk_missing_operand_on_other_mount",
+      "seq": 1622,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "awk '{print}' /data/b.txt /data2/xm-awk-nope.txt",
+      "expect": {
+        "exit": 2,
+        "stdout": "1\n2\n3\n",
+        "stderr": "awk: cannot open \"/data2/xm-awk-nope.txt\" (No such file or directory)\n"
+      }
+    }
+  ]
+}

@@ -13,376 +13,274 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import { describe, expect, it } from 'vitest'
-import { encodeText } from '../../shell/bytes.ts'
-import { breToEre, executeProgram, parseProgram } from './sed_script.ts'
+import { SedError, compileScript, type SedScriptPiece } from './sed_script.ts'
 
-function sed(expr: string, input: string, suppress = false, extended = false): string {
-  return executeProgram(input, parseProgram(expr), suppress, extended)
+function compile(...exprs: string[]): ReturnType<typeof compileScript> {
+  return compileScript(exprs.map((text) => ({ kind: 'expr', text })))
 }
 
-function latin1Bytes(text: string): number[] {
-  return Array.from({ length: text.length }, (_, i) => text.charCodeAt(i))
+function refusal(pieces: SedScriptPiece[], extended = false): SedError {
+  try {
+    compileScript(pieces, extended)
+  } catch (err) {
+    if (err instanceof SedError) return err
+    throw err
+  }
+  throw new Error('compiled')
 }
 
-// ERE convenience: sed -E
-function sedE(expr: string, input: string): string {
-  return sed(expr, input, false, true)
+function error(...exprs: string[]): string {
+  return refusal(exprs.map((text) => ({ kind: 'expr', text }))).message
 }
 
-describe('sed line anchors (^ and $)', () => {
-  // Regression for #326: ^/$ must anchor per line, matching Python sed / GNU sed.
-  it('anchored substitution applies per line', () => {
-    expect(sed('s/^#[0-9]*$/#TS/', '#123\nls\n')).toBe('#TS\nls\n')
+function cmds(...exprs: string[]): string {
+  return compile(...exprs)
+    .commands.map((c) => c.cmd)
+    .join('')
+}
+
+describe('sed script blanks (GNU sed 4.9 compile.c)', () => {
+  it.each([
+    ['2 d'],
+    ['2,3 p'],
+    ['/b/ p'],
+    ['2 s/b/X/'],
+    ['2, 3p'],
+    ['2 , 3 p'],
+    ['2 !d'],
+    ['2 ! d'],
+    ['1 ~ 2 p'],
+    ['/B/ I p'],
+  ])('reads the address and command of %j', (expr) => {
+    const [cmd] = compile(expr).commands
+    expect(cmd?.a1).not.toBeNull()
+    expect('dps').toContain(cmd?.cmd)
   })
 
-  it('anchored substitution with -E style + quantifier', () => {
-    expect(sedE('s/^#[0-9]+$/#TS/', '#123\nls\n')).toBe('#TS\nls\n')
+  it('skips blanks and semicolons between commands and around braces', () => {
+    expect(cmds(' ; ;2p ; ; 3p')).toBe('pp')
+    expect(cmds('2,3 { p }')).toBe('{p}')
+    expect(cmds('2{ p ; }')).toBe('{p}')
+    expect(cmds('{p};{p}')).toBe('{p}{p}')
   })
 
-  it('anchored substitution with global flag', () => {
-    expect(sed('s/^#[0-9]*$/#TS/g', '#123\nls\n')).toBe('#TS\nls\n')
+  it('allows blanks and ; after s flags and y, but nothing else', () => {
+    expect(cmds('s/b/X/ g')).toBe('s')
+    expect(cmds('s/b/X/ ; p')).toBe('sp')
+    expect(cmds('s/b/X/g p')).toBe('s')
+    expect(cmds('y/b/X/ ;p')).toBe('yp')
+    expect(error('y/b/X/p')).toBe('sed: -e expression #1, char 7: extra characters after command')
+    expect(error('p x')).toBe('sed: -e expression #1, char 3: extra characters after command')
   })
 
-  it('unanchored substitution still works', () => {
-    expect(sed('s/#[0-9][0-9]*/#TS/', '#123\nls\n')).toBe('#TS\nls\n')
+  it('ends a comment at the newline and a command before it', () => {
+    expect(cmds('2p # comment')).toBe('p')
+    expect(cmds('2d#x')).toBe('d')
+    expect(cmds('p;# c\np')).toBe('pp')
   })
 
-  it('$ anchor does not match mid-line', () => {
-    expect(sed('s/o$/0/', 'foo\nfox\n')).toBe('fo0\nfox\n')
+  it('ends a label at a blank, ; } or #', () => {
+    const program = compile(':a p')
+    expect(program.commands.map((c) => [c.cmd, c.label])).toEqual([
+      [':', 'a'],
+      ['p', undefined],
+    ])
+    expect(cmds('2b x ; p ; :x')).toBe('bp:')
+    expect(cmds('2{bx};p;:x')).toBe('{b}p:')
   })
 
-  it('^ anchor only matches line start', () => {
-    expect(sed('s/^a/X/', 'abc\nbac\n')).toBe('Xbc\nbac\n')
+  it('reads a file name to the end of the line', () => {
+    const [r] = compile('1r /data/r.txt ;p').commands
+    expect(r?.fname).toBe('/data/r.txt ;p')
+    expect(compile('2r/data/r').commands[0]?.fname).toBe('/data/r')
+    expect(compile('w /o ').wfiles).toEqual(['/o '])
   })
 
-  it('anchored substitution on last line without trailing newline', () => {
-    expect(sed('s/^bar$/BAR/', 'foo\nbar')).toBe('foo\nBAR')
-  })
-
-  it('regex address with $ anchor matches per line', () => {
-    // delete lines that consist solely of digits
-    expect(sed('/^[0-9]*$/d', '12\nab\n34\n')).toBe('ab\n')
-  })
-})
-
-describe('sed s/// flags', () => {
-  it('numeric count replaces only the Nth occurrence', () => {
-    expect(sed('s/o/O/2', 'oooo\n')).toBe('oOoo\n')
-    expect(sed('s/o/O/3', 'oooo\n')).toBe('ooOo\n')
-  })
-
-  it('numeric count with g replaces the Nth and all later occurrences', () => {
-    expect(sed('s/o/O/2g', 'oooo\n')).toBe('oOOO\n')
-  })
-
-  it('count is per line', () => {
-    expect(sed('s/o/O/2', 'oo\noo\n')).toBe('oO\noO\n')
-  })
-
-  it('no count, no g replaces first; g replaces all', () => {
-    expect(sed('s/o/O/', 'oooo\n')).toBe('Oooo\n')
-    expect(sed('s/o/O/g', 'oooo\n')).toBe('OOOO\n')
-  })
-
-  it('p flag prints the pattern space when a substitution is made', () => {
-    // without -n the line is emitted twice on a match, once via p
-    expect(sed('s/hi/HI/p', 'hi\nbye\n')).toBe('HI\nHI\nbye\n')
-  })
-
-  it('p flag under -n prints only substituted lines', () => {
-    expect(sed('s/hi/HI/p', 'hi\nbye\n', true)).toBe('HI\n')
-  })
-
-  it('skips an empty match touching the previous match', () => {
-    expect(sedE('s/b*/X/g', 'abbb\n')).toBe('XaX\n')
-    expect(sed('s/x*/-/g', 'abxd\n')).toBe('-a-b-d-\n')
-  })
-
-  it('does not count a skipped empty match', () => {
-    expect(sedE('s/b*/X/2', 'abbb\n')).toBe('aX\n')
-    expect(sedE('s/b*/X/3', 'abbb\n')).toBe('abbb\n')
-  })
-
-  it('count combines with case-insensitive flag', () => {
-    expect(sed('s/o/X/2i', 'oOoO\n')).toBe('oXoO\n')
+  it('reads l, q and Q numbers after blanks', () => {
+    expect(compile('l 5').commands[0]?.intArg).toBe(5)
+    expect(compile('l5').commands[0]?.intArg).toBe(5)
+    expect(compile('l').commands[0]?.intArg).toBe(-1)
+    expect(compile('2 q 5').commands[0]?.intArg).toBe(5)
+    expect(error('2q x')).toBe('sed: -e expression #1, char 4: extra characters after command')
   })
 })
 
-describe('sed y (transliterate)', () => {
-  it('translates characters by position', () => {
-    expect(sed('y/el/ip/', 'hello\n')).toBe('hippo\n')
+describe('sed #n and v', () => {
+  it('reads #n on the first line of the first piece as -n', () => {
+    expect(compile('#n\np').noDefaultOutput).toBe(true)
+    expect(compile('#nfoo').noDefaultOutput).toBe(true)
+    expect(compile(' #n').noDefaultOutput).toBe(false)
+    expect(compile('p', '#n').noDefaultOutput).toBe(false)
   })
 
-  it('leaves unmatched characters unchanged', () => {
-    expect(sed('y/-/ /', 'a-b-c\n')).toBe('a b c\n')
-  })
-
-  it('applies per line and preserves newlines', () => {
-    expect(sed('y/abc/xyz/', 'cab\nbac\n')).toBe('zxy\nyxz\n')
-  })
-
-  it('rejects mismatched source/dest lengths', () => {
-    expect(() => parseProgram('y/ab/x/')).toThrow()
+  it('v accepts this version or an older one', () => {
+    expect(cmds('v;p')).toBe('p')
+    expect(cmds('v 4.2;p')).toBe('p')
+    expect(error('v 9.0')).toBe('sed: -e expression #1, char 5: expected newer version of sed')
   })
 })
 
-describe('sed c (change)', () => {
-  it('changes every line when given no address', () => {
-    expect(sed('c\\\nX', 'a\nb\nc\n')).toBe('X\nX\nX\n')
+describe('sed script errors (GNU sed 4.9 wording)', () => {
+  it.each([
+    ['2!!d', "char 3: multiple `!'s"],
+    ['2! !d', "char 4: multiple `!'s"],
+    ['2}', "char 2: unexpected `}'"],
+    ['{p', "char 0: unmatched `{'"],
+    ['2', 'char 1: missing command'],
+    ['2 ', 'char 2: missing command'],
+    ['2!', 'char 2: missing command'],
+    ['k', "char 1: unknown command: `k'"],
+    ['2 k', "char 3: unknown command: `k'"],
+    [',p', "char 1: unknown command: `,'"],
+    ['1,p', "char 3: unexpected `,'"],
+    ['0p', 'char 2: invalid usage of line address 0'],
+    ['0,2p', 'char 4: invalid usage of line address 0'],
+    ['+1p', 'char 2: invalid usage of +N or ~N as first address'],
+    ['s/a/b', "char 5: unterminated `s' command"],
+    ['s/a/b/k', "char 7: unknown option to `s'"],
+    ['/a', 'char 2: unterminated address regex'],
+    [':', 'char 1: ":" lacks a label'],
+    ['1:a', "char 2: : doesn't want any addresses"],
+    ['1#x', "char 2: comments don't accept any addresses"],
+    ['y/ab/c/', "char 7: strings for `y' command are different lengths"],
+    ['y/ab/cd', "char 7: unterminated `y' command"],
+    ['s/a/b/pp', "char 8: multiple `p' options to `s' command"],
+    ['s/a/b/gg', "char 8: multiple `g' options to `s' command"],
+    ['s/a/b/1 2', "char 9: multiple number options to `s' command"],
+    ['s/o/O/0', "char 7: number option to `s' command may not be zero"],
+    ['a', "char 1: expected \\ after `a', `c' or `i'"],
+    ['1{a foo;}', "char 0: unmatched `{'"],
+    ['1,2q', 'char 4: command only uses one address'],
+    ['r', 'char 1: missing filename in r/R/w/W commands'],
+    ['s/a/b/w', 'char 7: missing filename in r/R/w/W commands'],
+    ['s/x/y/I;s//z/I', 'char 14: cannot specify modifiers on empty regexp'],
+  ])('%j', (expr, why) => {
+    expect(error(expr)).toBe(`sed: -e expression #1, ${why}`)
   })
 
-  it('changes a single addressed line', () => {
-    expect(sed('2c\\\nX', 'a\nb\nc\n')).toBe('a\nX\nc\n')
+  it('numbers the -e pieces and positions within each', () => {
+    expect(error('p', 'k')).toBe("sed: -e expression #2, char 1: unknown command: `k'")
+    expect(error('p', '2 k')).toBe("sed: -e expression #2, char 3: unknown command: `k'")
+    expect(error('2', 'p')).toBe('sed: -e expression #1, char 1: missing command')
+    expect(error('p', '{')).toBe("sed: -e expression #2, char 0: unmatched `{'")
   })
 
-  it('changes a regex-addressed line', () => {
-    expect(sed('/foo/c\\\nCHANGED', 'foo\nbar\n')).toBe('CHANGED\nbar\n')
+  it('names a script file and its line', () => {
+    const file = (text: string): SedScriptPiece => ({ kind: 'file', text, name: '/s.sed' })
+    expect(refusal([file('p\nk\n')]).message).toBe("sed: file /s.sed line 2: unknown command: `k'")
+    expect(refusal([{ kind: 'expr', text: 'p' }, file('p\n\n 2 k\n')]).message).toBe(
+      "sed: file /s.sed line 3: unknown command: `k'",
+    )
+    expect(refusal([file('2\n')]).message).toBe("sed: file /s.sed line 2: unknown command: `\n'")
+    expect(refusal([file('p\n{\np\n')]).message).toBe("sed: file /s.sed line 2: unmatched `{'")
   })
 
-  it('emits the text once for a line range', () => {
-    expect(sed('2,3c\\\nX', 'a\nb\nc\nd\n')).toBe('a\nX\nd\n')
-  })
-})
-
-describe('sed a, i and c text (GNU sed 4.9)', () => {
-  it('drops a backslash before an ordinary character', () => {
-    expect(sed('a one\\/two', 'x\n')).toBe('x\none/two\n')
-    expect(sed('i one\\/two', 'x\n')).toBe('one/two\nx\n')
-    expect(sed('c one\\/two', 'x\n')).toBe('one/two\n')
-    expect(sed("/^bibtexurl:/a codeurl: 'https:\\/\\/github.com\\/u\\/r'", 'bibtexurl: x\n')).toBe(
-      "bibtexurl: x\ncodeurl: 'https://github.com/u/r'\n",
+  it('names the first byte of a multibyte command, counted in bytes', () => {
+    expect(error('2 é')).toBe(
+      `sed: -e expression #1, char 3: unknown command: \`${String.fromCharCode(0xdcc3)}'`,
     )
   })
 
-  it('decodes the text escapes', () => {
-    expect(sed('a one\\/two\\tthree', 'x\n')).toBe('x\none/two\tthree\n')
-    expect(sed('a x\\ny', 'x\n')).toBe('x\nx\ny\n')
-    expect(sed('a x\\\\y', 'x\n')).toBe('x\nx\\y\n')
-    expect(sed('a x\\by', 'x\n')).toBe('x\nxby\n')
-    expect(sed('a 1\\a2\\f3\\v4\\r5', 'x\n')).toBe('x\n1\x072\f3\v4\r5\n')
+  it('refuses e and s///e: mirage has no shell to run them', () => {
+    expect(error('e echo hi')).toBe("sed: -e expression #1, char 1: `e' command not supported")
+    expect(error('s/b/X/e')).toBe("sed: -e expression #1, char 7: `e' command not supported")
   })
 
-  it('decodes numeric and control escapes', () => {
-    expect(sed('a [\\d065][\\x41][\\o101][\\x4][\\xZ][\\d300]', 'x\n')).toBe(
-      'x\n[A][A][A][\x04][xZ][,]\n',
-    )
-    expect(sed('a [\\cA][\\ca][\\c?][\\c\\\\]', 'x\n')).toBe('x\n[\x01][\x01][\x7f][\x1c]\n')
-    expect(() => sed('a [\\c\\d]', 'x\n')).toThrow('recursive escaping after \\c not allowed')
+  it('panics with exit 4 on a missing label', () => {
+    const err = refusal([{ kind: 'expr', text: 'bfoo' }])
+    expect(err.message).toBe("sed: can't find label for jump to `foo'")
+    expect(err.exitCode).toBe(4)
   })
 
-  it('writes numeric escapes above ASCII as raw bytes', () => {
-    const out = sed('a [\\xff][\\d200][\\o377][\\x80][\\xc3\\xa9][\\o400]', 'x\n')
-    expect([...encodeText(out)]).toEqual(
-      latin1Bytes('x\n[\xff][\xc8][\xff][\x80][\xc3\xa9][\x00]\n'),
-    )
-  })
-
-  it('lets a final \\c take the closing newline', () => {
-    expect(sed('a foo\\c', 'x\ny\n')).toBe('x\nfooJy\nfooJ')
-    expect(sed('i foo\\c', 'x\n')).toBe('foo\nx\n')
-  })
-
-  it('skips blanks before one-line text and keeps them after a backslash', () => {
-    expect(sed('a  \t foo', 'x\n')).toBe('x\nfoo\n')
-    expect(sed('a\\   foo', 'x\n')).toBe('x\n   foo\n')
-    expect(sed('a\\tfoo', 'x\n')).toBe('x\ntfoo\n')
-    expect(sed('a \\tfoo', 'x\n')).toBe('x\ntfoo\n')
-    expect(sed('a\\\\tfoo', 'x\n')).toBe('x\n\tfoo\n')
-  })
-
-  it('reads the classic form and continued lines', () => {
-    expect(sed('a\\\n  l1\\\n  l2', 'x\n')).toBe('x\n  l1\n  l2\n')
-    expect(sed('i\\\nl1\\\nl2', 'x\n')).toBe('l1\nl2\nx\n')
-    expect(sed('a foo\\\nbar', 'x\n')).toBe('x\nfoo\nbar\n')
-  })
-
-  it('ends the text at a newline and not at a semicolon', () => {
-    expect(sed('1a foo\n2d', 'x\ny\n')).toBe('x\nfoo\n')
-    expect(sed('1a foo; 2d', 'x\ny\n')).toBe('x\nfoo; 2d\ny\n')
-    expect(sed('a int x = 1; echo bar', 'x\n')).toBe('x\nint x = 1; echo bar\n')
-  })
-
-  it('keeps trailing blanks', () => {
-    expect(sed('1d\n$a foo   ', 'x\ny\n')).toBe('y\nfoo   \n')
-  })
-
-  it('leaves the text undecoded when the script ends on a backslash', () => {
-    expect(sed('a one\\/two\\', 'x\n')).toBe('x\none\\/two\n')
-    expect(sed('a\\', 'x\ny\n')).toBe('x\ny\n')
-    expect(sed('c\\', 'x\ny\n')).toBe('')
-  })
-
-  it('refuses a missing text and a block the text left open', () => {
-    expect(() => sed('a', 'x\n')).toThrow("expected \\ after `a', `c' or `i'")
-    expect(() => sed('1{a foo;}', 'x\ny\n')).toThrow("unmatched `{'")
-    expect(sed('1{a foo\n}', 'x\ny\n')).toBe('x\nfoo\ny\n')
+  it('keeps the w files it opened before the error', () => {
+    const err = refusal([
+      { kind: 'expr', text: 'w /o' },
+      { kind: 'expr', text: 'k' },
+    ])
+    expect(err.wfiles).toEqual(['/o'])
   })
 })
 
-describe('sed address negation (addr!cmd)', () => {
-  it('negated line address applies to all other lines', () => {
-    expect(sed('2!d', 'a\nb\nc\n')).toBe('b\n')
+describe('sed delimiters and text', () => {
+  it('drops a backslash before the delimiter and keeps a bracket whole', () => {
+    expect(compile('s|a\\|b|X|').commands[0]?.subst?.re?.pattern).toBe('a|b')
+    expect(compile('s.a\\.b.X.').commands[0]?.subst?.re?.pattern).toBe('a.b')
+    expect(compile('s/[/]/X/').commands[0]?.subst?.re?.pattern).toBe('[/]')
+    expect(compile('s&a&[\\&]&').commands[0]?.subst?.replacement).toBe('[\\&]')
   })
 
-  it('negated regex address keeps only non-matching lines', () => {
-    expect(sed('/b/!d', 'a\nb\nc\n')).toBe('b\n')
+  it('decodes y escapes', () => {
+    const [y] = compile('y/ab\\//\\n\\tX/').commands
+    expect(y?.ySrc).toEqual(['a', 'b', '/'])
+    expect(y?.yDst).toEqual(['\n', '\t', 'X'])
   })
 
-  it('negated last-line with -n prints all but the last', () => {
-    expect(sed('$!p', 'a\nb\nc\n', true)).toBe('a\nb\n')
+  it('continues a text left open on a backslash into the next piece', () => {
+    const [a] = compile('a\\', 'foo\\', 'bar').commands
+    expect(a?.text).toBe('foo\nbar\n')
+    expect(compile('a\\').commands[0]?.text).toBeNull()
   })
 
-  it('negated range substitutes outside the range', () => {
-    expect(sed('1,2!s/./X/', 'a\nb\nc\nd\n')).toBe('a\nb\nX\nX\n')
-  })
-
-  it('whitespace is allowed around the negation', () => {
-    expect(sed('2 ! d', 'a\nb\nc\n')).toBe('b\n')
+  it('reads 0r as a prepend on line 1', () => {
+    const [r] = compile('0r /r').commands
+    expect(r?.a1).toEqual({ kind: 'num', n: 1 })
+    expect(r?.prepend).toBe(true)
+    expect(error('0,1r /r')).toBe('sed: -e expression #1, char 4: invalid usage of line address 0')
   })
 })
 
-describe('sed replacement & hold-space (GNU semantics)', () => {
-  it('unescaped & is the whole match', () => {
-    expect(sed('s/wor/[&]/', 'world\n')).toBe('[wor]ld\n')
+describe('sed regex compilation (GNU sed 4.9 over glibc)', () => {
+  const eerror = (expr: string): string => refusal([{ kind: 'expr', text: expr }], true).message
+
+  it.each([
+    ['s/\\(/x/', 'char 7: Unmatched ( or \\('],
+    ['s/\\)/x/', 'char 7: Unmatched ) or \\)'],
+    ['s/a\\{x\\}/y/', 'char 11: Invalid content of \\{\\}'],
+    ['s/a\\{2/x/', 'char 9: Unmatched \\{'],
+    ['s/a\\{3,1\\}/x/', 'char 13: Invalid content of \\{\\}'],
+    ['/\\(/p', 'char 4: Unmatched ( or \\('],
+    ['/\\(/Ip', 'char 5: Unmatched ( or \\('],
+    ['s/\\(/x/Ig', 'char 9: Unmatched ( or \\('],
+    ['s/\\(/x/;p', 'char 8: Unmatched ( or \\('],
+    ['s/\\(/x/ ; p', 'char 9: Unmatched ( or \\('],
+    ['s/[[:foo:]]/x/', 'char 14: Invalid character class name'],
+    ['s/[z-a]/x/', 'char 10: Invalid range end'],
+    ['s/\\x5c/X/', 'char 9: Trailing backslash'],
+    ['s/\\(a\\)/\\2/', "char 11: invalid reference \\2 on `s' command's RHS"],
+  ])('BRE %j', (expr, why) => {
+    expect(error(expr)).toBe(`sed: -e expression #1, ${why}`)
   })
 
-  it('escaped \\& is a literal ampersand', () => {
-    expect(sed('s/wor/[\\&]/', 'world\n')).toBe('[&]ld\n')
+  it.each([
+    ['s/(/x/', 'char 6: Unmatched ( or \\('],
+    ['s/)/x/', 'char 6: Unmatched ) or \\)'],
+    ['s/*a/x/', 'char 7: Invalid preceding regular expression'],
+    ['s/a|*b/x/', 'char 9: Invalid preceding regular expression'],
+    ['s/a{x}/y/', 'char 9: Invalid content of \\{\\}'],
+    ['s/a{1/x/', 'char 8: Unmatched \\{'],
+    ['s/(?<=id=)[0-9]+/X/', 'char 19: Invalid preceding regular expression'],
+    ['s/a/\\1/', "char 7: invalid reference \\1 on `s' command's RHS"],
+  ])('ERE %j', (expr, why) => {
+    expect(eerror(expr)).toBe(`sed: -e expression #1, ${why}`)
   })
 
-  it('G appends a blank line when the hold space is empty', () => {
-    expect(sed('G', 'a\nb\n')).toBe('a\n\nb\n\n')
+  it('reports the regex before a later piece is read', () => {
+    expect(error('s/\\(/x/', 'k')).toBe('sed: -e expression #1, char 7: Unmatched ( or \\(')
+    expect(error('p', 's/\\(/x/')).toBe('sed: -e expression #2, char 7: Unmatched ( or \\(')
   })
 
-  it('H accumulates with a leading newline from an empty hold', () => {
-    expect(sed('H;${x;p}', 'a\nb\n', true)).toBe('\na\nb\n')
-  })
-})
-
-describe('sed multi-line pattern space (N / join / final newline)', () => {
-  it('joins all lines (the :a;N;$!ba idiom) with no trailing separator', () => {
-    expect(sed(':a;N;$!ba;s/\\n/,/g', 'a\nb\nc\n')).toBe('a,b,c\n')
+  it('panics on a class written without its outer brackets', () => {
+    const err = refusal([{ kind: 'expr', text: 's/[:alpha:]/x/' }])
+    expect(err.message).toBe('sed: character class syntax is [[:space:]], not [:space:]')
+    expect(err.exitCode).toBe(4)
+    expect(compile('s/[:]/x/').commands).toHaveLength(1)
+    expect(compile('s/[[:alpha:]]/x/').commands).toHaveLength(1)
   })
 
-  it('N joins line pairs', () => {
-    expect(sed('N;s/\\n/ /', 'a\nb\nc\nd\n')).toBe('a b\nc d\n')
+  it('accepts what glibc accepts', () => {
+    expect(compile('s/*a/x/', 's/a{x}/y/', 's/a|b/X/').commands).toHaveLength(3)
+    expect(
+      compileScript([{ kind: 'expr', text: 's/a**/x/;s/a{,1}b/X/;s/()/x/' }], true).commands,
+    ).toHaveLength(3)
   })
-
-  it('preserves a missing final newline', () => {
-    expect(sed('s/o/O/', 'foo')).toBe('fOo')
-    expect(sed('p', 'foo', true)).toBe('foo')
-  })
-
-  it('a line number address tracks the last line read after N', () => {
-    // after N, line 2 is current → $ matches and appends the hold (blank line)
-    expect(sed('N;$G', 'a\nb\n')).toBe('a\nb\n\n')
-  })
-})
-
-describe('breToEre translation', () => {
-  it('swaps backslashed and bare metacharacters', () => {
-    expect(breToEre('a\\+')).toBe('a+')
-    expect(breToEre('a+')).toBe('a\\+')
-    expect(breToEre('\\(foo\\)')).toBe('(foo)')
-    expect(breToEre('(foo)')).toBe('\\(foo\\)')
-    expect(breToEre('a\\{2\\}')).toBe('a{2}')
-    expect(breToEre('cat\\|dog')).toBe('cat|dog')
-  })
-
-  it('keeps bracket expressions verbatim', () => {
-    expect(breToEre('[a+b]')).toBe('[a+b]')
-    expect(breToEre('[^]x]')).toBe('[^]x]')
-  })
-
-  it('treats a leading * as literal and ^/$ positionally', () => {
-    expect(breToEre('*x')).toBe('\\*x')
-    expect(breToEre('a^b')).toBe('a\\^b')
-    expect(breToEre('a$b')).toBe('a\\$b')
-    expect(breToEre('^ab$')).toBe('^ab$')
-  })
-})
-
-describe('sed BRE (default) vs ERE (-E)', () => {
-  it('BRE: \\( \\) are groups, bare () are literal', () => {
-    expect(sed('s/\\(foo\\)/[\\1]/', 'foo\n')).toBe('[foo]\n')
-    expect(sed('s/(x)/Y/', '(x)\n')).toBe('Y\n')
-  })
-
-  it('BRE: \\+ is one-or-more, bare + is literal', () => {
-    expect(sed('s/a\\+/X/', 'aaab\n')).toBe('Xb\n')
-    expect(sed('s/a+/X/', 'a+b\n')).toBe('Xb\n')
-  })
-
-  it('BRE: \\{n\\} interval and \\| alternation', () => {
-    expect(sed('s/a\\{2\\}/X/', 'aaa\n')).toBe('Xa\n')
-    expect(sed('s/cat\\|dog/PET/', 'cat\n')).toBe('PET\n')
-  })
-
-  it('ERE: bare () are groups, + is one-or-more', () => {
-    expect(sedE('s/(foo)/[\\1]/', 'foo\n')).toBe('[foo]\n')
-    expect(sedE('s/a+/X/', 'aaab\n')).toBe('Xb\n')
-    expect(sedE('s/cat|dog/PET/', 'dog\n')).toBe('PET\n')
-  })
-
-  it('regex addresses honor BRE/ERE too', () => {
-    expect(sed('/a\\+/d', 'aaa\nbbb\n')).toBe('bbb\n')
-    expect(sedE('/a+/d', 'aaa\nbbb\n')).toBe('bbb\n')
-  })
-})
-
-describe('sed s/// edge cases', () => {
-  it('handles an escaped delimiter in the pattern', () => {
-    expect(sed('s/a\\/b/c/', 'a/b\n')).toBe('c\n')
-  })
-
-  it('handles an escaped delimiter in the replacement', () => {
-    expect(sed('s/x/a\\/b/', 'x\n')).toBe('a/b\n')
-  })
-
-  it('rejects a zero occurrence count', () => {
-    expect(() => parseProgram('s/o/O/0')).toThrow(/may not be zero/)
-  })
-})
-
-describe('sed address delimiters', () => {
-  it('escaped delimiter inside an address regex is a literal slash', () => {
-    expect(sed('/a\\/b/d', 'x\na/b\ny\n')).toBe('x\ny\n')
-  })
-
-  it('custom-delimiter address form \\cREc', () => {
-    expect(sed('\\%a/b%d', 'a/b\nz\n')).toBe('z\n')
-  })
-
-  it('BRE escapes inside an address survive to the regex', () => {
-    expect(sed('/a\\+b/d', 'x\na+b\naab\ny\n')).toBe('x\na+b\ny\n')
-  })
-
-  it('range addresses honor escaped delimiters', () => {
-    expect(sed('/a\\/b/,/c\\/d/d', 'x\na/b\nmid\nc/d\ny\n')).toBe('x\ny\n')
-  })
-
-  it('unterminated address regex throws', () => {
-    expect(() => sed('/a\\/b', 'x\n')).toThrow('unterminated address regex')
-  })
-})
-
-describe('sed replacement uses the original match', () => {
-  it('preserves word boundary context', () => {
-    expect(sed(String.raw`s/\Ba/X/g`, 'ba a\n')).toBe('bX a\n')
-  })
-  it('expands zero and single-digit captures without changing case', () => {
-    expect(sed(String.raw`s/\(a\)b/[\0:\1:&:\10]/I`, 'Ab\n')).toBe('[Ab:A:Ab:A0]\n')
-  })
-  it('keeps unmatched groups empty and dollar signs literal', () => {
-    expect(sedE(String.raw`s/(a)(b)?/[\1:\2:$&]/I`, 'A\n')).toBe('[A::$A]\n')
-  })
-})
-
-it.each([
-  ['2b\ns/./X/', 'a\nb\nc\nd\n', 'X\nb\nX\nX\n'],
-  ['1b\n$!d', 'a\nb\nc\nd\n', 'a\nd\n'],
-  ['s/a/A/\nt\ns/./X/', 'a\nb\n', 'A\nX\n'],
-  ['1b done\ns/./X/\n:done\ns/$/!/', 'a\nb\n', 'a!\nX!\n'],
-])('branch and label end at newline: %s', (script, text, expected) => {
-  expect(sed(script, text)).toBe(expected)
 })

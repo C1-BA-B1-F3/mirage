@@ -25,7 +25,13 @@ import { mountParentReaddir, mountParentStat } from '../utils/operands.ts'
 import { IOResult } from '../../../io/types.ts'
 import { FileType, PathSpec, type FileStat } from '../../../types.ts'
 import type { CommandFnResult, CommandOpts } from '../../config.ts'
-import { compilePattern, resolvePattern } from '../grep_pattern.ts'
+import {
+  NEVER_MATCH,
+  compilePattern,
+  matcherSyntax,
+  patternWarnings,
+  resolvePattern,
+} from '../grep_pattern.ts'
 import { BINARY_EXTENSIONS } from '../constants.ts'
 import { getExtension } from '../../resolve.ts'
 import { grepInput, type FlagSet } from '../grep_binary.ts'
@@ -136,9 +142,9 @@ export function parseFlags(fl: FlagView): FlagSet {
     filesWithoutMatch,
     wholeWord: fl.asBool('w'),
     fixedString: fl.asBool('F'),
-    // grep reads a basic expression unless -E says otherwise; -G asks for the
-    // default explicitly.
-    basicRegexp: !fl.asBool('E'),
+    // grep reads a basic expression unless -E or -P says otherwise; -G asks
+    // for the default explicitly.
+    syntax: matcherSyntax(fl),
     onlyMatching: fl.asBool('o'),
     maxCount: fl.asInt('m') ?? null,
     quiet: fl.asBool('q'),
@@ -203,14 +209,21 @@ export async function grepGeneric(
     return [null, new IOResult({ exitCode: 2, stderr: ENC.encode(error.message + '\n') })]
   }
   if (resolution.neverMatch) f.fixedString = false
-  const pat = compilePattern(
-    resolution.pattern,
-    f.ignoreCase,
-    f.fixedString,
-    f.wholeWord,
-    f.basicRegexp,
-  )
-  const io = new IOResult({ exitCode: 1 })
+  let pat: RegExp
+  try {
+    pat = resolution.neverMatch
+      ? new RegExp(NEVER_MATCH)
+      : compilePattern(resolution.pattern, f.ignoreCase, f.fixedString, f.wholeWord, f.syntax)
+  } catch (error) {
+    if (!(error instanceof UsageError)) throw error
+    return [null, new IOResult({ exitCode: 2, stderr: ENC.encode(error.message + '\n') })]
+  }
+  const warning =
+    resolution.neverMatch || f.fixedString ? '' : patternWarnings(resolution.pattern, f.syntax)
+  const warned = (): IOResult =>
+    warning ? new IOResult({ stderr: ENC.encode(warning) }) : new IOResult()
+  const io = warned()
+  io.exitCode = 1
   const first = paths[0]
   if (first === undefined) {
     try {
@@ -252,7 +265,7 @@ export async function grepGeneric(
       if (!fileAdmitted(first.virtual, f.filters)) return [new Uint8Array(), io]
       // Start the reader while the mount's cache context is still active.
       const source = stream(first)
-      const singleIO = new IOResult()
+      const singleIO = warned()
       return [
         grepInput(
           source,
@@ -278,7 +291,7 @@ export async function grepGeneric(
     }
   }
   const warnings: string[] = []
-  const notices: Uint8Array[] = []
+  const notices: Uint8Array[] = warning ? [ENC.encode(warning)] : []
   let matched = false
   let printed = false
 

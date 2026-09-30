@@ -198,28 +198,47 @@ export function commitPeople(row: {
   return { author: { ...named }, committer: { ...(committer ?? named) } }
 }
 
-// The store keeps a commit's paths as strings, because that is all a write
-// knows; the endpoints that report what changed answer with objects.
-export function commitFiles(paths: string[], status = 'added'): JsonValue {
-  return paths.map((filename) => ({ filename, status }))
-}
-
 export interface CommitRow {
   sha: string
   parentSha: string
   message: string
   authorLogin: string
   date: string
-  filesJson: string
   treeSha: string
   authorJson: string
   committerJson: string
   seq: number
 }
 
-export function pathsOf(row: { filesJson: string }): string[] {
-  const parsed = JSON.parse(row.filesJson) as JsonValue
-  return Array.isArray(parsed) ? parsed.filter((p): p is string => typeof p === 'string') : []
+// Who a commit is by and when, as its list rendering states it: a seeded
+// commit's login and date, a written commit's author and committer, and for a
+// commit written with neither, the authenticated user at the pinned write
+// stamp, which is who the vendor would name. A git identity is an account
+// only when its email is that account's noreply address.
+export interface CommitIdentity {
+  login: string
+  name: string
+  email: string
+  authored: string
+  committed: string
+}
+
+const NOREPLY = /^(?:\d+\+)?([^@]+)@users\.noreply\.github\.com$/i
+
+export function commitIdentity(row: CommitRow): CommitIdentity {
+  if (row.authorLogin !== '') {
+    const person = commitPerson(row.authorLogin, row.date) as { name: string; email: string }
+    return { login: row.authorLogin, ...person, authored: row.date, committed: row.date }
+  }
+  const author = parsePerson(row.authorJson) ?? defaultPerson()
+  const committer = parsePerson(row.committerJson) ?? author
+  return {
+    login: NOREPLY.exec(author.email)?.[1] ?? '',
+    name: author.name,
+    email: author.email,
+    authored: author.date,
+    committed: committer.date,
+  }
 }
 
 // A stored commit as the LIST endpoints report it. GitHub's list and write
@@ -264,7 +283,6 @@ export function rootCommit(sha: string): CommitRow {
     message: 'Initial commit',
     authorLogin: 'mirage',
     date: ROOT_COMMIT_DATE,
-    filesJson: '[]',
     treeSha: '',
     authorJson: '',
     committerJson: '',

@@ -14,13 +14,13 @@
 
 import type { Accessor } from '../../accessor/base.ts'
 import type { SearchOps, SearchQuery } from '../../vfs/types.ts'
-import type { GrepSearchOptions, GrepSearchMeta } from './types.ts'
+import { RegexSyntax, type GrepSearchOptions, type GrepSearchMeta } from './types.ts'
 import type { PathSpec } from '../../types.ts'
 import { getExtension } from '../resolve.ts'
 import { BINARY_EXTENSIONS, PatternType } from './constants.ts'
 import { hasUnresolvedGlob } from './utils/operands.ts'
 import { isStdin } from './utils/stream.ts'
-import { breSource } from './grep_pattern.ts'
+import { breSource, ereSource, perlRegex, rustSource } from './grep_pattern.ts'
 import { FlagView } from '../spec/flag_view.ts'
 import { type FlagValue } from '../spec/types.ts'
 
@@ -84,11 +84,12 @@ export function extractRequiredLiteral(pattern: string): string | null {
       continue
     }
     if (ch === '(') {
-      if (pattern.startsWith('(?', i)) return null
+      const opener = pattern.startsWith('(?:', i) ? 3 : 1
+      if (opener === 1 && pattern.startsWith('(?', i)) return null
       runs.push(current.join(''))
       current = []
       groups.push(runs.length)
-      i += 1
+      i += opener
       continue
     }
     if (ch === ')') {
@@ -125,14 +126,28 @@ export function extractRequiredLiteral(pattern: string): string | null {
 // required by). A SIMPLE pattern holding a dot is a regex here, not a
 // literal: `worker.3` matches `worker-3`, which a substring search for
 // `worker.3` never returns, so only the run before the dot is required.
-// `isLiteralPattern` already draws that line for the whole-word case. A
-// basic expression is translated before a literal is extracted, since its
-// operators are the escaped spellings: `\(bar\)\?` is an optional group
-// there and `(bar)?` three literal characters plus a literal question mark.
-export function searchQuery(pattern: string, fixedString: boolean, basic = false): string | null {
+// `isLiteralPattern` already draws that line for the whole-word case. Every
+// dialect is translated to host source before a literal is extracted, since
+// the operators differ: in a basic expression `\(bar\)\?` is an optional
+// group and `(bar)?` three literal characters plus a literal question mark,
+// and `\d` is a `d` to grep -E and a digit to rg.
+export function searchQuery(
+  pattern: string,
+  fixedString: boolean,
+  syntax = RegexSyntax.EXTENDED,
+): string | null {
   if (pattern.includes('\n')) return null
   if (isLiteralPattern(pattern, fixedString)) return pattern
-  return extractRequiredLiteral(basic ? breSource(pattern) : pattern)
+  return extractRequiredLiteral(hostSource(pattern, syntax))
+}
+
+// One pattern's host source in its dialect, for literal extraction; throws
+// UsageError when the dialect's compiler refuses it.
+export function hostSource(pattern: string, syntax: RegexSyntax): string {
+  if (syntax === RegexSyntax.BASIC) return breSource(pattern)
+  if (syntax === RegexSyntax.EXTENDED) return ereSource(pattern)
+  if (syntax === RegexSyntax.PERL) return perlRegex(pattern, false, false, true).source
+  return rustSource(pattern, false, false, false).source
 }
 
 // Whether the pattern is searched verbatim, with no regex extraction.
@@ -376,7 +391,7 @@ export function grepSearchMeta<A extends Accessor>(
 /** A plain resource query is literal text; grep owns its optional namespace. */
 export function grepSearchOptions(query: SearchQuery): GrepSearchOptions {
   const options = query.options?.grep === undefined ? {} : query.options.grep
-  const allowed = ['ignore_case', 'fixed_string', 'whole_word', 'basic']
+  const allowed = ['ignore_case', 'fixed_string', 'whole_word', 'syntax']
   if (
     options === null ||
     typeof options !== 'object' ||
@@ -385,13 +400,18 @@ export function grepSearchOptions(query: SearchQuery): GrepSearchOptions {
   ) {
     throw new Error('search.options.grep contains unknown options')
   }
-  if (Object.values(options).some((value) => typeof value !== 'boolean')) {
+  if (
+    Object.entries(options).some(([key, value]) => key !== 'syntax' && typeof value !== 'boolean')
+  ) {
     throw new Error('search.options.grep values must be boolean')
   }
+  const syntax = options.syntax ?? RegexSyntax.EXTENDED
+  const dialects: readonly unknown[] = Object.values(RegexSyntax)
+  if (!dialects.includes(syntax)) throw new Error('search.options.grep.syntax names no dialect')
   return {
     ignoreCase: options.ignore_case === true,
     fixedString: options.fixed_string !== false,
     wholeWord: options.whole_word === true,
-    basic: options.basic === true,
+    syntax: syntax as RegexSyntax,
   }
 }

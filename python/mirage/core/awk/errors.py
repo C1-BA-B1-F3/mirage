@@ -21,4 +21,21 @@ class AwkRuntimeError(Exception):
     pass
 
 
-__all__ = ["AwkRuntimeError", "AwkSyntaxError"]
+class AwkIOError(Exception):
+    """An input or output stream awk could not open, read or write.
+
+    The host raises it with the system's reason; the interpreter decides
+    whether the failure is fatal (a main input, an output file) or a
+    getline result of -1.
+
+    Args:
+        detail (str): the strerror text, such as ``No such file or
+            directory``.
+    """
+
+    def __init__(self, detail: str) -> None:
+        super().__init__(detail)
+        self.detail = detail
+
+
+__all__ = ["AwkIOError", "AwkRuntimeError", "AwkSyntaxError"]

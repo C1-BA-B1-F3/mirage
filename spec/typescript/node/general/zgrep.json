@@ -350,6 +350,10 @@
       "type": "bool"
     },
     {
+      "short": "-P",
+      "type": "bool"
+    },
+    {
       "short": "-H",
       "type": "bool"
     },

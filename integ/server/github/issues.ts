@@ -23,6 +23,7 @@ import {
   fail,
   jsonBodyOf,
   numberParam,
+  ordered,
   pagedReply,
   route,
   str,
@@ -100,28 +101,85 @@ export async function issueRow(
   })) as IssueRow | null
 }
 
+// A pull request as the issue it also is: its pull request shape, with the
+// `pull_request` key a caller tells the two apart by, pointing at the pull
+// request under the prefix and run the request came in on.
+async function pullAsIssue(ctx: Ctx<C>, repo: RepoRow, row: PullRow): Promise<JsonValue> {
+  const json = (await pullJson(ctx, repo, row)) as Record<string, JsonValue>
+  const path = ctx.url.pathname.replace(/\/issues(?:\/\d+)?$/, `/pulls/${String(row.number)}`)
+  return {
+    ...json,
+    assignees: [],
+    pull_request: {
+      url: `${ctx.runPrefix}${path}`,
+      html_url: json.html_url ?? null,
+      merged_at: json.merged_at ?? null,
+    },
+  }
+}
+
+// Issues and pull requests in one list, as GitHub lists them. `state`,
+// `creator`, `assignee` and `labels` narrow, `since` keeps what was updated at
+// or after it (one that is no date keeps nothing, as `commits` does), and
+// `sort` (`created`, `updated`, `comments`) and `direction` (`desc` unless
+// asked) order the whole list before it is paged. A pull request has no
+// assignees or labels here, so either filter leaves it out.
 async function listIssues(ctx: Ctx<C>, repo: RepoRow): Promise<Reply> {
-  const rows = (await ctx.db.githubIssue.findMany({
-    where: { ...scope(ctx.tenant), repo: repo.fullName },
-    orderBy: { seq: 'desc' },
-  })) as IssueRow[]
+  const where = { ...scope(ctx.tenant), repo: repo.fullName }
+  const issues = (await ctx.db.githubIssue.findMany({ where })) as IssueRow[]
+  const pulls = (await ctx.db.githubPull.findMany({ where })) as PullRow[]
+  const comments = await ctx.db.githubComment.findMany({ where, select: { issueNumber: true } })
+  interface Listed {
+    number: number
+    state: string
+    user: string
+    assignees: string[]
+    labels: string[]
+    createdAt: string
+    updatedAt: string
+    json: () => Promise<JsonValue>
+  }
+  const listed: Listed[] = [
+    ...issues.map((r) => ({
+      number: r.number,
+      state: r.state,
+      user: r.user,
+      assignees: names(r.assigneesJson),
+      labels: names(r.labelsJson),
+      createdAt: r.createdAt,
+      updatedAt: r.updatedAt,
+      json: () => Promise.resolve(issueJson(repo, r)),
+    })),
+    ...pulls.map((r) => ({
+      number: r.number,
+      state: r.state,
+      user: r.user,
+      assignees: [],
+      labels: [],
+      createdAt: r.createdAt,
+      updatedAt: r.updatedAt,
+      json: () => pullAsIssue(ctx, repo, r),
+    })),
+  ]
   const wanted = ctx.query.get('state') ?? 'open'
   const creator = ctx.query.get('creator') ?? ''
   const assignee = ctx.query.get('assignee') ?? ''
   const labels = (ctx.query.get('labels') ?? '').split(',').filter((v) => v !== '')
-  let kept = rows.filter((r) => wanted === 'all' || r.state === wanted)
-  if (creator !== '') kept = kept.filter((r) => r.user === creator)
-  if (assignee !== '') kept = kept.filter((r) => names(r.assigneesJson).includes(assignee))
-  if (labels.length > 0) {
-    kept = kept.filter((r) => {
-      const have = new Set(names(r.labelsJson))
-      return labels.every((want) => have.has(want))
-    })
-  }
-  return pagedReply(
-    ctx,
-    kept.map((r) => issueJson(repo, r)),
+  const since = ctx.query.get('since')
+  const kept = listed.filter(
+    (r) =>
+      (wanted === 'all' || r.state === wanted) &&
+      (creator === '' || r.user === creator) &&
+      (assignee === '' || r.assignees.includes(assignee)) &&
+      labels.every((want) => r.labels.includes(want)) &&
+      (since === null || Date.parse(r.updatedAt) >= Date.parse(since)),
   )
+  const sort = ctx.query.get('sort') ?? 'created'
+  const talk = (r: Listed): number => comments.filter((c) => c.issueNumber === r.number).length
+  const key = (r: Listed): number | string =>
+    sort === 'updated' ? r.updatedAt : sort === 'comments' ? talk(r) : r.createdAt
+  const sorted = ordered(kept, key, ctx.query.get('direction') ?? 'desc')
+  return pagedReply(ctx, await Promise.all(sorted.map((r) => r.json())))
 }
 
 async function createIssue(ctx: Ctx<C>, repo: RepoRow): Promise<Reply> {
@@ -158,17 +216,11 @@ async function getIssue(ctx: Ctx<C>, repo: RepoRow): Promise<Reply> {
   if (row !== null) return { status: 200, body: issueJson(repo, row) }
   const pull = await pullRow(ctx.db, ctx.tenant, repo, number)
   if (pull === null) return fail(404, 'Not Found')
-  const json = pullJson(repo, pull)
-  return {
-    status: 200,
-    // A reference the client follows, so it carries the run the request came
-    // in on. Without it, resolving a pull request from a scoped issue read
-    // queries the default run and can answer from another repository state.
-    body: {
-      ...(json as Record<string, JsonValue>),
-      pull_request: { url: `${ctx.runPrefix}${ctx.url.pathname}` },
-    },
-  }
+  // `pull_request.url` is a reference the client follows, so it carries the
+  // run the request came in on. Without it, resolving a pull request from a
+  // scoped issue read queries the default run and can answer from another
+  // repository state.
+  return { status: 200, body: await pullAsIssue(ctx, repo, pull) }
 }
 
 async function editIssue(ctx: Ctx<C>, repo: RepoRow): Promise<Reply> {

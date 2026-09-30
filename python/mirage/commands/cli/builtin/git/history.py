@@ -24,7 +24,8 @@ from dulwich.objects import Commit, ObjectID, Tag
 from dulwich.refs import HEADREF, LOCAL_BRANCH_PREFIX, LOCAL_TAG_PREFIX
 from dulwich.repo import BaseRepo
 
-from mirage.commands.builtin.utils.bre import BreError, search_bre
+from mirage.commands.builtin.utils.bre import (BreError, PosixSyntax,
+                                               search_bre, translate_ere)
 from mirage.commands.cli.builtin.git.errors import (  # yapf: disable
     BadDateError, GitError, IncompatibleLogOptionsError,
     UnrecognizedArgumentError)
@@ -35,7 +36,7 @@ from mirage.commands.cli.builtin.git.mailmap import (MailmapEntry,
 from mirage.commands.cli.builtin.git.pickaxe import touches
 from mirage.commands.spec.flag_view import FlagView
 from mirage.utils.dates import iso_timestamp
-from mirage.utils.posix import compile_posix_regex, translate_classes
+from mirage.utils.posix import compile_posix_regex
 
 REMOTE_PREFIX = b"refs/remotes/"
 BASIC_REGEXP = "basic_regexp"
@@ -211,7 +212,8 @@ def _pattern(value: str, syntax: str, ignore_case: bool,
         if syntax == FIXED_STRINGS:
             return compile_posix_regex(re.escape(value), fold)
         if syntax == EXTENDED_REGEXP:
-            return compile_posix_regex(translate_classes(value), fold)
+            return compile_posix_regex(
+                translate_ere(value, PosixSyntax.EXTENDED)[0], fold)
         return search_bre(value, ignore_case)
     except (BreError, re.error, regex.error) as exc:
         raise GitError(f"{origin}, '{value}': {exc}") from exc

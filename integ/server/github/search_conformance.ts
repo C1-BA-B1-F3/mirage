@@ -123,6 +123,24 @@ export async function searchConformance(endpoint: string): Promise<number> {
         if (!comment.ok) throw new Error(await comment.text())
       }
     }
+    // A pull request needs a head branch holding a commit its base lacks.
+    const main = await fetch(`${endpoint}/repos/${REPO}/git/ref/heads/main`, { headers: HEADERS })
+    if (!main.ok) throw new Error(await main.text())
+    const { object } = (await main.json()) as { object: { sha: string } }
+    for (const [path, body] of [
+      ['git/refs', { ref: 'refs/heads/feature', sha: object.sha }],
+      [
+        'contents/FEATURE.md',
+        { message: 'Add feature', content: 'ZmVhdHVyZQo=', branch: 'feature' },
+      ],
+    ] as const) {
+      const made = await fetch(`${endpoint}/repos/${REPO}/${path}`, {
+        method: path === 'git/refs' ? 'POST' : 'PUT',
+        headers: HEADERS,
+        body: JSON.stringify(body),
+      })
+      if (!made.ok) throw new Error(await made.text())
+    }
     const pull = await fetch(`${endpoint}/repos/${REPO}/pulls`, {
       method: 'POST',
       headers: HEADERS,

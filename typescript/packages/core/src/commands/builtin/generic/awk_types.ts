@@ -14,8 +14,6 @@
 
 export const USAGE = "awk: usage: awk [-F fs] [-v var=val] 'program' [file ...]"
 
-export const FS_ESCAPES: Readonly<Record<string, string>> = { t: '\t', n: '\n', '\\': '\\' }
-
 export interface AwkFlags {
   readonly fieldSeparator: string | null
   readonly assignments: readonly string[]

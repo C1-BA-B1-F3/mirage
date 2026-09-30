@@ -13,7 +13,13 @@ function pickString(record: Record<string, unknown>, key: string): string {
 
 function compiled(query: SearchQuery): RegExp {
   const options = grepSearchOptions(query)
-  return compilePattern(query.query, options.ignoreCase, options.fixedString, options.wholeWord)
+  return compilePattern(
+    query.query,
+    options.ignoreCase,
+    options.fixedString,
+    options.wholeWord,
+    options.syntax,
+  )
 }
 
 function filterTraces(traces: readonly Record<string, unknown>[], pattern: RegExp): string[] {

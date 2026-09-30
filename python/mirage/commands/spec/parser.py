@@ -672,7 +672,8 @@ def parse_command(
                                  ())
                     spelling = next(
                         (name for name in group if name in cs.dest), typed)
-            elif typed not in cs.dest and not no_long_option_parser:
+            elif (typed not in cs.dest and not no_long_option_parser
+                  and spec.allow_abbrev):
                 expansions = expand_long(cs, typed, synonyms)
                 if len(expansions) == 1:
                     spelling = expansions[0]

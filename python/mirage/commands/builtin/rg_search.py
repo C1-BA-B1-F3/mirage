@@ -19,6 +19,8 @@ from dataclasses import dataclass
 
 from mirage.commands.builtin.grep_offsets import decode_line, encode_line
 from mirage.commands.builtin.grep_prefilter import required_needles
+from mirage.commands.builtin.utils.pcre import (match_start, match_text,
+                                                user_groups)
 from mirage.io.async_line_iterator import AsyncLineIterator
 from mirage.io.stream import discard_streams
 from mirage.io.yield_budget import YieldBudget
@@ -95,6 +97,8 @@ class RgFlags:
     sort_reverse: bool
     no_messages: bool
     null_data: bool = False
+    engine: str = "default"
+    pcre2_unicode: bool = True
 
 
 def prints_context(f: RgFlags) -> bool:
@@ -166,9 +170,16 @@ def _capture(m: re.Match[str], ref: str) -> str:
         m (re.Match[str]): the match.
         ref (str): a group number or name.
     """
-    key: int | str = int(ref) if ref.isascii() and ref.isdigit() else ref
+    if ref.isascii() and ref.isdigit():
+        number = int(ref)
+        if number == 0:
+            return match_text(m)
+        groups = user_groups(m.re)
+        if number > len(groups):
+            return ""
+        return m.group(groups[number - 1]) or ""
     try:
-        return m.group(key) or ""
+        return m.group(ref) or ""
     except IndexError:
         return ""
 
@@ -223,7 +234,7 @@ def replace_all(pat: re.Pattern[str], text: str,
     last = 0
     length = 0
     for m in rust_matches(pat, text):
-        before = text[last:m.start()]
+        before = text[last:match_start(m)]
         pieces.append(before)
         length += len(before)
         replaced = expand(template, m)
@@ -326,48 +337,6 @@ def _regex_literals(pattern: str) -> Iterator[str]:
         if ch not in ".^$*+?()|{":
             yield ch
         i += 1
-
-
-def host_named_groups(pattern: str) -> str:
-    """ripgrep's two spellings of a named group, ``(?P<name>`` and
-    ``(?<name>``, in the one Python's engine reads, ``(?P<name>``. A
-    lookbehind, an escaped paren and a bracket class are left alone.
-
-    Args:
-        pattern (str): the pattern as typed.
-    """
-    out: list[str] = []
-    i = 0
-    in_class = False
-    while i < len(pattern):
-        ch = pattern[i]
-        if ch == "\\":
-            out.append(pattern[i:i + 2])
-            i += 2
-            continue
-        if in_class:
-            in_class = ch != "]"
-            out.append(ch)
-            i += 1
-            continue
-        if ch == "[":
-            in_class = True
-            j = i + 1
-            if pattern.startswith("^", j):
-                j += 1
-            if pattern.startswith("]", j):
-                j += 1
-            out.append(pattern[i:j])
-            i = j
-            continue
-        if pattern.startswith("(?<", i) and not pattern.startswith(
-            ("(?<=", "(?<!"), i):
-            out.append("(?P<")
-            i += 3
-            continue
-        out.append(ch)
-        i += 1
-    return "".join(out)
 
 
 def smart_case_folds(pattern: str, fixed_string: bool) -> bool:
@@ -485,7 +454,7 @@ class RgPrinter:
             terminated = False
         else:
             shown = text
-            spans = [(m.start(), m.end()) for m in matches]
+            spans = [(match_start(m), m.end()) for m in matches]
             terminated = True
         if f.vimgrep and matches:
             # One record per match, each at its own column unless
@@ -523,10 +492,10 @@ class RgPrinter:
             return
         cursor = ByteCursor(text)
         for m in matches:
-            piece = m.group(0)
+            piece = match_text(m)
             if f.replace is not None and is_match:
                 piece = expand(f.replace, m)
-            offset = cursor.at(m.start())
+            offset = cursor.at(match_start(m))
             column = 1 + offset if f.column and is_match else None
             yield self._record(index, column, start + offset, piece,
                                [(0, len(piece))], is_match, False, 1)

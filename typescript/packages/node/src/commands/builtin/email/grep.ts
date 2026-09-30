@@ -16,7 +16,11 @@ import type { IndexCacheStore } from '@struktoai/mirage-core/cache/index/store'
 import { prefixAggregate } from '@struktoai/mirage-core/commands/builtin/aggregators'
 import { grepGeneric } from '@struktoai/mirage-core/commands/builtin/generic/grep'
 import { resolveGlobOf } from '@struktoai/mirage-core/commands/builtin/generic_bind/index'
-import { compilePattern, patternArg } from '@struktoai/mirage-core/commands/builtin/grep_pattern'
+import {
+  compilePattern,
+  matcherSyntax,
+  patternArg,
+} from '@struktoai/mirage-core/commands/builtin/grep_pattern'
 import {
   pushdownOperand,
   searchQuery,
@@ -102,10 +106,10 @@ async function grepCommand(
   // the real pattern runs over each candidate. A pattern with no such
   // literal (an alternation, a class with nothing required around it)
   // takes the generic scan rather than a search for the regex's spelling.
-  // grep reads a basic expression unless -E says otherwise, and the
+  // grep reads a basic expression unless -E or -P says otherwise, and the
   // literal has to be read off the same dialect the matcher will use.
-  const basic = !fl.asBool('E')
-  const query = pattern !== null ? searchQuery(pattern, fl.asBool('F'), basic) : null
+  const syntax = matcherSyntax(fl)
+  const query = pattern !== null ? searchQuery(pattern, fl.asBool('F'), syntax) : null
   if (
     pattern !== null &&
     query !== null &&
@@ -125,7 +129,7 @@ async function grepCommand(
       if (textSearchResults(pairs.map(([, text]) => text))) {
         // The same dialect the literal was read off: a basic expression
         // compiled as an extended one matches a different language.
-        const pat = compilePattern(pattern, fl.asBool('i'), fl.asBool('F'), fl.asBool('w'), basic)
+        const pat = compilePattern(pattern, fl.asBool('i'), fl.asBool('F'), fl.asBool('w'), syntax)
         const lineOpts: GrepLinesOptions = {
           invert: false,
           lineNumbers: fl.asBool('n'),

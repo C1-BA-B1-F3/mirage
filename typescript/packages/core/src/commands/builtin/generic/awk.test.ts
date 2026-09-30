@@ -304,11 +304,20 @@ async function runIo(program: string, stdin: string): Promise<[string, number, s
 
 describe('awk fatal paths', () => {
   it.each([
-    ['{getline line; print line}', 'awk: getline is not supported in mirage\n'],
     ['{print > "out.txt"}', 'awk: file output requires a workspace\n'],
-    ['{system("ls")}', 'awk: system() is not supported in mirage\n'],
+    ['{system("ls")}', 'awk: running a command requires a workspace\n'],
+    ['{"ls" | getline}', 'awk: running a command requires a workspace\n'],
+    ['{print | "cat"}', 'awk: running a command requires a workspace\n'],
   ])('refuses %j', async (program, message) => {
     expect(await runIo(program, 'a\n')).toEqual(['', 2, message])
+  })
+
+  it('reads the next record with getline', async () => {
+    expect(await runIo('NR==1{getline; print} {print NR}', 'a\nb\nc\n')).toEqual([
+      'b\n2\n3\n',
+      0,
+      '',
+    ])
   })
 
   it('keeps the output written before a runtime error', async () => {

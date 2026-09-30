@@ -57,10 +57,24 @@ async def fetch_or_enoent(pending: Awaitable[T], virtual: str) -> T:
 # string rewriting that could alter trace content.
 def _to_dict(obj) -> dict[str, Any]:
     if hasattr(obj, "model_dump"):
-        return obj.model_dump(mode="json")
+        return _wire_numbers(obj.model_dump(mode="json"))
     if hasattr(obj, "dict"):
-        return obj.dict()
+        return _wire_numbers(obj.dict())
     return vars(obj)
+
+
+# The SDK's float fields (latency, totalCost, a score's value, ...) turn the
+# API's 1 into 1.0. Langfuse serves JSON from Node, whose JSON.stringify
+# never writes a fraction on an integral number below 1e21, so such a float
+# goes back to the integer the API sent.
+def _wire_numbers(value: Any) -> Any:
+    if isinstance(value, float) and value.is_integer() and abs(value) < 1e21:
+        return int(value)
+    if isinstance(value, dict):
+        return {key: _wire_numbers(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_wire_numbers(item) for item in value]
+    return value
 
 
 async def fetch_traces(

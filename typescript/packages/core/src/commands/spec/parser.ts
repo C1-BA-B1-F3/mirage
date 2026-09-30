@@ -679,7 +679,7 @@ export function parseCommand(
           const group = longTable.find((g) => g[0] === only)
           spelling = group?.find((name) => cs.dest.has(name)) ?? typed
         }
-      } else if (!cs.dest.has(typed) && !noLongOptionParser) {
+      } else if (!cs.dest.has(typed) && !noLongOptionParser && spec.allowAbbrev) {
         const candidates = expandLong(cs, typed, synonyms)
         if (candidates.length === 1) {
           spelling = candidates[0] ?? typed

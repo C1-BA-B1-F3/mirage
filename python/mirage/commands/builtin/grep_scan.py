@@ -17,6 +17,7 @@ import re
 from mirage.commands.builtin.grep_offsets import (MatchOffsets, line_offsets,
                                                   prefix_of, rg_pieces,
                                                   rust_matches)
+from mirage.commands.builtin.utils.pcre import match_start, match_text
 from mirage.io.types import IOResult
 
 
@@ -119,14 +120,14 @@ def grep_lines(
                     match_offsets = MatchOffsets(
                         start, line) if byte_offsets else None
                     for found in compiled.finditer(line):
-                        text = found.group(0)
+                        text = match_text(found)
                         if not text:
                             continue
                         results.append(
                             prefix_of(
                                 i if line_numbers else None,
-                                match_offsets.at(found.start(
-                                )) if match_offsets else None) + text)
+                                match_offsets.at(match_start(found))
+                                if match_offsets else None) + text)
             else:
                 results.append(
                     prefix_of(i if line_numbers else None,

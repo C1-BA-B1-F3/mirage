@@ -14,23 +14,12 @@
 
 import { Cmd } from './types.ts'
 
-export const STREAM_COMMANDS: ReadonlySet<string> = new Set([
-  Cmd.CAT,
-  Cmd.NL,
-  Cmd.CUT,
-  Cmd.SED,
-  Cmd.AWK,
-])
+export const STREAM_COMMANDS: ReadonlySet<string> = new Set([Cmd.CAT, Cmd.NL, Cmd.CUT])
 // The stream commands that read their input as lines: GNU ends a file's
-// unterminated last line where the next file begins (`sed -n 2p` on `ab` then
-// `cd` prints `cd`), so the merged stream carries that newline. `cat` joins
+// unterminated last line where the next file begins (`cut -c 1` on `ab` then
+// `cd` prints two lines), so the merged stream carries that newline. `cat` joins
 // the bytes as they are. Mirrors Python's LINE_STREAM_COMMANDS.
-export const LINE_STREAM_COMMANDS: ReadonlySet<string> = new Set([
-  Cmd.NL,
-  Cmd.CUT,
-  Cmd.SED,
-  Cmd.AWK,
-])
+export const LINE_STREAM_COMMANDS: ReadonlySet<string> = new Set([Cmd.NL, Cmd.CUT])
 const FANOUT_COMMANDS: ReadonlySet<string> = new Set([
   Cmd.REV,
   Cmd.GREP,
@@ -70,6 +59,8 @@ export const RELAY_COMMANDS: ReadonlySet<string> = new Set([
   Cmd.LS,
   Cmd.SORT,
   Cmd.WC,
+  Cmd.AWK,
+  Cmd.SED,
 ])
 export const CROSS_MOUNT_COMMANDS: ReadonlySet<string> = new Set([
   ...STREAM_COMMANDS,

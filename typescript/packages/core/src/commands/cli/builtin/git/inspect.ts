@@ -2,7 +2,8 @@ import { readHead, loadRefs } from './refs.ts'
 import git from 'isomorphic-git'
 import { VERSION } from '../../../../version.ts'
 
-import { translateClasses } from '../../../../utils/posix.ts'
+import { compilePosixRegex } from '../../../../utils/posix.ts'
+import { BreError, PosixSyntax, translateEre } from '../../../builtin/utils/bre.ts'
 import { compareCodePoints } from '../../../../utils/sort.ts'
 import { IOResult } from '../../../../io/types.ts'
 import type { CommandFnResult } from '../../../config.ts'
@@ -106,9 +107,11 @@ export async function config(inv: CLIInvocation): Promise<CommandFnResult> {
     const key = inv.texts[0] ?? ''
     let pattern: RegExp | null
     try {
-      pattern = regexp ? new RegExp(translateClasses(configKey(key))) : null
+      pattern = regexp
+        ? compilePosixRegex(translateEre(configKey(key), PosixSyntax.EXTENDED)[0])
+        : null
     } catch (err) {
-      if (!(err instanceof SyntaxError)) throw err
+      if (!(err instanceof SyntaxError) && !(err instanceof BreError)) throw err
       return [
         null,
         new IOResult({ exitCode: 6, stderr: ENC.encode(`error: invalid key pattern: ${key}\n`) }),

@@ -18,7 +18,7 @@ from mirage.commands.builtin.email.io import resolve_glob
 from mirage.commands.builtin.generic.rg import (parse_flags,
                                                 refuse_missing_pattern)
 from mirage.commands.builtin.generic.rg import rg as generic_rg
-from mirage.commands.builtin.generic.rg import rg_matcher
+from mirage.commands.builtin.generic.rg import rg_matcher, rg_syntax
 from mirage.commands.builtin.generic_bind.adapter import bound_op
 from mirage.commands.builtin.grep_pattern import pattern_arg
 from mirage.commands.builtin.grep_pushdown import (pushdown_operand,
@@ -59,7 +59,7 @@ async def rg(accessor: EmailAccessor, paths: list[PathSpec], texts: list[str],
                                RG_SEARCH_HONORED)
     # The server is asked for the literal every match must contain, never
     # the regex's own spelling: IMAP TEXT is a substring search.
-    query = (search_query(pattern_str, f.fixed_string)
+    query = (search_query(pattern_str, f.fixed_string, rg_syntax(f))
              if pattern_str is not None else None)
     match = detect_scope(operand) if operand is not None else None
     if (operand is not None and pattern_str is not None and query is not None

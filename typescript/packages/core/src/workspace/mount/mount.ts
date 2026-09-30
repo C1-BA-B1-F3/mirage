@@ -651,6 +651,7 @@ export class MountEntry {
         ...(context.ns !== undefined ? { ns: context.ns } : {}),
         ...(context.statPath !== undefined ? { statPath: context.statPath } : {}),
         ...(context.readdirPath !== undefined ? { readdirPath: context.readdirPath } : {}),
+        ...(context.shell !== undefined ? { shell: context.shell } : {}),
         ...(context.argv !== undefined ? { argv: context.argv } : {}),
       }
 

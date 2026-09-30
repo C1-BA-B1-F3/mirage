@@ -146,15 +146,16 @@ async def test_search_capability_distinguishes_decline_from_no_matches(
         search.assert_awaited_once()
         args = search.await_args.args
         assert args[1].vfs_path == "a.txt"
-        assert args[2] == SearchQuery(query="hello",
-                                      options={
-                                          "grep": {
-                                              "ignore_case": False,
-                                              "fixed_string": True,
-                                              "whole_word": False,
-                                              "basic": command == "grep"
-                                          }
-                                      })
+        assert args[2] == SearchQuery(
+            query="hello",
+            options={
+                "grep": {
+                    "ignore_case": False,
+                    "fixed_string": True,
+                    "whole_word": False,
+                    "syntax": "basic" if command == "grep" else "rust"
+                }
+            })
     finally:
         await ws.close()
 

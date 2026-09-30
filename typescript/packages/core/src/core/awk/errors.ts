@@ -15,3 +15,19 @@
 export class AwkSyntaxError extends Error {}
 
 export class AwkRuntimeError extends Error {}
+
+/**
+ * An input or output stream awk could not open, read or write. The host
+ * raises it with the system's reason (`detail`, a strerror text such as
+ * `No such file or directory`); the interpreter decides whether the
+ * failure is fatal (a main input, an output file) or a getline result
+ * of -1.
+ */
+export class AwkIOError extends Error {
+  readonly detail: string
+
+  constructor(detail: string) {
+    super(detail)
+    this.detail = detail
+  }
+}

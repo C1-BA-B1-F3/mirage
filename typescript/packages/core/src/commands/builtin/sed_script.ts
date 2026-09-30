@@ -12,77 +12,158 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import { byteChar } from '../../shell/bytes.ts'
-import { compilePosixRegex, translateClasses } from '../../utils/posix.ts'
-const SIMPLE_CMDS = new Set(['d', 'D', 'p', 'P', 'h', 'H', 'g', 'G', 'x', 'N', 'q'])
+import { byteChar, encodeText } from '../../shell/bytes.ts'
+import { compilePosixRegex } from '../../utils/posix.ts'
+import { BreError, PosixSyntax, translateBre, translateEre } from './utils/bre.ts'
 
-type SedAddr = ['line', string] | ['last', ''] | ['regex', string]
+// The GNU sed version `v` compares against.
+export const SED_VERSION = '4.9'
+
+// The names GNU's get_openfile answers itself rather than opening.
+export const SED_STDOUT = '/dev/stdout'
+export const SED_STDERR = '/dev/stderr'
+
+/**
+ * One regex of a script: `null` in its place means the last one run.
+ * `pattern` is the text between the delimiters; `source` is the host regex
+ * it compiles to, through GNU's escape pre-pass and the glibc translator.
+ */
+export interface SedRegex {
+  readonly pattern: string
+  readonly source: string
+  readonly groups: number
+  readonly icase: boolean
+  readonly multiline: boolean
+}
+
+/**
+ * The host flags a sed regex compiles with. GNU sed's regex syntax has
+ * RE_DOT_NEWLINE, so `.` matches the newline `N` puts in the pattern
+ * space; `M` (REG_NEWLINE) takes that away and makes `^` and `$` line
+ * anchors. Divergence: the host has no buffer-only anchor in multiline
+ * mode, so under `M` GNU's `\`` and `\'` anchor at lines too, and `[^a]`
+ * still matches a newline.
+ */
+export function sedRegexFlags(re: SedRegex, global: boolean): string {
+  return (re.icase ? 'i' : '') + (re.multiline ? 'm' : 's') + (global ? 'g' : '')
+}
+
+export type SedAddr =
+  | { readonly kind: 'num'; readonly n: number }
+  | { readonly kind: 'mod'; readonly first: number; readonly step: number }
+  | { readonly kind: 'step'; readonly n: number }
+  | { readonly kind: 'stepmod'; readonly n: number }
+  | { readonly kind: 'last' }
+  | { readonly kind: 'null' }
+  | { readonly kind: 'regex'; readonly re: SedRegex | null }
+
+export interface SedSubst {
+  re: SedRegex | null
+  replacement: string
+  global: boolean
+  print: boolean
+  numb: number
+  outf: string | null
+}
 
 export interface SedCommand {
   cmd: string
-  addrStart?: SedAddr | null
-  addrEnd?: SedAddr | null
-  negate?: boolean
-  pattern?: string
-  replacement?: string
-  exprFlags?: string
-  text?: string
+  a1: SedAddr | null
+  a2: SedAddr | null
+  bang: boolean
+  // a/i/c text, closing newline included; null when there is none.
+  text?: string | null
   label?: string
+  // Resolved target of `{`, `b`, `t` and `T`: the index of the matching
+  // `}` or label, or the script's length for the end of the script.
+  jump?: number
+  // The number after `l`, `q` or `Q`; -1 when there is none.
+  intArg?: number
+  fname?: string
+  // `0r FILE` writes the file before the first line instead of after it.
+  prepend?: boolean
+  subst?: SedSubst
+  ySrc?: string[]
+  yDst?: string[]
 }
 
-function parseAddress(addr: string): SedAddr | null {
-  if (addr === '') return null
-  if (/^\d+$/.test(addr)) return ['line', addr]
-  if (addr === '$') return ['last', '']
-  return null
+export interface SedProgram {
+  commands: SedCommand[]
+  // `#n` on the script's first line, which acts as -n.
+  noDefaultOutput: boolean
+  // Files `w`, `W` and `s///w` write, in the order GNU opens (truncates) them.
+  wfiles: string[]
+  // Files `r` reads (again at every append), and files `R` reads (opened
+  // once, as GNU opens them when it compiles the command).
+  rfiles: string[]
+  readerFiles: string[]
+  // Where GNU places an error found once the script has run out, as a
+  // missing previous regex at run time: the last piece, past its end.
+  endWhere: string
 }
 
-// Collect an address regex up to its unescaped closing delimiter. A
-// backslash escapes the next character (so `\/` inside `/re/` is a literal
-// slash) and the pair is kept verbatim: BRE escapes like `\+` must survive
-// for the regex translator, and the engine accepts a redundant `\/`.
-function scanRegexField(rest: string, start: number, delim: string): [string, number] {
-  let out = ''
-  let i = start
-  while (i < rest.length) {
-    const ch = rest.charAt(i)
-    if (ch === '\\' && i + 1 < rest.length) {
-      out += rest.slice(i, i + 2)
-      i += 2
-      continue
-    }
-    if (ch === delim) return [out, i + 1]
-    out += ch
-    i += 1
-  }
-  throw new Error('sed: unterminated address regex')
+/** One -e expression or -f script file, in command-line order. */
+export interface SedScriptPiece {
+  kind: 'expr' | 'file'
+  text: string
+  // The script file's name as given, for `file NAME line N:`.
+  name?: string
 }
 
-function consumeAddress(rest: string): [SedAddr | null, string] {
-  if (rest === '') return [null, rest]
-  if (rest.startsWith('/')) {
-    const [pattern, next] = scanRegexField(rest, 1, '/')
-    return [['regex', pattern], rest.slice(next)]
+/**
+ * A script GNU refuses. `wfiles` are the files the script had opened
+ * (and so truncated) before the error, since GNU opens a `w` file the
+ * moment it compiles the command. `exitCode` is 1 for a syntax error and
+ * 4 for GNU's panics (an undefined label).
+ */
+export class SedError extends Error {
+  readonly exitCode: number
+  readonly wfiles: readonly string[]
+
+  constructor(message: string, exitCode = 1, wfiles: readonly string[] = []) {
+    super(message)
+    this.exitCode = exitCode
+    this.wfiles = wfiles
   }
-  if (rest.startsWith('\\') && rest.length > 1) {
-    // GNU's \cREc form: the character after the backslash delimits the
-    // regex in place of `/`.
-    const [pattern, next] = scanRegexField(rest, 2, rest.charAt(1))
-    return [['regex', pattern], rest.slice(next)]
-  }
-  const first = rest[0]
-  if (first !== undefined && (/\d/.test(first) || first === '$')) {
-    let num = ''
-    while (rest.length > 0) {
-      const c: string | undefined = rest[0]
-      if (c === undefined || !(/\d/.test(c) || c === '$')) break
-      num += c
-      rest = rest.slice(1)
-    }
-    return [parseAddress(num), rest]
-  }
-  return [null, rest]
 }
+
+const BAD_BANG = "multiple `!'s"
+const BAD_COMMA = "unexpected `,'"
+const BAD_STEP = 'invalid usage of +N or ~N as first address'
+const EXCESS_OPEN_BRACE = "unmatched `{'"
+const EXCESS_CLOSE_BRACE = "unexpected `}'"
+const EXCESS_JUNK = 'extra characters after command'
+const EXPECTED_SLASH = "expected \\ after `a', `c' or `i'"
+const NO_CLOSE_BRACE_ADDR = "`}' doesn't want any addresses"
+const NO_COLON_ADDR = ": doesn't want any addresses"
+const NO_SHARP_ADDR = "comments don't accept any addresses"
+const NO_COMMAND = 'missing command'
+const ONE_ADDR = 'command only uses one address'
+const UNTERM_ADDR_RE = 'unterminated address regex'
+const UNTERM_S_CMD = "unterminated `s' command"
+const UNTERM_Y_CMD = "unterminated `y' command"
+const UNKNOWN_S_OPT = "unknown option to `s'"
+const EXCESS_P_OPT = "multiple `p' options to `s' command"
+const EXCESS_G_OPT = "multiple `g' options to `s' command"
+const EXCESS_N_OPT = "multiple number options to `s' command"
+const ZERO_N_OPT = "number option to `s' command may not be zero"
+const Y_CMD_LEN = "strings for `y' command are different lengths"
+const BAD_DELIM = 'delimiter character is not a single-byte character'
+const ANCIENT_VERSION = 'expected newer version of sed'
+const INVALID_LINE_0 = 'invalid usage of line address 0'
+const COLON_LACKS_LABEL = '":" lacks a label'
+const RECURSIVE_ESCAPE_C = 'recursive escaping after \\c not allowed'
+const MISSING_FILENAME = 'missing filename in r/R/w/W commands'
+const BAD_MODIF = 'cannot specify modifiers on empty regexp'
+const INVALID_PATTERN = 'Invalid regular expression'
+const UNMATCHED_CLOSE = 'Unmatched ) or \\)'
+// dfa.c's refusal of a bracket that looks like a class written without
+// its outer brackets, which sed's dfawarn turns into a panic (exit 4).
+const CONFUSING_BRACKET = 'character class syntax is [[:space:]], not [:space:]'
+// GNU runs `e` and `s///e` through popen; mirage has no door to run a
+// shell command from inside sed, so it refuses both where GNU compiles
+// them, in the words GNU's own no-popen build uses at run time.
+const NO_EVAL = "`e' command not supported"
 
 const TEXT_ESCAPES: Record<string, string> = {
   a: '\x07',
@@ -96,632 +177,809 @@ const TEXT_ESCAPES: Record<string, string> = {
 
 const TEXT_ESCAPE_BASES: Record<string, number> = { d: 10, o: 8, x: 16 }
 
-// GNU's normalize_text over a/i/c text: the escapes above, `\dNNN`, `\oNNN`
-// and `\xHH` bytes (one above ASCII carried as its surrogate escape, which
-// `encodeText` writes back as that raw byte, as GNU writes it), and `\cX`
-// control characters; a backslash before any other character is dropped. The text always ends in
-// the newline that closed it, so `\c` at its end takes that newline as X.
-function decodeTextEscapes(buf: string): string {
-  let out = ''
-  let i = 0
-  while (i < buf.length) {
-    const ch = buf.charAt(i)
-    if (ch !== '\\' || i + 1 >= buf.length) {
-      out += ch
-      i += 1
-      continue
-    }
-    const nx = buf.charAt(i + 1)
-    i += 2
-    const simple = TEXT_ESCAPES[nx]
-    if (simple !== undefined) {
-      out += simple
-      continue
-    }
-    const base = TEXT_ESCAPE_BASES[nx]
-    if (base !== undefined) {
-      let value = 0
-      let digits = 0
-      for (let max = 1; i < buf.length && max <= 255; max *= base) {
-        const d = Number.parseInt(buf.charAt(i), base)
-        if (Number.isNaN(d)) break
-        value = value * base + d
-        digits += 1
-        i += 1
-      }
-      out += digits === 0 ? nx : byteChar(value)
-      continue
-    }
-    if (nx === 'c') {
-      const x = buf.charAt(i)
-      const upper = x >= 'a' && x <= 'z' ? x.toUpperCase() : x
-      out += String.fromCharCode(upper.charCodeAt(0) ^ 0x40)
-      i += 1
-      if (x === '\\') {
-        if (buf.charAt(i) !== '\\') throw new Error('sed: recursive escaping after \\c not allowed')
-        i += 1
-      }
-      continue
-    }
-    out += nx
-  }
-  return out
+function isBlank(ch: string | null): boolean {
+  return ch === ' ' || ch === '\t'
 }
 
-// Read the text of `a`, `i` or `c` as GNU's read_text does. Blanks after the
-// letter are skipped. A backslash there starts the classic form: a newline
-// after it is dropped and any other character is the text's first, so
-// `a\  x` keeps its leading blanks. The text runs to the first newline no
-// backslash escapes (a `;` is part of it) and keeps that newline. A script
-// that ends on a backslash leaves the text as read, undecoded, as GNU keeps
-// text still pending when its script runs out.
-function readText(rest: string): [string, string] {
-  let i = 0
-  while (rest.charAt(i) === ' ' || rest.charAt(i) === '\t') i += 1
-  if (i >= rest.length) throw new Error("sed: expected \\ after `a', `c' or `i'")
-  let buf = ''
-  if (rest.charAt(i) === '\\') {
-    i += 1
-    if (i >= rest.length) return ['', '']
-    if (rest.charAt(i) !== '\n') buf += rest.charAt(i)
-    i += 1
+function isSpace(ch: string | null): boolean {
+  return ch === ' ' || ch === '\t' || ch === '\n' || ch === '\v' || ch === '\f' || ch === '\r'
+}
+
+function isDigit(ch: string | null): boolean {
+  return ch !== null && ch >= '0' && ch <= '9'
+}
+
+// The first byte of one character, as GNU's bad_command prints it.
+function firstByte(ch: string): string {
+  const bytes = encodeText(ch)
+  return bytes.length <= 1 ? ch : byteChar(bytes[0] ?? 0)
+}
+
+// GNU's strverscmp over two version strings: digit runs compare as numbers.
+function versionCompare(a: string, b: string): number {
+  const split = (s: string): string[] => s.match(/\d+|\D+/g) ?? []
+  const pa = split(a)
+  const pb = split(b)
+  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+    const x = pa[i]
+    const y = pb[i]
+    if (x === undefined) return -1
+    if (y === undefined) return 1
+    if (/^\d/.test(x) && /^\d/.test(y)) {
+      const d = Number(x) - Number(y)
+      if (d !== 0) return d
+      continue
+    }
+    if (x !== y) return x < y ? -1 : 1
   }
-  while (i < rest.length && rest.charAt(i) !== '\n') {
-    if (rest.charAt(i) === '\\') {
-      if (i + 1 >= rest.length) return [buf + '\n', '']
-      buf += rest.slice(i, i + 2)
+  return 0
+}
+
+interface BlockMark {
+  index: number
+  where: string
+}
+
+/**
+ * GNU sed 4.9's compile.c over one script given as -e and -f pieces.
+ * Pieces compile in order into one program, as GNU compiles each -e or
+ * -f in turn: an a/i/c text a piece leaves open on a backslash goes on in
+ * the next, a `{` in one closes in another, and labels are resolved once
+ * the last piece is read. Every blank and error position follows GNU:
+ * blanks and `;` before an address, blanks after one, around the range
+ * comma and after `!`, then the command's own rules.
+ */
+class Compiler {
+  private chars: string[] = []
+  private pos = 0
+  private line = 0
+  private name: string | null = null
+  private exprCount = 0
+  private firstScript = true
+  private readonly commands: SedCommand[] = []
+  private readonly blocks: BlockMark[] = []
+  private readonly labels = new Map<string, number>()
+  private readonly jumps: [number, string][] = []
+  private pendingText: string | null = null
+  private oldTextCmd: SedCommand | null = null
+  private noDefaultOutput = false
+  private readonly wfiles: string[] = []
+  private readonly rfiles: string[] = []
+  private readonly readerFiles: string[] = []
+
+  constructor(private readonly extended: boolean) {}
+
+  compile(pieces: readonly SedScriptPiece[]): SedProgram {
+    for (const piece of pieces) {
+      this.chars = Array.from(piece.text)
+      this.pos = 0
+      if (piece.kind === 'file') {
+        this.line = 1
+        this.name = piece.name ?? '-'
+      } else {
+        this.line = 0
+        this.name = null
+        this.exprCount += 1
+      }
+      this.compileProgram()
+      this.firstScript = false
+    }
+    this.checkFinal()
+    return {
+      commands: this.commands,
+      noDefaultOutput: this.noDefaultOutput,
+      wfiles: this.wfiles,
+      rfiles: this.rfiles,
+      readerFiles: this.readerFiles,
+      endWhere: this.blockWhere(),
+    }
+  }
+
+  // `unread` is how many bytes of the last character GNU, reading byte
+  // by byte, has not reached: an unknown command stops after the first
+  // byte of a multibyte character.
+  private where(unread = 0): string {
+    if (this.name !== null) return `file ${this.name} line ${String(this.line)}`
+    const consumed = encodeText(this.chars.slice(0, this.pos).join('')).length - unread
+    return `-e expression #${String(this.exprCount)}, char ${String(consumed)}`
+  }
+
+  private bad(why: string, unread = 0): never {
+    throw new SedError(`sed: ${this.where(unread)}: ${why}`, 1, [...this.wfiles])
+  }
+
+  private inchar(): string | null {
+    if (this.pos >= this.chars.length) return null
+    const ch = this.chars[this.pos] ?? null
+    this.pos += 1
+    if (ch === '\n') this.line += 1
+    return ch
+  }
+
+  private savchar(ch: string | null): void {
+    if (ch === null) return
+    if (ch === '\n' && this.line > 0) this.line -= 1
+    this.pos -= 1
+  }
+
+  private inNonblank(): string | null {
+    let ch = this.inchar()
+    while (isBlank(ch)) ch = this.inchar()
+    return ch
+  }
+
+  private readEndOfCmd(): void {
+    const ch = this.inNonblank()
+    if (ch === '}' || ch === '#') this.savchar(ch)
+    else if (ch !== null && ch !== '\n' && ch !== ';') this.bad(EXCESS_JUNK)
+  }
+
+  private inInteger(first: string | null): number {
+    let num = 0
+    let ch = first
+    while (isDigit(ch)) {
+      num = num * 10 + Number(ch)
+      ch = this.inchar()
+    }
+    this.savchar(ch)
+    return num
+  }
+
+  private readFilename(): string {
+    let b = ''
+    let ch = this.inNonblank()
+    while (ch !== null && ch !== '\n') {
+      b += ch
+      ch = this.inchar()
+    }
+    return b
+  }
+
+  private openFile(write: boolean): string {
+    const name = this.readFilename()
+    if (name === '') this.bad(MISSING_FILENAME)
+    const list = write ? this.wfiles : this.readerFiles
+    if (!list.includes(name)) list.push(name)
+    return name
+  }
+
+  // A label for `:`, `b`, `t`, `T` or `v`: it ends at a blank, `;`, `}`,
+  // `#` or the end of the line.
+  private readLabel(): string {
+    let b = ''
+    let ch = this.inNonblank()
+    while (ch !== null && ch !== '\n' && !isBlank(ch) && ch !== ';' && ch !== '}' && ch !== '#') {
+      b += ch
+      ch = this.inchar()
+    }
+    this.savchar(ch)
+    return b
+  }
+
+  private snarfCharClass(b: { v: string }): string | null {
+    let state = 0
+    let delim = ''
+    const addThenNext = (c: string): string | null => {
+      b.v += c
+      return this.inchar()
+    }
+    let ch = this.inchar()
+    if (ch === '^') ch = addThenNext(ch)
+    if (ch === ']') ch = addThenNext(ch)
+    for (; ; ch = addThenNext(ch)) {
+      if (ch === null || ch === '\n') return ch
+      if (ch === '.' || ch === ':' || ch === '=') {
+        if (state === 1) {
+          delim = ch
+          state = 2
+          continue
+        }
+        if (state === 2 && ch === delim) {
+          state = 3
+          continue
+        }
+      } else if (ch === '[') {
+        if (state === 0) state = 1
+        continue
+      } else if (ch === ']') {
+        if (state === 0 || state === 1) return ch
+        if (state === 3) state = 0
+      }
+      state &= ~1
+    }
+  }
+
+  // GNU's match_slash: read up to the closing delimiter. A backslash
+  // before the delimiter is dropped (so `s|a\|b||` matches a literal
+  // `a|b`), before a newline it leaves the newline, and before anything
+  // else it stays. In a regex a bracket expression is read whole, so a
+  // delimiter inside `[...]` does not end it.
+  private matchSlash(slash: string | null, regex: boolean): string | null {
+    if (slash !== null && (slash.codePointAt(0) ?? 0) > 0x7f) this.bad(BAD_DELIM)
+    const b = { v: '' }
+    let ch = this.inchar()
+    while (ch !== null && ch !== '\n') {
+      if (ch === slash) return b.v
+      if (ch === '\\') {
+        ch = this.inchar()
+        if (ch === null) break
+        if (ch !== '\n' && (ch !== slash || (!regex && ch === '&'))) b.v += '\\'
+      } else if (ch === '[' && regex) {
+        b.v += ch
+        ch = this.snarfCharClass(b)
+        if (ch !== ']') break
+      }
+      b.v += ch
+      ch = this.inchar()
+    }
+    if (ch === '\n') this.savchar(ch)
+    return null
+  }
+
+  // GNU's compile_regex: normalize_text's escapes, then regcomp in the
+  // basic or extended syntax (here the glibc translator), whose refusal
+  // is reported where the command was read, then dfa's bracket check. An
+  // `s` whose replacement names a group the regex lacks is refused too.
+  private regex(
+    pattern: string,
+    icase: boolean,
+    multiline: boolean,
+    reference = 0,
+  ): SedRegex | null {
+    if (pattern === '') {
+      if (icase || multiline) this.bad(BAD_MODIF)
+      return null
+    }
+    const normalized = this.normalizeText(pattern, true)
+    let source: string
+    let groups: number
+    try {
+      if (this.extended) {
+        // GNU sed clears RE_UNMATCHED_RIGHT_PAREN_ORD, which the POSIX
+        // extended syntax sets: an unmatched `)` is refused, unless the
+        // pattern before it is already refused for something else.
+        const close = unmatchedCloseParen(normalized)
+        if (close >= 0) {
+          translateEre(normalized.slice(0, close), PosixSyntax.EXTENDED)
+          throw new BreError(UNMATCHED_CLOSE)
+        }
+        ;[source, groups] = translateEre(normalized, PosixSyntax.EXTENDED)
+      } else [source, groups] = translateBre(normalized, true)
+    } catch (err) {
+      if (!(err instanceof BreError)) throw err
+      this.bad(err.message)
+    }
+    const re: SedRegex = { pattern, source, groups, icase, multiline }
+    try {
+      compilePosixRegex(source, sedRegexFlags(re, false))
+    } catch (err) {
+      if (!(err instanceof SyntaxError)) throw err
+      this.bad(INVALID_PATTERN)
+    }
+    if (reference > groups) {
+      this.bad(`invalid reference \\${String(reference)} on \`s' command's RHS`)
+    }
+    if (confusingBracket(normalized)) {
+      throw new SedError(`sed: ${CONFUSING_BRACKET}`, 4, [...this.wfiles])
+    }
+    return re
+  }
+
+  // GNU's normalize_text: C escapes, `\dNNN`, `\oNNN` and `\xHH` bytes
+  // (one above ASCII carried as its surrogate escape, written back as that
+  // raw byte), `\cX` control characters. In a text buffer (a/i/c and y) a
+  // backslash before any other character is dropped; in a regex it stays
+  // for regcomp, and what an escape produced is read as regex syntax, so
+  // `\x2e` is any character and `\x5c` a trailing backslash.
+  private normalizeText(buf: string, regex = false): string {
+    let out = ''
+    let i = 0
+    while (i < buf.length) {
+      const ch = buf.charAt(i)
+      if (ch !== '\\' || i + 1 >= buf.length) {
+        out += ch
+        i += 1
+        continue
+      }
+      const nx = buf.charAt(i + 1)
       i += 2
-      continue
-    }
-    buf += rest.charAt(i)
-    i += 1
-  }
-  return [decodeTextEscapes(buf + '\n'), rest.slice(i)]
-}
-
-function readLabelOrBranch(rest: string): [string, string] {
-  let label = ''
-  while (rest.length > 0) {
-    const c: string | undefined = rest[0]
-    if (c === undefined || c === ';' || c === '}' || c === '\n') break
-    label += c
-    rest = rest.slice(1)
-  }
-  return [label.trim(), rest]
-}
-
-export function parseOneCommand(rest: string): [SedCommand, string] {
-  let addrStart: SedAddr | null = null
-  let addrEnd: SedAddr | null = null
-  ;[addrStart, rest] = consumeAddress(rest)
-  if (addrStart !== null && rest.startsWith(',')) {
-    ;[addrEnd, rest] = consumeAddress(rest.slice(1))
-  }
-  // Optional address negation: `addr!command` (whitespace allowed around `!`)
-  // applies the command to every line the address does NOT select.
-  let negate = false
-  let probe = rest
-  while (probe.startsWith(' ')) probe = probe.slice(1)
-  if (probe.startsWith('!')) {
-    negate = true
-    rest = probe.slice(1)
-    while (rest.startsWith(' ')) rest = rest.slice(1)
-  }
-  if (rest.trim() === '') throw new Error('sed: missing command')
-  const ch = rest[0]
-  if (ch === '{') return [{ cmd: '{', addrStart, addrEnd, negate }, rest.slice(1)]
-  if (ch === '}') return [{ cmd: '}' }, rest.slice(1)]
-  if (ch === ':') {
-    const [label, after] = readLabelOrBranch(rest.slice(1))
-    return [{ cmd: ':', label }, after]
-  }
-  if (ch === 'b' || ch === 't') {
-    const [label, after] = readLabelOrBranch(rest.slice(1))
-    return [{ cmd: ch, label, addrStart, addrEnd, negate }, after]
-  }
-  if (ch === 's') {
-    const delim = rest[1]
-    if (delim === undefined) throw new Error('sed: missing delimiter')
-    // Read pattern and replacement up to the next delimiter, then consume only
-    // the trailing flag characters. Anything after is a separate command — a
-    // plain split() would wrongly fold it into the flags (e.g. `s/a/b/;d`).
-    let i = 2
-    // A backslash escapes the next char (incl. the delimiter: `s/a\/b/c/`).
-    const field = (): string => {
-      let value = ''
-      while (i < rest.length && rest[i] !== delim) {
-        const c = rest[i]
-        if (c === '\\' && i + 1 < rest.length) {
-          value += c + (rest[i + 1] ?? '')
-          i += 2
-          continue
-        }
-        value += c ?? ''
-        i += 1
-      }
-      i += 1
-      return value
-    }
-    const pattern = field()
-    const replacement = field()
-    let exprFlags = ''
-    while (i < rest.length) {
-      const fc = rest[i]
-      if (fc === undefined || !/[0-9gpiImMe]/.test(fc)) break
-      exprFlags += fc
-      i += 1
-    }
-    const cm = /[0-9]+/.exec(exprFlags)
-    if (cm && Number.parseInt(cm[0], 10) === 0) {
-      throw new Error("sed: number option to `s' command may not be zero")
-    }
-    return [
-      { cmd: 's', pattern, replacement, exprFlags, addrStart, addrEnd, negate },
-      rest.slice(i),
-    ]
-  }
-  if (ch === 'y') {
-    // y/src/dst/ — transliterate src[i] -> dst[i]; the two sets must match in
-    // length. Read both fields up to the delimiter (no trailing flags).
-    const delim = rest[1]
-    if (delim === undefined) throw new Error('sed: missing delimiter')
-    let i = 2
-    const field = (): string => {
-      const start = i
-      while (i < rest.length && rest[i] !== delim) i += 1
-      const value = rest.slice(start, i)
-      i += 1
-      return value
-    }
-    const pattern = field()
-    const replacement = field()
-    if (pattern.length !== replacement.length) {
-      throw new Error('sed: strings for `y` command are different lengths')
-    }
-    return [{ cmd: 'y', pattern, replacement, addrStart, addrEnd, negate }, rest.slice(i)]
-  }
-  if (ch !== undefined && SIMPLE_CMDS.has(ch)) {
-    return [{ cmd: ch, addrStart, addrEnd, negate }, rest.slice(1)]
-  }
-  if (ch === 'a' || ch === 'i' || ch === 'c') {
-    const [text, after] = readText(rest.slice(1))
-    return [{ cmd: ch, text, addrStart, addrEnd, negate }, after]
-  }
-  throw new Error(`sed: unsupported command: ${String(ch)}`)
-}
-
-export function parseProgram(expr: string): SedCommand[] {
-  const commands: SedCommand[] = []
-  // Only leading blanks go: trailing ones may belong to a/i/c text.
-  let rest = expr.replace(/^\s+/, '')
-  while (rest !== '') {
-    const first = rest[0]
-    if (first === ';' || first === '\n') {
-      rest = rest.slice(1).replace(/^\s+/, '')
-      continue
-    }
-    if (first === ' ') {
-      rest = rest.slice(1)
-      continue
-    }
-    const [cmd, after] = parseOneCommand(rest)
-    commands.push(cmd)
-    rest = after.replace(/^\s+/, '')
-  }
-  // A `}` on the line of an a/i/c text is part of the text, so `1{a x;}`
-  // leaves its block open, which GNU refuses.
-  let depth = 0
-  for (const c of commands) {
-    if (c.cmd === '{') depth += 1
-    else if (c.cmd === '}') depth -= 1
-  }
-  if (depth > 0) throw new Error("sed: unmatched `{'")
-  return commands
-}
-
-// Translate a POSIX Basic Regular Expression to the Extended syntax used by
-// the host regex engine (JS RegExp / Python re). GNU sed scripts are BRE by
-// default and ERE only under -E/-r. In BRE the bare metacharacters `( ) { } +
-// ? |` are literal and their backslashed forms are special; ERE is the
-// reverse. `^`/`$` are anchors only at the start/end (literal elsewhere) and a
-// leading `*` is literal. See issue: sed BRE/ERE support.
-export function breToEre(pat: string): string {
-  let out = ''
-  let i = 0
-  const n = pat.length
-  // True when the next character begins the regex or a subexpression (after
-  // `\(` or `\|`), where `*` is literal and `^` is an anchor.
-  let atStart = true
-  while (i < n) {
-    const ch = pat[i]
-    if (ch === undefined) break
-    if (ch === '[') {
-      // Bracket expression: copy verbatim through the closing `]`.
-      out += '['
-      let j = i + 1
-      if (pat[j] === '^') {
-        out += '^'
-        j += 1
-      }
-      if (pat[j] === ']') {
-        out += ']'
-        j += 1
-      }
-      while (j < n && pat[j] !== ']') {
-        out += pat[j] ?? ''
-        j += 1
-      }
-      if (j < n) {
-        out += ']'
-        j += 1
-      }
-      i = j
-      atStart = false
-      continue
-    }
-    if (ch === '\\') {
-      const nx = pat[i + 1]
-      if (nx === undefined) {
-        out += '\\'
-        i += 1
+      const simple = TEXT_ESCAPES[nx]
+      if (simple !== undefined) {
+        out += simple
         continue
       }
-      // Backslashed (){}+?| are the *special* forms in BRE -> emit bare (ERE).
-      if (
-        nx === '(' ||
-        nx === ')' ||
-        nx === '{' ||
-        nx === '}' ||
-        nx === '+' ||
-        nx === '?' ||
-        nx === '|'
-      ) {
-        out += nx
-        atStart = nx === '(' || nx === '|'
-        i += 2
-        continue
-      }
-      // Any other escape passes through unchanged (\. \* \[ \\ \1.. \n \t ...).
-      out += '\\' + nx
-      atStart = false
-      i += 2
-      continue
-    }
-    // Bare (){}+?| are literal in BRE -> escape for ERE.
-    if (
-      ch === '(' ||
-      ch === ')' ||
-      ch === '{' ||
-      ch === '}' ||
-      ch === '+' ||
-      ch === '?' ||
-      ch === '|'
-    ) {
-      out += '\\' + ch
-      atStart = false
-      i += 1
-      continue
-    }
-    if (ch === '*') {
-      out += atStart ? '\\*' : '*'
-      atStart = false
-      i += 1
-      continue
-    }
-    if (ch === '^') {
-      // Anchor only at the start of the regex/subexpression; literal elsewhere.
-      // A leading `^` keeps the start context so a following `*` stays literal.
-      out += atStart ? '^' : '\\^'
-      i += 1
-      continue
-    }
-    if (ch === '$') {
-      // Anchor only at the end (or before `\)` / `\|`); literal elsewhere.
-      const isEnd =
-        i === n - 1 || (pat[i + 1] === '\\' && (pat[i + 2] === ')' || pat[i + 2] === '|'))
-      out += isEnd ? '$' : '\\$'
-      atStart = false
-      i += 1
-      continue
-    }
-    out += ch
-    atStart = false
-    i += 1
-  }
-  return out
-}
-
-function compilePattern(pat: string, flags: string, extended: boolean): RegExp {
-  return compilePosixRegex(translateClasses(extended ? pat : breToEre(pat), extended), flags)
-}
-
-function addrMatches(
-  addr: SedAddr,
-  line: string,
-  lineno: number,
-  total: number,
-  extended: boolean,
-): boolean {
-  const [kind, val] = addr
-  if (kind === 'line') return lineno === Number.parseInt(val, 10)
-  if (kind === 'last') return lineno === total
-  // kind === 'regex' — the pattern space has no trailing newline, so anchors
-  // (^/$) match line content directly.
-  return compilePattern(val, '', extended).test(line)
-}
-
-/** Expand against the original captures, preserving boundary context and case. */
-function applyReplacement(repl: string, groups: readonly (string | undefined)[]): string {
-  let out = ''
-  for (let i = 0; i < repl.length; i++) {
-    const ch = repl[i]
-    if (ch === '&') out += groups[0] ?? ''
-    else if (ch === '\\' && i + 1 < repl.length) {
-      const next = repl[++i] ?? ''
-      if (/[0-9]/.test(next)) out += groups[Number(next)] ?? ''
-      else if (next === 'n') out += '\n'
-      else if (next === 't') out += '\t'
-      else out += next
-    } else out += ch ?? ''
-  }
-  return out
-}
-
-function regexReplace(
-  text: string,
-  pat: string,
-  repl: string,
-  ignoreCase: boolean,
-  global: boolean,
-  count = 1,
-  extended = false,
-): { text: string; substituted: boolean } {
-  // The pattern space excludes the line-separator newline (GNU semantics), so
-  // `^`/`$` anchor to its content directly — no stripping needed here.
-  // `count` is the 1-based occurrence the substitution starts at (GNU sed's
-  // numeric `s///N` flag, default 1). Without `g` only that single occurrence
-  // is replaced; with `g` that occurrence and every later one are. Iterate all
-  // matches and decide per match so `N` and `Ng` both work. An empty match
-  // touching the previous match is no match at all, so `s/b*/X/g` turns
-  // "abbb" into "XaX", not "XaXX".
-  const baseFlags = ignoreCase ? 'i' : ''
-  const erePat = translateClasses(extended ? pat : breToEre(pat), extended)
-  const scan = compilePosixRegex(erePat, baseFlags + 'g')
-  let n = 0
-  let lastEnd = -1
-  let substituted = false
-  const result = text.replace(scan, (m: string, ...rest: unknown[]) => {
-    const offsetIndex = rest.findIndex((arg) => typeof arg === 'number')
-    const at = rest[offsetIndex] as number
-    if (m === '' && at === lastEnd) return ''
-    if (m !== '') lastEnd = at + m.length
-    n += 1
-    const hit = global ? n >= count : n === count
-    if (hit) substituted = true
-    if (!hit) return m
-    const groups = rest
-      .slice(0, offsetIndex)
-      .map((value) => (typeof value === 'string' ? value : undefined))
-    return applyReplacement(repl, [m, ...groups])
-  })
-  return { text: result, substituted }
-}
-
-// Split into line contents WITHOUT trailing newlines (the sed pattern space
-// excludes the separator). `finalNewline` records whether the input's last
-// line ended with a newline, so output can preserve a missing final newline.
-function splitContentLines(text: string): { lines: string[]; finalNewline: boolean } {
-  if (text === '') return { lines: [], finalNewline: false }
-  const finalNewline = text.endsWith('\n')
-  const body = finalNewline ? text.slice(0, -1) : text
-  return { lines: body.split('\n'), finalNewline }
-}
-
-// `a` writes its text as read, closing newline included; `i` and `c` write
-// all of it but the last character and then a newline, as GNU's output_line
-// does, and nothing for an empty text (`a\` ending the script).
-function textLine(text: string): string {
-  return text === '' ? '' : text.slice(0, -1) + '\n'
-}
-
-export function executeProgram(
-  text: string,
-  commands: SedCommand[],
-  suppress = false,
-  extended = false,
-): string {
-  const { lines, finalNewline } = splitContentLines(text)
-  const total = lines.length
-  let hold = ''
-  const output: string[] = []
-  const labelMap = new Map<string, number>()
-  for (let idx = 0; idx < commands.length; idx++) {
-    const c = commands[idx]
-    if (c?.cmd === ':' && c.label !== undefined) labelMap.set(c.label, idx)
-  }
-  const rangeActive = new Map<number, boolean>()
-  // Trailing newline for a pattern space whose last consumed line is `ln`
-  // (1-based): every line gets one except a last line that had none on input.
-  const tailNL = (ln: number): string => (ln < total || finalNewline ? '\n' : '')
-
-  let i = 0
-  while (i < total) {
-    let pattern = lines[i] ?? ''
-    i += 1
-    let lineno = i
-    const deferred: string[] = []
-    let pc = 0
-    let deleteFlag = false
-    let substituted = false
-
-    while (pc < commands.length) {
-      const cmd = commands[pc]
-      if (cmd === undefined) {
-        pc += 1
-        continue
-      }
-      const c = cmd.cmd
-      if (c === ':' || c === '}') {
-        pc += 1
-        continue
-      }
-
-      let matched = true
-      if (cmd.addrStart !== null && cmd.addrStart !== undefined) {
-        if (cmd.addrEnd !== null && cmd.addrEnd !== undefined) {
-          const rid = pc
-          if (rangeActive.get(rid) !== true) {
-            if (addrMatches(cmd.addrStart, pattern, lineno, total, extended))
-              rangeActive.set(rid, true)
-            else matched = false
-          }
-          if (rangeActive.get(rid) === true) {
-            if (addrMatches(cmd.addrEnd, pattern, lineno, total, extended))
-              rangeActive.set(rid, false)
-          }
-        } else {
-          if (!addrMatches(cmd.addrStart, pattern, lineno, total, extended)) matched = false
-        }
-      }
-      // `addr!cmd` inverts the selection (range state above is tracked normally).
-      if (cmd.negate === true) matched = !matched
-
-      if (c === '{') {
-        if (!matched) {
-          let depth = 1
-          pc += 1
-          while (pc < commands.length && depth > 0) {
-            const next = commands[pc]
-            if (next?.cmd === '{') depth += 1
-            else if (next?.cmd === '}') depth -= 1
-            pc += 1
-          }
-          continue
-        }
-        pc += 1
-        continue
-      }
-
-      if (!matched) {
-        pc += 1
-        continue
-      }
-
-      if (c === 's') {
-        const pat = cmd.pattern ?? ''
-        const repl = cmd.replacement ?? ''
-        const ef = cmd.exprFlags ?? ''
-        const countMatch = /[0-9]+/.exec(ef)
-        const count = countMatch ? Number.parseInt(countMatch[0], 10) : 1
-        const newPattern = regexReplace(
-          pattern,
-          pat,
-          repl,
-          /[iI]/.test(ef),
-          ef.includes('g'),
-          count,
-          extended,
-        )
-        if (newPattern.substituted) substituted = true
-        pattern = newPattern.text
-        // `s///p` prints the pattern space when a substitution was made.
-        if (newPattern.substituted && ef.includes('p')) output.push(pattern + tailNL(lineno))
-      } else if (c === 'd') {
-        deleteFlag = true
-        break
-      } else if (c === 'D') {
-        const nl = pattern.indexOf('\n')
-        if (nl >= 0) {
-          pattern = pattern.slice(nl + 1)
-          pc = 0
-          continue
-        }
-        deleteFlag = true
-        break
-      } else if (c === 'p') {
-        output.push(pattern + tailNL(lineno))
-      } else if (c === 'P') {
-        const nl = pattern.indexOf('\n')
-        output.push(nl >= 0 ? pattern.slice(0, nl + 1) : pattern + tailNL(lineno))
-      } else if (c === 'N') {
-        if (i < total) {
-          pattern += '\n' + (lines[i] ?? '')
+      const base = TEXT_ESCAPE_BASES[nx]
+      if (base !== undefined) {
+        let value = 0
+        let digits = 0
+        for (let max = 1; i < buf.length && max <= 255; max *= base) {
+          const d = Number.parseInt(buf.charAt(i), 16)
+          if (Number.isNaN(d) || d >= base) break
+          value = value * base + d
+          digits += 1
           i += 1
-          lineno = i
-        } else {
-          break
         }
-      } else if (c === 'h') {
-        hold = pattern
-      } else if (c === 'H') {
-        // GNU appends newline + pattern unconditionally (empty hold -> leading
-        // newline), so `H` on the first line yields "\n<pattern>".
-        hold = hold + '\n' + pattern
-      } else if (c === 'g') {
-        pattern = hold
-      } else if (c === 'G') {
-        // GNU appends newline + hold unconditionally (empty hold -> blank line).
-        pattern = pattern + '\n' + hold
-      } else if (c === 'x') {
-        const tmp = pattern
-        pattern = hold
-        hold = tmp
-      } else if (c === 'a') {
-        deferred.push(cmd.text ?? '')
-      } else if (c === 'i') {
-        output.push(textLine(cmd.text ?? ''))
-      } else if (c === 'y') {
-        // Transliterate each char of pattern[i] -> replacement[i].
-        const from = cmd.pattern ?? ''
-        const to = cmd.replacement ?? ''
-        let outY = ''
-        for (const chr of pattern) {
-          const idx = from.indexOf(chr)
-          outY += idx >= 0 ? (to[idx] ?? chr) : chr
-        }
-        pattern = outY
-      } else if (c === 'c') {
-        // Change: delete the pattern space and emit the text. For a single
-        // address (or none) emit on each match; for a range emit once, when
-        // the range closes (or at EOF if it never does), matching GNU sed.
-        deleteFlag = true
-        const isRange = cmd.addrEnd !== null && cmd.addrEnd !== undefined
-        const rangeOpen = rangeActive.get(pc) === true
-        if (!isRange || !rangeOpen || lineno === total) {
-          output.push(textLine(cmd.text ?? ''))
-        }
-        break
-      } else if (c === 'q') {
-        output.push(pattern + tailNL(lineno))
-        return output.join('')
-      } else if (c === 'b') {
-        const label = cmd.label ?? ''
-        const target = labelMap.get(label)
-        if (label !== '' && target !== undefined) {
-          pc = target
+        out += digits === 0 ? nx : byteChar(value)
+        continue
+      }
+      if (nx === 'c') {
+        if (i >= buf.length) {
+          if (regex) out += '\\'
           continue
         }
-        break
-      } else if (c === 't') {
-        if (substituted) {
-          substituted = false
-          const label = cmd.label ?? ''
-          const target = labelMap.get(label)
-          if (label !== '' && target !== undefined) {
-            pc = target
-            continue
-          }
-          break
+        const x = buf.charAt(i)
+        const upper = x >= 'a' && x <= 'z' ? x.toUpperCase() : x
+        out += String.fromCharCode(upper.charCodeAt(0) ^ 0x40)
+        i += 1
+        if (x === '\\') {
+          if (buf.charAt(i) !== '\\') this.bad(RECURSIVE_ESCAPE_C)
+          i += 1
+        }
+        continue
+      }
+      out += regex ? '\\' + nx : nx
+    }
+    return out
+  }
+
+  // GNU's read_text. `leadin` is the text's first character, or a newline
+  // for none. The text runs to the first newline no backslash escapes and
+  // keeps that newline; a piece that ends on a backslash leaves the text
+  // pending for the next piece.
+  private readText(cmd: SedCommand | null, leadin: string | null): void {
+    if (cmd !== null) {
+      this.pendingText = ''
+      cmd.text = null
+      this.oldTextCmd = cmd
+    }
+    if (leadin === null) return
+    let pending = this.pendingText ?? ''
+    if (leadin !== '\n') pending += leadin
+    let ch = this.inchar()
+    while (ch !== null && ch !== '\n') {
+      if (ch === '\\') {
+        ch = this.inchar()
+        if (ch !== null) pending += '\\'
+      }
+      if (ch === null) {
+        this.pendingText = pending + '\n'
+        return
+      }
+      pending += ch
+      ch = this.inchar()
+    }
+    pending += '\n'
+    const target = cmd ?? this.oldTextCmd
+    if (target !== null) target.text = this.normalizeText(pending)
+    this.pendingText = null
+  }
+
+  private compileAddress(first: string | null): SedAddr | null {
+    let ch = first
+    if (ch === '/' || ch === '\\') {
+      if (ch === '\\') ch = this.inchar()
+      const b = this.matchSlash(ch, true)
+      if (b === null) this.bad(UNTERM_ADDR_RE)
+      let icase = false
+      let multiline = false
+      for (;;) {
+        ch = this.inNonblank()
+        if (ch === 'I') icase = true
+        else if (ch === 'M') multiline = true
+        else {
+          this.savchar(ch)
+          return { kind: 'regex', re: this.regex(b, icase, multiline) }
         }
       }
-
-      pc += 1
     }
+    if (isDigit(ch)) {
+      const n = this.inInteger(ch)
+      ch = this.inNonblank()
+      if (ch !== '~') {
+        this.savchar(ch)
+        return { kind: 'num', n }
+      }
+      const step = this.inInteger(this.inNonblank())
+      return step > 0 ? { kind: 'mod', first: n, step } : { kind: 'num', n }
+    }
+    if (ch === '+' || ch === '~') {
+      const step = this.inInteger(this.inNonblank())
+      if (step === 0) return { kind: 'null' }
+      return ch === '+' ? { kind: 'step', n: step } : { kind: 'stepmod', n: step }
+    }
+    if (ch === '$') return { kind: 'last' }
+    return null
+  }
 
-    if (!deleteFlag) {
-      if (!suppress) output.push(pattern + tailNL(lineno))
-      for (const d of deferred) output.push(d)
+  private markSubstOpts(sub: SedSubst): [boolean, boolean] {
+    let icase = false
+    let multiline = false
+    for (;;) {
+      const ch = this.inNonblank()
+      switch (ch) {
+        case 'i':
+        case 'I':
+          icase = true
+          break
+        case 'm':
+        case 'M':
+          multiline = true
+          break
+        case 'e':
+          this.bad(NO_EVAL)
+          break
+        case 'p':
+          if (sub.print) this.bad(EXCESS_P_OPT)
+          sub.print = true
+          break
+        case 'g':
+          if (sub.global) this.bad(EXCESS_G_OPT)
+          sub.global = true
+          break
+        case 'w':
+          sub.outf = this.openFile(true)
+          return [icase, multiline]
+        case '}':
+        case '#':
+          this.savchar(ch)
+          return [icase, multiline]
+        case null:
+        case '\n':
+        case ';':
+          return [icase, multiline]
+        case '\r':
+          if (this.inchar() === '\n') return [icase, multiline]
+          this.bad(UNKNOWN_S_OPT)
+          break
+        default:
+          if (isDigit(ch)) {
+            if (sub.numb !== 0) this.bad(EXCESS_N_OPT)
+            sub.numb = this.inInteger(ch)
+            if (sub.numb === 0) this.bad(ZERO_N_OPT)
+            break
+          }
+          this.bad(UNKNOWN_S_OPT)
+      }
     }
   }
-  return output.join('')
+
+  private compileProgram(): void {
+    if (this.pendingText !== null) this.readText(null, '\n')
+    for (;;) {
+      let ch = this.inchar()
+      while (ch === ';' || isSpace(ch)) ch = this.inchar()
+      if (ch === null) break
+      const cmd: SedCommand = { cmd: '', a1: null, a2: null, bang: false }
+      const a1 = this.compileAddress(ch)
+      if (a1 !== null) {
+        if (a1.kind === 'step' || a1.kind === 'stepmod') this.bad(BAD_STEP)
+        cmd.a1 = a1
+        ch = this.inNonblank()
+        if (ch === ',') {
+          const a2 = this.compileAddress(this.inNonblank())
+          if (a2 === null) this.bad(BAD_COMMA)
+          cmd.a2 = a2
+          ch = this.inNonblank()
+        }
+        if (
+          a1.kind === 'num' &&
+          a1.n === 0 &&
+          ((cmd.a2 === null && ch !== 'r') || (cmd.a2 !== null && cmd.a2.kind !== 'regex'))
+        ) {
+          this.bad(INVALID_LINE_0)
+        }
+      }
+      if (ch === '!') {
+        cmd.bang = true
+        ch = this.inNonblank()
+        if (ch === '!') this.bad(BAD_BANG)
+      }
+      if (ch === null) this.bad(NO_COMMAND)
+      cmd.cmd = ch
+      if (!this.compileCommand(cmd, ch)) continue
+      this.commands.push(cmd)
+    }
+  }
+
+  // Compile the command letter `ch`; false for `#` and `v`, which leave
+  // nothing in the program.
+  private compileCommand(cmd: SedCommand, ch: string): boolean {
+    switch (ch) {
+      case '#': {
+        if (cmd.a1 !== null) this.bad(NO_SHARP_ADDR)
+        let c = this.inchar()
+        if (c === 'n' && this.firstScript && this.line < 2 && this.pos === 2) {
+          this.noDefaultOutput = true
+        }
+        while (c !== null && c !== '\n') c = this.inchar()
+        return false
+      }
+      case 'v': {
+        const version = this.readLabel()
+        if (versionCompare(version === '' ? '4.0' : version, SED_VERSION) > 0) {
+          this.bad(ANCIENT_VERSION)
+        }
+        return false
+      }
+      case '{':
+        this.blocks.push({ index: this.commands.length, where: this.blockWhere() })
+        cmd.bang = !cmd.bang
+        return true
+      case '}': {
+        const open = this.blocks.pop()
+        if (open === undefined) this.bad(EXCESS_CLOSE_BRACE)
+        if (cmd.a1 !== null) this.bad(NO_CLOSE_BRACE_ADDR)
+        this.readEndOfCmd()
+        const target = this.commands[open.index]
+        if (target !== undefined) target.jump = this.commands.length
+        return true
+      }
+      case 'e':
+        this.bad(NO_EVAL)
+        return false
+      case 'a':
+      case 'i':
+      case 'c': {
+        let c = this.inNonblank()
+        if (c === null) this.bad(EXPECTED_SLASH)
+        if (c === '\\') c = this.inchar()
+        else {
+          this.savchar(c)
+          c = '\n'
+        }
+        this.readText(cmd, c)
+        return true
+      }
+      case ':': {
+        if (cmd.a1 !== null) this.bad(NO_COLON_ADDR)
+        const label = this.readLabel()
+        if (label === '') this.bad(COLON_LACKS_LABEL)
+        cmd.label = label
+        this.labels.set(label, this.commands.length)
+        return true
+      }
+      case 'T':
+      case 'b':
+      case 't':
+        cmd.label = this.readLabel()
+        this.jumps.push([this.commands.length, cmd.label])
+        return true
+      case 'Q':
+      case 'q':
+      case 'L':
+      case 'l': {
+        if ((ch === 'q' || ch === 'Q') && cmd.a2 !== null) this.bad(ONE_ADDR)
+        const c = this.inNonblank()
+        if (isDigit(c)) cmd.intArg = this.inInteger(c)
+        else {
+          cmd.intArg = -1
+          this.savchar(c)
+        }
+        this.readEndOfCmd()
+        return true
+      }
+      case '=':
+      case 'd':
+      case 'D':
+      case 'F':
+      case 'g':
+      case 'G':
+      case 'h':
+      case 'H':
+      case 'n':
+      case 'N':
+      case 'p':
+      case 'P':
+      case 'z':
+      case 'x':
+        this.readEndOfCmd()
+        return true
+      case 'r': {
+        const name = this.readFilename()
+        if (name === '') this.bad(MISSING_FILENAME)
+        cmd.fname = name
+        if (!this.rfiles.includes(name)) this.rfiles.push(name)
+        if (cmd.a1 !== null && cmd.a1.kind === 'num' && cmd.a1.n === 0 && cmd.a2 === null) {
+          cmd.a1 = { kind: 'num', n: 1 }
+          cmd.prepend = true
+        }
+        return true
+      }
+      case 'R':
+        cmd.fname = this.openFile(false)
+        return true
+      case 'W':
+      case 'w':
+        cmd.fname = this.openFile(true)
+        return true
+      case 's': {
+        const slash = this.inchar()
+        const pattern = this.matchSlash(slash, true)
+        if (pattern === null) this.bad(UNTERM_S_CMD)
+        const replacement = this.matchSlash(slash, false)
+        if (replacement === null) this.bad(UNTERM_S_CMD)
+        const sub: SedSubst = {
+          re: null,
+          replacement,
+          global: false,
+          print: false,
+          numb: 0,
+          outf: null,
+        }
+        const [icase, multiline] = this.markSubstOpts(sub)
+        sub.re = this.regex(pattern, icase, multiline, maxReference(replacement))
+        cmd.subst = sub
+        return true
+      }
+      case 'y': {
+        const slash = this.inchar()
+        const src = this.matchSlash(slash, false)
+        if (src === null) this.bad(UNTERM_Y_CMD)
+        const dst = this.matchSlash(slash, false)
+        if (dst === null) this.bad(UNTERM_Y_CMD)
+        const ySrc = Array.from(this.normalizeText(src))
+        const yDst = Array.from(this.normalizeText(dst))
+        if (ySrc.length !== yDst.length) this.bad(Y_CMD_LEN)
+        cmd.ySrc = ySrc
+        cmd.yDst = yDst
+        this.readEndOfCmd()
+        return true
+      }
+      default:
+        this.bad(`unknown command: \`${firstByte(ch)}'`, encodeText(ch).length - 1)
+    }
+  }
+
+  // Where an unmatched `{` is reported: GNU keeps the block's line but no
+  // longer has a position within the expression, so it says char 0.
+  private blockWhere(): string {
+    if (this.name !== null) return `file ${this.name} line ${String(this.line)}`
+    return `-e expression #${String(this.exprCount)}, char 0`
+  }
+
+  private checkFinal(): void {
+    const open = this.blocks[this.blocks.length - 1]
+    if (open !== undefined) {
+      throw new SedError(`sed: ${open.where}: ${EXCESS_OPEN_BRACE}`, 1, [...this.wfiles])
+    }
+    if (this.pendingText !== null && this.oldTextCmd !== null) {
+      this.oldTextCmd.text = this.pendingText === '' ? null : this.pendingText
+      this.pendingText = null
+    }
+    for (const [index, label] of this.jumps) {
+      const target = this.labels.get(label)
+      const cmd = this.commands[index]
+      if (cmd === undefined) continue
+      if (target !== undefined) cmd.jump = target
+      else if (label !== '') {
+        throw new SedError(`sed: can't find label for jump to \`${label}'`, 4, [...this.wfiles])
+      } else cmd.jump = this.commands.length
+    }
+  }
+}
+
+/**
+ * Compile a sed script given as its -e and -f pieces, as GNU sed 4.9 does.
+ *
+ * Throws SedError with GNU's wording, `sed: -e expression #N, char M:` or
+ * `sed: file F line L:` before the reason.
+ */
+export function compileScript(pieces: readonly SedScriptPiece[], extended = false): SedProgram {
+  return new Compiler(extended).compile(pieces)
+}
+
+/**
+ * Whether the script ever asks if more input follows. GNU asks (`test_eof`)
+ * for a `$` address and for `n` and `N`, and that lookahead passes over a
+ * directory to the operands after it; only a new cycle reads the directory
+ * and fails. So only a script that looks ahead needs the operands after a
+ * directory.
+ */
+export function looksAhead(program: SedProgram): boolean {
+  return program.commands.some(
+    (cmd) =>
+      cmd.cmd === 'n' || cmd.cmd === 'N' || cmd.a1?.kind === 'last' || cmd.a2?.kind === 'last',
+  )
+}
+
+// The highest group an `s` replacement names (`\1`..`\9`), 0 for none.
+function maxReference(replacement: string): number {
+  let max = 0
+  for (let i = 0; i < replacement.length; i++) {
+    if (replacement.charAt(i) !== '\\') continue
+    const d = replacement.charAt(i + 1)
+    if (d >= '0' && d <= '9') max = Math.max(max, Number(d))
+    i += 1
+  }
+  return max
+}
+
+// Where an ERE's first `)` with no open group sits, or -1.
+function unmatchedCloseParen(pattern: string): number {
+  let depth = 0
+  let i = 0
+  while (i < pattern.length) {
+    const ch = pattern.charAt(i)
+    if (ch === '\\') i += 2
+    else if (ch === '[') i = bracketEnd(pattern, i)
+    else {
+      if (ch === '(') depth += 1
+      else if (ch === ')') {
+        if (depth === 0) return i
+        depth -= 1
+      }
+      i += 1
+    }
+  }
+  return -1
+}
+
+// The index just past the bracket expression opening at `start`.
+function bracketEnd(pattern: string, start: number): number {
+  let j = start + 1
+  if (pattern.charAt(j) === '^') j += 1
+  if (pattern.charAt(j) === ']') j += 1
+  while (j < pattern.length && pattern.charAt(j) !== ']') {
+    const open = pattern.charAt(j + 1)
+    if (pattern.charAt(j) === '[' && (open === ':' || open === '.' || open === '=')) {
+      const close = pattern.indexOf(`${open}]`, j + 2)
+      j = close < 0 ? pattern.length : close + 2
+    } else j += 1
+  }
+  return j + 1
+}
+
+/**
+ * dfa.c's check for `[:space:]` written without its outer brackets: a
+ * bracket expression that starts and ends with `:`, holds some other
+ * character, and has no range or class inside. glibc accepts it (as the
+ * set of those characters); GNU sed then refuses it.
+ */
+function confusingBracket(pattern: string): boolean {
+  const chars = Array.from(pattern)
+  let i = 0
+  while (i < chars.length) {
+    const ch = chars[i]
+    if (ch === '\\') {
+      i += 2
+      continue
+    }
+    if (ch !== '[') {
+      i += 1
+      continue
+    }
+    let j = i + 1
+    if (chars[j] === '^') j += 1
+    let state = chars[j] === ':' ? 1 : 0
+    let first = true
+    for (;;) {
+      const c = chars[j]
+      if (c === undefined) return false
+      if (c === ']' && !first) {
+        j += 1
+        break
+      }
+      first = false
+      state &= ~2
+      const open = chars[j + 1]
+      if (c === '[' && (open === ':' || open === '.' || open === '=')) {
+        let k = j + 2
+        while (k < chars.length && !(chars[k] === open && chars[k + 1] === ']')) k += 1
+        j = k + 2
+        state |= 8
+        continue
+      }
+      const end = chars[j + 2]
+      if (chars[j + 1] === '-' && end !== undefined && end !== ']') {
+        state |= 8
+        j += 3
+        continue
+      }
+      state |= c === ':' ? 2 : 4
+      j += 1
+    }
+    if (state === 7) return true
+    i = j
+  }
+  return false
 }

@@ -12,7 +12,7 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import { RedirKind } from './nodes.ts'
+import { GetlineKind, RedirKind } from './nodes.ts'
 
 import {
   charLength,
@@ -25,12 +25,13 @@ import {
   safePow,
   safeSqrt,
   safeTrig,
+  splitAssignment,
   splitRecord,
   sprintf,
   substitute,
   substr,
 } from './builtins.ts'
-import { AwkRuntimeError } from './errors.ts'
+import { AwkIOError, AwkRuntimeError } from './errors.ts'
 import {
   RuleKind,
   type Assign,
@@ -43,6 +44,7 @@ import {
   type Expr,
   type For,
   type ForIn,
+  type Getline,
   type IncDec,
   type Logical,
   type Print,
@@ -52,7 +54,9 @@ import {
   type Stmt,
   type While,
 } from './nodes.ts'
+import { RecordReader } from './reader.ts'
 import { compileEre, searchFrom } from './regex.ts'
+import type { AwkHost } from './types.ts'
 import {
   UNINIT,
   ValueKind,
@@ -99,16 +103,20 @@ const ARITY: Readonly<Record<string, number>> = {
   sub: 2,
   gsub: 2,
   substr: 2,
+  system: 1,
   tolower: 1,
   toupper: 1,
 }
 
 const STDOUT_NAMES: ReadonlySet<string> = new Set(['/dev/stdout', '-'])
 const STDERR_NAME = '/dev/stderr'
+const PROGRAM_NAME = 'awk'
 
 const MAX_CALL_DEPTH = 100
 
 const PLAIN_PRINT: Print = { type: 'Print', args: [], redirect: null }
+
+const ENC = new TextEncoder()
 
 class NextRecord extends Error {}
 
@@ -144,13 +152,51 @@ interface Frame {
   readonly tables: Map<string, AwkArray>
 }
 
+/** A `cmd | getline` stream: the command's output records and its exit status. */
+export interface InputPipe {
+  readonly reader: RecordReader
+  readonly status: number
+}
+
+function concat(parts: readonly Uint8Array[]): Uint8Array {
+  let size = 0
+  for (const part of parts) size += part.byteLength
+  const out = new Uint8Array(size)
+  let offset = 0
+  for (const part of parts) {
+    out.set(part, offset)
+    offset += part.byteLength
+  }
+  return out
+}
+
+/**
+ * Run one awk program against the streams its host opens. Every stream
+ * the program names goes through `host`: the main input operands,
+ * `getline < file`, output files and the command pipes. Output is
+ * buffered the way mawk 1.3.4 buffers it: standard output waits while an
+ * output pipe is open, since the pipe's command runs when it is closed
+ * and what it prints comes first; running any command (a new pipe,
+ * `system()`) flushes it, as mawk flushes before it forks. `argv` is the
+ * operands as typed, ARGV[1] onward.
+ */
 export class Interpreter {
   private readonly program: Program
+  private readonly host: AwkHost
   private readonly globals = new Map<string, Value>()
   private readonly tables = new Map<string, AwkArray>()
   private readonly frames: Frame[] = []
-  private output: [string | null, string, boolean][] = []
-  private readonly openFiles = new Set<string>()
+  private readonly out: Uint8Array[] = []
+  private readonly held: Uint8Array[] = []
+  private readonly err: Uint8Array[] = []
+  private readonly outFiles = new Map<string, string[]>()
+  private readonly outPipes = new Map<string, string[]>()
+  private readonly inFiles = new Map<string, RecordReader>()
+  private readonly inPipes = new Map<string, InputPipe>()
+  private main: RecordReader | null = null
+  private mainName = ''
+  private argIndex = 0
+  private readOperand = false
   private record = ''
   private recordFs = ' '
   private recordParagraph = false
@@ -161,13 +207,22 @@ export class Interpreter {
   private readonly rangeActive = new Map<number, boolean>()
   private randState = 0
   private seed = 0
-  skipFile = false
   exitCode = 0
 
-  constructor(program: Program, assignments: Readonly<Record<string, string>> = {}) {
+  constructor(
+    program: Program,
+    host: AwkHost,
+    argv: readonly string[] = [],
+    assignments: Readonly<Record<string, string>> = {},
+  ) {
     this.program = program
+    this.host = host
     for (const [name, value] of Object.entries(SCALAR_DEFAULTS)) this.globals.set(name, text(value))
     for (const [name, raw] of Object.entries(assignments)) this.globals.set(name, strnum(raw))
+    const table: AwkArray = new Map([['0', text(PROGRAM_NAME)]])
+    argv.forEach((operand, position) => table.set(String(position + 1), strnum(operand)))
+    this.tables.set('ARGV', table)
+    this.globals.set('ARGC', num(argv.length + 1))
   }
 
   special(name: string): string {
@@ -241,10 +296,83 @@ export class Interpreter {
    * restarts while NR keeps running, which range patterns keyed on FNR
    * depend on.
    */
-  startFile(name: string): void {
+  private startFile(name: string): void {
     this.globals.set('FILENAME', text(name))
+    this.mainName = name
     this.fnr = 0
-    this.skipFile = false
+  }
+
+  private reader(source: string, index: number | null): RecordReader {
+    return new RecordReader(this.host.openInput(source, index), () => this.special('RS'))
+  }
+
+  /**
+   * Advance the main input to the next operand that names a file. ARGV is
+   * read as it stands when each operand is reached, as POSIX requires: an
+   * emptied or deleted slot is skipped, a `var=value` slot is assigned
+   * there, and a slot the program filled is read. With no file operand at
+   * all the main input is stdin, named `-` in FILENAME (mawk 1.3.4).
+   * Returns whether there was one more stream to read.
+   */
+  private openOperand(): boolean {
+    const argv = this.getArray('ARGV')
+    while (this.argIndex + 1 < toIndex(toNum(this.getVar('ARGC')))) {
+      this.argIndex += 1
+      const slot = argv.get(String(this.argIndex))
+      if (slot === undefined) continue
+      const operand = toStr(slot, this.convfmt())
+      if (operand === '') continue
+      const assignment = splitAssignment(operand)
+      if (assignment !== null) {
+        this.setVar(assignment[0], strnum(assignment[1]))
+        continue
+      }
+      this.readOperand = true
+      this.startFile(operand)
+      this.main = this.reader(operand, this.argIndex)
+      return true
+    }
+    if (this.readOperand) return false
+    this.readOperand = true
+    this.startFile('-')
+    this.main = this.reader('-', null)
+    return true
+  }
+
+  /**
+   * Read the next main-input record, counting it in NR and FNR. This is
+   * what the main loop and a plain `getline` both read, so a getline takes
+   * the record the next cycle would have seen, and crosses into the next
+   * operand the same way. An operand that cannot be opened ends the run
+   * (mawk 1.3.4, exit 2).
+   */
+  async nextRecord(): Promise<string | null> {
+    for (;;) {
+      if (this.main !== null) {
+        let record: string | null
+        try {
+          record = await this.main.next()
+        } catch (err) {
+          if (!(err instanceof AwkIOError)) throw err
+          throw new AwkRuntimeError(`awk: cannot open "${this.mainName}" (${err.detail})`)
+        }
+        if (record !== null) {
+          this.nr += 1
+          this.fnr += 1
+          return record
+        }
+        await this.main.close()
+        this.main = null
+      }
+      if (!this.openOperand()) return null
+    }
+  }
+
+  /** Abandon the rest of the current operand, as nextfile does. */
+  private async skipFile(): Promise<void> {
+    if (this.main === null) return
+    await this.main.close()
+    this.main = null
   }
 
   private frame(): Frame | null {
@@ -292,20 +420,43 @@ export class Interpreter {
     return array
   }
 
-  private subscript(subs: readonly Expr[]): string {
-    return subs.map((s) => toStr(this.eval(s), this.convfmt())).join(this.special('SUBSEP'))
+  private async subscript(subs: readonly Expr[]): Promise<string> {
+    const keys: string[] = []
+    for (const sub of subs)
+      keys.push(toStr(this.leaf(sub) ?? (await this.eval(sub)), this.convfmt()))
+    return keys.join(this.special('SUBSEP'))
   }
 
-  private regexSource(node: Expr): string {
+  private async regexSource(node: Expr): Promise<string> {
     if (node.type === 'Regex') return node.pattern
-    return toStr(this.eval(node), this.convfmt())
+    return toStr(await this.eval(node), this.convfmt())
   }
 
   private found(pattern: string, subject: string): boolean {
     return searchFrom(compileEre(pattern), subject, 0) !== null
   }
 
-  private eval(node: Expr): Value {
+  /**
+   * The value of a node that cannot suspend (a constant, a variable, a
+   * constant field), read without a round trip through the event loop;
+   * undefined for any other node, which `eval` answers.
+   */
+  private leaf(node: Expr): Value | undefined {
+    switch (node.type) {
+      case 'Num':
+        return num(node.value)
+      case 'Str':
+        return text(node.value)
+      case 'Var':
+        return this.getVar(node.name)
+      case 'Field':
+        return node.index.type === 'Num' ? this.getField(toIndex(node.index.value)) : undefined
+      default:
+        return undefined
+    }
+  }
+
+  private async eval(node: Expr): Promise<Value> {
     switch (node.type) {
       case 'Num':
         return num(node.value)
@@ -316,10 +467,10 @@ export class Interpreter {
       case 'Var':
         return this.getVar(node.name)
       case 'Field':
-        return this.getField(toIndex(toNum(this.eval(node.index))))
+        return this.getField(toIndex(toNum(this.leaf(node.index) ?? (await this.eval(node.index)))))
       case 'ArrayRef': {
         const array = this.getArray(node.name)
-        const key = this.subscript(node.subscripts)
+        const key = await this.subscript(node.subscripts)
         const held = array.get(key)
         if (held !== undefined) return held
         array.set(key, UNINIT)
@@ -330,52 +481,103 @@ export class Interpreter {
       case 'Binary':
         return this.evalBinary(node)
       case 'Unary': {
-        const value = toNum(this.eval(node.operand))
+        const value = toNum(await this.eval(node.operand))
         return num(node.op === '-' ? -value : value)
       }
       case 'Not':
-        return num(isTrue(this.eval(node.operand)) ? 0 : 1)
+        return num(isTrue(await this.eval(node.operand)) ? 0 : 1)
       case 'Concat': {
-        const left = toStr(this.eval(node.left), this.convfmt())
-        const right = toStr(this.eval(node.right), this.convfmt())
+        const left = toStr(this.leaf(node.left) ?? (await this.eval(node.left)), this.convfmt())
+        const right = toStr(this.leaf(node.right) ?? (await this.eval(node.right)), this.convfmt())
         return text(left + right)
       }
       case 'Compare':
         return this.evalCompare(node)
       case 'MatchOp': {
-        const subject = toStr(this.eval(node.left), this.convfmt())
-        const hit = this.found(this.regexSource(node.right), subject)
+        const subject = toStr(await this.eval(node.left), this.convfmt())
+        const hit = this.found(await this.regexSource(node.right), subject)
         return num(hit !== node.negated ? 1 : 0)
       }
       case 'Logical':
         return this.evalLogical(node)
       case 'Ternary':
-        return this.eval(isTrue(this.eval(node.cond)) ? node.then : node.other)
+        return this.eval(isTrue(await this.eval(node.cond)) ? node.then : node.other)
       case 'IncDec':
         return this.evalIncDec(node)
       case 'InArray':
-        return num(this.getArray(node.name).has(this.subscript(node.subscripts)) ? 1 : 0)
+        return num(this.getArray(node.name).has(await this.subscript(node.subscripts)) ? 1 : 0)
       case 'BuiltinCall':
         return this.evalBuiltin(node)
       case 'Call':
         return this.callFunction(node)
       case 'Getline':
-        throw new AwkRuntimeError('awk: getline is not supported in mirage')
+        return this.evalGetline(node)
     }
   }
 
-  private evalLogical(node: Logical): Value {
-    const left = isTrue(this.eval(node.left))
+  /**
+   * Read one record into $0 or a variable: 1, 0 at EOF, -1 on error. A
+   * plain getline reads the main input and counts NR and FNR; a file or a
+   * command does not, as in mawk 1.3.4, which leaves NR alone for
+   * `cmd | getline` too. A file that cannot be opened or read answers -1
+   * without a message.
+   */
+  private async evalGetline(node: Getline): Promise<Value> {
+    let record: string | null
+    if (node.kind === GetlineKind.PLAIN || node.source === null) {
+      record = await this.nextRecord()
+    } else {
+      const name = toStr(await this.eval(node.source), this.convfmt())
+      if (node.kind === GetlineKind.FILE) {
+        let reader = this.inFiles.get(name)
+        if (reader === undefined) {
+          reader = this.reader(name, null)
+          this.inFiles.set(name, reader)
+        }
+        try {
+          record = await reader.next()
+        } catch (err) {
+          if (!(err instanceof AwkIOError)) throw err
+          this.inFiles.delete(name)
+          return num(-1)
+        }
+      } else {
+        record = await (await this.inputPipe(name)).reader.next()
+      }
+    }
+    if (record === null) return num(0)
+    if (node.target === null) this.setRecord(record)
+    else await this.assignTo(node.target, strnum(record))
+    return num(1)
+  }
+
+  /** The stream `command | getline` reads, running the command on first use. */
+  private async inputPipe(command: string): Promise<InputPipe> {
+    let pipe = this.inPipes.get(command)
+    if (pipe === undefined) {
+      await this.beforeCommand()
+      const run = await this.host.run(command, null)
+      this.err.push(run.stderr)
+      pipe = { reader: new RecordReader(run.stdout, () => this.special('RS')), status: run.status }
+      this.inPipes.set(command, pipe)
+    }
+    return pipe
+  }
+
+  private async evalLogical(node: Logical): Promise<Value> {
+    const left = isTrue(await this.eval(node.left))
     if (node.op === '&&') {
       if (!left) return num(0)
-      return num(isTrue(this.eval(node.right)) ? 1 : 0)
+      return num(isTrue(await this.eval(node.right)) ? 1 : 0)
     }
     if (left) return num(1)
-    return num(isTrue(this.eval(node.right)) ? 1 : 0)
+    return num(isTrue(await this.eval(node.right)) ? 1 : 0)
   }
 
-  private evalCompare(node: Compare): Value {
-    const order = compare(this.eval(node.left), this.eval(node.right), this.convfmt())
+  private async evalCompare(node: Compare): Promise<Value> {
+    const left = this.leaf(node.left) ?? (await this.eval(node.left))
+    const right = this.leaf(node.right) ?? (await this.eval(node.right))
+    const order = compare(left, right, this.convfmt())
     let hit: boolean
     if (node.op === '<') hit = order < 0
     else if (node.op === '<=') hit = order <= 0
@@ -401,40 +603,42 @@ export class Interpreter {
     return safePow(lhs, rhs)
   }
 
-  private evalBinary(node: Binary): Value {
-    const lhs = toNum(this.eval(node.left))
-    const rhs = toNum(this.eval(node.right))
+  private async evalBinary(node: Binary): Promise<Value> {
+    const lhs = toNum(this.leaf(node.left) ?? (await this.eval(node.left)))
+    const rhs = toNum(this.leaf(node.right) ?? (await this.eval(node.right)))
     return num(this.arith(node.op, lhs, rhs, ''))
   }
 
-  private assignTo(target: Expr, value: Value): Value {
+  private async assignTo(target: Expr, value: Value): Promise<Value> {
     if (target.type === 'Var') {
       this.setVar(target.name, value)
       return value
     }
     if (target.type === 'Field') {
-      const index = toIndex(toNum(this.eval(target.index)))
+      const index = toIndex(toNum(this.leaf(target.index) ?? (await this.eval(target.index))))
       this.setField(index, toStr(value, this.convfmt()))
       return value
     }
     if (target.type === 'ArrayRef') {
-      this.getArray(target.name).set(this.subscript(target.subscripts), value)
+      this.getArray(target.name).set(await this.subscript(target.subscripts), value)
       return value
     }
     throw new AwkRuntimeError('awk: assignment to a non-lvalue')
   }
 
-  private evalAssign(node: Assign): Value {
-    if (node.op === '=') return this.assignTo(node.target, this.eval(node.value))
-    const current = toNum(this.eval(node.target))
-    const operand = toNum(this.eval(node.value))
+  private async evalAssign(node: Assign): Promise<Value> {
+    if (node.op === '=') {
+      return this.assignTo(node.target, this.leaf(node.value) ?? (await this.eval(node.value)))
+    }
+    const current = toNum(this.leaf(node.target) ?? (await this.eval(node.target)))
+    const operand = toNum(this.leaf(node.value) ?? (await this.eval(node.value)))
     return this.assignTo(node.target, num(this.arith(node.op.slice(0, -1), current, operand, '=')))
   }
 
-  private evalIncDec(node: IncDec): Value {
-    const current = toNum(this.eval(node.target))
+  private async evalIncDec(node: IncDec): Promise<Value> {
+    const current = toNum(this.leaf(node.target) ?? (await this.eval(node.target)))
     const updated = current + (node.op === '++' ? 1 : -1)
-    this.assignTo(node.target, num(updated))
+    await this.assignTo(node.target, num(updated))
     return num(node.pre ? updated : current)
   }
 
@@ -444,15 +648,15 @@ export class Interpreter {
     return node
   }
 
-  private numArg(args: readonly Expr[], position: number): number {
-    return toNum(this.eval(this.arg(args, position)))
+  private async numArg(args: readonly Expr[], position: number): Promise<number> {
+    return toNum(await this.eval(this.arg(args, position)))
   }
 
-  private strArg(args: readonly Expr[], position: number): string {
-    return toStr(this.eval(this.arg(args, position)), this.convfmt())
+  private async strArg(args: readonly Expr[], position: number): Promise<string> {
+    return toStr(await this.eval(this.arg(args, position)), this.convfmt())
   }
 
-  private evalBuiltin(node: BuiltinCall): Value {
+  private async evalBuiltin(node: BuiltinCall): Promise<Value> {
     const name = node.name
     const args = node.args
     if (name === 'length') return this.builtinLength(args)
@@ -460,12 +664,15 @@ export class Interpreter {
     if (arity !== undefined && args.length < arity) {
       throw new AwkRuntimeError(`awk: not enough arguments to ${name}`)
     }
-    if (name === 'sin' || name === 'cos') return num(safeTrig(this.numArg(args, 0), name))
-    if (name === 'exp') return num(safeExp(this.numArg(args, 0)))
-    if (name === 'sqrt') return num(safeSqrt(this.numArg(args, 0)))
-    if (name === 'log') return num(safeLog(this.numArg(args, 0)))
-    if (name === 'int') return num(Math.trunc(this.numArg(args, 0)))
-    if (name === 'atan2') return num(Math.atan2(this.numArg(args, 0), this.numArg(args, 1)))
+    if (name === 'sin' || name === 'cos') return num(safeTrig(await this.numArg(args, 0), name))
+    if (name === 'exp') return num(safeExp(await this.numArg(args, 0)))
+    if (name === 'sqrt') return num(safeSqrt(await this.numArg(args, 0)))
+    if (name === 'log') return num(safeLog(await this.numArg(args, 0)))
+    if (name === 'int') return num(Math.trunc(await this.numArg(args, 0)))
+    if (name === 'atan2') {
+      const left = await this.numArg(args, 0)
+      return num(Math.atan2(left, await this.numArg(args, 1)))
+    }
     if (name === 'rand') {
       const [state, drawn] = nextRandom(this.randState)
       this.randState = state
@@ -473,40 +680,46 @@ export class Interpreter {
     }
     if (name === 'srand') {
       const previous = this.seed
-      this.seed = args.length > 0 ? toIndex(this.numArg(args, 0)) : 0
+      this.seed = args.length > 0 ? toIndex(await this.numArg(args, 0)) : 0
       this.randState = Number(BigInt.asUintN(32, BigInt(this.seed)))
       return num(previous)
     }
-    if (name === 'index') return num(indexOf(this.strArg(args, 0), this.strArg(args, 1)))
+    if (name === 'index') {
+      const haystack = await this.strArg(args, 0)
+      return num(indexOf(haystack, await this.strArg(args, 1)))
+    }
     if (name === 'substr') {
-      const subject = this.strArg(args, 0)
-      const start = this.numArg(args, 1)
-      const span = args.length > 2 ? this.numArg(args, 2) : null
+      const subject = await this.strArg(args, 0)
+      const start = await this.numArg(args, 1)
+      const span = args.length > 2 ? await this.numArg(args, 2) : null
       return text(substr(subject, start, span))
     }
-    if (name === 'toupper') return text(this.strArg(args, 0).toUpperCase())
-    if (name === 'tolower') return text(this.strArg(args, 0).toLowerCase())
+    if (name === 'toupper') return text((await this.strArg(args, 0)).toUpperCase())
+    if (name === 'tolower') return text((await this.strArg(args, 0)).toLowerCase())
     if (name === 'sprintf') {
-      const fmt = this.strArg(args, 0)
-      const rest = args.slice(1).map((a) => this.eval(a))
+      const fmt = await this.strArg(args, 0)
+      const rest: Value[] = []
+      for (const a of args.slice(1)) rest.push(await this.eval(a))
       return text(sprintf(fmt, rest, this.convfmt()))
     }
     if (name === 'match') {
-      const subject = this.strArg(args, 0)
-      const [start, length] = matchPosition(this.regexSource(this.arg(args, 1)), subject)
+      const subject = await this.strArg(args, 0)
+      const [start, length] = matchPosition(await this.regexSource(this.arg(args, 1)), subject)
       this.globals.set('RSTART', num(start))
       this.globals.set('RLENGTH', num(length))
       return num(start)
     }
     if (name === 'sub' || name === 'gsub') return this.builtinSub(node, name === 'gsub')
     if (name === 'split') return this.builtinSplit(args)
-    if (name === 'close') return num(this.openFiles.delete(this.strArg(args, 0)) ? 0 : -1)
-    if (name === 'fflush') return num(0)
-    if (name === 'system') throw new AwkRuntimeError('awk: system() is not supported in mirage')
+    if (name === 'close') return num(await this.closeStream(await this.strArg(args, 0)))
+    if (name === 'fflush') {
+      return num(await this.fflush(args.length > 0 ? await this.strArg(args, 0) : null))
+    }
+    if (name === 'system') return num(await this.system(await this.strArg(args, 0)))
     throw new AwkRuntimeError(`awk: calling undefined function ${name}`)
   }
 
-  private builtinLength(args: readonly Expr[]): Value {
+  private async builtinLength(args: readonly Expr[]): Promise<Value> {
     const target = args[0]
     if (target === undefined) return num(charLength(this.ensureRecord()))
     if (target.type === 'Var') {
@@ -515,22 +728,22 @@ export class Interpreter {
       const array = known.get(target.name)
       if (array !== undefined) return num(array.size)
     }
-    return num(charLength(toStr(this.eval(target), this.convfmt())))
+    return num(charLength(toStr(await this.eval(target), this.convfmt())))
   }
 
-  private builtinSub(node: BuiltinCall, globally: boolean): Value {
+  private async builtinSub(node: BuiltinCall, globally: boolean): Promise<Value> {
     const args = node.args
-    const pattern = this.regexSource(this.arg(args, 0))
-    const template = this.strArg(args, 1)
+    const pattern = await this.regexSource(this.arg(args, 0))
+    const template = await this.strArg(args, 1)
     const target: Expr = args[2] ?? { type: 'Field', index: { type: 'Num', value: 0 } }
-    const subject = toStr(this.eval(target), this.convfmt())
+    const subject = toStr(await this.eval(target), this.convfmt())
     const [count, result] = substitute(pattern, template, subject, globally)
-    if (count > 0) this.assignTo(target, text(result))
+    if (count > 0) await this.assignTo(target, text(result))
     return num(count)
   }
 
-  private builtinSplit(args: readonly Expr[]): Value {
-    const subject = this.strArg(args, 0)
+  private async builtinSplit(args: readonly Expr[]): Promise<Value> {
+    const subject = await this.strArg(args, 0)
     const holder = this.arg(args, 1)
     if (holder.type !== 'Var' && holder.type !== 'ArrayRef') {
       throw new AwkRuntimeError('awk: split() needs an array')
@@ -538,13 +751,13 @@ export class Interpreter {
     const array = this.getArray(holder.name)
     array.clear()
     const third = args[2]
-    const separator = third !== undefined ? this.regexSource(third) : this.special('FS')
+    const separator = third !== undefined ? await this.regexSource(third) : this.special('FS')
     const parts = splitRecord(subject, separator)
     parts.forEach((part, position) => array.set(String(position + 1), strnum(part)))
     return num(parts.length)
   }
 
-  private callFunction(node: Call): Value {
+  private async callFunction(node: Call): Promise<Value> {
     const definition = this.program.functions.get(node.name)
     if (definition === undefined) {
       throw new AwkRuntimeError(`awk: calling undefined function ${node.name}`)
@@ -559,18 +772,18 @@ export class Interpreter {
       scalars: new Map(),
       tables: new Map(),
     }
-    definition.params.forEach((param, position) => {
+    for (const [position, param] of definition.params.entries()) {
       const argument = node.args[position]
-      if (argument === undefined) return
+      if (argument === undefined) continue
       if (argument.type === 'Var' && this.isArrayName(argument.name)) {
         frame.tables.set(param, this.getArray(argument.name))
       } else {
-        frame.scalars.set(param, this.eval(argument))
+        frame.scalars.set(param, await this.eval(argument))
       }
-    })
+    }
     this.frames.push(frame)
     try {
-      this.execStmt(definition.body)
+      await this.execStmt(definition.body)
     } catch (err) {
       if (err instanceof ReturnValue) return err.value
       throw err
@@ -592,65 +805,201 @@ export class Interpreter {
     return !this.globals.has(name) && !COUNTERS.has(name)
   }
 
-  private write(body: string, node: Print | Printf): void {
+  /**
+   * Buffer text for standard output. While an output pipe is open the
+   * text waits, since the pipe's command prints ahead of it when it runs;
+   * once held, later text waits behind it.
+   */
+  private stdout(body: string): void {
+    if (this.outPipes.size > 0 || this.held.length > 0) this.held.push(ENC.encode(body))
+    else this.out.push(ENC.encode(body))
+  }
+
+  /** Let held standard output go, as a flush of stdout does. */
+  private release(): void {
+    this.out.push(...this.held)
+    this.held.length = 0
+  }
+
+  /** Write through the host, a failure ending the run. */
+  private async writeFile(name: string, body: string, append: boolean): Promise<void> {
+    try {
+      await this.host.writeFile(name, body, append)
+    } catch (err) {
+      if (!(err instanceof AwkIOError)) throw err
+      throw new AwkRuntimeError(`awk: cannot open "${name}" for output (${err.detail})`)
+    }
+  }
+
+  private async flushFile(name: string): Promise<void> {
+    const pending = this.outFiles.get(name)
+    if (pending === undefined || pending.length === 0) return
+    const body = pending.join('')
+    pending.length = 0
+    await this.writeFile(name, body, true)
+  }
+
+  private async flushFiles(): Promise<void> {
+    for (const name of [...this.outFiles.keys()]) await this.flushFile(name)
+  }
+
+  /**
+   * Flush what a command about to run must see: mawk flushes its output
+   * before it forks, so the command reads the files awk wrote and prints
+   * after awk's standard output.
+   */
+  private async beforeCommand(): Promise<void> {
+    await this.flushFiles()
+    this.release()
+  }
+
+  /**
+   * Emit output to stdout or to a redirection target. A file opened with
+   * `>` is emptied when it is opened, and what is printed to it is
+   * buffered until a flush, a close or the end of the record, so reading
+   * it back before closing it reads what was flushed.
+   */
+  private async write(body: string, node: Print | Printf): Promise<void> {
     const redirect = node.redirect
     if (redirect === null) {
-      this.output.push([null, body, false])
+      this.stdout(body)
       return
     }
-    const name = toStr(this.eval(redirect.target), this.convfmt())
+    const name = toStr(await this.eval(redirect.target), this.convfmt())
     if (redirect.kind === RedirKind.PIPE) {
-      throw new AwkRuntimeError('awk: output pipes are not supported in mirage')
+      let pipe = this.outPipes.get(name)
+      if (pipe === undefined) {
+        await this.beforeCommand()
+        pipe = []
+        this.outPipes.set(name, pipe)
+      }
+      pipe.push(body)
+      return
     }
     if (STDOUT_NAMES.has(name)) {
-      this.output.push([null, body, false])
+      this.stdout(body)
       return
     }
     if (name === STDERR_NAME) {
-      this.output.push([STDERR_NAME, body, false])
+      this.err.push(ENC.encode(body))
       return
     }
-    const append = this.openFiles.has(name) || redirect.kind === RedirKind.APPEND
-    this.openFiles.add(name)
-    this.output.push([name, body, append])
+    let pending = this.outFiles.get(name)
+    if (pending === undefined) {
+      if (redirect.kind === RedirKind.FILE) await this.writeFile(name, '', false)
+      pending = []
+      this.outFiles.set(name, pending)
+    }
+    pending.push(body)
   }
 
-  private execStmt(node: Stmt): void {
+  /** Run an output pipe's command on everything printed to it. */
+  private async closeOutPipe(command: string): Promise<number> {
+    const body = (this.outPipes.get(command) ?? []).join('')
+    this.outPipes.delete(command)
+    await this.flushFiles()
+    const run = await this.host.run(command, ENC.encode(body))
+    this.out.push(run.stdout)
+    this.err.push(run.stderr)
+    return run.status
+  }
+
+  /**
+   * Close whatever the program opened under a name: a command answers its
+   * exit status, a file 0, and a name nothing is open under -1.
+   */
+  private async closeStream(name: string): Promise<number> {
+    let status = -1
+    if (this.outPipes.has(name)) status = await this.closeOutPipe(name)
+    const pipe = this.inPipes.get(name)
+    if (pipe !== undefined) {
+      this.inPipes.delete(name)
+      await pipe.reader.close()
+      status = pipe.status
+    }
+    if (this.outFiles.has(name)) {
+      await this.flushFile(name)
+      this.outFiles.delete(name)
+      status = 0
+    }
+    const reader = this.inFiles.get(name)
+    if (reader !== undefined) {
+      this.inFiles.delete(name)
+      await reader.close()
+      status = 0
+    }
+    return status
+  }
+
+  /**
+   * Flush standard output and files (null or ""), or one named stream.
+   * Output pipes run only when closed, so flushing one flushes nothing.
+   */
+  private async fflush(name: string | null): Promise<number> {
+    if (name === null || name === '') {
+      await this.beforeCommand()
+      return 0
+    }
+    if (STDOUT_NAMES.has(name)) {
+      this.release()
+      return 0
+    }
+    if (this.outFiles.has(name)) {
+      await this.flushFile(name)
+      return 0
+    }
+    return this.outPipes.has(name) ? 0 : -1
+  }
+
+  /** Run a command line, its output landing after awk's own. */
+  private async system(command: string): Promise<number> {
+    await this.beforeCommand()
+    const run = await this.host.run(command, null)
+    this.out.push(run.stdout)
+    this.err.push(run.stderr)
+    return run.status
+  }
+
+  private async execStmt(node: Stmt): Promise<void> {
     switch (node.type) {
       case 'Block':
-        for (const inner of node.body) this.execStmt(inner)
+        for (const inner of node.body) await this.execStmt(inner)
         return
       case 'ExprStmt':
-        this.eval(node.expr)
+        await this.eval(node.expr)
         return
       case 'Print':
-        this.execPrint(node)
+        await this.execPrint(node)
         return
       case 'Printf': {
-        const values = node.args.map((a) => this.eval(a))
+        const values: Value[] = []
+        for (const a of node.args) values.push(await this.eval(a))
         const head = values[0]
         if (head === undefined) throw new AwkRuntimeError('awk: printf needs a format')
-        this.write(sprintf(toStr(head, this.convfmt()), values.slice(1), this.convfmt()), node)
+        await this.write(
+          sprintf(toStr(head, this.convfmt()), values.slice(1), this.convfmt()),
+          node,
+        )
         return
       }
       case 'If':
-        if (isTrue(this.eval(node.cond))) this.execStmt(node.then)
-        else if (node.other !== null) this.execStmt(node.other)
+        if (isTrue(await this.eval(node.cond))) await this.execStmt(node.then)
+        else if (node.other !== null) await this.execStmt(node.other)
         return
       case 'While':
-        this.execWhile(node)
+        await this.execWhile(node)
         return
       case 'DoWhile':
-        this.execDoWhile(node)
+        await this.execDoWhile(node)
         return
       case 'For':
-        this.execFor(node)
+        await this.execFor(node)
         return
       case 'ForIn':
-        this.execForIn(node)
+        await this.execForIn(node)
         return
       case 'Delete':
-        this.execDelete(node)
+        await this.execDelete(node)
         return
       case 'Next':
         throw new NextRecord()
@@ -661,25 +1010,27 @@ export class Interpreter {
       case 'Continue':
         throw new ContinueLoop()
       case 'Return':
-        throw new ReturnValue(node.value !== null ? this.eval(node.value) : UNINIT)
+        throw new ReturnValue(node.value !== null ? await this.eval(node.value) : UNINIT)
       case 'Exit':
-        if (node.value !== null) this.exitCode = toIndex(toNum(this.eval(node.value)))
+        if (node.value !== null) this.exitCode = toIndex(toNum(await this.eval(node.value)))
         throw new ExitProgram(this.exitCode)
     }
   }
 
-  private execPrint(node: Print): void {
-    const body =
-      node.args.length > 0
-        ? node.args.map((a) => this.outStr(this.eval(a))).join(this.special('OFS'))
-        : this.ensureRecord()
-    this.write(body + this.special('ORS'), node)
+  private async execPrint(node: Print): Promise<void> {
+    let body: string
+    if (node.args.length > 0) {
+      const parts: string[] = []
+      for (const a of node.args) parts.push(this.outStr(this.leaf(a) ?? (await this.eval(a))))
+      body = parts.join(this.special('OFS'))
+    } else body = this.ensureRecord()
+    await this.write(body + this.special('ORS'), node)
   }
 
   // Runs a loop body; false means the loop was broken out of.
-  private runBody(body: Stmt): boolean {
+  private async runBody(body: Stmt): Promise<boolean> {
     try {
-      this.execStmt(body)
+      await this.execStmt(body)
     } catch (err) {
       if (err instanceof BreakLoop) return false
       if (!(err instanceof ContinueLoop)) throw err
@@ -687,65 +1038,65 @@ export class Interpreter {
     return true
   }
 
-  private execWhile(node: While): void {
-    while (isTrue(this.eval(node.cond))) {
-      if (!this.runBody(node.body)) return
+  private async execWhile(node: While): Promise<void> {
+    while (isTrue(await this.eval(node.cond))) {
+      if (!(await this.runBody(node.body))) return
     }
   }
 
-  private execDoWhile(node: DoWhile): void {
+  private async execDoWhile(node: DoWhile): Promise<void> {
     for (;;) {
-      if (!this.runBody(node.body)) return
-      if (!isTrue(this.eval(node.cond))) return
+      if (!(await this.runBody(node.body))) return
+      if (!isTrue(await this.eval(node.cond))) return
     }
   }
 
-  private execFor(node: For): void {
-    if (node.init !== null) this.execStmt(node.init)
-    while (node.cond === null || isTrue(this.eval(node.cond))) {
-      if (!this.runBody(node.body)) return
-      if (node.post !== null) this.execStmt(node.post)
+  private async execFor(node: For): Promise<void> {
+    if (node.init !== null) await this.execStmt(node.init)
+    while (node.cond === null || isTrue(await this.eval(node.cond))) {
+      if (!(await this.runBody(node.body))) return
+      if (node.post !== null) await this.execStmt(node.post)
     }
   }
 
-  private execForIn(node: ForIn): void {
+  private async execForIn(node: ForIn): Promise<void> {
     const array = this.getArray(node.array)
     for (const key of [...array.keys()]) {
       this.setVar(node.var, strnum(key))
-      if (!this.runBody(node.body)) return
+      if (!(await this.runBody(node.body))) return
     }
   }
 
-  private execDelete(node: Delete): void {
+  private async execDelete(node: Delete): Promise<void> {
     const array = this.getArray(node.name)
     if (node.subscripts === null) {
       array.clear()
       return
     }
-    array.delete(this.subscript(node.subscripts))
+    array.delete(await this.subscript(node.subscripts))
   }
 
-  private matchesRule(rule: Rule, index: number): boolean {
+  private async matchesRule(rule: Rule, index: number): Promise<boolean> {
     if (rule.kind === RuleKind.ALWAYS) return true
     if (rule.pattern === null) return false
-    if (rule.kind === RuleKind.PATTERN) return isTrue(this.eval(rule.pattern))
+    if (rule.kind === RuleKind.PATTERN) return isTrue(await this.eval(rule.pattern))
     if (rule.patternEnd === null) return false
     if (this.rangeActive.get(index) === true) {
-      if (isTrue(this.eval(rule.patternEnd))) this.rangeActive.set(index, false)
+      if (isTrue(await this.eval(rule.patternEnd))) this.rangeActive.set(index, false)
       return true
     }
-    if (isTrue(this.eval(rule.pattern))) {
-      this.rangeActive.set(index, !isTrue(this.eval(rule.patternEnd)))
+    if (isTrue(await this.eval(rule.pattern))) {
+      this.rangeActive.set(index, !isTrue(await this.eval(rule.patternEnd)))
       return true
     }
     return false
   }
 
   // BEGIN and END run with no current record, so `next` has no meaning.
-  private runEdge(kind: RuleKind): void {
+  private async runEdge(kind: RuleKind): Promise<void> {
     try {
       for (const rule of this.program.rules) {
-        if (rule.kind === kind && rule.action !== null) this.execStmt(rule.action)
+        if (rule.kind === kind && rule.action !== null) await this.execStmt(rule.action)
       }
     } catch (err) {
       if (err instanceof NextRecord || err instanceof NextFileSignal) {
@@ -755,36 +1106,33 @@ export class Interpreter {
     }
   }
 
-  runBegin(): void {
-    this.runEdge(RuleKind.BEGIN)
+  async runBegin(): Promise<void> {
+    await this.runEdge(RuleKind.BEGIN)
   }
 
-  /** Run the main rules against one input record, separator stripped. */
-  runRecord(line: string): void {
-    this.nr += 1
-    this.fnr += 1
+  /** Run the main rules against one record, as `nextRecord` returned it. */
+  async runRecord(line: string): Promise<void> {
     this.setRecord(line)
     try {
-      this.program.rules.forEach((rule, index) => {
-        if (rule.kind === RuleKind.BEGIN || rule.kind === RuleKind.END) return
-        if (!this.matchesRule(rule, index)) return
-        if (rule.action === null) this.write(this.ensureRecord() + this.special('ORS'), PLAIN_PRINT)
-        else this.execStmt(rule.action)
-      })
+      for (const [index, rule] of this.program.rules.entries()) {
+        if (rule.kind === RuleKind.BEGIN || rule.kind === RuleKind.END) continue
+        if (!(await this.matchesRule(rule, index))) continue
+        if (rule.action === null) {
+          await this.write(this.ensureRecord() + this.special('ORS'), PLAIN_PRINT)
+        } else await this.execStmt(rule.action)
+      }
     } catch (err) {
       if (err instanceof NextRecord) return
       if (err instanceof NextFileSignal) {
-        // nextfile abandons the rest of the current operand, not just
-        // the current record; the driver reads the flag and moves on.
-        this.skipFile = true
+        await this.skipFile()
         return
       }
       throw err
     }
   }
 
-  runEnd(): void {
-    this.runEdge(RuleKind.END)
+  async runEnd(): Promise<void> {
+    await this.runEdge(RuleKind.END)
   }
 
   /** Whether any rule needs input records. */
@@ -792,28 +1140,65 @@ export class Interpreter {
     return this.program.rules.some((r) => r.kind !== RuleKind.BEGIN)
   }
 
-  /** Take everything buffered for stdout since the last drain. */
-  drain(): string {
-    const out = this.output
-      .filter(([name]) => name === null)
-      .map(([, body]) => body)
-      .join('')
-    this.output = this.output.filter(([name]) => name !== null)
-    return out
+  /**
+   * Close everything at exit, as awk does before it returns. The output
+   * pipes run newest first, as mawk 1.3.4 closes them, and their output
+   * lands ahead of any standard output still waiting; the files are
+   * written out and the inputs let go.
+   */
+  async finish(): Promise<void> {
+    for (const command of [...this.outPipes.keys()].reverse()) await this.closeOutPipe(command)
+    await this.flushFiles()
+    this.release()
+    await this.closeInputs()
   }
 
-  drainErr(): string {
-    const out = this.output
-      .filter(([name]) => name === STDERR_NAME)
-      .map(([, body]) => body)
-      .join('')
-    this.output = this.output.filter(([name]) => name !== STDERR_NAME)
-    return out
+  /** Let go of every input stream still open. */
+  async closeInputs(): Promise<void> {
+    const readers = [...this.inPipes.values()].map((pipe) => pipe.reader)
+    readers.push(...this.inFiles.values())
+    if (this.main !== null) readers.push(this.main)
+    this.inPipes.clear()
+    this.inFiles.clear()
+    this.main = null
+    for (const reader of readers) await reader.close()
   }
 
-  drainOutput(): [string | null, string, boolean][] {
-    const pending = this.output
-    this.output = []
-    return pending
+  /**
+   * Take the output ready so far, standard output then stderr. Called
+   * between records: the files are written out, and standard output held
+   * for an output pipe stays held until the pipe closes.
+   */
+  async drain(): Promise<[Uint8Array, Uint8Array]> {
+    await this.flushFiles()
+    if (this.outPipes.size === 0) this.release()
+    return this.take()
+  }
+
+  /**
+   * Take what a run a fatal error ended leaves behind. What awk had
+   * already printed stays, held text included, and so does what it had
+   * printed to files, but no pipe command runs: mawk's exit flushes its
+   * buffers and nothing else. The error is reported, and after it any
+   * file that could not be written now.
+   */
+  async salvage(failure: Error): Promise<[Uint8Array, Uint8Array]> {
+    this.err.push(ENC.encode(`${failure.message}\n`))
+    try {
+      await this.flushFiles()
+    } catch (err) {
+      if (!(err instanceof AwkRuntimeError)) throw err
+      this.err.push(ENC.encode(`${err.message}\n`))
+    }
+    this.release()
+    return this.take()
+  }
+
+  private take(): [Uint8Array, Uint8Array] {
+    const out = concat(this.out)
+    const err = concat(this.err)
+    this.out.length = 0
+    this.err.length = 0
+    return [out, err]
   }
 }

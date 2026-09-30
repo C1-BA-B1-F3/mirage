@@ -73,6 +73,7 @@ import {
   defaultCwdOperand,
   mergeScopes,
   pathFlagScopes,
+  routableScopes,
   routedOperands,
 } from './command/routing.ts'
 import { findStartPoints, runOnMount, type RunOnMountCtx } from './command/run.ts'
@@ -360,10 +361,12 @@ export async function handleCommand(
   // operands (or the cwd) put it, and that run's op guards refuse it. A line
   // is not cross-mount because one of its words is empty.
   // A prepared program line already holds its positional operands.
-  const routed =
+  const routed = routableScopes(
+    cmdName,
     prepared !== null
       ? pathScopes
-      : routedOperands(cmdName, rawArgv, session.cwd, parts.slice(1), pathScopes)
+      : routedOperands(cmdName, rawArgv, session.cwd, parts.slice(1), pathScopes),
+  )
   const routingScopes = mergeScopes(routed, pathFlagScopes(cmdName, rawArgv, session.cwd)).filter(
     (s) => s.walkError !== 'ENOENT',
   )
@@ -448,7 +451,7 @@ export async function handleCommand(
     // The output flag owns a mount for routing, but is not a sort input.
     // Parsed operands preserve aliases, order, and repeated path values.
     let csScopes = cmdName === 'sort' ? csParsed.paths : pathScopes
-    if (strategyFor(cmdName as Cmd, csFlags) === Strategy.RELAY) {
+    if (strategyFor(cmdName as Cmd) === Strategy.RELAY) {
       // STREAM and FANOUT run each operand natively on its mount, which
       // expands the operand's glob. RELAY sees every operand at once (wc's
       // layout, cp's sources), so its glob operands must expand here; an
@@ -501,6 +504,7 @@ export async function handleCommand(
       csNs,
       sessionView(session, registry.policies),
       session.cwd,
+      spelledWords(parts.slice(1)),
     )
     let csStdout = csStdout0
     if (cmdName === 'find') {

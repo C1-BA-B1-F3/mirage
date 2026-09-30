@@ -17,7 +17,7 @@ import json
 import pytest
 
 from mirage.commands.cli.builtin.gh.pull import (PR_FIELDS, _check, checks_cmd,
-                                                 list_cmd, view_cmd)
+                                                 diff_cmd, list_cmd, view_cmd)
 from mirage.commands.cli.types import CLIInvocation
 from mirage.commands.errors import UsageError
 from mirage.core.github.config import GhConfig
@@ -85,6 +85,41 @@ async def test_a_failing_check_still_exits_one(monkeypatch):
     _, io = await checks_cmd(_inv(texts=["5"], flags={"repo": "o/r"}))
 
     assert io.exit_code == 1
+
+
+# What real gh 2.85 printed for `gh pr diff --name-only` over this diff:
+# the `b/` side of each header, a quoted name kept quoted, a rename by its
+# new name.
+NAME_ONLY_DIFF = ("diff --git a/README.md b/README.md\n"
+                  "deleted file mode 100644\n"
+                  "--- a/README.md\n+++ /dev/null\n@@ -1 +0,0 @@\n-x\n"
+                  'diff --git "a/caf\\303\\251.txt" "b/caf\\303\\251.txt"\n'
+                  "new file mode 100644\n"
+                  "diff --git a/docs/contributing.md b/moved/contributing.md\n"
+                  "similarity index 100%\n"
+                  'diff --git "a/q\\"t.txt" "b/q\\"t.txt"\n'
+                  "diff --git a/sub dir/x y.txt b/sub dir/x y.txt\n"
+                  "+++ b/sub dir/x y.txt\t\n")
+
+
+@pytest.mark.asyncio
+async def test_name_only_prints_the_b_side_of_each_header(monkeypatch):
+
+    async def diff(config, ref, number):
+        return NAME_ONLY_DIFF
+
+    monkeypatch.setitem(diff_cmd.__globals__, "diff_pull", diff)
+
+    out, io = await diff_cmd(
+        _inv(texts=["5"], flags={
+            "repo": "o/r",
+            "name_only": True
+        }))
+
+    assert io.exit_code == 0
+    assert (await materialize(out)).decode() == (
+        'README.md\n"caf\\303\\251.txt"\nmoved/contributing.md\n'
+        '"q\\"t.txt"\nsub dir/x y.txt\n')
 
 
 # Every field `gh pr view --json` and `gh pr list --json` accept in gh 2.85.

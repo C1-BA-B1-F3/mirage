@@ -200,7 +200,7 @@ import os, sys, warnings
 def process_state():
     return (dict(os.environ), list(sys.path), list(sys.argv), os.getcwd(),
             sys.dont_write_bytecode, dict(sys._xoptions), list(warnings.filters),
-            sys.stdin, sys.stdout, sys.stderr)
+            sys.stdin, sys.stdout, sys.stderr, sys.flags)
 saved_state = process_state()
 `)
     try {
@@ -209,7 +209,7 @@ saved_state = process_state()
           code: "import os, sys; os.environ['CHANGED'] = '1'; sys.path.append('/changed'); os.chdir('/tmp'); print('saved'); sys.stdout.close(); sys.stderr.close(); sys.exit('original exit')",
           argv: ['probe'],
           cwd: '/',
-          flags: { B: true, X: ['probe=1'], W: ['ignore'] },
+          flags: { B: true, O: 2, P: true, X: ['probe=1'], W: ['ignore'] },
           script_cli: false,
           filename: null,
           script: false,
@@ -223,6 +223,126 @@ saved_state = process_state()
       expect(new TextDecoder().decode(result[0])).toBe('saved\n')
       expect(new TextDecoder().decode(result[1])).toBe('original exit\n')
       expect(pyodide.runPython('process_state() == saved_state')).toBe(true)
+    } finally {
+      guest.close()
+    }
+  })
+
+  it('reports implemented flags as a read-only tuple and preserves native fields', async () => {
+    const pyodide = await loadPyodideRuntime()
+    const guest = new PyodideExecution(pyodide)
+    const native = pyodide.runPython(`
+import json, sys, types
+saved_flags = sys.flags
+flag_fields = [name for name, field in vars(type(sys.flags)).items()
+               if isinstance(field, types.MemberDescriptorType)]
+json.dumps({name: getattr(sys.flags, name) for name in flag_fields})
+`) as string
+    try {
+      for (const optimize of [0, 1, 2]) {
+        const result = guest.run(
+          {
+            code: `import json, sys
+expected = json.loads(${JSON.stringify(native)})
+expected.update(optimize=${String(optimize)}, dont_write_bytecode=1, safe_path=True)
+def check(condition):
+    if not condition:
+        raise AssertionError('flag view mismatch')
+check({name: getattr(sys.flags, name) for name in expected} == expected)
+check(isinstance(sys.flags, tuple))
+check(tuple(sys.flags) == tuple(expected.values())[:sys.flags.n_sequence_fields])
+check(set(expected).issubset(dir(sys.flags)))
+check('safe_path=True' in repr(sys.flags))
+saved_limit = sys.get_int_max_str_digits()
+try:
+    sys.set_int_max_str_digits(640)
+    check(sys.flags.int_max_str_digits == sys.get_int_max_str_digits())
+finally:
+    sys.set_int_max_str_digits(saved_limit)
+for name in ('safe_path', 'optimize', 'dont_write_bytecode'):
+    try:
+        setattr(sys.flags, name, 0)
+    except AttributeError:
+        pass
+    else:
+        raise AssertionError('flag is writable: ' + name)
+    try:
+        delattr(sys.flags, name)
+    except AttributeError:
+        pass
+    else:
+        raise AssertionError('flag is deletable: ' + name)
+print(sys.flags.optimize, __debug__, sys.flags.safe_path, '' in sys.path)
+`,
+            argv: ['-c'],
+            cwd: '/',
+            flags: { B: true, O: optimize, P: true },
+            script_cli: false,
+            filename: null,
+            script: false,
+            env: {},
+            stdin: null,
+          },
+          () => undefined,
+          () => undefined,
+        )
+        expect(new TextDecoder().decode(result[1])).toBe('')
+        expect(result[2]).toBe(0)
+        expect(new TextDecoder().decode(result[0])).toBe(
+          `${String(optimize)} ${optimize === 0 ? 'True' : 'False'} True False\n`,
+        )
+        expect(pyodide.runPython('sys.flags is saved_flags')).toBe(true)
+      }
+    } finally {
+      guest.close()
+    }
+  })
+
+  it('restores interpreter state after guest replacements, exceptions and syntax errors', async () => {
+    const pyodide = await loadPyodideRuntime()
+    const guest = new PyodideExecution(pyodide)
+    pyodide.runPython(`
+import sys, warnings
+saved_flags = sys.flags
+saved_path, saved_options, saved_filters = sys.path, sys._xoptions, warnings.filters
+saved_values = (list(sys.path), dict(sys._xoptions), list(warnings.filters))
+`)
+    try {
+      for (const [code, exitCode] of [
+        ['', 0],
+        ['raise SystemExit(7)', 7],
+        ["raise ValueError('failed')", 1],
+        ['if', 1],
+      ] as const) {
+        const result = guest.run(
+          {
+            code: `import sys, warnings
+sys.flags = None
+sys.path = []
+sys._xoptions = {}
+warnings.filters = []
+${code}`,
+            argv: ['-c'],
+            cwd: '/',
+            flags: { P: true, O: 2, B: true, W: ['ignore'], X: ['probe=1'] },
+            script_cli: false,
+            filename: null,
+            script: false,
+            env: {},
+            stdin: null,
+          },
+          () => undefined,
+          () => undefined,
+        )
+        expect(result[2]).toBe(exitCode)
+        expect(
+          pyodide.runPython(`
+sys.flags is saved_flags and sys.path is saved_path and \
+sys._xoptions is saved_options and warnings.filters is saved_filters and \
+(sys.path, sys._xoptions, warnings.filters) == saved_values
+`),
+        ).toBe(true)
+      }
     } finally {
       guest.close()
     }

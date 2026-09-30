@@ -22,7 +22,13 @@ workspace's existing mounts through Pyodide's filesystem adapter.
 A script file runs the way CPython runs one: `__file__` is its path made
 absolute against the working directory, tracebacks name it and quote
 its lines, and `sys.path[0]` is the script's own directory, so a module
-beside it imports; `-P` leaves that directory off.
+beside it imports; `-P` leaves that directory off. For `-c` and stdin,
+`-P` omits the current-directory entry. Configured `sysPath` entries stay
+available in either mode.
+
+The implemented `-P`, `-O`/`-OO`, and `-B` switches are reflected in a
+read-only `sys.flags` view for that invocation. Interpreter flags and
+import paths are restored when the invocation ends, including on errors.
 
 Installed Python script CLIs receive bare `argv` (including the installed name at index 0) and `stdin` (bytes, or `None` when absent), on both Monty and Pyodide. Pyodide also keeps `sys.argv` and `sys.stdin`. Ordinary `python3` commands retain their interpreter's existing globals.
 

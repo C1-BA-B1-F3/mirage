@@ -1529,6 +1529,134 @@
           }
         }
       ]
+    },
+    {
+      "id": "invocation_flags_and_import_paths_are_scoped",
+      "hosts": [
+        "typescript"
+      ],
+      "world": {
+        "runtimes": [
+          {
+            "name": "pyodide",
+            "config": {
+              "sys_path": [
+                "/w/vendor"
+              ]
+            }
+          },
+          "workspace"
+        ],
+        "mounts": {
+          "/w": {
+            "vfs": "ram",
+            "files": {
+              "app/probe.py": "import sys\nprint(sys.flags.safe_path, repr(sys.path[0]))\nsys.modules.pop('flag_import_probe', None)\nimport flag_import_probe\nprint(flag_import_probe.value)\n",
+              "app/flag_import_probe.py": "value = 'script module'\n",
+              "vendor/flag_import_probe.py": "value = 'vendor module'\n",
+              "app/fail.py": "import sys\nprint(sys.flags.safe_path)\nraise ValueError('flagged failure')\n"
+            }
+          }
+        }
+      },
+      "steps": [
+        {
+          "command": "cd /w",
+          "expect": {
+            "exit": 0,
+            "stdout": "",
+            "stderr": ""
+          }
+        },
+        {
+          "command": "python3 -P app/probe.py",
+          "expect": {
+            "exit": 0,
+            "stdout": "True '/w/vendor'\nvendor module\n",
+            "stderr": ""
+          }
+        },
+        {
+          "command": "python3 app/probe.py",
+          "expect": {
+            "exit": 0,
+            "stdout": "False '/w/app'\nscript module\n",
+            "stderr": ""
+          }
+        },
+        {
+          "command": "python3 -P -c \"import sys; print(sys.flags.safe_path, repr(sys.path[0]))\"",
+          "expect": {
+            "exit": 0,
+            "stdout": "True '/w/vendor'\n",
+            "stderr": ""
+          }
+        },
+        {
+          "command": "python3 -c \"import sys; print(sys.flags.safe_path, repr(sys.path[0]))\"",
+          "expect": {
+            "exit": 0,
+            "stdout": "False ''\n",
+            "stderr": ""
+          }
+        },
+        {
+          "command": "python3 -P - <<'PY'\nimport sys; print(sys.flags.safe_path, repr(sys.path[0]))\nPY",
+          "expect": {
+            "exit": 0,
+            "stdout": "True '/w/vendor'\n",
+            "stderr": ""
+          }
+        },
+        {
+          "command": "python3 - <<'PY'\nimport sys; print(sys.flags.safe_path, repr(sys.path[0]))\nPY",
+          "expect": {
+            "exit": 0,
+            "stdout": "False ''\n",
+            "stderr": ""
+          }
+        },
+        {
+          "command": "python3 -P -OO -B -c \"import sys; print(sys.flags.safe_path, sys.flags.optimize, __debug__, sys.flags.dont_write_bytecode == sys.dont_write_bytecode)\"",
+          "expect": {
+            "exit": 0,
+            "stdout": "True 2 False True\n",
+            "stderr": ""
+          }
+        },
+        {
+          "command": "python3 -c \"import sys; print(sys.flags.safe_path, sys.flags.optimize, __debug__, sys.flags.dont_write_bytecode == sys.dont_write_bytecode)\"",
+          "expect": {
+            "exit": 0,
+            "stdout": "False 0 True True\n",
+            "stderr": ""
+          }
+        },
+        {
+          "command": "python3 -P app/fail.py",
+          "expect": {
+            "exit": 1,
+            "stdout": "True\n",
+            "stderr_contains": "ValueError: flagged failure"
+          }
+        },
+        {
+          "command": "python3 app/probe.py",
+          "expect": {
+            "exit": 0,
+            "stdout": "False '/w/app'\nscript module\n",
+            "stderr": ""
+          }
+        },
+        {
+          "command": "python3 -E -c \"import sys; print(sys.flags.ignore_environment)\"",
+          "expect": {
+            "exit": 0,
+            "stdout": "0\n",
+            "stderr": "python3: warning: -E is ignored by the 'pyodide' runtime\n"
+          }
+        }
+      ]
     }
   ]
 }

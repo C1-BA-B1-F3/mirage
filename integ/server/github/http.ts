@@ -91,14 +91,16 @@ export function withRepo(fn: (ctx: Ctx<C>, repo: RepoRow) => Promise<Reply> | Re
   }
 }
 
-export interface Page {
-  items: JsonValue[]
+export interface Page<T = JsonValue> {
+  items: T[]
   headers: Record<string, string>
 }
 
 // One GitHub REST page, advertising the next with a Link header. A bad page or
 // per_page is 422, which is what the vendor answers and what a golden pins.
-export function paged(ctx: Ctx<C>, items: JsonValue[]): Page | null {
+// Any rows page the same way, so a list whose rendering costs a lookup per
+// row pages its rows first and renders only the page.
+export function paged<T>(ctx: Ctx<C>, items: T[]): Page<T> | null {
   const rawPage = ctx.query.get('page') ?? '1'
   const rawPer = ctx.query.get('per_page') ?? '30'
   if (!/^-?\d+$/.test(rawPage) || !/^-?\d+$/.test(rawPer)) return null

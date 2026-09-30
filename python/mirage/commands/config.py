@@ -24,7 +24,8 @@ from mirage.commands.spec import CommandSpec
 from mirage.commands.spec.builtin_specs import (HELP_OPTION, VERSION_OPTION,
                                                 is_builtin_grammar,
                                                 registered_spec)
-from mirage.commands.spec.constants import (STANDARD_AFTER_SCAN,
+from mirage.commands.spec.constants import (OWN_OPTION_LOOP,
+                                            STANDARD_AFTER_SCAN,
                                             STANDARD_BEFORE_SCAN)
 from mirage.commands.spec.help import render_help
 from mirage.commands.spec.parser import ParsedArgs, parse_command
@@ -458,9 +459,12 @@ def _with_help_support(
 
     Mirrors GNU coreutils: every registered command accepts both flags,
     prints to stdout, and exits 0 without running the command body.
-    A command declaring its own --version handles that flag itself.
+    A command declaring its own --version handles that flag itself, and
+    a program that runs its own option loop (OWN_OPTION_LOOP) answers
+    --help there too, after any option typed before it.
     """
     has_version = any(o.long == "--version" for o in spec.options)
+    own_help = is_builtin_grammar(name, spec) and name in OWN_OPTION_LOOP
     new_spec = registered_spec(name, spec)
     help_text = help_page(name, spec)
     version_text = version_line(name)
@@ -468,7 +472,7 @@ def _with_help_support(
     @functools.wraps(fn)
     async def wrapper(accessor: Accessor, paths: list[PathSpec],
                       texts: list[str], opts: CommandOpts) -> CommandFnResult:
-        if opts.flags.get("help") is True:
+        if not own_help and opts.flags.get("help") is True:
             return yield_bytes(help_text), IOResult()
         if not has_version and opts.flags.get("version") is True:
             return yield_bytes(version_text), IOResult()

@@ -704,7 +704,7 @@
       "expect": {
         "exit": 2,
         "stdout": "",
-        "stderr": "jq: invalid option -- 'C'\nTry 'jq --help' for more information.\n"
+        "stderr": "jq: Unknown option -C\nUse jq --help for help with command-line options,\nor see the jq manpage, or online docs at https://jqlang.org\n"
       },
       "flags": []
     },
@@ -721,7 +721,7 @@
       "expect": {
         "exit": 2,
         "stdout": "",
-        "stderr": "jq: invalid option -- 'L'\nTry 'jq --help' for more information.\n"
+        "stderr": "jq: Unknown option -L\nUse jq --help for help with command-line options,\nor see the jq manpage, or online docs at https://jqlang.org\n"
       },
       "flags": []
     },
@@ -738,7 +738,7 @@
       "expect": {
         "exit": 2,
         "stdout": "",
-        "stderr": "jq: unrecognized option '--stream-errors'\nTry 'jq --help' for more information.\n"
+        "stderr": "jq: Unknown option --stream-errors\nUse jq --help for help with command-line options,\nor see the jq manpage, or online docs at https://jqlang.org\n"
       },
       "flags": []
     },
@@ -755,7 +755,7 @@
       "expect": {
         "exit": 2,
         "stdout": "",
-        "stderr": "jq: unrecognized option '--build-configuration'\nTry 'jq --help' for more information.\n"
+        "stderr": "jq: Unknown option --build-configuration\nUse jq --help for help with command-line options,\nor see the jq manpage, or online docs at https://jqlang.org\n"
       },
       "flags": []
     },
@@ -829,7 +829,7 @@
       "expect": {
         "exit": 2,
         "stdout": "",
-        "stderr": "jq: option '--arg' requires an argument\nTry 'jq --help' for more information.\n"
+        "stderr": "jq: --arg takes two parameters (e.g. --arg varname value)\nUse jq --help for help with command-line options,\nor see the jq manpage, or online docs at https://jqlang.org\n"
       },
       "flags": [
         "arg"

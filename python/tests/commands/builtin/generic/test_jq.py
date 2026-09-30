@@ -4,15 +4,17 @@ import pytest
 
 from mirage.commands.builtin.generic.jq import (exit_code, indent_width,
                                                 input_name, jq, jq_generic,
-                                                parse_flags, positional_args,
-                                                read_options, run_status)
-from mirage.commands.config import CommandOpts
+                                                option_refusal, parse_flags,
+                                                positional_value, read_options,
+                                                run_status)
+from mirage.commands.config import CommandOpts, help_page, version_line
 from mirage.commands.errors import UsageError
 from mirage.commands.spec import SPECS, parse_command, parse_to_kwargs
 from mirage.commands.spec.flag_view import FlagView
 from mirage.commands.spec.types import FlagValue
 from mirage.core.jq import JqError, JqHalt, JqOptions, JqRun
-from mirage.io.types import materialize
+from mirage.io.stream import yield_bytes
+from mirage.io.types import IOResult, materialize
 from mirage.types import PathSpec
 
 FILES = {
@@ -35,6 +37,8 @@ FILES = {
     "/d/mid.json": b"1\n[1 2]\n3\n4\n",
     "/d/one.json": b"1",
     "/d/two.json": b" 2\n",
+    "/d/nul.jq": b".\0x",
+    "/d/-": b"42\n",
 }
 
 DIRS = {"/d/dir"}
@@ -69,8 +73,9 @@ def _spec_flags(**flags: FlagValue) -> FlagView:
     return FlagView(flags, spec=SPECS["jq"])
 
 
-def _parsed_bag(*words: str) -> dict:
-    bag = parse_to_kwargs(parse_command(SPECS["jq"], list(words), "/", "jq"))
+def _parsed_line(*words: str) -> tuple[dict, list[str]]:
+    parsed = parse_command(SPECS["jq"], list(words), "/", "jq")
+    bag = parse_to_kwargs(parsed)
     for dest in ("rawfile", "slurpfile"):
         pairs = bag.get(dest)
         if isinstance(pairs, list):
@@ -78,20 +83,28 @@ def _parsed_bag(*words: str) -> dict:
                 _path(str(word)) if at % 2 else word
                 for at, word in enumerate(pairs)
             ]
-    return bag
+    return bag, parsed.texts()
 
 
 async def _unread(path: PathSpec) -> bytes:
     raise AssertionError(f"{path.virtual} should not be read")
 
 
+async def _walk(*words: str) -> JqOptions | bytes:
+    bag, texts = _parsed_line(*words)
+    return await read_options(FlagView(bag, spec=SPECS["jq"]), texts,
+                              "from_file" in bag, _read_bytes)
+
+
 async def _options(*words: str) -> JqOptions:
-    return await read_options(FlagView(_parsed_bag(*words), spec=SPECS["jq"]),
-                              _read_bytes)
+    opts = await _walk(*words)
+    assert isinstance(opts, JqOptions)
+    return opts
 
 
 async def _bound(**flags: FlagValue) -> dict[str, str]:
-    opts = await read_options(_spec_flags(**flags), _unread)
+    opts = await read_options(_spec_flags(**flags), [], False, _unread)
+    assert isinstance(opts, JqOptions)
     return dict(opts.named_args)
 
 
@@ -115,7 +128,7 @@ def test_join_and_nul_output_imply_raw():
 
 @pytest.mark.asyncio
 async def test_indent_minus_one_is_tab_indentation():
-    opts = await read_options(_spec_flags(indent="-1"), _unread)
+    opts = await read_options(_spec_flags(indent="-1"), [], False, _unread)
     assert opts.tab
     assert opts.indent == 2
 
@@ -228,8 +241,9 @@ async def test_the_first_binding_of_a_name_wins(words, text):
     ["--slurpfile", "v", "/d/bad.json"],
 ])
 async def test_a_binding_of_a_taken_name_is_never_read(words):
-    bag = _parsed_bag("-n", "--arg", "v", "1", *words, "$v")
-    opts = await read_options(FlagView(bag, spec=SPECS["jq"]), _unread)
+    bag, texts = _parsed_line("-n", "--arg", "v", "1", *words, "$v")
+    opts = await read_options(FlagView(bag, spec=SPECS["jq"]), texts, False,
+                              _unread)
     assert opts.named_args == {"v": '"1"'}
 
 
@@ -250,8 +264,8 @@ async def test_the_first_option_jq_refuses_is_the_one_reported(words, refusal):
 
 @pytest.mark.asyncio
 async def test_the_generic_entry_reads_the_flags_in_the_order_typed():
-    bag = _parsed_bag("-n", "--tab", "-c", "--argjson", "b", "1", "--arg", "a",
-                      "2", "--arg", "b", "3", "$ARGS.named")
+    bag, _ = _parsed_line("-n", "--tab", "-c", "--argjson", "b", "1", "--arg",
+                          "a", "2", "--arg", "b", "3", "$ARGS.named")
     source, io = await jq_generic([], ["$ARGS.named"], CommandOpts(flags=bag),
                                   _read_bytes, _read_stream)
     assert source is not None
@@ -441,29 +455,126 @@ async def test_exit_status_flag_reports_no_output_at_all():
     assert io.exit_code == 4
 
 
-def test_positional_args_are_strings_by_default():
-    fl = _spec_flags(args=True)
-    assert positional_args(fl, [".", "a", "1"], False) == ('"a"', '"1"')
-
-
-def test_positional_args_keep_every_operand_when_f_gave_the_program():
-    fl = _spec_flags(args=True)
-    assert positional_args(fl, ["a", "b"], True) == ('"a"', '"b"')
+def test_args_reads_an_operand_as_a_string():
+    assert positional_value("args", "1") == '"1"'
 
 
 def test_jsonargs_keeps_each_operand_as_the_text_jq_reads():
-    fl = _spec_flags(jsonargs=True)
-    assert positional_args(fl, [".", "1.0", '{"b":1,"1":2}'],
-                           False) == ("1.0", '{"b":1,"1":2}')
+    assert positional_value("jsonargs", "1.0") == "1.0"
+    assert positional_value("jsonargs", '{"b":1,"1":2}') == '{"b":1,"1":2}'
 
 
-def test_jsonargs_rejects_invalid_json():
-    with pytest.raises(UsageError, match="invalid JSON text"):
-        positional_args(_spec_flags(jsonargs=True), [".", "nope"], False)
+def test_jsonargs_rejects_invalid_json_in_jqs_words():
+    with pytest.raises(UsageError) as caught:
+        positional_value("jsonargs", "nope")
+    assert str(caught.value) == (
+        f"jq: invalid JSON text passed to --jsonargs\n{HINT}")
+    assert caught.value.exit_code == 2
 
 
-def test_no_positional_args_without_the_flags():
-    assert positional_args(_spec_flags(), [".", "a"], False) == ()
+@pytest.mark.asyncio
+@pytest.mark.parametrize("words, positional", [
+    (["--args", "a", "--jsonargs", "1", "--args", "b"], ('"a"', "1", '"b"')),
+    (["--jsonargs", "1", "--args", "a"], ("1", '"a"')),
+    (["--args", "--jsonargs", "1"], ("1", )),
+    (["--args", "{", "--jsonargs", "1"], ('"{"', "1")),
+    (["/d/a.json", "--args", "x", "/d/b.json"], ('"x"', '"/d/b.json"')),
+    (["--jsonargs", "1", "--arg", "x", "y", "2"], ("1", "2")),
+    (["--args", "--", "-x", "--jsonargs"], ('"-x"', '"--jsonargs"')),
+    (["/d/a.json"], ()),
+])
+async def test_each_operand_takes_the_mode_typed_last_before_it(
+        words, positional):
+    opts = await _options("-n", ".", *words)
+    assert opts.positional_args == positional
+
+
+@pytest.mark.asyncio
+async def test_the_program_comes_first_whatever_the_mode():
+    opts = await _options("-n", "--jsonargs", ".", "1", "--args", "2",
+                          "--jsonargs", "3")
+    assert opts.positional_args == ("1", '"2"', "3")
+
+
+@pytest.mark.asyncio
+async def test_a_from_file_program_leaves_every_operand_to_the_modes():
+    opts = await _options("-n", "-f", "/d/prog.jq", "/d/a.json", "--args", "b",
+                          "--jsonargs", "2")
+    assert opts.positional_args == ('"b"', "2")
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("words, refusal", [
+    (["--jsonargs", "nope", "--indent", "x"
+      ], "jq: invalid JSON text passed to --jsonargs"),
+    (["--indent", "x", "--jsonargs", "nope"], "jq: --indent takes"),
+    (["--jsonargs", "nope", "--argjson", "a", "nope"
+      ], "jq: invalid JSON text passed to --jsonargs"),
+    (["--argjson", "a", "nope", "--jsonargs", "nope"
+      ], "jq: invalid JSON text passed to --argjson"),
+    (["--jsonargs", "nope", "--slurpfile", "b", "/d/missing.json"
+      ], "jq: invalid JSON text passed to --jsonargs"),
+    (["--slurpfile", "b", "/d/missing.json", "--jsonargs", "nope"
+      ], "jq: Bad JSON in --slurpfile b /d/missing.json"),
+])
+async def test_a_jsonargs_operand_is_refused_where_it_was_typed(
+        words, refusal):
+    with pytest.raises(UsageError) as caught:
+        await _options("-n", ".", *words)
+    assert str(caught.value).startswith(refusal)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("flags, has_program_file, texts, positional", [
+    ({
+        "args": True
+    }, False, [".", "a", "1"], ('"a"', '"1"')),
+    ({
+        "args": True
+    }, True, ["a", "b"], ('"a"', '"b"')),
+    ({
+        "args": True,
+        "jsonargs": True
+    }, False, [".", "1"], ("1", )),
+    ({
+        "jsonargs": True,
+        "args": True
+    }, False, [".", "1"], ('"1"', )),
+    ({}, False, [".", "a"], ()),
+])
+async def test_keyword_operands_come_after_every_option(
+        flags, has_program_file, texts, positional):
+    opts = await read_options(_spec_flags(**flags), texts, has_program_file,
+                              _unread)
+    assert opts.positional_args == positional
+
+
+@pytest.mark.asyncio
+async def test_an_input_file_typed_before_args_is_still_read():
+    parsed = parse_command(SPECS["jq"], [
+        "-c", "[., $ARGS.positional]", "/d/one.json", "--args", "/d/two.json"
+    ], "/", "jq")
+    source, io = await jq_generic([_path(p) for p in parsed.paths()],
+                                  parsed.texts(),
+                                  CommandOpts(flags=parse_to_kwargs(parsed)),
+                                  _read_bytes, _read_stream)
+    assert source is not None
+    assert await materialize(source) == b'[1,["/d/two.json"]]\n'
+    assert io.exit_code == 0
+
+
+@pytest.mark.asyncio
+async def test_dash_words_reach_jq_as_the_program_and_its_values():
+    parsed = parse_command(SPECS["jq"], [
+        "-n", "-c", "-$ARGS.positional[0], $ARGS.positional", "--jsonargs",
+        "-1", "--args", "-."
+    ], "/", "jq")
+    source, io = await jq_generic([], parsed.texts(),
+                                  CommandOpts(flags=parse_to_kwargs(parsed)),
+                                  _read_bytes, _read_stream)
+    assert source is not None
+    assert await materialize(source) == b'1\n[-1,"-."]\n'
+    assert io.exit_code == 0
 
 
 @pytest.mark.asyncio
@@ -827,6 +938,129 @@ async def test_a_usage_error_ends_with_jq_1_8s_hint():
         await _bound(argjson=["v", "1 2"])
     assert str(
         caught.value) == (f"jq: invalid JSON text passed to --argjson\n{HINT}")
+
+
+@pytest.mark.parametrize("word, line", [
+    ("-x", "Unknown option -x"),
+    ("--indent=3", "Unknown option --indent=3"),
+    ("--arg", "--arg takes two parameters (e.g. --arg varname value)"),
+    ("--slurpfile",
+     "--slurpfile takes two parameters (e.g. --slurpfile varname filename)"),
+    ("--indent", "--indent takes one parameter"),
+])
+def test_a_refused_option_is_worded_as_jq_words_it(word, line):
+    assert str(option_refusal(word)) == f"jq: {line}\n{HINT}"
+
+
+def test_an_f_the_line_ends_at_prints_jqs_short_usage():
+    refusal = option_refusal("-f")
+    assert str(refusal).startswith(
+        "jq - commandline JSON processor [version 1.8.2]\n")
+    assert str(refusal).endswith(
+        "For listing the command options, use jq --help.")
+    assert refusal.exit_code == 2
+
+
+# jq 1.8.2's loop stops at the first word it cannot take, so an option the
+# parser refused waits its turn behind a bad value typed before it.
+@pytest.mark.asyncio
+@pytest.mark.parametrize("words, first", [
+    ((".", "--jsonargs", "{", "--bogus"),
+     "invalid JSON text passed to --jsonargs"),
+    ((".", "--bogus", "--jsonargs", "{"), "Unknown option --bogus"),
+    ((".", "--indent", "9", "--bogus"),
+     "--indent takes a number between -1 and 7"),
+    ((".", "--bogus", "--indent", "9"), "Unknown option --bogus"),
+    ((".", "--argjson", "x", "{", "-Z"),
+     "invalid JSON text passed to --argjson"),
+])
+async def test_the_first_refusal_typed_is_the_one_reported(words, first):
+    with pytest.raises(UsageError) as caught:
+        await _walk("-n", *words)
+    assert str(caught.value) == f"jq: {first}\n{HINT}"
+
+
+@pytest.mark.asyncio
+async def test_help_and_version_answer_where_the_loop_reaches_them():
+    assert await _walk("--help", "--bogus") == help_page("jq", SPECS["jq"])
+    assert await _walk("-hx") == help_page("jq", SPECS["jq"])
+    assert await _walk("-n", ".", "-V", "--jsonargs",
+                       "{") == version_line("jq")
+    for words in (("--bogus", "--help"), ("-n", ".", "--jsonargs", "{", "-V")):
+        with pytest.raises(UsageError):
+            await _walk(*words)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("option, expected", [
+    ("from_file", b"42\n"),
+    ("rawfile", b'"42\\n"\n'),
+    ("slurpfile", b"[42]\n"),
+])
+async def test_dash_flag_file_reads_the_backend_without_a_dispatcher(
+        option, expected):
+    path = PathSpec("/d/-", "/d", "-", raw_path="-")
+    value = path if option == "from_file" else ["x", path]
+    source, io = await jq([],
+                          "$x",
+                          read_bytes=_read_bytes,
+                          read_stream=_read_stream,
+                          stdin=b"99\n",
+                          null_input=True,
+                          compact_output=True,
+                          **{option: value})
+    assert await materialize(source) == expected
+    assert io.exit_code == 0
+    assert await materialize(io.stderr) == b""
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("option", ["from_file", "rawfile", "slurpfile"])
+@pytest.mark.parametrize("operand", [None, "-", "/dev/stdin"])
+@pytest.mark.parametrize("streamed", [False, True])
+async def test_stdin_consumed_by_a_flag_file_is_not_replayed_as_input(
+        option, operand, streamed):
+    path = _path("/dev/stdin")
+    value = path if option == "from_file" else ["x", path]
+    paths = [] if operand is None else [
+        PathSpec("/dev/stdin", "/dev", "stdin", raw_path=operand)
+    ]
+    source, io = await jq(paths,
+                          ".",
+                          read_bytes=_read_bytes,
+                          read_stream=_read_stream,
+                          stdin=yield_bytes(b"99\n") if streamed else b"99\n",
+                          **{option: value})
+    assert await materialize(source) == b""
+    assert io.exit_code == 0
+    assert await materialize(io.stderr) == b""
+
+
+async def _run_program_file(*words: str) -> tuple[bytes, IOResult]:
+    parsed = parse_command(SPECS["jq"], list(words), "/", "jq")
+    bag = parse_to_kwargs(parsed)
+    bag["from_file"] = _path(str(bag["from_file"]))
+    source, io = await jq_generic([], parsed.texts(), CommandOpts(flags=bag),
+                                  _read_bytes, _read_stream)
+    return (await materialize(source) if source is not None else b""), io
+
+
+@pytest.mark.asyncio
+async def test_the_program_file_is_read_after_the_option_loop():
+    with pytest.raises(UsageError, match="Unknown option --bogus"):
+        await _run_program_file("-n", "-f", "/d/missing.jq", "--bogus")
+    _, io = await _run_program_file("-n", "-f", "/d/missing.jq")
+    assert io.exit_code == 2
+    assert b"Could not open" in await materialize(io.stderr)
+
+
+@pytest.mark.asyncio
+async def test_a_program_file_holding_nul_is_refused():
+    out, io = await _run_program_file("-n", "-f", "/d/nul.jq")
+    assert out == b""
+    assert io.exit_code == 2
+    assert await materialize(io.stderr
+                             ) == b"jq: program file contains NUL bytes\n"
 
 
 @pytest.mark.asyncio

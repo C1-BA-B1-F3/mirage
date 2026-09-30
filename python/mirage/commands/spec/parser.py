@@ -350,6 +350,40 @@ def _rebase(
     return moved
 
 
+def _first_text_operand(
+    flags: FlagBag[ParsedFlagValue],
+    cs: CompiledSpec,
+    text_when: tuple[str, ...],
+    in_order: bool,
+) -> int | None:
+    """The first operand a text_when option turns textual, or None.
+
+    Called after the scan, when the bag holds every option the line
+    carried and its tape every option occurrence and operand in scan
+    order. A program that reads its whole line first (tar's -x) turns
+    every operand textual, wherever the option sits; one that files each
+    operand as it reads it (IN_ORDER_OPERANDS) turns only the operands
+    typed after the first such option.
+
+    Args:
+        flags (FlagBag[ParsedFlagValue]): the parsed flag bag.
+        cs (CompiledSpec): compiled spec tables.
+        text_when (tuple[str, ...]): the rest slot's text_when spellings.
+        in_order (bool): whether the program files each operand as it
+            reads it.
+    """
+    dests = {cs.dest_of(name) for name in text_when}
+    if not in_order:
+        return 0 if any(dest in flags for dest in dests) else None
+    operands = 0
+    for name, _ in flags.occurrences:
+        if name in dests:
+            return operands
+        if name == constants.OPERAND:
+            operands += 1
+    return None
+
+
 def _set_bool_flag(
     flags: dict[str, ParsedFlagValue],
     cs: CompiledSpec,
@@ -567,6 +601,10 @@ def parse_command(
         outside_sole_argument = False
         digit_options = False
         equals_values = False
+        in_order_operands = False
+        letter_options = False
+        whole_words = False
+        own_loop = False
         synonyms: dict[str, str] = {}
         long_table = None
     else:
@@ -599,6 +637,12 @@ def parse_command(
         # states.
         digit_options = builtin and cmd_name in constants.DIGIT_OPTIONS
         equals_values = builtin and cmd_name in constants.EQUALS_SHORT_VALUES
+        in_order_operands = (builtin
+                             and cmd_name in constants.IN_ORDER_OPERANDS)
+        letter_options = builtin and cmd_name in constants.LETTER_OPTIONS
+        whole_words = (builtin
+                       and cmd_name in constants.WHOLE_WORD_LONG_OPTIONS)
+        own_loop = builtin and cmd_name in constants.OWN_OPTION_LOOP
         synonyms = {
             spelling: same
             for (name, spelling), same in constants.LONG_SYNONYMS.items()
@@ -606,6 +650,25 @@ def parse_command(
         }
         long_table = (constants.LONG_OPTION_TABLES.get(cmd_name)
                       if builtin else None)
+
+    def refused_on_tape(word: str) -> bool:
+        """Leave a refusal on the tape, where a program that runs its own
+        option loop reports it, and say whether it went there.
+
+        Args:
+            word (str): the option word as the program names it.
+        """
+        if own_loop:
+            flags.occurrences.append((constants.REFUSED, word))
+        return own_loop
+
+    def record_operand(word: str) -> None:
+        raw_args.append(word)
+        raw_indices.append(scan_origins[i])
+        raw_bases.append(base)
+        if in_order_operands or own_loop:
+            flags.occurrences.append((constants.OPERAND, word))
+
     i = 0
     end_of_flags = False
 
@@ -622,9 +685,7 @@ def parse_command(
             continue
 
         if end_of_flags:
-            raw_args.append(tok)
-            raw_indices.append(scan_origins[i])
-            raw_bases.append(base)
+            record_operand(tok)
             i += 1
             continue
 
@@ -634,9 +695,7 @@ def parse_command(
                 # long options to recognize, so the word is an operand
                 # whether or not it is declared: `expr --help x` is a
                 # syntax error on `x`, not a help request.
-                raw_args.append(tok)
-                raw_indices.append(scan_origins[i])
-                raw_bases.append(base)
+                record_operand(tok)
                 i += 1
                 continue
             # getopt_long: an exact spelling always wins; otherwise an
@@ -646,7 +705,7 @@ def parse_command(
             # exact-only matching: its unknown dash tokens are operands,
             # not typos. expr inside its window is a real getopt_long
             # call, so `expr --h` does resolve to --help.
-            eq = tok.find("=")
+            eq = -1 if whole_words else tok.find("=")
             typed = tok if eq == -1 else tok[:eq]
             spelling = typed
             if typed not in cs.dest and abbreviations is not None:
@@ -712,9 +771,10 @@ def parse_command(
                 i += 2
             elif is_pair:
                 if eq == -1:
-                    needs_value_options.append(spelling)
-                    option_error_kinds.append("needs_value")
-                else:
+                    if not refused_on_tape(spelling):
+                        needs_value_options.append(spelling)
+                        option_error_kinds.append("needs_value")
+                elif not refused_on_tape(tok):
                     # A two-token option has no `=` form (jq refuses
                     # `--arg=name` as an unknown option).
                     invalid_options.append(tok)
@@ -728,12 +788,11 @@ def parse_command(
                     base = _rebase(flags, cs, spelling, tok[eq + 1:], base)
                 elif etok in cs.long_value_spellings:
                     # Declared value flag at end of line with no argument.
-                    needs_value_options.append(etok)
-                    option_error_kinds.append("needs_value")
+                    if not refused_on_tape(etok):
+                        needs_value_options.append(etok)
+                        option_error_kinds.append("needs_value")
                 elif lenient_dash_operands:
-                    raw_args.append(tok)
-                    raw_indices.append(scan_origins[i])
-                    raw_bases.append(base)
+                    record_operand(tok)
                 elif eq != -1 and spelling in cs.long_bool_spellings:
                     # A boolean long handed a value. getopt_long knows
                     # the option, so it refuses the VALUE and names the
@@ -748,15 +807,19 @@ def parse_command(
                     # --byte-offset -- and because the programs that
                     # word this as an unknown option quote the value
                     # along with it.
-                    invalid_options.append(spelling + tok[eq:])
-                    option_error_kinds.append("unexpected_value")
-                else:
+                    if not refused_on_tape(tok):
+                        invalid_options.append(spelling + tok[eq:])
+                        option_error_kinds.append("unexpected_value")
+                elif not refused_on_tape(tok):
                     invalid_options.append(tok)
                     option_error_kinds.append("invalid")
                 i += 1
             continue
 
-        if tok.startswith("-") and len(tok) > 1:
+        # A dash word with no letter after the dash is an operand to jq
+        # (`-1`, `-.`, `- x`), so it falls through to the operands below.
+        if (tok.startswith("-") and len(tok) > 1
+                and (not letter_options or constants.DASH_LETTER.match(tok))):
             if cs.numeric_dest is not None and NUMERIC_SHORT.match(tok):
                 flags[cs.numeric_dest] = tok[1:]
                 i += 1
@@ -849,9 +912,7 @@ def parse_command(
             if lenient_dash_operands or (
                     NUMERIC_SHORT.match(tok) and
                 (not is_builtin_grammar(cmd_name, spec) or cmd_name == "seq")):
-                raw_args.append(tok)
-                raw_indices.append(scan_origins[i])
-                raw_bases.append(base)
+                record_operand(tok)
             elif tok in cs.value_spellings or (mixed is not None
                                                and mixed[2] is None):
                 # A declared value flag (alone or ending a cluster) with no
@@ -861,24 +922,32 @@ def parse_command(
                 else:
                     assert mixed is not None
                     needy = mixed[1][1:]
-                needs_value_options.append(needy)
-                option_error_kinds.append("needs_value")
+                    if own_loop:
+                        # The loop reads the cluster's letters in turn.
+                        for name in mixed[0]:
+                            _set_bool_flag(flags, cs, name)
+                if not refused_on_tape(f"-{needy}"):
+                    needs_value_options.append(needy)
+                    option_error_kinds.append("needs_value")
             else:
                 # GNU reports the first offending character, not the token.
-                bad = tok[1:2]
-                for ch in tok[1:]:
-                    if (f"-{ch}" not in cs.bool_spellings
-                            and f"-{ch}" not in cs.value_spellings):
-                        bad = ch
-                        break
-                invalid_options.append(bad)
-                option_error_kinds.append("invalid")
+                at = next((at for at, ch in enumerate(tok[1:], 1)
+                           if f"-{ch}" not in cs.bool_spellings
+                           and f"-{ch}" not in cs.value_spellings), 1)
+                bad = tok[at]
+                if own_loop:
+                    # The letters before it are read first, so jq's `-hx`
+                    # is help.
+                    for ch in tok[1:at]:
+                        if f"-{ch}" in cs.bool_spellings:
+                            _set_bool_flag(flags, cs, f"-{ch}")
+                if not refused_on_tape(f"-{bad}"):
+                    invalid_options.append(bad)
+                    option_error_kinds.append("invalid")
             i += 1
             continue
 
-        raw_args.append(tok)
-        raw_indices.append(scan_origins[i])
-        raw_bases.append(base)
+        record_operand(tok)
         # argparse's REMAINDER: the first operand ends option parsing,
         # so a script's own flags reach the script instead of being read
         # as the interpreter's.
@@ -963,14 +1032,14 @@ def parse_command(
             and len(raw_args) <= len(supplying)):
         missing_required_operands.append(spec.rest.name or ARG_PLACEHOLDER)
 
-    # A flag can turn the rest slot textual for this line only (jq's
-    # --args makes every later operand a positional string rather than an
-    # input file). Only classification moves: unknown dash tokens stay as
-    # strict as the declared kind makes them.
-    rest_kind = cs.rest_kind
-    if spec.rest is not None and any(
-            cs.dest_of(name) in flags for name in spec.rest.text_when):
-        rest_kind = "str"
+    # A flag can turn the rest slot textual for this line only: tar's -x
+    # makes every operand a member name rather than a file, and jq's
+    # --args makes the operands typed after it positional strings rather
+    # than input files. Only classification moves: unknown dash tokens stay
+    # as strict as the declared kind makes them.
+    text_from = (_first_text_operand(flags, cs, spec.rest.text_when,
+                                     in_order_operands)
+                 if spec.rest is not None else None)
 
     # Overflow operands past the declared positional slots pass through
     # classified like the last slot (TEXT when there is none), so a
@@ -992,8 +1061,10 @@ def parse_command(
             kind = "str"
         elif j < len(positional):
             kind = positional[j]
-        elif rest_kind is not None:
-            kind = rest_kind
+        elif text_from is not None and j >= text_from:
+            kind = "str"
+        elif cs.rest_kind is not None:
+            kind = cs.rest_kind
         else:
             kind = overflow_kind
         if stdin_script and kind == "path" and arg == "-":

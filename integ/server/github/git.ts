@@ -18,20 +18,21 @@ import type { C } from './config.ts'
 import {
   INVALID_PERSON,
   bodyPerson,
-  commitPeople,
   commitSha,
   defaultPerson,
+  gitCommitJson,
   nodeId,
   parsePerson,
   personJson,
-  treeSha,
 } from './wire.ts'
 import type { CommitRow } from './wire.ts'
 import {
   addBranch,
   blobBySha,
+  branchLinks,
   branchNames,
   commitList,
+  commitTreeId,
   commitsBySha,
   headOf,
   keepRoot,
@@ -42,9 +43,12 @@ import {
   resolveRef,
   stageTree,
   stagedTree,
+  storeBlob,
+  subtreeOf,
   tagObject,
   tagRefs,
   treeAt,
+  treeById,
   treeOfBranch,
   visibleHeadOf,
 } from './store.ts'
@@ -60,18 +64,48 @@ import {
   str,
   withRepo,
 } from './http.ts'
-import { recordCommit, writeFile } from './contents.ts'
+import { base64Bytes, recordCommit, writeFile } from './contents.ts'
+import { rebuildOnPush } from './pages.ts'
 import { stripSlash } from '../kit/typescript/index.ts'
 
+// A blob is written on its own, before any tree names it, which is how a
+// client builds a commit from the git database API: blobs, then a tree of
+// them, then the commit. `content` is text unless `encoding` says base64, and
+// the answer is the blob's git sha, the one `git hash-object` gives. An empty
+// repository refuses it, as it refuses every git database call: GitHub
+// documents the 409 and points at a contents write to start one. The wording
+// of a refused field is the fake's own, not measured.
+const createBlob = withRepo(async (ctx, repo) => {
+  if (await repoIsEmpty(ctx.db, ctx.tenant, repo)) return fail(409, 'Git Repository is empty.')
+  const body = jsonBodyOf(ctx)
+  const content = body.content
+  if (content === undefined || content === null) {
+    return fail(422, 'Invalid request.\n\n"content" wasn\'t supplied.')
+  }
+  if (typeof content !== 'string') return fail(422, 'Invalid request.\n\n"content" is invalid.')
+  const encoding = str(body, 'encoding', 'utf-8')
+  if (encoding !== 'utf-8' && encoding !== 'base64') {
+    return fail(422, 'Invalid request.\n\n"encoding" is invalid.')
+  }
+  const data = encoding === 'base64' ? base64Bytes(content) : Buffer.from(content, 'utf8')
+  if (data === null) return fail(422, 'Invalid request.\n\n"content" is invalid.')
+  const sha = await storeBlob(ctx.db, ctx.tenant, repo, data)
+  return {
+    status: 201,
+    body: { url: `https://api.github.com/repos/${repo.fullName}/git/blobs/${sha}`, sha },
+  }
+})
+
 // Build a tree from a base plus the caller's entries. A null sha is git's
-// delete, `content` is the inline form, and a bare sha names a blob the caller
-// wrote earlier.
+// delete, `content` is the inline form, a bare sha names a blob the caller
+// wrote earlier, and a `commit` entry is a gitlink to the commit it names.
 //
 // The base is `base_tree` when the caller named one, which is how a client
 // composes several staged trees into one commit: without it the second tree
 // starts from the branch again and silently drops everything the first one
-// added. A name that matches no staged tree falls back to the branch rather
-// than failing, which is what the fake this replaces did.
+// added. Any tree id the fake reported names one, a commit's or one
+// directory's included. An unknown base is refused rather than silently
+// substituting another tree. The validation wording is the fake's own.
 const createTree = withRepo(async (ctx, repo) => {
   const body = jsonBodyOf(ctx)
   // `tree` is required, and a body that omits it or spells it as anything but
@@ -84,8 +118,17 @@ const createTree = withRepo(async (ctx, repo) => {
   }
   const entries = body.tree
   const base = str(body, 'base_tree')
-  const staged = base === '' ? null : await stagedTree(ctx.db, ctx.tenant, repo, base)
-  const files = staged ?? (await treeOfBranch(ctx.db, ctx.tenant, repo, repo.defaultBranch))
+  const named = base === '' ? null : await treeById(ctx.db, ctx.tenant, repo, base)
+  if (base !== '' && named === null) {
+    return fail(422, 'Invalid request.\n\n"base_tree" is invalid.')
+  }
+  const { files, links } =
+    named === null
+      ? {
+          files: await treeOfBranch(ctx.db, ctx.tenant, repo, repo.defaultBranch),
+          links: await branchLinks(ctx.db, ctx.tenant, repo, repo.defaultBranch),
+        }
+      : subtreeOf(named, named.at)
   for (const raw of entries) {
     if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) continue
     const entry = raw as Record<string, unknown>
@@ -93,17 +136,23 @@ const createTree = withRepo(async (ctx, repo) => {
     if (path === '') continue
     if ('sha' in entry && entry.sha === null) {
       files.delete(path)
+      links.delete(path)
     } else if (entry.content !== undefined && entry.content !== null) {
       files.set(path, Buffer.from(String(entry.content), 'utf8'))
+      links.delete(path)
+    } else if (typeof entry.sha === 'string' && entry.sha !== '' && entry.type === 'commit') {
+      links.set(path, entry.sha)
+      files.delete(path)
     } else if (typeof entry.sha === 'string' && entry.sha !== '') {
       const blob = await blobBySha(ctx.db, ctx.tenant, repo, entry.sha)
       if (blob === null) return fail(422, `Tree entry ${path} has an unknown sha`)
       files.set(path, blob)
+      links.delete(path)
     }
   }
   return {
     status: 201,
-    body: { sha: await stageTree(ctx.db, ctx.tenant, repo, files), tree: [] },
+    body: { sha: await stageTree(ctx.db, ctx.tenant, repo, files, links), tree: [] },
   }
 })
 
@@ -112,12 +161,18 @@ const createTree = withRepo(async (ctx, repo) => {
 // several before touching any ref depends on that. `parents` is read from the
 // body as the API states it (first parent only, which is all a linear fake
 // needs); absent, the default branch's head stands in. What it changed is its
-// tree against its parent's, which every reader derives.
+// tree against its parent's, which every reader derives. The tree is any id
+// the fake reported, and one no write has staged yet, a seeded branch's or
+// one directory's, is staged here so the commit can be read back on its own.
 const createCommit = withRepo(async (ctx, repo) => {
   const body = jsonBodyOf(ctx)
   const tree = str(body, 'tree')
-  const staged = await stagedTree(ctx.db, ctx.tenant, repo, tree)
-  if (staged === null) return fail(422, 'Invalid request.\n\n"tree" is invalid.')
+  const named = await treeById(ctx.db, ctx.tenant, repo, tree)
+  if (named === null) {
+    return fail(422, 'Invalid request.\n\n"tree" is invalid.')
+  }
+  const sub = subtreeOf(named, named.at)
+  await stageTree(ctx.db, ctx.tenant, repo, sub.files, sub.links)
   const message = str(body, 'message') === '' ? 'Update' : str(body, 'message')
   const author = bodyPerson(body, 'author')
   if (author === INVALID_PERSON) return fail(422, 'Invalid request.\n\n"author" is invalid.')
@@ -144,14 +199,7 @@ const createCommit = withRepo(async (ctx, repo) => {
     parent,
     false,
   )
-  const people = commitPeople({
-    authorJson: personJson(author),
-    committerJson: personJson(committer),
-  })
-  return {
-    status: 201,
-    body: { sha: commit.sha, message, tree: { sha: tree }, ...(people ?? {}) },
-  }
+  return { status: 201, body: gitCommitJson(repo.fullName, commit, tree) }
 })
 
 // A branch starts as another name for whatever the base resolves to, which is
@@ -264,6 +312,7 @@ const updateRef = withRepo(async (ctx, repo) => {
   for (const [path, data] of staged) {
     await writeFile(ctx.db, ctx.tenant, repo, name, path, data)
   }
+  await rebuildOnPush(ctx.db, ctx.tenant, repo.fullName, name)
   return { status: 200, body: { ref: `refs/${ref}`, object: { sha, type: 'commit' } } }
 })
 
@@ -272,8 +321,8 @@ const updateRef = withRepo(async (ctx, repo) => {
 // are both real objects the vendor still answers for. Only the synthesized
 // root has to be searched for, because it is derived from a branch's content
 // rather than stored, and a caller resolving a ref on a fresh repository asks
-// for exactly that one. It is also the only row that names no tree, which is
-// why the whole-tree sha still stands in for one here.
+// for exactly that one. It is also the only row that names no tree, so its
+// tree is the id of the files it holds.
 const gitCommit = withRepo(async (ctx, repo) => {
   const sha = param(ctx, 'sha')
   const stored = (await ctx.db.githubCommit.findFirst({
@@ -291,15 +340,8 @@ const gitCommit = withRepo(async (ctx, repo) => {
     }
   }
   if (row === null) return fail(404, 'Not Found')
-  return {
-    status: 200,
-    body: {
-      sha,
-      message: row.message,
-      tree: { sha: row.treeSha === '' ? treeSha('') : row.treeSha },
-      ...(commitPeople(row) ?? {}),
-    },
-  }
+  const tree = await commitTreeId(ctx.db, ctx.tenant, repo, row)
+  return { status: 200, body: gitCommitJson(repo.fullName, row, tree) }
 })
 
 async function headSha(ctx: Ctx<C>, repo: RepoRow, branch: string): Promise<string> {
@@ -476,6 +518,7 @@ const listRefs = withRepo(async (ctx, repo) => {
 
 export function gitRoutes(): KitRoute<C>[] {
   return everywhere<C>(API_PREFIXES, (p) => [
+    route<C>('POST', `${p}/repos/:owner/:repo/git/blobs`, authedRoute(createBlob), { write: true }),
     route<C>('POST', `${p}/repos/:owner/:repo/git/trees`, authedRoute(createTree), { write: true }),
     route<C>('POST', `${p}/repos/:owner/:repo/git/commits`, authedRoute(createCommit), {
       write: true,

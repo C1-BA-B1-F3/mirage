@@ -211,6 +211,23 @@ class TestVersionSupport:
             None, [], [], CommandOpts(flags={"version": True})))
         assert _HANDLER_CALLS == ["called"]
 
+    def test_help_reaches_a_program_that_runs_its_own_option_loop(self):
+        # jq answers --help where its loop reaches it (OWN_OPTION_LOOP).
+        _HANDLER_CALLS.clear()
+        registered = command("jq", vfs=None,
+                             spec=SPECS["jq"])(_recording_handler)
+        asyncio.run(registered._registered_commands[0].fn(
+            None, [], [], CommandOpts(flags={"help": True})))
+        assert _HANDLER_CALLS == ["called"]
+
+    def test_help_short_circuits_a_borrowed_name(self):
+        _HANDLER_CALLS.clear()
+        registered = command("jq", vfs=None,
+                             spec=CommandSpec())(_recording_handler)
+        asyncio.run(registered._registered_commands[0].fn(
+            None, [], [], CommandOpts(flags={"help": True})))
+        assert _HANDLER_CALLS == []
+
 
 class TestStandardRequest:
 

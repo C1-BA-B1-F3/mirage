@@ -347,9 +347,9 @@ export function separateTotal(entries: [string, number][], root: string): number
 export function rollup(
   entries: [string, number][],
   root: string,
-  // `dirs`: paths that are directories even though no leaf points at
-  // them. mirage cannot otherwise see an empty directory, so this is the
-  // one case it can: an empty mount still gets GNU's `0` row.
+  // `dirs`: paths that are directories even though no leaf may point at
+  // them: the directories a walk met (an empty one, or one it could not
+  // open) and the roots of descendant mounts, which still get GNU's `0` row.
   opts: {
     all: boolean
     maxDepth: number | null
@@ -466,6 +466,7 @@ async function duOne(
   flags: DuFlags,
   links: LinkView | null,
   mounts: MountView | null,
+  directories?: () => readonly string[],
 ): Promise<[string[], number]> {
   const label = path.rawPath
 
@@ -499,7 +500,15 @@ async function duOne(
 
   const [raw, rawTotal] = await computeEntries(path)
   let total = rawTotal + linkTotal
-  if (raw.length === 0 && leaves.length === 0) {
+  const rootKey = norm(path.virtual)
+  const under = rootKey.replace(/\/$/, '') + '/'
+  const dirs = (directories?.() ?? []).filter(
+    (d) =>
+      norm(d).startsWith(under) &&
+      pathAllowed(d) &&
+      !roots.some((r) => norm(d) === r || norm(d).startsWith(r + '/')),
+  )
+  if (raw.length === 0 && leaves.length === 0 && dirs.length === 0) {
     // A backend that can only produce a size degrades to one total; it
     // cannot enumerate, so shadowed keys cannot be excluded either.
     const fallback = await computeSize(path)
@@ -520,7 +529,6 @@ async function duOne(
     entries = dropShadowed(entries, roots)
     total = entries.reduce((acc, [, size]) => acc + size, 0)
   }
-  const rootKey = norm(path.virtual)
   // A file operand walks to itself. GNU prints it once, with or without -a,
   // never as a leaf line plus a roll-up line. GNU scopes -S to directories, so
   // a file operand keeps its own size in both its row and the grand total.
@@ -539,6 +547,7 @@ async function duOne(
   const rows = rollup(entries, path.virtual, {
     all: flags.a,
     maxDepth: flags.maxDepth,
+    dirs,
     separateDirs: flags.S,
   })
   const shown = respellRaw(
@@ -568,6 +577,7 @@ export async function runDu(
   computeEntries: ComputeEntries,
   truncated?: () => boolean,
   unreadable?: () => readonly string[],
+  directories?: () => readonly string[],
 ): Promise<DuOutput> {
   const flags = parseFlags(opts)
   // -L dereferences: the operand was already rewritten at dispatch, and
@@ -597,6 +607,7 @@ export async function runDu(
     links,
     opts.ns?.mounts ?? null,
     unreadable,
+    directories,
   )
 }
 
@@ -614,7 +625,9 @@ export async function runDu(
  * walk could not open (a rule refused them below the operand): GNU names each
  * one, counts what it could, and exits 1; the line is spelled as the operand
  * was typed, and follows the unreadable-operand lines since those are known
- * before any walk.
+ * before any walk. `directories` is read after each operand's walk for every
+ * directory it met, so one no file points at (empty, or refused) still gets
+ * GNU's row.
  */
 export async function duGeneric(
   paths: PathSpec[],
@@ -626,13 +639,23 @@ export async function duGeneric(
   links: LinkView | null = null,
   mounts: MountView | null = null,
   unreadable?: () => readonly string[],
+  directories?: () => readonly string[],
 ): Promise<DuOutput> {
   const fmt = (size: number): string => (flags.h ? humanSize(size) : String(size))
 
   const lines: string[] = []
   let grand = 0
   for (const root of paths) {
-    const [block, total] = await duOne(root, computeSize, computeEntries, fmt, flags, links, mounts)
+    const [block, total] = await duOne(
+      root,
+      computeSize,
+      computeEntries,
+      fmt,
+      flags,
+      links,
+      mounts,
+      directories,
+    )
     lines.push(...block)
     grand += total
   }

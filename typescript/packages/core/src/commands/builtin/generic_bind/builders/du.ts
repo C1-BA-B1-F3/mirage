@@ -45,6 +45,10 @@ class WalkBudget {
   // the order it met them; the generic reports them after the walks the
   // way GNU names an unreadable directory.
   readonly unreadable: string[] = []
+  // Every directory the walk met, the operand's own included, which is how
+  // one no file points at (an empty one, or a refused one) still gets
+  // GNU's row.
+  readonly directories: string[] = []
 
   constructor(remaining: number | null) {
     this.remaining = remaining
@@ -117,6 +121,7 @@ async function duWalk(
     }
     return size
   }
+  budget.directories.push(path.virtual)
   let children: string[]
   try {
     children = await ops.readdir(accessor, path, index)
@@ -180,6 +185,7 @@ export const DU_BUILDER: Builder = {
       computeEntries,
       () => budget.hit,
       () => budget.unreadable,
+      () => budget.directories,
     )
     return [out.stdout, new IOResult({ stderr: out.stderr, exitCode: out.exitCode })]
   },

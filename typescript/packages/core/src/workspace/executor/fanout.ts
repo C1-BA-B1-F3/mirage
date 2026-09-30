@@ -96,6 +96,33 @@ async function mountDirs(
   return out
 }
 
+// The `0` rows of per-mount du blocks that are empty directories. Rendered du
+// output prints an empty directory and an empty file the same way, and only
+// the directory keeps its row without `-a`, so the merge asks the dispatcher
+// which each lone zero row is. The caller asks only when the answer changes
+// what prints.
+async function emptyDirs(
+  blocks: readonly Uint8Array[],
+  statPath: StatPath | null,
+): Promise<string[]> {
+  if (statPath === null) return []
+  const dec = new TextDecoder()
+  const rows = blocks.flatMap((data) =>
+    dec
+      .decode(data)
+      .split('\n')
+      .filter((line) => line.startsWith('0\t') && line.length > 2)
+      .map((line) => line.slice(2)),
+  )
+  const out: string[] = []
+  for (const row of rows) {
+    if (rows.some((other) => other.startsWith(rstripSlash(row) + '/'))) continue
+    const stat = await statPath(row)
+    if (stat !== null && stat.type === FileType.DIRECTORY) out.push(row)
+  }
+  return out
+}
+
 /**
  * Descendant mounts the current session may see.
  *
@@ -628,8 +655,7 @@ export async function fanOutTraversal(
         }),
       ]
     }
-    // Errors propagate, mirroring python: a mount that cannot open or
-    // whose command raises is a real failure, never a silently missing
+    // A mount that cannot open is a real failure, never a silently missing
     // slice of the aggregate. Unserved commands return 127 (below).
     if (ensureOpen !== undefined) {
       await ensureOpen(mount.vfs)
@@ -650,20 +676,12 @@ export async function fanOutTraversal(
         ...(dispatch === undefined ? {} : { dispatch }),
       })
     } catch (err) {
+      if (err instanceof CommandTimeoutError || (err instanceof Error && err.name === 'AbortError'))
+        throw err
       // A usage error belongs to the line, not to one mount: the
       // single-mount path reports it once as the command's result (#452),
       // and so does the walk, rather than aborting the line.
-      if (err instanceof CommandTimeoutError || (err instanceof Error && err.name === 'AbortError'))
-        throw err
-      if (!(err instanceof UsageError)) {
-        ran = [
-          null,
-          new IOResult({
-            exitCode: readFailExitCode(cmdName, err),
-            stderr: formatFsError(cmdName, err, subPaths),
-          }),
-        ]
-      } else {
+      if (err instanceof UsageError) {
         const usage = new TextEncoder().encode(`${err.message}\n`)
         return [
           null,
@@ -671,6 +689,16 @@ export async function fanOutTraversal(
           new ExecutionNode({ command: cmdStr, stderr: usage, exitCode: err.exitCode }),
         ]
       }
+      // Any other failure is this mount's slice of the walk, in the
+      // command's voice, as the single-mount chokepoint reports it; the
+      // remaining mounts still run and the status carries it.
+      ran = [
+        null,
+        new IOResult({
+          exitCode: readFailExitCode(cmdName, err),
+          stderr: formatFsError(cmdName, err, subPaths),
+        }),
+      ]
     }
     const [stdout0, io] = ran
     let stdout: ByteSource | null = stdout0
@@ -743,9 +771,11 @@ export async function fanOutTraversal(
   const finalIoExit = combinedExit(cmdName as Cmd, exitCodes, errored, quiet)
   let combined: ByteSource | null = null
   if (duMerge && allStdout.length > 0) {
+    const dirs = await mountDirs(descendants, statPath)
+    if (!duOpts.all && !duOpts.summarize) dirs.push(...(await emptyDirs(allStdout, statPath)))
     combined = mergeDuBlocks(allStdout, targetPath, paths[0]?.rawPath ?? targetPath, {
       ...duOpts,
-      mountRoots: await mountDirs(descendants, statPath),
+      dirs,
     })
   } else if (cmdName === 'find' && rows.length > 0 && findMatchesComplete) {
     if (paths.length === 1) {

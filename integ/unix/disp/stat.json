@@ -67,6 +67,109 @@
         "stdout": "  File: /data/a.txt\nType: regular file\nAccess: (0644/-rw-r--r--)\n",
         "stderr": ""
       }
+    },
+    {
+      "id": "disp_stat_default_directory_layout",
+      "seq": 856,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "stat /data | head -3",
+      "expect": {
+        "exit": 0,
+        "stdout": "  File: /data\n  Size: 4096      \tBlocks: ?          IO Block: ?      directory\nDevice: ?\tInode: ?           Links: ?\n",
+        "stderr": ""
+      },
+      "note": "A VFS keeps no device, inode, block or link counts, so those fields are `?` in GNU's layout; a directory's size is 4096 as `%s` prints it."
+    },
+    {
+      "id": "disp_stat_default_symlink_layout",
+      "seq": 857,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "ln -s a.txt /data/dsl && stat /data/dsl | sed -n '1p;2s/.*IO Block: *[^ ]* *//p'; rm /data/dsl",
+      "expect": {
+        "exit": 0,
+        "stdout": "  File: /data/dsl -> a.txt\nsymbolic link\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "disp_stat_default_one_record_per_operand",
+      "seq": 858,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "stat /data/a.txt /data | grep -c '^  File: '",
+      "expect": {
+        "exit": 0,
+        "stdout": "2\n",
+        "stderr": ""
+      }
     }
   ]
 }

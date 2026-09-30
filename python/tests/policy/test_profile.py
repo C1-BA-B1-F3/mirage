@@ -1933,7 +1933,9 @@ async def test_a_walk_below_the_operand_meets_the_rule_guard():
         assert err == "find: '/data/t/sealed': Permission denied\n"
         code, out, err = await _line(ws, "du -a /data/t", "g")
         assert code == 1
-        assert "2\t/data/t/locked/y\n" in out and "sealed" not in out
+        assert "2\t/data/t/locked/y\n" in out
+        # GNU still prints the row of a directory it may not open, at 0.
+        assert "0\t/data/t/sealed\n" in out and "/data/t/sealed/" not in out
         assert err == ("du: cannot read directory '/data/t/sealed': "
                        "Permission denied\n")
         code, out, err = await _line(ws, "cp -r /data/t /data/copy", "g")

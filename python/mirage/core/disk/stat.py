@@ -20,7 +20,7 @@ from mirage.accessor.disk import DiskAccessor
 from mirage.cache.index import NULL_INDEX, IndexCacheStore
 from mirage.core.disk.errors import disk_errors
 from mirage.core.disk.utils import resolve_inside
-from mirage.core.timeutil import epoch_to_iso
+from mirage.core.timeutil import ns_to_iso
 from mirage.types import FileStat, FileType, PathSpec
 from mirage.utils.filetype import content_type_for_path
 
@@ -35,9 +35,12 @@ async def stat(accessor: DiskAccessor,
     # (a path under a plain file) as plain absence.
     with disk_errors(virtual):
         st = await aiofiles.os.stat(p)
-    modified = epoch_to_iso(st.st_mtime)
+    modified = ns_to_iso(st.st_mtime_ns)
+    # Only BSD and macOS report a birth time, and only as float seconds.
     born = getattr(st, "st_birthtime", None)
-    birthtime = epoch_to_iso(born) if born is not None else None
+    birthtime = None
+    if born is not None:
+        birthtime = ns_to_iso(round(born * 1_000_000_000))
     # Fields setattr applies natively (mode, times) read from the real
     # inode, so external chmod/utime stays visible. Ownership can never
     # be applied natively (chown needs privileges), so it lives wholly
@@ -49,8 +52,8 @@ async def stat(accessor: DiskAccessor,
                         modified=modified,
                         type=FileType.DIRECTORY,
                         mode=st.st_mode & 0o7777,
-                        atime=epoch_to_iso(st.st_atime),
-                        ctime=epoch_to_iso(st.st_ctime),
+                        atime=ns_to_iso(st.st_atime_ns),
+                        ctime=ns_to_iso(st.st_ctime_ns),
                         birthtime=birthtime)
     return FileStat(name=p.name,
                     size=st.st_size,
@@ -59,6 +62,6 @@ async def stat(accessor: DiskAccessor,
                     type=FileType.FILE,
                     content=content_type_for_path(p.name),
                     mode=st.st_mode & 0o7777,
-                    atime=epoch_to_iso(st.st_atime),
-                    ctime=epoch_to_iso(st.st_ctime),
+                    atime=ns_to_iso(st.st_atime_ns),
+                    ctime=ns_to_iso(st.st_ctime_ns),
                     birthtime=birthtime)

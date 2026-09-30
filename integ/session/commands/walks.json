@@ -79,9 +79,10 @@
       "command": "du -a /scratch/wk",
       "expect": {
         "exit": 1,
-        "stdout": "2\t/scratch/wk/open/o\n2\t/scratch/wk/open\n2\t/scratch/wk\n",
+        "stdout": "2\t/scratch/wk/open/o\n2\t/scratch/wk/open\n0\t/scratch/wk/sealed\n2\t/scratch/wk\n",
         "stderr": "du: cannot read directory '/scratch/wk/sealed': Permission denied\n"
-      }
+      },
+      "note": "GNU du still prints the row of a directory it may not open, at 0 bytes under -ab since it counted nothing below it."
     },
     {
       "id": "cp_r_copies_the_rest_and_reports_the_refusal",

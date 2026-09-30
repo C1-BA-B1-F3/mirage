@@ -102,26 +102,32 @@ describe('handleWait', () => {
   })
 })
 
+const KILL_USAGE =
+  'kill: usage: kill [-s sigspec | -n signum | -sigspec] pid | jobspec ... or kill -l [sigspec]\n'
+
 describe('handleKill', () => {
-  it('rejects missing job id arg', async () => {
-    const jt = new JobTable()
-    const [, io] = await handleKill(jt, ['kill'])
-    expect(io.exitCode).toBe(1)
-    expect(decode(io.stderr as Uint8Array)).toMatch(/usage/)
-  })
-
-  it('rejects non-numeric job id', async () => {
-    const jt = new JobTable()
-    const [, io] = await handleKill(jt, ['kill', 'abc'])
-    expect(io.exitCode).toBe(1)
-    expect(decode(io.stderr as Uint8Array)).toMatch(/invalid job id/)
-  })
-
-  it('rejects unknown job id', async () => {
-    const jt = new JobTable()
-    const [, io] = await handleKill(jt, ['kill', '999'])
-    expect(io.exitCode).toBe(1)
-    expect(decode(io.stderr as Uint8Array)).toMatch(/no such job/)
+  it.each([
+    [[], 2, KILL_USAGE],
+    [['-9'], 2, KILL_USAGE],
+    [['--'], 2, KILL_USAGE],
+    [['-?'], 2, KILL_USAGE],
+    [['-s'], 1, 'kill: -s: option requires an argument\n'],
+    [['-n'], 1, 'kill: -n: option requires an argument\n'],
+    [['-FOO'], 1, 'kill: FOO: invalid signal specification\n'],
+    [['-s', 'FOO', '1'], 1, 'kill: FOO: invalid signal specification\n'],
+    [['-65', '1'], 1, 'kill: 65: invalid signal specification\n'],
+    [['abc'], 1, 'kill: abc: arguments must be process or job IDs\n'],
+    [['0x1'], 1, 'kill: 0x1: arguments must be process or job IDs\n'],
+    [['--', '-'], 1, 'kill: -: arguments must be process or job IDs\n'],
+    [[''], 1, "kill: `': not a pid or valid job spec\n"],
+    [['999'], 1, 'kill: (999) - No such process\n'],
+    [['-0', '999'], 1, 'kill: (999) - No such process\n'],
+    [['%3'], 1, 'kill: %3: no such job\n'],
+    [['%abc'], 1, 'kill: %abc: no such job\n'],
+    [['999', '998'], 1, 'kill: (999) - No such process\nkill: (998) - No such process\n'],
+  ] as const)('refuses %j in bash words', async (args, code, stderr) => {
+    const [, io] = await handleKill(new JobTable(), ['kill', ...args])
+    expect([io.exitCode, decode(io.stderr as Uint8Array)]).toEqual([code, stderr])
   })
 
   it('kills a known job and returns 0', async () => {
@@ -534,4 +540,88 @@ it('kill -0 checks signal permission without cancelling the process', async () =
   } finally {
     await ws.close()
   }
+})
+
+it.each(['-kill', '-SIGkill', '-s kill', '-n KILL', '-s 9'])(
+  'kill reads the signal name %s in any case',
+  async (spelling) => {
+    const ws = buildWs()
+    try {
+      const pid = stdoutStr(await ws.shell('sleep 30 & echo $!')).trim()
+      const result = await ws.shell(`kill ${spelling} ${pid}`)
+      expect([result.exitCode, stderrStr(result)]).toEqual([0, ''])
+    } finally {
+      await ws.close()
+    }
+  },
+)
+
+it('kill succeeds when any operand was signalled', async () => {
+  const ws = buildWs()
+  try {
+    const pid = stdoutStr(await ws.shell('sleep 30 & echo $!')).trim()
+    const result = await ws.shell(`kill 999999 %9 abc ${pid}; echo rc=$?`)
+    expect(stdoutStr(result)).toBe('rc=0\n')
+    expect(stderrStr(result)).toBe(
+      'kill: (999999) - No such process\nkill: %9: no such job\n' +
+        'kill: abc: arguments must be process or job IDs\n',
+    )
+  } finally {
+    await ws.close()
+  }
+})
+
+it('ps lays columns out as procps does', async () => {
+  const ws = buildWs()
+  try {
+    const pid = stdoutStr(await ws.shell('sleep 30 & echo $!')).trim()
+    const at = pid.padStart(7)
+    const cases: [string, string | null][] = [
+      [`ps -o pid,ppid,cmd -p ${pid}`, `    PID    PPID CMD\n${at}       1 sleep 30\n`],
+      [`ps -o cmd,pid -p ${pid}`, `CMD${' '.repeat(25)}    PID\nsleep 30${' '.repeat(20)}${at}\n`],
+      [`ps -o comm,args -p ${pid}`, 'COMMAND         COMMAND\nsleep           sleep 30\n'],
+      [`ps -o pid,cmd= -p ${pid}`, `    PID \n${at} sleep 30\n`],
+      [`ps -o pid=,cmd -p ${pid}`, `        CMD\n${at} sleep 30\n`],
+      [`ps -o pid=X,cmd=Y -p ${pid}`, `      X Y\n${at} sleep 30\n`],
+      [`ps -o "pid cmd" -p ${pid},${pid}`, `    PID CMD\n${at} sleep 30\n`],
+      [`ps ax -o pid= -p ${pid} | grep -c .`, null],
+    ]
+    for (const [line, out] of cases) {
+      const result = await ws.shell(line)
+      if (out !== null) expect(stdoutStr(result), line).toBe(out)
+      expect([result.exitCode, stderrStr(result)], line).toEqual([0, ''])
+    }
+  } finally {
+    await ws.close()
+  }
+})
+
+const PS_USAGE =
+  '\nUsage:\n ps [options]\n\n' +
+  " Try 'ps --help <simple|list|output|threads|misc|all>'\n" +
+  "  or 'ps --help <s|l|o|t|m|a>'\n for additional help text.\n\n" +
+  'For more details see ps(1).\n'
+
+it.each([
+  [['-p'], 'list of process IDs must follow -p'],
+  [['-p', ''], 'list of process IDs must follow -p'],
+  [['--pid'], 'list of process IDs must follow --pid'],
+  [['-p', '1,x'], 'process ID list syntax error'],
+  [['-p', '0'], 'process ID out of range'],
+  [['-p', '-1'], 'process ID out of range'],
+  [['-o'], 'format specification must follow -o'],
+  [['--format'], 'format specification must follow --format'],
+  [['-o', 'pid,,cmd'], 'improper format list'],
+  [['-o', 'foo'], 'unknown user-defined format specifier "foo"'],
+  [['-o', '='], 'unknown user-defined format specifier ""'],
+  [['-K'], 'unsupported SysV option'],
+  [['--bogus'], 'unknown gnu long option'],
+  [['bogus'], 'unsupported option (BSD syntax)'],
+] as const)('ps refuses %j in procps words', (args, message) => {
+  const [out, io] = handlePs(new JobTable(), ['ps', ...args])
+  expect(out).toBeNull()
+  expect([io.exitCode, decode(io.stderr as Uint8Array)]).toEqual([
+    1,
+    `error: ${message}\n${PS_USAGE}`,
+  ])
 })

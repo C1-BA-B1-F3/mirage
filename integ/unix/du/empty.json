@@ -1,0 +1,90 @@
+{
+  "cases": [
+    {
+      "id": "du_empty_dirs_prep",
+      "seq": 1301080,
+      "targets": [
+        "disk",
+        "ssh"
+      ],
+      "command": "mkdir -p /data/due/e /data/due/g/h && echo hi > /data/due/f",
+      "expect": {
+        "exit": 0,
+        "stdout": "",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "du_empty_dirs_get_rows",
+      "seq": 1301081,
+      "targets": [
+        "disk",
+        "ssh"
+      ],
+      "command": "du /data/due",
+      "expect": {
+        "exit": 0,
+        "stdout": "0\t/data/due/e\n0\t/data/due/g/h\n0\t/data/due/g\n3\t/data/due\n",
+        "stderr": ""
+      },
+      "note": "GNU du prints a row for every directory, an empty one included (0 bytes under -ab), children before their parent and siblings sorted."
+    },
+    {
+      "id": "du_empty_dirs_with_files",
+      "seq": 1301082,
+      "targets": [
+        "disk",
+        "ssh"
+      ],
+      "command": "du -a /data/due",
+      "expect": {
+        "exit": 0,
+        "stdout": "0\t/data/due/e\n3\t/data/due/f\n0\t/data/due/g/h\n0\t/data/due/g\n3\t/data/due\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "du_empty_dirs_depth_limit",
+      "seq": 1301083,
+      "targets": [
+        "disk",
+        "ssh"
+      ],
+      "command": "du --max-depth=1 /data/due",
+      "expect": {
+        "exit": 0,
+        "stdout": "0\t/data/due/e\n0\t/data/due/g\n3\t/data/due\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "du_empty_dirs_across_mounts",
+      "seq": 1301084,
+      "targets": [
+        "disk",
+        "ssh"
+      ],
+      "command": "du / | grep '/due'",
+      "expect": {
+        "exit": 0,
+        "stdout": "0\t/data/due/e\n0\t/data/due/g/h\n0\t/data/due/g\n3\t/data/due\n",
+        "stderr": ""
+      },
+      "note": "A walk from / folds every mount's rows into one tree; an empty directory prints like an empty file there, so the merge asks the dispatcher which each lone 0 row is."
+    },
+    {
+      "id": "du_empty_dirs_cleanup",
+      "seq": 1301085,
+      "targets": [
+        "disk",
+        "ssh"
+      ],
+      "command": "rm -rf /data/due && test ! -e /data/due && echo gone",
+      "expect": {
+        "exit": 0,
+        "stdout": "gone\n",
+        "stderr": ""
+      }
+    }
+  ]
+}

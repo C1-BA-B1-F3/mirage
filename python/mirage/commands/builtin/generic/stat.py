@@ -1,3 +1,5 @@
+import math
+import re
 from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -17,11 +19,16 @@ from mirage.io.types import ByteSource, IOResult
 from mirage.ops.types import LinkView, MountView, StatPath
 from mirage.types import (DEVICE_NUMBERS_KEY, LINK_TARGET_KEY, FileStat,
                           FileType, PathSpec, StatFn)
+from mirage.utils.dates import iso_timestamp
 from mirage.utils.errors import FS_ERRORS, fs_error_line
 from mirage.utils.stat_view import (content_size, device_rdev, is_dir,
                                     posix_mode)
 
 _STR_DIRECTIVES = frozenset("nNF")
+
+# The fraction of a second as the backend spelled it, so both hosts print
+# the digits the stamp carries rather than what their clock type keeps.
+_FRACTION = re.compile(r"\d\d:\d\d:\d\d\.(\d+)")
 
 _FORMAT_FLAGS = frozenset("#0 +-")
 
@@ -361,29 +368,28 @@ def _format_stat(fmt: str, s: FileStat, name: str,
 
 
 def _stat_time(value: str | None) -> str:
-    """Render a known timestamp in GNU's UTC layout, or '-' when unknown.
+    """A known timestamp in GNU's layout, in UTC, or '-' when unknown.
 
     Args:
-        value (str | None): backend ISO timestamp.
+        value (str | None): backend ISO timestamp; a naive one is UTC.
     """
-    if not value:
+    seconds = iso_timestamp(value)
+    if seconds is None or value is None:
         return "-"
-    try:
-        dt = datetime.fromisoformat(value.replace("Z", "+00:00"))
-    except ValueError:
-        return "-"
-    if dt.tzinfo is None:
-        dt = dt.replace(tzinfo=timezone.utc)
-    dt = dt.astimezone(timezone.utc)
-    return f"{dt:%Y-%m-%d %H:%M:%S}.{dt.microsecond:06d}000 +0000"
+    whole = datetime.fromtimestamp(math.floor(seconds), timezone.utc)
+    match = _FRACTION.search(value)
+    fraction = (match.group(1) if match else "").ljust(9, "0")[:9]
+    return f"{whole:%Y-%m-%d %H:%M:%S}.{fraction} +0000"
 
 
 def _render_stat(s: FileStat, name: str, identity: Identity | None) -> str:
-    """GNU coreutils 9.7 layout; VFS storage counters remain unknown.
+    """GNU coreutils 9.7's default layout, with unknown fields marked.
 
     A VFS has rendered bytes, modes and logical owners, but no device,
-    inode, allocation blocks or IO block size. Those fields print '?';
-    absent sizes and timestamps print '-'. Times are rendered in UTC.
+    inode, allocation blocks, IO block size or link count: those print
+    '?'. An absent size, owner number or time prints '-'. Each time is
+    the one its directive prints (``%x %y %z %w``), the name is unquoted
+    as GNU's default prints it, and times are UTC.
 
     Args:
         s (FileStat): the backend and namespace stat.
@@ -395,14 +401,19 @@ def _render_stat(s: FileStat, name: str, identity: Identity | None) -> str:
     gid = str(s.gid) if s.gid is not None else "-"
     owner = owner_name(s.uid, identity)
     group = group_name(s.gid, identity)
+    links = "Links: ?"
+    if s.type is FileType.CHAR_DEVICE:
+        major = _directive_value("Hr", s, name, identity)
+        minor = _directive_value("Lr", s, name, identity)
+        links = f"Links: {'?':<5} Device type: {major},{minor}"
     shown = " -> ".join(_name_parts(s, name, False))
     return (f"  File: {shown}\n"
             f"  Size: {size:<10}\tBlocks: {'?':<10} "
             f"IO Block: {'?':<6} {_type_label(s)}\n"
-            "Device: ?\tInode: ?           Links: ?\n"
+            f"Device: ?\tInode: {'?':<10}  {links}\n"
             f"Access: ({_effective_mode(s):04o}/{ls_mode_string(s)})  "
             f"Uid: ({uid:>5}/{owner:>8})   Gid: ({gid:>5}/{group:>8})\n"
-            f"Access: {_stat_time(s.atime)}\n"
+            f"Access: {_stat_time(s.atime or s.modified)}\n"
             f"Modify: {_stat_time(s.modified)}\n"
             f"Change: {_stat_time(s.ctime)}\n"
             f" Birth: {_stat_time(s.birthtime)}")

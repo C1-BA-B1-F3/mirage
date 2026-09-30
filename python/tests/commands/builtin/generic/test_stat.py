@@ -458,3 +458,39 @@ async def test_default_stat_layout_and_unknown_metadata():
     assert await _render(
         '%z %Z %w %W',
         info) == f'2026-03-04T05:06:07Z 1772600767 {_MTIME} {_MTIME_EPOCH}'
+
+
+async def _default(fs: FileStat) -> list[str]:
+    out, io = await stat([PathSpec.from_str_path("/data/f.txt")],
+                         stat_fn=partial(_const_stat, fs))
+    assert io.exit_code == 0
+    return (await materialize(out)).decode().splitlines()
+
+
+@pytest.mark.asyncio
+async def test_default_times_are_the_directives_times_in_gnu_layout():
+    # The Access line is %x, which falls back to the mtime; a naive stamp
+    # is UTC and an offset one is moved to UTC; the fraction is the digits
+    # the stamp carries, so both hosts print the same line.
+    lines = await _default(
+        _fs(modified="2026-03-04T05:06:07.123456789",
+            ctime="2026-03-04T07:06:07.5+02:00",
+            birthtime="2026-03-04T05:06:07Z"))
+    assert lines[4:] == [
+        "Access: 2026-03-04 05:06:07.123456789 +0000",
+        "Modify: 2026-03-04 05:06:07.123456789 +0000",
+        "Change: 2026-03-04 05:06:07.500000000 +0000",
+        " Birth: 2026-03-04 05:06:07.000000000 +0000",
+    ]
+    assert (await _default(_fs(modified="not a time")))[5] == "Modify: -"
+
+
+@pytest.mark.asyncio
+async def test_default_layout_names_a_device_type():
+    lines = await _default(
+        _fs(type=FileType.CHAR_DEVICE,
+            size=None,
+            extra={DEVICE_NUMBERS_KEY: [1, 3]}))
+    assert lines[1].endswith("character special file")
+    assert lines[2] == ("Device: ?\tInode: ?           Links: ?     "
+                        "Device type: 1,3")

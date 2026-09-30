@@ -12,6 +12,8 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import dataclasses
+
 import pytest
 
 from mirage.commands.builtin.generic_bind.adapter import CommandIO
@@ -162,3 +164,43 @@ async def test_budget_is_shared_across_operands():
                           [_spec('/db'), _spec('/db/sub')], [], CommandOpts())
     assert io.exit_code == 1
     assert len((await materialize(stream)).decode().splitlines()) == 2
+
+
+_SEALED_TREE = {
+    "/db": ["/db/a.txt", "/db/empty", "/db/sealed", "/db/walled"],
+    "/db/empty": [],
+    "/db/sealed": [],
+}
+
+
+def _sealed_ops() -> CommandIO:
+    # /db/sealed lists as refused and /db/walled refuses its stat, the two
+    # doors a rule or the host can shut.
+
+    async def readdir(_accessor, path, _index=None):
+        if path.virtual == "/db/sealed":
+            raise PermissionError(13, "Permission denied", path.virtual)
+        return _SEALED_TREE.get(path.virtual, [])
+
+    async def stat(_accessor, path, _index=None):
+        if path.virtual == "/db/walled":
+            raise PermissionError(13, "Permission denied", path.virtual)
+        if path.virtual in _SEALED_TREE:
+            return FileStat(name=path.virtual, type=FileType.DIRECTORY)
+        if path.virtual == "/db/a.txt":
+            return FileStat(name=path.virtual, type=FileType.FILE, size=3)
+        raise FileNotFoundError(path.virtual)
+
+    return dataclasses.replace(_ops(), readdir=readdir, stat=stat)
+
+
+@pytest.mark.asyncio
+async def test_a_directory_no_file_points_at_still_gets_its_row():
+    # GNU prints a row for an empty directory and for one it cannot open
+    # (0 under -ab); a refused stat names the path but proves no directory.
+    notes = ("du: cannot read directory '/db/sealed': Permission denied\n"
+             "du: cannot read directory '/db/walled': Permission denied\n")
+    rows = "0\t/db/empty\n0\t/db/sealed\n3\t/db\n"
+    assert await _run(_sealed_ops(), "/db") == (rows, 1, notes)
+    everything = "3\t/db/a.txt\n" + rows
+    assert await _run(_sealed_ops(), "/db", a=True) == (everything, 1, notes)

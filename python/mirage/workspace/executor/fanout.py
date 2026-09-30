@@ -103,6 +103,37 @@ async def _mount_dirs(descendants: Sequence[MountEntry],
     return out
 
 
+async def _empty_dirs(blocks: Sequence[bytes],
+                      stat_path: StatPath | None) -> list[str]:
+    """The ``0`` rows of per-mount du blocks that are empty directories.
+
+    Rendered du output prints an empty directory and an empty file the
+    same way, and only the directory keeps its row without ``-a``, so
+    the merge asks the dispatcher which each lone zero row is. The
+    caller asks only when the answer changes what prints.
+
+    Args:
+        blocks (Sequence[bytes]): rendered du output, one per mount.
+        stat_path (StatPath | None): dispatcher-backed stat.
+    """
+    if stat_path is None:
+        return []
+    rows: list[str] = []
+    for data in blocks:
+        for line in data.decode(errors="replace").splitlines():
+            size, _, label = line.partition("\t")
+            if size == "0" and label:
+                rows.append(label)
+    out: list[str] = []
+    for row in rows:
+        if any(other.startswith(row.rstrip("/") + "/") for other in rows):
+            continue
+        stat = await stat_path(row)
+        if stat is not None and stat.type is FileType.DIRECTORY:
+            out.append(row)
+    return out
+
+
 async def _ls_block_mounts(descendants: Sequence[MountEntry],
                            stat_path: StatPath | None) -> list[MountEntry]:
     """The descendants `ls -R` should render a block for.
@@ -684,10 +715,12 @@ async def _fan_out_traversal(
                                       command=cmd_str,
                                       exit_code=exc.exit_code,
                                       stderr=usage)
-
         except CommandTimeoutError:
             raise
         except Exception as exc:
+            # Any other failure is this mount's slice of the walk, in the
+            # command's voice, as the single-mount chokepoint reports it;
+            # the remaining mounts still run and the status carries it.
             logger.debug("%s traversal failed", cmd_name, exc_info=True)
             stdout = None
             io = IOResult(exit_code=read_fail_exit(cmd_name, exc),
@@ -750,6 +783,9 @@ async def _fan_out_traversal(
 
     combined: ByteSource | None
     if du_merge and all_stdout:
+        dirs = await _mount_dirs(descendants, stat_path)
+        if not du_flags.a and not du_flags.s:
+            dirs += await _empty_dirs(all_stdout, stat_path)
         combined = merge_du_blocks(all_stdout,
                                    target_path,
                                    paths[0].raw_path,
@@ -759,8 +795,7 @@ async def _fan_out_traversal(
                                    human=du_flags.human,
                                    max_depth=du_flags.max_depth,
                                    separate_dirs=du_flags.separate_dirs,
-                                   mount_roots=await
-                                   _mount_dirs(descendants, stat_path))
+                                   dirs=dirs)
     elif cmd_name == "find" and all_rows and find_matches_complete:
         if len(paths) == 1:
             unique = {p.virtual: p for p in all_rows}

@@ -23,7 +23,14 @@ import { rstripSlash, stripSlash } from '@struktoai/mirage-core/utils/slash'
 import { compareCodePoints } from '@struktoai/mirage-core/utils/sort'
 import type { SSHAccessor } from '../../accessor/ssh.ts'
 import type { SshAttrs } from './entry.ts'
-import { isDirectoryAttrs, isFileAttrs, isNoSuchFile, joinRoot, stripPrefix } from './utils.ts'
+import {
+  isDirectoryAttrs,
+  isFileAttrs,
+  isNoSuchFile,
+  isPermissionDenied,
+  joinRoot,
+  stripPrefix,
+} from './utils.ts'
 
 async function attrsOrNull(accessor: SSHAccessor, key: string): Promise<Stats | null> {
   const sftp = await accessor.sftp()
@@ -73,7 +80,7 @@ export async function readdir(
     sftp.readdir(remote, (err, entries) => {
       if (err !== undefined) {
         if (isNoSuchFile(err)) resolveFn(null)
-        else rejectFn((err as { code?: number }).code === 3 ? eacces(p) : err)
+        else rejectFn(isPermissionDenied(err) ? eacces(p) : err)
         return
       }
       resolveFn(entries)

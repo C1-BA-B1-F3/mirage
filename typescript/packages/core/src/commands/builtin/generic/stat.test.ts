@@ -388,3 +388,43 @@ it('renders GNU default layout with explicit unknown metadata', async () => {
     `2026-03-04T05:06:07Z 1772600767 ${MTIME} ${MTIME_EPOCH}`,
   )
 })
+
+async function defaultLines(s: FileStat): Promise<string[]> {
+  const result = await statGeneric(
+    [PathSpec.fromStrPath('/data/f.txt')],
+    { ...opts(''), flags: {} },
+    () => Promise.resolve(s),
+  )
+  if (result === null) throw new Error('missing result')
+  return DEC.decode(await materialize(result[0]))
+    .trimEnd()
+    .split('\n')
+}
+
+it("renders the directives' times in GNU layout, identically across hosts", async () => {
+  // The Access line is %x, which falls back to the mtime; a naive stamp is
+  // UTC and an offset one is moved to UTC; the fraction is the digits the
+  // stamp carries, so both hosts print the same line.
+  const lines = await defaultLines(
+    fs({
+      modified: '2026-03-04T05:06:07.123456789',
+      ctime: '2026-03-04T07:06:07.5+02:00',
+      birthtime: '2026-03-04T05:06:07Z',
+    }),
+  )
+  expect(lines.slice(4)).toEqual([
+    'Access: 2026-03-04 05:06:07.123456789 +0000',
+    'Modify: 2026-03-04 05:06:07.123456789 +0000',
+    'Change: 2026-03-04 05:06:07.500000000 +0000',
+    ' Birth: 2026-03-04 05:06:07.000000000 +0000',
+  ])
+  expect((await defaultLines(fs({ modified: 'not a time' })))[5]).toBe('Modify: -')
+})
+
+it('names a device type in the default layout', async () => {
+  const lines = await defaultLines(
+    fs({ type: FileType.CHAR_DEVICE, size: null, extra: { [DEVICE_NUMBERS_KEY]: [1, 3] } }),
+  )
+  expect(lines[1]?.endsWith('character special file')).toBe(true)
+  expect(lines[2]).toBe('Device: ?\tInode: ?           Links: ?     Device type: 1,3')
+})

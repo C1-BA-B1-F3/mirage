@@ -21,6 +21,7 @@ import { headVisible, nodeVisible } from '../../policy/match/allow.ts'
 import type { MountRegistry } from '../mount/registry.ts'
 import type { SessionState } from '../session/session.ts'
 import {
+  CAPTURABLE_BUILTINS,
   INTERPRETER_NAMES,
   KEYWORDS,
   NAMESPACE_COMMANDS,
@@ -134,7 +135,7 @@ function* layers(
   const refused = runtimeRefused(name, session, registry, routing)
   if (SHELL_NAMES.has(name) && installed) {
     found = true
-    yield (native || refused) && (INTERPRETER_NAMES.has(name) || name === 'ps' || name === 'kill')
+    yield (native || refused) && CAPTURABLE_BUILTINS.has(name)
       ? Consumer.EXTERNAL
       : Consumer.SESSION
   }

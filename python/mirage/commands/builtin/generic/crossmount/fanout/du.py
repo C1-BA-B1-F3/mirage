@@ -41,25 +41,23 @@ def _parse_rows(blocks: Sequence[bytes]) -> list[tuple[str, int]]:
 
 
 def _leaves(
-    rows: Sequence[tuple[str, int]], mount_roots: Sequence[str] = ()
+    rows: Sequence[tuple[str, int]], dirs: Sequence[str] = ()
 ) -> list[tuple[str, int]]:
     """Keep the rows nothing else sits under.
 
     The blocks are rendered text, which does not say which row is a file
     and which is a directory, but the shape does: a directory row is an
-    ancestor of some other row. mirage never emits a row for an empty
-    directory (no leaf points at one, the documented divergence), so a
-    row with no descendants is a file. The one exception is a mount root,
-    which is a directory even when the mount is empty, so those are named
-    rather than inferred.
+    ancestor of some other row. A row with no descendants is a file
+    unless it is named a directory: a mount root, or an empty directory
+    a mount reported, both of which print as ``0`` rows.
 
     Args:
         rows (Sequence[tuple[str, int]]): every parsed row.
-        mount_roots (Sequence[str]): paths that are directories whatever
-            their shape.
+        dirs (Sequence[str]): paths that are directories whatever their
+            shape.
     """
     paths = {path.rstrip("/") for path, _ in rows}
-    known = {root.rstrip("/") for root in mount_roots}
+    known = {root.rstrip("/") for root in dirs}
     return [(path, size) for path, size in rows
             if path.rstrip("/") not in known and not any(
                 other.startswith(path.rstrip("/") + "/") for other in paths)]
@@ -76,7 +74,7 @@ def merge_du_blocks(
         human: bool,
         max_depth: int | None,
         separate_dirs: bool = False,
-        mount_roots: Sequence[str] = (),
+        dirs: Sequence[str] = (),
 ) -> bytes:
     """Fold per-mount du blocks into one tree, GNU's way.
 
@@ -105,12 +103,13 @@ def merge_du_blocks(
         separate_dirs (bool): -S, a directory counts only the files that
             sit directly in it. The per-mount runs are asked without it,
             because the merge needs their leaves and applies it here.
-        mount_roots (Sequence[str]): the descendant mount roots, which
-            are directories whether or not they hold anything. An empty
-            mount contributes only its own row, which the leaf inference
-            would otherwise read as a zero-byte file and hide.
+        dirs (Sequence[str]): the rows that are directories whether or
+            not they hold anything: the descendant mount roots, and the
+            empty directories the mounts reported. Each prints as a lone
+            ``0`` row, which the leaf inference would otherwise read as a
+            zero-byte file and hide.
     """
-    leaves = _leaves(_parse_rows(blocks), mount_roots)
+    leaves = _leaves(_parse_rows(blocks), dirs)
     total = sum(size for _, size in leaves)
     # -S scopes to the operand's own row; GNU keeps the -c grand total
     # recursive (coreutils 9.7 over a real mount: `du -bSc base` prints
@@ -122,7 +121,7 @@ def merge_du_blocks(
                       root,
                       a=a,
                       max_depth=max_depth,
-                      dirs=mount_roots,
+                      dirs=dirs,
                       separate_dirs=separate_dirs)
         shown = respell_raw([node for node, _ in rows], root, label)
         lines = [

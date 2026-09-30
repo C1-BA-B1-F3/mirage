@@ -185,7 +185,7 @@ describe('handleCommand — job builtins', () => {
       jt,
     )
     expect(io.exitCode).toBe(1)
-    expect(decode(io.stderr as Uint8Array)).toMatch(/no such job/)
+    expect(decode(io.stderr as Uint8Array)).toMatch(/No such process/)
   })
 })
 

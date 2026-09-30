@@ -24,6 +24,22 @@ def now_iso() -> str:
     return to_iso_z(datetime.now(timezone.utc))
 
 
+def ns_to_iso(ns: int) -> str:
+    """Spell a host file time in UTC to the millisecond, as Node's stat does.
+
+    Node renders a stat time as ``Date(Math.round(sec * 1e3 + nsec / 1e6))``;
+    rounding the same double here keeps a disk mount's times byte-identical
+    across hosts, and the fraction is what ``find -newer`` compares.
+
+    Args:
+        ns (int): unix epoch nanoseconds (``st_mtime_ns``).
+    """
+    sec, nsec = divmod(ns, 1_000_000_000)
+    whole, ms = divmod(math.floor(sec * 1e3 + nsec / 1e6 + 0.5), 1000)
+    stamp = datetime.fromtimestamp(whole, tz=timezone.utc)
+    return f"{stamp:%Y-%m-%dT%H:%M:%S}.{ms:03d}Z"
+
+
 def epoch_to_iso(seconds: float) -> str:
     """Convert unix epoch seconds to a second-precision UTC ISO-8601 string.
 

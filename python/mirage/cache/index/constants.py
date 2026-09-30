@@ -18,5 +18,8 @@
 # prefix when upgrading workers that share an index.
 ENTRY_PREFIX = "mirage:idx:entry:"
 CHILDREN_PREFIX = "mirage:idx:directory:"
+TOMBSTONE_PREFIX = "mirage:idx:tombstone:"
+
+PATHS_KEY = "mirage:idx:paths"
 
 GENERATION_KEY = "mirage:idx:generation"

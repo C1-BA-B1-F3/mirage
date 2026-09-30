@@ -157,8 +157,7 @@ export async function cachedEntry(
   if (siblings?.includes(virtual) === true) return entry
   if (entry.resourceType === ResourceType.FOLDER && (await index.listDir(virtual)).entries != null)
     return entry
-  // A later listing must not revive metadata from an expired generation.
-  await index.invalidatePrefix(virtual)
+  await index.invalidateEntry(virtual)
   return null
 }
 

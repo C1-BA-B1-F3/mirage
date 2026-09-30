@@ -6,6 +6,7 @@ from mirage.core.qdrant.readdir import _blob_size, readdir
 from mirage.core.qdrant.render import blob_bytes, render_json, render_text
 from mirage.types import PathSpec
 from mirage.utils.sanitize import NAME_MAX_BYTES, byte_len
+from tests.fixtures.index_spy import WindowSpy
 
 
 def _ps(path: str) -> PathSpec:
@@ -192,3 +193,14 @@ async def test_a_basename_past_name_max_lists_within_it_and_opens(
     assert names == {first, second}
     assert _ids(await readdir(long_basename, _ps(f"/{first}"))) == {"1"}
     assert _ids(await readdir(long_basename, _ps(f"/{second}"))) == {"2"}
+
+
+@pytest.mark.asyncio
+async def test_a_capped_listing_is_written_as_a_window(accessor):
+    # Groups and rows are read up to max_rows, so a row outside the head of
+    # the table is not gone because a listing no longer names it.
+    index = WindowSpy()
+    await readdir(accessor, _ps("/animals"), index)
+    await readdir(accessor, _ps("/animals/cat/big"), index)
+    assert index.windows["/animals"] is True
+    assert index.windows["/animals/cat/big"] is True

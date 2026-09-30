@@ -97,6 +97,8 @@ async def write(prefix: str) -> None:
                               remote_time=REMOTE_TIME)
     await store.set_dir(DIR, [(FILE_NAME, file_entry),
                               (FOLDER_NAME, folder_entry)])
+    await store.set_dir(f"{DIR}/{FOLDER_NAME}", [(FILE_NAME, file_entry)])
+    await store.put(f"{DIR}/{FOLDER_NAME}/unlisted", file_entry)
     await store.set_dir(EMPTY_DIR, [])
     await store.set_partial_dir(PARTIAL_DIR, [(FILE_NAME, file_entry)])
     listing = await store.list_dir(DIR)
@@ -143,6 +145,22 @@ async def read(prefix: str) -> None:
     kept = await store.get(FILE)
     check("py read: invalidate keeps the entries", kept.entry is not None,
           f"got {kept!r}")
+    await store.set_dir(DIR, [
+        (FOLDER_NAME,
+         IndexEntry(id="replacement", name=FOLDER_NAME, resource_type="file"))
+    ])
+    replaced = await store.get(f"{DIR}/{FOLDER_NAME}")
+    check(
+        "py read: replacement file survives foreign subtree eviction",
+        replaced.entry is not None and replaced.entry.resource_type == "file")
+    for path in [
+            f"{DIR}/{FOLDER_NAME}/{FILE_NAME}", f"{DIR}/{FOLDER_NAME}/unlisted"
+    ]:
+        check("py read: foreign descendant evicted " + path,
+              (await store.get(path)).status is LookupStatus.NOT_FOUND)
+    check("py read: foreign directory listing evicted",
+          (await store.list_dir(f"{DIR}/{FOLDER_NAME}")).status
+          is LookupStatus.NOT_FOUND)
     await store.clear()
     gone = await store.list_dir(DIR)
     check("py read: clear forgets the listing", gone.status

@@ -14,8 +14,8 @@
 
 from datetime import datetime
 
-from mirage.cache.index.config import (IndexEntry, ListResult, LookupResult,
-                                       LookupStatus)
+from mirage.cache.index.config import (Evicted, IndexEntry, ListResult,
+                                       LookupResult, LookupStatus)
 from mirage.cache.index.store import IndexCacheStore
 
 
@@ -48,20 +48,29 @@ class NullIndexCacheStore(IndexCacheStore):
         return ListResult(status=LookupStatus.NOT_FOUND)
 
     async def set_dir(
-        self,
-        vfs_path: str,
-        entries: list[tuple[str, IndexEntry]],
-        expired_at: datetime | None = None,
-    ) -> None:
-        return None
+            self,
+            vfs_path: str,
+            entries: list[tuple[str, IndexEntry]],
+            expired_at: datetime | None = None,
+            *,
+            window: bool = False,
+            excluded: tuple[str, ...] = (),
+    ) -> list[Evicted]:
+        return []
 
     async def entries(self) -> dict[str, IndexEntry]:
         return {}
 
+    async def invalidate_entry(self, vfs_path: str) -> None:
+        pass
+
     async def invalidate_dir(self, vfs_path: str) -> None:
         return None
 
-    async def invalidate_prefix(self, vfs_path: str) -> None:
+    async def invalidate_prefix(self,
+                                vfs_path: str,
+                                *,
+                                excluded: tuple[str, ...] = ()) -> None:
         return None
 
     async def invalidate(self) -> None:

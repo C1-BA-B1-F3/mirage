@@ -1606,7 +1606,21 @@
           "repo": "integ/data-v1",
           "mode": "read"
         }
-      ]
+      ],
+      "sessions": {
+        "sealed": {
+          "commands": {
+            "deny": [
+              {
+                "reason": "unreadable cache subtree",
+                "paths": [
+                  "/trunc/src/cache"
+                ]
+              }
+            ]
+          }
+        }
+      }
     },
     {
       "id": "cli-gh",

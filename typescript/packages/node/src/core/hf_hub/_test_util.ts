@@ -15,7 +15,7 @@
 import { createHash } from 'node:crypto'
 import { type IncomingMessage, type Server, type ServerResponse, createServer } from 'node:http'
 import type { AddressInfo } from 'node:net'
-import type { IndexEntry } from '@struktoai/mirage-core/cache/index/config'
+import type { Evicted, IndexEntry, SetDirOptions } from '@struktoai/mirage-core/cache/index/config'
 import { RAMIndexCacheStore } from '@struktoai/mirage-core/cache/index/ram'
 import { compareCodePoints } from '@struktoai/mirage-core/utils/sort'
 import { rstripSlash, stripSlash } from '@struktoai/mirage-core/utils/slash'
@@ -416,8 +416,9 @@ export class ExpiredOnArrival extends RAMIndexCacheStore {
     path: string,
     entries: readonly [string, IndexEntry][],
     expiredAt?: Date | null,
-  ): Promise<void> {
-    return super.setDir(path, entries, this.expiryFor(path, expiredAt))
+    options?: SetDirOptions,
+  ): Promise<Evicted[]> {
+    return super.setDir(path, entries, this.expiryFor(path, expiredAt), options)
   }
 
   override setPartialDir(

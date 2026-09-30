@@ -23,6 +23,7 @@ from mirage.core.gmail.readdir import (_date_from_internal, _msg_filename,
                                        _sanitize, readdir)
 from mirage.types import PathSpec
 from mirage.utils.key_prefix import mount_key
+from tests.fixtures.index_spy import WindowSpy
 
 
 @pytest.fixture
@@ -530,3 +531,68 @@ async def test_a_globbed_label_listing_is_not_cached_as_the_label(
                      virtual="/gmail/INBOX",
                      directory="/gmail/INBOX"), index)
     assert plain == []
+
+
+async def _one_message(_tm, label_id=None, query=None, max_results=50):
+    return [{"id": "x1"}]
+
+
+@pytest.mark.asyncio
+async def test_a_label_and_its_day_are_written_as_windows(accessor):
+    # Both fetches stop at MAX_MESSAGES, so what they name is a window: a
+    # message outside it has not gone anywhere.
+    index = WindowSpy()
+    raws = {"x1": _msg_stub("x1", "Hi 27", 1777291200000)}
+
+    async def fake_get_message_raw(_tm, mid):
+        return raws[mid]
+
+    with (
+            patch("mirage.core.gmail.readdir.list_labels",
+                  new_callable=AsyncMock,
+                  return_value=[{
+                      "id": "INBOX",
+                      "type": "system"
+                  }]),
+            patch("mirage.core.gmail.readdir.list_messages", new=_one_message),
+            patch("mirage.core.gmail.readdir.get_message_raw",
+                  new=fake_get_message_raw),
+    ):
+        for path in ("/gmail/INBOX", "/gmail/INBOX/2026-04-27"):
+            await readdir(
+                accessor,
+                PathSpec(vfs_path=mount_key(path, "/gmail"),
+                         virtual=path,
+                         directory=path), index)
+    assert index.windows["/gmail/INBOX"] is True
+    assert index.windows["/gmail/INBOX/2026-04-27"] is True
+
+
+@pytest.mark.asyncio
+async def test_a_day_listed_first_is_written_as_a_window(accessor):
+    # Listing the day before its label runs the day lister itself, which
+    # the seeded path above never reaches.
+    index = WindowSpy()
+    raws = {"x1": _msg_stub("x1", "Hi 27", 1777291200000)}
+
+    async def fake_get_message_raw(_tm, mid):
+        return raws[mid]
+
+    with (
+            patch("mirage.core.gmail.readdir.list_labels",
+                  new_callable=AsyncMock,
+                  return_value=[{
+                      "id": "INBOX",
+                      "type": "system"
+                  }]),
+            patch("mirage.core.gmail.readdir.list_messages", new=_one_message),
+            patch("mirage.core.gmail.readdir.get_message_raw",
+                  new=fake_get_message_raw),
+    ):
+        path = "/gmail/INBOX/2026-04-27"
+        await readdir(
+            accessor,
+            PathSpec(vfs_path=mount_key(path, "/gmail"),
+                     virtual=path,
+                     directory=path), index)
+    assert index.windows["/gmail/INBOX/2026-04-27"] is True

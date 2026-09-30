@@ -118,7 +118,8 @@ async def test_a_probe_leaves_find_its_whole_listing():
             walks = hub.count("tree")
             listed = await _out(ws, "find /m -type f")
             assert listed.decode().split() == ["/m/a.txt", "/m/d/b.txt"]
-            assert hub.count("tree") == walks
+            # find, a new command, re-checks the listing once under fresh.
+            assert hub.count("tree") == walks + 1
         finally:
             await ws.close()
 
@@ -273,8 +274,9 @@ async def test_a_drift_check_on_a_loaded_mount_asks_one_path():
 
 
 # Measured on the first green run, then pinned (test plan T31): each
-# number is one reconcile probe, and a warm read makes no tree walk and no
-# download.
+# number is one reconcile probe, and a warm read makes no download. The one
+# tree walk is the command re-checking the listing its path resolves
+# through, which fresh does once per command (Task 1.3 makes it cheaper).
 WARM = [
     ("cat /m/a.txt", 2),
     ("cat /m/a.txt | head -c 1", 2),
@@ -293,7 +295,7 @@ async def test_a_warm_fresh_read_costs_one_path_per_probe(line, posts):
             hub.log.clear()
             await _out(ws, line)
             assert (hub.count("paths_info"), hub.count("tree"),
-                    hub.count("resolve")) == (posts, 0, 0)
+                    hub.count("resolve")) == (posts, 1, 0)
         finally:
             await ws.close()
 

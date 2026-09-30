@@ -12,7 +12,9 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import type { Evicted } from '../cache/index/config.ts'
 import { RAMIndexCacheStore } from '../cache/index/ram.ts'
+import { commandStarted } from '../cache/index/scope.ts'
 import type { FileCache } from '../cache/file/mixin.ts'
 import type { OpsRegistry } from '../ops/registry.ts'
 import type { BaseVFS } from '../vfs/base.ts'
@@ -20,6 +22,7 @@ import { FileStat, PathSpec, ReadPolicy } from '../types.ts'
 import { enoent, isEnoent, isEnotdir, isMissingOp } from '../utils/errors.ts'
 import { mountKey } from '../utils/key_prefix.ts'
 import { rstripSlash } from '../utils/slash.ts'
+import { ancestors } from '../utils/path.ts'
 import type { MountEntry } from './mount/mount.ts'
 import type { Namespace } from './mount/namespace/namespace.ts'
 
@@ -178,6 +181,23 @@ export class Reconciler {
     return verdict === Verdict.FRESH
   }
 
+  /**
+   * Gate a cached listing: may it be served without re-listing?
+   *
+   * Under `bounded` the listing is trusted within its bound. Under `fresh`
+   * it is trusted only if the running command refreshed it itself, so one
+   * command re-lists a folder once however often it reads it; anything
+   * older, and any read outside a command, lists again. Task 1.3 replaces
+   * "list again" with a cheaper check.
+   */
+  mayServeListing(mount: MountEntry, folder: string): Promise<boolean> {
+    if (mount.read.policy !== ReadPolicy.FRESH) return Promise.resolve(true)
+    const started = commandStarted()
+    return Promise.resolve(
+      started !== null && mount.cacheManager?.listedSince(folder, started) === true,
+    )
+  }
+
   // Reconcile a single-mount shell read before the command runs.
   // cat/ls/stat on one mount resolve here (not through the dispatcher), so
   // this is where their reads reconcile against backend truth. Only paths
@@ -223,6 +243,20 @@ export class Reconciler {
     ) {
       await this.onMissing(path)
     }
+  }
+
+  async onGone(gone: readonly Evicted[], excluded: readonly string[] = []): Promise<void> {
+    const paths = new Set(gone.map((child) => rstripSlash(child.path) || '/'))
+    const folders = new Set(
+      gone.filter((child) => child.folder).map((child) => rstripSlash(child.path) || '/'),
+    )
+    for (const path of paths) {
+      const parents = [...ancestors(path), ...(path === '/' ? [] : ['/'])]
+      if (parents.some((parent) => folders.has(parent))) continue
+      await this.cache.remove(path)
+      if (folders.has(path)) await this.cache.evictPrefix(rstripSlash(path) + '/', excluded)
+    }
+    if (paths.size > 0) await this.namespace.dropOverlaysUnder([...paths], excluded)
   }
 
   // Apply the deletion reaction: evict cache + GC orphaned overlay. An

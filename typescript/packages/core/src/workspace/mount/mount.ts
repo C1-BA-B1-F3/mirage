@@ -44,6 +44,7 @@ import { CachableAsyncIterator } from '../../io/cachable_iterator.ts'
 import type { ByteSource } from '../../io/types.ts'
 import { IOResult } from '../../io/types.ts'
 import { captureCacheContext, runWithCacheManager } from '../../cache/context.ts'
+import { captureCommandScope } from '../../cache/index/scope.ts'
 import type { CacheManager } from '../../cache/manager.ts'
 import { mergeSignals } from '../abort.ts'
 import {
@@ -883,6 +884,7 @@ function wrapMountStreams(
     ...captureSessionContext(),
     ...captureRecordingContext(),
     captureCacheContext(),
+    captureCommandScope(),
   ])
   const wrap = (obj: ByteSource): ByteSource => {
     if (obj instanceof Uint8Array) return obj

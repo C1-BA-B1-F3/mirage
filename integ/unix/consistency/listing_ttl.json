@@ -181,10 +181,10 @@
       ],
       "expect": {
         "exit": 0,
-        "stdout": "a.txt\na.txt\na.txt\nb.txt\na\n3\n",
+        "stdout": "a.txt\na.txt\nb.txt\na.txt\nb.txt\na\n3\n",
         "stderr": ""
       },
-      "note": "The same listing cap applies under fresh, which currently revalidates file content only. Uses the bounded case's fresh-capable targets: dropbox, ssh and box reject fresh. Setup and remaining exclusions match listing_ttl_bounded_new_file_appears."
+      "note": "fresh checks the listing too (Task 1.2): the next command re-lists a folder it reads from the cache, so b.txt shows at once instead of after the ttl. Uses the bounded case's fresh-capable targets: dropbox, ssh and box reject fresh. Setup and remaining exclusions match listing_ttl_bounded_new_file_appears."
     }
   ]
 }

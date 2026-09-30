@@ -12,7 +12,14 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import type { IndexEntry, IndexSnapshot, ListResult, LookupResult } from './config.ts'
+import type {
+  Evicted,
+  IndexEntry,
+  IndexSnapshot,
+  ListResult,
+  LookupResult,
+  SetDirOptions,
+} from './config.ts'
 
 export abstract class IndexCacheStore {
   /** Seconds a listing lives when its writer names no expiry. */
@@ -31,11 +38,28 @@ export abstract class IndexCacheStore {
   abstract get(vfsPath: string): Promise<LookupResult>
   abstract put(vfsPath: string, entry: IndexEntry): Promise<void>
   abstract listDir(vfsPath: string): Promise<ListResult>
+  /**
+   * Cache a complete directory listing. A complete listing names every
+   * child, so a child the previous listing named and this one does not is
+   * gone: its row goes, and a gone directory takes its listing and every
+   * row beneath it. Rows only `put` wrote were never named, so they stay. A
+   * window evicts nothing. Resolves to the children that went.
+   */
   abstract setDir(
     vfsPath: string,
     entries: readonly [string, IndexEntry][],
     expiredAt?: Date | null,
-  ): Promise<void>
+    options?: SetDirOptions,
+  ): Promise<Evicted[]>
+  /**
+   * Hand children a re-list found gone to the mount's cleanup. A raw store
+   * belongs to no mount, so there is nothing to clean.
+   */
+  reportGone(_gone: readonly Evicted[]): Promise<void> {
+    return Promise.resolve()
+  }
+  /** Drop one metadata row while preserving listing history. */
+  abstract invalidateEntry(vfsPath: string): Promise<void>
   abstract invalidateDir(vfsPath: string): Promise<void>
   /**
    * Cache observed children without claiming a complete directory. Stores
@@ -63,7 +87,7 @@ export abstract class IndexCacheStore {
    *
    * Mirrors Python `IndexCacheStore.invalidate_prefix`.
    */
-  abstract invalidatePrefix(vfsPath: string): Promise<void>
+  abstract invalidatePrefix(vfsPath: string, excluded?: readonly string[]): Promise<void>
   /**
    * Mark every entry stale without discarding it.
    *

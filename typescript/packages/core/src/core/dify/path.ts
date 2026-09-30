@@ -14,11 +14,11 @@
 
 import { mountPrefixOf } from '../../utils/key_prefix.ts'
 import type { DifyAccessor } from '../../accessor/dify.ts'
-import type { IndexEntry } from '../../cache/index/config.ts'
+import { LookupStatus, type IndexEntry } from '../../cache/index/config.ts'
 import type { IndexCacheStore } from '../../cache/index/store.ts'
 import { PathSpec } from '../../types.ts'
 import { rstripSlash, stripSlash } from '../../utils/slash.ts'
-import { ensureTree } from './tree.ts'
+import { ensureTree, refillTree } from './tree.ts'
 import { enoent } from '../../utils/errors.ts'
 
 export interface ResolvedDifyPath {
@@ -26,6 +26,7 @@ export interface ResolvedDifyPath {
   mountPrefix: string
   isDir: boolean
   entry: IndexEntry | null
+  children?: string[] | undefined
 }
 
 export async function resolvePath(
@@ -38,7 +39,7 @@ export async function resolvePath(
     throw new Error('dify: missing index')
   }
   const mountPrefix = mountPrefixOf(spec.virtual, spec.vfsPath)
-  await ensureTree(accessor, index, mountPrefix)
+  let refilled = await ensureTree(accessor, index, mountPrefix)
   const virtualKey = virtualKeyFor(spec)
   const result = await index.get(virtualKey)
   if (result.entry !== undefined && result.entry !== null) {
@@ -47,11 +48,29 @@ export async function resolvePath(
       mountPrefix,
       isDir: result.entry.resourceType === 'folder',
       entry: result.entry,
+      children: refilled?.get(virtualKey),
     }
   }
   const listing = await index.listDir(virtualKey)
+  if (listing.entries == null && listing.status === LookupStatus.EXPIRED) {
+    refilled ??= await refillTree(accessor, index, mountPrefix)
+    if (refilled.has(virtualKey))
+      return {
+        virtualKey,
+        mountPrefix,
+        isDir: true,
+        entry: null,
+        children: refilled.get(virtualKey),
+      }
+  }
   if (listing.entries !== undefined && listing.entries !== null) {
-    return { virtualKey, mountPrefix, isDir: true, entry: null }
+    return {
+      virtualKey,
+      mountPrefix,
+      isDir: true,
+      entry: null,
+      children: refilled?.get(virtualKey),
+    }
   }
   throw enoent(spec.virtual)
 }

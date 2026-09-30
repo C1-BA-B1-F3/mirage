@@ -3,6 +3,7 @@ from types import SimpleNamespace
 import pytest
 
 from mirage.core.dify import readdir as core_readdir
+from mirage.core.dify.path import ResolvedDifyDirectory
 from mirage.ops.dify import OPS
 
 
@@ -14,7 +15,8 @@ readdir = _op("readdir")
 
 
 async def resolve_dir(accessor, path, index):
-    return SimpleNamespace(is_dir=True, virtual_key="/knowledge/guides")
+    return ResolvedDifyDirectory(virtual_key="/knowledge/guides",
+                                 mount_prefix="/knowledge")
 
 
 class ListingIndex:

@@ -12,8 +12,10 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+from mirage.cache.index import IndexConfig
 from mirage.types import DEFAULT_READ_TTL, JsonValue, ReadPolicy, ReadSpec
 from mirage.vfs.base import BaseVFS
+from mirage.vfs.dev.dev import DevVFS
 
 
 def coerce_read_policy(value: "str | ReadPolicy | None") -> ReadPolicy:
@@ -132,7 +134,10 @@ def resolve_read_spec(policy: "str | ReadPolicy | None",
     return ReadSpec(policy=resolved_policy, ttl=resolved)
 
 
-def check_read_capability(prefix: str, vfs: BaseVFS, spec: ReadSpec) -> None:
+def check_read_capability(prefix: str,
+                          vfs: BaseVFS,
+                          spec: ReadSpec,
+                          index: IndexConfig | None = None) -> None:
     """Refuse a read policy this mount's backend cannot honour.
 
     The rules are ordered, and the order is the answer to two questions
@@ -150,6 +155,9 @@ def check_read_capability(prefix: str, vfs: BaseVFS, spec: ReadSpec) -> None:
         prefix (str): the mount prefix, for the message.
         vfs (BaseVFS): the backend being mounted.
         spec (ReadSpec): the resolved policy and bound.
+        index (IndexConfig | None): the index config the mount will be
+            built from, which is the listing cache fresh would check; None
+            for a RAM store at the driver's ``index_ttl``.
 
     Raises:
         ValueError: the backend cannot honour the declared policy.
@@ -193,11 +201,29 @@ def check_read_capability(prefix: str, vfs: BaseVFS, spec: ReadSpec) -> None:
     # The instance attribute, not the class: lancedb decides per config
     # whether it caches reads.
     if not vfs.caches_reads:
+        # No bytes to revalidate, but a listing cache is still something
+        # fresh checks before serving, so that alone makes it honest.
+        if _caches_listings(vfs, index):
+            return
         raise ValueError(
             f"mount {prefix!r}: read: fresh needs a resource that caches "
-            f"reads; {name} does not, so the freshness check could "
-            "never run")
+            f"reads or listings; {name} caches neither, so the freshness "
+            "check could never run")
     if not vfs.read_revalidatable:
         raise ValueError(
             f"mount {prefix!r}: read: fresh needs a resource that stamps a "
             f"comparable content token on reads; {name} does not")
+
+
+def _caches_listings(vfs: BaseVFS, index: IndexConfig | None) -> bool:
+    """Whether the mount will keep listings long enough to check.
+
+    Args:
+        vfs (BaseVFS): the backend being mounted.
+        index (IndexConfig | None): the index config the mount will be
+            built from; None for a RAM store at the driver's ``index_ttl``.
+    """
+    if isinstance(vfs, DevVFS):
+        return False
+    ttl = index.ttl if index is not None else vfs.index_ttl
+    return ttl > 0

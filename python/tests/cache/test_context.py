@@ -31,6 +31,9 @@ def _run(coro):
 
 class FakeManager:
 
+    def listed_since(self, _folder: str, _started: int) -> bool:
+        return False
+
     def __init__(self) -> None:
         self.writes: list[PathSpec] = []
         self.unlinks: list[PathSpec] = []

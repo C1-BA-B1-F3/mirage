@@ -23,6 +23,7 @@ from mirage.cache.file.mixin import FileCacheMixin, validate_max_drain_bytes
 from mirage.cache.file.utils import parse_limit
 from mirage.cache.invalidation import Invalidation
 from mirage.cache.lock import KeyLockMixin
+from mirage.utils.key_prefix import under_path
 from mirage.vfs.ram import RAMVFS
 
 
@@ -170,13 +171,19 @@ class RAMFileCacheStore(RAMVFS, FileCacheMixin, KeyLockMixin):
             self._cache_size = 0
             self._clear_locks()
 
-    async def evict_prefix(self, prefix: str) -> None:
+    async def evict_prefix(self,
+                           prefix: str,
+                           *,
+                           excluded: tuple[str, ...] = ()) -> None:
         # Store-wide: a fill in flight under the prefix has no entry yet,
         # so its key cannot be enumerated below.
         self._invalidation.invalidate_all()
         # A pending fill may not have installed an entry yet.
         keys = self._entries.keys() | self._drain_tasks.keys()
-        for key in [k for k in keys if k.startswith(prefix)]:
+        for key in [
+                k for k in keys if k.startswith(prefix) and not any(
+                    under_path(k, p) for p in excluded)
+        ]:
             await self.remove(key)
 
     def evict_paths(self, paths: Iterable[str]) -> None:

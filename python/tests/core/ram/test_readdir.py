@@ -58,6 +58,16 @@ async def test_readdir_root(accessor, store, index):
 
 
 @pytest.mark.asyncio
+async def test_parent_listing_preserves_a_cached_subdirectory(accessor, index):
+    children = await readdir(accessor, PathSpec.from_str_path("/sub", "sub"),
+                             index)
+    await readdir(accessor, PathSpec.from_str_path("/", ""), index)
+    assert (await index.list_dir("/sub")).entries == children
+    assert (await index.get("/sub")).entry.resource_type == "folder"
+    assert (await index.get("/a.txt")).entry.resource_type == "file"
+
+
+@pytest.mark.asyncio
 async def test_readdir_subdir(accessor, index):
     entries = await readdir(
         accessor, PathSpec(vfs_path="sub", virtual="/sub", directory="/sub"),

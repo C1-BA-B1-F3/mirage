@@ -131,6 +131,26 @@ export class IndexEntry {
   }
 }
 
+/**
+ * A child a complete re-list no longer names. `folder` says whether it held
+ * a listing or was typed a folder, so cleanup takes everything beneath it.
+ */
+export interface Evicted {
+  readonly path: string
+  readonly folder: boolean
+}
+
+/** How a complete listing is written. */
+export interface SetDirOptions {
+  /**
+   * The entries are a capped window (the newest N messages, the last N
+   * days): served as the listing, but they prove nothing absent.
+   */
+  readonly window?: boolean
+  /** Nested mount roots whose rows and descendants must survive. */
+  readonly excluded?: readonly string[]
+}
+
 /** Entry rows and directory children from one refill. */
 export interface IndexSnapshot {
   readonly entries: ReadonlyMap<string, IndexEntry>

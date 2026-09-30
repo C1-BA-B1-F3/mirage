@@ -69,7 +69,9 @@ export async function listing(
     if (!result) throw enoent(path)
     if (index) {
       const root = mountPrefixOf(path.virtual, path.vfsPath) + '/' + ps.slice(0, 4).join('/')
-      await index.invalidatePrefix(root)
+      // No wipe first: each complete setDir drops what it no longer names, a
+      // dropped folder takes its subtree, and the old lists are what tells
+      // cleanup which files went away.
       await index.put(root, entry('files', true))
       for (const [directory, entries] of tree)
         await index.setDir(directory ? root + '/' + directory : root, entries)

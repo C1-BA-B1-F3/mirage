@@ -18,6 +18,7 @@ import { VFSName, type PathSpec } from '../../../types.ts'
 import { command, type CommandFnResult, type CommandOpts } from '../../config.ts'
 import { specOf } from '../../spec/builtins.ts'
 import { findGeneric } from '../generic/find.ts'
+import { findWalk } from '../generic_bind/builders/find.ts'
 import { resolveGlobOf } from '../generic_bind/index.ts'
 import { metadataProvision } from './_provision.ts'
 import { GITHUB_IO } from './io.ts'
@@ -35,6 +36,10 @@ async function findCommand(
   // The dispatcher hands a pattern over whole; the wrapper resolves it,
   // as python's does, before the walk names anything.
   const resolved = await resolveGlob(accessor, paths, opts.index ?? undefined)
+  // A truncated tree names only some paths and is never refetched, so it
+  // takes the builder's folder-by-folder walk, which readdir answers per
+  // folder.
+  if (accessor.truncated) return findWalk(GITHUB_IO, accessor, resolved, texts, opts)
   return findGeneric(resolved, texts, opts, (root, options) => githubFind(accessor, root, options))
 }
 

@@ -259,6 +259,21 @@
         "stdout": "",
         "stderr": "unlink: cannot unlink '/repo/README.md': Read-only file system\n"
       }
+    },
+    {
+      "id": "github_truncated_du_preserves_refused_directory_rows",
+      "seq": 530031,
+      "targets": [
+        "github"
+      ],
+      "session": "sealed",
+      "command": "du /trunc/src 2>/dev/null | grep '/cache$'",
+      "expect": {
+        "exit": 0,
+        "stdout": "0\t/trunc/src/cache\n",
+        "stderr": ""
+      },
+      "note": "A truncated GitHub tree uses the generic folder walk: an unreadable subtree keeps its zero-byte directory row and du exits 1, as GNU coreutils 9.7 does."
     }
   ]
 }

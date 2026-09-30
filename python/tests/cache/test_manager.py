@@ -21,6 +21,7 @@ from mirage.cache.file.ram import RAMFileCacheStore
 from mirage.cache.index import NULL_INDEX
 from mirage.cache.index.config import IndexEntry
 from mirage.cache.index.ram import RAMIndexCacheStore
+from mirage.cache.index.scope import command_scope, command_started
 from mirage.cache.index.view import IndexView
 from mirage.cache.manager import CacheManager
 from mirage.types import PathSpec
@@ -526,3 +527,40 @@ async def test_scope_index_locked_is_never_memoized_nor_shared():
     assert locked is not manager.scope_index_locked(index)
     assert locked is not manager.scope_index(index)
     assert await _waits_for_the_lock(cache, manager.scope_index(index))
+
+
+@pytest.mark.asyncio
+async def test_a_write_through_the_locked_view_counts_for_the_shared_one():
+    # A glob writes through its own locked view; the command's later ls
+    # through the shared view must trust that same write.
+    cache, index = _stores()
+    manager = CacheManager(cache, index, "/data/", True)
+    async with command_scope():
+        started = command_started()
+        await manager.scope_index_locked(index).set_dir("/data", [])
+        assert started is not None
+        assert manager.listed_since("/data", started) is True
+        assert manager.listed_since("/data/other", started) is False
+
+
+@pytest.mark.asyncio
+async def test_a_write_before_the_command_does_not_count():
+    cache, index = _stores()
+    manager = CacheManager(cache, index, "/data/", True)
+    await manager.scope_index(index).set_dir("/data", [])
+    async with command_scope():
+        started = command_started()
+        assert started is not None
+        assert manager.listed_since("/data", started) is False
+
+
+@pytest.mark.asyncio
+async def test_a_replaced_store_forgets_what_the_old_one_was_written():
+    cache, index = _stores()
+    manager = CacheManager(cache, index, "/data/", True)
+    async with command_scope():
+        started = command_started()
+        await manager.scope_index(index).set_dir("/data", [])
+        manager.scope_index(RAMIndexCacheStore(ttl=600))
+        assert started is not None
+        assert manager.listed_since("/data", started) is False

@@ -12,20 +12,93 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import { DEFAULT_READ_SPEC, DEFAULT_READ_TTL, ReadPolicy, type ReadSpec } from '../../types.ts'
 import type { BaseVFS } from '../../vfs/base.ts'
+import { DevVFS } from '../../vfs/dev/dev.ts'
 import { checkReadCapability, resolveReadSpec } from './read_policy.ts'
 
 const FRESH: ReadSpec = { policy: ReadPolicy.FRESH, ttl: DEFAULT_READ_TTL }
 
-// The verdict reads exactly three fields off the VFS, so a stub carrying
+// The verdict reads exactly four fields off the VFS, so a stub carrying
 // them is the whole surface under test; a real backend would only add
 // construction cost. The alias-inheritance sweep, which cannot live in core
 // because both S3VFS classes are in the runtime packages, is in
 // node/src/vfs/read_revalidatable.test.ts.
-function stub(name: string, cachesReads: boolean, readRevalidatable: boolean): BaseVFS {
-  return { name, cachesReads, readRevalidatable } as unknown as BaseVFS
+function stub(
+  name: string,
+  cachesReads: boolean,
+  readRevalidatable: boolean,
+  indexTtl = 0,
+): BaseVFS {
+  return { name, cachesReads, readRevalidatable, indexTtl } as unknown as BaseVFS
+}
+
+const REVALIDATABLE = [
+  'aliyun',
+  'backblaze',
+  'ceph',
+  'digitalocean',
+  'gcs',
+  'gdocs',
+  'gdrive',
+  'github',
+  'gridfs',
+  'gsheets',
+  'gslides',
+  'hf_buckets',
+  'hf_datasets',
+  'hf_models',
+  'hf_spaces',
+  'minio',
+  'oci',
+  'onedrive',
+  'qingstor',
+  'r2',
+  's3',
+  'scaleway',
+  'seaweedfs',
+  'sharepoint',
+  'supabase',
+  'tencent',
+  'wasabi',
+]
+
+interface SpecCaps {
+  caches_reads?: boolean | string
+  read_revalidatable?: boolean
+  index_ttl?: number
+}
+
+// The real verdict over each backend's committed capability facts, so the
+// roster is judged by the function that judges a mount.
+function freshRoster(host: string): string[] {
+  const path = resolve(
+    fileURLToPath(import.meta.url),
+    `../../../../../../../spec/typescript/${host}/vfs.json`,
+  )
+  const caps = (
+    JSON.parse(readFileSync(path, 'utf8')) as { capabilities: Record<string, SpecCaps | null> }
+  ).capabilities
+  return Object.entries(caps)
+    .filter(([kind, c]) => {
+      if (c === null) return false
+      try {
+        checkReadCapability(
+          '/x/',
+          stub(kind, c.caches_reads === true, c.read_revalidatable === true, c.index_ttl ?? 0),
+          FRESH,
+        )
+        return true
+      } catch {
+        return false
+      }
+    })
+    .map(([kind]) => kind)
+    .sort()
 }
 
 describe('resolveReadSpec', () => {
@@ -137,11 +210,57 @@ describe('checkReadCapability', () => {
     }).toThrow(/needs a version layer to pin to/)
   })
 
-  it('refuses fresh on a backend that cannot cache reads', () => {
+  it('refuses fresh on a backend that caches nothing', () => {
     expect(() => {
       checkReadCapability('/d/', stub('ram', false, false), FRESH)
-    }).toThrow(/needs a resource that caches reads; ram does not/)
+    }).toThrow(/needs a resource that caches reads or listings; ram caches neither/)
   })
+
+  it('allows fresh on a backend that caches listings but no bytes', () => {
+    expect(() => {
+      checkReadCapability('/d/', stub('disk', false, false, 60), FRESH)
+    }).not.toThrow()
+  })
+
+  // /dev keeps no listing at all, the same on both hosts.
+  it('refuses fresh on /dev, which keeps no listing', () => {
+    expect(() => {
+      checkReadCapability('/dev/', new DevVFS(), FRESH)
+    }).toThrow(/caches reads or listings/)
+  })
+
+  it('names a bad bound before the listing verdict', () => {
+    expect(() => {
+      checkReadCapability('/d/', stub('ram', false, false), { policy: ReadPolicy.FRESH, ttl: 0 })
+    }).toThrow(/ttl must be at least 1 second/)
+  })
+
+  it.each([
+    ['node', ['airtable', 'chroma', 'disk', 'qdrant', 'wandb']],
+    ['browser', ['airtable', 'chroma', 'opfs', 'qdrant', 'wandb']],
+  ])(
+    'allows fresh on the %s roster: the revalidatable ones plus listing caches',
+    (host, listing) => {
+      const known = new Set(
+        Object.keys(
+          (
+            JSON.parse(
+              readFileSync(
+                resolve(
+                  fileURLToPath(import.meta.url),
+                  `../../../../../../../spec/typescript/${host}/vfs.json`,
+                ),
+                'utf8',
+              ),
+            ) as { capabilities: Record<string, unknown> }
+          ).capabilities,
+        ),
+      )
+      expect(freshRoster(host)).toEqual(
+        [...REVALIDATABLE.filter((n) => known.has(n)), ...listing].sort(),
+      )
+    },
+  )
 
   it('refuses fresh on a backend that caches but stamps nothing comparable', () => {
     expect(() => {

@@ -14,7 +14,7 @@
 
 import pytest
 
-from mirage.types import MountMode
+from mirage.types import MountMode, ReadPolicy, ReadSpec
 from mirage.vfs.gdrive import GoogleDriveConfig, GoogleDriveVFS
 from mirage.workspace import Workspace
 from tests.e2e.gdrive_mock import FakeGDrive, patch_gdrive
@@ -110,3 +110,60 @@ async def test_gdrive_mock_find_missing_start_point(gdrive_ws):
     r = await ws.shell("find /gd/nope")
     assert (await r.stdout_str()) == ""
     assert "401" not in (await r.stderr_str())
+
+
+@pytest.mark.asyncio
+async def test_a_stat_that_relists_the_parent_cleans_up_a_dropped_sibling():
+    # The first read of an expired folder can be a stat of one child; the
+    # re-list it warms still has to find the sibling that went away, which
+    # it cannot if the old listing is thrown out before warming.
+    fake = FakeGDrive()
+    fake.add_file("dir/a.txt", b"alpha\n")
+    fake.add_file("dir/b.txt", b"bravo\n")
+    config = GoogleDriveConfig(client_id="i",
+                               client_secret="s",
+                               refresh_token="r")
+    ws = Workspace({"/gd": GoogleDriveVFS(config)}, mode=MountMode.READ)
+    with patch_gdrive(fake):
+        try:
+            await ws.shell("ls /gd/dir")
+            cat = await ws.shell("cat /gd/dir/b.txt")
+            assert await cat.stdout_str() == "bravo\n"
+            await ws.namespace.set_attrs("/gd/dir/b.txt", mode=0o600)
+            assert await ws.cache.exists("/gd/dir/b.txt")
+            fake.remove_file("dir/b.txt")
+            await ws._registry.mount_for("/gd/dir").index.invalidate()
+            stat = await ws.shell("stat -c %n /gd/dir/a.txt")
+            assert await stat.stdout_str() == "/gd/dir/a.txt\n"
+            assert ws.namespace.meta_for("/gd/dir/b.txt") is None
+            assert not await ws.cache.exists("/gd/dir/b.txt")
+        finally:
+            await ws.close()
+
+
+@pytest.mark.asyncio
+async def test_under_fresh_a_stat_relists_and_cleans_up_a_dropped_sibling():
+    # Under fresh the next command re-lists on its own; its first read is
+    # a stat of a sibling, and that re-list still has to find b.txt gone.
+    fake = FakeGDrive()
+    fake.add_file("dir/a.txt", b"alpha\n")
+    fake.add_file("dir/b.txt", b"bravo\n")
+    config = GoogleDriveConfig(client_id="i",
+                               client_secret="s",
+                               refresh_token="r")
+    ws = Workspace({"/gd": GoogleDriveVFS(config)},
+                   mode=MountMode.READ,
+                   read=ReadSpec(policy=ReadPolicy.FRESH))
+    with patch_gdrive(fake):
+        try:
+            await ws.shell("ls /gd/dir")
+            cat = await ws.shell("cat /gd/dir/b.txt")
+            assert await cat.stdout_str() == "bravo\n"
+            await ws.namespace.set_attrs("/gd/dir/b.txt", mode=0o600)
+            fake.remove_file("dir/b.txt")
+            stat = await ws.shell("stat -c %n /gd/dir/a.txt")
+            assert await stat.stdout_str() == "/gd/dir/a.txt\n"
+            assert ws.namespace.meta_for("/gd/dir/b.txt") is None
+            assert not await ws.cache.exists("/gd/dir/b.txt")
+        finally:
+            await ws.close()

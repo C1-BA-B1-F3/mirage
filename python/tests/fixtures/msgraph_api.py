@@ -116,6 +116,9 @@ class FakeGraph:
                                          versions=versions,
                                          history=history)
 
+    def remove(self, drive: str, path: str) -> None:
+        self._rows.pop((drive, path))
+
     def touch(self, drive: str, path: str) -> None:
         row = self._rows[(drive, path)]
         n = self._mint()

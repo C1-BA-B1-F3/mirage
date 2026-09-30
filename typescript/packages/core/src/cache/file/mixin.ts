@@ -31,7 +31,7 @@ export interface FileCache {
   // path (an account CLI writing to its service by id) cannot say which
   // entries went stale, only which mount's keyspace did. Stores that own
   // their keyspace remotely push the filter down rather than enumerating.
-  evictPrefix(prefix: string): Promise<void>
+  evictPrefix(prefix: string, excluded?: readonly string[]): Promise<void>
   /**
    * Drop the given keys, synchronously.
    *

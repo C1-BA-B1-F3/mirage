@@ -22,7 +22,7 @@ import {
 } from '../../../types.ts'
 import { decodeBase64, encodeBase64 } from '../../../utils/base64.ts'
 import { epochToIso } from '../../../utils/dates.ts'
-import { globPrefixMatch, resolveSymlinks } from '../../../utils/path.ts'
+import { ancestors, globPrefixMatch, resolveSymlinks } from '../../../utils/path.ts'
 import { rstripSlash } from '../../../utils/slash.ts'
 import type { ResolveFn } from '../../dispatcher/index.ts'
 import type { MountEntry } from '../mount.ts'
@@ -329,6 +329,28 @@ export class Namespace {
     this.nodeTable.delete(path)
     await this.store.delete([path])
     return true
+  }
+
+  async dropOverlaysUnder(
+    paths: readonly string[],
+    excluded: readonly string[] = [],
+  ): Promise<number> {
+    const roots = new Set(paths.map((path) => path.replace(/\/+$/, '') || '/'))
+    const protectedPaths = new Set(excluded.map((path) => path.replace(/\/+$/, '') || '/'))
+    const doomed: string[] = []
+    for (const [key, meta] of this.nodeTable) {
+      if (meta.target !== undefined) continue
+      const lineage = ['/', ...ancestors(key), key.replace(/\/+$/, '') || '/']
+      if (
+        lineage.some((path) => roots.has(path)) &&
+        !lineage.some((path) => protectedPaths.has(path))
+      ) {
+        doomed.push(key)
+      }
+    }
+    for (const key of doomed) this.nodeTable.delete(key)
+    if (doomed.length > 0) await this.store.delete(doomed)
+    return doomed.length
   }
 
   // Drop overlay times after a content write. write(2) refreshes mtime,

@@ -334,3 +334,15 @@ async def test_an_empty_token_is_treated_as_absent(cache):
     await cache.set("/a", b"data", fingerprint="")
     assert not await cache._cache_client.exists(cache._meta_key("/a"))
     assert not await cache.is_fresh("/a", "")
+
+
+@pytest.mark.asyncio
+async def test_prefix_eviction_preserves_nested_mount(cache):
+    for key in ("/data/sub/old", "/data/sub/nested", "/data/sub/nested/file",
+                "/data/sub/nested2"):
+        await cache.set(key, b"value")
+    await cache.evict_prefix("/data/sub/", excluded=("/data/sub/nested", ))
+    assert await cache.get("/data/sub/nested") == b"value"
+    assert await cache.get("/data/sub/nested/file") == b"value"
+    assert await cache.get("/data/sub/old") is None
+    assert await cache.get("/data/sub/nested2") is None

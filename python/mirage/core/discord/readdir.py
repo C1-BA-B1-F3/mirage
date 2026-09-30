@@ -129,7 +129,7 @@ async def _list_channel_days(accessor: DiscordAccessor, match: ScopeMatch,
         date.fromisoformat(end_date), span) if accessor.time_range.bounded else
              _date_range(end_date, span=span))
     entries = [(d, history_entry(own.id, d)) for d in dates]
-    return DirListing(entries=entries, partial=span is not None)
+    return DirListing(entries=entries, partial=span is not None, window=True)
 
 
 async def _day_listing(accessor: DiscordAccessor, channel_id: str,
@@ -154,7 +154,9 @@ async def _day_listing(accessor: DiscordAccessor, channel_id: str,
         if _is_soft_error(e):
             logger.debug("discord: history denied for %s/%s (%d); empty day",
                          channel_id, date_str, e.status)
-            return DirListing(entries=[])
+            # A soft error is not the channel saying the day's messages
+            # are gone, so the empty day must not evict what it held.
+            return DirListing(entries=[], window=True)
         raise
     # The day's messages are already in hand, so chat.jsonl's exact rendered
     # size is free here; read() renders the same messages the same way.
@@ -231,7 +233,9 @@ async def _list_files(accessor: DiscordAccessor, match: ScopeMatch,
     # index evicted the files listing while the day's entries survived.
     channel_id = own.extra.get("channel_id") or own.id.split(":", 1)[0]
     listing = await _day_listing(accessor, channel_id, match.slots["day"])
-    return listing.seeds.get("files", [])
+    # A soft-error day proves nothing about its attachments either.
+    return DirListing(entries=list(listing.seeds.get("files", [])),
+                      window=listing.window)
 
 
 readdir = make_readdir(

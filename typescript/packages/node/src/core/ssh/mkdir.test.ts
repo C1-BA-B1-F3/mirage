@@ -24,6 +24,10 @@ function spec(p: string): PathSpec {
 }
 
 class RecordingInvalidator implements CacheInvalidator {
+  listedSince(_folder: string, _started: number): boolean {
+    return false
+  }
+
   readonly writes: string[] = []
   readonly ancestors: string[] = []
 

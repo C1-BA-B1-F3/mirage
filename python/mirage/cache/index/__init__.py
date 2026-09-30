@@ -14,14 +14,15 @@
 
 from typing import Any
 
-from mirage.cache.index.config import (IndexConfig, IndexEntry, ListResult,
-                                       LookupResult, LookupStatus,
+from mirage.cache.index.config import (Evicted, IndexConfig, IndexEntry,
+                                       ListResult, LookupResult, LookupStatus,
                                        RedisIndexConfig, ResourceType)
 from mirage.cache.index.null import NULL_INDEX, NullIndexCacheStore
 from mirage.cache.index.ram import RAMIndexCacheStore
 from mirage.cache.index.store import IndexCacheStore
 
 __all__ = [
+    "Evicted",
     "IndexCacheStore",
     "IndexEntry",
     "ListResult",

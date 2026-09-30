@@ -165,11 +165,16 @@ async def _children(accessor: QdrantAccessor,
                 "qdrant: basename_fields produced a path collision")
         return DirListing(entries=[(name, _dir_entry(name))
                                    for name in rendered],
-                          partial=bool(display_prefix))
+                          partial=bool(display_prefix),
+                          window=True)
     prefix = _row_prefix(pattern, config)
     rows = await rows_matching(accessor, table, filters, config.max_rows,
                                prefix)
-    return DirListing(entries=_row_entries(rows, config), partial=bool(prefix))
+    # Read up to max_rows, so a row outside the head of the collection is
+    # not gone because a listing no longer names it.
+    return DirListing(entries=_row_entries(rows, config),
+                      partial=bool(prefix),
+                      window=True)
 
 
 async def _list_root(accessor: QdrantAccessor,

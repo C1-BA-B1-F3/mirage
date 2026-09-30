@@ -214,7 +214,7 @@ export class Workspace {
   constructor(mounts: Record<string, MountSpec>, options: WorkspaceOptions = {}) {
     // The workspace-level default a mount overrides, as `mode` is.
     this.readDefault = options.read ?? DEFAULT_READ_SPEC
-    const normalized = normalizeMounts(mounts, this.readDefault)
+    const normalized = normalizeMounts(mounts, this.readDefault, options.index)
     this.indexConfig = options.index
     this.registry = new MountRegistry(
       normalized.bare,
@@ -1106,7 +1106,14 @@ export class Workspace {
     if (this.isShuttingDown()) throw new Error('Workspace is closed')
     this.registry.checkVfsAvailable(vfs)
     const resolvedRead = read ?? this.readDefault
-    checkReadCapability(prefix, vfs, resolvedRead)
+    // An alias keeps the index of the VFS's other mount.
+    const alias = this.registry.allMounts().find((m) => m.vfs === vfs)
+    checkReadCapability(
+      prefix,
+      vfs,
+      resolvedRead,
+      alias !== undefined ? alias.indexConfig : this.indexConfig,
+    )
     const previous = this.registry.allMounts()
     const m = this.registry.mount(prefix, vfs, mode, resolvedRead, {
       ...(this.indexConfig !== undefined ? { index: this.indexConfig } : {}),

@@ -14,7 +14,7 @@
 
 from mirage.accessor.jaeger import JaegerAccessor
 from mirage.cache.index import IndexEntry
-from mirage.core.hierarchy.readdir import make_readdir
+from mirage.core.hierarchy.readdir import DirListing, make_readdir
 from mirage.core.hierarchy.scope import ScopeMatch
 from mirage.core.jaeger.client import (fetch_operations, fetch_services,
                                        fetch_traces, is_trace_id)
@@ -89,7 +89,7 @@ async def _list_service(accessor: JaegerAccessor,
 
 
 async def _list_traces(accessor: JaegerAccessor,
-                       match: ScopeMatch) -> list[tuple[str, IndexEntry]]:
+                       match: ScopeMatch) -> DirListing:
     service = match.slots["service"]
     traces = await fetch_traces(
         accessor,
@@ -116,7 +116,9 @@ async def _list_traces(accessor: JaegerAccessor,
             size=len(json_bytes(trace)),
         )
         entries.append((filename, entry))
-    return entries
+    # The newest default_trace_limit traces: one that ages out of the page
+    # is still in Jaeger, so the listing evicts nothing.
+    return DirListing(entries=entries, window=True)
 
 
 readdir = make_readdir(

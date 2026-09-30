@@ -15,6 +15,7 @@
 import { describe, expect, it, vi } from 'vitest'
 
 import { LanceDBAccessor } from '../../accessor/lancedb.ts'
+import type { Evicted, IndexEntry, SetDirOptions } from '../../cache/index/config.ts'
 import { RAMIndexCacheStore } from '../../cache/index/ram.ts'
 import { resolveLanceDBConfig } from '../../vfs/lancedb/config.ts'
 import { PathSpec } from '../../types.ts'
@@ -50,6 +51,20 @@ function makeAccessor(): { accessor: LanceDBAccessor; rowsMatching: ReturnType<t
     rowsMatching,
   } as unknown as LanceDriver
   return { accessor: new LanceDBAccessor(driver, config), rowsMatching }
+}
+
+class WindowSpy extends RAMIndexCacheStore {
+  readonly windows = new Map<string, boolean>()
+
+  override setDir(
+    vfsPath: string,
+    entries: readonly [string, IndexEntry][],
+    expiredAt?: Date | null,
+    options: SetDirOptions = {},
+  ): Promise<Evicted[]> {
+    this.windows.set(vfsPath, options.window === true)
+    return super.setDir(vfsPath, entries, expiredAt, options)
+  }
 }
 
 function spec(virtual: string): PathSpec {
@@ -282,5 +297,18 @@ describe('lancedb group globs past the cap', () => {
     const { accessor, distinct } = crowdedAccessor()
     expect(await readdir(accessor, globbed('/', 'a⁄*'))).toEqual(['/a⁄∕x'])
     expect(distinct.mock.calls[0]?.[4]).toBe('a')
+  })
+})
+
+describe('lancedb capped listings', () => {
+  it('writes groups and rows as windows', async () => {
+    // Groups and rows are read up to maxRows, so a row outside the head of
+    // the table is not gone because a listing no longer names it.
+    const index = new WindowSpy()
+    const acc = makeAccessor().accessor
+    await readdir(acc, spec('/animals'), index)
+    await readdir(acc, spec('/animals/cat/big'), index)
+    expect(index.windows.get('/animals')).toBe(true)
+    expect(index.windows.get('/animals/cat/big')).toBe(true)
   })
 })

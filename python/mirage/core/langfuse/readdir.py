@@ -66,15 +66,18 @@ async def _list_traces(accessor: LangfuseAccessor,
 
 
 async def _list_sessions(accessor: LangfuseAccessor,
-                         match: ScopeMatch) -> list[tuple[str, IndexEntry]]:
+                         match: ScopeMatch) -> DirListing:
+    # One page of the newest sessions: an older one that drops off it has
+    # not been deleted, so the listing evicts nothing.
     sessions = await fetch_sessions(accessor.api)
-    return [(s.get("id", ""),
-             IndexEntry(
-                 id=s.get("id", ""),
-                 name=s.get("id", ""),
-                 resource_type="langfuse/session",
-                 vfs_name=s.get("id", ""),
-             )) for s in sessions]
+    return DirListing(entries=[(s.get("id", ""),
+                                IndexEntry(
+                                    id=s.get("id", ""),
+                                    name=s.get("id", ""),
+                                    resource_type="langfuse/session",
+                                    vfs_name=s.get("id", ""),
+                                )) for s in sessions],
+                      window=True)
 
 
 async def _list_session_traces(accessor: LangfuseAccessor,
@@ -90,7 +93,7 @@ async def _list_session_traces(accessor: LangfuseAccessor,
 
 
 async def _list_prompts(accessor: LangfuseAccessor,
-                        match: ScopeMatch) -> list[tuple[str, IndexEntry]]:
+                        match: ScopeMatch) -> DirListing:
     prompts = await fetch_prompts(accessor.api)
     seen: set[str] = set()
     entries: list[tuple[str, IndexEntry]] = []
@@ -106,7 +109,7 @@ async def _list_prompts(accessor: LangfuseAccessor,
                             resource_type="langfuse/prompt",
                             vfs_name=prompt_name,
                         )))
-    return entries
+    return DirListing(entries=entries, window=True)
 
 
 async def _list_prompt_versions(
@@ -134,15 +137,16 @@ async def _list_prompt_versions(
 
 
 async def _list_datasets(accessor: LangfuseAccessor,
-                         match: ScopeMatch) -> list[tuple[str, IndexEntry]]:
+                         match: ScopeMatch) -> DirListing:
     datasets = await fetch_datasets(accessor.api)
-    return [(d.get("name", ""),
-             IndexEntry(
-                 id=d.get("name", ""),
-                 name=d.get("name", ""),
-                 resource_type="langfuse/dataset",
-                 vfs_name=d.get("name", ""),
-             )) for d in datasets]
+    return DirListing(entries=[(d.get("name", ""),
+                                IndexEntry(
+                                    id=d.get("name", ""),
+                                    name=d.get("name", ""),
+                                    resource_type="langfuse/dataset",
+                                    vfs_name=d.get("name", ""),
+                                )) for d in datasets],
+                      window=True)
 
 
 async def _list_dataset(accessor: LangfuseAccessor,
@@ -171,9 +175,8 @@ async def _list_dataset(accessor: LangfuseAccessor,
     ]
 
 
-async def _list_dataset_runs(
-        accessor: LangfuseAccessor,
-        match: ScopeMatch) -> list[tuple[str, IndexEntry]]:
+async def _list_dataset_runs(accessor: LangfuseAccessor,
+                             match: ScopeMatch) -> DirListing:
     dataset_name = match.slots["dataset_name"]
     runs = await fetch_dataset_runs(accessor.api, dataset_name)
     entries: list[tuple[str, IndexEntry]] = []
@@ -190,7 +193,7 @@ async def _list_dataset_runs(
                             vfs_name=filename,
                             size=len(jsonl_bytes([r])),
                         )))
-    return entries
+    return DirListing(entries=entries, window=True)
 
 
 readdir = make_readdir(

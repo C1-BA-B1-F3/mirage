@@ -21,6 +21,7 @@ import pytest
 
 from mirage import MountMode, Workspace
 from mirage.cache.index.config import Evicted, RedisIndexConfig
+from mirage.cache.index.scope import command_scope
 from mirage.types import FileStat, FileType, ReadPolicy, ReadSpec
 from mirage.utils.errors import enotsup
 from mirage.vfs.ram import RAMVFS
@@ -120,6 +121,34 @@ async def test_on_op_missing_gcs_on_a_fresh_mounts_stat():
     rec = Reconciler(ws.cache, ws.namespace)
     await rec.on_op_missing(mount, "stat", "/data/f.txt")
     assert ws.namespace.meta_for("/data/f.txt") is None
+
+
+@pytest.mark.asyncio
+async def test_may_serve_listing_trusts_the_index_under_bounded():
+    ws = Workspace({"/data/": RAMVFS()}, mode=MountMode.WRITE)
+    mount = ws.namespace.mount_for("/data/d")
+    rec = Reconciler(ws.cache, ws.namespace)
+    assert await rec.may_serve_listing(mount, "/data/d") is True
+    await ws.close()
+
+
+@pytest.mark.asyncio
+async def test_may_serve_listing_under_fresh_trusts_only_this_commands_writes(
+):
+    # fresh re-lists anything listed before the command started; a listing
+    # the command itself refreshed is served, so one ls costs one re-list.
+    ws = Workspace({"/data/": RAMVFS()}, mode=MountMode.WRITE)
+    mount = ws.namespace.mount_for("/data/d")
+    mount.read = ReadSpec(policy=ReadPolicy.FRESH)
+    rec = Reconciler(ws.cache, ws.namespace)
+    await mount.index.set_dir("/data/d", [])
+    assert await rec.may_serve_listing(mount, "/data/d") is False
+    async with command_scope():
+        assert await rec.may_serve_listing(mount, "/data/d") is False
+        await mount.index.set_dir("/data/d", [])
+        assert await rec.may_serve_listing(mount, "/data/d") is True
+        assert await rec.may_serve_listing(mount, "/data/other") is False
+    await ws.close()
 
 
 @pytest.mark.asyncio

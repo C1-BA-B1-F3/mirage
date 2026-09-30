@@ -16,7 +16,9 @@ import { hiddenPathsIntersect, pathRulesActive } from '../../../../context/sessi
 import { walkFind } from '../../../../core/generic/find.ts'
 import { findGeneric } from '../../generic/find.ts'
 import type { PathSpec } from '../../../../types.ts'
-import { type Builder, overlaidStat, resolveGlobOf } from '../adapter.ts'
+import type { Accessor } from '../../../../accessor/base.ts'
+import type { CommandFnResult, CommandOpts } from '../../../config.ts'
+import { type Builder, type CommandIO, overlaidStat, resolveGlobOf } from '../adapter.ts'
 
 export const FIND_BUILDER: Builder = {
   name: 'find',
@@ -59,46 +61,61 @@ export const FIND_BUILDER: Builder = {
         dirEmpty,
       )
     }
-    // No backend find op: walk readdir/stat; the walk classifies entries
-    // through stat (see walkFind). A directory the guarded readdir
-    // refuses, and an entry whose stat fails, are collected here and
-    // reported by the generic per start point.
-    const closed: string[] = []
-    const unstatted = new Map<string, unknown>()
-    return findGeneric(
-      resolved,
-      texts,
-      opts,
-      (root, options) =>
-        walkFind(
-          root,
-          {
-            unreadable: closed,
-            unstatted,
-            readdir: (spec, i) => ops.readdir(accessor, spec, i),
-            // -mtime must see namespace times (touch results, observed
-            // writes on mtime-less backends), same as ls.
-            stat: async (spec, i) => {
-              const st = await ops.stat(accessor, spec, i)
-              const overlay = opts.ns?.statOverlay
-              return overlay !== undefined ? overlay(spec.virtual, st) : st
-            },
-            // A namespace symlink is an entry `-empty` must count and no
-            // backend readdir can see.
-            links: opts.ns?.links ?? null,
-          },
-          options,
-          idx,
-        ),
-      undefined,
-      undefined,
-      () => closed.splice(0),
-      () => {
-        const failed = [...unstatted]
-        unstatted.clear()
-        return failed
-      },
-      (spec) => ops.stat(accessor, spec, idx),
-    )
+    return findWalk(ops, accessor, resolved, texts, opts)
   },
+}
+
+/**
+ * Walk readdir/stat for find, the fork taken when no native find op may
+ * answer: no backend op, hidden paths or a path rule in force, or (github)
+ * a truncated tree that names only some paths.
+ */
+export function findWalk<A extends Accessor>(
+  ops: CommandIO<A>,
+  accessor: A,
+  resolved: PathSpec[],
+  texts: string[],
+  opts: CommandOpts,
+): Promise<CommandFnResult> {
+  const idx = opts.index ?? undefined
+  // The walk classifies entries through stat (see walkFind). A directory the guarded readdir
+  // refuses, and an entry whose stat fails, are collected here and
+  // reported by the generic per start point.
+  const closed: string[] = []
+  const unstatted = new Map<string, unknown>()
+  return findGeneric(
+    resolved,
+    texts,
+    opts,
+    (root, options) =>
+      walkFind(
+        root,
+        {
+          unreadable: closed,
+          unstatted,
+          readdir: (spec, i) => ops.readdir(accessor, spec, i),
+          // -mtime must see namespace times (touch results, observed
+          // writes on mtime-less backends), same as ls.
+          stat: async (spec, i) => {
+            const st = await ops.stat(accessor, spec, i)
+            const overlay = opts.ns?.statOverlay
+            return overlay !== undefined ? overlay(spec.virtual, st) : st
+          },
+          // A namespace symlink is an entry `-empty` must count and no
+          // backend readdir can see.
+          links: opts.ns?.links ?? null,
+        },
+        options,
+        idx,
+      ),
+    undefined,
+    undefined,
+    () => closed.splice(0),
+    () => {
+      const failed = [...unstatted]
+      unstatted.clear()
+      return failed
+    },
+    (spec) => ops.stat(accessor, spec, idx),
+  )
 }

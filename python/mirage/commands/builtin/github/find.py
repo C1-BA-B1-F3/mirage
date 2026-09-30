@@ -56,7 +56,9 @@ async def find(
     # session cannot see; the walk classifies through readdir/stat and
     # filters each entry through the gate, the same fork the factory
     # builder takes (rung 0).
-    if (path_rules_active()
+    # A truncated tree names only some paths and is never refetched, so it
+    # takes the same folder-by-folder walk, which readdir answers per folder.
+    if (accessor.truncated or path_rules_active()
             or any(hidden_paths_intersect(p.virtual) for p in paths)):
         return await find_walk_generic(paths,
                                        list(texts),

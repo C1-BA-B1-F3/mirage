@@ -20,14 +20,16 @@ import aiohttp
 import pytest
 
 from mirage.accessor.github import GitHubAccessor
-from mirage.cache.index import NULL_INDEX, IndexEntry
+from mirage.cache.file.ram import RAMFileCacheStore
+from mirage.cache.index import NULL_INDEX, Evicted, IndexEntry
 from mirage.cache.index.ram import RAMIndexCacheStore
+from mirage.cache.index.view import IndexView
 from mirage.core.github.client import GitHubApiError
 from mirage.core.github.config import GitHubConfig
 from mirage.core.github.tree import (ensure_live_snapshot, ensure_tree,
                                      fetch_dir_page, fetch_dir_tree,
                                      fetch_tree, index_rows, point_row,
-                                     seed_index)
+                                     refill_snapshot, seed_index)
 from mirage.core.github.tree_entry import TreeEntry
 from tests.fixtures.github_api import FakeGitHub, blob_sha, serve
 
@@ -482,3 +484,61 @@ async def test_a_truncated_seed_keeps_rows_it_does_not_name():
     ])
     seed_index(accessor, index, "/gh")
     assert (await index.get("/gh/data/other.txt")).entry.id == "b2"
+
+
+def _ledgered(store: RAMIndexCacheStore) -> tuple[list[Evicted], IndexView]:
+    gone: list[Evicted] = []
+
+    async def on_gone(child: Evicted) -> None:
+        gone.append(child)
+
+    return gone, IndexView(store,
+                           RAMFileCacheStore(),
+                           "/gh",
+                           lambda _key: True,
+                           on_gone=on_gone)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("removed, reported", [
+    (["d1/a.txt"], [Evicted("/gh/d1/a.txt", folder=False)]),
+    (["d1/a.txt", "d1/b.txt"], [Evicted("/gh/d1", folder=True)]),
+])
+async def test_a_refill_reports_what_left_the_repository(removed, reported):
+    # The refill wipes the index before seeding the new tree, so without
+    # the diff a file removed upstream keeps its cached bytes and overlay.
+    files = {"d1/a.txt": b"a", "d1/b.txt": b"b", "top.txt": b"t"}
+    with serve(FakeGitHub(files=dict(files))) as gh:
+        accessor = _served_accessor(gh)
+        gone, index = _ledgered(RAMIndexCacheStore())
+        await refill_snapshot(accessor, index, "/gh")
+        for path in removed:
+            del gh.files[path]
+        await refill_snapshot(accessor, index, "/gh")
+        assert gone == reported
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("before, after", [(True, False), (False, True)])
+async def test_a_truncated_tree_on_either_side_reports_nothing(before, after):
+    # A truncated tree names only some paths, so a path missing from it is
+    # not a path the repository lost.
+    files = {"d1/a.txt": b"a", "top.txt": b"t"}
+    with serve(FakeGitHub(files=dict(files),
+                          truncated_recursive=before)) as gh:
+        accessor = _served_accessor(gh)
+        gone, index = _ledgered(RAMIndexCacheStore())
+        await refill_snapshot(accessor, index, "/gh")
+        gh.truncated_recursive = after
+        del gh.files["d1/a.txt"]
+        await refill_snapshot(accessor, index, "/gh")
+        assert gone == []
+
+
+@pytest.mark.asyncio
+async def test_the_first_refill_reports_nothing():
+    with serve(FakeGitHub(files={"top.txt": b"t"})) as gh:
+        accessor = _served_accessor(gh)
+        gone, index = _ledgered(RAMIndexCacheStore())
+        await refill_snapshot(accessor, index, "/gh")
+        assert gone == []

@@ -30,18 +30,47 @@ export async function ensureTree(
   accessor: ChromaAccessor,
   index: IndexCacheStore,
   prefix = '',
-): Promise<void> {
+): Promise<Map<string, string[]> | null> {
   const rootKey = mountRoot(prefix)
   const listing = await index.listDir(rootKey)
-  if (listing.entries !== undefined && listing.entries !== null) return
+  if (listing.entries !== undefined && listing.entries !== null) return null
 
+  return refillTree(accessor, index, prefix)
+}
+
+/**
+ * Refetch the whole tree, write every folder's listing, return its rows.
+ *
+ * The mount's listings all come from this one fetch, so an expired one
+ * means the tree aged out rather than that a folder went away. The rows
+ * are returned so a reader can answer from them when the index itself
+ * will not serve them (fresh refusing every listing outside a command).
+ */
+export async function refillTree(
+  accessor: ChromaAccessor,
+  index: IndexCacheStore,
+  prefix = '',
+): Promise<Map<string, string[]>> {
   const pathTree = await parsePathTree(await fetchPathTree(accessor))
-  const dirEntries = buildDirEntries(pathTree, prefix)
+  return writeTree(index, buildDirEntries(pathTree, prefix))
+}
+
+async function writeTree(
+  index: IndexCacheStore,
+  dirEntries: Map<string, [string, IndexEntry][]>,
+): Promise<Map<string, string[]>> {
+  const children = new Map<string, string[]>()
   for (const directory of [...dirEntries.keys()].sort(compareCodePoints)) {
     const entries = dirEntries.get(directory) ?? []
     const sorted = [...entries].sort((a, b) => compareCodePoints(a[0], b[0]))
     await index.setDir(directory, sorted)
+    const stem = directory === '/' ? '/' : `${directory}/`
+    children.set(
+      directory,
+      sorted.map(([name]) => stem + name),
+    )
   }
+  return children
 }
 
 export async function parsePathTree(raw: string): Promise<ChromaPathTree> {

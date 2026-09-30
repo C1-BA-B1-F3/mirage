@@ -14,6 +14,7 @@
 
 import type { Evicted } from '../cache/index/config.ts'
 import { RAMIndexCacheStore } from '../cache/index/ram.ts'
+import { commandStarted } from '../cache/index/scope.ts'
 import type { FileCache } from '../cache/file/mixin.ts'
 import type { OpsRegistry } from '../ops/registry.ts'
 import type { BaseVFS } from '../vfs/base.ts'
@@ -177,6 +178,23 @@ export class Reconciler {
     const verdict = await this.probeOrUnknown(mount, path)
     if (verdict === Verdict.GONE) throw enoent(path)
     return verdict === Verdict.FRESH
+  }
+
+  /**
+   * Gate a cached listing: may it be served without re-listing?
+   *
+   * Under `bounded` the listing is trusted within its bound. Under `fresh`
+   * it is trusted only if the running command refreshed it itself, so one
+   * command re-lists a folder once however often it reads it; anything
+   * older, and any read outside a command, lists again. Task 1.3 replaces
+   * "list again" with a cheaper check.
+   */
+  mayServeListing(mount: MountEntry, folder: string): Promise<boolean> {
+    if (mount.read.policy !== ReadPolicy.FRESH) return Promise.resolve(true)
+    const started = commandStarted()
+    return Promise.resolve(
+      started !== null && mount.cacheManager?.listedSince(folder, started) === true,
+    )
   }
 
   // Reconcile a single-mount shell read before the command runs.

@@ -273,3 +273,21 @@ it('cleans up the bytes and overlay of a file a re-list drops', async () => {
   }
 })
 
+// No ttl to wait out: under fresh the next command re-lists, and that re-list
+// is what finds the file gone.
+it('re-lists on the next command under fresh and cleans up', async () => {
+  const graph = await graphOf(OLD)
+  graph.write(ME, 'b.txt', ENC.encode('bravo\n'))
+  const w = ws(await vfsOf(graph))
+  try {
+    expect(await out(w, 'ls /m')).toBe('a.txt\nb.txt\n')
+    expect(await out(w, 'cat /m/a.txt')).toBe('version one\n')
+    await w.namespace.setAttrs('/m/a.txt', { mode: 0o600 })
+    graph.remove(ME, 'a.txt')
+    expect(await out(w, 'ls /m')).toBe('b.txt\n')
+    expect(w.namespace.metaFor('/m/a.txt')).toBeNull()
+    expect(await w.cache.exists('/m/a.txt')).toBe(false)
+  } finally {
+    await w.close()
+  }
+})

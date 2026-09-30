@@ -265,3 +265,22 @@ async def test_a_relist_that_drops_a_file_cleans_up_its_bytes_and_overlay():
             assert result.exit_code == 1
         finally:
             await ws.close()
+
+
+@pytest.mark.asyncio
+async def test_under_fresh_the_next_command_relists_and_cleans_up():
+    # No ttl to wait out: the next command re-lists, and that re-list is
+    # what finds the file gone.
+    files = {"a.txt": OLD, "b.txt": b"bravo\n"}
+    with serve(FakeGraph(drives={ME: files})) as graph:
+        ws = _ws(_vfs(graph))
+        try:
+            assert await _out(ws, "ls /m") == b"a.txt\nb.txt\n"
+            assert await _out(ws, "cat /m/a.txt") == OLD
+            await ws.namespace.set_attrs("/m/a.txt", mode=0o600)
+            graph.remove(ME, "a.txt")
+            assert await _out(ws, "ls /m") == b"b.txt\n"
+            assert ws.namespace.meta_for("/m/a.txt") is None
+            assert not await ws.cache.exists("/m/a.txt")
+        finally:
+            await ws.close()

@@ -52,6 +52,28 @@ async def test_disk_can_declare_fresh_because_it_caches_listings(tmp_path):
         await ws.close()
 
 
+@pytest.mark.asyncio
+async def test_disk_under_fresh_lists_a_file_created_outside_mirage(tmp_path):
+    # What makes fresh honest on disk is the listing check: the next
+    # command re-lists instead of serving the cached directory.
+    root = tmp_path / "disk"
+    root.mkdir()
+    (root / "a.txt").write_bytes(b"a")
+    ws = Workspace(
+        {"/data": (DiskVFS(root=str(root)), MountMode.WRITE)},
+        mode=MountMode.WRITE,
+        read=ReadSpec(policy=ReadPolicy.FRESH),
+    )
+    try:
+        first = await ws.shell("ls /data")
+        assert await first.materialize_stdout() == b"a.txt\n"
+        (root / "b.txt").write_bytes(b"b")
+        second = await ws.shell("ls /data")
+        assert await second.materialize_stdout() == b"a.txt\nb.txt\n"
+    finally:
+        await ws.close()
+
+
 def test_disk_under_bounded_reads_current_bytes(tmp_path):
     root = tmp_path / "disk"
     root.mkdir()
@@ -701,7 +723,8 @@ def test_one_line_serves_each_mount_under_its_own_policy(
 
     One line reads a `fresh` mount and a `bounded` one after both objects
     changed out of band, so each leg must answer to its own mount: the
-    fresh leg prints v2 and pays one gate probe plus one refetch, the
+    fresh leg prints v2 and pays one re-list, one gate probe and one
+    refetch, the
     bounded leg prints v1 and sends nothing at all. The `ls` warm-up is
     what makes "nothing" true -- after `cat` alone each mount root is
     still unlisted and the walk pays one listing per leg.
@@ -795,10 +818,12 @@ def test_one_line_serves_each_mount_under_its_own_policy(
         k: n
         for k, n in line_calls.items() if k[1] == "fresh-bkt"
     } == {
+        ("list_objects_v2", "fresh-bkt"): 1,
         ("head_object", "fresh-bkt"): 1,
         ("get_object", "fresh-bkt"): 1
-    }, ("the fresh leg pays its gate probe and one refetch, and no listing; "
-        "a missing head_object means it was served without being checked")
+    }, ("the fresh leg re-lists its folder once (Task 1.2: fresh checks "
+        "listings too), pays its gate probe and one refetch; a missing "
+        "head_object means it was served without being checked")
     assert records == [("read", f"{fresh}/f.txt")
                        ], "only the fresh leg's refetch reaches the backend"
     assert (single_out, single_calls) == (b"v1\n", {}), (

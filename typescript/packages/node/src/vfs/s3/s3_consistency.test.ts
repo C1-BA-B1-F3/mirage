@@ -253,8 +253,10 @@ describe('S3 cache consistency (mocked)', () => {
         ]
         // Any send here means the fresh mount's policy reached the bounded one.
         expect(ledger('bounded-bkt')).toEqual([0, 0, 0])
-        // A missing HEAD means the fresh leg was served without a check.
-        expect(ledger('fresh-bkt')).toEqual([0, 1, 1])
+        // The fresh leg re-lists its folder once (Task 1.2: fresh checks
+        // listings too), pays its gate probe and one refetch; a missing HEAD
+        // means it was served without a check.
+        expect(ledger('fresh-bkt')).toEqual([1, 1, 1])
         expect(ws.networkRecords.slice(mark).map((r) => [r.op, r.path])).toEqual([
           ['read', `${fresh}/f.txt`],
         ])

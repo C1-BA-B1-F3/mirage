@@ -13,7 +13,11 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import { withIndexLock } from '@struktoai/mirage-core/cache/index/lock'
-import { IndexEntry, type IndexSnapshot } from '@struktoai/mirage-core/cache/index/config'
+import {
+  IndexEntry,
+  type Evicted,
+  type IndexSnapshot,
+} from '@struktoai/mirage-core/cache/index/config'
 import type { IndexCacheStore } from '@struktoai/mirage-core/cache/index/store'
 import { LookupStatus } from '@struktoai/mirage-core/cache/index/config'
 import * as kp from '@struktoai/mirage-core/utils/key_prefix'
@@ -368,13 +372,41 @@ export async function refillSnapshot(
   index: IndexCacheStore,
   prefix: string,
 ): Promise<IndexSnapshot> {
-  accessor.tree = await fetchTree(accessor)
+  // A first fetch has nothing to compare with, so it reports nothing.
+  const previous = accessor.treeLoaded ? new Map(accessor.tree) : null
+  const tree = await fetchTree(accessor)
+  accessor.tree = tree
   accessor.treeLoaded = true
   accessor.rowsCache = null
   accessor.refills += 1
   // Refilling replaces the snapshot; merging would retain deleted paths.
   await index.invalidatePrefix(rstripSlash(prefix) || '/')
-  return seedIndex(accessor, index, prefix)
+  const snapshot = await seedIndex(accessor, index, prefix)
+  if (previous !== null) await index.reportGone(departed(previous, tree, prefix))
+  return snapshot
+}
+
+/**
+ * The paths a refill lost, topmost only.
+ *
+ * A folder that went takes everything under it, so its descendants are
+ * not reported again.
+ */
+export function departed(
+  previous: ReadonlyMap<string, TreeEntry>,
+  current: ReadonlyMap<string, TreeEntry>,
+  prefix: string,
+): Evicted[] {
+  const stem = rstripSlash(prefix)
+  const gone = [...previous.keys()].filter((path) => !current.has(path)).sort(compareCodePoints)
+  const top: string[] = []
+  for (const path of gone) {
+    if (!top.some((kept) => path.startsWith(`${kept}/`))) top.push(path)
+  }
+  return top.map((path) => {
+    const entry = previous.get(path)
+    return { path: `${stem}/${path}`, folder: entry !== undefined && isDirEntry(entry) }
+  })
 }
 
 /**

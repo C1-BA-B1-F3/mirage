@@ -14,6 +14,7 @@
 
 import { timingReport } from './timing.ts'
 import { PathSpec } from '../../types.ts'
+import { runInCommandScope } from '../../cache/index/scope.ts'
 import { runWithSession } from '../../context/session_context.ts'
 import { isProgramInvocation, runAsProgram } from '../../context/session_context.ts'
 import type { ProcessHandle } from '../../process/handle.ts'
@@ -882,23 +883,28 @@ async function executeNodeBody(
   }
 
   if (kind === NodeKind.COMMAND) {
-    return executeCommand(
-      recurse,
-      dispatch,
-      registry,
-      deps.namespace,
-      executeFn,
-      node,
-      session,
-      stdin,
-      callStack,
-      jobTable,
-      deps.runtimeBindings,
-      deps.routingDecision,
-      deps.signal,
-      deps.reparse,
-      agentId,
-      deps.handed,
+    // One scope per simple command, entered before its words expand, so a
+    // fresh listing this command refreshes is trusted for the rest of it and
+    // nothing older is.
+    return runInCommandScope(() =>
+      executeCommand(
+        recurse,
+        dispatch,
+        registry,
+        deps.namespace,
+        executeFn,
+        node,
+        session,
+        stdin,
+        callStack,
+        jobTable,
+        deps.runtimeBindings,
+        deps.routingDecision,
+        deps.signal,
+        deps.reparse,
+        agentId,
+        deps.handed,
+      ),
     )
   }
 
@@ -1188,24 +1194,28 @@ async function executeNodeBody(
 
   if (kind === NodeKind.FOR || kind === NodeKind.SELECT) {
     const [variable, values, body] = getForParts(node)
-    const classified = await expandAndClassify(
-      values,
-      session,
-      executeFn,
-      registry,
-      session.cwd,
-      callStack,
-      sessionView(session, registry.policies),
-    )
-    // The loop word list is consumed by the shell (WordPolicy.SHELL):
-    // globs resolve to matches before iteration starts.
-    const resolved = await resolveGlobs(
-      classified,
-      registry,
-      session.shellOptions.noglob === true,
-      deps.namespace,
-      globOptions(session),
-    )
+    // The word list expands once, as a command of its own; each body command
+    // then gets its own scope.
+    const resolved = await runInCommandScope(async () => {
+      const classified = await expandAndClassify(
+        values,
+        session,
+        executeFn,
+        registry,
+        session.cwd,
+        callStack,
+        sessionView(session, registry.policies),
+      )
+      // The loop word list is consumed by the shell (WordPolicy.SHELL):
+      // globs resolve to matches before iteration starts.
+      return resolveGlobs(
+        classified,
+        registry,
+        session.shellOptions.noglob === true,
+        deps.namespace,
+        globOptions(session),
+      )
+    })
     if (kind === NodeKind.SELECT) {
       return handleSelect(
         stream,
@@ -1327,7 +1337,9 @@ async function executeNodeBody(
   }
 
   if (kind === NodeKind.DECLARATION) {
-    return await executeDeclaration(node, session, executeFn, registry, deps.namespace, callStack)
+    return await runInCommandScope(() =>
+      executeDeclaration(node, session, executeFn, registry, deps.namespace, callStack),
+    )
   }
 
   if (kind === NodeKind.UNSET) {

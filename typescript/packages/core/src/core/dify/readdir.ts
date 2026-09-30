@@ -16,7 +16,9 @@ import type { DifyAccessor } from '../../accessor/dify.ts'
 import type { IndexCacheStore } from '../../cache/index/store.ts'
 import { PathSpec } from '../../types.ts'
 import { enoent, enotdir } from '../../utils/errors.ts'
+import { LookupStatus } from '../../cache/index/config.ts'
 import { resolvePath } from './path.ts'
+import { refillTree } from './tree.ts'
 
 export async function readdir(
   accessor: DifyAccessor,
@@ -28,6 +30,12 @@ export async function readdir(
   if (!resolved.isDir) throw enotdir(spec.virtual)
   if (index === undefined) throw new Error('dify: missing index')
   const listing = await index.listDir(resolved.virtualKey)
+  if (listing.entries == null && listing.status === LookupStatus.EXPIRED) {
+    // The tree is written whole: expired means aged out, not gone.
+    const refilled = await refillTree(accessor, index, resolved.mountPrefix)
+    const rows = refilled.get(resolved.virtualKey)
+    if (rows !== undefined) return rows
+  }
   if (listing.entries === undefined || listing.entries === null) {
     throw enoent(spec.virtual)
   }

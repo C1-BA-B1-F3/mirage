@@ -118,7 +118,7 @@ async def _walk(
     return total
 
 
-async def _walk_size(
+async def walk_size(
     ops: CommandIO,
     accessor: Accessor,
     index: IndexCacheStore,
@@ -128,7 +128,7 @@ async def _walk_size(
     return await _walk(ops, accessor, index, path, budget, None)
 
 
-async def _walk_entries(
+async def walk_entries(
     ops: CommandIO,
     accessor: Accessor,
     index: IndexCacheStore,
@@ -193,8 +193,8 @@ async def du(ops: CommandIO, accessor: Accessor, paths: list[PathSpec],
     # A native du sums the raw tree; under a path rule the walk is what
     # reports a directory the rule refuses to open, where GNU does.
     if native is None or path_rules_active():
-        compute_size = partial(_walk_size, ops, accessor, opts.index, budget)
-        compute_entries = partial(_walk_entries, ops, accessor, opts.index,
+        compute_size = partial(walk_size, ops, accessor, opts.index, budget)
+        compute_entries = partial(walk_entries, ops, accessor, opts.index,
                                   budget)
     else:
         compute_size = partial(_op_size, native.size, accessor, opts.index)

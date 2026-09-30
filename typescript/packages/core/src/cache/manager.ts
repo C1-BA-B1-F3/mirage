@@ -20,6 +20,7 @@ import { rstripSlash } from '../utils/slash.ts'
 import type { FileCache } from './file/mixin.ts'
 import type { IndexCacheStore } from './index/store.ts'
 import type { Evicted } from './index/config.ts'
+import { tick } from './index/scope.ts'
 import { IndexView } from './index/view.ts'
 import { withCacheMutation, latestFingerprint } from './file/io.ts'
 
@@ -55,6 +56,9 @@ export class CacheManager {
 
   private readGeneration = 0
   private view: IndexView | null = null
+  // Folder to the tick its listing was last written at, by any view of this
+  // mount, shared or lock-held.
+  private readonly written = new Map<string, number>()
 
   constructor(
     fileCache: FileCache | null,
@@ -67,6 +71,9 @@ export class CacheManager {
     // Cleanup for a child a re-list found gone, injected for the same
     // one-way reason as the read gate; undefined cleans nothing.
     private readonly onGone?: (gone: Evicted) => Promise<void>,
+    // The listing gate every view of this mount asks before serving a
+    // cached listing; undefined serves them all.
+    private readonly mayServeListing?: (folder: string) => Promise<boolean>,
   ) {
     this.fileCache = fileCache
     this.index = index
@@ -96,12 +103,47 @@ export class CacheManager {
   scopeIndex(index: IndexCacheStore): IndexCacheStore {
     if (this.fileCache === null || index instanceof IndexView) return index
     if (this.view?.store !== index) {
-      this.view = new IndexView(index, this.fileCache, this.prefix || '/', this.ownsPath, {
-        readTtl: this.readTtl,
-        ...(this.onGone === undefined ? {} : { onGone: this.onGone }),
-      })
+      // A new store holds none of what the old one was written.
+      this.written.clear()
+      this.view = new IndexView(
+        index,
+        this.fileCache,
+        this.prefix || '/',
+        this.ownsPath,
+        this.viewOptions(),
+      )
     }
     return this.view
+  }
+
+  private viewOptions(): {
+    readTtl: number
+    onGone?: (gone: Evicted) => Promise<void>
+    mayServeListing?: (folder: string) => Promise<boolean>
+    noteWritten: (folder: string) => void
+  } {
+    return {
+      readTtl: this.readTtl,
+      ...(this.onGone === undefined ? {} : { onGone: this.onGone }),
+      ...(this.mayServeListing === undefined ? {} : { mayServeListing: this.mayServeListing }),
+      noteWritten: (folder) => {
+        this.noteWritten(folder)
+      },
+    }
+  }
+
+  private noteWritten(folder: string): void {
+    this.written.set(folder, tick())
+  }
+
+  /**
+   * Whether this mount wrote `folder`'s listing after `stamp`.
+   *
+   * Every view of the mount, shared or lock-held, records into one map, so
+   * a glob's write counts for the `ls` that follows it.
+   */
+  listedSince(folder: string, stamp: number): boolean {
+    return (this.written.get(folder) ?? 0) > stamp
   }
 
   /**
@@ -117,8 +159,7 @@ export class CacheManager {
     }
     return new IndexView(index, this.fileCache, this.prefix || '/', this.ownsPath, {
       locked: true,
-      readTtl: this.readTtl,
-      ...(this.onGone === undefined ? {} : { onGone: this.onGone }),
+      ...this.viewOptions(),
     })
   }
 

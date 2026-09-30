@@ -19,8 +19,8 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from mirage.accessor.hf_hub import HfHubAccessor
-from mirage.cache.index import (NULL_INDEX, IndexCacheStore, IndexEntry,
-                                LookupStatus)
+from mirage.cache.index import (NULL_INDEX, Evicted, IndexCacheStore,
+                                IndexEntry, LookupStatus)
 from mirage.cache.index.config import IndexSnapshot
 from mirage.cache.index.lock import index_lock
 from mirage.core.hf_hub.client import (HfHubError, api_url, hub_get_response,
@@ -476,6 +476,8 @@ async def refill_snapshot(
     # The caller holds index_lock through replacement and its final lookup.
     if index is NULL_INDEX:
         return None
+    # A first fetch has nothing to compare with, so it reports nothing.
+    previous = dict(accessor.tree) if accessor.tree_loaded else None
     tree = await fetch_tree(accessor)
     accessor.tree = tree
     accessor.tree_loaded = True
@@ -483,7 +485,34 @@ async def refill_snapshot(
     accessor.refills += 1
     # Refilling replaces the snapshot; merging would retain deleted paths.
     await index.invalidate_prefix(prefix.rstrip("/") or "/")
-    return seed_index(accessor, index, prefix)
+    snapshot = seed_index(accessor, index, prefix)
+    if previous is not None:
+        await index.report_gone(departed(previous, tree, prefix))
+    return snapshot
+
+
+def departed(previous: dict[str, TreeEntry], current: dict[str, TreeEntry],
+             prefix: str) -> list[Evicted]:
+    """The paths a refill lost, topmost only.
+
+    A folder that went takes everything under it, so its descendants are
+    not reported again.
+
+    Args:
+        previous (dict[str, TreeEntry]): the tree before the refill.
+        current (dict[str, TreeEntry]): the tree after it.
+        prefix (str): the mount prefix the keys are built against.
+    """
+    stem = prefix.rstrip("/")
+    gone = sorted(path for path in previous if path not in current)
+    top: list[str] = []
+    for path in gone:
+        if not any(path.startswith(kept + "/") for kept in top):
+            top.append(path)
+    return [
+        Evicted(f"{stem}/{path}", folder=previous[path].type == "directory")
+        for path in top
+    ]
 
 
 async def ensure_live_index(

@@ -25,6 +25,8 @@ import {
 import { withCacheMutation } from '../file/io.ts'
 import { RAMFileCacheStore } from '../file/ram.ts'
 import { RAMIndexCacheStore } from './ram.ts'
+import { RedisIndexCacheStore } from './redis.ts'
+import type { IndexCacheStore } from './store.ts'
 import { IndexView } from './view.ts'
 import { RAMVFS } from '../../vfs/ram/ram.ts'
 import { runWithSession } from '../../context/session_context.ts'
@@ -699,5 +701,170 @@ describe('IndexView cleanup after a re-list', () => {
 
   it('treats reportGone on a raw store as a no-op', async () => {
     await new RAMIndexCacheStore().reportGone([{ path: '/a', folder: false }])
+  })
+})
+
+describe('the listing gate', () => {
+  const row = (name: string): IndexEntry => new IndexEntry({ id: name, name, resourceType: 'file' })
+
+  function gate(answer: boolean): [string[], (key: string) => Promise<boolean>] {
+    const asked: string[] = []
+    return [
+      asked,
+      (key) => {
+        asked.push(key)
+        return Promise.resolve(answer)
+      },
+    ]
+  }
+
+  function storeOf(kind: string): IndexCacheStore {
+    const url = process.env.REDIS_URL
+    return kind === 'ram'
+      ? new RAMIndexCacheStore({ ttl: 600 })
+      : new RedisIndexCacheStore({
+          ttl: 600,
+          ...(url === undefined ? {} : { url }),
+          keyPrefix: `view-gate:${crypto.randomUUID()}:`,
+        })
+  }
+
+  // Refusing is not dropping: the listing stays for the re-list to diff
+  // against, and every reader already re-lists an EXPIRED answer.
+  for (const kind of ['ram', 'redis']) {
+    it.skipIf(kind === 'redis' && process.env.REDIS_URL === undefined).each([false, true])(
+      `${kind}: a refused listing reads expired and stays stored (partial=%s)`,
+      async (partial) => {
+        const [asked, mayServeListing] = gate(false)
+        const store = storeOf(kind)
+        try {
+          const view = new IndexView(store, new RAMFileCacheStore(), '/data', () => true, {
+            mayServeListing,
+          })
+          if (partial) await view.setPartialDir('/data', [['a', row('a')]])
+          else await view.setDir('/data', [['a', row('a')]])
+          expect((await view.listDir('/data')).status).toBe(LookupStatus.EXPIRED)
+          expect(asked).toEqual(['/data'])
+          const stored = await store.listDir('/data')
+          expect(partial ? stored.partialEntries : stored.entries).toEqual(['/data/a'])
+        } finally {
+          await store.close()
+        }
+      },
+    )
+  }
+
+  it('passes a served listing through', async () => {
+    const [, mayServeListing] = gate(true)
+    const view = new IndexView(
+      new RAMIndexCacheStore(),
+      new RAMFileCacheStore(),
+      '/data',
+      () => true,
+      { mayServeListing },
+    )
+    await view.setDir('/data', [['a', row('a')]])
+    expect((await view.listDir('/data')).entries).toEqual(['/data/a'])
+  })
+
+  // A missing or expired listing is re-listed anyway; and an unowned or
+  // absent key must stay NOT_FOUND, never become EXPIRED, since github
+  // answers an EXPIRED re-read from its refill snapshot.
+  it('asks only about a listing the store has', async () => {
+    const [asked, mayServeListing] = gate(false)
+    const store = new RAMIndexCacheStore()
+    const owned = new Set(['/data', '/data/old'])
+    const view = new IndexView(
+      store,
+      new RAMFileCacheStore(),
+      '/data',
+      (key) => owned.has(key) || key.startsWith('/data/x'),
+      { mayServeListing },
+    )
+    expect((await view.listDir('/data/x')).status).toBe(LookupStatus.NOT_FOUND)
+    await store.setDir('/data/old', [['a', row('a')]], new Date(Date.now() - 1000))
+    expect((await view.listDir('/data/old')).status).toBe(LookupStatus.EXPIRED)
+    expect((await view.listDir('/elsewhere')).status).toBe(LookupStatus.NOT_FOUND)
+    expect(asked).toEqual([])
+  })
+
+  it('keeps a listing whose ownership went during the read NOT_FOUND', async () => {
+    const [asked, mayServeListing] = gate(false)
+    const store = new RAMIndexCacheStore()
+    const owned = new Set(['/data'])
+    await store.setDir('/data', [['a', row('a')]])
+    const original = store.listDir.bind(store)
+    vi.spyOn(store, 'listDir').mockImplementation(async (key) => {
+      const result = await original(key)
+      owned.clear()
+      return result
+    })
+    const view = new IndexView(store, new RAMFileCacheStore(), '/data', (key) => owned.has(key), {
+      mayServeListing,
+    })
+    expect((await view.listDir('/data')).status).toBe(LookupStatus.NOT_FOUND)
+    expect(asked).toEqual([])
+  })
+
+  // Task 1.3's gate stats the backend; inside the mutation fence it would
+  // hold every writer of the mount for that round trip.
+  it('runs outside the fence', async () => {
+    const cache = new RAMFileCacheStore()
+    let enter = (): void => undefined
+    let release = (): void => undefined
+    const entered = new Promise<void>((resolve) => {
+      enter = resolve
+    })
+    const released = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    const view = new IndexView(new RAMIndexCacheStore(), cache, '/data', () => true, {
+      mayServeListing: async () => {
+        enter()
+        await released
+        return true
+      },
+    })
+    await view.setDir('/data', [['a', row('a')]])
+    const reading = view.listDir('/data')
+    try {
+      expect(await settleWithin(entered, 2000)).toBe('done')
+      expect(
+        await settleWithin(
+          withCacheMutation(cache, () => Promise.resolve()),
+          2000,
+        ),
+      ).toBe('done')
+    } finally {
+      release()
+    }
+    expect((await reading).entries).toEqual(['/data/a'])
+  })
+
+  // The note is what lets the same command trust the listing; noting it
+  // before the store holds it would trust a listing another reader sees
+  // half-written.
+  it('notes every written folder after its write', async () => {
+    const noted: string[] = []
+    const store = new RAMIndexCacheStore()
+    const original = store.setDir.bind(store)
+    vi.spyOn(store, 'setDir').mockImplementation((...args) => {
+      expect(noted).toEqual([])
+      return original(...args)
+    })
+    const view = new IndexView(store, new RAMFileCacheStore(), '/data', () => true, {
+      noteWritten: (folder) => noted.push(folder),
+    })
+    await view.setDir('/data', [['a', row('a')]])
+    await view.setPartialDir('/data/p', [['b', row('b')]])
+    view.seed(
+      new Map([['/data/s/c', row('c')]]),
+      new Map([
+        ['/data/s', ['/data/s/c']],
+        ['/data/t', []],
+      ]),
+      new Date(Date.now() + 3600000),
+    )
+    expect(noted).toEqual(['/data', '/data/p', '/data/s', '/data/t'])
   })
 })

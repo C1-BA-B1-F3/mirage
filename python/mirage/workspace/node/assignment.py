@@ -16,6 +16,7 @@ import functools
 from collections.abc import Awaitable
 from typing import Any, Callable
 
+from mirage.cache.index.scope import command_scope
 from mirage.io import IOResult
 from mirage.ops.types import SessionView
 from mirage.policy import PolicyDenied
@@ -138,19 +139,22 @@ async def expand_array_items(
     # so a pre_session rule governs those exactly as it governs `X=d`.
     view = session_view(session, registry.policies)
     values = list(array_node.named_children)
-    classified = await expand_and_classify(values,
-                                           session,
-                                           execute_fn,
-                                           registry,
-                                           session.cwd,
-                                           cs,
-                                           view=view)
-    resolved = await resolve_globs(classified,
-                                   registry,
-                                   noglob=bool(
-                                       session.shell_options.get("noglob")),
-                                   links=namespace,
-                                   options=glob_options(session))
+    # A bare assignment is no command, but its glob reads listings all the
+    # same, so it gets a scope of its own.
+    async with command_scope():
+        classified = await expand_and_classify(values,
+                                               session,
+                                               execute_fn,
+                                               registry,
+                                               session.cwd,
+                                               cs,
+                                               view=view)
+        resolved = await resolve_globs(
+            classified,
+            registry,
+            noglob=bool(session.shell_options.get("noglob")),
+            links=namespace,
+            options=glob_options(session))
     return [word_text(w) for w in resolved]
 
 

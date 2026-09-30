@@ -16,12 +16,13 @@ import type { GitHubAccessor } from '../../accessor/github.ts'
 import { fetchDirTreePage, fetchTree, GitHubApiError } from './client.ts'
 import type { IndexCacheStore } from '../../cache/index/store.ts'
 import { LookupStatus } from '../../cache/index/config.ts'
-import type { IndexEntry, IndexSnapshot } from '../../cache/index/config.ts'
+import type { Evicted, IndexEntry, IndexSnapshot } from '../../cache/index/config.ts'
 import { withIndexLock } from '../../cache/index/lock.ts'
 import type { GitHubTreeItem } from './client.ts'
 import { indexEntryFromTree, makeTreeEntry, type TreeEntry } from './tree_entry.ts'
 import { rstripSlash, stripSlash } from '../../utils/slash.ts'
 import { DEFER_STATUSES } from './constants.ts'
+import { compareCodePoints } from '../../utils/sort.ts'
 
 export function buildTreeMap(tree: GitHubTreeItem[]): Record<string, TreeEntry> {
   const map: Record<string, TreeEntry> = {}
@@ -132,6 +133,10 @@ export async function refillSnapshot(
   prefix: string,
 ): Promise<IndexSnapshot | null> {
   if (index === undefined) return null
+  // Only a complete tree can say what is gone; a first fetch compares
+  // against the empty tree the accessor starts with, and a truncated one
+  // names only some paths.
+  const previous = accessor.truncated ? null : { ...accessor.tree }
   const { tree, truncated } = await fetchTree(
     accessor.transport,
     accessor.owner,
@@ -139,10 +144,37 @@ export async function refillSnapshot(
     accessor.ref,
   )
   accessor.truncated = truncated
-  accessor.tree = buildTreeMap(tree)
+  const current = buildTreeMap(tree)
+  accessor.tree = current
   // A refill replaces this mount's snapshot, including paths now absent.
   await index.invalidatePrefix(rstripSlash(prefix) || '/')
-  return seedIndex(accessor, index, prefix)
+  const snapshot = await seedIndex(accessor, index, prefix)
+  if (previous !== null && !truncated) {
+    await index.reportGone(departed(previous, current, prefix))
+  }
+  return snapshot
+}
+
+/**
+ * The paths a refill lost, topmost only.
+ *
+ * A folder that went takes everything under it, so its descendants are
+ * not reported again.
+ */
+export function departed(
+  previous: Record<string, TreeEntry>,
+  current: Record<string, TreeEntry>,
+  prefix: string,
+): Evicted[] {
+  const stem = rstripSlash(prefix)
+  const gone = Object.keys(previous)
+    .filter((path) => !(path in current))
+    .sort(compareCodePoints)
+  const top: string[] = []
+  for (const path of gone) {
+    if (!top.some((kept) => path.startsWith(`${kept}/`))) top.push(path)
+  }
+  return top.map((path) => ({ path: `${stem}/${path}`, folder: previous[path]?.type === 'tree' }))
 }
 
 /**

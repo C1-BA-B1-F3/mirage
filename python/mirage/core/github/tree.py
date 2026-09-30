@@ -21,8 +21,8 @@ from urllib.parse import quote
 import aiohttp
 
 from mirage.accessor.github import GitHubAccessor
-from mirage.cache.index import (NULL_INDEX, IndexCacheStore, IndexEntry,
-                                LookupStatus)
+from mirage.cache.index import (NULL_INDEX, Evicted, IndexCacheStore,
+                                IndexEntry, LookupStatus)
 from mirage.cache.index.config import IndexSnapshot
 from mirage.cache.index.lock import index_lock
 from mirage.core.api.client import SessionArg
@@ -327,6 +327,10 @@ async def refill_snapshot(
     # The caller holds index_lock through replacement and its final lookup.
     if index is NULL_INDEX:
         return None
+    # Only a complete tree can say what is gone; a first fetch has nothing
+    # to compare with, and a truncated one names only some paths.
+    previous = (dict(accessor.tree)
+                if accessor.tree_loaded and not accessor.truncated else None)
     ref = await ensure_ref(accessor)
     tree, truncated = await fetch_tree(accessor.config, accessor.owner,
                                        accessor.repo, ref, accessor.pool)
@@ -335,7 +339,34 @@ async def refill_snapshot(
     accessor.tree_loaded = True
     # A refill replaces this mount's snapshot, including paths now absent.
     await index.invalidate_prefix(prefix.rstrip("/") or "/")
-    return seed_index(accessor, index, prefix)
+    snapshot = seed_index(accessor, index, prefix)
+    if previous is not None and not truncated:
+        await index.report_gone(departed(previous, tree, prefix))
+    return snapshot
+
+
+def departed(previous: dict[str, TreeEntry], current: dict[str, TreeEntry],
+             prefix: str) -> list[Evicted]:
+    """The paths a refill lost, topmost only.
+
+    A folder that went takes everything under it, so its descendants are
+    not reported again.
+
+    Args:
+        previous (dict[str, TreeEntry]): the tree before the refill.
+        current (dict[str, TreeEntry]): the tree after it.
+        prefix (str): the mount prefix the keys are built against.
+    """
+    stem = prefix.rstrip("/")
+    gone = sorted(path for path in previous if path not in current)
+    top: list[str] = []
+    for path in gone:
+        if not any(path.startswith(kept + "/") for kept in top):
+            top.append(path)
+    return [
+        Evicted(f"{stem}/{path}", folder=previous[path].type == "tree")
+        for path in top
+    ]
 
 
 async def ensure_live_snapshot(

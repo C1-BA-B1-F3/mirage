@@ -36,6 +36,13 @@ interface IndexViewOptions {
   readonly onGone?: (gone: Evicted) => Promise<void>
   /** Seconds a listing may live under this mount; unset means no cap. */
   readonly readTtl?: number
+  /**
+   * The mount's listing gate, asked before a cached listing is served;
+   * unset serves every cached listing.
+   */
+  readonly mayServeListing?: (folder: string) => Promise<boolean>
+  /** Told each folder whose listing this view has just written. */
+  readonly noteWritten?: (folder: string) => void
 }
 
 /** A mount-owned index view; delayed backend writes retain their original owner. */
@@ -43,6 +50,8 @@ export class IndexView extends IndexCacheStore {
   private readonly locked: boolean
   private readonly readTtl: number | undefined
   private readonly onGone: ((gone: Evicted) => Promise<void>) | undefined
+  private readonly mayServeListing: ((folder: string) => Promise<boolean>) | undefined
+  private readonly noteWritten: ((folder: string) => void) | undefined
 
   constructor(
     private readonly inner: IndexCacheStore,
@@ -55,6 +64,8 @@ export class IndexView extends IndexCacheStore {
     this.locked = options.locked ?? false
     this.readTtl = options.readTtl
     this.onGone = options.onGone
+    this.mayServeListing = options.mayServeListing
+    this.noteWritten = options.noteWritten
   }
 
   /** The store this view writes through. */
@@ -103,6 +114,7 @@ export class IndexView extends IndexCacheStore {
     if (!this.owns(this.prefix)) return
     const snapshot = this.scopeSnapshot({ entries, children })
     this.inner.seed(snapshot.entries, snapshot.children, this.cap(expiresAt))
+    for (const folder of snapshot.children.keys()) this.noted(folder)
   }
 
   entries(): Promise<Map<string, IndexEntry>> {
@@ -123,6 +135,21 @@ export class IndexView extends IndexCacheStore {
   }
 
   async listDir(path: string): Promise<ListResult> {
+    const result = await this.fencedListDir(path)
+    // Asked outside the fence, since a gate may reach the backend, and only
+    // about a listing the store has: a NOT_FOUND must stay one. A refusal
+    // leaves the listing stored for the re-list to diff.
+    if (
+      this.mayServeListing !== undefined &&
+      (result.entries != null || result.partialEntries != null) &&
+      !(await this.mayServeListing(path))
+    ) {
+      return { status: LookupStatus.EXPIRED }
+    }
+    return result
+  }
+
+  private fencedListDir(path: string): Promise<ListResult> {
     return this.fence(async () => {
       if (!this.owns(path)) return { status: LookupStatus.NOT_FOUND }
       const result = await this.inner.listDir(path)
@@ -181,11 +208,19 @@ export class IndexView extends IndexCacheStore {
       const deadline = this.deadline(expiredAt)
       if (partial) {
         await this.inner.setPartialDir(path, owned, deadline)
+        this.noted(path)
         return []
       }
       const gone = await this.inner.setDir(path, owned, deadline, { window })
+      this.noted(path)
       return gone.filter((child) => this.owns(child.path))
     })
+  }
+
+  // After the store holds it, never before: a reader trusting the note must
+  // find the listing the note is about.
+  private noted(path: string): void {
+    this.noteWritten?.(path)
   }
 
   // Outside the fence: cleanup evicts file-cache entries, and the mount table

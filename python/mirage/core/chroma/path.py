@@ -2,8 +2,9 @@ from dataclasses import dataclass
 from typing import Literal, TypeAlias
 
 from mirage.accessor.chroma import ChromaAccessor
-from mirage.cache.index import NULL_INDEX, IndexCacheStore, IndexEntry
-from mirage.core.chroma.tree import ensure_tree
+from mirage.cache.index import (NULL_INDEX, IndexCacheStore, IndexEntry,
+                                LookupStatus)
+from mirage.core.chroma.tree import ensure_tree, refill_tree
 from mirage.types import PathSpec
 from mirage.utils.errors import enoent
 from mirage.utils.key_prefix import mount_prefix_of
@@ -32,7 +33,7 @@ async def resolve_path(
         path: PathSpec,
         index: IndexCacheStore = NULL_INDEX) -> ResolvedChromaPath:
     mount_prefix = mount_prefix_of(path.virtual, path.vfs_path) or ""
-    await ensure_tree(accessor, index, mount_prefix)
+    refilled = await ensure_tree(accessor, index, mount_prefix)
     virtual_key = virtual_key_for(path)
     result = await index.get(virtual_key)
     if result.entry is not None:
@@ -45,6 +46,13 @@ async def resolve_path(
             entry=result.entry,
         )
     listing = await index.list_dir(virtual_key)
+    if listing.entries is None and listing.status == LookupStatus.EXPIRED:
+        # The tree is written whole: expired means aged out, not gone.
+        if refilled is None:
+            refilled = await refill_tree(accessor, index, mount_prefix)
+        if virtual_key in refilled:
+            return ResolvedChromaDirectory(virtual_key=virtual_key,
+                                           mount_prefix=mount_prefix)
     if listing.entries is not None:
         return ResolvedChromaDirectory(virtual_key=virtual_key,
                                        mount_prefix=mount_prefix)

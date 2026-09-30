@@ -1,6 +1,7 @@
 from mirage.accessor.chroma import ChromaAccessor
-from mirage.cache.index import NULL_INDEX, IndexCacheStore
+from mirage.cache.index import NULL_INDEX, IndexCacheStore, LookupStatus
 from mirage.core.chroma.path import resolve_path
+from mirage.core.chroma.tree import refill_tree
 from mirage.types import PathSpec
 from mirage.utils.errors import enoent, enotdir
 
@@ -14,6 +15,11 @@ async def readdir(
     if not resolved.is_dir:
         raise enotdir(path)
     listing = await index.list_dir(resolved.virtual_key)
+    if listing.entries is None and listing.status == LookupStatus.EXPIRED:
+        # The tree is written whole: expired means aged out, not gone.
+        refilled = await refill_tree(accessor, index, resolved.mount_prefix)
+        if resolved.virtual_key in refilled:
+            return refilled[resolved.virtual_key]
     if listing.entries is None:
         raise enoent(path)
     return listing.entries

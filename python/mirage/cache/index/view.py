@@ -31,17 +31,18 @@ class IndexView(IndexCacheStore):
     cannot refill a replacement mount's index.
     """
 
-    def __init__(
-            self,
-            store: IndexCacheStore,
-            cache: FileCacheMixin,
-            prefix: str,
-            owns: Callable[[str], bool],
-            *,
-            locked: bool = False,
-            read_ttl: float | None = None,
-            on_gone: Callable[[Evicted], Awaitable[None]] | None = None
-    ) -> None:
+    def __init__(self,
+                 store: IndexCacheStore,
+                 cache: FileCacheMixin,
+                 prefix: str,
+                 owns: Callable[[str], bool],
+                 *,
+                 locked: bool = False,
+                 read_ttl: float | None = None,
+                 on_gone: Callable[[Evicted], Awaitable[None]] | None = None,
+                 may_serve_listing: Callable[[str], Awaitable[bool]]
+                 | None = None,
+                 note_written: Callable[[str], None] | None = None) -> None:
         """Args:
             store (IndexCacheStore): the VFS's own index.
             cache (FileCacheMixin): workspace file cache whose mutation lock
@@ -54,6 +55,11 @@ class IndexView(IndexCacheStore):
             read_ttl (float | None): listing lifetime cap, or None.
             on_gone (Callable[[Evicted], Awaitable[None]] | None): the
                 mount's cleanup for a child a re-list found gone, or None.
+            may_serve_listing (Callable[[str], Awaitable[bool]] | None):
+                the mount's listing gate, asked before a cached listing is
+                served; None serves every cached listing.
+            note_written (Callable[[str], None] | None): told each folder
+                whose listing this view has just written.
         """
         super().__init__()
         self._store = store
@@ -63,6 +69,8 @@ class IndexView(IndexCacheStore):
         self._locked = locked
         self._read_ttl = read_ttl
         self._on_gone = on_gone
+        self._may_serve_listing = may_serve_listing
+        self._note_written = note_written
 
     @property
     def store(self) -> IndexCacheStore:
@@ -112,6 +120,17 @@ class IndexView(IndexCacheStore):
                 status=LookupStatus.NOT_FOUND)
 
     async def list_dir(self, vfs_path: str) -> ListResult:
+        result = await self._fenced_list_dir(vfs_path)
+        # Asked outside the fence, since a gate may reach the backend, and
+        # only about a listing the store has: a NOT_FOUND must stay one.
+        # A refusal leaves the listing stored for the re-list to diff.
+        if (self._may_serve_listing is not None and
+            (result.entries is not None or result.partial_entries is not None)
+                and not await self._may_serve_listing(vfs_path)):
+            return ListResult(status=LookupStatus.EXPIRED)
+        return result
+
+    async def _fenced_list_dir(self, vfs_path: str) -> ListResult:
         async with self._fence():
             if not self._owns(vfs_path):
                 return ListResult(status=LookupStatus.NOT_FOUND)
@@ -172,12 +191,20 @@ class IndexView(IndexCacheStore):
             deadline = self._deadline(expired_at)
             if partial:
                 await self._store.set_partial_dir(vfs_path, owned, deadline)
+                self._noted(vfs_path)
                 return []
             gone = await self._store.set_dir(vfs_path,
                                              owned,
                                              deadline,
                                              window=window)
+            self._noted(vfs_path)
             return [child for child in gone if self._owns(child.path)]
+
+    def _noted(self, vfs_path: str) -> None:
+        # After the store holds it, never before: a reader trusting the note
+        # must find the listing the note is about.
+        if self._note_written is not None:
+            self._note_written(vfs_path)
 
     async def report_gone(self, gone: list[Evicted]) -> None:
         # Outside the fence: cleanup evicts file-cache entries, and the
@@ -208,6 +235,8 @@ class IndexView(IndexCacheStore):
         snapshot = self.scope_snapshot(IndexSnapshot(entries, children))
         self._store.seed(snapshot.entries, snapshot.children,
                          self._cap(expires_at))
+        for folder in snapshot.children:
+            self._noted(folder)
 
     async def entries(self) -> dict[str, IndexEntry]:
         async with self._fence():

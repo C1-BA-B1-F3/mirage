@@ -49,6 +49,7 @@ import { compareCodePoints } from '../../utils/sort.ts'
 interface ReadReconciler {
   reconcileRead(mount: MountEntry, path: string): Promise<void>
   mayServeCached(mount: MountEntry, path: string): Promise<boolean>
+  mayServeListing(mount: MountEntry, folder: string): Promise<boolean>
   onGone(gone: Evicted): Promise<void>
 }
 
@@ -194,6 +195,21 @@ export class MountRegistry {
     return reconciler.mayServeCached(m, key)
   }
 
+  /**
+   * Run the shared listing verdict for one mount's cached listing.
+   *
+   * Mirrors `mayServeCached`: the reconciler is read at call time, and a
+   * retiring mount answers false without asking. Python also answers false
+   * for EBUSY from a mount that began retiring mid-check; this side has no
+   * such path, for the same reason as the read gate.
+   */
+  private async mayServeListing(m: MountEntry, folder: string): Promise<boolean> {
+    const reconciler = this.reconciler
+    if (reconciler === null) return true
+    if (m.retiring) return false
+    return reconciler.mayServeListing(m, folder)
+  }
+
   private attachManager(m: MountEntry): void {
     m.cacheManager = new CacheManager(
       this.cacheStore,
@@ -209,6 +225,7 @@ export class MountRegistry {
         const reconciler = this.reconciler
         if (reconciler !== null && !m.retiring) await reconciler.onGone(gone)
       },
+      (folder) => this.mayServeListing(m, folder),
     )
   }
 

@@ -20,6 +20,7 @@ import { withCacheMutation } from './file/io.ts'
 import { RAMFileCacheStore } from './file/ram.ts'
 import { IndexEntry } from './index/config.ts'
 import { RAMIndexCacheStore } from './index/ram.ts'
+import { commandStarted, runInCommandScope } from './index/scope.ts'
 import { IndexView } from './index/view.ts'
 import { CacheManager } from './manager.ts'
 import { enoent } from '../utils/errors.ts'
@@ -362,5 +363,45 @@ describe('CacheManager index views', () => {
       release()
       await held
     }
+  })
+})
+
+describe('what a mount has listed since a command started', () => {
+  // A glob writes through its own locked view; the command's later ls
+  // through the shared view must trust that same write.
+  it('counts a write through the locked view for the shared one', async () => {
+    const index = new RAMIndexCacheStore({ ttl: 600 })
+    const manager = new CacheManager(new RAMFileCacheStore(), index, '/data/', true)
+    await runInCommandScope(async () => {
+      const started = commandStarted()
+      await manager.scopeIndexLocked(index).setDir('/data', [])
+      expect(started).not.toBeNull()
+      expect(manager.listedSince('/data', started ?? 0)).toBe(true)
+      expect(manager.listedSince('/data/other', started ?? 0)).toBe(false)
+    })
+  })
+
+  it('does not count a write before the command', async () => {
+    const index = new RAMIndexCacheStore({ ttl: 600 })
+    const manager = new CacheManager(new RAMFileCacheStore(), index, '/data/', true)
+    await manager.scopeIndex(index).setDir('/data', [])
+    await runInCommandScope(() => {
+      const started = commandStarted()
+      expect(started).not.toBeNull()
+      expect(manager.listedSince('/data', started ?? 0)).toBe(false)
+      return Promise.resolve()
+    })
+  })
+
+  it('forgets what the old store was written when the store is replaced', async () => {
+    const index = new RAMIndexCacheStore({ ttl: 600 })
+    const manager = new CacheManager(new RAMFileCacheStore(), index, '/data/', true)
+    await runInCommandScope(async () => {
+      const started = commandStarted()
+      await manager.scopeIndex(index).setDir('/data', [])
+      manager.scopeIndex(new RAMIndexCacheStore({ ttl: 600 }))
+      expect(started).not.toBeNull()
+      expect(manager.listedSince('/data', started ?? 0)).toBe(false)
+    })
   })
 })

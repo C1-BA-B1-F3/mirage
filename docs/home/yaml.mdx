@@ -56,7 +56,7 @@ mounts:
 
 ## The read policy
 
-`read: bounded` serves cached bytes and cached directory listings without asking the backend, for as long as `ttl:` allows. `read: fresh` revalidates against the backend's content token before serving a cached copy, at the cost of one backend stat per file read.
+`read: bounded` serves cached bytes and cached directory listings without asking the backend, for as long as `ttl:` allows. `read: fresh` revalidates against the backend's content token before serving a cached copy, at the cost of one backend stat per file read, and re-lists a cached folder once per command before serving it.
 
 `fresh` is refused at mount time on a backend that cannot honour it, rather than quietly behaving as `bounded`:
 
@@ -69,7 +69,7 @@ mounts:
 
 `ttl:` lives only in a mount block. At the top level it would sit beside `index: {ttl: ...}` and mean a different thing, so the workspace-level default is `read:` alone and a workspace-level `bounded` takes 600 seconds.
 
-Each listing write is capped by the mount's `ttl`, under both policies. Backends may expire listings sooner, and mounts without a listing cache still keep none. `fresh` revalidates file content but does not yet revalidate listings.
+Each listing write is capped by the mount's `ttl`, under both policies. Backends may expire listings sooner, and mounts without a listing cache still keep none. `fresh` also checks listings: each command re-lists a folder it reads from the cache, once, and trusts that re-list for the rest of the command, so a file added or removed outside mirage shows in the next `ls`, `find` or glob. A read that belongs to no command (FUSE, a programmatic op) re-lists every time.
 
 Existing listings in a persisted Redis index retain their stored expiry until rewritten.
 

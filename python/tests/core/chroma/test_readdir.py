@@ -12,8 +12,12 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+from datetime import datetime, timedelta, timezone
+
 import pytest
 
+from mirage.cache.file.ram import RAMFileCacheStore
+from mirage.cache.index.view import IndexView
 from mirage.core.chroma.readdir import readdir
 from mirage.types import PathSpec
 from mirage.utils.key_prefix import mount_key
@@ -39,3 +43,66 @@ async def test_readdir_on_file_raises(chroma_accessor, chroma_index,
                                       quickstart_path):
     with pytest.raises(NotADirectoryError):
         await readdir(chroma_accessor, quickstart_path, chroma_index)
+
+
+def _guides() -> PathSpec:
+    return PathSpec.from_str_path("/knowledge/guides",
+                                  mount_key("/knowledge/guides", "/knowledge"))
+
+
+@pytest.mark.asyncio
+async def test_an_expired_folder_under_a_live_root_refills(
+        chroma_accessor, chroma_index):
+    # The tree is written whole, so an expired folder listing means the
+    # tree aged out, not that the folder is gone: refill and answer.
+    await readdir(chroma_accessor, _guides(), chroma_index)
+    await chroma_index.set_dir(
+        "/knowledge/guides", [],
+        datetime.now(timezone.utc) - timedelta(seconds=1))
+    entries = await readdir(chroma_accessor, _guides(), chroma_index)
+    assert entries == ["/knowledge/guides/quickstart"]
+
+
+@pytest.mark.asyncio
+async def test_a_refused_folder_listing_refills_and_answers(
+        chroma_accessor, chroma_index):
+    # A read outside any command under fresh has every cached listing
+    # refused; answering ENOENT would fail every such ls of a subfolder.
+    async def refuse(_folder: str) -> bool:
+        return False
+
+    view = IndexView(chroma_index,
+                     RAMFileCacheStore(),
+                     "/knowledge",
+                     lambda _key: True,
+                     may_serve_listing=refuse)
+    await readdir(chroma_accessor, _guides(), view)
+    assert await readdir(chroma_accessor, _guides(),
+                         view) == ["/knowledge/guides/quickstart"]
+
+
+@pytest.mark.asyncio
+async def test_a_folder_the_tree_lacks_is_still_enoent(chroma_accessor,
+                                                       chroma_index):
+    path = PathSpec.from_str_path("/knowledge/nope",
+                                  mount_key("/knowledge/nope", "/knowledge"))
+    with pytest.raises(FileNotFoundError):
+        await readdir(chroma_accessor, path, chroma_index)
+
+
+@pytest.mark.asyncio
+async def test_a_refused_root_listing_refills_and_answers(
+        chroma_accessor, chroma_index, knowledge_root):
+
+    async def refuse(_folder: str) -> bool:
+        return False
+
+    view = IndexView(chroma_index,
+                     RAMFileCacheStore(),
+                     "/knowledge",
+                     lambda _key: True,
+                     may_serve_listing=refuse)
+    await readdir(chroma_accessor, knowledge_root, view)
+    assert sorted(await
+                  readdir(chroma_accessor, knowledge_root,
+                          view)) == ["/knowledge/api", "/knowledge/guides"]

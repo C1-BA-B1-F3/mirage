@@ -31,6 +31,7 @@ import type { MountEntry } from './mount/mount.ts'
 const ENC = new TextEncoder()
 import { enotsup } from '../utils/errors.ts'
 import { Reconciler } from './reconcile.ts'
+import { runInCommandScope } from '../cache/index/scope.ts'
 import { ops } from '../test-utils.ts'
 import { Workspace } from './workspace/workspace.ts'
 
@@ -140,6 +141,36 @@ describe('Reconciler', () => {
     await rec.onOpMissing(mount, 'stat', '/data/f.txt', new Error('boom'))
     expect(ws.namespace.metaFor('/data/f.txt')).not.toBeNull()
     await ws.close()
+  })
+
+  it('mayServeListing trusts the index under bounded', async () => {
+    const ws = new Workspace({ '/data': new RAMVFS() }, { mode: MountMode.WRITE })
+    const mount = mountOf(ws, '/data/d')
+    const rec = new Reconciler(ws.cache, ws.namespace, ws.opsRegistry)
+    expect(await rec.mayServeListing(mount, '/data/d')).toBe(true)
+    await ws.close()
+  })
+
+  // fresh re-lists anything listed before the command started; a listing
+  // the command itself refreshed is served, so one ls costs one re-list.
+  it("mayServeListing under fresh trusts only this command's writes", async () => {
+    const ws = new Workspace({ '/data': new RAMVFS() }, { mode: MountMode.WRITE })
+    try {
+      const mount = withFresh(mountOf(ws, '/data/d'))
+      const rec = new Reconciler(ws.cache, ws.namespace, ws.opsRegistry)
+      const index = mount.index
+      if (index === undefined) throw new Error('no index')
+      await index.setDir('/data/d', [])
+      expect(await rec.mayServeListing(mount, '/data/d')).toBe(false)
+      await runInCommandScope(async () => {
+        expect(await rec.mayServeListing(mount, '/data/d')).toBe(false)
+        await index.setDir('/data/d', [])
+        expect(await rec.mayServeListing(mount, '/data/d')).toBe(true)
+        expect(await rec.mayServeListing(mount, '/data/other')).toBe(false)
+      })
+    } finally {
+      await ws.close()
+    }
   })
 
   it('mayServeCached trusts the cache under bounded', async () => {

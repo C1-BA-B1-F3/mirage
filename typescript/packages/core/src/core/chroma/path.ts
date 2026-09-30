@@ -14,11 +14,11 @@
 
 import { mountPrefixOf } from '../../utils/key_prefix.ts'
 import type { ChromaAccessor } from '../../accessor/chroma.ts'
-import type { IndexEntry } from '../../cache/index/config.ts'
+import { LookupStatus, type IndexEntry } from '../../cache/index/config.ts'
 import type { IndexCacheStore } from '../../cache/index/store.ts'
 import { PathSpec } from '../../types.ts'
 import { rstripSlash, stripSlash } from '../../utils/slash.ts'
-import { ensureTree } from './tree.ts'
+import { ensureTree, refillTree } from './tree.ts'
 import { enoent } from '../../utils/errors.ts'
 
 export interface ResolvedChromaPath {
@@ -38,7 +38,7 @@ export async function resolvePath(
     throw new Error('chroma: missing index')
   }
   const mountPrefix = mountPrefixOf(spec.virtual, spec.vfsPath)
-  await ensureTree(accessor, index, mountPrefix)
+  let refilled = await ensureTree(accessor, index, mountPrefix)
   const virtualKey = virtualKeyFor(spec)
   const result = await index.get(virtualKey)
   if (result.entry !== undefined && result.entry !== null) {
@@ -50,6 +50,11 @@ export async function resolvePath(
     }
   }
   const listing = await index.listDir(virtualKey)
+  if (listing.entries == null && listing.status === LookupStatus.EXPIRED) {
+    // The tree is written whole: expired means aged out, not gone.
+    refilled ??= await refillTree(accessor, index, mountPrefix)
+    if (refilled.has(virtualKey)) return { virtualKey, mountPrefix, isDir: true, entry: null }
+  }
   if (listing.entries !== undefined && listing.entries !== null) {
     return { virtualKey, mountPrefix, isDir: true, entry: null }
   }

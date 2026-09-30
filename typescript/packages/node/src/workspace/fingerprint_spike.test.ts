@@ -55,6 +55,23 @@ describe('fingerprint spike (port of test_fingerprint_spike.py)', () => {
     }
   })
 
+  // What makes fresh honest on disk is the listing check: the next command
+  // re-lists instead of serving the cached directory.
+  it('disk under fresh lists a file created outside mirage', async () => {
+    writeFileSync(join(root, 'a.txt'), 'a')
+    const ws = new Workspace(
+      { '/data': new DiskVFS({ root }) },
+      { mode: MountMode.WRITE, read: { policy: ReadPolicy.FRESH, ttl: DEFAULT_READ_TTL } },
+    )
+    try {
+      expect(DEC.decode((await ws.shell('ls /data')).stdout)).toBe('a.txt\n')
+      writeFileSync(join(root, 'b.txt'), 'b')
+      expect(DEC.decode((await ws.shell('ls /data')).stdout)).toBe('a.txt\nb.txt\n')
+    } finally {
+      await ws.close()
+    }
+  })
+
   it('disk under bounded reads current bytes, because it caches none', async () => {
     writeFileSync(join(root, 'file.txt'), 'v1')
     const vfs = new DiskVFS({ root })

@@ -77,6 +77,12 @@ export class FakeGitHub {
   truncatedRecursive = false
   readonly truncatedDirs = new Map<string, number>()
   readonly fail = new Map<string, [number, string]>()
+  // Called once a recursive tree response is built, so a test can change
+  // the repository between two fetches of one line.
+  afterRecursive: (() => void) | null = null
+  // A recursive fetch waits on it before answering, so a test can line
+  // readers up.
+  holdRecursive: Promise<void> | null = null
   readonly log: [string, string][] = []
   private readonly blobs = new Map<string, Uint8Array>()
   readonly url = BASE
@@ -163,10 +169,13 @@ export class FakeGitHub {
       const refused = this.refused('recursive')
       if (refused !== null) return refused
       if (segment !== this.ref) return json(404, { message: 'Not Found' })
+      if (this.holdRecursive !== null) await this.holdRecursive
       let paths = [...this.files.keys(), ...this.dirs()].sort(compareCodePoints)
       if (this.truncatedRecursive) paths = paths.filter((p) => !p.includes('/'))
       const tree = await Promise.all(paths.map((p) => this.row(p, p)))
-      return json(200, { sha: treeSha(''), tree, truncated: this.truncatedRecursive })
+      const response = json(200, { sha: treeSha(''), tree, truncated: this.truncatedRecursive })
+      this.afterRecursive?.()
+      return response
     }
     const colon = segment.indexOf(':')
     if (colon >= 0) {

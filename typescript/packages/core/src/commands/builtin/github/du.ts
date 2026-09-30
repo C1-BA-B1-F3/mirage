@@ -22,7 +22,8 @@ import { command, type CommandFnResult, type CommandOpts } from '../../config.ts
 import { specOf } from '../../spec/builtins.ts'
 import { metadataProvision } from './_provision.ts'
 import { IOResult } from '../../../io/types.ts'
-import { runDu } from '../generic/du.ts'
+import { DEFAULT_MAX_DU_ENTRIES, runDu } from '../generic/du.ts'
+import { WalkBudget, walkEntries, walkSize } from '../generic_bind/builders/du.ts'
 
 const resolveGlob = resolveGlobOf(GITHUB_IO)
 
@@ -39,6 +40,7 @@ async function duCommand(
   let probe: Promise<void> | undefined
   const live = (): Promise<void> =>
     (probe ??= ensureLiveTree(accessor, idx, opts.mountPrefix ?? ''))
+  const budget = new WalkBudget(GITHUB_IO.maxDuEntries ?? DEFAULT_MAX_DU_ENTRIES)
   const out = await runDu(
     paths,
     opts,
@@ -50,14 +52,20 @@ async function duCommand(
       await live()
       return GITHUB_IO.stat(accessor, p, idx)
     },
+    // A truncated tree names only some paths and is never refetched, so it
+    // is walked folder by folder, as a backend with no tree would be.
     async (p) => {
       await live()
+      if (accessor.truncated) return walkSize(GITHUB_IO, accessor, idx, budget, p)
       return githubDu(accessor, p, idx)
     },
     async (p) => {
       await live()
+      if (accessor.truncated) return walkEntries(GITHUB_IO, accessor, idx, budget, p)
       return githubDuAll(accessor, p, idx)
     },
+    () => budget.hit,
+    () => budget.unreadable,
   )
   return [out.stdout, new IOResult({ stderr: out.stderr, exitCode: out.exitCode })]
 }

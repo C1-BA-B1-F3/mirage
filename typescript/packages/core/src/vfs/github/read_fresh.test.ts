@@ -101,11 +101,14 @@ describe('github under read: fresh', () => {
 
   // Each cell is [dir listings, whole-tree walks, blob downloads] for one line
   // on a warm fresh mount: cat pays two probes (routing, then the cache
-  // door), as hf's table does; cp skips routing's probe.
+  // door), as hf's table does; cp skips routing's probe. The one walk is
+  // fresh checking the listing the path resolves through: a new command
+  // re-lists it once, and on github the listing is the whole tree (Task 1.3
+  // makes it cheaper).
   const WARM: [string, [number, number, number]][] = [
-    [`cat ${PATH}`, [2, 0, 0]],
-    [`cat ${PATH} | head -c 1`, [2, 0, 0]],
-    [`cp ${PATH} /r/a.txt`, [1, 0, 0]],
+    [`cat ${PATH}`, [2, 1, 0]],
+    [`cat ${PATH} | head -c 1`, [2, 1, 0]],
+    [`cp ${PATH} /r/a.txt`, [1, 1, 0]],
   ]
   for (const [line, cost] of WARM) {
     it(`costs one listing per probe: ${line}`, async () => {
@@ -133,7 +136,8 @@ describe('github under read: fresh', () => {
       expect(gh.counts()).toEqual([2, 1, 1])
       gh.log.length = 0
       expect(await out(w, `cat ${PATH}`)).toBe(NEW)
-      expect(gh.counts()).toEqual([2, 0, 0])
+      // Warm now, but a new command re-checks the listing once.
+      expect(gh.counts()).toEqual([2, 1, 0])
     } finally {
       await w.close()
     }
@@ -161,8 +165,10 @@ describe('github under read: fresh', () => {
       // create fetched the tree but seeded no index, so each stat asks one
       // directory until the listing fills it.
       expect(gh.counts()).toEqual([2, 1, 0])
+      // The listing filled the index, but under fresh the next command
+      // re-checks it once, which on github is one walk of the tree.
       await out(w, `stat ${PATH}`)
-      expect(gh.counts()).toEqual([2, 1, 0])
+      expect(gh.counts()).toEqual([2, 2, 0])
     } finally {
       await w.close()
     }
@@ -202,16 +208,16 @@ describe('github under read: fresh', () => {
     }
   })
 
-  it('serves the listing on a cold read until a probe corrects it', async () => {
-    // Documented limit, chosen by the user: fresh revalidates cached bytes, so
-    // the first read of a file comes from the mount's listing, and the next
-    // read's probe corrects it.
+  it('reads the new blob on a cold read after an outside change', async () => {
+    // The limit this used to pin (a cold read served the listed sha until the
+    // next probe) is gone: fresh re-checks the listing a new command reads,
+    // so even the first read resolves the current blob.
     const w = await ws(await vfsOf())
     try {
       await out(w, 'ls /gh/docs')
       gh.set('docs/a.txt', NEW)
-      expect(await out(w, `cat ${PATH}`)).toBe(OLD)
-      expect(await w.cache.isFresh(PATH, await blobSha(OLD))).toBe(true)
+      expect(await out(w, `cat ${PATH}`)).toBe(NEW)
+      expect(await w.cache.isFresh(PATH, await blobSha(NEW))).toBe(true)
       expect(await out(w, `cat ${PATH}`)).toBe(NEW)
     } finally {
       await w.close()
@@ -230,7 +236,9 @@ describe('github under read: fresh', () => {
         '/gh/docs/b.txt',
         '/gh/top.txt',
       ])
-      expect(gh.count('recursive')).toBe(walks)
+      // The probe left the whole listing; find, a new command, re-checks it
+      // once under fresh.
+      expect(gh.count('recursive')).toBe(walks + 1)
     } finally {
       await w.close()
     }
@@ -360,8 +368,9 @@ describe('github cannot-see versus gone', () => {
       expect(await out(w, `cat ${PATH}`)).toBe(OLD)
       expect(kept(w)).toBe(true)
       // One listing of docs/ per probe, each cut short, so each defers to one
-      // walk of the whole tree, which finds the file.
-      expect(gh.counts()).toEqual([2, 2, 0])
+      // walk of the whole tree, which finds the file; plus the command's one
+      // re-check of the listing under fresh.
+      expect(gh.counts()).toEqual([2, 3, 0])
     } finally {
       await w.close()
     }
@@ -380,8 +389,11 @@ describe('github cannot-see versus gone', () => {
       expect(await out(w, `cat ${PATH}`)).toBe(OLD)
       gh.log.length = 0
       expect(await out(w, `cat ${PATH}`)).toBe(OLD)
-      expect(gh.counts()).toEqual([2, 0, 0])
-      expect(gh.count('sha_dir')).toBe(0)
+      // A truncated tree never refills, so the command's re-check of the
+      // listing goes folder by folder: one more listing, reached through the
+      // folder's own tree sha.
+      expect(gh.counts()).toEqual([3, 0, 0])
+      expect(gh.count('sha_dir')).toBe(1)
     } finally {
       await w.close()
     }

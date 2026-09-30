@@ -116,13 +116,15 @@ async def test_a_native_gdoc_under_fresh_renders_once_until_it_changes():
 
 
 @pytest.mark.asyncio
-async def test_a_warm_gdrive_read_costs_two_parent_listings():
+async def test_a_warm_gdrive_read_costs_three_parent_listings():
     """Cost is the contract, and the gate's probes are the cost.
 
     A warm named operand is probed twice -- once at routing and once at the
     gate -- and each probe stats with a fresh index, so each warms through
-    the parent listing. One means the gate stopped revalidating a named
-    warm operand; zero downloads is the other half.
+    the parent listing. The third is the command resolving the path through
+    the mount's own listing, which fresh re-checks once per command. Two
+    means the listing check is gone; one means the gate stopped
+    revalidating a named warm operand; zero downloads is the other half.
     """
     fake = FakeGDrive()
     fake.add_file("file.txt", b"v1")
@@ -131,9 +133,9 @@ async def test_a_warm_gdrive_read_costs_two_parent_listings():
         await ws.shell("cat /gd/file.txt")
         fake.calls.clear()
         await ws.shell("cat /gd/file.txt")
-    assert fake.calls["list_files"] == 2, (
-        "routing reconcile + the gate's probe; one means the gate no longer "
-        "revalidates a named warm operand")
+    assert fake.calls["list_files"] == 3, (
+        "routing reconcile + the gate's probe + the listing re-check; fewer "
+        "means a check stopped running")
     assert fake.calls["download_file"] == 0
 
 

@@ -561,3 +561,151 @@ async def test_report_gone_hands_owned_keys_to_cleanup():
 @pytest.mark.asyncio
 async def test_report_gone_on_a_raw_store_is_a_no_op():
     await RAMIndexCacheStore().report_gone([Evicted("/a", folder=False)])
+
+
+def _gate(answer: bool) -> tuple[list[str], Callable[[str], Awaitable[bool]]]:
+    asked: list[str] = []
+
+    async def may_serve(key: str) -> bool:
+        asked.append(key)
+        return answer
+
+    return asked, may_serve
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("kind", ["ram", "fake-redis", "redis"])
+@pytest.mark.parametrize("partial", [False, True])
+async def test_a_refused_listing_reads_expired_and_stays_stored(kind, partial):
+    # Refusing is not dropping: the listing stays for the re-list to diff
+    # against, and every reader already re-lists an EXPIRED answer.
+    asked, may_serve = _gate(False)
+    async with _store(kind, 600) as store:
+        view = IndexView(store,
+                         RAMFileCacheStore(),
+                         "/data",
+                         _owns_all,
+                         may_serve_listing=may_serve)
+        writer = view.set_partial_dir if partial else view.set_dir
+        await writer("/data", [("a", _child("a"))])
+        assert (await view.list_dir("/data")).status == LookupStatus.EXPIRED
+        assert asked == ["/data"]
+        stored = await store.list_dir("/data")
+        assert (stored.partial_entries if partial else stored.entries) == [
+            "/data/a"
+        ]
+
+
+@pytest.mark.asyncio
+async def test_a_served_listing_passes_through():
+    _, may_serve = _gate(True)
+    view = IndexView(RAMIndexCacheStore(),
+                     RAMFileCacheStore(),
+                     "/data",
+                     _owns_all,
+                     may_serve_listing=may_serve)
+    await view.set_dir("/data", [("a", _child("a"))])
+    assert (await view.list_dir("/data")).entries == ["/data/a"]
+
+
+@pytest.mark.asyncio
+async def test_the_gate_is_asked_only_about_a_listing_the_store_has():
+    # A missing or expired listing is re-listed anyway; and an unowned or
+    # absent key must stay NOT_FOUND, never become EXPIRED, since github
+    # answers an EXPIRED re-read from its refill snapshot.
+    asked, may_serve = _gate(False)
+    store = RAMIndexCacheStore()
+    owned = {"/data", "/data/old"}
+    view = IndexView(store,
+                     RAMFileCacheStore(),
+                     "/data",
+                     lambda key: key in owned or key.startswith("/data/x"),
+                     may_serve_listing=may_serve)
+    assert (await view.list_dir("/data/x")).status == LookupStatus.NOT_FOUND
+    await store.set_dir("/data/old", [("a", _child("a"))],
+                        datetime.now(timezone.utc) - timedelta(seconds=1))
+    assert (await view.list_dir("/data/old")).status == LookupStatus.EXPIRED
+    assert (await view.list_dir("/elsewhere")).status == LookupStatus.NOT_FOUND
+    assert asked == []
+
+
+@pytest.mark.asyncio
+async def test_ownership_lost_during_the_read_stays_not_found():
+    asked, may_serve = _gate(False)
+    store = RAMIndexCacheStore()
+    owned = {"/data"}
+    await store.set_dir("/data", [("a", _child("a"))])
+    original = store.list_dir
+
+    async def unmount_mid_read(key):
+        result = await original(key)
+        owned.clear()
+        return result
+
+    store.list_dir = unmount_mid_read
+    view = IndexView(store,
+                     RAMFileCacheStore(),
+                     "/data",
+                     lambda key: key in owned,
+                     may_serve_listing=may_serve)
+    assert (await view.list_dir("/data")).status == LookupStatus.NOT_FOUND
+    assert asked == []
+
+
+@pytest.mark.asyncio
+async def test_the_gate_runs_outside_the_fence():
+    # Task 1.3's gate stats the backend; inside the mutation fence it would
+    # hold every writer of the mount for that round trip.
+    cache = RAMFileCacheStore()
+    entered, release = asyncio.Event(), asyncio.Event()
+
+    async def slow_gate(_key: str) -> bool:
+        entered.set()
+        await release.wait()
+        return True
+
+    view = IndexView(RAMIndexCacheStore(),
+                     cache,
+                     "/data",
+                     _owns_all,
+                     may_serve_listing=slow_gate)
+    await view.set_dir("/data", [("a", _child("a"))])
+    reading = asyncio.create_task(view.list_dir("/data"))
+    await entered.wait()
+
+    async def write() -> None:
+        async with mutation_lock(cache):
+            pass
+
+    await asyncio.wait_for(write(), 2)
+    release.set()
+    assert (await reading).entries == ["/data/a"]
+
+
+@pytest.mark.asyncio
+async def test_every_written_folder_is_noted_after_its_write():
+    # The note is what lets the same command trust the listing; noting it
+    # before the store holds it would trust a listing another reader sees
+    # half-written.
+    noted: list[str] = []
+    store = RAMIndexCacheStore()
+    original = store.set_dir
+
+    async def write_then_check(*args, **kwargs):
+        assert noted == []
+        return await original(*args, **kwargs)
+
+    store.set_dir = write_then_check
+    view = IndexView(store,
+                     RAMFileCacheStore(),
+                     "/data",
+                     _owns_all,
+                     note_written=noted.append)
+    await view.set_dir("/data", [("a", _child("a"))])
+    await view.set_partial_dir("/data/p", [("b", _child("b"))])
+    view.seed({"/data/s/c": _child("c")}, {
+        "/data/s": ["/data/s/c"],
+        "/data/t": []
+    },
+              datetime.now(timezone.utc) + timedelta(hours=1))
+    assert noted == ["/data", "/data/p", "/data/s", "/data/t"]

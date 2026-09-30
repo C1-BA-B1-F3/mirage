@@ -23,7 +23,7 @@ vi.mock('../../core/google/drive.ts', async () => {
 
 import type { FakeDrive } from '../../core/gdrive/_test_util.ts'
 import { resetFakeDrive } from '../../core/gdrive/_test_util.ts'
-import { MountMode } from '../../types.ts'
+import { MountMode, ReadPolicy } from '../../types.ts'
 import { getTestParser } from '../../workspace/fixtures/workspace_fixture.ts'
 import { Workspace } from '../../workspace/workspace/workspace.ts'
 import { GDriveVFS } from './gdrive.ts'
@@ -57,7 +57,38 @@ describe('GDriveVFS re-list cleanup', () => {
       expect(await ws.cache.exists('/gd/dir/b.txt')).toBe(true)
       fake.items.delete(b)
       await ws.registry.mountFor('/gd/dir').index?.invalidate()
-      expect(DEC.decode((await ws.shell('stat -c %n /gd/dir/a.txt')).stdout)).toBe('/gd/dir/a.txt\n')
+      expect(DEC.decode((await ws.shell('stat -c %n /gd/dir/a.txt')).stdout)).toBe(
+        '/gd/dir/a.txt\n',
+      )
+      expect(ws.namespace.metaFor('/gd/dir/b.txt')).toBeNull()
+      expect(await ws.cache.exists('/gd/dir/b.txt')).toBe(false)
+    } finally {
+      await ws.close()
+    }
+  })
+
+  // Under fresh the next command re-lists on its own; its first read is a
+  // stat of a sibling, and that re-list still has to find b.txt gone.
+  it('re-lists under fresh on a stat and cleans up a dropped sibling', async () => {
+    const dir = fake.folder('dir')
+    fake.add('a.txt', dir, undefined, ENC.encode('alpha\n'))
+    const b = fake.add('b.txt', dir, undefined, ENC.encode('bravo\n'))
+    const ws = new Workspace(
+      { '/gd': new GDriveVFS({ clientId: 'i', clientSecret: 's', refreshToken: 'r' }) },
+      {
+        mode: MountMode.READ,
+        read: { policy: ReadPolicy.FRESH, ttl: 600 },
+        shellParser: await getTestParser(),
+      },
+    )
+    try {
+      expect(DEC.decode((await ws.shell('ls /gd/dir')).stdout)).toBe('a.txt\nb.txt\n')
+      await ws.cache.set('/gd/dir/b.txt', ENC.encode('bravo\n'))
+      await ws.namespace.setAttrs('/gd/dir/b.txt', { mode: 0o600 })
+      fake.items.delete(b)
+      expect(DEC.decode((await ws.shell('stat -c %n /gd/dir/a.txt')).stdout)).toBe(
+        '/gd/dir/a.txt\n',
+      )
       expect(ws.namespace.metaFor('/gd/dir/b.txt')).toBeNull()
       expect(await ws.cache.exists('/gd/dir/b.txt')).toBe(false)
     } finally {

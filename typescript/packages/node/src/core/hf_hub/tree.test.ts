@@ -13,7 +13,10 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import { describe, expect, it, vi } from 'vitest'
+import { RAMFileCacheStore } from '@struktoai/mirage-core/cache/file/ram'
+import type { Evicted } from '@struktoai/mirage-core/cache/index/config'
 import { RAMIndexCacheStore } from '@struktoai/mirage-core/cache/index/ram'
+import { IndexView } from '@struktoai/mirage-core/cache/index/view'
 import { HfHubAccessor } from '../../accessor/hf_hub.ts'
 import { HfHubError } from './client.ts'
 import {
@@ -364,4 +367,48 @@ it('returns the snapshot it wrote if another refill replaces the accessor tree',
   } finally {
     vi.restoreAllMocks()
   }
+})
+
+function treeOf(...rows: Record<string, unknown>[]): Record<string, unknown>[] {
+  return rows
+}
+
+describe('refillSnapshot reports what left the repository', () => {
+  // The refill wipes the index before seeding the new tree, so without the
+  // diff a file removed upstream keeps its cached bytes and overlay.
+  it.each([
+    [
+      'a removed file',
+      treeOf(fileRow('d/b.txt'), dirRow('d')),
+      [{ path: '/m/a.txt', folder: false }],
+    ],
+    ['a removed folder once', treeOf(fileRow('a.txt')), [{ path: '/m/d', folder: true }]],
+  ])('reports %s', async (_label, after, reported) => {
+    const gone: Evicted[] = []
+    const index = new IndexView(
+      new RAMIndexCacheStore(),
+      new RAMFileCacheStore(),
+      '/m',
+      () => true,
+      {
+        onGone: (child) => {
+          gone.push(child)
+          return Promise.resolve()
+        },
+      },
+    )
+    const acc = accessor()
+    const spy = vi
+      .spyOn(client, 'hubGetResponse')
+      .mockResolvedValue(page([fileRow('a.txt'), fileRow('d/b.txt'), dirRow('d')]))
+    try {
+      await refillSnapshot(acc, index, '/m')
+      expect(gone).toEqual([])
+      spy.mockResolvedValue(page(after))
+      await refillSnapshot(acc, index, '/m')
+      expect(gone).toEqual(reported)
+    } finally {
+      vi.restoreAllMocks()
+    }
+  })
 })

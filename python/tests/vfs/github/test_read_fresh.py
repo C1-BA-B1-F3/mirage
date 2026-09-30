@@ -95,11 +95,14 @@ async def test_a_read_leaves_its_sha_on_the_cache_entry(prefix):
 
 # Each cell is (dir listings, whole-tree walks, blob downloads) for one line
 # on a warm fresh mount. cat pays two probes (routing, then the cache door),
-# as hf's table does; cp skips routing's probe.
+# as hf's table does; cp skips routing's probe. The one walk is fresh
+# checking the listing the path resolves through: a new command re-lists it
+# once, and on github the listing is the whole tree (Task 1.3 makes it
+# cheaper).
 WARM = [
-    ("cat /gh/docs/a.txt", (2, 0, 0)),
-    ("cat /gh/docs/a.txt | head -c 1", (2, 0, 0)),
-    ("cp /gh/docs/a.txt /r/a.txt", (1, 0, 0)),
+    ("cat /gh/docs/a.txt", (2, 1, 0)),
+    ("cat /gh/docs/a.txt | head -c 1", (2, 1, 0)),
+    ("cp /gh/docs/a.txt /r/a.txt", (1, 1, 0)),
 ]
 
 
@@ -131,7 +134,8 @@ async def test_a_changed_file_is_refetched_once_then_served_warm():
             assert hub.counts() == (2, 1, 1)
             hub.log.clear()
             assert await _out(ws, f"cat {PATH}") == NEW
-            assert hub.counts() == (2, 0, 0)
+            # Warm now, but a new command re-checks the listing once.
+            assert hub.counts() == (2, 1, 0)
         finally:
             await ws.close()
 
@@ -159,9 +163,10 @@ async def test_a_new_mount_asks_one_directory_per_stat_until_it_lists():
             await _out(ws, f"stat {PATH}")
             await _out(ws, "ls /gh/docs")
             assert hub.counts() == (2, 1, 0)
-            # The listing filled the index, so the stat after it is free.
+            # The listing filled the index, but under fresh the next command
+            # re-checks it once, which on github is one walk of the tree.
             await _out(ws, f"stat {PATH}")
-            assert hub.counts() == (2, 1, 0)
+            assert hub.counts() == (2, 2, 0)
         finally:
             await ws.close()
 
@@ -201,17 +206,17 @@ async def test_a_revert_is_read_through_both_doors():
 
 
 @pytest.mark.asyncio
-async def test_a_cold_read_serves_the_listing_until_a_probe_corrects_it():
-    # Documented limit, chosen by the user: fresh revalidates cached bytes,
-    # so the first read of a file comes from the mount's listing, and the
-    # next read's probe corrects it.
+async def test_a_cold_read_after_an_outside_change_reads_the_new_blob():
+    # The limit this used to pin (a cold read served the listed sha until
+    # the next probe) is gone: fresh re-checks the listing a new command
+    # reads, so even the first read resolves the current blob.
     with serve(_hub()) as hub:
         ws = _ws(_vfs(hub))
         try:
             await _out(ws, "ls /gh/docs")
             hub.files["docs/a.txt"] = NEW
-            assert await _out(ws, f"cat {PATH}") == OLD
-            assert await ws.cache.is_fresh(PATH, blob_sha(OLD))
+            assert await _out(ws, f"cat {PATH}") == NEW
+            assert await ws.cache.is_fresh(PATH, blob_sha(NEW))
             assert await _out(ws, f"cat {PATH}") == NEW
         finally:
             await ws.close()
@@ -229,7 +234,9 @@ async def test_a_probe_leaves_find_its_whole_listing():
             assert sorted(listed.decode().split()) == [
                 "/gh/docs/a.txt", "/gh/docs/b.txt", "/gh/top.txt"
             ]
-            assert hub.count("recursive") == walks
+            # The probe left the whole listing; find, a new command, re-checks
+            # it once under fresh.
+            assert hub.count("recursive") == walks + 1
         finally:
             await ws.close()
 
@@ -388,8 +395,9 @@ async def test_a_truncated_parent_listing_is_not_absence():
             assert await _out(ws, f"cat {PATH}") == OLD
             assert _kept(ws)
             # One listing of docs/ per probe, each cut short, so each defers
-            # to one walk of the whole tree, which finds the file.
-            assert hub.counts() == (2, 2, 0)
+            # to one walk of the whole tree, which finds the file; plus the
+            # command's one re-check of the listing under fresh.
+            assert hub.counts() == (2, 3, 0)
         finally:
             await ws.close()
 
@@ -413,8 +421,11 @@ async def test_a_truncated_repository_probes_one_directory():
             assert await _out(ws, f"cat {PATH}") == OLD
             hub.log.clear()
             assert await _out(ws, f"cat {PATH}") == OLD
-            assert hub.counts() == (2, 0, 0)
-            assert hub.count("sha_dir") == 0
+            # A truncated tree never refills, so the command's re-check of
+            # the listing goes folder by folder: one more listing, reached
+            # through the folder's own tree sha.
+            assert hub.counts() == (3, 0, 0)
+            assert hub.count("sha_dir") == 1
         finally:
             await ws.close()
 

@@ -15,6 +15,7 @@
 import type { Ctx, JsonValue, KitRoute, Reply } from '../kit/typescript/index.ts'
 import { API_PREFIXES, DEFAULT_LOGIN } from './config.ts'
 import type { C } from './config.ts'
+import { combinedStatus } from './actions.ts'
 import { rangeOf } from './compare.ts'
 import type { Range } from './compare.ts'
 import { changeJson, changeType, patchLines } from './diff.ts'
@@ -34,7 +35,15 @@ import {
   userNode,
 } from './wire.ts'
 import type { CommitRow, PageArgs } from './wire.ts'
-import { branchFor, nextNumber, resolveRef, scope } from './store.ts'
+import {
+  allRepos,
+  branchFor,
+  forkOwnedBy,
+  nextNumber,
+  repoJson,
+  resolveRef,
+  scope,
+} from './store.ts'
 import type { RepoRow, Resolved } from './store.ts'
 import {
   authedRoute,
@@ -43,6 +52,7 @@ import {
   fail,
   jsonBodyOf,
   numberParam,
+  ordered,
   pagedReply,
   route,
   str,
@@ -69,6 +79,7 @@ export interface PullRow {
   draft: boolean
   merged: boolean
   headSha: string
+  headRepoSeq: number
   reviewersJson: string
   createdAt: string
   updatedAt: string
@@ -113,17 +124,41 @@ interface PullState {
 
 const NO_RANGE: Range = { ahead: [], behind: 0, before: '', after: '', changes: [] }
 
+// The branch a head names: `head` is the branch, or `owner:branch` for one a
+// fixture states in GitHub's label form.
+function headBranch(row: PullRow): string {
+  const cut = row.head.indexOf(':')
+  return cut < 0 ? row.head : row.head.slice(cut + 1)
+}
+
+// The repository a pull request's head lives in: this one, or the fork in its
+// network the row names by seq, or whose owner an `owner:` head names. Null
+// when that repository is gone, as GitHub then reports the head's repo.
+export async function headRepoOf(
+  ctx: { db: C; tenant: string },
+  repo: RepoRow,
+  row: PullRow,
+): Promise<RepoRow | null> {
+  const repos = await allRepos(ctx.db, ctx.tenant)
+  if (row.headRepoSeq >= 0) return repos.find((r) => r.seq === row.headRepoSeq) ?? null
+  const cut = row.head.indexOf(':')
+  const owner = cut < 0 ? repo.owner : row.head.slice(0, cut)
+  if (owner.toLowerCase() === repo.owner.toLowerCase()) return repo
+  return await forkOwnedBy(ctx.db, ctx.tenant, repo, owner, headBranch(row))
+}
+
 async function pullHead(
   ctx: { db: C; tenant: string },
   repo: RepoRow,
   row: PullRow,
 ): Promise<Resolved | null> {
-  const branch = await branchFor(ctx.db, ctx.tenant, repo, row.head)
+  const home = await headRepoOf(ctx, repo, row)
+  const branch = home === null ? null : await branchFor(ctx.db, ctx.tenant, home, headBranch(row))
   if (branch === null && row.headSha === '') return null
   return await resolveRef(
     ctx.db,
     ctx.tenant,
-    repo,
+    home ?? repo,
     branch === null ? row.headSha : `refs/heads/${branch}`,
   )
 }
@@ -144,10 +179,11 @@ async function pullState(
 ): Promise<PullState> {
   const head = await pullHead(ctx, repo, row)
   const base = await pullBase(ctx, repo, row)
+  const home = (await headRepoOf(ctx, repo, row)) ?? repo
   const range =
     head === null || base === null
       ? NO_RANGE
-      : ((await rangeOf(ctx.db, ctx.tenant, repo, base, head)) ?? NO_RANGE)
+      : ((await rangeOf(ctx.db, ctx.tenant, repo, base, head, home)) ?? NO_RANGE)
   return {
     head: head?.history[0]?.sha ?? row.headSha,
     base: base?.history[0]?.sha ?? '',
@@ -158,7 +194,9 @@ async function pullState(
 
 // A pull request as the list and every write answer it. The counts and the
 // mergeable state are not in it, as GitHub leaves them out of a list; the
-// head and base shas are where those refs point now.
+// head and base shas are where those refs point now, and each side names its
+// repository and its `owner:branch` label, the head's a fork's when it comes
+// from one.
 export async function pullJson(
   ctx: { db: C; tenant: string },
   repo: RepoRow,
@@ -166,6 +204,16 @@ export async function pullJson(
 ): Promise<JsonValue> {
   const head = await pullHead(ctx, repo, row)
   const base = await pullBase(ctx, repo, row)
+  const home = await headRepoOf(ctx, repo, row)
+  const cut = row.head.indexOf(':')
+  const headOwner = home?.owner ?? (cut < 0 ? repo.owner : row.head.slice(0, cut))
+  const side = async (owner: string, ref: string, sha: string, at: RepoRow | null) => ({
+    label: `${owner}:${ref}`,
+    ref,
+    sha,
+    user: { login: owner },
+    repo: at === null ? null : await repoJson(ctx.db, ctx.tenant, at),
+  })
   return {
     number: row.number,
     title: row.title,
@@ -174,8 +222,8 @@ export async function pullJson(
     draft: row.draft,
     user: { login: row.user },
     labels: [],
-    base: { ref: row.base, sha: base?.history[0]?.sha ?? '' },
-    head: { ref: row.head, sha: head?.history[0]?.sha ?? row.headSha },
+    base: await side(repo.owner, row.base, base?.history[0]?.sha ?? '', repo),
+    head: await side(headOwner, headBranch(row), head?.history[0]?.sha ?? row.headSha, home),
     merged_at: row.merged ? MERGED_AT : null,
     created_at: row.createdAt,
     updated_at: row.updatedAt,
@@ -218,25 +266,49 @@ async function found(ctx: Ctx<C>, repo: RepoRow): Promise<PullRow | null> {
   return number === null ? null : await pullRow(ctx.db, ctx.tenant, repo, number)
 }
 
+// `sort` is `created` (the default), `updated`, `popularity`, which is the
+// comment count, or `long-running`, which orders by creation; GitHub's further
+// narrowing of that one to pull requests open a month and active in the last
+// one needs a clock the fake does not keep, so it is not applied. `direction`
+// defaults to `desc` for `created` and to `asc` for the rest, as GitHub's does.
 async function listPulls(ctx: Ctx<C>, repo: RepoRow): Promise<Reply> {
   const rows = (await ctx.db.githubPull.findMany({
     where: { ...scope(ctx.tenant), repo: repo.fullName },
-    orderBy: { seq: 'desc' },
   })) as PullRow[]
   const wanted = ctx.query.get('state') ?? 'open'
   let kept = rows.filter((r) => wanted === 'all' || r.state === wanted)
   const base = ctx.query.get('base') ?? ''
   const head = ctx.query.get('head') ?? ''
   if (base !== '') kept = kept.filter((r) => r.base === base)
-  if (head !== '') kept = kept.filter((r) => r.head === head)
-  return pagedReply(ctx, await Promise.all(kept.map((r) => pullJson(ctx, repo, r))))
+  if (head !== '') {
+    // `owner:branch`, as GitHub takes it, or a bare branch of this repository.
+    const labels = await Promise.all(
+      kept.map(async (r) => `${((await headRepoOf(ctx, repo, r)) ?? repo).owner}:${headBranch(r)}`),
+    )
+    kept = kept.filter((r, i) =>
+      head.includes(':')
+        ? labels[i] === head
+        : headBranch(r) === head && labels[i]?.startsWith(`${repo.owner}:`),
+    )
+  }
+  const sort = ctx.query.get('sort') ?? 'created'
+  const direction = ctx.query.get('direction') ?? (sort === 'created' ? 'desc' : 'asc')
+  const comments = await ctx.db.githubComment.findMany({
+    where: { ...scope(ctx.tenant), repo: repo.fullName },
+    select: { issueNumber: true },
+  })
+  const talk = (row: PullRow): number => comments.filter((c) => c.issueNumber === row.number).length
+  const key = (row: PullRow): number | string =>
+    sort === 'updated' ? row.updatedAt : sort === 'popularity' ? talk(row) : row.createdAt
+  const sorted = ordered(kept, key, direction)
+  return pagedReply(ctx, await Promise.all(sorted.map((r) => pullJson(ctx, repo, r))))
 }
 
-// A pull request needs a head and a base that are branches here, sharing
-// history, a head that holds something its base does not, and no open pull
-// request between the same two already. Each refusal is GitHub's. A head may be spelled
-// `owner:branch`, and names this repository's branch when the owner is its
-// own; the fake opens no pull request across repositories.
+// A pull request needs a head and a base that are branches, sharing history,
+// a head that holds something its base does not, and no open pull request
+// between the same two already. Each refusal is GitHub's. A head may be
+// spelled `owner:branch`: this repository's branch when the owner is its own,
+// and otherwise that account's fork in this repository's network.
 async function createPull(ctx: Ctx<C>, repo: RepoRow): Promise<Reply> {
   const body = jsonBodyOf(ctx)
   const title = str(body, 'title')
@@ -244,27 +316,39 @@ async function createPull(ctx: Ctx<C>, repo: RepoRow): Promise<Reply> {
   const base = str(body, 'base')
   if (title === '' || head === '' || base === '') return fail(422, 'Validation Failed')
   const cut = head.indexOf(':')
-  const headName = cut < 0 ? head : head.slice(0, cut) === repo.owner ? head.slice(cut + 1) : ''
-  const headBranch = headName === '' ? null : await branchFor(ctx.db, ctx.tenant, repo, headName)
+  const owner = cut < 0 ? repo.owner : head.slice(0, cut)
+  const named = cut < 0 ? head : head.slice(cut + 1)
+  const home =
+    owner.toLowerCase() === repo.owner.toLowerCase()
+      ? repo
+      : await forkOwnedBy(ctx.db, ctx.tenant, repo, owner, named)
+  const headName =
+    home === null || named === '' ? null : await branchFor(ctx.db, ctx.tenant, home, named)
   const baseBranch = await branchFor(ctx.db, ctx.tenant, repo, base)
   const invalid = [
     ...(baseBranch === null ? [{ resource: 'PullRequest', field: 'base', code: 'invalid' }] : []),
-    ...(headBranch === null ? [{ resource: 'PullRequest', field: 'head', code: 'invalid' }] : []),
+    ...(headName === null ? [{ resource: 'PullRequest', field: 'head', code: 'invalid' }] : []),
   ]
-  if (headBranch === null || baseBranch === null) return validationFailed(invalid, CREATE_DOCS)
+  if (home === null || headName === null || baseBranch === null) {
+    return validationFailed(invalid, CREATE_DOCS)
+  }
+  const cross = home.seq !== repo.seq
+  const label = cross ? `${home.owner}:${headName}` : headName
   const custom = (message: string): Reply =>
     validationFailed([{ resource: 'PullRequest', code: 'custom', message }], CREATE_DOCS)
+  const headRepoSeq = cross ? home.seq : -1
   const open = await ctx.db.githubPull.findFirst({
     where: {
       ...scope(ctx.tenant),
       repo: repo.fullName,
-      head: headBranch,
+      head: headName,
+      headRepoSeq,
       base: baseBranch,
       state: 'open',
     },
   })
   if (open !== null) {
-    return custom(`A pull request already exists for ${repo.owner}:${headBranch}.`)
+    return custom(`A pull request already exists for ${home.owner}:${headName}.`)
   }
   const draft: PullRow = {
     number: 0,
@@ -272,28 +356,24 @@ async function createPull(ctx: Ctx<C>, repo: RepoRow): Promise<Reply> {
     body: str(body, 'body'),
     state: 'open',
     user: DEFAULT_LOGIN,
-    head: headBranch,
+    head: headName,
     base: baseBranch,
     draft: body.draft === true,
     merged: false,
     headSha: '',
+    headRepoSeq,
     reviewersJson: '[]',
     createdAt: CREATED_AT,
     updatedAt: CREATED_AT,
   }
-  const [from, to] = await Promise.all(
-    [baseBranch, headBranch].map((name) =>
-      resolveRef(ctx.db, ctx.tenant, repo, `refs/heads/${name}`),
-    ),
-  )
+  const from = await resolveRef(ctx.db, ctx.tenant, repo, `refs/heads/${baseBranch}`)
+  const to = await resolveRef(ctx.db, ctx.tenant, home, `refs/heads/${headName}`)
   const range =
-    from === null || from === undefined || to === null || to === undefined
-      ? null
-      : await rangeOf(ctx.db, ctx.tenant, repo, from, to)
+    from === null || to === null ? null : await rangeOf(ctx.db, ctx.tenant, repo, from, to, home)
   if (range === null) {
-    return custom(`The ${headBranch} branch has no history in common with ${baseBranch}`)
+    return custom(`The ${label} branch has no history in common with ${baseBranch}`)
   }
-  if (range.ahead.length === 0) return custom(`No commits between ${baseBranch} and ${headBranch}`)
+  if (range.ahead.length === 0) return custom(`No commits between ${baseBranch} and ${label}`)
   const number = await nextNumber(ctx.db, ctx.tenant, repo)
   const row: PullRow = { ...draft, number, headSha: range.after }
   await ctx.db.githubPull.create({
@@ -721,15 +801,14 @@ function reviewNode(repo: RepoRow, number: number, row: ReviewRow): Record<strin
 
 /**
  * One commit of a pull request as GraphQL reports it: its headline and body,
- * who wrote it and when, and the repository's checks and statuses rolled up
- * against it, which the fake keeps per repository rather than per commit.
+ * who wrote it and when, and the checks and statuses set on it, rolled up.
  */
 function commitNode(
   ctx: { db: C; tenant: string },
   repo: RepoRow,
   row: CommitRow,
 ): Record<string, unknown> {
-  const where = { ...scope(ctx.tenant), repo: repo.fullName }
+  const where = { ...scope(ctx.tenant), repo: repo.fullName, sha: row.sha }
   const who = commitIdentity(row)
   const [headline = '', ...rest] = row.message.split('\n')
   return {
@@ -746,7 +825,7 @@ function commitNode(
     statusCheckRollup: {
       contexts: async ({ first, after }: PageArgs) => {
         const checks = await ctx.db.githubCheck.findMany({ where, orderBy: { seq: 'asc' } })
-        const statuses = await ctx.db.githubStatus.findMany({ where, orderBy: { seq: 'asc' } })
+        const statuses = (await combinedStatus(ctx, repo, row.sha)).rows
         const contexts = [
           ...checks.map((check) => ({
             __typename: 'CheckRun',
@@ -785,7 +864,11 @@ export async function pullRequestNode(
   repo: RepoRow,
   row: PullRow,
   repository: Record<string, unknown>,
+  nodeOf: (other: RepoRow) => Promise<Record<string, unknown>>,
 ): Promise<Record<string, unknown>> {
+  const home = await headRepoOf(ctx, repo, row)
+  const cross = home !== null && home.seq !== repo.seq
+  const headOwner = home?.owner ?? repo.owner
   const state = row.merged ? 'MERGED' : row.state === 'closed' ? 'CLOSED' : 'OPEN'
   const open = state === 'OPEN'
   // Read once, and only by a query that asks for a field that needs it.
@@ -822,10 +905,10 @@ export async function pullRequestNode(
     mergedAt: row.merged ? MERGED_AT : null,
     baseRefName: row.base,
     baseRefOid: async () => (await now()).base,
-    headRefName: row.head,
+    headRefName: headBranch(row),
     headRefOid: async () => (await now()).head,
     isDraft: row.draft,
-    isCrossRepository: false,
+    isCrossRepository: cross,
     maintainerCanModify: false,
     mergeable: open ? 'MERGEABLE' : 'UNKNOWN',
     mergeStateStatus: !open ? 'UNKNOWN' : row.draft ? 'DRAFT' : 'CLEAN',
@@ -836,11 +919,11 @@ export async function pullRequestNode(
     author: userNode(row.user),
     mergedBy: row.merged ? userNode(DEFAULT_LOGIN) : null,
     repository,
-    headRepository: repository,
+    headRepository: home === null ? null : cross ? await nodeOf(home) : repository,
     headRepositoryOwner: {
-      __typename: repo.owner === DEFAULT_LOGIN ? 'User' : 'Organization',
-      ...ownerNode(repo.owner),
-      name: repo.owner === DEFAULT_LOGIN ? repo.owner : null,
+      __typename: headOwner === DEFAULT_LOGIN ? 'User' : 'Organization',
+      ...ownerNode(headOwner),
+      name: headOwner === DEFAULT_LOGIN ? headOwner : null,
     },
     autoMergeRequest: null,
     mergeCommit: row.merged ? { oid: commitSha('merge') } : null,
@@ -926,7 +1009,7 @@ export async function pullRequestConnection(
     const state = row.merged ? 'MERGED' : row.state === 'closed' ? 'CLOSED' : 'OPEN'
     if (!states.includes(state)) return false
     if (args.baseRefName && row.base !== args.baseRefName) return false
-    return !args.headRefName || row.head === args.headRefName
+    return !args.headRefName || headBranch(row) === args.headRefName
   })
   const connection = page(kept, args.first ?? 0, args.after)
   return { ...connection, nodes: await Promise.all(connection.nodes.map(nodes)) }

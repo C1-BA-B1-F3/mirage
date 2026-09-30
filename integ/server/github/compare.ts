@@ -19,7 +19,7 @@ import { changeJson, diffTrees } from './diff.ts'
 import type { FileChange } from './diff.ts'
 import { commitJson } from './wire.ts'
 import type { CommitRow } from './wire.ts'
-import { commitTree, divergence, resolveRef, treeAt } from './store.ts'
+import { commitTree, divergence, forkOwnedBy, resolveRef, treeAt } from './store.ts'
 import type { RepoRow, Resolved } from './store.ts'
 import { authedRoute, diffReply, everywhere, fail, param, route, withRepo } from './http.ts'
 
@@ -28,6 +28,7 @@ import { authedRoute, diffReply, everywhere, fail, param, route, withRepo } from
  * first, how many the base holds past it, and every path the head's tree
  * changed against the merge base's, with the commit either side. A null base
  * compares the head against nothing, so every commit and file it has counts.
+ * The head may live in another repository of the network, a fork.
  */
 export interface Range {
   ahead: CommitRow[]
@@ -46,6 +47,7 @@ export async function rangeOf(
   repo: RepoRow,
   base: Resolved | null,
   head: Resolved,
+  headRepo: RepoRow = repo,
 ): Promise<Range | null> {
   const met =
     base === null
@@ -54,7 +56,7 @@ export async function rangeOf(
   if (met === null) return null
   const before =
     met.mergeBase === null ? new Map() : await commitTree(db, tenant, repo, met.mergeBase)
-  const after = (await treeAt(db, tenant, repo, head)) ?? new Map()
+  const after = (await treeAt(db, tenant, headRepo, head)) ?? new Map()
   return {
     ahead: met.ahead,
     behind: met.behind,
@@ -79,18 +81,28 @@ export async function commitChanges(
   return diffTrees(before, await commitTree(db, tenant, repo, commit))
 }
 
-// Either side is any ref `resolveRef` reads: a branch, or a commit by its full
-// or abbreviated sha. A spec with no `...` compares nothing against the
+// Either side is any ref `resolveRef` reads: a branch, a tag, or a commit by
+// its full or abbreviated sha, and the head may be `owner:ref` in a fork of
+// the network, as GitHub reads `base...owner:head`. A spec with no `...` compares nothing against the
 // default branch, so every commit on it counts. Asked for as a diff, the body
 // is the unified diff of the same range.
 async function compare(ctx: Ctx<C>, repo: RepoRow): Promise<Reply> {
   const spec = param(ctx, 'basehead')
   const cut = spec.indexOf('...')
   const baseRef = cut < 0 ? '' : spec.slice(0, cut)
-  const head = await resolveRef(ctx.db, ctx.tenant, repo, cut < 0 ? '' : spec.slice(cut + 3))
+  const headSpec = cut < 0 ? '' : spec.slice(cut + 3)
+  const colon = headSpec.indexOf(':')
+  const headRef = colon < 0 ? headSpec : headSpec.slice(colon + 1)
+  const home =
+    colon < 0
+      ? repo
+      : await forkOwnedBy(ctx.db, ctx.tenant, repo, headSpec.slice(0, colon), headRef)
+  const head = home === null ? null : await resolveRef(ctx.db, ctx.tenant, home, headRef)
   const base = baseRef === '' ? null : await resolveRef(ctx.db, ctx.tenant, repo, baseRef)
-  if (head === null || (baseRef !== '' && base === null)) return fail(404, 'Not Found')
-  const range = await rangeOf(ctx.db, ctx.tenant, repo, base, head)
+  if (home === null || head === null || (baseRef !== '' && base === null)) {
+    return fail(404, 'Not Found')
+  }
+  const range = await rangeOf(ctx.db, ctx.tenant, repo, base, head, home)
   if (range === null) return fail(404, 'No common ancestor between the two commits')
   const diff = diffReply(ctx, range.changes)
   if (diff !== null) return diff

@@ -27,7 +27,8 @@
       "owner": "integ",
       "name": "data-v1",
       "defaultBranch": "main",
-      "sourceDir": "github/data-v1"
+      "sourceDir": "github/data-v1",
+      "metaJson": "{\"stargazers\": [\"integ-user\", \"integ\"], \"subscribers\": [\"integ-user\"]}"
     }
   ],
   "workflows": [
@@ -54,7 +55,7 @@
       "runAttempt": 1,
       "event": "push",
       "headBranch": "main",
-      "headSha": "b74c57783a47b1129aae98054c381cd45eb6fe06",
+      "headSha": "c13318709d4eb753fe20ea762abe77e19a8e5e73",
       "status": "completed",
       "conclusion": "success",
       "createdAt": "2026-01-01T00:00:00Z",
@@ -120,7 +121,60 @@
       "login": "integ",
       "type": "Organization",
       "name": "Integ Fixtures",
-      "createdAt": "2020-05-01T00:00:00Z"
+      "createdAt": "2020-05-01T00:00:00Z",
+      "bio": "Fixtures for the integ batteries",
+      "company": "@integ",
+      "blog": "https://example.test",
+      "location": "Test Lab",
+      "followers": 12,
+      "following": 3,
+      "publicGists": 1,
+      "updatedAt": "2026-01-02T00:00:00Z"
+    }
+  ],
+  "checks": [
+    {
+      "repo": "integ/repo-v1",
+      "sha": "c13318709d4eb753fe20ea762abe77e19a8e5e73",
+      "id": 301,
+      "name": "test",
+      "status": "completed",
+      "conclusion": "success",
+      "startedAt": "2026-01-01T00:00:00Z",
+      "completedAt": "2026-01-01T00:01:00Z",
+      "detailsUrl": "https://example.test/check/301",
+      "summary": "All checks passed"
+    },
+    {
+      "repo": "integ/repo-v1",
+      "sha": "c13318709d4eb753fe20ea762abe77e19a8e5e73",
+      "id": 302,
+      "name": "flaky",
+      "status": "completed",
+      "conclusion": "cancelled",
+      "startedAt": "2026-01-01T00:00:00Z",
+      "completedAt": "2026-01-01T00:02:00Z",
+      "detailsUrl": "https://example.test/check/302",
+      "summary": "Cancelled by a newer run"
+    }
+  ],
+  "statuses": [
+    {
+      "repo": "integ/repo-v1",
+      "sha": "c13318709d4eb753fe20ea762abe77e19a8e5e73",
+      "context": "ci/legacy",
+      "state": "success",
+      "targetUrl": "https://example.test/status/legacy",
+      "description": "Legacy status passed",
+      "createdAt": "2026-01-01T00:00:00Z",
+      "updatedAt": "2026-01-01T00:01:30Z"
+    }
+  ],
+  "tags": [
+    {
+      "repo": "integ/data-v1",
+      "name": "v0.1.0",
+      "sha": "24f636d593911ace37ffae622f03331804f24386"
     }
   ]
 }

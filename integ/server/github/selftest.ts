@@ -867,7 +867,28 @@ async function diffsSearchAndHistory(at: string): Promise<void> {
   eq(
     "an item has GitHub's keys",
     Object.keys(((item as JsonValue[])[0] ?? {}) as Record<string, JsonValue>).sort(),
-    ['html_url', 'id', 'login', 'node_id', 'score', 'site_admin', 'type'],
+    [
+      'avatar_url',
+      'events_url',
+      'followers_url',
+      'following_url',
+      'gists_url',
+      'gravatar_id',
+      'html_url',
+      'id',
+      'login',
+      'node_id',
+      'organizations_url',
+      'received_events_url',
+      'repos_url',
+      'score',
+      'site_admin',
+      'starred_url',
+      'subscriptions_url',
+      'type',
+      'url',
+      'user_view_type',
+    ],
   )
   eq('an empty user search is refused', (await send('GET', `${base}/search/users?q=`)).status, 422)
   const org = await send('GET', `${base}/users/INTEG`)
@@ -1136,7 +1157,7 @@ async function diffsSearchAndHistory(at: string): Promise<void> {
     [422, prCommits[0] ?? null],
   )
   eq(
-    'a review names one too',
+    'a review names one of its head too, never an unrelated commit',
     (
       await send('POST', `${repo}/pulls/${number}/reviews`, {
         event: 'COMMENT',
@@ -1538,6 +1559,299 @@ async function refIdentity(at: string): Promise<void> {
   )
 }
 
+// Owner scope, issue search's `is:` and `sort:`, the order lists are sorted
+// and paged in, pull requests in the issue list, profiles, a repository's
+// languages, people and events, the rate limit, and pull requests from forks.
+async function listsProfilesAndForks(at: string): Promise<void> {
+  const run = 'lists-profiles-forks'
+  const base = `${at}/_run/${run}`
+  await post(`${base}/reset`, { run, tenants: [TENANT], fixture: 'v1' })
+  const repo = `${base}/repos/${REPO}`
+  const send = async (
+    method: string,
+    url: string,
+    body?: JsonValue,
+    headers: Record<string, string> = HEADERS,
+  ): Promise<{ status: number; body: JsonValue }> => {
+    const r = await fetch(url, {
+      method,
+      headers,
+      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+    })
+    const text = await r.text()
+    return { status: r.status, body: text === '' ? null : (JSON.parse(text) as JsonValue) }
+  }
+  const items = (body: JsonValue): JsonValue[] =>
+    (Array.isArray(body) ? body : ((field(body, 'items') ?? []) as JsonValue[])) as JsonValue[]
+  const branchOff = async (at: string, name: string, path: string): Promise<void> => {
+    const head = field(field((await send('GET', `${at}/git/ref/heads/main`)).body, 'object'), 'sha')
+    await send('POST', `${at}/git/refs`, { ref: `refs/heads/${name}`, sha: head })
+    await send('PUT', `${at}/contents/${path}`, {
+      message: `Add ${path}`,
+      content: Buffer.from(`${path}\n`).toString('base64'),
+      branch: name,
+    })
+  }
+
+  // ---- `owner:` scopes repository search as `user:` and `org:` do
+  await send('POST', `${base}/user/repos`, { name: 'own-repo' })
+  eq(
+    '`owner:` narrows repositories to that account',
+    items((await send('GET', `${base}/search/repositories?q=owner:integ`)).body).map((r) =>
+      field(r, 'full_name'),
+    ),
+    ['integ/data-v1', 'integ/repo-cli', 'integ/repo-trunc', 'integ/repo-v1'],
+  )
+
+  // ---- two issues and a pull request between them
+  await send('POST', `${repo}/issues`, { title: 'First issue' })
+  await branchOff(repo, 'one', 'one.txt')
+  await send('POST', `${repo}/pulls`, { title: 'Pull from one', head: 'one', base: 'main' })
+  await send('POST', `${repo}/issues`, { title: 'Second issue' })
+  const found = async (q: string): Promise<JsonValue> =>
+    items((await send('GET', `${base}/search/issues?q=${encodeURIComponent(q)}`)).body).map((i) =>
+      field(i, 'number'),
+    )
+  eq('`is:issue` keeps issues', await found(`repo:${REPO} is:issue`), [3, 1])
+  eq('`is:pr` keeps pull requests', await found(`repo:${REPO} is:pr`), [2])
+  eq('`is:open` keeps open ones', await found(`repo:${REPO} is:open`), [3, 1, 2])
+  eq(
+    '`sort:created-asc` orders oldest first',
+    await found(`repo:${REPO} is:issue sort:created-asc`),
+    [1, 3],
+  )
+  eq('`org:` scopes issue search', await found(`org:integ is:issue`), [3, 1])
+  eq(
+    'an account nobody holds is refused as a missing repository is',
+    (await send('GET', `${base}/search/issues?q=${encodeURIComponent('org:no-such-org-zz9')}`))
+      .status,
+    422,
+  )
+  eq('`user:` compares the login in any case', await found(`user:INTEG is:pr`), [2])
+
+  // ---- lists sort and page in the order asked; the issue list holds pull requests
+  await branchOff(repo, 'two', 'two.txt')
+  await send('POST', `${repo}/pulls`, { title: 'Pull from two', head: 'two', base: 'main' })
+  const numbers = async (path: string): Promise<JsonValue> =>
+    ((await send('GET', `${repo}/${path}`)).body as JsonValue[]).map((i) => [
+      field(i, 'number'),
+      field(i, 'pull_request') !== null,
+    ])
+  eq('pulls are newest first by default', await numbers('pulls?state=all'), [
+    [4, false],
+    [2, false],
+  ])
+  eq(
+    'and oldest first when asked',
+    await numbers('pulls?state=all&sort=created&direction=asc&per_page=1'),
+    [[2, false]],
+  )
+  eq('the issue list holds the pull requests too', await numbers('issues?state=all'), [
+    [4, true],
+    [3, false],
+    [2, true],
+    [1, false],
+  ])
+  eq(
+    'in the order asked',
+    await numbers('issues?state=all&sort=created&direction=asc&per_page=2'),
+    [
+      [1, false],
+      [2, true],
+    ],
+  )
+  eq(
+    '`since` keeps what was updated after it',
+    await numbers('issues?state=all&since=2100-01-01T00:00:00Z'),
+    [],
+  )
+
+  // ---- a profile answers every field the fixture states
+  const profile = (await send('GET', `${base}/users/integ`)).body
+  eq(
+    'a profile holds what the fixture states',
+    [
+      'name',
+      'type',
+      'bio',
+      'company',
+      'blog',
+      'location',
+      'followers',
+      'following',
+      'public_gists',
+      'public_repos',
+      'created_at',
+      'updated_at',
+    ].map((k) => field(profile, k)),
+    [
+      'Integ Fixtures',
+      'Organization',
+      'Fixtures for the integ batteries',
+      '@integ',
+      'https://example.test',
+      'Test Lab',
+      12,
+      3,
+      1,
+      4,
+      '2020-05-01T00:00:00Z',
+      '2026-01-02T00:00:00Z',
+    ],
+  )
+  const users = async (q: string): Promise<JsonValue> =>
+    items((await send('GET', `${base}/search/users?q=${encodeURIComponent(q)}`)).body).map((u) =>
+      field(u, 'login'),
+    )
+  eq('`location:` reads the profile', await users('location:"test lab"'), ['integ'])
+  eq('`followers:` compares the count', await users('followers:>10'), ['integ'])
+  eq('`language:` reads the repositories owned', await users('language:python'), ['integ'])
+
+  // ---- a repository's languages, people, events and tags
+  eq('languages are what Linguist counts', (await send('GET', `${repo}/languages`)).body, {
+    Python: 15014,
+  })
+  eq(
+    'a repository of data has none',
+    (await send('GET', `${base}/repos/integ/data-v1/languages`)).body,
+    {},
+  )
+  const graphLanguages = await send('POST', `${base}/graphql`, {
+    query:
+      '{ repository(owner: "integ", name: "repo-v1") { primaryLanguage { name } ' +
+      'languages(first: 5) { edges { size node { name } } } } }',
+  })
+  eq('GraphQL reads the same languages', field(field(graphLanguages.body, 'data'), 'repository'), {
+    primaryLanguage: { name: 'Python' },
+    languages: { edges: [{ size: 15014, node: { name: 'Python' } }] },
+  })
+  eq(
+    'a repository reports its primary language',
+    field((await send('GET', repo)).body, 'language'),
+    'Python',
+  )
+  const data = `${base}/repos/integ/data-v1`
+  eq(
+    'stargazers and subscribers are the ones the fixture lists',
+    [
+      items((await send('GET', `${data}/stargazers`)).body).map((u) => [
+        field(u, 'login'),
+        field(u, 'type'),
+      ]),
+      items((await send('GET', `${data}/subscribers`)).body).map((u) => field(u, 'login')),
+      field((await send('GET', data)).body, 'stargazers_count'),
+    ],
+    [
+      [
+        ['integ-user', 'User'],
+        ['integ', 'Organization'],
+      ],
+      ['integ-user'],
+      2,
+    ],
+  )
+  eq(
+    'a tag the fixture states is listed',
+    items((await send('GET', `${data}/tags`)).body).map((t) => [
+      field(t, 'name'),
+      field(field(t, 'commit'), 'sha'),
+    ]),
+    [['v0.1.0', '24f636d593911ace37ffae622f03331804f24386']],
+  )
+  eq(
+    'contributors are the accounts that wrote the default branch',
+    items((await send('GET', `${repo}/contributors?anon=1`)).body).map((c) => [
+      field(c, 'login') ?? field(c, 'email'),
+      field(c, 'type'),
+      field(c, 'contributions'),
+    ]),
+    [['mirage@users.noreply.github.com', 'Anonymous', 1]],
+  )
+  const kinds = items((await send('GET', `${repo}/events`)).body).map((e) => field(e, 'type'))
+  eq('events are the activity the fake holds, newest first', [...new Set(kinds)].sort(), [
+    'CreateEvent',
+    'IssuesEvent',
+    'PullRequestEvent',
+    'PushEvent',
+  ])
+  const limits = async (headers: Record<string, string>): Promise<JsonValue> => {
+    const body = (await send('GET', `${base}/rate_limit`, undefined, headers)).body
+    return [
+      field(field(field(body, 'resources'), 'core'), 'limit'),
+      field(field(field(body, 'resources'), 'search'), 'limit'),
+    ]
+  }
+  eq('the rate limit answers a signed-in caller', await limits(HEADERS), [5000, 30])
+  eq('and an anonymous one', await limits({ 'x-mirage-tenant': TENANT }), [60, 10])
+
+  // ---- a pull request from a fork
+  const forked = await send('POST', `${repo}/forks`, {})
+  eq(
+    'a fork is made',
+    [forked.status, field(forked.body, 'full_name')],
+    [202, 'integ-user/repo-v1'],
+  )
+  const fork = `${base}/repos/integ-user/repo-v1`
+  eq(
+    'it shares its source history',
+    field(field((await send('GET', `${fork}/git/ref/heads/main`)).body, 'object'), 'sha'),
+    field(field((await send('GET', `${repo}/git/ref/heads/main`)).body, 'object'), 'sha'),
+  )
+  await branchOff(fork, 'feature', 'forked.txt')
+  const opened = await send('POST', `${repo}/pulls`, {
+    title: 'From a fork',
+    head: 'integ-user:feature',
+    base: 'main',
+  })
+  const number = String(field(opened.body, 'number'))
+  const pull = (await send('GET', `${repo}/pulls/${number}`)).body
+  eq(
+    "its head is the fork's branch",
+    [
+      field(field(pull, 'head'), 'label'),
+      field(field(pull, 'head'), 'ref'),
+      field(field(field(pull, 'head'), 'repo'), 'full_name'),
+      field(field(pull, 'base'), 'label'),
+      field(pull, 'changed_files'),
+    ],
+    ['integ-user:feature', 'feature', 'integ-user/repo-v1', 'integ:main', 1],
+  )
+  eq(
+    'its files are the fork branch against the base',
+    items((await send('GET', `${repo}/pulls/${number}/files`)).body).map((f) =>
+      field(f, 'filename'),
+    ),
+    ['forked.txt'],
+  )
+  const graphPull = await send('POST', `${base}/graphql`, {
+    query:
+      `{ repository(owner: "integ", name: "repo-v1") { pullRequest(number: ${number}) { ` +
+      'isCrossRepository headRefName headRepository { nameWithOwner } headRepositoryOwner { login } } } }',
+  })
+  eq('GraphQL agrees', field(field(field(graphPull.body, 'data'), 'repository'), 'pullRequest'), {
+    isCrossRepository: true,
+    headRefName: 'feature',
+    headRepository: { nameWithOwner: 'integ-user/repo-v1' },
+    headRepositoryOwner: { login: 'integ-user' },
+  })
+  eq(
+    'a comparison reads `owner:branch` too',
+    items(
+      field((await send('GET', `${repo}/compare/main...integ-user:feature`)).body, 'files'),
+    ).map((f) => field(f, 'filename')),
+    ['forked.txt'],
+  )
+  eq(
+    'a head in no fork is refused',
+    field(
+      (await send('POST', `${repo}/pulls`, { title: 'x', head: 'carol:feature', base: 'main' }))
+        .body,
+      'errors',
+    ),
+    [{ resource: 'PullRequest', field: 'head', code: 'invalid' }],
+  )
+}
+
 async function main(): Promise<void> {
   const fake = await launch()
   const at = fake.endpoint
@@ -1552,6 +1866,7 @@ async function main(): Promise<void> {
     await workflowsAndSettings(at)
     await diffsSearchAndHistory(at)
     await diffsMatchGit()
+    await listsProfilesAndForks(at)
     const reset = await fetch(`${at}/reset`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
@@ -2574,12 +2889,28 @@ async function main(): Promise<void> {
       [],
     )
     eq('a negated qualifier is a term', await hits(`-repo:integ/repo-cli ${MARK}`), [])
-    // Content and metadata filters are dropped rather than matched as words,
-    // which only ever widens; live narrows by them.
-    for (const name of ['language', 'extension', 'filename', 'in', 'size', 'fork']) {
+    // A file's name, extension, language and size narrow, as GitHub's code
+    // search syntax defines them; where a term matches and forks are dropped
+    // rather than matched as words, which only ever widens.
+    const fileFilters: Array<[string, string, JsonValue[]]> = [
+      ['`filename:` keeps that name', 'filename:shared.md', [CLI]],
+      ['and nothing else', 'filename:nothing.txt', []],
+      ['`extension:` keeps that extension', 'extension:md', [CLI]],
+      ['with or without its dot', 'extension:.md', [CLI]],
+      ['and nothing else', 'extension:py', []],
+      ["`language:` keeps Linguist's name for the file", 'language:Markdown', [CLI]],
+      ['in any case', 'language:markdown', [CLI]],
+      ['and nothing else', 'language:Haskell', []],
+      ['`size:` compares the bytes', 'size:>0', [CLI]],
+      ['and narrows', 'size:<1', []],
+    ]
+    for (const [name, qualifier, want] of fileFilters) {
+      eq(name, await hits(`repo:integ/repo-cli ${qualifier} ${MARK}`), want)
+    }
+    for (const name of ['in', 'fork']) {
       eq(`\`${name}:\` is dropped`, await hits(`repo:integ/repo-cli ${name}:x ${MARK}`), [CLI])
     }
-    eq('and dropping one does not scope', await hits(`language:x ${MARK}`), ALL)
+    eq('and dropping one does not scope', await hits(`in:x ${MARK}`), ALL)
     // Live refuses an empty qualifier value with a query-parse 422.
     eq('an empty `user:` is dropped', await hits(`user: ${MARK}`), ALL)
     eq('an empty `repo:` is dropped', await hits(`repo: ${MARK}`), ALL)
@@ -2880,6 +3211,71 @@ async function main(): Promise<void> {
       (field(cards, 'errors') as JsonValue[]).map((e) => field(e, 'path')),
       [['repository', 'pullRequest', 'projectCards']],
     )
+    // CI state belongs to the commit it was set on: the fixture's check runs
+    // and status are on main's seeded commit, and the pull request's head,
+    // a new commit, carries only what is set on it.
+    const docsHead = String(field(field(docsPull.body, 'head'), 'sha'))
+    const checksOn = async (ref: string): Promise<JsonValue> =>
+      (
+        (field(await get(`${repoCli}/commits/${ref}/check-runs`), 'check_runs') ??
+          []) as JsonValue[]
+      ).map((row) => [field(row, 'name'), field(row, 'conclusion'), field(row, 'head_sha')])
+    eq(
+      'the fixture states its check runs on the commit they ran on',
+      await checksOn(String(cliMain)),
+      [
+        ['test', 'success', cliMain],
+        ['flaky', 'cancelled', cliMain],
+      ],
+    )
+    eq('a commit nobody ran checks on has none', await checksOn(docsHead), [])
+    const combined = async (ref: string): Promise<JsonValue> => {
+      const body = await get(`${repoCli}/commits/${ref}/status`)
+      return [field(body, 'state'), field(body, 'total_count')]
+    }
+    eq('a commit with no statuses is pending with none', await combined(docsHead), ['pending', 0])
+    for (const [context, state] of [
+      ['lint', 'pending'],
+      ['build', 'success'],
+      ['lint', 'success'],
+    ] as const) {
+      const set = await post(`${repoCli}/statuses/${docsHead}`, { context, state })
+      eq(`a ${state} ${context} status is set on the head`, set.status, 201)
+    }
+    eq('the newest of each context rolls up', await combined('docs'), ['success', 2])
+    eq(
+      'and every status stays listed',
+      ((await get(`${repoCli}/commits/${docsHead}/statuses`)) as JsonValue[]).map((row) => [
+        field(row, 'context'),
+        field(row, 'state'),
+      ]),
+      [
+        ['lint', 'success'],
+        ['build', 'success'],
+        ['lint', 'pending'],
+      ],
+    )
+    eq("the fixture's status stays on its own commit", await combined(String(cliMain)), [
+      'success',
+      1,
+    ])
+    eq(
+      'a status on nothing is refused',
+      (await post(`${repoCli}/statuses/${'0'.repeat(40)}`, { state: 'success' })).status,
+      422,
+    )
+    eq(
+      "a check run is an app's to create",
+      [
+        (await post(`${repoCli}/check-runs`, { name: 'x', head_sha: docsHead })).status,
+        field(
+          (await post(`${repoCli}/check-runs`, { name: 'x', head_sha: docsHead })).body,
+          'message',
+        ),
+      ],
+      [403, 'You must authenticate via a GitHub App.'],
+    )
+    await post(`${repoCli}/statuses/${docsHead}`, { context: 'docs', state: 'success' })
     const contexts = async (after: string): Promise<JsonValue> =>
       field(
         field(
@@ -2908,14 +3304,17 @@ async function main(): Promise<void> {
       )
     const firstChecks = field(await contexts(''), 'contexts')
     eq(
-      'the head commit rolls up the check runs first',
-      (field(firstChecks, 'nodes') as JsonValue[]).map((node) => field(node, '__typename')),
-      ['CheckRun', 'CheckRun'],
+      "the head commit's rollup pages its statuses",
+      [
+        (field(firstChecks, 'nodes') as JsonValue[]).map((node) => field(node, '__typename')),
+        field(field(firstChecks, 'pageInfo'), 'hasNextPage'),
+      ],
+      [['StatusContext', 'StatusContext'], true],
     )
     const cursor = field(field(firstChecks, 'pageInfo'), 'endCursor') as string
     const lastChecks = field(await contexts(`, after: "${cursor}"`), 'contexts')
     eq(
-      'the next page of the rollup is the commit status',
+      'and the next page is the rest',
       [
         (field(lastChecks, 'nodes') as JsonValue[]).map((node) => field(node, '__typename')),
         field(field(lastChecks, 'pageInfo'), 'hasNextPage'),

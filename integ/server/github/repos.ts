@@ -27,6 +27,12 @@ import type { PullRequestsArgs, PullRow } from './pulls.ts'
 import {
   accountsOf,
   addBranch,
+  headOf,
+  loginsOf,
+  primaryLanguage,
+  repoJson,
+  repoLanguages,
+  starsOf,
   allRepos,
   delegateFor,
   perRepoModels,
@@ -37,6 +43,7 @@ import {
   repoIsEmpty,
   resolveRef,
   scope,
+  tagRefs,
   treeOfBranch,
 } from './store.ts'
 import type { AccountRow, RepoRow } from './store.ts'
@@ -53,33 +60,9 @@ import {
 } from './http.ts'
 import type { Handler } from './http.ts'
 
-// The repository shape every route returns. A fixture's own values win, except
-// default_branch, which seeding decides.
-export function repoJson(repo: RepoRow): JsonValue {
-  const meta = metaOf(repo)
-  const { default_branch: _ignored, parent_seq: _parent, ...rest } = meta
-  return {
-    name: repo.name,
-    full_name: repo.fullName,
-    default_branch: repo.defaultBranch,
-    owner: { login: repo.owner },
-    html_url: `https://github.com/${repo.fullName}`,
-    description: null,
-    stargazers_count: 0,
-    forks_count: 0,
-    open_issues_count: 0,
-    language: null,
-    topics: [],
-    archived: false,
-    fork: false,
-    has_pages: repo.pagesJson !== '',
-    ...rest,
-  }
-}
-
 // An account's id, from its login alone so it is the same on every run:
 // FNV-1a, which spreads the bytes and protects nothing, as an id needs.
-function accountId(login: string): number {
+export function accountId(login: string): number {
   let hash = 0x811c9dc5
   for (const byte of Buffer.from(login)) hash = Math.imul(hash ^ byte, 0x01000193) >>> 0
   return hash & 0x7fffffff
@@ -91,19 +74,72 @@ function accountId(login: string): number {
  */
 export function accountJson(account: AccountRow, repos: RepoRow[]): JsonValue {
   const login = account.login
+  const api = `https://api.github.com/users/${login}`
+  const text = (value: string): string | null => (value === '' ? null : value)
   return {
     login,
     id: accountId(login),
     node_id: nodeId(account.type === 'User' ? '04:User' : '012:Organization', login),
+    avatar_url: `https://avatars.githubusercontent.com/u/${String(accountId(login))}?v=4`,
+    gravatar_id: '',
+    url: api,
     html_url: `https://github.com/${login}`,
+    followers_url: `${api}/followers`,
+    following_url: `${api}/following{/other_user}`,
+    gists_url: `${api}/gists{/gist_id}`,
+    starred_url: `${api}/starred{/owner}{/repo}`,
+    subscriptions_url: `${api}/subscriptions`,
+    organizations_url: `${api}/orgs`,
+    repos_url: `${api}/repos`,
+    events_url: `${api}/events{/privacy}`,
+    received_events_url: `${api}/received_events`,
     type: account.type,
+    user_view_type: 'public',
     site_admin: false,
-    name: account.name === '' ? null : account.name,
-    email: account.email === '' ? null : account.email,
+    name: text(account.name),
+    company: text(account.company),
+    blog: account.blog,
+    location: text(account.location),
+    email: text(account.email),
+    hireable: account.hireable ? true : null,
+    bio: text(account.bio),
+    twitter_username: text(account.twitterUsername),
     public_repos: repos.filter((repo) => repo.owner.toLowerCase() === login.toLowerCase()).length,
+    public_gists: account.publicGists,
+    followers: account.followers,
+    following: account.following,
     created_at: account.createdAt,
-    updated_at: account.createdAt,
+    updated_at: account.updatedAt === '' ? account.createdAt : account.updatedAt,
   }
+}
+
+// The fields GitHub lists a user by wherever it lists several: a search, the
+// stargazers, the contributors.
+const SIMPLE_USER = [
+  'login',
+  'id',
+  'node_id',
+  'avatar_url',
+  'gravatar_id',
+  'url',
+  'html_url',
+  'followers_url',
+  'following_url',
+  'gists_url',
+  'starred_url',
+  'subscriptions_url',
+  'organizations_url',
+  'repos_url',
+  'events_url',
+  'received_events_url',
+  'type',
+  'user_view_type',
+  'site_admin',
+]
+
+export function simpleUser(account: AccountRow): Record<string, JsonValue> {
+  const full = accountJson(account, []) as Record<string, JsonValue>
+  return Object.fromEntries(SIMPLE_USER.map((key) => [key, full[key] ?? null]))
 }
 
 /** One of a repository's dates, its fixture's or the fresh-repository default. */
@@ -135,7 +171,6 @@ export async function repositoryNode(
   const email = `${DEFAULT_LOGIN}@users.noreply.github.com`
   const where = { ...scope(ctx.tenant), repo: repo.fullName }
   const topics = Array.isArray(meta.topics) ? meta.topics.map(String) : []
-  const language = text('language')
   const owned = repo.owner === DEFAULT_LOGIN
   const user = { id: nodeId('04:User', DEFAULT_LOGIN), login: DEFAULT_LOGIN, name: DEFAULT_LOGIN }
   // A fork records its source by seq, the identity a rename keeps, so the
@@ -175,8 +210,8 @@ export async function repositoryNode(
     squashMergeAllowed: meta.allow_squash_merge !== false,
     rebaseMergeAllowed: meta.allow_rebase_merge !== false,
     forkCount: count('forks_count'),
-    stargazerCount: count('stargazers_count'),
-    watchers: { totalCount: count('watchers_count') },
+    stargazerCount: starsOf(repo),
+    watchers: { totalCount: loginsOf(repo, 'subscribers').length },
     codeOfConduct: null,
     contactLinks: [],
     defaultBranchRef: { name: repo.defaultBranch },
@@ -206,8 +241,15 @@ export async function repositoryNode(
           ? 'PRIVATE'
           : 'PUBLIC',
     repositoryTopics: { nodes: topics.map((name) => ({ topic: { name } })) },
-    primaryLanguage: language === null ? null : { name: language },
-    languages: { edges: language === null ? [] : [{ size: 0, node: { name: language } }] },
+    primaryLanguage: async () => {
+      const name = await primaryLanguage(ctx.db, ctx.tenant, repo)
+      return name === null ? null : { name }
+    },
+    languages: async ({ first }: { first?: number | null }) => ({
+      edges: (await repoLanguages(ctx.db, ctx.tenant, repo))
+        .slice(0, first ?? 100)
+        .map(([name, size]) => ({ size, node: { name } })),
+    }),
     issueTemplates: [],
     pullRequestTemplates: [],
     labels: { nodes: [] },
@@ -232,7 +274,7 @@ export async function repositoryNode(
   }
   // Issues own the comments on a pull request as on an issue.
   const pull = async (row: PullRow): Promise<Record<string, unknown>> => ({
-    ...(await pullRequestNode(ctx, repo, row, node)),
+    ...(await pullRequestNode(ctx, repo, row, node, (other) => repositoryNode(ctx, other))),
     __typename: 'PullRequest',
     comments: commentConnection(ctx, repo, row.number),
   })
@@ -408,7 +450,7 @@ export function repoRoutes(): KitRoute<C>[] {
     route<C>(
       'GET',
       `${p}/repos/:owner/:repo`,
-      authed(withRepo((_c, r) => ({ status: 200, body: repoJson(r) }))),
+      authed(withRepo(async (c, r) => ({ status: 200, body: await repoJson(c.db, c.tenant, r) }))),
     ),
     route<C>('PATCH', `${p}/repos/:owner/:repo`, authed(updateRepo), { write: true }),
     route<C>('GET', `${p}/repos/:owner/:repo/topics`, repoTopics),
@@ -500,10 +542,10 @@ async function commitsMatching(
 const listRepos: Handler = async (ctx) => {
   const owner = ctx.params.owner ?? DEFAULT_LOGIN
   const repos = await allRepos(ctx.db, ctx.tenant)
-  const items = repos
+  const owned = repos
     .filter((r) => r.owner === owner)
     .sort((a, b) => (a.fullName < b.fullName ? -1 : 1))
-    .map(repoJson)
+  const items = await Promise.all(owned.map((r) => repoJson(ctx.db, ctx.tenant, r)))
   return pagedReply(ctx, items)
 }
 
@@ -553,7 +595,7 @@ const createRepo: Handler = async (ctx) => {
       },
     })
   }
-  return { status: 201, body: repoJson(created) }
+  return { status: 201, body: await repoJson(ctx.db, ctx.tenant, created) }
 }
 
 // Validate every accepted field before writing metadata or moving repository
@@ -645,7 +687,7 @@ const updateRepo: Handler = authed(
         data,
       })) as RepoRow
     }
-    return { status: 200, body: repoJson(current) }
+    return { status: 200, body: await repoJson(ctx.db, ctx.tenant, current) }
   }),
 )
 
@@ -735,7 +777,8 @@ const forkRepo: Handler = authed(
     const name = str(body, 'name').trim() === '' ? source.name : str(body, 'name').trim()
     const fullName = `${DEFAULT_LOGIN}/${name}`
     const existing = await repoByName(ctx.db, ctx.tenant, fullName)
-    if (existing !== null) return { status: 202, body: repoJson(existing) }
+    if (existing !== null)
+      return { status: 202, body: await repoJson(ctx.db, ctx.tenant, existing) }
     const fork = (await ctx.db.githubRepo.create({
       data: {
         tenant: ctx.tenant,
@@ -755,8 +798,18 @@ const forkRepo: Handler = authed(
     // copied only the branch trees, submodules and metadata onto it, so a fork
     // does not inherit the source's issues, releases or runs.
     await initRepo(ctx.db, ctx.tenant, fork)
+    // Each branch at the commit its source's points at, and each tag, since
+    // a fork shares its network's history and objects: a pull request from
+    // it then has a merge base with its parent.
     for (const branch of await branchNames(ctx.db, ctx.tenant, source)) {
       await addBranch(ctx.db, ctx.tenant, fullName, branch)
+      const head = await headOf(ctx.db, ctx.tenant, source, branch)
+      if (head !== '') {
+        await ctx.db.githubBranch.updateMany({
+          where: { tenant: ctx.tenant, repo: fullName, name: branch },
+          data: { headSha: head },
+        })
+      }
       const tree = await treeOfBranch(ctx.db, ctx.tenant, source, branch)
       let seq = 0
       for (const [path, data] of tree) {
@@ -773,6 +826,14 @@ const forkRepo: Handler = authed(
         seq += 1
       }
     }
+    for (const tag of await tagRefs(ctx.db, ctx.tenant, source)) {
+      const count = await ctx.db.githubTagRef.count({
+        where: { tenant: ctx.tenant, repo: fullName },
+      })
+      await ctx.db.githubTagRef.create({
+        data: { tenant: ctx.tenant, repo: fullName, name: tag.name, sha: tag.sha, seq: count },
+      })
+    }
     const subs = await ctx.db.githubSubmodule.findMany({
       where: { tenant: ctx.tenant, repo: source.fullName },
       orderBy: { path: 'asc' },
@@ -782,6 +843,6 @@ const forkRepo: Handler = authed(
         data: { tenant: ctx.tenant, repo: fullName, path: s.path },
       })
     }
-    return { status: 202, body: repoJson(fork) }
+    return { status: 202, body: await repoJson(ctx.db, ctx.tenant, fork) }
   }),
 )

@@ -17,6 +17,7 @@ import { deleteOrder, stripSlash, tenantWhere } from '../kit/typescript/index.ts
 import type { Dmmf, JsonValue } from '../kit/typescript/index.ts'
 import { DEFAULT_LOGIN, REPO_DATE, SEARCH_SIZE_LIMIT, config } from './config.ts'
 import type { C } from './config.ts'
+import { languagesOf } from './languages.ts'
 import { blobSha, commitSha, rootCommit, rootSha, treeSha } from './wire.ts'
 import type { CommitRow } from './wire.ts'
 
@@ -98,6 +99,84 @@ export function metaOf(repo: RepoRow): Record<string, JsonValue> {
   return typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed) ? parsed : {}
 }
 
+// The logins a fixture states for a repository's `stargazers` or
+// `subscribers`, in its order.
+export function loginsOf(repo: RepoRow, key: string): string[] {
+  const value = metaOf(repo)[key]
+  return Array.isArray(value) ? value.map(String) : []
+}
+
+// Its star count: the one its fixture states, or else how many it lists.
+export function starsOf(repo: RepoRow): number {
+  const stated = metaOf(repo).stargazers_count
+  return typeof stated === 'number' ? stated : loginsOf(repo, 'stargazers').length
+}
+
+// A repository's languages, largest first: the ones its fixture states, as
+// GitHub's `{name: bytes}`, or else what Linguist counts in its default
+// branch.
+export async function repoLanguages(
+  db: C,
+  tenant: string,
+  repo: RepoRow,
+): Promise<Array<[string, number]>> {
+  const stated = metaOf(repo).languages
+  if (typeof stated === 'object' && stated !== null && !Array.isArray(stated)) {
+    return Object.entries(stated)
+      .flatMap(
+        ([name, size]): Array<[string, number]> => (typeof size === 'number' ? [[name, size]] : []),
+      )
+      .sort(([a, x], [b, y]) => y - x || (a < b ? -1 : 1))
+  }
+  return languagesOf(await treeOfBranch(db, tenant, repo, repo.defaultBranch))
+}
+
+// Its primary language: the one its fixture states, null included, or else
+// its largest.
+export async function primaryLanguage(
+  db: C,
+  tenant: string,
+  repo: RepoRow,
+): Promise<string | null> {
+  const meta = metaOf(repo)
+  if ('language' in meta) return typeof meta.language === 'string' ? meta.language : null
+  return (await repoLanguages(db, tenant, repo))[0]?.[0] ?? null
+}
+
+// The repository shape every route returns. A fixture's own values win, except
+// default_branch, which seeding decides, and the lists it states, which are
+// read through their own endpoints.
+export async function repoJson(db: C, tenant: string, repo: RepoRow): Promise<JsonValue> {
+  const meta = metaOf(repo)
+  const {
+    default_branch: _ignored,
+    parent_seq: _parent,
+    languages: _languages,
+    stargazers: _stargazers,
+    subscribers: _subscribers,
+    ...rest
+  } = meta
+  return {
+    name: repo.name,
+    full_name: repo.fullName,
+    default_branch: repo.defaultBranch,
+    owner: { login: repo.owner },
+    html_url: `https://github.com/${repo.fullName}`,
+    description: null,
+    stargazers_count: starsOf(repo),
+    watchers_count: starsOf(repo),
+    subscribers_count: loginsOf(repo, 'subscribers').length,
+    forks_count: 0,
+    open_issues_count: 0,
+    language: await primaryLanguage(db, tenant, repo),
+    topics: [],
+    archived: false,
+    fork: false,
+    has_pages: repo.pagesJson !== '',
+    ...rest,
+  }
+}
+
 // Branches, the default one first and the rest in name order.
 export async function branchNames(db: C, tenant: string, repo: RepoRow): Promise<string[]> {
   const rows = await db.githubBranch.findMany({
@@ -156,11 +235,58 @@ export function treeFingerprint(files: Tree): string {
     .join('\0')
 }
 
-// Scoped to the repository, not just the tenant. A staged sha is unique per
-// tenant, so a bare lookup accepted a tree staged in repository A while the
-// caller was operating on repository B, and committing it copied A's files
-// into B. The fake this replaces held `repo.trees` per repository, so a foreign
-// sha was simply not found there.
+// The repositories whose objects one repository can read: itself and every
+// fork in its network, the one its forks descend from included, as GitHub
+// shares one object store across a fork network. A repository no fork touches
+// is a network of one.
+export async function networkNames(db: C, tenant: string, repo: RepoRow): Promise<string[]> {
+  const repos = await allRepos(db, tenant)
+  const bySeq = new Map(repos.map((row) => [row.seq, row]))
+  const rootOf = (row: RepoRow): number => {
+    const seen = new Set<number>()
+    let at = row
+    for (;;) {
+      const parent = metaOf(at).parent_seq
+      const up = typeof parent === 'number' ? bySeq.get(parent) : undefined
+      if (up === undefined || seen.has(up.seq)) return at.seq
+      seen.add(at.seq)
+      at = up
+    }
+  }
+  const root = rootOf(repo)
+  const names = repos.filter((row) => rootOf(row) === root).map((row) => row.fullName)
+  return [repo.fullName, ...names.filter((name) => name !== repo.fullName)]
+}
+
+// The repository of this one's network an account owns that a head of
+// `owner:branch` names: this repository when it is that account's, else the
+// account's fork that holds the branch, since the fake lets one account keep
+// several forks of a network where GitHub keeps one.
+export async function forkOwnedBy(
+  db: C,
+  tenant: string,
+  repo: RepoRow,
+  owner: string,
+  branch: string,
+): Promise<RepoRow | null> {
+  const network = await networkNames(db, tenant, repo)
+  const repos = await allRepos(db, tenant)
+  const owned = repos.filter(
+    (r) => network.includes(r.fullName) && r.owner.toLowerCase() === owner.toLowerCase(),
+  )
+  const self = owned.find((r) => r.seq === repo.seq)
+  if (self !== undefined) return self
+  for (const candidate of owned) {
+    if ((await branchFor(db, tenant, candidate, branch)) !== null) return candidate
+  }
+  return owned[0] ?? null
+}
+
+// Scoped to the repository's network, not the tenant. A staged sha is unique
+// per tenant, so a bare lookup accepted a tree staged in repository A while
+// the caller was operating on an unrelated repository B, and committing it
+// copied A's files into B. A fork reads its network's trees, as git objects
+// are shared across one.
 export async function stagedTree(
   db: C,
   tenant: string,
@@ -168,7 +294,7 @@ export async function stagedTree(
   sha: string,
 ): Promise<Tree | null> {
   const tree = await db.githubStagedTree.findFirst({
-    where: { tenant, repo: repo.fullName, sha },
+    where: { tenant, repo: { in: await networkNames(db, tenant, repo) }, sha },
   })
   if (tree === null) return null
   const rows = await db.githubStagedEntry.findMany({
@@ -204,7 +330,7 @@ export async function blobBySha(
     for (const data of files.values()) if (blobSha(data) === sha) return data
   }
   const staged = await db.githubStagedTree.findMany({
-    where: { tenant, repo: repo.fullName },
+    where: { tenant, repo: { in: await networkNames(db, tenant, repo) } },
     select: { sha: true },
   })
   const row = await db.githubStagedEntry.findFirst({
@@ -378,7 +504,11 @@ async function resolveCommit(
   const want = ref.toLowerCase()
   const found = new Set<string>()
   const stored = await db.githubCommit.findMany({
-    where: { ...scope(tenant), repo: repo.fullName, sha: { startsWith: want } },
+    where: {
+      ...scope(tenant),
+      repo: { in: await networkNames(db, tenant, repo) },
+      sha: { startsWith: want },
+    },
     select: { sha: true },
   })
   for (const row of stored) found.add(row.sha)
@@ -466,7 +596,7 @@ async function rootTree(db: C, tenant: string, repo: RepoRow, sha: string): Prom
     if (files.size > 0 && rootOf(files) === sha) return files
   }
   const staged = await db.githubStagedTree.findMany({
-    where: { tenant, repo: repo.fullName },
+    where: { tenant, repo: { in: await networkNames(db, tenant, repo) } },
     orderBy: { seq: 'asc' },
     select: { sha: true },
   })
@@ -477,15 +607,15 @@ async function rootTree(db: C, tenant: string, repo: RepoRow, sha: string): Prom
   return null
 }
 
-// Every commit in one repository, keyed by sha, for walking a chain without a
-// query per hop.
+// Every commit a repository can read, its network's included, keyed by sha,
+// for walking a chain without a query per hop.
 export async function commitsBySha(
   db: C,
   tenant: string,
   repo: RepoRow,
 ): Promise<Map<string, CommitRow>> {
   const rows = (await db.githubCommit.findMany({
-    where: { ...scope(tenant), repo: repo.fullName },
+    where: { ...scope(tenant), repo: { in: await networkNames(db, tenant, repo) } },
     orderBy: { seq: 'asc' },
   })) as CommitRow[]
   const out = new Map<string, CommitRow>()
@@ -648,13 +778,53 @@ export interface AccountRow {
   type: string
   name: string
   email: string
+  bio: string
+  company: string
+  blog: string
+  location: string
+  twitterUsername: string
+  hireable: boolean
+  followers: number
+  following: number
+  publicGists: number
   createdAt: string
+  updatedAt: string
 }
 
 // Every account the tenant knows: each one a fixture states, the
 // authenticated user, and each repository owner no fixture states, which is
 // an organization unless it is that user, the way the fake has always typed
 // an owner. A login none of these name is no account.
+// A login as an account: the tenant's, or a user nothing states, for a login
+// a fixture names in a list but gives no profile.
+export async function accountOf(db: C, tenant: string, login: string): Promise<AccountRow> {
+  const known = (await accountsOf(db, tenant)).find(
+    (account) => account.login.toLowerCase() === login.toLowerCase(),
+  )
+  return known ?? { ...unstated(login), type: 'User' }
+}
+
+function unstated(login: string): AccountRow {
+  const user = login === DEFAULT_LOGIN
+  return {
+    login,
+    type: user ? 'User' : 'Organization',
+    name: user ? login : '',
+    email: '',
+    bio: '',
+    company: '',
+    blog: '',
+    location: '',
+    twitterUsername: '',
+    hireable: false,
+    followers: 0,
+    following: 0,
+    publicGists: 0,
+    createdAt: REPO_DATE,
+    updatedAt: '',
+  }
+}
+
 export async function accountsOf(db: C, tenant: string): Promise<AccountRow[]> {
   const stated = (await db.githubAccount.findMany({
     where: scope(tenant),
@@ -664,14 +834,7 @@ export async function accountsOf(db: C, tenant: string): Promise<AccountRow[]> {
   const implied = [DEFAULT_LOGIN, ...(await allRepos(db, tenant)).map((repo) => repo.owner)]
   for (const login of implied) {
     if (out.has(login.toLowerCase())) continue
-    const user = login === DEFAULT_LOGIN
-    out.set(login.toLowerCase(), {
-      login,
-      type: user ? 'User' : 'Organization',
-      name: user ? login : '',
-      email: '',
-      createdAt: REPO_DATE,
-    })
+    out.set(login.toLowerCase(), unstated(login))
   }
   return [...out.values()]
 }

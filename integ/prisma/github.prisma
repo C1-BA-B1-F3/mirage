@@ -221,6 +221,9 @@ model GithubPull {
   merged    Boolean @default(false)
   // The sha `gh pr checks` resolves its check runs and statuses against.
   headSha   String  @default("")
+  // The seq of the repository the head branch lives in, which a rename keeps;
+  // -1 when it is this one or the head's own `owner:` names it.
+  headRepoSeq Int   @default(-1)
   // Requested reviewers' logins, in request order.
   reviewersJson String @default("[]")
   createdAt String
@@ -360,6 +363,7 @@ model GithubCheck {
   detailsUrl  String @default("")
   summary     String @default("")
   appName     String @default("GitHub Actions")
+  sha         String @default("")
   seq         Int
 
   repository GithubRepo @relation(fields: [tenant, repo], references: [tenant, fullName])
@@ -379,6 +383,7 @@ model GithubStatus {
   description String @default("")
   createdAt   String
   updatedAt   String
+  sha         String @default("")
   seq         Int
 
   repository GithubRepo @relation(fields: [tenant, repo], references: [tenant, fullName])
@@ -463,16 +468,27 @@ model GithubTagRef {
   @@index([tenant, repo])
 }
 
-// An account a fixture states, with the name and dates user search reads.
+// An account a fixture states: the profile `/users/{login}` answers and user
+// search reads. An empty text field answers null.
 model GithubAccount {
-  pk        Int    @id @default(autoincrement())
-  tenant    String
-  login     String
-  type      String @default("User")
-  name      String @default("")
-  email     String @default("")
-  createdAt String @default("2026-01-01T00:00:00Z")
-  seq       Int
+  pk              Int     @id @default(autoincrement())
+  tenant          String
+  login           String
+  type            String  @default("User")
+  name            String  @default("")
+  email           String  @default("")
+  bio             String  @default("")
+  company         String  @default("")
+  blog            String  @default("")
+  location        String  @default("")
+  twitterUsername String  @default("")
+  hireable        Boolean @default(false)
+  followers       Int     @default(0)
+  following       Int     @default(0)
+  publicGists     Int     @default(0)
+  createdAt       String  @default("2026-01-01T00:00:00Z")
+  updatedAt       String  @default("")
+  seq             Int
 
   @@unique([tenant, login])
 }

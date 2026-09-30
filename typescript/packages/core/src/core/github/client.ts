@@ -61,24 +61,25 @@ export interface GitHubResponse {
 const Kit = Octokit.plugin(retry, throttling)
 
 /**
- * Octokit reads `{name}` in a url as a route-template placeholder and drops
- * the segment when nothing fills it, silently and without an error. Every
- * caller here passes a path that is already final -- `gh api` takes one
- * straight from the agent's command line. Escape braces and query colons
- * before Octokit can interpret them as route-template placeholders.
+ * Octokit reads `{name}` in a url as a route-template placeholder, and a path's
+ * `:name` as the legacy spelling of one, and drops either when nothing fills
+ * it, silently and without an error. Every caller here passes a path that is
+ * already final -- `gh api` takes one straight from the agent's command line,
+ * and `compare/main...owner:branch` loses its owner's branch. Escape braces,
+ * query colons and every path colon Octokit would read before it can.
  *
  * Args:
  *   path (string): the request path as the caller spelled it.
  *
  * Returns:
- *   string: braces and query colons percent-encoded, preserving the URL scheme.
+ *   string: braces and those colons percent-encoded, preserving the URL scheme.
  */
 function escapeRoute(path: string): string {
   const escaped = path.replace(/\{/g, '%7B').replace(/\}/g, '%7D')
   const query = escaped.indexOf('?')
-  return query < 0
-    ? escaped
-    : escaped.slice(0, query + 1) + escaped.slice(query + 1).replace(/:/g, '%3A')
+  const route = query < 0 ? escaped : escaped.slice(0, query)
+  const rest = query < 0 ? '' : `?${escaped.slice(query + 1).replace(/:/g, '%3A')}`
+  return route.replace(/:(?=[a-z]\w)/g, '%3A') + rest
 }
 
 /**

@@ -15,9 +15,9 @@
 import { crc32 } from 'node:zlib'
 import { YAMLException, load as yamlLoad } from 'js-yaml'
 import type { Ctx, JsonValue, KitRoute, Reply } from '../kit/typescript/index.ts'
-import { API_PREFIXES } from './config.ts'
+import { API_PREFIXES, DEFAULT_LOGIN, WRITE_COMMIT_DATE } from './config.ts'
 import type { C } from './config.ts'
-import { branchFor, scope, treeOfBranch, visibleHeadOf } from './store.ts'
+import { branchFor, resolveRef, scope, treeOfBranch, visibleHeadOf } from './store.ts'
 import type { RepoRow, Tree } from './store.ts'
 import {
   authedRoute,
@@ -88,6 +88,7 @@ interface RunRow {
 
 interface CheckRow {
   id: number
+  sha: string
   name: string
   status: string
   conclusion: string
@@ -105,6 +106,8 @@ export interface StatusRow {
   description: string
   createdAt: string
   updatedAt: string
+  sha: string
+  seq: number
 }
 
 function workflowJson(row: Workflow): JsonValue {
@@ -134,6 +137,7 @@ function runJson(repo: RepoRow, row: RunRow): JsonValue {
 function checkJson(row: CheckRow): JsonValue {
   return {
     id: row.id,
+    head_sha: row.sha,
     name: row.name,
     status: row.status,
     conclusion: row.conclusion,
@@ -147,6 +151,7 @@ function checkJson(row: CheckRow): JsonValue {
 
 function statusJson(row: StatusRow): JsonValue {
   return {
+    id: 7000 + row.seq,
     context: row.context,
     state: row.state,
     target_url: row.targetUrl,
@@ -502,25 +507,53 @@ async function rerun(ctx: Ctx<C>, repo: RepoRow): Promise<Reply> {
   return { status: 201 }
 }
 
+// The commit a `commits/{ref}/...` route names: a branch's head, a tag's
+// commit, or a commit by its sha. Null for a ref that names none.
+async function namedCommit(ctx: Ctx<C>, repo: RepoRow): Promise<string | null> {
+  return (await resolveRef(ctx.db, ctx.tenant, repo, param(ctx, 'sha')))?.history[0]?.sha ?? null
+}
+
+function noCommit(ctx: Ctx<C>): Reply {
+  return fail(422, `No commit found for SHA: ${param(ctx, 'sha')}`)
+}
+
+// A commit's check runs, which belong to the commit they ran on, as a
+// fixture states them. The fake runs no checks of its own.
 async function checkRuns(ctx: Ctx<C>, repo: RepoRow): Promise<Reply> {
+  const sha = await namedCommit(ctx, repo)
+  if (sha === null) return noCommit(ctx)
   const rows = (await ctx.db.githubCheck.findMany({
-    where: { ...scope(ctx.tenant), repo: repo.fullName },
+    where: { ...scope(ctx.tenant), repo: repo.fullName, sha },
     orderBy: { seq: 'asc' },
   })) as CheckRow[]
   return pagedReply(ctx, rows.map(checkJson), 'check_runs')
 }
 
-// The rolled-up state of a commit's statuses. Failure wins over pending, which
-// wins over success, and no statuses at all reads as pending rather than as a
-// green commit nothing has reported on.
-export async function combinedStatus(
-  ctx: Ctx<C>,
+/** Every status set on one commit, newest first. */
+export async function statusesOf(
+  ctx: { db: C; tenant: string },
   repo: RepoRow,
-): Promise<{ state: string; rows: StatusRow[] }> {
-  const rows = (await ctx.db.githubStatus.findMany({
-    where: { ...scope(ctx.tenant), repo: repo.fullName },
-    orderBy: { seq: 'asc' },
+  sha: string,
+): Promise<StatusRow[]> {
+  return (await ctx.db.githubStatus.findMany({
+    where: { ...scope(ctx.tenant), repo: repo.fullName, sha },
+    orderBy: { seq: 'desc' },
   })) as StatusRow[]
+}
+
+// The rolled-up state of a commit's statuses: the newest of each context,
+// failure winning over pending, which wins over success, and no statuses at
+// all reading as pending rather than as a pass, as GitHub rolls them up.
+export async function combinedStatus(
+  ctx: { db: C; tenant: string },
+  repo: RepoRow,
+  sha: string,
+): Promise<{ state: string; rows: StatusRow[] }> {
+  const latest = new Map<string, StatusRow>()
+  for (const row of await statusesOf(ctx, repo, sha)) {
+    if (!latest.has(row.context)) latest.set(row.context, row)
+  }
+  const rows = [...latest.values()].sort((a, b) => a.seq - b.seq)
   const states = new Set(rows.map((r) => r.state))
   let state = 'success'
   if (states.has('error') || states.has('failure')) state = 'failure'
@@ -529,15 +562,49 @@ export async function combinedStatus(
 }
 
 async function commitStatus(ctx: Ctx<C>, repo: RepoRow): Promise<Reply> {
-  const { state, rows } = await combinedStatus(ctx, repo)
+  const sha = await namedCommit(ctx, repo)
+  if (sha === null) return noCommit(ctx)
+  const { state, rows } = await combinedStatus(ctx, repo, sha)
   return {
     status: 200,
-    body: {
-      state,
-      sha: param(ctx, 'sha'),
-      total_count: rows.length,
-      statuses: rows.map(statusJson),
-    },
+    body: { state, sha, total_count: rows.length, statuses: rows.map(statusJson) },
+  }
+}
+
+async function listStatuses(ctx: Ctx<C>, repo: RepoRow): Promise<Reply> {
+  const sha = await namedCommit(ctx, repo)
+  if (sha === null) return noCommit(ctx)
+  return pagedReply(ctx, (await statusesOf(ctx, repo, sha)).map(statusJson))
+}
+
+const STATUS_STATES = ['error', 'failure', 'pending', 'success']
+
+// A status is set on one commit and stays with it, whatever the branch does
+// after. A second status in the same context supersedes the first in the
+// rollup, and both stay listed, as on GitHub.
+async function createStatus(ctx: Ctx<C>, repo: RepoRow): Promise<Reply> {
+  const sha = await namedCommit(ctx, repo)
+  if (sha === null) return noCommit(ctx)
+  const body = jsonBodyOf(ctx)
+  const state = str(body, 'state')
+  if (!STATUS_STATES.includes(state)) return fail(422, 'Validation Failed')
+  const seq = await ctx.db.githubStatus.count({
+    where: { ...scope(ctx.tenant), repo: repo.fullName },
+  })
+  const row: StatusRow = {
+    context: str(body, 'context') || 'default',
+    state,
+    targetUrl: str(body, 'target_url'),
+    description: str(body, 'description'),
+    createdAt: WRITE_COMMIT_DATE,
+    updatedAt: WRITE_COMMIT_DATE,
+    sha,
+    seq,
+  }
+  await ctx.db.githubStatus.create({ data: { tenant: ctx.tenant, repo: repo.fullName, ...row } })
+  return {
+    status: 201,
+    body: { ...(statusJson(row) as Record<string, JsonValue>), creator: { login: DEFAULT_LOGIN } },
   }
 }
 
@@ -585,6 +652,27 @@ export function actionRoutes(): KitRoute<C>[] {
         'GET',
         `${p}/repos/:owner/:repo/commits/:sha/status`,
         authedRoute(withRepo(commitStatus)),
+      ),
+      route<C>(
+        'GET',
+        `${p}/repos/:owner/:repo/commits/:sha/statuses`,
+        authedRoute(withRepo(listStatuses)),
+      ),
+      route<C>(
+        'POST',
+        `${p}/repos/:owner/:repo/statuses/:sha`,
+        authedRoute(withRepo(createStatus)),
+        {
+          write: true,
+        },
+      ),
+      // A check run is an app's to create; a personal token is refused, as
+      // GitHub refuses it.
+      route<C>(
+        'POST',
+        `${p}/repos/:owner/:repo/check-runs`,
+        authedRoute(withRepo(() => fail(403, 'You must authenticate via a GitHub App.'))),
+        { write: true },
       ),
     ]
   })

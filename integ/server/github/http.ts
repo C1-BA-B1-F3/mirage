@@ -121,6 +121,22 @@ export function paged(ctx: Ctx<C>, items: JsonValue[]): Page | null {
   return { items: batch, headers }
 }
 
+// A list in the order a `sort` and `direction` ask for, before it is paged.
+// Equal keys fall back to the number in the same direction, since every date
+// the fake stamps is the same one.
+export function ordered<T extends { number: number }>(
+  rows: T[],
+  key: (row: T) => number | string,
+  direction: string,
+): T[] {
+  const sign = direction === 'asc' ? 1 : -1
+  return [...rows].sort((a, b) => {
+    const x = key(a)
+    const y = key(b)
+    return sign * (x < y ? -1 : x > y ? 1 : a.number - b.number)
+  })
+}
+
 export function pagedReply(ctx: Ctx<C>, items: JsonValue[], key?: string): Reply {
   const page = paged(ctx, items)
   if (page === null) return fail(422, 'Validation Failed')

@@ -383,6 +383,30 @@ def test_a_text_run_dumps_a_program_its_comment_carries_on_past_a_line():
     assert jq_run_texts("5.0", "[.] # c") == JqRun(["[5.0]"])
 
 
+@pytest.mark.parametrize("definition", ["42", "empty", 'error("shadow")'])
+@pytest.mark.parametrize("suffix", ["", " # c", " # c \\"])
+def test_output_dumping_is_independent_of_user_defined_tojson(
+        definition, suffix):
+    doc = '{"b":1.000,"1":[-0,100000000000000000001]}'
+    assert jq_run_texts(doc,
+                        f"def tojson: {definition}; .{suffix}") == JqRun([doc])
+
+
+def test_as_typed_dumping_preserves_user_calls_and_each_output():
+    assert jq_run_texts("1.000", "def tojson: 42; ., tojson # c \\") == JqRun(
+        ["1.000", "42"])
+
+
+def test_as_typed_dumping_preserves_bindings_and_unread_documents():
+    assert jq_run_texts(
+        "null", "def tojson: empty; $v, $ARGS, input, [inputs] # c \\",
+        {"v": '{"b":1.000,"1":2}'}, ["-0", "1e2"],
+        '{"positional":[2.50],"named":{}}') == JqRun([
+            '{"b":1.000,"1":2}', '{"positional":[2.50],"named":{}}', "-0",
+            "[1E+2]"
+        ])
+
+
 def test_a_program_compiles_once_for_every_document():
     jq_eval_module._compile.cache_clear()
     for doc in ("1", "2.0", '{"a":3}'):

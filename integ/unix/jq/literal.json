@@ -570,6 +570,142 @@
       "flags": [
         "e"
       ]
+    },
+    {
+      "id": "jq_user_tojson_cannot_replace_output_dumping",
+      "seq": 9901911,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "printf '%s' '{\"b\":1.000,\"1\":[-0,100000000000000000001]}' | jq -c 'def tojson: 42; . # c \\'",
+      "expect": {
+        "exit": 0,
+        "stdout": "{\"b\":1.000,\"1\":[-0,100000000000000000001]}\n",
+        "stderr": ""
+      },
+      "flags": [
+        "c"
+      ]
+    },
+    {
+      "id": "jq_empty_tojson_cannot_drop_output",
+      "seq": 9901912,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "printf '%s' '{\"b\":1.000,\"1\":[-0,100000000000000000001]}' | jq -c 'def tojson: empty; . # c \\'",
+      "expect": {
+        "exit": 0,
+        "stdout": "{\"b\":1.000,\"1\":[-0,100000000000000000001]}\n",
+        "stderr": ""
+      },
+      "flags": [
+        "c"
+      ]
+    },
+    {
+      "id": "jq_erroring_tojson_cannot_break_output",
+      "seq": 9901913,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "printf '%s' '{\"b\":1.000,\"1\":[-0,100000000000000000001]}' | jq -c 'def tojson: error(\"shadow\"); . # c \\'",
+      "expect": {
+        "exit": 0,
+        "stdout": "{\"b\":1.000,\"1\":[-0,100000000000000000001]}\n",
+        "stderr": ""
+      },
+      "flags": [
+        "c"
+      ]
+    },
+    {
+      "id": "jq_user_tojson_still_runs_when_called",
+      "seq": 9901914,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "printf '1.000' | jq -c 'def tojson: 42; ., tojson # c \\'",
+      "expect": {
+        "exit": 0,
+        "stdout": "1.000\n42\n",
+        "stderr": ""
+      },
+      "flags": [
+        "c"
+      ]
+    },
+    {
+      "id": "jq_user_tojson_keeps_raw_string_output",
+      "seq": 9901915,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "printf '\"hello\"' | jq -r 'def tojson: empty; . # c \\'",
+      "expect": {
+        "exit": 0,
+        "stdout": "hello\n",
+        "stderr": ""
+      },
+      "flags": [
+        "r"
+      ]
+    },
+    {
+      "id": "jq_user_tojson_keeps_false_exit_status",
+      "seq": 9901916,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "jq -n -c -e 'def tojson: 42; false # c \\'",
+      "expect": {
+        "exit": 1,
+        "stdout": "false\n",
+        "stderr": ""
+      },
+      "flags": [
+        "n",
+        "c",
+        "e"
+      ]
+    },
+    {
+      "id": "jq_user_tojson_keeps_named_and_stream_bindings",
+      "seq": 9901917,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "printf '1.000 -0 1e2' | jq -c --argjson v '{\"b\":1.000,\"1\":[-0,100000000000000000001]}' 'def tojson: empty; ., $v, $ARGS.named, [inputs] # c \\'",
+      "expect": {
+        "exit": 0,
+        "stdout": "1.000\n{\"b\":1.000,\"1\":[-0,100000000000000000001]}\n{\"v\":{\"b\":1.000,\"1\":[-0,100000000000000000001]}}\n[-0,1E+2]\n",
+        "stderr": ""
+      },
+      "flags": [
+        "c",
+        "argjson"
+      ]
     }
   ]
 }

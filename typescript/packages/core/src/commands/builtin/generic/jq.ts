@@ -57,9 +57,9 @@ const DEC = new TextDecoder()
 const ENC = new TextEncoder()
 const INDENT_MIN = -1
 const INDENT_MAX = 7
-// What jq 1.8.2's strtol reads whole from an --indent word: a sign, then
-// decimal digits.
-const INDENT_WORD = /^[+-]?[0-9]+$/
+// A width in jq's range has at most one significant digit; the sign and
+// leading zeroes keep strtol's decimal spelling without a large conversion.
+const INDENT_WORD = /^([+-]?)0*([0-7])$/
 
 // The options whose order decides what they do: the layout options, which
 // reset one another, and the bindings, where the first of a name wins.
@@ -204,10 +204,14 @@ async function loadFile(
 /**
  * The width an --indent word names, read as jq 1.8.2's strtol reads it: a
  * sign and decimal digits and nothing else, no blank before and no text
- * after, from -1 to 7. Any other word is refused in jq's words.
+ * after, from -1 to 7. Only the significant digit is converted, so the
+ * width never depends on the host's handling of arbitrary-length numbers.
+ * Any other word is refused in jq's words.
  */
 export function indentWidth(word: string): number {
-  const width = INDENT_WORD.test(word) ? Number(word) : NaN
+  const match = INDENT_WORD.exec(word)
+  const width =
+    match !== null && match[0] === word ? Number(match[2]) * (match[1] === '-' ? -1 : 1) : NaN
   if (!(width >= INDENT_MIN && width <= INDENT_MAX)) {
     throw new UsageError(
       `jq: --indent takes a number between ${String(INDENT_MIN)} and ` +

@@ -10,6 +10,7 @@ from mirage.commands.config import CommandOpts
 from mirage.commands.errors import UsageError
 from mirage.commands.spec import SPECS, parse_command, parse_to_kwargs
 from mirage.commands.spec.flag_view import FlagView
+from mirage.commands.spec.types import FlagValue
 from mirage.core.jq import JqError, JqHalt, JqOptions, JqRun
 from mirage.io.types import materialize
 from mirage.types import PathSpec
@@ -64,7 +65,7 @@ def _path(virtual: str) -> PathSpec:
     return PathSpec(virtual, virtual.rsplit("/", 1)[0], virtual.lstrip("/"))
 
 
-def _spec_flags(**flags: object) -> FlagView:
+def _spec_flags(**flags: FlagValue) -> FlagView:
     return FlagView(flags, spec=SPECS["jq"])
 
 
@@ -89,7 +90,7 @@ async def _options(*words: str) -> JqOptions:
                               _read_bytes)
 
 
-async def _bound(**flags: object) -> dict[str, str]:
+async def _bound(**flags: FlagValue) -> dict[str, str]:
     opts = await read_options(_spec_flags(**flags), _unread)
     return dict(opts.named_args)
 
@@ -98,7 +99,7 @@ def _printed(*outputs: str) -> int:
     return run_status(JqRun(list(outputs)))
 
 
-async def _run(paths: list[str], *texts: str, **flags: object) -> tuple:
+async def _run(paths: list[str], *texts: str, **flags: FlagValue) -> tuple:
     source, io = await jq([_path(p) for p in paths],
                           *texts,
                           read_bytes=_read_bytes,
@@ -126,11 +127,29 @@ def test_indent_reads_its_word_as_jqs_strtol_does(word, width):
 
 
 @pytest.mark.parametrize("word", [
-    "x", "2x", "", " 3", "3 ", "1.5", "0x3", "08", "-2", "99999999999999999999"
+    "x", "2x", "", " 3", "3 ", "3\n", "1.5", "0x3", "08", "-2",
+    "99999999999999999999"
 ])
 def test_indent_refuses_any_other_word_in_jqs_words(word):
     with pytest.raises(UsageError) as caught:
         indent_width(word)
+    assert str(caught.value) == (
+        f"jq: --indent takes a number between -1 and 7\n{HINT}")
+    assert caught.value.exit_code == 2
+
+
+@pytest.mark.parametrize("sign, digit, width", [("", "7", 7), ("+", "3", 3),
+                                                ("-", "1", -1), ("-", "0", 0),
+                                                ("", "0", 0)])
+def test_indent_accepts_arbitrary_leading_zeroes(sign, digit, width):
+    assert indent_width(sign + "0" * 5000 + digit) == width
+
+
+@pytest.mark.parametrize("sign, digits", [("", "9"), ("-", "9"), ("+", "9"),
+                                          ("", "0")])
+def test_oversized_indent_stays_a_usage_error(sign, digits):
+    with pytest.raises(UsageError) as caught:
+        indent_width(sign + digits * 5000 + "8")
     assert str(caught.value) == (
         f"jq: --indent takes a number between -1 and 7\n{HINT}")
     assert caught.value.exit_code == 2
@@ -569,7 +588,7 @@ async def test_a_program_that_does_not_compile_is_refused_before_any_read():
 
 
 async def _flagged(paths: list[str], program: str,
-                   **flags: object) -> tuple[bytes, bytes, int]:
+                   **flags: FlagValue) -> tuple[bytes, bytes, int]:
     out, io = await _run(paths, program, **flags)
     return out, await materialize(io.stderr), io.exit_code
 

@@ -161,7 +161,7 @@ describe('indentWidth', () => {
     expect(indentWidth(word)).toBe(width)
   })
 
-  it.each(['x', '2x', '', ' 3', '3 ', '1.5', '0x3', '08', '-2', '99999999999999999999'])(
+  it.each(['x', '2x', '', ' 3', '3 ', '3\n', '1.5', '0x3', '08', '-2', '99999999999999999999'])(
     "refuses %j in jq's words",
     (word) => {
       expect(() => indentWidth(word)).toThrow(
@@ -169,6 +169,27 @@ describe('indentWidth', () => {
       )
     },
   )
+
+  it.each([
+    ['', '7', 7],
+    ['+', '3', 3],
+    ['-', '1', -1],
+    ['-', '0', 0],
+    ['', '0', 0],
+  ] as const)('accepts arbitrary leading zeroes before %s%s', (sign, digit, width) => {
+    expect(indentWidth(sign + '0'.repeat(5000) + digit)).toBe(width)
+  })
+
+  it.each([
+    ['', '9'],
+    ['-', '9'],
+    ['+', '9'],
+    ['', '0'],
+  ])("refuses oversized indent starting with %s%s in jq's words", (sign, digits) => {
+    expect(() => indentWidth(sign + digits.repeat(5000) + '8')).toThrow(
+      `jq: --indent takes a number between -1 and 7\n${HINT}`,
+    )
+  })
 })
 
 describe('readOptions', () => {

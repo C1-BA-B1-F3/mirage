@@ -30,9 +30,9 @@ from mirage.utils.errors import FS_ERRORS
 
 INDENT_MIN = -1
 INDENT_MAX = 7
-# What jq 1.8.2's strtol reads whole from an --indent word: a sign, then
-# decimal digits.
-INDENT_WORD = re.compile(r"[+-]?[0-9]+")
+# A width in jq's range has at most one significant digit; the sign and
+# leading zeroes keep strtol's decimal spelling without a large conversion.
+INDENT_WORD = re.compile(r"([+-]?)0*([0-7])")
 
 # The options whose order decides what they do: the layout options, which
 # reset one another, and the bindings, where the first of a name wins.
@@ -184,7 +184,8 @@ async def _load_file(read_bytes: Callable[..., Awaitable[bytes]], option: str,
 def indent_width(word: str) -> int:
     """The width an --indent word names, read as jq 1.8.2's strtol reads
     it: a sign and decimal digits and nothing else, no blank before and no
-    text after, from -1 to 7.
+    text after, from -1 to 7. Only the significant digit is converted,
+    so arbitrary-length words never reach Python's integer digit limit.
 
     Args:
         word (str): the word typed after --indent.
@@ -192,12 +193,14 @@ def indent_width(word: str) -> int:
     Raises:
         UsageError: for any other word, in jq's words.
     """
-    if (INDENT_WORD.fullmatch(word) is None
-            or not INDENT_MIN <= int(word) <= INDENT_MAX):
+    match = INDENT_WORD.fullmatch(word)
+    width = (int(match[2]) * (-1 if match[1] == "-" else 1)
+             if match is not None else INDENT_MAX + 1)
+    if not INDENT_MIN <= width <= INDENT_MAX:
         raise UsageError(
             f"jq: --indent takes a number between {INDENT_MIN} and "
             f"{INDENT_MAX}\n{USAGE_HINT}", 2)
-    return int(word)
+    return width
 
 
 def parse_flags(fl: FlagView) -> JqOptions:

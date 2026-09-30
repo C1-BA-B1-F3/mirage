@@ -781,4 +781,39 @@ describe('jqRunTexts', () => {
       stop: null,
     })
   })
+
+  it.each(['42', 'empty', 'error("shadow")'])(
+    'dumps outputs independently of tojson defined as %s',
+    async (definition) => {
+      const doc = '{"b":1.000,"1":[-0,100000000000000000001]}'
+      for (const suffix of ['', ' # c', ' # c \\']) {
+        expect(await jqRunTexts(doc, `def tojson: ${definition}; .${suffix}`)).toEqual({
+          outputs: [doc],
+          stop: null,
+        })
+      }
+    },
+  )
+
+  it('preserves user calls and each output when dumping an as-typed program', async () => {
+    expect(await jqRunTexts('1.000', 'def tojson: 42; ., tojson # c \\')).toEqual({
+      outputs: ['1.000', '42'],
+      stop: null,
+    })
+  })
+
+  it('preserves bindings and unread documents when dumping an as-typed program', async () => {
+    expect(
+      await jqRunTexts(
+        'null',
+        'def tojson: empty; $v, $ARGS, input, [inputs] # c \\',
+        new Map([['v', '{"b":1.000,"1":2}']]),
+        ['-0', '1e2'],
+        '{"positional":[2.50],"named":{}}',
+      ),
+    ).toEqual({
+      outputs: ['{"b":1.000,"1":2}', '{"positional":[2.50],"named":{}}', '-0', '[1E+2]'],
+      stop: null,
+    })
+  })
 })

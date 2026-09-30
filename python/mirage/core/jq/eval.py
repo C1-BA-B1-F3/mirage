@@ -72,8 +72,11 @@ _CATCH = f" catch {_ERROR_MARK}"
 _DONE = ', {"' + DONE_KEY + '": true}'
 # A run that hands its outputs back as text pipes every one, stops and
 # sentinel included, into jq's own compact dump of it, the text jq's main
-# loop prints from.
-_DUMP = "| tojson"
+# loop prints from. Bind the builtin before the user program can shadow
+# it, under a private name shared by the wrapped and as-typed paths.
+_DUMPER = f"__mirage_jq_dump_{_TOKEN}"
+_DUMP_DEF = f"def {_DUMPER}: tojson; "
+_DUMP = f"| {_DUMPER}"
 
 # A run keeps jq's own `halt` and `halt_error`, which no `try` catches and
 # which end the program wherever they are called; one that halted is the
@@ -458,9 +461,10 @@ def _typed(expr: str, bound: _Bound,
     The prelude costs one line here, so the line a compile error reports
     is moved back by it. A program with no code for jq to run at all goes
     bare, on the plain document, which keeps libjq's own refusal of an
-    empty program. A dumped run pipes the whole program into `tojson`
-    past a blank line, which ends a comment of the program's even when a
-    backslash carries it on over the line after it.
+    empty program. A dumped run binds jq's dumper before the user program
+    can shadow `tojson`, then pipes its outputs through that private
+    binding past a blank line. The blank line ends even a comment whose
+    trailing backslash carries it over the next line.
 
     Args:
         expr (str): jq program text.
@@ -472,7 +476,8 @@ def _typed(expr: str, bound: _Bound,
             errors numbered by the program's own lines.
     """
     shift = 1 if code_only(expr).strip() else 0
-    program = f"{_PRINT}{' '.join(bound.steps)}\n{expr}" if shift else expr
+    prelude = (_DUMP_DEF if dump else "") + _PRINT + " ".join(bound.steps)
+    program = f"{prelude}\n{expr}" if shift else expr
     stdin = bound.stdin if shift else bound.plain
     try:
         compiled = _compile(program)
@@ -684,7 +689,7 @@ def _run(expr: str, bound: _Bound, dump: bool) -> JqRun[JsonValue]:
             errors numbered by the program's own lines.
     """
     tail = f"{_CATCH}){_DONE} {_DUMP}" if dump else f"{_CATCH}){_DONE}"
-    compiled = _wrapped(expr, bound, "", tail)
+    compiled = _wrapped(expr, bound, _DUMP_DEF if dump else "", tail)
     if compiled is None:
         program, stdin, dumped = _typed(expr, bound, dump)
         run = _collected(program.input_text(stdin), dumped)[0]

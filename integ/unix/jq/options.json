@@ -853,6 +853,168 @@
       "flags": [
         "indent"
       ]
+    },
+    {
+      "id": "jq_indent_refuses_thousands_of_digits",
+      "seq": 9901918,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "width=$(printf '%05000d' 0); width=$(printf '%s' \"$width\" | tr 0 9); jq -n --indent \"$width\" .",
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "jq: --indent takes a number between -1 and 7\nUse jq --help for help with command-line options,\nor see the jq manpage, or online docs at https://jqlang.org\n"
+      },
+      "flags": [
+        "n",
+        "indent"
+      ]
+    },
+    {
+      "id": "jq_indent_accepts_thousands_of_leading_zeroes",
+      "seq": 9901919,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "width=$(printf '%05000d' 0); jq -n --indent \"${width}3\" '{\"a\":[1]}'",
+      "expect": {
+        "exit": 0,
+        "stdout": "{\n   \"a\": [\n      1\n   ]\n}\n",
+        "stderr": ""
+      },
+      "flags": [
+        "n",
+        "indent"
+      ]
+    },
+    {
+      "id": "jq_indent_accepts_long_negative_one",
+      "seq": 9901920,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "width=$(printf '%05000d' 0); jq -n --indent \"-${width}1\" '{\"a\":[1]}'",
+      "expect": {
+        "exit": 0,
+        "stdout": "{\n\t\"a\": [\n\t\t1\n\t]\n}\n",
+        "stderr": ""
+      },
+      "flags": [
+        "n",
+        "indent"
+      ]
+    },
+    {
+      "id": "jq_indent_accepts_long_negative_zero",
+      "seq": 9901921,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "width=$(printf '%05000d' 0); jq -n --indent \"-$width\" '{\"a\":[1]}'",
+      "expect": {
+        "exit": 0,
+        "stdout": "{\n\"a\": [\n1\n]\n}\n",
+        "stderr": ""
+      },
+      "flags": [
+        "n",
+        "indent"
+      ]
+    },
+    {
+      "id": "jq_indent_rejects_out_of_range_after_leading_zeroes",
+      "seq": 9901922,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "width=$(printf '%05000d' 0); jq -n --indent \"${width}8\" .",
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "jq: --indent takes a number between -1 and 7\nUse jq --help for help with command-line options,\nor see the jq manpage, or online docs at https://jqlang.org\n"
+      },
+      "flags": [
+        "n",
+        "indent"
+      ]
+    },
+    {
+      "id": "jq_indent_refuses_a_trailing_newline",
+      "seq": 9901923,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "jq -n --indent '3\n' .",
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "jq: --indent takes a number between -1 and 7\nUse jq --help for help with command-line options,\nor see the jq manpage, or online docs at https://jqlang.org\n"
+      },
+      "flags": [
+        "n",
+        "indent"
+      ]
+    },
+    {
+      "id": "jq_oversized_indent_wins_before_bad_argjson",
+      "seq": 9901924,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "width=$(printf '%05000d' 0); jq -n --indent \"${width}8\" --argjson a nope .",
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "jq: --indent takes a number between -1 and 7\nUse jq --help for help with command-line options,\nor see the jq manpage, or online docs at https://jqlang.org\n"
+      },
+      "flags": [
+        "n",
+        "indent",
+        "argjson"
+      ]
+    },
+    {
+      "id": "jq_bad_argjson_wins_before_oversized_indent",
+      "seq": 9901925,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "width=$(printf '%05000d' 0); jq -n --argjson a nope --indent \"${width}8\" .",
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "jq: invalid JSON text passed to --argjson\nUse jq --help for help with command-line options,\nor see the jq manpage, or online docs at https://jqlang.org\n"
+      },
+      "flags": [
+        "n",
+        "argjson",
+        "indent"
+      ]
     }
   ]
 }

@@ -123,16 +123,14 @@ async function warmFile(ws: Workspace, depth: number): Promise<string> {
 }
 
 describe('GDriveVFS warm read under fresh', () => {
-  // Cost is the contract, and the gate's probes are the cost. A warm named
-  // operand is probed twice -- at routing and at the gate -- and each probe
-  // stats with a fresh index, so each walks the parent listings: one per
-  // level. The command's own stat of its operand serves the routing probe's
-  // answer instead of walking the mount's listings, which fresh would
-  // re-check. More means that stat reached Drive again; fewer means a probe
-  // stopped running.
+  // Cost is the contract, and the routing probe is the cost. A warm named
+  // operand is probed at routing, with a fresh index, so the probe walks the
+  // parent listings: one per level. The command's own stat and the gate both
+  // reuse that answer for the rest of the command instead of asking again.
+  // More means one of them reached Drive again.
   for (const [depth, listings] of [
-    [0, 2],
-    [3, 8],
+    [0, 1],
+    [3, 4],
   ] as const) {
     it(`costs one walk per probe at depth ${String(depth)}`, async () => {
       const ws = freshWs(await getTestParser())

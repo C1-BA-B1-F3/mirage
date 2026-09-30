@@ -284,13 +284,14 @@ def test_always_revalidates_a_walk_and_a_glob():
         "revalidated, which is the bug this test exists for")
 
 
-def test_always_warm_read_costs_a_gate_probe():
-    """Cost is the contract, and the gate's probe is the cost.
+def test_always_warm_read_costs_one_probe():
+    """Cost is the contract, and the routing probe is the cost.
 
-    A warm ``cat`` is two backend stats: the routing reconcile and the
-    gate's probe; ``cat``'s own operand stat serves the routing probe's
-    answer. One means the gate stopped probing a named warm operand, so
-    this number is what separates the two. Counting starts after the
+    A warm ``cat`` is one backend stat: the routing reconcile. ``cat``'s own
+    operand stat and the gate both reuse its answer for the rest of the
+    command, so a count cannot tell the gate on from off here; the gate's
+    own reach -- the reads routing never sees -- is pinned by
+    ``test_always_revalidates_a_walk_and_a_glob``. Counting starts after the
     warm-up, because a cold+warm total is the same either way.
     """
     objects = {"a.txt": b"name,age\n"}
@@ -305,9 +306,8 @@ def test_always_warm_read_costs_a_gate_probe():
             await ws.close()
 
     asyncio.run(run())
-    assert client.calls["head_object"] == 2, (
-        "routing reconcile + the gate's probe; one means the gate no longer "
-        "revalidates a named warm operand")
+    assert client.calls["head_object"] == 1, (
+        "the routing reconcile, reused by cat's stat and the gate")
     assert client.calls["get_object"] == 0, (
         "an unchanged object must still be served from cache")
 
@@ -599,9 +599,9 @@ def test_bounded_serves_within_the_bound_then_goes_cold():
     assert warm == b"v1\n"
     assert warm_calls["head_object"] == 1, (
         "a warm bounded read is cat's own stat and nothing else; the same "
-        "read under fresh costs two (the routing reconcile, whose answer "
-        "cat's stat reuses, and the gate's probe), so anything above one "
-        "here means a door that should have skipped did not")
+        "read under fresh also costs one (the routing reconcile, whose "
+        "answer cat's stat and the gate reuse), so anything above one here "
+        "means a door that should have skipped did not")
     assert warm_calls.get("get_object", 0) == 0
     assert cold == b"v2\n", "past its bound, the entry must not be served"
 

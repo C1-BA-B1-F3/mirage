@@ -491,15 +491,4 @@ describe('what a probe saw this command', () => {
       })
     })
   }
-
-  it('is forgotten when a later probe found nothing', async () => {
-    const index = new RAMIndexCacheStore({ ttl: 600 })
-    const manager = new CacheManager(new RAMFileCacheStore(), index, '/data/', true)
-    await runInCommandScope(() => {
-      manager.noteProbed(path, probed())
-      manager.noteProbed(path, null)
-      expect(manager.probedStat(path)).toBeNull()
-      return Promise.resolve()
-    })
-  })
 })

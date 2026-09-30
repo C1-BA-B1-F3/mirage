@@ -54,12 +54,13 @@ class Reconciler:
     (RAM local, Redis shared across runtimes), so this is a thin coordinator
     holding references, not config.
 
-    The gate and ``reconcile_read`` overlap deliberately: a warm named
-    operand is probed once at routing and again at the gate. Deduplicating
-    them needs a fact neither tier owns -- routing runs before any handler,
-    the gate inside one -- so the cheap version was a flag on the command
-    that went stale the moment a backend registered its own reader. Paying
-    the second probe is the honest price until the two tiers share a scope.
+    The gate and ``reconcile_read`` both run for a warm named operand, once
+    at routing and again at the gate, and they share one scope: the
+    command. The first probe's backend answer is kept on the mount's
+    ``CacheManager`` for the rest of the command, so the gate, and the
+    command's own stat of the operand, reuse it instead of asking again. A
+    write in the command retires it, and a read outside any command (FUSE,
+    the op door) never sees it.
     """
 
     def __init__(self, cache: FileCacheMixin, namespace: Namespace) -> None:
@@ -72,33 +73,38 @@ class Reconciler:
         A missing path GCs (evict cache + drop overlay); a fingerprint
         mismatch evicts the stale cache entry. Non-404 errors propagate.
 
+        Inside a command, what an earlier probe of the same command got
+        from the backend is reused (``CacheManager.probed_stat``) until a
+        write lands: the verdict and its reactions still run, only the
+        round trip is skipped.
+
         Args:
             mount (MountEntry): the resolved mount for ``path``.
             path (str): absolute virtual path to probe.
         """
         manager = mount.cache_manager
         spec = PathSpec.from_str_path(path)
-        # Resolve backend IDs without reusing cached metadata.
-        try:
-            remote_stat = await mount.execute_op("stat",
-                                                 path,
-                                                 index=RAMIndexCacheStore())
-        except (FileNotFoundError, NotADirectoryError):
-            if manager is not None:
-                manager.note_probed(spec, None)
-            await self.on_missing(path)
-            await mount.index.clear()
-            return Verdict.GONE
-        except OperationNotSupportedError:
-            # A backend that registers no stat op cannot be revalidated at
-            # all. `_probe_or_unknown` would reach the same verdict, but it
-            # would also log every read: this is a permanent capability of
-            # the mount, not an anomaly worth a log line each time.
-            await self._cache.remove(path)
-            await mount.index.clear()
-            return Verdict.UNKNOWN
-        if manager is not None and isinstance(remote_stat, FileStat):
-            manager.note_probed(spec, remote_stat)
+        remote_stat = None if manager is None else manager.probed_stat(spec)
+        if remote_stat is None:
+            # Resolve backend IDs without reusing cached metadata.
+            try:
+                remote_stat = await mount.execute_op(
+                    "stat", path, index=RAMIndexCacheStore())
+            except (FileNotFoundError, NotADirectoryError):
+                await self.on_missing(path)
+                await mount.index.clear()
+                return Verdict.GONE
+            except OperationNotSupportedError:
+                # A backend that registers no stat op cannot be revalidated
+                # at all. `_probe_or_unknown` would reach the same verdict,
+                # but it would also log every read: this is a permanent
+                # capability of the mount, not an anomaly worth a log line
+                # each time.
+                await self._cache.remove(path)
+                await mount.index.clear()
+                return Verdict.UNKNOWN
+            if manager is not None and isinstance(remote_stat, FileStat):
+                manager.note_probed(spec, remote_stat)
         if remote_stat is None or remote_stat.fingerprint is None:
             await self._cache.remove(path)
             await mount.index.clear()

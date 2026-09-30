@@ -53,12 +53,12 @@ enum Verdict {
  * (RAM local, Redis shared across runtimes), so this is a thin coordinator
  * holding references, not config.
  *
- * The gate and reconcileRead overlap deliberately: a warm named operand is
- * probed once at routing and again at the gate. Deduplicating them needs a
- * fact neither tier owns -- routing runs before any handler, the gate inside
- * one -- so the cheap version was a flag on the command that went stale the
- * moment a backend registered its own reader. Paying the second probe is the
- * honest price until the two tiers share a scope.
+ * The gate and reconcileRead both run for a warm named operand, once at
+ * routing and again at the gate, and they share one scope: the command. The
+ * first probe's backend answer is kept on the mount's CacheManager for the
+ * rest of the command, so the gate, and the command's own stat of the
+ * operand, reuse it instead of asking again. A write in the command retires
+ * it, and a read outside any command (FUSE, the op door) never sees it.
  */
 export class Reconciler {
   private readonly cache: FileCache & BaseVFS
@@ -74,6 +74,10 @@ export class Reconciler {
   // Re-stat the backend and apply the matching cache/overlay reaction. A
   // missing path GCs (evict cache + drop overlay); a fingerprint mismatch
   // evicts the stale cache entry. Non-ENOENT errors propagate.
+  //
+  // Inside a command, what an earlier probe of the same command got from the
+  // backend is reused (CacheManager.probedStat) until a write lands: the
+  // verdict and its reactions still run, only the round trip is skipped.
   private async probe(mount: MountEntry, path: string): Promise<Verdict> {
     const vfs = mount.vfs
     const lastSlash = path.lastIndexOf('/')
@@ -83,33 +87,34 @@ export class Reconciler {
       vfsPath: mountKey(path, rstripSlash(mount.prefix)),
     })
     const manager = mount.cacheManager
-    let remoteStat: unknown
-    try {
-      remoteStat = await this.opsRegistry.call('stat', vfs, vfs.accessor, scope, [], {
-        index: new RAMIndexCacheStore(),
-      })
-    } catch (err) {
-      if (isEnoent(err) || isEnotdir(err)) {
-        manager?.noteProbed(scope, null)
-        await this.onMissing(path)
-        await mount.index.clear()
-        return Verdict.GONE
+    let remoteStat: unknown = manager?.probedStat(scope) ?? null
+    if (remoteStat === null) {
+      try {
+        remoteStat = await this.opsRegistry.call('stat', vfs, vfs.accessor, scope, [], {
+          index: new RAMIndexCacheStore(),
+        })
+      } catch (err) {
+        if (isEnoent(err) || isEnotdir(err)) {
+          await this.onMissing(path)
+          await mount.index.clear()
+          return Verdict.GONE
+        }
+        // A backend that registers no stat op cannot be revalidated at all.
+        // probeOrUnknown would reach the same verdict, but it would also log
+        // every read: this is a permanent capability of the mount, not an
+        // anomaly worth a log line each time. isMissingOp, not a bare ENOTSUP
+        // check: python catches OperationNotSupportedError, which only the op
+        // door raises, and `stat` is the only op probed here -- so a backend
+        // that stamps ENOTSUP itself takes the logged path on both sides.
+        if (isMissingOp(err, 'stat')) {
+          await this.cache.remove(path)
+          await mount.index.clear()
+          return Verdict.UNKNOWN
+        }
+        throw err
       }
-      // A backend that registers no stat op cannot be revalidated at all.
-      // probeOrUnknown would reach the same verdict, but it would also log
-      // every read: this is a permanent capability of the mount, not an
-      // anomaly worth a log line each time. isMissingOp, not a bare ENOTSUP
-      // check: python catches OperationNotSupportedError, which only the op
-      // door raises, and `stat` is the only op probed here -- so a backend
-      // that stamps ENOTSUP itself takes the logged path on both sides.
-      if (isMissingOp(err, 'stat')) {
-        await this.cache.remove(path)
-        await mount.index.clear()
-        return Verdict.UNKNOWN
-      }
-      throw err
+      if (remoteStat instanceof FileStat) manager?.noteProbed(scope, remoteStat)
     }
-    if (remoteStat instanceof FileStat) manager?.noteProbed(scope, remoteStat)
     const fp = remoteStat instanceof FileStat ? remoteStat.fingerprint : null
     if (fp === null) {
       await this.cache.remove(path)

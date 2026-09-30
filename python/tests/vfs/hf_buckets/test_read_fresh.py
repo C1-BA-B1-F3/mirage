@@ -214,13 +214,13 @@ async def test_a_probe_leaves_find_its_whole_prefixed_listing():
 
 
 # Measured on the first green run, then pinned (test plan T23): the
-# routing probe and the cache door's probe; the handler's own stat serves
-# the routing probe's answer. Cross-mount cp skips routing's probe, so its
-# stat goes through its own door against a mount index nothing filled.
+# routing probe; the handler's own stat and the cache door reuse its
+# answer. Cross-mount cp skips routing's probe, so the cache door asks, and
+# its stat goes through its own door against a mount index nothing filled.
 WARM = [
-    ("", "cat /m/a.txt", 2),
-    ("ls /m", "cat /m/a.txt", 2),
-    ("", "cat /m/a.txt | head -c 1", 2),
+    ("", "cat /m/a.txt", 1),
+    ("ls /m", "cat /m/a.txt", 1),
+    ("", "cat /m/a.txt | head -c 1", 1),
     ("", "cp /m/a.txt /r/a.txt", 2),
 ]
 

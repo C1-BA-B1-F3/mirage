@@ -32,6 +32,7 @@ import type { MountEntry } from './mount/mount.ts'
 
 const ENC = new TextEncoder()
 import { enotsup } from '../utils/errors.ts'
+import type { OpsRegistry } from '../ops/registry.ts'
 import { Reconciler } from './reconcile.ts'
 import { runInCommandScope } from '../cache/index/scope.ts'
 import { ops } from '../test-utils.ts'
@@ -585,10 +586,10 @@ it('batches overlapping folders and protects nested mounts', async () => {
   }
 })
 
-// The command's own stat serves what the probe got from the backend; a later
-// probe in the same command that finds the path gone must take that answer
-// back, or the stat would still describe a deleted file.
-it("a probe remembers the backend's stat until it finds nothing", async () => {
+// The gate reuses what routing got from the backend; a write in the same
+// command retires that answer, so the next probe asks again and sees a
+// deletion the remembered stat would have hidden.
+it('a write in the command sends the next probe to the backend', async () => {
   const resource = new RAMVFS()
   resource.store.files.set('/f.txt', new TextEncoder().encode('v1'))
   const ws = new Workspace({ '/data': resource }, { mode: MountMode.WRITE })
@@ -602,11 +603,100 @@ it("a probe remembers the backend's stat until it finds nothing", async () => {
       await rec.reconcileRead(mount, '/data/f.txt')
       expect(mount.cacheManager?.probedStat(spec)?.size).toBe(2)
       resource.store.files.delete('/f.txt')
+      await mount.cacheManager?.invalidateAfterWrite(PathSpec.fromStrPath('/data/g.txt'))
       await ws.cache.set('/data/f.txt', new TextEncoder().encode('v1'), { fingerprint: 'fp1' })
-      await rec.reconcileRead(mount, '/data/f.txt')
-      expect(mount.cacheManager?.probedStat(spec)).toBeNull()
+      await expect(rec.mayServeCached(mount, '/data/f.txt')).rejects.toMatchObject({
+        code: 'ENOENT',
+      })
     })
   } finally {
     await ws.close()
   }
+})
+
+describe('the gate reuses what routing got from the backend', () => {
+  async function gated(): Promise<{
+    ws: Workspace
+    mount: MountEntry
+    rec: Reconciler
+    calls: () => number
+  }> {
+    const resource = new RAMVFS()
+    resource.store.files.set('/f.txt', new TextEncoder().encode('v1'))
+    const ws = new Workspace({ '/data': resource }, { mode: MountMode.WRITE })
+    await ws.namespace.ensureLoaded()
+    const mount = withFresh(mountOf(ws, '/data/f.txt'))
+    await ws.cache.set('/data/f.txt', new TextEncoder().encode('v1'), { fingerprint: 'fp1' })
+    let calls = 0
+    const registry = {
+      call: () => {
+        calls += 1
+        return Promise.resolve(
+          new FileStat({ name: 'f.txt', size: 2, type: FileType.FILE, fingerprint: 'fp1' }),
+        )
+      },
+    } as unknown as OpsRegistry
+    return { ws, mount, rec: new Reconciler(ws.cache, ws.namespace, registry), calls: () => calls }
+  }
+
+  // Routing and the gate share the command: the gate compares the cache
+  // against what routing got from the backend instead of asking again.
+  it('reuses the routing probe', async () => {
+    const { ws, mount, rec, calls } = await gated()
+    try {
+      await runInCommandScope(async () => {
+        await rec.reconcileRead(mount, '/data/f.txt')
+        expect(await rec.mayServeCached(mount, '/data/f.txt')).toBe(true)
+      })
+      expect(calls()).toBe(1)
+    } finally {
+      await ws.close()
+    }
+  })
+
+  // Reuse skips the round trip, never the verdict: a remembered token that
+  // does not match the cached copy still evicts it.
+  it('still compares a reused answer with the cache', async () => {
+    const { ws, mount, rec, calls } = await gated()
+    try {
+      await runInCommandScope(async () => {
+        mount.cacheManager?.noteProbed(
+          PathSpec.fromStrPath('/data/f.txt'),
+          new FileStat({ name: 'f.txt', size: 2, type: FileType.FILE, fingerprint: 'fp2' }),
+        )
+        expect(await rec.mayServeCached(mount, '/data/f.txt')).toBe(false)
+      })
+      expect(await ws.cache.exists('/data/f.txt')).toBe(false)
+      expect(calls()).toBe(0)
+    } finally {
+      await ws.close()
+    }
+  })
+
+  it('asks the backend after a write in the command', async () => {
+    const { ws, mount, rec, calls } = await gated()
+    try {
+      await runInCommandScope(async () => {
+        await rec.reconcileRead(mount, '/data/f.txt')
+        await mount.cacheManager?.invalidateAfterWrite(PathSpec.fromStrPath('/data/g.txt'))
+        await rec.mayServeCached(mount, '/data/f.txt')
+      })
+      expect(calls()).toBe(2)
+    } finally {
+      await ws.close()
+    }
+  })
+
+  // FUSE and the op door belong to no command, so nothing a command's probe
+  // saw is reused for them.
+  it('asks the backend outside a command', async () => {
+    const { ws, mount, rec, calls } = await gated()
+    try {
+      await runInCommandScope(() => rec.reconcileRead(mount, '/data/f.txt'))
+      await rec.mayServeCached(mount, '/data/f.txt')
+      expect(calls()).toBe(2)
+    } finally {
+      await ws.close()
+    }
+  })
 })

@@ -281,13 +281,14 @@ describe('hf_hub snapshot pins', () => {
 
 // Measured on the first green run, then pinned (test plan T31): each path ask
 // is one reconcile probe, and a warm read makes no download. cat's own stat
-// serves the routing probe's answer. Cross-mount cp skips routing's probe, so
+// and the cache door reuse the routing probe's answer. Cross-mount cp skips
+// routing's probe, so
 // only the cache door asks, and its stat re-checks the listing its path
 // resolves through, which fresh does once per command: one tree walk (Task
 // 1.3 makes it cheaper).
 const WARM: [string, number, number][] = [
-  ['cat /m/a.txt', 2, 0],
-  ['cat /m/a.txt | head -c 1', 2, 0],
+  ['cat /m/a.txt', 1, 0],
+  ['cat /m/a.txt | head -c 1', 1, 0],
   ['cp /m/a.txt /r/a.txt', 1, 1],
 ]
 

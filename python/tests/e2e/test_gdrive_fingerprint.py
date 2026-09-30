@@ -116,18 +116,16 @@ async def test_a_native_gdoc_under_fresh_renders_once_until_it_changes():
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("path,listings", [("file.txt", 2),
-                                           ("a/b/c/file.txt", 8)])
+@pytest.mark.parametrize("path,listings", [("file.txt", 1),
+                                           ("a/b/c/file.txt", 4)])
 async def test_a_warm_gdrive_read_costs_one_walk_per_probe(path, listings):
-    """Cost is the contract, and the gate's probes are the cost.
+    """Cost is the contract, and the routing probe is the cost.
 
-    A warm named operand is probed twice -- once at routing and once at the
-    gate -- and each probe stats with a fresh index, so each walks the
-    parent listings: one per level. The command's own stat of its operand
-    serves the routing probe's answer instead of walking the mount's
-    listings, which fresh would re-check. More means that stat reached the
-    backend again; fewer means a probe stopped running; zero downloads is
-    the other half.
+    A warm named operand is probed at routing, with a fresh index, so the
+    probe walks the parent listings: one per level. The command's own stat
+    and the gate both reuse that answer for the rest of the command instead
+    of asking again. More means one of them reached the backend again; zero
+    downloads is the other half.
     """
     fake = FakeGDrive()
     fake.add_file(path, b"v1")

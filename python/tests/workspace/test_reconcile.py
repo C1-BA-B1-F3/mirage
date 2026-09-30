@@ -639,10 +639,10 @@ async def test_cleanup_batches_overlapping_folders_and_protects_nested_mounts(
 
 
 @pytest.mark.asyncio
-async def test_a_probe_remembers_the_backends_stat_until_it_finds_nothing():
-    # The command's own stat serves what the probe got from the backend; a
-    # later probe in the same command that finds the path gone must take that
-    # answer back, or the stat would still describe a deleted file.
+async def test_a_write_in_the_command_sends_the_next_probe_to_the_backend():
+    # The gate reuses what routing got from the backend; a write in the same
+    # command retires that answer, so the next probe asks again and sees a
+    # deletion the remembered stat would have hidden.
     resource = RAMVFS()
     resource._store.files["/f.txt"] = b"v1"
     ws = Workspace({"/data/": resource}, mode=MountMode.WRITE)
@@ -658,8 +658,99 @@ async def test_a_probe_remembers_the_backends_stat_until_it_finds_nothing():
             probed = mount.cache_manager.probed_stat(spec)
             assert probed is not None and probed.size == 2
             del resource._store.files["/f.txt"]
+            await mount.cache_manager.invalidate_after_write(
+                PathSpec.from_str_path("/data/g.txt"))
             await ws.cache.set("/data/f.txt", b"v1", fingerprint="fp1")
+            with pytest.raises(FileNotFoundError):
+                await rec.may_serve_cached(mount, "/data/f.txt")
+    finally:
+        await ws.close()
+
+
+class _CountingStat:
+
+    def __init__(self, fingerprint: str) -> None:
+        self.fingerprint = fingerprint
+        self.calls = 0
+
+    async def __call__(self, op, path, **kwargs):
+        self.calls += 1
+        return FileStat(name="f.txt",
+                        size=2,
+                        type=FileType.FILE,
+                        fingerprint=self.fingerprint)
+
+
+async def _gated(fingerprint: str = "fp1"):
+    resource = RAMVFS()
+    resource._store.files["/f.txt"] = b"v1"
+    ws = Workspace({"/data/": resource}, mode=MountMode.WRITE)
+    await ws.namespace.ensure_loaded()
+    mount = ws.namespace.mount_for("/data/f.txt")
+    mount.read = ReadSpec(policy=ReadPolicy.FRESH)
+    stat = _CountingStat(fingerprint)
+    mount.execute_op = stat
+    await ws.cache.set("/data/f.txt", b"v1", fingerprint="fp1")
+    return ws, mount, stat, Reconciler(ws.cache, ws.namespace)
+
+
+@pytest.mark.asyncio
+async def test_the_gate_reuses_the_routing_probes_answer():
+    # Routing and the gate share the command: the gate compares the cache
+    # against what routing got from the backend instead of asking again.
+    ws, mount, stat, rec = await _gated()
+    try:
+        async with command_scope():
             await rec.reconcile_read(mount, "/data/f.txt")
-            assert mount.cache_manager.probed_stat(spec) is None
+            assert await rec.may_serve_cached(mount, "/data/f.txt") is True
+        assert stat.calls == 1
+    finally:
+        await ws.close()
+
+
+@pytest.mark.asyncio
+async def test_the_gate_still_compares_a_reused_answer_with_the_cache():
+    # Reuse skips the round trip, never the verdict: a remembered token that
+    # does not match the cached copy still evicts it.
+    ws, mount, stat, rec = await _gated()
+    try:
+        async with command_scope():
+            mount.cache_manager.note_probed(
+                PathSpec.from_str_path("/data/f.txt"),
+                FileStat(name="f.txt",
+                         size=2,
+                         type=FileType.FILE,
+                         fingerprint="fp2"))
+            assert await rec.may_serve_cached(mount, "/data/f.txt") is False
+        assert not await ws.cache.exists("/data/f.txt")
+        assert stat.calls == 0
+    finally:
+        await ws.close()
+
+
+@pytest.mark.asyncio
+async def test_the_gate_asks_the_backend_after_a_write_in_the_command():
+    ws, mount, stat, rec = await _gated()
+    try:
+        async with command_scope():
+            await rec.reconcile_read(mount, "/data/f.txt")
+            await mount.cache_manager.invalidate_after_write(
+                PathSpec.from_str_path("/data/g.txt"))
+            await rec.may_serve_cached(mount, "/data/f.txt")
+        assert stat.calls == 2
+    finally:
+        await ws.close()
+
+
+@pytest.mark.asyncio
+async def test_the_gate_asks_the_backend_outside_a_command():
+    # FUSE and the op door belong to no command, so nothing a command's
+    # probe saw is reused for them.
+    ws, mount, stat, rec = await _gated()
+    try:
+        async with command_scope():
+            await rec.reconcile_read(mount, "/data/f.txt")
+        await rec.may_serve_cached(mount, "/data/f.txt")
+        assert stat.calls == 2
     finally:
         await ws.close()

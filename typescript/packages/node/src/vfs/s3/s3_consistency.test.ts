@@ -366,12 +366,13 @@ describe('S3 cache consistency (mocked)', () => {
     }
   })
 
-  it('a warm read costs a gate probe', async () => {
-    // A warm `cat` is two stats: the routing reconcile and the gate's probe;
-    // cat's own operand stat serves the routing probe's answer. One means the
-    // gate stopped probing a named warm operand, so this number is what
-    // separates the two. Counting starts after the warm-up, because a
-    // cold+warm total is the same either way.
+  it('a warm read costs one probe', async () => {
+    // A warm `cat` is one stat: the routing reconcile. cat's own operand stat
+    // and the gate both reuse its answer for the rest of the command, so a
+    // count cannot tell the gate on from off here; the gate's own reach -- the
+    // reads routing never sees -- is pinned by 'fresh revalidates a walk and a
+    // glob, not just a named operand'. Counting starts after the warm-up,
+    // because a cold+warm total is the same either way.
     const ws = new Workspace(
       { '/s3/': new S3VFS(makeConfig()) },
       { mode: MountMode.WRITE, read: FRESH },
@@ -380,7 +381,7 @@ describe('S3 cache consistency (mocked)', () => {
       await ws.shell('cat /s3/c.txt')
       mock.resetCalls()
       expect(DEC.decode((await ws.shell('cat /s3/c.txt')).stdout)).toBe('v1')
-      expect(mock.commandCalls(HeadObjectCommand)).toBe(2)
+      expect(mock.commandCalls(HeadObjectCommand)).toBe(1)
       expect(mock.commandCalls(GetObjectCommand)).toBe(0)
     } finally {
       await ws.close()

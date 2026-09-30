@@ -101,14 +101,14 @@ describe('github under read: fresh', () => {
   }
 
   // Each cell is [dir listings, whole-tree walks, blob downloads] for one line
-  // on a warm fresh mount: cat pays two probes (routing, then the cache
-  // door), as hf's table does, and its own stat of the operand serves the
-  // routing probe's answer. cp skips routing's probe, so its stat still
-  // resolves through the listing, which fresh re-checks once per command: on
-  // github that listing is the whole tree (Task 1.3 makes it cheaper).
+  // on a warm fresh mount: cat pays one probe, at routing, as hf's table
+  // does; its own stat and the cache door both reuse that answer. cp skips
+  // routing's probe, so the cache door asks, and cp's stat resolves through
+  // the listing, which fresh re-checks once per command: on github that
+  // listing is the whole tree (Task 1.3 makes it cheaper).
   const WARM: [string, [number, number, number]][] = [
-    [`cat ${PATH}`, [2, 0, 0]],
-    [`cat ${PATH} | head -c 1`, [2, 0, 0]],
+    [`cat ${PATH}`, [1, 0, 0]],
+    [`cat ${PATH} | head -c 1`, [1, 0, 0]],
     [`cp ${PATH} /r/a.txt`, [1, 1, 0]],
   ]
   for (const [line, cost] of WARM) {
@@ -172,8 +172,8 @@ describe('github under read: fresh', () => {
       expect(gh.counts()).toEqual([1, 1, 1])
       gh.log.length = 0
       expect(await out(w, `cat ${PATH}`)).toBe(NEW)
-      // Warm now: the two probes, and nothing else.
-      expect(gh.counts()).toEqual([2, 0, 0])
+      // Warm now: the routing probe, and nothing else.
+      expect(gh.counts()).toEqual([1, 0, 0])
     } finally {
       await w.close()
     }
@@ -403,10 +403,10 @@ describe('github cannot-see versus gone', () => {
       gh.log.length = 0
       expect(await out(w, `cat ${PATH}`)).toBe(OLD)
       expect(kept(w)).toBe(true)
-      // One listing of docs/ per probe, each cut short, so each defers to one
-      // walk of the whole tree, which finds the file; cat's own stat serves
-      // the routing probe's answer.
-      expect(gh.counts()).toEqual([2, 2, 0])
+      // The routing probe's listing of docs/ is cut short, so it defers to one
+      // walk of the whole tree, which finds the file; cat's own stat and the
+      // cache door reuse its answer.
+      expect(gh.counts()).toEqual([1, 1, 0])
     } finally {
       await w.close()
     }
@@ -425,10 +425,10 @@ describe('github cannot-see versus gone', () => {
       expect(await out(w, `cat ${PATH}`)).toBe(OLD)
       gh.log.length = 0
       expect(await out(w, `cat ${PATH}`)).toBe(OLD)
-      // One listing of docs/ per probe; cat's own stat serves the routing
-      // probe's answer, so the truncated tree is never walked folder by
-      // folder, which would reach docs/ by its tree sha.
-      expect(gh.counts()).toEqual([2, 0, 0])
+      // One listing of docs/, by the routing probe; cat's own stat and the
+      // cache door reuse its answer, so the truncated tree is never walked
+      // folder by folder, which would reach docs/ by its sha.
+      expect(gh.counts()).toEqual([1, 0, 0])
       expect(gh.count('sha_dir')).toBe(0)
     } finally {
       await w.close()

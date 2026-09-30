@@ -95,14 +95,14 @@ async def test_a_read_leaves_its_sha_on_the_cache_entry(prefix):
 
 
 # Each cell is (dir listings, whole-tree walks, blob downloads) for one line
-# on a warm fresh mount. cat pays two probes (routing, then the cache door),
-# as hf's table does, and its own stat of the operand serves the routing
-# probe's answer. cp skips routing's probe, so its stat still resolves
-# through the listing, which fresh re-checks once per command: on github
-# that listing is the whole tree (Task 1.3 makes it cheaper).
+# on a warm fresh mount. cat pays one probe, at routing, as hf's table does;
+# its own stat and the cache door both reuse that answer. cp skips routing's
+# probe, so the cache door asks, and cp's stat resolves through the listing,
+# which fresh re-checks once per command: on github that listing is the
+# whole tree (Task 1.3 makes it cheaper).
 WARM = [
-    ("cat /gh/docs/a.txt", (2, 0, 0)),
-    ("cat /gh/docs/a.txt | head -c 1", (2, 0, 0)),
+    ("cat /gh/docs/a.txt", (1, 0, 0)),
+    ("cat /gh/docs/a.txt | head -c 1", (1, 0, 0)),
     ("cp /gh/docs/a.txt /r/a.txt", (1, 1, 0)),
 ]
 
@@ -170,8 +170,8 @@ async def test_a_changed_file_is_refetched_once_then_served_warm():
             assert hub.counts() == (1, 1, 1)
             hub.log.clear()
             assert await _out(ws, f"cat {PATH}") == NEW
-            # Warm now: the two probes, and nothing else.
-            assert hub.counts() == (2, 0, 0)
+            # Warm now: the routing probe, and nothing else.
+            assert hub.counts() == (1, 0, 0)
         finally:
             await ws.close()
 
@@ -430,10 +430,10 @@ async def test_a_truncated_parent_listing_is_not_absence():
             hub.log.clear()
             assert await _out(ws, f"cat {PATH}") == OLD
             assert _kept(ws)
-            # One listing of docs/ per probe, each cut short, so each defers
+            # The routing probe's listing of docs/ is cut short, so it defers
             # to one walk of the whole tree, which finds the file; cat's own
-            # stat serves the routing probe's answer.
-            assert hub.counts() == (2, 2, 0)
+            # stat and the cache door reuse its answer.
+            assert hub.counts() == (1, 1, 0)
         finally:
             await ws.close()
 
@@ -457,10 +457,10 @@ async def test_a_truncated_repository_probes_one_directory():
             assert await _out(ws, f"cat {PATH}") == OLD
             hub.log.clear()
             assert await _out(ws, f"cat {PATH}") == OLD
-            # One listing of docs/ per probe; cat's own stat serves the
-            # routing probe's answer, so the truncated tree is never walked
-            # folder by folder, which would reach docs/ by its tree sha.
-            assert hub.counts() == (2, 0, 0)
+            # One listing of docs/, by the routing probe; cat's own stat and
+            # the cache door reuse its answer, so the truncated tree is never
+            # walked folder by folder, which would reach docs/ by its sha.
+            assert hub.counts() == (1, 0, 0)
             assert hub.count("sha_dir") == 0
         finally:
             await ws.close()

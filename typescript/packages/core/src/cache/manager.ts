@@ -178,18 +178,14 @@ export class CacheManager {
   /**
    * Remember what the freshness probe got from the backend for `path`.
    *
-   * Only the reconciler's probe calls this, and it always asks the backend,
-   * so a stat served from an index row -- which may carry no content token --
-   * never lands here. `null` (the backend reports the path gone) forgets an
-   * earlier answer.
+   * Only the reconciler's probe calls this, and only with an answer it got
+   * from the backend, so a stat served from an index row -- which may carry
+   * no content token -- never lands here. A path the backend reports gone
+   * records nothing: the probe asks the backend only when no answer is
+   * servable, so there is nothing left to take back.
    */
-  noteProbed(path: PathSpec, stat: FileStat | null): void {
-    const key = this.cacheKey(path)
-    if (stat === null) {
-      this.probed.delete(key)
-      return
-    }
-    this.probed.set(key, [tick(), this.readGeneration, stat])
+  noteProbed(path: PathSpec, stat: FileStat): void {
+    this.probed.set(this.cacheKey(path), [tick(), this.readGeneration, stat])
   }
 
   /**

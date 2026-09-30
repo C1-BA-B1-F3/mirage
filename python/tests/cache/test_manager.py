@@ -604,16 +604,6 @@ async def test_inside_a_command_the_window_does_not_apply(clock):
         assert manager.listing_trusted("/data") is True
 
 
-@pytest.mark.asyncio
-async def test_a_clock_that_ran_backwards_does_not_extend_the_window(clock):
-    # Elapsed time below zero is no evidence the listing is recent.
-    cache, index = _stores()
-    manager = CacheManager(cache, index, "/data/", True)
-    await manager.scope_index(index).set_dir("/data", [])
-    clock.now -= 5
-    assert manager.listing_trusted("/data") is False
-
-
 def _probed() -> FileStat:
     return FileStat(name="h.txt", size=4, type=FileType.FILE)
 
@@ -661,11 +651,10 @@ async def test_a_write_in_the_command_drops_its_probed_stats(invalidate):
 
 
 @pytest.mark.asyncio
-async def test_a_probe_that_found_nothing_forgets_the_earlier_answer():
+async def test_a_clock_that_ran_backwards_does_not_extend_the_window(clock):
+    # Elapsed time below zero is no evidence the listing is recent.
     cache, index = _stores()
     manager = CacheManager(cache, index, "/data/", True)
-    path = PathSpec.from_str_path("/data/arch/h.txt")
-    async with command_scope():
-        manager.note_probed(path, _probed())
-        manager.note_probed(path, None)
-        assert manager.probed_stat(path) is None
+    await manager.scope_index(index).set_dir("/data", [])
+    clock.now -= 5
+    assert manager.listing_trusted("/data") is False

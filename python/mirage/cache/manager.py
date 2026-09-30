@@ -185,23 +185,21 @@ class CacheManager:
             return stamp > started
         return 0 <= _now() - at < LISTING_TRUST_WINDOW
 
-    def note_probed(self, path: PathSpec, stat: FileStat | None) -> None:
+    def note_probed(self, path: PathSpec, stat: FileStat) -> None:
         """Remember what the freshness probe got from the backend for ``path``.
 
-        Only the reconciler's probe calls this, and it always asks the
-        backend, so a stat served from an index row -- which may carry no
-        content token -- never lands here. ``None`` (the backend reports the
-        path gone) forgets an earlier answer.
+        Only the reconciler's probe calls this, and only with an answer it
+        got from the backend, so a stat served from an index row -- which
+        may carry no content token -- never lands here. A path the backend
+        reports gone records nothing: the probe asks the backend only when
+        no answer is servable, so there is nothing left to take back.
 
         Args:
             path (PathSpec): the probed path; only ``virtual`` is read.
-            stat (FileStat | None): the backend's answer, or None.
+            stat (FileStat): the backend's answer.
         """
-        key = self._cache_key(path)
-        if stat is None:
-            self._probed.pop(key, None)
-            return
-        self._probed[key] = (tick(), self._read_generation, stat)
+        self._probed[self._cache_key(path)] = (tick(), self._read_generation,
+                                               stat)
 
     def probed_stat(self, path: PathSpec) -> FileStat | None:
         """The backend's answer for ``path`` from this command's probe.

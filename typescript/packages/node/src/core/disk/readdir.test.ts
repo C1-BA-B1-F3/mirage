@@ -59,6 +59,18 @@ describe('core/disk/readdir', () => {
     expect(await readdir(accessor, spec('/sub'))).toEqual(['/sub/x'])
   })
 
+  it('preserves a cached subdirectory when listing its parent', async () => {
+    await mkdir(join(root, 'sub'))
+    await writeFile(join(root, 'sub', 'child'), 'data')
+    await writeFile(join(root, 'file.txt'), 'data')
+    const index = new RAMIndexCacheStore({ ttl: 600 })
+    const children = await readdir(accessor, spec('/sub'), index)
+    await readdir(accessor, spec('/'), index)
+    expect((await index.listDir('/sub')).entries).toEqual(children)
+    expect((await index.get('/sub')).entry?.resourceType).toBe('folder')
+    expect((await index.get('/file.txt')).entry?.resourceType).toBe('file')
+  })
+
   it('throws ENOENT on a missing path', async () => {
     await expect(readdir(accessor, spec('/missing'))).rejects.toMatchObject({ code: 'ENOENT' })
   })

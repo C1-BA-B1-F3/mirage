@@ -15,7 +15,8 @@
 from functools import partial
 
 from mirage.accessor.ram import RAMAccessor
-from mirage.cache.index import NULL_INDEX, IndexCacheStore, IndexEntry
+from mirage.cache.index import (NULL_INDEX, IndexCacheStore, IndexEntry,
+                                ResourceType)
 from mirage.types import PathSpec
 from mirage.utils.errors import readdir_error
 from mirage.utils.key_prefix import mount_prefix_of
@@ -62,6 +63,8 @@ async def readdir(accessor: RAMAccessor,
     index_entries = [(e.rsplit("/", 1)[-1],
                       IndexEntry(id=e,
                                  name=e.rsplit("/", 1)[-1],
-                                 resource_type="file")) for e in entries]
+                                 resource_type=ResourceType.FILE
+                                 if e in store.files else ResourceType.FOLDER))
+                     for e in entries]
     await index.set_dir(virtual_key, index_entries)
     return virtual_entries

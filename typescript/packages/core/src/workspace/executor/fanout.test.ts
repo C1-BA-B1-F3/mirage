@@ -901,9 +901,12 @@ it('keeps the du rows when an empty row refuses stat', async () => {
 })
 
 it('keeps the du rows when a mount root refuses stat', async () => {
+  const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
   const [out, code] = await duAcross('3\t/f\n3\t/\n', '/data')
   expect(out).toBe('4\t/data\n7\t/\n')
   expect(code).toBe(0)
+  expect(warn).toHaveBeenCalledWith(expect.stringContaining('du: mount root /data refused stat'))
+  warn.mockRestore()
 })
 
 it('keeps every producing mount when the last operand is refused', async () => {

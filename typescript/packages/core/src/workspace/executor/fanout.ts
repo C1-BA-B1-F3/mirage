@@ -96,6 +96,7 @@ async function mountDirs(
       stat = await statPath(root)
     } catch (err) {
       if (!isFsError(err)) throw err
+      console.warn(`du: mount root ${root} refused stat: ${String(err)}`)
       continue
     }
     if (stat !== null && stat.type === FileType.DIRECTORY) out.push(root)

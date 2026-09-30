@@ -413,12 +413,13 @@ def merge(staged: dict[str, tuple[str, str | None]], unstaged: dict[str, str],
 
 
 async def collect(
-    dispatch: DispatchFn,
-    stat_path: StatPath,
-    repo: BaseRepo,
-    location: RepoLocation,
-    mode: str,
-    links: LinkView | None = None
+        dispatch: DispatchFn,
+        stat_path: StatPath,
+        repo: BaseRepo,
+        location: RepoLocation,
+        mode: str,
+        links: LinkView | None = None,
+        show_ignored: bool = False
 ) -> tuple[list[StatusEntry], IndexState, bool]:
     """Everything ``status`` reports, in one pass over the three sources.
 
@@ -437,9 +438,11 @@ async def collect(
         path.decode("utf-8", errors="replace")
         for path in (set(state.entries) | set(state.conflicts))
     }
-    found = await scan(dispatch, stat_path, location, tracked, mode, links)
+    found = await scan(dispatch, stat_path, location, tracked, mode, links,
+                       show_ignored)
     unstaged = await work_changes(dispatch, location.worktree, state.entries,
                                   found)
     rows = merge(staged, unstaged, conflict_codes(state.conflicts),
                  found.untracked)
+    rows.extend(StatusEntry(path, "!", "!") for path in sorted(found.ignored))
     return rows, state, no_commits

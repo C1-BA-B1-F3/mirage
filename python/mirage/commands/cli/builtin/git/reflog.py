@@ -12,9 +12,20 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import asyncio
 import posixpath
 
+from mirage.commands.cli.builtin.git.constants import HEAD
+from mirage.commands.cli.builtin.git.errors import GitError
 from mirage.commands.cli.builtin.git.io import read_optional, write_file
+from mirage.commands.cli.builtin.git.objects import abbrev_for
+from mirage.commands.cli.builtin.git.revparse import resolve_commit
+from mirage.commands.cli.builtin.git.session import opened
+from mirage.commands.cli.builtin.git.types import RepoLocation
+from mirage.commands.cli.builtin.git.util import fatal
+from mirage.commands.cli.types import CLIDoors, CLIInvocation
+from mirage.commands.spec.flag_view import FlagView
+from mirage.io.types import ByteSource, IOResult
 from mirage.runtime.types import DispatchFn
 
 LOGS_DIR = "logs"
@@ -92,3 +103,74 @@ async def record(dispatch: DispatchFn, gitdir: str, commondir: str,
     await append(dispatch, gitdir, HEAD_LOG, line)
     if ref is not None:
         await append(dispatch, commondir, posixpath.join(LOGS_DIR, ref), line)
+
+
+async def _log_of(dispatch: DispatchFn, location: RepoLocation,
+                  ref: str) -> bytes | None:
+    """A ref's reflog, from the git directory that owns it.
+
+    Args:
+        dispatch (DispatchFn): workspace op dispatcher.
+        location (RepoLocation): the discovered repository.
+        ref (str): the ref name, ``HEAD`` or a full ``refs/`` name.
+    """
+    root = location.gitdir if ref == HEAD else location.commondir
+    return await read_optional(dispatch, posixpath.join(root, LOGS_DIR, ref))
+
+
+async def _named_log(dispatch: DispatchFn, location: RepoLocation,
+                     revision: str) -> tuple[str, bytes | None]:
+    """The log a reflog walk reads, and the name its rows print.
+
+    As git's ``read_complete_reflog`` then ``dwim_log``: the name as
+    typed, then under ``refs/`` and ``refs/heads/``, keep the spelling;
+    only a log found by the full rev-parse rules (a tag, a remote) is
+    printed by its full name (git 2.47.3 and 2.50.1).
+
+    Args:
+        dispatch (DispatchFn): workspace op dispatcher.
+        location (RepoLocation): the discovered repository.
+        revision (str): the ref as typed.
+    """
+    for ref in (revision, f"refs/{revision}", f"refs/heads/{revision}"):
+        data = await _log_of(dispatch, location, ref)
+        if data:
+            return revision, data
+    for ref in (f"refs/tags/{revision}", f"refs/remotes/{revision}",
+                f"refs/remotes/{revision}/HEAD"):
+        data = await _log_of(dispatch, location, ref)
+        if data:
+            return ref, data
+    return revision, None
+
+
+async def reflog(
+        inv: CLIInvocation[None]) -> tuple[ByteSource | None, IOResult]:
+    """Read a ref's log newest first through the dispatcher.
+
+    Args:
+        inv (CLIInvocation[None]): optional show verb, ref and entry limit.
+    """
+    fl = FlagView(inv.flags)
+    try:
+        doors = inv.doors or CLIDoors()
+        repo, location = await opened(fl, doors)
+        assert doors.dispatch is not None
+        texts = inv.texts[1:] if inv.texts[:1] == ("show", ) else inv.texts
+        revision = texts[0] if texts else HEAD
+        await asyncio.to_thread(resolve_commit, repo, revision)
+        name, data = await _named_log(doors.dispatch, location, revision)
+        rows = list(reversed((data or b"").splitlines()))
+        limit = fl.as_int("max_count")
+        if limit is not None and limit >= 0:
+            rows = rows[:limit]
+        width = abbrev_for(repo)
+        out = []
+        for index, row in enumerate(rows):
+            record, _, message = row.partition(b"\t")
+            oid = record.split(b" ")[1]
+            out.append(f"{oid.decode()[:width]} {name}@{{{index}}}: "
+                       f"{message.decode('utf-8', 'replace')}\n")
+        return "".join(out).encode(), IOResult()
+    except GitError as exc:
+        return fatal(exc)

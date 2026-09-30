@@ -18,7 +18,8 @@ import { IOResult } from '../../../../io/types.ts'
 import type { CommandFnResult } from '../../../config.ts'
 import { FlagView } from '../../../spec/flag_view.ts'
 import type { CLIInvocation } from '../../types.ts'
-import { headCommit } from './branch.ts'
+import { branchUpstream, headCommit, remoteBranch, setUpTracking, trackMode } from './branch.ts'
+import { trackingLines } from './render.ts'
 import { ADDED, DELETED, headEntries, MODIFIED, workChanges } from './changes.ts'
 import {
   BadStartPointError,
@@ -70,13 +71,13 @@ const ENC = new TextEncoder()
 
 // What checkout records in the reflog. There is no committer here, only a move
 // of HEAD, so the same stated identity commit uses is reused.
-const IDENTITY = 'mirage <mirage@localhost>'
+export const IDENTITY = 'mirage <mirage@localhost>'
 
 // git's word-for-word warning when HEAD leaves a branch, kept verbatim. It is
 // the only thing telling a caller that commits made from here become unreachable
 // once HEAD moves again, and an agent that has read this text before should not
 // have to read a paraphrase of it.
-const DETACHED_ADVICE = `You are in 'detached HEAD' state. You can look around, make experimental
+export const DETACHED_ADVICE = `You are in 'detached HEAD' state. You can look around, make experimental
 changes and commit them, and you can discard any commits you make in this
 state without impacting any branches by switching back to a branch.
 
@@ -258,7 +259,7 @@ function lostDirectories(
  * about has already been refused by the caller if anything uncommitted stands on
  * it, so the tree diff is the whole decision here.
  */
-async function switchTo(
+export async function switchTo(
   repo: Repo,
   dispatch: Dispatch,
   statPath: StatPath,
@@ -519,12 +520,30 @@ export async function moveHead(
  * Refuses rather than overwriting when the switch would destroy work that is not
  * committed; see `moveHead`, which does the moving for `switch` as well.
  */
+/**
+ * What a switch onto a branch prints about its upstream, on stdout. Read after
+ * the move, so a branch created by the switch has its ref to count from.
+ */
+export async function trackingReport(repo: Repo, branch: string): Promise<string> {
+  const upstream = await branchUpstream(
+    repo,
+    { branch, ref: `${BRANCH_PREFIX}${branch}`, commit: null },
+    false,
+  )
+  return upstream === null
+    ? ''
+    : trackingLines(upstream)
+        .map((line) => `${line}\n`)
+        .join('')
+}
+
 export async function checkout(inv: CLIInvocation): Promise<CommandFnResult> {
   const doors = inv.doors ?? {}
   const texts = [...inv.texts]
   const fl = new FlagView(inv.flags)
   let carried: string
   let note: string
+  let warnings = ''
   try {
     const dispatch = doors.dispatch
     const statPath = doors.statPath
@@ -535,16 +554,20 @@ export async function checkout(inv: CLIInvocation): Promise<CommandFnResult> {
     const target = texts[0]
     if (target === undefined) throw new UnknownPathspecError('')
     const repo = await opened(fl, doors, true)
+    const mode = await trackMode(repo)
     const head = await readHead(dispatch, repo.location.gitdir)
-    const creating = fl.asBool('b')
+    let creating = fl.asBool('b')
     const ref = `${BRANCH_PREFIX}${target}`
     const known = await loadRefs(dispatch, repo.location.gitdir, repo.location.commondir)
     if (creating && known.has(ref)) throw new BranchExistsError(target)
+    let guessed: string | null = null
     if (!creating && !known.has(ref) && target !== head.branch) {
       try {
         await resolveCommit(repo, target)
       } catch {
-        throw new UnknownPathspecError(target)
+        guessed = await remoteBranch(repo, target)
+        if (guessed === null) throw new UnknownPathspecError(target)
+        creating = true
       }
     }
     if (!creating && target === head.branch) {
@@ -553,13 +576,18 @@ export async function checkout(inv: CLIInvocation): Promise<CommandFnResult> {
       // answering that there is nothing to do, so a caller cannot read
       // "Already on" as proof the repository is in a state it can build on.
       refuseUnresolved(await readIndex(repo, dispatch))
-      return [null, new IOResult({ stderr: ENC.encode(`Already on '${target}'\n`) })]
+      return [
+        null,
+        new IOResult({
+          stderr: fl.asBool('quiet') ? new Uint8Array() : ENC.encode(`Already on '${target}'\n`),
+        }),
+      ]
     }
     // `checkout -b <new> [<start>]` branches from the start point when one is
     // given, HEAD otherwise. Forcing HEAD here put the new branch on the
     // current commit and dropped the operand without a word, so every commit
     // after it landed on the wrong history.
-    const startPoint = creating ? texts[1] : undefined
+    const startPoint = guessed ?? (creating ? texts[1] : undefined)
     let oid: string
     if (startPoint !== undefined) {
       try {
@@ -594,13 +622,21 @@ export async function checkout(inv: CLIInvocation): Promise<CommandFnResult> {
       .sort(([a], [b]) => compareCodePoints(a, b))
       .map(([path, letter]) => `${letter}\t${path}\n`)
       .join('')
+    let warning = ''
+    if (creating) {
+      const [tracking, told] = await setUpTracking(repo, target, startPoint ?? null, mode, head)
+      carried += tracking
+      warning = told
+    }
     // git writes the warning above everything it says about the move, because
     // the directory it could not remove is a fact about the working tree
     // rather than about where HEAD went.
-    note = moved.warnings + (await previousPosition(repo, head))
+    warnings = moved.warnings + warning
+    note = moved.warnings + (await previousPosition(repo, head)) + warning
     if (attached) {
       const verb = creating ? 'Switched to a new branch' : 'Switched to branch'
       note += `${verb} '${target}'\n`
+      if (!creating) carried += await trackingReport(repo, target)
     } else {
       const { commit } = await git.readCommit({ ...repoArgs(repo), oid })
       const subject = commit.message.split('\n')[0] ?? ''
@@ -612,5 +648,6 @@ export async function checkout(inv: CLIInvocation): Promise<CommandFnResult> {
     if (err instanceof GitError) return fatal(err)
     throw err
   }
+  if (fl.asBool('quiet')) return [null, new IOResult({ stderr: ENC.encode(warnings) })]
   return [ENC.encode(carried), new IOResult({ stderr: ENC.encode(note) })]
 }

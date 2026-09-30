@@ -14,6 +14,8 @@
 
 from dataclasses import replace
 
+import pytest
+
 from mirage.commands.cli import CLISpec, walk
 from mirage.commands.cli.walk import (env_names, find_child, find_node,
                                       invoked_env_names, node_help, owns_argv,
@@ -568,3 +570,20 @@ def test_git_root_refuses_double_dash_like_an_unknown_option():
     assert walk("git", spec, ["remote", "--", "status"]).leaf is leaf
     assert walk("git", replace(spec, usage_style=UsageStyle.ARGPARSE),
                 ["--", "status"]).leaf is leaf
+
+
+@pytest.mark.parametrize("argv,expected", [
+    (["-C", "/repo", "-C", "docs"], "/repo/docs"),
+    (["-C", "/repo", "-C", "/other"], "/other"),
+    (["-C", "a", "-C", "../b"], "/work/b"),
+    (["-C", "", "-C", "docs"], "/work/docs"),
+    (["-C", "docs", "-C", ""], "/work/docs"),
+    ([], "/work"),
+])
+def test_an_operand_base_moves_like_a_chdir(argv, expected):
+    tree = CLISpec(name="git",
+                   operand_base="-C",
+                   options=(Option(short="-C", type="path", default="."), ),
+                   subcommands=(CLISpec(name="status", fn=_verb), ))
+    result = walk("git", tree, [*argv, "status"], cwd="/work")
+    assert result.group_flags["-C"] == expected

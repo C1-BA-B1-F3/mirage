@@ -15,6 +15,8 @@
 import re
 from collections.abc import Sequence
 
+from dulwich.config import ConfigFile
+
 from mirage.commands.cli.builtin.git.constants import HEAD
 from mirage.commands.cli.builtin.git.errors import (  # yapf: disable
     BadConfigValueError, GitError, UnrecognizedArgumentError)
@@ -36,6 +38,13 @@ INTEGER = re.compile(rb"[ \t\n\v\f\r]*([-+]?)"
                      rb"(0[xX][0-9a-fA-F]+|0[0-7]*|[1-9][0-9]*)([kKmMgG]?)")
 UNIT_SHIFTS = {b"": 0, b"k": 10, b"m": 20, b"g": 30}
 INT_BITS = 31
+VALUE_ESCAPES = {"\n": "\\n", "\t": "\\t", '"': '\\"', "\\": "\\\\"}
+COMMENT_STARTS = (";", "#")
+COMMENT_BYTES = (b";", b"#")
+QUOTED_HEADER = re.compile(
+    rb'\s*\[([A-Za-z0-9.-]+)\s+"((?:[^"\\\n]|\\.)*)"\s*\]')
+DOTTED_HEADER = re.compile(rb"\s*\[([A-Za-z0-9-]+)\.([^\]\s]*)\]")
+ESCAPED = re.compile(rb"\\(.)")
 
 
 def links_of(doors: CLIDoors) -> LinkView | None:
@@ -259,6 +268,125 @@ def git_bool(values: Sequence[bytes], key: str, default: bool) -> bool:
                 raise BadConfigValueError(value.decode(errors="replace"), key)
             answer = number != 0
     return answer
+
+
+def multivar(config: ConfigFile, section: tuple[bytes, ...],
+             name: bytes) -> list[bytes]:
+    """Every value of one variable, empty when it is not set.
+
+    Args:
+        config (ConfigFile): the parsed config.
+        section (tuple[bytes, ...]): section and subsection.
+        name (bytes): the variable.
+    """
+    try:
+        return list(config.get_multivar(section, name))
+    except KeyError:
+        return []
+
+
+def config_section(section: str, name: str,
+                   pairs: Sequence[tuple[str, str]]) -> str:
+    """One ``[section "name"]`` block the way git's config writer spells it.
+
+    The subsection escapes ``"`` and ``\\``; a value escapes those plus
+    newline and tab, and is quoted when it starts or ends with a space
+    or holds ``;`` or ``#``. A branch may be named ``a"b`` or ``a#b``,
+    and either one written raw reads back as a different name (pinned
+    against git 2.50.1).
+
+    Args:
+        section (str): the section, e.g. ``branch``.
+        name (str): the subsection, e.g. the branch name.
+        pairs (Sequence[tuple[str, str]]): variables and values, in order.
+    """
+    quoted = name.replace("\\", "\\\\").replace('"', '\\"')
+    text = f'[{section} "{quoted}"]\n'
+    for key, value in pairs:
+        body = "".join(VALUE_ESCAPES.get(ch, ch) for ch in value)
+        if value.startswith(" ") or value.endswith(" ") or any(
+                ch in value for ch in COMMENT_STARTS):
+            body = f'"{body}"'
+        text += f"\t{key} = {body}\n"
+    return text
+
+
+def without_section(data: bytes, section: str, name: str) -> bytes:
+    """A config's text with every block for ``section.name`` taken out.
+
+    ``git branch -d`` drops the deleted branch's settings this way, so a
+    branch made again under the same name starts with no upstream
+    rather than with two. A header names the block the way git's
+    ``section_name_match`` reads it, spelled exactly: ``[branch "x"]``
+    with its escapes, or the older ``[branch.x]``. ``[Branch "x"]`` and
+    ``[branch.X]`` are left, as git leaves them, and a line opening with
+    ``[`` ends a block (pinned against git 2.50.1).
+
+    A value continued onto the next line by a trailing backslash is
+    followed, so a continuation that opens with ``[`` is still part of
+    the block. git 2.50.1 reads it as a header there and leaves the
+    rest of the block behind, which it then refuses as a bad config
+    line; mirage keeps the file readable instead.
+
+    Args:
+        data (bytes): the config file's contents.
+        section (str): the section as git writes it, e.g. ``branch``.
+        name (str): the subsection, e.g. the branch name.
+    """
+    kept: list[bytes] = []
+    dropping = continued = inside = False
+    want = (section.encode(), name.encode())
+    for line in data.splitlines(keepends=True):
+        value = line
+        if not continued:
+            rest = line
+            if line.lstrip().startswith(b"["):
+                quoted = QUOTED_HEADER.match(line)
+                dotted = DOTTED_HEADER.match(line)
+                dropping = (quoted is not None and
+                            (quoted.group(1),
+                             ESCAPED.sub(rb"\1", quoted.group(2)))
+                            == want) or (dotted is not None
+                                         and dotted.groups() == want)
+                header = quoted or dotted
+                rest = line[header.end() if header else line.find(b"]") + 1:]
+            _, equals, value = rest.partition(b"=")
+            if not equals or rest.lstrip().startswith(COMMENT_BYTES):
+                value = b""
+            inside = False
+        continued, inside = _continues(value, inside)
+        if not dropping:
+            kept.append(line)
+    return b"".join(kept)
+
+
+def _continues(value: bytes, inside: bool) -> tuple[bool, bool]:
+    """Whether a config value runs onto the next line, as git parses one.
+
+    A backslash ending the line continues the value unless it is itself
+    escaped or sits in a comment; a comment starts at ``;`` or ``#``
+    outside double quotes. Returns whether the value continues and
+    whether the next line starts inside quotes.
+
+    Args:
+        value (bytes): the rest of the line, from the value on.
+        inside (bool): whether the line starts inside double quotes.
+    """
+    body = value.removesuffix(b"\n").removesuffix(b"\r")
+    at = 0
+    while at < len(body):
+        ch = body[at:at + 1]
+        if ch == b"\\":
+            if at == len(body) - 1:
+                return True, inside
+            at += 2
+            continue
+        if ch == b'"':
+            inside = not inside
+        elif not inside and ch in COMMENT_BYTES:
+            break
+        at += 1
+    return False, False
 
 
 def _integer(value: bytes) -> int | None:

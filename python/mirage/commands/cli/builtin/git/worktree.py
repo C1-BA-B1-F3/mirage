@@ -75,9 +75,14 @@ class Scanner:
             outside a workspace.
     """
 
-    def __init__(self, dispatch: DispatchFn, stat_path: StatPath,
-                 worktree: str, tracked: set[str], mode: str,
-                 links: LinkView | None) -> None:
+    def __init__(self,
+                 dispatch: DispatchFn,
+                 stat_path: StatPath,
+                 worktree: str,
+                 tracked: set[str],
+                 mode: str,
+                 links: LinkView | None,
+                 show_ignored: bool = False) -> None:
         self._dispatch = dispatch
         self._stat_path = stat_path
         self._worktree = worktree
@@ -85,6 +90,7 @@ class Scanner:
         self._directories = tracked_directories(tracked)
         self._mode = mode
         self._links = links
+        self._show_ignored = show_ignored
         self.found = WorkTree()
 
     def _absolute(self, relative: str) -> str:
@@ -117,7 +123,10 @@ class Scanner:
                 return link
         return await self._stat_path(absolute)
 
-    async def _holds_a_file(self, relative: str, ignores: IgnoreStack) -> bool:
+    async def _holds_a_file(self,
+                            relative: str,
+                            ignores: IgnoreStack,
+                            include_ignored: bool = False) -> bool:
         """Whether a directory holds anything git would call untracked.
 
         git lists a directory only when something inside it would be
@@ -139,11 +148,11 @@ class Scanner:
             if info is None:
                 continue
             directory = info.type is FileType.DIRECTORY
-            if rules.is_ignored(child, directory):
+            if not include_ignored and rules.is_ignored(child, directory):
                 continue
             if not directory:
                 return True
-            if await self._holds_a_file(child, rules):
+            if await self._holds_a_file(child, rules, include_ignored):
                 return True
         return False
 
@@ -178,11 +187,24 @@ class Scanner:
         """
         holds_tracked = relative in self._directories
         if ignored:
-            if holds_tracked:
+            if holds_tracked or (self._show_ignored
+                                 and self._mode == UNTRACKED_ALL):
                 await self.walk(relative, True, ignores)
+            elif (self._show_ignored and self._mode != UNTRACKED_NO
+                  and await self._holds_a_file(relative, ignores, True)):
+                self.found.ignored.append(f"{relative}/")
             return
         if holds_tracked or self._mode == UNTRACKED_ALL:
             await self.walk(relative, False, ignores)
+            return
+        if self._show_ignored and self._mode == UNTRACKED_NORMAL:
+            first = len(self.found.untracked)
+            ignored_first = len(self.found.ignored)
+            await self.walk(relative, False, ignores)
+            if len(self.found.untracked) > first:
+                self.found.untracked[first:] = [f"{relative}/"]
+            elif len(self.found.ignored) > ignored_first:
+                self.found.ignored[ignored_first:] = [f"{relative}/"]
             return
         if self._mode == UNTRACKED_NORMAL and await self._holds_a_file(
                 relative, ignores):
@@ -217,6 +239,8 @@ class Scanner:
                 continue
             if not ignored and not rules.is_ignored(child, False):
                 self.found.untracked.append(child)
+            elif self._show_ignored:
+                self.found.ignored.append(child)
 
 
 async def scan(dispatch: DispatchFn,
@@ -224,7 +248,8 @@ async def scan(dispatch: DispatchFn,
                location: RepoLocation,
                tracked: set[str],
                mode: str,
-               links: LinkView | None = None) -> WorkTree:
+               links: LinkView | None = None,
+               show_ignored: bool = False) -> WorkTree:
     """Walk a working tree once, for both halves of a status report.
 
     One walk answers two questions, which is why they are not asked
@@ -247,6 +272,6 @@ async def scan(dispatch: DispatchFn,
     ignores = await load_ignores(dispatch, location.commondir,
                                  location.worktree)
     scanner = Scanner(dispatch, stat_path, location.worktree, tracked, mode,
-                      links)
+                      links, show_ignored)
     await scanner.walk("", False, ignores)
     return scanner.found

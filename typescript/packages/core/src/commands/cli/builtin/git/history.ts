@@ -25,6 +25,8 @@ import { touches } from './pickaxe.ts'
 import { loadRefs, SYMREF_PREFIX } from './refs.ts'
 import { commitFacts, repoArgs, type Repo } from './repo.ts'
 import { compareCodePoints } from '../../../../utils/sort.ts'
+import { compilePosixRegex, POSIX_CLASSES, translateClasses } from '../../../../utils/posix.ts'
+import { mappedIdentity, type MailmapEntry } from './mailmap.ts'
 
 const BRANCH_PREFIX = 'refs/heads/'
 // How many hidden commits a limited walk takes past the point where only
@@ -32,6 +34,18 @@ const BRANCH_PREFIX = 'refs/heads/'
 const SLOP = 5
 const TAG_PREFIX = 'refs/tags/'
 const REMOTE_PREFIX = 'refs/remotes/'
+const BASIC_REGEXP = 'basic_regexp'
+const EXTENDED_REGEXP = 'extended_regexp'
+const FIXED_STRINGS = 'fixed_strings'
+const PERL_REGEXP = 'perl_regexp'
+// The pattern syntax switches; the last one on the line wins.
+const PATTERN_SYNTAXES = [BASIC_REGEXP, EXTENDED_REGEXP, FIXED_STRINGS, PERL_REGEXP]
+const COMMAND_LINE_ORIGIN = 'command line'
+const HEADER_ORIGIN = 'header'
+// The punctuation a `u` regex still accepts after a backslash.
+const U_SYNTAX = '^$\\.*+?()[]{}|/'
+// PCRE's subject anchors; git matches a line at a time, so `\Z` is `\z`.
+const PERL_ANCHORS: Readonly<Record<string, string>> = { A: '^', z: '$', Z: '$' }
 
 /** The parsed shape of a `git log` invocation. */
 export interface LogFlags {
@@ -39,6 +53,15 @@ export interface LogFlags {
   readonly authors: readonly RegExp[]
   /** `--grep` patterns, any of which may match a line of the message. */
   readonly greps: readonly RegExp[]
+  /** `--committer` patterns, any of which may match. */
+  readonly committers: readonly RegExp[]
+  /** The worktree `.mailmap`, which `%aN`-style placeholders always read. */
+  readonly mailmap: readonly MailmapEntry[]
+  /**
+   * `log.mailmap` or `--[no-]mailmap`: map the header identities and what
+   * `--author` and `--committer` match.
+   */
+  readonly useMailmap: boolean
   /** `-i`, which folds case for `--grep`, `--author` and `-S` alike. */
   readonly ignoreCase: boolean
   readonly minParents: number | null
@@ -132,6 +155,96 @@ export function prettyFormat(fl: FlagView): LogFormat {
   return pretty
 }
 
+/**
+ * One `--grep`, `--author` or `--committer` pattern, compiled.
+ *
+ * A refusal names where the pattern came from and the pattern itself, as
+ * git's `compile_regexp_failed` words it; the reason after that is glibc's
+ * for a basic expression and the host engine's otherwise.
+ */
+function pattern(value: string, syntax: string, ignoreCase: boolean, origin: string): RegExp {
+  try {
+    if (syntax === PERL_REGEXP) return perlRegex(value, ignoreCase)
+    const fold = ignoreCase ? 'i' : ''
+    if (syntax === FIXED_STRINGS)
+      return compilePosixRegex(value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), fold)
+    if (syntax === EXTENDED_REGEXP) return compilePosixRegex(translateClasses(value), fold)
+    return searchBre(value, ignoreCase)
+  } catch (err) {
+    if (err instanceof BreError || err instanceof SyntaxError)
+      throw new GitError(`${origin}, '${value}': ${err.message}`)
+    throw err
+  }
+}
+
+/**
+ * A `-P` pattern as a JavaScript `u` regex, which already reads PCRE's
+ * `\p{L}`, lookarounds and lazy quantifiers. What `u` lacks or refuses is
+ * rewritten to PCRE's meaning: a POSIX class inside a bracket, `\A`, `\z`
+ * and `\Z`, a leading `(?i)`, a backslash before punctuation, a `]` first
+ * in a bracket and a brace that opens no quantifier are all literals or
+ * anchors in PCRE2, the same set Python's `regex` engine reads natively.
+ */
+function perlRegex(value: string, ignoreCase: boolean): RegExp {
+  let flags = ignoreCase ? 'iu' : 'u'
+  let source = value
+  const inline = /^\(\?([ims]+)\)/.exec(source)
+  if (inline) {
+    for (const flag of inline[1] ?? '') if (!flags.includes(flag)) flags += flag
+    source = source.slice(inline[0].length)
+  }
+  let out = ''
+  let bracket = -1
+  for (let i = 0; i < source.length; i++) {
+    const ch = source.charAt(i)
+    if (ch === '\\' && i + 1 < source.length) {
+      const next = source.charAt(i + 1)
+      i += 1
+      if (bracket < 0 && PERL_ANCHORS[next] !== undefined) out += PERL_ANCHORS[next]
+      else if ('pP'.includes(next) && source.charAt(i + 1) === '{' && source.includes('}', i)) {
+        const close = source.indexOf('}', i)
+        out += ch + next + source.slice(i + 1, close + 1)
+        i = close
+      } else if (
+        /[A-Za-z0-9]/.test(next) ||
+        U_SYNTAX.includes(next) ||
+        (bracket >= 0 && next === '-')
+      )
+        out += ch + next
+      else out += '\\u{' + (next.codePointAt(0) ?? 0).toString(16) + '}'
+      continue
+    }
+    if (bracket >= 0) {
+      const name = /^\[:([a-z]+):\]/.exec(source.slice(i))
+      if (name) {
+        const members = Object.hasOwn(POSIX_CLASSES, name[1] ?? '')
+          ? POSIX_CLASSES[name[1] ?? '']
+          : undefined
+        if (members === undefined) throw new SyntaxError('unknown POSIX class name')
+        out += members
+        i += name[0].length - 1
+      } else if (ch === ']' && i > bracket) {
+        out += ch
+        bracket = -1
+      } else out += ch === ']' || ch === '[' ? '\\' + ch : ch
+      continue
+    }
+    if (ch === '[') {
+      out += ch
+      if (source.charAt(i + 1) === '^') {
+        out += '^'
+        i += 1
+      }
+      bracket = i + 1
+      continue
+    }
+    if (ch === '{' && !/^\{\d+(?:,\d*)?\}/.test(source.slice(i))) out += '\\{'
+    else if (ch === '}' && !/(?<!\\)\{\d+(?:,\d*)?$/.test(out)) out += '\\}'
+    else out += ch
+  }
+  return new RegExp(out, flags)
+}
+
 /** Read the raw log flag kwargs into a frozen struct. */
 export function parseFlags(fl: FlagView): LogFlags {
   const oneline = fl.asBool('oneline')
@@ -143,20 +256,25 @@ export function parseFlags(fl: FlagView): LogFlags {
     if (fl.asBool(name)) order = name === 'topo_order' ? 'topo' : 'date'
   }
   const ignoreCase = fl.asBool('regexp_ignore_case')
-  let authors: RegExp[]
-  let greps: RegExp[]
-  try {
-    authors = fl.asList('author').map((value) => searchBre(value, ignoreCase))
-    greps = fl
-      .asList('grep')
-      .flatMap((values) => values.split('\n').map((value) => searchBre(value, ignoreCase)))
-  } catch (err) {
-    if (err instanceof BreError) throw new GitError(err.message)
-    throw err
-  }
+  let syntax = BASIC_REGEXP
+  for (const [key] of fl.occurrences(...PATTERN_SYNTAXES)) syntax = key
+  const committers = fl
+    .asList('committer')
+    .map((value) => pattern(value, syntax, ignoreCase, HEADER_ORIGIN))
+  const authors = fl
+    .asList('author')
+    .map((value) => pattern(value, syntax, ignoreCase, HEADER_ORIGIN))
+  const greps = fl
+    .asList('grep')
+    .flatMap((values) =>
+      values.split('\n').map((value) => pattern(value, syntax, ignoreCase, COMMAND_LINE_ORIGIN)),
+    )
   const maxCount = fl.asInt('max_count') ?? null
   return {
     authors,
+    committers,
+    mailmap: [],
+    useMailmap: true,
     greps,
     ignoreCase,
     date: fl.asStr('date') ?? 'default',
@@ -482,11 +600,15 @@ function messageMatches(message: string, greps: readonly RegExp[]): boolean {
  * `--author` and a `--grep` must both match.
  */
 function filtersPass(commit: CommitFacts, flags: LogFlags): boolean {
-  if (
-    flags.authors.length &&
-    !flags.authors.some((pattern) => pattern.test(`${commit.authorName} <${commit.authorEmail}>`))
-  )
-    return false
+  const mailmap = flags.useMailmap ? flags.mailmap : []
+  const idents: [string, readonly RegExp[]][] = [
+    [`${commit.authorName} <${commit.authorEmail}>`, flags.authors],
+    [`${commit.committerName} <${commit.committerEmail}>`, flags.committers],
+  ]
+  for (const [ident, patterns] of idents) {
+    const mapped = mappedIdentity(ident, mailmap)
+    if (patterns.length && !patterns.some((re) => re.test(mapped))) return false
+  }
   if (flags.greps.length && !messageMatches(commit.message, flags.greps)) return false
   if (flags.minParents !== null && commit.parents.length < flags.minParents) return false
   return !(

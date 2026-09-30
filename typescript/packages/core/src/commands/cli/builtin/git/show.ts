@@ -12,6 +12,9 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import { loadMailmap, useMailmap, type MailmapEntry } from './mailmap.ts'
+import git from 'isomorphic-git'
+
 import { IOResult } from '../../../../io/types.ts'
 import type { CommandFnResult } from '../../../config.ts'
 import { FlagView } from '../../../spec/flag_view.ts'
@@ -34,8 +37,8 @@ import {
   renamesEnabled,
   type DiffFlags,
 } from './diff_output.ts'
-import { commitFacts, configBool, opened } from './repo.ts'
-import { resolveCommit } from './revparse.ts'
+import { commitFacts, configBool, opened, repoArgs } from './repo.ts'
+import { resolveCommit, resolveObject } from './revparse.ts'
 import { checkOperands, escaped, fatal, revisionArg } from './util.ts'
 import { encodeText } from '../../../../shell/bytes.ts'
 
@@ -49,12 +52,16 @@ interface ShowFlags {
   readonly diff: DiffFlags
   readonly pretty: LogFormat
   readonly date: string
+  readonly mailmap: readonly MailmapEntry[]
+  readonly useMailmap: boolean
 }
 
 /** Read the raw show flag kwargs into a frozen struct. */
 function parseShowFlags(fl: FlagView, defaultRenames = true, quotePathFully = true): ShowFlags {
   const pretty = prettyFormat(fl)
   return {
+    mailmap: [],
+    useMailmap: true,
     date: fl.asStr('date') ?? 'default',
     diff: parseDiffFlags(fl, true, 'dense-combined', true, defaultRenames, quotePathFully),
     pretty,
@@ -78,13 +85,13 @@ function header(
   const fmt = flags.pretty
   if (fmt.kind === 'oneline') return `${oneline(commit, width)}\n`
   if (fmt.kind === 'format' || fmt.kind === 'tformat') {
-    const text = renderTemplate(fmt.template ?? '', commit, width, decor, flags.date)
+    const text = renderTemplate(fmt.template ?? '', commit, width, decor, flags.date, flags.mailmap)
     if (fmt.kind === 'tformat') {
       return fmt.template === null || fmt.template === '' ? '' : `${text}\n`
     }
     return text
   }
-  return `${presetBlock(commit, fmt.kind, width, flags.date).join('\n')}\n`
+  return `${presetBlock(commit, fmt.kind, width, flags.date, flags.useMailmap ? flags.mailmap : []).join('\n')}\n`
 }
 
 /** Show one commit: its log entry, then its diff against its parent. */
@@ -95,12 +102,30 @@ export async function show(inv: CLIInvocation): Promise<CommandFnResult> {
   try {
     checkOperands(texts, undefined, escaped(inv.argv))
     const repo = await opened(fl, doors)
-    const parsed = parseShowFlags(
+    const base = parseShowFlags(
       fl,
       await renamesEnabled(repo),
       await configBool(repo, 'core.quotepath', true),
     )
-    const oid = await resolveCommit(repo, revisionArg(texts))
+    const parsed = {
+      ...base,
+      mailmap: await loadMailmap(repo.dispatch, repo.location),
+      useMailmap: useMailmap(fl, await configBool(repo, 'log.mailmap', true)),
+    }
+    const revision = revisionArg(texts)
+    const obj = await resolveObject(repo, revision)
+    if (obj.type === 'blob') {
+      const { blob } = await git.readBlob({ ...repoArgs(repo), oid: obj.oid })
+      return [blob, new IOResult()]
+    }
+    if (obj.type === 'tree') {
+      const { tree } = await git.readTree({ ...repoArgs(repo), oid: obj.oid })
+      const body = tree
+        .map((entry) => entry.path + (entry.type === 'tree' ? '/' : '') + '\n')
+        .join('')
+      return [encodeText(`tree ${revision}\n\n${body}`), new IOResult()]
+    }
+    const oid = await resolveCommit(repo, revision)
     const facts = await commitFacts(repo, oid)
     const decor = needsDecorations(parsed.pretty) ? await decorations(repo) : null
     const head = header(facts, parsed, repo.abbrev, decor)

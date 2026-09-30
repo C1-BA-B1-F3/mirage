@@ -20,7 +20,7 @@ from typing import IO, Iterator, cast
 from dulwich.object_format import SHA1
 from dulwich.object_store import PackCapableObjectStore
 from dulwich.objects import Blob, ObjectID, RawObjectID, ShaFile
-from dulwich.pack import Pack, PackData, load_pack_index_file
+from dulwich.pack import Pack, PackData, load_pack_index_file, write_pack_index
 from dulwich.repo import BaseRepo
 
 from mirage.bridge.sync import run_async_from_sync
@@ -362,6 +362,41 @@ async def load_object_store(dispatch: DispatchFn,
     loop = asyncio.get_running_loop()
     return VfsObjectStore(LooseObjects(dispatch, gitdir, loop), await
                           load_packs(dispatch, gitdir, loop))
+
+
+def _index_pack(data: bytes) -> tuple[bytes, bytes]:
+    """A received pack's v2 index and its trailing checksum.
+
+    Args:
+        data (bytes): the whole packfile, deltas resolved inside it.
+    """
+    pack = PackData.from_file(BytesIO(data), SHA1, len(data))
+    checksum = pack.get_stored_checksum()
+    out = BytesIO()
+    write_pack_index(out, pack.sorted_entries(), checksum)
+    return out.getvalue(), checksum
+
+
+async def store_pack(dispatch: DispatchFn, commondir: str,
+                     data: bytes) -> None:
+    """Keep a fetched pack whole, beside the index git reads it through.
+
+    Named by the pack's own checksum, as git names one it receives, and
+    written index last so a reader that lists ``.idx`` files never
+    finds one whose pack is not there yet.
+
+    Args:
+        dispatch (DispatchFn): workspace op dispatcher.
+        commondir (str): absolute virtual path of the shared git
+            directory, which owns the object database.
+        data (bytes): the packfile; empty stores nothing.
+    """
+    if not data:
+        return
+    index, checksum = await asyncio.to_thread(_index_pack, data)
+    stem = posixpath.join(commondir, PACK_DIR, f"pack-{checksum.hex()}")
+    await write_once(dispatch, f"{stem}{PACK_SUFFIX}", data)
+    await write_once(dispatch, f"{stem}{IDX_SUFFIX}", index)
 
 
 def abbrev_for(repo: BaseRepo) -> int:

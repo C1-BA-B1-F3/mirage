@@ -15,7 +15,9 @@
 import { describe, expect, it } from 'vitest'
 
 import { BadConfigValueError } from './errors.ts'
-import { gitBool } from './util.ts'
+import { configSection, gitBool, withoutSection } from './util.ts'
+import { walk } from '../../walk.ts'
+import { GIT } from './index.ts'
 
 describe('gitBool', () => {
   it.each([
@@ -69,5 +71,62 @@ describe('gitBool', () => {
 
   it('parses every occurrence', () => {
     expect(() => gitBool(['maybe', 'true'], 'core.bare', false)).toThrow(BadConfigValueError)
+  })
+})
+
+it('lands a later relative -C under the one before it', () => {
+  const result = walk('git', GIT, ['-C', '/repo', '-C', 'docs', 'status'], '/')
+  expect(result.groupFlags['-C']).toBe('/repo/docs')
+})
+
+describe('configSection', () => {
+  it('escapes its name and quotes a value holding a comment start', () => {
+    expect(
+      configSection('branch', 'q"x', [
+        ['remote', 'origin'],
+        ['merge', 'refs/heads/we#rd'],
+        ['note', ' pad\tend '],
+      ]),
+    ).toBe(
+      '[branch "q\\"x"]\n\tremote = origin\n\tmerge = "refs/heads/we#rd"\n\tnote = " pad\\tend "\n',
+    )
+  })
+})
+
+describe('withoutSection', () => {
+  const text =
+    '[core]\n\tbare = false\n[branch "topic"]\n\tremote = o\n[branch "main"]\n\tremote = o\n' +
+    '[branch.topic]\n\tmerge = m\n  [branch   "topic"] remote = o\n\tmerge = m\n' +
+    '[Branch "topic"]\n\tremote = o\n[branch.TOPIC]\n\tremote = o\n[branch "q\\"x"]\n\tremote = o\n'
+
+  it('drops the blocks git matches by name', () => {
+    expect(withoutSection(text, 'branch', 'topic')).toBe(
+      '[core]\n\tbare = false\n[branch "main"]\n\tremote = o\n' +
+        '[Branch "topic"]\n\tremote = o\n[branch.TOPIC]\n\tremote = o\n[branch "q\\"x"]\n\tremote = o\n',
+    )
+    expect(withoutSection(text, 'branch', 'q"x').endsWith('[branch.TOPIC]\n\tremote = o\n')).toBe(
+      true,
+    )
+  })
+})
+
+describe('withoutSection over continued values', () => {
+  const text =
+    '[core]\n\tbare = false\n[branch "c1"]\n\tdescription = one \\\n' +
+    '[two\n\tremote = origin\n[branch "keep"]\n\tremote = origin\n' +
+    '[branch "c2"]\n\tdescription = "a\\\n  [b"\n\tremote = origin\n' +
+    '[branch "c3"]\n\tnote = x \\\\\n[branch "keep2"]\n\tremote = o\n' +
+    '# see \\\n[branch "c4"]\n\tremote = origin\n'
+
+  it('follows a value continued onto a line that opens with a bracket', () => {
+    expect(withoutSection(text, 'branch', 'c1')).toBe(
+      '[core]\n\tbare = false\n[branch "keep"]\n\tremote = origin\n' +
+        '[branch "c2"]\n\tdescription = "a\\\n  [b"\n\tremote = origin\n' +
+        '[branch "c3"]\n\tnote = x \\\\\n[branch "keep2"]\n\tremote = o\n' +
+        '# see \\\n[branch "c4"]\n\tremote = origin\n',
+    )
+    expect(withoutSection(text, 'branch', 'c2')).not.toContain('  [b"')
+    expect(withoutSection(text, 'branch', 'c3').split('keep2').length).toBe(2)
+    expect(withoutSection(text, 'branch', 'c4').endsWith('# see \\\n')).toBe(true)
   })
 })

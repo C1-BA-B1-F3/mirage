@@ -14,7 +14,7 @@
 
 from dataclasses import replace
 
-from mirage.commands.cli.builtin.git.types import StatusEntry
+from mirage.commands.cli.builtin.git.types import StatusEntry, Upstream
 
 UNCHANGED = " "
 UNTRACKED = "?"
@@ -66,7 +66,9 @@ ESCAPES = {
 }
 
 ON_BRANCH = "On branch "
-DETACHED = "HEAD detached at "
+DETACHED_AT = "HEAD detached at "
+DETACHED_FROM = "HEAD detached from "
+NO_BRANCH = "Not currently on any branch."
 NO_COMMITS = "No commits yet"
 BRANCH_MARK = "## "
 NO_COMMITS_BRANCH = "No commits yet on "
@@ -173,21 +175,70 @@ def short_line(entry: StatusEntry, fully: bool = True) -> str:
     return f"{entry.index_status}{entry.tree_status} {path}"
 
 
-def branch_line(branch: str | None, commit: str | None,
-                no_commits: bool) -> str:
+def branch_line(branch: str | None,
+                no_commits: bool,
+                upstream: Upstream | None = None) -> str:
     """The ``## `` header ``--branch`` prepends to the short formats.
 
     Args:
         branch (str | None): the branch HEAD names, None when detached.
-        commit (str | None): the abbreviated commit HEAD holds, set only
-            when detached.
         no_commits (bool): whether HEAD resolves to nothing yet.
+        upstream (Upstream | None): the branch's upstream, if any.
     """
     if branch is None:
         return f"{BRANCH_MARK}HEAD (no branch)"
     if no_commits:
         return f"{BRANCH_MARK}{NO_COMMITS_BRANCH}{branch}"
-    return f"{BRANCH_MARK}{branch}"
+    if upstream is None:
+        return f"{BRANCH_MARK}{branch}"
+    counts = ["gone"] if upstream.gone else []
+    if upstream.ahead:
+        counts.append(f"ahead {upstream.ahead}")
+    if upstream.behind:
+        counts.append(f"behind {upstream.behind}")
+    shown = f" [{', '.join(counts)}]" if counts else ""
+    return f"{BRANCH_MARK}{branch}...{upstream.label}{shown}"
+
+
+def _commits(count: int) -> str:
+    return f"{count} commit" + ("" if count == 1 else "s")
+
+
+def tracking_lines(upstream: Upstream) -> list[str]:
+    """What the long status says about a branch and its upstream.
+
+    Pinned against git 2.47.3 and 2.50.1 (``format_tracking_info``).
+
+    Args:
+        upstream (Upstream): the branch's upstream.
+    """
+    name = upstream.label
+    if upstream.gone:
+        return [
+            f"Your branch is based on '{name}', but the upstream is gone.",
+            '  (use "git branch --unset-upstream" to fixup)'
+        ]
+    if not upstream.ahead and not upstream.behind:
+        return [f"Your branch is up to date with '{name}'."]
+    if not upstream.behind:
+        return [
+            f"Your branch is ahead of '{name}' by "
+            f"{_commits(upstream.ahead)}.",
+            '  (use "git push" to publish your local commits)'
+        ]
+    if not upstream.ahead:
+        return [
+            f"Your branch is behind '{name}' by "
+            f"{_commits(upstream.behind)}, and can be fast-forwarded.",
+            '  (use "git pull" to update your local branch)'
+        ]
+    return [
+        f"Your branch and '{name}' have diverged,",
+        f"and have {upstream.ahead} and {upstream.behind} different commits "
+        "each, respectively.",
+        '  (use "git pull" if you want to integrate the remote branch with '
+        'yours)'
+    ]
 
 
 def short_format(rows: list[StatusEntry],
@@ -240,7 +291,7 @@ def _staged_entries(rows: list[StatusEntry], fully: bool) -> list[str]:
     """
     lines = []
     for row in rows:
-        if row.index_status in (UNCHANGED, UNTRACKED, UNMERGED_COLUMN):
+        if row.index_status in (UNCHANGED, UNTRACKED, UNMERGED_COLUMN, "!"):
             continue
         label = STAGED_LABELS.get(row.index_status, "modified:")
         path = quote_path(row.path, False, fully)
@@ -260,7 +311,7 @@ def _work_entries(rows: list[StatusEntry], fully: bool) -> list[str]:
     lines = []
     for row in rows:
         if row.index_status == UNMERGED_COLUMN or row.tree_status in (
-                UNCHANGED, UNTRACKED):
+                UNCHANGED, UNTRACKED, "!"):
             continue
         label = WORK_LABELS.get(row.tree_status, "modified:")
         lines.append(
@@ -331,31 +382,32 @@ def _trailer(staged: list[str], work: list[str], unmerged: list[str],
 
 def long_format(rows: list[StatusEntry],
                 branch: str | None,
-                commit: str | None,
+                detached: str,
                 no_commits: bool,
                 merging: bool,
                 hide_untracked: bool,
-                fully: bool = True) -> str:
+                fully: bool = True,
+                upstream: Upstream | None = None) -> str:
     """The default, human-readable status report.
 
     Args:
         rows (list[StatusEntry]): every row, already in git's order.
         branch (str | None): the branch HEAD names, None when detached.
-        commit (str | None): the abbreviated commit HEAD holds, set only
-            when detached.
+        detached (str): the line naming a detached HEAD, used only
+            when ``branch`` is None.
         no_commits (bool): whether HEAD resolves to nothing yet.
         merging (bool): whether a merge is in progress.
         hide_untracked (bool): whether ``-uno`` suppressed the scan.
         fully (bool): ``core.quotePath``.
+        upstream (Upstream | None): the branch's upstream, if any.
     """
     staged = _staged_entries(rows, fully)
     unmerged = _unmerged_entries(rows, fully)
     work = _work_entries(rows, fully)
     untracked = _untracked_entries(rows, fully)
-    lines = [
-        f"{ON_BRANCH}{branch}"
-        if branch is not None else f"{DETACHED}{commit or ''}"
-    ]
+    lines = [f"{ON_BRANCH}{branch}" if branch is not None else detached]
+    if upstream is not None:
+        lines.extend([*tracking_lines(upstream), ""])
     if no_commits:
         lines.extend(["", NO_COMMITS, ""])
     if merging:
@@ -378,6 +430,13 @@ def long_format(rows: list[StatusEntry],
                  (WORK_HINT_DELETED if deleted else WORK_HINT, DISCARD_HINT),
                  work))
     lines.extend(_section(UNTRACKED_HEADER, (UNTRACKED_HINT, ), untracked))
+    ignored = [
+        f"\t{quote_path(row.path, False, fully)}" for row in rows
+        if row.index_status == '!'
+    ]
+    lines.extend(
+        _section('Ignored files:', ('  (use "git add -f <file>..." to include '
+                                    'in what will be committed)', ), ignored))
     lines.extend(
         _trailer(staged, work, unmerged, untracked, no_commits,
                  hide_untracked))

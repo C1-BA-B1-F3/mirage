@@ -13,6 +13,7 @@
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 from dataclasses import dataclass, field
+from enum import StrEnum
 
 from dulwich.index import ConflictedIndexEntry, IndexEntry
 
@@ -64,6 +65,38 @@ class HeadRef:
     branch: str | None
     ref: str | None
     commit: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class Upstream:
+    """A branch's configured upstream, and how far the two have moved.
+
+    Args:
+        label (str): the upstream as git names it, ``origin/main`` or a
+            local branch.
+        ahead (int): commits on the branch the upstream lacks.
+        behind (int): commits on the upstream the branch lacks.
+        gone (bool): the upstream ref is configured but missing.
+    """
+    label: str
+    ahead: int
+    behind: int
+    gone: bool
+
+
+class Track(StrEnum):
+    """``branch.autoSetupMerge``: the start points that give an upstream.
+
+    Each member is spelled as the config value that picks it: ``true``
+    takes a remote-tracking start point, ``always`` a local branch too,
+    ``simple`` a remote one of the same name, ``inherit`` copies the
+    start branch's own upstream, and ``false`` takes none.
+    """
+    OFF = "false"
+    REMOTE = "true"
+    ALWAYS = "always"
+    SIMPLE = "simple"
+    INHERIT = "inherit"
 
 
 @dataclass(frozen=True, slots=True)
@@ -171,3 +204,4 @@ class WorkTree:
     """
     files: dict[str, FileStat] = field(default_factory=dict)
     untracked: list[str] = field(default_factory=list)
+    ignored: list[str] = field(default_factory=list)

@@ -12,6 +12,11 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import { lsFiles } from './ls_files.ts'
+import { forEachRef } from './for_each_ref.ts'
+import { reflog } from './reflog.ts'
+import { fetch } from './fetch.ts'
+import { clone } from './clone.ts'
 import { Operand, Option } from '../../../spec/types.ts'
 import { CLISpec } from '../../types.ts'
 import { UsageStyle } from '../../../spec/types.ts'
@@ -43,7 +48,8 @@ import { tag } from './tag.ts'
 // `-C` is git's own before-anything-else option, so it sits on the root and
 // every verb inherits it. The "." default is load-bearing: a PATH default lands
 // as if typed, so an absent -C resolves to the session cwd and the leaves need
-// no separate working-directory fact.
+// no separate working-directory fact. The root names it its operand base, so a
+// later relative -C lands under the one before it.
 const DIRECTORY_OPTION = new Option({
   short: '-C',
   type: 'path',
@@ -80,6 +86,11 @@ const DATE_OPTION = new Option({
 })
 
 const DIFF_OPTIONS = [
+  new Option({
+    short: '-W',
+    long: '--function-context',
+    description: 'Show whole functions as diff context',
+  }),
   new Option({
     short: '-U',
     long: '--unified',
@@ -118,6 +129,24 @@ const MERGE_OPTIONS = [
 ]
 
 const LOG_OPTIONS = [
+  new Option({
+    short: '-E',
+    long: '--extended-regexp',
+    description: 'Use extended regular expressions',
+  }),
+  new Option({ short: '-F', long: '--fixed-strings', description: 'Match patterns literally' }),
+  new Option({
+    short: '-P',
+    long: '--perl-regexp',
+    description: 'Use Perl-compatible regular expressions',
+  }),
+  new Option({ long: '--basic-regexp', description: 'Use basic regular expressions' }),
+  new Option({
+    long: '--committer',
+    type: 'str',
+    multiple: true,
+    description: 'Limit commits to matching committers',
+  }),
   new Option({
     long: '--author',
     type: 'str',
@@ -205,7 +234,15 @@ const LOG_OPTIONS = [
   }),
 ]
 
+const MAILMAP_OPTIONS = [
+  new Option({ long: '--mailmap', description: 'Apply mailmap to identities' }),
+  new Option({ long: '--use-mailmap', description: 'Apply mailmap to identities' }),
+  new Option({ long: '--no-mailmap', description: 'Use recorded identities' }),
+  new Option({ long: '--no-use-mailmap', description: 'Use recorded identities' }),
+]
+
 const SHOW_OPTIONS = [
+  ...MAILMAP_OPTIONS,
   new Option({ long: '--oneline', description: 'One abbreviated line per commit' }),
   ...DIFF_OPTIONS,
   ...MERGE_OPTIONS,
@@ -215,6 +252,7 @@ const SHOW_OPTIONS = [
 ]
 
 const STATUS_OPTIONS = [
+  new Option({ long: '--ignored', description: 'Show ignored files' }),
   new Option({
     long: '--porcelain',
     type: 'str',
@@ -258,6 +296,7 @@ const ADD_OPTIONS = [
 ]
 
 const COMMIT_OPTIONS = [
+  new Option({ short: '-q', long: '--quiet', description: 'Suppress feedback messages' }),
   new Option({
     short: '-a',
     long: '--all',
@@ -271,9 +310,11 @@ const COMMIT_OPTIONS = [
 
 const CHECKOUT_OPTIONS = [
   new Option({ short: '-b', description: 'Create the branch and switch to it' }),
+  new Option({ short: '-q', long: '--quiet', description: 'Suppress feedback messages' }),
 ]
 
 const SWITCH_OPTIONS = [
+  new Option({ short: '-q', long: '--quiet', description: 'Suppress feedback messages' }),
   new Option({
     short: '-c',
     long: '--create',
@@ -442,6 +483,7 @@ export const GIT = new CLISpec({
   name: 'git',
   description: 'Content tracker',
   usageStyle: UsageStyle.GIT,
+  operandBase: '-C',
   options: [
     DIRECTORY_OPTION,
     new Option({
@@ -458,6 +500,85 @@ export const GIT = new CLISpec({
     }),
   ],
   subcommands: [
+    new CLISpec({
+      name: 'reflog',
+      fn: reflog,
+      description: 'Show reference history',
+      options: [
+        new Option({
+          short: '-n',
+          long: '--max-count',
+          type: 'int',
+          numericShorthand: true,
+          description: 'Limit the number of entries',
+        }),
+      ],
+      rest: REVISION,
+    }),
+    new CLISpec({
+      name: 'for-each-ref',
+      fn: forEachRef,
+      description: 'List references with a format',
+      options: [
+        new Option({ long: '--format', type: 'str', description: 'Format each reference' }),
+        new Option({ long: '--count', type: 'int', description: 'Maximum number of references' }),
+      ],
+      rest: REVISION,
+    }),
+    new CLISpec({
+      name: 'ls-files',
+      fn: lsFiles,
+      description: 'Show files in the index',
+      options: [
+        new Option({ short: '-z', description: 'Terminate paths with NUL' }),
+        new Option({ short: '-s', long: '--stage', description: 'Show staged object metadata' }),
+        new Option({ short: '-c', long: '--cached', description: 'Show cached files' }),
+      ],
+      rest: REVISION,
+    }),
+    new CLISpec({
+      name: 'fetch',
+      fn: fetch,
+      description: 'Download objects and refs from another repository',
+      options: [
+        new Option({ short: '-q', long: '--quiet', description: 'Print nothing but errors' }),
+        new Option({ short: '-v', long: '--verbose', description: 'Also list unchanged refs' }),
+        new Option({
+          short: '-p',
+          long: '--prune',
+          description: 'Remove remote-tracking refs the remote no longer has',
+        }),
+        new Option({ short: '-t', long: '--tags', description: 'Fetch every tag' }),
+        new Option({ short: '-n', long: '--no-tags', description: 'Follow no tags' }),
+      ],
+      rest: REVISION,
+    }),
+    new CLISpec({
+      name: 'clone',
+      fn: clone,
+      description: 'Clone a repository into a new directory',
+      options: [
+        new Option({ short: '-q', long: '--quiet', description: 'Print nothing but errors' }),
+        new Option({
+          short: '-b',
+          long: '--branch',
+          type: 'str',
+          description: 'Check out this branch or tag',
+        }),
+        new Option({
+          short: '-o',
+          long: '--origin',
+          type: 'str',
+          description: 'Name the remote this instead of origin',
+        }),
+        new Option({
+          short: '-n',
+          long: '--no-checkout',
+          description: 'Leave the working tree empty',
+        }),
+      ],
+      rest: REVISION,
+    }),
     new CLISpec({
       name: 'help',
       fn: helpCmd,
@@ -513,6 +634,7 @@ export const GIT = new CLISpec({
       description: 'Read repository configuration',
       fn: config,
       options: [
+        new Option({ long: '--global', description: 'Read global configuration' }),
         new Option({ long: '--get', description: 'Get a configuration value' }),
         new Option({ short: '-l', long: '--list', description: 'List every variable and value' }),
         new Option({ long: '--show-origin', description: 'Show the file each value comes from' }),
@@ -547,6 +669,7 @@ export const GIT = new CLISpec({
       fn: revParse,
       description: 'Resolve revisions',
       options: [
+        new Option({ long: '--show-toplevel', description: 'Show the worktree root' }),
         new Option({ long: '--abbrev-ref', description: 'Show abbreviated reference names' }),
       ],
       rest: REVISION,
@@ -579,7 +702,7 @@ export const GIT = new CLISpec({
       name: 'log',
       description: 'Show commit logs',
       fn: log,
-      options: [...LOG_OPTIONS, ...DIFF_OPTIONS],
+      options: [...LOG_OPTIONS, ...MAILMAP_OPTIONS, ...DIFF_OPTIONS],
       rest: REVISION,
     }),
     new CLISpec({

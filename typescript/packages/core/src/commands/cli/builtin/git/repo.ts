@@ -19,7 +19,7 @@ import { discover, requireWorkTree } from './discover.ts'
 import { NoWorkspaceError } from './errors.ts'
 import { abbrevLength, type CommitFacts } from './format.ts'
 import { configValues, gitFs } from './fs.ts'
-import { readNames, readRange, under } from './io.ts'
+import { exists, readNames, readRange, under, writeFile } from './io.ts'
 import { basename } from './path.ts'
 import type { CLIDoors } from '../../types.ts'
 import { gitBool, startPoint } from './util.ts'
@@ -89,13 +89,45 @@ async function packedCount(dispatch: Dispatch, commondir: string): Promise<numbe
   return total
 }
 
+/** Which of commit/tag/tree/blob an id names, null when the repository lacks it. */
+export async function objectType(repo: Repo, oid: string): Promise<string | null> {
+  try {
+    // Deprecated upstream for being general, but the general answer is what a
+    // walk needs: which kind this id names, without reading it as each in turn
+    // until one does not throw.
+    // eslint-disable-next-line @typescript-eslint/no-deprecated
+    return (await git.readObject({ ...repoArgs(repo), oid, format: 'content' })).type
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Keep a fetched pack whole, beside the index git reads it through.
+ *
+ * Named by the pack's own checksum, as git names one it receives, and indexed
+ * after the pack is written, so a reader that lists `.idx` files never finds
+ * one whose pack is not there yet. An empty pack stores nothing.
+ */
+export async function storePack(repo: Repo, data: Uint8Array): Promise<void> {
+  if (!data.length) return
+  const checksum = [...data.subarray(data.length - 20)]
+    .map((byte) => byte.toString(16).padStart(2, '0'))
+    .join('')
+  const dir = under(repo.location.commondir, PACK_DIR)
+  const name = `pack-${checksum}.pack`
+  if (await exists(repo.dispatch, under(dir, name.replace(/\.pack$/, IDX_SUFFIX)))) return
+  await writeFile(repo.dispatch, under(dir, name), data)
+  await git.indexPack({ ...repoArgs(repo), dir, filepath: name })
+}
+
 /**
  * Open a repository living in a mount.
  *
  * @param dispatch workspace op dispatcher
  * @param location the discovered repository
  */
-async function openRepo(dispatch: Dispatch, location: RepoLocation): Promise<Repo> {
+export async function openRepo(dispatch: Dispatch, location: RepoLocation): Promise<Repo> {
   return {
     fs: gitFs(dispatch, location),
     dispatch,

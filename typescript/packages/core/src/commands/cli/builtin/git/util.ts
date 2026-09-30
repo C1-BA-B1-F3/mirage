@@ -30,6 +30,14 @@ const FALSE_WORDS = ['false', 'no', 'off', '']
 const INTEGER = /^[ \t\n\v\f\r]*([-+]?)(0[xX][0-9a-fA-F]+|0[0-7]*|[1-9][0-9]*)([kKmMgG]?)$/
 const UNIT_SHIFTS: Readonly<Record<string, number>> = { '': 0, k: 10, m: 20, g: 30 }
 const INT_BITS = 31
+const VALUE_ESCAPES: Readonly<Record<string, string>> = {
+  '\n': '\\n',
+  '\t': '\\t',
+  '"': '\\"',
+  '\\': '\\\\',
+}
+const QUOTED_HEADER = /^\s*\[([A-Za-z0-9.-]+)\s+"((?:[^"\\\n]|\\.)*)"\s*\]/
+const DOTTED_HEADER = /^\s*\[([A-Za-z0-9-]+)\.([^\]\s]*)\]/
 
 const ENC = new TextEncoder()
 
@@ -212,6 +220,106 @@ export function gitBool(values: readonly string[], key: string, fallback: boolea
     }
   }
   return answer
+}
+
+/**
+ * One `[section "name"]` block the way git's config writer spells it.
+ *
+ * The subsection escapes `"` and `\`; a value escapes those plus newline and
+ * tab, and is quoted when it starts or ends with a space or holds `;` or `#`.
+ * A branch may be named `a"b` or `a#b`, and either one written raw reads back
+ * as a different name (pinned against git 2.50.1).
+ *
+ * @param section the section, e.g. `branch`
+ * @param name the subsection, e.g. the branch name
+ * @param pairs variables and values, in order
+ */
+export function configSection(
+  section: string,
+  name: string,
+  pairs: readonly (readonly [string, string])[],
+): string {
+  const quoted = name.replaceAll('\\', '\\\\').replaceAll('"', '\\"')
+  let text = `[${section} "${quoted}"]\n`
+  for (const [key, value] of pairs) {
+    let body = value.replace(/[\n\t"\\]/g, (ch) => VALUE_ESCAPES[ch] ?? ch)
+    if (value.startsWith(' ') || value.endsWith(' ') || /[;#]/.test(value)) body = `"${body}"`
+    text += `\t${key} = ${body}\n`
+  }
+  return text
+}
+
+/**
+ * A config's text with every block for `section.name` taken out.
+ *
+ * `git branch -d` drops the deleted branch's settings this way, so a branch
+ * made again under the same name starts with no upstream rather than with two.
+ * A header names the block the way git's `section_name_match` reads it,
+ * spelled exactly: `[branch "x"]` with its escapes, or the older `[branch.x]`.
+ * `[Branch "x"]` and `[branch.X]` are left, as git leaves them, and a line
+ * opening with `[` ends a block (pinned against git 2.50.1).
+ *
+ * A value continued onto the next line by a trailing backslash is followed, so
+ * a continuation that opens with `[` is still part of the block. git 2.50.1
+ * reads it as a header there and leaves the rest of the block behind, which it
+ * then refuses as a bad config line; mirage keeps the file readable instead.
+ *
+ * @param text the config file's contents
+ * @param section the section as git writes it, e.g. `branch`
+ * @param name the subsection, e.g. the branch name
+ */
+export function withoutSection(text: string, section: string, name: string): string {
+  let dropping = false
+  let continued = false
+  let inside = false
+  return text
+    .split(/(?<=\n)/)
+    .filter((line) => {
+      let value = line
+      if (!continued) {
+        let rest = line
+        if (line.trimStart().startsWith('[')) {
+          const quoted = QUOTED_HEADER.exec(line)
+          const dotted = DOTTED_HEADER.exec(line)
+          dropping =
+            (quoted?.[1] === section && quoted[2]?.replace(/\\(.)/g, '$1') === name) ||
+            (dotted?.[1] === section && dotted[2] === name)
+          const header = quoted ?? dotted
+          rest = line.slice(header ? header[0].length : line.indexOf(']') + 1)
+        }
+        const equals = rest.indexOf('=')
+        value = equals < 0 || /^\s*[;#]/.test(rest) ? '' : rest.slice(equals + 1)
+        inside = false
+      }
+      ;[continued, inside] = continues(value, inside)
+      return !dropping
+    })
+    .join('')
+}
+
+/**
+ * Whether a config value runs onto the next line, as git parses one.
+ *
+ * A backslash ending the line continues the value unless it is itself escaped
+ * or sits in a comment; a comment starts at `;` or `#` outside double quotes.
+ * Returns whether the value continues and whether the next line starts inside
+ * quotes.
+ *
+ * @param value the rest of the line, from the value on
+ * @param inside whether the line starts inside double quotes
+ */
+function continues(value: string, inside: boolean): [boolean, boolean] {
+  const body = value.replace(/\r?\n$/, '')
+  let quoted = inside
+  for (let at = 0; at < body.length; at++) {
+    const ch = body[at]
+    if (ch === '\\') {
+      if (at === body.length - 1) return [true, quoted]
+      at++
+    } else if (ch === '"') quoted = !quoted
+    else if (!quoted && (ch === ';' || ch === '#')) break
+  }
+  return [false, false]
 }
 
 /**

@@ -8,7 +8,29 @@ import { discover } from './discover.ts'
 import { GitError, NoWorkspaceError, NoWorkingDirectoryError } from './errors.ts'
 import { ensureDir, readOptional, under, writeFile } from './io.ts'
 import { validRefName } from './refs.ts'
+import type { Dispatch } from './types.ts'
 import { fatal, startPoint } from './util.ts'
+
+/** Write a new git directory's skeleton, keeping what is there. */
+export async function layOut(
+  dispatch: Dispatch,
+  gitdir: string,
+  branch: string,
+  config: string,
+): Promise<void> {
+  for (const directory of ['objects/info', 'objects/pack', 'refs/heads', 'refs/tags', 'info'])
+    await ensureDir(dispatch, under(gitdir, directory))
+  const files = {
+    HEAD: `ref: refs/heads/${branch}\n`,
+    config,
+    description: "Unnamed repository; edit this file 'description' to name the repository.\n",
+  }
+  for (const [name, text] of Object.entries(files)) {
+    const path = under(gitdir, name)
+    if ((await readOptional(dispatch, path)) === null)
+      await writeFile(dispatch, path, new TextEncoder().encode(text))
+  }
+}
 
 /** Initialize through the dispatcher; no host templates, hooks or branch advisory. */
 export async function init(inv: CLIInvocation): Promise<CommandFnResult> {
@@ -59,18 +81,12 @@ export async function init(inv: CLIInvocation): Promise<CommandFnResult> {
       gitdir = location.commondir
     }
     const existing = (await readOptional(dispatch, under(gitdir, 'HEAD'))) !== null
-    for (const directory of ['objects/info', 'objects/pack', 'refs/heads', 'refs/tags', 'info'])
-      await ensureDir(dispatch, under(gitdir, directory))
-    const files = {
-      HEAD: `ref: refs/heads/${branch}\n`,
-      config: `[core]\n\trepositoryformatversion = 0\n\tfilemode = true\n\tbare = ${bare ? 'true' : 'false'}\n`,
-      description: "Unnamed repository; edit this file 'description' to name the repository.\n",
-    }
-    for (const [name, text] of Object.entries(files)) {
-      const path = under(gitdir, name)
-      if ((await readOptional(dispatch, path)) === null)
-        await writeFile(dispatch, path, new TextEncoder().encode(text))
-    }
+    await layOut(
+      dispatch,
+      gitdir,
+      branch,
+      `[core]\n\trepositoryformatversion = 0\n\tfilemode = true\n\tbare = ${bare ? 'true' : 'false'}\n`,
+    )
     const text = existing
       ? `Reinitialized existing Git repository in ${gitdir}/\n`
       : `Initialized empty Git repository in ${gitdir}/\n`

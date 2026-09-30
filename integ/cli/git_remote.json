@@ -1,0 +1,214 @@
+{
+  "cases": [
+    {
+      "id": "git_clone_workspace_repository",
+      "seq": 567914,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "(cd /repo && git clone . c; status=$?; git -C c log --oneline -2; git -C c branch -a; git -C c status; rm -rf c; exit $status)",
+      "expect": {
+        "exit": 0,
+        "stdout": "8ef2542 add two\n225f39c add docs\n* main\n  remotes/origin/HEAD -> origin/main\n  remotes/origin/main\n  remotes/origin/topic\nOn branch main\nYour branch is up to date with 'origin/main'.\n\nnothing to commit, working tree clean\n",
+        "stderr": "Cloning into 'c'...\ndone.\n"
+      }
+    },
+    {
+      "id": "git_fetch_workspace_repository",
+      "seq": 567915,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "(cd /repo && git clone -q -b topic . c1 && git clone -q c1 c2 && git -C c1 branch newb && git -C c1 tag v9 && cd c2 && git fetch; status=$?; git log --oneline -1 origin/newb; git branch -a; cd /repo && rm -rf c1 c2; exit $status)",
+      "expect": {
+        "exit": 0,
+        "stdout": "225f39c add docs\n* topic\n  remotes/origin/HEAD -> origin/topic\n  remotes/origin/newb\n  remotes/origin/topic\n",
+        "stderr": "From /repo/c1\n * [new branch]      newb       -> origin/newb\n * [new tag]         v9         -> v9\n"
+      }
+    },
+    {
+      "id": "git_clone_missing_repository",
+      "seq": 567916,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "git clone /repo/nope /repo/x",
+      "expect": {
+        "exit": 128,
+        "stdout": "",
+        "stderr": "fatal: repository '/repo/nope' does not exist\n"
+      }
+    },
+    {
+      "id": "git_fetch_unknown_remote",
+      "seq": 567917,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "git -C /repo fetch nosuch",
+      "expect": {
+        "exit": 128,
+        "stdout": "",
+        "stderr": "fatal: 'nosuch' does not appear to be a git repository\nfatal: Could not read from remote repository.\n\nPlease make sure you have the correct access rights\nand the repository exists.\n"
+      }
+    },
+    {
+      "id": "git_clone_missing_branch",
+      "seq": 567918,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "(cd /repo && git clone -b nosuch . c; status=$?; test -e c || echo gone; exit $status)",
+      "expect": {
+        "exit": 128,
+        "stdout": "gone\n",
+        "stderr": "Cloning into 'c'...\nfatal: Remote branch nosuch not found in upstream origin\n"
+      }
+    },
+    {
+      "id": "git_fetch_ref_into_fetch_head",
+      "seq": 567919,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "(cd /repo && git clone -q . c && cd c && git fetch origin topic; status=$?; cat .git/FETCH_HEAD; cd /repo && rm -rf c; exit $status)",
+      "expect": {
+        "exit": 0,
+        "stdout": "225f39c50d27e015653a38d589474ce2880399e6\t\tbranch 'topic' of /repo/.\n",
+        "stderr": "From /repo/.\n * branch            topic      -> FETCH_HEAD\n"
+      }
+    },
+    {
+      "id": "git_branch_track_off",
+      "seq": 567920,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "(cd /repo && git clone -q . c && cd c && printf '[branch]\\n\\tautoSetupMerge = false\\n' >> .git/config && git branch t origin/topic && git branch -vv; status=$?; cd /repo && rm -rf c; exit $status)",
+      "expect": {
+        "exit": 0,
+        "stdout": "* main 8ef2542 [origin/main] add two\n  t    225f39c add docs\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "git_branch_track_always_local",
+      "seq": 567921,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "(cd /repo && git clone -q . c && cd c && printf '[branch]\\n\\tautoSetupMerge = always\\n' >> .git/config && git branch l main && git config --get-regexp '^branch\\.l\\.'; status=$?; cd /repo && rm -rf c; exit $status)",
+      "expect": {
+        "exit": 0,
+        "stdout": "branch 'l' set up to track 'main'.\nbranch.l.remote .\nbranch.l.merge refs/heads/main\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "git_branch_track_bad_value",
+      "seq": 567922,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "(cd /repo && git clone -q . c && cd c && printf '[branch]\\n\\tautoSetupMerge = never\\n' >> .git/config && git branch t origin/topic; status=$?; test -e .git/refs/heads/t || echo absent; cd /repo && rm -rf c; exit $status)",
+      "expect": {
+        "exit": 128,
+        "stdout": "absent\n",
+        "stderr": "fatal: bad boolean config value 'never' for 'branch.autosetupmerge'\n"
+      }
+    },
+    {
+      "id": "git_branch_quoted_name_upstream",
+      "seq": 567923,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "(cd /repo && git clone -q . c && cd c && git branch 'q\"x' origin/topic && tail -3 .git/config && git checkout -q 'q\"x' && git status -sb; status=$?; cd /repo && rm -rf c; exit $status)",
+      "expect": {
+        "exit": 0,
+        "stdout": "branch 'q\"x' set up to track 'origin/topic'.\n[branch \"q\\\"x\"]\n\tremote = origin\n\tmerge = refs/heads/topic\n## q\"x...origin/topic\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "git_branch_delete_drops_upstream",
+      "seq": 567924,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "(cd /repo && git clone -q . c && cd c && git branch t origin/topic && git branch -D t && git branch t origin/topic && git config --get-regexp '^branch\\.t\\.'; status=$?; cd /repo && rm -rf c; exit $status)",
+      "expect": {
+        "exit": 0,
+        "stdout": "branch 't' set up to track 'origin/topic'.\nDeleted branch t (was 225f39c).\nbranch 't' set up to track 'origin/topic'.\nbranch.t.remote origin\nbranch.t.merge refs/heads/topic\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "git_clone_failure_keeps_empty_directory",
+      "seq": 567925,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "(cd /repo && mkdir e && git clone -b nosuch . e; status=$?; ls -A e; rmdir e; exit $status)",
+      "expect": {
+        "exit": 128,
+        "stdout": "",
+        "stderr": "Cloning into 'e'...\nfatal: Remote branch nosuch not found in upstream origin\n"
+      }
+    },
+    {
+      "id": "git_clone_invalid_remote_name",
+      "seq": 567926,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "(cd /repo && git clone -o ../x . c; status=$?; test -e c || echo gone; exit $status)",
+      "expect": {
+        "exit": 128,
+        "stdout": "gone\n",
+        "stderr": "Cloning into 'c'...\nfatal: '../x' is not a valid remote name\n"
+      }
+    },
+    {
+      "id": "git_branch_delete_old_style_section",
+      "seq": 567927,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "(cd /repo && git clone -q . c && cd c && printf '[branch.t]\\n\\tremote = origin\\n[Branch \"t\"]\\n\\tremote = up\\n' >> .git/config && git branch t main && git branch -D t && tail -2 .git/config; status=$?; cd /repo && rm -rf c; exit $status)",
+      "expect": {
+        "exit": 0,
+        "stdout": "Deleted branch t (was 8ef2542).\n[Branch \"t\"]\n\tremote = up\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "git_branch_tracking_after_unterminated_config",
+      "seq": 567928,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "(cd /repo && git clone -q . c && cd c && printf '[branch \"z\"]\\n\\tremote = origin' >> .git/config && git branch t origin/topic && tail -5 .git/config && git branch -vv; status=$?; cd /repo && rm -rf c; exit $status)",
+      "expect": {
+        "exit": 0,
+        "stdout": "branch 't' set up to track 'origin/topic'.\n[branch \"z\"]\n\tremote = origin\n[branch \"t\"]\n\tremote = origin\n\tmerge = refs/heads/topic\n* main 8ef2542 [origin/main] add two\n  t    225f39c [origin/topic] add docs\n",
+        "stderr": ""
+      }
+    }
+  ]
+}

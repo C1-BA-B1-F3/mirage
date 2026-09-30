@@ -14,6 +14,7 @@
 
 import { CommandTimeoutError } from '../../../commands/errors.ts'
 import { EvalError } from '../../errors.ts'
+import { mainFilename } from '../execution.ts'
 import type { EvalResult, EvalValue, RunArgs, RunResult } from '../../types.ts'
 import type { PathSpec } from '../../../types.ts'
 import {
@@ -82,7 +83,11 @@ export class MontyExecution {
 
   async run(args: RunArgs, vfs: MontyVFS | null): Promise<RunResult> {
     const pool = await this.ensurePool()
-    const session = await pool.checkout()
+    // A script is Monty's own scriptName, which it keeps the last part of
+    // for `__file__`, under the directory a feed starts in.
+    const session = await pool.checkout(
+      args.scriptPath !== undefined ? { scriptName: mainFilename(args) } : undefined,
+    )
     // Monty executes on its own worker process, so the event loop stays
     // live to observe the limit deadline and the kill signal; a trip
     // SIGKILLs the worker (see killWorker). Deadline -> exit 124 via

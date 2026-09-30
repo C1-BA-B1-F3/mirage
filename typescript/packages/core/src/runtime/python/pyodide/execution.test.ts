@@ -41,7 +41,17 @@ small = [str(i).encode() for i in range(100000)]
 `)
       for (let call = 0; call < 3; call++) {
         const run = guest.run(
-          { code, argv: [], cwd: '', flags: {}, script_cli: false, env: {}, stdin: null },
+          {
+            code,
+            argv: [],
+            cwd: '',
+            flags: {},
+            script_cli: false,
+            filename: null,
+            script: false,
+            env: {},
+            stdin: null,
+          },
           () => undefined,
           () => undefined,
         )
@@ -79,6 +89,8 @@ small = [str(i).encode() for i in range(100000)]
             cwd: '/',
             flags: {},
             script_cli: false,
+            filename: null,
+            script: false,
             env: {},
             stdin: null,
           },
@@ -124,6 +136,8 @@ ${ending}`,
             cwd: '/',
             flags: {},
             script_cli: false,
+            filename: null,
+            script: false,
             env: {},
             stdin: null,
           },
@@ -159,6 +173,8 @@ ${ending}`,
             cwd: '/',
             flags: {},
             script_cli: false,
+            filename: null,
+            script: false,
             env: {},
             stdin: null,
           },
@@ -195,6 +211,8 @@ saved_state = process_state()
           cwd: '/',
           flags: { B: true, X: ['probe=1'], W: ['ignore'] },
           script_cli: false,
+          filename: null,
+          script: false,
           env: {},
           stdin: null,
         },
@@ -229,7 +247,17 @@ saved_state = process_state()
           let stderr: Uint8Array
           if (mode === 'run') {
             const result = guest.run(
-              { code, argv: [], cwd: '', flags: {}, script_cli: false, env: {}, stdin: null },
+              {
+                code,
+                argv: [],
+                cwd: '',
+                flags: {},
+                script_cli: false,
+                filename: null,
+                script: false,
+                env: {},
+                stdin: null,
+              },
               () => undefined,
               () => undefined,
             )
@@ -644,7 +672,17 @@ it.each(tracebackCases)(
     const guest = new PyodideExecution(await loadPyodideRuntime())
     try {
       const result = guest.run(
-        { code, argv: ['-c'], cwd: '', flags: {}, script_cli: false, env: {}, stdin: null },
+        {
+          code,
+          argv: ['-c'],
+          cwd: '',
+          flags: {},
+          script_cli: false,
+          filename: null,
+          script: false,
+          env: {},
+          stdin: null,
+        },
         () => undefined,
         () => undefined,
       )

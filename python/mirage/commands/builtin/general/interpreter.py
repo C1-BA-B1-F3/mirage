@@ -360,5 +360,6 @@ async def run_code(
                       env=env or {},
                       stdin=prepared.stdin,
                       flags=flags,
-                      cwd=cwd))
+                      cwd=cwd,
+                      script_path=prepared.script_path))
     return run_output(result)

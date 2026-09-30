@@ -1444,6 +1444,91 @@
       "hosts": [
         "typescript"
       ]
+    },
+    {
+      "id": "script_file_names_the_program",
+      "hosts": [
+        "typescript"
+      ],
+      "world": {
+        "runtimes": [
+          "pyodide",
+          "workspace"
+        ],
+        "mounts": {
+          "/w": {
+            "vfs": "ram",
+            "files": {
+              "app/file.py": "print(__file__)\n",
+              "app/err.py": "x = 1\nprint(x / 0)\n",
+              "app/imp.py": "import sys\nprint(repr(sys.path[0]))\nimport helper\n",
+              "app/helper.py": "print('helper imported')\n"
+            }
+          }
+        }
+      },
+      "steps": [
+        {
+          "command": "python3 /w/app/file.py",
+          "expect": {
+            "exit": 0,
+            "stdout": "/w/app/file.py\n",
+            "stderr": ""
+          }
+        },
+        {
+          "command": "cd /w",
+          "expect": {
+            "exit": 0
+          }
+        },
+        {
+          "command": "python3 ./app/file.py",
+          "expect": {
+            "exit": 0,
+            "stdout": "/w/./app/file.py\n",
+            "stderr": ""
+          }
+        },
+        {
+          "command": "python3 app/err.py",
+          "expect": {
+            "exit": 1,
+            "stdout": "",
+            "stderr": "Traceback (most recent call last):\n  File \"/w/app/err.py\", line 2, in <module>\n    print(x / 0)\n          ~~^~~\nZeroDivisionError: division by zero\n"
+          }
+        },
+        {
+          "command": "python3 -P app/imp.py",
+          "expect": {
+            "exit": 1,
+            "stderr_contains": "ModuleNotFoundError: No module named 'helper'"
+          }
+        },
+        {
+          "command": "python3 app/imp.py",
+          "expect": {
+            "exit": 0,
+            "stdout": "'/w/app'\nhelper imported\n",
+            "stderr": ""
+          }
+        },
+        {
+          "command": "cat app/file.py | python3 -",
+          "expect": {
+            "exit": 0,
+            "stdout": "<stdin>\n",
+            "stderr": ""
+          }
+        },
+        {
+          "command": "python3 -c 'print(__file__)'",
+          "expect": {
+            "exit": 1,
+            "stderr_contains": "NameError: name '__file__' is not defined"
+          }
+        }
+      ]
     }
   ]
 }

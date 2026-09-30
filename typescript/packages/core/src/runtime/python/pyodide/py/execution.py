@@ -428,6 +428,8 @@ def run(request, arm_interrupt, disarm_interrupt):
     init_flags = request['flags']
     argv = request['argv']
     cwd = request['cwd']
+    filename = request['filename']
+    script = request['script']
     script_cli = request['script_cli']
     merged_env = request['env']
     stdin_bytes = request['stdin']
@@ -486,9 +488,22 @@ def run(request, arm_interrupt, disarm_interrupt):
             sys.stderr = err_text
             _process_stdio = (stdin_text, out_text, err_text)
             sys.argv = list(argv)
+            # The '' entry is CPython's answer for -c and stdin. A script's
+            # own directory stands in its place, and -P's safe path has
+            # neither.
+            if '' in sys.path:
+                at = sys.path.index('')
+                if flags.get('P'):
+                    del sys.path[at]
+                elif script:
+                    sys.path[at] = os.path.dirname(os.path.realpath(filename))
             main_module = types.ModuleType('__main__')
             user_globals = main_module.__dict__
             user_globals['__annotations__'] = {}
+            # What CPython's file door binds, for a script and for stdin.
+            if filename is not None:
+                user_globals['__file__'] = filename
+                user_globals['__cached__'] = None
             sys.modules['__main__'] = main_module
             if script_cli:
                 user_globals.update(argv=list(argv),
@@ -501,7 +516,7 @@ def run(request, arm_interrupt, disarm_interrupt):
                         saved_chdir(cwd)
                     exec(
                         compile(user_code,
-                                '<string>',
+                                filename or '<string>',
                                 'exec',
                                 optimize=optimize), user_globals)
                 finally:

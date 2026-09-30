@@ -43,6 +43,9 @@ def has_unresolved_glob(paths: list[PathSpec]) -> bool:
 def resolve_script(name: str, cwd: PathSpec | str | None) -> PathSpec:
     """Resolve a script operand to a fully-resolved PathSpec.
 
+    The spelling as typed rides along in ``raw_path``, which is the name
+    an interpreter gives its program.
+
     Args:
         name (str): the script path as typed, absolute or cwd-relative.
         cwd (PathSpec | str | None): the session working directory as
@@ -56,7 +59,8 @@ def resolve_script(name: str, cwd: PathSpec | str | None) -> PathSpec:
     return PathSpec(vfs_path=path.strip("/"),
                     virtual=path,
                     directory=directory,
-                    resolved=True)
+                    resolved=True,
+                    raw_path=name)
 
 
 def default_paths(paths: list[PathSpec],

@@ -104,9 +104,10 @@ async def expand_argv(
 
     Uses the cwd mount's CommandSpec (when it has one for the command)
     to decide which words are TEXT (skip classification) and which are
-    PATH (classify even bare filenames). A native program's line is
-    globbed whatever the slots, as bash globs it, and its words are
-    then classified for the slots the expanded words fill.
+    PATH (classify even bare filenames). A program's line (a native
+    capture, or an interpreter run in-process) is globbed whatever the
+    slots, as bash globs it, and its words are then classified for the
+    slots the expanded words fill.
 
     Args:
         parts (list[TSNodeLike]): word nodes after env-prefix
@@ -154,12 +155,15 @@ async def expand_argv(
     # A native program gets its words the way bash hands them over, with
     # every unquoted glob already expanded, whatever slot the word fills.
     native = consumer is Consumer.EXTERNAL and not refused
-    # An interpreter run in-process keeps the shell's reading of its
-    # words, which is what its argv is built from, but its script is a
-    # file it opens: the spec's script slot makes that one word a path,
-    # so a rule protecting `secret.py` reads `python3 secret.py` however
-    # the script is spelled.
+    # So does an interpreter run in-process. The words after its program
+    # are that program's argv, handed over as typed, and only its script
+    # is a file it opens: the spec's script slot makes that one word a
+    # path, so a rule protecting `secret.py` reads `python3 secret.py`
+    # however the script is spelled, while `python3 s.py data/in.csv`
+    # hands the script `data/in.csv` and a `/tmp/q.txt` beside a script
+    # on /workspace names no second mount.
     in_process = consumer is Consumer.SESSION and name in INTERPRETER_NAMES
+    program = native or in_process
     spec: CommandSpec | None = None
     word_kinds: list[ValueType | None] | None = None
     word_bases: list[str | None] | None = None
@@ -173,15 +177,13 @@ async def expand_argv(
             # program hands the words after it to that program, and
             # POSIX's own `--` is how that is said.
             extra: list[ValueType | None] = ["str"] * (consumed - 1)
-            kinds = spec_word_kinds(spec, expanded[consumed:], name)
-            if in_process:
-                kinds = [kind if kind == "path" else None for kind in kinds]
-            word_kinds = extra + kinds
+            word_kinds = extra + spec_word_kinds(spec, expanded[consumed:],
+                                                 name)
             bases = spec_word_bases(spec, expanded[consumed:], session.cwd)
             if bases is not None:
                 head: list[str | None] = [None] * (consumed - 1)
                 word_bases = head + bases
-    if native:
+    if program:
         # bash globs every unquoted word before the program reads any of
         # them, whatever slot it fills and whatever it looks like:
         # `python3 s.py *.txt` gets the matches, `.*.txt` the dotfiles and
@@ -233,7 +235,7 @@ async def expand_argv(
             item if isinstance(item, PathSpec) and item.pattern else
             literal_word(item) for item in classified
         ]
-    if native and spec:
+    if program and spec:
         words = _program_words(words, spec, name, consumed, registry,
                                session.cwd)
     # The text view renders words as typed (raw_path): bash hands
@@ -251,7 +253,7 @@ async def expand_argv(
 def _program_words(words: list[str | PathSpec], spec: CommandSpec, name: str,
                    consumed: int, registry: MountRegistry,
                    cwd: str) -> list[str | PathSpec]:
-    """Classify a native program's words for the argv it receives.
+    """Classify a program's words for the argv it receives.
 
     bash expands every glob before the program parses its argv, so a
     match can fill a slot of another kind than the word it came from:

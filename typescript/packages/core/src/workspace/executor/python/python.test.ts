@@ -76,6 +76,143 @@ describe('python3: a rule on the script', () => {
   })
 })
 
+describe('python3: the program argv and its own file', { timeout: 60000 }, () => {
+  async function seeded(): Promise<Awaited<ReturnType<typeof makeWorkspace>>> {
+    const made = await makeWorkspace()
+    await made.ws.shell('mkdir -p /disk/app /disk/data')
+    await made.ws.shell("printf 'import sys\\nprint(sys.argv[1:])\\n' > /disk/app/argv.py")
+    await made.ws.shell("printf 'print(__file__)\\n' > /disk/app/file.py")
+    await made.ws.shell("printf 'x = 1\\nprint(x / 0)\\n' > /disk/app/err.py")
+    await made.ws.shell(
+      "printf 'import sys\\nprint(repr(sys.path[0]))\\nimport helper\\n' > /disk/app/imp.py",
+    )
+    await made.ws.shell('echo \'print("helper imported")\' > /disk/app/helper.py')
+    await made.ws.shell('echo x > /disk/data/in.csv')
+    return made
+  }
+
+  it.each([
+    [
+      'cd /disk && python3 app/argv.py data/in.csv data/in ./data/in.csv /disk/data/',
+      "['data/in.csv', 'data/in', './data/in.csv', '/disk/data/']",
+    ],
+    [
+      `cd /disk && python3 -c 'import os, sys; print(os.path.join("backup", sys.argv[1]))' data/in.csv`,
+      'backup/data/in.csv',
+    ],
+    ["cd /disk && python3 app/argv.py data/*.csv 'data/*.csv'", "['data/in.csv', 'data/*.csv']"],
+    ['python3 /disk/app/argv.py /ram/notes.txt', "['/ram/notes.txt']"],
+    ['python3 /disk/app/argv.py /ram/new.csv', "['/ram/new.csv']"],
+    [
+      "python3 -c 'import sys; print(sys.argv[1:])' /ram/notes.txt /disk/data/in.csv",
+      "['/ram/notes.txt', '/disk/data/in.csv']",
+    ],
+    [
+      'cd /ram && python3 /disk/app/argv.py --input /ram/notes.txt --out=/ram/o.csv',
+      "['--input', '/ram/notes.txt', '--out=/ram/o.csv']",
+    ],
+  ])('hands a path-shaped word over as typed: %s', async (line, argv) => {
+    // bash hands the words over as typed, globs expanded, and the program
+    // opens what it likes: a word naming another mount is no second mount
+    // for the line.
+    const { ws } = await seeded()
+    try {
+      const io = await ws.shell(line)
+      expect(stderrStr(io)).toBe('')
+      expect(io.exitCode).toBe(0)
+      expect(stdoutStr(io)).toBe(`${argv}\n`)
+    } finally {
+      await ws.close()
+    }
+  })
+
+  it.each([
+    ['python3 /disk/app/file.py', '/disk/app/file.py'],
+    ['cd /disk && python3 app/file.py', '/disk/app/file.py'],
+    ['cd /disk && python3 ./app/file.py', '/disk/./app/file.py'],
+    ['cat /disk/app/file.py | python3 -', '<stdin>'],
+    ['cat /disk/app/file.py | python3', '<stdin>'],
+  ])('binds __file__ the way CPython names the file: %s', async (line, file) => {
+    // CPython 3.13.5: the operand made absolute as typed, never
+    // normalized, and <stdin> for a program piped in.
+    const { ws } = await seeded()
+    try {
+      const io = await ws.shell(line)
+      expect(stderrStr(io)).toBe('')
+      expect(stdoutStr(io)).toBe(`${file}\n`)
+    } finally {
+      await ws.close()
+    }
+  })
+
+  it('binds no __file__ for a payload', async () => {
+    const { ws } = await seeded()
+    try {
+      const io = await ws.shell("python3 -c 'print(__file__)'")
+      expect(io.exitCode).toBe(1)
+      expect(stderrStr(io)).toContain("NameError: name '__file__' is not defined")
+    } finally {
+      await ws.close()
+    }
+  })
+
+  it('names the script and quotes its line in a traceback', async () => {
+    const { ws } = await seeded()
+    try {
+      const io = await ws.shell('python3 /disk/app/err.py')
+      expect(io.exitCode).toBe(1)
+      expect(stderrStr(io)).toContain('  File "/disk/app/err.py", line 2, in <module>\n')
+      expect(stderrStr(io)).toContain('    print(x / 0)\n')
+    } finally {
+      await ws.close()
+    }
+  })
+
+  it("heads sys.path with the script's own directory", async () => {
+    const { ws } = await seeded()
+    try {
+      const io = await ws.shell('python3 /disk/app/imp.py')
+      expect(stderrStr(io)).toBe('')
+      expect(stdoutStr(io)).toBe("'/disk/app'\nhelper imported\n")
+    } finally {
+      await ws.close()
+    }
+  })
+
+  it('hands Monty the script, which it names under the directory it starts in', async () => {
+    const ws = new Workspace(
+      { '/': new RAMVFS() },
+      {
+        mode: MountMode.EXEC,
+        shellParser: await getTestParser(),
+        runtimes: [new MontyRuntime(), 'workspace'],
+      },
+    )
+    try {
+      await ws.shell("mkdir /w && printf 'print(__file__)\\n' > /w/s.py")
+      const io = await ws.shell('cd /w && python3 s.py')
+      expect(stderrStr(io)).toBe('')
+      expect(stdoutStr(io)).toBe('/w/s.py\n')
+    } finally {
+      await ws.close()
+    }
+  })
+
+  it('honors -P: neither the script directory nor the working directory', async () => {
+    const { ws } = await seeded()
+    try {
+      const io = await ws.shell('cd /disk/app && python3 -P imp.py')
+      expect(io.exitCode).toBe(1)
+      expect(stdoutStr(io)).not.toContain("''")
+      expect(stdoutStr(io)).not.toContain("'/disk/app'")
+      expect(stderrStr(io)).toContain("ModuleNotFoundError: No module named 'helper'")
+      expect(stderrStr(io)).not.toContain('-P is ignored')
+    } finally {
+      await ws.close()
+    }
+  })
+})
+
 // All tests in this file are direct ports of Python mirage's python3 tests
 // in tests/workspace/test_workspace.py. Citations are in the `it()` title.
 

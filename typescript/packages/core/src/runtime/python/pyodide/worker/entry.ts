@@ -78,6 +78,9 @@ async function execute(request: ExecuteRequest): Promise<void> {
             ...(request.args.cwd !== undefined
               ? { cwd: PathSpec.fromStrPath(request.args.cwd) }
               : {}),
+            ...(request.args.scriptPath !== undefined
+              ? { scriptPath: new PathSpec(request.args.scriptPath) }
+              : {}),
           } as Parameters<PyodideRuntime['run']>[0])
         : await runtime.eval(request.code ?? '', {
             ...(request.inputs !== undefined ? { inputs: request.inputs } : {}),

@@ -91,6 +91,80 @@ async def test_the_words_after_the_script_stay_its_argv(line):
         await ws.close()
 
 
+@pytest_asyncio.fixture
+async def two_mounts():
+    workspace = Workspace({
+        "/w": RAMVFS(),
+        "/t": RAMVFS()
+    },
+                          mode=MountMode.EXEC)
+    await workspace.shell("mkdir -p /w/data")
+    await workspace.shell("printf 'print(argv[1:])\\n' > /w/s.py")
+    await workspace.shell("echo x > /w/data/in.csv")
+    await workspace.shell("echo q > /t/q.txt")
+    yield workspace
+    await workspace.close()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("line, argv", [
+    ("cd /w && python3 s.py data/in.csv data/in ./data/in.csv /w/data/",
+     "['data/in.csv', 'data/in', './data/in.csv', '/w/data/']"),
+    ("cd /w && python3 -c 'print(argv[1:])' data/in.csv", "['data/in.csv']"),
+    ("cd /w && python3 s.py data/*.csv 'data/*.csv'",
+     "['data/in.csv', 'data/*.csv']"),
+    ("python3 /w/s.py /t/q.txt", "['/t/q.txt']"),
+    ("python3 /w/s.py /t/new.csv", "['/t/new.csv']"),
+    ("python3 -c 'print(argv[1:])' /t/q.txt /w/data/in.csv",
+     "['/t/q.txt', '/w/data/in.csv']"),
+    ("cd /t && python3 /w/s.py --input /t/q.txt --out=/t/o.csv",
+     "['--input', '/t/q.txt', '--out=/t/o.csv']"),
+])
+async def test_a_path_shaped_word_is_the_programs_argv_as_typed(
+        two_mounts, line, argv):
+    # bash hands the words over as typed, globs expanded, and the
+    # program opens what it likes: a word naming another mount is no
+    # second mount for the line.
+    io = await two_mounts.shell(line)
+    assert await io.stderr_str() == ""
+    assert io.exit_code == 0
+    assert await io.stdout_str() == argv + "\n"
+
+
+@pytest.mark.asyncio
+async def test_monty_names_a_script_run_from_its_directory(ws):
+    await ws.shell("mkdir /w && printf 'print(__file__)\\n' > /w/s.py")
+    io = await ws.shell("cd /w && python3 s.py")
+    assert io.exit_code == 0
+    assert await io.stdout_str() == "/w/s.py\n"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("line, file", [
+    ("python3 /w/s.py", "/w/s.py"),
+    ("cd /w && python3 s.py", "/w/s.py"),
+    ("cd /w && python3 ./s.py", "/w/./s.py"),
+    ("cd /w && cat s.py | python3 -", "<stdin>"),
+    ("cd /w && cat s.py | python3", "<stdin>"),
+])
+async def test_the_file_door_binds_file_on_a_cpython_runtime(
+        ws_cpython, line, file):
+    # CPython 3.13.5: the operand made absolute as typed, never
+    # normalized, and <stdin> for a program piped in.
+    await ws_cpython.shell("mkdir /w && printf 'print(__file__)\\n' > /w/s.py")
+    io = await ws_cpython.shell(line)
+    assert io.exit_code == 0
+    assert await io.stdout_str() == file + "\n"
+
+
+@pytest.mark.asyncio
+async def test_a_payload_binds_no_file_on_a_cpython_runtime(ws_cpython):
+    io = await ws_cpython.shell("python3 -c 'print(__file__)'")
+    assert io.exit_code == 1
+    assert "NameError: name '__file__' is not defined" in (await
+                                                           io.stderr_str())
+
+
 @pytest.mark.asyncio
 async def test_dash_u_before_a_script_is_a_flag_not_the_script(ws):
     await ws.shell("printf 'print(42)\\n' > /s.py")

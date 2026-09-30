@@ -16,7 +16,7 @@ import errno
 import functools
 import os
 import time
-from collections.abc import AsyncIterator, Awaitable, Callable
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
@@ -28,9 +28,7 @@ from mirage.commands.builtin.utils.paths import dot_refusal
 from mirage.context import (get_current_session, hidden_paths_intersect,
                             hidden_refusal, path_allowed)
 from mirage.errors import POSIX, FsCondition
-from mirage.io import CachableAsyncIterator, IOResult, OpReport
-from mirage.io.read_stream import ReadStream
-from mirage.io.stream import close_quietly
+from mirage.io import IOResult, OpReport
 from mirage.io.types import materialize
 from mirage.observe.context import record, start_op
 from mirage.observe.record import OpRecord
@@ -40,8 +38,8 @@ from mirage.ops.namespace_view import (merge_readdir, namespace_listing,
 from mirage.policy import post_ops_gate, pre_ops_gate
 from mirage.policy.errors import PolicyDenied, PolicyError
 from mirage.types import (DEFAULT_READ_TTL, CacheFacts, FileStat, FileType,
-                          OnExceed, PathSpec, VFSName)
-from mirage.utils.errors import (MISS_ERRORS, eloop, enoent, no_mount,
+                          PathSpec, VFSName)
+from mirage.utils.errors import (MISS_ERRORS, eisdir, eloop, enoent, no_mount,
                                  walk_refusal)
 from mirage.utils.hidden import move_reveals
 from mirage.utils.key_prefix import mount_key
@@ -279,10 +277,9 @@ class Dispatcher:
                        *,
                        report: OpReport | None = None,
                        **kwargs: Any) -> tuple[Any, IOResult]:
-        # `stream` asks for a read as a ReadStream instead of bytes. It is
-        # a way of delivering the one `read` op, not an op of its own:
-        # every gate, cap, timeout, renderer and record keyed on "read"
-        # holds for it unchanged. Consumed here, never forwarded as-is.
+        # `stream` asks for a read as a ByteSource the backend fills as
+        # the caller pulls: a way of delivering the one `read` op, so
+        # every gate, cap, renderer and record keyed on "read" holds.
         streamed = kwargs.pop("stream", False) is True
         if streamed and op != "read":
             raise ValueError(f"only read streams, not {op}")
@@ -448,8 +445,7 @@ class Dispatcher:
                                             mount.prefix, served)
                 if bound is not None:
                     served = await apply_op_limit(served, bound)
-                return (ReadStream.whole(served) if streamed else served,
-                        IOResult(reads={path.virtual: served}))
+                return served, IOResult(reads={path.virtual: served})
 
         if op == "rename" and isinstance(kwargs.get("dst"), PathSpec):
             # Ops.rename addresses both endpoints against the source's
@@ -465,13 +461,13 @@ class Dispatcher:
         # setattr fork narrows the first assignment to its dict, so the
         # local keeps the op contract's type explicitly.
         result: Any
-        # Only a whole file streams from the backend; a window is one
-        # ranged read, handed out as one chunk.
+        # Only a whole file streams; a window is one ranged read.
         streams = streamed and _window(kwargs) == (0, None)
         try:
             if op == "setattr":
                 result = await self._apply_setattr(mount, path, kwargs)
             elif streams:
+                await self._readable(mount, path)
                 result = await mount.execute_op(op,
                                                 path.virtual,
                                                 stream=True,
@@ -493,9 +489,6 @@ class Dispatcher:
             if report is not None:
                 report.served(None, None)
         else:
-            if streams and hasattr(result, "__aiter__"):
-                return (await self._open_stream(mount, path, result,
-                                                report), IOResult())
             # The op ran, whatever invalidation, the post gate, or an
             # output cap do next: stamped here so a failure in any of
             # them cannot erase a transfer the backend already made.
@@ -562,6 +555,10 @@ class Dispatcher:
                                              kwargs["dst"].virtual)
                 await self._namespace.rename_under(path.virtual,
                                                    kwargs["dst"].virtual)
+        if streams and policies.reads_results():
+            # A policy that may read the result is handed the bytes a
+            # whole read hands it, never a stream it cannot inspect.
+            result = await materialize(result)
         bound = await post_ops_gate(policies, op, path, write, mount.prefix,
                                     result)
         if bound is not None:
@@ -569,78 +566,24 @@ class Dispatcher:
             # the caller receives, not what the backend moved; the
             # report above already carries the moved count.
             result = await apply_op_limit(result, bound)
-        if streamed and isinstance(result, (bytes, bytearray)):
-            # A renderer, a window, or a backend with nothing to stream
-            # answered whole: the caller asked for a stream, so the one
-            # answer is its one chunk.
-            result = ReadStream.whole(bytes(result))
         return result, IOResult()
 
-    async def _open_stream(self, mount: MountEntry, path: PathSpec,
-                           source: AsyncIterator[bytes],
-                           report: OpReport | None) -> ReadStream:
-        """Open a streamed read the way a whole read answers.
+    async def _readable(self, mount: MountEntry, path: PathSpec) -> None:
+        """Refuse a streamed read with nothing to read before it opens.
 
-        The first chunk is pulled here, inside the door: a backend
-        stream does its work lazily, so a missing file, a directory or
-        a refused read would otherwise surface at the caller's first
-        pull, past the reconciler's miss handling and with the report
-        already claiming a completed read. What is left streams.
-
-        The post gate then sees the read. A policy that may read an
-        op's result gets the whole bytes, as a whole read hands them;
-        past result-blind policies only, the stream itself goes by, and
-        the cap they return is applied as it flows: a truncating cap
-        cuts the stream, an erroring one reads at most the cap and
-        refuses a larger file whole, exactly as ``apply_op_limit``
-        refuses it. The report settles with what the backend moved,
-        when the read ends or is closed.
+        A backend stream does its work on the first pull, after the door
+        has returned, so a missing path or a directory would fail only
+        in the caller's hands. The stat first, as the command tier's
+        ``dir_aware_stream`` does, keeps both at the call: a miss raises
+        into the door's own miss handling, a directory is EISDIR.
 
         Args:
             mount (MountEntry): the mount serving the read.
             path (PathSpec): the followed path.
-            source (AsyncIterator[bytes]): the op's framed stream.
-            report (OpReport | None): the caller's report, stamped when
-                the read settles.
         """
-        # An op may hand its stream inside a cache tee; the door never
-        # fills the cache from a streamed read, so it reads the tee's
-        # own source and a close reaches the backend.
-        if isinstance(source, CachableAsyncIterator):
-            source = source.source
-        try:
-            first = await anext(source, None)
-        except (FileNotFoundError, NotADirectoryError):
-            await close_quietly(source)
-            await self._reconciler.on_op_missing(mount, "read", path.virtual)
-            raise
-        except BaseException:
-            await close_quietly(source)
-            raise
-        stream = ReadStream(first, source if first is not None else None)
-        if report is not None:
-            stream.on_settle(lambda moved: report.served(None, moved))
-        policies = self._namespace.registry.policies
-        if policies.reads_results():
-            data = await materialize(stream)
-            bound = await post_ops_gate(policies, "read", path, False,
-                                        mount.prefix, data)
-            if bound is not None:
-                data = await apply_op_limit(data, bound)
-            return ReadStream.whole(data)
-        try:
-            bound = await post_ops_gate(policies, "read", path, False,
-                                        mount.prefix, stream)
-        except BaseException:
-            await stream.aclose()
-            raise
-        if bound is None or (bound.max_bytes is None
-                             and bound.max_lines is None):
-            return stream
-        if bound.on_exceed is OnExceed.ERROR:
-            return ReadStream.whole(await apply_op_limit(stream, bound))
-        stream.cap(bound)
-        return stream
+        row = await mount.execute_op("stat", path.virtual)
+        if isinstance(row, FileStat) and row.type is FileType.DIRECTORY:
+            raise eisdir(path)
 
     async def _moved_source_is_dir(self, path: PathSpec) -> bool:
         """Whether a rename's source stats as a directory.

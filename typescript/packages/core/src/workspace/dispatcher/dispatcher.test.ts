@@ -12,22 +12,16 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import { setFlagsFromString } from 'node:v8'
-import { runInNewContext } from 'node:vm'
 import { describe, expect, it, vi } from 'vitest'
 import { CommandTimeoutError, LimitExceededError } from '../../commands/errors.ts'
-import { CachableAsyncIterator } from '../../io/cachable_iterator.ts'
-import { ReadStream } from '../../io/read_stream.ts'
-import { materialize, OpReport } from '../../io/types.ts'
+import { materialize } from '../../io/types.ts'
 import { runWithSession } from '../../context/session_context.ts'
 import { revisionFor } from '../../observe/context.ts'
 import { OpsRegistry, type RegisteredOp } from '../../ops/registry.ts'
-import type { Policy } from '../../policy/base.ts'
-import { RESULT_BLIND, type ResultBlind } from '../../policy/mixin.ts'
-import type { Action, OpsContext, OpsResultContext } from '../../policy/types.ts'
 import { POLICY_WRITE_OPS } from './constants.ts'
-import type { Dispatcher } from './dispatcher.ts'
 import { RAMVFS } from '../../vfs/ram/ram.ts'
+import type { Policy } from '../../policy/base.ts'
+import type { Action, OpsContext, OpsResultContext } from '../../policy/types.ts'
 import { FileStat, FileType, Limit, MountMode, OnExceed, PathSpec } from '../../types.ts'
 import { getTestParser } from '../fixtures/workspace_fixture.ts'
 import { SessionState } from '../session/session.ts'
@@ -859,650 +853,153 @@ describe('rmdir namespace entries', () => {
   })
 })
 
-const CHUNK = 64 * 1024
-const MIB = 1024 * 1024
-
-interface Pulls {
-  opened: number
-  chunks: number
-  closed: boolean
-}
-
-type StreamForm = NonNullable<RegisteredOp['stream']>
-
-function doorOf(ws: Workspace): Dispatcher {
-  return (ws as unknown as { dispatcher: Dispatcher }).dispatcher
-}
-
-function ramReadOp(ws: Workspace): RegisteredOp & { stream: StreamForm } {
-  const original = ws.opsRegistry.find('read', 'ram')
-  if (original?.stream === undefined) throw new Error('ram read has no stream form')
-  return original as RegisteredOp & { stream: StreamForm }
-}
-
-function streamRead(ws: Workspace, body: StreamForm): void {
-  ws.opsRegistry.register({ ...ramReadOp(ws), stream: body })
-}
-
-function chunkedReads(ws: Workspace, size = CHUNK): Pulls {
-  const inner = ramReadOp(ws).stream
-  const pulls: Pulls = { opened: 0, chunks: 0, closed: false }
-  streamRead(ws, (accessor, path, args, kwargs) => {
-    pulls.opened++
-    const source = inner(accessor, path, args, kwargs) as AsyncIterable<Uint8Array>
-    return (async function* (): AsyncGenerator<Uint8Array> {
-      try {
-        for await (const whole of source) {
-          for (let at = 0; at < whole.byteLength; at += size) {
-            pulls.chunks++
-            yield whole.subarray(at, at + size)
-          }
-        }
-      } finally {
-        pulls.closed = true
-      }
-    })()
-  })
-  return pulls
-}
-
-function pattern(size: number): Uint8Array {
-  return Uint8Array.from({ length: size }, (_, i) => i % 251)
-}
-
-async function openStream(
-  ws: Workspace,
-  path: string,
-  kwargs: Record<string, unknown> = {},
-): Promise<ReadStream> {
-  const stream = await ws.dispatch('read', path, [], { ...kwargs, stream: true })
-  expect(stream).toBeInstanceOf(ReadStream)
-  return stream as ReadStream
-}
-
-async function chunksOf(stream: ReadStream): Promise<Uint8Array[]> {
-  const out: Uint8Array[] = []
-  for await (const chunk of stream) out.push(chunk)
-  return out
-}
-
-function joined(chunks: readonly Uint8Array[]): Uint8Array {
-  const out = new Uint8Array(chunks.reduce((n, c) => n + c.byteLength, 0))
-  let at = 0
-  for (const chunk of chunks) {
-    out.set(chunk, at)
-    at += chunk.byteLength
-  }
-  return out
-}
-
-async function settlesWithin(promise: Promise<unknown>, ms: number): Promise<boolean> {
-  let timer: ReturnType<typeof setTimeout> | undefined
-  const late = new Promise<boolean>((resolve) => {
-    timer = setTimeout(() => {
-      resolve(false)
-    }, ms)
-  })
-  try {
-    return await Promise.race([promise.then(() => true), late])
-  } finally {
-    clearTimeout(timer)
-  }
-}
-
-function exposedGc(): (() => void) | undefined {
-  const own = (globalThis as { gc?: () => void }).gc
-  if (own !== undefined) return own
-  // The flag is process-wide and stays on: resetting it could race another
-  // worker's lookup, and a runtime that refuses it just skips the GC cases.
-  try {
-    setFlagsFromString('--expose-gc')
-    const gc: unknown = runInNewContext('typeof gc === "function" ? gc : undefined')
-    return typeof gc === 'function' ? (gc as () => void) : undefined
-  } catch {
-    return undefined
-  }
-}
-
-const collectGarbage = exposedGc()
-
-async function collectedWithin(settled: () => boolean, rounds = 50): Promise<boolean> {
-  for (let i = 0; i < rounds && !settled(); i++) {
-    collectGarbage?.()
-    await new Promise((resolve) => setTimeout(resolve, 10))
-  }
-  return settled()
-}
-
-class SealReads implements Policy {
-  preOps(ctx: OpsContext): Action | null {
-    return ctx.op === 'read' ? { kind: 'deny', reason: 'sealed' } : null
-  }
-}
-
-class DenySecret implements Policy {
-  postOps(ctx: OpsResultContext): Action | null {
-    const data = ctx.result instanceof Uint8Array ? DEC.decode(ctx.result) : ''
-    return ctx.op === 'read' && data.includes('SECRET') ? { kind: 'deny', reason: 'secret' } : null
-  }
-}
-
-class BlindSeal implements Policy, ResultBlind {
-  readonly [RESULT_BLIND] = true as const
-  postOps(ctx: OpsResultContext): Action | null {
-    return ctx.op === 'read' && ctx.path.virtual.endsWith('.sealed')
-      ? { kind: 'deny', reason: 'sealed' }
-      : null
-  }
-}
-
-function ramWorkspace(
-  options: {
-    limits?: Record<string, Limit>
-    policies?: Policy[]
-    caches?: boolean
-    ram?: RAMVFS
-  } = {},
-): Workspace {
-  const ram = options.ram ?? new RAMVFS()
-  if (options.caches === true) Object.assign(ram, { cachesReads: true })
-  return new Workspace(
-    { '/m': [ram, MountMode.WRITE, options.limits ?? {}] },
-    { mode: MountMode.WRITE, policies: options.policies ?? [] },
-  )
-}
-
 describe('a streamed read through the door', () => {
-  it('equals the whole read, for one chunk and for many', async () => {
-    const ws = ramWorkspace()
-    try {
-      await ws.vfs.writeFile('/m/small.txt', 'hello stream\n')
-      const small = await openStream(ws, '/m/small.txt')
-      expect(DEC.decode(joined(await chunksOf(small)))).toBe('hello stream\n')
-      const data = pattern(5 * CHUNK + 17)
-      await ws.vfs.writeFile('/m/big.bin', data)
-      const pulls = chunkedReads(ws)
-      const chunks = await chunksOf(await openStream(ws, '/m/big.bin'))
-      expect(chunks.length).toBe(6)
-      expect(joined(chunks)).toEqual((await ws.dispatch('read', '/m/big.bin')) as Uint8Array)
-      expect(joined(chunks)).toEqual(data)
-      expect(pulls.closed).toBe(true)
-    } finally {
-      await ws.close()
-    }
-  })
-
-  it('pulls at most two chunks of a large file closed after one, and unmount completes', async () => {
-    const ws = ramWorkspace()
-    try {
-      await ws.vfs.writeFile('/m/big.bin', pattern(MIB))
-      const pulls = chunkedReads(ws)
-      const report = new OpReport()
-      const [stream] = (await doorOf(ws).dispatch(
-        'read',
-        PathSpec.fromStrPath('/m/big.bin'),
-        [],
-        { stream: true },
-        report,
-      )) as [ReadStream, unknown]
-      const first = await stream.next()
-      expect((first.value as Uint8Array).byteLength).toBe(CHUNK)
-      await stream.return()
-      expect(pulls.chunks).toBeLessThanOrEqual(2)
-      expect(pulls.closed).toBe(true)
-      expect(report.bytes).toBeLessThan(MIB)
-      expect(await settlesWithin(ws.unmount('/m'), 2000)).toBe(true)
-    } finally {
-      await ws.close()
-    }
-  })
-
-  it('refuses a missing file at the dispatch call and tells the reconciler', async () => {
-    const ws = ramWorkspace()
-    try {
-      const missing = vi.spyOn(doorOf(ws).reconciler, 'onOpMissing')
-      await expect(ws.dispatch('read', '/m/nope.txt', [], { stream: true })).rejects.toMatchObject({
-        code: 'ENOENT',
-      })
-      expect(missing).toHaveBeenCalledOnce()
-      expect(missing.mock.calls[0]?.slice(1, 3)).toEqual(['read', '/m/nope.txt'])
-      expect(missing.mock.calls[0]?.[3]).toMatchObject({ code: 'ENOENT' })
-    } finally {
-      await ws.close()
-    }
-  })
-
-  it('refuses a hidden path as absent and a pre-denied read, opening no backend', async () => {
-    const ws = ramWorkspace()
-    try {
-      await ws.vfs.writeFile('/m/secret.txt', 's')
-      const pulls = chunkedReads(ws)
-      const sess = ws.createSession('agent', { profile: { paths: { hide: ['/m/secret.txt'] } } })
-      await runWithSession(sess, async () => {
-        await expect(
-          ws.dispatch('read', '/m/secret.txt', [], { stream: true }),
-        ).rejects.toMatchObject({ code: 'ENOENT' })
-      })
-      expect(pulls.opened).toBe(0)
-    } finally {
-      await ws.close()
-    }
-    const sealed = ramWorkspace({ policies: [new SealReads()] })
-    try {
-      await sealed.vfs.writeFile('/m/a.txt', 'a')
-      const pulls = chunkedReads(sealed)
-      await expect(sealed.dispatch('read', '/m/a.txt', [], { stream: true })).rejects.toMatchObject(
-        { code: 'EACCES' },
-      )
-      expect(pulls.opened).toBe(0)
-    } finally {
-      await sealed.close()
-    }
-  })
-
-  it('serves a warm cache as one chunk and streams a raw read from the backend', async () => {
-    const ws = ramWorkspace({ caches: true })
-    try {
-      await ws.vfs.writeFile('/m/doc.txt', 'STORED')
-      await ws.cache.set('/m/doc.txt', ENC.encode('CACHED'), { ttl: 600 })
-      const pulls = chunkedReads(ws)
-      const warm = await chunksOf(await openStream(ws, '/m/doc.txt'))
-      expect(warm.map((c) => DEC.decode(c))).toEqual(['CACHED'])
-      expect(pulls.opened).toBe(0)
-      const raw = await chunksOf(await openStream(ws, '/m/doc.txt', { filetype: null }))
-      expect(DEC.decode(joined(raw))).toBe('STORED')
-      expect(pulls.opened).toBe(1)
-    } finally {
-      await ws.close()
-    }
-  })
-
-  it('lets a filetype renderer win, and a raw stream yields the stored bytes', async () => {
-    const ws = ramWorkspace()
-    try {
-      ws.opsRegistry.register({
-        name: 'read',
-        vfs: 'ram',
-        filetype: '.tally',
-        write: false,
-        fn: () => Promise.resolve(ENC.encode('RENDERED')),
-      })
-      await ws.vfs.writeFile('/m/books.tally', 'STORED')
-      const rendered = await chunksOf(await openStream(ws, '/m/books.tally'))
-      expect(rendered.map((c) => DEC.decode(c))).toEqual(['RENDERED'])
-      const raw = await chunksOf(await openStream(ws, '/m/books.tally', { filetype: null }))
-      expect(DEC.decode(joined(raw))).toBe('STORED')
-    } finally {
-      await ws.close()
-    }
-  })
-
-  it('serves a window as one chunk holding the slice', async () => {
-    const ws = ramWorkspace()
-    try {
-      await ws.vfs.writeFile('/m/r.txt', '0123456789')
-      const pulls = chunkedReads(ws)
-      const window = await chunksOf(await openStream(ws, '/m/r.txt', { offset: 2, size: 3 }))
-      expect(window.map((c) => DEC.decode(c))).toEqual(['234'])
-      expect(pulls.opened).toBe(0)
-    } finally {
-      await ws.close()
-    }
-  })
-
-  it('cuts a truncating read cap as it flows and stops the backend early', async () => {
-    const ws = ramWorkspace({ limits: { read: new Limit({ maxBytes: 100 }) } })
-    try {
-      await ws.vfs.writeFile('/m/big.bin', pattern(1024))
-      const pulls = chunkedReads(ws, 64)
-      const report = new OpReport()
-      const [stream] = (await doorOf(ws).dispatch(
-        'read',
-        PathSpec.fromStrPath('/m/big.bin'),
-        [],
-        { stream: true },
-        report,
-      )) as [ReadStream, unknown]
-      expect(joined(await chunksOf(stream))).toEqual(pattern(1024).subarray(0, 100))
-      expect(pulls.chunks).toBe(2)
-      expect(pulls.closed).toBe(true)
-      expect(report.bytes).toBe(128)
-    } finally {
-      await ws.close()
-    }
-  })
-
-  it('refuses a file over an erroring read cap at dispatch and serves one under it whole', async () => {
-    const ws = ramWorkspace({
-      limits: { read: new Limit({ maxBytes: 100, onExceed: OnExceed.ERROR }) },
-    })
-    try {
-      await ws.vfs.writeFile('/m/big.bin', pattern(1024))
-      await ws.vfs.writeFile('/m/small.bin', pattern(90))
-      const pulls = chunkedReads(ws, 64)
-      await expect(ws.dispatch('read', '/m/big.bin', [], { stream: true })).rejects.toThrow(
-        LimitExceededError,
-      )
-      expect(pulls.chunks).toBe(2)
-      expect(pulls.closed).toBe(true)
-      const small = await chunksOf(await openStream(ws, '/m/small.bin'))
-      expect(small.length).toBe(1)
-      expect(joined(small)).toEqual(pattern(90))
-    } finally {
-      await ws.close()
-    }
-  })
-
-  it('hands a content-reading post policy the bytes, so it still denies a streamed read', async () => {
-    const ws = ramWorkspace()
-    try {
-      expect(ws.policies.readsResults()).toBe(false)
-      ws.policies.add(new DenySecret())
-      expect(ws.policies.readsResults()).toBe(true)
-      await ws.vfs.writeFile('/m/leak.txt', 'x'.repeat(130) + 'SECRET')
-      await ws.vfs.writeFile('/m/plans.txt', 'y'.repeat(200))
-      const pulls = chunkedReads(ws, 64)
-      await expect(ws.dispatch('read', '/m/leak.txt', [], { stream: true })).rejects.toMatchObject({
-        code: 'EACCES',
-      })
-      expect(pulls.chunks).toBe(3)
-      const clean = await chunksOf(await openStream(ws, '/m/plans.txt'))
-      expect(clean.map((c) => DEC.decode(c))).toEqual(['y'.repeat(200)])
-    } finally {
-      await ws.close()
-    }
-  })
-
-  it('keeps a result-blind post policy on the stream, whose deny closes it', async () => {
-    const ws = ramWorkspace({ policies: [new BlindSeal()] })
-    try {
-      expect(ws.policies.readsResults()).toBe(false)
-      await ws.vfs.writeFile('/m/a.sealed', pattern(1024))
-      const pulls = chunkedReads(ws, 64)
-      await expect(ws.dispatch('read', '/m/a.sealed', [], { stream: true })).rejects.toMatchObject({
-        code: 'EACCES',
-      })
-      expect(pulls.chunks).toBe(1)
-      expect(pulls.closed).toBe(true)
-    } finally {
-      await ws.close()
-    }
-  })
-
-  it('settles the report with the moved bytes when the stream closes, not at open', async () => {
-    const ws = ramWorkspace()
-    try {
-      await ws.vfs.writeFile('/m/big.bin', pattern(4 * 64))
-      chunkedReads(ws, 64)
-      const open = async (report: OpReport): Promise<ReadStream> => {
-        const [stream] = (await doorOf(ws).dispatch(
-          'read',
-          PathSpec.fromStrPath('/m/big.bin'),
-          [],
-          { stream: true },
-          report,
-        )) as [ReadStream, unknown]
-        return stream
-      }
-      const early = new OpReport()
-      const partial = await open(early)
-      expect(early.completed).toBe(false)
-      await partial.next()
-      await partial.next()
-      expect(early.completed).toBe(false)
-      await partial.return()
-      expect([early.completed, early.bytes]).toEqual([true, 128])
-      const full = new OpReport()
-      const drained = await open(full)
-      expect(full.completed).toBe(false)
-      await chunksOf(drained)
-      expect([full.completed, full.bytes]).toEqual([true, 256])
-    } finally {
-      await ws.close()
-    }
-  })
-
-  it('refuses stream on an op other than read', async () => {
-    const ws = ramWorkspace()
-    try {
-      await ws.vfs.writeFile('/m/a.txt', 'a')
-      await expect(ws.dispatch('stat', '/m/a.txt', [], { stream: true })).rejects.toThrow(TypeError)
-      await expect(
-        ws.dispatch('write', '/m/a.txt', [ENC.encode('b')], { stream: true }),
-      ).rejects.toThrow(TypeError)
-      expect(DEC.decode((await ws.dispatch('read', '/m/a.txt')) as Uint8Array)).toBe('a')
-    } finally {
-      await ws.close()
-    }
-  })
-
-  it('a lazy stream body sees the mount revision pins on its first pull', async () => {
-    const ws = ramWorkspace()
-    try {
-      await ws.vfs.writeFile('/m/a.txt', 'a')
-      const inner = ramReadOp(ws).stream
-      const seen: (string | null)[] = []
-      streamRead(ws, (accessor, path, args, kwargs) =>
-        (async function* (): AsyncGenerator<Uint8Array> {
-          seen.push(revisionFor(path.virtual))
-          yield* inner(accessor, path, args, kwargs) as AsyncIterable<Uint8Array>
-          seen.push(revisionFor(path.virtual))
-        })(),
-      )
-      ws.namespace.mountFor('/m/a.txt').revisions.set('/m/a.txt', 'v1')
-      const stream = await openStream(ws, '/m/a.txt')
-      expect(revisionFor('/m/a.txt')).toBeNull()
-      expect(DEC.decode(joined(await chunksOf(stream)))).toBe('a')
-      expect(seen).toEqual(['v1', 'v1'])
-    } finally {
-      await ws.close()
-    }
-  })
-
-  it('holds each pull to the read timeout from the mount command limits', async () => {
-    const ws = ramWorkspace({ limits: { read: new Limit({ timeoutSeconds: 0.05 }) } })
-    try {
-      await ws.vfs.writeFile('/m/a.txt', 'a')
-      const slowAt = { pull: 2 }
-      streamRead(ws, () =>
-        (async function* (): AsyncGenerator<Uint8Array> {
-          for (let pull = 1; pull <= 3; pull++) {
-            if (pull === slowAt.pull) await new Promise((resolve) => setTimeout(resolve, 300))
-            yield ENC.encode(String(pull))
-          }
-        })(),
-      )
-      const stream = await openStream(ws, '/m/a.txt')
-      expect(DEC.decode((await stream.next()).value as Uint8Array)).toBe('1')
-      await expect(stream.next()).rejects.toThrow(CommandTimeoutError)
-      slowAt.pull = 1
-      await expect(ws.dispatch('read', '/m/a.txt', [], { stream: true })).rejects.toThrow(
-        CommandTimeoutError,
-      )
-      expect(await settlesWithin(ws.unmount('/m'), 2000)).toBe(true)
-    } finally {
-      await ws.close()
-    }
-  })
-
-  it.skipIf(collectGarbage === undefined)(
-    'a stream dropped unclosed lets unmount complete once collected (needs a gc the runtime exposes)',
-    async () => {
-      const ws = ramWorkspace()
-      try {
-        await ws.vfs.writeFile('/m/big.bin', pattern(4 * 64))
-        chunkedReads(ws, 64)
-        const openAndDrop = async (): Promise<void> => {
-          const stream = await openStream(ws, '/m/big.bin')
-          expect(((await stream.next()).value as Uint8Array).byteLength).toBe(64)
-        }
-        await openAndDrop()
-        let unmounted = false
-        const unmounting = ws.unmount('/m').then(() => {
-          unmounted = true
-        })
-        await new Promise((resolve) => setTimeout(resolve, 20))
-        expect(unmounted).toBe(false)
-        expect(await collectedWithin(() => unmounted)).toBe(true)
-        await unmounting
-      } finally {
-        await ws.close()
-      }
-    },
-  )
-})
-
-async function openReported(ws: Workspace, path: string, report: OpReport): Promise<ReadStream> {
-  const [stream] = (await doorOf(ws).dispatch(
-    'read',
-    PathSpec.fromStrPath(path),
-    [],
-    { stream: true },
-    report,
-  )) as [ReadStream, unknown]
-  expect(stream).toBeInstanceOf(ReadStream)
-  return stream
-}
-
-describe('a streamed read collected unclosed', () => {
-  it.skipIf(collectGarbage === undefined)(
-    'settles its report with the moved bytes once collected (needs a gc the runtime exposes)',
-    async () => {
-      const ws = ramWorkspace()
-      try {
-        await ws.vfs.writeFile('/m/big.bin', pattern(4 * 64))
-        chunkedReads(ws, 64)
-        const report = new OpReport()
-        const openAndDrop = async (): Promise<void> => {
-          const stream = await openReported(ws, '/m/big.bin', report)
-          expect(((await stream.next()).value as Uint8Array).byteLength).toBe(64)
-          expect(((await stream.next()).value as Uint8Array).byteLength).toBe(64)
-        }
-        await openAndDrop()
-        expect(report.completed).toBe(false)
-        expect(await collectedWithin(() => report.completed)).toBe(true)
-        expect(report.bytes).toBe(128)
-      } finally {
-        await ws.close()
-      }
-    },
-  )
-
-  it.skipIf(collectGarbage === undefined)(
-    'closes the backend before an unmount closes the VFS once collected (needs a gc the runtime exposes)',
-    async () => {
-      const ram = new RAMVFS()
-      const ws = ramWorkspace({ ram })
-      try {
-        await ws.vfs.writeFile('/m/big.bin', pattern(4 * 64))
-        const pulls = chunkedReads(ws, 64)
-        const backendClosedAtVfsClose: boolean[] = []
-        const close = ram.close.bind(ram)
-        vi.spyOn(ram, 'close').mockImplementation(() => {
-          backendClosedAtVfsClose.push(pulls.closed)
-          return close()
-        })
-        const openAndDrop = async (): Promise<void> => {
-          const stream = await openStream(ws, '/m/big.bin')
-          expect(((await stream.next()).value as Uint8Array).byteLength).toBe(64)
-        }
-        await openAndDrop()
-        let unmounted = false
-        const unmounting = ws.unmount('/m').then(() => {
-          unmounted = true
-        })
-        await new Promise((resolve) => setTimeout(resolve, 20))
-        expect(unmounted).toBe(false)
-        expect(pulls.closed).toBe(false)
-        expect(await collectedWithin(() => unmounted)).toBe(true)
-        await unmounting
-        expect(pulls.closed).toBe(true)
-        expect(backendClosedAtVfsClose).toEqual([true])
-      } finally {
-        await ws.close()
-      }
-    },
-  )
-})
-
-describe('a streamed read the op hands in a cache tee', () => {
-  function teedReads(ws: Workspace, size: number): [Pulls, CachableAsyncIterator[]] {
-    const pulls = chunkedReads(ws, size)
-    const chunked = ramReadOp(ws).stream
-    const tees: CachableAsyncIterator[] = []
-    streamRead(ws, (accessor, path, args, kwargs) => {
-      const tee = new CachableAsyncIterator(
-        chunked(accessor, path, args, kwargs) as AsyncIterable<Uint8Array>,
-      )
-      tees.push(tee)
-      return tee
-    })
-    return [pulls, tees]
+  interface Pulls {
+    count: number
+    closed: boolean
   }
 
-  it('closes the backend through the tee source on an early return, and unmount completes', async () => {
-    const ws = ramWorkspace()
+  class Seal implements Policy {
+    preOps(ctx: OpsContext): Action | null {
+      return ctx.path.virtual === '/m/big.txt' ? { kind: 'deny', reason: 'sealed' } : null
+    }
+  }
+
+  class DenySecret implements Policy {
+    postOps(ctx: OpsResultContext): Action | null {
+      const data = ctx.result instanceof Uint8Array ? DEC.decode(ctx.result) : ''
+      return data.includes('SECRET') ? { kind: 'deny', reason: 'secret' } : null
+    }
+  }
+
+  // A RAM read hands its file over in one piece; the spy re-chunks it so
+  // a test can count what the door pulled and see whether it closed. It
+  // goes in after the workspace has registered the mount's own ops.
+  async function spiedWorkspace(policies: Policy[] = []): Promise<[Workspace, Pulls]> {
+    const pulls: Pulls = { count: 0, closed: false }
+    const ram = new RAMVFS()
+    const registry = new OpsRegistry()
+    const ws = new Workspace({ '/m': ram }, { mode: MountMode.WRITE, ops: registry })
+    await ws.vfs.writeFile('/m/big.txt', ENC.encode('x'.repeat(100_000)))
+    await ws.vfs.writeFile('/m/leak.txt', ENC.encode(`${'x'.repeat(20_000)}SECRET`))
+    await ws.vfs.mkdir('/m/sub')
+    const generic = registry.find('read', 'ram')
+    const inner = generic?.stream
+    if (generic === null || inner === undefined) throw new Error('no stream form')
+    registry.register({
+      ...generic,
+      stream: (accessor, path, args, kwargs) =>
+        (async function* body(): AsyncGenerator<Uint8Array> {
+          try {
+            const whole = inner(accessor, path, args, kwargs) as AsyncIterable<Uint8Array>
+            for await (const data of whole) {
+              for (let at = 0; at < data.byteLength; at += 1024) {
+                pulls.count++
+                yield data.subarray(at, at + 1024)
+              }
+            }
+          } finally {
+            pulls.closed = true
+          }
+        })(),
+    })
+    for (const policy of policies) ws.policies.add(policy)
+    return [ws, pulls]
+  }
+
+  const streamed = (ws: Workspace, path: string, kwargs: Record<string, unknown> = {}) =>
+    ws.dispatch('read', path, [], { ...kwargs, stream: true })
+
+  it('answers what the whole read does', async () => {
+    const [ws, pulls] = await spiedWorkspace()
     try {
-      await ws.vfs.writeFile('/m/big.bin', pattern(MIB))
-      const [pulls, tees] = teedReads(ws, CHUNK)
-      const report = new OpReport()
-      const stream = await openReported(ws, '/m/big.bin', report)
-      expect(((await stream.next()).value as Uint8Array).byteLength).toBe(CHUNK)
-      await stream.return()
-      expect(tees.length).toBe(1)
-      expect(pulls.chunks).toBeLessThanOrEqual(2)
-      expect(pulls.closed).toBe(true)
-      expect(tees[0]?.bufferedChunks.length).toBe(0)
-      expect([report.completed, report.bytes]).toEqual([true, CHUNK])
-      expect(await settlesWithin(ws.unmount('/m'), 2000)).toBe(true)
+      const whole = (await ws.dispatch('read', '/m/big.txt')) as Uint8Array
+      const all = await materialize((await streamed(ws, '/m/big.txt')) as AsyncIterable<Uint8Array>)
+      expect(all).toEqual(whole)
+      expect(pulls.count).toBeGreaterThan(1)
+      const window = (await streamed(ws, '/m/big.txt', { offset: 5, size: 3 })) as Uint8Array
+      expect(DEC.decode(window)).toBe('xxx')
     } finally {
       await ws.close()
     }
   })
 
-  it('streams a drained read through the tee source without buffering it in the tee', async () => {
-    const ws = ramWorkspace()
+  it.each([
+    ['/m/nope', 'ENOENT', []],
+    ['/m/sub', 'EISDIR', []],
+    ['/m/big.txt', 'EACCES', [new Seal()]],
+    ['/m/leak.txt', 'EACCES', [new DenySecret()]],
+  ] as const)('refuses %s at the call (%s)', async (path, code, policies) => {
+    const [ws] = await spiedWorkspace([...policies])
     try {
-      const data = pattern(5 * CHUNK + 17)
-      await ws.vfs.writeFile('/m/big.bin', data)
-      const [pulls, tees] = teedReads(ws, CHUNK)
-      const chunks = await chunksOf(await openStream(ws, '/m/big.bin'))
-      expect(chunks.length).toBe(6)
-      expect(joined(chunks)).toEqual(data)
-      expect(pulls.closed).toBe(true)
-      expect(tees[0]?.bufferedChunks.length).toBe(0)
-      expect(await settlesWithin(ws.unmount('/m'), 2000)).toBe(true)
+      await expect(streamed(ws, path)).rejects.toMatchObject({ code })
     } finally {
       await ws.close()
     }
   })
-})
 
-describe('shell streams over a device mount', () => {
-  it.skipIf(collectGarbage === undefined)(
-    'repeated /dev pipelines leave no stream held (needs a gc the runtime exposes)',
-    async () => {
-      const parser = await getTestParser()
-      const ws = new Workspace(
-        { '/data': new RAMVFS() },
-        { mode: MountMode.WRITE, shellParserFactory: () => Promise.resolve(parser) },
-      )
+  it('stops the backend when closed early and frees the mount', async () => {
+    const [ws, pulls] = await spiedWorkspace()
+    const stream = (await streamed(ws, '/m/big.txt')) as AsyncIterableIterator<Uint8Array>
+    expect((await stream.next()).value).toHaveLength(1024)
+    await stream.return?.()
+    expect(pulls).toEqual({ count: 1, closed: true })
+    await ws.unmount('/m')
+    await ws.close()
+  })
+
+  it.each([OnExceed.TRUNCATE, OnExceed.ERROR])(
+    'stops the stream at a read cap (%s)',
+    async (onExceed) => {
+      const [ws, pulls] = await spiedWorkspace()
       try {
-        for (let run = 0; run < 5; run++) {
-          const result = await ws.shell('cat /dev/zero | head -c 4')
-          expect(result.stdoutText).toBe('\0'.repeat(4))
+        const mount = ws.mounts().find((m) => m.prefix === '/m/')
+        mount?.commandLimits.set('read', new Limit({ maxBytes: 10, onExceed }))
+        if (onExceed === OnExceed.ERROR) {
+          await expect(streamed(ws, '/m/big.txt')).rejects.toThrow(LimitExceededError)
+        } else {
+          expect(((await streamed(ws, '/m/big.txt')) as Uint8Array).byteLength).toBe(10)
         }
-        const dev = ws.mounts().find((m) => m.prefix === '/dev/')
-        if (dev === undefined) throw new Error('no /dev mount')
-        let idle = false
-        void dev.activity.wait().then(() => {
-          idle = true
-        })
-        expect(await collectedWithin(() => idle)).toBe(true)
+        expect(pulls).toEqual({ count: 1, closed: true })
       } finally {
         await ws.close()
       }
     },
-    30_000,
   )
+
+  it('keeps the op frame: revision pins and the op timeout reach the lazy body', async () => {
+    const registry = new OpsRegistry()
+    const ws = new Workspace({ '/m': new RAMVFS() }, { mode: MountMode.WRITE, ops: registry })
+    const generic = registry.find('read', 'ram')
+    if (generic === null) throw new Error('no read')
+    try {
+      await ws.vfs.writeFile('/m/f.txt', ENC.encode('stored'))
+      const mount = ws.mounts().find((m) => m.prefix === '/m/')
+      mount?.revisions.set('/m/f.txt', 'v1')
+      registry.register({
+        ...generic,
+        stream: (_accessor, path) =>
+          (async function* pinned(): AsyncGenerator<Uint8Array> {
+            await Promise.resolve()
+            yield ENC.encode(revisionFor(path.virtual) ?? 'unpinned')
+          })(),
+      })
+      const pinned = (await streamed(ws, '/m/f.txt')) as AsyncIterable<Uint8Array>
+      expect(DEC.decode(await materialize(pinned))).toBe('v1')
+      mount?.commandLimits.set('read', new Limit({ timeoutSeconds: 0.05 }))
+      registry.register({
+        ...generic,
+        stream: () =>
+          (async function* slow(): AsyncGenerator<Uint8Array> {
+            await new Promise((resolve) => setTimeout(resolve, 1000))
+            yield ENC.encode('late')
+          })(),
+      })
+      const slow = (await streamed(ws, '/m/f.txt')) as AsyncIterable<Uint8Array>
+      await expect(materialize(slow)).rejects.toThrow(CommandTimeoutError)
+      await expect(ws.dispatch('stat', '/m/f.txt', [], { stream: true })).rejects.toThrow(TypeError)
+    } finally {
+      await ws.close()
+    }
+  })
 })

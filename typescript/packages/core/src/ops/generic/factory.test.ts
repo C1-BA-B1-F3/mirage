@@ -15,7 +15,6 @@
 import { describe, expect, it, vi } from 'vitest'
 
 import { Accessor } from '../../accessor/base.ts'
-import { RAMIndexCacheStore } from '../../cache/index/ram.ts'
 import { FileStat, FileType, PathSpec } from '../../types.ts'
 import { makeGenericOps, type OpsTable } from './factory.ts'
 
@@ -370,28 +369,15 @@ it('emulated truncate refuses no-create before reading or writing', async () => 
   expect(write).not.toHaveBeenCalled()
 })
 
-describe('the read op streaming form', () => {
-  it('carries a stream form when the table has readStream, returning the unstarted stream', () => {
-    let started = false
+describe('the read op stream form', () => {
+  it('carries the table stream form, and none without one', () => {
     const stream = (async function* (): AsyncGenerator<Uint8Array> {
-      started = true
-      yield await Promise.resolve(DATA)
+      yield await Promise.resolve(new Uint8Array([1]))
     })()
     const readStream = vi.fn(() => stream)
-    const op = readOp(makeTable({ readStream }))
-    expect(op.stream).toBeDefined()
-    const index = new RAMIndexCacheStore()
-    expect(op.stream?.(ACCESSOR, PATH, [], { index })).toBe(stream)
-    expect(readStream).toHaveBeenCalledWith(ACCESSOR, PATH, index)
-    expect(started).toBe(false)
-  })
-
-  it('has no stream form when the table has none', () => {
+    const read = readOp(makeTable({ readStream }))
+    expect(read.stream?.(ACCESSOR, PATH, [], {})).toBe(stream)
+    expect(readStream).toHaveBeenCalledWith(ACCESSOR, PATH, undefined)
     expect(readOp(makeTable()).stream).toBeUndefined()
-    expect(
-      makeGenericOps('x', makeTable({ readStream: vi.fn() }))
-        .filter((o) => o.name !== 'read')
-        .every((o) => o.stream === undefined),
-    ).toBe(true)
   })
 })

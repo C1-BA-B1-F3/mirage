@@ -14,18 +14,14 @@
 
 import asyncio
 import errno
-import gc
 
 import pytest
 
-from mirage import Workspace
 from mirage.accessor.ram import RAMAccessor
 from mirage.commands.config import command
 from mirage.commands.spec import CommandSpec
 from mirage.commands.spec.types import Option
 from mirage.io.types import IOResult, materialize
-from mirage.observe.context import revision_for
-from mirage.ops.registry import op
 from mirage.types import MountMode, PathSpec
 from mirage.utils.errors import OperationNotSupportedError, ReadOnlyError
 from mirage.vfs.ram import RAMVFS
@@ -290,126 +286,6 @@ def test_execute_op_no_such_op(registry):
     assert exc_info.value.errno == errno.ENOTSUP
 
 
-@op("read", vfs="ram", filetype=".tally")
-async def _read_tally(accessor, path: PathSpec, **kwargs) -> bytes:
-    return b"RENDERED"
-
-
-def _refuse_whole(accessor, scope, *args, **kwargs):
-    raise AssertionError("a streamed read must not run the whole read")
-
-
-def _pinned_stream(accessor, scope, *args, **kwargs):
-
-    async def body():
-        yield (revision_for(scope.virtual) or "unpinned").encode()
-
-    return body()
-
-
-def _stream_registry() -> tuple[MountRegistry, MountEntry]:
-    vfs = RAMVFS()
-    vfs._store.files["/f.txt"] = b"stored\n"
-    vfs._store.files["/books.tally"] = b"STORED"
-    reg = MountRegistry()
-    reg.mount("/data/", vfs, MountMode.WRITE)
-    mount = reg.mount_for("/data/f.txt")
-    mount.register_fns([_read_tally])
-    return reg, mount
-
-
-@pytest.mark.asyncio
-async def test_execute_op_with_stream_answers_from_the_ops_stream_form(
-        monkeypatch):
-    _, mount = _stream_registry()
-    whole = await mount.execute_op("read", "/data/f.txt")
-    assert whole == b"stored\n"
-    monkeypatch.setattr(mount._ops[("read", None)], "fn", _refuse_whole)
-    stream = await mount.execute_op("read", "/data/f.txt", stream=True)
-    assert not isinstance(stream, (bytes, bytearray))
-    assert hasattr(stream, "__aiter__")
-    assert b"".join([chunk async for chunk in stream]) == b"stored\n"
-
-
-@pytest.mark.asyncio
-async def test_a_filetype_read_without_a_stream_form_still_wins():
-    _, mount = _stream_registry()
-    assert mount._ops[("read", ".tally")].stream is None
-    rendered = await mount.execute_op("read", "/data/books.tally", stream=True)
-    assert rendered == b"RENDERED"
-    raw = await mount.execute_op("read",
-                                 "/data/books.tally",
-                                 stream=True,
-                                 filetype=None)
-    assert b"".join([chunk async for chunk in raw]) == b"STORED"
-
-
-@pytest.mark.asyncio
-async def test_a_streamed_read_sees_the_mounts_revision_pins(monkeypatch):
-    _, mount = _stream_registry()
-    mount.revisions = {"/data/f.txt": "v1"}
-    monkeypatch.setattr(mount._ops[("read", None)], "stream", _pinned_stream)
-    stream = await mount.execute_op("read", "/data/f.txt", stream=True)
-    assert revision_for("/data/f.txt") is None
-    assert [chunk async for chunk in stream] == [b"v1"]
-
-
-@pytest.mark.asyncio
-async def test_a_dropped_stream_releases_its_mount_when_collected():
-    vfs = RAMVFS()
-    vfs._store.files["/f.txt"] = b"stored\n"
-    ws = Workspace({"/data/": vfs}, mode=MountMode.WRITE)
-    mount = ws._registry.mount_for("/data/f.txt")
-    stream = await mount.execute_op("read", "/data/f.txt", stream=True)
-    assert await anext(stream) == b"stored\n"
-    waiting = asyncio.create_task(mount.activity.wait())
-    await asyncio.sleep(0)
-    assert not waiting.done()
-    del stream
-    gc.collect()
-    await asyncio.wait_for(waiting, 1)
-    await asyncio.wait_for(ws.unmount("/data/"), 2)
-    assert "/data/" not in [m.prefix for m in ws._registry.mounts()]
-
-
-@pytest.mark.asyncio
-async def test_a_dropped_stream_closes_its_backend_before_the_vfs_closes(
-        monkeypatch):
-    events: list[str] = []
-    vfs = RAMVFS()
-    vfs._store.files["/f.txt"] = b"stored\n"
-
-    async def close() -> None:
-        events.append("vfs close")
-
-    def logged_stream(accessor, scope, *args, **kwargs):
-
-        async def body():
-            try:
-                yield b"one"
-                yield b"two"
-            finally:
-                await asyncio.sleep(0.05)
-                events.append("backend finally")
-
-        return body()
-
-    monkeypatch.setattr(vfs, "close", close)
-    ws = Workspace({"/data/": vfs}, mode=MountMode.WRITE)
-    mount = ws._registry.mount_for("/data/f.txt")
-    monkeypatch.setattr(mount._ops[("read", None)], "stream", logged_stream)
-    stream = await mount.execute_op("read", "/data/f.txt", stream=True)
-    assert await anext(stream) == b"one"
-    unmounting = asyncio.create_task(ws.unmount("/data/"))
-    await asyncio.sleep(0.01)
-    assert not unmounting.done()
-    del stream
-    gc.collect()
-    await asyncio.wait_for(unmounting, 2)
-    assert events == ["backend finally", "vfs close"]
-    await ws.close()
-
-
 # ── command resolution ─────────────────────────
 
 
@@ -441,16 +317,3 @@ async def test_a_path_guarded_command_is_still_held_at_its_write():
     assert (io.exit_code,
             io.stderr) == (1, b"\ngzip: /ram/a.gz: Read-only file system\n")
     assert vfs._store.files == {"/a": b"original"}
-
-
-@pytest.mark.asyncio
-async def test_repeated_dev_pipelines_leave_no_stream_held():
-    ws = Workspace({"/data/": RAMVFS()}, mode=MountMode.WRITE)
-    dev = next(m for m in ws.mounts() if m.prefix == "/dev/")
-    for _ in range(5):
-        result = await ws.shell("cat /dev/zero | head -c 4")
-        assert await result.stdout_str() == "\0" * 4
-        del result
-    gc.collect()
-    await asyncio.wait_for(dev.activity.wait(), 2)
-    await ws.close()

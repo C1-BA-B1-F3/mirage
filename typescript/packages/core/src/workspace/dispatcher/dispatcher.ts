@@ -19,9 +19,7 @@ import { CacheManager } from '../../cache/manager.ts'
 import { applyOpLimit, runWithTimeout } from '../../commands/builtin/utils/limit.ts'
 import { dispatchStat, dotRefusal } from '../../commands/builtin/utils/paths.ts'
 import { getExtension } from '../../commands/resolve.ts'
-import { IOResult, materialize, type OpReport } from '../../io/types.ts'
-import { ReadStream } from '../../io/read_stream.ts'
-import { CachableAsyncIterator } from '../../io/cachable_iterator.ts'
+import { type ByteSource, IOResult, materialize, type OpReport } from '../../io/types.ts'
 import {
   eacces,
   erofsReadOnly,
@@ -60,7 +58,6 @@ import {
   FileStat,
   FileType,
   MountMode,
-  OnExceed,
   PathSpec,
   VFSName,
 } from '../../types.ts'
@@ -149,11 +146,6 @@ function takeIssuer(
   return [issuer, rest]
 }
 
-/** Whether an op answered with a stream rather than a value. */
-function isAsyncIterable(value: unknown): value is AsyncIterable<Uint8Array> {
-  return value !== null && typeof value === 'object' && Symbol.asyncIterator in value
-}
-
 /** The byte window a read asked for, whole file when it asked none. */
 function readWindow(kwargs: OpKwargs | undefined): [number, number | null] {
   return [
@@ -240,10 +232,9 @@ export class Dispatcher {
     // each one is told whose op it judges.
     const [issuer, stripped] = takeIssuer(kwargs)
     kwargs = stripped
-    // `stream` asks for a read as a ReadStream instead of bytes. It is a
-    // way of delivering the one `read` op, not an op of its own: every
-    // gate, cap, timeout, renderer and record keyed on 'read' holds for
-    // it unchanged. Consumed here, never forwarded as-is.
+    // `stream` asks for a read as a ByteSource the backend fills as the
+    // caller pulls: a way of delivering the one `read` op, so every gate,
+    // cap, renderer and record keyed on 'read' holds.
     const streamed = kwargs?.stream === true
     if (kwargs !== undefined && 'stream' in kwargs) {
       const rest = { ...kwargs }
@@ -485,10 +476,7 @@ export class Dispatcher {
         const served = (
           warmBound !== null ? await applyOpLimit(window, warmBound) : window
         ) as Uint8Array
-        return [
-          streamed ? ReadStream.whole(served) : served,
-          new IOResult({ reads: { [p.virtual]: served } }),
-        ]
+        return [served, new IOResult({ reads: { [p.virtual]: served } })]
       }
     }
     if (this.opsRegistry.find(opName, vfs)?.write === true) {
@@ -533,15 +521,14 @@ export class Dispatcher {
     // mirroring Python's Mount.execute_op.
     const opOverride = mount.commandLimits.get(opName) ?? null
     const opTimeout = opOverride !== null ? opOverride.timeoutSeconds : null
-    // Only a whole file streams from the backend; a window is one ranged
-    // read, handed out as one chunk.
+    // Only a whole file streams; a window is one ranged read.
     const [offset, size] = readWindow(kwargs)
     const streams = streamed && offset === 0 && size === null
     let result
     try {
-      // The stream is framed inside the op's own revisions binding, so a
-      // lazy backend body pulled after this frame exits still reads the
-      // pins (and the session) the call had.
+      if (streams) await this.readable(vfs, mountPrefix, mode, scope, issuer)
+      // Framed inside the op's own revisions binding, so a stream pulled
+      // after this frame exits still reads the pins the call had.
       result = await mount.use(() =>
         runWithMountContext(
           () =>
@@ -566,7 +553,7 @@ export class Dispatcher {
                 ),
                 mount.mountId,
                 mount.activity,
-                opTimeout,
+                opOverride,
                 opName,
               ),
             ),
@@ -588,9 +575,6 @@ export class Dispatcher {
         result = fallback
         memoryAnswered(report)
       }
-    }
-    if (streams && isAsyncIterable(result)) {
-      return [await this.openStream(mount, p, result, report), new IOResult()]
     }
     // The op ran, whatever invalidation, the post gate, or an output
     // cap do next: stamped here so a failure in any of them cannot
@@ -653,6 +637,11 @@ export class Dispatcher {
     if (opName === 'stat' && result instanceof FileStat) {
       result = mergeOverlayStat(this.namespace.metaFor(p.virtual), result)
     }
+    if (streams && this.policies.readsResults()) {
+      // A policy that may read the result is handed the bytes a whole
+      // read hands it, never a stream it cannot inspect.
+      result = await materialize(result as ByteSource)
+    }
     const bound = await postOpsGate(this.policies, opName, p, opWrite, mountPrefix, result)
     if (bound !== null) {
       // The transfer already happened, so the limit changes what the
@@ -660,78 +649,28 @@ export class Dispatcher {
       // already carries the moved count.
       result = await applyOpLimit(result, bound)
     }
-    // A renderer, a window, or a backend with nothing to stream answered
-    // whole: the caller asked for a stream, so the one answer is its one
-    // chunk.
-    if (streamed && result instanceof Uint8Array) result = ReadStream.whole(result)
     return [result, new IOResult()]
   }
 
   /**
-   * Open a streamed read the way a whole read answers.
+   * Refuse a streamed read with nothing to read before it opens.
    *
-   * The first chunk is pulled here, inside the door: a backend stream
-   * does its work lazily, so a missing file, a directory or a refused
-   * read would otherwise surface at the caller's first pull, past the
-   * reconciler's miss handling and with the report already claiming a
-   * completed read. What is left streams.
-   *
-   * The post gate then sees the read. A policy that may read an op's
-   * result gets the whole bytes, as a whole read hands them; past
-   * result-blind policies only, the stream itself goes by, and the cap
-   * they return is applied as it flows: a truncating cap cuts the
-   * stream, an erroring one reads at most the cap and refuses a larger
-   * file whole, exactly as `applyOpLimit` refuses it. The report settles
-   * with what the backend moved, when the read ends or is closed.
-   * Mirrors Python's `Dispatcher._open_stream`.
+   * A backend stream does its work on the first pull, after the door has
+   * returned, so a missing path or a directory would fail only in the
+   * caller's hands. The stat first, as the command tier's
+   * `dirAwareStream` does, keeps both at the call: a miss throws into the
+   * door's own miss handling, a directory is EISDIR. Mirrors Python's
+   * `Dispatcher._readable`.
    */
-  private async openStream(
-    mount: MountEntry,
-    p: PathSpec,
-    source: AsyncIterable<Uint8Array>,
-    report: OpReport | undefined,
-  ): Promise<ReadStream> {
-    // An op may hand its stream inside a cache tee; the door never fills
-    // the cache from a streamed read, so it reads the tee's own source and
-    // a close reaches the backend.
-    const iterator =
-      source instanceof CachableAsyncIterator ? source.source : source[Symbol.asyncIterator]()
-    let step: IteratorResult<Uint8Array>
-    try {
-      step = await iterator.next()
-    } catch (err) {
-      // Best-effort, as closeQuietly: the failed pull already released
-      // the hold, and the caller is owed the read's own error.
-      await Promise.resolve(iterator.return?.()).catch(() => undefined)
-      await this.reconciler.onOpMissing(mount, 'read', p.virtual, err)
-      throw err
-    }
-    const stream =
-      step.done === true ? new ReadStream(null, null) : new ReadStream(step.value, iterator)
-    if (report !== undefined) {
-      void stream.onSettle((moved) => {
-        report.served(null, moved)
-      })
-    }
-    if (this.policies.readsResults()) {
-      let data = await materialize(stream)
-      const bound = await postOpsGate(this.policies, 'read', p, false, mount.prefix, data)
-      if (bound !== null) data = (await applyOpLimit(data, bound)) as Uint8Array
-      return ReadStream.whole(data)
-    }
-    let bound
-    try {
-      bound = await postOpsGate(this.policies, 'read', p, false, mount.prefix, stream)
-    } catch (err) {
-      await stream.return()
-      throw err
-    }
-    if (bound === null || (bound.maxBytes === null && bound.maxLines === null)) return stream
-    if (bound.onExceed === OnExceed.ERROR) {
-      return ReadStream.whole((await applyOpLimit(stream, bound)) as Uint8Array)
-    }
-    stream.cap(bound)
-    return stream
+  private async readable(
+    vfs: BaseVFS,
+    mountPrefix: string,
+    mode: MountMode,
+    scope: PathSpec,
+    issuer?: symbol,
+  ): Promise<void> {
+    const row = await this.fencedCall(vfs, mountPrefix, mode, 'stat', scope, issuer)
+    if (row instanceof FileStat && row.type === FileType.DIRECTORY) throw eisdir(scope.virtual)
   }
 
   /**
@@ -803,22 +742,19 @@ export class Dispatcher {
     // Python's twin gets both bindings from `Mount.execute_op`.
     await mount.ensureReady()
     try {
-      return await mount.use(() =>
-        runWithMountContext(
+      return await mount.use(async () => {
+        const answer = await runWithMountContext(
           () =>
-            runWithRevisions(mount.revisions.size > 0 ? mount.revisions : null, async () =>
-              wrapOpStream(
-                await this.opsRegistry.call(opName, vfs, vfs.accessor, spec, [], {
-                  ...this.indexKwargs(mount),
-                  ...kwargs,
-                }),
-                mount.mountId,
-                mount.activity,
-              ),
+            runWithRevisions(mount.revisions.size > 0 ? mount.revisions : null, () =>
+              this.opsRegistry.call(opName, vfs, vfs.accessor, spec, [], {
+                ...this.indexKwargs(mount),
+                ...kwargs,
+              }),
             ),
           mount.mountId,
-        ),
-      )
+        )
+        return wrapOpStream(answer, mount.mountId, mount.activity)
+      })
     } finally {
       if (write) await this.invalidateAfterWriteByPath(spec.virtual)
     }

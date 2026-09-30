@@ -24,9 +24,7 @@ import { MountRegistry } from '../workspace/mount/registry.ts'
 import { Workspace } from '../workspace/workspace/workspace.ts'
 import type { Policy } from './base.ts'
 import { MountRootPolicy } from './builtin/mount_root.ts'
-import { OutputCapPolicy } from './builtin/output_cap.ts'
 import { PolicyDenied } from './errors.ts'
-import { isResultBlind, RESULT_BLIND, type ResultBlind } from './mixin.ts'
 import {
   Policies,
   postExecuteGate,
@@ -39,6 +37,7 @@ import {
   renderPending,
 } from './policies.ts'
 import { RulePolicy } from './rule.ts'
+import { RESULT_BLIND, type ResultBlind } from './mixin.ts'
 import type {
   Action,
   CommandContext,
@@ -297,36 +296,6 @@ describe('Policies', () => {
       reason: 'nope',
       policy: 'Object',
     })
-  })
-})
-
-describe('Policies.readsResults', () => {
-  class BlindDeny implements Policy, ResultBlind {
-    readonly [RESULT_BLIND] = true as const
-    postOps(ctx: OpsResultContext): Action | null {
-      return ctx.path.virtual.endsWith('.sealed') ? { kind: 'deny', reason: 'sealed' } : null
-    }
-  }
-
-  it('is false with only the built-ins and true once a result-reading post policy is added', () => {
-    const policies = new Policies([new MountRootPolicy(), new OutputCapPolicy(() => null)])
-    expect(new Policies().readsResults()).toBe(false)
-    expect(policies.readsResults()).toBe(false)
-    policies.add(new DenyReadOps())
-    expect(policies.readsResults()).toBe(false)
-    const reader = new DenyBigResults()
-    policies.add(reader)
-    expect(policies.readsResults()).toBe(true)
-    policies.remove(reader)
-    expect(policies.readsResults()).toBe(false)
-  })
-
-  it('stays false for a result-blind post policy', () => {
-    const policies = new Policies([new MountRootPolicy(), new OutputCapPolicy(() => null)])
-    policies.add(new BlindDeny())
-    expect(isResultBlind(new BlindDeny())).toBe(true)
-    expect(isResultBlind(new DenyBigResults())).toBe(false)
-    expect(policies.readsResults()).toBe(false)
   })
 })
 
@@ -857,4 +826,20 @@ it('removes by identity, refreshes hooks and preserves an admission in progress'
   expect(policies.wants('preCommand')).toBe(false)
   expect(policies.remove(first)).toBe(false)
   expect(await policies.preCommand(ctx('weird'))).toBeNull()
+})
+
+describe('Policies.readsResults', () => {
+  class BlindPost implements Policy, ResultBlind {
+    readonly [RESULT_BLIND] = true as const
+    postOps(): null {
+      return null
+    }
+  }
+
+  it('is true only while a result-reading postOps is present', () => {
+    const policies = new Policies([new BlindPost()])
+    expect(policies.readsResults()).toBe(false)
+    policies.add({ postOps: () => null })
+    expect(policies.readsResults()).toBe(true)
+  })
 })

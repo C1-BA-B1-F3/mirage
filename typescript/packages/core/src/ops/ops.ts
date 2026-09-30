@@ -13,7 +13,6 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import { type IOResult, OpReport } from '../io/types.ts'
-import { ReadStream } from '../io/read_stream.ts'
 import type { OpRecord } from '../observe/record.ts'
 import { finishRecord, type OpTimer, startOp } from '../observe/context.ts'
 import { NO_FOLLOW_OPS, type NamespaceLinks } from './config.ts'
@@ -244,28 +243,19 @@ export class Ops {
       }
       throw err
     }
-    if (owner === null) return result
-    const session = this.sessionFor(seen)
-    if (result instanceof ReadStream) {
-      // A streamed read has moved nothing yet: it is recorded when it
-      // settles, with what the backend moved by then.
-      const mount = owner
-      await result.onSettle(() =>
-        this.recordOp(op, followed, mount, report.source, report.bytes, null, args, timer, session),
+    if (owner !== null) {
+      await this.recordOp(
+        op,
+        followed,
+        owner,
+        report.source,
+        report.bytes,
+        result,
+        args,
+        timer,
+        this.sessionFor(seen),
       )
-      return result
     }
-    await this.recordOp(
-      op,
-      followed,
-      owner,
-      report.source,
-      report.bytes,
-      result,
-      args,
-      timer,
-      session,
-    )
     return result
   }
 
@@ -329,30 +319,6 @@ export class Ops {
       )) as Uint8Array
     }
     return (await this.through('read', path, [], kwargs, sessionId)) as Uint8Array
-  }
-
-  /**
-   * Read file content as it arrives: the same read as `readFile`, gated,
-   * capped and rendered alike, handed out as a stream. A missing or
-   * refused file fails here, the rest arrives as the caller pulls it,
-   * and the op is recorded once the stream ends or is closed, with the
-   * bytes the backend moved by then. A caller that stops early closes it
-   * (`return()`, which `break` out of `for await` calls) to release the
-   * backend and its mount. Python spells this `read_stream(path, raw)`.
-   */
-  async readStream(
-    path: string,
-    options: { raw?: boolean } = {},
-    sessionId?: string,
-  ): Promise<ReadStream> {
-    const kwargs: OpKwargs = options.raw === true ? { filetype: null } : {}
-    return (await this.through(
-      'read',
-      path,
-      [],
-      { ...kwargs, stream: true },
-      sessionId,
-    )) as ReadStream
   }
 
   async readFileText(path: string, encoding = 'utf-8', sessionId?: string): Promise<string> {

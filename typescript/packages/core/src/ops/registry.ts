@@ -35,8 +35,8 @@ export type OpFn = (
 /**
  * One op a mount answers, by name, VFS and (optionally) filetype.
  * `stream` is the op's streaming form, for a whole-file read asked to
- * stream; an op without one answers whole, which the door then hands
- * out as one chunk. Mirrors Python's `RegisteredOp`.
+ * stream; an op without one answers whole. Mirrors Python's
+ * `RegisteredOp`.
  */
 export interface RegisteredOp {
   name: string

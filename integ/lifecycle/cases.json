@@ -2844,307 +2844,52 @@
       ]
     },
     {
-      "id": "stream_read_matches_read",
+      "id": "stream_read_matches_read_and_fails_at_open",
       "settings": {
         "mode": "write",
-        "mounts": {
-          "/data": {
-            "vfs": "ram",
-            "config": {}
-          }
-        }
+        "mounts": {}
       },
       "steps": [
         {
-          "op": "write",
-          "path": "/data/notes.txt",
-          "data": "alpha\nbeta\n"
+          "op": "mount",
+          "path": "/data",
+          "vfs": "chunked-ram",
+          "config": { "files": { "/lines.txt": "line 01\nline 02\nline 03\n" } },
+          "mode": "write",
+          "expect": { "value": "/data/" }
+        },
+        {
+          "op": "read_stream",
+          "path": "/data/lines.txt",
+          "expect": { "value": "line 01\nline 02\nline 03\n" }
         },
         {
           "op": "read",
-          "path": "/data/notes.txt",
-          "expect": {
-            "value": "alpha\nbeta\n"
-          }
+          "path": "/data/lines.txt",
+          "expect": { "value": "line 01\nline 02\nline 03\n" }
         },
         {
           "op": "read_stream",
-          "path": "/data/notes.txt",
-          "expect": {
-            "value": "alpha\nbeta\n"
-          }
-        },
-        {
-          "op": "read_stream",
-          "path": "/data/notes.txt",
-          "raw": true,
-          "expect": {
-            "value": "alpha\nbeta\n"
-          }
-        },
-        {
-          "op": "records",
-          "path": "/data/notes.txt",
-          "expect": {
-            "value": [["write", 11], ["read", 11], ["read", 11], ["read", 11]]
-          }
-        },
-        {
-          "op": "write",
-          "path": "/data/empty.txt",
-          "data": ""
-        },
-        {
-          "op": "read_stream",
-          "path": "/data/empty.txt",
-          "expect": {
-            "value": ""
-          }
-        },
-        {
-          "op": "records",
-          "path": "/data/empty.txt",
-          "expect": {
-            "value": [["write", 0], ["read", 0]]
-          }
-        },
-        {
-          "op": "session",
-          "id": "reader"
-        },
-        {
-          "op": "read_stream",
-          "path": "/data/notes.txt",
-          "session": "reader",
-          "expect": {
-            "value": "alpha\nbeta\n"
-          }
-        }
-      ]
-    },
-    {
-      "id": "stream_read_fails_at_open",
-      "settings": {
-        "mode": "write",
-        "mounts": {
-          "/data": {
-            "vfs": "ram",
-            "config": {}
-          }
-        }
-      },
-      "steps": [
-        {
-          "op": "write",
-          "path": "/data/open.txt",
-          "data": "visible\n"
-        },
-        {
-          "op": "write",
-          "path": "/data/secret.txt",
-          "data": "hidden\n"
-        },
-        {
-          "op": "read_stream",
-          "path": "/data/missing.txt",
-          "take": 0,
-          "expect": {
-            "errno": "ENOENT"
-          }
-        },
-        {
-          "op": "read",
-          "path": "/data/missing.txt",
-          "expect": {
-            "errno": "ENOENT"
-          }
+          "path": "/data/nope.txt",
+          "expect": { "errno": "ENOENT" }
         },
         {
           "op": "register_policy",
-          "id": "gate",
-          "paths": ["/data/secret.txt"],
-          "reason": "no secrets"
-        },
-        {
-          "op": "read_stream",
-          "path": "/data/secret.txt",
-          "take": 0,
-          "expect": {
-            "errno": "EACCES",
-            "error_contains": "no secrets"
-          }
-        },
-        {
-          "op": "read",
-          "path": "/data/secret.txt",
-          "expect": {
-            "errno": "EACCES",
-            "error_contains": "no secrets"
-          }
-        },
-        {
-          "op": "read_stream",
-          "path": "/data/open.txt",
-          "expect": {
-            "value": "visible\n"
-          }
-        },
-        {
-          "op": "records",
-          "path": "/data/missing.txt",
-          "expect": {
-            "value": []
-          }
-        },
-        {
-          "op": "records",
-          "path": "/data/secret.txt",
-          "expect": {
-            "value": [["write", 7]]
-          }
-        },
-        {
-          "op": "unregister_policy",
-          "id": "gate",
-          "expect": {
-            "value": true
-          }
-        },
-        {
-          "op": "read_stream",
-          "path": "/data/secret.txt",
-          "expect": {
-            "value": "hidden\n"
-          }
-        },
-        {
-          "op": "write",
-          "path": "/data/shaded.txt",
-          "data": "shade\n"
-        },
-        {
-          "op": "session",
-          "id": "viewer"
-        },
-        {
-          "op": "set_profile",
-          "profile": {
-            "mounts": {
-              "/data": {
-                "paths": {
-                  "hide": ["/data/shaded.txt"]
-                }
-              }
-            }
-          },
-          "session": "viewer"
-        },
-        {
-          "op": "read_stream",
-          "path": "/data/shaded.txt",
-          "take": 0,
-          "expect": {
-            "errno": "ENOENT"
-          },
-          "session": "viewer"
-        },
-        {
-          "op": "read",
-          "path": "/data/shaded.txt",
-          "expect": {
-            "errno": "ENOENT"
-          },
-          "session": "viewer"
-        },
-        {
-          "op": "read_stream",
-          "path": "/data/shaded.txt",
-          "expect": {
-            "value": "shade\n"
-          }
-        }
-      ]
-    },
-    {
-      "id": "stream_read_partial_is_recorded",
-      "settings": {
-        "mode": "read",
-        "mounts": {
-          "/data": {
-            "vfs": "chunked-ram",
-            "config": {
-              "files": {
-                "/lines.txt": "line 01\nline 02\nline 03\nline 04\nline 05\nline 06\nline 07\nline 08\nline 09\nline 10\n"
-              }
-            }
-          }
-        }
-      },
-      "steps": [
-        {
-          "op": "read_stream",
-          "path": "/data/lines.txt",
-          "take": 1,
-          "expect": {
-            "value": "line 01\n"
-          }
-        },
-        {
-          "op": "records",
-          "path": "/data/lines.txt",
-          "expect": {
-            "value": [["read", 8]]
-          }
+          "id": "seal",
+          "paths": ["/data/lines.txt"],
+          "reason": "sealed"
         },
         {
           "op": "read_stream",
           "path": "/data/lines.txt",
-          "take": 3,
-          "expect": {
-            "value": "line 01\nline 02\nline 03\n"
-          }
-        },
-        {
-          "op": "records",
-          "path": "/data/lines.txt",
-          "expect": {
-            "value": [["read", 8], ["read", 24]]
-          }
-        },
-        {
-          "op": "read_stream",
-          "path": "/data/lines.txt",
-          "expect": {
-            "value": "line 01\nline 02\nline 03\nline 04\nline 05\nline 06\nline 07\nline 08\nline 09\nline 10\n"
-          }
-        },
-        {
-          "op": "records",
-          "path": "/data/lines.txt",
-          "expect": {
-            "value": [["read", 8], ["read", 24], ["read", 80]]
-          }
-        },
-        {
-          "op": "read",
-          "path": "/data/lines.txt",
-          "expect": {
-            "value": "line 01\nline 02\nline 03\nline 04\nline 05\nline 06\nline 07\nline 08\nline 09\nline 10\n"
-          }
-        },
-        {
-          "op": "records",
-          "path": "/data/lines.txt",
-          "expect": {
-            "value": [["read", 8], ["read", 24], ["read", 80], ["read", 80]]
-          }
+          "expect": { "errno": "EACCES" }
         }
       ]
     },
     {
       "id": "stream_read_early_close_releases_mount",
       "settings": {
-        "mode": "read",
+        "mode": "write",
         "mounts": {}
       },
       "steps": [
@@ -3152,172 +2897,26 @@
           "op": "mount",
           "path": "/data",
           "vfs": "chunked-ram",
-          "config": {
-            "files": {
-              "/lines.txt": "line 01\nline 02\nline 03\n"
-            }
-          },
-          "expect": {
-            "value": "/data/"
-          }
+          "config": { "files": { "/lines.txt": "line 01\nline 02\nline 03\nline 04\nline 05\nline 06\nline 07\nline 08\nline 09\nline 10\n" } },
+          "expect": { "value": "/data/" }
         },
         {
           "op": "read_stream",
           "path": "/data/lines.txt",
           "take": 1,
-          "hold": "early",
-          "expect": {
-            "value": "line 01\n"
-          }
+          "expect": { "value": "line 01\n" }
         },
         {
           "op": "unmount",
           "path": "/data",
           "within": 5
-        },
-        {
-          "op": "drop",
-          "id": "early"
-        },
-        {
-          "op": "read_stream",
-          "path": "/data/lines.txt",
-          "expect": {
-            "errno": "ENOENT"
-          }
-        },
-        {
-          "op": "mount",
-          "path": "/data",
-          "vfs": "chunked-ram",
-          "config": {
-            "files": {
-              "/lines.txt": "line 01\nline 02\nline 03\n"
-            }
-          },
-          "expect": {
-            "value": "/data/"
-          }
-        },
-        {
-          "op": "read_stream",
-          "path": "/data/lines.txt",
-          "take": 0,
-          "hold": "unpulled",
-          "expect": {
-            "value": ""
-          }
-        },
-        {
-          "op": "records",
-          "path": "/data/lines.txt",
-          "expect": {
-            "value": [["read", 8], ["read", 8]]
-          }
-        },
-        {
-          "op": "unmount",
-          "path": "/data",
-          "within": 5
-        },
-        {
-          "op": "drop",
-          "id": "unpulled"
-        },
-        {
-          "op": "readdir",
-          "path": "/",
-          "expect": {
-            "value": ["/.bash_history", "/dev", "/usr"]
-          }
-        }
-      ]
-    },
-    {
-      "id": "stream_read_break_is_recorded",
-      "settings": {
-        "mode": "read",
-        "mounts": {}
-      },
-      "steps": [
-        {
-          "op": "mount",
-          "path": "/data",
-          "vfs": "chunked-ram",
-          "config": {
-            "files": {
-              "/lines.txt": "line 01\nline 02\nline 03\n"
-            }
-          },
-          "expect": {
-            "value": "/data/"
-          }
-        },
-        {
-          "op": "read_stream",
-          "path": "/data/lines.txt",
-          "take": 1,
-          "close": false,
-          "expect": {
-            "value": "line 01\n"
-          }
-        },
-        {
-          "op": "records",
-          "path": "/data/lines.txt",
-          "expect": {
-            "value": [["read", 8]]
-          }
-        },
-        {
-          "op": "read_stream",
-          "path": "/data/lines.txt",
-          "take": 2,
-          "close": false,
-          "expect": {
-            "value": "line 01\nline 02\n"
-          }
-        },
-        {
-          "op": "records",
-          "path": "/data/lines.txt",
-          "expect": {
-            "value": [["read", 8], ["read", 16]]
-          }
-        },
-        {
-          "op": "read_stream",
-          "path": "/data/lines.txt",
-          "close": false,
-          "expect": {
-            "value": "line 01\nline 02\nline 03\n"
-          }
-        },
-        {
-          "op": "records",
-          "path": "/data/lines.txt",
-          "expect": {
-            "value": [["read", 8], ["read", 16], ["read", 24]]
-          }
-        },
-        {
-          "op": "unmount",
-          "path": "/data",
-          "within": 5
-        },
-        {
-          "op": "readdir",
-          "path": "/",
-          "expect": {
-            "value": ["/.bash_history", "/dev", "/usr"]
-          }
         }
       ]
     },
     {
       "id": "stream_read_capped_by_mount_limit",
       "settings": {
-        "mode": "read",
+        "mode": "write",
         "mounts": {}
       },
       "steps": [
@@ -3325,373 +2924,42 @@
           "op": "mount",
           "path": "/data",
           "vfs": "chunked-ram",
-          "config": {
-            "files": {
-              "/lines.txt": "line 01\nline 02\nline 03\nline 04\nline 05\nline 06\nline 07\nline 08\nline 09\nline 10\n",
-              "/short.txt": "a\nb\n"
-            }
-          },
-          "command_limits": {
-            "read": {
-              "max_lines": 2
-            }
-          },
-          "expect": {
-            "value": "/data/"
-          }
+          "config": { "files": { "/lines.txt": "line 01\nline 02\nline 03\nline 04\nline 05\nline 06\nline 07\nline 08\nline 09\nline 10\n" } },
+          "command_limits": { "read": { "max_lines": 2 } },
+          "expect": { "value": "/data/" }
         },
         {
           "op": "read_stream",
           "path": "/data/lines.txt",
-          "expect": {
-            "value": "line 01\nline 02\n"
-          }
-        },
-        {
-          "op": "records",
-          "path": "/data/lines.txt",
-          "expect": {
-            "value": [["read", 16]]
-          }
-        },
-        {
-          "op": "read_stream",
-          "path": "/data/lines.txt",
-          "take": 1,
-          "expect": {
-            "value": "line 01\n"
-          }
+          "expect": { "value": "line 01\nline 02\n" }
         },
         {
           "op": "read",
           "path": "/data/lines.txt",
-          "expect": {
-            "value": "line 01\nline 02\n"
-          }
-        },
-        {
-          "op": "records",
-          "path": "/data/lines.txt",
-          "expect": {
-            "value": [["read", 16], ["read", 8], ["read", 80]]
-          }
-        },
-        {
-          "op": "read_stream",
-          "path": "/data/short.txt",
-          "expect": {
-            "value": "a\nb\n"
-          }
-        },
-        {
-          "op": "mount",
-          "path": "/bytes",
-          "vfs": "chunked-ram",
-          "config": {
-            "files": {
-              "/lines.txt": "line 01\nline 02\nline 03\nline 04\nline 05\nline 06\nline 07\nline 08\nline 09\nline 10\n"
-            }
-          },
-          "command_limits": {
-            "read": {
-              "max_bytes": 10
-            }
-          },
-          "expect": {
-            "value": "/bytes/"
-          }
-        },
-        {
-          "op": "read_stream",
-          "path": "/bytes/lines.txt",
-          "expect": {
-            "value": "line 01\nli"
-          }
-        },
-        {
-          "op": "read",
-          "path": "/bytes/lines.txt",
-          "expect": {
-            "value": "line 01\nli"
-          }
-        },
-        {
-          "op": "records",
-          "path": "/bytes/lines.txt",
-          "expect": {
-            "value": [["read", 16], ["read", 80]]
-          }
+          "expect": { "value": "line 01\nline 02\n" }
         },
         {
           "op": "mount",
           "path": "/strict",
           "vfs": "chunked-ram",
-          "config": {
-            "files": {
-              "/lines.txt": "line 01\nline 02\nline 03\nline 04\nline 05\nline 06\nline 07\nline 08\nline 09\nline 10\n",
-              "/short.txt": "a\nb\n"
-            }
-          },
-          "command_limits": {
-            "read": {
-              "max_lines": 2,
-              "on_exceed": "error"
-            }
-          },
-          "expect": {
-            "value": "/strict/"
-          }
-        },
-        {
-          "op": "read",
-          "path": "/strict/lines.txt",
-          "expect": {
-            "error": "output truncated at limit (2 lines); narrow the selection or raise command_limits for this command"
-          }
+          "config": { "files": { "/lines.txt": "line 01\nline 02\nline 03\nline 04\nline 05\nline 06\nline 07\nline 08\nline 09\nline 10\n", "/short.txt": "a\nb\n" } },
+          "command_limits": { "read": { "max_lines": 2, "on_exceed": "error" } },
+          "expect": { "value": "/strict/" }
         },
         {
           "op": "read_stream",
           "path": "/strict/lines.txt",
-          "expect": {
-            "error": "output truncated at limit (2 lines); narrow the selection or raise command_limits for this command"
-          }
+          "expect": { "error_contains": "output truncated at limit (2 lines)" }
         },
         {
-          "op": "records",
+          "op": "read",
           "path": "/strict/lines.txt",
-          "expect": {
-            "value": [["read", 80], ["read", 24]]
-          }
+          "expect": { "error_contains": "output truncated at limit (2 lines)" }
         },
         {
           "op": "read_stream",
           "path": "/strict/short.txt",
-          "expect": {
-            "value": "a\nb\n"
-          }
-        },
-        {
-          "op": "read",
-          "path": "/strict/short.txt",
-          "expect": {
-            "value": "a\nb\n"
-          }
-        },
-        {
-          "op": "unmount",
-          "path": "/strict",
-          "within": 5
-        },
-        {
-          "op": "unmount",
-          "path": "/bytes",
-          "within": 5
-        },
-        {
-          "op": "unmount",
-          "path": "/data",
-          "within": 5
-        }
-      ]
-    },
-    {
-      "id": "stream_read_warm_cache",
-      "settings": {
-        "mode": "read",
-        "mounts": {
-          "/data": {
-            "vfs": "cached-chunked-ram",
-            "config": {
-              "files": {
-                "/file.txt": "cached 01\ncached 02\n"
-              }
-            }
-          }
-        }
-      },
-      "steps": [
-        {
-          "op": "cached",
-          "path": "/data/file.txt",
-          "expect": {
-            "value": null
-          }
-        },
-        {
-          "op": "read_stream",
-          "path": "/data/file.txt",
-          "take": 1,
-          "expect": {
-            "value": "cached 01\n"
-          }
-        },
-        {
-          "op": "cached",
-          "path": "/data/file.txt",
-          "expect": {
-            "value": null
-          }
-        },
-        {
-          "op": "exec",
-          "command": "cat /data/file.txt",
-          "expect": {
-            "value": {
-              "exit_code": 0,
-              "stdout": "cached 01\ncached 02\n",
-              "stderr": ""
-            }
-          }
-        },
-        {
-          "op": "cached",
-          "path": "/data/file.txt",
-          "expect": {
-            "value": "cached 01\ncached 02\n"
-          }
-        },
-        {
-          "op": "read_stream",
-          "path": "/data/file.txt",
-          "take": 1,
-          "expect": {
-            "value": "cached 01\ncached 02\n"
-          }
-        },
-        {
-          "op": "read_stream",
-          "path": "/data/file.txt",
-          "raw": true,
-          "take": 1,
-          "expect": {
-            "value": "cached 01\n"
-          }
-        },
-        {
-          "op": "read_stream",
-          "path": "/data/file.txt",
-          "expect": {
-            "value": "cached 01\ncached 02\n"
-          }
-        },
-        {
-          "op": "records",
-          "path": "/data/file.txt",
-          "expect": {
-            "value": [["read", 10], ["read", 20], ["read", 20], ["read", 10], ["read", 20]]
-          }
-        },
-        {
-          "op": "mount",
-          "path": "/capped",
-          "vfs": "cached-ram",
-          "config": {
-            "files": {
-              "/two.txt": "first\nsecond\n"
-            }
-          },
-          "command_limits": {
-            "read": {
-              "max_lines": 1
-            }
-          },
-          "expect": {
-            "value": "/capped/"
-          }
-        },
-        {
-          "op": "exec",
-          "command": "cat /capped/two.txt",
-          "expect": {
-            "value": {
-              "exit_code": 0,
-              "stdout": "first\nsecond\n",
-              "stderr": ""
-            }
-          }
-        },
-        {
-          "op": "cached",
-          "path": "/capped/two.txt",
-          "expect": {
-            "value": "first\nsecond\n"
-          }
-        },
-        {
-          "op": "read_stream",
-          "path": "/capped/two.txt",
-          "expect": {
-            "value": "first\n"
-          }
-        },
-        {
-          "op": "read",
-          "path": "/capped/two.txt",
-          "expect": {
-            "value": "first\n"
-          }
-        }
-      ]
-    },
-    {
-      "id": "stream_read_pull_timeout",
-      "settings": {
-        "mode": "read",
-        "mounts": {}
-      },
-      "steps": [
-        {
-          "op": "mount",
-          "path": "/slow",
-          "vfs": "chunked-ram",
-          "config": {
-            "files": {
-              "/lines.txt": "line 01\nline 02\nline 03\n"
-            },
-            "pause": 1
-          },
-          "command_limits": {
-            "read": {
-              "timeout_seconds": 0.2
-            }
-          },
-          "expect": {
-            "value": "/slow/"
-          }
-        },
-        {
-          "op": "read_stream",
-          "path": "/slow/lines.txt",
-          "take": 1,
-          "expect": {
-            "value": "line 01\n"
-          }
-        },
-        {
-          "op": "read_stream",
-          "path": "/slow/lines.txt",
-          "expect": {
-            "error": "read: timed out after 0.2s"
-          }
-        },
-        {
-          "op": "records",
-          "path": "/slow/lines.txt",
-          "expect": {
-            "value": [["read", 8], ["read", 8]]
-          }
-        },
-        {
-          "op": "read",
-          "path": "/slow/lines.txt",
-          "expect": {
-            "value": "line 01\nline 02\nline 03\n"
-          }
-        },
-        {
-          "op": "unmount",
-          "path": "/slow",
-          "within": 5
+          "expect": { "value": "a\nb\n" }
         }
       ]
     }

@@ -13,7 +13,8 @@
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import errno
-from unittest.mock import AsyncMock
+from dataclasses import replace
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -118,44 +119,6 @@ async def test_read_wrapper_forwards_index():
     result = await read.fn(acc, PATH, index=None)
     assert result == b"data"
     table.read_bytes.assert_awaited_once_with(acc, PATH, None)
-
-
-def _table_streaming(read_stream) -> CommandIO:
-    return CommandIO(readdir=AsyncMock(return_value=["/x/a.txt"]),
-                     read_bytes=AsyncMock(return_value=b"data"),
-                     read_stream=read_stream,
-                     stat=AsyncMock(),
-                     is_mounted=lambda a: True)
-
-
-@pytest.mark.asyncio
-async def test_the_generic_read_carries_the_tables_stream_form():
-    opened = []
-
-    async def read_stream(accessor, path, index=NULL_INDEX):
-        opened.append((accessor, path, index))
-        yield b"da"
-        yield b"ta"
-
-    table = _table_streaming(read_stream)
-    read = next(o for o in make_generic_ops("x", table) if o.name == "read")
-    assert read.stream is not None
-    acc = NOOPAccessor()
-    stream = read.stream(acc, PATH, index=None)
-    assert hasattr(stream, "__aiter__")
-    assert opened == []
-    assert [chunk async for chunk in stream] == [b"da", b"ta"]
-    assert opened == [(acc, PATH, None)]
-    table.read_bytes.assert_not_awaited()
-
-
-@pytest.mark.asyncio
-async def test_the_generic_read_has_no_stream_form_without_a_table_stream():
-    table = _table_streaming(None)
-    read = next(o for o in make_generic_ops("x", table) if o.name == "read")
-    assert read.stream is None
-    assert await read.fn(NOOPAccessor(), PATH) == b"data"
-    assert all(o.stream is None for o in make_generic_ops("x", table))
 
 
 @pytest.mark.asyncio
@@ -373,3 +336,13 @@ async def test_emulated_truncate_refuses_no_create_before_io():
     assert error.value.errno == errno.ENOTSUP
     read.assert_not_called()
     write.assert_not_called()
+
+
+def test_the_generic_read_carries_the_tables_stream_form():
+    table = replace(make_table(), read_stream=MagicMock())
+    read = next(o for o in make_generic_ops("x", table) if o.name == "read")
+    accessor = NOOPAccessor()
+    assert read.stream is not None
+    assert read.stream(accessor, PATH,
+                       index=NULL_INDEX) is table.read_stream.return_value
+    table.read_stream.assert_called_once_with(accessor, PATH, NULL_INDEX)

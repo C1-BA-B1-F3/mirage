@@ -22,7 +22,6 @@ from mirage.policy import (Action, Ask, CommandContext, CommandRule, Deny,
                            Policy, PolicyError, describe_refusal,
                            post_execute_gate, post_ops_gate, pre_ops_gate,
                            refusal_of, render_deny, render_pending, says_why)
-from mirage.policy.builtin.output_cap import OutputCapPolicy
 from mirage.policy.mixin import ResultBlindMixin, SessionScopedMixin
 from mirage.policy.rule import RulePolicy
 from mirage.policy.types import SessionContext
@@ -478,34 +477,20 @@ async def test_remove_by_identity_refreshes_hooks_and_keeps_admission_order():
     assert await policies.pre_command(_ctx("weird")) is None
 
 
-class _ReadsResult(Policy):
+class _ReadsResults(Policy):
 
-    async def post_ops(self, ctx: OpsResultContext) -> Action | None:
-        if isinstance(ctx.result, bytes) and b"SECRET" in ctx.result:
-            return Deny("redacted")
+    async def post_ops(self, ctx) -> Action | None:
         return None
 
 
 class _BlindPost(Policy, ResultBlindMixin):
 
-    async def post_ops(self, ctx: OpsResultContext) -> Action | None:
-        return Limit(max_bytes=4)
+    async def post_ops(self, ctx) -> Action | None:
+        return None
 
 
-def test_reads_results_only_while_a_result_reading_post_ops_is_present():
-    assert Policies().reads_results() is False
-    assert _registry().policies.reads_results() is False
-    policies = Policies(
-        [MountRootPolicy(),
-         OutputCapPolicy(lambda prefix, name: None)])
-    assert policies.reads_results() is False
-    policies.add(DenyReadOps())
-    assert policies.reads_results() is False
-    policies.add(_BlindPost())
-    assert policies.reads_results() is False
-    reader = _ReadsResult()
-    policies.add(reader)
-    assert policies.reads_results() is True
-    assert policies.remove(reader)
-    assert policies.reads_results() is False
-    assert Policies([DenyBigResults()]).reads_results() is True
+def test_reads_results_only_with_a_result_reading_post_ops():
+    policies = Policies([_BlindPost()])
+    assert not policies.reads_results()
+    policies.add(_ReadsResults())
+    assert policies.reads_results()

@@ -26,8 +26,8 @@ from mirage.cache.index.config import IndexConfig
 from mirage.cache.index.factory import build_index
 from mirage.cache.index.store import IndexCacheStore
 from mirage.cache.manager import CacheManager
-from mirage.commands.builtin.utils.limit import (run_with_timeout,
-                                                 with_pull_timeout)
+from mirage.commands.builtin.utils.limit import (maybe_with_timeout,
+                                                 run_with_timeout)
 from mirage.commands.builtin.utils.paths import dispatch_stat, link_follow
 from mirage.commands.config import (CommandOpts, ExecContext,
                                     RegisteredCommand, has_injected_version)
@@ -145,46 +145,33 @@ def _wrap_cmd_streams(
 
 
 def _wrap_op_stream(result: Any, mount_id: str, activity: VFSActivity,
-                    revisions: dict[str, str] | None, timeout: float | None,
+                    revisions: dict[str, str] | None, limit: Limit | None,
                     op_name: str) -> Any:
-    """Carry the op's frame into a result that streams.
+    """Frame an op result that streams the way a command's output is.
 
     An op that returns an async iterator has not run its body yet: the
     backend opens the file on the first ``__anext__``, after the frame
-    that called it is gone, and with it the host-I/O bypass, the
-    recorder's mount, the revision pins a snapshot replay reads
-    (``revision_for`` inside the s3 and gridfs bodies) and the session.
-    Each pull gets them back the way ``_wrap_cmd_streams`` gives them
-    to a command's output, and is held to the op's timeout, which the
-    call itself no longer bounds. Built inside ``execute_op``, so the
-    captured context is the op's own.
+    that called it is gone. ``_wrap_cmd_streams`` gives each pull its
+    frame back (the session, the recorder's mount, the revision pins a
+    snapshot replay reads, the host-I/O bypass) and holds the mount
+    until the stream ends or closes; the op's own timeout, which bounded
+    only the call, bounds the stream too.
 
     Args:
         result (Any): whatever the op returned.
         mount_id (str): identity of the serving mount.
-        activity (VFSActivity): the mount's use count, held until the
-            stream ends or closes.
-        revisions (dict[str, str] | None): the mount's pins, None when
-            it has none.
-        timeout (float | None): the op's per-pull budget, None for none.
+        activity (VFSActivity): the mount's use count.
+        revisions (dict[str, str] | None): the mount's pins, None for none.
+        limit (Limit | None): the mount's limit for this op.
         op_name (str): the op, for the timeout message.
     """
-    scope = ContextScope()
-
-    def framed(source: AsyncIterator[bytes]) -> AsyncIterator[bytes]:
-        wrapped = with_mount_context(source, mount_id)
-        if revisions:
-            wrapped = with_revisions(revisions, wrapped)
-        if timeout is not None and timeout > 0:
-            wrapped = with_pull_timeout(wrapped, timeout, op_name)
-        return scope.stream(with_host_io(wrapped))
-
-    if isinstance(result, CachableAsyncIterator):
-        result.replace_source(framed(result.source))
-        return activity.hold(result)
-    if hasattr(result, "__aiter__"):
-        return activity.hold(framed(result))
-    return result
+    if isinstance(result,
+                  (bytes, bytearray)) or not hasattr(result, "__aiter__"):
+        return result
+    timed = maybe_with_timeout(result, limit, op_name)
+    stream, _ = _wrap_cmd_streams((timed, IOResult()), revisions, mount_id,
+                                  activity)
+    return stream
 
 
 class MountEntry:
@@ -947,7 +934,7 @@ class MountEntry:
                     if result is not None:
                         return _wrap_op_stream(result, self.mount_id,
                                                self.activity, self.revisions
-                                               or None, op_timeout, op_name)
+                                               or None, op_override, op_name)
                 return None
             finally:
                 reset_revisions(revs_token)

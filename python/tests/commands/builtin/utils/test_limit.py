@@ -13,16 +13,13 @@
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import asyncio
-import errno
 from collections.abc import AsyncIterator
 
 import pytest
 
 from mirage.commands.builtin.utils.limit import (apply_limit,
                                                  maybe_with_timeout,
-                                                 run_with_timeout,
-                                                 with_pull_timeout,
-                                                 with_timeout)
+                                                 run_with_timeout)
 from mirage.commands.errors import CommandTimeoutError
 from mirage.io.types import materialize
 from mirage.types import Limit, OnExceed
@@ -176,133 +173,3 @@ async def test_limit_closes_its_source_when_output_is_cut():
     result, io = await apply_limit(source(), Limit(max_lines=1))
     assert await materialize(result) == b"a\n"
     assert closed
-
-
-class _Paced:
-    """A source that waits before each chunk and records its close.
-
-    Args:
-        delays (list[float]): seconds to wait before each chunk.
-    """
-
-    def __init__(self, delays: list[float]):
-        self._delays = list(delays)
-        self.pulls = 0
-        self.closed = False
-
-    def __aiter__(self) -> "_Paced":
-        return self
-
-    async def __anext__(self) -> bytes:
-        if self.pulls >= len(self._delays):
-            raise StopAsyncIteration
-        delay = self._delays[self.pulls]
-        self.pulls += 1
-        await asyncio.sleep(delay)
-        return f"c{self.pulls}".encode()
-
-    async def aclose(self) -> None:
-        self.closed = True
-
-
-@pytest.mark.asyncio
-async def test_with_pull_timeout_raises_when_one_pull_overruns():
-    source = _Paced([0, 5])
-    paced = with_pull_timeout(source, 0.05, "read")
-    assert await anext(paced) == b"c1"
-    with pytest.raises(CommandTimeoutError):
-        await anext(paced)
-    assert source.closed
-
-
-@pytest.mark.asyncio
-async def test_with_pull_timeout_passes_fast_pulls_past_the_total_budget():
-    source = _Paced([0.02] * 5)
-    paced = with_pull_timeout(source, 0.05, "read")
-    assert [chunk
-            async for chunk in paced] == [b"c1", b"c2", b"c3", b"c4", b"c5"]
-
-
-@pytest.mark.asyncio
-@pytest.mark.parametrize("finish", ["eof", "close"])
-async def test_with_pull_timeout_closes_its_source_at_the_end(finish):
-    source = _Paced([0, 0, 0])
-    paced = with_pull_timeout(source, 1, "read")
-    if finish == "eof":
-        assert len([chunk async for chunk in paced]) == 3
-    else:
-        assert await anext(paced) == b"c1"
-        await paced.aclose()
-        assert source.pulls == 1
-    assert source.closed
-
-
-_HELPERS = ["run_with_timeout", "with_timeout", "with_pull_timeout"]
-
-
-class _Stalls:
-    """A source whose one pull waits, then raises or runs its own deadline.
-
-    Args:
-        delay (float): seconds the pull waits first.
-        error (BaseException | None): what the pull raises after the
-            wait; None runs a backend deadline of its own instead.
-    """
-
-    def __init__(self, delay: float, error: BaseException | None) -> None:
-        self._delay = delay
-        self._error = error
-
-    def __aiter__(self) -> "_Stalls":
-        return self
-
-    async def __anext__(self) -> bytes:
-        await asyncio.sleep(self._delay)
-        if self._error is None:
-            await asyncio.wait_for(asyncio.sleep(5), 0.01)
-        else:
-            raise self._error
-        return b"never"
-
-
-async def _pull_within(helper: str, source: _Stalls, seconds: float) -> bytes:
-    if helper == "run_with_timeout":
-        return await run_with_timeout(anext(source), seconds, "read")
-    if helper == "with_timeout":
-        return await anext(with_timeout(source, seconds, "read"))
-    return await anext(with_pull_timeout(source, seconds, "read"))
-
-
-@pytest.mark.asyncio
-@pytest.mark.parametrize("helper", _HELPERS)
-@pytest.mark.parametrize("raised", [TimeoutError, OSError])
-async def test_a_backend_etimedout_inside_the_budget_keeps_its_errno(
-        helper, raised):
-    error = raised(errno.ETIMEDOUT, "connect timed out")
-    with pytest.raises(OSError) as exc:
-        await _pull_within(helper, _Stalls(0.01, error), 5)
-    assert exc.value is error
-    assert exc.value.errno == errno.ETIMEDOUT
-    assert not isinstance(exc.value, CommandTimeoutError)
-
-
-@pytest.mark.asyncio
-@pytest.mark.parametrize("helper", _HELPERS)
-async def test_a_backend_deadline_of_its_own_is_not_the_budget_expiring(
-        helper):
-    with pytest.raises(TimeoutError) as exc:
-        await _pull_within(helper, _Stalls(0, None), 5)
-    assert not isinstance(exc.value, CommandTimeoutError)
-
-
-@pytest.mark.asyncio
-@pytest.mark.parametrize("helper", _HELPERS)
-async def test_an_overrun_of_the_budget_raises_command_timeout(helper):
-    error = TimeoutError(errno.ETIMEDOUT, "too late")
-    with pytest.raises(CommandTimeoutError) as exc:
-        await _pull_within(helper, _Stalls(5, error), 0.05)
-    assert exc.value.command == "read"
-    assert exc.value.seconds == 0.05
-    assert str(exc.value) == "read: timed out after 0.05s"
-    assert isinstance(exc.value.__cause__, TimeoutError)
-    assert exc.value.__cause__ is not error

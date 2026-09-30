@@ -52,24 +52,7 @@ export class VFSActivity {
   }
 }
 
-// A stream dropped without a close would keep its mount busy for good,
-// and unmount waits on that count with no bound; collection is the last
-// point anything could still pull from it, so the hold goes with it. The
-// registry holds only the release: anything that reaches the stream (a
-// command's output can close over the result that holds it) would keep
-// it alive for good. JS never finalizes a generator, so the backend of a
-// stream dropped here is not closed; a streamed read the door hands out
-// closes its backend itself when it is collected (ReadStream). Python's
-// loop closes a collected generator, so its `_releasing` does both.
-const COLLECTED = new FinalizationRegistry<() => void>((release) => {
-  release()
-})
-
-/**
- * Explicit return releases even a stream that was never pulled, and a
- * stream that is dropped unclosed releases when it is collected.
- * Mirrors Python's `ActivityStream`.
- */
+/** Explicit return releases even a stream that was never pulled. */
 class ActivityStream implements AsyncIterableIterator<Uint8Array> {
   private readonly source: AsyncIterator<Uint8Array>
   private readonly pullLock = new KeyLock()
@@ -78,7 +61,6 @@ class ActivityStream implements AsyncIterableIterator<Uint8Array> {
     private readonly release: () => void,
   ) {
     this.source = source[Symbol.asyncIterator]()
-    COLLECTED.register(this, release, this)
   }
   [Symbol.asyncIterator](): AsyncIterableIterator<Uint8Array> {
     return this
@@ -87,10 +69,10 @@ class ActivityStream implements AsyncIterableIterator<Uint8Array> {
     return this.pullLock.withLock('', async () => {
       try {
         const step = await this.source.next()
-        if (step.done === true) this.done()
+        if (step.done === true) this.release()
         return step
       } catch (error) {
-        this.done()
+        this.release()
         throw error
       }
     })
@@ -101,12 +83,8 @@ class ActivityStream implements AsyncIterableIterator<Uint8Array> {
         await this.source.return?.()
         return { done: true, value: undefined }
       } finally {
-        this.done()
+        this.release()
       }
     })
-  }
-  private done(): void {
-    COLLECTED.unregister(this)
-    this.release()
   }
 }

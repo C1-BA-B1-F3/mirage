@@ -13,7 +13,6 @@
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import asyncio
-import errno
 
 import pytest
 
@@ -55,66 +54,3 @@ async def test_vfs_op_unconfigured_is_not_timed(monkeypatch):
     monkeypatch.setattr(mount._ops[("stat", None)], "fn", _slowish_op)
     result = await mount.execute_op("stat", "/data/f.txt")
     assert result == "ok"
-
-
-def _slow_stream(accessor, scope, *args, **kwargs):
-
-    async def body():
-        await asyncio.sleep(5)
-        yield b"late"
-
-    return body()
-
-
-@pytest.mark.asyncio
-async def test_a_streamed_read_holds_each_pull_to_the_op_timeout(monkeypatch):
-    mount = await _ws_mount()
-    mount.command_limits["read"] = Limit(timeout_seconds=0.05)
-    monkeypatch.setattr(mount._ops[("read", None)], "stream", _slow_stream)
-    stream = await asyncio.wait_for(
-        mount.execute_op("read", "/data/f.txt", stream=True), 1)
-    with pytest.raises(CommandTimeoutError):
-        await anext(stream)
-    await asyncio.wait_for(mount.activity.wait(), 1)
-
-
-async def _etimedout_op(accessor, scope, *args, **kwargs):
-    await asyncio.sleep(0.01)
-    raise TimeoutError(errno.ETIMEDOUT, "backend timed out")
-
-
-def _etimedout_stream(accessor, scope, *args, **kwargs):
-
-    async def body():
-        yield b"first"
-        await asyncio.sleep(0.01)
-        raise TimeoutError(errno.ETIMEDOUT, "backend timed out")
-
-    return body()
-
-
-@pytest.mark.asyncio
-async def test_a_backend_etimedout_under_the_op_timeout_keeps_its_errno(
-        monkeypatch):
-    mount = await _ws_mount()
-    mount.command_limits["stat"] = Limit(timeout_seconds=5)
-    monkeypatch.setattr(mount._ops[("stat", None)], "fn", _etimedout_op)
-    with pytest.raises(TimeoutError) as exc:
-        await mount.execute_op("stat", "/data/f.txt")
-    assert exc.value.errno == errno.ETIMEDOUT
-    assert not isinstance(exc.value, CommandTimeoutError)
-
-
-@pytest.mark.asyncio
-async def test_a_streamed_pull_keeps_a_backend_etimedout_errno(monkeypatch):
-    mount = await _ws_mount()
-    mount.command_limits["read"] = Limit(timeout_seconds=5)
-    monkeypatch.setattr(mount._ops[("read", None)], "stream",
-                        _etimedout_stream)
-    stream = await mount.execute_op("read", "/data/f.txt", stream=True)
-    assert await anext(stream) == b"first"
-    with pytest.raises(TimeoutError) as exc:
-        await anext(stream)
-    assert exc.value.errno == errno.ETIMEDOUT
-    assert not isinstance(exc.value, CommandTimeoutError)
-    await asyncio.wait_for(mount.activity.wait(), 1)

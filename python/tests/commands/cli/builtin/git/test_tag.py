@@ -16,11 +16,9 @@ from pathlib import Path
 
 import pytest
 from dulwich.objects import Commit, Tag
-from dulwich.refs import Ref
 from dulwich.repo import Repo
 
-from mirage.commands.cli.builtin.git.tag import (parse_flags, render_listing,
-                                                 selected_names, tag_names)
+from mirage.commands.cli.builtin.git.tag import parse_flags
 from mirage.commands.spec.flag_view import FlagView
 from tests.commands.cli.builtin.git.conftest import mounted_rw, pack_refs
 
@@ -79,32 +77,27 @@ def test_several_messages_are_paragraphs():
                                              "two"]})).message == "one\n\ntwo"
 
 
-def test_tag_names_sort_in_byte_order():
-    known = {
-        Ref(b"refs/tags/a10"),
-        Ref(b"refs/tags/a9"),
-        Ref(b"refs/tags/B"),
-        Ref(b"refs/heads/main")
-    }
-    assert tag_names(known) == ["B", "a10", "a9"]
+@pytest.mark.asyncio
+async def test_tag_names_sort_in_byte_order(git_rw):
+    for name in ("a10", "a9", "B"):
+        await run(git_rw, f"tag {name}")
+    assert (await run(git_rw, "tag"))[1] == b"B\na10\na9\n"
+    assert (await run(git_rw, "tag -l 'a1*' B"))[1] == b"B\na10\n"
+    assert (await run(git_rw, "tag --sort=-v:refname"))[1] == b"a10\na9\nB\n"
 
 
-def test_patterns_keep_any_match():
-    assert selected_names(["v0.9", "v1.0", "w"], ("v1*", "w")) == ["v1.0", "w"]
-
-
-def test_no_pattern_keeps_everything():
-    assert selected_names(["a", "b"], ()) == ["a", "b"]
-
-
-def test_listing_pads_the_name_and_indents_continuations():
-    rendered = render_listing(["v1", "v2"], {
-        "v1": ["first", "second"],
-        "v2": []
-    }, 2)
-    assert rendered == (b"v1              first\n"
-                        b"    second\n"
-                        b"v2              \n")
+@pytest.mark.asyncio
+async def test_listing_pads_the_name_and_indents_continuations(git_rw):
+    await run(git_rw, "tag -a v1 -m first -m second")
+    await run(git_rw, "tag v2 HEAD^{tree}")
+    assert (await run(git_rw, "tag -n3"))[1] == (b"v1              first\n"
+                                                 b"    \n"
+                                                 b"    second\n"
+                                                 b"v2              \n")
+    assert (await run(
+        git_rw,
+        "tag -n-2")) == (128, b"",
+                         b"fatal: positive value expected contents:lines=-2\n")
 
 
 @pytest.mark.asyncio

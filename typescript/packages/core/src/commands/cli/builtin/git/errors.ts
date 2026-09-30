@@ -927,23 +927,6 @@ export class ListModeOnlyError extends GitError {
 }
 
 /**
- * `tag -n<num>` with a count below the one git reserves.
- *
- * `-n` carries an optional count, and git's parser starts that count at -1 to
- * mean "not given at all". `-n-1` is therefore not a listing flag at all:
- * `git tag -d -n-1 v` deletes and `git tag -n-1 -a v -m m` creates, where a
- * real `-n` refuses both. Anything below -1 is a count, and a count has to be
- * positive, which git discovers while parsing the format it lists with rather
- * than while parsing the option: the list-mode refusal outranks this one, and
- * it fires in a repository holding no tags at all. Pinned against git 2.50.1.
- */
-export class TagLinesError extends GitError {
-  constructor(lines: number) {
-    super(`positive value expected contents:lines=${String(lines)}`)
-  }
-}
-
-/**
  * `tag -d` naming one tag twice.
  *
  * git stages every deletion on the line as one ref transaction, and a
@@ -1128,5 +1111,63 @@ export class BranchUsageError extends GitError {
 export class MissingRepositoryError extends GitError {
   constructor(url: string) {
     super(`repository '${url}' does not exist`)
+  }
+}
+
+/**
+ * A `--date` value, or a date atom's argument, git has no style for.
+ *
+ * Named as git's `parse_date_format` names it: the whole value, a `-local`
+ * suffix and all (pinned against git 2.50.1).
+ */
+export class UnknownDateFormatError extends GitError {
+  constructor(value: string) {
+    super(`unknown date format ${value}`)
+  }
+}
+
+/** `format` with no `:` before its strftime template. */
+export class DateFormatColonError extends GitError {
+  constructor(value: string) {
+    super(`date format missing colon separator: ${value}`)
+  }
+}
+
+/**
+ * A ref field git has but this build does not render.
+ *
+ * `%(describe)`, `%(trailers)`, `%(signature)` and their kin are real git
+ * fields; calling one unknown would gaslight an agent that spelled it right, so
+ * the refusal says unsupported instead.
+ */
+export class UnsupportedFieldError extends GitError {
+  constructor(name: string) {
+    super(`unsupported field name: ${name} (this build does not render it)`)
+  }
+}
+
+/**
+ * A ref format or option set a verb refuses with its usage.
+ *
+ * git prints the line, then the verb's usage, and exits 129; the usage is
+ * omitted here as it is for every other verb.
+ */
+export class FormatUsageError extends GitError {
+  override readonly prefix = 'error'
+  override readonly code = OPTION_EXIT
+}
+
+/**
+ * `branch` and `tag` given a format with a `%(` left open.
+ *
+ * `for-each-ref` answers the same format with its usage; these two say it
+ * twice instead, once as git's `error:` and once as the fatal that follows it
+ * (pinned against git 2.50.1).
+ */
+export class UnparsableFormatError extends GitError {
+  override readonly prefix = 'error'
+
+  constructor(rest: string) {
+    super(`malformed format string ${rest}\nfatal: unable to parse format string`)
   }
 }

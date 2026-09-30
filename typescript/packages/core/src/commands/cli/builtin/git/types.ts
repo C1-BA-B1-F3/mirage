@@ -14,6 +14,7 @@
 
 import type { FileStat } from '../../../../types.ts'
 import type { DispatchFn } from '../../../../runtime/types.ts'
+import type { Zone } from '../../../../utils/timezone.ts'
 
 /**
  * The workspace op dispatcher, as every module here consumes it.
@@ -208,4 +209,216 @@ export interface WorkTree {
   /** Paths to report as untracked, already collapsed to `dir/` where git would. */
   readonly untracked: string[]
   readonly ignored: string[]
+}
+
+/** One `.mailmap` line: the identity it matches and what it maps to. */
+export interface MailmapEntry {
+  /** The recorded email it matches, lowercased. */
+  readonly email: string
+  /** The recorded name it also requires, lowercased; null for email alone. */
+  readonly name: string | null
+  /** The canonical name, null to keep the recorded one. */
+  readonly mappedName: string | null
+  /** The canonical email, null to keep the recorded one. */
+  readonly mappedEmail: string | null
+}
+
+/** One of git's date styles, spelled as `--date` names it. */
+export enum DateKind {
+  NORMAL = 'default',
+  RELATIVE = 'relative',
+  SHORT = 'short',
+  ISO8601 = 'iso8601',
+  ISO8601_STRICT = 'iso8601-strict',
+  RFC2822 = 'rfc2822',
+  HUMAN = 'human',
+  RAW = 'raw',
+  UNIX = 'unix',
+  STRFTIME = 'format',
+}
+
+/** A parsed `--date` value, with the clock it is rendered against. */
+export interface DateMode {
+  readonly kind: DateKind
+  /** The `-local` suffix: show the time in the session's zone. */
+  readonly local: boolean
+  /** The `format:` template, empty otherwise. */
+  readonly strftime: string
+  /** The moment `relative` and `human` count from, epoch seconds. */
+  readonly now: number
+  /** The session's `TZ`, null for the host's own zone. */
+  readonly zone: Zone | null
+}
+
+/** How a ref field sorts, git's `cmp_type`: as text, or by the number behind it. */
+export enum FieldCompare {
+  TEXT = 'text',
+  NUMBER = 'number',
+  TIME = 'time',
+}
+
+/**
+ * Where a ref field's value comes from, git's `info_source`: the ref alone, the
+ * object's content, or its type and size.
+ */
+export enum FieldSource {
+  REF = 'ref',
+  OBJECT = 'object',
+  OBJECT_INFO = 'object-info',
+}
+
+/** `--shell`, `--perl`, `--python` and `--tcl`: how each field is quoted. */
+export enum QuoteStyle {
+  NONE = 'none',
+  SHELL = 'shell',
+  PERL = 'perl',
+  PYTHON = 'python',
+  TCL = 'tcl',
+}
+
+/** Which part of the namespace a listed ref lives in. */
+export enum RefKind {
+  BRANCH = 'branch',
+  REMOTE = 'remote',
+  TAG = 'tag',
+  DETACHED = 'detached',
+  ROOT = 'root',
+  OTHER = 'other',
+}
+
+/** One `%(...)` field of a ref format or a sort key, parsed. */
+export interface RefField {
+  /** The field as typed, its `*` and arguments included. */
+  readonly name: string
+  /** The field's own name, e.g. `refname`. */
+  readonly field: string
+  /** The `*` prefix: read the object a tag peels to. */
+  readonly deref: boolean
+  /** The text after the first `:`, null when there is none or it is empty. */
+  readonly arg: string | null
+  readonly compare: FieldCompare
+  readonly source: FieldSource
+  /** The argument the field's parser settled on, e.g. `short` or `lstrip`. */
+  readonly option: string
+  /** The count an option carries (`lstrip=2`, `short=10`, an `align` width). */
+  readonly number: number
+  /** The flags a list argument set, e.g. an email's `trim` and `mailmap`. */
+  readonly words: ReadonlySet<string>
+  /**
+   * A second word an option carries: an `if` comparand, an `align` position,
+   * or the refname option an upstream field shows its ref with.
+   */
+  readonly text: string
+}
+
+/** A `--format` string, parsed once for every ref it renders. */
+export interface RefFormat {
+  /** Literal text, escapes already expanded, and fields, in order. */
+  readonly pieces: readonly (string | RefField)[]
+  readonly quote: QuoteStyle
+}
+
+/** One `--sort` key. */
+export interface RefSortKey {
+  readonly field: RefField
+  /** The leading `-`. */
+  readonly reverse: boolean
+  /** The `version:` (`v:`) prefix. */
+  readonly version: boolean
+}
+
+/** An object as ref fields read it: its id, type and content. */
+export interface RefObject {
+  readonly oid: string
+  readonly type: string
+  readonly raw: Uint8Array
+}
+
+/** A branch's upstream as the `upstream` field reads it. */
+export interface RefUpstream {
+  /** The remote-tracking (or local) ref it follows. */
+  readonly ref: string
+  /** `branch.<name>.remote`. */
+  readonly remote: string
+  /** `branch.<name>.merge`. */
+  readonly merge: string
+  readonly ahead: number
+  readonly behind: number
+  /** The upstream ref does not exist. */
+  readonly gone: boolean
+}
+
+/** One listed ref, with what its fields are read from. */
+export interface RefItem {
+  /** The full ref name, `HEAD` for a detached HEAD. */
+  readonly name: string
+  /** The object the ref resolves to. */
+  readonly oid: string
+  readonly kind: RefKind
+  /** The ref a symbolic ref points at. */
+  readonly symref: string | null
+  /** The object, when a field reads it. */
+  readonly obj: RefObject | null
+  /** What a tag peels to, when a `*` field reads it. */
+  readonly peeled: RefObject | null
+  /** A branch's upstream, when an `upstream` field reads it. */
+  readonly upstream: RefUpstream | null
+  /** The worktree a branch is checked out in. */
+  readonly worktree: string
+}
+
+/** What a ref's fields read beyond the ref itself, once per listing. */
+export interface RefContext {
+  /** Every name that resolves, which decides whether a short name is ambiguous. */
+  readonly known: ReadonlySet<string>
+  /**
+   * `core.warnAmbiguousRefs`: a short name is ambiguous if any other rule finds
+   * a ref under it, not only an earlier one.
+   */
+  readonly strict: boolean
+  /** The ref HEAD resolves to, `HEAD` when detached, null when it names nothing. */
+  readonly head: string | null
+  /** How a detached HEAD row names itself, e.g. `(HEAD detached at 1a2b3c4)`. */
+  readonly headDescription: string
+  /** How many hex digits a short id keeps. */
+  readonly abbrev: number
+  /** Minimum unique widths for the object ids abbreviated by this listing. */
+  readonly abbreviations: ReadonlyMap<string, number>
+  /** For the `mailmap` options. */
+  readonly mailmap: readonly MailmapEntry[]
+  /** The clock date fields render by. */
+  readonly date: DateMode
+  /** `versionsort.suffix`. */
+  readonly suffixes: readonly string[]
+}
+
+/** A field's value for one ref: what it renders as, and what it sorts by as a number. */
+export interface FieldValue {
+  readonly text: string
+  readonly number: number
+}
+
+/** One open block while a ref format renders: the whole row, an `%(align)` or an `%(if)`. */
+export interface FormatFrame {
+  readonly kind: 'root' | 'align' | 'if'
+  /** The `align` or `if` field. */
+  readonly opener: RefField | null
+  /** What the block has rendered so far. */
+  out: string[]
+  /** An `if` block reached its `%(then)`. */
+  thenSeen: boolean
+  /** What its condition came to. */
+  satisfied: boolean
+  /** For the `%(else)` half of an `if`, the `if` it belongs to. */
+  readonly head: FormatFrame | null
+}
+
+/** One `[+]<src>[:<dst>]` refspec. */
+export interface Refspec {
+  /** The remote ref, or a pattern with one `*`. */
+  readonly src: string
+  /** The local ref it lands in, null for FETCH_HEAD alone. */
+  readonly dst: string | null
+  /** The leading `+`, which allows a non-fast-forward. */
+  readonly force: boolean
 }

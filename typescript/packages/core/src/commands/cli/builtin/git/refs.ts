@@ -23,7 +23,7 @@ import {
   under,
   writeFile,
 } from './io.ts'
-import type { Dispatch, HeadRef } from './types.ts'
+import type { Dispatch, HeadRef, Refspec } from './types.ts'
 
 const HEAD_FILE = 'HEAD'
 const PACKED_REFS = 'packed-refs'
@@ -275,4 +275,28 @@ export function validRefName(name: string): boolean {
     if (code < 0x20 || code === 0x7f || FORBIDDEN_IN_REF.has(ch)) return false
   }
   return name.split('/').every((part) => !part.startsWith('.') && !part.endsWith(LOCK_SUFFIX))
+}
+
+/** Split a refspec into its source, destination and force flag. */
+export function parseRefspec(text: string): Refspec {
+  const force = text.startsWith('+')
+  const body = force ? text.slice(1) : text
+  const colon = body.indexOf(':')
+  const src = colon < 0 ? body : body.slice(0, colon)
+  const dst = colon < 0 ? '' : body.slice(colon + 1)
+  return { src, dst: dst || null, force }
+}
+
+/** The local ref a refspec maps a remote ref to, null when unmatched. */
+export function mapped(spec: Refspec, name: string): string | null {
+  if (!spec.src.includes('*')) return name === spec.src ? (spec.dst ?? '') : null
+  const star = spec.src.indexOf('*')
+  const head = spec.src.slice(0, star)
+  const tail = spec.src.slice(star + 1)
+  if (name.length < head.length + tail.length || !name.startsWith(head) || !name.endsWith(tail))
+    return null
+  const middle = name.slice(head.length, name.length - tail.length)
+  if (spec.dst === null) return ''
+  const at = spec.dst.indexOf('*')
+  return at < 0 ? spec.dst : `${spec.dst.slice(0, at)}${middle}${spec.dst.slice(at + 1)}`
 }

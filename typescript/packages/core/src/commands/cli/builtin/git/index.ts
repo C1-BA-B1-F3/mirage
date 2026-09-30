@@ -78,11 +78,14 @@ const FORMAT_OPTION = new Option({
   description: 'Alias of --pretty (requires =value)',
 })
 
+// Free text, read by parseDateMode: git names a style it lacks in its own
+// fatal, and format:<strftime> is no fixed word.
 const DATE_OPTION = new Option({
   long: '--date',
   type: 'str',
-  choices: ['default', 'iso', 'iso8601', 'iso-strict', 'iso8601-strict', 'short', 'unix', 'raw'],
-  description: 'Date display format',
+  description:
+    'Date display format: default, relative, local, iso, iso-strict, rfc, short, raw, unix, ' +
+    'human or format:<strftime>',
 })
 
 const DIFF_OPTIONS = [
@@ -410,6 +413,68 @@ const REF_FILTER_OPTIONS = [
   }),
 ]
 
+// git's ref-format options, which `for-each-ref`, `branch` and `tag` share.
+// --sort repeats, the last key given sorting first, and --no-sort drops every
+// key before it, the default refname included.
+const FORMAT_OPTION_REF = new Option({
+  long: '--format',
+  type: 'str',
+  metavar: 'format',
+  description: 'Format each ref: %(fieldname) placeholders, as git for-each-ref',
+})
+const SORT_OPTIONS = [
+  new Option({
+    long: '--sort',
+    type: 'str',
+    multiple: true,
+    metavar: 'key',
+    description: 'Sort on a field, - reversing it and version: comparing as versions',
+  }),
+  new Option({ long: '--no-sort', description: 'Drop the sort keys given so far' }),
+]
+const OMIT_EMPTY_OPTION = new Option({
+  long: '--omit-empty',
+  description: 'Print nothing, not even a newline, for an empty row',
+})
+const IGNORE_CASE_OPTION = new Option({
+  short: '-i',
+  long: '--ignore-case',
+  description: 'Sort and match patterns case-insensitively',
+})
+
+const FOR_EACH_REF_OPTIONS = [
+  new Option({ short: '-s', long: '--shell', description: 'Quote fields suitably for shells' }),
+  new Option({ short: '-p', long: '--perl', description: 'Quote fields suitably for perl' }),
+  new Option({ long: '--python', description: 'Quote fields suitably for python' }),
+  new Option({ long: '--tcl', description: 'Quote fields suitably for Tcl' }),
+  OMIT_EMPTY_OPTION,
+  new Option({
+    long: '--count',
+    type: 'int',
+    metavar: 'n',
+    description: 'Show only the first <n> refs',
+  }),
+  FORMAT_OPTION_REF,
+  new Option({
+    long: '--exclude',
+    type: 'str',
+    multiple: true,
+    metavar: 'pattern',
+    description: 'Leave out refs matching the pattern',
+  }),
+  ...SORT_OPTIONS,
+  ...REF_FILTER_OPTIONS,
+  new Option({
+    long: '--ignore-case',
+    description: 'Sort and match patterns case-insensitively',
+  }),
+  new Option({ long: '--stdin', description: 'Read ref patterns from stdin' }),
+  new Option({
+    long: '--include-root-refs',
+    description: 'Also list HEAD and the other root refs',
+  }),
+]
+
 const TAG_OPTIONS = [
   new Option({ short: '-l', long: '--list', description: 'List tag names' }),
   // git spells the count attached (`-n2`) or not at all, never as a separate
@@ -432,6 +497,10 @@ const TAG_OPTIONS = [
   }),
   new Option({ short: '-f', long: '--force', description: 'Replace the tag if exists' }),
   ...REF_FILTER_OPTIONS,
+  ...SORT_OPTIONS,
+  FORMAT_OPTION_REF,
+  OMIT_EMPTY_OPTION,
+  IGNORE_CASE_OPTION,
 ]
 
 const BRANCH_OPTIONS = [
@@ -448,6 +517,10 @@ const BRANCH_OPTIONS = [
   new Option({ short: '-D', description: 'Delete a branch even if not merged' }),
   new Option({ short: '-l', long: '--list', description: 'List branches matching the patterns' }),
   ...REF_FILTER_OPTIONS,
+  ...SORT_OPTIONS,
+  FORMAT_OPTION_REF,
+  OMIT_EMPTY_OPTION,
+  IGNORE_CASE_OPTION,
 ]
 
 /**
@@ -519,10 +592,7 @@ export const GIT = new CLISpec({
       name: 'for-each-ref',
       fn: forEachRef,
       description: 'List references with a format',
-      options: [
-        new Option({ long: '--format', type: 'str', description: 'Format each reference' }),
-        new Option({ long: '--count', type: 'int', description: 'Maximum number of references' }),
-      ],
+      options: FOR_EACH_REF_OPTIONS,
       rest: REVISION,
     }),
     new CLISpec({

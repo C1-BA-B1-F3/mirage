@@ -26,7 +26,9 @@ import { loadRefs, SYMREF_PREFIX } from './refs.ts'
 import { commitFacts, repoArgs, type Repo } from './repo.ts'
 import { compareCodePoints } from '../../../../utils/sort.ts'
 import { compilePosixRegex, POSIX_CLASSES } from '../../../../utils/posix.ts'
-import { mappedIdentity, type MailmapEntry } from './mailmap.ts'
+import { mappedIdentity } from './mailmap.ts'
+import { dateClock, parseDateMode } from './dates.ts'
+import type { DateMode, MailmapEntry } from './types.ts'
 
 const BRANCH_PREFIX = 'refs/heads/'
 // How many hidden commits a limited walk takes past the point where only
@@ -67,7 +69,7 @@ export interface LogFlags {
   readonly minParents: number | null
   readonly maxParents: number | null
   readonly firstParent: boolean
-  readonly date: string
+  readonly date: DateMode
   readonly decorate: boolean
   /** `-n`/`--max-count`, how many commits to print; null when unlimited. */
   readonly maxCount: number | null
@@ -248,7 +250,10 @@ function perlRegex(value: string, ignoreCase: boolean): RegExp {
 }
 
 /** Read the raw log flag kwargs into a frozen struct. */
-export function parseFlags(fl: FlagView): LogFlags {
+export function parseFlags(
+  fl: FlagView,
+  env: Readonly<Record<string, string>> | null = null,
+): LogFlags {
   const oneline = fl.asBool('oneline')
   const pretty = prettyFormat(fl)
   const graph = fl.asBool('graph')
@@ -279,7 +284,7 @@ export function parseFlags(fl: FlagView): LogFlags {
     useMailmap: true,
     greps,
     ignoreCase,
-    date: fl.asStr('date') ?? 'default',
+    date: parseDateMode(fl.asStr('date') ?? 'default', dateClock(env)),
     decorate: fl.asBool('decorate'),
     // git reads a negative count as no limit at all.
     maxCount: maxCount !== null && maxCount < 0 ? null : maxCount,

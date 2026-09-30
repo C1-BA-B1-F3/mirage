@@ -13,35 +13,15 @@
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import re
-from dataclasses import dataclass
 
 from mirage.commands.cli.builtin.git.io import read_optional
-from mirage.commands.cli.builtin.git.types import RepoLocation
+from mirage.commands.cli.builtin.git.types import MailmapEntry, RepoLocation
 from mirage.commands.spec.flag_view import FlagView
 from mirage.runtime.types import DispatchFn
 
 MAILMAP_LINE = re.compile(
     r"^\s*([^<>]*?)\s*<([^<>]+)>(?:\s*([^<>]*?)\s*<([^<>]*)>)?")
 IDENTITY = re.compile(r"(.*?)\s*<([^<>]*)>")
-
-
-@dataclass(frozen=True, slots=True)
-class MailmapEntry:
-    """One ``.mailmap`` line: the identity it matches and what it maps to.
-
-    Args:
-        email (str): the recorded email it matches, lowercased.
-        name (str | None): the recorded name it also requires,
-            lowercased; None for an entry that matches the email alone.
-        mapped_name (str | None): the canonical name, None to keep the
-            recorded one.
-        mapped_email (str | None): the canonical email, None to keep
-            the recorded one.
-    """
-    email: str
-    name: str | None
-    mapped_name: str | None
-    mapped_email: str | None
 
 
 def parse_mailmap(text: str) -> tuple[MailmapEntry, ...]:

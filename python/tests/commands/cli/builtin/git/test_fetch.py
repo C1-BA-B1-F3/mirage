@@ -21,10 +21,8 @@ from pathlib import Path
 import pytest
 
 from mirage.commands.cli.builtin.git import GIT
-from mirage.commands.cli.builtin.git.fetch import (Refspec, Row, Wanted,
-                                                   ignore_funny, mapped,
-                                                   parse_refspec, prettify,
-                                                   summary_lines)
+from mirage.commands.cli.builtin.git.fetch import (Row, Wanted, ignore_funny,
+                                                   prettify, summary_lines)
 from mirage.types import MountMode
 from mirage.vfs.disk import DiskVFS
 from mirage.workspace import Workspace
@@ -44,28 +42,6 @@ ENV = {
 }
 # macOS git writes these two into every new repository's config.
 HOST_ONLY = b"\tignorecase = true\n\tprecomposeunicode = true\n"
-
-
-@pytest.mark.parametrize("text,expected", [
-    ("main", Refspec("main", None, False)),
-    ("+refs/heads/*:refs/remotes/origin/*",
-     Refspec("refs/heads/*", "refs/remotes/origin/*", True)),
-    ("topic:copy", Refspec("topic", "copy", False)),
-    ("main:", Refspec("main", None, False)),
-])
-def test_a_refspec_splits_into_source_destination_and_force(text, expected):
-    assert parse_refspec(text) == expected
-
-
-@pytest.mark.parametrize("spec,name,expected", [
-    ("+refs/heads/*:refs/remotes/origin/*", "refs/heads/feat/x",
-     "refs/remotes/origin/feat/x"),
-    ("+refs/heads/*:refs/remotes/origin/*", "refs/tags/v1", None),
-    ("refs/heads/main:refs/heads/copy", "refs/heads/main", "refs/heads/copy"),
-    ("refs/heads/main", "refs/heads/main", ""),
-])
-def test_a_refspec_maps_a_remote_ref(spec, name, expected):
-    assert mapped(parse_refspec(spec), name) == expected
 
 
 def test_a_ref_git_refuses_to_name_locally_is_dropped_with_its_error():

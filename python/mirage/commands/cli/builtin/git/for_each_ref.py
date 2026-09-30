@@ -13,125 +13,118 @@
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import asyncio
-import re
+from dataclasses import replace
 
-from dulwich.objects import Commit, Tag
-from dulwich.repo import BaseRepo
-
-from mirage.commands.cli.builtin.git.errors import GitError
-from mirage.commands.cli.builtin.git.objects import abbrev_for
+from mirage.commands.builtin.utils.stream import read_stdin_async
+from mirage.commands.cli.builtin.git.dates import date_clock
+from mirage.commands.cli.builtin.git.errors import (FormatUsageError, GitError,
+                                                    UnknownSwitchError)
+from mirage.commands.cli.builtin.git.ref_filter import (filter_words,
+                                                        ref_filter,
+                                                        without_filter_values)
+from mirage.commands.cli.builtin.git.ref_format import (format_refs,
+                                                        parse_format,
+                                                        used_fields)
+from mirage.commands.cli.builtin.git.ref_list import (is_root_ref,
+                                                      listing_result,
+                                                      match_as_path,
+                                                      read_config, ref_listing,
+                                                      sort_keys)
 from mirage.commands.cli.builtin.git.session import opened
-from mirage.commands.cli.builtin.git.util import fatal
+from mirage.commands.cli.builtin.git.types import QuoteStyle, RefKind
+from mirage.commands.cli.builtin.git.util import (check_operands, escaped,
+                                                  fatal, switches)
 from mirage.commands.cli.types import CLIDoors, CLIInvocation
 from mirage.commands.spec.flag_view import FlagView
 from mirage.io.types import ByteSource, IOResult
-from mirage.utils.fnmatch import fnmatch
 
 DEFAULT_FORMAT = "%(objectname) %(objecttype)\t%(refname)"
-PLACEHOLDER = re.compile(r"%\(([^)]+)\)|%([0-9a-fA-F]{2})")
-SHORT_PREFIX = re.compile(r"^refs/(heads|tags|remotes)/")
+QUOTE_OPTIONS = (("shell", QuoteStyle.SHELL), ("perl", QuoteStyle.PERL),
+                 ("python", QuoteStyle.PYTHON), ("tcl", QuoteStyle.TCL))
 
 
-def _path_match(parts: list[str], name: list[str]) -> bool:
-    """Match a pattern against a ref one component at a time.
-
-    Args:
-        parts (list[str]): the pattern's ``/``-separated components.
-        name (list[str]): the ref name's components.
-    """
-    if not parts:
-        return not name
-    head, rest = parts[0], parts[1:]
-    if head == "**":
-        return any(_path_match(rest, name[i:]) for i in range(len(name) + 1))
-    return bool(name) and fnmatch(name[0], head) and _path_match(
-        rest, name[1:])
-
-
-def ref_selected(name: str, patterns: tuple[str, ...]) -> bool:
-    """Whether a ref is one of the patterns', as ``match_name_as_path``.
-
-    A pattern selects a ref it spells in full or up to a ``/``, or one
-    it matches as a ``WM_PATHNAME`` glob: ``*`` stops at a ``/``, so
-    ``refs/*`` selects nothing while ``refs/*/*`` and ``refs/**``
-    select every branch (git 2.47.3 and 2.50.1).
+def quote_style(fl: FlagView) -> QuoteStyle:
+    """The one quoting option a line chose, none for plain text.
 
     Args:
-        name (str): the full ref name.
-        patterns (tuple[str, ...]): the operands; none selects all.
+        fl (FlagView): spec-bound options.
+
+    Raises:
+        FormatUsageError: two of them.
     """
-    if not patterns:
-        return True
-    components = name.split("/")
-    for pattern in patterns:
-        if name.startswith(pattern) and (len(name) == len(pattern)
-                                         or name[len(pattern)] == "/"
-                                         or pattern.endswith("/")):
-            return True
-        if _path_match(pattern.split("/"), components):
-            return True
-    return False
-
-
-def _formatted(repo: BaseRepo, patterns: tuple[str, ...], template: str,
-               count: int) -> bytes:
-    """Expand the format once per selected ref, in refname order.
-
-    Args:
-        repo (BaseRepo): the opened repository.
-        patterns (tuple[str, ...]): the ref patterns.
-        template (str): the ``--format`` string.
-        count (int): ``--count``, zero for every ref.
-    """
-    rows = []
-    for ref in sorted(repo.refs.allkeys()):
-        name = ref.decode()
-        if not name.startswith("refs/") or not ref_selected(name, patterns):
-            continue
-        obj = repo.object_store[repo.refs[ref]]
-        message = obj.message.decode("utf-8", "replace") if isinstance(
-            obj, (Commit, Tag)) else ""
-        atoms = {
-            "refname": name,
-            "refname:short": SHORT_PREFIX.sub("", name),
-            "objectname": obj.id.decode(),
-            "objectname:short": obj.id.decode()[:abbrev_for(repo)],
-            "objecttype": obj.type_name.decode(),
-            "subject": message.split("\n\n", 1)[0].rstrip().replace("\n", " "),
-            "contents": message,
-        }
-
-        def expand(match: re.Match[str]) -> str:
-            atom = match.group(1)
-            if atom is None:
-                return chr(int(match.group(2), 16))
-            if atom not in atoms:
-                raise GitError(f"unknown field name: {atom}")
-            return atoms[atom]
-
-        rows.append(PLACEHOLDER.sub(expand, template) + "\n")
-        if count and len(rows) >= count:
-            break
-    return "".join(rows).encode()
+    chosen = {style for name, style in QUOTE_OPTIONS if fl.as_bool(name)}
+    if len(chosen) > 1:
+        raise FormatUsageError("more than one quoting style?")
+    return chosen.pop() if chosen else QuoteStyle.NONE
 
 
 async def for_each_ref(
         inv: CLIInvocation[None]) -> tuple[ByteSource | None, IOResult]:
-    """Format the repository's references, including packed refs.
+    """Format the repository's references, as git's ref-filter does.
+
+    The refs are chosen by the path patterns, ``--exclude`` and the
+    commit filters, ordered by the ``--sort`` keys (refname when none),
+    and each is printed through ``--format``.
 
     Args:
-        inv (CLIInvocation[None]): optional ref patterns and format.
+        inv (CLIInvocation[None]): optional ref patterns and options.
     """
     fl = FlagView(inv.flags)
+    doors = inv.doors or CLIDoors()
+    words = filter_words(inv)
+    texts = without_filter_values(inv.texts, words)
     try:
+        check_operands(texts, UnknownSwitchError, escaped(inv.argv),
+                       switches(inv))
+        repo, location = await opened(fl, doors)
+        assert doors.dispatch is not None
+        filt = await asyncio.to_thread(ref_filter, repo, words)
         count = fl.as_int("count") or 0
         if count < 0:
-            raise GitError(f"invalid --count argument: {count}")
-        repo, _ = await opened(fl, inv.doors or CLIDoors())
+            raise FormatUsageError(f"invalid --count argument: `{count}'")
         template = fl.as_str("format")
-        out = await asyncio.to_thread(
-            _formatted, repo, inv.texts,
-            DEFAULT_FORMAT if template is None else template, count)
-        return out, IOResult()
+        fmt = parse_format(DEFAULT_FORMAT if template is None else template,
+                           quote_style(fl))
+        keys = sort_keys(fl, ("refname", ))
+        icase = fl.as_bool("ignore_case")
+        patterns = texts
+        if fl.as_bool("stdin"):
+            if texts:
+                raise GitError("unknown arguments supplied with --stdin")
+            text = (await read_stdin_async(inv.stdin)
+                    or b"").decode("utf-8", "replace")
+            lines = text.split("\n")
+            if lines[-1] == "":
+                lines.pop()
+            patterns = tuple(line.removesuffix("\r") for line in lines)
+        roots = fl.as_bool("include_root_refs")
+        excludes = tuple(fl.as_list("exclude"))
+
+        def wanted(name: str) -> bool:
+            listed = name.startswith("refs/") or (roots and is_root_ref(name))
+            return (listed and match_as_path(name, patterns, icase) and
+                    not (excludes and match_as_path(name, excludes, icase)))
+
+        items, ctx, errors = await ref_listing(
+            doors.dispatch, repo, location,
+            await read_config(doors.dispatch, location),
+            used_fields(fmt, keys
+                        or ()), wanted, filt, date_clock(inv.env), roots)
+        if roots:
+            items = [
+                replace(item, kind=RefKind.ROOT)
+                if item.kind is RefKind.DETACHED else item for item in items
+            ]
+        out, stopped = format_refs(
+            fmt,
+            items,
+            ctx,
+            keys,
+            count=count,
+            omit_empty=fl.as_bool("omit_empty"),
+            icase=icase,
+            stream=filt is None
+            or (filt.merged is None and filt.no_merged is None))
     except GitError as exc:
         return fatal(exc)
+    return listing_result(out, errors, stopped)

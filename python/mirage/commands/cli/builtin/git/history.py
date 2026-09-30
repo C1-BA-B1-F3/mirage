@@ -15,7 +15,7 @@
 import heapq
 import math
 import re
-from collections.abc import Iterable, Iterator
+from collections.abc import Iterable, Iterator, Mapping
 from dataclasses import dataclass
 from typing import Literal
 
@@ -26,14 +26,15 @@ from dulwich.repo import BaseRepo
 
 from mirage.commands.builtin.utils.bre import (BreError, PosixSyntax,
                                                search_bre, translate_ere)
+from mirage.commands.cli.builtin.git.dates import date_clock, parse_date_mode
 from mirage.commands.cli.builtin.git.errors import (  # yapf: disable
     BadDateError, GitError, IncompatibleLogOptionsError,
     UnrecognizedArgumentError)
-from mirage.commands.cli.builtin.git.format import (MEDIUM, LogFormat,
-                                                    parse_pretty)
-from mirage.commands.cli.builtin.git.mailmap import (MailmapEntry,
-                                                     mapped_identity)
+from mirage.commands.cli.builtin.git.format import (DEFAULT_DATE, MEDIUM,
+                                                    LogFormat, parse_pretty)
+from mirage.commands.cli.builtin.git.mailmap import mapped_identity
 from mirage.commands.cli.builtin.git.pickaxe import touches
+from mirage.commands.cli.builtin.git.types import DateMode, MailmapEntry
 from mirage.commands.spec.flag_view import FlagView
 from mirage.utils.dates import iso_timestamp
 from mirage.utils.posix import compile_posix_regex
@@ -98,7 +99,7 @@ class LogFlags:
     mailmap: tuple[MailmapEntry, ...] = ()
     use_mailmap: bool = True
     ignore_case: bool = False
-    date: str = "default"
+    date: DateMode = DEFAULT_DATE
     decorate: bool = False
     all_refs: bool = False
     pretty: LogFormat = MEDIUM
@@ -219,11 +220,15 @@ def _pattern(value: str, syntax: str, ignore_case: bool,
         raise GitError(f"{origin}, '{value}': {exc}") from exc
 
 
-def parse_flags(fl: FlagView) -> LogFlags:
+def parse_flags(fl: FlagView,
+                env: Mapping[str, str] | None = None) -> LogFlags:
     """Read the raw log flag kwargs into a frozen struct.
 
     Args:
         fl (FlagView): spec-validated view over the raw flag kwargs.
+        env (Mapping[str, str] | None): the command environment, whose
+            ``TZ`` and ``GIT_TEST_DATE_NOW`` set the clock dates are
+            rendered by.
     """
     oneline = fl.as_bool("oneline")
     pretty = pretty_format(fl)
@@ -253,7 +258,7 @@ def parse_flags(fl: FlagView) -> LogFlags:
         committers=committers,
         greps=greps,
         ignore_case=ignore_case,
-        date=fl.as_str("date") or "default",
+        date=parse_date_mode(fl.as_str("date") or "default", date_clock(env)),
         decorate=fl.as_bool("decorate"),
         # git reads a negative count as no limit at all.
         max_count=None

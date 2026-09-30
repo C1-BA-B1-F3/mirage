@@ -16,8 +16,10 @@ import pytest
 from dulwich.refs import Ref
 
 from mirage.commands.cli.builtin.git.refs import (blocking_ref, load_refs,
+                                                  mapped, parse_refspec,
                                                   read_head, valid_ref_name,
                                                   without_packed)
+from mirage.commands.cli.builtin.git.types import Refspec
 from mirage.io import IOResult
 
 from .conftest import make_branch, mounted, pack_refs
@@ -168,3 +170,25 @@ def test_a_ref_with_no_collision_is_free():
     assert blocking_ref(known, "refs/tags/foobar") is None
     # And the ref itself existing is a different refusal, not this one.
     assert blocking_ref(known, "refs/tags/foo") is None
+
+
+@pytest.mark.parametrize("text,expected", [
+    ("main", Refspec("main", None, False)),
+    ("+refs/heads/*:refs/remotes/origin/*",
+     Refspec("refs/heads/*", "refs/remotes/origin/*", True)),
+    ("topic:copy", Refspec("topic", "copy", False)),
+    ("main:", Refspec("main", None, False)),
+])
+def test_a_refspec_splits_into_source_destination_and_force(text, expected):
+    assert parse_refspec(text) == expected
+
+
+@pytest.mark.parametrize("spec,name,expected", [
+    ("+refs/heads/*:refs/remotes/origin/*", "refs/heads/feat/x",
+     "refs/remotes/origin/feat/x"),
+    ("+refs/heads/*:refs/remotes/origin/*", "refs/tags/v1", None),
+    ("refs/heads/main:refs/heads/copy", "refs/heads/main", "refs/heads/copy"),
+    ("refs/heads/main", "refs/heads/main", ""),
+])
+def test_a_refspec_maps_a_remote_ref(spec, name, expected):
+    assert mapped(parse_refspec(spec), name) == expected

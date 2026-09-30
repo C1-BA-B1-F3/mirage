@@ -103,7 +103,9 @@ async def test_remotes_only_drops_the_local_branches(repo_path):
     with mounted(repo_path) as ws:
         ws.register_cli("git", GIT)
         result = await ws.shell("git -C /repo branch -r")
-    assert result.stdout == b"  remotes/origin/main\n"
+    # Without the locals beside them git drops the remotes/ label
+    # (pinned against git 2.54).
+    assert result.stdout == b"  origin/main\n"
 
 
 @pytest.mark.asyncio
@@ -115,7 +117,13 @@ async def test_a_symbolic_remote_ref_renders_its_target(repo_path):
     with mounted(repo_path) as ws:
         ws.register_cli("git", GIT)
         result = await ws.shell("git -C /repo branch -r")
-    assert result.stdout == (b"  remotes/origin/HEAD -> origin/main\n"
+    assert result.stdout == (b"  origin/HEAD -> origin/main\n"
+                             b"  origin/main\n")
+    with mounted(repo_path) as ws:
+        ws.register_cli("git", GIT)
+        result = await ws.shell("git -C /repo branch -a")
+    assert result.stdout == (b"* main\n"
+                             b"  remotes/origin/HEAD -> origin/main\n"
                              b"  remotes/origin/main\n")
 
 

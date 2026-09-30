@@ -12,96 +12,92 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import git from 'isomorphic-git'
-import { IOResult } from '../../../../io/types.ts'
-import { fnmatch } from '../../../../utils/fnmatch.ts'
-import { compareCodePoints } from '../../../../utils/sort.ts'
+import { readStdinAsync } from '../../../builtin/utils/stream.ts'
 import type { CommandFnResult } from '../../../config.ts'
 import { FlagView } from '../../../spec/flag_view.ts'
 import type { CLIInvocation } from '../../types.ts'
-import { GitError } from './errors.ts'
-import { loadRefs } from './refs.ts'
-import { opened, repoArgs } from './repo.ts'
-import { resolveObject } from './revparse.ts'
-import { fatal } from './util.ts'
+import { dateClock } from './dates.ts'
+import { FormatUsageError, GitError, UnknownSwitchError } from './errors.ts'
+import { filterWords, refFilter, withoutFilterValues } from './ref_filter.ts'
+import { formatRefs, parseFormat, usedFields } from './ref_format.ts'
+import { isRootRef, listingResult, matchAsPath, refListing, sortKeys } from './ref_list.ts'
+import { opened } from './repo.ts'
+import { QuoteStyle, RefKind } from './types.ts'
+import { checkOperands, escaped, fatal, switches } from './util.ts'
 
 const DEFAULT_FORMAT = '%(objectname) %(objecttype)\t%(refname)'
-const PLACEHOLDER = /%\(([^)]+)\)|%([0-9a-fA-F]{2})/g
-const SHORT_PREFIX = /^refs\/(heads|tags|remotes)\//
+const QUOTE_OPTIONS: readonly (readonly [string, QuoteStyle])[] = [
+  ['shell', QuoteStyle.SHELL],
+  ['perl', QuoteStyle.PERL],
+  ['python', QuoteStyle.PYTHON],
+  ['tcl', QuoteStyle.TCL],
+]
 
-/** Match a pattern against a ref one component at a time. */
-function pathMatch(parts: readonly string[], name: readonly string[]): boolean {
-  const [head, ...rest] = parts
-  if (head === undefined) return name.length === 0
-  if (head === '**') {
-    for (let i = 0; i <= name.length; i++) if (pathMatch(rest, name.slice(i))) return true
-    return false
-  }
-  const [first] = name
-  return first !== undefined && fnmatch(first, head) && pathMatch(rest, name.slice(1))
+/**
+ * The one quoting option a line chose, none for plain text.
+ *
+ * @throws FormatUsageError two of them
+ */
+function quoteStyle(fl: FlagView): QuoteStyle {
+  const chosen = new Set(QUOTE_OPTIONS.filter(([name]) => fl.asBool(name)).map(([, s]) => s))
+  if (chosen.size > 1) throw new FormatUsageError('more than one quoting style?')
+  return [...chosen][0] ?? QuoteStyle.NONE
 }
 
 /**
- * Whether a ref is one of the patterns', as `match_name_as_path`.
- *
- * A pattern selects a ref it spells in full or up to a `/`, or one it matches
- * as a `WM_PATHNAME` glob: `*` stops at a `/`, so `refs/*` selects nothing
- * while `refs/*\/*` and `refs/**` select every branch (git 2.47.3 and 2.50.1).
+ * Format the repository's references, as git's ref-filter does: the refs are
+ * chosen by the path patterns, `--exclude` and the commit filters, ordered by
+ * the `--sort` keys (refname when none), and each is printed through
+ * `--format`.
  */
-export function refSelected(name: string, patterns: readonly string[]): boolean {
-  if (!patterns.length) return true
-  const components = name.split('/')
-  return patterns.some(
-    (pattern) =>
-      (name.startsWith(pattern) &&
-        (name.length === pattern.length ||
-          name[pattern.length] === '/' ||
-          pattern.endsWith('/'))) ||
-      pathMatch(pattern.split('/'), components),
-  )
-}
-
-/** Format the repository's references, including packed refs. */
 export async function forEachRef(inv: CLIInvocation): Promise<CommandFnResult> {
   const fl = new FlagView(inv.flags)
+  const words = filterWords(inv)
+  const texts = withoutFilterValues(inv.texts, words)
   try {
-    const count = fl.asInt('count') ?? 0
-    if (count < 0) throw new GitError(`invalid --count argument: ${String(count)}`)
+    checkOperands(texts, UnknownSwitchError, escaped(inv.argv), switches(inv))
     const repo = await opened(fl, inv.doors ?? {})
-    const refs = await loadRefs(repo.dispatch, repo.location.gitdir, repo.location.commondir)
-    const template = fl.asStr('format') ?? DEFAULT_FORMAT
-    const rows: string[] = []
-    const names = [...refs.keys()].filter((ref) => ref.startsWith('refs/')).sort(compareCodePoints)
-    for (const name of names) {
-      if (!refSelected(name, inv.texts)) continue
-      const oid = await git.resolveRef({ ...repoArgs(repo), ref: name })
-      const obj = await resolveObject(repo, oid)
-      let message = ''
-      if (obj.type === 'commit')
-        message = (await git.readCommit({ ...repoArgs(repo), oid })).commit.message
-      if (obj.type === 'tag') message = (await git.readTag({ ...repoArgs(repo), oid })).tag.message
-      const atoms: Record<string, string> = {
-        refname: name,
-        'refname:short': name.replace(SHORT_PREFIX, ''),
-        objectname: oid,
-        'objectname:short': oid.slice(0, repo.abbrev),
-        objecttype: obj.type,
-        subject: (message.split('\n\n')[0] ?? '').trimEnd().replaceAll('\n', ' '),
-        contents: message,
-      }
-      rows.push(
-        template.replace(
-          PLACEHOLDER,
-          (_match, atom: string | undefined, hex: string | undefined) => {
-            if (atom === undefined) return String.fromCharCode(parseInt(hex ?? '0', 16))
-            if (!Object.hasOwn(atoms, atom)) throw new GitError(`unknown field name: ${atom}`)
-            return atoms[atom] ?? ''
-          },
-        ) + '\n',
-      )
-      if (count && rows.length >= count) break
+    const filter = await refFilter(repo, words)
+    const count = fl.asInt('count') ?? 0
+    if (count < 0) throw new FormatUsageError(`invalid --count argument: \`${String(count)}'`)
+    const template = fl.asStr('format')
+    const fmt = parseFormat(template ?? DEFAULT_FORMAT, quoteStyle(fl))
+    const keys = sortKeys(fl, ['refname'])
+    const icase = fl.asBool('ignore_case')
+    let patterns: readonly string[] = texts
+    if (fl.asBool('stdin')) {
+      if (texts.length) throw new GitError('unknown arguments supplied with --stdin')
+      const data = await readStdinAsync(inv.stdin ?? null)
+      const lines = new TextDecoder().decode(data ?? new Uint8Array()).split('\n')
+      if (lines.at(-1) === '') lines.pop()
+      patterns = lines.map((line) => line.replace(/\r$/, ''))
     }
-    return [new TextEncoder().encode(rows.join('')), new IOResult()]
+    const roots = fl.asBool('include_root_refs')
+    const excludes = fl.asList('exclude')
+    const wanted = (name: string): boolean =>
+      (name.startsWith('refs/') || (roots && isRootRef(name))) &&
+      matchAsPath(name, patterns, icase) &&
+      !(excludes.length && matchAsPath(name, excludes, icase))
+    const [listed, ctx, errors] = await refListing(
+      repo,
+      usedFields(fmt, keys ?? []),
+      wanted,
+      filter,
+      dateClock(inv.env),
+      roots,
+    )
+    const items = roots
+      ? listed.map((item) =>
+          item.kind === RefKind.DETACHED ? { ...item, kind: RefKind.ROOT } : item,
+        )
+      : listed
+    const [out, stopped] = formatRefs(fmt, items, ctx, keys, {
+      count,
+      omitEmpty: fl.asBool('omit_empty'),
+      icase,
+      stream: filter === null || (filter.merged === null && filter.noMerged === null),
+    })
+    return listingResult(out, errors, stopped)
   } catch (err) {
     if (err instanceof GitError) return fatal(err)
     throw err

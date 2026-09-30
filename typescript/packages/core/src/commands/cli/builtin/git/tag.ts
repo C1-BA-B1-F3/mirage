@@ -20,12 +20,12 @@ import { FlagView } from '../../../spec/flag_view.ts'
 import type { CLIInvocation } from '../../types.ts'
 import { identity } from './commit.ts'
 import { HEAD } from './constants.ts'
+import { dateClock } from './dates.ts'
 import {
   GitError,
   IncompatibleOptionsError,
   InvalidTagNameError,
   ListModeOnlyError,
-  TagLinesError,
   MissingTagMessageError,
   NoWorkspaceError,
   RefLockError,
@@ -39,24 +39,20 @@ import {
 } from './errors.ts'
 import { short } from './format.ts'
 import { blockingRef, deleteRef, loadRefs, TAG_PREFIX, validRefName, writeRef } from './refs.ts'
-import {
-  filterWords,
-  keptRefs,
-  listModeOption,
-  refFilter,
-  withoutFilterValues,
-} from './ref_filter.ts'
+import { filterWords, listModeOption, refFilter, withoutFilterValues } from './ref_filter.ts'
+import { formatRefs, listingFormat, usedFields } from './ref_format.ts'
+import { configuredSort, listingResult, matchShort, refListing, sortKeys } from './ref_list.ts'
 import { opened, repoArgs, type Repo } from './repo.ts'
 import { resolveObject } from './revparse.ts'
 import { checkOperands, escaped, fatal, switches } from './util.ts'
-import { fnmatch } from '../../../../utils/fnmatch.ts'
 import { compareCodePoints } from '../../../../utils/sort.ts'
 
 const ENC = new TextEncoder()
-const DEC = new TextDecoder()
-// git pads a tag name to this width before the message under -n.
-const NAME_WIDTH = 15
-const CONTINUATION = '    '
+// git's own formats for a tag listing: the name, or under -n<num> the name
+// padded to 15 columns and that many lines of the message.
+const NAME_FORMAT = '%(refname:lstrip=2)'
+const linesFormat = (lines: number): string =>
+  `%(align:15)%(refname:lstrip=2)%(end) %(contents:lines=${String(lines)})`
 
 /** The parsed shape of a `git tag` invocation. */
 interface TagFlags {
@@ -102,60 +98,6 @@ function parseFlags(fl: FlagView): TagFlags {
     force: fl.asBool('force'),
     lines,
   }
-}
-
-/** Every tag name the repository publishes, in git's listing order. */
-export function tagNames(known: ReadonlyMap<string, string>): string[] {
-  return [...known.keys()]
-    .filter((ref) => ref.startsWith(TAG_PREFIX))
-    .map((ref) => ref.slice(TAG_PREFIX.length))
-    .sort(compareCodePoints)
-}
-
-/** The names a `-l` pattern list keeps: any pattern, or all. */
-export function selectedNames(names: readonly string[], patterns: readonly string[]): string[] {
-  if (patterns.length === 0) return [...names]
-  return names.filter((name) => patterns.some((pattern) => fnmatch(name, pattern)))
-}
-
-/**
- * The message `-n` prints for a tag: its own, or its commit's.
- *
- * An annotated tag carries a message; a lightweight one is a bare pointer, so
- * git shows the message of what it points at. Read off the raw object rather
- * than through isomorphic-git's tag parser, which normalizes away the blank
- * line an empty message leaves and then reads the headers as the message.
- */
-async function messageLines(repo: Repo, oid: string): Promise<string[]> {
-  // Deprecated upstream for being general, but the general answer is what
-  // reading a tag and a commit the same way needs.
-  // eslint-disable-next-line @typescript-eslint/no-deprecated
-  const { type, object } = await git.readObject({ ...repoArgs(repo), oid, format: 'content' })
-  if (type !== 'tag' && type !== 'commit') return []
-  const text = DEC.decode(object as Uint8Array)
-  const cut = text.indexOf('\n\n')
-  const lines = (cut === -1 ? '' : text.slice(cut + 2)).split('\n')
-  if (lines[lines.length - 1] === '') lines.pop()
-  return lines
-}
-
-/** One line per tag, with up to `count` message lines under -n. */
-export function renderListing(
-  names: readonly string[],
-  messages: ReadonlyMap<string, readonly string[]> | null,
-  count: number,
-): string {
-  const lines: string[] = []
-  for (const name of names) {
-    if (messages === null) {
-      lines.push(name)
-      continue
-    }
-    const body = (messages.get(name) ?? []).slice(0, count)
-    lines.push(`${name.padEnd(NAME_WIDTH)} ${body[0] ?? ''}`)
-    for (const line of body.slice(1)) lines.push(`${CONTINUATION}${line}`)
-  }
-  return lines.map((line) => `${line}\n`).join('')
 }
 
 /**
@@ -261,12 +203,9 @@ export async function tag(inv: CLIInvocation): Promise<CommandFnResult> {
     if (flags.remove && flags.lines !== undefined) throw new ListModeOnlyError()
     const listOnly = flags.remove ? listModeOption(words) : null
     if (listOnly !== null) throw new ListModeOnlyError(listOnly)
-    // git reads the count while parsing the format it lists with, which is
-    // after both usage refusals above and before any ref is read: a repository
-    // holding no tags refuses this one too.
-    if (flags.lines !== undefined && flags.lines < 0) throw new TagLinesError(flags.lines)
     const repo = await opened(fl, doors)
     abbrev = repo.abbrev
+    const keys = sortKeys(fl, await configuredSort(repo, 'tag'))
     const filter = await refFilter(repo, words)
     const known = await loadRefs(dispatch, repo.location.gitdir, repo.location.commondir)
     if (flags.remove) {
@@ -308,25 +247,29 @@ export async function tag(inv: CLIInvocation): Promise<CommandFnResult> {
       ]
     }
     if (flags.listing || flags.lines !== undefined || filtered || texts.length === 0) {
-      let names = selectedNames(tagNames(known), texts)
-      if (filter !== null) {
-        const kept = await keptRefs(
-          repo,
-          filter,
-          names.map((each) => [each, known.get(`${TAG_PREFIX}${each}`) ?? ''] as const),
-        )
-        names = names.filter((each) => kept.has(each))
-      }
-      let messages: Map<string, string[]> | null = null
-      // -n0 (and any other count that prints no line) is a plain listing in
-      // git, so nothing is read and nothing is padded.
-      if (flags.lines !== undefined && flags.lines > 0) {
-        messages = new Map()
-        for (const each of names) {
-          messages.set(each, await messageLines(repo, known.get(`${TAG_PREFIX}${each}`) ?? ''))
-        }
-      }
-      return [ENC.encode(renderListing(names, messages, flags.lines ?? 0)), new IOResult()]
+      // git reads a -n count while building the format it lists with, so a
+      // count below -1 is refused as the format's own (after both usage
+      // refusals above, and in a repository holding no tags), and --format
+      // drops -n altogether.
+      const fmt = listingFormat(
+        fl.asStr('format') ?? (flags.lines ? linesFormat(flags.lines) : NAME_FORMAT),
+      )
+      const icase = fl.asBool('ignore_case')
+      const wanted = (each: string): boolean =>
+        each.startsWith(TAG_PREFIX) && matchShort(each, texts, icase)
+      const [items, ctx, errors] = await refListing(
+        repo,
+        usedFields(fmt, keys ?? []),
+        wanted,
+        filter,
+        dateClock(inv.env),
+      )
+      const [rows, stopped] = formatRefs(fmt, items, ctx, keys, {
+        omitEmpty: fl.asBool('omit_empty'),
+        icase,
+        stream: filter === null || (filter.merged === null && filter.noMerged === null),
+      })
+      return listingResult(rows, errors, stopped)
     }
     if (texts.length > 2) throw new TooManyArgumentsError()
     name = texts[0] ?? ''

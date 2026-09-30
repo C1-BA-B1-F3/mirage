@@ -206,7 +206,7 @@ export async function log(inv: CLIInvocation): Promise<CommandFnResult> {
   const fl = new FlagView(inv.flags)
   try {
     checkOperands(texts, undefined, escaped(inv.argv))
-    const flags = parseFlags(fl)
+    const flags = parseFlags(fl, inv.env)
     const repo = await opened(fl, doors)
     const parsed = {
       ...flags,

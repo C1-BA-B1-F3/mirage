@@ -241,7 +241,7 @@ async def log(inv: CLIInvocation[None]) -> tuple[ByteSource | None, IOResult]:
         if dispatch is None:
             raise NoWorkspaceError()
         check_operands(texts, marked=escaped(inv.argv))
-        parsed = parse_flags(fl)
+        parsed = parse_flags(fl, inv.env)
         repo, location = await opened(fl, doors)
         parsed = replace(parsed,
                          mailmap=await load_mailmap(dispatch, location),

@@ -12,7 +12,9 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import { loadMailmap, useMailmap, type MailmapEntry } from './mailmap.ts'
+import { loadMailmap, useMailmap } from './mailmap.ts'
+import { dateClock, parseDateMode } from './dates.ts'
+import type { DateMode, MailmapEntry } from './types.ts'
 import git from 'isomorphic-git'
 
 import { IOResult } from '../../../../io/types.ts'
@@ -51,18 +53,23 @@ import { encodeText } from '../../../../shell/bytes.ts'
 interface ShowFlags {
   readonly diff: DiffFlags
   readonly pretty: LogFormat
-  readonly date: string
+  readonly date: DateMode
   readonly mailmap: readonly MailmapEntry[]
   readonly useMailmap: boolean
 }
 
 /** Read the raw show flag kwargs into a frozen struct. */
-function parseShowFlags(fl: FlagView, defaultRenames = true, quotePathFully = true): ShowFlags {
+function parseShowFlags(
+  fl: FlagView,
+  defaultRenames = true,
+  quotePathFully = true,
+  env: Readonly<Record<string, string>> | null = null,
+): ShowFlags {
   const pretty = prettyFormat(fl)
   return {
     mailmap: [],
     useMailmap: true,
-    date: fl.asStr('date') ?? 'default',
+    date: parseDateMode(fl.asStr('date') ?? 'default', dateClock(env)),
     diff: parseDiffFlags(fl, true, 'dense-combined', true, defaultRenames, quotePathFully),
     pretty,
   }
@@ -106,6 +113,7 @@ export async function show(inv: CLIInvocation): Promise<CommandFnResult> {
       fl,
       await renamesEnabled(repo),
       await configBool(repo, 'core.quotepath', true),
+      inv.env,
     )
     const parsed = {
       ...base,

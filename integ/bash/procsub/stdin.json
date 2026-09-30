@@ -61,6 +61,161 @@
         "stdout": "a\nb\n",
         "stderr": ""
       }
+    },
+    {
+      "id": "procsub_stdin_heredoc_loop",
+      "seq": 1346000,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "s3-prefix",
+        "databricks-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder"
+      ],
+      "command": "while IFS= read -r line; do printf 'got %s\\n' \"$line\"; done < <(cat <<'EOF'\na\nb\nEOF\n)",
+      "expect": {
+        "exit": 0,
+        "stdout": "got a\ngot b\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "procsub_stdin_heredoc_expansion",
+      "seq": 1346001,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "s3-prefix",
+        "databricks-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder"
+      ],
+      "command": "(v=world; cat < <(cat <<EOF\n\n  héllo $v $(printf child) $((2+3))\n\\$literal\nEOF\n))",
+      "expect": {
+        "exit": 0,
+        "stdout": "\n  héllo world child 5\n$literal\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "procsub_stdin_heredoc_dash",
+      "seq": 1346002,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "s3-prefix",
+        "databricks-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder"
+      ],
+      "command": "cat < <(cat <<-'EOF'\n\t\n\t\\begin{table}\n\t$literal\n\tEOF\n)",
+      "expect": {
+        "exit": 0,
+        "stdout": "\n\\begin{table}\n$literal\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "procsub_stdin_heredoc_filename",
+      "seq": 1346003,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "s3-prefix",
+        "databricks-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder"
+      ],
+      "command": "printf 'wrong file\\n' > '{mount}/procsub-path'; cat < <(cat <<'EOF'\n{mount}/procsub-path\nEOF\n); rm '{mount}/procsub-path'",
+      "expect": {
+        "exit": 0,
+        "stdout": "{mount}/procsub-path\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "procsub_input_preserves_descriptor",
+      "seq": 1346027,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "s3-prefix",
+        "databricks-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder"
+      ],
+      "command": "printf 'stdin\\n' | cat 2< <(cat <<'EOF'\nother descriptor\nEOF\n)",
+      "expect": {
+        "exit": 0,
+        "stdout": "stdin\n",
+        "stderr": ""
+      }
     }
   ]
 }

@@ -29,9 +29,11 @@ from mirage.provision import ProvisionResult
 from mirage.runtime.routing import RouteDecision, RouteDeny, RouteError
 from mirage.shell.console import JobConsole
 from mirage.shell.constants import FORK_FAILED, FORK_FAILED_STATUS
+from mirage.shell.helpers import input_substitution_redirect
 from mirage.shell.literal import literal_tree
 from mirage.shell.parse import (find_syntax_error, find_unterminated_backtick,
                                 parse, syntax_error_result)
+from mirage.shell.types import NodeType as NT
 from mirage.shell.types import TSNodeLike
 from mirage.types import PathSpec, Refusal
 from mirage.workspace.abort import (MirageAbortError, StatusWriter,
@@ -103,6 +105,7 @@ async def recurse(
     routing_decision: RouteDecision | None,
     agent_id: str | None,
     nested: NestedRefusal,
+    substitution: bool = False,
     **opts: Any,
 ) -> Any:
     """The executor's internal eval ($(), source, eval, xargs, ...).
@@ -131,6 +134,8 @@ async def recurse(
         agent_id (str | None): the typed line's agent, inherited.
         nested (NestedRefusal): where the record a nested line earned
             is kept for the typed line.
+        substitution (bool): isolate a substitution's child shell, except
+            for the single input redirect that expands in the parent.
         cmd (str): the nested command line.
         node (Any): the node whose text ``cmd`` is: the command running
             a line, or the substitution being expanded. None when the
@@ -158,13 +163,52 @@ async def recurse(
         inner = HandOff(parent=handed)
     else:
         inner = evaluated_from(node, handed, span)
-    io = await ws.shell(cmd,
-                        cancel=cancel,
-                        record=False,
-                        routing_decision=routing_decision,
-                        agent_id=agent_id,
-                        handed=inner,
-                        **opts)
+    session = get_current_session_for(ws._session_mgr)
+    if session is None:
+        session = ws._session_mgr.get(
+            opts.get("session_id") or ws._session_mgr.default_id)
+    tree = None
+    if substitution and node.type == NT.COMMAND_SUBSTITUTION:
+        tree = parse(cmd)
+    if tree is not None and input_substitution_redirect(tree) is not None:
+        evaluate = partial(recurse,
+                           ws,
+                           cancel=cancel,
+                           routing_decision=routing_decision,
+                           agent_id=agent_id,
+                           nested=nested,
+                           handed=inner)
+        io, _ = await run_command_tree(ws.dispatch,
+                                       ws._registry,
+                                       ws._namespace,
+                                       ws.job_table,
+                                       evaluate,
+                                       agent_id or "",
+                                       tree,
+                                       session,
+                                       None,
+                                       cancel,
+                                       routing_decision=routing_decision,
+                                       handed=inner,
+                                       command_substitution=True)
+        record_status(session, io.exit_code, transparent=True)
+    else:
+        saved = session.snapshot() if substitution else None
+        terminal_output = session.terminal_output
+        if saved is not None:
+            session.terminal_output = False
+        try:
+            io = await ws.shell(cmd,
+                                cancel=cancel,
+                                record=False,
+                                routing_decision=routing_decision,
+                                agent_id=agent_id,
+                                handed=inner,
+                                **opts)
+        finally:
+            if saved is not None:
+                session.terminal_output = terminal_output
+                session.restore(saved)
     if isinstance(io, IOResult) and io.refusal is not None:
         nested.latest = io.refusal
     return io

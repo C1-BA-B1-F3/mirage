@@ -30,6 +30,68 @@
         "stdout": "deep\n",
         "stderr": ""
       }
+    },
+    {
+      "id": "procsub_nested_heredoc",
+      "seq": 1346005,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "s3-prefix",
+        "databricks-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder"
+      ],
+      "command": "cat <(cat < <(cat <<EOF\n$(cat <<'INNER'\ninner\nINNER\n)\nEOF\n))",
+      "expect": {
+        "exit": 0,
+        "stdout": "inner\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "procsub_heredoc_function",
+      "seq": 1346006,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "s3-prefix",
+        "databricks-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder"
+      ],
+      "command": "(f() { cat < <(cat <<'EOF'\nbody\nEOF\n); }; f; f)",
+      "expect": {
+        "exit": 0,
+        "stdout": "body\nbody\n",
+        "stderr": ""
+      }
     }
   ]
 }

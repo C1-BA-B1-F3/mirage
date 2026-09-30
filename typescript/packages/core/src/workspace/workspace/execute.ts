@@ -47,7 +47,8 @@ import type { DispatchFn } from '../../runtime/types.ts'
 import { RouteDeny, type RouteDecision } from '../../runtime/routing/index.ts'
 import { refusalOf, renderDeny, type Deny, type HandOff } from '../../policy/index.ts'
 import type { Refusal } from '../../types.ts'
-import type { TSNodeLike } from '../../shell/types.ts'
+import { NodeType as NT, type TSNodeLike } from '../../shell/types.ts'
+import { inputSubstitutionRedirect } from '../../shell/helpers.ts'
 import {
   recordStatus,
   restoreStatus,
@@ -406,16 +407,44 @@ async function runLine(
     // stdin so `... | command cat` filters the upstream output; the same
     // path carries `echo hi | bash -c 'cat'` into the inner line.
     if (opts.stdin !== undefined && opts.stdin !== null) innerOpts.stdin = opts.stdin
-    const res = await env.execute(cmd, innerOpts)
-    // The record rides back with the streams: a refusal the inner line
-    // earned is the outer line's to report.
-    if (res.refusal !== null) nested.latest = res.refusal
-    return new IOResult({
-      exitCode: res.exitCode,
-      stdout: res.stdout,
-      stderr: res.stderr,
-      refusal: res.refusal,
-    })
+    const session = opts.session ?? effectiveSession
+    const substitutionTree =
+      opts.substitution === true && opts.node?.type === NT.COMMAND_SUBSTITUTION
+        ? parser.parse(cmd)
+        : null
+    if (substitutionTree !== null && inputSubstitutionRedirect(substitutionTree) !== null) {
+      const [stdout, io] = await runCommandTree(
+        withHandOff(deps, innerOpts.handed ?? handed),
+        substitutionTree,
+        session,
+        null,
+        true,
+      )
+      io.stdout = stdout
+      recordStatus(session, io.exitCode, true)
+      if (io.refusal !== null) nested.latest = io.refusal
+      return io
+    }
+    const saved = opts.substitution === true ? session.snapshot() : null
+    const terminalOutput = session.terminalOutput
+    if (saved !== null) session.terminalOutput = false
+    try {
+      const res = await env.execute(cmd, innerOpts)
+      // The record rides back with the streams: a refusal the inner line
+      // earned is the outer line's to report.
+      if (res.refusal !== null) nested.latest = res.refusal
+      return new IOResult({
+        exitCode: res.exitCode,
+        stdout: res.stdout,
+        stderr: res.stderr,
+        refusal: res.refusal,
+      })
+    } finally {
+      if (saved !== null) {
+        session.terminalOutput = terminalOutput
+        session.restore(saved)
+      }
+    }
   }
 
   const deps = withHandOff(

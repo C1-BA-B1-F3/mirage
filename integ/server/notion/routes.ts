@@ -12,9 +12,10 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import { route } from '../kit/typescript/index.ts'
+import { route, unroutedLine } from '../kit/typescript/index.ts'
 import type { Ctx, KitHandler, KitRoute, Reply } from '../kit/typescript/index.ts'
 import type { C } from './config.ts'
+import { config } from './config.ts'
 import {
   blockChildren,
   pageMarkdown,
@@ -24,7 +25,9 @@ import {
   retrieveDataSource,
   retrieveDatabase,
   retrievePage,
+  retrievePageProperty,
   retrieveUser,
+  listTemplates,
   listUsers,
   search,
   unauthorized,
@@ -33,16 +36,22 @@ import {
 import {
   appendChildrenRoute,
   createCommentRoute,
+  createDataSourceRoute,
+  createDatabaseRoute,
   createPageRoute,
   deleteBlockRoute,
   listCommentsRoute,
+  movePageRoute,
   replaceMarkdown,
+  updateDataSourceRoute,
+  updateDatabaseRoute,
   updatePageRoute,
   updateBlockRoute,
 } from './writes.ts'
+import { apiError } from './wire.ts'
 
 // Every route is behind the token check, so it is applied once here rather
-// than as a first line in seventeen handlers. The kit's tenant fallback is
+// than as a first line in every handler. The kit's tenant fallback is
 // deliberately permissive (an unreadable vendor token asks for nothing and
 // gets the default tenant); Notion is not, and answers 401.
 function guarded(handler: KitHandler<C>): KitHandler<C> {
@@ -57,13 +66,37 @@ function write(method: string, path: string, handler: KitHandler<C>): KitRoute<C
   return route<C>(method, path, guarded(handler), { write: true })
 }
 
+// A path no route matches, answered the way live Notion answers one (a
+// trailing-slash `POST /v1/pages/` gets exactly this). The kit's own reply is a
+// 404 in its own shape, which a client reads as "that page does not exist"
+// about a page it has just read. It is behind the token check like every
+// route, so a caller with no token cannot tell a path that exists from one
+// that does not. The stderr line is the kit's `unrouted` line, written here
+// because reaching this route means the kit's `unrouted`, which normally
+// writes it and which CI greps for, never ran. Declared LAST, so every real
+// route wins.
+function catchAll(): KitRoute<C>[] {
+  return ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'].map((method) =>
+    route<C>(
+      method,
+      '/*rest',
+      guarded((ctx: Ctx<C>) => {
+        process.stderr.write(`${unroutedLine(config.service, method, ctx.url.pathname)}\n`)
+        return apiError(400, 'invalid_request_url', 'Invalid request URL.')
+      }),
+    ),
+  )
+}
+
 export function notionRoutes(): KitRoute<C>[] {
   return [
     get('/v1/users/me', whoami),
     get('/v1/users/:id', retrieveUser),
     get('/v1/users', listUsers),
     get('/v1/pages/:id/markdown', pageMarkdown),
+    get('/v1/pages/:id/properties/:property', retrievePageProperty),
     get('/v1/pages/:id', retrievePage),
+    get('/v1/data_sources/:id/templates', listTemplates),
     get('/v1/data_sources/:id', retrieveDataSource),
     get('/v1/databases/:id', retrieveDatabase),
     get('/v1/blocks/:id/children', blockChildren),
@@ -77,11 +110,17 @@ export function notionRoutes(): KitRoute<C>[] {
     route<C>('POST', '/v1/data_sources/:id/query', guarded(queryDataSource)),
     route<C>('POST', '/v1/databases/:id/query', guarded(queryDatabase)),
     write('POST', '/v1/pages', createPageRoute),
+    write('POST', '/v1/databases', createDatabaseRoute),
+    write('PATCH', '/v1/databases/:id', updateDatabaseRoute),
+    write('POST', '/v1/data_sources', createDataSourceRoute),
+    write('PATCH', '/v1/data_sources/:id', updateDataSourceRoute),
+    write('POST', '/v1/pages/:id/move', movePageRoute),
     write('PATCH', '/v1/pages/:id/markdown', replaceMarkdown),
     write('PATCH', '/v1/pages/:id', updatePageRoute),
     write('PATCH', '/v1/blocks/:id/children', appendChildrenRoute),
     write('PATCH', '/v1/blocks/:id', updateBlockRoute),
     write('DELETE', '/v1/blocks/:id', deleteBlockRoute),
     write('POST', '/v1/comments', createCommentRoute),
+    ...catchAll(),
   ]
 }

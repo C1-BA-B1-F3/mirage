@@ -641,7 +641,8 @@ describe('IndexView cleanup after a re-list', () => {
       ['n', row('n')],
     ])
     owned.delete('/data/n')
-    await view.setDir('/data', [])
+    // What setDir hands back is filtered too, not only what cleanup sees.
+    expect(await view.setDir('/data', [])).toEqual([{ path: '/data/a', folder: false }])
     expect(seen).toEqual([{ path: '/data/a', folder: false }])
   })
 

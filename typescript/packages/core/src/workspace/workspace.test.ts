@@ -39,6 +39,7 @@ import type { MountResolver } from '../runtime/resolver.ts'
 import type { RunArgs, RunResult } from '../runtime/types.ts'
 import { getTestParser } from './fixtures/workspace_fixture.ts'
 import { Workspace } from './workspace/workspace.ts'
+import { Mount } from './mount/spec.ts'
 import { expandOperands } from './executor/builtins/shared.ts'
 
 class MockVFS extends BaseVFS {
@@ -373,6 +374,61 @@ describe('Workspace.addMount read policy', () => {
         policy: ReadPolicy.BOUNDED,
         ttl: DEFAULT_READ_TTL,
       })
+    } finally {
+      await ws.close()
+    }
+  })
+})
+
+describe('Workspace fresh on a listing cache', () => {
+  // RAMVFS caches no bytes and declares no listing lifetime, so each case
+  // is decided by the index the mount will actually run under.
+  const FRESH = { policy: ReadPolicy.FRESH, ttl: DEFAULT_READ_TTL }
+
+  it('is judged on the workspace index', async () => {
+    const ws = new Workspace(
+      { '/r': new RAMVFS() },
+      { mode: MountMode.WRITE, read: FRESH, index: { ttl: 600 } },
+    )
+    try {
+      expect(ws.mount('/r').read.policy).toBe(ReadPolicy.FRESH)
+    } finally {
+      await ws.close()
+    }
+    expect(() => new Workspace({ '/r': new RAMVFS() }, { read: FRESH, index: { ttl: 0 } })).toThrow(
+      /caches reads or listings/,
+    )
+  })
+
+  it("is judged on a mount's own index over the workspace's", async () => {
+    const ws = new Workspace(
+      { '/r': new Mount(new RAMVFS(), { index: { ttl: 600 } }) },
+      { read: FRESH, index: { ttl: 0 } },
+    )
+    try {
+      expect(ws.mount('/r').read.policy).toBe(ReadPolicy.FRESH)
+    } finally {
+      await ws.close()
+    }
+    expect(
+      () =>
+        new Workspace(
+          { '/r': new Mount(new RAMVFS(), { index: { ttl: 0 } }) },
+          { read: FRESH, index: { ttl: 600 } },
+        ),
+    ).toThrow(/caches reads or listings/)
+  })
+
+  it('judges an alias on the index it shares', async () => {
+    // A second mount of one driver shares the first mount's store, so the
+    // workspace index it would otherwise be given is not the one it runs.
+    const ram = new RAMVFS()
+    const ws = new Workspace(
+      { '/a': new Mount(ram, { index: { ttl: 600 } }) },
+      { index: { ttl: 0 } },
+    )
+    try {
+      expect(ws.addMount('/b', ram, MountMode.READ, FRESH).read.policy).toBe(ReadPolicy.FRESH)
     } finally {
       await ws.close()
     }
@@ -1260,4 +1316,32 @@ it('hands glob a lock-held view it can write through', async () => {
   } finally {
     await ws.close()
   }
+})
+
+it('constructor alias uses the first mount index', async () => {
+  const vfs = new RAMVFS()
+  const ws = new Workspace({
+    '/first': new Mount(vfs, { index: { ttl: 600 } }),
+    '/alias': new Mount(vfs, { index: { ttl: 0 }, read: { policy: ReadPolicy.FRESH, ttl: 600 } }),
+  })
+  try {
+    expect(ws.mount('/alias').indexStore).toBe(ws.mount('/first').indexStore)
+    expect(ws.mount('/alias').indexStore.ttl).toBe(600)
+  } finally {
+    await ws.close()
+  }
+})
+
+it('constructor alias cannot enable a disabled shared index', () => {
+  const vfs = new RAMVFS()
+  expect(
+    () =>
+      new Workspace({
+        '/first': new Mount(vfs, { index: { ttl: 0 } }),
+        '/alias': new Mount(vfs, {
+          index: { ttl: 600 },
+          read: { policy: ReadPolicy.FRESH, ttl: 600 },
+        }),
+      }),
+  ).toThrow(/caches reads or listings/)
 })

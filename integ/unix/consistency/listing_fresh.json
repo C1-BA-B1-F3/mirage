@@ -1,0 +1,133 @@
+{
+  "cases": [
+    {
+      "id": "listing_fresh_outside_add_is_seen_everywhere",
+      "seq": 310063,
+      "targets": [
+        "s3",
+        "s3-prefix",
+        "gridfs",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "gdrive",
+        "gdrive-folder"
+      ],
+      "read": "fresh",
+      "ttl": 600,
+      "scenario": [
+        {
+          "mutate": {
+            "path": "/data/lf.keep",
+            "content": "keep\n"
+          }
+        },
+        {
+          "mutate": {
+            "command": "mkdir -p /data/lf"
+          }
+        },
+        {
+          "mutate": {
+            "path": "/data/lf/a.txt",
+            "content": "a\n"
+          }
+        },
+        {
+          "command": "ls /data/lf"
+        },
+        {
+          "mutate": {
+            "path": "/data/lf/new.txt",
+            "content": "new\n"
+          }
+        },
+        {
+          "command": "ls /data/lf"
+        },
+        {
+          "command": "find /data/lf -name new.txt"
+        },
+        {
+          "command": "for f in /data/lf/*; do echo $f; done"
+        },
+        {
+          "command": "cat /data/lf/new.txt"
+        }
+      ],
+      "expect": {
+        "exit": 0,
+        "stdout": "a.txt\na.txt\nnew.txt\n/data/lf/new.txt\n/data/lf/a.txt\n/data/lf/new.txt\nnew\n",
+        "stderr": ""
+      },
+      "note": "Task 1.2: under fresh every command re-lists a folder it reads from the cache, so a file added outside mirage shows in ls, find, a glob and cat with a ttl that would otherwise hide it for ten minutes. The targets are every fresh-capable one with a shadow workspace on both hosts; the .keep write creates the onedrive mount root before mkdir -p (#1341 item 3)."
+    },
+    {
+      "id": "listing_relist_drops_a_file_deleted_outside",
+      "seq": 310064,
+      "targets": [
+        "s3",
+        "s3-prefix",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix"
+      ],
+      "read": "bounded",
+      "ttl": 3,
+      "scenario": [
+        {
+          "mutate": {
+            "path": "/data/lr.keep",
+            "content": "keep\n"
+          }
+        },
+        {
+          "mutate": {
+            "command": "mkdir -p /data/lr"
+          }
+        },
+        {
+          "mutate": {
+            "path": "/data/lr/a.txt",
+            "content": "a\n"
+          }
+        },
+        {
+          "mutate": {
+            "path": "/data/lr/b.txt",
+            "content": "b\n"
+          }
+        },
+        {
+          "command": "ls /data/lr"
+        },
+        {
+          "command": "cat /data/lr/a.txt"
+        },
+        {
+          "mutate": {
+            "command": "rm /data/lr/a.txt"
+          }
+        },
+        {
+          "command": "sleep 4"
+        },
+        {
+          "command": "ls /data/lr"
+        },
+        {
+          "command": "test -e /data/lr/a.txt; echo $?"
+        }
+      ],
+      "expect": {
+        "exit": 0,
+        "stdout": "a.txt\nb.txt\na\nb.txt\n1\n",
+        "stderr": ""
+      },
+      "note": "A re-list that no longer names a file evicts its cached row, so stat stops answering for it; before, msgraph's stat answered from the old row and test -e said it still existed. s3 names the directory's own targets; box and dropbox cannot run this until Task 1.4 (box also has no TS shadow, #1341 item 2)."
+    }
+  ]
+}

@@ -81,8 +81,10 @@ export function normalizeMounts(
   // Every mount spelling converges here, which is why this is where a
   // read policy is checked against what its backend can honour: one
   // verdict per mount, whatever door declared it.
+  const effectiveIndexes = new Map<BaseVFS, IndexConfig | undefined>()
   for (const [prefix, vfs] of Object.entries(bare)) {
-    checkReadCapability(prefix, vfs, read[prefix] ?? defaultRead, indexes[prefix] ?? index)
+    if (!effectiveIndexes.has(vfs)) effectiveIndexes.set(vfs, indexes[prefix] ?? index)
+    checkReadCapability(prefix, vfs, read[prefix] ?? defaultRead, effectiveIndexes.get(vfs))
   }
   return { bare, modes, commandLimits, refs, indexes, read }
 }

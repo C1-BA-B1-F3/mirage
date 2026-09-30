@@ -195,7 +195,7 @@ for (const backend of ['ram', 'redis']) {
           { path: '/dir/a', folder: false },
         ])
         expect((await store.get('/dir/a')).status).toBe(LookupStatus.NOT_FOUND)
-        expect((await store.get('/dir/b')).entry).not.toBeNull()
+        expect((await store.get('/dir/b')).entry).toBeDefined()
         expect((await store.listDir('/dir')).entries).toEqual(['/dir/b'])
       })
 
@@ -237,7 +237,7 @@ for (const backend of ['ram', 'redis']) {
           expect((await store.listDir(path)).status).toBe(LookupStatus.NOT_FOUND)
         }
         expect((await store.listDir('/dir/sub2')).entries).toEqual(['/dir/sub2/z'])
-        expect((await store.get('/dir/sub2/z')).entry).not.toBeNull()
+        expect((await store.get('/dir/sub2/z')).entry).toBeDefined()
       })
 
       it('evicts nothing on a partial listing', async () => {
@@ -246,7 +246,7 @@ for (const backend of ['ram', 'redis']) {
           ['b', entry('b')],
         ])
         await store.setPartialDir('/dir', [['b', entry('b')]])
-        expect((await store.get('/dir/a')).entry).not.toBeNull()
+        expect((await store.get('/dir/a')).entry).toBeDefined()
       })
 
       // A window names what to show, not every child: dropping out of it is
@@ -257,7 +257,7 @@ for (const backend of ['ram', 'redis']) {
           ['b', entry('b')],
         ])
         expect(await store.setDir('/dir', [['b', entry('b')]], null, { window: true })).toEqual([])
-        expect((await store.get('/dir/a')).entry).not.toBeNull()
+        expect((await store.get('/dir/a')).entry).toBeDefined()
         expect((await store.listDir('/dir')).entries).toEqual(['/dir/b'])
       })
 
@@ -267,7 +267,7 @@ for (const backend of ['ram', 'redis']) {
         await store.put('/dir/a', entry())
         await store.setPartialDir('/dir', [['b', entry('b')]])
         expect(await store.setDir('/dir', [])).toEqual([{ path: '/dir/b', folder: false }])
-        expect((await store.get('/dir/a')).entry).not.toBeNull()
+        expect((await store.get('/dir/a')).entry).toBeDefined()
       })
 
       it('still evicts on a re-list after invalidate', async () => {
@@ -357,7 +357,7 @@ for (const backend of ['ram', 'redis']) {
         await store.put('/dir/p', entry('p'))
         await store.setDir('/dir', [['a', entry()]])
         expect(await store.setDir('/dir', [])).toEqual([{ path: '/dir/a', folder: false }])
-        expect((await store.get('/dir/p')).entry).not.toBeNull()
+        expect((await store.get('/dir/p')).entry).toBeDefined()
       })
     },
   )

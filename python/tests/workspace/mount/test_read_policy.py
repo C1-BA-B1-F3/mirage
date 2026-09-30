@@ -17,7 +17,7 @@ from pathlib import Path
 
 import pytest
 
-from mirage.cache.index import IndexConfig, RAMIndexCacheStore
+from mirage.cache.index import IndexConfig
 from mirage.types import DEFAULT_READ_TTL, MountMode, ReadPolicy, ReadSpec
 from mirage.vfs.aliyun.aliyun import AliyunVFS
 from mirage.vfs.backblaze.backblaze import BackblazeVFS
@@ -53,6 +53,7 @@ from mirage.vfs.supabase.supabase import SupabaseVFS
 from mirage.vfs.tencent.tencent import TencentVFS
 from mirage.vfs.wasabi.wasabi import WasabiVFS
 from mirage.workspace import Workspace
+from mirage.workspace.mount import Mount
 from mirage.workspace.mount.read_policy import (check_read_capability,
                                                 coerce_read_policy,
                                                 resolve_read_spec)
@@ -368,13 +369,12 @@ FRESH_BY_LISTING = {"disk", "chroma", "qdrant", "airtable", "wandb"}
 
 def _stub(name: str) -> BaseVFS | None:
     # The real verdict over each class, unconfigured: it reads only class
-    # capabilities and the index the class would build.
+    # capabilities and the driver's index_ttl.
     entry = REGISTRY.get(name)
     if entry is None:
         return None
     cls = load_attr(entry.vfs_path)
     vfs = cls.__new__(cls)
-    vfs._index = RAMIndexCacheStore(ttl=cls.index_ttl)
     if not hasattr(vfs, "name"):
         vfs.name = name
     return vfs
@@ -410,6 +410,45 @@ async def test_a_workspace_index_is_what_fresh_is_judged_on(tmp_path):
         Workspace({"/l": DiskVFS(root=str(tmp_path))},
                   read=FRESH,
                   index=IndexConfig(ttl=0))
+
+
+@pytest.mark.asyncio
+async def test_a_mount_index_is_what_fresh_is_judged_on(tmp_path):
+    # A mount's own index overrides the workspace's, both ways.
+    ws = Workspace(
+        {
+            "/r": Mount(
+                RAMVFS(), mode=MountMode.WRITE, index=IndexConfig(ttl=600))
+        },
+        read=FRESH)
+    try:
+        assert ws._registry.mount_for_prefix("/r/").read.policy is (
+            ReadPolicy.FRESH)
+    finally:
+        await ws.close()
+    with pytest.raises(ValueError, match="caches reads or listings"):
+        Workspace(
+            {
+                "/l": Mount(DiskVFS(root=str(tmp_path)),
+                            index=IndexConfig(ttl=0))
+            },
+            read=FRESH,
+            index=IndexConfig(ttl=600))
+
+
+@pytest.mark.asyncio
+async def test_an_alias_is_judged_on_the_index_it_shares(tmp_path):
+    # A second mount of one driver shares the first mount's store, so the
+    # workspace index it would otherwise be given is not the one it runs.
+    disk = DiskVFS(root=str(tmp_path))
+    ws = Workspace({"/a": Mount(disk, index=IndexConfig(ttl=600))},
+                   index=IndexConfig(ttl=0))
+    try:
+        ws.add_mount("/b", disk, read=FRESH)
+        assert ws._registry.mount_for_prefix("/b/").read.policy is (
+            ReadPolicy.FRESH)
+    finally:
+        await ws.close()
 
 
 def test_fresh_is_refused_on_dev_which_keeps_no_listing():
@@ -470,3 +509,26 @@ def test_lancedb_decides_per_config_not_per_class():
     assert remote.caches_reads is True
     with pytest.raises(ValueError, match="comparable content token"):
         check_read_capability("/l/", remote, FRESH)
+
+
+@pytest.mark.asyncio
+async def test_constructor_alias_uses_first_mount_index():
+    vfs = RAMVFS()
+    ws = Workspace({
+        "/first": Mount(vfs, index=IndexConfig(ttl=600)),
+        "/alias": Mount(vfs, index=IndexConfig(ttl=0), read=FRESH),
+    })
+    try:
+        assert ws.mount("/alias").index_store is ws.mount("/first").index_store
+        assert ws.mount("/alias").index_store.ttl == 600
+    finally:
+        await ws.close()
+
+
+def test_constructor_alias_cannot_enable_a_disabled_shared_index():
+    vfs = RAMVFS()
+    with pytest.raises(ValueError, match="caches reads or listings"):
+        Workspace({
+            "/first": Mount(vfs, index=IndexConfig(ttl=0)),
+            "/alias": Mount(vfs, index=IndexConfig(ttl=600), read=FRESH),
+        })

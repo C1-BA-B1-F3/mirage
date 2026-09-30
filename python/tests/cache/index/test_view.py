@@ -494,7 +494,9 @@ async def test_cleanup_skips_a_key_the_mount_no_longer_owns():
                      on_gone=on_gone)
     await view.set_dir("/data", [("a", _child("a")), ("n", _child("n"))])
     owned.discard("/data/n")
-    await view.set_dir("/data", [])
+    # What set_dir hands back is filtered too, not only what cleanup sees.
+    assert await view.set_dir("/data",
+                              []) == [Evicted("/data/a", folder=False)]
     assert ledger == [Evicted("/data/a", folder=False)]
 
 

@@ -1,0 +1,42 @@
+{
+  "cases": [
+    {
+      "id": "github_listing_fresh_edit_seen_by_the_next_command",
+      "seq": 530030,
+      "targets": [
+        "github"
+      ],
+      "read": "fresh",
+      "ttl": 600,
+      "scenario": [
+        {
+          "mutate": {
+            "path": "/data/lf/a.txt",
+            "content": "v1\n"
+          }
+        },
+        {
+          "command": "find /data -path /data/lf/a.txt -size 3c"
+        },
+        {
+          "mutate": {
+            "path": "/data/lf/a.txt",
+            "content": "version two\n"
+          }
+        },
+        {
+          "command": "find /data -path /data/lf/a.txt -size 12c"
+        },
+        {
+          "command": "stat -c %s /data/lf/a.txt"
+        }
+      ],
+      "expect": {
+        "exit": 0,
+        "stdout": "/data/lf/a.txt\n/data/lf/a.txt\n12\n",
+        "stderr": ""
+      },
+      "note": "Under fresh the next command re-checks the listing, which on this mount is the whole tree, so find sees the new blob's size with a ttl that would otherwise hide it. Overwriting one name and filtering by path and size keeps the result stable on a fake that retains files between cases."
+    }
+  ]
+}

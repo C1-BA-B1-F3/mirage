@@ -124,11 +124,12 @@ def normalize_mounts(mounts: dict[str, VFSMount],
                           vfs=value,
                           mode=default_mode,
                           read=default_read))
+    indexes: dict[int, IndexConfig | None] = {}
     for spec in specs:
         check_vfs(spec.prefix, spec.vfs)
-        check_read_capability(
-            spec.prefix, spec.vfs, spec.read,
-            spec.index if spec.index is not None else index)
+        effective = indexes.setdefault(
+            id(spec.vfs), spec.index if spec.index is not None else index)
+        check_read_capability(spec.prefix, spec.vfs, spec.read, effective)
     return specs
 
 

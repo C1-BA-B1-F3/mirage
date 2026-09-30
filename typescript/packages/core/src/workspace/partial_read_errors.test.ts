@@ -335,7 +335,7 @@ describe('rest of the read family keeps partial output past missing', () => {
 
   it('stat keeps the good row past missing', async () => {
     const [out, err, code] = await runNumbered(['stat /a/f.txt /a/missing.txt'])
-    expect(out).toContain('name=f.txt')
+    expect(out).toContain('File: /a/f.txt')
     expect(err).toBe("stat: cannot statx '/a/missing.txt': No such file or directory\n")
     expect(code).toBe(1)
   })

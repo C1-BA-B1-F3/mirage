@@ -420,10 +420,10 @@ def test_glob_operand_commands_see_mount_and_link():
     assert _out(ws, "find /base/* -maxdepth 0").split() == [
         "/base/f1", "/base/inner", "/base/link", "/base/sub"
     ]
-    # stat renders a mount root's name as "/" (a separate, pre-existing
-    # divergence reproducible with the operand typed by hand), so this
-    # pins the row count rather than the naming.
-    assert len(_out(ws, "stat /base/*").splitlines()) == 4
+    assert _out(ws, "stat /base/* | grep '^  File:'").splitlines() == [
+        "  File: /base/f1", "  File: /base/inner",
+        "  File: /base/link -> /base/sub/f2", "  File: /base/sub"
+    ]
     # wc follows the link and reports the target's bytes under the link's
     # name, and gives each directory operand a row of zeros beside its
     # stderr line, like GNU.

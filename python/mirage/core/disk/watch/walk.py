@@ -20,7 +20,7 @@ from pathlib import Path
 from mirage.accessor.disk import DiskAccessor
 from mirage.core.disk.errors import disk_errors
 from mirage.core.disk.utils import resolve_inside_sync, walk_entries
-from mirage.core.timeutil import epoch_to_iso
+from mirage.core.timeutil import ns_to_iso
 from mirage.types import PathSpec, WalkEntry
 from mirage.utils.key_prefix import mount_prefix_of
 from mirage.watch.base import DeltaHook
@@ -60,7 +60,7 @@ def walk_sync(
                 continue
             if stat.S_ISLNK(info.st_mode):
                 continue
-            out.append(("/" + relative, False, epoch_to_iso(info.st_mtime),
+            out.append(("/" + relative, False, ns_to_iso(info.st_mtime_ns),
                         info.st_size))
     return out
 

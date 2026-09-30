@@ -215,6 +215,12 @@ class DuOps:
     native du all-or-nothing, so that degraded shape cannot be reached
     by omission.
 
+    A native op answers from one pass over the stored files, so a
+    directory holding no file never appears in ``entries`` and gets no
+    row, where the shared readdir walk (and GNU) prints its ``0`` row.
+    The difference is accepted for the speed and pinned in
+    ``integ/unix/du/empty.json``.
+
     Args:
         size (DuSizeOp): recursive byte total for one path.
         entries (DuEntriesOp): per-file breakdown, leaf files only.

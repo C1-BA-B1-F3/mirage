@@ -38,8 +38,25 @@
     "  257  1370 15533 /data/example.json",
     "",
     "=== stat /data/example.json ===",
+    "  File: /data/example.json",
     {
-      "re": "name=example\\.json size=15533 modified=\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}Z type=json"
+      "re": "  Size: \\d+ +\\tBlocks: \\? +IO Block: \\? +regular file"
+    },
+    "Device: ?\tInode: ?           Links: ?",
+    {
+      "re": "Access: \\(0[0-7]{3}/[-rwxstST]{10}\\)  Uid: \\(.*\\)   Gid: \\(.*\\)"
+    },
+    {
+      "re": "Access: (?:-|\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}\\.\\d{9} \\+0000)"
+    },
+    {
+      "re": "Modify: (?:-|\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}\\.\\d{9} \\+0000)"
+    },
+    {
+      "re": "Change: (?:-|\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}\\.\\d{9} \\+0000)"
+    },
+    {
+      "re": " Birth: (?:-|\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}\\.\\d{9} \\+0000)"
     },
     "",
     "=== tree /data/ ===",

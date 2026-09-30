@@ -21,8 +21,8 @@ async def test_stat_default_format(databricks_text_workspace):
 
     assert io.exit_code == 0
     out = io.stdout.decode()
-    assert "name=words.txt" in out
-    assert "size=17" in out
+    assert "File: /dbx/words.txt" in out
+    assert "Size: 17 " in out
 
 
 @pytest.mark.asyncio

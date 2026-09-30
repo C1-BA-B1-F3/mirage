@@ -15,6 +15,7 @@
 import asyncio
 import re
 from collections.abc import Callable
+from dataclasses import dataclass
 from typing import Any
 
 from mirage.commands.errors import CommandTimeoutError
@@ -25,7 +26,7 @@ from mirage.io.types import ByteSource
 from mirage.ops.types import SessionView
 from mirage.policy.decisions import Decisions
 from mirage.policy.types import HandOff
-from mirage.process.types import ProcessView
+from mirage.process.types import ProcessInfo, ProcessView
 from mirage.shell.call_stack import CallStack
 from mirage.shell.console import Channel, JobConsole
 from mirage.shell.console.pipe import PipeConsole
@@ -652,52 +653,134 @@ async def handle_fg(
     ), ExecutionNode(command=cmd_str, exit_code=job.exit_code)
 
 
+_KILL_USAGE = ("kill: usage: kill [-s sigspec | -n signum | -sigspec] pid | "
+               "jobspec ... or kill -l [sigspec]")
+
+# The signals a managed runner answers besides the probe (0). Each one ends
+# the runner through its cancellation channel, so the waited status is the
+# managed cancellation's (137) whichever was sent. Stop, continue and the
+# user signals have no managed meaning and are refused as bash refuses a
+# name it does not know.
+_KILL_SIGNALS = {"HUP": 1, "INT": 2, "QUIT": 3, "KILL": 9, "TERM": 15}
+
+# The largest PID operand kill and ps read as a number: the bound both hosts
+# hold exactly (bash's own is intmax_t).
+_MAX_PID_OPERAND = 2**53 - 1
+
+
+def _signal_number(spec: str) -> int | None:
+    """bash's sigspec: a number, or a name with or without SIG, any case.
+
+    Args:
+        spec (str): the sigspec as typed.
+    """
+    if spec.isascii() and spec.isdigit():
+        number = int(spec)
+        known = number == 0 or number in _KILL_SIGNALS.values()
+        return number if known else None
+    name = spec.upper()
+    return _KILL_SIGNALS.get(name[3:] if name.startswith("SIG") else name)
+
+
+def _kill_pid(jobs: list[Job], operand: str) -> tuple[int | None, str]:
+    """The managed PID one kill operand names, or bash's refusal.
+
+    Args:
+        jobs (list[Job]): the jobs the builtin can see.
+        operand (str): the operand as typed.
+    """
+    if operand == "":
+        return None, "`': not a pid or valid job spec"
+    if operand.startswith("%"):
+        raw = operand[1:]
+        job = _job_numbered(jobs, int(raw)) if raw.isdigit() else None
+        if job is None:
+            return None, f"{operand}: no such job"
+        return job.pid, ""
+    digits = operand[1:] if operand.startswith("-") else operand
+    if (not digits.isascii() or not digits.isdigit()
+            or int(digits) > _MAX_PID_OPERAND):
+        return None, f"{operand}: arguments must be process or job IDs"
+    return int(operand), ""
+
+
 async def handle_kill(
     job_table: JobTable,
     parts: list[str],
     session: SessionState | None = None,
     view: SessionView | None = None,
 ) -> tuple[ByteSource | None, IOResult, ExecutionNode]:
+    """Signal managed runners with bash's kill surface.
+
+    The signal comes from ``-s``/``-n``, or from the first ``-sigspec``;
+    ``0`` probes and every other signal cancels the runner. Every
+    operand is tried and each failure is named in bash's words; the
+    status is 0 when any operand was signalled, as bash's is. A job
+    spec is ``%N``; a negative number is a process group, which no
+    managed runner leads.
+
+    Args:
+        job_table (JobTable): the session's jobs.
+        parts (list[str]): the command words, `kill` first.
+        session (SessionState | None): the shell session, if any.
+        view (SessionView | None): the session plane's gated door.
+    """
     cmd_str = " ".join(parts)
     sid = _session_of(session)
-    if len(parts) < 2:
-        err = b"kill: usage: kill <job_id>\n"
-        return None, IOResult(exit_code=1,
-                              stderr=err), ExecutionNode(command=cmd_str,
-                                                         exit_code=1,
-                                                         stderr=err)
-    raw = parts[1].lstrip("%")
-    try:
-        job_id = int(raw)
-    except ValueError:
-        err = f"kill: invalid job id: {parts[1]}\n".encode()
-        return None, IOResult(exit_code=1,
-                              stderr=err), ExecutionNode(command=cmd_str,
-                                                         exit_code=1,
-                                                         stderr=err)
-    if parts[1].startswith("%"):
-        job = _job_numbered(job_table.list_jobs(sid), job_id)
-        killed = job is not None and await job_table.kill(job_id, sid)
-    else:
+    signal = _KILL_SIGNALS["TERM"]
+    words = parts[1:]
+    saw_signal = False
+    while words:
+        word = words[0]
+        if word in ("-s", "-n"):
+            if len(words) < 2:
+                return _job_result(
+                    cmd_str, f"kill: {word}: option requires an argument\n", 1)
+            spec, words = words[1], words[2:]
+        elif word == "--":
+            words = words[1:]
+            break
+        elif word == "-?":
+            return _job_result(cmd_str, f"{_KILL_USAGE}\n", 2)
+        elif word.startswith("-") and len(word) > 1 and not saw_signal:
+            spec, words, saw_signal = word[1:], words[1:], True
+        else:
+            break
+        number = _signal_number(spec)
+        if number is None:
+            return _job_result(
+                cmd_str, f"kill: {spec}: invalid signal specification\n", 1)
+        signal = number
+    if not words:
+        return _job_result(cmd_str, f"{_KILL_USAGE}\n", 2)
+    processes = _process_view(job_table, session)
+    errors: list[str] = []
+    signalled = False
+    for operand in words:
+        jobs = job_table.list_jobs(sid)
+        pid, refusal = _kill_pid(jobs, operand)
+        if pid is None:
+            errors.append(f"kill: {refusal}")
+            continue
         try:
-            killed = _process_view(job_table, session).terminate(job_id)
+            if signal == 0:
+                found = processes.probe(pid)
+            else:
+                found = processes.terminate(pid)
+                job = next((j for j in jobs if j.pid == pid), None)
+                if found and job is not None:
+                    await job_table.kill(job.id, sid)
         except PermissionError:
-            err = f"kill: ({job_id}) - Operation not permitted\n".encode()
-            return None, IOResult(exit_code=1,
-                                  stderr=err), ExecutionNode(command=cmd_str,
-                                                             exit_code=1,
-                                                             stderr=err)
-        job = next((j for j in job_table.list_jobs(sid) if j.pid == job_id),
-                   None)
-        if killed and job is not None:
-            await job_table.kill(job.id, sid)
-    if not killed:
-        err = f"kill: no such job: {job_id}\n".encode()
-        return None, IOResult(exit_code=1,
-                              stderr=err), ExecutionNode(command=cmd_str,
-                                                         exit_code=1,
-                                                         stderr=err)
-    return None, IOResult(), ExecutionNode(command=cmd_str, exit_code=0)
+            errors.append(f"kill: ({pid}) - Operation not permitted")
+            continue
+        if not found:
+            errors.append(f"kill: ({pid}) - No such process")
+            continue
+        signalled = True
+    code = 0 if signalled else 1
+    err = ("\n".join(errors) + "\n").encode() if errors else b""
+    node = ExecutionNode(command=cmd_str, exit_code=code, stderr=err)
+    return None, IOResult(exit_code=code, stderr=err or None), node
 
 
 _JOBS_FLAGS = frozenset("lnprs")
@@ -781,20 +864,218 @@ async def handle_jobs(
     return out, IOResult(), ExecutionNode(command=cmd_str, exit_code=0)
 
 
+# procps-ng 4.0.4's usage block, printed under every option error.
+_PS_USAGE = ("\nUsage:\n ps [options]\n\n"
+             " Try 'ps --help <simple|list|output|threads|misc|all>'\n"
+             "  or 'ps --help <s|l|o|t|m|a>'\n"
+             " for additional help text.\n\n"
+             "For more details see ps(1).\n")
+
+# The -o columns a managed runner can answer, as procps-ng 4.0.4 lays them
+# out: header, width, right-aligned. The last column is never padded.
+_PS_COLUMNS = {
+    "pid": ("PID", 7, True),
+    "ppid": ("PPID", 7, True),
+    "cmd": ("CMD", 27, False),
+    "args": ("COMMAND", 27, False),
+    "comm": ("COMMAND", 15, False),
+}
+
+# Letters that select every process: SysV -e/-A/-a/-x, BSD a/x.
+_PS_ALL = frozenset("eAax")
+
+
+@dataclass(frozen=True, slots=True)
+class _PsOptions:
+    """What a ps line selects and prints.
+
+    Args:
+        pids (frozenset[int]): ``-p`` selection, empty for none.
+        all (bool): a letter that selects every process was given.
+        columns (tuple[tuple[str, str], ...]): ``-o`` keys and headers.
+    """
+    pids: frozenset[int]
+    all: bool
+    columns: tuple[tuple[str, str], ...]
+
+
+def _ps_pids(value: str, option: str) -> set[int]:
+    """One ``-p`` list, refused in procps's words.
+
+    Args:
+        value (str): the list, comma or blank separated.
+        option (str): the option as typed, for the missing-list error.
+    """
+    tokens = value.replace(",", " ").split()
+    if not tokens:
+        raise ValueError(f"list of process IDs must follow {option}")
+    pids: set[int] = set()
+    for token in tokens:
+        body = token[1:] if token[:1] in "+-" else token
+        if not body.isascii() or not body.isdigit():
+            raise ValueError("process ID list syntax error")
+        number = int(token)
+        if number <= 0 or number > _MAX_PID_OPERAND:
+            raise ValueError("process ID out of range")
+        pids.add(number)
+    return pids
+
+
+def _ps_columns(value: str, option: str) -> list[tuple[str, str]]:
+    """One ``-o`` list: ``key`` or ``key=header``, refused in procps's words.
+
+    Args:
+        value (str): the format list, comma or blank separated.
+        option (str): the option as typed, for the missing-list error.
+    """
+    if not value.strip():
+        raise ValueError(f"format specification must follow {option}")
+    columns: list[tuple[str, str]] = []
+    for item in value.split(","):
+        if not item.strip():
+            raise ValueError("improper format list")
+        for token in item.split():
+            key, equal, header = token.partition("=")
+            if key not in _PS_COLUMNS:
+                raise ValueError(
+                    f'unknown user-defined format specifier "{key}"')
+            columns.append((key, header if equal else _PS_COLUMNS[key][0]))
+    return columns
+
+
+def _parse_ps(words: list[str]) -> _PsOptions:
+    """Parse the procps selection and output options a runner answers.
+
+    SysV letters after one dash, BSD letters with none, and the
+    ``--pid``/``--format`` long forms; ``-p`` and ``-o`` repeat and
+    accumulate. ``-f`` and BSD ``u``/``w``/``f`` pick a layout the
+    managed rows do not have, so they leave the compact one.
+
+    Args:
+        words (list[str]): arguments after ps.
+    """
+    pids: set[int] = set()
+    columns: list[tuple[str, str]] = []
+    select_all = False
+    at = 0
+    while at < len(words):
+        word = words[at]
+        at += 1
+        if word.startswith("--"):
+            option, equal, attached = word.partition("=")
+            if option not in ("--pid", "--format"):
+                raise ValueError("unknown gnu long option")
+            if not equal:
+                attached = words[at] if at < len(words) else ""
+                at += 1
+            if option == "--pid":
+                pids |= _ps_pids(attached, option)
+            else:
+                columns += _ps_columns(attached, option)
+            continue
+        if not word.startswith("-"):
+            if not word or any(letter not in "auxwf" for letter in word):
+                raise ValueError("unsupported option (BSD syntax)")
+            select_all = select_all or any(letter in "ax" for letter in word)
+            continue
+        letters = word[1:]
+        while letters:
+            flag, letters = letters[0], letters[1:]
+            if flag in _PS_ALL:
+                select_all = True
+                continue
+            if flag == "f":
+                continue
+            if flag not in "po":
+                raise ValueError("unsupported SysV option")
+            value, letters = letters, ""
+            if not value:
+                value = words[at] if at < len(words) else ""
+                at += 1
+            if flag == "p":
+                pids |= _ps_pids(value, "-p")
+            else:
+                columns += _ps_columns(value, "-o")
+    return _PsOptions(frozenset(pids), select_all, tuple(columns))
+
+
+def _ps_row(keys: list[str], cells: list[str]) -> str:
+    """One row in procps's layout: each column padded but the last.
+
+    Args:
+        keys (list[str]): the column keys, in output order.
+        cells (list[str]): the rendered cells, one per key.
+    """
+    out: list[str] = []
+    for at, (key, cell) in enumerate(zip(keys, cells)):
+        _, width, right = _PS_COLUMNS[key]
+        if right:
+            out.append(cell.rjust(width))
+        elif at == len(keys) - 1:
+            out.append(cell)
+        else:
+            out.append(cell.ljust(width))
+    return " ".join(out)
+
+
+def _ps_cell(key: str, info: ProcessInfo) -> str:
+    """One -o cell for a managed runner.
+
+    Args:
+        key (str): the column key.
+        info (ProcessInfo): the runner.
+    """
+    if key == "pid":
+        return str(info.pid)
+    if key == "ppid":
+        return str(info.parent_pid or 0)
+    if key == "comm":
+        head = info.command.split()[0] if info.command.split() else ""
+        return head.rsplit("/", 1)[-1][:15]
+    return info.command
+
+
 async def handle_ps(
     job_table: JobTable,
     parts: list[str],
     session: SessionState | None = None,
     view: SessionView | None = None,
 ) -> tuple[ByteSource | None, IOResult, ExecutionNode]:
+    """List managed runners with procps's selection and ``-o`` columns.
+
+    A runner has no CPU, RSS or TTY accounting, so without ``-o`` the
+    rows stay mirage's compact ``PID<TAB>COMMAND`` and never broaden the
+    profile's view. ``-o`` lays out the columns a runner can answer the
+    way procps-ng 4.0.4 does; a header row prints unless every header is
+    empty. Selecting nothing (``-p`` of an absent PID) exits 1, as
+    procps does, and an option error is procps's message and usage.
+
+    Args:
+        job_table (JobTable): the workspace's job table.
+        parts (list[str]): the command words, `ps` first.
+        session (SessionState | None): the shell session, if any.
+        view (SessionView | None): the session plane's gated door.
+    """
     cmd_str = " ".join(parts)
-    processes = _process_view(job_table, session)
-    # Logical runners have no native CPU, RSS, or TTY accounting. Selection
-    # never broadens the profile view, including for ps aux and ps -ef.
-    if parts[1:] not in ([], ["aux"], ["-ef"], ["-e"]):
-        return _job_result(cmd_str,
-                           "ps: supported forms: ps, ps aux, ps -e, ps -ef\n",
-                           2)
-    lines = [f"{info.pid}\t{info.command}" for info in processes.list()]
+    try:
+        options = _parse_ps(parts[1:])
+    except ValueError as exc:
+        return _job_result(cmd_str, f"error: {exc}\n{_PS_USAGE}", 1)
+    processes = [
+        info for info in _process_view(job_table, session).list()
+        if options.all or not options.pids or info.pid in options.pids
+    ]
+    if options.columns:
+        keys = [key for key, _ in options.columns]
+        lines = [
+            _ps_row(keys, [_ps_cell(key, info) for key in keys])
+            for info in processes
+        ]
+        if any(header for _, header in options.columns):
+            lines.insert(0, _ps_row(keys, [h for _, h in options.columns]))
+    else:
+        lines = [f"{info.pid}\t{info.command}" for info in processes]
+    code = 0 if processes else 1
     out = ("\n".join(lines) + "\n").encode() if lines else b""
-    return out, IOResult(), ExecutionNode(command=cmd_str, exit_code=0)
+    return out, IOResult(exit_code=code), ExecutionNode(command=cmd_str,
+                                                        exit_code=code)

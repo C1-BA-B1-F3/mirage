@@ -70,8 +70,8 @@ async def test_ls(ws):
 async def test_stat(ws):
     await _run(ws, "echo hello > /data/f.txt")
     result = await _run(ws, "stat /data/f.txt")
-    assert "name=f.txt" in result
-    assert "size=" in result
+    assert "File: /data/f.txt" in result
+    assert "Size: 6 " in result
 
 
 @pytest.mark.asyncio

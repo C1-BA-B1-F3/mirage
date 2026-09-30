@@ -45,6 +45,7 @@ class ProcessView:
     list: Callable[[], tuple[ProcessInfo, ...]]
     get: Callable[[int], ProcessInfo | None]
     check_spawn: Callable[[], None]
+    probe: Callable[[int], bool]
     terminate: Callable[[int], bool]
     wait: Callable[[int], Awaitable[ProcessInfo | None]]
     depth: int = 0

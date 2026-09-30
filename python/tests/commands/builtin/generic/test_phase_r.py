@@ -122,9 +122,9 @@ async def test_stat_default_format():
                         content=ContentType.TEXT)
 
     out, _ = await generic_stat([_spec("a.txt")], stat_fn=stat_fn)
-    assert b"name=a.txt" in out
-    assert b"size=42" in out
-    assert b"type=text" in out
+    assert b"File: a.txt" in out
+    assert b"Size: 42 " in out
+    assert b"regular file" in out
 
 
 @pytest.mark.asyncio

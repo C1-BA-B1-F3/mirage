@@ -693,7 +693,7 @@ describe.each(['process', 'shell'] as const)('native %s builtin precedence', (ki
     try {
       const session = new SessionState({ sessionId: 'lookup' })
       for (const name of SHELL_NAMES) {
-        if (['python', 'python3', 'node', 'js'].includes(name)) continue
+        if (['python', 'python3', 'node', 'js', 'ps', 'kill'].includes(name)) continue
         expect(lookup(name, session, ws.registry), name).toBe(Consumer.SESSION)
         const layers = lookupAll(name, session, ws.registry)
         expect(layers[0], name).toBe(Consumer.SESSION)
@@ -719,4 +719,21 @@ describe.each(['process', 'shell'] as const)('native %s builtin precedence', (ki
       await ws.close()
     }
   })
+})
+
+it.each([
+  ['ps', '-eo pid,cmd'],
+  ['kill', '-0 456'],
+])('explicit %s capture reaches the runtime', async (name, args) => {
+  for (const willing of [true, false]) {
+    const probe = new ProcessProbe({ captures: [name], script: () => willing })
+    const ws = await workspace(probe)
+    try {
+      const result = await ws.shell(`${name} ${args}`)
+      expect(result.exitCode).toBe(willing ? 0 : 126)
+      expect(probe.requests.map((r) => r.argv)).toEqual(willing ? [[name, ...args.split(' ')]] : [])
+    } finally {
+      await ws.close()
+    }
+  }
 })

@@ -35,7 +35,9 @@ const NOOP_ACCESSOR = new NOOPAccessor()
 import { getExtension } from '../../commands/resolve.ts'
 import { resolveLimit } from '../../policy/index.ts'
 import { runWithTimeout } from '../../commands/builtin/utils/limit.ts'
-import { CommandTimeoutError } from '../../commands/errors.ts'
+import { CommandTimeoutError, UsageError } from '../../commands/errors.ts'
+import { readFailExitCode } from '../../commands/spec/usage.ts'
+import { materialize } from '../../io/types.ts'
 import { flagOccurrences } from '../../commands/spec/flag_view.ts'
 import type { CommandSpec, FlagValue } from '../../commands/spec/types.ts'
 import { CachableAsyncIterator } from '../../io/cachable_iterator.ts'
@@ -62,7 +64,7 @@ import {
   MountMode,
   PathSpec,
 } from '../../types.ts'
-import { ebusy, enotsup } from '../../utils/errors.ts'
+import { ebusy, enotsup, formatFsError } from '../../utils/errors.ts'
 import { rstripSlash } from '../../utils/slash.ts'
 import {
   effectiveMountMode,
@@ -707,7 +709,13 @@ export class MountEntry {
                           prefixes: [this.prefix],
                           declared: cmd.limit ?? null,
                         }
-                        return wrapMountStreams(result, this.mountId, this.activity)
+                        const [stdout, io] = wrapMountStreams(result, this.mountId, this.activity)
+                        return [
+                          stdout !== null && !(stdout instanceof Uint8Array)
+                            ? commandOutput(stdout, io, cmdName, prefixedPaths)
+                            : stdout,
+                          io,
+                        ]
                       }
                     }
                     return [null, new IOResult()]
@@ -774,6 +782,27 @@ export class MountEntry {
         this.mountId,
       )
     })
+  }
+}
+
+async function* commandOutput(
+  source: AsyncIterable<Uint8Array>,
+  io: IOResult,
+  command: string,
+  paths: PathSpec[],
+): AsyncIterable<Uint8Array> {
+  try {
+    yield* source
+  } catch (err) {
+    if (err instanceof CommandTimeoutError || (err instanceof Error && err.name === 'AbortError'))
+      throw err
+    const existing = await materialize(io.stderr)
+    const message = formatFsError(command, err, paths)
+    const stderr = new Uint8Array(existing.length + message.length)
+    stderr.set(existing)
+    stderr.set(message, existing.length)
+    io.stderr = stderr
+    io.exitCode = err instanceof UsageError ? err.exitCode : readFailExitCode(command, err)
   }
 }
 

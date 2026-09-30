@@ -103,6 +103,13 @@ export class ProcessSupervisor {
       if (!valid() || !allowed(permissions().list, handle)) return null
       return handle.info
     }
+    const signalTarget = (pid: number): ProcessHandle | null => {
+      const entry = this.runners.get(pid)
+      if (entry === undefined || visible(entry.handle) === null) return null
+      if (!allowed(permissions().kill, entry.handle))
+        throw Object.assign(new Error('Operation not permitted'), { code: 'EPERM' })
+      return entry.handle
+    }
     return Object.freeze({
       list: () =>
         Object.freeze(
@@ -119,13 +126,8 @@ export class ProcessSupervisor {
         if (!valid())
           throw Object.assign(new Error('process spawn is not permitted'), { code: 'EACCES' })
       },
-      terminate: (pid: number) => {
-        const entry = this.runners.get(pid)
-        if (entry === undefined || visible(entry.handle) === null) return false
-        if (!allowed(permissions().kill, entry.handle))
-          throw Object.assign(new Error('Operation not permitted'), { code: 'EPERM' })
-        return entry.handle.terminate()
-      },
+      probe: (pid: number) => signalTarget(pid) !== null,
+      terminate: (pid: number) => signalTarget(pid)?.terminate() ?? false,
       wait: async (pid: number) => {
         const entry = this.runners.get(pid)
         if (entry === undefined || visible(entry.handle) === null) return null

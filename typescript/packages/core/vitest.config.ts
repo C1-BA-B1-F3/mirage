@@ -12,18 +12,17 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import { makeGenericCommands } from '@struktoai/mirage-core/commands/builtin/generic_bind/index'
-import type { RegisteredCommand } from '@struktoai/mirage-core/commands/config'
-import { VFSName } from '@struktoai/mirage-core/types'
-import type { DiskAccessor } from '../../../accessor/disk.ts'
-import { DISK_IO } from './io.ts'
+import { defineConfig } from 'vitest/config'
 
-// Shell traversals need partial results and per-directory errors; the shared
-// readdir/stat walker owns those. Direct VFS aggregate methods remain strict.
-const walkIO = { ...DISK_IO }
-delete walkIO.find
-delete walkIO.du
-
-export const DISK_COMMANDS: readonly RegisteredCommand[] = [
-  ...makeGenericCommands<DiskAccessor>(VFSName.DISK, walkIO),
-]
+export default defineConfig({
+  test: {
+    // Node 24's V8 tiers a wasm-to-JS import wrapper up after 1000 calls and
+    // frees the old one from a process-wide cache. When a terminated worker
+    // thread (pyodide, one per python.test.ts case) released it, its JIT
+    // page is already gone and the worker aborts on
+    // `Check failed: jit_page.has_value()` on Linux. A budget no test reaches
+    // never tiers up. It is a V8 flag, so NODE_OPTIONS refuses it; execArgv
+    // sets it for the whole fork, worker threads included.
+    execArgv: ['--wasm-wrapper-tiering-budget=1000000000'],
+  },
+})

@@ -276,25 +276,35 @@ async def test_wait_accepts_the_percent_job_id_spelling():
     assert io.exit_code == 0
 
 
-@pytest.mark.asyncio
-async def test_kill_rejects_a_missing_operand():
-    _, io, _ = await handle_kill(JobTable(), ["kill"])
-    assert io.exit_code == 1
-    assert b"usage" in io.stderr
+_KILL_USAGE = (b"kill: usage: kill [-s sigspec | -n signum | -sigspec] pid"
+               b" | jobspec ... or kill -l [sigspec]\n")
 
 
 @pytest.mark.asyncio
-async def test_kill_rejects_a_non_numeric_job_id():
-    _, io, _ = await handle_kill(JobTable(), ["kill", "abc"])
-    assert io.exit_code == 1
-    assert b"invalid job id" in io.stderr
-
-
-@pytest.mark.asyncio
-async def test_kill_rejects_an_unknown_job_id():
-    _, io, _ = await handle_kill(JobTable(), ["kill", "999"])
-    assert io.exit_code == 1
-    assert b"no such job" in io.stderr
+@pytest.mark.parametrize("args,code,stderr", [
+    ([], 2, _KILL_USAGE),
+    (["-9"], 2, _KILL_USAGE),
+    (["--"], 2, _KILL_USAGE),
+    (["-?"], 2, _KILL_USAGE),
+    (["-s"], 1, b"kill: -s: option requires an argument\n"),
+    (["-n"], 1, b"kill: -n: option requires an argument\n"),
+    (["-FOO"], 1, b"kill: FOO: invalid signal specification\n"),
+    (["-s", "FOO", "1"], 1, b"kill: FOO: invalid signal specification\n"),
+    (["-65", "1"], 1, b"kill: 65: invalid signal specification\n"),
+    (["abc"], 1, b"kill: abc: arguments must be process or job IDs\n"),
+    (["0x1"], 1, b"kill: 0x1: arguments must be process or job IDs\n"),
+    (["--", "-"], 1, b"kill: -: arguments must be process or job IDs\n"),
+    ([""], 1, b"kill: `': not a pid or valid job spec\n"),
+    (["999"], 1, b"kill: (999) - No such process\n"),
+    (["-0", "999"], 1, b"kill: (999) - No such process\n"),
+    (["%3"], 1, b"kill: %3: no such job\n"),
+    (["%abc"], 1, b"kill: %abc: no such job\n"),
+    (["999", "998"
+      ], 1, b"kill: (999) - No such process\nkill: (998) - No such process\n"),
+])
+async def test_kill_refuses_in_bash_words(args, code, stderr):
+    _, io, _ = await handle_kill(JobTable(), ["kill", *args])
+    assert (io.exit_code, io.stderr) == (code, stderr)
 
 
 @pytest.mark.asyncio
@@ -735,3 +745,135 @@ async def test_a_runaway_loop_stops_at_the_process_cap():
                              b"[2] running sleep 30\n")
     finally:
         await ws.close()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    'selector', ['-TERM', '-15', '-s TERM', '-n 15', '-SIGTERM', '-9'])
+async def test_ps_columns_and_signal_probes_share_managed_processes(selector):
+    ws = Workspace({'/': RAMVFS()}, mode='exec')
+    try:
+        started = await ws.shell('sleep 30 & echo $!')
+        pid = int(started.stdout)
+        result = await ws.shell(
+            f'kill -0 {pid}; echo alive=$?; ps -p{pid} -o pid=,ppid=,comm=')
+        lines = result.stdout.decode().splitlines()
+        assert lines[0] == 'alive=0'
+        assert lines[1].split()[0] == str(pid)
+        assert lines[1].split()[-1] == 'sleep'
+        assert not result.stderr
+        result = await ws.shell(f'ps --pid={pid} --format=pid= -o args=')
+        assert result.stdout.decode().split() == [str(pid), 'sleep', '30']
+        result = await ws.shell('ps -eo pid,cmd')
+        assert result.stdout.decode().splitlines()[0].split() == ['PID', 'CMD']
+        assert f'{pid}' in result.stdout.decode()
+        assert (await ws.shell(f'kill {selector} {pid}')).exit_code == 0
+        await ws.processes.drain()
+        result = await ws.shell(f'ps -p {pid} -o pid=; echo absent=$?')
+        assert result.stdout == b'absent=1\n'
+    finally:
+        await ws.close()
+
+
+@pytest.mark.asyncio
+async def test_kill_zero_respects_signal_permissions_without_cancelling():
+    ws = Workspace({'/': RAMVFS()}, mode='exec')
+    ws.create_session('owner')
+    ws.create_session('audit', profile={'processes': {'list': 'workspace'}})
+    try:
+        pid = int((await ws.shell('sleep 30 & echo $!',
+                                  session_id='owner')).stdout)
+        result = await ws.shell(f'kill -0 {pid}', session_id='audit')
+        assert result.exit_code == 1
+        assert b'Operation not permitted' in result.stderr
+        assert (await ws.shell(f'kill -0 {pid}',
+                               session_id='owner')).exit_code == 0
+        assert ws.processes.view('owner').get(
+            pid).cancellation_requested is False
+    finally:
+        await ws.close()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("spelling",
+                         ["-kill", "-SIGkill", "-s kill", "-n KILL", "-s 9"])
+async def test_kill_reads_signal_names_in_any_case(spelling):
+    ws = Workspace({'/': RAMVFS()}, mode='exec')
+    try:
+        pid = int((await ws.shell('sleep 30 & echo $!')).stdout)
+        result = await ws.shell(f'kill {spelling} {pid}')
+        assert (result.exit_code, result.stderr or b'') == (0, b'')
+    finally:
+        await ws.close()
+
+
+@pytest.mark.asyncio
+async def test_kill_succeeds_when_any_operand_was_signalled():
+    ws = Workspace({'/': RAMVFS()}, mode='exec')
+    try:
+        pid = int((await ws.shell('sleep 30 & echo $!')).stdout)
+        result = await ws.shell(f'kill 999999 %9 abc {pid}; echo rc=$?')
+        assert result.stdout == b'rc=0\n'
+        assert result.stderr == (
+            b'kill: (999999) - No such process\nkill: %9: no such job\n'
+            b'kill: abc: arguments must be process or job IDs\n')
+    finally:
+        await ws.close()
+
+
+@pytest.mark.asyncio
+async def test_ps_lays_columns_out_as_procps_does():
+    ws = Workspace({'/': RAMVFS()}, mode='exec')
+    try:
+        pid = int((await ws.shell('sleep 30 & echo $!')).stdout)
+        cases = {
+            f'ps -o pid,ppid,cmd -p {pid}':
+            f'    PID    PPID CMD\n{pid:>7}       1 sleep 30\n',
+            f'ps -o cmd,pid -p {pid}':
+            f'CMD{" " * 25}    PID\nsleep 30{" " * 20}{pid:>7}\n',
+            f'ps -o comm,args -p {pid}':
+            'COMMAND         COMMAND\nsleep           sleep 30\n',
+            f'ps -o pid,cmd= -p {pid}': f'    PID \n{pid:>7} sleep 30\n',
+            f'ps -o pid=,cmd -p {pid}': f'        CMD\n{pid:>7} sleep 30\n',
+            f'ps -o pid=X,cmd=Y -p {pid}': f'      X Y\n{pid:>7} sleep 30\n',
+            f'ps -o "pid cmd" -p {pid},{pid}':
+            f'    PID CMD\n{pid:>7} sleep 30\n',
+            f'ps ax -o pid= -p {pid} | grep -c .': None,
+        }
+        for line, out in cases.items():
+            result = await ws.shell(line)
+            if out is not None:
+                assert result.stdout.decode() == out, line
+            assert (result.exit_code, result.stderr or b'') == (0, b''), line
+    finally:
+        await ws.close()
+
+
+_PS_USAGE = (b"\nUsage:\n ps [options]\n\n"
+             b" Try 'ps --help <simple|list|output|threads|misc|all>'\n"
+             b"  or 'ps --help <s|l|o|t|m|a>'\n for additional help text.\n\n"
+             b"For more details see ps(1).\n")
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("args,message", [
+    (["-p"], b"list of process IDs must follow -p"),
+    (["-p", ""], b"list of process IDs must follow -p"),
+    (["--pid"], b"list of process IDs must follow --pid"),
+    (["-p", "1,x"], b"process ID list syntax error"),
+    (["-p", "0"], b"process ID out of range"),
+    (["-p", "-1"], b"process ID out of range"),
+    (["-o"], b"format specification must follow -o"),
+    (["--format"], b"format specification must follow --format"),
+    (["-o", "pid,,cmd"], b"improper format list"),
+    (["-o", "foo"], b'unknown user-defined format specifier "foo"'),
+    (["-o", "="], b'unknown user-defined format specifier ""'),
+    (["-K"], b"unsupported SysV option"),
+    (["--bogus"], b"unknown gnu long option"),
+    (["bogus"], b"unsupported option (BSD syntax)"),
+])
+async def test_ps_refuses_in_procps_words(args, message):
+    out, io, _ = await handle_ps(JobTable(), ["ps", *args])
+    assert out is None
+    assert (io.exit_code,
+            io.stderr) == (1, b"error: " + message + b"\n" + _PS_USAGE)

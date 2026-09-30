@@ -40,18 +40,23 @@ class WalkBudget:
 
     It also collects the directories the walk could not open (a rule
     refused them below the operand), which the generic reports after
-    the walks the way GNU names an unreadable directory.
+    the walks the way GNU names an unreadable directory, and every
+    directory it met, which is how one no file points at (an empty one,
+    or a refused one) still gets GNU's row.
 
     Args:
         remaining (int | None): entries still allowed, or None for no cap.
         hit (bool): whether the cap was reached.
         unreadable (list[str]): virtual paths of the directories the
             walk could not open, in the order it met them.
+        directories (list[str]): virtual paths of every directory the
+            walk met, the operand's own included.
     """
 
     remaining: int | None
     hit: bool = False
     unreadable: list[str] = field(default_factory=list)
+    directories: list[str] = field(default_factory=list)
 
     def spend(self) -> bool:
         """Charge one entry to the budget.
@@ -80,12 +85,19 @@ async def _walk(
         info = await ops.stat(accessor, path, index)
     except (FileNotFoundError, NotADirectoryError, ValueError):
         return 0
+    except PermissionError:
+        # A refused stat is the same fact as a refused listing: a rule
+        # denying the path outright refuses before the walk learns it is
+        # a directory, and GNU still names it and exits 1.
+        budget.unreadable.append(path.virtual)
+        return 0
     if info.type != FileType.DIRECTORY:
         size = info.size or 0
         if entries is not None:
             prefix = mount_prefix_of(path.virtual, path.vfs_path)
             entries.append(("/" + mount_key(path.virtual, prefix), size))
         return size
+    budget.directories.append(path.virtual)
     try:
         children = await ops.readdir(accessor, path, index)
     except (FileNotFoundError, NotADirectoryError, ValueError):
@@ -165,6 +177,10 @@ def _budget_unreadable(budget: WalkBudget) -> list[str]:
     return budget.unreadable
 
 
+def _budget_directories(budget: WalkBudget) -> list[str]:
+    return budget.directories
+
+
 async def du(ops: CommandIO, accessor: Accessor, paths: list[PathSpec],
              texts: list[str],
              opts: CommandOpts) -> tuple[ByteSource | None, IOResult]:
@@ -192,7 +208,8 @@ async def du(ops: CommandIO, accessor: Accessor, paths: list[PathSpec],
                             compute_size,
                             compute_entries,
                             truncated=partial(_budget_hit, budget),
-                            unreadable=partial(_budget_unreadable, budget))
+                            unreadable=partial(_budget_unreadable, budget),
+                            directories=partial(_budget_directories, budget))
 
 
 BUILDER = Builder('du', du, None, False, None)

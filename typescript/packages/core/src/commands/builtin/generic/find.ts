@@ -355,6 +355,9 @@ export function findGeneric(
   dirEmpty?: (spec: PathSpec) => Promise<boolean>,
   unreadable?: () => string[],
   unstatted?: () => [string, unknown][],
+  // A walker already evaluates times in its predicate tree. Its raw stat is
+  // needed only to distinguish ENOTDIR from ENOENT at a missing start point.
+  missingStat?: (spec: PathSpec) => Promise<FileStat>,
 ): Promise<CommandFnResult> {
   const fl = new FlagView(opts.flags, specOf('find'))
   const nameFlag = fl.asStr('name') ?? null
@@ -491,7 +494,7 @@ export function findGeneric(
           // rest, and exits 1. Reported as the operand was typed, falling
           // back to the resolved path for a synthesized root.
           const label = root.rawPath !== '' ? root.rawPath : root.virtual
-          missing.push(`find: '${label}': ${await missingStartDetail(root, stat)}`)
+          missing.push(`find: '${label}': ${await missingStartDetail(root, missingStat ?? stat)}`)
           continue
         }
         const cachedSize = start.size === null ? await cacheManager?.cachedSize(root) : null

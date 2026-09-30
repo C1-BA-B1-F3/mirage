@@ -23,9 +23,9 @@ import {
   type FileStat,
   type PathSpec,
 } from '../../../types.ts'
-import { isoToEpoch } from '../../../utils/dates.ts'
+import { isoTimestamp, isoToEpoch } from '../../../utils/dates.ts'
 import { fsErrorLine, isFsError } from '../../../utils/errors.ts'
-import { DIR_SIZE, contentSize, deviceRdev, isDir } from '../../../utils/stat_view.ts'
+import { contentSize, deviceRdev, isDir } from '../../../utils/stat_view.ts'
 import type { CommandFnResult, CommandOpts } from '../../config.ts'
 import { lsModeString } from '../utils/formatting.ts'
 import { groupName, identityOf, ownerName, type Identity } from '../utils/identity.ts'
@@ -42,12 +42,6 @@ const TYPE_LABELS: Partial<Record<FileType, string>> = {
 
 function typeLabel(s: FileStat): string {
   return TYPE_LABELS[s.type] ?? 'regular file'
-}
-
-// The default record's type= shows a regular file's content shape and a
-// non-regular node's kind, so one field reads the way it always has.
-function shownType(s: FileStat): string {
-  return s.type === FileType.FILE && s.content !== null ? s.content : s.type
 }
 
 function effectiveMode(s: FileStat): number {
@@ -188,10 +182,12 @@ function directiveValue(
   if (spec === 'g' || spec === 'G') return groupName(s.gid, identity)
   if (spec === 'x') return s.atime ?? s.modified ?? ''
   if (spec === 'X') return epoch(s.atime ?? s.modified)
-  if (spec === 'y' || spec === 'z') return s.modified ?? ''
-  if (spec === 'Y' || spec === 'Z') return epoch(s.modified)
-  if (spec === 'w') return '-'
-  if (spec === 'W') return '0'
+  if (spec === 'y') return s.modified ?? ''
+  if (spec === 'Y') return epoch(s.modified)
+  if (spec === 'z') return s.ctime ?? '-'
+  if (spec === 'Z') return epoch(s.ctime)
+  if (spec === 'w') return s.birthtime ?? '-'
+  if (spec === 'W') return epoch(s.birthtime)
   if (spec === 'B') return '512'
   const device = s.extra[DEVICE_NUMBERS_KEY]
   const numbers = Array.isArray(device) && device.length === 2 ? (device as [number, number]) : null
@@ -313,6 +309,48 @@ function formatStat(fmt: string, s: FileStat, name: string, identity: Identity |
   return parts.join('')
 }
 
+// The fraction of a second as the backend spelled it, so both hosts print
+// the digits the stamp carries rather than what their clock type keeps.
+const FRACTION = /\d\d:\d\d:\d\d\.(\d+)/
+
+/** A known timestamp in GNU's layout, in UTC, or '-' when unknown. A naive
+ * stamp is UTC, as everywhere else a backend time is read. */
+function statTime(value: string | null): string {
+  const seconds = isoTimestamp(value)
+  if (seconds === null || value === null) return '-'
+  const whole = new Date(Math.floor(seconds) * 1000).toISOString().slice(0, 19).replace('T', ' ')
+  const fraction = (FRACTION.exec(value)?.[1] ?? '').padEnd(9, '0').slice(0, 9)
+  return `${whole}.${fraction} +0000`
+}
+
+/** GNU coreutils 9.7's default layout, with unknown fields marked. A VFS has
+ * rendered bytes, modes and logical owners, but no device, inode, allocation
+ * blocks, IO block size or link count: those print '?'. An absent size,
+ * owner number or time prints '-'. Each time is the one its directive
+ * prints (`%x %y %z %w`), the name is unquoted as GNU's default prints it,
+ * and times are UTC. */
+function renderStat(s: FileStat, name: string, identity: Identity | null): string {
+  const size = directiveValue('s', s, name, identity)
+  const uid = String(s.uid ?? '-').padStart(5)
+  const gid = String(s.gid ?? '-').padStart(5)
+  const owner = ownerName(s.uid, identity).padStart(8)
+  const group = groupName(s.gid, identity).padStart(8)
+  const links =
+    s.type === FileType.CHAR_DEVICE
+      ? `Links: ${'?'.padEnd(5)} Device type: ${directiveValue('Hr', s, name, identity)},${directiveValue('Lr', s, name, identity)}`
+      : 'Links: ?'
+  return [
+    `  File: ${nameParts(s, name, false).join(' -> ')}`,
+    `  Size: ${size.padEnd(10)}\tBlocks: ${'?'.padEnd(10)} IO Block: ${'?'.padEnd(6)} ${typeLabel(s)}`,
+    `Device: ?\tInode: ${'?'.padEnd(10)}  ${links}`,
+    `Access: (${effectiveMode(s).toString(8).padStart(4, '0')}/${lsModeString(s)})  Uid: (${uid}/${owner})   Gid: (${gid}/${group})`,
+    `Access: ${statTime(s.atime ?? s.modified)}`,
+    `Modify: ${statTime(s.modified)}`,
+    `Change: ${statTime(s.ctime)}`,
+    ` Birth: ${statTime(s.birthtime)}`,
+  ].join('\n')
+}
+
 export async function statGeneric(
   paths: PathSpec[],
   opts: CommandOpts,
@@ -336,11 +374,7 @@ export async function statGeneric(
       if (fmt !== null) {
         lines.push(formatStat(fmt, linked, p.rawPath, identity))
       } else {
-        const sizeStr = linked.size === null ? 'None' : String(linked.size)
-        const modStr = linked.modified ?? 'None'
-        lines.push(
-          `name=${linked.name} size=${sizeStr} modified=${modStr} type=${shownType(linked)}`,
-        )
+        lines.push(renderStat(linked, p.rawPath, identity))
       }
       continue
     }
@@ -356,12 +390,7 @@ export async function statGeneric(
     if (fmt !== null) {
       lines.push(formatStat(fmt, s, p.rawPath, identity))
     } else {
-      // A directory's size= is DIR_SIZE, as `%s` prints it; anything else
-      // keeps its own, None when unknown.
-      const size = isDir(s) ? DIR_SIZE : s.size
-      const sizeStr = size === null ? 'None' : String(size)
-      const modStr = s.modified ?? 'None'
-      lines.push(`name=${s.name} size=${sizeStr} modified=${modStr} type=${shownType(s)}`)
+      lines.push(renderStat(s, p.rawPath, identity))
     }
   }
   const io = new IOResult({

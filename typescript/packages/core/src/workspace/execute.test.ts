@@ -168,7 +168,7 @@ describe('Workspace.shell', () => {
     ram.store.files.set('/x.txt', new TextEncoder().encode('abc'))
     const res = await ws.shell('stat /ram/x.txt')
     expect(res.exitCode).toBe(0)
-    expect(new TextDecoder().decode(res.stdout)).toMatch(/name=x\.txt size=3/)
+    expect(new TextDecoder().decode(res.stdout)).toMatch(/File: \/ram\/x\.txt\n {2}Size: 3 /)
     await ws.close()
   })
 

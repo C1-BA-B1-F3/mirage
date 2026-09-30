@@ -257,9 +257,9 @@ describe('du walk fallback under a path rule', () => {
         p.virtual === '/db/sub/b.txt' ? Promise.reject(enoent(p.virtual)) : OPS.stat(a, p, i),
     }
     const [out, io] = await runScoped(vanished, [PathSpec.fromStrPath('/db')])
-    // A subtree that sums to nothing prints no line of its own: no leaf
-    // points at it, which is the one place mirage's du diverges from GNU.
-    expect(DEC.decode(out)).toBe('3\t/db\n')
+    // A subtree that sums to nothing still prints its own 0 line, as GNU
+    // prints one for every directory it walked.
+    expect(DEC.decode(out)).toBe('0\t/db/sub\n3\t/db\n')
     expect(io.exitCode).toBe(0)
   })
 
@@ -272,7 +272,7 @@ describe('du walk fallback under a path rule', () => {
           : Promise.resolve(TREE[p.virtual]?.children ?? []),
     }
     const [out, io] = await runScoped(refused, [PathSpec.fromStrPath('/db')])
-    expect(DEC.decode(out)).toBe('3\t/db\n')
+    expect(DEC.decode(out)).toBe('0\t/db/sub\n3\t/db\n')
     expect(io.exitCode).toBe(1)
     expect(DEC.decode(io.stderr ?? new Uint8Array())).toBe(
       "du: cannot read directory '/db/sub': Permission denied\n",
@@ -296,5 +296,60 @@ describe('du walk fallback under a path rule', () => {
     expect(DEC.decode(io.stderr ?? new Uint8Array())).toBe(
       "du: cannot read directory '/db/sub': Permission denied\n",
     )
+  })
+})
+
+describe('du rows for directories no file points at', () => {
+  // /db/sealed lists as refused and /db/walled refuses its stat, the two
+  // doors a rule or the host can shut.
+  const sealed: Record<string, string[]> = {
+    '/db': ['/db/a.txt', '/db/empty', '/db/sealed', '/db/walled'],
+    '/db/empty': [],
+    '/db/sealed': [],
+  }
+  const ops: CommandIO = {
+    ...OPS,
+    readdir: (_a, p) =>
+      p.virtual === '/db/sealed'
+        ? Promise.reject(eacces(p.virtual))
+        : Promise.resolve(sealed[p.virtual] ?? []),
+    stat: (_a, p) => {
+      if (p.virtual === '/db/walled') return Promise.reject(eacces(p.virtual))
+      if (p.virtual in sealed)
+        return Promise.resolve(new FileStat({ name: p.virtual, type: FileType.DIRECTORY }))
+      if (p.virtual === '/db/a.txt')
+        return Promise.resolve(new FileStat({ name: p.virtual, type: FileType.FILE, size: 3 }))
+      return Promise.reject(enoent(p.virtual))
+    },
+  }
+  const notes =
+    "du: cannot read directory '/db/sealed': Permission denied\n" +
+    "du: cannot read directory '/db/walled': Permission denied\n"
+
+  async function run(flags: Record<string, boolean>): Promise<[string, number, string]> {
+    const result = await DU_BUILDER.fn(ops, ACCESSOR, [PathSpec.fromStrPath('/db')], [], {
+      stdin: null,
+      flags,
+      filetypeFns: null,
+      cwd: '/',
+    })
+    if (result === null) throw new Error('no result')
+    const [out, io] = result
+    const bytes =
+      out === null
+        ? new Uint8Array()
+        : out instanceof Uint8Array
+          ? out
+          : await materialize(out as AsyncIterable<Uint8Array>)
+    return [DEC.decode(bytes), io.exitCode, DEC.decode(io.stderr as Uint8Array)]
+  }
+
+  it('prints an empty and a refused directory, GNU-style, and names the refusals', async () => {
+    expect(await run({})).toEqual(['0\t/db/empty\n0\t/db/sealed\n3\t/db\n', 1, notes])
+    expect(await run({ a: true })).toEqual([
+      '3\t/db/a.txt\n0\t/db/empty\n0\t/db/sealed\n3\t/db\n',
+      1,
+      notes,
+    ])
   })
 })

@@ -44,6 +44,8 @@ export async function stat(accessor: DiskAccessor, p: PathSpec): Promise<FileSta
       type: FileType.DIRECTORY,
       mode: st.mode & 0o7777,
       atime: st.atime.toISOString(),
+      ctime: st.ctime.toISOString(),
+      birthtime: st.birthtimeMs > 0 ? st.birthtime.toISOString() : null,
     })
   }
   return new FileStat({
@@ -55,5 +57,7 @@ export async function stat(accessor: DiskAccessor, p: PathSpec): Promise<FileSta
     content: contentTypeForPath(name),
     mode: st.mode & 0o7777,
     atime: st.atime.toISOString(),
+    ctime: st.ctime.toISOString(),
+    birthtime: st.birthtimeMs > 0 ? st.birthtime.toISOString() : null,
   })
 }

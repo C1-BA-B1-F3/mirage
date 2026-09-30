@@ -14,6 +14,7 @@
 
 import dataclasses
 import functools
+import logging
 from collections.abc import Sequence
 from dataclasses import dataclass
 
@@ -34,10 +35,12 @@ from mirage.commands.builtin.generic.grep import filename_mode
 from mirage.commands.builtin.generic.rg import (label_flags, rg,
                                                 walks_descendant_mounts)
 from mirage.commands.config import CommandOpts, ExecContext
-from mirage.commands.errors import FindParseError, UsageError
+from mirage.commands.errors import (CommandTimeoutError, FindParseError,
+                                    UsageError)
 from mirage.commands.spec import SPECS
 from mirage.commands.spec.flag_view import FlagBag, FlagView
 from mirage.commands.spec.types import FlagValue
+from mirage.commands.spec.usage import read_fail_exit
 from mirage.context import path_allowed
 from mirage.io import IOResult
 from mirage.io.stream import materialize
@@ -46,10 +49,13 @@ from mirage.ops.types import NamespaceView, StatPath
 from mirage.runtime.types import DispatchFn
 from mirage.types import FileType, PathSpec, Producer
 from mirage.utils.dates import in_mtime_window, iso_timestamp
+from mirage.utils.errors import FS_ERRORS, format_fs_error, fs_strerror
 from mirage.utils.path import respell_one
 from mirage.workspace.mount import (MountCommandUnsupported, MountEntry,
                                     MountRegistry)
 from mirage.workspace.types import ExecutionNode
+
+logger = logging.getLogger(__name__)
 
 # `tree` is deliberately absent: its output is one document (root line,
 # drawing, summary), so a second per-mount block would print a second of
@@ -80,7 +86,9 @@ async def _mount_dirs(descendants: Sequence[MountEntry],
     directory with no content still earns GNU's ``0`` row while a file
     only shows under ``-a``, and rendered du output cannot say which it
     was looking at. Without a dispatcher the question cannot be asked,
-    and the merge falls back to inferring from the row shape.
+    and the merge falls back to inferring from the row shape. A root
+    that refuses the stat is left to that inference too: the mount's
+    own run already reported it.
 
     Args:
         descendants (Sequence[MountEntry]): the mounts under the operand.
@@ -91,10 +99,54 @@ async def _mount_dirs(descendants: Sequence[MountEntry],
     out: list[str] = []
     for m in descendants:
         root = m.prefix.rstrip("/") or "/"
-        stat = await stat_path(root)
+        try:
+            stat = await stat_path(root)
+        except FS_ERRORS:
+            logger.debug("du mount root %s refused stat", root, exc_info=True)
+            continue
         if stat is not None and stat.type is FileType.DIRECTORY:
             out.append(root)
     return out
+
+
+async def _empty_dirs(
+        blocks: Sequence[bytes], stat_path: StatPath | None
+) -> tuple[list[str], list[tuple[str, OSError]]]:
+    """The ``0`` rows of per-mount du blocks that are empty directories.
+
+    Rendered du output prints an empty directory and an empty file the
+    same way, and only the directory keeps its row without ``-a``, so
+    the merge asks the dispatcher which each lone zero row is. The
+    caller asks only when the answer changes what prints. A row that
+    refuses the stat comes back with its error rather than aborting the
+    merge, and gets no row, the way the walk treats a refused stat.
+
+    Args:
+        blocks (Sequence[bytes]): rendered du output, one per mount.
+        stat_path (StatPath | None): dispatcher-backed stat.
+    """
+    if stat_path is None:
+        return [], []
+    rows: list[str] = []
+    for data in blocks:
+        for line in data.decode(errors="replace").splitlines():
+            size, _, label = line.partition("\t")
+            if size == "0" and label:
+                rows.append(label)
+    out: list[str] = []
+    refused: list[tuple[str, OSError]] = []
+    for row in rows:
+        if any(other.startswith(row.rstrip("/") + "/") for other in rows):
+            continue
+        try:
+            stat = await stat_path(row)
+        except FS_ERRORS as exc:
+            logger.debug("du row %s refused stat", row, exc_info=True)
+            refused.append((row, exc))
+            continue
+        if stat is not None and stat.type is FileType.DIRECTORY:
+            out.append(row)
+    return out, refused
 
 
 async def _ls_block_mounts(descendants: Sequence[MountEntry],
@@ -678,6 +730,16 @@ async def _fan_out_traversal(
                                       command=cmd_str,
                                       exit_code=exc.exit_code,
                                       stderr=usage)
+        except CommandTimeoutError:
+            raise
+        except Exception as exc:
+            # Any other failure is this mount's slice of the walk, in the
+            # command's voice, as the single-mount chokepoint reports it;
+            # the remaining mounts still run and the status carries it.
+            logger.debug("%s traversal failed", cmd_name, exc_info=True)
+            stdout = None
+            io = IOResult(exit_code=read_fail_exit(cmd_name, exc),
+                          stderr=format_fs_error(cmd_name, exc, sub_paths))
 
         if mount is not primary_mount and io.exit_code == 127:
             # A descendant that does not serve this command contributes
@@ -736,6 +798,19 @@ async def _fan_out_traversal(
 
     combined: ByteSource | None
     if du_merge and all_stdout:
+        dirs = await _mount_dirs(descendants, stat_path)
+        if not du_flags.a and not du_flags.s:
+            empty, refused = await _empty_dirs(all_stdout, stat_path)
+            dirs += empty
+            if refused:
+                notes = "".join(
+                    f"du: cannot access "
+                    f"'{respell_one(row, target_path, paths[0].raw_path)}': "
+                    f"{fs_strerror(exc)}\n" for row, exc in refused)
+                merged_io = await merged_io.merge(
+                    IOResult(exit_code=1, stderr=notes.encode()))
+                exit_codes.append(1)
+                errored.append(True)
         combined = merge_du_blocks(all_stdout,
                                    target_path,
                                    paths[0].raw_path,
@@ -745,8 +820,7 @@ async def _fan_out_traversal(
                                    human=du_flags.human,
                                    max_depth=du_flags.max_depth,
                                    separate_dirs=du_flags.separate_dirs,
-                                   mount_roots=await
-                                   _mount_dirs(descendants, stat_path))
+                                   dirs=dirs)
     elif cmd_name == "find" and all_rows and find_matches_complete:
         if len(paths) == 1:
             unique = {p.virtual: p for p in all_rows}

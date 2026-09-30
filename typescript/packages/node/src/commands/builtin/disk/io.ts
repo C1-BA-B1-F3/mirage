@@ -61,4 +61,5 @@ export const DISK_IO: CommandIO<DiskAccessor> = new VFSAdapter<DiskAccessor>({
   isMounted: (a) => a.root !== '',
   local: true,
   maxGlobMatches: SCOPE_ERROR,
+  maxDuEntries: null,
 }).toCommandIO()

@@ -201,7 +201,7 @@ async function checkPartialRead(ws: Workspace, dst: string, label: string): Prom
   ;[out, err, code] = await run(ws, `stat ${src} ${miss}`)
   check(
     `${label}: stat keeps good row`,
-    out.includes('name=a.txt') &&
+    out.includes(`File: ${src}\n`) &&
       code === 1 &&
       err === `stat: cannot statx '${miss}': No such file or directory\n`,
   )

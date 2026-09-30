@@ -16,7 +16,8 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from mirage.core.timeutil import epoch_to_iso, iso_to_epoch, now_iso, to_iso_z
+from mirage.core.timeutil import (epoch_to_iso, iso_to_epoch, now_iso,
+                                  ns_to_iso, to_iso_z)
 
 
 def test_to_iso_z_converts_utc_offset_to_z():
@@ -74,3 +75,16 @@ def test_epoch_floors_negative_fractional_like_typescript():
 ])
 def test_to_iso_z_fraction_policy(input, expected):
     assert to_iso_z(datetime.fromisoformat(input)) == expected
+
+
+@pytest.mark.parametrize("ns,want", [
+    (1_609_459_200_000_000_000, "2021-01-01T00:00:00.000Z"),
+    (1_704_067_200_500_000_000, "2024-01-01T00:00:00.500Z"),
+    (1_759_216_160_567_499_999, "2025-09-30T07:09:20.568Z"),
+    (1_759_216_160_999_999_999, "2025-09-30T07:09:21.000Z"),
+    (-1_500_000, "1969-12-31T23:59:59.999Z"),
+])
+def test_ns_to_iso_rounds_as_node_stat_dates(ns, want):
+    # Pinned against node 24: `fs.statSync(p).mtime.toISOString()` for a
+    # file whose mtime was set to `ns`, and `new Date(-1)` for the last.
+    assert ns_to_iso(ns) == want

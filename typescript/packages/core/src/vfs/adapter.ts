@@ -12,7 +12,7 @@ export interface VFSAdapterOptions<A extends Accessor = Accessor> {
   local?: boolean
   isMounted?: CommandIO<A>['isMounted']
   maxGlobMatches?: number
-  maxDuEntries?: number
+  maxDuEntries?: number | null
 }
 
 /** Compose capabilities into one table for commands and filesystem ops. */

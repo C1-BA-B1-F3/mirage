@@ -13,6 +13,7 @@
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import asyncio
+from functools import partial
 from typing import Any, Callable
 
 from mirage.commands.builtin.utils.limit import guard_output
@@ -24,12 +25,15 @@ from mirage.runtime.routing import RouteDecision
 from mirage.runtime.types import DispatchFn
 from mirage.shell.barrier import BarrierPolicy, apply_barrier
 from mirage.shell.console import JobConsole
+from mirage.shell.helpers import input_substitution_redirect
 from mirage.shell.job_table import JobTable
 from mirage.types import Producer
+from mirage.workspace.executor.redirect import handle_redirect
+from mirage.workspace.expand.redirects import expand_redirects
 from mirage.workspace.mount import MountRegistry
 from mirage.workspace.mount.namespace import Namespace
 from mirage.workspace.node.execute_node import execute_node
-from mirage.workspace.session import SessionState
+from mirage.workspace.session import SessionState, session_view
 from mirage.workspace.types import ExecutionNode
 
 
@@ -47,6 +51,7 @@ async def run_command_tree(
     routing_decision: RouteDecision | None = None,
     handed: HandOff | None = None,
     sink: JobConsole | None = None,
+    command_substitution: bool = False,
 ) -> tuple[IOResult, ExecutionNode]:
     """Run a parsed command tree and finalize its output stream.
 
@@ -75,27 +80,45 @@ async def run_command_tree(
             the static bindings.
         handed (HandOff | None): the line's hand-off, threaded to every
             command's gate.
+        command_substitution (bool): capture a lone input redirect's data
+            using the same expansion, dispatcher and output gates.
 
     Returns:
         tuple[IOResult, ExecutionNode]: the finalized result (with
         ``io.stdout`` set to the barrier-resolved value) and the
         execution node.
     """
-    stdout, io, exec_node = await execute_node(
+    run = partial(
+        execute_node,
         dispatch,
         registry,
         namespace,
         job_table,
         execute_fn,
         agent_id,
-        ast,
-        session,
-        stdin,
         cancel=cancel,
         routing_decision=routing_decision,
         handed=handed,
         sink=sink,
     )
+    redirect = input_substitution_redirect(
+        ast) if command_substitution else None
+    if redirect is None:
+        stdout, io, exec_node = await run(ast, session, stdin)
+    else:
+        redirects, _ = await expand_redirects([redirect],
+                                              session,
+                                              execute_fn,
+                                              registry,
+                                              view=session_view(
+                                                  session, registry.policies))
+        stdout, io, exec_node = await handle_redirect(run,
+                                                      dispatch,
+                                                      None,
+                                                      redirects,
+                                                      session,
+                                                      stdin,
+                                                      capture_input=True)
     stdout = await apply_barrier(stdout, io, BarrierPolicy.VALUE)
     # The boundary consultation: the envelope's producer facts become
     # the post_execute context; the built-in cap and any user policies

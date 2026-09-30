@@ -19,6 +19,10 @@ import { postExecuteGate, refusalOf, renderDeny } from '../../policy/index.ts'
 import type { ByteSource, IOResult } from '../../io/types.ts'
 import { materialize } from '../../io/types.ts'
 import { applyBarrier, BarrierPolicy } from '../../shell/barrier.ts'
+import { inputSubstitutionRedirect } from '../../shell/helpers.ts'
+import { expandRedirects } from '../expand/redirects.ts'
+import { handleRedirect } from '../executor/redirect.ts'
+import { sessionView } from '../session/state.ts'
 import type { SessionState } from '../session/session.ts'
 import type { TSNodeLike } from '../../shell/types.ts'
 import type { ExecutionNode } from '../types.ts'
@@ -31,8 +35,33 @@ export async function runCommandTree(
   node: TSNodeLike,
   session: SessionState,
   stdin: ByteSource | null = null,
+  commandSubstitution = false,
 ): Promise<Result> {
-  const [stdout, io, execNode] = await executeNode(deps, node, session, stdin, null)
+  const redirect = commandSubstitution ? inputSubstitutionRedirect(node) : null
+  let result: Result
+  if (redirect === null) {
+    result = await executeNode(deps, node, session, stdin, null)
+  } else {
+    const [redirects] = await expandRedirects(
+      [redirect],
+      session,
+      deps.executeFn,
+      deps.registry,
+      null,
+      sessionView(session, deps.registry.policies),
+    )
+    result = await handleRedirect(
+      (inner, current, input, stack) => executeNode(deps, inner, current, input, stack),
+      deps.dispatch,
+      null,
+      redirects,
+      session,
+      stdin,
+      null,
+      true,
+    )
+  }
+  const [stdout, io, execNode] = result
   let materialized: ByteSource | null
   try {
     materialized = await applyBarrier(stdout, io, BarrierPolicy.VALUE)

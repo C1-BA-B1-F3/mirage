@@ -101,10 +101,10 @@ async def child_line(session: SessionState,
                      span: tuple[int, int] | None = None) -> IOResult:
     """Run a substitution's line in a child shell.
 
-    bash forks for ``$(...)`` and backticks, so what the line assigns,
-    ``cd``s or seeds (``RANDOM``) never reaches the parent: the session
-    is restored around the run, as ``handle_subshell`` restores it
-    around a ``( )`` body. The line reaches the executor unwrapped,
+    The evaluator isolates the child shell, except for Bash's ``$(< file)``
+    optimization, whose filename expands in the parent. It decides from
+    a fresh parse of the body, including each pair in a backtick region.
+    The line reaches the executor unwrapped,
     under the node that named it, so the pass places its commands
     where they were typed rather than under a subshell of their own.
 
@@ -117,17 +117,11 @@ async def child_line(session: SessionState,
         span (tuple[int, int] | None): the pair's byte span within the
             node, for a backtick region holding several.
     """
-    saved = session.snapshot()
-    terminal_output = session.terminal_output
-    session.terminal_output = False
-    try:
-        return await execute_fn(text,
-                                session_id=session.session_id,
-                                node=node,
-                                span=span)
-    finally:
-        session.terminal_output = terminal_output
-        session.restore(saved)
+    return await execute_fn(text,
+                            session_id=session.session_id,
+                            node=node,
+                            span=span,
+                            substitution=True)
 
 
 def unescape_heredoc(text: str) -> str:

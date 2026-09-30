@@ -95,8 +95,10 @@ async def expand_redirects(
                     io_ps = await child_line(session, execute_fn, inner,
                                              r.target_node)
                     inner_data = await materialize(io_ps.stdout)
+                    session._diagnostics.append(await
+                                                io_ps.materialize_stderr())
                 expanded.append(
-                    Redirect(fd=0,
+                    Redirect(fd=r.fd,
                              target=inner_data,
                              kind=RedirectKind.HEREDOC,
                              expand_vars=False))

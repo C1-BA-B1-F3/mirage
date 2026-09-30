@@ -134,6 +134,7 @@ async def handle_redirect(
     session: SessionState,
     stdin: ByteSource | None = None,
     call_stack: CallStack | None = None,
+    capture_input: bool = False,
 ) -> tuple[ByteSource | None, IOResult, ExecutionNode]:
     """Handle all redirect patterns: >, >>, <, 2>, 2>&1, &>, >&2, <<<.
 
@@ -144,6 +145,9 @@ async def handle_redirect(
     truncated unless appending) when the redirect is processed, even
     if the stream ends up empty — including the command-less
     `> file` form (command is None).
+
+    ``capture_input`` returns a bare redirect's input for ``$(< file)``;
+    ordinary redirect-only commands still produce no output.
 
     A redirect naming a descriptor above 2 is refused before anything
     opens, in bash's own words for a descriptor that is not open
@@ -285,7 +289,10 @@ async def handle_redirect(
 
     refused = False
     if command is None:
-        stdout_data = b""
+        source = inputs[FD_STDIN]
+        stdout_data = await materialize(
+            source
+        ) if capture_input and not isinstance(source, _Unreadable) else b""
         stderr_data = b""
         io = IOResult(exit_code=0)
     else:

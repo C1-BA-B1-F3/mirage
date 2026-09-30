@@ -28,6 +28,10 @@ class RecordingInvalidator implements CacheInvalidator {
     return false
   }
 
+  probedStat(): null {
+    return null
+  }
+
   readonly writes: string[] = []
   readonly ancestors: string[] = []
 

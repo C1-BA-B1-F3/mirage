@@ -16,7 +16,7 @@ from collections.abc import Awaitable, Callable
 from contextvars import ContextVar
 from typing import Protocol
 
-from mirage.types import PathSpec
+from mirage.types import FileStat, PathSpec
 
 
 class CacheInvalidator(Protocol):
@@ -50,6 +50,9 @@ class CacheInvalidator(Protocol):
         ...
 
     def listing_trusted(self, folder: str) -> bool:
+        ...
+
+    def probed_stat(self, path: PathSpec) -> FileStat | None:
         ...
 
 

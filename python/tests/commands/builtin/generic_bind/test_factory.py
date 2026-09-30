@@ -18,6 +18,8 @@ import pytest
 
 from mirage.cache.context import push_cache_manager
 from mirage.cache.file.ram import RAMFileCacheStore
+from mirage.cache.index.ram import RAMIndexCacheStore
+from mirage.cache.index.scope import command_scope
 from mirage.cache.manager import CacheManager
 from mirage.commands.builtin.generic_bind.adapter import CommandIO
 from mirage.commands.builtin.generic_bind.builders import BUILDERS
@@ -26,7 +28,7 @@ from mirage.commands.builtin.generic_bind.factory import (
     with_slash_guard)
 from mirage.commands.config import CommandOpts
 from mirage.ops.types import LinkView, NamespaceView
-from mirage.types import PathSpec
+from mirage.types import FileStat, FileType, PathSpec
 from mirage.utils.key_prefix import mount_key
 
 
@@ -283,3 +285,105 @@ async def test_partial_consumer_caches_complete_synthesized_stream():
     assert await ops.read_bytes(None, _spec()) == backend.data
     assert backend.bytes_calls == 1
     assert backend.stream_calls == 0
+
+
+class _CountingStat:
+
+    def __init__(self, answer: FileStat) -> None:
+        self.answer = answer
+        self.calls = 0
+
+    async def __call__(self, accessor, path, index=None) -> FileStat:
+        self.calls += 1
+        return self.answer
+
+
+def _stat_ops(stat: _CountingStat) -> CommandIO:
+    return replace(_ops(_CountingBackend(b"payload")), stat=stat)
+
+
+_BACKEND = FileStat(name="a.txt", size=7, type=FileType.FILE)
+_PROBED = FileStat(name="a.txt", size=9, type=FileType.FILE)
+
+
+@pytest.mark.asyncio
+async def test_a_command_stat_serves_what_its_probe_saw():
+    # The freshness probe already asked the backend this command; asking
+    # again resolves through a listing fresh has not re-checked yet.
+    stat = _CountingStat(_BACKEND)
+    manager = CacheManager(RAMFileCacheStore(), None, "/s3/", True)
+    ops = with_read_cache(_stat_ops(stat))
+    prev = push_cache_manager(manager)
+    try:
+        async with command_scope():
+            manager.note_probed(_spec(), _PROBED)
+            assert await ops.stat(None, _spec()) == _PROBED
+    finally:
+        push_cache_manager(prev)
+    assert stat.calls == 0
+
+
+@pytest.mark.asyncio
+async def test_a_write_after_the_probe_sends_the_stat_to_the_backend():
+    stat = _CountingStat(_BACKEND)
+    manager = CacheManager(RAMFileCacheStore(), RAMIndexCacheStore(), "/s3/",
+                           True)
+    ops = with_read_cache(_stat_ops(stat))
+    prev = push_cache_manager(manager)
+    try:
+        async with command_scope():
+            manager.note_probed(_spec(), _PROBED)
+            await manager.invalidate_after_write(_spec())
+            assert await ops.stat(None, _spec()) == _BACKEND
+    finally:
+        push_cache_manager(prev)
+    assert stat.calls == 1
+
+
+@pytest.mark.asyncio
+async def test_a_probed_stat_without_a_size_still_gets_the_cached_length():
+    # gdrive-native docs report no size; the rendered length is in the file
+    # cache, and serving the probe's answer must not skip that backfill.
+    stat = _CountingStat(_BACKEND)
+    cache = RAMFileCacheStore()
+    await cache.set("/s3/a.txt", b"rendered!!")
+    manager = CacheManager(cache, None, "/s3/", True)
+    ops = with_read_cache(_stat_ops(stat))
+    prev = push_cache_manager(manager)
+    try:
+        async with command_scope():
+            manager.note_probed(
+                _spec(), FileStat(name="a.txt", size=None, type=FileType.FILE))
+            served = await ops.stat(None, _spec())
+    finally:
+        push_cache_manager(prev)
+    assert (served.size, stat.calls) == (10, 0)
+
+
+def _bound_ops(commands, name: str) -> CommandIO:
+    fn = next(c for c in commands if c._registered_commands[0].name == name)
+    raw, finish, _ = fn.__wrapped__.args
+    return finish(raw)
+
+
+@pytest.mark.asyncio
+async def test_a_command_with_its_own_stat_never_serves_the_probe():
+    # dify binds `ls` to a cheaper stat than its op table's. The probe's
+    # answer is the op table's stat, so serving it there would change what a
+    # warm `ls -l` prints under fresh only.
+    table = _CountingStat(_BACKEND)
+    light = _CountingStat(FileStat(name="a.txt", size=1, type=FileType.FILE))
+    base = _stat_ops(table)
+    commands = make_generic_commands(
+        "s3", base, ops_overrides={"ls": replace(base, stat=light)})
+    manager = CacheManager(RAMFileCacheStore(), None, "/s3/", True)
+    prev = push_cache_manager(manager)
+    try:
+        async with command_scope():
+            manager.note_probed(_spec(), _PROBED)
+            ls_stat = await _bound_ops(commands, "ls").stat(None, _spec())
+            stat_stat = await _bound_ops(commands, "stat").stat(None, _spec())
+    finally:
+        push_cache_manager(prev)
+    assert (ls_stat.size, light.calls) == (1, 1)
+    assert (stat_stat, table.calls) == (_PROBED, 0)

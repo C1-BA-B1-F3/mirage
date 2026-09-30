@@ -26,6 +26,10 @@ class FakeManager {
     return false
   }
 
+  probedStat(): null {
+    return null
+  }
+
   writes: string[] = []
   unlinks: string[] = []
   subtrees: string[] = []

@@ -36,11 +36,14 @@ import { BUILDERS } from './builders/index.ts'
 import { defaultProvision } from './provision.ts'
 import { compareCodePoints } from '../../../utils/sort.ts'
 
-function cachedStat<A extends Accessor>(stat: StatOp<A>): StatOp<A> {
+function cachedStat<A extends Accessor>(stat: StatOp<A>, servesProbe: boolean): StatOp<A> {
   return async (accessor: A, path: PathSpec, index?: IndexCacheStore) => {
-    const result = await stat(accessor, path, index)
-    if (result.size !== null) return result
     const manager = activeCacheManager()
+    // The freshness probe already asked the backend this command; asking
+    // again resolves through listings fresh has not re-checked yet.
+    const probed = servesProbe ? (manager?.probedStat(path) ?? null) : null
+    const result = probed ?? (await stat(accessor, path, index))
+    if (result.size !== null) return result
     if (manager === null) return result
     // cachedSize, not cachedBytes: this backfill runs only when the backend
     // could not name a size, which is precisely the API mounts, so
@@ -52,8 +55,13 @@ function cachedStat<A extends Accessor>(stat: StatOp<A>): StatOp<A> {
   }
 }
 
-function withStatCache<A extends Accessor>(ops: CommandIO<A>): CommandIO<A> {
-  return { ...ops, stat: cachedStat(ops.stat) }
+// Under fresh the stat also serves what the freshness probe got from the
+// backend this command (CacheManager.probedStat), which is the backend's own
+// op-table stat; an adapter whose stat is a different function (a cheaper
+// per-command stat) passes servesProbe false, so what it prints never changes
+// with the policy.
+function withStatCache<A extends Accessor>(ops: CommandIO<A>, servesProbe = true): CommandIO<A> {
+  return { ...ops, stat: cachedStat(ops.stat, servesProbe) }
 }
 
 // Honor a trailing slash on an operand. POSIX resolves `x/` as `x/.`, so
@@ -141,11 +149,14 @@ export function withSlashGuard<A extends Accessor>(ops: CommandIO<A>): CommandIO
   }
 }
 
-function withReadCache<A extends Accessor>(ops: CommandIO<A>): CommandIO<A> {
+export function withReadCache<A extends Accessor>(
+  ops: CommandIO<A>,
+  servesProbe = true,
+): CommandIO<A> {
   const readBytes = cacheAwareReadBytes(ops.readBytes)
   return {
     ...ops,
-    stat: cachedStat(ops.stat),
+    stat: cachedStat(ops.stat, servesProbe),
     readStream: ops.streamsBytes
       ? (a, p, i) => streamFromBytes(readBytes, a, p, i)
       : cacheAwareReadStream(ops.readStream),
@@ -156,12 +167,12 @@ function withReadCache<A extends Accessor>(ops: CommandIO<A>): CommandIO<A> {
 // The builder tier's cache and slash wraps, chosen at registration from
 // the builder's read/write kind and applied per invocation on top of
 // the path guards (mirror Python's _read_wraps/_stat_wraps/_write_wraps).
-function readWraps<A extends Accessor>(ops: CommandIO<A>): CommandIO<A> {
-  return withSlashGuard(withReadCache(ops))
+function readWraps<A extends Accessor>(ops: CommandIO<A>, servesProbe: boolean): CommandIO<A> {
+  return withSlashGuard(withReadCache(ops, servesProbe))
 }
 
-function statWraps<A extends Accessor>(ops: CommandIO<A>): CommandIO<A> {
-  return withSlashGuard(withStatCache(ops))
+function statWraps<A extends Accessor>(ops: CommandIO<A>, servesProbe: boolean): CommandIO<A> {
+  return withSlashGuard(withStatCache(ops, servesProbe))
 }
 
 function writeWraps<A extends Accessor>(ops: CommandIO<A>): CommandIO<A> {
@@ -222,7 +233,15 @@ export function makeGenericCommands<A extends Accessor = Accessor>(
     // call time. The raw adapter stays untouched for the ops tables,
     // whose door does its own enforcement.
     const baseOps = withPathGuards(raw)
-    const finish = b.read === true ? readWraps : b.write === true ? writeWraps : statWraps
+    // A per-command adapter with its own stat (dify's light ls) would
+    // otherwise print the probe's full stat under fresh only.
+    const servesProbe = raw.stat === (ops as CommandIO).stat
+    const finish =
+      b.read === true
+        ? (o: CommandIO) => readWraps(o, servesProbe)
+        : b.write === true
+          ? writeWraps
+          : (o: CommandIO) => statWraps(o, servesProbe)
     // A nested mount's keys live in another VFS and no VFS
     // stores a symlink, so a glob resolved by one backend's readdir
     // misses both. The names are session-scoped, so the fact is stamped

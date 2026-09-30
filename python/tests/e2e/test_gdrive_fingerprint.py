@@ -116,27 +116,59 @@ async def test_a_native_gdoc_under_fresh_renders_once_until_it_changes():
 
 
 @pytest.mark.asyncio
-async def test_a_warm_gdrive_read_costs_three_parent_listings():
+@pytest.mark.parametrize("path,listings", [("file.txt", 2),
+                                           ("a/b/c/file.txt", 8)])
+async def test_a_warm_gdrive_read_costs_one_walk_per_probe(path, listings):
     """Cost is the contract, and the gate's probes are the cost.
 
     A warm named operand is probed twice -- once at routing and once at the
-    gate -- and each probe stats with a fresh index, so each warms through
-    the parent listing. The third is the command resolving the path through
-    the mount's own listing, which fresh re-checks once per command. Two
-    means the listing check is gone; one means the gate stopped
-    revalidating a named warm operand; zero downloads is the other half.
+    gate -- and each probe stats with a fresh index, so each walks the
+    parent listings: one per level. The command's own stat of its operand
+    serves the routing probe's answer instead of walking the mount's
+    listings, which fresh would re-check. More means that stat reached the
+    backend again; fewer means a probe stopped running; zero downloads is
+    the other half.
     """
     fake = FakeGDrive()
-    fake.add_file("file.txt", b"v1")
+    fake.add_file(path, b"v1")
     ws = _fresh_ws()
     with patch_gdrive(fake):
-        await ws.shell("cat /gd/file.txt")
+        await ws.shell(f"cat /gd/{path}")
         fake.calls.clear()
-        await ws.shell("cat /gd/file.txt")
-    assert fake.calls["list_files"] == 3, (
-        "routing reconcile + the gate's probe + the listing re-check; fewer "
-        "means a check stopped running")
+        await ws.shell(f"cat /gd/{path}")
+    assert fake.calls["list_files"] == listings
     assert fake.calls["download_file"] == 0
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("path", ["file.txt", "doc.gdoc.json"])
+async def test_a_warm_fresh_stat_prints_what_a_bounded_one_does(path):
+    # The command's stat now comes from the freshness probe rather than from
+    # the command's own lookup; what it prints must not change with it.
+    async def warm_stat(ws) -> bytes:
+        await ws.shell(f"cat /gd/{path}")
+        result = await ws.shell(f"stat /gd/{path}")
+        return await result.materialize_stdout()
+
+    fake = FakeGDrive()
+    fake.add_file("file.txt", b"v1")
+    fake.add_file("doc",
+                  b'{"v": 1}',
+                  mime="application/vnd.google-apps.document")
+    bounded = Workspace(
+        {
+            "/gd": (GoogleDriveVFS(
+                GoogleDriveConfig(
+                    client_id="fake-id",
+                    client_secret="fake-secret",
+                    refresh_token="fake-refresh")), MountMode.WRITE)
+        },
+        mode=MountMode.WRITE)
+    with patch_gdrive(fake):
+        fresh_out = await warm_stat(_fresh_ws())
+        bounded_out = await warm_stat(bounded)
+    assert fresh_out == bounded_out
+    assert fresh_out
 
 
 @pytest.mark.asyncio

@@ -102,13 +102,13 @@ describe('github under read: fresh', () => {
 
   // Each cell is [dir listings, whole-tree walks, blob downloads] for one line
   // on a warm fresh mount: cat pays two probes (routing, then the cache
-  // door), as hf's table does; cp skips routing's probe. The one walk is
-  // fresh checking the listing the path resolves through: a new command
-  // re-lists it once, and on github the listing is the whole tree (Task 1.3
-  // makes it cheaper).
+  // door), as hf's table does, and its own stat of the operand serves the
+  // routing probe's answer. cp skips routing's probe, so its stat still
+  // resolves through the listing, which fresh re-checks once per command: on
+  // github that listing is the whole tree (Task 1.3 makes it cheaper).
   const WARM: [string, [number, number, number]][] = [
-    [`cat ${PATH}`, [2, 1, 0]],
-    [`cat ${PATH} | head -c 1`, [2, 1, 0]],
+    [`cat ${PATH}`, [2, 0, 0]],
+    [`cat ${PATH} | head -c 1`, [2, 0, 0]],
     [`cp ${PATH} /r/a.txt`, [1, 1, 0]],
   ]
   for (const [line, cost] of WARM) {
@@ -125,6 +125,41 @@ describe('github under read: fresh', () => {
     })
   }
 
+  // The command's stat now comes from the freshness probe rather than from
+  // the command's own lookup; what it prints must not change with it.
+  it('prints the same warm stat as a bounded mount', async () => {
+    const outs: string[] = []
+    for (const policy of [ReadPolicy.FRESH, ReadPolicy.BOUNDED]) {
+      const w = await ws(await vfsOf(), policy)
+      try {
+        await out(w, `cat ${PATH}`)
+        outs.push(await out(w, `stat ${PATH}`))
+      } finally {
+        await w.close()
+      }
+    }
+    expect(outs[0]).toBe(outs[1])
+    expect(outs[0]).not.toBe('')
+  })
+
+  // Routing probes a path that carries an attribute overlay even when nothing
+  // is cached, so under fresh the command's stat of it comes from the probe;
+  // the overlay must still apply on top.
+  it('prints the same cold stat of an overlaid path as a bounded mount', async () => {
+    const outs: string[] = []
+    for (const policy of [ReadPolicy.FRESH, ReadPolicy.BOUNDED]) {
+      const w = await ws(await vfsOf(), policy)
+      try {
+        await w.namespace.setAttrs(PATH, { mode: 0o600 })
+        outs.push(await out(w, `stat -c '%a %s %n' ${PATH}`))
+      } finally {
+        await w.close()
+      }
+    }
+    expect(outs[0]).toBe(outs[1])
+    expect(outs[0]).toBe(`600 ${String(OLD.length)} ${PATH}\n`)
+  })
+
   it('refetches a changed file once, then serves it warm', async () => {
     const w = await ws(await vfsOf())
     try {
@@ -132,13 +167,13 @@ describe('github under read: fresh', () => {
       gh.set('docs/a.txt', NEW)
       gh.log.length = 0
       expect(await out(w, `cat ${PATH}`)).toBe(NEW)
-      // The probe finds a new sha; cat's own stat asks the cleared index's one
-      // directory; the read refills and downloads.
-      expect(gh.counts()).toEqual([2, 1, 1])
+      // The probe finds a new sha; cat's own stat serves the probe's answer;
+      // the read refills and downloads.
+      expect(gh.counts()).toEqual([1, 1, 1])
       gh.log.length = 0
       expect(await out(w, `cat ${PATH}`)).toBe(NEW)
-      // Warm now, but a new command re-checks the listing once.
-      expect(gh.counts()).toEqual([2, 1, 0])
+      // Warm now: the two probes, and nothing else.
+      expect(gh.counts()).toEqual([2, 0, 0])
     } finally {
       await w.close()
     }
@@ -369,9 +404,9 @@ describe('github cannot-see versus gone', () => {
       expect(await out(w, `cat ${PATH}`)).toBe(OLD)
       expect(kept(w)).toBe(true)
       // One listing of docs/ per probe, each cut short, so each defers to one
-      // walk of the whole tree, which finds the file; plus the command's one
-      // re-check of the listing under fresh.
-      expect(gh.counts()).toEqual([2, 3, 0])
+      // walk of the whole tree, which finds the file; cat's own stat serves
+      // the routing probe's answer.
+      expect(gh.counts()).toEqual([2, 2, 0])
     } finally {
       await w.close()
     }
@@ -390,11 +425,11 @@ describe('github cannot-see versus gone', () => {
       expect(await out(w, `cat ${PATH}`)).toBe(OLD)
       gh.log.length = 0
       expect(await out(w, `cat ${PATH}`)).toBe(OLD)
-      // A truncated tree never refills, so the command's re-check of the
-      // listing goes folder by folder: one more listing, reached through the
-      // folder's own tree sha.
-      expect(gh.counts()).toEqual([3, 0, 0])
-      expect(gh.count('sha_dir')).toBe(1)
+      // One listing of docs/ per probe; cat's own stat serves the routing
+      // probe's answer, so the truncated tree is never walked folder by
+      // folder, which would reach docs/ by its tree sha.
+      expect(gh.counts()).toEqual([2, 0, 0])
+      expect(gh.count('sha_dir')).toBe(0)
     } finally {
       await w.close()
     }

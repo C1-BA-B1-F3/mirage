@@ -25,7 +25,7 @@ from mirage.cache.index.store import IndexCacheStore
 from mirage.cache.index.view import IndexView
 from mirage.observe.context import active_recorder
 from mirage.observe.record import READ_FINGERPRINT_OPS
-from mirage.types import DEFAULT_READ_TTL, PathSpec
+from mirage.types import DEFAULT_READ_TTL, FileStat, PathSpec
 from mirage.utils.key_prefix import mount_key
 
 
@@ -109,6 +109,7 @@ class CacheManager:
         self._excluded_prefixes = excluded_prefixes
         self._may_serve_listing = may_serve_listing
         self._written: dict[str, tuple[int, float]] = {}
+        self._probed: dict[str, tuple[int, int, FileStat]] = {}
         self._read_generation = 0
         self._view: IndexView | None = None
 
@@ -183,6 +184,47 @@ class CacheManager:
         if started is not None:
             return stamp > started
         return 0 <= _now() - at < LISTING_TRUST_WINDOW
+
+    def note_probed(self, path: PathSpec, stat: FileStat | None) -> None:
+        """Remember what the freshness probe got from the backend for ``path``.
+
+        Only the reconciler's probe calls this, and it always asks the
+        backend, so a stat served from an index row -- which may carry no
+        content token -- never lands here. ``None`` (the backend reports the
+        path gone) forgets an earlier answer.
+
+        Args:
+            path (PathSpec): the probed path; only ``virtual`` is read.
+            stat (FileStat | None): the backend's answer, or None.
+        """
+        key = self._cache_key(path)
+        if stat is None:
+            self._probed.pop(key, None)
+            return
+        self._probed[key] = (tick(), self._read_generation, stat)
+
+    def probed_stat(self, path: PathSpec) -> FileStat | None:
+        """The backend's answer for ``path`` from this command's probe.
+
+        A read command stats its own operand after the probe already asked
+        the backend; under fresh, asking again resolves through listings the
+        command has not re-checked, and re-lists every folder on the path.
+        The answer is served only inside the command that probed, and only
+        while no write has landed since: every invalidation bumps the read
+        generation, so ``sed -i`` or ``> f`` in the same command sends the
+        next stat back to the backend.
+
+        Args:
+            path (PathSpec): the path to look up; only ``virtual`` is read.
+        """
+        probed = self._probed.get(self._cache_key(path))
+        started = command_started()
+        if probed is None or started is None:
+            return None
+        stamp, generation, stat = probed
+        if stamp < started or generation != self._read_generation:
+            return None
+        return stat
 
     def scope_index_locked(self, index: IndexCacheStore) -> IndexCacheStore:
         """A view for a caller already inside ``mutation()``.

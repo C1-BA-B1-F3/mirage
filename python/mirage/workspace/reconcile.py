@@ -18,7 +18,7 @@ from enum import Enum
 from mirage.cache.file.mixin import FileCacheMixin
 from mirage.cache.index.config import Evicted
 from mirage.cache.index.ram import RAMIndexCacheStore
-from mirage.types import ReadPolicy
+from mirage.types import FileStat, PathSpec, ReadPolicy
 from mirage.utils.errors import OperationNotSupportedError
 from mirage.utils.path import ancestors
 from mirage.workspace.mount.mount import MountEntry
@@ -76,12 +76,16 @@ class Reconciler:
             mount (MountEntry): the resolved mount for ``path``.
             path (str): absolute virtual path to probe.
         """
+        manager = mount.cache_manager
+        spec = PathSpec.from_str_path(path)
         # Resolve backend IDs without reusing cached metadata.
         try:
             remote_stat = await mount.execute_op("stat",
                                                  path,
                                                  index=RAMIndexCacheStore())
         except (FileNotFoundError, NotADirectoryError):
+            if manager is not None:
+                manager.note_probed(spec, None)
             await self.on_missing(path)
             await mount.index.clear()
             return Verdict.GONE
@@ -93,6 +97,8 @@ class Reconciler:
             await self._cache.remove(path)
             await mount.index.clear()
             return Verdict.UNKNOWN
+        if manager is not None and isinstance(remote_stat, FileStat):
+            manager.note_probed(spec, remote_stat)
         if remote_stat is None or remote_stat.fingerprint is None:
             await self._cache.remove(path)
             await mount.index.clear()

@@ -35,16 +35,22 @@ from mirage.types import FileType, PathSpec
 from mirage.utils.errors import MISS_ERRORS, eisdir, enotdir
 
 
-def _cached_stat(stat: Callable[..., Any], accessor: Accessor, path: PathSpec,
-                 *args, **kwargs):
+def _cached_stat(stat: Callable[..., Any], serves_probe: bool,
+                 accessor: Accessor, path: PathSpec, *args, **kwargs):
     manager = active_cache_manager()
-    return _cached_stat_result(manager, stat, accessor, path, *args, **kwargs)
+    return _cached_stat_result(manager, stat, serves_probe, accessor, path,
+                               *args, **kwargs)
 
 
-async def _cached_stat_result(manager, stat: Callable[...,
-                                                      Any], accessor: Accessor,
+async def _cached_stat_result(manager, stat: Callable[..., Any],
+                              serves_probe: bool, accessor: Accessor,
                               path: PathSpec, *args, **kwargs):
-    result = await stat(accessor, path, *args, **kwargs)
+    # The freshness probe already asked the backend this command; asking
+    # again resolves through listings fresh has not re-checked yet.
+    result = (manager.probed_stat(path)
+              if manager is not None and serves_probe else None)
+    if result is None:
+        result = await stat(accessor, path, *args, **kwargs)
     if (result is not None and getattr(result, "size", None) is None
             and manager is not None):
         # cached_size, not cached_bytes: this runs only where the backend
@@ -56,7 +62,7 @@ async def _cached_stat_result(manager, stat: Callable[...,
     return result
 
 
-def with_read_cache(ops: CommandIO) -> CommandIO:
+def with_read_cache(ops: CommandIO, serves_probe: bool = True) -> CommandIO:
     """Return ``ops`` whose byte reads serve cached bytes when warm.
 
     The factory hands this to every ``read=True`` command so a warm read
@@ -74,10 +80,12 @@ def with_read_cache(ops: CommandIO) -> CommandIO:
 
     Args:
         ops (CommandIO): the backend's IO adapter.
+        serves_probe (bool): whether ``ops.stat`` is the backend's
+            op-table stat (see ``with_stat_cache``).
     """
     read_bytes = cache_aware_read_bytes(ops.read_bytes)
     return replace(
-        with_stat_cache(ops),
+        with_stat_cache(ops, serves_probe),
         read_stream=(functools.partial(stream_from_bytes, read_bytes)
                      if ops.streams_bytes else cache_aware_read_stream(
                          ops.read_stream)),
@@ -186,7 +194,7 @@ def with_slash_guard(ops: CommandIO) -> CommandIO:
     return guarded
 
 
-def with_stat_cache(ops: CommandIO) -> CommandIO:
+def with_stat_cache(ops: CommandIO, serves_probe: bool = True) -> CommandIO:
     """Return ``ops`` whose ``stat`` fills size from the cache when warm.
 
     Metadata commands (ls, stat, du) don't read content, but for a
@@ -196,18 +204,28 @@ def with_stat_cache(ops: CommandIO) -> CommandIO:
     redirect to the cache mount. No-op when the backend already knows the
     size or the path isn't cached.
 
+    Under fresh it also serves what the freshness probe got from the
+    backend this command (``CacheManager.probed_stat``), which is the
+    backend's own op-table stat; an adapter whose ``stat`` is a different
+    function (a cheaper per-command stat) passes ``serves_probe=False``, so
+    what it prints never changes with the policy.
+
     Args:
         ops (CommandIO): the backend's IO adapter.
+        serves_probe (bool): whether ``ops.stat`` is the backend's
+            op-table stat, so the probe's answer is the same answer.
     """
-    return replace(ops, stat=functools.partial(_cached_stat, ops.stat))
+    return replace(ops,
+                   stat=functools.partial(_cached_stat, ops.stat,
+                                          serves_probe))
 
 
-def _read_wraps(ops: CommandIO) -> CommandIO:
-    return with_slash_guard(with_read_cache(ops))
+def _read_wraps(ops: CommandIO, serves_probe: bool) -> CommandIO:
+    return with_slash_guard(with_read_cache(ops, serves_probe))
 
 
-def _stat_wraps(ops: CommandIO) -> CommandIO:
-    return with_slash_guard(with_stat_cache(ops))
+def _stat_wraps(ops: CommandIO, serves_probe: bool) -> CommandIO:
+    return with_slash_guard(with_stat_cache(ops, serves_probe))
 
 
 def _write_wraps(ops: CommandIO) -> CommandIO:
@@ -312,10 +330,14 @@ def make_generic_commands(
         # the session at call time. The raw adapter stays untouched for
         # the ops tables, whose door does its own enforcement.
         base_ops = with_path_guards(raw)
+        # A per-command adapter with its own stat (dify's light ls) would
+        # otherwise print the probe's full stat under fresh only.
+        serves_probe = raw.stat is ops.stat
+        finish: Callable[[CommandIO], CommandIO]
         if b.read:
-            finish = _read_wraps
+            finish = functools.partial(_read_wraps, serves_probe=serves_probe)
         elif not b.write:
-            finish = _stat_wraps
+            finish = functools.partial(_stat_wraps, serves_probe=serves_probe)
         else:
             finish = _write_wraps
         bound = functools.partial(_run_with_namespace_globs, raw, finish, b.fn)

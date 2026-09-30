@@ -15,7 +15,7 @@
 import { mountKey } from '../utils/key_prefix.ts'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { PathSpec } from '../types.ts'
+import { FileStat, FileType, PathSpec } from '../types.ts'
 import { withCacheMutation } from './file/io.ts'
 import { RAMFileCacheStore } from './file/ram.ts'
 import { IndexEntry } from './index/config.ts'
@@ -442,6 +442,64 @@ describe('which listings a mount trusts', () => {
       await manager.scopeIndex(index).setDir('/data', [])
       vi.setSystemTime(Date.now() + LISTING_TRUST_WINDOW * 10_000)
       expect(manager.listingTrusted('/data')).toBe(true)
+    })
+  })
+})
+
+describe('what a probe saw this command', () => {
+  const path = PathSpec.fromStrPath('/data/arch/h.txt')
+  const probed = (): FileStat => new FileStat({ name: 'h.txt', size: 4, type: FileType.FILE })
+
+  it('is served for the rest of its command only', async () => {
+    const index = new RAMIndexCacheStore({ ttl: 600 })
+    const manager = new CacheManager(new RAMFileCacheStore(), index, '/data/', true)
+    const stat = probed()
+    await runInCommandScope(() => {
+      manager.noteProbed(path, stat)
+      expect(manager.probedStat(path)).toBe(stat)
+      expect(manager.probedStat(PathSpec.fromStrPath('/data/arch/other'))).toBeNull()
+      return Promise.resolve()
+    })
+    expect(manager.probedStat(path)).toBeNull()
+    await runInCommandScope(() => {
+      expect(manager.probedStat(path)).toBeNull()
+      return Promise.resolve()
+    })
+  })
+
+  it('is never served for a probe outside a command', () => {
+    const index = new RAMIndexCacheStore({ ttl: 600 })
+    const manager = new CacheManager(new RAMFileCacheStore(), index, '/data/', true)
+    manager.noteProbed(path, probed())
+    expect(manager.probedStat(path)).toBeNull()
+  })
+
+  // Any write the command makes, to any path, retires what its probes saw:
+  // coarser than per path, never a stale answer.
+  for (const invalidate of [
+    'invalidateAfterWrite',
+    'invalidateAfterUnlink',
+    'invalidateSubtree',
+  ] as const) {
+    it(`is dropped by ${invalidate} in the same command`, async () => {
+      const index = new RAMIndexCacheStore({ ttl: 600 })
+      const manager = new CacheManager(new RAMFileCacheStore(), index, '/data/', true)
+      await runInCommandScope(async () => {
+        manager.noteProbed(path, probed())
+        await manager[invalidate](PathSpec.fromStrPath('/data/elsewhere'))
+        expect(manager.probedStat(path)).toBeNull()
+      })
+    })
+  }
+
+  it('is forgotten when a later probe found nothing', async () => {
+    const index = new RAMIndexCacheStore({ ttl: 600 })
+    const manager = new CacheManager(new RAMFileCacheStore(), index, '/data/', true)
+    await runInCommandScope(() => {
+      manager.noteProbed(path, probed())
+      manager.noteProbed(path, null)
+      expect(manager.probedStat(path)).toBeNull()
+      return Promise.resolve()
     })
   })
 })

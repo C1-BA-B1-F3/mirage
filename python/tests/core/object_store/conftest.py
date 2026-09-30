@@ -200,6 +200,9 @@ class FakeManager:
     def listing_trusted(self, _folder: str) -> bool:
         return False
 
+    def probed_stat(self, _path):
+        return None
+
     def __init__(self) -> None:
         self.writes: list[str] = []
         self.ancestors: list[str] = []

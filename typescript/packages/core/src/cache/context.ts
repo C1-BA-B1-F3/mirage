@@ -12,7 +12,7 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import type { PathSpec } from '../types.ts'
+import type { FileStat, PathSpec } from '../types.ts'
 import { type ContextCall, createAsyncContext } from '../utils/async_context.ts'
 
 /**
@@ -30,6 +30,7 @@ export interface CacheInvalidator {
   readThrough(path: PathSpec, fetch: () => Promise<Uint8Array>): Promise<Uint8Array>
   cachedSize(path: PathSpec): Promise<number | null>
   listingTrusted(folder: string): boolean
+  probedStat(path: PathSpec): FileStat | null
 }
 
 interface CacheContextState {

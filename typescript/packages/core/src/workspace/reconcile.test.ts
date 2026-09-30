@@ -584,3 +584,29 @@ it('batches overlapping folders and protects nested mounts', async () => {
     await ws.close()
   }
 })
+
+// The command's own stat serves what the probe got from the backend; a later
+// probe in the same command that finds the path gone must take that answer
+// back, or the stat would still describe a deleted file.
+it("a probe remembers the backend's stat until it finds nothing", async () => {
+  const resource = new RAMVFS()
+  resource.store.files.set('/f.txt', new TextEncoder().encode('v1'))
+  const ws = new Workspace({ '/data': resource }, { mode: MountMode.WRITE })
+  try {
+    await ws.namespace.ensureLoaded()
+    const mount = withFresh(mountOf(ws, '/data/f.txt'))
+    await ws.cache.set('/data/f.txt', new TextEncoder().encode('v1'), { fingerprint: 'fp1' })
+    const rec = new Reconciler(ws.cache, ws.namespace, ws.opsRegistry)
+    const spec = PathSpec.fromStrPath('/data/f.txt')
+    await runInCommandScope(async () => {
+      await rec.reconcileRead(mount, '/data/f.txt')
+      expect(mount.cacheManager?.probedStat(spec)?.size).toBe(2)
+      resource.store.files.delete('/f.txt')
+      await ws.cache.set('/data/f.txt', new TextEncoder().encode('v1'), { fingerprint: 'fp1' })
+      await rec.reconcileRead(mount, '/data/f.txt')
+      expect(mount.cacheManager?.probedStat(spec)).toBeNull()
+    })
+  } finally {
+    await ws.close()
+  }
+})

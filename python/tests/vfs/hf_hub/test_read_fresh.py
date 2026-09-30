@@ -273,21 +273,22 @@ async def test_a_drift_check_on_a_loaded_mount_asks_one_path():
             await ws.close()
 
 
-# Measured on the first green run, then pinned (test plan T31): each
-# number is one reconcile probe, and a warm read makes no download. The one
-# tree walk is the command re-checking the listing its path resolves
-# through, which fresh does once per command (Task 1.3 makes it cheaper).
+# Measured on the first green run, then pinned (test plan T31): each path
+# ask is one reconcile probe, and a warm read makes no download. cat's own
+# stat serves the routing probe's answer. Cross-mount cp skips routing's
+# probe, so only the cache door asks, and its stat re-checks the listing its
+# path resolves through, which fresh does once per command: one tree walk
+# (Task 1.3 makes it cheaper).
 WARM = [
-    ("cat /m/a.txt", 2),
-    ("cat /m/a.txt | head -c 1", 2),
-    # Cross-mount cp skips routing's probe; only the cache door asks.
-    ("cp /m/a.txt /r/a.txt", 1),
+    ("cat /m/a.txt", 2, 0),
+    ("cat /m/a.txt | head -c 1", 2, 0),
+    ("cp /m/a.txt /r/a.txt", 1, 1),
 ]
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("line,posts", WARM)
-async def test_a_warm_fresh_read_costs_one_path_per_probe(line, posts):
+@pytest.mark.parametrize("line,posts,walks", WARM)
+async def test_a_warm_fresh_read_costs_one_path_per_probe(line, posts, walks):
     with serve(_hub({"a.txt": OLD})) as hub:
         ws = _ws(_vfs(hub))
         try:
@@ -295,7 +296,7 @@ async def test_a_warm_fresh_read_costs_one_path_per_probe(line, posts):
             hub.log.clear()
             await _out(ws, line)
             assert (hub.count("paths_info"), hub.count("tree"),
-                    hub.count("resolve")) == (posts, 1, 0)
+                    hub.count("resolve")) == (posts, walks, 0)
         finally:
             await ws.close()
 

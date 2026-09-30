@@ -258,6 +258,10 @@ export class FakeManager {
     return false
   }
 
+  probedStat(): null {
+    return null
+  }
+
   readThrough(_path: PathSpec, fetch: () => Promise<Uint8Array>): Promise<Uint8Array> {
     return fetch()
   }

@@ -25,7 +25,7 @@ from mirage.cache.index.config import (Evicted, IndexConfig, IndexEntry,
                                        RedisIndexConfig)
 from mirage.cache.index.constants import LISTING_TRUST_WINDOW
 from mirage.cache.index.scope import command_scope
-from mirage.types import FileStat, FileType, ReadPolicy, ReadSpec
+from mirage.types import FileStat, FileType, PathSpec, ReadPolicy, ReadSpec
 from mirage.utils.errors import enotsup
 from mirage.vfs.ram import RAMVFS
 from mirage.vfs.s3 import S3VFS, S3Config
@@ -634,5 +634,32 @@ async def test_cleanup_batches_overlapping_folders_and_protects_nested_mounts(
             assert await ws.cache.exists(path)
             assert ws.namespace.meta_for(path) is not None
         assert ws.namespace.readlink("/data/tree/link") == "/data/target"
+    finally:
+        await ws.close()
+
+
+@pytest.mark.asyncio
+async def test_a_probe_remembers_the_backends_stat_until_it_finds_nothing():
+    # The command's own stat serves what the probe got from the backend; a
+    # later probe in the same command that finds the path gone must take that
+    # answer back, or the stat would still describe a deleted file.
+    resource = RAMVFS()
+    resource._store.files["/f.txt"] = b"v1"
+    ws = Workspace({"/data/": resource}, mode=MountMode.WRITE)
+    try:
+        await ws.namespace.ensure_loaded()
+        mount = ws.namespace.mount_for("/data/f.txt")
+        mount.read = ReadSpec(policy=ReadPolicy.FRESH)
+        await ws.cache.set("/data/f.txt", b"v1", fingerprint="fp1")
+        rec = Reconciler(ws.cache, ws.namespace)
+        spec = PathSpec.from_str_path("/data/f.txt")
+        async with command_scope():
+            await rec.reconcile_read(mount, "/data/f.txt")
+            probed = mount.cache_manager.probed_stat(spec)
+            assert probed is not None and probed.size == 2
+            del resource._store.files["/f.txt"]
+            await ws.cache.set("/data/f.txt", b"v1", fingerprint="fp1")
+            await rec.reconcile_read(mount, "/data/f.txt")
+            assert mount.cache_manager.probed_stat(spec) is None
     finally:
         await ws.close()

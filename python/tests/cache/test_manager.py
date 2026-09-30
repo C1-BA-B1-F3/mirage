@@ -25,7 +25,7 @@ from mirage.cache.index.ram import RAMIndexCacheStore
 from mirage.cache.index.scope import command_scope
 from mirage.cache.index.view import IndexView
 from mirage.cache.manager import CacheManager
-from mirage.types import PathSpec
+from mirage.types import FileStat, FileType, PathSpec
 from mirage.utils.key_prefix import mount_key
 
 
@@ -612,3 +612,60 @@ async def test_a_clock_that_ran_backwards_does_not_extend_the_window(clock):
     await manager.scope_index(index).set_dir("/data", [])
     clock.now -= 5
     assert manager.listing_trusted("/data") is False
+
+
+def _probed() -> FileStat:
+    return FileStat(name="h.txt", size=4, type=FileType.FILE)
+
+
+@pytest.mark.asyncio
+async def test_a_probed_stat_is_served_for_the_rest_of_its_command_only():
+    cache, index = _stores()
+    manager = CacheManager(cache, index, "/data/", True)
+    path = PathSpec.from_str_path("/data/arch/h.txt")
+    stat = _probed()
+    async with command_scope():
+        manager.note_probed(path, stat)
+        assert manager.probed_stat(path) is stat
+        assert manager.probed_stat(
+            PathSpec.from_str_path("/data/arch/other")) is None
+    assert manager.probed_stat(path) is None
+    async with command_scope():
+        assert manager.probed_stat(path) is None
+
+
+@pytest.mark.asyncio
+async def test_a_probe_outside_a_command_is_never_served():
+    cache, index = _stores()
+    manager = CacheManager(cache, index, "/data/", True)
+    path = PathSpec.from_str_path("/data/arch/h.txt")
+    manager.note_probed(path, _probed())
+    assert manager.probed_stat(path) is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("invalidate", [
+    "invalidate_after_write", "invalidate_after_unlink", "invalidate_subtree"
+])
+async def test_a_write_in_the_command_drops_its_probed_stats(invalidate):
+    # Any write the command makes, to any path, retires what its probes saw:
+    # coarser than per path, never a stale answer.
+    cache, index = _stores()
+    manager = CacheManager(cache, index, "/data/", True)
+    path = PathSpec.from_str_path("/data/arch/h.txt")
+    async with command_scope():
+        manager.note_probed(path, _probed())
+        await getattr(manager,
+                      invalidate)(PathSpec.from_str_path("/data/elsewhere"))
+        assert manager.probed_stat(path) is None
+
+
+@pytest.mark.asyncio
+async def test_a_probe_that_found_nothing_forgets_the_earlier_answer():
+    cache, index = _stores()
+    manager = CacheManager(cache, index, "/data/", True)
+    path = PathSpec.from_str_path("/data/arch/h.txt")
+    async with command_scope():
+        manager.note_probed(path, _probed())
+        manager.note_probed(path, None)
+        assert manager.probed_stat(path) is None

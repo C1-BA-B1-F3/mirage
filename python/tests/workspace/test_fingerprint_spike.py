@@ -287,11 +287,11 @@ def test_always_revalidates_a_walk_and_a_glob():
 def test_always_warm_read_costs_a_gate_probe():
     """Cost is the contract, and the gate's probe is the cost.
 
-    A warm ``cat`` is three backend stats: the routing reconcile, ``cat``'s
-    own operand stat, and the gate's probe. Two means the gate stopped
-    probing a named warm operand -- which is what ``main`` does, so this
-    number is what separates the two. Counting starts after the warm-up,
-    because a cold+warm total is the same either way.
+    A warm ``cat`` is two backend stats: the routing reconcile and the
+    gate's probe; ``cat``'s own operand stat serves the routing probe's
+    answer. One means the gate stopped probing a named warm operand, so
+    this number is what separates the two. Counting starts after the
+    warm-up, because a cold+warm total is the same either way.
     """
     objects = {"a.txt": b"name,age\n"}
     session, ws = _always_mount(objects)
@@ -305,9 +305,9 @@ def test_always_warm_read_costs_a_gate_probe():
             await ws.close()
 
     asyncio.run(run())
-    assert client.calls["head_object"] == 3, (
-        "routing reconcile + cat's own stat + the gate's probe; two means "
-        "the gate no longer revalidates a named warm operand")
+    assert client.calls["head_object"] == 2, (
+        "routing reconcile + the gate's probe; one means the gate no longer "
+        "revalidates a named warm operand")
     assert client.calls["get_object"] == 0, (
         "an unchanged object must still be served from cache")
 
@@ -507,25 +507,36 @@ def test_metadata_command_reconciles_its_operand():
     """``ls`` reads no bytes, so the cache gate never fires for it.
 
     Routing is the one door a metadata command has to backend truth, and
-    it must keep probing there: a warm ``ls -l`` costs three backend
-    stats, and two means the routing reconcile stopped firing for a
-    command the gate does not cover.
+    it must keep probing there. The stat count cannot show it any more:
+    ``ls``'s own operand stat serves the routing probe's answer, so a warm
+    ``ls -l`` is the probe plus ls's readdir check of its operand, and with
+    routing dark it is ls's stat plus that same check -- two either way.
+    What only the routing probe does is evict a copy the backend replaced,
+    so that is what this pins.
     """
     objects = {"a.txt": b"v1\n"}
     session, ws = _always_mount(objects)
     client = session._client
 
-    async def run() -> None:
+    async def run() -> tuple[bool, bool]:
         with patch_s3_session(session):
             await ws.shell("cat /s3/a.txt")
             client.calls.clear()
             assert (await ws.shell("ls -l /s3/a.txt")).exit_code == 0
+            kept = await ws.cache.exists("/s3/a.txt")
+            objects["a.txt"] = b"v2\n"
+            assert (await ws.shell("ls -l /s3/a.txt")).exit_code == 0
+            evicted = not await ws.cache.exists("/s3/a.txt")
             await ws.close()
+            return kept, evicted
 
-    asyncio.run(run())
-    assert client.calls["head_object"] == 3, (
-        "ls must still reconcile its operand at routing; 2 means the one "
-        "door a metadata command has to backend truth went dark")
+    kept, evicted = asyncio.run(run())
+    assert kept, "an unchanged copy survives the probe"
+    assert evicted, (
+        "ls must still reconcile its operand at routing; a replaced copy "
+        "left in the cache means the one door a metadata command has to "
+        "backend truth went dark")
+    assert client.calls["head_object"] == 4
 
 
 def _bounded_mount(objects, ttl=600):
@@ -588,9 +599,9 @@ def test_bounded_serves_within_the_bound_then_goes_cold():
     assert warm == b"v1\n"
     assert warm_calls["head_object"] == 1, (
         "a warm bounded read is cat's own stat and nothing else; the same "
-        "read under fresh costs three (the routing reconcile, cat's stat "
-        "and the gate's probe), so anything above one means a door that "
-        "should have skipped did not")
+        "read under fresh costs two (the routing reconcile, whose answer "
+        "cat's stat reuses, and the gate's probe), so anything above one "
+        "here means a door that should have skipped did not")
     assert warm_calls.get("get_object", 0) == 0
     assert cold == b"v2\n", "past its bound, the entry must not be served"
 

@@ -82,6 +82,7 @@ export class Reconciler {
       directory: lastSlash > 0 ? path.slice(0, lastSlash + 1) : '/',
       vfsPath: mountKey(path, rstripSlash(mount.prefix)),
     })
+    const manager = mount.cacheManager
     let remoteStat: unknown
     try {
       remoteStat = await this.opsRegistry.call('stat', vfs, vfs.accessor, scope, [], {
@@ -89,6 +90,7 @@ export class Reconciler {
       })
     } catch (err) {
       if (isEnoent(err) || isEnotdir(err)) {
+        manager?.noteProbed(scope, null)
         await this.onMissing(path)
         await mount.index.clear()
         return Verdict.GONE
@@ -107,6 +109,7 @@ export class Reconciler {
       }
       throw err
     }
+    if (remoteStat instanceof FileStat) manager?.noteProbed(scope, remoteStat)
     const fp = remoteStat instanceof FileStat ? remoteStat.fingerprint : null
     if (fp === null) {
       await this.cache.remove(path)

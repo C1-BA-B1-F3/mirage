@@ -14,7 +14,7 @@
 
 import { activeRecords } from '../observe/context.ts'
 import { READ_FINGERPRINT_OPS } from '../observe/record.ts'
-import { DEFAULT_READ_TTL, PathSpec } from '../types.ts'
+import { DEFAULT_READ_TTL, type FileStat, PathSpec } from '../types.ts'
 import { mountKey } from '../utils/key_prefix.ts'
 import { rstripSlash } from '../utils/slash.ts'
 import type { FileCache } from './file/mixin.ts'
@@ -60,6 +60,9 @@ export class CacheManager {
   // Folder to the tick and the wall-clock millisecond its listing was last
   // written at, by any view of this mount, shared or lock-held.
   private readonly written = new Map<string, [number, number]>()
+  // Cache key to what the freshness probe got from the backend: the tick it
+  // was noted at, the read generation then, and the stat.
+  private readonly probed = new Map<string, [number, number, FileStat]>()
 
   constructor(
     fileCache: FileCache | null,
@@ -170,6 +173,42 @@ export class CacheManager {
     if (started !== null) return stamp > started
     const elapsed = Date.now() - at
     return elapsed >= 0 && elapsed < LISTING_TRUST_WINDOW * 1000
+  }
+
+  /**
+   * Remember what the freshness probe got from the backend for `path`.
+   *
+   * Only the reconciler's probe calls this, and it always asks the backend,
+   * so a stat served from an index row -- which may carry no content token --
+   * never lands here. `null` (the backend reports the path gone) forgets an
+   * earlier answer.
+   */
+  noteProbed(path: PathSpec, stat: FileStat | null): void {
+    const key = this.cacheKey(path)
+    if (stat === null) {
+      this.probed.delete(key)
+      return
+    }
+    this.probed.set(key, [tick(), this.readGeneration, stat])
+  }
+
+  /**
+   * The backend's answer for `path` from this command's probe.
+   *
+   * A read command stats its own operand after the probe already asked the
+   * backend; under fresh, asking again resolves through listings the command
+   * has not re-checked, and re-lists every folder on the path. The answer is
+   * served only inside the command that probed, and only while no write has
+   * landed since: every invalidation bumps the read generation, so `sed -i`
+   * or `> f` in the same command sends the next stat back to the backend.
+   */
+  probedStat(path: PathSpec): FileStat | null {
+    const probed = this.probed.get(this.cacheKey(path))
+    const started = commandStarted()
+    if (probed === undefined || started === null) return null
+    const [stamp, generation, stat] = probed
+    if (stamp < started || generation !== this.readGeneration) return null
+    return stat
   }
 
   /**

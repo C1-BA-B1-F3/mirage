@@ -33,6 +33,10 @@ class FakeManager {
     return false
   }
 
+  probedStat(): null {
+    return null
+  }
+
   writes: string[] = []
   ancestors: string[] = []
 

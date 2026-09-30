@@ -279,19 +279,20 @@ describe('hf_hub snapshot pins', () => {
   })
 })
 
-// Measured on the first green run, then pinned (test plan T31): each number is
-// one reconcile probe, and a warm read makes no download. The one tree walk is
-// the command re-checking the listing its path resolves through, which fresh
-// does once per command (Task 1.3 makes it cheaper).
-const WARM: [string, number][] = [
-  ['cat /m/a.txt', 2],
-  ['cat /m/a.txt | head -c 1', 2],
-  // Cross-mount cp skips routing's probe; only the cache door asks.
-  ['cp /m/a.txt /r/a.txt', 1],
+// Measured on the first green run, then pinned (test plan T31): each path ask
+// is one reconcile probe, and a warm read makes no download. cat's own stat
+// serves the routing probe's answer. Cross-mount cp skips routing's probe, so
+// only the cache door asks, and its stat re-checks the listing its path
+// resolves through, which fresh does once per command: one tree walk (Task
+// 1.3 makes it cheaper).
+const WARM: [string, number, number][] = [
+  ['cat /m/a.txt', 2, 0],
+  ['cat /m/a.txt | head -c 1', 2, 0],
+  ['cp /m/a.txt /r/a.txt', 1, 1],
 ]
 
 describe('hf_hub warm read cost', () => {
-  it.each(WARM)('%s costs one path per probe', async (command, posts) => {
+  it.each(WARM)('%s costs one path per probe', async (command, posts, walks) => {
     const fake = await hub({ 'a.txt': OLD })
     const w = ws(await vfsOf(fake))
     try {
@@ -300,7 +301,7 @@ describe('hf_hub warm read cost', () => {
       await out(w, command)
       expect([fake.count('paths_info'), fake.count('tree'), fake.count('resolve')]).toEqual([
         posts,
-        1,
+        walks,
         0,
       ])
     } finally {

@@ -712,16 +712,18 @@ async function fixtureTree(dir: string): Promise<Map<string, Buffer>> {
 // runs on, which is the text GitHub serves as a diff. Renames are git's exact
 // ones only: a file moved and edited is a removal and an addition here, where
 // git would pair the two once they are half alike.
-async function gitDiff(before: Map<string, Buffer>, after: Map<string, Buffer>): Promise<string> {
+async function gitDiff(before: Map<string, Buffer>, after: Map<string, Buffer>): Promise<Buffer> {
   const dir = await mkdtemp(join(tmpdir(), 'gh-diff-'))
   const env = { ...process.env, GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_NOSYSTEM: '1' }
-  const git = (...args: string[]): Promise<string> =>
+  const git = (...args: string[]): Promise<Buffer> =>
     new Promise((ok, bad) => {
       const child = spawn('git', ['-C', dir, ...args], { env, stdio: ['ignore', 'pipe', 'pipe'] })
-      let out = ''
-      child.stdout.setEncoding('utf8').on('data', (d: string) => (out += d))
+      const out: Buffer[] = []
+      child.stdout.on('data', (d: Buffer) => out.push(d))
       child.on('error', bad)
-      child.on('close', (code) => (code === 0 ? ok(out) : bad(new Error(`git ${args[0]} ${code}`))))
+      child.on('close', (code) =>
+        code === 0 ? ok(Buffer.concat(out)) : bad(new Error(`git ${args[0]} ${code}`)),
+      )
     })
   const commit = async (tree: Map<string, Buffer>, message: string): Promise<void> => {
     await git('rm', '-rq', '--ignore-unmatch', '.')
@@ -743,10 +745,11 @@ async function gitDiff(before: Map<string, Buffer>, after: Map<string, Buffer>):
 }
 
 // Seeded random tree pairs, each diffed by the fake and by git: a small
-// vocabulary, so lines repeat and a change can sit in several places, names
-// that git quotes or pads, a binary, an empty file, a moved file, and last
-// lines with and without their newline. Every pair must read as git prints
-// it, which is what pins the choice among equally short diffs to git's.
+// vocabulary, so lines repeat and a change can sit in several places, a line
+// in Latin-1 that is no UTF-8, names that git quotes or pads, a binary, an
+// empty file, a moved file, and last lines with and without their newline.
+// Every pair must read as git prints it, byte for byte, which is what pins
+// the choice among equally short diffs to git's.
 async function diffsMatchGit(): Promise<void> {
   let seed = 7
   const rand = (): number => {
@@ -754,7 +757,18 @@ async function diffsMatchGit(): Promise<void> {
     return seed / 2147483648
   }
   const pick = <T>(xs: T[]): T => xs[Math.floor(rand() * xs.length)] as T
-  const words = ['def main():', '    return 1', '', '}', 'class A:', '  x', 'foo', '$var', '_p']
+  const words = [
+    'def main():',
+    '    return 1',
+    '',
+    '}',
+    'class A:',
+    '  x',
+    'foo',
+    '$var',
+    '_p',
+    '\u00e9t\u00e9',
+  ]
   const text = (): string => {
     const lines = Array.from({ length: Math.floor(rand() * 30) }, () => pick(words))
     return lines.length > 0 && rand() < 0.85 ? `${lines.join('\n')}\n` : lines.join('\n')
@@ -777,7 +791,7 @@ async function diffsMatchGit(): Promise<void> {
     for (const name of names) {
       if (rand() >= 0.7) continue
       const body = name === 'bin.dat' ? `x\0${text()}` : name === 'empty.txt' ? '' : text()
-      before.set(name, Buffer.from(body))
+      before.set(name, Buffer.from(body, 'latin1'))
     }
     const after = new Map<string, Buffer>()
     for (const [path, data] of before) {
@@ -785,9 +799,10 @@ async function diffsMatchGit(): Promise<void> {
       if (r < 0.15) continue
       if (r < 0.25) after.set(`moved/${path.split('/').pop() ?? path}`, data)
       else if (path === 'bin.dat' || path === 'empty.txt') after.set(path, data)
-      else after.set(path, Buffer.from(edit(data.toString())))
+      else after.set(path, Buffer.from(edit(data.toString('latin1')), 'latin1'))
     }
-    if (unifiedDiff(diffTrees(before, after)) !== (await gitDiff(before, after))) differ.push(run)
+    const theirs = await gitDiff(before, after)
+    if (!unifiedDiff(diffTrees(before, after)).equals(theirs)) differ.push(run)
   }
   eq('forty random tree pairs diff as git diffs them', differ, [])
 }
@@ -806,20 +821,21 @@ async function diffsSearchAndHistory(at: string): Promise<void> {
     url: string,
     body?: JsonValue,
     accept?: string,
-  ): Promise<{ status: number; body: JsonValue; text: string; link: string }> => {
+  ): Promise<{ status: number; body: JsonValue; bytes: Buffer; text: string; link: string }> => {
     const r = await fetch(url, {
       method,
       headers: { ...HEADERS, ...(accept === undefined ? {} : { accept }) },
       ...(body === undefined ? {} : { body: JSON.stringify(body) }),
     })
-    const text = await r.text()
+    const bytes = Buffer.from(await r.arrayBuffer())
+    const text = bytes.toString('utf8')
     let parsed: JsonValue = null
     try {
       parsed = JSON.parse(text) as JsonValue
     } catch {
       parsed = null
     }
-    return { status: r.status, body: parsed, text, link: r.headers.get('link') ?? '' }
+    return { status: r.status, body: parsed, bytes, text, link: r.headers.get('link') ?? '' }
   }
   const put = (path: string, branch: string, text: string, sha?: JsonValue) =>
     send('PUT', `${repo}/contents/${path}`, {
@@ -939,7 +955,11 @@ async function diffsSearchAndHistory(at: string): Promise<void> {
     undefined,
     'application/vnd.github.diff',
   )
-  eq('the diff is the one git prints', diff.text, await gitDiff(before, after))
+  eq(
+    'the diff is the one git prints',
+    diff.bytes.toString('latin1'),
+    (await gitDiff(before, after)).toString('latin1'),
+  )
   const patch = await send(
     'GET',
     `${repo}/pulls/${number}`,
@@ -951,8 +971,9 @@ async function diffsSearchAndHistory(at: string): Promise<void> {
     [patch.status, field(patch.body, 'message')],
     [415, 'A patch is a mail per commit, which the integ fake does not model.'],
   )
-  // A rename, a removal, a name with a space, a binary and a last line that
-  // loses its newline, compared the same way.
+  // A rename, a removal, a name with a space, a binary, a last line that
+  // loses its newline and a text in Latin-1, compared the same way.
+  const LATIN1 = Buffer.from('caf\u00e9\n', 'latin1')
   await send('POST', `${repo}/git/refs`, { ref: 'refs/heads/shuffle', sha: main })
   const shaOn = async (path: string): Promise<JsonValue> =>
     field((await send('GET', `${repo}/contents/${path}?ref=shuffle`)).body, 'sha')
@@ -975,6 +996,11 @@ async function diffsSearchAndHistory(at: string): Promise<void> {
     branch: 'shuffle',
   })
   await put('README.md', 'shuffle', '# repo-v1', await shaOn('README.md'))
+  await send('PUT', `${repo}/contents/legacy.txt`, {
+    message: 'Add legacy.txt',
+    content: LATIN1.toString('base64'),
+    branch: 'shuffle',
+  })
   const shuffled = new Map(before)
   shuffled.delete('docs/contributing.md')
   shuffled.delete('docs/release.md')
@@ -982,13 +1008,18 @@ async function diffsSearchAndHistory(at: string): Promise<void> {
   shuffled.set('notes with space.txt', Buffer.from('spaced\n'))
   shuffled.set('blob.bin', Buffer.from([0, 1, 2, 3]))
   shuffled.set('README.md', Buffer.from('# repo-v1'))
+  shuffled.set('legacy.txt', LATIN1)
   const spread = await send(
     'GET',
     `${repo}/compare/main...shuffle`,
     undefined,
     'application/vnd.github.diff',
   )
-  eq('every kind of change reads as git prints it', spread.text, await gitDiff(before, shuffled))
+  eq(
+    'every kind of change reads as git prints it',
+    spread.bytes.toString('latin1'),
+    (await gitDiff(before, shuffled)).toString('latin1'),
+  )
   const compared = (await send('GET', `${repo}/compare/main...shuffle`)).body
   eq(
     'a comparison lists the rename once, with where it came from',
@@ -1020,6 +1051,52 @@ async function diffsSearchAndHistory(at: string): Promise<void> {
       commits: { totalCount: 3, nodes: [{ commit: { messageHeadline: 'Add README.md' } }] },
     },
   )
+  const newest = await send('POST', `${base}/graphql`, {
+    query:
+      `{ repository(owner: "integ", name: "repo-v1") { pullRequest(number: ${number}) { ` +
+      'commits(last: 2) { totalCount pageInfo { hasNextPage endCursor } ' +
+      'nodes { commit { messageHeadline } } } } } }',
+  })
+  eq(
+    'the newest commits page from where they start in the whole history',
+    field(field(field(field(newest.body, 'data'), 'repository'), 'pullRequest'), 'commits'),
+    {
+      totalCount: 3,
+      pageInfo: { hasNextPage: false, endCursor: Buffer.from('3').toString('base64') },
+      nodes: [
+        { commit: { messageHeadline: 'Add notes.txt' } },
+        { commit: { messageHeadline: 'Add README.md' } },
+      ],
+    },
+  )
+  const orphanTree = field(
+    (await send('POST', `${repo}/git/trees`, { tree: [{ path: 'only.txt', content: 'x\n' }] }))
+      .body,
+    'sha',
+  )
+  const orphan = await send('POST', `${repo}/git/commits`, {
+    message: 'Start over',
+    tree: orphanTree,
+    parents: [],
+  })
+  await send('POST', `${repo}/git/refs`, {
+    ref: 'refs/heads/orphan',
+    sha: field(orphan.body, 'sha'),
+  })
+  eq(
+    'a head with no history in common with its base opens nothing',
+    field(
+      (await send('POST', `${repo}/pulls`, { title: 'x', head: 'orphan', base: 'main' })).body,
+      'errors',
+    ),
+    [
+      {
+        resource: 'PullRequest',
+        code: 'custom',
+        message: 'The orphan branch has no history in common with main',
+      },
+    ],
+  )
 
   // ---- review comments land on lines the diff shows
   const comments = `${repo}/pulls/${number}/comments`
@@ -1033,6 +1110,43 @@ async function diffsSearchAndHistory(at: string): Promise<void> {
       field(made.body, 'diff_hunk'),
     ],
     [201, 2, 'RIGHT', '@@ -0,0 +1,3 @@\n+one\n+two'],
+  )
+  const prCommits = list((await send('GET', `${repo}/pulls/${number}/commits`)).body, 'sha')
+  eq(
+    'a comment names a commit of the pull request or none',
+    [
+      (
+        await send('POST', comments, {
+          body: 'x',
+          path: 'hello.txt',
+          line: 1,
+          commit_id: '0'.repeat(40),
+        })
+      ).status,
+      field(
+        (
+          await send('POST', comments, {
+            body: 'older',
+            path: 'hello.txt',
+            line: 1,
+            commit_id: prCommits[0] ?? null,
+          })
+        ).body,
+        'commit_id',
+      ),
+    ],
+    [422, prCommits[0] ?? null],
+  )
+  eq(
+    'a review names one too',
+    (
+      await send('POST', `${repo}/pulls/${number}/reviews`, {
+        event: 'COMMENT',
+        body: 'x',
+        commit_id: main,
+      })
+    ).status,
+    422,
   )
   eq(
     'a comment off the diff is refused',
@@ -1060,13 +1174,14 @@ async function diffsSearchAndHistory(at: string): Promise<void> {
   eq('a review carries its comments', reviewed.status, 200)
   eq('every comment is listed', list((await send('GET', comments)).body, 'body'), [
     'nice',
+    'older',
     'thanks',
     'old',
   ])
   eq(
     'each comment outside a review is a review of its own',
     ((await send('GET', `${repo}/pulls/${number}/reviews`)).body as JsonValue[]).length,
-    3,
+    4,
   )
 
   // ---- the commit list pages and filters
@@ -1159,6 +1274,15 @@ async function diffsSearchAndHistory(at: string): Promise<void> {
     'a tag ref reads back',
     field(field((await send('GET', `${repo}/git/ref/tags/v1`)).body, 'object'), 'type'),
     'tag',
+  )
+  eq(
+    'a tag names content and history as a branch does',
+    [
+      (await send('GET', `${repo}/contents/second.txt?ref=v1`)).status,
+      (await send('GET', `${repo}/contents/second.txt?ref=refs/tags/light`)).status,
+      list((await send('GET', `${repo}/commits?sha=v1`)).body, 'sha')[0] ?? null,
+    ],
+    [200, 200, head],
   )
   eq(
     'the tags list newest name first, each at its commit',

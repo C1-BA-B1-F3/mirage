@@ -31,7 +31,10 @@ const NO_BLOB = '0'.repeat(ABBREV)
 
 type ChangeStatus = 'added' | 'removed' | 'modified' | 'renamed'
 
-/** One path that differs between two trees, as git reports it. */
+/**
+ * One path that differs between two trees, as git reports it. Its hunks hold
+ * the file's bytes, one character each.
+ */
 export interface FileChange {
   filename: string
   previous: string | null
@@ -50,9 +53,11 @@ interface Op {
 }
 
 // Each line keeps its terminator, so a last line with no newline differs from
-// the same text with one, which is how git compares them.
+// the same text with one, which is how git compares them. A line is its bytes,
+// one character each, because git diffs bytes: decoding as UTF-8 would
+// replace any other encoding's bytes before the diff saw them.
 function linesOf(data: Buffer): string[] {
-  const text = data.toString('utf8')
+  const text = data.toString('latin1')
   const out: string[] = []
   let at = 0
   while (at < text.length) {
@@ -585,10 +590,7 @@ function compact(side: Side, other: Side): void {
 // trailing whitespace. A hunk that finds none keeps the one before it.
 function funcLine(line: string): string | null {
   if (!/^[A-Za-z_$]/.test(line)) return null
-  return Buffer.from(line)
-    .subarray(0, FUNC_LINE_BYTES)
-    .toString('utf8')
-    .replace(/[ \t\n\v\f\r]+$/, '')
+  return line.slice(0, FUNC_LINE_BYTES).replace(/[ \t\n\v\f\r]+$/, '')
 }
 
 function hunkRange(start: number, count: number): string {
@@ -782,15 +784,18 @@ function fileDiff(c: FileChange): string {
   return `${lines.join('\n')}\n${c.hunks.join('')}`
 }
 
-/** The whole `git diff` of a set of changes. */
-export function unifiedDiff(changes: FileChange[]): string {
-  return changes.map(fileDiff).join('')
+/** The whole `git diff` of a set of changes, byte for byte. */
+export function unifiedDiff(changes: FileChange[]): Buffer {
+  return Buffer.from(changes.map(fileDiff).join(''), 'latin1')
 }
 
-/** What GitHub's `patch` field holds: the hunks, without the last newline. */
+/**
+ * What GitHub's `patch` field holds: the hunks, without the last newline, as
+ * text, since a JSON string can carry nothing else.
+ */
 function patchOf(c: FileChange): string | null {
   if (c.binary || c.hunks.length === 0) return null
-  return c.hunks.join('').replace(/\n$/, '')
+  return Buffer.from(c.hunks.join('').replace(/\n$/, ''), 'latin1').toString('utf8')
 }
 
 /**

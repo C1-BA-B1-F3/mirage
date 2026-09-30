@@ -64,7 +64,7 @@ export function diffReply(ctx: Ctx<C>, changes: FileChange[]): Reply | null {
   if (!accept.includes('diff')) return null
   return {
     status: 200,
-    body: Buffer.from(unifiedDiff(changes)),
+    body: unifiedDiff(changes),
     headers: { 'Content-Type': 'text/plain' },
   }
 }

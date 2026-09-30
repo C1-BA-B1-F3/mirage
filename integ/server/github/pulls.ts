@@ -55,6 +55,7 @@ const EDITED_AT = '2026-01-01T00:02:00Z'
 const MERGED_AT = '2026-01-01T00:03:00Z'
 
 const CREATE_DOCS = 'https://docs.github.com/rest/pulls/pulls#create-a-pull-request'
+const REVIEW_DOCS = 'https://docs.github.com/rest/pulls/reviews#create-a-review-for-a-pull-request'
 const COMMENT_DOCS =
   'https://docs.github.com/rest/pulls/comments#create-a-review-comment-for-a-pull-request'
 export interface PullRow {
@@ -100,8 +101,8 @@ const REVIEWED_AT = '2026-01-01T00:04:00Z'
  * exists and the commit it last named once it does not, its base branch's
  * tip, and the range the head holds past the base. Everything a pull request
  * reports about what it changes is read off that range, the same one a
- * comparison of the two answers; a head that shares no history with its base
- * is compared against nothing, so all of it counts.
+ * comparison of the two answers. A head that no longer shares history with
+ * its base, which only a forced ref move can make, changes nothing.
  */
 interface PullState {
   head: string
@@ -138,11 +139,9 @@ async function pullState(
   const head = await pullHead(ctx, repo, row)
   const base = await pullBase(ctx, repo, row)
   const range =
-    head === null
+    head === null || base === null
       ? NO_RANGE
-      : ((await rangeOf(ctx.db, ctx.tenant, repo, base, head)) ??
-        (await rangeOf(ctx.db, ctx.tenant, repo, null, head)) ??
-        NO_RANGE)
+      : ((await rangeOf(ctx.db, ctx.tenant, repo, base, head)) ?? NO_RANGE)
   return {
     head: head?.history[0]?.sha ?? row.headSha,
     base: base?.history[0]?.sha ?? '',
@@ -226,9 +225,9 @@ async function listPulls(ctx: Ctx<C>, repo: RepoRow): Promise<Reply> {
   return pagedReply(ctx, await Promise.all(kept.map((r) => pullJson(ctx, repo, r))))
 }
 
-// A pull request needs a head and a base that are branches here, a head that
-// holds something its base does not, and no open pull request between the
-// same two already. Each refusal is GitHub's. A head may be spelled
+// A pull request needs a head and a base that are branches here, sharing
+// history, a head that holds something its base does not, and no open pull
+// request between the same two already. Each refusal is GitHub's. A head may be spelled
 // `owner:branch`, and names this repository's branch when the owner is its
 // own; the fake opens no pull request across repositories.
 async function createPull(ctx: Ctx<C>, repo: RepoRow): Promise<Reply> {
@@ -275,12 +274,19 @@ async function createPull(ctx: Ctx<C>, repo: RepoRow): Promise<Reply> {
     createdAt: CREATED_AT,
     updatedAt: CREATED_AT,
   }
-  const state = await pullState(ctx, repo, draft)
-  if (state.range.ahead.length === 0) {
-    return custom(`No commits between ${baseBranch} and ${headBranch}`)
+  const [from, to] = await Promise.all(
+    [baseBranch, headBranch].map((name) => resolveRef(ctx.db, ctx.tenant, repo, name)),
+  )
+  const range =
+    from === null || from === undefined || to === null || to === undefined
+      ? null
+      : await rangeOf(ctx.db, ctx.tenant, repo, from, to)
+  if (range === null) {
+    return custom(`The ${headBranch} branch has no history in common with ${baseBranch}`)
   }
+  if (range.ahead.length === 0) return custom(`No commits between ${baseBranch} and ${headBranch}`)
   const number = await nextNumber(ctx.db, ctx.tenant, repo)
-  const row: PullRow = { ...draft, number, headSha: state.head }
+  const row: PullRow = { ...draft, number, headSha: range.after }
   await ctx.db.githubPull.create({
     data: { tenant: ctx.tenant, repo: repo.fullName, ...row, seq: number },
   })
@@ -399,6 +405,16 @@ function unprocessable(reason: string, documentation = 'https://docs.github.com/
 // its documented reply rather than measured.
 const OFF_THE_DIFF =
   "Pull request review thread line must be part of the diff and Pull request review thread diff hunk can't be blank"
+
+// The commit a review or a comment is made against: one of the pull
+// request's own commits, or its head when none is named, as GitHub defaults
+// it. Null for any other sha, which is refused in GitHub's field-refusal
+// shape; the exact wording is not measured.
+function reviewedCommit(state: PullState, body: Record<string, JsonValue>): string | null {
+  const named = str(body, 'commit_id')
+  if (named === '') return state.head
+  return state.range.ahead.some((c) => c.sha === named) ? named : null
+}
 
 type Placement = Pick<
   ReviewCommentRow,
@@ -564,6 +580,13 @@ async function createReviewComment(ctx: Ctx<C>, repo: RepoRow): Promise<Reply> {
     placed = place(state, body)
   }
   if (placed === null) return unprocessable(OFF_THE_DIFF, COMMENT_DOCS)
+  const commitId = reviewedCommit(state, body)
+  if (commitId === null) {
+    return validationFailed(
+      [{ resource: 'PullRequestReviewComment', code: 'invalid', field: 'commit_id' }],
+      COMMENT_DOCS,
+    )
+  }
   const { comments } = await recordReview(
     ctx,
     repo,
@@ -572,7 +595,7 @@ async function createReviewComment(ctx: Ctx<C>, repo: RepoRow): Promise<Reply> {
       user: DEFAULT_LOGIN,
       body: '',
       state: 'COMMENTED',
-      commitId: str(body, 'commit_id') || state.head,
+      commitId,
       submittedAt: COMMENTED_AT,
     },
     [{ ...placed, body: text, inReplyTo }],
@@ -632,6 +655,13 @@ async function createReview(ctx: Ctx<C>, repo: RepoRow): Promise<Reply> {
     if (placed === null) return unprocessable(OFF_THE_DIFF)
     comments.push({ ...placed, body: str(record(spec), 'body'), inReplyTo: 0 })
   }
+  const commitId = reviewedCommit(pull, body)
+  if (commitId === null) {
+    return validationFailed(
+      [{ resource: 'PullRequestReview', code: 'invalid', field: 'commit_id' }],
+      REVIEW_DOCS,
+    )
+  }
   const { review } = await recordReview(
     ctx,
     repo,
@@ -640,7 +670,7 @@ async function createReview(ctx: Ctx<C>, repo: RepoRow): Promise<Reply> {
       user: DEFAULT_LOGIN,
       body: text,
       state,
-      commitId: str(body, 'commit_id') || pull.head,
+      commitId,
       submittedAt: REVIEWED_AT,
     },
     comments,
@@ -843,14 +873,16 @@ export async function pullRequestNode(
         after,
       ),
     // Oldest first, as GitHub lists them; `last` is the newest few, which is
-    // how `gh pr checks` reaches the head commit's rollup.
+    // how `gh pr checks` reaches the head commit's rollup. The page starts
+    // where those few do, so its cursors count from the oldest commit.
     commits: async ({ first, last, after }: PageArgs & { last?: number | null }) => {
       const nodes = [...(await now()).range.ahead]
         .reverse()
         .map((commit) => ({ commit: commitNode(ctx, repo, commit) }))
-      const kept = typeof last === 'number' ? nodes.slice(Math.max(0, nodes.length - last)) : nodes
-      const connection = page(kept, last ?? first, after)
-      return { ...connection, totalCount: nodes.length }
+      if (typeof last !== 'number') return page(nodes, first, after)
+      const from = after ? Number(Buffer.from(after, 'base64').toString()) : 0
+      const start = Math.max(from, nodes.length - last)
+      return page(nodes, last, Buffer.from(String(start)).toString('base64'))
     },
     closingIssuesReferences: ({ first, after }: PageArgs) => page(closing, first, after),
     projectCards: () => {

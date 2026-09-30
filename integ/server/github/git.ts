@@ -36,16 +36,19 @@ import {
   headOf,
   keepRoot,
   keepTree,
+  peeled,
   reaches,
   repoIsEmpty,
   resolveRef,
   stageTree,
   stagedTree,
+  tagObject,
+  tagRefs,
   treeAt,
   treeOfBranch,
   visibleHeadOf,
 } from './store.ts'
-import type { RepoRow } from './store.ts'
+import type { RepoRow, TagRow } from './store.ts'
 import {
   authedRoute,
   everywhere,
@@ -304,52 +307,13 @@ async function headSha(ctx: Ctx<C>, repo: RepoRow, branch: string): Promise<stri
   return head[0]?.sha ?? ''
 }
 
-interface TagRow {
-  sha: string
-  tag: string
-  message: string
-  objectSha: string
-  objectType: string
-  taggerJson: string
-}
-
-interface TagRefRow {
-  name: string
-  sha: string
-}
-
-async function tagObject(ctx: Ctx<C>, repo: RepoRow, sha: string): Promise<TagRow | null> {
-  return (await ctx.db.githubTag.findFirst({
-    where: { tenant: ctx.tenant, repo: repo.fullName, sha },
-  })) as TagRow | null
-}
-
-async function tagRefs(ctx: Ctx<C>, repo: RepoRow): Promise<TagRefRow[]> {
-  return (await ctx.db.githubTagRef.findMany({
-    where: { tenant: ctx.tenant, repo: repo.fullName },
-    orderBy: { name: 'asc' },
-  })) as TagRefRow[]
-}
-
 // What a full sha names here, for a tag to point at: an annotated tag object
 // or a commit, by its whole sha, as git objects are named. Null for anything
 // else, which is how GitHub's "Object does not exist" reads.
 async function objectType(ctx: Ctx<C>, repo: RepoRow, sha: string): Promise<string | null> {
-  if ((await tagObject(ctx, repo, sha)) !== null) return 'tag'
+  if ((await tagObject(ctx.db, ctx.tenant, repo, sha)) !== null) return 'tag'
   const at = await resolveRef(ctx.db, ctx.tenant, repo, sha)
   return at !== null && at.branch === null && at.history[0]?.sha === sha ? 'commit' : null
-}
-
-// The commit a tag names, through any tag objects between.
-async function peeled(ctx: Ctx<C>, repo: RepoRow, sha: string): Promise<string> {
-  const seen = new Set<string>()
-  let at = sha
-  for (let tag = await tagObject(ctx, repo, at); tag !== null && !seen.has(at); ) {
-    seen.add(at)
-    at = tag.objectSha
-    tag = await tagObject(ctx, repo, at)
-  }
-  return at
 }
 
 function tagJson(repo: RepoRow, row: TagRow): JsonValue {
@@ -408,7 +372,7 @@ const createTag = withRepo(async (ctx, repo) => {
   row.sha = commitSha(
     ['tag', repo.fullName, row.tag, object, type, row.message, taggerJson].join('\0'),
   )
-  if ((await tagObject(ctx, repo, row.sha)) === null) {
+  if ((await tagObject(ctx.db, ctx.tenant, repo, row.sha)) === null) {
     const count = await ctx.db.githubTag.count({
       where: { tenant: ctx.tenant, repo: repo.fullName },
     })
@@ -420,14 +384,14 @@ const createTag = withRepo(async (ctx, repo) => {
 })
 
 const getTag = withRepo(async (ctx, repo) => {
-  const row = await tagObject(ctx, repo, param(ctx, 'sha'))
+  const row = await tagObject(ctx.db, ctx.tenant, repo, param(ctx, 'sha'))
   return row === null ? fail(404, 'Not Found') : { status: 200, body: tagJson(repo, row) }
 })
 
 // A tag ref names a commit or an annotated tag object by its whole sha.
 async function createTagRef(ctx: Ctx<C>, repo: RepoRow, name: string, sha: string) {
   if (name === '') return fail(422, 'Invalid request.\n\n"ref" is invalid.')
-  if ((await tagRefs(ctx, repo)).some((row) => row.name === name)) {
+  if ((await tagRefs(ctx.db, ctx.tenant, repo)).some((row) => row.name === name)) {
     return fail(422, 'Reference already exists')
   }
   const type = await objectType(ctx, repo, sha)
@@ -446,10 +410,10 @@ async function createTagRef(ctx: Ctx<C>, repo: RepoRow, name: string, sha: strin
 // to the commit it names.
 const listTags = withRepo(async (ctx, repo) => {
   const api = `https://api.github.com/repos/${repo.fullName}`
-  const rows = (await tagRefs(ctx, repo)).sort((a, b) => (a.name < b.name ? 1 : -1))
+  const rows = (await tagRefs(ctx.db, ctx.tenant, repo)).sort((a, b) => (a.name < b.name ? 1 : -1))
   const items: JsonValue[] = []
   for (const row of rows) {
-    const commit = await peeled(ctx, repo, row.sha)
+    const commit = await peeled(ctx.db, ctx.tenant, repo, row.sha)
     items.push({
       name: row.name,
       zipball_url: `${api}/zipball/refs/tags/${row.name}`,
@@ -473,8 +437,8 @@ async function refsOf(
     const sha = await headSha(ctx, repo, name)
     if (sha !== '') out.push({ ref: `heads/${name}`, sha, type: 'commit' })
   }
-  for (const row of await tagRefs(ctx, repo)) {
-    const tag = await tagObject(ctx, repo, row.sha)
+  for (const row of await tagRefs(ctx.db, ctx.tenant, repo)) {
+    const tag = await tagObject(ctx.db, ctx.tenant, repo, row.sha)
     out.push({ ref: `tags/${row.name}`, sha: row.sha, type: tag === null ? 'commit' : 'tag' })
   }
   return out

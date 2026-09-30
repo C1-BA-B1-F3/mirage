@@ -17,14 +17,7 @@ import type { Ctx, JsonValue, KitRoute } from '../kit/typescript/index.ts'
 import { API_PREFIXES, DEFAULT_LOGIN, REPO_DATE } from './config.ts'
 import type { C } from './config.ts'
 import { commitChanges } from './compare.ts'
-import {
-  PROJECTS_CLASSIC_GONE,
-  commitIdentity,
-  commitJson,
-  commitSha,
-  nodeId,
-  ownerNode,
-} from './wire.ts'
+import { PROJECTS_CLASSIC_GONE, commitIdentity, commitJson, nodeId, ownerNode } from './wire.ts'
 import type { CommitRow } from './wire.ts'
 import { createReposAllowed, initRepo } from './seed.ts'
 import { commentConnection, issueConnection, issueNode, issueRow } from './issues.ts'
@@ -84,16 +77,23 @@ export function repoJson(repo: RepoRow): JsonValue {
   }
 }
 
+// An account's id, from its login alone so it is the same on every run:
+// FNV-1a, which spreads the bytes and protects nothing, as an id needs.
+function accountId(login: string): number {
+  let hash = 0x811c9dc5
+  for (const byte of Buffer.from(login)) hash = Math.imul(hash ^ byte, 0x01000193) >>> 0
+  return hash & 0x7fffffff
+}
+
 /**
- * One account as `/users/{login}` reports it. The id is derived from the login
- * so it is the same on every run, and `public_repos` counts the repositories
- * the account owns here.
+ * One account as `/users/{login}` reports it. `public_repos` counts the
+ * repositories the account owns here.
  */
 export function accountJson(account: AccountRow, repos: RepoRow[]): JsonValue {
   const login = account.login
   return {
     login,
-    id: Number.parseInt(commitSha(`account\0${login}`).slice(0, 7), 16),
+    id: accountId(login),
     node_id: nodeId(account.type === 'User' ? '04:User' : '012:Organization', login),
     html_url: `https://github.com/${login}`,
     type: account.type,

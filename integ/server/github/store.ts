@@ -322,10 +322,54 @@ export interface Resolved {
   history: CommitRow[]
 }
 
-// A branch first, the way git prefers a ref to an object, then one commit by
-// its full or abbreviated sha: any commit the repository holds, a dangling one
-// included, or a branch's synthesized root. A prefix two commits share names
-// neither.
+export interface TagRow {
+  sha: string
+  tag: string
+  message: string
+  objectSha: string
+  objectType: string
+  taggerJson: string
+}
+
+export interface TagRefRow {
+  name: string
+  sha: string
+}
+
+export async function tagObject(
+  db: C,
+  tenant: string,
+  repo: RepoRow,
+  sha: string,
+): Promise<TagRow | null> {
+  return (await db.githubTag.findFirst({
+    where: { tenant, repo: repo.fullName, sha },
+  })) as TagRow | null
+}
+
+export async function tagRefs(db: C, tenant: string, repo: RepoRow): Promise<TagRefRow[]> {
+  return (await db.githubTagRef.findMany({
+    where: { tenant, repo: repo.fullName },
+    orderBy: { name: 'asc' },
+  })) as TagRefRow[]
+}
+
+// The commit a tag names, through any tag objects between.
+export async function peeled(db: C, tenant: string, repo: RepoRow, sha: string): Promise<string> {
+  const seen = new Set<string>()
+  let at = sha
+  for (let tag = await tagObject(db, tenant, repo, at); tag !== null && !seen.has(at); ) {
+    seen.add(at)
+    at = tag.objectSha
+    tag = await tagObject(db, tenant, repo, at)
+  }
+  return at
+}
+
+// A branch first, the way git prefers a ref to an object, then a tag, bare or
+// qualified, at the commit it peels to, then one commit by its full or
+// abbreviated sha: any commit the repository holds, a dangling one included,
+// or a branch's synthesized root. A prefix two commits share names neither.
 export async function resolveRef(
   db: C,
   tenant: string,
@@ -334,7 +378,14 @@ export async function resolveRef(
 ): Promise<Resolved | null> {
   const branch = await branchFor(db, tenant, repo, ref)
   if (branch !== null) return { branch, history: await commitList(db, tenant, repo, branch) }
-  if (ref === null || !ABBREVIATED_SHA.test(ref)) return null
+  if (ref === null) return null
+  const name = ref.replace(/^(?:refs\/)?tags\//, '')
+  const tag = (await tagRefs(db, tenant, repo)).find((row) => row.name === name)
+  if (tag !== undefined) {
+    const sha = await peeled(db, tenant, repo, tag.sha)
+    return { branch: null, history: historyFrom(sha, await commitsBySha(db, tenant, repo)) }
+  }
+  if (!ABBREVIATED_SHA.test(ref)) return null
   const want = ref.toLowerCase()
   const found = new Set<string>()
   const stored = await db.githubCommit.findMany({

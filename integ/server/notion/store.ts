@@ -14,12 +14,25 @@
 
 import type { C } from './config.ts'
 import { blockToMd } from './text.ts'
-import type { BlockRow, MetaRow } from './types.ts'
+import type { BlockRow, DatabaseRow, MetaRow } from './types.ts'
+import { databaseIdOf } from './wire.ts'
 
 export async function metaOf(db: C, tenant: string): Promise<MetaRow> {
   const row = await db.notionMeta.findUnique({ where: { tenant } })
   if (row === null) throw new Error(`notion fake: no meta row for tenant ${tenant}`)
   return row
+}
+
+// The database a data source id belongs to. The fake derives one data source
+// per database, so this is `dataSourceIdOf` run backwards over every database.
+export async function dataSourceOwner(
+  db: C,
+  tenant: string,
+  dataSourceId: string,
+): Promise<DatabaseRow | null> {
+  const all = (await db.notionDatabase.findMany({ where: { tenant } })) as DatabaseRow[]
+  const owner = databaseIdOf(dataSourceId, all)
+  return all.find((row) => row.id === owner) ?? null
 }
 
 export async function childrenOf(db: C, tenant: string, parentId: string): Promise<BlockRow[]> {

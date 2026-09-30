@@ -64,6 +64,9 @@ model GithubRepo {
   issues      GithubIssue[]
   pulls       GithubPull[]
   reviews     GithubReview[]
+  reviewComments GithubReviewComment[]
+  tags        GithubTag[]
+  tagRefs     GithubTagRef[]
   releases    GithubRelease[]
   comments    GithubComment[]
   workflows   GithubWorkflow[]
@@ -143,10 +146,6 @@ model GithubCommit {
   message       String
   authorLogin   String
   date          String
-  // Paths this commit touched, as a JSON array of strings. The vendor reports
-  // them as objects carrying a status; the fixture states the paths and the
-  // renderer adds the rest.
-  filesJson     String @default("[]")
   // The staged tree this commit points at, for the git plumbing write path.
   // Empty on a seeded commit, which has no staged tree behind it.
   treeSha       String @default("")
@@ -247,6 +246,35 @@ model GithubReview {
   state       String
   commitId    String
   submittedAt String
+  seq         Int
+
+  repository GithubRepo @relation(fields: [tenant, repo], references: [tenant, fullName])
+
+  @@index([tenant, repo, pullNumber])
+}
+
+// A comment on one line of a pull request's diff, or on one file of it. A
+// review's comments carry that review's id; a reply carries the comment it
+// answers and inherits its place.
+model GithubReviewComment {
+  pk          Int    @id @default(autoincrement())
+  tenant      String
+  repo        String
+  pullNumber  Int
+  id          Int
+  reviewId    Int    @default(0)
+  inReplyTo   Int    @default(0)
+  user        String
+  body        String
+  path        String
+  line        Int    @default(0)
+  side        String @default("RIGHT")
+  startLine   Int    @default(0)
+  startSide   String @default("")
+  subjectType String @default("line")
+  commitId    String
+  diffHunk    String @default("")
+  createdAt   String
   seq         Int
 
   repository GithubRepo @relation(fields: [tenant, repo], references: [tenant, fullName])
@@ -399,4 +427,52 @@ model GithubSetting {
   tenant      String  @id
   // POST /user/repos answers 403 when false; fork and rename stay available.
   createRepos Boolean @default(true)
+}
+
+// An annotated tag object, which exists by its sha before any ref names it,
+// as it does in git.
+model GithubTag {
+  pk         Int    @id @default(autoincrement())
+  tenant     String
+  repo       String
+  sha        String
+  tag        String
+  message    String
+  objectSha  String
+  objectType String
+  taggerJson String @default("")
+  seq        Int
+
+  repository GithubRepo @relation(fields: [tenant, repo], references: [tenant, fullName])
+
+  @@index([tenant, repo])
+}
+
+// A ref under refs/tags/, pointing at a commit or at an annotated tag object.
+model GithubTagRef {
+  pk     Int    @id @default(autoincrement())
+  tenant String
+  repo   String
+  name   String
+  sha    String
+  seq    Int
+
+  repository GithubRepo @relation(fields: [tenant, repo], references: [tenant, fullName])
+
+  @@unique([tenant, repo, name])
+  @@index([tenant, repo])
+}
+
+// An account a fixture states, with the name and dates user search reads.
+model GithubAccount {
+  pk        Int    @id @default(autoincrement())
+  tenant    String
+  login     String
+  type      String @default("User")
+  name      String @default("")
+  email     String @default("")
+  createdAt String @default("2026-01-01T00:00:00Z")
+  seq       Int
+
+  @@unique([tenant, login])
 }

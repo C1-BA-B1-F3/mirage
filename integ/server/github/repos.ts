@@ -12,16 +12,27 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import type { JsonValue, KitRoute } from '../kit/typescript/index.ts'
-import { API_PREFIXES, DEFAULT_LOGIN } from './config.ts'
+import { stripSlash } from '../kit/typescript/index.ts'
+import type { Ctx, JsonValue, KitRoute } from '../kit/typescript/index.ts'
+import { API_PREFIXES, DEFAULT_LOGIN, REPO_DATE } from './config.ts'
 import type { C } from './config.ts'
-import { PROJECTS_CLASSIC_GONE, commitJson, nodeId, ownerNode } from './wire.ts'
+import { commitChanges } from './compare.ts'
+import {
+  PROJECTS_CLASSIC_GONE,
+  commitIdentity,
+  commitJson,
+  commitSha,
+  nodeId,
+  ownerNode,
+} from './wire.ts'
+import type { CommitRow } from './wire.ts'
 import { createReposAllowed, initRepo } from './seed.ts'
 import { commentConnection, issueConnection, issueNode, issueRow } from './issues.ts'
 import type { IssueRow, IssuesArgs } from './issues.ts'
 import { pullRequestConnection, pullRequestNode, pullRow } from './pulls.ts'
 import type { PullRequestsArgs, PullRow } from './pulls.ts'
 import {
+  accountsOf,
   addBranch,
   allRepos,
   delegateFor,
@@ -35,7 +46,7 @@ import {
   scope,
   treeOfBranch,
 } from './store.ts'
-import type { RepoRow } from './store.ts'
+import type { AccountRow, RepoRow } from './store.ts'
 import {
   authedRoute as authed,
   everywhere,
@@ -73,8 +84,33 @@ export function repoJson(repo: RepoRow): JsonValue {
   }
 }
 
-// Every date the fresh-repository defaults report, unless a fixture states one.
-const REPO_DATE = '2026-01-01T00:00:00Z'
+/**
+ * One account as `/users/{login}` reports it. The id is derived from the login
+ * so it is the same on every run, and `public_repos` counts the repositories
+ * the account owns here.
+ */
+export function accountJson(account: AccountRow, repos: RepoRow[]): JsonValue {
+  const login = account.login
+  return {
+    login,
+    id: Number.parseInt(commitSha(`account\0${login}`).slice(0, 7), 16),
+    node_id: nodeId(account.type === 'User' ? '04:User' : '012:Organization', login),
+    html_url: `https://github.com/${login}`,
+    type: account.type,
+    site_admin: false,
+    name: account.name === '' ? null : account.name,
+    email: account.email === '' ? null : account.email,
+    public_repos: repos.filter((repo) => repo.owner.toLowerCase() === login.toLowerCase()).length,
+    created_at: account.createdAt,
+    updated_at: account.createdAt,
+  }
+}
+
+/** One of a repository's dates, its fixture's or the fresh-repository default. */
+export function repoDate(repo: RepoRow, key: string): string {
+  const value = metaOf(repo)[key]
+  return typeof value === 'string' ? value : REPO_DATE
+}
 
 /**
  * The GraphQL `Repository` for one row: the same facts the REST object reports,
@@ -125,10 +161,10 @@ export async function repositoryNode(
     sshUrl: `git@github.com:${repo.fullName}.git`,
     mirrorUrl: null,
     securityPolicyUrl: null,
-    createdAt: text('created_at') ?? REPO_DATE,
-    pushedAt: text('pushed_at') ?? REPO_DATE,
-    updatedAt: text('updated_at') ?? REPO_DATE,
-    archivedAt: meta.archived === true ? (text('updated_at') ?? REPO_DATE) : null,
+    createdAt: repoDate(repo, 'created_at'),
+    pushedAt: repoDate(repo, 'pushed_at'),
+    updatedAt: repoDate(repo, 'updated_at'),
+    archivedAt: meta.archived === true ? repoDate(repo, 'updated_at') : null,
     isBlankIssuesEnabled: true,
     isSecurityPolicyEnabled: false,
     hasIssuesEnabled: meta.has_issues !== false,
@@ -233,15 +269,13 @@ export async function repositoryNode(
 /** The value a GraphQL `RepositoryOrder` field sorts one repository by. */
 function orderKey(repo: RepoRow, field: string): string | number {
   const meta = metaOf(repo)
-  const date = (key: string): string =>
-    typeof meta[key] === 'string' ? (meta[key] as string) : REPO_DATE
   if (field === 'NAME') return repo.name
   if (field === 'STARGAZERS') {
     return typeof meta.stargazers_count === 'number' ? meta.stargazers_count : 0
   }
-  if (field === 'CREATED_AT') return date('created_at')
-  if (field === 'UPDATED_AT') return date('updated_at')
-  return date('pushed_at')
+  if (field === 'CREATED_AT') return repoDate(repo, 'created_at')
+  if (field === 'UPDATED_AT') return repoDate(repo, 'updated_at')
+  return repoDate(repo, 'pushed_at')
 }
 
 interface RepositoriesArgs {
@@ -322,16 +356,18 @@ export function repoRoutes(): KitRoute<C>[] {
         body: { login: DEFAULT_LOGIN, name: DEFAULT_LOGIN, type: 'User' },
       })),
     ),
-    // Whether a named owner is the user or an organization.
+    // One account, by login in any case, the way GitHub reads one.
     route<C>(
       'GET',
       `${p}/users/:owner`,
-      authed((ctx) => {
-        const owner = param(ctx, 'owner')
-        return {
-          status: 200,
-          body: { login: owner, type: owner === DEFAULT_LOGIN ? 'User' : 'Organization' },
-        }
+      authed(async (ctx) => {
+        const login = param(ctx, 'owner').toLowerCase()
+        const found = (await accountsOf(ctx.db, ctx.tenant)).find(
+          (account) => account.login.toLowerCase() === login,
+        )
+        if (found === undefined) return fail(404, 'Not Found')
+        const repos = await allRepos(ctx.db, ctx.tenant)
+        return { status: 200, body: accountJson(found, repos) }
       }),
     ),
     // The API root, so a client probing it gets "this is a GitHub API" rather
@@ -407,12 +443,11 @@ export function repoRoutes(): KitRoute<C>[] {
       'GET',
       `${p}/repos/:owner/:repo/commits`,
       authed(
-        // Not paged, unlike the repository list: the vendor pages this one and
-        // the fake this replaces answered the whole history, which is what the
-        // goldens record. `sha` is "SHA or branch to start listing commits
-        // from", so a commit, full or abbreviated, starts the list at itself.
-        // One that names nothing is 404, measured against GitHub (2026-09-29);
-        // listing the default branch instead answered a question nobody asked.
+        // `sha` is "SHA or branch to start listing commits from", so a commit,
+        // full or abbreviated, starts the list at itself. One that names
+        // nothing is 404, measured against GitHub (2026-09-29); listing the
+        // default branch instead answered a question nobody asked. The list
+        // is filtered, then paged the way the repository list is.
         withRepo(async (ctx, repo) => {
           if (await repoIsEmpty(ctx.db, ctx.tenant, repo)) {
             return fail(409, 'Git Repository is empty.')
@@ -420,13 +455,46 @@ export function repoRoutes(): KitRoute<C>[] {
           const at = await resolveRef(ctx.db, ctx.tenant, repo, ctx.query.get('sha') ?? '')
           if (at === null) return fail(404, 'Not Found')
           if (at.history.length === 0) return fail(409, 'Git Repository is empty.')
-          return { status: 200, body: at.history.map(commitJson) }
+          return pagedReply(ctx, (await commitsMatching(ctx, repo, at.history)).map(commitJson))
         }),
       ),
     ),
-    // Tag refs are not modeled; releases alone do not create git tags here.
-    route<C>('GET', `${p}/repos/:owner/:repo/tags`, authed(withRepo((ctx) => pagedReply(ctx, [])))),
   ])
+}
+
+// The filters `commits` reads. `since` and `until` bound the commit date, and
+// one that is no date bounds everything out, as GitHub's does (measured
+// 2026-09-29: `since=abc` answers `[]`). `author` is the author's login or
+// email. `path` keeps the commits whose change against their first parent
+// touches that file or anything under it, a rename's old name included.
+async function commitsMatching(
+  ctx: Ctx<C>,
+  repo: RepoRow,
+  history: CommitRow[],
+): Promise<CommitRow[]> {
+  const since = ctx.query.get('since')
+  const until = ctx.query.get('until')
+  const author = (ctx.query.get('author') ?? '').toLowerCase()
+  const path = stripSlash(ctx.query.get('path') ?? '')
+  const kept: CommitRow[] = []
+  for (const [i, row] of history.entries()) {
+    const who = commitIdentity(row)
+    const when = Date.parse(who.committed)
+    if (since !== null && !(when >= Date.parse(since))) continue
+    if (until !== null && !(when <= Date.parse(until))) continue
+    if (author !== '' && who.login.toLowerCase() !== author && who.email.toLowerCase() !== author)
+      continue
+    if (path !== '') {
+      const changes = await commitChanges(ctx.db, ctx.tenant, repo, history.slice(i))
+      const touched = changes.flatMap((c) => [
+        c.filename,
+        ...(c.previous === null ? [] : [c.previous]),
+      ])
+      if (!touched.some((p) => p === path || p.startsWith(`${path}/`))) continue
+    }
+    kept.push(row)
+  }
+  return kept
 }
 
 const listRepos: Handler = async (ctx) => {

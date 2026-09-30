@@ -15,6 +15,8 @@
 import { route } from '../kit/typescript/index.ts'
 import type { Ctx, JsonValue, KitRoute, Reply } from '../kit/typescript/index.ts'
 import type { C } from './config.ts'
+import { unifiedDiff } from './diff.ts'
+import type { FileChange } from './diff.ts'
 import { errorBody } from './wire.ts'
 import { repoByName } from './store.ts'
 import type { RepoRow } from './store.ts'
@@ -29,6 +31,15 @@ export function fail(status: number, message: string): Reply {
   return { status, body: errorBody(message) }
 }
 
+// GitHub's 422 for a request whose fields it read and refused, each refusal
+// named in `errors`, with the page of the docs that describes the endpoint.
+export function validationFailed(errors: JsonValue[], documentation: string): Reply {
+  return {
+    status: 422,
+    body: { message: 'Validation Failed', errors, documentation_url: documentation, status: '422' },
+  }
+}
+
 // Every repository route refuses an unauthenticated caller before it looks
 // anything up, which is what the vendor does and what a golden pins: an
 // anonymous read of a private-by-default fake is 401, not 404.
@@ -37,6 +48,24 @@ export function authedRoute(fn: Handler): Handler {
     const auth = ctx.headers.authorization
     if (auth === undefined || auth === '') return fail(401, 'Requires authentication')
     return await fn(ctx)
+  }
+}
+
+// A pull request, a comparison or a commit asked for as
+// `application/vnd.github.diff` answers its unified diff as text instead of
+// its JSON; null when the caller asked for JSON. Asked for as a patch, which
+// GitHub answers with `git format-patch` mail per commit, it refuses rather
+// than answer JSON the caller would print as a patch.
+export function diffReply(ctx: Ctx<C>, changes: FileChange[]): Reply | null {
+  const accept = ctx.headers.accept ?? ''
+  if (accept.includes('patch')) {
+    return fail(415, 'A patch is a mail per commit, which the integ fake does not model.')
+  }
+  if (!accept.includes('diff')) return null
+  return {
+    status: 200,
+    body: Buffer.from(unifiedDiff(changes)),
+    headers: { 'Content-Type': 'text/plain' },
   }
 }
 

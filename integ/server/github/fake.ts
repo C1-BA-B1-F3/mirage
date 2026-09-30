@@ -30,6 +30,7 @@ export const githubFake: Fake<C> = {
     comments: 'GithubComment',
     workflows: 'GithubWorkflow',
     runs: 'GithubRun',
+    accounts: 'GithubAccount',
   },
   // A repository's files come from the directory its row names, and every
   // repository starts with the same checks and statuses. Neither is stateable

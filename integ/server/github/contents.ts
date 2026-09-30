@@ -15,16 +15,9 @@
 import type { JsonValue, KitRoute } from '../kit/typescript/index.ts'
 import { API_PREFIXES } from './config.ts'
 import type { C } from './config.ts'
-import {
-  blobSha,
-  commitFiles,
-  commitJson,
-  commitSha,
-  pathsOf,
-  personJson,
-  treeSha,
-  writtenCommitJson,
-} from './wire.ts'
+import { commitChanges } from './compare.ts'
+import { changeJson } from './diff.ts'
+import { blobSha, commitJson, commitSha, personJson, treeSha, writtenCommitJson } from './wire.ts'
 import type { GitPerson } from './wire.ts'
 import {
   blobBySha,
@@ -43,7 +36,17 @@ import {
   visibleHeadOf,
 } from './store.ts'
 import type { RepoRow, Tree } from './store.ts'
-import { authedRoute, everywhere, fail, jsonBodyOf, param, route, str, withRepo } from './http.ts'
+import {
+  authedRoute,
+  diffReply,
+  everywhere,
+  fail,
+  jsonBodyOf,
+  param,
+  route,
+  str,
+  withRepo,
+} from './http.ts'
 import type { C as Client } from './config.ts'
 import { stripSlash } from '../kit/typescript/index.ts'
 
@@ -118,7 +121,6 @@ export async function recordCommit(
   tenant: string,
   repo: RepoRow,
   message: string,
-  paths: string[],
   branch: string,
   tree = '',
   people: { author: GitPerson | null; committer: GitPerson | null } = {
@@ -159,7 +161,6 @@ export async function recordCommit(
       message,
       authorLogin: '',
       date: '',
-      filesJson: JSON.stringify(paths),
       treeSha: stored,
       authorJson,
       committerJson,
@@ -277,7 +278,6 @@ const putContents = withRepo(async (ctx, repo) => {
     ctx.tenant,
     repo,
     message,
-    [path],
     branch,
     '',
     undefined,
@@ -313,7 +313,6 @@ const deleteContents = withRepo(async (ctx, repo) => {
     ctx.tenant,
     repo,
     message,
-    [path],
     branch,
     '',
     undefined,
@@ -345,11 +344,21 @@ const readme = withRepo(async (ctx, repo) => {
 const oneCommit = withRepo(async (ctx, repo) => {
   if (await repoIsEmpty(ctx.db, ctx.tenant, repo)) return fail(409, 'Git Repository is empty.')
   const ref = param(ctx, 'ref')
-  const hit = (await resolveRef(ctx.db, ctx.tenant, repo, ref))?.history[0]
+  const history = (await resolveRef(ctx.db, ctx.tenant, repo, ref))?.history ?? []
+  const [hit, parent] = history
   if (hit === undefined) return fail(422, `No commit found for SHA: ${ref}`)
+  const changes = await commitChanges(ctx.db, ctx.tenant, repo, history)
+  const diff = diffReply(ctx, changes)
+  if (diff !== null) return diff
+  const additions = changes.reduce((n, c) => n + c.additions, 0)
+  const deletions = changes.reduce((n, c) => n + c.deletions, 0)
   return {
     status: 200,
-    body: { ...(commitJson(hit) as Record<string, JsonValue>), files: commitFiles(pathsOf(hit)) },
+    body: {
+      ...(commitJson(hit) as Record<string, JsonValue>),
+      stats: { total: additions + deletions, additions, deletions },
+      files: changes.map((c) => changeJson(repo.fullName, c, parent?.sha ?? '', hit.sha)),
+    },
   }
 })
 

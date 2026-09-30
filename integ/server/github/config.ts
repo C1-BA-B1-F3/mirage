@@ -34,6 +34,9 @@ export const ROOT_COMMIT_DATE = '1970-01-01T00:00:00Z'
 // and because a fake whose commits move with the wall clock cannot be the fixed
 // point a benchmark compares against.
 export const WRITE_COMMIT_DATE = '2026-01-01T00:00:00Z'
+// What a repository or an account reports as its dates when no fixture states
+// them.
+export const REPO_DATE = '2026-01-01T00:00:00Z'
 // A file at or over this size is not indexed for code search, which is
 // GitHub's own documented limit.
 export const SEARCH_SIZE_LIMIT = 384 * 1024

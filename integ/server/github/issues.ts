@@ -158,7 +158,7 @@ async function getIssue(ctx: Ctx<C>, repo: RepoRow): Promise<Reply> {
   if (row !== null) return { status: 200, body: issueJson(repo, row) }
   const pull = await pullRow(ctx.db, ctx.tenant, repo, number)
   if (pull === null) return fail(404, 'Not Found')
-  const json = pullJson(repo, pull)
+  const json = await pullJson(ctx, repo, pull)
   return {
     status: 200,
     // A reference the client follows, so it carries the run the request came

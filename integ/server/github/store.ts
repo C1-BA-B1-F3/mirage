@@ -15,7 +15,7 @@
 import { Prisma } from '../../generated/github/index.js'
 import { deleteOrder, stripSlash, tenantWhere } from '../kit/typescript/index.ts'
 import type { Dmmf, JsonValue } from '../kit/typescript/index.ts'
-import { SEARCH_SIZE_LIMIT, config } from './config.ts'
+import { DEFAULT_LOGIN, REPO_DATE, SEARCH_SIZE_LIMIT, config } from './config.ts'
 import type { C } from './config.ts'
 import { blobSha, commitSha, rootCommit, rootSha, treeSha } from './wire.ts'
 import type { CommitRow } from './wire.ts'
@@ -256,7 +256,6 @@ export async function keepRoot(
       message: root.message,
       authorLogin: root.authorLogin,
       date: root.date,
-      filesJson: root.filesJson,
       treeSha: '',
       authorJson: '',
       committerJson: '',
@@ -535,6 +534,71 @@ export function historyFrom(head: string, byId: Map<string, CommitRow>): CommitR
   const last = walked.at(-1)
   if (last === undefined) return [rootCommit(head)]
   return last.parentSha === '' ? walked : [...walked, rootCommit(last.parentSha)]
+}
+
+// The files one commit recorded, or none for a commit that recorded nothing
+// the fake can still find.
+export async function commitTree(
+  db: C,
+  tenant: string,
+  repo: RepoRow,
+  commit: CommitRow,
+): Promise<Tree> {
+  return (await treeAt(db, tenant, repo, { branch: null, history: [commit] })) ?? new Map()
+}
+
+// Where two first-parent histories meet: the head's commits past that point,
+// newest first, and how many the base holds past it. Null when they never
+// meet, which is a different answer from meeting at the head.
+export interface Divergence {
+  ahead: CommitRow[]
+  behind: number
+  mergeBase: CommitRow
+}
+
+export function divergence(head: CommitRow[], base: CommitRow[]): Divergence | null {
+  const onBase = new Set(base.map((c) => c.sha))
+  const at = head.findIndex((c) => onBase.has(c.sha))
+  const mergeBase = head[at]
+  if (mergeBase === undefined) return null
+  return {
+    ahead: head.slice(0, at),
+    behind: base.findIndex((c) => c.sha === mergeBase.sha),
+    mergeBase,
+  }
+}
+
+export interface AccountRow {
+  login: string
+  type: string
+  name: string
+  email: string
+  createdAt: string
+}
+
+// Every account the tenant knows: each one a fixture states, the
+// authenticated user, and each repository owner no fixture states, which is
+// an organization unless it is that user, the way the fake has always typed
+// an owner. A login none of these name is no account.
+export async function accountsOf(db: C, tenant: string): Promise<AccountRow[]> {
+  const stated = (await db.githubAccount.findMany({
+    where: scope(tenant),
+    orderBy: { seq: 'asc' },
+  })) as AccountRow[]
+  const out = new Map(stated.map((row) => [row.login.toLowerCase(), row]))
+  const implied = [DEFAULT_LOGIN, ...(await allRepos(db, tenant)).map((repo) => repo.owner)]
+  for (const login of implied) {
+    if (out.has(login.toLowerCase())) continue
+    const user = login === DEFAULT_LOGIN
+    out.set(login.toLowerCase(), {
+      login,
+      type: user ? 'User' : 'Organization',
+      name: user ? login : '',
+      email: '',
+      createdAt: REPO_DATE,
+    })
+  }
+  return [...out.values()]
 }
 
 export function directoriesOf(files: Tree): Set<string> {

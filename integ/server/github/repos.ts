@@ -54,6 +54,7 @@ import {
   everywhere,
   fail,
   jsonBodyOf,
+  paged,
   pagedReply,
   param,
   route,
@@ -499,8 +500,10 @@ export function repoRoutes(): KitRoute<C>[] {
           const at = await resolveRef(ctx.db, ctx.tenant, repo, ctx.query.get('sha') ?? '')
           if (at === null) return fail(404, 'Not Found')
           if (at.history.length === 0) return fail(409, 'Git Repository is empty.')
-          const rows = await commitsMatching(ctx, repo, at.history)
-          return pagedReply(ctx, await commitsJson(ctx.db, ctx.tenant, repo, rows))
+          const page = paged(ctx, await commitsMatching(ctx, repo, at.history))
+          if (page === null) return fail(422, 'Validation Failed')
+          const body = await commitsJson(ctx.db, ctx.tenant, repo, page.items)
+          return { status: 200, body, headers: page.headers }
         }),
       ),
     ),

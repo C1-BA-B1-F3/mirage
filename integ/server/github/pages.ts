@@ -18,16 +18,7 @@ import type { C } from './config.ts'
 import { simpleUser } from './repos.ts'
 import { accountOf, branchFor, metaOf, repoByName, visibleHeadOf } from './store.ts'
 import type { RepoRow } from './store.ts'
-import {
-  authedRoute,
-  everywhere,
-  fail,
-  jsonBodyOf,
-  pagedReply,
-  param,
-  route,
-  withRepo,
-} from './http.ts'
+import { authedRoute, everywhere, fail, jsonBodyOf, paged, param, route, withRepo } from './http.ts'
 
 // One Pages build: the commit it built and who pushed it. Its id is its place
 // in the site's list, counting from 1.
@@ -209,17 +200,16 @@ async function buildJson(ctx: Ctx<C>, repo: RepoRow, build: Build, id: number): 
   }
 }
 
-// Newest first, as GitHub lists them.
+// Newest first, as GitHub lists them, paged before any build is rendered.
 async function listBuilds(ctx: Ctx<C>, repo: RepoRow): Promise<Reply> {
   const site = siteOf(repo)
   if (site === null) return noBuild('list-apiname-pages-builds')
   const builds = site.builds ?? []
+  const page = paged(ctx, builds.map((build, at) => ({ build, id: at + 1 })).reverse())
+  if (page === null) return fail(422, 'Validation Failed')
   const items: JsonValue[] = []
-  for (let at = builds.length - 1; at >= 0; at -= 1) {
-    const build = builds[at]
-    if (build !== undefined) items.push(await buildJson(ctx, repo, build, at + 1))
-  }
-  return pagedReply(ctx, items)
+  for (const { build, id } of page.items) items.push(await buildJson(ctx, repo, build, id))
+  return { status: 200, body: items, headers: page.headers }
 }
 
 // A requested build runs at once, but the request answers as GitHub's does,

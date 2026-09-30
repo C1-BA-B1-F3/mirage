@@ -43,6 +43,7 @@ import {
   stageTree,
   stagedTree,
   storeBlob,
+  subtreeOf,
   tagObject,
   tagRefs,
   treeAt,
@@ -101,9 +102,9 @@ const createBlob = withRepo(async (ctx, repo) => {
 // The base is `base_tree` when the caller named one, which is how a client
 // composes several staged trees into one commit: without it the second tree
 // starts from the branch again and silently drops everything the first one
-// added. Any tree id the fake reported names one, a commit's included. A name
-// that matches no tree falls back to the branch rather than failing, which is
-// what the fake this replaces did.
+// added. Any tree id the fake reported names one, a commit's or one
+// directory's included. A name that matches no tree falls back to the branch
+// rather than failing, which is what the fake this replaces did.
 const createTree = withRepo(async (ctx, repo) => {
   const body = jsonBodyOf(ctx)
   // `tree` is required, and a body that omits it or spells it as anything but
@@ -117,7 +118,10 @@ const createTree = withRepo(async (ctx, repo) => {
   const entries = body.tree
   const base = str(body, 'base_tree')
   const named = base === '' ? null : await treeById(ctx.db, ctx.tenant, repo, base)
-  const files = named ?? (await treeOfBranch(ctx.db, ctx.tenant, repo, repo.defaultBranch))
+  const files =
+    named === null
+      ? await treeOfBranch(ctx.db, ctx.tenant, repo, repo.defaultBranch)
+      : new Map(subtreeOf(named.files, named.at))
   for (const raw of entries) {
     if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) continue
     const entry = raw as Record<string, unknown>
@@ -145,15 +149,17 @@ const createTree = withRepo(async (ctx, repo) => {
 // body as the API states it (first parent only, which is all a linear fake
 // needs); absent, the default branch's head stands in. What it changed is its
 // tree against its parent's, which every reader derives. The tree is any id
-// the fake reported, and one no write has staged yet, a seeded branch's, is
-// staged here so the commit can be read back on its own.
+// the fake reported, and one no write has staged yet, a seeded branch's or
+// one directory's, is staged here so the commit can be read back on its own.
 const createCommit = withRepo(async (ctx, repo) => {
   const body = jsonBodyOf(ctx)
   const tree = str(body, 'tree')
   const staged = await stagedTree(ctx.db, ctx.tenant, repo, tree)
-  const files = staged ?? (await treeById(ctx.db, ctx.tenant, repo, tree))
-  if (files === null) return fail(422, 'Invalid request.\n\n"tree" is invalid.')
-  if (staged === null) await stageTree(ctx.db, ctx.tenant, repo, files)
+  const named = staged === null ? await treeById(ctx.db, ctx.tenant, repo, tree) : null
+  if (staged === null && named === null) {
+    return fail(422, 'Invalid request.\n\n"tree" is invalid.')
+  }
+  if (named !== null) await stageTree(ctx.db, ctx.tenant, repo, subtreeOf(named.files, named.at))
   const message = str(body, 'message') === '' ? 'Update' : str(body, 'message')
   const author = bodyPerson(body, 'author')
   if (author === INVALID_PERSON) return fail(422, 'Invalid request.\n\n"author" is invalid.')

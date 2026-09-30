@@ -2289,6 +2289,20 @@ async function gitDatabase(at: string): Promise<void> {
     [url(2), head],
     [url(1), head],
   ])
+  const firstPage = await send('GET', `${pages}/builds?per_page=1`)
+  eq(
+    'builds page like any list',
+    [
+      (firstPage.body as JsonValue[]).map((it) => field(it, 'url')),
+      firstPage.link.includes('page=2'),
+    ],
+    [[url(3)], true],
+  )
+  eq(
+    'and the next page holds the next build',
+    ((await get(`${pages}/builds?per_page=1&page=2`)) as JsonValue[]).map((it) => field(it, 'url')),
+    [url(2)],
+  )
   eq('one build by its id', field(await get(`${pages}/builds/2`), 'commit'), head)
   eq(
     'an id it never had is 404',
@@ -2310,6 +2324,68 @@ async function gitDatabase(at: string): Promise<void> {
     'a site a workflow publishes starts over and is not rebuilt by a push',
     (await builds()).length,
     1,
+  )
+
+  const dirId = async (): Promise<string> =>
+    String(
+      field(
+        (field(await get(`${repo}/git/trees/main:src`), 'tree') as JsonValue[]).find(
+          (it) => field(it, 'path') === 'auth',
+        ) ?? null,
+        'sha',
+      ),
+    )
+  const before = await dirId()
+  eq(
+    'the contents API names a directory by the same tree id',
+    field(
+      ((await get(`${repo}/contents/src`)) as JsonValue[]).find(
+        (it) => field(it, 'name') === 'auth',
+      ) ?? null,
+      'sha',
+    ),
+    before,
+  )
+  eq('a directory id lists that directory', paths(await get(`${repo}/git/trees/${before}`)), auth)
+  await send('PUT', `${repo}/contents/src/auth/extra.py`, {
+    message: 'Add extra.py',
+    content: Buffer.from('x = 1\n').toString('base64'),
+  })
+  const after = await dirId()
+  eq('a directory that changed has a new id', after === before, false)
+  eq(
+    'which lists what it holds now',
+    paths(await get(`${repo}/git/trees/${after}`)).includes('extra.py'),
+    true,
+  )
+  eq(
+    'while the old id still lists what it held then',
+    paths(await get(`${repo}/git/trees/${before}`)),
+    auth,
+  )
+  await send('PUT', `${repo}/contents/src/auth/later.py`, {
+    message: 'Add later.py',
+    content: Buffer.from('z = 3\n').toString('base64'),
+  })
+  const kept = paths(await get(`${repo}/git/trees/${after}`))
+  eq(
+    'and an id no branch holds any more reads the snapshot that kept it',
+    [kept.includes('extra.py'), kept.includes('later.py')],
+    [true, false],
+  )
+  const based = await post(`${repo}/git/trees`, {
+    base_tree: before,
+    tree: [{ path: 'added.py', mode: '100644', type: 'blob', content: 'y = 2\n' }],
+  })
+  eq(
+    'and a tree built on it starts from that directory',
+    (
+      (field(await get(`${repo}/git/trees/${String(field(based.body, 'sha'))}`), 'tree') ??
+        []) as JsonValue[]
+    )
+      .filter((it) => field(it, 'type') === 'blob')
+      .map((it) => field(it, 'path')),
+    [...auth, 'added.py'].map(String).sort(),
   )
 }
 

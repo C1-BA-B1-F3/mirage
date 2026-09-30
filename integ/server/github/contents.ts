@@ -18,13 +18,14 @@ import type { C } from './config.ts'
 import { commitChanges } from './compare.ts'
 import { changeJson } from './diff.ts'
 import { rebuildOnPush } from './pages.ts'
-import { blobSha, commitJson, commitSha, gitCommitJson, personJson, treeSha } from './wire.ts'
+import { blobSha, commitJson, commitSha, gitCommitJson, personJson } from './wire.ts'
 import type { CommitRow, GitPerson } from './wire.ts'
 import {
   blobBySha,
   branchFor,
   commitTreeId,
   directoriesOf,
+  directoryIds,
   keepRoot,
   keepTree,
   repoIsEmpty,
@@ -66,10 +67,12 @@ function fileJson(path: string, data: Buffer): JsonValue {
   }
 }
 
-// A directory listing, or null when the path is not a directory.
-function dirJson(files: Tree, at: string): JsonValue[] | null {
+// A directory listing, or null when the path is not a directory. A
+// directory row carries the same tree id the git trees endpoint reports.
+function dirJson(repo: RepoRow, files: Tree, at: string): JsonValue[] | null {
   const prefix = at === '' ? '' : `${at}/`
   if (at !== '' && !directoriesOf(files).has(at)) return null
+  const ids = directoryIds(repo, files)
   const entries = new Map<string, JsonValue>()
   for (const [candidate, data] of files) {
     if (!candidate.startsWith(prefix)) continue
@@ -82,7 +85,7 @@ function dirJson(files: Tree, at: string): JsonValue[] | null {
           type: 'dir',
           name: head,
           path: `${prefix}${head}`,
-          sha: treeSha(`${prefix}${head}`),
+          sha: ids.get(`${prefix}${head}`) ?? '',
           size: 0,
         })
       }
@@ -233,7 +236,7 @@ const contents = withRepo(async (ctx, repo) => {
   const path = stripSlash(param(ctx, 'path'))
   const hit = files.get(path)
   if (hit !== undefined) return { status: 200, body: fileJson(path, hit) }
-  const listing = dirJson(files, path)
+  const listing = dirJson(repo, files, path)
   if (listing === null) return fail(404, 'Not Found')
   return { status: 200, body: listing }
 })
@@ -398,18 +401,19 @@ function treeListing(
   recursive: boolean,
 ): Reply {
   const cut = !recursive || repo.truncated
-  const items = treeItems(files, subs, at).filter((it) => !cut || !it.path.includes('/'))
+  const items = treeItems(repo, files, subs, at).filter((it) => !cut || !it.path.includes('/'))
   return { status: 200, body: { sha, tree: items, truncated: recursive && repo.truncated } }
 }
 
 // The tree a request names, as git reads a tree-ish: a ref (branch, tag or
 // commit, any of them with an ancestry suffix), a tree id a commit or a
-// listing reported, or `{rev}:{dir}`, one directory of a rev, whose `dir` may
-// hold slashes, sent plain or encoded. The backend asks the last form for a
-// file's parent, and a tree sha from a previous listing as the truncation
-// fallback. A ref is resolved through `resolveRef`, which accepts a commit sha
-// too, because a client that resolves a ref to a commit then asks for the
-// tree by that sha: git accepts it, since a commit names its root tree.
+// listing reported, whole or one directory's, or `{rev}:{dir}`, one directory
+// of a rev, whose `dir` may hold slashes, sent plain or encoded. The backend
+// asks the last form for a file's parent, and a directory's id from a
+// previous listing as the truncation fallback. A ref is resolved through
+// `resolveRef`, which accepts a commit sha too, because a client that
+// resolves a ref to a commit then asks for the tree by that sha: git accepts
+// it, since a commit names its root tree.
 //
 // An empty repository is answered first, for every form of the request: the
 // recursive and shallow tree of a ref and one directory of it all 409, measured
@@ -435,19 +439,14 @@ const gitTree = withRepo(async (ctx, repo) => {
       }
     }
     if (at !== '' && !directoriesOf(files).has(at)) return fail(404, 'Not Found')
-    const sha = at === '' ? treeIdOf(repo, files) : treeSha(at)
+    const sha = directoryIds(repo, files).get(at) ?? ''
     return treeListing(repo, files, subs, at, sha, recursive)
   }
   const files = await treeOf(ctx.db, ctx.tenant, repo, ref)
   if (files !== null) return treeListing(repo, files, subs, '', treeIdOf(repo, files), recursive)
-  const whole = await treeById(ctx.db, ctx.tenant, repo, ref)
-  if (whole !== null) return treeListing(repo, whole, subs, '', ref, recursive)
-  // Not a whole tree, so it may be one directory's tree sha, which names that
-  // directory of the default branch.
-  const branch = await treeOfBranch(ctx.db, ctx.tenant, repo, repo.defaultBranch)
-  const at = [...directoriesOf(branch)].sort().find((d) => treeSha(d) === ref)
-  if (at === undefined) return fail(404, 'Not Found')
-  return treeListing(repo, branch, subs, at, ref, recursive)
+  const named = await treeById(ctx.db, ctx.tenant, repo, ref)
+  if (named === null) return fail(404, 'Not Found')
+  return treeListing(repo, named.files, subs, named.at, ref, recursive)
 })
 
 // GitHub wraps a base64 payload rather than emitting one long line, and so

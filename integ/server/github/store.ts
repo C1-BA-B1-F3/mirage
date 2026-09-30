@@ -421,19 +421,83 @@ export function treeIdOf(repo: RepoRow, files: Tree): string {
   return treeSha(`${repo.fullName}\0${treeFingerprint(files)}`)
 }
 
-// The whole tree an id names: one a write staged, or the tree a branch holds
-// now, which nothing has staged while the branch is still as seeded.
+// The files below one directory of a tree, their paths relative to it; the
+// tree itself for the root.
+export function subtreeOf(files: Tree, at: string): Tree {
+  if (at === '') return files
+  const prefix = `${at}/`
+  const out: Tree = new Map()
+  for (const [path, data] of files) {
+    if (path.startsWith(prefix)) out.set(path.slice(prefix.length), data)
+  }
+  return out
+}
+
+// Every directory's tree id, the root's under '', each the id its files would
+// have as a whole tree. Content decides it as it does in git, so a directory
+// that changed has a new id and an older listing's id still names what that
+// directory held then. One pass over the files: each blob joins every
+// directory above it.
+export function directoryIds(repo: RepoRow, files: Tree): Map<string, string> {
+  const rows = new Map<string, Array<[string, string]>>([['', []]])
+  for (const [path, data] of files) {
+    const blob = blobSha(data)
+    const parts = path.split('/')
+    for (let depth = 0; depth < parts.length; depth += 1) {
+      const dir = parts.slice(0, depth).join('/')
+      const list = rows.get(dir) ?? []
+      list.push([parts.slice(depth).join('/'), blob])
+      rows.set(dir, list)
+    }
+  }
+  const ids = new Map<string, string>()
+  for (const [dir, list] of rows) {
+    const fingerprint = list
+      .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+      .map(([p, b]) => `${p}:${b}`)
+      .join('\0')
+    ids.set(dir, treeSha(`${repo.fullName}\0${fingerprint}`))
+  }
+  return ids
+}
+
+// Where a tree id names a tree: the files that hold it and the directory of
+// them it is, '' for a whole tree.
+export interface TreeAtId {
+  files: Tree
+  at: string
+}
+
+// The tree an id names, whole or one directory of it, from every tree the
+// repository can read: a staged tree by its own id, each branch as it is now,
+// then every snapshot a commit or a write kept, newest first. The branches
+// come first because a listing a client follows is most often current.
 export async function treeById(
   db: C,
   tenant: string,
   repo: RepoRow,
   sha: string,
-): Promise<Tree | null> {
+): Promise<TreeAtId | null> {
   const staged = await stagedTree(db, tenant, repo, sha)
-  if (staged !== null) return staged
+  if (staged !== null) return { files: staged, at: '' }
+  const found = (files: Tree): TreeAtId | null => {
+    for (const [at, id] of directoryIds(repo, files)) if (id === sha) return { files, at }
+    return null
+  }
   for (const branch of await branchNames(db, tenant, repo)) {
     const files = await treeOfBranch(db, tenant, repo, branch)
-    if (files.size > 0 && treeIdOf(repo, files) === sha) return files
+    const hit = files.size > 0 ? found(files) : null
+    if (hit !== null) return hit
+  }
+  const kept = await db.githubStagedTree.findMany({
+    where: { tenant, repo: { in: await networkNames(db, tenant, repo) } },
+    orderBy: { pk: 'desc' },
+    select: { sha: true },
+  })
+  for (const row of kept) {
+    const files = await stagedTree(db, tenant, repo, row.sha)
+    const hit = files === null || files.size === 0 ? null : found(files)
+    if (hit !== null) return hit
   }
   return null
 }
@@ -998,8 +1062,9 @@ export type TreeItem =
   | { path: string; mode: string; type: string; sha: string }
   | { path: string; mode: string; type: string; sha: string; size: number }
 
-export function treeItems(files: Tree, submodules: string[], at = ''): TreeItem[] {
+export function treeItems(repo: RepoRow, files: Tree, submodules: string[], at = ''): TreeItem[] {
   const prefix = at === '' ? '' : `${at}/`
+  const ids = directoryIds(repo, files)
   const items: TreeItem[] = []
   for (const path of [...directoriesOf(files)].sort()) {
     if (!path.startsWith(prefix) || path === at) continue
@@ -1007,7 +1072,7 @@ export function treeItems(files: Tree, submodules: string[], at = ''): TreeItem[
       path: path.slice(prefix.length),
       mode: '040000',
       type: 'tree',
-      sha: treeSha(path),
+      sha: ids.get(path) ?? '',
     })
   }
   for (const path of [...files.keys()].sort()) {

@@ -82,6 +82,21 @@ async function fails(w: Workspace, line: string): Promise<string> {
 }
 
 describe('github under read: fresh', () => {
+  it('does not let a warm probe bypass a session hidden path', async () => {
+    const w = await ws(await vfsOf())
+    try {
+      expect(await out(w, `cat ${PATH}`)).toBe(OLD)
+      const session = w.createSession('hidden')
+      session.hiddenPaths = { paths: [PATH] }
+      const result = await w.shell(`cat ${PATH}`, { sessionId: 'hidden' })
+      expect(DEC.decode(result.stdout)).toBe('')
+      expect(result.exitCode).toBe(1)
+      expect(DEC.decode(result.stderr)).toContain('No such file or directory')
+    } finally {
+      await w.close()
+    }
+  })
+
   // A mount at /src over a repository holding a src/ directory is the decoy:
   // a record labelled repo-relative or mount-relative lands on a key the
   // cache never asks for, so the entry would carry no token.

@@ -277,11 +277,9 @@ async def _run_with_namespace_globs(ops: CommandIO,
         ops,
         glob_children=children,
         glob_target_stat=(links.target_stat if links is not None else None))
-    # The policy guard sits outside the cache wraps (`finish`) so a
-    # coded pre_ops deny fires before a warm serve, the dispatcher's
-    # own order at the op door.
-    bound = with_dir_guard(with_policy_guard(finish(
-        with_path_guards(stamped))))
+    # Path and policy guards must run before a cached stat or byte serve.
+    bound = with_dir_guard(with_policy_guard(with_path_guards(
+        finish(stamped))))
     return await fn(bound, accessor, paths, texts, opts)
 
 

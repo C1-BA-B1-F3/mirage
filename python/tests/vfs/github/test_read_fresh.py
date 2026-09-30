@@ -18,7 +18,7 @@ import pytest
 from mirage.cache.index.constants import LISTING_TRUST_WINDOW
 from mirage.core.github.config import GitHubConfig
 from mirage.core.github.tree import fetch_tree
-from mirage.types import MountMode, ReadPolicy, ReadSpec
+from mirage.types import HiddenPaths, MountMode, ReadPolicy, ReadSpec
 from mirage.vfs.github import GitHubVFS
 from mirage.vfs.ram import RAMVFS
 from mirage.vfs.registry import build_vfs
@@ -136,6 +136,22 @@ async def test_a_warm_fresh_stat_prints_what_a_bounded_one_does():
                 await ws.close()
     assert outs[0] == outs[1]
     assert outs[0]
+
+
+@pytest.mark.asyncio
+async def test_a_warm_probe_does_not_bypass_a_sessions_hidden_path():
+    with serve(_hub()) as hub:
+        ws = _ws(_vfs(hub))
+        try:
+            assert await _out(ws, f"cat {PATH}") == OLD
+            session = ws.create_session("hidden")
+            session.hidden_paths = HiddenPaths(paths=(PATH, ))
+            result = await ws.shell(f"cat {PATH}", session_id="hidden")
+            assert await result.materialize_stdout() == b""
+            assert result.exit_code == 1
+            assert "No such file or directory" in await result.stderr_str()
+        finally:
+            await ws.close()
 
 
 @pytest.mark.asyncio

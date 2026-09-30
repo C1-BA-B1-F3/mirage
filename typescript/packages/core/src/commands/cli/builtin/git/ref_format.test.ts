@@ -63,6 +63,7 @@ const CTX: RefContext = {
   head: null,
   headDescription: '',
   abbrev: 7,
+  abbreviations: new Map(),
   mailmap: [],
   date: { kind: DateKind.NORMAL, local: false, strftime: '', now: 0, zone: null },
   suffixes: [],
@@ -83,6 +84,21 @@ function run(
   )
   return [out, stopped === null ? null : stopped.message]
 }
+
+it.each(['refname:short', 'refname:lstrip=2'])(
+  'sorts transformed names by %s before applying count',
+  (key) => {
+    const items = [
+      { ...A, name: 'refs/heads/main' },
+      { ...C, name: 'refs/tags/base' },
+    ]
+    expect(run('%(refname)', ['refname', key], items, { count: 1 })).toEqual([
+      'refs/tags/base\n',
+      null,
+    ])
+    expect(run('%(refname)', [key], items, { count: 1 })).toEqual(['refs/heads/main\n', null])
+  },
+)
 
 it.each([
   ['100%%', '100%'],

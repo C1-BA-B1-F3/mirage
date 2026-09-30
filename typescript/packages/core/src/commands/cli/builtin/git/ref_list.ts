@@ -27,7 +27,7 @@ import { basename } from './path.ts'
 import { parseFlags, select } from './history.ts'
 import { readNames, readOptional, under } from './io.ts'
 import { loadMailmap } from './mailmap.ts'
-import { needsObject } from './ref_fields.ts'
+import { abbreviationRequests, needsObject } from './ref_fields.ts'
 import { keptRefs, type RefFilter } from './ref_filter.ts'
 import { parseSortKeys } from './ref_format.ts'
 import { loadRefs, mapped, parseRefspec } from './refs.ts'
@@ -418,6 +418,34 @@ export function headRef(table: ReadonlyMap<string, string>): string | null {
   return null
 }
 
+/** Widen prefixes against loose and packed objects without reading their contents. */
+async function uniqueAbbreviations(
+  repo: Repo,
+  widths: ReadonlyMap<string, number>,
+): Promise<Map<string, number>> {
+  const unique = new Map<string, number>()
+  for (const [oid, requested] of widths) {
+    let width = requested
+    if (width < oid.length) {
+      let matches: string[]
+      try {
+        matches = [await git.expandOid({ ...repoArgs(repo), oid: oid.slice(0, width) })]
+      } catch (err) {
+        if (err instanceof git.Errors.AmbiguousError) matches = err.data.matches
+        // A missing parent/tree is still printed as an abbreviated id by Git.
+        else if (err instanceof git.Errors.NotFoundError) matches = []
+        else throw err
+      }
+      for (const other of matches) {
+        if (other === oid) continue
+        while (other.startsWith(oid.slice(0, width)) && width < oid.length) width += 1
+      }
+    }
+    unique.set(oid, width)
+  }
+  return unique
+}
+
 /**
  * The refs one listing prints and the facts their fields read. Everything a
  * field could want is loaded only when some field wants it: the objects, what
@@ -477,11 +505,14 @@ export async function refListing(
     head: headRef(table),
     headDescription: '',
     abbrev: repo.abbrev,
+    abbreviations: new Map(),
     mailmap: mailmapped ? await loadMailmap(repo.dispatch, repo.location) : [],
     date,
     suffixes: suffixes.length ? suffixes : await values('versionsort.prereleasesuffix'),
   }
-  return [items, ctx, errors]
+  const widths = abbreviationRequests(fields, items, ctx)
+  const abbreviations = await uniqueAbbreviations(repo, widths)
+  return [items, { ...ctx, abbreviations }, errors]
 }
 
 /**

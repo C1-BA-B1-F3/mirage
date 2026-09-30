@@ -22,6 +22,20 @@ const BASE: DateMode = { kind: DateKind.NORMAL, local: false, strftime: '', now:
 const CLOCK: DateMode = { ...BASE, now: 1768561800, zone: UTC_ZONE }
 
 describe('showDate', () => {
+  it.each([
+    [330, '16:40 +0530'],
+    [-420, '04:10 -0700'],
+  ])('keeps the instant and percent escapes when formatting epoch at offset %i', (offset, wall) => {
+    const mode = parseDateMode('format:%s %%s %%%s %H:%M %z', CLOCK)
+    expect(showDate(1768561800, offset, mode)).toBe(`1768561800 %s %1768561800 ${wall}`)
+  })
+
+  it('keeps the instant when formatting a local epoch', () => {
+    const clock = dateClock({ TZ: 'Asia/Kolkata' })
+    const mode = parseDateMode('format-local:%s %H:%M %z', clock)
+    expect(showDate(1768561800, -420, mode)).toBe('1768561800 16:40 +0530')
+  })
+
   it("matches git's default format, the day unpadded", () => {
     expect(showDate(1768561800, 0, BASE)).toBe('Fri Jan 16 11:10:00 2026 +0000')
     expect(showDate(1767603900, 0, BASE)).toBe('Mon Jan 5 09:05:00 2026 +0000')

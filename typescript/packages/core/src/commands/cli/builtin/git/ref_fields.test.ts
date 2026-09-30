@@ -15,6 +15,7 @@
 import { describe, expect, it } from 'vitest'
 import { GitError, UnknownDateFormatError, UnsupportedFieldError } from './errors.ts'
 import {
+  abbreviationRequests,
   cInt,
   cUint,
   fieldValue,
@@ -62,10 +63,48 @@ const CTX: RefContext = {
   head: 'refs/heads/main',
   headDescription: '',
   abbrev: 7,
+  abbreviations: new Map(),
   mailmap: [],
   date: { kind: DateKind.NORMAL, local: false, strftime: '', now: 1700000000, zone: null },
   suffixes: [],
 }
+
+it.each([
+  ['objectname', COMMIT.oid],
+  ['*objectname', COMMIT.oid],
+  ['tree', 't'.repeat(40)],
+  ['parent', 'p'.repeat(40)],
+])('widens collisions for %s but keeps longer requested widths', (name, oid) => {
+  const row = item(name.startsWith('*') ? TAG : COMMIT, 'refs/tags/v1', { peeled: COMMIT })
+  const ctx = { ...CTX, abbreviations: new Map([[oid, 8]]) }
+  for (const [suffix, width] of [
+    ['', 40],
+    [':short', 8],
+    [':short=4', 8],
+    [':short=12', 12],
+  ] as const)
+    expect(fieldValue(parseField(name + suffix), row, ctx).text).toBe(oid.slice(0, width))
+})
+
+it('deduplicates abbreviation requests at the smallest width', () => {
+  const row = item(TAG, 'refs/tags/v1', { peeled: COMMIT })
+  const fields = [
+    'refname:short',
+    'objectname',
+    '*objectname:short=12',
+    '*objectname:short',
+    '*objectname:short=4',
+    '*parent:short',
+    '*tree:short=40',
+  ].map(parseField)
+  expect(abbreviationRequests(fields, [row, row], CTX)).toEqual(
+    new Map([
+      [COMMIT.oid, 4],
+      ['p'.repeat(40), 7],
+      ['t'.repeat(40), 40],
+    ]),
+  )
+})
 
 function item(
   obj: RefObject | null,

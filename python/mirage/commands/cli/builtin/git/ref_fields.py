@@ -13,7 +13,7 @@
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import re
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import replace
 
 from mirage.commands.cli.builtin.git.constants import DWIM_RULES
@@ -856,11 +856,33 @@ def _abbreviated(field: RefField, oid: str, ctx: RefContext) -> str:
         oid (str): the full hex id.
         ctx (RefContext): carries the repository's abbreviation.
     """
-    if field.option == "short":
-        return oid[:ctx.abbrev]
-    if field.option == "length":
-        return oid[:field.number]
-    return oid
+    if field.option not in ("short", "length"):
+        return oid
+    width = ctx.abbrev if field.option == "short" else field.number
+    return oid[:max(width, ctx.abbreviations.get(oid, 0))]
+
+
+def abbreviation_requests(fields: Sequence[RefField], items: Sequence[RefItem],
+                          ctx: RefContext) -> dict[str, int]:
+    """The smallest requested width per object id, including peeled ids,
+    trees and parents, using the same field readers as rendering.
+
+    Args:
+        fields (Sequence[RefField]): the listing's format and sort fields.
+        items (Sequence[RefItem]): the selected refs and loaded objects.
+        ctx (RefContext): carries the default abbreviation width.
+    """
+    widths: dict[str, int] = {}
+    for atom in fields:
+        if atom.field not in ("objectname", "tree", "parent") or \
+                atom.option not in ("short", "length"):
+            continue
+        width = ctx.abbrev if atom.option == "short" else atom.number
+        full = replace(atom, option="")
+        for item in items:
+            for oid in field_value(full, item, ctx).text.split():
+                widths[oid] = min(width, widths.get(oid, len(oid)))
+    return widths
 
 
 def _object_value(obj: RefObject, field: RefField,

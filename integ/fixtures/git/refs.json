@@ -203,5 +203,17 @@
   "log --format='%ar|%cr|%ah|%ch'",
   "log --date=local --format=%ad",
   "log --date=iso-local --format=%ad",
-  "log --date=format-local:'%Y/%m/%d %H:%M %z %Z' --format=%ad"
+  "log --date=format-local:'%Y/%m/%d %H:%M %z %Z' --format=%ad",
+  "for-each-ref --no-sort --sort=refname:short --format='%(refname:short)'",
+  "for-each-ref --no-sort --sort=refname:lstrip=2 --count=3 --format='%(refname)'",
+  "for-each-ref --format='%(objectname:short) %(objectname:short=4) %(objectname:short=12)' refs/heads/collision",
+  "for-each-ref --format='%(*objectname:short) %(*objectname:short=4)' refs/tags/collision-tag",
+  "branch -v --list collision",
+  "tag --list collision-tag --format='%(*objectname:short)'",
+  "for-each-ref --format='%(refname) %(authordate:format:%s %%s %%%s %H:%M %z)' refs/heads",
+  "log -1 --format='%at %ad %ct %cd' --date='format:%s %%s %%%s %H:%M %z'",
+  "show -s --format='%at %ad %ct %cd' --date='format:%s %H:%M %z' main",
+  "log -1 --format='%at %ad %ct %cd' --date='format-local:%s %H:%M %z'",
+  "for-each-ref --format='%(parent:short) %(parent:short=4) %(parent:short=12)' refs/heads/collision-child",
+  "for-each-ref --sort=refname:lstrip=2 --count=3 --format='%(refname)'"
 ]

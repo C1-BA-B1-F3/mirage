@@ -31,7 +31,8 @@ from mirage.commands.cli.builtin.git.format import short
 from mirage.commands.cli.builtin.git.io import read_names, read_optional
 from mirage.commands.cli.builtin.git.mailmap import load_mailmap
 from mirage.commands.cli.builtin.git.objects import abbrev_for
-from mirage.commands.cli.builtin.git.ref_fields import needs_object
+from mirage.commands.cli.builtin.git.ref_fields import (abbreviation_requests,
+                                                        needs_object)
 from mirage.commands.cli.builtin.git.ref_filter import RefFilter, kept_refs
 from mirage.commands.cli.builtin.git.ref_format import parse_sort_keys
 from mirage.commands.cli.builtin.git.refs import mapped, parse_refspec
@@ -550,6 +551,29 @@ def _mailmapped(fields: Sequence[RefField]) -> bool:
                for field in fields)
 
 
+def _unique_abbreviations(repo: BaseRepo,
+                          widths: Mapping[str, int]) -> dict[str, int]:
+    """Widen requested prefixes against loose and packed objects, including
+    objects no selected ref reaches, without reading object contents.
+
+    Args:
+        repo (BaseRepo): the opened repository.
+        widths (Mapping[str, int]): the smallest requested width per id.
+    """
+    unique: dict[str, int] = {}
+    for oid, width in widths.items():
+        if width < len(oid):
+            for candidate in repo.object_store.iter_prefix(
+                    oid[:width].encode()):
+                other = candidate.decode()
+                if other == oid:
+                    continue
+                while other.startswith(oid[:width]) and width < len(oid):
+                    width += 1
+        unique[oid] = width
+    return unique
+
+
 async def ref_listing(
         dispatch: DispatchFn,
         repo: BaseRepo,
@@ -621,6 +645,11 @@ async def ref_listing(
         if _mailmapped(fields) else (),
         date=date,
         suffixes=tuple(value.decode("utf-8", "replace") for value in suffixes))
+    widths = abbreviation_requests(fields, items, ctx)
+    if widths:
+        ctx = replace(ctx,
+                      abbreviations=await
+                      asyncio.to_thread(_unique_abbreviations, repo, widths))
     return items, ctx, errors
 
 

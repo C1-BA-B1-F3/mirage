@@ -382,6 +382,8 @@ export interface RefContext {
   readonly headDescription: string
   /** How many hex digits a short id keeps. */
   readonly abbrev: number
+  /** Minimum unique widths for the object ids abbreviated by this listing. */
+  readonly abbreviations: ReadonlyMap<string, number>
   /** For the `mailmap` options. */
   readonly mailmap: readonly MailmapEntry[]
   /** The clock date fields render by. */

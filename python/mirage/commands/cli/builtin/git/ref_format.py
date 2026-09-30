@@ -562,6 +562,8 @@ def format_refs(fmt: RefFormat,
     rows: list[str] = []
     try:
         ordered = list(items)
+        # Git 2.50.1's can_do_iterative_format checks the atom type, even
+        # for :short/:lstrip after --no-sort removes the default tie-breaker.
         by_name = keys is None or (len(keys) == 1 and not keys[0].reverse
                                    and not keys[0].version and not icase
                                    and keys[0].field.field == "refname")

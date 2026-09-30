@@ -12,6 +12,7 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from datetime import tzinfo
 from enum import StrEnum
@@ -433,6 +434,8 @@ class RefContext:
         head_description (str): how a detached HEAD row names itself,
             e.g. ``(HEAD detached at 1a2b3c4)``.
         abbrev (int): how many hex digits a short id keeps.
+        abbreviations (Mapping[str, int]): minimum unique widths for the
+            object ids abbreviated by this listing.
         mailmap (tuple[MailmapEntry, ...]): for the ``mailmap`` options.
         date (DateMode): the clock date fields render by.
         suffixes (tuple[str, ...]): ``versionsort.suffix``.
@@ -442,6 +445,7 @@ class RefContext:
     head: str | None = None
     head_description: str = ""
     abbrev: int = 7
+    abbreviations: Mapping[str, int] = field(default_factory=dict)
     mailmap: tuple[MailmapEntry, ...] = ()
     date: DateMode = DateMode()
     suffixes: tuple[str, ...] = ()

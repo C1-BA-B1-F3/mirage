@@ -55,3 +55,21 @@ git pack-refs --all
 at 2022-02-02T02:02:02+0100
 git tag feature feature
 git update-ref refs/notes/commits HEAD
+
+# These commits share d04348a. Keep the second unreferenced and packed so
+# abbreviations must consult the object database beyond the selected refs.
+git hash-object -t tree -w --stdin < /dev/null > /dev/null
+for n in 9287 18707; do
+  oid=$(printf 'tree 4b825dc642cb6eb9a060e54bf8d69288fbee4904\nauthor A <a@x> 1700000000 +0000\ncommitter C <c@x> 1700000000 +0000\n\ncollision %s\n' "$n" |
+    git hash-object -t commit -w --stdin)
+  if [ "$n" = 9287 ]; then
+    git update-ref refs/heads/collision "$oid"
+    git tag -a collision-tag -m Collision "$oid"
+  else
+    { printf '%s\n' "$oid"; git rev-parse collision; } |
+      git pack-objects .git/objects/pack/pack > /dev/null
+    rm ".git/objects/${oid:0:2}/${oid:2}"
+  fi
+done
+child=$(printf 'Collision child\n' | git commit-tree 4b825dc642cb6eb9a060e54bf8d69288fbee4904 -p collision)
+git update-ref refs/heads/collision-child "$child"

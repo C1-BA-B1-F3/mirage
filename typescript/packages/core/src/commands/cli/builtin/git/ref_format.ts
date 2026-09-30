@@ -534,6 +534,8 @@ export function formatRefs(
   try {
     let ordered = [...items]
     const [only] = keys ?? []
+    // Git 2.50.1's can_do_iterative_format checks the atom type, even for
+    // :short/:lstrip after --no-sort removes the default tie-breaker.
     const byName =
       keys === null ||
       (keys.length === 1 &&

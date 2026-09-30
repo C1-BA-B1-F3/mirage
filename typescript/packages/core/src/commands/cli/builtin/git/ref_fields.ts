@@ -684,9 +684,35 @@ function message(obj: RefObject, field: RefField): FieldValue {
 
 /** An id as `oid_atom_parser` asked for it. */
 function abbreviated(field: RefField, oid: string, ctx: RefContext): string {
-  if (field.option === 'short') return oid.slice(0, ctx.abbrev)
-  if (field.option === 'length') return oid.slice(0, field.number)
-  return oid
+  if (field.option !== 'short' && field.option !== 'length') return oid
+  const width = field.option === 'short' ? ctx.abbrev : field.number
+  return oid.slice(0, Math.max(width, ctx.abbreviations.get(oid) ?? 0))
+}
+
+/**
+ * The smallest requested width per object id, including peeled ids, trees
+ * and parents, using the same field readers as rendering.
+ */
+export function abbreviationRequests(
+  fields: readonly RefField[],
+  items: readonly RefItem[],
+  ctx: RefContext,
+): Map<string, number> {
+  const widths = new Map<string, number>()
+  for (const atom of fields) {
+    if (
+      !['objectname', 'tree', 'parent'].includes(atom.field) ||
+      !['short', 'length'].includes(atom.option)
+    )
+      continue
+    const width = atom.option === 'short' ? ctx.abbrev : atom.number
+    const full = { ...atom, option: '' }
+    for (const item of items) {
+      for (const oid of fieldValue(full, item, ctx).text.split(' ').filter(Boolean))
+        widths.set(oid, Math.min(width, widths.get(oid) ?? oid.length))
+    }
+  }
+  return widths
 }
 
 /** A field read off an object's type, size or content. */

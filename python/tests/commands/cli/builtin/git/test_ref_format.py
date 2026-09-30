@@ -120,6 +120,18 @@ def test_the_last_sort_key_given_sorts_first():
                                ("refname", False, False)]
 
 
+@pytest.mark.parametrize("key", ["refname:short", "refname:lstrip=2"])
+def test_transformed_names_are_sorted_before_applying_count(key):
+    items = [
+        RefItem(name="refs/heads/main", oid="1" * 40, kind=RefKind.BRANCH),
+        RefItem(name="refs/tags/base", oid="2" * 40, kind=RefKind.TAG),
+    ]
+    assert _run("%(refname)", ("refname", key), items=items,
+                count=1) == ("refs/tags/base\n", None)
+    assert _run("%(refname)", (key, ), items=items,
+                count=1) == ("refs/heads/main\n", None)
+
+
 @pytest.mark.parametrize("a,b,sign", [
     ("v1.9", "v1.10", -1),
     ("v1.10", "v1.9", 1),

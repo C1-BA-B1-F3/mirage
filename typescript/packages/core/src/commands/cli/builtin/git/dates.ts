@@ -237,8 +237,8 @@ function normal(timestamp: number, wall: Wall, offsetMinutes: number, mode: Date
 }
 
 /**
- * A `format:` date, with `%z` and `%Z` as git's `strbuf_addftime` hands them to
- * strftime: `%z` is the date's own offset rather than the C library's, and `%Z`
+ * A `format:` date, with `%s`, `%z` and `%Z` as git's `strbuf_addftime` handles
+ * them: `%s` keeps the original instant, `%z` is the date's recorded offset, and `%Z`
  * is dropped unless the date is shown in the session's zone, whose name is the
  * only one strftime can know.
  */
@@ -255,6 +255,7 @@ function formatted(timestamp: number, offsetMinutes: number, mode: DateMode): st
     }
     const after = template[i + 1] ?? ''
     if (after === '%') munged.push('%%')
+    else if (after === 's') munged.push(String(timestamp))
     else if (after === 'z') munged.push(zoneText(offsetMinutes))
     else if (after !== 'Z' || mode.local) munged.push(`%${after}`)
     i += 2

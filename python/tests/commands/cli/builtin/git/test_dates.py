@@ -79,6 +79,20 @@ def test_every_style_git_names(value, expected):
     assert show_date(1768561800, 19800, _mode(value)) == expected
 
 
+@pytest.mark.parametrize("offset,wall", [(19800, "16:40 +0530"),
+                                         (-25200, "04:10 -0700")])
+def test_formatted_epoch_keeps_the_instant_and_percent_escapes(offset, wall):
+    mode = _mode("format:%s %%s %%%s %H:%M %z")
+    assert show_date(1768561800, offset,
+                     mode) == (f"1768561800 %s %1768561800 {wall}")
+
+
+def test_formatted_local_epoch_keeps_the_instant():
+    clock = date_clock({"TZ": "Asia/Kolkata"})
+    mode = parse_date_mode("format-local:%s %H:%M %z", clock)
+    assert show_date(1768561800, -25200, mode) == "1768561800 16:40 +0530"
+
+
 def test_strict_iso_names_utc_as_z():
     assert show_date(1768561800, 0,
                      _mode("iso-strict")) == "2026-01-16T11:10:00Z"

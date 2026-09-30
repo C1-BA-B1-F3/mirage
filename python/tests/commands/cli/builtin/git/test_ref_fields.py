@@ -12,6 +12,8 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+from dataclasses import replace
+
 import pytest
 
 from mirage.commands.cli.builtin.git import ref_fields
@@ -61,6 +63,46 @@ def _value(name: str,
                    obj=obj,
                    **kwargs)
     return ref_fields.field_value(ref_fields.parse_field(name), item, CTX).text
+
+
+@pytest.mark.parametrize("name,oid", [
+    ("objectname", COMMIT.oid),
+    ("*objectname", COMMIT.oid),
+    ("tree", "t" * 40),
+    ("parent", "p" * 40),
+])
+def test_id_fields_widen_collisions_but_keep_longer_requested_widths(
+        name, oid):
+    obj = TAG if name.startswith("*") else COMMIT
+    item = RefItem(name="refs/tags/v1",
+                   oid=obj.oid,
+                   kind=RefKind.TAG,
+                   obj=obj,
+                   peeled=COMMIT)
+    ctx = replace(CTX, abbreviations={oid: 8})
+    for suffix, width in [("", 40), (":short", 8), (":short=4", 8),
+                          (":short=12", 12)]:
+        atom = ref_fields.parse_field(name + suffix)
+        assert ref_fields.field_value(atom, item, ctx).text == oid[:width]
+
+
+def test_abbreviation_requests_deduplicate_ids_at_the_smallest_width():
+    item = RefItem(name="refs/tags/v1",
+                   oid=TAG.oid,
+                   kind=RefKind.TAG,
+                   obj=TAG,
+                   peeled=COMMIT)
+    fields = [
+        ref_fields.parse_field(name)
+        for name in ("refname:short", "objectname", "*objectname:short=12",
+                     "*objectname:short", "*objectname:short=4",
+                     "*parent:short", "*tree:short=40")
+    ]
+    assert ref_fields.abbreviation_requests(fields, [item, item], CTX) == {
+        COMMIT.oid: 4,
+        "p" * 40: 7,
+        "t" * 40: 40,
+    }
 
 
 @pytest.mark.parametrize("text,expected", [

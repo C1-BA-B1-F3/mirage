@@ -267,6 +267,427 @@ async function liveReads(at: string): Promise<void> {
   )
 }
 
+const ROW = 'ffff1111-2222-3333-4444-555566667777'
+const PAGE_B = 'bbbb2222-3333-4444-5555-666677778888'
+const PAGE_C = 'cccc1111-2222-3333-4444-555566667777'
+const MISSING = '00000000-0000-0000-0000-000000000000'
+
+function keys(value: JsonValue | undefined): string[] {
+  return Object.keys(value as Record<string, JsonValue>)
+}
+
+// Retrieve a page property item: one item for a plain value, a list of one
+// item per element for title, rich text, people and relation, paged by
+// position with a `next_url` that resumes the same request, under the run it
+// arrived on.
+async function propertyItems(at: string): Promise<void> {
+  await request(at, 'POST', '/reset', { tenants: [TENANT], fixture: 'v1' })
+  const number = { object: 'property_item', id: 'pri', type: 'number', number: 2 }
+  eq('a number is one item', await request(at, 'GET', `/v1/pages/${ROW}/properties/pri`), number)
+  eq(
+    'a property is found by name',
+    await request(at, 'GET', `/v1/pages/${ROW}/properties/Priority`),
+    number,
+  )
+  eq('a title is a list of items', await request(at, 'GET', `/v1/pages/${ROW}/properties/title`), {
+    object: 'list',
+    results: [
+      {
+        object: 'property_item',
+        id: 'title',
+        type: 'title',
+        title: { type: 'text', plain_text: 'Write spec', text: { content: 'Write spec' } },
+      },
+    ],
+    next_cursor: null,
+    has_more: false,
+    type: 'property_item',
+    property_item: { id: 'title', next_url: null, type: 'title', title: {} },
+  })
+  await request(at, 'GET', `/v1/pages/${ROW}/properties/nope`, undefined, 404)
+  await request(at, 'GET', `/v1/pages/${MISSING}/properties/title`, undefined, 404)
+  await request(at, 'GET', `/v1/pages/${ROW}/properties/title?start_cursor=nope`, undefined, 400)
+
+  const run = '/_run/props'
+  await request(at, 'POST', `${run}/reset`, { tenants: [TENANT], fixture: 'v1' })
+  const row = await request(at, 'POST', `${run}/v1/pages`, {
+    parent: { data_source_id: DS },
+    properties: {
+      Name: { title: [{ text: { content: 'Chunks' } }] },
+      Notes: { rich_text: ['a', 'b', 'c'].map((content) => ({ text: { content } })) },
+    },
+  })
+  const path = `${run}/v1/pages/${String(row.id)}/properties/nt`
+  const first = await request(at, 'GET', `${path}?page_size=2`)
+  const chunks = (body: Record<string, JsonValue>): JsonValue[] =>
+    results(body).map((item) => (item.rich_text as Record<string, JsonValue>).plain_text!)
+  eq(
+    'a list pages by position',
+    [chunks(first), first.next_cursor!, first.has_more!],
+    [['a', 'b'], '2', true],
+  )
+  const next = String((first.property_item as Record<string, JsonValue>).next_url)
+  eq('next_url resumes the request under its run', next, `${at}${path}?page_size=2&start_cursor=2`)
+  const last = await request(at, 'GET', next.slice(at.length))
+  eq(
+    'the last page ends the list',
+    [chunks(last), last.next_cursor!, last.has_more!],
+    [['c'], null, false],
+  )
+}
+
+// Create and update a database at 2022-06-28, the version
+// @notionhq/notion-mcp-server 1.9.0 sends. An update's schema write moves the
+// rows with it; a refused one changes nothing.
+async function databaseWrites(at: string): Promise<void> {
+  await request(at, 'POST', '/reset', { tenants: [TENANT], fixture: 'v1' })
+  const v1 = (method: string, path: string, body?: JsonValue, status = 200) =>
+    request(at, method, path, body, status, '2022-06-28')
+  const made = await v1('POST', '/v1/databases', {
+    parent: { type: 'page_id', page_id: PAGE },
+    title: [{ text: { content: 'Reading list' } }],
+    properties: {
+      Name: { title: {} },
+      Pages: { number: {} },
+      Status: { select: { options: [{ name: 'Queued' }] } },
+    },
+  })
+  const id = String(made.id)
+  eq('a created database answers its schema', keys(made.properties), ['Name', 'Pages', 'Status'])
+  eq('a created column', (made.properties as Record<string, JsonValue>).Pages, {
+    id: 'Pages',
+    name: 'Pages',
+    type: 'number',
+    number: { format: 'number' },
+  })
+  eq(
+    'a created option',
+    (
+      (made.properties as Record<string, Record<string, JsonValue>>).Status!.select as Record<
+        string,
+        JsonValue
+      >
+    ).options,
+    [{ id: 'Queued', name: 'Queued', color: 'default' }],
+  )
+  eq('a created database parent', made.parent, { type: 'page_id', page_id: PAGE })
+  eq(
+    'a created database is a child of its page',
+    results(await v1('GET', `/v1/blocks/${PAGE}/children`)).at(-1),
+    {
+      object: 'block',
+      id,
+      type: 'child_database',
+      has_children: false,
+      child_database: { title: 'Reading list' },
+    },
+  )
+  const book = await v1('POST', '/v1/pages', {
+    parent: { database_id: id },
+    properties: { Name: { title: [{ text: { content: 'Dune' } }] }, Pages: { number: 412 } },
+  })
+  const updated = await v1('PATCH', `/v1/databases/${id}`, {
+    title: [{ text: { content: 'Books' } }],
+    properties: { Pages: { name: 'Length' }, Status: null, Rating: { number: {} } },
+  })
+  eq('an update renames, removes and adds', keys(updated.properties), ['Name', 'Length', 'Rating'])
+  eq(
+    'a renamed column keeps its id',
+    (
+      (updated.properties as Record<string, Record<string, JsonValue>>).Length as Record<
+        string,
+        JsonValue
+      >
+    ).id,
+    'Pages',
+  )
+  const moved = (await v1('GET', `/v1/pages/${String(book.id)}`)).properties as Record<
+    string,
+    Record<string, JsonValue>
+  >
+  eq(
+    'rows follow the schema',
+    [Object.keys(moved), moved.Length!.number!, moved.Rating!.number!],
+    [['Name', 'Length', 'Rating'], 412, null],
+  )
+  eq(
+    'a renamed value answers by its old id',
+    (await v1('GET', `/v1/pages/${String(book.id)}/properties/Pages`)).number,
+    412,
+  )
+  eq(
+    'a retitled database retitles its block',
+    (await v1('GET', `/v1/blocks/${id}`)).child_database,
+    { title: 'Books' },
+  )
+  for (const properties of [
+    { Name: null },
+    { Name: { number: {} } },
+    { Other: { title: {} } },
+    { Nope: null },
+    { Nope: { name: 'Renamed' } },
+    { Length: { name: 'Rating' } },
+  ]) {
+    await v1('PATCH', `/v1/databases/${id}`, { properties }, 400)
+  }
+  eq(
+    'a refused update changes nothing',
+    keys((await v1('GET', `/v1/databases/${id}`)).properties),
+    ['Name', 'Length', 'Rating'],
+  )
+  await v1('PATCH', `/v1/databases/${MISSING}`, { title: [] }, 404)
+  await v1(
+    'POST',
+    '/v1/databases',
+    { parent: { page_id: PAGE }, properties: { N: { number: {} } } },
+    400,
+  )
+  await v1('POST', '/v1/databases', { properties: { Name: { title: {} } } }, 400)
+  await v1(
+    'POST',
+    '/v1/databases',
+    { parent: { page_id: MISSING }, properties: { Name: { title: {} } } },
+    404,
+  )
+  const modern = await request(at, 'POST', '/v1/databases', {
+    parent: { page_id: PAGE },
+    title: [{ text: { content: 'Modern' } }],
+    initial_data_source: { properties: { Task: { title: {} } } },
+  })
+  const source = (modern.data_sources as Record<string, JsonValue>[])[0]!
+  eq('a 2025-09-03 create answers its data source', source.name, 'Modern')
+  eq(
+    'the data source holds the initial schema',
+    keys((await request(at, 'GET', `/v1/data_sources/${String(source.id)}`)).properties),
+    ['Task'],
+  )
+}
+
+// Update a data source at 2025-09-03: the same schema write a database takes,
+// on the one data source the fake derives for it. A second data source, a
+// data source moved to another database and templates are what the fake does
+// not model, and each says so.
+async function dataSourceWrites(at: string): Promise<void> {
+  await request(at, 'POST', '/reset', { tenants: [TENANT], fixture: 'v1' })
+  const updated = await request(at, 'PATCH', `/v1/data_sources/${DS}`, {
+    title: [{ text: { content: 'Backlog' } }],
+    properties: { Priority: { name: 'Rank' }, Link: null },
+  })
+  eq('a data source update answers the data source', updated.object, 'data_source')
+  eq('a data source update writes the schema', keys(updated.properties), [
+    'Name',
+    'Rank',
+    'Done',
+    'Stage',
+    'Tags',
+    'Due',
+    'Notes',
+  ])
+  eq(
+    'its database shows the new title',
+    (await request(at, 'GET', `/v1/databases/${DB}`)).data_sources,
+    [{ id: DS, name: 'Backlog' }],
+  )
+  const row = (await request(at, 'GET', `/v1/pages/${ROW}`)).properties as Record<
+    string,
+    Record<string, JsonValue>
+  >
+  eq('its rows follow', [row.Rank!.number!, 'Link' in row], [2, false])
+  await request(at, 'PATCH', `/v1/data_sources/${DS}`, { parent: { database_id: MISSING } }, 400)
+  await request(at, 'PATCH', `/v1/data_sources/${DS}`, { properties: { Name: null } }, 400)
+  await request(at, 'PATCH', `/v1/data_sources/${MISSING}`, { title: [] }, 404)
+  const schema = { Name: { title: {} } }
+  await request(
+    at,
+    'POST',
+    '/v1/data_sources',
+    { parent: { database_id: DB }, properties: schema },
+    400,
+  )
+  await request(
+    at,
+    'POST',
+    '/v1/data_sources',
+    { parent: { page_id: PAGE }, properties: schema },
+    400,
+  )
+  await request(
+    at,
+    'POST',
+    '/v1/data_sources',
+    { parent: { database_id: MISSING }, properties: schema },
+    404,
+  )
+  eq(
+    'a data source lists no templates',
+    await request(at, 'GET', `/v1/data_sources/${DS}/templates`),
+    {
+      templates: [],
+      has_more: false,
+      next_cursor: null,
+    },
+  )
+  await request(at, 'GET', `/v1/data_sources/${DS}/templates?start_cursor=nope`, undefined, 400)
+  await request(at, 'GET', `/v1/data_sources/${MISSING}/templates`, undefined, 404)
+}
+
+// Move a page between pages and data sources. Its child_page block follows it
+// between pages, its title follows it into and out of a schema, and its own
+// content never moves.
+async function pageMoves(at: string): Promise<void> {
+  await request(at, 'POST', '/reset', { tenants: [TENANT], fixture: 'v1' })
+  const move = (id: string, parent: JsonValue, status = 200) =>
+    request(at, 'POST', `/v1/pages/${id}/move`, { parent }, status)
+  const children = async (id: string): Promise<JsonValue[]> =>
+    results(await request(at, 'GET', `/v1/blocks/${id}/children`)).map((block) => block.id!)
+  const under = await move(PAGE_C, { type: 'page_id', page_id: PAGE_B })
+  eq('a moved page names its new parent', under.parent, { type: 'page_id', page_id: PAGE_B })
+  eq(
+    'its block leaves the old parent and joins the new one',
+    [(await children(PAGE)).includes(PAGE_C), (await children(PAGE_B)).at(-1)!],
+    [false, PAGE_C],
+  )
+  const row = await move(PAGE_C, { type: 'data_source_id', data_source_id: DS })
+  eq('a page moved into a data source takes its schema', keys(row.properties), [
+    'Name',
+    'Priority',
+    'Done',
+    'Stage',
+    'Tags',
+    'Due',
+    'Link',
+    'Notes',
+  ])
+  eq('its title moves to the title column', titles({ results: [row] }), ['Q1 Goals'])
+  eq('it leaves no block behind', (await children(PAGE_B)).includes(PAGE_C), false)
+  check(
+    'it is a row of the data source',
+    titles(await request(at, 'POST', `/v1/data_sources/${DS}/query`, {})).includes('Q1 Goals'),
+  )
+  eq('its content stays with it', await children(PAGE_C), ['b-c1'])
+  const out = await move(ROW, { type: 'page_id', page_id: PAGE })
+  eq('a row moved under a page keeps only its title', keys(out.properties), ['title'])
+  eq('a row moved under a page gets a block', (await children(PAGE)).at(-1), ROW)
+  await move(PAGE, { type: 'page_id', page_id: PAGE }, 400)
+  await move(PAGE, { type: 'page_id', page_id: ROW }, 400)
+  await move(MISSING, { type: 'page_id', page_id: PAGE }, 404)
+  await move(PAGE_B, { type: 'page_id', page_id: MISSING }, 404)
+  await move(PAGE_B, { type: 'workspace' }, 400)
+}
+
+// Every operation @notionhq/notion-mcp-server exposes at the two versions this
+// fake is pinned to, from each one's scripts/notion-openapi.json, sent with the
+// Notion-Version that version sends: 1.9.0 is what vfs-bench drives, 2.5.2 is
+// the newest. A missing id reaches each operation without changing anything,
+// so every answer is the route's own, and only a path no route serves answers
+// invalid_request_url.
+const MCP_OPERATIONS: ReadonlyArray<
+  readonly [string, string, ReadonlyArray<readonly [string, string]>]
+> = [
+  [
+    '1.9.0',
+    '2022-06-28',
+    [
+      ['GET', '/v1/users/{user_id}'],
+      ['GET', '/v1/users'],
+      ['GET', '/v1/users/me'],
+      ['POST', '/v1/databases/{database_id}/query'],
+      ['POST', '/v1/search'],
+      ['GET', '/v1/blocks/{block_id}/children'],
+      ['PATCH', '/v1/blocks/{block_id}/children'],
+      ['GET', '/v1/blocks/{block_id}'],
+      ['PATCH', '/v1/blocks/{block_id}'],
+      ['DELETE', '/v1/blocks/{block_id}'],
+      ['GET', '/v1/pages/{page_id}'],
+      ['PATCH', '/v1/pages/{page_id}'],
+      ['POST', '/v1/pages'],
+      ['POST', '/v1/databases'],
+      ['PATCH', '/v1/databases/{database_id}'],
+      ['GET', '/v1/databases/{database_id}'],
+      ['GET', '/v1/pages/{page_id}/properties/{property_id}'],
+      ['GET', '/v1/comments'],
+      ['POST', '/v1/comments'],
+    ],
+  ],
+  [
+    '2.5.2',
+    '2025-09-03',
+    [
+      ['GET', '/v1/users/{user_id}'],
+      ['GET', '/v1/users'],
+      ['GET', '/v1/users/me'],
+      ['POST', '/v1/search'],
+      ['GET', '/v1/blocks/{block_id}/children'],
+      ['PATCH', '/v1/blocks/{block_id}/children'],
+      ['GET', '/v1/blocks/{block_id}'],
+      ['PATCH', '/v1/blocks/{block_id}'],
+      ['DELETE', '/v1/blocks/{block_id}'],
+      ['GET', '/v1/pages/{page_id}'],
+      ['PATCH', '/v1/pages/{page_id}'],
+      ['POST', '/v1/pages'],
+      ['GET', '/v1/pages/{page_id}/properties/{property_id}'],
+      ['GET', '/v1/comments'],
+      ['POST', '/v1/comments'],
+      ['POST', '/v1/data_sources/{data_source_id}/query'],
+      ['GET', '/v1/data_sources/{data_source_id}'],
+      ['PATCH', '/v1/data_sources/{data_source_id}'],
+      ['POST', '/v1/data_sources'],
+      ['GET', '/v1/data_sources/{data_source_id}/templates'],
+      ['GET', '/v1/databases/{database_id}'],
+      ['POST', '/v1/pages/{page_id}/move'],
+      ['GET', '/v1/pages/{page_id}/markdown'],
+      ['PATCH', '/v1/pages/{page_id}/markdown'],
+    ],
+  ],
+]
+
+async function answer(
+  at: string,
+  method: string,
+  path: string,
+  version = '2022-06-28',
+): Promise<[number, Record<string, JsonValue>]> {
+  const response = await fetch(at + path, {
+    method,
+    headers: {
+      Authorization: `Bearer ${TENANT}`,
+      'Notion-Version': version,
+      'Content-Type': 'application/json',
+    },
+    ...(method === 'GET' || method === 'DELETE' ? {} : { body: '{}' }),
+  })
+  return [response.status, (await response.json()) as Record<string, JsonValue>]
+}
+
+async function mcpSurface(at: string): Promise<void> {
+  await request(at, 'POST', '/reset', { tenants: [TENANT], fixture: 'v1' })
+  for (const [server, version, operations] of MCP_OPERATIONS) {
+    for (const [method, template] of operations) {
+      const path = template.replace(/\{\w+\}/g, MISSING)
+      const [status, body] = await answer(at, method, path, version)
+      check(
+        `${server} ${method} ${template} is served`,
+        body.code !== 'invalid_request_url',
+        `${String(status)} ${String(body.code)}`,
+      )
+    }
+  }
+  for (const [method, path] of [
+    ['GET', `/v1/pages/${PAGE}/comments`],
+    ['POST', '/v1/pages/'],
+  ] as const) {
+    eq(`${method} ${path} is an invalid request url`, await answer(at, method, path), [
+      400,
+      {
+        object: 'error',
+        status: 400,
+        code: 'invalid_request_url',
+        message: 'Invalid request URL.',
+      },
+    ])
+  }
+}
+
 async function main(): Promise<void> {
   const fake = await launch()
   const at = fake.endpoint
@@ -505,6 +926,11 @@ async function main(): Promise<void> {
     )
     eq('a folded query that fits one page has no next page', unicode.has_more, false)
     await liveReads(at)
+    await propertyItems(at)
+    await databaseWrites(at)
+    await dataSourceWrites(at)
+    await pageMoves(at)
+    await mcpSurface(at)
     process.stdout.write(`notion selftest: ${String(checks)} checks passed\n`)
   } finally {
     fake.child.kill('SIGTERM')

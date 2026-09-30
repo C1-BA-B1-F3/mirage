@@ -21,19 +21,22 @@ import {
 } from './blocks.ts'
 import type { Ctx, Minter, Reply } from '../kit/typescript/index.ts'
 import type { C } from './config.ts'
-import { MAX_PAGE_SIZE } from './config.ts'
+import { DATA_SOURCE_VERSION, MAX_PAGE_SIZE } from './config.ts'
 import {
   fillSchema,
+  migrateRow,
+  movedProperties,
   normalizeBlockPayload,
   normalizeProperties,
+  patchSchema,
   persistSchema,
   schemaOf,
   titleColumnOf,
   titleOfProperties,
   titleProp,
 } from './props.ts'
-import { markdownOf, metaOf } from './store.ts'
-import { markdownToBlocks, richToMd } from './text.ts'
+import { dataSourceOwner, markdownOf, metaOf } from './store.ts'
+import { markdownToBlocks, normalizeRichText, plainTextOf, richToMd } from './text.ts'
 import { apiVersion, markdownReply } from './reads.ts'
 import type {
   BlockSpec,
@@ -50,7 +53,8 @@ import {
   blockJson,
   commentJson,
   cursorOf,
-  databaseIdOf,
+  dataSourceJson,
+  databaseJson,
   defaultUrl,
   intOr,
   idAt,
@@ -83,11 +87,10 @@ async function createPage(
   } else if (typeof parent.data_source_id === 'string') {
     // Rows are addressed by data source since 2025-09-03, but storage keys
     // them by database, so the parent resolves back one hop here.
-    const all = (await db.notionDatabase.findMany({ where: { tenant } })) as DatabaseRow[]
-    const owner = databaseIdOf(parent.data_source_id, all)
+    const owner = await dataSourceOwner(db, tenant, parent.data_source_id)
     if (owner === null) return notFound('data source', parent.data_source_id)
     parentType = 'database_id'
-    parentId = owner
+    parentId = owner.id
   } else if (typeof parent.database_id === 'string') {
     parentType = 'database_id'
     parentId = parent.database_id
@@ -465,6 +468,296 @@ async function updatePage(
   return { status: 200, body: pageJson(updated, version) }
 }
 
+// A 2022-06-28 create names its columns in `properties`; a 2025-09-03 one names
+// them in `initial_data_source`, whose data source is the one the fake derives
+// from every database. A database under a page is also a child_database block
+// of that page, as a child page is a child_page block, so the page's children
+// list it. The fake stores no database icon or cover, so both are ignored.
+async function createDatabase(
+  db: C,
+  tenant: string,
+  meta: MetaRow,
+  minter: Minter,
+  body: Json,
+  version: string,
+): Promise<Reply> {
+  const parent = asObject(body.parent)
+  const parentId = typeof parent.page_id === 'string' ? parent.page_id : null
+  if (parentId === null && parent.workspace !== true) {
+    return apiError(400, 'validation_error', 'body.parent should be defined.')
+  }
+  if (
+    parentId !== null &&
+    (await db.notionPage.findFirst({ where: { tenant, id: parentId } })) === null
+  ) {
+    return notFound('page', parentId)
+  }
+  const named =
+    version < DATA_SOURCE_VERSION ? body.properties : asObject(body.initial_data_source).properties
+  const columns = patchSchema({}, asObject(named))
+  if (!Array.isArray(columns)) return columns
+  if (!columns.some(([, column]) => column.type === 'title')) {
+    return validation('A database has exactly one title property.')
+  }
+  const title = normalizeRichText(body.title)
+  const id = mintId(minter, 'f0000000')
+  await db.notionDatabase.create({
+    data: {
+      id,
+      tenant,
+      parentType: parentId === null ? 'workspace' : 'page_id',
+      parentId,
+      titleText: plainTextOf(title),
+      titleJson: JSON.stringify(title),
+      descriptionJson:
+        body.description === undefined ? null : JSON.stringify(normalizeRichText(body.description)),
+      propertiesJson: JSON.stringify(Object.fromEntries(columns)),
+      isInline: body.is_inline === true,
+      createdTime: meta.createdTime,
+      lastEditedTime: meta.lastEditedTime,
+      createdBy: meta.createdBy,
+      lastEditedBy: meta.lastEditedBy,
+      url: defaultUrl(meta, id),
+      position: await db.notionDatabase.count({ where: { tenant } }),
+    },
+  })
+  if (parentId !== null) {
+    await db.notionBlock.create({
+      data: {
+        id,
+        tenant,
+        parentId,
+        position: await db.notionBlock.count({ where: { tenant, parentId } }),
+        type: 'child_database',
+        payloadJson: JSON.stringify({ title: plainTextOf(title) }),
+        hasChildren: false,
+        createdTime: meta.createdTime,
+        lastEditedTime: meta.lastEditedTime,
+        createdBy: meta.createdBy,
+        lastEditedBy: meta.lastEditedBy,
+      },
+    })
+  }
+  const created = (await db.notionDatabase.findFirst({ where: { tenant, id } })) as DatabaseRow
+  return { status: 200, body: databaseJson(created, version) }
+}
+
+// A schema write moves every row with it: a renamed column's values follow its
+// id to the new name, a removed one's go, an added one's start empty. The
+// title, like a trash flag, reaches the child_database block too, since the
+// page's children render the block rather than the database. Null when the
+// write landed, the refusal when it did not.
+async function patchDatabase(
+  db: C,
+  tenant: string,
+  meta: MetaRow,
+  row: DatabaseRow,
+  body: Json,
+): Promise<Reply | null> {
+  const id = row.id
+  const data: Record<string, unknown> = {}
+  if (body.title !== undefined) {
+    const title = normalizeRichText(body.title)
+    data.titleJson = JSON.stringify(title)
+    data.titleText = plainTextOf(title)
+  }
+  if (body.description !== undefined) {
+    data.descriptionJson = JSON.stringify(normalizeRichText(body.description))
+  }
+  if (typeof body.is_inline === 'boolean') data.isInline = body.is_inline
+  const trash = typeof body.in_trash === 'boolean' ? body.in_trash : body.archived
+  if (typeof trash === 'boolean') data.inTrash = trash
+  if (body.properties !== undefined) {
+    const before = schemaOf(row)
+    const columns = patchSchema(before, asObject(body.properties))
+    if (!Array.isArray(columns)) return columns
+    const schema = Object.fromEntries(columns)
+    data.propertiesJson = JSON.stringify(schema)
+    const rows = (await db.notionPage.findMany({
+      where: { tenant, parentType: 'database_id', parentId: id },
+    })) as PageRow[]
+    for (const one of rows) {
+      const properties = migrateRow(JSON.parse(one.propertiesJson) as Json, before, schema, meta)
+      await db.notionPage.update({
+        where: { tenant_id: { tenant, id: one.id } },
+        data: { propertiesJson: JSON.stringify(properties) },
+      })
+    }
+  }
+  const updated = await db.notionDatabase.update({ where: { tenant_id: { tenant, id } }, data })
+  if ((await db.notionBlock.findFirst({ where: { tenant, id } })) !== null) {
+    await db.notionBlock.update({
+      where: { tenant_id: { tenant, id } },
+      data: { payloadJson: JSON.stringify({ title: updated.titleText }), inTrash: updated.inTrash },
+    })
+  }
+  return null
+}
+
+async function updateDatabase(
+  db: C,
+  tenant: string,
+  meta: MetaRow,
+  id: string,
+  body: Json,
+  version: string,
+): Promise<Reply> {
+  const row = (await db.notionDatabase.findFirst({ where: { tenant, id } })) as DatabaseRow | null
+  if (row === null) return notFound('database', id)
+  const refused = await patchDatabase(db, tenant, meta, row, body)
+  if (refused !== null) return refused
+  const updated = (await db.notionDatabase.findFirst({ where: { tenant, id } })) as DatabaseRow
+  return { status: 200, body: databaseJson(updated, version) }
+}
+
+// Since 2025-09-03 a database's title and schema are its data source's, and
+// the fake derives one data source per database, so updating either writes the
+// same row. Moving a data source to another database would leave its database
+// with none, which that model cannot hold, so it is refused.
+async function updateDataSource(
+  db: C,
+  tenant: string,
+  meta: MetaRow,
+  id: string,
+  body: Json,
+): Promise<Reply> {
+  const row = await dataSourceOwner(db, tenant, id)
+  if (row === null) return notFound('data source', id)
+  const target = asObject(body.parent).database_id
+  if (target !== undefined && target !== row.id) {
+    return apiError(
+      400,
+      'validation_error',
+      'body.parent moves a data source to another database, which the integ fake does not model.',
+    )
+  }
+  const refused = await patchDatabase(db, tenant, meta, row, body)
+  if (refused !== null) return refused
+  const updated = (await db.notionDatabase.findFirst({
+    where: { tenant, id: row.id },
+  })) as DatabaseRow
+  return { status: 200, body: dataSourceJson(updated) }
+}
+
+// Create a data source adds one to an existing database (API reference). Every
+// database already holds the one data source the fake derives for it, so a
+// second is refused in the fake's words, after the same checks live makes. A
+// database with a new schema is `POST /v1/databases` with
+// `initial_data_source`.
+async function createDataSource(db: C, tenant: string, body: Json): Promise<Reply> {
+  const id = asObject(body.parent).database_id
+  if (typeof id !== 'string') {
+    return validation(
+      'body failed validation: body.parent.database_id should be defined, instead was `undefined`.',
+    )
+  }
+  if ((await db.notionDatabase.findFirst({ where: { tenant, id } })) === null) {
+    return notFound('database', id)
+  }
+  return validation(
+    `Database ${id} already holds a data source, and a second is not something the integ fake models.`,
+  )
+}
+
+// Move a page under a page or into a data source (API reference, move page);
+// a database id under `page_id` or `database_id` names its one data source.
+// The API moves no database or other block. A page under a page is also a
+// child_page block of it, so that block follows the page, is made when the
+// page leaves a data source, and goes when it enters one; the page's own
+// content is keyed by the page and moves untouched. Moving a page under
+// itself or its own subpage is refused, in the fake's words.
+async function movePage(
+  db: C,
+  tenant: string,
+  meta: MetaRow,
+  id: string,
+  body: Json,
+  version: string,
+): Promise<Reply> {
+  const row = (await db.notionPage.findFirst({ where: { tenant, id } })) as PageRow | null
+  if (row === null) return notFound('page', id)
+  const parent = asObject(body.parent)
+  let owner: DatabaseRow | null = null
+  let parentPage: string | null = null
+  if (typeof parent.data_source_id === 'string') {
+    owner = await dataSourceOwner(db, tenant, parent.data_source_id)
+    if (owner === null) return notFound('data source', parent.data_source_id)
+  } else if (typeof parent.database_id === 'string' || typeof parent.page_id === 'string') {
+    const ref = String(parent.page_id ?? parent.database_id)
+    owner = (await db.notionDatabase.findFirst({
+      where: { tenant, id: ref },
+    })) as DatabaseRow | null
+    if (owner === null && typeof parent.page_id !== 'string') return notFound('database', ref)
+    if (owner === null) {
+      if ((await db.notionPage.findFirst({ where: { tenant, id: ref } })) === null) {
+        return notFound('page', ref)
+      }
+      parentPage = ref
+    }
+  } else {
+    return validation(
+      'body failed validation: body.parent.page_id should be defined, instead was `undefined`.',
+    )
+  }
+  let above = owner === null ? parentPage : owner.parentType === 'page_id' ? owner.parentId : null
+  while (above !== null) {
+    if (above === id)
+      return validation('A page cannot be moved into itself or one of its subpages.')
+    const up = (await db.notionPage.findFirst({ where: { tenant, id: above } })) as PageRow | null
+    if (up === null || up.parentType === 'workspace') break
+    if (up.parentType === 'page_id') {
+      above = up.parentId
+      continue
+    }
+    const holder = await db.notionDatabase.findFirst({ where: { tenant, id: up.parentId ?? '' } })
+    above = holder !== null && holder.parentType === 'page_id' ? holder.parentId : null
+  }
+  const properties = movedProperties(
+    JSON.parse(row.propertiesJson) as Json,
+    owner === null ? null : schemaOf(owner),
+    meta,
+  )
+  await db.notionPage.update({
+    where: { tenant_id: { tenant, id } },
+    data: {
+      parentType: owner === null ? 'page_id' : 'database_id',
+      parentId: owner === null ? parentPage : owner.id,
+      propertiesJson: JSON.stringify(properties),
+    },
+  })
+  const block = await db.notionBlock.findFirst({ where: { tenant, id } })
+  if (parentPage === null) {
+    if (block !== null) await db.notionBlock.delete({ where: { tenant_id: { tenant, id } } })
+  } else if (block === null || block.parentId !== parentPage) {
+    const position = await db.notionBlock.count({ where: { tenant, parentId: parentPage } })
+    if (block === null) {
+      await db.notionBlock.create({
+        data: {
+          id,
+          tenant,
+          parentId: parentPage,
+          position,
+          type: 'child_page',
+          payloadJson: JSON.stringify({ title: row.titleText }),
+          hasChildren: false,
+          inTrash: row.inTrash,
+          createdTime: meta.createdTime,
+          lastEditedTime: meta.lastEditedTime,
+          createdBy: meta.createdBy,
+          lastEditedBy: meta.lastEditedBy,
+        },
+      })
+    } else {
+      await db.notionBlock.update({
+        where: { tenant_id: { tenant, id } },
+        data: { parentId: parentPage, position },
+      })
+    }
+  }
+  const moved = (await db.notionPage.findFirst({ where: { tenant, id } })) as PageRow
+  return { status: 200, body: pageJson(moved, version) }
+}
+
 // The route-shaped wrappers. Every write reads the same three pieces of
 // per-tenant state, so they are fetched once here rather than by each handler:
 // the meta row (the fixture's old `defaults`), the tenant's minter, and the
@@ -477,6 +770,32 @@ export async function createPageRoute(ctx: Ctx<C>): Promise<Reply> {
 export async function updatePageRoute(ctx: Ctx<C>): Promise<Reply> {
   const id = ctx.params.id ?? ''
   return updatePage(ctx.db, ctx.tenant, id, asObject(ctx.json()), apiVersion(ctx))
+}
+
+export async function createDatabaseRoute(ctx: Ctx<C>): Promise<Reply> {
+  const meta = await metaOf(ctx.db, ctx.tenant)
+  return createDatabase(ctx.db, ctx.tenant, meta, ctx.minter, asObject(ctx.json()), apiVersion(ctx))
+}
+
+export async function updateDatabaseRoute(ctx: Ctx<C>): Promise<Reply> {
+  const meta = await metaOf(ctx.db, ctx.tenant)
+  const id = ctx.params.id ?? ''
+  return updateDatabase(ctx.db, ctx.tenant, meta, id, asObject(ctx.json()), apiVersion(ctx))
+}
+
+export async function updateDataSourceRoute(ctx: Ctx<C>): Promise<Reply> {
+  const meta = await metaOf(ctx.db, ctx.tenant)
+  return updateDataSource(ctx.db, ctx.tenant, meta, ctx.params.id ?? '', asObject(ctx.json()))
+}
+
+export async function createDataSourceRoute(ctx: Ctx<C>): Promise<Reply> {
+  return createDataSource(ctx.db, ctx.tenant, asObject(ctx.json()))
+}
+
+export async function movePageRoute(ctx: Ctx<C>): Promise<Reply> {
+  const meta = await metaOf(ctx.db, ctx.tenant)
+  const id = ctx.params.id ?? ''
+  return movePage(ctx.db, ctx.tenant, meta, id, asObject(ctx.json()), apiVersion(ctx))
 }
 
 export async function appendChildrenRoute(ctx: Ctx<C>): Promise<Reply> {

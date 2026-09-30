@@ -14,6 +14,7 @@
 
 import { describe, expect, it } from 'vitest'
 import { LangfuseAccessor, type LangfuseAccessorConfig } from '../../accessor/langfuse.ts'
+import type { Evicted, IndexEntry, SetDirOptions } from '../../cache/index/config.ts'
 import { RAMIndexCacheStore } from '../../cache/index/ram.ts'
 import { LANGFUSE_IO } from '../../commands/builtin/langfuse/io.ts'
 import { BaseVFS } from '../../vfs/base.ts'
@@ -46,6 +47,20 @@ class RecordingTransport implements LangfuseTransport {
 
 function accessor(transport: LangfuseTransport, config: LangfuseAccessorConfig = {}) {
   return new LangfuseAccessor(transport, config)
+}
+
+class WindowSpy extends RAMIndexCacheStore {
+  readonly windows = new Map<string, boolean>()
+
+  override setDir(
+    vfsPath: string,
+    entries: readonly [string, IndexEntry][],
+    expiredAt?: Date | null,
+    options: SetDirOptions = {},
+  ): Promise<Evicted[]> {
+    this.windows.set(vfsPath, options.window === true)
+    return super.setDir(vfsPath, entries, expiredAt, options)
+  }
 }
 
 function spec(virtual: string): PathSpec {
@@ -208,5 +223,25 @@ describe('langfuse bounded trace listing', () => {
       index,
     )
     expect((await index.listDir('/traces')).entries).toHaveLength(2)
+  })
+})
+
+describe('langfuse single-page listings', () => {
+  it.each([
+    ['/sessions', '/api/public/sessions', [{ id: 'session-1' }]],
+    ['/prompts', '/api/public/v2/prompts', [{ name: 'summarize', versions: [1] }]],
+    ['/datasets', '/api/public/v2/datasets', [{ name: 'qa-eval' }]],
+    ['/datasets/qa-eval/runs', '/api/public/datasets/qa-eval/runs', [{ name: 'run-a' }]],
+  ])('writes %s as a window', async (path, endpoint, rows) => {
+    // Each of these is one page of the newest entries: an older one that
+    // drops off the page has not been deleted.
+    const index = new WindowSpy()
+    const out = await readdir(
+      accessor(new RecordingTransport({ [endpoint]: { data: rows } })),
+      spec(path),
+      index,
+    )
+    expect(out).toHaveLength(1)
+    expect(index.windows.get(path)).toBe(true)
   })
 })

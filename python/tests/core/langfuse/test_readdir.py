@@ -25,6 +25,7 @@ from mirage.core.langfuse.stat import stat
 from mirage.core.render.json import jsonl_bytes
 from mirage.types import PathSpec
 from mirage.vfs.langfuse.config import LangfuseConfig
+from tests.fixtures.index_spy import WindowSpy
 
 
 @pytest.fixture
@@ -370,3 +371,35 @@ async def test_a_trace_listing_short_of_the_limit_is_the_directory(index):
     accessor = _bounded_accessor(default_trace_limit=3)
     await _list_traces_dir(accessor, index, [{"id": "t1"}, {"id": "t2"}])
     assert (await index.list_dir("/traces")).entries is not None
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("path, fetch, rows", [
+    ("/sessions", "fetch_sessions", [{
+        "id": "session-1"
+    }]),
+    ("/prompts", "fetch_prompts", [{
+        "name": "summarize",
+        "versions": [1]
+    }]),
+    ("/datasets", "fetch_datasets", [{
+        "name": "qa-eval"
+    }]),
+    ("/datasets/qa-eval/runs", "fetch_dataset_runs", [{
+        "name": "run-a"
+    }]),
+])
+async def test_a_single_page_listing_is_written_as_a_window(
+        accessor, path, fetch, rows):
+    # Each of these is one page of the newest entries: an older one that
+    # drops off the page has not been deleted.
+    index = WindowSpy()
+    with patch(f"mirage.core.langfuse.readdir.{fetch}",
+               new_callable=AsyncMock,
+               return_value=rows):
+        await readdir(
+            accessor,
+            PathSpec(vfs_path=path.lstrip("/"), virtual=path, directory=path),
+            index)
+    assert index.windows[path] is True
+

@@ -23,6 +23,7 @@ from mirage.core.slack.config import SlackConfig
 from mirage.core.slack.readdir import _date_range, readdir
 from mirage.core.time_range import TimeRange
 from mirage.types import PathSpec
+from tests.fixtures.index_spy import WindowSpy
 
 
 @pytest.fixture
@@ -442,3 +443,28 @@ async def test_end_scoped_bare_listing_pages_only_history_before_the_end(
         "/dms/alice__D001/2026-05-31",
         "/dms/alice__D001/2026-05-30",
     ]
+
+
+@pytest.mark.asyncio
+async def test_a_channel_listing_is_written_as_a_window(accessor):
+    # The bare listing covers the last 90 days only; a day that falls out
+    # of it still exists and is still readable by path.
+    index = WindowSpy()
+    await index.set_dir("/channels", [
+        ("general__C001",
+         IndexEntry(id="C001",
+                    name="general",
+                    resource_type="slack/channel",
+                    vfs_name="general__C001")),
+    ])
+    now = datetime.now(timezone.utc)
+    with patch("mirage.core.slack.readdir._latest_message_ts",
+               new_callable=AsyncMock,
+               return_value=now.timestamp()):
+        await readdir(accessor,
+                      PathSpec(vfs_path="channels/general__C001",
+                               virtual="/channels/general__C001",
+                               directory="/channels/general__C001"),
+                      index=index)
+    assert index.windows["/channels/general__C001"] is True
+

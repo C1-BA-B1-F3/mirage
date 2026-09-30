@@ -112,6 +112,7 @@ async function children(accessor: LanceDBAccessor, match: ScopeMatch): Promise<L
       entries: names.map((name): [string, IndexEntry] => [name, dirEntry(name)]),
       seeds: {},
       partial: displayPrefix !== '',
+      window: true,
     }
     return listing
   }
@@ -135,6 +136,7 @@ async function children(accessor: LanceDBAccessor, match: ScopeMatch): Promise<L
     entries: rowEntries(rows, config),
     seeds: {},
     partial: prefix !== '',
+    window: true,
   }
   return listing
 }

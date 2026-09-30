@@ -51,11 +51,17 @@ class DirListing:
             readdir re-list. ``seeds`` stay full listings of the
             children this fetch did report, so they are cached as
             directories as usual.
+        window (bool): the fetch was capped (the newest N messages, the
+            last N days, the first N rows), so the entries are everything
+            to show but prove nothing absent: a child that drops out of
+            the window has not been deleted. The listing and its seeds
+            are cached as directories but evict nothing.
     """
     entries: list[tuple[str, IndexEntry]]
     seeds: Mapping[str, list[tuple[str,
                                    IndexEntry]]] = field(default_factory=dict)
     partial: bool = False
+    window: bool = False
 
 
 Listed = list[tuple[str, IndexEntry]] | DirListing
@@ -224,19 +230,22 @@ def make_readdir(
             listed = maybe
         seeds: Mapping[str, list[tuple[str, IndexEntry]]] = {}
         partial = False
+        window = False
         if isinstance(listed, DirListing):
             seeds = listed.seeds
             partial = listed.partial
+            window = listed.window
             listed = listed.entries
         entries = _drop_hidden(listed)
         stem = virtual_key.rstrip("/")
         if partial:
             await index.set_partial_dir(virtual_key, entries)
         else:
-            await index.set_dir(virtual_key, entries)
+            await index.set_dir(virtual_key, entries, window=window)
         for rel, child_entries in seeds.items():
             await index.set_dir(f"{stem}/{rel.strip('/')}",
-                                _drop_hidden(child_entries))
+                                _drop_hidden(child_entries),
+                                window=window)
         return [f"{stem}/{name}" for name, _ in entries]
 
     return readdir

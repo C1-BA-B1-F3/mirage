@@ -223,7 +223,7 @@ async function listFolder(
       seeds[`${dateStr}/${attDir}`] = attEntries
     }
   }
-  return { entries, seeds }
+  return { entries, seeds, window: true }
 }
 
 async function listDay(
@@ -236,7 +236,7 @@ async function listDay(
   const headersList = await folderHeaders(accessor, match.slots.folder ?? '')
   const day = match.slots.day ?? ''
   const { children, seeds } = dateChildren(headersList.filter((hdr) => dateBucket(hdr) === day))
-  const listing: DirListing = { entries: children, seeds }
+  const listing: DirListing = { entries: children, seeds, window: true }
   return listing
 }
 

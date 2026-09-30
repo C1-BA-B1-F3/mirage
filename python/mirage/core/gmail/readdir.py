@@ -193,7 +193,10 @@ async def _list_label(accessor: GmailAccessor, match: ScopeMatch,
         seeds[date_str] = children
         for att_dir, att_entries in att_seeds.items():
             seeds[f"{date_str}/{att_dir}"] = att_entries
-    return DirListing(entries=entries, seeds=seeds, partial=span is not None)
+    return DirListing(entries=entries,
+                      seeds=seeds,
+                      partial=span is not None,
+                      window=True)
 
 
 async def _list_day(accessor: GmailAccessor, match: ScopeMatch,
@@ -212,7 +215,7 @@ async def _list_day(accessor: GmailAccessor, match: ScopeMatch,
     )
     groups = await _group_by_date(accessor, msg_ids)
     children, att_seeds = _date_children(groups.get(match.slots["day"], []))
-    return DirListing(entries=children, seeds=att_seeds)
+    return DirListing(entries=children, seeds=att_seeds, window=True)
 
 
 async def _list_attachment_dir(accessor: GmailAccessor, match: ScopeMatch,

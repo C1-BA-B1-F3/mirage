@@ -15,7 +15,7 @@
 import type { JaegerAccessor } from '../../accessor/jaeger.ts'
 import { IndexEntry } from '../../cache/index/config.ts'
 import { enoent } from '../../utils/errors.ts'
-import { makeReaddir } from '../hierarchy/readdir.ts'
+import { makeReaddir, type DirListing } from '../hierarchy/readdir.ts'
 import type { ScopeMatch } from '../hierarchy/scope.ts'
 import { jsonBytes } from '../render/json.ts'
 import { fetchOperations, fetchServices, fetchTraces, isTraceId } from './client.ts'
@@ -93,10 +93,7 @@ async function listService(
   ]
 }
 
-async function listTraces(
-  accessor: JaegerAccessor,
-  match: ScopeMatch,
-): Promise<[string, IndexEntry][]> {
+async function listTraces(accessor: JaegerAccessor, match: ScopeMatch): Promise<DirListing> {
   const service = match.slots.service ?? ''
   const opts: { limit: number; fromTimestamp?: string; toTimestamp?: string } = {
     limit: accessor.config.defaultTraceLimit ?? 100,
@@ -125,7 +122,9 @@ async function listTraces(
       }),
     ])
   }
-  return entries
+  // The newest defaultTraceLimit traces: one that ages out of the page is
+  // still in Jaeger, so the listing evicts nothing.
+  return { entries, seeds: {}, window: true }
 }
 
 export const readdir = makeReaddir<JaegerAccessor>(detectScope, {

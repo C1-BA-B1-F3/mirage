@@ -42,11 +42,17 @@ import { INVALID, ROOT, type DetectFn, type ScopeMatch } from './scope.ts'
  * themselves are real either way, so the kit caches those and lets the next
  * readdir re-list. `seeds` stay full listings of the children this fetch did
  * report, so they are cached as directories as usual.
+ *
+ * `window` says the entries are a capped fetch (the newest N messages, the
+ * last N days): they show everything to display but prove nothing absent,
+ * so a re-list that no longer names a child evicts nothing. The seeds of a
+ * window are cut from the same capped fetch, so they are windows too.
  */
 export interface DirListing {
   entries: [string, IndexEntry][]
   seeds: Readonly<Record<string, [string, IndexEntry][]>>
   partial?: boolean
+  window?: boolean
 }
 
 export type Listed = [string, IndexEntry][] | DirListing
@@ -220,9 +226,11 @@ export function makeReaddir<A extends Accessor>(
     }
     let seeds: Readonly<Record<string, [string, IndexEntry][]>> = {}
     let partial = false
+    let window = false
     if (!Array.isArray(listed)) {
       seeds = listed.seeds
       partial = listed.partial === true
+      window = listed.window === true
       listed = listed.entries
     }
     const entries = dropHidden(listed)
@@ -230,10 +238,12 @@ export function makeReaddir<A extends Accessor>(
     if (partial) {
       await store.setPartialDir(virtualKey, entries)
     } else {
-      await store.setDir(virtualKey, entries)
+      await store.setDir(virtualKey, entries, undefined, { window })
     }
     for (const [rel, childEntries] of Object.entries(seeds)) {
-      await store.setDir(`${stem}/${stripSlash(rel)}`, dropHidden(childEntries))
+      await store.setDir(`${stem}/${stripSlash(rel)}`, dropHidden(childEntries), undefined, {
+        window,
+      })
     }
     return entries.map(([name]) => `${stem}/${name}`)
   }

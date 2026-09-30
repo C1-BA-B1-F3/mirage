@@ -193,7 +193,7 @@ async function listLabel(
       seeds[`${dateStr}/${attDir}`] = attEntries
     }
   }
-  return { entries, seeds, partial: span !== null }
+  return { entries, seeds, partial: span !== null, window: true }
 }
 
 async function listDay(
@@ -215,7 +215,7 @@ async function listDay(
   })
   const groups = await groupByDate(accessor, msgIds)
   const { children, seeds } = dateChildren(groups.get(day) ?? [])
-  const listing: DirListing = { entries: children, seeds }
+  const listing: DirListing = { entries: children, seeds, window: true }
   return listing
 }
 

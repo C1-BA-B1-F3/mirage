@@ -16,8 +16,10 @@ import asyncio
 
 import pytest
 
-from mirage.cache.index import IndexEntry
+from mirage.cache.file.ram import RAMFileCacheStore
+from mirage.cache.index import Evicted, IndexEntry
 from mirage.cache.index.ram import RAMIndexCacheStore
+from mirage.cache.index.view import IndexView
 from mirage.core.hierarchy.readdir import DirListing, make_readdir
 from mirage.core.hierarchy.scope import ScopeMatch
 from mirage.types import PathSpec
@@ -331,3 +333,108 @@ def test_a_globbed_listing_does_not_read_a_warm_window(accessor):
                        index=index))
     assert out == ["/h/rooms/red/z.json"]
     assert accessor.calls == ["window:None", "window:z.json"]
+
+
+def _room(name: str) -> tuple[str, IndexEntry]:
+    return (name, IndexEntry(id=name, name=name, resource_type="fake/room"))
+
+
+def _sliding(window: bool, partial: bool = False):
+    # First the window holds red and blue, then a newer room pushes red out;
+    # each listing also seeds the room it names first.
+    pages = [["red", "blue"], ["blue", "green"]]
+
+    async def lister(a, match):
+        names = pages.pop(0)
+        return DirListing(entries=[_room(n) for n in names],
+                          seeds={names[0]: [_room(f"{names[0]}-a")]},
+                          window=window,
+                          partial=partial)
+
+    return make_readdir(detect_scope,
+                        listers={"rooms": lister},
+                        static_root=("rooms", ))
+
+
+@pytest.mark.parametrize("window, survives", [(True, True), (False, False)])
+def test_a_window_slide_keeps_the_row_that_slid_out(accessor, window,
+                                                    survives):
+    # The same slide without the flag evicts red, which is what shows the
+    # fixture can tell a window from a complete listing.
+    readdir = _sliding(window)
+    index = RAMIndexCacheStore()
+    asyncio.run(readdir(accessor, spec("/rooms"), index=index))
+    asyncio.run(index.invalidate())
+    asyncio.run(readdir(accessor, spec("/rooms"), index=index))
+    red = asyncio.run(index.get("/h/rooms/red")).entry
+    assert (red is not None) is survives
+    assert asyncio.run(index.list_dir("/h/rooms")).entries == [
+        "/h/rooms/blue", "/h/rooms/green"
+    ]
+
+
+def test_a_windowed_listing_seeds_windows_too(accessor):
+    # A day seeded from a label window names only that window's messages;
+    # it must not evict what a full listing of the day found earlier.
+    readdir = make_readdir(
+        detect_scope,
+        listers={
+            "rooms":
+            lambda a, match: _seed_once(
+                ["/h/rooms/red-a", "/h/rooms/red-b"], window=True)
+        },
+        static_root=("rooms", ))
+    index = RAMIndexCacheStore()
+    asyncio.run(
+        index.set_dir("/h/rooms/red", [_room("red-a"), _room("red-b")]))
+    asyncio.run(readdir(accessor, spec("/rooms"), index=index))
+    assert asyncio.run(index.get("/h/rooms/red/red-b")).entry is not None
+
+
+def test_a_partial_window_stays_partial_and_seeds_windows(accessor):
+    readdir = _sliding(window=True, partial=True)
+    index = RAMIndexCacheStore()
+    asyncio.run(
+        index.set_dir("/h/rooms/red", [_room("red-a"), _room("red-z")]))
+    asyncio.run(readdir(accessor, spec("/rooms"), index=index))
+    assert asyncio.run(index.list_dir("/h/rooms")).entries is None
+    assert asyncio.run(index.get("/h/rooms/red/red-z")).entry is not None
+
+
+async def _seed_once(_names: list[str], window: bool) -> DirListing:
+    return DirListing(entries=[_room("red")],
+                      seeds={"red": [_room("red-a")]},
+                      window=window)
+
+
+def test_relisting_an_unchanged_backend_hands_nothing_to_cleanup(accessor):
+    # Every writer here must name every child it names the first time; a
+    # dropped hidden name or a seeded child listing that differs between
+    # two identical fetches would evict rows that still exist.
+    gone: list[Evicted] = []
+
+    async def on_gone(child: Evicted) -> None:
+        gone.append(child)
+
+    async def lister(a, match):
+        return DirListing(entries=[(".secret", _room(".secret")[1]),
+                                   _room("red"),
+                                   _room("blue")],
+                          seeds={"red": [_room("red-a"),
+                                         (".hidden", _room(".hidden")[1])]})
+
+    readdir = make_readdir(detect_scope,
+                           listers={"rooms": lister},
+                           static_root=("rooms", ))
+    store = RAMIndexCacheStore()
+    index = IndexView(store,
+                      RAMFileCacheStore(),
+                      "/h",
+                      lambda _key: True,
+                      on_gone=on_gone)
+    asyncio.run(readdir(accessor, spec("/rooms"), index=index))
+    asyncio.run(store.invalidate())
+    asyncio.run(readdir(accessor, spec("/rooms"), index=index))
+    assert gone == []
+    assert asyncio.run(store.get("/h/rooms/red/red-a")).entry is not None
+

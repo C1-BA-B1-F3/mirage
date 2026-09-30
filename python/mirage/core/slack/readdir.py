@@ -218,7 +218,7 @@ async def _list_channel_days(accessor: SlackAccessor, match: ScopeMatch,
                     vfs_name=d,
                     extra={"channel_id": own.id},
                 )) for d in dates]
-    return DirListing(entries=entries, partial=span is not None)
+    return DirListing(entries=entries, partial=span is not None, window=True)
 
 
 async def _day_listing(accessor: SlackAccessor, channel_id: str,
@@ -244,7 +244,9 @@ async def _day_listing(accessor: SlackAccessor, channel_id: str,
         if any(code in str(e) for code in _SOFT_HISTORY_ERRORS):
             logger.debug("slack: history denied for %s/%s (%s); empty day",
                          channel_id, date_str, e)
-            return DirListing(entries=[])
+            # A soft error is not the channel saying the day's messages
+            # are gone, so the empty day must not evict what it held.
+            return DirListing(entries=[], window=True)
         raise
     chat_entry = IndexEntry(
         id=f"{channel_id}:{date_str}:chat",
@@ -318,7 +320,9 @@ async def _list_files(accessor: SlackAccessor, match: ScopeMatch,
     # index evicted the files listing while the day's entries survived.
     channel_id = own.extra.get("channel_id") or own.id.split(":", 1)[0]
     listing = await _day_listing(accessor, channel_id, match.slots["day"])
-    return listing.seeds.get("files", [])
+    # A soft-error day proves nothing about its attachments either.
+    return DirListing(entries=list(listing.seeds.get("files", [])),
+                      window=listing.window)
 
 
 readdir = make_readdir(

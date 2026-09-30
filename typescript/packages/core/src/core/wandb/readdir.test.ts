@@ -1,7 +1,10 @@
 import { describe, expect, it, vi } from 'vitest'
 import { fileEntries, readdir } from './readdir.ts'
 import { WandbAccessor } from '../../accessor/wandb.ts'
+import { RAMFileCacheStore } from '../../cache/file/ram.ts'
+import type { Evicted } from '../../cache/index/config.ts'
 import { RAMIndexCacheStore } from '../../cache/index/ram.ts'
+import { IndexView } from '../../cache/index/view.ts'
 import { normalizeWandbConfig } from './config.ts'
 import { stat } from './stat.ts'
 import { FileType, PathSpec } from '../../types.ts'
@@ -54,5 +57,33 @@ describe('W&B file tree', () => {
     )
     expect((await index.listDir('/wandb/lab/project/run/files')).entries).toBeUndefined()
     expect((await index.get('/wandb/lab/project/run/files/nested')).entry).toBeUndefined()
+  })
+  it('hands what a file re-list dropped to cleanup', async () => {
+    // The catalog is one complete fetch, so a re-list that no longer names
+    // a file or a folder is the backend saying it went away.
+    const gone: Evicted[] = []
+    const accessor = new WandbAccessor(normalizeWandbConfig({ entities: ['lab'] }))
+    vi.spyOn(accessor.client, 'run').mockResolvedValue({ name: 'run' })
+    vi.spyOn(accessor.client, 'files')
+      .mockResolvedValueOnce([
+        { name: 'nested/old.txt', sizeBytes: 3 },
+        { name: 'deep/sub/file.txt', sizeBytes: 5 },
+      ])
+      .mockResolvedValueOnce([{ name: 'nested/new.txt', sizeBytes: 9 }])
+    const store = new RAMIndexCacheStore()
+    const index = new IndexView(store, new RAMFileCacheStore(), '/wandb', () => true, {
+      onGone: (child) => {
+        gone.push(child)
+        return Promise.resolve()
+      },
+    })
+    const root = 'lab/project/run/files'
+    await readdir(accessor, path(root), index)
+    await store.invalidate()
+    await readdir(accessor, path(root), index)
+    expect(gone.map((child) => child.path).sort()).toEqual([
+      '/wandb/' + root + '/deep',
+      '/wandb/' + root + '/nested/old.txt',
+    ])
   })
 })

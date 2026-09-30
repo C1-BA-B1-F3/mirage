@@ -178,7 +178,7 @@ function listChannelDays(
   const entries = dates.map(
     (d) => [d, DiscordIndexEntry.history(own.id, d)] as [string, IndexEntry],
   )
-  return Promise.resolve({ entries, seeds: {}, partial: span !== null })
+  return Promise.resolve({ entries, seeds: {}, partial: span !== null, window: true })
 }
 
 /**
@@ -196,7 +196,7 @@ async function dayListing(
   try {
     messages = await listMessagesForDay(accessor, channelId, dateStr)
   } catch (e) {
-    if (isSoftError(e)) return { entries: [], seeds: {} }
+    if (isSoftError(e)) return { entries: [], seeds: {}, window: true }
     throw e
   }
   // The day's messages are already in hand, so chat.jsonl's exact rendered
@@ -273,7 +273,7 @@ function listDay(
   return dayListing(accessor, channel.id, match.slots.day ?? '')
 }
 
-async function listFiles(
+export async function listFiles(
   accessor: DiscordAccessor,
   match: ScopeMatch,
   own: IndexEntry,
@@ -283,7 +283,8 @@ async function listFiles(
   const fromExtra = typeof own.extra.channel_id === 'string' ? own.extra.channel_id : ''
   const channelId = fromExtra !== '' ? fromExtra : (own.id.split(':', 1)[0] ?? '')
   const listing = await dayListing(accessor, channelId, match.slots.day ?? '')
-  return listing.seeds.files ?? []
+  // A soft-error day proves nothing about its attachments either.
+  return { entries: [...(listing.seeds.files ?? [])], seeds: {}, window: listing.window === true }
 }
 
 export const readdir = makeReaddir<DiscordAccessor>(detectScope, {

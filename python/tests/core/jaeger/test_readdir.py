@@ -22,6 +22,7 @@ from mirage.core.jaeger.readdir import readdir
 from mirage.core.render.json import json_bytes
 from mirage.types import PathSpec
 from mirage.vfs.jaeger.config import JaegerConfig
+from tests.fixtures.index_spy import WindowSpy
 
 TRACE_A = "a" * 32
 TRACE_B = "b" * 32
@@ -186,3 +187,21 @@ async def test_readdir_service_fetches_operations_once(accessor, index):
         await readdir(accessor, spec("services/checkout"), index)
         await readdir(accessor, spec("services/checkout"), index)
     assert fetch.await_count == 1
+
+
+@pytest.mark.asyncio
+async def test_a_trace_listing_is_written_as_a_window(accessor):
+    # The listing is the newest default_trace_limit traces; an older trace
+    # that falls off it is still in Jaeger.
+    index = WindowSpy()
+    with patch("mirage.core.jaeger.readdir.fetch_services",
+               new_callable=AsyncMock,
+               return_value=["checkout"]):
+        with patch("mirage.core.jaeger.readdir.fetch_traces",
+                   new_callable=AsyncMock,
+                   return_value=[{
+                       "traceID": TRACE_A
+                   }]):
+            await readdir(accessor, spec("services/checkout/traces"), index)
+    assert index.windows["/services/checkout/traces"] is True
+

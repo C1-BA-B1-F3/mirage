@@ -164,6 +164,7 @@ async function children(accessor: QdrantAccessor, match: ScopeMatch): Promise<Li
         }),
       seeds: {},
       partial: displayPrefix !== '',
+      window: true,
     }
     if (new Set(listing.entries.map(([name]) => name)).size !== listing.entries.length) {
       throw new Error('qdrant: basenameFields produced a path collision')
@@ -176,6 +177,7 @@ async function children(accessor: QdrantAccessor, match: ScopeMatch): Promise<Li
     entries: rowEntries(rows, config),
     seeds: {},
     partial: prefix !== '',
+    window: true,
   }
   return listing
 }

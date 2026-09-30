@@ -226,7 +226,7 @@ async function listChannelDays(
         }),
       ] as [string, IndexEntry],
   )
-  return { entries, seeds: {}, partial: span !== null }
+  return { entries, seeds: {}, partial: span !== null, window: true }
 }
 
 /**
@@ -244,7 +244,7 @@ async function dayListing(
   try {
     messages = await fetchMessagesForDay(accessor, channelId, dateStr)
   } catch (err) {
-    if (isSoftHistoryError(err)) return { entries: [], seeds: {} }
+    if (isSoftHistoryError(err)) return { entries: [], seeds: {}, window: true }
     throw err
   }
   const chatEntry = new IndexEntry({
@@ -319,7 +319,7 @@ function listDay(accessor: SlackAccessor, match: ScopeMatch, channel: IndexEntry
   return dayListing(accessor, channel.id, match.slots.day ?? '')
 }
 
-async function listFiles(
+export async function listFiles(
   accessor: SlackAccessor,
   match: ScopeMatch,
   own: IndexEntry,
@@ -329,7 +329,8 @@ async function listFiles(
   const fromExtra = typeof own.extra.channel_id === 'string' ? own.extra.channel_id : ''
   const channelId = fromExtra !== '' ? fromExtra : (own.id.split(':', 1)[0] ?? '')
   const listing = await dayListing(accessor, channelId, match.slots.day ?? '')
-  return listing.seeds.files ?? []
+  // A soft-error day proves nothing about its attachments either.
+  return { entries: [...(listing.seeds.files ?? [])], seeds: {}, window: listing.window === true }
 }
 
 export const readdir = makeReaddir<SlackAccessor>(detectScope, {

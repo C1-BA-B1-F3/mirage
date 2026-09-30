@@ -1,0 +1,20 @@
+{
+  "cases": [
+    {
+      "id": "find_newer_compares_fractions",
+      "seq": 1301086,
+      "targets": [
+        "ram",
+        "disk",
+        "redis"
+      ],
+      "command": "echo a > /data/nwa && echo b > /data/nwb && touch -d '2024-01-01 00:00:00' /data/nwa && touch -d '2024-01-01 00:00:00.5' /data/nwb && find /data -maxdepth 1 -name 'nw*' -newer /data/nwa; rm -f /data/nwa /data/nwb",
+      "expect": {
+        "exit": 0,
+        "stdout": "/data/nwb\n",
+        "stderr": ""
+      },
+      "note": "GNU touch -d keeps the fraction and find -newer compares it (findutils 4.10, coreutils 9.7): the file half a second newer is listed."
+    }
+  ]
+}

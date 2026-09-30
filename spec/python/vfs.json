@@ -740,7 +740,7 @@
     },
     "disk": {
       "local": true,
-      "max_du_entries": 10000,
+      "max_du_entries": null,
       "max_glob_matches": 50000,
       "slots": [
         "append",
@@ -1278,7 +1278,7 @@
     },
     "ssh": {
       "local": false,
-      "max_du_entries": 10000,
+      "max_du_entries": null,
       "max_glob_matches": 5000,
       "slots": [
         "append",

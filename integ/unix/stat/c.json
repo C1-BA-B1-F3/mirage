@@ -33,7 +33,9 @@
         "stdout": "24\n",
         "stderr": ""
       },
-      "flags": ["c"]
+      "flags": [
+        "c"
+      ]
     },
     {
       "id": "stat_name",
@@ -68,7 +70,9 @@
         "stdout": "/data/a.txt\n",
         "stderr": ""
       },
-      "flags": ["c"]
+      "flags": [
+        "c"
+      ]
     },
     {
       "id": "stat_root_dir",
@@ -103,11 +107,13 @@
         "stdout": "directory /data\n",
         "stderr": ""
       },
-      "flags": ["c"]
+      "flags": [
+        "c"
+      ]
     },
     {
       "id": "stat_mount_root_names_the_operand",
-      "note": "A mount root's name comes from the operand, never from the backend serving it. A backend names its own root the way its store spells one: ram answers `/` and disk answers the host directory's basename, which put a real host path in the answer to a question asked about a virtual one. `%n` was always the operand (seq 94), so only the default render could carry that, and only the name field is asserted because size and mtime are legitimately per-backend.",
+      "note": "A mount root's default File field uses the virtual operand, never the backend root's basename. Size and timestamps legitimately vary by backend.",
       "seq": 95,
       "targets": [
         "ram",
@@ -133,10 +139,10 @@
         "gdrive-folder",
         "box"
       ],
-      "command": "stat /data | cut -d' ' -f1",
+      "command": "stat /data | head -1",
       "expect": {
         "exit": 0,
-        "stdout": "name=data\n",
+        "stdout": "  File: /data\n",
         "stderr": ""
       }
     },

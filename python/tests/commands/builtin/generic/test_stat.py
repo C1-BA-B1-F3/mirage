@@ -83,9 +83,10 @@ async def test_default_record_sizes_a_directory_as_percent_s_does():
     # A directory is DIR_SIZE whatever the backend put in size: None for
     # a synthetic one, a subtree total for a Graph folder. A file keeps
     # its own size, None when unknown.
-    cases = [(_fs(type=FileType.DIRECTORY, size=None), f"size={DIR_SIZE} "),
-             (_fs(type=FileType.DIRECTORY, size=123456), f"size={DIR_SIZE} "),
-             (_fs(size=None), "size=None ")]
+    cases = [(_fs(type=FileType.DIRECTORY, size=None), f"  Size: {DIR_SIZE} "),
+             (_fs(type=FileType.DIRECTORY,
+                  size=123456), f"  Size: {DIR_SIZE} "),
+             (_fs(size=None), "  Size: - ")]
     for fs, want in cases:
         out, io = await stat([PathSpec.from_str_path("/data/f.txt")],
                              stat_fn=partial(_const_stat, fs))
@@ -209,10 +210,9 @@ async def test_owner_directives():
 
 @pytest.mark.asyncio
 async def test_time_directives():
-    fs = _fs(modified=_MTIME, atime="2026-03-04T05:06:07Z")
+    fs = _fs(modified=_MTIME, ctime=_MTIME, atime="2026-03-04T05:06:07Z")
     assert await _render("%y", fs) == _MTIME
     assert await _render("%Y", fs) == _MTIME_EPOCH
-    # ctime is approximated by mtime (mirage tracks no separate ctime).
     assert await _render("%z", fs) == _MTIME
     assert await _render("%Z", fs) == _MTIME_EPOCH
     assert await _render("%x", fs) == "2026-03-04T05:06:07Z"
@@ -400,8 +400,8 @@ async def test_a_link_operand_reports_the_link_not_its_target():
                          links=_LINKS)
     assert io.exit_code == 0
     text = (await materialize(out)).decode()
-    assert "name=link" in text
-    assert "type=symlink" in text
+    assert "  File: /data/link -> /data/f.txt" in text
+    assert "symbolic link" in text
 
 
 @pytest.mark.asyncio
@@ -412,8 +412,8 @@ async def test_dash_l_dereferences_instead_of_reporting_the_link():
                          L=True)
     assert io.exit_code == 0
     text = (await materialize(out)).decode()
-    assert "name=f.txt" in text
-    assert "type=text" in text
+    assert "  File: /data/link\n" in text
+    assert "regular file" in text
 
 
 @pytest.mark.asyncio
@@ -422,7 +422,7 @@ async def test_a_non_link_operand_still_reaches_the_backend():
                          stat_fn=partial(_const_stat, _fs()),
                          links=_LINKS)
     assert io.exit_code == 0
-    assert "name=f.txt" in (await materialize(out)).decode()
+    assert "  File: /data/f.txt\n" in (await materialize(out)).decode()
 
 
 @pytest.mark.asyncio
@@ -437,3 +437,60 @@ async def test_format_directives_describe_a_link_as_gnu_does():
 async def test_link_size_is_the_target_string_length():
     assert await _render("%s", _link_fs("/a/very/long/target")) == str(
         len("/a/very/long/target"))
+
+
+@pytest.mark.asyncio
+async def test_default_stat_layout_and_unknown_metadata():
+    info = _fs(size=None, modified=None, ctime=None)
+    out, io = await stat([PathSpec.from_str_path('/data/f.txt')],
+                         stat_fn=partial(_const_stat, info))
+    assert io.exit_code == 0
+    assert (await materialize(out)).decode() == (
+        '  File: /data/f.txt\n'
+        '  Size: -         \tBlocks: ?          '
+        'IO Block: ?      regular file\n'
+        'Device: ?\tInode: ?           Links: ?\n'
+        'Access: (0644/-rw-r--r--)  Uid: (    -/       -)   '
+        'Gid: (    -/       -)\n'
+        'Access: -\nModify: -\nChange: -\n Birth: -\n')
+    assert await _render('%z %Z %w %W', info) == '- 0 - 0'
+    info = _fs(ctime='2026-03-04T05:06:07Z', birthtime=_MTIME)
+    assert await _render(
+        '%z %Z %w %W',
+        info) == f'2026-03-04T05:06:07Z 1772600767 {_MTIME} {_MTIME_EPOCH}'
+
+
+async def _default(fs: FileStat) -> list[str]:
+    out, io = await stat([PathSpec.from_str_path("/data/f.txt")],
+                         stat_fn=partial(_const_stat, fs))
+    assert io.exit_code == 0
+    return (await materialize(out)).decode().splitlines()
+
+
+@pytest.mark.asyncio
+async def test_default_times_are_the_directives_times_in_gnu_layout():
+    # The Access line is %x, which falls back to the mtime; a naive stamp
+    # is UTC and an offset one is moved to UTC; the fraction is the digits
+    # the stamp carries, so both hosts print the same line.
+    lines = await _default(
+        _fs(modified="2026-03-04T05:06:07.123456789",
+            ctime="2026-03-04T07:06:07.5+02:00",
+            birthtime="2026-03-04T05:06:07Z"))
+    assert lines[4:] == [
+        "Access: 2026-03-04 05:06:07.123456789 +0000",
+        "Modify: 2026-03-04 05:06:07.123456789 +0000",
+        "Change: 2026-03-04 05:06:07.500000000 +0000",
+        " Birth: 2026-03-04 05:06:07.000000000 +0000",
+    ]
+    assert (await _default(_fs(modified="not a time")))[5] == "Modify: -"
+
+
+@pytest.mark.asyncio
+async def test_default_layout_names_a_device_type():
+    lines = await _default(
+        _fs(type=FileType.CHAR_DEVICE,
+            size=None,
+            extra={DEVICE_NUMBERS_KEY: [1, 3]}))
+    assert lines[1].endswith("character special file")
+    assert lines[2] == ("Device: ?\tInode: ?           Links: ?     "
+                        "Device type: 1,3")

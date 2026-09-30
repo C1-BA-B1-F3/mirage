@@ -408,9 +408,9 @@ def rollup(
         a (bool): -a, keep the file lines as well as the directories.
         max_depth (int | None): drop nodes deeper than this many levels.
         dirs (Sequence[str]): paths that are directories even though no
-            leaf points at them. mirage cannot otherwise see an empty
-            directory, so this is the one case it can: an empty mount
-            still gets GNU's ``0`` row.
+            leaf may point at them: the directories a walk met (an empty
+            one, or one it could not open) and the roots of descendant
+            mounts, which still get GNU's ``0`` row.
         separate_dirs (bool): -S, exclude subdirectory sizes.
 
     Returns:
@@ -526,6 +526,7 @@ async def _du_one(
     flags: DuFlags,
     links: LinkView | None = None,
     mounts: MountView | None = None,
+    directories: Callable[[], Sequence[str]] | None = None,
 ) -> tuple[list[str], int]:
     label = path.raw_path
 
@@ -556,7 +557,14 @@ async def _du_one(
 
     entries, total = await compute_entries(path)
     total += link_total
-    if not entries and not leaves:
+    root_key = _norm(path.virtual)
+    under = root_key.rstrip("/") + "/"
+    dirs = [
+        d for d in (directories() if directories is not None else ())
+        if _norm(d).startswith(under) and path_allowed(d) and not any(
+            _norm(d) == r or _norm(d).startswith(r + "/") for r in roots)
+    ]
+    if not entries and not leaves and not dirs:
         # A backend that can only produce a size degrades to one total;
         # it cannot enumerate, so shadowed keys cannot be excluded either.
         total = await compute_size(path)
@@ -574,7 +582,6 @@ async def _du_one(
         # honest number is the sum of what survived.
         virtual = drop_shadowed(virtual, roots)
         total = sum(size for _, size in virtual)
-    root_key = _norm(path.virtual)
     # A file operand walks to itself. GNU prints it once, with or
     # without -a, never as a leaf line plus a roll-up line. GNU scopes
     # -S to directories, so a file operand keeps its own size in both
@@ -592,6 +599,7 @@ async def _du_one(
                   path.virtual,
                   a=flags.a,
                   max_depth=flags.max_depth,
+                  dirs=dirs,
                   separate_dirs=flags.S)
     shown = respell_raw([node for node, _ in rows], path.virtual, label)
     lines = [
@@ -620,6 +628,7 @@ async def run_du(
     mounts: MountView | None = None,
     stat_path: StatPath | None = None,
     unreadable: Callable[[], Sequence[str]] | None = None,
+    directories: Callable[[], Sequence[str]] | None = None,
 ) -> DuOutput:
     """Run one whole ``du`` invocation, from raw flags to rendered bytes.
 
@@ -650,6 +659,8 @@ async def run_du(
             answers for a directory the bound backend cannot see.
         unreadable (Callable[[], Sequence[str]] | None): the directories
             a walk could not open, read after the walks.
+        directories (Callable[[], Sequence[str]] | None): every directory
+            a walk met, read after each operand's walk.
 
     Raises:
         UsageError: on a bad depth or a conflicting flag combination.
@@ -675,6 +686,7 @@ async def run_du(
                     missing=missing,
                     truncated=truncated,
                     unreadable=unreadable,
+                    directories=directories,
                     links=links,
                     mounts=mounts)
 
@@ -690,6 +702,7 @@ async def du(
     links: LinkView | None = None,
     mounts: MountView | None = None,
     unreadable: Callable[[], Sequence[str]] | None = None,
+    directories: Callable[[], Sequence[str]] | None = None,
 ) -> DuOutput:
     """Render ``du`` output for a list of operands.
 
@@ -717,12 +730,15 @@ async def du(
             counts what it could, and exits 1; the line is spelled as
             the operand was typed, and follows the unreadable-operand
             lines since those are known before any walk.
+        directories (Callable[[], Sequence[str]] | None): read after each
+            operand's walk for every directory it met, so one no file
+            points at (empty, or refused) still gets GNU's row.
     """
     lines: list[str] = []
     totals: list[int] = []
     for path in paths:
         block, total = await _du_one(path, compute_size, compute_entries,
-                                     flags, links, mounts)
+                                     flags, links, mounts, directories)
         lines.extend(block)
         totals.append(total)
     # GNU still prints the grand total when every operand failed ("0
@@ -771,6 +787,7 @@ async def du_generic(
     compute_entries: ComputeEntries,
     truncated: Callable[[], bool] | None = None,
     unreadable: Callable[[], Sequence[str]] | None = None,
+    directories: Callable[[], Sequence[str]] | None = None,
 ) -> tuple[bytes, IOResult]:
     """Run du over the given operands; mirrors duGeneric.
 
@@ -793,6 +810,8 @@ async def du_generic(
         truncated (Callable[[], bool] | None): Whether the walk was cut.
         unreadable (Callable[[], Sequence[str]] | None): The directories
             the walk could not open.
+        directories (Callable[[], Sequence[str]] | None): Every directory
+            the walk met.
     """
     fl = FlagView(opts.flags, spec=SPECS["du"])
     out = await run_du(
@@ -810,6 +829,7 @@ async def du_generic(
         separate_dirs=fl.as_bool("separate_dirs"),
         truncated=truncated,
         unreadable=unreadable,
+        directories=directories,
         links=(None if fl.as_bool("L") else
                opts.ns.links if opts.ns is not None else None),
         mounts=opts.ns.mounts if opts.ns is not None else None,

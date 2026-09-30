@@ -30,7 +30,7 @@ import { abortable, mergeSignals } from '../abort.ts'
 import type { SessionView } from '../../ops/types.ts'
 import type { Decisions } from '../../policy/decisions.ts'
 import type { HandOff } from '../../policy/types.ts'
-import type { ProcessView } from '../../process/types.ts'
+import type { ProcessInfo, ProcessView } from '../../process/types.ts'
 import type { SessionState } from '../session/session.ts'
 import { occurrenceOf } from '../node/occurrence.ts'
 import { scanOptions } from './builtins/getopt.ts'
@@ -631,6 +631,58 @@ export async function handleFg(
   return [stdout, io, new ExecutionNode({ command: cmdStr, exitCode: job.exitCode })]
 }
 
+const KILL_USAGE =
+  'kill: usage: kill [-s sigspec | -n signum | -sigspec] pid | jobspec ... or kill -l [sigspec]'
+
+// The signals a managed runner answers besides the probe (0). Each one ends
+// the runner through its cancellation channel, so the waited status is the
+// managed cancellation's (137) whichever was sent. Stop, continue and the
+// user signals have no managed meaning and are refused as bash refuses a
+// name it does not know.
+const KILL_SIGNALS: Readonly<Record<string, number>> = {
+  HUP: 1,
+  INT: 2,
+  QUIT: 3,
+  KILL: 9,
+  TERM: 15,
+}
+
+// The largest PID operand kill and ps read as a number: the bound both hosts
+// hold exactly (bash's own is intmax_t).
+const MAX_PID_OPERAND = Number.MAX_SAFE_INTEGER
+
+/** bash's sigspec: a number, or a name with or without SIG, any case. */
+function signalNumber(spec: string): number | null {
+  if (/^[0-9]+$/.test(spec)) {
+    const number = Number(spec)
+    return number === 0 || Object.values(KILL_SIGNALS).includes(number) ? number : null
+  }
+  const name = spec.toUpperCase()
+  return KILL_SIGNALS[name.startsWith('SIG') ? name.slice(3) : name] ?? null
+}
+
+/** The managed PID one kill operand names, or bash's refusal. */
+function killPid(jobs: readonly Job[], operand: string): [number | null, string] {
+  if (operand === '') return [null, "`': not a pid or valid job spec"]
+  if (operand.startsWith('%')) {
+    const raw = operand.slice(1)
+    const job = /^[0-9]+$/.test(raw) ? jobNumbered(jobs, Number(raw)) : null
+    return job !== null ? [job.pid, ''] : [null, `${operand}: no such job`]
+  }
+  const digits = operand.startsWith('-') ? operand.slice(1) : operand
+  if (!/^[0-9]+$/.test(digits) || Number(digits) > MAX_PID_OPERAND)
+    return [null, `${operand}: arguments must be process or job IDs`]
+  return [Number(operand), '']
+}
+
+/**
+ * Signal managed runners with bash's kill surface. The signal comes from
+ * `-s`/`-n`, or from the first `-sigspec`; `0` probes and every other
+ * signal cancels the runner. Every operand is tried and each failure is
+ * named in bash's words; the status is 0 when any operand was signalled,
+ * as bash's is. A job spec is `%N`; a negative number is a process group,
+ * which no managed runner leads.
+ */
 export async function handleKill(
   jobTable: JobTable,
   parts: string[],
@@ -639,54 +691,69 @@ export async function handleKill(
 ): Promise<JobHandlerResult> {
   const cmdStr = parts.join(' ')
   const sid = sessionOf(session)
-  if (parts.length < 2) {
-    const err = new TextEncoder().encode('kill: usage: kill <job_id>\n')
-    return [
-      null,
-      new IOResult({ exitCode: 1, stderr: err }),
-      new ExecutionNode({ command: cmdStr, exitCode: 1, stderr: err }),
-    ]
+  let signal = KILL_SIGNALS.TERM ?? 15
+  let words = parts.slice(1)
+  let sawSignal = false
+  while (words.length > 0) {
+    const word = words[0] ?? ''
+    let spec: string
+    if (word === '-s' || word === '-n') {
+      if (words.length < 2)
+        return jobResult(cmdStr, `kill: ${word}: option requires an argument\n`, 1)
+      spec = words[1] ?? ''
+      words = words.slice(2)
+    } else if (word === '--') {
+      words = words.slice(1)
+      break
+    } else if (word === '-?') {
+      return jobResult(cmdStr, `${KILL_USAGE}\n`, 2)
+    } else if (word.startsWith('-') && word.length > 1 && !sawSignal) {
+      spec = word.slice(1)
+      words = words.slice(1)
+      sawSignal = true
+    } else break
+    const number = signalNumber(spec)
+    if (number === null)
+      return jobResult(cmdStr, `kill: ${spec}: invalid signal specification\n`, 1)
+    signal = number
   }
-  const raw = (parts[1] ?? '').replace(/^%+/, '')
-  const jobId = Number(raw)
-  if (!Number.isInteger(jobId)) {
-    const err = new TextEncoder().encode(`kill: invalid job id: ${parts[1] ?? ''}\n`)
-    return [
-      null,
-      new IOResult({ exitCode: 1, stderr: err }),
-      new ExecutionNode({ command: cmdStr, exitCode: 1, stderr: err }),
-    ]
-  }
-  let killed: boolean
-  if ((parts[1] ?? '').startsWith('%')) {
-    const job = jobNumbered(jobTable.listJobs(sid), jobId)
-    killed = job !== null && (await jobTable.kill(jobId, sid))
-  } else {
+  if (words.length === 0) return jobResult(cmdStr, `${KILL_USAGE}\n`, 2)
+  const processes = processView(jobTable, session)
+  const errors: string[] = []
+  let signalled = false
+  for (const operand of words) {
+    const jobs = jobTable.listJobs(sid)
+    const [pid, refusal] = killPid(jobs, operand)
+    if (pid === null) {
+      errors.push(`kill: ${refusal}`)
+      continue
+    }
+    let found: boolean
     try {
-      killed = processView(jobTable, session).terminate(jobId)
+      if (signal === 0) found = processes.probe(pid)
+      else {
+        found = processes.terminate(pid)
+        const job = jobs.find((j) => j.pid === pid)
+        if (found && job !== undefined) await jobTable.kill(job.id, sid)
+      }
     } catch (err) {
       if ((err as { code?: unknown }).code !== 'EPERM') throw err
-      const denied = new TextEncoder().encode(
-        `kill: (${String(jobId)}) - Operation not permitted\n`,
-      )
-      return [
-        null,
-        new IOResult({ exitCode: 1, stderr: denied }),
-        new ExecutionNode({ command: cmdStr, exitCode: 1, stderr: denied }),
-      ]
+      errors.push(`kill: (${String(pid)}) - Operation not permitted`)
+      continue
     }
-    const job = jobTable.listJobs(sid).find((j) => j.pid === jobId)
-    if (killed && job !== undefined) await jobTable.kill(job.id, sid)
+    if (!found) {
+      errors.push(`kill: (${String(pid)}) - No such process`)
+      continue
+    }
+    signalled = true
   }
-  if (!killed) {
-    const err = new TextEncoder().encode(`kill: no such job: ${jobId.toString()}\n`)
-    return [
-      null,
-      new IOResult({ exitCode: 1, stderr: err }),
-      new ExecutionNode({ command: cmdStr, exitCode: 1, stderr: err }),
-    ]
-  }
-  return [null, new IOResult(), new ExecutionNode({ command: cmdStr, exitCode: 0 })]
+  const code = signalled ? 0 : 1
+  const stderr = errors.length > 0 ? new TextEncoder().encode(errors.join('\n') + '\n') : null
+  return [
+    null,
+    new IOResult({ exitCode: code, stderr }),
+    new ExecutionNode({ command: cmdStr, exitCode: code, stderr: stderr ?? new Uint8Array() }),
+  ]
 }
 
 const JOBS_FLAGS: ReadonlySet<string> = new Set('lnprs')
@@ -768,6 +835,141 @@ export function handleJobs(
   return [out, new IOResult(), new ExecutionNode({ command: cmdStr, exitCode: 0 })]
 }
 
+// procps-ng 4.0.4's usage block, printed under every option error.
+const PS_USAGE =
+  '\nUsage:\n ps [options]\n\n' +
+  " Try 'ps --help <simple|list|output|threads|misc|all>'\n" +
+  "  or 'ps --help <s|l|o|t|m|a>'\n" +
+  ' for additional help text.\n\n' +
+  'For more details see ps(1).\n'
+
+// The -o columns a managed runner can answer, as procps-ng 4.0.4 lays them
+// out: header, width, right-aligned. The last column is never padded.
+const PS_COLUMNS: Readonly<Record<string, readonly [string, number, boolean]>> = {
+  pid: ['PID', 7, true],
+  ppid: ['PPID', 7, true],
+  cmd: ['CMD', 27, false],
+  args: ['COMMAND', 27, false],
+  comm: ['COMMAND', 15, false],
+}
+
+// Letters that select every process: SysV -e/-A/-a/-x, BSD a/x.
+const PS_ALL = new Set(['e', 'A', 'a', 'x'])
+
+/** What a ps line selects and prints. */
+interface PsOptions {
+  readonly pids: ReadonlySet<number>
+  readonly all: boolean
+  readonly columns: readonly (readonly [string, string])[]
+}
+
+/** One `-p` list, refused in procps's words. */
+function psPids(value: string, option: string): number[] {
+  const tokens = value.split(/[\s,]+/).filter((t) => t !== '')
+  if (tokens.length === 0) throw new Error(`list of process IDs must follow ${option}`)
+  return tokens.map((token) => {
+    if (!/^[+-]?[0-9]+$/.test(token)) throw new Error('process ID list syntax error')
+    const number = Number(token)
+    if (number <= 0 || number > MAX_PID_OPERAND) throw new Error('process ID out of range')
+    return number
+  })
+}
+
+/** One `-o` list: `key` or `key=header`, refused in procps's words. */
+function psColumns(value: string, option: string): [string, string][] {
+  if (value.trim() === '') throw new Error(`format specification must follow ${option}`)
+  const columns: [string, string][] = []
+  for (const item of value.split(',')) {
+    if (item.trim() === '') throw new Error('improper format list')
+    for (const token of item.split(/\s+/).filter((t) => t !== '')) {
+      const equal = token.indexOf('=')
+      const key = equal < 0 ? token : token.slice(0, equal)
+      const column = PS_COLUMNS[key]
+      if (column === undefined) throw new Error(`unknown user-defined format specifier "${key}"`)
+      columns.push([key, equal < 0 ? column[0] : token.slice(equal + 1)])
+    }
+  }
+  return columns
+}
+
+/**
+ * Parse the procps selection and output options a runner answers: SysV
+ * letters after one dash, BSD letters with none, and the `--pid`/`--format`
+ * long forms; `-p` and `-o` repeat and accumulate. `-f` and BSD `u`/`w`/`f`
+ * pick a layout the managed rows do not have, so they leave the compact one.
+ */
+function parsePs(words: string[]): PsOptions {
+  const pids = new Set<number>()
+  const columns: [string, string][] = []
+  let all = false
+  let at = 0
+  while (at < words.length) {
+    const word = words[at++] ?? ''
+    if (word.startsWith('--')) {
+      const equal = word.indexOf('=')
+      const option = equal < 0 ? word : word.slice(0, equal)
+      if (option !== '--pid' && option !== '--format') throw new Error('unknown gnu long option')
+      const value = equal < 0 ? (words[at++] ?? '') : word.slice(equal + 1)
+      if (option === '--pid') for (const pid of psPids(value, option)) pids.add(pid)
+      else columns.push(...psColumns(value, option))
+      continue
+    }
+    if (!word.startsWith('-')) {
+      if (!/^[auxwf]+$/.test(word)) throw new Error('unsupported option (BSD syntax)')
+      all ||= /[ax]/.test(word)
+      continue
+    }
+    let letters = word.slice(1)
+    while (letters !== '') {
+      const flag = letters.charAt(0)
+      letters = letters.slice(1)
+      if (PS_ALL.has(flag)) {
+        all = true
+        continue
+      }
+      if (flag === 'f') continue
+      if (flag !== 'p' && flag !== 'o') throw new Error('unsupported SysV option')
+      const value = letters !== '' ? letters : (words[at++] ?? '')
+      letters = ''
+      if (flag === 'p') for (const pid of psPids(value, '-p')) pids.add(pid)
+      else columns.push(...psColumns(value, '-o'))
+    }
+  }
+  return { pids, all, columns }
+}
+
+/** One row in procps's layout: each column padded but the last. */
+function psRow(keys: readonly string[], cells: readonly string[]): string {
+  return keys
+    .map((key, at) => {
+      const [, width, right] = PS_COLUMNS[key] ?? ['', 0, false]
+      const cell = cells[at] ?? ''
+      if (right) return cell.padStart(width)
+      return at === keys.length - 1 ? cell : cell.padEnd(width)
+    })
+    .join(' ')
+}
+
+/** One -o cell for a managed runner. */
+function psCell(key: string, info: ProcessInfo): string {
+  if (key === 'pid') return String(info.pid)
+  if (key === 'ppid') return String(info.parentPid ?? 0)
+  if (key === 'comm') {
+    const head = info.command.split(/\s+/).find((w) => w !== '') ?? ''
+    return (head.split('/').pop() ?? '').slice(0, 15)
+  }
+  return info.command
+}
+
+/**
+ * List managed runners with procps's selection and `-o` columns. A runner
+ * has no CPU, RSS or TTY accounting, so without `-o` the rows stay mirage's
+ * compact `PID<TAB>COMMAND` and never broaden the profile's view. `-o` lays
+ * out the columns a runner can answer the way procps-ng 4.0.4 does; a
+ * header row prints unless every header is empty. Selecting nothing (`-p`
+ * of an absent PID) exits 1, as procps does, and an option error is
+ * procps's message and usage.
+ */
 export function handlePs(
   jobTable: JobTable,
   parts: string[],
@@ -775,14 +977,39 @@ export function handlePs(
   _view: SessionView | null = null,
 ): JobHandlerResult {
   const cmdStr = parts.join(' ')
-  const lines: string[] = []
-  if (parts.length > 2 || (parts.length === 2 && !['aux', '-ef', '-e'].includes(parts[1] ?? ''))) {
-    return jobResult(cmdStr, 'ps: supported forms: ps, ps aux, ps -e, ps -ef\n', 2)
+  let options: PsOptions
+  try {
+    options = parsePs(parts.slice(1))
+  } catch (err) {
+    return jobResult(cmdStr, `error: ${(err as Error).message}\n${PS_USAGE}`, 1)
   }
-  for (const info of processView(jobTable, session).list()) {
-    lines.push(`${String(info.pid)}\t${info.command}`)
+  const processes = processView(jobTable, session)
+    .list()
+    .filter((info) => options.all || options.pids.size === 0 || options.pids.has(info.pid))
+  let lines: string[]
+  if (options.columns.length > 0) {
+    const keys = options.columns.map(([key]) => key)
+    lines = processes.map((info) =>
+      psRow(
+        keys,
+        keys.map((key) => psCell(key, info)),
+      ),
+    )
+    if (options.columns.some(([, header]) => header !== ''))
+      lines.unshift(
+        psRow(
+          keys,
+          options.columns.map(([, header]) => header),
+        ),
+      )
+  } else {
+    lines = processes.map((info) => `${String(info.pid)}\t${info.command}`)
   }
-  const out =
-    lines.length > 0 ? new TextEncoder().encode(`${lines.join('\n')}\n`) : new Uint8Array()
-  return [out, new IOResult(), new ExecutionNode({ command: cmdStr, exitCode: 0 })]
+  const code = processes.length > 0 ? 0 : 1
+  const out = new TextEncoder().encode(lines.length > 0 ? lines.join('\n') + '\n' : '')
+  return [
+    out,
+    new IOResult({ exitCode: code }),
+    new ExecutionNode({ command: cmdStr, exitCode: code }),
+  ]
 }

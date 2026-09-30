@@ -12,6 +12,8 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import os
+
 import pytest
 
 from mirage.accessor.disk import DiskAccessor
@@ -102,3 +104,17 @@ async def test_stat_under_a_plain_file_is_not_a_directory(tmp_path):
         await stat(DiskAccessor(tmp_path), spec, RAMIndexCacheStore(ttl=0))
     assert exc.value.filename == "/a.txt/x"
     assert str(tmp_path) not in str(exc.value)
+
+
+@pytest.mark.asyncio
+async def test_stat_keeps_the_fraction_of_a_second(tmp_path):
+    target = tmp_path / "half.txt"
+    target.write_text("x")
+    os.utime(target, ns=(1_704_067_200_250_000_000, 1_704_067_200_500_000_000))
+    result = await stat(
+        DiskAccessor(tmp_path),
+        PathSpec(vfs_path="half.txt",
+                 virtual="/half.txt",
+                 directory="/half.txt"), RAMIndexCacheStore(ttl=0))
+    assert result.modified == "2024-01-01T00:00:00.500Z"
+    assert result.atime == "2024-01-01T00:00:00.250Z"

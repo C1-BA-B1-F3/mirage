@@ -46,6 +46,10 @@ describe('parseTouchStamp', () => {
     expect(parseTouchStamp(null, null)).toBeNull()
   })
 
+  it('keeps a fraction of a second, spelled as the Python touch spells it', () => {
+    expect(parseTouchStamp(null, '2024-01-01 00:00:00.5')).toBe('2024-01-01T00:00:00.500000+00:00')
+  })
+
   it('throws on invalid stamps', () => {
     expect(() => parseTouchStamp('13011200', '')).toThrow()
     expect(() => parseTouchStamp('2026010215301', null)).toThrow()

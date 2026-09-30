@@ -20,10 +20,10 @@
         "sharepoint-prefix",
         "box"
       ],
-      "command": "touch -t 202401010000 /data/metao/f.txt && stat /data/metao/f.txt | cut -d' ' -f4",
+      "command": "touch -t 202401010000 /data/metao/f.txt && stat -c %F /data/metao/f.txt",
       "expect": {
         "exit": 0,
-        "stdout": "type=text\n",
+        "stdout": "regular file\n",
         "stderr": ""
       }
     },

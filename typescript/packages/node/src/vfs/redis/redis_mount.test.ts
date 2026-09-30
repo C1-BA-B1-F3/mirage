@@ -91,7 +91,7 @@ describe.skipIf(skip)('RedisVFS as mount', () => {
   it('stat returns metadata for files and dirs', async () => {
     await ws.shell('echo "hi" | tee /data/f.txt')
     const rf = await ws.shell('stat /data/f.txt')
-    expect(DEC.decode(rf.stdout)).toContain('size=3')
+    expect(DEC.decode(rf.stdout)).toContain('Size: 3 ')
     await ws.shell('mkdir /data/d')
     const rd = await ws.shell('stat /data/d')
     expect(DEC.decode(rd.stdout)).toContain('directory')

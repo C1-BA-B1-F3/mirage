@@ -41,6 +41,7 @@ ENV = {
     "GIT_COMMITTER_NAME": "A",
     "GIT_COMMITTER_EMAIL": "a@example.com"
 }
+INFO_REFS = "/repo.git/info/refs?service=git-upload-pack"
 
 
 def test_pkt_lines_round_trip_with_flushes():
@@ -163,7 +164,10 @@ def _backend(
 
 
 def _redirector(target: str) -> ThreadingHTTPServer:
-    """A listener that sends every GET on to another origin.
+    """A listener that sends the ref advertisement on to another origin.
+
+    The Location is built from constants alone, never from the request,
+    and any other path is a 404.
 
     Args:
         target (str): the origin redirected to, scheme and host.
@@ -172,8 +176,10 @@ def _redirector(target: str) -> ThreadingHTTPServer:
     class Handler(BaseHTTPRequestHandler):
 
         def do_GET(self) -> None:
-            self.send_response(302)
-            self.send_header("Location", f"{target}{self.path}")
+            known = self.path == INFO_REFS
+            self.send_response(302 if known else 404)
+            if known:
+                self.send_header("Location", f"{target}{INFO_REFS}")
             self.send_header("Content-Length", "0")
             self.end_headers()
 

@@ -36,7 +36,8 @@ const VALUE_ESCAPES: Readonly<Record<string, string>> = {
   '"': '\\"',
   '\\': '\\\\',
 }
-const SECTION_HEADER = /^[ \t]*\[[ \t]*([A-Za-z0-9.-]+)(?:[ \t]+"((?:[^"\\]|\\.)*)")?[ \t]*\]/
+const QUOTED_HEADER = /^\s*\[([A-Za-z0-9.-]+)\s+"((?:[^"\\\n]|\\.)*)"\s*\]/
+const DOTTED_HEADER = /^\s*\[([A-Za-z0-9-]+)\.([^\]\s]*)\]/
 
 const ENC = new TextEncoder()
 
@@ -249,14 +250,17 @@ export function configSection(
 }
 
 /**
- * A config's text with every `[section "name"]` block taken out.
+ * A config's text with every block for `section.name` taken out.
  *
  * `git branch -d` drops the deleted branch's settings this way, so a branch
- * made again under the same name starts with no upstream rather than with two
- * (pinned against git 2.50.1).
+ * made again under the same name starts with no upstream rather than with two.
+ * A header names the block the way git's `section_name_match` reads it,
+ * spelled exactly: `[branch "x"]` with its escapes, or the older `[branch.x]`.
+ * `[Branch "x"]` and `[branch.X]` are left, as git leaves them, and any line
+ * opening with `[` ends a block (pinned against git 2.50.1).
  *
  * @param text the config file's contents
- * @param section the section, lowercase, e.g. `branch`
+ * @param section the section as git writes it, e.g. `branch`
  * @param name the subsection, e.g. the branch name
  */
 export function withoutSection(text: string, section: string, name: string): string {
@@ -264,10 +268,12 @@ export function withoutSection(text: string, section: string, name: string): str
   return text
     .split(/(?<=\n)/)
     .filter((line) => {
-      const header = SECTION_HEADER.exec(line)
-      if (header !== null) {
+      if (line.trimStart().startsWith('[')) {
+        const quoted = QUOTED_HEADER.exec(line)
+        const dotted = DOTTED_HEADER.exec(line)
         dropping =
-          (header[1] ?? '').toLowerCase() === section && header[2]?.replace(/\\(.)/g, '$1') === name
+          (quoted?.[1] === section && quoted[2]?.replace(/\\(.)/g, '$1') === name) ||
+          (dotted?.[1] === section && dotted[2] === name)
       }
       return !dropping
     })

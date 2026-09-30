@@ -40,8 +40,9 @@ UNIT_SHIFTS = {b"": 0, b"k": 10, b"m": 20, b"g": 30}
 INT_BITS = 31
 VALUE_ESCAPES = {"\n": "\\n", "\t": "\\t", '"': '\\"', "\\": "\\\\"}
 COMMENT_STARTS = (";", "#")
-SECTION_HEADER = re.compile(
-    rb'[ \t]*\[[ \t]*([A-Za-z0-9.-]+)(?:[ \t]+"((?:[^"\\]|\\.)*)")?[ \t]*\]')
+QUOTED_HEADER = re.compile(
+    rb'\s*\[([A-Za-z0-9.-]+)\s+"((?:[^"\\\n]|\\.)*)"\s*\]')
+DOTTED_HEADER = re.compile(rb"\s*\[([A-Za-z0-9-]+)\.([^\]\s]*)\]")
 ESCAPED = re.compile(rb"\\(.)")
 
 
@@ -310,26 +311,32 @@ def config_section(section: str, name: str,
 
 
 def without_section(data: bytes, section: str, name: str) -> bytes:
-    """A config's text with every ``[section "name"]`` block taken out.
+    """A config's text with every block for ``section.name`` taken out.
 
     ``git branch -d`` drops the deleted branch's settings this way, so a
     branch made again under the same name starts with no upstream
-    rather than with two (pinned against git 2.50.1).
+    rather than with two. A header names the block the way git's
+    ``section_name_match`` reads it, spelled exactly: ``[branch "x"]``
+    with its escapes, or the older ``[branch.x]``. ``[Branch "x"]`` and
+    ``[branch.X]`` are left, as git leaves them, and any line opening
+    with ``[`` ends a block (pinned against git 2.50.1).
 
     Args:
         data (bytes): the config file's contents.
-        section (str): the section, lowercase, e.g. ``branch``.
+        section (str): the section as git writes it, e.g. ``branch``.
         name (str): the subsection, e.g. the branch name.
     """
     kept: list[bytes] = []
     dropping = False
+    want = (section.encode(), name.encode())
     for line in data.splitlines(keepends=True):
-        header = SECTION_HEADER.match(line)
-        if header is not None:
-            sub = header.group(2)
-            dropping = (header.group(1).decode().lower() == section
-                        and sub is not None
-                        and ESCAPED.sub(rb"\1", sub) == name.encode())
+        if line.lstrip().startswith(b"["):
+            quoted = QUOTED_HEADER.match(line)
+            dotted = DOTTED_HEADER.match(line)
+            dropping = (quoted is not None and
+                        (quoted.group(1), ESCAPED.sub(rb"\1", quoted.group(2)))
+                        == want) or (dotted is not None
+                                     and dotted.groups() == want)
         if not dropping:
             kept.append(line)
     return b"".join(kept)

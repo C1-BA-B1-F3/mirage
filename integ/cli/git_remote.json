@@ -181,6 +181,34 @@
         "stdout": "gone\n",
         "stderr": "Cloning into 'c'...\nfatal: '../x' is not a valid remote name\n"
       }
+    },
+    {
+      "id": "git_branch_delete_old_style_section",
+      "seq": 567927,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "(cd /repo && git clone -q . c && cd c && printf '[branch.t]\\n\\tremote = origin\\n[Branch \"t\"]\\n\\tremote = up\\n' >> .git/config && git branch t main && git branch -D t && tail -2 .git/config; status=$?; cd /repo && rm -rf c; exit $status)",
+      "expect": {
+        "exit": 0,
+        "stdout": "Deleted branch t (was 8ef2542).\n[Branch \"t\"]\n\tremote = up\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "git_branch_tracking_after_unterminated_config",
+      "seq": 567928,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "(cd /repo && git clone -q . c && cd c && printf '[branch \"z\"]\\n\\tremote = origin' >> .git/config && git branch t origin/topic && tail -5 .git/config && git branch -vv; status=$?; cd /repo && rm -rf c; exit $status)",
+      "expect": {
+        "exit": 0,
+        "stdout": "branch 't' set up to track 'origin/topic'.\n[branch \"z\"]\n\tremote = origin\n[branch \"t\"]\n\tremote = origin\n\tmerge = refs/heads/topic\n* main 8ef2542 [origin/main] add two\n  t    225f39c [origin/topic] add docs\n",
+        "stderr": ""
+      }
     }
   ]
 }

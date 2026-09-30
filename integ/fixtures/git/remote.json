@@ -88,6 +88,8 @@
   "cd dst && git checkout -q w && git status -sb && git checkout -q main",
   "mkdir e1 && git clone -b nosuch src e1; ls -A e1",
   "git clone -o ../x src e2; test -d e2 || echo gone",
+  "printf '[branch.gone]\\n\\tremote = origin\\n[Branch \"gone\"]\\n\\tremote = up\\n' >> dst/.git/config && git -C dst branch gone v1 && git -C dst branch -D gone && tail -2 dst/.git/config",
+  "printf '[branch \"z\"]\\n\\tremote = origin' >> dst/.git/config && cd dst && git branch nl origin/topic && tail -6 .git/config",
   "printf '[branch]\\n\\tautoSetupMerge = never\\n' >> dst/.git/config",
   "cd dst && git branch bad origin/main; git checkout -b bad2 origin/main; git switch -c bad3; git branch --list 'bad*'"
 ]

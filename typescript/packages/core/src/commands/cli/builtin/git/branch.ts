@@ -69,6 +69,7 @@ import { compareCodePoints } from '../../../../utils/sort.ts'
 
 const ENC = new TextEncoder()
 const DEC = new TextDecoder()
+const NEWLINE = 0x0a
 const HEADS_PREFIX = 'refs/heads/'
 const REMOTES_PREFIX = 'refs/remotes/'
 const CURRENT = '* '
@@ -241,7 +242,8 @@ export async function setUpTracking(
     ['remote', remote],
     ...merges.map((merge): [string, string] => ['merge', merge]),
   ])
-  await writeFile(repo.dispatch, path, new Uint8Array([...data, ...ENC.encode(section)]))
+  const tail = data.length && data[data.length - 1] !== NEWLINE ? '\n' : ''
+  await writeFile(repo.dispatch, path, new Uint8Array([...data, ...ENC.encode(tail + section)]))
   const labels = merges.map((merge) => `${prefix}${merge.replace(/^refs\/heads\//, '')}`)
   if (labels.length === 1) return [`branch '${branch}' set up to track '${labels[0] ?? ''}'.\n`, '']
   return [

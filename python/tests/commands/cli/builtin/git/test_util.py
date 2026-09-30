@@ -263,13 +263,15 @@ def test_a_config_section_escapes_its_name_and_quotes_comment_values():
            '\tmerge = "refs/heads/we#rd"\n\tnote = " pad\\tend "\n')
 
 
-def test_without_section_drops_every_block_of_that_name_only():
+def test_without_section_drops_the_blocks_git_matches_by_name():
     data = (b'[core]\n\tbare = false\n[branch "topic"]\n\tremote = o\n'
-            b'[branch "main"]\n\tremote = o\n[Branch "topic"]\n\tmerge = m\n'
+            b'[branch "main"]\n\tremote = o\n[branch.topic]\n\tmerge = m\n'
+            b'  [branch   "topic"] remote = o\n\tmerge = m\n'
+            b'[Branch "topic"]\n\tremote = o\n[branch.TOPIC]\n\tremote = o\n'
             b'[branch "q\\"x"]\n\tremote = o\n')
-    assert without_section(
-        data, "branch",
-        "topic") == (b'[core]\n\tbare = false\n[branch "main"]\n\tremote = o\n'
-                     b'[branch "q\\"x"]\n\tremote = o\n')
+    assert without_section(data, "branch", "topic") == (
+        b'[core]\n\tbare = false\n[branch "main"]\n\tremote = o\n'
+        b'[Branch "topic"]\n\tremote = o\n[branch.TOPIC]\n\tremote = o\n'
+        b'[branch "q\\"x"]\n\tremote = o\n')
     assert without_section(data, "branch",
-                           'q"x').endswith(b'[Branch "topic"]\n\tmerge = m\n')
+                           'q"x').endswith(b'[branch.TOPIC]\n\tremote = o\n')

@@ -41,6 +41,7 @@ const ENV = {
   GIT_COMMITTER_NAME: 'A',
   GIT_COMMITTER_EMAIL: 'a@example.com',
 }
+const INFO_REFS = '/repo.git/info/refs?service=git-upload-pack'
 const require = createRequire(import.meta.url)
 const engineWasm = readFileSync(require.resolve('web-tree-sitter/web-tree-sitter.wasm'))
 const grammarWasm = readFileSync(require.resolve('tree-sitter-bash/tree-sitter-bash.wasm'))
@@ -103,11 +104,16 @@ function backend(
   })
 }
 
-/** A listener that sends every GET on to another origin. */
+/**
+ * A listener that sends the ref advertisement on to another origin. The
+ * Location is built from constants alone, never from the request, and any
+ * other path is a 404.
+ */
 function redirector(target: string): Server {
   return createServer((req, res) => {
-    res.statusCode = 302
-    res.setHeader('Location', `${target}${req.url ?? '/'}`)
+    const known = req.url === INFO_REFS
+    res.statusCode = known ? 302 : 404
+    if (known) res.setHeader('Location', `${target}${INFO_REFS}`)
     res.end()
   })
 }

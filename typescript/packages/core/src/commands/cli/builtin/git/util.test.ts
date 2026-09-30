@@ -96,13 +96,15 @@ describe('configSection', () => {
 describe('withoutSection', () => {
   const text =
     '[core]\n\tbare = false\n[branch "topic"]\n\tremote = o\n[branch "main"]\n\tremote = o\n' +
-    '[Branch "topic"]\n\tmerge = m\n[branch "q\\"x"]\n\tremote = o\n'
+    '[branch.topic]\n\tmerge = m\n  [branch   "topic"] remote = o\n\tmerge = m\n' +
+    '[Branch "topic"]\n\tremote = o\n[branch.TOPIC]\n\tremote = o\n[branch "q\\"x"]\n\tremote = o\n'
 
-  it('drops every block of that name only', () => {
+  it('drops the blocks git matches by name', () => {
     expect(withoutSection(text, 'branch', 'topic')).toBe(
-      '[core]\n\tbare = false\n[branch "main"]\n\tremote = o\n[branch "q\\"x"]\n\tremote = o\n',
+      '[core]\n\tbare = false\n[branch "main"]\n\tremote = o\n' +
+        '[Branch "topic"]\n\tremote = o\n[branch.TOPIC]\n\tremote = o\n[branch "q\\"x"]\n\tremote = o\n',
     )
-    expect(withoutSection(text, 'branch', 'q"x').endsWith('[Branch "topic"]\n\tmerge = m\n')).toBe(
+    expect(withoutSection(text, 'branch', 'q"x').endsWith('[branch.TOPIC]\n\tremote = o\n')).toBe(
       true,
     )
   })

@@ -246,6 +246,8 @@ async def set_up_tracking(dispatch: DispatchFn, repo: BaseRepo,
         return "", ""
     path = f"{location.commondir}/config"
     data = await read_optional(dispatch, path) or b""
+    if data and not data.endswith(b"\n"):
+        data += b"\n"
     remote, merges, prefix, warning = _tracked(
         ConfigFile.from_file(BytesIO(data)), ref, branch, mode)
     if remote is None:

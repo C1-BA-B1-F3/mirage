@@ -497,7 +497,9 @@ async def test_fresh_s3_relist_keeps_deletion_baseline_after_stat():
 @pytest.mark.asyncio
 @pytest.mark.parametrize("shared", [False, True])
 @pytest.mark.parametrize("redis", [False, True])
-async def test_relist_preserves_nested_mount_subtree(shared, redis):
+@pytest.mark.parametrize("replacement", [False, True])
+async def test_relist_preserves_nested_mount_subtree(shared, redis,
+                                                     replacement):
     config = IndexConfig(ttl=600)
     if redis:
         url = os.environ.get("REDIS_URL")
@@ -525,7 +527,14 @@ async def test_relist_preserves_nested_mount_subtree(shared, redis):
         await ws.cache.set("/data/sub/nested/file", b"keep")
         await ws.namespace.set_attrs("/data/sub/old", mode=0o600)
         await ws.namespace.set_attrs("/data/sub/nested/file", mode=0o640)
-        await index.set_dir("/data", [])
+        rows = []
+        if replacement:
+            rows.append(
+                ("sub", IndexEntry(id="new", name="sub",
+                                   resource_type="file")))
+        await index.set_dir("/data", rows)
+        if replacement:
+            assert (await index.get("/data/sub")).entry.id == "new"
         assert await ws.cache.get("/data/sub/nested/file") == b"keep"
         assert ws.namespace.meta_for("/data/sub/nested/file").mode == 0o640
         assert (await nested.list_dir("/data/sub/nested")).entries == [

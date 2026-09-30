@@ -53,6 +53,91 @@ describe.skipIf(skip)('RedisIndexCacheStore', () => {
     return (store as unknown as { client: () => Promise<RedisClientLike> }).client()
   }
 
+  it('evicts a subtree without scanning unrelated Redis keys', async () => {
+    const client = await redis()
+    const child = entry('child', 'child')
+    await store.setDir('/d', [['sub', entry('sub', 'sub', 'folder')]])
+    await store.put('/d/sub/unlisted/deep', child)
+    store.seed(
+      new Map(Array.from({ length: 200 }, (_, i) => [`/other/${String(i)}`, child])),
+      new Map(),
+      new Date(Date.now() + 3600000),
+    )
+    await store.get('/other/0')
+    await client.set(`${prefix}unrelated`, 'keep')
+    const evaluate = client.eval.bind(client)
+    const spy = vi.spyOn(client, 'eval').mockImplementation((script, options) =>
+      evaluate(
+        `
+local call = redis.call
+local redis = {call = function(command, ...)
+  if command == 'SCAN' then error('unexpected database scan') end
+  return call(command, ...)
+end}
+${script}`,
+        options,
+      ),
+    )
+    try {
+      await store.setDir('/d', [])
+      expect((await store.get('/d/sub/unlisted/deep')).status).toBe(LookupStatus.NOT_FOUND)
+      expect((await store.get('/other/0')).entry).toBeDefined()
+      expect(await client.get(`${prefix}unrelated`)).toBe('keep')
+    } finally {
+      spy.mockRestore()
+    }
+  })
+
+  it('recovers subtree membership after Redis evicts the path registry', async () => {
+    const client = await redis()
+    const child = entry('child', 'child')
+    await store.setDir('/d', [['sub', entry('sub', 'sub', 'folder')]])
+    await store.put('/d/sub/unlisted/deep', child)
+    await store.setDir('/d/sub/buried', [['child', child]])
+    await store.invalidateDir('/d/sub/buried')
+    await client.del(`${prefix}mirage:idx:paths`)
+    await store.put('/unrelated', child)
+    await store.setDir('/d', [])
+    expect((await store.get('/d/sub/unlisted/deep')).status).toBe(LookupStatus.NOT_FOUND)
+    expect(await client.get(`${prefix}mirage:idx:tombstone:/d/sub/buried`)).toBeNull()
+    expect((await store.get('/unrelated')).entry).toBeDefined()
+  })
+
+  it('prunes removed path members while retaining tombstones', async () => {
+    const client = await redis()
+    const child = entry('child', 'child')
+    const members = () =>
+      client.eval("return redis.call('ZRANGE', KEYS[1], 0, -1)", {
+        keys: [`${prefix}mirage:idx:paths`],
+        arguments: [],
+      })
+    await store.put('/put-only', child)
+    await store.invalidateEntry('/put-only')
+    expect(await members()).toEqual([''])
+    await store.setDir('/d', [['child', child]])
+    await store.setDir('/d', [])
+    expect(await members()).toEqual(['', '/d'])
+    await store.setDir('/d', [['child', child]])
+    await store.invalidateDir('/d')
+    await store.invalidatePrefix('/d')
+    expect(await members()).toEqual(['', '/d'])
+    expect(await client.get(`${prefix}mirage:idx:tombstone:/d`)).not.toBeNull()
+    await store.clear()
+    expect(await client.exists(`${prefix}mirage:idx:paths`)).toBe(0)
+  })
+
+  it('accepts trailing slashes while preserving literal prefix boundaries and exclusions', async () => {
+    const child = entry('child', 'child')
+    await store.setDir('/literal[1]', [['child', child]])
+    await store.setDir('/literal[1]/nested', [['child', child]])
+    await store.put('/literal[1]sibling/child', child)
+    await store.invalidatePrefix('/literal[1]/', ['/literal[1]/nested/'])
+    expect((await store.get('/literal[1]/child')).status).toBe(LookupStatus.NOT_FOUND)
+    expect((await store.listDir('/literal[1]')).status).toBe(LookupStatus.NOT_FOUND)
+    expect((await store.get('/literal[1]/nested/child')).entry).toBeDefined()
+    expect((await store.get('/literal[1]sibling/child')).entry).toBeDefined()
+  })
+
   it('finishes subtree eviction before a newer listing can be written', async () => {
     const client = await redis()
     const folder = entry('sub', 'sub', 'folder')
@@ -232,12 +317,30 @@ describe.skipIf(skip)('RedisIndexCacheStore', () => {
           }
           return result
         })
+        const multi = client.multi.bind(client)
+        const transactions = vi.spyOn(client, 'multi').mockImplementation(() => {
+          const pipeline = multi()
+          if (token !== 'directory' || intercepted) return pipeline
+          const exec = pipeline.exec.bind(pipeline)
+          pipeline.exec = async () => {
+            intercepted = true
+            if (race === 'lost NX') await set(key, 'concurrent-winner')
+            const result = await exec()
+            if (race === 'replaced after initialization') {
+              await client.del(key)
+              await set(key, 'concurrent-replacement')
+            }
+            return result
+          }
+          return pipeline
+        })
         try {
           await store.setDir('/snapshot', [['old', entry('old', 'old')]])
           expect(intercepted).toBe(true)
           expect((await store.listDir('/snapshot')).status).toBe(LookupStatus.EXPIRED)
         } finally {
           spy.mockRestore()
+          transactions.mockRestore()
         }
       },
     )
@@ -502,6 +605,7 @@ describe.skipIf(skip)('RedisIndexCacheStore', () => {
 describe('deferred Redis seeds', () => {
   function client() {
     const pipeline: ReturnType<RedisClientLike['multi']> = {
+      eval: vi.fn(),
       set: vi.fn(),
       del: vi.fn(),
       exec: vi.fn().mockResolvedValue([]),

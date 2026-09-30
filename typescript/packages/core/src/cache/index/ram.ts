@@ -139,7 +139,11 @@ export class RAMIndexCacheStore extends IndexCacheStore {
         for (const child of this.tombstones.get(vfsPath) ?? []) buried.set(child.path, child.folder)
         this.tombstones.delete(vfsPath)
       }
-      const candidates = new Set([...(this.children.get(vfsPath) ?? []), ...buried.keys()])
+      const candidates = new Set([
+        ...(this.children.get(vfsPath) ?? []),
+        ...buried.keys(),
+        ...rows.keys(),
+      ])
       const gone = evict
         ? [...candidates]
             .filter(

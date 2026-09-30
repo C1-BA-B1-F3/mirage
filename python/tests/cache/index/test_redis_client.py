@@ -70,7 +70,7 @@ async def test_invalidate_dir_is_one_script_over_its_three_keys(client):
     store = RedisIndexCacheStore(client=client)
     await store.invalidate_dir("/folder")
     args = client.eval.await_args.args
-    assert args[1:5] == (3, "mirage:idx:directory:/folder",
+    assert args[1:5] == (4, "mirage:idx:directory:/folder",
                          "mirage:idx:tombstone:/folder",
                          "mirage:idx:generation:/folder")
 
@@ -346,6 +346,7 @@ async def test_scalar_initialization_does_not_adopt_replacement_tokens(
     generation_key = f"{prefix}mirage:idx:generation"
     target = generation_key if scope == "global" else f"{generation_key}:/repo"
     original_set = client.set
+    original_pipeline = client.pipeline
     fresh = IndexEntry(id="new", name="new.txt", resource_type="file")
     stale = IndexEntry(id="old", name="old.txt", resource_type="file")
 
@@ -368,8 +369,27 @@ async def test_scalar_initialization_does_not_adopt_replacement_tokens(
             await refill()
         return result
 
+    def pipeline_during_refill():
+        pipe = original_pipeline()
+        execute = pipe.execute
+
+        async def execute_during_refill():
+            monkeypatch.setattr(client, "pipeline", original_pipeline)
+            if timing == "before":
+                await refill()
+            result = await execute()
+            if timing == "after":
+                await refill()
+            return result
+
+        pipe.execute = execute_during_refill
+        return pipe
+
     try:
-        monkeypatch.setattr(client, "set", set_during_refill)
+        if scope == "global":
+            monkeypatch.setattr(client, "set", set_during_refill)
+        else:
+            monkeypatch.setattr(client, "pipeline", pipeline_during_refill)
         await store.set_dir("/repo", [("old.txt", stale)],
                             expired_at=datetime.now(timezone.utc) +
                             timedelta(days=365))
@@ -523,3 +543,96 @@ async def test_subtree_eviction_finishes_before_a_newer_listing(
     assert (await second.get("/d/sub")).entry is not None
     assert (await second.list_dir("/d/sub")).entries == ["/d/sub/new"]
     assert (await second.get("/d/sub/new")).entry is not None
+
+
+@pytest.mark.asyncio
+async def test_subtree_eviction_does_not_scan_unrelated_keys(
+        rolling_client, monkeypatch):
+    client, prefix = rolling_client
+    store = RedisIndexCacheStore(client=client, key_prefix=prefix)
+    folder = IndexEntry(id="sub", name="sub", resource_type="folder")
+    child = IndexEntry(id="child", name="child", resource_type="file")
+    await store.set_dir("/d", [("sub", folder)])
+    await store.put("/d/sub/unlisted/deep", child)
+    store.seed({f"/other/{i}": child
+                for i in range(200)}, {},
+               datetime.now(timezone.utc) + timedelta(hours=1))
+    await store.get("/other/0")
+    await client.set(prefix + "unrelated", "keep")
+    evaluate = client.eval
+
+    async def forbid_scan(script, *args, **kwargs):
+        guarded = """
+local call = redis.call
+local redis = {call = function(command, ...)
+  if command == 'SCAN' then error('unexpected database scan') end
+  return call(command, ...)
+end}
+""" + script
+        return await evaluate(guarded, *args, **kwargs)
+
+    monkeypatch.setattr(client, "eval", forbid_scan)
+    await store.set_dir("/d", [])
+    assert (await store.get("/d/sub/unlisted/deep")).entry is None
+    assert (await store.get("/other/0")).entry is not None
+    assert await client.get(prefix + "unrelated") == "keep"
+
+
+@pytest.mark.asyncio
+async def test_subtree_eviction_recovers_an_evicted_path_registry(
+        rolling_client):
+    client, prefix = rolling_client
+    store = RedisIndexCacheStore(client=client, key_prefix=prefix)
+    folder = IndexEntry(id="sub", name="sub", resource_type="folder")
+    child = IndexEntry(id="child", name="child", resource_type="file")
+    await store.set_dir("/d", [("sub", folder)])
+    await store.put("/d/sub/unlisted/deep", child)
+    await store.set_dir("/d/sub/buried", [("child", child)])
+    await store.invalidate_dir("/d/sub/buried")
+    await client.delete(prefix + "mirage:idx:paths")
+    await store.put("/unrelated", child)
+    await store.set_dir("/d", [])
+    assert (await store.get("/d/sub/unlisted/deep")).entry is None
+    assert await client.get(prefix +
+                            "mirage:idx:tombstone:/d/sub/buried") is None
+    assert (await store.get("/unrelated")).entry is not None
+
+
+@pytest.mark.asyncio
+async def test_path_registry_prunes_removed_rows_but_preserves_tombstones(
+        rolling_client):
+    client, prefix = rolling_client
+    store = RedisIndexCacheStore(client=client, key_prefix=prefix)
+    child = IndexEntry(id="child", name="child", resource_type="file")
+    registry = prefix + "mirage:idx:paths"
+    await store.put("/put-only", child)
+    await store.invalidate_entry("/put-only")
+    assert await client.zrange(registry, 0, -1) == [""]
+    await store.set_dir("/d", [("child", child)])
+    await store.set_dir("/d", [])
+    assert await client.zrange(registry, 0, -1) == ["", "/d"]
+    await store.set_dir("/d", [("child", child)])
+    await store.invalidate_dir("/d")
+    await store.invalidate_prefix("/d")
+    assert await client.zrange(registry, 0, -1) == ["", "/d"]
+    assert await client.get(prefix + "mirage:idx:tombstone:/d") is not None
+    await store.clear()
+    assert await client.exists(registry) == 0
+
+
+@pytest.mark.asyncio
+async def test_registry_prefix_invalidation_accepts_trailing_slashes(
+        rolling_client):
+    client, prefix = rolling_client
+    store = RedisIndexCacheStore(client=client, key_prefix=prefix)
+    child = IndexEntry(id="child", name="child", resource_type="file")
+    await store.set_dir("/literal[1]", [("child", child)])
+    await store.set_dir("/literal[1]/nested", [("child", child)])
+    await store.put("/literal[1]sibling/child", child)
+    await store.invalidate_prefix("/literal[1]/",
+                                  excluded=("/literal[1]/nested/", ))
+    assert (await store.get("/literal[1]/child")).entry is None
+    assert (await
+            store.list_dir("/literal[1]")).status == LookupStatus.NOT_FOUND
+    assert (await store.get("/literal[1]/nested/child")).entry is not None
+    assert (await store.get("/literal[1]sibling/child")).entry is not None

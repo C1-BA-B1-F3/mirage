@@ -20,6 +20,8 @@ export const ENTRY_PREFIX = 'mirage:idx:entry:'
 export const CHILDREN_PREFIX = 'mirage:idx:directory:'
 export const TOMBSTONE_PREFIX = 'mirage:idx:tombstone:'
 
+export const PATHS_KEY = 'mirage:idx:paths'
+
 export const GENERATION_KEY = 'mirage:idx:generation'
 
 export const DEFAULT_KEY_PREFIX = 'mirage:index:'

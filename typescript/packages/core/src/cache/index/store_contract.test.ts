@@ -45,15 +45,16 @@ for (const backend of ['ram', 'redis']) {
         await store.close()
       })
 
-      it.each([false, true])(
-        'clears a directory replaced by a file (invalidated=%s)',
-        async (invalidated) => {
-          await store.setDir('/dir', [['sub', folder('sub')]])
+      it.each(['listed', 'invalidated', 'unlisted'])(
+        'clears a directory replaced by a file (prior=%s)',
+        async (prior) => {
+          if (prior === 'unlisted') await store.put('/dir/sub', folder('sub'))
+          else await store.setDir('/dir', [['sub', folder('sub')]])
           await store.setDir('/dir/sub', [['old', entry('old')]])
           await store.put('/dir/sub/unlisted', entry('unlisted'))
           await store.setDir('/dir/sub/nested', [['keep', entry('keep')]])
           await store.setDir('/dir/sub2', [['keep', entry('keep')]])
-          if (invalidated) await store.invalidateDir('/dir')
+          if (prior === 'invalidated') await store.invalidateDir('/dir')
           expect(
             await store.setDir('/dir', [['sub', entry('sub')]], undefined, {
               excluded: ['/dir/sub/nested'],

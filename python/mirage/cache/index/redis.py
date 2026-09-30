@@ -20,6 +20,7 @@ from typing import cast
 
 try:
     from redis.asyncio import Redis
+    from redis.asyncio.client import Pipeline
 except ImportError as _err:
     raise ImportError("RedisIndexCacheStore requires the 'redis' extra. "
                       "Install with: pip install mirage-ai[redis]") from _err
@@ -27,18 +28,91 @@ except ImportError as _err:
 from mirage.cache.index.config import (Evicted, IndexDirectory, IndexEntry,
                                        ListResult, LookupResult, LookupStatus)
 from mirage.cache.index.constants import (CHILDREN_PREFIX, ENTRY_PREFIX,
-                                          GENERATION_KEY, TOMBSTONE_PREFIX)
+                                          GENERATION_KEY, PATHS_KEY,
+                                          TOMBSTONE_PREFIX)
 from mirage.cache.index.store import IndexCacheStore
 from mirage.core.timeutil import to_iso_z
 from mirage.utils.ids import uuid7
-from mirage.utils.key_prefix import under_path
 
 
 def _text(value: str | bytes) -> str:
     return value.decode() if isinstance(value, bytes) else value
 
 
-_SWAP_LISTING = """
+# Redis can evict the registry independently of its indexed paths.
+_PATH_REGISTRY = """
+local function track(registry, prefixes, paths)
+  if not redis.call('ZSCORE', registry, '') then
+    local cursor = '0'
+    repeat
+      local batch = redis.call('SCAN', cursor, 'COUNT', 1000)
+      cursor = batch[1]
+      for _, key in ipairs(batch[2]) do
+        for _, prefix in ipairs(prefixes) do
+          if string.sub(key, 1, #prefix) == prefix then
+            redis.call('ZADD', registry, 0, string.sub(key, #prefix + 1))
+            break
+          end
+        end
+      end
+    until cursor == '0'
+    redis.call('ZADD', registry, 0, '')
+  end
+  for _, path in ipairs(paths) do redis.call('ZADD', registry, 0, path) end
+end
+local function prune(registry, prefixes, path)
+  for _, prefix in ipairs(prefixes) do
+    if redis.call('EXISTS', prefix .. path) == 1 then return end
+  end
+  redis.call('ZREM', registry, path)
+end
+local function subtree(registry, root)
+  root = string.gsub(root, '/+$', '')
+  if root == '' then root = '/' end
+  local lower = root == '/' and '/' or root .. '/'
+  local upper = root == '/' and '0' or root .. '0'
+  local paths = redis.call('ZRANGEBYLEX', registry, '[' .. lower, '(' .. upper)
+  paths[#paths + 1] = root
+  return paths
+end
+"""
+
+_TRACK_PATHS = _PATH_REGISTRY + """
+local paths = {}
+for i = 5, #ARGV do paths[#paths + 1] = ARGV[i] end
+track(KEYS[1], {ARGV[1], ARGV[2], ARGV[3], ARGV[4]}, paths)
+return 1
+"""
+
+_DELETE_PATHS = _PATH_REGISTRY + """
+local prefixes = {ARGV[1], ARGV[2], ARGV[3], ARGV[4]}
+track(KEYS[1], prefixes, {})
+local excluded = cjson.decode(ARGV[7])
+for _, path in ipairs(subtree(KEYS[1], ARGV[6])) do
+  local protected = false
+  for _, root in ipairs(excluded) do
+    if path == root or string.sub(path, 1, #root + 1) == root .. '/' then
+      protected = true
+      break
+    end
+  end
+  if not protected then
+    redis.call('DEL', ARGV[5] .. path)
+    prune(KEYS[1], prefixes, path)
+  end
+end
+"""
+
+_DELETE_ENTRY = _PATH_REGISTRY + """
+local prefixes = {ARGV[1], ARGV[2], ARGV[3], ARGV[4]}
+track(KEYS[1], prefixes, {})
+redis.call('DEL', ARGV[1] .. ARGV[5])
+prune(KEYS[1], prefixes, ARGV[5])
+"""
+
+_SWAP_LISTING = _PATH_REGISTRY + """
+track(KEYS[3], {ARGV[2], ARGV[3], ARGV[4], ARGV[5]},
+  {string.sub(KEYS[1], #ARGV[3] + 1)})
 local old = redis.call('GET', KEYS[1])
 local tomb = redis.call('GET', KEYS[2])
 redis.call('DEL', KEYS[2])
@@ -68,6 +142,7 @@ local function drop(path, buried)
   end
   seen[path] = true
   redis.call('DEL', ARGV[2] .. path)
+  prune(KEYS[3], {ARGV[2], ARGV[3], ARGV[4], ARGV[5]}, path)
   gone[#gone + 1] = path
   folders[#folders + 1] = folder and 1 or 0
 end
@@ -82,41 +157,32 @@ if tomb then
     drop(path, t.folders[i] == 1)
   end
 end
+for i = 7, #ARGV, 2 do drop(ARGV[i], false) end
 local roots = {}
 for i, path in ipairs(gone) do
   if folders[i] == 1 then roots[#roots + 1] = path end
 end
-if #roots > 0 then
-  local cursor, doomed = '0', {}
-  repeat
-    local batch = redis.call('SCAN', cursor, 'COUNT', 1000)
-    cursor = batch[1]
-    for _, key in ipairs(batch[2]) do
-      for _, prefix in ipairs({ARGV[2], ARGV[3], ARGV[4], ARGV[5]}) do
-        if string.sub(key, 1, #prefix) == prefix then
-          local path = string.sub(key, #prefix + 1)
-          for _, root in ipairs(roots) do
-            if not protected(path) and (path == root
-              or string.sub(path, 1, #root + 1) == root .. '/') then
-              doomed[#doomed + 1] = key
-              break
-            end
-          end
-          break
-        end
-      end
-    end
-  until cursor == '0'
-  for _, key in ipairs(doomed) do redis.call('DEL', key) end
+local function remove(path)
+  if protected(path) then return end
+  for _, prefix in ipairs({ARGV[2], ARGV[3], ARGV[4], ARGV[5]}) do
+    redis.call('DEL', prefix .. path)
+  end
+  redis.call('ZREM', KEYS[3], path)
+end
+for _, root in ipairs(roots) do
+  for _, path in ipairs(subtree(KEYS[3], root)) do remove(path) end
 end
 for i = 7, #ARGV, 2 do
   redis.call('SET', ARGV[2] .. ARGV[i], ARGV[i + 1])
+  redis.call('ZADD', KEYS[3], 0, ARGV[i])
 end
 redis.call('SET', KEYS[1], ARGV[1])
 return {gone, folders}
 """
 
-_BURY_LISTING = """
+_BURY_LISTING = _PATH_REGISTRY + """
+track(KEYS[4], {ARGV[1], ARGV[2], ARGV[3], ARGV[4]},
+  {string.sub(KEYS[1], #ARGV[2] + 1)})
 local raw = redis.call('GET', KEYS[1])
 if raw then
   local entries = cjson.decode(raw).entries
@@ -127,12 +193,15 @@ if raw then
       or (row ~= false and cjson.decode(row).resource_type == 'folder')
     folders[i] = folder and 1 or 0
     redis.call('DEL', ARGV[1] .. path)
+    prune(KEYS[4], {ARGV[1], ARGV[2], ARGV[3], ARGV[4]}, path)
   end
   redis.call('SET', KEYS[2],
     cjson.encode({entries = entries, folders = folders}))
 end
 redis.call('DEL', KEYS[1])
 redis.call('DEL', KEYS[3])
+prune(KEYS[4], {ARGV[1], ARGV[2], ARGV[3], ARGV[4]},
+  string.sub(KEYS[1], #ARGV[2] + 1))
 """
 
 
@@ -163,7 +232,9 @@ class RedisIndexCacheStore(IndexCacheStore):
     Like RAM, stale records remain until explicitly cleared or invalidated by
     path, so expiry is distinguishable from absence. Redis eviction may still
     remove records; size limits belong to the server, not this store.
-    All writes within set_dir are batched in a single pipeline for efficiency.
+    Listing replacement and subtree eviction are atomic. A sorted path registry
+    limits eviction to the removed subtrees. The registry is rebuilt with one
+    database scan on first use or after Redis evicts it.
 
     Multiple stores can share one Redis server by using distinct key_prefix
     values (e.g. "gdrive:", "s3:"). The full key layout is::
@@ -201,6 +272,7 @@ class RedisIndexCacheStore(IndexCacheStore):
         self._children_prefix = f"{p}{CHILDREN_PREFIX}"
         self._tombstone_prefix = f"{p}{TOMBSTONE_PREFIX}"
         self._generation_key = f"{p}{GENERATION_KEY}"
+        self._paths_key = f"{p}{PATHS_KEY}"
         self._directory_generation_prefix = f"{self._generation_key}:"
 
     def _entry_key(self, vfs_path: str) -> str:
@@ -208,6 +280,11 @@ class RedisIndexCacheStore(IndexCacheStore):
 
     def _children_key(self, vfs_path: str) -> str:
         return f"{self._children_prefix}{vfs_path}"
+
+    def _track_paths(self, pipe: Pipeline, paths: list[str]) -> None:
+        pipe.eval(_TRACK_PATHS, 1, self._paths_key, self._entry_prefix,
+                  self._children_prefix, self._tombstone_prefix,
+                  self._directory_generation_prefix, *paths)
 
     def seed(self, entries: dict[str, IndexEntry],
              children: dict[str, list[str]], expires_at: datetime) -> None:
@@ -231,7 +308,15 @@ class RedisIndexCacheStore(IndexCacheStore):
                 if current is not None:
                     return _text(current)
                 generation = uuid7()
-                await self._client.set(key, generation, nx=True)
+                if key == self._generation_key:
+                    await self._client.set(key, generation, nx=True)
+                else:
+                    pipe = self._client.pipeline()
+                    self._track_paths(
+                        pipe,
+                        [key.removeprefix(self._directory_generation_prefix)])
+                    pipe.set(key, generation, nx=True)
+                    await pipe.execute()
                 # Never adopt a later token: a concurrent invalidation may
                 # have replaced it. Losing safely costs one extra refill.
                 return generation
@@ -264,6 +349,7 @@ class RedisIndexCacheStore(IndexCacheStore):
         missing = {path: uuid7() for path in paths if path not in generations}
         if missing:
             pipe = self._client.pipeline()
+            self._track_paths(pipe, list(missing))
             for path, token in missing.items():
                 pipe.set(f"{self._directory_generation_prefix}{path}",
                          token,
@@ -287,6 +373,10 @@ class RedisIndexCacheStore(IndexCacheStore):
                 directory_generations = await self._directory_generations(
                     directories)
                 pipe = self._client.pipeline()
+                self._track_paths(pipe, [
+                    path for entries, children, _ in pending
+                    for path in set(entries) | set(children)
+                ])
                 for entries, children, expires_at in pending:
                     for vfs_path, entry in entries.items():
                         pipe.set(self._entry_key(vfs_path),
@@ -319,8 +409,10 @@ class RedisIndexCacheStore(IndexCacheStore):
         if not entry.index_time:
             entry = entry.model_copy(
                 update={"index_time": to_iso_z(datetime.now(timezone.utc))})
-        await self._client.set(self._entry_key(vfs_path),
-                               entry.model_dump_json())
+        pipe = self._client.pipeline()
+        self._track_paths(pipe, [vfs_path])
+        pipe.set(self._entry_key(vfs_path), entry.model_dump_json())
+        await pipe.execute()
 
     async def list_dir(self, vfs_path: str) -> ListResult:
         await self._flush_seed()
@@ -401,6 +493,7 @@ class RedisIndexCacheStore(IndexCacheStore):
             partial=partial)
         if not evict:
             pipe = self._client.pipeline()
+            self._track_paths(pipe, [vfs_path, *(path for path, _ in rows)])
             for path, row in rows:
                 pipe.set(self._entry_key(path), row)
             pipe.set(self._children_key(vfs_path), listing.model_dump_json())
@@ -414,10 +507,11 @@ class RedisIndexCacheStore(IndexCacheStore):
         # listing and replacing it; the diff is against the true predecessor.
         gone, folders = await cast(
             Awaitable[tuple[list[str | bytes], list[int]]],
-            self._client.eval(_SWAP_LISTING, 2, self._children_key(vfs_path),
+            self._client.eval(_SWAP_LISTING, 3, self._children_key(vfs_path),
                               self._tombstone_prefix + vfs_path,
-                              listing.model_dump_json(), self._entry_prefix,
-                              self._children_prefix, self._tombstone_prefix,
+                              self._paths_key, listing.model_dump_json(),
+                              self._entry_prefix, self._children_prefix,
+                              self._tombstone_prefix,
                               self._directory_generation_prefix,
                               json.dumps([p.rstrip("/") for p in excluded]),
                               *(value for row in rows for value in row)))
@@ -447,7 +541,12 @@ class RedisIndexCacheStore(IndexCacheStore):
 
     async def invalidate_entry(self, vfs_path: str) -> None:
         await self._flush_seed()
-        await self._client.delete(self._entry_key(vfs_path))
+        await cast(
+            Awaitable[None],
+            self._client.eval(_DELETE_ENTRY, 1, self._paths_key,
+                              self._entry_prefix, self._children_prefix,
+                              self._tombstone_prefix,
+                              self._directory_generation_prefix, vfs_path))
 
     async def invalidate_dir(self, vfs_path: str) -> None:
         await self._flush_seed()
@@ -456,50 +555,35 @@ class RedisIndexCacheStore(IndexCacheStore):
         await cast(
             Awaitable[None],
             self._client.eval(
-                _BURY_LISTING, 3, self._children_key(vfs_path),
+                _BURY_LISTING, 4, self._children_key(vfs_path),
                 self._tombstone_prefix + vfs_path,
                 f"{self._directory_generation_prefix}{vfs_path}",
-                self._entry_prefix, self._children_prefix))
+                self._paths_key, self._entry_prefix, self._children_prefix,
+                self._tombstone_prefix, self._directory_generation_prefix))
 
-    async def _scan_delete(
+    async def _delete_paths(
         self, prefix: str, vfs_path: str, excluded: tuple[str,
                                                           ...] = ()) -> None:
-        """Delete every key under ``prefix`` naming a path in the subtree.
-
-        Args:
-            prefix (str): Key namespace to scan (entries or children).
-            vfs_path (str): Mount-absolute root of the subtree.
-            excluded (tuple[str, ...]): nested mount roots to preserve.
-        """
-        pattern = f"{_glob_escape(prefix + vfs_path.rstrip('/'))}*"
-        cursor = 0
-        while True:
-            cursor, keys = await self._client.scan(cursor,
-                                                   match=pattern,
-                                                   count=500)
-            doomed = [
-                key for key in keys
-                if under_path(_text(key).removeprefix(prefix), vfs_path)
-                and not any(
-                    under_path(_text(key).removeprefix(prefix), p)
-                    for p in excluded)
-            ]
-            if doomed:
-                await self._client.delete(*doomed)
-            if cursor == 0:
-                return
+        await cast(
+            Awaitable[None],
+            self._client.eval(_DELETE_PATHS, 1, self._paths_key,
+                              self._entry_prefix, self._children_prefix,
+                              self._tombstone_prefix,
+                              self._directory_generation_prefix, prefix,
+                              vfs_path,
+                              json.dumps([p.rstrip("/") for p in excluded])))
 
     async def invalidate_prefix(self,
                                 vfs_path: str,
                                 *,
                                 excluded: tuple[str, ...] = ()) -> None:
         await self._flush_seed()
-        await self._scan_delete(self._entry_prefix, vfs_path, excluded)
+        await self._delete_paths(self._entry_prefix, vfs_path, excluded)
         # Forgetting what is cached is not evidence that anything went
         # away, so tombstones survive for the next complete listing.
-        await self._scan_delete(self._children_prefix, vfs_path, excluded)
-        await self._scan_delete(self._directory_generation_prefix, vfs_path,
-                                excluded)
+        await self._delete_paths(self._children_prefix, vfs_path, excluded)
+        await self._delete_paths(self._directory_generation_prefix, vfs_path,
+                                 excluded)
 
     async def invalidate(self) -> None:
         await self._flush_seed()
@@ -510,11 +594,11 @@ class RedisIndexCacheStore(IndexCacheStore):
     async def clear(self) -> None:
         async with self._seed_lock:
             self._pending_seeds.clear()
-            await self._scan_delete(self._entry_prefix, "/")
-            await self._scan_delete(self._children_prefix, "/")
-            await self._scan_delete(self._tombstone_prefix, "/")
-            await self._scan_delete(self._directory_generation_prefix, "/")
-            await self._client.delete(self._generation_key)
+            await self._delete_paths(self._entry_prefix, "/")
+            await self._delete_paths(self._children_prefix, "/")
+            await self._delete_paths(self._tombstone_prefix, "/")
+            await self._delete_paths(self._directory_generation_prefix, "/")
+            await self._client.delete(self._generation_key, self._paths_key)
 
     async def close(self) -> None:
         if self._closed:

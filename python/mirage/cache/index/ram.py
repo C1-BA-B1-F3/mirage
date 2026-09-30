@@ -142,6 +142,7 @@ class RAMIndexCacheStore(IndexCacheStore, KeyLockMixin):
             }
             candidates = dict.fromkeys(self._children.get(vfs_path, []))
             candidates.update(dict.fromkeys(buried))
+            candidates.update(dict.fromkeys(rows))
             gone = [
                 self._evict(key, buried.get(key, False), excluded)
                 for key in candidates

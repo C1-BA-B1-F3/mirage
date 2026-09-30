@@ -128,6 +128,70 @@
         "stderr": ""
       },
       "note": "A re-list that no longer names a file evicts its cached row, so stat stops answering for it; before, msgraph's stat answered from the old row and test -e said it still existed. s3 names the directory's own targets; box and dropbox cannot run this until Task 1.4 (box also has no TS shadow, #1341 item 2)."
+    },
+    {
+      "id": "listing_relist_drops_descendants_of_a_replaced_directory",
+      "seq": 310065,
+      "targets": [
+        "s3",
+        "s3-prefix",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix"
+      ],
+      "read": "fresh",
+      "ttl": 600,
+      "scenario": [
+        {
+          "mutate": {
+            "path": "/data/replace.keep",
+            "content": "keep\n"
+          }
+        },
+        {
+          "mutate": {
+            "command": "mkdir -p /data/replace/sub"
+          }
+        },
+        {
+          "mutate": {
+            "path": "/data/replace/sub/old.txt",
+            "content": "old\n"
+          }
+        },
+        {
+          "command": "ls /data/replace/sub"
+        },
+        {
+          "command": "cat /data/replace/sub/old.txt"
+        },
+        {
+          "mutate": {
+            "command": "rm -r /data/replace/sub"
+          }
+        },
+        {
+          "mutate": {
+            "path": "/data/replace/sub",
+            "content": "replacement\n"
+          }
+        },
+        {
+          "command": "ls /data/replace"
+        },
+        {
+          "command": "test -e /data/replace/sub/old.txt; echo $?"
+        },
+        {
+          "command": "cat /data/replace/sub"
+        }
+      ],
+      "expect": {
+        "exit": 0,
+        "stdout": "old.txt\nold\nsub\n1\nreplacement\n",
+        "stderr": ""
+      },
+      "note": "Replacing a listed directory with a file removes its cached descendants when the parent is re-listed. MSGraph stat otherwise serves the old child row after the replacement; object stores must discard the old prefix while preserving the new file."
     }
   ]
 }

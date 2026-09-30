@@ -339,15 +339,17 @@ async def test_prefix_invalidation_preserves_excluded_subtrees(store):
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("invalidated", [False, True])
-async def test_directory_replaced_by_file_evicts_old_subtree(
-        store, invalidated):
-    await store.set_dir("/dir", [("sub", folder("sub"))])
+@pytest.mark.parametrize("prior", ["listed", "invalidated", "unlisted"])
+async def test_directory_replaced_by_file_evicts_old_subtree(store, prior):
+    if prior == "unlisted":
+        await store.put("/dir/sub", folder("sub"))
+    else:
+        await store.set_dir("/dir", [("sub", folder("sub"))])
     await store.set_dir("/dir/sub", [("old", entry("old"))])
     await store.put("/dir/sub/unlisted", entry("unlisted"))
     await store.set_dir("/dir/sub/nested", [("keep", entry("keep"))])
     await store.set_dir("/dir/sub2", [("keep", entry("keep"))])
-    if invalidated:
+    if prior == "invalidated":
         await store.invalidate_dir("/dir")
     assert await store.set_dir("/dir", [("sub", entry("sub"))],
                                excluded=("/dir/sub/nested", )) == [

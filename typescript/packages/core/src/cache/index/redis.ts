@@ -143,7 +143,7 @@ local function drop(path, buried)
   local row = redis.call('GET', ARGV[2] .. path)
   local folder = buried or redis.call('EXISTS', ARGV[3] .. path) == 1
     or (row ~= false and cjson.decode(row).resource_type == 'folder')
-  if named[path] and not (folder and named[path] ~= 'folder') then
+  if named[path] and not (folder and named[path] == 'file') then
     return
   end
   seen[path] = true

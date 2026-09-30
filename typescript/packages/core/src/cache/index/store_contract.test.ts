@@ -73,6 +73,23 @@ for (const backend of ['ram', 'redis']) {
         },
       )
 
+      it.each(['listed', 'invalidated', 'unlisted'])(
+        'preserves backend directory subtrees on re-list (prior=%s)',
+        async (prior) => {
+          for (const resourceType of ['wandb/directory', 'notion/page']) {
+            const child = new IndexEntry({ id: 'sub', name: 'sub', resourceType })
+            if (prior !== 'unlisted') await store.setDir('/dir', [['sub', child]])
+            await store.setDir('/dir/sub', [['keep', entry('keep')]])
+            if (prior === 'invalidated') await store.invalidateDir('/dir')
+            expect(await store.setDir('/dir', [['sub', child]])).toEqual([])
+            expect((await store.listDir('/dir/sub')).entries).toEqual(['/dir/sub/keep'])
+            expect((await store.get('/dir/sub/keep')).entry).toBeDefined()
+            expect(await store.setDir('/dir', [])).toEqual([{ path: '/dir/sub', folder: true }])
+            expect((await store.get('/dir/sub/keep')).status).toBe(LookupStatus.NOT_FOUND)
+          }
+        },
+      )
+
       it('prefix invalidation preserves excluded subtrees', async () => {
         for (const path of ['/dir/nested', '/dir/nested/sub', '/dir/nested2']) {
           await store.put(path, entry(path))

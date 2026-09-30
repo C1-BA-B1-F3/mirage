@@ -363,3 +363,22 @@ async def test_directory_replaced_by_file_evicts_old_subtree(store, prior):
     for path in ["/dir/sub/nested", "/dir/sub2"]:
         assert (await store.list_dir(path)).entries == [path + "/keep"]
     assert await store.set_dir("/dir", [("sub", entry("sub"))]) == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("prior", ["listed", "invalidated", "unlisted"])
+@pytest.mark.parametrize("resource_type", ["wandb/directory", "notion/page"])
+async def test_backend_directory_relist_preserves_subtree(
+        store, prior, resource_type):
+    child = IndexEntry(id="sub", name="sub", resource_type=resource_type)
+    if prior != "unlisted":
+        await store.set_dir("/dir", [("sub", child)])
+    await store.set_dir("/dir/sub", [("keep", entry("keep"))])
+    if prior == "invalidated":
+        await store.invalidate_dir("/dir")
+    assert await store.set_dir("/dir", [("sub", child)]) == []
+    assert (await store.list_dir("/dir/sub")).entries == ["/dir/sub/keep"]
+    assert (await store.get("/dir/sub/keep")).entry is not None
+    assert await store.set_dir("/dir",
+                               []) == [Evicted("/dir/sub", folder=True)]
+    assert (await store.get("/dir/sub/keep")).status == LookupStatus.NOT_FOUND

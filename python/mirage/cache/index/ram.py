@@ -147,7 +147,7 @@ class RAMIndexCacheStore(IndexCacheStore, KeyLockMixin):
                 self._evict(key, buried.get(key, False), excluded)
                 for key in candidates
                 if (key not in rows or
-                    (rows[key].resource_type != ResourceType.FOLDER and
+                    (rows[key].resource_type == ResourceType.FILE and
                      (buried.get(key, False) or key in self._children
                       or self._is_folder(key)))) and not any(
                           under_path(key, p) for p in excluded)

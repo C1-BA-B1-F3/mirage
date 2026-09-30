@@ -149,7 +149,7 @@ export class RAMIndexCacheStore extends IndexCacheStore {
             .filter(
               (key) =>
                 (!rows.has(key) ||
-                  (rows.get(key)?.resourceType !== ResourceType.FOLDER &&
+                  (rows.get(key)?.resourceType === ResourceType.FILE &&
                     (buried.get(key) === true ||
                       this.children.has(key) ||
                       this.entryMap.get(key)?.resourceType === ResourceType.FOLDER))) &&

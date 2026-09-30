@@ -12,7 +12,7 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import { JqParseError, NO_VALUE, type NoValue } from './types.ts'
+import { JqParseError, NO_VALUE, NumberText, type NoValue } from './types.ts'
 
 // The deepest jq nests arrays, objects and the keys between them. jq's
 // streaming parser has no limit, but every event it hands out copies its
@@ -58,6 +58,9 @@ function ord(ch: string): number {
 
 const WHITESPACE = byteTable((byte) => ' \t\r\n'.includes(String.fromCharCode(byte)))
 const STRUCTURE = byteTable((byte) => '[,]{:}'.includes(String.fromCharCode(byte)))
+// What stands between two values of a stream: whitespace, and under --seq
+// the RS before each one.
+const SEPARATORS = byteTable((byte) => WHITESPACE[byte] === 1 || byte === RS)
 
 // Runs of bytes that each go through jq's scan() the same way, so a run
 // is taken in one step: a literal's bytes, whitespace, a string's body.
@@ -268,8 +271,38 @@ function unhex4(data: Uint8Array, at: number): number {
   return point
 }
 
+/** A string as JSON text, which jq's parser reads back as that string. */
+export function stringText(value: string): string {
+  return JSON.stringify(value)
+}
+
+/**
+ * A --stream event as JSON text: its path, then its leaf, a number spelled
+ * as its literal (see NumberText). `event` is `[path]` or `[path, leaf]`, as
+ * the streaming parser hands it out.
+ */
+export function eventText(event: unknown): string {
+  const [path, ...rest] = event as [unknown, ...unknown[]]
+  const head = JSON.stringify(path)
+  if (rest.length === 0) return `[${head}]`
+  const leaf = rest[0]
+  return `[${head},${leaf instanceof NumberText ? leaf.text : JSON.stringify(leaf)}]`
+}
+
 function isNumber(value: unknown): value is number {
   return typeof value === 'number'
+}
+
+/** Whether a parsed value is a number: a --stream leaf keeps its literal. */
+function isNumeric(value: unknown): boolean {
+  return typeof value === 'number' || value instanceof NumberText
+}
+
+/** The bytes after any separators they start with. */
+function afterSeparators(bytes: Uint8Array): Uint8Array {
+  let at = 0
+  while (at < bytes.length && SEPARATORS[bytes[at] ?? 0] === 1) at += 1
+  return bytes.subarray(at)
 }
 
 function isObject(frame: unknown): frame is Record<string, unknown> {
@@ -392,7 +425,10 @@ class TokenBuffer {
  * so `1]` fails before printing 1 while `1 ]` prints it first.
  *
  * Feed it one buffer at a time (jv_parser_set_buf) and pull what it parsed
- * (jv_parser_next); the reader over it decides the buffers.
+ * (jv_parser_next); the reader over it decides the buffers. What it parsed is
+ * also there as text (see text()), which is what libjq is handed: jq keeps a
+ * number's literal and an object's key order, and the text keeps both where
+ * the value cannot.
  *
  * `seq` is --seq, an RFC 7464 text sequence: nothing counts before the first
  * RS, and a bad value is reported and skipped. `streaming` is --stream,
@@ -418,6 +454,15 @@ export class JqParser {
   private buf: Uint8Array | null = null
   private pos = 0
   private partial = false
+  // Where the bytes of the next value begin in the buffer, the bytes of it
+  // earlier buffers held, whether the value last completed ended before the
+  // byte that completed it (a literal does), and the last value's bytes, or
+  // under --stream the last event.
+  private mark = 0
+  private carry: Uint8Array[] = []
+  private before = false
+  private textBytes: Uint8Array = new Uint8Array(0)
+  private last: unknown = NO_VALUE
 
   constructor(
     private readonly seq = false,
@@ -449,6 +494,17 @@ export class JqParser {
     this.buf = data
     this.pos = start
     this.partial = partial
+    this.mark = start
+  }
+
+  /**
+   * The JSON text of the value next() handed back last, which jq's parser
+   * reads as that value: the bytes it was read from, or under --stream the
+   * event with a number leaf spelled as its literal.
+   */
+  text(): string {
+    if (this.streaming) return eventText(this.last)
+    return decodeUtf8(this.textBytes)
   }
 
   /** Bytes of the current buffer not yet parsed. */
@@ -525,7 +581,10 @@ export class JqParser {
     }
     if (this.streaming) {
       const done = this.streamCheckDone()
-      if (done !== NO_VALUE) return done
+      if (done !== NO_VALUE) {
+        this.last = done
+        return done
+      }
     }
     this.produced = NO_VALUE
     const end = buf.length
@@ -539,6 +598,7 @@ export class JqParser {
         const stop = rs < 0 ? end : rs + 1
         this.advance(buf, pos, stop)
         pos = stop
+        this.mark = pos
         if (rs >= 0) this.state = ParseState.NORMAL
         continue
       }
@@ -571,8 +631,19 @@ export class JqParser {
       msg = this.scan(ch)
     }
     this.pos = pos
-    if (msg === OUTPUT) return this.produced
+    if (msg === OUTPUT) {
+      const produced = this.produced
+      if (produced === NO_VALUE) {
+        // An RS dropped what it cut short.
+        this.mark = pos
+      } else {
+        this.take(buf, this.before ? pos - 1 : pos)
+        this.last = produced
+      }
+      return produced
+    }
     if (msg !== null) {
+      this.mark = pos
       const where = `at line ${String(this.line)}, column ${String(this.column)}`
       if (ch !== RS && this.seq) {
         this.state = ParseState.WAITING_FOR_RS
@@ -588,8 +659,48 @@ export class JqParser {
       }
       return failure
     }
-    if (this.partial) return NO_VALUE
-    return this.atEof()
+    if (this.partial) {
+      this.hold(buf, end)
+      return NO_VALUE
+    }
+    const value = this.atEof()
+    if (value !== NO_VALUE && !(value instanceof JqParseError)) {
+      this.take(buf, end)
+      this.last = value
+    }
+    return value
+  }
+
+  // The bytes of the value just completed, which end at `stop`: the next
+  // value's begin after them.
+  private take(buf: Uint8Array, stop: number): void {
+    if (this.streaming) return
+    const tail = buf.subarray(this.mark, stop)
+    if (this.carry.length === 0) {
+      this.textBytes = afterSeparators(tail).slice()
+    } else {
+      this.carry.push(tail)
+      let size = 0
+      for (const part of this.carry) size += part.length
+      const whole = new Uint8Array(size)
+      let at = 0
+      for (const part of this.carry) {
+        whole.set(part, at)
+        at += part.length
+      }
+      this.textBytes = afterSeparators(whole)
+      this.carry = []
+    }
+    this.mark = stop
+  }
+
+  // Keep the bytes of a value the buffer ended inside of.
+  private hold(buf: Uint8Array, stop: number): void {
+    if (this.streaming) return
+    const held = buf.subarray(this.mark, stop)
+    const kept = this.carry.length === 0 ? afterSeparators(held) : held
+    if (kept.length > 0) this.carry.push(kept.slice())
+    this.mark = stop
   }
 
   private atEof(): unknown {
@@ -607,7 +718,7 @@ export class JqParser {
     let value = this.nextValue
     if (this.streaming && value !== NO_VALUE) value = [[...this.path], value]
     this.nextValue = NO_VALUE
-    if (this.seq && !this.lastChWasWs && isNumber(value)) {
+    if (this.seq && !this.lastChWasWs && isNumeric(value)) {
       return new JqParseError(`Potentially truncated top-level numeric value ${where}`)
     }
     return value
@@ -643,6 +754,7 @@ export class JqParser {
     this.nextValue = NO_VALUE
     this.stack = []
     this.token.clear()
+    this.carry = []
     this.state = ParseState.NORMAL
   }
 
@@ -690,19 +802,18 @@ export class JqParser {
       const next = this.nextValue
       return (
         this.path.length > 0 ||
-        (next !== NO_VALUE &&
-          (next === null || typeof next === 'number' || typeof next === 'boolean'))
+        (next !== NO_VALUE && (next === null || isNumeric(next) || typeof next === 'boolean'))
       )
     }
     return (
       !this.lastChWasWs &&
-      (this.stack.length > 0 || this.token.length > 0 || isNumber(this.nextValue))
+      (this.stack.length > 0 || this.token.length > 0 || isNumeric(this.nextValue))
     )
   }
 
   private isTopNum(): boolean {
     const above = this.streaming ? this.path : this.stack
-    return above.length === 0 && isNumber(this.nextValue)
+    return above.length === 0 && isNumeric(this.nextValue)
   }
 
   private scan(ch: number): string | Scanned | null {
@@ -724,6 +835,7 @@ export class JqParser {
         const done = this.checkDone()
         if (done !== NO_VALUE) {
           this.produced = done
+          this.before = true
           return OUTPUT
         }
       }
@@ -742,6 +854,7 @@ export class JqParser {
         const done = this.checkDone()
         if (done !== NO_VALUE) {
           this.produced = done
+          this.before = true
           answer = OUTPUT
         }
       }
@@ -756,6 +869,7 @@ export class JqParser {
       const done = this.checkDone()
       if (done !== NO_VALUE) {
         this.produced = done
+        this.before = false
         answer = OUTPUT
       }
     } else if (ch === QUOTE && this.state === ParseState.STRING) {
@@ -765,6 +879,7 @@ export class JqParser {
       const done = this.checkDone()
       if (done !== NO_VALUE) {
         this.produced = done
+        this.before = false
         answer = OUTPUT
       }
     } else {
@@ -799,9 +914,10 @@ export class JqParser {
       if (!spells(token, pattern)) return 'Invalid literal'
     } else {
       const nul = token.indexOf(0)
-      const number = numberValue(latin1(nul < 0 ? token : token.subarray(0, nul)))
+      const literal = latin1(nul < 0 ? token : token.subarray(0, nul))
+      const number = numberValue(literal)
       if (number === NO_VALUE) return 'Invalid numeric literal'
-      value = number
+      value = this.streaming ? new NumberText(literal) : number
     }
     const msg = this.value(value)
     if (msg !== null) return msg

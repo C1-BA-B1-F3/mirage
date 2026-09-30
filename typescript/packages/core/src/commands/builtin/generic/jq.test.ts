@@ -13,20 +13,22 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import { describe, expect, it } from 'vitest'
-import { jqOptions } from '../../../core/jq/index.ts'
+import { jqOptions, type JqOptions } from '../../../core/jq/index.ts'
 import { materialize, type ByteSource, type IOResult } from '../../../io/types.ts'
 import { PathSpec } from '../../../types.ts'
 import { eisdir, enoent } from '../../../utils/errors.ts'
 import type { CommandOpts } from '../../config.ts'
 import { specOf } from '../../spec/builtins.ts'
 import { FlagView } from '../../spec/flag_view.ts'
+import { parseCommand, parseToKwargs } from '../../spec/parser.ts'
 import {
   exitCode,
+  indentWidth,
   inputName,
   jqGeneric,
-  namedArgs,
   parseFlags,
   positionalArgs,
+  readOptions,
   runStatus,
 } from './jq.ts'
 
@@ -103,65 +105,255 @@ function view(flags: Record<string, string | boolean | number | string[]>): Flag
   return new FlagView(flags, specOf('jq'))
 }
 
+const HINT =
+  'Use jq --help for help with command-line options,\n' +
+  'or see the jq manpage, or online docs at https://jqlang.org'
+
+/** A jq line's flags as the parser leaves them, with the order they were typed in. */
+function parsedFlags(...words: string[]): CommandOpts['flags'] {
+  return parseToKwargs(parseCommand(specOf('jq'), words, '/', 'jq'))
+}
+
+function toSpec(value: string): PathSpec {
+  return PathSpec.fromStrPath(value)
+}
+
+async function unread(path: PathSpec): Promise<Uint8Array> {
+  await Promise.resolve()
+  throw new Error(`${path.virtual} should not be read`)
+}
+
+/** The options a jq line reads to, its flag files read off FILES. */
+async function options(...words: string[]): Promise<JqOptions> {
+  const fl = new FlagView(parsedFlags(...words), specOf('jq'))
+  return readOptions(fl, toSpec, (path) => materialize(read(path)))
+}
+
+/** The bindings a flag record makes, where no file may be read. */
+async function bound(
+  flags: Record<string, string | boolean | number | string[]>,
+): Promise<ReadonlyMap<string, string>> {
+  return (await readOptions(view(flags), toSpec, unread)).namedArgs
+}
+
+/** How jq lays an output out under these options. */
+function layout(opts: JqOptions): string | number {
+  if (opts.compact) return 'compact'
+  return opts.tab ? 'tab' : opts.indent
+}
+
 describe('parseFlags', () => {
   it('reads -j and --raw-output0 as implying -r', () => {
     expect(parseFlags(view({ join_output: true })).rawOutput).toBe(true)
     expect(parseFlags(view({ raw_output0: true })).rawOutput).toBe(true)
   })
+})
 
-  it('reads --indent -1 as tab indentation', () => {
-    const opts = parseFlags(view({ indent: '-1' }))
+describe('indentWidth', () => {
+  it.each([
+    ['3', 3],
+    ['+3', 3],
+    ['07', 7],
+    ['-0', 0],
+    ['0', 0],
+    ['-1', -1],
+  ] as const)("reads %j as jq's strtol does", (word, width) => {
+    expect(indentWidth(word)).toBe(width)
+  })
+
+  it.each(['x', '2x', '', ' 3', '3 ', '3\n', '1.5', '0x3', '08', '-2', '99999999999999999999'])(
+    "refuses %j in jq's words",
+    (word) => {
+      expect(() => indentWidth(word)).toThrow(
+        `jq: --indent takes a number between -1 and 7\n${HINT}`,
+      )
+    },
+  )
+
+  it.each([
+    ['', '7', 7],
+    ['+', '3', 3],
+    ['-', '1', -1],
+    ['-', '0', 0],
+    ['', '0', 0],
+  ] as const)('accepts arbitrary leading zeroes before %s%s', (sign, digit, width) => {
+    expect(indentWidth(sign + '0'.repeat(5000) + digit)).toBe(width)
+  })
+
+  it.each([
+    ['', '9'],
+    ['-', '9'],
+    ['+', '9'],
+    ['', '0'],
+  ])("refuses oversized indent starting with %s%s in jq's words", (sign, digits) => {
+    expect(() => indentWidth(sign + digits.repeat(5000) + '8')).toThrow(
+      `jq: --indent takes a number between -1 and 7\n${HINT}`,
+    )
+  })
+})
+
+describe('readOptions', () => {
+  it('reads --indent -1 as tab indentation', async () => {
+    const opts = await readOptions(view({ indent: '-1' }), toSpec, unread)
     expect(opts.tab).toBe(true)
     expect(opts.indent).toBe(2)
   })
 
-  it('refuses an indent out of range', () => {
-    expect(() => parseFlags(view({ indent: '8' }))).toThrow(/between -1 and 7/)
+  it.each([
+    [['-c', '--tab'], 'tab'],
+    [['--tab', '-c'], 'compact'],
+    [['--indent', '3', '-c'], 'compact'],
+    [['-c', '--indent', '3'], 3],
+    [['--tab', '--indent', '3'], 3],
+    [['--indent', '3', '--tab'], 'tab'],
+    [['--indent', '-1', '-c'], 'compact'],
+    [['-c', '--indent', '-1'], 'tab'],
+    [['-cr', '--tab'], 'tab'],
+    [['--tab', '-rc'], 'compact'],
+    [['--indent', '2', '--indent', '5'], 5],
+  ] as const)('lets the last layout option typed win: %j', async (words, expected) => {
+    expect(layout(await options(...words, '.'))).toBe(expected)
   })
-})
 
-describe('namedArgs', () => {
-  it('pairs up the flattened tokens', () => {
-    expect(namedArgs(view({ arg: ['a', '1', 'b', '2'] }))).toEqual({ a: '1', b: '2' })
+  it('reads a later --indent word too', async () => {
+    await expect(options('--indent', '2', '--indent', 'x', '.')).rejects.toThrow(
+      '--indent takes a number',
+    )
   })
 
-  it('parses an --argjson value as JSON', () => {
-    expect(namedArgs(view({ argjson: ['v', '{"k":[1,2]}'] }))).toEqual({ v: { k: [1, 2] } })
+  it('binds each --arg name to a string', async () => {
+    expect(await bound({ arg: ['a', '1', 'b', 'x"y'] })).toEqual(
+      new Map([
+        ['a', '"1"'],
+        ['b', '"x\\"y"'],
+      ]),
+    )
   })
 
-  it('refuses invalid JSON', () => {
-    expect(() => namedArgs(view({ argjson: ['v', 'nope'] }))).toThrow(/invalid JSON text/)
+  it('keeps an --argjson value as the text jq reads', async () => {
+    expect(await bound({ argjson: ['v', ' {"b":1.000,"1":2} '] })).toEqual(
+      new Map([['v', '{"b":1.000,"1":2}']]),
+    )
+  })
+
+  it('refuses invalid JSON', async () => {
+    await expect(bound({ argjson: ['v', 'nope'] })).rejects.toThrow(/invalid JSON text/)
+  })
+
+  it('keeps the bindings in the order they were typed in', async () => {
+    const opts = await options(
+      '-n',
+      '--slurpfile',
+      's',
+      '/d/four.json',
+      '--arg',
+      'a',
+      '1',
+      '--rawfile',
+      'r',
+      '/d/one.json',
+      '--argjson',
+      'b',
+      '2',
+      '$ARGS.named',
+    )
+    expect([...opts.namedArgs]).toEqual([
+      ['s', '[1,2,3,4]'],
+      ['a', '"1"'],
+      ['r', '"1"'],
+      ['b', '2'],
+    ])
+  })
+
+  it.each([
+    [['--argjson', 'v', '1', '--argjson', 'v', '2'], '1'],
+    [['--arg', 'v', '1', '--argjson', 'v', '2'], '"1"'],
+    [['--rawfile', 'v', '/d/one.json', '--arg', 'v', '2'], '"1"'],
+    [['--slurpfile', 'v', '/d/two.json', '--rawfile', 'v', '/d/one.json'], '[2]'],
+  ] as const)('lets the first binding of a name win: %j', async (words, text) => {
+    expect((await options('-n', ...words, '$v')).namedArgs).toEqual(new Map([['v', text]]))
+  })
+
+  it.each([
+    [['--argjson', 'v', 'nope']],
+    [['--rawfile', 'v', '/d/missing.txt']],
+    [['--slurpfile', 'v', '/d/bad.json']],
+  ] as const)('never reads a binding of a taken name: %j', async (words) => {
+    const fl = new FlagView(parsedFlags('-n', '--arg', 'v', '1', ...words, '$v'), specOf('jq'))
+    expect((await readOptions(fl, toSpec, unread)).namedArgs).toEqual(new Map([['v', '"1"']]))
+  })
+
+  it.each([
+    [['--indent', 'x', '--argjson', 'a', 'nope'], 'jq: --indent takes'],
+    [['--argjson', 'a', 'nope', '--indent', 'x'], 'jq: invalid JSON text'],
+    [['--argjson', 'a', 'nope', '--slurpfile', 'b', '/d/missing.json'], 'jq: invalid JSON text'],
+    [
+      ['--slurpfile', 'b', '/d/missing.json', '--argjson', 'a', 'nope'],
+      'jq: Bad JSON in --slurpfile b /d/missing.json',
+    ],
+  ] as const)('reports the first option jq refuses: %j', async (words, refusal) => {
+    await expect(options('-n', ...words, '1')).rejects.toThrow(refusal)
+  })
+
+  it('is what jqGeneric reads the flags it is handed with', async () => {
+    const opts = {
+      stdin: null,
+      flags: parsedFlags(
+        '-n',
+        '--tab',
+        '-c',
+        '--argjson',
+        'b',
+        '1',
+        '--arg',
+        'a',
+        '2',
+        '--arg',
+        'b',
+        '3',
+        '$ARGS.named',
+      ),
+      filetypeFns: null,
+      cwd: '/',
+      vfs: { kind: 'ram' } as never,
+    } as CommandOpts
+    const result = await jqGeneric([], ['$ARGS.named'], opts, read)
+    if (result === null) throw new Error('jq returned no result')
+    const [out, io] = result
+    expect(DEC.decode(await materialize(out))).toBe('{"b":1,"a":"2"}\n')
+    expect(io.exitCode).toBe(0)
   })
 })
 
 /** Inputs named the way jq names files, one per text. */
 describe('exitCode', () => {
-  const printed = (...outputs: unknown[]): number => runStatus({ outputs, stop: null })
-  const failed = runStatus({ outputs: [1], stop: { kind: 'error', text: 'x', string: true } })
+  const printed = (...outputs: string[]): number => runStatus({ outputs, stop: null })
+  const failed = runStatus({ outputs: ['1'], stop: { kind: 'error', text: 'x', string: true } })
 
   it('reads the last output only under -e', () => {
     const opts = jqOptions({ exitStatus: true })
-    expect(exitCode([printed(1, false)], opts)).toBe(1)
-    expect(exitCode([printed(false, 1)], opts)).toBe(0)
-    expect(exitCode([printed(null)], opts)).toBe(1)
+    expect(exitCode([printed('1', 'false')], opts)).toBe(1)
+    expect(exitCode([printed('false', '1')], opts)).toBe(0)
+    expect(exitCode([printed('null')], opts)).toBe(1)
+    expect(exitCode([printed('"false"'), printed('0.0')], opts)).toBe(0)
     expect(exitCode([], opts)).toBe(4)
   })
 
   it('is zero without the flag', () => {
     expect(exitCode([], jqOptions())).toBe(0)
-    expect(exitCode([printed(null)], jqOptions())).toBe(0)
+    expect(exitCode([printed('null')], jqOptions())).toBe(0)
   })
 
   it('counts a failed run only when it is the last one', () => {
-    expect(exitCode([failed, printed(1)], jqOptions())).toBe(0)
-    expect(exitCode([printed(1), failed], jqOptions())).toBe(5)
-    expect(exitCode([failed, printed(false)], jqOptions({ exitStatus: true }))).toBe(1)
+    expect(exitCode([failed, printed('1')], jqOptions())).toBe(0)
+    expect(exitCode([printed('1'), failed], jqOptions())).toBe(5)
+    expect(exitCode([failed, printed('false')], jqOptions({ exitStatus: true }))).toBe(1)
   })
 
   it('looks back past runs that printed nothing under -e', () => {
     const opts = jqOptions({ exitStatus: true })
-    expect(exitCode([printed(false), printed()], opts)).toBe(1)
-    expect(exitCode([printed(1), printed()], opts)).toBe(0)
+    expect(exitCode([printed('false'), printed()], opts)).toBe(1)
+    expect(exitCode([printed('1'), printed()], opts)).toBe(0)
   })
 
   it.each([
@@ -173,7 +365,7 @@ describe('exitCode', () => {
     [300, false, 44],
   ])('exits a halt with code %s (-e %s) as %s', (code, exitStatus, expected) => {
     const status = runStatus({
-      outputs: [false],
+      outputs: ['false'],
       stop: { kind: 'halt', message: null, string: false, code },
     })
     expect(exitCode([status], jqOptions({ exitStatus }))).toBe(expected)
@@ -209,18 +401,18 @@ describe('inputName', () => {
 })
 
 describe('positionalArgs', () => {
-  it('reads the operands after the program as text', () => {
-    expect(positionalArgs(view({ args: true }), ['.', 'a', 'b'], false)).toEqual(['a', 'b'])
+  it('reads the operands after the program as strings', () => {
+    expect(positionalArgs(view({ args: true }), ['.', 'a', '1'], false)).toEqual(['"a"', '"1"'])
   })
 
   it('keeps every operand when -f gave the program', () => {
-    expect(positionalArgs(view({ args: true }), ['a', 'b'], true)).toEqual(['a', 'b'])
+    expect(positionalArgs(view({ args: true }), ['a', 'b'], true)).toEqual(['"a"', '"b"'])
   })
 
-  it('parses each operand under --jsonargs', () => {
-    expect(positionalArgs(view({ jsonargs: true }), ['.', '1', '{"k":2}'], false)).toEqual([
-      1,
-      { k: 2 },
+  it('keeps each operand under --jsonargs as the text jq reads', () => {
+    expect(positionalArgs(view({ jsonargs: true }), ['.', '1.0', '{"b":1,"1":2}'], false)).toEqual([
+      '1.0',
+      '{"b":1,"1":2}',
     ])
   })
 
@@ -510,18 +702,16 @@ describe('jqGeneric over malformed input', () => {
     )
   })
 
-  it('ends a usage error with the hint jq 1.8 gives', () => {
-    expect(() => namedArgs(view({ argjson: ['v', '1 2'] }))).toThrow(
-      'jq: invalid JSON text passed to --argjson\n' +
-        'Use jq --help for help with command-line options,\n' +
-        'or see the jq manpage, or online docs at https://jqlang.org',
+  it('ends a usage error with the hint jq 1.8 gives', async () => {
+    await expect(bound({ argjson: ['v', '1 2'] })).rejects.toThrow(
+      `jq: invalid JSON text passed to --argjson\n${HINT}`,
     )
   })
 
-  it("reads an --argjson value as jq's parser does", () => {
-    expect(namedArgs(view({ argjson: ['v', '{"a":1}'] }))).toEqual({ v: { a: 1 } })
-    expect(Number.isNaN(namedArgs(view({ argjson: ['v', 'nan'] })).v)).toBe(true)
-    expect(() => namedArgs(view({ argjson: ['v', '1 2'] }))).toThrow(
+  it("reads an --argjson value as jq's parser does", async () => {
+    expect(await bound({ argjson: ['v', '{"a":1}'] })).toEqual(new Map([['v', '{"a":1}']]))
+    expect(await bound({ argjson: ['v', 'nan'] })).toEqual(new Map([['v', 'nan']]))
+    await expect(bound({ argjson: ['v', '1 2'] })).rejects.toThrow(
       'jq: invalid JSON text passed to --argjson',
     )
   })

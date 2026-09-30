@@ -1,0 +1,711 @@
+{
+  "cases": [
+    {
+      "id": "jq_keeps_the_literal_of_each_number_it_reads",
+      "seq": 701073,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "mkdir -p /data/qjql && printf '1.000 1e2 -0 100000000000000000001 0.00001 1E-7 1e17 1.5e1 100e-2 .5 +1 01 1. 1e1000 -1e1000 0e10 -0.0 1.0e0 123456789012345678901234567890' > /data/qjql/n.json && jq -c . /data/qjql/n.json",
+      "expect": {
+        "exit": 0,
+        "stdout": "1.000\n1E+2\n-0\n100000000000000000001\n0.00001\n1E-7\n1E+17\n15\n1.00\n0.5\n1\n1\n1\n1E+1000\n-1E+1000\n0E+10\n-0.0\n1.0\n123456789012345678901234567890\n",
+        "stderr": ""
+      },
+      "flags": [
+        "c"
+      ]
+    },
+    {
+      "id": "jq_prints_nan_as_null_and_infinity_as_the_largest_double",
+      "seq": 701074,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "printf '[nan, NaN, Infinity, -Infinity, 1e1000]' | jq -c '., (.[4] | . + 0)'",
+      "expect": {
+        "exit": 0,
+        "stdout": "[null,null,1.7976931348623157e+308,-1.7976931348623157e+308,1E+1000]\n1.7976931348623157e+308\n",
+        "stderr": ""
+      },
+      "flags": [
+        "c"
+      ]
+    },
+    {
+      "id": "jq_spells_a_computed_number_as_jq_does",
+      "seq": 701075,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "printf '1e17 1e-5 0.1 3.0 12345678901234567 123e-7 100000000000000000001' | jq -c '. + 0'",
+      "expect": {
+        "exit": 0,
+        "stdout": "1e+17\n1e-05\n0.1\n3\n12345678901234568\n1.23e-05\n1e+20\n",
+        "stderr": ""
+      },
+      "flags": [
+        "c"
+      ]
+    },
+    {
+      "id": "jq_keeps_the_literal_of_a_number_the_program_spells",
+      "seq": 701076,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "jq -n -c '1.000, 1e2, 100000000000000000001, [1.10, {\"a\": 2.50}]'",
+      "expect": {
+        "exit": 0,
+        "stdout": "1.000\n1E+2\n100000000000000000001\n[1.10,{\"a\":2.50}]\n",
+        "stderr": ""
+      },
+      "flags": [
+        "n",
+        "c"
+      ]
+    },
+    {
+      "id": "jq_keeps_the_key_order_it_read",
+      "seq": 701077,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "mkdir -p /data/qjql && printf '{\"b\":1,\"1\":2,\"a\":{\"z\":1,\"0\":2}}' > /data/qjql/o.json && jq -c '., keys_unsorted, to_entries, tojson' /data/qjql/o.json",
+      "expect": {
+        "exit": 0,
+        "stdout": "{\"b\":1,\"1\":2,\"a\":{\"z\":1,\"0\":2}}\n[\"b\",\"1\",\"a\"]\n[{\"key\":\"b\",\"value\":1},{\"key\":\"1\",\"value\":2},{\"key\":\"a\",\"value\":{\"z\":1,\"0\":2}}]\n\"{\\\"b\\\":1,\\\"1\\\":2,\\\"a\\\":{\\\"z\\\":1,\\\"0\\\":2}}\"\n",
+        "stderr": ""
+      },
+      "flags": [
+        "c"
+      ]
+    },
+    {
+      "id": "jq_keeps_the_key_order_of_an_argjson_value",
+      "seq": 701078,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "jq -n -c --argjson v '{\"b\":1,\"1\":2.50}' '$v, $ARGS.named'",
+      "expect": {
+        "exit": 0,
+        "stdout": "{\"b\":1,\"1\":2.50}\n{\"v\":{\"b\":1,\"1\":2.50}}\n",
+        "stderr": ""
+      },
+      "flags": [
+        "n",
+        "c",
+        "argjson"
+      ]
+    },
+    {
+      "id": "jq_keeps_literals_in_a_slurpfile_and_jsonargs",
+      "seq": 701079,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "mkdir -p /data/qjql && printf '1.000 {\"b\":1,\"1\":2}' > /data/qjql/s.json && jq -n -c --slurpfile s /data/qjql/s.json '[$s, $ARGS.positional]' --jsonargs 2.50 '{\"z\":1,\"0\":2}'",
+      "expect": {
+        "exit": 0,
+        "stdout": "[[1.000,{\"b\":1,\"1\":2}],[2.50,{\"z\":1,\"0\":2}]]\n",
+        "stderr": ""
+      },
+      "flags": [
+        "n",
+        "c",
+        "slurpfile",
+        "jsonargs"
+      ]
+    },
+    {
+      "id": "jq_slurp_keeps_literals_and_key_order",
+      "seq": 701080,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "mkdir -p /data/qjql && printf '[1.000,{\"b\":1,\"1\":2}]\\n[1e2]\\n' > /data/qjql/a.json && jq -c -s . /data/qjql/a.json",
+      "expect": {
+        "exit": 0,
+        "stdout": "[[1.000,{\"b\":1,\"1\":2}],[1E+2]]\n",
+        "stderr": ""
+      },
+      "flags": [
+        "c",
+        "s"
+      ]
+    },
+    {
+      "id": "jq_stream_keeps_literals_and_key_order",
+      "seq": 701081,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "mkdir -p /data/qjql && printf '[1.000,{\"b\":1,\"1\":2}]' > /data/qjql/a.json && jq -c --stream . /data/qjql/a.json",
+      "expect": {
+        "exit": 0,
+        "stdout": "[[0],1.000]\n[[1,\"b\"],1]\n[[1,\"1\"],2]\n[[1,\"1\"]]\n[[1]]\n",
+        "stderr": ""
+      },
+      "flags": [
+        "c",
+        "stream"
+      ]
+    },
+    {
+      "id": "jq_input_and_inputs_keep_literals",
+      "seq": 701082,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "printf '1.000 2.50 {\"b\":1,\"1\":2}' | jq -c -n 'input, [inputs]'",
+      "expect": {
+        "exit": 0,
+        "stdout": "1.000\n[2.50,{\"b\":1,\"1\":2}]\n",
+        "stderr": ""
+      },
+      "flags": [
+        "c",
+        "n"
+      ]
+    },
+    {
+      "id": "jq_seq_keeps_literals",
+      "seq": 701083,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "printf '\\036 1.000\\n\\036{\"b\":1,\"1\":2}\\n' | jq -c --seq .",
+      "expect": {
+        "exit": 0,
+        "stdout": "\u001e1.000\n\u001e{\"b\":1,\"1\":2}\n",
+        "stderr": ""
+      },
+      "flags": [
+        "c",
+        "seq"
+      ]
+    },
+    {
+      "id": "jq_pretty_prints_literals_and_empty_containers",
+      "seq": 701084,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "mkdir -p /data/qjql && printf '{\"b\":1.000,\"a\":[1e2,{\"d\":-0,\"c\":1},[],{}],\"1\":2}' > /data/qjql/l.json && jq . /data/qjql/l.json",
+      "expect": {
+        "exit": 0,
+        "stdout": "{\n  \"b\": 1.000,\n  \"a\": [\n    1E+2,\n    {\n      \"d\": -0,\n      \"c\": 1\n    },\n    [],\n    {}\n  ],\n  \"1\": 2\n}\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "jq_sort_keys_keeps_literals",
+      "seq": 701085,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "mkdir -p /data/qjql && printf '{\"b\":1.000,\"a\":[1e2,{\"d\":-0,\"c\":1},[],{}],\"1\":2}' > /data/qjql/l.json && jq -S -c . /data/qjql/l.json",
+      "expect": {
+        "exit": 0,
+        "stdout": "{\"1\":2,\"a\":[1E+2,{\"c\":1,\"d\":-0},[],{}],\"b\":1.000}\n",
+        "stderr": ""
+      },
+      "flags": [
+        "S",
+        "c"
+      ]
+    },
+    {
+      "id": "jq_sort_keys_with_tab_keeps_literals",
+      "seq": 701086,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "mkdir -p /data/qjql && printf '{\"b\":1.000,\"a\":[1e2,{\"d\":-0,\"c\":1},[],{}],\"1\":2}' > /data/qjql/l.json && jq -S --tab . /data/qjql/l.json",
+      "expect": {
+        "exit": 0,
+        "stdout": "{\n\t\"1\": 2,\n\t\"a\": [\n\t\t1E+2,\n\t\t{\n\t\t\t\"c\": 1,\n\t\t\t\"d\": -0\n\t\t},\n\t\t[],\n\t\t{}\n\t],\n\t\"b\": 1.000\n}\n",
+        "stderr": ""
+      },
+      "flags": [
+        "S",
+        "tab"
+      ]
+    },
+    {
+      "id": "jq_indent_zero_breaks_lines_without_indenting",
+      "seq": 701087,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "mkdir -p /data/qjql && printf '{\"b\":1.000,\"a\":[1e2,{\"d\":-0,\"c\":1},[],{}],\"1\":2}' > /data/qjql/l.json && jq --indent 0 . /data/qjql/l.json",
+      "expect": {
+        "exit": 0,
+        "stdout": "{\n\"b\": 1.000,\n\"a\": [\n1E+2,\n{\n\"d\": -0,\n\"c\": 1\n},\n[],\n{}\n],\n\"1\": 2\n}\n",
+        "stderr": ""
+      },
+      "flags": [
+        "indent"
+      ]
+    },
+    {
+      "id": "jq_indent_five_keeps_literals",
+      "seq": 701088,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "mkdir -p /data/qjql && printf '{\"b\":1.000,\"a\":[1e2,{\"d\":-0,\"c\":1},[],{}],\"1\":2}' > /data/qjql/l.json && jq --indent 5 . /data/qjql/l.json",
+      "expect": {
+        "exit": 0,
+        "stdout": "{\n     \"b\": 1.000,\n     \"a\": [\n          1E+2,\n          {\n               \"d\": -0,\n               \"c\": 1\n          },\n          [],\n          {}\n     ],\n     \"1\": 2\n}\n",
+        "stderr": ""
+      },
+      "flags": [
+        "indent"
+      ]
+    },
+    {
+      "id": "jq_escapes_del_as_jq_does",
+      "seq": 701089,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "printf '\"a\\\\u007fb\" {\"\\\\u007f\":1}' | jq -c .",
+      "expect": {
+        "exit": 0,
+        "stdout": "\"a\\u007fb\"\n{\"\\u007f\":1}\n",
+        "stderr": ""
+      },
+      "flags": [
+        "c"
+      ]
+    },
+    {
+      "id": "jq_ascii_output_keeps_literals",
+      "seq": 701090,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "printf '{\"\\303\\251\":1.000,\"u\":\"\\303\\274\\360\\237\\230\\200\"}' | jq -a -c .",
+      "expect": {
+        "exit": 0,
+        "stdout": "{\"\\u00e9\":1.000,\"u\":\"\\u00fc\\ud83d\\ude00\"}\n",
+        "stderr": ""
+      },
+      "flags": [
+        "a",
+        "c"
+      ]
+    },
+    {
+      "id": "jq_raw_output_keeps_a_number_literal",
+      "seq": 701091,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "printf '1.000 \"x\" [1e2]' | jq -r .",
+      "expect": {
+        "exit": 0,
+        "stdout": "1.000\nx\n[\n  1E+2\n]\n",
+        "stderr": ""
+      },
+      "flags": [
+        "r"
+      ]
+    },
+    {
+      "id": "jq_raw_output0_refuses_a_string_holding_a_nul",
+      "seq": 701092,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "printf '\"a\\\\u0000b\" \"c\"' | jq --raw-output0 .",
+      "expect": {
+        "exit": 0,
+        "stdout": "c\u0000",
+        "stderr": "jq: error (at <stdin>:0): Cannot dump a string containing NUL with --raw-output0 option\n"
+      },
+      "flags": [
+        "raw-output0"
+      ]
+    },
+    {
+      "id": "jq_error_message_keeps_the_literal",
+      "seq": 701093,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "printf '1.000' | jq '. + \"a\"'",
+      "expect": {
+        "exit": 5,
+        "stdout": "",
+        "stderr": "jq: error (at <stdin>:0): number (1.000) and string (\"a\") cannot be added\n"
+      }
+    },
+    {
+      "id": "jq_halt_error_keeps_the_literal_and_key_order",
+      "seq": 701094,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "printf '{\"b\":1.000,\"1\":2}' | jq 'halt_error'",
+      "expect": {
+        "exit": 5,
+        "stdout": "",
+        "stderr": "{\"b\":1.000,\"1\":2}\n"
+      }
+    },
+    {
+      "id": "jq_value_run_on_across_two_files_keeps_its_literal",
+      "seq": 701095,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "mkdir -p /data/qjql && printf '1.' > /data/qjql/p.json && printf '000' > /data/qjql/q.json && jq . /data/qjql/p.json /data/qjql/q.json",
+      "expect": {
+        "exit": 0,
+        "stdout": "1.000\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "jq_formats_keep_literals",
+      "seq": 701096,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "printf '[1.000, 1e2, 100000000000000000001]' | jq -r '@csv, @text'",
+      "expect": {
+        "exit": 0,
+        "stdout": "1.000,1E+2,100000000000000000001\n[1.000,1E+2,100000000000000000001]\n",
+        "stderr": ""
+      },
+      "flags": [
+        "r"
+      ]
+    },
+    {
+      "id": "jq_json_lines_keep_literals_and_key_order",
+      "seq": 701097,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "mkdir -p /data/qjql && printf '{\"b\":1.000,\"1\":2}\\n{\"a\":1e2}\\n' > /data/qjql/r.jsonl && jq -c . /data/qjql/r.jsonl",
+      "expect": {
+        "exit": 0,
+        "stdout": "{\"b\":1.000,\"1\":2}\n{\"a\":1E+2}\n",
+        "stderr": ""
+      },
+      "flags": [
+        "c"
+      ]
+    },
+    {
+      "id": "jq_pretty_printed_document_keeps_literals_and_key_order",
+      "seq": 701098,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "mkdir -p /data/qjql && printf '{\\n  \"b\": 1.000,\\n  \"1\": 2\\n}\\n' > /data/qjql/pretty.json && jq -c . /data/qjql/pretty.json",
+      "expect": {
+        "exit": 0,
+        "stdout": "{\"b\":1.000,\"1\":2}\n",
+        "stderr": ""
+      },
+      "flags": [
+        "c"
+      ]
+    },
+    {
+      "id": "jq_bom_is_stripped_before_a_literal",
+      "seq": 701099,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "printf '\\357\\273\\2771.000' | jq .",
+      "expect": {
+        "exit": 0,
+        "stdout": "1.000\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "jq_pretty_prints_a_value_nested_three_hundred_deep",
+      "seq": 701100,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "mkdir -p /data/qjql && jq -n -c 'reduce range(300) as $i (1.000; [.])' > /data/qjql/deep.json && jq . /data/qjql/deep.json | wc -c",
+      "expect": {
+        "exit": 0,
+        "stdout": "181206\n",
+        "stderr": ""
+      },
+      "flags": [
+        "n",
+        "c"
+      ]
+    },
+    {
+      "id": "jq_sort_keys_reaches_a_value_nested_three_hundred_deep",
+      "seq": 701101,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "mkdir -p /data/qjql && jq -n -c 'reduce range(300) as $i ({\"b\":1.000,\"a\":2}; {\"z\":.,\"y\":1})' > /data/qjql/deep.json && jq -S -c . /data/qjql/deep.json | head -c 60",
+      "expect": {
+        "exit": 0,
+        "stdout": "{\"y\":1,\"z\":{\"y\":1,\"z\":{\"y\":1,\"z\":{\"y\":1,\"z\":{\"y\":1,\"z\":{\"y\":",
+        "stderr": ""
+      },
+      "flags": [
+        "n",
+        "c",
+        "S"
+      ]
+    },
+    {
+      "id": "jq_exit_status_reads_a_literal_output",
+      "seq": 701102,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "printf '{\"a\":[1.000,\"x\"]}' | jq -e '.a[0]'",
+      "expect": {
+        "exit": 0,
+        "stdout": "1.000\n",
+        "stderr": ""
+      },
+      "flags": [
+        "e"
+      ]
+    },
+    {
+      "id": "jq_user_tojson_cannot_replace_output_dumping",
+      "seq": 9901911,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "printf '%s' '{\"b\":1.000,\"1\":[-0,100000000000000000001]}' | jq -c 'def tojson: 42; . # c \\'",
+      "expect": {
+        "exit": 0,
+        "stdout": "{\"b\":1.000,\"1\":[-0,100000000000000000001]}\n",
+        "stderr": ""
+      },
+      "flags": [
+        "c"
+      ]
+    },
+    {
+      "id": "jq_empty_tojson_cannot_drop_output",
+      "seq": 9901912,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "printf '%s' '{\"b\":1.000,\"1\":[-0,100000000000000000001]}' | jq -c 'def tojson: empty; . # c \\'",
+      "expect": {
+        "exit": 0,
+        "stdout": "{\"b\":1.000,\"1\":[-0,100000000000000000001]}\n",
+        "stderr": ""
+      },
+      "flags": [
+        "c"
+      ]
+    },
+    {
+      "id": "jq_erroring_tojson_cannot_break_output",
+      "seq": 9901913,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "printf '%s' '{\"b\":1.000,\"1\":[-0,100000000000000000001]}' | jq -c 'def tojson: error(\"shadow\"); . # c \\'",
+      "expect": {
+        "exit": 0,
+        "stdout": "{\"b\":1.000,\"1\":[-0,100000000000000000001]}\n",
+        "stderr": ""
+      },
+      "flags": [
+        "c"
+      ]
+    },
+    {
+      "id": "jq_user_tojson_still_runs_when_called",
+      "seq": 9901914,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "printf '1.000' | jq -c 'def tojson: 42; ., tojson # c \\'",
+      "expect": {
+        "exit": 0,
+        "stdout": "1.000\n42\n",
+        "stderr": ""
+      },
+      "flags": [
+        "c"
+      ]
+    },
+    {
+      "id": "jq_user_tojson_keeps_raw_string_output",
+      "seq": 9901915,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "printf '\"hello\"' | jq -r 'def tojson: empty; . # c \\'",
+      "expect": {
+        "exit": 0,
+        "stdout": "hello\n",
+        "stderr": ""
+      },
+      "flags": [
+        "r"
+      ]
+    },
+    {
+      "id": "jq_user_tojson_keeps_false_exit_status",
+      "seq": 9901916,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "jq -n -c -e 'def tojson: 42; false # c \\'",
+      "expect": {
+        "exit": 1,
+        "stdout": "false\n",
+        "stderr": ""
+      },
+      "flags": [
+        "n",
+        "c",
+        "e"
+      ]
+    },
+    {
+      "id": "jq_user_tojson_keeps_named_and_stream_bindings",
+      "seq": 9901917,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "printf '1.000 -0 1e2' | jq -c --argjson v '{\"b\":1.000,\"1\":[-0,100000000000000000001]}' 'def tojson: empty; ., $v, $ARGS.named, [inputs] # c \\'",
+      "expect": {
+        "exit": 0,
+        "stdout": "1.000\n{\"b\":1.000,\"1\":[-0,100000000000000000001]}\n{\"v\":{\"b\":1.000,\"1\":[-0,100000000000000000001]}}\n[-0,1E+2]\n",
+        "stderr": ""
+      },
+      "flags": [
+        "c",
+        "argjson"
+      ]
+    }
+  ]
+}

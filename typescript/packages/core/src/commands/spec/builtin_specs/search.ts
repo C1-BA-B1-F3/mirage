@@ -110,7 +110,8 @@ export const SPECS: Record<string, CommandSpec> = {
         description: 'Set the exit status from the last output',
       }),
       new Option({ long: '--tab', description: 'Indent with tabs' }),
-      new Option({ long: '--indent', type: 'int', description: 'Indent with n spaces (max 7)' }),
+      // jq words its own refusal of a width it cannot read.
+      new Option({ long: '--indent', type: 'str', description: 'Indent with n spaces (max 7)' }),
       new Option({
         short: '-M',
         long: '--monochrome-output',

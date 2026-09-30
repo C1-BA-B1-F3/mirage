@@ -18,9 +18,9 @@ import random
 import jq as libjq
 import pytest
 
-from mirage.core.jq.parse import (JqParser, decode_utf8, number_value,
-                                  utf8_missing)
-from mirage.core.jq.types import NO_VALUE, JqParseError
+from mirage.core.jq.parse import (JqParser, decode_utf8, event_text,
+                                  number_value, string_text, utf8_missing)
+from mirage.core.jq.types import NO_VALUE, JqParseError, NumberText
 
 # Every case below is jq 1.8.2's own output (debian:testing-slim):
 # the values its parser yields, then the report of the error that stopped
@@ -220,6 +220,9 @@ SEQ_STREAMING = [
 
 
 def _same(a: object, b: object) -> bool:
+    # A --stream event keeps a number leaf as its literal.
+    if isinstance(a, NumberText):
+        a = number_value(a.text.encode())
     if isinstance(a, float) and isinstance(
             b, float) and math.isnan(a) and math.isnan(b):
         return True
@@ -230,7 +233,7 @@ def _same(a: object, b: object) -> bool:
     return type(a) is type(b) and a == b
 
 
-def _drain(parser: JqParser, seq: bool) -> list:
+def _drain(parser: JqParser, seq: bool, texts: bool = False) -> list:
     # An RS under --seq can end a call with nothing to hand back while
     # the buffer still holds bytes, so pull until the buffer is used up.
     out: list = []
@@ -245,26 +248,32 @@ def _drain(parser: JqParser, seq: bool) -> list:
             if not seq:
                 return out
             continue
-        out.append(value)
+        out.append(parser.text() if texts else value)
 
 
-def _whole(data: bytes, seq: bool = False, streaming: bool = False) -> list:
+def _whole(data: bytes,
+           seq: bool = False,
+           streaming: bool = False,
+           texts: bool = False) -> list:
     parser = JqParser(seq=seq, streaming=streaming)
     parser.feed(data, False)
-    return _drain(parser, seq)
+    return _drain(parser, seq, texts)
 
 
-def _bytewise(data: bytes, seq: bool = False, streaming: bool = False) -> list:
+def _bytewise(data: bytes,
+              seq: bool = False,
+              streaming: bool = False,
+              texts: bool = False) -> list:
     parser = JqParser(seq=seq, streaming=streaming)
     out: list = []
     for i in range(len(data)):
         parser.feed(data[i:i + 1], True)
-        got = _drain(parser, seq)
+        got = _drain(parser, seq, texts)
         out.extend(got)
         if got and isinstance(got[-1], JqParseError) and not seq:
             return out
     parser.feed(b"", False)
-    return out + _drain(parser, seq)
+    return out + _drain(parser, seq, texts)
 
 
 def _split(got: list) -> tuple[list, str | None]:
@@ -389,6 +398,67 @@ def test_utf8_missing(piece, missing):
     assert utf8_missing(piece) == missing
 
 
+# The text of each value, as the parser read it: jq's parser reads it as
+# the same value, with every number's literal and every key's place.
+TEXTS = [
+    (b"1.000 1e2 -0 100000000000000000001",
+     ["1.000", "1e2", "-0", "100000000000000000001"], {}),
+    (b' {"b":1.000,"1":2}\n[1e2, {"c":-0}]  "a\\u00e9"true null 1"x"[2]', [
+        '{"b":1.000,"1":2}', '[1e2, {"c":-0}]', '"a\\u00e9"', "true", "null",
+        "1", '"x"', "[2]"
+    ], {}),
+    (b"1 [", ["1"], {}),
+    (b"\xef\xbb\xbf 1.000", ["1.000"], {}),
+    (b'["\xff", 1.000]', ['["\N{REPLACEMENT CHARACTER}", 1.000]'], {}),
+    (b"1\x002 ", ["1\x002"], {}),
+    (b'\x1e1.000\n\x1e{"b":1,"1":2}\n', ["1.000", '{"b":1,"1":2}'], {
+        "seq": True
+    }),
+    (b"\x1e[1,\x1e2.50\n", ["2.50"], {
+        "seq": True
+    }),
+    (b"\x1e1\x1e\x1e2 ", ["2"], {
+        "seq": True
+    }),
+    (b"\x1e[1 2]\n\x1e3.0\n", ["3.0"], {
+        "seq": True
+    }),
+    (b'{"b":1.000,"1":[2.50,{}],"a":[]}', [
+        '[["b"],1.000]', '[["1",0],2.50]', '[["1",1],{}]', '[["1",1]]',
+        '[["a"],[]]', '[["a"]]'
+    ], {
+        "streaming": True
+    }),
+    (b'1.000 "x"', ['[[],1.000]', '[[],"x"]'], {
+        "streaming": True
+    }),
+]
+
+
+@pytest.mark.parametrize("data,texts,modes", TEXTS)
+def test_a_value_comes_with_the_text_it_was_read_from(data, texts, modes):
+    for read in (_whole, _bytewise):
+        got = [
+            text for text in read(data, texts=True, **modes)
+            if not isinstance(text, JqParseError)
+        ]
+        assert got == texts
+
+
+def test_a_stream_event_keeps_a_number_leaf_as_its_literal():
+    assert _whole(b"[1.000, nan]", streaming=True) == [[[0],
+                                                        NumberText("1.000")],
+                                                       [[1],
+                                                        NumberText("nan")],
+                                                       [[1]]]
+    assert event_text([[0, "a"], NumberText("1E2")]) == '[[0,"a"],1E2]'
+    assert event_text([["é"], "x\u0000"]) == '[["é"],"x\\u0000"]'
+
+
+def test_string_text_is_json_jq_reads_back():
+    assert string_text('a"\\\n\x7fé') == '"a\\"\\\\\\n\x7fé"'
+
+
 def test_a_proto_key_is_an_ordinary_key():
     assert _whole(b'{"__proto__":1,"a":[]}') == [{"__proto__": 1, "a": []}]
 
@@ -456,12 +526,28 @@ def _loose(a: object, b: object) -> bool:
     return type(a) is type(b) and a == b
 
 
+def _dumps(text: str) -> list[str]:
+    # jq's own dump of each value it reads from the text.
+    dumps: list[str] = []
+    try:
+        for dump in libjq.compile("tojson").input_text(text):
+            dumps.append(dump)
+    except ValueError:
+        return dumps
+    return dumps
+
+
 def test_parser_agrees_with_libjq_on_generated_input():
     rng = random.Random(1325)
     for _ in range(3000):
         text = _mutant(rng)
         values, message = _libjq(text)
+        dumps = _dumps(text)
         for read in (_whole, _bytewise):
             got, got_message = _split(read(text.encode()))
             assert got_message == message, text
             assert _loose(values, got), text
+            # The text of each value, which libjq is handed, dumps as jq
+            # dumped the value.
+            texts, _ = _split(read(text.encode(), texts=True))
+            assert [_dumps(value)[0] for value in texts] == dumps, text

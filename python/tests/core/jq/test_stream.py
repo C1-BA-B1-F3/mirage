@@ -17,8 +17,9 @@ import math
 
 import pytest
 
+from mirage.core.jq.parse import JqParser
 from mirage.core.jq.stream import (READ_CHUNK, InputReader, is_jsonl_path,
-                                   parse_value, pieces_through, read_values)
+                                   pieces_through, read_texts, value_text)
 from mirage.core.jq.types import NO_VALUE, InputSource, JqOptions, JqParseError
 
 
@@ -34,24 +35,44 @@ def _sources(*inputs: bytes, size: int = 1 << 20) -> list[InputSource]:
     ]
 
 
-async def _read(
-    sources: list[InputSource], opts: JqOptions = JqOptions()) -> list[tuple]:
+def _parsed(text: object) -> object:
+    # The value jq's parser reads the text as, which is what libjq runs on.
+    assert isinstance(text, str)
+    parser = JqParser()
+    parser.feed(text.encode(), False)
+    value = parser.next()
+    assert not isinstance(value, JqParseError), text
+    assert parser.next() is NO_VALUE, text
+    return value
+
+
+async def _read(sources: list[InputSource],
+                opts: JqOptions = JqOptions(),
+                texts: bool = False) -> list[tuple]:
     reader = InputReader(sources, opts)
     out: list[tuple] = []
     while True:
-        value = await reader.next_input()
-        if value is NO_VALUE:
+        text = await reader.next_input()
+        if text is NO_VALUE:
             return out
-        if isinstance(value, JqParseError):
-            out.append(("error", value.message, reader.position()))
+        if isinstance(text, JqParseError):
+            out.append(("error", text.message, reader.position()))
             if not opts.seq:
                 return out
             continue
-        out.append((value, reader.position()))
+        out.append((text if texts else _parsed(text), reader.position()))
 
 
 async def _values(*inputs: bytes, opts: JqOptions = JqOptions()) -> list:
     return [row[0] for row in await _read(_sources(*inputs), opts)]
+
+
+async def _texts(*inputs: bytes,
+                 opts: JqOptions = JqOptions(),
+                 size: int = 1 << 20) -> list:
+    return [
+        row[0] for row in await _read(_sources(*inputs, size=size), opts, True)
+    ]
 
 
 @pytest.mark.asyncio
@@ -146,7 +167,7 @@ async def test_a_document_is_handed_over_before_the_input_ends(data, value):
     # over, so an input that has not ended yet still yields it.
     reader = InputReader([InputSource("f0.json", _unending(data))],
                          JqOptions())
-    assert await asyncio.wait_for(reader.next_input(), 5) == value
+    assert _parsed(await asyncio.wait_for(reader.next_input(), 5)) == value
 
 
 @pytest.mark.asyncio
@@ -159,11 +180,52 @@ async def test_a_document_not_pretty_printed_goes_to_jqs_parser(size):
 
 
 @pytest.mark.asyncio
-async def test_an_integer_past_64_bits_keeps_every_digit():
-    assert await _values(b'{"n":100000000000000000001}\n') == [{
-        "n":
-        100000000000000000001
-    }]
+@pytest.mark.parametrize("size", [1, 5, 1 << 20])
+async def test_a_value_is_handed_over_as_the_text_it_was_read_from(size):
+    # jq keeps a number's literal and an object's key order, so libjq is
+    # handed the bytes, not a value built from them.
+    data = (b'{"b":1.000,"1":2}\n{\n  "n": 100000000000000000001,\n'
+            b'  "e": 1e2\n}\n[1.10, -0] "\\u00e9" nan\n')
+    assert await _texts(data, size=size) == [
+        '{"b":1.000,"1":2}',
+        '{\n  "n": 100000000000000000001,\n  "e": 1e2\n}',
+        "[1.10, -0]",
+        '"\\u00e9"',
+        "nan",
+    ]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("size", [1, 1 << 20])
+async def test_a_value_that_runs_on_across_inputs_is_one_text(size):
+    assert await _texts(b"1.", b"000", size=size) == ["1.000"]
+    assert await _texts(b'[1.0,', b' {"b":1,', b'"1":2}]',
+                        size=size) == ['[1.0, {"b":1,"1":2}]']
+
+
+@pytest.mark.asyncio
+async def test_a_text_leaves_the_bom_out_and_replaces_bad_utf8_as_jq_does():
+    assert await _texts(b"\xef\xbb\xbf1.000\n") == ["1.000"]
+    assert await _texts(b'["\xff", 1.000]') == [
+        '["\N{REPLACEMENT CHARACTER}", 1.000]'
+    ]
+
+
+@pytest.mark.asyncio
+async def test_raw_lines_seq_stream_and_slurp_hand_over_text():
+    assert await _texts(b'a"b\n',
+                        opts=JqOptions(raw_input=True)) == ['"a\\"b"']
+    seq = JqOptions(seq=True)
+    assert await _texts(b'\x1e1.000\n\x1e{"b":1,"1":2}\n',
+                        opts=seq) == ["1.000", '{"b":1,"1":2}']
+    stream = JqOptions(stream=True)
+    assert await _texts(b'{"b":1.000,"1":[2.50]}', opts=stream) == [
+        '[["b"],1.000]', '[["1",0],2.50]', '[["1",0]]', '[["1"]]'
+    ]
+    slurp = JqOptions(slurp=True)
+    assert await _texts(b"1.000 {\"b\":1,\"1\":2}\n", b"[1e2]",
+                        opts=slurp) == ['[1.000,{"b":1,"1":2},[1e2]]']
+    assert await _texts(opts=slurp) == ["[]"]
 
 
 @pytest.mark.asyncio
@@ -298,8 +360,8 @@ async def _reported(
     reports: list[str] = []
     reader = InputReader(sources, opts, reports.append)
     values = []
-    while (value := await reader.next_input()) is not NO_VALUE:
-        values.append(value)
+    while (text := await reader.next_input()) is not NO_VALUE:
+        values.append(_parsed(text))
     return values, reports, reader.position(), reader.failures()
 
 
@@ -392,24 +454,25 @@ def test_a_piece_ending_inside_a_character_reads_to_its_end():
 
 
 @pytest.mark.asyncio
-async def test_read_values_reads_a_slurpfile_as_jq_does():
-    source = InputSource("m.json", _chunks(b'{"a":1}\n{"a":2}\n', 4))
-    assert await read_values(source) == ([{"a": 1}, {"a": 2}], None)
-    values, failure = await read_values(
+async def test_read_texts_reads_a_slurpfile_as_jq_does():
+    source = InputSource("m.json", _chunks(b'{"a":1.0}\n{"a":2}\n', 4))
+    assert await read_texts(source) == (['{"a":1.0}', '{"a":2}'], None)
+    texts, failure = await read_texts(
         InputSource("bad.json", _chunks(b"1 [", 99)))
-    assert values == [1]
+    assert texts == ["1"]
     assert failure == JqParseError(
         "Unfinished JSON term at EOF at line 1, column 3")
 
 
-def test_parse_value_takes_one_value_as_jv_parse_does():
-    assert parse_value(b'{"a":1}') == {"a": 1}
-    assert math.isnan(parse_value(b"nan"))
-    assert parse_value(b" 12 ") == 12
-    assert parse_value(b"1 2") is NO_VALUE
-    assert parse_value(b"") is NO_VALUE
-    assert parse_value(b"nope") is NO_VALUE
-    assert parse_value(b"[1,") is NO_VALUE
+def test_value_text_takes_one_value_as_jv_parse_does():
+    assert value_text(b'{"b":1,"1":2.50}') == '{"b":1,"1":2.50}'
+    assert value_text(b"nan") == "nan"
+    assert value_text(b" 12 \n") == "12"
+    assert value_text(b"\xef\xbb\xbf1.0") == "1.0"
+    assert value_text(b"1 2") is NO_VALUE
+    assert value_text(b"") is NO_VALUE
+    assert value_text(b"nope") is NO_VALUE
+    assert value_text(b"[1,") is NO_VALUE
 
 
 def test_is_jsonl_path():

@@ -13,14 +13,15 @@
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 from mirage.core.jq.errors import JqCompileError
-from mirage.core.jq.eval import (args_object, halts, jq_check, jq_eval,
-                                 jq_raised, jq_run, references_args,
-                                 stream_reads)
-from mirage.core.jq.format import (error_report, format_jq_output, format_one,
-                                   halt_report, load_failure)
-from mirage.core.jq.parse import JqParser, decode_utf8
-from mirage.core.jq.stream import (InputReader, is_jsonl_path, parse_value,
-                                   read_values)
+from mirage.core.jq.eval import (args_text, halts, jq_check, jq_eval,
+                                 jq_raised, jq_run, jq_run_texts,
+                                 references_args, stream_reads)
+from mirage.core.jq.format import (dump_text, error_report, format_jq_output,
+                                   format_one, halt_report, load_failure,
+                                   printable)
+from mirage.core.jq.parse import JqParser, decode_utf8, string_text
+from mirage.core.jq.stream import (InputReader, is_jsonl_path, read_texts,
+                                   value_text)
 from mirage.core.jq.types import (DEFAULT_INDENT, NO_VALUE, STDIN_NAME,
                                   UNKNOWN_POSITION, InputSource, JqError,
                                   JqHalt, JqOptions, JqParseError, JqRun,
@@ -42,8 +43,9 @@ __all__ = [
     "JqRun",
     "NoValue",
     "StreamReads",
-    "args_object",
+    "args_text",
     "decode_utf8",
+    "dump_text",
     "error_report",
     "format_jq_output",
     "format_one",
@@ -54,9 +56,12 @@ __all__ = [
     "jq_eval",
     "jq_raised",
     "jq_run",
+    "jq_run_texts",
     "load_failure",
-    "parse_value",
-    "read_values",
+    "printable",
+    "read_texts",
     "references_args",
     "stream_reads",
+    "string_text",
+    "value_text",
 ]

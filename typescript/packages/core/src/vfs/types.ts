@@ -95,6 +95,11 @@ export type ResolveGlobOp<A extends Accessor = Accessor> = (
 // cheaper `size` would silently print operand totals with no directory
 // rows and an inert `-a`. Pairing them makes native du all-or-nothing,
 // so that degraded shape cannot be reached by omission (#645).
+//
+// A native op answers from one pass over the stored files, so a directory
+// holding no file never appears in `entries` and gets no row, where the
+// shared readdir walk (and GNU) prints its `0` row. The difference is
+// accepted for the speed and pinned in integ/unix/du/empty.json.
 export interface DuOps<A extends Accessor = Accessor> {
   size: DuSizeOp<A>
   entries: DuEntriesOp<A>

@@ -48,6 +48,7 @@ type Write = (p: PathSpec, data: Uint8Array) => Promise<void>
  * this mount's own read and write otherwise.
  */
 interface SedDoors {
+  virtual(name: string): string
   read(name: string): Promise<Uint8Array>
   write(name: string, data: Uint8Array): Promise<void>
 }
@@ -67,6 +68,7 @@ function sedDoors(opts: CommandOpts, stream: Stream, write: Write): SedDoors {
   }
   const dispatch = opts.dispatch
   return {
+    virtual: (name) => resolvePath(name, opts.cwd),
     async read(name) {
       if (dispatch === undefined) return materialize(stream(spec(name)))
       // A keyed store reads a directory as nothing at all, so the stat
@@ -115,15 +117,15 @@ async function openWriteFiles(names: readonly string[], doors: SedDoors): Promis
   return null
 }
 
-// Read every file `r` or `R` names before the run: a file that cannot be
-// opened reads as empty, as POSIX asks, and a directory opens and then
-// fails to read, which GNU reports and exits 4 on when it gets there.
+// Read the files `r` or `R` names: a file that cannot be opened reads as
+// empty, as POSIX asks, and a directory opens and then fails to read,
+// which GNU reports and exits 4 on when it gets there.
 async function readScriptFiles(
-  program: SedProgram,
+  names: readonly string[],
   doors: SedDoors,
 ): Promise<Map<string, SedFileContent>> {
   const files = new Map<string, SedFileContent>()
-  for (const name of program.rfiles) {
+  for (const name of names) {
     try {
       files.set(name, { text: DEC.decode(await doors.read(name)) })
     } catch (err) {
@@ -138,10 +140,16 @@ async function readScriptFiles(
   return files
 }
 
-async function flushWriteFiles(machine: SedMachine, doors: SedDoors): Promise<string> {
+// Write out what the `w` files collected. A `w` file that -i then edited
+// keeps the edit: GNU's stream still points at the file -i renamed over.
+async function flushWriteFiles(
+  machine: SedMachine,
+  doors: SedDoors,
+  edited: ReadonlySet<string> = new Set(),
+): Promise<string> {
   let err = ''
   for (const [name, out] of machine.wfiles) {
-    if (out.chunks.length === 0) continue
+    if (out.chunks.length === 0 || edited.has(doors.virtual(name))) continue
     try {
       await doors.write(name, encodeText(out.chunks.join('')))
     } catch (e) {
@@ -248,10 +256,11 @@ export async function sedGeneric(
     suppress: fl.asBool('n'),
     separate: inPlace || fl.asBool('separate'),
     lineLength: lineLength(fl.asStr('line_length')),
-    files: await readScriptFiles(program, doors),
+    files: await readScriptFiles(program.rfiles, doors),
+    readerFiles: await readScriptFiles(program.readerFiles, doors),
   })
 
-  if (inPlace) return runInPlace(paths, machine, doors, stream, write)
+  if (inPlace) return runInPlace(paths, program, machine, doors, stream, write)
 
   const inputs: SedInput[] = []
   const readOk: string[] = []
@@ -268,7 +277,9 @@ export async function sedGeneric(
   // opens fine and then fails) is exit 4 and FATAL: `sed -n p dir ok.txt`
   // prints nothing and `sed -n p ok.txt dir ok2.txt` stops after ok.txt.
   // A `q` before an operand means GNU never opens it, so it is not
-  // reported either.
+  // reported either. The operands after a directory are still read: the
+  // lookahead for `$` opens a directory, finds no data in it and goes on
+  // (`sed -n '$p' ok.txt dir ok2.txt` prints ok2.txt's last line, exit 0).
   for (const p of paths) {
     try {
       inputs.push({ name: p.rawPath, text: DEC.decode(await materialize(stream(p))) })
@@ -282,7 +293,6 @@ export async function sedGeneric(
         code: readFailExitCode('sed', e),
         fatal,
       })
-      if (fatal) break
     }
   }
   machine.process(inputs, true)
@@ -305,6 +315,7 @@ export async function sedGeneric(
 // before the next file; a panic leaves the file it hit untouched.
 async function runInPlace(
   paths: PathSpec[],
+  program: SedProgram,
   machine: SedMachine,
   doors: SedDoors,
   stream: Stream,
@@ -313,6 +324,7 @@ async function runInPlace(
   if (paths.length === 0) return failed(`${SED_NO_INPUT_FILES}\n`, SED_NO_INPUT_EXIT)
   const writes: Record<string, Uint8Array> = {}
   const edited: string[] = []
+  const editedVirtual = new Set<string>()
   let err = ''
   let code = 0
   for (const p of paths) {
@@ -327,14 +339,17 @@ async function runInPlace(
       if ((e as { code?: string }).code === 'EISDIR') break
       continue
     }
+    // An `r` file edited by an earlier file of this command reads new.
+    if (edited.length > 0) machine.setFiles(await readScriptFiles(program.rfiles, doors))
     const out = machine.process([{ name: p.rawPath, text: DEC.decode(data) }], false)
     if (machine.panicCode !== null) break
     const newData = encodeText(out)
     await write(p, newData)
     writes[p.mountPath] = newData
     edited.push(p.mountPath)
+    editedVirtual.add(p.virtual)
   }
-  const writeErr = await flushWriteFiles(machine, doors)
+  const writeErr = await flushWriteFiles(machine, doors, editedVirtual)
   const stderr = err + machine.stderr() + writeErr
   const exitCode =
     machine.panicCode ?? (writeErr !== '' ? 4 : code === 4 ? 4 : code || machine.exitCode())

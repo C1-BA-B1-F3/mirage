@@ -44,6 +44,7 @@ function run(
     separate: opts.separate ?? false,
     lineLength: opts.lineLength ?? 70,
     files: new Map(Object.entries(opts.files ?? {})),
+    readerFiles: new Map(Object.entries(opts.files ?? {})),
   })
   machine.process(typeof inputs === 'string' ? [{ name: '-', text: inputs }] : inputs, true)
   const wfiles = new Map<string, string>()
@@ -651,6 +652,38 @@ describe('sed streams and files', () => {
     expect(after.stdout).toBe('two\n')
     expect(after.exitCode).toBe(0)
     expect(run('Q3', [missing, { name: 'f', text: 'one\n' }]).exitCode).toBe(2)
+  })
+
+  it('skips a directory while looking for $, as GNU does, but not when reading on', () => {
+    const dir = { name: 'd', error: 'sed: read error on d: Is a directory\n', code: 4, fatal: true }
+    const one = { name: 'f', text: 'one\ntwo\n' }
+    const last = run('$p', [one, dir], { suppress: true })
+    expect([last.stdout, last.exitCode]).toEqual(['two\n', 0])
+    const after = run('$p', [one, dir, { name: 'g', text: 'x\n' }], { suppress: true })
+    expect([after.stdout, after.exitCode]).toEqual(['x\n', 0])
+    const next = run('n', [one, dir])
+    expect([next.stdout, next.stderr, next.exitCode]).toEqual(['one\ntwo\n', dir.error, 4])
+    const separate = run('$p', [one, dir], { suppress: true, separate: true })
+    expect([separate.stdout, separate.exitCode]).toEqual(['two\n', 4])
+  })
+
+  it('reads r files anew after setFiles, R files once', () => {
+    const machine = new SedMachine(
+      compileScript([
+        { kind: 'expr', text: '1r /r' },
+        { kind: 'expr', text: '1R /q' },
+      ]),
+      {
+        suppress: false,
+        separate: true,
+        lineLength: 70,
+        files: new Map([['/r', { text: 'old\n' }]]),
+        readerFiles: new Map([['/q', { text: 'Q1\nQ2\n' }]]),
+      },
+    )
+    expect(machine.process([{ name: 'a', text: 'a\n' }], false)).toBe('a\nold\nQ1\n')
+    machine.setFiles(new Map([['/r', { text: 'new\n' }]]))
+    expect(machine.process([{ name: 'b', text: 'b\n' }], false)).toBe('b\nnew\nQ1\n')
   })
 
   it('stops at a read error', () => {

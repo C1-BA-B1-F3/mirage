@@ -441,6 +441,74 @@
         "stdout": "",
         "stderr": "sed: -e expression #1, char 7: missing filename in r/R/w/W commands\n"
       }
+    },
+    {
+      "id": "sed_w_then_r_same_run",
+      "seq": 9960309,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "mkdir -p /data/swr && printf 'a\\nb\\nc\\n' | sed -e 'w /data/swr/o' -e '$r /data/swr/o' && echo -- && cat /data/swr/o; rm -r /data/swr",
+      "expect": {
+        "exit": 0,
+        "stdout": "a\nb\nc\n--\na\nb\nc\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "sed_w_file_then_edited_in_place",
+      "seq": 9960310,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "mkdir -p /data/sri && printf 'one\\ntwo\\n' > /data/sri/f && printf 'b1\\nb2\\n' > /data/sri/b && sed -i 's/b/B/;w /data/sri/f' /data/sri/b /data/sri/f && wc -c < /data/sri/f && cat /data/sri/b; rm -r /data/sri",
+      "expect": {
+        "exit": 0,
+        "stdout": "0\nB1\nB2\n",
+        "stderr": ""
+      }
     }
   ]
 }

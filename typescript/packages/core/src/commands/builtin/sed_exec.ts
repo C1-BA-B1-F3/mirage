@@ -129,7 +129,10 @@ export interface SedRunOptions {
   suppress: boolean
   separate: boolean
   lineLength: number
+  // What each `r` file holds now, and what each `R` file held when the
+  // script was compiled.
   files: ReadonlyMap<string, SedFileContent>
+  readerFiles: ReadonlyMap<string, SedFileContent>
 }
 
 /** Thrown to stop the run the way GNU's panic exits: a message, then exit 4. */
@@ -206,6 +209,7 @@ export class SedMachine {
   private readonly specialOut = new SedOutput(this.stdout.chunks)
   private readonly specialErr = new SedOutput()
   private lastRegex: SedRegex | null = null
+  private files: ReadonlyMap<string, SedFileContent>
 
   private main = this.stdout
   private inputs: SedInput[] = []
@@ -224,6 +228,7 @@ export class SedMachine {
   constructor(program: SedProgram, opts: SedRunOptions) {
     this.program = program
     this.opts = opts
+    this.files = opts.files
     this.noDefaultOutput = opts.suppress || program.noDefaultOutput
     this.rangeState = program.commands.map(() => RANGE_INACTIVE)
     this.a2Number = program.commands.map(() => 0)
@@ -423,8 +428,18 @@ export class SedMachine {
     return true
   }
 
+  /**
+   * Replace what the `r` files hold. GNU opens an `r` file each time the
+   * append queue is written, so under -i a file edited earlier in the
+   * command reads with its new content; within one run nothing it reads
+   * changes (a `w` file stays in its stdio buffer until sed exits).
+   */
+  setFiles(files: ReadonlyMap<string, SedFileContent>): void {
+    this.files = files
+  }
+
   private fileText(name: string): string {
-    const content = this.opts.files.get(name) ?? null
+    const content = this.files.get(name) ?? null
     if (content === null) return ''
     if ('error' in content) throw new SedPanic(content.error)
     return content.text
@@ -454,7 +469,7 @@ export class SedMachine {
   private readLine(name: string): string | null {
     let reader = this.readers.get(name)
     if (reader === undefined) {
-      const content = this.opts.files.get(name) ?? null
+      const content = this.opts.readerFiles.get(name) ?? null
       if (content !== null && 'error' in content) throw new SedPanic(content.error)
       reader = content === null ? null : { lines: readerLines(content.text), pos: 0 }
       this.readers.set(name, reader)

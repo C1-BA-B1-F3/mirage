@@ -1077,6 +1077,90 @@
         "stdout": "rc=1\nrc=2\n",
         "stderr": "gzip: sub1301.gz: No such file or directory\ngzip: sub1301.gz is a directory -- ignored\n"
       }
+    },
+    {
+      "id": "readfail_sed_last_line_skips_dir",
+      "seq": 9960301,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "mkdir -p /data/sla/d && printf 'x\\n' > /data/sla/d/in && printf 'one\\ntwo\\n' > /data/sla/f && printf 'x\\n' > /data/sla/g && sed -n '$p' /data/sla/f /data/sla/d; echo rc=$?; rm -r /data/sla",
+      "expect": {
+        "exit": 0,
+        "stdout": "two\nrc=0\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "readfail_sed_last_line_reads_past_dir",
+      "seq": 9960302,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "mkdir -p /data/sla/d && printf 'x\\n' > /data/sla/d/in && printf 'one\\ntwo\\n' > /data/sla/f && printf 'x\\n' > /data/sla/g && sed -n '$p' /data/sla/f /data/sla/d /data/sla/g; echo rc=$?; rm -r /data/sla",
+      "expect": {
+        "exit": 0,
+        "stdout": "x\nrc=0\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "readfail_sed_n_then_dir",
+      "seq": 9960303,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "mkdir -p /data/sla/d && printf 'x\\n' > /data/sla/d/in && printf 'one\\ntwo\\n' > /data/sla/f && printf 'x\\n' > /data/sla/g && sed n /data/sla/f /data/sla/d; echo rc=$?; rm -r /data/sla",
+      "expect": {
+        "exit": 0,
+        "stdout": "one\ntwo\nrc=4\n",
+        "stderr": "sed: read error on /data/sla/d: Is a directory\n"
+      }
+    },
+    {
+      "id": "readfail_sed_N_then_dir",
+      "seq": 9960304,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "mkdir -p /data/sla/d && printf 'x\\n' > /data/sla/d/in && printf 'one\\ntwo\\n' > /data/sla/f && printf 'x\\n' > /data/sla/g && sed '$!N' /data/sla/f /data/sla/d; echo rc=$?; rm -r /data/sla",
+      "expect": {
+        "exit": 0,
+        "stdout": "one\ntwo\nrc=4\n",
+        "stderr": "sed: read error on /data/sla/d: Is a directory\n"
+      }
+    },
+    {
+      "id": "readfail_sed_separate_last_line_dir",
+      "seq": 9960305,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "mkdir -p /data/sla/d && printf 'x\\n' > /data/sla/d/in && printf 'one\\ntwo\\n' > /data/sla/f && printf 'x\\n' > /data/sla/g && sed -s -n '$p' /data/sla/f /data/sla/d; echo rc=$?; rm -r /data/sla",
+      "expect": {
+        "exit": 0,
+        "stdout": "two\nrc=4\n",
+        "stderr": "sed: read error on /data/sla/d: Is a directory\n"
+      }
+    },
+    {
+      "id": "readfail_sed_last_line_names_dir",
+      "seq": 9960306,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "mkdir -p /data/sla/d && printf 'x\\n' > /data/sla/d/in && printf 'one\\ntwo\\n' > /data/sla/f && printf 'x\\n' > /data/sla/g && sed '$F' /data/sla/f /data/sla/d; echo rc=$?; rm -r /data/sla",
+      "expect": {
+        "exit": 0,
+        "stdout": "one\n/data/sla/d\ntwo\nrc=0\n",
+        "stderr": ""
+      }
     }
   ]
 }

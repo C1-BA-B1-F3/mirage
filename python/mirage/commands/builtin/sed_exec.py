@@ -159,10 +159,17 @@ class SedInput:
 
 @dataclass(frozen=True)
 class SedRunOptions:
+    """How a machine runs.
+
+    ``files`` is what each ``r`` file holds now; ``reader_files`` what
+    each ``R`` file held when the script was compiled.
+    """
+
     suppress: bool = False
     separate: bool = False
     line_length: int = SED_LINE_LENGTH
     files: Mapping[str, SedFileContent] = field(default_factory=dict)
+    reader_files: Mapping[str, SedFileContent] = field(default_factory=dict)
 
 
 class SedPanic(Exception):
@@ -261,6 +268,7 @@ class SedMachine:
     def __init__(self, program: SedProgram, opts: SedRunOptions) -> None:
         self.program = program
         self.opts = opts
+        self._files = opts.files
         self.no_default_output = opts.suppress or program.no_default_output
         self.stdout = SedOutput()
         self.stderr_lines: list[str] = []
@@ -484,8 +492,21 @@ class SedMachine:
             self._range_state[index] = _RANGE_CLOSED
         return True
 
+    def set_files(self, files: Mapping[str, SedFileContent]) -> None:
+        """Replace what the ``r`` files hold.
+
+        GNU opens an ``r`` file each time the append queue is written, so
+        under -i a file edited earlier in the command reads with its new
+        content; within one run nothing it reads changes (a ``w`` file
+        stays in its stdio buffer until sed exits).
+
+        Args:
+            files (Mapping[str, SedFileContent]): the ``r`` files now.
+        """
+        self._files = files
+
     def _file_text(self, name: str) -> str:
-        content = self.opts.files.get(name)
+        content = self._files.get(name)
         if content is None:
             return ""
         if isinstance(content, SedFileError):
@@ -510,7 +531,7 @@ class SedMachine:
 
     def _read_line(self, name: str) -> str | None:
         if name not in self._readers:
-            content = self.opts.files.get(name)
+            content = self.opts.reader_files.get(name)
             if isinstance(content, SedFileError):
                 raise SedPanic(content.error)
             self._readers[name] = None if content is None else _Reader(

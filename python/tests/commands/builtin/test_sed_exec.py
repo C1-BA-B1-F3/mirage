@@ -24,7 +24,8 @@ def _run(exprs: str | list[str],
         SedRunOptions(suppress=suppress,
                       separate=separate,
                       line_length=line_length,
-                      files=files or {}))
+                      files=files or {},
+                      reader_files=files or {}))
     machine.process(
         [SedInput("-", inputs)] if isinstance(inputs, str) else inputs, True)
     wfiles = {
@@ -365,3 +366,34 @@ def test_dot_matches_newline_except_under_M():
     assert _sed("N;s/a$/X/M", "a\nb\n") == "X\nb\n"
     assert _sed("N;s/a$/X/", "a\nb\n") == "a\nb\n"
     assert _sed("N;s/^/X/Mg", "a\nb\n") == "Xa\nXb\n"
+
+
+def test_lookahead_skips_a_directory_but_reading_on_panics():
+    folder = SedInput("d",
+                      error="sed: read error on d: Is a directory\n",
+                      code=4,
+                      fatal=True)
+    one = SedInput("f", "one\ntwo\n")
+    out, _, code, _ = _run("$p", [one, folder], suppress=True)
+    assert (out, code) == ("two\n", 0)
+    out, _, code, _ = _run("$p",
+                           [one, folder, SedInput("g", "x\n")],
+                           suppress=True)
+    assert (out, code) == ("x\n", 0)
+    out, err, code, _ = _run("n", [one, folder])
+    assert (out, err, code) == ("one\ntwo\n", folder.error, 4)
+    out, _, code, _ = _run("$p", [one, folder], suppress=True, separate=True)
+    assert (out, code) == ("two\n", 4)
+
+
+def test_r_files_read_anew_after_set_files_R_once():
+    machine = SedMachine(
+        compile_script(
+            [SedScriptPiece("expr", "1r /r"),
+             SedScriptPiece("expr", "1R /q")]),
+        SedRunOptions(separate=True,
+                      files={"/r": SedFileText("old\n")},
+                      reader_files={"/q": SedFileText("Q1\nQ2\n")}))
+    assert machine.process([SedInput("a", "a\n")], False) == "a\nold\nQ1\n"
+    machine.set_files({"/r": SedFileText("new\n")})
+    assert machine.process([SedInput("b", "b\n")], False) == "b\nnew\nQ1\n"

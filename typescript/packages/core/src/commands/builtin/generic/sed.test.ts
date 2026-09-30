@@ -127,3 +127,41 @@ describe('sed text escapes above ASCII', () => {
     expect([...(files.get('/a.txt') ?? [])]).toEqual(latin1Bytes('x\ny\xff\n'))
   })
 })
+
+describe('sed script files across -i files (GNU sed 4.9)', () => {
+  const enc = (text: string): Uint8Array => new TextEncoder().encode(text)
+  const text = (files: Map<string, Uint8Array>, name: string): string =>
+    new TextDecoder().decode(files.get(name))
+
+  it('reads an r file at each append, so an earlier edit shows', async () => {
+    const files = new Map([
+      ['/f', enc('one\ntwo\n')],
+      ['/b', enc('b1\nb2\n')],
+    ])
+    const paths = [PathSpec.fromStrPath('/f'), PathSpec.fromStrPath('/b')]
+    await sedBytes(paths, ['1r /f'], { i: true }, files)
+    expect(text(files, '/f')).toBe('one\none\ntwo\ntwo\n')
+    expect(text(files, '/b')).toBe('b1\none\none\ntwo\ntwo\nb2\n')
+  })
+
+  it('reads an R file as it was when the script was compiled', async () => {
+    const files = new Map([
+      ['/f', enc('one\ntwo\n')],
+      ['/b', enc('b1\nb2\n')],
+    ])
+    const paths = [PathSpec.fromStrPath('/f'), PathSpec.fromStrPath('/b')]
+    await sedBytes(paths, ['R /f'], { i: true }, files)
+    expect(text(files, '/b')).toBe('b1\none\nb2\ntwo\n')
+  })
+
+  it('lets -i keep a w file it then edited', async () => {
+    const files = new Map([
+      ['/b', enc('b1\nb2\n')],
+      ['/f', enc('old\n')],
+    ])
+    const paths = [PathSpec.fromStrPath('/b'), PathSpec.fromStrPath('/f')]
+    await sedBytes(paths, ['s/b/B/;w /f'], { i: true }, files)
+    expect(text(files, '/f')).toBe('')
+    expect(text(files, '/b')).toBe('B1\nB2\n')
+  })
+})

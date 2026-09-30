@@ -137,7 +137,9 @@ class SedProgram:
 
     ``no_default_output`` is ``#n`` on the first line. ``wfiles`` are the
     files ``w``, ``W`` and ``s///w`` write, in the order GNU opens
-    (truncates) them; ``rfiles`` the files ``r`` and ``R`` read.
+    (truncates) them; ``rfiles`` the files ``r`` reads (again at every
+    append) and ``reader_files`` those ``R`` reads (opened once, as GNU
+    opens them when it compiles the command).
     ``end_where`` is where GNU places an error found once the script has
     run out, as a missing previous regex at run time.
     """
@@ -146,6 +148,7 @@ class SedProgram:
     no_default_output: bool
     wfiles: list[str]
     rfiles: list[str]
+    reader_files: list[str]
     end_where: str
 
 
@@ -301,6 +304,7 @@ class _Compiler:
         self.no_default_output = False
         self.wfiles: list[str] = []
         self.rfiles: list[str] = []
+        self.reader_files: list[str] = []
 
     def compile(self, pieces: Sequence[SedScriptPiece]) -> SedProgram:
         for piece in pieces:
@@ -320,6 +324,7 @@ class _Compiler:
                           no_default_output=self.no_default_output,
                           wfiles=self.wfiles,
                           rfiles=self.rfiles,
+                          reader_files=self.reader_files,
                           end_where=self._block_where())
 
     def _where(self, unread: int = 0) -> str:
@@ -398,7 +403,7 @@ class _Compiler:
         name = self._read_filename()
         if not name:
             raise self._bad(MISSING_FILENAME)
-        names = self.wfiles if write else self.rfiles
+        names = self.wfiles if write else self.reader_files
         if name not in names:
             names.append(name)
         return name

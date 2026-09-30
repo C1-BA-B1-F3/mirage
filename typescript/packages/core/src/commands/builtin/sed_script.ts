@@ -93,8 +93,10 @@ export interface SedProgram {
   noDefaultOutput: boolean
   // Files `w`, `W` and `s///w` write, in the order GNU opens (truncates) them.
   wfiles: string[]
-  // Files `r` and `R` read.
+  // Files `r` reads (again at every append), and files `R` reads (opened
+  // once, as GNU opens them when it compiles the command).
   rfiles: string[]
+  readerFiles: string[]
   // Where GNU places an error found once the script has run out, as a
   // missing previous regex at run time: the last piece, past its end.
   endWhere: string
@@ -243,6 +245,7 @@ class Compiler {
   private noDefaultOutput = false
   private readonly wfiles: string[] = []
   private readonly rfiles: string[] = []
+  private readonly readerFiles: string[] = []
 
   constructor(private readonly extended: boolean) {}
 
@@ -267,6 +270,7 @@ class Compiler {
       noDefaultOutput: this.noDefaultOutput,
       wfiles: this.wfiles,
       rfiles: this.rfiles,
+      readerFiles: this.readerFiles,
       endWhere: this.blockWhere(),
     }
   }
@@ -334,7 +338,7 @@ class Compiler {
   private openFile(write: boolean): string {
     const name = this.readFilename()
     if (name === '') this.bad(MISSING_FILENAME)
-    const list = write ? this.wfiles : this.rfiles
+    const list = write ? this.wfiles : this.readerFiles
     if (!list.includes(name)) list.push(name)
     return name
   }

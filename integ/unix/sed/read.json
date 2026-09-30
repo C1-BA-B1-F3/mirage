@@ -407,6 +407,74 @@
         "stdout": "",
         "stderr": "sed: -e expression #1, char 1: missing filename in r/R/w/W commands\n"
       }
+    },
+    {
+      "id": "sed_r_inplace_reads_earlier_edit",
+      "seq": 9960307,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "mkdir -p /data/sri && printf 'one\\ntwo\\n' > /data/sri/f && printf 'b1\\nb2\\n' > /data/sri/b && sed -i '1r /data/sri/f' /data/sri/f /data/sri/b && cat /data/sri/f && echo -- && cat /data/sri/b; rm -r /data/sri",
+      "expect": {
+        "exit": 0,
+        "stdout": "one\none\ntwo\ntwo\n--\nb1\none\none\ntwo\ntwo\nb2\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "sed_R_inplace_reads_file_as_compiled",
+      "seq": 9960308,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "mkdir -p /data/sri && printf 'one\\ntwo\\n' > /data/sri/f && printf 'b1\\nb2\\n' > /data/sri/b && sed -i 'R /data/sri/f' /data/sri/f /data/sri/b && cat /data/sri/b; rm -r /data/sri",
+      "expect": {
+        "exit": 0,
+        "stdout": "b1\none\nb2\ntwo\n",
+        "stderr": ""
+      }
     }
   ]
 }

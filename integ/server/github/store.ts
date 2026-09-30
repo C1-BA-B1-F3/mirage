@@ -462,6 +462,9 @@ export interface TagRefRow {
   sha: string
 }
 
+// An annotated tag object by its sha, from anywhere in the repository's
+// network, since a tag object is a git object like any other: a fork's copy
+// of a tag ref still peels through the one its source made.
 export async function tagObject(
   db: C,
   tenant: string,
@@ -469,7 +472,7 @@ export async function tagObject(
   sha: string,
 ): Promise<TagRow | null> {
   return (await db.githubTag.findFirst({
-    where: { tenant, repo: repo.fullName, sha },
+    where: { tenant, repo: { in: await networkNames(db, tenant, repo) }, sha },
   })) as TagRow | null
 }
 

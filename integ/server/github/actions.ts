@@ -529,14 +529,18 @@ async function checkRuns(ctx: Ctx<C>, repo: RepoRow): Promise<Reply> {
   return pagedReply(ctx, rows.map(checkJson), 'check_runs')
 }
 
-/** Every status set on one commit, newest first. */
+/**
+ * Every status set on one commit in the repositories named, newest first: one
+ * repository's own for its REST routes, and both sides of a pull request from
+ * a fork for its rollup, whose head commit's CI may have reported to either.
+ */
 export async function statusesOf(
   ctx: { db: C; tenant: string },
-  repo: RepoRow,
+  repos: RepoRow[],
   sha: string,
 ): Promise<StatusRow[]> {
   return (await ctx.db.githubStatus.findMany({
-    where: { ...scope(ctx.tenant), repo: repo.fullName, sha },
+    where: { ...scope(ctx.tenant), repo: { in: repos.map((r) => r.fullName) }, sha },
     orderBy: { seq: 'desc' },
   })) as StatusRow[]
 }
@@ -546,11 +550,11 @@ export async function statusesOf(
 // all reading as pending rather than as a pass, as GitHub rolls them up.
 export async function combinedStatus(
   ctx: { db: C; tenant: string },
-  repo: RepoRow,
+  repos: RepoRow[],
   sha: string,
 ): Promise<{ state: string; rows: StatusRow[] }> {
   const latest = new Map<string, StatusRow>()
-  for (const row of await statusesOf(ctx, repo, sha)) {
+  for (const row of await statusesOf(ctx, repos, sha)) {
     if (!latest.has(row.context)) latest.set(row.context, row)
   }
   const rows = [...latest.values()].sort((a, b) => a.seq - b.seq)
@@ -564,7 +568,7 @@ export async function combinedStatus(
 async function commitStatus(ctx: Ctx<C>, repo: RepoRow): Promise<Reply> {
   const sha = await namedCommit(ctx, repo)
   if (sha === null) return noCommit(ctx)
-  const { state, rows } = await combinedStatus(ctx, repo, sha)
+  const { state, rows } = await combinedStatus(ctx, [repo], sha)
   return {
     status: 200,
     body: { state, sha, total_count: rows.length, statuses: rows.map(statusJson) },
@@ -574,7 +578,7 @@ async function commitStatus(ctx: Ctx<C>, repo: RepoRow): Promise<Reply> {
 async function listStatuses(ctx: Ctx<C>, repo: RepoRow): Promise<Reply> {
   const sha = await namedCommit(ctx, repo)
   if (sha === null) return noCommit(ctx)
-  return pagedReply(ctx, (await statusesOf(ctx, repo, sha)).map(statusJson))
+  return pagedReply(ctx, (await statusesOf(ctx, [repo], sha)).map(statusJson))
 }
 
 const STATUS_STATES = ['error', 'failure', 'pending', 'success']

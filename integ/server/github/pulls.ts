@@ -801,14 +801,20 @@ function reviewNode(repo: RepoRow, number: number, row: ReviewRow): Record<strin
 
 /**
  * One commit of a pull request as GraphQL reports it: its headline and body,
- * who wrote it and when, and the checks and statuses set on it, rolled up.
+ * who wrote it and when, and the checks and statuses set on it in the
+ * repositories named, rolled up: the base's, and the fork's for a pull
+ * request from one, since its head commit's CI may report to either.
  */
 function commitNode(
   ctx: { db: C; tenant: string },
-  repo: RepoRow,
+  repos: RepoRow[],
   row: CommitRow,
 ): Record<string, unknown> {
-  const where = { ...scope(ctx.tenant), repo: repo.fullName, sha: row.sha }
+  const where = {
+    ...scope(ctx.tenant),
+    repo: { in: repos.map((r) => r.fullName) },
+    sha: row.sha,
+  }
   const who = commitIdentity(row)
   const [headline = '', ...rest] = row.message.split('\n')
   return {
@@ -825,7 +831,7 @@ function commitNode(
     statusCheckRollup: {
       contexts: async ({ first, after }: PageArgs) => {
         const checks = await ctx.db.githubCheck.findMany({ where, orderBy: { seq: 'asc' } })
-        const statuses = (await combinedStatus(ctx, repo, row.sha)).rows
+        const statuses = (await combinedStatus(ctx, repos, row.sha)).rows
         const contexts = [
           ...checks.map((check) => ({
             __typename: 'CheckRun',
@@ -969,7 +975,7 @@ export async function pullRequestNode(
     commits: async ({ first, last, after }: PageArgs & { last?: number | null }) => {
       const nodes = [...(await now()).range.ahead]
         .reverse()
-        .map((commit) => ({ commit: commitNode(ctx, repo, commit) }))
+        .map((commit) => ({ commit: commitNode(ctx, cross ? [repo, home] : [repo], commit) }))
       if (typeof last !== 'number') return page(nodes, first, after)
       const from = after ? Number(Buffer.from(after, 'base64').toString()) : 0
       const start = Math.max(from, nodes.length - last)

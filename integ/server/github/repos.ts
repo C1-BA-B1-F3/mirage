@@ -29,6 +29,7 @@ import {
   addBranch,
   headOf,
   loginsOf,
+  networkNames,
   primaryLanguage,
   repoJson,
   repoLanguages,
@@ -749,12 +750,47 @@ async function renameRepo(db: C, tenant: string, repo: RepoRow, name: string): P
 
 const deleteRepo: Handler = authed(
   withRepo(async (ctx, repo) => {
-    await dropRepo(ctx.db, ctx.tenant, repo.fullName)
+    await dropRepo(ctx.db, ctx.tenant, repo)
     return { status: 204 }
   }),
 )
 
-async function dropRepo(db: C, tenant: string, fullName: string): Promise<void> {
+// The objects a network shares move to the oldest surviving fork when the
+// repository holding them is deleted, and that fork takes the deleted one's
+// place as parent of the rest, as GitHub hands a network to a fork. Without
+// it the forks kept heads naming commits and trees that no longer existed.
+async function handOff(db: C, tenant: string, repo: RepoRow): Promise<void> {
+  const network = await networkNames(db, tenant, repo)
+  const rest = (await allRepos(db, tenant))
+    .filter((r) => network.includes(r.fullName) && r.seq !== repo.seq)
+    .sort((a, b) => a.seq - b.seq)
+  const heir = rest[0]
+  if (heir === undefined) return
+  const moved = { tenant, repo: repo.fullName }
+  await db.githubCommit.updateMany({ where: moved, data: { repo: heir.fullName } })
+  await db.githubStagedTree.updateMany({ where: moved, data: { repo: heir.fullName } })
+  await db.githubTag.updateMany({ where: moved, data: { repo: heir.fullName } })
+  const up = metaOf(repo).parent_seq
+  for (const row of rest) {
+    const meta = metaOf(row)
+    if (meta.parent_seq !== repo.seq) continue
+    const { parent_seq: _was, ...kept } = meta
+    const next =
+      row.seq === heir.seq
+        ? typeof up === 'number'
+          ? { ...kept, parent_seq: up }
+          : kept
+        : { ...kept, parent_seq: heir.seq }
+    await db.githubRepo.updateMany({
+      where: { tenant, fullName: row.fullName },
+      data: { metaJson: JSON.stringify(next) },
+    })
+  }
+}
+
+async function dropRepo(db: C, tenant: string, repo: RepoRow): Promise<void> {
+  await handOff(db, tenant, repo)
+  const fullName = repo.fullName
   const where = { tenant, repo: fullName }
   // A staged entry hangs off a staged TREE rather than off the repository, so
   // it is the one child the schema walk cannot reach: entries are keyed by tree

@@ -581,8 +581,14 @@ async function searchIssues(ctx: Ctx<C>): Promise<Reply> {
       )
         continue
       if (q.has('status')) {
-        const head = String(record(item.head ?? null).sha ?? '')
-        const status = pull ? (await combinedStatus(ctx, repo, head)).state : ''
+        const side = record(item.head ?? null)
+        const home = await repoByName(
+          ctx.db,
+          ctx.tenant,
+          String(record(side.repo ?? null).full_name),
+        )
+        const repos = home === null || home.seq === repo.seq ? [repo] : [repo, home]
+        const status = pull ? (await combinedStatus(ctx, repos, String(side.sha ?? ''))).state : ''
         if (!pull || !q.get('status')?.includes(status)) continue
       }
       if (q.has('base') && record(item.base ?? null).ref !== q.get('base')?.[0]) continue

@@ -1794,6 +1794,14 @@ async function listsProfilesAndForks(at: string): Promise<void> {
   eq('and an anonymous one', await limits({ 'x-mirage-tenant': TENANT }), [60, 10])
 
   // ---- a pull request from a fork
+  const tip = field(field((await send('GET', `${repo}/git/ref/heads/main`)).body, 'object'), 'sha')
+  const annotated = await send('POST', `${repo}/git/tags`, {
+    tag: 'v2',
+    message: 'Second',
+    object: tip,
+    type: 'commit',
+  })
+  await send('POST', `${repo}/git/refs`, { ref: 'refs/tags/v2', sha: field(annotated.body, 'sha') })
   const forked = await send('POST', `${repo}/forks`, {})
   eq(
     'a fork is made',
@@ -1859,6 +1867,79 @@ async function listsProfilesAndForks(at: string): Promise<void> {
     ),
     [{ resource: 'PullRequest', field: 'head', code: 'invalid' }],
   )
+  eq(
+    "a fork's copy of an annotated tag peels through its source's tag object",
+    [
+      items((await send('GET', `${fork}/tags`)).body).map((t) => [
+        field(t, 'name'),
+        field(field(t, 'commit'), 'sha'),
+      ]),
+      field(
+        (await send('GET', `${fork}/git/tags/${String(field(annotated.body, 'sha'))}`)).body,
+        'tag',
+      ),
+    ],
+    [[['v2', tip]], 'v2'],
+  )
+
+  // CI the fork's head commit reports to the fork rolls up on the pull request.
+  const forkHead = String(field(field(pull, 'head'), 'sha'))
+  await send('POST', `${fork}/statuses/${forkHead}`, { context: 'fork-ci', state: 'failure' })
+  const rolled = await send('POST', `${base}/graphql`, {
+    query:
+      `{ repository(owner: "integ", name: "repo-v1") { pullRequest(number: ${number}) { ` +
+      'commits(last: 1) { nodes { commit { statusCheckRollup { contexts(first: 10) { nodes { ' +
+      '... on StatusContext { context state } } } } } } } } } }',
+  })
+  eq(
+    "a status set in the fork is on the pull request's rollup",
+    field(
+      field(
+        (
+          field(
+            field(field(field(rolled.body, 'data'), 'repository'), 'pullRequest'),
+            'commits',
+          ) as { nodes: JsonValue[] }
+        ).nodes[0] ?? null,
+        'commit',
+      ),
+      'statusCheckRollup',
+    ),
+    { contexts: { nodes: [{ context: 'fork-ci', state: 'FAILURE' }] } },
+  )
+  eq(
+    "and each repository's own status endpoint answers its own",
+    [
+      field((await send('GET', `${fork}/commits/${forkHead}/status`)).body, 'total_count'),
+      field((await send('GET', `${repo}/commits/${forkHead}/status`)).body, 'total_count'),
+    ],
+    [1, 0],
+  )
+
+  // Deleting the source leaves the fork its history, its trees and its tags.
+  const history = async (): Promise<JsonValue> =>
+    items((await send('GET', `${fork}/commits?sha=feature`)).body).map((c) => field(c, 'sha'))
+  const before = await history()
+  const one = field(field((await send('GET', `${repo}/git/ref/heads/one`)).body, 'object'), 'sha')
+  eq('the source is deleted', (await send('DELETE', repo)).status, 204)
+  eq('the fork keeps its history', await history(), before)
+  eq(
+    "and the files of its source's commits",
+    (await send('GET', `${fork}/contents/one.txt?ref=${String(one)}`)).status,
+    200,
+  )
+  eq(
+    'and its tags',
+    items((await send('GET', `${fork}/tags`)).body).map((t) => field(field(t, 'commit'), 'sha')),
+    [tip],
+  )
+  const orphaned = await send('POST', `${base}/graphql`, {
+    query: '{ repository(owner: "integ-user", name: "repo-v1") { isFork parent { name } } }',
+  })
+  eq('with no parent left', field(field(orphaned.body, 'data'), 'repository'), {
+    isFork: true,
+    parent: null,
+  })
 }
 
 async function main(): Promise<void> {

@@ -61,7 +61,7 @@ class CacheManager:
             owns_path: Callable[[str], bool] = lambda _: True,
             may_serve_cached: Callable[[str], Awaitable[bool]] = _always_serve,
             read_ttl: int = DEFAULT_READ_TTL,
-            on_gone: Callable[[Evicted], Awaitable[None]] | None = None,
+            on_gone: Callable[[list[Evicted]], Awaitable[None]] | None = None,
             may_serve_listing: Callable[[str], Awaitable[bool]] | None = None,
             excluded_prefixes: Callable[[], tuple[str, ...]] = tuple) -> None:
         """Args:
@@ -82,9 +82,9 @@ class CacheManager:
                 still be served; the default trusts the cache.
             read_ttl (int): lifetime of complete backend renders, and the
                 cap on every listing this mount's view writes.
-            on_gone (Callable[[Evicted], Awaitable[None]] | None): cleanup
-                for a child a re-list found gone, injected for the same
-                one-way reason as the read gate; None cleans nothing.
+            on_gone (Callable[[list[Evicted]], Awaitable[None]] | None):
+                cleanup for children a re-list found gone. This keeps the
+                dependency one-way, like the read gate; None cleans nothing.
             may_serve_listing (Callable[[str], Awaitable[bool]] | None):
                 the listing gate every view of this mount asks before
                 serving a cached listing; None serves them all.
@@ -143,10 +143,11 @@ class CacheManager:
                                    note_written=self._note_written)
         return self._view
 
-    async def _cleanup(self, gone: Evicted) -> None:
+    async def _cleanup(self, gone: list[Evicted]) -> None:
         async with self.mutation():
-            if self._owns_path(gone.path) and self._on_gone is not None:
-                await self._on_gone(gone)
+            owned = [child for child in gone if self._owns_path(child.path)]
+            if owned and self._on_gone is not None:
+                await self._on_gone(owned)
 
     def _note_written(self, folder: str) -> None:
         self._written[folder] = tick()

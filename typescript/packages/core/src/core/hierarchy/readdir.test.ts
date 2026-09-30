@@ -502,8 +502,8 @@ describe('a window listing proves nothing absent', () => {
     })
     const store = new RAMIndexCacheStore()
     const index = new IndexView(store, new RAMFileCacheStore(), '/h', () => true, {
-      onGone: (child) => {
-        gone.push(child)
+      onGone: (children) => {
+        gone.push(...children)
         return Promise.resolve()
       },
     })

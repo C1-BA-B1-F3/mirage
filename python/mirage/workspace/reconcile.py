@@ -21,6 +21,7 @@ from mirage.cache.index.ram import RAMIndexCacheStore
 from mirage.cache.index.scope import command_started
 from mirage.types import ReadPolicy
 from mirage.utils.errors import OperationNotSupportedError
+from mirage.utils.path import ancestors
 from mirage.workspace.mount.mount import MountEntry
 from mirage.workspace.mount.namespace import Namespace
 
@@ -269,24 +270,29 @@ class Reconciler:
         if (mount.read.policy is ReadPolicy.FRESH and op in _REVALIDATE_OPS):
             await self.on_missing(path)
 
-    async def on_gone(self, gone: Evicted, excluded: tuple[str,
-                                                           ...] = ()) -> None:
-        """Clean up after a re-list that no longer names a child.
-
-        A complete re-list is the backend's own answer, so this runs under
-        every policy. A folder takes its cached bytes and overlays beneath
-        it; the prefix eviction is kept to folders because it also cancels
-        every fill in flight across the store.
+    async def on_gone(
+        self, gone: list[Evicted], excluded: tuple[str, ...] = ()) -> None:
+        """Clean up the children a complete re-list removed or replaced.
 
         Args:
-            gone (Evicted): the child the backend no longer has.
+            gone (list[Evicted]): vanished children and replaced folders.
             excluded (tuple[str, ...]): nested mount roots to preserve.
         """
-        await self._cache.remove(gone.path)
-        if gone.folder:
-            await self._cache.evict_prefix(gone.path.rstrip("/") + "/",
-                                           excluded=excluded)
-        await self._namespace.drop_overlays_under(gone.path, excluded=excluded)
+        paths = dict.fromkeys(child.path.rstrip("/") or "/" for child in gone)
+        folders = {
+            child.path.rstrip("/") or "/"
+            for child in gone if child.folder
+        }
+        for path in paths:
+            parents = ancestors(path) + (["/"] if path != "/" else [])
+            if folders.isdisjoint(parents):
+                await self._cache.remove(path)
+                if path in folders:
+                    await self._cache.evict_prefix(path.rstrip("/") + "/",
+                                                   excluded=excluded)
+        if paths:
+            await self._namespace.drop_overlays_under(list(paths),
+                                                      excluded=excluded)
 
     async def on_missing(self, path: str) -> None:
         """Apply the deletion reaction: evict cache + GC orphaned overlay.

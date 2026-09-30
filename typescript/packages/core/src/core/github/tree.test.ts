@@ -302,8 +302,8 @@ function ledgered(): { gone: Evicted[]; index: IndexView } {
     '/gh',
     () => true,
     {
-      onGone: (child) => {
-        gone.push(child)
+      onGone: (children) => {
+        gone.push(...children)
         return Promise.resolve()
       },
     },

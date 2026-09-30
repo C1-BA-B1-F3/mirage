@@ -70,7 +70,7 @@ export class CacheManager {
     private readonly readTtl: number = DEFAULT_READ_TTL,
     // Cleanup for a child a re-list found gone, injected for the same
     // one-way reason as the read gate; undefined cleans nothing.
-    private readonly onGone?: (gone: Evicted) => Promise<void>,
+    private readonly onGone?: (gone: readonly Evicted[]) => Promise<void>,
     // The listing gate every view of this mount asks before serving a
     // cached listing; undefined serves them all.
     private readonly mayServeListing?: (folder: string) => Promise<boolean>,
@@ -119,7 +119,7 @@ export class CacheManager {
   private viewOptions(locked = false): {
     excludedPrefixes: () => readonly string[]
     readTtl: number
-    onGone?: (gone: Evicted) => Promise<void>
+    onGone?: (gone: readonly Evicted[]) => Promise<void>
     mayServeListing?: (folder: string) => Promise<boolean>
     noteWritten: (folder: string) => void
   } {
@@ -131,9 +131,10 @@ export class CacheManager {
         : {
             onGone: locked
               ? this.onGone
-              : (gone: Evicted) =>
+              : (gone: readonly Evicted[]) =>
                   this.withMutation(async () => {
-                    if (this.ownsPath(gone.path)) await this.onGone?.(gone)
+                    const owned = gone.filter((child) => this.ownsPath(child.path))
+                    if (owned.length > 0) await this.onGone?.(owned)
                   }),
           }),
       ...(this.mayServeListing === undefined ? {} : { mayServeListing: this.mayServeListing }),

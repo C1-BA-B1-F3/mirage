@@ -40,7 +40,7 @@ class IndexView(IndexCacheStore):
             *,
             locked: bool = False,
             read_ttl: float | None = None,
-            on_gone: Callable[[Evicted], Awaitable[None]] | None = None,
+            on_gone: Callable[[list[Evicted]], Awaitable[None]] | None = None,
             may_serve_listing: Callable[[str], Awaitable[bool]]
         | None = None,
             note_written: Callable[[str], None] | None = None,
@@ -55,8 +55,8 @@ class IndexView(IndexCacheStore):
             locked (bool): skip the non-reentrant mutation lock already
                 held by the caller; the view must not outlive that hold.
             read_ttl (float | None): listing lifetime cap, or None.
-            on_gone (Callable[[Evicted], Awaitable[None]] | None): the
-                mount's cleanup for a child a re-list found gone, or None.
+            on_gone (Callable[[list[Evicted]], Awaitable[None]] | None): the
+                mount's cleanup for the children a re-list found gone, or None.
             may_serve_listing (Callable[[str], Awaitable[bool]] | None):
                 the mount's listing gate, asked before a cached listing is
                 served; None serves every cached listing.
@@ -227,9 +227,9 @@ class IndexView(IndexCacheStore):
         # again at the moment of cleanup.
         if self._on_gone is None:
             return
-        for child in gone:
-            if self._owns(child.path):
-                await self._on_gone(child)
+        owned = [child for child in gone if self._owns(child.path)]
+        if owned:
+            await self._on_gone(owned)
 
     def scope_snapshot(self, snapshot: IndexSnapshot) -> IndexSnapshot:
         return IndexSnapshot(

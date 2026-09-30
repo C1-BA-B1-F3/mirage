@@ -421,8 +421,8 @@ def test_relisting_an_unchanged_backend_hands_nothing_to_cleanup(accessor):
     # two identical fetches would evict rows that still exist.
     gone: list[Evicted] = []
 
-    async def on_gone(child: Evicted) -> None:
-        gone.append(child)
+    async def on_gone(children: list[Evicted]) -> None:
+        gone.extend(children)
 
     readdir = make_readdir(detect_scope,
                            listers={"rooms": _unchanged_listing},

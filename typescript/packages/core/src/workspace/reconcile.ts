@@ -22,6 +22,7 @@ import { FileStat, PathSpec, ReadPolicy } from '../types.ts'
 import { enoent, isEnoent, isEnotdir, isMissingOp } from '../utils/errors.ts'
 import { mountKey } from '../utils/key_prefix.ts'
 import { rstripSlash } from '../utils/slash.ts'
+import { ancestors } from '../utils/path.ts'
 import type { MountEntry } from './mount/mount.ts'
 import type { Namespace } from './mount/namespace/namespace.ts'
 
@@ -244,15 +245,18 @@ export class Reconciler {
     }
   }
 
-  // Clean up after a re-list that no longer names a child. A complete
-  // re-list is the backend's own answer, so this runs under every policy. A
-  // folder takes its cached bytes and overlays beneath it; the prefix
-  // eviction is kept to folders because it also cancels every fill in
-  // flight across the store.
-  async onGone(gone: Evicted, excluded: readonly string[] = []): Promise<void> {
-    await this.cache.remove(gone.path)
-    if (gone.folder) await this.cache.evictPrefix(rstripSlash(gone.path) + '/', excluded)
-    await this.namespace.dropOverlaysUnder(gone.path, excluded)
+  async onGone(gone: readonly Evicted[], excluded: readonly string[] = []): Promise<void> {
+    const paths = new Set(gone.map((child) => rstripSlash(child.path) || '/'))
+    const folders = new Set(
+      gone.filter((child) => child.folder).map((child) => rstripSlash(child.path) || '/'),
+    )
+    for (const path of paths) {
+      const parents = [...ancestors(path), ...(path === '/' ? [] : ['/'])]
+      if (parents.some((parent) => folders.has(parent))) continue
+      await this.cache.remove(path)
+      if (folders.has(path)) await this.cache.evictPrefix(rstripSlash(path) + '/', excluded)
+    }
+    if (paths.size > 0) await this.namespace.dropOverlaysUnder([...paths], excluded)
   }
 
   // Apply the deletion reaction: evict cache + GC orphaned overlay. An

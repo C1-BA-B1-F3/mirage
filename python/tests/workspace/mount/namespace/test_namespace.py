@@ -129,7 +129,7 @@ async def test_drop_overlays_under_keeps_links_and_siblings(namespace):
     await namespace.set_attrs("/data/sub/deep/x", mode=0o600)
     await namespace.set_attrs("/data/sub2", mode=0o600)
     await namespace.symlink("/data/sub/link", "/t1", 1.0)
-    assert await namespace.drop_overlays_under("/data/sub") == 2
+    assert await namespace.drop_overlays_under(["/data/sub"]) == 2
     assert namespace.meta_for("/data/sub") is None
     assert namespace.meta_for("/data/sub/deep/x") is None
     assert namespace.meta_for("/data/sub2") is not None

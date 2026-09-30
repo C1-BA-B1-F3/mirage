@@ -67,7 +67,7 @@ describe('Reconciler', () => {
     await ws.cache.set('/data/f.txt', ENC.encode('v1'))
     await ws.cache.set('/data/f.txt.bak', ENC.encode('keep'))
     const rec = new Reconciler(ws.cache, ws.namespace, ws.opsRegistry)
-    await rec.onGone({ path: '/data/f.txt', folder: false })
+    await rec.onGone([{ path: '/data/f.txt', folder: false }])
     expect(ws.namespace.metaFor('/data/f.txt')).toBeNull()
     expect(await ws.cache.exists('/data/f.txt')).toBe(false)
     expect(await ws.cache.exists('/data/f.txt.bak')).toBe(true)
@@ -84,7 +84,7 @@ describe('Reconciler', () => {
     await ws.cache.set('/data/sub/x', ENC.encode('x'))
     await ws.cache.set('/data/sub2/x', ENC.encode('keep'))
     const rec = new Reconciler(ws.cache, ws.namespace, ws.opsRegistry)
-    await rec.onGone({ path: '/data/sub', folder: true })
+    await rec.onGone([{ path: '/data/sub', folder: true }])
     expect(ws.namespace.metaFor('/data/sub')).toBeNull()
     expect(ws.namespace.metaFor('/data/sub/x')).toBeNull()
     expect(ws.namespace.readlink('/data/sub/link')).toBe('/data/t')
@@ -507,3 +507,74 @@ it.each([
     }
   },
 )
+
+it('batches a thousand vanished children in one cleanup', async () => {
+  const ws = new Workspace({ '/data': new RAMVFS() }, { index: { ttl: 600 } })
+  try {
+    await ws.namespace.ensureLoaded()
+    const mount = ws.mount('/data')
+    const rows: [string, IndexEntry][] = Array.from({ length: 1000 }, (_, i) => [
+      `file-${String(i)}`,
+      new IndexEntry({ id: String(i), name: `file-${String(i)}`, resourceType: 'file' }),
+    ])
+    await mount.index.setDir('/data', rows)
+    for (const [name] of rows) {
+      await ws.cache.set(`/data/${name}`, ENC.encode('stale'))
+      await ws.namespace.setAttrs(`/data/${name}`, { mode: 0o600 })
+    }
+    await ws.cache.set('/data/keeper', ENC.encode('keep'))
+    await ws.namespace.setAttrs('/data/keeper', { mode: 0o640 })
+    const manager = mount.cacheManager
+    if (manager === null) throw new Error('mount has no cache manager')
+    const lock = vi.spyOn(manager, 'withMutation')
+    const scans = vi.spyOn(ws.namespace.nodes, Symbol.iterator)
+    await mount.index.setDir('/data', [])
+    expect(lock).toHaveBeenCalledTimes(1)
+    expect(scans).toHaveBeenCalledTimes(1)
+    expect([...ws.namespace.nodes.keys()]).toEqual(['/data/keeper'])
+    expect(await ws.cache.get('/data/keeper')).toEqual(ENC.encode('keep'))
+    expect(await ws.cache.exists('/data/file-0')).toBe(false)
+    expect(await ws.cache.exists('/data/file-999')).toBe(false)
+  } finally {
+    await ws.close()
+  }
+})
+
+it('batches overlapping folders and protects nested mounts', async () => {
+  const ws = new Workspace(
+    { '/data': new RAMVFS(), '/data/tree/nested': new RAMVFS() },
+    { index: { ttl: 600 } },
+  )
+  try {
+    await ws.namespace.ensureLoaded()
+    const removed = ['/data/tree', '/data/tree/sub/old', '/data/tree2/old']
+    const kept = ['/data/tree/nested/keep', '/data/treehouse/keep']
+    for (const path of [...removed, ...kept]) {
+      await ws.cache.set(path, ENC.encode('data'))
+      await ws.namespace.setAttrs(path, { mode: 0o600 })
+    }
+    await ws.namespace.symlink('/data/tree/link', '/data/target', 1)
+    const evict = vi.spyOn(ws.cache, 'evictPrefix')
+    await ws.mount('/data').index.reportGone([
+      { path: '/data/tree/sub', folder: true },
+      { path: '/data/tree/sub/old', folder: false },
+      { path: '/data/tree/', folder: true },
+      { path: '/data/tree', folder: true },
+      { path: '/data/tree2', folder: true },
+      { path: '/data/tree/nested/keep', folder: false },
+    ])
+    expect(evict).toHaveBeenCalledTimes(2)
+    expect(evict.mock.calls.map(([path]) => path).sort()).toEqual(['/data/tree/', '/data/tree2/'])
+    for (const path of removed) {
+      expect(await ws.cache.exists(path)).toBe(false)
+      expect(ws.namespace.metaFor(path)).toBeNull()
+    }
+    for (const path of kept) {
+      expect(await ws.cache.exists(path)).toBe(true)
+      expect(ws.namespace.metaFor(path)).not.toBeNull()
+    }
+    expect(ws.namespace.readlink('/data/tree/link')).toBe('/data/target')
+  } finally {
+    await ws.close()
+  }
+})

@@ -102,8 +102,8 @@ async def test_a_file_relist_hands_what_it_dropped_to_cleanup() -> None:
     # a file or a folder is the backend saying it went away.
     gone: list[Evicted] = []
 
-    async def on_gone(child: Evicted) -> None:
-        gone.append(child)
+    async def on_gone(children: list[Evicted]) -> None:
+        gone.extend(children)
 
     accessor = WandbAccessor(WandbConfig(entities=["lab"]))
     accessor.client.run = AsyncMock(return_value={"name": "run"})

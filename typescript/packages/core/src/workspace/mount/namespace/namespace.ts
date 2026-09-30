@@ -22,8 +22,7 @@ import {
 } from '../../../types.ts'
 import { decodeBase64, encodeBase64 } from '../../../utils/base64.ts'
 import { epochToIso } from '../../../utils/dates.ts'
-import { underPath } from '../../../utils/key_prefix.ts'
-import { globPrefixMatch, resolveSymlinks } from '../../../utils/path.ts'
+import { ancestors, globPrefixMatch, resolveSymlinks } from '../../../utils/path.ts'
 import { rstripSlash } from '../../../utils/slash.ts'
 import type { ResolveFn } from '../../dispatcher/index.ts'
 import type { MountEntry } from '../mount.ts'
@@ -332,18 +331,23 @@ export class Namespace {
     return true
   }
 
-  // Drop the overlays of a path the backend no longer has, and below. A
-  // re-list that finds a folder gone orphans every attribute overlay kept
-  // under it; symlink entries are authoritative, so they stay.
-  async dropOverlaysUnder(path: string, excluded: readonly string[] = []): Promise<number> {
-    const doomed = [...this.nodeTable]
-      .filter(
-        ([key, meta]) =>
-          meta.target === undefined &&
-          underPath(key, path) &&
-          !excluded.some((prefix) => underPath(key, prefix)),
-      )
-      .map(([key]) => key)
+  async dropOverlaysUnder(
+    paths: readonly string[],
+    excluded: readonly string[] = [],
+  ): Promise<number> {
+    const roots = new Set(paths.map((path) => path.replace(/\/+$/, '') || '/'))
+    const protectedPaths = new Set(excluded.map((path) => path.replace(/\/+$/, '') || '/'))
+    const doomed: string[] = []
+    for (const [key, meta] of this.nodeTable) {
+      if (meta.target !== undefined) continue
+      const lineage = ['/', ...ancestors(key), key.replace(/\/+$/, '') || '/']
+      if (
+        lineage.some((path) => roots.has(path)) &&
+        !lineage.some((path) => protectedPaths.has(path))
+      ) {
+        doomed.push(key)
+      }
+    }
     for (const key of doomed) this.nodeTable.delete(key)
     if (doomed.length > 0) await this.store.delete(doomed)
     return doomed.length

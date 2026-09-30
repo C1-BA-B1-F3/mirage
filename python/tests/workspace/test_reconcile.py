@@ -15,6 +15,7 @@
 import errno
 import logging
 import os
+from unittest.mock import patch
 from uuid import uuid4
 
 import pytest
@@ -27,6 +28,7 @@ from mirage.types import FileStat, FileType, ReadPolicy, ReadSpec
 from mirage.utils.errors import enotsup
 from mirage.vfs.ram import RAMVFS
 from mirage.vfs.s3 import S3VFS, S3Config
+from mirage.workspace.mount.namespace.namespace import NodeMeta
 from mirage.workspace.reconcile import Reconciler
 from tests.e2e.s3_mock import patch_s3_multi
 
@@ -62,7 +64,7 @@ async def test_on_gone_for_a_file_evicts_its_bytes_and_overlay():
     await ws.cache.set("/data/f.txt", b"v1")
     await ws.cache.set("/data/f.txt.bak", b"keep")
     rec = Reconciler(ws.cache, ws.namespace)
-    await rec.on_gone(Evicted("/data/f.txt", folder=False))
+    await rec.on_gone([Evicted("/data/f.txt", folder=False)])
     assert ws.namespace.meta_for("/data/f.txt") is None
     assert not await ws.cache.exists("/data/f.txt")
     assert await ws.cache.exists("/data/f.txt.bak")
@@ -79,7 +81,7 @@ async def test_on_gone_for_a_folder_takes_its_subtree_but_not_links():
     await ws.cache.set("/data/sub/x", b"x")
     await ws.cache.set("/data/sub2/x", b"keep")
     rec = Reconciler(ws.cache, ws.namespace)
-    await rec.on_gone(Evicted("/data/sub", folder=True))
+    await rec.on_gone([Evicted("/data/sub", folder=True)])
     assert ws.namespace.meta_for("/data/sub") is None
     assert ws.namespace.meta_for("/data/sub/x") is None
     assert ws.namespace.readlink("/data/sub/link") == "/data/t"
@@ -546,4 +548,85 @@ async def test_relist_preserves_nested_mount_subtree(shared, redis,
     finally:
         await ws.mount("/data").index_store.clear()
         await ws.mount("/data/sub/nested").index_store.clear()
+        await ws.close()
+
+
+class _CountedNodes(dict[str, NodeMeta]):
+    scans = 0
+
+    def items(self):
+        self.scans += 1
+        return super().items()
+
+
+@pytest.mark.asyncio
+async def test_relist_batches_a_thousand_vanished_children():
+    ws = Workspace({"/data": RAMVFS()}, index=IndexConfig(ttl=600))
+    try:
+        await ws.namespace.ensure_loaded()
+        mount = ws.mount("/data")
+        rows = [(f"file-{i}",
+                 IndexEntry(id=str(i), name=f"file-{i}", resource_type="file"))
+                for i in range(1000)]
+        await mount.index.set_dir("/data", rows)
+        for name, _ in rows:
+            await ws.cache.set(f"/data/{name}", b"stale")
+            await ws.namespace.set_attrs(f"/data/{name}", mode=0o600)
+        await ws.cache.set("/data/keeper", b"keep")
+        await ws.namespace.set_attrs("/data/keeper", mode=0o640)
+        nodes = _CountedNodes(ws.namespace.nodes)
+        ws.namespace._nodes = nodes
+        manager = mount.cache_manager
+        assert manager is not None
+        with patch.object(manager, "mutation", wraps=manager.mutation) as lock:
+            await mount.index.set_dir("/data", [])
+        assert lock.call_count == 1
+        assert nodes.scans == 1
+        assert set(nodes) == {"/data/keeper"}
+        assert await ws.cache.get("/data/keeper") == b"keep"
+        assert not await ws.cache.exists("/data/file-0")
+        assert not await ws.cache.exists("/data/file-999")
+    finally:
+        await ws.close()
+
+
+@pytest.mark.asyncio
+async def test_cleanup_batches_overlapping_folders_and_protects_nested_mounts(
+):
+    ws = Workspace({
+        "/data": RAMVFS(),
+        "/data/tree/nested": RAMVFS()
+    },
+                   index=IndexConfig(ttl=600))
+    try:
+        await ws.namespace.ensure_loaded()
+        removed = ["/data/tree", "/data/tree/sub/old", "/data/tree2/old"]
+        kept = ["/data/tree/nested/keep", "/data/treehouse/keep"]
+        for path in removed + kept:
+            await ws.cache.set(path, b"data")
+            await ws.namespace.set_attrs(path, mode=0o600)
+        await ws.namespace.symlink("/data/tree/link", "/data/target", 1)
+        with patch.object(ws.cache,
+                          "evict_prefix",
+                          wraps=ws.cache.evict_prefix) as evict:
+            await ws.mount("/data").index.report_gone([
+                Evicted("/data/tree/sub", folder=True),
+                Evicted("/data/tree/sub/old", folder=False),
+                Evicted("/data/tree/", folder=True),
+                Evicted("/data/tree", folder=True),
+                Evicted("/data/tree2", folder=True),
+                Evicted("/data/tree/nested/keep", folder=False),
+            ])
+        assert evict.call_count == 2
+        assert {call.args[0]
+                for call in evict.call_args_list
+                } == {"/data/tree/", "/data/tree2/"}
+        for path in removed:
+            assert not await ws.cache.exists(path)
+            assert ws.namespace.meta_for(path) is None
+        for path in kept:
+            assert await ws.cache.exists(path)
+            assert ws.namespace.meta_for(path) is not None
+        assert ws.namespace.readlink("/data/tree/link") == "/data/target"
+    finally:
         await ws.close()

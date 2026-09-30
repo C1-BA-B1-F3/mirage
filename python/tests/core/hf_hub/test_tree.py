@@ -451,8 +451,8 @@ async def test_a_refill_reports_what_left_the_repository(
     # the diff a file removed upstream keeps its cached bytes and overlay.
     gone: list[Evicted] = []
 
-    async def on_gone(child: Evicted) -> None:
-        gone.append(child)
+    async def on_gone(children: list[Evicted]) -> None:
+        gone.extend(children)
 
     index = IndexView(RAMIndexCacheStore(),
                       RAMFileCacheStore(),

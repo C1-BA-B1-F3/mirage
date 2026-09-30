@@ -264,7 +264,7 @@ describe('Namespace node metadata overlay', () => {
     await ws.namespace.setAttrs('/data/sub/deep/x', { mode: 0o600 })
     await ws.namespace.setAttrs('/data/sub2', { mode: 0o600 })
     await ws.namespace.symlink('/data/sub/link', '/t1', 1)
-    expect(await ws.namespace.dropOverlaysUnder('/data/sub')).toBe(2)
+    expect(await ws.namespace.dropOverlaysUnder(['/data/sub'])).toBe(2)
     expect(ws.namespace.metaFor('/data/sub')).toBeNull()
     expect(ws.namespace.metaFor('/data/sub/deep/x')).toBeNull()
     expect(ws.namespace.metaFor('/data/sub2')).not.toBeNull()

@@ -34,7 +34,7 @@ interface IndexViewOptions {
    */
   readonly locked?: boolean
   /** The mount's cleanup for a child a re-list found gone. */
-  readonly onGone?: (gone: Evicted) => Promise<void>
+  readonly onGone?: (gone: readonly Evicted[]) => Promise<void>
   /** Seconds a listing may live under this mount; unset means no cap. */
   readonly readTtl?: number
   /**
@@ -50,7 +50,7 @@ interface IndexViewOptions {
 export class IndexView extends IndexCacheStore {
   private readonly locked: boolean
   private readonly readTtl: number | undefined
-  private readonly onGone: ((gone: Evicted) => Promise<void>) | undefined
+  private readonly onGone: ((gone: readonly Evicted[]) => Promise<void>) | undefined
   private readonly mayServeListing: ((folder: string) => Promise<boolean>) | undefined
   private readonly excludedPrefixes: () => readonly string[]
   private readonly noteWritten: ((folder: string) => void) | undefined
@@ -239,9 +239,8 @@ export class IndexView extends IndexCacheStore {
   // can change after the write, so ownership is asked again at cleanup time.
   override async reportGone(gone: readonly Evicted[]): Promise<void> {
     if (this.onGone === undefined) return
-    for (const child of gone) {
-      if (this.owns(child.path)) await this.onGone(child)
-    }
+    const owned = gone.filter((child) => this.owns(child.path))
+    if (owned.length > 0) await this.onGone(owned)
   }
 
   invalidateEntry(vfsPath: string): Promise<void> {

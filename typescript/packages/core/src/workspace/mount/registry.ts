@@ -50,7 +50,7 @@ interface ReadReconciler {
   reconcileRead(mount: MountEntry, path: string): Promise<void>
   mayServeCached(mount: MountEntry, path: string): Promise<boolean>
   mayServeListing(mount: MountEntry, folder: string): Promise<boolean>
-  onGone(gone: Evicted, excluded?: readonly string[]): Promise<void>
+  onGone(gone: readonly Evicted[], excluded?: readonly string[]): Promise<void>
 }
 
 // The stat the dispatcher itself runs for a mount's VFS: its registry op,
@@ -226,7 +226,7 @@ export class MountRegistry {
         if (reconciler !== null && !m.retiring)
           await reconciler.onGone(
             gone,
-            this.descendantMounts(gone.path).map((entry) => entry.prefix.replace(/\/$/, '')),
+            this.descendantMounts(m.prefix).map((entry) => entry.prefix.replace(/\/$/, '')),
           )
       },
       (folder) => this.mayServeListing(m, folder),

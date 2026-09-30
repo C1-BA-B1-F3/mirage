@@ -438,11 +438,11 @@ async def test_a_view_reports_the_lifetime_its_listings_get(kind):
 
 
 def _gone_ledger(
-) -> tuple[list[Evicted], Callable[[Evicted], Awaitable[None]]]:
+) -> tuple[list[Evicted], Callable[[list[Evicted]], Awaitable[None]]]:
     ledger: list[Evicted] = []
 
-    async def on_gone(gone: Evicted) -> None:
-        ledger.append(gone)
+    async def on_gone(gone: list[Evicted]) -> None:
+        ledger.extend(gone)
 
     return ledger, on_gone
 
@@ -534,9 +534,9 @@ async def test_cleanup_runs_after_the_fence():
     cache = RAMFileCacheStore()
     done: list[str] = []
 
-    async def on_gone(gone: Evicted) -> None:
+    async def on_gone(gone: list[Evicted]) -> None:
         async with mutation_lock(cache):
-            done.append(gone.path)
+            done.extend(child.path for child in gone)
 
     view = IndexView(RAMIndexCacheStore(),
                      cache,

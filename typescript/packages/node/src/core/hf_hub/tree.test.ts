@@ -391,8 +391,8 @@ describe('refillSnapshot reports what left the repository', () => {
       '/m',
       () => true,
       {
-        onGone: (child) => {
-          gone.push(child)
+        onGone: (children) => {
+          gone.push(...children)
           return Promise.resolve()
         },
       },

@@ -56,8 +56,8 @@ class ReadReconciler(Protocol):
     async def may_serve_cached(self, mount: MountEntry, path: str) -> bool:
         ...
 
-    async def on_gone(self, gone: Evicted, excluded: tuple[str,
-                                                           ...] = ()) -> None:
+    async def on_gone(
+        self, gone: list[Evicted], excluded: tuple[str, ...] = ()) -> None:
         ...
 
     async def may_serve_listing(self, mount: MountEntry, folder: str) -> bool:
@@ -252,7 +252,7 @@ class MountRegistry:
         async def listing_gate(folder: str) -> bool:
             return await self._may_serve_listing(m, folder)
 
-        async def cleanup(gone: Evicted) -> None:
+        async def cleanup(gone: list[Evicted]) -> None:
             # Read at call time, for the same reason as the gate; a retiring
             # mount's leftovers go with its teardown instead.
             reconciler = self._reconciler
@@ -261,7 +261,7 @@ class MountRegistry:
                     gone,
                     tuple(
                         e.prefix.rstrip("/")
-                        for e in self.descendant_mounts(gone.path)))
+                        for e in self.descendant_mounts(m.prefix)))
 
         m.cache_manager = CacheManager(
             self._file_cache,

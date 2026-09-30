@@ -72,8 +72,8 @@ describe('W&B file tree', () => {
       .mockResolvedValueOnce([{ name: 'nested/new.txt', sizeBytes: 9 }])
     const store = new RAMIndexCacheStore()
     const index = new IndexView(store, new RAMFileCacheStore(), '/wandb', () => true, {
-      onGone: (child) => {
-        gone.push(child)
+      onGone: (children) => {
+        gone.push(...children)
         return Promise.resolve()
       },
     })

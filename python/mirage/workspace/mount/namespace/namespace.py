@@ -20,8 +20,7 @@ from enum import StrEnum
 
 from mirage.core.timeutil import epoch_to_iso
 from mirage.types import LINK_TARGET_KEY, FileStat, FileType, MountMode
-from mirage.utils.key_prefix import under_path
-from mirage.utils.path import glob_prefix_match, resolve_symlinks
+from mirage.utils.path import ancestors, glob_prefix_match, resolve_symlinks
 from mirage.vfs.base import BaseVFS
 from mirage.workspace.mount.mount import MountEntry
 from mirage.workspace.mount.namespace.ram import RAMNamespaceStore
@@ -389,27 +388,27 @@ class Namespace:
         return True
 
     async def drop_overlays_under(self,
-                                  path: str,
+                                  paths: list[str],
                                   *,
                                   excluded: tuple[str, ...] = ()) -> int:
-        """Drop the overlays of a path the backend no longer has, and below.
-
-        A re-list that finds a folder gone orphans every attribute overlay
-        mirage kept under it. Symlink entries are authoritative (they have
-        no backend file), so they stay, as in :meth:`drop_overlay`.
+        """Drop orphaned overlays in one pass, retaining symlinks.
 
         Args:
-            path (str): absolute virtual path reported gone.
+            paths (list[str]): absolute roots reported gone.
             excluded (tuple[str, ...]): nested mount roots to preserve.
 
         Returns:
             int: number of overlay nodes dropped.
         """
-        doomed = [
-            key for key, meta in self._nodes.items()
-            if meta.target is None and under_path(key, path) and not any(
-                under_path(key, p) for p in excluded)
-        ]
+        roots = {path.rstrip("/") or "/" for path in paths}
+        protected = {path.rstrip("/") or "/" for path in excluded}
+        doomed = []
+        for key, meta in self._nodes.items():
+            if meta.target is not None:
+                continue
+            lineage = ["/", *ancestors(key), key.rstrip("/") or "/"]
+            if not roots.isdisjoint(lineage) and protected.isdisjoint(lineage):
+                doomed.append(key)
         for key in doomed:
             del self._nodes[key]
         if doomed:

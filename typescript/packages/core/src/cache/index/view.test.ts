@@ -578,12 +578,12 @@ describe('IndexView cleanup after a re-list', () => {
   const row = (name: string, resourceType = 'file'): IndexEntry =>
     new IndexEntry({ id: name, name, resourceType })
 
-  function ledger(): [Evicted[], (gone: Evicted) => Promise<void>] {
+  function ledger(): [Evicted[], (gone: readonly Evicted[]) => Promise<void>] {
     const seen: Evicted[] = []
     return [
       seen,
       (gone) => {
-        seen.push(gone)
+        seen.push(...gone)
         return Promise.resolve()
       },
     ]
@@ -673,7 +673,7 @@ describe('IndexView cleanup after a re-list', () => {
     const view = new IndexView(new RAMIndexCacheStore(), cache, '/data', () => true, {
       onGone: (gone) =>
         withCacheMutation(cache, () => {
-          done.push(gone.path)
+          done.push(...gone.map((child) => child.path))
           return Promise.resolve()
         }),
     })

@@ -489,8 +489,8 @@ async def test_a_truncated_seed_keeps_rows_it_does_not_name():
 def _ledgered(store: RAMIndexCacheStore) -> tuple[list[Evicted], IndexView]:
     gone: list[Evicted] = []
 
-    async def on_gone(child: Evicted) -> None:
-        gone.append(child)
+    async def on_gone(children: list[Evicted]) -> None:
+        gone.extend(children)
 
     return gone, IndexView(store,
                            RAMFileCacheStore(),

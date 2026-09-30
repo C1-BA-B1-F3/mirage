@@ -17,10 +17,13 @@ from pathlib import Path
 
 import pytest
 
+from mirage.cache.index import IndexConfig, RAMIndexCacheStore
 from mirage.types import DEFAULT_READ_TTL, MountMode, ReadPolicy, ReadSpec
 from mirage.vfs.aliyun.aliyun import AliyunVFS
 from mirage.vfs.backblaze.backblaze import BackblazeVFS
+from mirage.vfs.base import BaseVFS
 from mirage.vfs.ceph.ceph import CephVFS
+from mirage.vfs.dev.dev import DevVFS
 from mirage.vfs.digitalocean.digitalocean import DigitalOceanVFS
 from mirage.vfs.disk.disk import DiskVFS
 from mirage.vfs.dropbox.config import DropboxConfig
@@ -41,7 +44,7 @@ from mirage.vfs.oci.oci import OCIVFS
 from mirage.vfs.qingstor.qingstor import QingStorVFS
 from mirage.vfs.r2.r2 import R2VFS
 from mirage.vfs.ram.ram import RAMVFS
-from mirage.vfs.registry import REGISTRY, known_vfs_names
+from mirage.vfs.registry import REGISTRY, build_vfs, known_vfs_names
 from mirage.vfs.s3 import S3VFS, S3Config
 from mirage.vfs.scaleway.scaleway import ScalewayVFS
 from mirage.vfs.seaweedfs.seaweedfs import SeaweedFSVFS
@@ -208,18 +211,52 @@ def test_pinned_is_refused_naming_the_missing_layer():
     assert "use fresh or bounded" in str(exc.value)
 
 
-def test_fresh_is_refused_on_ram_which_cannot_cache_reads():
+def test_fresh_is_refused_on_ram_which_caches_nothing():
     with pytest.raises(ValueError) as exc:
         check_read_capability("/d/", RAMVFS(), FRESH)
-    assert "needs a resource that caches reads" in str(exc.value)
-    assert "ram does not" in str(exc.value)
+    assert "needs a resource that caches reads or listings" in str(exc.value)
+    assert "ram caches neither" in str(exc.value)
 
 
-def test_fresh_is_refused_on_disk_which_cannot_cache_reads(tmp_path):
+@pytest.mark.parametrize("name, config", [
+    ("postgres", {
+        "dsn": "postgresql://x/y"
+    }),
+])
+def test_fresh_is_refused_where_listings_live_no_time(name, config):
+    vfs = build_vfs(name, config)
+    assert vfs.caches_reads is False
+    with pytest.raises(ValueError, match="caches reads or listings"):
+        check_read_capability("/d/", vfs, FRESH)
+
+
+def test_fresh_is_allowed_on_disk_which_caches_listings(tmp_path):
     vfs = DiskVFS(root=str(tmp_path))
-    with pytest.raises(ValueError) as exc:
-        check_read_capability("/local/", vfs, FRESH)
-    assert "needs a resource that caches reads" in str(exc.value)
+    assert vfs.caches_reads is False
+    check_read_capability("/local/", vfs, FRESH)
+
+
+@pytest.mark.parametrize("name, config", [
+    ("chroma", {
+        "collection_name": "c"
+    }),
+    ("qdrant", {
+        "url": "http://localhost:6333",
+        "collection": "c"
+    }),
+    ("airtable", {
+        "token": "k"
+    }),
+    ("wandb", {
+        "entities": ["lab"]
+    }),
+])
+def test_fresh_is_allowed_on_a_listing_cache_without_a_file_cache(
+        name, config):
+    # fresh has a listing to check here even though no file bytes are kept.
+    vfs = build_vfs(name, config)
+    assert vfs.caches_reads is False
+    check_read_capability("/d/", vfs, FRESH)
 
 
 def test_fresh_is_refused_on_a_backend_that_caches_but_stamps_nothing():
@@ -326,6 +363,65 @@ REVALIDATABLE = {
     "github"
 }
 
+FRESH_BY_LISTING = {"disk", "chroma", "qdrant", "airtable", "wandb"}
+
+
+def _stub(name: str) -> BaseVFS | None:
+    # The real verdict over each class, unconfigured: it reads only class
+    # capabilities and the index the class would build.
+    entry = REGISTRY.get(name)
+    if entry is None:
+        return None
+    cls = load_attr(entry.vfs_path)
+    vfs = cls.__new__(cls)
+    vfs._index = RAMIndexCacheStore(ttl=cls.index_ttl)
+    if not hasattr(vfs, "name"):
+        vfs.name = name
+    return vfs
+
+
+def test_the_fresh_roster_is_the_revalidatable_ones_plus_listing_caches():
+    allowed = set()
+    for name in known_vfs_names():
+        vfs = _stub(name)
+        if vfs is None:
+            continue
+        try:
+            check_read_capability("/x/", vfs, FRESH)
+        except ValueError:
+            continue
+        allowed.add(name)
+    assert allowed == REVALIDATABLE | FRESH_BY_LISTING
+
+
+@pytest.mark.asyncio
+async def test_a_workspace_index_is_what_fresh_is_judged_on(tmp_path):
+    # RAMVFS declares no listing lifetime of its own, but a workspace index
+    # gives it one; the verdict must read the index the mount will use.
+    ws = Workspace({"/r": (RAMVFS(), MountMode.WRITE)},
+                   read=FRESH,
+                   index=IndexConfig(ttl=600))
+    try:
+        assert ws._registry.mount_for_prefix("/r/").read.policy is (
+            ReadPolicy.FRESH)
+    finally:
+        await ws.close()
+    with pytest.raises(ValueError, match="caches reads or listings"):
+        Workspace({"/l": DiskVFS(root=str(tmp_path))},
+                  read=FRESH,
+                  index=IndexConfig(ttl=0))
+
+
+def test_fresh_is_refused_on_dev_which_keeps_no_listing():
+    with pytest.raises(ValueError, match="caches reads or listings"):
+        check_read_capability("/dev/", DevVFS(), FRESH)
+
+
+def test_a_bad_bound_is_named_before_the_listing_verdict():
+    with pytest.raises(ValueError, match="ttl must be at least 1 second"):
+        check_read_capability("/d/", RAMVFS(),
+                              ReadSpec(policy=ReadPolicy.FRESH, ttl=0))
+
 
 def test_the_revalidatable_roster_is_exactly_these_backends():
     declared = set()
@@ -367,7 +463,7 @@ def test_lancedb_decides_per_config_not_per_class():
     # although the class is the same.
     local = LanceDBVFS(LanceDBConfig(uri="/tmp/lance"))
     assert local.caches_reads is False
-    with pytest.raises(ValueError, match="needs a resource that caches reads"):
+    with pytest.raises(ValueError, match="caches reads or listings"):
         check_read_capability("/l/", local, FRESH)
 
     remote = LanceDBVFS(LanceDBConfig(uri="db://acme"))

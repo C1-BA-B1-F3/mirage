@@ -37,17 +37,22 @@ describe('fingerprint spike (port of test_fingerprint_spike.py)', () => {
     rmSync(root, { recursive: true, force: true })
   })
 
-  // Disk is answered by the first rule, not the token-quality one: it
-  // does not cache reads, so there is no gate to revalidate at.
-  it('disk cannot declare fresh', () => {
+  // Task 1.2 turned this around: disk caches no bytes, but it caches
+  // listings, and those are now something fresh can check. The bytes still
+  // come straight off the disk.
+  it('disk can declare fresh because it caches listings', async () => {
     writeFileSync(join(root, 'file.txt'), 'v1')
-    expect(
-      () =>
-        new Workspace(
-          { '/data': new DiskVFS({ root }) },
-          { mode: MountMode.WRITE, read: { policy: ReadPolicy.FRESH, ttl: DEFAULT_READ_TTL } },
-        ),
-    ).toThrow(/needs a resource that caches reads/)
+    const ws = new Workspace(
+      { '/data': new DiskVFS({ root }) },
+      { mode: MountMode.WRITE, read: { policy: ReadPolicy.FRESH, ttl: DEFAULT_READ_TTL } },
+    )
+    try {
+      expect(DEC.decode((await ws.shell('cat /data/file.txt')).stdout)).toBe('v1')
+      writeFileSync(join(root, 'file.txt'), 'v2')
+      expect(DEC.decode((await ws.shell('cat /data/file.txt')).stdout)).toBe('v2')
+    } finally {
+      await ws.close()
+    }
   })
 
   it('disk under bounded reads current bytes, because it caches none', async () => {

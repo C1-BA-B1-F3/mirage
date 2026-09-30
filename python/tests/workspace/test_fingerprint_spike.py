@@ -29,23 +29,27 @@ from mirage.workspace.mount.spec import Mount
 from tests.e2e.s3_mock import MultiBucketSession, patch_s3_session
 
 
-def test_disk_cannot_declare_fresh(tmp_path):
-    """Disk is answered by the first rule, not the token-quality one.
-
-    #1101 Q8 worried that refusing would leave the two commonest local
-    mounts with no read policy. Disk never reaches that question: it
-    does not cache reads, so there is no gate to revalidate at.
-    """
+@pytest.mark.asyncio
+async def test_disk_can_declare_fresh_because_it_caches_listings(tmp_path):
+    # Task 1.2 turned this around: disk caches no bytes, but it caches
+    # listings, and those are now something fresh can check. The bytes
+    # still come straight off the disk.
     root = tmp_path / "disk"
     root.mkdir()
     (root / "file.txt").write_bytes(b"v1")
-    with pytest.raises(ValueError) as exc:
-        Workspace(
-            {"/data": (DiskVFS(root=str(root)), MountMode.WRITE)},
-            mode=MountMode.WRITE,
-            read=ReadSpec(policy=ReadPolicy.FRESH),
-        )
-    assert "needs a resource that caches reads" in str(exc.value)
+    ws = Workspace(
+        {"/data": (DiskVFS(root=str(root)), MountMode.WRITE)},
+        mode=MountMode.WRITE,
+        read=ReadSpec(policy=ReadPolicy.FRESH),
+    )
+    try:
+        first = await ws.shell("cat /data/file.txt")
+        assert await first.materialize_stdout() == b"v1"
+        (root / "file.txt").write_bytes(b"v2")
+        second = await ws.shell("cat /data/file.txt")
+        assert await second.materialize_stdout() == b"v2"
+    finally:
+        await ws.close()
 
 
 def test_disk_under_bounded_reads_current_bytes(tmp_path):

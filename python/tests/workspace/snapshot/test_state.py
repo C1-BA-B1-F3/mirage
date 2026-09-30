@@ -737,6 +737,21 @@ async def test_the_read_policy_survives_a_snapshot_round_trip():
 
 
 @pytest.mark.asyncio
+async def test_a_snapshot_cannot_restore_fresh_onto_a_mount_that_caches_nothing(
+):
+    # A hand-edited snapshot is input like any other: the load door runs
+    # the same verdict as the constructor, listing arm included.
+    ws = Workspace({"/d/": RAMVFS()}, mode=MountMode.WRITE)
+    try:
+        state = await to_state_dict(ws)
+    finally:
+        await ws.close()
+    state[StateKey.MOUNTS][0][MountKey.READ] = ReadPolicy.FRESH.value
+    with pytest.raises(ValueError, match="caches reads or listings"):
+        await Workspace.from_state(state)
+
+
+@pytest.mark.asyncio
 async def test_a_v3_snapshot_is_refused_with_the_regenerate_message():
     ws = Workspace({"/d/": RAMVFS()}, mode=MountMode.WRITE)
     try:

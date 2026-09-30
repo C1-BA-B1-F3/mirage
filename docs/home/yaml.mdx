@@ -60,7 +60,7 @@ mounts:
 
 `fresh` is refused at mount time on a backend that cannot honour it, rather than quietly behaving as `bounded`:
 
-- the backend does not cache reads at all, so the check has no gate to run at (`ram`, `disk`, `redis`, `postgres`, `mongodb`, `chroma`, `qdrant`);
+- the backend caches neither reads nor listings, so the check has nothing to run against (`ram`, `redis`, `postgres`, `mongodb`, a local `lancedb`). A backend that caches listings but no bytes (`disk`, `chroma`, `qdrant`, `airtable`, `wandb`) accepts `fresh`, because its listings are checked;
 - or it caches reads but stamps no token the check can compare, because its `stat` and its read return different kinds of value, or its read stamps nothing.
 
 [The VFS matrix](/home/vfs-matrix) lists which backends accept `fresh` today.

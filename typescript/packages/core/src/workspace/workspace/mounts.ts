@@ -46,6 +46,7 @@ export interface NormalizedMounts {
 export function normalizeMounts(
   mounts: Record<string, MountSpec>,
   defaultRead: ReadSpec,
+  index?: IndexConfig,
 ): NormalizedMounts {
   const bare: Record<string, BaseVFS> = {}
   const modes: Record<string, MountMode> = {}
@@ -81,7 +82,7 @@ export function normalizeMounts(
   // read policy is checked against what its backend can honour: one
   // verdict per mount, whatever door declared it.
   for (const [prefix, vfs] of Object.entries(bare)) {
-    checkReadCapability(prefix, vfs, read[prefix] ?? defaultRead)
+    checkReadCapability(prefix, vfs, read[prefix] ?? defaultRead, indexes[prefix] ?? index)
   }
   return { bare, modes, commandLimits, refs, indexes, read }
 }

@@ -315,8 +315,8 @@ export async function branchFor(
 const ABBREVIATED_SHA = /^[0-9a-f]{4,40}$/i
 
 // What a ref names. `branch` is set when it names a branch and null when it
-// names one commit by its sha; `history` is newest first from there, which is
-// what `commits?sha=` lists and whose head `commits/{ref}` answers.
+// names a tag or one commit by its sha. Its history is newest first, which
+// `commits?sha=` lists and whose head `commits/{ref}` answers.
 export interface Resolved {
   branch: string | null
   history: CommitRow[]
@@ -366,25 +366,14 @@ export async function peeled(db: C, tenant: string, repo: RepoRow, sha: string):
   return at
 }
 
-// A branch first, the way git prefers a ref to an object, then a tag, bare or
-// qualified, at the commit it peels to, then one commit by its full or
-// abbreviated sha: any commit the repository holds, a dangling one included,
-// or a branch's synthesized root. A prefix two commits share names neither.
-export async function resolveRef(
+// Resolve only commit identities, including dangling commits and synthesized
+// roots. A prefix two commits share names neither; ref names cannot redirect it.
+async function resolveCommit(
   db: C,
   tenant: string,
   repo: RepoRow,
-  ref: string | null,
+  ref: string,
 ): Promise<Resolved | null> {
-  const branch = await branchFor(db, tenant, repo, ref)
-  if (branch !== null) return { branch, history: await commitList(db, tenant, repo, branch) }
-  if (ref === null) return null
-  const name = ref.replace(/^(?:refs\/)?tags\//, '')
-  const tag = (await tagRefs(db, tenant, repo)).find((row) => row.name === name)
-  if (tag !== undefined) {
-    const sha = await peeled(db, tenant, repo, tag.sha)
-    return { branch: null, history: historyFrom(sha, await commitsBySha(db, tenant, repo)) }
-  }
   if (!ABBREVIATED_SHA.test(ref)) return null
   const want = ref.toLowerCase()
   const found = new Set<string>()
@@ -400,6 +389,41 @@ export async function resolveRef(
   const [sha] = [...found]
   if (found.size !== 1 || sha === undefined) return null
   return { branch: null, history: historyFrom(sha, await commitsBySha(db, tenant, repo)) }
+}
+
+async function resolveTag(
+  db: C,
+  tenant: string,
+  repo: RepoRow,
+  name: string,
+): Promise<Resolved | null> {
+  const tag = await db.githubTagRef.findFirst({
+    where: { tenant, repo: repo.fullName, name },
+  })
+  if (tag === null) return null
+  const sha = await peeled(db, tenant, repo, tag.sha)
+  return { branch: null, history: historyFrom(sha, await commitsBySha(db, tenant, repo)) }
+}
+
+// Qualified names stay in their namespace. Otherwise an existing full commit
+// sha wins, followed by a branch, a tag, then an unambiguous abbreviated sha.
+export async function resolveRef(
+  db: C,
+  tenant: string,
+  repo: RepoRow,
+  ref: string | null,
+): Promise<Resolved | null> {
+  if (ref !== null && /^(?:refs\/)?tags\//.test(ref)) {
+    return await resolveTag(db, tenant, repo, ref.replace(/^(?:refs\/)?tags\//, ''))
+  }
+  if (ref?.length === 40) {
+    const commit = await resolveCommit(db, tenant, repo, ref)
+    if (commit !== null) return commit
+  }
+  const branch = await branchFor(db, tenant, repo, ref)
+  if (branch !== null) return { branch, history: await commitList(db, tenant, repo, branch) }
+  if (ref === null || /^(?:refs\/)?heads\//.test(ref)) return null
+  return (await resolveTag(db, tenant, repo, ref)) ?? (await resolveCommit(db, tenant, repo, ref))
 }
 
 // The files a resolved ref names: a branch's as they are now, a commit's as

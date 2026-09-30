@@ -102,6 +102,25 @@ async function get(url: string): Promise<JsonValue> {
   return (await r.json()) as JsonValue
 }
 
+async function send(
+  method: string,
+  url: string,
+  body?: JsonValue,
+  accept?: string,
+): Promise<{ status: number; body: JsonValue; bytes: Buffer; text: string; link: string }> {
+  const r = await fetch(url, {
+    method,
+    headers: { ...HEADERS, ...(accept === undefined ? {} : { accept }) },
+    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+  })
+  const bytes = Buffer.from(await r.arrayBuffer())
+  const text = bytes.toString('utf8')
+  const parsed = r.headers.get('content-type')?.includes('json')
+    ? (JSON.parse(text) as JsonValue)
+    : null
+  return { status: r.status, body: parsed, bytes, text, link: r.headers.get('link') ?? '' }
+}
+
 function field(body: JsonValue, key: string): JsonValue {
   return typeof body === 'object' && body !== null && !Array.isArray(body)
     ? ((body as Record<string, JsonValue>)[key] ?? null)
@@ -816,27 +835,6 @@ async function diffsSearchAndHistory(at: string): Promise<void> {
   const base = `${at}/_run/${run}`
   await post(`${base}/reset`, { run, tenants: [TENANT], fixture: 'v1' })
   const repo = `${base}/repos/${REPO}`
-  const send = async (
-    method: string,
-    url: string,
-    body?: JsonValue,
-    accept?: string,
-  ): Promise<{ status: number; body: JsonValue; bytes: Buffer; text: string; link: string }> => {
-    const r = await fetch(url, {
-      method,
-      headers: { ...HEADERS, ...(accept === undefined ? {} : { accept }) },
-      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-    })
-    const bytes = Buffer.from(await r.arrayBuffer())
-    const text = bytes.toString('utf8')
-    let parsed: JsonValue = null
-    try {
-      parsed = JSON.parse(text) as JsonValue
-    } catch {
-      parsed = null
-    }
-    return { status: r.status, body: parsed, bytes, text, link: r.headers.get('link') ?? '' }
-  }
   const put = (path: string, branch: string, text: string, sha?: JsonValue) =>
     send('PUT', `${repo}/contents/${path}`, {
       message: `Add ${path}`,
@@ -1143,7 +1141,7 @@ async function diffsSearchAndHistory(at: string): Promise<void> {
       await send('POST', `${repo}/pulls/${number}/reviews`, {
         event: 'COMMENT',
         body: 'x',
-        commit_id: main,
+        commit_id: field(orphan.body, 'sha'),
       })
     ).status,
     422,
@@ -1297,10 +1295,255 @@ async function diffsSearchAndHistory(at: string): Promise<void> {
   )
 }
 
+async function reviewAncestry(at: string): Promise<void> {
+  const run = 'review-ancestry'
+  const base = `${at}/_run/${run}`
+  await post(`${base}/reset`, { run, tenants: [TENANT], fixture: 'v1' })
+  const repo = `${base}/repos/${REPO}`
+  const root = field(field(await get(`${repo}/git/ref/heads/main`), 'object'), 'sha')
+  await post(`${repo}/git/refs`, { ref: 'refs/heads/review', sha: root })
+  const first = await send('PUT', `${repo}/contents/review.txt`, {
+    message: 'First revision',
+    content: Buffer.from('first\n').toString('base64'),
+    branch: 'review',
+  })
+  const firstSha = field(field(first.body, 'commit'), 'sha')
+  const second = await send('PUT', `${repo}/contents/review.txt`, {
+    message: 'Second revision',
+    content: Buffer.from('second\n').toString('base64'),
+    sha: field(field(first.body, 'content'), 'sha'),
+    branch: 'review',
+  })
+  const head = field(field(second.body, 'commit'), 'sha')
+  const opened = await post(`${repo}/pulls`, {
+    title: 'Review ancestry',
+    head: 'review',
+    base: 'main',
+  })
+  eq('review ancestry pull opens', opened.status, 201)
+  const pull = `${repo}/pulls/${String(field(opened.body, 'number'))}`
+  const advanced = await send('PATCH', `${repo}/git/refs/heads/main`, { sha: firstSha })
+  eq('base advances through the first review commit', advanced.status, 200)
+  eq(
+    'the current pull range now holds only the second commit',
+    ((await get(`${pull}/commits`)) as JsonValue[]).map((row) => field(row, 'sha')),
+    [head],
+  )
+  for (const commit of [firstSha, head]) {
+    const comment = { body: 'Still reviewable', path: 'review.txt', line: 1 }
+    const made = await post(`${pull}/comments`, { ...comment, commit_id: commit })
+    eq(
+      'an ancestor remains reviewable after the base advances',
+      [made.status, field(made.body, 'commit_id')],
+      [201, commit],
+    )
+    const reviewed = await post(`${pull}/reviews`, {
+      event: 'COMMENT',
+      body: 'Review with a comment',
+      commit_id: commit,
+      comments: [comment],
+    })
+    eq(
+      'a batch review uses the same ancestry validation',
+      [reviewed.status, field(reviewed.body, 'commit_id')],
+      [200, commit],
+    )
+    const saved = await get(`${pull}/comments`)
+    eq(
+      'the batched comment keeps its reviewed commit',
+      (saved as JsonValue[])
+        .filter((row) => field(row, 'pull_request_review_id') === field(reviewed.body, 'id'))
+        .map((row) => field(row, 'commit_id')),
+      [commit],
+    )
+  }
+  await send('PATCH', `${repo}/git/refs/heads/main`, { sha: head })
+  eq('base can catch up to every pull commit', await get(`${pull}/commits`), [])
+  for (const commit of [null, head, firstSha]) {
+    const reviewed = await post(`${pull}/reviews`, {
+      event: 'COMMENT',
+      body: 'Review after base catches up',
+      ...(commit === null ? {} : { commit_id: commit }),
+    })
+    eq(
+      'explicit and default review commits survive an empty diff range',
+      [reviewed.status, field(reviewed.body, 'commit_id')],
+      [200, commit ?? head],
+    )
+  }
+  const outside = await send('PUT', `${repo}/contents/base-only.txt`, {
+    message: 'Only on base',
+    content: Buffer.from('base\n').toString('base64'),
+    branch: 'main',
+  })
+  const outsideSha = field(field(outside.body, 'commit'), 'sha')
+  for (const commit of [outsideSha, '0'.repeat(40)]) {
+    const refused = await post(`${pull}/reviews`, {
+      event: 'COMMENT',
+      body: 'Not in head ancestry',
+      commit_id: commit,
+    })
+    eq(
+      'a base-only or nonexistent commit is still refused',
+      [refused.status, field(refused.body, 'errors')],
+      [422, [{ resource: 'PullRequestReview', code: 'invalid', field: 'commit_id' }]],
+    )
+  }
+  const rewound = await send('PATCH', `${repo}/git/refs/heads/main`, { sha: firstSha, force: true })
+  eq('base rewinds to restore a commentable diff', rewound.status, 200)
+  const refused = await post(`${pull}/comments`, {
+    body: 'Not in head ancestry',
+    path: 'review.txt',
+    line: 1,
+    commit_id: outsideSha,
+  })
+  eq(
+    'standalone comments also refuse an existing commit outside head ancestry',
+    [refused.status, field(refused.body, 'errors')],
+    [422, [{ resource: 'PullRequestReviewComment', code: 'invalid', field: 'commit_id' }]],
+  )
+}
+
+async function refIdentity(at: string): Promise<void> {
+  const run = 'ref-identity'
+  const base = `${at}/_run/${run}`
+  await post(`${base}/reset`, { run, tenants: [TENANT], fixture: 'v1' })
+  const repo = `${base}/repos/${REPO}`
+  const root = String(field(field(await get(`${repo}/git/ref/heads/main`), 'object'), 'sha'))
+  const written = await send('PUT', `${repo}/contents/identity.txt`, {
+    message: 'Identity',
+    content: Buffer.from('identity\n').toString('base64'),
+    branch: 'main',
+  })
+  const head = String(field(field(written.body, 'commit'), 'sha'))
+  const annotated = await post(`${repo}/git/tags`, {
+    tag: 'old',
+    message: 'Old revision',
+    type: 'commit',
+    object: root,
+  })
+  const tagSha = field(annotated.body, 'sha')
+  for (const [name, target] of [
+    [root, head],
+    [head, tagSha],
+  ] as const) {
+    const made = await post(`${repo}/git/refs`, { ref: `refs/tags/${String(name)}`, sha: target })
+    eq('a tag may have a full commit sha as its name', made.status, 201)
+  }
+  for (const prefix of ['', '/api/v3']) {
+    const api = `${base}${prefix}/repos/${REPO}`
+    for (const [sha, contentStatus] of [
+      [root, 404],
+      [head, 200],
+    ] as const) {
+      for (const spelling of [sha, sha.toUpperCase(), sha.slice(0, 7)]) {
+        eq(
+          'commit identity wins over a sha-named tag',
+          field(await get(`${api}/commits/${spelling}`), 'sha'),
+          sha,
+        )
+        eq(
+          'history starts at the named commit rather than the tag target',
+          field(((await get(`${api}/commits?sha=${spelling}`)) as JsonValue[])[0] ?? null, 'sha'),
+          sha,
+        )
+        eq(
+          'content comes from the named commit',
+          (await send('GET', `${api}/contents/identity.txt?ref=${spelling}`)).status,
+          contentStatus,
+        )
+      }
+    }
+    const compared = await get(`${api}/compare/${root}...${head}`)
+    eq(
+      'comparison preserves commit identity on both sides',
+      [field(compared, 'status'), field(compared, 'ahead_by'), field(compared, 'behind_by')],
+      ['ahead', 1, 0],
+    )
+    for (const qualifier of ['tags/', 'refs/tags/']) {
+      eq(
+        'a qualified sha-named tag still names its own target',
+        [
+          (await send('GET', `${api}/contents/identity.txt?ref=${qualifier}${root}`)).status,
+          (await send('GET', `${api}/contents/identity.txt?ref=${qualifier}${head}`)).status,
+        ],
+        [200, 404],
+      )
+    }
+  }
+  const copied = await post(`${repo}/git/tags`, {
+    tag: 'new',
+    message: 'New revision',
+    type: 'commit',
+    object: head,
+  })
+  eq(
+    'a sha-named tag cannot prevent another tag from naming the commit',
+    [copied.status, field(field(copied.body, 'object'), 'sha')],
+    [201, head],
+  )
+  const branch = await post(`${repo}/git/refs`, { ref: 'refs/heads/copy', sha: head })
+  eq(
+    'a branch created by sha uses the commit rather than the tag target',
+    [branch.status, (await send('GET', `${repo}/contents/identity.txt?ref=copy`)).status],
+    [201, 200],
+  )
+  for (const [name, target] of [
+    [head, root],
+    [`tags/${head}`, head],
+  ] as const) {
+    const made = await post(`${repo}/git/refs`, { ref: `refs/heads/${name}`, sha: target })
+    eq('a branch may overlap an object or tag spelling', made.status, 201)
+  }
+  for (const [ref, expected] of [
+    [head, head],
+    [`heads/${head}`, root],
+    [`refs/heads/${head}`, root],
+    [`tags/${head}`, root],
+    [`refs/tags/${head}`, root],
+    [`refs/heads/tags/${head}`, head],
+  ] as const) {
+    eq(
+      'qualified names resolve only within their namespace',
+      field(await get(`${repo}/commits/${encodeURIComponent(ref)}`), 'sha'),
+      expected,
+    )
+  }
+  const opened = await post(`${repo}/pulls`, {
+    title: 'Branches with ambiguous names',
+    head: `tags/${head}`,
+    base: head,
+  })
+  eq(
+    'pull creation resolves head and base as branch names',
+    [
+      opened.status,
+      field(field(opened.body, 'head'), 'sha'),
+      field(field(opened.body, 'base'), 'sha'),
+    ],
+    [201, head, root],
+  )
+  const pull = await get(`${repo}/pulls/${String(field(opened.body, 'number'))}`)
+  eq(
+    'pull reads preserve the same branch identity',
+    [field(field(pull, 'head'), 'sha'), field(field(pull, 'base'), 'sha'), field(pull, 'commits')],
+    [head, root, 1],
+  )
+  const short = await post(`${repo}/git/refs`, { ref: `refs/tags/${head.slice(0, 7)}`, sha: root })
+  eq('an abbreviated sha can also name a tag', short.status, 201)
+  eq(
+    'bare tag names still take precedence over abbreviated commits',
+    field(await get(`${repo}/commits/${head.slice(0, 7)}`), 'sha'),
+    root,
+  )
+}
+
 async function main(): Promise<void> {
   const fake = await launch()
   const at = fake.endpoint
   try {
+    await refIdentity(at)
+    await reviewAncestry(at)
     await emptyRepository(at)
     await seededHistory(at)
     await supersededBlobs(at)

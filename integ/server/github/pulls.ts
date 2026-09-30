@@ -107,6 +107,7 @@ const REVIEWED_AT = '2026-01-01T00:04:00Z'
 interface PullState {
   head: string
   base: string
+  history: CommitRow[]
   range: Range
 }
 
@@ -119,7 +120,12 @@ async function pullHead(
 ): Promise<Resolved | null> {
   const branch = await branchFor(ctx.db, ctx.tenant, repo, row.head)
   if (branch === null && row.headSha === '') return null
-  return await resolveRef(ctx.db, ctx.tenant, repo, branch ?? row.headSha)
+  return await resolveRef(
+    ctx.db,
+    ctx.tenant,
+    repo,
+    branch === null ? row.headSha : `refs/heads/${branch}`,
+  )
 }
 
 async function pullBase(
@@ -128,7 +134,7 @@ async function pullBase(
   row: PullRow,
 ): Promise<Resolved | null> {
   const branch = await branchFor(ctx.db, ctx.tenant, repo, row.base)
-  return branch === null ? null : await resolveRef(ctx.db, ctx.tenant, repo, branch)
+  return branch === null ? null : await resolveRef(ctx.db, ctx.tenant, repo, `refs/heads/${branch}`)
 }
 
 async function pullState(
@@ -145,6 +151,7 @@ async function pullState(
   return {
     head: head?.history[0]?.sha ?? row.headSha,
     base: base?.history[0]?.sha ?? '',
+    history: head?.history ?? [],
     range,
   }
 }
@@ -275,7 +282,9 @@ async function createPull(ctx: Ctx<C>, repo: RepoRow): Promise<Reply> {
     updatedAt: CREATED_AT,
   }
   const [from, to] = await Promise.all(
-    [baseBranch, headBranch].map((name) => resolveRef(ctx.db, ctx.tenant, repo, name)),
+    [baseBranch, headBranch].map((name) =>
+      resolveRef(ctx.db, ctx.tenant, repo, `refs/heads/${name}`),
+    ),
   )
   const range =
     from === null || from === undefined || to === null || to === undefined
@@ -406,14 +415,13 @@ function unprocessable(reason: string, documentation = 'https://docs.github.com/
 const OFF_THE_DIFF =
   "Pull request review thread line must be part of the diff and Pull request review thread diff hunk can't be blank"
 
-// The commit a review or a comment is made against: one of the pull
-// request's own commits, or its head when none is named, as GitHub defaults
-// it. Null for any other sha, which is refused in GitHub's field-refusal
-// shape; the exact wording is not measured.
+// Review commits must be reachable from the head, independently of the base's
+// current position. An advancing base removes commits from the diff range,
+// but cannot remove them from the head's ancestry. The default head follows
+// the same validation as an explicit sha; refusal wording is not measured.
 function reviewedCommit(state: PullState, body: Record<string, JsonValue>): string | null {
-  const named = str(body, 'commit_id')
-  if (named === '') return state.head
-  return state.range.ahead.some((c) => c.sha === named) ? named : null
+  const named = str(body, 'commit_id') || state.head
+  return state.history.some((c) => c.sha === named) ? named : null
 }
 
 type Placement = Pick<

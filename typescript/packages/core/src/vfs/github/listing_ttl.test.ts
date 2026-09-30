@@ -530,11 +530,13 @@ describe('a fresh mount re-lists once per command', () => {
     const boundedHub = gh
     // Two repositories behind one stubbed fetch, told apart by host.
     const BOUNDED = 'http://bounded.test'
-    vi.stubGlobal('fetch', (input: RequestInfo | URL, init?: RequestInit) =>
-      new Request(input, init).url.startsWith(BOUNDED)
+    const boundedOrigin = new URL(BOUNDED).origin
+    vi.stubGlobal('fetch', (input: RequestInfo | URL, init?: RequestInit) => {
+      const requestUrl = new URL(new Request(input, init).url)
+      return requestUrl.origin === boundedOrigin
         ? boundedHub.fetch(input, init)
-        : freshHub.fetch(input, init),
-    )
+        : freshHub.fetch(input, init)
+    })
     const create = (baseUrl: string): Promise<GitHubVFS> =>
       GitHubVFS.create({ token: 't', owner: 'o', repo: 'r', ref: 'main', baseUrl })
     const freshVfs = await create(freshHub.url)

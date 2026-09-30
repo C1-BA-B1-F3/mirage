@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta, timezone
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -84,3 +85,28 @@ async def test_a_refused_root_listing_refills_and_answers(
     assert await readdir.readdir(dify_accessor, knowledge_root, view) == [
         "/knowledge/README.md", "/knowledge/guides"
     ]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("root", [False, True])
+async def test_refused_listing_fetches_tree_once(monkeypatch, dify_accessor,
+                                                 dify_index, knowledge_root,
+                                                 root):
+    fetch = AsyncMock(wraps=list_basic_documents)
+    monkeypatch.setattr(tree, "list_all_documents", fetch)
+    decisions = []
+
+    async def refuse(folder):
+        decisions.append(folder)
+        return False
+
+    view = IndexView(dify_index,
+                     RAMFileCacheStore(),
+                     "/knowledge",
+                     lambda _key: True,
+                     may_serve_listing=refuse)
+    path = knowledge_root if root else _guides()
+    for _ in range(2):
+        fetch.reset_mock()
+        assert await readdir.readdir(dify_accessor, path, view)
+        assert fetch.await_count == 1

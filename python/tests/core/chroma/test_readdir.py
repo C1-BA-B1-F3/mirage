@@ -13,11 +13,13 @@
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 from datetime import datetime, timedelta, timezone
+from unittest.mock import AsyncMock
 
 import pytest
 
 from mirage.cache.file.ram import RAMFileCacheStore
 from mirage.cache.index.view import IndexView
+from mirage.core.chroma import tree
 from mirage.core.chroma.readdir import readdir
 from mirage.types import PathSpec
 from mirage.utils.key_prefix import mount_key
@@ -106,3 +108,28 @@ async def test_a_refused_root_listing_refills_and_answers(
     assert sorted(await
                   readdir(chroma_accessor, knowledge_root,
                           view)) == ["/knowledge/api", "/knowledge/guides"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("root", [False, True])
+async def test_refused_listing_fetches_tree_once(monkeypatch, chroma_accessor,
+                                                 chroma_index, knowledge_root,
+                                                 root):
+    fetch = AsyncMock(wraps=tree.fetch_path_tree)
+    monkeypatch.setattr(tree, "fetch_path_tree", fetch)
+    decisions = []
+
+    async def refuse(folder):
+        decisions.append(folder)
+        return False
+
+    view = IndexView(chroma_index,
+                     RAMFileCacheStore(),
+                     "/knowledge",
+                     lambda _key: True,
+                     may_serve_listing=refuse)
+    path = knowledge_root if root else _guides()
+    for _ in range(2):
+        fetch.reset_mock()
+        assert await readdir(chroma_accessor, path, view)
+        assert fetch.await_count == 1

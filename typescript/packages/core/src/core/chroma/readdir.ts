@@ -35,6 +35,7 @@ export async function readdir(
   const resolved = await resolvePath(accessor, spec, index)
   if (!resolved.isDir) throw enotdir(spec.virtual)
   if (index === undefined) throw new Error('chroma: missing index')
+  if (resolved.children !== undefined) return resolved.children
   const listing = await index.listDir(resolved.virtualKey)
   if (listing.entries == null && listing.status === LookupStatus.EXPIRED) {
     // The tree is written whole: expired means aged out, not gone.

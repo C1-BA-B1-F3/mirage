@@ -12,6 +12,7 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import { listingRefreshed } from '../../cache/context.ts'
 import { mountPrefixOf } from '../../utils/key_prefix.ts'
 import type { GitHubAccessor } from '../../accessor/github.ts'
 import { LookupStatus } from '../../cache/index/config.ts'
@@ -148,13 +149,24 @@ async function resolveDirSha(
   let currentSha = accessor.ref
   let currentPath = stem || '/'
   for (const part of parts) {
+    const childPath = `${currentPath === '/' ? '' : currentPath}/${part}`
+    if (listingRefreshed(currentPath)) {
+      const listing = await index.listDir(currentPath)
+      if (listing.entries?.includes(childPath)) {
+        const cached = (await index.get(childPath)).entry
+        if (cached?.resourceType === 'folder') {
+          currentSha = cached.id
+          currentPath = childPath
+          continue
+        }
+      }
+    }
     const entries = await fetchDirTree(
       accessor.transport,
       accessor.owner,
       accessor.repo,
       currentSha,
     )
-    const childPath = `${currentPath === '/' ? '' : currentPath}/${part}`
     const found = entries.find((e) => e.path === part)
     if (found?.type !== 'tree') {
       // Remove the former directory before caching a replacement blob.

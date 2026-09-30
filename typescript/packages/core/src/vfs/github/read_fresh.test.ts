@@ -506,3 +506,22 @@ describe('github snapshot pins', () => {
     expect(await load(state, await vfsOf())).toBe(OLD)
   })
 })
+
+it.each(['find /gh', 'du -a /gh', 'ls -R /gh'])(
+  'truncated walk lists each directory once: %s',
+  async (line) => {
+    gh.files.clear()
+    gh.files.set('a/b/c/d/e.txt', 'x')
+    gh.truncatedRecursive = true
+    const workspace = await ws(await vfsOf())
+    try {
+      await out(workspace, line)
+      gh.files.set('a/b/c/d/new.txt', 'new')
+      gh.log.length = 0
+      expect(await out(workspace, line)).toContain('new.txt')
+      expect(gh.log.filter(([kind]) => kind === 'dir' || kind === 'sha_dir')).toHaveLength(5)
+    } finally {
+      await workspace.close()
+    }
+  },
+)

@@ -16,6 +16,7 @@ from collections.abc import Awaitable, Callable
 from contextvars import ContextVar
 from typing import Protocol
 
+from mirage.cache.index.scope import command_started
 from mirage.types import PathSpec
 
 
@@ -47,6 +48,9 @@ class CacheInvalidator(Protocol):
         ...
 
     async def cached_size(self, path: PathSpec) -> int | None:
+        ...
+
+    def listed_since(self, folder: str, stamp: int) -> bool:
         ...
 
 
@@ -145,3 +149,15 @@ async def invalidate_ancestors(path: PathSpec) -> None:
     manager = _active.get()
     if manager is not None:
         await manager.invalidate_ancestors(path)
+
+
+def listing_refreshed(folder: str) -> bool:
+    """Whether the active mount refreshed a listing during this command.
+
+    Args:
+        folder (str): mount-absolute directory key.
+    """
+    manager = active_cache_manager()
+    started = command_started()
+    return (manager is not None and started is not None
+            and manager.listed_since(folder, started))

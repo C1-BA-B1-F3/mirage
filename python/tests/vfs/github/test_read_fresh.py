@@ -543,3 +543,21 @@ async def test_a_snapshot_from_before_github_pinned_still_loads():
             assert await _out(loaded, f"cat {PATH}") == OLD
         finally:
             await loaded.close()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("line", ["find /gh", "du -a /gh", "ls -R /gh"])
+async def test_truncated_walk_lists_each_directory_once_per_command(line):
+    with serve(_hub({"a/b/c/d/e.txt": b"x"}, truncated_recursive=True)) as hub:
+        ws = _ws(_vfs(hub))
+        try:
+            await _out(ws, line)
+            hub.files["a/b/c/d/new.txt"] = b"new"
+            hub.log.clear()
+            assert b"new.txt" in await _out(ws, line)
+            listings = [
+                kind for kind, _ in hub.log if kind in ("dir", "sha_dir")
+            ]
+            assert len(listings) == 5
+        finally:
+            await ws.close()

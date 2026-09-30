@@ -14,6 +14,8 @@ async def readdir(
     resolved = await resolve_path(accessor, path, index)
     if not resolved.is_dir:
         raise enotdir(path)
+    if resolved.children is not None:
+        return resolved.children
     listing = await index.list_dir(resolved.virtual_key)
     if listing.entries is None and listing.status == LookupStatus.EXPIRED:
         # The tree is written whole: expired means aged out, not gone.

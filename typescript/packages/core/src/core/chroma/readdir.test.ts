@@ -84,4 +84,15 @@ describe('chroma readdir on an expired listing', () => {
       '/knowledge/guides',
     ])
   })
+  it.each(['/knowledge', '/knowledge/guides'])(
+    'fetches a refused listing once: %s',
+    async (path) => {
+      const view = refusing(new RAMIndexCacheStore())
+      for (let i = 0; i < 2; i++) {
+        vi.mocked(clientMod.fetchPathTree).mockClear()
+        expect(await readdir(ACCESSOR, pathAt(path), view)).not.toHaveLength(0)
+        expect(clientMod.fetchPathTree).toHaveBeenCalledTimes(1)
+      }
+    },
+  )
 })

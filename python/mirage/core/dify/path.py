@@ -15,6 +15,7 @@ class ResolvedDifyDirectory:
     virtual_key: str
     mount_prefix: str
     is_dir: Literal[True] = True
+    children: list[str] | None = None
 
 
 @dataclass(frozen=True)
@@ -39,7 +40,9 @@ async def resolve_path(
     if result.entry is not None:
         if result.entry.resource_type == "folder":
             return ResolvedDifyDirectory(virtual_key=virtual_key,
-                                         mount_prefix=mount_prefix)
+                                         mount_prefix=mount_prefix,
+                                         children=refilled.get(virtual_key)
+                                         if refilled is not None else None)
         return ResolvedDifyFile(
             virtual_key=virtual_key,
             mount_prefix=mount_prefix,
@@ -52,10 +55,14 @@ async def resolve_path(
             refilled = await refill_tree(accessor, index, mount_prefix)
         if virtual_key in refilled:
             return ResolvedDifyDirectory(virtual_key=virtual_key,
-                                         mount_prefix=mount_prefix)
+                                         mount_prefix=mount_prefix,
+                                         children=refilled.get(virtual_key)
+                                         if refilled is not None else None)
     if listing.entries is not None:
         return ResolvedDifyDirectory(virtual_key=virtual_key,
-                                     mount_prefix=mount_prefix)
+                                     mount_prefix=mount_prefix,
+                                     children=refilled.get(virtual_key)
+                                     if refilled is not None else None)
     raise enoent(path)
 
 

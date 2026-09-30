@@ -26,6 +26,7 @@ export interface ResolvedDifyPath {
   mountPrefix: string
   isDir: boolean
   entry: IndexEntry | null
+  children?: string[] | undefined
 }
 
 export async function resolvePath(
@@ -47,16 +48,30 @@ export async function resolvePath(
       mountPrefix,
       isDir: result.entry.resourceType === 'folder',
       entry: result.entry,
+      children: refilled?.get(virtualKey),
     }
   }
   const listing = await index.listDir(virtualKey)
   if (listing.entries == null && listing.status === LookupStatus.EXPIRED) {
     // The tree is written whole: expired means aged out, not gone.
     refilled ??= await refillTree(accessor, index, mountPrefix)
-    if (refilled.has(virtualKey)) return { virtualKey, mountPrefix, isDir: true, entry: null }
+    if (refilled.has(virtualKey))
+      return {
+        virtualKey,
+        mountPrefix,
+        isDir: true,
+        entry: null,
+        children: refilled.get(virtualKey),
+      }
   }
   if (listing.entries !== undefined && listing.entries !== null) {
-    return { virtualKey, mountPrefix, isDir: true, entry: null }
+    return {
+      virtualKey,
+      mountPrefix,
+      isDir: true,
+      entry: null,
+      children: refilled?.get(virtualKey),
+    }
   }
   throw enoent(spec.virtual)
 }

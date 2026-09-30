@@ -122,11 +122,18 @@ describe('parseFlags', () => {
 
 describe('namedArgs', () => {
   it('pairs up the flattened tokens', () => {
-    expect(namedArgs(view({ arg: ['a', '1', 'b', '2'] }))).toEqual({ a: '1', b: '2' })
+    expect(namedArgs(view({ arg: ['a', '1', 'b', 'x"y'] }))).toEqual(
+      new Map([
+        ['a', '"1"'],
+        ['b', '"x\\"y"'],
+      ]),
+    )
   })
 
-  it('parses an --argjson value as JSON', () => {
-    expect(namedArgs(view({ argjson: ['v', '{"k":[1,2]}'] }))).toEqual({ v: { k: [1, 2] } })
+  it('keeps an --argjson value as the text jq reads', () => {
+    expect(namedArgs(view({ argjson: ['v', ' {"b":1.000,"1":2} '] }))).toEqual(
+      new Map([['v', '{"b":1.000,"1":2}']]),
+    )
   })
 
   it('refuses invalid JSON', () => {
@@ -136,32 +143,33 @@ describe('namedArgs', () => {
 
 /** Inputs named the way jq names files, one per text. */
 describe('exitCode', () => {
-  const printed = (...outputs: unknown[]): number => runStatus({ outputs, stop: null })
-  const failed = runStatus({ outputs: [1], stop: { kind: 'error', text: 'x', string: true } })
+  const printed = (...outputs: string[]): number => runStatus({ outputs, stop: null })
+  const failed = runStatus({ outputs: ['1'], stop: { kind: 'error', text: 'x', string: true } })
 
   it('reads the last output only under -e', () => {
     const opts = jqOptions({ exitStatus: true })
-    expect(exitCode([printed(1, false)], opts)).toBe(1)
-    expect(exitCode([printed(false, 1)], opts)).toBe(0)
-    expect(exitCode([printed(null)], opts)).toBe(1)
+    expect(exitCode([printed('1', 'false')], opts)).toBe(1)
+    expect(exitCode([printed('false', '1')], opts)).toBe(0)
+    expect(exitCode([printed('null')], opts)).toBe(1)
+    expect(exitCode([printed('"false"'), printed('0.0')], opts)).toBe(0)
     expect(exitCode([], opts)).toBe(4)
   })
 
   it('is zero without the flag', () => {
     expect(exitCode([], jqOptions())).toBe(0)
-    expect(exitCode([printed(null)], jqOptions())).toBe(0)
+    expect(exitCode([printed('null')], jqOptions())).toBe(0)
   })
 
   it('counts a failed run only when it is the last one', () => {
-    expect(exitCode([failed, printed(1)], jqOptions())).toBe(0)
-    expect(exitCode([printed(1), failed], jqOptions())).toBe(5)
-    expect(exitCode([failed, printed(false)], jqOptions({ exitStatus: true }))).toBe(1)
+    expect(exitCode([failed, printed('1')], jqOptions())).toBe(0)
+    expect(exitCode([printed('1'), failed], jqOptions())).toBe(5)
+    expect(exitCode([failed, printed('false')], jqOptions({ exitStatus: true }))).toBe(1)
   })
 
   it('looks back past runs that printed nothing under -e', () => {
     const opts = jqOptions({ exitStatus: true })
-    expect(exitCode([printed(false), printed()], opts)).toBe(1)
-    expect(exitCode([printed(1), printed()], opts)).toBe(0)
+    expect(exitCode([printed('false'), printed()], opts)).toBe(1)
+    expect(exitCode([printed('1'), printed()], opts)).toBe(0)
   })
 
   it.each([
@@ -173,7 +181,7 @@ describe('exitCode', () => {
     [300, false, 44],
   ])('exits a halt with code %s (-e %s) as %s', (code, exitStatus, expected) => {
     const status = runStatus({
-      outputs: [false],
+      outputs: ['false'],
       stop: { kind: 'halt', message: null, string: false, code },
     })
     expect(exitCode([status], jqOptions({ exitStatus }))).toBe(expected)
@@ -209,18 +217,18 @@ describe('inputName', () => {
 })
 
 describe('positionalArgs', () => {
-  it('reads the operands after the program as text', () => {
-    expect(positionalArgs(view({ args: true }), ['.', 'a', 'b'], false)).toEqual(['a', 'b'])
+  it('reads the operands after the program as strings', () => {
+    expect(positionalArgs(view({ args: true }), ['.', 'a', '1'], false)).toEqual(['"a"', '"1"'])
   })
 
   it('keeps every operand when -f gave the program', () => {
-    expect(positionalArgs(view({ args: true }), ['a', 'b'], true)).toEqual(['a', 'b'])
+    expect(positionalArgs(view({ args: true }), ['a', 'b'], true)).toEqual(['"a"', '"b"'])
   })
 
-  it('parses each operand under --jsonargs', () => {
-    expect(positionalArgs(view({ jsonargs: true }), ['.', '1', '{"k":2}'], false)).toEqual([
-      1,
-      { k: 2 },
+  it('keeps each operand under --jsonargs as the text jq reads', () => {
+    expect(positionalArgs(view({ jsonargs: true }), ['.', '1.0', '{"b":1,"1":2}'], false)).toEqual([
+      '1.0',
+      '{"b":1,"1":2}',
     ])
   })
 
@@ -519,8 +527,8 @@ describe('jqGeneric over malformed input', () => {
   })
 
   it("reads an --argjson value as jq's parser does", () => {
-    expect(namedArgs(view({ argjson: ['v', '{"a":1}'] }))).toEqual({ v: { a: 1 } })
-    expect(Number.isNaN(namedArgs(view({ argjson: ['v', 'nan'] })).v)).toBe(true)
+    expect(namedArgs(view({ argjson: ['v', '{"a":1}'] }))).toEqual(new Map([['v', '{"a":1}']]))
+    expect(namedArgs(view({ argjson: ['v', 'nan'] }))).toEqual(new Map([['v', 'nan']]))
     expect(() => namedArgs(view({ argjson: ['v', '1 2'] }))).toThrow(
       'jq: invalid JSON text passed to --argjson',
     )

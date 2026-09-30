@@ -12,15 +12,19 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import functools
+import json
 import logging
 import re
 import uuid
 from collections.abc import Iterable, Mapping, Sequence
-from typing import Any
+from dataclasses import dataclass
+from typing import cast
 
 import jq as _libjq
 
 from mirage.core.jq.errors import JqCompileError
+from mirage.core.jq.parse import string_text
 from mirage.core.jq.types import JqError, JqHalt, JqOptions, JqRun, StreamReads
 from mirage.types import JsonValue
 
@@ -49,10 +53,13 @@ ERROR_KEY = f"__mirage_jq_error_{_TOKEN}"
 HALT_KEY = f"__mirage_jq_halt_{_TOKEN}"
 DONE_KEY = f"__mirage_jq_done_{_TOKEN}"
 
-# The named arguments the prelude reads: the unread documents `input` and
-# `inputs` read, the parse error they meet past the last of them, and the
-# value it rebinds `$ARGS` to. They carry the same token, so no `--arg` of
-# the program's own can take one's place.
+# The variables the prelude binds: the document the program runs on, the
+# --arg / --argjson / --rawfile / --slurpfile bindings by name, the unread
+# documents `input` and `inputs` read, the parse error they meet past the
+# last of them, and the value it rebinds `$ARGS` to. They carry the same
+# token, so no `--arg` of the program's own can take one's place.
+VALUE_VAR = f"__mirage_jq_value_{_TOKEN}"
+NAMED_VAR = f"__mirage_jq_named_{_TOKEN}"
 INPUTS_VAR = f"__mirage_jq_inputs_{_TOKEN}"
 INPUTS_ERROR_VAR = f"__mirage_jq_inputs_error_{_TOKEN}"
 ARGS_VAR = f"__mirage_jq_args_{_TOKEN}"
@@ -63,6 +70,10 @@ _ERROR_MARK = ('{"' + ERROR_KEY + '": [(type == "string"), '
                '(if type == "string" then . else tojson end)]}')
 _CATCH = f" catch {_ERROR_MARK}"
 _DONE = ', {"' + DONE_KEY + '": true}'
+# A run that hands its outputs back as text pipes every one, stops and
+# sentinel included, into jq's own compact dump of it, the text jq's main
+# loop prints from.
+_DUMP = "| tojson"
 
 # A run keeps jq's own `halt` and `halt_error`, which no `try` catches and
 # which end the program wherever they are called; one that halted is the
@@ -209,16 +220,16 @@ def halts(expr: str) -> bool:
     return HALT_REF.search(code_only(expr)) is not None
 
 
-def args_object(opts: JqOptions) -> dict[str, Any]:
-    """The value `$ARGS` resolves to for a run.
+def args_text(opts: JqOptions) -> str:
+    """The JSON text of the value `$ARGS` resolves to for a run.
 
     Args:
         opts (JqOptions): resolved options carrying both binding kinds.
     """
-    return {
-        "positional": list(opts.positional_args),
-        "named": dict(opts.named_args),
-    }
+    positional = ",".join(opts.positional_args)
+    named = ",".join(f"{string_text(name)}:{text}"
+                     for name, text in opts.named_args.items())
+    return f'{{"positional":[{positional}],"named":{{{named}}}}}'
 
 
 def stream_reads(expr: str) -> StreamReads:
@@ -325,10 +336,15 @@ def _stop_of(value: JsonValue) -> JqError | JqHalt | None:
     return None
 
 
-def _collected(results: Iterable[JsonValue]) -> tuple[JqRun, bool]:
+def _collected(results: Iterable[JsonValue],
+               dumped: bool = False) -> tuple[JqRun[JsonValue], bool]:
     """A run's outputs, up to the stop the prelude hands back, and whether
     the run ended by itself rather than stopping at a halt: it reached the
     sentinel, handed back a stop, or failed.
+
+    A run whose outputs libjq dumped (see _DUMP) hands each back as jq's
+    compact text, a string; only one that holds the token can be a stop
+    or the sentinel, so only such a one is read back.
 
     Only a program the prelude could not wrap raises its error here, and
     libjq's binding says no more of that error than its text.
@@ -336,13 +352,17 @@ def _collected(results: Iterable[JsonValue]) -> tuple[JqRun, bool]:
     Args:
         results (Iterable[JsonValue]): the program's outputs, as libjq
             yields them.
+        dumped (bool): whether each output is jq's dump of one.
     """
     outputs: list[JsonValue] = []
     try:
         for value in results:
-            if isinstance(value, dict) and DONE_KEY in value:
+            mark = value
+            if dumped and isinstance(value, str) and _TOKEN in value:
+                mark = json.loads(value)
+            if isinstance(mark, dict) and DONE_KEY in mark:
                 return JqRun(outputs), True
-            stop = _stop_of(value)
+            stop = None if dumped and mark is value else _stop_of(mark)
             if stop is not None:
                 return JqRun(outputs, stop), True
             outputs.append(value)
@@ -351,71 +371,130 @@ def _collected(results: Iterable[JsonValue]) -> tuple[JqRun, bool]:
     return JqRun(outputs), False
 
 
-def _bindings(
-    expr: str,
-    named_args: Mapping[str, Any] | None,
-    inputs: Sequence[JsonValue] | None,
-    args_value: Mapping[str, Any] | None,
-    inputs_error: str | None = None,
-) -> tuple[dict[str, Any], list[str]]:
-    """The named arguments a run compiles with, and the prelude steps
-    that read them.
+@dataclass(frozen=True, slots=True)
+class _Bound:
+    """One run as libjq is handed it.
+
+    Every value a run binds travels on its input, inside one wrapper
+    document the prelude unpacks, as the JSON text jq's own parser reads,
+    so a number keeps its literal and an object its key order. A run that
+    binds nothing goes on the plain document.
 
     Args:
+        steps (tuple[str, ...]): the prelude steps that unpack the input.
+        stdin (str): the input the steps unpack.
+        plain (str): the plain document, for a program that goes bare.
+    """
+
+    steps: tuple[str, ...]
+    stdin: str
+    plain: str
+
+
+def _bound(
+    doc: str,
+    expr: str,
+    named: Mapping[str, str] | None,
+    inputs: Sequence[str] | None,
+    args: str | None,
+    inputs_error: str | None = None,
+) -> _Bound:
+    """The bindings one run carries.
+
+    Args:
+        doc (str): the document the program runs on.
         expr (str): jq program text.
-        named_args (Mapping[str, Any] | None): $name bindings.
-        inputs (Sequence[JsonValue] | None): the unread documents.
-        args_value (Mapping[str, Any] | None): the value of `$ARGS`.
+        named (Mapping[str, str] | None): $name bindings, as text.
+        inputs (Sequence[str] | None): the unread documents.
+        args (str | None): the value of `$ARGS`.
         inputs_error (str | None): the parse error the stream ends in.
     """
-    args: dict[str, Any] = dict(named_args) if named_args else {}
-    steps: list[str] = []
+    named = named or {}
+    # A name that is not an identifier can never be spelled as a variable,
+    # so nothing needs it bound; $ARGS.named still carries it.
+    names = [name for name in named if IDENT.fullmatch(name)]
+    if not names and inputs is None and args is None:
+        return _Bound((), doc, doc)
+    steps = [
+        f". as [${VALUE_VAR}, ${NAMED_VAR}, ${INPUTS_VAR}, ${ARGS_VAR}, "
+        f"${INPUTS_ERROR_VAR}] |"
+    ]
+    steps.extend(f"${NAMED_VAR}[{string_text(name)}] as ${name} |"
+                 for name in names)
     if inputs is not None:
-        args[INPUTS_VAR] = list(inputs)
-        if inputs_error is not None:
-            args[INPUTS_ERROR_VAR] = inputs_error
         steps.append(_stream_defs(expr, inputs_error is not None))
-    if args_value is not None:
-        args[ARGS_VAR] = dict(args_value)
+    if args is not None:
         steps.append(f"${ARGS_VAR} as $ARGS |")
-    return args, steps
+    steps.append(f"${VALUE_VAR} |")
+    carried = ",".join(f"{string_text(name)}:{text}"
+                       for name, text in named.items())
+    error = "null" if inputs_error is None else string_text(inputs_error)
+    stdin = (f"[{doc},{{{carried}}},[{','.join(inputs or ())}],"
+             f"{args or 'null'},{error}]")
+    return _Bound(tuple(steps), stdin, doc)
 
 
-def _typed(expr: str, args: dict[str, Any], steps: list[str]) -> Any:
+@functools.lru_cache(maxsize=256)
+def _compile(program: str) -> _libjq._Program:
+    """A program compiled once for every document it runs on: its text
+    carries no value, only the names of the bindings.
+
+    Args:
+        program (str): the whole program, prelude included.
+
+    Raises:
+        ValueError: libjq's refusal of the program.
+    """
+    return _libjq.compile(program)
+
+
+def _typed(expr: str, bound: _Bound,
+           dump: bool) -> tuple[_libjq._Program, str, bool]:
     """The program compiled as typed, behind the definitions that print a
     halt just before it: the way a program runs when its code cannot sit
-    whole inside the prelude's parentheses.
+    whole inside the prelude's parentheses. Returns it with the input it
+    runs on, and whether it dumps its outputs.
 
     The prelude costs one line here, so the line a compile error reports
     is moved back by it. A program with no code for jq to run at all goes
-    bare, which keeps libjq's own refusal of an empty program.
+    bare, on the plain document, which keeps libjq's own refusal of an
+    empty program. A dumped run pipes the whole program into `tojson`
+    past a blank line, which ends a comment of the program's even when a
+    backslash carries it on over the line after it.
 
     Args:
         expr (str): jq program text.
-        args (dict[str, Any]): the named arguments to compile with.
-        steps (list[str]): the prelude steps that read them.
+        bound (_Bound): the run's bindings.
+        dump (bool): whether the run hands its outputs back as text.
 
     Raises:
         JqCompileError: libjq's refusal of the program, its compile
             errors numbered by the program's own lines.
     """
     shift = 1 if code_only(expr).strip() else 0
-    program = f"{_PRINT}{' '.join(steps)}\n{expr}" if shift else expr
+    program = f"{_PRINT}{' '.join(bound.steps)}\n{expr}" if shift else expr
+    stdin = bound.stdin if shift else bound.plain
     try:
-        return _libjq.compile(program, args=args)
+        compiled = _compile(program)
     except ValueError as exc:
         raise JqCompileError(_unshifted(str(exc), shift)) from exc
+    if not dump:
+        return compiled, stdin, False
+    try:
+        return _compile(f"{program}\n\n{_DUMP}"), stdin, True
+    except ValueError as exc:
+        logger.debug("jq: program refused with its outputs dumped: %s", exc)
+        return compiled, stdin, False
 
 
-def _wrapped(expr: str, args: dict[str, Any], steps: list[str], stops: str,
-             tail: str) -> Any | None:
+def _wrapped(expr: str, bound: _Bound, stops: str,
+             tail: str) -> _libjq._Program | None:
     """The program compiled inside the prelude (see jq_run), or None when
     its code cannot sit whole inside the prelude's parentheses.
 
     Args:
         expr (str): jq program text.
-        args (dict[str, Any]): the named arguments to compile with.
-        steps (list[str]): the prelude steps that read them.
+        bound (_Bound): the run's bindings.
         stops (str): the definitions `halt` and `halt_error` run as.
         tail (str): what follows the program: its `catch`, and the
             sentinel of a run that keeps the real halts.
@@ -423,9 +502,9 @@ def _wrapped(expr: str, args: dict[str, Any], steps: list[str], stops: str,
     code = code_only(expr)
     if not code.strip() or not _balanced(code):
         return None
-    prelude = stops + "".join(f"{step} " for step in steps)
+    prelude = stops + "".join(f"{step} " for step in bound.steps)
     try:
-        return _libjq.compile(f"{prelude}(try ({expr}\n){tail}", args=args)
+        return _compile(f"{prelude}(try ({expr}\n){tail}")
     except ValueError as exc:
         # A refusal names the prelude's text; the program as typed is
         # what says why.
@@ -433,23 +512,20 @@ def _wrapped(expr: str, args: dict[str, Any], steps: list[str], stops: str,
         return None
 
 
-def _halt_of(obj: JsonValue, expr: str, args: dict[str, Any], steps: list[str],
-             printed: int) -> JqHalt:
+def _halt_of(expr: str, bound: _Bound, printed: int) -> JqHalt:
     """The message and code of the halt a run stopped at, from running the
     program again with the halts redefined (see _RAISE and _PRINT).
 
     Args:
-        obj (JsonValue): the value the program ran on.
         expr (str): jq program text.
-        args (dict[str, Any]): the named arguments to compile with.
-        steps (list[str]): the prelude steps that read them.
+        bound (_Bound): the run's bindings.
         printed (int): how many outputs the run printed before it halted.
     """
     for stops, tail in ((_RAISE, f"{_RAISED})"), (_PRINT, f"{_CATCH})")):
-        compiled = _wrapped(expr, args, steps, stops, tail)
+        compiled = _wrapped(expr, bound, stops, tail)
         if compiled is None:
             continue
-        again, _ = _collected(compiled.input_value(obj))
+        again, _ = _collected(compiled.input_text(bound.stdin))
         if isinstance(again.stop, JqHalt) and len(again.outputs) == printed:
             return again.stop
     # A halt caught by the program's own `try` inside a collector keeps
@@ -495,7 +571,8 @@ def _raised_mark(value: JsonValue) -> JqError | None:
     return None
 
 
-def _wrapped_verdict(results: Iterable[JsonValue], run: JqRun) -> bool | None:
+def _wrapped_verdict(results: Iterable[JsonValue],
+                     run: JqRun[JsonValue]) -> bool | None:
     """What the rerun that wraps the program's own errors says of the one
     a run stopped at: raised by the program when it hands that error back
     under RAISED_KEY, by a builtin when it stops at it as it was, and
@@ -505,7 +582,7 @@ def _wrapped_verdict(results: Iterable[JsonValue], run: JqRun) -> bool | None:
     Args:
         results (Iterable[JsonValue]): the rerun's outputs, as libjq
             yields them.
-        run (JqRun): the run that stopped.
+        run (JqRun[JsonValue]): the run that stopped.
     """
     printed = 0
     try:
@@ -524,7 +601,8 @@ def _wrapped_verdict(results: Iterable[JsonValue], run: JqRun) -> bool | None:
     return None
 
 
-def _marked_verdict(results: Iterable[JsonValue], run: JqRun) -> bool | None:
+def _marked_verdict(results: Iterable[JsonValue],
+                    run: JqRun[JsonValue]) -> bool | None:
     """Whether the rerun that prints each of the program's own errors just
     before raising it shows the program raised the one a run stopped at:
     it printed as many outputs as the run did, and that error's mark last.
@@ -532,7 +610,7 @@ def _marked_verdict(results: Iterable[JsonValue], run: JqRun) -> bool | None:
     Args:
         results (Iterable[JsonValue]): the rerun's outputs, as libjq
             yields them.
-        run (JqRun): the run that stopped.
+        run (JqRun[JsonValue]): the run that stopped.
     """
     printed = 0
     last: JqError | None = None
@@ -556,16 +634,84 @@ def _marked_verdict(results: Iterable[JsonValue], run: JqRun) -> bool | None:
     return None
 
 
+def _value_text(value: JsonValue) -> str:
+    """A value as the JSON text libjq's binding itself hands jq's parser
+    for one, NaN and the infinities spelled the way jq reads them.
+
+    Args:
+        value (JsonValue): the value.
+    """
+    return json.dumps(value)
+
+
+def _value_bound(
+    obj: JsonValue,
+    expr: str,
+    named_args: Mapping[str, JsonValue] | None,
+    inputs: Sequence[JsonValue] | None,
+    args_value: Mapping[str, JsonValue] | None,
+    inputs_error: str | None = None,
+) -> _Bound:
+    """The bindings of a run on values, each carried as its JSON text.
+
+    Args:
+        obj (JsonValue): the value the program runs on.
+        expr (str): jq program text.
+        named_args (Mapping[str, JsonValue] | None): $name bindings.
+        inputs (Sequence[JsonValue] | None): the unread documents.
+        args_value (Mapping[str, JsonValue] | None): the value of `$ARGS`.
+        inputs_error (str | None): the parse error the stream ends in.
+    """
+    named = ({
+        name: _value_text(value)
+        for name, value in named_args.items()
+    } if named_args else None)
+    docs = None if inputs is None else [_value_text(doc) for doc in inputs]
+    args = None if args_value is None else _value_text(dict(args_value))
+    return _bound(_value_text(obj), expr, named, docs, args, inputs_error)
+
+
+def _run(expr: str, bound: _Bound, dump: bool) -> JqRun[JsonValue]:
+    """One run of the program on its bindings (see jq_run).
+
+    Args:
+        expr (str): jq program text.
+        bound (_Bound): the run's bindings.
+        dump (bool): whether to hand the outputs back as jq's dump text.
+
+    Raises:
+        JqCompileError: libjq's refusal of the program, its compile
+            errors numbered by the program's own lines.
+    """
+    tail = f"{_CATCH}){_DONE} {_DUMP}" if dump else f"{_CATCH}){_DONE}"
+    compiled = _wrapped(expr, bound, "", tail)
+    if compiled is None:
+        program, stdin, dumped = _typed(expr, bound, dump)
+        run = _collected(program.input_text(stdin), dumped)[0]
+        if dumped or not dump:
+            return run
+        # The last resort of a program that refused the dump: its values,
+        # written back as JSON.
+        return JqRun([
+            json.dumps(value, ensure_ascii=False, separators=(",", ":"))
+            for value in run.outputs
+        ], run.stop)
+    run, ended = _collected(compiled.input_text(bound.stdin), dump)
+    if ended:
+        return run
+    return JqRun(run.outputs, _halt_of(expr, bound, len(run.outputs)))
+
+
 def jq_run(
     obj: JsonValue,
     expr: str,
-    named_args: Mapping[str, Any] | None = None,
+    named_args: Mapping[str, JsonValue] | None = None,
     inputs: Sequence[JsonValue] | None = None,
-    args_value: Mapping[str, Any] | None = None,
+    args_value: Mapping[str, JsonValue] | None = None,
     inputs_error: str | None = None,
-) -> JqRun:
+) -> JqRun[JsonValue]:
     """Run a jq program on one value using libjq, the way jq's main loop
-    runs it on one document.
+    runs it on one document, and hand back the values it printed.
 
     A jq program is a stream transformer: it emits zero, one or many
     values, and jq prints each on its own line. That arity is preserved
@@ -586,16 +732,16 @@ def jq_run(
     Args:
         obj (JsonValue): the value the program runs on.
         expr (str): jq program text.
-        named_args (Mapping[str, Any] | None): $name bindings from
+        named_args (Mapping[str, JsonValue] | None): $name bindings from
             --arg / --argjson.
         inputs (Sequence[JsonValue] | None): the documents still unread
             at this point in the stream, which `input` and `inputs` read
             (see _stream_defs). libjq's Python binding owns no input
-            stream, so both builtins are bound as definitions over a
-            named argument instead; a user program that defines its own
+            stream, so both builtins are bound as definitions over those
+            documents instead; a user program that defines its own
             shadows the binding, as it would shadow the builtin.
-        args_value (Mapping[str, Any] | None): the value `$ARGS` should
-            resolve to, bound the same way and for the same reason
+        args_value (Mapping[str, JsonValue] | None): the value `$ARGS`
+            should resolve to, bound the same way and for the same reason
             (libjq's binding defines no `$ARGS` of its own).
         inputs_error (str | None): the parse error the stream ends in,
             which `input` and `inputs` raise past the last of `inputs`.
@@ -604,24 +750,50 @@ def jq_run(
         JqCompileError: libjq's refusal of the program, its compile
             errors numbered by the program's own lines.
     """
-    args, steps = _bindings(expr, named_args, inputs, args_value, inputs_error)
-    compiled = _wrapped(expr, args, steps, "", f"{_CATCH}){_DONE}")
-    if compiled is None:
-        return _collected(_typed(expr, args, steps).input_value(obj))[0]
-    run, ended = _collected(compiled.input_value(obj))
-    if ended:
-        return run
-    halt = _halt_of(obj, expr, args, steps, len(run.outputs))
-    return JqRun(run.outputs, halt)
+    bound = _value_bound(obj, expr, named_args, inputs, args_value,
+                         inputs_error)
+    return _run(expr, bound, False)
+
+
+def jq_run_texts(
+    doc: str,
+    expr: str,
+    named: Mapping[str, str] | None = None,
+    inputs: Sequence[str] | None = None,
+    args: str | None = None,
+    inputs_error: str | None = None,
+) -> JqRun[str]:
+    """Run a jq program on one document the way jq_run does, with the
+    document, the bindings and the outputs all JSON text: jq's parser
+    reads the text, so a number keeps its literal and an object its key
+    order, and each output comes back as jq's own compact dump of it, the
+    spelling jq prints (`1.000`, `1E+2`, `1e+17`, `-0`).
+
+    Args:
+        doc (str): the document the program runs on.
+        expr (str): jq program text.
+        named (Mapping[str, str] | None): $name bindings.
+        inputs (Sequence[str] | None): the documents still unread.
+        args (str | None): the value `$ARGS` should resolve to.
+        inputs_error (str | None): the parse error the stream ends in.
+
+    Raises:
+        JqCompileError: libjq's refusal of the program, its compile
+            errors numbered by the program's own lines.
+    """
+    run = _run(expr, _bound(doc, expr, named, inputs, args, inputs_error),
+               True)
+    # A dumped run hands back strings only (see _collected).
+    return cast("JqRun[str]", run)
 
 
 def jq_raised(
     obj: JsonValue,
     expr: str,
-    run: JqRun,
-    named_args: Mapping[str, Any] | None = None,
+    run: JqRun[JsonValue],
+    named_args: Mapping[str, JsonValue] | None = None,
     inputs: Sequence[JsonValue] | None = None,
-    args_value: Mapping[str, Any] | None = None,
+    args_value: Mapping[str, JsonValue] | None = None,
 ) -> bool:
     """Whether the program's own `error` raised the error a run stopped at,
     rather than a builtin, which jq itself never tells apart but gojq does.
@@ -635,10 +807,10 @@ def jq_raised(
     Args:
         obj (JsonValue): the value the program ran on.
         expr (str): jq program text.
-        run (JqRun): what jq_run returned for them.
-        named_args (Mapping[str, Any] | None): $name bindings.
+        run (JqRun[JsonValue]): what jq_run returned for them.
+        named_args (Mapping[str, JsonValue] | None): $name bindings.
         inputs (Sequence[JsonValue] | None): the unread documents.
-        args_value (Mapping[str, Any] | None): the value of `$ARGS`.
+        args_value (Mapping[str, JsonValue] | None): the value of `$ARGS`.
     """
     if not isinstance(run.stop, JqError):
         return False
@@ -647,23 +819,23 @@ def jq_raised(
     renamed = _renamed(expr)
     if renamed == expr:
         return False
-    args, steps = _bindings(expr, named_args, inputs, args_value)
-    compiled = _wrapped(renamed, args, steps, _WRAP, f"{_UNWRAP}){_DONE}")
+    bound = _value_bound(obj, expr, named_args, inputs, args_value)
+    compiled = _wrapped(renamed, bound, _WRAP, f"{_UNWRAP}){_DONE}")
     if compiled is not None:
-        verdict = _wrapped_verdict(compiled.input_value(obj), run)
+        verdict = _wrapped_verdict(compiled.input_text(bound.stdin), run)
         if verdict is not None:
             return verdict
-    compiled = _wrapped(renamed, args, steps, _MARK, f"{_CATCH}){_DONE}")
+    compiled = _wrapped(renamed, bound, _MARK, f"{_CATCH}){_DONE}")
     if compiled is None:
         return False
-    return _marked_verdict(compiled.input_value(obj), run) is True
+    return _marked_verdict(compiled.input_text(bound.stdin), run) is True
 
 
 def jq_check(
     expr: str,
-    named_args: Mapping[str, Any] | None = None,
-    inputs: Sequence[JsonValue] | None = None,
-    args_value: Mapping[str, Any] | None = None,
+    named: Mapping[str, str] | None = None,
+    inputs: Sequence[str] | None = None,
+    args: str | None = None,
 ) -> None:
     """Compile a program the way a run would, without running it.
 
@@ -672,24 +844,24 @@ def jq_check(
 
     Args:
         expr (str): jq program text.
-        named_args (Mapping[str, Any] | None): $name bindings.
-        inputs (Sequence[JsonValue] | None): the unread documents.
-        args_value (Mapping[str, Any] | None): the value of `$ARGS`.
+        named (Mapping[str, str] | None): $name bindings, as text.
+        inputs (Sequence[str] | None): the unread documents.
+        args (str | None): the value of `$ARGS`.
 
     Raises:
         JqCompileError: libjq's refusal of the program.
     """
-    args, steps = _bindings(expr, named_args, inputs, args_value)
-    if _wrapped(expr, args, steps, "", f"{_CATCH}){_DONE}") is None:
-        _typed(expr, args, steps)
+    bound = _bound("null", expr, named, inputs, args)
+    if _wrapped(expr, bound, "", f"{_CATCH}){_DONE} {_DUMP}") is None:
+        _typed(expr, bound, True)
 
 
 def jq_eval(
     obj: JsonValue,
     expr: str,
-    named_args: Mapping[str, Any] | None = None,
+    named_args: Mapping[str, JsonValue] | None = None,
     inputs: Sequence[JsonValue] | None = None,
-    args_value: Mapping[str, Any] | None = None,
+    args_value: Mapping[str, JsonValue] | None = None,
 ) -> list[JsonValue]:
     """Every output of a jq program on one value (see jq_run), for a
     caller that treats an error as a failure of its own.
@@ -697,9 +869,9 @@ def jq_eval(
     Args:
         obj (JsonValue): the value the program runs on.
         expr (str): jq program text.
-        named_args (Mapping[str, Any] | None): $name bindings.
+        named_args (Mapping[str, JsonValue] | None): $name bindings.
         inputs (Sequence[JsonValue] | None): the unread documents.
-        args_value (Mapping[str, Any] | None): the value of `$ARGS`.
+        args_value (Mapping[str, JsonValue] | None): the value of `$ARGS`.
 
     Raises:
         ValueError: libjq's refusal of the program, or the error that

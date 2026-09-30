@@ -36,6 +36,15 @@ export class JqParseError {
 }
 
 /**
+ * A number as a --stream event carries it: its literal, up to its first
+ * NUL, which jq keeps and prints as it was written (`1.000`, `1E+2`) where
+ * a JS number cannot.
+ */
+export class NumberText {
+  constructor(readonly text: string) {}
+}
+
+/**
  * One input of the stream jq reads: a file operand or stdin. `name` is the
  * input as jq reports it, the operand as the command line spelled it or
  * `<stdin>`.
@@ -74,9 +83,10 @@ export interface JqHalt {
 }
 
 /** What one run of a program printed, and what ended it early. */
-export interface JqRun {
-  /** Every value it printed, in order. */
-  readonly outputs: unknown[]
+export interface JqRun<T = unknown> {
+  /** Every output it printed, in order: a value, or jq's own compact dump
+   * of one. */
+  readonly outputs: T[]
   /** The error or the halt that ended it, or null when it ran to its end. */
   readonly stop: JqError | JqHalt | null
 }
@@ -135,12 +145,12 @@ export interface JqOptions {
   readonly indent: number
   /** -e, derive the exit code from the last output value. */
   readonly exitStatus: boolean
-  /** --arg / --argjson / --rawfile / --slurpfile bindings, as the values
-   * $name resolves to. */
-  readonly namedArgs: Readonly<Record<string, unknown>>
-  /** --args / --jsonargs values, in order, as $ARGS.positional reports
-   * them. */
-  readonly positionalArgs: readonly unknown[]
+  /** --arg / --argjson / --rawfile / --slurpfile bindings, each the JSON
+   * text of the value $name resolves to, in the order they were bound. */
+  readonly namedArgs: ReadonlyMap<string, string>
+  /** --args / --jsonargs values, in order, as JSON text of what
+   * $ARGS.positional reports. */
+  readonly positionalArgs: readonly string[]
 }
 
 const DEFAULT_JQ_OPTIONS: JqOptions = Object.freeze({
@@ -158,7 +168,7 @@ const DEFAULT_JQ_OPTIONS: JqOptions = Object.freeze({
   tab: false,
   indent: DEFAULT_INDENT,
   exitStatus: false,
-  namedArgs: Object.freeze({}),
+  namedArgs: new Map<string, string>(),
   positionalArgs: Object.freeze([]),
 })
 

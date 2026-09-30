@@ -14,12 +14,13 @@
 
 export { JqCompileError } from './errors.ts'
 export {
-  argsObject,
+  argsText,
   halts,
   jqCheck,
   jqEval,
   jqRaised,
   jqRun,
+  jqRunTexts,
   referencesArgs,
   streamReads,
 } from './eval.ts'
@@ -30,9 +31,10 @@ export {
   formatOne,
   haltReport,
   loadFailure,
+  printable,
 } from './format.ts'
-export { JqParser, decodeUtf8 } from './parse.ts'
-export { InputReader, isJsonlPath, parseValue, readValues } from './stream.ts'
+export { JqParser, decodeUtf8, stringText } from './parse.ts'
+export { InputReader, isJsonlPath, readTexts, valueText } from './stream.ts'
 export {
   DEFAULT_INDENT,
   JqParseError,

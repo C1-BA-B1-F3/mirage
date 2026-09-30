@@ -21,19 +21,21 @@ import {
   JqParseError,
   NO_VALUE,
   STDIN_NAME,
-  argsObject,
+  argsText,
   decodeUtf8,
   errorReport,
   formatJqOutput,
   haltReport,
   jqCheck,
   jqOptions,
-  jqRun,
+  jqRunTexts,
   loadFailure,
-  parseValue,
-  readValues,
+  printable,
+  readTexts,
   referencesArgs,
   streamReads,
+  stringText,
+  valueText,
   type InputSource,
   type JqOptions,
   type JqRun,
@@ -64,6 +66,9 @@ const OK_NULL_KIND = -1
 const OK_NO_OUTPUT = -4
 const ERROR_UNKNOWN = 5
 
+// The outputs -e counts as null-kind, as jq dumps them.
+const NULL_KIND = new Set(['null', 'false'])
+
 // jq's exit status when it refuses the program itself, and when it could not
 // read one of its inputs, whatever the runs answered.
 const ERROR_COMPILE = 3
@@ -81,22 +86,26 @@ function pairArgs(values: readonly string[]): [string, string][] {
   return pairs
 }
 
-/** Collect the $name bindings from --arg and --argjson. */
-export function namedArgs(fl: FlagView): Record<string, unknown> {
-  const args: Record<string, unknown> = {}
-  for (const [name, value] of pairArgs(fl.asList('arg'))) args[name] = value
+/**
+ * Collect the $name bindings from --arg and --argjson, each as the JSON text
+ * of its value, in the order bound.
+ */
+export function namedArgs(fl: FlagView): Map<string, string> {
+  const args = new Map<string, string>()
+  for (const [name, value] of pairArgs(fl.asList('arg'))) args.set(name, stringText(value))
   for (const [name, value] of pairArgs(fl.asList('argjson'))) {
-    const parsed = parseValue(ENC.encode(value))
+    const parsed = valueText(ENC.encode(value))
     if (parsed === NO_VALUE) {
       throw new UsageError(`jq: invalid JSON text passed to --argjson\n${USAGE_HINT}`, 2)
     }
-    args[name] = parsed
+    args.set(name, parsed)
   }
   return args
 }
 
 /**
- * Values `$ARGS.positional` reports, from --args / --jsonargs.
+ * The JSON text of each value `$ARGS.positional` reports, from --args /
+ * --jsonargs.
  *
  * The operands after the program stop being input files once either flag
  * appears, so they arrive here as ordinary text.
@@ -105,13 +114,13 @@ export function positionalArgs(
   fl: FlagView,
   texts: readonly string[],
   hasProgramFile: boolean,
-): unknown[] {
+): string[] {
   const asJson = fl.asBool('jsonargs')
   if (!asJson && !fl.asBool('args')) return []
   const rest = hasProgramFile ? [...texts] : texts.slice(1)
-  if (!asJson) return rest
+  if (!asJson) return rest.map(stringText)
   return rest.map((value) => {
-    const parsed = parseValue(ENC.encode(value))
+    const parsed = valueText(ENC.encode(value))
     if (parsed === NO_VALUE) {
       throw new UsageError(`jq: invalid JSON text passed to --jsonargs\n${USAGE_HINT}`, 2)
     }
@@ -142,7 +151,8 @@ function pathPairs(
 }
 
 /**
- * Collect the $name bindings that read a file.
+ * Collect the $name bindings that read a file, each as the JSON text of its
+ * value.
  *
  * --rawfile binds the file's text, --slurpfile the array of documents in
  * it, which is the same difference -R draws on the input stream. Both read
@@ -153,14 +163,14 @@ async function fileArgs(
   fl: FlagView,
   toSpec: (value: string) => PathSpec,
   read: (path: PathSpec) => Promise<Uint8Array>,
-): Promise<Record<string, unknown>> {
-  const args: Record<string, unknown> = {}
+): Promise<Map<string, string>> {
+  const args = new Map<string, string>()
   for (const [name, path] of pathPairs(fl, 'rawfile', toSpec)) {
-    args[name] = decodeUtf8(await loadFile(read, 'rawfile', name, path))
+    args.set(name, stringText(decodeUtf8(await loadFile(read, 'rawfile', name, path))))
   }
   for (const [name, path] of pathPairs(fl, 'slurpfile', toSpec)) {
     const shown = inputName(path)
-    const [values, failure] = await readValues({
+    const [texts, failure] = await readTexts({
       name: shown,
       chunks: yieldBytes(await loadFile(read, 'slurpfile', name, path)),
     })
@@ -170,7 +180,7 @@ async function fileArgs(
         ERROR_SYSTEM,
       )
     }
-    args[name] = values
+    args.set(name, `[${texts.join(',')}]`)
   }
   return args
 }
@@ -245,13 +255,12 @@ export function inputName(path: PathSpec): string {
   return path.rawPath === '' ? path.virtual : path.rawPath
 }
 
-/** What jq's process() answers for one run. */
-export function runStatus(run: JqRun): number {
+/** What jq's process() answers for one run, its outputs jq's compact dumps. */
+export function runStatus(run: JqRun<string>): number {
   if (run.stop?.kind === 'halt') return run.stop.code === null ? OK : Math.trunc(run.stop.code)
   if (run.stop?.kind === 'error') return ERROR_UNKNOWN
   if (run.outputs.length === 0) return OK_NO_OUTPUT
-  const last = run.outputs[run.outputs.length - 1]
-  return last === null || last === false ? OK_NULL_KIND : OK
+  return NULL_KIND.has(run.outputs[run.outputs.length - 1] ?? '') ? OK_NULL_KIND : OK
 }
 
 /**
@@ -315,7 +324,7 @@ export class MainLoop {
     private readonly expr: string,
     private readonly opts: JqOptions,
     private readonly reads: StreamReads,
-    private readonly argsValue: Record<string, unknown> | null,
+    private readonly args: string | null,
     private readonly io: IOResult,
   ) {
     this.reader = new InputReader(sources, opts, (line) => this.reports.push(line))
@@ -325,7 +334,7 @@ export class MainLoop {
   async *outputs(): AsyncIterable<Uint8Array> {
     try {
       if (this.opts.nullInput) {
-        const [run, position] = await this.run(null, this.reader.position())
+        const [run, position] = await this.run('null', this.reader.position())
         if (run.outputs.length > 0) yield formatJqOutput(run.outputs, this.opts)
         this.settle(run, position)
         return
@@ -352,7 +361,8 @@ export class MainLoop {
   /**
    * Run the program on one document (null under -n), and say where the
    * reader stands after it, for its error report; `position` is where it
-   * stood once it had read the document.
+   * stood once it had read the document. The run is what jq's main loop gets
+   * to print (see printable).
    *
    * `input` and `inputs` consume the stream the main loop reads, so a run
    * reads what they take first, and the next run starts past it. How much a
@@ -365,12 +375,13 @@ export class MainLoop {
    * reading: the run raises it where `input` or `inputs` would reach it, and
    * the main loop reads on past it.
    */
-  private async run(doc: unknown, position: string): Promise<[JqRun, string]> {
+  private async run(doc: string, position: string): Promise<[JqRun<string>, string]> {
     const reads = this.reads
     if (!reads.input && !reads.inputs) {
-      return [await jqRun(doc, this.expr, this.opts.namedArgs, null, this.argsValue), position]
+      const run = await jqRunTexts(doc, this.expr, this.opts.namedArgs, null, this.args)
+      return [printable(run, this.opts), position]
     }
-    const docs: unknown[] = []
+    const docs: string[] = []
     let failure: JqParseError | null = null
     let at = position
     for (;;) {
@@ -384,21 +395,21 @@ export class MainLoop {
       docs.push(item)
       if (!reads.inputs) break
     }
-    const run = await jqRun(
+    const run = await jqRunTexts(
       doc,
       this.expr,
       this.opts.namedArgs,
       docs,
-      this.argsValue,
+      this.args,
       failure === null ? null : failure.message,
     )
-    return [run, at]
+    return [printable(run, this.opts), at]
   }
 
   // Fold one run into the invocation: its answer toward the exit status,
   // and its report when it stopped early. A halt ends the invocation, which
   // is what this answers.
-  private settle(run: JqRun, position: string): boolean {
+  private settle(run: JqRun<string>, position: string): boolean {
     this.statuses.push(runStatus(run))
     if (run.stop?.kind === 'error') {
       this.reports.push(errorReport(position, run.stop))
@@ -467,12 +478,12 @@ export async function jqGeneric(
   const base = parseFlags(fl)
   const jq: JqOptions = jqOptions({
     ...base,
-    namedArgs: { ...base.namedArgs, ...(await fileArgs(fl, toSpec, readFlagFile)) },
+    namedArgs: new Map([...base.namedArgs, ...(await fileArgs(fl, toSpec, readFlagFile))]),
     positionalArgs: positionalArgs(fl, texts, hasProgramFile),
   })
-  const argsValue = referencesArgs(expr) ? argsObject(jq) : null
+  const args = referencesArgs(expr) ? argsText(jq) : null
   try {
-    await jqCheck(expr, jq.namedArgs, readsStream ? [] : null, argsValue)
+    await jqCheck(expr, jq.namedArgs, readsStream ? [] : null, args)
   } catch (error) {
     if (!(error instanceof JqCompileError)) throw error
     // jq compiles its program before it opens a single input, so a
@@ -505,6 +516,6 @@ export async function jqGeneric(
     }
   }
   const io = new IOResult()
-  const loop = new MainLoop(sources, expr, jq, reads, argsValue, io)
+  const loop = new MainLoop(sources, expr, jq, reads, args, io)
   return [loop.outputs(), io]
 }

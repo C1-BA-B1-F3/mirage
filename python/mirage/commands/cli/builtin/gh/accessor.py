@@ -339,7 +339,8 @@ def _gojq_text(text: str, string: bool) -> str:
     return text if string else _go_encoded(json.loads(text), _gojq_string)
 
 
-def _jq_failure(value: JsonValue, program: str, run: JqRun) -> str | None:
+def _jq_failure(value: JsonValue, program: str,
+                run: JqRun[JsonValue]) -> str | None:
     """The message go-gh fails with when a run stopped early, or None when
     that stop ends the output without failing.
 
@@ -352,7 +353,7 @@ def _jq_failure(value: JsonValue, program: str, run: JqRun) -> str | None:
     Args:
         value (JsonValue): the value the program ran on.
         program (str): the `--jq` program.
-        run (JqRun): what jq_run returned for them.
+        run (JqRun[JsonValue]): what jq_run returned for them.
     """
     stop = run.stop
     if stop is None:

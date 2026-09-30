@@ -13,9 +13,10 @@
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import asyncio
+import json
 from pathlib import Path
 
-from mirage.core.jq import InputSource, jq_eval, read_values
+from mirage.core.jq import InputSource, jq_eval, read_texts
 from mirage.io.stream import yield_bytes
 from mirage.types import MountMode
 from mirage.vfs.ram import RAMVFS
@@ -56,9 +57,9 @@ def documents(backend, path):
     """
     store = backend.accessor.store
     source = InputSource(path, yield_bytes(store.files[_norm(path)]))
-    values, failure = asyncio.run(read_values(source))
+    texts, failure = asyncio.run(read_texts(source))
     assert failure is None, failure
-    return values
+    return [json.loads(text) for text in texts]
 
 
 def jq_all(backend, path, expression):

@@ -10,10 +10,11 @@ from mirage.commands.errors import UsageError
 from mirage.commands.spec import SPECS
 from mirage.commands.spec.flag_view import FlagView
 from mirage.commands.spec.types import FlagValue
-from mirage.core.jq import (args_object, decode_utf8, error_report,
-                            format_jq_output, halt_report, jq_check, jq_run,
-                            load_failure, parse_value, read_values,
-                            references_args, stream_reads)
+from mirage.core.jq import (args_text, decode_utf8, error_report,
+                            format_jq_output, halt_report, jq_check,
+                            jq_run_texts, load_failure, printable, read_texts,
+                            references_args, stream_reads, string_text,
+                            value_text)
 from mirage.core.jq.errors import JqCompileError
 from mirage.core.jq.stream import InputReader
 from mirage.core.jq.types import (DEFAULT_INDENT, NO_VALUE, STDIN_NAME,
@@ -22,7 +23,7 @@ from mirage.core.jq.types import (DEFAULT_INDENT, NO_VALUE, STDIN_NAME,
 from mirage.io.stream import yield_bytes
 from mirage.io.types import ByteSource, IOResult
 from mirage.runtime.types import DispatchFn
-from mirage.types import JsonValue, PathSpec
+from mirage.types import PathSpec
 from mirage.utils.errors import FS_ERRORS
 
 INDENT_MIN = -1
@@ -35,6 +36,9 @@ OK = 0
 OK_NULL_KIND = -1
 OK_NO_OUTPUT = -4
 ERROR_UNKNOWN = 5
+
+# The outputs -e counts as null-kind, as jq dumps them.
+NULL_KIND = frozenset(("null", "false"))
 
 # jq's exit status when it refuses the program itself, and when it could
 # not read one of its inputs, whatever the runs answered.
@@ -70,8 +74,9 @@ def _pair_flag(fl: FlagView, name: str) -> list[tuple[str, Any]]:
 
 
 def positional_args(fl: FlagView, texts: Sequence[str],
-                    has_program_file: bool) -> tuple[Any, ...]:
-    """Values `$ARGS.positional` reports, from --args / --jsonargs.
+                    has_program_file: bool) -> tuple[str, ...]:
+    """The JSON text of each value `$ARGS.positional` reports, from
+    --args / --jsonargs.
 
     The operands after the program stop being input files once either
     flag appears, so they arrive here as ordinary text.
@@ -92,10 +97,10 @@ def positional_args(fl: FlagView, texts: Sequence[str],
         return ()
     rest = list(texts) if has_program_file else list(texts[1:])
     if not as_json:
-        return tuple(rest)
-    values: list[Any] = []
+        return tuple(string_text(value) for value in rest)
+    values: list[str] = []
     for value in rest:
-        parsed = parse_value(value.encode())
+        parsed = value_text(value.encode())
         if parsed is NO_VALUE:
             raise UsageError(
                 f"jq: invalid JSON text passed to --jsonargs\n{USAGE_HINT}", 2)
@@ -103,8 +108,9 @@ def positional_args(fl: FlagView, texts: Sequence[str],
     return tuple(values)
 
 
-def named_args(fl: FlagView) -> dict[str, Any]:
-    """Collect the $name bindings from --arg and --argjson.
+def named_args(fl: FlagView) -> dict[str, str]:
+    """Collect the $name bindings from --arg and --argjson, each as the
+    JSON text of its value.
 
     Args:
         fl (FlagView): spec-validated view over the raw flag kwargs.
@@ -113,11 +119,11 @@ def named_args(fl: FlagView) -> dict[str, Any]:
         UsageError: when an --argjson value is not one JSON value, as
             jq's own parser reads it.
     """
-    args: dict[str, Any] = {}
+    args: dict[str, str] = {}
     for name, value in _pair_args(fl.as_list("arg")):
-        args[name] = value
+        args[name] = string_text(str(value))
     for name, value in _pair_args(fl.as_list("argjson")):
-        parsed = parse_value(str(value).encode())
+        parsed = value_text(str(value).encode())
         if parsed is NO_VALUE:
             raise UsageError(
                 f"jq: invalid JSON text passed to --argjson\n{USAGE_HINT}", 2)
@@ -128,8 +134,9 @@ def named_args(fl: FlagView) -> dict[str, Any]:
 async def file_args(
     fl: FlagView,
     read_bytes: Callable[..., Awaitable[bytes]],
-) -> dict[str, Any]:
-    """Collect the $name bindings that read a file.
+) -> dict[str, str]:
+    """Collect the $name bindings that read a file, each as the JSON text
+    of its value.
 
     --rawfile binds the file's text, --slurpfile the array of documents
     in it, which is the same difference -R draws on the input stream.
@@ -143,20 +150,20 @@ async def file_args(
         UsageError: when a file cannot be read, or a --slurpfile holds
             bad JSON, reported in jq's words.
     """
-    args: dict[str, Any] = {}
+    args: dict[str, str] = {}
     for name, path in _pair_flag(fl, "rawfile"):
         data = await _load_file(read_bytes, "rawfile", name, path)
-        args[name] = decode_utf8(data)
+        args[name] = string_text(decode_utf8(data))
     for name, path in _pair_flag(fl, "slurpfile"):
         shown = input_name(path)
         data = await _load_file(read_bytes, "slurpfile", name, path)
-        values, failure = await read_values(
-            InputSource(shown, yield_bytes(data)))
+        texts, failure = await read_texts(InputSource(shown,
+                                                      yield_bytes(data)))
         if failure is not None:
             raise UsageError(
                 f"jq: Bad JSON in --slurpfile {name} {shown}: "
                 f"{failure.message}", ERROR_SYSTEM)
-        args[name] = values
+        args[name] = f"[{','.join(texts)}]"
     return args
 
 
@@ -242,11 +249,11 @@ def input_name(path: PathSpec) -> str:
     return path.raw_path or path.virtual
 
 
-def run_status(run: JqRun) -> int:
+def run_status(run: JqRun[str]) -> int:
     """What jq's process() answers for one run.
 
     Args:
-        run (JqRun): the run.
+        run (JqRun[str]): the run, its outputs jq's compact dumps.
     """
     if isinstance(run.stop, JqHalt):
         return OK if run.stop.code is None else int(run.stop.code)
@@ -254,8 +261,7 @@ def run_status(run: JqRun) -> int:
         return ERROR_UNKNOWN
     if not run.outputs:
         return OK_NO_OUTPUT
-    last = run.outputs[-1]
-    return OK_NULL_KIND if last is None or last is False else OK
+    return OK_NULL_KIND if run.outputs[-1] in NULL_KIND else OK
 
 
 def exit_code(statuses: Sequence[int], opts: JqOptions) -> int:
@@ -322,19 +328,18 @@ class MainLoop:
         expr (str): jq program text.
         opts (JqOptions): resolved options.
         reads (StreamReads): which stream builtins the program calls.
-        args_value (dict[str, Any] | None): the value of `$ARGS`.
+        args (str | None): the value of `$ARGS`, as text.
         io (IOResult): the result to settle.
     """
 
     def __init__(self, sources: list[InputSource], expr: str, opts: JqOptions,
-                 reads: StreamReads, args_value: dict[str, Any] | None,
-                 io: IOResult) -> None:
+                 reads: StreamReads, args: str | None, io: IOResult) -> None:
         self._reports: list[str] = []
         self._reader = InputReader(sources, opts, self._reports.append)
         self._expr = expr
         self._opts = opts
         self._reads = reads
-        self._args_value = args_value
+        self._args = args
         self._io = io
         self._statuses: list[int] = []
 
@@ -342,7 +347,8 @@ class MainLoop:
         """The invocation's stdout, run by run."""
         try:
             if self._opts.null_input:
-                run, position = await self._run(None, self._reader.position())
+                run, position = await self._run("null",
+                                                self._reader.position())
                 if run.outputs:
                     yield format_jq_output(run.outputs, self._opts)
                 self._settle(run, position)
@@ -367,9 +373,10 @@ class MainLoop:
             if self._reports:
                 self._io.stderr = "".join(self._reports).encode()
 
-    async def _run(self, doc: JsonValue, position: str) -> tuple[JqRun, str]:
+    async def _run(self, doc: str, position: str) -> tuple[JqRun[str], str]:
         """Run the program on one document, and say where the reader
-        stands after it, for its error report.
+        stands after it, for its error report. The run is what jq's main
+        loop gets to print (see printable).
 
         `input` and `inputs` consume the stream the main loop reads, so a
         run reads what they take first, and the next run starts past it.
@@ -384,14 +391,15 @@ class MainLoop:
         on past it.
 
         Args:
-            doc (JsonValue): the run's own document, null under -n.
+            doc (str): the run's own document, null under -n.
             position (str): where the reader stood once it had read it.
         """
         reads = self._reads
         if not (reads.input or reads.inputs):
-            return jq_run(doc, self._expr, self._opts.named_args, None,
-                          self._args_value), position
-        docs: list[JsonValue] = []
+            run = jq_run_texts(doc, self._expr, self._opts.named_args, None,
+                               self._args)
+            return printable(run, self._opts), position
+        docs: list[str] = []
         failure: JqParseError | None = None
         while True:
             item = await self._reader.next_input()
@@ -404,12 +412,12 @@ class MainLoop:
             docs.append(item)
             if not reads.inputs:
                 break
-        run = jq_run(doc, self._expr, self._opts.named_args, docs,
-                     self._args_value,
-                     None if failure is None else failure.message)
-        return run, position
+        run = jq_run_texts(doc, self._expr, self._opts.named_args, docs,
+                           self._args,
+                           None if failure is None else failure.message)
+        return printable(run, self._opts), position
 
-    def _settle(self, run: JqRun, position: str) -> bool:
+    def _settle(self, run: JqRun[str], position: str) -> bool:
         # Fold one run into the invocation: its answer toward the exit
         # status, and its report when it stopped early. A halt ends the
         # invocation, which is what this answers.
@@ -493,10 +501,9 @@ async def jq(
         positional_args=positional_args(fl, texts,
                                         isinstance(program_file, PathSpec)),
     )
-    args_value = args_object(opts) if references_args(expr) else None
+    args = args_text(opts) if references_args(expr) else None
     try:
-        jq_check(expr, opts.named_args, [] if reads_stream else None,
-                 args_value)
+        jq_check(expr, opts.named_args, [] if reads_stream else None, args)
     except JqCompileError as exc:
         # jq compiles its program before it opens a single input, so a
         # refusal is all it prints.
@@ -516,7 +523,7 @@ async def jq(
         elif stdin is not None:
             sources.append(InputSource(STDIN_NAME, resolve_source(stdin)))
     io = IOResult()
-    loop = MainLoop(sources, expr, opts, reads, args_value, io)
+    loop = MainLoop(sources, expr, opts, reads, args, io)
     return loop.outputs(), io
 
 

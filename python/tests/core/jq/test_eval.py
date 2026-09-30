@@ -14,9 +14,10 @@
 
 import pytest
 
+from mirage.core.jq import eval as jq_eval_module
 from mirage.core.jq.errors import JqCompileError
 from mirage.core.jq.eval import (halts, jq_check, jq_eval, jq_raised, jq_run,
-                                 references_args, stream_reads)
+                                 jq_run_texts, references_args, stream_reads)
 from mirage.core.jq.types import JqError, JqHalt, JqRun, StreamReads
 
 
@@ -329,3 +330,62 @@ def test_a_program_is_checked_without_being_run():
 ])
 def test_halts_finds_a_call_to_either_halt(expr, expected):
     assert halts(expr) is expected
+
+
+# jq_run_texts runs on JSON text and hands back jq's own dump of each
+# output; every expectation is what jq 1.8.2 prints for the same program.
+def test_a_text_run_keeps_every_literal_and_the_key_order_jq_reads():
+    run = jq_run_texts('{"b":1,"1":2,"a":{"z":1,"0":2}}',
+                       '., keys, keys_unsorted, (. + {"c":3})')
+    assert run == JqRun([
+        '{"b":1,"1":2,"a":{"z":1,"0":2}}', '["1","a","b"]', '["b","1","a"]',
+        '{"b":1,"1":2,"a":{"z":1,"0":2},"c":3}'
+    ])
+    run = jq_run_texts("[1.000, 1e2, -0, 100000000000000000001]",
+                       ".[], (.[3] + 1), (.[0] | tojson), map(. * 1)")
+    assert run.outputs == [
+        "1.000", "1E+2", "-0", "100000000000000000001", "1e+20", '"1.000"',
+        "[1,100,-0,1e+20]"
+    ]
+
+
+def test_a_text_run_reports_errors_and_halts_in_jqs_own_spelling():
+    assert jq_run_texts("1.000", '. + "a"').stop == JqError(
+        'number (1.000) and string ("a") cannot be added', True)
+    assert jq_run_texts('{"b":1.000,"1":2}',
+                        "error").stop == JqError('{"b":1.000,"1":2}', False)
+    assert jq_run_texts('{"b":1.000,"1":2}',
+                        "halt_error").stop == JqHalt('{"b":1.000,"1":2}',
+                                                     False, 5)
+
+
+def test_a_text_run_binds_its_arguments_and_unread_documents_as_text():
+    run = jq_run_texts("null", "$v, $ARGS, input, [inputs]",
+                       {"v": '{"b":1,"1":2.50}'}, ["1.0", "2.00", "3e2"],
+                       '{"positional":[1.0],"named":{"v":{"b":1,"1":2.50}}}')
+    assert run.outputs == [
+        '{"b":1,"1":2.50}',
+        '{"positional":[1.0],"named":{"v":{"b":1,"1":2.50}}}', "1.0",
+        "[2.00,3E+2]"
+    ]
+
+
+def test_a_text_run_meets_the_parse_error_past_the_unread_documents():
+    message = "Unfinished JSON term at EOF at line 1, column 3"
+    assert jq_run_texts("null", "[inputs]", None, ["1.0"], None,
+                        message) == JqRun([], JqError(message, True))
+
+
+def test_a_text_run_dumps_a_program_its_comment_carries_on_past_a_line():
+    # jq 1.8.2 carries a comment over a backslash at its line's end, so a
+    # program ending in one is run as typed, and still dumped.
+    assert jq_run_texts("5.0", ". # c \\") == JqRun(["5.0"])
+    assert jq_run_texts("5.0", "[.] # c") == JqRun(["[5.0]"])
+
+
+def test_a_program_compiles_once_for_every_document():
+    jq_eval_module._compile.cache_clear()
+    for doc in ("1", "2.0", '{"a":3}'):
+        jq_run_texts(doc, ". as $x | $x")
+    info = jq_eval_module._compile.cache_info()
+    assert (info.misses, info.hits) == (1, 2)

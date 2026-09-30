@@ -63,7 +63,7 @@ def _spec_flags(**flags: object) -> FlagView:
     return FlagView(flags, spec=SPECS["jq"])
 
 
-def _printed(*outputs: object) -> int:
+def _printed(*outputs: str) -> int:
     return run_status(JqRun(list(outputs)))
 
 
@@ -93,13 +93,13 @@ def test_indent_out_of_range_is_a_usage_error():
 
 
 def test_named_args_pair_up_the_flattened_tokens():
-    args = named_args(_spec_flags(arg=["a", "1", "b", "2"]))
-    assert args == {"a": "1", "b": "2"}
+    args = named_args(_spec_flags(arg=["a", "1", "b", 'x"y']))
+    assert args == {"a": '"1"', "b": '"x\\"y"'}
 
 
-def test_argjson_parses_its_value_as_json():
-    args = named_args(_spec_flags(argjson=["v", '{"k":[1,2]}']))
-    assert args == {"v": {"k": [1, 2]}}
+def test_argjson_keeps_its_value_as_the_text_jq_reads():
+    args = named_args(_spec_flags(argjson=["v", ' {"b":1.000,"1":2} ']))
+    assert args == {"v": '{"b":1.000,"1":2}'}
 
 
 def test_argjson_rejects_invalid_json():
@@ -109,29 +109,30 @@ def test_argjson_rejects_invalid_json():
 
 def test_exit_status_reads_the_last_output_only():
     opts = JqOptions(exit_status=True)
-    assert exit_code([_printed(1, False)], opts) == 1
-    assert exit_code([_printed(False, 1)], opts) == 0
-    assert exit_code([_printed(None)], opts) == 1
+    assert exit_code([_printed("1", "false")], opts) == 1
+    assert exit_code([_printed("false", "1")], opts) == 0
+    assert exit_code([_printed("null")], opts) == 1
+    assert exit_code([_printed('"false"'), _printed("0.0")], opts) == 0
     assert exit_code([], opts) == 4
 
 
 def test_exit_status_is_zero_without_the_flag():
     assert exit_code([], JqOptions()) == 0
-    assert exit_code([_printed(None)], JqOptions()) == 0
+    assert exit_code([_printed("null")], JqOptions()) == 0
 
 
 def test_a_failed_run_counts_only_when_it_is_the_last_one():
-    failed = run_status(JqRun([1], JqError("x", True)))
-    assert exit_code([failed, _printed(1)], JqOptions()) == 0
-    assert exit_code([_printed(1), failed], JqOptions()) == 5
-    assert exit_code([failed, _printed(False)],
+    failed = run_status(JqRun(["1"], JqError("x", True)))
+    assert exit_code([failed, _printed("1")], JqOptions()) == 0
+    assert exit_code([_printed("1"), failed], JqOptions()) == 5
+    assert exit_code([failed, _printed("false")],
                      JqOptions(exit_status=True)) == 1
 
 
 def test_exit_status_looks_back_past_runs_that_printed_nothing():
     opts = JqOptions(exit_status=True)
-    assert exit_code([_printed(False), _printed()], opts) == 1
-    assert exit_code([_printed(1), _printed()], opts) == 0
+    assert exit_code([_printed("false"), _printed()], opts) == 1
+    assert exit_code([_printed("1"), _printed()], opts) == 0
 
 
 @pytest.mark.parametrize("code, exit_status, expected", [
@@ -288,19 +289,20 @@ async def test_exit_status_flag_reports_no_output_at_all():
     assert io.exit_code == 4
 
 
-def test_positional_args_are_text_by_default():
+def test_positional_args_are_strings_by_default():
     fl = _spec_flags(args=True)
-    assert positional_args(fl, [".", "a", "b"], False) == ("a", "b")
+    assert positional_args(fl, [".", "a", "1"], False) == ('"a"', '"1"')
 
 
 def test_positional_args_keep_every_operand_when_f_gave_the_program():
     fl = _spec_flags(args=True)
-    assert positional_args(fl, ["a", "b"], True) == ("a", "b")
+    assert positional_args(fl, ["a", "b"], True) == ('"a"', '"b"')
 
 
-def test_jsonargs_parses_each_operand():
+def test_jsonargs_keeps_each_operand_as_the_text_jq_reads():
     fl = _spec_flags(jsonargs=True)
-    assert positional_args(fl, [".", "1", '{"k":2}'], False) == (1, {"k": 2})
+    assert positional_args(fl, [".", "1.0", '{"b":1,"1":2}'],
+                           False) == ("1.0", '{"b":1,"1":2}')
 
 
 def test_jsonargs_rejects_invalid_json():
@@ -678,10 +680,8 @@ def test_a_usage_error_ends_with_jq_1_8s_hint():
 
 def test_argjson_reads_its_value_as_jqs_parser_does():
     assert named_args(_spec_flags(argjson=["v", "{\"a\":1}"])) == {
-        "v": {
-            "a": 1
-        }
+        "v": '{"a":1}'
     }
-    assert named_args(_spec_flags(argjson=["v", "nan"]))["v"] != 0
+    assert named_args(_spec_flags(argjson=["v", "nan"])) == {"v": "nan"}
     with pytest.raises(UsageError):
         named_args(_spec_flags(argjson=["v", "1 2"]))

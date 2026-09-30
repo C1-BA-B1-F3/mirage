@@ -17,6 +17,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Literal, Protocol, TypeAlias
 
 from mirage.io import IOResult, OpReport
+from mirage.io.types import ByteSource
 from mirage.types import PathSpec
 
 if TYPE_CHECKING:
@@ -86,6 +87,13 @@ class DispatchFn(Protocol):
 # beside DispatchFn for the same reason: the consumer receives it, the
 # workspace provides it.
 ExecPathFn: TypeAlias = Callable[[str], bool]
+
+# Run one shell line in the calling session and return its result, the
+# line reading the given input (None keeps the ambient one): the door a
+# command handler reaches the executor through, as awk's command pipes
+# and system() do. Defined beside DispatchFn for the same reason: the
+# consumer receives it, the workspace provides it.
+ShellFn: TypeAlias = Callable[[str, ByteSource | None], Awaitable[IOResult]]
 
 # Live view of the workspace mount prefixes, read per run so mounts
 # added or removed after construction are always picked up.

@@ -247,6 +247,7 @@
       "wandb"
     ]
   },
+  "allow_abbrev": false,
   "options": [
     {
       "long": "--regexp",
@@ -736,8 +737,17 @@
       "type": "bool"
     },
     {
+      "long": "--pcre2",
+      "short": "-P",
+      "type": "bool"
+    },
+    {
       "long": "--no-pcre2",
       "type": "bool"
+    },
+    {
+      "long": "--engine",
+      "type": "str"
     },
     {
       "long": "--no-json",

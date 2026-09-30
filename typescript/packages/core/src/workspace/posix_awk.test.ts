@@ -10,18 +10,27 @@ interface Case {
   id: string
   command: string
   expect: { exit: number; stdout: string; stderr: string }
+  seed?: boolean
 }
-const cases = ['bash/test/posix.json', 'unix/awk/redirect.json'].flatMap((name) => {
-  const data = JSON.parse(
-    readFileSync(new URL(`../../../../../integ/${name}`, import.meta.url), 'utf8'),
-  ) as { cases: Case[] }
-  return data.cases
-})
+
+// The fixture files the getline cases read, as every integ target seeds them.
+const FIXTURES =
+  "printf '1\\n2\\n3\\n' > /data/b.txt; printf '10\\n2\\n30\\n4\\n5\\n' > /data/numbers.txt; " +
+  "printf 'alice 30 engineer\\nbob 25 designer\\ncarol 40 manager\\n' > /data/fields.txt"
+const cases = ['bash/test/posix.json', 'unix/awk/redirect.json', 'unix/awk/getline.json'].flatMap(
+  (name) => {
+    const data = JSON.parse(
+      readFileSync(new URL(`../../../../../integ/${name}`, import.meta.url), 'utf8'),
+    ) as { cases: Case[] }
+    return data.cases.map((c) => ({ ...c, seed: name === 'unix/awk/getline.json' }))
+  },
+)
 
 describe('POSIX classes and awk output across the shell', () => {
   it.each(cases)('$id', async (test) => {
     const { ws } = await makeIntegrationWS()
     try {
+      if (test.seed) await runResult(ws, FIXTURES)
       expect(await runResult(ws, test.command)).toEqual([
         test.expect.exit,
         test.expect.stdout,

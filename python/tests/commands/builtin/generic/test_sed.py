@@ -248,10 +248,17 @@ async def test_sed_y_transliterate():
 
 
 @pytest.mark.asyncio
-async def test_sed_y_mismatched_lengths_raises():
+async def test_sed_y_mismatched_lengths_refused():
     rb, wb, _ = _make_backend({})
-    with pytest.raises(ValueError, match="different lengths"):
-        await sed([], "y/ab/x/", read_bytes=rb, write_bytes=wb, stdin=b"a\n")
+    output, io = await sed([],
+                           "y/ab/x/",
+                           read_bytes=rb,
+                           write_bytes=wb,
+                           stdin=b"a\n")
+    assert output is None
+    assert io.exit_code == 1
+    assert io.stderr == (b"sed: -e expression #1, char 7: strings for `y' "
+                         b"command are different lengths\n")
 
 
 @pytest.mark.asyncio
@@ -444,8 +451,14 @@ async def test_sed_escaped_delimiter():
 @pytest.mark.asyncio
 async def test_sed_zero_count_rejected():
     rb, wb, _ = _make_backend({})
-    with pytest.raises(ValueError, match="may not be zero"):
-        await sed([], "s/o/O/0", read_bytes=rb, write_bytes=wb, stdin=b"oo\n")
+    _, io = await sed([],
+                      "s/o/O/0",
+                      read_bytes=rb,
+                      write_bytes=wb,
+                      stdin=b"oo\n")
+    assert io.exit_code == 1
+    assert io.stderr == (b"sed: -e expression #1, char 7: number option to "
+                         b"`s' command may not be zero\n")
 
 
 @pytest.mark.asyncio
@@ -601,10 +614,16 @@ async def test_sed_address_range_with_escaped_delimiters():
 
 
 @pytest.mark.asyncio
-async def test_sed_unterminated_address_raises():
+async def test_sed_unterminated_address_refused():
     rb, wb, _ = _make_backend({})
-    with pytest.raises(ValueError, match="unterminated address regex"):
-        await sed([], "/a\\/b", read_bytes=rb, write_bytes=wb, stdin=b"x\n")
+    _, io = await sed([],
+                      "/a\\/b",
+                      read_bytes=rb,
+                      write_bytes=wb,
+                      stdin=b"x\n")
+    assert io.exit_code == 1
+    assert io.stderr == (b"sed: -e expression #1, char 5: unterminated "
+                         b"address regex\n")
 
 
 @pytest.mark.asyncio

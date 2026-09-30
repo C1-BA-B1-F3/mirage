@@ -43,7 +43,8 @@ import type { Runtime } from '../../../runtime/base.ts'
 import { WorkspaceRuntime } from '../../../runtime/table.ts'
 import type { RouteDecision } from '../../../runtime/routing/index.ts'
 import type { SessionState } from '../../session/session.ts'
-import type { DispatchFn } from '../../../runtime/types.ts'
+import type { DispatchFn, ShellFn } from '../../../runtime/types.ts'
+import type { ExecuteFn } from '../../expand/node.ts'
 import { pathAllowed } from '../../../context/session_context.ts'
 import { CommandTimeoutError } from '../../../commands/errors.ts'
 import { UsageError } from '../../../commands/errors.ts'
@@ -65,6 +66,26 @@ export interface RunOnMountCtx {
   runtimeBindings?: Record<string, Runtime>
   routingDecision?: RouteDecision
   signal?: AbortSignal
+  executeFn?: ExecuteFn
+}
+
+/**
+ * The door a command handler runs a nested line through (`opts.shell`):
+ * the line runs in the calling command's own session, under its signal,
+ * reading the input it is handed.
+ */
+function nestedShell(
+  executeFn: ExecuteFn,
+  session: SessionState,
+  signal: AbortSignal | undefined,
+): ShellFn {
+  return (line: string, stdin: ByteSource | null) =>
+    executeFn(line, {
+      sessionId: session.sessionId,
+      session,
+      stdin,
+      ...(signal !== undefined ? { signal } : {}),
+    })
 }
 
 /**
@@ -320,6 +341,9 @@ export async function runOnMount(
       statPath,
       readdirPath,
       ...(signal !== undefined ? { signal } : {}),
+      ...(ctx.executeFn !== undefined
+        ? { shell: nestedShell(ctx.executeFn, session, signal) }
+        : {}),
       limitOverride,
       ...(opts.argv !== undefined ? { argv: opts.argv } : {}),
     })

@@ -12,27 +12,29 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import { isStdin } from '../utils/stream.ts'
-import { stdinStream } from '../utils/stream.ts'
+import { isStdin, resolveSource } from '../utils/stream.ts'
 import { specOf } from '../../spec/builtins.ts'
 import { FlagView } from '../../spec/flag_view.ts'
 import { mountKey, mountPrefixOf } from '../../../utils/key_prefix.ts'
-import { IOResult, materialize } from '../../../io/types.ts'
+import { IOResult, materialize, type ByteSource } from '../../../io/types.ts'
 import { PathSpec } from '../../../types.ts'
 import type { CommandFnResult, CommandOpts } from '../../config.ts'
 import { chunks } from '../../../io/cooperative.ts'
-import { YieldBudget } from '../../../io/yield_budget.ts'
 import {
+  AwkIOError,
   AwkRuntimeError,
   AwkSyntaxError,
   ExitProgram,
   Interpreter,
   parse,
-  takeRecord,
+  splitAssignment,
   text,
+  unescape,
+  type AwkHost,
+  type CommandRun,
 } from '../../../core/awk/index.ts'
 import { UsageError } from '../../errors.ts'
-import { FS_ESCAPES, USAGE, type AwkFlags } from './awk_types.ts'
+import { USAGE, type AwkFlags } from './awk_types.ts'
 import {
   fsStrerror,
   isEnotdir,
@@ -41,16 +43,14 @@ import {
   isWalkError,
 } from '../../../utils/errors.ts'
 import { resolvePath } from '../../../utils/path.ts'
-import { resolveSource } from '../utils/stream.ts'
+import { shellJoin } from '../../../shell/join.ts'
 
 const ENC = new TextEncoder()
 const DEC = new TextDecoder('utf-8', { fatal: false })
 
-type Stream = (p: PathSpec) => AsyncIterable<Uint8Array>
+const STDIN_NAMES: ReadonlySet<string> = new Set(['-', '/dev/stdin'])
 
-// Each input opens when its turn comes, so one that cannot be opened is
-// reported after the output of those before it.
-type Source = readonly [name: string, open: () => AsyncIterable<Uint8Array>]
+type Stream = (p: PathSpec) => AsyncIterable<Uint8Array>
 
 function parseFlags(opts: CommandOpts): AwkFlags {
   const fl = new FlagView(opts.flags, specOf('awk'))
@@ -61,23 +61,6 @@ function parseFlags(opts: CommandOpts): AwkFlags {
     assignments,
     programFiles,
   }
-}
-
-/** Expand the backslash escapes awk reads in a -F or -v argument. */
-function unescape(raw: string): string {
-  let out = ''
-  let idx = 0
-  while (idx < raw.length) {
-    if (raw.charAt(idx) === '\\' && idx + 1 < raw.length) {
-      const nxt = raw.charAt(idx + 1)
-      out += FS_ESCAPES[nxt] ?? '\\' + nxt
-      idx += 2
-      continue
-    }
-    out += raw.charAt(idx)
-    idx += 1
-  }
-  return out
 }
 
 function splitAssignments(raw: readonly string[]): Record<string, string> {
@@ -93,162 +76,157 @@ function exitStatus(code: number): number {
   return Number(BigInt.asUintN(8, BigInt(code)))
 }
 
-/**
- * Close a phase: move /dev/stderr text and a fatal error onto `io`.
- * Every awk treats a runtime error as fatal at exit 2 and keeps what it
- * had already written, so the pending stdout is handed back either way.
- */
-async function settle(
-  io: IOResult,
-  interp: Interpreter,
-  failure: Error | null,
-  opts: CommandOpts,
-): Promise<[Uint8Array, boolean]> {
-  const out: string[] = []
-  let err = ''
-  const pending = interp.drainOutput()
-  for (const [name, body, append] of pending) {
-    if (name === null) out.push(body)
-    else if (name === '/dev/stderr') err += body
-    else {
-      if (opts.dispatch === undefined) {
-        failure = new AwkRuntimeError('awk: file output requires a workspace')
-        break
-      }
-      const path = PathSpec.fromStrPath(resolvePath(name, opts.cwd))
-      try {
-        await opts.dispatch(append ? 'append' : 'write', path, [ENC.encode(body)])
-      } catch (error) {
-        if (!isWalkError(error)) throw error
-        const detail = fsStrerror(error) ?? 'Cannot write output file'
-        failure = new AwkRuntimeError(`awk: cannot open "${name}" for output (${detail})`)
-        break
-      }
-    }
-  }
-  if (failure !== null) {
-    io.exitCode = 2
-    err += `${failure.message}\n`
-  }
-  if (err !== '') {
-    const held = io.stderr instanceof Uint8Array ? DEC.decode(io.stderr) : ''
-    io.stderr = ENC.encode(held + err)
-  }
-  return [ENC.encode(out.join('')), failure !== null]
-}
-
 function isFatal(err: unknown): err is AwkRuntimeError | AwkSyntaxError {
   return err instanceof AwkRuntimeError || err instanceof AwkSyntaxError
 }
 
-/**
- * Cut one input into records with the RS in force at each read. RS is
- * read again before every record, so an action that assigns it changes
- * how the next record is cut, as in every awk.
- */
-async function* records(
-  source: AsyncIterable<Uint8Array>,
-  interp: Interpreter,
-): AsyncIterable<string> {
-  const decoder = new TextDecoder('utf-8', { fatal: false })
-  const budget = new YieldBudget()
-  const pulled = chunks(source)
-  let buffer = ''
-  let start = 0
-  let final = false
+/** Relay a stream, a filesystem failure becoming awk's `AwkIOError`. */
+async function* guarded(source: AsyncIterable<Uint8Array>): AsyncIterable<Uint8Array> {
   try {
-    while (!final) {
-      const next = await pulled.next()
-      final = next.done === true
-      const decoded =
-        next.done === true ? decoder.decode() : decoder.decode(next.value, { stream: true })
-      buffer = buffer.slice(start) + decoded
-      start = 0
-      for (;;) {
-        const pending = budget.run()
-        if (pending !== undefined) await pending
-        const [record, after] = takeRecord(buffer, start, interp.special('RS'), final)
-        start = after
-        if (record === null) break
-        yield record
-      }
-    }
-  } finally {
-    await pulled.return?.()
+    yield* chunks(source)
+  } catch (err) {
+    if (!isFsError(err)) throw err
+    throw new AwkIOError(fsStrerror(err) ?? 'No such file or directory')
   }
 }
 
-async function* awkStream(
-  sources: readonly Source[],
-  interp: Interpreter,
-  io: IOResult,
-  opts: CommandOpts,
-): AsyncIterable<Uint8Array> {
-  let exited = false
-  try {
-    interp.runBegin()
-  } catch (err) {
-    if (err instanceof ExitProgram) {
-      io.exitCode = exitStatus(err.code)
-      exited = true
-    } else if (isFatal(err)) {
-      const [chunk] = await settle(io, interp, err, opts)
-      yield chunk
-      return
-    } else throw err
+/**
+ * The files and commands one awk run reaches, through the workspace.
+ * Operands still holding their command-line value read through the
+ * mount's own reader, the way they were resolved; every other name
+ * (`getline < file`, an ARGV slot the program filled) reads through the
+ * dispatcher, as output redirection writes through it. Every stdin
+ * reader, a `-` operand, `getline < "-"` and a command's inherited input
+ * alike, shares one cursor, so none replays what another read.
+ */
+export class AwkStreams implements AwkHost {
+  private readonly operands: readonly PathSpec[]
+  private readonly stream: Stream
+  private readonly stdin: AsyncIterator<Uint8Array>
+  private readonly opts: CommandOpts
+
+  constructor(operands: readonly PathSpec[], stream: Stream, opts: CommandOpts) {
+    this.operands = operands
+    this.stream = stream
+    this.stdin = resolveSource(opts.stdin)[Symbol.asyncIterator]()
+    this.opts = opts
   }
-  {
-    const [chunk, failed] = await settle(io, interp, null, opts)
-    yield chunk
-    if (failed) return
-  }
-  if (!exited && interp.hasMainRules()) {
-    for (const [name, open] of sources) {
-      if (exited) break
-      interp.startFile(name)
-      try {
-        for await (const record of records(open(), interp)) {
-          interp.runRecord(record)
-          const [chunk, failed] = await settle(io, interp, null, opts)
-          if (chunk.length > 0) yield chunk
-          if (failed) return
-          if (interp.skipFile) break
-        }
-      } catch (err) {
-        if (err instanceof ExitProgram) {
-          io.exitCode = exitStatus(err.code)
-          exited = true
-        } else if (isFatal(err)) {
-          const [chunk] = await settle(io, interp, err, opts)
-          yield chunk
-          return
-        } else if (isFsError(err)) {
-          // An input awk cannot open ends the run there, END and the
-          // files after it unread (mawk 1.3.4, exit 2).
-          const failure = new AwkRuntimeError(
-            `awk: cannot open "${name}" (${fsStrerror(err) ?? ''})`,
-          )
-          const [chunk] = await settle(io, interp, failure, opts)
-          yield chunk
-          return
-        } else throw err
-      }
+
+  private async *stdinView(): AsyncIterable<Uint8Array> {
+    for (;;) {
+      const next = await this.stdin.next()
+      if (next.done === true) return
+      yield next.value
     }
   }
-  try {
-    interp.runEnd()
-  } catch (err) {
-    if (err instanceof ExitProgram) io.exitCode = exitStatus(err.code)
-    else if (isFatal(err)) {
-      const [chunk] = await settle(io, interp, err, opts)
-      yield chunk
-      return
-    } else throw err
+
+  private async *readPath(name: string): AsyncIterable<Uint8Array> {
+    const dispatch = this.opts.dispatch
+    if (dispatch === undefined) throw new AwkIOError('No such file or directory')
+    const [data] = await dispatch('read', PathSpec.fromStrPath(resolvePath(name, this.opts.cwd)))
+    yield data instanceof Uint8Array ? data : ENC.encode(String(data))
   }
-  {
-    const [chunk, failed] = await settle(io, interp, null, opts)
-    yield chunk
-    if (failed) return
+
+  /** A `-f` program file: /dev/stdin reads the shared stdin cursor. */
+  programSource(path: PathSpec): AsyncIterable<Uint8Array> {
+    return isStdin(path) ? this.stdinView() : this.stream(path)
+  }
+
+  openInput(name: string, index: number | null): AsyncIterable<Uint8Array> {
+    if (index !== null && index > 0 && index <= this.operands.length) {
+      const operand = this.operands[index - 1]
+      if (operand?.rawPath === name) {
+        return guarded(isStdin(operand) ? this.stdinView() : this.stream(operand))
+      }
+    }
+    if (STDIN_NAMES.has(name)) return guarded(this.stdinView())
+    return guarded(this.readPath(name))
+  }
+
+  async writeFile(name: string, body: string, append: boolean): Promise<void> {
+    const dispatch = this.opts.dispatch
+    if (dispatch === undefined) throw new AwkRuntimeError('awk: file output requires a workspace')
+    const path = PathSpec.fromStrPath(resolvePath(name, this.opts.cwd))
+    try {
+      await dispatch(append ? 'append' : 'write', path, [ENC.encode(body)])
+    } catch (error) {
+      if (!isWalkError(error)) throw error
+      throw new AwkIOError(fsStrerror(error) ?? 'Cannot write output file')
+    }
+  }
+
+  /**
+   * Run a command line in a subshell of the session, as sh -c would.
+   * `eval` takes the line whole, so an empty one, a comment or a line
+   * ending in a backslash runs as `sh -c` would run it.
+   */
+  async run(command: string, stdin: Uint8Array | null): Promise<CommandRun> {
+    const shell = this.opts.shell
+    if (shell === undefined) {
+      throw new AwkRuntimeError('awk: running a command requires a workspace')
+    }
+    const source: ByteSource = stdin ?? this.stdinView()
+    const io = await shell(`( ${shellJoin(['eval', command])} )`, source)
+    const stdout = await materialize(io.stdout)
+    const stderr = await materialize(io.stderr)
+    return { stdout, stderr, status: io.exitCode }
+  }
+}
+
+/** Run one phase of the program; true when it ran `exit`. */
+async function stage(step: Promise<void>, io: IOResult): Promise<boolean> {
+  try {
+    await step
+  } catch (err) {
+    if (!(err instanceof ExitProgram)) throw err
+    io.exitCode = exitStatus(err.code)
+    return true
+  }
+  return false
+}
+
+function addStderr(io: IOResult, err: Uint8Array): void {
+  if (err.length === 0) return
+  const held = io.stderr instanceof Uint8Array ? DEC.decode(io.stderr) : ''
+  io.stderr = ENC.encode(held + DEC.decode(err))
+}
+
+async function drained(interp: Interpreter, io: IOResult): Promise<Uint8Array> {
+  const [out, err] = await interp.drain()
+  addStderr(io, err)
+  return out
+}
+
+/**
+ * Run the program, yielding standard output as each record settles.
+ * `exit` in BEGIN skips the input and in the main rules stops it, and END
+ * runs after either; every awk treats a runtime error as fatal at exit 2
+ * and keeps what it had already written.
+ */
+async function* awkStream(interp: Interpreter, io: IOResult): AsyncIterable<Uint8Array> {
+  try {
+    const exited = await stage(interp.runBegin(), io)
+    yield await drained(interp, io)
+    if (!exited && interp.hasMainRules()) {
+      for (;;) {
+        const record = await interp.nextRecord()
+        if (record === null) break
+        if (await stage(interp.runRecord(record), io)) break
+        const chunk = await drained(interp, io)
+        if (chunk.length > 0) yield chunk
+      }
+    }
+    await stage(interp.runEnd(), io)
+    await interp.finish()
+    yield await drained(interp, io)
+  } catch (err) {
+    if (!isFatal(err)) throw err
+    const [out, stderr] = await interp.salvage(err)
+    io.exitCode = 2
+    addStderr(io, stderr)
+    yield out
+  } finally {
+    await interp.closeInputs()
   }
 }
 
@@ -258,8 +236,8 @@ export async function awkGeneric(
   opts: CommandOpts,
   stream: Stream,
 ): Promise<CommandFnResult> {
-  stream = stdinStream(stream, opts.stdin)
   const f = parseFlags(opts)
+  const streams = new AwkStreams(paths, stream, opts)
   let program: string
   if (f.programFiles.length > 0) {
     const mountPrefix =
@@ -273,7 +251,7 @@ export async function awkGeneric(
       const virtual = resolvePath(programFile, opts.cwd)
       const programSpec = PathSpec.fromStrPath(virtual, mountKey(virtual, mountPrefix))
       try {
-        pieces.push(DEC.decode(await materialize(stream(programSpec))))
+        pieces.push(DEC.decode(await materialize(streams.programSource(programSpec))))
       } catch (err) {
         // GNU awk exits 2 when a -f program file cannot be opened;
         // anything that is not absence keeps propagating.
@@ -289,28 +267,27 @@ export async function awkGeneric(
     return [null, new IOResult({ exitCode: 2, stderr: ENC.encode(`${USAGE}\n`) })]
   }
 
-  let interp: Interpreter
+  let parsed
   try {
-    interp = new Interpreter(parse(program), splitAssignments(f.assignments))
+    parsed = parse(program)
   } catch (err) {
     if (err instanceof AwkSyntaxError) throw new UsageError(err.message)
     throw err
   }
+  // An empty operand names no file and mawk skips it, as it does an
+  // operand ARGV no longer holds; a `var=value` operand is assigned when
+  // the input reaches it. FILENAME reports the operand as typed.
+  const interp = new Interpreter(
+    parsed,
+    streams,
+    paths.map((p) => p.rawPath),
+    splitAssignments(f.assignments),
+  )
   if (f.fieldSeparator !== null) interp.setVar('FS', text(unescape(f.fieldSeparator)))
 
-  let sources: Source[]
-  let cache: string[]
-  // An empty operand names no file and mawk skips it, reading stdin when
-  // nothing else is left.
-  const files = paths.filter((p) => p.rawPath !== '')
-  if (files.length > 0) {
-    // FILENAME reports the operand as typed, matching every awk.
-    sources = files.map((p) => [p.rawPath, () => stream(p)] as const)
-    cache = files.filter((p) => !isStdin(p)).map((p) => p.mountPath)
-  } else {
-    sources = [['', () => resolveSource(opts.stdin)]]
-    cache = []
-  }
+  const cache = paths
+    .filter((p) => p.rawPath !== '' && !isStdin(p) && splitAssignment(p.rawPath) === null)
+    .map((p) => p.mountPath)
   const io = new IOResult({ cache })
-  return [awkStream(sources, interp, io, opts), io]
+  return [awkStream(interp, io), io]
 }

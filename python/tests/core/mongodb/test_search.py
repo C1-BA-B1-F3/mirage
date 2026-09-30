@@ -73,7 +73,7 @@ async def _search(path: str, pattern: str, **flags) -> list[str]:
                                        SearchQuery(query=pattern,
                                                    options={
                                                        "grep": {
-                                                           "basic": True,
+                                                           "syntax": "basic",
                                                            "fixed_string":
                                                            False,
                                                            **flags

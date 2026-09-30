@@ -9,7 +9,13 @@ interface Required {
 }
 
 const LIMIT = 64
-export const LONGEST = 4096
+// Long enough for a translated Unicode class: ripgrep's `\b` alone spells its
+// word class out four times, some 45,000 characters of host source.
+export const LONGEST = 1 << 18
+// The ASCII letters a non-ASCII character matches under JavaScript's Unicode
+// case folding (the Kelvin sign for k, `ſ` for s): a lowercased byte search
+// for a needle holding one could miss a line.
+const UNICODE_FOLDED = /[ks]/
 const QUANTIFIER = /[*+?]|\{(?<least>[0-9]+)(?:,[0-9]*)?\}/y
 const GROUP = /\?(?:(?<look>=|!|<=|<!)|[:>]|P?<[A-Za-z_$][A-Za-z0-9_$]*>)/y
 const UNKNOWN: Required = { literal: null, needles: [] }
@@ -167,20 +173,16 @@ class RequiredLiterals {
 /**
  * Byte-view literals, one of which every line `pat` matches contains.
  * Under `i` they are lowercase, for a search of a lowercased view. Unicode
- * case folding (`i` with `u` or `v`) matches non-ASCII spellings of ASCII
- * letters (`ſ` for `s`), which only the line matcher can see, so a pattern
- * that folds that way gets none.
+ * case folding (`i` with `u` or `v`) matches non-ASCII spellings of two ASCII
+ * letters (`ſ` for `s`), which only the line matcher can see, so under it a
+ * needle holding one of them gives the pattern none.
  */
 export function requiredNeedles(pat: RegExp): string[] | null {
-  if (
-    pat.global ||
-    pat.sticky ||
-    (pat.ignoreCase && (pat.unicode || pat.flags.includes('v'))) ||
-    pat.source.length > LONGEST ||
-    /[^\x20-\x7e]/.test(pat.source)
-  )
+  if (pat.global || pat.sticky || pat.source.length > LONGEST || /[^\x20-\x7e]/.test(pat.source))
     return null
   const found = new RequiredLiterals(pat.source).needles()
   const needles = pat.ignoreCase ? [...new Set(found.map((s) => s.toLowerCase()))] : [...found]
+  const unicodeFold = pat.ignoreCase && (pat.unicode || pat.flags.includes('v'))
+  if (unicodeFold && needles.some((needle) => UNICODE_FOLDED.test(needle))) return null
   return needles.length > 0 ? needles : null
 }

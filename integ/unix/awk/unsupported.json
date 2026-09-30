@@ -35,7 +35,7 @@
       }
     },
     {
-      "id": "awk_rejects_getline",
+      "id": "awk_getline_var_at_eof",
       "seq": 962341,
       "targets": [
         "ram",
@@ -63,13 +63,13 @@
       ],
       "command": "printf 'a\\n' | awk '{getline line; print line}'",
       "expect": {
-        "exit": 2,
-        "stdout": "",
-        "stderr": "awk: getline is not supported in mirage\n"
+        "exit": 0,
+        "stdout": "\n",
+        "stderr": ""
       }
     },
     {
-      "id": "awk_rejects_output_pipe",
+      "id": "awk_output_pipe_to_cat",
       "seq": 962342,
       "targets": [
         "ram",
@@ -97,13 +97,13 @@
       ],
       "command": "awk 'BEGIN{print \"hi\" | \"cat\"}'",
       "expect": {
-        "exit": 2,
-        "stdout": "",
-        "stderr": "awk: output pipes are not supported in mirage\n"
+        "exit": 0,
+        "stdout": "hi\n",
+        "stderr": ""
       }
     },
     {
-      "id": "awk_rejects_system",
+      "id": "awk_system_runs_a_command",
       "seq": 962343,
       "targets": [
         "ram",
@@ -129,11 +129,11 @@
         "gdrive-folder",
         "box"
       ],
-      "command": "awk 'BEGIN{system(\"ls\")}'",
+      "command": "awk 'BEGIN{r = system(\"echo hi\"); print r}'",
       "expect": {
-        "exit": 2,
-        "stdout": "",
-        "stderr": "awk: system() is not supported in mirage\n"
+        "exit": 0,
+        "stdout": "hi\n0\n",
+        "stderr": ""
       }
     }
   ]

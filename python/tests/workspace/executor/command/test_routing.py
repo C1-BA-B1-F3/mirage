@@ -22,7 +22,8 @@ from mirage.workspace import Workspace
 from mirage.workspace.executor.command.routing import (default_cwd_operand,
                                                        merge_scopes,
                                                        path_flag_scopes,
-                                                       program_tokens)
+                                                       program_tokens,
+                                                       routable_scopes)
 
 
 def _path(virtual: str) -> PathSpec:
@@ -37,6 +38,29 @@ def test_merge_scopes_keeps_operand_order_and_dedupes():
     dup = _path("/m/a")
     merged = merge_scopes([a, b], [dup, _path("/m/c")])
     assert [p.virtual for p in merged] == ["/m/a", "/m/b", "/m/c"]
+
+
+def test_routable_scopes_drop_awk_assignment_operands():
+    a, assign, b = _path("/m/a"), _path("/x=1"), _path("/m/b")
+    assign = PathSpec(virtual="/x=1",
+                      directory="/",
+                      vfs_path="",
+                      resolved=True,
+                      raw_path="x=1")
+    routed = routable_scopes("awk", [a, assign, b])
+    assert [p.virtual for p in routed] == ["/m/a", "/m/b"]
+    assert routable_scopes("cat", [a, assign, b]) == [a, assign, b]
+
+
+@pytest.mark.asyncio
+async def test_awk_assignment_operand_keeps_the_line_on_one_mount():
+    ws = Workspace({"/data": RAMVFS()}, mode=MountMode.WRITE)
+    try:
+        await ws.shell("printf '1\\n' > /data/a; printf '2\\n' > /data/b")
+        result = await ws.shell("awk '{print x, $0}' /data/a x=5 /data/b")
+        assert (result.exit_code, result.stdout) == (0, b" 1\n5 2\n")
+    finally:
+        await ws.close()
 
 
 def test_path_flag_scopes_reads_path_valued_flags():

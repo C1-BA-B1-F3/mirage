@@ -30,6 +30,8 @@ MAX_CODE_POINT = 0x10FFFF
 SURROGATES = range(0xD800, 0xE000)
 RAND_MASK = 0xFFFFFFFF
 RAND_SCALE = 4294967296.0
+ESCAPES = {"t": "\t", "n": "\n", "\\": "\\"}
+ASSIGNMENT = re.compile(r"[A-Za-z_][A-Za-z0-9_]*=")
 
 
 def substr(subject: str, start: float, length: float | None) -> str:
@@ -603,6 +605,44 @@ def take_record(buffer: str, start: int, separator: str,
     return take_tail(buffer, start, final)
 
 
+def unescape(raw: str) -> str:
+    """Expand the backslash escapes awk reads in an assigned value.
+
+    A ``-v`` value, an ``-F`` separator and a ``var=value`` operand all
+    take the same escapes.
+
+    Args:
+        raw (str): the value as typed on the command line.
+    """
+    out: list[str] = []
+    idx = 0
+    while idx < len(raw):
+        if raw[idx] == "\\" and idx + 1 < len(raw):
+            nxt = raw[idx + 1]
+            out.append(ESCAPES.get(nxt, "\\" + nxt))
+            idx += 2
+            continue
+        out.append(raw[idx])
+        idx += 1
+    return "".join(out)
+
+
+def split_assignment(operand: str) -> tuple[str, str] | None:
+    """Read a ``var=value`` operand, or None when it names a file.
+
+    POSIX makes an operand an assignment when it starts with a name (a
+    letter or underscore, then letters, digits and underscores) followed
+    by ``=``; ``1x=3`` and ``=x`` are file names.
+
+    Args:
+        operand (str): the operand text.
+    """
+    found = ASSIGNMENT.match(operand)
+    if found is None:
+        return None
+    return operand[:found.end() - 1], unescape(operand[found.end():])
+
+
 __all__ = [
     "expand_replacement",
     "match_position",
@@ -618,6 +658,7 @@ __all__ = [
     "safe_pow",
     "safe_sqrt",
     "safe_trig",
+    "split_assignment",
     "split_fields",
     "split_record",
     "sprintf",
@@ -627,4 +668,5 @@ __all__ = [
     "take_paragraph",
     "take_record",
     "take_tail",
+    "unescape",
 ]

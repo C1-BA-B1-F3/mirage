@@ -1,3 +1,4 @@
+import logging
 import re
 from collections.abc import (AsyncIterator, Awaitable, Callable, Mapping,
                              Sequence)
@@ -7,22 +8,26 @@ from functools import partial
 from mirage.cache.read_through import (cache_aware_bound_bytes,
                                        cache_aware_bound_stream)
 from mirage.commands.builtin.grep_offsets import decode_line, encode_line
-from mirage.commands.builtin.grep_pattern import (build_pattern_str,
-                                                  resolve_pattern)
+from mirage.commands.builtin.grep_pattern import (NEVER_MATCH, resolve_pattern,
+                                                  rust_escape)
 from mirage.commands.builtin.grep_scan import exit_code_for
 from mirage.commands.builtin.rg_filetypes import FileTypes, type_listing
 from mirage.commands.builtin.rg_glob import Overrides
 from mirage.commands.builtin.rg_scan import (Haystack, WalkFilter,
                                              on_other_mount, open_error_line,
                                              walk_error_line, walk_haystacks)
-from mirage.commands.builtin.rg_search import (RgFlags, Tally,
-                                               host_named_groups,
-                                               prints_context, search_haystack,
+from mirage.commands.builtin.rg_search import (RgFlags, Tally, prints_context,
+                                               search_haystack,
                                                smart_case_folds)
+from mirage.commands.builtin.types import RegexSyntax
 from mirage.commands.builtin.utils.constants import STDIN_OPERAND
 from mirage.commands.builtin.utils.links import LinkDoor, link_door
 from mirage.commands.builtin.utils.output import (format_optional_records,
                                                   format_records)
+from mirage.commands.builtin.utils.pcre import PcreError, translate_pcre
+from mirage.commands.builtin.utils.rust_regex import (RustRegexError,
+                                                      translate_rust,
+                                                      whole_line, whole_word)
 from mirage.commands.builtin.utils.stream import is_stdin, stdin_stream
 from mirage.commands.builtin.utils.wrap import (call_read_bytes, call_readdir,
                                                 call_stat,
@@ -39,6 +44,8 @@ from mirage.types import FileStat, FileType, PathSpec
 from mirage.utils.errors import FS_ERRORS, WALK_ERRORS, walk_refusal
 from mirage.utils.key_prefix import mount_prefix_of
 
+logger = logging.getLogger(__name__)
+
 # ripgrep's own words for a line with no pattern, exit 2 (14.1.1).
 RG_NO_PATTERN = "rg: ripgrep requires at least one pattern to execute a search"
 # What ripgrep says when a line that named no path searched nothing,
@@ -54,6 +61,8 @@ STDIN_NAME = "<stdin>"
 IMPLICIT_CWD = ""
 SORT_KEYS = ("path", "modified", "accessed", "created", "none")
 COLOR_CHOICES = ("never", "auto", "always", "ansi")
+# --engine's values (ripgrep 14.1.1).
+ENGINES = ("default", "pcre2", "auto")
 SIZE = re.compile(r"([0-9]+)([KMG]?)")
 SIZE_UNIT = {"": 1, "K": 1 << 10, "M": 1 << 20, "G": 1 << 30}
 U64_MAX = (1 << 64) - 1
@@ -338,6 +347,9 @@ def parse_flags(fl: FlagView) -> RgFlags:
                for name, value in fl.occurrences("type_clear", "type_add")
                if isinstance(value, str)]
     return RgFlags(
+        engine=engine_flag(fl),
+        pcre2_unicode=_last(fl, "pcre2_unicode",
+                            "no_pcre2_unicode") != "no_pcre2_unicode",
         ignore_case=case == "ignore_case",
         smart_case=case == "smart_case",
         invert=_last(fl, "invert_match", "no_invert_match") == "invert_match",
@@ -407,14 +419,107 @@ def parse_flags(fl: FlagView) -> RgFlags:
     )
 
 
+def rg_syntax(f: RgFlags) -> RegexSyntax:
+    """The dialect rg's patterns are written in, for a pushed-down search.
+
+    ``auto`` reads as the default engine's: a pattern only PCRE2 takes
+    fails the default translation and the search falls back to the
+    generic scan, which runs PCRE2.
+
+    Args:
+        f (RgFlags): the parsed flags.
+    """
+    return RegexSyntax.PERL if f.engine == "pcre2" else RegexSyntax.RUST
+
+
+def engine_flag(fl: FlagView) -> str:
+    """The regex engine the line asks for, the last of -P, --no-pcre2
+    and --engine winning (ripgrep 14.1.1: `rg -P --no-pcre2` is the
+    default engine and `rg --no-pcre2 -P` is PCRE2).
+
+    Args:
+        fl (FlagView): the flag view.
+
+    Raises:
+        UsageError: --engine names no engine ripgrep has.
+    """
+    chosen = _last(fl, "pcre2", "no_pcre2", "engine")
+    if chosen == "pcre2":
+        return "pcre2"
+    if chosen != "engine":
+        return "default"
+    value = fl.as_str("engine") or ""
+    if value not in ENGINES:
+        raise UsageError(f"rg: error parsing flag --engine: "
+                         f"unrecognized regex engine '{value}'")
+    return value
+
+
+def rust_matcher(patterns: list[str], fold: bool,
+                 f: RgFlags) -> re.Pattern[str]:
+    """The default engine's matcher, or its refusal in ripgrep's words.
+
+    Args:
+        patterns (list[str]): the patterns, escaped under -F.
+        fold (bool): case-insensitive.
+        f (RgFlags): the parsed flags.
+
+    Raises:
+        UsageError: regex-syntax refuses the pattern.
+    """
+    try:
+        translated = translate_rust(patterns, fold, f.null_data)
+    except RustRegexError as exc:
+        raise UsageError(f"rg: {exc}") from exc
+    source = translated.source
+    if f.line_regexp:
+        source = whole_line(source, f.null_data)
+    elif f.whole_word:
+        source = whole_word(source)
+    return re.compile(source, re.IGNORECASE if translated.ignore_case else 0)
+
+
+def pcre_matcher(patterns: list[str], fold: bool,
+                 f: RgFlags) -> re.Pattern[str]:
+    """The PCRE2 engine's matcher, or its refusal in ripgrep's words.
+
+    ripgrep hands PCRE2 the list joined as ``(?:a)|(?:b)``, wrapped for
+    -w and -x, and the offset in its refusal counts into that string.
+
+    Args:
+        patterns (list[str]): the patterns, escaped under -F.
+        fold (bool): case-insensitive.
+        f (RgFlags): the parsed flags.
+
+    Raises:
+        UsageError: PCRE2 refuses the pattern.
+    """
+    display = "|".join(f"(?:{p})" for p in patterns)
+    if f.line_regexp:
+        display = f"(?m:^)(?:{display})(?m:$)"
+    elif f.whole_word:
+        display = f"(?<!\\w)(?:{display})(?!\\w)"
+    try:
+        translated = translate_pcre(display, f.pcre2_unicode, fold,
+                                    f.null_data)
+    except PcreError as exc:
+        raise UsageError(f"rg: PCRE2: error compiling pattern at offset "
+                         f"{exc.offset}: {exc.message}") from exc
+    flags = re.IGNORECASE if translated.ignore_case else 0
+    if not f.pcre2_unicode:
+        flags |= re.ASCII
+    return re.compile(translated.source, flags)
+
+
 def rg_matcher(pattern: str, never_match: bool, f: RgFlags) -> re.Pattern[str]:
-    """The pattern list compiled the way the flags ask.
+    """The pattern list compiled the way the flags and engine ask.
 
     -w and -x, whichever the line gave last, bound the whole list: -x to
     the line, -w to ripgrep's half word boundaries (no word character
     just before the match or just after it, which ``\\b`` would also
     demand inside it). -S folds case only when the pattern is all
-    lowercase.
+    lowercase. ``auto`` runs the default engine and falls back to PCRE2
+    only when that refuses the pattern.
 
     Args:
         pattern (str): the newline-joined pattern list.
@@ -422,17 +527,35 @@ def rg_matcher(pattern: str, never_match: bool, f: RgFlags) -> re.Pattern[str]:
             ``resolve_pattern``; it is a regex, so it suppresses -F.
         f (RgFlags): the parsed flags.
     """
-    fixed = f.fixed_string and not never_match
-    source = build_pattern_str(
-        pattern if fixed else host_named_groups(pattern), fixed)
-    if f.line_regexp:
-        source = f"^(?:{source})$"
-    elif f.whole_word:
-        source = rf"(?<!\w)(?:{source})(?!\w)"
-    # ASCII like grep's matcher: mirage's rg shares its LC_ALL=C classes.
-    folds = re.IGNORECASE if folds_case(pattern, fixed, f) else 0
-    return re.compile(source, re.ASCII | folds
-                      | (re.MULTILINE if f.null_data else 0))
+    if never_match:
+        return re.compile(NEVER_MATCH)
+    fold = folds_case(pattern, f.fixed_string, f)
+    parts = pattern.split("\n")
+    pcre = f.engine == "pcre2"
+    if f.fixed_string:
+        parts = [pcre_escape(p) if pcre else rust_escape(p) for p in parts]
+    if pcre:
+        return pcre_matcher(parts, fold, f)
+    if f.engine != "auto":
+        return rust_matcher(parts, fold, f)
+    try:
+        return rust_matcher(parts, fold, f)
+    except UsageError as refused:
+        try:
+            return pcre_matcher(parts, fold, f)
+        except UsageError as also:
+            logger.debug("rg --engine auto: PCRE2 refused too: %s", also)
+            raise refused from None
+
+
+def pcre_escape(text: str) -> str:
+    """A literal as a PCRE2 pattern.
+
+    Args:
+        text (str): the literal.
+    """
+    return "".join("\\" + ch if ch.isascii() and not ch.isalnum() else ch
+                   for ch in text)
 
 
 def folds_case(pattern: str, fixed: bool, f: RgFlags) -> bool:

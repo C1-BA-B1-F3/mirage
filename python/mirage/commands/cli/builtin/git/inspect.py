@@ -6,6 +6,8 @@ from io import BytesIO
 from dulwich.config import ConfigFile
 from dulwich.repo import BaseRepo
 
+from mirage.commands.builtin.utils.bre import (BreError, PosixSyntax,
+                                               translate_ere)
 from mirage.commands.cli.builtin.git.errors import GitError, NoWorkspaceError
 from mirage.commands.cli.builtin.git.history import (LogFlags, parse_flags,
                                                      ref_commits, select)
@@ -19,7 +21,7 @@ from mirage.commands.cli.builtin.git.util import (check_operands, escaped,
 from mirage.commands.cli.types import CLIDoors, CLIInvocation
 from mirage.commands.spec.flag_view import FlagView
 from mirage.io.types import ByteSource, IOResult
-from mirage.utils.posix import translate_classes
+from mirage.utils.posix import compile_posix_regex
 from mirage.version import __version__
 
 SHOW_TOPLEVEL = "--show-toplevel"
@@ -119,9 +121,10 @@ async def config(
                                   stderr=b"error: wrong number of arguments\n")
         key = inv.texts[0] if inv.texts else ""
         try:
-            pattern = re.compile(translate_classes(
-                config_key(key))) if regexp else None
-        except re.error:
+            pattern = compile_posix_regex(
+                translate_ere(config_key(key),
+                              PosixSyntax.EXTENDED)[0]) if regexp else None
+        except (BreError, re.error):
             return None, IOResult(
                 exit_code=6,
                 stderr=f"error: invalid key pattern: {key}\n".encode())

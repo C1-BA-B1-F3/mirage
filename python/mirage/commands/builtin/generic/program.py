@@ -172,9 +172,7 @@ async def prepare_program(
         out[PATTERN_KEYS[name]] = [] if pattern is None else [pattern]
     elif name == "sed":
         expressions = iter(fl.as_list("e"))
-        scripts = iter(
-            data.decode(errors="replace").removesuffix("\n")
-            for data in pieces)
+        scripts = iter(data.decode(errors="replace") for data in pieces)
         out["e"] = [
             next(expressions) if kind == "e" else next(scripts)
             for kind, _ in fl.occurrences("e", "f")

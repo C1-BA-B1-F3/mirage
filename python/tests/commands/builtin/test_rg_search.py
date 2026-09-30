@@ -23,6 +23,7 @@ from mirage.commands.builtin.rg_search import (ByteCursor, NonmatchStop,
                                                replace_all, rust_matches,
                                                search_haystack,
                                                smart_case_folds)
+from mirage.commands.errors import UsageError
 from mirage.commands.spec import SPECS
 from mirage.commands.spec.flag_view import FlagView
 from mirage.io.async_line_iterator import AsyncLineIterator
@@ -378,3 +379,58 @@ async def test_rg_prefilter_preserves_output_and_offsets(flags):
                           return_value=(0, 0)):
             expected = await _search(data, pattern, **opts)
         assert await _search(data, pattern, **opts) == expected
+
+
+# ripgrep 14.1.1 through PCRE2: `rg -oP`, `-r`, `-b` and `--column`
+# report the match from its last `\K`.
+@pytest.mark.asyncio
+@pytest.mark.parametrize("pattern,flags,out", [
+    (r"a\Ka", {
+        "only_matching": True,
+        "pcre2": True
+    }, "a\n"),
+    (r"a\Kbc", {
+        "only_matching": True,
+        "byte_offset": True,
+        "pcre2": True
+    }, "1:bc\n"),
+    (r"a\Kbc", {
+        "column": True,
+        "pcre2": True
+    }, "1:2:abc\n"),
+    (r"a\Kb", {
+        "replace": "X",
+        "pcre2": True
+    }, "aXc\n"),
+    (r"a\K(b)", {
+        "replace": "[$1]",
+        "pcre2": True
+    }, "a[b]c\n"),
+    ("(?<=id=)[0-9]+", {
+        "only_matching": True,
+        "pcre2": True
+    }, "42\n"),
+])
+async def test_pcre2_reports_the_kept_part(pattern, flags, out):
+    data = b"id=42\n" if "id" in pattern else (
+        b"aaa\n" if pattern == r"a\Ka" else b"abc\n")
+    assert (await _search(data, pattern, **flags))[0] == out
+
+
+def test_the_engine_is_the_last_one_the_line_names():
+    assert _flags().engine == "default"
+    assert parse_flags(FlagView({"pcre2": True},
+                                spec=SPECS["rg"])).engine == "pcre2"
+    assert _flags(engine="auto").engine == "auto"
+    with pytest.raises(UsageError) as caught:
+        _flags(engine="foo")
+    assert str(caught.value) == ("rg: error parsing flag --engine: "
+                                 "unrecognized regex engine 'foo'")
+
+
+def test_auto_falls_back_to_pcre2_only_when_the_default_refuses():
+    auto = _flags(engine="auto")
+    assert rg_matcher(r"(a)\1", False, auto).search("aa")
+    with pytest.raises(UsageError) as caught:
+        rg_matcher(r"(a)\1", False, _flags())
+    assert "backreferences are not supported" in str(caught.value)

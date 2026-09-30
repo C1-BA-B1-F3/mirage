@@ -39,9 +39,15 @@ export const SPECS: Record<string, CommandSpec> = {
       new Option({ short: '-w' }),
       new Option({ short: '-F' }),
       new Option({ short: '-E' }),
-      // -G asks for the basic expressions grep already reads by default, so it
-      // is accepted and changes nothing.
+      // -G asks for the basic expressions grep already reads by default; with
+      // -E, -F and -P it is one of the four matchers, two different ones
+      // being refused.
       new Option({ short: '-G' }),
+      new Option({ short: '-P', long: '--perl-regexp' }),
+      // -E's and -G's long spellings, one option to GNU; mirage keeps the
+      // short dests the matcher check reads next to these.
+      new Option({ long: '--extended-regexp' }),
+      new Option({ long: '--basic-regexp' }),
       new Option({ short: '-o' }),
       new Option({ short: '-q' }),
       new Option({ short: '-H' }),
@@ -301,7 +307,9 @@ export const SPECS: Record<string, CommandSpec> = {
       new Option({ long: '--no-crlf' }),
       new Option({ long: '--no-multiline' }),
       new Option({ long: '--no-multiline-dotall' }),
+      new Option({ short: '-P', long: '--pcre2' }),
       new Option({ long: '--no-pcre2' }),
+      new Option({ long: '--engine', type: 'str' }),
       new Option({ long: '--no-json' }),
       new Option({ long: '--no-search-zip' }),
       new Option({ long: '--no-encoding' }),
@@ -318,6 +326,8 @@ export const SPECS: Record<string, CommandSpec> = {
     // rather than the pattern.
     positional: [new Operand({ type: 'str', providedBy: ['-e', '-f', '--files', '--type-list'] })],
     rest: new Operand({ type: 'path' }),
+    // ripgrep's parser (lexopt) takes a long flag only as spelled.
+    allowAbbrev: false,
   }),
   search: new CommandSpec({
     options: [
@@ -331,7 +341,7 @@ export const SPECS: Record<string, CommandSpec> = {
   sed: new CommandSpec({
     options: [
       new Option({ short: '-i' }),
-      // -e takes a script and may repeat; multiple -e are joined with newlines.
+      // -e takes a script and may repeat; the pieces compile in order.
       new Option({ short: '-e', type: 'str', multiple: true }),
       // -f reads the script from a file and may repeat (like grep -f); its value
       // is a PATH so it routes and is read from the mount.
@@ -339,6 +349,9 @@ export const SPECS: Record<string, CommandSpec> = {
       new Option({ short: '-n' }),
       new Option({ short: '-E' }),
       new Option({ short: '-r' }),
+      // -l N sets the `l` command's line length (GNU atoi: 0 never folds).
+      new Option({ short: '-l', long: '--line-length', type: 'str' }),
+      new Option({ short: '-s', long: '--separate' }),
     ],
     // providedBy lists the flags that can supply this positional slot's value;
     // when any is present the parser skips the slot so the next word is not
@@ -366,6 +379,7 @@ export const SPECS: Record<string, CommandSpec> = {
       new Option({ short: '-E' }),
       new Option({ short: '-G' }),
       new Option({ short: '-F' }),
+      new Option({ short: '-P' }),
       new Option({ short: '-H' }),
       new Option({ short: '-h' }),
       new Option({ short: '-m', type: 'str' }),

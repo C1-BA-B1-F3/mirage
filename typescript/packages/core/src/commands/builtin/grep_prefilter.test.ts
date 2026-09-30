@@ -61,6 +61,13 @@ it.each([
   expect(requiredNeedles(pat)).toBeNull()
 })
 
+it('keeps the needles Unicode folding cannot reach', () => {
+  // Only the Kelvin sign and `ſ` fold onto ASCII letters under `iu`, so
+  // `needle` still narrows.
+  expect(requiredNeedles(/Needle/iu)).toEqual(['needle'])
+  expect(requiredNeedles(/kin/iu)).toBeNull()
+})
+
 it('bounds the source and builds long literals once', () => {
   expect(requiredNeedles(new RegExp('a'.repeat(LONGEST)))).toEqual(['a'.repeat(LONGEST)])
   expect(requiredNeedles(new RegExp('a'.repeat(LONGEST + 1)))).toBeNull()

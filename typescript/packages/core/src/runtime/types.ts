@@ -14,7 +14,7 @@
 
 import type { ProcessView } from '../process/types.ts'
 
-import type { IOResult, OpReport } from '../io/types.ts'
+import type { ByteSource, IOResult, OpReport } from '../io/types.ts'
 import type { PathSpec, SetAttrFields } from '../types.ts'
 import type { RuntimeConfig } from './config.ts'
 import type { RouteScript } from './routing/types.ts'
@@ -70,6 +70,15 @@ export type DispatchFn = (
   kwargs?: Record<string, unknown>,
   report?: OpReport,
 ) => Promise<[unknown, IOResult]>
+
+/**
+ * Run one shell line in the calling session and return its result, the
+ * line reading the given input (null keeps the ambient one): the door a
+ * command handler reaches the executor through, as awk's command pipes
+ * and system() do. Defined beside DispatchFn for the same reason: the
+ * consumer receives it, the workspace provides it.
+ */
+export type ShellFn = (line: string, stdin: ByteSource | null) => Promise<IOResult>
 
 /**
  * Per-op modifiers riding the bridge's attrs slot: setattr's fields,

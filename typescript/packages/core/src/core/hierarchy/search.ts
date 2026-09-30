@@ -33,7 +33,7 @@ export function queryMatcher(query: SearchQuery): RegExp {
     options.ignoreCase,
     options.fixedString,
     options.wholeWord,
-    options.basic,
+    options.syntax,
   )
 }
 

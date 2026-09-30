@@ -63,59 +63,6 @@ export function translateBracket(pattern: string, start: number, out: string[]):
   throw new SyntaxError('Unmatched [, [^, [:, [., or [=')
 }
 
-const INTERVAL = /\{\d+(?:,\d*)?\}/y
-
-/**
- * Expand POSIX brackets while preserving regex operators and escapes. With
- * `nest`, a quantifier stacked on a quantified atom repeats that whole
- * repetition, the way glibc reads an ERE: `a++` is `(a+)+` and `a+?` is
- * `(a+)?`, never a syntax error or the host's lazy form.
- */
-export function translateClasses(pattern: string, nest = true): string {
-  const out: string[] = []
-  const groups: number[] = []
-  let atom: number | null = null
-  let quantified = false
-  let idx = 0
-  while (idx < pattern.length) {
-    const ch = pattern.charAt(idx)
-    INTERVAL.lastIndex = idx
-    const interval = ch === '{' ? INTERVAL.exec(pattern) : null
-    if ('*+?'.includes(ch) || interval !== null) {
-      const token = interval?.[0] ?? ch
-      if (nest && quantified && atom !== null)
-        out.splice(atom, out.length - atom, '(?:', ...out.slice(atom), ')')
-      out.push(token)
-      quantified = atom !== null
-      idx += token.length
-      continue
-    }
-    quantified = false
-    if (ch === '\\' && idx + 1 < pattern.length) {
-      atom = out.length
-      out.push(pattern.slice(idx, idx + 2))
-      idx += 2
-    } else if (ch === '[') {
-      atom = out.length
-      idx = translateBracket(pattern, idx, out)
-    } else if (ch === '(') {
-      groups.push(out.length)
-      atom = null
-      out.push(ch)
-      idx += 1
-    } else if (ch === ')') {
-      atom = groups.pop() ?? null
-      out.push(ch)
-      idx += 1
-    } else {
-      atom = '|^$'.includes(ch) ? null : out.length
-      out.push(ch)
-      idx += 1
-    }
-  }
-  return out.join('')
-}
-
 export function classCharacters(name: string): string {
   const expansion = Object.hasOwn(POSIX_CLASSES, name) ? POSIX_CLASSES[name] : undefined
   if (expansion === undefined) throw new Error(`tr: invalid character class '${name}'`)
@@ -156,12 +103,14 @@ export function foldAscii(text: string): string {
 // Scan complete escapes, classes and named group openers before literal letters.
 // Lowercasing regex source directly would turn \\D into \\d and [Z-a] into [z-a].
 const FOLD_TOKEN =
-  /\\(?:x[\da-fA-F]{2}|u[\da-fA-F]{4}|c[A-Za-z]|k<[^>]+>|[\s\S])|\[(?:\\[\s\S]|[^\]\\])*\]|\(\?<[^=!][^>]*>|[A-Z]/g
+  /\\(?:x[\da-fA-F]{2}|u[\da-fA-F]{4}|u\{[\da-fA-F]+\}|c[A-Za-z]|k<[^>]+>|[\s\S])|\[(?:\\[\s\S]|[^\]\\])*\]|\(\?<[^=!][^>]*>|[A-Z]/g
 
-function foldRegexSource(source: string): string {
+// Under `u` a bracket is read with `u` too, so a `\u{...}` member is one code
+// point rather than the letters of its spelling.
+function foldRegexSource(source: string, unicode: boolean): string {
   return source.replace(FOLD_TOKEN, (token) => {
     if (token.startsWith('[')) {
-      const bracket = new RegExp(token)
+      const bracket = new RegExp(token, unicode ? 'u' : '')
       const negated = token.startsWith('[^')
       let letters = ''
       for (let code = 97; code <= 122; code++) {
@@ -173,8 +122,8 @@ function foldRegexSource(source: string): string {
       return negated ? `(?:(?![${letters}])${token})` : `(?:${token}|[${letters}])`
     }
     if (token.startsWith('(?<') || token.startsWith('\\k<')) return token
-    if (/^\\[xu][\da-fA-F]+$/.test(token)) {
-      const code = Number.parseInt(token.slice(2), 16)
+    if (/^\\(?:[xu][\da-fA-F]+|u\{[\da-fA-F]+\})$/.test(token)) {
+      const code = Number.parseInt(token.replace(/[\\xu{}]/g, ''), 16)
       return code >= 65 && code <= 90 ? String.fromCharCode(code + 32) : token
     }
     if (token.startsWith('\\')) return token
@@ -197,7 +146,7 @@ class AsciiIgnoreCaseRegex extends RegExp {
     super(source, flags)
     const foldedFlags = this.flags.replace('i', '')
     this.folded = new RegExp(
-      foldRegexSource(this.source),
+      foldRegexSource(this.source, this.unicode),
       foldedFlags.includes('d') ? foldedFlags : foldedFlags + 'd',
     )
   }

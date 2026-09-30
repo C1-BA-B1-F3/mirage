@@ -68,7 +68,7 @@ async function search(
         ignore_case: flags.ignoreCase ?? false,
         fixed_string: flags.fixedString ?? false,
         whole_word: flags.wholeWord ?? false,
-        basic: flags.basic ?? true,
+        syntax: flags.syntax ?? 'basic',
       },
     },
   })

@@ -15,15 +15,29 @@
 import re
 from collections.abc import Awaitable, Callable, Sequence
 
-from mirage.commands.builtin.utils.bre import BreError, translate_bre
+from mirage.commands.builtin.types import RegexSyntax
+from mirage.commands.builtin.utils.bre import (BreError, translate_bre,
+                                               translate_ere)
+from mirage.commands.builtin.utils.pcre import PcreError, translate_pcre
+from mirage.commands.builtin.utils.rust_regex import (RustRegexError,
+                                                      translate_rust,
+                                                      whole_word)
+from mirage.commands.builtin.utils.types import HostRegex
 from mirage.commands.builtin.utils.wrap import call_read_bytes
 from mirage.commands.errors import UsageError
 from mirage.commands.spec.flag_view import FlagView
 from mirage.types import PathSpec
 from mirage.utils.key_prefix import mount_prefix_of
-from mirage.utils.posix import compile_posix_regex, translate_classes
+from mirage.utils.posix import compile_posix_regex
 
 NEVER_MATCH = r"(?!)"
+# The matcher options, as GNU grep names them: each one picks the
+# dialect, and two different ones on a line are refused.
+MATCHERS = {"E": RegexSyntax.EXTENDED, "P": RegexSyntax.PERL}
+CONFLICTING_MATCHERS = "conflicting matchers specified"
+PERL_SINGLE = "the -P option only supports a single pattern"
+# GNU grep 3.11's -P wrapping for -w (pcresearch.c).
+PERL_WORD = ("(?<!\\w)(?:", ")(?!\\w)")
 # The dest -e fills in each search command's spec: rg spells its options
 # by their long names.
 PATTERN_KEYS = {"grep": "e", "zgrep": "e", "rg": "regexp"}
@@ -150,30 +164,162 @@ def bre_source(part: str) -> str:
         raise UsageError(f"grep: {exc}") from exc
 
 
-def _source_of(part: str, fixed_string: bool, basic: bool) -> str:
+def ere_source(part: str) -> str:
+    """One extended expression as grep -E reads it, or grep's refusal.
+
+    Args:
+        part (str): a single extended expression from the pattern list.
+
+    Raises:
+        UsageError: the pattern is one glibc's compiler would refuse.
+    """
+    try:
+        return translate_ere(part)[0]
+    except BreError as exc:
+        raise UsageError(f"grep: {exc}") from exc
+
+
+def matcher_syntax(fl: FlagView,
+                   prog: str = "grep",
+                   perl: str = "perl_regexp") -> RegexSyntax:
+    """The dialect grep's matcher options pick, refusing a mixture.
+
+    GNU grep 3.11 keeps one matcher: -G, -E, -F and -P each name one,
+    repeating the same is harmless, and any two different ones are
+    ``conflicting matchers specified`` (exit 2) in either order. -F is
+    carried as ``fixed_string``, so it only takes part in the check.
+
+    Args:
+        fl (FlagView): the grep (or zgrep) flag view.
+        prog (str): the name the refusal carries.
+        perl (str): the dest -P fills in this spec (grep's has a long
+            spelling, zgrep's does not).
+
+    Raises:
+        UsageError: two different matchers were given.
+    """
+    dests = {"G": "G", "E": "E", "F": "F", perl: "P"}
+    if perl == "perl_regexp":
+        dests.update(basic_regexp="G", extended_regexp="E")
+    chosen = {matcher for dest, matcher in dests.items() if fl.as_bool(dest)}
+    if len(chosen) > 1:
+        raise UsageError(f"{prog}: {CONFLICTING_MATCHERS}")
+    for matcher in chosen:
+        if matcher in MATCHERS:
+            return MATCHERS[matcher]
+    return RegexSyntax.BASIC
+
+
+def pattern_warnings(pattern: str,
+                     syntax: RegexSyntax,
+                     prog: str = "grep") -> bytes:
+    """GNU grep's compile-time warnings for a pattern list, as stderr.
+
+    Only an extended expression has any: dfa.c warns about a repetition
+    operator at the start of an expression (`grep: warning: * at start
+    of expression`), once per occurrence, which is also how GNU reads
+    `(?<=...)`.
+
+    Args:
+        pattern (str): the newline-separated pattern list.
+        syntax (RegexSyntax): its dialect.
+        prog (str): the name the warning carries.
+    """
+    if syntax is not RegexSyntax.EXTENDED:
+        return b""
+    lines: list[str] = []
+    for part in pattern.split("\n"):
+        try:
+            lines.extend(translate_ere(part)[2])
+        except BreError:
+            return b""
+    return "".join(f"{prog}: warning: {w}\n" for w in lines).encode()
+
+
+def _source_of(part: str, fixed_string: bool, syntax: RegexSyntax) -> str:
     """One pattern's regex source, in the syntax it was written in.
 
     Args:
         part (str): a single pattern from the list.
         fixed_string (bool): True if -F flag is set.
-        basic (bool): True when the pattern is a basic regular
-            expression (grep's default), False for an extended one.
+        syntax (RegexSyntax): BASIC or EXTENDED.
     """
     if fixed_string:
         return re.escape(part)
-    if basic:
+    if syntax is RegexSyntax.BASIC:
         return bre_source(part)
+    return ere_source(part)
+
+
+def perl_regex(pattern: str,
+               ignore_case: bool,
+               whole: bool,
+               unicode: bool = False) -> tuple[str, bool]:
+    """grep -P's one pattern as host source, or grep's refusal.
+
+    Args:
+        pattern (str): the pattern (a list of one).
+        ignore_case (bool): -i.
+        whole (bool): -w, wrapped the way GNU grep wraps it.
+        unicode (bool): UCP classes (a pushed-down rg -P).
+
+    Returns:
+        tuple[str, bool]: the host source and whether the host must fold
+            case (a caseless back-reference).
+
+    Raises:
+        UsageError: more than one pattern, or PCRE2 refuses it.
+    """
+    if "\n" in pattern:
+        raise UsageError(f"grep: {PERL_SINGLE}")
+    source = PERL_WORD[0] + pattern + PERL_WORD[1] if whole else pattern
     try:
-        return translate_classes(part)
-    except re.error as exc:
-        raise UsageError(f"grep: {exc}") from exc
+        translated = translate_pcre(source, unicode, ignore_case)
+    except PcreError as exc:
+        raise UsageError(f"grep: {exc.message}") from exc
+    return translated.source, translated.ignore_case
+
+
+def rust_source(pattern: str, fixed_string: bool, whole: bool,
+                ignore_case: bool) -> HostRegex:
+    """ripgrep's default-engine pattern list as host source.
+
+    Args:
+        pattern (str): the newline-separated pattern list.
+        fixed_string (bool): -F.
+        whole (bool): -w, ripgrep's half word boundaries.
+        ignore_case (bool): -i or smart case.
+
+    Raises:
+        UsageError: ripgrep refuses the pattern.
+    """
+    parts = pattern.split("\n")
+    if fixed_string:
+        parts = [rust_escape(part) for part in parts]
+    try:
+        translated = translate_rust(parts, ignore_case)
+    except RustRegexError as exc:
+        raise UsageError(f"rg: {exc}") from exc
+    if not whole:
+        return translated
+    return HostRegex(whole_word(translated.source), translated.ignore_case)
+
+
+def rust_escape(text: str) -> str:
+    """A literal as a Rust regex, the way ``regex::escape`` spells it.
+
+    Args:
+        text (str): the literal.
+    """
+    return "".join("\\" + ch if ch in "\\.+*?()|[]{}^$#&-~" else ch
+                   for ch in text)
 
 
 def build_pattern_str(
     pattern: str,
     fixed_string: bool = False,
     whole_word: bool = False,
-    basic: bool = False,
+    syntax: RegexSyntax = RegexSyntax.EXTENDED,
 ) -> str:
     """Build a regex source string from a POSIX pattern list.
 
@@ -182,23 +328,21 @@ def build_pattern_str(
             any of the patterns matches.
         fixed_string (bool): True if -F flag is set.
         whole_word (bool): True if -w flag is set.
-        basic (bool): True when the patterns are basic regular
-            expressions, which grep reads by default and which invert
-            most of Python's operators. False leaves them alone, which
-            is right for -E and for rg's own dialect.
+        syntax (RegexSyntax): BASIC or EXTENDED; the other two dialects
+            compile through ``compile_pattern``.
 
     Returns:
         str: regex source string.
     """
     parts = pattern.split("\n")
     if len(parts) == 1:
-        pat_str = _source_of(pattern, fixed_string, basic)
+        pat_str = _source_of(pattern, fixed_string, syntax)
         if whole_word:
             pat_str = r"\b" + pat_str + r"\b"
         return pat_str
     subs: list[str] = []
     for part in parts:
-        source = _source_of(part, fixed_string, basic)
+        source = _source_of(part, fixed_string, syntax)
         sub = source if fixed_string else f"(?:{source})"
         if whole_word:
             sub = r"\b" + sub + r"\b"
@@ -211,7 +355,7 @@ def compile_pattern(
     ignore_case: bool = False,
     fixed_string: bool = False,
     whole_word: bool = False,
-    basic: bool = False,
+    syntax: RegexSyntax = RegexSyntax.EXTENDED,
 ) -> re.Pattern[str]:
     """Compile a pattern list into one matcher.
 
@@ -220,25 +364,19 @@ def compile_pattern(
         ignore_case (bool): True if -i flag is set.
         fixed_string (bool): True if -F flag is set.
         whole_word (bool): True if -w flag is set.
-        basic (bool): True for a basic regular expression.
+        syntax (RegexSyntax): the dialect the patterns are written in.
     """
+    if syntax is RegexSyntax.RUST:
+        translated = rust_source(pattern, fixed_string, whole_word,
+                                 ignore_case)
+        return re.compile(translated.source,
+                          re.IGNORECASE if translated.ignore_case else 0)
+    if syntax is RegexSyntax.PERL and not fixed_string:
+        source, fold = perl_regex(pattern, ignore_case, whole_word)
+        return compile_posix_regex(source, re.IGNORECASE if fold else 0)
     flags = re.IGNORECASE if ignore_case else 0
-    source = build_pattern_str(pattern, fixed_string, whole_word, basic)
+    source = build_pattern_str(pattern, fixed_string, whole_word, syntax)
     try:
         return compile_posix_regex(source, flags)
     except re.error as exc:
-        # GNU grep 3.11 diagnostics, also used by zgrep. Syntax outside
-        # our supported dialect gets a stable generic refusal.
-        message = "Invalid regular expression"
-        for prefix, diagnostic in (
-            ("missing ), unterminated subpattern", "Unmatched ( or \\("),
-            ("bad character range", "Invalid range end"),
-            ("min repeat greater than max repeat",
-             "Invalid content of \\{\\}"),
-            ("bad escape (end of pattern)", "Trailing backslash"),
-            ("invalid group reference", "Invalid back reference"),
-        ):
-            if exc.msg.startswith(prefix):
-                message = diagnostic
-                break
-        raise UsageError(f"grep: {message}") from exc
+        raise UsageError("grep: Invalid regular expression") from exc

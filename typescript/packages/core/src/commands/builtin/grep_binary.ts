@@ -17,6 +17,8 @@ import { YieldBudget } from '../../io/yield_budget.ts'
 import { closeQuietly } from '../../io/stream.ts'
 import { decodeLine, encodeLine, MatchOffsets, prefixOf } from './grep_offsets.ts'
 import { requiredNeedles } from './grep_prefilter.ts'
+import type { RegexSyntax } from './types.ts'
+import { matchStart, matchText } from './utils/pcre.ts'
 import { AsyncLineIterator } from '../../io/async_line_iterator.ts'
 import type { IOResult } from '../../io/types.ts'
 import type { WalkFilters } from './grep_select.ts'
@@ -36,7 +38,7 @@ export interface FlagSet {
   filesWithoutMatch: boolean
   wholeWord: boolean
   fixedString: boolean
-  basicRegexp: boolean
+  syntax: RegexSyntax
   onlyMatching: boolean
   maxCount: number | null
   quiet: boolean
@@ -235,16 +237,17 @@ export async function* grepInput(
             for (const m of line.matchAll(re)) {
               const pending = budget.run()
               if (pending !== undefined) await pending
-              if (m[0] !== '')
+              const text = matchText(m)
+              if (text !== '')
                 chunks.push(
                   outputLine(
-                    encodeLine(m[0]),
+                    encodeLine(text),
                     number,
                     true,
                     path,
                     showFilename,
                     f,
-                    offsets?.at(m.index) ?? 0,
+                    offsets?.at(matchStart(m)) ?? 0,
                   ),
                 )
             }

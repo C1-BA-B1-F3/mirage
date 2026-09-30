@@ -680,8 +680,8 @@ describe('symlinks (namespace-backed)', () => {
 
   it('stat lstats a link and -L dereferences', async () => {
     const ws = await seeded()
-    expect(dec((await ws.shell('stat /data/link.txt')).stdout)).toContain('type=symlink')
-    expect(dec((await ws.shell('stat -L /data/link.txt')).stdout)).toContain('type=text')
+    expect(dec((await ws.shell('stat /data/link.txt')).stdout)).toContain('symbolic link')
+    expect(dec((await ws.shell('stat -L /data/link.txt')).stdout)).toContain('regular file')
     await ws.close()
   })
 

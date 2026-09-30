@@ -12,6 +12,8 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import { readFailExitCode } from '../../commands/spec/usage.ts'
+import { formatFsError } from '../../utils/errors.ts'
 import { pathAllowed } from '../../context/session_context.ts'
 import { mountKey } from '../../utils/key_prefix.ts'
 import { type ByteSource, IOResult, materialize } from '../../io/types.ts'
@@ -31,7 +33,7 @@ import {
   type PredNode,
 } from '../../commands/builtin/find_eval.ts'
 import { parseFindExpression, type FindExpr } from '../../commands/builtin/find_parse.ts'
-import { FindParseError, UsageError } from '../../commands/errors.ts'
+import { CommandTimeoutError, FindParseError, UsageError } from '../../commands/errors.ts'
 import type { FlagValue } from '../../commands/spec/types.ts'
 import type { Cmd, DispatchFn, RunSingle } from '../../commands/builtin/generic/crossmount/types.ts'
 import {
@@ -651,13 +653,24 @@ export async function fanOutTraversal(
       // A usage error belongs to the line, not to one mount: the
       // single-mount path reports it once as the command's result (#452),
       // and so does the walk, rather than aborting the line.
-      if (!(err instanceof UsageError)) throw err
-      const usage = new TextEncoder().encode(`${err.message}\n`)
-      return [
-        null,
-        new IOResult({ exitCode: err.exitCode, stderr: usage }),
-        new ExecutionNode({ command: cmdStr, stderr: usage, exitCode: err.exitCode }),
-      ]
+      if (err instanceof CommandTimeoutError || (err instanceof Error && err.name === 'AbortError'))
+        throw err
+      if (!(err instanceof UsageError)) {
+        ran = [
+          null,
+          new IOResult({
+            exitCode: readFailExitCode(cmdName, err),
+            stderr: formatFsError(cmdName, err, subPaths),
+          }),
+        ]
+      } else {
+        const usage = new TextEncoder().encode(`${err.message}\n`)
+        return [
+          null,
+          new IOResult({ exitCode: err.exitCode, stderr: usage }),
+          new ExecutionNode({ command: cmdStr, stderr: usage, exitCode: err.exitCode }),
+        ]
+      }
     }
     const [stdout0, io] = ran
     let stdout: ByteSource | null = stdout0

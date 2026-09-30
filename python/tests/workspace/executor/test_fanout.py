@@ -317,15 +317,16 @@ def test_fanout_preserves_partial_failure_exit_code():
     assert io.stderr == b"backend failed\n"
 
 
-def test_fanout_propagates_unexpected_backend_error():
+def test_fanout_reports_unexpected_backend_error_without_losing_output():
     primary = TraversalMount("/", output=b"root\n")
     child = TraversalMount("/data/", error=RuntimeError("backend exploded"))
     path = PathSpec.from_str_path("/")
-    with pytest.raises(RuntimeError, match="backend exploded"):
-        asyncio.run(
-            _fan_out_traversal("tree", [path], [], {},
-                               TraversalRegistry([child]), primary, "/",
-                               "tree /", None))
+    out, io, _ = asyncio.run(
+        _fan_out_traversal("tree", [path], [], {}, TraversalRegistry([child]),
+                           primary, "/", "tree /", None))
+    assert out == b"root\n"
+    assert io.exit_code == 1
+    assert io.stderr == b"tree: backend exploded\n"
 
 
 def test_filter_reads_du_paths_after_the_size_column():

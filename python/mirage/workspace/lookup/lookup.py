@@ -145,8 +145,9 @@ def _layers(name: str,
     refused = runtime_refused(name, session, registry, routing)
     if name in SHELL_NAMES and installed:
         found = True
-        yield (Consumer.EXTERNAL if (native or refused)
-               and name in INTERPRETER_NAMES else Consumer.SESSION)
+        yield (Consumer.EXTERNAL if (native or refused) and
+               (name in INTERPRETER_NAMES or name in {"ps", "kill"}) else
+               Consumer.SESSION)
     if installed and name in NAMESPACE_COMMANDS:
         found = True
         yield Consumer.NAMESPACE

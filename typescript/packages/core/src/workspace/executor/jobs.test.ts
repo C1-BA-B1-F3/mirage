@@ -486,3 +486,52 @@ describe('job builtins honor the process profile', () => {
     }
   })
 })
+
+it.each(['-TERM', '-15', '-s TERM', '-n 15', '-SIGTERM', '-9'])(
+  'ps and kill %s share managed processes',
+  async (selector) => {
+    const ws = buildWs()
+    try {
+      const pid = Number(stdoutStr(await ws.shell('sleep 30 & echo $!')))
+      const result = await ws.shell(
+        `kill -0 ${String(pid)}; echo alive=$?; ps -p${String(pid)} -o pid=,ppid=,comm=`,
+      )
+      const lines = stdoutStr(result).trimEnd().split('\n')
+      expect(lines[0]).toBe('alive=0')
+      expect(lines[1]?.trim().split(/\s+/)[0]).toBe(String(pid))
+      expect(lines[1]?.trim().split(/\s+/).at(-1)).toBe('sleep')
+      expect(stderrStr(result)).toBe('')
+      expect(
+        stdoutStr(await ws.shell(`ps --pid=${String(pid)} --format=pid= -o args=`))
+          .trim()
+          .split(/\s+/),
+      ).toEqual([String(pid), 'sleep', '30'])
+      const all = stdoutStr(await ws.shell('ps -eo pid,cmd'))
+      expect(all.split('\n')[0]?.trim().split(/\s+/)).toEqual(['PID', 'CMD'])
+      expect(all).toContain(String(pid))
+      expect((await ws.shell(`kill ${selector} ${String(pid)}`)).exitCode).toBe(0)
+      await ws.processes.drain()
+      expect(stdoutStr(await ws.shell(`ps -p ${String(pid)} -o pid=; echo absent=$?`))).toBe(
+        'absent=1\n',
+      )
+    } finally {
+      await ws.close()
+    }
+  },
+)
+
+it('kill -0 checks signal permission without cancelling the process', async () => {
+  const ws = buildWs()
+  ws.createSession('owner')
+  ws.createSession('audit', { profile: { processes: { list: 'workspace' } } })
+  try {
+    const pid = Number(stdoutStr(await ws.shell('sleep 30 & echo $!', { sessionId: 'owner' })))
+    const result = await ws.shell(`kill -0 ${String(pid)}`, { sessionId: 'audit' })
+    expect(result.exitCode).toBe(1)
+    expect(stderrStr(result)).toContain('Operation not permitted')
+    expect((await ws.shell(`kill -0 ${String(pid)}`, { sessionId: 'owner' })).exitCode).toBe(0)
+    expect(ws.processes.view('owner').get(pid)?.cancellationRequested).toBe(false)
+  } finally {
+    await ws.close()
+  }
+})

@@ -34,10 +34,12 @@ from mirage.commands.builtin.generic.grep import filename_mode
 from mirage.commands.builtin.generic.rg import (label_flags, rg,
                                                 walks_descendant_mounts)
 from mirage.commands.config import CommandOpts, ExecContext
-from mirage.commands.errors import FindParseError, UsageError
+from mirage.commands.errors import (CommandTimeoutError, FindParseError,
+                                    UsageError)
 from mirage.commands.spec import SPECS
 from mirage.commands.spec.flag_view import FlagBag, FlagView
 from mirage.commands.spec.types import FlagValue
+from mirage.commands.spec.usage import read_fail_exit
 from mirage.context import path_allowed
 from mirage.io import IOResult
 from mirage.io.stream import materialize
@@ -46,6 +48,7 @@ from mirage.ops.types import NamespaceView, StatPath
 from mirage.runtime.types import DispatchFn
 from mirage.types import FileType, PathSpec, Producer
 from mirage.utils.dates import in_mtime_window, iso_timestamp
+from mirage.utils.errors import format_fs_error
 from mirage.utils.path import respell_one
 from mirage.workspace.mount import (MountCommandUnsupported, MountEntry,
                                     MountRegistry)
@@ -678,6 +681,13 @@ async def _fan_out_traversal(
                                       command=cmd_str,
                                       exit_code=exc.exit_code,
                                       stderr=usage)
+
+        except CommandTimeoutError:
+            raise
+        except Exception as exc:
+            stdout = None
+            io = IOResult(exit_code=read_fail_exit(cmd_name, exc),
+                          stderr=format_fs_error(cmd_name, exc, sub_paths))
 
         if mount is not primary_mount and io.exit_code == 127:
             # A descendant that does not serve this command contributes

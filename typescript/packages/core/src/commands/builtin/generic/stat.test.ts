@@ -152,9 +152,9 @@ describe('stat -c directive formatting', () => {
   it('sizes a directory in the default record as %s does', async () => {
     const plain = { ...opts(''), flags: {} } as CommandOpts
     const cases: [FileStat, string][] = [
-      [fs({ type: FileType.DIRECTORY, size: null }), `size=${String(DIR_SIZE)} `],
-      [fs({ type: FileType.DIRECTORY, size: 123456 }), `size=${String(DIR_SIZE)} `],
-      [fs({ size: null }), 'size=None '],
+      [fs({ type: FileType.DIRECTORY, size: null }), `  Size: ${String(DIR_SIZE)} `],
+      [fs({ type: FileType.DIRECTORY, size: 123456 }), `  Size: ${String(DIR_SIZE)} `],
+      [fs({ size: null }), '  Size: - '],
     ]
     for (const [s, want] of cases) {
       const result = await statGeneric([PathSpec.fromStrPath('/data/f.txt')], plain, () =>
@@ -220,7 +220,7 @@ describe('stat -c directive formatting', () => {
   })
 
   it('renders time directives and epochs', async () => {
-    const s = fs({ modified: MTIME, atime: '2026-03-04T05:06:07Z' })
+    const s = fs({ modified: MTIME, ctime: MTIME, atime: '2026-03-04T05:06:07Z' })
     expect(await render('%y', s)).toBe(MTIME)
     expect(await render('%Y', s)).toBe(MTIME_EPOCH)
     expect(await render('%z', s)).toBe(MTIME)
@@ -230,7 +230,7 @@ describe('stat -c directive formatting', () => {
   })
 
   it('falls back atime to mtime when absent', async () => {
-    const s = fs({ modified: MTIME, atime: null })
+    const s = fs({ modified: MTIME, ctime: MTIME, atime: null })
     expect(await render('%x', s)).toBe(MTIME)
     expect(await render('%X', s)).toBe(MTIME_EPOCH)
   })
@@ -366,4 +366,25 @@ describe('stat -c workspace integration', () => {
     expect(statOwner.trim()).toBe('agent7 -')
     expect(lsLong).toContain(' 1 agent7 - ')
   })
+})
+
+it('renders GNU default layout with explicit unknown metadata', async () => {
+  const info = fs({ size: null, modified: null, ctime: null })
+  const result = await statGeneric(
+    [PathSpec.fromStrPath('/data/f.txt')],
+    { ...opts(''), flags: {} },
+    () => Promise.resolve(info),
+  )
+  if (result === null) throw new Error('missing result')
+  expect(DEC.decode(await materialize(result[0]))).toBe(
+    '  File: /data/f.txt\n' +
+      '  Size: -         \tBlocks: ?          IO Block: ?      regular file\n' +
+      'Device: ?\tInode: ?           Links: ?\n' +
+      'Access: (0644/-rw-r--r--)  Uid: (    -/       -)   Gid: (    -/       -)\n' +
+      'Access: -\nModify: -\nChange: -\n Birth: -\n',
+  )
+  expect(await render('%z %Z %w %W', info)).toBe('- 0 - 0')
+  expect(await render('%z %Z %w %W', fs({ ctime: '2026-03-04T05:06:07Z', birthtime: MTIME }))).toBe(
+    `2026-03-04T05:06:07Z 1772600767 ${MTIME} ${MTIME_EPOCH}`,
+  )
 })

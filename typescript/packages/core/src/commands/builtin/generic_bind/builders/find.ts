@@ -91,13 +91,14 @@ export const FIND_BUILDER: Builder = {
           idx,
         ),
       undefined,
-      dirEmpty,
+      undefined,
       () => closed.splice(0),
       () => {
         const failed = [...unstatted]
         unstatted.clear()
         return failed
       },
+      (spec) => ops.stat(accessor, spec, idx),
     )
   },
 }

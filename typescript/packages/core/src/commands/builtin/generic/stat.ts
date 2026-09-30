@@ -25,7 +25,7 @@ import {
 } from '../../../types.ts'
 import { isoToEpoch } from '../../../utils/dates.ts'
 import { fsErrorLine, isFsError } from '../../../utils/errors.ts'
-import { DIR_SIZE, contentSize, deviceRdev, isDir } from '../../../utils/stat_view.ts'
+import { contentSize, deviceRdev, isDir } from '../../../utils/stat_view.ts'
 import type { CommandFnResult, CommandOpts } from '../../config.ts'
 import { lsModeString } from '../utils/formatting.ts'
 import { groupName, identityOf, ownerName, type Identity } from '../utils/identity.ts'
@@ -42,12 +42,6 @@ const TYPE_LABELS: Partial<Record<FileType, string>> = {
 
 function typeLabel(s: FileStat): string {
   return TYPE_LABELS[s.type] ?? 'regular file'
-}
-
-// The default record's type= shows a regular file's content shape and a
-// non-regular node's kind, so one field reads the way it always has.
-function shownType(s: FileStat): string {
-  return s.type === FileType.FILE && s.content !== null ? s.content : s.type
 }
 
 function effectiveMode(s: FileStat): number {
@@ -188,10 +182,12 @@ function directiveValue(
   if (spec === 'g' || spec === 'G') return groupName(s.gid, identity)
   if (spec === 'x') return s.atime ?? s.modified ?? ''
   if (spec === 'X') return epoch(s.atime ?? s.modified)
-  if (spec === 'y' || spec === 'z') return s.modified ?? ''
-  if (spec === 'Y' || spec === 'Z') return epoch(s.modified)
-  if (spec === 'w') return '-'
-  if (spec === 'W') return '0'
+  if (spec === 'y') return s.modified ?? ''
+  if (spec === 'Y') return epoch(s.modified)
+  if (spec === 'z') return s.ctime ?? '-'
+  if (spec === 'Z') return epoch(s.ctime)
+  if (spec === 'w') return s.birthtime ?? '-'
+  if (spec === 'W') return epoch(s.birthtime)
   if (spec === 'B') return '512'
   const device = s.extra[DEVICE_NUMBERS_KEY]
   const numbers = Array.isArray(device) && device.length === 2 ? (device as [number, number]) : null
@@ -313,6 +309,33 @@ function formatStat(fmt: string, s: FileStat, name: string, identity: Identity |
   return parts.join('')
 }
 
+function statTime(value: string | null): string {
+  if (!value) return '-'
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return '-'
+  return date.toISOString().replace('T', ' ').replace('Z', '000000 +0000')
+}
+
+/** GNU coreutils 9.7 layout. VFS allocation and inode fields are unknown;
+ * missing sizes/times use '-', storage counters use '?', and times use UTC. */
+function renderStat(s: FileStat, name: string, identity: Identity | null): string {
+  const size = directiveValue('s', s, name, identity)
+  const uid = String(s.uid ?? '-').padStart(5)
+  const gid = String(s.gid ?? '-').padStart(5)
+  const owner = ownerName(s.uid, identity).padStart(8)
+  const group = groupName(s.gid, identity).padStart(8)
+  return [
+    `  File: ${nameParts(s, name, false).join(' -> ')}`,
+    `  Size: ${size.padEnd(10)}\tBlocks: ${'?'.padEnd(10)} IO Block: ${'?'.padEnd(6)} ${typeLabel(s)}`,
+    'Device: ?\tInode: ?           Links: ?',
+    `Access: (${effectiveMode(s).toString(8).padStart(4, '0')}/${lsModeString(s)})  Uid: (${uid}/${owner})   Gid: (${gid}/${group})`,
+    `Access: ${statTime(s.atime)}`,
+    `Modify: ${statTime(s.modified)}`,
+    `Change: ${statTime(s.ctime)}`,
+    ` Birth: ${statTime(s.birthtime)}`,
+  ].join('\n')
+}
+
 export async function statGeneric(
   paths: PathSpec[],
   opts: CommandOpts,
@@ -336,11 +359,7 @@ export async function statGeneric(
       if (fmt !== null) {
         lines.push(formatStat(fmt, linked, p.rawPath, identity))
       } else {
-        const sizeStr = linked.size === null ? 'None' : String(linked.size)
-        const modStr = linked.modified ?? 'None'
-        lines.push(
-          `name=${linked.name} size=${sizeStr} modified=${modStr} type=${shownType(linked)}`,
-        )
+        lines.push(renderStat(linked, p.rawPath, identity))
       }
       continue
     }
@@ -356,12 +375,7 @@ export async function statGeneric(
     if (fmt !== null) {
       lines.push(formatStat(fmt, s, p.rawPath, identity))
     } else {
-      // A directory's size= is DIR_SIZE, as `%s` prints it; anything else
-      // keeps its own, None when unknown.
-      const size = isDir(s) ? DIR_SIZE : s.size
-      const sizeStr = size === null ? 'None' : String(size)
-      const modStr = s.modified ?? 'None'
-      lines.push(`name=${s.name} size=${sizeStr} modified=${modStr} type=${shownType(s)}`)
+      lines.push(renderStat(s, p.rawPath, identity))
     }
   }
   const io = new IOResult({

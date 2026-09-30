@@ -343,7 +343,7 @@ def test_cross_md5_good_then_missing():
 
 def test_stat_good_then_missing_keeps_row():
     out, err, code = _run(_make_ws(), "stat /a/f.txt /a/missing.txt")
-    assert "name=f.txt" in out
+    assert "File: /a/f.txt" in out
     assert err == ("stat: cannot statx '/a/missing.txt': "
                    "No such file or directory\n")
     assert code == 1

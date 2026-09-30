@@ -1,5 +1,6 @@
 from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from itertools import groupby
 
 from mirage.commands.builtin.utils.formatting import ls_mode_string
@@ -17,8 +18,8 @@ from mirage.ops.types import LinkView, MountView, StatPath
 from mirage.types import (DEVICE_NUMBERS_KEY, LINK_TARGET_KEY, FileStat,
                           FileType, PathSpec, StatFn)
 from mirage.utils.errors import FS_ERRORS, fs_error_line
-from mirage.utils.stat_view import (DIR_SIZE, content_size, device_rdev,
-                                    is_dir, posix_mode)
+from mirage.utils.stat_view import (content_size, device_rdev, is_dir,
+                                    posix_mode)
 
 _STR_DIRECTIVES = frozenset("nNF")
 
@@ -219,14 +220,18 @@ def _directive_value(spec: str, s: FileStat, name: str,
         return s.atime or s.modified or ""
     if spec == "X":
         return _epoch(s.atime or s.modified)
-    if spec in ("y", "z"):
+    if spec == "y":
         return s.modified or ""
-    if spec in ("Y", "Z"):
+    if spec == "Y":
         return _epoch(s.modified)
+    if spec == "z":
+        return s.ctime or "-"
+    if spec == "Z":
+        return _epoch(s.ctime)
     if spec == "w":
-        return "-"
+        return s.birthtime or "-"
     if spec == "W":
-        return "0"
+        return _epoch(s.birthtime)
     if spec == "B":
         return "512"
     dev = s.extra.get(DEVICE_NUMBERS_KEY) if s.extra else None
@@ -355,21 +360,52 @@ def _format_stat(fmt: str, s: FileStat, name: str,
     return "".join(parts)
 
 
-def _render_stat(s: FileStat) -> str:
-    """Render the default (no -c) stat line.
+def _stat_time(value: str | None) -> str:
+    """Render a known timestamp in GNU's UTC layout, or '-' when unknown.
 
     Args:
-        s (FileStat): the stat to render.
+        value (str | None): backend ISO timestamp.
     """
-    # The record's type= shows a regular file's content shape and a
-    # non-regular node's kind, so one field reads the way it always has.
-    # A directory's size= is DIR_SIZE, as `%s` prints it; anything else
-    # keeps its own, None when unknown.
-    shown = (s.content.value if s.type is FileType.FILE
-             and s.content is not None else s.type.value)
-    size = DIR_SIZE if is_dir(s) else s.size
-    return (f"name={s.name} size={size} modified={s.modified}"
-            f" type={shown}")
+    if not value:
+        return "-"
+    try:
+        dt = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return "-"
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    dt = dt.astimezone(timezone.utc)
+    return f"{dt:%Y-%m-%d %H:%M:%S}.{dt.microsecond:06d}000 +0000"
+
+
+def _render_stat(s: FileStat, name: str, identity: Identity | None) -> str:
+    """GNU coreutils 9.7 layout; VFS storage counters remain unknown.
+
+    A VFS has rendered bytes, modes and logical owners, but no device,
+    inode, allocation blocks or IO block size. Those fields print '?';
+    absent sizes and timestamps print '-'. Times are rendered in UTC.
+
+    Args:
+        s (FileStat): the backend and namespace stat.
+        name (str): operand spelling.
+        identity (Identity | None): session owner and group defaults.
+    """
+    size = _directive_value("s", s, name, identity)
+    uid = str(s.uid) if s.uid is not None else "-"
+    gid = str(s.gid) if s.gid is not None else "-"
+    owner = owner_name(s.uid, identity)
+    group = group_name(s.gid, identity)
+    shown = " -> ".join(_name_parts(s, name, False))
+    return (f"  File: {shown}\n"
+            f"  Size: {size:<10}\tBlocks: {'?':<10} "
+            f"IO Block: {'?':<6} {_type_label(s)}\n"
+            "Device: ?\tInode: ?           Links: ?\n"
+            f"Access: ({_effective_mode(s):04o}/{ls_mode_string(s)})  "
+            f"Uid: ({uid:>5}/{owner:>8})   Gid: ({gid:>5}/{group:>8})\n"
+            f"Access: {_stat_time(s.atime)}\n"
+            f"Modify: {_stat_time(s.modified)}\n"
+            f"Change: {_stat_time(s.ctime)}\n"
+            f" Birth: {_stat_time(s.birthtime)}")
 
 
 async def stat(
@@ -418,7 +454,7 @@ async def stat(
             if fmt is not None:
                 lines.append(_format_stat(fmt, linked, p.raw_path, identity))
             else:
-                lines.append(_render_stat(linked))
+                lines.append(_render_stat(linked, p.raw_path, identity))
             continue
         try:
             s = await operand_stat(p,
@@ -433,7 +469,7 @@ async def stat(
         if fmt is not None:
             lines.append(_format_stat(fmt, s, p.raw_path, identity))
         else:
-            lines.append(_render_stat(s))
+            lines.append(_render_stat(s, p.raw_path, identity))
     io = IOResult(exit_code=1 if err else 0, stderr=err or None)
     if not lines:
         return None, io

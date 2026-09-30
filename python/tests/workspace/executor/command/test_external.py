@@ -652,7 +652,9 @@ async def test_native_captures_preserve_shell_builtins(kind, willing):
                          mode=MountMode.EXEC,
                          runtimes=[probe]) as ws:
         session = SessionState(session_id="lookup")
-        for name in SHELL_NAMES - {"python", "python3", "node", "js"}:
+        for name in SHELL_NAMES - {
+                "python", "python3", "node", "js", "ps", "kill"
+        }:
             assert lookup(name, session,
                           ws._registry) is Consumer.SESSION, name
             layers = lookup_all(name, session, ws._registry)
@@ -675,3 +677,19 @@ async def test_native_captures_preserve_shell_builtins(kind, willing):
         delegated = probe.requests if isinstance(probe,
                                                  ProcessProbe) else probe.lines
         assert len(delegated) == (4 if willing else 0)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('name,args', [('ps', '-eo pid,cmd'),
+                                       ('kill', '-0 456')])
+@pytest.mark.parametrize('willing', [True, False])
+async def test_explicit_process_command_captures_reach_the_runtime(
+        name, args, willing):
+    probe = ProcessProbe(captures=(name, ), script=lambda ctx: willing)
+    async with workspace({'/': RAMVFS()},
+                         mode=MountMode.EXEC,
+                         runtimes=[probe]) as ws:
+        result = await ws.shell(f'{name} {args}')
+        assert result.exit_code == (0 if willing else 126)
+        assert [r.argv for r in probe.requests
+                ] == ([tuple([name] + args.split())] if willing else [])

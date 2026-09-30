@@ -15,6 +15,7 @@
 import asyncio
 import re
 from collections.abc import Callable
+from dataclasses import dataclass
 from typing import Any
 
 from mirage.commands.errors import CommandTimeoutError
@@ -652,6 +653,40 @@ async def handle_fg(
     ), ExecutionNode(command=cmd_str, exit_code=job.exit_code)
 
 
+_KILL_SIGNALS = {"0": 0, "HUP": 1, "INT": 2, "QUIT": 3, "KILL": 9, "TERM": 15}
+
+
+def _kill_args(words: list[str]) -> tuple[int, list[str]]:
+    """Parse kill's signal selector without treating it as a PID.
+
+    Managed runners support probes and cancellation, not stop/continue or
+    arbitrary signal delivery. Terminating signals use the runtime's existing
+    cancellation channel (and its managed cancellation status, 137).
+
+    Args:
+        words (list[str]): arguments after kill.
+    """
+    signal = "TERM"
+    if words and words[0] in ("-s", "-n"):
+        if len(words) < 2:
+            raise ValueError("option requires an argument")
+        signal, words = words[1], words[2:]
+    elif words and words[0].startswith("-") and words[0] != "--":
+        signal, words = words[0][1:], words[1:]
+    if words and words[0] == "--":
+        words = words[1:]
+    key = signal.removeprefix("SIG")
+    number = int(
+        key) if key.isascii() and key.isdigit() else _KILL_SIGNALS.get(key)
+    if number is None or number not in _KILL_SIGNALS.values():
+        raise ValueError(f"{signal}: unsupported signal")
+    if not words:
+        raise ValueError(
+            "usage: kill [-s sigspec | -n signum | -sigspec] pid | jobspec ..."
+        )
+    return number, words
+
+
 async def handle_kill(
     job_table: JobTable,
     parts: list[str],
@@ -660,43 +695,39 @@ async def handle_kill(
 ) -> tuple[ByteSource | None, IOResult, ExecutionNode]:
     cmd_str = " ".join(parts)
     sid = _session_of(session)
-    if len(parts) < 2:
-        err = b"kill: usage: kill <job_id>\n"
-        return None, IOResult(exit_code=1,
-                              stderr=err), ExecutionNode(command=cmd_str,
-                                                         exit_code=1,
-                                                         stderr=err)
-    raw = parts[1].lstrip("%")
     try:
-        job_id = int(raw)
-    except ValueError:
-        err = f"kill: invalid job id: {parts[1]}\n".encode()
-        return None, IOResult(exit_code=1,
-                              stderr=err), ExecutionNode(command=cmd_str,
-                                                         exit_code=1,
-                                                         stderr=err)
-    if parts[1].startswith("%"):
-        job = _job_numbered(job_table.list_jobs(sid), job_id)
-        killed = job is not None and await job_table.kill(job_id, sid)
-    else:
+        signal, operands = _kill_args(parts[1:])
+    except ValueError as exc:
+        return _job_result(cmd_str, f"kill: {exc}\n", 1)
+    processes = _process_view(job_table, session)
+    errors: list[str] = []
+    for operand in operands:
+        raw = operand[1:] if operand.startswith("%") else operand
+        if not raw.isascii() or not raw.isdigit() or int(raw) <= 0:
+            errors.append(f"kill: invalid job id: {operand}")
+            continue
+        number = int(raw)
+        job = (_job_numbered(job_table.list_jobs(sid), number)
+               if operand.startswith("%") else next(
+                   (j for j in job_table.list_jobs(sid)
+                    if j.pid == number), None))
+        pid = job.pid if job is not None else number
         try:
-            killed = _process_view(job_table, session).terminate(job_id)
+            if operand.startswith("%") and job is None:
+                success = False
+            elif signal == 0:
+                success = processes.probe(pid)
+            else:
+                success = processes.terminate(pid)
+                if success and job is not None:
+                    await job_table.kill(job.id, sid)
         except PermissionError:
-            err = f"kill: ({job_id}) - Operation not permitted\n".encode()
-            return None, IOResult(exit_code=1,
-                                  stderr=err), ExecutionNode(command=cmd_str,
-                                                             exit_code=1,
-                                                             stderr=err)
-        job = next((j for j in job_table.list_jobs(sid) if j.pid == job_id),
-                   None)
-        if killed and job is not None:
-            await job_table.kill(job.id, sid)
-    if not killed:
-        err = f"kill: no such job: {job_id}\n".encode()
-        return None, IOResult(exit_code=1,
-                              stderr=err), ExecutionNode(command=cmd_str,
-                                                         exit_code=1,
-                                                         stderr=err)
+            errors.append(f"kill: ({pid}) - Operation not permitted")
+            continue
+        if not success:
+            errors.append(f"kill: no such job: {number}")
+    if errors:
+        return _job_result(cmd_str, "\n".join(errors) + "\n", 1)
     return None, IOResult(), ExecutionNode(command=cmd_str, exit_code=0)
 
 
@@ -781,6 +812,86 @@ async def handle_jobs(
     return out, IOResult(), ExecutionNode(command=cmd_str, exit_code=0)
 
 
+_PS_HEADERS = {
+    "pid": "PID",
+    "ppid": "PPID",
+    "cmd": "CMD",
+    "args": "COMMAND",
+    "comm": "COMMAND"
+}
+
+
+@dataclass(frozen=True, slots=True)
+class PsOptions:
+    pids: frozenset[int]
+    all: bool
+    columns: tuple[tuple[str, str], ...]
+
+
+def _parse_ps(words: list[str]) -> PsOptions:
+    """Parse procps selection and repeated output lists for managed processes.
+
+    Args:
+        words (list[str]): arguments after ps.
+    """
+    pids: set[int] = set()
+    columns: list[tuple[str, str]] = []
+    all_processes = False
+    at = 0
+    while at < len(words):
+        word = words[at]
+        at += 1
+        if word == "aux":
+            all_processes = True
+            continue
+        if word.startswith("--"):
+            option, _, attached = word.partition("=")
+            if option == "--pid":
+                letters = "p"
+            elif option == "--format":
+                letters = "o"
+            else:
+                raise ValueError(f"unsupported option: {word}")
+        elif word.startswith("-"):
+            letters, attached = word[1:], ""
+        else:
+            raise ValueError(f"unsupported option: {word}")
+        while letters:
+            flag, letters = letters[0], letters[1:]
+            if flag in "eAax":
+                all_processes = True
+                continue
+            if flag in "fu":
+                continue
+            if flag not in "po":
+                raise ValueError(f"unsupported option: -{flag}")
+            value = attached or letters
+            letters = ""
+            if not value:
+                if at == len(words):
+                    raise ValueError(f"option -{flag} requires an argument")
+                value = words[at]
+                at += 1
+            if flag == "p":
+                tokens = value.replace(",", " ").split()
+                if not tokens or any(
+                        not t.isascii() or not t.isdigit() or int(t) <= 0
+                        for t in tokens):
+                    raise ValueError("process ID list syntax error")
+                pids.update(int(t) for t in tokens)
+            else:
+                for token in value.replace(",", " ").split():
+                    key, equal, header = token.partition("=")
+                    if key not in _PS_HEADERS:
+                        raise ValueError(
+                            f"unknown output format specifier: {key}")
+                    columns.append(
+                        (key, header if equal else _PS_HEADERS[key]))
+                if not columns:
+                    raise ValueError("empty format list")
+    return PsOptions(frozenset(pids), all_processes, tuple(columns))
+
+
 async def handle_ps(
     job_table: JobTable,
     parts: list[str],
@@ -788,13 +899,49 @@ async def handle_ps(
     view: SessionView | None = None,
 ) -> tuple[ByteSource | None, IOResult, ExecutionNode]:
     cmd_str = " ".join(parts)
-    processes = _process_view(job_table, session)
-    # Logical runners have no native CPU, RSS, or TTY accounting. Selection
-    # never broadens the profile view, including for ps aux and ps -ef.
-    if parts[1:] not in ([], ["aux"], ["-ef"], ["-e"]):
-        return _job_result(cmd_str,
-                           "ps: supported forms: ps, ps aux, ps -e, ps -ef\n",
-                           2)
-    lines = [f"{info.pid}\t{info.command}" for info in processes.list()]
+    try:
+        options = _parse_ps(parts[1:])
+    except ValueError as exc:
+        return _job_result(cmd_str, f"ps: {exc}\n", 1)
+    processes = [
+        info for info in _process_view(job_table, session).list()
+        if options.all or not options.pids or info.pid in options.pids
+    ]
+    lines: list[str] = []
+    if options.columns:
+        widths = [
+            max(5 if key in ("pid", "ppid") else 0, len(header))
+            for key, header in options.columns
+        ]
+        if any(header for _, header in options.columns):
+            lines.append(" ".join(
+                header.rjust(width) if key in ("pid",
+                                               "ppid") else header.ljust(width)
+                for (key,
+                     header), width in zip(options.columns, widths)).rstrip())
+        for info in processes:
+            values = {
+                "pid":
+                str(info.pid),
+                "ppid":
+                str(info.parent_pid or 0),
+                "cmd":
+                info.command,
+                "args":
+                info.command,
+                "comm":
+                info.command.split()[0].rsplit("/", 1)[-1]
+                if info.command else ""
+            }
+            lines.append(" ".join(
+                values[key].rjust(width) if key in (
+                    "pid", "ppid") else values[key].ljust(width)
+                for (key, _), width in zip(options.columns, widths)).rstrip())
+    else:
+        # Managed runners have no CPU/RSS/TTY accounting; retain the compact
+        # default view. -o provides procps columns without inventing OS facts.
+        lines = [f"{info.pid}\t{info.command}" for info in processes]
+    code = 0 if processes else 1
     out = ("\n".join(lines) + "\n").encode() if lines else b""
-    return out, IOResult(), ExecutionNode(command=cmd_str, exit_code=0)
+    return out, IOResult(exit_code=code), ExecutionNode(command=cmd_str,
+                                                        exit_code=code)

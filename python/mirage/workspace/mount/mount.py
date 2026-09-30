@@ -27,15 +27,17 @@ from mirage.commands.builtin.utils.limit import run_with_timeout
 from mirage.commands.builtin.utils.paths import dispatch_stat, link_follow
 from mirage.commands.config import (CommandOpts, ExecContext,
                                     RegisteredCommand, has_injected_version)
+from mirage.commands.errors import CommandTimeoutError, UsageError
 from mirage.commands.resolve import get_extension
 from mirage.commands.spec import CommandSpec
 from mirage.commands.spec.flag_view import FlagBag
 from mirage.commands.spec.types import FlagValue
+from mirage.commands.spec.usage import read_fail_exit
 from mirage.context import (effective_mount_mode, require_paths_writable,
                             reset_mount_gate, reset_walk_probe, set_mount_gate,
                             set_walk_probe, strongest_mode_under)
 from mirage.io.cachable_iterator import CachableAsyncIterator
-from mirage.io.types import ByteSource, IOResult
+from mirage.io.types import ByteSource, IOResult, materialize
 from mirage.observe.context import (push_mount_context, push_revisions,
                                     reset_active_recorder, reset_revisions,
                                     with_mount_context, with_revisions)
@@ -45,7 +47,7 @@ from mirage.policy import resolve_limit
 from mirage.types import (FileType, Limit, MountMode, PathSpec, Producer,
                           ReadSpec, WalkProbe)
 from mirage.utils.context_scope import ContextScope
-from mirage.utils.errors import ebusy, enotsup
+from mirage.utils.errors import ebusy, enotsup, format_fs_error
 from mirage.utils.ids import uuid7
 from mirage.utils.key_prefix import mount_key
 from mirage.vfs.base import BaseVFS
@@ -58,6 +60,29 @@ from mirage.workspace.mount.read_policy import coerce_read_policy
 # stay per-path: the runtimes compose rmtree from unlink/rmdir, and
 # each of those answers for its own path above.
 _SUBTREE_OPS = frozenset({"rename"})
+
+
+async def _command_output(source: AsyncIterator[bytes], io: IOResult,
+                          command: str,
+                          paths: list[PathSpec]) -> AsyncIterator[bytes]:
+    """Keep a deferred backend failure on its command, after any emitted bytes.
+
+    Args:
+        source (AsyncIterator[bytes]): mount-owned output.
+        io (IOResult): result finalized when the stream is exhausted.
+        command (str): command whose diagnostic and exit code apply.
+        paths (list[PathSpec]): operands for diagnostic spelling.
+    """
+    try:
+        async for chunk in source:
+            yield chunk
+    except CommandTimeoutError:
+        raise
+    except Exception as exc:
+        existing = await materialize(io.stderr) or b""
+        io.stderr = existing + format_fs_error(command, exc, paths)
+        io.exit_code = (exc.exit_code if isinstance(exc, UsageError) else
+                        read_fail_exit(command, exc))
 
 
 def _wrap_cmd_streams(
@@ -725,6 +750,10 @@ class MountEntry:
                         io.producer = Producer(command=cmd_name,
                                                prefixes=(self.prefix, ),
                                                declared=cmd.limit)
+                        if stream is not None and not isinstance(
+                                stream, bytes):
+                            stream = _command_output(stream, io, cmd_name,
+                                                     paths)
                         return stream, io
                 return None, IOResult()
             finally:

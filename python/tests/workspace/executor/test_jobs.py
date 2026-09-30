@@ -735,3 +735,50 @@ async def test_a_runaway_loop_stops_at_the_process_cap():
                              b"[2] running sleep 30\n")
     finally:
         await ws.close()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    'selector', ['-TERM', '-15', '-s TERM', '-n 15', '-SIGTERM', '-9'])
+async def test_ps_columns_and_signal_probes_share_managed_processes(selector):
+    ws = Workspace({'/': RAMVFS()}, mode='exec')
+    try:
+        started = await ws.shell('sleep 30 & echo $!')
+        pid = int(started.stdout)
+        result = await ws.shell(
+            f'kill -0 {pid}; echo alive=$?; ps -p{pid} -o pid=,ppid=,comm=')
+        lines = result.stdout.decode().splitlines()
+        assert lines[0] == 'alive=0'
+        assert lines[1].split()[0] == str(pid)
+        assert lines[1].split()[-1] == 'sleep'
+        assert not result.stderr
+        result = await ws.shell(f'ps --pid={pid} --format=pid= -o args=')
+        assert result.stdout.decode().split() == [str(pid), 'sleep', '30']
+        result = await ws.shell('ps -eo pid,cmd')
+        assert result.stdout.decode().splitlines()[0].split() == ['PID', 'CMD']
+        assert f'{pid}' in result.stdout.decode()
+        assert (await ws.shell(f'kill {selector} {pid}')).exit_code == 0
+        await ws.processes.drain()
+        result = await ws.shell(f'ps -p {pid} -o pid=; echo absent=$?')
+        assert result.stdout == b'absent=1\n'
+    finally:
+        await ws.close()
+
+
+@pytest.mark.asyncio
+async def test_kill_zero_respects_signal_permissions_without_cancelling():
+    ws = Workspace({'/': RAMVFS()}, mode='exec')
+    ws.create_session('owner')
+    ws.create_session('audit', profile={'processes': {'list': 'workspace'}})
+    try:
+        pid = int((await ws.shell('sleep 30 & echo $!',
+                                  session_id='owner')).stdout)
+        result = await ws.shell(f'kill -0 {pid}', session_id='audit')
+        assert result.exit_code == 1
+        assert b'Operation not permitted' in result.stderr
+        assert (await ws.shell(f'kill -0 {pid}',
+                               session_id='owner')).exit_code == 0
+        assert ws.processes.view('owner').get(
+            pid).cancellation_requested is False
+    finally:
+        await ws.close()

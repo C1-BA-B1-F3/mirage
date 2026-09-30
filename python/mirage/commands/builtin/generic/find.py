@@ -770,6 +770,7 @@ async def _is_empty_entry(
     index: IndexCacheStore | None,
     links: LinkView | None = None,
     unstatted: dict[str, Exception] | None = None,
+    unreadable: list[str] | None = None,
 ) -> bool:
     if is_dir:
         if find_eval.has_link_children(links, path):
@@ -781,6 +782,12 @@ async def _is_empty_entry(
         try:
             return len(await readdir(spec, index)) == 0
         except (FileNotFoundError, NotADirectoryError):
+            return False
+        except PermissionError:
+            if unreadable is None:
+                raise
+            if path not in unreadable:
+                unreadable.append(path)
             return False
     st = await _stat_entry(stat, path, prefix, index, unstatted)
     return st is not None and st.type is FileType.FILE and st.size == 0
@@ -1002,7 +1009,8 @@ async def walk_find(
         is_empty = None
         if need_empty:
             is_empty = await _is_empty_entry(readdir, stat, p, is_dir, prefix,
-                                             index, links, unstatted)
+                                             index, links, unstatted,
+                                             unreadable)
         # With a time test in the tree the stat comes first, so the entry
         # answers the test itself and a -prune after it fires only where
         # GNU's would; the stat that -size alone needs waits for the rows
@@ -1178,6 +1186,7 @@ async def find_walk_generic(
             start = await resolve_start(search,
                                         args,
                                         stat_path,
+                                        stat=partial(stat, index=opts.index),
                                         is_link=is_link(links, search),
                                         follow=link_follow(links))
             if start.missing:

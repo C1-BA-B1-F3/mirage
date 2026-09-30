@@ -122,6 +122,10 @@ async function isEmptyEntry(
       return (await deps.readdir(spec, index)).length === 0
     } catch (err) {
       if (isEnoent(err)) return false
+      if (isEacces(err) && deps.unreadable !== undefined) {
+        if (!deps.unreadable.includes(path)) deps.unreadable.push(path)
+        return false
+      }
       throw err
     }
   }

@@ -33,6 +33,108 @@
         "stdout": "killed\n",
         "stderr": ""
       }
+    },
+    {
+      "id": "job_signal_probe_and_ps_selection",
+      "seq": 502410,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "(sleep 5 & p=$!; kill -0 \"$p\"; echo alive=$?; ps -p \"$p\" -o comm=; kill -s TERM \"$p\"; wait \"$p\" 2>/dev/null || :)",
+      "expect": {
+        "exit": 0,
+        "stdout": "alive=0\nsleep\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "job_ps_missing_pid_exits_one",
+      "seq": 502407,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "ps -p 999999999 -o pid=; echo absent=$?",
+      "expect": {
+        "exit": 0,
+        "stdout": "absent=1\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "job_ps_column_headers",
+      "seq": 502409,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "ps -eo pid,ppid,cmd | head -1 | awk '{print $1,$2,$3}'",
+      "expect": {
+        "exit": 0,
+        "stdout": "PID PPID CMD\n",
+        "stderr": ""
+      }
     }
   ]
 }

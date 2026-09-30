@@ -631,6 +631,38 @@ export async function handleFg(
   return [stdout, io, new ExecutionNode({ command: cmdStr, exitCode: job.exitCode })]
 }
 
+const KILL_SIGNALS: Readonly<Record<string, number>> = {
+  '0': 0,
+  HUP: 1,
+  INT: 2,
+  QUIT: 3,
+  KILL: 9,
+  TERM: 15,
+}
+
+/** Managed runners support probes and cancellation. Terminating signals use
+ * the runtime cancellation channel and its managed exit status (137); native
+ * signal delivery requires an explicitly captured runtime command. */
+function killArgs(words: string[]): readonly [number, string[]] {
+  let signal = 'TERM'
+  if (words[0] === '-s' || words[0] === '-n') {
+    if (words.length < 2) throw new Error('option requires an argument')
+    signal = words[1] ?? ''
+    words = words.slice(2)
+  } else if (words[0]?.startsWith('-') === true && words[0] !== '--') {
+    signal = words[0].slice(1)
+    words = words.slice(1)
+  }
+  if (words[0] === '--') words = words.slice(1)
+  const key = signal.replace(/^SIG/, '')
+  const number = /^\d+$/.test(key) ? Number(key) : KILL_SIGNALS[key]
+  if (number === undefined || !Object.values(KILL_SIGNALS).includes(number))
+    throw new Error(`${signal}: unsupported signal`)
+  if (words.length === 0)
+    throw new Error('usage: kill [-s sigspec | -n signum | -sigspec] pid | jobspec ...')
+  return [number, words]
+}
+
 export async function handleKill(
   jobTable: JobTable,
   parts: string[],
@@ -639,53 +671,43 @@ export async function handleKill(
 ): Promise<JobHandlerResult> {
   const cmdStr = parts.join(' ')
   const sid = sessionOf(session)
-  if (parts.length < 2) {
-    const err = new TextEncoder().encode('kill: usage: kill <job_id>\n')
-    return [
-      null,
-      new IOResult({ exitCode: 1, stderr: err }),
-      new ExecutionNode({ command: cmdStr, exitCode: 1, stderr: err }),
-    ]
+  let signal: number
+  let operands: string[]
+  try {
+    ;[signal, operands] = killArgs(parts.slice(1))
+  } catch (err) {
+    return jobResult(cmdStr, `kill: ${err instanceof Error ? err.message : String(err)}\n`, 1)
   }
-  const raw = (parts[1] ?? '').replace(/^%+/, '')
-  const jobId = Number(raw)
-  if (!Number.isInteger(jobId)) {
-    const err = new TextEncoder().encode(`kill: invalid job id: ${parts[1] ?? ''}\n`)
-    return [
-      null,
-      new IOResult({ exitCode: 1, stderr: err }),
-      new ExecutionNode({ command: cmdStr, exitCode: 1, stderr: err }),
-    ]
-  }
-  let killed: boolean
-  if ((parts[1] ?? '').startsWith('%')) {
-    const job = jobNumbered(jobTable.listJobs(sid), jobId)
-    killed = job !== null && (await jobTable.kill(jobId, sid))
-  } else {
+  const processes = processView(jobTable, session)
+  const errors: string[] = []
+  for (const operand of operands) {
+    const raw = operand.startsWith('%') ? operand.slice(1) : operand
+    const number = Number(raw)
+    if (!/^\d+$/.test(raw) || number <= 0 || !Number.isSafeInteger(number)) {
+      errors.push(`kill: invalid job id: ${operand}`)
+      continue
+    }
+    const jobs = jobTable.listJobs(sid)
+    const job = operand.startsWith('%')
+      ? jobNumbered(jobs, number)
+      : jobs.find((j) => j.pid === number)
+    const pid = job?.pid ?? number
+    let success: boolean
     try {
-      killed = processView(jobTable, session).terminate(jobId)
+      if (operand.startsWith('%') && job == null) success = false
+      else if (signal === 0) success = processes.probe(pid)
+      else {
+        success = processes.terminate(pid)
+        if (success && job != null) await jobTable.kill(job.id, sid)
+      }
     } catch (err) {
       if ((err as { code?: unknown }).code !== 'EPERM') throw err
-      const denied = new TextEncoder().encode(
-        `kill: (${String(jobId)}) - Operation not permitted\n`,
-      )
-      return [
-        null,
-        new IOResult({ exitCode: 1, stderr: denied }),
-        new ExecutionNode({ command: cmdStr, exitCode: 1, stderr: denied }),
-      ]
+      errors.push(`kill: (${String(pid)}) - Operation not permitted`)
+      continue
     }
-    const job = jobTable.listJobs(sid).find((j) => j.pid === jobId)
-    if (killed && job !== undefined) await jobTable.kill(job.id, sid)
+    if (!success) errors.push(`kill: no such job: ${String(number)}`)
   }
-  if (!killed) {
-    const err = new TextEncoder().encode(`kill: no such job: ${jobId.toString()}\n`)
-    return [
-      null,
-      new IOResult({ exitCode: 1, stderr: err }),
-      new ExecutionNode({ command: cmdStr, exitCode: 1, stderr: err }),
-    ]
-  }
+  if (errors.length > 0) return jobResult(cmdStr, errors.join('\n') + '\n', 1)
   return [null, new IOResult(), new ExecutionNode({ command: cmdStr, exitCode: 0 })]
 }
 
@@ -768,6 +790,80 @@ export function handleJobs(
   return [out, new IOResult(), new ExecutionNode({ command: cmdStr, exitCode: 0 })]
 }
 
+const PS_HEADERS: Readonly<Record<string, string>> = {
+  pid: 'PID',
+  ppid: 'PPID',
+  cmd: 'CMD',
+  args: 'COMMAND',
+  comm: 'COMMAND',
+}
+
+interface PsOptions {
+  readonly pids: ReadonlySet<number>
+  readonly all: boolean
+  readonly columns: readonly (readonly [string, string])[]
+}
+
+function parsePs(words: string[]): PsOptions {
+  const pids = new Set<number>()
+  const columns: [string, string][] = []
+  let all = false
+  let at = 0
+  while (at < words.length) {
+    const word = words[at++] ?? ''
+    if (word === 'aux') {
+      all = true
+      continue
+    }
+    let letters: string
+    let attached = ''
+    if (word.startsWith('--')) {
+      const equal = word.indexOf('=')
+      const option = equal < 0 ? word : word.slice(0, equal)
+      attached = equal < 0 ? '' : word.slice(equal + 1)
+      if (option === '--pid') letters = 'p'
+      else if (option === '--format') letters = 'o'
+      else throw new Error(`unsupported option: ${word}`)
+    } else if (word.startsWith('-')) letters = word.slice(1)
+    else throw new Error(`unsupported option: ${word}`)
+    while (letters !== '') {
+      const flag = letters.charAt(0)
+      letters = letters.slice(1)
+      if ('eAax'.includes(flag)) {
+        all = true
+        continue
+      }
+      if ('fu'.includes(flag)) continue
+      if (!'po'.includes(flag)) throw new Error(`unsupported option: -${flag}`)
+      let value = attached || letters
+      letters = ''
+      if (value === '') {
+        if (at === words.length) throw new Error(`option -${flag} requires an argument`)
+        value = words[at++] ?? ''
+      }
+      const tokens = value.split(/[ ,]+/).filter(Boolean)
+      if (flag === 'p') {
+        if (
+          tokens.length === 0 ||
+          tokens.some((t) => !/^\d+$/.test(t) || Number(t) <= 0 || !Number.isSafeInteger(Number(t)))
+        )
+          throw new Error('process ID list syntax error')
+        for (const token of tokens) pids.add(Number(token))
+      } else {
+        for (const token of tokens) {
+          const equal = token.indexOf('=')
+          const key = equal < 0 ? token : token.slice(0, equal)
+          const header = PS_HEADERS[key]
+          if (header === undefined) throw new Error(`unknown output format specifier: ${key}`)
+          columns.push([key, equal < 0 ? header : token.slice(equal + 1)])
+        }
+        if (columns.length === 0) throw new Error('empty format list')
+      }
+    }
+  }
+  return { pids, all, columns }
+}
+
 export function handlePs(
   jobTable: JobTable,
   parts: string[],
@@ -775,14 +871,51 @@ export function handlePs(
   _view: SessionView | null = null,
 ): JobHandlerResult {
   const cmdStr = parts.join(' ')
+  let options: PsOptions
+  try {
+    options = parsePs(parts.slice(1))
+  } catch (err) {
+    return jobResult(cmdStr, `ps: ${err instanceof Error ? err.message : String(err)}\n`, 1)
+  }
+  const processes = processView(jobTable, session)
+    .list()
+    .filter((info) => options.all || options.pids.size === 0 || options.pids.has(info.pid))
   const lines: string[] = []
-  if (parts.length > 2 || (parts.length === 2 && !['aux', '-ef', '-e'].includes(parts[1] ?? ''))) {
-    return jobResult(cmdStr, 'ps: supported forms: ps, ps aux, ps -e, ps -ef\n', 2)
+  if (options.columns.length > 0) {
+    const widths = options.columns.map(([key, header]) =>
+      Math.max(key === 'pid' || key === 'ppid' ? 5 : 0, header.length),
+    )
+    const row = (values: readonly string[]): string =>
+      values
+        .map((value, index) => {
+          const key = options.columns[index]?.[0]
+          const width = widths[index] ?? 0
+          return key === 'pid' || key === 'ppid' ? value.padStart(width) : value.padEnd(width)
+        })
+        .join(' ')
+        .trimEnd()
+    if (options.columns.some(([, header]) => header !== ''))
+      lines.push(row(options.columns.map(([, header]) => header)))
+    for (const info of processes) {
+      const values: Record<string, string> = {
+        pid: String(info.pid),
+        ppid: String(info.parentPid ?? 0),
+        cmd: info.command,
+        args: info.command,
+        comm: info.command.split(/\s+/)[0]?.split('/').pop() ?? '',
+      }
+      lines.push(row(options.columns.map(([key]) => values[key] ?? '')))
+    }
+  } else {
+    // Managed runners have no CPU/RSS/TTY accounting. The compact default
+    // remains; -o provides procps columns without inventing OS facts.
+    for (const info of processes) lines.push(`${String(info.pid)}\t${info.command}`)
   }
-  for (const info of processView(jobTable, session).list()) {
-    lines.push(`${String(info.pid)}\t${info.command}`)
-  }
-  const out =
-    lines.length > 0 ? new TextEncoder().encode(`${lines.join('\n')}\n`) : new Uint8Array()
-  return [out, new IOResult(), new ExecutionNode({ command: cmdStr, exitCode: 0 })]
+  const code = processes.length > 0 ? 0 : 1
+  const out = new TextEncoder().encode(lines.length > 0 ? lines.join('\n') + '\n' : '')
+  return [
+    out,
+    new IOResult({ exitCode: code }),
+    new ExecutionNode({ command: cmdStr, exitCode: code }),
+  ]
 }

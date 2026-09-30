@@ -13,7 +13,7 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import type { FileStat, PathSpec } from '@struktoai/mirage-core/types'
-import { enoent } from '@struktoai/mirage-core/utils/errors'
+import { eacces, enoent } from '@struktoai/mirage-core/utils/errors'
 import { rstripSlash } from '@struktoai/mirage-core/utils/slash'
 import type { Stats } from 'ssh2'
 import type { SSHAccessor } from '../../accessor/ssh.ts'
@@ -30,7 +30,7 @@ export async function stat(accessor: SSHAccessor, p: PathSpec): Promise<FileStat
     sftp.stat(remote, (err, stats) => {
       if (err !== undefined) {
         if (isNoSuchFile(err)) rejectFn(enoent(p))
-        else rejectFn(err)
+        else rejectFn((err as { code?: number }).code === 3 ? eacces(p) : err)
         return
       }
       resolveFn(stats)

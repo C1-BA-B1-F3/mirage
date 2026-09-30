@@ -36,6 +36,8 @@ async def stat(accessor: DiskAccessor,
     with disk_errors(virtual):
         st = await aiofiles.os.stat(p)
     modified = epoch_to_iso(st.st_mtime)
+    born = getattr(st, "st_birthtime", None)
+    birthtime = epoch_to_iso(born) if born is not None else None
     # Fields setattr applies natively (mode, times) read from the real
     # inode, so external chmod/utime stays visible. Ownership can never
     # be applied natively (chown needs privileges), so it lives wholly
@@ -47,7 +49,9 @@ async def stat(accessor: DiskAccessor,
                         modified=modified,
                         type=FileType.DIRECTORY,
                         mode=st.st_mode & 0o7777,
-                        atime=epoch_to_iso(st.st_atime))
+                        atime=epoch_to_iso(st.st_atime),
+                        ctime=epoch_to_iso(st.st_ctime),
+                        birthtime=birthtime)
     return FileStat(name=p.name,
                     size=st.st_size,
                     modified=modified,
@@ -55,4 +59,6 @@ async def stat(accessor: DiskAccessor,
                     type=FileType.FILE,
                     content=content_type_for_path(p.name),
                     mode=st.st_mode & 0o7777,
-                    atime=epoch_to_iso(st.st_atime))
+                    atime=epoch_to_iso(st.st_atime),
+                    ctime=epoch_to_iso(st.st_ctime),
+                    birthtime=birthtime)

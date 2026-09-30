@@ -134,15 +134,22 @@ class ProcessSupervisor:
             if not valid():
                 raise PermissionError("process spawn is not permitted")
 
+        def signal_target(pid: int) -> ProcessHandle | None:
+            entry = self._live.get(pid)
+            if entry is None or visible(entry[1]) is None:
+                return None
+            if not allowed(permissions().kill, entry[1]):
+                raise PermissionError(errno.EPERM, "Operation not permitted")
+            return entry[1]
+
+        def probe(pid: int) -> bool:
+            with self._lock:
+                return signal_target(pid) is not None
+
         def terminate(pid: int) -> bool:
             with self._lock:
-                entry = self._live.get(pid)
-                if entry is None or visible(entry[1]) is None:
-                    return False
-                if not allowed(permissions().kill, entry[1]):
-                    raise PermissionError(errno.EPERM,
-                                          "Operation not permitted")
-                return entry[1].terminate()
+                handle = signal_target(pid)
+                return handle is not None and handle.terminate()
 
         async def wait(pid: int) -> ProcessInfo | None:
             with self._lock:
@@ -156,6 +163,7 @@ class ProcessSupervisor:
         return ProcessView(list=list_visible,
                            get=get_visible,
                            check_spawn=check_spawn,
+                           probe=probe,
                            terminate=terminate,
                            wait=wait)
 

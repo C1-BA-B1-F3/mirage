@@ -134,7 +134,9 @@ function* layers(
   const refused = runtimeRefused(name, session, registry, routing)
   if (SHELL_NAMES.has(name) && installed) {
     found = true
-    yield (native || refused) && INTERPRETER_NAMES.has(name) ? Consumer.EXTERNAL : Consumer.SESSION
+    yield (native || refused) && (INTERPRETER_NAMES.has(name) || name === 'ps' || name === 'kill')
+      ? Consumer.EXTERNAL
+      : Consumer.SESSION
   }
   if (installed && NAMESPACE_COMMANDS.has(name)) {
     found = true

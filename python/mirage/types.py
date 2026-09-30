@@ -171,6 +171,8 @@ class FileStat(BaseModel):
     uid: int | str | None = None
     gid: int | str | None = None
     atime: str | None = None
+    ctime: str | None = None
+    birthtime: str | None = None
     extra: dict[str, Any] = Field(default_factory=dict)
 
     @model_validator(mode="after")

@@ -1657,6 +1657,53 @@
           }
         }
       ]
+    },
+    {
+      "id": "optimize_reaches_imported_modules",
+      "hosts": [
+        "typescript"
+      ],
+      "world": {
+        "runtimes": [
+          "pyodide",
+          "workspace"
+        ],
+        "mounts": {
+          "/w": {
+            "vfs": "ram",
+            "files": {
+              "app/main.py": "import sys\nsys.modules.pop('optimize_helper', None)\nimport optimize_helper\nprint(sys.flags.optimize, __debug__, optimize_helper.debug)\n",
+              "app/optimize_helper.py": "debug = __debug__\nassert False, 'helper assert ran'\n"
+            }
+          }
+        }
+      },
+      "steps": [
+        {
+          "command": "python3 -O /w/app/main.py",
+          "expect": {
+            "exit": 0,
+            "stdout": "1 False False\n",
+            "stderr": ""
+          }
+        },
+        {
+          "command": "python3 -OO /w/app/main.py",
+          "expect": {
+            "exit": 0,
+            "stdout": "2 False False\n",
+            "stderr": ""
+          }
+        },
+        {
+          "command": "python3 /w/app/main.py",
+          "expect": {
+            "exit": 1,
+            "stdout": "",
+            "stderr_contains": "AssertionError: helper assert ran"
+          }
+        }
+      ]
     }
   ]
 }

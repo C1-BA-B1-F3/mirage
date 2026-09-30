@@ -477,6 +477,19 @@ def interpreter_state(flags, filename, script, stderr):
     saved_filters = warnings.filters
     saved_filter_entries = saved_filters[:]
     optimize = min(int(flags.get('O') or 0), 2)
+    loader = importlib._bootstrap_external.SourceLoader
+    saved_source_to_code = loader.source_to_code
+
+    # importlib compiles an imported module at the level the interpreter
+    # started with, and names its cached bytecode after sys.flags, so -O
+    # has to reach the compile as well for the two to agree.
+    def source_to_code(self, data, path, *, _optimize=-1):
+        return saved_source_to_code(
+            self,
+            data,
+            path,
+            _optimize=optimize if _optimize == -1 else _optimize)
+
     try:
         sys.dont_write_bytecode = bool(flags.get('B') or saved_dwb)
         sys.flags = InvocationFlags(saved_flags,
@@ -498,8 +511,11 @@ def interpreter_state(flags, filename, script, stderr):
             sys.path.insert(
                 0,
                 os.path.dirname(os.path.realpath(filename)) if script else '')
+        if optimize:
+            loader.source_to_code = source_to_code
         yield optimize
     finally:
+        loader.source_to_code = saved_source_to_code
         sys.flags = saved_flags
         sys.path = saved_path
         saved_path[:] = saved_entries

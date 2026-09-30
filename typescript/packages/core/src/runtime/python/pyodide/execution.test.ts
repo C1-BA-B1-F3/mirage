@@ -298,6 +298,57 @@ print(sys.flags.optimize, __debug__, sys.flags.safe_path, '' in sys.path)
     }
   })
 
+  it('compiles the modules a program imports at its -O level', async () => {
+    const pyodide = await loadPyodideRuntime()
+    const guest = new PyodideExecution(pyodide)
+    pyodide.runPython(`
+import importlib._bootstrap_external, os
+os.makedirs('/tmp/optimize_probe', exist_ok=True)
+with open('/tmp/optimize_probe/optimize_helper.py', 'w') as f:
+    f.write('debug = __debug__\\nassert False, "helper assert ran"\\n')
+saved_source_to_code = importlib._bootstrap_external.SourceLoader.source_to_code
+`)
+    try {
+      for (const [optimize, stdout, exitCode] of [
+        [1, 'False\n', 0],
+        [2, 'False\n', 0],
+        [0, '', 1],
+      ] as const) {
+        const result = guest.run(
+          {
+            code: `import sys
+sys.path.insert(0, '/tmp/optimize_probe')
+sys.modules.pop('optimize_helper', None)
+import optimize_helper
+print(optimize_helper.debug)`,
+            argv: ['-c'],
+            cwd: '/',
+            flags: { O: optimize },
+            script_cli: false,
+            filename: null,
+            script: false,
+            env: {},
+            stdin: null,
+          },
+          () => undefined,
+          () => undefined,
+        )
+        expect(new TextDecoder().decode(result[0])).toBe(stdout)
+        expect(result[2]).toBe(exitCode)
+        if (exitCode !== 0) {
+          expect(new TextDecoder().decode(result[1])).toContain('helper assert ran')
+        }
+        expect(
+          pyodide.runPython(
+            'importlib._bootstrap_external.SourceLoader.source_to_code is saved_source_to_code',
+          ),
+        ).toBe(true)
+      }
+    } finally {
+      guest.close()
+    }
+  })
+
   it('restores interpreter state after guest replacements, exceptions and syntax errors', async () => {
     const pyodide = await loadPyodideRuntime()
     const guest = new PyodideExecution(pyodide)

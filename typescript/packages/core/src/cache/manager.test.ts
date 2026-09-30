@@ -474,6 +474,31 @@ describe('what a probe saw this command', () => {
     expect(manager.probedStat(path)).toBeNull()
   })
 
+  it.each([false, true])('does not reuse an overlapping probe (scoped: %s)', async (scoped) => {
+    const index = new RAMIndexCacheStore({ ttl: 600 })
+    const manager = new CacheManager(new RAMFileCacheStore(), index, '/data/', true)
+    let ready = (): void => undefined
+    let release = (): void => undefined
+    const readyPromise = new Promise<void>((resolve) => {
+      ready = resolve
+    })
+    const releasePromise = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    const note = async (): Promise<void> => {
+      ready()
+      await releasePromise
+      manager.noteProbed(path, probed())
+    }
+    const producer = scoped ? runInCommandScope(note) : note()
+    await readyPromise
+    await runInCommandScope(async () => {
+      release()
+      await producer
+      expect(manager.probedStat(path)).toBeNull()
+    })
+  })
+
   // Any write the command makes, to any path, retires what its probes saw:
   // coarser than per path, never a stale answer.
   for (const invalidate of [

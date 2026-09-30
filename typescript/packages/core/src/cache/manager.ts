@@ -60,8 +60,8 @@ export class CacheManager {
   // Folder to the tick and the wall-clock millisecond its listing was last
   // written at, by any view of this mount, shared or lock-held.
   private readonly written = new Map<string, [number, number]>()
-  // Cache key to what the freshness probe got from the backend: the tick it
-  // was noted at, the read generation then, and the stat.
+  // Cache key to what the freshness probe got from the backend: its command
+  // identity, the read generation then, and the stat.
   private readonly probed = new Map<string, [number, number, FileStat]>()
 
   constructor(
@@ -185,7 +185,10 @@ export class CacheManager {
    * servable, so there is nothing left to take back.
    */
   noteProbed(path: PathSpec, stat: FileStat): void {
-    this.probed.set(this.cacheKey(path), [tick(), this.readGeneration, stat])
+    const started = commandStarted()
+    if (started !== null) {
+      this.probed.set(this.cacheKey(path), [started, this.readGeneration, stat])
+    }
   }
 
   /** Mutation generation, captured before a freshness probe starts. */
@@ -208,7 +211,7 @@ export class CacheManager {
     const started = commandStarted()
     if (probed === undefined || started === null) return null
     const [stamp, generation, stat] = probed
-    if (stamp < started || generation !== this.readGeneration) return null
+    if (stamp !== started || generation !== this.readGeneration) return null
     return stat
   }
 

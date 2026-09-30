@@ -203,8 +203,10 @@ class CacheManager:
             path (PathSpec): the probed path; only ``virtual`` is read.
             stat (FileStat): the backend's answer.
         """
-        self._probed[self._cache_key(path)] = (tick(), self._read_generation,
-                                               stat)
+        started = command_started()
+        if started is not None:
+            self._probed[self._cache_key(path)] = (started,
+                                                   self._read_generation, stat)
 
     def probed_stat(self, path: PathSpec) -> FileStat | None:
         """The backend's answer for ``path`` from this command's probe.
@@ -225,7 +227,7 @@ class CacheManager:
         if probed is None or started is None:
             return None
         stamp, generation, stat = probed
-        if stamp < started or generation != self._read_generation:
+        if stamp != started or generation != self._read_generation:
             return None
         return stat
 

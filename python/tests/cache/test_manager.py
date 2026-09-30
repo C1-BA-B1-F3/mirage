@@ -651,6 +651,34 @@ async def test_a_write_in_the_command_drops_its_probed_stats(invalidate):
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("scoped", [False, True])
+async def test_an_overlapping_probe_belongs_only_to_its_command(scoped):
+    cache, index = _stores()
+    manager = CacheManager(cache, index, "/data/", True)
+    path = PathSpec.from_str_path("/data/arch/h.txt")
+    ready, release = asyncio.Event(), asyncio.Event()
+
+    async def note():
+        ready.set()
+        await release.wait()
+        manager.note_probed(path, _probed())
+
+    async def produce():
+        if scoped:
+            async with command_scope():
+                await note()
+        else:
+            await note()
+
+    producer = asyncio.create_task(produce())
+    await ready.wait()
+    async with command_scope():
+        release.set()
+        await producer
+        assert manager.probed_stat(path) is None
+
+
+@pytest.mark.asyncio
 async def test_a_clock_that_ran_backwards_does_not_extend_the_window(clock):
     # Elapsed time below zero is no evidence the listing is recent.
     cache, index = _stores()

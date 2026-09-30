@@ -124,14 +124,13 @@ export class RAMIndexCacheStore extends IndexCacheStore {
       const exp = expiredAt ? expiredAt.getTime() : now + this.ttl * 1000
       const nowIso = toIsoZ(new Date(now))
       const prefix = vfsPath === '/' ? '/' : `${vfsPath}/`
-      const childKeys: string[] = []
+      const rows = new Map<string, IndexEntry>()
       for (const [name, entry] of entries) {
         const fullPath = prefix + name
         const stored = entry.indexTime === '' ? entry.copyWith({ indexTime: nowIso }) : entry
-        this.entryMap.set(fullPath, stored)
-        childKeys.push(fullPath)
+        rows.set(fullPath, stored)
       }
-      const named = new Set(childKeys)
+      const childKeys = [...rows.keys()]
       // What the last full knowledge named: the current listing, plus a
       // tombstone an invalidation left (a partial since then cannot have
       // proven its other children gone).
@@ -143,9 +142,18 @@ export class RAMIndexCacheStore extends IndexCacheStore {
       const candidates = new Set([...(this.children.get(vfsPath) ?? []), ...buried.keys()])
       const gone = evict
         ? [...candidates]
-            .filter((key) => !named.has(key) && !excluded.some((prefix) => underPath(key, prefix)))
+            .filter(
+              (key) =>
+                (!rows.has(key) ||
+                  (rows.get(key)?.resourceType !== ResourceType.FOLDER &&
+                    (buried.get(key) === true ||
+                      this.children.has(key) ||
+                      this.entryMap.get(key)?.resourceType === ResourceType.FOLDER))) &&
+                !excluded.some((prefix) => underPath(key, prefix)),
+            )
             .map((key) => this.evict(key, buried.get(key) ?? false, excluded))
         : []
+      for (const [path, row] of rows) this.entryMap.set(path, row)
       this.children.set(vfsPath, childKeys)
       this.expiry.set(vfsPath, exp)
       if (partial) this.partial.add(vfsPath)

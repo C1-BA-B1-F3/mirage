@@ -336,3 +336,28 @@ async def test_prefix_invalidation_preserves_excluded_subtrees(store):
         assert (await store.get(path)).entry is not None
         assert (await store.list_dir(path)).entries == [path + "/a"]
     assert (await store.get("/dir/nested2/a")).status == LookupStatus.NOT_FOUND
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("invalidated", [False, True])
+async def test_directory_replaced_by_file_evicts_old_subtree(
+        store, invalidated):
+    await store.set_dir("/dir", [("sub", folder("sub"))])
+    await store.set_dir("/dir/sub", [("old", entry("old"))])
+    await store.put("/dir/sub/unlisted", entry("unlisted"))
+    await store.set_dir("/dir/sub/nested", [("keep", entry("keep"))])
+    await store.set_dir("/dir/sub2", [("keep", entry("keep"))])
+    if invalidated:
+        await store.invalidate_dir("/dir")
+    assert await store.set_dir("/dir", [("sub", entry("sub"))],
+                               excluded=("/dir/sub/nested", )) == [
+                                   Evicted("/dir/sub", folder=True)
+                               ]
+    assert (await store.get("/dir/sub")).entry.resource_type == "file"
+    assert (await store.list_dir("/dir")).entries == ["/dir/sub"]
+    assert (await store.list_dir("/dir/sub")).status == LookupStatus.NOT_FOUND
+    for path in ["/dir/sub/old", "/dir/sub/unlisted"]:
+        assert (await store.get(path)).status == LookupStatus.NOT_FOUND
+    for path in ["/dir/sub/nested", "/dir/sub2"]:
+        assert (await store.list_dir(path)).entries == [path + "/keep"]
+    assert await store.set_dir("/dir", [("sub", entry("sub"))]) == []

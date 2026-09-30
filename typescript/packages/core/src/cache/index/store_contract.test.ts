@@ -45,6 +45,33 @@ for (const backend of ['ram', 'redis']) {
         await store.close()
       })
 
+      it.each([false, true])(
+        'clears a directory replaced by a file (invalidated=%s)',
+        async (invalidated) => {
+          await store.setDir('/dir', [['sub', folder('sub')]])
+          await store.setDir('/dir/sub', [['old', entry('old')]])
+          await store.put('/dir/sub/unlisted', entry('unlisted'))
+          await store.setDir('/dir/sub/nested', [['keep', entry('keep')]])
+          await store.setDir('/dir/sub2', [['keep', entry('keep')]])
+          if (invalidated) await store.invalidateDir('/dir')
+          expect(
+            await store.setDir('/dir', [['sub', entry('sub')]], undefined, {
+              excluded: ['/dir/sub/nested'],
+            }),
+          ).toEqual([{ path: '/dir/sub', folder: true }])
+          expect((await store.get('/dir/sub')).entry?.resourceType).toBe('file')
+          expect((await store.listDir('/dir')).entries).toEqual(['/dir/sub'])
+          expect((await store.listDir('/dir/sub')).status).toBe(LookupStatus.NOT_FOUND)
+          for (const path of ['/dir/sub/old', '/dir/sub/unlisted']) {
+            expect((await store.get(path)).status).toBe(LookupStatus.NOT_FOUND)
+          }
+          for (const path of ['/dir/sub/nested', '/dir/sub2']) {
+            expect((await store.listDir(path)).entries).toEqual([path + '/keep'])
+          }
+          expect(await store.setDir('/dir', [['sub', entry('sub')]])).toEqual([])
+        },
+      )
+
       it('prefix invalidation preserves excluded subtrees', async () => {
         for (const path of ['/dir/nested', '/dir/nested/sub', '/dir/nested2']) {
           await store.put(path, entry(path))

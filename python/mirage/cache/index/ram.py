@@ -126,14 +126,13 @@ class RAMIndexCacheStore(IndexCacheStore, KeyLockMixin):
             exp = expired_at or (now + timedelta(seconds=self._ttl))
             now_iso = to_iso_z(now)
             prefix = "/" if vfs_path == "/" else vfs_path + "/"
-            child_keys: list[str] = []
+            rows: dict[str, IndexEntry] = {}
             for name, entry in entries:
                 full_path = prefix + name
                 if not entry.index_time:
                     entry = entry.model_copy(update={"index_time": now_iso})
-                self._entries[full_path] = entry
-                child_keys.append(full_path)
-            named = set(child_keys)
+                rows[full_path] = entry
+            child_keys = list(rows)
             # What the last full knowledge named: the current listing, plus a
             # tombstone an invalidation left (a partial since then cannot
             # have proven its other children gone).
@@ -145,9 +144,14 @@ class RAMIndexCacheStore(IndexCacheStore, KeyLockMixin):
             candidates.update(dict.fromkeys(buried))
             gone = [
                 self._evict(key, buried.get(key, False), excluded)
-                for key in candidates if key not in named and not any(
-                    under_path(key, p) for p in excluded)
+                for key in candidates
+                if (key not in rows or
+                    (rows[key].resource_type != ResourceType.FOLDER and
+                     (buried.get(key, False) or key in self._children
+                      or self._is_folder(key)))) and not any(
+                          under_path(key, p) for p in excluded)
             ] if evict else []
+            self._entries.update(rows)
             self._children[vfs_path] = child_keys
             self._expiry[vfs_path] = exp
             if partial:

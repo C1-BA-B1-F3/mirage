@@ -53,20 +53,21 @@ local function protected(path)
 end
 local named = {}
 for i = 7, #ARGV, 2 do
-  named[ARGV[i]] = true
-  redis.call('SET', ARGV[2] .. ARGV[i], ARGV[i + 1])
+  named[ARGV[i]] = cjson.decode(ARGV[i + 1]).resource_type
 end
-redis.call('SET', KEYS[1], ARGV[1])
 local seen, gone, folders = {}, {}, {}
 local function drop(path, buried)
-  if named[path] or seen[path] or protected(path) then
+  if seen[path] or protected(path) then
+    return
+  end
+  local row = redis.call('GET', ARGV[2] .. path)
+  local folder = buried or redis.call('EXISTS', ARGV[3] .. path) == 1
+    or (row ~= false and cjson.decode(row).resource_type == 'folder')
+  if named[path] and not (folder and named[path] ~= 'folder') then
     return
   end
   seen[path] = true
-  local row = redis.call('GET', ARGV[2] .. path)
   redis.call('DEL', ARGV[2] .. path)
-  local folder = buried or redis.call('EXISTS', ARGV[3] .. path) == 1
-    or (row ~= false and cjson.decode(row).resource_type == 'folder')
   gone[#gone + 1] = path
   folders[#folders + 1] = folder and 1 or 0
 end
@@ -108,6 +109,10 @@ if #roots > 0 then
   until cursor == '0'
   for _, key in ipairs(doomed) do redis.call('DEL', key) end
 end
+for i = 7, #ARGV, 2 do
+  redis.call('SET', ARGV[2] .. ARGV[i], ARGV[i + 1])
+end
+redis.call('SET', KEYS[1], ARGV[1])
 return {gone, folders}
 """
 

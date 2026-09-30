@@ -662,6 +662,13 @@ def parse_command(
             flags.occurrences.append((constants.REFUSED, word))
         return own_loop
 
+    def record_operand(word: str) -> None:
+        raw_args.append(word)
+        raw_indices.append(scan_origins[i])
+        raw_bases.append(base)
+        if in_order_operands or own_loop:
+            flags.occurrences.append((constants.OPERAND, word))
+
     i = 0
     end_of_flags = False
 
@@ -678,10 +685,7 @@ def parse_command(
             continue
 
         if end_of_flags:
-            raw_args.append(tok)
-            raw_indices.append(scan_origins[i])
-            raw_bases.append(base)
-            flags.occurrences.append((constants.OPERAND, tok))
+            record_operand(tok)
             i += 1
             continue
 
@@ -691,10 +695,7 @@ def parse_command(
                 # long options to recognize, so the word is an operand
                 # whether or not it is declared: `expr --help x` is a
                 # syntax error on `x`, not a help request.
-                raw_args.append(tok)
-                raw_indices.append(scan_origins[i])
-                raw_bases.append(base)
-                flags.occurrences.append((constants.OPERAND, tok))
+                record_operand(tok)
                 i += 1
                 continue
             # getopt_long: an exact spelling always wins; otherwise an
@@ -791,10 +792,7 @@ def parse_command(
                         needs_value_options.append(etok)
                         option_error_kinds.append("needs_value")
                 elif lenient_dash_operands:
-                    raw_args.append(tok)
-                    raw_indices.append(scan_origins[i])
-                    raw_bases.append(base)
-                    flags.occurrences.append((constants.OPERAND, tok))
+                    record_operand(tok)
                 elif eq != -1 and spelling in cs.long_bool_spellings:
                     # A boolean long handed a value. getopt_long knows
                     # the option, so it refuses the VALUE and names the
@@ -914,10 +912,7 @@ def parse_command(
             if lenient_dash_operands or (
                     NUMERIC_SHORT.match(tok) and
                 (not is_builtin_grammar(cmd_name, spec) or cmd_name == "seq")):
-                raw_args.append(tok)
-                raw_indices.append(scan_origins[i])
-                raw_bases.append(base)
-                flags.occurrences.append((constants.OPERAND, tok))
+                record_operand(tok)
             elif tok in cs.value_spellings or (mixed is not None
                                                and mixed[2] is None):
                 # A declared value flag (alone or ending a cluster) with no
@@ -952,10 +947,7 @@ def parse_command(
             i += 1
             continue
 
-        raw_args.append(tok)
-        raw_indices.append(scan_origins[i])
-        raw_bases.append(base)
-        flags.occurrences.append((constants.OPERAND, tok))
+        record_operand(tok)
         # argparse's REMAINDER: the first operand ends option parsing,
         # so a script's own flags reach the script instead of being read
         # as the interpreter's.

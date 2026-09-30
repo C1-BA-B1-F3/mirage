@@ -14,6 +14,7 @@
 
 import { describe, expect, it } from 'vitest'
 import { jqOptions, type JqOptions } from '../../../core/jq/index.ts'
+import { yieldBytes } from '../../../io/stream.ts'
 import { materialize, type ByteSource, type IOResult } from '../../../io/types.ts'
 import { PathSpec } from '../../../types.ts'
 import { eisdir, enoent } from '../../../utils/errors.ts'
@@ -48,6 +49,7 @@ const FILES: Record<string, string> = {
   '/d/one.json': '1',
   '/d/two.json': ' 2\n',
   '/d/nul.jq': '.\u0000x',
+  '/d/-': '42\n',
 }
 
 async function* read(path: PathSpec): AsyncIterable<Uint8Array> {
@@ -572,6 +574,66 @@ describe('readOptions over --args and --jsonargs', () => {
     const [out, io] = result
     expect(DEC.decode(await materialize(out))).toBe('1\n[-1,"-."]\n')
     expect(io.exitCode).toBe(0)
+  })
+})
+
+describe('jq flag-file readers', () => {
+  it.each([
+    ['from_file', '42\n'],
+    ['rawfile', '"42\\n"\n'],
+    ['slurpfile', '[42]\n'],
+  ])('reads a dash %s from the backend without a dispatcher', async (option, expected) => {
+    const path = new PathSpec({ virtual: '/d/-', directory: '/d', vfsPath: '-', rawPath: '-' })
+    const opts = {
+      stdin: ENC.encode('99\n'),
+      flags: {
+        null_input: true,
+        compact_output: true,
+        [option]: option === 'from_file' ? path : ['x', path],
+      },
+      filetypeFns: null,
+      cwd: '/d',
+      vfs: { kind: 'ram' } as never,
+    } as CommandOpts
+    const result = await jqGeneric([], ['$x'], opts, read)
+    if (result === null) throw new Error('jq returned no result')
+    const [out, io] = result
+    expect(DEC.decode(await materialize(out))).toBe(expected)
+    expect(io.exitCode).toBe(0)
+    expect(await materialize(io.stderr)).toEqual(new Uint8Array())
+  })
+
+  describe.each(['from_file', 'rawfile', 'slurpfile'])('%s consumes stdin', (option) => {
+    describe.each([false, true])('streamed=%s', (streamed) => {
+      it.each([null, '-', '/dev/stdin'])('does not replay stdin for input %s', async (operand) => {
+        const path = PathSpec.fromStrPath('/dev/stdin')
+        const stdin = ENC.encode('99\n')
+        const opts = {
+          stdin: streamed ? yieldBytes(stdin) : stdin,
+          flags: { [option]: option === 'from_file' ? path : ['x', path] },
+          filetypeFns: null,
+          cwd: '/',
+          vfs: { kind: 'ram' } as never,
+        } as CommandOpts
+        const paths =
+          operand === null
+            ? []
+            : [
+                new PathSpec({
+                  virtual: '/dev/stdin',
+                  directory: '/dev',
+                  vfsPath: 'stdin',
+                  rawPath: operand,
+                }),
+              ]
+        const result = await jqGeneric(paths, ['.'], opts, read)
+        if (result === null) throw new Error('jq returned no result')
+        const [out, io] = result
+        expect(await materialize(out)).toEqual(new Uint8Array())
+        expect(io.exitCode).toBe(0)
+        expect(await materialize(io.stderr)).toEqual(new Uint8Array())
+      })
+    })
   })
 })
 

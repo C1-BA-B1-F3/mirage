@@ -13,6 +13,7 @@ from mirage.commands.spec import SPECS, parse_command, parse_to_kwargs
 from mirage.commands.spec.flag_view import FlagView
 from mirage.commands.spec.types import FlagValue
 from mirage.core.jq import JqError, JqHalt, JqOptions, JqRun
+from mirage.io.stream import yield_bytes
 from mirage.io.types import IOResult, materialize
 from mirage.types import PathSpec
 
@@ -37,6 +38,7 @@ FILES = {
     "/d/one.json": b"1",
     "/d/two.json": b" 2\n",
     "/d/nul.jq": b".\0x",
+    "/d/-": b"42\n",
 }
 
 DIRS = {"/d/dir"}
@@ -987,6 +989,51 @@ async def test_help_and_version_answer_where_the_loop_reaches_them():
     for words in (("--bogus", "--help"), ("-n", ".", "--jsonargs", "{", "-V")):
         with pytest.raises(UsageError):
             await _walk(*words)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("option, expected", [
+    ("from_file", b"42\n"),
+    ("rawfile", b'"42\\n"\n'),
+    ("slurpfile", b"[42]\n"),
+])
+async def test_dash_flag_file_reads_the_backend_without_a_dispatcher(
+        option, expected):
+    path = PathSpec("/d/-", "/d", "-", raw_path="-")
+    value = path if option == "from_file" else ["x", path]
+    source, io = await jq([],
+                          "$x",
+                          read_bytes=_read_bytes,
+                          read_stream=_read_stream,
+                          stdin=b"99\n",
+                          null_input=True,
+                          compact_output=True,
+                          **{option: value})
+    assert await materialize(source) == expected
+    assert io.exit_code == 0
+    assert await materialize(io.stderr) == b""
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("option", ["from_file", "rawfile", "slurpfile"])
+@pytest.mark.parametrize("operand", [None, "-", "/dev/stdin"])
+@pytest.mark.parametrize("streamed", [False, True])
+async def test_stdin_consumed_by_a_flag_file_is_not_replayed_as_input(
+        option, operand, streamed):
+    path = _path("/dev/stdin")
+    value = path if option == "from_file" else ["x", path]
+    paths = [] if operand is None else [
+        PathSpec("/dev/stdin", "/dev", "stdin", raw_path=operand)
+    ]
+    source, io = await jq(paths,
+                          ".",
+                          read_bytes=_read_bytes,
+                          read_stream=_read_stream,
+                          stdin=yield_bytes(b"99\n") if streamed else b"99\n",
+                          **{option: value})
+    assert await materialize(source) == b""
+    assert io.exit_code == 0
+    assert await materialize(io.stderr) == b""
 
 
 async def _run_program_file(*words: str) -> tuple[bytes, IOResult]:

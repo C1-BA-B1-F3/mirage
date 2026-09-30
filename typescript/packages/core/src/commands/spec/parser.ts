@@ -653,6 +653,12 @@ export function parseCommand(
 
   let i = 0
   let endOfFlags = false
+  const recordOperand = (word: string): void => {
+    rawArgs.push(word)
+    rawIndices.push(scanOrigins[i] ?? -1)
+    rawBases.push(base)
+    if (inOrderOperands || ownLoop) flagOccurrences(flags).push([OPERAND, word])
+  }
 
   while (i < scanArgv.length) {
     const tok = scanArgv[i]
@@ -678,10 +684,7 @@ export function parseCommand(
     }
 
     if (endOfFlags) {
-      rawArgs.push(tok)
-      rawIndices.push(scanOrigins[i] ?? -1)
-      rawBases.push(base)
-      flagOccurrences(flags).push([OPERAND, tok])
+      recordOperand(tok)
       i += 1
       continue
     }
@@ -692,10 +695,7 @@ export function parseCommand(
         // to recognize, so the word is an operand whether or not it is
         // declared: `expr --help x` is a syntax error on `x`, not a help
         // request.
-        rawArgs.push(tok)
-        rawIndices.push(scanOrigins[i] ?? -1)
-        rawBases.push(base)
-        flagOccurrences(flags).push([OPERAND, tok])
+        recordOperand(tok)
         i += 1
         continue
       }
@@ -793,10 +793,7 @@ export function parseCommand(
             optionErrorKinds.push('needs_value')
           }
         } else if (lenientDashOperands) {
-          rawArgs.push(tok)
-          rawIndices.push(scanOrigins[i] ?? -1)
-          rawBases.push(base)
-          flagOccurrences(flags).push([OPERAND, tok])
+          recordOperand(tok)
         } else if (eqPos !== -1 && cs.longBoolSpellings.has(spelling)) {
           // A boolean long handed a value. getopt_long knows the option, so
           // it refuses the VALUE and names the option without it, which is a
@@ -919,10 +916,7 @@ export function parseCommand(
         lenientDashOperands ||
         (NUMERIC_SHORT.test(tok) && (!isBuiltinGrammar(cmdName, spec) || cmdName === 'seq'))
       ) {
-        rawArgs.push(tok)
-        rawIndices.push(scanOrigins[i] ?? -1)
-        rawBases.push(base)
-        flagOccurrences(flags).push([OPERAND, tok])
+        recordOperand(tok)
       } else if (cs.valueSpellings.includes(tok)) {
         // A declared value flag with no argument left on the line.
         if (!refusedOnTape(tok)) {
@@ -967,10 +961,7 @@ export function parseCommand(
       continue
     }
 
-    rawArgs.push(tok)
-    rawIndices.push(scanOrigins[i] ?? -1)
-    rawBases.push(base)
-    flagOccurrences(flags).push([OPERAND, tok])
+    recordOperand(tok)
     // The first operand ends option parsing outright under
     // argparse's REMAINDER, so a script's own flags reach the script
     // of being read as the interpreter's.

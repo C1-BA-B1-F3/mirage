@@ -2419,6 +2419,170 @@
         "n",
         "V"
       ]
+    },
+    {
+      "id": "jq_program_file_named_dash_reads_file",
+      "seq": 701213,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "(mkdir -p /data/qjqo/flag-dash && cd /data/qjqo/flag-dash && printf '42\\n' > ./- && printf '99\\n' | jq -nc -f -)",
+      "expect": {
+        "exit": 0,
+        "stdout": "42\n",
+        "stderr": ""
+      },
+      "flags": [
+        "n",
+        "c",
+        "f"
+      ]
+    },
+    {
+      "id": "jq_rawfile_named_dash_reads_file",
+      "seq": 701214,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "(mkdir -p /data/qjqo/flag-dash && cd /data/qjqo/flag-dash && printf '42\\n' > ./- && printf '99\\n' | jq -nc --rawfile x - '$x')",
+      "expect": {
+        "exit": 0,
+        "stdout": "\"42\\n\"\n",
+        "stderr": ""
+      },
+      "flags": [
+        "n",
+        "c",
+        "rawfile"
+      ]
+    },
+    {
+      "id": "jq_slurpfile_named_dash_reads_file",
+      "seq": 701215,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "(mkdir -p /data/qjqo/flag-dash && cd /data/qjqo/flag-dash && printf '42\\n' > ./- && printf '99\\n' | jq -nc --slurpfile x - '$x')",
+      "expect": {
+        "exit": 0,
+        "stdout": "[42]\n",
+        "stderr": ""
+      },
+      "flags": [
+        "n",
+        "c",
+        "slurpfile"
+      ]
+    },
+    {
+      "id": "jq_program_file_consumes_implicit_stdin",
+      "seq": 701216,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "printf '99\\n' | jq -c -f /dev/stdin",
+      "expect": {
+        "exit": 0,
+        "stdout": "",
+        "stderr": ""
+      },
+      "flags": [
+        "c",
+        "f"
+      ]
+    },
+    {
+      "id": "jq_rawfile_consumes_implicit_stdin",
+      "seq": 701217,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "printf '99\\n' | jq -c --rawfile x /dev/stdin '[., $x]'",
+      "expect": {
+        "exit": 0,
+        "stdout": "",
+        "stderr": ""
+      },
+      "flags": [
+        "c",
+        "rawfile"
+      ]
+    },
+    {
+      "id": "jq_slurpfile_consumes_implicit_stdin",
+      "seq": 701218,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "printf '99\\n' | jq -c --slurpfile x /dev/stdin '[., $x]'",
+      "expect": {
+        "exit": 0,
+        "stdout": "",
+        "stderr": ""
+      },
+      "flags": [
+        "c",
+        "slurpfile"
+      ]
+    },
+    {
+      "id": "jq_rawfile_consumes_explicit_stdin",
+      "seq": 701219,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "printf '99\\n' | jq -c --rawfile x /dev/stdin '[., $x]' -",
+      "expect": {
+        "exit": 0,
+        "stdout": "",
+        "stderr": ""
+      },
+      "flags": [
+        "c",
+        "rawfile"
+      ]
+    },
+    {
+      "id": "jq_flag_files_share_stdin",
+      "seq": 701220,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "printf '99\\n' | jq -nc --rawfile x /dev/stdin --rawfile y /dev/stdin '[$x, $y]'",
+      "expect": {
+        "exit": 0,
+        "stdout": "[\"99\\n\",\"\"]\n",
+        "stderr": ""
+      },
+      "flags": [
+        "n",
+        "c",
+        "rawfile"
+      ]
     }
   ]
 }

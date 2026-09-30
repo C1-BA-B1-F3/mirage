@@ -6,8 +6,7 @@ from typing import Any
 
 from mirage.commands.builtin.generic.program import (program_file_refusal,
                                                      read_program_file)
-from mirage.commands.builtin.utils.stream import (is_stdin, resolve_source,
-                                                  stdin_bytes, stdin_stream)
+from mirage.commands.builtin.utils.stream import is_stdin, stdin_stream
 from mirage.commands.config import CommandOpts, help_page, version_line
 from mirage.commands.errors import UsageError
 from mirage.commands.spec import SPECS
@@ -25,7 +24,7 @@ from mirage.core.jq.types import (DEFAULT_INDENT, NO_VALUE, STDIN_NAME,
                                   InputSource, JqError, JqHalt, JqOptions,
                                   JqParseError, JqRun, StreamReads)
 from mirage.io.stream import yield_bytes
-from mirage.io.types import ByteSource, IOResult
+from mirage.io.types import ByteSource, IOResult, materialize
 from mirage.runtime.types import DispatchFn
 from mirage.types import PathSpec
 from mirage.utils.errors import FS_ERRORS
@@ -631,8 +630,7 @@ async def _jq(
             through.
     """
     fl = FlagView(flags, spec=SPECS["jq"])
-    read_bytes = stdin_bytes(read_bytes, stdin)
-    read_stream = stdin_stream(read_stream, stdin)
+    read_input = stdin_stream(read_stream, stdin)
 
     async def read_flag_file(path: PathSpec) -> bytes:
         # -f, --rawfile and --slurpfile route nothing (the executor's
@@ -640,7 +638,9 @@ async def _jq(
         # mount than the operands: it is read through the door. jq opens
         # it by name, so /dev/stdin is the invocation's own stdin and `-`
         # is a file named `-`.
-        if dispatch is None or is_stdin(path, dash=False):
+        if is_stdin(path, dash=False):
+            return await materialize(read_input(path))
+        if dispatch is None:
             return await read_bytes(path)
         return await read_program_file("jq", path, dispatch)
 
@@ -685,10 +685,11 @@ async def _jq(
     if not opts.null_input or reads_stream:
         if paths:
             for path in paths:
-                sources.append(InputSource(input_name(path),
-                                           read_stream(path)))
+                sources.append(InputSource(input_name(path), read_input(path)))
         elif stdin is not None:
-            sources.append(InputSource(STDIN_NAME, resolve_source(stdin)))
+            sources.append(
+                InputSource(STDIN_NAME,
+                            read_input(PathSpec.from_str_path("/dev/stdin"))))
     io = IOResult()
     loop = MainLoop(sources, expr, opts, reads, args, io)
     return loop.outputs(), io

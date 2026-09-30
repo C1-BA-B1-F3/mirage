@@ -1155,6 +1155,15 @@ def test_tar_mode_typed_after_the_names_still_makes_them_members():
     assert parsed.paths() == []
 
 
+def test_operand_tape_is_not_allocated_for_other_commands():
+    words = [f"file-{i}" for i in range(1000)]
+    parsed = parse_command(SPECS["cat"], ["-n", *words], "/", "cat")
+    assert len(parsed.paths()) == 1000
+    assert len(parsed.flags.occurrences) == 1
+    custom = CommandSpec(rest=Operand(type="path"))
+    assert parse_command(custom, words, "/", "jq").flags.occurrences == []
+
+
 def test_tape_records_each_operand_among_the_options():
     parsed = parse_command(SPECS["jq"], ["-n", ".", "--args", "a", "--", "-b"],
                            "/", "jq")

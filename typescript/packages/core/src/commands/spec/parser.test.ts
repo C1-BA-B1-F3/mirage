@@ -1404,6 +1404,15 @@ describe('flag-driven operand kinds', () => {
     expect(p.paths()).toEqual([])
   })
 
+  it('does not allocate operand tape entries for other commands', () => {
+    const words = Array.from({ length: 1000 }, (_, i) => `file-${String(i)}`)
+    const parsed = parseCommand(specOf('cat'), ['-n', ...words], '/', 'cat')
+    expect(parsed.paths()).toHaveLength(1000)
+    expect(flagOccurrences(parsed.flags)).toHaveLength(1)
+    const custom = new CommandSpec({ rest: new Operand({ type: 'path' }) })
+    expect(flagOccurrences(parseCommand(custom, words, '/', 'jq').flags)).toEqual([])
+  })
+
   it('records each operand on the tape among the options', () => {
     const p = parseCommand(specOf('jq'), ['-n', '.', '--args', 'a', '--', '-b'], '/', 'jq')
     expect(flagOccurrences(p.flags)).toEqual([

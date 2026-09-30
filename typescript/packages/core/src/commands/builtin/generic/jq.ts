@@ -588,7 +588,7 @@ export async function jqGeneric(
   opts: CommandOpts,
   stream: Stream,
 ): Promise<CommandFnResult> {
-  stream = stdinStream(stream, opts.stdin)
+  const readInput = stdinStream(stream, opts.stdin)
   const fl = new FlagView(opts.flags, specOf('jq'))
   const toSpec = pathSpecFactory(paths, opts)
   const programFile = programFileOf(fl, toSpec)
@@ -597,7 +597,8 @@ export async function jqGeneric(
   // is read through the door. jq opens it by name, so /dev/stdin is the
   // invocation's own stdin and `-` is a file named `-`.
   const readFlagFile = (path: PathSpec): Promise<Uint8Array> => {
-    if (opts.dispatch === undefined || isStdin(path, false)) return materialize(stream(path))
+    if (isStdin(path, false)) return materialize(readInput(path))
+    if (opts.dispatch === undefined) return materialize(stream(path))
     return readProgramFile('jq', path, opts.dispatch)
   }
   // jq reads its options before its program, so a refused option is reported
@@ -653,13 +654,12 @@ export async function jqGeneric(
   if (!jq.nullInput || readsStream) {
     if (paths.length > 0) {
       for (const path of paths) {
-        sources.push({ name: inputName(path), chunks: stream(path) })
+        sources.push({ name: inputName(path), chunks: readInput(path) })
       }
     } else if (opts.stdin !== null) {
-      const stdin = opts.stdin
       sources.push({
         name: STDIN_NAME,
-        chunks: stdin instanceof Uint8Array ? yieldBytes(stdin) : stdin,
+        chunks: readInput(PathSpec.fromStrPath('/dev/stdin')),
       })
     }
   }

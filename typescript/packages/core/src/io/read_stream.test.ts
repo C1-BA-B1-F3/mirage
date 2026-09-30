@@ -363,3 +363,38 @@ describe('ReadStream settle callbacks', () => {
     expect(seen).toEqual([1])
   })
 })
+
+describe('a cap met at a chunk end', () => {
+  it.each([
+    ['bytes', new Limit({ maxBytes: 4 }), ['abcd', 'efgh'], ['abcd']],
+    ['lines', new Limit({ maxLines: 1 }), ['a\n', 'b\n'], ['a\n']],
+    ['both', new Limit({ maxBytes: 10, maxLines: 1 }), ['a\n', 'bc'], ['a\n']],
+  ] as const)('closes without pulling again (%s)', async (_name, limit, chunks, kept) => {
+    const spy = new SpySource(chunks.map((c) => ENC.encode(c)))
+    const stream = await opened(spy)
+    stream.cap(limit)
+    const out = await collect(stream)
+    expect(out.map((c) => new TextDecoder().decode(c))).toEqual(kept)
+    expect(spy.pulls).toBe(1)
+    expect(spy.closed).toBe(true)
+  })
+
+  it('ends the read without waiting on a backend that never answers again', async () => {
+    const spy = new SpySource([ENC.encode('abcd'), ENC.encode('efgh')])
+    const first = await spy.next()
+    let asked = false
+    const stalled: AsyncIterator<Uint8Array> = {
+      next: () => {
+        asked = true
+        return new Promise<IteratorResult<Uint8Array>>(() => undefined)
+      },
+      return: () => spy.return(),
+    }
+    const stream = new ReadStream(first.value as Uint8Array, stalled)
+    stream.cap(new Limit({ maxBytes: 4 }))
+    const out = await collect(stream)
+    expect(out).toEqual([ENC.encode('abcd')])
+    expect(asked).toBe(false)
+    expect(spy.closed).toBe(true)
+  })
+})

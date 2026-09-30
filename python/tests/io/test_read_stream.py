@@ -328,3 +328,37 @@ async def test_a_failing_settle_callback_does_not_skip_the_rest():
     with pytest.raises(ValueError, match="broken callback"):
         await stream.aclose()
     assert seen == [1]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("limit, chunks, kept", [
+    (Limit(max_bytes=4), [b"abcd", b"efgh"], [b"abcd"]),
+    (Limit(max_lines=1), [b"a\n", b"b\n"], [b"a\n"]),
+    (Limit(max_bytes=10, max_lines=1), [b"a\n", b"bc"], [b"a\n"]),
+])
+async def test_a_cap_met_at_a_chunk_end_closes_without_pulling_again(
+        limit, chunks, kept):
+    spy = _Spy(chunks)
+    stream = await _opened(spy)
+    stream.cap(limit)
+    assert await _drain(stream) == kept
+    assert spy.pulls == 1
+    assert spy.closed
+
+
+class _Stalled(_Spy):
+    """A source whose pulls after the first never answer."""
+
+    async def __anext__(self) -> bytes:
+        if self.pulls:
+            await asyncio.Event().wait()
+        return await super().__anext__()
+
+
+@pytest.mark.asyncio
+async def test_a_spent_cap_ends_the_read_without_waiting_on_the_backend():
+    spy = _Stalled([b"abcd", b"efgh"])
+    stream = await _opened(spy)
+    stream.cap(Limit(max_bytes=4))
+    assert await asyncio.wait_for(_drain(stream), 1) == [b"abcd"]
+    assert spy.closed

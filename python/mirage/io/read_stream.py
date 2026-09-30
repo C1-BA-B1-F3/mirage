@@ -84,6 +84,18 @@ def call_on_loop(loop: asyncio.AbstractEventLoop | None,
         fn()
 
 
+def _cap_spent(limit: Limit, emitted: int, lines: int) -> bool:
+    """Whether a cap lets nothing more through.
+
+    Args:
+        limit (Limit): the cap.
+        emitted (int): bytes the cap already let through.
+        lines (int): newlines the cap already let through.
+    """
+    return ((limit.max_bytes is not None and emitted >= limit.max_bytes)
+            or (limit.max_lines is not None and lines >= limit.max_lines))
+
+
 class _Tally:
     """What a read moved, and who is told once it settles.
 
@@ -211,8 +223,13 @@ class ReadStream:
         kept = chunk[:end]
         self._emitted += end
         self._lines += kept.count(b"\n")
-        if end < len(chunk):
+        cut = end < len(chunk)
+        if cut:
             logger.debug("vfs op output truncated at %r", self._limit)
+        # A cap met exactly at a chunk's end closes now: pulling the
+        # backend again only to cut the next chunk to nothing would make
+        # a finished read wait on (or fail with) one more backend call.
+        if cut or _cap_spent(self._limit, self._emitted, self._lines):
             await self.aclose()
             if not kept:
                 raise StopAsyncIteration

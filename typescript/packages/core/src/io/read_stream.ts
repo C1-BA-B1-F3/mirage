@@ -39,6 +39,14 @@ export function capEnd(chunk: Uint8Array, limit: Limit, emitted: number, lines: 
   return end
 }
 
+/** Whether a cap lets nothing more through. Mirrors Python's `_cap_spent`. */
+function capSpent(limit: Limit, emitted: number, lines: number): boolean {
+  return (
+    (limit.maxBytes !== null && emitted >= limit.maxBytes) ||
+    (limit.maxLines !== null && lines >= limit.maxLines)
+  )
+}
+
 function countNewlines(chunk: Uint8Array): number {
   let n = 0
   for (const byte of chunk) if (byte === NEWLINE) n++
@@ -186,7 +194,10 @@ export class ReadStream implements AsyncIterableIterator<Uint8Array> {
     const kept = chunk.subarray(0, end)
     this.emitted += end
     this.lines += countNewlines(kept)
-    if (end < chunk.byteLength) {
+    // A cap met exactly at a chunk's end closes now: pulling the backend
+    // again only to cut the next chunk to nothing would make a finished
+    // read wait on (or fail with) one more backend call.
+    if (end < chunk.byteLength || capSpent(this.limit, this.emitted, this.lines)) {
       await this.return()
       if (kept.byteLength === 0) return { done: true, value: undefined }
     }

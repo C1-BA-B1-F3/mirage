@@ -3351,7 +3351,7 @@
           "op": "records",
           "path": "/data/lines.txt",
           "expect": {
-            "value": [["read", 24]]
+            "value": [["read", 16]]
           }
         },
         {
@@ -3373,7 +3373,7 @@
           "op": "records",
           "path": "/data/lines.txt",
           "expect": {
-            "value": [["read", 24], ["read", 8], ["read", 80]]
+            "value": [["read", 16], ["read", 8], ["read", 80]]
           }
         },
         {

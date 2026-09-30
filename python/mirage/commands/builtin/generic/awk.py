@@ -5,6 +5,7 @@ from typing import Any
 
 from mirage.cache.index import NULL_INDEX, IndexCacheStore
 from mirage.commands.builtin.generic.awk_types import USAGE, AwkFlags
+from mirage.commands.builtin.utils.paths import dispatch_stat
 from mirage.commands.builtin.utils.stream import is_stdin, resolve_source
 from mirage.commands.constants import ROOT_CWD
 from mirage.commands.errors import UsageError
@@ -20,8 +21,8 @@ from mirage.io.stream import materialize
 from mirage.io.types import ByteSource, IOResult
 from mirage.runtime.types import DispatchFn, ShellFn
 from mirage.shell.join import shell_join
-from mirage.types import PathSpec
-from mirage.utils.errors import FS_ERRORS, WALK_ERRORS, fs_strerror
+from mirage.types import FileType, PathSpec
+from mirage.utils.errors import FS_ERRORS, WALK_ERRORS, eisdir, fs_strerror
 from mirage.utils.path import resolve_path
 
 STDIN_NAMES = frozenset({"-", "/dev/stdin"})
@@ -116,6 +117,12 @@ class AwkStreams:
         if self.dispatch is None:
             raise AwkIOError("No such file or directory")
         path = PathSpec.from_str_path(resolve_path(name, self.cwd.virtual))
+        # A keyed store reads a directory as nothing at all, and other
+        # backends fail it in their own words, so the stat goes first to
+        # fail it the way a POSIX read does.
+        if (await dispatch_stat(self.dispatch,
+                                path)).type == FileType.DIRECTORY:
+            raise eisdir(path)
         data, _ = await self.dispatch("read", path)
         yield data
 

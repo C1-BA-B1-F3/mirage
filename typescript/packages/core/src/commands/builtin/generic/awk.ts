@@ -17,7 +17,7 @@ import { specOf } from '../../spec/builtins.ts'
 import { FlagView } from '../../spec/flag_view.ts'
 import { mountKey, mountPrefixOf } from '../../../utils/key_prefix.ts'
 import { IOResult, materialize, type ByteSource } from '../../../io/types.ts'
-import { PathSpec } from '../../../types.ts'
+import { FileType, PathSpec } from '../../../types.ts'
 import type { CommandFnResult, CommandOpts } from '../../config.ts'
 import { chunks } from '../../../io/cooperative.ts'
 import {
@@ -35,7 +35,9 @@ import {
 } from '../../../core/awk/index.ts'
 import { UsageError } from '../../errors.ts'
 import { USAGE, type AwkFlags } from './awk_types.ts'
+import { dispatchStat } from '../utils/paths.ts'
 import {
+  eisdir,
   fsStrerror,
   isEnotdir,
   isFsError,
@@ -123,7 +125,12 @@ export class AwkStreams implements AwkHost {
   private async *readPath(name: string): AsyncIterable<Uint8Array> {
     const dispatch = this.opts.dispatch
     if (dispatch === undefined) throw new AwkIOError('No such file or directory')
-    const [data] = await dispatch('read', PathSpec.fromStrPath(resolvePath(name, this.opts.cwd)))
+    const path = PathSpec.fromStrPath(resolvePath(name, this.opts.cwd))
+    // A keyed store reads a directory as nothing at all, and other backends
+    // fail it in their own words, so the stat goes first to fail it the way
+    // a POSIX read does.
+    if ((await dispatchStat(dispatch)(path)).type === FileType.DIRECTORY) throw eisdir(path)
+    const [data] = await dispatch('read', path)
     yield data instanceof Uint8Array ? data : ENC.encode(String(data))
   }
 

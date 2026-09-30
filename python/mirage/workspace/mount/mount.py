@@ -21,6 +21,7 @@ from contextlib import asynccontextmanager
 from typing import Any, Callable
 
 from mirage.cache.context import push_cache_manager
+from mirage.cache.index.config import IndexConfig
 from mirage.cache.index.factory import build_index
 from mirage.cache.index.store import IndexCacheStore
 from mirage.cache.manager import CacheManager
@@ -156,6 +157,7 @@ class MountEntry:
         read: ReadSpec | None = None,
         index: IndexCacheStore | None = None,
         vfs_ref: str | None = None,
+        index_config: IndexConfig | None = None,
     ) -> None:
         if not prefix.startswith("/"):
             raise ValueError(f"prefix must start with /: {prefix!r}")
@@ -194,6 +196,8 @@ class MountEntry:
         # The ``vfs:`` value the driver was built from, recorded for
         # snapshots; None for one constructed in code.
         self.vfs_ref = vfs_ref
+        self.index_config = (index_config.model_copy(
+            deep=True) if index_config is not None else None)
         self.activity = VFSActivity()
         self.retiring = False
         self.before_use: Callable[[], Awaitable[None]] | None = None

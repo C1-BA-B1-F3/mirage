@@ -12,6 +12,7 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import type { IndexConfigSnapshot } from './config.ts'
 import type { EventDict } from '../../observe/observer.ts'
 import type { VFSStateBase } from '../../vfs/base.ts'
 import type { RAMVFSState } from '../../vfs/ram/ram.ts'
@@ -28,9 +29,8 @@ export interface MountSnapshot {
   read: string
   ttl: number
   vfs_class: string
-  // The `vfs:` value the registry built the VFS from, or null
-  // for one constructed in code. See `BaseVFS.vfsRef`.
   vfs_ref: string | null
+  index_config?: IndexConfigSnapshot | null
   vfs_state: VFSState
 }
 

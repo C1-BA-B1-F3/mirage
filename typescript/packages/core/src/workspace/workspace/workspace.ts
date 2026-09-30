@@ -12,6 +12,7 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import { indexConfigDump } from '../snapshot/config.ts'
 import { RAMIndexCacheStore } from '../../cache/index/ram.ts'
 import { KeyLock } from '../../cache/lock.ts'
 import { checkCliVerbs } from '../session/validate.ts'
@@ -1675,6 +1676,10 @@ export class Workspace {
     // are reconstructed from snapshot state. Uses _fromState directly (no tar
     // round-trip, no drift install) like Python's `type(self)._from_state`.
     const state = await toStateDict(this)
+    for (const mount of this.registry.allMounts()) {
+      const saved = state.mounts.find((entry) => entry.prefix === mount.prefix)
+      if (saved !== undefined) saved.index_config = indexConfigDump(mount.indexConfig, true)
+    }
     const opts: WorkspaceOptions = {
       mode: options.mode ?? MountMode.WRITE,
       // The declarations travel with the copy the way a live CLI

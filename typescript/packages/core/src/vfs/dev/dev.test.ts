@@ -12,6 +12,7 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import { Mount } from '../../workspace/mount/spec.ts'
 import { CLISpec } from '../../commands/cli/types.ts'
 import { runWithSession } from '../../context/session_context.ts'
 import { SessionState } from '../../workspace/session/session.ts'
@@ -415,3 +416,31 @@ it('rejects stale writes and releases after the same session reuses an input', a
     return Promise.resolve()
   })
 })
+
+it.each([false, true])(
+  'keeps alternate device mounts session-private (configured: %s)',
+  async (configured) => {
+    const dev = new DevVFS()
+    const ws = new Workspace(
+      { '/devices': configured ? new Mount(dev, { index: { ttl: 120 } }) : dev },
+      { index: { ttl: 600 }, shellParser: await getTestParser() },
+    )
+    const owner = ws.createSession('owner')
+    ws.createSession('peer')
+    await runWithSession(owner, () => {
+      const [path, allocation] = dev.allocateInput()
+      dev.setInput(path, allocation, new TextEncoder().encode('private'))
+      return Promise.resolve()
+    })
+    try {
+      const listed = await ws.shell('ls /devices/fd', { sessionId: 'owner' })
+      expect(listed.exitCode).toBe(0)
+      expect(listed.stdoutText).toBe('63\n')
+      const peer = await ws.shell('ls /devices/fd', { sessionId: 'peer' })
+      expect(peer.stdoutText).not.toContain('63')
+      expect(peer.exitCode).not.toBe(0)
+    } finally {
+      await ws.close()
+    }
+  },
+)

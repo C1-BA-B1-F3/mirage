@@ -362,6 +362,16 @@ describe('UpstashRedisStore', () => {
     expect(fake.keys()).toEqual([])
   })
 
+  it('recreates the root before using a cleared store', async () => {
+    const { store } = make()
+    await store.addDir('/old')
+    await store.clear()
+    expect(await store.hasDir('/')).toBe(true)
+    expect(await store.hasDir('/old')).toBe(false)
+    await store.setFile('/new', ENC.encode('new'))
+    expect(await store.getFile('/new')).toEqual(ENC.encode('new'))
+  })
+
   it('surfaces the server error message', async () => {
     const { fake, store } = make()
     fake.exec(['HSET', 'mirage:fs:file:/h', 'field', 'value'])

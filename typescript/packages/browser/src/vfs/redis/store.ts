@@ -498,6 +498,7 @@ export class UpstashRedisStore implements RedisStoreLike {
       }
     }
     await this.command(['DEL', this.dk()])
+    this.rootSeeded = null
   }
 
   close(): Promise<void> {

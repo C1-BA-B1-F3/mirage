@@ -24,9 +24,9 @@ import type { RAMStore } from '../ram/store.ts'
 import { type DevFiles, DevStore } from './store.ts'
 
 /**
- * The index the reserved /dev mount runs under: it never keeps an entry,
+ * The index every DevVFS runs under: it never keeps an entry,
  * because a path-only index would publish one session's descriptors to
- * another. Mirrors the `NULL_INDEX` Python's registry places /dev with.
+ * another. Mirrors the `NULL_INDEX` Python's registry uses for DevVFS.
  */
 export class DevIndex extends RAMIndexCacheStore {
   override seed(): void {

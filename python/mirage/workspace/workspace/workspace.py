@@ -96,6 +96,7 @@ from mirage.workspace.snapshot import (DriftQueue, apply_state_dict,
                                        read_tar)
 from mirage.workspace.snapshot import snapshot as _write_snapshot
 from mirage.workspace.snapshot import to_state_dict
+from mirage.workspace.snapshot.config import index_config_dump
 from mirage.workspace.snapshot.keys import StateKey
 from mirage.workspace.snapshot.state import (CLIOverrides, reusable_clis,
                                              reusable_mounts)
@@ -1102,6 +1103,11 @@ class Workspace:
         shared and local content mounts are reconstructed fresh.
         """
         state = await to_state_dict(self)
+        for mount in self._registry.mounts():
+            for saved in state["mounts"]:
+                if saved["prefix"] == mount.prefix:
+                    saved["index_config"] = index_config_dump(
+                        mount.index_config, reveal=True)
         mounts = reusable_mounts(self._registry.mounts(), state)
         # The declarations travel with the copy the way a live CLI
         # install does: an env pointer restores from state naming its

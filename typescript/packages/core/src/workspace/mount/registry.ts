@@ -251,7 +251,20 @@ export class MountRegistry {
       const read = readByPrefix[prefix] ?? defaultRead
       const index = this.indexFor(vfs, placements.indexes?.[rawPrefix], list)
       const vfsRef = placements.refs?.[rawPrefix] ?? null
-      list.push(MountRegistry.place({ prefix, vfs, mode, read, index, vfsRef }, list))
+      list.push(
+        MountRegistry.place(
+          {
+            prefix,
+            vfs,
+            mode,
+            read,
+            index,
+            vfsRef,
+            indexConfig: placements.indexes?.[rawPrefix] ?? this.indexConfig,
+          },
+          list,
+        ),
+      )
     }
     list.sort((a, b) => b.prefix.length - a.prefix.length)
     this.mountList = list
@@ -268,8 +281,10 @@ export class MountRegistry {
    * through `mount()` as well.
    */
   private static place(init: MountInit, siblings: readonly MountEntry[]): MountEntry {
-    const m = new MountEntry(init)
     const alias = siblings.find((existing) => existing.vfs === init.vfs)
+    const m = new MountEntry(
+      alias === undefined ? init : { ...init, indexConfig: alias.indexConfig },
+    )
     if (alias !== undefined) m.activity = alias.activity
     // Through `registerFns`, as python's `registry.mount` does, so a
     // family table that fans out over sibling VFS names (the HF four
@@ -295,6 +310,7 @@ export class MountRegistry {
   ): IndexCacheStore {
     const alias = siblings.find((existing) => existing.vfs === vfs)
     if (alias !== undefined) return alias.indexStore
+    if (vfs instanceof DevVFS) return new DevIndex()
     return buildIndex(config ?? this.indexConfig, vfs.indexTtl)
   }
 
@@ -330,7 +346,15 @@ export class MountRegistry {
     const index = this.indexFor(vfs, placement.index, this.mountList)
     const vfsRef = placement.vfsRef ?? null
     const m = MountRegistry.place(
-      { prefix: norm, vfs, mode, read: read ?? this.defaultRead, index, vfsRef },
+      {
+        prefix: norm,
+        vfs,
+        mode,
+        read: read ?? this.defaultRead,
+        index,
+        vfsRef,
+        indexConfig: placement.index ?? this.indexConfig,
+      },
       this.mountList,
     )
     if (this.cacheStore !== null) this.attachManager(m)

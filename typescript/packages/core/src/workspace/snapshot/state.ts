@@ -12,6 +12,7 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import { indexConfigDump, restoreIndexConfig } from './config.ts'
 import { tokenOrNull } from '../../cache/file/utils.ts'
 import { CacheEntry } from '../../cache/file/entry.ts'
 import { RAMFileCacheStore } from '../../cache/file/ram.ts'
@@ -102,6 +103,7 @@ export async function toStateDict(ws: Workspace): Promise<WorkspaceStateDict> {
       ttl: m.read.ttl,
       vfs_class: m.vfs.name,
       vfs_ref: m.vfsRef,
+      index_config: indexConfigDump(m.indexConfig),
       vfs_state: state,
     })
   }
@@ -337,11 +339,13 @@ export function buildMountArgs(
     const read: ReadSpec = foreign.has(normMountPrefix(m.prefix))
       ? (placed?.options.read ?? DEFAULT_READ_SPEC)
       : savedSpec
+    const index = restoreIndexConfig(m.index_config, placed?.options.index, m.prefix)
     mountArgs[m.prefix] = new Mount(
       placed !== null ? placed.vfs : ((override as BaseVFS | undefined) ?? new RAMVFS()),
       {
         mode: m.mode as MountMode,
         read,
+        ...(index === undefined ? {} : { index }),
         vfsRef: placed !== null ? (placed.options.vfsRef ?? null) : savedRef(m),
       },
     )

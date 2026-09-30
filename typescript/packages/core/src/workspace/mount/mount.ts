@@ -17,6 +17,7 @@ import { captureSessionContext } from '../../context/session_context.ts'
 import { mountKey } from '../../utils/key_prefix.ts'
 import { coerceReadPolicy } from './read_policy.ts'
 import { KeyLock } from '../../cache/lock.ts'
+import type { IndexConfig } from '../../cache/index/config.ts'
 import { buildIndex } from '../../cache/index/factory.ts'
 import type { IndexCacheStore } from '../../cache/index/store.ts'
 import type {
@@ -110,6 +111,7 @@ export interface MountInit {
   // one, shared with any alias of the same instance. A bare entry gets
   // a RAM store at the driver's TTL.
   index?: IndexCacheStore
+  indexConfig?: IndexConfig | undefined
   // The `vfs:` value the driver was built from, recorded for snapshots;
   // null for one constructed in code.
   vfsRef?: string | null
@@ -138,6 +140,7 @@ export class MountEntry {
   // `index` is this same store scoped by the cache manager, which is
   // what ops and commands receive.
   readonly indexStore: IndexCacheStore
+  readonly indexConfig: IndexConfig | undefined
   readonly vfsRef: string | null
   activity = new VFSActivity()
   retiring = false
@@ -197,6 +200,7 @@ export class MountEntry {
     const spec = init.read ?? DEFAULT_READ_SPEC
     this.read = Object.freeze({ ...spec, policy: coerceReadPolicy(spec.policy) })
     this.indexStore = init.index ?? buildIndex(undefined, init.vfs.indexTtl)
+    this.indexConfig = init.indexConfig === undefined ? undefined : { ...init.indexConfig }
     this.vfsRef = init.vfsRef ?? null
   }
 

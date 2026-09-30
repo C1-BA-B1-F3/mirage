@@ -44,7 +44,8 @@ from mirage.workspace.session.session import (SessionState, vars_from_fields,
                                               vars_to_fields)
 from mirage.workspace.session.shell_dirs import set_cwd
 from mirage.workspace.session.state import gate_restored_vars
-from mirage.workspace.snapshot.config import MountArgs
+from mirage.workspace.snapshot.config import (MountArgs, index_config_dump,
+                                              restore_index_config)
 from mirage.workspace.snapshot.drift import (capture_fingerprints,
                                              live_only_mount_prefixes)
 from mirage.workspace.snapshot.keys import (CacheKey, CLIKey, JobKey, MountKey,
@@ -167,15 +168,24 @@ async def to_state_dict(ws) -> dict[str, Any]:
         async with m.use():
             vfs_state = m.vfs.get_state()
         mounts_state.append({
-            MountKey.INDEX: idx,
-            MountKey.PREFIX: m.prefix,
-            MountKey.MODE: m.mode.value,
-            MountKey.READ: m.read.policy.value,
-            MountKey.TTL: m.read.ttl,
+            MountKey.INDEX:
+            idx,
+            MountKey.PREFIX:
+            m.prefix,
+            MountKey.MODE:
+            m.mode.value,
+            MountKey.READ:
+            m.read.policy.value,
+            MountKey.TTL:
+            m.read.ttl,
             MountKey.VFS_CLASS:
             f"{type(m.vfs).__module__}.{type(m.vfs).__name__}",
-            MountKey.VFS_REF: m.vfs_ref,
-            MountKey.VFS_STATE: vfs_state,
+            MountKey.VFS_REF:
+            m.vfs_ref,
+            MountKey.INDEX_CONFIG:
+            index_config_dump(m.index_config),
+            MountKey.VFS_STATE:
+            vfs_state,
         })
 
     # Only a RAM cache holds entries the snapshot can carry; a Redis
@@ -358,6 +368,10 @@ def build_mount_args(state: dict[str, Any],
             mode=MountMode(m[MountKey.MODE]),
             read=read,
             vfs_ref=ref,
+            index=restore_index_config(
+                m.get(MountKey.INDEX_CONFIG),
+                override.index if isinstance(override, Mount) else None,
+                prefix),
         )
 
     cli_args: dict[str, tuple[str | CLISpec, dict[str, Any] | None]] = {}

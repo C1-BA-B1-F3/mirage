@@ -16,37 +16,15 @@ import type { IndexConfig } from '../../cache/index/config.ts'
 import type { BaseVFS } from '../../vfs/base.ts'
 import type { Limit, MountBackend, MountMode, ReadSpec } from '../../types.ts'
 
+/** Placement settings; index and read fall back to the workspace defaults. */
 export interface MountSpecOptions {
-  /** Per-mount mode override; falls back to the workspace default when unset. */
   mode?: MountMode
-  /**
-   * How the mount is exposed. `workspace` (the default) keeps it inside mirage's
-   * own filesystem; `fuse` and `fskit` also register a real mountpoint.
-   */
   backend?: MountBackend
-  /**
-   * Where to mount, for the kernel backends. Omitted picks a temporary
-   * directory appropriate for the backend. Ignored when backend is `workspace`.
-   */
   mountpoint?: string
   commandLimits?: Record<string, Limit>
-  /**
-   * The `vfs:` value the driver was built from: a registry name (`s3`)
-   * or a code reference (`./wiki.mjs:WikiVFS`), null for one constructed
-   * in code. A snapshot records it so the loader can rebuild the mount
-   * through the same door.
-   */
+  /** Registry name or code loader used to rebuild the driver from a snapshot. */
   vfsRef?: string | null
-  /**
-   * The index store this mount runs its driver under; omitted takes the
-   * workspace's index config, or a RAM store at the driver's `indexTtl`
-   * when there is none.
-   */
   index?: IndexConfig
-  /**
-   * How cached bytes for this mount are revalidated. Omitted takes the
-   * workspace default, as `mode` does.
-   */
   read?: ReadSpec
 }
 

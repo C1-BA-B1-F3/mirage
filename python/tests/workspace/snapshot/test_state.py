@@ -24,6 +24,7 @@ from mirage import (NULL_INDEX, Accessor, BaseVFS, CommandIO, FileStat,
                     IndexCacheStore, Mount, MountMode, PathSpec, Workspace,
                     stream_from_bytes)
 from mirage.cache.file.config import RedisCacheConfig
+from mirage.cache.index import IndexConfig, RedisIndexConfig
 from mirage.policy import Action, Deny, Policy, PolicyDenied
 from mirage.policy.types import SessionContext
 from mirage.secrets import registry
@@ -35,12 +36,67 @@ from mirage.vfs.loader import SCRIPT_MODULE_NAME, load_backend_class
 from mirage.vfs.minio import MinIOConfig, MinIOVFS
 from mirage.vfs.ram import RAMVFS
 from mirage.vfs.registry import build_vfs, register_vfs
+from mirage.vfs.secrets import REDACTED_SECRET
 from mirage.workspace.snapshot.keys import (CacheKey, MountKey, StateKey,
                                             VFSStateKey)
 from mirage.workspace.snapshot.state import (apply_state_dict,
                                              build_mount_args,
                                              requires_vfs_override,
                                              to_state_dict)
+
+
+@pytest.mark.asyncio
+async def test_snapshot_preserves_effective_index_config_and_aliases():
+    driver = RAMVFS()
+    ws = Workspace(
+        {
+            "/first": Mount(driver, index=IndexConfig(ttl=37)),
+            "/alias": Mount(driver, index=IndexConfig(ttl=99)),
+            "/default": RAMVFS()
+        },
+        index=IndexConfig(ttl=73))
+    try:
+        restored = await Workspace._from_state(await to_state_dict(ws))
+        try:
+            for entry in restored.mounts():
+                if entry.prefix in ("/first/", "/alias/", "/default/"):
+                    ttl = 73 if entry.prefix == "/default/" else 37
+                    assert entry.index_config == IndexConfig(ttl=ttl)
+                    assert entry.index_store.ttl == ttl
+        finally:
+            await restored.close()
+    finally:
+        await ws.close()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "url",
+    ["redis://localhost:6379/2", "redis://user:secret@localhost:6379/2"])
+async def test_snapshot_preserves_redis_index_with_credential_override(url):
+    config = RedisIndexConfig(url=url, key_prefix="test:index:", ttl=91)
+    ws = Workspace({"/data": Mount(RAMVFS(), index=config)})
+    try:
+        state = await to_state_dict(ws)
+        saved = next(m for m in state[StateKey.MOUNTS]
+                     if m[MountKey.PREFIX] == "/data/")
+        if "secret" in url:
+            assert saved[MountKey.INDEX_CONFIG]["url"] == REDACTED_SECRET
+            with pytest.raises(ValueError, match="fresh index credentials"):
+                build_mount_args(state)
+            args = build_mount_args(state,
+                                    {"/data": Mount(RAMVFS(), index=config)})
+        else:
+            args = build_mount_args(state)
+        assert args.mount_args["/data/"].index == config
+        copied = await ws.copy()
+        try:
+            entry = next(m for m in copied.mounts() if m.prefix == "/data/")
+            assert entry.index_config == config
+        finally:
+            await copied.close()
+    finally:
+        await ws.close()
 
 
 class FakeConfig(BaseModel):

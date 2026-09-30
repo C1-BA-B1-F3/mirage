@@ -277,11 +277,14 @@ class MountRegistry:
         alias = next((e for e in self._mounts if e.vfs is vfs), None)
         if alias is not None:
             store = alias.index_store
+            index = alias.index_config
+        elif isinstance(vfs, DevVFS):
+            store = NULL_INDEX
         elif store is None:
             store = build_index(index, vfs.index_ttl)
         m = MountEntry(norm_prefix, vfs, mode,
                        read if read is not None else self._default_read, store,
-                       vfs_ref)
+                       vfs_ref, index)
         if alias is not None:
             m.activity = alias.activity
         m.register_fns(vfs.commands())

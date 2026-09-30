@@ -13,6 +13,9 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import { setCwd } from './session/shell_dirs.ts'
+import { IndexType, type RedisIndexConfig } from '../cache/index/config.ts'
+import { Mount } from './mount/spec.ts'
+import { REDACTED_SECRET } from '../vfs/secrets.ts'
 import { seedVar } from './session/state.ts'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -63,6 +66,70 @@ beforeAll(async () => {
 afterAll(() => {
   rmSync(tempDir, { recursive: true, force: true })
 })
+
+it('preserves effective mount index settings and aliases through snapshots', async () => {
+  const driver = new RAMVFS()
+  const ws = new Workspace(
+    {
+      '/first': new Mount(driver, { index: { ttl: 37 } }),
+      '/alias': new Mount(driver, { index: { ttl: 99 } }),
+      '/default': new RAMVFS(),
+    },
+    { index: { ttl: 73 }, shellParser: parser },
+  )
+  try {
+    const restored = await Workspace.fromState(await toStateDict(ws), { shellParser: parser })
+    try {
+      for (const entry of restored.mounts()) {
+        if (['/first/', '/alias/', '/default/'].includes(entry.prefix)) {
+          const ttl = entry.prefix === '/default/' ? 73 : 37
+          expect(entry.indexConfig?.ttl).toBe(ttl)
+          expect(entry.indexStore.ttl).toBe(ttl)
+        }
+      }
+    } finally {
+      await restored.close()
+    }
+  } finally {
+    await ws.close()
+  }
+})
+
+it.each(['redis://localhost:6379/2', 'redis://user:secret@localhost:6379/2'])(
+  'preserves Redis index settings and protects credentials (%s)',
+  async (url) => {
+    const config: RedisIndexConfig = {
+      type: IndexType.REDIS,
+      url,
+      keyPrefix: 'test:index:',
+      ttl: 91,
+    }
+    const ws = new Workspace(
+      { '/data': new Mount(new RAMVFS(), { index: config }) },
+      { shellParser: parser },
+    )
+    try {
+      const state = await toStateDict(ws)
+      let overrides = {}
+      if (url.includes('secret')) {
+        expect(state.mounts.find((m) => m.prefix === '/data/')?.index_config?.url).toBe(
+          REDACTED_SECRET,
+        )
+        expect(() => buildMountArgs(state)).toThrow(/fresh index credentials/)
+        overrides = { '/data': new Mount(new RAMVFS(), { index: config }) }
+      }
+      expect(buildMountArgs(state, overrides).mountArgs['/data/']?.options.index).toEqual(config)
+      const copied = await ws.copy()
+      try {
+        expect(copied.mounts().find((m) => m.prefix === '/data/')?.indexConfig).toEqual(config)
+      } finally {
+        await copied.close()
+      }
+    } finally {
+      await ws.close()
+    }
+  },
+)
 
 function buildWorkspace(): Workspace {
   const ram = new RAMVFS()

@@ -65,8 +65,7 @@
       ],
       "typescript": [
         "GITHUB_URL"
-      ],
-      "shared": true
+      ]
     },
     "gridfs": {
       "python": [],
@@ -2878,7 +2877,8 @@
         "scriptedops": "scriptedops",
         "keeper": "keeper",
         "opener": "opener",
-        "pruner": "pruner"
+        "pruner": "pruner",
+        "speaker": "speaker"
       },
       "profile": "default",
       "profiles": {
@@ -3104,6 +3104,13 @@
               "source": "def pre_command(ctx):\n    for p in ctx['command']['paths']:\n        if 'marker' in contents(p):\n            return {'deny': 'marked by ' + ctx['profile']}\n    return None\n\ndef pre_ops(ctx):\n    op = ctx['op']\n    if op['write'] and op['path'].startswith('/scratch/cold/'):\n        return {'deny': 'cold by ' + ctx['profile']}\n    return None\n\ndef pre_session(ctx):\n    if ctx['write']['key'].startswith('AWS_'):\n        return {'deny': 'credentials are set by the operator'}\n    return None\n\ndef contents(path):\n    try:\n        return open(path).read()\n    except OSError:\n        return ''\n"
             },
             "runtime": "monty"
+          }
+        },
+        "speaker": {
+          "commands": {
+            "allow": [
+              "echo"
+            ]
           }
         }
       }

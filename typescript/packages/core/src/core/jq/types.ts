@@ -14,12 +14,90 @@
 
 export const DEFAULT_INDENT = 2
 
-// The named argument the `inputs` prelude reads. Spelled so a user
-// program can never collide with it by accident.
-export const INPUTS_VAR = '__mirage_jq_inputs'
+// What jq names standard input when it reports where it stands, and what
+// it reports before it has read any input at all.
+export const STDIN_NAME = '<stdin>'
+export const UNKNOWN_POSITION = '<unknown>'
 
-// The named argument the `$ARGS` prelude rebinds.
-export const ARGS_VAR = '__mirage_jq_args'
+/**
+ * jq's `jv_invalid()` where a value could stand: nothing yet, which is not
+ * the same as null.
+ */
+export const NO_VALUE: unique symbol = Symbol('no-value')
+export type NoValue = typeof NO_VALUE
+
+/**
+ * jq's parser refusing its input: the message, with the line and the column
+ * it had reached, as jq's report words it (e.g. `Unfinished JSON term at EOF
+ * at line 1, column 3`). A class, so no parsed JSON value can pass for one.
+ */
+export class JqParseError {
+  constructor(readonly message: string) {}
+}
+
+/**
+ * A number as a --stream event carries it: its literal, up to its first
+ * NUL, which jq keeps and prints as it was written (`1.000`, `1E+2`) where
+ * a JS number cannot.
+ */
+export class NumberText {
+  constructor(readonly text: string) {}
+}
+
+/**
+ * One input of the stream jq reads: a file operand or stdin. `name` is the
+ * input as jq reports it, the operand as the command line spelled it or
+ * `<stdin>`.
+ */
+export interface InputSource {
+  readonly name: string
+  readonly chunks: AsyncIterable<Uint8Array>
+}
+
+/**
+ * An error no `try` caught, which ends one run: jq reports it and goes on
+ * with the next document.
+ */
+export interface JqError {
+  readonly kind: 'error'
+  /** The message as jq prints it: a string as it is, anything else in
+   * jq's own compact dump. */
+  readonly text: string
+  /** Whether the message was a string, which jq's report says when it
+   * was not. */
+  readonly string: boolean
+}
+
+/** `halt` or `halt_error`, which end the whole invocation. */
+export interface JqHalt {
+  readonly kind: 'halt'
+  /** halt_error's input as jq prints it (a string as it is, anything else
+   * in jq's compact dump), or null for `halt` and for a null input, which
+   * print nothing. */
+  readonly message: string | null
+  /** Whether that input was a string, which jq prints with no newline of
+   * its own. */
+  readonly string: boolean
+  /** The exit code `halt_error` named, or null for `halt`. */
+  readonly code: number | null
+}
+
+/** What one run of a program printed, and what ended it early. */
+export interface JqRun<T = unknown> {
+  /** Every output it printed, in order: a value, or jq's own compact dump
+   * of one. */
+  readonly outputs: T[]
+  /** The error or the halt that ended it, or null when it ran to its end. */
+  readonly stop: JqError | JqHalt | null
+}
+
+/** Which of the builtins that read the input stream a program calls. */
+export interface StreamReads {
+  /** `input`, which takes the next unread document. */
+  readonly input: boolean
+  /** `inputs`, which yields every unread document. */
+  readonly inputs: boolean
+}
 
 // The record separator an application/json-seq stream puts before every
 // value (RFC 7464).
@@ -67,12 +145,12 @@ export interface JqOptions {
   readonly indent: number
   /** -e, derive the exit code from the last output value. */
   readonly exitStatus: boolean
-  /** --arg / --argjson / --rawfile / --slurpfile bindings, as the values
-   * $name resolves to. */
-  readonly namedArgs: Readonly<Record<string, unknown>>
-  /** --args / --jsonargs values, in order, as $ARGS.positional reports
-   * them. */
-  readonly positionalArgs: readonly unknown[]
+  /** --arg / --argjson / --rawfile / --slurpfile bindings, each the JSON
+   * text of the value $name resolves to, in the order they were bound. */
+  readonly namedArgs: ReadonlyMap<string, string>
+  /** --args / --jsonargs values, in order, as JSON text of what
+   * $ARGS.positional reports. */
+  readonly positionalArgs: readonly string[]
 }
 
 const DEFAULT_JQ_OPTIONS: JqOptions = Object.freeze({
@@ -90,7 +168,7 @@ const DEFAULT_JQ_OPTIONS: JqOptions = Object.freeze({
   tab: false,
   indent: DEFAULT_INDENT,
   exitStatus: false,
-  namedArgs: Object.freeze({}),
+  namedArgs: new Map<string, string>(),
   positionalArgs: Object.freeze([]),
 })
 

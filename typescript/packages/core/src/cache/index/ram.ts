@@ -19,7 +19,7 @@ import { LookupStatus, type IndexEntry, type ListResult, type LookupResult } fro
 import { IndexCacheStore } from './store.ts'
 
 export class RAMIndexCacheStore extends IndexCacheStore {
-  private readonly ttl: number
+  readonly ttl: number
   private readonly entryMap = new Map<string, IndexEntry>()
   private readonly children = new Map<string, string[]>()
   private readonly expiry = new Map<string, number>()

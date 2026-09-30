@@ -19,7 +19,9 @@ from pathlib import Path
 import asyncssh
 
 from mirage.server.registry import WorkspaceRegistry
+from mirage.server.ssh.codex import serve_codex
 from mirage.server.ssh.config import SSHConfig
+from mirage.server.ssh.constants import CODEX_SUBSYSTEM
 from mirage.server.ssh.keys import load_host_key
 from mirage.server.ssh.session import handle_process
 from mirage.server.ssh.sftp import MirageSFTPServer
@@ -61,13 +63,29 @@ class MirageSSHServer(asyncssh.SSHServer):
         return False
 
 
+async def serve_channel(registry: WorkspaceRegistry,
+                        process: asyncssh.SSHServerProcess[str]) -> None:
+    """Route a session channel: Codex's subsystem to its door, anything
+    else to the shell.
+
+    Args:
+        registry (WorkspaceRegistry): the daemon's workspaces.
+        process (asyncssh.SSHServerProcess[str]): the channel's process.
+    """
+    if process.subsystem == CODEX_SUBSYSTEM:
+        await serve_codex(registry, process)
+        return
+    await handle_process(registry, process)
+
+
 async def start_ssh_server(registry: WorkspaceRegistry,
                            config: SSHConfig) -> asyncssh.SSHAcceptor:
     """Listen for SSH on the daemon's loop, serving its workspaces.
 
     ``ssh <workspace-id>@host`` opens a shell in that workspace,
-    ``ssh <workspace-id>@host cmd`` runs one line, and ``sftp``/``scp``
-    reach its files. Each channel runs as a fresh mirage session under
+    ``ssh <workspace-id>@host cmd`` runs one line, ``sftp``/``scp``
+    reach its files, and the ``codex-exec`` subsystem serves Codex's
+    tools. Each channel runs as a fresh mirage session under
     the profile its key is bound to (``mirage-profile`` in the
     authorized keys), else the workspace's default profile.
 
@@ -88,7 +106,7 @@ async def start_ssh_server(registry: WorkspaceRegistry,
         server_host_keys=[load_host_key(config.host_key_file)],
         server_factory=functools.partial(MirageSSHServer,
                                          config.authorized_keys_file),
-        process_factory=functools.partial(handle_process, registry),
+        process_factory=functools.partial(serve_channel, registry),
         sftp_factory=functools.partial(MirageSFTPServer, registry),
         allow_scp=True,
         max_line_length=MAX_TERMINAL_LINE,

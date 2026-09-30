@@ -51,6 +51,33 @@ export interface RepoLocation {
 }
 
 /** What HEAD points at: a branch, some other ref, or a raw commit. */
+/** A branch's configured upstream, and how far the two have moved. */
+export interface Upstream {
+  /** The upstream as git names it, `origin/main` or a local branch. */
+  readonly label: string
+  /** Commits on the branch the upstream lacks. */
+  readonly ahead: number
+  /** Commits on the upstream the branch lacks. */
+  readonly behind: number
+  /** The upstream ref is configured but missing. */
+  readonly gone: boolean
+}
+
+/**
+ * `branch.autoSetupMerge`: the start points that give a new branch an
+ * upstream. Each member is spelled as the config value that picks it: `true`
+ * takes a remote-tracking start point, `always` a local branch too, `simple` a
+ * remote one of the same name, `inherit` copies the start branch's own
+ * upstream, and `false` takes none.
+ */
+export enum Track {
+  OFF = 'false',
+  REMOTE = 'true',
+  ALWAYS = 'always',
+  SIMPLE = 'simple',
+  INHERIT = 'inherit',
+}
+
 export interface HeadRef {
   /** Short branch name when HEAD is a symbolic ref under `refs/heads`. */
   readonly branch: string | null
@@ -180,4 +207,5 @@ export interface WorkTree {
   readonly files: Map<string, FileStat>
   /** Paths to report as untracked, already collapsed to `dir/` where git would. */
   readonly untracked: string[]
+  readonly ignored: string[]
 }

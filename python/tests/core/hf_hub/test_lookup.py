@@ -12,21 +12,25 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import asyncio
 from unittest.mock import AsyncMock
 
 import pytest
 from fakeredis.aioredis import FakeRedis
 
 import mirage.core.hf_hub.lookup as lookup_mod
+from mirage.cache.file.ram import RAMFileCacheStore
 from mirage.cache.index import NULL_INDEX, IndexEntry
 from mirage.cache.index.ram import RAMIndexCacheStore
 from mirage.cache.index.redis import RedisIndexCacheStore
+from mirage.cache.index.view import IndexView
 from mirage.core.hf_hub.lookup import (dir_stat_entry, key_of, lookup,
                                        probe_dir, probe_file)
 from mirage.core.hf_hub.read import read_bytes, resolve_entry
 from mirage.core.hf_hub.stat import stat
 from mirage.core.hf_hub.tree import parse_entry, refill_index, seed_index
-from tests.core.hf_hub.conftest import file_row, ps
+from tests.core.hf_hub.conftest import file_row, ps, seed
+from tests.fixtures.github_api import expired_on_arrival
 
 
 @pytest.mark.parametrize("prefix,local,expected", [
@@ -60,7 +64,6 @@ async def test_lookup_and_the_index_agree(loaded):
 
 @pytest.mark.asyncio
 async def test_lookup_reports_a_directory_with_no_row_of_its_own(accessor):
-    from tests.core.hf_hub.conftest import file_row, seed
     seed(accessor, file_row("d/b.txt"))
     found = await lookup(accessor, NULL_INDEX, "", "/d")
     assert found.is_dir is True
@@ -136,8 +139,6 @@ async def test_direct_lookup_refreshes_invalidated_snapshot(
 @pytest.mark.parametrize("backend", ["ram", "redis"])
 async def test_parallel_snapshot_readers_share_one_replacement(
         loaded, backend, monkeypatch):
-    import asyncio
-
     client = FakeRedis()
     index = RAMIndexCacheStore() if backend == "ram" else RedisIndexCacheStore(
         client=client)
@@ -273,3 +274,46 @@ async def test_a_read_retries_when_a_reseed_hides_the_clear(
     index = _ClearedAndReseeded(accessor)
     entry = await resolve_entry(accessor, ps("a.txt"), index)
     assert entry.size == 7
+
+
+@pytest.mark.asyncio
+async def test_lookup_answers_from_the_refill_it_just_made(
+        loaded, monkeypatch):
+    fetch = AsyncMock(return_value=dict(loaded.tree))
+    monkeypatch.setattr("mirage.core.hf_hub.tree.fetch_tree", fetch)
+    refills = loaded.refills
+    found = await lookup(loaded, expired_on_arrival(), "/m", "/m/d")
+    assert (found.entry.id, found.children) == ("tree-d", ["/m/d/b.txt"])
+    assert loaded.refills - refills == 1
+    fetch.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_lookup_of_an_expired_folder_under_a_live_root_refills_it(
+        loaded, monkeypatch):
+    index = expired_on_arrival("/m")
+    seed_index(loaded, index, "/m")
+    fetch = AsyncMock(return_value=dict(loaded.tree))
+    monkeypatch.setattr("mirage.core.hf_hub.tree.fetch_tree", fetch)
+    refills = loaded.refills
+    found = await lookup(loaded, index, "/m", "/m/d")
+    assert (found.entry.id, found.children) == ("tree-d", ["/m/d/b.txt"])
+    assert loaded.refills - refills == 1
+    fetch.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("key", ["/m/d", "/m/d/b.txt"])
+async def test_refill_snapshot_respects_child_ownership(
+        loaded, monkeypatch, key):
+    fetch = AsyncMock(return_value=dict(loaded.tree))
+    monkeypatch.setattr("mirage.core.hf_hub.tree.fetch_tree", fetch)
+    view = IndexView(expired_on_arrival(), RAMFileCacheStore(), "/m",
+                     lambda path: path != "/m/d/b.txt")
+    found = await lookup(loaded, view, "/m", key)
+    if key == "/m/d":
+        assert found.entry.id == "tree-d"
+        assert found.children == []
+    else:
+        assert not found.exists
+    fetch.assert_awaited_once()

@@ -21,6 +21,7 @@ from mirage.core.api.client import SessionArg
 from mirage.core.github.client import (GitHubApiError, github_get,
                                        github_request)
 from mirage.core.github.config import GhConfig, GitHubConfig
+from mirage.core.github.constants import GRAPHQL_PATH
 from mirage.core.github.paginate import github_pages
 from mirage.types import JsonValue
 
@@ -145,8 +146,8 @@ async def view_repo(config: GhConfig, ref: RepoRef) -> JsonValue:
                                 base_url=config.base_url)
 
 
-async def _graphql_data(config: GhConfig, query: str,
-                        variables: dict[str, JsonValue]) -> dict[str, Any]:
+async def graphql_data(config: GhConfig, query: str,
+                       variables: dict[str, JsonValue]) -> dict[str, Any]:
     """Run one GraphQL query and return its data, refusing the way gh does.
 
     gh names each error with the path of the field that raised it and
@@ -160,7 +161,7 @@ async def _graphql_data(config: GhConfig, query: str,
     """
     response = await github_request(config.token,
                                     "POST",
-                                    "/graphql", {
+                                    GRAPHQL_PATH, {
                                         "query": query,
                                         "variables": variables
                                     },
@@ -190,7 +191,7 @@ async def repository_fields(config: GhConfig, ref: RepoRef,
         ref (RepoRef): the repository.
         selection (str): the GraphQL selection inside ``repository { }``.
     """
-    data = await _graphql_data(
+    data = await graphql_data(
         config, "query RepositoryInfo($owner: String!, $name: String!) {\n"
         f"    repository(owner: $owner, name: $name) {{{selection}}}\n  }}", {
             "owner": ref.owner,
@@ -236,7 +237,7 @@ async def list_repository_fields(config: GhConfig, owner: str | None,
             variables["owner"] = owner
         if cursor is not None:
             variables["endCursor"] = cursor
-        data = await _graphql_data(config, query, variables)
+        data = await graphql_data(config, query, variables)
         owner_node = data.get("repositoryOwner") or {}
         page = owner_node.get("repositories") or {}
         rows.extend(page.get("nodes") or [])
@@ -283,6 +284,54 @@ async def fork_repo(config: GhConfig,
                                 "POST",
                                 f"/repos/{ref.owner}/{ref.repo}/forks",
                                 body,
+                                base_url=config.base_url)
+
+
+async def edit_repo(config: GhConfig, ref: RepoRef,
+                    body: dict[str, JsonValue]) -> JsonValue:
+    """Change a repository's settings: the one PATCH ``gh repo edit`` sends.
+
+    Args:
+        config (GhConfig): the install's configuration.
+        ref (RepoRef): the repository.
+        body (dict[str, JsonValue]): the settings to change.
+    """
+    return await github_request(config.token,
+                                "PATCH",
+                                f"/repos/{ref.owner}/{ref.repo}",
+                                body,
+                                base_url=config.base_url)
+
+
+async def repo_topics(config: GhConfig, ref: RepoRef) -> list[str]:
+    """A repository's topics, which GitHub keeps and replaces as one list.
+
+    Args:
+        config (GhConfig): the install's configuration.
+        ref (RepoRef): the repository.
+    """
+    data = await github_request(config.token,
+                                "GET",
+                                f"/repos/{ref.owner}/{ref.repo}/topics",
+                                base_url=config.base_url)
+    names = data.get("names") if isinstance(data, dict) else None
+    return [n for n in names
+            if isinstance(n, str)] if isinstance(names, list) else []
+
+
+async def set_repo_topics(config: GhConfig, ref: RepoRef,
+                          names: list[str]) -> JsonValue:
+    return await github_request(config.token,
+                                "PUT",
+                                f"/repos/{ref.owner}/{ref.repo}/topics",
+                                {"names": cast(JsonValue, names)},
+                                base_url=config.base_url)
+
+
+async def delete_repo(config: GhConfig, ref: RepoRef) -> JsonValue:
+    return await github_request(config.token,
+                                "DELETE",
+                                f"/repos/{ref.owner}/{ref.repo}",
                                 base_url=config.base_url)
 
 

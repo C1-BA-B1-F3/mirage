@@ -143,6 +143,10 @@ describe('configValues', () => {
     expect(await configValues(dispatch, location, 'core.bare')).toEqual(['1', 'yes', 'true', ''])
     expect(await configValues(dispatch, location, 'CORE.Bare')).toEqual(['1', 'yes', 'true', ''])
     expect(await configValues(dispatch, location, 'core.sub.bare')).toEqual(['no'])
+    await ws.dispatch('write', '/repo/cfg/config', [
+      new TextEncoder().encode('[branch "q\\"x"]\n\tremote = origin\n'),
+    ])
+    expect(await configValues(dispatch, location, 'branch.q"x.remote')).toEqual(['origin'])
     expect(await configValues(dispatch, location, 'core.worktree')).toEqual([])
     const nowhere = { ...location, gitdir: '/repo/none', commondir: '/repo/none' }
     expect(await configValues(dispatch, nowhere, 'core.bare')).toEqual([])

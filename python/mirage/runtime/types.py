@@ -226,6 +226,8 @@ class RunArgs:
             in the program globals as well as the interpreter's own streams.
         cwd (PathSpec | None): virtual working directory for
             filesystem-aware guest runtimes.
+        script_path (PathSpec | None): the script file the program was
+            read from, ``raw_path`` as typed.
         stdin (bytes | None): bytes fed to the interpreter's stdin.
         flags (dict[str, Any]): interpreter-level switches parsed by
             the command's spec (e.g. js module mode). Each runtime
@@ -239,6 +241,7 @@ class RunArgs:
     stdin: bytes | None = None
     flags: dict[str, Any] = field(default_factory=dict)
     cwd: PathSpec | None = None
+    script_path: PathSpec | None = None
     script_cli: bool = False
 
 

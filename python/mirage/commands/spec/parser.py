@@ -667,8 +667,11 @@ def parse_command(
                     option_error_kinds.append("ambiguous")
                     i += 1
                     continue
-                if found and found[0] in cs.dest:
-                    spelling = found[0]
+                if found:
+                    group = next((g for g in long_table if g[0] == found[0]),
+                                 ())
+                    spelling = next(
+                        (name for name in group if name in cs.dest), typed)
             elif typed not in cs.dest and not no_long_option_parser:
                 expansions = expand_long(cs, typed, synonyms)
                 if len(expansions) == 1:
@@ -842,7 +845,9 @@ def parse_command(
                     i += 2
                     continue
 
-            if lenient_dash_operands or NUMERIC_SHORT.match(tok):
+            if lenient_dash_operands or (
+                    NUMERIC_SHORT.match(tok) and
+                (not is_builtin_grammar(cmd_name, spec) or cmd_name == "seq")):
                 raw_args.append(tok)
                 raw_indices.append(scan_origins[i])
                 raw_bases.append(base)
@@ -1029,7 +1034,8 @@ def parse_command(
             flags[flag_name] = resolved_list
             path_flag_values.extend(resolved_list)
         elif isinstance(value, str):
-            if cmd_name == "wget" and flag_name == "-O" and value == "-":
+            if (value == "-" and constants.STDOUT_DASH_OPTIONS.get(cmd_name)
+                    == flag_name):
                 continue
             resolved = resolve_path(value, cwd)
             flags[flag_name] = resolved
@@ -1048,7 +1054,8 @@ def parse_command(
     flags.occurrences = [
         (name, resolve_path(value, cwd)
          if cs.kind_by_dest.get(name) == "path" and isinstance(value, str)
-         and not (cmd_name == "wget" and name == "-O" and value == "-") else
+         and not (value == "-"
+                  and constants.STDOUT_DASH_OPTIONS.get(cmd_name) == name) else
          value) for name, value in flags.occurrences
     ]
     return ParsedArgs(

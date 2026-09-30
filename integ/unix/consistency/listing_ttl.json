@@ -1,0 +1,190 @@
+{
+  "cases": [
+    {
+      "id": "listing_ttl_bounded_new_file_appears",
+      "seq": 310060,
+      "targets": [
+        "s3",
+        "s3-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "gdrive",
+        "gdrive-folder",
+        "box",
+        "ssh"
+      ],
+      "read": "bounded",
+      "ttl": 3,
+      "scenario": [
+        {
+          "mutate": {
+            "command": "mkdir -p /data/lt1"
+          }
+        },
+        {
+          "mutate": {
+            "path": "/data/lt1/a.txt",
+            "content": "a\n"
+          }
+        },
+        {
+          "command": "ls /data/lt1"
+        },
+        {
+          "mutate": {
+            "path": "/data/lt1/b.txt",
+            "content": "bb\n"
+          }
+        },
+        {
+          "command": "ls /data/lt1"
+        },
+        {
+          "command": "sleep 4"
+        },
+        {
+          "command": "ls /data/lt1"
+        },
+        {
+          "command": "cat /data/lt1/a.txt"
+        },
+        {
+          "command": "stat -c %s /data/lt1/b.txt"
+        }
+      ],
+      "expect": {
+        "exit": 0,
+        "stdout": "a.txt\na.txt\na.txt\nb.txt\na\n3\n",
+        "stderr": ""
+      },
+      "note": "Listings stay cached before ttl and include remote additions after expiry. GitHub and HF Hub use overwrite cases in integ/vfs/github/listing_ttl.json and integ/vfs/hf_hub/listing_ttl.json because their fakes retain state. Mail/gapps have no shadow /data mount."
+    },
+    {
+      "id": "listing_ttl_glob_first",
+      "seq": 310061,
+      "targets": [
+        "s3",
+        "s3-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "gdrive",
+        "gdrive-folder",
+        "box",
+        "ssh"
+      ],
+      "read": "bounded",
+      "ttl": 3,
+      "scenario": [
+        {
+          "mutate": {
+            "command": "mkdir -p /data/lt2"
+          }
+        },
+        {
+          "mutate": {
+            "path": "/data/lt2/a.txt",
+            "content": "a\n"
+          }
+        },
+        {
+          "command": "for f in /data/lt2/*; do echo $f; done"
+        },
+        {
+          "mutate": {
+            "path": "/data/lt2/b.txt",
+            "content": "bb\n"
+          }
+        },
+        {
+          "command": "ls /data/lt2"
+        },
+        {
+          "command": "sleep 4"
+        },
+        {
+          "command": "ls /data/lt2"
+        },
+        {
+          "command": "cat /data/lt2/a.txt"
+        },
+        {
+          "command": "stat -c %s /data/lt2/b.txt"
+        }
+      ],
+      "expect": {
+        "exit": 0,
+        "stdout": "/data/lt2/a.txt\na.txt\na.txt\nb.txt\na\n3\n",
+        "stderr": ""
+      },
+      "note": "Shell glob expansion seeds the listing through the mount's view; subsequent ls must obey the same ttl cap. Setup and target exclusions match listing_ttl_bounded_new_file_appears."
+    },
+    {
+      "id": "listing_ttl_fresh",
+      "seq": 310062,
+      "targets": [
+        "s3",
+        "s3-prefix",
+        "hf",
+        "hf-prefix",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "gdrive",
+        "gdrive-folder"
+      ],
+      "read": "fresh",
+      "ttl": 3,
+      "scenario": [
+        {
+          "mutate": {
+            "command": "mkdir -p /data/lt3"
+          }
+        },
+        {
+          "mutate": {
+            "path": "/data/lt3/a.txt",
+            "content": "a\n"
+          }
+        },
+        {
+          "command": "ls /data/lt3"
+        },
+        {
+          "mutate": {
+            "path": "/data/lt3/b.txt",
+            "content": "bb\n"
+          }
+        },
+        {
+          "command": "ls /data/lt3"
+        },
+        {
+          "command": "sleep 4"
+        },
+        {
+          "command": "ls /data/lt3"
+        },
+        {
+          "command": "cat /data/lt3/a.txt"
+        },
+        {
+          "command": "stat -c %s /data/lt3/b.txt"
+        }
+      ],
+      "expect": {
+        "exit": 0,
+        "stdout": "a.txt\na.txt\na.txt\nb.txt\na\n3\n",
+        "stderr": ""
+      },
+      "note": "The same listing cap applies under fresh, which currently revalidates file content only. Uses the bounded case's fresh-capable targets: dropbox, ssh and box reject fresh. Setup and remaining exclusions match listing_ttl_bounded_new_file_appears."
+    }
+  ]
+}

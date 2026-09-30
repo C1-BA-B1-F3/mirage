@@ -861,7 +861,7 @@ async function boxUpload(
   if (r.status !== 201) throw new Error(`box upload ${name} -> ${String(r.status)}`)
 }
 
-async function openBox(target: Target): Promise<Open> {
+async function openBox(target: Target, options?: OpenOptions): Promise<Open> {
   let endpoint = process.env.BOX_URL ?? ''
   while (endpoint.endsWith('/')) endpoint = endpoint.slice(0, -1)
   if (endpoint === '') throw new Error('box target requires BOX_URL')
@@ -872,12 +872,11 @@ async function openBox(target: Target): Promise<Open> {
   // which isolated runs only as far as a name collision.
   const token = `integ-box-${runId()}`
   const root = integRoot()
-  const mounts: Record<string, BoxVFS> = {}
+  const folders: Record<string, string> = {}
   for (const m of target.mounts) {
-    // Box is read-only through the workspace, so the harness tee-seeding
-    // can't run; the fixture is uploaded over the Box API instead (the folder
-    // id becomes the mount root, mirroring how a real Box app scopes to a
-    // folder).
+    // The fixture is uploaded over the Box API rather than tee-seeded through
+    // the workspace: the folder id becomes the mount root, mirroring how a
+    // real Box app scopes to a folder.
     const folderId = await boxCreateFolder(endpoint, token, '0', String(m.folder))
     if (m.seed !== undefined) {
       const base = join(root, 'fixtures', m.seed)
@@ -902,17 +901,26 @@ async function openBox(target: Target): Promise<Open> {
       // listings must hide it and a direct stat must ENOENT.
       await boxCreateWebLink(endpoint, token, folderId, 'homepage', 'https://example.com/')
     }
-    mounts[m.path] = new BoxVFS({
-      accessToken: token,
-      endpoint,
-      rootFolderId: folderId,
-      // The fake supports name+content search, so exercise grep/rg push-down
-      // narrowing in the battery.
-      contentSearch: true,
-    })
+    folders[m.path] = folderId
   }
-  const ws = new Workspace(mounts, { mode: MountMode.WRITE })
-  return { ws: ws as unknown as ExecWorkspace, cleanup: () => ws.close() }
+  // Seeding runs once; each workspace, the shadow a scenario mutates through
+  // included, gets its own BoxVFS over the same folders.
+  const build = (): MountMap => {
+    const mounts: Record<string, BoxVFS> = {}
+    for (const [path, folderId] of Object.entries(folders)) {
+      mounts[path] = new BoxVFS({
+        accessToken: token,
+        endpoint,
+        rootFolderId: folderId,
+        // The fake supports name+content search, so exercise grep/rg
+        // push-down narrowing in the battery.
+        contentSearch: true,
+      })
+    }
+    return mounts
+  }
+  const opened = openWorkspaces(build, options)
+  return { ws: opened.ws, shadow: opened.shadow, cleanup: () => opened.closeAll() }
 }
 
 async function openDropbox(target: Target, options?: OpenOptions): Promise<Open> {
@@ -1912,21 +1920,20 @@ async function openSlack(target: Target): Promise<Open> {
 // git remote real gh reads. Seeded by the fake alongside the mounted one.
 const GH_CLI_REPO = 'integ/repo-cli'
 
-// The fake api.github.com server (integ/server/github) is a kit fake, external
-// and shared across both hosts, mirroring the fake Slack server. It used to
-// have to be out of process for the python host, whose GitHubVFS
-// fetched the repo tree with a blocking urlopen from its constructor; that
-// fetch is awaited now, so being shared is the only reason left.
+// Mounts, CLI requests and consistency mutations share one run's URL.
+// Each target seeds its own fixture without resetting another host.
 async function openGitHub(target: Target, options?: OpenOptions): Promise<Open> {
   let base = process.env.GITHUB_URL ?? ''
   while (base.endsWith('/')) base = base.slice(0, -1)
   if (base === '') throw new Error('github target requires GITHUB_URL')
-  // The write battery runs once per host against one shared fake, so it
-  // starts from the seed rather than from the other host's writes.
-  if (target.clis?.includes('gh') === true) {
-    const reset = await fetch(`${base}/reset`, { method: 'POST' })
-    if (!reset.ok) throw new Error(`github /reset failed: ${String(reset.status)}`)
-  }
+  base = `${base}/_run/${runId()}`
+  const fixture = target.clis?.includes('gh') === true ? 'cli' : 'v1'
+  const reset = await fetch(`${base}/reset`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ fixture }),
+  })
+  if (!reset.ok) throw new Error(`github /reset failed: ${String(reset.status)}`)
   const create = async (m: Mount): Promise<GitHubVFS> => {
     const [owner, repo] = String(m.repo).split('/')
     return GitHubVFS.create({

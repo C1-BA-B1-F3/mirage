@@ -14,6 +14,7 @@
 
 import re
 
+from mirage.commands.spec.long_options import GNU_LONG_OPTIONS
 from mirage.commands.spec.types import Option
 
 # The two options every registered command answers, as GNU coreutils
@@ -41,6 +42,12 @@ AMBIGUOUS_NAMES = {"l": "args_l", "O": "args_O", "I": "args_I", "1": "args_1"}
 # refusal that has to name the slot always has a word for it. Bare like
 # every operand name: the brackets are the renderer's.
 ARG_PLACEHOLDER = "ARG"
+
+# The path options whose lone `-` is stdout rather than a file, keyed by
+# command, valued by the option's canonical spelling: `wget -O -` and
+# `curl -D -`. Such a value stays `-`, unresolved and outside routing.
+# Explicit `./-` still names a file (curl 8.14.1 writes `-D ./-` there).
+STDOUT_DASH_OPTIONS = {"wget": "-O", "curl": "--dump-header"}
 
 # CPython and node read the script from stdin for a lone `-`, including
 # after `--`. Explicit `./-` still names a file (CPython 3.12, node 22).
@@ -305,7 +312,7 @@ TAR_LONG_OPTIONS: tuple[tuple[str, ...], ...] = (
     ("--HANG", ),
     ("--version", ),
 )
-LONG_OPTION_TABLES = {"tar": TAR_LONG_OPTIONS}
+LONG_OPTION_TABLES = {**GNU_LONG_OPTIONS, "tar": TAR_LONG_OPTIONS}
 
 # The programs whose short value options drop one `=` from an attached
 # value, the way lexopt (ripgrep's parser), clap and argparse read

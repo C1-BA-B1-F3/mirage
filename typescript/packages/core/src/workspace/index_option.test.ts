@@ -25,14 +25,14 @@ describe('Workspace index option', () => {
     const ws = new Workspace({ '/data': ram }, { index: { type: IndexType.RAM, ttl: 5 } })
     const index = ws.mount('/data').indexStore
     expect(index).toBeInstanceOf(RAMIndexCacheStore)
-    expect((index as unknown as { ttl: number }).ttl).toBe(5)
+    expect(index.ttl).toBe(5)
     await ws.close()
   })
 
   it('keeps the VFS default index when no workspace index is given', async () => {
     const ram = new RAMVFS()
     const ws = new Workspace({ '/data': ram }, {})
-    expect((ws.mount('/data').indexStore as unknown as { ttl: number }).ttl).toBe(0)
+    expect(ws.mount('/data').indexStore.ttl).toBe(0)
     await ws.close()
   })
 
@@ -42,7 +42,7 @@ describe('Workspace index option', () => {
       { '/data': new Mount(ram, { index: { type: IndexType.RAM, ttl: 7 } }) },
       { index: { type: IndexType.RAM, ttl: 5 } },
     )
-    expect((ws.mount('/data').indexStore as unknown as { ttl: number }).ttl).toBe(7)
+    expect(ws.mount('/data').indexStore.ttl).toBe(7)
     await ws.close()
   })
 })

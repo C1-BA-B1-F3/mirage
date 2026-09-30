@@ -182,11 +182,19 @@ export function hasUnresolvedGlob(paths: PathSpec[]): boolean {
 
 // Resolve a script operand (absolute or cwd-relative) to a fully-resolved
 // PathSpec, the way python3/js locate a mounted script before running it.
+// The spelling as typed rides along in rawPath, which is the name an
+// interpreter gives its program.
 export function resolveScript(name: string, cwd: string): PathSpec {
   const path = resolvePath(name, cwd)
   const lastSlash = path.lastIndexOf('/')
   const directory = lastSlash >= 0 ? path.slice(0, lastSlash + 1) : '/'
-  return new PathSpec({ vfsPath: stripSlash(path), virtual: path, directory, resolved: true })
+  return new PathSpec({
+    vfsPath: stripSlash(path),
+    virtual: path,
+    directory,
+    resolved: true,
+    rawPath: name,
+  })
 }
 
 // Partition operands into readable paths and GNU stderr lines. Read-family

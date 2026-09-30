@@ -12,7 +12,7 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   IndexEntry,
   IndexType,
@@ -20,6 +20,7 @@ import {
   type IndexConfig,
   type RedisIndexConfig,
 } from './config.ts'
+import { withCacheMutation } from '../file/io.ts'
 import { RAMFileCacheStore } from '../file/ram.ts'
 import { RAMIndexCacheStore } from './ram.ts'
 import { IndexView } from './view.ts'
@@ -184,6 +185,7 @@ for (const type of [IndexType.RAM, IndexType.REDIS]) {
         const reading = ws.vfs.readdir('/data')
         let changing: Promise<unknown> | undefined
         const replacement = new RAMVFS()
+        replacement.store.files.set('/own', new TextEncoder().encode('own\n'))
         try {
           await entered
           let changed = false
@@ -217,6 +219,14 @@ for (const type of [IndexType.RAM, IndexType.REDIS]) {
           for (const candidate of [index, fresh]) {
             expect((await candidate.get('/data/stale')).status).toBe(LookupStatus.NOT_FOUND)
             expect((await candidate.listDir('/data')).entries ?? []).not.toContain('/data/stale')
+            if (method !== 'put') {
+              const listing = await candidate.listDir('/data')
+              // One redis keyspace backs every mount, so each handle reads the
+              // replacement's own listing; ram gives each mount its own store.
+              const shares = candidate === fresh || type === IndexType.REDIS
+              const own = shares ? ['/data/own'] : null
+              expect([listing.entries ?? null, listing.partialEntries ?? null]).toEqual([own, null])
+            }
           }
           expect((await fresh.get('/data/fresh')).entry?.id).toBe('new')
         } finally {
@@ -259,4 +269,297 @@ it('filters seeded snapshots and entries through mount ownership', async () => {
   } finally {
     await cache.close()
   }
+})
+
+const ROW = new IndexEntry({ id: 'a', name: 'a', resourceType: 'file' })
+
+function settleWithin<T>(work: Promise<T>, ms: number): Promise<'done' | 'pending'> {
+  return Promise.race([
+    work.then(() => 'done' as const),
+    new Promise<'pending'>((resolve) => {
+      setTimeout(() => {
+        resolve('pending')
+      }, ms)
+    }),
+  ])
+}
+
+/** Take the workspace mutation lock the way a shell glob does, until released. */
+function holdMutation(cache: RAMFileCacheStore): {
+  entered: Promise<void>
+  release: () => void
+  done: Promise<void>
+} {
+  let enter = (): void => undefined
+  let release = (): void => undefined
+  const entered = new Promise<void>((resolve) => {
+    enter = resolve
+  })
+  const gate = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  const done = withCacheMutation(cache, async () => {
+    enter()
+    await gate
+  })
+  return { entered, release, done }
+}
+
+const FENCED: [string, (view: IndexView) => Promise<unknown>][] = [
+  ['get', (view) => view.get('/data/a')],
+  ['listDir', (view) => view.listDir('/data')],
+  ['put', (view) => view.put('/data/a', ROW)],
+  ['setDir', (view) => view.setDir('/data', [['a', ROW]])],
+  ['setPartialDir', (view) => view.setPartialDir('/data', [['a', ROW]])],
+  ['entries', (view) => view.entries()],
+  ['invalidateDir', (view) => view.invalidateDir('/data')],
+  ['invalidatePrefix', (view) => view.invalidatePrefix('/data')],
+  ['invalidate', (view) => view.invalidate()],
+]
+
+describe('a lock-held view', () => {
+  it.each(FENCED)('%s completes while its caller holds the mutation lock', async (_, call) => {
+    const cache = new RAMFileCacheStore()
+    const view = new IndexView(new RAMIndexCacheStore(), cache, '/data', () => true, {
+      locked: true,
+    })
+    const held = holdMutation(cache)
+    try {
+      await held.entered
+      expect(await settleWithin(call(view), 1000)).toBe('done')
+    } finally {
+      held.release()
+      await held.done
+      await cache.close()
+    }
+  })
+
+  it.each(FENCED)('%s on an unlocked view waits for the mutation lock', async (_, call) => {
+    const cache = new RAMFileCacheStore()
+    const view = new IndexView(new RAMIndexCacheStore(), cache, '/data', () => true)
+    const held = holdMutation(cache)
+    try {
+      await held.entered
+      const pending = call(view)
+      expect(await settleWithin(pending, 20)).toBe('pending')
+      held.release()
+      expect(await settleWithin(pending, 1000)).toBe('done')
+    } finally {
+      held.release()
+      await held.done
+      await cache.close()
+    }
+  })
+
+  it.each([false, true])('keeps the ownership fence (owns=%s)', async (owned) => {
+    const cache = new RAMFileCacheStore()
+    const store = new RAMIndexCacheStore()
+    const view = new IndexView(store, cache, '/data', () => owned, { locked: true })
+    const held = holdMutation(cache)
+    try {
+      await held.entered
+      expect(await settleWithin(view.put('/data/p', ROW), 1000)).toBe('done')
+      expect(await settleWithin(view.setDir('/data/full', [['a', ROW]]), 1000)).toBe('done')
+      expect(await settleWithin(view.setPartialDir('/data/part', [['a', ROW]]), 1000)).toBe('done')
+    } finally {
+      held.release()
+      await held.done
+    }
+    try {
+      if (owned) {
+        expect((await store.get('/data/p')).entry?.id).toBe('a')
+        expect((await store.listDir('/data/full')).entries).toEqual(['/data/full/a'])
+        expect((await store.listDir('/data/part')).partialEntries).toEqual(['/data/part/a'])
+      } else {
+        expect(await store.entries()).toEqual(new Map())
+        expect((await store.listDir('/data/full')).status).toBe(LookupStatus.NOT_FOUND)
+        expect((await store.listDir('/data/part')).status).toBe(LookupStatus.NOT_FOUND)
+      }
+    } finally {
+      await cache.close()
+    }
+  })
+})
+
+const T0 = new Date('2026-01-01T00:00:00Z')
+const YEAR = 365 * 24 * 60 * 60 * 1000
+
+type Explicit = 'none' | 'year' | 'epoch'
+
+function expiryOf(explicit: Explicit): Date | undefined {
+  if (explicit === 'year') return new Date(Date.now() + YEAR)
+  if (explicit === 'epoch') return new Date(0)
+  return undefined
+}
+
+class ExpirySpy extends RAMIndexCacheStore {
+  readonly asked: (Date | null | undefined)[] = []
+  override setDir(
+    path: string,
+    entries: readonly [string, IndexEntry][],
+    expiredAt?: Date | null,
+  ): Promise<void> {
+    this.asked.push(expiredAt)
+    return super.setDir(path, entries, expiredAt)
+  }
+  override setPartialDir(
+    path: string,
+    entries: readonly [string, IndexEntry][],
+    expiredAt?: Date | null,
+  ): Promise<void> {
+    this.asked.push(expiredAt)
+    return super.setPartialDir(path, entries, expiredAt)
+  }
+}
+
+describe('the view caps listing expiry at the mount ttl', () => {
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(T0)
+  })
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  // [row, store ttl, read ttl, explicit expiry, seconds after the write, live]
+  const ROWS: [number, number, number | undefined, Explicit, number, boolean][] = [
+    [1, 86400, 2, 'none', 3, false],
+    [2, 86400, 2, 'none', 1, true],
+    [3, 60, 600, 'none', 61, false],
+    [4, 60, 600, 'none', 59, true],
+    [5, 0, 600, 'none', 0, false],
+    [6, 86400, 2, 'year', 3, false],
+    [7, 60, 600, 'year', 61, true],
+    [8, 86400, 2, 'epoch', 0, false],
+    [9, 86400, undefined, 'none', 3, true],
+    [10, 86400, undefined, 'year', 3, true],
+  ]
+  for (const method of ['setDir', 'setPartialDir'] as const) {
+    it.each(ROWS)(
+      `${method} row %i: store ttl %d, read ttl %s, expiry %s, +%ds -> live=%s`,
+      async (_row, storeTtl, readTtl, explicit, after, live) => {
+        const cache = new RAMFileCacheStore()
+        const store = new RAMIndexCacheStore({ ttl: storeTtl })
+        const view = new IndexView(
+          store,
+          cache,
+          '/data',
+          () => true,
+          readTtl === undefined ? {} : { readTtl },
+        )
+        try {
+          await view[method]('/data', [['a', ROW]], expiryOf(explicit))
+          vi.setSystemTime(Date.now() + after * 1000)
+          const listing = await store.listDir('/data')
+          if (live) expect(listing.status ?? 'live').toBe('live')
+          else expect(listing.status).toBe(LookupStatus.EXPIRED)
+        } finally {
+          await cache.close()
+        }
+      },
+    )
+
+    it(`${method} row 11: takes now at the write, not at construction`, async () => {
+      const cache = new RAMFileCacheStore()
+      const store = new RAMIndexCacheStore({ ttl: 86400 })
+      const view = new IndexView(store, cache, '/data', () => true, { readTtl: 2 })
+      try {
+        vi.setSystemTime(Date.now() + 5000)
+        await view[method]('/data', [['a', ROW]])
+        const written = Date.now()
+        vi.setSystemTime(written + 1000)
+        expect((await store.listDir('/data')).status ?? 'live').toBe('live')
+        vi.setSystemTime(written + 3000)
+        expect((await store.listDir('/data')).status).toBe(LookupStatus.EXPIRED)
+      } finally {
+        await cache.close()
+      }
+    })
+
+    it(`${method} passes the writer's expiry through when the cap does not bite`, async () => {
+      const cache = new RAMFileCacheStore()
+      const store = new ExpirySpy({ ttl: 60 })
+      const view = new IndexView(store, cache, '/data', () => true, { readTtl: 600 })
+      try {
+        await view[method]('/data', [['a', ROW]])
+        expect(store.asked).toHaveLength(1)
+        expect(store.asked[0] ?? null).toBeNull()
+      } finally {
+        await cache.close()
+      }
+    })
+
+    it(`${method} hands the store a deadline when the cap bites`, async () => {
+      const cache = new RAMFileCacheStore()
+      const store = new ExpirySpy({ ttl: 86400 })
+      const view = new IndexView(store, cache, '/data', () => true, { readTtl: 2 })
+      try {
+        await view[method]('/data', [['a', ROW]])
+        expect(store.asked).toHaveLength(1)
+        expect(store.asked[0]).toBeInstanceOf(Date)
+      } finally {
+        await cache.close()
+      }
+    })
+  }
+
+  it('clamps a seed for every folder', async () => {
+    const cache = new RAMFileCacheStore()
+    const store = new RAMIndexCacheStore({ ttl: 86400 })
+    const view = new IndexView(store, cache, '/data', () => true, { readTtl: 2 })
+    try {
+      view.seed(
+        new Map([
+          ['/data/a', ROW],
+          ['/data/b/a', ROW],
+        ]),
+        new Map([
+          ['/data', ['/data/a', '/data/b']],
+          ['/data/b', ['/data/b/a']],
+          ['/data/c', []],
+        ]),
+        new Date(Date.now() + YEAR),
+      )
+      vi.setSystemTime(Date.now() + 3000)
+      for (const dir of ['/data', '/data/b', '/data/c'])
+        expect((await store.listDir(dir)).status, dir).toBe(LookupStatus.EXPIRED)
+    } finally {
+      await cache.close()
+    }
+  })
+
+  it('keeps an epoch-zero seed expired', async () => {
+    const cache = new RAMFileCacheStore()
+    const store = new RAMIndexCacheStore({ ttl: 86400 })
+    const view = new IndexView(store, cache, '/data', () => true, { readTtl: 2 })
+    try {
+      view.seed(new Map([['/data/a', ROW]]), new Map([['/data', ['/data/a']]]), new Date(0))
+      expect((await store.listDir('/data')).status).toBe(LookupStatus.EXPIRED)
+    } finally {
+      await cache.close()
+    }
+  })
+
+  it('takes the deadline after waiting for the mutation lock', async () => {
+    const cache = new RAMFileCacheStore()
+    const store = new RAMIndexCacheStore({ ttl: 86400 })
+    const view = new IndexView(store, cache, '/data', () => true, { readTtl: 2 })
+    const held = holdMutation(cache)
+    try {
+      await held.entered
+      const writing = view.setDir('/data', [['a', ROW]])
+      vi.setSystemTime(Date.now() + 1500)
+      held.release()
+      await writing
+      const released = Date.now()
+      vi.setSystemTime(released + 1000)
+      expect((await store.listDir('/data')).status ?? 'live').toBe('live')
+      vi.setSystemTime(released + 2100)
+      expect((await store.listDir('/data')).status).toBe(LookupStatus.EXPIRED)
+    } finally {
+      held.release()
+      await held.done
+      await cache.close()
+    }
+  })
 })

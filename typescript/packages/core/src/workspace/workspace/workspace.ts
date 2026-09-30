@@ -391,6 +391,7 @@ export class Workspace {
       this.drift,
     )
     this.registry.setReconciler(this.dispatcher.reconciler)
+    this.registry.setOpStat((mount, path) => this.dispatcher.opStat(mount, path))
     // The file cache is a hidden store (attached above), never a mount. Arg-less
     // commands and root listing resolve against a neutral root anchor: reuse the
     // user's `/` mount if they gave one, else add a plain empty RAM mount at `/`.

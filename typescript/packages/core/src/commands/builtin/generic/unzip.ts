@@ -39,7 +39,7 @@ const DEC = new TextDecoder('utf-8', { fatal: false })
 // One central-directory entry: zipinfo's row plus a door to its bytes.
 // The bytes are inflated on demand, so a listing never touches them and
 // an archive using a method mirage cannot inflate still lists.
-interface ZipEntry extends ZipRow {
+export interface ZipEntry extends ZipRow {
   content: () => Promise<Uint8Array>
 }
 
@@ -120,7 +120,7 @@ function corruptCdir(archive: string): string {
 // an end record whose directory is not where it says.
 type ZipFault = 'no_eocd' | 'corrupt_cdir'
 
-class ZipFormatError extends Error {
+export class ZipFormatError extends Error {
   readonly fault: ZipFault
 
   constructor(fault: ZipFault) {
@@ -283,7 +283,7 @@ function dosDateTime(date: number, time: number): ZipRow['dateTime'] {
 // over, is a corrupt directory. Info-ZIP and zipfile read the truncated
 // entry anyway (Info-ZIP lists it and exits 1 or 51; a short count makes
 // Info-ZIP exit 3 after listing); mirage refuses up front on both hosts.
-function readZipEntries(data: Uint8Array): {
+export function readZipEntries(data: Uint8Array): {
   entries: ZipEntry[]
   count: number
   slack: number

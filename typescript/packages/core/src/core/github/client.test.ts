@@ -18,7 +18,9 @@ import {
   fetchDirTreePage,
   fetchTree,
   GitHubApiError,
+  GitHubConnectionError,
   type GitHubTransport,
+  graphqlUrl,
   HttpGitHubTransport,
   searchCode,
 } from './client.ts'
@@ -66,6 +68,33 @@ beforeEach(() => {
 
 afterEach(() => {
   globalThis.fetch = REAL_FETCH
+})
+
+// gh's GraphQLEndpoint beside its RESTPrefix (cli/cli internal/ghinstance):
+// an Enterprise Server serves GraphQL at /api/graphql, outside /api/v3.
+describe('graphqlUrl', () => {
+  it.each([
+    ['https://api.github.com', 'https://api.github.com/graphql'],
+    ['https://ghe.example/api/v3', 'https://ghe.example/api/graphql'],
+    ['https://ghe.example/api/v3/', 'https://ghe.example/api/graphql'],
+    ['http://127.0.0.1:5098', 'http://127.0.0.1:5098/graphql'],
+    ['http://127.0.0.1:5098/api/v3x', 'http://127.0.0.1:5098/api/v3x/graphql'],
+  ])('%s answers GraphQL at %s', (base, url) => {
+    expect(graphqlUrl(base)).toBe(url)
+  })
+
+  it('sends a GraphQL query outside an Enterprise REST base', async () => {
+    // A slash-led `/graphql` is a REST path, as `gh api /graphql` is in gh.
+    const ghes = new HttpGitHubTransport({ token: 't', baseUrl: 'https://ghe.example/api/v3' })
+    await ghes.request('POST', 'graphql', { query: '{ viewer { login } }' })
+    await ghes.get('/repos/o/r')
+    await ghes.get('/graphql')
+    expect(SEEN.map((seen) => `${seen.method} ${seen.url}`)).toEqual([
+      'POST https://ghe.example/api/graphql',
+      'GET https://ghe.example/api/v3/repos/o/r',
+      'GET https://ghe.example/api/v3/graphql',
+    ])
+  })
 })
 
 describe('HttpGitHubTransport', () => {
@@ -173,6 +202,79 @@ describe('HttpGitHubTransport', () => {
       status: 404,
       message: 'Not Found',
     })
+  })
+
+  // A status no retry is for is asked once: a retry count on every request
+  // made plugin-retry's limiter send a 404 or a 422 four times over.
+  it.each([404, 422])('sends a request that answers %i once', async (status) => {
+    REPLY = { status, body: '{"message":"no"}' }
+    await expect(transport().get('/repos/o/r')).rejects.toMatchObject({ status })
+    expect(SEEN).toHaveLength(1)
+  })
+
+  // `gh api -i` prints a failing response's headers as it prints any other's.
+  it("carries a failing response's headers", async () => {
+    REPLY = { status: 404, body: '{"message":"Not Found"}' }
+    await expect(transport().get('/repos/o/r')).rejects.toMatchObject({
+      headers: { 'content-type': 'application/json', 'x-page': 'next' },
+    })
+  })
+
+  // gh retries no server error, and a retried 500 is what a refused
+  // connection used to cost: three waits, 14 s, before failing anyway.
+  it('does not retry a 500', async () => {
+    REPLY = { status: 500, body: '{"message":"Server Error"}' }
+    await expect(transport().get('/repos/o/r')).rejects.toMatchObject({ status: 500 })
+    expect(SEEN).toHaveLength(1)
+  })
+
+  it('hands a binary body back as bytes', async () => {
+    globalThis.fetch = vi.fn(() =>
+      Promise.resolve(
+        new Response(new Uint8Array([0x50, 0x4b, 0x05, 0x06]), {
+          headers: { 'content-type': 'application/zip' },
+        }),
+      ),
+    ) as typeof globalThis.fetch
+    expect(await transport().get('/repos/o/r/actions/runs/1/logs')).toEqual(
+      new Uint8Array([0x50, 0x4b, 0x05, 0x06]),
+    )
+  })
+})
+
+// A call that got no response is no status at all: gh names the failure and
+// exits at once. Measured against gh 2.85 (2026-09-30): an unknown host reads
+// as its printError words it, a refused connection as Go's client reports it.
+describe('a call that gets no response', () => {
+  function refuse(code: string, extra: Record<string, unknown> = {}): void {
+    globalThis.fetch = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      const req = new Request(input, init)
+      SEEN.push({ url: req.url, method: req.method, body: null, contentType: null, accept: null })
+      const cause = Object.assign(new Error(`connect ${code}`), { code, ...extra })
+      return Promise.reject(new TypeError('fetch failed', { cause }))
+    }) as typeof globalThis.fetch
+  }
+
+  it('names a refused connection as Go does, without a retry', async () => {
+    refuse('ECONNREFUSED', { address: '127.0.0.1', port: 19773 })
+    const failure = transport().get('/repos/o/r', { per_page: '1' })
+    await expect(failure).rejects.toThrow(GitHubConnectionError)
+    await expect(failure).rejects.toThrow(
+      'Get "https://api.example.test/repos/o/r?per_page=1": dial tcp 127.0.0.1:19773: connect: connection refused',
+    )
+    expect(SEEN).toHaveLength(1)
+  })
+
+  it('names a host that does not resolve as gh does', async () => {
+    refuse('ENOTFOUND')
+    await expect(transport().request('POST', '/repos/o/r/issues', {})).rejects.toThrow(
+      'error connecting to api.example.test\ncheck your internet connection or https://githubstatus.com',
+    )
+  })
+
+  it('reports any other failure as the transport words it', async () => {
+    refuse('ECONNRESET')
+    await expect(transport().get('/repos/o/r')).rejects.toThrow('connect ECONNRESET')
   })
 })
 

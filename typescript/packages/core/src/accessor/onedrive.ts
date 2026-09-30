@@ -144,12 +144,22 @@ function fullPath(config: OneDriveConfigResolved, path: string): string {
   return config.keyPrefix || stripped
 }
 
-export function oneDriveItemUrl(config: OneDriveConfigResolved, path: string, action = ''): string {
+// A drive item by its path from the drive root, NOT placed under the
+// mount's keyPrefix: this is how the prefix folders themselves are reached.
+export function oneDriveFullItemUrl(
+  config: OneDriveConfigResolved,
+  full: string,
+  action = '',
+): string {
   const base = oneDriveBase(config)
-  const full = fullPath(config, path)
-  if (full === '') return `${base}/root${action}`
-  const stem = `${base}/root:/${encodedPath(full)}`
+  const path = stripSlash(full)
+  if (path === '') return `${base}/root${action}`
+  const stem = `${base}/root:/${encodedPath(path)}`
   return action !== '' ? `${stem}:${action}` : stem
+}
+
+export function oneDriveItemUrl(config: OneDriveConfigResolved, path: string, action = ''): string {
+  return oneDriveFullItemUrl(config, fullPath(config, path), action)
 }
 
 export function oneDriveRefPath(config: OneDriveConfigResolved, folder = ''): string {

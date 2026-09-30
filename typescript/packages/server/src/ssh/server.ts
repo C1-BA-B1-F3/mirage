@@ -17,8 +17,9 @@ import type { AddressInfo } from 'node:net'
 import type * as Ssh2Mod from 'ssh2'
 import type { AuthContext, Connection, ParsedKey, PseudoTtyInfo, ServerChannel } from 'ssh2'
 import type { WorkspaceRegistry } from '../registry.ts'
+import { serveCodex } from './codex.ts'
 import type { SSHConfig } from './config.ts'
-import { PROFILE_OPTION } from './constants.ts'
+import { CODEX_SUBSYSTEM, PROFILE_OPTION } from './constants.ts'
 import { SSHConfigError } from './errors.ts'
 import { loadHostKey } from './keys.ts'
 import {
@@ -230,7 +231,20 @@ function serveConnection(
         serveSFTP(registry, username, profile, acceptSftp())
       })
       session.on('subsystem', (acceptSubsystem, _reject, info) => {
-        refuseSubsystem(acceptSubsystem(), info.name)
+        const channel = acceptSubsystem()
+        if (info.name !== CODEX_SUBSYSTEM) {
+          refuseSubsystem(channel, info.name)
+          return
+        }
+        const request: ChannelRequest = {
+          username,
+          profile,
+          command: null,
+          term: null,
+          peer,
+          local,
+        }
+        void serveCodex(registry, channel, request)
       })
     })
   })
@@ -245,8 +259,8 @@ function serveConnection(
  * Listen for SSH, serving the daemon's workspaces.
  *
  * `ssh <workspace-id>@host` opens a shell in that workspace, `ssh
- * <workspace-id>@host cmd` runs one line, and `sftp`/`scp` reach its
- * files. Each channel runs as a fresh mirage session under the
+ * <workspace-id>@host cmd` runs one line, `sftp`/`scp` reach its files,
+ * and the `codex-exec` subsystem serves Codex's tools. Each channel runs as a fresh mirage session under the
  * workspace's default profile. ssh2 is loaded here, on first use, the way
  * the Python daemon loads asyncssh only once a port is set.
  */

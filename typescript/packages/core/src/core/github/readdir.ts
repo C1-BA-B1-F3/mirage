@@ -18,7 +18,7 @@ import { LookupStatus } from '../../cache/index/config.ts'
 import type { IndexCacheStore } from '../../cache/index/store.ts'
 import type { PathSpec } from '../../types.ts'
 import { fetchDirTree, type GitHubTreeItem } from './client.ts'
-import { ensureLiveIndex, refillIndex } from './tree.ts'
+import { ensureLiveSnapshot, refillSnapshot } from './tree.ts'
 import { withIndexLock } from '../../cache/index/lock.ts'
 import { IndexEntry } from '../../cache/index/config.ts'
 import { rstripSlash, stripSlash } from '../../utils/slash.ts'
@@ -60,15 +60,16 @@ export async function readdirUnlocked(
   const key =
     rel === '' ? (prefix === '' ? '/' : rstripSlash(prefix)) : `${rstripSlash(prefix)}/${rel}`
 
-  await ensureLiveIndex(accessor, index, prefix)
+  let refilled = await ensureLiveSnapshot(accessor, index, prefix)
   let listing = await index.listDir(key)
   // The index is the whole listing here, not a cache in front of one, so an
   // *expired* answer means the tree aged out, not that the path is gone.
   // Refetch once and ask again. A NOT_FOUND against a live index is a real
   // absence and must not cost a tree fetch: refilling on any miss spends a
   // recursive-tree call on every ENOENT.
-  if (listing.status === LookupStatus.EXPIRED && !accessor.truncated) {
-    if (await refillIndex(accessor, index, prefix)) listing = await index.listDir(key)
+  if (listing.status === LookupStatus.EXPIRED && !accessor.truncated && refilled === null) {
+    refilled = await refillSnapshot(accessor, index, prefix)
+    if (refilled !== null) listing = await index.listDir(key)
   }
   if (listing.entries !== undefined && listing.entries !== null) {
     return listing.entries
@@ -78,6 +79,13 @@ export async function readdirUnlocked(
     (listing.status === LookupStatus.NOT_FOUND || listing.status === LookupStatus.EXPIRED)
   ) {
     return fallbackReaddir(accessor, key, index, prefix)
+  }
+  // A lock wait can outlast the TTL; use this refill only on EXPIRED.
+  if (refilled !== null && listing.status === LookupStatus.EXPIRED) {
+    refilled = index.scopeSnapshot(refilled)
+    const children = refilled.children.get(key)
+    if (children === undefined) throw enoent(path)
+    return [...children]
   }
   if (listing.status === LookupStatus.NOT_FOUND) throw enoent(path)
   return []

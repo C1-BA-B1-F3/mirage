@@ -19,6 +19,7 @@ from collections.abc import Iterable, Iterator
 from dataclasses import dataclass
 from typing import Literal
 
+import regex
 from dulwich.objects import Commit, ObjectID, Tag
 from dulwich.refs import HEADREF, LOCAL_BRANCH_PREFIX, LOCAL_TAG_PREFIX
 from dulwich.repo import BaseRepo
@@ -29,11 +30,22 @@ from mirage.commands.cli.builtin.git.errors import (  # yapf: disable
     UnrecognizedArgumentError)
 from mirage.commands.cli.builtin.git.format import (MEDIUM, LogFormat,
                                                     parse_pretty)
+from mirage.commands.cli.builtin.git.mailmap import (MailmapEntry,
+                                                     mapped_identity)
 from mirage.commands.cli.builtin.git.pickaxe import touches
 from mirage.commands.spec.flag_view import FlagView
 from mirage.utils.dates import iso_timestamp
+from mirage.utils.posix import compile_posix_regex, translate_classes
 
 REMOTE_PREFIX = b"refs/remotes/"
+BASIC_REGEXP = "basic_regexp"
+EXTENDED_REGEXP = "extended_regexp"
+FIXED_STRINGS = "fixed_strings"
+PERL_REGEXP = "perl_regexp"
+# The pattern syntax switches; the last one on the line wins.
+PATTERN_SYNTAXES = (BASIC_REGEXP, EXTENDED_REGEXP, FIXED_STRINGS, PERL_REGEXP)
+COMMAND_LINE_ORIGIN = "command line"
+HEADER_ORIGIN = "header"
 # How many hidden commits a limited walk takes past the point where only
 # hidden ones are queued, git's SLOP.
 SLOP = 5
@@ -54,6 +66,13 @@ class LogFlags:
         authors (tuple[re.Pattern[str], ...]): author patterns, ORed together.
         greps (tuple[re.Pattern[str], ...]): ``--grep`` patterns, any of
             which may match a line of the message.
+        committers (tuple[re.Pattern[str], ...]): ``--committer``
+            patterns, ORed together.
+        mailmap (tuple[MailmapEntry, ...]): the worktree ``.mailmap``,
+            which ``%aN``-style placeholders always read.
+        use_mailmap (bool): ``log.mailmap`` or ``--[no-]mailmap``: map
+            the header identities and what ``--author`` and
+            ``--committer`` match.
         ignore_case (bool): ``-i``, which folds case for ``--grep``,
             ``--author`` and ``-S`` alike.
         all_refs (bool): ``--all``, start from every ref as well.
@@ -74,6 +93,9 @@ class LogFlags:
     until: float | None
     authors: tuple[re.Pattern[str], ...] = ()
     greps: tuple[re.Pattern[str], ...] = ()
+    committers: tuple[re.Pattern[str], ...] = ()
+    mailmap: tuple[MailmapEntry, ...] = ()
+    use_mailmap: bool = True
     ignore_case: bool = False
     date: str = "default"
     decorate: bool = False
@@ -163,6 +185,38 @@ def pretty_format(fl: FlagView) -> LogFormat:
     return pretty
 
 
+def _pattern(value: str, syntax: str, ignore_case: bool,
+             origin: str) -> re.Pattern[str]:
+    """One ``--grep``, ``--author`` or ``--committer`` pattern, compiled.
+
+    ``-P`` goes to the ``regex`` engine, whose syntax is PCRE's where
+    Python's ``re`` is not (``\\p{L}``, ``[[:alpha:]]``, ``\\K``), with
+    ASCII escapes as PCRE2 reads them without UCP. A refusal names where
+    the pattern came from and the pattern itself, as git's
+    ``compile_regexp_failed`` words it; the reason after that is glibc's
+    for a basic expression and the host engine's otherwise.
+
+    Args:
+        value (str): the pattern as typed.
+        syntax (str): which of ``PATTERN_SYNTAXES`` reads it.
+        ignore_case (bool): ``-i``/``--regexp-ignore-case``.
+        origin (str): git's name for where the pattern came from.
+    """
+    try:
+        if syntax == PERL_REGEXP:
+            perl: re.Pattern[str] = regex.compile(
+                value, regex.ASCII | (regex.IGNORECASE if ignore_case else 0))
+            return perl
+        fold = re.IGNORECASE if ignore_case else 0
+        if syntax == FIXED_STRINGS:
+            return compile_posix_regex(re.escape(value), fold)
+        if syntax == EXTENDED_REGEXP:
+            return compile_posix_regex(translate_classes(value), fold)
+        return search_bre(value, ignore_case)
+    except (BreError, re.error, regex.error) as exc:
+        raise GitError(f"{origin}, '{value}': {exc}") from exc
+
+
 def parse_flags(fl: FlagView) -> LogFlags:
     """Read the raw log flag kwargs into a frozen struct.
 
@@ -179,17 +233,22 @@ def parse_flags(fl: FlagView) -> LogFlags:
         if fl.as_bool(name):
             order = "topo" if name == "topo_order" else "date"
     ignore_case = fl.as_bool("regexp_ignore_case")
-    try:
-        authors = tuple(
-            search_bre(value, ignore_case) for value in fl.as_list("author"))
-        greps = tuple(
-            search_bre(value, ignore_case) for values in fl.as_list("grep")
-            for value in values.split("\n"))
-    except BreError as exc:
-        raise GitError(str(exc)) from exc
+    syntax = BASIC_REGEXP
+    for key, _ in fl.occurrences(*PATTERN_SYNTAXES):
+        syntax = key
+    committers = tuple(
+        _pattern(value, syntax, ignore_case, HEADER_ORIGIN)
+        for value in fl.as_list("committer"))
+    authors = tuple(
+        _pattern(value, syntax, ignore_case, HEADER_ORIGIN)
+        for value in fl.as_list("author"))
+    greps = tuple(
+        _pattern(value, syntax, ignore_case, COMMAND_LINE_ORIGIN)
+        for values in fl.as_list("grep") for value in values.split("\n"))
     max_count = fl.as_int("max_count")
     return LogFlags(
         authors=authors,
+        committers=committers,
         greps=greps,
         ignore_case=ignore_case,
         date=fl.as_str("date") or "default",
@@ -506,6 +565,20 @@ def _message_matches(message: bytes, greps: tuple[re.Pattern[str],
     return any(pattern.search(line) for pattern in greps for line in lines)
 
 
+def _ident_matches(ident: bytes, patterns: tuple[re.Pattern[str], ...],
+                   mailmap: tuple[MailmapEntry, ...]) -> bool:
+    """Whether an ``--author`` or ``--committer`` pattern matches.
+
+    Args:
+        ident (bytes): the recorded ``Name <email>``.
+        patterns (tuple[re.Pattern[str], ...]): the alternatives.
+        mailmap (tuple[MailmapEntry, ...]): the entries that map the
+            identity first, empty under ``--no-mailmap``.
+    """
+    mapped = mapped_identity(ident.decode("utf-8", "replace"), mailmap)
+    return any(pattern.search(mapped) for pattern in patterns)
+
+
 def _filters_pass(commit: Commit, flags: LogFlags) -> bool:
     """Whether a commit passes ``--author``, ``--grep``, ``--merges``,
     ``--no-merges`` and kin.
@@ -517,10 +590,11 @@ def _filters_pass(commit: Commit, flags: LogFlags) -> bool:
         commit (Commit): the commit.
         flags (LogFlags): the parsed invocation.
     """
-    if flags.authors and not any(
-            pattern.search(commit.author.decode("utf-8", "replace"))
-            for pattern in flags.authors):
-        return False
+    mailmap = flags.mailmap if flags.use_mailmap else ()
+    for ident, patterns in ((commit.author, flags.authors),
+                            (commit.committer, flags.committers)):
+        if patterns and not _ident_matches(ident, patterns, mailmap):
+            return False
     if flags.greps and not _message_matches(commit.message, flags.greps):
         return False
     count = len(commit.parents)

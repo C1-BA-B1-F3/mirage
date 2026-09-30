@@ -75,7 +75,8 @@ class CacheManager:
                 dispatcher and ``mirage.cache.context`` documents that
                 dependency as one-way. Answers whether a warm entry may
                 still be served; the default trusts the cache.
-            read_ttl (int): lifetime of complete backend renders.
+            read_ttl (int): lifetime of complete backend renders, and the
+                cap on every listing this mount's view writes.
         """
         self._file_cache = file_cache
         self._index = index
@@ -85,6 +86,7 @@ class CacheManager:
         self._may_serve_cached = may_serve_cached
         self._read_ttl = read_ttl
         self._read_generation = 0
+        self._view: IndexView | None = None
 
     @asynccontextmanager
     async def mutation(self) -> AsyncIterator[None]:
@@ -102,11 +104,47 @@ class CacheManager:
                 await index.clear()
 
     def scope_index(self, index: IndexCacheStore) -> IndexCacheStore:
-        """Bind backend metadata writes to this mount's lifetime."""
+        """Bind backend metadata writes to this mount's lifetime.
+
+        Reuse the view because refill locks are keyed by index identity.
+
+        Args:
+            index (IndexCacheStore): the VFS's own index.
+        """
         if self._file_cache is None or isinstance(index, IndexView):
             return index
-        return IndexView(index, self._file_cache, self._prefix,
-                         self._owns_path)
+        if self._view is None or self._view.store is not index:
+            self._view = IndexView(index,
+                                   self._file_cache,
+                                   self._prefix,
+                                   self._owns_path,
+                                   read_ttl=self._read_ttl)
+        return self._view
+
+    def scope_index_locked(self, index: IndexCacheStore) -> IndexCacheStore:
+        """A view for a caller already inside ``mutation()``.
+
+        Never share or retain it beyond that hold. A distinct refill lock
+        avoids lock inversion with readers of the shared view.
+
+        Args:
+            index (IndexCacheStore): the VFS's own index, never a view.
+
+        Raises:
+            ValueError: ``index`` is already a view, which would take the
+                lock again.
+        """
+        if self._file_cache is None:
+            return index
+        if isinstance(index, IndexView):
+            raise ValueError("scope_index_locked needs a raw store; a view "
+                             "would take the lock again")
+        return IndexView(index,
+                         self._file_cache,
+                         self._prefix,
+                         self._owns_path,
+                         locked=True,
+                         read_ttl=self._read_ttl)
 
     async def _evict_dir(self, key: str) -> None:
         """Drop one directory's cached listing.

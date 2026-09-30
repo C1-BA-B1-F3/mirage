@@ -13,9 +13,11 @@
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import asyncio
+import json
 from pathlib import Path
 
-from mirage.core.jq import jq_eval, parse_json_path
+from mirage.core.jq import InputSource, jq_eval, read_texts
+from mirage.io.stream import yield_bytes
 from mirage.types import MountMode
 from mirage.vfs.ram import RAMVFS
 from mirage.workspace import Workspace
@@ -46,14 +48,43 @@ def eval_one(obj: object, expr: str) -> object:
     return outputs[0]
 
 
-def jq_all(backend, path, expression):
+def documents(backend, path):
+    """Every document of a file, as jq reads a stream of them.
+
+    Args:
+        backend: the mount holding the file.
+        path (str): the file.
+    """
     store = backend.accessor.store
-    data = parse_json_path(store.files[_norm(path)], path)
-    return jq_eval(data, expression.strip())
+    source = InputSource(path, yield_bytes(store.files[_norm(path)]))
+    texts, failure = asyncio.run(read_texts(source))
+    assert failure is None, failure
+    return [json.loads(text) for text in texts]
+
+
+def jq_all(backend, path, expression):
+    """Every output of a program run on each document of a file in turn,
+    the way jq runs it."""
+    return [
+        output for doc in documents(backend, path)
+        for output in jq_eval(doc, expression.strip())
+    ]
 
 
 def jq(backend, path, expression):
     outputs = jq_all(backend, path, expression)
+    assert len(outputs) == 1
+    return outputs[0]
+
+
+def jq_slurp_all(backend, path, expression):
+    """Every output of a program run once on a file's documents collected
+    into one array, the way `jq -s` runs it."""
+    return jq_eval(documents(backend, path), expression.strip())
+
+
+def jq_slurp(backend, path, expression):
+    outputs = jq_slurp_all(backend, path, expression)
     assert len(outputs) == 1
     return outputs[0]
 

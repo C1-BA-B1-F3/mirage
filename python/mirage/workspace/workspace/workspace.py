@@ -22,6 +22,8 @@ from shlex import join as shell_join
 from types import TracebackType
 from typing import Any, Literal, overload
 
+from pydantic import BaseModel
+
 from mirage.bridge.sync import run_async_from_sync
 from mirage.cache.file.config import CacheConfig
 from mirage.cache.file.mixin import FileCacheMixin
@@ -624,10 +626,12 @@ class Workspace:
     def fuse_mountpoints(self) -> dict[str, str]:
         return self._kernel_mounts.mountpoints
 
-    def register_cli(self,
-                     name: str,
-                     spec: CLISpec,
-                     config: dict[str, JsonValue] | None = None) -> CLIInstall:
+    def register_cli(
+        self,
+        name: str,
+        spec: CLISpec,
+        config: Mapping[str, JsonValue] | BaseModel | None = None
+    ) -> CLIInstall:
         """Install a CLI under a head word, fully separate from mounts.
 
         Args:
@@ -635,9 +639,10 @@ class Workspace:
                 two installs of one spec under different names are two
                 accounts).
             spec (CLISpec): the program tree.
-            config (dict[str, JsonValue] | None): installation config,
-                validated through the spec's ``config_model`` (fail
-                loud at install time).
+            config (Mapping[str, JsonValue] | BaseModel | None):
+                installation config: a mapping, validated through the
+                spec's ``config_model`` (fail loud at install time), or
+                an instance of that model.
         """
         if self._shutting_down:
             raise RuntimeError("Workspace is closed")

@@ -5,6 +5,7 @@ import { isStdin, resolveSource } from '../utils/stream.ts'
 import { specOf } from '../../spec/index.ts'
 import { FlagView } from '../../spec/flag_view.ts'
 import type { FlagValue } from '../../spec/types.ts'
+import { loadFailure } from '../../../core/jq/index.ts'
 import { IOResult, materialize, type ByteSource } from '../../../io/types.ts'
 import type { DispatchFn } from '../../../runtime/types.ts'
 import { FileType, type PathSpec } from '../../../types.ts'
@@ -49,9 +50,7 @@ export function programFileRefusal(name: string, path: PathSpec, err: unknown): 
     if (readFailed) return [`awk: read error (${strerror})\n`, 2]
     return [`awk: cannot open "${shown}" (${strerror})\n`, 2]
   }
-  if (name === 'jq') {
-    return [`jq: Could not open ${shown}: ${readFailed ? "It's a directory" : strerror}\n`, 2]
-  }
+  if (name === 'jq') return [`jq: ${loadFailure(shown, err)}\n`, 2]
   if (name === 'rg') return [`rg: ${shown}:${readFailed ? '' : ' '}${osErrorText(err)}\n`, 2]
   if (name === 'zgrep') return [fsErrorLine('cat', path, err), 2]
   return [fsErrorLine(name, path, err), 2]
@@ -152,7 +151,11 @@ export async function prepareProgram(
     out[key] = []
     out[patternKey] = pattern === null ? [] : [pattern]
   } else if (name === 'sed') {
-    out.e = [...fl.asList('e'), ...pieces.map((data) => dec.decode(data).replace(/\n$/, ''))]
+    const expressions = fl.asList('e').values()
+    const scripts = pieces.map((data) => dec.decode(data).replace(/\n$/, '')).values()
+    out.e = fl
+      .occurrences('e', 'f')
+      .map(([kind]) => (kind === 'e' ? expressions : scripts).next().value ?? '')
   } else {
     texts = [pieces.map((data) => dec.decode(data)).join('\n'), ...texts]
   }

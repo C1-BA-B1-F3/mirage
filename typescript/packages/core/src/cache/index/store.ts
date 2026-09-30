@@ -12,15 +12,21 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import type { IndexEntry, ListResult, LookupResult } from './config.ts'
+import type { IndexEntry, IndexSnapshot, ListResult, LookupResult } from './config.ts'
 
 export abstract class IndexCacheStore {
+  /** Seconds a listing lives when its writer names no expiry. */
+  abstract readonly ttl: number
   /** Merge snapshots by path; deferred stores flush before operations or close. Clear discards them. */
   abstract seed(
     entries: ReadonlyMap<string, IndexEntry>,
     children: ReadonlyMap<string, readonly string[]>,
     expiresAt: Date,
   ): void
+  /** Apply this index's ownership rules to a refill snapshot. */
+  scopeSnapshot(snapshot: IndexSnapshot): IndexSnapshot {
+    return snapshot
+  }
   abstract entries(): Promise<Map<string, IndexEntry>>
   abstract get(vfsPath: string): Promise<LookupResult>
   abstract put(vfsPath: string, entry: IndexEntry): Promise<void>

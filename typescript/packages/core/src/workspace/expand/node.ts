@@ -56,6 +56,7 @@ export type ExecuteFn = (
     node?: TSNodeLike
     span?: readonly [number, number]
     handed?: HandOff
+    substitution?: boolean
   },
 ) => Promise<IOResult>
 
@@ -108,9 +109,9 @@ async function expandBacktickRegion(
 /**
  * Run a substitution's line in a child shell.
  *
- * bash forks for `$(...)` and backticks, so what the line assigns, `cd`s
- * or seeds (`RANDOM`) never reaches the parent: the session is restored
- * around the run, as `handleSubshell` restores it around a `( )` body.
+ * The evaluator isolates the child shell, except for Bash's `$(< file)`
+ * optimization, whose filename expands in the parent. It decides from
+ * a fresh parse of the body, including each pair in a backtick region.
  * The line reaches the executor unwrapped, under the node that named it,
  * so the pass places its commands where they were typed rather than
  * under a subshell of their own. `span` is the pair's span within the
@@ -123,19 +124,13 @@ export async function childLine(
   node: TSNodeLike,
   span?: [number, number],
 ): Promise<IOResult> {
-  const saved = session.snapshot()
-  const terminalOutput = session.terminalOutput
-  session.terminalOutput = false
-  try {
-    return await executeFn(text, {
-      sessionId: session.sessionId,
-      node,
-      ...(span === undefined ? {} : { span }),
-    })
-  } finally {
-    session.terminalOutput = terminalOutput
-    session.restore(saved)
-  }
+  return executeFn(text, {
+    sessionId: session.sessionId,
+    session,
+    node,
+    substitution: true,
+    ...(span === undefined ? {} : { span }),
+  })
 }
 
 export function unescapeHeredoc(text: string): string {

@@ -22,16 +22,17 @@ from mirage.commands.cli.builtin.gh.accessor import (body_value, read_cli_file,
                                                      repo_number)
 from mirage.commands.cli.builtin.gh.api import api
 from mirage.commands.cli.builtin.gh.issue import comments_for, comments_text
-from mirage.commands.cli.builtin.gh.repo import (fork, list_cmd, rename,
-                                                 summary, view)
+from mirage.commands.cli.builtin.gh.repo import (delete_cmd, edit_cmd, fork,
+                                                 list_cmd, rename, summary,
+                                                 view)
 from mirage.commands.cli.specs import cli_spec_for
 from mirage.commands.cli.types import CLIDoors, CLIInvocation
-from mirage.commands.errors import UsageError
+from mirage.commands.errors import PartialOutputError, UsageError
 from mirage.commands.spec.flag_view import FlagView
 from mirage.core.api.client import ApiResponse
 from mirage.core.github.client import GitHubApiError
 from mirage.core.github.config import GhConfig
-from mirage.core.github.repo import RepoRef, repository_fields
+from mirage.core.github.repo import RepoRef, edit_repo, repository_fields
 from mirage.io.types import materialize
 from mirage.types import PathSpec
 
@@ -116,7 +117,10 @@ def _patch(monkeypatch):
                                base_url=base_url,
                                headers=headers)
         if RESPONSES:
-            return RESPONSES.pop(0)
+            answer = RESPONSES.pop(0)
+            if isinstance(answer, GitHubApiError):
+                raise answer
+            return answer
         return ApiResponse(REPLY, 200, {})
 
     monkeypatch.setitem(view.__globals__, "view_repo", fake_view)
@@ -144,12 +148,13 @@ def _inv(texts=(), flags=None,
 def test_registers_itself_under_the_grammar_gh_uses():
     assert cli_spec_for("gh") is GH
     assert [c.name for c in GH.subcommands] == [
-        "version", "api", "issue", "pr", "repo", "release", "run", "workflow",
-        "search"
+        "auth", "version", "api", "issue", "pr", "repo", "release", "run",
+        "workflow", "search"
     ]
     repo = next(c for c in GH.subcommands if c.name == "repo")
-    assert [c.name for c in repo.subcommands
-            ] == ["list", "view", "create", "fork", "rename"]
+    assert [c.name for c in repo.subcommands] == [
+        "list", "view", "create", "fork", "rename", "edit", "delete"
+    ]
     groups = {
         c.name: [leaf.name for leaf in c.subcommands]
         for c in GH.subcommands if c.subcommands
@@ -234,7 +239,7 @@ async def test_json_repo_view_asks_graphql_for_the_fields_named(monkeypatch):
     out, _io = await view(_inv(["o/r"], {"json": "parent,name"}))
     assert CALLS == [{
         "method": "POST",
-        "path": "/graphql",
+        "path": "graphql",
         "body": {
             "query":
             "query RepositoryInfo($owner: String!, $name: String!) {\n"
@@ -246,8 +251,17 @@ async def test_json_repo_view_asks_graphql_for_the_fields_named(monkeypatch):
             },
         },
     }]
-    assert await materialize(out
-                             ) == b'{\n  "name": "r",\n  "parent": null\n}\n'
+    assert await materialize(out) == b'{"name":"r","parent":null}\n'
+
+
+@pytest.mark.asyncio
+async def test_json_output_is_ghs_compact_go_encoding(monkeypatch):
+    _graphql(monkeypatch)
+    text = "a<b>&c\N{LINE SEPARATOR}d\N{PARAGRAPH SEPARATOR}\b\u00e9"
+    _reset({"data": {"repository": {"description": text}}})
+    out, _io = await view(_inv(["o/r"], {"json": "description"}))
+    assert await materialize(out) == ('{"description":"a<b>&c\\u2028d'
+                                      '\\u2029\\b\u00e9"}\n').encode()
 
 
 # gh decodes the answer into Go structs and prints those: a null string
@@ -453,6 +467,132 @@ async def test_forks_under_the_source_name_when_unnamed():
     assert CALLS[0]["body"] == {}
 
 
+@pytest.fixture()
+def _core_repo(monkeypatch):
+    """Route the core repository calls through the recorder."""
+
+    async def fake_request(token,
+                           method,
+                           path,
+                           body=_MISSING,
+                           params=None,
+                           *,
+                           base_url=None,
+                           headers=None):
+        call = {"method": method, "path": path}
+        if body is not _MISSING:
+            call["body"] = body
+        return _record(**call)
+
+    monkeypatch.setitem(edit_repo.__globals__, "github_request", fake_request)
+
+
+@pytest.mark.asyncio
+async def test_repo_edit_sends_one_patch_and_prints_nothing(_core_repo):
+    _reset({
+        "names": ["old", "keep"],
+        "data": {
+            "repository": {
+                "viewerCanAdminister": True
+            }
+        }
+    })
+    out, _io = await edit_cmd(
+        _inv(
+            ["o/r"], {
+                "description": "d",
+                "enable_wiki": "false",
+                "template": True,
+                "enable_secret_scanning": "false",
+                "add_topic": ["new,keep"],
+                "remove_topic": ["old"],
+            }))
+    assert out == b""
+    assert [(c["method"], c["path"], c.get("body")) for c in CALLS[1:]] == [
+        ("PATCH", "/repos/o/r", {
+            "description": "d",
+            "has_wiki": False,
+            "is_template": True,
+            "security_and_analysis": {
+                "secret_scanning": {
+                    "status": "disabled"
+                }
+            },
+        }),
+        ("GET", "/repos/o/r/topics", None),
+        ("PUT", "/repos/o/r/topics", {
+            "names": ["keep", "new"]
+        }),
+    ]
+    assert CALLS[0]["method"] == "POST"
+
+
+@pytest.mark.asyncio
+async def test_repo_edit_refuses_a_security_edit_it_cannot_administer(
+        _core_repo):
+    _reset({"data": {"repository": {"viewerCanAdminister": False}}})
+    with pytest.raises(ValueError, match="sufficient permissions"):
+        await edit_cmd(_inv(["o/r"], {"enable_secret_scanning": True}))
+    assert [c["method"] for c in CALLS] == ["POST"]
+
+
+@pytest.mark.asyncio
+async def test_repo_edit_leaves_the_topics_alone_when_none_change(_core_repo):
+    _reset({"names": ["keep"]})
+    await edit_cmd(
+        _inv(["o/r"], {
+            "add_topic": ["keep"],
+            "remove_topic": ["gone"]
+        }))
+    assert [f'{c["method"]} {c["path"]}'
+            for c in CALLS] == ["GET /repos/o/r/topics"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("flags,message", [
+    ({}, "specify properties to edit"),
+    ({
+        "visibility": "private"
+    }, "requires --accept-visibility-change-consequences"),
+])
+async def test_repo_edit_refuses_as_gh_does_without_a_terminal(
+        _core_repo, flags, message):
+    with pytest.raises(UsageError, match=message):
+        await edit_cmd(_inv(["o/r"], flags))
+    assert CALLS == []
+
+
+@pytest.mark.asyncio
+async def test_repo_delete_reads_a_bare_name_as_the_viewers(_core_repo):
+    _reset({"login": "me"})
+    out, _io = await delete_cmd(_inv(["tools"], {"yes": True}))
+    assert out == b""
+    assert [f'{c["method"]} {c["path"]}'
+            for c in CALLS] == ["GET /user", "DELETE /repos/me/tools"]
+
+
+@pytest.mark.asyncio
+async def test_repo_delete_warns_that_confirm_is_deprecated(_core_repo):
+    _out, io = await delete_cmd(_inv(["o/r"], {"confirm": True}))
+    assert await materialize(
+        io.stderr
+    ) == (b"Flag --confirm has been deprecated, use `--yes` instead\n")
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("texts,flags,message", [
+    ((), {
+        "yes": True
+    }, "cannot non-interactively delete current repository"),
+    (("o/r", ), {}, "--yes required when not running interactively"),
+])
+async def test_repo_delete_refuses_without_a_terminal(_core_repo, texts, flags,
+                                                      message):
+    with pytest.raises(UsageError, match=message):
+        await delete_cmd(_inv(texts, flags))
+    assert CALLS == []
+
+
 # gh takes the new name as the operand and the repository to rename as -R,
 # which is the reverse of what the shape of the line suggests.
 @pytest.mark.asyncio
@@ -518,6 +658,15 @@ async def test_api_keeps_everything_after_the_first_equals():
 async def test_api_takes_an_endpoint_with_or_without_a_leading_slash():
     await api(_inv(["/user"]))
     assert CALLS[0]["path"] == "/user"
+
+
+# gh sends `graphql` alone to the GraphQL endpoint (`p == "graphql"`) and
+# any other spelling, `/graphql` included, under the REST base.
+@pytest.mark.asyncio
+async def test_api_names_graphql_by_the_bare_graphql_endpoint_alone():
+    await api(_inv(["graphql"], {"raw_field": ["query={ viewer { login } }"]}))
+    await api(_inv(["/graphql"]))
+    assert [call["path"] for call in CALLS] == ["graphql", "/graphql"]
 
 
 @pytest.mark.asyncio
@@ -623,7 +772,35 @@ async def test_api_follows_link_headers_and_slurps_pages():
     ])
     out, _io = await api(_inv(["items"], {"paginate": True, "slurp": True}))
     assert [call["path"] for call in CALLS] == ["/items", "/items?page=2"]
-    assert json.loads(await materialize(out)) == [[{"id": 1}], [{"id": 2}]]
+    assert await materialize(out) == b'[[{"id":1}],[{"id":2}]]'
+
+
+# gh copies each body out verbatim, the vendor's compact text with no
+# newline added, and a paginated run streams array pages as one array (its
+# paginatedArrayReader); an empty page leaves a space behind.
+@pytest.mark.asyncio
+@pytest.mark.parametrize("bodies,paginate,stdout", [
+    ([[{
+        "id": 1
+    }]], False, '[{"id":1}]'),
+    ([[1, 2], [3]], True, "[1,2,3]"),
+    ([[1], [], [2]], True, "[1 ,2]"),
+    ([{
+        "a": 1
+    }, {
+        "a": 2
+    }], True, '{"a":1}{"a":2}'),
+])
+async def test_api_prints_bodies_as_gh_does(bodies, paginate, stdout):
+    RESPONSES.extend(
+        ApiResponse(
+            body, 200,
+            {"link": f'<http://fake/items?page={index + 2}>; '
+             'rel="next"'} if index < len(bodies) - 1 else {})
+        for index, body in enumerate(bodies))
+    out, _io = await api(
+        _inv(["items"], {"paginate": True} if paginate else {}))
+    assert await materialize(out) == stdout.encode()
 
 
 @pytest.mark.asyncio
@@ -652,6 +829,94 @@ async def test_api_silent_suppresses_output():
 
 
 @pytest.mark.asyncio
+async def test_api_copies_a_body_that_is_not_text_out_as_its_bytes():
+    RESPONSES.append(ApiResponse(b"PK\xff\x00", 200, {}))
+    out, _io = await api(_inv(["repos/o/r/actions/runs/1/logs"]))
+    assert await materialize(out) == b"PK\xff\x00"
+
+
+# gh 2.85's `-i` (api.go processResponse): the protocol and status, every
+# header but Status in name order ending `\r\n`, a blank `\r\n` line, then
+# the body, for every response, the failing one included.
+_HEADERS = {
+    "x-github-request-id": "AB:CD",
+    "content-type": "application/json; charset=utf-8",
+    "status": "200 OK",
+}
+_HEAD = (b"HTTP/1.1 200 OK\nContent-Type: application/json; charset=utf-8\r\n"
+         b"X-Github-Request-Id: AB:CD\r\n\r\n")
+
+
+@pytest.mark.asyncio
+async def test_api_include_prints_the_status_line_and_headers_first():
+    RESPONSES.append(ApiResponse({"a": 1}, 200, _HEADERS))
+    out, _io = await api(_inv(["x"], {"include": True}))
+    assert await materialize(out) == _HEAD + b'{"a":1}'
+
+
+@pytest.mark.asyncio
+async def test_api_include_drops_the_headers_of_the_encoded_body():
+    RESPONSES.append(
+        ApiResponse(None, 204, {
+            "content-encoding": "gzip",
+            "content-length": "20",
+            "etag": 'W/"1"'
+        }))
+    out, _io = await api(_inv(["x"], {"include": True, "method": "DELETE"}))
+    assert await materialize(out) == (
+        b'HTTP/1.1 204 No Content\nEtag: W/"1"\r\n\r\n')
+
+
+@pytest.mark.asyncio
+async def test_api_include_heads_every_page_and_prints_pages_as_they_came():
+    link = {"link": '<http://fake/x?page=2>; rel="next"'}
+    RESPONSES.extend([ApiResponse([1], 200, link), ApiResponse([2], 200, {})])
+    out, _io = await api(_inv(["x"], {"include": True, "paginate": True}))
+    assert await materialize(out) == (
+        b'HTTP/1.1 200 OK\nLink: <http://fake/x?page=2>; rel="next"\r\n'
+        b"\r\n[1]\nHTTP/1.1 200 OK\n\r\n[2]")
+
+
+@pytest.mark.asyncio
+async def test_api_include_opens_each_slurp_page_before_its_head():
+    link = {"link": '<http://fake/x?page=2>; rel="next"'}
+    RESPONSES.extend([ApiResponse([1], 200, link), ApiResponse([2], 200, {})])
+    out, _io = await api(
+        _inv(["x"], {
+            "include": True,
+            "paginate": True,
+            "slurp": True
+        }))
+    assert await materialize(out) == (
+        b'[HTTP/1.1 200 OK\nLink: <http://fake/x?page=2>; rel="next"\r\n'
+        b"\r\n[1]\n,HTTP/1.1 200 OK\n\r\n[2]]")
+
+
+@pytest.mark.asyncio
+async def test_api_include_keeps_heads_under_silent_and_before_jq():
+    RESPONSES.append(ApiResponse({"a": 1}, 200, _HEADERS))
+    out, _io = await api(_inv(["x"], {"include": True, "silent": True}))
+    assert await materialize(out) == _HEAD
+    RESPONSES.append(ApiResponse({"a": 1}, 200, _HEADERS))
+    out, _io = await api(_inv(["x"], {"include": True, "jq": ".a"}))
+    assert await materialize(out) == _HEAD + b"1\n"
+
+
+@pytest.mark.asyncio
+async def test_api_include_heads_a_failing_response_too():
+    RESPONSES.append(
+        GitHubApiError("Not Found",
+                       404,
+                       body='{"message":"Not Found"}',
+                       headers={"content-type": "application/json"}))
+    out, io = await api(_inv(["x"], {"include": True}))
+    assert await materialize(out) == (
+        b"HTTP/1.1 404 Not Found\nContent-Type: application/json\r\n\r\n"
+        b'{"message":"Not Found"}')
+    assert await materialize(io.stderr) == b"gh: Not Found (HTTP 404)\n"
+
+
+@pytest.mark.asyncio
 async def test_api_emits_a_non_json_response_verbatim():
     RESPONSES.append(ApiResponse("diff --git a/x b/x\n", 200, {}))
     out, _io = await api(
@@ -661,7 +926,8 @@ async def test_api_emits_a_non_json_response_verbatim():
 
 
 # `--jq` renders the way gh 2.85 does, probed live: a string raw, null as
-# an empty line, everything else as compact JSON, one output per line.
+# an empty line, everything else as compact JSON with its keys sorted, one
+# output per line.
 @pytest.mark.asyncio
 async def test_api_jq_prints_a_string_raw():
     _reset({"full_name": "o/r"})
@@ -674,7 +940,51 @@ async def test_api_jq_prints_non_strings_as_compact_json():
     _reset({"name": "r", "count": 2, "ok": True})
     out, _io = await api(
         _inv(["repos/o/r"], {"jq": "{name: .name, count: .count}, .ok"}))
-    assert await materialize(out) == b'{"name":"r","count":2}\ntrue\n'
+    assert await materialize(out) == b'{"count":2,"name":"r"}\ntrue\n'
+
+
+# go-gh prints a number on its own line in fixed notation, whole with no
+# decimals and otherwise with two, rounded half to even as strconv rounds;
+# anything else goes through Go's json.Marshal: keys sorted, <, > and &
+# escaped for HTML and U+2028 and U+2029 for JavaScript, DEL raw, and
+# numbers spelled as ES6 spells them. Pinned against gh 2.85's go-gh with
+# `gh api rate_limit --jq`.
+@pytest.mark.asyncio
+@pytest.mark.parametrize("program, line", [
+    ("1.5", "1.50"),
+    ("0.125", "0.12"),
+    ("0.375", "0.38"),
+    ("-0.125", "-0.12"),
+    ("2.675", "2.67"),
+    ("1e-7", "0.00"),
+    ("3.0", "3"),
+    ("1e21", "1000000000000000000000"),
+    (".n / 3", "1666.67"),
+    ("[.n / 3]", "[1666.6666666666667]"),
+    ("[1.5, 1e21, 1e-7, 0.000001, 100]", "[1.5,1e+21,1e-7,0.000001,100]"),
+    ('{"b": 1, "a": {"d": 2, "c": 3}}', '{"a":{"c":3,"d":2},"b":1}'),
+    ('{"x": "<&>"}', '{"x":"\\u003c\\u0026\\u003e"}'),
+    ('["\\u2028", "\\u2029", "\\u007f", "é", "\\u0001", "\\b"]',
+     '["\\u2028","\\u2029","\x7f","é","\\u0001","\\b"]'),
+    ('[true, null, "x"]', '[true,null,"x"]'),
+])
+async def test_api_jq_prints_each_output_as_go_gh_does(program, line):
+    _reset({"n": 5000})
+    out, _io = await api(_inv(["repos/o/r"], {"jq": program}))
+    assert await materialize(out) == f"{line}\n".encode()
+
+
+# gh prints a computed negative zero as -0, but jq.py hands it to Python as
+# the int 0, so both hosts print 0.
+@pytest.mark.asyncio
+@pytest.mark.parametrize("program, line", [
+    (".n * 0 * -1", "0"),
+    ("[.n * 0 * -1]", "[0]"),
+])
+async def test_api_jq_prints_negative_zero_as_zero(program, line):
+    _reset({"n": 5000})
+    out, _io = await api(_inv(["repos/o/r"], {"jq": program}))
+    assert await materialize(out) == f"{line}\n".encode()
 
 
 @pytest.mark.asyncio
@@ -689,6 +999,77 @@ async def test_api_jq_emits_one_line_per_output():
     _reset({"a": "x", "b": "y"})
     out, _io = await api(_inv(["repos/o/r"], {"jq": ".a, .b"}))
     assert await materialize(out) == b"x\ny\n"
+
+
+# go-gh's gojq ends the output at `halt` and fails at halt_error, pinned
+# against gh: `halt error: <message>`, exit 1 whatever the code.
+@pytest.mark.asyncio
+async def test_api_jq_ends_the_output_at_halt():
+    _reset({"a": "x"})
+    out, _io = await api(_inv(["repos/o/r"], {"jq": ".a, halt, .a"}))
+    assert await materialize(out) == b"x\n"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("program, message", [
+    ('"x" | halt_error(3)', "halt error: x"),
+    ('{"a":1} | halt_error', 'halt error: {"a":1}'),
+    ("[.a] | map({v: .} | halt_error(0))", 'halt error: {"v":"x"}'),
+])
+async def test_api_jq_fails_at_halt_error(program, message):
+    _reset({"a": "x"})
+    with pytest.raises(PartialOutputError) as caught:
+        await api(_inv(["repos/o/r"], {"jq": program}))
+    assert (str(caught.value), caught.value.stdout) == (message, b"")
+
+
+# gojq reports what the program raised with `error` as `error: <value>`,
+# anything but a string in gojq's own compact JSON (keys sorted), and a
+# builtin's error in words mirage's jq does not share, so jq 1.8.2's stand,
+# except for the builtins gojq writes in jq. Pinned against gh 2.85's
+# gojq with `gh api rate_limit --jq`.
+@pytest.mark.asyncio
+@pytest.mark.parametrize("program, message", [
+    ('error("boom")', "error: boom"),
+    ('"x" | error', "error: x"),
+    ("error(null)", "error: null"),
+    ("error(error)", 'error: {"a":"x"}'),
+    ('error({"b": 1, "a": [2, "x"]})', 'error: {"a":[2,"x"],"b":1}'),
+    ('error(["\\u007f", "é", "<&>", "\\u0001"])',
+     'error: ["\\u007f","é","<&>","\\u0001"]'),
+    ("error(1.0)", "error: 1"),
+    ("error(1e21)", "error: 1e+21"),
+    ("error(0.0000001)", "error: 1e-7"),
+    ('[error("in")]', "error: in"),
+    ('first(error("in"))', "error: in"),
+    ("try (.a | .b) catch error",
+     'error: Cannot index string with string ("b")'),
+    (".a | .b", 'Cannot index string with string ("b")'),
+    ("label $f | .a | .b", 'Cannot index string with string ("b")'),
+    ('def error: 7; error | .b', 'Cannot index number with string ("b")'),
+    ("limit(-1; .a)", "error: limit doesn't support negative count"),
+    ("skip(-1; .a)", "error: skip doesn't support negative count"),
+    ("nth(-1; .a)", "error: nth doesn't support negative index"),
+    ('{"b": 1, "a": 2} | halt_error(1)', 'halt error: {"a":2,"b":1}'),
+])
+async def test_api_jq_fails_the_way_gojq_reports_it(program, message):
+    _reset({"a": "x"})
+    with pytest.raises(PartialOutputError) as caught:
+        await api(_inv(["repos/o/r"], {"jq": program}))
+    assert (str(caught.value), caught.value.stdout) == (message, b"")
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("program, message", [
+    ('.a, ("y" | halt_error(1))', "halt error: y"),
+    ('.a, error("boom")', "error: boom"),
+    ('(try error(.a) catch .), error("y")', "error: y"),
+])
+async def test_api_jq_keeps_what_it_printed_before_failing(program, message):
+    _reset({"a": "x"})
+    with pytest.raises(PartialOutputError) as caught:
+        await api(_inv(["repos/o/r"], {"jq": program}))
+    assert (str(caught.value), caught.value.stdout) == (message, b"x\n")
 
 
 # gh prints two tab-separated header lines and then the README verbatim;
@@ -885,6 +1266,9 @@ async def test_api_failure_names_what_gh_reads_off_the_body(
     ({
         "slurp": True
     }, "", '[{"value":"first"},]', "gh: HTTP 422\n"),
+    ({}, '{"message":"Validation Failed"}',
+     '{"value":"first"}{"message":"Validation Failed"}',
+     "gh: Validation Failed (HTTP 422)\n"),
     ({
         "silent": True
     }, '{"message":"Validation Failed"}', "",
@@ -902,6 +1286,43 @@ async def test_api_later_page_failure_keeps_rendered_pages(
     assert io.exit_code == 1
     assert await io.stderr_str() == stderr
     assert request.await_count == 2
+
+
+# gh runs `--jq` over each page as it lands, so a failure on a later page
+# keeps the lines the earlier pages printed.
+@pytest.mark.asyncio
+@pytest.mark.parametrize("program, message", [
+    ('if .value == "second" then "y" | halt_error(1) else .value end',
+     "halt error: y"),
+    ('if .value == "second" then error("boom") else .value end',
+     "error: boom"),
+])
+async def test_api_jq_failure_on_a_later_page_keeps_the_earlier_pages(
+        monkeypatch, program, message):
+    request = AsyncMock(side_effect=[
+        ApiResponse({"value": "first"}, 200, {"link": '</page2>; rel="next"'}),
+        ApiResponse({"value": "second"}, 200, {}),
+    ])
+    monkeypatch.setitem(api.__globals__, "github_request_response", request)
+    with pytest.raises(PartialOutputError) as caught:
+        await api(_inv(("page1", ), {"paginate": True, "jq": program}))
+    assert (str(caught.value), caught.value.stdout) == (message, b"first\n")
+
+
+# A failing response after an array page is still a page to gh, so that
+# array's closing bracket stays withheld and the failing body runs on.
+@pytest.mark.asyncio
+async def test_api_leaves_an_array_page_open_before_a_failing_page(
+        monkeypatch):
+    request = AsyncMock(side_effect=[
+        ApiResponse([1], 200, {"link": '</page2>; rel="next"'}),
+        GitHubApiError(
+            "Validation Failed", 422, body='{"message":"Validation Failed"}'),
+    ])
+    monkeypatch.setitem(api.__globals__, "github_request_response", request)
+    out, io = await api(_inv(("page1", ), {"paginate": True}))
+    assert await materialize(out) == b'[1{"message":"Validation Failed"}'
+    assert io.exit_code == 1
 
 
 @pytest.mark.asyncio

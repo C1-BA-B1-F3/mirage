@@ -33,6 +33,7 @@ import { ExecutionNode } from '../types.ts'
 import { getTestParser } from '../fixtures/workspace_fixture.ts'
 import { Workspace } from './workspace.ts'
 import { dropMountCaches } from '../executor/command/run.ts'
+import { toStateDict } from '../snapshot/state.ts'
 
 let parser: ShellParser
 
@@ -288,16 +289,14 @@ it.each([
 it.each(
   [null, 'initial', 'dynamic'].flatMap((alias) =>
     ['op', 'command', 'df'].flatMap((surface) =>
-      (surface === 'df' ? [false] : [false, true]).map((streaming) => ({
-        alias,
-        streaming,
-        surface,
-      })),
+      (surface === 'df' ? [false] : [false, true]).flatMap((streaming) =>
+        [false, true].map((borrowed) => ({ alias, streaming, surface, borrowed })),
+      ),
     ),
   ),
 )(
-  'unmount waits for admitted VFS use ($surface, streaming=$streaming, alias=$alias)',
-  async ({ surface, streaming, alias }) => {
+  'unmount waits for admitted VFS use ($surface, streaming=$streaming, alias=$alias, borrowed=$borrowed)',
+  async ({ surface, streaming, alias, borrowed }) => {
     const vfs = new RAMVFS()
     let entered = (): void => undefined
     let resume = (): void => undefined
@@ -308,10 +307,12 @@ it.each(
       resume = resolve
     })
     let closed = false
+    let indexClosed = false
     async function* chunks(): AsyncGenerator<Uint8Array> {
       entered()
       await release
       expect(closed).toBe(false)
+      expect(indexClosed).toBe(false)
       yield new TextEncoder().encode('value')
     }
     const read = async (): Promise<Uint8Array | AsyncIterable<Uint8Array>> => {
@@ -319,16 +320,21 @@ it.each(
       entered()
       await release
       expect(closed).toBe(false)
+      expect(indexClosed).toBe(false)
       return new TextEncoder().encode('value')
     }
     const mounts: Record<string, RAMVFS> = { '/data': vfs }
     if (alias === 'initial') mounts['/alias'] = vfs
-    const ws = new Workspace(mounts, { shellParser: parser })
+    const owner = new Workspace(mounts, { shellParser: parser })
+    const ws = borrowed
+      ? await Workspace.fromState(await toStateDict(owner), { shellParser: parser }, mounts)
+      : owner
     if (alias === 'dynamic') ws.addMount('/alias', vfs)
     vi.spyOn(vfs, 'capacity').mockImplementation(async () => {
       entered()
       await release
       expect(closed).toBe(false)
+      expect(indexClosed).toBe(false)
       return { state: CapacityState.UNKNOWN }
     })
     ws.opsRegistry.register({ name: 'read', vfs: 'ram', filetype: null, write: false, fn: read })
@@ -340,6 +346,12 @@ it.each(
     })
     if (registered === undefined) throw new Error('missing command')
     ws.mount('/data').register(registered)
+    const index = ws.mount('/data').indexStore
+    const closeIndex = index.close.bind(index)
+    vi.spyOn(index, 'close').mockImplementation(async () => {
+      indexClosed = true
+      await closeIndex()
+    })
     const closeVfs = vfs.close.bind(vfs)
     vi.spyOn(vfs, 'close').mockImplementation(async () => {
       closed = true
@@ -367,6 +379,7 @@ it.each(
       if (alias) {
         await ws.unmount('/data')
         expect(closed).toBe(false)
+        expect(indexClosed).toBe(false)
       }
       let removed = false
       const prefix = alias ? '/alias' : '/data'
@@ -378,14 +391,17 @@ it.each(
       })
       expect(removed).toBe(false)
       expect(closed).toBe(false)
+      expect(indexClosed).toBe(false)
       resume()
       expect(await running).toBe('value')
       await removing
-      expect(closed).toBe(true)
+      expect(closed).toBe(!borrowed)
+      expect(indexClosed).toBe(true)
     } finally {
       resume()
       await Promise.allSettled([running, ...(removing === undefined ? [] : [removing])])
       await ws.close()
+      await owner.close()
     }
   },
 )

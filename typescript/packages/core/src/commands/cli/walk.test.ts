@@ -679,3 +679,20 @@ it('refuses -- at the git root like an unknown option, and only there', () => {
   const plain = new CLISpec({ name: 'git', subcommands: [leaf, inner] })
   expect(walk('git', plain, ['--', 'status']).leaf).toBe(leaf)
 })
+
+it.each([
+  [['-C', '/repo', '-C', 'docs'], '/repo/docs'],
+  [['-C', '/repo', '-C', '/other'], '/other'],
+  [['-C', 'a', '-C', '../b'], '/work/b'],
+  [['-C', '', '-C', 'docs'], '/work/docs'],
+  [['-C', 'docs', '-C', ''], '/work/docs'],
+  [[], '/work'],
+])('moves an operand base like a chdir for %j', (argv, expected) => {
+  const git = new CLISpec({
+    name: 'git',
+    operandBase: '-C',
+    options: [new Option({ short: '-C', type: 'path', default: '.' })],
+    subcommands: [new CLISpec({ name: 'status', fn: verb })],
+  })
+  expect(walk('git', git, [...argv, 'status'], '/work').groupFlags['-C']).toBe(expected)
+})

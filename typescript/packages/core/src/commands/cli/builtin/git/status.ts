@@ -17,12 +17,24 @@ import type { LinkView, StatPath } from '../../../../ops/types.ts'
 import type { CommandFnResult } from '../../../config.ts'
 import { FlagView } from '../../../spec/flag_view.ts'
 import type { CLIInvocation } from '../../types.ts'
+import git from 'isomorphic-git'
+import { branchUpstream } from './branch.ts'
 import { collect } from './changes.ts'
+import { DWIM_RULES } from './constants.ts'
 import { GitError, NoWorkspaceError } from './errors.ts'
 import { short } from './format.ts'
-import { readHead } from './refs.ts'
-import { branchLine, longFormat, relativeEntries, shortFormat } from './render.ts'
-import { configBool, opened, type Repo } from './repo.ts'
+import { readOptional, under } from './io.ts'
+import { loadRefs, readHead } from './refs.ts'
+import {
+  branchLine,
+  DETACHED_AT,
+  DETACHED_FROM,
+  longFormat,
+  NO_BRANCH,
+  relativeEntries,
+  shortFormat,
+} from './render.ts'
+import { configBool, objectType, opened, repoArgs, type Repo } from './repo.ts'
 import type { Dispatch, HeadRef, StatusEntry } from './types.ts'
 import { fatal, startPoint } from './util.ts'
 import { repoRelative } from './pathspec.ts'
@@ -39,6 +51,7 @@ interface StatusFlags {
   readonly branch: boolean
   /** `-u`, which untracked files to report. */
   readonly untracked: string
+  readonly ignored: boolean
 }
 
 /**
@@ -57,6 +70,7 @@ function parseFlags(fl: FlagView): StatusFlags {
     porcelain: fl.asBool('porcelain') || fl.asStr('porcelain') != null,
     short: fl.asBool('short'),
     branch: fl.asBool('branch'),
+    ignored: fl.asBool('ignored'),
     untracked: mode,
   }
 }
@@ -71,6 +85,56 @@ function parseFlags(fl: FlagView): StatusFlags {
 async function displayed(repo: Repo, start: string, rows: StatusEntry[]): Promise<StatusEntry[]> {
   if (!(await configBool(repo, 'status.relativePaths', true))) return rows
   return relativeEntries(rows, repoRelative(repo.location, start, '.'))
+}
+
+const CHECKOUT_MOVE = 'checkout: moving from '
+
+/**
+ * How the status names where a detached HEAD came from: the checkout's target
+ * when it still names exactly one ref holding that commit (a tag or
+ * remote-tracking branch by its short name), the abbreviated id otherwise.
+ */
+async function detachedLabel(repo: Repo, target: string, moved: string): Promise<string> {
+  const refs = await loadRefs(repo.dispatch, repo.location.gitdir, repo.location.commondir)
+  const found = [...new Set(DWIM_RULES.map((rule) => rule.replace('{}', target)))].filter((name) =>
+    refs.has(name),
+  )
+  const [only] = found
+  if (target !== 'HEAD' && found.length === 1 && only !== undefined) {
+    let oid = await git.resolveRef({ ...repoArgs(repo), ref: only })
+    while ((await objectType(repo, oid)) === 'tag')
+      oid = (await git.readTag({ ...repoArgs(repo), oid })).tag.object
+    if (oid === moved) return only.replace(/^refs\/tags\//, '').replace(/^refs\/remotes\//, '')
+  }
+  return short(moved, repo.abbrev)
+}
+
+/**
+ * The first line of a status on a detached HEAD, read off the reflog.
+ *
+ * git names the target of the newest `checkout: moving from` entry, `at` while
+ * HEAD is still there and `from` once it has moved on, and says it is on no
+ * branch when no checkout put it there, which is what a clone of a tag or of a
+ * detached HEAD reads (pinned against git 2.47.3 and 2.50.1).
+ */
+async function detachedLine(repo: Repo, head: HeadRef): Promise<string> {
+  const log = await readOptional(repo.dispatch, under(repo.location.gitdir, 'logs/HEAD'))
+  const rows = new TextDecoder()
+    .decode(log ?? new Uint8Array())
+    .split('\n')
+    .filter(Boolean)
+  for (const row of rows.reverse()) {
+    const tab = row.indexOf('\t')
+    const message = row.slice(tab + 1)
+    if (!message.startsWith(CHECKOUT_MOVE)) continue
+    const to = message.indexOf(' to ', CHECKOUT_MOVE.length)
+    if (to < 0) continue
+    const target = message.slice(to + 4)
+    const moved = row.slice(0, tab).split(' ')[1] ?? ''
+    const label = await detachedLabel(repo, target, moved)
+    return `${head.commit === moved ? DETACHED_AT : DETACHED_FROM}${label}`
+  }
+  return NO_BRANCH
 }
 
 /**
@@ -90,15 +154,16 @@ export async function renderReport(
 ): Promise<string> {
   const [rows, state, noCommits] = await collect(repo, dispatch, statPath, UNTRACKED_NORMAL, links)
   const fully = await configBool(repo, 'core.quotepath', true)
-  const commit = head.commit === null ? null : short(head.commit, repo.abbrev)
+  const detached = head.branch !== null ? '' : await detachedLine(repo, head)
   return longFormat(
     await displayed(repo, start, rows),
     head.branch,
-    commit,
+    detached,
     noCommits,
     state.merging,
     false,
     fully,
+    await branchUpstream(repo, head, noCommits),
   )
 }
 
@@ -128,21 +193,28 @@ export async function status(inv: CLIInvocation): Promise<CommandFnResult> {
       statPath,
       parsed.untracked,
       doors.ns?.links ?? null,
+      parsed.ignored,
     )
     const fully = await configBool(repo, 'core.quotepath', true)
     const shown = parsed.porcelain ? rows : await displayed(repo, startPoint(fl), rows)
-    const commit = head.commit === null ? null : short(head.commit, repo.abbrev)
+    const upstream = await branchUpstream(repo, head, noCommits)
+    const detached = head.branch !== null ? '' : await detachedLine(repo, head)
     const body =
       parsed.porcelain || parsed.short
-        ? shortFormat(shown, parsed.branch ? branchLine(head.branch, noCommits) : null, fully)
+        ? shortFormat(
+            shown,
+            parsed.branch ? branchLine(head.branch, noCommits, upstream) : null,
+            fully,
+          )
         : longFormat(
             shown,
             head.branch,
-            commit,
+            detached,
             noCommits,
             state.merging,
             parsed.untracked === UNTRACKED_NO,
             fully,
+            upstream,
           )
     return [encodeText(body), new IOResult()]
   } catch (err) {

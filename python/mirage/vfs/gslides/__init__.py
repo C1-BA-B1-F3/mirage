@@ -12,13 +12,18 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+from typing import TYPE_CHECKING
+
 from mirage.vfs.gslides.config import GSlidesConfig
 from mirage.vfs.gslides.slide_entry import SlideEntry
+
+if TYPE_CHECKING:
+    from mirage.vfs.gslides.gslides import GSlidesVFS
 
 __all__ = ["GSlidesConfig", "SlideEntry", "GSlidesVFS"]
 
 
-def __getattr__(name: str):
+def __getattr__(name: str) -> "type[GSlidesVFS]":
     if name == "GSlidesVFS":
         from mirage.vfs.gslides.gslides import GSlidesVFS
         return GSlidesVFS

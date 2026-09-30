@@ -17,11 +17,17 @@
 // shared pieces directly: narrowScope (code-search push-down on subdirs and
 // regex-extracted literals, gated on -w).
 
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { GitHubAccessor } from '../../../accessor/github.ts'
 import type { GitHubTransport } from '../../../core/github/client.ts'
 import type { TreeEntry } from '../../../core/github/tree_entry.ts'
-import { PathSpec } from '../../../types.ts'
+import { FakeGitHub } from '../../../core/github/_test_util.ts'
+import { isDirectoryKey } from '../../../core/github/pushdown.ts'
+import { MountMode, PathSpec } from '../../../types.ts'
+import { GitHubVFS } from '../../../vfs/github/github.ts'
+import { getTestParser } from '../../../workspace/fixtures/workspace_fixture.ts'
+import { Mount } from '../../../workspace/mount/spec.ts'
+import { Workspace } from '../../../workspace/workspace/workspace.ts'
 import { narrowScope, scopeRefusal } from './pushdown.ts'
 
 // 150 blobs under src/ so the scope clears SCOPE_WARN (100) and search kicks in.
@@ -264,5 +270,80 @@ describe('scopeRefusal', () => {
     // With -w given, telling the caller to add -w is wrong: code search ran
     // and its answer could not be trusted.
     expect(scopeRefusal(cmd, 12, wholeWord)).toBe(stderr)
+  })
+})
+
+describe('narrowScope over an expired listing', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it('counts the refreshed tree', async () => {
+    const gh = new FakeGitHub({ 'docs/a.txt': 'x', 'docs/b.txt': 'x', 'top.txt': 'x' })
+    vi.stubGlobal('fetch', gh.fetch)
+    const vfs = await GitHubVFS.create({
+      token: 't',
+      owner: 'o',
+      repo: 'r',
+      ref: 'main',
+      baseUrl: gh.url,
+    })
+    const ws = new Workspace(
+      { '/gh': new Mount(vfs, { mode: MountMode.READ }) },
+      { shellParser: await getTestParser() },
+    )
+    try {
+      expect((await ws.shell('ls /gh/docs')).exitCode).toBe(0)
+      gh.set('docs/c.txt', 'x')
+      gh.set('newdir/d.txt', 'x')
+      const index = ws.registry.mountFor('/gh/docs').index
+      await index.invalidate()
+      gh.log.length = 0
+      const root = new PathSpec({ virtual: '/gh', directory: '/gh', vfsPath: '', resolved: false })
+      const res = await narrowScope(vfs.accessor, [root], 'x', false, true, false, index)
+      expect(res.fileCount).toBe(5)
+      expect(isDirectoryKey(vfs.accessor.tree, 'newdir')).toBe(true)
+      expect(gh.counts()).toEqual([0, 1, 0])
+    } finally {
+      await ws.close()
+    }
+  })
+
+  // [mount prefix, scope below it, files in scope]
+  it.each<[string, string, number]>([
+    ['/gh', 'docs', 3],
+    ['/r/gh', 'docs', 3],
+    ['/r/gh', '', 5],
+  ])('refills at the mount root for %s scope %j and warms its listing', async (prefix, sub, n) => {
+    const gh = new FakeGitHub({ 'docs/a.txt': 'x', 'docs/b.txt': 'x', 'top.txt': 'x' })
+    vi.stubGlobal('fetch', gh.fetch)
+    const vfs = await GitHubVFS.create({
+      token: 't',
+      owner: 'o',
+      repo: 'r',
+      ref: 'main',
+      baseUrl: gh.url,
+    })
+    const ws = new Workspace(
+      { [prefix]: new Mount(vfs, { mode: MountMode.READ }) },
+      { shellParser: await getTestParser() },
+    )
+    try {
+      expect((await ws.shell(`ls ${prefix}/docs`)).exitCode).toBe(0)
+      gh.set('docs/c.txt', 'x')
+      gh.set('newdir/d.txt', 'x')
+      const index = ws.registry.mountFor(prefix).index
+      await index.invalidate()
+      gh.log.length = 0
+      const virtual = sub === '' ? prefix : `${prefix}/${sub}`
+      const scope = new PathSpec({ virtual, directory: virtual, vfsPath: sub, resolved: false })
+      const res = await narrowScope(vfs.accessor, [scope], 'x', false, true, false, index)
+      expect(res.fileCount).toBe(n)
+      const ls = await ws.shell(`ls ${prefix}`)
+      expect(new TextDecoder().decode(ls.stdout)).toBe('docs\nnewdir\ntop.txt\n')
+      expect(gh.counts()).toEqual([0, 1, 0])
+    } finally {
+      await ws.close()
+    }
   })
 })

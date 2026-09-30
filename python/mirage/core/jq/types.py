@@ -12,18 +12,139 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-from collections.abc import Mapping
+from collections.abc import AsyncIterator, Mapping
 from dataclasses import dataclass, field
-from typing import Any
+from enum import Enum, auto
+from typing import Generic, TypeAlias, TypeVar
+
+T = TypeVar("T")
 
 DEFAULT_INDENT = 2
 
-# The named argument the `inputs` prelude reads. Spelled so a user
-# program can never collide with it by accident.
-INPUTS_VAR = "__mirage_jq_inputs"
+# What jq names standard input when it reports where it stands, and what
+# it reports before it has read any input at all.
+STDIN_NAME = "<stdin>"
+UNKNOWN_POSITION = "<unknown>"
 
-# The named argument the `$ARGS` prelude rebinds.
-ARGS_VAR = "__mirage_jq_args"
+
+class NoValue(Enum):
+    """jq's `jv_invalid()` where a value could stand: nothing yet, which
+    is not the same as null."""
+
+    TOKEN = auto()
+
+
+NO_VALUE = NoValue.TOKEN
+
+
+@dataclass(frozen=True, slots=True)
+class JqParseError:
+    """jq's parser refusing its input: the message, with the line and the
+    column it had reached, as jq's report words it.
+
+    Args:
+        message (str): e.g. ``Unfinished JSON term at EOF at line 1,
+            column 3``.
+    """
+
+    message: str
+
+
+@dataclass(frozen=True, slots=True)
+class NumberText:
+    """A number as a --stream event carries it: its literal, which jq
+    keeps and prints as it was written (`1.000`, `1E+2`) where a float
+    cannot.
+
+    Args:
+        text (str): the literal, up to its first NUL.
+    """
+
+    text: str
+
+
+# A value as jq's parser builds it: JSON, with a --stream event's number
+# leaf kept as its literal.
+ParsedValue: TypeAlias = ("None | bool | int | float | str | NumberText"
+                          " | list[ParsedValue] | dict[str, ParsedValue]")
+
+
+@dataclass(frozen=True, slots=True)
+class InputSource:
+    """One input of the stream jq reads: a file operand or stdin.
+
+    Args:
+        name (str): the input as jq reports it, the operand as the command
+            line spelled it or ``<stdin>``.
+        chunks (AsyncIterator[bytes]): its bytes.
+    """
+
+    name: str
+    chunks: AsyncIterator[bytes]
+
+
+@dataclass(frozen=True, slots=True)
+class JqError:
+    """An error no `try` caught, which ends one run: jq reports it and
+    goes on with the next document.
+
+    Args:
+        text (str): the message as jq prints it: a string as it is,
+            anything else in jq's own compact dump.
+        string (bool): whether the message was a string, which jq's
+            report says when it was not.
+    """
+
+    text: str
+    string: bool
+
+
+@dataclass(frozen=True, slots=True)
+class JqHalt:
+    """`halt` or `halt_error`, which end the whole invocation.
+
+    Args:
+        message (str | None): halt_error's input as jq prints it (a
+            string as it is, anything else in jq's compact dump), or None
+            for `halt` and for a null input, which print nothing.
+        string (bool): whether that input was a string, which jq prints
+            with no newline of its own.
+        code (float | None): the exit code `halt_error` named, or None
+            for `halt`.
+    """
+
+    message: str | None
+    string: bool
+    code: float | None
+
+
+@dataclass(frozen=True, slots=True)
+class JqRun(Generic[T]):
+    """What one run of a program printed, and what ended it early.
+
+    Args:
+        outputs (list[T]): every output it printed, in order: a value,
+            or jq's own compact dump of one.
+        stop (JqError | JqHalt | None): the error or the halt that ended
+            it, or None when it ran to its end.
+    """
+
+    outputs: list[T]
+    stop: JqError | JqHalt | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class StreamReads:
+    """Which of the builtins that read the input stream a program calls.
+
+    Args:
+        input (bool): `input`, which takes the next unread document.
+        inputs (bool): `inputs`, which yields every unread document.
+    """
+
+    input: bool
+    inputs: bool
+
 
 # The record separator an application/json-seq stream puts before every
 # value (RFC 7464).
@@ -61,10 +182,11 @@ class JqOptions:
         indent (int): spaces per indent level when not compact.
         exit_status (bool): -e, derive the exit code from the last
             output value.
-        named_args (Mapping[str, Any]): --arg / --argjson / --rawfile /
-            --slurpfile bindings, as the values $name resolves to.
-        positional_args (tuple[Any, ...]): --args / --jsonargs values, in
-            order, as $ARGS.positional reports them.
+        named_args (Mapping[str, str]): --arg / --argjson / --rawfile /
+            --slurpfile bindings, each the JSON text of the value $name
+            resolves to.
+        positional_args (tuple[str, ...]): --args / --jsonargs values, in
+            order, as JSON text of what $ARGS.positional reports.
     """
 
     null_input: bool = False
@@ -81,5 +203,5 @@ class JqOptions:
     tab: bool = False
     indent: int = DEFAULT_INDENT
     exit_status: bool = False
-    named_args: Mapping[str, Any] = field(default_factory=dict)
-    positional_args: tuple[Any, ...] = ()
+    named_args: Mapping[str, str] = field(default_factory=dict)
+    positional_args: tuple[str, ...] = ()

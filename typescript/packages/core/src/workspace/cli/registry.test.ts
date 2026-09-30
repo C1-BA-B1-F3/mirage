@@ -132,6 +132,32 @@ describe('CLIRegistry', () => {
 })
 
 describe('CLIRegistry zod config schemas', () => {
+  // Twin of the python arm taking an instance of its model as it is: a
+  // config the schema already parsed carries the schema's own keys.
+  it('installs a config the schema already parsed', () => {
+    const reg = new CLIRegistry()
+    const model = z.object({ imapHost: z.string(), imapPort: z.number().default(993) })
+    const parsed = model.parse({ imapHost: 'mail.example.com' })
+    expect(reg.install('prog', tree(model), parsed).config).toEqual({
+      imapHost: 'mail.example.com',
+      imapPort: 993,
+    })
+  })
+
+  it.each([
+    ['token', 'string'],
+    [['token'], 'array'],
+  ])('refuses a config that is not an object (%o)', (config, kind) => {
+    const reg = new CLIRegistry()
+    expect(() =>
+      reg.install(
+        'prog',
+        tree(z.object({ token: z.string() })),
+        config as unknown as Record<string, unknown>,
+      ),
+    ).toThrow(`CLI 'prog': config must be an object, got ${kind}`)
+  })
+
   it('rejects unknown keys on a plain object schema', () => {
     const reg = new CLIRegistry()
     expect(() =>

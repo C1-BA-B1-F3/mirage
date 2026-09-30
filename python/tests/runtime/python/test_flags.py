@@ -40,6 +40,16 @@ def test_the_long_switch_goes_back_as_two_words():
                       "never"}) == ["--check-hash-based-pycs", "never"]
 
 
+def test_the_order_is_bools_counts_lists_then_the_long_switch():
+    assert init_argv({
+        "check_hash_based_pycs": "always",
+        "X": ["dev"],
+        "O": 1,
+        "S": True,
+        "B": True
+    }) == ["-B", "-S", "-O", "-X", "dev", "--check-hash-based-pycs", "always"]
+
+
 def test_an_engine_that_honors_nothing_reports_every_switch_present():
     flags = {
         "B": True,

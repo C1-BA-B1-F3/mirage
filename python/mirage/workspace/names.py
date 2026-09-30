@@ -32,12 +32,10 @@ NAMESPACE_COMMANDS = frozenset({"getfattr", "ln", "readlink", "setfattr"})
 
 # bash reserved words that mirage's grammar implements. The parser, not
 # the executor, consumes them, so they never reach route; `type` reports
-# them and the CLI registry refuses them as head words. bash's `time`
-# and `coproc` are left out on purpose: mirage implements neither
-# construct, so a line starting with one reports `command not found`,
-# and `type` may not contradict what dispatch does. Add a word back
-# when its construct lands.
+# them and the CLI registry refuses them as head words. `coproc` is omitted
+# because its construct is not implemented.
 KEYWORDS = frozenset({
+    "time",
     "if",
     "then",
     "else",

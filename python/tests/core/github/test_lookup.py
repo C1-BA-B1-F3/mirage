@@ -27,7 +27,7 @@ from mirage.core.github.config import GitHubConfig
 from mirage.core.github.lookup import locate, point_lookup
 from mirage.core.github.read import read
 from mirage.core.github.stat import stat
-from mirage.core.github.tree import refill_index
+from mirage.core.github.tree import refill_snapshot
 from mirage.types import FileType, PathSpec
 from tests.fixtures.github_api import FakeGitHub, blob_sha, race_index, serve
 
@@ -73,7 +73,7 @@ async def _close(index, client) -> None:
 
 async def _listed(gh: FakeGitHub, index) -> GitHubAccessor:
     accessor = _accessor(gh)
-    await refill_index(accessor, index, "/gh")
+    await refill_snapshot(accessor, index, "/gh")
     gh.log.clear()
     return accessor
 
@@ -171,7 +171,7 @@ async def test_a_live_root_answers_before_any_request(gh):
     order: list[str] = []
     accessor = _accessor(gh)
     live = _OrderedIndex(order)
-    await refill_index(accessor, live, "/gh")
+    await refill_snapshot(accessor, live, "/gh")
     order.clear()
     gh.log.clear()
     assert await point_lookup(accessor, live, "/gh", "docs/a.txt") is None

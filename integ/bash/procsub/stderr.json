@@ -30,6 +30,161 @@
         "stdout": "out\n",
         "stderr": "err\n"
       }
+    },
+    {
+      "id": "procsub_stdin_stderr_status",
+      "seq": 1346007,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "s3-prefix",
+        "databricks-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder"
+      ],
+      "command": "cat < <(echo payload; echo diagnostic >&2; exit 7); echo status:$?",
+      "expect": {
+        "exit": 0,
+        "stdout": "payload\nstatus:0\n",
+        "stderr": "diagnostic\n"
+      }
+    },
+    {
+      "id": "procsub_stdin_nested_stderr",
+      "seq": 1346008,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "s3-prefix",
+        "databricks-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder"
+      ],
+      "command": "cat < <(cat < <(echo nested >&2; echo payload)); echo after >&2",
+      "expect": {
+        "exit": 0,
+        "stdout": "payload\n",
+        "stderr": "nested\nafter\n"
+      }
+    },
+    {
+      "id": "procsub_stdin_heredoc_stderr",
+      "seq": 1346009,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "s3-prefix",
+        "databricks-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder"
+      ],
+      "command": "cat < <(cat <<'EOF'\npayload\nEOF\necho diagnostic >&2; exit 9) 2>/dev/null; echo status:$?",
+      "expect": {
+        "exit": 0,
+        "stdout": "payload\nstatus:0\n",
+        "stderr": "diagnostic\n"
+      }
+    },
+    {
+      "id": "procsub_stdin_stderr_redirected_inside",
+      "seq": 1346010,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "s3-prefix",
+        "databricks-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder"
+      ],
+      "command": "cat < <({ echo hidden >&2; echo payload; } 2>/dev/null)",
+      "expect": {
+        "exit": 0,
+        "stdout": "payload\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "procsub_stdin_missing_file",
+      "seq": 1346011,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "s3-prefix",
+        "databricks-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder"
+      ],
+      "command": "cat < <(cat {mount}/procsub-missing); echo status:$?",
+      "expect": {
+        "exit": 0,
+        "stdout": "status:0\n",
+        "stderr": "cat: {mount}/procsub-missing: No such file or directory\n"
+      }
     }
   ]
 }

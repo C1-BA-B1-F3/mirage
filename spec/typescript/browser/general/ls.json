@@ -253,6 +253,11 @@
       "type": "bool"
     },
     {
+      "long": "--escape",
+      "short": "-b",
+      "type": "bool"
+    },
+    {
       "long": "--all",
       "short": "-a",
       "type": "bool"

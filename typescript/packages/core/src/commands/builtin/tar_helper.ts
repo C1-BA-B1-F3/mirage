@@ -26,6 +26,7 @@ export interface TarEntry {
   // its target in the header's linkname field instead of any content.
   isDir?: boolean
   linkname?: string
+  header?: TarHeader
 }
 
 function headerOf(entry: TarEntry): TarHeader {
@@ -47,19 +48,38 @@ export async function writeTar(entries: readonly TarEntry[]): Promise<Uint8Array
   // occupy no data blocks, whatever the caller put in `data`.
   return packTar(
     entries.map((entry) => {
-      const header = headerOf(entry)
+      const header = { mtime: new Date(0), ...headerOf(entry), ...entry.header }
       return header.type === 'file' ? { header, body: entry.data } : { header }
     }),
   )
 }
 
 export async function readTar(data: Uint8Array): Promise<TarEntry[]> {
+  if (data.byteLength < 512) throw new Error('Invalid tar header')
+  // Like Python's tarfile.open, identify an archive by its first header.
+  // modern-tar's strict mode also requires two EOF blocks and rejects
+  // trailing data, both of which GNU tar permits. Keep its tolerant reader
+  // after checking the header checksum (including old signed checksums).
+  const block = data.subarray(0, 512)
+  if (block.some((byte) => byte !== 0)) {
+    const field = new TextDecoder().decode(block.subarray(148, 156)).split('\0')[0]?.trim() ?? ''
+    let unsigned = 0
+    let signed = 0
+    for (const [index, byte] of block.entries()) {
+      const value = index >= 148 && index < 156 ? 32 : byte
+      unsigned += value
+      signed += value < 128 ? value : value - 256
+    }
+    const checksum = /^[0-7]+$/.test(field) ? Number.parseInt(field, 8) : -1
+    if (checksum !== unsigned && checksum !== signed) throw new Error('Invalid tar header')
+  }
   const parsed = await unpackTar(data)
   return parsed.map((entry) => {
     // A trailing slash marks a directory even on an archive written
     // before ustar typeflags (GNU tar has always spelled it that way).
     const isDir = entry.header.type === 'directory' || entry.header.name.endsWith('/')
     return {
+      header: entry.header,
       name: entry.header.name,
       data: entry.data ?? new Uint8Array(0),
       isFile: entry.header.type === 'file' && !isDir,

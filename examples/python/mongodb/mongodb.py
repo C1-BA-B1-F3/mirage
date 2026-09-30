@@ -129,12 +129,12 @@ async def main():
     print("\n" + "=" * 60)
     print("JQ on documents.jsonl")
     print("=" * 60)
-    await _run(ws, f'jq -r ".[] | .title" "{coll_doc}" | head -n 5')
-    await _run(ws, f'jq -r \'.[] | ._id["$oid"]\' "{coll_doc}" | head -n 5')
+    await _run(ws, f'jq -r ".title" "{coll_doc}" | head -n 5')
+    await _run(ws, f'jq -r \'._id["$oid"]\' "{coll_doc}" | head -n 5')
     await _run(
-        ws, f'jq -r ".[] | select(.year >= 2024) | .title" "{coll_doc}"'
+        ws, f'jq -r "select(.year >= 2024) | .title" "{coll_doc}"'
         " | head -n 5")
-    await _run(ws, f'jq -r ".[] | .body" "{text_doc}" | head -n 3')
+    await _run(ws, f'jq -r ".body" "{text_doc}" | head -n 3')
 
     print("\n" + "=" * 60)
     print("FIND")

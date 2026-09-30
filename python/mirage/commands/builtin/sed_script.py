@@ -283,7 +283,7 @@ def parse_one_command(rest: str) -> tuple[SedCommand, str]:
     if ch == ":":
         label = ""
         rest = rest[1:]
-        while rest and rest[0] not in (";", "}"):
+        while rest and rest[0] not in (";", "}", "\n"):
             label += rest[0]
             rest = rest[1:]
         return {
@@ -293,7 +293,7 @@ def parse_one_command(rest: str) -> tuple[SedCommand, str]:
     if ch == "b":
         label = ""
         rest = rest[1:]
-        while rest and rest[0] not in (";", "}"):
+        while rest and rest[0] not in (";", "}", "\n"):
             label += rest[0]
             rest = rest[1:]
         return {
@@ -306,7 +306,7 @@ def parse_one_command(rest: str) -> tuple[SedCommand, str]:
     if ch == "t":
         label = ""
         rest = rest[1:]
-        while rest and rest[0] not in (";", "}"):
+        while rest and rest[0] not in (";", "}", "\n"):
             label += rest[0]
             rest = rest[1:]
         return {

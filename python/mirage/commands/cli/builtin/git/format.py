@@ -19,6 +19,8 @@ from dulwich.objects import Commit
 
 from mirage.commands.cli.builtin.git.errors import (BadPrettyError,
                                                     UnsupportedPrettyError)
+from mirage.commands.cli.builtin.git.mailmap import (MailmapEntry,
+                                                     mapped_identity)
 from mirage.shell.bytes import byte_char
 
 SHORT_SHA = 7
@@ -205,9 +207,11 @@ def message_block(commit: Commit) -> list[str]:
     return [f"{INDENT}{line}" for line in text.split("\n")]
 
 
-def entry(commit: Commit,
-          length: int = SHORT_SHA,
-          date: str = "default") -> list[str]:
+def entry(
+    commit: Commit,
+    length: int = SHORT_SHA,
+    date: str = "default",
+    mailmap: tuple[MailmapEntry, ...] = ()) -> list[str]:
     """A full log entry: the header block and the indented message.
 
     A merge carries an extra ``Merge:`` line naming its parents in
@@ -222,8 +226,9 @@ def entry(commit: Commit,
     if len(commit.parents) > 1:
         lines.append(f"Merge: "
                      f"{' '.join(short(p, length) for p in commit.parents)}")
+    author = mapped_identity(commit.author.decode('utf-8', 'replace'), mailmap)
     lines.extend([
-        f"Author: {commit.author.decode('utf-8', errors='replace')}",
+        f"Author: {author}",
         "Date:   " +
         git_date(commit.author_time, commit.author_timezone, date),
         "",
@@ -253,10 +258,12 @@ def _subject_only_block(commit: Commit) -> list[str]:
     return [f"{INDENT}{subject(commit)}"]
 
 
-def preset_block(commit: Commit,
-                 kind: str,
-                 length: int,
-                 date: str = "default") -> list[str]:
+def preset_block(
+    commit: Commit,
+    kind: str,
+    length: int,
+    date: str = "default",
+    mailmap: tuple[MailmapEntry, ...] = ()) -> list[str]:
     """One commit as a block preset renders it (short/medium/full/fuller).
 
     Pinned against git 2.50: ``short`` is the id, author and indented
@@ -279,9 +286,11 @@ def preset_block(commit: Commit,
             *message_block(commit)
         ]
     if kind == "medium":
-        return entry(commit, length, date)
-    author = commit.author.decode("utf-8", errors="replace")
-    committer = commit.committer.decode("utf-8", errors="replace")
+        return entry(commit, length, date, mailmap)
+    author = mapped_identity(commit.author.decode("utf-8", errors="replace"),
+                             mailmap)
+    committer = mapped_identity(
+        commit.committer.decode("utf-8", errors="replace"), mailmap)
     lines = [f"commit {commit.id.decode()}", *_merge_line(commit, length)]
     if kind == "short":
         lines.extend([f"Author: {author}", "", *_subject_only_block(commit)])
@@ -363,11 +372,13 @@ def decoration_names(decor: Decorations | None, commit: Commit) -> list[str]:
     return decor.get(commit.id, [])
 
 
-def render_template(template: str,
-                    commit: Commit,
-                    length: int,
-                    decor: Decorations | None,
-                    date: str = "default") -> str:
+def render_template(
+    template: str,
+    commit: Commit,
+    length: int,
+    decor: Decorations | None,
+    date: str = "default",
+    mailmap: tuple[MailmapEntry, ...] = ()) -> str:
     """Expand a format:/tformat: template for one commit.
 
     The scan mirrors git's pretty.c behavior pinned in docker: an
@@ -400,7 +411,8 @@ def render_template(template: str,
             i += 2
             continue
         if marker in ("a", "c") and i + 2 < len(template):
-            pair = _ident_placeholder(marker, template[i + 2], commit, date)
+            pair = _ident_placeholder(marker, template[i + 2], commit, date,
+                                      mailmap)
             if pair is not None:
                 out.append(pair)
                 i += 3
@@ -456,12 +468,11 @@ def _simple_placeholder(marker: str, commit: Commit, message: str, length: int,
     return None
 
 
-def _ident_placeholder(who: str, field: str, commit: Commit,
-                       date: str) -> str | None:
+def _ident_placeholder(who: str, field: str, commit: Commit, date: str,
+                       mailmap: tuple[MailmapEntry, ...]) -> str | None:
     """An author/committer placeholder's value (%an, %cd, ...).
 
-    %aN/%aE are the mailmap variants; no mailmap is ever loaded, so
-    they read as their plain forms.
+    Uppercase identity placeholders always apply the worktree mailmap.
 
     Args:
         who (str): ``a`` or ``c``.
@@ -469,6 +480,9 @@ def _ident_placeholder(who: str, field: str, commit: Commit,
         commit (Commit): the commit to render.
     """
     ident = commit.author if who == "a" else commit.committer
+    if field in ("N", "E"):
+        ident = mapped_identity(ident.decode("utf-8", "replace"),
+                                mailmap).encode()
     time = commit.author_time if who == "a" else commit.commit_time
     zone = commit.author_timezone if who == "a" else commit.commit_timezone
     if field in ("n", "N"):

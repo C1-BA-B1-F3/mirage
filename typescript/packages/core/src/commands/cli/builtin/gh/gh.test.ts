@@ -28,9 +28,10 @@ import { issueComments } from '../../../../core/github/issue.ts'
 import { commentsFor, commentsText } from './issue.ts'
 import { GH } from './index.ts'
 import { PathSpec } from '../../../../types.ts'
+import { PartialOutputError } from '../../../errors.ts'
 import { IOResult, materialize } from '../../../../io/types.ts'
 import { api } from './api.ts'
-import { fork, listCmd, rename, summary, view } from './repo.ts'
+import { deleteCmd, editCmd, fork, listCmd, rename, summary, view } from './repo.ts'
 
 const DEC = new TextDecoder()
 
@@ -43,7 +44,7 @@ interface Call {
 
 const CALLS: Call[] = []
 let REPLY: unknown = {}
-let RESPONSES: GitHubResponse[] = []
+let RESPONSES: (GitHubResponse | GitHubApiError)[] = []
 
 class FakeTransport implements GitHubTransport {
   get(path: string, params?: Record<string, string>): Promise<unknown> {
@@ -75,7 +76,8 @@ class FakeTransport implements GitHubTransport {
     if (params !== undefined) call.params = params
     if (headers !== undefined) call.headers = headers
     CALLS.push(call)
-    return Promise.resolve(RESPONSES.shift() ?? { data: REPLY, status: 200, headers: {} })
+    const next = RESPONSES.shift() ?? { data: REPLY, status: 200, headers: {} }
+    return next instanceof Error ? Promise.reject(next) : Promise.resolve(next)
   }
 }
 
@@ -117,6 +119,7 @@ describe('gh tree', () => {
   it('registers itself under the grammar gh uses', () => {
     expect(cliSpecFor('gh')).toBe(GH)
     expect(GH.subcommands.map((c) => c.name)).toEqual([
+      'auth',
       'version',
       'api',
       'issue',
@@ -134,6 +137,8 @@ describe('gh tree', () => {
       'create',
       'fork',
       'rename',
+      'edit',
+      'delete',
     ])
     const groups = Object.fromEntries(
       GH.subcommands.map((group) => [group.name, group.subcommands.map((leaf) => leaf.name)]),
@@ -172,7 +177,7 @@ describe('gh repo', () => {
     expect(CALLS).toEqual([
       {
         method: 'POST',
-        path: '/graphql',
+        path: 'graphql',
         body: {
           query:
             'query RepositoryInfo($owner: String!, $name: String!) {\n' +
@@ -181,7 +186,15 @@ describe('gh repo', () => {
         },
       },
     ])
-    expect(out).toBe('{\n  "name": "r",\n  "parent": null\n}\n')
+    expect(out).toBe('{"name":"r","parent":null}\n')
+  })
+
+  // Go's encoder, which gh's exporter uses, escapes the two Unicode line
+  // separators; with HTML escaping off, `<`, `>` and `&` stay raw.
+  it("prints JSON as gh does: compact, in Go's escaping", async () => {
+    reset({ data: { repository: { description: 'a<b>&c\u{2028}d\u{2029}\b\u{e9}' } } })
+    const out = text(await view(inv(['o/r'], { json: 'description' })))
+    expect(out).toBe('{"description":"a<b>&c\\u2028d\\u2029\\b\u{e9}"}\n')
   })
 
   // gh decodes the answer into Go structs and prints those: a null string is
@@ -317,6 +330,89 @@ describe('gh repo', () => {
 
   // gh takes the new name as the operand and the repository to rename as
   // -R, which is the reverse of what the shape of the line suggests.
+  it('edits the settings named in one PATCH and prints nothing', async () => {
+    reset({ names: ['old', 'keep'], data: { repository: { viewerCanAdminister: true } } })
+    const out = await editCmd(
+      inv(['o/r'], {
+        description: 'd',
+        enable_wiki: 'false',
+        template: true,
+        enable_secret_scanning: 'false',
+        add_topic: ['new,keep'],
+        remove_topic: ['old'],
+      }),
+    )
+    expect(out === null ? '' : text(out)).toBe('')
+    expect(CALLS.map((call) => [call.method, call.path, call.body])).toEqual([
+      ['POST', 'graphql', expect.objectContaining({ variables: { owner: 'o', name: 'r' } })],
+      [
+        'PATCH',
+        '/repos/o/r',
+        {
+          description: 'd',
+          has_wiki: false,
+          is_template: true,
+          security_and_analysis: { secret_scanning: { status: 'disabled' } },
+        },
+      ],
+      ['GET', '/repos/o/r/topics', undefined],
+      ['PUT', '/repos/o/r/topics', { names: ['keep', 'new'] }],
+    ])
+  })
+
+  it('refuses a security edit the viewer cannot administer', async () => {
+    reset({ data: { repository: { viewerCanAdminister: false } } })
+    await expect(editCmd(inv(['o/r'], { enable_secret_scanning: true }))).rejects.toThrow(
+      'you do not have sufficient permissions to edit repository security and analysis features',
+    )
+    expect(CALLS.map((call) => call.method)).toEqual(['POST'])
+  })
+
+  it('leaves the topics alone when the edit changes none', async () => {
+    reset({ names: ['keep'] })
+    await editCmd(inv(['o/r'], { add_topic: ['keep'], remove_topic: ['gone'] }))
+    expect(CALLS.map((call) => `${call.method} ${call.path}`)).toEqual(['GET /repos/o/r/topics'])
+  })
+
+  it.each([
+    [{}, 'specify properties to edit when not running interactively'],
+    [
+      { visibility: 'private' },
+      'use of --visibility flag requires --accept-visibility-change-consequences flag',
+    ],
+  ])('refuses %o as gh does without a terminal', async (flags, message) => {
+    reset()
+    await expect(editCmd(inv(['o/r'], flags))).rejects.toThrow(message)
+    expect(CALLS).toEqual([])
+  })
+
+  it('deletes a named repository, reading a bare name as the viewer', async () => {
+    reset({ login: 'me' })
+    const out = await deleteCmd(inv(['tools'], { yes: true }))
+    expect(out === null ? '' : text(out)).toBe('')
+    expect(CALLS.map((call) => `${call.method} ${call.path}`)).toEqual([
+      'GET /user',
+      'DELETE /repos/me/tools',
+    ])
+  })
+
+  it('warns that --confirm is --yes under its deprecated name', async () => {
+    reset()
+    const out = await deleteCmd(inv(['o/r'], { confirm: true }))
+    expect(DEC.decode(out?.[1].stderr as Uint8Array)).toBe(
+      'Flag --confirm has been deprecated, use `--yes` instead\n',
+    )
+  })
+
+  it.each([
+    [[], { yes: true }, 'cannot non-interactively delete current repository'],
+    [['o/r'], {}, '--yes required when not running interactively'],
+  ])('refuses to delete %o %o without a terminal', async (texts, flags, message) => {
+    reset()
+    await expect(deleteCmd(inv(texts, flags))).rejects.toThrow(message)
+    expect(CALLS).toEqual([])
+  })
+
   it('renames the -R repository to the operand', async () => {
     reset({ full_name: 'me/after' })
     await rename(inv(['after'], { repo: 'me/before' }))
@@ -426,6 +522,15 @@ describe('gh api', () => {
     expect(CALLS[0]?.path).toBe('/user')
   })
 
+  // gh sends `graphql` alone to the GraphQL endpoint (`p == "graphql"`) and
+  // any other spelling, `/graphql` included, under the REST base.
+  it('names GraphQL by the bare graphql endpoint alone', async () => {
+    reset({})
+    await api(inv(['graphql'], { raw_field: ['query={ viewer { login } }'] }))
+    await api(inv(['/graphql']))
+    expect(CALLS.map((call) => call.path)).toEqual(['graphql', '/graphql'])
+  })
+
   it('refuses a field that is not key=value', async () => {
     reset({})
     await expect(api(inv(['x'], { raw_field: ['nope'] }))).rejects.toThrow(/key=value/)
@@ -527,7 +632,29 @@ describe('gh api', () => {
     ]
     const out = await api(inv(['items'], { paginate: true, slurp: true }))
     expect(CALLS.map((call) => call.path)).toEqual(['/items', '/items?page=2'])
-    expect(out === null ? '' : JSON.parse(text(out))).toEqual([[{ id: 1 }], [{ id: 2 }]])
+    expect(out === null ? '' : text(out)).toBe('[[{"id":1}],[{"id":2}]]')
+  })
+
+  // gh copies each body out verbatim, the vendor's compact text with no
+  // newline added, and a paginated run streams array pages as one array
+  // (its paginatedArrayReader); an empty page leaves a space behind.
+  it.each([
+    ['one body', [[{ id: 1 }]], false, '[{"id":1}]'],
+    ['array pages', [[1, 2], [3]], true, '[1,2,3]'],
+    ['an empty page between', [[1], [], [2]], true, '[1 ,2]'],
+    ['object pages', [{ a: 1 }, { a: 2 }], true, '{"a":1}{"a":2}'],
+  ] as const)('prints %s as gh does', async (_name, bodies, paginate, stdout) => {
+    reset()
+    RESPONSES = bodies.map((data, index) => ({
+      data,
+      status: 200,
+      headers:
+        index < bodies.length - 1
+          ? { link: `<http://fake/items?page=${String(index + 2)}>; rel="next"` }
+          : {},
+    }))
+    const out = await api(inv(['items'], paginate ? { paginate: true } : {}))
+    expect(out === null ? '' : text(out)).toBe(stdout)
   })
 
   it('strips the Enterprise API prefix from Link pages', async () => {
@@ -551,10 +678,99 @@ describe('gh api', () => {
     const out = await api(inv(['x'], { method: 'POST', silent: true }))
     expect(out === null ? '' : text(out)).toBe('')
   })
+
+  it('copies a body that is not text out as its bytes', async () => {
+    reset()
+    RESPONSES = [{ data: new Uint8Array([0x50, 0x4b, 0xff, 0x00]), status: 200, headers: {} }]
+    const out = await api(inv(['repos/o/r/actions/runs/1/logs']))
+    expect(out?.[0]).toEqual(new Uint8Array([0x50, 0x4b, 0xff, 0x00]))
+  })
+})
+
+// gh 2.85's `-i` (api.go processResponse): the protocol and status, every
+// header but Status in name order ending `\r\n`, a blank `\r\n` line, then
+// the body, for every response, the failing one included.
+describe('gh api --include', () => {
+  const HEADERS = {
+    'x-github-request-id': 'AB:CD',
+    'content-type': 'application/json; charset=utf-8',
+    status: '200 OK',
+  }
+  const HEAD =
+    'HTTP/1.1 200 OK\nContent-Type: application/json; charset=utf-8\r\nX-Github-Request-Id: AB:CD\r\n\r\n'
+
+  it('prints the status line and headers before the body', async () => {
+    reset()
+    RESPONSES = [{ data: { a: 1 }, status: 200, headers: HEADERS }]
+    const out = await api(inv(['x'], { include: true }))
+    expect(out === null ? '' : text(out)).toBe(`${HEAD}{"a":1}`)
+  })
+
+  it('drops the headers of the encoded body it no longer prints', async () => {
+    reset()
+    RESPONSES = [
+      {
+        data: null,
+        status: 204,
+        headers: { 'content-encoding': 'gzip', 'content-length': '20', etag: 'W/"1"' },
+      },
+    ]
+    const out = await api(inv(['x'], { include: true, method: 'DELETE' }))
+    expect(out === null ? '' : text(out)).toBe('HTTP/1.1 204 No Content\nEtag: W/"1"\r\n\r\n')
+  })
+
+  it('heads every page, a newline between, and prints pages as they came', async () => {
+    reset()
+    RESPONSES = [
+      { data: [1], status: 200, headers: { link: '<http://fake/x?page=2>; rel="next"' } },
+      { data: [2], status: 200, headers: {} },
+    ]
+    const out = await api(inv(['x'], { include: true, paginate: true }))
+    expect(out === null ? '' : text(out)).toBe(
+      'HTTP/1.1 200 OK\nLink: <http://fake/x?page=2>; rel="next"\r\n\r\n[1]\nHTTP/1.1 200 OK\n\r\n[2]',
+    )
+  })
+
+  it("opens each --slurp page before its head, as gh's writer does", async () => {
+    reset()
+    RESPONSES = [
+      { data: [1], status: 200, headers: { link: '<http://fake/x?page=2>; rel="next"' } },
+      { data: [2], status: 200, headers: {} },
+    ]
+    const out = await api(inv(['x'], { include: true, paginate: true, slurp: true }))
+    expect(out === null ? '' : text(out)).toBe(
+      '[HTTP/1.1 200 OK\nLink: <http://fake/x?page=2>; rel="next"\r\n\r\n[1]\n,HTTP/1.1 200 OK\n\r\n[2]]',
+    )
+  })
+
+  it('keeps the heads under --silent and puts them before --jq output', async () => {
+    reset()
+    RESPONSES = [{ data: { a: 1 }, status: 200, headers: HEADERS }]
+    const silent = await api(inv(['x'], { include: true, silent: true }))
+    expect(silent === null ? '' : text(silent)).toBe(HEAD)
+    RESPONSES = [{ data: { a: 1 }, status: 200, headers: HEADERS }]
+    const filtered = await api(inv(['x'], { include: true, jq: '.a' }))
+    expect(filtered === null ? '' : text(filtered)).toBe(`${HEAD}1\n`)
+  })
+
+  it('heads a failing response too', async () => {
+    reset()
+    RESPONSES = [
+      new GitHubApiError('Not Found', 404, '{"message":"Not Found"}', 'u', {
+        'content-type': 'application/json',
+      }),
+    ]
+    const out = await api(inv(['x'], { include: true }))
+    expect(out === null ? '' : text(out)).toBe(
+      'HTTP/1.1 404 Not Found\nContent-Type: application/json\r\n\r\n{"message":"Not Found"}',
+    )
+    expect(DEC.decode(out?.[1].stderr as Uint8Array)).toBe('gh: Not Found (HTTP 404)\n')
+  })
 })
 
 // `--jq` renders the way gh 2.85 does, probed live: a string raw, null as
-// an empty line, everything else as compact JSON, one output per line.
+// an empty line, everything else as compact JSON with its keys sorted, one
+// output per line.
 describe('gh api --jq', () => {
   it('prints a string raw', async () => {
     reset({ full_name: 'o/r' })
@@ -565,7 +781,49 @@ describe('gh api --jq', () => {
   it('prints non-strings as compact JSON', async () => {
     reset({ name: 'r', count: 2, ok: true })
     const out = await api(inv(['repos/o/r'], { jq: '{name: .name, count: .count}, .ok' }))
-    expect(out === null ? '' : text(out)).toBe('{"name":"r","count":2}\ntrue\n')
+    expect(out === null ? '' : text(out)).toBe('{"count":2,"name":"r"}\ntrue\n')
+  })
+
+  // go-gh prints a number on its own line in fixed notation, whole with no
+  // decimals and otherwise with two, rounded half to even as strconv rounds;
+  // anything else goes through Go's json.Marshal: keys sorted, <, > and &
+  // escaped for HTML and U+2028 and U+2029 for JavaScript, DEL raw, and
+  // numbers spelled as ES6 spells them. Pinned against gh 2.85's go-gh with
+  // `gh api rate_limit --jq`.
+  it.each([
+    ['1.5', '1.50'],
+    ['0.125', '0.12'],
+    ['0.375', '0.38'],
+    ['-0.125', '-0.12'],
+    ['2.675', '2.67'],
+    ['1e-7', '0.00'],
+    ['3.0', '3'],
+    ['1e21', '1000000000000000000000'],
+    ['.n / 3', '1666.67'],
+    ['[.n / 3]', '[1666.6666666666667]'],
+    ['[1.5, 1e21, 1e-7, 0.000001, 100]', '[1.5,1e+21,1e-7,0.000001,100]'],
+    ['{"b": 1, "a": {"d": 2, "c": 3}}', '{"a":{"c":3,"d":2},"b":1}'],
+    ['{"x": "<&>"}', '{"x":"\\u003c\\u0026\\u003e"}'],
+    [
+      '["\\u2028", "\\u2029", "\\u007f", "é", "\\u0001", "\\b"]',
+      '["\\u2028","\\u2029","\x7f","é","\\u0001","\\b"]',
+    ],
+    ['[true, null, "x"]', '[true,null,"x"]'],
+  ])('prints %s as go-gh does', async (program, line) => {
+    reset({ n: 5000 })
+    const out = await api(inv(['repos/o/r'], { jq: program }))
+    expect(out === null ? '' : text(out)).toBe(`${line}\n`)
+  })
+
+  // gh prints a computed negative zero as -0, but jq.py hands it to Python as
+  // the int 0, so both hosts print 0.
+  it.each([
+    ['.n * 0 * -1', '0'],
+    ['[.n * 0 * -1]', '[0]'],
+  ])('prints the negative zero of %s as 0', async (program, line) => {
+    reset({ n: 5000 })
+    const out = await api(inv(['repos/o/r'], { jq: program }))
+    expect(out === null ? '' : text(out)).toBe(`${line}\n`)
   })
 
   it('prints null as an empty line', async () => {
@@ -578,6 +836,68 @@ describe('gh api --jq', () => {
     reset({ a: 'x', b: 'y' })
     const out = await api(inv(['repos/o/r'], { jq: '.a, .b' }))
     expect(out === null ? '' : text(out)).toBe('x\ny\n')
+  })
+
+  // go-gh's gojq ends the output at `halt` and fails at halt_error, pinned
+  // against gh: `halt error: <message>`, exit 1 whatever the code.
+  it('ends the output at halt', async () => {
+    reset({ a: 'x' })
+    const out = await api(inv(['repos/o/r'], { jq: '.a, halt, .a' }))
+    expect(out === null ? '' : text(out)).toBe('x\n')
+  })
+
+  it.each([
+    ['"x" | halt_error(3)', 'halt error: x'],
+    ['{"a":1} | halt_error', 'halt error: {"a":1}'],
+    ['[.a] | map({v: .} | halt_error(0))', 'halt error: {"v":"x"}'],
+  ])('fails at %s', async (program, message) => {
+    reset({ a: 'x' })
+    await expect(api(inv(['repos/o/r'], { jq: program }))).rejects.toThrow(message)
+  })
+
+  // gojq reports what the program raised with `error` as `error: <value>`,
+  // anything but a string in gojq's own compact JSON (keys sorted), and a
+  // builtin's error in words mirage's jq does not share, so jq 1.8.2's stand,
+  // except for the builtins gojq writes in jq. Pinned against gh 2.85's gojq
+  // with `gh api rate_limit --jq`.
+  it.each([
+    ['error("boom")', 'error: boom'],
+    ['"x" | error', 'error: x'],
+    ['error(null)', 'error: null'],
+    ['error(error)', 'error: {"a":"x"}'],
+    ['error({"b": 1, "a": [2, "x"]})', 'error: {"a":[2,"x"],"b":1}'],
+    ['error(["\\u007f", "é", "<&>", "\\u0001"])', 'error: ["\\u007f","é","<&>","\\u0001"]'],
+    ['error(1.0)', 'error: 1'],
+    ['error(1e21)', 'error: 1e+21'],
+    ['error(0.0000001)', 'error: 1e-7'],
+    ['[error("in")]', 'error: in'],
+    ['first(error("in"))', 'error: in'],
+    ['try (.a | .b) catch error', 'error: Cannot index string with string ("b")'],
+    ['.a | .b', 'Cannot index string with string ("b")'],
+    ['label $f | .a | .b', 'Cannot index string with string ("b")'],
+    ['def error: 7; error | .b', 'Cannot index number with string ("b")'],
+    ['limit(-1; .a)', "error: limit doesn't support negative count"],
+    ['skip(-1; .a)', "error: skip doesn't support negative count"],
+    ['nth(-1; .a)', "error: nth doesn't support negative index"],
+    ['{"b": 1, "a": 2} | halt_error(1)', 'halt error: {"a":2,"b":1}'],
+  ])('fails %s the way gojq reports it', async (program, message) => {
+    reset({ a: 'x' })
+    const failure = await api(inv(['repos/o/r'], { jq: program })).catch((error: unknown) => error)
+    expect(failure).toBeInstanceOf(PartialOutputError)
+    const partial = failure as PartialOutputError
+    expect([partial.message, new TextDecoder().decode(partial.stdout)]).toEqual([message, ''])
+  })
+
+  it.each([
+    ['.a, ("y" | halt_error(1))', 'halt error: y'],
+    ['.a, error("boom")', 'error: boom'],
+    ['(try error(.a) catch .), error("y")', 'error: y'],
+  ])('keeps what it printed before %s failed', async (program, message) => {
+    reset({ a: 'x' })
+    const failure = await api(inv(['repos/o/r'], { jq: program })).catch((error: unknown) => error)
+    expect(failure).toBeInstanceOf(PartialOutputError)
+    const partial = failure as PartialOutputError
+    expect([partial.message, new TextDecoder().decode(partial.stdout)]).toEqual([message, 'x\n'])
   })
 })
 
@@ -617,7 +937,7 @@ it('follows GraphQL comment cursors and propagates errors', async () => {
   expect(request).toHaveBeenNthCalledWith(
     2,
     'POST',
-    '/graphql',
+    'graphql',
     expect.objectContaining({ variables: { owner: 'o', repo: 'r', number: 1, cursor: 'next' } }),
   )
   request.mockResolvedValueOnce({ errors: [{ message: 'Could not resolve repository' }] })
@@ -734,6 +1054,12 @@ it.each([
     'gh: HTTP 422\n',
   ],
   [{ slurp: true }, '', '[{"value":"first"},]', 'gh: HTTP 422\n'],
+  [
+    {},
+    '{"message":"Validation Failed"}',
+    '{"value":"first"}{"message":"Validation Failed"}',
+    'gh: Validation Failed (HTTP 422)\n',
+  ],
   [{ silent: true }, '{"message":"Validation Failed"}', '', 'gh: Validation Failed (HTTP 422)\n'],
 ] as const)(
   'keeps rendered pages when a later request fails: %s %j',
@@ -758,6 +1084,51 @@ it.each([
     }
   },
 )
+
+// gh runs `--jq` over each page as it lands, so a failure on a later page
+// keeps the lines the earlier pages printed.
+it.each([
+  ['if .value == "second" then "y" | halt_error(1) else .value end', 'halt error: y'],
+  ['if .value == "second" then error("boom") else .value end', 'error: boom'],
+])('keeps the earlier pages when --jq %s fails on a later one', async (program, message) => {
+  const request = vi
+    .spyOn(FakeTransport.prototype, 'requestWithResponse')
+    .mockResolvedValueOnce({
+      data: { value: 'first' },
+      status: 200,
+      headers: { link: '</page2>; rel="next"' },
+    })
+    .mockResolvedValueOnce({ data: { value: 'second' }, status: 200, headers: {} })
+  try {
+    const failure = await api(inv(['page1'], { paginate: true, jq: program })).catch(
+      (error: unknown) => error,
+    )
+    expect(failure).toBeInstanceOf(PartialOutputError)
+    const partial = failure as PartialOutputError
+    expect([partial.message, DEC.decode(partial.stdout)]).toEqual([message, 'first\n'])
+  } finally {
+    request.mockRestore()
+  }
+})
+
+// A failing response after an array page is still a page to gh, so that
+// array's closing bracket stays withheld and the failing body runs on.
+it('leaves an array page open when a failing page follows it', async () => {
+  const request = vi
+    .spyOn(FakeTransport.prototype, 'requestWithResponse')
+    .mockResolvedValueOnce({ data: [1], status: 200, headers: { link: '</page2>; rel="next"' } })
+    .mockRejectedValueOnce(
+      new GitHubApiError('Validation Failed', 422, '{"message":"Validation Failed"}'),
+    )
+  try {
+    const result = await api(inv(['page1'], { paginate: true }))
+    if (result === null) throw new Error('missing API result')
+    expect(DEC.decode(await materialize(result[0]))).toBe('[1{"message":"Validation Failed"}')
+    expect(result[1].exitCode).toBe(1)
+  } finally {
+    request.mockRestore()
+  }
+})
 
 it.each([
   [{}, '{"errors":[{"message":"one"},{"message":"two"}],"data":null}'],

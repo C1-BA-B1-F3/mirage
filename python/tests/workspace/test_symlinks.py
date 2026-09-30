@@ -18,7 +18,7 @@ import pytest
 
 from mirage.policy import Deny
 from mirage.policy.base import Policy
-from mirage.types import FileStat, FileType, MountMode
+from mirage.types import FileStat, FileType, MountMode, PathSpec
 from mirage.vfs.ram import RAMVFS
 from mirage.workspace import Workspace
 
@@ -1617,3 +1617,17 @@ async def test_ln_relative_needs_symbolic_after_the_operand_count():
                         b"Try 'ln --help' for more information.\n")
     assert (await ws.shell("ln -rs /data/a.txt /data/d/rel")).exit_code == 0
     assert (await ws.shell("readlink /data/d/rel")).stdout == b"../a.txt\n"
+
+
+@pytest.mark.asyncio
+async def test_op_door_follows_relative_parent_targets_and_chains():
+    ws = _ws()
+    await ws.shell("mkdir /data/s; echo hello > /data/a.txt; "
+                   "ln -s ../next /data/s/al; ln -s ./a.txt /data/next")
+    path = PathSpec.from_str_path("/data/s/al")
+    st, _ = await ws.dispatch("stat", path)
+    assert st.type == FileType.FILE
+    assert st.size == 6
+    data, _ = await ws.dispatch("read", path, offset=1, size=3)
+    assert data == b"ell"
+    await ws.close()

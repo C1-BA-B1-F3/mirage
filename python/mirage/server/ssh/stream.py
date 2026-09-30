@@ -70,10 +70,15 @@ class ChannelInput:
 
     Args:
         process (asyncssh.SSHServerProcess[str]): the channel's process.
+        max_line (int | None): the longest line ``readline`` returns
+            before it answers ``Mark.LIMIT``; None for ``MAX_LINE``.
     """
 
-    def __init__(self, process: asyncssh.SSHServerProcess[str]) -> None:
+    def __init__(self,
+                 process: asyncssh.SSHServerProcess[str],
+                 max_line: int | None = None) -> None:
         self._process = process
+        self._max_line = MAX_LINE if max_line is None else max_line
         self._items: deque[bytes | Mark] = deque()
         self._buffered = 0
         self._closed = False
@@ -176,7 +181,7 @@ class ChannelInput:
                     return item
                 cut = item.find(b"\n")
                 size = len(item) if cut < 0 else cut
-                if len(line) + size > MAX_LINE:
+                if len(line) + size > self._max_line:
                     return Mark.LIMIT
                 if cut < 0:
                     self._items.popleft()

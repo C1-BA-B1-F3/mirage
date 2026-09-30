@@ -77,6 +77,24 @@ class ExitSignal(Exception):
                                if contained_code is not None else exit_code)
 
 
+class UnboundVariable(ExitSignal):
+    """``set -u`` reading a name that is not set.
+
+    ``$x``, ``${a[i]}``, or a variable an arithmetic expression reads.
+    GNU bash dies on it the way it dies on ``${x:?}``: status 127 at top
+    level, 1 from a containing subshell or pipeline segment.
+
+    Args:
+        name (str): the name as the message spells it (``a[i]`` for an
+            element).
+    """
+
+    def __init__(self, name: str) -> None:
+        super().__init__(127,
+                         stderr=f"bash: {name}: unbound variable\n".encode(),
+                         contained_code=1)
+
+
 class ReturnSignal(Exception):
 
     def __init__(self, exit_code: int = 0, stderr: bytes = b"") -> None:

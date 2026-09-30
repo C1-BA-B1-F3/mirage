@@ -28,10 +28,13 @@ export const githubFake: Fake<C> = {
     settings: 'GithubSetting',
     issues: 'GithubIssue',
     comments: 'GithubComment',
+    workflows: 'GithubWorkflow',
+    runs: 'GithubRun',
   },
   // A repository's files come from the directory its row names, and every
-  // repository starts with the same workflows, checks, statuses and one run.
-  // Neither is stateable in a fixture, so both happen here.
+  // repository starts with the same checks and statuses. Neither is stateable
+  // in a fixture, so both happen here, along with registering the workflow
+  // files each repository holds.
   afterSeed: seedRepos,
   routes: githubRoutes,
 }

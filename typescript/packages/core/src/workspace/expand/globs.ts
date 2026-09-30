@@ -15,7 +15,7 @@
 import { childMountNames, namespaceNames } from '../../ops/namespace_view.ts'
 import type { NamespaceLinks } from '../../ops/config.ts'
 import { mountKey } from '../../utils/key_prefix.ts'
-import { type FileStat, FileType, PathSpec } from '../../types.ts'
+import { FileStat, FileType, PathSpec } from '../../types.ts'
 import { isFsError } from '../../utils/errors.ts'
 import type { MountEntry } from '../mount/mount.ts'
 import type { MountRegistry } from '../mount/registry.ts'
@@ -376,11 +376,7 @@ async function walkGlobstar(
 // anything else is asked of the mount that owns the link-resolved path, one
 // stat per match. That mount is readied first, as levelMatches readies one
 // before listing it, because a link can point into a mount nothing has
-// touched yet. python's twin then reaches the mount's op table; a TypeScript
-// mount entry keeps no op table of its own (ops live on the workspace
-// registry), so the VFS is asked through the same direct door the
-// listings use. A VFS with no stat of its own cannot tell, so its
-// match is kept.
+// touched yet. The mount's op table supplies stat; an unclassified match is dropped.
 async function isDirectory(
   registry: MountRegistry,
   mount: MountEntry,
@@ -399,15 +395,18 @@ async function isDirectory(
   const owner = mountOf(registry, real, mount)
   const prefix = rstripSlash(owner.prefix)
   if (rstripSlash(real) === prefix) return true
-  if (!owner.hasOp('stat')) return true
-  let row: FileStat
+  let row: unknown
   try {
-    row = (await owner.executeOp('stat', real)) as FileStat
+    await owner.ensureReady()
+    row =
+      registry.opStat === null
+        ? await owner.executeOp('stat', real)
+        : await registry.opStat(owner, PathSpec.fromStrPath(real, mountKey(real, prefix)))
   } catch (err) {
     if (isFsError(err)) return false
     throw err
   }
-  return row.type === FileType.DIRECTORY
+  return row instanceof FileStat && row.type === FileType.DIRECTORY
 }
 
 function withTrailingSlash(spec: PathSpec): PathSpec {

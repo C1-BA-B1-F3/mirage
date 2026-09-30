@@ -12,11 +12,11 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import type { Ctx, Reply } from '../kit/typescript/index.ts'
+import type { Ctx, JsonValue, Reply } from '../kit/typescript/index.ts'
 import type { C } from './config.ts'
 import { DEFAULT_API_VERSION, MAX_PAGE_SIZE } from './config.ts'
-import { databaseRows, filterRefusal, keepProperties, searchResults } from './search.ts'
-import { childrenOf, markdownOf, metaOf } from './store.ts'
+import { databaseRows, filterRefusal, keepProperties, propByRef, searchResults } from './search.ts'
+import { childrenOf, dataSourceOwner, markdownOf, metaOf } from './store.ts'
 import type { BlockRow, DatabaseRow, Json, PageRow, UserRow } from './types.ts'
 import {
   apiError,
@@ -25,7 +25,6 @@ import {
   botJson,
   cursorOf,
   dataSourceJson,
-  databaseIdOf,
   databaseJson,
   intOr,
   listTypeOf,
@@ -79,6 +78,60 @@ export async function retrievePage(ctx: Ctx<C>): Promise<Reply> {
   if (row === null) return notFound('page', id)
   const body = keepProperties(pageJson(row, apiVersion(ctx)), propertyRefs(ctx))
   return { status: 200, body }
+}
+
+// Title, rich text, people and relation answer as a list with one property
+// item per element, even for one element, and a rollup as a list whose result
+// rides on `property_item`; every other type is one property item (API
+// reference, property item object). A list pages 100 at a time unless
+// `page_size` asks for fewer, and `next_url` is the same request resumed at the
+// next cursor. The fake computes no rollup, so a rollup's list is empty and its
+// stored value is the result, where live lists the related rows' items. A
+// missing page's wording is the probed one `retrievePage` answers; a missing
+// property's is the same sentence, not probed.
+const LISTED = new Set(['title', 'rich_text', 'people', 'relation'])
+
+export async function retrievePageProperty(ctx: Ctx<C>): Promise<Reply> {
+  const id = ctx.params.id ?? ''
+  const ref = ctx.params.property ?? ''
+  const row = (await ctx.db.notionPage.findFirst({
+    where: { tenant: ctx.tenant, id },
+  })) as PageRow | null
+  if (row === null) return notFound('page', id)
+  const prop = propByRef({ properties: JSON.parse(row.propertiesJson) as Json }, ref)
+  if (prop === undefined) return notFound('property', ref)
+  const type = typeof prop.type === 'string' ? prop.type : ''
+  const item = (value: JsonValue | undefined): Json => ({
+    object: 'property_item',
+    id: prop.id ?? null,
+    type,
+    [type]: value ?? null,
+  })
+  if (!LISTED.has(type) && type !== 'rollup') return { status: 200, body: item(prop[type]) }
+  const value = prop[type]
+  const reply = pageOf(
+    LISTED.has(type) && Array.isArray(value) ? value.map(item) : [],
+    cursorOf(ctx.query.get('start_cursor')),
+    intOr(ctx.query.get('page_size'), MAX_PAGE_SIZE),
+    'property_item',
+    (_item, at) => String(at),
+  )
+  if (reply.status !== 200) return reply
+  const body = reply.body as Json
+  let nextUrl: string | null = null
+  if (typeof body.next_cursor === 'string') {
+    const next = new URL(ctx.url)
+    next.pathname = `${ctx.runPrefix}${ctx.url.pathname}`
+    next.searchParams.set('start_cursor', body.next_cursor)
+    nextUrl = next.href
+  }
+  body.property_item = {
+    id: prop.id ?? null,
+    next_url: nextUrl,
+    type,
+    [type]: type === 'rollup' ? (value ?? null) : {},
+  }
+  return reply
 }
 
 export async function whoami(ctx: Ctx<C>): Promise<Reply> {
@@ -155,24 +208,31 @@ export async function pageMarkdown(ctx: Ctx<C>): Promise<Reply> {
 
 export async function retrieveDataSource(ctx: Ctx<C>): Promise<Reply> {
   const wanted = ctx.params.id ?? ''
-  const all = (await ctx.db.notionDatabase.findMany({
-    where: { tenant: ctx.tenant },
-  })) as DatabaseRow[]
-  const owner = databaseIdOf(wanted, all)
-  const row = all.find((d) => d.id === owner)
-  if (row === undefined) return notFound('data source', wanted)
+  const row = await dataSourceOwner(ctx.db, ctx.tenant, wanted)
+  if (row === null) return notFound('data source', wanted)
   return { status: 200, body: dataSourceJson(row) }
 }
 
 export async function queryDataSource(ctx: Ctx<C>): Promise<Reply> {
   const wanted = ctx.params.id ?? ''
   const body = asObject(ctx.json())
-  const all = (await ctx.db.notionDatabase.findMany({
-    where: { tenant: ctx.tenant },
-  })) as DatabaseRow[]
-  const owner = databaseIdOf(wanted, all)
+  const owner = await dataSourceOwner(ctx.db, ctx.tenant, wanted)
   if (owner === null) return notFound('data source', wanted)
-  return queryRows(ctx, owner, body)
+  return queryRows(ctx, owner.id, body)
+}
+
+// The fake models no page templates, so a data source lists none, in the
+// shape the API reference gives. A cursor is refused as any list refuses one
+// it never handed out.
+export async function listTemplates(ctx: Ctx<C>): Promise<Reply> {
+  const wanted = ctx.params.id ?? ''
+  if ((await dataSourceOwner(ctx.db, ctx.tenant, wanted)) === null) {
+    return notFound('data source', wanted)
+  }
+  const size = intOr(ctx.query.get('page_size'), MAX_PAGE_SIZE)
+  const listed = pageOf([], cursorOf(ctx.query.get('start_cursor')), size, 'template')
+  if (listed.status !== 200) return listed
+  return { status: 200, body: { templates: [], has_more: false, next_cursor: null } }
 }
 
 export async function retrieveDatabase(ctx: Ctx<C>): Promise<Reply> {

@@ -259,21 +259,20 @@ class MountEntry:
             return list(paths)
         async with self.use():
             if self.cache_manager is None:
-                return await self._run_glob(levels, paths, prefix)
+                return await self._run_glob(levels, paths, prefix,
+                                            self.index_store)
             async with self.cache_manager.mutation():
                 await self.ensure_ready()
-                return await self._run_glob(levels, paths, prefix)
+                index = self.cache_manager.scope_index_locked(self.index_store)
+                return await self._run_glob(levels, paths, prefix, index)
 
     async def _run_glob(self, levels: list[RegisteredOp],
-                        paths: list[PathSpec], prefix: str) -> list[PathSpec]:
-        # The raw store, not the cache-scoped view: the walk runs under
-        # the cache manager's mutation lock, which the view takes again.
-        index = self.index_store
+                        paths: list[PathSpec], prefix: str,
+                        index: IndexCacheStore) -> list[PathSpec]:
         out: list[PathSpec] = []
         for p in paths:
-            spec = (dataclasses.replace(p,
-                                        vfs_path=mount_key(p.virtual, prefix))
-                    if prefix and isinstance(p, PathSpec) else p)
+            spec = (dataclasses.replace(
+                p, vfs_path=mount_key(p.virtual, prefix)) if prefix else p)
             for op in levels:
                 matches = await op.fn(self.vfs.accessor, spec, index=index)
                 if matches is not None:

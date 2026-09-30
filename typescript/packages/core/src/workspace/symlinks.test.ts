@@ -1400,3 +1400,16 @@ describe('trailing slash on a link name', () => {
     expect([r.exitCode, dec(r.stdout)]).toEqual([0, '/data/sd\n'])
   })
 })
+
+it('follows parent-relative link chains through the op door', async () => {
+  const ws = buildWorkspace()
+  await ws.shell(
+    'mkdir /data/s; echo hello > /data/a.txt; ln -s ../next /data/s/al; ln -s ./a.txt /data/next',
+  )
+  const path = '/data/s/al'
+  const st = await ws.dispatch('stat', path)
+  expect(st).toMatchObject({ type: FileType.FILE, size: 6 })
+  const data = await ws.dispatch('read', path, [], { offset: 1, size: 3 })
+  expect(data).toEqual(new TextEncoder().encode('ell'))
+  await ws.close()
+})

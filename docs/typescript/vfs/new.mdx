@@ -116,6 +116,26 @@ supply `CommandIO` directly. The escape hatches remain:
 - `ops` layers an irregular VFS/FUSE handler over the derived set; one carrying no `filetype` shadows the derived op of the same name. `autoOps: false` opts out of deriving any. A verb the op table does not carry is not served: the mount answers `Operation not supported` for it, so a backend can be partial.
 - `sizesAlwaysKnown` declares that `stat` sizes every file without fetching it, which is also what makes the mount legal on FSKit. `supportsSnapshot` declares that `stat` fills `FileStat.fingerprint`; setting it without that is not drift detection.
 
+### How the driver connects to a workspace
+
+`BaseVFS` is the backend authoring API. Mount it once with
+`new Workspace({ "/jira": new JiraVFS(config) })`; consumers use workspace paths.
+
+| Consumer | Connection |
+| --- | --- |
+| Shell and coreutils | `commands()` derives generic commands from the adapter; the shell supplies expansion, pipes, redirects and session policy. |
+| Filesystem calls | `ops()` supplies the dispatcher's operations used by `ws.vfs`. |
+| CLIs | The host registers a `CLISpec` with `registerCli`. File-oriented handlers use `inv.doors.dispatch` and `inv.doors.ns`; mounting a driver does not install an account CLI. |
+| Runtimes | Runtimes wired to `RuntimeVFS` reach the same dispatcher. A process or remote runtime needs its configured mount bridge. |
+| Namespace | The workspace owns symlinks, nested mounts and metadata overlays; the backend implements its own tree. |
+
+Use `path.vfsPath` to address your backend and `path.virtual` for workspace
+paths. Use the index passed to callbacks: the mount scopes it for ownership
+and freshness. Put shared behavior in the adapter callbacks; an explicit
+`ops` override changes that operation, while a `commands` override changes
+that shell command. Optional mutations remain optional, and unsupported
+operations report `Operation not supported`.
+
 ### Native search and backend-specific core functions
 
 Builtin backends use the same `VFSAdapter` groups. Operation types live in
@@ -322,7 +342,7 @@ export class MyVFS extends BaseVFS {
 
 The mount registers both arrays when the driver is placed; a driver never registers anything onto itself.
 
-Set `cachesReads` true only for stable, read-mostly content. `BaseVFS` supplies a no-op `loadState()` and a 600 s `indexTtl`, so declare one only to change it. Override `getState()` to carry the (redacted) config, and `close()` to release any client handles, calling `super.close()`. The index store is the mount's, built when the driver is placed, so a driver never sees or closes one.
+Set `cachesReads` true only for stable, read-mostly content. `BaseVFS` supplies a no-op `loadState()` and a 600 s `indexTtl`, so declare one only to change it. A mount's read `ttl` caps listing lifetimes. Override `getState()` to carry the (redacted) config, and `close()` to release any client handles, calling `super.close()`. The index store is the mount's, built when the driver is placed, so a driver never sees or closes one.
 
 A backend whose content lives in a remote service keeps `needs_override: true` in that state. Both loaders refuse a missing live override; neither substitutes an empty RAM mount. A backend that owns portable content can implement `getState` and `loadState` and register a factory so snapshots rebuild it, as shown above.
 

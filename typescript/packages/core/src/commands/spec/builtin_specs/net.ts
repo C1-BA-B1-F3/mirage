@@ -54,6 +54,12 @@ export const SPECS: Record<string, CommandSpec> = {
         type: 'path',
         description: 'Write response body to the given file.',
       }),
+      new Option({
+        short: '-D',
+        long: '--dump-header',
+        type: 'path',
+        description: 'Write the received headers to the given file, - for stdout.',
+      }),
       new Option({ short: '-L', long: '--location', description: 'Follow HTTP redirects.' }),
       new Option({
         short: '-f',
@@ -82,10 +88,31 @@ export const SPECS: Record<string, CommandSpec> = {
       }),
       new Option({ short: '-I', long: '--head', description: 'Fetch the headers only.' }),
       new Option({
+        short: '-4',
+        long: '--ipv4',
+        description: 'Accept IPv4 preference (transport selects the address family).',
+      }),
+      new Option({
+        short: '-6',
+        long: '--ipv6',
+        description: 'Accept IPv6 preference (transport selects the address family).',
+      }),
+      new Option({
+        short: '-w',
+        long: '--write-out',
+        type: 'str',
+        description: 'Print transfer information after completion.',
+      }),
+      new Option({
         short: '-m',
         long: '--max-time',
         type: 'float',
         description: 'Give up after this many seconds.',
+      }),
+      new Option({
+        short: '-k',
+        long: '--insecure',
+        description: 'Skip verification of the server certificate.',
       }),
     ],
     // A URL slot, not a free-text rest: a textual rest makes the parser keep
@@ -102,6 +129,12 @@ export const SPECS: Record<string, CommandSpec> = {
         description: 'Write the downloaded content to the given file.',
       }),
       new Option({ short: '-q', description: 'Run quietly with no output.' }),
+      new Option({
+        short: '-T',
+        long: '--timeout',
+        type: 'float',
+        description: 'Set the network timeout in seconds (zero disables it).',
+      }),
       new Option({
         long: '--spider',
         description: 'Check that the URL exists without downloading it.',

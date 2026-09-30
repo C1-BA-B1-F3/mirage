@@ -179,4 +179,4 @@ def test_install_mounts_applies_a_workspace_index_to_every_vfs():
         registry,
         normalize_mounts({"/a": RAMVFS()}, MountMode.WRITE, ReadSpec()),
         IndexConfig(ttl=5), MountMode.WRITE, ReadSpec())
-    assert registry.mount_for("/a/").index_store._ttl == 5
+    assert registry.mount_for("/a/").index_store.ttl == 5

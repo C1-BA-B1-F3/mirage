@@ -231,4 +231,24 @@ describe('node/js: quickjs runtime', () => {
     expect(stdoutStr(io)).toBe('stdin:-e,console.log("flag")\n')
     await ws.close()
   }, 60_000)
+
+  it.each([
+    ['cd /disk && node a.js sub/deep.txt ./sub/deep.txt', '["sub/deep.txt","./sub/deep.txt"]'],
+    ['node /disk/a.js /ram/notes.txt', '["/ram/notes.txt"]'],
+    [
+      "node -e 'console.log(JSON.stringify(scriptArgs))' /ram/notes.txt /disk/readme.txt",
+      '["/ram/notes.txt","/disk/readme.txt"]',
+    ],
+  ])('hands a path-shaped word over as typed: %s', async (line, argv) => {
+    const { ws } = await makeWorkspace()
+    try {
+      await ws.shell("echo 'console.log(JSON.stringify(scriptArgs))' > /disk/a.js")
+      const io = await ws.shell(line)
+      expect(stderrStr(io)).toBe('')
+      expect(io.exitCode).toBe(0)
+      expect(stdoutStr(io)).toBe(`${argv}\n`)
+    } finally {
+      await ws.close()
+    }
+  })
 })

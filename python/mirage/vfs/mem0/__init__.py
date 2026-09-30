@@ -12,12 +12,17 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+from typing import TYPE_CHECKING
+
 from mirage.vfs.mem0.config import Mem0Config
+
+if TYPE_CHECKING:
+    from mirage.vfs.mem0.mem0 import Mem0VFS
 
 __all__ = ["Mem0Config", "Mem0VFS"]
 
 
-def __getattr__(name: str):
+def __getattr__(name: str) -> "type[Mem0VFS]":
     if name == "Mem0VFS":
         from mirage.vfs.mem0.mem0 import Mem0VFS
         return Mem0VFS

@@ -200,6 +200,10 @@ class RedisIndexCacheStore(IndexCacheStore):
                 await pipe.execute()
                 del self._pending_seeds[:len(pending)]
 
+    @property
+    def ttl(self) -> float:
+        return self._ttl
+
     async def get(self, vfs_path: str) -> LookupResult:
         await self._flush_seed()
         raw = await self._client.get(self._entry_key(vfs_path))

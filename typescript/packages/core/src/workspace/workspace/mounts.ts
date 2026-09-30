@@ -162,9 +162,6 @@ export async function unmountPrefix(deps: UnmountDeps, prefix: string): Promise<
   const vfs = entry.vfs
   const remaining = deps.registry.allMounts()
   const stillMounted = remaining.some((m) => m.vfs === vfs)
-  // The store was the mount's, shared only with aliases of the same
-  // instance, so it closes with the last of them whoever owns the VFS.
-  if (!stillMounted) await entry.indexStore.close()
   const kindStillMounted = remaining.some((m) => m.vfs.name === vfs.name)
   deps.opsRegistry.unregisterVfs(kindStillMounted ? vfs : vfs.name)
   for (const survivor of remaining) {
@@ -186,8 +183,13 @@ export async function unmountPrefix(deps: UnmountDeps, prefix: string): Promise<
 async function closeVfs(deps: UnmountDeps, entry: MountEntry): Promise<void> {
   const vfs = entry.vfs
   const shared = deps.sharedMounts.has(vfs)
-  if (!shared) await entry.activity.wait()
-  if (shared) return
-  deps.registry.retiredMounts.add(vfs)
-  await vfs.close()
+  await entry.activity.wait()
+  try {
+    if (!shared) {
+      deps.registry.retiredMounts.add(vfs)
+      await vfs.close()
+    }
+  } finally {
+    await entry.indexStore.close()
+  }
 }

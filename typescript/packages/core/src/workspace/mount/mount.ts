@@ -14,7 +14,7 @@
 
 import { ContextScope } from '../../utils/context_scope.ts'
 import { captureSessionContext } from '../../context/session_context.ts'
-import { mountKey, mountPrefixOf } from '../../utils/key_prefix.ts'
+import { mountKey } from '../../utils/key_prefix.ts'
 import { coerceReadPolicy } from './read_policy.ts'
 import { KeyLock } from '../../cache/lock.ts'
 import { buildIndex } from '../../cache/index/factory.ts'
@@ -216,37 +216,43 @@ export class MountEntry {
     const levels = this.resolveCascade('glob', null, this.ops, this.generalOps)
     if (levels.length === 0) return [...paths]
     return this.use(async () => {
-      const call = async (): Promise<PathSpec[]> => {
+      const manager = this.cacheManager
+      if (manager === null) return this.runGlob(levels, paths, prefix, this.indexStore)
+      return manager.withMutation(async () => {
         await this.ensureReady()
-        const accessor = this.vfs.accessor
-        // The raw store, not the cache-scoped view: the walk runs under
-        // the cache manager's mutation lock, which the view takes again.
-        const kwargs: OpKwargs = { index: this.indexStore }
-        const out: PathSpec[] = []
-        for (const p of paths) {
-          const spec =
-            prefix && !mountPrefixOf(p.virtual, p.vfsPath)
-              ? new PathSpec({
-                  virtual: p.virtual,
-                  directory: p.directory,
-                  ...(p.pattern !== null ? { pattern: p.pattern } : {}),
-                  resolved: p.resolved,
-                  vfsPath: mountKey(p.virtual, prefix),
-                  rawPath: p.rawPath,
-                })
-              : p
-          for (const op of levels) {
-            const matches = await op.fn(accessor, spec, [], kwargs)
-            if (matches !== null && matches !== undefined) {
-              out.push(...(matches as PathSpec[]))
-              break
-            }
-          }
-        }
-        return out
-      }
-      return this.cacheManager === null ? call() : this.cacheManager.withMutation(call)
+        return this.runGlob(levels, paths, prefix, manager.scopeIndexLocked(this.indexStore))
+      })
     })
+  }
+
+  private async runGlob(
+    levels: readonly RegisteredOp[],
+    paths: readonly PathSpec[],
+    prefix: string,
+    index: IndexCacheStore,
+  ): Promise<PathSpec[]> {
+    const kwargs: OpKwargs = { index }
+    const out: PathSpec[] = []
+    for (const p of paths) {
+      const spec = prefix
+        ? new PathSpec({
+            virtual: p.virtual,
+            directory: p.directory,
+            ...(p.pattern !== null ? { pattern: p.pattern } : {}),
+            resolved: p.resolved,
+            vfsPath: mountKey(p.virtual, prefix),
+            rawPath: p.rawPath,
+          })
+        : p
+      for (const op of levels) {
+        const matches = await op.fn(this.vfs.accessor, spec, [], kwargs)
+        if (matches !== null && matches !== undefined) {
+          out.push(...(matches as PathSpec[]))
+          break
+        }
+      }
+    }
+    return out
   }
 
   /** Metadata access bound to this mount's ownership. */

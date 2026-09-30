@@ -1,22 +1,21 @@
 from collections import Counter
+from collections.abc import Iterator
+from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 from unittest.mock import patch
 
 import pytest
 
-from mirage.types import MountMode
+from mirage.cache.index.config import IndexConfig
+from mirage.types import MountMode, ReadSpec
 from mirage.vfs.s3 import S3VFS, S3Config
 from mirage.workspace import Workspace
+from mirage.workspace.mount import Mount
 from tests.e2e.s3_mock import MultiBucketSession, patch_s3_session
 
 
-@pytest.fixture
-def counted_s3():
-    session = MultiBucketSession(
-        {'bucket': {
-            'a.txt': b'hello',
-            'd/b.txt': b'abc'
-        }})
+@contextmanager
+def _counted(session: MultiBucketSession) -> Iterator[Counter]:
     client = session._client
     counts = Counter()
     original_head = client.head_object
@@ -43,15 +42,29 @@ def counted_s3():
         result.paginate = paginate
         return result
 
-    vfs = S3VFS(
+    with (patch_s3_session(session), patch.object(client, 'head_object', head),
+          patch.object(client, 'list_objects_v2', listing),
+          patch.object(client, 'get_paginator', paginator)):
+        yield counts
+
+
+def _s3_vfs() -> S3VFS:
+    return S3VFS(
         S3Config(bucket='bucket',
                  region='us-east-1',
                  aws_access_key_id='fake',
                  aws_secret_access_key='fake'))
-    with (patch_s3_session(session), patch.object(client, 'head_object', head),
-          patch.object(client, 'list_objects_v2', listing),
-          patch.object(client, 'get_paginator', paginator)):
-        yield Workspace({'/s3': (vfs, MountMode.WRITE)}), counts
+
+
+@pytest.fixture
+def counted_s3():
+    session = MultiBucketSession(
+        {'bucket': {
+            'a.txt': b'hello',
+            'd/b.txt': b'abc'
+        }})
+    with _counted(session) as counts:
+        yield Workspace({'/s3': (_s3_vfs(), MountMode.WRITE)}), counts
 
 
 @pytest.mark.asyncio
@@ -136,3 +149,52 @@ async def test_deleted_recursive_root_is_not_reported_after_expiry(warmup):
             result = await ws.shell(command + ' /s3/d')
             assert await result.stdout_str() == ''
             assert result.exit_code == 1
+
+
+class _Clock(datetime):
+    at: datetime = datetime(2026, 1, 1, tzinfo=timezone.utc)
+
+    @classmethod
+    def now(cls, tz=None):
+        return cls.at
+
+    @classmethod
+    def advance(cls, seconds: float) -> None:
+        cls.at += timedelta(seconds=seconds)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('index_ttl,mount_ttl,steps', [
+    (86400, 2, [(1, False, 0), (2, True, 1)]),
+    (5, 600, [(6, True, 1)]),
+])
+async def test_a_listing_lives_as_long_as_the_shorter_of_index_and_mount_ttl(
+        monkeypatch, index_ttl, mount_ttl, steps):
+    _Clock.at = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    for module in ('view', 'ram'):
+        monkeypatch.setattr(f'mirage.cache.index.{module}.datetime', _Clock)
+    objects = {'a.txt': b'hello'}
+    with _counted(MultiBucketSession({'bucket': objects})) as counts:
+        ws = Workspace(
+            {
+                '/s3':
+                Mount(vfs=_s3_vfs(),
+                      mode=MountMode.WRITE,
+                      read=ReadSpec(ttl=mount_ttl))
+            },
+            index=IndexConfig(ttl=index_ttl))
+        try:
+            first = await ws.shell('ls /s3')
+            assert (first.exit_code, await
+                    first.stdout_str()) == (0, 'a.txt\n')
+            objects['b.txt'] = b'new'
+            for seconds, shown, listed in steps:
+                _Clock.advance(seconds)
+                before = counts['list']
+                result = await ws.shell('ls /s3')
+                assert (result.exit_code, await
+                        result.stdout_str()) == (0, 'a.txt\nb.txt\n'
+                                                 if shown else 'a.txt\n')
+                assert counts['list'] - before == listed
+        finally:
+            await ws.close()

@@ -14,7 +14,13 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { HttpConnectError, HttpTimeoutError } from '../errors.ts'
-import { httpFormRequest, httpRequest, isHttpError, setHttpProxyBase } from './http.ts'
+import {
+  httpFormRequest,
+  httpRequest,
+  isHttpError,
+  registerInsecureFetch,
+  setHttpProxyBase,
+} from './http.ts'
 
 const ENC = new TextEncoder()
 
@@ -306,5 +312,36 @@ describe('redirect history', () => {
     const resp = await httpRequest('http://x.test/redirect', { followRedirects: false })
     expect([resp.status, resp.history]).toEqual([302, []])
     expect(mock).toHaveBeenCalledTimes(1)
+  })
+})
+
+// curl -k: a request that does not verify goes through the fetch the host
+// registered; one that does, or a host that registered none, uses fetch.
+describe('insecure fetch', () => {
+  afterEach(() => {
+    registerInsecureFetch(null)
+    vi.unstubAllGlobals()
+  })
+
+  it('sends verify: false through the registered fetch', async () => {
+    const fetchMock = makeFetchMock('verified')
+    const insecure = makeFetchMock('unverified')
+    vi.stubGlobal('fetch', fetchMock)
+    registerInsecureFetch(insecure)
+    const skipped = await httpRequest('https://example.com/x', { verify: false })
+    const checked = await httpRequest('https://example.com/x')
+    const form = await httpFormRequest('https://example.com/f', { verify: false })
+    expect(new TextDecoder().decode(skipped.body)).toBe('unverified')
+    expect(new TextDecoder().decode(checked.body)).toBe('verified')
+    expect(new TextDecoder().decode(form.body)).toBe('unverified')
+    expect(urlsCalled(insecure)).toEqual(['https://example.com/x', 'https://example.com/f'])
+    expect(urlsCalled(fetchMock)).toEqual(['https://example.com/x'])
+  })
+
+  it('falls back to fetch when no host registered one', async () => {
+    const fetchMock = makeFetchMock('verified')
+    vi.stubGlobal('fetch', fetchMock)
+    const resp = await httpRequest('https://example.com/x', { verify: false })
+    expect(new TextDecoder().decode(resp.body)).toBe('verified')
   })
 })

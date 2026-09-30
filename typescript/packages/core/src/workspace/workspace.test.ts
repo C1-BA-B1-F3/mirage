@@ -23,6 +23,7 @@ import {
   type RedisIndexConfig,
 } from '../cache/index/config.ts'
 import { RedisIndexCacheStore } from '../cache/index/redis.ts'
+import { IndexView } from '../cache/index/view.ts'
 import type { IndexCacheStore } from '../cache/index/store.ts'
 import { mountKey, mountPrefixOf } from '../utils/key_prefix.ts'
 import { globNameMatches, globPattern } from '../utils/glob_walk.ts'
@@ -1205,6 +1206,58 @@ it('unmount drains metadata globs and their index writes', async () => {
   } finally {
     resume()
     await Promise.allSettled([expanding, ...(removing === undefined ? [] : [removing])])
+    await ws.close()
+  }
+})
+
+it('hands glob a lock-held view it can write through', async () => {
+  const vfs = new RAMVFS()
+  // RAM defaults to ttl 0; keep the written row live for the assertion.
+  const ws = new Workspace({ '/data': vfs }, { index: { ttl: 600 } })
+  await ws.resolve('/data')
+  const raw = ws.mount('/data').indexStore
+  let seen: unknown = undefined
+  let wrote: unknown = 'not called'
+  ws.mount('/data').registerFns([
+    {
+      name: 'glob',
+      vfs: 'ram',
+      filetype: null,
+      write: false,
+      fn: async (_accessor, _path, _args, kwargs) => {
+        seen = kwargs.index
+        if (seen instanceof IndexView) {
+          wrote = await Promise.race([
+            seen
+              .setDir('/data', [
+                ['row', new IndexEntry({ id: 'row', name: 'row', resourceType: 'file' })],
+              ])
+              .then(() => 'done'),
+            new Promise((resolve) => {
+              setTimeout(() => {
+                resolve('timeout')
+              }, 1000)
+            }),
+          ])
+        }
+        return []
+      },
+    } satisfies RegisteredOp,
+  ])
+  try {
+    await expandOperands(ws.namespace, [
+      new PathSpec({
+        virtual: '/data/*',
+        directory: '/data/',
+        vfsPath: '*',
+        pattern: '*',
+        resolved: false,
+      }),
+    ])
+    expect(seen).toBeInstanceOf(IndexView)
+    expect(wrote).toBe('done')
+    expect((await raw.listDir('/data')).entries).toEqual(['/data/row'])
+  } finally {
     await ws.close()
   }
 })

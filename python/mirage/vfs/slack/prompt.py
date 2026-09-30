@@ -41,6 +41,8 @@ PROMPT = """\
   A time-scoped mount does not search through Slack: grep and rg read
   the in-scope files, so grep needs -r to search a directory.
   Messages are JSONL; use jq to extract fields like .text, .user, .ts, .files.
+  .user is a user ID (U…), not a username; resolve it through
+  users/<username>__<user-id>.json and filter messages by the ID.
   rg over files/ uses Slack's server-side file content search; works on
   PDFs, Word docs, code snippets that Slack has indexed."""
 

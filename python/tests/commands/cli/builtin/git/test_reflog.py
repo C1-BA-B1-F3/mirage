@@ -12,6 +12,8 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import os
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -21,6 +23,12 @@ from mirage.commands.cli.builtin.git.reflog import ZERO, entry, record
 WHO = b"Test Author <test@example.com>"
 OLD = b"1" * 40
 NEW = b"2" * 40
+ENV = {
+    **os.environ, "LC_ALL": "C",
+    "LANG": "C",
+    "GIT_CONFIG_GLOBAL": "/dev/null",
+    "GIT_CONFIG_NOSYSTEM": "1"
+}
 
 
 def test_a_line_carries_both_ids_then_the_identity():
@@ -101,3 +109,32 @@ async def test_a_linked_worktree_logs_its_branch_in_the_repository(
     assert own == [shared[-1]]
     assert not lines(repo_path, "worktrees", "wt", "logs", "refs", "heads",
                      "main")
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("line", [
+    "reflog",
+    "reflog show -1",
+    "reflog main",
+    "reflog refs/heads/main",
+    "reflog origin/main",
+    "reflog refs/remotes/origin/main",
+    "reflog v1",
+])
+async def test_rows_print_the_name_git_found_the_log_under(
+        git_ws, repo_path, line):
+    for args in ([
+            "update-ref", "--create-reflog", "-m", "fetch: fast-forward",
+            "refs/remotes/origin/main", "HEAD~1"
+    ], ["tag", "v1"]):
+        subprocess.run(["git", "-C", str(repo_path), *args],
+                       check=True,
+                       capture_output=True,
+                       env=ENV)
+    native = subprocess.run(
+        ["git", "-C", str(repo_path), *line.split()],
+        capture_output=True,
+        env=ENV)
+    actual = await git_ws.shell(f"git -C /repo {line}")
+    assert (actual.exit_code, actual.stdout or b"", actual.stderr
+            or b"") == (native.returncode, native.stdout, native.stderr)

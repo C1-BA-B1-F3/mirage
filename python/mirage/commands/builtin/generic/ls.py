@@ -22,11 +22,12 @@ from mirage.commands.spec.usage import (argmatch_error, argmatch_line,
 from mirage.errors.classify import failure_text
 from mirage.io.types import IOResult
 from mirage.ops.types import ChildMounts, LinkView, MountView, StatPath
-from mirage.types import (FileStat, FileType, LsIndicator, LsLinkMode,
-                          LsSortBy, LsTimeKind, PathSpec)
+from mirage.types import (LINK_TARGET_KEY, FileStat, FileType, LsIndicator,
+                          LsLinkMode, LsSortBy, LsTimeKind, PathSpec)
 from mirage.utils.errors import DotWalkError, DotWalkLoop, fs_strerror
 from mirage.utils.key_prefix import mount_prefix_of, rekey, under_path
 from mirage.utils.path import CycleError, respell_one
+from mirage.utils.quote import escape_name
 from mirage.utils.stat_view import content_size
 from mirage.utils.width import char_width
 
@@ -56,6 +57,7 @@ class LsFlags:
     time_kind: LsTimeKind = LsTimeKind.MTIME
     group_dirs_first: bool = False
     columns: formatting.LsColumns = formatting.DEFAULT_COLUMNS
+    escape: bool = False
     hyperlink: bool = False
 
 
@@ -391,6 +393,7 @@ def parse_flags(flags: Mapping[str, FlagValue]) -> LsFlags:
         group_dirs_first=fl.as_bool("group_directories_first"),
         columns=columns,
         hyperlink=_hyperlink_flag(fl),
+        escape=fl.as_bool("escape"),
     )
 
 
@@ -750,7 +753,8 @@ def _order_rows(rows: list[FileStat],
                 reverse: bool,
                 *,
                 time_kind: LsTimeKind = LsTimeKind.MTIME,
-                group_dirs_first: bool = False) -> list[int]:
+                group_dirs_first: bool = False,
+                escape: bool = False) -> list[int]:
     """Indices of ``rows`` in GNU ls order.
 
     GNU's `-t`/`-S` comparators fall back to the name when the timestamps or
@@ -784,7 +788,8 @@ def _order_rows(rows: list[FileStat],
         if sort_by is LsSortBy.EXTENSION:
             order.sort(key=lambda i: _extension(rows[i].name))
         elif sort_by is LsSortBy.WIDTH:
-            order.sort(key=lambda i: name_width(rows[i].name))
+            order.sort(key=lambda i: name_width(
+                escape_name(rows[i].name) if escape else rows[i].name))
         elif sort_by is not LsSortBy.NAME:
             # -t and -S list newest/largest first.
             order.sort(
@@ -803,13 +808,15 @@ def sort_stats(entries: list[FileStat],
                reverse: bool,
                *,
                time_kind: LsTimeKind = LsTimeKind.MTIME,
-               group_dirs_first: bool = False) -> list[FileStat]:
+               group_dirs_first: bool = False,
+               escape: bool = False) -> list[FileStat]:
     return [
         entries[i] for i in _order_rows(entries,
                                         sort_by,
                                         reverse,
                                         time_kind=time_kind,
-                                        group_dirs_first=group_dirs_first)
+                                        group_dirs_first=group_dirs_first,
+                                        escape=escape)
     ]
 
 
@@ -1064,6 +1071,7 @@ async def probe_operand(
     time_kind: LsTimeKind = LsTimeKind.MTIME,
     group_dirs_first: bool = False,
     stat_needed: bool = True,
+    escape: bool = False,
 ) -> tuple[Operand, list[LsWarning]]:
     """List one operand and report whether it turned out to be a directory.
 
@@ -1172,7 +1180,8 @@ async def probe_operand(
                          sort_by,
                          reverse,
                          time_kind=time_kind,
-                         group_dirs_first=group_dirs_first)
+                         group_dirs_first=group_dirs_first,
+                         escape=escape)
     groups: list[tuple[PathSpec, list[FileStat]]] = [(path, entries)]
     if recursive:
         for entry in entries:
@@ -1201,7 +1210,8 @@ async def probe_operand(
                 stat_path=stat_path,
                 time_kind=time_kind,
                 group_dirs_first=group_dirs_first,
-                stat_needed=stat_needed)
+                stat_needed=stat_needed,
+                escape=escape)
             groups.extend(child.groups)
             warnings.extend(child_ws)
     return Operand(path, None, groups), warnings
@@ -1226,6 +1236,7 @@ async def walk(
     stat_path: StatPath | None = None,
     time_kind: LsTimeKind = LsTimeKind.MTIME,
     group_dirs_first: bool = False,
+    escape: bool = False,
 ) -> WalkResult:
     """Flat listing for one operand: a directory's entries, or the operand
     itself when it is not one. ``recursive`` flattens the whole subtree in
@@ -1292,7 +1303,8 @@ async def walk(
                                             mounts=mounts,
                                             stat_path=stat_path,
                                             time_kind=time_kind,
-                                            group_dirs_first=group_dirs_first)
+                                            group_dirs_first=group_dirs_first,
+                                            escape=escape)
     if operand.row is not None:
         return WalkResult([operand.row], warnings)
     entries = [e for _, group in operand.groups for e in group]
@@ -1328,14 +1340,15 @@ async def _sorted_operands(
     stat: Stat,
     index: IndexCacheStore,
     time_kind: LsTimeKind = LsTimeKind.MTIME,
+    escape: bool = False,
 ) -> list[Operand]:
     keys = [
         await _operand_key(o, sort_by=sort_by, stat=stat, index=index)
         for o in operands
     ]
     return [
-        operands[i]
-        for i in _order_rows(keys, sort_by, reverse, time_kind=time_kind)
+        operands[i] for i in _order_rows(
+            keys, sort_by, reverse, time_kind=time_kind, escape=escape)
     ]
 
 
@@ -1367,22 +1380,26 @@ def uri_escape(path: str) -> str:
 
 
 def _decorated_names(entries: list[FileStat], hrefs: list[str] | None,
-                     long: bool) -> list[str] | None:
-    """The name column per row under ``--hyperlink``, None otherwise.
+                     long: bool, escape: bool) -> list[str] | None:
+    """The name column with escapes and hyperlinks, None when undecorated.
 
     Args:
         entries (list[FileStat]): the rows.
         hrefs (list[str] | None): each row's virtual path, when linking.
         long (bool): whether the long format's ``-> target`` applies.
+        escape (bool): render names and targets with GNU ``-b`` escapes.
     """
-    if hrefs is None:
+    if hrefs is None and not escape:
         return None
     out: list[str] = []
-    for e, href in zip(entries, hrefs):
-        linked = _hyperlinked(e.name, href)
-        out.append(
-            formatting.ls_name(e.model_copy(
-                update={"name": linked})) if long else linked)
+    for i, e in enumerate(entries):
+        name = escape_name(e.name) if escape else e.name
+        if hrefs is not None:
+            name = _hyperlinked(name, hrefs[i])
+        target = e.extra.get(LINK_TARGET_KEY)
+        if long and e.type is FileType.SYMLINK and isinstance(target, str):
+            name += " -> " + (escape_name(target) if escape else target)
+        out.append(name)
     return out
 
 
@@ -1424,10 +1441,11 @@ def _render_group(
     indicator: LsIndicator,
     identity: Identity | None,
     columns: formatting.LsColumns = formatting.DEFAULT_COLUMNS,
+    escape: bool = False,
     hrefs: list[str] | None = None,
     targets: list[FileStat | None] | None = None,
 ) -> None:
-    names = _decorated_names(entries, hrefs, long)
+    names = _decorated_names(entries, hrefs, long, escape)
     if long:
         results.extend(
             formatting.format_ls_long(entries,
@@ -1477,6 +1495,7 @@ async def ls(
     time_kind: LsTimeKind = LsTimeKind.MTIME,
     group_dirs_first: bool = False,
     columns: formatting.LsColumns = formatting.DEFAULT_COLUMNS,
+    escape: bool = False,
     hyperlink: bool = False,
 ) -> tuple[bytes, IOResult]:
     results: list[str] = []
@@ -1506,7 +1525,8 @@ async def ls(
                                 sort_by,
                                 reverse,
                                 time_kind=time_kind,
-                                group_dirs_first=group_dirs_first)
+                                group_dirs_first=group_dirs_first,
+                                escape=escape)
             rows = [rows[i] for i in order]
             row_hrefs = [row_hrefs[i] for i in order]
         _render_group(results,
@@ -1516,6 +1536,7 @@ async def ls(
                       indicator=indicator,
                       identity=identity,
                       columns=columns,
+                      escape=escape,
                       hrefs=row_hrefs if hyperlink else None,
                       targets=await link_targets(rows, row_hrefs, links, long,
                                                  indicator))
@@ -1546,7 +1567,8 @@ async def ls(
                                             stat_path=stat_path,
                                             time_kind=time_kind,
                                             group_dirs_first=group_dirs_first,
-                                            stat_needed=needed)
+                                            stat_needed=needed,
+                                            escape=escape)
         warnings.extend(p_ws)
         operands.append(operand)
     if len(operands) > 1:
@@ -1555,7 +1577,8 @@ async def ls(
                                           reverse=reverse,
                                           stat=stat,
                                           index=index,
-                                          time_kind=time_kind)
+                                          time_kind=time_kind,
+                                          escape=escape)
 
     # GNU names every listed directory once there is more than one operand
     # (or under -R); a lone directory operand is listed bare.
@@ -1569,6 +1592,7 @@ async def ls(
                   indicator=indicator,
                   identity=identity,
                   columns=columns,
+                  escape=escape,
                   hrefs=row_paths if hyperlink else None,
                   targets=await link_targets(rows, row_paths, links, long,
                                              indicator))
@@ -1611,13 +1635,14 @@ async def ls(
                                      sort_by,
                                      reverse,
                                      time_kind=time_kind,
-                                     group_dirs_first=group_dirs_first)
+                                     group_dirs_first=group_dirs_first,
+                                     escape=escape)
             if headed:
                 if printed:
                     results.append("")
                 header = respell_one(dir_spec.virtual, operand.path.virtual,
                                      operand.path.raw_path)
-                results.append(f"{header}:")
+                results.append(f"{escape_name(header) if escape else header}:")
             # GNU 9.7 prints allocated blocks here; VFS has no allocation
             # metadata, so report unknown instead of inventing a block count.
             if long:
@@ -1632,6 +1657,7 @@ async def ls(
                           indicator=indicator,
                           identity=identity,
                           columns=columns,
+                          escape=escape,
                           hrefs=entry_paths if hyperlink else None,
                           targets=await link_targets(entries, entry_paths,
                                                      links, long, indicator))

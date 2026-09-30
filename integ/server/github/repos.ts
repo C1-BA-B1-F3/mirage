@@ -15,18 +15,23 @@
 import type { JsonValue, KitRoute } from '../kit/typescript/index.ts'
 import { API_PREFIXES, DEFAULT_LOGIN } from './config.ts'
 import type { C } from './config.ts'
-import { commitJson } from './wire.ts'
+import { PROJECTS_CLASSIC_GONE, commitJson, nodeId, ownerNode } from './wire.ts'
 import { createReposAllowed, initRepo } from './seed.ts'
+import { commentConnection, issueConnection, issueNode, issueRow } from './issues.ts'
+import type { IssueRow, IssuesArgs } from './issues.ts'
+import { pullRequestConnection, pullRequestNode, pullRow } from './pulls.ts'
+import type { PullRequestsArgs, PullRow } from './pulls.ts'
 import {
   addBranch,
   allRepos,
   delegateFor,
   perRepoModels,
-  branchFor,
   branchNames,
   commitList,
   metaOf,
   repoByName,
+  repoIsEmpty,
+  resolveRef,
   scope,
   treeOfBranch,
 } from './store.ts'
@@ -63,22 +68,13 @@ export function repoJson(repo: RepoRow): JsonValue {
     topics: [],
     archived: false,
     fork: false,
+    has_pages: repo.pagesJson !== '',
     ...rest,
   }
 }
 
 // Every date the fresh-repository defaults report, unless a fixture states one.
 const REPO_DATE = '2026-01-01T00:00:00Z'
-
-/** A GraphQL global id in the vendor's base64 `<type><id>` spelling. */
-function nodeId(type: string, key: string | number): string {
-  return Buffer.from(`${type}${String(key)}`).toString('base64')
-}
-
-/** The GraphQL `owner` of a repository, a user or an organization. */
-function ownerNode(login: string): Record<string, JsonValue> {
-  return { id: nodeId(login === DEFAULT_LOGIN ? '04:User' : '012:Organization', login), login }
-}
 
 /**
  * The GraphQL `Repository` for one row: the same facts the REST object reports,
@@ -114,7 +110,7 @@ export async function repositoryNode(
     const row = (await allRepos(ctx.db, ctx.tenant)).find((each) => each.seq === parentSeq)
     return row === undefined ? null : repositoryNode(ctx, row)
   }
-  return {
+  const node: Record<string, unknown> = {
     id: nodeId('010:Repository', repo.seq),
     name: repo.name,
     nameWithOwner: repo.fullName,
@@ -139,22 +135,16 @@ export async function repositoryNode(
     hasProjectsEnabled: meta.has_projects !== false,
     hasDiscussionsEnabled: meta.has_discussions === true,
     hasWikiEnabled: meta.has_wiki !== false,
-    mergeCommitAllowed: true,
-    squashMergeAllowed: true,
-    rebaseMergeAllowed: true,
+    mergeCommitAllowed: meta.allow_merge_commit !== false,
+    squashMergeAllowed: meta.allow_squash_merge !== false,
+    rebaseMergeAllowed: meta.allow_rebase_merge !== false,
     forkCount: count('forks_count'),
     stargazerCount: count('stargazers_count'),
     watchers: { totalCount: count('watchers_count') },
-    issues: async () => ({
-      totalCount: await ctx.db.githubIssue.count({ where: { ...where, state: 'open' } }),
-    }),
-    pullRequests: async () => ({
-      totalCount: await ctx.db.githubPull.count({ where: { ...where, state: 'open' } }),
-    }),
     codeOfConduct: null,
     contactLinks: [],
     defaultBranchRef: { name: repo.defaultBranch },
-    deleteBranchOnMerge: false,
+    deleteBranchOnMerge: meta.delete_branch_on_merge === true,
     diskUsage: 0,
     fundingLinks: [],
     isArchived: meta.archived === true,
@@ -163,7 +153,7 @@ export async function repositoryNode(
     isInOrganization: !owned,
     isMirror: false,
     isPrivate: meta.private === true,
-    isTemplate: false,
+    isTemplate: meta.is_template === true,
     isUserConfigurationRepository: repo.name === repo.owner,
     licenseInfo: null,
     viewerCanAdminister: true,
@@ -173,7 +163,12 @@ export async function repositoryNode(
     viewerPermission: 'ADMIN',
     viewerPossibleCommitEmails: [email],
     viewerSubscription: owned ? 'SUBSCRIBED' : 'UNSUBSCRIBED',
-    visibility: meta.private === true ? 'PRIVATE' : 'PUBLIC',
+    visibility:
+      typeof meta.visibility === 'string'
+        ? meta.visibility.toUpperCase()
+        : meta.private === true
+          ? 'PRIVATE'
+          : 'PUBLIC',
     repositoryTopics: { nodes: topics.map((name) => ({ topic: { name } })) },
     primaryLanguage: language === null ? null : { name: language },
     languages: { edges: language === null ? [] : [{ size: 0, node: { name: language } }] },
@@ -195,13 +190,44 @@ export async function repositoryNode(
     assignableUsers: { nodes: [user] },
     mentionableUsers: { nodes: [user] },
     projects: () => {
-      throw new Error(
-        'Projects (classic) is being deprecated in favor of the new Projects experience, ' +
-          'see: https://github.blog/changelog/2024-05-23-sunset-notice-projects-classic/.',
-      )
+      throw new Error(PROJECTS_CLASSIC_GONE)
     },
     projectsV2: { nodes: [] },
   }
+  // Issues own the comments on a pull request as on an issue.
+  const pull = async (row: PullRow): Promise<Record<string, unknown>> => ({
+    ...(await pullRequestNode(ctx, repo, row, node)),
+    __typename: 'PullRequest',
+    comments: commentConnection(ctx, repo, row.number),
+  })
+  const issue = (row: IssueRow): Promise<Record<string, unknown>> => issueNode(ctx, repo, row, node)
+  return Object.assign(node, {
+    issueOrPullRequest: async ({ number }: { number: number }) => {
+      const found = await issueRow(ctx.db, ctx.tenant, repo, number)
+      if (found !== null) return issue(found)
+      const row = await pullRow(ctx.db, ctx.tenant, repo, number)
+      if (row !== null) return pull(row)
+      throw new Error(
+        `Could not resolve to an issue or pull request with the number of ${String(number)}.`,
+      )
+    },
+    issue: async ({ number }: { number: number }) => {
+      const found = await issueRow(ctx.db, ctx.tenant, repo, number)
+      if (found === null) {
+        throw new Error(`Could not resolve to an Issue with the number of ${String(number)}.`)
+      }
+      return issue(found)
+    },
+    issues: (args: IssuesArgs) => issueConnection(ctx, repo, args, issue),
+    pullRequest: async ({ number }: { number: number }) => {
+      const row = await pullRow(ctx.db, ctx.tenant, repo, number)
+      if (row === null) {
+        throw new Error(`Could not resolve to a PullRequest with the number of ${String(number)}.`)
+      }
+      return pull(row)
+    },
+    pullRequests: (args: PullRequestsArgs) => pullRequestConnection(ctx, repo, args, pull),
+  })
 }
 
 /** The value a GraphQL `RepositoryOrder` field sorts one repository by. */
@@ -237,8 +263,11 @@ export async function ownedRepositories(
   login: string,
 ): Promise<Record<string, unknown>> {
   const owned = (await allRepos(ctx.db, ctx.tenant)).filter((row) => row.owner === login)
+  const user = login === DEFAULT_LOGIN
   return {
-    login,
+    __typename: user ? 'User' : 'Organization',
+    ...ownerNode(login),
+    ...(user ? { name: login } : {}),
     repositories: async ({ first, after, privacy, isFork, orderBy }: RepositoriesArgs) => {
       const rows = owned
         .filter((row) => {
@@ -346,6 +375,8 @@ export function repoRoutes(): KitRoute<C>[] {
       authed(withRepo((_c, r) => ({ status: 200, body: repoJson(r) }))),
     ),
     route<C>('PATCH', `${p}/repos/:owner/:repo`, authed(updateRepo), { write: true }),
+    route<C>('GET', `${p}/repos/:owner/:repo/topics`, repoTopics),
+    route<C>('PUT', `${p}/repos/:owner/:repo/topics`, setRepoTopics, { write: true }),
     route<C>('DELETE', `${p}/repos/:owner/:repo`, authed(deleteRepo), { write: true }),
     route<C>('POST', `${p}/repos/:owner/:repo/forks`, authed(forkRepo), { write: true }),
     route<C>(
@@ -378,14 +409,18 @@ export function repoRoutes(): KitRoute<C>[] {
       authed(
         // Not paged, unlike the repository list: the vendor pages this one and
         // the fake this replaces answered the whole history, which is what the
-        // goldens record. An unresolvable `sha` falls back to the default
-        // branch rather than 404ing, also matching it.
+        // goldens record. `sha` is "SHA or branch to start listing commits
+        // from", so a commit, full or abbreviated, starts the list at itself.
+        // One that names nothing is 404, measured against GitHub (2026-09-29);
+        // listing the default branch instead answered a question nobody asked.
         withRepo(async (ctx, repo) => {
-          const asked = ctx.query.get('sha') ?? ''
-          const branch = (await branchFor(ctx.db, ctx.tenant, repo, asked)) ?? repo.defaultBranch
-          const list = await commitList(ctx.db, ctx.tenant, repo, branch)
-          if (list.length === 0) return fail(409, 'Git Repository is empty.')
-          return { status: 200, body: list.map(commitJson) }
+          if (await repoIsEmpty(ctx.db, ctx.tenant, repo)) {
+            return fail(409, 'Git Repository is empty.')
+          }
+          const at = await resolveRef(ctx.db, ctx.tenant, repo, ctx.query.get('sha') ?? '')
+          if (at === null) return fail(404, 'Not Found')
+          if (at.history.length === 0) return fail(409, 'Git Repository is empty.')
+          return { status: 200, body: at.history.map(commitJson) }
         }),
       ),
     ),
@@ -453,12 +488,76 @@ const createRepo: Handler = async (ctx) => {
   return { status: 201, body: repoJson(created) }
 }
 
+// Validate every accepted field before writing metadata or moving repository
+// keys. A malformed default_branch must not leave a successful rename behind.
+const EDITABLE: Record<string, 'string' | 'nullable' | 'boolean' | 'object'> = {
+  name: 'string',
+  default_branch: 'string',
+  description: 'nullable',
+  homepage: 'nullable',
+  private: 'boolean',
+  visibility: 'string',
+  is_template: 'boolean',
+  has_issues: 'boolean',
+  has_projects: 'boolean',
+  has_wiki: 'boolean',
+  has_discussions: 'boolean',
+  allow_squash_merge: 'boolean',
+  allow_merge_commit: 'boolean',
+  allow_rebase_merge: 'boolean',
+  allow_auto_merge: 'boolean',
+  allow_update_branch: 'boolean',
+  allow_forking: 'boolean',
+  delete_branch_on_merge: 'boolean',
+  use_squash_pr_title_as_default: 'boolean',
+  web_commit_signoff_required: 'boolean',
+  archived: 'boolean',
+  squash_merge_commit_title: 'string',
+  squash_merge_commit_message: 'string',
+  merge_commit_title: 'string',
+  merge_commit_message: 'string',
+  security_and_analysis: 'object',
+}
+
+const VISIBILITIES = ['public', 'private', 'internal']
+
+function editType(kind: string, value: JsonValue): string | null {
+  if (kind === 'boolean') return typeof value === 'boolean' ? null : 'boolean'
+  if (kind === 'object') {
+    return typeof value === 'object' && value !== null && !Array.isArray(value) ? null : 'object'
+  }
+  if (typeof value === 'string' || (kind === 'nullable' && value === null)) return null
+  return kind === 'nullable' ? 'string or null' : 'string'
+}
+
 // A rename has to carry the content with it rather than leave an empty
 // repository behind under the new name, which is what a fork-then-rename does.
 const updateRepo: Handler = authed(
   withRepo(async (ctx, repo) => {
     const body = jsonBodyOf(ctx)
-    const name = str(body, 'name').trim()
+    const edits: Record<string, JsonValue> = {}
+    for (const [key, kind] of Object.entries(EDITABLE)) {
+      const value = body[key]
+      if (value === undefined) continue
+      const wanted = editType(kind, value)
+      if (wanted !== null) {
+        return fail(
+          422,
+          `Invalid request.\n\nFor 'properties/${key}', ${JSON.stringify(value)} is not a ${wanted}.`,
+        )
+      }
+      edits[key] = value
+    }
+    if (typeof edits.visibility === 'string') {
+      if (!VISIBILITIES.includes(edits.visibility)) return fail(422, 'Validation Failed')
+      edits.private = edits.visibility !== 'public'
+    } else if (typeof edits.private === 'boolean') {
+      edits.visibility = edits.private ? 'private' : 'public'
+    }
+    const name = str(edits, 'name').trim()
+    const branch = str(edits, 'default_branch').trim()
+    delete edits.name
+    delete edits.default_branch
     let current = repo
     if (name !== '' && name !== repo.name) {
       const target = `${repo.owner}/${name}`
@@ -467,14 +566,41 @@ const updateRepo: Handler = authed(
       }
       current = (await renameRepo(ctx.db, ctx.tenant, repo, name)) as RepoRow
     }
-    const branch = str(body, 'default_branch').trim()
-    if (branch !== '') {
+    const data: { defaultBranch?: string; metaJson?: string } = {}
+    if (branch !== '') data.defaultBranch = branch
+    if (Object.keys(edits).length > 0) {
+      data.metaJson = JSON.stringify({ ...metaOf(current), ...edits })
+    }
+    if (Object.keys(data).length > 0) {
       current = (await ctx.db.githubRepo.update({
         where: { tenant_fullName: { tenant: ctx.tenant, fullName: current.fullName } },
-        data: { defaultBranch: branch },
+        data,
       })) as RepoRow
     }
     return { status: 200, body: repoJson(current) }
+  }),
+)
+
+// The topics `gh repo edit --add-topic` reads and replaces whole: GitHub keeps
+// them as one list, and `PUT` sets that list.
+const repoTopics: Handler = authed(
+  withRepo((_ctx, repo) => {
+    const topics = metaOf(repo).topics
+    return { status: 200, body: { names: Array.isArray(topics) ? topics : [] } }
+  }),
+)
+
+const setRepoTopics: Handler = authed(
+  withRepo(async (ctx, repo) => {
+    const names = jsonBodyOf(ctx).names
+    if (!Array.isArray(names) || names.some((n) => typeof n !== 'string')) {
+      return fail(422, 'Invalid request.\n\n"names" wasn\'t supplied.')
+    }
+    await ctx.db.githubRepo.update({
+      where: { tenant_fullName: { tenant: ctx.tenant, fullName: repo.fullName } },
+      data: { metaJson: JSON.stringify({ ...metaOf(repo), topics: names }) },
+    })
+    return { status: 200, body: { names } }
   }),
 )
 
@@ -494,6 +620,7 @@ async function renameRepo(db: C, tenant: string, repo: RepoRow, name: string): P
       truncated: repo.truncated,
       sourceDir: repo.sourceDir,
       sourceBranch: repo.sourceBranch,
+      pagesJson: repo.pagesJson,
       seq: repo.seq,
     },
   })) as RepoRow

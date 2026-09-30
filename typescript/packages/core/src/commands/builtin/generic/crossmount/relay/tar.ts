@@ -12,7 +12,7 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import { IOResult } from '../../../../../io/types.ts'
+import { type ByteSource, IOResult } from '../../../../../io/types.ts'
 import type { NamespaceView } from '../../../../../ops/types.ts'
 import type { PathSpec } from '../../../../../types.ts'
 import type { FlagValue } from '../../../../spec/types.ts'
@@ -53,6 +53,7 @@ export async function runTar(
   dispatch: DispatchFn,
   // The symlinks and mount boundaries the create scan merges into each walk.
   ns?: NamespaceView,
+  stdin: ByteSource | null = null,
 ): Promise<CrossResult> {
   const parsed = parseTarFlags(flagKwargs)
   const archive = parsed.archive
@@ -61,7 +62,7 @@ export async function runTar(
   const result = await tarGeneric(
     flatten(created),
     textArgs,
-    { ...crossOpts(flagKwargs), ...(ns !== undefined ? { ns } : {}) },
+    { ...crossOpts(flagKwargs), stdin, ...(ns !== undefined ? { ns } : {}) },
     {
       stream: streamOp(dispatch),
       write: async (p, data) => {

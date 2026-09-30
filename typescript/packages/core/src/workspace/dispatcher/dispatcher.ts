@@ -663,6 +663,7 @@ export class Dispatcher {
     opName: string,
     spec: PathSpec,
     issuer?: symbol,
+    kwargs: OpKwargs = {},
   ): Promise<unknown> {
     const mount = this.namespace.mountFor(spec.virtual)
     const write = this.opsRegistry.find(opName, vfs)?.write === true
@@ -690,7 +691,10 @@ export class Dispatcher {
         const answer = await runWithMountContext(
           () =>
             runWithRevisions(mount.revisions.size > 0 ? mount.revisions : null, () =>
-              this.opsRegistry.call(opName, vfs, vfs.accessor, spec, [], this.indexKwargs(mount)),
+              this.opsRegistry.call(opName, vfs, vfs.accessor, spec, [], {
+                ...this.indexKwargs(mount),
+                ...kwargs,
+              }),
             ),
           mount.mountId,
         )
@@ -699,6 +703,29 @@ export class Dispatcher {
     } finally {
       if (write) await this.invalidateAfterWriteByPath(spec.virtual)
     }
+  }
+
+  /**
+   * The stat this dispatcher runs for one mount's VFS, behind the same
+   * fence as its own probes (mode, revision pins, index kwargs), with no
+   * namespace follow or visibility filter: the caller has resolved the
+   * path already. The path's filetype is stamped as dispatch stamps it,
+   * so an op registered for one filetype answers here too. A
+   * trailing-slash glob classifies a match with it, the twin of Python's
+   * `owner.execute_op("stat")`, so a trailing-slash glob and `stat` read
+   * the same op table.
+   */
+  opStat(mount: MountEntry, path: PathSpec): Promise<unknown> {
+    const filetype = getExtension(path.virtual)
+    return this.fencedCall(
+      mount.vfs,
+      mount.prefix,
+      mount.mode,
+      'stat',
+      path,
+      undefined,
+      filetype !== null ? { filetype } : {},
+    )
   }
 
   /**

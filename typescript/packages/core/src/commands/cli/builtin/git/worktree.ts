@@ -53,9 +53,10 @@ function trackedDirectories(tracked: ReadonlySet<string>): Set<string> {
 
 /** One walk of the working tree, carrying what the walk needs. */
 class Scanner {
-  readonly found: { files: Map<string, FileStat>; untracked: string[] } = {
+  readonly found: { files: Map<string, FileStat>; untracked: string[]; ignored: string[] } = {
     files: new Map(),
     untracked: [],
+    ignored: [],
   }
   private readonly directories: Set<string>
 
@@ -66,6 +67,7 @@ class Scanner {
     private readonly tracked: ReadonlySet<string>,
     private readonly mode: string,
     private readonly links: LinkView | null,
+    private readonly showIgnored = false,
   ) {
     this.directories = trackedDirectories(tracked)
   }
@@ -99,7 +101,11 @@ class Scanner {
    * directory holding nothing but ignored files, or nothing at all, is not
    * mentioned. Stops at the first find.
    */
-  private async holdsAFile(relative: string, ignores: IgnoreStack): Promise<boolean> {
+  private async holdsAFile(
+    relative: string,
+    ignores: IgnoreStack,
+    includeIgnored = false,
+  ): Promise<boolean> {
     const rules = await this.descend(relative, ignores)
     for (const entry of await readNames(this.dispatch, this.absolute(relative))) {
       const name = basename(entry)
@@ -108,9 +114,9 @@ class Scanner {
       const info = await this.entryStat(child)
       if (info === null) continue
       const directory = info.type === FileType.DIRECTORY
-      if (rules.isIgnored(child, directory)) continue
+      if (!includeIgnored && rules.isIgnored(child, directory)) continue
       if (!directory) return true
-      if (await this.holdsAFile(child, rules)) return true
+      if (await this.holdsAFile(child, rules, includeIgnored)) return true
     }
     return false
   }
@@ -137,11 +143,28 @@ class Scanner {
   ): Promise<void> {
     const holdsTracked = this.directories.has(relative)
     if (ignored) {
-      if (holdsTracked) await this.walk(relative, true, ignores)
+      if (holdsTracked || (this.showIgnored && this.mode === UNTRACKED_ALL))
+        await this.walk(relative, true, ignores)
+      else if (
+        this.showIgnored &&
+        this.mode !== UNTRACKED_NO &&
+        (await this.holdsAFile(relative, ignores, true))
+      )
+        this.found.ignored.push(`${relative}/`)
       return
     }
     if (holdsTracked || this.mode === UNTRACKED_ALL) {
       await this.walk(relative, false, ignores)
+      return
+    }
+    if (this.showIgnored && this.mode === UNTRACKED_NORMAL) {
+      const first = this.found.untracked.length,
+        ignoredFirst = this.found.ignored.length
+      await this.walk(relative, false, ignores)
+      if (this.found.untracked.length > first)
+        this.found.untracked.splice(first, Infinity, `${relative}/`)
+      else if (this.found.ignored.length > ignoredFirst)
+        this.found.ignored.splice(ignoredFirst, Infinity, `${relative}/`)
       return
     }
     if (this.mode === UNTRACKED_NORMAL && (await this.holdsAFile(relative, ignores))) {
@@ -175,6 +198,7 @@ class Scanner {
       this.found.files.set(child, info)
       if (this.tracked.has(child) || this.mode === UNTRACKED_NO) continue
       if (!ignored && !rules.isIgnored(child, false)) this.found.untracked.push(child)
+      else if (this.showIgnored) this.found.ignored.push(child)
     }
   }
 }
@@ -202,9 +226,18 @@ export async function scan(
   tracked: ReadonlySet<string>,
   mode: string,
   links: LinkView | null = null,
+  showIgnored = false,
 ): Promise<WorkTree> {
   const ignores = await loadIgnores(dispatch, location.commondir, location.worktree)
-  const scanner = new Scanner(dispatch, statPath, location.worktree, tracked, mode, links)
+  const scanner = new Scanner(
+    dispatch,
+    statPath,
+    location.worktree,
+    tracked,
+    mode,
+    links,
+    showIgnored,
+  )
   await scanner.walk('', false, ignores)
   return scanner.found
 }

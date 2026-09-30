@@ -160,7 +160,7 @@ mapping in the `RAMIndexCacheStore` attached to the VFS. The first time you `ls 
 it walks the tree top-down (one API call per level) and caches each entry's ID. Subsequent reads
 of `/box/foo/bar/anyfile.json` hit the cache instead of re-walking.
 
-The cache TTL defaults to 24h. To force re-resolution, recreate the `BoxVFS`.
+Listings live for the mount's `ttl` (600 s by default), at most 24 hours. To force re-resolution, recreate the `BoxVFS`.
 
 ## Box-native file types
 

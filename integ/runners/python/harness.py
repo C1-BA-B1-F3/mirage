@@ -588,6 +588,8 @@ async def run_case(
         # question, and charging that to the dry run would fail every
         # ask case.
         recorded = len(ws.decisions.pending()) - before
+    read_paths = case.get("check", {}).get("read_paths") is True
+    record_start = len(ws.vfs.records) if read_paths else 0
     result = await ws.shell(case["command"], session_id=case.get("session"))
     elapsed = time.monotonic() - start
     out = await result.stdout_str()
@@ -596,7 +598,12 @@ async def run_case(
                            reasons)
              if reasons and not case.get("explain_blind") else [])
     check_out = None
-    if case.get("check") is not None:
+    if read_paths:
+        paths = [
+            r.path for r in ws.vfs.records[record_start:] if r.op == "read"
+        ]
+        check_out = json.dumps(paths, separators=(",", ":")) + "\n"
+    elif case.get("check") is not None:
         check_out = await stat_check(ws, case["check"])
     return result.exit_code, out, err, elapsed, check_out, notes
 

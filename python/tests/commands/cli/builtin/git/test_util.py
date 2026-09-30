@@ -12,12 +12,17 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import subprocess
+
 import pytest
 
+from mirage.commands.cli import walk
+from mirage.commands.cli.builtin.git import GIT
 from mirage.commands.cli.builtin.git.errors import (  # yapf: disable
     FATAL_EXIT, BadConfigValueError, NotARepositoryError, UnknownSwitchError)
 from mirage.commands.cli.builtin.git.util import (  # yapf: disable
-    check_operands, escaped, fatal, git_bool, start_point, switches)
+    check_operands, config_section, escaped, fatal, git_bool, start_point,
+    switches, without_section)
 from mirage.commands.cli.types import CLIInvocation, CLISpec
 from mirage.commands.spec.flag_view import FlagView
 from mirage.commands.spec.types import Option
@@ -228,3 +233,61 @@ def test_the_last_occurrence_wins():
 def test_every_occurrence_is_parsed():
     with pytest.raises(BadConfigValueError):
         git_bool([b"maybe", b"true"], "core.bare", False)
+
+
+def test_a_later_relative_c_lands_under_the_one_before_it():
+    result = walk("git", GIT, ["-C", "/repo", "-C", "docs", "status"], "/")
+    assert result.group_flags["-C"] == "/repo/docs"
+
+
+@pytest.mark.asyncio
+async def test_chained_c_runs_the_verb_in_the_composed_directory(
+        git_ws, repo_path):
+    (repo_path / "docs").mkdir()
+    (repo_path / "docs" / "new.txt").write_text("new\n")
+    native = subprocess.run(
+        ["git", "-C",
+         str(repo_path), "-C", "docs", "status", "--short"],
+        capture_output=True)
+    result = await git_ws.shell("git -C /repo -C docs status --short")
+    assert (result.exit_code, result.stdout) == (native.returncode,
+                                                 native.stdout)
+    assert result.stdout == b"?? ./\n"
+
+
+def test_a_config_section_escapes_its_name_and_quotes_comment_values():
+    assert config_section("branch", 'q"x', [
+        ("remote", "origin"), ("merge", "refs/heads/we#rd"),
+        ("note", " pad\tend ")
+    ]) == ('[branch "q\\"x"]\n\tremote = origin\n'
+           '\tmerge = "refs/heads/we#rd"\n\tnote = " pad\\tend "\n')
+
+
+def test_without_section_drops_the_blocks_git_matches_by_name():
+    data = (b'[core]\n\tbare = false\n[branch "topic"]\n\tremote = o\n'
+            b'[branch "main"]\n\tremote = o\n[branch.topic]\n\tmerge = m\n'
+            b'  [branch   "topic"] remote = o\n\tmerge = m\n'
+            b'[Branch "topic"]\n\tremote = o\n[branch.TOPIC]\n\tremote = o\n'
+            b'[branch "q\\"x"]\n\tremote = o\n')
+    assert without_section(data, "branch", "topic") == (
+        b'[core]\n\tbare = false\n[branch "main"]\n\tremote = o\n'
+        b'[Branch "topic"]\n\tremote = o\n[branch.TOPIC]\n\tremote = o\n'
+        b'[branch "q\\"x"]\n\tremote = o\n')
+    assert without_section(data, "branch",
+                           'q"x').endswith(b'[branch.TOPIC]\n\tremote = o\n')
+
+
+def test_without_section_follows_a_value_continued_onto_a_bracket_line():
+    data = (b'[core]\n\tbare = false\n[branch "c1"]\n\tdescription = one \\\n'
+            b'[two\n\tremote = origin\n[branch "keep"]\n\tremote = origin\n'
+            b'[branch "c2"]\n\tdescription = "a\\\n  [b"\n\tremote = origin\n'
+            b'[branch "c3"]\n\tnote = x \\\\\n[branch "keep2"]\n\tremote = o\n'
+            b'# see \\\n[branch "c4"]\n\tremote = origin\n')
+    assert without_section(data, "branch", "c1") == (
+        b'[core]\n\tbare = false\n[branch "keep"]\n\tremote = origin\n'
+        b'[branch "c2"]\n\tdescription = "a\\\n  [b"\n\tremote = origin\n'
+        b'[branch "c3"]\n\tnote = x \\\\\n[branch "keep2"]\n\tremote = o\n'
+        b'# see \\\n[branch "c4"]\n\tremote = origin\n')
+    assert b'  [b"' not in without_section(data, "branch", "c2")
+    assert without_section(data, "branch", "c3").count(b"keep2") == 1
+    assert without_section(data, "branch", "c4").endswith(b"# see \\\n")

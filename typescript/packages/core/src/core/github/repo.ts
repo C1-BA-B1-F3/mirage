@@ -13,6 +13,7 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import { GitHubApiError, type GitHubTransport } from './client.ts'
+import { GRAPHQL_PATH } from './constants.ts'
 import { decodeBase64 } from '../../utils/base64.ts'
 import { githubPages } from './paginate.ts'
 
@@ -68,12 +69,12 @@ interface GraphQLErrorRow {
  * them: `GraphQL: Could not resolve to a Repository with the name 'o/r'.
  * (repository)`.
  */
-async function graphqlData(
+export async function graphqlData(
   transport: GitHubTransport,
   query: string,
   variables: Record<string, unknown>,
 ): Promise<Record<string, unknown>> {
-  const response = (await transport.request('POST', '/graphql', { query, variables })) as {
+  const response = (await transport.request('POST', GRAPHQL_PATH, { query, variables })) as {
     data?: Record<string, unknown> | null
     errors?: GraphQLErrorRow[]
   }
@@ -184,6 +185,36 @@ export function forkRepo(
 ): Promise<unknown> {
   const body = name === undefined ? {} : { name }
   return transport.request('POST', `/repos/${ref.owner}/${ref.repo}/forks`, body)
+}
+
+/** Change a repository's settings: the one `PATCH` `gh repo edit` sends. */
+export function editRepo(
+  transport: GitHubTransport,
+  ref: RepoRef,
+  body: Record<string, unknown>,
+): Promise<unknown> {
+  return transport.request('PATCH', `/repos/${ref.owner}/${ref.repo}`, body)
+}
+
+/** A repository's topics, which GitHub keeps and replaces as one list. */
+export async function repoTopics(transport: GitHubTransport, ref: RepoRef): Promise<string[]> {
+  const data = (await transport.get(`/repos/${ref.owner}/${ref.repo}/topics`)) as {
+    names?: unknown
+  } | null
+  const names = data?.names
+  return Array.isArray(names) ? names.filter((n): n is string => typeof n === 'string') : []
+}
+
+export function setRepoTopics(
+  transport: GitHubTransport,
+  ref: RepoRef,
+  names: readonly string[],
+): Promise<unknown> {
+  return transport.request('PUT', `/repos/${ref.owner}/${ref.repo}/topics`, { names })
+}
+
+export function deleteRepo(transport: GitHubTransport, ref: RepoRef): Promise<unknown> {
+  return transport.request('DELETE', `/repos/${ref.owner}/${ref.repo}`)
 }
 
 export function renameRepo(

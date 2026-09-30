@@ -97,6 +97,9 @@ const SKIP_PARTS: ReadonlySet<string> = new Set([NT.FILE_REDIRECT, NT.HERESTRING
  * where a sibling `file_redirect` begins; `cat a 0 >&-` keeps its operand.
  */
 export function claimedDescriptor(command: TSNodeLike, last: TSNodeLike): number | null {
+  if (last.type === NT.COMMAND_NAME && last.namedChildren.length === 1) {
+    last = last.namedChildren[0] ?? last
+  }
   if (last.type !== NT.NUMBER || command.parent == null) return null
   for (const sibling of command.parent.namedChildren) {
     if (sibling.type === NT.FILE_REDIRECT && sibling.startIndex === last.endIndex) {
@@ -653,7 +656,10 @@ export function getRedirects(node: TSNodeLike): [TSNodeLike | null, Redirect[]] 
     recoverHerestring = false
   }
 
-  return [command, redirects]
+  return [
+    command?.type === NT.COMMAND && getParts(command).length === 0 ? null : command,
+    redirects,
+  ]
 }
 
 /**
@@ -979,8 +985,36 @@ export function getProcessSubDirection(node: TSNodeLike): ProcessSubDirection | 
   return null
 }
 
+/**
+ * Bash's single-file command substitution, measured against 5.2.37.
+ * Only a lone foreground `< file` (optionally `0<`) reads input into
+ * the substitution. Extra redirects, commands, heredocs and descriptor
+ * duplication retain ordinary redirect-only semantics.
+ */
+export function inputSubstitutionRedirect(node: TSNodeLike): Redirect | null {
+  if (node.children.some((child) => child.type === '&')) return null
+  const statements = node.namedChildren.filter((child) => child.type !== NT.COMMENT)
+  const statement = statements[0]
+  if (statements.length !== 1 || statement === undefined) return null
+  if (statement.type !== NT.REDIRECTED_STATEMENT && statement.type !== NT.FILE_REDIRECT) return null
+  const [command, redirects] =
+    statement.type === NT.FILE_REDIRECT
+      ? [null, [parseFileRedirect(statement)]]
+      : getRedirects(statement)
+  const redirect = redirects[0]
+  if (
+    command !== null ||
+    redirects.length !== 1 ||
+    redirect?.kind !== RedirectKind.STDIN ||
+    redirect.fd !== 0 ||
+    typeof redirect.target === 'number'
+  )
+    return null
+  return redirect
+}
+
 export function getProcessSubBody(node: TSNodeLike): string {
-  const text = getText(node)
+  const text = node.sourceText ?? node.text
   if ((text.startsWith('<(') || text.startsWith('>(')) && text.endsWith(')')) {
     return text.slice(2, -1)
   }

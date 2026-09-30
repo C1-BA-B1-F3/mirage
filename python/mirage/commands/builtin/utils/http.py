@@ -102,14 +102,17 @@ def http_request(
     data: bytes | None = None,
     timeout: float | None = 30,
     follow_redirects: bool = False,
+    verify: bool = True,
 ) -> HttpResponse:
     # A None timeout is no deadline at all (curl's `--max-time 0`), which
-    # is what httpx spells it as too.
+    # is what httpx spells it as too. `verify=False` is curl's -k: the
+    # server's certificate is not checked.
     if httpx is None:
         raise ImportError(MISSING_HTTPX)
     started = time.monotonic()
     with httpx.Client(timeout=timeout,
-                      follow_redirects=follow_redirects) as client:
+                      follow_redirects=follow_redirects,
+                      verify=verify) as client:
         try:
             resp = client.request(method,
                                   url,
@@ -132,12 +135,14 @@ def http_form_request(
     headers: dict[str, str] | None = None,
     timeout: float | None = 30,
     follow_redirects: bool = False,
+    verify: bool = True,
 ) -> HttpResponse:
     if httpx is None:
         raise ImportError(MISSING_HTTPX)
     started = time.monotonic()
     with httpx.Client(timeout=timeout,
-                      follow_redirects=follow_redirects) as client:
+                      follow_redirects=follow_redirects,
+                      verify=verify) as client:
         try:
             resp = client.request(method,
                                   url,
@@ -154,7 +159,7 @@ def http_form_request(
 def http_get(
     url: str,
     headers: dict[str, str] | None = None,
-    timeout: float = 30,
+    timeout: float | None = 30,
     follow_redirects: bool = True,
 ) -> HttpResponse:
     return http_request(url,

@@ -25,7 +25,7 @@ import { flagKwargName } from '../../../commands/spec/constants.ts'
 import { UsageStyle } from '../../../commands/spec/types.ts'
 import { renderHelp } from '../../../commands/spec/help.ts'
 import { Operand, type FlagValue } from '../../../commands/spec/types.ts'
-import { UsageError } from '../../../commands/errors.ts'
+import { PartialOutputError, UsageError } from '../../../commands/errors.ts'
 import { IOResult, materialize, type ByteSource } from '../../../io/types.ts'
 import { wordText, PathSpec, type Limit } from '../../../types.ts'
 import { concatBytes } from '../../../core/jq/format.ts'
@@ -435,7 +435,8 @@ export async function handleCli(
     }
     // Any other thrown leaf error (an API error, a TypeError) becomes
     // this command's IOResult, prefixed like GNU (prog: message), so
-    // the rest of the line keeps running.
+    // the rest of the line keeps running, and what a leaf printed before
+    // it failed stays printed.
     // The write may already have landed when a leaf throws after its
     // request (a PUT whose --jq program fails filters a response the
     // service already applied); without the drop a github mount keeps
@@ -444,7 +445,7 @@ export async function handleCli(
     const message = err instanceof Error ? err.message : String(err)
     const stderr = new TextEncoder().encode(`${prog}: ${message}\n`)
     return [
-      null,
+      err instanceof PartialOutputError ? err.stdout : null,
       new IOResult({ exitCode: 1, stderr }),
       new ExecutionNode({ command: cmdStr, exitCode: 1, stderr }),
     ]

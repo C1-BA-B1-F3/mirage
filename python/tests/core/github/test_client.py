@@ -12,13 +12,16 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import socket
+
 import pytest
 import pytest_asyncio
 from aiohttp import web
 
-from mirage.core.github.client import (GitHubApiError, github_headers,
-                                       github_request, github_request_response,
-                                       github_url)
+from mirage.core.github.client import (GitHubApiError, GitHubConnectionError,
+                                       github_headers, github_request,
+                                       github_request_response, github_url,
+                                       graphql_url)
 from mirage.core.github.config import GitHubConfig
 
 
@@ -77,6 +80,10 @@ async def _echo(request: web.Request) -> web.Response:
         "content_type": request.headers.get("Content-Type"),
         "accept": request.headers.get("Accept"),
     })
+    if isinstance(REPLY["body"], bytes):
+        return web.Response(status=REPLY["status"],
+                            body=REPLY["body"],
+                            content_type=REPLY["content_type"])
     return web.Response(status=REPLY["status"],
                         text=REPLY["body"],
                         content_type="application/json",
@@ -204,3 +211,107 @@ async def test_request_error_preserves_wire_body_and_request_url(
     assert error.data == data
     assert error.url == f"{base_url}/search/issues?q=bad+query"
     assert error.status == 422
+
+
+# gh's GraphQLEndpoint beside its RESTPrefix (cli/cli internal/ghinstance):
+# an Enterprise Server serves GraphQL at /api/graphql, outside /api/v3.
+@pytest.mark.parametrize("base,url", [
+    (None, "https://api.github.com/graphql"),
+    ("https://api.github.com", "https://api.github.com/graphql"),
+    ("https://ghe.example/api/v3", "https://ghe.example/api/graphql"),
+    ("https://ghe.example/api/v3/", "https://ghe.example/api/graphql"),
+    ("http://127.0.0.1:5098", "http://127.0.0.1:5098/graphql"),
+    ("http://127.0.0.1:5098/api/v3x", "http://127.0.0.1:5098/api/v3x/graphql"),
+])
+def test_graphql_url_pairs_with_the_rest_base_as_gh_does(base, url):
+    assert graphql_url(base) == url
+
+
+@pytest.mark.asyncio
+async def test_graphql_goes_outside_an_enterprise_rest_base(base_url):
+    # A slash-led `/graphql` is a REST path, as `gh api /graphql` is in gh.
+    await github_request("t",
+                         "POST",
+                         "graphql", {"query": "{ viewer { login } }"},
+                         base_url=base_url + "/api/v3")
+    await github_request("t",
+                         "GET",
+                         "/repos/o/r",
+                         base_url=base_url + "/api/v3")
+    await github_request("t", "GET", "/graphql", base_url=base_url + "/api/v3")
+    assert [(seen["method"], seen["path"]) for seen in SEEN] == [
+        ("POST", "/api/graphql"),
+        ("GET", "/api/v3/repos/o/r"),
+        ("GET", "/api/v3/graphql"),
+    ]
+
+
+# `gh api -i` prints a failing response's headers as it prints any other's.
+@pytest.mark.asyncio
+async def test_request_error_carries_the_response_headers(base_url):
+    REPLY.update({"status": 404, "body": '{"message":"Not Found"}'})
+    with pytest.raises(GitHubApiError) as caught:
+        await github_request("t", "GET", "/repos/o/r", base_url=base_url)
+    assert caught.value.headers["x-page"] == "next"
+    assert caught.value.headers["content-type"].startswith("application/json")
+
+
+@pytest.mark.asyncio
+async def test_request_hands_a_binary_body_back_as_bytes(base_url):
+    REPLY.update({
+        "status": 200,
+        "body": b"PK\x05\x06\xff",
+        "content_type": "application/zip"
+    })
+    assert await github_request("t",
+                                "GET",
+                                "/repos/o/r/actions/runs/1/logs",
+                                base_url=base_url) == b"PK\x05\x06\xff"
+
+
+@pytest.mark.asyncio
+async def test_request_reads_a_text_body_as_text(base_url):
+    REPLY.update({
+        "status": 200,
+        "body": b"line one\n",
+        "content_type": "text/plain"
+    })
+    assert await github_request("t",
+                                "GET",
+                                "/repos/o/r/actions/jobs/1/logs",
+                                base_url=base_url) == "line one\n"
+
+
+def _closed_port() -> int:
+    with socket.socket() as probe:
+        probe.bind(("127.0.0.1", 0))
+        return probe.getsockname()[1]
+
+
+# A call that got no response is no status at all: gh names the failure and
+# exits at once. Measured against gh 2.85 (2026-09-30): a refused connection
+# reads as Go's client reports it, an unknown host as printError words it.
+@pytest.mark.asyncio
+async def test_a_refused_connection_is_named_as_go_names_it():
+    port = _closed_port()
+    with pytest.raises(GitHubConnectionError) as caught:
+        await github_request("t",
+                             "GET",
+                             "/repos/o/r",
+                             params={"per_page": "1"},
+                             base_url=f"http://127.0.0.1:{port}")
+    assert str(caught.value) == (
+        f'Get "http://127.0.0.1:{port}/repos/o/r?per_page=1": '
+        f"dial tcp 127.0.0.1:{port}: connect: connection refused")
+
+
+@pytest.mark.asyncio
+async def test_a_host_that_does_not_resolve_is_named_as_gh_names_it():
+    with pytest.raises(GitHubConnectionError) as caught:
+        await github_request("t",
+                             "POST",
+                             "/repos/o/r/issues", {},
+                             base_url="http://nowhere.invalid")
+    assert str(caught.value) == (
+        "error connecting to nowhere.invalid\n"
+        "check your internet connection or https://githubstatus.com")

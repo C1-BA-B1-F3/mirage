@@ -44,10 +44,11 @@ def leaf(name: str):
 def test_tree_shape():
     assert GIT.name == "git"
     assert [v.name for v in GIT.subcommands] == [
-        "version", "remote", "config", "show-ref", "shortlog", "rev-parse",
-        "rev-list", "diff-tree", "status", "log", "show", "diff", "branch",
-        "add", "reset", "commit", "checkout", "switch", "restore", "rm", "mv",
-        "tag"
+        "reflog", "for-each-ref", "ls-files", "fetch", "clone", "help", "init",
+        "fsck", "stash", "version", "remote", "config", "show-ref", "shortlog",
+        "rev-parse", "rev-list", "diff-tree", "status", "log", "show", "diff",
+        "branch", "add", "reset", "commit", "checkout", "switch", "restore",
+        "rm", "mv", "tag"
     ]
 
 
@@ -124,7 +125,7 @@ async def test_discovery_stops_at_the_mount_root():
 
 
 @pytest.mark.asyncio
-async def test_detached_head_reports_the_short_commit():
+async def test_a_detached_head_no_checkout_moved_is_on_no_branch():
     with Workspace({"/data/": RAMVFS()}, mode=MountMode.WRITE) as ws:
         ws.register_cli("git", GIT)
         await ws.shell("mkdir -p /data/repo/.git")
@@ -132,7 +133,7 @@ async def test_detached_head_reports_the_short_commit():
                            b"cdd6234342b147880f5d86c55dad6c1fbe222bfe\n")
         result = await ws.shell("git -C /data/repo status")
     assert result.exit_code == 0
-    assert result.stdout == b"HEAD detached at cdd6234" + NOTHING_YET
+    assert result.stdout == b"Not currently on any branch." + NOTHING_YET
 
 
 @pytest.mark.asyncio

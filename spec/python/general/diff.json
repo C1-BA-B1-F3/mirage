@@ -318,6 +318,16 @@
       "type": "bool"
     },
     {
+      "short": "-U",
+      "type": "str"
+    },
+    {
+      "long": "--unified",
+      "type": "str",
+      "value_optional": true
+    },
+    {
+      "long": "--brief",
       "short": "-q",
       "type": "bool"
     },

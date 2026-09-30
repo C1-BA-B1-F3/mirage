@@ -112,7 +112,7 @@ async def execute_command(
             ast = parse(line)
             offending = find_syntax_error(ast)
             if offending is not None:
-                io = syntax_error_result(offending)
+                io = syntax_error_result(offending, ast)
                 bad = io.stderr if isinstance(io.stderr, bytes) else b""
                 return None, io, ExecutionNode(command=head,
                                                exit_code=io.exit_code,

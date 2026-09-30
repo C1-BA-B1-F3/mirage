@@ -41,6 +41,7 @@ import { preloadInto } from './vfs/preload.ts'
 import { MirageFs } from './vfs/vfs.ts'
 import { MirageFsSeed } from './vfs/seed.ts'
 import { PyodideExecution } from './execution.ts'
+import { mainFilename } from '../execution.ts'
 import { unhonoredNotice, type InitFlags } from '../flags.ts'
 import type { SyncVFS, XattrOp } from './vfs/types.ts'
 import { classify } from '../../../errors/index.ts'
@@ -60,8 +61,9 @@ function bridgeStderr(value: Uint8Array | ArrayLike<number>): Uint8Array | null 
 // (-E, -I, -s, -S) only change how an interpreter *starts*, and this
 // one is already running by the time a line is typed, so it reports
 // them instead of pretending. See execution.py for what honoring the
-// four below amounts to.
-const HONORED_FLAGS: readonly string[] = ['B', 'O', 'W', 'X']
+// five below amounts to; -P takes the working directory off sys.path
+// for the run, and no script's directory goes there in its place.
+const HONORED_FLAGS: readonly string[] = ['B', 'O', 'P', 'W', 'X']
 
 function decodeNoticeLines(notice: Uint8Array): string[] {
   if (notice.length === 0) return []
@@ -774,6 +776,8 @@ export class PyodideRuntime extends PythonRuntime implements Evaluator {
       flags: args.flags ?? {},
       script_cli: args.scriptCli ?? false,
       cwd: this.guestCwd(args.cwd),
+      filename: mainFilename(args),
+      script: args.scriptPath !== undefined,
     }
 
     // Deadline trip -> exit 124 via CommandTimeoutError; a kill signal

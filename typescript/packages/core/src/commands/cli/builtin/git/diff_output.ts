@@ -27,6 +27,7 @@ export interface DiffFlags {
   merge: string
   raw: boolean
   abbrev: boolean
+  functionContext: boolean
   context: number
   quotePathFully: boolean
 }
@@ -79,10 +80,12 @@ export function parseDiffFlags(
   if (context < 0) throw new GitError('negative context length')
   const patch =
     fl.asBool('patch') ||
+    fl.asBool('function_context') ||
     fl.asInt('unified') != null ||
     ((defaultPatch || fl.asBool('cc') || (porcelain && fl.asBool('c'))) && !modes)
   return {
     context,
+    functionContext: fl.asBool('function_context'),
     nameOnly,
     nameStatus,
     stat,
@@ -238,6 +241,7 @@ export async function renderChanges(repo: Repo, rows: Change[], flags: DiffFlags
           repo.abbrev,
           fully,
           flags.context,
+          flags.functionContext,
         ),
       )
   }
@@ -314,6 +318,7 @@ export async function commitSummary(
 ): Promise<string> {
   return renderChanges(repo, await compare(repo, before, after, RENAME_SCORE), {
     context: 3,
+    functionContext: false,
     nameOnly: false,
     nameStatus: false,
     stat: false,

@@ -71,8 +71,9 @@ describe.each(NATIVE_BACKENDS)('native jq (%s backend)', (kind) => {
     ['jq -a .', '{"k":"caf\u00e9"}'],
     ['jq -a -r .k', '{"k":"caf\u00e9"}'],
     ['jq --tab .', '{"a":[1,2]}'],
+    // No --indent 0: jq 1.7 prints it compact and jq 1.8.2, which mirage
+    // follows, breaks the lines without indenting (integ/unix/jq/literal.json).
     ['jq --indent 4 .', '{"a":[1,2]}'],
-    ['jq --indent 0 .', '{"a":[1,2]}'],
     ['jq --indent -1 .', '{"a":[1,2]}'],
     ['jq --raw-output .a', '{"a":"x"}'],
     ['jq --compact-output .', '{"a":[1,2]}'],

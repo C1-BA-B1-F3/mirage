@@ -1,0 +1,225 @@
+{
+  "cases": [
+    {
+      "id": "curl_ipv4_short_write_out",
+      "seq": 330300,
+      "targets": [
+        "http-ram"
+      ],
+      "command": "curl -4 -s -w '%{http_code}\\n' {http}/hello",
+      "expect": {
+        "exit": 0,
+        "stdout": "hello from http\n200\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "curl_ipv4_long_write_out",
+      "seq": 330301,
+      "targets": [
+        "http-ram"
+      ],
+      "command": "curl --ipv4 -s -o /dev/null -w '%{response_code}' {http}/hello",
+      "expect": {
+        "exit": 0,
+        "stdout": "200",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "curl_ipv6_short_write_out",
+      "seq": 330302,
+      "targets": [
+        "http-ram"
+      ],
+      "command": "curl -6 -s -o - -w ':%{http_code}' {http}/hello",
+      "expect": {
+        "exit": 0,
+        "stdout": "hello from http\n:200",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "curl_ipv6_long_write_out",
+      "seq": 330303,
+      "targets": [
+        "http-ram"
+      ],
+      "command": "curl --ipv6 -s -o /dev/null -w '%{http_code}' {http}/hello",
+      "expect": {
+        "exit": 0,
+        "stdout": "200",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "curl_write_out_http_error",
+      "seq": 330304,
+      "targets": [
+        "http-ram"
+      ],
+      "command": "curl -s -o /dev/null -w '%{http_code}:%{exitcode}' {http}/missing",
+      "expect": {
+        "exit": 0,
+        "stdout": "404:0",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "curl_write_out_fail",
+      "seq": 330305,
+      "targets": [
+        "http-ram"
+      ],
+      "command": "curl -sf -w '%{http_code}:%{exitcode}' {http}/missing",
+      "expect": {
+        "exit": 22,
+        "stdout": "404:22",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "curl_write_out_connection_failure",
+      "seq": 330306,
+      "targets": [
+        "http-ram"
+      ],
+      "command": "curl -s -w '%{http_code}:%{exitcode}' http://127.0.0.1:9/x",
+      "expect": {
+        "exit": 7,
+        "stdout": "000:7",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "curl_write_out_separate_file",
+      "seq": 330307,
+      "targets": [
+        "http-ram"
+      ],
+      "command": "curl -s -o {mount}/body -w '%{http_code}\\n' {http}/hello; cat {mount}/body",
+      "expect": {
+        "exit": 0,
+        "stdout": "200\nhello from http\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "curl_write_out_file_template",
+      "seq": 330308,
+      "targets": [
+        "http-ram"
+      ],
+      "command": "printf '%%{http_code}\\n' > {mount}/format; curl -s -o /dev/null -w @{mount}/format {http}/hello",
+      "expect": {
+        "exit": 0,
+        "stdout": "200\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "curl_write_out_streams",
+      "seq": 330309,
+      "targets": [
+        "http-ram"
+      ],
+      "command": "curl -s -o /dev/null -w '%%:%{http_code}%{stderr}status=%{http_code}%{stdout}!' {http}/hello",
+      "expect": {
+        "exit": 0,
+        "stdout": "%:200!",
+        "stderr": "status=200"
+      }
+    },
+    {
+      "id": "curl_write_out_unknown",
+      "seq": 330310,
+      "targets": [
+        "http-ram"
+      ],
+      "command": "curl -s -o /dev/null -w 'a%{no_such_variable}b' {http}/hello",
+      "expect": {
+        "exit": 0,
+        "stdout": "ab",
+        "stderr": "curl: unknown --write-out variable: 'no_such_variable'\n"
+      }
+    },
+    {
+      "id": "wget_timeout_long",
+      "seq": 330311,
+      "targets": [
+        "http-ram"
+      ],
+      "command": "wget --timeout=5 -q -O - {http}/hello",
+      "expect": {
+        "exit": 0,
+        "stdout": "hello from http\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "wget_timeout_short",
+      "seq": 330312,
+      "targets": [
+        "http-ram"
+      ],
+      "command": "wget -T 0 -q -O - {http}/hello",
+      "expect": {
+        "exit": 0,
+        "stdout": "hello from http\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "wget_timeout_connect",
+      "seq": 330313,
+      "targets": [
+        "http-ram"
+      ],
+      "command": "wget --timeout=5 -q -O - http://127.0.0.1:9/x",
+      "expect": {
+        "exit": 4,
+        "stdout": "",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "curl_write_out_missing",
+      "seq": 330314,
+      "targets": [
+        "http-ram"
+      ],
+      "command": "curl -w @{mount}/missing-write-out-format {http}/hello",
+      "expect": {
+        "exit": 26,
+        "stdout": "",
+        "stderr": "curl: Failed to open {mount}/missing-write-out-format\ncurl: option -w: error encountered when reading a file\ncurl: try 'curl --help' or 'curl --manual' for more information\n"
+      }
+    },
+    {
+      "id": "curl_write_out_missing_silent",
+      "seq": 330315,
+      "targets": [
+        "http-ram"
+      ],
+      "command": "curl -s -w @{mount}/missing-write-out-format {http}/hello",
+      "expect": {
+        "exit": 26,
+        "stdout": "",
+        "stderr": "curl: option -w: error encountered when reading a file\ncurl: try 'curl --help' or 'curl --manual' for more information\n"
+      }
+    },
+    {
+      "id": "curl_write_out_missing_show_error",
+      "seq": 330316,
+      "targets": [
+        "http-ram"
+      ],
+      "command": "curl -sS -w @{mount}/missing-write-out-format {http}/hello",
+      "expect": {
+        "exit": 26,
+        "stdout": "",
+        "stderr": "curl: option -w: error encountered when reading a file\ncurl: try 'curl --help' or 'curl --manual' for more information\n"
+      }
+    }
+  ]
+}

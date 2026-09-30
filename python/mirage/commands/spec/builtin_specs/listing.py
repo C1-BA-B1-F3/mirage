@@ -19,6 +19,7 @@ SPECS: dict[str, CommandSpec] = {
     CommandSpec(
         options=(
             Option(short="-l"),
+            Option(short="-b", long="--escape"),
             Option(short="-a", long="--all"),
             Option(short="-A", long="--almost-all"),
             Option(short="-h", long="--human-readable"),

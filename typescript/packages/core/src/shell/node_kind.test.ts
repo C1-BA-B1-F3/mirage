@@ -34,6 +34,7 @@ beforeAll(async () => {
 const SNIPPETS: Record<NodeKind, string> = {
   [NodeKind.COMMENT]: '# a comment',
   [NodeKind.PROGRAM]: 'true',
+  [NodeKind.TIMED]: 'time cat /data/a.txt',
   [NodeKind.COMMAND]: 'cat /data/a.txt',
   [NodeKind.PIPELINE]: 'cat /data/a.txt | wc -l',
   [NodeKind.LIST]: 'true && false',

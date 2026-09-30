@@ -19,7 +19,7 @@ import {
   ARITH_NAME,
   ARITH_TOKEN,
 } from './constants.ts'
-import { ArithError } from './errors.ts'
+import { ArithError, UnboundVariable } from './errors.ts'
 import type { ArithResult, ArithWrite, ElementOps } from './types.ts'
 
 type ArithTarget = { kind: 'var'; name: string } | { kind: 'elem'; name: string; sub: string }
@@ -367,6 +367,7 @@ class ArithEvaluator {
     private readonly elements: ElementOps | null,
     private readonly readVar: ((name: string) => string | null) | null,
     private readonly wroteVar: ((name: string, value: string) => void) | null = null,
+    private readonly nounset = false,
   ) {}
 
   private coerce(raw: string | null): bigint {
@@ -400,6 +401,7 @@ class ArithEvaluator {
       this.elements,
       this.readVar,
       this.wroteVar,
+      this.nounset,
     )
     return nested.run(new ArithParser(tokenize(text)).parse())
   }
@@ -416,7 +418,13 @@ class ArithEvaluator {
     // A bare array name reads as element 0 (`a=(4 5)` then `$((a))` is
     // 4); the env holds scalars only, so the element resolver answers
     // for the arrays.
-    return this.coerce(this.elements === null ? null : this.elements.read(name, '0'))
+    const element = this.elements === null ? null : this.elements.read(name, '0')
+    // Under `set -u` a name no variable holds is fatal, as bash's
+    // expr_streval has it; an array counts whatever its element 0 holds.
+    if (element === null && this.nounset && this.elements?.holdsArray?.(name) !== true) {
+      throw new UnboundVariable(name)
+    }
+    return this.coerce(element)
   }
 
   private elemKey(name: string, sub: string): string {
@@ -598,7 +606,8 @@ class ArithEvaluator {
  * session behind it can honestly say. Returns the value plus the scalar
  * and element assignments made, for the caller to apply to the session.
  * Throws ArithError on syntax errors, division by zero, or a negative
- * exponent.
+ * exponent. `nounset` is `set -u` for the names the expression reads: one
+ * that no variable holds throws UnboundVariable instead of reading 0.
  */
 export function evaluateArith(
   expr: string,
@@ -607,6 +616,7 @@ export function evaluateArith(
   elements: ElementOps | null = null,
   readVar: ((name: string) => string | null) | null = null,
   wroteVar: ((name: string, value: string) => void) | null = null,
+  nounset = false,
 ): ArithResult {
   const tokens = tokenize(expr)
   if (tokens.length === 0) return { value: 0n, writes: [] }
@@ -625,6 +635,7 @@ export function evaluateArith(
       elements,
       readVar,
       wroteVar,
+      nounset,
     ).run(node)
   } catch (err) {
     if (err instanceof ArithError) err.writes = [...writes.values()]

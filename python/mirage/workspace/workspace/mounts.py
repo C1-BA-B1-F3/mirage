@@ -145,7 +145,8 @@ def install_mounts(registry: MountRegistry, specs: list[MountSpec],
     A workspace-level ``index`` builds every mount's store, its TTL
     included: the config names the store the whole workspace shares, so
     a VFS that declares ``index_ttl = 0`` caches its listings for the
-    workspace's TTL under it (the redis index example relies on exactly
+    workspace's TTL under it, capped by the mount's read ``ttl`` (the
+    redis index example relies on exactly
     that to share a RAM mount's listing between two processes). A mount
     that names its own ``index`` keeps it; with neither, the mount runs
     a RAM store at the driver's ``index_ttl``.
@@ -262,24 +263,26 @@ async def unmount(registry: MountRegistry, ops: Ops, prefix: str,
     ops.unmount(prefix)
     remaining = registry.mounts()
     still_instance = any(m.vfs is removed.vfs for m in remaining)
-    # The store was the mount's, shared only with aliases of the same
-    # instance, so it closes with the last of them whoever owns the VFS.
-    if not still_instance:
-        await removed.index_store.close()
     # The mount owns its op table, so dropping the mount drops the ops
     # with it; the facade keeps no second registry to clean up.
-    if not still_instance and id(removed.vfs) not in shared_mounts:
+    if not still_instance:
         identity = id(removed.vfs)
-        registry.retired_mounts[identity] = removed.vfs
-        closing = asyncio.create_task(_close_vfs(removed))
+        shared = identity in shared_mounts
+        if not shared:
+            registry.retired_mounts[identity] = removed.vfs
+        closing = asyncio.create_task(_close_vfs(removed, shared))
         registry.retiring_mounts[identity] = closing
         closing.add_done_callback(partial(_release_vfs, registry, identity))
         await asyncio.shield(closing)
 
 
-async def _close_vfs(entry: MountEntry) -> None:
+async def _close_vfs(entry: MountEntry, shared: bool) -> None:
     await entry.activity.wait()
-    await entry.vfs.close()
+    try:
+        if not shared:
+            await entry.vfs.close()
+    finally:
+        await entry.index_store.close()
 
 
 def _release_vfs(registry: MountRegistry, identity: int,

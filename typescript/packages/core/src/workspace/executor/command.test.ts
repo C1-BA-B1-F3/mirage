@@ -209,3 +209,43 @@ describe('the words a handler sees', () => {
     await ws.close()
   })
 })
+
+describe('door options route nothing', () => {
+  // jq's --rawfile/--slurpfile are read and curl's -o/-D written through
+  // the dispatcher, so a file on another mount, or a process substitution
+  // under /dev, is no cross-mount line (DOOR_FLAG_KEYS). Positional operands
+  // still route. Mirrors python's test_door_options_route_nothing.
+  it.each([
+    [
+      "jq -c -n --slurpfile t /work/t.json --slurpfile f <(echo '{\"x\":1}') '[$t, $f]'",
+      '[[{"a":1}],[{"x":1}]]\n',
+    ],
+    ["jq -c --slurpfile t /work/t.json '[., $t]' /data/d.json", '[{"b":2},[{"a":1}]]\n'],
+    ["cd /work && jq -c -n --rawfile r /data/r.txt '$r'", '"raw\\n"\n'],
+  ])('%s', async (line, out) => {
+    const ws = new Workspace(
+      { '/data/': new RAMVFS(), '/work/': new RAMVFS() },
+      { mode: MountMode.WRITE, shellParser: await getTestParser() },
+    )
+    await ws.shell(
+      'echo \'{"a":1}\' > /work/t.json; echo \'{"b":2}\' > /data/d.json; echo raw > /data/r.txt',
+    )
+    const r = await ws.shell(line)
+    expect([r.exitCode, decode(r.stdout), decode(r.stderr)]).toEqual([0, out, ''])
+    await ws.close()
+  })
+
+  it('still refuses positional operands on two mounts', async () => {
+    const ws = new Workspace(
+      { '/data/': new RAMVFS(), '/work/': new RAMVFS() },
+      { mode: MountMode.WRITE, shellParser: await getTestParser() },
+    )
+    await ws.shell('echo 1 > /work/t.json; echo 2 > /data/d.json')
+    const r = await ws.shell('jq . /work/t.json /data/d.json')
+    expect(r.exitCode).toBe(1)
+    expect(decode(r.stderr)).toBe(
+      'jq: paths span multiple mounts (/data/, /work/), cross-mount not supported\n',
+    )
+    await ws.close()
+  })
+})

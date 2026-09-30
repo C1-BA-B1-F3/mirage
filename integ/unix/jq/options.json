@@ -1,0 +1,1020 @@
+{
+  "cases": [
+    {
+      "id": "jq_args_named_keeps_the_typed_order_across_arg_and_argjson",
+      "seq": 701103,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "jq -n -c --argjson a 1 --arg b x --argjson c '{\"z\":1,\"0\":2}' '$ARGS.named'",
+      "expect": {
+        "exit": 0,
+        "stdout": "{\"a\":1,\"b\":\"x\",\"c\":{\"z\":1,\"0\":2}}\n",
+        "stderr": ""
+      },
+      "flags": [
+        "n",
+        "c",
+        "argjson",
+        "arg"
+      ]
+    },
+    {
+      "id": "jq_args_named_lists_bindings_as_typed_not_flag_by_flag",
+      "seq": 701104,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "jq -n -c --arg b x --argjson a 1 '$ARGS.named, $a, $b'",
+      "expect": {
+        "exit": 0,
+        "stdout": "{\"b\":\"x\",\"a\":1}\n1\n\"x\"\n",
+        "stderr": ""
+      },
+      "flags": [
+        "n",
+        "c",
+        "arg",
+        "argjson"
+      ]
+    },
+    {
+      "id": "jq_the_first_argjson_of_a_name_wins",
+      "seq": 701105,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "jq -n -c --argjson v 1 --argjson v 2 '$v, $ARGS.named'",
+      "expect": {
+        "exit": 0,
+        "stdout": "1\n{\"v\":1}\n",
+        "stderr": ""
+      },
+      "flags": [
+        "n",
+        "c",
+        "argjson"
+      ]
+    },
+    {
+      "id": "jq_the_first_binding_of_a_name_wins_across_arg_and_argjson",
+      "seq": 701106,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "jq -n -c --arg v 1 --argjson v 2 '$v, $ARGS.named'",
+      "expect": {
+        "exit": 0,
+        "stdout": "\"1\"\n{\"v\":\"1\"}\n",
+        "stderr": ""
+      },
+      "flags": [
+        "n",
+        "c",
+        "arg",
+        "argjson"
+      ]
+    },
+    {
+      "id": "jq_a_taken_name_never_parses_its_argjson",
+      "seq": 701107,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "jq -n -c --arg v 1 --argjson v nope '$v, $ARGS.named'",
+      "expect": {
+        "exit": 0,
+        "stdout": "\"1\"\n{\"v\":\"1\"}\n",
+        "stderr": ""
+      },
+      "flags": [
+        "n",
+        "c",
+        "arg",
+        "argjson"
+      ]
+    },
+    {
+      "id": "jq_args_named_keeps_the_typed_order_across_all_four_bindings",
+      "seq": 701108,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "mkdir -p /data/qjqa && printf 'x' > /data/qjqa/r.txt && printf '1 2' > /data/qjqa/s.json && jq -n -c --slurpfile s /data/qjqa/s.json --arg a 1 --rawfile r /data/qjqa/r.txt --argjson b 2 '$ARGS.named'",
+      "expect": {
+        "exit": 0,
+        "stdout": "{\"s\":[1,2],\"a\":\"1\",\"r\":\"x\",\"b\":2}\n",
+        "stderr": ""
+      },
+      "flags": [
+        "n",
+        "c",
+        "slurpfile",
+        "arg",
+        "rawfile",
+        "argjson"
+      ]
+    },
+    {
+      "id": "jq_a_taken_name_never_opens_its_rawfile",
+      "seq": 701109,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "mkdir -p /data/qjqa && jq -n -c --arg v 1 --rawfile v /data/qjqa/missing.txt '$v'",
+      "expect": {
+        "exit": 0,
+        "stdout": "\"1\"\n",
+        "stderr": ""
+      },
+      "flags": [
+        "n",
+        "c",
+        "arg",
+        "rawfile"
+      ]
+    },
+    {
+      "id": "jq_a_taken_name_never_reads_its_slurpfile",
+      "seq": 701110,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "mkdir -p /data/qjqa && printf '[' > /data/qjqa/bad.json && jq -n -c --argjson v 2 --slurpfile v /data/qjqa/bad.json '$v'",
+      "expect": {
+        "exit": 0,
+        "stdout": "2\n",
+        "stderr": ""
+      },
+      "flags": [
+        "n",
+        "c",
+        "argjson",
+        "slurpfile"
+      ]
+    },
+    {
+      "id": "jq_a_rawfile_binding_wins_over_a_later_arg",
+      "seq": 701111,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "mkdir -p /data/qjqa && printf 'x' > /data/qjqa/r.txt && jq -n -c --rawfile v /data/qjqa/r.txt --arg v 1 '$v, $ARGS.named'",
+      "expect": {
+        "exit": 0,
+        "stdout": "\"x\"\n{\"v\":\"x\"}\n",
+        "stderr": ""
+      },
+      "flags": [
+        "n",
+        "c",
+        "rawfile",
+        "arg"
+      ]
+    },
+    {
+      "id": "jq_an_argjson_refusal_typed_first_is_reported_first",
+      "seq": 701112,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "mkdir -p /data/qjqa && jq -n --argjson a nope --slurpfile b /data/qjqa/missing.json 1",
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "jq: invalid JSON text passed to --argjson\nUse jq --help for help with command-line options,\nor see the jq manpage, or online docs at https://jqlang.org\n"
+      },
+      "flags": [
+        "n",
+        "argjson",
+        "slurpfile"
+      ]
+    },
+    {
+      "id": "jq_a_slurpfile_refusal_typed_first_is_reported_first",
+      "seq": 701113,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "mkdir -p /data/qjqa && jq -n --slurpfile b /data/qjqa/missing.json --argjson a nope 1",
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "jq: Bad JSON in --slurpfile b /data/qjqa/missing.json: Could not open /data/qjqa/missing.json: No such file or directory\n"
+      },
+      "flags": [
+        "n",
+        "slurpfile",
+        "argjson"
+      ]
+    },
+    {
+      "id": "jq_a_binding_typed_among_args_operands_is_bound",
+      "seq": 701114,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "jq -n -c --args '[$ARGS.positional, $ARGS.named]' a --arg n 1 b",
+      "expect": {
+        "exit": 0,
+        "stdout": "[[\"a\",\"b\"],{\"n\":\"1\"}]\n",
+        "stderr": ""
+      },
+      "flags": [
+        "n",
+        "c",
+        "args",
+        "arg"
+      ]
+    },
+    {
+      "id": "jq_a_binding_named_args_leaves_dollar_args_alone",
+      "seq": 701115,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "jq -n -c --arg ARGS x '$ARGS.named, ($ARGS | keys)'",
+      "expect": {
+        "exit": 0,
+        "stdout": "{\"ARGS\":\"x\"}\n[\"named\",\"positional\"]\n",
+        "stderr": ""
+      },
+      "flags": [
+        "n",
+        "c",
+        "arg"
+      ]
+    },
+    {
+      "id": "jq_args_named_keeps_integer_like_names_in_typed_order",
+      "seq": 701116,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "jq -n -c --arg 1 x --arg b y --arg 0 z '$ARGS.named'",
+      "expect": {
+        "exit": 0,
+        "stdout": "{\"1\":\"x\",\"b\":\"y\",\"0\":\"z\"}\n",
+        "stderr": ""
+      },
+      "flags": [
+        "n",
+        "c",
+        "arg"
+      ]
+    },
+    {
+      "id": "jq_indent_refuses_a_word_that_is_not_a_number",
+      "seq": 701117,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "echo '{\"a\":[1]}' | jq --indent x .",
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "jq: --indent takes a number between -1 and 7\nUse jq --help for help with command-line options,\nor see the jq manpage, or online docs at https://jqlang.org\n"
+      },
+      "flags": [
+        "indent"
+      ]
+    },
+    {
+      "id": "jq_indent_refuses_a_number_with_text_after_it",
+      "seq": 701118,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "echo '{\"a\":[1]}' | jq --indent 2x .",
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "jq: --indent takes a number between -1 and 7\nUse jq --help for help with command-line options,\nor see the jq manpage, or online docs at https://jqlang.org\n"
+      },
+      "flags": [
+        "indent"
+      ]
+    },
+    {
+      "id": "jq_indent_refuses_an_empty_word",
+      "seq": 701119,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "echo '{\"a\":[1]}' | jq --indent '' .",
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "jq: --indent takes a number between -1 and 7\nUse jq --help for help with command-line options,\nor see the jq manpage, or online docs at https://jqlang.org\n"
+      },
+      "flags": [
+        "indent"
+      ]
+    },
+    {
+      "id": "jq_indent_refuses_a_blank_before_the_number",
+      "seq": 701120,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "echo '{\"a\":[1]}' | jq --indent ' 3' .",
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "jq: --indent takes a number between -1 and 7\nUse jq --help for help with command-line options,\nor see the jq manpage, or online docs at https://jqlang.org\n"
+      },
+      "flags": [
+        "indent"
+      ]
+    },
+    {
+      "id": "jq_indent_refuses_a_blank_after_the_number",
+      "seq": 701121,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "echo '{\"a\":[1]}' | jq --indent '3 ' .",
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "jq: --indent takes a number between -1 and 7\nUse jq --help for help with command-line options,\nor see the jq manpage, or online docs at https://jqlang.org\n"
+      },
+      "flags": [
+        "indent"
+      ]
+    },
+    {
+      "id": "jq_indent_reads_a_plus_sign",
+      "seq": 701122,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "echo '{\"a\":[1]}' | jq --indent +3 .",
+      "expect": {
+        "exit": 0,
+        "stdout": "{\n   \"a\": [\n      1\n   ]\n}\n",
+        "stderr": ""
+      },
+      "flags": [
+        "indent"
+      ]
+    },
+    {
+      "id": "jq_indent_reads_a_leading_zero_as_decimal",
+      "seq": 701123,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "echo '{\"a\":[1]}' | jq --indent 07 .",
+      "expect": {
+        "exit": 0,
+        "stdout": "{\n       \"a\": [\n              1\n       ]\n}\n",
+        "stderr": ""
+      },
+      "flags": [
+        "indent"
+      ]
+    },
+    {
+      "id": "jq_indent_reads_08_as_eight_and_refuses_it",
+      "seq": 701124,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "echo '{\"a\":[1]}' | jq --indent 08 .",
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "jq: --indent takes a number between -1 and 7\nUse jq --help for help with command-line options,\nor see the jq manpage, or online docs at https://jqlang.org\n"
+      },
+      "flags": [
+        "indent"
+      ]
+    },
+    {
+      "id": "jq_indent_reads_minus_zero_as_zero",
+      "seq": 701125,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "echo '{\"a\":[1]}' | jq --indent -0 .",
+      "expect": {
+        "exit": 0,
+        "stdout": "{\n\"a\": [\n1\n]\n}\n",
+        "stderr": ""
+      },
+      "flags": [
+        "indent"
+      ]
+    },
+    {
+      "id": "jq_indent_refuses_a_number_too_large_to_read",
+      "seq": 701126,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "echo '{\"a\":[1]}' | jq --indent 99999999999999999999 .",
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "jq: --indent takes a number between -1 and 7\nUse jq --help for help with command-line options,\nor see the jq manpage, or online docs at https://jqlang.org\n"
+      },
+      "flags": [
+        "indent"
+      ]
+    },
+    {
+      "id": "jq_indent_refuses_a_bad_width_after_a_good_one",
+      "seq": 701127,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "echo '{\"a\":[1]}' | jq --indent 2 --indent x .",
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "jq: --indent takes a number between -1 and 7\nUse jq --help for help with command-line options,\nor see the jq manpage, or online docs at https://jqlang.org\n"
+      },
+      "flags": [
+        "indent"
+      ]
+    },
+    {
+      "id": "jq_indent_refuses_a_bad_width_before_a_good_one",
+      "seq": 701128,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "echo '{\"a\":[1]}' | jq --indent x --indent 2 .",
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "jq: --indent takes a number between -1 and 7\nUse jq --help for help with command-line options,\nor see the jq manpage, or online docs at https://jqlang.org\n"
+      },
+      "flags": [
+        "indent"
+      ]
+    },
+    {
+      "id": "jq_indent_refuses_a_fraction",
+      "seq": 701129,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "echo '{\"a\":[1]}' | jq --indent 1.5 .",
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "jq: --indent takes a number between -1 and 7\nUse jq --help for help with command-line options,\nor see the jq manpage, or online docs at https://jqlang.org\n"
+      },
+      "flags": [
+        "indent"
+      ]
+    },
+    {
+      "id": "jq_indent_refuses_a_hex_width",
+      "seq": 701130,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "echo '{\"a\":[1]}' | jq --indent 0x3 .",
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "jq: --indent takes a number between -1 and 7\nUse jq --help for help with command-line options,\nor see the jq manpage, or online docs at https://jqlang.org\n"
+      },
+      "flags": [
+        "indent"
+      ]
+    },
+    {
+      "id": "jq_tab_after_c_lays_out_with_tabs",
+      "seq": 701131,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "echo '{\"a\":[1]}' | jq -c --tab .",
+      "expect": {
+        "exit": 0,
+        "stdout": "{\n\t\"a\": [\n\t\t1\n\t]\n}\n",
+        "stderr": ""
+      },
+      "flags": [
+        "c",
+        "tab"
+      ]
+    },
+    {
+      "id": "jq_c_after_tab_prints_compact",
+      "seq": 701132,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "echo '{\"a\":[1]}' | jq --tab -c .",
+      "expect": {
+        "exit": 0,
+        "stdout": "{\"a\":[1]}\n",
+        "stderr": ""
+      },
+      "flags": [
+        "tab",
+        "c"
+      ]
+    },
+    {
+      "id": "jq_c_after_indent_prints_compact",
+      "seq": 701133,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "echo '{\"a\":[1]}' | jq --indent 3 -c .",
+      "expect": {
+        "exit": 0,
+        "stdout": "{\"a\":[1]}\n",
+        "stderr": ""
+      },
+      "flags": [
+        "indent",
+        "c"
+      ]
+    },
+    {
+      "id": "jq_indent_after_c_lays_out_with_spaces",
+      "seq": 701134,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "echo '{\"a\":[1]}' | jq -c --indent 3 .",
+      "expect": {
+        "exit": 0,
+        "stdout": "{\n   \"a\": [\n      1\n   ]\n}\n",
+        "stderr": ""
+      },
+      "flags": [
+        "c",
+        "indent"
+      ]
+    },
+    {
+      "id": "jq_indent_after_tab_lays_out_with_spaces",
+      "seq": 701135,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "echo '{\"a\":[1]}' | jq --tab --indent 3 .",
+      "expect": {
+        "exit": 0,
+        "stdout": "{\n   \"a\": [\n      1\n   ]\n}\n",
+        "stderr": ""
+      },
+      "flags": [
+        "tab",
+        "indent"
+      ]
+    },
+    {
+      "id": "jq_tab_after_indent_lays_out_with_tabs",
+      "seq": 701136,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "echo '{\"a\":[1]}' | jq --indent 3 --tab .",
+      "expect": {
+        "exit": 0,
+        "stdout": "{\n\t\"a\": [\n\t\t1\n\t]\n}\n",
+        "stderr": ""
+      },
+      "flags": [
+        "indent",
+        "tab"
+      ]
+    },
+    {
+      "id": "jq_c_after_indent_minus_one_prints_compact",
+      "seq": 701137,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "echo '{\"a\":[1]}' | jq --indent -1 -c .",
+      "expect": {
+        "exit": 0,
+        "stdout": "{\"a\":[1]}\n",
+        "stderr": ""
+      },
+      "flags": [
+        "indent",
+        "c"
+      ]
+    },
+    {
+      "id": "jq_indent_minus_one_after_c_lays_out_with_tabs",
+      "seq": 701138,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "echo '{\"a\":[1]}' | jq -c --indent -1 .",
+      "expect": {
+        "exit": 0,
+        "stdout": "{\n\t\"a\": [\n\t\t1\n\t]\n}\n",
+        "stderr": ""
+      },
+      "flags": [
+        "c",
+        "indent"
+      ]
+    },
+    {
+      "id": "jq_tab_after_compact_output_lays_out_with_tabs",
+      "seq": 701139,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "echo '{\"a\":[1]}' | jq --compact-output --tab .",
+      "expect": {
+        "exit": 0,
+        "stdout": "{\n\t\"a\": [\n\t\t1\n\t]\n}\n",
+        "stderr": ""
+      },
+      "flags": [
+        "compact-output",
+        "tab"
+      ]
+    },
+    {
+      "id": "jq_tab_after_a_cr_cluster_lays_out_with_tabs",
+      "seq": 701140,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "echo '{\"a\":[1]}' | jq -cr --tab .",
+      "expect": {
+        "exit": 0,
+        "stdout": "{\n\t\"a\": [\n\t\t1\n\t]\n}\n",
+        "stderr": ""
+      },
+      "flags": [
+        "c",
+        "r",
+        "tab"
+      ]
+    },
+    {
+      "id": "jq_an_rc_cluster_after_tab_prints_compact",
+      "seq": 701141,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "echo '{\"a\":[1]}' | jq --tab -rc .",
+      "expect": {
+        "exit": 0,
+        "stdout": "{\"a\":[1]}\n",
+        "stderr": ""
+      },
+      "flags": [
+        "tab",
+        "r",
+        "c"
+      ]
+    },
+    {
+      "id": "jq_an_indent_refusal_typed_first_is_reported_first",
+      "seq": 701142,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "jq -n --indent x --argjson a nope 1",
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "jq: --indent takes a number between -1 and 7\nUse jq --help for help with command-line options,\nor see the jq manpage, or online docs at https://jqlang.org\n"
+      },
+      "flags": [
+        "n",
+        "indent",
+        "argjson"
+      ]
+    },
+    {
+      "id": "jq_an_argjson_refusal_typed_before_indent_is_reported_first",
+      "seq": 701143,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "jq -n --argjson a nope --indent x 1",
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "jq: invalid JSON text passed to --argjson\nUse jq --help for help with command-line options,\nor see the jq manpage, or online docs at https://jqlang.org\n"
+      },
+      "flags": [
+        "n",
+        "argjson",
+        "indent"
+      ]
+    },
+    {
+      "id": "jq_indent_refuses_a_later_width_out_of_range",
+      "seq": 701144,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "echo '{\"a\":[1]}' | jq --indent 2 --indent 9 .",
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "jq: --indent takes a number between -1 and 7\nUse jq --help for help with command-line options,\nor see the jq manpage, or online docs at https://jqlang.org\n"
+      },
+      "flags": [
+        "indent"
+      ]
+    },
+    {
+      "id": "jq_indent_refuses_thousands_of_digits",
+      "seq": 9901918,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "width=$(printf '%05000d' 0); width=$(printf '%s' \"$width\" | tr 0 9); jq -n --indent \"$width\" .",
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "jq: --indent takes a number between -1 and 7\nUse jq --help for help with command-line options,\nor see the jq manpage, or online docs at https://jqlang.org\n"
+      },
+      "flags": [
+        "n",
+        "indent"
+      ]
+    },
+    {
+      "id": "jq_indent_accepts_thousands_of_leading_zeroes",
+      "seq": 9901919,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "width=$(printf '%05000d' 0); jq -n --indent \"${width}3\" '{\"a\":[1]}'",
+      "expect": {
+        "exit": 0,
+        "stdout": "{\n   \"a\": [\n      1\n   ]\n}\n",
+        "stderr": ""
+      },
+      "flags": [
+        "n",
+        "indent"
+      ]
+    },
+    {
+      "id": "jq_indent_accepts_long_negative_one",
+      "seq": 9901920,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "width=$(printf '%05000d' 0); jq -n --indent \"-${width}1\" '{\"a\":[1]}'",
+      "expect": {
+        "exit": 0,
+        "stdout": "{\n\t\"a\": [\n\t\t1\n\t]\n}\n",
+        "stderr": ""
+      },
+      "flags": [
+        "n",
+        "indent"
+      ]
+    },
+    {
+      "id": "jq_indent_accepts_long_negative_zero",
+      "seq": 9901921,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "width=$(printf '%05000d' 0); jq -n --indent \"-$width\" '{\"a\":[1]}'",
+      "expect": {
+        "exit": 0,
+        "stdout": "{\n\"a\": [\n1\n]\n}\n",
+        "stderr": ""
+      },
+      "flags": [
+        "n",
+        "indent"
+      ]
+    },
+    {
+      "id": "jq_indent_rejects_out_of_range_after_leading_zeroes",
+      "seq": 9901922,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "width=$(printf '%05000d' 0); jq -n --indent \"${width}8\" .",
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "jq: --indent takes a number between -1 and 7\nUse jq --help for help with command-line options,\nor see the jq manpage, or online docs at https://jqlang.org\n"
+      },
+      "flags": [
+        "n",
+        "indent"
+      ]
+    },
+    {
+      "id": "jq_indent_refuses_a_trailing_newline",
+      "seq": 9901923,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "jq -n --indent '3\n' .",
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "jq: --indent takes a number between -1 and 7\nUse jq --help for help with command-line options,\nor see the jq manpage, or online docs at https://jqlang.org\n"
+      },
+      "flags": [
+        "n",
+        "indent"
+      ]
+    },
+    {
+      "id": "jq_oversized_indent_wins_before_bad_argjson",
+      "seq": 9901924,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "width=$(printf '%05000d' 0); jq -n --indent \"${width}8\" --argjson a nope .",
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "jq: --indent takes a number between -1 and 7\nUse jq --help for help with command-line options,\nor see the jq manpage, or online docs at https://jqlang.org\n"
+      },
+      "flags": [
+        "n",
+        "indent",
+        "argjson"
+      ]
+    },
+    {
+      "id": "jq_bad_argjson_wins_before_oversized_indent",
+      "seq": 9901925,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "width=$(printf '%05000d' 0); jq -n --argjson a nope --indent \"${width}8\" .",
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "jq: invalid JSON text passed to --argjson\nUse jq --help for help with command-line options,\nor see the jq manpage, or online docs at https://jqlang.org\n"
+      },
+      "flags": [
+        "n",
+        "argjson",
+        "indent"
+      ]
+    }
+  ]
+}

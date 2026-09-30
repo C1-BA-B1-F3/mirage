@@ -21,6 +21,9 @@ import _mirage_xattr
 _process_active = False
 _inherited_inputs = {}
 _process_stdio = None
+_FLAG_FIELDS = tuple(name for name, field in vars(type(sys.flags)).items()
+                     if isinstance(field, types.MemberDescriptorType))
+_FLAG_INDEX = {name: index for index, name in enumerate(_FLAG_FIELDS)}
 
 
 def _process_call(op, **params):
@@ -422,12 +425,117 @@ def eval_enc(o):
     raise TypeError('%s is not JSON-serializable' % type(o).__name__)
 
 
+class InvocationFlags(tuple):
+    """Read-only sys.flags view for switches implemented by a warm guest."""
+
+    def __new__(cls, original, **overrides):
+        fields = _FLAG_FIELDS[:original.n_sequence_fields]
+        values = (overrides.get(name, getattr(original, name))
+                  for name in fields)
+        instance = super().__new__(cls, values)
+        object.__setattr__(instance, '_original', original)
+        return instance
+
+    def __getattr__(self, name):
+        index = _FLAG_INDEX.get(name)
+        if index is not None and index < len(self):
+            return self[index]
+        return getattr(self._original, name)
+
+    def __setattr__(self, name, value):
+        raise AttributeError('readonly attribute')
+
+    def __delattr__(self, name):
+        raise AttributeError('readonly attribute')
+
+    def __dir__(self):
+        return sorted(set(super().__dir__()) | set(dir(self._original)))
+
+    def __repr__(self):
+        fields = _FLAG_FIELDS[:self.n_sequence_fields]
+        values = ', '.join(f'{name}={getattr(self, name)!r}'
+                           for name in fields)
+        return f'sys.flags({values})'
+
+
+@contextmanager
+def interpreter_state(flags, filename, script, stderr):
+    """Apply and restore the interpreter switches this guest implements.
+
+    Args:
+        flags (dict): Parsed initialization switches.
+        filename (str | None): The program's display path.
+        script (bool): Whether the program was read from a script.
+        stderr (OutputCapture): Destination for invalid warning options.
+    """
+    saved_flags = sys.flags
+    saved_path = sys.path
+    saved_entries = saved_path[:]
+    saved_dwb = sys.dont_write_bytecode
+    saved_xop = sys._xoptions
+    saved_options = saved_xop.copy()
+    saved_filters = warnings.filters
+    saved_filter_entries = saved_filters[:]
+    optimize = min(int(flags.get('O') or 0), 2)
+    loader = importlib._bootstrap_external.SourceLoader
+    saved_source_to_code = loader.source_to_code
+
+    # importlib compiles an imported module at the level the interpreter
+    # started with, and names its cached bytecode after sys.flags, so -O
+    # has to reach the compile as well for the two to agree.
+    def source_to_code(self, data, path, *, _optimize=-1):
+        return saved_source_to_code(
+            self,
+            data,
+            path,
+            _optimize=optimize if _optimize == -1 else _optimize)
+
+    try:
+        sys.dont_write_bytecode = bool(flags.get('B') or saved_dwb)
+        sys.flags = InvocationFlags(saved_flags,
+                                    optimize=optimize,
+                                    dont_write_bytecode=int(
+                                        sys.dont_write_bytecode),
+                                    safe_path=bool(flags.get('P')))
+        for xopt in flags.get('X') or []:
+            name, _, value = str(xopt).partition('=')
+            sys._xoptions[name] = value if value else True
+        for spec in flags.get('W') or []:
+            try:
+                warnings._setoption(str(spec))
+            except warnings._OptionError as error:
+                stderr.diagnostic(f'Invalid -W option ignored: {error}\n')
+        if '' in sys.path:
+            sys.path.remove('')
+        if not sys.flags.safe_path:
+            sys.path.insert(
+                0,
+                os.path.dirname(os.path.realpath(filename)) if script else '')
+        if optimize:
+            loader.source_to_code = source_to_code
+        yield optimize
+    finally:
+        loader.source_to_code = saved_source_to_code
+        sys.flags = saved_flags
+        sys.path = saved_path
+        saved_path[:] = saved_entries
+        sys.dont_write_bytecode = saved_dwb
+        sys._xoptions = saved_xop
+        saved_xop.clear()
+        saved_xop.update(saved_options)
+        warnings.filters = saved_filters
+        saved_filters[:] = saved_filter_entries
+        warnings._filters_mutated()
+
+
 def run(request, arm_interrupt, disarm_interrupt):
     global _process_stdio, _process_active
     user_code = request['code']
     init_flags = request['flags']
     argv = request['argv']
     cwd = request['cwd']
+    filename = request['filename']
+    script = request['script']
     script_cli = request['script_cli']
     merged_env = request['env']
     stdin_bytes = request['stdin']
@@ -435,7 +543,6 @@ def run(request, arm_interrupt, disarm_interrupt):
     saved_cwd = saved_getcwd()
     saved_chdir = os.chdir
     saved_env = dict(os.environ)
-    saved_path = list(sys.path)
     saved_stdin = sys.stdin
     saved_stdout = sys.stdout
     saved_stderr = sys.stderr
@@ -457,69 +564,59 @@ def run(request, arm_interrupt, disarm_interrupt):
 
     flags = dict(init_flags) if init_flags is not None else {}
 
-    optimize = min(int(flags.get('O') or 0), 2)
-    saved_dwb = sys.dont_write_bytecode
-    saved_xop = dict(sys._xoptions)
-    saved_filters = None
-
     with out_bytes, err_bytes:
         exit_code = 0
         try:
             sys.executable = "/usr/bin/python3"
             os.environ.clear()
             os.environ.update(merged_env)
-            if flags.get('B'):
-                sys.dont_write_bytecode = True
-            for xopt in flags.get('X') or []:
-                name, _, value = str(xopt).partition('=')
-                sys._xoptions[name] = value if value else True
-            if flags.get('W'):
-                saved_filters = warnings.filters[:]
-                for spec in flags.get('W') or []:
-                    try:
-                        warnings._setoption(str(spec))
-                    except warnings._OptionError as werr:
-                        err_bytes.diagnostic(
-                            f'Invalid -W option ignored: {werr}\n')
-            sys.stdin = stdin_text
-            sys.stdout = out_text
-            sys.stderr = err_text
-            _process_stdio = (stdin_text, out_text, err_text)
-            sys.argv = list(argv)
-            main_module = types.ModuleType('__main__')
-            user_globals = main_module.__dict__
-            user_globals['__annotations__'] = {}
-            sys.modules['__main__'] = main_module
-            if script_cli:
-                user_globals.update(argv=list(argv),
-                                    stdin=bytes(stdin_bytes)
-                                    if stdin_bytes is not None else None)
-            try:
+            with interpreter_state(flags, filename, script,
+                                   err_bytes) as optimize:
+                sys.stdin = stdin_text
+                sys.stdout = out_text
+                sys.stderr = err_text
+                _process_stdio = (stdin_text, out_text, err_text)
+                sys.argv = list(argv)
+                main_module = types.ModuleType('__main__')
+                user_globals = main_module.__dict__
+                user_globals['__annotations__'] = {}
+                # What CPython's file door binds, for a script and for stdin.
+                if filename is not None:
+                    user_globals['__file__'] = filename
+                    user_globals['__cached__'] = None
+                sys.modules['__main__'] = main_module
+                if script_cli:
+                    user_globals.update(argv=list(argv),
+                                        stdin=bytes(stdin_bytes)
+                                        if stdin_bytes is not None else None)
                 try:
-                    arm_interrupt()
-                    if cwd != '':
-                        saved_chdir(cwd)
-                    exec(
-                        compile(user_code,
-                                '<string>',
-                                'exec',
-                                optimize=optimize), user_globals)
-                finally:
-                    disarm_interrupt()
-            except SystemExit as e:
-                code = e.code
-                if code is None:
-                    exit_code = 0
-                elif isinstance(code, bool):
-                    exit_code = int(code)
-                elif isinstance(code, int):
-                    exit_code = code
-                else:
-                    err_bytes.diagnostic(str(code) + '\n')
+                    try:
+                        arm_interrupt()
+                        if cwd != '':
+                            saved_chdir(cwd)
+                        exec(
+                            compile(user_code,
+                                    filename or '<string>',
+                                    'exec',
+                                    optimize=optimize), user_globals)
+                    finally:
+                        disarm_interrupt()
+                except SystemExit as e:
+                    code = e.code
+                    if code is None:
+                        exit_code = 0
+                    elif isinstance(code, bool):
+                        exit_code = int(code)
+                    elif isinstance(code, int):
+                        exit_code = code
+                    else:
+                        err_bytes.diagnostic(str(code) + '\n')
+                        exit_code = 1
+                except BaseException as e:
+                    err_bytes.diagnostic(''.join(
+                        traceback.format_exception(type(e), e,
+                                                   e.__traceback__.tb_next)))
                     exit_code = 1
-            except BaseException:
-                err_bytes.diagnostic(traceback.format_exc())
-                exit_code = 1
         finally:
             if had_main:
                 sys.modules['__main__'] = saved_main
@@ -527,13 +624,6 @@ def run(request, arm_interrupt, disarm_interrupt):
                 sys.modules.pop('__main__', None)
             os.environ.clear()
             os.environ.update(saved_env)
-            sys.path[:] = saved_path
-            sys.dont_write_bytecode = saved_dwb
-            sys._xoptions.clear()
-            sys._xoptions.update(saved_xop)
-            if saved_filters is not None:
-                warnings.filters[:] = saved_filters
-                warnings._filters_mutated()
             if _process_active:
                 try:
                     _process_call("finish")

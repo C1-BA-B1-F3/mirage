@@ -590,7 +590,7 @@
       "provision": true,
       "expect": {
         "exit": 0,
-        "stdout": "net=27 write=0 cache=0 ops=1 hits=0 precision=exact\n",
+        "stdout": "net=0-27 write=0 cache=0 ops=1 hits=0 precision=range\n",
         "stderr": ""
       }
     },

@@ -1854,3 +1854,17 @@ describe('tar long options against its whole table', () => {
     expect(parsed.ambiguousOptions[0]?.[0]).toBe('--re=x')
   })
 })
+
+it.each(['--uc', '--univ'])('resolves GNU alias %s through its declared synonym', (word) => {
+  const parsed = parseCommand(specOf('date'), [word], '/', 'date')
+  expect(parsed.flags['--utc']).toBe(true)
+  expect(parsed.optionErrorKinds).toEqual([])
+})
+
+it('does not turn cmp options into numeric skips while retaining seq operands', () => {
+  const parsed = parseCommand(specOf('cmp'), ['a', 'b', '-1'], '/', 'cmp')
+  expect(parsed.invalidOptions).toEqual(['1'])
+  const sequence = parseCommand(specOf('seq'), ['-1', '1'], '/', 'seq')
+  expect(sequence.texts()).toEqual(['-1', '1'])
+  expect(sequence.optionErrorKinds).toEqual([])
+})

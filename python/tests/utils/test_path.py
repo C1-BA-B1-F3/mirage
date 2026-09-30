@@ -17,7 +17,7 @@ import pytest
 from mirage.utils.path import (ancestors, drop_trailing_segments, expand_tilde,
                                glob_prefix_match, gnu_basename, gnu_dirname,
                                norm, norm_dir, owner_prefix, parent,
-                               resolve_path, respell_one)
+                               resolve_path, resolve_symlinks, respell_one)
 
 
 def test_norm_strips_and_adds_leading_slash():
@@ -284,3 +284,40 @@ def test_respell_one_root_original_collapses_to_raw():
     assert respell_one("/", "/", ".") == "."
     assert respell_one("/", "/", "") == "."
     assert respell_one("/ram/a.txt", "/", ".") == "./ram/a.txt"
+
+
+@pytest.mark.parametrize("path, links, expected", [
+    ("/data/s/al", {
+        "/data/s/al": "../a.txt"
+    }, "/data/a.txt"),
+    ("/data/s/al", {
+        "/data/s/al": "../next",
+        "/data/next": "./a.txt"
+    }, "/data/a.txt"),
+    ("/data/al", {
+        "/data/al": "/data/s/../a.txt"
+    }, "/data/a.txt"),
+    ("/data/al/x", {
+        "/data/al": "s/.."
+    }, "/data/x"),
+    ("/data/al", {
+        "/data/al": "dir/../a.txt",
+        "/data/dir": "/other/deep"
+    }, "/other/a.txt"),
+    ("/data/al", {
+        "/data/al": "../../../../a.txt"
+    }, "/a.txt"),
+])
+def test_link_targets_walk_dots_and_links_in_order(path, links, expected):
+    assert resolve_symlinks(path, links) == expected
+
+
+@pytest.mark.parametrize("path, expected", [
+    ("/data/al/", "/other/dir/"),
+    ("/data/al/../", "/other/"),
+    ("/data/plain/", "/data/plain/"),
+    ("/data/root/", "/"),
+])
+def test_resolve_symlinks_preserves_directory_suffix(path, expected):
+    links = {"/data/al": "/other/dir", "/data/root": "/"}
+    assert resolve_symlinks(path, links) == expected

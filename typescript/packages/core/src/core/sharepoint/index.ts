@@ -249,6 +249,27 @@ async function createDir(
   )
 }
 
+// Every level of a drive path, from the drive root down.
+async function createChain(
+  accessor: SharePointAccessor,
+  driveId: string,
+  itemPath: string,
+): Promise<void> {
+  const parts = itemPath.split('/')
+  for (let index = 1; index <= parts.length; index++) {
+    await createDir(accessor, driveId, parts.slice(0, index).join('/'))
+  }
+}
+
+// Only a mount scoped to one site and drive places its paths under the
+// keyPrefix, so only there is the mount root a folder chain a folder create
+// can find missing. With parents the chain is already walked; without, a
+// create right under the root has to make it first.
+function scopedPrefix(accessor: SharePointAccessor): string {
+  const { site, drive, keyPrefix } = accessor.config
+  return site !== null && drive !== null ? keyPrefix : ''
+}
+
 export async function mkdir(
   accessor: SharePointAccessor,
   path: PathSpec,
@@ -257,13 +278,22 @@ export async function mkdir(
   if (path.vfsPath === '') return
   const resolved = await resolvedItem(accessor, path)
   const itemPath = resolved.itemPath ?? ''
+  const driveId = resolved.driveId ?? ''
   if (parents) {
-    const parts = itemPath.split('/')
-    for (let index = 1; index <= parts.length; index++) {
-      await createDir(accessor, resolved.driveId ?? '', parts.slice(0, index).join('/'))
-    }
+    await createChain(accessor, driveId, itemPath)
   } else {
-    await createDir(accessor, resolved.driveId ?? '', itemPath)
+    try {
+      await createDir(accessor, driveId, itemPath)
+    } catch (error) {
+      const prefix = scopedPrefix(accessor)
+      const missingRoot =
+        error instanceof GraphError &&
+        error.status === 404 &&
+        prefix !== '' &&
+        parentPath(itemPath) === prefix
+      if (!missingRoot) throw error
+      await createChain(accessor, driveId, itemPath)
+    }
   }
   await invalidateAfterWrite(path)
   if (parents) await invalidateAncestors(path)

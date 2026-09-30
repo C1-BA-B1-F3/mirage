@@ -69,7 +69,7 @@ export async function runRelay(
   if (cmdName === Cmd.PASTE) return runPaste(scopes, flagKwargs, dispatch, stdin)
   if (cmdName === Cmd.COMM) return runComm(scopes, flagKwargs, dispatch, stdin)
   if (cmdName === Cmd.JOIN) return runJoin(scopes, flagKwargs, dispatch, stdin)
-  if (cmdName === Cmd.TAR) return runTar(scopes, textArgs, flagKwargs, dispatch, ns)
+  if (cmdName === Cmd.TAR) return runTar(scopes, textArgs, flagKwargs, dispatch, ns, stdin)
   if (cmdName === Cmd.UNZIP) return runUnzip(scopes, textArgs, flagKwargs, dispatch)
   if (cmdName === Cmd.ZIP) return runZip(scopes, flagKwargs, dispatch, ns)
   return runCmp(scopes, textArgs, flagKwargs, dispatch, stdin)

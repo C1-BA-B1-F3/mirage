@@ -27,6 +27,7 @@ import { asyncContextIsolatesTasks } from '../../utils/async_context.ts'
 import { getCurrentSessionFor, runWithSession } from '../../context/session_context.ts'
 import type { JobTable } from '../../shell/job_table/index.ts'
 import {
+  syntaxErrorMessage,
   findSyntaxError,
   findUnterminatedBacktick,
   type ShellParser,
@@ -45,7 +46,8 @@ import type { DispatchFn } from '../../runtime/types.ts'
 import { RouteDeny, type RouteDecision } from '../../runtime/routing/index.ts'
 import { refusalOf, renderDeny, type Deny, type HandOff } from '../../policy/index.ts'
 import type { Refusal } from '../../types.ts'
-import type { TSNodeLike } from '../../shell/types.ts'
+import { NodeType as NT, type TSNodeLike } from '../../shell/types.ts'
+import { inputSubstitutionRedirect } from '../../shell/helpers.ts'
 import {
   recordStatus,
   restoreStatus,
@@ -121,12 +123,8 @@ interface NestedRefusal {
   latest: Refusal | null
 }
 
-function syntaxErrorResult(offending: string): ExecuteResult {
-  const snippet = offending.trim()
-  const errMsg =
-    snippet.length > 0
-      ? `mirage: syntax error near '${snippet}'\n`
-      : 'mirage: syntax error in command\n'
+function syntaxErrorResult(offending: string, root: TSNodeLike): ExecuteResult {
+  const errMsg = syntaxErrorMessage(offending, root)
   return new ExecuteResult(new Uint8Array(), new TextEncoder().encode(errMsg), 2)
 }
 
@@ -276,7 +274,7 @@ async function runLine(
     // The gate runs before the provision branch, mirroring Python: a
     // provision run of unparseable input reports the syntax error
     // instead of walking the ERROR tree.
-    return syntaxErrorResult(offending)
+    return syntaxErrorResult(offending, root)
   }
   if (options.provision === true) {
     // The plan is judged as this line's caller: the effective session
@@ -407,16 +405,44 @@ async function runLine(
     // stdin so `... | command cat` filters the upstream output; the same
     // path carries `echo hi | bash -c 'cat'` into the inner line.
     if (opts.stdin !== undefined && opts.stdin !== null) innerOpts.stdin = opts.stdin
-    const res = await env.execute(cmd, innerOpts)
-    // The record rides back with the streams: a refusal the inner line
-    // earned is the outer line's to report.
-    if (res.refusal !== null) nested.latest = res.refusal
-    return new IOResult({
-      exitCode: res.exitCode,
-      stdout: res.stdout,
-      stderr: res.stderr,
-      refusal: res.refusal,
-    })
+    const session = opts.session ?? effectiveSession
+    const substitutionTree =
+      opts.substitution === true && opts.node?.type === NT.COMMAND_SUBSTITUTION
+        ? parser.parse(cmd)
+        : null
+    if (substitutionTree !== null && inputSubstitutionRedirect(substitutionTree) !== null) {
+      const [stdout, io] = await runCommandTree(
+        withHandOff(deps, innerOpts.handed ?? handed),
+        substitutionTree,
+        session,
+        null,
+        true,
+      )
+      io.stdout = stdout
+      recordStatus(session, io.exitCode, true)
+      if (io.refusal !== null) nested.latest = io.refusal
+      return io
+    }
+    const saved = opts.substitution === true ? session.snapshot() : null
+    const terminalOutput = session.terminalOutput
+    if (saved !== null) session.terminalOutput = false
+    try {
+      const res = await env.execute(cmd, innerOpts)
+      // The record rides back with the streams: a refusal the inner line
+      // earned is the outer line's to report.
+      if (res.refusal !== null) nested.latest = res.refusal
+      return new IOResult({
+        exitCode: res.exitCode,
+        stdout: res.stdout,
+        stderr: res.stderr,
+        refusal: res.refusal,
+      })
+    } finally {
+      if (saved !== null) {
+        session.terminalOutput = terminalOutput
+        session.restore(saved)
+      }
+    }
   }
 
   const deps = withHandOff(

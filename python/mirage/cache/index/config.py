@@ -12,6 +12,7 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+from dataclasses import dataclass
 from enum import Enum
 from typing import Any
 
@@ -42,6 +43,14 @@ class IndexEntry(BaseModel):
     vfs_name: str = ""
     size: int | None = None
     extra: dict[str, Any] = Field(default_factory=dict)
+
+
+@dataclass(frozen=True, slots=True)
+class IndexSnapshot:
+    """Entry rows and directory children from one refill."""
+
+    entries: dict[str, IndexEntry]
+    children: dict[str, list[str]]
 
 
 class LookupResult(BaseModel):

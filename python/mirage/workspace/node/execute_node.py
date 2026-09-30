@@ -13,6 +13,7 @@
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import asyncio
+import time
 from dataclasses import replace
 from functools import partial
 from typing import Any, Callable
@@ -67,6 +68,7 @@ from mirage.workspace.node.declaration import execute_declaration
 from mirage.workspace.node.program import execute_program
 from mirage.workspace.node.test_expr import (expand_double_bracket,
                                              expand_test_expr)
+from mirage.workspace.node.timing import timing_report
 from mirage.workspace.session import (SessionState, reset_current_session,
                                       set_current_session)
 from mirage.workspace.session.elements import assign_element
@@ -795,6 +797,18 @@ async def _execute_node(
         return None, io, exec_node
 
     stream = partial(recurse, sink=sink) if sink is not None else recurse
+
+    if kind == NodeKind.TIMED:
+        started = time.monotonic()
+        inner = node.named_children[0]
+        stdout, io, exec_node = await stream(inner, session, stdin, cs)
+        stdout = await apply_barrier(stdout, io, BarrierPolicy.VALUE)
+        elapsed = time.monotonic() - started
+        report = b"".join(
+            timing_report(elapsed, portable, session.env.get("TIMEFORMAT"))
+            for portable in reversed(node.timing))
+        io.stderr = (await io.materialize_stderr()) + report
+        return stdout, io, exec_node
 
     if kind == NodeKind.COMMENT:
         return None, IOResult(), ExecutionNode(command="", exit_code=0)

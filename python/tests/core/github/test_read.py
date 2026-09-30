@@ -27,7 +27,7 @@ from mirage.commands.builtin.github.io import IO
 from mirage.core.github.config import GitHubConfig
 from mirage.core.github.read import read, read_bytes
 from mirage.core.github.stat import stat
-from mirage.core.github.tree import refill_index
+from mirage.core.github.tree import refill_snapshot
 from mirage.core.github.tree_entry import TreeEntry
 from mirage.observe.context import RecordingScope
 from mirage.types import PathSpec
@@ -66,7 +66,7 @@ def _index() -> RAMIndexCacheStore:
     index._expiry["/src"] = datetime.now(timezone.utc) + timedelta(days=365)
     # The root row is what makes this a live index rather than a dropped
     # one; without it every read here would be a refill, which is the
-    # distinction ensure_live_index draws.
+    # distinction ensure_live_snapshot draws.
     index._entries["/src"] = IndexEntry(id="aaa",
                                         name="src",
                                         resource_type="folder")
@@ -186,7 +186,7 @@ async def test_a_read_retries_when_the_index_changes_under_it(kind):
     with serve(FakeGitHub(files={"docs/sub/b.txt": b"bravo"})) as gh:
         index = race_index(kind)
         accessor = _served(gh)
-        await refill_index(accessor, index, "/gh")
+        await refill_snapshot(accessor, index, "/gh")
         index.accessor = accessor
         index.fired = False
         gh.log.clear()
@@ -200,7 +200,7 @@ async def test_a_read_after_a_clear_refills_the_mount_index():
     with serve(FakeGitHub(files={"docs/a.txt": b"alpha"})) as gh:
         index = RAMIndexCacheStore()
         accessor = _served(gh)
-        await refill_index(accessor, index, "/gh")
+        await refill_snapshot(accessor, index, "/gh")
         await index.clear()
         gh.log.clear()
         assert await read(accessor, _at("docs/a.txt", "/gh"),
@@ -217,10 +217,10 @@ async def test_a_read_stamps_the_sha_it_fetched_not_a_newer_one():
     with serve(FakeGitHub(files={"a.txt": old})) as gh:
         accessor = _served(gh)
         index = RAMIndexCacheStore()
-        await refill_index(accessor, index, "/gh")
+        await refill_snapshot(accessor, index, "/gh")
         gh.files["a.txt"] = reseated
         # A refill on some other index reseats the accessor's tree only.
-        await refill_index(accessor, RAMIndexCacheStore(), "/gh")
+        await refill_snapshot(accessor, RAMIndexCacheStore(), "/gh")
         assert accessor.tree["a.txt"].sha == blob_sha(reseated)
         gh.files["a.txt"] = live
         scope = RecordingScope()

@@ -44,13 +44,26 @@ In YAML the same install rides the `clis:` section; see the
 | `token`   | the API token, as `GH_TOKEN` carries for real gh               |
 | `repo`    | the default repository, as `[HOST/]OWNER/REPO`                 |
 | `branch` | the current branch, for `{branch}` in an endpoint |
-| `baseUrl` | the API base, for GitHub Enterprise Server                     |
+| `baseUrl` | the REST API base, for GitHub Enterprise Server               |
+
+An Enterprise Server base ends in `/api/v3`, and GraphQL (`gh api graphql`
+and the verbs that query it, such as `repo view --json`) then goes to
+`/api/graphql` on the same host, outside the REST base, as real gh sends
+it. Any other `baseUrl` answers GraphQL at `baseUrl/graphql`.
 
 `repo` and `branch` are what real gh reads off the current directory's git
 remote and checkout. A workspace has neither, so the install carries them:
 `repo` answers a line that names no repository, and both feed the
 `{owner}`/`{repo}`/`{branch}` placeholders. Two installs under different head words are two
 accounts.
+
+## Authentication status
+
+`gh auth status` checks the configured token with `GET /user`, reports the
+host and account, and exits 1 when GitHub rejects the credential. It needs
+no mount. The token source is reported as `Mirage configuration`: configuration
+retains the resolved secret, not the environment variable or file that supplied
+it. The credential itself is never printed.
 
 ## Reading is the mount, acting is the CLI
 
@@ -76,7 +89,7 @@ of the caller, and nothing on the spec names the mount.
 gh api       <ENDPOINT>
 gh issue     list | view | create | edit | close | reopen | comment
 gh pr        list | view | create | edit | merge | close | comment | diff | checks
-gh repo      list | view | create | fork | rename
+gh repo      list | view | create | fork | rename | edit | delete
 gh release   list | view | create
 gh run       list | view | rerun
 gh workflow  list | view | run
@@ -91,15 +104,29 @@ and issue and pull request `create` also accept `new`.
 Typed read commands accept `-R/--repo [HOST/]OWNER/REPO` where applicable.
 Most also accept `--json field1,field2` and `-q/--jq EXPRESSION`; `--jq`
 requires `--json`, so the selected field set stays explicit and bounded.
-List commands use `-L/--limit` and fetch as many REST pages as needed.
+List commands use `-L/--limit` and fetch as many pages as needed.
+
+`gh issue view`, `gh issue list`, `gh pr view` and `gh pr list` accept every
+`--json` field gh 2.85 does, and `gh repo view` and `gh repo list` every
+repository field. Like gh, they ask GraphQL for exactly the fields named and
+print each in gh's own shape, so `files`, `commits`, `reviews`,
+`statusCheckRollup` and `closedByPullRequestsReferences` need no fallback to
+`gh api`. `pr view` reads reviews, comments, closing issues and checks past
+their first 100, and `issue view` its comments and closing pull requests.
+`issue view` answers a pull request's number too, as gh does, with the
+fields only an issue has at their zero. The JSON prints compact, one value
+per line, the way gh prints it to anything but a terminal.
 
 ```bash
 gh issue list --state open --label bug --limit 20
 gh issue view 42 --json number,title,labels,url --jq '.url'
+gh pr view 17 --json files,commits,reviews --jq '.files[].path'
 gh pr checks 17 --json name,bucket,state
 gh repo list acme --json nameWithOwner,visibility
 gh release list --json tagName,isLatest
 gh run list --workflow ci.yml --json databaseId,status,conclusion
+gh run view 123456 --log-failed
+gh workflow view ci.yml --yaml --ref release
 ```
 
 Mutations never open an editor or prompt. Supply the values on the line,
@@ -125,6 +152,16 @@ Body and notes files are read through the workspace dispatcher, not the host
 filesystem. That keeps an agent inside mirage while still supporting the
 official CLI's file-oriented grammar.
 
+`gh workflow view --yaml` prints the workflow's file as the repository holds
+it at `-r/--ref`, a branch or tag, or on the default branch; that is the one
+read gh makes, and `--ref` without `--yaml` is refused as gh refuses it.
+`gh run view --log` prints a completed run's log a line at a time, each line
+behind its job and step name, from the log archive GitHub ships; a job the
+archive has no log for is fetched on its own, and `--log-failed` keeps only the
+failed steps of failed jobs. A run still going is refused in gh's words, `run
+N is still in progress; logs will be available when it is complete`, before
+any log is asked for.
+
 ### repo
 
 ```bash
@@ -140,16 +177,32 @@ gh repo fork acme/tools
 gh repo fork acme/tools --fork-name tools-patched
 
 gh repo rename tools-v2 -R acme/tools
+
+gh repo edit --description 'Agent tools' --homepage https://tools.example
+gh repo edit acme/tools --enable-wiki=false --delete-branch-on-merge
+gh repo edit --add-topic cli,agents --remove-topic legacy
+gh repo edit --visibility private --accept-visibility-change-consequences
+
+gh repo delete acme/tools-old --yes
 ```
 
 The default `view` prints a `name:` line, a `description:` line, then `--`
 and the README, with the separator omitted when the repository has none.
-Use `--json` for a stable subset of repository fields or `gh api` for the
-complete REST object.
+Use `--json` for any of gh's repository fields or `gh api` for the complete
+REST object.
 
 `rename` takes the **new name** as the operand and the repository to
 rename on `-R`, which is the reverse of what the shape of the line
 suggests; that is upstream's grammar, not a mirage choice.
+
+`edit` sends the settings named on the line in one `PATCH`, as gh does, and
+reads and replaces the topic list when `--add-topic` or `--remove-topic`
+changes it. A switch such as `--enable-wiki` is on when bare and off as
+`--enable-wiki=false`. With no setting named gh would prompt, so it is
+refused, and `--visibility` needs `--accept-visibility-change-consequences`.
+`delete` needs `--yes` and a named repository, since gh only prompts for the
+current one; a name with no owner is the viewer's. Both print nothing on
+success, as gh does when it is not writing to a terminal.
 
 `[HOST/]OWNER/REPO` is parsed from the right, so the owner and the
 repository are the last two segments and a leading host is dropped. The
@@ -199,9 +252,15 @@ The rules are gh's own:
 - `--input FILE` sends that JSON document as the body and moves any fields
   to the query string. `--input -` reads stdin.
 - `-H/--header` adds or replaces request headers.
-- `--paginate` follows REST `Link` headers. Responses stream page by page;
-  `--slurp` wraps all pages in one array.
+- `--paginate` follows REST `Link` headers, and pages that are arrays print
+  as one array, joined the way gh joins them; `--slurp` wraps every page in
+  one array instead.
 - `--silent` suppresses response output without suppressing the request.
+- `-i/--include` prints each response's status line and headers before its
+  body: `HTTP/1.1 200 OK`, then the headers in name order, each line ending
+  `\r\n`, then a blank line. Pages print as they came, a newline between
+  two, and `--silent` still prints the headers. A failing response is headed
+  too.
 - A call with no fields sends **no body at all**, so a bare `DELETE` is a
   bare `DELETE` rather than an empty JSON object with a content type. Some
   endpoints read those differently.
@@ -210,14 +269,33 @@ The rules are gh's own:
   `-f` one, which is the split gh's own `--help` describes.
 - A read (`GET`, `HEAD`, `OPTIONS`) leaves the mount's cache alone; only a
   write expires it.
+- A request that gets no response at all fails at once, with exit 1 and gh's
+  words: `error connecting to HOST` and a pointer at githubstatus.com for a
+  host that does not resolve, `Get "URL": dial tcp ADDR: connect: connection
+  refused` for a refused connection. It is never retried, and neither is a
+  `500`. This holds for every verb, not only `api`.
 
-JSON responses are pretty-printed by default. `-q/--jq` evaluates in-process
-and renders strings raw, or the rest of the shell can consume stdout:
+A response prints as the server sent it, which is how gh prints it to
+anything but a terminal: GitHub's JSON arrives compact, with no newline at
+the end. `-q/--jq` evaluates in-process and prints each output as gh does:
+a string raw, null as an empty line, a number in fixed notation with two
+decimals unless it is whole (`1.50`, `3`), and anything else as compact JSON
+with its keys sorted and `<`, `>` and `&` escaped. The rest of the shell can
+consume stdout just as well:
 
 ```bash
 gh api repos/acme/tools | jq -r .default_branch
 gh api repos/acme/tools/issues --jq '.[].title'
 ```
+
+A `--jq` program that fails ends the command with exit 1, after the lines
+it printed first. The report follows gh's gojq where mirage's jq can tell
+what gojq would say: an error the program raises with `error(v)` reads
+`error: <v>`, with `v` as it is when it is a string and as compact JSON with
+sorted keys otherwise; `halt_error` reads `halt error: <v>`; and `halt`, like
+`halt_error` on null, only ends the output. As with every CLI failure,
+mirage puts the command's name first (`gh api: error: boom`), where gh
+prints `error: boom` alone.
 
 ## Divergences from upstream gh
 
@@ -228,8 +306,13 @@ gh api repos/acme/tools/issues --jq '.[].title'
 | Only the command groups listed above are installed | `auth`, `browse`, `codespace`, `extension`, `gist`, and host checkout operations do not act on virtual workspace state |
 | Commands never prompt, open an editor, or launch a browser | agents need deterministic, noninteractive execution |
 | `pr create` requires explicit title, head, base, and body/body-file | there is no host checkout from which to infer or fill them |
-| `repo fork` omits clone/remote flags; release asset upload and workflow log/watch/YAML views are absent | those require host files, checkout state, or streaming surfaces not modeled here |
-| Typed `--json` exposes a stable REST-backed field subset | upstream's full field sets include GraphQL-only data; use `gh api` for arbitrary REST fields |
+| `repo fork` omits clone/remote flags; release asset upload and `run watch` are absent | those require host files, checkout state, or a streaming surface not modeled here |
+| `repo` has no `archive`, `unarchive`, `sync`, `deploy-key`, `autolink`, `gitignore`, `license`, `clone` or `set-default` | `clone` and `set-default` act on a host checkout; the others are not implemented |
+| Outside `issue`, `pr` and `repo`, typed `--json` exposes a REST-backed field subset | upstream's full field sets include GraphQL-only data; use `gh api` for arbitrary REST fields |
 | `gh api --input` accepts JSON, and pagination follows REST `Link` headers only | arbitrary byte bodies and GraphQL cursor pagination are not implemented |
-| `gh api` pretty-prints JSON and has no `--include`/verbose/cache flags | output is optimized for agents and shell composition rather than wire debugging |
+| `gh api` has no verbose/cache flags | output is optimized for agents and shell composition rather than wire debugging |
+| `gh api -i` reports `HTTP/1.1` where gh against github.com reports `HTTP/2.0` | mirage's clients speak HTTP/1.1; the reason phrase is Go's for the code, as gh's is |
+| `gh api --slurp` also takes `--jq`, running it once on the array of pages | gh refuses the pair; the combination is the one-call way to filter every page together |
+| A builtin's `--jq` error keeps jq 1.8.2's wording: `Cannot index number with string ("a")` where gh says `expected an object but got: number (5000)` | mirage evaluates `--jq` with jq, and gojq's messages carry values jq's leave out. The negative-count errors of `limit`, `skip` and `nth`, which gojq raises with `error`, still read `error: ...` as in gh. An `error(v)` built outside a `catch` from a value that `catch` took from another `error` also reads as a builtin's, because the reruns that tell the two apart cannot follow it |
+| `--jq` numbers are jq's doubles: `nan` prints as an empty line, an infinity as the largest finite number, a negative zero as `0`, and an integer literal past 2^53 as its nearest double | jq has made `nan`, an infinity and a big literal that before mirage sees them, and jq.py hands a negative zero to Python as `0`, which TypeScript matches; gh prints `NaN`, `+Inf` and `-0` (refusing the first two inside an array or object) and keeps a big literal's digits |
 | A `HOST/` repository prefix is accepted but never routes | one install is one account on one host; use another install for another host |

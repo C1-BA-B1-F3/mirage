@@ -95,7 +95,7 @@
         "gdrive-folder",
         "box"
       ],
-      "command": "tar -x -z -f /data/arch/a.tgz --strip-components 2 -C /data/arch/out && cat /data/arch/out/g.txt",
+      "command": "mkdir -p /data/arch/out && printf keep > /data/arch/out/.keep && tar -x -z -f /data/arch/a.tgz --strip-components 2 -C /data/arch/out && cat /data/arch/out/g.txt",
       "expect": {
         "exit": 0,
         "stdout": "gz-data\n",
@@ -145,7 +145,7 @@
         "redis",
         "opfs"
       ],
-      "command": "mkdir -p /data/otar && echo otar-data | tee /data/otar/g.txt > /dev/null && tar czf /data/otar/a.tgz /data/otar/g.txt && tar tzf /data/otar/a.tgz && tar xzf /data/otar/a.tgz --strip-components 2 -C /data/otar/out && cat /data/otar/out/g.txt",
+      "command": "mkdir -p /data/otar/out && printf keep > /data/otar/out/.keep && mkdir -p /data/otar && echo otar-data | tee /data/otar/g.txt > /dev/null && tar czf /data/otar/a.tgz /data/otar/g.txt && tar tzf /data/otar/a.tgz && tar xzf /data/otar/a.tgz --strip-components 2 -C /data/otar/out && cat /data/otar/out/g.txt",
       "expect": {
         "exit": 0,
         "stdout": "data/otar/g.txt\notar-data\n",
@@ -177,7 +177,7 @@
         "redis",
         "opfs"
       ],
-      "command": "mkdir -p /data/otar3 && echo three | tee /data/otar3/i.txt > /dev/null && tar czf /data/otar3/c.tgz /data/otar3/i.txt && tar xzCf /data/otar3/out /data/otar3/c.tgz && cat /data/otar3/out/data/otar3/i.txt",
+      "command": "mkdir -p /data/otar3/out && mkdir -p /data/otar3 && echo three | tee /data/otar3/i.txt > /dev/null && tar czf /data/otar3/c.tgz /data/otar3/i.txt && tar xzCf /data/otar3/out /data/otar3/c.tgz && cat /data/otar3/out/data/otar3/i.txt",
       "expect": {
         "exit": 0,
         "stdout": "three\n",
@@ -285,7 +285,7 @@
         "redis",
         "opfs"
       ],
-      "command": "mkdir -p /data/trt/sub && echo rt | tee /data/trt/sub/r.txt > /dev/null && tar -c -f /data/trt.tar -C /data trt && tar -x -f /data/trt.tar -C /data/trtout && cat /data/trtout/trt/sub/r.txt",
+      "command": "mkdir -p /data/trtout && printf keep > /data/trtout/.keep && mkdir -p /data/trt/sub && echo rt | tee /data/trt/sub/r.txt > /dev/null && tar -c -f /data/trt.tar -C /data trt && tar -x -f /data/trt.tar -C /data/trtout && cat /data/trtout/trt/sub/r.txt",
       "expect": {
         "exit": 0,
         "stdout": "rt\n",
@@ -700,7 +700,7 @@
         "gdrive-folder",
         "box"
       ],
-      "command": "tar -xzf /data/msel.tgz -C /data/mselout msel/sub && ls /data/mselout/msel && cat /data/mselout/msel/sub/b.txt",
+      "command": "mkdir -p /data/mselout && printf keep > /data/mselout/.keep && tar -xzf /data/msel.tgz -C /data/mselout msel/sub && ls /data/mselout/msel && cat /data/mselout/msel/sub/b.txt",
       "expect": {
         "exit": 0,
         "stdout": "sub\ntwo\n",
@@ -1079,6 +1079,42 @@
         "exit": 2,
         "stdout": "",
         "stderr": "\ngzip: stdin: invalid compressed data--crc error\n\ngzip: stdin: invalid compressed data--length error\ntar: This does not look like a tar archive\ntar: Skipping to next header\ntar: Child returned status 1\ntar: Error is not recoverable: exiting now\n"
+      }
+    },
+    {
+      "id": "arch_tar_checksum_nul_newline_list",
+      "seq": 962403,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "s3-prefix"
+      ],
+      "command": "printf %s H4sIAAAAAAAC/0vUK6koYaAtMAACMxMTMA0E6DRIFokNEjczNzJi4DJgoAMoLS5JLAJayTAyQUZqTk4+F8MoGAWjYBSMghEGAOTVivYACAAA | base64 -d | tar -tzf -",
+      "expect": {
+        "exit": 0,
+        "stdout": "a.txt\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "arch_tar_checksum_nul_newline_stdout",
+      "seq": 962404,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "s3-prefix"
+      ],
+      "command": "printf %s H4sIAAAAAAAC/0vUK6koYaAtMAACMxMTMA0E6DRIFokNEjczNzJi4DJgoAMoLS5JLAJayTAyQUZqTk4+F8MoGAWjYBSMghEGAOTVivYACAAA | base64 -d | tar -xOzf -",
+      "expect": {
+        "exit": 0,
+        "stdout": "hello\n",
+        "stderr": ""
       }
     }
   ]

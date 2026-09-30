@@ -222,6 +222,21 @@ describe('input limits', () => {
     input.close()
   })
 
+  it('takes its own line bound', async () => {
+    const long = new FakeChannel()
+    const wide = new FakeChannel()
+    const tight = new ChannelInput(long.asChannel(), false, 4)
+    const roomy = new ChannelInput(wide.asChannel(), false, 8)
+    tight.start()
+    roomy.start()
+    long.send('aaaaaa\n')
+    wide.send('aaaaaa\n')
+    expect(await tight.readline()).toBe(Mark.LIMIT)
+    expect(dec.decode((await roomy.readline()) as Uint8Array)).toBe('aaaaaa\n')
+    tight.close()
+    roomy.close()
+  })
+
   it('bounds the terminal editor before it submits a line', async () => {
     const [chan, input] = started(true)
     chan.send('a'.repeat(MAX_TERMINAL_LINE))

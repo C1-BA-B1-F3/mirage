@@ -102,7 +102,7 @@ async function main(): Promise<void> {
     if (d0 !== '') {
       const itemsPath = `/langfuse/datasets/${d0}/items.jsonl`
       await run(ws, `head -n 2 "${itemsPath}"`)
-      await run(ws, `jq ".[].id" "${itemsPath}" | head -n 3`)
+      await run(ws, `jq ".id" "${itemsPath}" | head -n 3`)
     }
 
     console.log('\n=== tree -L 2 /langfuse/ ===')

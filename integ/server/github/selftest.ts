@@ -467,6 +467,233 @@ async function supersededBlobs(at: string): Promise<void> {
   eq('a sha no tree ever held is not found', await blob('0'.repeat(40)), 404)
 }
 
+// A ref names a branch, or one commit by its full or abbreviated sha, and
+// every read that takes one answers from what it names: a commit's own
+// files, its own history, its own place in a comparison.
+async function refsNameCommits(at: string): Promise<void> {
+  const run = 'refs-name-commits'
+  const base = `${at}/_run/${run}`
+  await post(`${base}/reset`, { run, tenants: [TENANT], fixture: 'v1' })
+  const repo = `${base}/repos/${REPO}`
+  const status = async (url: string, init: RequestInit = {}): Promise<number> =>
+    (await fetch(url, { headers: HEADERS, ...init })).status
+  const put = await fetch(`${repo}/contents/later.txt`, {
+    method: 'PUT',
+    headers: HEADERS,
+    body: JSON.stringify({ message: 'Later', content: Buffer.from('later').toString('base64') }),
+  })
+  eq('a file lands on the seeded branch', put.status, 201)
+  const history = (await get(`${repo}/commits`)) as JsonValue[]
+  const head = String(field(history[0] ?? null, 'sha'))
+  const root = String(field(history.at(-1) ?? null, 'sha'))
+  eq(
+    'four hex digits name the root',
+    field(await get(`${repo}/commits/${root.slice(0, 4)}`), 'sha'),
+    root,
+  )
+  eq('three name nothing', await status(`${repo}/commits/${root.slice(0, 3)}`), 422)
+  eq(
+    'commits?sha= lists from the commit it names',
+    ((await get(`${repo}/commits?sha=${root.slice(0, 7).toUpperCase()}`)) as JsonValue[]).map((c) =>
+      field(c, 'sha'),
+    ),
+    [root],
+  )
+  eq('commits?sha= naming nothing is 404', await status(`${repo}/commits?sha=0000000`), 404)
+  eq(
+    'the root reads its own files',
+    await status(`${repo}/contents/later.txt?ref=${root.slice(0, 7)}`),
+    404,
+  )
+  eq(
+    'the head reads its own',
+    await status(`${repo}/contents/later.txt?ref=${head.slice(0, 7)}`),
+    200,
+  )
+  const paths = async (ref: string): Promise<boolean> =>
+    ((field(await get(`${repo}/git/trees/${ref}?recursive=1`), 'tree') as JsonValue[]) ?? []).some(
+      (row) => field(row, 'path') === 'later.txt',
+    )
+  eq("a tree by the root's short sha is the root's", await paths(root.slice(0, 7)), false)
+  eq("a tree by the head's short sha is the head's", await paths(head.slice(0, 7)), true)
+  const compare = async (spec: string): Promise<JsonValue> => {
+    const body = await get(`${repo}/compare/${spec}`)
+    return [field(body, 'status'), field(body, 'ahead_by'), field(body, 'behind_by')]
+  }
+  eq('the head is ahead of the root', await compare(`${root.slice(0, 7)}...main`), ['ahead', 1, 0])
+  eq('the root is behind the head', await compare(`main...${root.slice(0, 7)}`), ['behind', 0, 1])
+  eq('a branch is identical to itself', await compare('main...main'), ['identical', 0, 0])
+  const made = await post(`${repo}/git/refs`, { ref: 'refs/heads/old', sha: root.slice(0, 7) })
+  eq('a branch starts at a short sha', made.status, 201)
+  eq("and holds that commit's files", await status(`${repo}/contents/later.txt?ref=old`), 404)
+}
+
+// A seeded branch force-moved onto an unrelated root leaves its own root on
+// no branch, and that sha still names its commit and its files, as git keeps
+// an object once it exists.
+async function abandonedRoot(at: string): Promise<void> {
+  const run = 'abandoned-root'
+  const base = `${at}/_run/${run}`
+  await post(`${base}/reset`, { run, tenants: [TENANT], fixture: 'v1' })
+  const repo = `${base}/repos/${REPO}`
+  const root = String(field(((await get(`${repo}/commits`)) as JsonValue[])[0] ?? null, 'sha'))
+  const tree = await post(`${repo}/git/trees`, {
+    tree: [{ path: 'only.txt', mode: '100644', type: 'blob', content: 'only' }],
+  })
+  const other = await post(`${repo}/git/commits`, {
+    message: 'Unrelated',
+    tree: field(tree.body, 'sha'),
+    parents: [],
+  })
+  const moved = await fetch(`${repo}/git/refs/heads/main`, {
+    method: 'PATCH',
+    headers: HEADERS,
+    body: JSON.stringify({ sha: field(other.body, 'sha'), force: true }),
+  })
+  eq('the branch is forced onto an unrelated root', moved.status, 200)
+  eq(
+    'the old root still names its commit',
+    field(await get(`${repo}/commits/${root.slice(0, 7)}`), 'sha'),
+    root,
+  )
+  const readme = await fetch(`${repo}/contents/README.md?ref=${root.slice(0, 7)}`, {
+    headers: HEADERS,
+  })
+  eq('and its files', readme.status, 200)
+  const dispatch = await fetch(
+    `${base}/repos/integ/repo-cli/actions/workflows/archive.yml/dispatches`,
+    {
+      method: 'POST',
+      headers: HEADERS,
+      body: JSON.stringify({ ref: 'main' }),
+    },
+  )
+  eq('a disabled workflow is not dispatched', await refusalOf(dispatch), [
+    422,
+    "Cannot trigger a 'workflow_dispatch' on a disabled workflow",
+  ])
+}
+
+async function refusalOf(r: Response): Promise<JsonValue> {
+  return [r.status, field((await r.json()) as JsonValue, 'message')]
+}
+
+// Workflows are the repository's files, and the settings routes store what
+// they take and refuse what they do not, before anything is written.
+async function workflowsAndSettings(at: string): Promise<void> {
+  const run = 'workflows-and-settings'
+  const base = `${at}/_run/${run}`
+  await post(`${base}/reset`, { run, tenants: [TENANT], fixture: 'v1' })
+  const repo = `${base}/repos/${REPO}`
+  const send = async (method: string, path: string, body?: JsonValue): Promise<number> =>
+    (
+      await fetch(`${repo}${path}`, {
+        method,
+        headers: HEADERS,
+        ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+      })
+    ).status
+  const write = (path: string, text: string): Promise<number> =>
+    send('PUT', `/contents/${path}`, {
+      message: `Add ${path}`,
+      content: Buffer.from(text).toString('base64'),
+    })
+  await write('.github/workflows/nameless.yaml', 'on: push\n')
+  await write('.github/workflows/nested/deep.yml', 'name: Deep\n')
+  await write('.github/workflows/notes.txt', 'name: Notes\n')
+  const listed = async (): Promise<JsonValue> =>
+    ((field(await get(`${repo}/actions/workflows`), 'workflows') as JsonValue[]) ?? []).map((w) => [
+      field(w, 'name'),
+      field(w, 'path'),
+    ])
+  eq('the list is the workflow files, by id', await listed(), [
+    ['Archive', '.github/workflows/archive.yml'],
+    ['CI', '.github/workflows/ci.yml'],
+    ['.github/workflows/nameless.yaml', '.github/workflows/nameless.yaml'],
+  ])
+  eq('a workflow is found by its file', await send('GET', '/actions/workflows/ci.yml'), 200)
+  eq('never by its display name', await send('GET', '/actions/workflows/CI'), 404)
+  eq(
+    'one with no dispatch trigger cannot be dispatched',
+    await send('POST', '/actions/workflows/nameless.yaml/dispatches', { ref: 'main' }),
+    422,
+  )
+  eq(
+    'a dispatch to a ref that is no branch is refused',
+    await send('POST', '/actions/workflows/ci.yml/dispatches', { ref: 'nope' }),
+    422,
+  )
+  const ci = await get(`${repo}/contents/.github/workflows/ci.yml`)
+  await send('DELETE', '/contents/.github/workflows/ci.yml', {
+    message: 'rm',
+    sha: field(ci, 'sha'),
+  })
+  eq('a workflow whose file is gone is not listed', ((await listed()) as JsonValue[]).length, 2)
+  eq(
+    'and cannot be dispatched',
+    await send('POST', '/actions/workflows/ci.yml/dispatches', { ref: 'main' }),
+    404,
+  )
+  eq(
+    'a wrongly typed setting refuses the whole edit',
+    await send('PATCH', '', { description: 'x', has_issues: 'yes' }),
+    422,
+  )
+  eq('and writes none of it', field(await get(repo), 'description'), null)
+  for (const key of ['name', 'default_branch']) {
+    for (const value of [123, null, [], {}]) {
+      eq(
+        `a wrongly typed ${key} refuses the whole edit`,
+        await send('PATCH', '', { description: 'must not land', [key]: value }),
+        422,
+      )
+      eq('the refused edit preserves the repository', field(await get(repo), 'description'), null)
+    }
+  }
+  eq(
+    'an invalid branch type cannot partially rename a repository',
+    await send('PATCH', '', { name: 'must-not-rename', default_branch: false }),
+    422,
+  )
+  eq('the original name still resolves', await send('GET', ''), 200)
+  eq('an unknown visibility is refused', await send('PATCH', '', { visibility: 'secret' }), 422)
+  eq('a legacy site needs a source', await send('POST', '/pages', {}), 422)
+  eq(
+    'a source path is the root or /docs',
+    await send('POST', '/pages', { source: { branch: 'main', path: '/site' } }),
+    422,
+  )
+  eq('no site is updated', await send('PUT', '/pages', { cname: null }), 404)
+  eq('no site is deleted', await send('DELETE', '/pages'), 404)
+  eq(
+    'a workflow site needs no source',
+    await send('POST', '/pages', { build_type: 'workflow' }),
+    201,
+  )
+  eq("and publishes the default branch's root", field(await get(`${repo}/pages`), 'source'), {
+    branch: 'main',
+    path: '/',
+  })
+  eq(
+    'a wrongly typed site edit is refused',
+    await send('PUT', '/pages', { https_enforced: 'yes' }),
+    422,
+  )
+  const logs = await fetch(`${base}/repos/integ/repo-cli/actions/runs/201/logs`, {
+    headers: HEADERS,
+  })
+  eq("a completed run's logs are a zip", logs.headers.get('content-type'), 'application/zip')
+  eq(
+    "one job's log is its steps' text",
+    (
+      await (
+        await fetch(`${base}/repos/integ/repo-cli/actions/jobs/401/logs`, { headers: HEADERS })
+      ).text()
+    ).split('\n')[0] ?? '',
+    "2026-01-01T00:00:05.0000000Z Current runner version: '2.330.0'",
+  )
+}
+
 async function main(): Promise<void> {
   const fake = await launch()
   const at = fake.endpoint
@@ -474,6 +701,9 @@ async function main(): Promise<void> {
     await emptyRepository(at)
     await seededHistory(at)
     await supersededBlobs(at)
+    await refsNameCommits(at)
+    await abandonedRoot(at)
+    await workflowsAndSettings(at)
     const reset = await fetch(`${at}/reset`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
@@ -1656,6 +1886,226 @@ async function main(): Promise<void> {
       await repositoryNames('integ-user', ', isFork: false'),
       [],
     )
+
+    // ---- a pull request over GraphQL: every field gh pr view/list read, its
+    // reviews and review requests, the issue its body closes, and the checks
+    // rolled up on its head commit, a page at a time
+    const cliSeed = await fetch(`${at}/reset`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ tenants: [TENANT], fixture: 'cli' }),
+    })
+    check('the cli fixture is seeded', cliSeed.status === 200)
+    const repoCli = `${at}/repos/integ/repo-cli`
+    const tracked = await post(`${repoCli}/issues`, { title: 'tracked' })
+    eq('an issue for the pull request to close', field(tracked.body, 'number'), 1)
+    const docsPull = await post(`${repoCli}/pulls`, {
+      title: 'docs',
+      head: 'docs',
+      base: 'main',
+      body: 'Fixes #1',
+    })
+    eq('the pull request is opened', field(docsPull.body, 'number'), 2)
+    const approve = await post(`${repoCli}/pulls/2/reviews`, { event: 'APPROVE' })
+    eq(
+      'an author may not approve their own pull request',
+      [approve.status, field(approve.body, 'errors')],
+      [422, ['Can not approve your own pull request']],
+    )
+    const bareReview = await post(`${repoCli}/pulls/2/reviews`, { event: 'COMMENT' })
+    eq('a comment review needs a body', bareReview.status, 422)
+    const review = await post(`${repoCli}/pulls/2/reviews`, { event: 'COMMENT', body: 'lgtm' })
+    eq(
+      'a comment review is recorded as COMMENTED',
+      [review.status, field(review.body, 'state'), field(review.body, 'body')],
+      [200, 'COMMENTED', 'lgtm'],
+    )
+    const own = await post(`${repoCli}/pulls/2/requested_reviewers`, { reviewers: ['integ-user'] })
+    eq(
+      'a review cannot be requested of the author',
+      [own.status, field(own.body, 'message')],
+      [422, 'Review cannot be requested from pull request author.'],
+    )
+    const asked = await post(`${repoCli}/pulls/2/requested_reviewers`, {
+      reviewers: ['octo-reviewer'],
+    })
+    eq('a review is requested of someone else', asked.status, 201)
+    const pullGraph = async (selection: string): Promise<JsonValue> => {
+      const r = await post(`${at}/graphql`, {
+        query: `{ repository(owner: "integ", name: "repo-cli") { ${selection} } }`,
+      })
+      return r.body
+    }
+    const pr = await pullGraph(
+      'pullRequest(number: 2) { state closed number files(first: 100) { nodes { path additions ' +
+        'deletions } } reviews(first: 100) { nodes { state body author { login } } } ' +
+        'latestReviews(first: 100) { nodes { state } } reviewRequests(first: 100) { nodes { ' +
+        'requestedReviewer { __typename ... on User { login } } } } closingIssuesReferences(' +
+        'first: 100) { nodes { number } } author { login ... on User { name } } ' +
+        'headRepositoryOwner { login ... on User { name } } mergedBy { login } }',
+    )
+    eq('a pull request answers every field it is asked for', field(pr, 'data'), {
+      repository: {
+        pullRequest: {
+          state: 'OPEN',
+          closed: false,
+          number: 2,
+          files: { nodes: [{ path: 'README.md', additions: 1, deletions: 0 }] },
+          reviews: {
+            nodes: [{ state: 'COMMENTED', body: 'lgtm', author: { login: 'integ-user' } }],
+          },
+          latestReviews: { nodes: [] },
+          reviewRequests: {
+            nodes: [{ requestedReviewer: { __typename: 'User', login: 'octo-reviewer' } }],
+          },
+          closingIssuesReferences: { nodes: [{ number: 1 }] },
+          author: { login: 'integ-user', name: 'integ-user' },
+          headRepositoryOwner: { login: 'integ' },
+          mergedBy: null,
+        },
+      },
+    })
+    const issueAsPull = await pullGraph('pullRequest(number: 1) { number }')
+    eq(
+      'an issue number is no pull request',
+      (field(issueAsPull, 'errors') as JsonValue[]).map((e) => [
+        field(e, 'message'),
+        field(e, 'path'),
+      ]),
+      [['Could not resolve to a PullRequest with the number of 1.', ['repository', 'pullRequest']]],
+    )
+    const pullLists = await pullGraph(
+      'open: pullRequests(states: [OPEN], first: 10) { totalCount nodes { number } } ' +
+        'merged: pullRequests(states: MERGED, first: 10) { totalCount }',
+    )
+    eq('pullRequests narrows by state', field(pullLists, 'data'), {
+      repository: { open: { totalCount: 1, nodes: [{ number: 2 }] }, merged: { totalCount: 0 } },
+    })
+    const owned = await post(`${at}/graphql`, {
+      query:
+        '{ repositoryOwner(login: "integ") { repositories(first: 100) { nodes { name ' +
+        'pullRequests(states: [OPEN], first: 10) { nodes { number repository { name } } } ' +
+        'issues(first: 1) { pageInfo { hasNextPage } } } } } }',
+    })
+    const cli = (
+      field(
+        field(field(field(owned.body, 'data'), 'repositoryOwner'), 'repositories'),
+        'nodes',
+      ) as JsonValue[]
+    ).find((repo) => field(repo, 'name') === 'repo-cli')
+    eq(
+      'a repository reached through its owner answers its connections as a top-level one does',
+      [field(owned.body, 'errors'), field(cli ?? null, 'pullRequests')],
+      [null, { nodes: [{ number: 2, repository: { name: 'repo-cli' } }] }],
+    )
+    const cards = await pullGraph(
+      'pullRequest(number: 2) { projectCards(first: 100) { totalCount } }',
+    )
+    eq(
+      'project cards are refused as the vendor refuses Projects (classic)',
+      (field(cards, 'errors') as JsonValue[]).map((e) => field(e, 'path')),
+      [['repository', 'pullRequest', 'projectCards']],
+    )
+    const contexts = async (after: string): Promise<JsonValue> =>
+      field(
+        field(
+          (
+            field(
+              field(
+                field(
+                  field(
+                    await pullGraph(
+                      'pullRequest(number: 2) { commits(last: 1) { nodes { commit { ' +
+                        `statusCheckRollup { contexts(first: 2${after}) { nodes { __typename } ` +
+                        'pageInfo { hasNextPage endCursor } } } } } } }',
+                    ),
+                    'data',
+                  ),
+                  'repository',
+                ),
+                'pullRequest',
+              ),
+              'commits',
+            ) as { nodes: JsonValue[] }
+          ).nodes[0] ?? null,
+          'commit',
+        ),
+        'statusCheckRollup',
+      )
+    const firstChecks = field(await contexts(''), 'contexts')
+    eq(
+      'the head commit rolls up the check runs first',
+      (field(firstChecks, 'nodes') as JsonValue[]).map((node) => field(node, '__typename')),
+      ['CheckRun', 'CheckRun'],
+    )
+    const cursor = field(field(firstChecks, 'pageInfo'), 'endCursor') as string
+    const lastChecks = field(await contexts(`, after: "${cursor}"`), 'contexts')
+    eq(
+      'the next page of the rollup is the commit status',
+      [
+        (field(lastChecks, 'nodes') as JsonValue[]).map((node) => field(node, '__typename')),
+        field(field(lastChecks, 'pageInfo'), 'hasNextPage'),
+      ],
+      [['StatusContext'], false],
+    )
+    const tracked1 = await pullGraph(
+      'issue(number: 1) { state stateReason closed closedAt closedByPullRequestsReferences(' +
+        'first: 100) { nodes { number } } }',
+    )
+    eq('an issue names the pull request that closes it', field(tracked1, 'data'), {
+      repository: {
+        issue: {
+          state: 'OPEN',
+          stateReason: null,
+          closed: false,
+          closedAt: null,
+          closedByPullRequestsReferences: { nodes: [{ number: 2 }] },
+        },
+      },
+    })
+    const reason = async (state: string): Promise<JsonValue> => {
+      const r = await fetch(`${repoCli}/issues/1`, {
+        method: 'PATCH',
+        headers: HEADERS,
+        body: JSON.stringify({ state }),
+      })
+      check(`the issue is set ${state}`, r.status === 200, String(r.status))
+      const graph = await pullGraph('issue(number: 1) { state stateReason closedAt }')
+      return field(field(field(graph, 'data'), 'repository'), 'issue')
+    }
+    eq('closing records why and when', await reason('closed'), {
+      state: 'CLOSED',
+      stateReason: 'COMPLETED',
+      closedAt: '2026-01-01T00:02:00Z',
+    })
+    eq('reopening records that it was reopened', await reason('open'), {
+      state: 'OPEN',
+      stateReason: 'REOPENED',
+      closedAt: null,
+    })
+    const either = await pullGraph(
+      'a: issueOrPullRequest(number: 1) { __typename } ' +
+        'b: issueOrPullRequest(number: 2) { __typename ... on PullRequest { headRefName } }',
+    )
+    eq('issueOrPullRequest answers an issue or a pull request', field(either, 'data'), {
+      repository: {
+        a: { __typename: 'Issue' },
+        b: { __typename: 'PullRequest', headRefName: 'docs' },
+      },
+    })
+    const neither = await pullGraph('issueOrPullRequest(number: 99) { __typename }')
+    eq(
+      'a number that is neither is refused',
+      (field(neither, 'errors') as JsonValue[]).map((e) => field(e, 'message')),
+      ['Could not resolve to an issue or pull request with the number of 99.'],
+    )
+    const narrowed = await pullGraph(
+      'all: issues(states: [OPEN, CLOSED], first: 10) { totalCount nodes { number } } ' +
+        'labelled: issues(first: 10, filterBy: { labels: ["nope"] }) { totalCount }',
+    )
+    eq('issues narrows by labels', field(narrowed, 'data'), {
+      repository: { all: { totalCount: 1, nodes: [{ number: 1 }] }, labelled: { totalCount: 0 } },
+    })
     process.stdout.write(`github selftest: ${String(checks)} checks passed\n`)
   } finally {
     fake.child.kill('SIGTERM')

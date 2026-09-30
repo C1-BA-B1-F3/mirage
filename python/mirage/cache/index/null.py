@@ -30,6 +30,10 @@ class NullIndexCacheStore(IndexCacheStore):
     on ``index is None``.
     """
 
+    @property
+    def ttl(self) -> float:
+        return 0.0
+
     async def get(self, vfs_path: str) -> LookupResult:
         return LookupResult(status=LookupStatus.NOT_FOUND)
 

@@ -19,7 +19,9 @@ import { RAM_IO } from '../commands/builtin/ram/io.ts'
 import type { CommandIO } from '../commands/builtin/generic_bind/index.ts'
 import { streamFromBytes } from '../commands/builtin/utils/wrap.ts'
 import { command, type RegisteredCommand } from '../commands/config.ts'
-import { CommandSpec } from '../commands/spec/types.ts'
+import { CommandSpec, Operand } from '../commands/spec/types.ts'
+import { CLISpec, type CLIInvocation } from '../commands/cli/types.ts'
+import { RuntimeVFS } from '../runtime/vfs.ts'
 import { IOResult } from '../io/types.ts'
 import type { RegisteredOp } from '../ops/registry.ts'
 import { ops } from '../test-utils.ts'
@@ -481,4 +483,44 @@ describe('custom VFS capability fallbacks', () => {
       if (custom) await builtin.close()
     }
   })
+})
+
+async function readCli(inv: CLIInvocation): Promise<[Uint8Array, IOResult]> {
+  const dispatch = inv.doors?.dispatch
+  const path = inv.paths[0]
+  if (dispatch === undefined || path === undefined) throw new Error('missing CLI path door')
+  const [data, result] = await dispatch('read', path)
+  if (!(data instanceof Uint8Array)) throw new Error('expected file bytes')
+  return [data, result]
+}
+
+it('serves a custom driver through CLI, namespace and runtime doors', async () => {
+  const ws = new Workspace(
+    { '/wiki': makeVfs() },
+    {
+      mode: MountMode.WRITE,
+      shellParser: await getTestParser(),
+    },
+  )
+  ws.registerCli(
+    'showpage',
+    new CLISpec({
+      name: 'showpage',
+      positional: [new Operand({ name: 'path', type: 'path', required: true })],
+      fn: readCli,
+    }),
+  )
+  try {
+    expect((await ws.shell('ln -s /wiki/notes.md /page')).exitCode).toBe(0)
+    for (const line of ['cat /page', 'showpage /page']) {
+      const result = await ws.shell(line)
+      expect(result.exitCode).toBe(0)
+      expect(new TextDecoder().decode(result.stdout)).toBe('agents speak bash\n')
+    }
+    const runtime = new RuntimeVFS((op, path) => ws.dispatch(op, path))
+    expect(new TextDecoder().decode(await runtime.read('/page'))).toBe('agents speak bash\n')
+    expect(await runtime.stat('/page')).toMatchObject({ size: 18, isDir: false })
+  } finally {
+    await ws.close()
+  }
 })

@@ -12,12 +12,17 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+from typing import TYPE_CHECKING
+
 from mirage.vfs.discord.config import DiscordConfig
+
+if TYPE_CHECKING:
+    from mirage.vfs.discord.discord import DiscordVFS
 
 __all__ = ["DiscordConfig", "DiscordVFS"]
 
 
-def __getattr__(name: str):
+def __getattr__(name: str) -> "type[DiscordVFS]":
     if name == "DiscordVFS":
         from mirage.vfs.discord.discord import DiscordVFS
         return DiscordVFS

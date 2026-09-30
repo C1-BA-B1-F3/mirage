@@ -19,6 +19,12 @@ import { rstripSlash } from '../utils/slash.ts'
 const HELP_HINT =
   'Tip: run `man` to list every available command grouped by VFS, `man <cmd>` for a single entry, and `<cmd> --help` for flag details.'
 
+const MODE_LINES: Record<MountMode, string> = {
+  [MountMode.READ]: '  Mode: read-only; writes are refused.',
+  [MountMode.WRITE]: '  Mode: read-write.',
+  [MountMode.EXEC]: '  Mode: read-write; programs can run.',
+}
+
 export function buildFilePrompt(mounts: readonly MountEntry[]): string {
   const parts: string[] = [HELP_HINT]
   for (const m of mounts) {
@@ -26,7 +32,7 @@ export function buildFilePrompt(mounts: readonly MountEntry[]): string {
     const prompt = r.prompt
     if (prompt === undefined || prompt === '') continue
     const prefix = rstripSlash(m.prefix) || '/'
-    let section = prompt.replace(/\{prefix\}/g, prefix)
+    let section = prompt.replace(/\{prefix\}/g, prefix) + '\n' + MODE_LINES[m.mode]
     if (m.mode !== MountMode.READ && r.writePrompt !== undefined && r.writePrompt !== '') {
       section += '\n' + r.writePrompt.replace(/\{prefix\}/g, prefix)
     }

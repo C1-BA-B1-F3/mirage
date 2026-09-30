@@ -18,6 +18,7 @@ import { scanParameter } from '../parameter.ts'
 import { ARITH_OPEN_TOKEN, QUOTES, VERBATIM_TYPES } from './constants.ts'
 import { expansionSource } from './expansion.ts'
 import { heredocOperators, protectedSource, sameShape } from './heredoc/index.ts'
+import { lowerTiming, wrapTiming, type TimingMark } from './timing.ts'
 import { discoverHeredocs } from './heredoc/reader.ts'
 import { dropChars, dropSourceChars, lowerHeredocs, rebaseSource } from './heredoc/lower.ts'
 import { HeredocNode } from './heredoc/node.ts'
@@ -291,6 +292,36 @@ function repairRedirectDashes(parser: Parser, root: Node, text: string): [Node, 
 // start would poison every later parser.
 let engineBoot: Promise<void> | null = null
 
+/**
+ * Make statement newlines swallowed between simple-command words explicit.
+ * Quoted newlines are inside a child and continuations were already removed.
+ * Insertion preserves the source maps used by lowered heredocs.
+ */
+function statementBoundaries(parser: Parser, text: string): string {
+  if (!text.includes('\n')) return text
+  const root = parser.parse(text)?.rootNode
+  if (root === undefined) return text
+  const offsets = new Set<number>()
+  const stack = [root]
+  while (stack.length > 0) {
+    const node = stack.pop()
+    if (node === undefined) break
+    stack.push(...node.children)
+    if (!['command', 'file_redirect', 'redirected_statement'].includes(node.type)) continue
+    const children = node.children
+    for (let i = 1; i < children.length; i += 1) {
+      const left = children[i - 1]
+      const right = children[i]
+      if (left === undefined || right === undefined) continue
+      const gap = text.slice(left.endIndex, right.startIndex)
+      if (gap.includes('\n') && gap.trim() === '') offsets.add(left.endIndex + gap.indexOf('\n'))
+    }
+  }
+  for (const offset of [...offsets].sort((a, b) => b - a))
+    text = text.slice(0, offset) + ';' + text.slice(offset)
+  return text
+}
+
 export async function createShellParser(config: ShellParserConfig): Promise<ShellParser> {
   engineBoot ??= Parser.init({ wasmBinary: toArrayBuffer(config.engineWasm) }).catch(
     (err: unknown) => {
@@ -330,11 +361,23 @@ export async function createShellParser(config: ShellParserConfig): Promise<Shel
           ? discoverHeredocs(command, heredocOperators(original.rootNode))
           : []
       const lowered = documents.length > 0 ? lowerHeredocs(command, documents) : null
-      const heredocs =
+      let heredocs =
         lowered === null
           ? null
           : dropSourceChars(lowered, continuationIndices(parser, lowered.source))
-      const source = heredocs?.source ?? joinContinuations(parser, command)
+      let input = heredocs?.source ?? joinContinuations(parser, command)
+      let timingMarks: readonly TimingMark[] = []
+      if (input.includes('time')) {
+        heredocs ??= {
+          original: input,
+          source: input,
+          offsets: Array.from({ length: input.length + 1 }, (_, i) => i),
+          documents: [],
+        }
+        ;[heredocs, timingMarks] = lowerTiming(parser, heredocs)
+        input = heredocs.source
+      }
+      const source = statementBoundaries(parser, input)
       let root = parseProtected(parser, source)
       let text = source
       if (root.hasError) {
@@ -363,12 +406,13 @@ export async function createShellParser(config: ShellParserConfig): Promise<Shel
       if (text.includes('$')) {
         root = repairOrphanedDollars(parser, root, text)
       }
-      return heredocs === null
-        ? root
-        : new HeredocNode(
-            root,
-            rebaseSource(heredocs, heredocs.source.slice(0, root.startIndex) + root.text),
-          )
+      if (heredocs === null) return root
+      const mappedSource = rebaseSource(
+        heredocs,
+        heredocs.source.slice(0, root.startIndex) + root.text,
+      )
+      const mapped = new HeredocNode(root, mappedSource)
+      return timingMarks.length === 0 ? mapped : wrapTiming(mapped, mappedSource, timingMarks)
     },
   }
 }

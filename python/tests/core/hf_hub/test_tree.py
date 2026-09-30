@@ -23,7 +23,7 @@ from mirage.core.hf_hub.client import HfHubError
 from mirage.core.hf_hub.tree import (collect, ensure_live_index, ensure_tree,
                                      fetch_path, fetch_tree, index_rows,
                                      next_cursor, parse_entry, paths_info_url,
-                                     refill_index, tree_url)
+                                     refill_index, refill_snapshot, tree_url)
 from tests.core.hf_hub.conftest import FakeAccessor, dir_row, file_row, page
 
 
@@ -411,3 +411,22 @@ async def test_fetch_path_refuses_an_answer_that_is_not_a_list(
 async def test_fetch_path_reads_an_empty_list_as_absence(mock_post, accessor):
     mock_post.return_value = []
     assert await fetch_path(accessor, "a.txt") == {}
+
+
+@pytest.mark.asyncio
+@patch("mirage.core.hf_hub.tree.fetch_tree")
+async def test_refill_returns_the_snapshot_it_wrote(mock_fetch, accessor,
+                                                    monkeypatch):
+    mock_fetch.return_value = {"a.txt": parse_entry(file_row("a.txt"))}
+    index = RAMIndexCacheStore()
+    write = index.seed
+
+    def seed(*args):
+        write(*args)
+        accessor.tree = {"other.txt": parse_entry(file_row("other.txt"))}
+
+    monkeypatch.setattr(index, "seed", seed)
+    snapshot = await refill_snapshot(accessor, index, "/m")
+    assert snapshot.children["/m"] == ["/m/a.txt"]
+    assert snapshot.entries["/m/a.txt"].id == "oid-a.txt"
+    assert (await index.list_dir("/m")).entries == ["/m/a.txt"]

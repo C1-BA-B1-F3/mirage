@@ -25,6 +25,7 @@ import { formatFsError, isFsError } from '../../../utils/errors.ts'
 import { edScript, normalDiff, unifiedDiff } from '../diff_format.ts'
 import { extraOperandError, missingOperandError } from '../../spec/usage.ts'
 import { isStdin, stdinStat, stdinStream } from '../utils/stream.ts'
+import { UsageError } from '../../errors.ts'
 import { CommandName } from '../../spec/types.ts'
 import { compareCodePoints } from '../../../utils/sort.ts'
 
@@ -41,6 +42,7 @@ interface DiffFlags {
   e: boolean
   q: boolean
   u: boolean
+  context: number
 }
 
 function childSpec(parent: PathSpec, name: string): PathSpec {
@@ -97,7 +99,8 @@ async function diffPair(
   const bLines = splitLinesKeepEnds(textB)
   let result: string[]
   if (flags.e) result = edScript(aLines, bLines)
-  else if (flags.u) result = unifiedDiff(aLines, bLines, path1.rawPath, path2.rawPath)
+  else if (flags.u)
+    result = unifiedDiff(aLines, bLines, path1.rawPath, path2.rawPath, flags.context)
   else result = normalDiff(aLines, bLines)
   return ENC.encode(result.join(''))
 }
@@ -164,6 +167,22 @@ export async function diffGeneric(
   backendStat?: Stat,
 ): Promise<[ByteSource | null, IOResult]> {
   const fl = new FlagView(opts.flags, specOf('diff'))
+  let context = -1
+  let unified = fl.asBool('u')
+  for (const [, value] of fl.occurrences('U', 'unified')) {
+    unified = true
+    if (value === true) context = Math.max(context, 3)
+    else if (
+      typeof value === 'string' &&
+      (value === '' || /^[ \t\n\r\v\f]*[+-]?[0-9]+$/.test(value)) &&
+      Number(value) >= 0
+    )
+      context = Math.max(context, Math.min(Number(value), Number.MAX_SAFE_INTEGER))
+    else
+      throw new UsageError(
+        `diff: invalid context length '${String(value)}'\ndiff: Try 'diff --help' for more information.`,
+      )
+  }
   if (paths.length > 2) throw extraOperandError(CommandName.DIFF, paths[2]?.rawPath ?? '')
   if (paths.length < 2)
     throw missingOperandError(CommandName.DIFF, paths[0]?.rawPath ?? null, opts.argv ?? [])
@@ -172,8 +191,9 @@ export async function diffGeneric(
     w: fl.asBool('w'),
     b: fl.asBool('b'),
     e: fl.asBool('e'),
-    q: fl.asBool('q'),
-    u: fl.asBool('u'),
+    q: fl.asBool('brief'),
+    u: unified,
+    context: context === -1 ? 3 : context,
   }
   const p0 = paths[0]
   const p1 = paths[1]

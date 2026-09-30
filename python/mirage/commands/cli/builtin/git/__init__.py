@@ -15,28 +15,39 @@
 from mirage.commands.cli.builtin.git.add import add
 from mirage.commands.cli.builtin.git.branch import branch
 from mirage.commands.cli.builtin.git.checkout import checkout
+from mirage.commands.cli.builtin.git.clone import clone
 from mirage.commands.cli.builtin.git.commit import commit
 from mirage.commands.cli.builtin.git.diff import diff
+from mirage.commands.cli.builtin.git.fetch import fetch
+from mirage.commands.cli.builtin.git.for_each_ref import for_each_ref
+from mirage.commands.cli.builtin.git.fsck import fsck
+from mirage.commands.cli.builtin.git.init import init
 from mirage.commands.cli.builtin.git.inspect import (config, remote, rev_list,
                                                      rev_parse, show_ref,
                                                      version)
 from mirage.commands.cli.builtin.git.log import log
+from mirage.commands.cli.builtin.git.ls_files import ls_files
 from mirage.commands.cli.builtin.git.mv import mv
+from mirage.commands.cli.builtin.git.reflog import reflog
 from mirage.commands.cli.builtin.git.reset import reset
 from mirage.commands.cli.builtin.git.restore import restore
 from mirage.commands.cli.builtin.git.rm import rm
 from mirage.commands.cli.builtin.git.shortlog import shortlog
 from mirage.commands.cli.builtin.git.show import diff_tree, show
+from mirage.commands.cli.builtin.git.stash import stash_list, stash_show
 from mirage.commands.cli.builtin.git.status import status
 from mirage.commands.cli.builtin.git.switch import switch
 from mirage.commands.cli.builtin.git.tag import tag
-from mirage.commands.cli.types import CLISpec, UsageStyle
+from mirage.commands.cli.types import CLIInvocation, CLISpec, UsageStyle
+from mirage.commands.cli.walk import find_node, node_help
 from mirage.commands.spec.types import Operand, Option
+from mirage.io.types import IOResult
 
 # `-C` is git's own before-anything-else option, so it sits on the root
 # and every verb inherits it. The "." default is load-bearing: a PATH
 # default lands as if typed, so an absent -C resolves to the session cwd
-# and the leaves need no separate working-directory fact.
+# and the leaves need no separate working-directory fact. The root names it
+# its operand base, so a later relative -C lands under the one before it.
 DIRECTORY_OPTION = Option(short="-C",
                           type="path",
                           default=".",
@@ -66,6 +77,9 @@ DATE_OPTION = Option(long="--date",
                      description="Date display format")
 
 DIFF_OPTIONS = (
+    Option(short='-W',
+           long='--function-context',
+           description='Show whole functions as diff context'),
     Option(short="-U",
            long="--unified",
            type="int",
@@ -110,6 +124,20 @@ MERGE_OPTIONS = (
 )
 
 LOG_OPTIONS = (
+    Option(short='-E',
+           long='--extended-regexp',
+           description='Use extended regular expressions'),
+    Option(short='-F',
+           long='--fixed-strings',
+           description='Match patterns literally'),
+    Option(short='-P',
+           long='--perl-regexp',
+           description='Use Perl-compatible regular expressions'),
+    Option(long='--basic-regexp', description='Use basic regular expressions'),
+    Option(long='--committer',
+           type='str',
+           multiple=True,
+           description='Limit commits to matching committers'),
     Option(long="--author",
            type="str",
            multiple=True,
@@ -175,7 +203,15 @@ LOG_OPTIONS = (
            description="Commits older than a date (ISO-8601 or epoch)"),
 )
 
-SHOW_OPTIONS = (Option(long="--oneline",
+MAILMAP_OPTIONS = (
+    Option(long='--mailmap', description='Apply mailmap to identities'),
+    Option(long='--use-mailmap', description='Apply mailmap to identities'),
+    Option(long='--no-mailmap', description='Use recorded identities'),
+    Option(long='--no-use-mailmap', description='Use recorded identities'),
+)
+
+SHOW_OPTIONS = (*MAILMAP_OPTIONS,
+                Option(long="--oneline",
                        description="One abbreviated line per commit"),
                 *DIFF_OPTIONS, *MERGE_OPTIONS, DATE_OPTION, PRETTY_OPTION,
                 FORMAT_OPTION)
@@ -258,6 +294,9 @@ ADD_OPTIONS = (
 )
 
 COMMIT_OPTIONS = (
+    Option(short="-q",
+           long="--quiet",
+           description="Suppress feedback messages"),
     Option(short="-a",
            long="--all",
            description="Stage modified and deleted tracked files first"),
@@ -272,10 +311,17 @@ COMMIT_OPTIONS = (
            description="Override the recorded author"),
 )
 
-CHECKOUT_OPTIONS = (Option(short="-b",
-                           description="Create the branch and switch to it"), )
+CHECKOUT_OPTIONS = (
+    Option(short="-b", description="Create the branch and switch to it"),
+    Option(short="-q",
+           long="--quiet",
+           description="Suppress feedback messages"),
+)
 
 SWITCH_OPTIONS = (
+    Option(short="-q",
+           long="--quiet",
+           description="Suppress feedback messages"),
     Option(short="-c",
            long="--create",
            type="str",
@@ -342,6 +388,7 @@ TAG_OPTIONS = (
 )
 
 STATUS_OPTIONS = (
+    Option(long='--ignored', description='Show ignored files'),
     Option(long="--porcelain",
            type="str",
            value_optional=True,
@@ -364,12 +411,31 @@ STATUS_OPTIONS = (
            description="Show untracked files: no, normal or all"),
 )
 
+
+async def help_cmd(inv: CLIInvocation[None]) -> tuple[bytes | None, IOResult]:
+    """Render the declared command tree, without needing a repository.
+
+    Args:
+        inv (CLIInvocation[None]): optional command to describe.
+    """
+    found = find_node(GIT, inv.texts)
+    if found is None:
+        return None, IOResult(
+            exit_code=1,
+            stderr=(f"git: '{' '.join(inv.texts)}' is not a git command. "
+                    "See 'git --help'.\n").encode())
+    node, path = found
+    return node_help(" ".join(("git", *path)), node,
+                     GIT.usage_style).encode(), IOResult()
+
+
 # The git program tree. No config_model: local git needs no credentials,
 # which is what makes it installable with a bare `cli: git`.
 GIT = CLISpec(
     name="git",
     description="Content tracker",
     usage_style=UsageStyle.GIT,
+    operand_base="-C",
     options=(DIRECTORY_OPTION,
              Option(long="--git-dir",
                     type="str",
@@ -380,6 +446,113 @@ GIT = CLISpec(
                     env="GIT_WORK_TREE",
                     description="Use <path> as the working tree")),
     subcommands=(
+        CLISpec(name='reflog',
+                fn=reflog,
+                description='Show reference history',
+                options=(Option(short='-n',
+                                long='--max-count',
+                                type='int',
+                                numeric_shorthand=True,
+                                description='Limit the number of entries'), ),
+                rest=REVISION),
+        CLISpec(name='for-each-ref',
+                fn=for_each_ref,
+                description='List references with a format',
+                options=(
+                    Option(long='--format',
+                           type='str',
+                           description='Format each reference'),
+                    Option(long='--count',
+                           type='int',
+                           description='Maximum number of references'),
+                ),
+                rest=REVISION),
+        CLISpec(name='ls-files',
+                fn=ls_files,
+                description='Show files in the index',
+                options=(
+                    Option(short='-z', description='Terminate paths with NUL'),
+                    Option(short='-s',
+                           long='--stage',
+                           description='Show staged object metadata'),
+                    Option(short='-c',
+                           long='--cached',
+                           description='Show cached files'),
+                ),
+                rest=REVISION),
+        CLISpec(name="fetch",
+                fn=fetch,
+                description="Download objects and refs from another "
+                "repository",
+                options=(
+                    Option(short="-q",
+                           long="--quiet",
+                           description="Print nothing but errors"),
+                    Option(short="-v",
+                           long="--verbose",
+                           description="Also list unchanged refs"),
+                    Option(short="-p",
+                           long="--prune",
+                           description="Remove remote-tracking refs the "
+                           "remote no longer has"),
+                    Option(short="-t",
+                           long="--tags",
+                           description="Fetch every tag"),
+                    Option(short="-n",
+                           long="--no-tags",
+                           description="Follow no tags"),
+                ),
+                rest=REVISION),
+        CLISpec(name="clone",
+                fn=clone,
+                description="Clone a repository into a new directory",
+                options=(
+                    Option(short="-q",
+                           long="--quiet",
+                           description="Print nothing but errors"),
+                    Option(short="-b",
+                           long="--branch",
+                           type="str",
+                           description="Check out this branch or tag"),
+                    Option(short="-o",
+                           long="--origin",
+                           type="str",
+                           description="Name the remote this instead of "
+                           "origin"),
+                    Option(short="-n",
+                           long="--no-checkout",
+                           description="Leave the working tree empty"),
+                ),
+                rest=REVISION),
+        CLISpec(name="help",
+                fn=help_cmd,
+                description="Show command help",
+                rest=Operand(type="str")),
+        CLISpec(
+            name="init",
+            fn=init,
+            description=
+            "Create an empty Git repository or reinitialize an existing one",
+            write=True,
+            options=(Option(short="-q", long="--quiet"), Option(long="--bare"),
+                     Option(short="-b", long="--initial-branch", type="str")),
+            positional=(Operand(type="str", name="directory"), )),
+        CLISpec(name="fsck",
+                fn=fsck,
+                description="Verify object hashes and connectivity",
+                options=(Option(long="--full"), Option(long="--no-dangling"))),
+        CLISpec(name="stash",
+                description="Inspect saved working trees",
+                subcommands=(
+                    CLISpec(name="list",
+                            fn=stash_list,
+                            description="List stashed changes"),
+                    CLISpec(name="show",
+                            fn=stash_show,
+                            description="Show stashed changes",
+                            options=DIFF_OPTIONS,
+                            positional=(Operand(type="str", name="stash"), )),
+                )),
         CLISpec(name="version",
                 aliases=("--version", "-v"),
                 fn=version,
@@ -393,7 +566,9 @@ GIT = CLISpec(
         CLISpec(name="config",
                 description="Read repository configuration",
                 fn=config,
-                options=(Option(long="--get",
+                options=(Option(long="--global",
+                                description="Read global configuration"),
+                         Option(long="--get",
                                 description="Get a configuration value"),
                          Option(short="-l",
                                 long="--list",
@@ -431,9 +606,12 @@ GIT = CLISpec(
         CLISpec(name="rev-parse",
                 fn=rev_parse,
                 description="Resolve revisions",
-                options=(Option(
-                    long="--abbrev-ref",
-                    description="Show abbreviated reference names"), ),
+                options=(
+                    Option(long="--show-toplevel",
+                           description="Show the worktree root"),
+                    Option(long="--abbrev-ref",
+                           description="Show abbreviated reference names"),
+                ),
                 rest=REVISION),
         CLISpec(name="rev-list",
                 description="List reachable commits",
@@ -462,7 +640,7 @@ GIT = CLISpec(
             name="log",
             description="Show commit logs",
             fn=log,
-            options=(*LOG_OPTIONS, *DIFF_OPTIONS),
+            options=(*LOG_OPTIONS, *MAILMAP_OPTIONS, *DIFF_OPTIONS),
             rest=REVISION,
         ),
         CLISpec(

@@ -12,6 +12,7 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import asyncio
 from dataclasses import replace
 from functools import partial
 
@@ -24,11 +25,13 @@ from mirage.cache.index import NULL_INDEX, IndexCacheStore
 from mirage.commands.builtin.generic_bind import CommandIO
 from mirage.commands.builtin.ram.io import IO as RAM_IO
 from mirage.commands.builtin.utils.wrap import stream_from_bytes
+from mirage.commands.cli import CLISpec
 from mirage.commands.config import command
-from mirage.commands.spec import CommandSpec
+from mirage.commands.spec import CommandSpec, Operand
 from mirage.commands.spec.types import FlagValue
 from mirage.io.types import IOResult
 from mirage.ops.registry import RegisteredOp
+from mirage.runtime.vfs import RuntimeVFS
 from mirage.types import (CapacityState, ContentType, FileStat, FileType,
                           PathSpec, ReadPolicy, ReadSpec)
 from mirage.vfs.base import BaseVFS
@@ -459,3 +462,34 @@ async def test_builtin_and_custom_writes_obey_mount_mode(custom):
         await ws.close()
         if custom:
             await builtin.close()
+
+
+async def _read_cli(inv):
+    assert inv.doors is not None and inv.doors.dispatch is not None
+    return await inv.doors.dispatch("read", inv.paths[0])
+
+
+@pytest.mark.asyncio
+async def test_custom_driver_serves_cli_namespace_and_runtime():
+    ws = Workspace({"/wiki": make_vfs()}, mode=MountMode.WRITE)
+    ws.register_cli(
+        "showpage",
+        CLISpec(name="showpage",
+                positional=(Operand(name="path", type="path",
+                                    required=True), ),
+                fn=_read_cli))
+    try:
+        linked = await ws.shell("ln -s /wiki/notes.md /page")
+        assert linked.exit_code == 0
+        for line in ("cat /page", "showpage /page"):
+            result = await ws.shell(line)
+            assert (result.exit_code,
+                    result.stdout) == (0, b"agents speak bash\n")
+        runtime = RuntimeVFS(ws.dispatch, asyncio.get_running_loop())
+        assert await asyncio.to_thread(runtime.read,
+                                       "/page") == b"agents speak bash\n"
+        row = await asyncio.to_thread(runtime.stat, "/page")
+        assert row.size == 18
+        assert not row.is_dir
+    finally:
+        await ws.close()

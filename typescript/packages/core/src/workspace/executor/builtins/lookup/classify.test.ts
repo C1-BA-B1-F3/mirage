@@ -89,14 +89,12 @@ describe('classify', () => {
     ])
   })
 
-  it('does not call time or coproc keywords', () => {
-    // mirage implements neither construct, so `time echo hi` reports
-    // command not found and type may not call it a keyword.
+  it('recognizes time while leaving coproc unimplemented', () => {
     const session = makeSession()
     const registry = makeRegistry()
-    expect(classify('time', session, registry)).toBeNull()
+    expect(classify('time', session, registry)).toBe(NameKind.KEYWORD)
     expect(classify('coproc', session, registry)).toBeNull()
     session.functions.time = 'time() { :; }'
-    expect(classify('time', session, registry)).toBe(NameKind.FUNCTION)
+    expect(classify('time', session, registry)).toBe(NameKind.KEYWORD)
   })
 })

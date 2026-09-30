@@ -19,7 +19,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { buildRuntime } from '@struktoai/mirage-core/runtime/table'
 import { RAMVFS } from '@struktoai/mirage-core/vfs/ram/ram'
-import { MountMode } from '@struktoai/mirage-core/types'
+import { MountMode, PathSpec } from '@struktoai/mirage-core/types'
 import { Workspace } from '../../workspace.ts'
 import { LocalRuntime } from './local.ts'
 
@@ -161,6 +161,56 @@ describe('LocalRuntime', () => {
     })
     expect(result.exitCode).toBe(0)
     expect(DEC.decode(result.stdout)).toBe("['alpha', 'beta'] piped V\n")
+  })
+
+  it('hands the init switches to the host interpreter', async () => {
+    const rt = new LocalRuntime()
+    const result = await rt.run({
+      code: 'import sys; print(sys.flags.optimize, sys.dont_write_bytecode, sys.warnoptions)',
+      args: [],
+      stdin: null,
+      env: {},
+      flags: { O: 2, B: true, W: ['ignore'] },
+    })
+    expect(DEC.decode(result.stderr ?? new Uint8Array())).toBe('')
+    expect(DEC.decode(result.stdout)).toBe("2 True ['ignore']\n")
+  })
+
+  it('strips asserts under -O, with no notice', async () => {
+    // Mirrors Python's test_dash_o_strips_asserts_on_a_cpython_runtime.
+    const ws = new Workspace(
+      { '/': new RAMVFS() },
+      { mode: MountMode.EXEC, runtimes: [new LocalRuntime(), 'workspace'] },
+    )
+    try {
+      const io = await ws.shell(`python3 -O -c 'assert False, "boom"; print("ok")'`)
+      expect(DEC.decode(io.stderr)).toBe('')
+      expect(io.exitCode).toBe(0)
+      expect(DEC.decode(io.stdout)).toBe('ok\n')
+    } finally {
+      await ws.close()
+    }
+  })
+
+  it('names a script after its file, as CPython does', async () => {
+    const rt = new LocalRuntime()
+    const result = await rt.run({
+      code: 'import sys\nprint(sys.argv[0], __file__)\nraise SystemExit(sys.argv[1])\n',
+      args: ['bye'],
+      prog: './s.py',
+      scriptPath: new PathSpec({
+        virtual: '/w/s.py',
+        directory: '/w/',
+        vfsPath: 'w/s.py',
+        rawPath: './s.py',
+      }),
+      cwd: PathSpec.fromStrPath('/w'),
+      stdin: null,
+      env: {},
+    })
+    expect(DEC.decode(result.stdout)).toBe('./s.py /w/./s.py\n')
+    expect(DEC.decode(result.stderr ?? new Uint8Array())).toBe('bye\n')
+    expect(result.exitCode).toBe(1)
   })
 
   it('reports the interpreter exit code and stderr', async () => {

@@ -12,12 +12,17 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+from typing import TYPE_CHECKING
+
 from mirage.vfs.lancedb.config import LanceDBConfig
+
+if TYPE_CHECKING:
+    from mirage.vfs.lancedb.lancedb import LanceDBVFS
 
 __all__ = ["LanceDBConfig", "LanceDBVFS"]
 
 
-def __getattr__(name: str):
+def __getattr__(name: str) -> "type[LanceDBVFS]":
     if name == "LanceDBVFS":
         from mirage.vfs.lancedb.lancedb import LanceDBVFS
         return LanceDBVFS

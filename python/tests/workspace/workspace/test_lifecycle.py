@@ -22,6 +22,7 @@ import pytest
 
 from mirage.cache.index.config import (IndexConfig, IndexEntry, LookupStatus,
                                        RedisIndexConfig)
+from mirage.cache.index.view import IndexView
 from mirage.commands.cli.types import CLISpec
 from mirage.commands.config import RegisteredCommand
 from mirage.commands.spec import CommandSpec, Operand
@@ -725,17 +726,20 @@ async def test_close_settles_pending_profile_persistence(
                                                ("command", True),
                                                ("df", False)])
 @pytest.mark.parametrize("alias", [None, "initial", "dynamic"])
+@pytest.mark.parametrize("borrowed", [False, True])
 async def test_unmount_waits_for_admitted_vfs_use(monkeypatch, surface,
-                                                  streaming, alias):
+                                                  streaming, alias, borrowed):
     vfs = RAMVFS()
     entered = asyncio.Event()
     release = asyncio.Event()
     closed = False
+    index_closed = False
 
     async def chunks():
         entered.set()
         await release.wait()
         assert not closed
+        assert not index_closed
         yield b"value"
 
     async def read_body():
@@ -744,6 +748,7 @@ async def test_unmount_waits_for_admitted_vfs_use(monkeypatch, surface,
         entered.set()
         await release.wait()
         assert not closed
+        assert not index_closed
         return b"value"
 
     @op("read", vfs="ram")
@@ -757,13 +762,16 @@ async def test_unmount_waits_for_admitted_vfs_use(monkeypatch, surface,
         entered.set()
         await release.wait()
         assert not closed
+        assert not index_closed
         return CapacityResult(state=CapacityState.UNKNOWN)
 
     monkeypatch.setattr(vfs, "capacity", capacity)
     mounts = {"/data": vfs}
     if alias == "initial":
         mounts["/alias"] = vfs
-    ws = Workspace(mounts)
+    owner = Workspace(mounts)
+    ws = (await Workspace.from_state(await to_state_dict(owner), mounts=mounts)
+          if borrowed else owner)
     if alias == "dynamic":
         ws.add_mount("/alias", vfs)
     ws.mount("/data").register_fns([read])
@@ -774,6 +782,15 @@ async def test_unmount_waits_for_admitted_vfs_use(monkeypatch, surface,
                           filetype=None,
                           fn=command))
     close_vfs = vfs.close
+    index = ws.mount("/data").index_store
+    close_index = index.close
+
+    async def close_index_store():
+        nonlocal index_closed
+        index_closed = True
+        await close_index()
+
+    monkeypatch.setattr(index, "close", close_index_store)
 
     async def close():
         nonlocal closed
@@ -802,6 +819,7 @@ async def test_unmount_waits_for_admitted_vfs_use(monkeypatch, surface,
         if alias:
             await ws.unmount("/data")
             assert not closed
+        assert not index_closed
         removing = asyncio.create_task(
             ws.unmount("/alias" if alias else "/data"))
         async with asyncio.timeout(5):
@@ -810,16 +828,19 @@ async def test_unmount_waits_for_admitted_vfs_use(monkeypatch, surface,
                 await asyncio.sleep(0)
         assert not removing.done()
         assert not closed
+        assert not index_closed
         release.set()
         assert await asyncio.wait_for(running, 5) == b"value"
         await asyncio.wait_for(removing, 5)
-        assert closed
+        assert closed == (not borrowed)
+        assert index_closed
     finally:
         release.set()
         await asyncio.gather(running,
                              *([removing] if removing else []),
                              return_exceptions=True)
         await ws.close()
+        await owner.close()
 
 
 @pytest.mark.asyncio
@@ -875,7 +896,7 @@ async def test_unmount_drains_metadata_glob_and_its_index_writes(monkeypatch):
     ws = Workspace({"/data": vfs}, index=IndexConfig(ttl=600))
     entered, release = asyncio.Event(), asyncio.Event()
     closed = False
-    index = ws.mount("/data").index_store
+    raw = ws.mount("/data").index_store
     close_vfs = vfs.close
 
     async def close():
@@ -887,7 +908,7 @@ async def test_unmount_drains_metadata_glob_and_its_index_writes(monkeypatch):
         entered.set()
         await release.wait()
         assert not closed
-        await index.set_dir("/data", [
+        await raw.set_dir("/data", [
             ("late", IndexEntry(id="late", name="late", resource_type="file"))
         ])
         return []
@@ -914,12 +935,40 @@ async def test_unmount_drains_metadata_glob_and_its_index_writes(monkeypatch):
         await expanding
         await removing
         assert closed
-        assert (await index.list_dir("/data")).entries is None
+        assert (await raw.list_dir("/data")).entries is None
     finally:
         release.set()
         await asyncio.gather(expanding,
                              *([] if removing is None else [removing]),
                              return_exceptions=True)
+        await ws.close()
+
+
+@pytest.mark.asyncio
+async def test_a_glob_writes_its_listing_through_a_lock_held_view(monkeypatch):
+    vfs = RAMVFS()
+    ws = Workspace({"/data": vfs}, index=IndexConfig(ttl=600))
+    raw = ws.mount("/data").index_store
+    handed = []
+
+    async def glob(accessor, path, *, index=None, **kwargs):
+        handed.append(index)
+        await asyncio.wait_for(
+            index.set_dir(
+                "/data",
+                [("seen",
+                  IndexEntry(id="seen", name="seen", resource_type="file"))]),
+            1)
+        return []
+
+    ws.mount("/data").register_fns(
+        [RegisteredOp(name="glob", vfs="ram", filetype=None, fn=glob)])
+    try:
+        result = await asyncio.wait_for(ws.shell("echo /data/*"), 5)
+        assert (result.exit_code, result.stdout) == (0, b"/data/*\n")
+        assert [type(index) for index in handed] == [IndexView]
+        assert (await raw.list_dir("/data")).entries == ["/data/seen"]
+    finally:
         await ws.close()
 
 

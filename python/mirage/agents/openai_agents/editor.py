@@ -12,6 +12,9 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import posixpath
+import shlex
+
 from agents.apply_diff import apply_diff
 from agents.editor import (ApplyPatchEditor, ApplyPatchOperation,
                            ApplyPatchResult)
@@ -30,15 +33,16 @@ class MirageEditor(ApplyPatchEditor):
         self._ws = workspace
 
     async def create_file(self, op: ApplyPatchOperation) -> ApplyPatchResult:
-        ops = self._ws.vfs
-        parent = "/".join(op.path.rstrip("/").split("/")[:-1]) or "/"
-        try:
-            await ops.mkdir(parent)
-        except (FileExistsError, ValueError):
-            # mkdir -p semantics: an existing parent is success
-            pass
+        parent = posixpath.dirname(op.path.rstrip("/")) or "/"
+        made = await self._ws.shell(f"mkdir -p -- {shlex.quote(parent)}",
+                                    record=False)
+        if made.exit_code != 0:
+            err = await made.materialize_stderr()
+            return ApplyPatchResult(status="failed",
+                                    output=err.decode(
+                                        "utf-8", errors="replace").strip())
         content = apply_diff("", op.diff or "", mode="create")
-        await ops.write(op.path, content.encode("utf-8"))
+        await self._ws.vfs.write(op.path, content.encode("utf-8"))
         return ApplyPatchResult(status="completed")
 
     async def update_file(self, op: ApplyPatchOperation) -> ApplyPatchResult:

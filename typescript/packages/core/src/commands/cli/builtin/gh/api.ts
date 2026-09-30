@@ -18,12 +18,28 @@ import type { CommandFnResult } from '../../../config.ts'
 import type { CLIInvocation } from '../../types.ts'
 import { expand } from '../../../../core/github/placeholder.ts'
 import type { GhConfig } from '../../../../core/github/config.ts'
+import { GRAPHQL_PATH } from '../../../../core/github/constants.ts'
 import { GitHubApiError, type GitHubResponse } from '../../../../core/github/client.ts'
-import { jqEval } from '../../../../core/jq/index.ts'
-import { ghTransport, readCliFile, textOut } from './accessor.ts'
+import { PartialOutputError } from '../../../errors.ts'
+import { ghTransport, jqLines, readCliFile } from './accessor.ts'
+import { HTTP_REASONS } from './constants.ts'
 
 type Json = null | boolean | number | string | Json[] | { [key: string]: Json }
 const EMPTY_ARRAY = Symbol('empty-array')
+const ENC = new TextEncoder()
+
+// One response as `gh api` prints it: the decoded body, and under `-i` the
+// status line and headers that go before it ('' otherwise).
+interface Printed {
+  data: unknown
+  head: string
+}
+
+// A failing response: its body verbatim, and its head as for any other.
+interface Failure {
+  body: string
+  head: string
+}
 
 function typed(value: string): Json {
   if (value === 'true') return true
@@ -31,12 +47,6 @@ function typed(value: string): Json {
   if (value === 'null') return null
   if (/^-?\d+$/.test(value)) return Number(value)
   return value
-}
-
-function jqLine(value: unknown): string {
-  if (value === null || value === undefined) return ''
-  if (typeof value === 'string') return value
-  return JSON.stringify(value)
 }
 
 function split(pair: string, emptyArray = false): [string, string | typeof EMPTY_ARRAY] {
@@ -198,7 +208,8 @@ export async function api(inv: CLIInvocation): Promise<CommandFnResult> {
   const method = fl.asStr('method') ?? (Object.keys(values).length > 0 || hasInput ? 'POST' : 'GET')
   const upper = method.toUpperCase()
   const expanded = expand(endpoint, inv.config as GhConfig)
-  const path = expanded.startsWith('/') ? expanded : `/${expanded}`
+  const path =
+    expanded === GRAPHQL_PATH ? expanded : expanded.startsWith('/') ? expanded : `/${expanded}`
 
   let body: unknown
   let params: Record<string, string> | undefined
@@ -216,7 +227,8 @@ export async function api(inv: CLIInvocation): Promise<CommandFnResult> {
   }
   if (params !== undefined && Object.keys(params).length === 0) params = undefined
 
-  const pages: unknown[] = []
+  const pages: Printed[] = []
+  const include = fl.asBool('include')
   const transport = ghTransport(inv.config)
   let current: string | undefined = path
   let first = true
@@ -249,22 +261,58 @@ export async function api(inv: CLIInvocation): Promise<CommandFnResult> {
       return failed(
         pages,
         fl,
-        error.body,
+        { body: error.body, head: include ? responseHead(error.status, error.headers) : '' },
         serverError(error.data, error.status) || `HTTP ${String(error.status)}`,
       )
     }
+    const head = include ? responseHead(response.status, response.headers) : ''
     if (endpoint === 'graphql') {
       const diagnostic = serverError(response.data, response.status)
-      if (diagnostic !== '') return failed(pages, fl, JSON.stringify(response.data), diagnostic)
+      if (diagnostic !== '') {
+        return failed(pages, fl, { body: JSON.stringify(response.data), head }, diagnostic)
+      }
     }
-    pages.push(response.data)
+    pages.push({ data: response.data, head })
     first = false
     current = fl.asBool('paginate')
       ? nextPath(response.headers.link, (inv.config as GhConfig).baseUrl)
       : undefined
   }
 
-  return textOut(await renderPages(pages, fl))
+  return [await renderPages(pages, fl), new IOResult()]
+}
+
+// gh's name for a header: each word capitalized, the way Go canonicalizes one.
+function canonical(name: string): string {
+  return name
+    .toLowerCase()
+    .split('-')
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join('-')
+}
+
+/**
+ * The status line and headers `gh api -i` prints before a body.
+ *
+ * gh prints the protocol and status Go's client reports, then every header
+ * but `Status` in name order, each line ending `\r\n`, then a blank `\r\n`
+ * line. Mirage's clients speak HTTP/1.1, and the reason is Go's phrase for
+ * the code. The body arrives decoded, so the headers describing its encoded
+ * form (`Content-Encoding`, `Content-Length`) are dropped, which is what Go's
+ * transport does when it inflates a body itself.
+ */
+function responseHead(status: number, headers: Record<string, string>): string {
+  const decoded = headers['content-encoding'] !== undefined
+  const lines = Object.entries(headers)
+    .map(([name, value]): [string, string] => [canonical(name), value])
+    .filter(
+      ([name]) =>
+        name !== 'Status' &&
+        !(decoded && (name === 'Content-Encoding' || name === 'Content-Length')),
+    )
+    .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+    .map(([name, value]) => `${name}: ${value}\r\n`)
+  return `HTTP/1.1 ${String(status)} ${HTTP_REASONS[status] ?? ''}\n${lines.join('')}\r\n`
 }
 
 /**
@@ -292,19 +340,68 @@ function serverError(data: unknown, status: number): string {
 }
 
 async function failed(
-  pages: unknown[],
+  pages: Printed[],
   fl: FlagView,
-  body: string,
+  failure: Failure,
   diagnostic: string,
 ): Promise<CommandFnResult> {
   return [
-    new TextEncoder().encode(await renderPages(pages, fl, body)),
-    new IOResult({ exitCode: 1, stderr: new TextEncoder().encode(`gh: ${diagnostic}\n`) }),
+    await renderPages(pages, fl, failure),
+    new IOResult({ exitCode: 1, stderr: ENC.encode(`gh: ${diagnostic}\n`) }),
   ]
 }
 
-function jsonPage(value: unknown): string {
-  return value === null ? '' : `${JSON.stringify(value, null, 2)}\n`
+/**
+ * A page's body as gh copies it out: verbatim, with no newline added. The
+ * body arrives decoded, and the vendor's JSON is compact, so the compact
+ * spelling of what arrived is the text it sent. A body that is not JSON is
+ * its own text, bytes that are not text (a run's log archive) are copied
+ * as they came, and a call that answered with none prints nothing.
+ */
+function bodyText(page: unknown): string | Uint8Array {
+  if (page === null) return ''
+  if (page instanceof Uint8Array) return page
+  return typeof page === 'string' ? page : JSON.stringify(page)
+}
+
+function bytesOf(parts: readonly (string | Uint8Array)[]): Uint8Array {
+  const chunks = parts.map((part) => (typeof part === 'string' ? ENC.encode(part) : part))
+  const out = new Uint8Array(chunks.reduce((size, chunk) => size + chunk.length, 0))
+  let at = 0
+  for (const chunk of chunks) {
+    out.set(chunk, at)
+    at += chunk.length
+  }
+  return out
+}
+
+// `parts` with `between` inserted between each two.
+function joined(
+  parts: readonly (readonly (string | Uint8Array)[])[],
+  between: string,
+): (string | Uint8Array)[] {
+  return parts.flatMap((part, index) => (index === 0 ? [...part] : [between, ...part]))
+}
+
+/**
+ * The bodies of `--paginate` as gh's paginatedArrayReader streams them.
+ *
+ * A JSON array body after the first opens with a comma instead of its
+ * bracket (an empty one with a space), and one that more pages follow drops
+ * its closing bracket, so array pages print as one array. Object bodies, and
+ * bodies that are not JSON, run on as they came. `more` says a failing body
+ * follows the last page here.
+ */
+function joinedPages(pages: unknown[], more: boolean): (string | Uint8Array)[] {
+  return pages.map((page, index) => {
+    let text = bodyText(page)
+    if (page === null || typeof page === 'string' || typeof text !== 'string') return text
+    if (index > 0 && text.startsWith('[')) {
+      text = `${text.startsWith('[]') ? ' ' : ','}${text.slice(1)}`
+    }
+    if ((more || index < pages.length - 1) && text.endsWith(']')) text = text.slice(0, -1)
+    return text
+  })
 }
 
 /**
@@ -313,25 +410,60 @@ function jsonPage(value: unknown): string {
  * gh copies the failing body out verbatim, past `--jq`. Under `--slurp`
  * that body is still the array's last element, even an empty one or one
  * that is not JSON, which is gh's own output.
+ *
+ * Under `-i` every response's head goes before its body, a newline goes
+ * between two responses, and pages print as they came rather than joined
+ * into one array. `--silent` drops the bodies and keeps the heads, and under
+ * `--slurp` the array's `[` or `,` goes before a page's head, since gh's
+ * writer opens each page before the head is printed.
  */
-async function renderPages(pages: unknown[], fl: FlagView, failure?: string): Promise<string> {
-  if (fl.asBool('silent')) return ''
+async function renderPages(pages: Printed[], fl: FlagView, failure?: Failure): Promise<Uint8Array> {
+  const include = fl.asBool('include')
+  const between = include ? '\n' : ''
+  const all = failure === undefined ? pages : [...pages, { data: null, head: failure.head }]
+  if (fl.asBool('silent'))
+    return bytesOf(
+      joined(
+        all.map((page) => [page.head]),
+        between,
+      ),
+    )
   const slurp = fl.asBool('slurp')
+  const printed = pages.map((page) => [page.head, bodyText(page.data)])
+  const failed = failure === undefined ? [] : [[failure.head, failure.body]]
+  // gh's jsonArrayWriter: every body in one array, a comma between each.
   if (slurp && failure !== undefined) {
-    return `[${[...pages.map((page) => JSON.stringify(page)), failure].join(',')}]`
+    return bytesOf(['[', ...joined([...printed, ...failed], `${between},`), ']'])
   }
   const program = fl.asStr('jq')
-  let rendered: string
   if (program !== undefined && program !== '') {
-    const output: string[] = []
-    for (const item of slurp ? [pages] : pages) {
-      for (const value of await jqEval(item, program)) output.push(`${jqLine(value)}\n`)
+    if (!include || slurp) {
+      const heads = joined(
+        pages.map((page) => [page.head]),
+        between,
+      )
+      const data = pages.map((page) => page.data)
+      return bytesOf([...heads, await jqLines(slurp ? [data] : data, program), failure?.body ?? ''])
     }
-    rendered = output.join('')
-  } else if (slurp) {
-    rendered = jsonPage(pages)
-  } else {
-    rendered = pages.map((page) => (typeof page === 'string' ? page : jsonPage(page))).join('')
+    const parts: (string | Uint8Array)[][] = []
+    for (const page of pages) {
+      try {
+        parts.push([page.head, await jqLines([page.data], program)])
+      } catch (err) {
+        if (!(err instanceof PartialOutputError)) throw err
+        const done = bytesOf([...joined([...parts, [page.head]], between), err.stdout])
+        throw new PartialOutputError(err.message, done)
+      }
+    }
+    return bytesOf(joined([...parts, ...failed], between))
   }
-  return rendered + (failure ?? '')
+  if (slurp) return bytesOf(['[', ...joined(printed, `${between},`), ']'])
+  if (include) return bytesOf(joined([...printed, ...failed], between))
+  return bytesOf([
+    ...joinedPages(
+      pages.map((page) => page.data),
+      failure !== undefined,
+    ),
+    failure?.body ?? '',
+  ])
 }

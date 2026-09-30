@@ -1370,3 +1370,14 @@ class BranchUsageError(GitError):
             "   or: git branch [<options>] [-l] [<pattern>...]\n"
             "   or: git branch [<options>] [-r] (-d | -D) <branch-name>...\n"
             "   or: git branch [<options>] [-r | -a] [--points-at]")
+
+
+class MissingRepositoryError(GitError):
+    """A local path that holds no repository, in clone's words.
+
+    Args:
+        url (str): the path as typed.
+    """
+
+    def __init__(self, url: str) -> None:
+        super().__init__(f"repository '{url}' does not exist")

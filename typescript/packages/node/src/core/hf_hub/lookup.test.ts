@@ -14,11 +14,14 @@
 
 import { PathSpec } from '@struktoai/mirage-core/types'
 import { IndexEntry, LookupStatus } from '@struktoai/mirage-core/cache/index/config'
+import { IndexView } from '@struktoai/mirage-core/cache/index/view'
+import { RAMFileCacheStore } from '@struktoai/mirage-core/cache/file/ram'
 import { RAMIndexCacheStore } from '@struktoai/mirage-core/cache/index/ram'
 import { RedisIndexCacheStore } from '@struktoai/mirage-core/cache/index/redis'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { HfHubAccessor } from '../../accessor/hf_hub.ts'
 import * as client from './client.ts'
+import { ExpiredOnArrival, FakeHub, serveHub } from './_test_util.ts'
 import { exists as pathExists } from './exists.ts'
 import { dirStatEntry, keyOf, lookup, probeDir, probeFile } from './lookup.ts'
 import { read, resolveEntry } from './read.ts'
@@ -679,4 +682,80 @@ describe('exists on a refusal', () => {
     expect(await codeOf(() => pathExists(accessor, ps('a.txt')))).toBe('EACCES')
     vi.restoreAllMocks()
   })
+})
+
+describe('hf lookup answers from its own refill', () => {
+  let fake: FakeHub | null = null
+
+  afterEach(async () => {
+    await fake?.close()
+    fake = null
+  })
+
+  it('returns the fresh entry and children, with one refill', async () => {
+    fake = new FakeHub()
+    const enc = new TextEncoder()
+    fake.files().set('sub/a.txt', enc.encode('alpha'))
+    fake.files().set('sub/b.txt', enc.encode('bravo'))
+    fake.files().set('top.txt', enc.encode('top'))
+    await serveHub(fake)
+    const accessor = new HfHubAccessor({ repoId: 'acme/widget', endpoint: fake.url } as never)
+    const index = new ExpiredOnArrival()
+    await tree.refillIndex(accessor, index, '/m')
+    const refills = accessor.refills
+    const found = await lookup(accessor, index, '/m', '/m/sub')
+    expect(found.children).toEqual(['/m/sub/a.txt', '/m/sub/b.txt'])
+    expect(found.entry?.resourceType).toBe('folder')
+    expect(accessor.refills - refills).toBe(1)
+  })
+
+  it('answers from the expired-folder refill under a live root', async () => {
+    fake = new FakeHub()
+    const enc = new TextEncoder()
+    fake.files().set('sub/a.txt', enc.encode('alpha'))
+    fake.files().set('sub/b.txt', enc.encode('bravo'))
+    fake.files().set('top.txt', enc.encode('top'))
+    await serveHub(fake)
+    const accessor = new HfHubAccessor({ repoId: 'acme/widget', endpoint: fake.url } as never)
+    const index = new ExpiredOnArrival('/m')
+    await tree.refillIndex(accessor, index, '/m')
+    expect((await index.listDir('/m')).entries).toEqual(['/m/sub', '/m/top.txt'])
+    expect((await index.listDir('/m/sub')).status).toBe(LookupStatus.EXPIRED)
+    const refills = accessor.refills
+    const trees = fake.count('tree')
+    const found = await lookup(accessor, index, '/m', '/m/sub')
+    expect(found.children).toEqual(['/m/sub/a.txt', '/m/sub/b.txt'])
+    expect(found.entry?.resourceType).toBe('folder')
+    expect(accessor.refills - refills).toBe(1)
+    expect(fake.count('tree') - trees).toBe(1)
+  })
+})
+
+it.each(['/m/d', '/m/d/b.txt'])('respects snapshot child ownership for %s', async (key) => {
+  const accessor = loaded()
+  const fetch = vi.spyOn(client, 'hubGetResponse').mockResolvedValue(
+    page([
+      { type: 'file', oid: 'oid-a', size: 7, path: 'a.txt' },
+      { type: 'file', oid: 'oid-b', size: 3, path: 'd/b.txt' },
+      { type: 'directory', oid: 'tree-d', size: 0, path: 'd' },
+    ]),
+  )
+  const view = new IndexView(
+    new ExpiredOnArrival(),
+    new RAMFileCacheStore(),
+    '/m',
+    (path) => path !== '/m/d/b.txt',
+  )
+  try {
+    const found = await lookup(accessor, view, '/m', key)
+    if (key === '/m/d') {
+      expect(found.entry?.id).toBe('tree-d')
+      expect(found.children).toEqual([])
+    } else {
+      expect(found).toEqual({ entry: null, children: null })
+    }
+    expect(fetch).toHaveBeenCalledTimes(1)
+  } finally {
+    vi.restoreAllMocks()
+  }
 })

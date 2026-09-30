@@ -157,6 +157,7 @@ export interface Expect {
 }
 
 export interface StatCheck {
+  read_paths?: boolean
   stat?: string
   fields?: string[]
   read?: string
@@ -231,6 +232,7 @@ export interface HarnessStat {
 }
 
 export interface ExecWorkspace {
+  vfs: { records: readonly { op: string; path: string }[] }
   shell(cmd: string, opts?: { stdin?: Uint8Array; sessionId?: string }): Promise<ExecResult>
   dispatch(
     opName: string,
@@ -864,11 +866,22 @@ export async function runCase(
     // and charging that to the dry run would fail every ask case.
     recorded = ws.decisions.pending().length - before
   }
+  const recordStart = c.check?.read_paths === true ? ws.vfs.records.length : 0
   const result = await ws.shell(c.command, c.session === undefined ? {} : { sessionId: c.session })
   const elapsed = (performance.now() - start) / 1000
   const out = DEC.decode(result.stdout)
   const err = DEC.decode(result.stderr)
-  const checkOut = c.check !== undefined ? await statCheck(ws, c.check) : null
+  const checkOut =
+    c.check?.read_paths === true
+      ? JSON.stringify(
+          ws.vfs.records
+            .slice(recordStart)
+            .filter((r) => r.op === 'read')
+            .map((r) => r.path),
+        ) + '\n'
+      : c.check !== undefined
+        ? await statCheck(ws, c.check)
+        : null
   return {
     exitCode: result.exitCode,
     out,

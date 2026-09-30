@@ -1,0 +1,157 @@
+{
+  "cases": [
+    {
+      "id": "ls_escape_seed",
+      "seq": 1338100,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "mkdir -p /data/escaped; touch '/data/escaped/a b' '/data/escaped/back\\slash' '/data/escaped/tab\there' '/data/escaped/line\nhere' '/data/escaped/\u0007\b\u000b\f\r\u001b' '/data/escaped/' '/data/escaped/é🌍' '/data/escaped/quote'\"'\"'\"' /data/escaped/a:b",
+      "expect": {
+        "exit": 0,
+        "stdout": "",
+        "stderr": ""
+      },
+      "flags": [
+        "b"
+      ]
+    },
+    {
+      "id": "ls_escape_short",
+      "seq": 1338101,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "ls -b /data/escaped",
+      "expect": {
+        "exit": 0,
+        "stdout": "\\a\\b\\v\\f\\r\\033\\177\na\\ b\na:b\nback\\\\slash\nline\\nhere\nquote'\"\ntab\\there\n\\302\\205\né🌍\n",
+        "stderr": ""
+      },
+      "flags": [
+        "b"
+      ]
+    },
+    {
+      "id": "ls_escape_long_option",
+      "seq": 1338102,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "ls --escape /data/escaped",
+      "expect": {
+        "exit": 0,
+        "stdout": "\\a\\b\\v\\f\\r\\033\\177\na\\ b\na:b\nback\\\\slash\nline\\nhere\nquote'\"\ntab\\there\n\\302\\205\né🌍\n",
+        "stderr": ""
+      },
+      "flags": [
+        "b"
+      ]
+    },
+    {
+      "id": "ls_escape_operand",
+      "seq": 1338103,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "ls -bd '/data/escaped/a b'",
+      "expect": {
+        "exit": 0,
+        "stdout": "/data/escaped/a\\ b\n",
+        "stderr": ""
+      },
+      "flags": [
+        "b"
+      ]
+    },
+    {
+      "id": "ls_escape_recursive",
+      "seq": 1338104,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "mkdir -p $'/data/escaped/dir\\nname'; touch $'/data/escaped/dir\\nname/k\\tz'; ls -bRF /data/escaped",
+      "expect": {
+        "exit": 0,
+        "stdout": "/data/escaped:\n\\a\\b\\v\\f\\r\\033\\177\na\\ b\na:b\nback\\\\slash\ndir\\nname/\nline\\nhere\nquote'\"\ntab\\there\n\\302\\205\né🌍\n\n/data/escaped/dir\\nname:\nk\\tz\n",
+        "stderr": ""
+      },
+      "flags": [
+        "b"
+      ]
+    },
+    {
+      "id": "ls_escape_link",
+      "seq": 1338105,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "ln -s $'tab\\there' $'/data/escaped/link\\nname'; ls -lb /data/escaped | sed -n '/link/p' | sed 's/^.* link/link/'",
+      "expect": {
+        "exit": 0,
+        "stdout": "link\\nname -> tab\\there\n",
+        "stderr": ""
+      },
+      "flags": [
+        "b"
+      ]
+    },
+    {
+      "id": "ls_escape_crossmount",
+      "seq": 1338106,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "ls -bd '/data/escaped/a b' /",
+      "expect": {
+        "exit": 0,
+        "stdout": "/\n/data/escaped/a\\ b\n",
+        "stderr": ""
+      },
+      "flags": [
+        "b"
+      ]
+    },
+    {
+      "id": "ls_escape_width",
+      "seq": 1338120,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "mkdir /data/width; touch $'/data/width/\\t' /data/width/aa /data/width/b; ls -b --sort=width /data/width",
+      "expect": {
+        "exit": 0,
+        "stdout": "b\n\\t\naa\n",
+        "stderr": ""
+      },
+      "flags": [
+        "b"
+      ]
+    },
+    {
+      "id": "ls_escape_hyperlink",
+      "seq": 1338121,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "ls -bd --hyperlink=always '/data/escaped/a b'",
+      "expect": {
+        "exit": 0,
+        "stdout": "\u001b]8;;file:///data/escaped/a%20b\u0007/data/escaped/a\\ b\u001b]8;;\u0007\n",
+        "stderr": ""
+      },
+      "flags": [
+        "b"
+      ]
+    }
+  ]
+}

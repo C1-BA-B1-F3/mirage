@@ -47,7 +47,7 @@ import { runExternal } from '../executor/command/external.ts'
 import { handleCommand } from '../executor/command.ts'
 import type { ExecuteNodeOpts } from '../executor/jobs.ts'
 import { type AliasMark, aliasCommandText } from '../executor/builtins/alias/index.ts'
-import { findSyntaxError } from '../../shell/parse/index.ts'
+import { findSyntaxError, syntaxErrorMessage } from '../../shell/parse/index.ts'
 import { INTERPRETER_NAMES } from '../lookup/constants.ts'
 import { guardIO, runWithTimeout } from '../../commands/builtin/utils/limit.ts'
 import {
@@ -155,12 +155,7 @@ export async function executeCommand(
       const ast = reparse(line)
       const offending = findSyntaxError(ast, reparse)
       if (offending !== null) {
-        const snippet = offending.trim()
-        const errBytes = new TextEncoder().encode(
-          snippet.length > 0
-            ? `mirage: syntax error near '${snippet}'\n`
-            : 'mirage: syntax error in command\n',
-        )
+        const errBytes = new TextEncoder().encode(syntaxErrorMessage(offending, ast))
         return [
           null,
           new IOResult({ exitCode: 2, stderr: errBytes }),

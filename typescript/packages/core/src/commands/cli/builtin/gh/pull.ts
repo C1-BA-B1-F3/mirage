@@ -16,48 +16,268 @@ import { commentsFor, commentsText } from './issue.ts'
 import { FlagView } from '../../../spec/flag_view.ts'
 import type { CommandFnResult } from '../../../config.ts'
 import type { CLIInvocation } from '../../types.ts'
+import type { GitHubTransport } from '../../../../core/github/client.ts'
 import {
   commentPull,
   createPull,
   diffPull,
   editPull,
   getPull,
+  listPullRequestFields,
   listPulls,
   mergePull,
   pullChecks,
+  pullRequestFields,
 } from '../../../../core/github/pull.ts'
+import type { RepoRef } from '../../../../core/github/repo.ts'
 import {
   bodyValue,
   camel,
   ghTransport,
+  jsonFields,
   repoFor,
   repoNumber,
   textOut,
   textValue,
   typedOut,
 } from './accessor.ts'
+import {
+  LOGIN,
+  SHARED_FIELDS,
+  connection,
+  exportedNode,
+  nodes,
+  nodesOf,
+  paged,
+  plain,
+  readRest,
+  record,
+  references,
+  selection,
+  type Connection,
+  type Field,
+  type Node,
+} from './fields.ts'
+import { exported, orNull, pointer, struct } from './shape.ts'
 
-export const PR_FIELDS = [
-  'additions',
-  'author',
-  'baseRefName',
-  'body',
-  'changedFiles',
-  'closed',
-  'createdAt',
-  'deletions',
-  'headRefName',
-  'headRefOid',
-  'isDraft',
-  'labels',
-  'mergeable',
-  'mergedAt',
-  'number',
-  'state',
-  'title',
-  'updatedAt',
-  'url',
-] as const
+const OID = pointer(['oid', 'string'])
+// Its `url` is `omitempty`, and gh never asks for it, so it never prints.
+const REVIEW = struct(
+  ['id', 'string'],
+  ['author', LOGIN],
+  ['authorAssociation', 'string'],
+  ['body', 'string'],
+  ['submittedAt', 'raw'],
+  ['includesCreatedEdit', 'bool'],
+  ['reactionGroups', 'reactions'],
+  ['state', 'string'],
+  ['commit', struct(['oid', 'string'])],
+)
+const FILE = struct(['path', 'string'], ['additions', 'int'], ['deletions', 'int'])
+
+const REVIEWS = (after: string): string =>
+  `reviews(first: 100${after}) {nodes {id,author{login},authorAssociation,submittedAt,body,` +
+  'state,commit{oid},reactionGroups{content,users{totalCount}}}' +
+  'pageInfo{hasNextPage,endCursor}totalCount}'
+const CHECKS = (after: string): string =>
+  'statusCheckRollup: commits(last: 1) {nodes {commit {statusCheckRollup ' +
+  `{contexts(first:100${after}) {nodes {__typename...on StatusContext {context,state,` +
+  'targetUrl,createdAt,description},...on CheckRun {name,checkSuite{workflowRun{workflow' +
+  '{name}}},status,conclusion,startedAt,completedAt,detailsUrl}},' +
+  'pageInfo{hasNextPage,endCursor}}}}}}'
+
+/** The context connection of the one commit a status rollup reads. */
+function contexts(node: Node): Connection {
+  const commit = nodesOf(node.statusCheckRollup)[0]
+  return connection(record(record(record(commit).commit).statusCheckRollup).contexts)
+}
+
+function commitsOf(node: Node): unknown[] {
+  return nodesOf(node.commits).map((item) => {
+    const commit = record(record(item).commit)
+    return {
+      authoredDate: exported(commit.authoredDate, 'time'),
+      authors: nodesOf(commit.authors).map((author) => {
+        const row = record(author)
+        const user = record(row.user)
+        return {
+          email: exported(row.email, 'string'),
+          id: exported(user.id, 'string'),
+          login: exported(user.login, 'string'),
+          name: exported(row.name, 'string'),
+        }
+      }),
+      committedDate: exported(commit.committedDate, 'time'),
+      messageBody: exported(commit.messageBody, 'string'),
+      messageHeadline: exported(commit.messageHeadline, 'string'),
+      oid: exported(commit.oid, 'string'),
+    }
+  })
+}
+
+// A status rollup with no commit behind it is null; one whose commit carries
+// no rollup is an empty list, since gh builds that list before reading it.
+function checksOf(node: Node): unknown[] | null {
+  if (nodesOf(node.statusCheckRollup).length === 0) return null
+  return nodesOf(contexts(node)).map((item) => {
+    const row = record(item)
+    if (row.__typename === 'CheckRun') {
+      const workflow = record(record(record(row.checkSuite).workflowRun).workflow)
+      return {
+        __typename: 'CheckRun',
+        completedAt: exported(row.completedAt, 'time'),
+        conclusion: exported(row.conclusion, 'string'),
+        detailsUrl: exported(row.detailsUrl, 'string'),
+        name: exported(row.name, 'string'),
+        startedAt: exported(row.startedAt, 'time'),
+        status: exported(row.status, 'string'),
+        workflowName: exported(workflow.name, 'string'),
+      }
+    }
+    return {
+      __typename: exported(row.__typename, 'string'),
+      context: exported(row.context, 'string'),
+      startedAt: exported(row.createdAt, 'time'),
+      state: exported(row.state, 'string'),
+      targetUrl: exported(row.targetUrl, 'string'),
+    }
+  })
+}
+
+// Only users and teams are listed; a team prints as `org/slug`.
+function requestsOf(node: Node): unknown[] {
+  const requests: unknown[] = []
+  for (const item of nodesOf(node.reviewRequests)) {
+    const reviewer = record(record(item).requestedReviewer)
+    if (reviewer.__typename === 'User') {
+      requests.push({ __typename: 'User', login: exported(reviewer.login, 'string') })
+    } else if (reviewer.__typename === 'Team') {
+      const org = textValue(record(reviewer.organization).login)
+      requests.push({
+        __typename: 'Team',
+        name: exported(reviewer.name, 'string'),
+        slug: `${org}/${textValue(reviewer.slug)}`,
+      })
+    }
+  }
+  return requests
+}
+
+/**
+ * Every field `gh pr view --json` and `gh pr list --json` accept in gh 2.85:
+ * the ones issues share, and the ones only a pull request has. `pr view`
+ * never asks github.com for `projectCards`, which is gone there, so the
+ * field prints null.
+ */
+const PULL_FIELD_TABLE: ReadonlyMap<string, Field> = new Map<string, Field>([
+  ...SHARED_FIELDS.map(([name, spec]): readonly [string, Field] =>
+    name === 'projectCards' ? [name, { ...spec, view: 'never' }] : [name, spec],
+  ),
+  plain('additions', 'int'),
+  plain(
+    'autoMergeRequest',
+    pointer(
+      ['authorEmail', 'raw'],
+      ['commitBody', 'raw'],
+      ['commitHeadline', 'raw'],
+      ['mergeMethod', 'string'],
+      ['enabledAt', 'time'],
+      ['enabledBy', 'author'],
+    ),
+    'autoMergeRequest {authorEmail,commitBody,commitHeadline,mergeMethod,enabledAt,' +
+      'enabledBy{login,...on User{id,name}}}',
+  ),
+  plain('baseRefName', 'string'),
+  plain('baseRefOid', 'string'),
+  plain('changedFiles', 'int'),
+  references('closingIssuesReferences'),
+  [
+    'commits',
+    {
+      select:
+        'commits(first: 100) {nodes {commit {authors(first:100) {nodes {name,email,' +
+        'user{id,login}}},messageHeadline,messageBody,oid,committedDate,authoredDate}}}',
+      export: commitsOf,
+    },
+  ],
+  plain('deletions', 'int'),
+  nodes('files', 'files(first: 100) {nodes {additions,deletions,path}}', FILE),
+  plain('fullDatabaseId', 'string'),
+  plain('headRefName', 'string'),
+  plain('headRefOid', 'string'),
+  plain(
+    'headRepository',
+    pointer(['id', 'string'], ['name', 'string'], ['nameWithOwner', 'string']),
+    'headRepository{id,name}',
+  ),
+  plain('headRepositoryOwner', 'owner', 'headRepositoryOwner{id,login,...on User{name}}'),
+  plain('isCrossRepository', 'bool'),
+  plain('isDraft', 'bool'),
+  nodes(
+    'latestReviews',
+    'latestReviews(first: 100) {nodes {author{login},authorAssociation,submittedAt,body,state}}',
+    REVIEW,
+  ),
+  plain('maintainerCanModify', 'bool'),
+  plain('mergeCommit', OID, 'mergeCommit{oid}'),
+  plain('mergeStateStatus', 'string'),
+  plain('mergeable', 'string'),
+  plain('mergedAt', 'raw'),
+  plain('mergedBy', orNull('author'), 'mergedBy{login,...on User{id,name}}'),
+  plain('potentialMergeCommit', OID, 'potentialMergeCommit{oid}'),
+  plain('reviewDecision', 'string'),
+  [
+    'reviewRequests',
+    {
+      select:
+        'reviewRequests(first: 100) {nodes {requestedReviewer {__typename,...on User{login},' +
+        '...on Team{organization{login}name,slug}}}}',
+      export: requestsOf,
+    },
+  ],
+  nodes('reviews', REVIEWS(''), REVIEW, paged('reviews', REVIEWS)),
+  [
+    'statusCheckRollup',
+    { select: CHECKS(''), pages: { select: CHECKS, at: contexts }, export: checksOf },
+  ],
+])
+
+export const PR_FIELDS: readonly string[] = [...PULL_FIELD_TABLE.keys()]
+
+// The `--state` spellings as the pull request states gh lists for each.
+const STATES: Readonly<Record<string, readonly string[]>> = {
+  open: ['OPEN'],
+  closed: ['CLOSED', 'MERGED'],
+  merged: ['MERGED'],
+  all: ['OPEN', 'CLOSED', 'MERGED'],
+}
+
+/**
+ * One pull request as `gh pr view --json` reads it: the fields asked for in
+ * one query, plus the `id` and `number` gh adds for its own follow-ups, every
+ * connection it pages read to its end, and project items in a query of their
+ * own. A line that asks for `number` alone is answered from the line itself,
+ * which is gh's own shortcut.
+ */
+async function viewedPull(
+  transport: GitHubTransport,
+  ref: RepoRef,
+  number: number,
+  fields: readonly string[],
+): Promise<Node> {
+  if (fields.every((field) => field === 'number')) return { number }
+  const names = [...fields, 'id', 'number']
+  const node = await pullRequestFields(
+    transport,
+    ref,
+    number,
+    selection(PULL_FIELD_TABLE, names, true),
+  )
+  return readRest(PULL_FIELD_TABLE, node, fields, (select, cursor) =>
+    pullRequestFields(transport, ref, number, select, cursor),
+  )
+}
+
 const CHECK_FIELDS = [
   'bucket',
   'completedAt',
@@ -119,12 +339,33 @@ function target(inv: CLIInvocation, fl: FlagView) {
   return repoNumber(inv, fl, inv.texts[0], 'pull request', 'pull')
 }
 
+/**
+ * `gh pr list`. With `--json` it asks GraphQL for exactly the fields named,
+ * the way gh's PullRequestList does, so every field gh accepts is answered
+ * in gh's own shape; the text view reads the REST listing.
+ */
 export async function listCmd(inv: CLIInvocation): Promise<CommandFnResult> {
   const fl = new FlagView(inv.flags)
   const wanted = fl.asStr('state') ?? 'open'
-  const params: Record<string, string> = { state: wanted === 'merged' ? 'closed' : wanted }
   const base = fl.asStr('base')
   const head = fl.asStr('head')
+  const fields = jsonFields(fl, PR_FIELDS)
+  if (fields !== null) {
+    const rows = await listPullRequestFields(
+      ghTransport(inv.config),
+      repoFor(inv, fl),
+      { states: STATES[wanted] ?? ['OPEN'], base, head },
+      fl.asInt('limit') ?? 30,
+      selection(PULL_FIELD_TABLE, fields, false),
+    )
+    return typedOut(
+      rows.map((node) => exportedNode(PULL_FIELD_TABLE, node, fields)),
+      fl,
+      '',
+      PR_FIELDS,
+    )
+  }
+  const params: Record<string, string> = { state: wanted === 'merged' ? 'closed' : wanted }
   if (base !== undefined) params.base = base
   if (head !== undefined) params.head = head
   const values = await listPulls(
@@ -140,16 +381,27 @@ export async function listCmd(inv: CLIInvocation): Promise<CommandFnResult> {
   return typedOut(rows, fl, listText(rows), PR_FIELDS)
 }
 
+/**
+ * `gh pr view`. With `--json` it reads the fields named over GraphQL, as gh
+ * does (see viewedPull); the text view reads the REST object, and `-c` its
+ * comments.
+ */
 export async function viewCmd(inv: CLIInvocation): Promise<CommandFnResult> {
   const fl = new FlagView(inv.flags)
   const [ref, number] = target(inv, fl)
+  const fields = jsonFields(fl, PR_FIELDS)
+  if (fields !== null) {
+    const node = await viewedPull(ghTransport(inv.config), ref, number, fields)
+    return typedOut(exportedNode(PULL_FIELD_TABLE, node, fields), fl, '', PR_FIELDS)
+  }
   const row = pull(await getPull(ghTransport(inv.config), ref, number))
   const comments = await commentsFor(inv, fl, ref, number)
-  if (comments !== null) row.comments = comments
-  return typedOut(row, fl, fl.asBool('comments') ? commentsText(comments ?? []) : viewText(row), [
-    ...PR_FIELDS,
-    'comments',
-  ])
+  return typedOut(
+    row,
+    fl,
+    fl.asBool('comments') ? commentsText(comments ?? []) : viewText(row),
+    PR_FIELDS,
+  )
 }
 
 export async function createCmd(inv: CLIInvocation): Promise<CommandFnResult> {

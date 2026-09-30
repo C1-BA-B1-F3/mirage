@@ -97,3 +97,13 @@ def test_text_refuses_missing_text_and_open_block():
     with pytest.raises(ValueError, match="unmatched `{'"):
         _sed("1{a foo;}", "x\ny\n")
     assert _sed("1{a foo\n}", "x\ny\n") == "x\nfoo\ny\n"
+
+
+@pytest.mark.parametrize("script,text,expected", [
+    ("2b\ns/./X/", "a\nb\nc\nd\n", "X\nb\nX\nX\n"),
+    ("1b\n$!d", "a\nb\nc\nd\n", "a\nd\n"),
+    ("s/a/A/\nt\ns/./X/", "a\nb\n", "A\nX\n"),
+    ("1b done\ns/./X/\n:done\ns/$/!/", "a\nb\n", "a!\nX!\n"),
+])
+def test_branch_and_label_end_at_newline(script, text, expected):
+    assert _sed(script, text) == expected

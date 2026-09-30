@@ -13,7 +13,7 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import type { Accessor } from '../../../accessor/base.ts'
-import { IOResult } from '../../../io/types.ts'
+import { IOResult, materialize, type ByteSource } from '../../../io/types.ts'
 import { PathSpec } from '../../../types.ts'
 import { command, type CommandFnResult, type CommandOpts } from '../../config.ts'
 import { specOf } from '../../spec/builtins.ts'
@@ -26,10 +26,12 @@ import {
   isHttpError,
 } from '../utils/http.ts'
 import { UsageError } from '../../errors.ts'
-import { gnuStrerror, isFsError } from '../../../utils/errors.ts'
+import { gnuStrerror, isFsError, isWalkError, enotsup } from '../../../utils/errors.ts'
 import { rstripSlash, stripSlash } from '../../../utils/slash.ts'
 import { compareCodePoints } from '../../../utils/sort.ts'
 import { FlagView } from '../../spec/flag_view.ts'
+
+import { renderWriteOut } from './curl_write_out.ts'
 
 const ENC = new TextEncoder()
 
@@ -41,6 +43,7 @@ const EXIT_USAGE = 2
 const EXIT_CONNECT = 7
 const EXIT_HTTP_ERROR = 22
 const EXIT_WRITE = 23
+const EXIT_READ = 26
 const EXIT_TIMEOUT = 28
 
 const DEFAULT_TIMEOUT_MS = 30_000
@@ -137,6 +140,39 @@ function dump(lines: string[], prefix = ''): string {
   return [...lines, ''].map((line) => `${prefix}${line}${CRLF}`).join('')
 }
 
+/**
+ * The header blocks when -D and -i (or -I) both print to stdout. curl
+ * writes each header line to the dump as it arrives and then to the
+ * output, so on one stream every line comes out twice, one after the other
+ * (curl 8.14.1).
+ */
+function doubled(hops: HttpResponse[]): string {
+  return hops
+    .flatMap((hop) => [...responseLines(hop), ''])
+    .map((line) => `${line}${CRLF}${line}${CRLF}`)
+    .join('')
+}
+
+/**
+ * Why a write to `shown` failed, in curl's exit code 23.
+ *
+ * Deliberate divergence: real curl says "Failed writing received data to
+ * disk/application" (or "client returned ERROR on write of N bytes") and
+ * drops the cause. A mirage write can fail for reasons a local file cannot
+ * (read-only mount, unsupported op), so the exit code matches curl while the
+ * message keeps path and reason. The refusals whose wording is load-bearing
+ * (read-only mount, unsupported op) keep their raw message; an unusable path
+ * carries only the path as its message, so it needs the GNU strerror.
+ */
+function writeFailure(shown: string, err: unknown): string {
+  const code = (err as { code?: string }).code
+  const strerror = gnuStrerror(code)
+  const raw = code === 'EACCES' || code === 'ENOTSUP' || !isFsError(err)
+  const detail =
+    !raw && strerror !== null ? strerror : err instanceof Error ? err.message : String(err)
+  return `curl: (${String(EXIT_WRITE)}) ${shown}: ${detail}\n`
+}
+
 function concat(a: Uint8Array, b: Uint8Array): Uint8Array {
   if (a.length === 0) return b
   if (b.length === 0) return a
@@ -158,7 +194,20 @@ async function curlCommand(
   const request = fl.asStr('request') ?? null
   const data = fl.asStr('data') ?? null
   const form = fl.asStr('form') ?? null
-  const output = fl.asStr('output') ?? null
+  const outputValue = fl.raw('output')
+  const output =
+    outputValue instanceof PathSpec && outputValue.rawPath === '-'
+      ? '-'
+      : (fl.asStr('output') ?? null)
+  // -D names a file, or stdout as a lone `-`, which the parser leaves
+  // unresolved (STDOUT_DASH_OPTIONS); `./-` is a file.
+  const dumpHeader = fl.asStr('dump_header') ?? null
+  const dumpToStdout = dumpHeader === '-' || fl.asPaths('dump_header')[0]?.rawPath === '-'
+  const dumpFile = dumpHeader !== null && !dumpToStdout ? dumpHeader : null
+  // -k skips certificate verification through the fetch the host registered
+  // (utils/http.ts); the browser has none, so there certificates are still
+  // verified.
+  const verify = !fl.asBool('insecure')
   const location = fl.asBool('location')
   const failOnError = fl.asBool('fail')
   const verbose = fl.asBool('verbose')
@@ -202,6 +251,53 @@ async function curlCommand(
   // A zero --max-time is curl's "no limit", not a deadline of zero.
   const timeoutMs =
     maxTime === undefined ? DEFAULT_TIMEOUT_MS : maxTime === 0 ? null : maxTime * 1000
+  let template = fl.asStr('write_out') ?? ''
+  if (template.startsWith('@')) {
+    try {
+      let content: ByteSource | null = opts.stdin ?? null
+      if (template !== '@-') {
+        if (opts.dispatch === undefined) throw enotsup('unavailable', 'read', template.slice(1))
+        const [format] = await opts.dispatch('read', resolveTarget(template.slice(1), opts.cwd), [])
+        content = format as ByteSource
+      }
+      template = new TextDecoder().decode(await materialize(content))
+    } catch (err) {
+      if (!isWalkError(err)) throw err
+      // curl 8.14.1: -s suppresses only the opening diagnostic; -S does
+      // not restore it. Parsed flags lose their spelling, so use -w.
+      const detail = fl.asBool('silent') ? '' : `curl: Failed to open ${template.slice(1)}\n`
+      const failure = new UsageError(
+        `${detail}curl: option -w: error encountered when reading a file\n${HELP_HINT}`,
+        EXIT_READ,
+      )
+      failure.cause = err
+      throw failure
+    }
+  }
+  const started = performance.now()
+  const finish = async (
+    stdout: ByteSource | null,
+    io: IOResult,
+    response?: HttpResponse,
+  ): Promise<CommandFnResult> => {
+    const code = String(response?.status ?? 0).padStart(3, '0')
+    const [out, err] = renderWriteOut(template, {
+      http_code: code,
+      response_code: code,
+      url_effective: response?.url ?? url,
+      num_redirects: String(response?.history.length ?? 0),
+      size_download: String(response?.body.length ?? 0),
+      content_type: response?.headers.find(([k]) => k.toLowerCase() === 'content-type')?.[1] ?? '',
+      method:
+        response?.method ??
+        request ??
+        (head ? 'HEAD' : data !== null || form !== null ? 'POST' : 'GET'),
+      exitcode: String(io.exitCode),
+      time_total: ((performance.now() - started) / 1000).toFixed(6),
+    })
+    io.stderr = concat(await materialize(io.stderr), err)
+    return [concat(await materialize(stdout), out), io]
+  }
   let method: string
   let bodyLen: number | null = null
   let bodyType: string | null = null
@@ -218,6 +314,7 @@ async function curlCommand(
         headers,
         timeoutMs,
         followRedirects: location,
+        verify,
       })
     } else {
       method = request ?? (head ? 'HEAD' : data !== null ? 'POST' : 'GET')
@@ -233,6 +330,7 @@ async function curlCommand(
         ...(body !== undefined ? { body } : {}),
         timeoutMs,
         followRedirects: location,
+        verify,
       })
     }
   } catch (err) {
@@ -240,23 +338,23 @@ async function curlCommand(
       // Nothing was received: the body is read whole, so a deadline that
       // hits mid-transfer still counts as zero bytes here.
       const line = `curl: (${String(EXIT_TIMEOUT)}) Operation timed out after ${String(err.elapsedMs)} milliseconds with 0 bytes received\n`
-      return [
+      return await finish(
         null,
         new IOResult({
           exitCode: EXIT_TIMEOUT,
           stderr: quiet ? new Uint8Array() : ENC.encode(line),
         }),
-      ]
+      )
     }
     if (!(err instanceof HttpConnectError)) throw err
     const line = `curl: (${String(EXIT_CONNECT)}) Failed to connect to ${err.host} port ${String(err.port)}: Could not connect to server\n`
-    return [
+    return await finish(
       null,
       new IOResult({
         exitCode: EXIT_CONNECT,
         stderr: quiet ? new Uint8Array() : ENC.encode(line),
       }),
-    ]
+    )
   }
   const hops = [...resp.history, resp]
   // The first request is the one this handler built; each redirect's is
@@ -290,60 +388,82 @@ async function curlCommand(
           .join(''),
       )
     : new Uint8Array()
-  // Only -f makes an error status an error, and then nothing is written.
+  // -i, -I and -D all show every hop's header block (curl 8.14.1); the body
+  // a redirect carried is never written, only the final one.
+  const blocks = ENC.encode(hops.map((hop) => dump(responseLines(hop))).join(''))
+  const writes: Record<string, Uint8Array> = {}
+  // -D writes the headers as they arrive, so before -f judges the status and
+  // before -o writes the body: a file both name ends up holding the body.
+  if (dumpFile !== null) {
+    if (opts.dispatch !== undefined) {
+      try {
+        await opts.dispatch('write', resolveTarget(dumpFile, opts.cwd), [blocks])
+      } catch (err) {
+        const line = writeFailure(dumpFile, err)
+        return await finish(
+          null,
+          new IOResult({
+            exitCode: EXIT_WRITE,
+            stderr: concat(trace, quiet ? new Uint8Array() : ENC.encode(line)),
+          }),
+          resp,
+        )
+      }
+    }
+    writes[dumpFile] = blocks
+  }
+  const headerOut = dumpToStdout ? blocks : null
+  // Only -f makes an error status an error, and then no body is written; the
+  // headers -D already dumped stay dumped.
   if (failOnError && isHttpError(resp)) {
     const line = `curl: (${String(EXIT_HTTP_ERROR)}) The requested URL returned error: ${String(resp.status)}\n`
-    return [
-      null,
+    return await finish(
+      headerOut,
       new IOResult({
         exitCode: EXIT_HTTP_ERROR,
         stderr: concat(trace, quiet ? new Uint8Array() : ENC.encode(line)),
+        writes,
       }),
-    ]
+      resp,
+    )
   }
   let result = resp.body
-  // -i and -I print every hop's header block (curl 8.7.1); the body a
-  // redirect carried is never written, only the final one.
-  const blocks = ENC.encode(hops.map((hop) => dump(responseLines(hop))).join(''))
   if (head) {
     // -I prints the headers alone, whatever method -X made it send.
     result = blocks
   } else if (include) {
     result = concat(blocks, result)
   }
-  if (output !== null) {
+  if (output !== null && output !== '-') {
     if (opts.dispatch !== undefined) {
       const scope = resolveTarget(output, opts.cwd)
       try {
         await opts.dispatch('write', scope, [result])
       } catch (err) {
-        // Deliberate divergence: real curl says "client returned ERROR on
-        // write of N bytes" and drops the cause. A mirage write can fail for
-        // reasons a local file cannot (read-only mount, unsupported op), so
-        // the exit code matches curl while the message keeps path and reason.
-        //
-        // The refusals whose wording is load-bearing (read-only mount,
-        // unsupported op) keep their raw message; an unusable path carries
-        // only the path as its message, so it needs the GNU strerror.
-        const code = (err as { code?: string }).code
-        const strerror = gnuStrerror(code)
-        const raw = code === 'EACCES' || code === 'ENOTSUP' || !isFsError(err)
-        const detail =
-          !raw && strerror !== null ? strerror : err instanceof Error ? err.message : String(err)
-        const line = `curl: (${String(EXIT_WRITE)}) ${output}: ${detail}\n`
-        return [
-          null,
+        const line = writeFailure(output, err)
+        return await finish(
+          headerOut,
           new IOResult({
             exitCode: EXIT_WRITE,
             stderr: concat(trace, quiet ? new Uint8Array() : ENC.encode(line)),
+            writes,
           }),
-        ]
+          resp,
+        )
       }
     }
-    // Real curl writes the body to the file and prints nothing on stdout.
-    return [null, new IOResult({ writes: { [output]: result }, stderr: trace })]
+    writes[output] = result
+    // Real curl writes the body to the file and prints nothing else on
+    // stdout, the headers -D sends there aside.
+    return await finish(headerOut, new IOResult({ writes, stderr: trace }), resp)
   }
-  return [result, new IOResult({ stderr: trace })]
+  if (dumpToStdout) {
+    result =
+      head || include
+        ? concat(ENC.encode(doubled(hops)), head ? new Uint8Array() : resp.body)
+        : concat(blocks, result)
+  }
+  return await finish(result, new IOResult({ writes, stderr: trace }), resp)
 }
 
 export const GENERAL_CURL = command({

@@ -377,3 +377,12 @@ describe('sed replacement uses the original match', () => {
     expect(sedE(String.raw`s/(a)(b)?/[\1:\2:$&]/I`, 'A\n')).toBe('[A::$A]\n')
   })
 })
+
+it.each([
+  ['2b\ns/./X/', 'a\nb\nc\nd\n', 'X\nb\nX\nX\n'],
+  ['1b\n$!d', 'a\nb\nc\nd\n', 'a\nd\n'],
+  ['s/a/A/\nt\ns/./X/', 'a\nb\n', 'A\nX\n'],
+  ['1b done\ns/./X/\n:done\ns/$/!/', 'a\nb\n', 'a!\nX!\n'],
+])('branch and label end at newline: %s', (script, text, expected) => {
+  expect(sed(script, text)).toBe(expected)
+})

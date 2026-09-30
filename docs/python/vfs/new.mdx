@@ -107,6 +107,26 @@ VFS/FUSE ops are derived from the same table automatically (`make_generic_ops` u
 
 The driver never sees the mount it runs under. The index store, the registered tables and the `vfs:` reference it was built from all live on the mount, built when the driver is placed and shared with any alias of the same instance.
 
+### How the driver connects to a workspace
+
+`BaseVFS` is the backend authoring API. Mount it once with
+`Workspace({"/jira": JiraVFS(config)})`; consumers use workspace paths.
+
+| Consumer | Connection |
+| --- | --- |
+| Shell and coreutils | `commands()` derives generic commands from the adapter; the shell supplies expansion, pipes, redirects and session policy. |
+| Filesystem calls | `ops()` supplies the dispatcher's operations used by `ws.vfs`. |
+| CLIs | The host registers a `CLISpec` with `register_cli`. File-oriented handlers use `inv.doors.dispatch` and `inv.doors.ns`; mounting a driver does not install an account CLI. |
+| Runtimes | Runtimes wired to `RuntimeVFS` reach the same dispatcher. A process or remote runtime needs its configured mount bridge. |
+| Namespace | The workspace owns symlinks, nested mounts and metadata overlays; the backend implements its own tree. |
+
+Use `path.vfs_path` to address your backend and `path.virtual` for workspace
+paths. Use the index passed to callbacks: the mount scopes it for ownership
+and freshness. Put shared behavior in the adapter callbacks; an explicit
+`ops=` override changes that operation, while a `commands=` override changes
+that shell command. Optional mutations remain optional, and unsupported
+operations report `Operation not supported`.
+
 ### Native search and backend-specific core functions
 
 Builtin backends use the same `VFSAdapter` groups. Operation protocols live in

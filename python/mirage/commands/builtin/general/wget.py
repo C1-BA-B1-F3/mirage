@@ -13,7 +13,7 @@
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 from mirage.accessor.base import Accessor
-from mirage.commands.builtin.errors import HttpConnectError
+from mirage.commands.builtin.errors import HttpConnectError, HttpTimeoutError
 from mirage.commands.builtin.general.curl import resolve_target
 from mirage.commands.builtin.utils.http import http_get
 from mirage.commands.config import CommandOpts
@@ -53,10 +53,20 @@ async def wget(
     if not texts:
         raise UsageError(USAGE, exit_code=EXIT_GENERIC)
     url = texts[0]
+    timeout = fl.as_float("timeout")
+    if timeout is not None and timeout < 0:
+        raise UsageError(
+            f"wget: --timeout: Negative time period '{timeout:g}'",
+            exit_code=2)
 
     # wget follows redirects unconditionally; it has no -L equivalent.
     try:
-        resp = http_get(url)
+        resp = http_get(url,
+                        timeout=30 if timeout is None else (timeout or None))
+    except HttpTimeoutError as exc:
+        err = b"" if q else (f"Connecting to {exc.host}:{exc.port}... "
+                             "failed: Connection timed out.\n").encode()
+        return None, IOResult(exit_code=EXIT_NETWORK, stderr=err)
     except HttpConnectError as exc:
         err = b"" if q else (f"Connecting to {exc.host}:{exc.port}... "
                              f"failed: Connection refused.\n").encode()

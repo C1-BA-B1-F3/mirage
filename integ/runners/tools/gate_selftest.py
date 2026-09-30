@@ -483,10 +483,8 @@ def selftest_target_pool() -> None:
           len(scoped) > 1 and all(la.startswith("solo:") for la in scoped),
           f"gws lanes: {scoped}")
 
-    # The accident this whole mechanism exists for. `github` is safe in the
-    # core facet today only because that facet holds exactly one github
-    # target, which is a property of the data and not of the code. A second
-    # one must land in the same lane rather than pool beside the first.
+    # GitHub selects and seeds its fixture inside each run's namespace.
+    # A second repository target must be able to run beside the first.
     twinned = with_manifest(lambda d: d["targets"].append({
         **next(t for t in d["targets"] if t["id"] == "github"), "id":
         "github-twin"
@@ -496,9 +494,11 @@ def selftest_target_pool() -> None:
         lane for i, lane in twin_pool
         if twinned["targets"][i]["id"].startswith("github")
     ]
-    check("pool: two targets on a one-world fake share its lane",
-          len(twin_lanes) == 2 and set(twin_lanes) == {"github"},
-          f"lanes: {twin_lanes}")
+    check(
+        "pool: GitHub targets have independent lanes",
+        len(twin_lanes) == 2 and len(set(twin_lanes)) == 2
+        and all(lane.startswith("solo:") for lane in twin_lanes),
+        f"lanes: {twin_lanes}")
 
     bad_shared = with_manifest(
         lambda d: d["services"]["github"].update({"shared": 1}))

@@ -43,6 +43,11 @@ SPECS: dict[str, CommandSpec] = {
                    long="--output",
                    type="path",
                    description="Write response body to the given file."),
+            Option(short="-D",
+                   long="--dump-header",
+                   type="path",
+                   description="Write the received headers to the given "
+                   "file, - for stdout."),
             Option(short="-L",
                    long="--location",
                    description="Follow HTTP redirects."),
@@ -65,10 +70,26 @@ SPECS: dict[str, CommandSpec] = {
             Option(short="-I",
                    long="--head",
                    description="Fetch the headers only."),
+            Option(short="-4",
+                   long="--ipv4",
+                   description=("Accept IPv4 preference "
+                                "(transport selects the address family).")),
+            Option(short="-6",
+                   long="--ipv6",
+                   description=("Accept IPv6 preference "
+                                "(transport selects the address family).")),
+            Option(short="-w",
+                   long="--write-out",
+                   type="str",
+                   description="Print transfer information after completion."),
             Option(short="-m",
                    long="--max-time",
                    type="float",
                    description="Give up after this many seconds."),
+            Option(short="-k",
+                   long="--insecure",
+                   description="Skip verification of the server "
+                   "certificate."),
         ),
         # A URL slot, not a free-text rest: a textual rest makes the parser
         # keep unknown dash words as operands (the echo/git-log shape), and
@@ -84,6 +105,11 @@ SPECS: dict[str, CommandSpec] = {
                 type="path",
                 description="Write the downloaded content to the given file."),
             Option(short="-q", description="Run quietly with no output."),
+            Option(short="-T",
+                   long="--timeout",
+                   type="float",
+                   description=
+                   "Set the network timeout in seconds (zero disables it)."),
             Option(
                 long="--spider",
                 description="Check that the URL exists without downloading it."

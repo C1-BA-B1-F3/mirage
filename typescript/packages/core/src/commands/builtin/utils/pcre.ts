@@ -1284,7 +1284,8 @@ export function matchStart(m: RegExpExecArray): number {
   const groups = m.indices?.groups
   if (groups === undefined) return m.index
   let start = -1
-  for (const [name, span] of Object.entries(groups)) {
+  for (const name of Object.keys(groups)) {
+    const span = groups[name]
     if (span !== undefined && name.startsWith(KEEP_PREFIX)) start = Math.max(start, span[0])
   }
   return start < 0 ? m.index : start

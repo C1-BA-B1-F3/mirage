@@ -190,7 +190,7 @@ printf '1e17 0.00001' | jq -c '. + 0'
 | `--argjson name value` | bind `$name` to a JSON value |
 | `--rawfile name file` | bind `$name` to a file's text |
 | `--slurpfile name file` | bind `$name` to a file's documents, as an array |
-| `--args`, `--jsonargs` | read the remaining operands into `$ARGS.positional` |
+| `--args`, `--jsonargs` | read the operands typed after them into `$ARGS.positional`, as strings after `--args` and as JSON values after `--jsonargs`, whichever came last; an operand typed before either is an input file, as in jq |
 
 | Writing output | |
 | --- | --- |
@@ -223,7 +223,32 @@ jq -n -c --rawfile body /data/lines.txt '{text: $body}'
 ```
 
 `$ARGS` is always defined, carrying `named` (the `--arg` family) and
-`positional` (`--args` / `--jsonargs`).
+`positional` (`--args` / `--jsonargs`). jq's option loop reads each operand
+the moment it reaches it, and mirage reads the line the same way: the last of
+`--args` and `--jsonargs` typed before an operand decides how it is read, and
+an operand typed before either one is still an input file.
+
+```bash
+jq -n -c '$ARGS.positional' --args a --jsonargs 1 --args b
+["a",1,"b"]
+
+printf '{"k":1}' > /data/f.json
+jq -c '[., $ARGS.positional]' /data/f.json --args a
+[{"k":1},["a"]]
+```
+
+jq reads a word as options only when a letter or a second dash follows its
+dash, and so does mirage. Any other dash word (`-1`, `-.5`, `- x`, a lone
+`-`) is an operand, so a program, an input file or a positional value may
+start with a dash, while `-nan` is still `-n -a -n`.
+
+```bash
+jq -n -c '$ARGS.positional' --jsonargs -1 -.5 --args -1a
+[-1,-0.5,"-1a"]
+
+echo '{"a":3}' | jq '-.a'
+-3
+```
 
 ### Errors
 
@@ -269,7 +294,29 @@ events before the error, and `--seq` reports `jq: ignoring parse error:
 runtime error, which `try` can catch, and the next run starts past it, with
 or without `--seq`. A `--slurpfile` holding bad JSON is refused with
 `jq: Bad JSON in --slurpfile <name> <file>: <message>` and status 2, and
-`--argjson` and `--jsonargs` accept what jq's parser accepts.
+`--argjson` and `--jsonargs` accept what jq's parser accepts. A `--jsonargs`
+operand is parsed where it was typed, so `jq -n . --jsonargs '{' --indent 9`
+reports the bad JSON, not the bad width.
+
+Options are read the way jq's option loop reads them: one word at a time,
+stopping at the first one it cannot take, in jq's words and with status 2.
+A long option is a whole word, with no abbreviation and no `=value`, so
+`--nul` and `--indent=3` are refused as `jq: Unknown option --nul` and
+`jq: Unknown option --indent=3`. An option the line ends too early for says
+what it takes (`jq: --arg takes two parameters (e.g. --arg varname value)`),
+and each refusal ends with jq's two-line `Use jq --help` hint. Whatever comes
+first on the line is what answers: a bad `--jsonargs` value typed before an
+unknown option is the one reported, `-h`/`--help` and `-V`/`--version`
+answer where they are typed, and the `-f` file is read after every option,
+so `jq -n -f missing.jq --bogus` reports `--bogus`. jq opens a flag's file by
+name: `/dev/stdin` reads stdin, and `-` is a file named `-`.
+
+```bash
+jq -n . --jsonargs '{' --bogus
+# stderr: jq: invalid JSON text passed to --jsonargs
+# stderr: Use jq --help for help with command-line options,
+# stderr: or see the jq manpage, or online docs at https://jqlang.org
+```
 
 A file that cannot be opened is reported when the reader reaches it, and
 the reader goes on to the next one. jq's main loop checks for such a failure
@@ -313,11 +360,12 @@ with `Exceeds depth limit for parsing`, the limit jq's ordinary parser
 has. jq's streaming parser has no limit, but every event carries a copy
 of its path, so input nested n deep costs time in n squared.
 
-Not implemented, and reported as an unknown option rather than quietly
-ignored: `-C` (colorized output, which an agent would only have to strip
-again), `-L` (no module system, so `include` has nothing to search),
-`--stream-errors` (which hands a parse error over as an array value instead
-of reporting it), and `--build-configuration`.
+Not implemented, and reported as an unknown option (`jq: Unknown option -C`)
+rather than quietly ignored: `-C` (colorized output, which an agent would
+only have to strip again), `-L` (no module system, so `include` has nothing
+to search), `--stream-errors` (which hands a parse error over as an array
+value instead of reporting it), and `--build-configuration`. `-V` prints
+mirage's version line, as `--version` does.
 
 `find -exec` runs each invocation in an isolated child shell, and it looks
 the head word up the way findutils' `execvp` does: only an installed program

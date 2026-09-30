@@ -12,14 +12,21 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import { flagKwargName } from './constants.ts'
+import { flagKwargName, OPERAND, REFUSED } from './constants.ts'
 import { compareCodePoints } from '../../utils/sort.ts'
 import { PathSpec } from '../../types.ts'
 import type { CommandSpec, FlagValue, ParsedFlagValue } from './types.ts'
 
 // The tape records what the parser scanned, so its values are the parser's
-// own; a PATH value recovered as a PathSpec replaces the bag entry only.
+// own; a PATH value recovered as a PathSpec replaces the bag entry only. It
+// holds each option occurrence as [dest, value], each operand as [OPERAND,
+// word], and for a program that runs its own option loop each refused option
+// as [REFUSED, word], so it also says which options were typed before an
+// operand or a refusal.
 const occurrenceTapes = new WeakMap<Record<string, FlagValue>, [string, ParsedFlagValue][]>()
+
+// The tape names no option declares: they mark operands and refusals.
+const TAPE_ONLY: ReadonlySet<string> = new Set([OPERAND, REFUSED])
 
 export function flagOccurrences(flags: Record<string, FlagValue>): [string, ParsedFlagValue][] {
   let tape = occurrenceTapes.get(flags)
@@ -96,13 +103,21 @@ export class FlagView {
     return Object.keys(this.flags).filter((k) => wanted.has(k))
   }
 
+  /**
+   * Read each typed occurrence, then defaults without a typed value.
+   *
+   * OPERAND among the names reads the operands too, each as [OPERAND, word]
+   * where it was typed among the options, and REFUSED reads the refused
+   * options the same way. Flags with no tape (a plain record) have neither on
+   * it.
+   */
   occurrences(...names: string[]): [string, ParsedFlagValue][] {
-    const wanted = new Set(names.map((name) => this.key(name)))
+    const wanted = new Set(names.map((name) => (TAPE_ONLY.has(name) ? name : this.key(name))))
     const result = flagOccurrences(this.flags).filter(
-      ([name]) => wanted.has(name) && name in this.flags,
+      ([name]) => wanted.has(name) && (TAPE_ONLY.has(name) || name in this.flags),
     )
     const seen = new Set(result.map(([name]) => name))
-    for (const name of this.typedOrder(...names)) {
+    for (const name of this.typedOrder(...names.filter((name) => !TAPE_ONLY.has(name)))) {
       if (seen.has(name)) continue
       const value = this.flags[name]
       if (value === undefined) continue

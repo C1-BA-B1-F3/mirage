@@ -74,6 +74,7 @@ import {
   mergeScopes,
   pathFlagScopes,
   routableScopes,
+  optionLoopExits,
   routedOperands,
 } from './command/routing.ts'
 import { findStartPoints, runOnMount, type RunOnMountCtx } from './command/run.ts'
@@ -361,15 +362,18 @@ export async function handleCommand(
   // operands (or the cwd) put it, and that run's op guards refuse it. A line
   // is not cross-mount because one of its words is empty.
   // A prepared program line already holds its positional operands.
-  const routed = routableScopes(
-    cmdName,
-    prepared !== null
-      ? pathScopes
-      : routedOperands(cmdName, rawArgv, session.cwd, parts.slice(1), pathScopes),
-  )
-  const routingScopes = mergeScopes(routed, pathFlagScopes(cmdName, rawArgv, session.cwd)).filter(
-    (s) => s.walkError !== 'ENOENT',
-  )
+  let routingScopes: PathSpec[] = []
+  if (!optionLoopExits(cmdName, cmdMount?.specFor(cmdName) ?? null, rawArgv, session.cwd)) {
+    const routed = routableScopes(
+      cmdName,
+      prepared !== null
+        ? pathScopes
+        : routedOperands(cmdName, rawArgv, session.cwd, parts.slice(1), pathScopes),
+    )
+    routingScopes = mergeScopes(routed, pathFlagScopes(cmdName, rawArgv, session.cwd)).filter(
+      (s) => s.walkError !== 'ENOENT',
+    )
+  }
 
   let findExprTokens: string[] | null = null
   if (cmdName === 'find') {

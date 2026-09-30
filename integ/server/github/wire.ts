@@ -241,34 +241,60 @@ export function commitIdentity(row: CommitRow): CommitIdentity {
   }
 }
 
-// A stored commit as the LIST endpoints report it. GitHub's list and write
-// shapes carry no `files` key at all; serving one handed clients bare strings
-// where the contract has objects, which broke history enumeration after the
-// first write.
+// A commit's parents as each rendering lists them, linked at `kind`
+// (`commits` for the REST shape, `git/commits` for git's): its first parent,
+// or none for a root, since the fake keeps first parents only.
+function parentsJson(repo: string, row: CommitRow, kind: string): JsonValue[] {
+  if (row.parentSha === '') return []
+  return [
+    {
+      sha: row.parentSha,
+      url: `https://api.github.com/repos/${repo}/${kind}/${row.parentSha}`,
+      html_url: `https://github.com/${repo}/commit/${row.parentSha}`,
+    },
+  ]
+}
+
+// A commit's git author and committer: a seeded commit's login at its date,
+// or what a written one was given, which may be nothing.
+function gitPeople(row: CommitRow): { author: JsonValue; committer: JsonValue } | null {
+  if (row.authorLogin === '') return commitPeople(row)
+  const person = commitPerson(row.authorLogin, row.date)
+  return { author: person, committer: person }
+}
+
+function treeRef(repo: string, tree: string): JsonValue {
+  return { sha: tree, url: `https://api.github.com/repos/${repo}/git/trees/${tree}` }
+}
+
+// A stored commit as `/commits`, `/commits/{ref}`, a comparison and a pull
+// request list it, `tree` being the id of the tree it names. GitHub's list and
+// write shapes carry no `files` key at all; serving one handed clients bare
+// strings where the contract has objects, which broke history enumeration
+// after the first write.
 // A write records a commit carrying only a message, so its rendering omits the
 // author blocks a seeded one has: the two shapes are not a default apart, and a
 // golden renders the difference. An empty author is what tells them apart,
 // because that is what `recordCommit` stores.
-export function commitJson(row: CommitRow): JsonValue {
-  if (row.authorLogin === '') {
-    const people = commitPeople(row)
-    return people === null
-      ? writtenCommitJson(row)
-      : { sha: row.sha, commit: { message: row.message, ...people } }
-  }
+export function commitJson(repo: string, row: CommitRow, tree: string): JsonValue {
   return {
     sha: row.sha,
-    commit: {
-      message: row.message,
-      author: commitPerson(row.authorLogin, row.date),
-      committer: commitPerson(row.authorLogin, row.date),
-    },
-    author: { login: row.authorLogin },
+    commit: { message: row.message, ...(gitPeople(row) ?? {}), tree: treeRef(repo, tree) },
+    ...(row.authorLogin === '' ? {} : { author: { login: row.authorLogin } }),
+    parents: parentsJson(repo, row, 'commits'),
   }
 }
 
-export function writtenCommitJson(row: { sha: string; message: string }): JsonValue {
-  return { sha: row.sha, commit: { message: row.message } }
+// The same commit as git's object: what `git/commits/{sha}` reads, what
+// `POST git/commits` answers, and the `commit` a contents write answers.
+export function gitCommitJson(repo: string, row: CommitRow, tree: string): JsonValue {
+  return {
+    sha: row.sha,
+    message: row.message,
+    tree: treeRef(repo, tree),
+    ...(gitPeople(row) ?? {}),
+    parents: parentsJson(repo, row, 'git/commits'),
+  }
 }
 
 export function rootSha(tree: Array<[string, string]>): string {

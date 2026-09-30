@@ -14,6 +14,7 @@
 
 import { describe, expect, it, vi } from 'vitest'
 import { command, crossCommand, RegisteredCommand } from './config.ts'
+import { specOf } from './spec/builtins.ts'
 import { CommandSpec, Operand, Option } from './spec/types.ts'
 
 const STUB_SPEC = new CommandSpec({ rest: new Operand({ type: 'path' }) })
@@ -53,6 +54,24 @@ describe('command()', () => {
       cwd: '/',
     })
     expect(fn).toHaveBeenCalledOnce()
+  })
+
+  // jq answers --help where its loop reaches it (OWN_OPTION_LOOP); a command
+  // that only borrows the name gets the wrapper's answer.
+  it.each([
+    ["jq's own grammar", specOf('jq'), 1],
+    ['a borrowed jq name', STUB_SPEC, 0],
+  ])('hands --help to the handler for %s', async (_, spec, calls) => {
+    const fn = vi.fn(STUB_FN)
+    const [rc] = command({ name: 'jq', vfs: null, spec, fn })
+    if (rc === undefined) throw new Error('expected a registered command')
+    await rc.fn({} as never, [], [], {
+      stdin: null,
+      flags: { help: true },
+      filetypeFns: null,
+      cwd: '/',
+    })
+    expect(fn).toHaveBeenCalledTimes(calls)
   })
 
   it('returns one RegisteredCommand per VFS when given a single string', () => {

@@ -216,9 +216,12 @@ export interface OperandInit {
   type?: ValueType
   /**
    * Flags that make this slot textual even though it is declared 'path'.
-   * jq's `--args` turns the operands after the program into positional
-   * string values rather than input files, which is a property of the
-   * line, not of the slot, so it cannot be spelled in the type alone.
+   * tar's `-x` turns the operands into member names rather than files, and
+   * jq's `--args` turns them into positional string values, which is a
+   * property of the line, not of the slot, so it cannot be spelled in the
+   * type alone. The flag reaches every operand on the line, or only the ones
+   * typed after it for a program that files each operand as it reads it
+   * (IN_ORDER_OPERANDS, jq).
    */
   textWhen?: readonly string[]
   /**

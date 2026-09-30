@@ -174,13 +174,23 @@ export const SPECS: Record<string, CommandSpec> = {
         description: 'Read the remaining operands as positional JSON values',
       }),
       new Option({ short: '-h', long: '--help', description: 'Show this help and exit' }),
+      // jq answers -h and -V inside its option loop, where they are typed
+      // (OWN_OPTION_LOOP), so it declares both.
+      new Option({
+        short: '-V',
+        long: '--version',
+        description: 'Show version information and exit',
+      }),
     ],
     // Without providedBy, `jq -f prog.jq data.json` would take data.json
     // as the filter and never read it as a file.
     positional: [new Operand({ type: 'str', providedBy: ['-f'] })],
-    // --args and --jsonargs turn the operands after the program into
-    // $ARGS.positional, so they stop being input files.
+    // --args and --jsonargs turn the operands typed after them into
+    // $ARGS.positional, so those stop being input files (IN_ORDER_OPERANDS).
     rest: new Operand({ type: 'path', textWhen: ['--args', '--jsonargs'] }),
+    // jq's main.c compares each long option with strcmp, so `--nul` is no
+    // --null-input (jq 1.8.2: `jq: Unknown option --nul`).
+    allowAbbrev: false,
   }),
   rg: new CommandSpec({
     options: [

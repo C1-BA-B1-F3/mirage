@@ -14,6 +14,7 @@
 
 import { describe, expect, it } from 'vitest'
 import { helpSpec, registeredSpec, specOf } from './builtins.ts'
+import { flagOccurrences } from './flag_view.ts'
 import { ParsedArgs, parseCommand, parseToKwargs } from './parser.ts'
 import { CommandSpec, Operand, Option } from './types.ts'
 
@@ -1361,6 +1362,167 @@ describe('flag-driven operand kinds', () => {
     const p = parseCommand(specOf('jq'), ['.', '/d/a.json'], '/')
     expect(p.texts()).toEqual(['.'])
     expect(p.paths()).toEqual(['/d/a.json'])
+  })
+
+  // jq 1.8.2's option loop files each operand as it reads it: only the
+  // operands after the first --args or --jsonargs are positional values.
+  it('keeps the jq operands typed before --args as input files', () => {
+    const p = parseCommand(specOf('jq'), ['.', '/d/a.json', '--args', 'x', '/d/b.json'], '/', 'jq')
+    expect(p.texts()).toEqual(['.', 'x', '/d/b.json'])
+    expect(p.paths()).toEqual(['/d/a.json'])
+    expect(p.wordKinds).toEqual(['str', 'path', 'str', 'str', 'str'])
+  })
+
+  it('keeps a jq program typed after --jsonargs the program', () => {
+    const p = parseCommand(specOf('jq'), ['--jsonargs', '.', '1', '--args', 'a'], '/', 'jq')
+    expect(p.texts()).toEqual(['.', '1', 'a'])
+    expect(p.paths()).toEqual([])
+  })
+
+  it('keeps the jq mode for the operands after --', () => {
+    const p = parseCommand(specOf('jq'), ['.', '--args', '--', '-x', '--jsonargs'], '/', 'jq')
+    expect(p.texts()).toEqual(['.', '-x', '--jsonargs'])
+  })
+
+  it('reads a jq --args after -- as an input file', () => {
+    const p = parseCommand(specOf('jq'), ['.', '--', '--args', 'a'], '/', 'jq')
+    expect(p.texts()).toEqual(['.'])
+    expect(p.paths()).toEqual(['/--args', '/a'])
+  })
+
+  it('keeps a jq operand before --args an input file when -f gave the program', () => {
+    const p = parseCommand(specOf('jq'), ['-f', 'p.jq', 'in.json', '--args', 'b'], '/d', 'jq')
+    expect(p.paths()).toEqual(['/d/in.json'])
+    expect(p.texts()).toEqual(['b'])
+  })
+
+  // GNU tar 1.35 reads the whole line first: `tar -f a.tar d/m -t` lists d/m,
+  // as `tar -f a.tar -t d/m` does.
+  it('makes the names typed before a tar mode members', () => {
+    const p = parseCommand(specOf('tar'), ['-f', '/d/a.tar', 'd/m', '-t'], '/', 'tar')
+    expect(p.texts()).toEqual(['d/m'])
+    expect(p.paths()).toEqual([])
+  })
+
+  it('does not allocate operand tape entries for other commands', () => {
+    const words = Array.from({ length: 1000 }, (_, i) => `file-${String(i)}`)
+    const parsed = parseCommand(specOf('cat'), ['-n', ...words], '/', 'cat')
+    expect(parsed.paths()).toHaveLength(1000)
+    expect(flagOccurrences(parsed.flags)).toHaveLength(1)
+    const custom = new CommandSpec({ rest: new Operand({ type: 'path' }) })
+    expect(flagOccurrences(parseCommand(custom, words, '/', 'jq').flags)).toEqual([])
+  })
+
+  it('records each operand on the tape among the options', () => {
+    const p = parseCommand(specOf('jq'), ['-n', '.', '--args', 'a', '--', '-b'], '/', 'jq')
+    expect(flagOccurrences(p.flags)).toEqual([
+      ['--null-input', true],
+      ['', '.'],
+      ['--args', true],
+      ['', 'a'],
+      ['', '-b'],
+    ])
+    expect(flagOccurrences(parseToKwargs(p))).toEqual([
+      ['null_input', true],
+      ['', '.'],
+      ['args', true],
+      ['', 'a'],
+      ['', '-b'],
+    ])
+  })
+
+  // jq 1.8.2's isoptish(): a dash word is an option only when a letter or a
+  // second dash follows the dash, so `-1` is a program, a file or a value.
+  it('reads the jq dash words without a letter as operands', () => {
+    const p = parseCommand(
+      specOf('jq'),
+      ['-1', '-.', '--jsonargs', '-1.5', '- x', '-é'],
+      '/d',
+      'jq',
+    )
+    expect(p.invalidOptions).toEqual([])
+    expect(p.texts()).toEqual(['-1', '-1.5', '- x', '-é'])
+    expect(p.paths()).toEqual(['/d/-.'])
+  })
+
+  it('keeps the jq dash letter words options', () => {
+    const p = parseCommand(specOf('jq'), ['.', '--jsonargs', '-nan', '-x'], '/', 'jq')
+    expect(p.flags['--null-input']).toBe(true)
+    expect(p.flags['--ascii-output']).toBe(true)
+    expect(p.texts()).toEqual(['.'])
+    expect(flagOccurrences(p.flags).at(-1)).toEqual(['?', '-x'])
+  })
+
+  // jq's option loop reports what it refuses where it stands, so the parser
+  // leaves each refusal on the tape rather than refusing the line.
+  it('leaves each jq refusal on the tape where it was typed', () => {
+    const p = parseCommand(specOf('jq'), ['-n', '.', '--jsonargs', '{', '--bogus', '-Z'], '/', 'jq')
+    expect(p.optionErrorKinds).toEqual([])
+    expect(p.invalidOptions).toEqual([])
+    expect(flagOccurrences(p.flags)).toEqual([
+      ['--null-input', true],
+      ['', '.'],
+      ['--jsonargs', true],
+      ['', '{'],
+      ['?', '--bogus'],
+      ['?', '-Z'],
+    ])
+  })
+
+  it('reads jq long options as whole words', () => {
+    // jq compares the whole word with strcmp: no abbreviation, no `=`.
+    const p = parseCommand(specOf('jq'), ['--nul', '--indent=3', '--slurp=1'], '/', 'jq')
+    expect('--null-input' in p.flags).toBe(false)
+    expect('--indent' in p.flags).toBe(false)
+    expect(
+      flagOccurrences(p.flags)
+        .filter(([name]) => name === '?')
+        .map(([, value]) => value),
+    ).toEqual(['--nul', '--indent=3', '--slurp=1'])
+  })
+
+  it.each([
+    [['-n', '--arg', 'x'], '--arg'],
+    [['-n', '.', '--indent'], '--indent'],
+    [['-n', '-f'], '-f'],
+  ])('leaves a jq option short of its values on the tape: %j', (words, word) => {
+    const p = parseCommand(specOf('jq'), words, '/', 'jq')
+    expect(p.needsValueOptions).toEqual([])
+    expect(
+      flagOccurrences(p.flags)
+        .filter(([name]) => name === '?')
+        .map(([, value]) => value),
+    ).toEqual([word])
+  })
+
+  it("reads a jq cluster's letters before the refused one", () => {
+    expect(flagOccurrences(parseCommand(specOf('jq'), ['-hx'], '/', 'jq').flags)).toEqual([
+      ['--help', true],
+      ['?', '-x'],
+    ])
+    expect(flagOccurrences(parseCommand(specOf('jq'), ['-xh'], '/', 'jq').flags)).toEqual([
+      ['?', '-x'],
+    ])
+  })
+
+  it('keeps getopt_long and its refusals for a borrowed jq name', () => {
+    const spec = new CommandSpec({
+      options: [new Option({ long: '--null-input' })],
+      rest: new Operand({ type: 'str' }),
+    })
+    const p = parseCommand(spec, ['--nul', '--bogus'], '/', 'jq')
+    expect(p.flags['--null-input']).toBe(true)
+    expect(p.invalidOptions).toEqual(['--bogus'])
+    expect(flagOccurrences(p.flags)).not.toContainEqual(['?', '--bogus'])
+  })
+
+  it("reads a dash digit as an option outside jq's own grammar", () => {
+    expect(parseCommand(specOf('cat'), ['-1'], '/', 'cat').invalidOptions).toEqual(['1'])
+    const spec = new CommandSpec({
+      options: [new Option({ short: '-n' })],
+      rest: new Operand({ type: 'str' }),
+    })
+    expect(parseCommand(spec, ['-.'], '/', 'jq').invalidOptions).toEqual(['.'])
   })
 })
 

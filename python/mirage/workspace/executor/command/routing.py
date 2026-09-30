@@ -19,7 +19,10 @@ from mirage.commands.builtin.find_parse import find_expr_tail
 from mirage.commands.builtin.generic.program import FILE_KEYS
 from mirage.commands.cli.walk import walk
 from mirage.commands.spec import SPECS, parse_command, parse_to_kwargs
+from mirage.commands.spec.builtin_specs import is_builtin_grammar
+from mirage.commands.spec.constants import OWN_OPTION_LOOP, REFUSED
 from mirage.commands.spec.flag_view import FlagView
+from mirage.commands.spec.types import CommandSpec
 from mirage.core.awk.builtins import split_assignment
 from mirage.io.types import ByteSource, DeviceInput
 from mirage.types import PathSpec
@@ -165,6 +168,27 @@ def positional_scopes(cmd_name: str, argv: list[str], cwd: str,
                      vfs_path="",
                      raw_path=value)) for value in parsed.paths()
     ]
+
+
+def option_loop_exits(cmd_name: str, spec: CommandSpec | None, argv: list[str],
+                      cwd: str) -> bool:
+    """Whether a handler's option loop must exit before reading operands.
+
+    Help, version and deferred refusals leave no input files to route.
+    The handler still decides which answer or earlier binding error wins.
+
+    Args:
+        cmd_name (str): command name.
+        spec (CommandSpec | None): the registered command's grammar.
+        argv (list[str]): words after the command name.
+        cwd (str): working directory.
+    """
+    if (spec is None or cmd_name not in OWN_OPTION_LOOP
+            or not is_builtin_grammar(cmd_name, spec)):
+        return False
+    parsed = parse_command(spec, argv, cwd, cmd_name)
+    fl = FlagView(parse_to_kwargs(parsed), spec=spec)
+    return bool(fl.occurrences("help", "version", REFUSED))
 
 
 def routed_operands(cmd_name: str, argv: list[str], cwd: str,

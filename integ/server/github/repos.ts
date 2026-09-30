@@ -17,7 +17,7 @@ import type { Ctx, JsonValue, KitRoute } from '../kit/typescript/index.ts'
 import { API_PREFIXES, DEFAULT_LOGIN, REPO_DATE } from './config.ts'
 import type { C } from './config.ts'
 import { commitChanges } from './compare.ts'
-import { PROJECTS_CLASSIC_GONE, commitIdentity, commitJson, nodeId, ownerNode } from './wire.ts'
+import { PROJECTS_CLASSIC_GONE, commitIdentity, nodeId, ownerNode } from './wire.ts'
 import type { CommitRow } from './wire.ts'
 import { createReposAllowed, initRepo } from './seed.ts'
 import { commentConnection, issueConnection, issueNode, issueRow } from './issues.ts'
@@ -39,6 +39,7 @@ import {
   perRepoModels,
   branchNames,
   commitList,
+  commitsJson,
   metaOf,
   repoByName,
   repoIsEmpty,
@@ -53,6 +54,7 @@ import {
   everywhere,
   fail,
   jsonBodyOf,
+  paged,
   pagedReply,
   param,
   route,
@@ -498,7 +500,10 @@ export function repoRoutes(): KitRoute<C>[] {
           const at = await resolveRef(ctx.db, ctx.tenant, repo, ctx.query.get('sha') ?? '')
           if (at === null) return fail(404, 'Not Found')
           if (at.history.length === 0) return fail(409, 'Git Repository is empty.')
-          return pagedReply(ctx, (await commitsMatching(ctx, repo, at.history)).map(commitJson))
+          const page = paged(ctx, await commitsMatching(ctx, repo, at.history))
+          if (page === null) return fail(422, 'Validation Failed')
+          const body = await commitsJson(ctx.db, ctx.tenant, repo, page.items)
+          return { status: 200, body, headers: page.headers }
         }),
       ),
     ),
@@ -769,7 +774,10 @@ async function handOff(db: C, tenant: string, repo: RepoRow): Promise<void> {
   const moved = { tenant, repo: repo.fullName }
   await db.githubCommit.updateMany({ where: moved, data: { repo: heir.fullName } })
   await db.githubStagedTree.updateMany({ where: moved, data: { repo: heir.fullName } })
+  await db.githubStagedEntry.updateMany({ where: moved, data: { repo: heir.fullName } })
+  await db.githubStagedDir.updateMany({ where: moved, data: { repo: heir.fullName } })
   await db.githubTag.updateMany({ where: moved, data: { repo: heir.fullName } })
+  await db.githubBlob.updateMany({ where: moved, data: { repo: heir.fullName } })
   const up = metaOf(repo).parent_seq
   for (const row of rest) {
     const meta = metaOf(row)
@@ -792,15 +800,10 @@ async function dropRepo(db: C, tenant: string, repo: RepoRow): Promise<void> {
   await handOff(db, tenant, repo)
   const fullName = repo.fullName
   const where = { tenant, repo: fullName }
-  // A staged entry hangs off a staged TREE rather than off the repository, so
-  // it is the one child the schema walk cannot reach: entries are keyed by tree
-  // sha, and they have to go before the trees they require.
-  const staged = await db.githubStagedTree.findMany({ where, select: { sha: true } })
-  await db.githubStagedEntry.deleteMany({
-    where: { tenant, treeSha: { in: staged.map((t) => t.sha) } },
-  })
   // In dependency order, deepest first, for the same reason the kit's own
-  // scoped reset derives its order rather than declaring one.
+  // scoped reset derives its order rather than declaring one. A staged entry
+  // and a staged directory carry their repository, so the walk reaches them
+  // too, and never another repository's rows under the same tree sha.
   for (const model of perRepoModels()) {
     await delegateFor(db, model).deleteMany({ where })
   }

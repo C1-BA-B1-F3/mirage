@@ -12,10 +12,11 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import { validation } from './blocks.ts'
 import type { C } from './config.ts'
 import { plainTextOf } from './text.ts'
 import { normalizeRichText } from './text.ts'
-import type { JsonValue } from '../kit/typescript/index.ts'
+import type { JsonValue, Minter, Reply } from '../kit/typescript/index.ts'
 import type { DatabaseRow, Json, MetaRow } from './types.ts'
 import { asObject } from './wire.ts'
 
@@ -195,6 +196,143 @@ export function fillSchema(properties: Json, schema: Json, meta: MetaRow): Json 
     if (!(name in out)) out[name] = value
   }
   return out
+}
+
+// A column spec names its type the way a property value does, by the one key
+// that is not bookkeeping: `{"number": {"format": "percent"}}` says number.
+function columnKind(spec: Json): string | undefined {
+  if (typeof spec.type === 'string') return spec.type
+  return Object.keys(spec).find((key) => !['id', 'name', 'type', 'description'].includes(key))
+}
+
+// A column as the schema stores it, in the fixture's key order: id, name, type,
+// then the type's settings. A number with no format is a plain number, and an
+// option named without an id or a color gets the name and `default`, the way
+// `selectOption` mints one on a row write.
+function columnOf(id: string, name: string, kind: string, settings: JsonValue | undefined): Json {
+  const config: Json = { ...asObject(settings) }
+  if (kind === 'number' && config.format === undefined) config.format = 'number'
+  if (Array.isArray(config.options)) {
+    config.options = config.options.map((one) => {
+      const option = asObject(one)
+      return {
+        id: option.id ?? option.name ?? null,
+        name: option.name ?? null,
+        color: option.color ?? 'default',
+      }
+    })
+  }
+  return { id, name, type: kind, [kind]: config }
+}
+
+// A schema write, keyed by a column's name or id: null removes the column, a
+// `name` renames it and keeps its id (which is what lets every row follow), a
+// type's settings replace the column's, and a key the schema does not hold
+// adds one. The title column can be renamed but not removed, retyped or joined
+// by a second (API reference, update property schema object). Creating a
+// database is this write on an empty schema. A key resolves by name before
+// id, the order `propByRef` resolves every other reference in, so one key
+// names one column whatever order the schema holds them in. An added column's
+// id is minted short and percent-encoded, the way live Notion's read (`%3A7`),
+// from the tenant's minter and never from the column's name: an id spelled like
+// a name let a later name shadow it, and a non-title column named `title` took
+// the title column's id. The minter never repeats a number, so an id a removed
+// column held never comes back to name another. The title column's id is
+// always `title`, as on live Notion. The wording of each refusal is the fake's,
+// except the unknown column, which is live's for a filter.
+export function patchSchema(
+  schema: Json,
+  patch: Json,
+  minter: Minter,
+): Array<[string, Json]> | Reply {
+  const columns = Object.entries(schema).map(([name, spec]): [string, Json] => [
+    name,
+    asObject(spec),
+  ])
+  for (const [ref, value] of Object.entries(patch)) {
+    const named = columns.findIndex(([name]) => name === ref)
+    const at =
+      named !== -1
+        ? named
+        : columns.findIndex(([, spec]) => spec.id === ref || spec.id === encodeURIComponent(ref))
+    const current = columns[at]?.[1]
+    if (value === null) {
+      if (current === undefined)
+        return validation(`Could not find property with name or id: ${ref}`)
+      if (current.type === 'title') return validation('The title property cannot be removed.')
+      columns.splice(at, 1)
+      continue
+    }
+    const spec = asObject(value)
+    const kind = columnKind(spec)
+    const name =
+      typeof spec.name === 'string' && spec.name !== '' ? spec.name : (columns[at]?.[0] ?? ref)
+    let next: Json
+    if (kind === undefined) {
+      if (current === undefined)
+        return validation(`Could not find property with name or id: ${ref}`)
+      next = { ...current, name }
+    } else {
+      if (current?.type === 'title' && kind !== 'title') {
+        return validation('The title property cannot change type.')
+      }
+      if (
+        kind === 'title' &&
+        current?.type !== 'title' &&
+        columns.some(([, other]) => other.type === 'title')
+      ) {
+        return validation('A database has exactly one title property.')
+      }
+      let id = typeof current?.id === 'string' ? current.id : 'title'
+      if (current === undefined && kind !== 'title') id = `%3A${String(minter.next('property'))}`
+      next = columnOf(id, name, kind, spec[kind])
+    }
+    if (columns.some(([other], i) => other === name && i !== at)) {
+      return validation(`A property named ${name} already exists.`)
+    }
+    if (at === -1) columns.push([name, next])
+    else columns[at] = [name, next]
+  }
+  return columns
+}
+
+// Each row keeps its values under the names their columns now have, found by
+// the column id every value carries. A removed column's value goes, and one
+// whose column changed type starts empty, where live converts what it can. A
+// value no schema ever named stays, as `fillSchema` keeps it.
+export function migrateRow(properties: Json, before: Json, schema: Json, meta: MetaRow): Json {
+  const names = new Map(Object.entries(schema).map(([name, spec]) => [asObject(spec).id, name]))
+  const moved: Json = {}
+  for (const [name, value] of Object.entries(properties)) {
+    const prop = asObject(value)
+    const target = names.get(prop.id)
+    if (target === undefined) {
+      if (!(name in before)) moved[name] = value
+      continue
+    }
+    if (asObject(schema[target]).type === prop.type) moved[target] = value
+  }
+  return fillSchema(moved, schema, meta)
+}
+
+// What a page keeps when it moves: its title, under the new parent's title
+// column (`title` under a page), and each value whose name and type the new
+// schema shares, under that column's id. A column the page brings nothing for
+// starts empty, as on a created row. Live's rule is not documented.
+export function movedProperties(properties: Json, schema: Json | null, meta: MetaRow): Json {
+  const title =
+    Object.values(properties)
+      .map(asObject)
+      .find((prop) => prop.type === 'title')?.title ?? []
+  if (schema === null) return { title: { id: 'title', type: 'title', title } }
+  const kept: Json = {}
+  for (const [name, spec] of Object.entries(schema)) {
+    const column = asObject(spec)
+    const value = asObject(properties[name])
+    if (column.type === 'title') kept[name] = { id: column.id ?? 'title', type: 'title', title }
+    else if (value.type === column.type) kept[name] = { ...value, id: column.id ?? null }
+  }
+  return fillSchema(kept, schema, meta)
 }
 
 export function normalizeBlockPayload(payload: Json): Json {

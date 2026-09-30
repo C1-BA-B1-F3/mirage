@@ -58,7 +58,6 @@
       "postcss@<=8.5.17": ">=8.5.18 <9",
       "smol-toml@<1.7.1": ">=1.7.1 <2",
       "deepmerge-ts@<8.0.0": ">=8.0.0 <9",
-      "moment@>=2.29.2 <2.31.0": ">=2.31.0 <3",
       "@deepseek-ai/dsh-invariants": "0.1.5-rc.2",
       "@deepseek-ai/dsh-llm": "0.1.5-rc.2",
       "@deepseek-ai/dsh-sandbox": "0.1.5-rc.2",

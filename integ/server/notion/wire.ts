@@ -238,14 +238,18 @@ export function listJson(results: Json[], nextCursor: string | null, type: strin
 // Notion hands out (a row, a block, a user) and what a client resumes from, so
 // an offset could not resume a cursor a live recording carries. One Notion does
 // not recognize is refused in its own words (probed 2026-09-22 on users, block
-// children and search), never read as the first page.
+// children and search), never read as the first page. `keyOf` is for a list
+// whose items share one id, which property items do: every chunk of a title
+// carries the title's id, so only its position can name where a page starts.
 export function pageOf(
   items: Json[],
   startCursor: string | null,
   pageSize: number,
   type: string,
+  keyOf: (item: Json, at: number) => string = (item) => String(item.id),
 ): Reply {
-  const start = startCursor === null ? 0 : items.findIndex((item) => item.id === startCursor)
+  const start =
+    startCursor === null ? 0 : items.findIndex((item, at) => keyOf(item, at) === startCursor)
   if (start === -1) {
     return apiError(
       400,
@@ -257,7 +261,7 @@ export function pageOf(
   const next = items[start + size]
   const body = listJson(
     items.slice(start, start + size),
-    next === undefined ? null : String(next.id),
+    next === undefined ? null : keyOf(next, start + size),
     type,
   )
   return { status: 200, body }

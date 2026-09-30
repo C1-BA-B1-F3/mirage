@@ -164,11 +164,11 @@ export async function searchResults(
   return found.slice(0, take).map((one) => one.item)
 }
 
-// A filter, a sort and `filter_properties` all name a property by its name or
-// its id. Notion stores an id percent-encoded (`%3BEch`) and a client may send
+// A filter, a sort, `filter_properties` and a property item read all name a
+// property by its name or its id. Notion stores an id percent-encoded (`%3BEch`) and a client may send
 // it either way; the MCP-Atlas recordings send it decoded (`f:fc` for
 // `f%3Afc`), so both spellings resolve.
-function propByRef(page: Json, ref: string): Json | undefined {
+export function propByRef(page: Json, ref: string): Json | undefined {
   const props = asObject(page.properties)
   const named = props[ref]
   if (named !== undefined) return asObject(named)

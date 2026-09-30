@@ -14,9 +14,10 @@
 
 import { describe, expect, it } from 'vitest'
 import { specOf } from './builtins.ts'
-import { flagKwargName } from './constants.ts'
+import { flagKwargName, OPERAND, REFUSED } from './constants.ts'
 import { CommandSpec, Option } from './types.ts'
 import { FlagView, specFlagNames } from './flag_view.ts'
+import { parseCommand, parseToKwargs } from './parser.ts'
 
 // Mirrors python/tests/commands/spec/test_types.py.
 
@@ -136,5 +137,51 @@ describe('FlagView.typedOrder', () => {
     expect(fl.typedOrder('include', 'exclude')).toEqual(['exclude', 'include'])
     expect(fl.typedOrder('include')).toEqual(['include'])
     expect(fl.typedOrder('color')).toEqual([])
+  })
+})
+
+function jqView(...words: string[]): FlagView {
+  return new FlagView(parseToKwargs(parseCommand(specOf('jq'), words, '/', 'jq')), specOf('jq'))
+}
+
+describe('FlagView.occurrences', () => {
+  it('reads the operands where they were typed', () => {
+    const fl = jqView('-c', '.', '--args', 'a', '--jsonargs', '1')
+    expect(fl.occurrences('args', 'jsonargs', OPERAND)).toEqual([
+      [OPERAND, '.'],
+      ['args', true],
+      [OPERAND, 'a'],
+      ['jsonargs', true],
+      [OPERAND, '1'],
+    ])
+    expect(fl.occurrences(OPERAND)).toEqual([
+      [OPERAND, '.'],
+      [OPERAND, 'a'],
+      [OPERAND, '1'],
+    ])
+  })
+
+  it('reads the refusals where they were typed', () => {
+    const fl = jqView('-n', '.', '--bogus', '--args', 'a')
+    expect(fl.occurrences('args', OPERAND, REFUSED)).toEqual([
+      [OPERAND, '.'],
+      [REFUSED, '--bogus'],
+      ['args', true],
+      [OPERAND, 'a'],
+    ])
+    expect(fl.occurrences('args')).toEqual([['args', true]])
+  })
+
+  it('leaves the operands out unless asked', () => {
+    expect(jqView('.', '--args', 'a', '-c').occurrences('compact_output', 'args')).toEqual([
+      ['args', true],
+      ['compact_output', true],
+    ])
+  })
+
+  it('reads no operand from a record with no tape', () => {
+    expect(new FlagView({ args: true }, specOf('jq')).occurrences('args', OPERAND)).toEqual([
+      ['args', true],
+    ])
   })
 })

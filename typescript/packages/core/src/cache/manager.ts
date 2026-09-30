@@ -159,8 +159,8 @@ export class CacheManager {
    * re-lists a folder once however often it reads it. Outside any command
    * (FUSE, a programmatic op) there is no command to belong to, so a listing
    * written within `LISTING_TRUST_WINDOW` seconds is trusted instead: one
-   * `ls -l` over FUSE is a burst of calls, and it re-lists once per burst
-   * rather than once per call.
+   * `ls -l` over FUSE is a burst of calls that can share a re-list until
+   * the window expires.
    *
    * Every view of the mount, shared or lock-held, records into one map, so
    * a glob's write counts for the `ls` that follows it.

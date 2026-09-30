@@ -160,8 +160,8 @@ class Reconciler:
         """Gate a cached read: is the cached copy still valid to serve?
 
         Under ``bounded`` the cache is trusted within its bound. Under
-        ``fresh`` the backend is
-        re-stated: a matching fingerprint serves the cached copy, a
+        ``fresh`` a backend probe (reused within its command until a write)
+        supplies the fingerprint: a match serves the cached copy, a
         mismatch evicts it, a path the backend no longer has GCs and
         raises, and a backend that answers no fingerprint at all -- or no
         ``stat`` at all -- cannot be verified, so the copy is dropped and

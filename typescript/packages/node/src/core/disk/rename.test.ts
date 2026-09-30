@@ -22,7 +22,7 @@ import { spec, tmpRoot } from '../../test-utils.ts'
 import { rename } from './rename.ts'
 
 class FakeManager {
-  listedSince(_folder: string, _started: number): boolean {
+  listingTrusted(_folder: string): boolean {
     return false
   }
 

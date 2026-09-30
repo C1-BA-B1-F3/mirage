@@ -20,7 +20,8 @@ import { rstripSlash } from '../utils/slash.ts'
 import type { FileCache } from './file/mixin.ts'
 import type { IndexCacheStore } from './index/store.ts'
 import type { Evicted } from './index/config.ts'
-import { tick } from './index/scope.ts'
+import { LISTING_TRUST_WINDOW } from './index/constants.ts'
+import { commandStarted, tick } from './index/scope.ts'
 import { IndexView } from './index/view.ts'
 import { withCacheMutation, latestFingerprint } from './file/io.ts'
 
@@ -56,9 +57,9 @@ export class CacheManager {
 
   private readGeneration = 0
   private view: IndexView | null = null
-  // Folder to the tick its listing was last written at, by any view of this
-  // mount, shared or lock-held.
-  private readonly written = new Map<string, number>()
+  // Folder to the tick and the wall-clock millisecond its listing was last
+  // written at, by any view of this mount, shared or lock-held.
+  private readonly written = new Map<string, [number, number]>()
 
   constructor(
     fileCache: FileCache | null,
@@ -145,17 +146,30 @@ export class CacheManager {
   }
 
   private noteWritten(folder: string): void {
-    this.written.set(folder, tick())
+    this.written.set(folder, [tick(), Date.now()])
   }
 
   /**
-   * Whether this mount wrote `folder`'s listing after `stamp`.
+   * Whether `folder`'s listing is recent enough to serve under fresh.
+   *
+   * Inside a command: only if the command wrote it itself, so one command
+   * re-lists a folder once however often it reads it. Outside any command
+   * (FUSE, a programmatic op) there is no command to belong to, so a listing
+   * written within `LISTING_TRUST_WINDOW` seconds is trusted instead: one
+   * `ls -l` over FUSE is a burst of calls, and it re-lists once per burst
+   * rather than once per call.
    *
    * Every view of the mount, shared or lock-held, records into one map, so
    * a glob's write counts for the `ls` that follows it.
    */
-  listedSince(folder: string, stamp: number): boolean {
-    return (this.written.get(folder) ?? 0) > stamp
+  listingTrusted(folder: string): boolean {
+    const written = this.written.get(folder)
+    if (written === undefined) return false
+    const [stamp, at] = written
+    const started = commandStarted()
+    if (started !== null) return stamp > started
+    const elapsed = Date.now() - at
+    return elapsed >= 0 && elapsed < LISTING_TRUST_WINDOW * 1000
   }
 
   /**

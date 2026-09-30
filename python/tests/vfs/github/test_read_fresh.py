@@ -15,6 +15,7 @@
 import aiohttp
 import pytest
 
+from mirage.cache.index.constants import LISTING_TRUST_WINDOW
 from mirage.core.github.config import GitHubConfig
 from mirage.core.github.tree import fetch_tree
 from mirage.types import MountMode, ReadPolicy, ReadSpec
@@ -559,5 +560,44 @@ async def test_truncated_walk_lists_each_directory_once_per_command(line):
                 kind for kind, _ in hub.log if kind in ("dir", "sha_dir")
             ]
             assert len(listings) == 5
+        finally:
+            await ws.close()
+
+
+def _burst_hub() -> FakeGitHub:
+    return _hub({f"docs/f{n:02}.txt": b"x" for n in range(20)})
+
+
+# The op door is what FUSE, ws.vfs and the agent file tools reach, and none
+# of them runs inside a shell command. One `ls -l` over FUSE is a readdir and
+# a stat per entry; fresh trusts a listing that recent instead of refetching
+# the whole tree for every call.
+@pytest.mark.asyncio
+async def test_an_ops_door_burst_fetches_the_tree_once():
+    with serve(_burst_hub()) as hub:
+        ws = _ws(_vfs(hub))
+        try:
+            names = await ws.readdir("/gh/docs")
+            assert len(names) == 20
+            for name in names:
+                await ws.stat(name if name.startswith("/") else
+                              f"/gh/docs/{name.rsplit('/', 1)[-1]}")
+            assert hub.count("recursive") == 1
+        finally:
+            await ws.close()
+
+
+@pytest.mark.asyncio
+async def test_an_ops_door_read_sees_an_outside_change_after_the_window(
+        monkeypatch):
+    now = [100.0]
+    monkeypatch.setattr("mirage.cache.manager._now", lambda: now[0])
+    with serve(_hub()) as hub:
+        ws = _ws(_vfs(hub))
+        try:
+            assert "/gh/docs/c.txt" not in await ws.readdir("/gh/docs")
+            hub.files["docs/c.txt"] = b"new"
+            now[0] += LISTING_TRUST_WINDOW
+            assert "/gh/docs/c.txt" in await ws.readdir("/gh/docs")
         finally:
             await ws.close()

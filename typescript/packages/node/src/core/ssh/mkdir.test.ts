@@ -24,7 +24,7 @@ function spec(p: string): PathSpec {
 }
 
 class RecordingInvalidator implements CacheInvalidator {
-  listedSince(_folder: string, _started: number): boolean {
+  listingTrusted(_folder: string): boolean {
     return false
   }
 

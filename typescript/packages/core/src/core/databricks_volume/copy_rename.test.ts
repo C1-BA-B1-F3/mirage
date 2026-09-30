@@ -33,7 +33,7 @@ import {
 const resolveGlob = resolveGlobOf(DATABRICKS_VOLUME_IO)
 
 class FakeManager {
-  listedSince(_folder: string, _started: number): boolean {
+  listingTrusted(_folder: string): boolean {
     return false
   }
 

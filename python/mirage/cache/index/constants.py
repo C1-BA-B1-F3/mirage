@@ -23,3 +23,7 @@ TOMBSTONE_PREFIX = "mirage:idx:tombstone:"
 PATHS_KEY = "mirage:idx:paths"
 
 GENERATION_KEY = "mirage:idx:generation"
+
+# How long, in seconds, a read that belongs to no shell command trusts a
+# listing under `read: fresh`. One FUSE `ls -l` is a burst of such reads.
+LISTING_TRUST_WINDOW = 1.0

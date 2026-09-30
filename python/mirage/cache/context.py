@@ -16,7 +16,6 @@ from collections.abc import Awaitable, Callable
 from contextvars import ContextVar
 from typing import Protocol
 
-from mirage.cache.index.scope import command_started
 from mirage.types import PathSpec
 
 
@@ -50,7 +49,7 @@ class CacheInvalidator(Protocol):
     async def cached_size(self, path: PathSpec) -> int | None:
         ...
 
-    def listed_since(self, folder: str, stamp: int) -> bool:
+    def listing_trusted(self, folder: str) -> bool:
         ...
 
 
@@ -152,12 +151,13 @@ async def invalidate_ancestors(path: PathSpec) -> None:
 
 
 def listing_refreshed(folder: str) -> bool:
-    """Whether the active mount refreshed a listing during this command.
+    """Whether the active mount's listing of ``folder`` is recent enough.
+
+    The same rule as the fresh listing gate: written during this command,
+    or within the trust window when no command is running.
 
     Args:
         folder (str): mount-absolute directory key.
     """
     manager = active_cache_manager()
-    started = command_started()
-    return (manager is not None and started is not None
-            and manager.listed_since(folder, started))
+    return manager is not None and manager.listing_trusted(folder)

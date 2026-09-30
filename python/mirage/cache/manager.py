@@ -12,19 +12,26 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import time
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
 
 from mirage.cache.file.io import latest_fingerprint, mutation_lock
 from mirage.cache.file.mixin import FileCacheMixin
 from mirage.cache.index.config import Evicted
-from mirage.cache.index.scope import tick
+from mirage.cache.index.constants import LISTING_TRUST_WINDOW
+from mirage.cache.index.scope import command_started, tick
 from mirage.cache.index.store import IndexCacheStore
 from mirage.cache.index.view import IndexView
 from mirage.observe.context import active_recorder
 from mirage.observe.record import READ_FINGERPRINT_OPS
 from mirage.types import DEFAULT_READ_TTL, PathSpec
 from mirage.utils.key_prefix import mount_key
+
+
+def _now() -> float:
+    """Monotonic seconds, read through one name so tests can move it."""
+    return time.monotonic()
 
 
 async def _always_serve(_key: str) -> bool:
@@ -101,7 +108,7 @@ class CacheManager:
         self._on_gone = on_gone
         self._excluded_prefixes = excluded_prefixes
         self._may_serve_listing = may_serve_listing
-        self._written: dict[str, int] = {}
+        self._written: dict[str, tuple[int, float]] = {}
         self._read_generation = 0
         self._view: IndexView | None = None
 
@@ -150,19 +157,32 @@ class CacheManager:
                 await self._on_gone(owned)
 
     def _note_written(self, folder: str) -> None:
-        self._written[folder] = tick()
+        self._written[folder] = (tick(), _now())
 
-    def listed_since(self, folder: str, stamp: int) -> bool:
-        """Whether this mount wrote ``folder``'s listing after ``stamp``.
+    def listing_trusted(self, folder: str) -> bool:
+        """Whether ``folder``'s listing is recent enough to serve under fresh.
+
+        Inside a command: only if the command wrote it itself, so one
+        command re-lists a folder once however often it reads it. Outside
+        any command (FUSE, a programmatic op) there is no command to
+        belong to, so a listing written within ``LISTING_TRUST_WINDOW``
+        seconds is trusted instead: one ``ls -l`` over FUSE is a burst of
+        calls, and it re-lists once per burst rather than once per call.
 
         Every view of the mount, shared or lock-held, records into one map,
         so a glob's write counts for the ``ls`` that follows it.
 
         Args:
             folder (str): mount-absolute listing key.
-            stamp (int): the running command's start.
         """
-        return self._written.get(folder, 0) > stamp
+        written = self._written.get(folder)
+        if written is None:
+            return False
+        stamp, at = written
+        started = command_started()
+        if started is not None:
+            return stamp > started
+        return 0 <= _now() - at < LISTING_TRUST_WINDOW
 
     def scope_index_locked(self, index: IndexCacheStore) -> IndexCacheStore:
         """A view for a caller already inside ``mutation()``.

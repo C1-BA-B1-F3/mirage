@@ -13,14 +13,15 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import { mountKey } from '../utils/key_prefix.ts'
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { PathSpec } from '../types.ts'
 import { withCacheMutation } from './file/io.ts'
 import { RAMFileCacheStore } from './file/ram.ts'
 import { IndexEntry } from './index/config.ts'
+import { LISTING_TRUST_WINDOW } from './index/constants.ts'
 import { RAMIndexCacheStore } from './index/ram.ts'
-import { commandStarted, runInCommandScope } from './index/scope.ts'
+import { runInCommandScope } from './index/scope.ts'
 import { IndexView } from './index/view.ts'
 import { CacheManager } from './manager.ts'
 import { enoent } from '../utils/errors.ts'
@@ -373,11 +374,9 @@ describe('what a mount has listed since a command started', () => {
     const index = new RAMIndexCacheStore({ ttl: 600 })
     const manager = new CacheManager(new RAMFileCacheStore(), index, '/data/', true)
     await runInCommandScope(async () => {
-      const started = commandStarted()
       await manager.scopeIndexLocked(index).setDir('/data', [])
-      expect(started).not.toBeNull()
-      expect(manager.listedSince('/data', started ?? 0)).toBe(true)
-      expect(manager.listedSince('/data/other', started ?? 0)).toBe(false)
+      expect(manager.listingTrusted('/data')).toBe(true)
+      expect(manager.listingTrusted('/data/other')).toBe(false)
     })
   })
 
@@ -386,9 +385,7 @@ describe('what a mount has listed since a command started', () => {
     const manager = new CacheManager(new RAMFileCacheStore(), index, '/data/', true)
     await manager.scopeIndex(index).setDir('/data', [])
     await runInCommandScope(() => {
-      const started = commandStarted()
-      expect(started).not.toBeNull()
-      expect(manager.listedSince('/data', started ?? 0)).toBe(false)
+      expect(manager.listingTrusted('/data')).toBe(false)
       return Promise.resolve()
     })
   })
@@ -397,11 +394,54 @@ describe('what a mount has listed since a command started', () => {
     const index = new RAMIndexCacheStore({ ttl: 600 })
     const manager = new CacheManager(new RAMFileCacheStore(), index, '/data/', true)
     await runInCommandScope(async () => {
-      const started = commandStarted()
       await manager.scopeIndex(index).setDir('/data', [])
       manager.scopeIndex(new RAMIndexCacheStore({ ttl: 600 }))
-      expect(started).not.toBeNull()
-      expect(manager.listedSince('/data', started ?? 0)).toBe(false)
+      expect(manager.listingTrusted('/data')).toBe(false)
+    })
+  })
+})
+
+describe('which listings a mount trusts', () => {
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  it('trusts a listing for the window outside any command', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    const index = new RAMIndexCacheStore({ ttl: 600 })
+    const manager = new CacheManager(new RAMFileCacheStore(), index, '/data/', true)
+    await manager.scopeIndex(index).setDir('/data', [])
+    vi.setSystemTime(Date.now() + LISTING_TRUST_WINDOW * 1000 - 10)
+    expect(manager.listingTrusted('/data')).toBe(true)
+    expect(manager.listingTrusted('/data/other')).toBe(false)
+    vi.setSystemTime(Date.now() + 20)
+    expect(manager.listingTrusted('/data')).toBe(false)
+  })
+
+  // Date.now can step backwards; elapsed time below zero is no evidence the
+  // listing is recent.
+  it('does not extend the window when the clock ran backwards', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    const index = new RAMIndexCacheStore({ ttl: 600 })
+    const manager = new CacheManager(new RAMFileCacheStore(), index, '/data/', true)
+    await manager.scopeIndex(index).setDir('/data', [])
+    vi.setSystemTime(Date.now() - 5000)
+    expect(manager.listingTrusted('/data')).toBe(false)
+  })
+
+  // A listing the previous command wrote a moment ago is still re-listed by
+  // the next one: the window is only for reads that belong to no command.
+  it('does not apply the window inside a command', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    const index = new RAMIndexCacheStore({ ttl: 600 })
+    const manager = new CacheManager(new RAMFileCacheStore(), index, '/data/', true)
+    await manager.scopeIndex(index).setDir('/data', [])
+    vi.setSystemTime(Date.now() + 10)
+    await runInCommandScope(async () => {
+      expect(manager.listingTrusted('/data')).toBe(false)
+      await manager.scopeIndex(index).setDir('/data', [])
+      vi.setSystemTime(Date.now() + LISTING_TRUST_WINDOW * 10_000)
+      expect(manager.listingTrusted('/data')).toBe(true)
     })
   })
 })

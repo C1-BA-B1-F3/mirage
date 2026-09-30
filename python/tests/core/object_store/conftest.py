@@ -197,7 +197,7 @@ def make_driver(
 
 class FakeManager:
 
-    def listed_since(self, _folder: str, _started: int) -> bool:
+    def listing_trusted(self, _folder: str) -> bool:
         return False
 
     def __init__(self) -> None:

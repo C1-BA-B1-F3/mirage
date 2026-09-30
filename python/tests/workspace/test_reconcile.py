@@ -23,6 +23,7 @@ import pytest
 from mirage import MountMode, Workspace
 from mirage.cache.index.config import (Evicted, IndexConfig, IndexEntry,
                                        RedisIndexConfig)
+from mirage.cache.index.constants import LISTING_TRUST_WINDOW
 from mirage.cache.index.scope import command_scope
 from mirage.types import FileStat, FileType, ReadPolicy, ReadSpec
 from mirage.utils.errors import enotsup
@@ -137,14 +138,19 @@ async def test_may_serve_listing_trusts_the_index_under_bounded():
 
 @pytest.mark.asyncio
 async def test_may_serve_listing_under_fresh_trusts_only_this_commands_writes(
-):
+        monkeypatch):
     # fresh re-lists anything listed before the command started; a listing
     # the command itself refreshed is served, so one ls costs one re-list.
+    # Outside any command a listing is trusted only for the window.
+    now = [100.0]
+    monkeypatch.setattr("mirage.cache.manager._now", lambda: now[0])
     ws = Workspace({"/data/": RAMVFS()}, mode=MountMode.WRITE)
     mount = ws.namespace.mount_for("/data/d")
     mount.read = ReadSpec(policy=ReadPolicy.FRESH)
     rec = Reconciler(ws.cache, ws.namespace)
     await mount.index.set_dir("/data/d", [])
+    assert await rec.may_serve_listing(mount, "/data/d") is True
+    now[0] += LISTING_TRUST_WINDOW
     assert await rec.may_serve_listing(mount, "/data/d") is False
     async with command_scope():
         assert await rec.may_serve_listing(mount, "/data/d") is False

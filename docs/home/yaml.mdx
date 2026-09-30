@@ -69,7 +69,7 @@ mounts:
 
 `ttl:` lives only in a mount block. At the top level it would sit beside `index: {ttl: ...}` and mean a different thing, so the workspace-level default is `read:` alone and a workspace-level `bounded` takes 600 seconds.
 
-Each listing write is capped by the mount's `ttl`, under both policies. Backends may expire listings sooner, and mounts without a listing cache still keep none. `fresh` also checks listings: each command re-lists a folder it reads from the cache, once, and trusts that re-list for the rest of the command, so a file added or removed outside mirage shows in the next `ls`, `find` or glob. A read that belongs to no command (FUSE, a programmatic op) re-lists every time.
+Each listing write is capped by the mount's `ttl`, under both policies. Backends may expire listings sooner, and mounts without a listing cache still keep none. `fresh` also checks listings: each command re-lists a folder it reads from the cache, once, and trusts that re-list for the rest of the command, so a file added or removed outside mirage shows in the next `ls`, `find` or glob. A read that belongs to no command (FUSE, a programmatic op such as `ws.vfs`, an agent's file tools) trusts a listing written in the last second, so one `ls -l` over FUSE re-lists once rather than once per entry; an outside change can stay hidden from those reads for up to that second.
 
 Existing listings in a persisted Redis index retain their stored expiry until rewritten.
 

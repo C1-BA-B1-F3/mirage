@@ -17,6 +17,7 @@ import { GitHubAccessor } from '../accessor/github.ts'
 import { read as githubRead } from '../core/github/read.ts'
 import { stat as githubStat } from '../core/github/stat.ts'
 import { IndexEntry } from '../cache/index/config.ts'
+import { LISTING_TRUST_WINDOW } from '../cache/index/constants.ts'
 import { RAMVFS } from '../vfs/ram/ram.ts'
 import {
   type ReadSpec,
@@ -154,13 +155,17 @@ describe('Reconciler', () => {
 
   // fresh re-lists anything listed before the command started; a listing
   // the command itself refreshed is served, so one ls costs one re-list.
+  // Outside any command a listing is trusted only for the window.
   it("mayServeListing under fresh trusts only this command's writes", async () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
     const ws = new Workspace({ '/data': new RAMVFS() }, { mode: MountMode.WRITE })
     try {
       const mount = withFresh(mountOf(ws, '/data/d'))
       const rec = new Reconciler(ws.cache, ws.namespace, ws.opsRegistry)
       const index = mount.index
       await index.setDir('/data/d', [])
+      expect(await rec.mayServeListing(mount, '/data/d')).toBe(true)
+      vi.setSystemTime(Date.now() + LISTING_TRUST_WINDOW * 1000)
       expect(await rec.mayServeListing(mount, '/data/d')).toBe(false)
       await runInCommandScope(async () => {
         expect(await rec.mayServeListing(mount, '/data/d')).toBe(false)
@@ -169,6 +174,7 @@ describe('Reconciler', () => {
         expect(await rec.mayServeListing(mount, '/data/other')).toBe(false)
       })
     } finally {
+      vi.useRealTimers()
       await ws.close()
     }
   })

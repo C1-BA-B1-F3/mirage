@@ -18,7 +18,6 @@ from enum import Enum
 from mirage.cache.file.mixin import FileCacheMixin
 from mirage.cache.index.config import Evicted
 from mirage.cache.index.ram import RAMIndexCacheStore
-from mirage.cache.index.scope import command_started
 from mirage.types import ReadPolicy
 from mirage.utils.errors import OperationNotSupportedError
 from mirage.utils.path import ancestors
@@ -194,8 +193,10 @@ class Reconciler:
         Under ``bounded`` the listing is trusted within its bound. Under
         ``fresh`` it is trusted only if the running command refreshed it
         itself, so one command re-lists a folder once however often it
-        reads it; anything older, and any read outside a command, lists
-        again. Task 1.3 replaces "list again" with a cheaper check.
+        reads it; a read outside any command trusts a listing written
+        within the last ``LISTING_TRUST_WINDOW`` seconds instead
+        (``CacheManager.listing_trusted``). Anything older lists again.
+        Task 1.3 replaces "list again" with a cheaper check.
 
         Args:
             mount (MountEntry): the mount holding the listing.
@@ -206,10 +207,8 @@ class Reconciler:
         """
         if mount.read.policy is not ReadPolicy.FRESH:
             return True
-        started = command_started()
         manager = mount.cache_manager
-        return (started is not None and manager is not None
-                and manager.listed_since(folder, started))
+        return manager is not None and manager.listing_trusted(folder)
 
     async def reconcile_read(self, mount: MountEntry, path: str) -> None:
         """Reconcile a single-mount shell read before the command runs.

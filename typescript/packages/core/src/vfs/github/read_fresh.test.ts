@@ -14,6 +14,7 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { FakeGitHub, blobSha } from '../../core/github/_test_util.ts'
+import { LISTING_TRUST_WINDOW } from '../../cache/index/constants.ts'
 import { DEFAULT_READ_TTL, MountMode, ReadPolicy } from '../../types.ts'
 import type { BaseVFS } from '../base.ts'
 import { RAMVFS } from '../ram/ram.ts'
@@ -525,3 +526,40 @@ it.each(['find /gh', 'du -a /gh', 'ls -R /gh'])(
     }
   },
 )
+
+// The op door is what FUSE, ws.vfs and the agent file tools reach, and none
+// of them runs inside a shell command. One `ls -l` over FUSE is a readdir and
+// a stat per entry; fresh trusts a listing that recent instead of refetching
+// the whole tree for every call.
+describe('github op door under read: fresh', () => {
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  it('fetches the tree once for a burst', async () => {
+    gh.files.clear()
+    for (let n = 0; n < 20; n++) gh.set(`docs/f${String(n).padStart(2, '0')}.txt`, 'x')
+    const w = await ws(await vfsOf())
+    try {
+      const names = await w.readdir('/gh/docs')
+      expect(names).toHaveLength(20)
+      for (const name of names) await w.stat(name)
+      expect(gh.count('recursive')).toBe(1)
+    } finally {
+      await w.close()
+    }
+  })
+
+  it('sees an outside change after the window', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    const w = await ws(await vfsOf())
+    try {
+      expect(await w.readdir('/gh/docs')).not.toContain('/gh/docs/c.txt')
+      gh.set('docs/c.txt', 'new')
+      vi.setSystemTime(Date.now() + LISTING_TRUST_WINDOW * 1000)
+      expect(await w.readdir('/gh/docs')).toContain('/gh/docs/c.txt')
+    } finally {
+      await w.close()
+    }
+  })
+})

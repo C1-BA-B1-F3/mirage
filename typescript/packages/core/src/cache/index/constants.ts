@@ -25,3 +25,7 @@ export const PATHS_KEY = 'mirage:idx:paths'
 export const GENERATION_KEY = 'mirage:idx:generation'
 
 export const DEFAULT_KEY_PREFIX = 'mirage:index:'
+
+// How long, in seconds, a read that belongs to no shell command trusts a
+// listing under `read: fresh`. One FUSE `ls -l` is a burst of such reads.
+export const LISTING_TRUST_WINDOW = 1

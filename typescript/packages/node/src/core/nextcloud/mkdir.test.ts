@@ -15,7 +15,7 @@ function accessorWith(fake: FakeNextcloudOperator): NextcloudAccessor {
 
 // Collects the paths each invalidation hook was told about.
 class RecordingInvalidator implements CacheInvalidator {
-  listedSince(_folder: string, _started: number): boolean {
+  listingTrusted(_folder: string): boolean {
     return false
   }
 

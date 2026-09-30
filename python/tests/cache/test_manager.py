@@ -20,8 +20,9 @@ from mirage.cache.file.io import mutation_lock
 from mirage.cache.file.ram import RAMFileCacheStore
 from mirage.cache.index import NULL_INDEX
 from mirage.cache.index.config import IndexEntry
+from mirage.cache.index.constants import LISTING_TRUST_WINDOW
 from mirage.cache.index.ram import RAMIndexCacheStore
-from mirage.cache.index.scope import command_scope, command_started
+from mirage.cache.index.scope import command_scope
 from mirage.cache.index.view import IndexView
 from mirage.cache.manager import CacheManager
 from mirage.types import PathSpec
@@ -536,11 +537,9 @@ async def test_a_write_through_the_locked_view_counts_for_the_shared_one():
     cache, index = _stores()
     manager = CacheManager(cache, index, "/data/", True)
     async with command_scope():
-        started = command_started()
         await manager.scope_index_locked(index).set_dir("/data", [])
-        assert started is not None
-        assert manager.listed_since("/data", started) is True
-        assert manager.listed_since("/data/other", started) is False
+        assert manager.listing_trusted("/data") is True
+        assert manager.listing_trusted("/data/other") is False
 
 
 @pytest.mark.asyncio
@@ -549,9 +548,7 @@ async def test_a_write_before_the_command_does_not_count():
     manager = CacheManager(cache, index, "/data/", True)
     await manager.scope_index(index).set_dir("/data", [])
     async with command_scope():
-        started = command_started()
-        assert started is not None
-        assert manager.listed_since("/data", started) is False
+        assert manager.listing_trusted("/data") is False
 
 
 @pytest.mark.asyncio
@@ -559,8 +556,59 @@ async def test_a_replaced_store_forgets_what_the_old_one_was_written():
     cache, index = _stores()
     manager = CacheManager(cache, index, "/data/", True)
     async with command_scope():
-        started = command_started()
         await manager.scope_index(index).set_dir("/data", [])
         manager.scope_index(RAMIndexCacheStore(ttl=600))
-        assert started is not None
-        assert manager.listed_since("/data", started) is False
+        assert manager.listing_trusted("/data") is False
+
+
+class _Clock:
+
+    def __init__(self) -> None:
+        self.now = 100.0
+
+    def __call__(self) -> float:
+        return self.now
+
+
+@pytest.fixture
+def clock(monkeypatch) -> _Clock:
+    fake = _Clock()
+    monkeypatch.setattr("mirage.cache.manager._now", fake)
+    return fake
+
+
+@pytest.mark.asyncio
+async def test_outside_a_command_a_listing_is_trusted_for_the_window(clock):
+    cache, index = _stores()
+    manager = CacheManager(cache, index, "/data/", True)
+    await manager.scope_index(index).set_dir("/data", [])
+    clock.now += LISTING_TRUST_WINDOW - 0.01
+    assert manager.listing_trusted("/data") is True
+    assert manager.listing_trusted("/data/other") is False
+    clock.now += 0.02
+    assert manager.listing_trusted("/data") is False
+
+
+@pytest.mark.asyncio
+async def test_inside_a_command_the_window_does_not_apply(clock):
+    # A listing the previous command wrote a moment ago is still re-listed by
+    # the next one: the window is only for reads that belong to no command.
+    cache, index = _stores()
+    manager = CacheManager(cache, index, "/data/", True)
+    await manager.scope_index(index).set_dir("/data", [])
+    clock.now += 0.01
+    async with command_scope():
+        assert manager.listing_trusted("/data") is False
+        await manager.scope_index(index).set_dir("/data", [])
+        clock.now += LISTING_TRUST_WINDOW * 10
+        assert manager.listing_trusted("/data") is True
+
+
+@pytest.mark.asyncio
+async def test_a_clock_that_ran_backwards_does_not_extend_the_window(clock):
+    # Elapsed time below zero is no evidence the listing is recent.
+    cache, index = _stores()
+    manager = CacheManager(cache, index, "/data/", True)
+    await manager.scope_index(index).set_dir("/data", [])
+    clock.now -= 5
+    assert manager.listing_trusted("/data") is False

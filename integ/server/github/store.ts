@@ -535,16 +535,29 @@ async function resolveTag(
   return { branch: null, history: historyFrom(sha, await commitsBySha(db, tenant, repo)) }
 }
 
-// Qualified names stay in their namespace. Otherwise an existing full commit
-// sha wins, followed by a branch, a tag, then an unambiguous abbreviated sha.
+// A fully qualified name stays in its namespace. Otherwise an existing full
+// commit sha wins, followed by a branch, a tag, then an unambiguous
+// abbreviated sha. A name under `tags/` reads in git's order: the tag it
+// names, then a tag or a branch spelled that way whole, so a branch called
+// `tags/release` is still found by that name.
 export async function resolveRef(
   db: C,
   tenant: string,
   repo: RepoRow,
   ref: string | null,
 ): Promise<Resolved | null> {
-  if (ref !== null && /^(?:refs\/)?tags\//.test(ref)) {
-    return await resolveTag(db, tenant, repo, ref.replace(/^(?:refs\/)?tags\//, ''))
+  if (ref !== null && ref.startsWith('refs/tags/')) {
+    return await resolveTag(db, tenant, repo, ref.slice('refs/tags/'.length))
+  }
+  if (ref !== null && ref.startsWith('tags/')) {
+    const tagged =
+      (await resolveTag(db, tenant, repo, ref.slice('tags/'.length))) ??
+      (await resolveTag(db, tenant, repo, ref))
+    if (tagged !== null) return tagged
+    const whole = await branchFor(db, tenant, repo, ref)
+    return whole === null
+      ? null
+      : { branch: whole, history: await commitList(db, tenant, repo, whole) }
   }
   if (ref?.length === 40) {
     const commit = await resolveCommit(db, tenant, repo, ref)

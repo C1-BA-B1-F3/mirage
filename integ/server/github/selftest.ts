@@ -1444,6 +1444,15 @@ async function refIdentity(at: string): Promise<void> {
     object: root,
   })
   const tagSha = field(annotated.body, 'sha')
+  // A branch spelled under `tags/` is still found by that name, and a tag of
+  // the name that follows wins over it, in git's order.
+  const slashed = await post(`${repo}/git/refs`, { ref: 'refs/heads/tags/release', sha: head })
+  eq('a branch may be named under tags/', slashed.status, 201)
+  const byName = async (): Promise<JsonValue> =>
+    field(await get(`${repo}/commits/tags/release`), 'sha')
+  eq('and reads by that name while no tag is called release', await byName(), head)
+  await post(`${repo}/git/refs`, { ref: 'refs/tags/release', sha: root })
+  eq('a tag called release is read first once it exists', await byName(), root)
   for (const [name, target] of [
     [root, head],
     [head, tagSha],

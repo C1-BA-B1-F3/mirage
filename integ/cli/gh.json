@@ -1806,6 +1806,188 @@
         "stdout": "integ-user\n1.50\n0.12\n-0.12\n1000000000000000000000\n3\n{\"a\":\"\\u003c\\u0026\\u003e\",\"b\":1}\n[1.5,1e+21,1e-7]\ntrue\n\n{\"number\":4,\"third\":1.3333333333333333}\n1.33\n",
         "stderr": ""
       }
+    },
+    {
+      "id": "gh_run_view_log_prints_each_line_behind_its_job_and_step",
+      "seq": 569024,
+      "targets": [
+        "cli-gh"
+      ],
+      "command": "gh run view 201 --log; gh run view 201 --log-failed",
+      "expect": {
+        "exit": 0,
+        "stdout": "test\tSet up job\t2026-01-01T00:00:05.0000000Z Current runner version: '2.330.0'\ntest\tSet up job\t2026-01-01T00:00:05.1000000Z Operating System\ntest\tRun actions/checkout@v4\t2026-01-01T00:00:06.0000000Z ##[group]Run actions/checkout@v4\ntest\tRun actions/checkout@v4\t2026-01-01T00:00:06.2000000Z Syncing repository: integ/repo-cli\ntest\tRun python -m pytest tests\t2026-01-01T00:00:09.0000000Z ##[group]Run python -m pytest tests\ntest\tRun python -m pytest tests\t2026-01-01T00:00:58.0000000Z ============================== 6 passed in 48.90s ==============================\ntest\tComplete job\t2026-01-01T00:00:58.0000000Z Cleaning up orphan processes\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "gh_run_view_log_waits_for_the_run_to_complete",
+      "seq": 569062,
+      "targets": [
+        "cli-gh"
+      ],
+      "command": "gh run view 202 --log --log-failed; gh run view 202 --log-failed",
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "specify only one of --log or --log-failed\ngh run view: run 202 is still in progress; logs will be available when it is complete\n"
+      }
+    },
+    {
+      "id": "gh_workflow_list_follows_the_workflow_files",
+      "seq": 569063,
+      "targets": [
+        "cli-gh"
+      ],
+      "command": "gh workflow list --all --json id,name,path,state --jq 'map([.id, .name, .path, .state])'",
+      "expect": {
+        "exit": 0,
+        "stdout": "[[101,\"CI\",\".github/workflows/ci.yml\",\"active\"],[102,\"Archive\",\".github/workflows/archive.yml\",\"disabled_manually\"]]\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "gh_workflow_view_yaml_prints_the_file",
+      "seq": 569064,
+      "targets": [
+        "cli-gh"
+      ],
+      "command": "gh workflow view CI --yaml | head -4; gh workflow view ci.yml -y -r main | tail -1",
+      "expect": {
+        "exit": 0,
+        "stdout": "name: CI\n\"on\":\n  push:\n    branches: [main]\n      - run: python -m pytest tests\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "gh_workflow_view_ref_needs_yaml_and_a_ref_holding_the_file",
+      "seq": 569065,
+      "targets": [
+        "cli-gh"
+      ],
+      "command": "gh workflow view ci.yml -r main; gh workflow view ci.yml --yaml -r nope",
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "`--yaml` required when specifying `--ref`\ngh workflow view: could not find workflow file ci.yml on nope, try specifying a different ref\n"
+      }
+    },
+    {
+      "id": "gh_workflow_run_needs_a_dispatch_trigger",
+      "seq": 569066,
+      "targets": [
+        "cli-gh"
+      ],
+      "command": "gh workflow run archive.yml",
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "gh workflow run: Workflow does not have 'workflow_dispatch' trigger\n"
+      }
+    },
+    {
+      "id": "gh_api_short_sha_names_its_commit",
+      "seq": 569901,
+      "targets": [
+        "cli-gh"
+      ],
+      "command": "gh api \"repos/integ/repo-cli/commits/$(gh api repos/integ/repo-cli/commits --jq '.[-1].sha[0:7]')\" --jq .commit.message; gh api \"repos/integ/repo-cli/contents/README.md?ref=$(gh api repos/integ/repo-cli/commits --jq '.[-1].sha[0:4]')\" --jq .name; gh api repos/integ/repo-cli/commits/abc",
+      "expect": {
+        "exit": 1,
+        "stdout": "Initial commit\nREADME.md\n{\"message\":\"No commit found for SHA: abc\",\"documentation_url\":\"https://docs.github.com/rest\"}",
+        "stderr": "gh: No commit found for SHA: abc (HTTP 422)\n"
+      }
+    },
+    {
+      "id": "gh_api_commits_sha_lists_from_that_commit",
+      "seq": 569902,
+      "targets": [
+        "cli-gh"
+      ],
+      "command": "test \"$(gh api \"repos/integ/repo-cli/commits?sha=$(gh api repos/integ/repo-cli/commits --jq '.[1].sha[0:7]')\" --jq '.[0].sha')\" = \"$(gh api repos/integ/repo-cli/commits --jq '.[1].sha')\" && echo starts-at-the-commit; gh api 'repos/integ/repo-cli/commits?sha=0000000'",
+      "expect": {
+        "exit": 1,
+        "stdout": "starts-at-the-commit\n{\"message\":\"Not Found\",\"documentation_url\":\"https://docs.github.com/rest\"}",
+        "stderr": "gh: Not Found (HTTP 404)\n"
+      }
+    },
+    {
+      "id": "gh_api_pages_site_sets_has_pages",
+      "seq": 569903,
+      "targets": [
+        "cli-gh"
+      ],
+      "command": "gh api repos/integ/repo-cli --jq .has_pages; gh api -X POST repos/integ/repo-cli/pages -f 'source[branch]=main' -f 'source[path]=/' --jq '[.html_url, .source, .status]'; gh api repos/integ/repo-cli --jq .has_pages; gh api -X DELETE repos/integ/repo-cli/pages --silent; gh api repos/integ/repo-cli --jq .has_pages",
+      "expect": {
+        "exit": 0,
+        "stdout": "false\n[\"https://integ.github.io/repo-cli/\",{\"branch\":\"main\",\"path\":\"/\"},\"built\"]\ntrue\nfalse\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "gh_api_pages_without_a_site_is_github_404",
+      "seq": 569904,
+      "targets": [
+        "cli-gh"
+      ],
+      "command": "gh api repos/integ/repo-cli/pages",
+      "expect": {
+        "exit": 1,
+        "stdout": "{\"message\":\"Not Found\",\"documentation_url\":\"https://docs.github.com/rest\"}",
+        "stderr": "gh: Not Found (HTTP 404)\n"
+      }
+    },
+    {
+      "id": "gh_api_include_prints_the_status_line_and_headers",
+      "seq": 569905,
+      "targets": [
+        "cli-gh"
+      ],
+      "command": "gh api -i repos/integ/repo-cli --jq .name | sed -n '1p;$p'; gh api --include repos/integ/repo-cli | grep -c '^Content-Type: application/json'; gh api -i repos/integ/repo-cli/pages | head -1",
+      "expect": {
+        "exit": 0,
+        "stdout": "HTTP/1.1 200 OK\nrepo-cli\n1\nHTTP/1.1 404 Not Found\n",
+        "stderr": "gh: Not Found (HTTP 404)\n"
+      }
+    },
+    {
+      "id": "gh_repo_edit_stores_what_it_sends",
+      "seq": 569906,
+      "targets": [
+        "cli-gh"
+      ],
+      "command": "gh repo edit; gh repo edit --visibility private; gh repo edit --description edited --enable-wiki=false --add-topic cli,agents && gh api repos/integ/repo-cli --jq '[.description, .has_wiki, .topics]' && gh repo edit --remove-topic cli && gh repo view --json description,hasWikiEnabled && gh api repos/integ/repo-cli/topics --jq .names",
+      "expect": {
+        "exit": 0,
+        "stdout": "[\"edited\",false,[\"cli\",\"agents\"]]\n{\"description\":\"edited\",\"hasWikiEnabled\":false}\n[\"agents\"]\n",
+        "stderr": "specify properties to edit when not running interactively\nuse of --visibility flag requires --accept-visibility-change-consequences flag\n"
+      }
+    },
+    {
+      "id": "gh_repo_delete_needs_yes_and_a_named_repository",
+      "seq": 569907,
+      "targets": [
+        "cli-gh"
+      ],
+      "command": "gh repo delete integ-user/doomed; gh repo delete --yes; gh repo fork integ/repo-cli --fork-name doomed > /dev/null && gh workflow list -R integ-user/doomed --json name --jq 'map(.name)' && gh run list -R integ-user/doomed --json databaseId && gh repo delete doomed --yes && gh api repos/integ-user/doomed --silent",
+      "expect": {
+        "exit": 1,
+        "stdout": "[\"Archive\",\"CI\"]\n[]\n",
+        "stderr": "--yes required when not running interactively\ncannot non-interactively delete current repository. Please specify a repository or run interactively\ngh: Not Found (HTTP 404)\n"
+      }
+    },
+    {
+      "id": "gh_workflow_follows_a_workflow_file_added_later",
+      "seq": 569908,
+      "targets": [
+        "cli-gh"
+      ],
+      "command": "gh api repos/integ/repo-cli/contents/.github/workflows/build.yml -X PUT -f message=build -f content=bmFtZTogQnVpbGQKb246IHdvcmtmbG93X2Rpc3BhdGNoCg== > /dev/null && gh workflow list --json name --jq 'map(.name)' && gh workflow run build.yml && gh run list --workflow Build --limit 1 --json workflowName,status,event --jq '.[0]'",
+      "expect": {
+        "exit": 0,
+        "stdout": "[\"CI\",\"Build\"]\n{\"event\":\"workflow_dispatch\",\"status\":\"queued\",\"workflowName\":\"Build\"}\n",
+        "stderr": ""
+      }
     }
   ]
 }

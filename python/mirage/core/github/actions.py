@@ -12,6 +12,8 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import base64
+import sys
 from collections.abc import Callable
 from typing import Any
 from urllib.parse import quote
@@ -24,6 +26,8 @@ from mirage.types import JsonValue
 
 WORKFLOW_FILES = (".yml", ".yaml")
 WORKFLOW_LOOKUP = 100
+# gh reads every page of a run's jobs, however many there are.
+ALL_JOBS = sys.maxsize
 
 
 def _actions(ref: RepoRef, tail: str) -> str:
@@ -129,3 +133,80 @@ async def dispatch_workflow(config: GhConfig, ref: RepoRef, workflow: str,
         _actions(ref, f"workflows/{quote(selector, safe='')}/dispatches"),
         body,
         base_url=config.base_url)
+
+
+async def list_jobs(config: GhConfig, ref: RepoRef,
+                    run_id: int) -> list[dict[str, Any]]:
+    """A run's jobs, every page of them, as ``gh run view`` reads them.
+
+    Args:
+        config (GhConfig): the install's configuration.
+        ref (RepoRef): the repository.
+        run_id (int): the run.
+    """
+    return await github_pages(config,
+                              _actions(ref, f"runs/{run_id}/jobs"),
+                              limit=ALL_JOBS,
+                              key="jobs")
+
+
+def _bytes_of(data: "JsonValue | bytes") -> bytes:
+    if isinstance(data, bytes):
+        return data
+    return data.encode() if isinstance(data, str) else b""
+
+
+async def run_log_archive(config: GhConfig, ref: RepoRef,
+                          run_id: int) -> bytes:
+    """A completed run's log archive, the zip GitHub ships its logs as.
+
+    Args:
+        config (GhConfig): the install's configuration.
+        ref (RepoRef): the repository.
+        run_id (int): the run.
+    """
+    return _bytes_of(await github_request(config.token,
+                                          "GET",
+                                          _actions(ref, f"runs/{run_id}/logs"),
+                                          base_url=config.base_url))
+
+
+async def job_log(config: GhConfig, ref: RepoRef, job_id: int) -> bytes:
+    """One job's whole log, where gh turns when the archive holds none.
+
+    Args:
+        config (GhConfig): the install's configuration.
+        ref (RepoRef): the repository.
+        job_id (int): the job.
+    """
+    return _bytes_of(await github_request(config.token,
+                                          "GET",
+                                          _actions(ref, f"jobs/{job_id}/logs"),
+                                          base_url=config.base_url))
+
+
+async def workflow_content(config: GhConfig,
+                           ref: RepoRef,
+                           path: str,
+                           git_ref: str | None = None) -> bytes:
+    """A workflow file's bytes as the repository holds it.
+
+    The one read ``gh workflow view --yaml`` makes, at ``git_ref`` or the
+    default branch.
+
+    Args:
+        config (GhConfig): the install's configuration.
+        ref (RepoRef): the repository.
+        path (str): the workflow's file.
+        git_ref (str | None): the branch or tag, or None for the default.
+    """
+    params = {"ref": git_ref} if git_ref else None
+    data = await github_request(
+        config.token,
+        "GET",
+        f"/repos/{ref.owner}/{ref.repo}/contents/{path}",
+        params=params,
+        base_url=config.base_url)
+    content = data.get("content") if isinstance(data, dict) else None
+    return base64.b64decode("".join(content.split())) if isinstance(
+        content, str) else b""

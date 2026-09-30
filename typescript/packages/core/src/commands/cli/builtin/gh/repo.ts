@@ -15,18 +15,33 @@
 import { FlagView } from '../../../spec/flag_view.ts'
 import {
   createRepo,
+  deleteRepo,
+  editRepo,
   forkRepo,
   listRepos,
   listRepositoryFields,
   login,
   readReadme,
   renameRepo,
+  repoTopics,
   repositoryFields,
+  setRepoTopics,
   viewRepo,
 } from '../../../../core/github/repo.ts'
 import type { CommandFnResult } from '../../../config.ts'
+import { UsageError } from '../../../errors.ts'
+import { IOResult } from '../../../../io/types.ts'
 import type { CLIInvocation } from '../../types.ts'
-import { camel, ghRepo, ghTransport, jsonFields, textOut, textValue, typedOut } from './accessor.ts'
+import {
+  camel,
+  csvValues,
+  ghRepo,
+  ghTransport,
+  jsonFields,
+  textOut,
+  textValue,
+  typedOut,
+} from './accessor.ts'
 import { exported, list, pointer, struct, type Shape } from './shape.ts'
 
 const OWNER = struct(['id', 'string'], ['login', 'string'])
@@ -418,4 +433,125 @@ export async function rename(inv: CLIInvocation): Promise<CommandFnResult> {
   if (name === '') throw new Error('a new repository name is required')
   const renamed = (await renameRepo(transport, target, name)) as { full_name?: string }
   return textOut(`✓ Renamed repository ${renamed.full_name ?? name}\n`)
+}
+
+// `gh repo edit`'s value flags and the field each sets in the one `PATCH` it
+// sends (repo/edit EditRepositoryInput).
+const EDIT_VALUES: readonly (readonly [string, string])[] = [
+  ['description', 'description'],
+  ['homepage', 'homepage'],
+  ['default_branch', 'default_branch'],
+  ['visibility', 'visibility'],
+]
+
+// Its switches, each on bare or with `=true` and off with `=false`.
+const EDIT_SWITCHES: readonly (readonly [string, string])[] = [
+  ['template', 'is_template'],
+  ['enable_issues', 'has_issues'],
+  ['enable_projects', 'has_projects'],
+  ['enable_wiki', 'has_wiki'],
+  ['enable_discussions', 'has_discussions'],
+  ['enable_merge_commit', 'allow_merge_commit'],
+  ['enable_squash_merge', 'allow_squash_merge'],
+  ['enable_rebase_merge', 'allow_rebase_merge'],
+  ['enable_auto_merge', 'allow_auto_merge'],
+  ['delete_branch_on_merge', 'delete_branch_on_merge'],
+  ['allow_forking', 'allow_forking'],
+  ['allow_update_branch', 'allow_update_branch'],
+]
+
+// The switches that ride `security_and_analysis` as `{status}` objects.
+const EDIT_SECURITY: readonly (readonly [string, string])[] = [
+  ['enable_advanced_security', 'advanced_security'],
+  ['enable_secret_scanning', 'secret_scanning'],
+  ['enable_secret_scanning_push_protection', 'secret_scanning_push_protection'],
+]
+
+function switchOn(fl: FlagView, dest: string): boolean {
+  return fl.asBool(dest) || fl.asStr(dest) === 'true'
+}
+
+/**
+ * `gh repo edit`: the settings named on the line in one `PATCH`, and topics
+ * read and replaced whole when `--add-topic` or `--remove-topic` changes
+ * them. With nothing to edit gh would prompt, so it refuses instead, and a
+ * visibility change needs `--accept-visibility-change-consequences`. Like gh
+ * writing to anything but a terminal, success prints nothing.
+ */
+export async function editCmd(inv: CLIInvocation): Promise<CommandFnResult> {
+  const fl = new FlagView(inv.flags)
+  const ref = ghRepo(inv.config, inv.texts[0])
+  const body: Record<string, unknown> = {}
+  for (const [dest, key] of EDIT_VALUES) {
+    const value = fl.asStr(dest)
+    if (value !== undefined) body[key] = value
+  }
+  for (const [dest, key] of EDIT_SWITCHES) {
+    if (fl.raw(dest) !== undefined) body[key] = switchOn(fl, dest)
+  }
+  const security: Record<string, unknown> = {}
+  for (const [dest, key] of EDIT_SECURITY) {
+    if (fl.raw(dest) !== undefined) {
+      security[key] = { status: switchOn(fl, dest) ? 'enabled' : 'disabled' }
+    }
+  }
+  const adds = csvValues(fl.asList('add_topic'))
+  const removes = csvValues(fl.asList('remove_topic'))
+  const accepted = fl.asBool('accept_visibility_change_consequences')
+  const named =
+    Object.keys(body).length + Object.keys(security).length + adds.length + removes.length > 0
+  if (!named && !accepted) {
+    throw new UsageError('specify properties to edit when not running interactively', 1)
+  }
+  if (body.visibility !== undefined && !accepted) {
+    throw new UsageError(
+      'use of --visibility flag requires --accept-visibility-change-consequences flag',
+      1,
+    )
+  }
+  const transport = ghTransport(inv.config)
+  if (Object.keys(security).length > 0) {
+    const node = await repositoryFields(transport, ref, 'viewerCanAdminister')
+    if (node.viewerCanAdminister !== true) {
+      throw new Error(
+        'you do not have sufficient permissions to edit repository security and analysis features',
+      )
+    }
+    body.security_and_analysis = security
+  }
+  if (Object.keys(body).length > 0) await editRepo(transport, ref, body)
+  if (adds.length > 0 || removes.length > 0) {
+    const old = await repoTopics(transport, ref)
+    const next = [...new Set([...old, ...adds])].filter((topic) => !removes.includes(topic))
+    const same = next.length === old.length && next.every((topic) => old.includes(topic))
+    if (!same) await setRepoTopics(transport, ref, next)
+  }
+  return [new Uint8Array(0), new IOResult()]
+}
+
+/**
+ * `gh repo delete REPO --yes`. A name with no owner is the viewer's, as gh
+ * reads it. The current repository is never deleted by default: gh ignores
+ * `--yes` there and prompts, so without a terminal it refuses. `--confirm`
+ * is gh's deprecated spelling of `--yes`, and it warns the way cobra does.
+ */
+export async function deleteCmd(inv: CLIInvocation): Promise<CommandFnResult> {
+  const fl = new FlagView(inv.flags)
+  const confirmed = fl.asBool('yes') || fl.asBool('confirm')
+  const spec = inv.texts[0]
+  if (spec === undefined && confirmed) {
+    throw new UsageError(
+      'cannot non-interactively delete current repository. Please specify a repository or run interactively',
+      1,
+    )
+  }
+  if (!confirmed) throw new UsageError('--yes required when not running interactively', 1)
+  const transport = ghTransport(inv.config)
+  const named = spec ?? ''
+  const ref = ghRepo(inv.config, named.includes('/') ? named : `${await login(transport)}/${named}`)
+  await deleteRepo(transport, ref)
+  const warning = fl.asBool('confirm')
+    ? 'Flag --confirm has been deprecated, use `--yes` instead\n'
+    : ''
+  return [new Uint8Array(0), new IOResult({ stderr: new TextEncoder().encode(warning) })]
 }

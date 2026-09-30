@@ -14,7 +14,7 @@
 
 import type { Ctx, KitRoute, Reply } from '../kit/typescript/index.ts'
 import type { C } from './config.ts'
-import { branchFor, treeOfBranch } from './store.ts'
+import { treeOf } from './store.ts'
 import type { RepoRow } from './store.ts'
 import { authedRoute, fail, param, route, withRepo } from './http.ts'
 import { repoRoutes } from './repos.ts'
@@ -26,6 +26,7 @@ import { pullRoutes } from './pulls.ts'
 import { releaseRoutes } from './releases.ts'
 import { actionRoutes } from './actions.ts'
 import { compareRoutes } from './compare.ts'
+import { pageRoutes } from './pages.ts'
 import { searchRoutes } from './search.ts'
 import { stripSlash } from '../kit/typescript/index.ts'
 
@@ -39,9 +40,8 @@ function looksTextual(data: Buffer): boolean {
 }
 
 async function rawContent(ctx: Ctx<C>, repo: RepoRow): Promise<Reply> {
-  const branch = await branchFor(ctx.db, ctx.tenant, repo, param(ctx, 'ref'))
-  if (branch === null) return fail(404, 'Not Found')
-  const files = await treeOfBranch(ctx.db, ctx.tenant, repo, branch)
+  const files = await treeOf(ctx.db, ctx.tenant, repo, param(ctx, 'ref'))
+  if (files === null) return fail(404, 'Not Found')
   const data = files.get(stripSlash(param(ctx, 'path')))
   if (data === undefined) return fail(404, 'Not Found')
   const type = looksTextual(data) ? 'text/plain' : 'application/octet-stream'
@@ -67,6 +67,7 @@ export function githubRoutes(): KitRoute<C>[] {
     ...pullRoutes(),
     ...releaseRoutes(),
     ...compareRoutes(),
+    ...pageRoutes(),
     ...searchRoutes(),
     route<C>('GET', '/raw/:owner/:repo/:ref/*path', authedRoute(withRepo(rawContent))),
   ]

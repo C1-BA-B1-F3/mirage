@@ -20,7 +20,6 @@ import type { CommitRow } from './wire.ts'
 import {
   addBranch,
   blobBySha,
-  branchFor,
   branchNames,
   commitList,
   commitsBySha,
@@ -28,8 +27,10 @@ import {
   keepTree,
   reaches,
   repoIsEmpty,
+  resolveRef,
   stageTree,
   stagedTree,
+  treeAt,
   treeOfBranch,
   visibleHeadOf,
 } from './store.ts'
@@ -147,12 +148,11 @@ const createCommit = withRepo(async (ctx, repo) => {
 // that point as its head, so it SHARES the history behind it and diverges only
 // in what each ref is pointed at next.
 //
-// The base is resolved as a COMMIT OBJECT first and only then as a ref,
-// because those are two different questions and only the second one needs a
-// branch to already contain the commit. A client that commits and then creates
-// the branch at that sha is naming an object no ref has reached yet, and
-// asking which existing branch holds it answers "none" for a commit that is
-// perfectly real.
+// The base is resolved as what it names, a commit object or a branch, and
+// never as "the branch that holds this sha": a client that commits and then
+// creates the branch at that sha is naming an object no ref has reached yet,
+// and asking which existing branch holds it answers "none" for a commit that
+// is perfectly real.
 const createRef = withRepo(async (ctx, repo) => {
   const body = jsonBodyOf(ctx)
   const ref = stripSlash(str(body, 'ref'))
@@ -161,35 +161,31 @@ const createRef = withRepo(async (ctx, repo) => {
   if (name === '') return fail(422, 'Invalid request.\n\n"ref" is invalid.')
   const names = await branchNames(ctx.db, ctx.tenant, repo)
   if (names.includes(name)) return fail(422, 'Reference already exists')
-  const asked = str(body, 'sha')
-  const object =
-    asked === ''
-      ? null
-      : ((await ctx.db.githubCommit.findFirst({
-          where: { tenant: ctx.tenant, repo: repo.fullName, sha: asked },
-        })) as CommitRow | null)
+  const at = await resolveRef(ctx.db, ctx.tenant, repo, str(body, 'sha'))
   // A commit carries its own tree, so the branch is populated from the commit
   // that was named rather than from a branch that happens to hold it. Those are
   // different answers whenever that branch has moved on since, and reading the
   // branch reported the newer files under the older sha.
-  const staged = object === null ? null : await stagedTree(ctx.db, ctx.tenant, repo, object.treeSha)
-  if (object !== null && staged === null) return fail(422, 'Object does not exist')
-  // Only a sha no commit row answers for is resolved as a ref, which is how a
-  // branch name, HEAD, the empty string and the synthesized root all arrive.
-  const base = object !== null ? null : await branchFor(ctx.db, ctx.tenant, repo, asked)
-  if (object === null && base === null) return fail(422, 'Object does not exist')
+  const files = at === null ? null : await treeAt(ctx.db, ctx.tenant, repo, at)
+  if (at === null || files === null) return fail(422, 'Object does not exist')
   // Recorded before the files are copied, because a branch off an empty
   // repository copies none and would otherwise not exist at all.
   await addBranch(ctx.db, ctx.tenant, repo.fullName, name)
+  // A synthesized root is no stored commit, so a branch started on one keeps
+  // no head and derives the same root from the files it is given.
+  const named = at.history[0]
   const startAt =
-    object !== null ? object.sha : base === null ? '' : await headOf(ctx.db, ctx.tenant, repo, base)
+    at.branch !== null
+      ? await headOf(ctx.db, ctx.tenant, repo, at.branch)
+      : named !== undefined && named.treeSha !== ''
+        ? named.sha
+        : ''
   if (startAt !== '') {
     await ctx.db.githubBranch.updateMany({
       where: { tenant: ctx.tenant, repo: repo.fullName, name },
       data: { headSha: startAt },
     })
   }
-  const files = staged ?? (await treeOfBranch(ctx.db, ctx.tenant, repo, base ?? repo.defaultBranch))
   let seq = 0
   for (const [path, data] of files) {
     await ctx.db.githubFile.create({

@@ -12,6 +12,8 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+from collections.abc import Mapping
+
 from pydantic import BaseModel, ValidationError
 
 from mirage.commands.cli.types import CLISpec
@@ -48,10 +50,12 @@ class CLIRegistry:
     def __init__(self) -> None:
         self._installs: dict[str, CLIInstall] = {}
 
-    def install(self,
-                name: str,
-                spec: CLISpec,
-                config: dict[str, JsonValue] | None = None) -> CLIInstall:
+    def install(
+        self,
+        name: str,
+        spec: CLISpec,
+        config: Mapping[str, JsonValue] | BaseModel | None = None
+    ) -> CLIInstall:
         """Install a CLI under a head word.
 
         Args:
@@ -60,8 +64,9 @@ class CLIRegistry:
                 shell builtin, or a general command (a runtime capture
                 of the same name is fine: the policy steers per line).
             spec (CLISpec): the program tree.
-            config (dict[str, JsonValue] | None): installation config,
-                validated through the spec's ``config_model``.
+            config (Mapping[str, JsonValue] | BaseModel | None):
+                installation config: a mapping, validated through the
+                spec's ``config_model``, or an instance of that model.
         """
         if not name or any(ch.isspace() for ch in name):
             raise ValueError(f"CLI name {name!r} must be a single word")
@@ -83,25 +88,39 @@ class CLIRegistry:
         return install
 
     def _validate_config(
-        self, name: str, spec: CLISpec, config: dict[str, JsonValue] | None
+        self, name: str, spec: CLISpec,
+        config: Mapping[str, JsonValue] | BaseModel | None
     ) -> BaseModel | dict[str, JsonValue] | None:
         """Validate an installation config against the spec's model.
+
+        An instance of the spec's own ``config_model`` is taken as it is,
+        since pydantic validated it when it was built; any other value
+        that is not a mapping is refused by type, rather than having its
+        iteration read as a list of unknown keys.
 
         Args:
             name (str): installed head word, for error attribution.
             spec (CLISpec): the program tree carrying ``config_model``.
-            config (dict[str, JsonValue] | None): raw config mapping.
+            config (Mapping[str, JsonValue] | BaseModel | None): a raw
+                config mapping, or an instance of ``config_model``.
         """
+        model = spec.config_model
+        if model is not None and isinstance(config, model):
+            return config
+        if config is not None and not isinstance(config, Mapping):
+            expected = ("a mapping" if model is None else
+                        f"a mapping or a {model.__name__}")
+            raise ValueError(f"CLI {name!r}: config must be {expected}, "
+                             f"got {type(config).__name__}")
         if spec.script is not None:
             # A script spec has no config_model: the mapping passes
             # through as-is for the program to consume.
             return dict(config) if config else None
-        if spec.config_model is None:
+        if model is None:
             if config:
                 raise ValueError(f"CLI {name!r}: config given but "
                                  f"{spec.name!r} declares no config_model")
             return None
-        model = spec.config_model
         # Unknown keys fail loud (a typo'd YAML key must not be
         # silently ignored) unless the model itself opts into extras.
         if model.model_config.get("extra") != "allow":

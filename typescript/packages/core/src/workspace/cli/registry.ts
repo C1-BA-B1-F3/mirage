@@ -82,6 +82,14 @@ export class CLIRegistry {
     spec: CLISpec,
     config: Record<string, unknown> | null,
   ): unknown {
+    // A config that is not an object is refused by type, rather than having
+    // its entries read as unknown keys. One the schema already parsed is
+    // still an object with the schema's own keys, so it installs as given,
+    // which is what the python arm does with an instance of its model.
+    if (config !== null && (typeof config !== 'object' || Array.isArray(config))) {
+      const kind = Array.isArray(config) ? 'array' : typeof config
+      throw new Error(`CLI '${name}': config must be an object, got ${kind}`)
+    }
     if (spec.script !== null) {
       // A script spec has no configModel: the mapping passes through
       // as-is for the program to consume.

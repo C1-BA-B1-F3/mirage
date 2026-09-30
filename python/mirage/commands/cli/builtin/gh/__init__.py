@@ -43,6 +43,21 @@ TITLE = Option(short="-t", long="--title", type="str")
 NUMBER = Operand(type="str", name="NUMBER", required=True)
 
 
+def _toggle(long: str, description: str) -> Option:
+    """A gh boolean flag: on bare or with ``=true``, off with ``=false``,
+    as pflag reads one.
+
+    Args:
+        long (str): the flag's spelling.
+        description (str): what it does.
+    """
+    return Option(long=long,
+                  type="str",
+                  value_optional=True,
+                  choices=("true", "false"),
+                  description=description)
+
+
 def _issue() -> CLISpec:
     return CLISpec(name="issue",
                    description="Manage issues",
@@ -220,6 +235,68 @@ def _pr() -> CLISpec:
                    ))
 
 
+# `gh repo edit`'s flags, each named and described as gh 2.85 has it.
+REPO_EDIT_OPTIONS = (
+    Option(short="-d",
+           long="--description",
+           type="str",
+           description="Description of the repository"),
+    Option(short="-h",
+           long="--homepage",
+           type="str",
+           description="Repository home page URL"),
+    Option(long="--default-branch",
+           type="str",
+           description="Set the default branch name for the repository"),
+    Option(long="--visibility",
+           type="str",
+           choices=("public", "private", "internal"),
+           description="Change the visibility of the repository to "
+           "{public,private,internal}"),
+    _toggle("--template",
+            "Make the repository available as a template repository"),
+    _toggle("--enable-issues", "Enable issues in the repository"),
+    _toggle("--enable-projects", "Enable projects in the repository"),
+    _toggle("--enable-wiki", "Enable wiki in the repository"),
+    _toggle("--enable-discussions", "Enable discussions in the repository"),
+    _toggle("--enable-merge-commit",
+            "Enable merging pull requests via merge commit"),
+    _toggle("--enable-squash-merge",
+            "Enable merging pull requests via squashed commit"),
+    _toggle("--enable-rebase-merge",
+            "Enable merging pull requests via rebase"),
+    _toggle("--enable-auto-merge", "Enable auto-merge functionality"),
+    _toggle("--enable-advanced-security",
+            "Enable advanced security in the repository"),
+    _toggle("--enable-secret-scanning",
+            "Enable secret scanning in the repository"),
+    _toggle("--enable-secret-scanning-push-protection",
+            "Enable secret scanning push protection in the repository"),
+    _toggle("--delete-branch-on-merge",
+            "Delete head branch when pull requests are merged"),
+    _toggle("--allow-forking", "Allow forking of an organization repository"),
+    _toggle(
+        "--allow-update-branch",
+        "Allow a pull request head branch that is behind its base branch to "
+        "be updated"),
+    Option(long="--add-topic",
+           type="str",
+           multiple=True,
+           description="Add repository topic"),
+    Option(long="--remove-topic",
+           type="str",
+           multiple=True,
+           description="Remove repository topic"),
+    Option(long="--accept-visibility-change-consequences",
+           description="Accept the consequences of changing the repository "
+           "visibility"),
+)
+REPO_DELETE_OPTIONS = (
+    Option(long="--yes", description="Confirm deletion without prompting"),
+    Option(long="--confirm", description="Deprecated: use --yes instead"),
+)
+
+
 def _repo() -> CLISpec:
     return CLISpec(name="repo",
                    description="Manage repositories",
@@ -267,6 +344,20 @@ def _repo() -> CLISpec:
                                                    name="NEW-NAME",
                                                    required=True), ),
                                options=(REPO, )),
+                       CLISpec(name="edit",
+                               description="Edit repository settings",
+                               fn=repo_commands.edit_cmd,
+                               write=True,
+                               positional=(Operand(type="str",
+                                                   name="REPOSITORY"), ),
+                               options=REPO_EDIT_OPTIONS),
+                       CLISpec(name="delete",
+                               description="Delete a repository",
+                               fn=repo_commands.delete_cmd,
+                               write=True,
+                               positional=(Operand(type="str",
+                                                   name="REPOSITORY"), ),
+                               options=REPO_DELETE_OPTIONS),
                    ))
 
 
@@ -308,6 +399,32 @@ def _release() -> CLISpec:
                    ))
 
 
+# `gh run view`'s flags: the summary's, and gh 2.85's two log views.
+RUN_VIEW_OPTIONS = (
+    REPO,
+    JSON,
+    JQ,
+    Option(long="--exit-status"),
+    Option(long="--log",
+           description="View full log for either a run or specific job"),
+    Option(long="--log-failed",
+           description="View the log for any failed steps in a run or "
+           "specific job"),
+)
+# `gh workflow view`'s flags, `--ref` only beside `--yaml`, as in gh 2.85.
+WORKFLOW_VIEW_OPTIONS = (
+    REPO,
+    Option(short="-y",
+           long="--yaml",
+           description="View the workflow yaml file"),
+    Option(short="-r",
+           long="--ref",
+           type="str",
+           description="The branch or tag name which contains the version of "
+           "the workflow file you'd like to view"),
+)
+
+
 def _run() -> CLISpec:
     return CLISpec(name="run",
                    description="View workflow runs",
@@ -346,8 +463,7 @@ def _run() -> CLISpec:
                                positional=(Operand(type="str",
                                                    name="RUN-ID",
                                                    required=True), ),
-                               options=(REPO, JSON, JQ,
-                                        Option(long="--exit-status"))),
+                               options=RUN_VIEW_OPTIONS),
                        CLISpec(name="rerun",
                                description="Rerun a workflow run",
                                fn=action_commands.run_rerun_cmd,
@@ -384,7 +500,7 @@ def _workflow() -> CLISpec:
                                positional=(Operand(type="str",
                                                    name="WORKFLOW",
                                                    required=True), ),
-                               options=(REPO, )),
+                               options=WORKFLOW_VIEW_OPTIONS),
                        CLISpec(name="run",
                                description="Run a workflow",
                                fn=action_commands.workflow_run_cmd,
@@ -443,6 +559,10 @@ GH = CLISpec(
                            long="--header",
                            type="str",
                            multiple=True),
+                    Option(short="-i",
+                           long="--include",
+                           description="Include HTTP response status line "
+                           "and headers in the output"),
                     Option(long="--input", type="path"),
                     JQ,
                     Option(long="--paginate"),

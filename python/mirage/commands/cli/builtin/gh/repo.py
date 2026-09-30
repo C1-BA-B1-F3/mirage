@@ -15,18 +15,22 @@
 from dataclasses import dataclass
 from typing import Any, Literal
 
-from mirage.commands.cli.builtin.gh.accessor import (camel, gh_repo,
-                                                     json_fields, list_limit,
-                                                     text_out, typed_out)
+from mirage.commands.cli.builtin.gh.accessor import (camel, csv_values,
+                                                     gh_repo, json_fields,
+                                                     list_limit, text_out,
+                                                     typed_out)
 from mirage.commands.cli.builtin.gh.shape import (ListOf, Shape, exported,
                                                   pointer, struct)
 from mirage.commands.cli.types import CLIInvocation
+from mirage.commands.errors import UsageError
 from mirage.commands.spec.flag_view import FlagView
 from mirage.core.github.config import GhConfig
-from mirage.core.github.repo import (create_repo, fork_repo, list_repos,
+from mirage.core.github.repo import (create_repo, delete_repo, edit_repo,
+                                     fork_repo, list_repos,
                                      list_repository_fields, login,
-                                     read_readme, rename_repo,
-                                     repository_fields, view_repo)
+                                     read_readme, rename_repo, repo_topics,
+                                     repository_fields, set_repo_topics,
+                                     view_repo)
 from mirage.io.types import ByteSource, IOResult
 from mirage.types import JsonValue
 
@@ -391,3 +395,124 @@ async def rename(
     landed = renamed.get("full_name") if isinstance(renamed, dict) else None
     full = landed if isinstance(landed, str) else name
     return text_out(f"✓ Renamed repository {full}\n")
+
+
+# `gh repo edit`'s value flags and the field each sets in the one PATCH it
+# sends (repo/edit EditRepositoryInput).
+EDIT_VALUES = (("description", "description"), ("homepage", "homepage"),
+               ("default_branch", "default_branch"), ("visibility",
+                                                      "visibility"))
+
+# Its switches, each on bare or with `=true` and off with `=false`.
+EDIT_SWITCHES = (
+    ("template", "is_template"),
+    ("enable_issues", "has_issues"),
+    ("enable_projects", "has_projects"),
+    ("enable_wiki", "has_wiki"),
+    ("enable_discussions", "has_discussions"),
+    ("enable_merge_commit", "allow_merge_commit"),
+    ("enable_squash_merge", "allow_squash_merge"),
+    ("enable_rebase_merge", "allow_rebase_merge"),
+    ("enable_auto_merge", "allow_auto_merge"),
+    ("delete_branch_on_merge", "delete_branch_on_merge"),
+    ("allow_forking", "allow_forking"),
+    ("allow_update_branch", "allow_update_branch"),
+)
+
+# The switches that ride `security_and_analysis` as `{status}` objects.
+EDIT_SECURITY = (
+    ("enable_advanced_security", "advanced_security"),
+    ("enable_secret_scanning", "secret_scanning"),
+    ("enable_secret_scanning_push_protection",
+     "secret_scanning_push_protection"),
+)
+
+
+def _switch_on(fl: FlagView, dest: str) -> bool:
+    return fl.as_bool(dest) or fl.as_str(dest) == "true"
+
+
+async def edit_cmd(
+        inv: CLIInvocation[GhConfig]) -> tuple[ByteSource | None, IOResult]:
+    """``gh repo edit``.
+
+    The settings named on the line in one PATCH, and topics read and
+    replaced whole when ``--add-topic`` or ``--remove-topic`` changes them.
+    With nothing to edit gh would prompt, so it refuses instead, and a
+    visibility change needs ``--accept-visibility-change-consequences``.
+    Like gh writing to anything but a terminal, success prints nothing.
+
+    Args:
+        inv (CLIInvocation[GhConfig]): the invocation.
+    """
+    fl = FlagView(inv.flags)
+    ref = gh_repo(inv.config, inv.texts[0] if inv.texts else None)
+    body: dict[str, JsonValue] = {}
+    for dest, key in EDIT_VALUES:
+        value = fl.as_str(dest)
+        if value is not None:
+            body[key] = value
+    for dest, key in EDIT_SWITCHES:
+        if fl.raw(dest) is not None:
+            body[key] = _switch_on(fl, dest)
+    security: dict[str, JsonValue] = {}
+    for dest, key in EDIT_SECURITY:
+        if fl.raw(dest) is not None:
+            security[key] = {
+                "status": "enabled" if _switch_on(fl, dest) else "disabled"
+            }
+    adds = csv_values(fl.as_list("add_topic"))
+    removes = csv_values(fl.as_list("remove_topic"))
+    accepted = fl.as_bool("accept_visibility_change_consequences")
+    if not (body or security or adds or removes or accepted):
+        raise UsageError(
+            "specify properties to edit when not running interactively", 1)
+    if "visibility" in body and not accepted:
+        raise UsageError(
+            "use of --visibility flag requires "
+            "--accept-visibility-change-consequences flag", 1)
+    if security:
+        node = await repository_fields(inv.config, ref, "viewerCanAdminister")
+        if node.get("viewerCanAdminister") is not True:
+            raise ValueError("you do not have sufficient permissions to edit "
+                             "repository security and analysis features")
+        body["security_and_analysis"] = security
+    if body:
+        await edit_repo(inv.config, ref, body)
+    if adds or removes:
+        old = await repo_topics(inv.config, ref)
+        wanted = list(dict.fromkeys([*old, *adds]))
+        new = [topic for topic in wanted if topic not in removes]
+        if len(new) != len(old) or any(topic not in old for topic in new):
+            await set_repo_topics(inv.config, ref, new)
+    return b"", IOResult()
+
+
+async def delete_cmd(
+        inv: CLIInvocation[GhConfig]) -> tuple[ByteSource | None, IOResult]:
+    """``gh repo delete REPO --yes``.
+
+    A name with no owner is the viewer's, as gh reads it. The current
+    repository is never deleted by default: gh ignores ``--yes`` there and
+    prompts, so without a terminal it refuses. ``--confirm`` is gh's
+    deprecated spelling of ``--yes``, and it warns the way cobra does.
+
+    Args:
+        inv (CLIInvocation[GhConfig]): the invocation.
+    """
+    fl = FlagView(inv.flags)
+    confirmed = fl.as_bool("yes") or fl.as_bool("confirm")
+    spec = inv.texts[0] if inv.texts else None
+    if spec is None and confirmed:
+        raise UsageError(
+            "cannot non-interactively delete current repository. Please "
+            "specify a repository or run interactively", 1)
+    if not confirmed:
+        raise UsageError("--yes required when not running interactively", 1)
+    named = spec or ""
+    if "/" not in named:
+        named = f"{await login(inv.config)}/{named}"
+    await delete_repo(inv.config, gh_repo(inv.config, named))
+    warning = (b"Flag --confirm has been deprecated, use `--yes` instead\n"
+               if fl.as_bool("confirm") else b"")
+    return b"", IOResult(stderr=warning)

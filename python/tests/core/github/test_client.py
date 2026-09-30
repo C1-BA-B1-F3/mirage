@@ -12,13 +12,16 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import socket
+
 import pytest
 import pytest_asyncio
 from aiohttp import web
 
-from mirage.core.github.client import (GitHubApiError, github_headers,
-                                       github_request, github_request_response,
-                                       github_url, graphql_url)
+from mirage.core.github.client import (GitHubApiError, GitHubConnectionError,
+                                       github_headers, github_request,
+                                       github_request_response, github_url,
+                                       graphql_url)
 from mirage.core.github.config import GitHubConfig
 
 
@@ -77,6 +80,10 @@ async def _echo(request: web.Request) -> web.Response:
         "content_type": request.headers.get("Content-Type"),
         "accept": request.headers.get("Accept"),
     })
+    if isinstance(REPLY["body"], bytes):
+        return web.Response(status=REPLY["status"],
+                            body=REPLY["body"],
+                            content_type=REPLY["content_type"])
     return web.Response(status=REPLY["status"],
                         text=REPLY["body"],
                         content_type="application/json",
@@ -237,3 +244,74 @@ async def test_graphql_goes_outside_an_enterprise_rest_base(base_url):
         ("GET", "/api/v3/repos/o/r"),
         ("GET", "/api/v3/graphql"),
     ]
+
+
+# `gh api -i` prints a failing response's headers as it prints any other's.
+@pytest.mark.asyncio
+async def test_request_error_carries_the_response_headers(base_url):
+    REPLY.update({"status": 404, "body": '{"message":"Not Found"}'})
+    with pytest.raises(GitHubApiError) as caught:
+        await github_request("t", "GET", "/repos/o/r", base_url=base_url)
+    assert caught.value.headers["x-page"] == "next"
+    assert caught.value.headers["content-type"].startswith("application/json")
+
+
+@pytest.mark.asyncio
+async def test_request_hands_a_binary_body_back_as_bytes(base_url):
+    REPLY.update({
+        "status": 200,
+        "body": b"PK\x05\x06\xff",
+        "content_type": "application/zip"
+    })
+    assert await github_request("t",
+                                "GET",
+                                "/repos/o/r/actions/runs/1/logs",
+                                base_url=base_url) == b"PK\x05\x06\xff"
+
+
+@pytest.mark.asyncio
+async def test_request_reads_a_text_body_as_text(base_url):
+    REPLY.update({
+        "status": 200,
+        "body": b"line one\n",
+        "content_type": "text/plain"
+    })
+    assert await github_request("t",
+                                "GET",
+                                "/repos/o/r/actions/jobs/1/logs",
+                                base_url=base_url) == "line one\n"
+
+
+def _closed_port() -> int:
+    with socket.socket() as probe:
+        probe.bind(("127.0.0.1", 0))
+        return probe.getsockname()[1]
+
+
+# A call that got no response is no status at all: gh names the failure and
+# exits at once. Measured against gh 2.85 (2026-09-30): a refused connection
+# reads as Go's client reports it, an unknown host as printError words it.
+@pytest.mark.asyncio
+async def test_a_refused_connection_is_named_as_go_names_it():
+    port = _closed_port()
+    with pytest.raises(GitHubConnectionError) as caught:
+        await github_request("t",
+                             "GET",
+                             "/repos/o/r",
+                             params={"per_page": "1"},
+                             base_url=f"http://127.0.0.1:{port}")
+    assert str(caught.value) == (
+        f'Get "http://127.0.0.1:{port}/repos/o/r?per_page=1": '
+        f"dial tcp 127.0.0.1:{port}: connect: connection refused")
+
+
+@pytest.mark.asyncio
+async def test_a_host_that_does_not_resolve_is_named_as_gh_names_it():
+    with pytest.raises(GitHubConnectionError) as caught:
+        await github_request("t",
+                             "POST",
+                             "/repos/o/r/issues", {},
+                             base_url="http://nowhere.invalid")
+    assert str(caught.value) == (
+        "error connecting to nowhere.invalid\n"
+        "check your internet connection or https://githubstatus.com")

@@ -26,11 +26,12 @@ import {
   allRepos,
   delegateFor,
   perRepoModels,
-  branchFor,
   branchNames,
   commitList,
   metaOf,
   repoByName,
+  repoIsEmpty,
+  resolveRef,
   scope,
   treeOfBranch,
 } from './store.ts'
@@ -67,6 +68,7 @@ export function repoJson(repo: RepoRow): JsonValue {
     topics: [],
     archived: false,
     fork: false,
+    has_pages: repo.pagesJson !== '',
     ...rest,
   }
 }
@@ -133,16 +135,16 @@ export async function repositoryNode(
     hasProjectsEnabled: meta.has_projects !== false,
     hasDiscussionsEnabled: meta.has_discussions === true,
     hasWikiEnabled: meta.has_wiki !== false,
-    mergeCommitAllowed: true,
-    squashMergeAllowed: true,
-    rebaseMergeAllowed: true,
+    mergeCommitAllowed: meta.allow_merge_commit !== false,
+    squashMergeAllowed: meta.allow_squash_merge !== false,
+    rebaseMergeAllowed: meta.allow_rebase_merge !== false,
     forkCount: count('forks_count'),
     stargazerCount: count('stargazers_count'),
     watchers: { totalCount: count('watchers_count') },
     codeOfConduct: null,
     contactLinks: [],
     defaultBranchRef: { name: repo.defaultBranch },
-    deleteBranchOnMerge: false,
+    deleteBranchOnMerge: meta.delete_branch_on_merge === true,
     diskUsage: 0,
     fundingLinks: [],
     isArchived: meta.archived === true,
@@ -151,7 +153,7 @@ export async function repositoryNode(
     isInOrganization: !owned,
     isMirror: false,
     isPrivate: meta.private === true,
-    isTemplate: false,
+    isTemplate: meta.is_template === true,
     isUserConfigurationRepository: repo.name === repo.owner,
     licenseInfo: null,
     viewerCanAdminister: true,
@@ -161,7 +163,12 @@ export async function repositoryNode(
     viewerPermission: 'ADMIN',
     viewerPossibleCommitEmails: [email],
     viewerSubscription: owned ? 'SUBSCRIBED' : 'UNSUBSCRIBED',
-    visibility: meta.private === true ? 'PRIVATE' : 'PUBLIC',
+    visibility:
+      typeof meta.visibility === 'string'
+        ? meta.visibility.toUpperCase()
+        : meta.private === true
+          ? 'PRIVATE'
+          : 'PUBLIC',
     repositoryTopics: { nodes: topics.map((name) => ({ topic: { name } })) },
     primaryLanguage: language === null ? null : { name: language },
     languages: { edges: language === null ? [] : [{ size: 0, node: { name: language } }] },
@@ -368,6 +375,8 @@ export function repoRoutes(): KitRoute<C>[] {
       authed(withRepo((_c, r) => ({ status: 200, body: repoJson(r) }))),
     ),
     route<C>('PATCH', `${p}/repos/:owner/:repo`, authed(updateRepo), { write: true }),
+    route<C>('GET', `${p}/repos/:owner/:repo/topics`, repoTopics),
+    route<C>('PUT', `${p}/repos/:owner/:repo/topics`, setRepoTopics, { write: true }),
     route<C>('DELETE', `${p}/repos/:owner/:repo`, authed(deleteRepo), { write: true }),
     route<C>('POST', `${p}/repos/:owner/:repo/forks`, authed(forkRepo), { write: true }),
     route<C>(
@@ -400,14 +409,18 @@ export function repoRoutes(): KitRoute<C>[] {
       authed(
         // Not paged, unlike the repository list: the vendor pages this one and
         // the fake this replaces answered the whole history, which is what the
-        // goldens record. An unresolvable `sha` falls back to the default
-        // branch rather than 404ing, also matching it.
+        // goldens record. `sha` is "SHA or branch to start listing commits
+        // from", so a commit, full or abbreviated, starts the list at itself.
+        // One that names nothing is 404, measured against GitHub (2026-09-29);
+        // listing the default branch instead answered a question nobody asked.
         withRepo(async (ctx, repo) => {
-          const asked = ctx.query.get('sha') ?? ''
-          const branch = (await branchFor(ctx.db, ctx.tenant, repo, asked)) ?? repo.defaultBranch
-          const list = await commitList(ctx.db, ctx.tenant, repo, branch)
-          if (list.length === 0) return fail(409, 'Git Repository is empty.')
-          return { status: 200, body: list.map(commitJson) }
+          if (await repoIsEmpty(ctx.db, ctx.tenant, repo)) {
+            return fail(409, 'Git Repository is empty.')
+          }
+          const at = await resolveRef(ctx.db, ctx.tenant, repo, ctx.query.get('sha') ?? '')
+          if (at === null) return fail(404, 'Not Found')
+          if (at.history.length === 0) return fail(409, 'Git Repository is empty.')
+          return { status: 200, body: at.history.map(commitJson) }
         }),
       ),
     ),
@@ -475,11 +488,74 @@ const createRepo: Handler = async (ctx) => {
   return { status: 201, body: repoJson(created) }
 }
 
+// The settings `PATCH /repos/{owner}/{repo}` stores beside `name` and
+// `default_branch`, by the JSON type each takes. They land in the metadata the
+// repository object and GraphQL both read, so an edit shows up everywhere a
+// fixture's own value would. A field the vendor does not take is ignored, as
+// the vendor ignores it; one of the wrong type refuses the whole request before
+// anything is written.
+const EDITABLE: Record<string, 'string' | 'nullable' | 'boolean' | 'object'> = {
+  description: 'nullable',
+  homepage: 'nullable',
+  private: 'boolean',
+  visibility: 'string',
+  is_template: 'boolean',
+  has_issues: 'boolean',
+  has_projects: 'boolean',
+  has_wiki: 'boolean',
+  has_discussions: 'boolean',
+  allow_squash_merge: 'boolean',
+  allow_merge_commit: 'boolean',
+  allow_rebase_merge: 'boolean',
+  allow_auto_merge: 'boolean',
+  allow_update_branch: 'boolean',
+  allow_forking: 'boolean',
+  delete_branch_on_merge: 'boolean',
+  use_squash_pr_title_as_default: 'boolean',
+  web_commit_signoff_required: 'boolean',
+  archived: 'boolean',
+  squash_merge_commit_title: 'string',
+  squash_merge_commit_message: 'string',
+  merge_commit_title: 'string',
+  merge_commit_message: 'string',
+  security_and_analysis: 'object',
+}
+
+const VISIBILITIES = ['public', 'private', 'internal']
+
+function editType(kind: string, value: JsonValue): string | null {
+  if (kind === 'boolean') return typeof value === 'boolean' ? null : 'boolean'
+  if (kind === 'object') {
+    return typeof value === 'object' && value !== null && !Array.isArray(value) ? null : 'object'
+  }
+  if (typeof value === 'string' || (kind === 'nullable' && value === null)) return null
+  return kind === 'nullable' ? 'string or null' : 'string'
+}
+
 // A rename has to carry the content with it rather than leave an empty
 // repository behind under the new name, which is what a fork-then-rename does.
 const updateRepo: Handler = authed(
   withRepo(async (ctx, repo) => {
     const body = jsonBodyOf(ctx)
+    const edits: Record<string, JsonValue> = {}
+    for (const [key, kind] of Object.entries(EDITABLE)) {
+      const value = body[key]
+      if (value === undefined) continue
+      const wanted = editType(kind, value)
+      if (wanted !== null) {
+        return fail(
+          422,
+          `Invalid request.\n\nFor 'properties/${key}', ${JSON.stringify(value)} is not a ${wanted}.`,
+        )
+      }
+      edits[key] = value
+    }
+    if (typeof edits.visibility === 'string') {
+      if (!VISIBILITIES.includes(edits.visibility)) return fail(422, 'Validation Failed')
+      edits.private = edits.visibility !== 'public'
+    } else if (typeof edits.private === 'boolean') {
+      edits.visibility = edits.private ? 'private' : 'public'
+    }
     const name = str(body, 'name').trim()
     let current = repo
     if (name !== '' && name !== repo.name) {
@@ -490,13 +566,41 @@ const updateRepo: Handler = authed(
       current = (await renameRepo(ctx.db, ctx.tenant, repo, name)) as RepoRow
     }
     const branch = str(body, 'default_branch').trim()
-    if (branch !== '') {
+    const data: { defaultBranch?: string; metaJson?: string } = {}
+    if (branch !== '') data.defaultBranch = branch
+    if (Object.keys(edits).length > 0) {
+      data.metaJson = JSON.stringify({ ...metaOf(current), ...edits })
+    }
+    if (Object.keys(data).length > 0) {
       current = (await ctx.db.githubRepo.update({
         where: { tenant_fullName: { tenant: ctx.tenant, fullName: current.fullName } },
-        data: { defaultBranch: branch },
+        data,
       })) as RepoRow
     }
     return { status: 200, body: repoJson(current) }
+  }),
+)
+
+// The topics `gh repo edit --add-topic` reads and replaces whole: GitHub keeps
+// them as one list, and `PUT` sets that list.
+const repoTopics: Handler = authed(
+  withRepo((_ctx, repo) => {
+    const topics = metaOf(repo).topics
+    return { status: 200, body: { names: Array.isArray(topics) ? topics : [] } }
+  }),
+)
+
+const setRepoTopics: Handler = authed(
+  withRepo(async (ctx, repo) => {
+    const names = jsonBodyOf(ctx).names
+    if (!Array.isArray(names) || names.some((n) => typeof n !== 'string')) {
+      return fail(422, 'Invalid request.\n\n"names" wasn\'t supplied.')
+    }
+    await ctx.db.githubRepo.update({
+      where: { tenant_fullName: { tenant: ctx.tenant, fullName: repo.fullName } },
+      data: { metaJson: JSON.stringify({ ...metaOf(repo), topics: names }) },
+    })
+    return { status: 200, body: { names } }
   }),
 )
 
@@ -516,6 +620,7 @@ async function renameRepo(db: C, tenant: string, repo: RepoRow, name: string): P
       truncated: repo.truncated,
       sourceDir: repo.sourceDir,
       sourceBranch: repo.sourceBranch,
+      pagesJson: repo.pagesJson,
       seq: repo.seq,
     },
   })) as RepoRow

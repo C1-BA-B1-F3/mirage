@@ -31,7 +31,7 @@ import { PathSpec } from '../../../../types.ts'
 import { PartialOutputError } from '../../../errors.ts'
 import { IOResult, materialize } from '../../../../io/types.ts'
 import { api } from './api.ts'
-import { fork, listCmd, rename, summary, view } from './repo.ts'
+import { deleteCmd, editCmd, fork, listCmd, rename, summary, view } from './repo.ts'
 
 const DEC = new TextDecoder()
 
@@ -44,7 +44,7 @@ interface Call {
 
 const CALLS: Call[] = []
 let REPLY: unknown = {}
-let RESPONSES: GitHubResponse[] = []
+let RESPONSES: (GitHubResponse | GitHubApiError)[] = []
 
 class FakeTransport implements GitHubTransport {
   get(path: string, params?: Record<string, string>): Promise<unknown> {
@@ -76,7 +76,8 @@ class FakeTransport implements GitHubTransport {
     if (params !== undefined) call.params = params
     if (headers !== undefined) call.headers = headers
     CALLS.push(call)
-    return Promise.resolve(RESPONSES.shift() ?? { data: REPLY, status: 200, headers: {} })
+    const next = RESPONSES.shift() ?? { data: REPLY, status: 200, headers: {} }
+    return next instanceof Error ? Promise.reject(next) : Promise.resolve(next)
   }
 }
 
@@ -136,6 +137,8 @@ describe('gh tree', () => {
       'create',
       'fork',
       'rename',
+      'edit',
+      'delete',
     ])
     const groups = Object.fromEntries(
       GH.subcommands.map((group) => [group.name, group.subcommands.map((leaf) => leaf.name)]),
@@ -327,6 +330,89 @@ describe('gh repo', () => {
 
   // gh takes the new name as the operand and the repository to rename as
   // -R, which is the reverse of what the shape of the line suggests.
+  it('edits the settings named in one PATCH and prints nothing', async () => {
+    reset({ names: ['old', 'keep'], data: { repository: { viewerCanAdminister: true } } })
+    const out = await editCmd(
+      inv(['o/r'], {
+        description: 'd',
+        enable_wiki: 'false',
+        template: true,
+        enable_secret_scanning: 'false',
+        add_topic: ['new,keep'],
+        remove_topic: ['old'],
+      }),
+    )
+    expect(out === null ? '' : text(out)).toBe('')
+    expect(CALLS.map((call) => [call.method, call.path, call.body])).toEqual([
+      ['POST', 'graphql', expect.objectContaining({ variables: { owner: 'o', name: 'r' } })],
+      [
+        'PATCH',
+        '/repos/o/r',
+        {
+          description: 'd',
+          has_wiki: false,
+          is_template: true,
+          security_and_analysis: { secret_scanning: { status: 'disabled' } },
+        },
+      ],
+      ['GET', '/repos/o/r/topics', undefined],
+      ['PUT', '/repos/o/r/topics', { names: ['keep', 'new'] }],
+    ])
+  })
+
+  it('refuses a security edit the viewer cannot administer', async () => {
+    reset({ data: { repository: { viewerCanAdminister: false } } })
+    await expect(editCmd(inv(['o/r'], { enable_secret_scanning: true }))).rejects.toThrow(
+      'you do not have sufficient permissions to edit repository security and analysis features',
+    )
+    expect(CALLS.map((call) => call.method)).toEqual(['POST'])
+  })
+
+  it('leaves the topics alone when the edit changes none', async () => {
+    reset({ names: ['keep'] })
+    await editCmd(inv(['o/r'], { add_topic: ['keep'], remove_topic: ['gone'] }))
+    expect(CALLS.map((call) => `${call.method} ${call.path}`)).toEqual(['GET /repos/o/r/topics'])
+  })
+
+  it.each([
+    [{}, 'specify properties to edit when not running interactively'],
+    [
+      { visibility: 'private' },
+      'use of --visibility flag requires --accept-visibility-change-consequences flag',
+    ],
+  ])('refuses %o as gh does without a terminal', async (flags, message) => {
+    reset()
+    await expect(editCmd(inv(['o/r'], flags))).rejects.toThrow(message)
+    expect(CALLS).toEqual([])
+  })
+
+  it('deletes a named repository, reading a bare name as the viewer', async () => {
+    reset({ login: 'me' })
+    const out = await deleteCmd(inv(['tools'], { yes: true }))
+    expect(out === null ? '' : text(out)).toBe('')
+    expect(CALLS.map((call) => `${call.method} ${call.path}`)).toEqual([
+      'GET /user',
+      'DELETE /repos/me/tools',
+    ])
+  })
+
+  it('warns that --confirm is --yes under its deprecated name', async () => {
+    reset()
+    const out = await deleteCmd(inv(['o/r'], { confirm: true }))
+    expect(DEC.decode(out?.[1].stderr as Uint8Array)).toBe(
+      'Flag --confirm has been deprecated, use `--yes` instead\n',
+    )
+  })
+
+  it.each([
+    [[], { yes: true }, 'cannot non-interactively delete current repository'],
+    [['o/r'], {}, '--yes required when not running interactively'],
+  ])('refuses to delete %o %o without a terminal', async (texts, flags, message) => {
+    reset()
+    await expect(deleteCmd(inv(texts, flags))).rejects.toThrow(message)
+    expect(CALLS).toEqual([])
+  })
+
   it('renames the -R repository to the operand', async () => {
     reset({ full_name: 'me/after' })
     await rename(inv(['after'], { repo: 'me/before' }))
@@ -591,6 +677,94 @@ describe('gh api', () => {
     reset({ ok: true })
     const out = await api(inv(['x'], { method: 'POST', silent: true }))
     expect(out === null ? '' : text(out)).toBe('')
+  })
+
+  it('copies a body that is not text out as its bytes', async () => {
+    reset()
+    RESPONSES = [{ data: new Uint8Array([0x50, 0x4b, 0xff, 0x00]), status: 200, headers: {} }]
+    const out = await api(inv(['repos/o/r/actions/runs/1/logs']))
+    expect(out?.[0]).toEqual(new Uint8Array([0x50, 0x4b, 0xff, 0x00]))
+  })
+})
+
+// gh 2.85's `-i` (api.go processResponse): the protocol and status, every
+// header but Status in name order ending `\r\n`, a blank `\r\n` line, then
+// the body, for every response, the failing one included.
+describe('gh api --include', () => {
+  const HEADERS = {
+    'x-github-request-id': 'AB:CD',
+    'content-type': 'application/json; charset=utf-8',
+    status: '200 OK',
+  }
+  const HEAD =
+    'HTTP/1.1 200 OK\nContent-Type: application/json; charset=utf-8\r\nX-Github-Request-Id: AB:CD\r\n\r\n'
+
+  it('prints the status line and headers before the body', async () => {
+    reset()
+    RESPONSES = [{ data: { a: 1 }, status: 200, headers: HEADERS }]
+    const out = await api(inv(['x'], { include: true }))
+    expect(out === null ? '' : text(out)).toBe(`${HEAD}{"a":1}`)
+  })
+
+  it('drops the headers of the encoded body it no longer prints', async () => {
+    reset()
+    RESPONSES = [
+      {
+        data: null,
+        status: 204,
+        headers: { 'content-encoding': 'gzip', 'content-length': '20', etag: 'W/"1"' },
+      },
+    ]
+    const out = await api(inv(['x'], { include: true, method: 'DELETE' }))
+    expect(out === null ? '' : text(out)).toBe('HTTP/1.1 204 No Content\nEtag: W/"1"\r\n\r\n')
+  })
+
+  it('heads every page, a newline between, and prints pages as they came', async () => {
+    reset()
+    RESPONSES = [
+      { data: [1], status: 200, headers: { link: '<http://fake/x?page=2>; rel="next"' } },
+      { data: [2], status: 200, headers: {} },
+    ]
+    const out = await api(inv(['x'], { include: true, paginate: true }))
+    expect(out === null ? '' : text(out)).toBe(
+      'HTTP/1.1 200 OK\nLink: <http://fake/x?page=2>; rel="next"\r\n\r\n[1]\nHTTP/1.1 200 OK\n\r\n[2]',
+    )
+  })
+
+  it("opens each --slurp page before its head, as gh's writer does", async () => {
+    reset()
+    RESPONSES = [
+      { data: [1], status: 200, headers: { link: '<http://fake/x?page=2>; rel="next"' } },
+      { data: [2], status: 200, headers: {} },
+    ]
+    const out = await api(inv(['x'], { include: true, paginate: true, slurp: true }))
+    expect(out === null ? '' : text(out)).toBe(
+      '[HTTP/1.1 200 OK\nLink: <http://fake/x?page=2>; rel="next"\r\n\r\n[1]\n,HTTP/1.1 200 OK\n\r\n[2]]',
+    )
+  })
+
+  it('keeps the heads under --silent and puts them before --jq output', async () => {
+    reset()
+    RESPONSES = [{ data: { a: 1 }, status: 200, headers: HEADERS }]
+    const silent = await api(inv(['x'], { include: true, silent: true }))
+    expect(silent === null ? '' : text(silent)).toBe(HEAD)
+    RESPONSES = [{ data: { a: 1 }, status: 200, headers: HEADERS }]
+    const filtered = await api(inv(['x'], { include: true, jq: '.a' }))
+    expect(filtered === null ? '' : text(filtered)).toBe(`${HEAD}1\n`)
+  })
+
+  it('heads a failing response too', async () => {
+    reset()
+    RESPONSES = [
+      new GitHubApiError('Not Found', 404, '{"message":"Not Found"}', 'u', {
+        'content-type': 'application/json',
+      }),
+    ]
+    const out = await api(inv(['x'], { include: true }))
+    expect(out === null ? '' : text(out)).toBe(
+      'HTTP/1.1 404 Not Found\nContent-Type: application/json\r\n\r\n{"message":"Not Found"}',
+    )
+    expect(DEC.decode(out?.[1].stderr as Uint8Array)).toBe('gh: Not Found (HTTP 404)\n')
   })
 })
 

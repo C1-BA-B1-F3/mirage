@@ -23,6 +23,10 @@ ws.register_cli("himalaya", HIMALAYA, config.model_dump())
 await ws.shell("himalaya envelope list --unseen --max 5")
 ```
 
+The config is a mapping, validated through the CLI's config model, or an
+instance of that model, taken as it is. Anything else is refused at install
+time.
+
 In YAML the same install rides the `clis:` section:
 
 ```yaml

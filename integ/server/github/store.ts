@@ -29,6 +29,7 @@ export interface RepoRow {
   truncated: boolean
   sourceDir: string
   sourceBranch: string
+  pagesJson: string
   seq: number
 }
 
@@ -250,10 +251,10 @@ export async function stageTree(
   return sha
 }
 
-// A ref is a branch name, HEAD, the empty string, or a commit sha belonging to
-// one branch's history. A fully qualified spelling names the same branch: tool
+// A branch by name: bare, HEAD, the empty string, or fully qualified. Tool
 // schemas advertise `refs/heads/main` and the live API accepts it on every
-// ref-taking parameter.
+// ref-taking parameter. Only a name, never a sha, because a write names the
+// branch it lands on; a read resolves a sha through `resolveRef`.
 export async function branchFor(
   db: C,
   tenant: string,
@@ -269,12 +270,65 @@ export async function branchFor(
     }
   }
   const branches = await branchNames(db, tenant, repo)
-  if (branches.includes(name)) return name
-  for (const branch of branches) {
-    const list = await commitList(db, tenant, repo, branch)
-    if (list.some((c) => c.sha === ref)) return branch
+  return branches.includes(name) ? name : null
+}
+
+// Git's shortest abbreviation, and GitHub's. Measured against GitHub
+// (2026-09-29): four hex digits name a commit in `/commits/{ref}`, `?sha=` and
+// `?ref=`, in either case, and three name nothing.
+const ABBREVIATED_SHA = /^[0-9a-f]{4,40}$/i
+
+// What a ref names. `branch` is set when it names a branch and null when it
+// names one commit by its sha; `history` is newest first from there, which is
+// what `commits?sha=` lists and whose head `commits/{ref}` answers.
+export interface Resolved {
+  branch: string | null
+  history: CommitRow[]
+}
+
+// A branch first, the way git prefers a ref to an object, then one commit by
+// its full or abbreviated sha: any commit the repository holds, a dangling one
+// included, or a branch's synthesized root. A prefix two commits share names
+// neither.
+export async function resolveRef(
+  db: C,
+  tenant: string,
+  repo: RepoRow,
+  ref: string | null,
+): Promise<Resolved | null> {
+  const branch = await branchFor(db, tenant, repo, ref)
+  if (branch !== null) return { branch, history: await commitList(db, tenant, repo, branch) }
+  if (ref === null || !ABBREVIATED_SHA.test(ref)) return null
+  const want = ref.toLowerCase()
+  const found = new Set<string>()
+  const stored = await db.githubCommit.findMany({
+    where: { ...scope(tenant), repo: repo.fullName, sha: { startsWith: want } },
+    select: { sha: true },
+  })
+  for (const row of stored) found.add(row.sha)
+  for (const name of await branchNames(db, tenant, repo)) {
+    const root = (await commitList(db, tenant, repo, name)).at(-1)
+    if (root !== undefined && root.sha.startsWith(want)) found.add(root.sha)
   }
-  return null
+  const [sha] = [...found]
+  if (found.size !== 1 || sha === undefined) return null
+  return { branch: null, history: historyFrom(sha, await commitsBySha(db, tenant, repo)) }
+}
+
+// The files a resolved ref names: a branch's as they are now, a commit's as
+// that commit recorded them. Reading the branch that holds a commit instead
+// answered an older sha with whatever the branch had gained since.
+export async function treeAt(
+  db: C,
+  tenant: string,
+  repo: RepoRow,
+  at: Resolved,
+): Promise<Tree | null> {
+  if (at.branch !== null) return await treeOfBranch(db, tenant, repo, at.branch)
+  const commit = at.history[0]
+  if (commit === undefined) return null
+  if (commit.treeSha !== '') return await stagedTree(db, tenant, repo, commit.treeSha)
+  return await rootTree(db, tenant, repo, commit.sha)
 }
 
 export async function treeOf(
@@ -283,8 +337,33 @@ export async function treeOf(
   repo: RepoRow,
   ref: string | null,
 ): Promise<Tree | null> {
-  const branch = await branchFor(db, tenant, repo, ref)
-  return branch === null ? null : await treeOfBranch(db, tenant, repo, branch)
+  const at = await resolveRef(db, tenant, repo, ref)
+  return at === null ? null : await treeAt(db, tenant, repo, at)
+}
+
+// The sha a tree's synthesized root takes, derived from its content so that a
+// mirror of a repository has the same root as its source.
+export function rootOf(tree: Tree): string {
+  return rootSha([...tree.entries()].map(([p, d]): [string, string] => [p, blobSha(d)]))
+}
+
+// A synthesized root stores no tree, so its files are found by content: a
+// branch still carrying them, or the snapshot the first write kept.
+async function rootTree(db: C, tenant: string, repo: RepoRow, sha: string): Promise<Tree | null> {
+  for (const branch of await branchNames(db, tenant, repo)) {
+    const files = await treeOfBranch(db, tenant, repo, branch)
+    if (files.size > 0 && rootOf(files) === sha) return files
+  }
+  const staged = await db.githubStagedTree.findMany({
+    where: { tenant, repo: repo.fullName },
+    orderBy: { seq: 'asc' },
+    select: { sha: true },
+  })
+  for (const row of staged) {
+    const files = await stagedTree(db, tenant, repo, row.sha)
+    if (files !== null && files.size > 0 && rootOf(files) === sha) return files
+  }
+  return null
 }
 
 // Every commit in one repository, keyed by sha, for walking a chain without a
@@ -353,8 +432,7 @@ export async function visibleHeadOf(
   const stored = await headOf(db, tenant, repo, branch)
   if (stored !== '') return stored
   const tree = await treeOfBranch(db, tenant, repo, branch)
-  if (tree.size === 0) return ''
-  return rootSha([...tree.entries()].map(([p, d]): [string, string] => [p, blobSha(d)]))
+  return tree.size === 0 ? '' : rootOf(tree)
 }
 
 export async function headOf(
@@ -408,15 +486,18 @@ export async function commitList(
   branch: string,
 ): Promise<CommitRow[]> {
   const head = await headOf(db, tenant, repo, branch)
-  const walked = head === '' ? [] : chainFrom(head, await commitsBySha(db, tenant, repo))
-  const last = walked[walked.length - 1]
-  if (last !== undefined) {
-    return last.parentSha === '' ? walked : [...walked, rootCommit(last.parentSha)]
-  }
+  if (head !== '') return historyFrom(head, await commitsBySha(db, tenant, repo))
   const tree = await treeOfBranch(db, tenant, repo, branch)
-  if (tree.size === 0) return []
-  const pairs: Array<[string, string]> = [...tree.entries()].map(([p, d]) => [p, blobSha(d)])
-  return [rootCommit(rootSha(pairs))]
+  return tree.size === 0 ? [] : [rootCommit(rootOf(tree))]
+}
+
+// A commit's history, newest first: the first-parent chain from it and the
+// synthesized root under that chain, or the root alone when the sha is one.
+export function historyFrom(head: string, byId: Map<string, CommitRow>): CommitRow[] {
+  const walked = chainFrom(head, byId)
+  const last = walked.at(-1)
+  if (last === undefined) return [rootCommit(head)]
+  return last.parentSha === '' ? walked : [...walked, rootCommit(last.parentSha)]
 }
 
 export function directoriesOf(files: Tree): Set<string> {

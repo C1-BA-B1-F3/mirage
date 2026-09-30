@@ -15,8 +15,12 @@
 import type { GitHubTransport } from './client.ts'
 import { githubPages } from './paginate.ts'
 import type { RepoRef } from './repo.ts'
+import { decodeBase64 } from '../../utils/base64.ts'
 
 const WORKFLOW_LOOKUP = 100
+// gh reads every page of a run's jobs, however many there are.
+const ALL_JOBS = Number.MAX_SAFE_INTEGER
+const ENC = new TextEncoder()
 
 function actions(ref: RepoRef, tail: string): string {
   return `/repos/${ref.owner}/${ref.repo}/actions/${tail}`
@@ -113,4 +117,62 @@ export async function dispatchWorkflow(
     actions(ref, `workflows/${encodeURIComponent(selector)}/dispatches`),
     body,
   )
+}
+
+/** A run's jobs, every page of them, as `gh run view` reads them. */
+export function listJobs(
+  transport: GitHubTransport,
+  ref: RepoRef,
+  runId: number,
+): Promise<Record<string, unknown>[]> {
+  return githubPages(transport, actions(ref, `runs/${String(runId)}/jobs`), {
+    limit: ALL_JOBS,
+    key: 'jobs',
+  })
+}
+
+// A body a transport handed back as bytes, text, or nothing.
+function bytesOf(data: unknown): Uint8Array {
+  if (data instanceof Uint8Array) return data
+  if (data instanceof ArrayBuffer) return new Uint8Array(data)
+  return typeof data === 'string' ? ENC.encode(data) : new Uint8Array(0)
+}
+
+/** A completed run's log archive, the zip GitHub ships its logs as. */
+export async function runLogArchive(
+  transport: GitHubTransport,
+  ref: RepoRef,
+  runId: number,
+): Promise<Uint8Array> {
+  return bytesOf(await transport.get(actions(ref, `runs/${String(runId)}/logs`)))
+}
+
+/** One job's whole log, where gh turns when the archive holds none for it. */
+export async function jobLog(
+  transport: GitHubTransport,
+  ref: RepoRef,
+  jobId: number,
+): Promise<Uint8Array> {
+  return bytesOf(await transport.get(actions(ref, `jobs/${String(jobId)}/logs`)))
+}
+
+/**
+ * A workflow file's bytes as the repository holds it, at `gitRef` or the
+ * default branch: the one read `gh workflow view --yaml` makes.
+ */
+export async function workflowContent(
+  transport: GitHubTransport,
+  ref: RepoRef,
+  path: string,
+  gitRef?: string,
+): Promise<Uint8Array> {
+  const params = gitRef === undefined || gitRef === '' ? undefined : { ref: gitRef }
+  const data = (await transport.get(
+    `/repos/${ref.owner}/${ref.repo}/contents/${path}`,
+    params,
+  )) as {
+    content?: unknown
+  } | null
+  const content = data?.content
+  return typeof content === 'string' ? decodeBase64(content.replace(/\s/g, '')) : new Uint8Array(0)
 }

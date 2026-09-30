@@ -29,12 +29,13 @@ import type { GitPerson } from './wire.ts'
 import {
   blobBySha,
   branchFor,
-  commitList,
   directoriesOf,
   keepTree,
   repoIsEmpty,
+  resolveRef,
   stageTree,
   submodulesOf,
+  treeAt,
   treeItems,
   treeOf,
   treeOfBranch,
@@ -202,7 +203,6 @@ export async function writeFile(
     })
     return
   }
-  await keepTree(db, tenant, repo, branch)
   await db.githubFile.update({ where: { pk: existing.pk }, data: { data: bytes } })
 }
 
@@ -216,11 +216,12 @@ export async function writeFile(
 const contents = withRepo(async (ctx, repo) => {
   if (await repoIsEmpty(ctx.db, ctx.tenant, repo)) return fail(404, 'This repository is empty.')
   const ref = ctx.query.get('ref') ?? ''
-  const branch = await branchFor(ctx.db, ctx.tenant, repo, ref)
-  if (branch === null || (await visibleHeadOf(ctx.db, ctx.tenant, repo, branch)) === '') {
+  const at = await resolveRef(ctx.db, ctx.tenant, repo, ref)
+  const files =
+    at === null || at.history.length === 0 ? null : await treeAt(ctx.db, ctx.tenant, repo, at)
+  if (files === null) {
     return fail(404, `No commit found for the ref ${ref === '' ? repo.defaultBranch : ref}`)
   }
-  const files = await treeOfBranch(ctx.db, ctx.tenant, repo, branch)
   const path = stripSlash(param(ctx, 'path'))
   const hit = files.get(path)
   if (hit !== undefined) return { status: 200, body: fileJson(path, hit) }
@@ -264,6 +265,10 @@ const putContents = withRepo(async (ctx, repo) => {
   // this request arrived: a seeded branch's root, or none on an empty branch.
   // After the write the same question names a root the ref never reported.
   const parent = await visibleHeadOf(ctx.db, ctx.tenant, repo, branch)
+  // Kept for a new path as well as a replaced one: the first write to a
+  // seeded branch is what moves it off its synthesized root, and that root
+  // reads its files back from this snapshot.
+  await keepTree(ctx.db, ctx.tenant, repo, branch)
   await writeFile(ctx.db, ctx.tenant, repo, branch, path, data)
   const message = str(body, 'message') === '' ? `Update ${path}` : str(body, 'message')
   const commit = await recordCommit(
@@ -333,26 +338,22 @@ const readme = withRepo(async (ctx, repo) => {
 // Emptiness comes first here too, so every ref gets the 409 in an empty
 // repository. Past that, a ref that names no commit is a 422 quoting the ref
 // as it was asked, whether it looks like a sha or like a branch: the vendor
-// says "SHA" either way.
+// says "SHA" either way. A branch names its head and a sha, full or
+// abbreviated, its own commit.
 const oneCommit = withRepo(async (ctx, repo) => {
   if (await repoIsEmpty(ctx.db, ctx.tenant, repo)) return fail(409, 'Git Repository is empty.')
   const ref = param(ctx, 'ref')
-  const branch = await branchFor(ctx.db, ctx.tenant, repo, ref)
-  const history = branch === null ? [] : await commitList(ctx.db, ctx.tenant, repo, branch)
-  const rendered: Array<Record<string, JsonValue>> = history.map((entry) => ({
-    ...(commitJson(entry) as Record<string, JsonValue>),
-    files: commitFiles(pathsOf(entry)),
-  }))
-  // A sha names its own commit; any other spelling branchFor resolves (bare,
-  // HEAD, refs/heads/...) names the head.
-  const hit = rendered.find((entry) => entry.sha === ref) ?? rendered[0]
+  const hit = (await resolveRef(ctx.db, ctx.tenant, repo, ref))?.history[0]
   if (hit === undefined) return fail(422, `No commit found for SHA: ${ref}`)
-  return { status: 200, body: hit }
+  return {
+    status: 200,
+    body: { ...(commitJson(hit) as Record<string, JsonValue>), files: commitFiles(pathsOf(hit)) },
+  }
 })
 
 // The backend passes either a ref name (a recursive whole-tree fetch) or a tree
 // sha from a previous listing (the truncation fallback). A ref is resolved
-// through `branchFor`, which accepts a commit sha too, because a client that
+// through `resolveRef`, which accepts a commit sha too, because a client that
 // resolves a ref to a commit then asks for the tree by that sha: git accepts
 // it, since a commit names its root tree.
 //

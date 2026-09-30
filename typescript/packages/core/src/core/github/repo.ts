@@ -187,6 +187,36 @@ export function forkRepo(
   return transport.request('POST', `/repos/${ref.owner}/${ref.repo}/forks`, body)
 }
 
+/** Change a repository's settings: the one `PATCH` `gh repo edit` sends. */
+export function editRepo(
+  transport: GitHubTransport,
+  ref: RepoRef,
+  body: Record<string, unknown>,
+): Promise<unknown> {
+  return transport.request('PATCH', `/repos/${ref.owner}/${ref.repo}`, body)
+}
+
+/** A repository's topics, which GitHub keeps and replaces as one list. */
+export async function repoTopics(transport: GitHubTransport, ref: RepoRef): Promise<string[]> {
+  const data = (await transport.get(`/repos/${ref.owner}/${ref.repo}/topics`)) as {
+    names?: unknown
+  } | null
+  const names = data?.names
+  return Array.isArray(names) ? names.filter((n): n is string => typeof n === 'string') : []
+}
+
+export function setRepoTopics(
+  transport: GitHubTransport,
+  ref: RepoRef,
+  names: readonly string[],
+): Promise<unknown> {
+  return transport.request('PUT', `/repos/${ref.owner}/${ref.repo}/topics`, { names })
+}
+
+export function deleteRepo(transport: GitHubTransport, ref: RepoRef): Promise<unknown> {
+  return transport.request('DELETE', `/repos/${ref.owner}/${ref.repo}`)
+}
+
 export function renameRepo(
   transport: GitHubTransport,
   ref: RepoRef,

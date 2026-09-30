@@ -43,7 +43,8 @@ import type { Runtime } from '../../../runtime/base.ts'
 import { WorkspaceRuntime } from '../../../runtime/table.ts'
 import type { RouteDecision } from '../../../runtime/routing/index.ts'
 import type { SessionState } from '../../session/session.ts'
-import type { DispatchFn } from '../../../runtime/types.ts'
+import type { DispatchFn, ShellFn } from '../../../runtime/types.ts'
+import type { ExecuteFn } from '../../expand/node.ts'
 import { pathAllowed } from '../../../context/session_context.ts'
 import { CommandTimeoutError } from '../../../commands/errors.ts'
 import { UsageError } from '../../../commands/errors.ts'
@@ -65,6 +66,26 @@ export interface RunOnMountCtx {
   runtimeBindings?: Record<string, Runtime>
   routingDecision?: RouteDecision
   signal?: AbortSignal
+  executeFn?: ExecuteFn
+}
+
+/**
+ * The door a command handler runs a nested line through (`opts.shell`):
+ * the line runs in the calling command's own session, under its signal,
+ * reading the input it is handed.
+ */
+function nestedShell(
+  executeFn: ExecuteFn,
+  session: SessionState,
+  signal: AbortSignal | undefined,
+): ShellFn {
+  return (line: string, stdin: ByteSource | null) =>
+    executeFn(line, {
+      sessionId: session.sessionId,
+      session,
+      stdin,
+      ...(signal !== undefined ? { signal } : {}),
+    })
 }
 
 /**
@@ -227,9 +248,11 @@ export async function dropMountCaches(registry: MountRegistry): Promise<void> {
 // filesystem-error formatting, ls/find post-processing, and read/write key
 // prefixing. handleCommand uses it for the normal path, and passes it (bound)
 // to the cross-mount runners so each operand executes natively on its owning
-// mount. `resolveHint` resolves the mount when `paths` is empty (a stream
-// command running in stdin mode); a pre-resolved `mount` skips resolution and
-// session-mode checks, which the caller already performed.
+// mount. `resolveHint` names the path whose mount runs the command, ahead of
+// the first of `paths`: a stream command in stdin mode has none, and awk over
+// operands on several mounts runs where its first file lives. A pre-resolved
+// `mount` skips resolution and session-mode checks, which the caller already
+// performed.
 export async function runOnMount(
   ctx: RunOnMountCtx,
   cmdName: string,
@@ -243,7 +266,7 @@ export async function runOnMount(
   const hint = opts.resolveHint ?? null
   let mount = opts.mount ?? null
   if (mount === null) {
-    const resolvePaths = paths.length > 0 ? paths : hint !== null ? [hint] : []
+    const resolvePaths = hint !== null ? [hint] : paths
     try {
       mount = await registry.resolveMount(cmdName, resolvePaths, session.cwd)
     } catch (err) {
@@ -320,6 +343,9 @@ export async function runOnMount(
       statPath,
       readdirPath,
       ...(signal !== undefined ? { signal } : {}),
+      ...(ctx.executeFn !== undefined
+        ? { shell: nestedShell(ctx.executeFn, session, signal) }
+        : {}),
       limitOverride,
       ...(opts.argv !== undefined ? { argv: opts.argv } : {}),
     })

@@ -14,7 +14,7 @@
 
 import { describe, expect, it } from 'vitest'
 import { AwkSyntaxError } from './errors.ts'
-import { RuleKind, type Stmt } from './nodes.ts'
+import { GetlineKind, RedirKind, RuleKind, type Stmt } from './nodes.ts'
 import { parse } from './parser.ts'
 
 function firstStmt(src: string): Stmt {
@@ -70,6 +70,62 @@ describe('awk parser', () => {
   it('collects functions', () => {
     const program = parse('function f(a, b) { return a+b } {print f(1,2)}')
     expect(program.functions.get('f')?.params).toEqual(['a', 'b'])
+  })
+
+  it('reads a getline file as a primary', () => {
+    const stmt = firstStmt('{x = getline line < "a" "b"}')
+    expect(stmt).toMatchObject({
+      expr: {
+        value: {
+          type: 'Concat',
+          left: { type: 'Getline', kind: GetlineKind.FILE, source: { type: 'Str', value: 'a' } },
+        },
+      },
+    })
+  })
+
+  it('compares an unparenthesised getline file result', () => {
+    expect(firstStmt('{while (getline line < f > 0) n++}')).toMatchObject({
+      cond: { type: 'Compare', left: { type: 'Getline', target: { type: 'Var', name: 'line' } } },
+    })
+  })
+
+  it('reads the command of an input pipe as a primary', () => {
+    expect(firstStmt('{x = "echo " "hi" | getline}')).toMatchObject({
+      expr: {
+        value: {
+          type: 'Concat',
+          left: { type: 'Str', value: 'echo ' },
+          right: { type: 'Getline', kind: GetlineKind.CMD, source: { type: 'Str', value: 'hi' } },
+        },
+      },
+    })
+    expect(firstStmt('{x = 1 + "cmd" | getline}')).toMatchObject({
+      expr: { value: { type: 'Binary', right: { type: 'Getline' } } },
+    })
+  })
+
+  it('lets operators follow an input pipe result', () => {
+    expect(firstStmt('{x = "cmd" | getline line > 0}')).toMatchObject({
+      expr: {
+        value: {
+          type: 'Compare',
+          left: {
+            type: 'Getline',
+            kind: GetlineKind.CMD,
+            target: { type: 'Var', name: 'line' },
+            source: { type: 'Str', value: 'cmd' },
+          },
+        },
+      },
+    })
+  })
+
+  it('keeps a print pipe an output pipe', () => {
+    expect(firstStmt('{print "x" | "cat"}')).toMatchObject({
+      type: 'Print',
+      redirect: { kind: RedirKind.PIPE },
+    })
   })
 
   it.each(['{print $(}', '{if x print}', '{break}', '{return 1}', '{print', '/[/', '{x = }'])(

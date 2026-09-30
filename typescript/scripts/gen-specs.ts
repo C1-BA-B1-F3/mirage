@@ -244,6 +244,7 @@ function serializeOption(o: Option): Record<string, unknown> {
 
 function specFields(spec: CommandSpec): Record<string, unknown> {
   return {
+    allow_abbrev: spec.allowAbbrev,
     description: spec.description,
     epilog: spec.epilog,
     ignore_tokens: [...spec.ignoreTokens].sort(compareCodePoints),

@@ -4,8 +4,9 @@ import pytest
 
 from mirage.core.awk.builtins import (match_position, next_random, safe_fmod,
                                       safe_log, safe_pow, safe_sqrt,
-                                      split_record, sprintf, substitute,
-                                      substr, take_record)
+                                      split_assignment, split_record, sprintf,
+                                      substitute, substr, take_record,
+                                      unescape)
 from mirage.core.awk.errors import AwkRuntimeError, AwkSyntaxError
 from mirage.core.awk.value import num, strnum, text
 
@@ -190,3 +191,29 @@ def test_rand_sequence_is_the_same_on_both_hosts():
     assert drawn == [
         0.26642920868471265, 0.0003297457005828619, 0.2232720274478197
     ]
+
+
+@pytest.mark.parametrize("raw,expected", [
+    ("a\\tb", "a\tb"),
+    ("a\\nb", "a\nb"),
+    ("a\\\\b", "a\\b"),
+    ("a\\qb", "a\\qb"),
+    ("tail\\", "tail\\"),
+])
+def test_unescape(raw, expected):
+    assert unescape(raw) == expected
+
+
+@pytest.mark.parametrize("operand,expected", [
+    ("x=5", ("x", "5")),
+    ("_a1=", ("_a1", "")),
+    ("x=a=b", ("x", "a=b")),
+    ("x=/data/f", ("x", "/data/f")),
+    ("x=a\\tb", ("x", "a\tb")),
+    ("1x=3", None),
+    ("=x", None),
+    ("/data/x=1", None),
+    ("file", None),
+])
+def test_split_assignment(operand, expected):
+    assert split_assignment(operand) == expected

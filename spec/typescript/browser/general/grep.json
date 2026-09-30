@@ -306,6 +306,19 @@
       "type": "bool"
     },
     {
+      "long": "--perl-regexp",
+      "short": "-P",
+      "type": "bool"
+    },
+    {
+      "long": "--extended-regexp",
+      "type": "bool"
+    },
+    {
+      "long": "--basic-regexp",
+      "type": "bool"
+    },
+    {
       "short": "-o",
       "type": "bool"
     },

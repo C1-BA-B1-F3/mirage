@@ -54,29 +54,34 @@ def test_sets_are_disjoint():
 
 
 def test_strategy_for_stream_commands():
-    for name in ("cat", "nl", "cut", "awk"):
-        assert strategy_for(name, {}) is Strategy.STREAM
+    for name in ("cat", "nl", "cut"):
+        assert strategy_for(name) is Strategy.STREAM
 
 
 def test_strategy_for_fanout_commands():
     for name in ("grep", "sha256sum", "rm", "tee", "rev"):
-        assert strategy_for(name, {}) is Strategy.FANOUT
+        assert strategy_for(name) is Strategy.FANOUT
 
 
 def test_strategy_for_relay_commands():
     for name in ("cp", "mv", "diff", "cmp", "sort", "wc"):
-        assert strategy_for(name, {}) is Strategy.RELAY
+        assert strategy_for(name) is Strategy.RELAY
+
+
+def test_awk_relays_because_it_tells_its_operands_apart():
+    # FILENAME, FNR, ARGV and a var=value operand between two files all
+    # need each file as its own input, which a merged stream loses.
+    assert strategy_for("awk") is Strategy.RELAY
 
 
 def test_ls_relays_because_its_layout_spans_the_whole_line():
     # A per-operand run sees one operand, so it can neither head its
     # block nor sort against the operands living on other mounts.
-    assert strategy_for("ls", {}) is Strategy.RELAY
+    assert strategy_for("ls") is Strategy.RELAY
 
 
-def test_sed_default_streams_but_in_place_fans_out():
-    assert strategy_for("sed", {}) is Strategy.STREAM
-    assert strategy_for("sed", {"i": True}) is Strategy.FANOUT
+def test_sed_relays_to_keep_file_boundaries_and_shared_output():
+    assert strategy_for("sed") is Strategy.RELAY
 
 
 def test_is_cross_mount_true_when_operands_span_mounts():

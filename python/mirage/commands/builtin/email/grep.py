@@ -20,11 +20,13 @@ from mirage.commands.builtin.email._provision import file_read_provision
 from mirage.commands.builtin.email.io import resolve_glob
 from mirage.commands.builtin.generic.grep import grep as generic_grep
 from mirage.commands.builtin.generic_bind.adapter import bound_op
-from mirage.commands.builtin.grep_pattern import compile_pattern, pattern_arg
+from mirage.commands.builtin.grep_pattern import (compile_pattern,
+                                                  matcher_syntax, pattern_arg)
 from mirage.commands.builtin.grep_pushdown import (pushdown_operand,
                                                    search_query,
                                                    text_search_results)
 from mirage.commands.builtin.grep_scan import grep_lines
+from mirage.commands.builtin.types import RegexSyntax
 from mirage.commands.builtin.utils.output import format_records
 from mirage.commands.config import CommandOpts
 from mirage.commands.registry import command
@@ -87,10 +89,10 @@ async def grep(accessor: EmailAccessor, paths: list[PathSpec],
     # the real pattern runs over each candidate. A pattern with no such
     # literal (an alternation, a class with nothing required around it)
     # takes the generic scan rather than a search for the regex's spelling.
-    # grep reads a basic expression unless -E says otherwise, and the
-    # literal has to be read off the same dialect the matcher will use.
-    basic = not fl.as_bool("E")
-    query = (search_query(pattern, fl.as_bool("F"), basic=basic)
+    # grep reads a basic expression unless -E or -P says otherwise, and
+    # the literal has to be read off the same dialect the matcher will use.
+    syntax = matcher_syntax(fl)
+    query = (search_query(pattern, fl.as_bool("F"), syntax)
              if pattern else None)
     if (pattern is not None and query is not None and operand is not None
             and (fl.as_bool("r") or fl.as_bool("R"))):
@@ -108,7 +110,7 @@ async def grep(accessor: EmailAccessor, paths: list[PathSpec],
                                              F=fl.as_bool("F"),
                                              o=fl.as_bool("o"),
                                              max_count=fl.as_int("m"),
-                                             basic=basic)
+                                             syntax=syntax)
 
             if result is not None:
                 return result
@@ -139,7 +141,7 @@ async def _grep_server_side(
     F: bool = False,
     o: bool = False,
     max_count: int | None = None,
-    basic: bool = False,
+    syntax: RegexSyntax = RegexSyntax.BASIC,
 ) -> tuple[ByteSource | None, IOResult] | None:
     file_prefix = mount_prefix_of(operand.virtual, operand.vfs_path)
     pairs = await search_and_format(
@@ -156,7 +158,7 @@ async def _grep_server_side(
 
     # The same dialect the literal was read off: a basic expression
     # compiled as an extended one matches a different language.
-    pat = compile_pattern(pattern, i, F, w, basic)
+    pat = compile_pattern(pattern, i, F, w, syntax)
     all_results: list[str] = []
     any_match = False
     for vfs_path, msg_text in pairs:

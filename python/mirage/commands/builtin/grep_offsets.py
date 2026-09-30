@@ -15,6 +15,7 @@
 import re
 from collections.abc import Sequence
 
+from mirage.commands.builtin.utils.pcre import match_start, match_text
 from mirage.shell.helpers import byte_offset
 
 
@@ -111,7 +112,7 @@ def rust_matches(pat: re.Pattern[str], line: str) -> list[tuple[int, str]]:
         else:
             pos = m.end()
         last_end = m.end()
-        matches.append((m.start(), m.group()))
+        matches.append((match_start(m), match_text(m)))
     return matches
 
 

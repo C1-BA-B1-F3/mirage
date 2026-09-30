@@ -25,7 +25,7 @@ import { specOf } from '../../spec/builtins.ts'
 import { FlagView, flagOccurrences } from '../../spec/flag_view.ts'
 import type { FlagValue, ParsedFlagValue } from '../../spec/types.ts'
 import { decodeLine, encodeLine } from '../grep_offsets.ts'
-import { buildPatternStr, resolvePattern } from '../grep_pattern.ts'
+import { NEVER_MATCH, resolvePattern, rustEscape } from '../grep_pattern.ts'
 import { exitCodeFor } from '../grep_scan.ts'
 import { FileTypes, typeListing, type TypeChange, type TypeSelection } from '../rg_filetypes.ts'
 import { Overrides } from '../rg_glob.ts'
@@ -38,7 +38,6 @@ import {
   walkHaystacks,
 } from '../rg_scan.ts'
 import {
-  hostNamedGroups,
   printsContext,
   type RgFlags,
   searchHaystack,
@@ -49,6 +48,9 @@ import { STDIN_OPERAND } from '../utils/constants.ts'
 import { type LinkDoor, linkDoor } from '../utils/links.ts'
 import { formatOptionalRecords, formatRecords } from '../utils/output.ts'
 import { isStdin, stdinStream } from '../utils/stream.ts'
+import { RegexSyntax } from '../types.ts'
+import { PcreError, hostFlags, translatePcre } from '../utils/pcre.ts'
+import { RustRegexError, translateRust, wholeLine, wholeWord } from '../utils/rust_regex.ts'
 
 const ENC = new TextEncoder()
 // ripgrep's own words for a line with no pattern, exit 2 (14.1.1).
@@ -65,6 +67,8 @@ const STDIN_NAME = '<stdin>'
 const IMPLICIT_CWD = ''
 const SORT_KEYS = ['path', 'modified', 'accessed', 'created', 'none']
 const COLOR_CHOICES = ['never', 'auto', 'always', 'ansi']
+// --engine's values (ripgrep 14.1.1).
+const ENGINES = ['default', 'pcre2', 'auto']
 const SIZE = /^([0-9]+)([KMG]?)$/
 const SIZE_UNIT: Readonly<Record<string, number>> = { '': 1, K: 1 << 10, M: 1 << 20, G: 1 << 30 }
 const U64_MAX = (1n << 64n) - 1n
@@ -303,6 +307,8 @@ export function parseFlags(fl: FlagView): RgFlags {
     if (typeof value === 'string') changes.push([name === 'type_clear' ? 'clear' : 'add', value])
   }
   return {
+    engine: engineFlag(fl),
+    pcre2Unicode: last(fl, 'pcre2_unicode', 'no_pcre2_unicode') !== 'no_pcre2_unicode',
     ignoreCase: caseMode === 'ignore_case',
     smartCase: caseMode === 'smart_case',
     invert: last(fl, 'invert_match', 'no_invert_match') === 'invert_match',
@@ -372,19 +378,104 @@ export function foldsCase(pattern: string, fixed: boolean, f: RgFlags): boolean 
 }
 
 /**
- * The pattern list compiled the way the flags ask. -w and -x, whichever the
- * line gave last, bound the whole list: -x to the line, -w to ripgrep's half
- * word boundaries (no word character just before the match or just after
- * it, which `\b` would also demand inside it). -S folds case only when the
- * pattern is all lowercase. `neverMatch` is the zero-pattern sentinel from
- * `resolvePattern`; it is a regex, so it suppresses -F.
+ * The dialect rg's patterns are written in, for a pushed-down search. `auto`
+ * reads as the default engine's: a pattern only PCRE2 takes fails the default
+ * translation and the search falls back to the generic scan, which runs
+ * PCRE2.
+ */
+export function rgSyntax(f: RgFlags): RegexSyntax {
+  return f.engine === 'pcre2' ? RegexSyntax.PERL : RegexSyntax.RUST
+}
+
+/**
+ * The regex engine the line asks for, the last of -P, --no-pcre2 and
+ * --engine winning (ripgrep 14.1.1: `rg -P --no-pcre2` is the default engine
+ * and `rg --no-pcre2 -P` is PCRE2). Throws for an --engine ripgrep lacks.
+ */
+export function engineFlag(fl: FlagView): string {
+  const chosen = last(fl, 'pcre2', 'no_pcre2', 'engine')
+  if (chosen === 'pcre2') return 'pcre2'
+  if (chosen !== 'engine') return 'default'
+  const value = fl.asStr('engine') ?? ''
+  if (!ENGINES.includes(value)) {
+    throw new UsageError(`rg: error parsing flag --engine: unrecognized regex engine '${value}'`)
+  }
+  return value
+}
+
+// The default engine's matcher, or its refusal in ripgrep's words.
+function rustMatcher(patterns: readonly string[], fold: boolean, f: RgFlags): RegExp {
+  let translated
+  try {
+    translated = translateRust(patterns, fold, f.nullData)
+  } catch (err) {
+    if (err instanceof RustRegexError) throw new UsageError(`rg: ${err.message}`)
+    throw err
+  }
+  let source = translated.source
+  if (f.lineRegexp) source = wholeLine(source, f.nullData)
+  else if (f.wholeWord) source = wholeWord(source)
+  return new RegExp(source, translated.ignoreCase ? 'iu' : 'u')
+}
+
+// The PCRE2 engine's matcher, or its refusal in ripgrep's words. ripgrep
+// hands PCRE2 the list joined as `(?:a)|(?:b)`, wrapped for -w and -x, and
+// the offset in its refusal counts into that string.
+function pcreMatcher(patterns: readonly string[], fold: boolean, f: RgFlags): RegExp {
+  let display = patterns.map((p) => `(?:${p})`).join('|')
+  if (f.lineRegexp) display = `(?m:^)(?:${display})(?m:$)`
+  else if (f.wholeWord) display = `(?<!\\w)(?:${display})(?!\\w)`
+  let translated
+  try {
+    translated = translatePcre(display, f.pcre2Unicode, fold, f.nullData)
+  } catch (err) {
+    if (err instanceof PcreError) {
+      throw new UsageError(
+        `rg: PCRE2: error compiling pattern at offset ${String(err.offset)}: ${err.message}`,
+      )
+    }
+    throw err
+  }
+  return new RegExp(translated.source, hostFlags(translated.source, translated.ignoreCase))
+}
+
+// A literal as a PCRE2 pattern: every ASCII character that is not a letter
+// or a digit escaped, which PCRE2 reads as that character.
+function pcreEscape(text: string): string {
+  return Array.from(text, (ch) =>
+    (ch.codePointAt(0) ?? 0) < 0x80 && !/^[0-9A-Za-z]$/.test(ch) ? '\\' + ch : ch,
+  ).join('')
+}
+
+/**
+ * The pattern list compiled the way the flags and engine ask. -w and -x,
+ * whichever the line gave last, bound the whole list: -x to the line, -w to
+ * ripgrep's half word boundaries (no word character just before the match or
+ * just after it, which `\b` would also demand inside it). -S folds case only
+ * when the pattern is all lowercase. `auto` runs the default engine and falls
+ * back to PCRE2 only when that refuses the pattern. `neverMatch` is the
+ * zero-pattern sentinel from `resolvePattern`; it is a regex, so it
+ * suppresses -F.
  */
 export function rgMatcher(pattern: string, neverMatch: boolean, f: RgFlags): RegExp {
-  const fixed = f.fixedString && !neverMatch
-  let source = buildPatternStr(fixed ? pattern : hostNamedGroups(pattern), fixed)
-  if (f.lineRegexp) source = `^(?:${source})$`
-  else if (f.wholeWord) source = `(?<!\\w)(?:${source})(?!\\w)`
-  return new RegExp(source, (foldsCase(pattern, fixed, f) ? 'i' : '') + (f.nullData ? 'm' : ''))
+  if (neverMatch) return new RegExp(NEVER_MATCH)
+  const fold = foldsCase(pattern, f.fixedString, f)
+  const pcre = f.engine === 'pcre2'
+  let parts = pattern.split('\n')
+  if (f.fixedString) parts = parts.map(pcre ? pcreEscape : rustEscape)
+  if (pcre) return pcreMatcher(parts, fold, f)
+  if (f.engine !== 'auto') return rustMatcher(parts, fold, f)
+  try {
+    return rustMatcher(parts, fold, f)
+  } catch (refused) {
+    if (!(refused instanceof UsageError)) throw refused
+    try {
+      return pcreMatcher(parts, fold, f)
+    } catch (also) {
+      if (!(also instanceof UsageError)) throw also
+      throw refused
+    }
+  }
 }
 
 // What the walk keeps, the globs and types compiled; a glob or a type

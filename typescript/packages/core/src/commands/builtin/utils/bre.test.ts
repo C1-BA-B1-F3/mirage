@@ -14,7 +14,8 @@
 
 import { describe, expect, it } from 'vitest'
 
-import { BreError, compileBre, searchBre, translateBre } from './bre.ts'
+import { BreError, PosixSyntax, compileBre, searchBre, translateBre, translateEre } from './bre.ts'
+import { compilePosixRegex } from '../../../utils/posix.ts'
 
 // Every row below is a differential result against GNU grep 3.11, GNU nl 9.4
 // and GNU expr 9.4 on glibc 2.39 under `LC_ALL=C`: 208 patterns crossed with
@@ -321,5 +322,150 @@ describe('bre entry points', () => {
     const [compiled, groups] = compileBre('\\(x\\)')
     expect(groups).toBe(1)
     expect(compiled.test('abc')).toBe(false)
+  })
+})
+
+// ERE mode: the rows below are `test_bre.py`'s own.
+
+function ereFound(pattern: string, text: string): [string[], string[]] {
+  const [source, , warnings] = translateEre(pattern)
+  const re = compilePosixRegex(source, 'g')
+  const found: string[] = []
+  for (let m = re.exec(text); m !== null; m = re.exec(text)) {
+    if (m[0] !== '') found.push(m[0])
+    else re.lastIndex += 1
+  }
+  return [found, [...warnings]]
+}
+
+describe('translateEre', () => {
+  it('names only a group its branch completed in a back-reference', () => {
+    expect(() => translateBre('\\(a\\)\\|\\1')).toThrow(new BreError('Invalid back reference'))
+    expect(translateBre('\\(\\(a\\)\\|b\\)\\2')[1]).toBe(2)
+  })
+
+  // GNU grep 3.11 -oE on debian:stable-slim: the matches and its warnings.
+  it.each([
+    ['\\d+', 'abc 123 x45', [], []],
+    ['\\t', 'a\tb t', ['t'], []],
+    ['\\x41', 'x41 A', ['x41'], []],
+    ['\\<w[a-z]*', 'word sword', ['word'], []],
+    ['[a-z]*d\\>', 'word sword', ['word', 'sword'], []],
+    ['(?<=id=)[0-9]+', 'id=42', [], ['? at start of expression']],
+    ['(?:id)', 'id=42', [], ['? at start of expression']],
+    ['(?b)', 'a?b', ['b'], ['? at start of expression']],
+    ['?a', 'ab', ['a'], ['? at start of expression']],
+    ['*a', '*ab', ['a'], ['* at start of expression']],
+    ['+a', '+ab', ['a'], ['+ at start of expression']],
+    ['(*a)', 'ab', ['a'], ['* at start of expression']],
+    ['a|*b', 'ab', ['a', 'b'], ['* at start of expression']],
+    ['**a', 'ab', ['a'], ['* at start of expression', '* at start of expression']],
+    ['*a|*b', 'ab', ['a', 'b'], ['* at start of expression', '* at start of expression']],
+    ['{1}a', 'ab', ['a'], ['{...} at start of expression']],
+    ['{xa', 'ab', [], []],
+    ['\\<*a', 'ab', ['a'], ['* at start of expression']],
+    ['a|*', 'a*', ['a'], ['* at start of expression']],
+    ['a**', 'aaa', ['aaa'], []],
+    ['a+?', 'aaa', ['aaa'], []],
+    ['a*+', 'aaa', ['aaa'], []],
+    ['a{2}{2}', 'aaa', [], []],
+    ['a{2}*', 'aaaa', ['aaaa'], []],
+    ['a{1}?', 'aaa', ['a', 'a', 'a'], []],
+    ['a{b', 'a{b', ['a{b'], []],
+    ['a{', 'a{', ['a{'], []],
+    ['a{1', 'a{1', ['a{1'], []],
+    ['a{1,', 'a{1,', ['a{1,'], []],
+    ['a{,2}', 'a{,2}', ['a'], []],
+    ['a{,}b', 'aab', ['aab'], []],
+    ['a{x}', 'a{x}', ['a{x}'], []],
+    ['a{ 1}b', 'a{ 1}b', ['a{ 1}b'], []],
+    ['a{01}b', 'ab', ['ab'], []],
+    ['a{0}b', 'ab', ['b'], []],
+    ['(a){1}', 'a{1}', ['a'], []],
+    ['(|a)b', 'ab', ['ab'], []],
+    ['()b', 'ab', ['b'], []],
+    ['a|', 'ab', ['a'], []],
+    ['(a)\\1', 'aa ab', ['aa'], []],
+    ['(a)(b)\\2', 'abab', [], []],
+    ['((a)|b)\\2', 'aa', ['aa'], []],
+    ['a)', 'a)', ['a)'], []],
+    [')', 'a)', [')'], []],
+    ['[]a]', 'a]', ['a', ']'], []],
+    ['[\\]', 'a\\b', ['\\'], []],
+    ['a$b', 'a$b', [], []],
+    ['a^b', 'a^b', [], []],
+    ['(^a)', 'ab', ['a'], []],
+    ['b|^a', 'ab', ['a', 'b'], []],
+    ['a(b$)', 'ab', ['ab'], []],
+    ['\\0', 'a0b', ['0'], []],
+    ['\\X', 'aXb', ['X'], []],
+    ['\\{', 'a{b', ['{'], []],
+    ['\\|', 'a|b', ['|'], []],
+    ['\\(a\\)', 'ab', [], []],
+    ['\\bw\\w*', 'word sword', ['word'], []],
+    ['\\Bw\\w*', 'word sword', ['word'], []],
+    ['\\S+', 'a b', ['a', 'b'], []],
+    ['\\`a', 'ab', ['a'], []],
+    ["b\\'", 'ab', ['b'], []],
+    ['[a-]+', 'ab', ['a'], []],
+    ['[a\\-c]+', 'a-c', ['a', 'c'], []],
+  ] as [string, string, string[], string[]][])('%j over %j', (pattern, text, found, warnings) => {
+    expect(ereFound(pattern, text)).toEqual([found, warnings])
+  })
+
+  it.each([
+    ['a$?', 'ab'],
+    ['a$*b', 'ab'],
+    ['a\\>*', 'ab'],
+    ['^*a', '*ab'],
+    ['{1}x', 'x'],
+  ] as [string, string][])('selects %j over %j as dfa.c does', (pattern, text) => {
+    expect(compilePosixRegex(translateEre(pattern)[0]).test(text)).toBe(true)
+  })
+
+  it.each([
+    ['a{2,1}', 'Invalid content of \\{\\}'],
+    ['a{32768}', 'Regular expression too big'],
+    ['a{1,2,3}', 'Invalid content of \\{\\}'],
+    ['a{}b', 'Invalid content of \\{\\}'],
+    ['(a)\\2', 'Invalid back reference'],
+    ['\\1(a)', 'Invalid back reference'],
+    ['(a)|b\\1', 'Invalid back reference'],
+    ['(', 'Unmatched ( or \\('],
+    ['(?', 'Unmatched ( or \\('],
+    ['a(*)', 'Unmatched ( or \\('],
+    ['a(|*)b', 'Unmatched ( or \\('],
+    ['(a)(?)', 'Unmatched ( or \\('],
+    ['a\\', 'Trailing backslash'],
+    ['[a', 'Unmatched [, [^, [:, [., or [='],
+    ['[', 'Invalid regular expression'],
+    ['[z-a]', 'Invalid range end'],
+    ['[[:foo:]]', 'Invalid character class name'],
+    ['[[:alpha:]-z]', 'Invalid range end'],
+  ] as [string, string][])('grep -E refuses %j', (pattern, message) => {
+    expect(() => translateEre(pattern)).toThrow(new BreError(message))
+  })
+
+  // regcomp(REG_EXTENDED), as bash's `[[ =~ ]]` and git -E read it.
+  it.each([
+    ['*a', 'Invalid preceding regular expression'],
+    ['a|*b', 'Invalid preceding regular expression'],
+    ['(*a)', 'Invalid preceding regular expression'],
+    ['(?:id)', 'Invalid preceding regular expression'],
+    ['^*a', 'Invalid preceding regular expression'],
+    ['a$?', 'Invalid preceding regular expression'],
+    ['{1}a', 'Invalid preceding regular expression'],
+    ['a{x}', 'Invalid content of \\{\\}'],
+    ['a{1', 'Unmatched \\{'],
+    ['a{1,x}', 'Invalid content of \\{\\}'],
+    ['a{}', 'Invalid content of \\{\\}'],
+  ] as [string, string][])('regcomp refuses %j', (pattern, message) => {
+    expect(() => translateEre(pattern, PosixSyntax.EXTENDED)).toThrow(new BreError(message))
+  })
+
+  it('reads escapes as glibc under regcomp', () => {
+    const source = translateEre('\\d', PosixSyntax.EXTENDED)[0]
+    expect(new RegExp(source).exec('abc d')?.[0]).toBe('d')
+    expect(translateEre('a{,2}', PosixSyntax.EXTENDED)[2]).toEqual([])
   })
 })

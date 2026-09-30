@@ -12,10 +12,14 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import re
+
 import pytest
 
-from mirage.commands.builtin.utils.bre import (BreError, compile_bre,
-                                               search_bre, translate_bre)
+from mirage.commands.builtin.utils.bre import (BreError, PosixSyntax,
+                                               compile_bre, search_bre,
+                                               translate_bre, translate_ere)
+from mirage.utils.posix import compile_posix_regex
 
 # Every row below is a differential result against GNU grep 3.11, GNU nl
 # 9.4 and GNU expr 9.4 on glibc 2.39 under `LC_ALL=C`: 208 patterns
@@ -314,3 +318,162 @@ def test_the_group_count_survives_a_failed_match():
     compiled, groups = compile_bre(r"\(x\)")
     assert groups == 1
     assert compiled.match("abc") is None
+
+
+def test_a_back_reference_names_only_a_group_its_branch_completed():
+    # glibc resets `completed_bkref_map` for each branch: measured,
+    # `grep -o '\(a\)\|\1'` is `Invalid back reference`.
+    with pytest.raises(BreError) as caught:
+        translate_bre(r"\(a\)\|\1")
+    assert str(caught.value) == "Invalid back reference"
+    assert translate_bre(r"\(\(a\)\|b\)\2")[1] == 2
+
+
+def ere_found(pattern: str, text: str) -> tuple[list[str], tuple[str, ...]]:
+    source, _, warnings = translate_ere(pattern)
+    found = [m.group() for m in compile_posix_regex(source).finditer(text)]
+    return [f for f in found if f], warnings
+
+
+STAR = "* at start of expression"
+QMARK = "? at start of expression"
+PLUS = "+ at start of expression"
+BRACE = "{...} at start of expression"
+
+
+# Every row is GNU grep 3.11 -oE on debian:stable-slim: the matches, and
+# the warnings it printed after `grep: warning: `.
+@pytest.mark.parametrize("pattern,text,found,warnings", [
+    (r"\d+", "abc 123 x45", [], ()),
+    (r"\t", "a\tb t", ["t"], ()),
+    (r"\x41", "x41 A", ["x41"], ()),
+    (r"\<w[a-z]*", "word sword", ["word"], ()),
+    (r"[a-z]*d\>", "word sword", ["word", "sword"], ()),
+    ("(?<=id=)[0-9]+", "id=42", [], (QMARK, )),
+    ("(?:id)", "id=42", [], (QMARK, )),
+    ("(?b)", "a?b", ["b"], (QMARK, )),
+    ("?a", "ab", ["a"], (QMARK, )),
+    ("*a", "*ab", ["a"], (STAR, )),
+    ("+a", "+ab", ["a"], (PLUS, )),
+    ("(*a)", "ab", ["a"], (STAR, )),
+    ("a|*b", "ab", ["a", "b"], (STAR, )),
+    ("**a", "ab", ["a"], (STAR, STAR)),
+    ("*a|*b", "ab", ["a", "b"], (STAR, STAR)),
+    ("{1}a", "ab", ["a"], (BRACE, )),
+    ("{xa", "ab", [], ()),
+    (r"\<*a", "ab", ["a"], (STAR, )),
+    ("a|*", "a*", ["a"], (STAR, )),
+    ("a**", "aaa", ["aaa"], ()),
+    ("a+?", "aaa", ["aaa"], ()),
+    ("a*+", "aaa", ["aaa"], ()),
+    ("a{2}{2}", "aaa", [], ()),
+    ("a{2}*", "aaaa", ["aaaa"], ()),
+    ("a{1}?", "aaa", ["a", "a", "a"], ()),
+    ("a{b", "a{b", ["a{b"], ()),
+    ("a{", "a{", ["a{"], ()),
+    ("a{1", "a{1", ["a{1"], ()),
+    ("a{1,", "a{1,", ["a{1,"], ()),
+    ("a{,2}", "a{,2}", ["a"], ()),
+    ("a{,}b", "aab", ["aab"], ()),
+    ("a{x}", "a{x}", ["a{x}"], ()),
+    ("a{ 1}b", "a{ 1}b", ["a{ 1}b"], ()),
+    ("a{01}b", "ab", ["ab"], ()),
+    ("a{0}b", "ab", ["b"], ()),
+    ("(a){1}", "a{1}", ["a"], ()),
+    ("(|a)b", "ab", ["ab"], ()),
+    ("()b", "ab", ["b"], ()),
+    ("a|", "ab", ["a"], ()),
+    (r"(a)\1", "aa ab", ["aa"], ()),
+    (r"(a)(b)\2", "abab", [], ()),
+    (r"((a)|b)\2", "aa", ["aa"], ()),
+    ("a)", "a)", ["a)"], ()),
+    (")", "a)", [")"], ()),
+    ("[]a]", "a]", ["a", "]"], ()),
+    ("[\\]", "a\\b", ["\\"], ()),
+    ("a$b", "a$b", [], ()),
+    ("a^b", "a^b", [], ()),
+    ("(^a)", "ab", ["a"], ()),
+    ("b|^a", "ab", ["a", "b"], ()),
+    ("a(b$)", "ab", ["ab"], ()),
+    (r"\0", "a0b", ["0"], ()),
+    (r"\X", "aXb", ["X"], ()),
+    (r"\{", "a{b", ["{"], ()),
+    (r"\|", "a|b", ["|"], ()),
+    (r"\(a\)", "ab", [], ()),
+    (r"\bw\w*", "word sword", ["word"], ()),
+    (r"\Bw\w*", "word sword", ["word"], ()),
+    (r"\S+", "a b", ["a", "b"], ()),
+    (r"\`a", "ab", ["a"], ()),
+    (r"b\'", "ab", ["b"], ()),
+    ("[a-]+", "ab", ["a"], ()),
+    ("[a\\-c]+", "a-c", ["a", "c"], ()),
+])
+def test_an_extended_expression_reads_as_glibc(pattern, text, found, warnings):
+    assert ere_found(pattern, text) == (found, warnings)
+
+
+# dfa.c selects the line where GNU's own -o, read by glibc, prints
+# nothing: one matcher cannot give both, and this one selects.
+@pytest.mark.parametrize("pattern,text", [
+    ("a$?", "ab"),
+    ("a$*b", "ab"),
+    (r"a\>*", "ab"),
+    ("^*a", "*ab"),
+    ("{1}x", "x"),
+])
+def test_a_repeated_anchor_selects_as_dfa_does(pattern, text):
+    source = translate_ere(pattern)[0]
+    assert compile_posix_regex(source).search(text)
+
+
+@pytest.mark.parametrize("pattern,message", [
+    ("a{2,1}", "Invalid content of \\{\\}"),
+    ("a{32768}", "Regular expression too big"),
+    ("a{1,2,3}", "Invalid content of \\{\\}"),
+    ("a{}b", "Invalid content of \\{\\}"),
+    (r"(a)\2", "Invalid back reference"),
+    (r"\1(a)", "Invalid back reference"),
+    (r"(a)|b\1", "Invalid back reference"),
+    ("(", "Unmatched ( or \\("),
+    ("(?", "Unmatched ( or \\("),
+    ("a(*)", "Unmatched ( or \\("),
+    ("a(|*)b", "Unmatched ( or \\("),
+    ("(a)(?)", "Unmatched ( or \\("),
+    ("a\\", "Trailing backslash"),
+    ("[a", "Unmatched [, [^, [:, [., or [="),
+    ("[", "Invalid regular expression"),
+    ("[z-a]", "Invalid range end"),
+    ("[[:foo:]]", "Invalid character class name"),
+    ("[[:alpha:]-z]", "Invalid range end"),
+])
+def test_grep_e_refusals(pattern, message):
+    with pytest.raises(BreError) as caught:
+        translate_ere(pattern)
+    assert str(caught.value) == message
+
+
+# regcomp(REG_EXTENDED), measured through bash 5.2's `[[ =~ ]]` (status 2
+# on a refusal) and git 2.47's `log -E --grep`, which prints glibc's words.
+@pytest.mark.parametrize("pattern,message", [
+    ("*a", "Invalid preceding regular expression"),
+    ("a|*b", "Invalid preceding regular expression"),
+    ("(*a)", "Invalid preceding regular expression"),
+    ("(?:id)", "Invalid preceding regular expression"),
+    ("^*a", "Invalid preceding regular expression"),
+    ("a$?", "Invalid preceding regular expression"),
+    ("{1}a", "Invalid preceding regular expression"),
+    ("a{x}", "Invalid content of \\{\\}"),
+    ("a{1", "Unmatched \\{"),
+    ("a{1,x}", "Invalid content of \\{\\}"),
+    ("a{}", "Invalid content of \\{\\}"),
+])
+def test_regcomp_extended_refuses_what_grep_drops(pattern, message):
+    with pytest.raises(BreError) as caught:
+        translate_ere(pattern, PosixSyntax.EXTENDED)
+    assert str(caught.value) == message
+
+
+def test_regcomp_extended_reads_escapes_as_glibc():
+    source = translate_ere(r"\d", PosixSyntax.EXTENDED)[0]
+    assert re.search(source, "abc d").group() == "d"
+    assert translate_ere("a{,2}", PosixSyntax.EXTENDED)[2] == ()

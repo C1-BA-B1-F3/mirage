@@ -152,7 +152,7 @@ export async function prepareProgram(
     out[patternKey] = pattern === null ? [] : [pattern]
   } else if (name === 'sed') {
     const expressions = fl.asList('e').values()
-    const scripts = pieces.map((data) => dec.decode(data).replace(/\n$/, '')).values()
+    const scripts = pieces.map((data) => dec.decode(data)).values()
     out.e = fl
       .occurrences('e', 'f')
       .map(([kind]) => (kind === 'e' ? expressions : scripts).next().value ?? '')

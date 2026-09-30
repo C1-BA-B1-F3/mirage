@@ -13,25 +13,30 @@
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import math
+from collections.abc import Sequence
 from dataclasses import dataclass, field
+from functools import partial
 
 from mirage.core.awk.builtins import (match_position, next_random, safe_exp,
                                       safe_fmod, safe_log, safe_pow, safe_sqrt,
-                                      safe_trig, split_record, sprintf,
-                                      substitute, substr)
-from mirage.core.awk.errors import AwkRuntimeError
+                                      safe_trig, split_assignment,
+                                      split_record, sprintf, substitute,
+                                      substr)
+from mirage.core.awk.errors import AwkIOError, AwkRuntimeError, AwkSyntaxError
 # yapf: disable
 from mirage.core.awk.nodes import Binary  # yapf: disable
 from mirage.core.awk.nodes import (ArrayRef, Assign, Block, Break, BuiltinCall,
                                    Call, Compare, Concat, Continue, Delete,
                                    DoWhile, Exit, Expr, ExprStmt, Field, For,
-                                   ForIn, Getline, If, InArray, IncDec,
-                                   Logical, MatchOp, Next, NextFile, Not, Num,
-                                   Print, Printf, Program, RedirKind, Regex,
-                                   Return, Rule, RuleKind, Stmt, Str, Ternary,
-                                   Unary, Var, While)
+                                   ForIn, Getline, GetlineKind, If, InArray,
+                                   IncDec, Logical, MatchOp, Next, NextFile,
+                                   Not, Num, Print, Printf, Program, RedirKind,
+                                   Regex, Return, Rule, RuleKind, Stmt, Str,
+                                   Ternary, Unary, Var, While)
 # yapf: enable
+from mirage.core.awk.reader import RecordReader
 from mirage.core.awk.regex import compile_ere
+from mirage.core.awk.types import AwkHost
 from mirage.core.awk.value import (UNINIT, Value, ValueKind, compare,
                                    format_num, is_true, num, strnum, text,
                                    to_int, to_num, to_str)
@@ -53,6 +58,7 @@ COUNTERS = frozenset({"NR", "FNR", "NF"})
 
 ARITY = {
     "close": 1,
+    "system": 1,
     "atan2": 2,
     "cos": 1,
     "exp": 1,
@@ -73,6 +79,7 @@ ARITY = {
 
 STDOUT_NAMES = frozenset({"/dev/stdout", "-"})
 STDERR_NAME = "/dev/stderr"
+PROGRAM_NAME = "awk"
 
 MAX_CALL_DEPTH = 100
 
@@ -114,17 +121,58 @@ class Frame:
     tables: dict[str, dict[str, Value]] = field(default_factory=dict)
 
 
+@dataclass
+class InputPipe:
+    """A ``cmd | getline`` stream: the command's output and its status.
+
+    Args:
+        reader (RecordReader): the records of what the command printed.
+        status (int): its exit status, which ``close(cmd)`` returns.
+    """
+
+    reader: RecordReader
+    status: int
+
+
 class Interpreter:
+    """Run one awk program against the streams its host opens.
+
+    Every stream the program names goes through ``host``: the main input
+    operands, ``getline < file``, output files and the command pipes.
+    Output is buffered the way mawk 1.3.4 buffers it: standard output
+    waits while an output pipe is open, since the pipe's command runs
+    when it is closed and what it prints comes first; running any
+    command (a new pipe, ``system()``) flushes it, as mawk flushes before
+    it forks.
+
+    Args:
+        program (Program): the parsed program.
+        host (AwkHost): the doors to files and commands.
+        argv (Sequence[str]): the operands as typed, ARGV[1] onward.
+        assignments (dict[str, str] | None): the ``-v`` assignments.
+    """
 
     def __init__(self,
                  program: Program,
+                 host: AwkHost,
+                 argv: Sequence[str] = (),
                  assignments: dict[str, str] | None = None) -> None:
         self.program = program
+        self.host = host
         self.globals: dict[str, Value] = {}
         self.tables: dict[str, dict[str, Value]] = {}
         self.frames: list[Frame] = []
-        self.output: list[tuple[str | None, str, bool]] = []
-        self.open_files: set[str] = set()
+        self.out: list[bytes] = []
+        self.held: list[bytes] = []
+        self.err: list[bytes] = []
+        self.out_files: dict[str, list[str]] = {}
+        self.out_pipes: dict[str, list[str]] = {}
+        self.in_files: dict[str, RecordReader] = {}
+        self.in_pipes: dict[str, InputPipe] = {}
+        self.main: RecordReader | None = None
+        self.main_name = ""
+        self.arg_index = 0
+        self.read_operand = False
         self.record = ""
         self.record_fs = " "
         self.record_paragraph = False
@@ -133,7 +181,6 @@ class Interpreter:
         self.nr = 0
         self.fnr = 0
         self.range_active: dict[int, bool] = {}
-        self.skip_file = False
         self.exit_code = 0
         self.rand_state = 0
         self.seed = 0
@@ -141,6 +188,10 @@ class Interpreter:
             self.globals[name] = text(value)
         for name, raw in (assignments or {}).items():
             self.globals[name] = strnum(raw)
+        self.tables["ARGV"] = {"0": text(PROGRAM_NAME)}
+        for position, operand in enumerate(argv, 1):
+            self.tables["ARGV"][str(position)] = strnum(operand)
+        self.globals["ARGC"] = num(len(argv) + 1)
 
     def special(self, name: str) -> str:
         return to_str(self.globals.get(name, UNINIT), "%.6g")
@@ -243,8 +294,83 @@ class Interpreter:
             name (str): the operand as it was typed on the command line.
         """
         self.globals["FILENAME"] = text(name)
+        self.main_name = name
         self.fnr = 0
-        self.skip_file = False
+
+    def reader(self, source: str, index: int | None) -> RecordReader:
+        """Open a record reader over one named input stream.
+
+        Args:
+            source (str): the stream's name.
+            index (int | None): its ARGV slot, None for getline.
+        """
+        return RecordReader(self.host.open_input(source, index),
+                            partial(self.special, "RS"))
+
+    async def open_operand(self) -> bool:
+        """Advance the main input to the next operand that names a file.
+
+        ARGV is read as it stands when each operand is reached, as POSIX
+        requires: an emptied or deleted slot is skipped, a ``var=value``
+        slot is assigned there, and a slot the program filled is read.
+        With no file operand at all the main input is stdin, named ``-``
+        in FILENAME (mawk 1.3.4). Returns whether there was one more
+        stream to read.
+        """
+        argv = self.tables.setdefault("ARGV", {})
+        while self.arg_index + 1 < to_int(to_num(self.get_var("ARGC"))):
+            self.arg_index += 1
+            slot = argv.get(str(self.arg_index))
+            if slot is None:
+                continue
+            operand = to_str(slot, self.convfmt())
+            if operand == "":
+                continue
+            assignment = split_assignment(operand)
+            if assignment is not None:
+                self.set_var(assignment[0], strnum(assignment[1]))
+                continue
+            self.read_operand = True
+            self.start_file(operand)
+            self.main = self.reader(operand, self.arg_index)
+            return True
+        if self.read_operand:
+            return False
+        self.read_operand = True
+        self.start_file("-")
+        self.main = self.reader("-", None)
+        return True
+
+    async def next_record(self) -> str | None:
+        """Read the next main-input record, counting it in NR and FNR.
+
+        This is what the main loop and a plain ``getline`` both read, so
+        a getline takes the record the next cycle would have seen, and
+        crosses into the next operand the same way. An operand that
+        cannot be opened ends the run (mawk 1.3.4, exit 2).
+        """
+        while True:
+            if self.main is not None:
+                try:
+                    record = await self.main.next()
+                except AwkIOError as exc:
+                    raise AwkRuntimeError(
+                        f'awk: cannot open "{self.main_name}"'
+                        f' ({exc.detail})') from exc
+                if record is not None:
+                    self.nr += 1
+                    self.fnr += 1
+                    return record
+                await self.main.close()
+                self.main = None
+            if not await self.open_operand():
+                return None
+
+    async def skip_file(self) -> None:
+        """Abandon the rest of the current operand, as nextfile does."""
+        if self.main is not None:
+            await self.main.close()
+            self.main = None
 
     def frame(self) -> Frame | None:
         return self.frames[-1] if self.frames else None
@@ -299,16 +425,20 @@ class Interpreter:
             return frame.tables.setdefault(name, {})
         return self.tables.setdefault(name, {})
 
-    def subscript(self, subs: tuple[Expr, ...]) -> str:
+    async def subscript(self, subs: tuple[Expr, ...]) -> str:
         """Join subscript expressions into a single array key.
 
         Args:
             subs (tuple[Expr, ...]): the subscript expressions.
         """
         sep = self.special("SUBSEP")
-        return sep.join(to_str(self.eval(s), self.convfmt()) for s in subs)
+        keys = [
+            to_str(self.leaf(s) or await self.eval(s), self.convfmt())
+            for s in subs
+        ]
+        return sep.join(keys)
 
-    def regex_source(self, node: Expr) -> str:
+    async def regex_source(self, node: Expr) -> str:
         """Read the ERE text of a node used in a regex position.
 
         Args:
@@ -316,9 +446,28 @@ class Interpreter:
         """
         if isinstance(node, Regex):
             return node.pattern
-        return to_str(self.eval(node), self.convfmt())
+        return to_str(await self.eval(node), self.convfmt())
 
-    def eval(self, node: Expr) -> Value:
+    def leaf(self, node: Expr) -> Value | None:
+        """Read a node that cannot suspend without scheduling a coroutine.
+
+        A constant, a variable or a constant field answers here; any
+        other node answers None and goes through ``eval``.
+
+        Args:
+            node (Expr): the expression.
+        """
+        if isinstance(node, Num):
+            return num(node.value)
+        if isinstance(node, Str):
+            return text(node.value)
+        if isinstance(node, Var):
+            return self.get_var(node.name)
+        if isinstance(node, Field) and isinstance(node.index, Num):
+            return self.get_field(to_int(node.index.value))
+        return None
+
+    async def eval(self, node: Expr) -> Value:
         """Evaluate an expression node.
 
         Args:
@@ -334,62 +483,119 @@ class Interpreter:
         if isinstance(node, Var):
             return self.get_var(node.name)
         if isinstance(node, Field):
-            return self.get_field(to_int(to_num(self.eval(node.index))))
+            index = self.leaf(node.index) or await self.eval(node.index)
+            return self.get_field(to_int(to_num(index)))
         if isinstance(node, ArrayRef):
             array = self.get_array(node.name)
-            return array.setdefault(self.subscript(node.subscripts), UNINIT)
+            key = await self.subscript(node.subscripts)
+            return array.setdefault(key, UNINIT)
         if isinstance(node, Assign):
-            return self.eval_assign(node)
+            return await self.eval_assign(node)
         if isinstance(node, Binary):
-            return self.eval_binary(node)
+            return await self.eval_binary(node)
         if isinstance(node, Unary):
-            value = to_num(self.eval(node.operand))
+            value = to_num(await self.eval(node.operand))
             return num(-value if node.op == "-" else value)
         if isinstance(node, Not):
-            return num(0.0 if is_true(self.eval(node.operand)) else 1.0)
+            return num(0.0 if is_true(await self.eval(node.operand)) else 1.0)
         if isinstance(node, Concat):
-            left = to_str(self.eval(node.left), self.convfmt())
-            right = to_str(self.eval(node.right), self.convfmt())
-            return text(left + right)
+            left = self.leaf(node.left) or await self.eval(node.left)
+            right = self.leaf(node.right) or await self.eval(node.right)
+            return text(
+                to_str(left, self.convfmt()) + to_str(right, self.convfmt()))
         if isinstance(node, Compare):
-            return self.eval_compare(node)
+            return await self.eval_compare(node)
         if isinstance(node, MatchOp):
-            subject = to_str(self.eval(node.left), self.convfmt())
-            hit = compile_ere(self.regex_source(node.right)).search(subject)
-            found = hit is not None
+            subject = to_str(await self.eval(node.left), self.convfmt())
+            pattern = await self.regex_source(node.right)
+            found = compile_ere(pattern).search(subject) is not None
             return num(1.0 if found != node.negated else 0.0)
         if isinstance(node, Logical):
-            return self.eval_logical(node)
+            return await self.eval_logical(node)
         if isinstance(node, Ternary):
-            branch = node.then if is_true(self.eval(node.cond)) else node.other
-            return self.eval(branch)
+            cond = is_true(await self.eval(node.cond))
+            return await self.eval(node.then if cond else node.other)
         if isinstance(node, IncDec):
-            return self.eval_incdec(node)
+            return await self.eval_incdec(node)
         if isinstance(node, InArray):
             array = self.get_array(node.name)
-            return num(1.0 if self.subscript(node.subscripts) in
-                       array else 0.0)
+            key = await self.subscript(node.subscripts)
+            return num(1.0 if key in array else 0.0)
         if isinstance(node, BuiltinCall):
-            return self.eval_builtin(node)
+            return await self.eval_builtin(node)
         if isinstance(node, Call):
-            return self.call_function(node)
+            return await self.call_function(node)
         if isinstance(node, Getline):
-            raise AwkRuntimeError("awk: getline is not supported in mirage")
+            return await self.eval_getline(node)
         raise AwkRuntimeError(f"awk: cannot evaluate {type(node).__name__}")
 
-    def eval_logical(self, node: Logical) -> Value:
-        left = is_true(self.eval(node.left))
+    async def eval_getline(self, node: Getline) -> Value:
+        """Read one record into $0 or a variable: 1, 0 at EOF, -1 on error.
+
+        A plain getline reads the main input and counts NR and FNR; a
+        file or a command does not, as in mawk 1.3.4, which leaves NR
+        alone for ``cmd | getline`` too. A file that cannot be opened or
+        read answers -1 without a message.
+
+        Args:
+            node (Getline): the getline expression.
+        """
+        if node.kind is GetlineKind.PLAIN:
+            record = await self.next_record()
+        else:
+            assert node.source is not None
+            name = to_str(await self.eval(node.source), self.convfmt())
+            if node.kind is GetlineKind.FILE:
+                reader = self.in_files.get(name)
+                if reader is None:
+                    reader = self.reader(name, None)
+                    self.in_files[name] = reader
+                try:
+                    record = await reader.next()
+                except AwkIOError:
+                    del self.in_files[name]
+                    return num(-1)
+            else:
+                record = await (await self.input_pipe(name)).reader.next()
+        if record is None:
+            return num(0)
+        if node.target is None:
+            self.set_record(record)
+        else:
+            await self.assign_to(node.target, strnum(record))
+        return num(1)
+
+    async def input_pipe(self, command: str) -> InputPipe:
+        """The stream ``command | getline`` reads, running it on first use.
+
+        Args:
+            command (str): the command line.
+        """
+        pipe = self.in_pipes.get(command)
+        if pipe is None:
+            await self.before_command()
+            run = await self.host.run(command, None)
+            self.err.append(run.stderr)
+            pipe = InputPipe(
+                RecordReader(run.stdout, partial(self.special, "RS")),
+                run.status)
+            self.in_pipes[command] = pipe
+        return pipe
+
+    async def eval_logical(self, node: Logical) -> Value:
+        left = is_true(await self.eval(node.left))
         if node.op == "&&":
             if not left:
                 return num(0.0)
-            return num(1.0 if is_true(self.eval(node.right)) else 0.0)
+            return num(1.0 if is_true(await self.eval(node.right)) else 0.0)
         if left:
             return num(1.0)
-        return num(1.0 if is_true(self.eval(node.right)) else 0.0)
+        return num(1.0 if is_true(await self.eval(node.right)) else 0.0)
 
-    def eval_compare(self, node: Compare) -> Value:
-        order = compare(self.eval(node.left), self.eval(node.right),
-                        self.convfmt())
+    async def eval_compare(self, node: Compare) -> Value:
+        left = self.leaf(node.left) or await self.eval(node.left)
+        right = self.leaf(node.right) or await self.eval(node.right)
+        order = compare(left, right, self.convfmt())
         if node.op == "<":
             hit = order < 0
         elif node.op == "<=":
@@ -404,9 +610,9 @@ class Interpreter:
             hit = order != 0
         return num(1.0 if hit else 0.0)
 
-    def eval_binary(self, node: Binary) -> Value:
-        lhs = to_num(self.eval(node.left))
-        rhs = to_num(self.eval(node.right))
+    async def eval_binary(self, node: Binary) -> Value:
+        lhs = to_num(self.leaf(node.left) or await self.eval(node.left))
+        rhs = to_num(self.leaf(node.right) or await self.eval(node.right))
         if node.op == "+":
             return num(lhs + rhs)
         if node.op == "-":
@@ -423,7 +629,7 @@ class Interpreter:
             return num(safe_fmod(lhs, rhs))
         return num(safe_pow(lhs, rhs))
 
-    def assign_to(self, target: Expr, value: Value) -> Value:
+    async def assign_to(self, target: Expr, value: Value) -> Value:
         """Store a value into an lvalue node.
 
         Args:
@@ -434,20 +640,23 @@ class Interpreter:
             self.set_var(target.name, value)
             return value
         if isinstance(target, Field):
-            index = to_int(to_num(self.eval(target.index)))
+            held = self.leaf(target.index) or await self.eval(target.index)
+            index = to_int(to_num(held))
             self.set_field(index, to_str(value, self.convfmt()))
             return value
         if isinstance(target, ArrayRef):
             array = self.get_array(target.name)
-            array[self.subscript(target.subscripts)] = value
+            array[await self.subscript(target.subscripts)] = value
             return value
         raise AwkRuntimeError("awk: assignment to a non-lvalue")
 
-    def eval_assign(self, node: Assign) -> Value:
+    async def eval_assign(self, node: Assign) -> Value:
         if node.op == "=":
-            return self.assign_to(node.target, self.eval(node.value))
-        current = to_num(self.eval(node.target))
-        operand = to_num(self.eval(node.value))
+            value = self.leaf(node.value) or await self.eval(node.value)
+            return await self.assign_to(node.target, value)
+        current = to_num(
+            self.leaf(node.target) or await self.eval(node.target))
+        operand = to_num(self.leaf(node.value) or await self.eval(node.value))
         if node.op == "+=":
             result = current + operand
         elif node.op == "-=":
@@ -464,86 +673,88 @@ class Interpreter:
             result = safe_fmod(current, operand)
         else:
             result = safe_pow(current, operand)
-        return self.assign_to(node.target, num(result))
+        return await self.assign_to(node.target, num(result))
 
-    def eval_incdec(self, node: IncDec) -> Value:
-        current = to_num(self.eval(node.target))
+    async def eval_incdec(self, node: IncDec) -> Value:
+        current = to_num(
+            self.leaf(node.target) or await self.eval(node.target))
         updated = current + (1.0 if node.op == "++" else -1.0)
-        self.assign_to(node.target, num(updated))
+        await self.assign_to(node.target, num(updated))
         return num(updated if node.pre else current)
 
-    def eval_builtin(self, node: BuiltinCall) -> Value:
+    async def str_arg(self, node: Expr) -> str:
+        return to_str(await self.eval(node), self.convfmt())
+
+    async def eval_builtin(self, node: BuiltinCall) -> Value:
         name = node.name
         args = node.args
         if name == "length":
-            return self.builtin_length(args)
+            return await self.builtin_length(args)
         if name in ARITY and len(args) < ARITY[name]:
             raise AwkRuntimeError(f"awk: not enough arguments to {name}")
         if name in ("sin", "cos"):
-            return num(safe_trig(to_num(self.eval(args[0])), name))
+            return num(safe_trig(to_num(await self.eval(args[0])), name))
         if name == "exp":
-            return num(safe_exp(to_num(self.eval(args[0]))))
+            return num(safe_exp(to_num(await self.eval(args[0]))))
         if name == "sqrt":
-            return num(safe_sqrt(to_num(self.eval(args[0]))))
+            return num(safe_sqrt(to_num(await self.eval(args[0]))))
         if name == "log":
-            return num(safe_log(to_num(self.eval(args[0]))))
+            return num(safe_log(to_num(await self.eval(args[0]))))
         if name == "int":
-            value = to_num(self.eval(args[0]))
+            value = to_num(await self.eval(args[0]))
             if math.isnan(value) or math.isinf(value):
                 return num(value)
             return num(float(to_int(value)))
         if name == "atan2":
-            return num(
-                math.atan2(to_num(self.eval(args[0])),
-                           to_num(self.eval(args[1]))))
+            left = to_num(await self.eval(args[0]))
+            right = to_num(await self.eval(args[1]))
+            return num(math.atan2(left, right))
         if name == "rand":
             self.rand_state, drawn = next_random(self.rand_state)
             return num(drawn)
         if name == "srand":
             previous = self.seed
-            self.seed = to_int(to_num(self.eval(args[0]))) if args else 0
+            self.seed = to_int(to_num(await self.eval(args[0]))) if args else 0
             self.rand_state = self.seed & 0xFFFFFFFF
             return num(previous)
         if name == "index":
-            haystack = to_str(self.eval(args[0]), self.convfmt())
-            needle = to_str(self.eval(args[1]), self.convfmt())
+            haystack = await self.str_arg(args[0])
+            needle = await self.str_arg(args[1])
             return num(haystack.find(needle) + 1)
         if name == "substr":
-            subject = to_str(self.eval(args[0]), self.convfmt())
-            start = to_num(self.eval(args[1]))
-            span = to_num(self.eval(args[2])) if len(args) > 2 else None
+            subject = await self.str_arg(args[0])
+            start = to_num(await self.eval(args[1]))
+            span = to_num(await self.eval(args[2])) if len(args) > 2 else None
             return text(substr(subject, start, span))
         if name == "toupper":
-            return text(to_str(self.eval(args[0]), self.convfmt()).upper())
+            return text((await self.str_arg(args[0])).upper())
         if name == "tolower":
-            return text(to_str(self.eval(args[0]), self.convfmt()).lower())
+            return text((await self.str_arg(args[0])).lower())
         if name == "sprintf":
-            fmt = to_str(self.eval(args[0]), self.convfmt())
-            rest = [self.eval(a) for a in args[1:]]
+            fmt = await self.str_arg(args[0])
+            rest = [await self.eval(a) for a in args[1:]]
             return text(sprintf(fmt, rest, self.convfmt()))
         if name == "match":
-            subject = to_str(self.eval(args[0]), self.convfmt())
-            start, length = match_position(self.regex_source(args[1]), subject)
+            subject = await self.str_arg(args[0])
+            pattern = await self.regex_source(args[1])
+            start, length = match_position(pattern, subject)
             self.globals["RSTART"] = num(start)
             self.globals["RLENGTH"] = num(length)
             return num(start)
         if name in ("sub", "gsub"):
-            return self.builtin_sub(node, name == "gsub")
+            return await self.builtin_sub(node, name == "gsub")
         if name == "split":
-            return self.builtin_split(args)
+            return await self.builtin_split(args)
         if name == "close":
-            target = to_str(self.eval(args[0]), self.convfmt())
-            if target not in self.open_files:
-                return num(-1)
-            self.open_files.remove(target)
-            return num(0)
+            return num(await self.close_stream(await self.str_arg(args[0])))
         if name == "fflush":
-            return num(0)
+            target = await self.str_arg(args[0]) if args else None
+            return num(await self.fflush(target))
         if name == "system":
-            raise AwkRuntimeError("awk: system() is not supported in mirage")
+            return num(await self.system(await self.str_arg(args[0])))
         raise AwkRuntimeError(f"awk: calling undefined function {name}")
 
-    def builtin_length(self, args: tuple[Expr, ...]) -> Value:
+    async def builtin_length(self, args: tuple[Expr, ...]) -> Value:
         if not args:
             return num(len(self.ensure_record()))
         target = args[0]
@@ -554,21 +765,21 @@ class Interpreter:
                      if local and frame is not None else self.tables)
             if target.name in known:
                 return num(len(known[target.name]))
-        return num(len(to_str(self.eval(target), self.convfmt())))
+        return num(len(await self.str_arg(target)))
 
-    def builtin_sub(self, node: BuiltinCall, globally: bool) -> Value:
+    async def builtin_sub(self, node: BuiltinCall, globally: bool) -> Value:
         args = node.args
-        pattern = self.regex_source(args[0])
-        template = to_str(self.eval(args[1]), self.convfmt())
+        pattern = await self.regex_source(args[0])
+        template = await self.str_arg(args[1])
         target: Expr = args[2] if len(args) > 2 else Field(Num(0.0))
-        subject = to_str(self.eval(target), self.convfmt())
+        subject = await self.str_arg(target)
         count, result = substitute(pattern, template, subject, globally)
         if count:
-            self.assign_to(target, text(result))
+            await self.assign_to(target, text(result))
         return num(count)
 
-    def builtin_split(self, args: tuple[Expr, ...]) -> Value:
-        subject = to_str(self.eval(args[0]), self.convfmt())
+    async def builtin_split(self, args: tuple[Expr, ...]) -> Value:
+        subject = await self.str_arg(args[0])
         holder = args[1]
         if not isinstance(holder, (Var, ArrayRef)):
             raise AwkRuntimeError("awk: split() needs an array")
@@ -576,7 +787,7 @@ class Interpreter:
         array = self.get_array(name)
         array.clear()
         if len(args) > 2:
-            separator = self.regex_source(args[2])
+            separator = await self.regex_source(args[2])
         else:
             separator = self.special("FS")
         parts = split_record(subject, separator)
@@ -584,7 +795,7 @@ class Interpreter:
             array[str(position)] = strnum(part)
         return num(len(parts))
 
-    def call_function(self, node: Call) -> Value:
+    async def call_function(self, node: Call) -> Value:
         definition = self.program.functions.get(node.name)
         if definition is None:
             raise AwkRuntimeError(
@@ -601,10 +812,10 @@ class Interpreter:
             if isinstance(argument, Var) and self.is_array_name(argument.name):
                 frame.tables[param] = self.get_array(argument.name)
             else:
-                frame.scalars[param] = self.eval(argument)
+                frame.scalars[param] = await self.eval(argument)
         self.frames.append(frame)
         try:
-            self.exec_stmt(definition.body)
+            await self.exec_stmt(definition.body)
         except ReturnValue as returned:
             return returned.value
         finally:
@@ -629,8 +840,73 @@ class Interpreter:
             return True
         return name not in self.globals and name not in COUNTERS
 
-    def write(self, body: str, node: Print | Printf) -> None:
+    def stdout(self, body: str) -> None:
+        """Buffer text for standard output.
+
+        While an output pipe is open the text waits, since the pipe's
+        command prints ahead of it when it runs; once held, later text
+        waits behind it.
+
+        Args:
+            body (str): the text.
+        """
+        if self.out_pipes or self.held:
+            self.held.append(body.encode())
+        else:
+            self.out.append(body.encode())
+
+    def release(self) -> None:
+        """Let held standard output go, as a flush of stdout does."""
+        self.out.extend(self.held)
+        self.held.clear()
+
+    async def write_file(self, name: str, body: str, append: bool) -> None:
+        """Write through the host, a failure ending the run.
+
+        Args:
+            name (str): the file name.
+            body (str): the text.
+            append (bool): append rather than replace.
+        """
+        try:
+            await self.host.write_file(name, body, append)
+        except AwkIOError as exc:
+            raise AwkRuntimeError(f'awk: cannot open "{name}" for output '
+                                  f'({exc.detail})') from exc
+
+    async def flush_file(self, name: str) -> None:
+        """Write out what one output file has buffered.
+
+        Args:
+            name (str): the file name.
+        """
+        pending = self.out_files.get(name)
+        if pending:
+            body = "".join(pending)
+            pending.clear()
+            await self.write_file(name, body, True)
+
+    async def flush_files(self) -> None:
+        """Write out what every output file has buffered."""
+        for name in list(self.out_files):
+            await self.flush_file(name)
+
+    async def before_command(self) -> None:
+        """Flush what a command about to run must see.
+
+        mawk flushes its output before it forks, so the command reads
+        the files awk wrote and prints after awk's standard output.
+        """
+        await self.flush_files()
+        self.release()
+
+    async def write(self, body: str, node: Print | Printf) -> None:
         """Emit output to stdout or to a redirection target.
+
+        A file opened with ``>`` is emptied when it is opened, and what
+        is printed to it is buffered until a flush, a close or the end of
+        the record, so reading it back before closing it reads what was
+        flushed.
 
         Args:
             body (str): the text to write.
@@ -638,23 +914,101 @@ class Interpreter:
         """
         redirect = node.redirect
         if redirect is None:
-            self.output.append((None, body, False))
+            self.stdout(body)
             return
-        name = to_str(self.eval(redirect.target), self.convfmt())
+        name = to_str(await self.eval(redirect.target), self.convfmt())
         if redirect.kind == RedirKind.PIPE:
-            raise AwkRuntimeError(
-                "awk: output pipes are not supported in mirage")
+            pipe = self.out_pipes.get(name)
+            if pipe is None:
+                await self.before_command()
+                pipe = self.out_pipes[name] = []
+            pipe.append(body)
+            return
         if name in STDOUT_NAMES:
-            self.output.append((None, body, False))
+            self.stdout(body)
             return
         if name == STDERR_NAME:
-            self.output.append((STDERR_NAME, body, False))
+            self.err.append(body.encode())
             return
-        append = name in self.open_files or redirect.kind == RedirKind.APPEND
-        self.open_files.add(name)
-        self.output.append((name, body, append))
+        pending = self.out_files.get(name)
+        if pending is None:
+            if redirect.kind == RedirKind.FILE:
+                await self.write_file(name, "", False)
+            pending = self.out_files[name] = []
+        pending.append(body)
 
-    def exec_stmt(self, node: Stmt) -> None:
+    async def close_out_pipe(self, command: str) -> int:
+        """Run an output pipe's command on everything printed to it.
+
+        Args:
+            command (str): the command line.
+        """
+        body = "".join(self.out_pipes.pop(command))
+        await self.flush_files()
+        run = await self.host.run(command, body.encode())
+        self.out.append(run.stdout)
+        self.err.append(run.stderr)
+        return run.status
+
+    async def close_stream(self, name: str) -> int:
+        """Close whatever the program opened under a name.
+
+        A command answers its exit status, a file 0, and a name nothing
+        is open under -1.
+
+        Args:
+            name (str): the file name or command line.
+        """
+        status = -1
+        if name in self.out_pipes:
+            status = await self.close_out_pipe(name)
+        pipe = self.in_pipes.pop(name, None)
+        if pipe is not None:
+            await pipe.reader.close()
+            status = pipe.status
+        if name in self.out_files:
+            await self.flush_file(name)
+            del self.out_files[name]
+            status = 0
+        reader = self.in_files.pop(name, None)
+        if reader is not None:
+            await reader.close()
+            status = 0
+        return status
+
+    async def fflush(self, name: str | None) -> int:
+        """Flush standard output and files, or one named stream.
+
+        Output pipes run only when closed, so flushing one flushes
+        nothing.
+
+        Args:
+            name (str | None): the stream, None or "" for all of them.
+        """
+        if name is None or name == "":
+            await self.before_command()
+            return 0
+        if name in STDOUT_NAMES:
+            self.release()
+            return 0
+        if name in self.out_files:
+            await self.flush_file(name)
+            return 0
+        return 0 if name in self.out_pipes else -1
+
+    async def system(self, command: str) -> int:
+        """Run a command line, its output landing after awk's own.
+
+        Args:
+            command (str): the command line.
+        """
+        await self.before_command()
+        run = await self.host.run(command, None)
+        self.out.append(run.stdout)
+        self.err.append(run.stderr)
+        return run.status
+
+    async def exec_stmt(self, node: Stmt) -> None:
         """Execute a statement node.
 
         Args:
@@ -662,41 +1016,41 @@ class Interpreter:
         """
         if isinstance(node, Block):
             for inner in node.body:
-                self.exec_stmt(inner)
+                await self.exec_stmt(inner)
             return
         if isinstance(node, ExprStmt):
-            self.eval(node.expr)
+            await self.eval(node.expr)
             return
         if isinstance(node, Print):
-            self.exec_print(node)
+            await self.exec_print(node)
             return
         if isinstance(node, Printf):
-            values = [self.eval(a) for a in node.args]
+            values = [await self.eval(a) for a in node.args]
             if not values:
                 raise AwkRuntimeError("awk: printf needs a format")
             fmt = to_str(values[0], self.convfmt())
-            self.write(sprintf(fmt, values[1:], self.convfmt()), node)
+            await self.write(sprintf(fmt, values[1:], self.convfmt()), node)
             return
         if isinstance(node, If):
-            if is_true(self.eval(node.cond)):
-                self.exec_stmt(node.then)
+            if is_true(await self.eval(node.cond)):
+                await self.exec_stmt(node.then)
             elif node.other is not None:
-                self.exec_stmt(node.other)
+                await self.exec_stmt(node.other)
             return
         if isinstance(node, While):
-            self.exec_while(node)
+            await self.exec_while(node)
             return
         if isinstance(node, DoWhile):
-            self.exec_do_while(node)
+            await self.exec_do_while(node)
             return
         if isinstance(node, For):
-            self.exec_for(node)
+            await self.exec_for(node)
             return
         if isinstance(node, ForIn):
-            self.exec_for_in(node)
+            await self.exec_for_in(node)
             return
         if isinstance(node, Delete):
-            self.exec_delete(node)
+            await self.exec_delete(node)
             return
         if isinstance(node, Next):
             raise NextRecord()
@@ -707,74 +1061,78 @@ class Interpreter:
         if isinstance(node, Continue):
             raise ContinueLoop()
         if isinstance(node, Return):
-            value = self.eval(node.value) if node.value is not None else UNINIT
+            value = (await self.eval(node.value)
+                     if node.value is not None else UNINIT)
             raise ReturnValue(value)
         if isinstance(node, Exit):
             if node.value is not None:
-                self.exit_code = to_int(to_num(self.eval(node.value)))
+                self.exit_code = to_int(to_num(await self.eval(node.value)))
             raise ExitProgram(self.exit_code)
         raise AwkRuntimeError(f"awk: cannot run {type(node).__name__}")
 
-    def exec_print(self, node: Print) -> None:
+    async def exec_print(self, node: Print) -> None:
         if node.args:
-            body = self.special("OFS").join(
-                self.out_str(self.eval(a)) for a in node.args)
+            parts = [
+                self.out_str(self.leaf(a) or await self.eval(a))
+                for a in node.args
+            ]
+            body = self.special("OFS").join(parts)
         else:
             body = self.ensure_record()
-        self.write(body + self.special("ORS"), node)
+        await self.write(body + self.special("ORS"), node)
 
-    def exec_while(self, node: While) -> None:
-        while is_true(self.eval(node.cond)):
+    async def exec_while(self, node: While) -> None:
+        while is_true(await self.eval(node.cond)):
             try:
-                self.exec_stmt(node.body)
+                await self.exec_stmt(node.body)
             except BreakLoop:
                 return
             except ContinueLoop:
                 continue
 
-    def exec_do_while(self, node: DoWhile) -> None:
+    async def exec_do_while(self, node: DoWhile) -> None:
         while True:
             try:
-                self.exec_stmt(node.body)
+                await self.exec_stmt(node.body)
             except BreakLoop:
                 return
             except ContinueLoop:
                 pass
-            if not is_true(self.eval(node.cond)):
+            if not is_true(await self.eval(node.cond)):
                 return
 
-    def exec_for(self, node: For) -> None:
+    async def exec_for(self, node: For) -> None:
         if node.init is not None:
-            self.exec_stmt(node.init)
-        while node.cond is None or is_true(self.eval(node.cond)):
+            await self.exec_stmt(node.init)
+        while node.cond is None or is_true(await self.eval(node.cond)):
             try:
-                self.exec_stmt(node.body)
+                await self.exec_stmt(node.body)
             except BreakLoop:
                 return
             except ContinueLoop:
                 pass
             if node.post is not None:
-                self.exec_stmt(node.post)
+                await self.exec_stmt(node.post)
 
-    def exec_for_in(self, node: ForIn) -> None:
+    async def exec_for_in(self, node: ForIn) -> None:
         array = self.get_array(node.array)
         for key in list(array.keys()):
             self.set_var(node.var, strnum(key))
             try:
-                self.exec_stmt(node.body)
+                await self.exec_stmt(node.body)
             except BreakLoop:
                 return
             except ContinueLoop:
                 continue
 
-    def exec_delete(self, node: Delete) -> None:
+    async def exec_delete(self, node: Delete) -> None:
         array = self.get_array(node.name)
         if node.subscripts is None:
             array.clear()
             return
-        array.pop(self.subscript(node.subscripts), None)
+        array.pop(await self.subscript(node.subscripts), None)
 
-    def matches_rule(self, rule: Rule, index: int) -> bool:
+    async def matches_rule(self, rule: Rule, index: int) -> bool:
         """Decide whether a main rule fires for the current record.
 
         Args:
@@ -785,22 +1143,23 @@ class Interpreter:
             return True
         if rule.kind is RuleKind.PATTERN:
             assert rule.pattern is not None
-            return is_true(self.eval(rule.pattern))
+            return is_true(await self.eval(rule.pattern))
         assert rule.pattern is not None and rule.pattern_end is not None
         if self.range_active.get(index, False):
-            if is_true(self.eval(rule.pattern_end)):
+            if is_true(await self.eval(rule.pattern_end)):
                 self.range_active[index] = False
             return True
-        if is_true(self.eval(rule.pattern)):
-            self.range_active[index] = not is_true(self.eval(rule.pattern_end))
+        if is_true(await self.eval(rule.pattern)):
+            self.range_active[index] = not is_true(await self.eval(
+                rule.pattern_end))
             return True
         return False
 
-    def run_begin(self) -> None:
+    async def run_begin(self) -> None:
         """Run every BEGIN rule in source order."""
-        self.run_edge(RuleKind.BEGIN)
+        await self.run_edge(RuleKind.BEGIN)
 
-    def run_edge(self, kind: RuleKind) -> None:
+    async def run_edge(self, kind: RuleKind) -> None:
         """Run the BEGIN or the END rules, where no record is current.
 
         Args:
@@ -809,71 +1168,113 @@ class Interpreter:
         try:
             for rule in self.program.rules:
                 if rule.kind is kind and rule.action is not None:
-                    self.exec_stmt(rule.action)
+                    await self.exec_stmt(rule.action)
         except (NextRecord, NextFileSignal) as exc:
             raise AwkRuntimeError(
                 f"awk: next used in a {kind.value} action") from exc
 
-    def run_record(self, line: str) -> None:
+    async def run_record(self, line: str) -> None:
         """Run the main rules against one input record.
 
         Args:
-            line (str): the record text, without its separator.
+            line (str): the record text, without its separator, as
+                ``next_record`` returned it.
         """
-        self.nr += 1
-        self.fnr += 1
         self.set_record(line)
         try:
             for index, rule in enumerate(self.program.rules):
                 if rule.kind in (RuleKind.BEGIN, RuleKind.END):
                     continue
-                if not self.matches_rule(rule, index):
+                if not await self.matches_rule(rule, index):
                     continue
                 if rule.action is None:
-                    self.write(self.ensure_record() + self.special("ORS"),
-                               Print((), None))
+                    await self.write(
+                        self.ensure_record() + self.special("ORS"),
+                        Print((), None))
                 else:
-                    self.exec_stmt(rule.action)
+                    await self.exec_stmt(rule.action)
         except NextRecord:
             return
         except NextFileSignal:
-            # nextfile abandons the rest of the current operand, not just
-            # the current record; the driver reads the flag and moves on.
-            self.skip_file = True
-            return
+            await self.skip_file()
 
-    def run_end(self) -> None:
+    async def run_end(self) -> None:
         """Run every END rule in source order."""
-        self.run_edge(RuleKind.END)
+        await self.run_edge(RuleKind.END)
 
     def has_main_rules(self) -> bool:
         """Report whether any rule needs input records."""
         return any(r.kind not in (RuleKind.BEGIN, )
                    for r in self.program.rules)
 
-    def drain(self) -> str:
-        """Take everything buffered for stdout since the last drain."""
-        out = "".join(body for name, body, _ in self.output if name is None)
-        self.output = [event for event in self.output if event[0] is not None]
-        return out
+    async def finish(self) -> None:
+        """Close everything at exit, as awk does before it returns.
 
-    def drain_err(self) -> str:
-        """Take everything written to /dev/stderr since the last drain."""
-        out = "".join(body for name, body, _ in self.output
-                      if name == STDERR_NAME)
-        self.output = [
-            event for event in self.output if event[0] != STDERR_NAME
-        ]
-        return out
+        The output pipes run newest first, as mawk 1.3.4 closes them,
+        and their output lands ahead of any standard output still
+        waiting; the files are written out and the inputs let go.
+        """
+        for command in reversed(list(self.out_pipes)):
+            await self.close_out_pipe(command)
+        await self.flush_files()
+        self.release()
+        await self.close_inputs()
 
-    def drain_output(self) -> list[tuple[str | None, str, bool]]:
-        """Take ordered output events for the async host to apply."""
-        pending, self.output = self.output, []
-        return pending
+    async def close_inputs(self) -> None:
+        """Let go of every input stream still open."""
+        readers = [pipe.reader for pipe in self.in_pipes.values()]
+        readers.extend(self.in_files.values())
+        if self.main is not None:
+            readers.append(self.main)
+        self.in_pipes.clear()
+        self.in_files.clear()
+        self.main = None
+        for reader in readers:
+            await reader.close()
+
+    async def drain(self) -> tuple[bytes, bytes]:
+        """Take the output ready so far: standard output, then stderr.
+
+        Called between records: the files are written out, and standard
+        output held for an output pipe stays held until the pipe closes.
+        """
+        await self.flush_files()
+        if not self.out_pipes:
+            self.release()
+        return self.take()
+
+    async def salvage(
+            self,
+            failure: AwkRuntimeError | AwkSyntaxError) -> tuple[bytes, bytes]:
+        """Take what a run a fatal error ended leaves behind.
+
+        What awk had already printed stays, held text included, and so
+        does what it had printed to files, but no pipe command runs:
+        mawk's exit flushes its buffers and nothing else. The error is
+        reported, and after it any file that could not be written now.
+
+        Args:
+            failure (AwkRuntimeError | AwkSyntaxError): the fatal error.
+        """
+        self.err.append(f"{failure}\n".encode())
+        try:
+            await self.flush_files()
+        except AwkRuntimeError as exc:
+            self.err.append(f"{exc}\n".encode())
+        self.release()
+        return self.take()
+
+    def take(self) -> tuple[bytes, bytes]:
+        out = b"".join(self.out)
+        err = b"".join(self.err)
+        self.out.clear()
+        self.err.clear()
+        return out, err
 
 
 __all__ = [
     "ExitProgram",
     "Frame",
+    "InputPipe",
     "Interpreter",
 ]

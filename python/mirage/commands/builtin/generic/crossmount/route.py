@@ -34,17 +34,18 @@ from mirage.utils.errors import FS_ERRORS, format_fs_error
 
 
 async def handle_cross_mount(
-    cmd_name: str,
-    scopes: list[PathSpec],
-    text_args: list[str],
-    flag_kwargs: dict[str, FlagValue],
-    dispatch: DispatchFn,
-    run_single: RunSingle,
-    stdin: ByteSource | None = None,
-    storage_key: Callable[[PathSpec], str] | None = None,
-    ns: NamespaceView | None = None,
-    session_view: SessionView | None = None,
-    cwd: str = "/",
+        cmd_name: str,
+        scopes: list[PathSpec],
+        text_args: list[str],
+        flag_kwargs: dict[str, FlagValue],
+        dispatch: DispatchFn,
+        run_single: RunSingle,
+        stdin: ByteSource | None = None,
+        storage_key: Callable[[PathSpec], str] | None = None,
+        ns: NamespaceView | None = None,
+        session_view: SessionView | None = None,
+        cwd: str = "/",
+        argv: tuple[str, ...] = (),
 ) -> CrossResult:
     """Run a command whose path operands span mounts.
 
@@ -75,6 +76,7 @@ async def handle_cross_mount(
             the RELAY generic that renders the session's profile (ls).
         cwd (str): The session's working directory, which a typed
             operand resolves against (cp's link sources).
+        argv (tuple[str, ...]): Original argument spellings for diagnostics.
     """
     native = run_single
     input_source = resolve_source(stdin)
@@ -88,11 +90,11 @@ async def handle_cross_mount(
 
     run_single = run_input
     try:
-        strategy = strategy_for(cmd_name, flag_kwargs)
+        strategy = strategy_for(cmd_name)
         if strategy is Strategy.RELAY:
             return await run_relay(cmd_name, scopes, text_args, flag_kwargs,
                                    dispatch, run_single, storage_key, ns,
-                                   session_view, stdin, cwd)
+                                   session_view, stdin, cwd, argv)
         if strategy is Strategy.STREAM:
             return await run_stream(cmd_name, scopes, text_args, flag_kwargs,
                                     run_single)

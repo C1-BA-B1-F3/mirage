@@ -706,16 +706,23 @@ async def test_awk_runs_what_the_scraper_refused(program, stdin, expected):
 @pytest.mark.parametrize(
     "program,message",
     [
-        ("{getline line; print line}",
-         "awk: getline is not supported in mirage\n"),
         ('{print > "out.txt"}', "awk: file output requires a workspace\n"),
-        ('{system("ls")}', "awk: system() is not supported in mirage\n"),
+        ('{system("ls")}', "awk: running a command requires a workspace\n"),
+        ('{"ls" | getline}', "awk: running a command requires a workspace\n"),
+        ('{print | "cat"}', "awk: running a command requires a workspace\n"),
     ],
 )
 @pytest.mark.asyncio
 async def test_awk_refuses_what_it_cannot_reach(program, message):
     out, code, err = await _run_io(program, b"a\n")
     assert (out, code, err) == ("", 2, message.encode())
+
+
+@pytest.mark.asyncio
+async def test_awk_getline_reads_the_next_record():
+    out, code, err = await _run_io("NR==1{getline; print} {print NR}",
+                                   b"a\nb\nc\n")
+    assert (out, code, err) == ("b\n2\n3\n", 0, b"")
 
 
 @pytest.mark.asyncio

@@ -53,7 +53,7 @@
       "expect": {
         "exit": 2,
         "stdout": "b\na\n",
-        "stderr": "awk: /data2/xrf_nope.txt: No such file or directory\n"
+        "stderr": "awk: cannot open \"/data2/xrf_nope.txt\" (No such file or directory)\n"
       }
     },
     {

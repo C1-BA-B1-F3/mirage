@@ -836,6 +836,18 @@ def test_unique_long_prefix_expands_like_getopt_long():
     assert parsed.ambiguous_options == []
 
 
+def test_a_spec_without_abbreviations_takes_a_long_only_as_spelled():
+    # ripgrep's lexopt: `rg --pcr` is `unrecognized flag --pcr`, never a
+    # prefix of --pcre2-unicode.
+    spec = CommandSpec(options=(Option(long="--pcre2-unicode"), ),
+                       allow_abbrev=False)
+    parsed = parse_command(spec, ["--pcre2", "x"], "/")
+    assert "--pcre2-unicode" not in parsed.flags
+    assert parsed.invalid_options == ["--pcre2"]
+    assert parse_command(SPECS["rg"], ["--pcr", "a"],
+                         "/").invalid_options == ["--pcr"]
+
+
 def test_ambiguous_long_prefix_reports_possibilities_in_order():
     spec = CommandSpec(
         options=(Option(long="--context", type="str"),

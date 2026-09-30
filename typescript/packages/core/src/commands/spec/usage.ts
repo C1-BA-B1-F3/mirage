@@ -24,6 +24,7 @@ import {
   pythonUsage,
   READ_FAIL_EXIT,
   READ_FAIL_EXIT_ISDIR,
+  RG_FLAG_NAMES,
   USAGE_EXIT,
   USAGE_HINT_PREFIX,
 } from './constants.ts'
@@ -166,6 +167,7 @@ export function unknownOptionError(cmdName: string, token: string): [Uint8Array,
       usageExitCode(cmdName),
     ]
   }
+  if (cmdName === 'rg') return rgUnknownFlag(token)
   if (PYTHON_NAMES.has(cmdName)) {
     // CPython's own two shapes, which do not match each other: the short
     // form capitalizes and takes a colon, the long form does neither.
@@ -181,6 +183,48 @@ export function unknownOptionError(cmdName: string, token: string): [Uint8Array,
     : `${cmdName}: invalid option -- '${token}'\n`
   const hint = usageHint(cmdName) + '\n'
   return [new TextEncoder().encode(line + hint), usageExitCode(cmdName)]
+}
+
+// ripgrep's `find_similar_names` threshold: the share of 3-grams a flag name
+// must have in common with an unknown one to be suggested.
+const RG_SUGGEST_THRESHOLD = 0.4
+
+/**
+ * ripgrep's refusal of a flag it does not have (14.1.1): the flag as typed
+ * without its value, then the similar flags its own table holds, if any:
+ * `rg --colo` suggests `--color, --colors`, and `rg --pcr` suggests nothing.
+ * No usage hint follows.
+ */
+export function rgUnknownFlag(token: string): [Uint8Array, number] {
+  const dashed = token.startsWith('-') ? token : `-${token}`
+  const name = dashed.split('=', 1)[0] ?? dashed
+  let line = `rg: unrecognized flag ${name}\n`
+  if (name.startsWith('--')) {
+    const similar = similarRgFlags(name.slice(2)).filter((n) => n !== name.slice(2))
+    if (similar.length > 0) {
+      line += `\nsimilar flags that are available: ${similar.map((n) => `--${n}`).join(', ')}\n`
+    }
+  }
+  return [new TextEncoder().encode(line), usageExitCode('rg')]
+}
+
+// ripgrep's `find_similar_names`: its flags whose 3-grams overlap enough.
+export function similarRgFlags(unrecognized: string): string[] {
+  const given = trigrams(unrecognized)
+  return RG_FLAG_NAMES.filter((name) => {
+    const grams = trigrams(name)
+    let shared = 0
+    for (const gram of given) if (grams.has(gram)) shared += 1
+    return shared / (given.size + grams.size - shared) >= RG_SUGGEST_THRESHOLD
+  })
+}
+
+// The 3-grams of a flag name, padded with `!` when shorter.
+function trigrams(name: string): Set<string> {
+  if (name.length < 3) return new Set([(name + '!!!').slice(0, 3)])
+  const out = new Set<string>()
+  for (let i = 0; i + 3 <= name.length; i++) out.add(name.slice(i, i + 3))
+  return out
 }
 
 // The programs that do NOT parse with getopt_long, and so answer an option

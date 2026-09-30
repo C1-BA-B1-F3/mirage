@@ -19,6 +19,7 @@ import { encodeText } from '../../shell/bytes.ts'
 import { byteOffset } from '../../shell/helpers.ts'
 import { requiredNeedles } from './grep_prefilter.ts'
 import { decodeLine, encodeLine } from './grep_offsets.ts'
+import { matchStart, matchText, userGroups } from './utils/pcre.ts'
 import type { TypeChange, TypeSelection } from './rg_filetypes.ts'
 
 // ripgrep's words for a line -M will not print whole (ripgrep 14.1.1).
@@ -91,6 +92,10 @@ export interface RgFlags {
   sort: string | null
   sortReverse: boolean
   noMessages: boolean
+  // The regex engine: `default` (ripgrep's own), `pcre2` or `auto`.
+  engine: string
+  // PCRE2's UTF and UCP, on unless --no-pcre2-unicode.
+  pcre2Unicode: boolean
 }
 
 /**
@@ -164,9 +169,16 @@ function captureRef(rest: string): [string | null, number] {
   return [name[0], 1 + name[0].length]
 }
 
-// One group's text for a replacement, empty when there is none.
-function capture(m: RegExpExecArray, ref: string): string {
-  if (/^[0-9]+$/.test(ref)) return m[Number(ref)] ?? ''
+// One group's text for a replacement, empty when there is none. A number
+// counts the pattern's own groups, never a `\K` marker's or another synthetic
+// group's.
+function capture(m: RegExpExecArray, ref: string, pat: RegExp): string {
+  if (/^[0-9]+$/.test(ref)) {
+    const number = Number(ref)
+    if (number === 0) return matchText(m)
+    const host = userGroups(pat)[number - 1]
+    return host === undefined ? '' : (m[host] ?? '')
+  }
   return m.groups?.[ref] ?? ''
 }
 
@@ -176,7 +188,7 @@ function capture(m: RegExpExecArray, ref: string): string {
  * of `[0-9A-Za-z_]` (so `$1x` is the group `1x`), a group that did not take
  * part is empty, `$$` is `$`, and a `$` no name follows is itself.
  */
-export function expand(template: string, m: RegExpExecArray): string {
+export function expand(template: string, m: RegExpExecArray, pat: RegExp): string {
   const out: string[] = []
   let i = 0
   for (;;) {
@@ -198,7 +210,7 @@ export function expand(template: string, m: RegExpExecArray): string {
       i = j + 1
       continue
     }
-    out.push(capture(m, ref))
+    out.push(capture(m, ref, pat))
     i = j + length
   }
 }
@@ -217,10 +229,10 @@ export function replaceAll(
   let last = 0
   let length = 0
   for (const m of rustMatches(pat, text)) {
-    const before = text.slice(last, m.index)
+    const before = text.slice(last, matchStart(m))
     pieces.push(before)
     length += before.length
-    const replaced = expand(template, m)
+    const replaced = expand(template, m, pat)
     spans.push([length, length + replaced.length])
     pieces.push(replaced)
     length += replaced.length
@@ -332,48 +344,6 @@ function* regexLiterals(pattern: string): Generator<string> {
   }
 }
 
-/**
- * ripgrep's two spellings of a named group, `(?P<name>` and `(?<name>`, in
- * the one JavaScript's engine reads, `(?<name>`. A lookbehind, an escaped
- * paren and a bracket class are left alone.
- */
-export function hostNamedGroups(pattern: string): string {
-  const out: string[] = []
-  let i = 0
-  let inClass = false
-  while (i < pattern.length) {
-    const ch = pattern[i] ?? ''
-    if (ch === '\\') {
-      out.push(pattern.slice(i, i + 2))
-      i += 2
-      continue
-    }
-    if (inClass) {
-      inClass = ch !== ']'
-      out.push(ch)
-      i += 1
-      continue
-    }
-    if (ch === '[') {
-      inClass = true
-      let j = i + 1
-      if (pattern[j] === '^') j += 1
-      if (pattern[j] === ']') j += 1
-      out.push(pattern.slice(i, j))
-      i = j
-      continue
-    }
-    if (pattern.startsWith('(?P<', i)) {
-      out.push('(?<')
-      i += 4
-      continue
-    }
-    out.push(ch)
-    i += 1
-  }
-  return out.join('')
-}
-
 function isUpper(ch: string): boolean {
   return ch.toLowerCase() !== ch && ch.toUpperCase() === ch
 }
@@ -474,7 +444,7 @@ export class RgPrinter {
       terminated = false
     } else {
       shown = text
-      spans = matches.map((m): [number, number] => [m.index, m.index + m[0].length])
+      spans = matches.map((m): [number, number] => [matchStart(m), m.index + m[0].length])
       terminated = true
     }
     if (f.vimgrep && matches.length > 0) {
@@ -509,9 +479,9 @@ export class RgPrinter {
     }
     const cursor = new ByteCursor(text)
     for (const m of matches) {
-      let piece = m[0]
-      if (f.replace !== null && isMatch) piece = expand(f.replace, m)
-      const offset = cursor.at(m.index)
+      let piece = matchText(m)
+      if (f.replace !== null && isMatch) piece = expand(f.replace, m, this.pat)
+      const offset = cursor.at(matchStart(m))
       const column = f.column && isMatch ? 1 + offset : null
       yield this.record(
         index,

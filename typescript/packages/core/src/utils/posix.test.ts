@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest'
-import { classCharacters, compilePosixRegex, translateClasses } from './posix.ts'
+import { classCharacters, compilePosixRegex, translateBracket } from './posix.ts'
+
+function bracket(pattern: string): string {
+  const out: string[] = []
+  const end = translateBracket(pattern, 0, out)
+  expect(end).toBe(pattern.length)
+  return out.join('')
+}
 
 describe('POSIX character classes', () => {
   it.each([
@@ -16,7 +23,7 @@ describe('POSIX character classes', () => {
     ['upper', 'AZ', 'az0'],
     ['xdigit', '09aAfF', 'gG_'],
   ])('%s membership', (name, yes, no) => {
-    const compiled = new RegExp(translateClasses(`^[[:${name}:]]$`))
+    const compiled = new RegExp(`^${bracket(`[[:${name}:]]`)}$`)
     const expanded = classCharacters(name)
     for (const char of yes) {
       expect(compiled.test(char)).toBe(true)
@@ -32,29 +39,12 @@ describe('POSIX character classes', () => {
     expect(classCharacters('lower')).toBe('abcdefghijklmnopqrstuvwxyz')
   })
   it.each(['[[:bogus:]]', '[[:constructor:]]', '[[:digit:]'])('rejects %s', (pattern) => {
-    expect(() => translateClasses(pattern)).toThrow(SyntaxError)
+    expect(() => bracket(pattern)).toThrow(SyntaxError)
   })
-  it('preserves escapes and mixed brackets', () => {
-    expect(new RegExp(translateClasses(String.raw`\[\[:digit:\]\]`)).test('[[:digit:]]')).toBe(true)
-    const compiled = new RegExp(translateClasses('^[][:digit:]_]+$'))
+  it('reads a leading ] and a class together', () => {
+    const compiled = new RegExp(`^${bracket('[][:digit:]_]')}+$`)
     expect(compiled.test(']_123')).toBe(true)
     expect(compiled.test('abc')).toBe(false)
-  })
-  it.each([
-    ['a++', '(?:a+)+'],
-    ['a+?', '(?:a+)?'],
-    ['a{1,2}?', '(?:a{1,2})?'],
-    ['(ab)+?', '(?:(ab)+)?'],
-    ['a|[bc]**', 'a|(?:[bc]*)*'],
-    [String.raw`\++`, String.raw`\++`],
-    ['a{', 'a{'],
-  ])('nests the stacked quantifiers in %s', (pattern, nested) => {
-    expect(translateClasses(pattern)).toBe(nested)
-    expect(translateClasses(pattern, false)).toBe(pattern)
-  })
-  it('keeps backtracking inside a nested quantifier', () => {
-    expect('aaa'.replace(new RegExp(translateClasses('a+?')), 'X')).toBe('X')
-    expect(new RegExp(`^${translateClasses('a++a')}$`).test('aaa')).toBe(true)
   })
 })
 

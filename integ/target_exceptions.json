@@ -577,6 +577,31 @@
     "integ/unix/sym/eloop.json :: sym_eloop_mv_onto": {
       "hf": "hf has no rename op, so the backend rename this case pins (a file landing on a link a loop stands in, which GNU renames over the link because the destination's stat fails ELOOP) answers `Operation not supported` there, the same limit mv/backup.json omits hf for. hf runs every other case in this file, each of which refuses before any op reaches the backend.",
       "hf-prefix": "hf has no rename op, so the backend rename this case pins (a file landing on a link a loop stands in, which GNU renames over the link because the destination's stat fails ELOOP) answers `Operation not supported` there, the same limit mv/backup.json omits hf for. hf runs every other case in this file, each of which refuses before any op reaches the backend."
+    },
+    "integ/unix/awk/getline.json :: awk_getline_write_then_read": {
+      "databricks": "This case creates a file directly under /data. This target cannot serve arbitrary file creation there, as with the existing printf-based seeding cases. All 19 writable sibling targets exercise the dispatcher writes, and every read-only getline case in this file runs here.",
+      "databricks-prefix": "This case creates a file directly under /data. This target cannot serve arbitrary file creation there, as with the existing printf-based seeding cases. All 19 writable sibling targets exercise the dispatcher writes, and every read-only getline case in this file runs here.",
+      "sharepoint-prefix": "This case creates a file directly under /data. This target cannot serve arbitrary file creation there, as with the existing printf-based seeding cases. All 19 writable sibling targets exercise the dispatcher writes, and every read-only getline case in this file runs here."
+    },
+    "integ/unix/awk/getline.json :: awk_getline_read_before_close": {
+      "databricks": "This case creates a file directly under /data. This target cannot serve arbitrary file creation there, as with the existing printf-based seeding cases. All 19 writable sibling targets exercise the dispatcher writes, and every read-only getline case in this file runs here.",
+      "databricks-prefix": "This case creates a file directly under /data. This target cannot serve arbitrary file creation there, as with the existing printf-based seeding cases. All 19 writable sibling targets exercise the dispatcher writes, and every read-only getline case in this file runs here.",
+      "sharepoint-prefix": "This case creates a file directly under /data. This target cannot serve arbitrary file creation there, as with the existing printf-based seeding cases. All 19 writable sibling targets exercise the dispatcher writes, and every read-only getline case in this file runs here."
+    },
+    "integ/unix/awk/getline.json :: awk_system_sees_written_file": {
+      "databricks": "This case creates a file directly under /data. This target cannot serve arbitrary file creation there, as with the existing printf-based seeding cases. All 19 writable sibling targets exercise the dispatcher writes, and every read-only getline case in this file runs here.",
+      "databricks-prefix": "This case creates a file directly under /data. This target cannot serve arbitrary file creation there, as with the existing printf-based seeding cases. All 19 writable sibling targets exercise the dispatcher writes, and every read-only getline case in this file runs here.",
+      "sharepoint-prefix": "This case creates a file directly under /data. This target cannot serve arbitrary file creation there, as with the existing printf-based seeding cases. All 19 writable sibling targets exercise the dispatcher writes, and every read-only getline case in this file runs here."
+    },
+    "integ/unix/awk/getline.json :: awk_getline_issue_seeded_file": {
+      "databricks": "This case creates a file directly under /data. This target cannot serve arbitrary file creation there, as with the existing printf-based seeding cases. All 19 writable sibling targets exercise the dispatcher writes, and every read-only getline case in this file runs here.",
+      "databricks-prefix": "This case creates a file directly under /data. This target cannot serve arbitrary file creation there, as with the existing printf-based seeding cases. All 19 writable sibling targets exercise the dispatcher writes, and every read-only getline case in this file runs here.",
+      "sharepoint-prefix": "This case creates a file directly under /data. This target cannot serve arbitrary file creation there, as with the existing printf-based seeding cases. All 19 writable sibling targets exercise the dispatcher writes, and every read-only getline case in this file runs here."
+    },
+    "integ/unix/awk/getline.json :: awk_getline_redirected_output_complete": {
+      "databricks": "This case creates a file directly under /data. This target cannot serve arbitrary file creation there, as with the existing printf-based seeding cases. All 19 writable sibling targets exercise the dispatcher writes, and every read-only getline case in this file runs here.",
+      "databricks-prefix": "This case creates a file directly under /data. This target cannot serve arbitrary file creation there, as with the existing printf-based seeding cases. All 19 writable sibling targets exercise the dispatcher writes, and every read-only getline case in this file runs here.",
+      "sharepoint-prefix": "This case creates a file directly under /data. This target cannot serve arbitrary file creation there, as with the existing printf-based seeding cases. All 19 writable sibling targets exercise the dispatcher writes, and every read-only getline case in this file runs here."
     }
   }
 }

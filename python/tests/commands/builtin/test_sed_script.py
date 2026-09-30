@@ -1,109 +1,273 @@
 import pytest
 
-from mirage.commands.builtin.sed_script import execute_program, parse_program
-from mirage.shell.bytes import encode_text
+from mirage.commands.builtin.sed_script import (SedAddr, SedError,
+                                                SedScriptPiece, compile_script)
 
 
-def _sed(expr: str, text: str) -> str:
-    return execute_program(text, parse_program(expr))
+def _compile(*exprs: str):
+    return compile_script([SedScriptPiece("expr", text) for text in exprs])
 
 
-@pytest.mark.parametrize("expr,text,expected", [
-    ("a one\\/two", "x\n", "x\none/two\n"),
-    ("i one\\/two", "x\n", "one/two\nx\n"),
-    ("c one\\/two", "x\n", "one/two\n"),
-    ("/^bibtexurl:/a codeurl: 'https:\\/\\/github.com\\/u\\/r'",
-     "bibtexurl: x\n", "bibtexurl: x\ncodeurl: 'https://github.com/u/r'\n"),
+def _refusal(pieces: list[SedScriptPiece], extended: bool = False) -> SedError:
+    with pytest.raises(SedError) as info:
+        compile_script(pieces, extended)
+    return info.value
+
+
+def _error(*exprs: str) -> str:
+    return str(_refusal([SedScriptPiece("expr", text) for text in exprs]))
+
+
+def _cmds(*exprs: str) -> str:
+    return "".join(c.cmd for c in _compile(*exprs).commands)
+
+
+@pytest.mark.parametrize("expr", [
+    "2 d", "2,3 p", "/b/ p", "2 s/b/X/", "2, 3p", "2 , 3 p", "2 !d", "2 ! d",
+    "1 ~ 2 p", "/B/ I p"
 ])
-def test_text_drops_backslash_before_ordinary_char(expr, text, expected):
-    assert _sed(expr, text) == expected
+def test_blanks_after_address_comma_and_bang(expr):
+    [cmd] = _compile(expr).commands
+    assert cmd.a1 is not None
+    assert cmd.cmd in "dps"
 
 
-@pytest.mark.parametrize("expr,expected", [
-    ("a one\\/two\\tthree", "x\none/two\tthree\n"),
-    ("a x\\ny", "x\nx\ny\n"),
-    ("a x\\\\y", "x\nx\\y\n"),
-    ("a x\\by", "x\nxby\n"),
-    ("a 1\\a2\\f3\\v4\\r5", "x\n1\x072\f3\v4\r5\n"),
+def test_blanks_and_semicolons_between_commands():
+    assert _cmds(" ; ;2p ; ; 3p") == "pp"
+    assert _cmds("2,3 { p }") == "{p}"
+    assert _cmds("2{ p ; }") == "{p}"
+    assert _cmds("{p};{p}") == "{p}{p}"
+
+
+def test_s_flags_and_y_take_blanks_and_nothing_else():
+    assert _cmds("s/b/X/ g") == "s"
+    assert _cmds("s/b/X/ ; p") == "sp"
+    assert _cmds("s/b/X/g p") == "s"
+    assert _cmds("y/b/X/ ;p") == "yp"
+    assert _error("y/b/X/p") == ("sed: -e expression #1, char 7: "
+                                 "extra characters after command")
+    assert _error("p x") == ("sed: -e expression #1, char 3: "
+                             "extra characters after command")
+
+
+def test_comments():
+    assert _cmds("2p # comment") == "p"
+    assert _cmds("2d#x") == "d"
+    assert _cmds("p;# c\np") == "pp"
+
+
+def test_labels_end_at_blank_semicolon_brace_or_hash():
+    program = _compile(":a p")
+    assert [(c.cmd, c.label) for c in program.commands] == [(":", "a"),
+                                                            ("p", "")]
+    assert _cmds("2b x ; p ; :x") == "bp:"
+    assert _cmds("2{bx};p;:x") == "{b}p:"
+
+
+def test_file_names_run_to_the_end_of_the_line():
+    assert _compile("1r /data/r.txt ;p").commands[0].fname == \
+        "/data/r.txt ;p"
+    assert _compile("2r/data/r").commands[0].fname == "/data/r"
+    assert _compile("w /o ").wfiles == ["/o "]
+
+
+def test_l_q_Q_numbers():
+    assert _compile("l 5").commands[0].int_arg == 5
+    assert _compile("l5").commands[0].int_arg == 5
+    assert _compile("l").commands[0].int_arg == -1
+    assert _compile("2 q 5").commands[0].int_arg == 5
+    assert _error("2q x") == ("sed: -e expression #1, char 4: "
+                              "extra characters after command")
+
+
+def test_hash_n_and_v():
+    assert _compile("#n\np").no_default_output
+    assert _compile("#nfoo").no_default_output
+    assert not _compile(" #n").no_default_output
+    assert not _compile("p", "#n").no_default_output
+    assert _cmds("v;p") == "p"
+    assert _cmds("v 4.2;p") == "p"
+    assert _error("v 9.0") == ("sed: -e expression #1, char 5: "
+                               "expected newer version of sed")
+
+
+@pytest.mark.parametrize("expr,why", [
+    ("2!!d", "char 3: multiple `!'s"),
+    ("2! !d", "char 4: multiple `!'s"),
+    ("2}", "char 2: unexpected `}'"),
+    ("{p", "char 0: unmatched `{'"),
+    ("2", "char 1: missing command"),
+    ("2 ", "char 2: missing command"),
+    ("2!", "char 2: missing command"),
+    ("k", "char 1: unknown command: `k'"),
+    ("2 k", "char 3: unknown command: `k'"),
+    (",p", "char 1: unknown command: `,'"),
+    ("1,p", "char 3: unexpected `,'"),
+    ("0p", "char 2: invalid usage of line address 0"),
+    ("0,2p", "char 4: invalid usage of line address 0"),
+    ("+1p", "char 2: invalid usage of +N or ~N as first address"),
+    ("s/a/b", "char 5: unterminated `s' command"),
+    ("s/a/b/k", "char 7: unknown option to `s'"),
+    ("/a", "char 2: unterminated address regex"),
+    (":", 'char 1: ":" lacks a label'),
+    ("1:a", "char 2: : doesn't want any addresses"),
+    ("1#x", "char 2: comments don't accept any addresses"),
+    ("y/ab/c/", "char 7: strings for `y' command are different lengths"),
+    ("y/ab/cd", "char 7: unterminated `y' command"),
+    ("s/a/b/pp", "char 8: multiple `p' options to `s' command"),
+    ("s/a/b/gg", "char 8: multiple `g' options to `s' command"),
+    ("s/a/b/1 2", "char 9: multiple number options to `s' command"),
+    ("s/o/O/0", "char 7: number option to `s' command may not be zero"),
+    ("a", "char 1: expected \\ after `a', `c' or `i'"),
+    ("1{a foo;}", "char 0: unmatched `{'"),
+    ("1,2q", "char 4: command only uses one address"),
+    ("r", "char 1: missing filename in r/R/w/W commands"),
+    ("s/a/b/w", "char 7: missing filename in r/R/w/W commands"),
+    ("s/x/y/I;s//z/I", "char 14: cannot specify modifiers on empty regexp"),
 ])
-def test_text_decodes_escapes(expr, expected):
-    assert _sed(expr, "x\n") == expected
+def test_errors_in_gnu_words(expr, why):
+    assert _error(expr) == f"sed: -e expression #1, {why}"
 
 
-def test_text_decodes_numeric_and_control_escapes():
-    assert _sed("a [\\d065][\\x41][\\o101][\\x4][\\xZ][\\d300]",
-                "x\n") == "x\n[A][A][A][\x04][xZ][,]\n"
-    assert _sed("a [\\cA][\\ca][\\c?][\\c\\\\]",
-                "x\n") == "x\n[\x01][\x01][\x7f][\x1c]\n"
-    with pytest.raises(ValueError,
-                       match=r"recursive escaping after \\c not allowed"):
-        _sed("a [\\c\\d]", "x\n")
+def test_errors_number_the_pieces():
+    assert _error("p", "k") == ("sed: -e expression #2, char 1: "
+                                "unknown command: `k'")
+    assert _error("p", "2 k") == ("sed: -e expression #2, char 3: "
+                                  "unknown command: `k'")
+    assert _error("2", "p") == ("sed: -e expression #1, char 1: "
+                                "missing command")
+    assert _error("p", "{") == ("sed: -e expression #2, char 0: "
+                                "unmatched `{'")
 
 
-def test_text_numeric_escapes_above_ascii_are_raw_bytes():
-    out = _sed("a [\\xff][\\d200][\\o377][\\x80][\\xc3\\xa9][\\o400]", "x\n")
-    assert encode_text(out) == (
-        b"x\n[\xff][\xc8][\xff][\x80][\xc3\xa9][\x00]\n")
+def test_errors_name_a_script_file_and_line():
+
+    def file(text: str) -> SedScriptPiece:
+        return SedScriptPiece("file", text, "/s.sed")
+
+    assert str(_refusal([file("p\nk\n")
+                         ])) == "sed: file /s.sed line 2: unknown command: `k'"
+    assert str(_refusal([SedScriptPiece("expr", "p"),
+                         file("p\n\n 2 k\n")
+                         ])) == "sed: file /s.sed line 3: unknown command: `k'"
+    assert str(_refusal(
+        [file("2\n")])) == "sed: file /s.sed line 2: unknown command: `\n'"
+    assert str(_refusal([file("p\n{\np\n")
+                         ])) == "sed: file /s.sed line 2: unmatched `{'"
 
 
-def test_text_final_c_escape_takes_closing_newline():
-    assert _sed("a foo\\c", "x\ny\n") == "x\nfooJy\nfooJ"
-    assert _sed("i foo\\c", "x\n") == "foo\nx\n"
+def test_unknown_multibyte_command_names_its_first_byte():
+    assert _error("2 é") == ("sed: -e expression #1, char 3: "
+                             "unknown command: `\udcc3'")
 
 
-@pytest.mark.parametrize("expr,expected", [
-    ("a  \t foo", "x\nfoo\n"),
-    ("a\\   foo", "x\n   foo\n"),
-    ("a\\tfoo", "x\ntfoo\n"),
-    ("a \\tfoo", "x\ntfoo\n"),
-    ("a\\\\tfoo", "x\n\tfoo\n"),
+def test_e_is_refused():
+    assert _error("e echo hi") == ("sed: -e expression #1, char 1: "
+                                   "`e' command not supported")
+    assert _error("s/b/X/e") == ("sed: -e expression #1, char 7: "
+                                 "`e' command not supported")
+
+
+def test_missing_label_panics():
+    err = _refusal([SedScriptPiece("expr", "bfoo")])
+    assert str(err) == "sed: can't find label for jump to `foo'"
+    assert err.exit_code == 4
+
+
+def test_error_keeps_the_w_files_opened_before_it():
+    err = _refusal(
+        [SedScriptPiece("expr", "w /o"),
+         SedScriptPiece("expr", "k")])
+    assert err.wfiles == ("/o", )
+
+
+def test_delimiters_and_brackets():
+    sub = _compile("s|a\\|b|X|").commands[0].subst
+    assert sub is not None and sub.re is not None
+    assert sub.re.pattern == "a|b"
+    sub = _compile("s.a\\.b.X.").commands[0].subst
+    assert sub is not None and sub.re is not None
+    assert sub.re.pattern == "a.b"
+    sub = _compile("s/[/]/X/").commands[0].subst
+    assert sub is not None and sub.re is not None
+    assert sub.re.pattern == "[/]"
+    sub = _compile("s&a&[\\&]&").commands[0].subst
+    assert sub is not None and sub.replacement == "[\\&]"
+
+
+def test_y_escapes():
+    [y] = _compile("y/ab\\//\\n\\tX/").commands
+    assert y.y_src == ["a", "b", "/"]
+    assert y.y_dst == ["\n", "\t", "X"]
+
+
+def test_text_continues_into_the_next_piece():
+    [a] = _compile("a\\", "foo\\", "bar").commands
+    assert a.text == "foo\nbar\n"
+    assert _compile("a\\").commands[0].text is None
+
+
+def test_0r_prepends_on_line_1():
+    [r] = _compile("0r /r").commands
+    assert r.a1 == SedAddr("num", n=1)
+    assert r.prepend
+    assert _error("0,1r /r") == ("sed: -e expression #1, char 4: "
+                                 "invalid usage of line address 0")
+
+
+@pytest.mark.parametrize("expr,why", [
+    ("s/\\(/x/", "char 7: Unmatched ( or \\("),
+    ("s/\\)/x/", "char 7: Unmatched ) or \\)"),
+    ("s/a\\{x\\}/y/", "char 11: Invalid content of \\{\\}"),
+    ("s/a\\{2/x/", "char 9: Unmatched \\{"),
+    ("s/a\\{3,1\\}/x/", "char 13: Invalid content of \\{\\}"),
+    ("/\\(/p", "char 4: Unmatched ( or \\("),
+    ("/\\(/Ip", "char 5: Unmatched ( or \\("),
+    ("s/\\(/x/Ig", "char 9: Unmatched ( or \\("),
+    ("s/\\(/x/;p", "char 8: Unmatched ( or \\("),
+    ("s/\\(/x/ ; p", "char 9: Unmatched ( or \\("),
+    ("s/[[:foo:]]/x/", "char 14: Invalid character class name"),
+    ("s/[z-a]/x/", "char 10: Invalid range end"),
+    ("s/\\x5c/X/", "char 9: Trailing backslash"),
+    ("s/\\(a\\)/\\2/", "char 11: invalid reference \\2 on `s' command's RHS"),
 ])
-def test_text_leading_blanks(expr, expected):
-    assert _sed(expr, "x\n") == expected
+def test_bre_refusals_in_gnu_words(expr, why):
+    assert _error(expr) == f"sed: -e expression #1, {why}"
 
 
-@pytest.mark.parametrize("expr,expected", [
-    ("a\\\n  l1\\\n  l2", "x\n  l1\n  l2\n"),
-    ("i\\\nl1\\\nl2", "l1\nl2\nx\n"),
-    ("a foo\\\nbar", "x\nfoo\nbar\n"),
+@pytest.mark.parametrize("expr,why", [
+    ("s/(/x/", "char 6: Unmatched ( or \\("),
+    ("s/)/x/", "char 6: Unmatched ) or \\)"),
+    ("s/*a/x/", "char 7: Invalid preceding regular expression"),
+    ("s/a|*b/x/", "char 9: Invalid preceding regular expression"),
+    ("s/a{x}/y/", "char 9: Invalid content of \\{\\}"),
+    ("s/a{1/x/", "char 8: Unmatched \\{"),
+    ("s/(?<=id=)[0-9]+/X/", "char 19: Invalid preceding regular expression"),
+    ("s/a/\\1/", "char 7: invalid reference \\1 on `s' command's RHS"),
 ])
-def test_text_classic_form_and_continued_lines(expr, expected):
-    assert _sed(expr, "x\n") == expected
+def test_ere_refusals_in_gnu_words(expr, why):
+    err = _refusal([SedScriptPiece("expr", expr)], extended=True)
+    assert str(err) == f"sed: -e expression #1, {why}"
 
 
-@pytest.mark.parametrize("expr,text,expected", [
-    ("1a foo\n2d", "x\ny\n", "x\nfoo\n"),
-    ("1a foo; 2d", "x\ny\n", "x\nfoo; 2d\ny\n"),
-    ("a int x = 1; echo bar", "x\n", "x\nint x = 1; echo bar\n"),
-    ("1d\n$a foo   ", "x\ny\n", "y\nfoo   \n"),
-])
-def test_text_runs_to_newline(expr, text, expected):
-    assert _sed(expr, text) == expected
+def test_regex_refusal_comes_before_a_later_piece():
+    assert _error("s/\\(/x/", "k") == ("sed: -e expression #1, char 7: "
+                                       "Unmatched ( or \\(")
+    assert _error("p", "s/\\(/x/") == ("sed: -e expression #2, char 7: "
+                                       "Unmatched ( or \\(")
 
 
-@pytest.mark.parametrize("expr,text,expected", [
-    ("a one\\/two\\", "x\n", "x\none\\/two\n"),
-    ("a\\", "x\ny\n", "x\ny\n"),
-    ("c\\", "x\ny\n", ""),
-])
-def test_text_undecoded_when_script_ends_on_backslash(expr, text, expected):
-    assert _sed(expr, text) == expected
+def test_class_without_outer_brackets_panics():
+    err = _refusal([SedScriptPiece("expr", "s/[:alpha:]/x/")])
+    assert str(err) == ("sed: character class syntax is [[:space:]], "
+                        "not [:space:]")
+    assert err.exit_code == 4
+    assert len(_compile("s/[:]/x/").commands) == 1
+    assert len(_compile("s/[[:alpha:]]/x/").commands) == 1
 
 
-def test_text_refuses_missing_text_and_open_block():
-    with pytest.raises(ValueError,
-                       match="expected \\\\ after `a', `c' or `i'"):
-        _sed("a", "x\n")
-    with pytest.raises(ValueError, match="unmatched `{'"):
-        _sed("1{a foo;}", "x\ny\n")
-    assert _sed("1{a foo\n}", "x\ny\n") == "x\nfoo\ny\n"
-
-
-@pytest.mark.parametrize("script,text,expected", [
-    ("2b\ns/./X/", "a\nb\nc\nd\n", "X\nb\nX\nX\n"),
-    ("1b\n$!d", "a\nb\nc\nd\n", "a\nd\n"),
-    ("s/a/A/\nt\ns/./X/", "a\nb\n", "A\nX\n"),
-    ("1b done\ns/./X/\n:done\ns/$/!/", "a\nb\n", "a!\nX!\n"),
-])
-def test_branch_and_label_end_at_newline(script, text, expected):
-    assert _sed(script, text) == expected
+def test_accepts_what_glibc_accepts():
+    assert len(_compile("s/*a/x/", "s/a{x}/y/", "s/a|b/X/").commands) == 3
+    program = compile_script(
+        [SedScriptPiece("expr", "s/a**/x/;s/a{,1}b/X/;s/()/x/")], True)
+    assert len(program.commands) == 3

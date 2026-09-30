@@ -33,14 +33,13 @@ P_TERNARY = 2
 P_OR = 3
 P_AND = 4
 P_IN = 5
-P_GETLINE_PIPE = 6
-P_MATCH = 7
-P_COMPARE = 8
-P_CONCAT = 9
-P_ADD = 10
-P_MUL = 11
-P_UNARY = 12
-P_POW = 13
+P_MATCH = 6
+P_COMPARE = 7
+P_CONCAT = 8
+P_ADD = 9
+P_MUL = 10
+P_UNARY = 11
+P_POW = 12
 
 ASSIGN_OPS = frozenset({"=", "+=", "-=", "*=", "/=", "%=", "^="})
 COMPARE_OPS = frozenset({"<", "<=", ">", ">=", "==", "!="})
@@ -418,7 +417,27 @@ class Parser:
             if not isinstance(target, LVALUE_TYPES):
                 raise self.error(f"{op} needs an lvalue")
             return IncDec(True, op, target)
-        return self.parse_postfix(self.parse_primary(no_gt), no_gt)
+        node = self.parse_postfix(self.parse_primary(no_gt), no_gt)
+        return self.parse_input_pipe(node, no_gt)
+
+    def parse_input_pipe(self, node: Expr, no_gt: bool) -> Expr:
+        """Read ``cmd | getline`` after a primary expression.
+
+        The command is the primary alone, as in mawk 1.3.4: ``"echo "
+        "hi" | getline`` runs ``hi`` and concatenates the result, and
+        ``1 + "cmd" | getline`` adds 1 to getline's result. In a print
+        statement ``|`` is the output pipe instead.
+
+        Args:
+            node (Expr): the primary before the ``|``.
+            no_gt (bool): whether ``|`` belongs to a print statement.
+        """
+        while (not no_gt and self.at_op("|")
+               and self.peek(1).kind is TokKind.KEYWORD
+               and self.peek(1).text == "getline"):
+            self.pos += 1
+            node = self.parse_getline(node)
+        return node
 
     def parse_postfix(self, node: Expr, no_gt: bool) -> Expr:
         while self.at_op("++", "--") and isinstance(node, LVALUE_TYPES):
@@ -515,8 +534,12 @@ class Parser:
         if source is not None:
             return Getline(GetlineKind.CMD, target, source)
         if self.at_op("<"):
+            # The file is a primary, so `getline < "a" "b"` reads "a"
+            # and concatenates "b" to the result, and `getline line < f
+            # > 0` compares the result (mawk 1.3.4).
             self.pos += 1
-            return Getline(GetlineKind.FILE, target, self.parse_expr(P_CONCAT))
+            name = self.parse_postfix(self.parse_primary(True), True)
+            return Getline(GetlineKind.FILE, target, name)
         return Getline(GetlineKind.PLAIN, target, None)
 
     def starts_concat(self) -> bool:
@@ -577,15 +600,6 @@ class Parser:
                 self.pos += 1
                 left = MatchOp(op == "!~", left,
                                self.parse_expr(P_MATCH + 1, no_gt))
-                continue
-            if op == "|":
-                if no_gt or P_GETLINE_PIPE < min_bp:
-                    return left
-                if not (self.peek(1).kind is TokKind.KEYWORD
-                        and self.peek(1).text == "getline"):
-                    return left
-                self.pos += 1
-                left = self.parse_getline(left)
                 continue
             if op in COMPARE_OPS:
                 if (no_gt and op in (">", ">>")) or P_COMPARE < min_bp:

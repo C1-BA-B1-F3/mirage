@@ -13,7 +13,7 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import git from 'isomorphic-git'
-import { BreError, searchBre } from '../../../builtin/utils/bre.ts'
+import { BreError, PosixSyntax, searchBre, translateEre } from '../../../builtin/utils/bre.ts'
 import { GitError } from './errors.ts'
 import { HEAD } from './constants.ts'
 
@@ -25,7 +25,7 @@ import { touches } from './pickaxe.ts'
 import { loadRefs, SYMREF_PREFIX } from './refs.ts'
 import { commitFacts, repoArgs, type Repo } from './repo.ts'
 import { compareCodePoints } from '../../../../utils/sort.ts'
-import { compilePosixRegex, POSIX_CLASSES, translateClasses } from '../../../../utils/posix.ts'
+import { compilePosixRegex, POSIX_CLASSES } from '../../../../utils/posix.ts'
 import { mappedIdentity, type MailmapEntry } from './mailmap.ts'
 
 const BRANCH_PREFIX = 'refs/heads/'
@@ -168,7 +168,9 @@ function pattern(value: string, syntax: string, ignoreCase: boolean, origin: str
     const fold = ignoreCase ? 'i' : ''
     if (syntax === FIXED_STRINGS)
       return compilePosixRegex(value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), fold)
-    if (syntax === EXTENDED_REGEXP) return compilePosixRegex(translateClasses(value), fold)
+    if (syntax === EXTENDED_REGEXP) {
+      return compilePosixRegex(translateEre(value, PosixSyntax.EXTENDED)[0], fold)
+    }
     return searchBre(value, ignoreCase)
   } catch (err) {
     if (err instanceof BreError || err instanceof SyntaxError)

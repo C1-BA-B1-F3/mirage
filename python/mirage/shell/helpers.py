@@ -118,6 +118,8 @@ def claimed_descriptor(command: TSNodeLike, last: TSNodeLike) -> int | None:
         command (TSNodeLike): the command node the number is in.
         last (TSNodeLike): the command's last child.
     """
+    if (last.type == NT.COMMAND_NAME and len(last.named_children) == 1):
+        last = last.named_children[0]
     if last.type != NT.NUMBER or command.parent is None:
         return None
     for sibling in command.parent.named_children:
@@ -760,6 +762,9 @@ def get_redirects(
             redirects.append(_parse_file_redirect(child, fd))
         recover_herestring = False
 
+    if command is not None and command.type == NT.COMMAND and not get_parts(
+            command):
+        command = None
     return command, redirects
 
 
@@ -953,8 +958,39 @@ def get_process_sub_direction(node: TSNodeLike) -> ProcessSubDirection | None:
     return None
 
 
+def input_substitution_redirect(node: TSNodeLike) -> Redirect | None:
+    """Bash's single-file command substitution, measured against 5.2.37.
+
+    Only a lone foreground ``< file`` (optionally ``0<``) reads input
+    into the substitution. Extra redirects, commands, heredocs and
+    descriptor duplication retain ordinary redirect-only semantics.
+
+    Args:
+        node (TSNodeLike): the parsed substitution body program.
+    """
+    if any(child.type == "&" for child in node.children):
+        return None
+    statements = [c for c in node.named_children if c.type != NT.COMMENT]
+    if len(statements) != 1:
+        return None
+    statement = statements[0]
+    if statement.type == NT.FILE_REDIRECT:
+        command, redirects = None, [_parse_file_redirect(statement)]
+    elif statement.type == NT.REDIRECTED_STATEMENT:
+        command, redirects = get_redirects(statement)
+    else:
+        return None
+    if command is not None or len(redirects) != 1:
+        return None
+    redirect = redirects[0]
+    if (redirect.kind != RedirectKind.STDIN or redirect.fd != 0
+            or isinstance(redirect.target, int)):
+        return None
+    return redirect
+
+
 def get_process_sub_body(node: TSNodeLike) -> str:
-    text = get_text(node)
+    text = (getattr(node, "source_text", node.text) or b"").decode()
     if text.startswith(("<(", ">(")) and text.endswith(")"):
         return text[2:-1]
     return text

@@ -12,8 +12,12 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import { compilePosixRegex, translateClasses } from '../../utils/posix.ts'
-import { BreError, translateBre } from './utils/bre.ts'
+import { compilePosixRegex } from '../../utils/posix.ts'
+import { RegexSyntax } from './types.ts'
+import { BreError, translateBre, translateEre } from './utils/bre.ts'
+import { PcreError, hostFlags, translatePcre } from './utils/pcre.ts'
+import { RustRegexError, translateRust, wholeWord as rustWholeWord } from './utils/rust_regex.ts'
+import type { HostRegex } from './utils/types.ts'
 import { UsageError } from '../errors.ts'
 import { mountKey, mountPrefixOf } from '../../utils/key_prefix.ts'
 import { materialize } from '../../io/types.ts'
@@ -22,6 +26,16 @@ import { FlagView } from '../spec/flag_view.ts'
 import { type FlagValue } from '../spec/types.ts'
 
 export const NEVER_MATCH = '(?!)'
+// The matcher options, as GNU grep names them: each one picks the dialect,
+// and two different ones on a line are refused.
+const MATCHERS: Readonly<Record<string, RegexSyntax>> = {
+  E: RegexSyntax.EXTENDED,
+  P: RegexSyntax.PERL,
+}
+const CONFLICTING_MATCHERS = 'conflicting matchers specified'
+const PERL_SINGLE = 'the -P option only supports a single pattern'
+// GNU grep 3.11's -P wrapping for -w (pcresearch.c).
+const PERL_WORD: readonly [string, string] = ['(?<!\\w)(?:', ')(?!\\w)']
 // The dest -e fills in each search command's spec: rg spells its options by
 // their long names.
 export const PATTERN_KEYS: Readonly<Record<string, string>> = {
@@ -140,37 +154,127 @@ export function breSource(part: string): string {
   }
 }
 
-// One pattern's regex source, in the syntax it was written in.
-function sourceOf(part: string, fixedString: boolean, basic: boolean): string {
-  if (fixedString) return escapeRegex(part)
-  if (basic) return breSource(part)
+// One extended expression as grep -E reads it, or grep's refusal.
+export function ereSource(part: string): string {
   try {
-    return translateClasses(part)
+    return translateEre(part)[0]
   } catch (err) {
-    if (err instanceof SyntaxError) throw new UsageError(`grep: ${err.message}`)
+    if (err instanceof BreError) throw new UsageError(`grep: ${err.message}`)
     throw err
   }
 }
 
-// Build a regex source string from a POSIX pattern list. `basic` says the
-// patterns are basic regular expressions, which grep reads by default and which
-// invert most of the RegExp operators; false leaves them alone, which is right
-// for -E and for rg's own dialect.
+/**
+ * The dialect grep's matcher options pick, refusing a mixture. GNU grep 3.11
+ * keeps one matcher: -G, -E, -F and -P each name one, repeating the same is
+ * harmless, and any two different ones are `conflicting matchers specified`
+ * (exit 2) in either order. -F is carried as `fixedString`, so it only takes
+ * part in the check. `perl` is the dest -P fills in this spec (grep's has a
+ * long spelling, zgrep's does not).
+ */
+export function matcherSyntax(fl: FlagView, prog = 'grep', perl = 'perl_regexp'): RegexSyntax {
+  const dests: Record<string, string> = { G: 'G', E: 'E', F: 'F', [perl]: 'P' }
+  if (perl === 'perl_regexp') Object.assign(dests, { basic_regexp: 'G', extended_regexp: 'E' })
+  const chosen = new Set<string>()
+  for (const [dest, matcher] of Object.entries(dests)) if (fl.asBool(dest)) chosen.add(matcher)
+  if (chosen.size > 1) throw new UsageError(`${prog}: ${CONFLICTING_MATCHERS}`)
+  for (const matcher of chosen) {
+    const syntax = MATCHERS[matcher]
+    if (syntax !== undefined) return syntax
+  }
+  return RegexSyntax.BASIC
+}
+
+/**
+ * GNU grep's compile-time warnings for a pattern list, as stderr. Only an
+ * extended expression has any: dfa.c warns about a repetition operator at the
+ * start of an expression (`grep: warning: * at start of expression`), once per
+ * occurrence, which is also how GNU reads `(?<=...)`.
+ */
+export function patternWarnings(pattern: string, syntax: RegexSyntax, prog = 'grep'): string {
+  if (syntax !== RegexSyntax.EXTENDED) return ''
+  const lines: string[] = []
+  for (const part of pattern.split('\n')) {
+    try {
+      lines.push(...translateEre(part)[2])
+    } catch (err) {
+      if (err instanceof BreError) return ''
+      throw err
+    }
+  }
+  return lines.map((w) => `${prog}: warning: ${w}\n`).join('')
+}
+
+// One pattern's regex source in BASIC or EXTENDED syntax.
+function sourceOf(part: string, fixedString: boolean, syntax: RegexSyntax): string {
+  if (fixedString) return escapeRegex(part)
+  if (syntax === RegexSyntax.BASIC) return breSource(part)
+  return ereSource(part)
+}
+
+/**
+ * grep -P's one pattern as host source (`u`-flag syntax), or grep's refusal:
+ * more than one pattern, or one PCRE2 refuses. -w wraps it the way GNU grep
+ * does; `unicode` is UCP classes (a pushed-down rg -P).
+ */
+export function perlRegex(
+  pattern: string,
+  ignoreCase: boolean,
+  whole: boolean,
+  unicode = false,
+): HostRegex {
+  if (pattern.includes('\n')) throw new UsageError(`grep: ${PERL_SINGLE}`)
+  const source = whole ? PERL_WORD[0] + pattern + PERL_WORD[1] : pattern
+  try {
+    return translatePcre(source, unicode, ignoreCase)
+  } catch (err) {
+    if (err instanceof PcreError) throw new UsageError(`grep: ${err.message}`)
+    throw err
+  }
+}
+
+// ripgrep's default-engine pattern list as host source, or its refusal.
+export function rustSource(
+  pattern: string,
+  fixedString: boolean,
+  whole: boolean,
+  ignoreCase: boolean,
+): HostRegex {
+  let parts = pattern.split('\n')
+  if (fixedString) parts = parts.map(rustEscape)
+  let translated: HostRegex
+  try {
+    translated = translateRust(parts, ignoreCase)
+  } catch (err) {
+    if (err instanceof RustRegexError) throw new UsageError(`rg: ${err.message}`)
+    throw err
+  }
+  if (!whole) return translated
+  return { source: rustWholeWord(translated.source), ignoreCase: translated.ignoreCase }
+}
+
+// A literal as a Rust regex, the way `regex::escape` spells it.
+export function rustEscape(text: string): string {
+  return text.replace(/[\\.+*?()|[\]{}^$#&\-~]/g, '\\$&')
+}
+
+// Build a regex source string from a POSIX pattern list in BASIC or
+// EXTENDED syntax; the other two dialects compile through `compilePattern`.
 export function buildPatternStr(
   pattern: string,
   fixedString = false,
   wholeWord = false,
-  basic = false,
+  syntax = RegexSyntax.EXTENDED,
 ): string {
   const parts = pattern.split('\n')
   if (parts.length === 1) {
-    let patStr = sourceOf(pattern, fixedString, basic)
+    let patStr = sourceOf(pattern, fixedString, syntax)
     if (wholeWord) patStr = `\\b${patStr}\\b`
     return patStr
   }
   const subs: string[] = []
   for (const part of parts) {
-    const source = sourceOf(part, fixedString, basic)
+    const source = sourceOf(part, fixedString, syntax)
     let sub = fixedString ? source : `(?:${source})`
     if (wholeWord) sub = `\\b${sub}\\b`
     subs.push(sub)
@@ -183,27 +287,21 @@ export function compilePattern(
   ignoreCase = false,
   fixedString = false,
   wholeWord = false,
-  basic = false,
+  syntax = RegexSyntax.EXTENDED,
 ): RegExp {
-  const source = buildPatternStr(pattern, fixedString, wholeWord, basic)
+  if (syntax === RegexSyntax.RUST) {
+    const translated = rustSource(pattern, fixedString, wholeWord, ignoreCase)
+    return new RegExp(translated.source, translated.ignoreCase ? 'iu' : 'u')
+  }
+  if (syntax === RegexSyntax.PERL && !fixedString) {
+    const translated = perlRegex(pattern, ignoreCase, wholeWord)
+    return compilePosixRegex(translated.source, hostFlags(translated.source, translated.ignoreCase))
+  }
+  const source = buildPatternStr(pattern, fixedString, wholeWord, syntax)
   try {
     return compilePosixRegex(source, ignoreCase ? 'i' : '')
   } catch (err) {
     if (!(err instanceof SyntaxError)) throw err
-    // GNU grep 3.11 diagnostics, also used by zgrep. Syntax outside
-    // our supported dialect gets a stable generic refusal.
-    let message = 'Invalid regular expression'
-    for (const [suffix, diagnostic] of [
-      ['Unterminated group', 'Unmatched ( or \\('],
-      ['Range out of order in character class', 'Invalid range end'],
-      ['numbers out of order in {} quantifier', 'Invalid content of \\{\\}'],
-      ['\\ at end of pattern', 'Trailing backslash'],
-    ] as const) {
-      if (err.message.endsWith(suffix)) {
-        message = diagnostic
-        break
-      }
-    }
-    throw new UsageError(`grep: ${message}`)
+    throw new UsageError('grep: Invalid regular expression')
   }
 }

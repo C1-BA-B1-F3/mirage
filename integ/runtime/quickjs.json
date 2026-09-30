@@ -383,6 +383,56 @@
       ]
     },
     {
+      "id": "node_argv_is_typed_and_names_no_mount",
+      "world": {
+        "runtimes": [
+          "quickjs",
+          "workspace"
+        ],
+        "mounts": {
+          "/w": {
+            "vfs": "ram",
+            "files": {
+              "a.js": "console.log(JSON.stringify(scriptArgs))\n",
+              "data/in.csv": "x\n"
+            }
+          },
+          "/t": {
+            "vfs": "ram",
+            "files": {
+              "q.txt": "from-t\n"
+            }
+          }
+        }
+      },
+      "steps": [
+        {
+          "command": "cd /w && node a.js data/in.csv ./data/in.csv",
+          "expect": {
+            "exit": 0,
+            "stdout": "[\"data/in.csv\",\"./data/in.csv\"]\n",
+            "stderr": ""
+          }
+        },
+        {
+          "command": "node /w/a.js /t/q.txt",
+          "expect": {
+            "exit": 0,
+            "stdout": "[\"/t/q.txt\"]\n",
+            "stderr": ""
+          }
+        },
+        {
+          "command": "node -e 'console.log(JSON.stringify(scriptArgs))' /t/q.txt /w/data/in.csv",
+          "expect": {
+            "exit": 0,
+            "stdout": "[\"/t/q.txt\",\"/w/data/in.csv\"]\n",
+            "stderr": ""
+          }
+        }
+      ]
+    },
+    {
       "id": "utimes_reaches_the_mount",
       "world": {
         "runtimes": [

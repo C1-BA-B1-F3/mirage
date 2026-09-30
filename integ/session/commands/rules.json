@@ -278,6 +278,76 @@
         "stdout": "p\n",
         "stderr": ""
       }
+    },
+    {
+      "id": "cmd_input_substitution_denies_before_read",
+      "seq": 1346030,
+      "targets": [
+        "ram-commands"
+      ],
+      "command": "echo \"$(< /scratch/private/k)\"",
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "cat: /scratch/private/k: private\n",
+        "check": "[]\n"
+      },
+      "check": {
+        "read_paths": true
+      }
+    },
+    {
+      "id": "cmd_input_substitution_denies_relative_path",
+      "seq": 1346031,
+      "targets": [
+        "ram-commands"
+      ],
+      "command": "(cd /scratch && echo \"$(< private/k)\")",
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "cat: private/k: private\n"
+      }
+    },
+    {
+      "id": "cmd_input_substitution_denies_symlink",
+      "seq": 1346032,
+      "targets": [
+        "ram-commands"
+      ],
+      "command": "echo \"$(< /scratch/k)\"",
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "cat: /scratch/k: private\n"
+      }
+    },
+    {
+      "id": "cmd_input_substitution_denies_backticks",
+      "seq": 1346033,
+      "targets": [
+        "ram-commands"
+      ],
+      "command": "echo \"`< /scratch/private/k`\"",
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "cat: /scratch/private/k: private\n"
+      }
+    },
+    {
+      "id": "cmd_input_substitution_denies_expanded_target",
+      "seq": 1346034,
+      "targets": [
+        "ram-commands"
+      ],
+      "command": "p=/scratch/private/k; echo \"$(< \"$p\")\"",
+      "expect": {
+        "exit": 0,
+        "stdout": "\n",
+        "stderr": "cat: /scratch/private/k: private\n"
+      },
+      "explain_blind": true
     }
   ]
 }

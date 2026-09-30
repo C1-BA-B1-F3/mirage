@@ -1,7 +1,5 @@
 import re
 
-INTERVAL = re.compile(r"\{\d+(?:,\d*)?\}")
-
 # Character classes use the C locale in both runtimes.
 POSIX_CLASSES = {
     "alpha": "A-Za-z",
@@ -68,57 +66,6 @@ def translate_bracket(pattern: str, start: int, out: list[str]) -> int:
         out.append(ch)
         idx += 1
     raise re.error("Unmatched [, [^, [:, [., or [=")
-
-
-def translate_classes(pattern: str, nest: bool = True) -> str:
-    """Expand POSIX brackets while preserving regex operators and escapes.
-
-    With ``nest``, a quantifier stacked on a quantified atom repeats that
-    whole repetition, the way glibc reads an ERE: ``a++`` is ``(a+)+``
-    and ``a+?`` is ``(a+)?``, never the host's possessive or lazy forms.
-
-    Args:
-        pattern (str): the regex source, before host compilation.
-        nest (bool): read stacked quantifiers as nested repetition.
-    """
-    out: list[str] = []
-    groups: list[int] = []
-    atom: int | None = None
-    quantified = False
-    idx = 0
-    while idx < len(pattern):
-        ch = pattern[idx]
-        interval = INTERVAL.match(pattern, idx) if ch == "{" else None
-        if ch in "*+?" or interval is not None:
-            token = interval.group() if interval is not None else ch
-            if nest and quantified and atom is not None:
-                out[atom:] = ["(?:", *out[atom:], ")"]
-            out.append(token)
-            quantified = atom is not None
-            idx += len(token)
-            continue
-        quantified = False
-        if ch == "\\" and idx + 1 < len(pattern):
-            atom = len(out)
-            out.append(pattern[idx:idx + 2])
-            idx += 2
-        elif ch == "[":
-            atom = len(out)
-            idx = translate_bracket(pattern, idx, out)
-        elif ch == "(":
-            groups.append(len(out))
-            atom = None
-            out.append(ch)
-            idx += 1
-        elif ch == ")":
-            atom = groups.pop() if groups else None
-            out.append(ch)
-            idx += 1
-        else:
-            atom = None if ch in "|^$" else len(out)
-            out.append(ch)
-            idx += 1
-    return "".join(out)
 
 
 def class_characters(name: str) -> str:

@@ -14,7 +14,16 @@
 
 import { describe, expect, it, vi } from 'vitest'
 import { JqCompileError } from './errors.ts'
-import { halts, jqCheck, jqEval, jqRaised, jqRun, referencesArgs, streamReads } from './eval.ts'
+import {
+  halts,
+  jqCheck,
+  jqEval,
+  jqRaised,
+  jqRun,
+  jqRunTexts,
+  referencesArgs,
+  streamReads,
+} from './eval.ts'
 import type { JqRun } from './types.ts'
 
 /**
@@ -679,5 +688,132 @@ describe('halts', () => {
     ['def halting: 1; halting', false],
   ])('finds a call to either halt in %s', (expr, expected) => {
     expect(halts(expr)).toBe(expected)
+  })
+})
+
+// jqRunTexts runs on JSON text and hands back jq's own dump of each output;
+// every expectation is what jq 1.8.2 prints for the same program.
+describe('jqRunTexts', () => {
+  it('keeps every literal and the key order jq reads', async () => {
+    expect(
+      await jqRunTexts('{"b":1,"1":2,"a":{"z":1,"0":2}}', '., keys, keys_unsorted, (. + {"c":3})'),
+    ).toEqual({
+      outputs: [
+        '{"b":1,"1":2,"a":{"z":1,"0":2}}',
+        '["1","a","b"]',
+        '["b","1","a"]',
+        '{"b":1,"1":2,"a":{"z":1,"0":2},"c":3}',
+      ],
+      stop: null,
+    })
+    const run = await jqRunTexts(
+      '[1.000, 1e2, -0, 100000000000000000001]',
+      '.[], (.[3] + 1), (.[0] | tojson), map(. * 1)',
+    )
+    expect(run.outputs).toEqual([
+      '1.000',
+      '1E+2',
+      '-0',
+      '100000000000000000001',
+      '1e+20',
+      '"1.000"',
+      '[1,100,-0,1e+20]',
+    ])
+  })
+
+  it("reports errors and halts in jq's own spelling", async () => {
+    expect((await jqRunTexts('1.000', '. + "a"')).stop).toEqual({
+      kind: 'error',
+      text: 'number (1.000) and string ("a") cannot be added',
+      string: true,
+    })
+    expect((await jqRunTexts('{"b":1.000,"1":2}', 'error')).stop).toEqual({
+      kind: 'error',
+      text: '{"b":1.000,"1":2}',
+      string: false,
+    })
+    expect((await jqRunTexts('{"b":1.000,"1":2}', 'halt_error')).stop).toEqual({
+      kind: 'halt',
+      message: '{"b":1.000,"1":2}',
+      string: false,
+      code: 5,
+    })
+  })
+
+  it('binds its arguments and unread documents as text', async () => {
+    const run = await jqRunTexts(
+      'null',
+      '$v, $ARGS, input, [inputs]',
+      new Map([['v', '{"b":1,"1":2.50}']]),
+      ['1.0', '2.00', '3e2'],
+      '{"positional":[1.0],"named":{"v":{"b":1,"1":2.50}}}',
+    )
+    expect(run.outputs).toEqual([
+      '{"b":1,"1":2.50}',
+      '{"positional":[1.0],"named":{"v":{"b":1,"1":2.50}}}',
+      '1.0',
+      '[2.00,3E+2]',
+    ])
+  })
+
+  it('meets the parse error past the unread documents', async () => {
+    const message = 'Unfinished JSON term at EOF at line 1, column 3'
+    expect(await jqRunTexts('null', '[inputs]', new Map(), ['1.0'], null, message)).toEqual({
+      outputs: [],
+      stop: { kind: 'error', text: message, string: true },
+    })
+  })
+
+  it('dumps a program whose comment carries on past its line', async () => {
+    // jq 1.8.2 carries a comment over a backslash at its line's end, so a
+    // program ending in one is run as typed, and still dumped.
+    expect(await jqRunTexts('5.0', '. # c \\')).toEqual({ outputs: ['5.0'], stop: null })
+    expect(await jqRunTexts('5.0', '[.] # c')).toEqual({ outputs: ['[5.0]'], stop: null })
+  })
+
+  it('hands a pretty-printed document to jq-wasm compacted, as the same value', async () => {
+    const doc = '{\n  "b": [\n    1.000,\n    " a \\" b "\n  ],\n  "1": {}\n}'
+    expect(await jqRunTexts(doc, '., tojson')).toEqual({
+      outputs: [
+        '{"b":[1.000," a \\" b "],"1":{}}',
+        '"{\\"b\\":[1.000,\\" a \\\\\\" b \\"],\\"1\\":{}}"',
+      ],
+      stop: null,
+    })
+  })
+
+  it.each(['42', 'empty', 'error("shadow")'])(
+    'dumps outputs independently of tojson defined as %s',
+    async (definition) => {
+      const doc = '{"b":1.000,"1":[-0,100000000000000000001]}'
+      for (const suffix of ['', ' # c', ' # c \\']) {
+        expect(await jqRunTexts(doc, `def tojson: ${definition}; .${suffix}`)).toEqual({
+          outputs: [doc],
+          stop: null,
+        })
+      }
+    },
+  )
+
+  it('preserves user calls and each output when dumping an as-typed program', async () => {
+    expect(await jqRunTexts('1.000', 'def tojson: 42; ., tojson # c \\')).toEqual({
+      outputs: ['1.000', '42'],
+      stop: null,
+    })
+  })
+
+  it('preserves bindings and unread documents when dumping an as-typed program', async () => {
+    expect(
+      await jqRunTexts(
+        'null',
+        'def tojson: empty; $v, $ARGS, input, [inputs] # c \\',
+        new Map([['v', '{"b":1.000,"1":2}']]),
+        ['-0', '1e2'],
+        '{"positional":[2.50],"named":{}}',
+      ),
+    ).toEqual({
+      outputs: ['{"b":1.000,"1":2}', '{"positional":[2.50],"named":{}}', '-0', '[1E+2]'],
+      stop: null,
+    })
   })
 })

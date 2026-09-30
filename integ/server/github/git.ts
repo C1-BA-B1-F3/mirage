@@ -15,26 +15,51 @@
 import type { Ctx, JsonValue, KitRoute } from '../kit/typescript/index.ts'
 import { API_PREFIXES } from './config.ts'
 import type { C } from './config.ts'
-import { INVALID_PERSON, bodyPerson, commitPeople, personJson, treeSha } from './wire.ts'
+import {
+  INVALID_PERSON,
+  bodyPerson,
+  commitPeople,
+  commitSha,
+  defaultPerson,
+  nodeId,
+  parsePerson,
+  personJson,
+  treeSha,
+} from './wire.ts'
 import type { CommitRow } from './wire.ts'
 import {
   addBranch,
   blobBySha,
-  branchFor,
   branchNames,
   commitList,
   commitsBySha,
   headOf,
+  keepRoot,
   keepTree,
+  peeled,
   reaches,
   repoIsEmpty,
+  resolveRef,
   stageTree,
   stagedTree,
+  tagObject,
+  tagRefs,
+  treeAt,
   treeOfBranch,
   visibleHeadOf,
 } from './store.ts'
-import type { RepoRow } from './store.ts'
-import { authedRoute, everywhere, fail, jsonBodyOf, param, route, str, withRepo } from './http.ts'
+import type { RepoRow, TagRow } from './store.ts'
+import {
+  authedRoute,
+  everywhere,
+  fail,
+  jsonBodyOf,
+  pagedReply,
+  param,
+  route,
+  str,
+  withRepo,
+} from './http.ts'
 import { recordCommit, writeFile } from './contents.ts'
 import { stripSlash } from '../kit/typescript/index.ts'
 
@@ -82,29 +107,17 @@ const createTree = withRepo(async (ctx, repo) => {
   }
 })
 
-// The touched set is computed against the DEFAULT branch, which is what the
-// python fake did and what a golden records, even when the commit is later
-// pointed at another branch.
-//
 // The commit is born dangling: it advances no ref, because in git creating a
 // commit and moving a branch onto it are two steps, and a client that stages
 // several before touching any ref depends on that. `parents` is read from the
 // body as the API states it (first parent only, which is all a linear fake
-// needs); absent, the default branch's head stands in, which is the base the
-// touched set above is computed against.
+// needs); absent, the default branch's head stands in. What it changed is its
+// tree against its parent's, which every reader derives.
 const createCommit = withRepo(async (ctx, repo) => {
   const body = jsonBodyOf(ctx)
   const tree = str(body, 'tree')
   const staged = await stagedTree(ctx.db, ctx.tenant, repo, tree)
   if (staged === null) return fail(422, 'Invalid request.\n\n"tree" is invalid.')
-  const current = await treeOfBranch(ctx.db, ctx.tenant, repo, repo.defaultBranch)
-  const touched = new Set<string>()
-  for (const p of staged.keys()) if (!current.has(p)) touched.add(p)
-  for (const p of current.keys()) if (!staged.has(p)) touched.add(p)
-  for (const [p, d] of staged) {
-    const was = current.get(p)
-    if (was === undefined || !was.equals(d)) touched.add(p)
-  }
   const message = str(body, 'message') === '' ? 'Update' : str(body, 'message')
   const author = bodyPerson(body, 'author')
   if (author === INVALID_PERSON) return fail(422, 'Invalid request.\n\n"author" is invalid.')
@@ -125,7 +138,6 @@ const createCommit = withRepo(async (ctx, repo) => {
     ctx.tenant,
     repo,
     message,
-    [...touched].sort(),
     repo.defaultBranch,
     tree,
     { author, committer },
@@ -147,49 +159,47 @@ const createCommit = withRepo(async (ctx, repo) => {
 // that point as its head, so it SHARES the history behind it and diverges only
 // in what each ref is pointed at next.
 //
-// The base is resolved as a COMMIT OBJECT first and only then as a ref,
-// because those are two different questions and only the second one needs a
-// branch to already contain the commit. A client that commits and then creates
-// the branch at that sha is naming an object no ref has reached yet, and
-// asking which existing branch holds it answers "none" for a commit that is
-// perfectly real.
+// The base is resolved as what it names, a commit object or a branch, and
+// never as "the branch that holds this sha": a client that commits and then
+// creates the branch at that sha is naming an object no ref has reached yet,
+// and asking which existing branch holds it answers "none" for a commit that
+// is perfectly real.
 const createRef = withRepo(async (ctx, repo) => {
   const body = jsonBodyOf(ctx)
   const ref = stripSlash(str(body, 'ref'))
+  if (ref.startsWith('refs/tags/')) {
+    return await createTagRef(ctx, repo, ref.slice('refs/tags/'.length), str(body, 'sha'))
+  }
   if (!ref.startsWith('refs/heads/')) return fail(422, 'Invalid request.\n\n"ref" is invalid.')
   const name = ref.slice('refs/heads/'.length)
   if (name === '') return fail(422, 'Invalid request.\n\n"ref" is invalid.')
   const names = await branchNames(ctx.db, ctx.tenant, repo)
   if (names.includes(name)) return fail(422, 'Reference already exists')
-  const asked = str(body, 'sha')
-  const object =
-    asked === ''
-      ? null
-      : ((await ctx.db.githubCommit.findFirst({
-          where: { tenant: ctx.tenant, repo: repo.fullName, sha: asked },
-        })) as CommitRow | null)
+  const at = await resolveRef(ctx.db, ctx.tenant, repo, str(body, 'sha'))
   // A commit carries its own tree, so the branch is populated from the commit
   // that was named rather than from a branch that happens to hold it. Those are
   // different answers whenever that branch has moved on since, and reading the
   // branch reported the newer files under the older sha.
-  const staged = object === null ? null : await stagedTree(ctx.db, ctx.tenant, repo, object.treeSha)
-  if (object !== null && staged === null) return fail(422, 'Object does not exist')
-  // Only a sha no commit row answers for is resolved as a ref, which is how a
-  // branch name, HEAD, the empty string and the synthesized root all arrive.
-  const base = object !== null ? null : await branchFor(ctx.db, ctx.tenant, repo, asked)
-  if (object === null && base === null) return fail(422, 'Object does not exist')
+  const files = at === null ? null : await treeAt(ctx.db, ctx.tenant, repo, at)
+  if (at === null || files === null) return fail(422, 'Object does not exist')
   // Recorded before the files are copied, because a branch off an empty
   // repository copies none and would otherwise not exist at all.
   await addBranch(ctx.db, ctx.tenant, repo.fullName, name)
+  // A synthesized root is no stored commit, so a branch started on one keeps
+  // no head and derives the same root from the files it is given.
+  const named = at.history[0]
   const startAt =
-    object !== null ? object.sha : base === null ? '' : await headOf(ctx.db, ctx.tenant, repo, base)
+    at.branch !== null
+      ? await headOf(ctx.db, ctx.tenant, repo, at.branch)
+      : named !== undefined && named.treeSha !== ''
+        ? named.sha
+        : ''
   if (startAt !== '') {
     await ctx.db.githubBranch.updateMany({
       where: { tenant: ctx.tenant, repo: repo.fullName, name },
       data: { headSha: startAt },
     })
   }
-  const files = staged ?? (await treeOfBranch(ctx.db, ctx.tenant, repo, base ?? repo.defaultBranch))
   let seq = 0
   for (const [path, data] of files) {
     await ctx.db.githubFile.create({
@@ -242,6 +252,7 @@ const updateRef = withRepo(async (ctx, repo) => {
   if (!reaches(sha, head, byId) && body.force !== true) {
     return fail(422, 'Update is not a fast forward')
   }
+  await keepRoot(ctx.db, ctx.tenant, repo, name)
   await ctx.db.githubBranch.updateMany({
     where: { tenant: ctx.tenant, repo: repo.fullName, name },
     data: { headSha: sha },
@@ -296,6 +307,143 @@ async function headSha(ctx: Ctx<C>, repo: RepoRow, branch: string): Promise<stri
   return head[0]?.sha ?? ''
 }
 
+// What a full sha names here, for a tag to point at: an annotated tag object
+// or a commit, by its whole sha, as git objects are named. Null for anything
+// else, which is how GitHub's "Object does not exist" reads.
+async function objectType(ctx: Ctx<C>, repo: RepoRow, sha: string): Promise<string | null> {
+  if ((await tagObject(ctx.db, ctx.tenant, repo, sha)) !== null) return 'tag'
+  const at = await resolveRef(ctx.db, ctx.tenant, repo, sha)
+  return at !== null && at.branch === null && at.history[0]?.sha === sha ? 'commit' : null
+}
+
+function tagJson(repo: RepoRow, row: TagRow): JsonValue {
+  const api = `https://api.github.com/repos/${repo.fullName}`
+  const kind = row.objectType === 'tag' ? 'tags' : 'commits'
+  return {
+    node_id: nodeId('03:Tag', row.sha),
+    tag: row.tag,
+    sha: row.sha,
+    url: `${api}/git/tags/${row.sha}`,
+    message: row.message,
+    tagger: { ...(parsePerson(row.taggerJson) ?? defaultPerson()) },
+    object: {
+      type: row.objectType,
+      sha: row.objectSha,
+      url: `${api}/git/${kind}/${row.objectSha}`,
+    },
+    verification: {
+      verified: false,
+      reason: 'unsigned',
+      signature: null,
+      payload: null,
+      verified_at: null,
+    },
+  }
+}
+
+// An annotated tag object: a name, a message and a tagger around a commit or
+// another tag, stored by a sha of its content, and pointed at by no ref until
+// a caller creates `refs/tags/<name>` at it. That is git's two steps, and
+// GitHub's.
+const createTag = withRepo(async (ctx, repo) => {
+  const body = jsonBodyOf(ctx)
+  const missing = ['tag', 'message', 'object', 'type'].filter(
+    (key) => typeof body[key] !== 'string',
+  )
+  if (missing.length > 0) {
+    const names = missing.map((key) => `"${key}"`).join(', ')
+    const verb = missing.length === 1 ? "wasn't" : "weren't"
+    return fail(422, `Invalid request.\n\n${names} ${verb} supplied.`)
+  }
+  const object = str(body, 'object')
+  const type = str(body, 'type')
+  if ((await objectType(ctx, repo, object)) !== type) return fail(422, 'Object does not exist')
+  const tagger = bodyPerson(body, 'tagger')
+  if (tagger === INVALID_PERSON) return fail(422, 'Invalid request.\n\n"tagger" is invalid.')
+  const taggerJson = personJson(tagger ?? defaultPerson())
+  const row: TagRow = {
+    sha: '',
+    tag: str(body, 'tag'),
+    message: str(body, 'message'),
+    objectSha: object,
+    objectType: type,
+    taggerJson,
+  }
+  row.sha = commitSha(
+    ['tag', repo.fullName, row.tag, object, type, row.message, taggerJson].join('\0'),
+  )
+  if ((await tagObject(ctx.db, ctx.tenant, repo, row.sha)) === null) {
+    const count = await ctx.db.githubTag.count({
+      where: { tenant: ctx.tenant, repo: repo.fullName },
+    })
+    await ctx.db.githubTag.create({
+      data: { tenant: ctx.tenant, repo: repo.fullName, ...row, seq: count },
+    })
+  }
+  return { status: 201, body: tagJson(repo, row) }
+})
+
+const getTag = withRepo(async (ctx, repo) => {
+  const row = await tagObject(ctx.db, ctx.tenant, repo, param(ctx, 'sha'))
+  return row === null ? fail(404, 'Not Found') : { status: 200, body: tagJson(repo, row) }
+})
+
+// A tag ref names a commit or an annotated tag object by its whole sha.
+async function createTagRef(ctx: Ctx<C>, repo: RepoRow, name: string, sha: string) {
+  if (name === '') return fail(422, 'Invalid request.\n\n"ref" is invalid.')
+  if ((await tagRefs(ctx.db, ctx.tenant, repo)).some((row) => row.name === name)) {
+    return fail(422, 'Reference already exists')
+  }
+  const type = await objectType(ctx, repo, sha)
+  if (type === null) return fail(422, 'Object does not exist')
+  const count = await ctx.db.githubTagRef.count({
+    where: { tenant: ctx.tenant, repo: repo.fullName },
+  })
+  await ctx.db.githubTagRef.create({
+    data: { tenant: ctx.tenant, repo: repo.fullName, name, sha, seq: count },
+  })
+  return { status: 201, body: { ref: `refs/tags/${name}`, object: { sha, type } } }
+}
+
+// A repository's tags as `GET /tags` lists them: newest name first, as
+// GitHub's list reads (measured 2026-09-29 on octocat/linguist), each peeled
+// to the commit it names.
+const listTags = withRepo(async (ctx, repo) => {
+  const api = `https://api.github.com/repos/${repo.fullName}`
+  const rows = (await tagRefs(ctx.db, ctx.tenant, repo)).sort((a, b) => (a.name < b.name ? 1 : -1))
+  const items: JsonValue[] = []
+  for (const row of rows) {
+    const commit = await peeled(ctx.db, ctx.tenant, repo, row.sha)
+    items.push({
+      name: row.name,
+      zipball_url: `${api}/zipball/refs/tags/${row.name}`,
+      tarball_url: `${api}/tarball/refs/tags/${row.name}`,
+      commit: { sha: commit, url: `${api}/commits/${commit}` },
+      node_id: nodeId('03:Ref', `${String(repo.seq)}:refs/tags/${row.name}`),
+    })
+  }
+  return pagedReply(ctx, items)
+})
+
+// Every ref the repository has, branches first and then tags, each as
+// `heads/<name>` or `tags/<name>` with what it points at. A branch nothing has
+// been committed to points nowhere, so it is no ref.
+async function refsOf(
+  ctx: Ctx<C>,
+  repo: RepoRow,
+): Promise<Array<{ ref: string; sha: string; type: string }>> {
+  const out: Array<{ ref: string; sha: string; type: string }> = []
+  for (const name of await branchNames(ctx.db, ctx.tenant, repo)) {
+    const sha = await headSha(ctx, repo, name)
+    if (sha !== '') out.push({ ref: `heads/${name}`, sha, type: 'commit' })
+  }
+  for (const row of await tagRefs(ctx.db, ctx.tenant, repo)) {
+    const tag = await tagObject(ctx.db, ctx.tenant, repo, row.sha)
+    out.push({ ref: `tags/${row.name}`, sha: row.sha, type: tag === null ? 'commit' : 'tag' })
+  }
+  return out
+}
+
 // `git/ref/<full-ref>` returns ONE object and `git/refs/<prefix>` a LIST of
 // everything beneath it. They are different endpoints, and a caller picks
 // whichever it expects, so serving only the singular makes the plural read as
@@ -311,22 +459,17 @@ async function headSha(ctx: Ctx<C>, repo: RepoRow, branch: string): Promise<stri
 const showRef = withRepo(async (ctx, repo) => {
   if (await repoIsEmpty(ctx.db, ctx.tenant, repo)) return fail(409, 'Git Repository is empty.')
   const ref = stripSlash(param(ctx, 'ref'))
-  const name = ref.startsWith('heads/') ? ref.slice('heads/'.length) : ''
-  const names = await branchNames(ctx.db, ctx.tenant, repo)
-  const sha = names.includes(name) ? await headSha(ctx, repo, name) : ''
-  if (sha === '') return fail(404, 'Not Found')
-  return { status: 200, body: { ref: `refs/${ref}`, object: { sha, type: 'commit' } } }
+  const hit = (await refsOf(ctx, repo)).find((row) => row.ref === ref)
+  if (hit === undefined) return fail(404, 'Not Found')
+  return { status: 200, body: { ref: `refs/${ref}`, object: { sha: hit.sha, type: hit.type } } }
 })
 
 const listRefs = withRepo(async (ctx, repo) => {
   if (await repoIsEmpty(ctx.db, ctx.tenant, repo)) return fail(409, 'Git Repository is empty.')
   const prefix = stripSlash(param(ctx, 'ref'))
-  const items: JsonValue[] = []
-  for (const name of await branchNames(ctx.db, ctx.tenant, repo)) {
-    if (!`heads/${name}`.startsWith(prefix)) continue
-    const sha = await headSha(ctx, repo, name)
-    if (sha !== '') items.push({ ref: `refs/heads/${name}`, object: { sha, type: 'commit' } })
-  }
+  const items: JsonValue[] = (await refsOf(ctx, repo))
+    .filter((row) => row.ref.startsWith(prefix))
+    .map((row) => ({ ref: `refs/${row.ref}`, object: { sha: row.sha, type: row.type } }))
   if (items.length === 0) return fail(404, 'Not Found')
   return { status: 200, body: items }
 })
@@ -338,6 +481,9 @@ export function gitRoutes(): KitRoute<C>[] {
       write: true,
     }),
     route<C>('GET', `${p}/repos/:owner/:repo/git/commits/:sha`, authedRoute(gitCommit)),
+    route<C>('POST', `${p}/repos/:owner/:repo/git/tags`, authedRoute(createTag), { write: true }),
+    route<C>('GET', `${p}/repos/:owner/:repo/git/tags/:sha`, authedRoute(getTag)),
+    route<C>('GET', `${p}/repos/:owner/:repo/tags`, authedRoute(listTags)),
     route<C>('POST', `${p}/repos/:owner/:repo/git/refs`, authedRoute(createRef), { write: true }),
     route<C>('PATCH', `${p}/repos/:owner/:repo/git/refs/*ref`, authedRoute(updateRef), {
       write: true,

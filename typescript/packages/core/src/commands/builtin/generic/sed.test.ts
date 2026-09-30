@@ -16,6 +16,7 @@ import { describe, expect, it } from 'vitest'
 import { yieldBytes } from '../../../io/stream.ts'
 import { materialize } from '../../../io/types.ts'
 import { PathSpec } from '../../../types.ts'
+import { eisdir } from '../../../utils/errors.ts'
 import type { CommandOpts } from '../../config.ts'
 import { sedGeneric } from './sed.ts'
 
@@ -125,5 +126,100 @@ describe('sed text escapes above ASCII', () => {
     const files = new Map([['/a.txt', new TextEncoder().encode('x\n')]])
     await sedBytes([PathSpec.fromStrPath('/a.txt')], ['a y\\xff'], { i: true }, files)
     expect([...(files.get('/a.txt') ?? [])]).toEqual(latin1Bytes('x\ny\xff\n'))
+  })
+})
+
+describe('sed script files across -i files (GNU sed 4.9)', () => {
+  const enc = (text: string): Uint8Array => new TextEncoder().encode(text)
+  const text = (files: Map<string, Uint8Array>, name: string): string =>
+    new TextDecoder().decode(files.get(name))
+
+  it('reads an r file at each append, so an earlier edit shows', async () => {
+    const files = new Map([
+      ['/f', enc('one\ntwo\n')],
+      ['/b', enc('b1\nb2\n')],
+    ])
+    const paths = [PathSpec.fromStrPath('/f'), PathSpec.fromStrPath('/b')]
+    await sedBytes(paths, ['1r /f'], { i: true }, files)
+    expect(text(files, '/f')).toBe('one\none\ntwo\ntwo\n')
+    expect(text(files, '/b')).toBe('b1\none\none\ntwo\ntwo\nb2\n')
+  })
+
+  it('reads an R file as it was when the script was compiled', async () => {
+    const files = new Map([
+      ['/f', enc('one\ntwo\n')],
+      ['/b', enc('b1\nb2\n')],
+    ])
+    const paths = [PathSpec.fromStrPath('/f'), PathSpec.fromStrPath('/b')]
+    await sedBytes(paths, ['R /f'], { i: true }, files)
+    expect(text(files, '/b')).toBe('b1\none\nb2\ntwo\n')
+  })
+
+  it('lets -i keep a w file it then edited', async () => {
+    const files = new Map([
+      ['/b', enc('b1\nb2\n')],
+      ['/f', enc('old\n')],
+    ])
+    const paths = [PathSpec.fromStrPath('/b'), PathSpec.fromStrPath('/f')]
+    await sedBytes(paths, ['s/b/B/;w /f'], { i: true }, files)
+    expect(text(files, '/f')).toBe('')
+    expect(text(files, '/b')).toBe('B1\nB2\n')
+  })
+})
+
+describe('sed operands after a directory (GNU sed 4.9)', () => {
+  const enc = (text: string): Uint8Array => new TextEncoder().encode(text)
+
+  async function run(
+    script: string,
+    flags: CommandOpts['flags'] = {},
+  ): Promise<{ out: string; code: number; reads: string[] }> {
+    const files = new Map([
+      ['/f', enc('one\ntwo\nthree\n')],
+      ['/g', enc('L1\nL2\n')],
+    ])
+    const reads: string[] = []
+    const paths = ['/f', '/d', '/g'].map((p) => PathSpec.fromStrPath(p))
+    const opts = {
+      stdin: null,
+      flags: { n: true, ...flags },
+      filetypeFns: null,
+      cwd: '/',
+      vfs: { kind: 'ram' } as never,
+    } as CommandOpts
+    const result = await sedGeneric(
+      paths,
+      [script],
+      opts,
+      (p) => {
+        reads.push(p.virtual)
+        if (p.virtual === '/d') throw eisdir(p)
+        return yieldBytes(files.get(p.virtual) ?? new Uint8Array())
+      },
+      () => Promise.resolve(),
+    )
+    if (result === null) throw new Error('sed returned nothing')
+    const out = result[0] === null ? '' : DEC.decode(await materialize(result[0]))
+    return { out, code: result[1].exitCode, reads }
+  }
+
+  it.each([
+    ['$p', 'L2\n'],
+    ['n;p', 'two\nL1\n'],
+    ['N;p', 'one\ntwo\nthree\nL1\n'],
+  ])('reads past the directory when %s looks ahead', async (script, out) => {
+    expect(await run(script)).toEqual({ out, code: 0, reads: ['/f', '/d', '/g'] })
+  })
+
+  it('reads nothing past the directory under -s, whose lookahead stays in the file', async () => {
+    expect(await run('n;p', { separate: true })).toEqual({
+      out: 'two\n',
+      code: 4,
+      reads: ['/f', '/d'],
+    })
+  })
+
+  it('reads nothing past the directory without a lookahead', async () => {
+    expect(await run('p')).toEqual({ out: 'one\ntwo\nthree\n', code: 4, reads: ['/f', '/d'] })
   })
 })

@@ -20,8 +20,10 @@ from mirage.commands.builtin.generic.grep import grep as generic_grep
 from mirage.commands.builtin.generic.rg import folds_case
 from mirage.commands.builtin.generic.rg import parse_flags as parse_rg_flags
 from mirage.commands.builtin.generic.rg import rg as generic_rg
+from mirage.commands.builtin.generic.rg import rg_syntax
 from mirage.commands.builtin.generic_bind.adapter import CommandIO, bound_op
-from mirage.commands.builtin.grep_pattern import PATTERN_KEYS, pattern_arg
+from mirage.commands.builtin.grep_pattern import (PATTERN_KEYS, matcher_syntax,
+                                                  pattern_arg)
 from mirage.commands.builtin.grep_pushdown import (grep_search_meta,
                                                    literal_pushdown_operand,
                                                    pushdown_operand,
@@ -56,13 +58,13 @@ def search_options(name: str, fl: FlagView,
             "ignore_case": folds_case(pattern, f.fixed_string, f),
             "fixed_string": f.fixed_string,
             "whole_word": f.whole_word,
-            "basic": False,
+            "syntax": rg_syntax(f).value,
         }
     return {
         "ignore_case": fl.as_bool("i"),
         "fixed_string": fl.as_bool("F"),
         "whole_word": fl.as_bool("w"),
-        "basic": not fl.as_bool("E"),
+        "syntax": matcher_syntax(fl).value,
     }
 
 

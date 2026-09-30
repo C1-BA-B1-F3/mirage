@@ -1088,6 +1088,19 @@ describe('multiple + default', () => {
 })
 
 describe('long-option abbreviation', () => {
+  it('takes a long only as spelled when the spec allows no abbreviation', () => {
+    // ripgrep's lexopt: `rg --pcr` is `unrecognized flag --pcr`, never a
+    // prefix of --pcre2-unicode.
+    const spec = new CommandSpec({
+      options: [new Option({ long: '--pcre2-unicode' })],
+      allowAbbrev: false,
+    })
+    const parsed = parseCommand(spec, ['--pcre2', 'x'], '/')
+    expect(parsed.flags['--pcre2-unicode']).toBeUndefined()
+    expect(parsed.invalidOptions).toEqual(['--pcre2'])
+    expect(parseCommand(specOf('rg'), ['--pcr', 'a'], '/').invalidOptions).toEqual(['--pcr'])
+  })
+
   it('expands a unique prefix like getopt_long', () => {
     const spec = new CommandSpec({
       options: [new Option({ long: '--recursive' }), new Option({ long: '--count' })],

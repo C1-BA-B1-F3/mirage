@@ -30,6 +30,37 @@
         "stdout": "hi\n",
         "stderr": ""
       }
+    },
+    {
+      "id": "procsub_cat_heredoc_operands",
+      "seq": 1346004,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "s3-prefix",
+        "databricks-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder"
+      ],
+      "command": "cat <(cat <<'A'\nfirst $literal\nA\n) <(cat <<B\nsecond $(printf value)\nB\n)",
+      "expect": {
+        "exit": 0,
+        "stdout": "first $literal\nsecond value\n",
+        "stderr": ""
+      }
     }
   ]
 }

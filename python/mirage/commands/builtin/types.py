@@ -13,6 +13,7 @@
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 from dataclasses import dataclass
+from enum import Enum
 from typing import Literal
 
 
@@ -59,13 +60,34 @@ class PrintfAction:
 FindAction = ExecAction | RowAction | PrintfAction
 
 
+class RegexSyntax(Enum):
+    """The regex dialect a search pattern is written in.
+
+    One translator per dialect turns it into host source: ``BASIC`` and
+    ``EXTENDED`` are glibc's (grep's default and -E), ``PERL`` is
+    PCRE2's (grep -P, rg -P) and ``RUST`` is ripgrep's default engine.
+    The value is also the spelling a pushed-down search carries.
+    """
+    BASIC = "basic"
+    EXTENDED = "extended"
+    PERL = "perl"
+    RUST = "rust"
+
+
 @dataclass(frozen=True, slots=True)
 class GrepSearchOptions:
-    """The grep integration's per-request options, parsed from SearchQuery."""
+    """The grep integration's per-request options, parsed from SearchQuery.
+
+    Args:
+        ignore_case (bool): -i, or rg's smart case over the pattern.
+        fixed_string (bool): -F; a plain resource query is literal text.
+        whole_word (bool): -w.
+        syntax (RegexSyntax): the pattern's dialect.
+    """
     ignore_case: bool = False
     fixed_string: bool = True
     whole_word: bool = False
-    basic: bool = False
+    syntax: RegexSyntax = RegexSyntax.EXTENDED
 
 
 @dataclass(frozen=True, slots=True)

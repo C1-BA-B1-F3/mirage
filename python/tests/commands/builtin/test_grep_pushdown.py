@@ -5,6 +5,7 @@ import pytest
 
 from mirage.commands.builtin import grep_pushdown
 from mirage.commands.builtin.constants import PatternType
+from mirage.commands.builtin.types import RegexSyntax
 from mirage.types import PathSpec
 from mirage.vfs.types import SearchOps, SearchQuery
 
@@ -37,7 +38,7 @@ def test_classify_pattern_newline_list_is_regex():
     ("(foo){1,2}bar", "foo"),
     ("(foo)+bar", "foo"),
     ("a(b(cdef)?g)?h", None),
-    ("(?:foo)?bar", None),
+    ("(?:foo)?bar", "bar"),
 ])
 def test_extract_required_literal(pattern, expected):
     assert grep_pushdown.extract_required_literal(pattern) == expected
@@ -78,8 +79,9 @@ def test_search_query_reads_a_basic_expression_in_its_own_dialect():
     # grep reads a basic expression unless -E says otherwise, where the
     # operators are the escaped spellings and bare parens are literal.
     assert grep_pushdown.search_query(r"fo\(bar\)\?baz", False,
-                                      basic=True) == "baz"
-    assert grep_pushdown.search_query("(foo)?bar", False, basic=True) == "foo"
+                                      RegexSyntax.BASIC) == "baz"
+    assert grep_pushdown.search_query("(foo)?bar", False,
+                                      RegexSyntax.BASIC) == "foo"
     assert grep_pushdown.search_query("(foo)?bar", False) == "bar"
 
 

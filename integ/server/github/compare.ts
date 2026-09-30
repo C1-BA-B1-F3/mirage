@@ -15,35 +15,117 @@
 import type { Ctx, KitRoute, Reply } from '../kit/typescript/index.ts'
 import { API_PREFIXES } from './config.ts'
 import type { C } from './config.ts'
-import { commitFiles, pathsOf } from './wire.ts'
-import { commitList } from './store.ts'
-import type { RepoRow } from './store.ts'
-import { authedRoute, everywhere, fail, param, route, withRepo } from './http.ts'
+import { changeJson, diffTrees } from './diff.ts'
+import type { FileChange } from './diff.ts'
+import { commitJson } from './wire.ts'
+import type { CommitRow } from './wire.ts'
+import { commitTree, divergence, forkOwnedBy, resolveRef, treeAt } from './store.ts'
+import type { RepoRow, Resolved } from './store.ts'
+import { authedRoute, diffReply, everywhere, fail, param, route, withRepo } from './http.ts'
 
-// Files changed between two refs. The fake diffs nothing, so a comparison is
-// answered from the commits recorded since the base, which is enough for
-// "which files did the agent touch" and is what the graders ask.
+/**
+ * What a head holds past a base: its commits past the merge base, newest
+ * first, how many the base holds past it, and every path the head's tree
+ * changed against the merge base's, with the commit either side. A null base
+ * compares the head against nothing, so every commit and file it has counts.
+ * The head may live in another repository of the network, a fork.
+ */
+export interface Range {
+  ahead: CommitRow[]
+  behind: number
+  before: string
+  after: string
+  changes: FileChange[]
+}
+
+// Null when the two share no commit: a base the head never came from is no
+// base, and answering "nothing changed" about it is the shape of wrongness
+// that reads as success.
+export async function rangeOf(
+  db: C,
+  tenant: string,
+  repo: RepoRow,
+  base: Resolved | null,
+  head: Resolved,
+  headRepo: RepoRow = repo,
+): Promise<Range | null> {
+  const met =
+    base === null
+      ? { ahead: head.history, behind: 0, mergeBase: null }
+      : divergence(head.history, base.history)
+  if (met === null) return null
+  const before =
+    met.mergeBase === null ? new Map() : await commitTree(db, tenant, repo, met.mergeBase)
+  const after = (await treeAt(db, tenant, headRepo, head)) ?? new Map()
+  return {
+    ahead: met.ahead,
+    behind: met.behind,
+    before: met.mergeBase?.sha ?? '',
+    after: head.history[0]?.sha ?? '',
+    changes: diffTrees(before, after),
+  }
+}
+
+// What one commit changed: its tree against its first parent's, or against
+// nothing for a root. `history` is newest first from the commit, as
+// `resolveRef` answers it.
+export async function commitChanges(
+  db: C,
+  tenant: string,
+  repo: RepoRow,
+  history: CommitRow[],
+): Promise<FileChange[]> {
+  const [commit, parent] = history
+  if (commit === undefined) return []
+  const before = parent === undefined ? new Map() : await commitTree(db, tenant, repo, parent)
+  return diffTrees(before, await commitTree(db, tenant, repo, commit))
+}
+
+// Either side is any ref `resolveRef` reads: a branch, a tag, or a commit by
+// its full or abbreviated sha, and the head may be `owner:ref` in a fork of
+// the network, as GitHub reads `base...owner:head`. A spec with no `...` compares nothing against the
+// default branch, so every commit on it counts. Asked for as a diff, the body
+// is the unified diff of the same range.
 async function compare(ctx: Ctx<C>, repo: RepoRow): Promise<Reply> {
   const spec = param(ctx, 'basehead')
-  const base = spec.includes('...') ? (spec.split('...')[0] ?? '') : ''
-  const history = await commitList(ctx.db, ctx.tenant, repo, repo.defaultBranch)
-  const known = new Set(history.map((c) => c.sha))
-  // A base this repository has never heard of is an error, not an empty diff.
-  // Answering "nothing changed" to a question about an unrelated commit is the
-  // shape of wrongness that reads as success.
-  if (base !== '' && !known.has(base) && base !== repo.defaultBranch) {
-    return fail(404, 'No common ancestor between the two commits')
+  const cut = spec.indexOf('...')
+  const baseRef = cut < 0 ? '' : spec.slice(0, cut)
+  const headSpec = cut < 0 ? '' : spec.slice(cut + 3)
+  const colon = headSpec.indexOf(':')
+  const headRef = colon < 0 ? headSpec : headSpec.slice(colon + 1)
+  const home =
+    colon < 0
+      ? repo
+      : await forkOwnedBy(ctx.db, ctx.tenant, repo, headSpec.slice(0, colon), headRef)
+  const head = home === null ? null : await resolveRef(ctx.db, ctx.tenant, home, headRef)
+  const base = baseRef === '' ? null : await resolveRef(ctx.db, ctx.tenant, repo, baseRef)
+  if (home === null || head === null || (baseRef !== '' && base === null)) {
+    return fail(404, 'Not Found')
   }
-  // `history` is newest first, so everything before the base is what came
-  // after it in time. Walking past the base instead would collect the commits
-  // the base already contains.
-  const touched: string[] = []
-  for (const commit of history) {
-    if (base !== '' && commit.sha === base) break
-    touched.push(...pathsOf(commit))
+  const range = await rangeOf(ctx.db, ctx.tenant, repo, base, head, home)
+  if (range === null) return fail(404, 'No common ancestor between the two commits')
+  const diff = diffReply(ctx, range.changes)
+  if (diff !== null) return diff
+  const ahead = range.ahead.length
+  const status =
+    ahead === 0
+      ? range.behind === 0
+        ? 'identical'
+        : 'behind'
+      : range.behind === 0
+        ? 'ahead'
+        : 'diverged'
+  return {
+    status: 200,
+    body: {
+      status,
+      ahead_by: ahead,
+      behind_by: range.behind,
+      total_commits: ahead,
+      commits: [...range.ahead].reverse().map(commitJson),
+      files: range.changes.map((c) => changeJson(repo.fullName, c, range.before, range.after)),
+    },
   }
-  const files = commitFiles([...new Set(touched)], 'modified')
-  return { status: 200, body: { status: 'ahead', files, commits: [] } }
 }
 
 export function compareRoutes(): KitRoute<C>[] {

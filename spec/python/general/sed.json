@@ -322,6 +322,16 @@
     {
       "short": "-r",
       "type": "bool"
+    },
+    {
+      "long": "--line-length",
+      "short": "-l",
+      "type": "str"
+    },
+    {
+      "long": "--separate",
+      "short": "-s",
+      "type": "bool"
     }
   ],
   "positional": [

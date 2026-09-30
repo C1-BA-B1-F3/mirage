@@ -46,7 +46,6 @@ def test_conservative_requirements(source, expected):
     r"(foo)\1",
     "(?P<name>a)(?P=name)",
     r"\x66oo",
-    r"\Afoo",
     "a{,3}b",
     "a{b",
     "a++b",
@@ -66,6 +65,17 @@ def test_folds_ascii_and_declines_unicode_folding():
                                        re.ASCII | re.I)) == (b"foo", b"bar")
     assert required_needles(re.compile("s", re.I)) is None
     assert required_needles(re.compile("a b", re.VERBOSE)) is None
+
+
+def test_unicode_folding_keeps_needles_no_non_ascii_letter_folds_to():
+    # Only `ı`, `İ`, the Kelvin sign and `ſ` fold onto ASCII letters
+    # under python's Unicode IGNORECASE, so `needle` still narrows.
+    assert required_needles(re.compile("Needle", re.I)) == (b"needle", )
+    assert required_needles(re.compile("kin", re.I)) is None
+
+
+def test_reads_anchors_as_consuming_nothing():
+    assert required_needles(re.compile(r"\Afoo\Z")) == (b"foo", )
 
 
 def test_bounds_the_source_and_builds_long_literals_once():

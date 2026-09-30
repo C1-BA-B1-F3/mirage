@@ -18,6 +18,19 @@ import type * as PullModule from '../../../../core/github/pull.ts'
 import type { CLIInvocation } from '../../types.ts'
 
 let ROWS: Record<string, unknown>[] = []
+// What real gh 2.85 printed for `gh pr diff --name-only` over this diff: the
+// `b/` side of each header, a quoted name kept quoted, a rename by its new name.
+const NAME_ONLY_DIFF =
+  'diff --git a/README.md b/README.md\n' +
+  'deleted file mode 100644\n' +
+  '--- a/README.md\n+++ /dev/null\n@@ -1 +0,0 @@\n-x\n' +
+  'diff --git "a/caf\\303\\251.txt" "b/caf\\303\\251.txt"\n' +
+  'new file mode 100644\n' +
+  'diff --git a/docs/contributing.md b/moved/contributing.md\n' +
+  'similarity index 100%\n' +
+  'diff --git "a/q\\"t.txt" "b/q\\"t.txt"\n' +
+  'diff --git a/sub dir/x y.txt b/sub dir/x y.txt\n' +
+  '+++ b/sub dir/x y.txt\t\n'
 const FIELDS = vi.fn<typeof PullModule.pullRequestFields>()
 const LIST = vi.fn<typeof PullModule.listPullRequestFields>()
 
@@ -30,6 +43,7 @@ vi.mock('../../../../core/github/pull.ts', async (importOriginal) => {
   const actual = await importOriginal<typeof PullModule>()
   return {
     ...actual,
+    diffPull: () => Promise.resolve(NAME_ONLY_DIFF),
     pullChecks: () => Promise.resolve(ROWS),
     pullRequestFields: (...args: Parameters<typeof PullModule.pullRequestFields>) =>
       FIELDS(...args),
@@ -38,7 +52,7 @@ vi.mock('../../../../core/github/pull.ts', async (importOriginal) => {
   }
 })
 
-const { PR_FIELDS, checksCmd, listCmd, viewCmd } = await import('./pull.ts')
+const { PR_FIELDS, checksCmd, diffCmd, listCmd, viewCmd } = await import('./pull.ts')
 
 function json(result: Awaited<ReturnType<typeof viewCmd>>): Record<string, unknown> {
   if (result === null) throw new Error('expected a result tuple')
@@ -367,6 +381,16 @@ describe('gh pr list --json', () => {
     await listCmd(inv({ json: 'projectCards,projectItems', state: 'all' }))
     expect(LIST.mock.calls[0]?.[4]).toMatch(
       /^projectCards\(first:100\).*,projectItems\(first:100\)/,
+    )
+  })
+})
+
+describe('gh pr diff --name-only', () => {
+  it('prints the b side of each header, as gh does', async () => {
+    const result = await diffCmd(inv({ name_only: true }))
+    if (result === null) throw new Error('expected a result tuple')
+    expect(new TextDecoder().decode(result[0] as Uint8Array)).toBe(
+      'README.md\n"caf\\303\\251.txt"\nmoved/contributing.md\n"q\\"t.txt"\nsub dir/x y.txt\n',
     )
   })
 })

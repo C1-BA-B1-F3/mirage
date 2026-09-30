@@ -3,7 +3,14 @@ import re
 import pytest
 
 from mirage.utils.posix import (class_characters, compile_posix_regex,
-                                translate_classes)
+                                translate_bracket)
+
+
+def _bracket(pattern: str) -> str:
+    out: list[str] = []
+    end = translate_bracket(pattern, 0, out)
+    assert end == len(pattern)
+    return "".join(out)
 
 
 @pytest.mark.parametrize('name,yes,no', [
@@ -21,7 +28,7 @@ from mirage.utils.posix import (class_characters, compile_posix_regex,
     ('xdigit', '09aAfF', 'gG_'),
 ])
 def test_class_membership(name, yes, no):
-    compiled = re.compile(translate_classes(f'^[[:{name}:]]$'))
+    compiled = re.compile(_bracket(f'[[:{name}:]]'))
     expanded = class_characters(name)
     for char in yes:
         assert compiled.fullmatch(char)
@@ -40,33 +47,13 @@ def test_class_order_for_translation():
                          ['[[:bogus:]]', '[[:constructor:]]', '[[:digit:]'])
 def test_invalid_classes_refused(pattern):
     with pytest.raises(re.error):
-        translate_classes(pattern)
+        _bracket(pattern)
 
 
-def test_escapes_and_mixed_brackets():
-    assert re.fullmatch(translate_classes(r'\[\[:digit:\]\]'), '[[:digit:]]')
-    compiled = re.compile(translate_classes('^[][:digit:]_]+$'))
+def test_mixed_brackets():
+    compiled = re.compile(_bracket('[][:digit:]_]') + '+')
     assert compiled.fullmatch(']_123')
     assert not compiled.fullmatch('abc')
-
-
-@pytest.mark.parametrize('pattern,nested', [
-    ('a++', '(?:a+)+'),
-    ('a+?', '(?:a+)?'),
-    ('a{1,2}?', '(?:a{1,2})?'),
-    ('(ab)+?', '(?:(ab)+)?'),
-    ('a|[bc]**', 'a|(?:[bc]*)*'),
-    (r'\++', r'\++'),
-    ('a{', 'a{'),
-])
-def test_stacked_quantifiers_nest(pattern, nested):
-    assert translate_classes(pattern) == nested
-    assert translate_classes(pattern, nest=False) == pattern
-
-
-def test_nested_quantifier_keeps_backtracking():
-    assert re.sub(translate_classes('a+?'), 'X', 'aaa', count=1) == 'X'
-    assert re.fullmatch(translate_classes('a++a'), 'aaa')
 
 
 @pytest.mark.parametrize("source,text,expected",

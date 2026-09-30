@@ -13,9 +13,17 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import { describe, expect, it } from 'vitest'
-import { jqEval } from './eval.ts'
-import { concatBytes, errorReport, formatJqOutput, haltReport, loadFailure } from './format.ts'
-import { jqOptions } from './types.ts'
+import { jqRunTexts } from './eval.ts'
+import {
+  concatBytes,
+  dumpText,
+  errorReport,
+  formatJqOutput,
+  haltReport,
+  loadFailure,
+  printable,
+} from './format.ts'
+import { jqOptions, type JqOptions } from './types.ts'
 import { eacces, eisdir, enoent } from '../../utils/errors.ts'
 
 const DEC = new TextDecoder()
@@ -23,97 +31,163 @@ const PRETTY = jqOptions()
 const COMPACT = jqOptions({ compact: true })
 const RAW = jqOptions({ rawOutput: true, compact: true })
 
+// jq's compact dump of one document, and what jq 1.8.2 (debian:testing-slim)
+// prints for it under each set of flags.
+const DOC = '{"b":1.000,"1":[1E+2,-0,{},[]],"a":[],"é":"ü😀\\u007f"}'
+const LAYOUTS: [string, JqOptions, string][] = [
+  [
+    'the default',
+    jqOptions(),
+    '{\n  "b": 1.000,\n  "1": [\n    1E+2,\n    -0,\n    {},\n    []\n  ],\n  "a": [],\n' +
+      '  "é": "ü😀\\u007f"\n}\n',
+  ],
+  ['-c', jqOptions({ compact: true }), `${DOC}\n`],
+  [
+    '-S',
+    jqOptions({ sortKeys: true }),
+    '{\n  "1": [\n    1E+2,\n    -0,\n    {},\n    []\n  ],\n  "a": [],\n  "b": 1.000,\n' +
+      '  "é": "ü😀\\u007f"\n}\n',
+  ],
+  [
+    '-S -c',
+    jqOptions({ sortKeys: true, compact: true }),
+    '{"1":[1E+2,-0,{},[]],"a":[],"b":1.000,"é":"ü😀\\u007f"}\n',
+  ],
+  [
+    '--tab',
+    jqOptions({ tab: true }),
+    '{\n\t"b": 1.000,\n\t"1": [\n\t\t1E+2,\n\t\t-0,\n\t\t{},\n\t\t[]\n\t],\n\t"a": [],\n' +
+      '\t"é": "ü😀\\u007f"\n}\n',
+  ],
+  [
+    '--indent 0',
+    jqOptions({ indent: 0 }),
+    '{\n"b": 1.000,\n"1": [\n1E+2,\n-0,\n{},\n[]\n],\n"a": [],\n"é": "ü😀\\u007f"\n}\n',
+  ],
+  [
+    '--indent 7',
+    jqOptions({ indent: 7 }),
+    '{\n       "b": 1.000,\n       "1": [\n              1E+2,\n              -0,\n' +
+      '              {},\n              []\n       ],\n       "a": [],\n' +
+      '       "é": "ü😀\\u007f"\n}\n',
+  ],
+  [
+    '-a',
+    jqOptions({ asciiOutput: true }),
+    '{\n  "b": 1.000,\n  "1": [\n    1E+2,\n    -0,\n    {},\n    []\n  ],\n  "a": [],\n' +
+      '  "\\u00e9": "\\u00fc\\ud83d\\ude00\\u007f"\n}\n',
+  ],
+  [
+    '-a -S --tab',
+    jqOptions({ asciiOutput: true, sortKeys: true, tab: true }),
+    '{\n\t"1": [\n\t\t1E+2,\n\t\t-0,\n\t\t{},\n\t\t[]\n\t],\n\t"a": [],\n\t"b": 1.000,\n' +
+      '\t"\\u00e9": "\\u00fc\\ud83d\\ude00\\u007f"\n}\n',
+  ],
+  [
+    '-r',
+    jqOptions({ rawOutput: true }),
+    '{\n  "b": 1.000,\n  "1": [\n    1E+2,\n    -0,\n    {},\n    []\n  ],\n  "a": [],\n' +
+      '  "é": "ü😀\\u007f"\n}\n',
+  ],
+]
+
+// A string, and what jq 1.8.2 prints for it.
+const STRING = '"ü😀\\u007f\\u0000"'
+const STRING_LAYOUTS: [string, JqOptions, string][] = [
+  ['-r', jqOptions({ rawOutput: true }), 'ü😀\x7f\x00\n'],
+  [
+    '-r -a',
+    jqOptions({ rawOutput: true, asciiOutput: true }),
+    `"\\u00fc\\ud83d\\ude00\\u007f\\u0000"\n`,
+  ],
+  ['-j', jqOptions({ rawOutput: true, joinOutput: true }), 'ü😀\x7f\x00'],
+  ['-a', jqOptions({ asciiOutput: true }), `"\\u00fc\\ud83d\\ude00\\u007f\\u0000"\n`],
+]
+
 describe('formatJqOutput', () => {
+  it.each(LAYOUTS)('lays an output out the way jq prints it under %s', (_, opts, expected) => {
+    expect(DEC.decode(formatJqOutput([DOC], opts))).toBe(expected)
+  })
+
+  it.each(STRING_LAYOUTS)('prints a string the way jq prints it under %s', (_, opts, expected) => {
+    expect(DEC.decode(formatJqOutput([STRING], opts))).toBe(expected)
+  })
+
   it('returns empty bytes when there are no outputs', () => {
     expect(formatJqOutput([], PRETTY)).toEqual(new Uint8Array(0))
     expect(formatJqOutput([], RAW)).toEqual(new Uint8Array(0))
   })
 
-  it('serializes a single value compactly', () => {
-    expect(DEC.decode(formatJqOutput([{ a: 1 }], COMPACT))).toBe('{"a":1}\n')
-  })
-
-  it('indents a single value by default', () => {
-    expect(DEC.decode(formatJqOutput([{ a: 1 }], PRETTY))).toBe('{\n  "a": 1\n}\n')
-  })
-
-  it('emits raw strings without JSON quoting when raw=true', () => {
-    expect(DEC.decode(formatJqOutput(['hello'], RAW))).toBe('hello\n')
-  })
-
   it('leaves non-strings as JSON when raw=true', () => {
-    expect(DEC.decode(formatJqOutput(['a', 1], RAW))).toBe('a\n1\n')
+    expect(DEC.decode(formatJqOutput(['"a"', '1.000'], RAW))).toBe('a\n1.000\n')
   })
 
-  it('prints one line per output', () => {
-    expect(DEC.decode(formatJqOutput([1, 2, 3], COMPACT))).toBe('1\n2\n3\n')
+  it('lays out a value nested as deep as jq reads', () => {
+    const deep = '['.repeat(300) + '1.000' + ']'.repeat(300)
+    const pretty = dumpText(deep, PRETTY)
+    expect(pretty.startsWith('[\n  [\n    [')).toBe(true)
+    expect(pretty.includes(`\n${' '.repeat(600)}1.000\n`)).toBe(true)
+    const nested = '{"b":'.repeat(300) + '{"a":1}' + '}'.repeat(300)
+    expect(
+      dumpText(nested, jqOptions({ compact: true, sortKeys: true })).split('"b"'),
+    ).toHaveLength(301)
   })
 
-  it('keeps a single array output on one line', () => {
-    expect(DEC.decode(formatJqOutput([[1, 2, 3]], COMPACT))).toBe('[1,2,3]\n')
+  it.each([true, false])('sorts keys by code point, escaped ones read (compact: %s)', (compact) => {
+    // jq compares keys as UTF-8 bytes, which is code point order.
+    const text = '{"é":1,"z":2,"a\\"":3,"😀":4,"ｚ":5,"\\u0001":6}'
+    const ordered = '{"\\u0001":6,"a\\"":3,"z":2,"é":1,"ｚ":5,"😀":4}'
+    expect(dumpText(text, jqOptions({ compact, sortKeys: true }))).toBe(
+      dumpText(ordered, jqOptions({ compact })),
+    )
   })
 
-  it('prints one line per output of a comma program', async () => {
-    const outputs = await jqEval({ a: 'alice', b: 30 }, '.a, .b')
-    expect(DEC.decode(formatJqOutput(outputs, RAW))).toBe('alice\n30\n')
-  })
-})
-
-describe('jq DropItem regression', () => {
-  it('zero-output expression yields no outputs, not a thrown error', async () => {
-    const msg = { id: 'x', subject: 'hi', body_text: '...' }
-    const outputs = await jqEval(msg, '.attachments[]?')
-    expect(outputs).toEqual([])
-    expect(formatJqOutput(outputs, RAW)).toEqual(new Uint8Array(0))
-  })
-
-  it('select with no match yields no outputs', async () => {
-    const outputs = await jqEval({ x: 1 }, 'select(.x > 100)')
-    expect(outputs).toEqual([])
-    expect(formatJqOutput(outputs, COMPACT)).toEqual(new Uint8Array(0))
+  it('keeps the spelling jq gives each output', async () => {
+    const run = await jqRunTexts(
+      '{"b":1.000,"1":2}',
+      '., .b, (.b + 0), (1e17 * 1), -0, keys_unsorted',
+    )
+    expect(DEC.decode(formatJqOutput(run.outputs, COMPACT))).toBe(
+      '{"b":1.000,"1":2}\n1.000\n1\n1e+17\n0\n["b","1"]\n',
+    )
   })
 })
 
 describe('jq output flags', () => {
   it('writes no separator under -j', () => {
     const opts = jqOptions({ rawOutput: true, joinOutput: true, compact: true })
-    expect(DEC.decode(formatJqOutput(['a', 'b'], opts))).toBe('ab')
+    expect(DEC.decode(formatJqOutput(['"a"', '"b"'], opts))).toBe('ab')
   })
 
   it('terminates with NUL under --raw-output0, which beats -j', () => {
     const opts = jqOptions({ rawOutput: true, joinOutput: true, nulOutput: true, compact: true })
-    expect(formatJqOutput(['a', 'b'], opts)).toEqual(new Uint8Array([97, 0, 98, 0]))
+    expect(formatJqOutput(['"a"', '"b"'], opts)).toEqual(new Uint8Array([97, 0, 98, 0]))
   })
 
-  it('sorts object keys under -S', () => {
-    const opts = jqOptions({ compact: true, sortKeys: true })
-    expect(DEC.decode(formatJqOutput([{ b: 1, a: 2 }], opts))).toBe('{"a":2,"b":1}\n')
+  it('puts RS before each value under --seq, but not before a raw string', () => {
+    const opts = jqOptions({ seq: true, rawOutput: true, compact: true })
+    expect(DEC.decode(formatJqOutput(['1.000', '"x"', '[]'], opts))).toBe('\x1e1.000\nx\n\x1e[]\n')
   })
+})
 
-  it('sorts nested object keys under -S', () => {
-    const opts = jqOptions({ compact: true, sortKeys: true })
-    expect(DEC.decode(formatJqOutput([{ b: { d: 1, c: 2 } }], opts))).toBe('{"b":{"c":2,"d":1}}\n')
-  })
-
-  it('escapes non-ASCII under -a, which beats -r', () => {
-    const opts = jqOptions({ rawOutput: true, asciiOutput: true, compact: true })
-    expect(DEC.decode(formatJqOutput(['caf\u00e9'], opts))).toBe('"caf\\u00e9"\n')
-  })
-
-  it('indents with tabs under --tab', () => {
-    expect(DEC.decode(formatJqOutput([{ a: 1 }], jqOptions({ tab: true })))).toBe(
-      '{\n\t"a": 1\n}\n',
-    )
-  })
-
-  it('honors an indent width', () => {
-    expect(DEC.decode(formatJqOutput([{ a: 1 }], jqOptions({ indent: 4 })))).toBe(
-      '{\n    "a": 1\n}\n',
-    )
-  })
-
-  it('is compact at indent 0', () => {
-    expect(DEC.decode(formatJqOutput([{ a: 1 }], jqOptions({ indent: 0 })))).toBe('{"a":1}\n')
+describe('printable', () => {
+  it('refuses a string holding a NUL under --raw-output0', () => {
+    // Pinned: printf '"a\u0000b" "c"' | jq --raw-output0 . fails the first
+    // run with this error and prints the second.
+    const opts = jqOptions({ rawOutput: true, nulOutput: true, compact: true })
+    const run = { outputs: ['"x"', '"a\\u0000b"', '"c"'], stop: null }
+    expect(printable(run, opts)).toEqual({
+      outputs: ['"x"'],
+      stop: {
+        kind: 'error',
+        text: 'Cannot dump a string containing NUL with --raw-output0 option',
+        string: true,
+      },
+    })
+    const escaped = { outputs: ['"a\\\\u0000"'], stop: null }
+    expect(printable(escaped, opts)).toBe(escaped)
+    expect(printable(run, jqOptions({ rawOutput: true, compact: true }))).toBe(run)
+    expect(printable(run, jqOptions({ nulOutput: true, asciiOutput: true }))).toBe(run)
   })
 })
 

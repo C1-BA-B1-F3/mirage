@@ -13,9 +13,49 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import { describe, expect, it } from 'vitest'
-import { unhonoredNotice } from './flags.ts'
+import { initArgv, unhonoredNotice } from './flags.ts'
 
 const text = (bytes: Uint8Array): string => new TextDecoder().decode(bytes)
+
+// Mirrors Python's tests/runtime/python/test_flags.py.
+describe('initArgv', () => {
+  it('asks for nothing on an empty bag', () => {
+    expect(initArgv({})).toEqual([])
+  })
+
+  it("hands a bool switch back in CPython's own spelling", () => {
+    expect(initArgv({ B: true, E: false, P: true })).toEqual(['-B', '-P'])
+  })
+
+  it('repeats a count switch, because CPython counts occurrences', () => {
+    // CPython reads `-O -O` exactly as `-OO`; the same is true of -b.
+    expect(initArgv({ O: 2, b: 1 })).toEqual(['-O', '-O', '-b'])
+  })
+
+  it('repeats a list switch per value', () => {
+    expect(initArgv({ W: ['ignore', 'error::UserWarning'] })).toEqual([
+      '-W',
+      'ignore',
+      '-W',
+      'error::UserWarning',
+    ])
+  })
+
+  it('hands the long switch back as two words', () => {
+    // CPython parses --check-hash-based-pycs by hand and rejects the
+    // --opt=value spelling, so it can only be handed back detached.
+    expect(initArgv({ check_hash_based_pycs: 'never' })).toEqual([
+      '--check-hash-based-pycs',
+      'never',
+    ])
+  })
+
+  it('keeps the order bools, counts, lists, then the long switch', () => {
+    expect(
+      initArgv({ check_hash_based_pycs: 'always', X: ['dev'], O: 1, S: true, B: true }),
+    ).toEqual(['-B', '-S', '-O', '-X', 'dev', '--check-hash-based-pycs', 'always'])
+  })
+})
 
 describe('unhonoredNotice', () => {
   it('names the runtime once per switch present', () => {

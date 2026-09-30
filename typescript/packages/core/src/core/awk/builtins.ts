@@ -37,6 +37,8 @@ const SURROGATE_MIN = 0xd800
 const SURROGATE_MAX = 0xdfff
 const SURROGATE = /[\ud800-\udfff]/
 const RAND_SCALE = 4294967296
+const ESCAPES: Readonly<Record<string, string>> = { t: '\t', n: '\n', '\\': '\\' }
+const ASSIGNMENT = /^[A-Za-z_][A-Za-z0-9_]*=/
 
 /** The string as code points, which is what awk counts and indexes. */
 export function chars(subject: string): string[] {
@@ -474,4 +476,37 @@ export function takeRecord(
     return [buffer.slice(start, found.start), found.end]
   }
   return takeTail(buffer, start, final)
+}
+
+/**
+ * Expand the backslash escapes awk reads in an assigned value: a `-v`
+ * value, an `-F` separator and a `var=value` operand all take them.
+ */
+export function unescape(raw: string): string {
+  let out = ''
+  let idx = 0
+  while (idx < raw.length) {
+    if (raw.charAt(idx) === '\\' && idx + 1 < raw.length) {
+      const nxt = raw.charAt(idx + 1)
+      out += ESCAPES[nxt] ?? '\\' + nxt
+      idx += 2
+      continue
+    }
+    out += raw.charAt(idx)
+    idx += 1
+  }
+  return out
+}
+
+/**
+ * Read a `var=value` operand, or null when it names a file. POSIX makes
+ * an operand an assignment when it starts with a name (a letter or
+ * underscore, then letters, digits and underscores) followed by `=`;
+ * `1x=3` and `=x` are file names.
+ */
+export function splitAssignment(operand: string): [string, string] | null {
+  const found = ASSIGNMENT.exec(operand)
+  if (found === null) return null
+  const eq = found[0].length
+  return [operand.slice(0, eq - 1), unescape(operand.slice(eq))]
 }

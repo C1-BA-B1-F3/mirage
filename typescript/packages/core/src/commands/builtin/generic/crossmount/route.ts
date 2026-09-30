@@ -52,6 +52,7 @@ export async function handleCrossMount(
   // The session's working directory, which a typed operand resolves against
   // (cp's link sources).
   cwd = '/',
+  argv: readonly string[] = [],
 ): Promise<CrossResult> {
   const native = runSingle
   const input = resolveSource(stdin)
@@ -64,7 +65,7 @@ export async function handleCrossMount(
     // isCrossMount gated on CROSS_MOUNT_COMMANDS membership, so the name is
     // one of the Cmd values by the time it reaches the strategy layer.
     const cmd = cmdName as Cmd
-    const strategy = strategyFor(cmd, flagKwargs)
+    const strategy = strategyFor(cmd)
     if (strategy === Strategy.RELAY) {
       return await runRelay(
         cmd,
@@ -78,6 +79,7 @@ export async function handleCrossMount(
         sessionView,
         stdin,
         cwd,
+        argv,
       )
     }
     if (strategy === Strategy.STREAM) {

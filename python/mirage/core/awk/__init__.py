@@ -13,17 +13,21 @@
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 from mirage.core.awk.builtins import sprintf, substitute, substr
-from mirage.core.awk.errors import AwkRuntimeError, AwkSyntaxError
+from mirage.core.awk.errors import AwkIOError, AwkRuntimeError, AwkSyntaxError
 from mirage.core.awk.interp import ExitProgram, Interpreter
 from mirage.core.awk.lexer import tokenize
 from mirage.core.awk.nodes import Program
 from mirage.core.awk.parser import parse
 from mirage.core.awk.regex import compile_ere, matches, translate
+from mirage.core.awk.types import AwkHost, CommandRun
 from mirage.core.awk.value import Value, strnum, to_num, to_str
 
 __all__ = [
+    "AwkHost",
+    "AwkIOError",
     "AwkRuntimeError",
     "AwkSyntaxError",
+    "CommandRun",
     "ExitProgram",
     "Interpreter",
     "Program",

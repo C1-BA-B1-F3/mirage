@@ -17,6 +17,7 @@ import { HOME_CONFIG_KEYS } from '@struktoai/mirage-core/runtime/config'
 import type { HomeConfig } from '@struktoai/mirage-core/runtime/config'
 import { PythonRuntime } from '@struktoai/mirage-core/runtime/python/base'
 import { prepareSource } from '@struktoai/mirage-core/runtime/python/execution'
+import { initArgv, type InitFlags } from '@struktoai/mirage-core/runtime/python/flags'
 import { registerRuntime } from '@struktoai/mirage-core/runtime/table'
 import type { RunArgs, RunResult, RuntimeOptions } from '@struktoai/mirage-core/runtime/types'
 
@@ -56,8 +57,11 @@ export class LocalRuntime extends PythonRuntime {
   }
 
   run(args: RunArgs): Promise<RunResult> {
+    // Honoring the init switches is just handing them back to the real
+    // interpreter, which is why this tier gets them exactly right
+    // (sys.flags included) where an in-process engine cannot.
     return this.runProcess(
-      ['-c', prepareSource(args), ...args.args],
+      [...initArgv((args.flags ?? {}) as InitFlags), '-c', prepareSource(args), ...args.args],
       args.env,
       args.stdin,
       args.signal,

@@ -18,6 +18,7 @@ import {
   refuseMissingPattern,
   rgGeneric,
   rgMatcher,
+  rgSyntax,
 } from '@struktoai/mirage-core/commands/builtin/generic/rg'
 import { resolveGlobOf } from '@struktoai/mirage-core/commands/builtin/generic_bind/index'
 import { patternArg } from '@struktoai/mirage-core/commands/builtin/grep_pattern'
@@ -78,7 +79,7 @@ async function rgCommand(
   const operand = pushdownOperand(paths, opts.flags, pattern, RG_SEARCH_HONORED)
   // The server is asked for the literal every match must contain, never
   // the regex's own spelling: IMAP TEXT is a substring search.
-  const query = pattern === null ? null : searchQuery(pattern, f.fixedString)
+  const query = pattern === null ? null : searchQuery(pattern, f.fixedString, rgSyntax(f))
   if (operand !== null && pattern !== null && query !== null) {
     const match = detectScope(operand)
     if (NATIVE_KINDS.has(match.kind)) {

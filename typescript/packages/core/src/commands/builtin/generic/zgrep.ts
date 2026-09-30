@@ -18,7 +18,16 @@ import { FlagView } from '../../spec/flag_view.ts'
 import { IOResult, materialize, type ByteSource } from '../../../io/types.ts'
 import type { PathSpec } from '../../../types.ts'
 import type { CommandFnResult, CommandOpts } from '../../config.ts'
-import { compilePattern, resolvePattern } from '../grep_pattern.ts'
+import {
+  NEVER_MATCH,
+  compilePattern,
+  matcherSyntax,
+  patternWarnings,
+  resolvePattern,
+} from '../grep_pattern.ts'
+import { UsageError } from '../../errors.ts'
+import type { RegexSyntax } from '../types.ts'
+import { matchStart, matchText } from '../utils/pcre.ts'
 import { STDIN_OPERAND } from '../utils/constants.ts'
 import { linkDoor } from '../utils/links.ts'
 import { operandLabel } from '../utils/stream.ts'
@@ -78,7 +87,7 @@ function zgrepSearch(
       }
       if (hits.length > 0) {
         for (const h of hits) {
-          matched.push([i + 1, matchOffset(start, line, h.index), h[0]])
+          matched.push([i + 1, matchOffset(start, line, matchStart(h)), matchText(h)])
           if (opts.maxCount !== null && matched.length >= opts.maxCount) break
         }
       }
@@ -135,8 +144,15 @@ export async function zgrepGeneric(
   }
   const rawPattern = resolution.pattern
   // zgrep is grep over decompressed bytes, so it reads a basic expression
-  // unless -E says otherwise; -G asks for the default explicitly.
-  const basicRegexp = !fl.asBool('E')
+  // unless -E or -P says otherwise, and refuses two matchers as grep does;
+  // -G asks for the default explicitly.
+  let syntax: RegexSyntax
+  try {
+    syntax = matcherSyntax(fl, 'grep', 'P')
+  } catch (err) {
+    if (!(err instanceof UsageError)) throw err
+    return [null, new IOResult({ exitCode: 2, stderr: ENC.encode(err.message + '\n') })]
+  }
   const fixedString = fl.asBool('F') && !neverMatch
   const wholeWord = fl.asBool('w')
   const ignoreCase = fl.asBool('i')
@@ -160,7 +176,9 @@ export async function zgrepGeneric(
   const pattern =
     maxCount === 0
       ? null
-      : compilePattern(rawPattern, ignoreCase, fixedString, wholeWord, basicRegexp)
+      : neverMatch
+        ? new RegExp(NEVER_MATCH)
+        : compilePattern(rawPattern, ignoreCase, fixedString, wholeWord, syntax)
 
   const multi = paths.length > 1
   const showFilename = forceH || (multi && !hideH)
@@ -168,7 +186,9 @@ export async function zgrepGeneric(
   const allResults: string[] = []
 
   const door = linkDoor(opts)
-  let errors = ''
+  // zgrep runs grep, so grep's compile warnings come first, in its name.
+  let errors =
+    pattern === null || neverMatch || fixedString ? '' : patternWarnings(rawPattern, syntax)
   let failed = false
   for (const p of paths.length > 0 ? paths : [STDIN_OPERAND]) {
     // zgrep decompresses each operand with `gzip -cdfq -- FILE`, which

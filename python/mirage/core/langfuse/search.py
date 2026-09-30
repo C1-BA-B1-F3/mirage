@@ -16,7 +16,8 @@ from mirage.vfs.types import SearchQuery
 def _compiled(query: SearchQuery) -> re.Pattern[str]:
     options = grep_search_options(query)
     return compile_pattern(query.query, options.ignore_case,
-                           options.fixed_string, options.whole_word)
+                           options.fixed_string, options.whole_word,
+                           options.syntax)
 
 
 def _filter_traces(traces: list[dict[str, Any]],

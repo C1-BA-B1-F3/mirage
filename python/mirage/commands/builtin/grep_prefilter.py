@@ -2,7 +2,13 @@ import re
 from dataclasses import dataclass
 
 LIMIT = 64
-LONGEST = 4096
+# Long enough for a translated Unicode class: ripgrep's `\b` alone spells
+# its word class out four times, some 45,000 characters of host source.
+LONGEST = 1 << 18
+# The ASCII letters a non-ASCII character matches under python's Unicode
+# IGNORECASE (`ı` and `İ` for i, the Kelvin sign for k, `ſ` for s): a
+# lowercased byte search for a needle holding one could miss a line.
+UNICODE_FOLDED = frozenset("iks")
 QUANTIFIER = re.compile(r"[*+?]|\{(?P<least>[0-9]+)(?:,[0-9]*)?\}")
 GROUP = re.compile(
     r"\?(?:(?P<look>=|!|<=|<!)|[:>]|P?<[A-Za-z_$][A-Za-z0-9_$]*>)")
@@ -170,7 +176,7 @@ class RequiredLiterals:
     def escape(self) -> Required:
         char = self.peek()
         self.at += 1
-        if char in ("b", "B"):
+        if char in ("b", "B", "A", "Z"):
             return EMPTY
         if char in ("d", "D", "s", "S", "w", "W", "n", "r", "t", "f", "v"):
             return UNKNOWN
@@ -185,18 +191,21 @@ def required_needles(pat: re.Pattern[str]) -> tuple[bytes, ...] | None:
 
     Under ``re.IGNORECASE`` they are lowercase, for a search of an
     ASCII-lowercased view. Unicode case folding matches non-ASCII
-    spellings of ASCII letters (``ſ`` for ``s``), which only the line
-    matcher can see, so a pattern that folds that way gets none.
+    spellings of three ASCII letters (``ſ`` for ``s``), which only the
+    line matcher can see, so under it a needle holding one of them gives
+    the pattern none.
 
     Args:
         pat (re.Pattern[str]): the compiled line matcher.
     """
     fold = bool(pat.flags & re.IGNORECASE)
-    if (pat.flags & re.VERBOSE or fold and not pat.flags & re.ASCII
-            or len(pat.pattern) > LONGEST
+    if (pat.flags & re.VERBOSE or len(pat.pattern) > LONGEST
             or any(not " " <= char <= "~" for char in pat.pattern)):
         return None
     needles = RequiredLiterals(pat.pattern).needles()
     if fold:
         needles = tuple(dict.fromkeys(needle.lower() for needle in needles))
+        if not pat.flags & re.ASCII and any(UNICODE_FOLDED & set(needle)
+                                            for needle in needles):
+            return None
     return tuple(needle.encode("ascii") for needle in needles) or None

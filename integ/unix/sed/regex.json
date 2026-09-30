@@ -1,0 +1,1279 @@
+{
+  "cases": [
+    {
+      "id": "sed_regex_E_d_is_d",
+      "seq": 9960201,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "printf 'abc 123 x45\\n' | sed -E 's/\\d+/<&>/g'; printf 'd 7\\n' | sed -E 's/\\d/X/'",
+      "expect": {
+        "exit": 0,
+        "stdout": "abc 123 x45\nX 7\n",
+        "stderr": ""
+      },
+      "flags": [
+        "E"
+      ]
+    },
+    {
+      "id": "sed_regex_decimal_escape",
+      "seq": 9960202,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "printf 'A\\n' | sed 's/\\d065/X/'; printf 'A\\n' | sed -E 's/\\d065/X/'; printf 'A\\n' | sed 's/\\o101/X/'",
+      "expect": {
+        "exit": 0,
+        "stdout": "X\nX\nX\n",
+        "stderr": ""
+      },
+      "flags": [
+        "E"
+      ]
+    },
+    {
+      "id": "sed_regex_E_tab_escape",
+      "seq": 9960203,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "printf 'a\\tb t\\n' | sed -E 's/\\t/X/'",
+      "expect": {
+        "exit": 0,
+        "stdout": "aXb t\n",
+        "stderr": ""
+      },
+      "flags": [
+        "E"
+      ]
+    },
+    {
+      "id": "sed_regex_E_hex_escape",
+      "seq": 9960204,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "printf 'x41 A\\n' | sed -E 's/\\x41/X/'",
+      "expect": {
+        "exit": 0,
+        "stdout": "x41 X\n",
+        "stderr": ""
+      },
+      "flags": [
+        "E"
+      ]
+    },
+    {
+      "id": "sed_regex_E_word_start",
+      "seq": 9960205,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "printf 'word sword\\n' | sed -E 's/\\<w/X/g'",
+      "expect": {
+        "exit": 0,
+        "stdout": "Xord sword\n",
+        "stderr": ""
+      },
+      "flags": [
+        "E"
+      ]
+    },
+    {
+      "id": "sed_regex_E_lookbehind_refused",
+      "seq": 9960206,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "printf 'id=42\\n' | sed -E 's/(?<=id=)[0-9]+/X/'",
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "sed: -e expression #1, char 19: Invalid preceding regular expression\n"
+      },
+      "flags": [
+        "E"
+      ]
+    },
+    {
+      "id": "sed_regex_E_word_class",
+      "seq": 9960207,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "printf 'a_b c\\n' | sed -E 's/\\w+/X/g'",
+      "expect": {
+        "exit": 0,
+        "stdout": "X X\n",
+        "stderr": ""
+      },
+      "flags": [
+        "E"
+      ]
+    },
+    {
+      "id": "sed_regex_E_escaped_plus_literal",
+      "seq": 9960208,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "printf 'a+b aab\\n' | sed -E 's/a\\+/X/'",
+      "expect": {
+        "exit": 0,
+        "stdout": "Xb aab\n",
+        "stderr": ""
+      },
+      "flags": [
+        "E"
+      ]
+    },
+    {
+      "id": "sed_regex_bre_bar_literal",
+      "seq": 9960209,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "printf 'a|b\\n' | sed 's/a|b/X/'",
+      "expect": {
+        "exit": 0,
+        "stdout": "X\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "sed_regex_E_bar_alternation",
+      "seq": 9960210,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "printf 'a|b\\n' | sed -E 's/a|b/X/g'",
+      "expect": {
+        "exit": 0,
+        "stdout": "X|X\n",
+        "stderr": ""
+      },
+      "flags": [
+        "E"
+      ]
+    },
+    {
+      "id": "sed_regex_newline_in_bracket",
+      "seq": 9960211,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "printf 'a\\nb\\n' | sed 'N;s/[\\n]/X/'",
+      "expect": {
+        "exit": 0,
+        "stdout": "aXb\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "sed_regex_dot_matches_newline",
+      "seq": 9960212,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "printf 'a\\nb\\n' | sed 'N;s/a.b/X/'",
+      "expect": {
+        "exit": 0,
+        "stdout": "X\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "sed_regex_M_dot_stops_at_newline",
+      "seq": 9960213,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "printf 'a\\nb\\n' | sed 'N;s/a.b/X/M'",
+      "expect": {
+        "exit": 0,
+        "stdout": "a\nb\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "sed_regex_M_line_end",
+      "seq": 9960214,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "printf 'a\\nb\\n' | sed 'N;s/a$/X/M'",
+      "expect": {
+        "exit": 0,
+        "stdout": "X\nb\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "sed_regex_hex_escape_is_syntax",
+      "seq": 9960215,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "printf 'a.b axb\\n' | sed 's/a\\x2eb/X/g'",
+      "expect": {
+        "exit": 0,
+        "stdout": "X X\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "sed_regex_hex_backslash_trailing",
+      "seq": 9960216,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "printf 'a\\\\b\\n' | sed 's/\\x5c/X/'",
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "sed: -e expression #1, char 9: Trailing backslash\n"
+      }
+    },
+    {
+      "id": "sed_regex_control_escape",
+      "seq": 9960217,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "printf 'a\\001b\\n' | sed 's/\\cA/X/'",
+      "expect": {
+        "exit": 0,
+        "stdout": "aXb\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "sed_regex_bracket_backslash_literal",
+      "seq": 9960218,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "printf 'a.b\\\\\\n' | sed 's/[\\.]/X/g'",
+      "expect": {
+        "exit": 0,
+        "stdout": "aXbX\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "sed_regex_unmatched_group",
+      "seq": 9960219,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "printf 'a\\n' | sed 's/\\(/x/'",
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "sed: -e expression #1, char 7: Unmatched ( or \\(\n"
+      }
+    },
+    {
+      "id": "sed_regex_E_unmatched_group",
+      "seq": 9960220,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "printf 'a\\n' | sed -E 's/(/x/'",
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "sed: -e expression #1, char 6: Unmatched ( or \\(\n"
+      },
+      "flags": [
+        "E"
+      ]
+    },
+    {
+      "id": "sed_regex_E_unmatched_close",
+      "seq": 9960221,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "printf 'a\\n' | sed -E 's/)/x/'",
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "sed: -e expression #1, char 6: Unmatched ) or \\)\n"
+      },
+      "flags": [
+        "E"
+      ]
+    },
+    {
+      "id": "sed_regex_E_leading_star_refused",
+      "seq": 9960222,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "printf 'a\\n' | sed -E 's/*a/x/'",
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "sed: -e expression #1, char 7: Invalid preceding regular expression\n"
+      },
+      "flags": [
+        "E"
+      ]
+    },
+    {
+      "id": "sed_regex_bre_leading_star_literal",
+      "seq": 9960223,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "printf 'a\\n' | sed 's/*a/x/'",
+      "expect": {
+        "exit": 0,
+        "stdout": "a\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "sed_regex_E_bad_interval",
+      "seq": 9960224,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "printf 'a\\n' | sed -E 's/a{x}/y/'",
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "sed: -e expression #1, char 9: Invalid content of \\{\\}\n"
+      },
+      "flags": [
+        "E"
+      ]
+    },
+    {
+      "id": "sed_regex_bre_brace_literal",
+      "seq": 9960225,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "printf 'a{x}\\n' | sed 's/a{x}/y/'",
+      "expect": {
+        "exit": 0,
+        "stdout": "y\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "sed_regex_unmatched_brace",
+      "seq": 9960226,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "printf 'a\\n' | sed 's/a\\{2/x/'",
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "sed: -e expression #1, char 9: Unmatched \\{\n"
+      }
+    },
+    {
+      "id": "sed_regex_address_error_position",
+      "seq": 9960227,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "printf 'a\\n' | sed -n '/\\(/Ip'",
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "sed: -e expression #1, char 5: Unmatched ( or \\(\n"
+      }
+    },
+    {
+      "id": "sed_regex_invalid_reference",
+      "seq": 9960228,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "printf 'a\\n' | sed -E 's/a/\\1/'",
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "sed: -e expression #1, char 7: invalid reference \\1 on `s' command's RHS\n"
+      },
+      "flags": [
+        "E"
+      ]
+    },
+    {
+      "id": "sed_regex_bad_class_name",
+      "seq": 9960229,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "printf 'a\\n' | sed 's/[[:foo:]]/x/'",
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "sed: -e expression #1, char 14: Invalid character class name\n"
+      }
+    },
+    {
+      "id": "sed_regex_inverted_range",
+      "seq": 9960230,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "printf 'a\\n' | sed 's/[z-a]/x/'",
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "sed: -e expression #1, char 10: Invalid range end\n"
+      }
+    },
+    {
+      "id": "sed_regex_error_after_flags",
+      "seq": 9960231,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "printf 'a\\n' | sed 's/\\(/x/;p'",
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "sed: -e expression #1, char 8: Unmatched ( or \\(\n"
+      }
+    },
+    {
+      "id": "sed_regex_error_second_expression",
+      "seq": 9960232,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "printf 'a\\n' | sed -e p -e 's/\\(/x/'",
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "sed: -e expression #2, char 7: Unmatched ( or \\(\n"
+      }
+    },
+    {
+      "id": "sed_regex_confusing_bracket",
+      "seq": 9960233,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "printf 'a\\n' | sed 's/[:alpha:]/x/'; echo rc=$?",
+      "expect": {
+        "exit": 0,
+        "stdout": "rc=4\n",
+        "stderr": "sed: character class syntax is [[:space:]], not [:space:]\n"
+      }
+    },
+    {
+      "id": "sed_regex_E_stacked_repeat",
+      "seq": 9960234,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "printf 'a\\n' | sed -E 's/a**/x/'",
+      "expect": {
+        "exit": 0,
+        "stdout": "x\n",
+        "stderr": ""
+      },
+      "flags": [
+        "E"
+      ]
+    },
+    {
+      "id": "sed_regex_E_empty_group",
+      "seq": 9960235,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "printf 'a\\n' | sed -E 's/()/x/'",
+      "expect": {
+        "exit": 0,
+        "stdout": "xa\n",
+        "stderr": ""
+      },
+      "flags": [
+        "E"
+      ]
+    },
+    {
+      "id": "sed_regex_E_backreference",
+      "seq": 9960236,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "printf 'aa\\n' | sed -E 's/(a)\\1/X/'",
+      "expect": {
+        "exit": 0,
+        "stdout": "X\n",
+        "stderr": ""
+      },
+      "flags": [
+        "E"
+      ]
+    }
+  ]
+}

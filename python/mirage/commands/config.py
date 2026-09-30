@@ -35,7 +35,7 @@ from mirage.io.types import ByteSource, IOResult
 from mirage.ops.types import NamespaceView, ReaddirPath, SessionView, StatPath
 from mirage.process.types import ProcessView
 from mirage.runtime.base import Runtime
-from mirage.runtime.types import DispatchFn, ExecPathFn
+from mirage.runtime.types import DispatchFn, ExecPathFn, ShellFn
 from mirage.types import Limit, PathSpec
 from mirage.version import __version__
 
@@ -79,6 +79,8 @@ class ExecContext:
             one path.
         session_view (SessionView | None): The session plane's live,
             gated handle.
+        shell (ShellFn | None): Runs a nested line in the calling
+            session.
         argv (tuple[str, ...]): The words after the command name, as the
             line spelled them.
     """
@@ -98,6 +100,7 @@ class ExecContext:
     readdir_path: ReaddirPath | None = None
     session_view: SessionView | None = None
     processes: ProcessView | None = None
+    shell: ShellFn | None = None
     argv: tuple[str, ...] = ()
 
 
@@ -159,6 +162,10 @@ class CommandOpts:
         session_view (SessionView | None): The session plane's live,
             gated handle (reads and gate-cleared writes); ``env`` above
             stays the frozen process-view snapshot.
+        shell (ShellFn | None): Runs a nested line in the calling
+            session, reading the input it is handed, the way the
+            session's ``sh -c`` would: awk's command pipes and
+            ``system()`` go through it. None outside a workspace.
         argv (tuple[str, ...]): The words after the command name, as the
             line spelled them (an operand's ``raw_path``), for the GNU
             diagnostic that quotes a word the classified operands do not
@@ -189,6 +196,7 @@ class CommandOpts:
     readdir_path: ReaddirPath | None = None
     session_view: SessionView | None = None
     processes: ProcessView | None = None
+    shell: ShellFn | None = None
     argv: tuple[str, ...] = ()
 
 

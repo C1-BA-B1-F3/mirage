@@ -41,7 +41,7 @@ from mirage.workspace.mount import (MountCommandUnsupported, MountEntry,
 from mirage.workspace.mount.namespace import Namespace
 from mirage.workspace.mount.namespace.overlay import merge_overlay_stat
 from mirage.workspace.session import SessionState, env_snapshot, session_view
-from mirage.workspace.types import ExecutionNode
+from mirage.workspace.types import ExecuteLine, ExecutionNode
 
 
 async def exec_node(cmd_str: str, io: IOResult,
@@ -336,20 +336,34 @@ def namespace_stat_overlay(namespace: Namespace, virtual: str,
     return merge_overlay_stat(namespace.meta_for(virtual), stat)
 
 
+async def run_nested_line(execute_fn: ExecuteLine, session_id: str, line: str,
+                          stdin: ByteSource | None) -> IOResult:
+    """Run a line a command handler asked for, in the handler's session.
+
+    Args:
+        execute_fn (ExecuteLine): runs a line in a session.
+        session_id (str): the session the calling command runs under.
+        line (str): the line.
+        stdin (ByteSource | None): its input, None for the ambient one.
+    """
+    return await execute_fn(line, session_id=session_id, stdin=stdin)
+
+
 async def run_on_mount(
-        registry: MountRegistry,
-        session: SessionState,
-        dispatch: DispatchFn,
-        namespace: Namespace | None,
-        cmd_name: str,
-        paths: list[PathSpec],
-        texts: list[str],
-        flag_kwargs: dict[str, FlagValue],
-        stdin: ByteSource | None = None,
-        resolve_hint: PathSpec | None = None,
-        mount: MountEntry | None = None,
-        routing_decision: RouteDecision | None = None,
-        argv: tuple[str, ...] = (),
+    registry: MountRegistry,
+    session: SessionState,
+    dispatch: DispatchFn,
+    namespace: Namespace | None,
+    cmd_name: str,
+    paths: list[PathSpec],
+    texts: list[str],
+    flag_kwargs: dict[str, FlagValue],
+    stdin: ByteSource | None = None,
+    resolve_hint: PathSpec | None = None,
+    mount: MountEntry | None = None,
+    routing_decision: RouteDecision | None = None,
+    argv: tuple[str, ...] = (),
+    execute_fn: ExecuteLine | None = None,
 ) -> tuple[ByteSource | None, IOResult]:
     """Run one already-parsed command on the mount that owns its paths.
 
@@ -371,15 +385,19 @@ async def run_on_mount(
         texts (list[str]): Positional text operands.
         flag_kwargs (dict): Parsed flags forwarded to the mount command.
         stdin (ByteSource | None): Standard input for the command.
-        resolve_hint (PathSpec | None): Mount-resolution path when ``paths``
-            is empty (a stream command running in stdin mode).
+        resolve_hint (PathSpec | None): The path whose mount runs the
+            command, ahead of the first of ``paths``: a stream command in
+            stdin mode has none, and awk over operands on several mounts
+            runs where its first file lives.
         mount: Pre-resolved mount; skips resolution and session mode
             checks, which the caller already performed.
         argv (tuple[str, ...]): The words after the command name, as the
             line spelled them; empty for a run split out of a line.
+        execute_fn (ExecuteLine | None): Runs a nested line, which the
+            handler reaches as ``opts.shell``; None outside a workspace.
     """
     if mount is None:
-        resolve_paths = paths or ([resolve_hint] if resolve_hint else [])
+        resolve_paths = [resolve_hint] if resolve_hint else paths
         try:
             mount = await registry.resolve_mount(cmd_name, resolve_paths,
                                                  session.cwd)
@@ -439,6 +457,9 @@ async def run_on_mount(
                 ns=ns,
                 stat_path=stat_path,
                 readdir_path=readdir_path,
+                shell=(functools.partial(run_nested_line, execute_fn,
+                                         session.session_id)
+                       if execute_fn is not None else None),
                 argv=argv,
             ),
         )

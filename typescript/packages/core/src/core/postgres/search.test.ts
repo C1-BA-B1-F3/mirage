@@ -86,7 +86,7 @@ function query(pattern: string, ignoreCase = false): SearchQuery {
   return {
     query: pattern,
     options: {
-      grep: { ignore_case: ignoreCase, fixed_string: false, whole_word: false, basic: true },
+      grep: { ignore_case: ignoreCase, fixed_string: false, whole_word: false, syntax: 'basic' },
     },
   }
 }

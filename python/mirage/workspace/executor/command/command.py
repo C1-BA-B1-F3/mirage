@@ -46,11 +46,14 @@ from mirage.workspace.executor.command.cli import (CLIContext,
                                                    handle_cli)
 from mirage.workspace.executor.command.flags import option_error, parse_flags
 from mirage.workspace.executor.command.functions import run_shell_function
+# yapf: disable
 from mirage.workspace.executor.command.routing import (CWD_DEFAULT_RAW,
                                                        default_cwd_operand,
                                                        merge_scopes,
                                                        path_flag_scopes,
+                                                       routable_scopes,
                                                        routed_operands)
+# yapf: enable
 from mirage.workspace.executor.command.types import (ExecuteNodeFn,
                                                      ParsedCommand)
 from mirage.workspace.executor.fanout import (_fan_out_traversal,
@@ -308,8 +311,9 @@ async def handle_command(
     # other operands (or the cwd) put it, and that run's op guards refuse
     # it. A line is not cross-mount because one of its words is empty.
     # A prepared program line already holds its positional operands.
-    routed = (path_scopes if prepared is not None else routed_operands(
-        cmd_name, raw_argv, session.cwd, parts[1:], path_scopes))
+    routed = routable_scopes(
+        cmd_name, path_scopes if prepared is not None else routed_operands(
+            cmd_name, raw_argv, session.cwd, parts[1:], path_scopes))
     routing_scopes = [
         s for s in merge_scopes(
             routed, path_flag_scopes(cmd_name, raw_argv, session.cwd))
@@ -377,7 +381,7 @@ async def handle_command(
         # positions instead of subtracting matching path strings afterward.
         cross_scopes = (cross_parsed.paths
                         if cmd_name == "sort" else path_scopes)
-        if strategy_for(cmd_name, cross_parsed.flag_kwargs) is Strategy.RELAY:
+        if strategy_for(cmd_name) is Strategy.RELAY:
             # STREAM and FANOUT run each operand natively on its mount, which
             # expands the operand's glob. RELAY sees every operand at once
             # (wc's layout, cp's sources), so its glob operands must expand
@@ -392,7 +396,8 @@ async def handle_command(
                                        session,
                                        dispatch,
                                        namespace,
-                                       routing_decision=routing_decision)
+                                       routing_decision=routing_decision,
+                                       execute_fn=execute_fn)
         cross_ns = namespace_view_of(registry, namespace, dispatch)
         # A per-operand native run is single-mount by construction, so a
         # traversal operand holding nested mounts has to fan out inside
@@ -417,7 +422,8 @@ async def handle_command(
             storage_key=make_storage_key(registry),
             ns=cross_ns,
             session_view=session_view(session, registry.policies),
-            cwd=session.cwd)
+            cwd=session.cwd,
+            argv=spelled_words(parts[1:]))
         if cmd_name == "find":
             stdout = await _finish_find(stdout,
                                         io,
@@ -567,7 +573,8 @@ async def handle_command(
                                     stdin=stdin,
                                     mount=mount,
                                     routing_decision=routing_decision,
-                                    argv=spelled_words(parts[1:]))
+                                    argv=spelled_words(parts[1:]),
+                                    execute_fn=execute_fn)
     if cmd_name == "find":
         stdout = await _finish_find(stdout,
                                     io,

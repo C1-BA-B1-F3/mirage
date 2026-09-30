@@ -6,12 +6,16 @@ from functools import partial
 from mirage.commands.builtin.generic.decompress import decompress_inputs
 from mirage.commands.builtin.grep_offsets import (decode_line, line_offsets,
                                                   match_offset, prefix_of)
-from mirage.commands.builtin.grep_pattern import (compile_pattern,
+from mirage.commands.builtin.grep_pattern import (NEVER_MATCH, compile_pattern,
+                                                  matcher_syntax,
+                                                  pattern_warnings,
                                                   resolve_pattern)
+from mirage.commands.builtin.types import RegexSyntax
 from mirage.commands.builtin.utils.constants import STDIN_OPERAND
 from mirage.commands.builtin.utils.lines import split_lines
 from mirage.commands.builtin.utils.links import LinkDoor
 from mirage.commands.builtin.utils.output import format_records
+from mirage.commands.builtin.utils.pcre import match_start, match_text
 from mirage.commands.builtin.utils.stream import operand_label
 from mirage.commands.spec import SPECS
 from mirage.commands.spec.flag_view import FlagView
@@ -62,8 +66,9 @@ def _zgrep_search(
             hits = list(pattern.finditer(line))
             if hits:
                 for m in hits:
-                    matched.append((idx, match_offset(start, line,
-                                                      m.start()), m.group()))
+                    matched.append(
+                        (idx, match_offset(start, line,
+                                           match_start(m)), match_text(m)))
                     if max_count is not None and len(matched) >= max_count:
                         break
         else:
@@ -111,7 +116,7 @@ class ZgrepFlags:
     line_numbers: bool
     byte_offsets: bool
     fixed: bool
-    basic_regexp: bool
+    syntax: RegexSyntax
     force_filename: bool
     suppress_filename: bool
     only_matching: bool
@@ -143,8 +148,9 @@ def parse_flags(fl: FlagView, never_match: bool) -> ZgrepFlags:
         byte_offsets=fl.as_bool("byte_offset"),
         fixed=fl.as_bool("F") and not never_match,
         # zgrep is grep over decompressed bytes, so it reads a basic
-        # expression unless -E says otherwise; -G asks for the default.
-        basic_regexp=not fl.as_bool("E"),
+        # expression unless -E or -P says otherwise, and refuses two
+        # matchers as grep does; -G asks for the default.
+        syntax=matcher_syntax(fl, "grep", "P"),
         force_filename=fl.as_bool("H"),
         suppress_filename=fl.as_bool("h"),
         only_matching=fl.as_bool("o"),
@@ -170,14 +176,18 @@ async def zgrep(
         "zgrep: usage: zgrep [flags] pattern [path]")
     f = parse_flags(fl, never_match)
     # GNU grep 3.11 skips regex validation and selection under -m0.
-    compiled = (None if f.max_count == 0 else compile_pattern(
-        pattern, f.ignore_case, f.fixed, f.whole_word, f.basic_regexp))
+    compiled = (None if f.max_count == 0 else
+                re.compile(NEVER_MATCH) if never_match else compile_pattern(
+                    pattern, f.ignore_case, f.fixed, f.whole_word, f.syntax))
     multi = len(paths) > 1
     show_filename = f.force_filename or (multi and not f.suppress_filename)
     any_match = False
     all_results: list[str] = []
 
-    errors: list[str] = []
+    # zgrep runs grep, so grep's compile warnings come first, in its name.
+    errors: list[str] = [] if compiled is None or never_match or f.fixed else [
+        pattern_warnings(pattern, f.syntax).decode()
+    ]
     failed = False
     for p in paths or [STDIN_OPERAND]:
         # zgrep decompresses each operand with `gzip -cdfq -- FILE`,

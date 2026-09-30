@@ -73,6 +73,10 @@ virtual paths, so `cd /data; python3 -c "print(open('a.txt').read())"`
 reads `/data/a.txt` through the same mount and policy checks as `cat`.
 The script operand is judged like `cat`'s file too: a rule protecting
 `/data/job.py` refuses `python3 job.py` from `/data`.
+The words after it are the program's argv exactly as typed, globs
+expanded as bash expands them: `python3 job.py data/in.csv` hands the
+script `data/in.csv`, and a word naming another mount is a string the
+script may open, not a second mount for the line.
 `os.getcwd()` and `Path.cwd()` report that virtual directory, and
 `os.chdir()` changes it inside the guest without changing the shell or
 host process directory.
@@ -104,6 +108,8 @@ Monty implements a Python subset. Notably:
   `help`, `callable`, `issubclass`, `super` and
   `compile`. There is no `__dict__` on any object, so none of them can
   be written by hand either.
+- `__file__` is the script's name under the directory the run starts in,
+  so it names the script's own file only when the run starts there.
 - Command-line arguments are the `argv` global (`argv[0]` is the script
   name); `sys.argv` does not exist.
 - No `sys.stdin`: piping into `python3` needs the `wasi` or `local` runtime.
@@ -144,6 +150,11 @@ Each execution starts at the Mirage session's working directory, so
 calls can supply `RunArgs.cwd` to override it. Guest `os.chdir()` changes
 last for that execution; they do not change the Mirage session or host
 process directory. A missing or non-directory cwd fails before user code.
+
+A script file runs the way CPython runs one: `__file__` is its path made
+absolute against the working directory, tracebacks name it and quote
+its lines, and `sys.path[0]` is the script's own directory, so a module
+beside it imports; `-P` and `-I` leave that directory off.
 
 It needs the `wasi` extra plus a CPython WASI build (download and
 unzip a release from
@@ -209,6 +220,9 @@ runtimes:
 
 Note that `local` code does **not** see workspace mounts; it sees the real
 host filesystem.
+A script's `__file__` and tracebacks still name its workspace path, as
+CPython names the file, but `sys.path[0]` stays the host's working
+directory: the host has no copy of the directory the script came from.
 
 ## Selecting in YAML
 

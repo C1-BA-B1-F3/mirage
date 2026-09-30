@@ -27,7 +27,7 @@ async def _run_single(cmd_name: str, scope: PathSpec, *args: object,
 
 def _pick(strategy: Strategy):
 
-    def strategy_for(cmd_name: str, flags: dict) -> Strategy:
+    def strategy_for(cmd_name: str) -> Strategy:
         return strategy
 
     return strategy_for
@@ -66,7 +66,7 @@ async def test_each_strategy_reaches_its_runner(monkeypatch, strategy, runner):
 
 def _broken(strategy_exc: Exception):
 
-    def strategy_for(cmd_name: str, flags: dict) -> Strategy:
+    def strategy_for(cmd_name: str) -> Strategy:
         raise strategy_exc
 
     return strategy_for

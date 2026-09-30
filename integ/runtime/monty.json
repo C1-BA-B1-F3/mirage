@@ -172,6 +172,96 @@
       ]
     },
     {
+      "id": "program_argv_is_typed_and_names_no_mount",
+      "world": {
+        "runtimes": [
+          "monty",
+          "workspace"
+        ],
+        "mounts": {
+          "/w": {
+            "vfs": "ram",
+            "files": {
+              "s.py": "print(argv[1:])\n",
+              "read.py": "from pathlib import Path\nprint(Path(argv[1]).read_text(), end='')\n",
+              "f.py": "print(__file__)\n",
+              "data/in.csv": "x\n"
+            }
+          },
+          "/t": {
+            "vfs": "ram",
+            "files": {
+              "q.txt": "from-t\n"
+            }
+          }
+        }
+      },
+      "steps": [
+        {
+          "command": "cd /w",
+          "expect": {
+            "exit": 0
+          }
+        },
+        {
+          "command": "python3 s.py data/in.csv data/in ./data/in.csv /w/data/",
+          "expect": {
+            "exit": 0,
+            "stdout": "['data/in.csv', 'data/in', './data/in.csv', '/w/data/']\n",
+            "stderr": ""
+          }
+        },
+        {
+          "command": "python3 s.py data/*.csv 'data/*.csv'",
+          "expect": {
+            "exit": 0,
+            "stdout": "['data/in.csv', 'data/*.csv']\n",
+            "stderr": ""
+          }
+        },
+        {
+          "command": "python3 /w/s.py /t/q.txt /t/new.csv",
+          "expect": {
+            "exit": 0,
+            "stdout": "['/t/q.txt', '/t/new.csv']\n",
+            "stderr": ""
+          }
+        },
+        {
+          "command": "python3 -c 'print(argv[1:])' /t/q.txt /w/data/in.csv",
+          "expect": {
+            "exit": 0,
+            "stdout": "['/t/q.txt', '/w/data/in.csv']\n",
+            "stderr": ""
+          }
+        },
+        {
+          "command": "python3 s.py --input /t/q.txt --out=/t/o.csv",
+          "expect": {
+            "exit": 0,
+            "stdout": "['--input', '/t/q.txt', '--out=/t/o.csv']\n",
+            "stderr": ""
+          }
+        },
+        {
+          "command": "python3 read.py /t/q.txt",
+          "expect": {
+            "exit": 0,
+            "stdout": "from-t\n",
+            "stderr": ""
+          }
+        },
+        {
+          "command": "python3 f.py",
+          "expect": {
+            "exit": 0,
+            "stdout": "/w/f.py\n",
+            "stderr": ""
+          }
+        }
+      ]
+    },
+    {
       "id": "stdin_pipe",
       "world": {
         "runtimes": [

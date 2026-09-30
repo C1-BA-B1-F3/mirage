@@ -15,9 +15,9 @@
 from collections.abc import AsyncIterator, Mapping
 from dataclasses import dataclass, field
 from enum import Enum, auto
-from typing import Any
+from typing import Generic, TypeAlias, TypeVar
 
-from mirage.types import JsonValue
+T = TypeVar("T")
 
 DEFAULT_INDENT = 2
 
@@ -48,6 +48,25 @@ class JqParseError:
     """
 
     message: str
+
+
+@dataclass(frozen=True, slots=True)
+class NumberText:
+    """A number as a --stream event carries it: its literal, which jq
+    keeps and prints as it was written (`1.000`, `1E+2`) where a float
+    cannot.
+
+    Args:
+        text (str): the literal, up to its first NUL.
+    """
+
+    text: str
+
+
+# A value as jq's parser builds it: JSON, with a --stream event's number
+# leaf kept as its literal.
+ParsedValue: TypeAlias = ("None | bool | int | float | str | NumberText"
+                          " | list[ParsedValue] | dict[str, ParsedValue]")
 
 
 @dataclass(frozen=True, slots=True)
@@ -100,16 +119,17 @@ class JqHalt:
 
 
 @dataclass(frozen=True, slots=True)
-class JqRun:
+class JqRun(Generic[T]):
     """What one run of a program printed, and what ended it early.
 
     Args:
-        outputs (list[JsonValue]): every value it printed, in order.
+        outputs (list[T]): every output it printed, in order: a value,
+            or jq's own compact dump of one.
         stop (JqError | JqHalt | None): the error or the halt that ended
             it, or None when it ran to its end.
     """
 
-    outputs: list[JsonValue]
+    outputs: list[T]
     stop: JqError | JqHalt | None = None
 
 
@@ -162,10 +182,11 @@ class JqOptions:
         indent (int): spaces per indent level when not compact.
         exit_status (bool): -e, derive the exit code from the last
             output value.
-        named_args (Mapping[str, Any]): --arg / --argjson / --rawfile /
-            --slurpfile bindings, as the values $name resolves to.
-        positional_args (tuple[Any, ...]): --args / --jsonargs values, in
-            order, as $ARGS.positional reports them.
+        named_args (Mapping[str, str]): --arg / --argjson / --rawfile /
+            --slurpfile bindings, each the JSON text of the value $name
+            resolves to.
+        positional_args (tuple[str, ...]): --args / --jsonargs values, in
+            order, as JSON text of what $ARGS.positional reports.
     """
 
     null_input: bool = False
@@ -182,5 +203,5 @@ class JqOptions:
     tab: bool = False
     indent: int = DEFAULT_INDENT
     exit_status: bool = False
-    named_args: Mapping[str, Any] = field(default_factory=dict)
-    positional_args: tuple[Any, ...] = ()
+    named_args: Mapping[str, str] = field(default_factory=dict)
+    positional_args: tuple[str, ...] = ()

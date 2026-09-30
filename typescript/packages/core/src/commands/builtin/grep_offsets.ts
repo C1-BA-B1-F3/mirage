@@ -15,6 +15,7 @@
 import { compilePosixRegex } from '../../utils/posix.ts'
 import { encodeText } from '../../shell/bytes.ts'
 import { byteOffset } from '../../shell/helpers.ts'
+import { matchStart, matchText } from './utils/pcre.ts'
 
 const DEC_FATAL = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true })
 
@@ -153,7 +154,7 @@ export function rustMatches(pat: RegExp, line: string): [number, string][] {
       pos = end
     }
     lastEnd = end
-    matches.push([m.index, m[0]])
+    matches.push([matchStart(m), matchText(m)])
   }
   return matches
 }

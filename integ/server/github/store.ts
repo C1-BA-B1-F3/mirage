@@ -15,8 +15,9 @@
 import { Prisma } from '../../generated/github/index.js'
 import { deleteOrder, stripSlash, tenantWhere } from '../kit/typescript/index.ts'
 import type { Dmmf, JsonValue } from '../kit/typescript/index.ts'
-import { SEARCH_SIZE_LIMIT, config } from './config.ts'
+import { DEFAULT_LOGIN, REPO_DATE, SEARCH_SIZE_LIMIT, config } from './config.ts'
 import type { C } from './config.ts'
+import { languagesOf } from './languages.ts'
 import { blobSha, commitSha, rootCommit, rootSha, treeSha } from './wire.ts'
 import type { CommitRow } from './wire.ts'
 
@@ -29,6 +30,7 @@ export interface RepoRow {
   truncated: boolean
   sourceDir: string
   sourceBranch: string
+  pagesJson: string
   seq: number
 }
 
@@ -97,6 +99,84 @@ export function metaOf(repo: RepoRow): Record<string, JsonValue> {
   return typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed) ? parsed : {}
 }
 
+// The logins a fixture states for a repository's `stargazers` or
+// `subscribers`, in its order.
+export function loginsOf(repo: RepoRow, key: string): string[] {
+  const value = metaOf(repo)[key]
+  return Array.isArray(value) ? value.map(String) : []
+}
+
+// Its star count: the one its fixture states, or else how many it lists.
+export function starsOf(repo: RepoRow): number {
+  const stated = metaOf(repo).stargazers_count
+  return typeof stated === 'number' ? stated : loginsOf(repo, 'stargazers').length
+}
+
+// A repository's languages, largest first: the ones its fixture states, as
+// GitHub's `{name: bytes}`, or else what Linguist counts in its default
+// branch.
+export async function repoLanguages(
+  db: C,
+  tenant: string,
+  repo: RepoRow,
+): Promise<Array<[string, number]>> {
+  const stated = metaOf(repo).languages
+  if (typeof stated === 'object' && stated !== null && !Array.isArray(stated)) {
+    return Object.entries(stated)
+      .flatMap(
+        ([name, size]): Array<[string, number]> => (typeof size === 'number' ? [[name, size]] : []),
+      )
+      .sort(([a, x], [b, y]) => y - x || (a < b ? -1 : 1))
+  }
+  return languagesOf(await treeOfBranch(db, tenant, repo, repo.defaultBranch))
+}
+
+// Its primary language: the one its fixture states, null included, or else
+// its largest.
+export async function primaryLanguage(
+  db: C,
+  tenant: string,
+  repo: RepoRow,
+): Promise<string | null> {
+  const meta = metaOf(repo)
+  if ('language' in meta) return typeof meta.language === 'string' ? meta.language : null
+  return (await repoLanguages(db, tenant, repo))[0]?.[0] ?? null
+}
+
+// The repository shape every route returns. A fixture's own values win, except
+// default_branch, which seeding decides, and the lists it states, which are
+// read through their own endpoints.
+export async function repoJson(db: C, tenant: string, repo: RepoRow): Promise<JsonValue> {
+  const meta = metaOf(repo)
+  const {
+    default_branch: _ignored,
+    parent_seq: _parent,
+    languages: _languages,
+    stargazers: _stargazers,
+    subscribers: _subscribers,
+    ...rest
+  } = meta
+  return {
+    name: repo.name,
+    full_name: repo.fullName,
+    default_branch: repo.defaultBranch,
+    owner: { login: repo.owner },
+    html_url: `https://github.com/${repo.fullName}`,
+    description: null,
+    stargazers_count: starsOf(repo),
+    watchers_count: starsOf(repo),
+    subscribers_count: loginsOf(repo, 'subscribers').length,
+    forks_count: 0,
+    open_issues_count: 0,
+    language: await primaryLanguage(db, tenant, repo),
+    topics: [],
+    archived: false,
+    fork: false,
+    has_pages: repo.pagesJson !== '',
+    ...rest,
+  }
+}
+
 // Branches, the default one first and the rest in name order.
 export async function branchNames(db: C, tenant: string, repo: RepoRow): Promise<string[]> {
   const rows = await db.githubBranch.findMany({
@@ -155,11 +235,58 @@ export function treeFingerprint(files: Tree): string {
     .join('\0')
 }
 
-// Scoped to the repository, not just the tenant. A staged sha is unique per
-// tenant, so a bare lookup accepted a tree staged in repository A while the
-// caller was operating on repository B, and committing it copied A's files
-// into B. The fake this replaces held `repo.trees` per repository, so a foreign
-// sha was simply not found there.
+// The repositories whose objects one repository can read: itself and every
+// fork in its network, the one its forks descend from included, as GitHub
+// shares one object store across a fork network. A repository no fork touches
+// is a network of one.
+export async function networkNames(db: C, tenant: string, repo: RepoRow): Promise<string[]> {
+  const repos = await allRepos(db, tenant)
+  const bySeq = new Map(repos.map((row) => [row.seq, row]))
+  const rootOf = (row: RepoRow): number => {
+    const seen = new Set<number>()
+    let at = row
+    for (;;) {
+      const parent = metaOf(at).parent_seq
+      const up = typeof parent === 'number' ? bySeq.get(parent) : undefined
+      if (up === undefined || seen.has(up.seq)) return at.seq
+      seen.add(at.seq)
+      at = up
+    }
+  }
+  const root = rootOf(repo)
+  const names = repos.filter((row) => rootOf(row) === root).map((row) => row.fullName)
+  return [repo.fullName, ...names.filter((name) => name !== repo.fullName)]
+}
+
+// The repository of this one's network an account owns that a head of
+// `owner:branch` names: this repository when it is that account's, else the
+// account's fork that holds the branch, since the fake lets one account keep
+// several forks of a network where GitHub keeps one.
+export async function forkOwnedBy(
+  db: C,
+  tenant: string,
+  repo: RepoRow,
+  owner: string,
+  branch: string,
+): Promise<RepoRow | null> {
+  const network = await networkNames(db, tenant, repo)
+  const repos = await allRepos(db, tenant)
+  const owned = repos.filter(
+    (r) => network.includes(r.fullName) && r.owner.toLowerCase() === owner.toLowerCase(),
+  )
+  const self = owned.find((r) => r.seq === repo.seq)
+  if (self !== undefined) return self
+  for (const candidate of owned) {
+    if ((await branchFor(db, tenant, candidate, branch)) !== null) return candidate
+  }
+  return owned[0] ?? null
+}
+
+// Scoped to the repository's network, not the tenant. A staged sha is unique
+// per tenant, so a bare lookup accepted a tree staged in repository A while
+// the caller was operating on an unrelated repository B, and committing it
+// copied A's files into B. A fork reads its network's trees, as git objects
+// are shared across one.
 export async function stagedTree(
   db: C,
   tenant: string,
@@ -167,7 +294,7 @@ export async function stagedTree(
   sha: string,
 ): Promise<Tree | null> {
   const tree = await db.githubStagedTree.findFirst({
-    where: { tenant, repo: repo.fullName, sha },
+    where: { tenant, repo: { in: await networkNames(db, tenant, repo) }, sha },
   })
   if (tree === null) return null
   const rows = await db.githubStagedEntry.findMany({
@@ -203,7 +330,7 @@ export async function blobBySha(
     for (const data of files.values()) if (blobSha(data) === sha) return data
   }
   const staged = await db.githubStagedTree.findMany({
-    where: { tenant, repo: repo.fullName },
+    where: { tenant, repo: { in: await networkNames(db, tenant, repo) } },
     select: { sha: true },
   })
   const row = await db.githubStagedEntry.findFirst({
@@ -225,6 +352,42 @@ export async function keepTree(
 ): Promise<void> {
   const files = await treeOfBranch(db, tenant, repo, branch)
   if (files.size > 0) await stageTree(db, tenant, repo, files)
+}
+
+// A branch still on its synthesized root is about to move off it, so the
+// root is stored as a commit: git keeps an object once it exists, and a sha
+// a listing reported must still resolve once no branch stands on it. It is
+// stored with no tree, as the synthesized one has none; its files are the
+// snapshot staged here, which `treeAt` finds by content.
+export async function keepRoot(
+  db: C,
+  tenant: string,
+  repo: RepoRow,
+  branch: string,
+): Promise<void> {
+  if ((await headOf(db, tenant, repo, branch)) !== '') return
+  const files = await treeOfBranch(db, tenant, repo, branch)
+  if (files.size === 0) return
+  await stageTree(db, tenant, repo, files)
+  const root = rootCommit(rootOf(files))
+  const where = { ...scope(tenant), repo: repo.fullName }
+  if ((await db.githubCommit.findFirst({ where: { ...where, sha: root.sha } })) !== null) return
+  const top = await db.githubCommit.findFirst({ where, orderBy: { seq: 'desc' } })
+  await db.githubCommit.create({
+    data: {
+      tenant,
+      repo: repo.fullName,
+      sha: root.sha,
+      parentSha: '',
+      message: root.message,
+      authorLogin: root.authorLogin,
+      date: root.date,
+      treeSha: '',
+      authorJson: '',
+      committerJson: '',
+      seq: top === null ? 0 : top.seq + 1,
+    },
+  })
 }
 
 export async function stageTree(
@@ -250,10 +413,10 @@ export async function stageTree(
   return sha
 }
 
-// A ref is a branch name, HEAD, the empty string, or a commit sha belonging to
-// one branch's history. A fully qualified spelling names the same branch: tool
+// A branch by name: bare, HEAD, the empty string, or fully qualified. Tool
 // schemas advertise `refs/heads/main` and the live API accepts it on every
-// ref-taking parameter.
+// ref-taking parameter. Only a name, never a sha, because a write names the
+// branch it lands on; a read resolves a sha through `resolveRef`.
 export async function branchFor(
   db: C,
   tenant: string,
@@ -269,12 +432,160 @@ export async function branchFor(
     }
   }
   const branches = await branchNames(db, tenant, repo)
-  if (branches.includes(name)) return name
-  for (const branch of branches) {
-    const list = await commitList(db, tenant, repo, branch)
-    if (list.some((c) => c.sha === ref)) return branch
+  return branches.includes(name) ? name : null
+}
+
+// Git's shortest abbreviation, and GitHub's. Measured against GitHub
+// (2026-09-29): four hex digits name a commit in `/commits/{ref}`, `?sha=` and
+// `?ref=`, in either case, and three name nothing.
+const ABBREVIATED_SHA = /^[0-9a-f]{4,40}$/i
+
+// What a ref names. `branch` is set when it names a branch and null when it
+// names a tag or one commit by its sha. Its history is newest first, which
+// `commits?sha=` lists and whose head `commits/{ref}` answers.
+export interface Resolved {
+  branch: string | null
+  history: CommitRow[]
+}
+
+export interface TagRow {
+  sha: string
+  tag: string
+  message: string
+  objectSha: string
+  objectType: string
+  taggerJson: string
+}
+
+export interface TagRefRow {
+  name: string
+  sha: string
+}
+
+// An annotated tag object by its sha, from anywhere in the repository's
+// network, since a tag object is a git object like any other: a fork's copy
+// of a tag ref still peels through the one its source made.
+export async function tagObject(
+  db: C,
+  tenant: string,
+  repo: RepoRow,
+  sha: string,
+): Promise<TagRow | null> {
+  return (await db.githubTag.findFirst({
+    where: { tenant, repo: { in: await networkNames(db, tenant, repo) }, sha },
+  })) as TagRow | null
+}
+
+export async function tagRefs(db: C, tenant: string, repo: RepoRow): Promise<TagRefRow[]> {
+  return (await db.githubTagRef.findMany({
+    where: { tenant, repo: repo.fullName },
+    orderBy: { name: 'asc' },
+  })) as TagRefRow[]
+}
+
+// The commit a tag names, through any tag objects between.
+export async function peeled(db: C, tenant: string, repo: RepoRow, sha: string): Promise<string> {
+  const seen = new Set<string>()
+  let at = sha
+  for (let tag = await tagObject(db, tenant, repo, at); tag !== null && !seen.has(at); ) {
+    seen.add(at)
+    at = tag.objectSha
+    tag = await tagObject(db, tenant, repo, at)
   }
-  return null
+  return at
+}
+
+// Resolve only commit identities, including dangling commits and synthesized
+// roots. A prefix two commits share names neither; ref names cannot redirect it.
+async function resolveCommit(
+  db: C,
+  tenant: string,
+  repo: RepoRow,
+  ref: string,
+): Promise<Resolved | null> {
+  if (!ABBREVIATED_SHA.test(ref)) return null
+  const want = ref.toLowerCase()
+  const found = new Set<string>()
+  const stored = await db.githubCommit.findMany({
+    where: {
+      ...scope(tenant),
+      repo: { in: await networkNames(db, tenant, repo) },
+      sha: { startsWith: want },
+    },
+    select: { sha: true },
+  })
+  for (const row of stored) found.add(row.sha)
+  for (const name of await branchNames(db, tenant, repo)) {
+    const root = (await commitList(db, tenant, repo, name)).at(-1)
+    if (root !== undefined && root.sha.startsWith(want)) found.add(root.sha)
+  }
+  const [sha] = [...found]
+  if (found.size !== 1 || sha === undefined) return null
+  return { branch: null, history: historyFrom(sha, await commitsBySha(db, tenant, repo)) }
+}
+
+async function resolveTag(
+  db: C,
+  tenant: string,
+  repo: RepoRow,
+  name: string,
+): Promise<Resolved | null> {
+  const tag = await db.githubTagRef.findFirst({
+    where: { tenant, repo: repo.fullName, name },
+  })
+  if (tag === null) return null
+  const sha = await peeled(db, tenant, repo, tag.sha)
+  return { branch: null, history: historyFrom(sha, await commitsBySha(db, tenant, repo)) }
+}
+
+// A fully qualified name stays in its namespace. Otherwise an existing full
+// commit sha wins, followed by a branch, a tag, then an unambiguous
+// abbreviated sha. A name under `tags/` reads in git's order: the tag it
+// names, then a tag or a branch spelled that way whole, so a branch called
+// `tags/release` is still found by that name.
+export async function resolveRef(
+  db: C,
+  tenant: string,
+  repo: RepoRow,
+  ref: string | null,
+): Promise<Resolved | null> {
+  if (ref !== null && ref.startsWith('refs/tags/')) {
+    return await resolveTag(db, tenant, repo, ref.slice('refs/tags/'.length))
+  }
+  if (ref !== null && ref.startsWith('tags/')) {
+    const tagged =
+      (await resolveTag(db, tenant, repo, ref.slice('tags/'.length))) ??
+      (await resolveTag(db, tenant, repo, ref))
+    if (tagged !== null) return tagged
+    const whole = await branchFor(db, tenant, repo, ref)
+    return whole === null
+      ? null
+      : { branch: whole, history: await commitList(db, tenant, repo, whole) }
+  }
+  if (ref?.length === 40) {
+    const commit = await resolveCommit(db, tenant, repo, ref)
+    if (commit !== null) return commit
+  }
+  const branch = await branchFor(db, tenant, repo, ref)
+  if (branch !== null) return { branch, history: await commitList(db, tenant, repo, branch) }
+  if (ref === null || /^(?:refs\/)?heads\//.test(ref)) return null
+  return (await resolveTag(db, tenant, repo, ref)) ?? (await resolveCommit(db, tenant, repo, ref))
+}
+
+// The files a resolved ref names: a branch's as they are now, a commit's as
+// that commit recorded them. Reading the branch that holds a commit instead
+// answered an older sha with whatever the branch had gained since.
+export async function treeAt(
+  db: C,
+  tenant: string,
+  repo: RepoRow,
+  at: Resolved,
+): Promise<Tree | null> {
+  if (at.branch !== null) return await treeOfBranch(db, tenant, repo, at.branch)
+  const commit = at.history[0]
+  if (commit === undefined) return null
+  if (commit.treeSha !== '') return await stagedTree(db, tenant, repo, commit.treeSha)
+  return await rootTree(db, tenant, repo, commit.sha)
 }
 
 export async function treeOf(
@@ -283,19 +594,44 @@ export async function treeOf(
   repo: RepoRow,
   ref: string | null,
 ): Promise<Tree | null> {
-  const branch = await branchFor(db, tenant, repo, ref)
-  return branch === null ? null : await treeOfBranch(db, tenant, repo, branch)
+  const at = await resolveRef(db, tenant, repo, ref)
+  return at === null ? null : await treeAt(db, tenant, repo, at)
 }
 
-// Every commit in one repository, keyed by sha, for walking a chain without a
-// query per hop.
+// The sha a tree's synthesized root takes, derived from its content so that a
+// mirror of a repository has the same root as its source.
+export function rootOf(tree: Tree): string {
+  return rootSha([...tree.entries()].map(([p, d]): [string, string] => [p, blobSha(d)]))
+}
+
+// A synthesized root stores no tree, so its files are found by content: a
+// branch still carrying them, or the snapshot the first write kept.
+async function rootTree(db: C, tenant: string, repo: RepoRow, sha: string): Promise<Tree | null> {
+  for (const branch of await branchNames(db, tenant, repo)) {
+    const files = await treeOfBranch(db, tenant, repo, branch)
+    if (files.size > 0 && rootOf(files) === sha) return files
+  }
+  const staged = await db.githubStagedTree.findMany({
+    where: { tenant, repo: { in: await networkNames(db, tenant, repo) } },
+    orderBy: { seq: 'asc' },
+    select: { sha: true },
+  })
+  for (const row of staged) {
+    const files = await stagedTree(db, tenant, repo, row.sha)
+    if (files !== null && files.size > 0 && rootOf(files) === sha) return files
+  }
+  return null
+}
+
+// Every commit a repository can read, its network's included, keyed by sha,
+// for walking a chain without a query per hop.
 export async function commitsBySha(
   db: C,
   tenant: string,
   repo: RepoRow,
 ): Promise<Map<string, CommitRow>> {
   const rows = (await db.githubCommit.findMany({
-    where: { ...scope(tenant), repo: repo.fullName },
+    where: { ...scope(tenant), repo: { in: await networkNames(db, tenant, repo) } },
     orderBy: { seq: 'asc' },
   })) as CommitRow[]
   const out = new Map<string, CommitRow>()
@@ -353,8 +689,7 @@ export async function visibleHeadOf(
   const stored = await headOf(db, tenant, repo, branch)
   if (stored !== '') return stored
   const tree = await treeOfBranch(db, tenant, repo, branch)
-  if (tree.size === 0) return ''
-  return rootSha([...tree.entries()].map(([p, d]): [string, string] => [p, blobSha(d)]))
+  return tree.size === 0 ? '' : rootOf(tree)
 }
 
 export async function headOf(
@@ -408,15 +743,116 @@ export async function commitList(
   branch: string,
 ): Promise<CommitRow[]> {
   const head = await headOf(db, tenant, repo, branch)
-  const walked = head === '' ? [] : chainFrom(head, await commitsBySha(db, tenant, repo))
-  const last = walked[walked.length - 1]
-  if (last !== undefined) {
-    return last.parentSha === '' ? walked : [...walked, rootCommit(last.parentSha)]
-  }
+  if (head !== '') return historyFrom(head, await commitsBySha(db, tenant, repo))
   const tree = await treeOfBranch(db, tenant, repo, branch)
-  if (tree.size === 0) return []
-  const pairs: Array<[string, string]> = [...tree.entries()].map(([p, d]) => [p, blobSha(d)])
-  return [rootCommit(rootSha(pairs))]
+  return tree.size === 0 ? [] : [rootCommit(rootOf(tree))]
+}
+
+// A commit's history, newest first: the first-parent chain from it and the
+// synthesized root under that chain, or the root alone when the sha is one.
+export function historyFrom(head: string, byId: Map<string, CommitRow>): CommitRow[] {
+  const walked = chainFrom(head, byId)
+  const last = walked.at(-1)
+  if (last === undefined) return [rootCommit(head)]
+  return last.parentSha === '' ? walked : [...walked, rootCommit(last.parentSha)]
+}
+
+// The files one commit recorded, or none for a commit that recorded nothing
+// the fake can still find.
+export async function commitTree(
+  db: C,
+  tenant: string,
+  repo: RepoRow,
+  commit: CommitRow,
+): Promise<Tree> {
+  return (await treeAt(db, tenant, repo, { branch: null, history: [commit] })) ?? new Map()
+}
+
+// Where two first-parent histories meet: the head's commits past that point,
+// newest first, and how many the base holds past it. Null when they never
+// meet, which is a different answer from meeting at the head.
+export interface Divergence {
+  ahead: CommitRow[]
+  behind: number
+  mergeBase: CommitRow
+}
+
+export function divergence(head: CommitRow[], base: CommitRow[]): Divergence | null {
+  const onBase = new Set(base.map((c) => c.sha))
+  const at = head.findIndex((c) => onBase.has(c.sha))
+  const mergeBase = head[at]
+  if (mergeBase === undefined) return null
+  return {
+    ahead: head.slice(0, at),
+    behind: base.findIndex((c) => c.sha === mergeBase.sha),
+    mergeBase,
+  }
+}
+
+export interface AccountRow {
+  login: string
+  type: string
+  name: string
+  email: string
+  bio: string
+  company: string
+  blog: string
+  location: string
+  twitterUsername: string
+  hireable: boolean
+  followers: number
+  following: number
+  publicGists: number
+  createdAt: string
+  updatedAt: string
+}
+
+// Every account the tenant knows: each one a fixture states, the
+// authenticated user, and each repository owner no fixture states, which is
+// an organization unless it is that user, the way the fake has always typed
+// an owner. A login none of these name is no account.
+// A login as an account: the tenant's, or a user nothing states, for a login
+// a fixture names in a list but gives no profile.
+export async function accountOf(db: C, tenant: string, login: string): Promise<AccountRow> {
+  const known = (await accountsOf(db, tenant)).find(
+    (account) => account.login.toLowerCase() === login.toLowerCase(),
+  )
+  return known ?? { ...unstated(login), type: 'User' }
+}
+
+function unstated(login: string): AccountRow {
+  const user = login === DEFAULT_LOGIN
+  return {
+    login,
+    type: user ? 'User' : 'Organization',
+    name: user ? login : '',
+    email: '',
+    bio: '',
+    company: '',
+    blog: '',
+    location: '',
+    twitterUsername: '',
+    hireable: false,
+    followers: 0,
+    following: 0,
+    publicGists: 0,
+    createdAt: REPO_DATE,
+    updatedAt: '',
+  }
+}
+
+export async function accountsOf(db: C, tenant: string): Promise<AccountRow[]> {
+  const stated = (await db.githubAccount.findMany({
+    where: scope(tenant),
+    orderBy: { seq: 'asc' },
+  })) as AccountRow[]
+  const out = new Map(stated.map((row) => [row.login.toLowerCase(), row]))
+  const implied = [DEFAULT_LOGIN, ...(await allRepos(db, tenant)).map((repo) => repo.owner)]
+  for (const login of implied) {
+    if (out.has(login.toLowerCase())) continue
+    out.set(login.toLowerCase(), unstated(login))
+  }
+  return [...out.values()]
 }
 
 export function directoriesOf(files: Tree): Set<string> {

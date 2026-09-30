@@ -14,6 +14,7 @@
 
 import * as jqWasm from 'jq-wasm'
 import { JqCompileError } from './errors.ts'
+import { stringText } from './parse.ts'
 import type { JqError, JqHalt, JqOptions, JqRun, StreamReads } from './types.ts'
 
 // The convenience raw() cache keeps an aborted instance; own its lifecycle here.
@@ -147,9 +148,10 @@ export function halts(expr: string): boolean {
   return HALT_REF.test(codeOnly(expr))
 }
 
-/** The value `$ARGS` resolves to for a run. */
-export function argsObject(opts: JqOptions): Record<string, unknown> {
-  return { positional: [...opts.positionalArgs], named: { ...opts.namedArgs } }
+/** The JSON text of the value `$ARGS` resolves to for a run. */
+export function argsText(opts: JqOptions): string {
+  const named = [...opts.namedArgs].map(([name, text]) => `${stringText(name)}:${text}`)
+  return `{"positional":[${opts.positionalArgs.join(',')}],"named":{${named.join(',')}}}`
 }
 
 /**
@@ -311,6 +313,50 @@ const REPORTED = /jq: error \(at [^)\n]*\)( \(not a string\))?: /g
 const ERROR_COMPILE = 3
 const COMPILE_REFUSAL = /jq: \d+ compile errors?\n?$/
 
+const ENC = new TextEncoder()
+const DEC = new TextDecoder()
+const QUOTE = 0x22
+const BACKSLASH = 0x5c
+
+function isWhitespace(byte: number): boolean {
+  return byte === 0x20 || byte === 0x0a || byte === 0x09 || byte === 0x0d
+}
+
+/**
+ * A value's JSON text with the whitespace between its tokens left out, which
+ * jq's parser reads as the same value: whitespace only ever stands between
+ * two tokens of one value, never inside one. jq-wasm's parser reads a byte
+ * at a time, so a pretty-printed document rides to it this way, at half the
+ * bytes; the bytes are copied one at a time, which a string cannot match.
+ */
+function compacted(text: string): string {
+  const bytes = ENC.encode(text)
+  const out = new Uint8Array(bytes.length)
+  let n = 0
+  let at = 0
+  while (at < bytes.length) {
+    const ch = bytes[at] ?? 0
+    at += 1
+    if (ch === QUOTE) {
+      out[n++] = ch
+      while (at < bytes.length) {
+        const inner = bytes[at] ?? 0
+        out[n++] = inner
+        at += 1
+        if (inner === BACKSLASH) {
+          out[n++] = bytes[at] ?? 0
+          at += 1
+        } else if (inner === QUOTE) {
+          break
+        }
+      }
+    } else if (!isWhitespace(ch)) {
+      out[n++] = ch
+    }
+  }
+  return n === bytes.length ? text : DEC.decode(out.subarray(0, n))
+}
+
 /** One run as jq-wasm is handed it: the prelude steps and its stdin. */
 interface Bound {
   readonly steps: readonly string[]
@@ -320,7 +366,8 @@ interface Bound {
 }
 
 /**
- * The bindings one run carries.
+ * The bindings one run carries, each as the JSON text jq's own parser reads,
+ * so a number keeps its literal and an object its key order.
  *
  * Every value a run binds travels on stdin, inside one wrapper document the
  * prelude unpacks, and never on the command line: jq-wasm copies each argv
@@ -330,6 +377,41 @@ interface Bound {
  * on the plain document.
  */
 function bound(
+  doc: string,
+  expr: string,
+  named: ReadonlyMap<string, string>,
+  inputs: readonly string[] | null,
+  args: string | null,
+  inputsError: string | null,
+): Bound {
+  const plain = compacted(doc)
+  // A name that is not an identifier can never be spelled as a variable,
+  // so nothing needs it bound; $ARGS.named still carries it.
+  const names = [...named.keys()].filter((name) => NAME.test(name))
+  if (names.length === 0 && inputs === null && args === null) {
+    return { steps: [], stdin: plain, plain }
+  }
+  const steps = [
+    `. as [$${VALUE_VAR}, $${NAMED_VAR}, $${INPUTS_VAR}, $${ARGS_VAR}, $${INPUTS_ERROR_VAR}] |`,
+  ]
+  for (const name of names) steps.push(`$${NAMED_VAR}[${stringText(name)}] as $${name} |`)
+  if (inputs !== null) steps.push(streamDefs(expr, inputsError !== null))
+  // jq defines $ARGS itself, from a command line that no longer carries
+  // the bindings, so the only way to serve mirage's own is to rebind it.
+  if (args !== null) steps.push(`$${ARGS_VAR} as $ARGS |`)
+  steps.push(`$${VALUE_VAR} |`)
+  const carried = [...named]
+    .map(([name, text]) => `${stringText(name)}:${compacted(text)}`)
+    .join(',')
+  const docs = (inputs ?? []).map(compacted).join(',')
+  const argsValue = args === null ? 'null' : compacted(args)
+  const error = inputsError === null ? 'null' : stringText(inputsError)
+  const stdin = `[${plain},{${carried}},[${docs}],${argsValue},${error}]`
+  return { steps, stdin, plain }
+}
+
+/** The bindings of a run on values, each carried as its JSON text. */
+function valueBound(
   obj: unknown,
   expr: string,
   namedArgs: Readonly<Record<string, unknown>>,
@@ -337,24 +419,16 @@ function bound(
   argsValue: Readonly<Record<string, unknown>> | null,
   inputsError: string | null,
 ): Bound {
-  const plain = jqText(obj)
-  // A name that is not an identifier can never be spelled as a variable,
-  // so nothing needs it bound; $ARGS.named still carries it.
-  const names = Object.keys(namedArgs).filter((name) => NAME.test(name))
-  if (names.length === 0 && inputs === null && argsValue === null) {
-    return { steps: [], stdin: plain, plain }
-  }
-  const steps = [
-    `. as [$${VALUE_VAR}, $${NAMED_VAR}, $${INPUTS_VAR}, $${ARGS_VAR}, $${INPUTS_ERROR_VAR}] |`,
-  ]
-  for (const name of names) steps.push(`$${NAMED_VAR}[${JSON.stringify(name)}] as $${name} |`)
-  if (inputs !== null) steps.push(streamDefs(expr, inputsError !== null))
-  // jq defines $ARGS itself, from a command line that no longer carries
-  // the bindings, so the only way to serve mirage's own is to rebind it.
-  if (argsValue !== null) steps.push(`$${ARGS_VAR} as $ARGS |`)
-  steps.push(`$${VALUE_VAR} |`)
-  const carried = [obj, namedArgs, inputs ?? [], argsValue, inputsError]
-  return { steps, stdin: jqText(carried), plain }
+  const named = new Map(Object.entries(namedArgs).map(([name, value]) => [name, jqText(value)]))
+  const docs = inputs === null ? null : inputs.map(jqText)
+  return bound(
+    jqText(obj),
+    expr,
+    named,
+    docs,
+    argsValue === null ? null : jqText(argsValue),
+    inputsError,
+  )
 }
 
 /** A compile error as the program's own lines number it. */
@@ -441,18 +515,23 @@ function stopOf(value: unknown): JqError | JqHalt | null {
  * handed back a stop, or failed. A run with no sentinel ends when jq does;
  * only a program the prelude could not wrap exits with an error then, which
  * jq has reported on stderr.
+ *
+ * Each output is a line of jq-wasm's compact stdout, jq's own dump of it,
+ * which `texts` keeps as it is; only a line that holds the token can be a
+ * stop or the sentinel, so only such a line is parsed then.
  */
-function collected(result: jqWasm.JqResult, sentinel: boolean): [JqRun, boolean] {
+function collected(result: jqWasm.JqResult, sentinel: boolean, texts = false): [JqRun, boolean] {
   const outputs: unknown[] = []
   for (const line of result.stdout.split('\n')) {
     if (line === '') continue
-    const value = JSON.parse(line) as unknown
-    if (value !== null && typeof value === 'object' && DONE_KEY in value) {
+    const marked = !texts || line.includes(TOKEN)
+    const value = marked ? (JSON.parse(line) as unknown) : line
+    if (marked && value !== null && typeof value === 'object' && DONE_KEY in value) {
       return [{ outputs, stop: null }, true]
     }
-    const stop = stopOf(value)
+    const stop = marked ? stopOf(value) : null
     if (stop !== null) return [{ outputs, stop }, true]
-    outputs.push(value)
+    outputs.push(texts ? line : value)
   }
   if (sentinel) return [{ outputs, stop: null }, false]
   if (result.exitCode === 0) return [{ outputs, stop: null }, true]
@@ -674,10 +753,38 @@ export async function jqRun(
   argsValue: Readonly<Record<string, unknown>> | null = null,
   inputsError: string | null = null,
 ): Promise<JqRun> {
-  const bindings = bound(obj, expr, namedArgs, inputs, argsValue, inputsError)
-  const [run, ended] = collected(...(await ran(bindings, expr, false)))
-  if (ended) return run
-  return { outputs: run.outputs, stop: await haltOf(bindings, expr, run.outputs.length) }
+  const bindings = valueBound(obj, expr, namedArgs, inputs, argsValue, inputsError)
+  return run(bindings, expr, false)
+}
+
+/**
+ * Run a jq program on one document the way jqRun does, with the document,
+ * the bindings and the outputs all JSON text: jq's parser reads the text, so
+ * a number keeps its literal and an object its key order, and each output
+ * comes back as jq's own compact dump of it, the spelling jq prints (`1.000`,
+ * `1E+2`, `1e+17`, `-0`). `named` are the $name bindings, `inputs` the
+ * documents still unread, `args` the value `$ARGS` should resolve to, and
+ * `inputsError` the parse error the stream ends in.
+ */
+export async function jqRunTexts(
+  doc: string,
+  expr: string,
+  named: ReadonlyMap<string, string> = new Map(),
+  inputs: readonly string[] | null = null,
+  args: string | null = null,
+  inputsError: string | null = null,
+): Promise<JqRun<string>> {
+  const done = await run(bound(doc, expr, named, inputs, args, inputsError), expr, true)
+  // A text run hands back jq-wasm's lines as they are (see collected).
+  return done as JqRun<string>
+}
+
+/** One run of the program on its bindings (see jqRun). */
+async function run(bindings: Bound, expr: string, texts: boolean): Promise<JqRun> {
+  const [result, sentinel] = await ran(bindings, expr, false)
+  const [done, ended] = collected(result, sentinel, texts)
+  if (ended) return done
+  return { outputs: done.outputs, stop: await haltOf(bindings, expr, done.outputs.length) }
 }
 
 /**
@@ -702,7 +809,7 @@ export async function jqRaised(
   if (!run.stop.string) return true
   const program = renamed(expr)
   if (program === expr) return false
-  const bindings = bound(obj, expr, namedArgs, inputs, argsValue, null)
+  const bindings = valueBound(obj, expr, namedArgs, inputs, argsValue, null)
   const wrapping = wrapped(bindings, program, WRAP, `${UNWRAP})${DONE}`)
   if (wrapping !== null) {
     const values = rerunValues(await raw(bindings.stdin, wrapping))
@@ -719,15 +826,16 @@ export async function jqRaised(
  * Compile a program the way a run would, without running it: on an empty
  * stdin, which jq reads no document from. jq compiles its program before
  * it reads any input, so it refuses a bad one even when there is no
- * document to run it on. Throws JqCompileError for the refusal.
+ * document to run it on. `named` and `args` are the bindings as text.
+ * Throws JqCompileError for the refusal.
  */
 export async function jqCheck(
   expr: string,
-  namedArgs: Readonly<Record<string, unknown>> = {},
-  inputs: readonly unknown[] | null = null,
-  argsValue: Readonly<Record<string, unknown>> | null = null,
+  named: ReadonlyMap<string, string> = new Map(),
+  inputs: readonly string[] | null = null,
+  args: string | null = null,
 ): Promise<void> {
-  await ran(bound(null, expr, namedArgs, inputs, argsValue, null), expr, true)
+  await ran(bound('null', expr, named, inputs, args, null), expr, true)
 }
 
 /**

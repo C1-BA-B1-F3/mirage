@@ -13,7 +13,19 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import { describe, expect, it } from 'vitest'
-import { compilePattern, mergePatternList, NEVER_MATCH } from './grep_pattern.ts'
+import {
+  compilePattern,
+  matcherSyntax,
+  mergePatternList,
+  NEVER_MATCH,
+  patternWarnings,
+  rustEscape,
+} from './grep_pattern.ts'
+import { RegexSyntax } from './types.ts'
+import { UsageError } from '../errors.ts'
+import { specOf } from '../spec/builtins.ts'
+import { FlagView } from '../spec/flag_view.ts'
+import type { FlagValue } from '../spec/types.ts'
 
 const ENC = new TextEncoder()
 
@@ -110,15 +122,70 @@ describe('ASCII semantics for word boundaries and case folding', () => {
     ['ab', 'xab', false, true, false],
     ['k', 'K', true, false, true],
   ])('%j on %j', (pattern, subject, ignoreCase, wholeWord, selected) => {
-    const pat = compilePattern(pattern, ignoreCase, false, wholeWord, true)
+    const pat = compilePattern(pattern, ignoreCase, false, wholeWord, RegexSyntax.BASIC)
     expect(pat.test(subject)).toBe(selected)
   })
 
   it('keeps the word class ASCII in an extended expression', () => {
     // -E takes the same compile, so `\w` must not grow a Unicode meaning
     // there either.
-    const pat = compilePattern('\\w', false, false, false, false)
+    const pat = compilePattern('\\w', false, false, false, RegexSyntax.EXTENDED)
     expect(pat.test('é')).toBe(false)
     expect(pat.test('a')).toBe(true)
+  })
+})
+
+// GNU grep 3.11: one matcher, and two different ones are refused. Mirrors
+// `test_grep_pattern.py`.
+describe('matcherSyntax', () => {
+  it.each([
+    [{}, RegexSyntax.BASIC],
+    [{ G: true }, RegexSyntax.BASIC],
+    [{ E: true }, RegexSyntax.EXTENDED],
+    [{ perl_regexp: true }, RegexSyntax.PERL],
+    [{ F: true }, RegexSyntax.BASIC],
+  ] as [Record<string, FlagValue>, RegexSyntax][])('%j reads %s', (flags, syntax) => {
+    expect(matcherSyntax(new FlagView(flags, specOf('grep')))).toBe(syntax)
+  })
+
+  it.each([
+    { E: true, perl_regexp: true },
+    { F: true, perl_regexp: true },
+    { G: true, perl_regexp: true },
+    { E: true, F: true },
+  ] as Record<string, FlagValue>[])('refuses %j', (flags) => {
+    expect(() => matcherSyntax(new FlagView(flags, specOf('grep')))).toThrow(
+      new UsageError('grep: conflicting matchers specified'),
+    )
+  })
+})
+
+describe('the other dialects', () => {
+  it('warns only for an extended expression', () => {
+    expect(patternWarnings('*a\n?b', RegexSyntax.EXTENDED)).toBe(
+      'grep: warning: * at start of expression\ngrep: warning: ? at start of expression\n',
+    )
+    expect(patternWarnings('*a', RegexSyntax.BASIC)).toBe('')
+  })
+
+  it('takes one PCRE2 pattern', () => {
+    expect(() => compilePattern('a\nb', false, false, false, RegexSyntax.PERL)).toThrow(
+      new UsageError('grep: the -P option only supports a single pattern'),
+    )
+    expect(compilePattern('\\d+', false, false, false, RegexSyntax.PERL).test('x45')).toBe(true)
+    const word = compilePattern('a', false, false, true, RegexSyntax.PERL)
+    expect(word.test('ab')).toBe(false)
+    expect(word.test('a b')).toBe(true)
+  })
+
+  it("refuses in PCRE2's words", () => {
+    expect(() => compilePattern('(', false, false, false, RegexSyntax.PERL)).toThrow(
+      new UsageError('grep: missing closing parenthesis'),
+    )
+  })
+
+  it('escapes as regex::escape', () => {
+    expect(rustEscape('a.b-c~d')).toBe('a\\.b\\-c\\~d')
+    expect(compilePattern('a.b', false, true, false, RegexSyntax.RUST).test('a.b')).toBe(true)
   })
 })

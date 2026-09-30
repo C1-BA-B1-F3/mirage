@@ -13,6 +13,7 @@
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import re
+from enum import Enum
 
 from mirage.utils.posix import POSIX_CLASSES, compile_posix_regex
 
@@ -35,6 +36,7 @@ BAD_BRACE_CONTENT = "Invalid content of \\{\\}"
 BAD_BACKREF = "Invalid back reference"
 BAD_RANGE = "Invalid range end"
 TOO_BIG = "Regular expression too big"
+INVALID_PRECEDING = "Invalid preceding regular expression"
 
 # glibc's RE_DUP_MAX. An interval past it is refused by glibc rather than
 # handed to the matcher, and both host engines have their own much larger
@@ -108,6 +110,23 @@ RANGE_KINDS = frozenset({"char", "."})
 
 class BreError(Exception):
     """A pattern glibc's regex compiler refuses, worded as it words it."""
+
+
+class PosixSyntax(Enum):
+    """Which of glibc's syntax-bit sets a pattern is read with.
+
+    ``BASIC`` is ``RE_SYNTAX_POSIX_BASIC`` (grep, sed, expr, nl).
+    ``EGREP`` is ``RE_SYNTAX_EGREP`` as GNU grep 3.11 compiles ``-E``:
+    a repetition operator with nothing before it is dropped (with dfa.c's
+    ``* at start of expression`` warning when only the start of the
+    expression precedes it) and a brace that opens no valid interval is a
+    literal. ``EXTENDED`` is ``RE_SYNTAX_POSIX_EXTENDED``, what
+    ``regcomp(REG_EXTENDED)`` reads (bash's ``[[ =~ ]]``): both of those
+    are refusals there.
+    """
+    BASIC = "basic"
+    EGREP = "egrep"
+    EXTENDED = "extended"
 
 
 def escape_outside(ch: str) -> str:
@@ -223,14 +242,38 @@ class BreTranslator:
     cannot drift apart.
     """
 
-    def __init__(self, pattern: str, refuse_inverted_range: bool) -> None:
+    def __init__(self,
+                 pattern: str,
+                 refuse_inverted_range: bool,
+                 syntax: PosixSyntax = PosixSyntax.BASIC) -> None:
         self.src = pattern
         self.refuse_inverted_range = refuse_inverted_range
+        self.syntax = syntax
+        self.extended = syntax is not PosixSyntax.BASIC
         self.pos = 0
         self.out: list[str] = []
         self.groups = 0
         self.open_groups: list[int] = []
         self.group_starts: list[int] = []
+        self.warnings: list[str] = []
+        # glibc's `completed_bkref_map`: the groups a back-reference may
+        # name. A branch of an alternation starts again from what was
+        # complete when the alternation began, so `\(a\)\|\1` is
+        # `Invalid back reference` while `\(\(a\)\|b\)\2` is not.
+        self.completed: set[int] = set()
+        self.alt_initial: list[set[int]] = [set()]
+        self.alt_accum: list[set[int]] = [set()]
+        # dfa.c's `laststart`: only the start of the expression, a `(`,
+        # a `|` or zero-width operators precede this position, which is
+        # where GNU grep warns about a repetition operator.
+        self.laststart = True
+        # An ERE repetition operator with nothing to repeat was just
+        # dropped; glibc then reads the next token as an expression of
+        # its own, so a `)` right after it is a literal.
+        self.dropped = False
+        # Where in `out` the anchor that is the last thing emitted sits,
+        # for the dfa's reading of a repetition applied to it.
+        self.anchor_at: int | None = None
         # Where `^` is the anchor rather than a literal caret: the start
         # of the pattern, just after `\(`, and just after `\|`. Nowhere
         # else, and that is narrower than "nothing precedes": `^^a`
@@ -260,25 +303,43 @@ class BreTranslator:
         """
         while self.pos < len(self.src):
             ch = self.src[self.pos]
+            dropped = self.dropped
+            self.dropped = False
             if ch == "\\":
                 self.escape()
             elif ch == "[":
                 self.bracket()
-            elif ch == "*":
+            elif ch == "*" or (self.extended and ch in "+?"):
                 self.pos += 1
-                self.repeat("*", "*")
+                if self.extended:
+                    self.ere_repeat(ch)
+                else:
+                    self.repeat("*", "*")
+            elif self.extended and ch == "{":
+                self.pos += 1
+                self.ere_interval()
+            elif self.extended and ch == "(":
+                self.pos += 1
+                self.open_group()
+            elif (self.extended and ch == ")" and self.open_groups
+                  and not dropped):
+                self.pos += 1
+                self.close_group()
+            elif self.extended and ch == "|":
+                self.pos += 1
+                self.alternate()
             elif ch == ".":
                 self.pos += 1
                 self.atom(".")
             elif ch == "^":
                 self.pos += 1
-                if self.caret_anchors:
+                if self.extended or self.caret_anchors:
                     self.anchor(ANCHOR_START)
                 else:
                     self.atom(escape_outside("^"))
             elif ch == "$":
                 self.pos += 1
-                if self.dollar_is_anchor():
+                if self.extended or self.dollar_is_anchor():
                     self.anchor(ANCHOR_END)
                 else:
                     self.atom(escape_outside("$"))
@@ -313,6 +374,8 @@ class BreTranslator:
         self.out.append(text)
         self.atom_quantified = False
         self.caret_anchors = False
+        self.laststart = False
+        self.anchor_at = None
 
     def anchor(self, text: str) -> None:
         """Emit one anchor, which no quantifier may follow.
@@ -320,6 +383,7 @@ class BreTranslator:
         Args:
             text (str): the host source for the anchor.
         """
+        self.anchor_at = len(self.out)
         self.out.append(text)
         self.atom_start = None
         self.atom_quantified = False
@@ -354,6 +418,88 @@ class BreTranslator:
         self.out.append(token)
         self.atom_quantified = True
 
+    def ere_repeat(self, op: str) -> None:
+        """Apply an ERE `*`, `+` or `?`, or drop it with nothing to repeat.
+
+        glibc's `RE_CONTEXT_INDEP_OPS` skips an operator that has no
+        expression before it -- the start of the pattern, a `(`, a `|`
+        or an anchor -- and `RE_CONTEXT_INVALID_OPS` refuses it instead.
+        GNU grep also warns where dfa.c's `laststart` holds: measured,
+        `grep -E '*a'` matches `a` and warns `* at start of expression`,
+        `grep -E 'a$*b'` drops the `*` without a word.
+
+        After an anchor the line is selected as dfa.c reads it, where the
+        operator repeats the anchor: `a$?` and `^*a` select `ab` and
+        `*ab` (GNU's `-o` then prints nothing, because its regex matcher
+        reads glibc's skip; one matcher cannot give both answers).
+
+        Args:
+            op (str): the operator as typed.
+
+        Raises:
+            BreError: the syntax refuses a repetition with nothing to
+                repeat.
+        """
+        if self.atom_start is not None:
+            self.repeat(op, op)
+            return
+        if self.syntax is PosixSyntax.EXTENDED:
+            raise BreError(INVALID_PRECEDING)
+        if self.laststart:
+            self.warnings.append(f"{op} at start of expression")
+        self.drop_repeat(op != "+")
+
+    def drop_repeat(self, optional: bool) -> None:
+        """Drop a repetition that has no expression before it.
+
+        Args:
+            optional (bool): the repetition allows zero, so an anchor it
+                follows no longer has to hold.
+        """
+        if optional and self.anchor_at is not None:
+            del self.out[self.anchor_at:]
+        self.anchor_at = None
+        self.dropped = True
+
+    def open_group(self) -> None:
+        """Open one capturing group: ERE's `(` or BRE's `\\(`."""
+        self.groups += 1
+        self.open_groups.append(self.groups)
+        self.group_starts.append(len(self.out))
+        self.out.append("(")
+        self.alt_initial.append(set(self.completed))
+        self.alt_accum.append(set())
+        self.anchor_at = None
+        self.atom_start = None
+        self.atom_quantified = False
+        self.caret_anchors = True
+        self.laststart = True
+
+    def close_group(self) -> None:
+        """Close the innermost group, which becomes the repeatable atom."""
+        number = self.open_groups.pop()
+        start = self.group_starts.pop()
+        self.out.append(")")
+        self.completed |= self.alt_accum.pop()
+        self.alt_initial.pop()
+        self.completed.add(number)
+        self.anchor_at = None
+        self.atom_start = start
+        self.atom_quantified = False
+        self.caret_anchors = False
+        self.laststart = False
+
+    def alternate(self) -> None:
+        """Start the next branch: ERE's `|` or BRE's `\\|`."""
+        self.out.append("|")
+        self.alt_accum[-1] |= self.completed
+        self.completed = set(self.alt_initial[-1])
+        self.anchor_at = None
+        self.atom_start = None
+        self.atom_quantified = False
+        self.caret_anchors = True
+        self.laststart = True
+
     def escape(self) -> None:
         """Scan one backslash sequence.
 
@@ -366,28 +512,16 @@ class BreTranslator:
             raise BreError(TRAILING_BACKSLASH)
         ch = self.src[self.pos + 1]
         self.pos += 2
-        if ch == "(":
-            self.groups += 1
-            self.open_groups.append(self.groups)
-            self.group_starts.append(len(self.out))
-            self.out.append("(")
-            self.atom_start = None
-            self.atom_quantified = False
-            self.caret_anchors = True
+        if self.extended and ch in "()|+?{}":
+            self.atom(escape_outside(ch))
+        elif ch == "(":
+            self.open_group()
         elif ch == ")":
             if not self.open_groups:
                 raise BreError(UNMATCHED_CLOSE)
-            self.open_groups.pop()
-            start = self.group_starts.pop()
-            self.out.append(")")
-            self.atom_start = start
-            self.atom_quantified = False
-            self.caret_anchors = False
+            self.close_group()
         elif ch == "|":
-            self.out.append("|")
-            self.atom_start = None
-            self.atom_quantified = False
-            self.caret_anchors = True
+            self.alternate()
         elif ch == "+":
             self.repeat("+", "+")
         elif ch == "?":
@@ -395,7 +529,7 @@ class BreTranslator:
         elif ch == "{":
             self.interval()
         elif ch in "123456789":
-            if int(ch) > self.groups or int(ch) in self.open_groups:
+            if int(ch) not in self.completed:
                 raise BreError(BAD_BACKREF)
             self.atom("\\" + ch)
         elif ch in CLASS_ESCAPES:
@@ -437,6 +571,115 @@ class BreTranslator:
         body = self.src[self.pos:close]
         self.pos = close + 2
         self.repeat(interval_token(body), "{")
+
+    def ere_interval(self) -> None:
+        """Scan one ERE `{n,m}`, the position already past the `{`.
+
+        glibc's `parse_dup_op` and `fetch_number`: `{,m}` is `{0,m}`,
+        `{}` and `{m,n,o}` are `Invalid content of \\{\\}`, and any
+        other body that is not digits and one comma rolls back to a
+        literal `{` under `RE_INVALID_INTERVAL_ORD` (grep -E: `a{x}`
+        matches the four bytes) and is refused without it (regcomp:
+        `Unmatched \\{` when the pattern ends first). With nothing to
+        repeat, grep drops a valid interval as dfa.c does and warns
+        `{...} at start of expression`, while an invalid one is a
+        literal brace.
+
+        Raises:
+            BreError: the syntax refuses the interval.
+        """
+        start = self.pos
+        if self.atom_start is None and self.syntax is PosixSyntax.EXTENDED:
+            raise BreError(INVALID_PRECEDING)
+        try:
+            token, end = self.interval_body(start)
+        except BreError:
+            if self.atom_start is None:
+                token, end = None, start
+            else:
+                raise
+        if token is None:
+            self.atom(escape_outside("{"))
+            return
+        self.pos = end
+        if self.atom_start is None:
+            if self.laststart:
+                self.warnings.append("{...} at start of expression")
+            self.drop_repeat(token.startswith(("{0}", "{0,")))
+            return
+        self.repeat(token, "{")
+
+    def interval_body(self, start: int) -> tuple[str | None, int]:
+        """glibc's reading of an interval body from `start`.
+
+        Args:
+            start (int): the index just past the `{`.
+
+        Returns:
+            tuple[str | None, int]: the host quantifier and the index past
+                the `}`, or None when the brace rolls back to a literal.
+
+        Raises:
+            BreError: a body glibc refuses in every syntax.
+        """
+        low, i, term = self.fetch_number(start)
+        high = -2
+        if low == -1:
+            if term != ",":
+                raise BreError(BAD_BRACE_CONTENT)
+            low = 0
+        if low != -2:
+            if term == "}":
+                high = low
+            elif term == ",":
+                high, i, term = self.fetch_number(i)
+        if low == -2 or high == -2:
+            if self.syntax is PosixSyntax.EGREP:
+                return None, start
+            raise BreError(UNMATCHED_BRACE if term ==
+                           "" else BAD_BRACE_CONTENT)
+        if (high != -1 and low > high) or term != "}":
+            raise BreError(BAD_BRACE_CONTENT)
+        if (low if high == -1 else high) > RE_DUP_MAX:
+            raise BreError(TOO_BIG)
+        if high == -1:
+            return f"{{{low},}}", i
+        if high == low:
+            return f"{{{low}}}", i
+        return f"{{{low},{high}}}", i
+
+    def fetch_number(self, i: int) -> tuple[int, int, str]:
+        """glibc's `fetch_number`: digits up to a `}` or a `,`.
+
+        Args:
+            i (int): where the number starts.
+
+        Returns:
+            tuple[int, int, str]: -1 when nothing precedes the
+                terminator, -2 when something other than a digit does or
+                the pattern ends first, else the value (capped just past
+                RE_DUP_MAX); the index past the terminator; and the
+                terminator, empty at the end of the pattern.
+        """
+        num = -1
+        src = self.src
+        while True:
+            if i >= len(src):
+                return -2, i, ""
+            ch = src[i]
+            if ch == "\\":
+                i += 2
+                num = -2
+                continue
+            i += 1
+            if ch in "},":
+                return num, i, ch
+            if num == -2 or not "0" <= ch <= "9":
+                num = -2
+            elif num == -1:
+                num = int(ch)
+            else:
+                num = min(RE_DUP_MAX + 1, num * 10 + int(ch))
 
     def bracket(self) -> None:
         """Scan one `[...]`, whose escaping rules are their own dialect.
@@ -540,6 +783,39 @@ def translate_bre(pattern: str,
         BreError: the pattern is one glibc would refuse.
     """
     return BreTranslator(pattern, refuse_inverted_range).translate()
+
+
+def translate_ere(
+    pattern: str,
+    syntax: PosixSyntax = PosixSyntax.EGREP,
+) -> tuple[str, int, tuple[str, ...]]:
+    """Translate a POSIX ERE into this host's regex dialect.
+
+    The same scanner as ``translate_bre``, reading the extended syntax:
+    an escape means exactly what glibc says, so ``\\w \\W \\s \\S
+    \\b \\B \\< \\> \\` \\'`` and back-references are GNU's
+    operators and any other escaped character is that character --
+    ``\\d`` is ``d``, ``\\t`` is ``t`` and ``\\x41`` is ``x41``, never
+    the host's digit, tab or ``A``. A ``(?`` is glibc's, not a host
+    group: the ``?`` has nothing to repeat. An inverted range is refused,
+    as ``RE_NO_EMPTY_RANGES`` does in both extended syntaxes.
+
+    Args:
+        pattern (str): the ERE exactly as it arrived.
+        syntax (PosixSyntax): ``EGREP`` for grep -E, ``EXTENDED`` for
+            ``regcomp(REG_EXTENDED)``.
+
+    Returns:
+        tuple[str, int, tuple[str, ...]]: the host pattern source, its
+            group count, and GNU grep's warnings (without the
+            ``grep: warning: `` prefix), which only ``EGREP`` produces.
+
+    Raises:
+        BreError: the pattern is one glibc would refuse.
+    """
+    translator = BreTranslator(pattern, True, syntax)
+    source, groups = translator.translate()
+    return source, groups, tuple(translator.warnings)
 
 
 def compile_bre(pattern: str) -> tuple[re.Pattern[str], int]:

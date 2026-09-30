@@ -19,7 +19,9 @@ from mirage.commands.cli.builtin.gh import release as release_commands
 from mirage.commands.cli.builtin.gh import repo as repo_commands
 from mirage.commands.cli.builtin.gh.api import api
 from mirage.commands.cli.builtin.gh.auth import status as auth_status
+from mirage.commands.cli.builtin.gh.constants import REPO_EDIT_FIELDS
 from mirage.commands.cli.builtin.gh.search import search_spec
+from mirage.commands.cli.builtin.gh.types import RepoEditField
 from mirage.commands.cli.builtin.gh.version import version
 from mirage.commands.cli.types import CLISpec
 from mirage.commands.spec.types import Operand, Option
@@ -41,6 +43,21 @@ BODY = Option(short="-b", long="--body", type="str")
 BODY_FILE = Option(short="-F", long="--body-file", type="path")
 TITLE = Option(short="-t", long="--title", type="str")
 NUMBER = Operand(type="str", name="NUMBER", required=True)
+
+
+def _repo_edit_option(field: RepoEditField) -> Option:
+    """Build the grammar from the setting consumed by the handler.
+
+    Args:
+        field (RepoEditField): Repository setting definition.
+    """
+    return Option(short=field.short,
+                  long=field.flag,
+                  type="str",
+                  value_optional=field.kind != "value",
+                  choices=field.choices if field.kind == "value" else
+                  ("true", "false"),
+                  description=field.description)
 
 
 def _issue() -> CLISpec:
@@ -211,13 +228,36 @@ def _pr() -> CLISpec:
                                description="View changes in a pull request",
                                fn=pull_commands.diff_cmd,
                                positional=(NUMBER, ),
-                               options=(REPO, )),
+                               options=(REPO,
+                                        Option(long="--name-only",
+                                               description="Display only "
+                                               "names of changed files"))),
                        CLISpec(name="checks",
                                description="Show CI checks for a pull request",
                                fn=pull_commands.checks_cmd,
                                positional=(NUMBER, ),
                                options=(REPO, JSON, JQ)),
                    ))
+
+
+REPO_EDIT_OPTIONS = (
+    *(_repo_edit_option(field) for field in REPO_EDIT_FIELDS),
+    Option(long="--add-topic",
+           type="str",
+           multiple=True,
+           description="Add repository topic"),
+    Option(long="--remove-topic",
+           type="str",
+           multiple=True,
+           description="Remove repository topic"),
+    Option(long="--accept-visibility-change-consequences",
+           description="Accept the consequences of changing the repository "
+           "visibility"),
+)
+REPO_DELETE_OPTIONS = (
+    Option(long="--yes", description="Confirm deletion without prompting"),
+    Option(long="--confirm", description="Deprecated: use --yes instead"),
+)
 
 
 def _repo() -> CLISpec:
@@ -267,6 +307,20 @@ def _repo() -> CLISpec:
                                                    name="NEW-NAME",
                                                    required=True), ),
                                options=(REPO, )),
+                       CLISpec(name="edit",
+                               description="Edit repository settings",
+                               fn=repo_commands.edit_cmd,
+                               write=True,
+                               positional=(Operand(type="str",
+                                                   name="REPOSITORY"), ),
+                               options=REPO_EDIT_OPTIONS),
+                       CLISpec(name="delete",
+                               description="Delete a repository",
+                               fn=repo_commands.delete_cmd,
+                               write=True,
+                               positional=(Operand(type="str",
+                                                   name="REPOSITORY"), ),
+                               options=REPO_DELETE_OPTIONS),
                    ))
 
 
@@ -308,6 +362,32 @@ def _release() -> CLISpec:
                    ))
 
 
+# `gh run view`'s flags: the summary's, and gh 2.85's two log views.
+RUN_VIEW_OPTIONS = (
+    REPO,
+    JSON,
+    JQ,
+    Option(long="--exit-status"),
+    Option(long="--log",
+           description="View full log for either a run or specific job"),
+    Option(long="--log-failed",
+           description="View the log for any failed steps in a run or "
+           "specific job"),
+)
+# `gh workflow view`'s flags, `--ref` only beside `--yaml`, as in gh 2.85.
+WORKFLOW_VIEW_OPTIONS = (
+    REPO,
+    Option(short="-y",
+           long="--yaml",
+           description="View the workflow yaml file"),
+    Option(short="-r",
+           long="--ref",
+           type="str",
+           description="The branch or tag name which contains the version of "
+           "the workflow file you'd like to view"),
+)
+
+
 def _run() -> CLISpec:
     return CLISpec(name="run",
                    description="View workflow runs",
@@ -346,8 +426,7 @@ def _run() -> CLISpec:
                                positional=(Operand(type="str",
                                                    name="RUN-ID",
                                                    required=True), ),
-                               options=(REPO, JSON, JQ,
-                                        Option(long="--exit-status"))),
+                               options=RUN_VIEW_OPTIONS),
                        CLISpec(name="rerun",
                                description="Rerun a workflow run",
                                fn=action_commands.run_rerun_cmd,
@@ -384,7 +463,7 @@ def _workflow() -> CLISpec:
                                positional=(Operand(type="str",
                                                    name="WORKFLOW",
                                                    required=True), ),
-                               options=(REPO, )),
+                               options=WORKFLOW_VIEW_OPTIONS),
                        CLISpec(name="run",
                                description="Run a workflow",
                                fn=action_commands.workflow_run_cmd,
@@ -443,6 +522,10 @@ GH = CLISpec(
                            long="--header",
                            type="str",
                            multiple=True),
+                    Option(short="-i",
+                           long="--include",
+                           description="Include HTTP response status line "
+                           "and headers in the output"),
                     Option(long="--input", type="path"),
                     JQ,
                     Option(long="--paginate"),

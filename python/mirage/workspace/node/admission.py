@@ -244,6 +244,7 @@ async def gate(
     stdin: ByteSource | None = None,
     redirects: Sequence[PathSpec] = (),
     defined_fn: bool = False,
+    intrinsic: bool = False,
 ) -> Refused | tuple[CommandContext, Deny | Ask | None]:
     """Everything the gate decides about one command before anything is
     spent on it: visibility, the classified context, and the policy
@@ -267,6 +268,8 @@ async def gate(
             whether a bare ``rg`` reads the working directory.
         redirects (Sequence[PathSpec]): the statement's expanded
             redirect targets, empty when it has none.
+        intrinsic (bool): judge a shell-provided operation as a tool even
+            when a function shadows its policy name.
         defined_fn (bool): the caller vouches the head word is a shell
             function defined by run time. The provision walk vouches
             for a function its own script defines: the run stores that
@@ -281,7 +284,8 @@ async def gate(
         A Refused when the session cannot see the head word, else the
         context and whatever the policy chain answered.
     """
-    tool = (name in SHELL_NAMES) if defined_fn else is_tool(name, session)
+    tool = intrinsic or (
+        (name in SHELL_NAMES) if defined_fn else is_tool(name, session))
     if tool and not listed(name, session):
         return Refused(f"{name}: command not found\n".encode(), 127)
     tokens, program = program_tokens(registry, name, args, session.cwd)
@@ -321,6 +325,7 @@ async def admit(
     redirects: Sequence[PathSpec] = (),
     cancel: asyncio.Event | None = None,
     claimant: Claimant | None = None,
+    intrinsic: bool = False,
 ) -> Refused | Admitted:
     """The command plane's admission of one command: visibility, then
     the policy chain, then the decision ledger.
@@ -355,6 +360,8 @@ async def admit(
             only so a question put to a host cannot outlive the run
             that raised it. Nothing else here waits on anything outside
             mirage.
+        intrinsic (bool): the shell provides the operation directly, so
+            a function of the same name cannot bypass its tool allow list.
         claimant (Claimant | None): the command and its line, None
             outside a line. On a line, every grant behind the command
             is claimed on the line's hand-off for that occurrence,
@@ -366,8 +373,16 @@ async def admit(
             such care -- the record refuses the agent's retry from the
             ledger either way.
     """
-    gated = await gate(name, args, operands, session, registry, namespace,
-                       agent_id, stdin, redirects)
+    gated = await gate(name,
+                       args,
+                       operands,
+                       session,
+                       registry,
+                       namespace,
+                       agent_id,
+                       stdin,
+                       redirects,
+                       intrinsic=intrinsic)
     if isinstance(gated, Refused):
         return gated
     ctx, asked = gated

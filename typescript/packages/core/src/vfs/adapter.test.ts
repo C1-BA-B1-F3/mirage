@@ -173,7 +173,7 @@ it.each(['grep', 'rg'])(
                 fixed_string: true,
                 ignore_case: false,
                 whole_word: false,
-                basic: command === 'grep',
+                syntax: command === 'grep' ? 'basic' : 'rust',
               },
             },
           },

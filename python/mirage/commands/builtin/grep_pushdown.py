@@ -17,8 +17,10 @@ from collections.abc import Mapping, Sequence
 from typing import Literal, cast
 
 from mirage.commands.builtin.constants import BINARY_EXTENSIONS, PatternType
-from mirage.commands.builtin.grep_pattern import bre_source
-from mirage.commands.builtin.types import GrepSearchMeta, GrepSearchOptions
+from mirage.commands.builtin.grep_pattern import (bre_source, ere_source,
+                                                  perl_regex, rust_source)
+from mirage.commands.builtin.types import (GrepSearchMeta, GrepSearchOptions,
+                                           RegexSyntax)
 from mirage.commands.builtin.utils.paths import has_unresolved_glob
 from mirage.commands.builtin.utils.stream import is_stdin
 from mirage.commands.resolve import get_extension
@@ -122,12 +124,13 @@ def extract_required_literal(pattern: str) -> str | None:
             i += 1
             continue
         if ch == "(":
-            if pattern.startswith("(?", i):
+            opener = 3 if pattern.startswith("(?:", i) else 1
+            if opener == 1 and pattern.startswith("(?", i):
                 return None
             runs.append("".join(current))
             current = []
             groups.append(len(runs))
-            i += 1
+            i += opener
             continue
         if ch == ")":
             runs.append("".join(current))
@@ -228,23 +231,23 @@ def text_candidates(paths: list[PathSpec]) -> list[PathSpec]:
 
 def search_query(pattern: str,
                  fixed_string: bool,
-                 basic: bool = False) -> str | None:
+                 syntax: RegexSyntax = RegexSyntax.EXTENDED) -> str | None:
     """Literal to push down to a substring or code-search API for a pattern.
 
     A SIMPLE pattern holding a dot is a regex here, not a literal:
     ``worker.3`` matches ``worker-3``, which a substring search for
     ``worker.3`` never returns, so only the run before the dot is required.
     ``is_literal_pattern`` already draws that line for the whole-word case.
-    A basic expression is translated before a literal is extracted, since
-    its operators are the escaped spellings: ``\\(bar\\)\\?`` is an
-    optional group there and ``(bar)?`` three literal characters plus a
-    literal question mark.
+    Every dialect is translated to host source before a literal is
+    extracted, since the operators differ: in a basic expression
+    ``\\(bar\\)\\?`` is an optional group and ``(bar)?`` three literal
+    characters plus a literal question mark, and ``\\d`` is a ``d`` to
+    grep -E and a digit to rg.
 
     Args:
         pattern (str): the search pattern.
         fixed_string (bool): True if -F is set.
-        basic (bool): True when the pattern is a basic regular expression,
-            which grep reads unless -E says otherwise.
+        syntax (RegexSyntax): the dialect the pattern is written in.
 
     Returns:
         str | None: the pattern itself when it is literal, the longest
@@ -253,14 +256,33 @@ def search_query(pattern: str,
             of alternatives no one literal is required by.
 
     Raises:
-        UsageError: a basic expression glibc's compiler would refuse,
-            which grep reports before it reads anything.
+        UsageError: a pattern the dialect's compiler would refuse, which
+            grep and rg report before they read anything.
     """
     if "\n" in pattern:
         return None
     if is_literal_pattern(pattern, fixed_string):
         return pattern
-    return extract_required_literal(bre_source(pattern) if basic else pattern)
+    return extract_required_literal(host_source(pattern, syntax))
+
+
+def host_source(pattern: str, syntax: RegexSyntax) -> str:
+    """One pattern's host source in its dialect, for literal extraction.
+
+    Args:
+        pattern (str): a single pattern.
+        syntax (RegexSyntax): its dialect.
+
+    Raises:
+        UsageError: the dialect's compiler refuses the pattern.
+    """
+    if syntax is RegexSyntax.BASIC:
+        return bre_source(pattern)
+    if syntax is RegexSyntax.EXTENDED:
+        return ere_source(pattern)
+    if syntax is RegexSyntax.PERL:
+        return perl_regex(pattern, False, False, True)[0]
+    return rust_source(pattern, False, False, False).source
 
 
 # grep's dests, then rg's, which spells each flag by its long name; a
@@ -483,14 +505,21 @@ def grep_search_options(query: SearchQuery) -> GrepSearchOptions:
         query (SearchQuery): resource query with optional grep namespace.
     """
     options = query.options.get("grep", {})
-    allowed = {"ignore_case", "fixed_string", "whole_word", "basic"}
+    allowed = {"ignore_case", "fixed_string", "whole_word", "syntax"}
     if not isinstance(options, dict) or set(options) - allowed:
         raise ValueError("search.options.grep contains unknown options")
-    if any(not isinstance(value, bool) for value in options.values()):
+    if any(not isinstance(value, bool) for key, value in options.items()
+           if key != "syntax"):
         raise ValueError("search.options.grep values must be boolean")
+    syntax = options.get("syntax", RegexSyntax.EXTENDED.value)
+    if not isinstance(syntax, str) or syntax not in {
+            s.value
+            for s in RegexSyntax
+    }:
+        raise ValueError("search.options.grep.syntax names no dialect")
     return GrepSearchOptions(
         ignore_case=options.get("ignore_case", False) is True,
         fixed_string=options.get("fixed_string", True) is True,
         whole_word=options.get("whole_word", False) is True,
-        basic=options.get("basic", False) is True,
+        syntax=RegexSyntax(syntax),
     )

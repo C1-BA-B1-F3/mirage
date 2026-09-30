@@ -2,7 +2,8 @@ import pytest
 
 from mirage.core.awk.errors import AwkSyntaxError
 from mirage.core.awk.nodes import (Assign, Binary, Block, Compare, Concat, For,
-                                   ForIn, Print, RuleKind, Unary, While)
+                                   ForIn, Getline, GetlineKind, Print,
+                                   RedirKind, RuleKind, Str, Unary, Var, While)
 from mirage.core.awk.parser import parse
 
 
@@ -73,3 +74,43 @@ def test_functions_are_collected():
 def test_syntax_errors(src):
     with pytest.raises(AwkSyntaxError):
         parse(src)
+
+
+def test_getline_file_is_a_primary():
+    expr = first_stmt('{x = getline line < "a" "b"}').expr.value
+    assert isinstance(expr, Concat)
+    assert isinstance(expr.left, Getline)
+    assert expr.left.kind is GetlineKind.FILE
+    assert expr.left.source == Str("a")
+
+
+def test_getline_file_result_compares_unparenthesised():
+    loop = first_stmt('{while (getline line < f > 0) n++}')
+    assert isinstance(loop.cond, Compare)
+    assert isinstance(loop.cond.left, Getline)
+    assert loop.cond.left.target == Var("line")
+
+
+def test_command_of_an_input_pipe_is_a_primary():
+    expr = first_stmt('{x = "echo " "hi" | getline}').expr.value
+    assert isinstance(expr, Concat)
+    assert expr.left == Str("echo ")
+    assert isinstance(expr.right, Getline)
+    assert expr.right.kind is GetlineKind.CMD
+    assert expr.right.source == Str("hi")
+    summed = first_stmt('{x = 1 + "cmd" | getline}').expr.value
+    assert isinstance(summed, Binary)
+    assert isinstance(summed.right, Getline)
+
+
+def test_input_pipe_result_takes_operators_after_it():
+    cmp = first_stmt('{x = "cmd" | getline line > 0}').expr.value
+    assert isinstance(cmp, Compare)
+    assert cmp.left == Getline(GetlineKind.CMD, Var("line"), Str("cmd"))
+
+
+def test_print_pipe_stays_an_output_pipe():
+    stmt = first_stmt('{print "x" | "cat"}')
+    assert isinstance(stmt, Print)
+    assert stmt.redirect is not None
+    assert stmt.redirect.kind is RedirKind.PIPE

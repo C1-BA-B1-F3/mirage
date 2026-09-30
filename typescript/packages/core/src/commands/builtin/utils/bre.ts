@@ -32,6 +32,7 @@ const BAD_BRACE_CONTENT = 'Invalid content of \\{\\}'
 const BAD_BACKREF = 'Invalid back reference'
 const BAD_RANGE = 'Invalid range end'
 const TOO_BIG = 'Regular expression too big'
+const INVALID_PRECEDING = 'Invalid preceding regular expression'
 
 // glibc's RE_DUP_MAX. An interval past it is refused by glibc rather than
 // handed to the matcher, and both host engines have their own much larger
@@ -101,6 +102,22 @@ const RANGE_KINDS = new Set(['char', '.'])
 
 // A pattern glibc's regex compiler refuses, worded as it words it.
 export class BreError extends Error {}
+
+/**
+ * Which of glibc's syntax-bit sets a pattern is read with. `BASIC` is
+ * `RE_SYNTAX_POSIX_BASIC` (grep, sed, expr, nl). `EGREP` is `RE_SYNTAX_EGREP`
+ * as GNU grep 3.11 compiles `-E`: a repetition operator with nothing before
+ * it is dropped (with dfa.c's `* at start of expression` warning when only the
+ * start of the expression precedes it) and a brace that opens no valid
+ * interval is a literal. `EXTENDED` is `RE_SYNTAX_POSIX_EXTENDED`, what
+ * `regcomp(REG_EXTENDED)` reads (bash's `[[ =~ ]]`): both of those are
+ * refusals there. Mirrors `PosixSyntax` in `bre.py`.
+ */
+export enum PosixSyntax {
+  BASIC = 'basic',
+  EGREP = 'egrep',
+  EXTENDED = 'extended',
+}
 
 // One literal character, safe outside a host bracket expression:
 // backslash-escaped when the host engine would otherwise read it as an
@@ -198,10 +215,33 @@ class BreTranslator {
   // all that precedes it.
   private caretAnchors = true
   private readonly refuseInvertedRange: boolean
+  private readonly syntax: PosixSyntax
+  private readonly extended: boolean
+  readonly warnings: string[] = []
+  // glibc's `completed_bkref_map`: the groups a back-reference may name. A
+  // branch of an alternation starts again from what was complete when the
+  // alternation began, so `\(a\)\|\1` is `Invalid back reference` while
+  // `\(\(a\)\|b\)\2` is not.
+  private completed = new Set<number>()
+  private altInitial: Set<number>[] = [new Set()]
+  private altAccum: Set<number>[] = [new Set()]
+  // dfa.c's `laststart`: only the start of the expression, a `(`, a `|` or
+  // zero-width operators precede this position, which is where GNU grep
+  // warns about a repetition operator.
+  private laststart = true
+  // An ERE repetition operator with nothing to repeat was just dropped;
+  // glibc then reads the next token as an expression of its own, so a `)`
+  // right after it is a literal.
+  private dropped = false
+  // Where in `out` the anchor that is the last thing emitted sits, for the
+  // dfa's reading of a repetition applied to it.
+  private anchorAt: number | null = null
 
-  constructor(pattern: string, refuseInvertedRange: boolean) {
+  constructor(pattern: string, refuseInvertedRange: boolean, syntax = PosixSyntax.BASIC) {
     this.src = pattern
     this.refuseInvertedRange = refuseInvertedRange
+    this.syntax = syntax
+    this.extended = syntax !== PosixSyntax.BASIC
   }
 
   // Scan the whole pattern, returning the host pattern source and how
@@ -211,23 +251,38 @@ class BreTranslator {
   translate(): [string, number] {
     while (this.pos < this.src.length) {
       const ch = this.src[this.pos] ?? ''
+      const dropped = this.dropped
+      this.dropped = false
       if (ch === '\\') {
         this.escape()
       } else if (ch === '[') {
         this.bracket()
-      } else if (ch === '*') {
+      } else if (ch === '*' || (this.extended && (ch === '+' || ch === '?'))) {
         this.pos += 1
-        this.repeat('*', '*')
+        if (this.extended) this.ereRepeat(ch)
+        else this.repeat('*', '*')
+      } else if (this.extended && ch === '{') {
+        this.pos += 1
+        this.ereInterval()
+      } else if (this.extended && ch === '(') {
+        this.pos += 1
+        this.openGroup()
+      } else if (this.extended && ch === ')' && this.openGroups.length > 0 && !dropped) {
+        this.pos += 1
+        this.closeGroup()
+      } else if (this.extended && ch === '|') {
+        this.pos += 1
+        this.alternate()
       } else if (ch === '.') {
         this.pos += 1
         this.atom('.')
       } else if (ch === '^') {
         this.pos += 1
-        if (this.caretAnchors) this.anchor(ANCHOR_START)
+        if (this.extended || this.caretAnchors) this.anchor(ANCHOR_START)
         else this.atom(escapeOutside('^'))
       } else if (ch === '$') {
         this.pos += 1
-        if (this.dollarIsAnchor()) this.anchor(ANCHOR_END)
+        if (this.extended || this.dollarIsAnchor()) this.anchor(ANCHOR_END)
         else this.atom(escapeOutside('$'))
       } else {
         this.pos += 1
@@ -254,10 +309,13 @@ class BreTranslator {
     this.out.push(text)
     this.atomQuantified = false
     this.caretAnchors = false
+    this.laststart = false
+    this.anchorAt = null
   }
 
   // Emit one anchor, which no quantifier may follow.
   private anchor(text: string): void {
+    this.anchorAt = this.out.length
     this.out.push(text)
     this.atomStart = null
     this.atomQuantified = false
@@ -289,32 +347,93 @@ class BreTranslator {
     this.atomQuantified = true
   }
 
+  // Apply an ERE `*`, `+` or `?`, or drop it with nothing to repeat.
+  //
+  // glibc's `RE_CONTEXT_INDEP_OPS` skips an operator that has no expression
+  // before it -- the start of the pattern, a `(`, a `|` or an anchor -- and
+  // `RE_CONTEXT_INVALID_OPS` refuses it instead. GNU grep also warns where
+  // dfa.c's `laststart` holds: measured, `grep -E '*a'` matches `a` and warns
+  // `* at start of expression`, `grep -E 'a$*b'` drops the `*` without a word.
+  //
+  // After an anchor the line is selected as dfa.c reads it, where the
+  // operator repeats the anchor: `a$?` and `^*a` select `ab` and `*ab` (GNU's
+  // `-o` then prints nothing, because its regex matcher reads glibc's skip;
+  // one matcher cannot give both answers).
+  private ereRepeat(op: string): void {
+    if (this.atomStart !== null) {
+      this.repeat(op, op)
+      return
+    }
+    if (this.syntax === PosixSyntax.EXTENDED) throw new BreError(INVALID_PRECEDING)
+    if (this.laststart) this.warnings.push(`${op} at start of expression`)
+    this.dropRepeat(op !== '+')
+  }
+
+  // Drop a repetition that has no expression before it; one that allows
+  // zero means the anchor it follows no longer has to hold.
+  private dropRepeat(optional: boolean): void {
+    if (optional && this.anchorAt !== null) this.out.splice(this.anchorAt)
+    this.anchorAt = null
+    this.dropped = true
+  }
+
+  // Open one capturing group: ERE's `(` or BRE's `\(`.
+  private openGroup(): void {
+    this.groups += 1
+    this.openGroups.push(this.groups)
+    this.groupStarts.push(this.out.length)
+    this.out.push('(')
+    this.altInitial.push(new Set(this.completed))
+    this.altAccum.push(new Set())
+    this.anchorAt = null
+    this.atomStart = null
+    this.atomQuantified = false
+    this.caretAnchors = true
+    this.laststart = true
+  }
+
+  // Close the innermost group, which becomes the repeatable atom.
+  private closeGroup(): void {
+    const number = this.openGroups.pop() ?? 0
+    const start = this.groupStarts.pop() ?? 0
+    this.out.push(')')
+    for (const n of this.altAccum.pop() ?? []) this.completed.add(n)
+    this.altInitial.pop()
+    this.completed.add(number)
+    this.anchorAt = null
+    this.atomStart = start
+    this.atomQuantified = false
+    this.caretAnchors = false
+    this.laststart = false
+  }
+
+  // Start the next branch: ERE's `|` or BRE's `\|`.
+  private alternate(): void {
+    this.out.push('|')
+    const accum = this.altAccum[this.altAccum.length - 1]
+    for (const n of this.completed) accum?.add(n)
+    this.completed = new Set(this.altInitial[this.altInitial.length - 1])
+    this.anchorAt = null
+    this.atomStart = null
+    this.atomQuantified = false
+    this.caretAnchors = true
+    this.laststart = true
+  }
+
   // Scan one backslash sequence.
   private escape(): void {
     if (this.pos + 1 >= this.src.length) throw new BreError(TRAILING_BACKSLASH)
     const ch = this.src[this.pos + 1] ?? ''
     this.pos += 2
-    if (ch === '(') {
-      this.groups += 1
-      this.openGroups.push(this.groups)
-      this.groupStarts.push(this.out.length)
-      this.out.push('(')
-      this.atomStart = null
-      this.atomQuantified = false
-      this.caretAnchors = true
+    if (this.extended && '()|+?{}'.includes(ch)) {
+      this.atom(escapeOutside(ch))
+    } else if (ch === '(') {
+      this.openGroup()
     } else if (ch === ')') {
       if (this.openGroups.length === 0) throw new BreError(UNMATCHED_CLOSE)
-      this.openGroups.pop()
-      const start = this.groupStarts.pop()
-      this.out.push(')')
-      this.atomStart = start ?? null
-      this.atomQuantified = false
-      this.caretAnchors = false
+      this.closeGroup()
     } else if (ch === '|') {
-      this.out.push('|')
-      this.atomStart = null
-      this.atomQuantified = false
-      this.caretAnchors = true
+      this.alternate()
     } else if (ch === '+') {
       this.repeat('+', '+')
     } else if (ch === '?') {
@@ -322,10 +441,7 @@ class BreTranslator {
     } else if (ch === '{') {
       this.interval()
     } else if (ch >= '1' && ch <= '9') {
-      const num = Number(ch)
-      if (num > this.groups || this.openGroups.includes(num)) {
-        throw new BreError(BAD_BACKREF)
-      }
+      if (!this.completed.has(Number(ch))) throw new BreError(BAD_BACKREF)
       this.atom('\\' + ch)
     } else if (CLASS_ESCAPES[ch] !== undefined) {
       this.atom(CLASS_ESCAPES[ch] ?? '')
@@ -363,6 +479,93 @@ class BreTranslator {
     const body = this.src.slice(this.pos, close)
     this.pos = close + 2
     this.repeat(intervalToken(body), '{')
+  }
+
+  // Scan one ERE `{n,m}`, the position already past the `{`.
+  //
+  // glibc's `parse_dup_op` and `fetch_number`: `{,m}` is `{0,m}`, `{}` and
+  // `{m,n,o}` are `Invalid content of \{\}`, and any other body that is not
+  // digits and one comma rolls back to a literal `{` under
+  // `RE_INVALID_INTERVAL_ORD` (grep -E: `a{x}` matches the four bytes) and is
+  // refused without it (regcomp: `Unmatched \{` when the pattern ends
+  // first). With nothing to repeat, grep drops a valid interval as dfa.c does
+  // and warns `{...} at start of expression`, while an invalid one is a
+  // literal brace.
+  private ereInterval(): void {
+    const start = this.pos
+    if (this.atomStart === null && this.syntax === PosixSyntax.EXTENDED) {
+      throw new BreError(INVALID_PRECEDING)
+    }
+    let token: string | null
+    let end: number
+    try {
+      ;[token, end] = this.intervalBody(start)
+    } catch (err) {
+      if (!(err instanceof BreError) || this.atomStart !== null) throw err
+      ;[token, end] = [null, start]
+    }
+    if (token === null) {
+      this.atom(escapeOutside('{'))
+      return
+    }
+    this.pos = end
+    if (this.atomStart === null) {
+      if (this.laststart) this.warnings.push('{...} at start of expression')
+      this.dropRepeat(token.startsWith('{0}') || token.startsWith('{0,'))
+      return
+    }
+    this.repeat(token, '{')
+  }
+
+  // glibc's reading of an interval body from `start` (just past the `{`):
+  // the host quantifier and the index past the `}`, or null when the brace
+  // rolls back to a literal. Throws BreError for a body glibc refuses in
+  // every syntax.
+  private intervalBody(start: number): [string | null, number] {
+    let [low, i, term] = this.fetchNumber(start)
+    let high = -2
+    if (low === -1) {
+      if (term !== ',') throw new BreError(BAD_BRACE_CONTENT)
+      low = 0
+    }
+    if (low !== -2) {
+      if (term === '}') high = low
+      else if (term === ',') [high, i, term] = this.fetchNumber(i)
+    }
+    if (low === -2 || high === -2) {
+      if (this.syntax === PosixSyntax.EGREP) return [null, start]
+      throw new BreError(term === '' ? UNMATCHED_BRACE : BAD_BRACE_CONTENT)
+    }
+    if ((high !== -1 && low > high) || term !== '}') throw new BreError(BAD_BRACE_CONTENT)
+    if ((high === -1 ? low : high) > RE_DUP_MAX) throw new BreError(TOO_BIG)
+    if (high === -1) return [`{${String(low)},}`, i]
+    if (high === low) return [`{${String(low)}}`, i]
+    return [`{${String(low)},${String(high)}}`, i]
+  }
+
+  // glibc's `fetch_number`: digits up to a `}` or a `,`. Answers -1 when
+  // nothing precedes the terminator, -2 when something other than a digit
+  // does or the pattern ends first, else the value (capped just past
+  // RE_DUP_MAX); the index past the terminator; and the terminator, empty at
+  // the end of the pattern.
+  private fetchNumber(from: number): [number, number, string] {
+    let num = -1
+    let i = from
+    const src = this.src
+    for (;;) {
+      if (i >= src.length) return [-2, i, '']
+      const ch = src[i] ?? ''
+      if (ch === '\\') {
+        i += 2
+        num = -2
+        continue
+      }
+      i += 1
+      if (ch === '}' || ch === ',') return [num, i, ch]
+      if (num === -2 || ch < '0' || ch > '9') num = -2
+      else if (num === -1) num = Number(ch)
+      else num = Math.min(RE_DUP_MAX + 1, num * 10 + Number(ch))
+    }
   }
 
   // Scan one `[...]`, whose escaping rules are their own dialect. Inside a
@@ -459,6 +662,26 @@ export function translateBre(pattern: string, refuseInvertedRange = false): [str
 // because GNU matches with `re_match`, which is anchored at position 0 --
 // sticky gives that without rewriting the pattern, so a top-level `\|`
 // keeps meaning what it meant.
+/**
+ * Translate a POSIX ERE into this host's regex dialect: the same scanner as
+ * `translateBre`, reading the extended syntax. An escape means exactly what
+ * glibc says, so `\w \W \s \S \b \B \< \> \` \'` and back-references are
+ * GNU's operators and any other escaped character is that character -- `\d`
+ * is `d`, `\t` is `t` and `\x41` is `x41`, never the host's digit, tab or
+ * `A`. A `(?` is glibc's, not a host group: the `?` has nothing to repeat. An
+ * inverted range is refused, as `RE_NO_EMPTY_RANGES` does in both extended
+ * syntaxes. Answers the host source, its group count, and GNU grep's warnings
+ * (without the `grep: warning: ` prefix), which only `EGREP` produces.
+ */
+export function translateEre(
+  pattern: string,
+  syntax = PosixSyntax.EGREP,
+): [string, number, readonly string[]] {
+  const translator = new BreTranslator(pattern, true, syntax)
+  const [source, groups] = translator.translate()
+  return [source, groups, [...translator.warnings]]
+}
+
 export function compileBre(pattern: string): [RegExp, number] {
   const [source, groups] = translateBre(pattern)
   try {

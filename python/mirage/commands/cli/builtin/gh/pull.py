@@ -19,6 +19,7 @@ from mirage.commands.cli.builtin.gh.accessor import (body_value, camel,
                                                      json_fields, list_limit,
                                                      repo_for, repo_number,
                                                      text_out, typed_out)
+from mirage.commands.cli.builtin.gh.constants import DIFF_HEADER
 from mirage.commands.cli.builtin.gh.fields import (LOGIN, SHARED_FIELDS, Field,
                                                    Node, Pages, exported_node,
                                                    nodes, nodes_of, paged,
@@ -480,7 +481,20 @@ async def diff_cmd(
     fl = FlagView(inv.flags)
     ref, number = _target(inv, fl)
     value = await diff_pull(inv.config, ref, number)
+    if fl.as_bool("name_only"):
+        return text_out("".join(f"{name}\n" for name in _changed_names(value)))
     return text_out(value if value.endswith("\n") else f"{value}\n")
+
+
+def _changed_names(diff: str) -> list[str]:
+    """The files a diff changes, as ``gh pr diff --name-only`` reads them:
+    the ``b/`` side of each ``diff --git`` header, quotes and all.
+
+    Args:
+        diff (str): the unified diff.
+    """
+    return [(quote + name).strip()
+            for quote, name in DIFF_HEADER.findall(diff)]
 
 
 def _check(value: dict[str, Any]) -> dict[str, Any]:

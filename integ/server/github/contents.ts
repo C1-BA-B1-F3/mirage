@@ -15,33 +15,38 @@
 import type { JsonValue, KitRoute } from '../kit/typescript/index.ts'
 import { API_PREFIXES } from './config.ts'
 import type { C } from './config.ts'
-import {
-  blobSha,
-  commitFiles,
-  commitJson,
-  commitSha,
-  pathsOf,
-  personJson,
-  treeSha,
-  writtenCommitJson,
-} from './wire.ts'
+import { commitChanges } from './compare.ts'
+import { changeJson } from './diff.ts'
+import { blobSha, commitJson, commitSha, personJson, treeSha, writtenCommitJson } from './wire.ts'
 import type { GitPerson } from './wire.ts'
 import {
   blobBySha,
   branchFor,
-  commitList,
   directoriesOf,
+  keepRoot,
   keepTree,
   repoIsEmpty,
+  resolveRef,
   stageTree,
   submodulesOf,
+  treeAt,
   treeItems,
   treeOf,
   treeOfBranch,
   visibleHeadOf,
 } from './store.ts'
 import type { RepoRow, Tree } from './store.ts'
-import { authedRoute, everywhere, fail, jsonBodyOf, param, route, str, withRepo } from './http.ts'
+import {
+  authedRoute,
+  diffReply,
+  everywhere,
+  fail,
+  jsonBodyOf,
+  param,
+  route,
+  str,
+  withRepo,
+} from './http.ts'
 import type { C as Client } from './config.ts'
 import { stripSlash } from '../kit/typescript/index.ts'
 
@@ -116,7 +121,6 @@ export async function recordCommit(
   tenant: string,
   repo: RepoRow,
   message: string,
-  paths: string[],
   branch: string,
   tree = '',
   people: { author: GitPerson | null; committer: GitPerson | null } = {
@@ -157,7 +161,6 @@ export async function recordCommit(
       message,
       authorLogin: '',
       date: '',
-      filesJson: JSON.stringify(paths),
       treeSha: stored,
       authorJson,
       committerJson,
@@ -202,7 +205,6 @@ export async function writeFile(
     })
     return
   }
-  await keepTree(db, tenant, repo, branch)
   await db.githubFile.update({ where: { pk: existing.pk }, data: { data: bytes } })
 }
 
@@ -216,11 +218,12 @@ export async function writeFile(
 const contents = withRepo(async (ctx, repo) => {
   if (await repoIsEmpty(ctx.db, ctx.tenant, repo)) return fail(404, 'This repository is empty.')
   const ref = ctx.query.get('ref') ?? ''
-  const branch = await branchFor(ctx.db, ctx.tenant, repo, ref)
-  if (branch === null || (await visibleHeadOf(ctx.db, ctx.tenant, repo, branch)) === '') {
+  const at = await resolveRef(ctx.db, ctx.tenant, repo, ref)
+  const files =
+    at === null || at.history.length === 0 ? null : await treeAt(ctx.db, ctx.tenant, repo, at)
+  if (files === null) {
     return fail(404, `No commit found for the ref ${ref === '' ? repo.defaultBranch : ref}`)
   }
-  const files = await treeOfBranch(ctx.db, ctx.tenant, repo, branch)
   const path = stripSlash(param(ctx, 'path'))
   const hit = files.get(path)
   if (hit !== undefined) return { status: 200, body: fileJson(path, hit) }
@@ -264,6 +267,10 @@ const putContents = withRepo(async (ctx, repo) => {
   // this request arrived: a seeded branch's root, or none on an empty branch.
   // After the write the same question names a root the ref never reported.
   const parent = await visibleHeadOf(ctx.db, ctx.tenant, repo, branch)
+  // Kept for a new path as well as a replaced one: the first write to a
+  // seeded branch is what moves it off its synthesized root.
+  await keepRoot(ctx.db, ctx.tenant, repo, branch)
+  await keepTree(ctx.db, ctx.tenant, repo, branch)
   await writeFile(ctx.db, ctx.tenant, repo, branch, path, data)
   const message = str(body, 'message') === '' ? `Update ${path}` : str(body, 'message')
   const commit = await recordCommit(
@@ -271,7 +278,6 @@ const putContents = withRepo(async (ctx, repo) => {
     ctx.tenant,
     repo,
     message,
-    [path],
     branch,
     '',
     undefined,
@@ -298,6 +304,7 @@ const deleteContents = withRepo(async (ctx, repo) => {
     return fail(409, `${path} does not match`)
   }
   const parent = await visibleHeadOf(ctx.db, ctx.tenant, repo, branch)
+  await keepRoot(ctx.db, ctx.tenant, repo, branch)
   await keepTree(ctx.db, ctx.tenant, repo, branch)
   await ctx.db.githubFile.delete({ where: { pk: row.pk } })
   const message = str(body, 'message') === '' ? `Delete ${path}` : str(body, 'message')
@@ -306,7 +313,6 @@ const deleteContents = withRepo(async (ctx, repo) => {
     ctx.tenant,
     repo,
     message,
-    [path],
     branch,
     '',
     undefined,
@@ -333,26 +339,32 @@ const readme = withRepo(async (ctx, repo) => {
 // Emptiness comes first here too, so every ref gets the 409 in an empty
 // repository. Past that, a ref that names no commit is a 422 quoting the ref
 // as it was asked, whether it looks like a sha or like a branch: the vendor
-// says "SHA" either way.
+// says "SHA" either way. A branch names its head and a sha, full or
+// abbreviated, its own commit.
 const oneCommit = withRepo(async (ctx, repo) => {
   if (await repoIsEmpty(ctx.db, ctx.tenant, repo)) return fail(409, 'Git Repository is empty.')
   const ref = param(ctx, 'ref')
-  const branch = await branchFor(ctx.db, ctx.tenant, repo, ref)
-  const history = branch === null ? [] : await commitList(ctx.db, ctx.tenant, repo, branch)
-  const rendered: Array<Record<string, JsonValue>> = history.map((entry) => ({
-    ...(commitJson(entry) as Record<string, JsonValue>),
-    files: commitFiles(pathsOf(entry)),
-  }))
-  // A sha names its own commit; any other spelling branchFor resolves (bare,
-  // HEAD, refs/heads/...) names the head.
-  const hit = rendered.find((entry) => entry.sha === ref) ?? rendered[0]
+  const history = (await resolveRef(ctx.db, ctx.tenant, repo, ref))?.history ?? []
+  const [hit, parent] = history
   if (hit === undefined) return fail(422, `No commit found for SHA: ${ref}`)
-  return { status: 200, body: hit }
+  const changes = await commitChanges(ctx.db, ctx.tenant, repo, history)
+  const diff = diffReply(ctx, changes)
+  if (diff !== null) return diff
+  const additions = changes.reduce((n, c) => n + c.additions, 0)
+  const deletions = changes.reduce((n, c) => n + c.deletions, 0)
+  return {
+    status: 200,
+    body: {
+      ...(commitJson(hit) as Record<string, JsonValue>),
+      stats: { total: additions + deletions, additions, deletions },
+      files: changes.map((c) => changeJson(repo.fullName, c, parent?.sha ?? '', hit.sha)),
+    },
+  }
 })
 
 // The backend passes either a ref name (a recursive whole-tree fetch) or a tree
 // sha from a previous listing (the truncation fallback). A ref is resolved
-// through `branchFor`, which accepts a commit sha too, because a client that
+// through `resolveRef`, which accepts a commit sha too, because a client that
 // resolves a ref to a commit then asks for the tree by that sha: git accepts
 // it, since a commit names its root tree.
 //

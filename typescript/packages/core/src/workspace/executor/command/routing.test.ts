@@ -20,7 +20,36 @@ import { OpsRegistry } from '../../../ops/registry.ts'
 import { RAMVFS } from '../../../vfs/ram/ram.ts'
 import { MountMode, PathSpec } from '../../../types.ts'
 import { Workspace } from '../../workspace/workspace.ts'
-import { defaultCwdOperand, pathFlagScopes, programTokens } from './routing.ts'
+import { getTestParser } from '../../fixtures/workspace_fixture.ts'
+import { runResult } from '../../fixtures/integration_fixture.ts'
+import { defaultCwdOperand, pathFlagScopes, programTokens, routableScopes } from './routing.ts'
+
+describe('routableScopes', () => {
+  it('drops awk assignment operands', () => {
+    const a = new PathSpec({ virtual: '/m/a', directory: '/m', vfsPath: '', rawPath: '/m/a' })
+    const assign = new PathSpec({ virtual: '/x=1', directory: '/', vfsPath: '', rawPath: 'x=1' })
+    const b = new PathSpec({ virtual: '/m/b', directory: '/m', vfsPath: '', rawPath: '/m/b' })
+    expect(routableScopes('awk', [a, assign, b]).map((p) => p.virtual)).toEqual(['/m/a', '/m/b'])
+    expect(routableScopes('cat', [a, assign, b])).toEqual([a, assign, b])
+  })
+
+  it('keeps an awk line with an assignment operand on one mount', async () => {
+    const ws = new Workspace(
+      { '/data': new RAMVFS() },
+      { mode: MountMode.WRITE, shellParser: await getTestParser() },
+    )
+    try {
+      await runResult(ws, "printf '1\\n' > /data/a; printf '2\\n' > /data/b")
+      expect(await runResult(ws, "awk '{print x, $0}' /data/a x=5 /data/b")).toEqual([
+        0,
+        ' 1\n5 2\n',
+        '',
+      ])
+    } finally {
+      await ws.close()
+    }
+  })
+})
 
 describe('pathFlagScopes', () => {
   it.each([

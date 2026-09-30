@@ -32,8 +32,14 @@ SPECS: dict[str, CommandSpec] = {
             Option(short="-F"),
             Option(short="-E"),
             # -G asks for the basic expressions grep already reads by
-            # default, so it is accepted and changes nothing.
+            # default; with -E, -F and -P it is one of the four matchers,
+            # two different ones being refused.
             Option(short="-G"),
+            Option(short="-P", long="--perl-regexp"),
+            # -E's and -G's long spellings, one option to GNU; mirage keeps
+            # the short dests the matcher check reads next to these.
+            Option(long="--extended-regexp"),
+            Option(long="--basic-regexp"),
             Option(short="-o"),
             Option(short="-q"),
             Option(short="-H"),
@@ -195,7 +201,9 @@ SPECS: dict[str, CommandSpec] = {
             Option(long="--no-crlf"),
             Option(long="--no-multiline"),
             Option(long="--no-multiline-dotall"),
+            Option(short="-P", long="--pcre2"),
             Option(long="--no-pcre2"),
+            Option(long="--engine", type="str"),
             Option(long="--no-json"),
             Option(long="--no-search-zip"),
             Option(long="--no-encoding"),
@@ -214,12 +222,14 @@ SPECS: dict[str, CommandSpec] = {
                             provided_by=("-e", "-f", "--files",
                                          "--type-list")), ),
         rest=Operand(type="path"),
+        # ripgrep's parser (lexopt) takes a long flag only as spelled.
+        allow_abbrev=False,
     ),
     'sed':
     CommandSpec(
         options=(
             Option(short="-i"),
-            # -e takes a script and may repeat; joined with newlines.
+            # -e takes a script and may repeat; the pieces compile in order.
             Option(short="-e", type="str", multiple=True),
             # -f reads the script from a file and may repeat (like grep -f);
             # its value is a PATH so it routes and is read from the mount.
@@ -227,6 +237,10 @@ SPECS: dict[str, CommandSpec] = {
             Option(short="-n"),
             Option(short="-E"),
             Option(short="-r"),
+            # -l N sets the `l` command's line length (GNU atoi: 0 never
+            # folds).
+            Option(short="-l", long="--line-length", type="str"),
+            Option(short="-s", long="--separate"),
         ),
         # provided_by lists the flags that can supply this positional slot's
         # value; when any is present the parser skips the slot so the next
@@ -275,8 +289,9 @@ SPECS: dict[str, CommandSpec] = {
                    long="--exit-status",
                    description="Set the exit status from the last output"),
             Option(long="--tab", description="Indent with tabs"),
+            # jq words its own refusal of a width it cannot read.
             Option(long="--indent",
-                   type="int",
+                   type="str",
                    description="Indent with n spaces (max 7)"),
             Option(short="-M",
                    long="--monochrome-output",
@@ -357,6 +372,7 @@ SPECS: dict[str, CommandSpec] = {
             Option(short="-E"),
             Option(short="-G"),
             Option(short="-F"),
+            Option(short="-P"),
             Option(short="-H"),
             Option(short="-h"),
             Option(short="-m", type="str"),

@@ -121,6 +121,7 @@ export async function handleRedirect(
   session: SessionState,
   stdin: ByteSource | null = null,
   callStack: CallStack | null = null,
+  captureInput = false,
 ): Promise<Result> {
   const badFd = unsupportedDescriptor(redirects)
   for (const r of redirects) {
@@ -234,7 +235,9 @@ export async function handleRedirect(
   let io: IOResult
   let refused = false
   if (command === null) {
-    stdoutData = new Uint8Array()
+    const source = inputs[0]
+    stdoutData =
+      captureInput && source !== UNREADABLE ? await materialize(source) : new Uint8Array()
     stderrData = new Uint8Array()
     io = new IOResult({ exitCode: 0 })
   } else {

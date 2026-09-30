@@ -293,6 +293,7 @@ export interface CommandSpecInit {
   epilog?: string | null
   oldOptionStyle?: boolean
   operandBase?: string | null
+  allowAbbrev?: boolean
 }
 
 export class CommandSpec {
@@ -314,6 +315,12 @@ export class CommandSpec {
   // every other path-valued flag keeps resolving against the session
   // cwd, which is what GNU does with -f.
   readonly operandBase: string | null
+  // argparse's `allow_abbrev`: whether an unambiguous prefix of a long
+  // option stands for it. getopt_long and argparse both expand one by
+  // default; clap and lexopt (ripgrep) do not, so a program parsed with
+  // either declares false and `--pcr` is refused rather than read as
+  // `--pcre2-unicode`.
+  readonly allowAbbrev: boolean
   // python3's rule: parse options strictly until the first operand,
   // then take every remaining word verbatim. An interpreter needs both
   // halves at once -- an unknown flag before the script is a usage
@@ -330,6 +337,7 @@ export class CommandSpec {
     this.epilog = init.epilog ?? null
     this.oldOptionStyle = init.oldOptionStyle ?? false
     this.operandBase = init.operandBase ?? null
+    this.allowAbbrev = init.allowAbbrev ?? true
     // A subclass (CLISpec) still has its own fields to assign, so only
     // freeze here when constructed directly; subclasses freeze themselves.
     if (new.target === CommandSpec) Object.freeze(this)

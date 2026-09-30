@@ -1,7 +1,14 @@
 import pytest
 
 from mirage.commands.builtin.grep_pattern import (NEVER_MATCH, compile_pattern,
-                                                  merge_pattern_list)
+                                                  matcher_syntax,
+                                                  merge_pattern_list,
+                                                  pattern_warnings,
+                                                  rust_escape)
+from mirage.commands.builtin.types import RegexSyntax
+from mirage.commands.errors import UsageError
+from mirage.commands.spec import SPECS
+from mirage.commands.spec.flag_view import FlagView
 
 
 def test_single_pattern_keeps_regex_semantics():
@@ -119,13 +126,83 @@ def test_ascii_semantics_for_word_boundaries_and_case_folding(
     pat = compile_pattern(pattern,
                           ignore_case=ignore_case,
                           whole_word=whole_word,
-                          basic=True)
+                          syntax=RegexSyntax.BASIC)
     assert bool(pat.search(subject)) is selected
 
 
 def test_word_class_stays_ascii_in_an_extended_expression():
     # -E takes the same compile, so `\w` must not grow a Unicode meaning
     # there either.
-    pat = compile_pattern(r"\w", basic=False)
+    pat = compile_pattern(r"\w", syntax=RegexSyntax.EXTENDED)
     assert not pat.search("é")
     assert pat.search("a")
+
+
+# GNU grep 3.11: one matcher, and two different ones are refused.
+@pytest.mark.parametrize("flags,syntax", [
+    ({}, RegexSyntax.BASIC),
+    ({
+        "G": True
+    }, RegexSyntax.BASIC),
+    ({
+        "E": True
+    }, RegexSyntax.EXTENDED),
+    ({
+        "perl_regexp": True
+    }, RegexSyntax.PERL),
+    ({
+        "F": True
+    }, RegexSyntax.BASIC),
+])
+def test_matcher_syntax(flags, syntax):
+    assert matcher_syntax(FlagView(flags, spec=SPECS["grep"])) is syntax
+
+
+@pytest.mark.parametrize("flags", [{
+    "E": True,
+    "perl_regexp": True
+}, {
+    "F": True,
+    "perl_regexp": True
+}, {
+    "G": True,
+    "perl_regexp": True
+}, {
+    "E": True,
+    "F": True
+}])
+def test_two_matchers_conflict(flags):
+    with pytest.raises(UsageError) as caught:
+        matcher_syntax(FlagView(flags, spec=SPECS["grep"]))
+    assert str(caught.value) == "grep: conflicting matchers specified"
+
+
+def test_only_an_extended_expression_warns():
+    assert pattern_warnings(
+        "*a\n?b",
+        RegexSyntax.EXTENDED) == (b"grep: warning: * at start of expression\n"
+                                  b"grep: warning: ? at start of expression\n")
+    assert pattern_warnings("*a", RegexSyntax.BASIC) == b""
+
+
+def test_perl_takes_one_pattern():
+    with pytest.raises(UsageError) as caught:
+        compile_pattern("a\nb", syntax=RegexSyntax.PERL)
+    assert str(caught.value) == ("grep: the -P option only supports a "
+                                 "single pattern")
+    assert compile_pattern(r"\d+", syntax=RegexSyntax.PERL).search("x45")
+    word = compile_pattern("a", whole_word=True, syntax=RegexSyntax.PERL)
+    assert not word.search("ab")
+    assert word.search("a b")
+
+
+def test_perl_refusals_are_pcre2s():
+    with pytest.raises(UsageError) as caught:
+        compile_pattern("(", syntax=RegexSyntax.PERL)
+    assert str(caught.value) == "grep: missing closing parenthesis"
+
+
+def test_rust_escape_is_regex_escape():
+    assert rust_escape("a.b-c~d") == "a\\.b\\-c\\~d"
+    assert compile_pattern("a.b", fixed_string=True,
+                           syntax=RegexSyntax.RUST).search("a.b")

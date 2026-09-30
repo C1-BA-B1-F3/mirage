@@ -18,8 +18,6 @@ from mirage.types import PathSpec
 
 USAGE = "awk: usage: awk [-F fs] [-v var=val] 'program' [file ...]"
 
-FS_ESCAPES = {"t": "\t", "n": "\n", "\\": "\\"}
-
 
 @dataclass(frozen=True, slots=True)
 class AwkFlags:
@@ -30,6 +28,5 @@ class AwkFlags:
 
 __all__ = [
     "AwkFlags",
-    "FS_ESCAPES",
     "USAGE",
 ]

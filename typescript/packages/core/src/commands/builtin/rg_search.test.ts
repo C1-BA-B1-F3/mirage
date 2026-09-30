@@ -24,7 +24,6 @@ import {
   NonmatchStop,
   type RgFlags,
   expand,
-  hostNamedGroups,
   replaceAll,
   rustMatches,
   searchHaystack,
@@ -87,9 +86,10 @@ describe('expand', () => {
     ['<$>', '<$>'],
     ['<$9>', '<>'],
   ])("reads %s as Rust's Captures::expand", (template, want) => {
-    const m = /a(?<name>b)/.exec('ab')
+    const re = /a(?<name>b)/
+    const m = re.exec('ab')
     expect(m).not.toBeNull()
-    if (m !== null) expect(expand(template, m)).toBe(want)
+    if (m !== null) expect(expand(template, m, re)).toBe(want)
   })
 })
 
@@ -117,18 +117,6 @@ describe('smartCaseFolds', () => {
     ['H.llo', true, false],
   ])('%s (fixed %s) folds: %s', (pattern, fixed, folds) => {
     expect(smartCaseFolds(pattern, fixed)).toBe(folds)
-  })
-})
-
-describe('hostNamedGroups', () => {
-  it.each([
-    ['(?P<name>x)', '(?<name>x)'],
-    ['(?<name>x)', '(?<name>x)'],
-    ['(?<=a)b', '(?<=a)b'],
-    ['\\(?P<x', '\\(?P<x'],
-    ['[(?P<]x', '[(?P<]x'],
-  ])('reads %s as %s', (pattern, host) => {
-    expect(hostNamedGroups(pattern)).toBe(host)
   })
 })
 
@@ -326,4 +314,38 @@ it.each([
     }
     expect(await search(data, pattern, opts)).toBe(expected)
   }
+})
+
+// ripgrep 14.1.1 through PCRE2: `rg -oP`, `-r`, `-b` and `--column` report
+// the match from its last `\\K`. Mirrors `test_rg_search.py`.
+describe('PCRE2 keep', () => {
+  it.each([
+    ['a\\Ka', 'aaa\n', { only_matching: true, pcre2: true }, 'a\n'],
+    ['a\\Kbc', 'abc\n', { only_matching: true, byte_offset: true, pcre2: true }, '1:bc\n'],
+    ['a\\Kbc', 'abc\n', { column: true, pcre2: true }, '1:2:abc\n'],
+    ['a\\Kb', 'abc\n', { replace: 'X', pcre2: true }, 'aXc\n'],
+    ['a\\K(b)', 'abc\n', { replace: '[$1]', pcre2: true }, 'a[b]c\n'],
+    ['(?<=id=)[0-9]+', 'id=42\n', { only_matching: true, pcre2: true }, '42\n'],
+  ] as [string, string, Record<string, FlagValue>, string][])(
+    '%j over %j',
+    async (pattern, data, flags, out) => {
+      expect(await search(data, pattern, flags)).toBe(out)
+    },
+  )
+
+  it('takes the engine the line names last', () => {
+    expect(flagsOf({}).engine).toBe('default')
+    expect(flagsOf({ pcre2: true }).engine).toBe('pcre2')
+    expect(flagsOf({ engine: 'auto' }).engine).toBe('auto')
+    expect(() => flagsOf({ engine: 'foo' })).toThrow(
+      "rg: error parsing flag --engine: unrecognized regex engine 'foo'",
+    )
+  })
+
+  it('falls back to PCRE2 under auto only when the default refuses', () => {
+    expect(rgMatcher('(a)\\1', false, flagsOf({ engine: 'auto' })).test('aa')).toBe(true)
+    expect(() => rgMatcher('(a)\\1', false, flagsOf({}))).toThrow(
+      /backreferences are not supported/,
+    )
+  })
 })

@@ -687,6 +687,7 @@ class MountEntry:
                 readdir_path=context.readdir_path,
                 session_view=context.session_view,
                 processes=context.processes,
+                shell=context.shell,
                 argv=context.argv,
             )
 

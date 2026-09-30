@@ -269,7 +269,7 @@
       "expect": {
         "exit": 1,
         "stdout": "",
-        "stderr": "sed: expected \\ after `a', `c' or `i'\n"
+        "stderr": "sed: -e expression #1, char 1: expected \\ after `a', `c' or `i'\n"
       }
     },
     {
@@ -303,7 +303,7 @@
       "expect": {
         "exit": 1,
         "stdout": "",
-        "stderr": "sed: unmatched `{'\n"
+        "stderr": "sed: -e expression #1, char 0: unmatched `{'\n"
       }
     },
     {

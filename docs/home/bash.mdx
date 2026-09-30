@@ -157,6 +157,25 @@ jq -c '[.name, .age]' /data/user.json
 ["alice",30]
 ```
 
+Numbers and keys print the way jq prints them. libjq is handed each
+document as the text it was read from, so jq's own parser reads it, and each
+output comes back as jq's own dump of it. A number keeps its literal, and an
+object keeps its key order, on both hosts. A number the program computes
+takes jq's spelling.
+
+```bash
+printf '1.000 1e2 -0 100000000000000000001 {"b":1,"1":2}' | jq -c .
+1.000
+1E+2
+-0
+100000000000000000001
+{"b":1,"1":2}
+
+printf '1e17 0.00001' | jq -c '. + 0'
+1e+17
+1e-05
+```
+
 ### Flags
 
 | Reading input | |
@@ -177,11 +196,11 @@ jq -c '[.name, .age]' /data/user.json
 | --- | --- |
 | `-r`, `--raw-output` | print string outputs unquoted |
 | `-j`, `--join-output` | `-r` with no separator |
-| `--raw-output0` | `-r` with a NUL after each output |
+| `--raw-output0` | `-r` with a NUL after each output; a string holding a NUL fails its run, as in jq |
 | `-c`, `--compact-output` | one line per output |
 | `-a`, `--ascii-output` | escape non-ASCII (and keep strings quoted, as jq does) |
 | `-S`, `--sort-keys` | sort object keys |
-| `--tab`, `--indent n` | indent width (`--indent -1` is a tab) |
+| `--tab`, `--indent n` | indent with a tab, or with n spaces up to 7 (`--indent -1` is a tab; `--indent 0` breaks the lines without indenting, as jq 1.8.2 does); the last of `-c`, `--tab` and `--indent` wins, as in jq |
 | `-e`, `--exit-status` | exit 1 when the last output is `false`/`null`, 4 when there was none (see [Errors](#errors)) |
 | `-M`, `--monochrome-output`, `--unbuffered` | accepted; already how mirage writes |
 
@@ -288,16 +307,11 @@ reads the clock again and which the program's own error handling can defeat:
 a halt whose message or choice rests on `now` reports what the rerun read, a
 halt inside a `try` inside a collector (`[try halt_error(2) catch .]`)
 reports status 5 with no message, and a halt that a `try ... catch empty`
-swallows can report the message and code of a later halt instead. Numbers
-print from the values the evaluator hands back, so jq's own spellings are not
-kept: where jq prints `1.000`, `1E+2`, `-0` and all 21 digits of
-`100000000000000000001` as they came in, mirage prints `1`, `100`, `0` and
-the nearest double. On the TypeScript host an object lists keys that read as
-array indices first (`{"b":1,"1":2}` prints as `{"1":2,"b":1}`). Under
-`--stream`, input nested more than 10,000 levels deep is refused with
-`Exceeds depth limit for parsing`, the limit jq's ordinary parser has. jq's
-streaming parser has no limit, but every event carries a copy of its path,
-so input nested n deep costs time in n squared.
+swallows can report the message and code of a later halt instead.
+Under `--stream`, input nested more than 10,000 levels deep is refused
+with `Exceeds depth limit for parsing`, the limit jq's ordinary parser
+has. jq's streaming parser has no limit, but every event carries a copy
+of its path, so input nested n deep costs time in n squared.
 
 Not implemented, and reported as an unknown option rather than quietly
 ignored: `-C` (colorized output, which an agent would only have to strip

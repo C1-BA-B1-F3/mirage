@@ -25,14 +25,14 @@ import { specOf } from '../../spec/builtins.ts'
 import { FlagView } from '../../spec/flag_view.ts'
 
 import { grepGeneric } from '../generic/grep.ts'
-import { foldsCase, parseFlags as parseRgFlags, rgGeneric } from '../generic/rg.ts'
+import { foldsCase, parseFlags as parseRgFlags, rgGeneric, rgSyntax } from '../generic/rg.ts'
 import {
   grepSearchMeta,
   textSearchResults,
   literalPushdownOperand,
   pushdownOperand,
 } from '../grep_pushdown.ts'
-import { PATTERN_KEYS, patternArg } from '../grep_pattern.ts'
+import { PATTERN_KEYS, matcherSyntax, patternArg } from '../grep_pattern.ts'
 import { formatRecords } from '../utils/output.ts'
 import { resolveGlobOf, type CommandIO } from './adapter.ts'
 
@@ -90,21 +90,21 @@ export function searchOptions(
   name: 'grep' | 'rg',
   fl: FlagView,
   pattern: string,
-): Record<string, boolean> {
+): Record<string, boolean | string> {
   if (name === 'rg') {
     const f = parseRgFlags(fl)
     return {
       ignore_case: foldsCase(pattern, f.fixedString, f),
       fixed_string: f.fixedString,
       whole_word: f.wholeWord,
-      basic: false,
+      syntax: rgSyntax(f),
     }
   }
   return {
     ignore_case: fl.asBool('i'),
     fixed_string: fl.asBool('F'),
     whole_word: fl.asBool('w'),
-    basic: !fl.asBool('E'),
+    syntax: matcherSyntax(fl),
   }
 }
 

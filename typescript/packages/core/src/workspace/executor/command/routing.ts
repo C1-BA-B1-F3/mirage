@@ -22,6 +22,7 @@ import { DeviceInput, type ByteSource } from '../../../io/types.ts'
 import { PathSpec } from '../../../types.ts'
 import { type MountRegistry } from '../../mount/registry.ts'
 import { classifyBarePath } from '../../expand/classify/index.ts'
+import { splitAssignment } from '../../../core/awk/builtins.ts'
 
 // Commands a bare invocation points at the working directory, mapped to
 // the typed spelling their synthetic operand carries. GNU find/tree/du/
@@ -182,6 +183,17 @@ export function routedOperands(
 ): PathSpec[] {
   if (!(cmdName in DOOR_FLAG_KEYS)) return pathScopes
   return positionalScopes(cmdName, argv, cwd, words)
+}
+
+/**
+ * Drop the operands that name no path from a line's routing words. An awk
+ * `var=value` operand is an assignment awk makes when its input reaches
+ * it, so it routes nowhere: `awk p /data/a x=1 /data/b` runs on /data like
+ * the same line without it.
+ */
+export function routableScopes(cmdName: string, scopes: PathSpec[]): PathSpec[] {
+  if (cmdName !== 'awk') return scopes
+  return scopes.filter((s) => splitAssignment(s.rawPath) === null)
 }
 
 /** Combine positional and path-flag scopes, keeping operand order. */

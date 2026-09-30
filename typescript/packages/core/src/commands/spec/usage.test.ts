@@ -28,6 +28,8 @@ import {
   oldOptionError,
   unexpectedValueError,
   unknownOptionError,
+  rgUnknownFlag,
+  similarRgFlags,
   readFailExitCode,
   readFailExitCodeFromLine,
   usageExitCode,
@@ -493,5 +495,47 @@ describe('missingOperandError', () => {
   ] as const)('matches GNU for %s %s %j', (cmd, last, argv, line, prefixed, code) => {
     const err = missingOperandError(cmd, last, argv)
     expect([err.message, err.exitCode]).toEqual([`${line}\n${hint(cmd, prefixed)}`, code])
+  })
+})
+
+// ripgrep 14.1.1's refusals: no usage hint, and the similar flags its own
+// table holds. Mirrors `test_usage.py`.
+describe('rgUnknownFlag', () => {
+  it.each([
+    ['--pcr', 'rg: unrecognized flag --pcr\n'],
+    ['--pcr=x', 'rg: unrecognized flag --pcr\n'],
+    ['y', 'rg: unrecognized flag -y\n'],
+    ['--pcre', 'rg: unrecognized flag --pcre\n\nsimilar flags that are available: --pcre2\n'],
+    [
+      '--no-pcr',
+      'rg: unrecognized flag --no-pcr\n\nsimilar flags that are available: --no-pcre2\n',
+    ],
+    [
+      '--colo',
+      'rg: unrecognized flag --colo\n\nsimilar flags that are available: --color, --colors\n',
+    ],
+    [
+      '--ignore-cas',
+      'rg: unrecognized flag --ignore-cas\n\nsimilar flags that are available: --ignore-case, ' +
+        '--ignore-file, --ignore, --ignore-dot, --ignore-vcs\n',
+    ],
+    [
+      '--context-sep',
+      'rg: unrecognized flag --context-sep\n\nsimilar flags that are available: --context, ' +
+        '--context-separator, --no-context-separator, --field-context-separator\n',
+    ],
+    [
+      '--heading-x',
+      'rg: unrecognized flag --heading-x\n\nsimilar flags that are available: --heading, --no-heading\n',
+    ],
+  ])('refuses %j in ripgrep words', (token, stderr) => {
+    const want: [Uint8Array, number] = [new TextEncoder().encode(stderr), 2]
+    expect(unknownOptionError('rg', token)).toEqual(want)
+    expect(rgUnknownFlag(token)).toEqual(want)
+  })
+
+  it("keeps ripgrep's order", () => {
+    expect(similarRgFlags('colo')).toEqual(['color', 'colors'])
+    expect(similarRgFlags('pcr')).toEqual([])
   })
 })

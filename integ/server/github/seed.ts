@@ -15,10 +15,11 @@
 import { readFileSync, readdirSync, statSync } from 'node:fs'
 import { join, relative, sep } from 'node:path'
 
+import { SeedError } from '../kit/typescript/index.ts'
 import type { JsonValue } from '../kit/typescript/index.ts'
 import type { C } from './config.ts'
-import { commitSha } from './wire.ts'
-import { addBranch, allRepos } from './store.ts'
+import { workflowsOf } from './actions.ts'
+import { addBranch, allRepos, resolveRef } from './store.ts'
 import type { RepoRow } from './store.ts'
 
 // A fixture root file naming submodule gitlink paths, one per line. It is a
@@ -36,118 +37,6 @@ function walkFiles(root: string): string[] {
   }
   visit(root)
   return out.sort()
-}
-
-// The per-repository collections a fresh fake starts with. They were literals
-// in the python FakeRepo's constructor, so they are the same for every
-// repository and no fixture states them; stating them here keeps them one
-// declaration rather than one per fixture.
-interface WorkflowSeed {
-  id: number
-  name: string
-  path: string
-  state: string
-}
-
-interface CheckSeed {
-  id: number
-  name: string
-  status: string
-  conclusion: string
-  startedAt: string
-  completedAt: string
-  detailsUrl: string
-  summary: string
-}
-
-interface StatusSeed {
-  context: string
-  state: string
-  targetUrl: string
-  description: string
-  createdAt: string
-  updatedAt: string
-}
-
-interface RunSeed {
-  id: number
-  name: string
-  displayTitle: string
-  workflowId: number
-  runNumber: number
-  runAttempt: number
-  event: string
-  headBranch: string
-  headSha: string
-  status: string
-  conclusion: string
-  createdAt: string
-  updatedAt: string
-  runStartedAt: string
-}
-
-function defaultWorkflows(): WorkflowSeed[] {
-  return [
-    { id: 102, name: 'Archive', path: '.github/workflows/archive.yml', state: 'disabled_manually' },
-    { id: 101, name: 'CI', path: '.github/workflows/ci.yml', state: 'active' },
-  ]
-}
-
-function defaultChecks(): CheckSeed[] {
-  return [
-    {
-      id: 301,
-      name: 'test',
-      status: 'completed',
-      conclusion: 'success',
-      startedAt: '2026-01-01T00:00:00Z',
-      completedAt: '2026-01-01T00:01:00Z',
-      detailsUrl: 'https://example.test/check/301',
-      summary: 'All checks passed',
-    },
-    {
-      id: 302,
-      name: 'flaky',
-      status: 'completed',
-      conclusion: 'cancelled',
-      startedAt: '2026-01-01T00:00:00Z',
-      completedAt: '2026-01-01T00:02:00Z',
-      detailsUrl: 'https://example.test/check/302',
-      summary: 'Cancelled by a newer run',
-    },
-  ]
-}
-
-function defaultStatuses(): StatusSeed[] {
-  return [
-    {
-      context: 'ci/legacy',
-      state: 'success',
-      targetUrl: 'https://example.test/status/legacy',
-      description: 'Legacy status passed',
-      createdAt: '2026-01-01T00:00:00Z',
-      updatedAt: '2026-01-01T00:01:30Z',
-    },
-  ]
-}
-
-function defaultRun(repo: RepoRow): RunSeed {
-  return {
-    id: 201,
-    name: 'CI',
-    displayTitle: 'Initial checks',
-    workflowId: 101,
-    runNumber: 1,
-    runAttempt: 1,
-    event: 'push',
-    headBranch: repo.defaultBranch,
-    headSha: commitSha('initial-run'),
-    status: 'completed',
-    conclusion: 'success',
-    createdAt: '2026-01-01T00:00:00Z',
-    updatedAt: '2026-01-01T00:01:00Z',
-    runStartedAt: '2026-01-01T00:00:05Z',
-  }
 }
 
 // Two models, so two counts. Returning one total made /reset publish the sum
@@ -190,49 +79,25 @@ async function loadTree(
   return { files: seq, submodules: subs }
 }
 
-// Everything a repository has the moment it exists, in ONE place. The python
-// FakeRepo constructor ran for every repository however it came about, so a
-// repository created through POST /user/repos or forked had the same default
-// workflows, checks, statuses and run as a seeded one. Doing this only during
-// seeding left a fresh fork answering the action endpoints empty and 404ing a
-// dispatch. Every creation path calls this, and a new piece of per-repository
-// state is added here rather than at three call sites.
-export async function initRepo(
-  db: C,
-  tenant: string,
-  repo: RepoRow,
-  counts?: Record<string, number>,
-): Promise<void> {
-  const bump = (model: string, n: number): void => {
-    if (counts !== undefined) counts[model] = (counts[model] ?? 0) + n
-  }
+// Everything a repository has the moment it exists, in ONE place: its default
+// branch. Every creation path calls this, and a new piece of per-repository
+// state is added here rather than at three call sites. Its CI state is not
+// among it: a check or a status belongs to the commit it was set on, so a
+// fixture states the ones a repository's commits carry, and a repository made
+// through the API starts with none, as on GitHub. Workflows follow the files,
+// so a fork has its source's and a new repository has none until it holds a
+// workflow file.
+export async function initRepo(db: C, tenant: string, repo: RepoRow): Promise<void> {
   await addBranch(db, tenant, repo.fullName, repo.defaultBranch)
-  let seq = 0
-  for (const row of defaultWorkflows()) {
-    await db.githubWorkflow.create({ data: { tenant, repo: repo.fullName, ...row, seq } })
-    seq += 1
-  }
-  bump('GithubWorkflow', defaultWorkflows().length)
-  seq = 0
-  for (const row of defaultChecks()) {
-    await db.githubCheck.create({ data: { tenant, repo: repo.fullName, ...row, seq } })
-    seq += 1
-  }
-  bump('GithubCheck', defaultChecks().length)
-  seq = 0
-  for (const row of defaultStatuses()) {
-    await db.githubStatus.create({ data: { tenant, repo: repo.fullName, ...row, seq } })
-    seq += 1
-  }
-  bump('GithubStatus', defaultStatuses().length)
-  await db.githubRun.create({ data: { tenant, repo: repo.fullName, ...defaultRun(repo), seq: 0 } })
-  bump('GithubRun', 1)
 }
 
 // What a fixture cannot state: a repository's 120 files come from the directory
 // its row names, and every repository starts with the state initRepo gives it.
 // Both are counted into the /reset report, because a table no fixture key names
-// would otherwise read back as empty.
+// would otherwise read back as empty. Each repository's workflow files are
+// registered here too, after every fixture row: a row the fixture states keeps
+// its id, and the rest take theirs in repository and path order, the same on
+// every reset rather than in whatever order requests first list them.
 export async function seedRepos(
   db: C,
   tenant: string,
@@ -242,17 +107,47 @@ export async function seedRepos(
 ): Promise<void> {
   let files = 0
   let submodules = 0
-  for (const repo of await allRepos(db, tenant)) {
-    await initRepo(db, tenant, repo, counts)
+  const repos = await allRepos(db, tenant)
+  for (const repo of repos) {
+    await initRepo(db, tenant, repo)
     const loaded = await loadTree(db, tenant, repo, fixtureRoot)
     files += loaded.files
     submodules += loaded.submodules
   }
+  for (const repo of repos) await workflowsOf(db, tenant, repo)
+  await namedCommitsExist(db, tenant, repos)
   if (files > 0) counts.GithubFile = files
   if (submodules > 0) counts.GithubSubmodule = submodules
+  const workflows = await db.githubWorkflow.count({ where: { tenant } })
+  if (workflows > 0) counts.GithubWorkflow = workflows
   const sorted = Object.entries(counts).sort(([a], [b]) => (a < b ? -1 : 1))
   for (const key of Object.keys(counts)) delete counts[key]
   for (const [key, value] of sorted) counts[key] = value
+}
+
+// A run, a check, a status or a tag a fixture states names a commit its
+// repository holds, or the fixture is refused at /reset: a sha that names
+// nothing reads back as CI state no commit carries, which is how a fixture's
+// shas went stale once its tree changed.
+async function namedCommitsExist(db: C, tenant: string, repos: RepoRow[]): Promise<void> {
+  for (const repo of repos) {
+    const where = { tenant, repo: repo.fullName }
+    const named: Array<[string, string]> = [
+      ...(await db.githubRun.findMany({ where })).map((r): [string, string] => ['run', r.headSha]),
+      ...(await db.githubCheck.findMany({ where })).map((r): [string, string] => ['check', r.sha]),
+      ...(await db.githubStatus.findMany({ where })).map((r): [string, string] => [
+        'status',
+        r.sha,
+      ]),
+      ...(await db.githubTagRef.findMany({ where })).map((r): [string, string] => ['tag', r.sha]),
+    ]
+    for (const [kind, sha] of named) {
+      const at = await resolveRef(db, tenant, repo, sha)
+      if (at?.history[0]?.sha !== sha) {
+        throw new SeedError(`github fixture: ${repo.fullName} ${kind} names no commit ${sha}`)
+      }
+    }
+  }
 }
 
 export async function createReposAllowed(db: C, tenant: string): Promise<boolean> {

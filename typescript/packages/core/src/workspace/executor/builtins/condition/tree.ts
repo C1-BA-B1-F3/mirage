@@ -12,7 +12,8 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import { translateClasses } from '../../../../utils/posix.ts'
+import { compilePosixRegex } from '../../../../utils/posix.ts'
+import { BreError, PosixSyntax, translateEre } from '../../../../commands/builtin/utils/bre.ts'
 import { randomReader, seedVar, sessionElements } from '../../../session/state.ts'
 import { evaluateArith } from '../../../../shell/arith.ts'
 import type { ArithResult, ArithWrite } from '../../../../shell/types.ts'
@@ -62,10 +63,13 @@ async function evalCondBinary(
     const pattern = node.rightLiteral
       ? node.right.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
       : node.right
+    // bash hands the pattern to regcomp(REG_EXTENDED): glibc's
+    // POSIX_EXTENDED syntax, where `\d` is a `d` and `(?` is refused.
     let match: RegExpExecArray | null
     try {
-      match = new RegExp(translateClasses(pattern)).exec(node.left)
-    } catch {
+      match = compilePosixRegex(translateEre(pattern, PosixSyntax.EXTENDED)[0]).exec(node.left)
+    } catch (err) {
+      if (!(err instanceof BreError) && !(err instanceof SyntaxError)) throw err
       throw new CondError('mirage: syntax error in conditional expression')
     }
     if (match === null) return false

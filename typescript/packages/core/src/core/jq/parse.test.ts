@@ -14,8 +14,16 @@
 
 import { loadJq, type Jq } from 'jq-wasm'
 import { describe, expect, it } from 'vitest'
-import { JqParser, MAX_PARSING_DEPTH, decodeUtf8, numberValue, utf8Missing } from './parse.ts'
-import { JqParseError, NO_VALUE } from './types.ts'
+import {
+  JqParser,
+  MAX_PARSING_DEPTH,
+  decodeUtf8,
+  eventText,
+  numberValue,
+  stringText,
+  utf8Missing,
+} from './parse.ts'
+import { JqParseError, NO_VALUE, NumberText } from './types.ts'
 
 const ENC = new TextEncoder()
 const FFFD = String.fromCharCode(0xfffd)
@@ -51,9 +59,19 @@ function label(text: string): string {
   return shown.length > 48 ? `${shown.slice(0, 45)}...` : shown
 }
 
+/**
+ * A --stream event with its number leaf, which the event holds at its top
+ * level, read as a number, as the tables spell it.
+ */
+function plain(value: unknown): unknown {
+  if (value instanceof NumberText) return numberValue(value.text)
+  if (!Array.isArray(value)) return value
+  return value.map((item: unknown) => (item instanceof NumberText ? numberValue(item.text) : item))
+}
+
 // An RS under --seq can end a call with nothing to hand back while the
 // buffer still holds bytes, so pull until the buffer is used up.
-function drain(parser: JqParser, seq: boolean): unknown[] {
+function drain(parser: JqParser, seq: boolean, texts = false): unknown[] {
   const out: unknown[] = []
   for (;;) {
     const value = parser.next()
@@ -66,27 +84,27 @@ function drain(parser: JqParser, seq: boolean): unknown[] {
       if (!seq) return out
       continue
     }
-    out.push(value)
+    out.push(texts ? parser.text() : plain(value))
   }
 }
 
-function whole(data: Uint8Array, seq = false, streaming = false): unknown[] {
+function whole(data: Uint8Array, seq = false, streaming = false, texts = false): unknown[] {
   const parser = new JqParser(seq, streaming)
   parser.feed(data, false)
-  return drain(parser, seq)
+  return drain(parser, seq, texts)
 }
 
-function bytewise(data: Uint8Array, seq = false, streaming = false): unknown[] {
+function bytewise(data: Uint8Array, seq = false, streaming = false, texts = false): unknown[] {
   const parser = new JqParser(seq, streaming)
   const out: unknown[] = []
   for (let i = 0; i < data.length; i += 1) {
     parser.feed(data.subarray(i, i + 1), true)
-    const got = drain(parser, seq)
+    const got = drain(parser, seq, texts)
     out.push(...got)
     if (!seq && got.some(isErr)) return out
   }
   parser.feed(new Uint8Array(0), false)
-  return [...out, ...drain(parser, seq)]
+  return [...out, ...drain(parser, seq, texts)]
 }
 
 const READS = [whole, bytewise]
@@ -388,6 +406,50 @@ describe('JqParser', () => {
     expect(events[events.length - 1]).toEqual([[0]])
   })
 
+  // The text of each value, as the parser read it: jq's parser reads it as
+  // the same value, with every number's literal and every key's place.
+  it.each([
+    ['1.000 1e2 -0 100000000000000000001', ['1.000', '1e2', '-0', '100000000000000000001'], {}],
+    [
+      ' {"b":1.000,"1":2}\n[1e2, {"c":-0}]  "a\\u00e9"true null 1"x"[2]',
+      ['{"b":1.000,"1":2}', '[1e2, {"c":-0}]', '"a\\u00e9"', 'true', 'null', '1', '"x"', '[2]'],
+      {},
+    ],
+    ['1 [', ['1'], {}],
+    ['\xef\xbb\xbf 1.000', ['1.000'], {}],
+    ['["\xff", 1.000]', [`["${FFFD}", 1.000]`], {}],
+    ['1\x002 ', ['1\x002'], {}],
+    ['\x1e1.000\n\x1e{"b":1,"1":2}\n', ['1.000', '{"b":1,"1":2}'], { seq: true }],
+    ['\x1e[1,\x1e2.50\n', ['2.50'], { seq: true }],
+    ['\x1e1\x1e\x1e2 ', ['2'], { seq: true }],
+    ['\x1e[1 2]\n\x1e3.0\n', ['3.0'], { seq: true }],
+    [
+      '{"b":1.000,"1":[2.50,{}],"a":[]}',
+      ['[["b"],1.000]', '[["1",0],2.50]', '[["1",1],{}]', '[["1",1]]', '[["a"],[]]', '[["a"]]'],
+      { streaming: true },
+    ],
+    ['1.000 "x"', ['[[],1.000]', '[[],"x"]'], { streaming: true }],
+  ])('hands %j over with the text it was read from', (input, texts, modes) => {
+    const seq = 'seq' in modes
+    const streaming = 'streaming' in modes
+    for (const read of READS) {
+      expect(read(b(input), seq, streaming, true).filter((item) => !isErr(item))).toEqual(texts)
+    }
+  })
+
+  it('keeps a --stream number leaf as its literal', () => {
+    const parser = new JqParser(false, true)
+    parser.feed(b('[1.000, nan]'), false)
+    expect(parser.next()).toEqual([[0], new NumberText('1.000')])
+    expect(parser.next()).toEqual([[1], new NumberText('nan')])
+    expect(eventText([[0, 'a'], new NumberText('1E2')])).toBe('[[0,"a"],1E2]')
+    expect(eventText([['é'], 'x\u0000'])).toBe('[["é"],"x\\u0000"]')
+  })
+
+  it('writes a string as JSON jq reads back', () => {
+    expect(stringText('a"\\\n\x7fé')).toBe('"a\\"\\\\\\n\x7fé"')
+  })
+
   it('nests as deep as jq and no deeper', () => {
     const deepest = `${'['.repeat(MAX_PARSING_DEPTH)}${']'.repeat(MAX_PARSING_DEPTH)}`
     let value = whole(b(deepest))[0]
@@ -647,19 +709,23 @@ function mutant(rng: () => number, alphabet: readonly string[], seeds: readonly 
   return text.join('')
 }
 
-/** What one run of jq printed: its values, and the parse errors it reported. */
+/**
+ * What one run of jq printed: its values, their lines as jq dumped them, and
+ * the parse errors it reported.
+ */
 interface Run {
   readonly values: unknown[]
+  readonly lines: string[]
   readonly errors: string[]
 }
 
 function jqReads(jq: Jq, text: string, flags: readonly string[], seq: boolean): Run {
   const result = jq.raw(text, '.', ['-c', ...flags])
-  const lines = result.stdout === '' ? [] : result.stdout.split('\n')
-  const values = lines.map((line) => {
+  const lines = (result.stdout === '' ? [] : result.stdout.split('\n')).map((line) => {
     if (seq && !line.startsWith('\x1e')) throw new Error(`no RS before ${line}`)
-    return JSON.parse(seq ? line.slice(1) : line) as unknown
+    return seq ? line.slice(1) : line
   })
+  const values = lines.map((line) => JSON.parse(line) as unknown)
   const reports = result.stderr === '' ? [] : result.stderr.split('\n')
   const prefix = seq ? IGNORED_ERROR : PARSE_ERROR
   const errors = reports.map((report) => {
@@ -668,14 +734,21 @@ function jqReads(jq: Jq, text: string, flags: readonly string[], seq: boolean): 
   })
   const exit = errors.length > 0 && !seq ? 5 : 0
   if (result.exitCode !== exit) throw new Error(`unexpected exit: ${JSON.stringify(result)}`)
-  return { values, errors }
+  return { values, lines, errors }
 }
 
-function ours(got: readonly unknown[]): Run {
+function ours(got: readonly unknown[]): Omit<Run, 'lines'> {
   return {
     values: got.filter((item) => !isErr(item)),
     errors: got.filter(isErr).map((item) => item.error),
   }
+}
+
+/** What jq prints for each text, which should be what it printed for the input. */
+function echoed(jq: Jq, texts: readonly unknown[]): string[] {
+  return texts
+    .filter((item) => !isErr(item))
+    .map((text) => jq.raw(String(text), '.', ['-c']).stdout)
 }
 
 // jq prints NaN as null and an infinite number as the largest double, or
@@ -751,6 +824,12 @@ describe('JqParser against jq-wasm', () => {
             got.errors.every((message, i) => message === want.errors[i]) &&
             loose(want.values, got.values)
           if (!same && misses.length < 5) misses.push({ text, read: read.name, want, got })
+          // The text of each value, which libjq is handed, prints as jq
+          // printed the value.
+          const lines = echoed(jq, read(data, mode.seq, mode.streaming, true))
+          if (lines.join('\n') !== want.lines.join('\n') && misses.length < 5) {
+            misses.push({ text, read: read.name, want: want.lines, got: lines })
+          }
         }
       }
       expect(misses).toEqual([])

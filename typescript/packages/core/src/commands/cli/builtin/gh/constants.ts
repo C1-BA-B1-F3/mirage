@@ -12,6 +12,8 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import type { RepoEditField } from './types.ts'
+
 export const SEARCH_FLAGS: Record<string, string[]> = {
   issues: [
     'app',
@@ -364,6 +366,10 @@ export const SEARCH_SHAPES: Record<string, [string, string, string][]> = {
   ],
 }
 
+// gh 2.85's `diffHeaderRegexp`, the `diff --git` header `--name-only` reads a
+// name from, with Go's `\s` and `.` spelled out so no host widens them.
+export const DIFF_HEADER = /(?:^|\n)diff[\t\n\f\r ]--git[^\n]*[\t\n\f\r ](["]?)b\/([^\n]*)/g
+
 export const TEMPLATE_TOKEN = /"(?:\\.|[^"\\])*"|`[^`]*`|[^\s|]+|\|/g
 export const TEMPLATE_ACTION = /{{(-?)\s*(.*?)\s*(-?)}}/gs
 export const TEMPLATE_DECLARATION =
@@ -377,3 +383,190 @@ export const GOJQ_RAISED: ReadonlyMap<string, string> = new Map([
   ["skip doesn't support negative count", "skip doesn't support negative count"],
   ["nth doesn't support negative indices", "nth doesn't support negative index"],
 ])
+
+// The reason phrase `gh api -i` prints after a status code: Go's
+// http.StatusText, which is what gh reports for a response that carries none.
+export const HTTP_REASONS: Readonly<Record<number, string>> = {
+  100: 'Continue',
+  101: 'Switching Protocols',
+  102: 'Processing',
+  103: 'Early Hints',
+  200: 'OK',
+  201: 'Created',
+  202: 'Accepted',
+  203: 'Non-Authoritative Information',
+  204: 'No Content',
+  205: 'Reset Content',
+  206: 'Partial Content',
+  207: 'Multi-Status',
+  208: 'Already Reported',
+  226: 'IM Used',
+  300: 'Multiple Choices',
+  301: 'Moved Permanently',
+  302: 'Found',
+  303: 'See Other',
+  304: 'Not Modified',
+  305: 'Use Proxy',
+  307: 'Temporary Redirect',
+  308: 'Permanent Redirect',
+  400: 'Bad Request',
+  401: 'Unauthorized',
+  402: 'Payment Required',
+  403: 'Forbidden',
+  404: 'Not Found',
+  405: 'Method Not Allowed',
+  406: 'Not Acceptable',
+  407: 'Proxy Authentication Required',
+  408: 'Request Timeout',
+  409: 'Conflict',
+  410: 'Gone',
+  411: 'Length Required',
+  412: 'Precondition Failed',
+  413: 'Request Entity Too Large',
+  414: 'Request URI Too Long',
+  415: 'Unsupported Media Type',
+  416: 'Requested Range Not Satisfiable',
+  417: 'Expectation Failed',
+  418: "I'm a teapot",
+  421: 'Misdirected Request',
+  422: 'Unprocessable Entity',
+  423: 'Locked',
+  424: 'Failed Dependency',
+  425: 'Too Early',
+  426: 'Upgrade Required',
+  428: 'Precondition Required',
+  429: 'Too Many Requests',
+  431: 'Request Header Fields Too Large',
+  451: 'Unavailable For Legal Reasons',
+  500: 'Internal Server Error',
+  501: 'Not Implemented',
+  502: 'Bad Gateway',
+  503: 'Service Unavailable',
+  504: 'Gateway Timeout',
+  505: 'HTTP Version Not Supported',
+  506: 'Variant Also Negotiates',
+  507: 'Insufficient Storage',
+  508: 'Loop Detected',
+  510: 'Not Extended',
+  511: 'Network Authentication Required',
+}
+
+export const REPO_EDIT_FIELDS: readonly RepoEditField[] = [
+  {
+    flag: '--description',
+    field: 'description',
+    kind: 'value',
+    description: 'Description of the repository',
+    short: '-d',
+  },
+  {
+    flag: '--homepage',
+    field: 'homepage',
+    kind: 'value',
+    description: 'Repository home page URL',
+    short: '-h',
+  },
+  {
+    flag: '--default-branch',
+    field: 'default_branch',
+    kind: 'value',
+    description: 'Set the default branch name for the repository',
+  },
+  {
+    flag: '--visibility',
+    field: 'visibility',
+    kind: 'value',
+    description: 'Change the visibility of the repository to {public,private,internal}',
+    choices: ['public', 'private', 'internal'],
+  },
+  {
+    flag: '--template',
+    field: 'is_template',
+    kind: 'toggle',
+    description: 'Make the repository available as a template repository',
+  },
+  {
+    flag: '--enable-issues',
+    field: 'has_issues',
+    kind: 'toggle',
+    description: 'Enable issues in the repository',
+  },
+  {
+    flag: '--enable-projects',
+    field: 'has_projects',
+    kind: 'toggle',
+    description: 'Enable projects in the repository',
+  },
+  {
+    flag: '--enable-wiki',
+    field: 'has_wiki',
+    kind: 'toggle',
+    description: 'Enable wiki in the repository',
+  },
+  {
+    flag: '--enable-discussions',
+    field: 'has_discussions',
+    kind: 'toggle',
+    description: 'Enable discussions in the repository',
+  },
+  {
+    flag: '--enable-merge-commit',
+    field: 'allow_merge_commit',
+    kind: 'toggle',
+    description: 'Enable merging pull requests via merge commit',
+  },
+  {
+    flag: '--enable-squash-merge',
+    field: 'allow_squash_merge',
+    kind: 'toggle',
+    description: 'Enable merging pull requests via squashed commit',
+  },
+  {
+    flag: '--enable-rebase-merge',
+    field: 'allow_rebase_merge',
+    kind: 'toggle',
+    description: 'Enable merging pull requests via rebase',
+  },
+  {
+    flag: '--enable-auto-merge',
+    field: 'allow_auto_merge',
+    kind: 'toggle',
+    description: 'Enable auto-merge functionality',
+  },
+  {
+    flag: '--enable-advanced-security',
+    field: 'advanced_security',
+    kind: 'security',
+    description: 'Enable advanced security in the repository',
+  },
+  {
+    flag: '--enable-secret-scanning',
+    field: 'secret_scanning',
+    kind: 'security',
+    description: 'Enable secret scanning in the repository',
+  },
+  {
+    flag: '--enable-secret-scanning-push-protection',
+    field: 'secret_scanning_push_protection',
+    kind: 'security',
+    description: 'Enable secret scanning push protection in the repository',
+  },
+  {
+    flag: '--delete-branch-on-merge',
+    field: 'delete_branch_on_merge',
+    kind: 'toggle',
+    description: 'Delete head branch when pull requests are merged',
+  },
+  {
+    flag: '--allow-forking',
+    field: 'allow_forking',
+    kind: 'toggle',
+    description: 'Allow forking of an organization repository',
+  },
+  {
+    flag: '--allow-update-branch',
+    field: 'allow_update_branch',
+    kind: 'toggle',
+    description: 'Allow a pull request head branch that is behind its base branch to be updated',
+  },
+]

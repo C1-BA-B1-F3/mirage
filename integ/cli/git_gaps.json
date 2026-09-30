@@ -265,6 +265,62 @@
         "stdout": "Integ Author <canonical@example.com>\n",
         "stderr": ""
       }
+    },
+    {
+      "id": "git_log_extended_regexp_glibc_escape",
+      "seq": 13470101,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "git -C /repo log -E --grep='del\\ta' --format=%s",
+      "expect": {
+        "exit": 0,
+        "stdout": "add delta\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "git_log_extended_regexp_refuses_a_bare_question",
+      "seq": 13470102,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "git -C /repo log -E --grep='(?:id)' --format=%s",
+      "expect": {
+        "exit": 128,
+        "stdout": "",
+        "stderr": "fatal: command line, '(?:id)': Invalid preceding regular expression\n"
+      }
+    },
+    {
+      "id": "git_log_extended_regexp_refuses_a_bad_interval",
+      "seq": 13470103,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "git -C /repo log -E --grep='a{x}' --format=%s",
+      "expect": {
+        "exit": 128,
+        "stdout": "",
+        "stderr": "fatal: command line, 'a{x}': Invalid content of \\{\\}\n"
+      }
+    },
+    {
+      "id": "git_config_get_regexp_reads_glibc_ere",
+      "seq": 13470104,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "git -C /repo config --get-regexp 'user.(?:name)'; echo rc=$?",
+      "expect": {
+        "exit": 0,
+        "stdout": "rc=6\n",
+        "stderr": "error: invalid key pattern: user.(?:name)\n"
+      }
     }
   ]
 }

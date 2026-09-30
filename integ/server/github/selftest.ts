@@ -14,15 +14,16 @@
 
 import { searchConformance } from './search_conformance.ts'
 import { spawn } from 'node:child_process'
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import type { ChildProcessByStdio } from 'node:child_process'
-import { dirname, join, resolve } from 'node:path'
+import { dirname, join, relative, resolve, sep } from 'node:path'
 import type { Readable } from 'node:stream'
 import { fileURLToPath } from 'node:url'
 import { ANNOUNCE_RE } from '../kit/typescript/announce.ts'
 import type { JsonValue } from '../kit/typescript/types.ts'
 import { start } from '../kit/typescript/serve.ts'
+import { diffTrees, unifiedDiff } from './diff.ts'
 import { githubFake } from './fake.ts'
 
 // The routes the corpus does not reach, or cannot exercise fully, because the
@@ -99,6 +100,25 @@ async function post(url: string, body: JsonValue): Promise<{ status: number; bod
 async function get(url: string): Promise<JsonValue> {
   const r = await fetch(url, { headers: HEADERS })
   return (await r.json()) as JsonValue
+}
+
+async function send(
+  method: string,
+  url: string,
+  body?: JsonValue,
+  accept?: string,
+): Promise<{ status: number; body: JsonValue; bytes: Buffer; text: string; link: string }> {
+  const r = await fetch(url, {
+    method,
+    headers: { ...HEADERS, ...(accept === undefined ? {} : { accept }) },
+    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+  })
+  const bytes = Buffer.from(await r.arrayBuffer())
+  const text = bytes.toString('utf8')
+  const parsed = r.headers.get('content-type')?.includes('json')
+    ? (JSON.parse(text) as JsonValue)
+    : null
+  return { status: r.status, body: parsed, bytes, text, link: r.headers.get('link') ?? '' }
 }
 
 function field(body: JsonValue, key: string): JsonValue {
@@ -418,7 +438,7 @@ async function seededHistory(at: string): Promise<void> {
       ((field((await compared.json()) as JsonValue, 'files') ?? []) as JsonValue[]).map((f) =>
         field(f, 'filename'),
       ),
-      ['second.txt', path],
+      [path, 'second.txt'],
     )
   }
 }
@@ -467,13 +487,1509 @@ async function supersededBlobs(at: string): Promise<void> {
   eq('a sha no tree ever held is not found', await blob('0'.repeat(40)), 404)
 }
 
+// A ref names a branch, or one commit by its full or abbreviated sha, and
+// every read that takes one answers from what it names: a commit's own
+// files, its own history, its own place in a comparison.
+async function refsNameCommits(at: string): Promise<void> {
+  const run = 'refs-name-commits'
+  const base = `${at}/_run/${run}`
+  await post(`${base}/reset`, { run, tenants: [TENANT], fixture: 'v1' })
+  const repo = `${base}/repos/${REPO}`
+  const status = async (url: string, init: RequestInit = {}): Promise<number> =>
+    (await fetch(url, { headers: HEADERS, ...init })).status
+  const put = await fetch(`${repo}/contents/later.txt`, {
+    method: 'PUT',
+    headers: HEADERS,
+    body: JSON.stringify({ message: 'Later', content: Buffer.from('later').toString('base64') }),
+  })
+  eq('a file lands on the seeded branch', put.status, 201)
+  const history = (await get(`${repo}/commits`)) as JsonValue[]
+  const head = String(field(history[0] ?? null, 'sha'))
+  const root = String(field(history.at(-1) ?? null, 'sha'))
+  eq(
+    'four hex digits name the root',
+    field(await get(`${repo}/commits/${root.slice(0, 4)}`), 'sha'),
+    root,
+  )
+  eq('three name nothing', await status(`${repo}/commits/${root.slice(0, 3)}`), 422)
+  eq(
+    'commits?sha= lists from the commit it names',
+    ((await get(`${repo}/commits?sha=${root.slice(0, 7).toUpperCase()}`)) as JsonValue[]).map((c) =>
+      field(c, 'sha'),
+    ),
+    [root],
+  )
+  eq('commits?sha= naming nothing is 404', await status(`${repo}/commits?sha=0000000`), 404)
+  eq(
+    'the root reads its own files',
+    await status(`${repo}/contents/later.txt?ref=${root.slice(0, 7)}`),
+    404,
+  )
+  eq(
+    'the head reads its own',
+    await status(`${repo}/contents/later.txt?ref=${head.slice(0, 7)}`),
+    200,
+  )
+  const paths = async (ref: string): Promise<boolean> =>
+    ((field(await get(`${repo}/git/trees/${ref}?recursive=1`), 'tree') as JsonValue[]) ?? []).some(
+      (row) => field(row, 'path') === 'later.txt',
+    )
+  eq("a tree by the root's short sha is the root's", await paths(root.slice(0, 7)), false)
+  eq("a tree by the head's short sha is the head's", await paths(head.slice(0, 7)), true)
+  const compare = async (spec: string): Promise<JsonValue> => {
+    const body = await get(`${repo}/compare/${spec}`)
+    return [field(body, 'status'), field(body, 'ahead_by'), field(body, 'behind_by')]
+  }
+  eq('the head is ahead of the root', await compare(`${root.slice(0, 7)}...main`), ['ahead', 1, 0])
+  eq('the root is behind the head', await compare(`main...${root.slice(0, 7)}`), ['behind', 0, 1])
+  eq('a branch is identical to itself', await compare('main...main'), ['identical', 0, 0])
+  const made = await post(`${repo}/git/refs`, { ref: 'refs/heads/old', sha: root.slice(0, 7) })
+  eq('a branch starts at a short sha', made.status, 201)
+  eq("and holds that commit's files", await status(`${repo}/contents/later.txt?ref=old`), 404)
+}
+
+// A seeded branch force-moved onto an unrelated root leaves its own root on
+// no branch, and that sha still names its commit and its files, as git keeps
+// an object once it exists.
+async function abandonedRoot(at: string): Promise<void> {
+  const run = 'abandoned-root'
+  const base = `${at}/_run/${run}`
+  await post(`${base}/reset`, { run, tenants: [TENANT], fixture: 'v1' })
+  const repo = `${base}/repos/${REPO}`
+  const root = String(field(((await get(`${repo}/commits`)) as JsonValue[])[0] ?? null, 'sha'))
+  const tree = await post(`${repo}/git/trees`, {
+    tree: [{ path: 'only.txt', mode: '100644', type: 'blob', content: 'only' }],
+  })
+  const other = await post(`${repo}/git/commits`, {
+    message: 'Unrelated',
+    tree: field(tree.body, 'sha'),
+    parents: [],
+  })
+  const moved = await fetch(`${repo}/git/refs/heads/main`, {
+    method: 'PATCH',
+    headers: HEADERS,
+    body: JSON.stringify({ sha: field(other.body, 'sha'), force: true }),
+  })
+  eq('the branch is forced onto an unrelated root', moved.status, 200)
+  eq(
+    'the old root still names its commit',
+    field(await get(`${repo}/commits/${root.slice(0, 7)}`), 'sha'),
+    root,
+  )
+  const readme = await fetch(`${repo}/contents/README.md?ref=${root.slice(0, 7)}`, {
+    headers: HEADERS,
+  })
+  eq('and its files', readme.status, 200)
+  const dispatch = await fetch(
+    `${base}/repos/integ/repo-cli/actions/workflows/archive.yml/dispatches`,
+    {
+      method: 'POST',
+      headers: HEADERS,
+      body: JSON.stringify({ ref: 'main' }),
+    },
+  )
+  eq('a disabled workflow is not dispatched', await refusalOf(dispatch), [
+    422,
+    "Cannot trigger a 'workflow_dispatch' on a disabled workflow",
+  ])
+}
+
+async function refusalOf(r: Response): Promise<JsonValue> {
+  return [r.status, field((await r.json()) as JsonValue, 'message')]
+}
+
+// Workflows are the repository's files, and the settings routes store what
+// they take and refuse what they do not, before anything is written.
+async function workflowsAndSettings(at: string): Promise<void> {
+  const run = 'workflows-and-settings'
+  const base = `${at}/_run/${run}`
+  await post(`${base}/reset`, { run, tenants: [TENANT], fixture: 'v1' })
+  const repo = `${base}/repos/${REPO}`
+  const send = async (method: string, path: string, body?: JsonValue): Promise<number> =>
+    (
+      await fetch(`${repo}${path}`, {
+        method,
+        headers: HEADERS,
+        ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+      })
+    ).status
+  const write = (path: string, text: string): Promise<number> =>
+    send('PUT', `/contents/${path}`, {
+      message: `Add ${path}`,
+      content: Buffer.from(text).toString('base64'),
+    })
+  await write('.github/workflows/nameless.yaml', 'on: push\n')
+  await write('.github/workflows/nested/deep.yml', 'name: Deep\n')
+  await write('.github/workflows/notes.txt', 'name: Notes\n')
+  const listed = async (): Promise<JsonValue> =>
+    ((field(await get(`${repo}/actions/workflows`), 'workflows') as JsonValue[]) ?? []).map((w) => [
+      field(w, 'name'),
+      field(w, 'path'),
+    ])
+  eq('the list is the workflow files, by id', await listed(), [
+    ['Archive', '.github/workflows/archive.yml'],
+    ['CI', '.github/workflows/ci.yml'],
+    ['.github/workflows/nameless.yaml', '.github/workflows/nameless.yaml'],
+  ])
+  eq('a workflow is found by its file', await send('GET', '/actions/workflows/ci.yml'), 200)
+  eq('never by its display name', await send('GET', '/actions/workflows/CI'), 404)
+  eq(
+    'one with no dispatch trigger cannot be dispatched',
+    await send('POST', '/actions/workflows/nameless.yaml/dispatches', { ref: 'main' }),
+    422,
+  )
+  eq(
+    'a dispatch to a ref that is no branch is refused',
+    await send('POST', '/actions/workflows/ci.yml/dispatches', { ref: 'nope' }),
+    422,
+  )
+  const ci = await get(`${repo}/contents/.github/workflows/ci.yml`)
+  await send('DELETE', '/contents/.github/workflows/ci.yml', {
+    message: 'rm',
+    sha: field(ci, 'sha'),
+  })
+  eq('a workflow whose file is gone is not listed', ((await listed()) as JsonValue[]).length, 2)
+  eq(
+    'and cannot be dispatched',
+    await send('POST', '/actions/workflows/ci.yml/dispatches', { ref: 'main' }),
+    404,
+  )
+  eq(
+    'a wrongly typed setting refuses the whole edit',
+    await send('PATCH', '', { description: 'x', has_issues: 'yes' }),
+    422,
+  )
+  eq('and writes none of it', field(await get(repo), 'description'), null)
+  for (const key of ['name', 'default_branch']) {
+    for (const value of [123, null, [], {}]) {
+      eq(
+        `a wrongly typed ${key} refuses the whole edit`,
+        await send('PATCH', '', { description: 'must not land', [key]: value }),
+        422,
+      )
+      eq('the refused edit preserves the repository', field(await get(repo), 'description'), null)
+    }
+  }
+  eq(
+    'an invalid branch type cannot partially rename a repository',
+    await send('PATCH', '', { name: 'must-not-rename', default_branch: false }),
+    422,
+  )
+  eq('the original name still resolves', await send('GET', ''), 200)
+  eq('an unknown visibility is refused', await send('PATCH', '', { visibility: 'secret' }), 422)
+  eq('a legacy site needs a source', await send('POST', '/pages', {}), 422)
+  eq(
+    'a source path is the root or /docs',
+    await send('POST', '/pages', { source: { branch: 'main', path: '/site' } }),
+    422,
+  )
+  eq('no site is updated', await send('PUT', '/pages', { cname: null }), 404)
+  eq('no site is deleted', await send('DELETE', '/pages'), 404)
+  eq(
+    'a workflow site needs no source',
+    await send('POST', '/pages', { build_type: 'workflow' }),
+    201,
+  )
+  eq("and publishes the default branch's root", field(await get(`${repo}/pages`), 'source'), {
+    branch: 'main',
+    path: '/',
+  })
+  eq(
+    'a wrongly typed site edit is refused',
+    await send('PUT', '/pages', { https_enforced: 'yes' }),
+    422,
+  )
+  const logs = await fetch(`${base}/repos/integ/repo-cli/actions/runs/201/logs`, {
+    headers: HEADERS,
+  })
+  eq("a completed run's logs are a zip", logs.headers.get('content-type'), 'application/zip')
+  eq(
+    "one job's log is its steps' text",
+    (
+      await (
+        await fetch(`${base}/repos/integ/repo-cli/actions/jobs/401/logs`, { headers: HEADERS })
+      ).text()
+    ).split('\n')[0] ?? '',
+    "2026-01-01T00:00:05.0000000Z Current runner version: '2.330.0'",
+  )
+}
+
+// Every file under a fixture directory, by its path in the repository, the
+// way seeding reads it: the submodule manifest is no file.
+async function fixtureTree(dir: string): Promise<Map<string, Buffer>> {
+  const out = new Map<string, Buffer>()
+  const root = join(INTEG, 'fixtures', dir)
+  for (const entry of await readdir(root, { recursive: true, withFileTypes: true })) {
+    if (!entry.isFile()) continue
+    const path = relative(root, join(entry.parentPath, entry.name)).split(sep).join('/')
+    if (path !== 'SUBMODULES') out.set(path, await readFile(join(root, path)))
+  }
+  return out
+}
+
+// `git diff` itself over two trees, with no configuration of the machine it
+// runs on, which is the text GitHub serves as a diff. Renames are git's exact
+// ones only: a file moved and edited is a removal and an addition here, where
+// git would pair the two once they are half alike.
+async function gitDiff(before: Map<string, Buffer>, after: Map<string, Buffer>): Promise<Buffer> {
+  const dir = await mkdtemp(join(tmpdir(), 'gh-diff-'))
+  const env = { ...process.env, GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_NOSYSTEM: '1' }
+  const git = (...args: string[]): Promise<Buffer> =>
+    new Promise((ok, bad) => {
+      const child = spawn('git', ['-C', dir, ...args], { env, stdio: ['ignore', 'pipe', 'pipe'] })
+      const out: Buffer[] = []
+      child.stdout.on('data', (d: Buffer) => out.push(d))
+      child.on('error', bad)
+      child.on('close', (code) =>
+        code === 0 ? ok(Buffer.concat(out)) : bad(new Error(`git ${args[0]} ${code}`)),
+      )
+    })
+  const commit = async (tree: Map<string, Buffer>, message: string): Promise<void> => {
+    await git('rm', '-rq', '--ignore-unmatch', '.')
+    for (const [path, data] of tree) {
+      await mkdir(dirname(join(dir, path)), { recursive: true })
+      await writeFile(join(dir, path), data)
+    }
+    await git('add', '-A')
+    await git('-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-qm', message)
+  }
+  try {
+    await git('init', '-q')
+    await commit(before, 'before')
+    await commit(after, 'after')
+    return await git('diff', '-M100%', 'HEAD~1', 'HEAD')
+  } finally {
+    await rm(dir, { recursive: true, force: true })
+  }
+}
+
+// Seeded random tree pairs, each diffed by the fake and by git: a small
+// vocabulary, so lines repeat and a change can sit in several places, a line
+// in Latin-1 that is no UTF-8, names that git quotes or pads, a binary, an
+// empty file, a moved file, and last lines with and without their newline.
+// Every pair must read as git prints it, byte for byte, which is what pins
+// the choice among equally short diffs to git's.
+async function diffsMatchGit(): Promise<void> {
+  let seed = 7
+  const rand = (): number => {
+    seed = (seed * 1103515245 + 12345) % 2147483648
+    return seed / 2147483648
+  }
+  const pick = <T>(xs: T[]): T => xs[Math.floor(rand() * xs.length)] as T
+  const words = [
+    'def main():',
+    '    return 1',
+    '',
+    '}',
+    'class A:',
+    '  x',
+    'foo',
+    '$var',
+    '_p',
+    '\u00e9t\u00e9',
+  ]
+  const text = (): string => {
+    const lines = Array.from({ length: Math.floor(rand() * 30) }, () => pick(words))
+    return lines.length > 0 && rand() < 0.85 ? `${lines.join('\n')}\n` : lines.join('\n')
+  }
+  const edit = (was: string): string => {
+    const lines = was.split('\n')
+    for (let k = 1 + Math.floor(rand() * 5); k > 0; k -= 1) {
+      const at = Math.floor(rand() * (lines.length + 1))
+      const r = rand()
+      if (r < 0.33) lines.splice(at, 0, pick(words))
+      else if (r < 0.66) lines.splice(at, 1)
+      else lines[at] = pick(words)
+    }
+    return lines.join('\n')
+  }
+  const names = ['a.txt', 'b/c.py', 'b/d e.md', 'q"t.txt', 'caf\u00e9.txt', 'bin.dat', 'empty.txt']
+  const differ: number[] = []
+  for (let run = 0; run < 40; run += 1) {
+    const before = new Map<string, Buffer>()
+    for (const name of names) {
+      if (rand() >= 0.7) continue
+      const body = name === 'bin.dat' ? `x\0${text()}` : name === 'empty.txt' ? '' : text()
+      before.set(name, Buffer.from(body, 'latin1'))
+    }
+    const after = new Map<string, Buffer>()
+    for (const [path, data] of before) {
+      const r = rand()
+      if (r < 0.15) continue
+      if (r < 0.25) after.set(`moved/${path.split('/').pop() ?? path}`, data)
+      else if (path === 'bin.dat' || path === 'empty.txt') after.set(path, data)
+      else after.set(path, Buffer.from(edit(data.toString('latin1')), 'latin1'))
+    }
+    const theirs = await gitDiff(before, after)
+    if (!unifiedDiff(diffTrees(before, after)).equals(theirs)) differ.push(run)
+  }
+  eq('forty random tree pairs diff as git diffs them', differ, [])
+}
+
+// What used to answer fixed or missing, each now read off the rows the fake
+// holds: accounts and user search, the repository qualifiers, a
+// pull request's diff with its files, commits and review comments, and the
+// commit list's paging and filters, plus annotated tags.
+async function diffsSearchAndHistory(at: string): Promise<void> {
+  const run = 'diffs-search-history'
+  const base = `${at}/_run/${run}`
+  await post(`${base}/reset`, { run, tenants: [TENANT], fixture: 'v1' })
+  const repo = `${base}/repos/${REPO}`
+  const put = (path: string, branch: string, text: string, sha?: JsonValue) =>
+    send('PUT', `${repo}/contents/${path}`, {
+      message: `Add ${path}`,
+      content: Buffer.from(text).toString('base64'),
+      branch,
+      ...(sha === undefined ? {} : { sha }),
+    })
+  const list = (body: JsonValue, key: string): JsonValue[] =>
+    ((Array.isArray(body) ? body : field(body, 'items')) as JsonValue[]).map((row) =>
+      field(row, key),
+    )
+
+  // ---- accounts: the fixture's, the authenticated user, and each owner
+  const users = async (q: string, extra = ''): Promise<JsonValue[]> =>
+    list(
+      (await send('GET', `${base}/search/users?q=${encodeURIComponent(q)}${extra}`)).body,
+      'login',
+    )
+  eq('user search leads with the exact login', await users('integ'), ['integ', 'integ-user'])
+  eq('type:user keeps users', await users('integ type:user'), ['integ-user'])
+  eq('type:org keeps organizations', await users('integ type:org'), ['integ'])
+  eq('fullname: reads the stated name', await users('fullname:"Integ Fixtures"'), ['integ'])
+  eq('created: reads the stated date', await users('created:<2021-01-01'), ['integ'])
+  eq('repos: counts what an account owns', await users('repos:>=4'), ['integ'])
+  eq('sort=joined orders by creation', await users('integ', '&sort=joined&order=asc'), [
+    'integ',
+    'integ-user',
+  ])
+  const item = field((await send('GET', `${base}/search/users?q=integ-user`)).body, 'items')
+  eq(
+    "an item has GitHub's keys",
+    Object.keys(((item as JsonValue[])[0] ?? {}) as Record<string, JsonValue>).sort(),
+    [
+      'avatar_url',
+      'events_url',
+      'followers_url',
+      'following_url',
+      'gists_url',
+      'gravatar_id',
+      'html_url',
+      'id',
+      'login',
+      'node_id',
+      'organizations_url',
+      'received_events_url',
+      'repos_url',
+      'score',
+      'site_admin',
+      'starred_url',
+      'subscriptions_url',
+      'type',
+      'url',
+      'user_view_type',
+    ],
+  )
+  eq('an empty user search is refused', (await send('GET', `${base}/search/users?q=`)).status, 422)
+  const org = await send('GET', `${base}/users/INTEG`)
+  eq(
+    'an account reads in any case',
+    [org.status, field(org.body, 'login'), field(org.body, 'name'), field(org.body, 'type')],
+    [200, 'integ', 'Integ Fixtures', 'Organization'],
+  )
+  eq('a login nobody holds is no account', (await send('GET', `${base}/users/nobody`)).status, 404)
+
+  // ---- repository search narrows by every qualifier it holds data for
+  const repos = async (q: string): Promise<JsonValue> => {
+    const body = (await send('GET', `${base}/search/repositories?q=${encodeURIComponent(q)}`)).body
+    return [field(body, 'total_count'), list(body, 'full_name')]
+  }
+  eq('repo: narrows to the named repository', await repos(`repo:${REPO}`), [1, [REPO]])
+  eq('several repo: OR together', await repos(`repo:${REPO} repo:integ/data-v1`), [
+    2,
+    ['integ/data-v1', REPO],
+  ])
+  eq('created: compares the creation date', await repos(`repo:${REPO} created:<2000-01-01`), [
+    0,
+    [],
+  ])
+  eq('an open range reads *', await repos(`repo:${REPO} created:2025-01-01..*`), [1, [REPO]])
+  eq('pushed: compares the push date', await repos(`repo:${REPO} pushed:>2030-01-01`), [0, []])
+  eq('stars: compares the count', await repos(`repo:${REPO} stars:>0`), [0, []])
+
+  // ---- a pull request's files, counts, commits and diff are its range's
+  const main = field(field((await send('GET', `${repo}/git/ref/heads/main`)).body, 'object'), 'sha')
+  await send('POST', `${repo}/git/refs`, { ref: 'refs/heads/feature', sha: main })
+  await put('hello.txt', 'feature', 'one\ntwo\nthree\n')
+  await put('notes.txt', 'feature', 'four\nfive\n')
+  const readmeSha = field((await send('GET', `${repo}/contents/README.md?ref=feature`)).body, 'sha')
+  const readme = '# repo-v1\n\nFixture repository for the GitHub fake.\n'
+  await put('README.md', 'feature', readme, readmeSha)
+  const opened = await send('POST', `${repo}/pulls`, {
+    title: 'Add two files',
+    head: 'feature',
+    base: 'main',
+  })
+  const number = String(field(opened.body, 'number'))
+  const pull = (await send('GET', `${repo}/pulls/${number}`)).body
+  eq(
+    'the counts are the range',
+    ['additions', 'deletions', 'changed_files', 'commits'].map((key) => field(pull, key)),
+    [6, 1, 3, 3],
+  )
+  const files = (await send('GET', `${repo}/pulls/${number}/files`)).body as JsonValue[]
+  eq(
+    'the files are what the head changed',
+    files.map((f) =>
+      ['filename', 'status', 'additions', 'deletions', 'changes'].map((k) => field(f, k)),
+    ),
+    [
+      ['README.md', 'modified', 1, 1, 2],
+      ['hello.txt', 'added', 3, 0, 3],
+      ['notes.txt', 'added', 2, 0, 2],
+    ],
+  )
+  eq('a file carries its patch', field(files[2] ?? null, 'patch'), '@@ -0,0 +1,2 @@\n+four\n+five')
+  const paged = await send('GET', `${repo}/pulls/${number}/files?per_page=2`)
+  eq(
+    'the files page',
+    [(paged.body as JsonValue[]).length, paged.link.includes('rel="next"')],
+    [2, true],
+  )
+  eq(
+    'the commits are the head past the base, oldest first',
+    ((await send('GET', `${repo}/pulls/${number}/commits`)).body as JsonValue[]).map((c) =>
+      field(field(c, 'commit'), 'message'),
+    ),
+    ['Add hello.txt', 'Add notes.txt', 'Add README.md'],
+  )
+  const before = await fixtureTree('github/repo-v1')
+  const after = new Map(before)
+  after.set('hello.txt', Buffer.from('one\ntwo\nthree\n'))
+  after.set('notes.txt', Buffer.from('four\nfive\n'))
+  after.set('README.md', Buffer.from(readme))
+  const diff = await send(
+    'GET',
+    `${repo}/pulls/${number}`,
+    undefined,
+    'application/vnd.github.diff',
+  )
+  eq(
+    'the diff is the one git prints',
+    diff.bytes.toString('latin1'),
+    (await gitDiff(before, after)).toString('latin1'),
+  )
+  const patch = await send(
+    'GET',
+    `${repo}/pulls/${number}`,
+    undefined,
+    'application/vnd.github.patch',
+  )
+  eq(
+    'a patch is refused rather than answered as JSON',
+    [patch.status, field(patch.body, 'message')],
+    [415, 'A patch is a mail per commit, which the integ fake does not model.'],
+  )
+  // A rename, a removal, a name with a space, a binary, a last line that
+  // loses its newline and a text in Latin-1, compared the same way.
+  const LATIN1 = Buffer.from('caf\u00e9\n', 'latin1')
+  await send('POST', `${repo}/git/refs`, { ref: 'refs/heads/shuffle', sha: main })
+  const shaOn = async (path: string): Promise<JsonValue> =>
+    field((await send('GET', `${repo}/contents/${path}?ref=shuffle`)).body, 'sha')
+  const drop = async (path: string): Promise<void> => {
+    const sha = await shaOn(path)
+    await send('DELETE', `${repo}/contents/${path}`, {
+      message: `Drop ${path}`,
+      sha,
+      branch: 'shuffle',
+    })
+  }
+  const moved = before.get('docs/contributing.md') ?? Buffer.alloc(0)
+  await put('moved/contributing.md', 'shuffle', moved.toString())
+  await drop('docs/contributing.md')
+  await drop('docs/release.md')
+  await put('notes with space.txt', 'shuffle', 'spaced\n')
+  await send('PUT', `${repo}/contents/blob.bin`, {
+    message: 'Add blob.bin',
+    content: Buffer.from([0, 1, 2, 3]).toString('base64'),
+    branch: 'shuffle',
+  })
+  await put('README.md', 'shuffle', '# repo-v1', await shaOn('README.md'))
+  await send('PUT', `${repo}/contents/legacy.txt`, {
+    message: 'Add legacy.txt',
+    content: LATIN1.toString('base64'),
+    branch: 'shuffle',
+  })
+  const shuffled = new Map(before)
+  shuffled.delete('docs/contributing.md')
+  shuffled.delete('docs/release.md')
+  shuffled.set('moved/contributing.md', moved)
+  shuffled.set('notes with space.txt', Buffer.from('spaced\n'))
+  shuffled.set('blob.bin', Buffer.from([0, 1, 2, 3]))
+  shuffled.set('README.md', Buffer.from('# repo-v1'))
+  shuffled.set('legacy.txt', LATIN1)
+  const spread = await send(
+    'GET',
+    `${repo}/compare/main...shuffle`,
+    undefined,
+    'application/vnd.github.diff',
+  )
+  eq(
+    'every kind of change reads as git prints it',
+    spread.bytes.toString('latin1'),
+    (await gitDiff(before, shuffled)).toString('latin1'),
+  )
+  const compared = (await send('GET', `${repo}/compare/main...shuffle`)).body
+  eq(
+    'a comparison lists the rename once, with where it came from',
+    ((field(compared, 'files') ?? []) as JsonValue[])
+      .filter((f) => field(f, 'status') === 'renamed')
+      .map((f) => [field(f, 'filename'), field(f, 'previous_filename'), field(f, 'patch')]),
+    [['moved/contributing.md', 'docs/contributing.md', null]],
+  )
+  const graph = await send('POST', `${base}/graphql`, {
+    query:
+      `{ repository(owner: "integ", name: "repo-v1") { pullRequest(number: ${number}) { ` +
+      'additions deletions changedFiles files(first: 10) { nodes { path changeType } } ' +
+      'commits(last: 1) { totalCount nodes { commit { messageHeadline } } } } } }',
+  })
+  eq(
+    'GraphQL reads the same range',
+    field(field(field(graph.body, 'data'), 'repository'), 'pullRequest'),
+    {
+      additions: 6,
+      deletions: 1,
+      changedFiles: 3,
+      files: {
+        nodes: [
+          { path: 'README.md', changeType: 'MODIFIED' },
+          { path: 'hello.txt', changeType: 'ADDED' },
+          { path: 'notes.txt', changeType: 'ADDED' },
+        ],
+      },
+      commits: { totalCount: 3, nodes: [{ commit: { messageHeadline: 'Add README.md' } }] },
+    },
+  )
+  const newest = await send('POST', `${base}/graphql`, {
+    query:
+      `{ repository(owner: "integ", name: "repo-v1") { pullRequest(number: ${number}) { ` +
+      'commits(last: 2) { totalCount pageInfo { hasNextPage endCursor } ' +
+      'nodes { commit { messageHeadline } } } } } }',
+  })
+  eq(
+    'the newest commits page from where they start in the whole history',
+    field(field(field(field(newest.body, 'data'), 'repository'), 'pullRequest'), 'commits'),
+    {
+      totalCount: 3,
+      pageInfo: { hasNextPage: false, endCursor: Buffer.from('3').toString('base64') },
+      nodes: [
+        { commit: { messageHeadline: 'Add notes.txt' } },
+        { commit: { messageHeadline: 'Add README.md' } },
+      ],
+    },
+  )
+  const orphanTree = field(
+    (await send('POST', `${repo}/git/trees`, { tree: [{ path: 'only.txt', content: 'x\n' }] }))
+      .body,
+    'sha',
+  )
+  const orphan = await send('POST', `${repo}/git/commits`, {
+    message: 'Start over',
+    tree: orphanTree,
+    parents: [],
+  })
+  await send('POST', `${repo}/git/refs`, {
+    ref: 'refs/heads/orphan',
+    sha: field(orphan.body, 'sha'),
+  })
+  eq(
+    'a head with no history in common with its base opens nothing',
+    field(
+      (await send('POST', `${repo}/pulls`, { title: 'x', head: 'orphan', base: 'main' })).body,
+      'errors',
+    ),
+    [
+      {
+        resource: 'PullRequest',
+        code: 'custom',
+        message: 'The orphan branch has no history in common with main',
+      },
+    ],
+  )
+
+  // ---- review comments land on lines the diff shows
+  const comments = `${repo}/pulls/${number}/comments`
+  const made = await send('POST', comments, { body: 'nice', path: 'hello.txt', line: 2 })
+  eq(
+    'a comment lands on a line the diff shows',
+    [
+      made.status,
+      field(made.body, 'line'),
+      field(made.body, 'side'),
+      field(made.body, 'diff_hunk'),
+    ],
+    [201, 2, 'RIGHT', '@@ -0,0 +1,3 @@\n+one\n+two'],
+  )
+  const prCommits = list((await send('GET', `${repo}/pulls/${number}/commits`)).body, 'sha')
+  eq(
+    'a comment names a commit of the pull request or none',
+    [
+      (
+        await send('POST', comments, {
+          body: 'x',
+          path: 'hello.txt',
+          line: 1,
+          commit_id: '0'.repeat(40),
+        })
+      ).status,
+      field(
+        (
+          await send('POST', comments, {
+            body: 'older',
+            path: 'hello.txt',
+            line: 1,
+            commit_id: prCommits[0] ?? null,
+          })
+        ).body,
+        'commit_id',
+      ),
+    ],
+    [422, prCommits[0] ?? null],
+  )
+  eq(
+    'a review names one of its head too, never an unrelated commit',
+    (
+      await send('POST', `${repo}/pulls/${number}/reviews`, {
+        event: 'COMMENT',
+        body: 'x',
+        commit_id: field(orphan.body, 'sha'),
+      })
+    ).status,
+    422,
+  )
+  eq(
+    'a comment off the diff is refused',
+    (await send('POST', comments, { body: 'x', path: 'hello.txt', line: 9 })).status,
+    422,
+  )
+  eq(
+    'a file the pull request leaves alone takes no comment',
+    (await send('POST', comments, { body: 'x', path: 'docs/release.md', line: 1 })).status,
+    422,
+  )
+  const reply = await send('POST', `${comments}/${String(field(made.body, 'id'))}/replies`, {
+    body: 'thanks',
+  })
+  eq(
+    'a reply takes the place of what it answers',
+    [field(reply.body, 'in_reply_to_id'), field(reply.body, 'path'), field(reply.body, 'line')],
+    [field(made.body, 'id'), 'hello.txt', 2],
+  )
+  const reviewed = await send('POST', `${repo}/pulls/${number}/reviews`, {
+    event: 'COMMENT',
+    body: 'see',
+    comments: [{ path: 'README.md', line: 3, side: 'LEFT', body: 'old' }],
+  })
+  eq('a review carries its comments', reviewed.status, 200)
+  eq('every comment is listed', list((await send('GET', comments)).body, 'body'), [
+    'nice',
+    'older',
+    'thanks',
+    'old',
+  ])
+  eq(
+    'each comment outside a review is a review of its own',
+    ((await send('GET', `${repo}/pulls/${number}/reviews`)).body as JsonValue[]).length,
+    4,
+  )
+
+  // ---- the commit list pages and filters
+  await put('second.txt', 'main', 'second\n')
+  const shas = async (query: string): Promise<JsonValue> =>
+    list((await send('GET', `${repo}/commits${query}`)).body, 'sha')
+  const history = (await shas('')) as JsonValue[]
+  eq('main holds the write and its root', history.length, 2)
+  const first = await send('GET', `${repo}/commits?per_page=1`)
+  eq(
+    'per_page cuts a page',
+    [list(first.body, 'sha'), first.link.includes('rel="next"')],
+    [[history[0] ?? null], true],
+  )
+  eq('page=2 is the next page', await shas('?per_page=1&page=2'), [history[1] ?? null])
+  eq('until bounds the commit date', await shas('?until=2000-01-01T00:00:00Z'), [
+    history[1] ?? null,
+  ])
+  eq('since bounds it too', await shas('?since=2100-01-01T00:00:00Z'), [])
+  eq('a since that is no date bounds everything out', await shas('?since=abc'), [])
+  eq('author reads the login', await shas('?author=integ-user'), [history[0] ?? null])
+  eq('an author nobody is matches nothing', await shas('?author=nobody'), [])
+  eq('path keeps the commits that touched it', await shas('?path=second.txt'), [history[0] ?? null])
+  eq('a directory path reads beneath it', await shas('?path=docs'), [history[1] ?? null])
+  eq('a path nothing touched matches nothing', await shas('?path=missing.txt'), [])
+  const one = (await send('GET', `${repo}/commits/${String(history[0])}`)).body
+  eq(
+    "a commit's files are its tree against its parent's",
+    [
+      field(one, 'stats'),
+      ((field(one, 'files') ?? []) as JsonValue[]).map((f) => [
+        field(f, 'filename'),
+        field(f, 'status'),
+      ]),
+    ],
+    [{ total: 1, additions: 1, deletions: 0 }, [['second.txt', 'added']]],
+  )
+
+  // ---- annotated tags are objects a ref can name
+  const head = history[0] ?? null
+  const tag = await send('POST', `${repo}/git/tags`, {
+    tag: 'v1',
+    message: 'first',
+    object: head,
+    type: 'commit',
+  })
+  eq('an annotated tag is created', tag.status, 201)
+  const read = await send('GET', `${repo}/git/tags/${String(field(tag.body, 'sha'))}`)
+  eq(
+    'and reads back by its sha',
+    [read.status, field(read.body, 'tag'), field(field(read.body, 'object'), 'sha')],
+    [200, 'v1', head],
+  )
+  eq(
+    'a sha no tag has is 404',
+    (await send('GET', `${repo}/git/tags/${'0'.repeat(40)}`)).status,
+    404,
+  )
+  eq(
+    'a tag of nothing is refused',
+    field(
+      (
+        await send('POST', `${repo}/git/tags`, {
+          tag: 'x',
+          message: 'x',
+          object: 'nope',
+          type: 'commit',
+        })
+      ).body,
+      'message',
+    ),
+    'Object does not exist',
+  )
+  eq(
+    'a tag needs its fields',
+    field((await send('POST', `${repo}/git/tags`, {})).body, 'message'),
+    'Invalid request.\n\n"tag", "message", "object", "type" weren\'t supplied.',
+  )
+  const annotated = await send('POST', `${repo}/git/refs`, {
+    ref: 'refs/tags/v1',
+    sha: field(tag.body, 'sha'),
+  })
+  const light = await send('POST', `${repo}/git/refs`, { ref: 'refs/tags/light', sha: head })
+  eq(
+    'a tag ref names a tag object or a commit',
+    [field(field(annotated.body, 'object'), 'type'), field(field(light.body, 'object'), 'type')],
+    ['tag', 'commit'],
+  )
+  eq(
+    'a tag ref reads back',
+    field(field((await send('GET', `${repo}/git/ref/tags/v1`)).body, 'object'), 'type'),
+    'tag',
+  )
+  eq(
+    'a tag names content and history as a branch does',
+    [
+      (await send('GET', `${repo}/contents/second.txt?ref=v1`)).status,
+      (await send('GET', `${repo}/contents/second.txt?ref=refs/tags/light`)).status,
+      list((await send('GET', `${repo}/commits?sha=v1`)).body, 'sha')[0] ?? null,
+    ],
+    [200, 200, head],
+  )
+  eq(
+    'the tags list newest name first, each at its commit',
+    ((await send('GET', `${repo}/tags`)).body as JsonValue[]).map((t) => [
+      field(t, 'name'),
+      field(field(t, 'commit'), 'sha'),
+    ]),
+    [
+      ['v1', head],
+      ['light', head],
+    ],
+  )
+}
+
+async function reviewAncestry(at: string): Promise<void> {
+  const run = 'review-ancestry'
+  const base = `${at}/_run/${run}`
+  await post(`${base}/reset`, { run, tenants: [TENANT], fixture: 'v1' })
+  const repo = `${base}/repos/${REPO}`
+  const root = field(field(await get(`${repo}/git/ref/heads/main`), 'object'), 'sha')
+  await post(`${repo}/git/refs`, { ref: 'refs/heads/review', sha: root })
+  const first = await send('PUT', `${repo}/contents/review.txt`, {
+    message: 'First revision',
+    content: Buffer.from('first\n').toString('base64'),
+    branch: 'review',
+  })
+  const firstSha = field(field(first.body, 'commit'), 'sha')
+  const second = await send('PUT', `${repo}/contents/review.txt`, {
+    message: 'Second revision',
+    content: Buffer.from('second\n').toString('base64'),
+    sha: field(field(first.body, 'content'), 'sha'),
+    branch: 'review',
+  })
+  const head = field(field(second.body, 'commit'), 'sha')
+  const opened = await post(`${repo}/pulls`, {
+    title: 'Review ancestry',
+    head: 'review',
+    base: 'main',
+  })
+  eq('review ancestry pull opens', opened.status, 201)
+  const pull = `${repo}/pulls/${String(field(opened.body, 'number'))}`
+  const advanced = await send('PATCH', `${repo}/git/refs/heads/main`, { sha: firstSha })
+  eq('base advances through the first review commit', advanced.status, 200)
+  eq(
+    'the current pull range now holds only the second commit',
+    ((await get(`${pull}/commits`)) as JsonValue[]).map((row) => field(row, 'sha')),
+    [head],
+  )
+  for (const commit of [firstSha, head]) {
+    const comment = { body: 'Still reviewable', path: 'review.txt', line: 1 }
+    const made = await post(`${pull}/comments`, { ...comment, commit_id: commit })
+    eq(
+      'an ancestor remains reviewable after the base advances',
+      [made.status, field(made.body, 'commit_id')],
+      [201, commit],
+    )
+    const reviewed = await post(`${pull}/reviews`, {
+      event: 'COMMENT',
+      body: 'Review with a comment',
+      commit_id: commit,
+      comments: [comment],
+    })
+    eq(
+      'a batch review uses the same ancestry validation',
+      [reviewed.status, field(reviewed.body, 'commit_id')],
+      [200, commit],
+    )
+    const saved = await get(`${pull}/comments`)
+    eq(
+      'the batched comment keeps its reviewed commit',
+      (saved as JsonValue[])
+        .filter((row) => field(row, 'pull_request_review_id') === field(reviewed.body, 'id'))
+        .map((row) => field(row, 'commit_id')),
+      [commit],
+    )
+  }
+  await send('PATCH', `${repo}/git/refs/heads/main`, { sha: head })
+  eq('base can catch up to every pull commit', await get(`${pull}/commits`), [])
+  for (const commit of [null, head, firstSha]) {
+    const reviewed = await post(`${pull}/reviews`, {
+      event: 'COMMENT',
+      body: 'Review after base catches up',
+      ...(commit === null ? {} : { commit_id: commit }),
+    })
+    eq(
+      'explicit and default review commits survive an empty diff range',
+      [reviewed.status, field(reviewed.body, 'commit_id')],
+      [200, commit ?? head],
+    )
+  }
+  const outside = await send('PUT', `${repo}/contents/base-only.txt`, {
+    message: 'Only on base',
+    content: Buffer.from('base\n').toString('base64'),
+    branch: 'main',
+  })
+  const outsideSha = field(field(outside.body, 'commit'), 'sha')
+  for (const commit of [outsideSha, '0'.repeat(40)]) {
+    const refused = await post(`${pull}/reviews`, {
+      event: 'COMMENT',
+      body: 'Not in head ancestry',
+      commit_id: commit,
+    })
+    eq(
+      'a base-only or nonexistent commit is still refused',
+      [refused.status, field(refused.body, 'errors')],
+      [422, [{ resource: 'PullRequestReview', code: 'invalid', field: 'commit_id' }]],
+    )
+  }
+  const rewound = await send('PATCH', `${repo}/git/refs/heads/main`, { sha: firstSha, force: true })
+  eq('base rewinds to restore a commentable diff', rewound.status, 200)
+  const refused = await post(`${pull}/comments`, {
+    body: 'Not in head ancestry',
+    path: 'review.txt',
+    line: 1,
+    commit_id: outsideSha,
+  })
+  eq(
+    'standalone comments also refuse an existing commit outside head ancestry',
+    [refused.status, field(refused.body, 'errors')],
+    [422, [{ resource: 'PullRequestReviewComment', code: 'invalid', field: 'commit_id' }]],
+  )
+}
+
+async function refIdentity(at: string): Promise<void> {
+  const run = 'ref-identity'
+  const base = `${at}/_run/${run}`
+  await post(`${base}/reset`, { run, tenants: [TENANT], fixture: 'v1' })
+  const repo = `${base}/repos/${REPO}`
+  const root = String(field(field(await get(`${repo}/git/ref/heads/main`), 'object'), 'sha'))
+  const written = await send('PUT', `${repo}/contents/identity.txt`, {
+    message: 'Identity',
+    content: Buffer.from('identity\n').toString('base64'),
+    branch: 'main',
+  })
+  const head = String(field(field(written.body, 'commit'), 'sha'))
+  const annotated = await post(`${repo}/git/tags`, {
+    tag: 'old',
+    message: 'Old revision',
+    type: 'commit',
+    object: root,
+  })
+  const tagSha = field(annotated.body, 'sha')
+  // A branch spelled under `tags/` is still found by that name, and a tag of
+  // the name that follows wins over it, in git's order.
+  const slashed = await post(`${repo}/git/refs`, { ref: 'refs/heads/tags/release', sha: head })
+  eq('a branch may be named under tags/', slashed.status, 201)
+  const byName = async (): Promise<JsonValue> =>
+    field(await get(`${repo}/commits/tags/release`), 'sha')
+  eq('and reads by that name while no tag is called release', await byName(), head)
+  await post(`${repo}/git/refs`, { ref: 'refs/tags/release', sha: root })
+  eq('a tag called release is read first once it exists', await byName(), root)
+  for (const [name, target] of [
+    [root, head],
+    [head, tagSha],
+  ] as const) {
+    const made = await post(`${repo}/git/refs`, { ref: `refs/tags/${String(name)}`, sha: target })
+    eq('a tag may have a full commit sha as its name', made.status, 201)
+  }
+  for (const prefix of ['', '/api/v3']) {
+    const api = `${base}${prefix}/repos/${REPO}`
+    for (const [sha, contentStatus] of [
+      [root, 404],
+      [head, 200],
+    ] as const) {
+      for (const spelling of [sha, sha.toUpperCase(), sha.slice(0, 7)]) {
+        eq(
+          'commit identity wins over a sha-named tag',
+          field(await get(`${api}/commits/${spelling}`), 'sha'),
+          sha,
+        )
+        eq(
+          'history starts at the named commit rather than the tag target',
+          field(((await get(`${api}/commits?sha=${spelling}`)) as JsonValue[])[0] ?? null, 'sha'),
+          sha,
+        )
+        eq(
+          'content comes from the named commit',
+          (await send('GET', `${api}/contents/identity.txt?ref=${spelling}`)).status,
+          contentStatus,
+        )
+      }
+    }
+    const compared = await get(`${api}/compare/${root}...${head}`)
+    eq(
+      'comparison preserves commit identity on both sides',
+      [field(compared, 'status'), field(compared, 'ahead_by'), field(compared, 'behind_by')],
+      ['ahead', 1, 0],
+    )
+    for (const qualifier of ['tags/', 'refs/tags/']) {
+      eq(
+        'a qualified sha-named tag still names its own target',
+        [
+          (await send('GET', `${api}/contents/identity.txt?ref=${qualifier}${root}`)).status,
+          (await send('GET', `${api}/contents/identity.txt?ref=${qualifier}${head}`)).status,
+        ],
+        [200, 404],
+      )
+    }
+  }
+  const copied = await post(`${repo}/git/tags`, {
+    tag: 'new',
+    message: 'New revision',
+    type: 'commit',
+    object: head,
+  })
+  eq(
+    'a sha-named tag cannot prevent another tag from naming the commit',
+    [copied.status, field(field(copied.body, 'object'), 'sha')],
+    [201, head],
+  )
+  const branch = await post(`${repo}/git/refs`, { ref: 'refs/heads/copy', sha: head })
+  eq(
+    'a branch created by sha uses the commit rather than the tag target',
+    [branch.status, (await send('GET', `${repo}/contents/identity.txt?ref=copy`)).status],
+    [201, 200],
+  )
+  for (const [name, target] of [
+    [head, root],
+    [`tags/${head}`, head],
+  ] as const) {
+    const made = await post(`${repo}/git/refs`, { ref: `refs/heads/${name}`, sha: target })
+    eq('a branch may overlap an object or tag spelling', made.status, 201)
+  }
+  for (const [ref, expected] of [
+    [head, head],
+    [`heads/${head}`, root],
+    [`refs/heads/${head}`, root],
+    [`tags/${head}`, root],
+    [`refs/tags/${head}`, root],
+    [`refs/heads/tags/${head}`, head],
+  ] as const) {
+    eq(
+      'qualified names resolve only within their namespace',
+      field(await get(`${repo}/commits/${encodeURIComponent(ref)}`), 'sha'),
+      expected,
+    )
+  }
+  const opened = await post(`${repo}/pulls`, {
+    title: 'Branches with ambiguous names',
+    head: `tags/${head}`,
+    base: head,
+  })
+  eq(
+    'pull creation resolves head and base as branch names',
+    [
+      opened.status,
+      field(field(opened.body, 'head'), 'sha'),
+      field(field(opened.body, 'base'), 'sha'),
+    ],
+    [201, head, root],
+  )
+  const pull = await get(`${repo}/pulls/${String(field(opened.body, 'number'))}`)
+  eq(
+    'pull reads preserve the same branch identity',
+    [field(field(pull, 'head'), 'sha'), field(field(pull, 'base'), 'sha'), field(pull, 'commits')],
+    [head, root, 1],
+  )
+  const short = await post(`${repo}/git/refs`, { ref: `refs/tags/${head.slice(0, 7)}`, sha: root })
+  eq('an abbreviated sha can also name a tag', short.status, 201)
+  eq(
+    'bare tag names still take precedence over abbreviated commits',
+    field(await get(`${repo}/commits/${head.slice(0, 7)}`), 'sha'),
+    root,
+  )
+}
+
+// Owner scope, issue search's `is:` and `sort:`, the order lists are sorted
+// and paged in, pull requests in the issue list, profiles, a repository's
+// languages, people and events, the rate limit, and pull requests from forks.
+async function listsProfilesAndForks(at: string): Promise<void> {
+  const run = 'lists-profiles-forks'
+  const base = `${at}/_run/${run}`
+  await post(`${base}/reset`, { run, tenants: [TENANT], fixture: 'v1' })
+  const repo = `${base}/repos/${REPO}`
+  const send = async (
+    method: string,
+    url: string,
+    body?: JsonValue,
+    headers: Record<string, string> = HEADERS,
+  ): Promise<{ status: number; body: JsonValue }> => {
+    const r = await fetch(url, {
+      method,
+      headers,
+      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+    })
+    const text = await r.text()
+    return { status: r.status, body: text === '' ? null : (JSON.parse(text) as JsonValue) }
+  }
+  const items = (body: JsonValue): JsonValue[] =>
+    (Array.isArray(body) ? body : ((field(body, 'items') ?? []) as JsonValue[])) as JsonValue[]
+  const branchOff = async (at: string, name: string, path: string): Promise<void> => {
+    const head = field(field((await send('GET', `${at}/git/ref/heads/main`)).body, 'object'), 'sha')
+    await send('POST', `${at}/git/refs`, { ref: `refs/heads/${name}`, sha: head })
+    await send('PUT', `${at}/contents/${path}`, {
+      message: `Add ${path}`,
+      content: Buffer.from(`${path}\n`).toString('base64'),
+      branch: name,
+    })
+  }
+
+  // ---- `owner:` scopes repository search as `user:` and `org:` do
+  await send('POST', `${base}/user/repos`, { name: 'own-repo' })
+  eq(
+    '`owner:` narrows repositories to that account',
+    items((await send('GET', `${base}/search/repositories?q=owner:integ`)).body).map((r) =>
+      field(r, 'full_name'),
+    ),
+    ['integ/data-v1', 'integ/repo-cli', 'integ/repo-trunc', 'integ/repo-v1'],
+  )
+
+  // ---- two issues and a pull request between them
+  await send('POST', `${repo}/issues`, { title: 'First issue' })
+  await branchOff(repo, 'one', 'one.txt')
+  await send('POST', `${repo}/pulls`, { title: 'Pull from one', head: 'one', base: 'main' })
+  await send('POST', `${repo}/issues`, { title: 'Second issue' })
+  const found = async (q: string): Promise<JsonValue> =>
+    items((await send('GET', `${base}/search/issues?q=${encodeURIComponent(q)}`)).body).map((i) =>
+      field(i, 'number'),
+    )
+  eq('`is:issue` keeps issues', await found(`repo:${REPO} is:issue`), [3, 1])
+  eq('`is:pr` keeps pull requests', await found(`repo:${REPO} is:pr`), [2])
+  eq('`is:open` keeps open ones', await found(`repo:${REPO} is:open`), [3, 1, 2])
+  eq(
+    '`sort:created-asc` orders oldest first',
+    await found(`repo:${REPO} is:issue sort:created-asc`),
+    [1, 3],
+  )
+  eq('`org:` scopes issue search', await found(`org:integ is:issue`), [3, 1])
+  eq(
+    'an account nobody holds is refused as a missing repository is',
+    (await send('GET', `${base}/search/issues?q=${encodeURIComponent('org:no-such-org-zz9')}`))
+      .status,
+    422,
+  )
+  eq('`user:` compares the login in any case', await found(`user:INTEG is:pr`), [2])
+
+  // ---- lists sort and page in the order asked; the issue list holds pull requests
+  await branchOff(repo, 'two', 'two.txt')
+  await send('POST', `${repo}/pulls`, { title: 'Pull from two', head: 'two', base: 'main' })
+  const numbers = async (path: string): Promise<JsonValue> =>
+    ((await send('GET', `${repo}/${path}`)).body as JsonValue[]).map((i) => [
+      field(i, 'number'),
+      field(i, 'pull_request') !== null,
+    ])
+  eq('pulls are newest first by default', await numbers('pulls?state=all'), [
+    [4, false],
+    [2, false],
+  ])
+  eq(
+    'and oldest first when asked',
+    await numbers('pulls?state=all&sort=created&direction=asc&per_page=1'),
+    [[2, false]],
+  )
+  eq('the issue list holds the pull requests too', await numbers('issues?state=all'), [
+    [4, true],
+    [3, false],
+    [2, true],
+    [1, false],
+  ])
+  eq(
+    'in the order asked',
+    await numbers('issues?state=all&sort=created&direction=asc&per_page=2'),
+    [
+      [1, false],
+      [2, true],
+    ],
+  )
+  eq(
+    '`since` keeps what was updated after it',
+    await numbers('issues?state=all&since=2100-01-01T00:00:00Z'),
+    [],
+  )
+
+  // ---- a profile answers every field the fixture states
+  const profile = (await send('GET', `${base}/users/integ`)).body
+  eq(
+    'a profile holds what the fixture states',
+    [
+      'name',
+      'type',
+      'bio',
+      'company',
+      'blog',
+      'location',
+      'followers',
+      'following',
+      'public_gists',
+      'public_repos',
+      'created_at',
+      'updated_at',
+    ].map((k) => field(profile, k)),
+    [
+      'Integ Fixtures',
+      'Organization',
+      'Fixtures for the integ batteries',
+      '@integ',
+      'https://example.test',
+      'Test Lab',
+      12,
+      3,
+      1,
+      4,
+      '2020-05-01T00:00:00Z',
+      '2026-01-02T00:00:00Z',
+    ],
+  )
+  const users = async (q: string): Promise<JsonValue> =>
+    items((await send('GET', `${base}/search/users?q=${encodeURIComponent(q)}`)).body).map((u) =>
+      field(u, 'login'),
+    )
+  eq('`location:` reads the profile', await users('location:"test lab"'), ['integ'])
+  eq('`followers:` compares the count', await users('followers:>10'), ['integ'])
+  eq('`language:` reads the repositories owned', await users('language:python'), ['integ'])
+
+  // ---- a repository's languages, people, events and tags
+  eq('languages are what Linguist counts', (await send('GET', `${repo}/languages`)).body, {
+    Python: 15014,
+  })
+  eq(
+    'a repository of data has none',
+    (await send('GET', `${base}/repos/integ/data-v1/languages`)).body,
+    {},
+  )
+  const graphLanguages = await send('POST', `${base}/graphql`, {
+    query:
+      '{ repository(owner: "integ", name: "repo-v1") { primaryLanguage { name } ' +
+      'languages(first: 5) { edges { size node { name } } } } }',
+  })
+  eq('GraphQL reads the same languages', field(field(graphLanguages.body, 'data'), 'repository'), {
+    primaryLanguage: { name: 'Python' },
+    languages: { edges: [{ size: 15014, node: { name: 'Python' } }] },
+  })
+  eq(
+    'a repository reports its primary language',
+    field((await send('GET', repo)).body, 'language'),
+    'Python',
+  )
+  const data = `${base}/repos/integ/data-v1`
+  eq(
+    'stargazers and subscribers are the ones the fixture lists',
+    [
+      items((await send('GET', `${data}/stargazers`)).body).map((u) => [
+        field(u, 'login'),
+        field(u, 'type'),
+      ]),
+      items((await send('GET', `${data}/subscribers`)).body).map((u) => field(u, 'login')),
+      field((await send('GET', data)).body, 'stargazers_count'),
+    ],
+    [
+      [
+        ['integ-user', 'User'],
+        ['integ', 'Organization'],
+      ],
+      ['integ-user'],
+      2,
+    ],
+  )
+  eq(
+    'a tag the fixture states is listed',
+    items((await send('GET', `${data}/tags`)).body).map((t) => [
+      field(t, 'name'),
+      field(field(t, 'commit'), 'sha'),
+    ]),
+    [['v0.1.0', '24f636d593911ace37ffae622f03331804f24386']],
+  )
+  eq(
+    'contributors are the accounts that wrote the default branch',
+    items((await send('GET', `${repo}/contributors?anon=1`)).body).map((c) => [
+      field(c, 'login') ?? field(c, 'email'),
+      field(c, 'type'),
+      field(c, 'contributions'),
+    ]),
+    [['mirage@users.noreply.github.com', 'Anonymous', 1]],
+  )
+  const kinds = items((await send('GET', `${repo}/events`)).body).map((e) => field(e, 'type'))
+  eq('events are the activity the fake holds, newest first', [...new Set(kinds)].sort(), [
+    'CreateEvent',
+    'IssuesEvent',
+    'PullRequestEvent',
+    'PushEvent',
+  ])
+  const limits = async (headers: Record<string, string>): Promise<JsonValue> => {
+    const body = (await send('GET', `${base}/rate_limit`, undefined, headers)).body
+    return [
+      field(field(field(body, 'resources'), 'core'), 'limit'),
+      field(field(field(body, 'resources'), 'search'), 'limit'),
+    ]
+  }
+  eq('the rate limit answers a signed-in caller', await limits(HEADERS), [5000, 30])
+  eq('and an anonymous one', await limits({ 'x-mirage-tenant': TENANT }), [60, 10])
+
+  // ---- a pull request from a fork
+  const tip = field(field((await send('GET', `${repo}/git/ref/heads/main`)).body, 'object'), 'sha')
+  const annotated = await send('POST', `${repo}/git/tags`, {
+    tag: 'v2',
+    message: 'Second',
+    object: tip,
+    type: 'commit',
+  })
+  await send('POST', `${repo}/git/refs`, { ref: 'refs/tags/v2', sha: field(annotated.body, 'sha') })
+  const forked = await send('POST', `${repo}/forks`, {})
+  eq(
+    'a fork is made',
+    [forked.status, field(forked.body, 'full_name')],
+    [202, 'integ-user/repo-v1'],
+  )
+  const fork = `${base}/repos/integ-user/repo-v1`
+  eq(
+    'it shares its source history',
+    field(field((await send('GET', `${fork}/git/ref/heads/main`)).body, 'object'), 'sha'),
+    field(field((await send('GET', `${repo}/git/ref/heads/main`)).body, 'object'), 'sha'),
+  )
+  await branchOff(fork, 'feature', 'forked.txt')
+  const opened = await send('POST', `${repo}/pulls`, {
+    title: 'From a fork',
+    head: 'integ-user:feature',
+    base: 'main',
+  })
+  const number = String(field(opened.body, 'number'))
+  const pull = (await send('GET', `${repo}/pulls/${number}`)).body
+  eq(
+    "its head is the fork's branch",
+    [
+      field(field(pull, 'head'), 'label'),
+      field(field(pull, 'head'), 'ref'),
+      field(field(field(pull, 'head'), 'repo'), 'full_name'),
+      field(field(pull, 'base'), 'label'),
+      field(pull, 'changed_files'),
+    ],
+    ['integ-user:feature', 'feature', 'integ-user/repo-v1', 'integ:main', 1],
+  )
+  eq(
+    'its files are the fork branch against the base',
+    items((await send('GET', `${repo}/pulls/${number}/files`)).body).map((f) =>
+      field(f, 'filename'),
+    ),
+    ['forked.txt'],
+  )
+  const graphPull = await send('POST', `${base}/graphql`, {
+    query:
+      `{ repository(owner: "integ", name: "repo-v1") { pullRequest(number: ${number}) { ` +
+      'isCrossRepository headRefName headRepository { nameWithOwner } headRepositoryOwner { login } } } }',
+  })
+  eq('GraphQL agrees', field(field(field(graphPull.body, 'data'), 'repository'), 'pullRequest'), {
+    isCrossRepository: true,
+    headRefName: 'feature',
+    headRepository: { nameWithOwner: 'integ-user/repo-v1' },
+    headRepositoryOwner: { login: 'integ-user' },
+  })
+  eq(
+    'a comparison reads `owner:branch` too',
+    items(
+      field((await send('GET', `${repo}/compare/main...integ-user:feature`)).body, 'files'),
+    ).map((f) => field(f, 'filename')),
+    ['forked.txt'],
+  )
+  eq(
+    'a head in no fork is refused',
+    field(
+      (await send('POST', `${repo}/pulls`, { title: 'x', head: 'carol:feature', base: 'main' }))
+        .body,
+      'errors',
+    ),
+    [{ resource: 'PullRequest', field: 'head', code: 'invalid' }],
+  )
+  eq(
+    "a fork's copy of an annotated tag peels through its source's tag object",
+    [
+      items((await send('GET', `${fork}/tags`)).body).map((t) => [
+        field(t, 'name'),
+        field(field(t, 'commit'), 'sha'),
+      ]),
+      field(
+        (await send('GET', `${fork}/git/tags/${String(field(annotated.body, 'sha'))}`)).body,
+        'tag',
+      ),
+    ],
+    [[['v2', tip]], 'v2'],
+  )
+
+  // CI the fork's head commit reports to the fork rolls up on the pull request.
+  const forkHead = String(field(field(pull, 'head'), 'sha'))
+  await send('POST', `${fork}/statuses/${forkHead}`, { context: 'fork-ci', state: 'failure' })
+  const rolled = await send('POST', `${base}/graphql`, {
+    query:
+      `{ repository(owner: "integ", name: "repo-v1") { pullRequest(number: ${number}) { ` +
+      'commits(last: 1) { nodes { commit { statusCheckRollup { contexts(first: 10) { nodes { ' +
+      '... on StatusContext { context state } } } } } } } } } }',
+  })
+  eq(
+    "a status set in the fork is on the pull request's rollup",
+    field(
+      field(
+        (
+          field(
+            field(field(field(rolled.body, 'data'), 'repository'), 'pullRequest'),
+            'commits',
+          ) as { nodes: JsonValue[] }
+        ).nodes[0] ?? null,
+        'commit',
+      ),
+      'statusCheckRollup',
+    ),
+    { contexts: { nodes: [{ context: 'fork-ci', state: 'FAILURE' }] } },
+  )
+  eq(
+    "and each repository's own status endpoint answers its own",
+    [
+      field((await send('GET', `${fork}/commits/${forkHead}/status`)).body, 'total_count'),
+      field((await send('GET', `${repo}/commits/${forkHead}/status`)).body, 'total_count'),
+    ],
+    [1, 0],
+  )
+  for (let i = 0; i < 3; i++) {
+    await send('POST', `${repo}/statuses/${forkHead}`, { context: 'shared', state: 'success' })
+  }
+  await send('POST', `${fork}/statuses/${forkHead}`, { context: 'shared', state: 'failure' })
+  const reread = await send('POST', `${base}/graphql`, {
+    query:
+      `{ repository(owner: "integ", name: "repo-v1") { pullRequest(number: ${number}) { ` +
+      'commits(last: 1) { nodes { commit { statusCheckRollup { contexts(first: 10) { nodes { ' +
+      '... on StatusContext { context state } } } } } } } } } }',
+  })
+  eq(
+    'a context set in both repositories rolls up the one set last',
+    field(
+      field(
+        (
+          field(
+            field(field(field(reread.body, 'data'), 'repository'), 'pullRequest'),
+            'commits',
+          ) as { nodes: JsonValue[] }
+        ).nodes[0] ?? null,
+        'commit',
+      ),
+      'statusCheckRollup',
+    ),
+    {
+      contexts: {
+        nodes: [
+          { context: 'fork-ci', state: 'FAILURE' },
+          { context: 'shared', state: 'FAILURE' },
+        ],
+      },
+    },
+  )
+
+  // Deleting the source leaves the fork its history, its trees and its tags.
+  const history = async (): Promise<JsonValue> =>
+    items((await send('GET', `${fork}/commits?sha=feature`)).body).map((c) => field(c, 'sha'))
+  const before = await history()
+  const one = field(field((await send('GET', `${repo}/git/ref/heads/one`)).body, 'object'), 'sha')
+  eq('the source is deleted', (await send('DELETE', repo)).status, 204)
+  eq('the fork keeps its history', await history(), before)
+  eq(
+    "and the files of its source's commits",
+    (await send('GET', `${fork}/contents/one.txt?ref=${String(one)}`)).status,
+    200,
+  )
+  eq(
+    'and its tags',
+    items((await send('GET', `${fork}/tags`)).body).map((t) => field(field(t, 'commit'), 'sha')),
+    [tip],
+  )
+  const orphaned = await send('POST', `${base}/graphql`, {
+    query: '{ repository(owner: "integ-user", name: "repo-v1") { isFork parent { name } } }',
+  })
+  eq('with no parent left', field(field(orphaned.body, 'data'), 'repository'), {
+    isFork: true,
+    parent: null,
+  })
+}
+
 async function main(): Promise<void> {
   const fake = await launch()
   const at = fake.endpoint
   try {
+    await refIdentity(at)
+    await reviewAncestry(at)
     await emptyRepository(at)
     await seededHistory(at)
     await supersededBlobs(at)
+    await refsNameCommits(at)
+    await abandonedRoot(at)
+    await workflowsAndSettings(at)
+    await diffsSearchAndHistory(at)
+    await diffsMatchGit()
+    await listsProfilesAndForks(at)
     const reset = await fetch(`${at}/reset`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
@@ -1496,12 +3012,28 @@ async function main(): Promise<void> {
       [],
     )
     eq('a negated qualifier is a term', await hits(`-repo:integ/repo-cli ${MARK}`), [])
-    // Content and metadata filters are dropped rather than matched as words,
-    // which only ever widens; live narrows by them.
-    for (const name of ['language', 'extension', 'filename', 'in', 'size', 'fork']) {
+    // A file's name, extension, language and size narrow, as GitHub's code
+    // search syntax defines them; where a term matches and forks are dropped
+    // rather than matched as words, which only ever widens.
+    const fileFilters: Array<[string, string, JsonValue[]]> = [
+      ['`filename:` keeps that name', 'filename:shared.md', [CLI]],
+      ['and nothing else', 'filename:nothing.txt', []],
+      ['`extension:` keeps that extension', 'extension:md', [CLI]],
+      ['with or without its dot', 'extension:.md', [CLI]],
+      ['and nothing else', 'extension:py', []],
+      ["`language:` keeps Linguist's name for the file", 'language:Markdown', [CLI]],
+      ['in any case', 'language:markdown', [CLI]],
+      ['and nothing else', 'language:Haskell', []],
+      ['`size:` compares the bytes', 'size:>0', [CLI]],
+      ['and narrows', 'size:<1', []],
+    ]
+    for (const [name, qualifier, want] of fileFilters) {
+      eq(name, await hits(`repo:integ/repo-cli ${qualifier} ${MARK}`), want)
+    }
+    for (const name of ['in', 'fork']) {
       eq(`\`${name}:\` is dropped`, await hits(`repo:integ/repo-cli ${name}:x ${MARK}`), [CLI])
     }
-    eq('and dropping one does not scope', await hits(`language:x ${MARK}`), ALL)
+    eq('and dropping one does not scope', await hits(`in:x ${MARK}`), ALL)
     // Live refuses an empty qualifier value with a query-parse 422.
     eq('an empty `user:` is dropped', await hits(`user: ${MARK}`), ALL)
     eq('an empty `repo:` is dropped', await hits(`repo: ${MARK}`), ALL)
@@ -1669,6 +3201,32 @@ async function main(): Promise<void> {
     const repoCli = `${at}/repos/integ/repo-cli`
     const tracked = await post(`${repoCli}/issues`, { title: 'tracked' })
     eq('an issue for the pull request to close', field(tracked.body, 'number'), 1)
+    const cliMain = field(field(await get(`${repoCli}/git/ref/heads/main`), 'object'), 'sha')
+    const cut = await post(`${repoCli}/git/refs`, { ref: 'refs/heads/docs', sha: cliMain })
+    eq('a docs branch is cut from main', cut.status, 201)
+    const unchanged = await post(`${repoCli}/pulls`, { title: 'docs', head: 'docs', base: 'main' })
+    eq('a head with nothing past its base opens nothing', field(unchanged.body, 'errors'), [
+      { resource: 'PullRequest', code: 'custom', message: 'No commits between main and docs' },
+    ])
+    const readme = await fetch(`${repoCli}/contents/README.md`, {
+      method: 'PUT',
+      headers: HEADERS,
+      body: JSON.stringify({
+        message: 'Point at the docs\n\nThe README says where they live.',
+        content: Buffer.from(
+          '# repo-v1\n\nFixture repository for the fake GitHub API server.\nSee docs/.\n',
+        ).toString('base64'),
+        sha: field(await get(`${repoCli}/contents/README.md?ref=docs`), 'sha'),
+        branch: 'docs',
+      }),
+    })
+    eq('the docs branch changes the README', readme.status, 200)
+    const missingHead = await post(`${repoCli}/pulls`, { title: 'x', head: 'nope', base: 'main' })
+    eq(
+      'a head that is no branch opens nothing',
+      [missingHead.status, field(missingHead.body, 'errors')],
+      [422, [{ resource: 'PullRequest', field: 'head', code: 'invalid' }]],
+    )
     const docsPull = await post(`${repoCli}/pulls`, {
       title: 'docs',
       head: 'docs',
@@ -1776,6 +3334,71 @@ async function main(): Promise<void> {
       (field(cards, 'errors') as JsonValue[]).map((e) => field(e, 'path')),
       [['repository', 'pullRequest', 'projectCards']],
     )
+    // CI state belongs to the commit it was set on: the fixture's check runs
+    // and status are on main's seeded commit, and the pull request's head,
+    // a new commit, carries only what is set on it.
+    const docsHead = String(field(field(docsPull.body, 'head'), 'sha'))
+    const checksOn = async (ref: string): Promise<JsonValue> =>
+      (
+        (field(await get(`${repoCli}/commits/${ref}/check-runs`), 'check_runs') ??
+          []) as JsonValue[]
+      ).map((row) => [field(row, 'name'), field(row, 'conclusion'), field(row, 'head_sha')])
+    eq(
+      'the fixture states its check runs on the commit they ran on',
+      await checksOn(String(cliMain)),
+      [
+        ['test', 'success', cliMain],
+        ['flaky', 'cancelled', cliMain],
+      ],
+    )
+    eq('a commit nobody ran checks on has none', await checksOn(docsHead), [])
+    const combined = async (ref: string): Promise<JsonValue> => {
+      const body = await get(`${repoCli}/commits/${ref}/status`)
+      return [field(body, 'state'), field(body, 'total_count')]
+    }
+    eq('a commit with no statuses is pending with none', await combined(docsHead), ['pending', 0])
+    for (const [context, state] of [
+      ['lint', 'pending'],
+      ['build', 'success'],
+      ['lint', 'success'],
+    ] as const) {
+      const set = await post(`${repoCli}/statuses/${docsHead}`, { context, state })
+      eq(`a ${state} ${context} status is set on the head`, set.status, 201)
+    }
+    eq('the newest of each context rolls up', await combined('docs'), ['success', 2])
+    eq(
+      'and every status stays listed',
+      ((await get(`${repoCli}/commits/${docsHead}/statuses`)) as JsonValue[]).map((row) => [
+        field(row, 'context'),
+        field(row, 'state'),
+      ]),
+      [
+        ['lint', 'success'],
+        ['build', 'success'],
+        ['lint', 'pending'],
+      ],
+    )
+    eq("the fixture's status stays on its own commit", await combined(String(cliMain)), [
+      'success',
+      1,
+    ])
+    eq(
+      'a status on nothing is refused',
+      (await post(`${repoCli}/statuses/${'0'.repeat(40)}`, { state: 'success' })).status,
+      422,
+    )
+    eq(
+      "a check run is an app's to create",
+      [
+        (await post(`${repoCli}/check-runs`, { name: 'x', head_sha: docsHead })).status,
+        field(
+          (await post(`${repoCli}/check-runs`, { name: 'x', head_sha: docsHead })).body,
+          'message',
+        ),
+      ],
+      [403, 'You must authenticate via a GitHub App.'],
+    )
+    await post(`${repoCli}/statuses/${docsHead}`, { context: 'docs', state: 'success' })
     const contexts = async (after: string): Promise<JsonValue> =>
       field(
         field(
@@ -1804,14 +3427,17 @@ async function main(): Promise<void> {
       )
     const firstChecks = field(await contexts(''), 'contexts')
     eq(
-      'the head commit rolls up the check runs first',
-      (field(firstChecks, 'nodes') as JsonValue[]).map((node) => field(node, '__typename')),
-      ['CheckRun', 'CheckRun'],
+      "the head commit's rollup pages its statuses",
+      [
+        (field(firstChecks, 'nodes') as JsonValue[]).map((node) => field(node, '__typename')),
+        field(field(firstChecks, 'pageInfo'), 'hasNextPage'),
+      ],
+      [['StatusContext', 'StatusContext'], true],
     )
     const cursor = field(field(firstChecks, 'pageInfo'), 'endCursor') as string
     const lastChecks = field(await contexts(`, after: "${cursor}"`), 'contexts')
     eq(
-      'the next page of the rollup is the commit status',
+      'and the next page is the rest',
       [
         (field(lastChecks, 'nodes') as JsonValue[]).map((node) => field(node, '__typename')),
         field(field(lastChecks, 'pageInfo'), 'hasNextPage'),

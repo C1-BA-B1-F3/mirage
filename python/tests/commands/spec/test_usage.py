@@ -6,8 +6,8 @@ from mirage.commands.spec.usage import (  # yapf: disable
     argmatch_valid_block, extra_operand_error, invalid_argument_error,
     invalid_float_error, invalid_int_error, missing_operand_error,
     missing_required_error, missing_value_error, old_option_error,
-    read_fail_exit, read_fail_exit_line, unexpected_value_error,
-    unknown_option_error, usage_exit_code)
+    read_fail_exit, read_fail_exit_line, rg_unknown_flag, similar_rg_flags,
+    unexpected_value_error, unknown_option_error, usage_exit_code)
 from mirage.utils.errors import efbig
 
 
@@ -24,6 +24,37 @@ def test_unknown_long_option_reports_full_token():
     assert msg == (b"cat: unrecognized option '--bogus=x'\n"
                    b"Try 'cat --help' for more information.\n")
     assert code == 1
+
+
+# ripgrep 14.1.1's refusals: no usage hint, and the similar flags its
+# own table holds.
+@pytest.mark.parametrize("token,stderr", [
+    ("--pcr", "rg: unrecognized flag --pcr\n"),
+    ("--pcr=x", "rg: unrecognized flag --pcr\n"),
+    ("y", "rg: unrecognized flag -y\n"),
+    ("--pcre", "rg: unrecognized flag --pcre\n\n"
+     "similar flags that are available: --pcre2\n"),
+    ("--no-pcr", "rg: unrecognized flag --no-pcr\n\n"
+     "similar flags that are available: --no-pcre2\n"),
+    ("--colo", "rg: unrecognized flag --colo\n\n"
+     "similar flags that are available: --color, --colors\n"),
+    ("--ignore-cas", "rg: unrecognized flag --ignore-cas\n\n"
+     "similar flags that are available: --ignore-case, --ignore-file, "
+     "--ignore, --ignore-dot, --ignore-vcs\n"),
+    ("--context-sep", "rg: unrecognized flag --context-sep\n\n"
+     "similar flags that are available: --context, --context-separator, "
+     "--no-context-separator, --field-context-separator\n"),
+    ("--heading-x", "rg: unrecognized flag --heading-x\n\n"
+     "similar flags that are available: --heading, --no-heading\n"),
+])
+def test_rg_refuses_an_unknown_flag_in_its_own_words(token, stderr):
+    assert unknown_option_error("rg", token) == (stderr.encode(), 2)
+    assert rg_unknown_flag(token) == (stderr.encode(), 2)
+
+
+def test_similar_rg_flags_keep_ripgreps_order():
+    assert similar_rg_flags("colo") == ["color", "colors"]
+    assert similar_rg_flags("pcr") == []
 
 
 def test_unknown_short_option_reports_char():

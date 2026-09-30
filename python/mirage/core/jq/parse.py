@@ -12,12 +12,13 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import json
 import logging
 import re
 from enum import Enum, auto
 
-from mirage.core.jq.types import NO_VALUE, JqParseError, NoValue
-from mirage.types import JsonValue
+from mirage.core.jq.types import (NO_VALUE, JqParseError, NoValue, NumberText,
+                                  ParsedValue)
 
 logger = logging.getLogger(__name__)
 
@@ -48,6 +49,9 @@ COLON = 0x3A
 COMMA = 0x2C
 WHITESPACE = frozenset(b" \t\r\n")
 STRUCTURE = frozenset(b"[,]{:}")
+# What stands between two values of a stream: whitespace, and under --seq
+# the RS before each one.
+SEPARATORS = b" \t\r\n\x1e"
 
 # Runs of bytes that each go through jq's scan() the same way, so a run
 # is taken in one step: a literal's bytes, whitespace, a string's body.
@@ -216,6 +220,33 @@ def number_value(literal: bytes) -> int | float | NoValue:
     return NO_VALUE
 
 
+def string_text(value: str) -> str:
+    """A string as JSON text, which jq's parser reads back as that string.
+
+    Args:
+        value (str): the string.
+    """
+    return json.dumps(value, ensure_ascii=False)
+
+
+def event_text(event: ParsedValue) -> str:
+    """A --stream event as JSON text: its path, then its leaf, a number
+    spelled as its literal (see NumberText).
+
+    Args:
+        event (ParsedValue): ``[path]`` or ``[path, leaf]``, as the
+            streaming parser hands it out.
+    """
+    assert isinstance(event, list)
+    path = json.dumps(event[0], ensure_ascii=False, separators=(",", ":"))
+    if len(event) < 2:
+        return f"[{path}]"
+    leaf = event[1]
+    text = (leaf.text if isinstance(leaf, NumberText) else json.dumps(
+        leaf, ensure_ascii=False))
+    return f"[{path},{text}]"
+
+
 def _unhex4(data: bytes | bytearray, at: int) -> int:
     try:
         text = bytes(data[at:at + 4]).decode("ascii")
@@ -226,8 +257,9 @@ def _unhex4(data: bytes | bytearray, at: int) -> int:
     return int(text, 16)
 
 
-def _is_number(value: "JsonValue | NoValue") -> bool:
-    return isinstance(value, (int, float)) and not isinstance(value, bool)
+def _is_number(value: "ParsedValue | NoValue") -> bool:
+    return isinstance(
+        value, (int, float, NumberText)) and not isinstance(value, bool)
 
 
 class JqParser:
@@ -245,6 +277,9 @@ class JqParser:
 
     Feed it one buffer at a time (jv_parser_set_buf) and pull what it
     parsed (jv_parser_next); the reader over it decides the buffers.
+    What it parsed is also there as text (see text()), which is what
+    libjq is handed: jq keeps a number's literal and an object's key order,
+    and the text keeps both where the value cannot.
 
     Args:
         seq (bool): --seq, an RFC 7464 text sequence: nothing counts before
@@ -258,12 +293,12 @@ class JqParser:
         self._streaming = streaming
         self._literal_run = LITERAL_RUN_SEQ if seq else LITERAL_RUN
         self._string_run = STRING_RUN_SEQ if seq else STRING_RUN
-        self._stack: list[JsonValue] = []
-        self._path: list[JsonValue] = []
+        self._stack: list[ParsedValue] = []
+        self._path: list[ParsedValue] = []
         self._last_seen = LastSeen.NONE
-        self._output: "list[JsonValue] | NoValue" = NO_VALUE
-        self._next: "JsonValue | NoValue" = NO_VALUE
-        self._produced: "JsonValue | NoValue" = NO_VALUE
+        self._output: "list[ParsedValue] | NoValue" = NO_VALUE
+        self._next: "ParsedValue | NoValue" = NO_VALUE
+        self._produced: "ParsedValue | NoValue" = NO_VALUE
         self._token = bytearray()
         self._line = 1
         self._column = 0
@@ -274,6 +309,15 @@ class JqParser:
         self._buf: bytes | None = None
         self._pos = 0
         self._partial = False
+        # Where the bytes of the next value begin in the buffer, the bytes
+        # of it earlier buffers held, whether the value last completed
+        # ended before the byte that completed it (a literal does), and
+        # the last value's bytes, or under --stream the last event.
+        self._mark = 0
+        self._carry = bytearray()
+        self._before = False
+        self._text = b""
+        self._last: ParsedValue = None
 
     def feed(self, data: bytes, partial: bool) -> None:
         """Hand the parser its next buffer (jv_parser_set_buf), once the
@@ -296,6 +340,15 @@ class JqParser:
         self._buf = data
         self._pos = start
         self._partial = partial
+        self._mark = start
+
+    def text(self) -> str:
+        """The JSON text of the value next() handed back last, which jq's
+        parser reads as that value: the bytes it was read from, or under
+        --stream the event with a number leaf spelled as its literal."""
+        if self._streaming:
+            return event_text(self._last)
+        return decode_utf8(self._text)
 
     def remaining(self) -> int:
         """Bytes of the current buffer not yet parsed."""
@@ -342,7 +395,7 @@ class JqParser:
             self._advance(data, start, stop)
             self._last_ch_was_ws = data[stop - 1] in WHITESPACE
 
-    def next(self) -> "JsonValue | JqParseError | NoValue":
+    def next(self) -> "ParsedValue | JqParseError | NoValue":
         """The next value, the parse error that stops it, or NO_VALUE when
         the buffer ran out first or the input ended with nothing left
         (jv_parser_next)."""
@@ -356,6 +409,7 @@ class JqParser:
         if self._streaming:
             done = self._stream_check_done()
             if done is not NO_VALUE:
+                self._last = done
                 return done
         self._produced = NO_VALUE
         buf = self._buf
@@ -370,6 +424,7 @@ class JqParser:
                 stop = end if rs < 0 else rs + 1
                 self._advance(buf, pos, stop)
                 pos = stop
+                self._mark = pos
                 if rs >= 0:
                     self._state = ParseState.NORMAL
                 continue
@@ -404,8 +459,16 @@ class JqParser:
             msg = self._scan(ch)
         self._pos = pos
         if msg is Scanned.OUTPUT:
-            return self._produced
+            produced = self._produced
+            if produced is NO_VALUE:
+                # An RS dropped what it cut short.
+                self._mark = pos
+            else:
+                self._take(buf, pos - 1 if self._before else pos)
+                self._last = produced
+            return produced
         if msg is not None:
+            self._mark = pos
             where = f"at line {self._line}, column {self._column}"
             if ch != RS and self._seq:
                 self._state = ParseState.WAITING_FOR_RS
@@ -419,10 +482,37 @@ class JqParser:
                 self._pos = 0
             return failure
         if self._partial:
+            self._hold(buf, end)
             return NO_VALUE
-        return self._at_eof()
+        value = self._at_eof()
+        if value is not NO_VALUE and not isinstance(value, JqParseError):
+            self._take(buf, end)
+            self._last = value
+        return value
 
-    def _at_eof(self) -> "JsonValue | JqParseError | NoValue":
+    def _take(self, buf: bytes, stop: int) -> None:
+        # The bytes of the value just completed, which end at `stop`: the
+        # next value's begin after them.
+        if self._streaming:
+            return
+        carry = self._carry
+        if carry:
+            carry += buf[self._mark:stop]
+            self._text = bytes(carry).lstrip(SEPARATORS)
+            carry.clear()
+        else:
+            self._text = buf[self._mark:stop].lstrip(SEPARATORS)
+        self._mark = stop
+
+    def _hold(self, buf: bytes, stop: int) -> None:
+        # Keep the bytes of a value the buffer ended inside of.
+        if self._streaming:
+            return
+        held = buf[self._mark:stop]
+        self._carry += held if self._carry else held.lstrip(SEPARATORS)
+        self._mark = stop
+
+    def _at_eof(self) -> "ParsedValue | JqParseError | NoValue":
         self._eof = True
         where = f"at EOF at line {self._line}, column {self._column}"
         if self._state is ParseState.WAITING_FOR_RS:
@@ -434,7 +524,7 @@ class JqParser:
             return self._fail_at_eof(f"{msg} {where}")
         if self._path if self._streaming else self._stack:
             return self._fail_at_eof(f"Unfinished JSON term {where}")
-        value: "JsonValue | NoValue" = self._next
+        value: "ParsedValue | NoValue" = self._next
         if self._streaming and value is not NO_VALUE:
             value = [list(self._path), value]
         self._next = NO_VALUE
@@ -464,9 +554,10 @@ class JqParser:
         self._next = NO_VALUE
         self._stack = []
         self._token.clear()
+        self._carry.clear()
         self._state = ParseState.NORMAL
 
-    def _value(self, value: JsonValue) -> str | None:
+    def _value(self, value: ParsedValue) -> str | None:
         if self._streaming:
             if self._next is not NO_VALUE or self._last_seen is LastSeen.VALUE:
                 return EXPECTED_SEPARATOR
@@ -476,7 +567,7 @@ class JqParser:
         self._next = value
         return None
 
-    def _check_done(self) -> "JsonValue | NoValue":
+    def _check_done(self) -> "ParsedValue | NoValue":
         if self._streaming:
             return self._stream_check_done()
         if not self._stack and self._next is not NO_VALUE:
@@ -485,9 +576,9 @@ class JqParser:
             return done
         return NO_VALUE
 
-    def _stream_check_done(self) -> "JsonValue | NoValue":
+    def _stream_check_done(self) -> "ParsedValue | NoValue":
         if not self._path and self._next is not NO_VALUE:
-            done: JsonValue = [[], self._next]
+            done: ParsedValue = [[], self._next]
             self._next = NO_VALUE
             return done
         output = self._output
@@ -529,6 +620,7 @@ class JqParser:
                 done = self._check_done()
                 if done is not NO_VALUE:
                     self._produced = done
+                    self._before = True
                     return Scanned.OUTPUT
             self._reset()
             self._produced = NO_VALUE
@@ -547,6 +639,7 @@ class JqParser:
                 done = self._check_done()
                 if done is not NO_VALUE:
                     self._produced = done
+                    self._before = True
                     answer = Scanned.OUTPUT
             if literal:
                 self._token.append(ch)
@@ -560,6 +653,7 @@ class JqParser:
             done = self._check_done()
             if done is not NO_VALUE:
                 self._produced = done
+                self._before = False
                 answer = Scanned.OUTPUT
         elif ch == QUOTE and self._state is ParseState.STRING:
             msg = self._found_string()
@@ -569,6 +663,7 @@ class JqParser:
             done = self._check_done()
             if done is not NO_VALUE:
                 self._produced = done
+                self._before = False
                 answer = Scanned.OUTPUT
         else:
             self._token.append(ch)
@@ -583,7 +678,7 @@ class JqParser:
             return None
         first = token[0]
         pattern: bytes | None = None
-        value: JsonValue = None
+        value: ParsedValue = None
         if first == ord("t"):
             pattern, value = b"true", True
         elif first == ord("f"):
@@ -596,10 +691,12 @@ class JqParser:
             if token != pattern:
                 return "Invalid literal"
         else:
-            number = number_value(bytes(token).split(b"\0", 1)[0])
+            literal = bytes(token).split(b"\0", 1)[0]
+            number = number_value(literal)
             if number is NO_VALUE:
                 return "Invalid numeric literal"
-            value = number
+            value = (NumberText(literal.decode("ascii"))
+                     if self._streaming else number)
         msg = self._value(value)
         if msg is not None:
             return msg

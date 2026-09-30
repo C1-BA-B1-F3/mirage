@@ -27,12 +27,154 @@
       "owner": "integ",
       "name": "data-v1",
       "defaultBranch": "main",
-      "sourceDir": "github/data-v1"
+      "sourceDir": "github/data-v1",
+      "metaJson": "{\"stargazers\": [\"integ-user\", \"integ\"], \"subscribers\": [\"integ-user\"]}"
+    }
+  ],
+  "workflows": [
+    {
+      "repo": "integ/repo-cli",
+      "id": 101,
+      "path": ".github/workflows/ci.yml"
+    },
+    {
+      "repo": "integ/repo-cli",
+      "id": 102,
+      "path": ".github/workflows/archive.yml",
+      "state": "disabled_manually"
+    }
+  ],
+  "runs": [
+    {
+      "repo": "integ/repo-cli",
+      "id": 201,
+      "name": "CI",
+      "displayTitle": "Initial checks",
+      "workflowId": 101,
+      "runNumber": 1,
+      "runAttempt": 1,
+      "event": "push",
+      "headBranch": "main",
+      "headSha": "c13318709d4eb753fe20ea762abe77e19a8e5e73",
+      "status": "completed",
+      "conclusion": "success",
+      "createdAt": "2026-01-01T00:00:00Z",
+      "updatedAt": "2026-01-01T00:01:00Z",
+      "runStartedAt": "2026-01-01T00:00:05Z",
+      "jobsJson": [
+        {
+          "id": 401,
+          "name": "test",
+          "status": "completed",
+          "conclusion": "success",
+          "started_at": "2026-01-01T00:00:05Z",
+          "completed_at": "2026-01-01T00:01:00Z",
+          "steps": [
+            {
+              "name": "Set up job",
+              "number": 1,
+              "status": "completed",
+              "conclusion": "success",
+              "started_at": "2026-01-01T00:00:05Z",
+              "completed_at": "2026-01-01T00:00:06Z",
+              "log": "2026-01-01T00:00:05.0000000Z Current runner version: '2.330.0'\n2026-01-01T00:00:05.1000000Z Operating System\n"
+            },
+            {
+              "name": "Run actions/checkout@v4",
+              "number": 2,
+              "status": "completed",
+              "conclusion": "success",
+              "started_at": "2026-01-01T00:00:06Z",
+              "completed_at": "2026-01-01T00:00:09Z",
+              "log": "2026-01-01T00:00:06.0000000Z ##[group]Run actions/checkout@v4\n2026-01-01T00:00:06.2000000Z Syncing repository: integ/repo-cli\n"
+            },
+            {
+              "name": "Run python -m pytest tests",
+              "number": 3,
+              "status": "completed",
+              "conclusion": "success",
+              "started_at": "2026-01-01T00:00:09Z",
+              "completed_at": "2026-01-01T00:00:58Z",
+              "log": "2026-01-01T00:00:09.0000000Z ##[group]Run python -m pytest tests\n2026-01-01T00:00:58.0000000Z ============================== 6 passed in 48.90s ==============================\n"
+            },
+            {
+              "name": "Complete job",
+              "number": 4,
+              "status": "completed",
+              "conclusion": "success",
+              "started_at": "2026-01-01T00:00:58Z",
+              "completed_at": "2026-01-01T00:01:00Z",
+              "log": "2026-01-01T00:00:58.0000000Z Cleaning up orphan processes\n"
+            }
+          ]
+        }
+      ]
     }
   ],
   "settings": [
     {
       "createRepos": true
+    }
+  ],
+  "accounts": [
+    {
+      "login": "integ",
+      "type": "Organization",
+      "name": "Integ Fixtures",
+      "createdAt": "2020-05-01T00:00:00Z",
+      "bio": "Fixtures for the integ batteries",
+      "company": "@integ",
+      "blog": "https://example.test",
+      "location": "Test Lab",
+      "followers": 12,
+      "following": 3,
+      "publicGists": 1,
+      "updatedAt": "2026-01-02T00:00:00Z"
+    }
+  ],
+  "checks": [
+    {
+      "repo": "integ/repo-v1",
+      "sha": "c13318709d4eb753fe20ea762abe77e19a8e5e73",
+      "id": 301,
+      "name": "test",
+      "status": "completed",
+      "conclusion": "success",
+      "startedAt": "2026-01-01T00:00:00Z",
+      "completedAt": "2026-01-01T00:01:00Z",
+      "detailsUrl": "https://example.test/check/301",
+      "summary": "All checks passed"
+    },
+    {
+      "repo": "integ/repo-v1",
+      "sha": "c13318709d4eb753fe20ea762abe77e19a8e5e73",
+      "id": 302,
+      "name": "flaky",
+      "status": "completed",
+      "conclusion": "cancelled",
+      "startedAt": "2026-01-01T00:00:00Z",
+      "completedAt": "2026-01-01T00:02:00Z",
+      "detailsUrl": "https://example.test/check/302",
+      "summary": "Cancelled by a newer run"
+    }
+  ],
+  "statuses": [
+    {
+      "repo": "integ/repo-v1",
+      "sha": "c13318709d4eb753fe20ea762abe77e19a8e5e73",
+      "context": "ci/legacy",
+      "state": "success",
+      "targetUrl": "https://example.test/status/legacy",
+      "description": "Legacy status passed",
+      "createdAt": "2026-01-01T00:00:00Z",
+      "updatedAt": "2026-01-01T00:01:30Z"
+    }
+  ],
+  "tags": [
+    {
+      "repo": "integ/data-v1",
+      "name": "v0.1.0",
+      "sha": "24f636d593911ace37ffae622f03331804f24386"
     }
   ]
 }

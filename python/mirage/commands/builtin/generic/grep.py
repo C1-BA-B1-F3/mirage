@@ -1,3 +1,4 @@
+import re
 from collections.abc import (AsyncGenerator, AsyncIterator, Awaitable,
                              Callable, Sequence)
 from contextlib import aclosing
@@ -8,7 +9,9 @@ from mirage.cache.read_through import (cache_aware_bound_bytes,
                                        cache_aware_bound_stream)
 from mirage.commands.builtin.constants import BINARY_EXTENSIONS
 from mirage.commands.builtin.grep_binary import GrepFlags, grep_input
-from mirage.commands.builtin.grep_pattern import (compile_pattern,
+from mirage.commands.builtin.grep_pattern import (NEVER_MATCH, compile_pattern,
+                                                  matcher_syntax,
+                                                  pattern_warnings,
                                                   resolve_pattern)
 from mirage.commands.builtin.grep_scan import exit_code_for
 from mirage.commands.builtin.grep_select import (WalkFilters, dir_admitted,
@@ -148,9 +151,9 @@ def parse_flags(fl: FlagView, never_match: bool) -> GrepFlags:
         files_without_match=files_without_match,
         whole_word=fl.as_bool("w"),
         fixed_string=fl.as_bool("F") and not never_match,
-        # grep reads a basic expression unless -E says
+        # grep reads a basic expression unless -E or -P says
         # otherwise; -G asks for the default explicitly.
-        basic_regexp=not fl.as_bool("E"),
+        syntax=matcher_syntax(fl),
         only_matching=fl.as_bool("o"),
         quiet=fl.as_bool("q"),
         recursive=fl.as_bool("r") or fl.as_bool("R"),
@@ -200,9 +203,11 @@ async def grep(
     pattern, never_match = await resolve_pattern(texts, fl, read_bytes,
                                                  GREP_NO_PATTERN, "file")
     f = parse_flags(fl, never_match)
-    pat = compile_pattern(pattern, f.ignore_case, f.fixed_string, f.whole_word,
-                          f.basic_regexp)
-    io = IOResult(exit_code=1)
+    pat = (re.compile(NEVER_MATCH) if never_match else compile_pattern(
+        pattern, f.ignore_case, f.fixed_string, f.whole_word, f.syntax))
+    warning = b"" if never_match or f.fixed_string else pattern_warnings(
+        pattern, f.syntax)
+    io = IOResult(exit_code=1, stderr=warning or None)
     if not paths:
         source = resolve_source(stdin, GREP_NO_PATTERN, error_cls=UsageError)
         return grep_input(source, pat, f, "(standard input)", f.with_filename
@@ -237,11 +242,11 @@ async def grep(
                 exit_code=2,
                 stderr=f"grep: {p.raw_path}: {fs_strerror(exc) or exc}\n".
                 encode())
-        io = IOResult()
+        io = IOResult(stderr=warning or None)
         return grep_input(source, pat, f, operand_label(p, "(standard input)"),
                           f.with_filename and not f.no_filename, io), io
     warnings: list[str] = []
-    diagnostics: list[bytes] = []
+    diagnostics: list[bytes] = [warning] if warning else []
     matched = False
     printed = False
 

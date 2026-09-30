@@ -77,13 +77,9 @@ class LocalRuntime(PythonRuntime):
         # Honoring the init switches is just handing them back to the
         # real interpreter, which is why this tier gets them exactly
         # right (sys.flags included) where an in-process engine cannot.
-        return await self._run([
-            *init_argv(args.flags), "-c",
-            prepare_source(args.code,
-                           args.prog,
-                           script_cli=args.script_cli,
-                           stdin=args.stdin), *args.args
-        ], args.env, args.stdin)
+        return await self._run(
+            [*init_argv(args.flags), "-c",
+             prepare_source(args), *args.args], args.env, args.stdin)
 
     async def _run(self,
                    argv: list[str],

@@ -34,14 +34,13 @@ const P_TERNARY = 2
 const P_OR = 3
 const P_AND = 4
 const P_IN = 5
-const P_GETLINE_PIPE = 6
-const P_MATCH = 7
-const P_COMPARE = 8
-const P_CONCAT = 9
-const P_ADD = 10
-const P_MUL = 11
-const P_UNARY = 12
-const P_POW = 13
+const P_MATCH = 6
+const P_COMPARE = 7
+const P_CONCAT = 8
+const P_ADD = 9
+const P_MUL = 10
+const P_UNARY = 11
+const P_POW = 12
 
 const ASSIGN_OPS: ReadonlySet<string> = new Set(['=', '+=', '-=', '*=', '/=', '%=', '^='])
 const COMPARE_OPS: ReadonlySet<string> = new Set(['<', '<=', '>', '>=', '==', '!='])
@@ -426,7 +425,24 @@ export class Parser {
       if (!isLvalue(target)) throw this.error(`${op} needs an lvalue`)
       return { type: 'IncDec', pre: true, op, target }
     }
-    return this.parsePostfix(this.parsePrimary(noGt))
+    return this.parseInputPipe(this.parsePostfix(this.parsePrimary(noGt)), noGt)
+  }
+
+  /**
+   * Read `cmd | getline` after a primary expression. The command is the
+   * primary alone, as in mawk 1.3.4: `"echo " "hi" | getline` runs `hi`
+   * and concatenates the result, and `1 + "cmd" | getline` adds 1 to
+   * getline's result. In a print statement `|` is the output pipe.
+   */
+  private parseInputPipe(start: Expr, noGt: boolean): Expr {
+    let node = start
+    for (;;) {
+      const ahead = this.peek(1)
+      if (noGt || !this.atOp('|') || !(ahead.kind === TokKind.KEYWORD && ahead.text === 'getline'))
+        return node
+      this.pos += 1
+      node = this.parseGetline(node)
+    }
   }
 
   private parsePostfix(start: Expr): Expr {
@@ -536,12 +552,15 @@ export class Parser {
     }
     if (source !== null) return { type: 'Getline', kind: GetlineKind.CMD, target, source }
     if (this.atOp('<')) {
+      // The file is a primary, so `getline < "a" "b"` reads "a" and
+      // concatenates "b" to the result, and `getline line < f > 0`
+      // compares the result (mawk 1.3.4).
       this.pos += 1
       return {
         type: 'Getline',
         kind: GetlineKind.FILE,
         target,
-        source: this.parseExpr(P_CONCAT),
+        source: this.parsePostfix(this.parsePrimary(true)),
       }
     }
     return { type: 'Getline', kind: GetlineKind.PLAIN, target, source: null }
@@ -608,14 +627,6 @@ export class Parser {
           left,
           right: this.parseExpr(P_MATCH + 1, noGt),
         }
-        continue
-      }
-      if (op === '|') {
-        if (noGt || P_GETLINE_PIPE < minBp) return left
-        const ahead = this.peek(1)
-        if (!(ahead.kind === TokKind.KEYWORD && ahead.text === 'getline')) return left
-        this.pos += 1
-        left = this.parseGetline(left)
         continue
       }
       if (COMPARE_OPS.has(op)) {

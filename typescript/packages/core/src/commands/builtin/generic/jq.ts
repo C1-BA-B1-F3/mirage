@@ -21,19 +21,21 @@ import {
   JqParseError,
   NO_VALUE,
   STDIN_NAME,
-  argsObject,
+  argsText,
   decodeUtf8,
   errorReport,
   formatJqOutput,
   haltReport,
   jqCheck,
   jqOptions,
-  jqRun,
+  jqRunTexts,
   loadFailure,
-  parseValue,
-  readValues,
+  printable,
+  readTexts,
   referencesArgs,
   streamReads,
+  stringText,
+  valueText,
   type InputSource,
   type JqOptions,
   type JqRun,
@@ -55,6 +57,15 @@ const DEC = new TextDecoder()
 const ENC = new TextEncoder()
 const INDENT_MIN = -1
 const INDENT_MAX = 7
+// A width in jq's range has at most one significant digit; the sign and
+// leading zeroes keep strtol's decimal spelling without a large conversion.
+const INDENT_WORD = /^([+-]?)0*([0-7])$/
+
+// The options whose order decides what they do: the layout options, which
+// reset one another, and the bindings, where the first of a name wins.
+const LAYOUT = ['compact_output', 'tab', 'indent'] as const
+const BINDINGS = ['arg', 'argjson', 'rawfile', 'slurpfile'] as const
+type Binding = (typeof BINDINGS)[number]
 
 // What jq's process() answers for one run, which its exit status is made
 // of (main.c): the last output was not false or null, it was, there was
@@ -63,6 +74,9 @@ const OK = 0
 const OK_NULL_KIND = -1
 const OK_NO_OUTPUT = -4
 const ERROR_UNKNOWN = 5
+
+// The outputs -e counts as null-kind, as jq dumps them.
+const NULL_KIND = new Set(['null', 'false'])
 
 // jq's exit status when it refuses the program itself, and when it could not
 // read one of its inputs, whatever the runs answered.
@@ -81,22 +95,9 @@ function pairArgs(values: readonly string[]): [string, string][] {
   return pairs
 }
 
-/** Collect the $name bindings from --arg and --argjson. */
-export function namedArgs(fl: FlagView): Record<string, unknown> {
-  const args: Record<string, unknown> = {}
-  for (const [name, value] of pairArgs(fl.asList('arg'))) args[name] = value
-  for (const [name, value] of pairArgs(fl.asList('argjson'))) {
-    const parsed = parseValue(ENC.encode(value))
-    if (parsed === NO_VALUE) {
-      throw new UsageError(`jq: invalid JSON text passed to --argjson\n${USAGE_HINT}`, 2)
-    }
-    args[name] = parsed
-  }
-  return args
-}
-
 /**
- * Values `$ARGS.positional` reports, from --args / --jsonargs.
+ * The JSON text of each value `$ARGS.positional` reports, from --args /
+ * --jsonargs.
  *
  * The operands after the program stop being input files once either flag
  * appears, so they arrive here as ordinary text.
@@ -105,13 +106,13 @@ export function positionalArgs(
   fl: FlagView,
   texts: readonly string[],
   hasProgramFile: boolean,
-): unknown[] {
+): string[] {
   const asJson = fl.asBool('jsonargs')
   if (!asJson && !fl.asBool('args')) return []
   const rest = hasProgramFile ? [...texts] : texts.slice(1)
-  if (!asJson) return rest
+  if (!asJson) return rest.map(stringText)
   return rest.map((value) => {
-    const parsed = parseValue(ENC.encode(value))
+    const parsed = valueText(ENC.encode(value))
     if (parsed === NO_VALUE) {
       throw new UsageError(`jq: invalid JSON text passed to --jsonargs\n${USAGE_HINT}`, 2)
     }
@@ -142,37 +143,40 @@ function pathPairs(
 }
 
 /**
- * Collect the $name bindings that read a file.
- *
- * --rawfile binds the file's text, --slurpfile the array of documents in
- * it, which is the same difference -R draws on the input stream. Both read
- * the bytes the way jq reads its inputs. A file that cannot be read, and a
- * --slurpfile holding bad JSON, are refused in jq's words.
+ * The JSON text one binding gives its name: --arg a string, --argjson one
+ * JSON value, --rawfile a file's text, and --slurpfile the array of
+ * documents in a file, which is the same difference -R draws on the input
+ * stream. `value` is the word --arg or --argjson binds, or the file
+ * --rawfile or --slurpfile reads. Both files are read the way jq reads its
+ * inputs. An --argjson value that is not one JSON value as jq's own parser
+ * reads it, a file that cannot be read, and a --slurpfile holding bad JSON
+ * are refused in jq's words.
  */
-async function fileArgs(
-  fl: FlagView,
-  toSpec: (value: string) => PathSpec,
+async function binding(
+  dest: Binding,
+  name: string,
+  value: string | PathSpec,
   read: (path: PathSpec) => Promise<Uint8Array>,
-): Promise<Record<string, unknown>> {
-  const args: Record<string, unknown> = {}
-  for (const [name, path] of pathPairs(fl, 'rawfile', toSpec)) {
-    args[name] = decodeUtf8(await loadFile(read, 'rawfile', name, path))
-  }
-  for (const [name, path] of pathPairs(fl, 'slurpfile', toSpec)) {
-    const shown = inputName(path)
-    const [values, failure] = await readValues({
-      name: shown,
-      chunks: yieldBytes(await loadFile(read, 'slurpfile', name, path)),
-    })
-    if (failure !== null) {
-      throw new UsageError(
-        `jq: Bad JSON in --slurpfile ${name} ${shown}: ${failure.message}`,
-        ERROR_SYSTEM,
-      )
+): Promise<string> {
+  if (typeof value === 'string') {
+    if (dest === 'arg') return stringText(value)
+    const text = valueText(ENC.encode(value))
+    if (text === NO_VALUE) {
+      throw new UsageError(`jq: invalid JSON text passed to --argjson\n${USAGE_HINT}`, 2)
     }
-    args[name] = values
+    return text
   }
-  return args
+  const data = await loadFile(read, dest, name, value)
+  if (dest === 'rawfile') return stringText(decodeUtf8(data))
+  const shown = inputName(value)
+  const [texts, failure] = await readTexts({ name: shown, chunks: yieldBytes(data) })
+  if (failure !== null) {
+    throw new UsageError(
+      `jq: Bad JSON in --slurpfile ${name} ${shown}: ${failure.message}`,
+      ERROR_SYSTEM,
+    )
+  }
+  return `[${texts.join(',')}]`
 }
 
 /**
@@ -198,24 +202,32 @@ async function loadFile(
 }
 
 /**
- * Read the raw jq flag kwargs into a frozen struct.
- *
- * Two deliberate divergences from jq's own parser, both from mirage
- * parsing a whole line before acting on it rather than one option at a
- * time. jq lets `-c`, `--tab` and `--indent` override each other in the
- * order typed; here `-c` wins whenever it appears. And jq reads a
- * non-numeric `--indent` as 0 (C atoi), where mirage refuses it like
- * every other int-typed option.
+ * The width an --indent word names, read as jq 1.8.2's strtol reads it: a
+ * sign and decimal digits and nothing else, no blank before and no text
+ * after, from -1 to 7. Only the significant digit is converted, so the
+ * width never depends on the host's handling of arbitrary-length numbers.
+ * Any other word is refused in jq's words.
  */
-export function parseFlags(fl: FlagView): JqOptions {
-  const width = fl.asInt('indent')
-  if (width !== undefined && (width < INDENT_MIN || width > INDENT_MAX)) {
+export function indentWidth(word: string): number {
+  const match = INDENT_WORD.exec(word)
+  const width =
+    match !== null && match[0] === word ? Number(match[2]) * (match[1] === '-' ? -1 : 1) : NaN
+  if (!(width >= INDENT_MIN && width <= INDENT_MAX)) {
     throw new UsageError(
       `jq: --indent takes a number between ${String(INDENT_MIN)} and ` +
         `${String(INDENT_MAX)}\n${USAGE_HINT}`,
       2,
     )
   }
+  return width === 0 ? 0 : width
+}
+
+/**
+ * Read the jq flags whose order does not matter into a frozen struct: the
+ * layout stays jq's default and nothing is bound, which readOptions reads in
+ * the order typed.
+ */
+export function parseFlags(fl: FlagView): JqOptions {
   const joinOutput = fl.asBool('join_output')
   const nulOutput = fl.asBool('raw_output0')
   return jqOptions({
@@ -228,15 +240,67 @@ export function parseFlags(fl: FlagView): JqOptions {
     rawOutput: fl.asBool('raw_output') || joinOutput || nulOutput,
     joinOutput,
     nulOutput,
-    compact: fl.asBool('compact_output'),
     asciiOutput: fl.asBool('ascii_output'),
     sortKeys: fl.asBool('sort_keys'),
-    // jq spells tab indentation both ways: --tab, or --indent -1.
-    tab: fl.asBool('tab') || width === INDENT_MIN,
-    indent: width === undefined || width === INDENT_MIN ? DEFAULT_INDENT : width,
     exitStatus: fl.asBool('exit_status'),
-    namedArgs: namedArgs(fl),
   })
+}
+
+/**
+ * Read the jq flags into a frozen struct the way jq's option loop (main.c)
+ * reads them: one option at a time, in the order typed.
+ *
+ * The layout options reset one another, so the last of `-c`, `--tab` and
+ * `--indent` decides (`--indent -1` is `--tab`). A binding takes its name
+ * only while the name is free: the first `--arg`, `--argjson`, `--rawfile`
+ * or `--slurpfile` of a name wins, as `$name` and in `$ARGS.named`, which
+ * lists the names in the order they were bound. A later binding of the name
+ * is never read, so its JSON is not parsed and its file is not opened. An
+ * option jq refuses stops the loop where it stands, so the refusal reported
+ * is the first one typed. The operands --jsonargs reads are parsed after
+ * every option (positionalArgs), where jq parses each one in its turn.
+ * `read` is the byte reader for a --rawfile or --slurpfile.
+ */
+export async function readOptions(
+  fl: FlagView,
+  toSpec: (value: string) => PathSpec,
+  read: (path: PathSpec) => Promise<Uint8Array>,
+): Promise<JqOptions> {
+  let compact = false
+  let tab = false
+  let indent = DEFAULT_INDENT
+  const named = new Map<string, string>()
+  const pairs = {
+    arg: pairArgs(fl.asList('arg')).values(),
+    argjson: pairArgs(fl.asList('argjson')).values(),
+    rawfile: pathPairs(fl, 'rawfile', toSpec).values(),
+    slurpfile: pathPairs(fl, 'slurpfile', toSpec).values(),
+  }
+  const tape = fl.occurrences(...LAYOUT, ...BINDINGS).values()
+  for (const [dest, value] of tape) {
+    if (dest === 'compact_output') {
+      compact = true
+      tab = false
+    } else if (dest === 'tab') {
+      compact = false
+      tab = true
+    } else if (dest === 'indent') {
+      const width = indentWidth(String(value))
+      compact = false
+      tab = width === INDENT_MIN
+      indent = tab ? DEFAULT_INDENT : width
+    } else {
+      // A binding is two words on the tape, its name and what it binds, and
+      // the bag keeps each pair as typed.
+      tape.next()
+      const kind = dest as Binding
+      const pair = pairs[kind].next()
+      if (pair.done === true) continue
+      const [name, bound] = pair.value
+      if (!named.has(name)) named.set(name, await binding(kind, name, bound, read))
+    }
+  }
+  return jqOptions({ ...parseFlags(fl), compact, tab, indent, namedArgs: named })
 }
 
 /** An input as jq's reports name it: the operand as typed, and `<stdin>` for `-`. */
@@ -245,13 +309,12 @@ export function inputName(path: PathSpec): string {
   return path.rawPath === '' ? path.virtual : path.rawPath
 }
 
-/** What jq's process() answers for one run. */
-export function runStatus(run: JqRun): number {
+/** What jq's process() answers for one run, its outputs jq's compact dumps. */
+export function runStatus(run: JqRun<string>): number {
   if (run.stop?.kind === 'halt') return run.stop.code === null ? OK : Math.trunc(run.stop.code)
   if (run.stop?.kind === 'error') return ERROR_UNKNOWN
   if (run.outputs.length === 0) return OK_NO_OUTPUT
-  const last = run.outputs[run.outputs.length - 1]
-  return last === null || last === false ? OK_NULL_KIND : OK
+  return NULL_KIND.has(run.outputs[run.outputs.length - 1] ?? '') ? OK_NULL_KIND : OK
 }
 
 /**
@@ -315,7 +378,7 @@ export class MainLoop {
     private readonly expr: string,
     private readonly opts: JqOptions,
     private readonly reads: StreamReads,
-    private readonly argsValue: Record<string, unknown> | null,
+    private readonly args: string | null,
     private readonly io: IOResult,
   ) {
     this.reader = new InputReader(sources, opts, (line) => this.reports.push(line))
@@ -325,7 +388,7 @@ export class MainLoop {
   async *outputs(): AsyncIterable<Uint8Array> {
     try {
       if (this.opts.nullInput) {
-        const [run, position] = await this.run(null, this.reader.position())
+        const [run, position] = await this.run('null', this.reader.position())
         if (run.outputs.length > 0) yield formatJqOutput(run.outputs, this.opts)
         this.settle(run, position)
         return
@@ -352,7 +415,8 @@ export class MainLoop {
   /**
    * Run the program on one document (null under -n), and say where the
    * reader stands after it, for its error report; `position` is where it
-   * stood once it had read the document.
+   * stood once it had read the document. The run is what jq's main loop gets
+   * to print (see printable).
    *
    * `input` and `inputs` consume the stream the main loop reads, so a run
    * reads what they take first, and the next run starts past it. How much a
@@ -365,12 +429,13 @@ export class MainLoop {
    * reading: the run raises it where `input` or `inputs` would reach it, and
    * the main loop reads on past it.
    */
-  private async run(doc: unknown, position: string): Promise<[JqRun, string]> {
+  private async run(doc: string, position: string): Promise<[JqRun<string>, string]> {
     const reads = this.reads
     if (!reads.input && !reads.inputs) {
-      return [await jqRun(doc, this.expr, this.opts.namedArgs, null, this.argsValue), position]
+      const run = await jqRunTexts(doc, this.expr, this.opts.namedArgs, null, this.args)
+      return [printable(run, this.opts), position]
     }
-    const docs: unknown[] = []
+    const docs: string[] = []
     let failure: JqParseError | null = null
     let at = position
     for (;;) {
@@ -384,21 +449,21 @@ export class MainLoop {
       docs.push(item)
       if (!reads.inputs) break
     }
-    const run = await jqRun(
+    const run = await jqRunTexts(
       doc,
       this.expr,
       this.opts.namedArgs,
       docs,
-      this.argsValue,
+      this.args,
       failure === null ? null : failure.message,
     )
-    return [run, at]
+    return [printable(run, this.opts), at]
   }
 
   // Fold one run into the invocation: its answer toward the exit status,
   // and its report when it stopped early. A halt ends the invocation, which
   // is what this answers.
-  private settle(run: JqRun, position: string): boolean {
+  private settle(run: JqRun<string>, position: string): boolean {
     this.statuses.push(runStatus(run))
     if (run.stop?.kind === 'error') {
       this.reports.push(errorReport(position, run.stop))
@@ -453,26 +518,26 @@ export async function jqGeneric(
   const fl = new FlagView(opts.flags, specOf('jq'))
   const toSpec = pathSpecFactory(paths, opts)
   const hasProgramFile = fl.asStr('from_file') !== undefined
-  const expr = (await programText(texts, fl, toSpec, stream)).trim()
-  const reads = streamReads(expr)
-  const readsStream = reads.input || reads.inputs
-  // --rawfile / --slurpfile read a file each, so they join the bindings
-  // only once a reader is in hand. Their files route nothing (the executor's
-  // DOOR_FLAG_KEYS), so one may sit on another mount than the operands: it
-  // is read through the door, stdin excepted, which is the invocation's own.
+  // --rawfile / --slurpfile route nothing (the executor's DOOR_FLAG_KEYS),
+  // so a file may sit on another mount than the operands: it is read
+  // through the door, stdin excepted, which is the invocation's own.
   const readFlagFile = (path: PathSpec): Promise<Uint8Array> => {
     if (opts.dispatch === undefined || isStdin(path)) return materialize(stream(path))
     return readProgramFile('jq', path, opts.dispatch)
   }
-  const base = parseFlags(fl)
+  // jq reads its options before its program, so a refused option is reported
+  // before an -f file is read.
+  const flagOptions = await readOptions(fl, toSpec, readFlagFile)
+  const expr = (await programText(texts, fl, toSpec, stream)).trim()
+  const reads = streamReads(expr)
+  const readsStream = reads.input || reads.inputs
   const jq: JqOptions = jqOptions({
-    ...base,
-    namedArgs: { ...base.namedArgs, ...(await fileArgs(fl, toSpec, readFlagFile)) },
+    ...flagOptions,
     positionalArgs: positionalArgs(fl, texts, hasProgramFile),
   })
-  const argsValue = referencesArgs(expr) ? argsObject(jq) : null
+  const args = referencesArgs(expr) ? argsText(jq) : null
   try {
-    await jqCheck(expr, jq.namedArgs, readsStream ? [] : null, argsValue)
+    await jqCheck(expr, jq.namedArgs, readsStream ? [] : null, args)
   } catch (error) {
     if (!(error instanceof JqCompileError)) throw error
     // jq compiles its program before it opens a single input, so a
@@ -505,6 +570,6 @@ export async function jqGeneric(
     }
   }
   const io = new IOResult()
-  const loop = new MainLoop(sources, expr, jq, reads, argsValue, io)
+  const loop = new MainLoop(sources, expr, jq, reads, args, io)
   return [loop.outputs(), io]
 }

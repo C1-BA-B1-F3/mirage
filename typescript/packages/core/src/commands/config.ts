@@ -18,7 +18,7 @@ import type { IndexCacheStore } from '../cache/index/index.ts'
 import { IOResult, type ByteSource } from '../io/types.ts'
 import type { Limit, PathSpec } from '../types.ts'
 import type { Runtime } from '../runtime/base.ts'
-import type { DispatchFn } from '../runtime/types.ts'
+import type { DispatchFn, ShellFn } from '../runtime/types.ts'
 import type { NamespaceView, ReaddirPath, SessionView, StatPath } from '../ops/types.ts'
 import { VERSION } from '../version.ts'
 import type { AggregateResult } from './builtin/aggregators.ts'
@@ -68,6 +68,7 @@ export interface ExecContext {
   readdirPath?: ReaddirPath
   signal?: AbortSignal
   limitOverride?: Limit | null
+  shell?: ShellFn
   argv?: readonly string[]
 }
 
@@ -122,6 +123,10 @@ export interface CommandOpts {
   readdirPath?: ReaddirPath
   signal?: AbortSignal
   timeoutSeconds?: number
+  // Runs a nested line in the calling session, reading the input it is
+  // handed, the way the session's `sh -c` would: awk's command pipes and
+  // `system()` go through it. Absent outside a workspace.
+  shell?: ShellFn
   // The words after the command name, as the line spelled them (an
   // operand's rawPath), for the GNU diagnostic that quotes a word the
   // classified operands do not hold: diffutils names the line's last

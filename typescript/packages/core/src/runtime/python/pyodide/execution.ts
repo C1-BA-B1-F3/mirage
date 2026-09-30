@@ -50,6 +50,10 @@ type ExecutionRequest = Pick<RunArgs, 'code' | 'env' | 'stdin'> & {
   cwd: string
   flags: NonNullable<RunArgs['flags']>
   script_cli: boolean
+  // What CPython names the program (mainFilename), null for none.
+  filename: string | null
+  // Whether the program was read from a script file.
+  script: boolean
 }
 
 export class PyodideExecution {
@@ -80,7 +84,7 @@ export class PyodideExecution {
   ): [Uint8Array, Uint8Array, number] {
     const [stdout, stderr, exitCode] = this.call(
       'run',
-      { ...request, stdin: request.stdin ?? undefined },
+      { ...request, stdin: request.stdin ?? undefined, filename: request.filename ?? undefined },
       arm,
       disarm,
     ) as [number[], number[], number]

@@ -24,7 +24,7 @@
       ]
     },
     {
-      "id": "script_file_names_the_program",
+      "id": "host_script_is_named_after_its_workspace_path",
       "world": {
         "runtimes": [
           "local"

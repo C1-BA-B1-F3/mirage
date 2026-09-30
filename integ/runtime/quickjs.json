@@ -383,7 +383,7 @@
       ]
     },
     {
-      "id": "program_argv_is_typed_and_names_no_mount",
+      "id": "node_argv_is_typed_and_names_no_mount",
       "world": {
         "runtimes": [
           "quickjs",

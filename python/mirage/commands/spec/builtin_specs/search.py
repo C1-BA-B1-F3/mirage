@@ -275,8 +275,9 @@ SPECS: dict[str, CommandSpec] = {
                    long="--exit-status",
                    description="Set the exit status from the last output"),
             Option(long="--tab", description="Indent with tabs"),
+            # jq words its own refusal of a width it cannot read.
             Option(long="--indent",
-                   type="int",
+                   type="str",
                    description="Indent with n spaces (max 7)"),
             Option(short="-M",
                    long="--monochrome-output",

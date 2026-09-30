@@ -200,7 +200,7 @@ printf '1e17 0.00001' | jq -c '. + 0'
 | `-c`, `--compact-output` | one line per output |
 | `-a`, `--ascii-output` | escape non-ASCII (and keep strings quoted, as jq does) |
 | `-S`, `--sort-keys` | sort object keys |
-| `--tab`, `--indent n` | indent width (`--indent -1` is a tab; `--indent 0` breaks the lines without indenting, as jq 1.8.2 does) |
+| `--tab`, `--indent n` | indent with a tab, or with n spaces up to 7 (`--indent -1` is a tab; `--indent 0` breaks the lines without indenting, as jq 1.8.2 does); the last of `-c`, `--tab` and `--indent` wins, as in jq |
 | `-e`, `--exit-status` | exit 1 when the last output is `false`/`null`, 4 when there was none (see [Errors](#errors)) |
 | `-M`, `--monochrome-output`, `--unbuffered` | accepted; already how mirage writes |
 
@@ -308,14 +308,10 @@ a halt whose message or choice rests on `now` reports what the rerun read, a
 halt inside a `try` inside a collector (`[try halt_error(2) catch .]`)
 reports status 5 with no message, and a halt that a `try ... catch empty`
 swallows can report the message and code of a later halt instead.
-`$ARGS.named` lists the bindings flag by flag, `--arg` first, then
-`--argjson`, `--rawfile` and `--slurpfile`, and a name bound twice reads as
-its last value, where jq keeps the order they were typed in and the first
-value. Under `--stream`, input nested more than 10,000 levels deep is
-refused with `Exceeds depth limit for parsing`, the limit jq's ordinary
-parser has. jq's
-streaming parser has no limit, but every event carries a copy of its path,
-so input nested n deep costs time in n squared.
+Under `--stream`, input nested more than 10,000 levels deep is refused
+with `Exceeds depth limit for parsing`, the limit jq's ordinary parser
+has. jq's streaming parser has no limit, but every event carries a copy
+of its path, so input nested n deep costs time in n squared.
 
 Not implemented, and reported as an unknown option rather than quietly
 ignored: `-C` (colorized output, which an agent would only have to strip

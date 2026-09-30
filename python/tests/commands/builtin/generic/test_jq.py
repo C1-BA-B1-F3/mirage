@@ -2,11 +2,13 @@ import asyncio
 
 import pytest
 
-from mirage.commands.builtin.generic.jq import (exit_code, input_name, jq,
-                                                named_args, parse_flags,
-                                                positional_args, run_status)
+from mirage.commands.builtin.generic.jq import (exit_code, indent_width,
+                                                input_name, jq, jq_generic,
+                                                parse_flags, positional_args,
+                                                read_options, run_status)
+from mirage.commands.config import CommandOpts
 from mirage.commands.errors import UsageError
-from mirage.commands.spec import SPECS
+from mirage.commands.spec import SPECS, parse_command, parse_to_kwargs
 from mirage.commands.spec.flag_view import FlagView
 from mirage.core.jq import JqError, JqHalt, JqOptions, JqRun
 from mirage.io.types import materialize
@@ -36,6 +38,9 @@ FILES = {
 
 DIRS = {"/d/dir"}
 
+HINT = ("Use jq --help for help with command-line options,\n"
+        "or see the jq manpage, or online docs at https://jqlang.org")
+
 
 def _stored(path: PathSpec) -> bytes:
     if path.virtual in DIRS:
@@ -63,6 +68,32 @@ def _spec_flags(**flags: object) -> FlagView:
     return FlagView(flags, spec=SPECS["jq"])
 
 
+def _parsed_bag(*words: str) -> dict:
+    bag = parse_to_kwargs(parse_command(SPECS["jq"], list(words), "/", "jq"))
+    for dest in ("rawfile", "slurpfile"):
+        pairs = bag.get(dest)
+        if isinstance(pairs, list):
+            bag[dest] = [
+                _path(str(word)) if at % 2 else word
+                for at, word in enumerate(pairs)
+            ]
+    return bag
+
+
+async def _unread(path: PathSpec) -> bytes:
+    raise AssertionError(f"{path.virtual} should not be read")
+
+
+async def _options(*words: str) -> JqOptions:
+    return await read_options(FlagView(_parsed_bag(*words), spec=SPECS["jq"]),
+                              _read_bytes)
+
+
+async def _bound(**flags: object) -> dict[str, str]:
+    opts = await read_options(_spec_flags(**flags), _unread)
+    return dict(opts.named_args)
+
+
 def _printed(*outputs: str) -> int:
     return run_status(JqRun(list(outputs)))
 
@@ -81,30 +112,132 @@ def test_join_and_nul_output_imply_raw():
     assert parse_flags(_spec_flags(raw_output0=True)).raw_output
 
 
-def test_indent_minus_one_is_tab_indentation():
-    opts = parse_flags(_spec_flags(indent="-1"))
+@pytest.mark.asyncio
+async def test_indent_minus_one_is_tab_indentation():
+    opts = await read_options(_spec_flags(indent="-1"), _unread)
     assert opts.tab
     assert opts.indent == 2
 
 
-def test_indent_out_of_range_is_a_usage_error():
-    with pytest.raises(UsageError, match="between -1 and 7"):
-        parse_flags(_spec_flags(indent="8"))
+@pytest.mark.parametrize("word, width", [("3", 3), ("+3", 3), ("07", 7),
+                                         ("-0", 0), ("0", 0), ("-1", -1)])
+def test_indent_reads_its_word_as_jqs_strtol_does(word, width):
+    assert indent_width(word) == width
 
 
-def test_named_args_pair_up_the_flattened_tokens():
-    args = named_args(_spec_flags(arg=["a", "1", "b", 'x"y']))
+@pytest.mark.parametrize("word", [
+    "x", "2x", "", " 3", "3 ", "1.5", "0x3", "08", "-2", "99999999999999999999"
+])
+def test_indent_refuses_any_other_word_in_jqs_words(word):
+    with pytest.raises(UsageError) as caught:
+        indent_width(word)
+    assert str(caught.value) == (
+        f"jq: --indent takes a number between -1 and 7\n{HINT}")
+    assert caught.value.exit_code == 2
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("words, layout", [
+    (["-c", "--tab"], "tab"),
+    (["--tab", "-c"], "compact"),
+    (["--indent", "3", "-c"], "compact"),
+    (["-c", "--indent", "3"], 3),
+    (["--tab", "--indent", "3"], 3),
+    (["--indent", "3", "--tab"], "tab"),
+    (["--indent", "-1", "-c"], "compact"),
+    (["-c", "--indent", "-1"], "tab"),
+    (["-cr", "--tab"], "tab"),
+    (["--tab", "-rc"], "compact"),
+    (["--indent", "2", "--indent", "5"], 5),
+])
+async def test_the_last_layout_option_typed_wins(words, layout):
+    opts = await _options(*words, ".")
+    assert ("compact"
+            if opts.compact else "tab" if opts.tab else opts.indent) == layout
+
+
+@pytest.mark.asyncio
+async def test_a_later_indent_word_is_read_too():
+    with pytest.raises(UsageError, match="--indent takes a number"):
+        await _options("--indent", "2", "--indent", "x", ".")
+
+
+@pytest.mark.asyncio
+async def test_arg_binds_each_name_to_a_string():
+    args = await _bound(arg=["a", "1", "b", 'x"y'])
     assert args == {"a": '"1"', "b": '"x\\"y"'}
 
 
-def test_argjson_keeps_its_value_as_the_text_jq_reads():
-    args = named_args(_spec_flags(argjson=["v", ' {"b":1.000,"1":2} ']))
+@pytest.mark.asyncio
+async def test_argjson_keeps_its_value_as_the_text_jq_reads():
+    args = await _bound(argjson=["v", ' {"b":1.000,"1":2} '])
     assert args == {"v": '{"b":1.000,"1":2}'}
 
 
-def test_argjson_rejects_invalid_json():
+@pytest.mark.asyncio
+async def test_argjson_rejects_invalid_json():
     with pytest.raises(UsageError, match="invalid JSON text"):
-        named_args(_spec_flags(argjson=["v", "nope"]))
+        await _bound(argjson=["v", "nope"])
+
+
+@pytest.mark.asyncio
+async def test_bindings_keep_the_order_they_were_typed_in():
+    opts = await _options("-n", "--slurpfile", "s", "/d/four.json", "--arg",
+                          "a", "1", "--rawfile", "r", "/d/one.json",
+                          "--argjson", "b", "2", "$ARGS.named")
+    assert list(opts.named_args.items()) == [("s", "[1,2,3,4]"), ("a", '"1"'),
+                                             ("r", '"1"'), ("b", "2")]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("words, text", [
+    (["--argjson", "v", "1", "--argjson", "v", "2"], "1"),
+    (["--arg", "v", "1", "--argjson", "v", "2"], '"1"'),
+    (["--rawfile", "v", "/d/one.json", "--arg", "v", "2"], '"1"'),
+    (["--slurpfile", "v", "/d/two.json", "--rawfile", "v", "/d/one.json"
+      ], "[2]"),
+])
+async def test_the_first_binding_of_a_name_wins(words, text):
+    opts = await _options("-n", *words, "$v")
+    assert opts.named_args == {"v": text}
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("words", [
+    ["--argjson", "v", "nope"],
+    ["--rawfile", "v", "/d/missing.txt"],
+    ["--slurpfile", "v", "/d/bad.json"],
+])
+async def test_a_binding_of_a_taken_name_is_never_read(words):
+    bag = _parsed_bag("-n", "--arg", "v", "1", *words, "$v")
+    opts = await read_options(FlagView(bag, spec=SPECS["jq"]), _unread)
+    assert opts.named_args == {"v": '"1"'}
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("words, refusal", [
+    (["--indent", "x", "--argjson", "a", "nope"], "jq: --indent takes"),
+    (["--argjson", "a", "nope", "--indent", "x"], "jq: invalid JSON text"),
+    (["--argjson", "a", "nope", "--slurpfile", "b", "/d/missing.json"
+      ], "jq: invalid JSON text"),
+    (["--slurpfile", "b", "/d/missing.json", "--argjson", "a", "nope"
+      ], "jq: Bad JSON in --slurpfile b /d/missing.json"),
+])
+async def test_the_first_option_jq_refuses_is_the_one_reported(words, refusal):
+    with pytest.raises(UsageError) as caught:
+        await _options("-n", *words, "1")
+    assert str(caught.value).startswith(refusal)
+
+
+@pytest.mark.asyncio
+async def test_the_generic_entry_reads_the_flags_in_the_order_typed():
+    bag = _parsed_bag("-n", "--tab", "-c", "--argjson", "b", "1", "--arg", "a",
+                      "2", "--arg", "b", "3", "$ARGS.named")
+    source, io = await jq_generic([], ["$ARGS.named"], CommandOpts(flags=bag),
+                                  _read_bytes, _read_stream)
+    assert source is not None
+    assert await materialize(source) == b'{"b":1,"a":"2"}\n'
+    assert io.exit_code == 0
 
 
 def test_exit_status_reads_the_last_output_only():
@@ -669,19 +802,17 @@ async def test_a_flag_file_that_cannot_be_read_is_refused_in_jqs_words(
     assert caught.value.exit_code == 2
 
 
-def test_a_usage_error_ends_with_jq_1_8s_hint():
+@pytest.mark.asyncio
+async def test_a_usage_error_ends_with_jq_1_8s_hint():
     with pytest.raises(UsageError) as caught:
-        named_args(_spec_flags(argjson=["v", "1 2"]))
-    assert str(caught.value) == (
-        "jq: invalid JSON text passed to --argjson\n"
-        "Use jq --help for help with command-line options,\n"
-        "or see the jq manpage, or online docs at https://jqlang.org")
+        await _bound(argjson=["v", "1 2"])
+    assert str(
+        caught.value) == (f"jq: invalid JSON text passed to --argjson\n{HINT}")
 
 
-def test_argjson_reads_its_value_as_jqs_parser_does():
-    assert named_args(_spec_flags(argjson=["v", "{\"a\":1}"])) == {
-        "v": '{"a":1}'
-    }
-    assert named_args(_spec_flags(argjson=["v", "nan"])) == {"v": "nan"}
+@pytest.mark.asyncio
+async def test_argjson_reads_its_value_as_jqs_parser_does():
+    assert await _bound(argjson=["v", "{\"a\":1}"]) == {"v": '{"a":1}'}
+    assert await _bound(argjson=["v", "nan"]) == {"v": "nan"}
     with pytest.raises(UsageError):
-        named_args(_spec_flags(argjson=["v", "1 2"]))
+        await _bound(argjson=["v", "1 2"])

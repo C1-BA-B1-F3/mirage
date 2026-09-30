@@ -364,7 +364,7 @@
     {
       "description": "Indent with n spaces (max 7)",
       "long": "--indent",
-      "type": "int"
+      "type": "str"
     },
     {
       "description": "Disable colored output (already the default)",

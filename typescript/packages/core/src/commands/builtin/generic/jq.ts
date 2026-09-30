@@ -57,6 +57,15 @@ const DEC = new TextDecoder()
 const ENC = new TextEncoder()
 const INDENT_MIN = -1
 const INDENT_MAX = 7
+// What jq 1.8.2's strtol reads whole from an --indent word: a sign, then
+// decimal digits.
+const INDENT_WORD = /^[+-]?[0-9]+$/
+
+// The options whose order decides what they do: the layout options, which
+// reset one another, and the bindings, where the first of a name wins.
+const LAYOUT = ['compact_output', 'tab', 'indent'] as const
+const BINDINGS = ['arg', 'argjson', 'rawfile', 'slurpfile'] as const
+type Binding = (typeof BINDINGS)[number]
 
 // What jq's process() answers for one run, which its exit status is made
 // of (main.c): the last output was not false or null, it was, there was
@@ -84,23 +93,6 @@ function pairArgs(values: readonly string[]): [string, string][] {
     pairs.push([values[i] ?? '', values[i + 1] ?? ''])
   }
   return pairs
-}
-
-/**
- * Collect the $name bindings from --arg and --argjson, each as the JSON text
- * of its value, in the order bound.
- */
-export function namedArgs(fl: FlagView): Map<string, string> {
-  const args = new Map<string, string>()
-  for (const [name, value] of pairArgs(fl.asList('arg'))) args.set(name, stringText(value))
-  for (const [name, value] of pairArgs(fl.asList('argjson'))) {
-    const parsed = valueText(ENC.encode(value))
-    if (parsed === NO_VALUE) {
-      throw new UsageError(`jq: invalid JSON text passed to --argjson\n${USAGE_HINT}`, 2)
-    }
-    args.set(name, parsed)
-  }
-  return args
 }
 
 /**
@@ -151,38 +143,40 @@ function pathPairs(
 }
 
 /**
- * Collect the $name bindings that read a file, each as the JSON text of its
- * value.
- *
- * --rawfile binds the file's text, --slurpfile the array of documents in
- * it, which is the same difference -R draws on the input stream. Both read
- * the bytes the way jq reads its inputs. A file that cannot be read, and a
- * --slurpfile holding bad JSON, are refused in jq's words.
+ * The JSON text one binding gives its name: --arg a string, --argjson one
+ * JSON value, --rawfile a file's text, and --slurpfile the array of
+ * documents in a file, which is the same difference -R draws on the input
+ * stream. `value` is the word --arg or --argjson binds, or the file
+ * --rawfile or --slurpfile reads. Both files are read the way jq reads its
+ * inputs. An --argjson value that is not one JSON value as jq's own parser
+ * reads it, a file that cannot be read, and a --slurpfile holding bad JSON
+ * are refused in jq's words.
  */
-async function fileArgs(
-  fl: FlagView,
-  toSpec: (value: string) => PathSpec,
+async function binding(
+  dest: Binding,
+  name: string,
+  value: string | PathSpec,
   read: (path: PathSpec) => Promise<Uint8Array>,
-): Promise<Map<string, string>> {
-  const args = new Map<string, string>()
-  for (const [name, path] of pathPairs(fl, 'rawfile', toSpec)) {
-    args.set(name, stringText(decodeUtf8(await loadFile(read, 'rawfile', name, path))))
-  }
-  for (const [name, path] of pathPairs(fl, 'slurpfile', toSpec)) {
-    const shown = inputName(path)
-    const [texts, failure] = await readTexts({
-      name: shown,
-      chunks: yieldBytes(await loadFile(read, 'slurpfile', name, path)),
-    })
-    if (failure !== null) {
-      throw new UsageError(
-        `jq: Bad JSON in --slurpfile ${name} ${shown}: ${failure.message}`,
-        ERROR_SYSTEM,
-      )
+): Promise<string> {
+  if (typeof value === 'string') {
+    if (dest === 'arg') return stringText(value)
+    const text = valueText(ENC.encode(value))
+    if (text === NO_VALUE) {
+      throw new UsageError(`jq: invalid JSON text passed to --argjson\n${USAGE_HINT}`, 2)
     }
-    args.set(name, `[${texts.join(',')}]`)
+    return text
   }
-  return args
+  const data = await loadFile(read, dest, name, value)
+  if (dest === 'rawfile') return stringText(decodeUtf8(data))
+  const shown = inputName(value)
+  const [texts, failure] = await readTexts({ name: shown, chunks: yieldBytes(data) })
+  if (failure !== null) {
+    throw new UsageError(
+      `jq: Bad JSON in --slurpfile ${name} ${shown}: ${failure.message}`,
+      ERROR_SYSTEM,
+    )
+  }
+  return `[${texts.join(',')}]`
 }
 
 /**
@@ -208,24 +202,28 @@ async function loadFile(
 }
 
 /**
- * Read the raw jq flag kwargs into a frozen struct.
- *
- * Two deliberate divergences from jq's own parser, both from mirage
- * parsing a whole line before acting on it rather than one option at a
- * time. jq lets `-c`, `--tab` and `--indent` override each other in the
- * order typed; here `-c` wins whenever it appears. And jq reads a
- * non-numeric `--indent` as 0 (C atoi), where mirage refuses it like
- * every other int-typed option.
+ * The width an --indent word names, read as jq 1.8.2's strtol reads it: a
+ * sign and decimal digits and nothing else, no blank before and no text
+ * after, from -1 to 7. Any other word is refused in jq's words.
  */
-export function parseFlags(fl: FlagView): JqOptions {
-  const width = fl.asInt('indent')
-  if (width !== undefined && (width < INDENT_MIN || width > INDENT_MAX)) {
+export function indentWidth(word: string): number {
+  const width = INDENT_WORD.test(word) ? Number(word) : NaN
+  if (!(width >= INDENT_MIN && width <= INDENT_MAX)) {
     throw new UsageError(
       `jq: --indent takes a number between ${String(INDENT_MIN)} and ` +
         `${String(INDENT_MAX)}\n${USAGE_HINT}`,
       2,
     )
   }
+  return width === 0 ? 0 : width
+}
+
+/**
+ * Read the jq flags whose order does not matter into a frozen struct: the
+ * layout stays jq's default and nothing is bound, which readOptions reads in
+ * the order typed.
+ */
+export function parseFlags(fl: FlagView): JqOptions {
   const joinOutput = fl.asBool('join_output')
   const nulOutput = fl.asBool('raw_output0')
   return jqOptions({
@@ -238,15 +236,67 @@ export function parseFlags(fl: FlagView): JqOptions {
     rawOutput: fl.asBool('raw_output') || joinOutput || nulOutput,
     joinOutput,
     nulOutput,
-    compact: fl.asBool('compact_output'),
     asciiOutput: fl.asBool('ascii_output'),
     sortKeys: fl.asBool('sort_keys'),
-    // jq spells tab indentation both ways: --tab, or --indent -1.
-    tab: fl.asBool('tab') || width === INDENT_MIN,
-    indent: width === undefined || width === INDENT_MIN ? DEFAULT_INDENT : width,
     exitStatus: fl.asBool('exit_status'),
-    namedArgs: namedArgs(fl),
   })
+}
+
+/**
+ * Read the jq flags into a frozen struct the way jq's option loop (main.c)
+ * reads them: one option at a time, in the order typed.
+ *
+ * The layout options reset one another, so the last of `-c`, `--tab` and
+ * `--indent` decides (`--indent -1` is `--tab`). A binding takes its name
+ * only while the name is free: the first `--arg`, `--argjson`, `--rawfile`
+ * or `--slurpfile` of a name wins, as `$name` and in `$ARGS.named`, which
+ * lists the names in the order they were bound. A later binding of the name
+ * is never read, so its JSON is not parsed and its file is not opened. An
+ * option jq refuses stops the loop where it stands, so the refusal reported
+ * is the first one typed. The operands --jsonargs reads are parsed after
+ * every option (positionalArgs), where jq parses each one in its turn.
+ * `read` is the byte reader for a --rawfile or --slurpfile.
+ */
+export async function readOptions(
+  fl: FlagView,
+  toSpec: (value: string) => PathSpec,
+  read: (path: PathSpec) => Promise<Uint8Array>,
+): Promise<JqOptions> {
+  let compact = false
+  let tab = false
+  let indent = DEFAULT_INDENT
+  const named = new Map<string, string>()
+  const pairs = {
+    arg: pairArgs(fl.asList('arg')).values(),
+    argjson: pairArgs(fl.asList('argjson')).values(),
+    rawfile: pathPairs(fl, 'rawfile', toSpec).values(),
+    slurpfile: pathPairs(fl, 'slurpfile', toSpec).values(),
+  }
+  const tape = fl.occurrences(...LAYOUT, ...BINDINGS).values()
+  for (const [dest, value] of tape) {
+    if (dest === 'compact_output') {
+      compact = true
+      tab = false
+    } else if (dest === 'tab') {
+      compact = false
+      tab = true
+    } else if (dest === 'indent') {
+      const width = indentWidth(String(value))
+      compact = false
+      tab = width === INDENT_MIN
+      indent = tab ? DEFAULT_INDENT : width
+    } else {
+      // A binding is two words on the tape, its name and what it binds, and
+      // the bag keeps each pair as typed.
+      tape.next()
+      const kind = dest as Binding
+      const pair = pairs[kind].next()
+      if (pair.done === true) continue
+      const [name, bound] = pair.value
+      if (!named.has(name)) named.set(name, await binding(kind, name, bound, read))
+    }
+  }
+  return jqOptions({ ...parseFlags(fl), compact, tab, indent, namedArgs: named })
 }
 
 /** An input as jq's reports name it: the operand as typed, and `<stdin>` for `-`. */
@@ -464,21 +514,21 @@ export async function jqGeneric(
   const fl = new FlagView(opts.flags, specOf('jq'))
   const toSpec = pathSpecFactory(paths, opts)
   const hasProgramFile = fl.asStr('from_file') !== undefined
-  const expr = (await programText(texts, fl, toSpec, stream)).trim()
-  const reads = streamReads(expr)
-  const readsStream = reads.input || reads.inputs
-  // --rawfile / --slurpfile read a file each, so they join the bindings
-  // only once a reader is in hand. Their files route nothing (the executor's
-  // DOOR_FLAG_KEYS), so one may sit on another mount than the operands: it
-  // is read through the door, stdin excepted, which is the invocation's own.
+  // --rawfile / --slurpfile route nothing (the executor's DOOR_FLAG_KEYS),
+  // so a file may sit on another mount than the operands: it is read
+  // through the door, stdin excepted, which is the invocation's own.
   const readFlagFile = (path: PathSpec): Promise<Uint8Array> => {
     if (opts.dispatch === undefined || isStdin(path)) return materialize(stream(path))
     return readProgramFile('jq', path, opts.dispatch)
   }
-  const base = parseFlags(fl)
+  // jq reads its options before its program, so a refused option is reported
+  // before an -f file is read.
+  const flagOptions = await readOptions(fl, toSpec, readFlagFile)
+  const expr = (await programText(texts, fl, toSpec, stream)).trim()
+  const reads = streamReads(expr)
+  const readsStream = reads.input || reads.inputs
   const jq: JqOptions = jqOptions({
-    ...base,
-    namedArgs: new Map([...base.namedArgs, ...(await fileArgs(fl, toSpec, readFlagFile))]),
+    ...flagOptions,
     positionalArgs: positionalArgs(fl, texts, hasProgramFile),
   })
   const args = referencesArgs(expr) ? argsText(jq) : null

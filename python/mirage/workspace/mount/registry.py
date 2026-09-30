@@ -21,6 +21,7 @@ from weakref import WeakValueDictionary
 from mirage.cache.file.mixin import FileCacheMixin
 from mirage.cache.index import NULL_INDEX, IndexCacheStore, IndexConfig
 from mirage.cache.index.factory import build_index
+from mirage.cache.index.config import Evicted
 from mirage.cache.manager import CacheManager
 from mirage.commands.builtin.general import COMMANDS as GENERAL_COMMANDS
 from mirage.context import effective_path_mode, strongest_mode_under
@@ -53,6 +54,9 @@ class ReadReconciler(Protocol):
         ...
 
     async def may_serve_cached(self, mount: MountEntry, path: str) -> bool:
+        ...
+
+    async def on_gone(self, gone: Evicted) -> None:
         ...
 
 
@@ -218,6 +222,13 @@ class MountRegistry:
         async def gate(key: str) -> bool:
             return await self._may_serve_cached(m, key)
 
+        async def cleanup(gone: Evicted) -> None:
+            # Read at call time, for the same reason as the gate; a retiring
+            # mount's leftovers go with its teardown instead.
+            reconciler = self._reconciler
+            if reconciler is not None and not m.retiring:
+                await reconciler.on_gone(gone)
+
         m.cache_manager = CacheManager(
             self._file_cache,
             m.index_store,
@@ -225,7 +236,8 @@ class MountRegistry:
             m.vfs.caches_reads,
             lambda path: not m.retiring and self.try_mount_for(path) is m,
             gate,
-            read_ttl=m.read.ttl)
+            read_ttl=m.read.ttl,
+            on_gone=cleanup)
 
     def check_vfs_available(self, vfs: BaseVFS) -> None:
         """A removed VFS instance cannot start a second lifecycle."""

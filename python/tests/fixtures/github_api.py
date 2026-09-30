@@ -25,7 +25,7 @@ from typing import Any
 from aiohttp import web
 
 from mirage.accessor.github import GitHubAccessor
-from mirage.cache.index import IndexEntry, ListResult, LookupResult
+from mirage.cache.index import Evicted, IndexEntry, ListResult, LookupResult
 from mirage.cache.index.ram import RAMIndexCacheStore
 from mirage.core.github.tree import refill_snapshot
 
@@ -382,11 +382,14 @@ class _ExpiredOnArrival(RAMIndexCacheStore):
 
     async def _set_dir(self, vfs_path: str, entries: list[tuple[str,
                                                                 IndexEntry]],
-                       expired_at: datetime | None, *, partial: bool) -> None:
-        await super()._set_dir(vfs_path,
-                               entries,
-                               expired_at if vfs_path in self.live else _EPOCH,
-                               partial=partial)
+                       expired_at: datetime | None, *, partial: bool,
+                       evict: bool) -> list[Evicted]:
+        return await super()._set_dir(
+            vfs_path,
+            entries,
+            expired_at if vfs_path in self.live else _EPOCH,
+            partial=partial,
+            evict=evict)
 
 
 def expired_on_arrival(*live: str) -> RAMIndexCacheStore:

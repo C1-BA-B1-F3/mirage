@@ -13,7 +13,13 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import { GitHubAccessor } from '../../accessor/github.ts'
-import type { IndexEntry, ListResult, LookupResult } from '../../cache/index/config.ts'
+import type {
+  Evicted,
+  IndexEntry,
+  ListResult,
+  LookupResult,
+  SetDirOptions,
+} from '../../cache/index/config.ts'
 import { RAMIndexCacheStore } from '../../cache/index/ram.ts'
 import { HttpGitHubTransport } from './client.ts'
 import { refillSnapshot } from './tree.ts'
@@ -325,8 +331,9 @@ export class ExpiredOnArrival extends RAMIndexCacheStore {
     path: string,
     entries: readonly [string, IndexEntry][],
     expiredAt?: Date | null,
-  ): Promise<string[]> {
-    return super.setDir(path, entries, this.expiryFor(path, expiredAt))
+    options?: SetDirOptions,
+  ): Promise<Evicted[]> {
+    return super.setDir(path, entries, this.expiryFor(path, expiredAt), options)
   }
 
   override setPartialDir(

@@ -22,12 +22,20 @@ import {
   IndexDirectorySchema,
   IndexEntry,
   LookupStatus,
+  type Evicted,
   type IndexDirectory,
   type ListResult,
   type LookupResult,
+  type SetDirOptions,
 } from './config.ts'
 import { IndexCacheStore } from './store.ts'
-import { CHILDREN_PREFIX, DEFAULT_KEY_PREFIX, ENTRY_PREFIX, GENERATION_KEY } from './constants.ts'
+import {
+  CHILDREN_PREFIX,
+  DEFAULT_KEY_PREFIX,
+  ENTRY_PREFIX,
+  GENERATION_KEY,
+  TOMBSTONE_PREFIX,
+} from './constants.ts'
 
 /**
  * Escape redis MATCH metacharacters in a literal path.
@@ -39,26 +47,58 @@ import { CHILDREN_PREFIX, DEFAULT_KEY_PREFIX, ENTRY_PREFIX, GENERATION_KEY } fro
  */
 const SWAP_LISTING = `
 local old = redis.call('GET', KEYS[1])
+local tomb = redis.call('GET', KEYS[2])
+redis.call('DEL', KEYS[2])
 local named = {}
 for i = 3, #ARGV, 2 do
   named[ARGV[i]] = true
   redis.call('SET', ARGV[2] .. ARGV[i], ARGV[i + 1])
 end
 redis.call('SET', KEYS[1], ARGV[1])
-local gone, folders = {}, {}
+local seen, gone, folders = {}, {}, {}
+local function drop(path, buried)
+  if named[path] or seen[path] then
+    return
+  end
+  seen[path] = true
+  local row = redis.call('GET', ARGV[2] .. path)
+  redis.call('DEL', ARGV[2] .. path)
+  local folder = buried
+    or (row ~= false and cjson.decode(row).resource_type == 'folder')
+  gone[#gone + 1] = path
+  folders[#folders + 1] = folder and 1 or 0
+end
 if old then
   for _, path in ipairs(cjson.decode(old).entries) do
-    if not named[path] then
-      local row = redis.call('GET', ARGV[2] .. path)
-      redis.call('DEL', ARGV[2] .. path)
-      local folder = row ~= false
-        and cjson.decode(row).resource_type == 'folder'
-      gone[#gone + 1] = path
-      folders[#folders + 1] = folder and 1 or 0
-    end
+    drop(path, false)
+  end
+end
+if tomb then
+  local t = cjson.decode(tomb)
+  for i, path in ipairs(t.entries) do
+    drop(path, t.folders[i] == 1)
   end
 end
 return {gone, folders}
+`
+
+const BURY_LISTING = `
+local raw = redis.call('GET', KEYS[1])
+if raw then
+  local entries = cjson.decode(raw).entries
+  local folders = {}
+  for i, path in ipairs(entries) do
+    local row = redis.call('GET', ARGV[1] .. path)
+    local folder = redis.call('EXISTS', ARGV[2] .. path) == 1
+      or (row ~= false and cjson.decode(row).resource_type == 'folder')
+    folders[i] = folder and 1 or 0
+    redis.call('DEL', ARGV[1] .. path)
+  end
+  redis.call('SET', KEYS[2],
+    cjson.encode({entries = entries, folders = folders}))
+end
+redis.call('DEL', KEYS[1])
+redis.call('DEL', KEYS[3])
 `
 
 function globEscape(value: string): string {
@@ -100,6 +140,7 @@ export class RedisIndexCacheStore extends IndexCacheStore {
   private readonly providedClient: RedisClientLike | null
   private readonly entryPrefix: string
   private readonly childrenPrefix: string
+  private readonly tombstonePrefix: string
   private readonly generationKey: string
   private readonly initializingGenerations = new Map<string, Promise<string>>()
   private clientPromise: Promise<RedisClientLike> | null = null
@@ -120,6 +161,7 @@ export class RedisIndexCacheStore extends IndexCacheStore {
     const prefix = options.keyPrefix ?? DEFAULT_KEY_PREFIX
     this.entryPrefix = `${prefix}${ENTRY_PREFIX}`
     this.childrenPrefix = `${prefix}${CHILDREN_PREFIX}`
+    this.tombstonePrefix = `${prefix}${TOMBSTONE_PREFIX}`
     this.generationKey = `${prefix}${GENERATION_KEY}`
   }
 
@@ -291,8 +333,9 @@ export class RedisIndexCacheStore extends IndexCacheStore {
     vfsPath: string,
     entries: readonly [string, IndexEntry][],
     expiredAt?: Date | null,
-  ): Promise<string[]> {
-    return this.storeDir(vfsPath, entries, expiredAt, false)
+    options: SetDirOptions = {},
+  ): Promise<Evicted[]> {
+    return this.storeDir(vfsPath, entries, expiredAt, false, options.window !== true)
   }
 
   override async setPartialDir(
@@ -300,7 +343,7 @@ export class RedisIndexCacheStore extends IndexCacheStore {
     entries: readonly [string, IndexEntry][],
     expiredAt?: Date | null,
   ): Promise<void> {
-    await this.storeDir(vfsPath, entries, expiredAt, true)
+    await this.storeDir(vfsPath, entries, expiredAt, true, false)
   }
 
   private async storeDir(
@@ -308,7 +351,8 @@ export class RedisIndexCacheStore extends IndexCacheStore {
     entries: readonly [string, IndexEntry][],
     expiredAt: Date | null | undefined,
     partial: boolean,
-  ): Promise<string[]> {
+    evict: boolean,
+  ): Promise<Evicted[]> {
     await this.flushSeed()
     const c = await this.client()
     const now = new Date()
@@ -327,39 +371,44 @@ export class RedisIndexCacheStore extends IndexCacheStore {
       expires_at: (expiredAt?.getTime() ?? now.getTime() + this.ttl * 1000) / 1000,
       partial,
     }
-    if (partial) {
+    if (!evict) {
       const pipe = c.multi()
       for (const [path, row] of rows) pipe.set(this.entryKey(path), row)
       pipe.set(this.childrenKey(vfsPath), JSON.stringify(listing))
+      // A window is the new full knowledge; it proves nothing gone and leaves
+      // nothing for a later listing to diff against.
+      if (!partial) pipe.del(this.tombstonePrefix + vfsPath)
       await pipe.exec()
       return []
     }
     // One script, so no other writer lands between reading the previous
     // listing and replacing it; the diff is against the true predecessor.
     const [gone, folders] = (await c.eval(SWAP_LISTING, {
-      keys: [this.childrenKey(vfsPath)],
+      keys: [this.childrenKey(vfsPath), this.tombstonePrefix + vfsPath],
       arguments: [JSON.stringify(listing), this.entryPrefix, ...rows.flat()],
     })) as [string[], number[]]
+    const dropped: Evicted[] = []
     for (const [i, path] of gone.entries()) {
-      if (folders[i] === 1 || (await c.exists(this.childrenKey(path))) === 1) {
-        await this.invalidatePrefix(path)
-      }
+      const folder = folders[i] === 1 || (await c.exists(this.childrenKey(path))) === 1
+      if (folder) await this.invalidatePrefix(path)
+      dropped.push({ path, folder })
     }
-    return gone
+    return dropped
   }
 
   async invalidateDir(vfsPath: string): Promise<void> {
     await this.flushSeed()
     const c = await this.client()
-    const raw = await c.get(this.childrenKey(vfsPath))
-    const childPaths = raw === null ? [] : IndexDirectorySchema.parse(JSON.parse(raw)).entries
-    const pipe = c.multi()
-    for (const child of childPaths) {
-      pipe.del(this.entryKey(child))
-    }
-    pipe.del(this.childrenKey(vfsPath))
-    pipe.del(`${this.generationKey}:${vfsPath}`)
-    await pipe.exec()
+    // The child list becomes a tombstone, so the next complete listing can
+    // still tell which children went away.
+    await c.eval(BURY_LISTING, {
+      keys: [
+        this.childrenKey(vfsPath),
+        this.tombstonePrefix + vfsPath,
+        `${this.generationKey}:${vfsPath}`,
+      ],
+      arguments: [this.entryPrefix, this.childrenPrefix],
+    })
   }
 
   private async scanDelete(prefix: string, vfsPath: string): Promise<void> {
@@ -395,6 +444,7 @@ export class RedisIndexCacheStore extends IndexCacheStore {
       this.pendingSeeds.length = 0
       await this.scanDelete(this.entryPrefix, '/')
       await this.scanDelete(this.childrenPrefix, '/')
+      await this.scanDelete(this.tombstonePrefix, '/')
       await this.scanDelete(`${this.generationKey}:`, '/')
       const c = await this.client()
       await c.del(this.generationKey)

@@ -53,6 +53,18 @@ class IndexSnapshot:
     children: dict[str, list[str]]
 
 
+@dataclass(frozen=True, slots=True)
+class Evicted:
+    """A child a complete re-list no longer names.
+
+    ``folder`` says whether it held a listing or was typed a folder, so
+    cleanup knows to take everything cached beneath it.
+    """
+
+    path: str
+    folder: bool
+
+
 class LookupResult(BaseModel):
     entry: IndexEntry | None = None
     status: LookupStatus | None = None

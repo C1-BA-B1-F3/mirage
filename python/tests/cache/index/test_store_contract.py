@@ -7,7 +7,8 @@ import pytest
 import pytest_asyncio
 from fakeredis.aioredis import FakeRedis
 
-from mirage.cache.index import IndexEntry, LookupStatus, RAMIndexCacheStore
+from mirage.cache.index import (Evicted, IndexEntry, LookupStatus,
+                                RAMIndexCacheStore)
 from mirage.cache.index.redis import RedisIndexCacheStore
 
 
@@ -172,7 +173,8 @@ async def test_first_listing_evicts_nothing(store):
 @pytest.mark.asyncio
 async def test_relist_evicts_the_rows_it_no_longer_names(store):
     await store.set_dir("/dir", [("a", entry()), ("b", entry("b"))])
-    assert await store.set_dir("/dir", [("b", entry("b"))]) == ["/dir/a"]
+    assert await store.set_dir(
+        "/dir", [("b", entry("b"))]) == [Evicted("/dir/a", folder=False)]
     assert (await store.get("/dir/a")).status == LookupStatus.NOT_FOUND
     assert (await store.get("/dir/b")).entry is not None
     assert (await store.list_dir("/dir")).entries == ["/dir/b"]
@@ -183,7 +185,8 @@ async def test_relist_over_an_expired_listing_still_evicts(store):
     past = datetime.now(timezone.utc) - timedelta(seconds=1)
     await store.set_dir("/dir", [("a", entry()), ("b", entry("b"))], past)
     assert (await store.list_dir("/dir")).status == LookupStatus.EXPIRED
-    assert await store.set_dir("/dir", [("b", entry("b"))]) == ["/dir/a"]
+    assert await store.set_dir(
+        "/dir", [("b", entry("b"))]) == [Evicted("/dir/a", folder=False)]
     assert (await store.get("/dir/a")).status == LookupStatus.NOT_FOUND
 
 
@@ -194,7 +197,8 @@ async def test_a_dropped_folder_takes_its_subtree(store):
                                      ("deep", folder("deep"))])
     await store.set_dir("/dir/sub/deep", [("y", entry("y"))])
     await store.set_dir("/dir/sub2", [("z", entry("z"))])
-    assert await store.set_dir("/dir", [("f", entry("f"))]) == ["/dir/sub"]
+    assert await store.set_dir(
+        "/dir", [("f", entry("f"))]) == [Evicted("/dir/sub", folder=True)]
     for path in ["/dir/sub", "/dir/sub/x", "/dir/sub/deep/y"]:
         assert (await store.get(path)).status == LookupStatus.NOT_FOUND
     for path in ["/dir/sub", "/dir/sub/deep"]:
@@ -214,5 +218,99 @@ async def test_partial_listing_evicts_nothing(store):
 async def test_relist_keeps_rows_only_put_wrote(store):
     await store.put("/dir/p", entry("p"))
     await store.set_dir("/dir", [("a", entry())])
-    assert await store.set_dir("/dir", []) == ["/dir/a"]
+    assert await store.set_dir("/dir", []) == [Evicted("/dir/a", folder=False)]
     assert (await store.get("/dir/p")).entry is not None
+
+
+@pytest.mark.asyncio
+async def test_a_window_listing_evicts_nothing(store):
+    # A window names what to show, not every child: dropping out of it is
+    # not deletion, so the row stays while the listing is served whole.
+    await store.set_dir("/dir", [("a", entry()), ("b", entry("b"))])
+    assert await store.set_dir("/dir", [("b", entry("b"))], window=True) == []
+    assert (await store.get("/dir/a")).entry is not None
+    assert (await store.list_dir("/dir")).entries == ["/dir/b"]
+
+
+@pytest.mark.asyncio
+async def test_a_full_relist_over_a_partial_diffs_only_what_it_named(store):
+    # The partial listing never claimed "a", so a later full listing has no
+    # evidence that "a" went away; only "b", which it named, can be gone.
+    await store.put("/dir/a", entry())
+    await store.set_partial_dir("/dir", [("b", entry("b"))])
+    assert await store.set_dir("/dir", []) == [Evicted("/dir/b", folder=False)]
+    assert (await store.get("/dir/a")).entry is not None
+
+
+@pytest.mark.asyncio
+async def test_a_relist_after_invalidate_still_evicts(store):
+    await store.set_dir("/dir", [("a", entry()), ("b", entry("b"))])
+    await store.invalidate()
+    assert (await store.list_dir("/dir")).status == LookupStatus.EXPIRED
+    assert await store.set_dir(
+        "/dir", [("b", entry("b"))]) == [Evicted("/dir/a", folder=False)]
+    assert (await store.get("/dir/a")).status == LookupStatus.NOT_FOUND
+
+
+@pytest.mark.asyncio
+async def test_a_relist_diffs_against_a_pending_seed(store):
+    store.seed({
+        "/dir/a": entry(),
+        "/dir/b": entry("b")
+    }, {"/dir": ["/dir/a", "/dir/b"]},
+               datetime.now(timezone.utc) + timedelta(hours=1))
+    assert await store.set_dir(
+        "/dir", [("b", entry("b"))]) == [Evicted("/dir/a", folder=False)]
+
+
+@pytest.mark.asyncio
+async def test_a_dropped_listed_folder_without_a_folder_row_is_a_folder(store):
+    # Classified by whether it holds a listing, not by its row's type.
+    await store.set_dir("/dir", [("sub", entry("sub"))])
+    await store.set_dir("/dir/sub", [("x", entry("x"))])
+    assert await store.set_dir("/dir",
+                               []) == [Evicted("/dir/sub", folder=True)]
+    assert (await store.get("/dir/sub/x")).status == LookupStatus.NOT_FOUND
+
+
+@pytest.mark.asyncio
+async def test_a_relist_after_invalidate_dir_still_evicts(store):
+    # Dropping a listing (a warm, a mutation) must not throw away what the
+    # next re-list compares against.
+    await store.set_dir("/dir", [("a", entry()), ("sub", folder("sub"))])
+    await store.invalidate_dir("/dir")
+    assert (await store.list_dir("/dir")).status == LookupStatus.NOT_FOUND
+    assert await store.set_dir("/dir", []) == [
+        Evicted("/dir/a", folder=False),
+        Evicted("/dir/sub", folder=True)
+    ]
+    assert await store.set_dir("/dir", []) == []
+
+
+@pytest.mark.asyncio
+async def test_a_window_after_invalidate_dir_evicts_nothing(store):
+    await store.set_dir("/dir", [("a", entry())])
+    await store.invalidate_dir("/dir")
+    assert await store.set_dir("/dir", [], window=True) == []
+    assert await store.set_dir("/dir", []) == []
+
+
+@pytest.mark.asyncio
+async def test_a_partial_after_invalidate_dir_keeps_the_tombstone(store):
+    await store.set_dir("/dir", [("a", entry()), ("b", entry("b"))])
+    await store.invalidate_dir("/dir")
+    await store.set_partial_dir("/dir", [("b", entry("b"))])
+    assert await store.set_dir(
+        "/dir", [("b", entry("b"))]) == [Evicted("/dir/a", folder=False)]
+
+
+@pytest.mark.asyncio
+async def test_invalidate_prefix_keeps_an_existing_tombstone(store):
+    # A warm resolving a folder drops its parent's listing and then the
+    # folder's own prefix before listing it; the evidence has to survive
+    # that cascade or the re-list finds nothing gone.
+    await store.set_dir("/dir", [("a", entry()), ("b", entry("b"))])
+    await store.invalidate_dir("/dir")
+    await store.invalidate_prefix("/dir")
+    assert await store.set_dir(
+        "/dir", [("a", entry())]) == [Evicted("/dir/b", folder=False)]

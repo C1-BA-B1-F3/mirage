@@ -20,6 +20,7 @@ from enum import StrEnum
 
 from mirage.core.timeutil import epoch_to_iso
 from mirage.types import LINK_TARGET_KEY, FileStat, FileType, MountMode
+from mirage.utils.key_prefix import under_path
 from mirage.utils.path import glob_prefix_match, resolve_symlinks
 from mirage.vfs.base import BaseVFS
 from mirage.workspace.mount.mount import MountEntry
@@ -386,6 +387,29 @@ class Namespace:
         del self._nodes[path]
         await self._store.delete([path])
         return True
+
+    async def drop_overlays_under(self, path: str) -> int:
+        """Drop the overlays of a path the backend no longer has, and below.
+
+        A re-list that finds a folder gone orphans every attribute overlay
+        mirage kept under it. Symlink entries are authoritative (they have
+        no backend file), so they stay, as in :meth:`drop_overlay`.
+
+        Args:
+            path (str): absolute virtual path reported gone.
+
+        Returns:
+            int: number of overlay nodes dropped.
+        """
+        doomed = [
+            key for key, meta in self._nodes.items()
+            if meta.target is None and under_path(key, path)
+        ]
+        for key in doomed:
+            del self._nodes[key]
+        if doomed:
+            await self._store.delete(doomed)
+        return len(doomed)
 
     async def clear_times(self,
                           path: str,

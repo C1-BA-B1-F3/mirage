@@ -23,10 +23,10 @@ except ImportError as _err:
     raise ImportError("RedisIndexCacheStore requires the 'redis' extra. "
                       "Install with: pip install mirage-ai[redis]") from _err
 
-from mirage.cache.index.config import (IndexDirectory, IndexEntry, ListResult,
-                                       LookupResult, LookupStatus)
+from mirage.cache.index.config import (Evicted, IndexDirectory, IndexEntry,
+                                       ListResult, LookupResult, LookupStatus)
 from mirage.cache.index.constants import (CHILDREN_PREFIX, ENTRY_PREFIX,
-                                          GENERATION_KEY)
+                                          GENERATION_KEY, TOMBSTONE_PREFIX)
 from mirage.cache.index.store import IndexCacheStore
 from mirage.core.timeutil import to_iso_z
 from mirage.utils.ids import uuid7
@@ -39,26 +39,58 @@ def _text(value: str | bytes) -> str:
 
 _SWAP_LISTING = """
 local old = redis.call('GET', KEYS[1])
+local tomb = redis.call('GET', KEYS[2])
+redis.call('DEL', KEYS[2])
 local named = {}
 for i = 3, #ARGV, 2 do
   named[ARGV[i]] = true
   redis.call('SET', ARGV[2] .. ARGV[i], ARGV[i + 1])
 end
 redis.call('SET', KEYS[1], ARGV[1])
-local gone, folders = {}, {}
+local seen, gone, folders = {}, {}, {}
+local function drop(path, buried)
+  if named[path] or seen[path] then
+    return
+  end
+  seen[path] = true
+  local row = redis.call('GET', ARGV[2] .. path)
+  redis.call('DEL', ARGV[2] .. path)
+  local folder = buried
+    or (row ~= false and cjson.decode(row).resource_type == 'folder')
+  gone[#gone + 1] = path
+  folders[#folders + 1] = folder and 1 or 0
+end
 if old then
   for _, path in ipairs(cjson.decode(old).entries) do
-    if not named[path] then
-      local row = redis.call('GET', ARGV[2] .. path)
-      redis.call('DEL', ARGV[2] .. path)
-      local folder = row ~= false
-        and cjson.decode(row).resource_type == 'folder'
-      gone[#gone + 1] = path
-      folders[#folders + 1] = folder and 1 or 0
-    end
+    drop(path, false)
+  end
+end
+if tomb then
+  local t = cjson.decode(tomb)
+  for i, path in ipairs(t.entries) do
+    drop(path, t.folders[i] == 1)
   end
 end
 return {gone, folders}
+"""
+
+_BURY_LISTING = """
+local raw = redis.call('GET', KEYS[1])
+if raw then
+  local entries = cjson.decode(raw).entries
+  local folders = {}
+  for i, path in ipairs(entries) do
+    local row = redis.call('GET', ARGV[1] .. path)
+    local folder = redis.call('EXISTS', ARGV[2] .. path) == 1
+      or (row ~= false and cjson.decode(row).resource_type == 'folder')
+    folders[i] = folder and 1 or 0
+    redis.call('DEL', ARGV[1] .. path)
+  end
+  redis.call('SET', KEYS[2],
+    cjson.encode({entries = entries, folders = folders}))
+end
+redis.call('DEL', KEYS[1])
+redis.call('DEL', KEYS[3])
 """
 
 
@@ -125,6 +157,7 @@ class RedisIndexCacheStore(IndexCacheStore):
         p = key_prefix or ""
         self._entry_prefix = f"{p}{ENTRY_PREFIX}"
         self._children_prefix = f"{p}{CHILDREN_PREFIX}"
+        self._tombstone_prefix = f"{p}{TOMBSTONE_PREFIX}"
         self._generation_key = f"{p}{GENERATION_KEY}"
         self._directory_generation_prefix = f"{self._generation_key}:"
 
@@ -270,11 +303,14 @@ class RedisIndexCacheStore(IndexCacheStore):
         vfs_path: str,
         entries: list[tuple[str, IndexEntry]],
         expired_at: datetime | None = None,
-    ) -> list[str]:
+        *,
+        window: bool = False,
+    ) -> list[Evicted]:
         return await self._set_dir(vfs_path,
                                    entries,
                                    expired_at,
-                                   partial=False)
+                                   partial=False,
+                                   evict=not window)
 
     async def set_partial_dir(
         self,
@@ -282,7 +318,11 @@ class RedisIndexCacheStore(IndexCacheStore):
         entries: list[tuple[str, IndexEntry]],
         expired_at: datetime | None = None,
     ) -> None:
-        await self._set_dir(vfs_path, entries, expired_at, partial=True)
+        await self._set_dir(vfs_path,
+                            entries,
+                            expired_at,
+                            partial=True,
+                            evict=False)
 
     async def _set_dir(
         self,
@@ -291,7 +331,8 @@ class RedisIndexCacheStore(IndexCacheStore):
         expired_at: datetime | None,
         *,
         partial: bool,
-    ) -> list[str]:
+        evict: bool,
+    ) -> list[Evicted]:
         await self._flush_seed()
         now = datetime.now(timezone.utc)
         now_iso = to_iso_z(now)
@@ -313,24 +354,33 @@ class RedisIndexCacheStore(IndexCacheStore):
             expires_at=expiry.timestamp(),
             generation=f"{generation}:{directory_generation}",
             partial=partial)
-        if partial:
+        if not evict:
             pipe = self._client.pipeline()
             for path, row in rows:
                 pipe.set(self._entry_key(path), row)
             pipe.set(self._children_key(vfs_path), listing.model_dump_json())
+            if not partial:
+                # A window is the new full knowledge; it proves nothing gone
+                # and leaves nothing for a later listing to diff against.
+                pipe.delete(self._tombstone_prefix + vfs_path)
             await pipe.execute()
             return []
         # One script, so no other writer lands between reading the previous
         # listing and replacing it; the diff is against the true predecessor.
         gone, folders = await cast(
             Awaitable[tuple[list[str | bytes], list[int]]],
-            self._client.eval(_SWAP_LISTING, 1, self._children_key(vfs_path),
+            self._client.eval(_SWAP_LISTING, 2, self._children_key(vfs_path),
+                              self._tombstone_prefix + vfs_path,
                               listing.model_dump_json(), self._entry_prefix,
                               *(value for row in rows for value in row)))
-        dropped = [_text(key) for key in gone]
-        for key, folder in zip(dropped, folders):
-            if folder or await self._client.exists(self._children_key(key)):
+        dropped: list[Evicted] = []
+        for raw, flag in zip(gone, folders):
+            key = _text(raw)
+            folder = bool(flag) or bool(await self._client.exists(
+                self._children_key(key)))
+            if folder:
                 await self.invalidate_prefix(key)
+            dropped.append(Evicted(key, folder=folder))
         return dropped
 
     async def entries(self) -> dict[str, IndexEntry]:
@@ -353,16 +403,15 @@ class RedisIndexCacheStore(IndexCacheStore):
 
     async def invalidate_dir(self, vfs_path: str) -> None:
         await self._flush_seed()
-        children_key = self._children_key(vfs_path)
-        raw = await self._client.get(children_key)
-        child_paths = IndexDirectory.model_validate_json(
-            raw).entries if raw is not None else []
-        pipe = self._client.pipeline()
-        for child in child_paths:
-            pipe.delete(self._entry_key(child))
-        pipe.delete(children_key)
-        pipe.delete(f"{self._directory_generation_prefix}{vfs_path}")
-        await pipe.execute()
+        # The child list becomes a tombstone, so the next complete listing
+        # can still tell which children went away.
+        await cast(
+            Awaitable[None],
+            self._client.eval(
+                _BURY_LISTING, 3, self._children_key(vfs_path),
+                self._tombstone_prefix + vfs_path,
+                f"{self._directory_generation_prefix}{vfs_path}",
+                self._entry_prefix, self._children_prefix))
 
     async def _scan_delete(self, prefix: str, vfs_path: str) -> None:
         """Delete every key under ``prefix`` naming a path in the subtree.
@@ -389,6 +438,8 @@ class RedisIndexCacheStore(IndexCacheStore):
     async def invalidate_prefix(self, vfs_path: str) -> None:
         await self._flush_seed()
         await self._scan_delete(self._entry_prefix, vfs_path)
+        # Forgetting what is cached is not evidence that anything went
+        # away, so tombstones survive for the next complete listing.
         await self._scan_delete(self._children_prefix, vfs_path)
         await self._scan_delete(self._directory_generation_prefix, vfs_path)
 
@@ -403,6 +454,7 @@ class RedisIndexCacheStore(IndexCacheStore):
             self._pending_seeds.clear()
             await self._scan_delete(self._entry_prefix, "/")
             await self._scan_delete(self._children_prefix, "/")
+            await self._scan_delete(self._tombstone_prefix, "/")
             await self._scan_delete(self._directory_generation_prefix, "/")
             await self._client.delete(self._generation_key)
 

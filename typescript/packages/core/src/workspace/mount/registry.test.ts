@@ -458,6 +458,9 @@ describe('MountRegistry read gate', () => {
       if (this.rejects !== undefined) return Promise.reject(this.rejects)
       return Promise.resolve(this.answer)
     }
+    onGone(): Promise<void> {
+      return Promise.resolve()
+    }
   }
 
   function gated(reconciler?: StubReconciler) {

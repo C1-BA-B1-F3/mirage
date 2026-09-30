@@ -19,6 +19,7 @@ import { mountKey } from '../utils/key_prefix.ts'
 import { rstripSlash } from '../utils/slash.ts'
 import type { FileCache } from './file/mixin.ts'
 import type { IndexCacheStore } from './index/store.ts'
+import type { Evicted } from './index/config.ts'
 import { IndexView } from './index/view.ts'
 import { withCacheMutation, latestFingerprint } from './file/io.ts'
 
@@ -63,6 +64,9 @@ export class CacheManager {
     ownsPath: (path: string) => boolean = () => true,
     mayServeCached: (key: string) => Promise<boolean> = alwaysServe,
     private readonly readTtl: number = DEFAULT_READ_TTL,
+    // Cleanup for a child a re-list found gone, injected for the same
+    // one-way reason as the read gate; undefined cleans nothing.
+    private readonly onGone?: (gone: Evicted) => Promise<void>,
   ) {
     this.fileCache = fileCache
     this.index = index
@@ -94,6 +98,7 @@ export class CacheManager {
     if (this.view?.store !== index) {
       this.view = new IndexView(index, this.fileCache, this.prefix || '/', this.ownsPath, {
         readTtl: this.readTtl,
+        ...(this.onGone === undefined ? {} : { onGone: this.onGone }),
       })
     }
     return this.view
@@ -113,6 +118,7 @@ export class CacheManager {
     return new IndexView(index, this.fileCache, this.prefix || '/', this.ownsPath, {
       locked: true,
       readTtl: this.readTtl,
+      ...(this.onGone === undefined ? {} : { onGone: this.onGone }),
     })
   }
 

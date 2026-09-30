@@ -14,8 +14,9 @@
 
 from datetime import datetime, timedelta, timezone
 
-from mirage.cache.index.config import (IndexEntry, ListResult, LookupResult,
-                                       LookupStatus, ResourceType)
+from mirage.cache.index.config import (Evicted, IndexEntry, ListResult,
+                                       LookupResult, LookupStatus,
+                                       ResourceType)
 from mirage.cache.index.store import IndexCacheStore
 from mirage.cache.lock import KeyLockMixin
 from mirage.core.timeutil import to_iso_z
@@ -32,6 +33,7 @@ class RAMIndexCacheStore(IndexCacheStore, KeyLockMixin):
         self._children: dict[str, list[str]] = {}
         self._expiry: dict[str, datetime] = {}
         self._partial: set[str] = set()
+        self._tombstones: dict[str, list[Evicted]] = {}
 
     def seed(self, entries: dict[str, IndexEntry],
              children: dict[str, list[str]], expires_at: datetime) -> None:
@@ -86,11 +88,14 @@ class RAMIndexCacheStore(IndexCacheStore, KeyLockMixin):
         vfs_path: str,
         entries: list[tuple[str, IndexEntry]],
         expired_at: datetime | None = None,
-    ) -> list[str]:
+        *,
+        window: bool = False,
+    ) -> list[Evicted]:
         return await self._set_dir(vfs_path,
                                    entries,
                                    expired_at,
-                                   partial=False)
+                                   partial=False,
+                                   evict=not window)
 
     async def set_partial_dir(
         self,
@@ -98,7 +103,11 @@ class RAMIndexCacheStore(IndexCacheStore, KeyLockMixin):
         entries: list[tuple[str, IndexEntry]],
         expired_at: datetime | None = None,
     ) -> None:
-        await self._set_dir(vfs_path, entries, expired_at, partial=True)
+        await self._set_dir(vfs_path,
+                            entries,
+                            expired_at,
+                            partial=True,
+                            evict=False)
 
     async def _set_dir(
         self,
@@ -107,7 +116,8 @@ class RAMIndexCacheStore(IndexCacheStore, KeyLockMixin):
         expired_at: datetime | None,
         *,
         partial: bool,
-    ) -> list[str]:
+        evict: bool,
+    ) -> list[Evicted]:
         async with self._lock_for(vfs_path):
             now = datetime.now(timezone.utc)
             exp = expired_at or (now + timedelta(seconds=self._ttl))
@@ -121,12 +131,19 @@ class RAMIndexCacheStore(IndexCacheStore, KeyLockMixin):
                 self._entries[full_path] = entry
                 child_keys.append(full_path)
             named = set(child_keys)
-            gone = [] if partial else [
-                key for key in self._children.get(vfs_path, [])
+            # What the last full knowledge named: the current listing, plus a
+            # tombstone an invalidation left (a partial since then cannot
+            # have proven its other children gone).
+            buried = {} if partial else {
+                child.path: child.folder
+                for child in self._tombstones.pop(vfs_path, [])
+            }
+            candidates = dict.fromkeys(self._children.get(vfs_path, []))
+            candidates.update(dict.fromkeys(buried))
+            gone = [
+                self._evict(key, buried.get(key, False)) for key in candidates
                 if key not in named
-            ]
-            for key in gone:
-                self._evict(key)
+            ] if evict else []
             self._children[vfs_path] = child_keys
             self._expiry[vfs_path] = exp
             if partial:
@@ -135,28 +152,55 @@ class RAMIndexCacheStore(IndexCacheStore, KeyLockMixin):
                 self._partial.discard(vfs_path)
             return gone
 
-    def _evict(self, key: str) -> None:
+    def _evict(self, key: str, buried_folder: bool = False) -> Evicted:
         """Drop a child a complete listing no longer names.
 
         Args:
             key (str): the gone child's key.
+            buried_folder (bool): a tombstone recorded it as a folder,
+                after its row was already dropped.
         """
         entry = self._entries.pop(key, None)
-        if key in self._children or (entry is not None and entry.resource_type
-                                     == ResourceType.FOLDER):
+        folder = buried_folder or key in self._children or (
+            entry is not None and entry.resource_type == ResourceType.FOLDER)
+        if folder:
             self._drop_prefix(key)
+        return Evicted(key, folder=folder)
 
     async def invalidate_dir(self, vfs_path: str) -> None:
-        for child in self._children.get(vfs_path, []):
+        # The child list is kept as a tombstone, so the next complete
+        # listing can still tell which children went away.
+        children = self._children.get(vfs_path)
+        if children is not None:
+            self._tombstones[vfs_path] = [
+                Evicted(child,
+                        folder=child in self._children
+                        or self._is_folder(child)) for child in children
+            ]
+        for child in children or []:
             self._entries.pop(child, None)
         self._expiry.pop(vfs_path, None)
         self._children.pop(vfs_path, None)
         self._partial.discard(vfs_path)
 
     async def invalidate_prefix(self, vfs_path: str) -> None:
-        self._drop_prefix(vfs_path)
+        # Forgetting what is cached is not evidence that anything went away,
+        # so an existing tombstone survives for the next complete listing.
+        self._drop_prefix(vfs_path, keep_tombstones=True)
 
-    def _drop_prefix(self, vfs_path: str) -> None:
+    def _is_folder(self, key: str) -> bool:
+        entry = self._entries.get(key)
+        return entry is not None and entry.resource_type == ResourceType.FOLDER
+
+    def _drop_prefix(self,
+                     vfs_path: str,
+                     *,
+                     keep_tombstones: bool = False) -> None:
+        if not keep_tombstones:
+            for tomb_key in [
+                    k for k in self._tombstones if under_path(k, vfs_path)
+            ]:
+                self._tombstones.pop(tomb_key, None)
         for entry_key in [k for k in self._entries if under_path(k, vfs_path)]:
             self._entries.pop(entry_key, None)
         for dir_key in [k for k in self._children if under_path(k, vfs_path)]:
@@ -175,4 +219,5 @@ class RAMIndexCacheStore(IndexCacheStore, KeyLockMixin):
         self._children.clear()
         self._expiry.clear()
         self._partial.clear()
+        self._tombstones.clear()
         self._clear_locks()

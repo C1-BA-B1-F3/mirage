@@ -22,6 +22,7 @@ import {
 } from '../../../types.ts'
 import { decodeBase64, encodeBase64 } from '../../../utils/base64.ts'
 import { epochToIso } from '../../../utils/dates.ts'
+import { underPath } from '../../../utils/key_prefix.ts'
 import { globPrefixMatch, resolveSymlinks } from '../../../utils/path.ts'
 import { rstripSlash } from '../../../utils/slash.ts'
 import type { ResolveFn } from '../../dispatcher/index.ts'
@@ -329,6 +330,18 @@ export class Namespace {
     this.nodeTable.delete(path)
     await this.store.delete([path])
     return true
+  }
+
+  // Drop the overlays of a path the backend no longer has, and below. A
+  // re-list that finds a folder gone orphans every attribute overlay kept
+  // under it; symlink entries are authoritative, so they stay.
+  async dropOverlaysUnder(path: string): Promise<number> {
+    const doomed = [...this.nodeTable]
+      .filter(([key, meta]) => meta.target === undefined && underPath(key, path))
+      .map(([key]) => key)
+    for (const key of doomed) this.nodeTable.delete(key)
+    if (doomed.length > 0) await this.store.delete(doomed)
+    return doomed.length
   }
 
   // Drop overlay times after a content write. write(2) refreshes mtime,

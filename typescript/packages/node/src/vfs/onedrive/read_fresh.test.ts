@@ -244,3 +244,32 @@ describe('onedrive warm read cost', () => {
     }
   })
 })
+
+// A re-list is the backend's own answer, so a file it no longer names loses
+// what mirage kept for it. Asserted right after the `ls`, before anything
+// reads the path, since a stat of it reaches the per-file cleanup anyway.
+it('cleans up the bytes and overlay of a file a re-list drops', async () => {
+  const graph = await graphOf(OLD)
+  graph.write(ME, 'b.txt', ENC.encode('bravo\n'))
+  const w = new Workspace({
+    '/m': new Mount(await vfsOf(graph), {
+      mode: MountMode.WRITE,
+      read: { policy: ReadPolicy.BOUNDED, ttl: 600 },
+    }),
+  })
+  try {
+    expect(await out(w, 'ls /m')).toBe('a.txt\nb.txt\n')
+    expect(await out(w, 'cat /m/a.txt')).toBe('version one\n')
+    await w.namespace.setAttrs('/m/a.txt', { mode: 0o600 })
+    expect(await w.cache.exists('/m/a.txt')).toBe(true)
+    graph.remove(ME, 'a.txt')
+    await w.registry.mountFor('/m/a.txt').index?.invalidate()
+    expect(await out(w, 'ls /m')).toBe('b.txt\n')
+    expect(w.namespace.metaFor('/m/a.txt')).toBeNull()
+    expect(await w.cache.exists('/m/a.txt')).toBe(false)
+    expect((await w.shell('stat /m/a.txt')).exitCode).toBe(1)
+  } finally {
+    await w.close()
+  }
+})
+

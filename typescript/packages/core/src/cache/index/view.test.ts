@@ -14,6 +14,8 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
+  type Evicted,
+  type SetDirOptions,
   IndexEntry,
   IndexType,
   LookupStatus,
@@ -403,9 +405,10 @@ class ExpirySpy extends RAMIndexCacheStore {
     path: string,
     entries: readonly [string, IndexEntry][],
     expiredAt?: Date | null,
-  ): Promise<string[]> {
+    options?: SetDirOptions,
+  ): Promise<Evicted[]> {
     this.asked.push(expiredAt)
-    return super.setDir(path, entries, expiredAt)
+    return super.setDir(path, entries, expiredAt, options)
   }
   override setPartialDir(
     path: string,
@@ -566,5 +569,135 @@ describe('the view caps listing expiry at the mount ttl', () => {
       await held.done
       await cache.close()
     }
+  })
+})
+
+describe('IndexView cleanup after a re-list', () => {
+  const row = (name: string, resourceType = 'file'): IndexEntry =>
+    new IndexEntry({ id: name, name, resourceType })
+
+  function ledger(): [Evicted[], (gone: Evicted) => Promise<void>] {
+    const seen: Evicted[] = []
+    return [
+      seen,
+      (gone) => {
+        seen.push(gone)
+        return Promise.resolve()
+      },
+    ]
+  }
+
+  it('hands each dropped child to cleanup', async () => {
+    const [seen, onGone] = ledger()
+    const view = new IndexView(
+      new RAMIndexCacheStore(),
+      new RAMFileCacheStore(),
+      '/data',
+      () => true,
+      { onGone },
+    )
+    await view.setDir('/data', [
+      ['a', row('a')],
+      ['sub', row('sub', 'folder')],
+    ])
+    await view.setDir('/data', [])
+    expect(seen).toEqual([
+      { path: '/data/a', folder: false },
+      { path: '/data/sub', folder: true },
+    ])
+  })
+
+  it('hands nothing to cleanup for a window', async () => {
+    const [seen, onGone] = ledger()
+    const view = new IndexView(
+      new RAMIndexCacheStore(),
+      new RAMFileCacheStore(),
+      '/data',
+      () => true,
+      { onGone },
+    )
+    await view.setDir('/data', [['a', row('a')]])
+    await view.setDir('/data', [], null, { window: true })
+    expect(seen).toEqual([])
+  })
+
+  // A nested mount took /data/n after the parent listed it.
+  it('skips a key the mount no longer owns', async () => {
+    const [seen, onGone] = ledger()
+    const owned = new Set(['/data', '/data/a', '/data/n'])
+    const view = new IndexView(
+      new RAMIndexCacheStore(),
+      new RAMFileCacheStore(),
+      '/data',
+      (k) => owned.has(k),
+      {
+        onGone,
+      },
+    )
+    await view.setDir('/data', [
+      ['a', row('a')],
+      ['n', row('n')],
+    ])
+    owned.delete('/data/n')
+    await view.setDir('/data', [])
+    expect(seen).toEqual([{ path: '/data/a', folder: false }])
+  })
+
+  // The mount table can change between the fenced write and the cleanup.
+  it('rechecks ownership after the write', async () => {
+    const [seen, onGone] = ledger()
+    const owned = new Set(['/data', '/data/a'])
+    const store = new RAMIndexCacheStore()
+    const view = new IndexView(store, new RAMFileCacheStore(), '/data', (k) => owned.has(k), {
+      onGone,
+    })
+    await view.setDir('/data', [['a', row('a')]])
+    const original = store.setDir.bind(store)
+    vi.spyOn(store, 'setDir').mockImplementation(async (...args) => {
+      const gone = await original(...args)
+      owned.delete('/data/a')
+      return gone
+    })
+    await view.setDir('/data', [])
+    expect(seen).toEqual([])
+  })
+
+  // Cleanup evicts file-cache entries; inside the fence it would wait on the
+  // lock its own write holds.
+  it('runs cleanup after the fence', async () => {
+    const cache = new RAMFileCacheStore()
+    const done: string[] = []
+    const view = new IndexView(new RAMIndexCacheStore(), cache, '/data', () => true, {
+      onGone: (gone) =>
+        withCacheMutation(cache, () => {
+          done.push(gone.path)
+          return Promise.resolve()
+        }),
+    })
+    await view.setDir('/data', [['a', row('a')]])
+    await view.setDir('/data', [])
+    expect(done).toEqual(['/data/a'])
+  })
+
+  it('hands owned reported keys to cleanup', async () => {
+    const [seen, onGone] = ledger()
+    const view = new IndexView(
+      new RAMIndexCacheStore(),
+      new RAMFileCacheStore(),
+      '/data',
+      (k) => k !== '/data/n',
+      {
+        onGone,
+      },
+    )
+    await view.reportGone([
+      { path: '/data/a', folder: false },
+      { path: '/data/n', folder: true },
+    ])
+    expect(seen).toEqual([{ path: '/data/a', folder: false }])
+  })
+
+  it('treats reportGone on a raw store as a no-op', async () => {
+    await new RAMIndexCacheStore().reportGone([{ path: '/a', folder: false }])
   })
 })

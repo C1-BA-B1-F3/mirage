@@ -14,8 +14,8 @@
 
 from datetime import datetime
 
-from mirage.cache.index.config import (IndexEntry, IndexSnapshot, ListResult,
-                                       LookupResult)
+from mirage.cache.index.config import (Evicted, IndexEntry, IndexSnapshot,
+                                       ListResult, LookupResult)
 
 
 class IndexCacheStore:
@@ -64,24 +64,40 @@ class IndexCacheStore:
         vfs_path: str,
         entries: list[tuple[str, IndexEntry]],
         expired_at: datetime | None = None,
-    ) -> list[str]:
+        *,
+        window: bool = False,
+    ) -> list[Evicted]:
         """Cache a complete directory listing.
 
         A complete listing names every child, so a child the previous
         listing named and this one does not is gone: its row goes, and a
         gone directory takes its listing and every row beneath it. Rows
-        only ``put`` wrote were never named, so they stay.
+        only ``put`` wrote were never named, so they stay. A window (the
+        newest N messages, the last N days) is served as the listing but
+        proves nothing absent, so it evicts nothing.
 
         Args:
             vfs_path (str): the listed directory's virtual path.
             entries (list[tuple[str, IndexEntry]]): every child.
             expired_at (datetime | None): optional freshness deadline.
+            window (bool): the entries are a capped window, not every
+                child.
 
         Returns:
-            list[str]: keys of the children the previous listing named
-            and this one does not.
+            list[Evicted]: the children the previous listing named and
+            this one does not.
         """
         raise NotImplementedError
+
+    async def report_gone(self, gone: list[Evicted]) -> None:
+        """Hand children a re-list found gone to the mount's cleanup.
+
+        A raw store belongs to no mount, so there is nothing to clean.
+
+        Args:
+            gone (list[Evicted]): the children the backend no longer has.
+        """
+        return None
 
     async def entries(self) -> dict[str, IndexEntry]:
         raise NotImplementedError

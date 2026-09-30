@@ -352,8 +352,9 @@ it('returns the snapshot it wrote if another refill replaces the accessor tree',
   const write = index.setDir.bind(index)
   vi.spyOn(client, 'hubGetResponse').mockResolvedValue(page([fileRow('a.txt')]))
   vi.spyOn(index, 'setDir').mockImplementation(async (...args) => {
-    await write(...args)
+    const gone = await write(...args)
     acc.tree = new Map([['other.txt', parseEntry(fileRow('other.txt'))]])
+    return gone
   })
   try {
     const snapshot = await refillSnapshot(acc, index, '/m')

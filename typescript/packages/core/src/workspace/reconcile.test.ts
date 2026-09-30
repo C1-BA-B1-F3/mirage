@@ -60,6 +60,38 @@ async function wsWithOverlay(): Promise<Workspace> {
 }
 
 describe('Reconciler', () => {
+  it('onGone for a file evicts its bytes and overlay', async () => {
+    const ws = await wsWithOverlay()
+    await ws.cache.set('/data/f.txt', ENC.encode('v1'))
+    await ws.cache.set('/data/f.txt.bak', ENC.encode('keep'))
+    const rec = new Reconciler(ws.cache, ws.namespace, ws.opsRegistry)
+    await rec.onGone({ path: '/data/f.txt', folder: false })
+    expect(ws.namespace.metaFor('/data/f.txt')).toBeNull()
+    expect(await ws.cache.exists('/data/f.txt')).toBe(false)
+    expect(await ws.cache.exists('/data/f.txt.bak')).toBe(true)
+    await ws.close()
+  })
+
+  it('onGone for a folder takes its subtree but not links', async () => {
+    const ws = new Workspace({ '/data': new RAMVFS() })
+    await ws.namespace.ensureLoaded()
+    await ws.namespace.setAttrs('/data/sub', { mode: 0o700 })
+    await ws.namespace.setAttrs('/data/sub/x', { mode: 0o600 })
+    await ws.namespace.setAttrs('/data/sub2/x', { mode: 0o600 })
+    await ws.namespace.symlink('/data/sub/link', '/data/t', 1)
+    await ws.cache.set('/data/sub/x', ENC.encode('x'))
+    await ws.cache.set('/data/sub2/x', ENC.encode('keep'))
+    const rec = new Reconciler(ws.cache, ws.namespace, ws.opsRegistry)
+    await rec.onGone({ path: '/data/sub', folder: true })
+    expect(ws.namespace.metaFor('/data/sub')).toBeNull()
+    expect(ws.namespace.metaFor('/data/sub/x')).toBeNull()
+    expect(ws.namespace.readlink('/data/sub/link')).toBe('/data/t')
+    expect(ws.namespace.metaFor('/data/sub2/x')).not.toBeNull()
+    expect(await ws.cache.exists('/data/sub/x')).toBe(false)
+    expect(await ws.cache.exists('/data/sub2/x')).toBe(true)
+    await ws.close()
+  })
+
   it('onOpMissing GCs an orphaned overlay on a fresh mount + stat + ENOENT', async () => {
     const ws = await wsWithOverlay()
     const rec = new Reconciler(ws.cache, ws.namespace, ws.opsRegistry)

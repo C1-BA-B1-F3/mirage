@@ -191,7 +191,9 @@ for (const backend of ['ram', 'redis']) {
           ['a', entry()],
           ['b', entry('b')],
         ])
-        expect(await store.setDir('/dir', [['b', entry('b')]])).toEqual(['/dir/a'])
+        expect(await store.setDir('/dir', [['b', entry('b')]])).toEqual([
+          { path: '/dir/a', folder: false },
+        ])
         expect((await store.get('/dir/a')).status).toBe(LookupStatus.NOT_FOUND)
         expect((await store.get('/dir/b')).entry).not.toBeNull()
         expect((await store.listDir('/dir')).entries).toEqual(['/dir/b'])
@@ -208,7 +210,9 @@ for (const backend of ['ram', 'redis']) {
           past,
         )
         expect((await store.listDir('/dir')).status).toBe(LookupStatus.EXPIRED)
-        expect(await store.setDir('/dir', [['b', entry('b')]])).toEqual(['/dir/a'])
+        expect(await store.setDir('/dir', [['b', entry('b')]])).toEqual([
+          { path: '/dir/a', folder: false },
+        ])
         expect((await store.get('/dir/a')).status).toBe(LookupStatus.NOT_FOUND)
       })
 
@@ -223,7 +227,9 @@ for (const backend of ['ram', 'redis']) {
         ])
         await store.setDir('/dir/sub/deep', [['y', entry('y')]])
         await store.setDir('/dir/sub2', [['z', entry('z')]])
-        expect(await store.setDir('/dir', [['f', entry('f')]])).toEqual(['/dir/sub'])
+        expect(await store.setDir('/dir', [['f', entry('f')]])).toEqual([
+          { path: '/dir/sub', folder: true },
+        ])
         for (const path of ['/dir/sub', '/dir/sub/x', '/dir/sub/deep/y']) {
           expect((await store.get(path)).status).toBe(LookupStatus.NOT_FOUND)
         }
@@ -243,10 +249,114 @@ for (const backend of ['ram', 'redis']) {
         expect((await store.get('/dir/a')).entry).not.toBeNull()
       })
 
+      // A window names what to show, not every child: dropping out of it is
+      // not deletion, so the row stays while the listing is served whole.
+      it('evicts nothing on a window listing', async () => {
+        await store.setDir('/dir', [
+          ['a', entry()],
+          ['b', entry('b')],
+        ])
+        expect(await store.setDir('/dir', [['b', entry('b')]], null, { window: true })).toEqual([])
+        expect((await store.get('/dir/a')).entry).not.toBeNull()
+        expect((await store.listDir('/dir')).entries).toEqual(['/dir/b'])
+      })
+
+      // The partial listing never claimed "a", so a later full listing has
+      // no evidence that "a" went away.
+      it('diffs a full re-list over a partial only against what it named', async () => {
+        await store.put('/dir/a', entry())
+        await store.setPartialDir('/dir', [['b', entry('b')]])
+        expect(await store.setDir('/dir', [])).toEqual([{ path: '/dir/b', folder: false }])
+        expect((await store.get('/dir/a')).entry).not.toBeNull()
+      })
+
+      it('still evicts on a re-list after invalidate', async () => {
+        await store.setDir('/dir', [
+          ['a', entry()],
+          ['b', entry('b')],
+        ])
+        await store.invalidate()
+        expect((await store.listDir('/dir')).status).toBe(LookupStatus.EXPIRED)
+        expect(await store.setDir('/dir', [['b', entry('b')]])).toEqual([
+          { path: '/dir/a', folder: false },
+        ])
+      })
+
+      it('diffs a re-list against a pending seed', async () => {
+        store.seed(
+          new Map([
+            ['/dir/a', entry()],
+            ['/dir/b', entry('b')],
+          ]),
+          new Map([['/dir', ['/dir/a', '/dir/b']]]),
+          new Date(Date.now() + 3600000),
+        )
+        expect(await store.setDir('/dir', [['b', entry('b')]])).toEqual([
+          { path: '/dir/a', folder: false },
+        ])
+      })
+
+      // Classified by whether it holds a listing, not by its row's type.
+      it('treats a dropped listed child without a folder row as a folder', async () => {
+        await store.setDir('/dir', [['sub', entry('sub')]])
+        await store.setDir('/dir/sub', [['x', entry('x')]])
+        expect(await store.setDir('/dir', [])).toEqual([{ path: '/dir/sub', folder: true }])
+        expect((await store.get('/dir/sub/x')).status).toBe(LookupStatus.NOT_FOUND)
+      })
+
+      // Dropping a listing (a warm, a mutation) must not throw away what the
+      // next re-list compares against.
+      it('still evicts on a re-list after invalidateDir', async () => {
+        await store.setDir('/dir', [
+          ['a', entry()],
+          ['sub', folder('sub')],
+        ])
+        await store.invalidateDir('/dir')
+        expect((await store.listDir('/dir')).status).toBe(LookupStatus.NOT_FOUND)
+        expect(await store.setDir('/dir', [])).toEqual([
+          { path: '/dir/a', folder: false },
+          { path: '/dir/sub', folder: true },
+        ])
+        expect(await store.setDir('/dir', [])).toEqual([])
+      })
+
+      it('evicts nothing on a window after invalidateDir', async () => {
+        await store.setDir('/dir', [['a', entry()]])
+        await store.invalidateDir('/dir')
+        expect(await store.setDir('/dir', [], null, { window: true })).toEqual([])
+        expect(await store.setDir('/dir', [])).toEqual([])
+      })
+
+      it('keeps the tombstone across a partial after invalidateDir', async () => {
+        await store.setDir('/dir', [
+          ['a', entry()],
+          ['b', entry('b')],
+        ])
+        await store.invalidateDir('/dir')
+        await store.setPartialDir('/dir', [['b', entry('b')]])
+        expect(await store.setDir('/dir', [['b', entry('b')]])).toEqual([
+          { path: '/dir/a', folder: false },
+        ])
+      })
+
+      // A warm resolving a folder drops its parent's listing and then the
+      // folder's own prefix before listing it; the evidence has to survive.
+      it('keeps an existing tombstone across invalidatePrefix', async () => {
+        await store.setDir('/dir', [
+          ['a', entry()],
+          ['b', entry('b')],
+        ])
+        await store.invalidateDir('/dir')
+        await store.invalidatePrefix('/dir')
+        expect(await store.setDir('/dir', [['a', entry()]])).toEqual([
+          { path: '/dir/b', folder: false },
+        ])
+      })
+
       it('keeps rows only put wrote', async () => {
         await store.put('/dir/p', entry('p'))
         await store.setDir('/dir', [['a', entry()]])
-        expect(await store.setDir('/dir', [])).toEqual(['/dir/a'])
+        expect(await store.setDir('/dir', [])).toEqual([{ path: '/dir/a', folder: false }])
         expect((await store.get('/dir/p')).entry).not.toBeNull()
       })
     },

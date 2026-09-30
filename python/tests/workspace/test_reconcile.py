@@ -20,7 +20,7 @@ from uuid import uuid4
 import pytest
 
 from mirage import MountMode, Workspace
-from mirage.cache.index.config import RedisIndexConfig
+from mirage.cache.index.config import Evicted, RedisIndexConfig
 from mirage.types import FileStat, FileType, ReadPolicy, ReadSpec
 from mirage.utils.errors import enotsup
 from mirage.vfs.ram import RAMVFS
@@ -52,6 +52,38 @@ async def test_on_missing_keeps_symlink():
     rec = Reconciler(ws.cache, ws.namespace)
     await rec.on_missing("/data/link")
     assert ws.namespace.readlink("/data/link") == "/data/t"
+
+
+@pytest.mark.asyncio
+async def test_on_gone_for_a_file_evicts_its_bytes_and_overlay():
+    ws = await _ws_with_overlay()
+    await ws.cache.set("/data/f.txt", b"v1")
+    await ws.cache.set("/data/f.txt.bak", b"keep")
+    rec = Reconciler(ws.cache, ws.namespace)
+    await rec.on_gone(Evicted("/data/f.txt", folder=False))
+    assert ws.namespace.meta_for("/data/f.txt") is None
+    assert not await ws.cache.exists("/data/f.txt")
+    assert await ws.cache.exists("/data/f.txt.bak")
+
+
+@pytest.mark.asyncio
+async def test_on_gone_for_a_folder_takes_its_subtree_but_not_links():
+    ws = Workspace({"/data/": RAMVFS()}, mode=MountMode.WRITE)
+    await ws.namespace.ensure_loaded()
+    await ws.namespace.set_attrs("/data/sub", mode=0o700)
+    await ws.namespace.set_attrs("/data/sub/x", mode=0o600)
+    await ws.namespace.set_attrs("/data/sub2/x", mode=0o600)
+    await ws.namespace.symlink("/data/sub/link", "/data/t", 1.0)
+    await ws.cache.set("/data/sub/x", b"x")
+    await ws.cache.set("/data/sub2/x", b"keep")
+    rec = Reconciler(ws.cache, ws.namespace)
+    await rec.on_gone(Evicted("/data/sub", folder=True))
+    assert ws.namespace.meta_for("/data/sub") is None
+    assert ws.namespace.meta_for("/data/sub/x") is None
+    assert ws.namespace.readlink("/data/sub/link") == "/data/t"
+    assert ws.namespace.meta_for("/data/sub2/x") is not None
+    assert not await ws.cache.exists("/data/sub/x")
+    assert await ws.cache.exists("/data/sub2/x")
 
 
 @pytest.mark.asyncio

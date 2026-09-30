@@ -231,3 +231,37 @@ async def test_a_metadata_edit_does_not_refetch():
             assert graph.fetches() - before == 0
         finally:
             await ws.close()
+
+
+def _bounded_ws(vfs) -> Workspace:
+    return Workspace({
+        "/m":
+        Mount(vfs=vfs,
+              mode=MountMode.WRITE,
+              read=ReadSpec(policy=ReadPolicy.BOUNDED, ttl=600)),
+    })
+
+
+@pytest.mark.asyncio
+async def test_a_relist_that_drops_a_file_cleans_up_its_bytes_and_overlay():
+    # A re-list is the backend's own answer, so a file it no longer names
+    # loses what mirage kept for it: the cached bytes and the chmod overlay.
+    # Asserted right after the `ls`, before anything reads the path, since
+    # a stat of it would reach the per-file cleanup on its own.
+    files = {"a.txt": OLD, "b.txt": b"bravo\n"}
+    with serve(FakeGraph(drives={ME: files})) as graph:
+        ws = _bounded_ws(_vfs(graph))
+        try:
+            assert await _out(ws, "ls /m") == b"a.txt\nb.txt\n"
+            assert await _out(ws, "cat /m/a.txt") == OLD
+            await ws.namespace.set_attrs("/m/a.txt", mode=0o600)
+            assert await ws.cache.exists("/m/a.txt")
+            graph.remove(ME, "a.txt")
+            await ws._registry.mount_for("/m/a.txt").index.invalidate()
+            assert await _out(ws, "ls /m") == b"b.txt\n"
+            assert ws.namespace.meta_for("/m/a.txt") is None
+            assert not await ws.cache.exists("/m/a.txt")
+            result = await ws.shell("stat /m/a.txt")
+            assert result.exit_code == 1
+        finally:
+            await ws.close()

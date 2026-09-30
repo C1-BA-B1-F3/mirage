@@ -17,6 +17,7 @@ from contextlib import asynccontextmanager
 
 from mirage.cache.file.io import latest_fingerprint, mutation_lock
 from mirage.cache.file.mixin import FileCacheMixin
+from mirage.cache.index.config import Evicted
 from mirage.cache.index.store import IndexCacheStore
 from mirage.cache.index.view import IndexView
 from mirage.observe.context import active_recorder
@@ -50,15 +51,17 @@ class CacheManager:
     pipeline runs instead of after the whole command tree.
     """
 
-    def __init__(self,
-                 file_cache: FileCacheMixin | None,
-                 index: IndexCacheStore,
-                 prefix: str,
-                 caches_reads: bool,
-                 owns_path: Callable[[str], bool] = lambda _: True,
-                 may_serve_cached: Callable[[str],
-                                            Awaitable[bool]] = _always_serve,
-                 read_ttl: int = DEFAULT_READ_TTL) -> None:
+    def __init__(
+            self,
+            file_cache: FileCacheMixin | None,
+            index: IndexCacheStore,
+            prefix: str,
+            caches_reads: bool,
+            owns_path: Callable[[str], bool] = lambda _: True,
+            may_serve_cached: Callable[[str], Awaitable[bool]] = _always_serve,
+            read_ttl: int = DEFAULT_READ_TTL,
+            on_gone: Callable[[Evicted], Awaitable[None]]
+        | None = None) -> None:
         """Args:
             file_cache (FileCacheMixin | None): Workspace file cache
                 store; entries are keyed by mount-absolute path.
@@ -77,6 +80,9 @@ class CacheManager:
                 still be served; the default trusts the cache.
             read_ttl (int): lifetime of complete backend renders, and the
                 cap on every listing this mount's view writes.
+            on_gone (Callable[[Evicted], Awaitable[None]] | None): cleanup
+                for a child a re-list found gone, injected for the same
+                one-way reason as the read gate; None cleans nothing.
         """
         self._file_cache = file_cache
         self._index = index
@@ -85,6 +91,7 @@ class CacheManager:
         self._owns_path = owns_path
         self._may_serve_cached = may_serve_cached
         self._read_ttl = read_ttl
+        self._on_gone = on_gone
         self._read_generation = 0
         self._view: IndexView | None = None
 
@@ -118,7 +125,8 @@ class CacheManager:
                                    self._file_cache,
                                    self._prefix,
                                    self._owns_path,
-                                   read_ttl=self._read_ttl)
+                                   read_ttl=self._read_ttl,
+                                   on_gone=self._on_gone)
         return self._view
 
     def scope_index_locked(self, index: IndexCacheStore) -> IndexCacheStore:
@@ -144,7 +152,8 @@ class CacheManager:
                          self._prefix,
                          self._owns_path,
                          locked=True,
-                         read_ttl=self._read_ttl)
+                         read_ttl=self._read_ttl,
+                         on_gone=self._on_gone)
 
     async def _evict_dir(self, key: str) -> None:
         """Drop one directory's cached listing.

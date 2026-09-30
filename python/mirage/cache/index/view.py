@@ -12,14 +12,14 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from contextlib import AbstractAsyncContextManager, nullcontext
 from datetime import datetime, timedelta, timezone
 
 from mirage.cache.file.io import mutation_lock
 from mirage.cache.file.mixin import FileCacheMixin
-from mirage.cache.index.config import (IndexEntry, IndexSnapshot, ListResult,
-                                       LookupResult, LookupStatus)
+from mirage.cache.index.config import (Evicted, IndexEntry, IndexSnapshot,
+                                       ListResult, LookupResult, LookupStatus)
 from mirage.cache.index.store import IndexCacheStore
 
 
@@ -31,14 +31,17 @@ class IndexView(IndexCacheStore):
     cannot refill a replacement mount's index.
     """
 
-    def __init__(self,
-                 store: IndexCacheStore,
-                 cache: FileCacheMixin,
-                 prefix: str,
-                 owns: Callable[[str], bool],
-                 *,
-                 locked: bool = False,
-                 read_ttl: float | None = None) -> None:
+    def __init__(
+            self,
+            store: IndexCacheStore,
+            cache: FileCacheMixin,
+            prefix: str,
+            owns: Callable[[str], bool],
+            *,
+            locked: bool = False,
+            read_ttl: float | None = None,
+            on_gone: Callable[[Evicted], Awaitable[None]] | None = None
+    ) -> None:
         """Args:
             store (IndexCacheStore): the VFS's own index.
             cache (FileCacheMixin): workspace file cache whose mutation lock
@@ -49,6 +52,8 @@ class IndexView(IndexCacheStore):
             locked (bool): skip the non-reentrant mutation lock already
                 held by the caller; the view must not outlive that hold.
             read_ttl (float | None): listing lifetime cap, or None.
+            on_gone (Callable[[Evicted], Awaitable[None]] | None): the
+                mount's cleanup for a child a re-list found gone, or None.
         """
         super().__init__()
         self._store = store
@@ -57,6 +62,7 @@ class IndexView(IndexCacheStore):
         self._owns = owns
         self._locked = locked
         self._read_ttl = read_ttl
+        self._on_gone = on_gone
 
     @property
     def store(self) -> IndexCacheStore:
@@ -132,22 +138,31 @@ class IndexView(IndexCacheStore):
     async def set_dir(self,
                       vfs_path: str,
                       entries: list[tuple[str, IndexEntry]],
-                      expired_at: datetime | None = None) -> list[str]:
-        return await self._set_dir(vfs_path,
+                      expired_at: datetime | None = None,
+                      *,
+                      window: bool = False) -> list[Evicted]:
+        gone = await self._set_dir(vfs_path,
                                    entries,
                                    expired_at,
-                                   partial=False)
+                                   partial=False,
+                                   window=window)
+        await self.report_gone(gone)
+        return gone
 
     async def set_partial_dir(self,
                               vfs_path: str,
                               entries: list[tuple[str, IndexEntry]],
                               expired_at: datetime | None = None) -> None:
-        await self._set_dir(vfs_path, entries, expired_at, partial=True)
+        await self._set_dir(vfs_path,
+                            entries,
+                            expired_at,
+                            partial=True,
+                            window=False)
 
     async def _set_dir(self, vfs_path: str, entries: list[tuple[str,
                                                                 IndexEntry]],
-                       expired_at: datetime | None, *,
-                       partial: bool) -> list[str]:
+                       expired_at: datetime | None, *, partial: bool,
+                       window: bool) -> list[Evicted]:
         async with self._fence():
             if not self._owns(vfs_path):
                 return []
@@ -158,8 +173,21 @@ class IndexView(IndexCacheStore):
             if partial:
                 await self._store.set_partial_dir(vfs_path, owned, deadline)
                 return []
-            gone = await self._store.set_dir(vfs_path, owned, deadline)
-            return [key for key in gone if self._owns(key)]
+            gone = await self._store.set_dir(vfs_path,
+                                             owned,
+                                             deadline,
+                                             window=window)
+            return [child for child in gone if self._owns(child.path)]
+
+    async def report_gone(self, gone: list[Evicted]) -> None:
+        # Outside the fence: cleanup evicts file-cache entries, and the
+        # mount table can change after the write, so ownership is asked
+        # again at the moment of cleanup.
+        if self._on_gone is None:
+            return
+        for child in gone:
+            if self._owns(child.path):
+                await self._on_gone(child)
 
     def scope_snapshot(self, snapshot: IndexSnapshot) -> IndexSnapshot:
         return IndexSnapshot(

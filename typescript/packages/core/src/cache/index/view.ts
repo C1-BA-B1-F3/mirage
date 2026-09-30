@@ -16,10 +16,12 @@ import { withCacheMutation } from '../file/io.ts'
 import type { FileCache } from '../file/mixin.ts'
 import {
   LookupStatus,
+  type Evicted,
   type IndexEntry,
   type IndexSnapshot,
   type ListResult,
   type LookupResult,
+  type SetDirOptions,
 } from './config.ts'
 import { IndexCacheStore } from './store.ts'
 import { rstripSlash } from '../../utils/slash.ts'
@@ -30,6 +32,8 @@ interface IndexViewOptions {
    * The view must not outlive that hold.
    */
   readonly locked?: boolean
+  /** The mount's cleanup for a child a re-list found gone. */
+  readonly onGone?: (gone: Evicted) => Promise<void>
   /** Seconds a listing may live under this mount; unset means no cap. */
   readonly readTtl?: number
 }
@@ -38,6 +42,7 @@ interface IndexViewOptions {
 export class IndexView extends IndexCacheStore {
   private readonly locked: boolean
   private readonly readTtl: number | undefined
+  private readonly onGone: ((gone: Evicted) => Promise<void>) | undefined
 
   constructor(
     private readonly inner: IndexCacheStore,
@@ -49,6 +54,7 @@ export class IndexView extends IndexCacheStore {
     super()
     this.locked = options.locked ?? false
     this.readTtl = options.readTtl
+    this.onGone = options.onGone
   }
 
   /** The store this view writes through. */
@@ -143,8 +149,14 @@ export class IndexView extends IndexCacheStore {
     path: string,
     entries: readonly [string, IndexEntry][],
     expiredAt?: Date | null,
-  ): Promise<string[]> {
-    return this.storeDir(path, entries, expiredAt, false)
+    options: SetDirOptions = {},
+  ): Promise<Evicted[]> {
+    return this.storeDir(path, entries, expiredAt, false, options.window === true).then(
+      async (gone) => {
+        await this.reportGone(gone)
+        return gone
+      },
+    )
   }
 
   override setPartialDir(
@@ -152,7 +164,7 @@ export class IndexView extends IndexCacheStore {
     entries: readonly [string, IndexEntry][],
     expiredAt?: Date | null,
   ): Promise<void> {
-    return this.storeDir(path, entries, expiredAt, true).then(() => undefined)
+    return this.storeDir(path, entries, expiredAt, true, false).then(() => undefined)
   }
 
   private storeDir(
@@ -160,7 +172,8 @@ export class IndexView extends IndexCacheStore {
     entries: readonly [string, IndexEntry][],
     expiredAt: Date | null | undefined,
     partial: boolean,
-  ): Promise<string[]> {
+    window: boolean,
+  ): Promise<Evicted[]> {
     return this.fence(async () => {
       if (!this.owns(path)) return []
       const prefix = rstripSlash(path) + '/'
@@ -170,9 +183,18 @@ export class IndexView extends IndexCacheStore {
         await this.inner.setPartialDir(path, owned, deadline)
         return []
       }
-      const gone = await this.inner.setDir(path, owned, deadline)
-      return gone.filter((key) => this.owns(key))
+      const gone = await this.inner.setDir(path, owned, deadline, { window })
+      return gone.filter((child) => this.owns(child.path))
     })
+  }
+
+  // Outside the fence: cleanup evicts file-cache entries, and the mount table
+  // can change after the write, so ownership is asked again at cleanup time.
+  override async reportGone(gone: readonly Evicted[]): Promise<void> {
+    if (this.onGone === undefined) return
+    for (const child of gone) {
+      if (this.owns(child.path)) await this.onGone(child)
+    }
   }
 
   invalidateDir(path: string): Promise<void> {

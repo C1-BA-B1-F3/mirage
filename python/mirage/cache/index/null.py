@@ -14,8 +14,8 @@
 
 from datetime import datetime
 
-from mirage.cache.index.config import (IndexEntry, ListResult, LookupResult,
-                                       LookupStatus)
+from mirage.cache.index.config import (Evicted, IndexEntry, ListResult,
+                                       LookupResult, LookupStatus)
 from mirage.cache.index.store import IndexCacheStore
 
 
@@ -52,7 +52,9 @@ class NullIndexCacheStore(IndexCacheStore):
         vfs_path: str,
         entries: list[tuple[str, IndexEntry]],
         expired_at: datetime | None = None,
-    ) -> list[str]:
+        *,
+        window: bool = False,
+    ) -> list[Evicted]:
         return []
 
     async def entries(self) -> dict[str, IndexEntry]:

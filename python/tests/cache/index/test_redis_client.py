@@ -1,7 +1,7 @@
 import asyncio
 import os
 from datetime import datetime, timedelta, timezone
-from unittest.mock import AsyncMock, MagicMock, call
+from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
 
 import pytest
@@ -63,18 +63,16 @@ async def test_list_dir_decodes_injected_client_values(client):
 
 
 @pytest.mark.asyncio
-async def test_invalidate_dir_decodes_child_paths(client):
+async def test_invalidate_dir_is_one_script_over_its_three_keys(client):
+    # The rows go and the child list becomes a tombstone in one step, so no
+    # writer lands between reading the listing and dropping it.
+    client.eval = AsyncMock()
     store = RedisIndexCacheStore(client=client)
-    client.get.return_value = (
-        b'{"entries":["/folder/a.txt"],"expires_at":4102444800,'
-        b'"generation":"g"}')
     await store.invalidate_dir("/folder")
-    pipe = client.pipeline.return_value
-    assert pipe.delete.call_args_list == [
-        call("mirage:idx:entry:/folder/a.txt"),
-        call("mirage:idx:directory:/folder"),
-        call("mirage:idx:generation:/folder"),
-    ]
+    args = client.eval.await_args.args
+    assert args[1:5] == (3, "mirage:idx:directory:/folder",
+                         "mirage:idx:tombstone:/folder",
+                         "mirage:idx:generation:/folder")
 
 
 @pytest.mark.asyncio

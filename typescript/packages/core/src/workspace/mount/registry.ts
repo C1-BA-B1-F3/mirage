@@ -19,6 +19,7 @@ import { mountKey } from '../../utils/key_prefix.ts'
 import type { Runtime } from '../../runtime/base.ts'
 import type { WorkspaceRuntime } from '../../runtime/table.ts'
 import type { FileCache } from '../../cache/file/mixin.ts'
+import type { Evicted } from '../../cache/index/config.ts'
 import { CacheManager } from '../../cache/manager.ts'
 import { GENERAL_COMMANDS } from '../../commands/builtin/general/index.ts'
 import type { BaseVFS } from '../../vfs/base.ts'
@@ -48,6 +49,7 @@ import { compareCodePoints } from '../../utils/sort.ts'
 interface ReadReconciler {
   reconcileRead(mount: MountEntry, path: string): Promise<void>
   mayServeCached(mount: MountEntry, path: string): Promise<boolean>
+  onGone(gone: Evicted): Promise<void>
 }
 
 // The stat the dispatcher itself runs for a mount's VFS: its registry op,
@@ -201,6 +203,12 @@ export class MountRegistry {
       (path) => !m.retiring && this.tryMountFor(path) === m,
       (key) => this.mayServeCached(m, key),
       m.read.ttl,
+      // Read at call time, as the gate is; a retiring mount's leftovers go
+      // with its teardown instead.
+      async (gone) => {
+        const reconciler = this.reconciler
+        if (reconciler !== null && !m.retiring) await reconciler.onGone(gone)
+      },
     )
   }
 

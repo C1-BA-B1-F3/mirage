@@ -12,6 +12,7 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import type { Evicted } from '../cache/index/config.ts'
 import { RAMIndexCacheStore } from '../cache/index/ram.ts'
 import type { FileCache } from '../cache/file/mixin.ts'
 import type { OpsRegistry } from '../ops/registry.ts'
@@ -223,6 +224,17 @@ export class Reconciler {
     ) {
       await this.onMissing(path)
     }
+  }
+
+  // Clean up after a re-list that no longer names a child. A complete
+  // re-list is the backend's own answer, so this runs under every policy. A
+  // folder takes its cached bytes and overlays beneath it; the prefix
+  // eviction is kept to folders because it also cancels every fill in
+  // flight across the store.
+  async onGone(gone: Evicted): Promise<void> {
+    await this.cache.remove(gone.path)
+    if (gone.folder) await this.cache.evictPrefix(rstripSlash(gone.path) + '/')
+    await this.namespace.dropOverlaysUnder(gone.path)
   }
 
   // Apply the deletion reaction: evict cache + GC orphaned overlay. An

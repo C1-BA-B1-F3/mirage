@@ -256,8 +256,13 @@ export function configSection(
  * made again under the same name starts with no upstream rather than with two.
  * A header names the block the way git's `section_name_match` reads it,
  * spelled exactly: `[branch "x"]` with its escapes, or the older `[branch.x]`.
- * `[Branch "x"]` and `[branch.X]` are left, as git leaves them, and any line
+ * `[Branch "x"]` and `[branch.X]` are left, as git leaves them, and a line
  * opening with `[` ends a block (pinned against git 2.50.1).
+ *
+ * A value continued onto the next line by a trailing backslash is followed, so
+ * a continuation that opens with `[` is still part of the block. git 2.50.1
+ * reads it as a header there and leaves the rest of the block behind, which it
+ * then refuses as a bad config line; mirage keeps the file readable instead.
  *
  * @param text the config file's contents
  * @param section the section as git writes it, e.g. `branch`
@@ -265,19 +270,56 @@ export function configSection(
  */
 export function withoutSection(text: string, section: string, name: string): string {
   let dropping = false
+  let continued = false
+  let inside = false
   return text
     .split(/(?<=\n)/)
     .filter((line) => {
-      if (line.trimStart().startsWith('[')) {
-        const quoted = QUOTED_HEADER.exec(line)
-        const dotted = DOTTED_HEADER.exec(line)
-        dropping =
-          (quoted?.[1] === section && quoted[2]?.replace(/\\(.)/g, '$1') === name) ||
-          (dotted?.[1] === section && dotted[2] === name)
+      let value = line
+      if (!continued) {
+        let rest = line
+        if (line.trimStart().startsWith('[')) {
+          const quoted = QUOTED_HEADER.exec(line)
+          const dotted = DOTTED_HEADER.exec(line)
+          dropping =
+            (quoted?.[1] === section && quoted[2]?.replace(/\\(.)/g, '$1') === name) ||
+            (dotted?.[1] === section && dotted[2] === name)
+          const header = quoted ?? dotted
+          rest = line.slice(header ? header[0].length : line.indexOf(']') + 1)
+        }
+        const equals = rest.indexOf('=')
+        value = equals < 0 || /^\s*[;#]/.test(rest) ? '' : rest.slice(equals + 1)
+        inside = false
       }
+      ;[continued, inside] = continues(value, inside)
       return !dropping
     })
     .join('')
+}
+
+/**
+ * Whether a config value runs onto the next line, as git parses one.
+ *
+ * A backslash ending the line continues the value unless it is itself escaped
+ * or sits in a comment; a comment starts at `;` or `#` outside double quotes.
+ * Returns whether the value continues and whether the next line starts inside
+ * quotes.
+ *
+ * @param value the rest of the line, from the value on
+ * @param inside whether the line starts inside double quotes
+ */
+function continues(value: string, inside: boolean): [boolean, boolean] {
+  const body = value.replace(/\r?\n$/, '')
+  let quoted = inside
+  for (let at = 0; at < body.length; at++) {
+    const ch = body[at]
+    if (ch === '\\') {
+      if (at === body.length - 1) return [true, quoted]
+      at++
+    } else if (ch === '"') quoted = !quoted
+    else if (!quoted && (ch === ';' || ch === '#')) break
+  }
+  return [false, false]
 }
 
 /**

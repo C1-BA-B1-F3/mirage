@@ -275,3 +275,19 @@ def test_without_section_drops_the_blocks_git_matches_by_name():
         b'[branch "q\\"x"]\n\tremote = o\n')
     assert without_section(data, "branch",
                            'q"x').endswith(b'[branch.TOPIC]\n\tremote = o\n')
+
+
+def test_without_section_follows_a_value_continued_onto_a_bracket_line():
+    data = (b'[core]\n\tbare = false\n[branch "c1"]\n\tdescription = one \\\n'
+            b'[two\n\tremote = origin\n[branch "keep"]\n\tremote = origin\n'
+            b'[branch "c2"]\n\tdescription = "a\\\n  [b"\n\tremote = origin\n'
+            b'[branch "c3"]\n\tnote = x \\\\\n[branch "keep2"]\n\tremote = o\n'
+            b'# see \\\n[branch "c4"]\n\tremote = origin\n')
+    assert without_section(data, "branch", "c1") == (
+        b'[core]\n\tbare = false\n[branch "keep"]\n\tremote = origin\n'
+        b'[branch "c2"]\n\tdescription = "a\\\n  [b"\n\tremote = origin\n'
+        b'[branch "c3"]\n\tnote = x \\\\\n[branch "keep2"]\n\tremote = o\n'
+        b'# see \\\n[branch "c4"]\n\tremote = origin\n')
+    assert b'  [b"' not in without_section(data, "branch", "c2")
+    assert without_section(data, "branch", "c3").count(b"keep2") == 1
+    assert without_section(data, "branch", "c4").endswith(b"# see \\\n")

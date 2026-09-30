@@ -109,3 +109,24 @@ describe('withoutSection', () => {
     )
   })
 })
+
+describe('withoutSection over continued values', () => {
+  const text =
+    '[core]\n\tbare = false\n[branch "c1"]\n\tdescription = one \\\n' +
+    '[two\n\tremote = origin\n[branch "keep"]\n\tremote = origin\n' +
+    '[branch "c2"]\n\tdescription = "a\\\n  [b"\n\tremote = origin\n' +
+    '[branch "c3"]\n\tnote = x \\\\\n[branch "keep2"]\n\tremote = o\n' +
+    '# see \\\n[branch "c4"]\n\tremote = origin\n'
+
+  it('follows a value continued onto a line that opens with a bracket', () => {
+    expect(withoutSection(text, 'branch', 'c1')).toBe(
+      '[core]\n\tbare = false\n[branch "keep"]\n\tremote = origin\n' +
+        '[branch "c2"]\n\tdescription = "a\\\n  [b"\n\tremote = origin\n' +
+        '[branch "c3"]\n\tnote = x \\\\\n[branch "keep2"]\n\tremote = o\n' +
+        '# see \\\n[branch "c4"]\n\tremote = origin\n',
+    )
+    expect(withoutSection(text, 'branch', 'c2')).not.toContain('  [b"')
+    expect(withoutSection(text, 'branch', 'c3').split('keep2').length).toBe(2)
+    expect(withoutSection(text, 'branch', 'c4').endsWith('# see \\\n')).toBe(true)
+  })
+})

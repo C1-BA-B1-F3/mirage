@@ -64,6 +64,10 @@ const ws = new Workspace({ '/jira/': new JiraVFS(cfg) }, { mode: MountMode.READ 
 
 The accessor is a type parameter, so the table is checked against the accessor your core functions actually take: wiring `readdir` where `stat` belongs, or an accessor from another backend, is a compile error rather than a runtime one.
 
+For a smaller runnable example, see `examples/typescript/other/basevfs_views.ts`.
+Its read-only `NotesVFS` connects to a nested mount, a namespace symlink,
+a CLI using namespace and session views, and the filesystem and runtime APIs.
+
 The driver never sees the mount it runs under. The index store, the registered tables and the `vfs:` reference it was built from all live on the mount, built when the driver is placed and shared with any alias of the same instance. The loader recognizes a driver by the `VFS_BRAND` symbol `BaseVFS` stamps, so a script file that loaded its own copy of the package still mounts.
 
 ### Add capabilities as the resource grows

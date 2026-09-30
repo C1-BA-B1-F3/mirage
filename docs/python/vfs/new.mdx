@@ -60,6 +60,10 @@ Mount it like any builtin: `Workspace({"/jira/": JiraVFS(cfg)})`. A class rather
 factory function, because that is what the registry and the config reference below both name;
 `examples/python/other/custom_vfs.py` is the same shape end to end.
 
+For a smaller runnable example, see `examples/python/other/basevfs_views.py`.
+Its read-only `NotesVFS` connects to a nested mount, a namespace symlink,
+a CLI using namespace and session views, and the filesystem and runtime APIs.
+
 ### Add capabilities as the resource grows
 
 Only `readdir`, `read_bytes`, and `stat` are required. The adapter derives a

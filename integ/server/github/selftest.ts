@@ -2378,14 +2378,82 @@ async function gitDatabase(at: string): Promise<void> {
     tree: [{ path: 'added.py', mode: '100644', type: 'blob', content: 'y = 2\n' }],
   })
   eq(
-    'and a tree built on it starts from that directory',
-    (
-      (field(await get(`${repo}/git/trees/${String(field(based.body, 'sha'))}`), 'tree') ??
-        []) as JsonValue[]
-    )
-      .filter((it) => field(it, 'type') === 'blob')
-      .map((it) => field(it, 'path')),
+    "and a tree built on it starts from that directory, with none of the root's gitlinks",
+    paths(await get(`${repo}/git/trees/${String(field(based.body, 'sha'))}`)),
     [...auth, 'added.py'].map(String).sort(),
+  )
+
+  const gitlinks = async (url: string): Promise<JsonValue[]> =>
+    ((field(await get(url), 'tree') ?? []) as JsonValue[])
+      .filter((it) => field(it, 'type') === 'commit')
+      .map((it) => [field(it, 'path'), field(it, 'mode'), field(it, 'sha')])
+  const seeded = await gitlinks(`${repo}/git/trees/main?recursive=1`)
+  eq(
+    'a branch lists the gitlinks its fixture seeds',
+    seeded.map((row) => (row as JsonValue[])[0] ?? null),
+    ['docs/vendored', 'extern'],
+  )
+  const link = 'c0ffee'.padEnd(40, '0')
+  const linked = await post(`${repo}/git/trees`, {
+    base_tree: String(field(await get(`${repo}/git/trees/main`), 'sha')),
+    tree: [
+      { path: 'src/vendored-lib', mode: '160000', type: 'commit', sha: link },
+      { path: 'extern', mode: '160000', type: 'commit', sha: null },
+    ],
+  })
+  const linkedTree = String(field(linked.body, 'sha'))
+  const relinked = [seeded[0] ?? null, ['src/vendored-lib', '160000', link]]
+  eq(
+    'a commit entry is a gitlink of that tree, and a null sha drops one',
+    await gitlinks(`${repo}/git/trees/${linkedTree}?recursive=1`),
+    relinked,
+  )
+  const mainHead = String(field(field(await get(`${repo}/git/ref/heads/main`), 'object'), 'sha'))
+  const linkCommit = await post(`${repo}/git/commits`, {
+    message: 'Link a library',
+    tree: linkedTree,
+    parents: [mainHead],
+  })
+  await post(`${repo}/git/refs`, {
+    ref: 'refs/heads/linked',
+    sha: String(field(linkCommit.body, 'sha')),
+  })
+  eq(
+    "a branch on that commit lists the commit tree's gitlinks",
+    await gitlinks(`${repo}/git/trees/linked?recursive=1`),
+    relinked,
+  )
+  await send('PUT', `${repo}/contents/note.txt`, {
+    message: 'Add note.txt',
+    branch: 'linked',
+    content: Buffer.from('note\n').toString('base64'),
+  })
+  eq(
+    'and a write on the branch carries them forward',
+    await gitlinks(`${repo}/git/trees/linked?recursive=1`),
+    relinked,
+  )
+  eq('while main keeps its own', await gitlinks(`${repo}/git/trees/main?recursive=1`), seeded)
+
+  const fork = `${base}/repos/integ-user/database-fork`
+  eq('a fork is made', (await post(`${repo}/forks`, { name: 'database-fork' })).status, 202)
+  eq(
+    'and reads a directory id its source reported',
+    paths(await get(`${fork}/git/trees/${after}`)),
+    kept,
+  )
+  const renamed = await send('PATCH', repo, { name: 'renamed-v1' })
+  eq('a rename lands', renamed.status, 200)
+  const moves = `${base}/repos/integ/renamed-v1`
+  eq('and keeps every directory id', paths(await get(`${moves}/git/trees/${after}`)), kept)
+  const rebased = await post(`${moves}/git/trees`, {
+    base_tree: after,
+    tree: [{ path: 'renamed.py', mode: '100644', type: 'blob', content: 'r = 1\n' }],
+  })
+  eq(
+    'so a tree built on one after the rename starts from that directory',
+    paths(await get(`${moves}/git/trees/${String(field(rebased.body, 'sha'))}`)),
+    [...kept, 'renamed.py'].map(String).sort(),
   )
 }
 

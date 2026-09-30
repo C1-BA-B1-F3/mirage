@@ -774,6 +774,8 @@ async function handOff(db: C, tenant: string, repo: RepoRow): Promise<void> {
   const moved = { tenant, repo: repo.fullName }
   await db.githubCommit.updateMany({ where: moved, data: { repo: heir.fullName } })
   await db.githubStagedTree.updateMany({ where: moved, data: { repo: heir.fullName } })
+  await db.githubStagedEntry.updateMany({ where: moved, data: { repo: heir.fullName } })
+  await db.githubStagedDir.updateMany({ where: moved, data: { repo: heir.fullName } })
   await db.githubTag.updateMany({ where: moved, data: { repo: heir.fullName } })
   await db.githubBlob.updateMany({ where: moved, data: { repo: heir.fullName } })
   const up = metaOf(repo).parent_seq
@@ -798,15 +800,10 @@ async function dropRepo(db: C, tenant: string, repo: RepoRow): Promise<void> {
   await handOff(db, tenant, repo)
   const fullName = repo.fullName
   const where = { tenant, repo: fullName }
-  // A staged entry hangs off a staged TREE rather than off the repository, so
-  // it is the one child the schema walk cannot reach: entries are keyed by tree
-  // sha, and they have to go before the trees they require.
-  const staged = await db.githubStagedTree.findMany({ where, select: { sha: true } })
-  await db.githubStagedEntry.deleteMany({
-    where: { tenant, treeSha: { in: staged.map((t) => t.sha) } },
-  })
   // In dependency order, deepest first, for the same reason the kit's own
-  // scoped reset derives its order rather than declaring one.
+  // scoped reset derives its order rather than declaring one. A staged entry
+  // and a staged directory carry their repository, so the walk reaches them
+  // too, and never another repository's rows under the same tree sha.
   for (const model of perRepoModels()) {
     await delegateFor(db, model).deleteMany({ where })
   }

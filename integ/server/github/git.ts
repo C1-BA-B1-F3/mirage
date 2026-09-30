@@ -29,6 +29,7 @@ import type { CommitRow } from './wire.ts'
 import {
   addBranch,
   blobBySha,
+  branchLinks,
   branchNames,
   commitList,
   commitTreeId,
@@ -96,8 +97,8 @@ const createBlob = withRepo(async (ctx, repo) => {
 })
 
 // Build a tree from a base plus the caller's entries. A null sha is git's
-// delete, `content` is the inline form, and a bare sha names a blob the caller
-// wrote earlier.
+// delete, `content` is the inline form, a bare sha names a blob the caller
+// wrote earlier, and a `commit` entry is a gitlink to the commit it names.
 //
 // The base is `base_tree` when the caller named one, which is how a client
 // composes several staged trees into one commit: without it the second tree
@@ -118,10 +119,13 @@ const createTree = withRepo(async (ctx, repo) => {
   const entries = body.tree
   const base = str(body, 'base_tree')
   const named = base === '' ? null : await treeById(ctx.db, ctx.tenant, repo, base)
-  const files =
+  const { files, links } =
     named === null
-      ? await treeOfBranch(ctx.db, ctx.tenant, repo, repo.defaultBranch)
-      : new Map(subtreeOf(named.files, named.at))
+      ? {
+          files: await treeOfBranch(ctx.db, ctx.tenant, repo, repo.defaultBranch),
+          links: await branchLinks(ctx.db, ctx.tenant, repo, repo.defaultBranch),
+        }
+      : subtreeOf(named, named.at)
   for (const raw of entries) {
     if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) continue
     const entry = raw as Record<string, unknown>
@@ -129,17 +133,23 @@ const createTree = withRepo(async (ctx, repo) => {
     if (path === '') continue
     if ('sha' in entry && entry.sha === null) {
       files.delete(path)
+      links.delete(path)
     } else if (entry.content !== undefined && entry.content !== null) {
       files.set(path, Buffer.from(String(entry.content), 'utf8'))
+      links.delete(path)
+    } else if (typeof entry.sha === 'string' && entry.sha !== '' && entry.type === 'commit') {
+      links.set(path, entry.sha)
+      files.delete(path)
     } else if (typeof entry.sha === 'string' && entry.sha !== '') {
       const blob = await blobBySha(ctx.db, ctx.tenant, repo, entry.sha)
       if (blob === null) return fail(422, `Tree entry ${path} has an unknown sha`)
       files.set(path, blob)
+      links.delete(path)
     }
   }
   return {
     status: 201,
-    body: { sha: await stageTree(ctx.db, ctx.tenant, repo, files), tree: [] },
+    body: { sha: await stageTree(ctx.db, ctx.tenant, repo, files, links), tree: [] },
   }
 })
 
@@ -159,7 +169,10 @@ const createCommit = withRepo(async (ctx, repo) => {
   if (staged === null && named === null) {
     return fail(422, 'Invalid request.\n\n"tree" is invalid.')
   }
-  if (named !== null) await stageTree(ctx.db, ctx.tenant, repo, subtreeOf(named.files, named.at))
+  if (named !== null) {
+    const sub = subtreeOf(named, named.at)
+    await stageTree(ctx.db, ctx.tenant, repo, sub.files, sub.links)
+  }
   const message = str(body, 'message') === '' ? 'Update' : str(body, 'message')
   const author = bodyPerson(body, 'author')
   if (author === INVALID_PERSON) return fail(422, 'Invalid request.\n\n"author" is invalid.')

@@ -36,6 +36,19 @@ export interface RepoRow {
 
 export type Tree = Map<string, Buffer>
 
+// A tree's gitlinks: each path and the commit it names.
+export type Links = Map<string, string>
+
+// A tree as a listing reads it: its blobs and its gitlinks. A submodule is a
+// path in a tree, so the links belong to the tree and not to its repository.
+export interface Snapshot {
+  files: Tree
+  links: Links
+}
+
+const BLOB_MODE = '100644'
+const LINK_MODE = '160000'
+
 export function scope(tenant: string): Record<string, JsonValue> {
   return tenantWhere(tenant, config.tenantKind)
 }
@@ -225,13 +238,20 @@ export async function treeOfBranch(
   return out
 }
 
-// A tree's bytes, as `path:blob` pairs in path order. This is the tree's whole
-// identity, so it is what both the sha and any equality test are derived from.
-export function treeFingerprint(files: Tree): string {
-  return [...files.entries()]
-    .map(([p, d]): [string, string] => [p, blobSha(d)])
+// A tree's content, as `path:blob` and `path@commit` rows in path order. This
+// is the tree's whole identity, so it is what both the sha and any equality
+// test are derived from.
+export function treeFingerprint(files: Tree, links: Links = new Map()): string {
+  return fingerprintOf([
+    ...[...files].map(([p, d]): [string, string] => [p, `${p}:${blobSha(d)}`]),
+    ...[...links].map(([p, c]): [string, string] => [p, `${p}@${c}`]),
+  ])
+}
+
+function fingerprintOf(rows: Array<[string, string]>): string {
+  return rows
     .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
-    .map(([p, b]) => `${p}:${b}`)
+    .map(([, row]) => row)
     .join('\0')
 }
 
@@ -287,32 +307,74 @@ export async function forkOwnedBy(
 // the caller was operating on an unrelated repository B, and committing it
 // copied A's files into B. A fork reads its network's trees, as git objects
 // are shared across one.
+// `mode` narrows the read to blobs or to gitlinks, for a caller that needs
+// only one of them.
+export async function stagedSnapshot(
+  db: C,
+  tenant: string,
+  repo: RepoRow,
+  sha: string,
+  mode: string | null = null,
+): Promise<Snapshot | null> {
+  const tree = await db.githubStagedTree.findFirst({
+    where: { tenant, repo: { in: await networkNames(db, tenant, repo) }, sha },
+  })
+  if (tree === null) return null
+  const rows = await db.githubStagedEntry.findMany({
+    where: { tenant, repo: tree.repo, treeSha: sha, ...(mode === null ? {} : { mode }) },
+    orderBy: { seq: 'asc' },
+  })
+  const out: Snapshot = { files: new Map(), links: new Map() }
+  for (const r of rows) {
+    if (r.mode === LINK_MODE) out.links.set(r.path, r.sha)
+    else out.files.set(r.path, Buffer.from(r.data))
+  }
+  return out
+}
+
 export async function stagedTree(
   db: C,
   tenant: string,
   repo: RepoRow,
   sha: string,
 ): Promise<Tree | null> {
-  const tree = await db.githubStagedTree.findFirst({
-    where: { tenant, repo: { in: await networkNames(db, tenant, repo) }, sha },
-  })
-  if (tree === null) return null
-  const rows = await db.githubStagedEntry.findMany({
-    where: { tenant, treeSha: sha },
-    orderBy: { seq: 'asc' },
-  })
-  const out: Tree = new Map()
-  for (const r of rows) out.set(r.path, Buffer.from(r.data))
-  return out
+  return (await stagedSnapshot(db, tenant, repo, sha))?.files ?? null
 }
 
-// Store one tree and answer its sha. The sha is the CONTENT's, the way git's
-// is, so staging the same bytes twice is one object rather than two, and no id
-// can be reproduced by a later tree landing in a slot a delete freed. The
-// repository name is in the hash because the table's uniqueness is per tenant
-// while every reader scopes by repository: without it two repositories holding
-// the same file would collide on insert, and the second would be handed the
-// first's rows.
+// The gitlinks a fixture seeds, which a branch carries while nothing has
+// moved it.
+export async function rootLinks(db: C, tenant: string, repo: RepoRow): Promise<Links> {
+  return new Map((await submodulesOf(db, tenant, repo)).map((path) => [path, commitSha(path)]))
+}
+
+// The gitlinks a branch's tree holds: its head commit's, which every write
+// carries forward, or the seeded ones while the branch is still on its
+// synthesized root.
+export async function branchLinks(
+  db: C,
+  tenant: string,
+  repo: RepoRow,
+  branch: string,
+): Promise<Links> {
+  const head = await headOf(db, tenant, repo, branch)
+  const commit =
+    head === ''
+      ? null
+      : await db.githubCommit.findFirst({
+          where: {
+            ...scope(tenant),
+            repo: { in: await networkNames(db, tenant, repo) },
+            sha: head,
+          },
+          select: { treeSha: true },
+        })
+  const staged =
+    commit === null || commit.treeSha === ''
+      ? null
+      : await stagedSnapshot(db, tenant, repo, commit.treeSha, LINK_MODE)
+  return staged?.links ?? (await rootLinks(db, tenant, repo))
+}
+
 // A blob by its sha, from any tree the repository has held: each branch's
 // files, then every staged tree, which holds each commit's snapshot and each
 // tree a write replaced. Git keeps an object once it is written, so a sha an
@@ -330,13 +392,9 @@ export async function blobBySha(
     for (const data of files.values()) if (blobSha(data) === sha) return data
   }
   const network = await networkNames(db, tenant, repo)
-  const staged = await db.githubStagedTree.findMany({
-    where: { tenant, repo: { in: network } },
-    select: { sha: true },
-  })
   const row =
     (await db.githubStagedEntry.findFirst({
-      where: { tenant, sha, treeSha: { in: staged.map((t) => t.sha) } },
+      where: { tenant, repo: { in: network }, sha, mode: BLOB_MODE },
       select: { data: true },
     })) ??
     (await db.githubBlob.findFirst({
@@ -375,7 +433,9 @@ export async function keepTree(
   branch: string,
 ): Promise<void> {
   const files = await treeOfBranch(db, tenant, repo, branch)
-  if (files.size > 0) await stageTree(db, tenant, repo, files)
+  if (files.size > 0) {
+    await stageTree(db, tenant, repo, files, await branchLinks(db, tenant, repo, branch))
+  }
 }
 
 // A branch still on its synthesized root is about to move off it, so the
@@ -392,7 +452,7 @@ export async function keepRoot(
   if ((await headOf(db, tenant, repo, branch)) !== '') return
   const files = await treeOfBranch(db, tenant, repo, branch)
   if (files.size === 0) return
-  await stageTree(db, tenant, repo, files)
+  await stageTree(db, tenant, repo, files, await rootLinks(db, tenant, repo))
   const root = rootCommit(rootOf(files))
   const where = { ...scope(tenant), repo: repo.fullName }
   if ((await db.githubCommit.findFirst({ where: { ...where, sha: root.sha } })) !== null) return
@@ -416,88 +476,79 @@ export async function keepRoot(
 
 // The id a whole tree has, staged or not: the one `stageTree` stores it
 // under, so a seeded branch's tree and the snapshot a write later keeps of it
-// are one object.
-export function treeIdOf(repo: RepoRow, files: Tree): string {
-  return treeSha(`${repo.fullName}\0${treeFingerprint(files)}`)
+// are one object. Content alone decides it, as in git, so a rename keeps every
+// id and a fork reads the ids its source reported.
+export function treeIdOf(files: Tree, links: Links): string {
+  return treeSha(treeFingerprint(files, links))
 }
 
-// The files below one directory of a tree, their paths relative to it; the
-// tree itself for the root.
-export function subtreeOf(files: Tree, at: string): Tree {
-  if (at === '') return files
-  const prefix = `${at}/`
-  const out: Tree = new Map()
-  for (const [path, data] of files) {
-    if (path.startsWith(prefix)) out.set(path.slice(prefix.length), data)
-  }
-  return out
+// One directory of a tree as a tree of its own, paths relative to it. Always
+// fresh maps, so a caller may edit what it gets.
+export function subtreeOf(tree: Snapshot, at: string): Snapshot {
+  const prefix = at === '' ? '' : `${at}/`
+  const cut = <T>(from: Map<string, T>): Map<string, T> =>
+    new Map(
+      [...from]
+        .filter(([path]) => path.startsWith(prefix))
+        .map(([path, value]): [string, T] => [path.slice(prefix.length), value]),
+    )
+  return { files: cut(tree.files), links: cut(tree.links) }
 }
 
-// Every directory's tree id, the root's under '', each the id its files would
-// have as a whole tree. Content decides it as it does in git, so a directory
-// that changed has a new id and an older listing's id still names what that
-// directory held then. One pass over the files: each blob joins every
+// Every directory's tree id, the root's under '', each the id its content
+// would have as a whole tree. Content decides it as it does in git, so a
+// directory that changed has a new id and an older listing's id still names
+// what that directory held then. One pass: each blob and gitlink joins every
 // directory above it.
-export function directoryIds(repo: RepoRow, files: Tree): Map<string, string> {
+export function directoryIds(files: Tree, links: Links): Map<string, string> {
   const rows = new Map<string, Array<[string, string]>>([['', []]])
-  for (const [path, data] of files) {
-    const blob = blobSha(data)
+  const add = (path: string, row: (rel: string) => string): void => {
     const parts = path.split('/')
     for (let depth = 0; depth < parts.length; depth += 1) {
       const dir = parts.slice(0, depth).join('/')
+      const rel = parts.slice(depth).join('/')
       const list = rows.get(dir) ?? []
-      list.push([parts.slice(depth).join('/'), blob])
+      list.push([rel, row(rel)])
       rows.set(dir, list)
     }
   }
-  const ids = new Map<string, string>()
-  for (const [dir, list] of rows) {
-    const fingerprint = list
-      .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
-      .map(([p, b]) => `${p}:${b}`)
-      .join('\0')
-    ids.set(dir, treeSha(`${repo.fullName}\0${fingerprint}`))
+  for (const [path, data] of files) {
+    const blob = blobSha(data)
+    add(path, (rel) => `${rel}:${blob}`)
   }
-  return ids
+  for (const [path, commit] of links) add(path, (rel) => `${rel}@${commit}`)
+  return new Map([...rows].map(([dir, list]) => [dir, treeSha(fingerprintOf(list))]))
 }
 
-// Where a tree id names a tree: the files that hold it and the directory of
-// them it is, '' for a whole tree.
-export interface TreeAtId {
-  files: Tree
+// Where a tree id names a tree: the tree that holds it and the directory of it
+// the id names, '' for a whole tree.
+export interface TreeAtId extends Snapshot {
   at: string
 }
 
-// The tree an id names, whole or one directory of it, from every tree the
-// repository can read: a staged tree by its own id, each branch as it is now,
-// then every snapshot a commit or a write kept, newest first. The branches
-// come first because a listing a client follows is most often current.
+// The tree an id names, whole or one directory of it: a staged tree by its own
+// id, a directory of one through the index staging keeps, then each branch as
+// it is now, which nothing has staged while it is still as seeded. Each step
+// is an indexed lookup or one pass over a current tree, however much history
+// the repository has.
 export async function treeById(
   db: C,
   tenant: string,
   repo: RepoRow,
   sha: string,
 ): Promise<TreeAtId | null> {
-  const staged = await stagedTree(db, tenant, repo, sha)
-  if (staged !== null) return { files: staged, at: '' }
-  const found = (files: Tree): TreeAtId | null => {
-    for (const [at, id] of directoryIds(repo, files)) if (id === sha) return { files, at }
-    return null
-  }
+  const whole = await stagedSnapshot(db, tenant, repo, sha)
+  if (whole !== null) return { ...whole, at: '' }
+  const dir = await db.githubStagedDir.findFirst({
+    where: { tenant, repo: { in: await networkNames(db, tenant, repo) }, sha },
+  })
+  const holder = dir === null ? null : await stagedSnapshot(db, tenant, repo, dir.treeSha)
+  if (dir !== null && holder !== null) return { ...holder, at: dir.path }
   for (const branch of await branchNames(db, tenant, repo)) {
     const files = await treeOfBranch(db, tenant, repo, branch)
-    const hit = files.size > 0 ? found(files) : null
-    if (hit !== null) return hit
-  }
-  const kept = await db.githubStagedTree.findMany({
-    where: { tenant, repo: { in: await networkNames(db, tenant, repo) } },
-    orderBy: { pk: 'desc' },
-    select: { sha: true },
-  })
-  for (const row of kept) {
-    const files = await stagedTree(db, tenant, repo, row.sha)
-    const hit = files === null || files.size === 0 ? null : found(files)
-    if (hit !== null) return hit
+    if (files.size === 0) continue
+    const links = await branchLinks(db, tenant, repo, branch)
+    for (const [at, id] of directoryIds(files, links)) if (id === sha) return { files, links, at }
   }
   return null
 }
@@ -511,7 +562,7 @@ export async function commitTreeId(
   commit: CommitRow,
 ): Promise<string> {
   if (commit.treeSha !== '') return commit.treeSha
-  return treeIdOf(repo, await commitTree(db, tenant, repo, commit))
+  return treeIdOf(await commitTree(db, tenant, repo, commit), await rootLinks(db, tenant, repo))
 }
 
 // Commits as the REST endpoints list them, each naming its tree.
@@ -528,25 +579,41 @@ export async function commitsJson(
   return out
 }
 
+// Store one tree, gitlinks included, and answer its sha. The sha is the
+// content's, the way git's is, so staging the same tree twice is one object,
+// once per fork network since a network shares its objects, and no id can be
+// reproduced by a later tree landing in a slot a delete freed. Each directory
+// is indexed under its own id as it is staged.
 export async function stageTree(
   db: C,
   tenant: string,
   repo: RepoRow,
   files: Tree,
+  links: Links,
 ): Promise<string> {
-  const sha = treeIdOf(repo, files)
+  const sha = treeIdOf(files, links)
   const already = await db.githubStagedTree.findFirst({
-    where: { tenant, repo: repo.fullName, sha },
+    where: { tenant, repo: { in: await networkNames(db, tenant, repo) }, sha },
   })
   if (already !== null) return sha
   const count = await db.githubStagedTree.count({ where: { tenant, repo: repo.fullName } })
+  const at = { tenant, repo: repo.fullName, treeSha: sha }
   await db.githubStagedTree.create({ data: { tenant, repo: repo.fullName, sha, seq: count } })
   let seq = 0
   for (const [path, data] of files) {
     await db.githubStagedEntry.create({
-      data: { tenant, treeSha: sha, path, data: new Uint8Array(data), sha: blobSha(data), seq },
+      data: { ...at, path, data: new Uint8Array(data), sha: blobSha(data), mode: BLOB_MODE, seq },
     })
     seq += 1
+  }
+  for (const [path, commit] of links) {
+    await db.githubStagedEntry.create({
+      data: { ...at, path, data: new Uint8Array(0), sha: commit, mode: LINK_MODE, seq },
+    })
+    seq += 1
+  }
+  for (const [path, id] of directoryIds(files, links)) {
+    if (path !== '') await db.githubStagedDir.create({ data: { ...at, path, sha: id } })
   }
   return sha
 }
@@ -773,6 +840,36 @@ export async function treeOf(
 ): Promise<Tree | null> {
   const at = await resolveRef(db, tenant, repo, ref)
   return at === null ? null : await treeAt(db, tenant, repo, at)
+}
+
+// The tree a resolved ref names with its gitlinks, as a listing reads it.
+export async function snapshotAt(
+  db: C,
+  tenant: string,
+  repo: RepoRow,
+  at: Resolved,
+): Promise<Snapshot | null> {
+  if (at.branch !== null) {
+    return {
+      files: await treeOfBranch(db, tenant, repo, at.branch),
+      links: await branchLinks(db, tenant, repo, at.branch),
+    }
+  }
+  const commit = at.history[0]
+  if (commit === undefined) return null
+  if (commit.treeSha !== '') return await stagedSnapshot(db, tenant, repo, commit.treeSha)
+  const files = await rootTree(db, tenant, repo, commit.sha)
+  return files === null ? null : { files, links: await rootLinks(db, tenant, repo) }
+}
+
+export async function snapshotOf(
+  db: C,
+  tenant: string,
+  repo: RepoRow,
+  ref: string | null,
+): Promise<Snapshot | null> {
+  const at = await resolveRef(db, tenant, repo, ref)
+  return at === null ? null : await snapshotAt(db, tenant, repo, at)
 }
 
 // The sha a tree's synthesized root takes, derived from its content so that a
@@ -1062,9 +1159,10 @@ export type TreeItem =
   | { path: string; mode: string; type: string; sha: string }
   | { path: string; mode: string; type: string; sha: string; size: number }
 
-export function treeItems(repo: RepoRow, files: Tree, submodules: string[], at = ''): TreeItem[] {
+export function treeItems(tree: Snapshot, at = ''): TreeItem[] {
+  const { files, links } = tree
   const prefix = at === '' ? '' : `${at}/`
-  const ids = directoryIds(repo, files)
+  const ids = directoryIds(files, links)
   const items: TreeItem[] = []
   for (const path of [...directoriesOf(files)].sort()) {
     if (!path.startsWith(prefix) || path === at) continue
@@ -1080,20 +1178,15 @@ export function treeItems(repo: RepoRow, files: Tree, submodules: string[], at =
     const data = files.get(path) ?? Buffer.alloc(0)
     items.push({
       path: path.slice(prefix.length),
-      mode: '100644',
+      mode: BLOB_MODE,
       type: 'blob',
       sha: blobSha(data),
       size: data.length,
     })
   }
-  for (const path of [...submodules].sort()) {
+  for (const [path, commit] of links) {
     if (!path.startsWith(prefix)) continue
-    items.push({
-      path: path.slice(prefix.length),
-      mode: '160000',
-      type: 'commit',
-      sha: commitSha(path),
-    })
+    items.push({ path: path.slice(prefix.length), mode: LINK_MODE, type: 'commit', sha: commit })
   }
   items.sort((a, b) => (a.path < b.path ? -1 : 1))
   return items

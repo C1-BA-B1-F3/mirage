@@ -23,6 +23,7 @@ import type { CommitRow, GitPerson } from './wire.ts'
 import {
   blobBySha,
   branchFor,
+  branchLinks,
   commitTreeId,
   directoriesOf,
   directoryIds,
@@ -30,9 +31,9 @@ import {
   keepTree,
   repoIsEmpty,
   resolveRef,
+  snapshotAt,
+  snapshotOf,
   stageTree,
-  submodulesOf,
-  treeAt,
   treeById,
   treeIdOf,
   treeItems,
@@ -40,7 +41,7 @@ import {
   treeOfBranch,
   visibleHeadOf,
 } from './store.ts'
-import type { RepoRow, Tree } from './store.ts'
+import type { RepoRow, Snapshot } from './store.ts'
 import {
   authedRoute,
   diffReply,
@@ -69,10 +70,11 @@ function fileJson(path: string, data: Buffer): JsonValue {
 
 // A directory listing, or null when the path is not a directory. A
 // directory row carries the same tree id the git trees endpoint reports.
-function dirJson(repo: RepoRow, files: Tree, at: string): JsonValue[] | null {
+function dirJson(tree: Snapshot, at: string): JsonValue[] | null {
+  const { files } = tree
   const prefix = at === '' ? '' : `${at}/`
   if (at !== '' && !directoriesOf(files).has(at)) return null
-  const ids = directoryIds(repo, files)
+  const ids = directoryIds(files, tree.links)
   const entries = new Map<string, JsonValue>()
   for (const [candidate, data] of files) {
     if (!candidate.startsWith(prefix)) continue
@@ -155,7 +157,13 @@ export async function recordCommit(
   // addressing them by message and parent alone made them one.
   const stored =
     tree === ''
-      ? await stageTree(db, tenant, repo, await treeOfBranch(db, tenant, repo, branch))
+      ? await stageTree(
+          db,
+          tenant,
+          repo,
+          await treeOfBranch(db, tenant, repo, branch),
+          await branchLinks(db, tenant, repo, branch),
+        )
       : tree
   const sha = commitSha(
     [repo.fullName, parentSha, stored, authorJson, committerJson, message].join('\0'),
@@ -228,15 +236,15 @@ const contents = withRepo(async (ctx, repo) => {
   if (await repoIsEmpty(ctx.db, ctx.tenant, repo)) return fail(404, 'This repository is empty.')
   const ref = ctx.query.get('ref') ?? ''
   const at = await resolveRef(ctx.db, ctx.tenant, repo, ref)
-  const files =
-    at === null || at.history.length === 0 ? null : await treeAt(ctx.db, ctx.tenant, repo, at)
-  if (files === null) {
+  const tree =
+    at === null || at.history.length === 0 ? null : await snapshotAt(ctx.db, ctx.tenant, repo, at)
+  if (tree === null) {
     return fail(404, `No commit found for the ref ${ref === '' ? repo.defaultBranch : ref}`)
   }
   const path = stripSlash(param(ctx, 'path'))
-  const hit = files.get(path)
+  const hit = tree.files.get(path)
   if (hit !== undefined) return { status: 200, body: fileJson(path, hit) }
-  const listing = dirJson(repo, files, path)
+  const listing = dirJson(tree, path)
   if (listing === null) return fail(404, 'Not Found')
   return { status: 200, body: listing }
 })
@@ -394,14 +402,13 @@ const oneCommit = withRepo(async (ctx, repo) => {
 // truncation onto it refused a listing GitHub would have served whole.
 function treeListing(
   repo: RepoRow,
-  files: Tree,
-  subs: string[],
+  tree: Snapshot,
   at: string,
   sha: string,
   recursive: boolean,
 ): Reply {
   const cut = !recursive || repo.truncated
-  const items = treeItems(repo, files, subs, at).filter((it) => !cut || !it.path.includes('/'))
+  const items = treeItems(tree, at).filter((it) => !cut || !it.path.includes('/'))
   return { status: 200, body: { sha, tree: items, truncated: recursive && repo.truncated } }
 }
 
@@ -423,14 +430,14 @@ const gitTree = withRepo(async (ctx, repo) => {
   const ref = param(ctx, 'ref')
   if (ref === '') return fail(404, 'Not Found')
   const recursive = ctx.query.has('recursive')
-  const subs = await submodulesOf(ctx.db, ctx.tenant, repo)
   // A branch name cannot hold a colon, so the first one splits the rev from
   // its directory. Measured against GitHub (2026-09-25): a missing directory
   // or ref is 404, and a path through a file is 422.
   const colon = ref.indexOf(':')
   if (colon >= 0) {
-    const files = await treeOf(ctx.db, ctx.tenant, repo, ref.slice(0, colon))
-    if (files === null) return fail(404, 'Not Found')
+    const tree = await snapshotOf(ctx.db, ctx.tenant, repo, ref.slice(0, colon))
+    if (tree === null) return fail(404, 'Not Found')
+    const { files } = tree
     const at = ref.slice(colon + 1).replace(/^\/+|\/+$/g, '')
     const parts = at === '' ? [] : at.split('/')
     for (let depth = 1; depth <= parts.length; depth += 1) {
@@ -439,14 +446,16 @@ const gitTree = withRepo(async (ctx, repo) => {
       }
     }
     if (at !== '' && !directoriesOf(files).has(at)) return fail(404, 'Not Found')
-    const sha = directoryIds(repo, files).get(at) ?? ''
-    return treeListing(repo, files, subs, at, sha, recursive)
+    const sha = directoryIds(files, tree.links).get(at) ?? ''
+    return treeListing(repo, tree, at, sha, recursive)
   }
-  const files = await treeOf(ctx.db, ctx.tenant, repo, ref)
-  if (files !== null) return treeListing(repo, files, subs, '', treeIdOf(repo, files), recursive)
+  const tree = await snapshotOf(ctx.db, ctx.tenant, repo, ref)
+  if (tree !== null) {
+    return treeListing(repo, tree, '', treeIdOf(tree.files, tree.links), recursive)
+  }
   const named = await treeById(ctx.db, ctx.tenant, repo, ref)
   if (named === null) return fail(404, 'Not Found')
-  return treeListing(repo, named.files, subs, named.at, ref, recursive)
+  return treeListing(repo, named, named.at, ref, recursive)
 })
 
 // GitHub wraps a base64 payload rather than emitting one long line, and so

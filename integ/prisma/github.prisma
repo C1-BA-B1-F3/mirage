@@ -12,10 +12,10 @@
 // --commits or --no-create-repos names a fixture instead, and fixtures/github/
 // already holds three (v1, cli, empty).
 //
-// Files are per BRANCH; submodules and blobs are per REPOSITORY. That split is
-// the vendor's: a gitlink is a path in a tree with no blob behind its sha, and
-// a blob is content-addressed, so two branches holding the same bytes name one
-// blob.
+// Files are per BRANCH; the submodules a fixture seeds and the blobs are per
+// REPOSITORY. A gitlink is a path in a tree with no blob behind its sha, so a
+// staged tree keeps its own, and a branch reads its head commit's. A blob is
+// content-addressed, so two branches holding the same bytes name one blob.
 
 generator client {
   provider = "prisma-client-js"
@@ -394,7 +394,9 @@ model GithubStatus {
 
 // A tree built by POST /git/trees and not yet pointed at by a branch. The write
 // path is build-a-tree, commit-it, move-the-ref, and only that last step may
-// change what a read returns, so a staged tree is its own table.
+// change what a read returns, so a staged tree is its own table. Its sha is
+// its content's alone, so one tree is one row per fork network and two
+// unrelated repositories holding the same tree each have their own.
 model GithubStagedTree {
   pk     Int    @id @default(autoincrement())
   tenant String
@@ -403,26 +405,49 @@ model GithubStagedTree {
   seq    Int
 
   entries    GithubStagedEntry[]
+  dirs       GithubStagedDir[]
   repository GithubRepo          @relation(fields: [tenant, repo], references: [tenant, fullName])
 
-  @@unique([tenant, sha])
-  @@index([tenant, repo])
+  @@unique([tenant, repo, sha])
+  @@index([tenant, sha])
 }
 
 model GithubStagedEntry {
   pk      Int    @id @default(autoincrement())
   tenant  String
+  repo    String
   treeSha String
   path    String
   data    Bytes
   // The blob sha of `data`, so a blob no current tree holds is one indexed
-  // lookup rather than a hash of every snapshot the repository kept.
+  // lookup rather than a hash of every snapshot the repository kept. For a
+  // gitlink it is the commit the link names, and `data` is empty.
   sha     String @default("")
+  // `100644` for a blob, `160000` for a gitlink: a submodule is a path in a
+  // tree, so each tree carries its own.
+  mode    String @default("100644")
   seq     Int
 
-  tree GithubStagedTree @relation(fields: [tenant, treeSha], references: [tenant, sha])
+  tree GithubStagedTree @relation(fields: [tenant, repo, treeSha], references: [tenant, repo, sha])
 
-  @@index([tenant, treeSha])
+  @@index([tenant, repo, treeSha])
+  @@index([tenant, sha])
+}
+
+// One directory of a staged tree under its own tree id, so an id an older
+// listing reported finds its snapshot in one lookup instead of by hashing
+// every snapshot the repository kept.
+model GithubStagedDir {
+  pk      Int    @id @default(autoincrement())
+  tenant  String
+  repo    String
+  treeSha String
+  path    String
+  sha     String
+
+  tree GithubStagedTree @relation(fields: [tenant, repo, treeSha], references: [tenant, repo, sha])
+
+  @@index([tenant, repo, treeSha])
   @@index([tenant, sha])
 }
 

@@ -34,7 +34,7 @@ import type { LinkView } from '../../ops/types.ts'
 
 import { getExtension } from '../../commands/resolve.ts'
 import { resolveLimit } from '../../policy/index.ts'
-import { runWithTimeout } from '../../commands/builtin/utils/limit.ts'
+import { runWithTimeout, withPullTimeout } from '../../commands/builtin/utils/limit.ts'
 import { CommandTimeoutError, UsageError } from '../../commands/errors.ts'
 import { readFailExitCode } from '../../commands/spec/usage.ts'
 import { materialize } from '../../io/types.ts'
@@ -778,14 +778,24 @@ export class MountEntry {
     })
   }
 
+  /**
+   * Execute a VFS op on this mount, the filetype-specific level first.
+   * `stream` asks each level for its streaming form where it has one; a
+   * level without one answers the way it always does, so a filetype
+   * renderer still wins. Mirrors Python's `MountEntry.execute_op`.
+   */
   async executeOp(
     opName: string,
     path: string,
     args: readonly unknown[] = [],
     kwargs: OpKwargs = {},
+    stream = false,
   ): Promise<unknown> {
     return this.use(async (): Promise<unknown> => {
-      const filetype = getExtension(path)
+      // A caller may name the filetype, and null asks for the by-VFS op
+      // even where a filetype-scoped one is registered (a raw read), as
+      // Python's execute_op pops it.
+      const filetype = kwargs.filetype !== undefined ? kwargs.filetype : getExtension(path)
       const levels = this.resolveCascade(opName, filetype, this.ops, this.generalOps)
       if (levels.length === 0) {
         throw enotsup(this.vfs.name, opName, path)
@@ -817,13 +827,14 @@ export class MountEntry {
         () =>
           runWithRevisions(this.revisions.size > 0 ? this.revisions : null, async () => {
             for (const op of levels) {
+              const fn = stream && op.stream !== undefined ? op.stream : op.fn
               const result = await runWithTimeout(
-                Promise.resolve(op.fn(accessor, scope, args, effectiveKwargs)),
+                Promise.resolve(fn(accessor, scope, args, effectiveKwargs)),
                 opTimeout,
                 opName,
               )
               if (result !== null && result !== undefined) {
-                return wrapOpStream(result, this.mountId, this.activity)
+                return wrapOpStream(result, this.mountId, this.activity, opTimeout, opName)
               }
             }
             return null
@@ -855,14 +866,43 @@ async function* commandOutput(
   }
 }
 
-/** Preserve a streaming operation's recording owner after its dispatch frame exits. */
-export function wrapOpStream(result: unknown, mountId: string, activity: VFSActivity): unknown {
+/**
+ * Carry the op's frame into a result that streams.
+ *
+ * An op that returns an async iterator has not run its body yet: the
+ * backend opens the file on the first pull, after the frame that called
+ * it is gone, and with it the recorder's mount, the revision pins a
+ * snapshot replay reads (`revisionFor` inside the s3 and gridfs bodies)
+ * and the session. Each pull gets them back the way `wrapMountStreams`
+ * gives them to a command's output, and is held to the op's timeout,
+ * which the call itself no longer bounds. Call it inside the op's own
+ * `runWithRevisions`, so the captured context is the op's. Mirrors
+ * Python's `_wrap_op_stream`.
+ */
+export function wrapOpStream(
+  result: unknown,
+  mountId: string,
+  activity: VFSActivity,
+  timeout: number | null = null,
+  opName = '',
+): unknown {
+  const scope = new ContextScope([
+    ...captureSessionContext(),
+    ...captureRecordingContext(),
+    captureCacheContext(),
+  ])
+  const framed = (source: AsyncIterable<Uint8Array>): AsyncIterable<Uint8Array> => {
+    const owned = withMountContext(source, mountId)
+    return scope.stream(
+      timeout !== null && timeout > 0 ? withPullTimeout(owned, timeout, opName) : owned,
+    )
+  }
   if (result instanceof CachableAsyncIterator) {
-    result.wrapSource((source) => withMountContext(source, mountId))
+    result.wrapSource(framed)
     return activity.hold(result)
   }
   if (result !== null && typeof result === 'object' && Symbol.asyncIterator in result) {
-    return activity.hold(withMountContext(result as AsyncIterable<Uint8Array>, mountId))
+    return activity.hold(framed(result as AsyncIterable<Uint8Array>))
   }
   return result
 }

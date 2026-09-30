@@ -15,7 +15,7 @@
 import { YieldBudget } from './yield_budget.ts'
 
 export class CachableAsyncIterator implements AsyncIterableIterator<Uint8Array> {
-  private source: AsyncIterator<Uint8Array>
+  private upstream: AsyncIterator<Uint8Array>
   private readonly buffer: Uint8Array[] = []
   private exhaustedFlag = false
   private discardedFlag = false
@@ -26,7 +26,7 @@ export class CachableAsyncIterator implements AsyncIterableIterator<Uint8Array> 
   private readonly budget = new YieldBudget()
 
   constructor(source: AsyncIterable<Uint8Array>) {
-    this.source = source[Symbol.asyncIterator]()
+    this.upstream = source[Symbol.asyncIterator]()
   }
 
   // Re-wrap the underlying source in place, keeping whatever is already
@@ -34,8 +34,13 @@ export class CachableAsyncIterator implements AsyncIterableIterator<Uint8Array> 
   // around each pull without replacing the object commands hold on to.
   // Mirrors python's CachableAsyncIterator.replace_source.
   wrapSource(fn: (src: AsyncIterable<Uint8Array>) => AsyncIterable<Uint8Array>): void {
-    const inner = this.source
-    this.source = fn({ [Symbol.asyncIterator]: () => inner })[Symbol.asyncIterator]()
+    const inner = this.upstream
+    this.upstream = fn({ [Symbol.asyncIterator]: () => inner })[Symbol.asyncIterator]()
+  }
+
+  /** The iterator this tee pulls from. Mirrors python's `source`. */
+  get source(): AsyncIterator<Uint8Array> {
+    return this.upstream
   }
 
   get discarded(): boolean {
@@ -124,7 +129,7 @@ export class CachableAsyncIterator implements AsyncIterableIterator<Uint8Array> 
   private async pull(): Promise<IteratorResult<Uint8Array>> {
     this.pulling = true
     try {
-      return await this.source.next()
+      return await this.upstream.next()
     } finally {
       // Reached only when the pull settled; an abandoned pull leaves the
       // flag set, which is what discard reads.
@@ -138,7 +143,7 @@ export class CachableAsyncIterator implements AsyncIterableIterator<Uint8Array> 
     this.discardedFlag = true
     this.exhaustedFlag = true
     this.buffer.length = 0
-    const closing = this.source.return?.(undefined)
+    const closing = this.upstream.return?.(undefined)
     if (closing === undefined) return
     // A return queued behind a pull that never settles would hang the
     // cleanup that called this, and with it the abort or timeout it is

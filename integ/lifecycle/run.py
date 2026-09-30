@@ -19,8 +19,11 @@ shell command can answer directly through a backend's command handler.
 """
 
 import asyncio
+import dataclasses
 import errno
+import gc
 import json
+from collections.abc import AsyncIterator, Callable
 from pathlib import Path
 from typing import Any
 
@@ -28,18 +31,31 @@ from mirage.commands.cli.types import CLISpec
 from mirage.config import load_config
 from mirage.context import reset_current_session, set_current_session
 from mirage.errors import classify
+from mirage.ops.registry import RegisteredOp
 from mirage.policy import Policy
 from mirage.policy.types import (CommandContext, Deny, OpsContext,
                                  SessionContext)
 from mirage.process.types import SpawnRequest
 from mirage.runtime.types import ScriptSource
-from mirage.types import MountMode
+from mirage.types import Limit, MountMode
 from mirage.vfs.ram import RAMVFS
 from mirage.vfs.registry import build_vfs, register_vfs
 from mirage.workspace import Workspace
 from mirage.workspace.snapshot import apply_state_dict, to_state_dict
 
 SUITE = Path(__file__).with_name("cases.json")
+CLOSE_WITHIN = 60
+SESSION_OPS = frozenset({"read", "read_stream", "write", "readdir", "stat"})
+
+
+def load_files(vfs: RAMVFS, files: dict[str, str] | None) -> None:
+    """Seed a RAM fixture with the text files its JSON config names."""
+    vfs.load_state({
+        "files": {
+            path: data.encode()
+            for path, data in (files or {}).items()
+        }
+    })
 
 
 class CachedRAMVFS(RAMVFS):
@@ -49,15 +65,64 @@ class CachedRAMVFS(RAMVFS):
 
     def __init__(self, files: dict[str, str] | None = None) -> None:
         super().__init__()
-        self.load_state({
-            "files": {
-                path: data.encode()
-                for path, data in (files or {}).items()
-            }
-        })
+        load_files(self, files)
+
+
+def by_line(stream: Callable[..., AsyncIterator[bytes]],
+            pause: float) -> Callable[..., AsyncIterator[bytes]]:
+    """Split a streamed read into one chunk per line, ``pause`` apart."""
+
+    async def lines(*args: Any, **kwargs: Any) -> AsyncIterator[bytes]:
+        sent = 0
+        async for chunk in stream(*args, **kwargs):
+            start = 0
+            while start < len(chunk):
+                end = chunk.find(b"\n", start) + 1 or len(chunk)
+                if sent and pause:
+                    await asyncio.sleep(pause)
+                sent += 1
+                yield chunk[start:end]
+                start = end
+
+    return lines
+
+
+class ChunkedRAMVFS(RAMVFS):
+    """A RAM fixture whose streamed read yields one chunk per line.
+
+    Chunk boundaries are then the same on every host, which a disk
+    mount's read size is not; ``pause`` delays every chunk after the
+    first, a backend slow to deliver the rest.
+    """
+
+    def __init__(self,
+                 files: dict[str, str] | None = None,
+                 pause: float = 0.0) -> None:
+        super().__init__()
+        load_files(self, files)
+        self._pause = pause
+
+    def ops(self) -> list[RegisteredOp]:
+        return [
+            dataclasses.replace(ro, stream=by_line(ro.stream, self._pause))
+            if ro.name == "read" and ro.filetype is None
+            and ro.stream is not None else ro for ro in super().ops()
+        ]
+
+
+class CachedChunkedRAMVFS(ChunkedRAMVFS):
+    """A chunked fixture behind the read cache.
+
+    A cold stream then arrives one line per chunk and a warm one in the
+    single chunk the cache answers with, so the two are told apart.
+    """
+
+    caches_reads = True
 
 
 register_vfs("cached-ram", CachedRAMVFS)
+register_vfs("chunked-ram", ChunkedRAMVFS)
+register_vfs("cached-chunked-ram", CachedChunkedRAMVFS)
 
 
 class RulePolicy(Policy):
@@ -102,13 +167,15 @@ async def action(ws: Workspace, step: dict[str, Any],
         policies (dict[str, RulePolicy]): the coded policies registered
             so far, by id.
         held (dict[str, Any]): what earlier steps put aside for later
-            ones; ``snapshot`` stores the state dict ``checkout`` applies.
+            ones; ``snapshot`` stores the state dict ``checkout`` applies,
+            and ``read_stream`` keeps a stream under ``streams`` by its
+            ``hold`` id until ``drop`` lets it go.
     """
     op = step["op"]
     if op == "cached":
         value = await ws.cache.get(step["path"])
         return value.decode() if value is not None else None
-    if op in {"read", "write", "readdir", "stat"} and "session" in step:
+    if op in SESSION_OPS and "session" in step:
         token = set_current_session(ws.get_session(step["session"]))
         try:
             return await action(ws, {
@@ -120,13 +187,23 @@ async def action(ws: Workspace, step: dict[str, Any],
     if op == "mount":
         vfs = build_vfs(step["vfs"], step.get("config", {}))
         try:
-            return ws.add_mount(step["path"], vfs,
-                                MountMode(step.get("mode", "read"))).prefix
+            entry = ws.add_mount(step["path"], vfs,
+                                 MountMode(step.get("mode", "read")))
         except Exception:
             await vfs.close()
             raise
+        for name, raw in step.get("command_limits", {}).items():
+            entry.command_limits[name] = Limit.model_validate(raw)
+        return entry.prefix
     if op == "unmount":
-        await ws.unmount(step["path"])
+        within = step.get("within")
+        try:
+            await asyncio.wait_for(ws.unmount(step["path"]), within)
+        except asyncio.TimeoutError:
+            if within is None:
+                raise
+            raise TimeoutError(f"unmount {step['path']} did not finish "
+                               f"within {within}s") from None
     elif op == "set_mode":
         ws.set_mount_mode(step["path"], MountMode(step["mode"]))
     elif op == "session":
@@ -164,6 +241,43 @@ async def action(ws: Workspace, step: dict[str, Any],
         await ws.vfs.write(step["path"], step["data"].encode())
     elif op == "read":
         return (await ws.vfs.read(step["path"])).decode()
+    elif op == "read_stream":
+        take = step.get("take")
+        if take == 0 and not step.get("close", True):
+            raise ValueError("take 0 with close false pulls nothing: "
+                             "hold the stream and drop it")
+        stream = await ws.vfs.read_stream(step["path"], step.get("raw", False))
+        pulled: list[bytes] = []
+        if step.get("close", True):
+            try:
+                while take is None or len(pulled) < take:
+                    chunk = await anext(stream, None)
+                    if chunk is None:
+                        break
+                    pulled.append(chunk)
+            finally:
+                await stream.aclose()
+        else:
+            # An `async for` that breaks never closes what it iterates:
+            # the stream settles once it is collected.
+            async for chunk in stream:
+                pulled.append(chunk)
+                if len(pulled) == take:
+                    break
+        if "hold" in step:
+            held.setdefault("streams", {})[step["hold"]] = stream
+        elif not step.get("close", True):
+            del stream
+            gc.collect()
+        return b"".join(pulled).decode()
+    elif op == "drop":
+        if step["id"] not in held.get("streams", {}):
+            raise ValueError(f"no held stream: {step['id']}")
+        del held["streams"][step["id"]]
+        gc.collect()
+    elif op == "records":
+        return [[r.op, r.bytes] for r in ws.vfs.records
+                if r.path == step["path"]]
     elif op == "readdir":
         return sorted(await ws.vfs.readdir(step["path"]))
     elif op == "stat":
@@ -225,7 +339,9 @@ async def run(case: dict[str, Any]) -> int:
                                      f"expected {expected!r}, got {actual!r}")
         return len(case["steps"])
     finally:
-        await ws.close()
+        # A mount that never goes idle would hold close forever; the case
+        # fails instead of hanging the battery.
+        await asyncio.wait_for(ws.close(), CLOSE_WITHIN)
 
 
 def matches(actual: Any, expected: Any) -> bool:

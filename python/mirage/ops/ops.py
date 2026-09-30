@@ -14,10 +14,12 @@
 
 import asyncio
 import errno
+import logging
 from typing import Any
 
 from mirage.context import get_current_session, path_allowed
 from mirage.io import OpReport
+from mirage.io.read_stream import ReadStream
 from mirage.observe import OpRecord
 from mirage.observe.context import OpTimer, finish_record, start_op
 from mirage.ops.config import NO_FOLLOW_OPS, NamespaceLinks, OpsMount
@@ -26,6 +28,8 @@ from mirage.runtime.types import DispatchFn
 from mirage.types import FileStat, FileType, MountMode, PathSpec
 from mirage.utils.errors import NoMountError
 from mirage.utils.path import owner_prefix
+
+logger = logging.getLogger(__name__)
 
 
 class Ops:
@@ -206,9 +210,18 @@ class Ops:
             timer,
         )
         self.records.append(rec)
-        if self._observer is not None:
-            asyncio.ensure_future(
-                self._observer.log_op(rec, self._agent_id, session))
+        if self._observer is None:
+            return
+        # A streamed read nobody closed settles from its finalizer, which
+        # may run after the loop has gone; the ledger keeps the record.
+        try:
+            asyncio.get_running_loop()
+        except RuntimeError:
+            logger.debug("op %s %s recorded with no loop to log it on", op,
+                         path)
+            return
+        asyncio.ensure_future(
+            self._observer.log_op(rec, self._agent_id, session))
 
     def _owner(self, path: str) -> OpsMount | None:
         """The mount owning ``path`` by longest prefix, or None."""
@@ -303,10 +316,20 @@ class Ops:
                                 self._session_for(seen))
             raise
         owner = self._owner(resolved[0])
-        if owner is not None:
-            self._record_op(op, resolved[0], owner, report.source,
-                            report.bytes, result, kwargs, timer,
-                            self._session_for(seen))
+        if owner is None:
+            return result
+        session = self._session_for(seen)
+        if isinstance(result, ReadStream):
+            # A streamed read has moved nothing yet: it is recorded when
+            # it settles, with what the backend moved by then.
+            def settled(_moved: int) -> None:
+                self._record_op(op, resolved[0], owner, report.source,
+                                report.bytes, None, kwargs, timer, session)
+
+            result.on_settle(settled)
+            return result
+        self._record_op(op, resolved[0], owner, report.source, report.bytes,
+                        result, kwargs, timer, session)
         return result
 
     def _session_for(self, seen: list[str]) -> str:
@@ -386,6 +409,35 @@ class Ops:
                                     size=size,
                                     **kwargs)
         return await self._call("read", path, session_id, **kwargs)
+
+    async def read_stream(self,
+                          path: str,
+                          raw: bool = False,
+                          *,
+                          session_id: str | None = None) -> ReadStream:
+        """Read file content as it arrives.
+
+        The same read as :meth:`read`, gated, capped and rendered alike,
+        handed out as a stream: a missing or refused file fails here,
+        the rest arrives as the caller pulls it, and the op is recorded
+        once the stream ends or is closed, with the bytes the backend
+        moved by then. A caller that stops early closes it (``aclose``)
+        to release the backend and its mount.
+
+        Args:
+            path (str): Virtual path.
+            raw (bool): Read stored bytes rather than a rendered form.
+            session_id (str | None): Session to run as outside a line.
+
+        Returns:
+            ReadStream: the file's bytes, chunk by chunk.
+        """
+        kwargs: dict[str, Any] = {"filetype": None} if raw else {}
+        return await self._call("read",
+                                path,
+                                session_id,
+                                stream=True,
+                                **kwargs)
 
     async def write(self,
                     path: str,

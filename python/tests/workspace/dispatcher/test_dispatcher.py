@@ -12,17 +12,25 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import asyncio
 import errno
+import gc
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+from mirage.commands.errors import LimitExceededError
 from mirage.context import reset_current_session, set_current_session
 from mirage.errors import FsCondition, posix_errno
-from mirage.policy import (Action, CommandRule, Deny, OpsContext, Policies,
-                           Policy, PolicyDenied)
+from mirage.io import CachableAsyncIterator, IOResult, OpReport
+from mirage.io.read_stream import ReadStream
+from mirage.ops.registry import RegisteredOp
+from mirage.policy import (Action, CommandRule, Deny, OpsContext,
+                           OpsResultContext, Policies, Policy, PolicyDenied)
+from mirage.policy.mixin import ResultBlindMixin
 from mirage.policy.rule import RulePolicy
-from mirage.types import FileStat, FileType, HiddenPaths, MountMode, PathSpec
+from mirage.types import (FileStat, FileType, HiddenPaths, Limit, MountMode,
+                          OnExceed, PathSpec)
 from mirage.utils.errors import ReadOnlyError
 from mirage.vfs.disk import DiskVFS
 from mirage.vfs.ram import RAMVFS
@@ -1016,3 +1024,424 @@ async def test_rmdir_keeps_a_link_created_while_the_backend_removes():
             reset_current_session(token)
         assert not ws.namespace.is_link("/data/d/old")
         assert ws.namespace.readlink("/data/d/late") == "nowhere"
+
+
+_CHUNK = 8192
+
+
+class _CachingRAM(RAMVFS):
+    caches_reads = True
+
+
+async def _render_tally(accessor, path: PathSpec, **kwargs) -> bytes:
+    return b"RENDERED"
+
+
+_READ_TALLY = RegisteredOp(name="read",
+                           vfs="ram",
+                           filetype=".tally",
+                           fn=_render_tally)
+
+
+class _StreamSpy:
+    """Stands in for a mount's streaming read and counts what it moves.
+
+    Args:
+        entry (RegisteredOp): the read op whose stream form it wraps.
+    """
+
+    def __init__(self, entry: RegisteredOp) -> None:
+        self._stream = entry.stream
+        self.opened = 0
+        self.pulls = 0
+        self.closed = False
+
+    def __call__(self, accessor, scope, *args, **kwargs):
+        self.opened += 1
+        return self._count(self._stream(accessor, scope, *args, **kwargs))
+
+    async def _count(self, source):
+        try:
+            async for chunk in source:
+                self.pulls += 1
+                yield chunk
+        finally:
+            self.closed = True
+            await source.aclose()
+
+
+def _spy(monkeypatch, ws: Workspace, prefix: str) -> _StreamSpy:
+    entry = ws._registry.mount_for_prefix(prefix)._ops[("read", None)]
+    spy = _StreamSpy(entry)
+    monkeypatch.setattr(entry, "stream", spy)
+    return spy
+
+
+def _stream_ws(tmp_path) -> Workspace:
+    return Workspace({
+        "/ram/": RAMVFS(),
+        "/disk/": DiskVFS(root=str(tmp_path))
+    },
+                     mode=MountMode.WRITE)
+
+
+async def _open(ws: Workspace, virtual: str, **kwargs) -> ReadStream:
+    stream, _ = await ws.dispatch("read",
+                                  PathSpec.from_str_path(virtual),
+                                  stream=True,
+                                  **kwargs)
+    assert isinstance(stream, ReadStream)
+    return stream
+
+
+async def _chunks(stream: ReadStream) -> list[bytes]:
+    return [chunk async for chunk in stream]
+
+
+def _payload(size: int) -> bytes:
+    return (bytes(range(256)) * (size // 256 + 1))[:size]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("prefix", ["/ram/", "/disk/"])
+async def test_a_streamed_read_equals_the_whole_read(tmp_path, prefix):
+    data = _payload(5 * _CHUNK + 17)
+    with _stream_ws(tmp_path) as ws:
+        await ws.vfs.write(prefix + "big.bin", data)
+        chunks = await _chunks(await _open(ws, prefix + "big.bin"))
+        assert b"".join(chunks) == data
+        assert await ws.vfs.read(prefix + "big.bin") == data
+        if prefix == "/disk/":
+            assert len(chunks) == 6
+
+
+@pytest.mark.asyncio
+async def test_closing_a_streamed_read_early_stops_the_backend(
+        tmp_path, monkeypatch):
+    size = 1 << 20
+    (tmp_path / "huge.bin").write_bytes(_payload(size))
+    ws = _stream_ws(tmp_path)
+    spy = _spy(monkeypatch, ws, "/disk/")
+    report = OpReport()
+    stream = await _open(ws, "/disk/huge.bin", report=report)
+    assert await anext(stream) == _payload(_CHUNK)
+    await stream.aclose()
+    assert spy.opened == 1
+    assert spy.pulls <= 2
+    assert spy.closed
+    assert report.completed
+    assert report.bytes is not None and report.bytes < size
+    await asyncio.wait_for(ws.unmount("/disk/"), 2)
+    await ws.close()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("prefix", ["/ram/", "/disk/"])
+async def test_a_streamed_read_of_a_missing_file_fails_at_dispatch(
+        tmp_path, monkeypatch, prefix):
+    with _stream_ws(tmp_path) as ws:
+        path = PathSpec.from_str_path(prefix + "nope.txt")
+        with pytest.raises(FileNotFoundError) as whole:
+            await ws.dispatch("read", path)
+        missing = AsyncMock()
+        monkeypatch.setattr(ws._dispatcher._reconciler, "on_op_missing",
+                            missing)
+        with pytest.raises(FileNotFoundError) as exc:
+            await ws.dispatch("read", path, stream=True)
+        assert exc.value.errno == whole.value.errno
+        assert str(exc.value) == str(whole.value)
+        mount = ws._registry.mount_for_prefix(prefix)
+        missing.assert_awaited_once_with(mount, "read", prefix + "nope.txt")
+        await asyncio.wait_for(mount.activity.wait(), 1)
+
+
+class _DenyReads(Policy):
+
+    async def pre_ops(self, ctx: OpsContext) -> Action | None:
+        if ctx.op == "read":
+            return Deny("sealed\n")
+        return None
+
+
+@pytest.mark.asyncio
+async def test_a_streamed_read_of_a_hidden_path_is_absent_at_dispatch(
+        tmp_path, monkeypatch):
+    with _stream_ws(tmp_path) as ws:
+        await ws.vfs.write("/ram/secret.txt", b"hidden")
+        spy = _spy(monkeypatch, ws, "/ram/")
+        session = SessionState(
+            session_id="blind",
+            hidden_paths=HiddenPaths(paths=("/ram/secret.txt", )))
+        token = set_current_session(session)
+        try:
+            with pytest.raises(FileNotFoundError) as exc:
+                await _open(ws, "/ram/secret.txt")
+        finally:
+            reset_current_session(token)
+        assert exc.value.errno == errno.ENOENT
+        assert spy.opened == 0
+
+
+@pytest.mark.asyncio
+async def test_a_pre_ops_deny_refuses_a_streamed_read_at_dispatch(
+        tmp_path, monkeypatch):
+    with _stream_ws(tmp_path) as ws:
+        await ws.vfs.write("/ram/f.txt", b"body")
+        spy = _spy(monkeypatch, ws, "/ram/")
+        ws.policies.add(_DenyReads())
+        with pytest.raises(PermissionError) as exc:
+            await _open(ws, "/ram/f.txt")
+        assert exc.value.errno == errno.EACCES
+        assert spy.opened == 0
+
+
+@pytest.mark.asyncio
+async def test_a_warm_cache_answers_a_streamed_read_in_one_chunk(monkeypatch):
+    with Workspace({"/data/": _CachingRAM()}, mode=MountMode.WRITE) as ws:
+        await ws.vfs.write("/data/f.txt", b"STORED")
+        await ws.apply_io(
+            IOResult(reads={"/data/f.txt": b"CACHED"}, cache=["/data/f.txt"]))
+        spy = _spy(monkeypatch, ws, "/data/")
+        assert await _chunks(await _open(ws, "/data/f.txt")) == [b"CACHED"]
+        assert spy.opened == 0
+        raw = await _open(ws, "/data/f.txt", filetype=None)
+        assert b"".join(await _chunks(raw)) == b"STORED"
+        assert spy.opened == 1
+
+
+@pytest.mark.asyncio
+async def test_a_filetype_renderer_wins_over_a_streamed_read(monkeypatch):
+    with Workspace({"/data/": RAMVFS()}, mode=MountMode.WRITE) as ws:
+        ws.mount("/data/").register_fns([_READ_TALLY])
+        await ws.vfs.write("/data/books.tally", b"STORED")
+        spy = _spy(monkeypatch, ws, "/data/")
+        rendered = await _open(ws, "/data/books.tally")
+        assert await _chunks(rendered) == [b"RENDERED"]
+        assert spy.opened == 0
+        raw = await _open(ws, "/data/books.tally", filetype=None)
+        assert b"".join(await _chunks(raw)) == b"STORED"
+        assert spy.opened == 1
+
+
+@pytest.mark.asyncio
+async def test_a_windowed_streamed_read_is_one_chunk_of_the_slice(
+        tmp_path, monkeypatch):
+    with _stream_ws(tmp_path) as ws:
+        await ws.vfs.write("/ram/f.bin", b"0123456789")
+        spy = _spy(monkeypatch, ws, "/ram/")
+        window = await _open(ws, "/ram/f.bin", offset=2, size=3)
+        assert await _chunks(window) == [b"234"]
+        tail = await _open(ws, "/ram/f.bin", offset=7)
+        assert await _chunks(tail) == [b"789"]
+        assert spy.opened == 0
+
+
+@pytest.mark.asyncio
+async def test_a_truncating_read_cap_cuts_the_stream_and_the_backend(
+        tmp_path, monkeypatch):
+    size = 1 << 20
+    data = _payload(size)
+    (tmp_path / "huge.bin").write_bytes(data)
+    ws = _stream_ws(tmp_path)
+    ws._registry.mount_for_prefix("/disk/").command_limits["read"] = Limit(
+        max_bytes=100)
+    spy = _spy(monkeypatch, ws, "/disk/")
+    report = OpReport()
+    stream = await _open(ws, "/disk/huge.bin", report=report)
+    assert b"".join(await _chunks(stream)) == data[:100]
+    assert spy.pulls <= 2
+    assert spy.closed
+    assert report.bytes is not None and report.bytes < size
+    await asyncio.wait_for(ws.unmount("/disk/"), 2)
+    await ws.close()
+
+
+@pytest.mark.asyncio
+async def test_an_erroring_read_cap_refuses_a_larger_file_at_dispatch(
+        tmp_path, monkeypatch):
+    big = _payload(1 << 20)
+    (tmp_path / "huge.bin").write_bytes(big)
+    (tmp_path / "small.bin").write_bytes(big[:50])
+    with _stream_ws(tmp_path) as ws:
+        mount = ws._registry.mount_for_prefix("/disk/")
+        mount.command_limits["read"] = Limit(max_bytes=100,
+                                             on_exceed=OnExceed.ERROR)
+        spy = _spy(monkeypatch, ws, "/disk/")
+        with pytest.raises(LimitExceededError):
+            await _open(ws, "/disk/huge.bin")
+        assert spy.pulls <= 2
+        assert spy.closed
+        await asyncio.wait_for(mount.activity.wait(), 1)
+        assert await _chunks(await _open(ws, "/disk/small.bin")) == [big[:50]]
+
+
+class _DenySecret(Policy):
+
+    async def post_ops(self, ctx: OpsResultContext) -> Action | None:
+        if isinstance(ctx.result,
+                      (bytes, bytearray)) and b"SECRET" in ctx.result:
+            return Deny("redacted\n")
+        return None
+
+
+class _BlindPost(Policy, ResultBlindMixin):
+
+    async def post_ops(self, ctx: OpsResultContext) -> Action | None:
+        return None
+
+
+@pytest.mark.asyncio
+async def test_a_content_post_ops_policy_still_judges_a_streamed_read(
+        tmp_path):
+    secret = _payload(3 * _CHUNK) + b"SECRET"
+    (tmp_path / "secret.bin").write_bytes(secret)
+    (tmp_path / "open.bin").write_bytes(_payload(3 * _CHUNK))
+    with _stream_ws(tmp_path) as ws:
+        assert ws.policies.reads_results() is False
+        ws.policies.add(_BlindPost())
+        assert ws.policies.reads_results() is False
+        ws.policies.add(_DenySecret())
+        assert ws.policies.reads_results() is True
+        with pytest.raises(PermissionError) as exc:
+            await _open(ws, "/disk/secret.bin")
+        assert exc.value.errno == errno.EACCES
+        chunks = await _chunks(await _open(ws, "/disk/open.bin"))
+        assert chunks == [_payload(3 * _CHUNK)]
+        mount = ws._registry.mount_for_prefix("/disk/")
+        await asyncio.wait_for(mount.activity.wait(), 1)
+
+
+@pytest.mark.asyncio
+async def test_the_report_settles_with_the_moved_bytes_at_close(tmp_path):
+    size = 5 * _CHUNK
+    (tmp_path / "big.bin").write_bytes(_payload(size))
+    with _stream_ws(tmp_path) as ws:
+        early = OpReport()
+        stream = await _open(ws, "/disk/big.bin", report=early)
+        assert not early.completed
+        assert await anext(stream) == _payload(_CHUNK)
+        assert not early.completed
+        await stream.aclose()
+        assert early.completed
+        assert early.bytes == _CHUNK
+        full = OpReport()
+        stream = await _open(ws, "/disk/big.bin", report=full)
+        assert not full.completed
+        assert b"".join(await _chunks(stream)) == _payload(size)
+        assert full.completed
+        assert full.bytes == size
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("op_name", ["stat", "readdir", "write"])
+async def test_stream_on_an_op_other_than_read_raises(tmp_path, op_name):
+    with _stream_ws(tmp_path) as ws:
+        await ws.vfs.write("/ram/f.txt", b"body")
+        with pytest.raises(ValueError, match="only read streams"):
+            await ws.dispatch(op_name,
+                              PathSpec.from_str_path("/ram/f.txt"),
+                              stream=True)
+
+
+class _BlindSeal(Policy, ResultBlindMixin):
+
+    async def post_ops(self, ctx: OpsResultContext) -> Action | None:
+        if ctx.op == "read" and ctx.path.virtual.endswith(".sealed"):
+            return Deny("sealed\n")
+        return None
+
+
+@pytest.mark.asyncio
+async def test_a_result_blind_post_ops_deny_closes_the_stream(
+        tmp_path, monkeypatch):
+    (tmp_path / "a.sealed").write_bytes(_payload(1 << 20))
+    with _stream_ws(tmp_path) as ws:
+        ws.policies.add(_BlindSeal())
+        assert ws.policies.reads_results() is False
+        spy = _spy(monkeypatch, ws, "/disk/")
+        with pytest.raises(PermissionError) as exc:
+            await _open(ws, "/disk/a.sealed")
+        assert exc.value.errno == errno.EACCES
+        assert spy.opened == 1
+        assert spy.pulls <= 1
+        assert spy.closed
+        mount = ws._registry.mount_for_prefix("/disk/")
+        await asyncio.wait_for(mount.activity.wait(), 1)
+
+
+@pytest.mark.asyncio
+async def test_a_streamed_read_dropped_after_a_break_settles_when_collected(
+        tmp_path, monkeypatch):
+    size = 1 << 20
+    (tmp_path / "huge.bin").write_bytes(_payload(size))
+    ws = _stream_ws(tmp_path)
+    spy = _spy(monkeypatch, ws, "/disk/")
+    vfs = ws._registry.mount_for_prefix("/disk/").vfs
+    backend_closed_at_vfs_close: list[bool] = []
+
+    async def close() -> None:
+        backend_closed_at_vfs_close.append(spy.closed)
+
+    monkeypatch.setattr(vfs, "close", close)
+    report = OpReport()
+    stream = await _open(ws, "/disk/huge.bin", report=report)
+    pulled = 0
+    async for chunk in stream:
+        pulled += len(chunk)
+        if pulled >= 2 * _CHUNK:
+            break
+    assert not report.completed
+    del stream
+    gc.collect()
+    assert report.completed
+    assert report.bytes == pulled == 2 * _CHUNK
+    await asyncio.wait_for(ws.unmount("/disk/"), 2)
+    assert spy.closed
+    assert backend_closed_at_vfs_close == [True]
+    await ws.close()
+
+
+def _teed(tees: list[CachableAsyncIterator], events: list[str]):
+
+    def read(accessor, scope, *args, **kwargs):
+
+        async def body():
+            try:
+                for at in range(4):
+                    yield bytes([65 + at]) * 16
+            finally:
+                events.append("backend finally")
+
+        tee = CachableAsyncIterator(body())
+        tees.append(tee)
+        return tee
+
+    return read
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("finish", ["close", "eof"])
+async def test_a_teed_stream_op_reaches_the_backend_and_buffers_nothing(
+        tmp_path, monkeypatch, finish):
+    ws = _stream_ws(tmp_path)
+    await ws.vfs.write("/ram/f.bin", b"stored")
+    tees: list[CachableAsyncIterator] = []
+    events: list[str] = []
+    entry = ws._registry.mount_for_prefix("/ram/")._ops[("read", None)]
+    monkeypatch.setattr(entry, "stream", _teed(tees, events))
+    report = OpReport()
+    stream = await _open(ws, "/ram/f.bin", report=report)
+    assert len(tees) == 1
+    if finish == "close":
+        assert await anext(stream) == b"A" * 16
+        await stream.aclose()
+        assert report.bytes == 16
+    else:
+        chunks = await _chunks(stream)
+        assert chunks == [bytes([65 + at]) * 16 for at in range(4)]
+        assert report.bytes == 64
+    assert events == ["backend finally"]
+    assert report.completed
+    assert tees[0].buffered_chunks == []
+    await asyncio.wait_for(ws.unmount("/ram/"), 2)
+    await ws.close()

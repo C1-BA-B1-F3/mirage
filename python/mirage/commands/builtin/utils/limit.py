@@ -15,15 +15,43 @@
 import asyncio
 import logging
 import time
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Awaitable
+from typing import TypeVar
 
 from mirage.commands.errors import CommandTimeoutError, LimitExceededError
+from mirage.io.read_stream import cap_end
 from mirage.io.stream import close_quietly
 from mirage.io.types import ByteSource, IOResult, materialize
 from mirage.types import Limit, OnExceed
 from mirage.utils.stream import ensure_stream
 
 logger = logging.getLogger(__name__)
+
+T = TypeVar("T")
+
+
+async def _within(step: Awaitable[T], budget: float, seconds: float,
+                  label: str) -> T:
+    """Await one step inside a time budget.
+
+    Only the budget running out is a timeout: a backend's own
+    ``TimeoutError`` (an ``OSError`` carrying ETIMEDOUT) raised inside
+    it keeps its errno, as it does on the TypeScript host, where the
+    deadline answers with a sentinel instead of an exception.
+
+    Args:
+        step (Awaitable[T]): what to wait for.
+        budget (float): seconds left for this step.
+        seconds (float): the whole budget, for the message.
+        label (str): the command or op the message names.
+    """
+    try:
+        async with asyncio.timeout(budget) as deadline:
+            return await step
+    except TimeoutError as exc:
+        if not deadline.expired():
+            raise
+        raise CommandTimeoutError(label, seconds) from exc
 
 
 async def with_timeout(
@@ -39,12 +67,10 @@ async def with_timeout(
         if remaining <= 0:
             raise CommandTimeoutError(command, seconds)
         try:
-            chunk = await asyncio.wait_for(iterator.__anext__(),
-                                           timeout=remaining)
+            chunk = await _within(iterator.__anext__(), remaining, seconds,
+                                  command)
         except StopAsyncIteration:
             return
-        except asyncio.TimeoutError as exc:
-            raise CommandTimeoutError(command, seconds) from exc
         yield chunk
 
 
@@ -73,6 +99,36 @@ def maybe_with_timeout(
     return with_timeout(stream, limit.timeout_seconds, command)
 
 
+async def with_pull_timeout(src: AsyncIterator[bytes], seconds: float,
+                            name: str) -> AsyncIterator[bytes]:
+    """Bound every pull of a lazy op result by the op's own timeout.
+
+    An op that answers with a stream has done no backend work when it
+    returns, so the deadline :func:`run_with_timeout` puts on the call
+    covers nothing; this holds each step to it instead. The budget is
+    per pull, not per read, because a consumer that is slow to ask for
+    the next chunk is not the backend taking too long to deliver it.
+
+    Args:
+        src (AsyncIterator[bytes]): the op's lazy result.
+        seconds (float): the budget for one pull.
+        name (str): op name for the timeout message.
+    """
+    iterator = src.__aiter__()
+    try:
+        while True:
+            try:
+                chunk = await _within(iterator.__anext__(), seconds, seconds,
+                                      name or "?")
+            except StopAsyncIteration:
+                return
+            yield chunk
+    finally:
+        close = getattr(iterator, "aclose", None)
+        if close is not None:
+            await close()
+
+
 async def run_with_timeout(coro, seconds: float | None, name: str):
     """Wrap a coroutine with a deadline, mapping overrun to a timeout error.
 
@@ -86,10 +142,7 @@ async def run_with_timeout(coro, seconds: float | None, name: str):
     """
     if not seconds or seconds <= 0:
         return await coro
-    try:
-        return await asyncio.wait_for(coro, timeout=seconds)
-    except asyncio.TimeoutError as exc:
-        raise CommandTimeoutError(name or "?", seconds) from exc
+    return await _within(coro, seconds, seconds, name or "?")
 
 
 def row_cap_notice(command: str, operand: str, count: int, unit: str,
@@ -160,22 +213,7 @@ async def _bounded_stream(src: ByteSource,
     src_stream = ensure_stream(src)
     try:
         async for chunk in src_stream:
-            end = len(chunk)
-            if limit.max_bytes is not None:
-                end = min(end, max(0, limit.max_bytes - total))
-            if limit.max_lines is not None:
-                remaining = limit.max_lines - lines
-                if remaining <= 0:
-                    end = 0
-                else:
-                    at = 0
-                    for _ in range(remaining):
-                        newline = chunk.find(b"\n", at, end)
-                        if newline < 0:
-                            break
-                        at = newline + 1
-                    else:
-                        end = at
+            end = cap_end(chunk, limit, total, lines)
             kept = chunk[:end]
             total += end
             lines += kept.count(b"\n")

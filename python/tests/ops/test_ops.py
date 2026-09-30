@@ -12,17 +12,22 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import asyncio
 import errno
+import gc
 from dataclasses import replace
 
 import pytest
 
 from mirage import Workspace
 from mirage.context import reset_current_session, set_current_session
+from mirage.io.read_stream import ReadStream
 from mirage.ops import Ops
+from mirage.ops.registry import op
 from mirage.policy import (Action, Deny, OpsContext, OpsResultContext, Policy,
                            PolicyDenied)
-from mirage.types import FileType, HiddenPaths, MountMode
+from mirage.types import FileType, HiddenPaths, MountMode, PathSpec
+from mirage.vfs.disk import DiskVFS
 from mirage.vfs.ram import RAMVFS
 from mirage.workspace import Session
 from mirage.workspace.session import SessionState
@@ -663,3 +668,86 @@ class TestPerCallSession:
             assert run(ws.vfs.exists("/data/secret.txt")) is True
         finally:
             run(ws.close())
+
+
+_CHUNK = 8192
+
+
+@op("read", vfs="ram", filetype=".tally")
+async def _read_tally(accessor, path: PathSpec, **kwargs) -> bytes:
+    return b"RENDERED"
+
+
+def _read_rows(ws: Workspace) -> list[tuple[str, str, int]]:
+    return [(r.op, r.path, r.bytes) for r in ws.vfs.records]
+
+
+class TestReadStream:
+    """``read_stream`` records the read once it settles, not at open."""
+
+    @pytest.mark.asyncio
+    async def test_a_drained_stream_is_recorded_once_with_the_full_size(
+            self, tmp_path):
+        size = 5 * _CHUNK
+        (tmp_path / "big.bin").write_bytes(b"x" * size)
+        ws = Workspace({"/disk/": DiskVFS(root=str(tmp_path))},
+                       mode=MountMode.WRITE)
+        try:
+            stream = await ws.vfs.read_stream("/disk/big.bin")
+            assert isinstance(stream, ReadStream)
+            assert _read_rows(ws) == []
+            assert b"".join([chunk async for chunk in stream]) == b"x" * size
+            assert _read_rows(ws) == [("read", "/disk/big.bin", size)]
+        finally:
+            await ws.close()
+
+    @pytest.mark.asyncio
+    async def test_an_early_close_is_recorded_with_the_partial_bytes(
+            self, tmp_path):
+        (tmp_path / "big.bin").write_bytes(b"x" * (5 * _CHUNK))
+        ws = Workspace({"/disk/": DiskVFS(root=str(tmp_path))},
+                       mode=MountMode.WRITE)
+        try:
+            stream = await ws.vfs.read_stream("/disk/big.bin")
+            assert await anext(stream) == b"x" * _CHUNK
+            assert _read_rows(ws) == []
+            await stream.aclose()
+            assert _read_rows(ws) == [("read", "/disk/big.bin", _CHUNK)]
+            await stream.aclose()
+            assert _read_rows(ws) == [("read", "/disk/big.bin", _CHUNK)]
+        finally:
+            await ws.close()
+
+    @pytest.mark.asyncio
+    async def test_a_stream_dropped_after_a_break_is_recorded_when_collected(
+            self, tmp_path):
+        (tmp_path / "big.bin").write_bytes(b"x" * (5 * _CHUNK))
+        ws = Workspace({"/disk/": DiskVFS(root=str(tmp_path))},
+                       mode=MountMode.WRITE)
+        try:
+            stream = await ws.vfs.read_stream("/disk/big.bin")
+            pulled = 0
+            async for chunk in stream:
+                pulled += len(chunk)
+                if pulled >= 2 * _CHUNK:
+                    break
+            assert _read_rows(ws) == []
+            del stream
+            gc.collect()
+            assert _read_rows(ws) == [("read", "/disk/big.bin", 2 * _CHUNK)]
+            await asyncio.wait_for(ws.unmount("/disk/"), 2)
+        finally:
+            await ws.close()
+
+    @pytest.mark.asyncio
+    async def test_a_raw_read_stream_bypasses_a_renderer(self):
+        ws = Workspace({"/data/": RAMVFS()}, mode=MountMode.WRITE)
+        ws.mount("/data/").register_fns([_read_tally])
+        try:
+            await ws.vfs.write("/data/books.tally", b"STORED")
+            rendered = await ws.vfs.read_stream("/data/books.tally")
+            assert [chunk async for chunk in rendered] == [b"RENDERED"]
+            raw = await ws.vfs.read_stream("/data/books.tally", raw=True)
+            assert b"".join([chunk async for chunk in raw]) == b"STORED"
+        finally:
+            await ws.close()

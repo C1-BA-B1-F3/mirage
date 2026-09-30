@@ -268,6 +268,52 @@ describe('OpsRegistry.call', () => {
   })
 })
 
+describe('OpsRegistry.call with stream', () => {
+  const WHOLE = new TextEncoder().encode('whole')
+  const streamed = (async function* (): AsyncGenerator<Uint8Array> {
+    yield await Promise.resolve(new TextEncoder().encode('streamed'))
+  })()
+
+  function streamingRegistry(): OpsRegistry {
+    const registry = new OpsRegistry()
+    registry.register({
+      name: 'read',
+      vfs: 'ram',
+      filetype: null,
+      fn: () => Promise.resolve(WHOLE),
+      stream: () => streamed,
+      write: false,
+    })
+    return registry
+  }
+
+  it('returns the stream from the op stream form when asked to stream', async () => {
+    const registry = streamingRegistry()
+    await expect(registry.call('read', 'ram', stubAccessor, stubPath, [], {}, true)).resolves.toBe(
+      streamed,
+    )
+    await expect(registry.call('read', 'ram', stubAccessor, stubPath)).resolves.toBe(WHOLE)
+  })
+
+  it('lets a filetype-scoped read without a stream form win with its bytes', async () => {
+    const registry = streamingRegistry()
+    const rendered = new TextEncoder().encode('RENDERED')
+    registry.register({
+      name: 'read',
+      vfs: 'ram',
+      filetype: '.tally',
+      fn: () => Promise.resolve(rendered),
+      write: false,
+    })
+    await expect(
+      registry.call('read', 'ram', stubAccessor, stubPath, [], { filetype: '.tally' }, true),
+    ).resolves.toBe(rendered)
+    await expect(
+      registry.call('read', 'ram', stubAccessor, stubPath, [], { filetype: null }, true),
+    ).resolves.toBe(streamed)
+  })
+})
+
 describe('registerOp helper', () => {
   it('adds an op to the target registry', () => {
     const registry = new OpsRegistry()

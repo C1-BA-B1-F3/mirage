@@ -13,6 +13,7 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import { chunks } from '../../../io/cooperative.ts'
+import { capEnd } from '../../../io/read_stream.ts'
 import { yieldBytes } from '../../../io/stream.ts'
 import { type ByteSource, IOResult, materialize } from '../../../io/types.ts'
 import { type Limit, OnExceed } from '../../../types.ts'
@@ -120,6 +121,42 @@ export function maybeWithTimeout(
   return withTimeout(stream, timeout, command)
 }
 
+/**
+ * Bound every pull of a lazy op result by the op's own timeout.
+ *
+ * An op that answers with a stream has done no backend work when it
+ * returns, so the deadline `runWithTimeout` puts on the call covers
+ * nothing; this holds each step to it instead. The budget is per pull,
+ * not per read, because a consumer that is slow to ask for the next
+ * chunk is not the backend taking too long to deliver it. A pull that
+ * overran is abandoned, not awaited, when the stream closes. Mirrors
+ * Python's `with_pull_timeout`.
+ */
+export async function* withPullTimeout(
+  src: AsyncIterable<Uint8Array>,
+  seconds: number,
+  name: string,
+): AsyncGenerator<Uint8Array> {
+  const iterator = src[Symbol.asyncIterator]()
+  let overran = false
+  try {
+    for (;;) {
+      const next = await withDeadline(iterator.next(), seconds * 1000)
+      if (next === TIMED_OUT) {
+        overran = true
+        throw new CommandTimeoutError(name || '?', seconds)
+      }
+      if (next.done === true) return
+      yield next.value
+    }
+  } finally {
+    // An overran pull is still pending, and a close queued behind it would
+    // wait on it: abandon it, best-effort as closeQuietly, instead.
+    if (overran) void Promise.resolve(iterator.return?.()).catch(() => undefined)
+    else await iterator.return?.()
+  }
+}
+
 export async function runWithTimeout<T>(
   promise: Promise<T>,
   seconds: number | null,
@@ -192,21 +229,8 @@ async function* boundedStream(
   let lines = 0
   const iterable = src instanceof Uint8Array ? yieldBytes(src) : src
   for await (const chunk of iterable) {
-    let end =
-      limit.maxBytes === null
-        ? chunk.byteLength
-        : Math.min(chunk.byteLength, Math.max(0, limit.maxBytes - total))
-    if (limit.maxLines !== null) {
-      if (lines >= limit.maxLines) end = 0
-      else {
-        for (let i = 0; i < end; i++) {
-          if (chunk[i] === NEWLINE && ++lines === limit.maxLines) {
-            end = i + 1
-            break
-          }
-        }
-      }
-    }
+    const end = capEnd(chunk, limit, total, lines)
+    for (let i = 0; i < end; i++) if (chunk[i] === NEWLINE) lines++
     total += end
     if (end > 0) yield chunk.subarray(0, end)
     if (end < chunk.byteLength) {

@@ -12,9 +12,12 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import { setFlagsFromString } from 'node:v8'
+import { runInNewContext } from 'node:vm'
 import { describe, expect, it } from 'vitest'
 import { runWithSession } from '../context/session_context.ts'
 import { LimitExceededError } from '../commands/errors.ts'
+import { materialize } from '../io/types.ts'
 import { OpsRegistry } from './registry.ts'
 import type { Policy } from '../policy/base.ts'
 import { PolicyDenied, PolicyError } from '../policy/errors.ts'
@@ -866,4 +869,110 @@ describe('Ops per-call sessionId', () => {
     expect(await new Session(ws, 'blind').vfs.exists('/data/secret.txt')).toBe(false)
     expect(await ws.vfs.exists('/data/secret.txt')).toBe(true)
   })
+})
+
+function exposedGc(): (() => void) | undefined {
+  const own = (globalThis as { gc?: () => void }).gc
+  if (own !== undefined) return own
+  // The flag is process-wide and stays on: resetting it could race another
+  // worker's lookup, and a runtime that refuses it just skips the GC cases.
+  try {
+    setFlagsFromString('--expose-gc')
+    const gc: unknown = runInNewContext('typeof gc === "function" ? gc : undefined')
+    return typeof gc === 'function' ? (gc as () => void) : undefined
+  } catch {
+    return undefined
+  }
+}
+
+const collectGarbage = exposedGc()
+
+async function collectedWithin(settled: () => boolean, rounds = 50): Promise<boolean> {
+  for (let i = 0; i < rounds && !settled(); i++) {
+    collectGarbage?.()
+    await new Promise((resolve) => setTimeout(resolve, 10))
+  }
+  return settled()
+}
+
+describe('Ops.readStream', () => {
+  function chunkedReads(ws: Workspace, size: number): void {
+    const original = ws.opsRegistry.find('read', 'ram')
+    const inner = original?.stream
+    if (original === null || inner === undefined) throw new Error('ram read has no stream form')
+    ws.opsRegistry.register({
+      ...original,
+      stream: (accessor, path, args, kwargs) => {
+        const source = inner(accessor, path, args, kwargs) as AsyncIterable<Uint8Array>
+        return (async function* (): AsyncGenerator<Uint8Array> {
+          for await (const whole of source) {
+            for (let at = 0; at < whole.byteLength; at += size) yield whole.subarray(at, at + size)
+          }
+        })()
+      },
+    })
+  }
+
+  const rows = (ws: Workspace): [string, string, number][] =>
+    ws.records.filter((r) => r.op === 'read').map((r) => [r.op, r.path, r.bytes])
+
+  it('records the read once it settles, with the bytes the backend moved', async () => {
+    const ws = mkWorkspace()
+    await ws.vfs.writeFile('/data/a.txt', 'hello')
+    await ws.vfs.writeFile('/data/big.bin', new Uint8Array(256))
+    chunkedReads(ws, 64)
+    const drained = await ws.vfs.readStream('/data/a.txt')
+    expect(rows(ws)).toEqual([])
+    expect(DEC.decode(await materialize(drained))).toBe('hello')
+    expect(rows(ws)).toEqual([['read', '/data/a.txt', 5]])
+    ws.records.length = 0
+    const early = await ws.vfs.readStream('/data/big.bin')
+    await early.next()
+    expect(rows(ws)).toEqual([])
+    await early.return()
+    expect(rows(ws)).toEqual([['read', '/data/big.bin', 64]])
+    await early.return()
+    expect(rows(ws)).toEqual([['read', '/data/big.bin', 64]])
+  })
+
+  it('raw bypasses a renderer', async () => {
+    const vfs = new RAMVFS()
+    const ops = new OpsRegistry()
+    ops.registerVfs(vfs)
+    ops.register({
+      name: 'read',
+      vfs: vfs.name,
+      filetype: '.gdoc.json',
+      write: false,
+      fn: () => Promise.resolve(new TextEncoder().encode('rendered')),
+    })
+    const ws = new Workspace({ '/m': vfs }, { mode: MountMode.WRITE, ops })
+    await ws.vfs.writeFile('/m/doc.gdoc.json', 'stored')
+    expect(DEC.decode(await materialize(await ws.vfs.readStream('/m/doc.gdoc.json')))).toBe(
+      'rendered',
+    )
+    const raw = await ws.vfs.readStream('/m/doc.gdoc.json', { raw: true })
+    expect(DEC.decode(await materialize(raw))).toBe('stored')
+  })
+
+  it.skipIf(collectGarbage === undefined)(
+    'records a stream dropped unclosed once it is collected, with the bytes the backend moved (needs a gc the runtime exposes)',
+    async () => {
+      const ws = mkWorkspace()
+      try {
+        await ws.vfs.writeFile('/data/big.bin', new Uint8Array(256))
+        chunkedReads(ws, 64)
+        const pullAndDrop = async (): Promise<void> => {
+          const stream = await ws.vfs.readStream('/data/big.bin')
+          expect(((await stream.next()).value as Uint8Array).byteLength).toBe(64)
+        }
+        await pullAndDrop()
+        expect(rows(ws)).toEqual([])
+        expect(await collectedWithin(() => rows(ws).length > 0)).toBe(true)
+        expect(rows(ws)).toEqual([['read', '/data/big.bin', 64]])
+      } finally {
+        await ws.close()
+      }
+    },
+  )
 })

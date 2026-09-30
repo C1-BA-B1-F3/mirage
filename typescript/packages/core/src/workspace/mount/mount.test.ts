@@ -22,6 +22,7 @@ import {
   RegisteredCommand,
 } from '../../commands/config.ts'
 import { CommandSpec, Operand, Option } from '../../commands/spec/types.ts'
+import { CommandTimeoutError } from '../../commands/errors.ts'
 import { IOResult, materialize } from '../../io/types.ts'
 import type { Accessor } from '../../accessor/base.ts'
 import type { RAMAccessor } from '../../accessor/ram.ts'
@@ -507,6 +508,106 @@ describe('Mount.revisions', () => {
     m.registerOp(op)
     await m.executeOp('read', '/ram/x.txt')
     expect(revisionFor('/ram/x.txt')).toBeNull()
+  })
+})
+
+describe('Mount.executeOp streamed results', () => {
+  function lazyRead(body: (path: PathSpec) => AsyncGenerator<Uint8Array>): RegisteredOp {
+    return {
+      name: 'read',
+      vfs: 'ram',
+      filetype: null,
+      write: false,
+      fn: (_accessor: Accessor, path: PathSpec) => Promise.resolve(body(path)),
+    }
+  }
+
+  it('a lazy stream body sees the mount revision pins on its first pull', async () => {
+    const m = makeMount()
+    m.revisions.set('/ram/x.txt', 'v1')
+    let observed: string | null = '<unset>'
+    m.registerOp(
+      lazyRead(async function* (path) {
+        observed = revisionFor(path.virtual)
+        yield await Promise.resolve(new TextEncoder().encode('x'))
+      }),
+    )
+    const stream = (await m.executeOp('read', '/ram/x.txt')) as AsyncIterable<Uint8Array>
+    expect(observed).toBe('<unset>')
+    expect(revisionFor('/ram/x.txt')).toBeNull()
+    expect(new TextDecoder().decode(await materialize(stream))).toBe('x')
+    expect(observed).toBe('v1')
+  })
+
+  const STORED = new TextEncoder().encode('stored\n')
+
+  function refuseWhole(): never {
+    throw new Error('a streamed read must not run the whole read')
+  }
+
+  function wholeAndStreamed(): RegisteredOp {
+    return {
+      name: 'read',
+      vfs: 'ram',
+      filetype: null,
+      write: false,
+      fn: () => Promise.resolve(STORED),
+      stream: () =>
+        (async function* (): AsyncGenerator<Uint8Array> {
+          yield await Promise.resolve(STORED.subarray(0, 3))
+          yield STORED.subarray(3)
+        })(),
+    }
+  }
+
+  it('executeOp with stream answers from the op stream form', async () => {
+    const m = makeMount()
+    m.registerOp(wholeAndStreamed())
+    expect(await m.executeOp('read', '/ram/f.txt')).toEqual(STORED)
+    m.registerOp({ ...wholeAndStreamed(), fn: refuseWhole })
+    const stream = await m.executeOp('read', '/ram/f.txt', [], {}, true)
+    expect(stream).not.toBeInstanceOf(Uint8Array)
+    expect(typeof stream === 'object' && stream !== null && Symbol.asyncIterator in stream).toBe(
+      true,
+    )
+    expect(await materialize(stream as AsyncIterable<Uint8Array>)).toEqual(STORED)
+    await m.activity.wait()
+  })
+
+  it('a filetype read without a stream form still wins', async () => {
+    const m = makeMount()
+    const rendered = new TextEncoder().encode('RENDERED')
+    m.registerOp(wholeAndStreamed())
+    m.registerOp({
+      name: 'read',
+      vfs: 'ram',
+      filetype: '.tally',
+      write: false,
+      fn: () => Promise.resolve(rendered),
+    })
+    expect(await m.executeOp('read', '/ram/books.tally', [], {}, true)).toBe(rendered)
+    const plain = await m.executeOp('read', '/ram/f.txt', [], {}, true)
+    expect(await materialize(plain as AsyncIterable<Uint8Array>)).toEqual(STORED)
+    const raw = await m.executeOp('read', '/ram/books.tally', [], { filetype: null }, true)
+    expect(await materialize(raw as AsyncIterable<Uint8Array>)).toEqual(STORED)
+    await m.activity.wait()
+  })
+
+  it('holds each pull to the read timeout from the mount command limits', async () => {
+    const m = makeMount()
+    m.commandLimits.set('read', new Limit({ timeoutSeconds: 0.05 }))
+    m.registerOp(
+      lazyRead(async function* () {
+        yield new TextEncoder().encode('fast')
+        await new Promise((resolve) => setTimeout(resolve, 300))
+        yield new TextEncoder().encode('slow')
+      }),
+    )
+    const stream = (await m.executeOp('read', '/ram/x.txt')) as AsyncIterable<Uint8Array>
+    const iterator = stream[Symbol.asyncIterator]()
+    expect(new TextDecoder().decode((await iterator.next()).value as Uint8Array)).toBe('fast')
+    await expect(iterator.next()).rejects.toThrow(CommandTimeoutError)
+    await m.activity.wait()
   })
 })
 

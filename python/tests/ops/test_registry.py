@@ -165,6 +165,75 @@ class TestOpsRegistry:
             registry.register("not a function")
 
 
+async def _whole_read(accessor, path):
+    return b"whole"
+
+
+async def _streamed_read(accessor, path):
+    yield b"str"
+    yield b"eam"
+
+
+async def _render_tally(accessor, path):
+    return b"RENDERED"
+
+
+def _streaming_registry() -> OpsRegistry:
+    registry = OpsRegistry()
+    registry.register(
+        RegisteredOp(name="read",
+                     vfs="ram",
+                     filetype=None,
+                     fn=_whole_read,
+                     stream=_streamed_read))
+    registry.register(
+        RegisteredOp(name="read",
+                     vfs="ram",
+                     filetype=".tally",
+                     fn=_render_tally))
+    return registry
+
+
+class TestStreamedCall:
+
+    @pytest.mark.asyncio
+    async def test_stream_picks_the_levels_stream_form(self):
+        registry = _streaming_registry()
+        streamed = await registry.call("read",
+                                       "ram",
+                                       None,
+                                       _spec("/f.txt"),
+                                       stream=True)
+        assert not isinstance(streamed, (bytes, bytearray))
+        assert [chunk async for chunk in streamed] == [b"str", b"eam"]
+
+    @pytest.mark.asyncio
+    async def test_without_stream_the_level_answers_whole(self):
+        registry = _streaming_registry()
+        assert await registry.call("read", "ram", None,
+                                   _spec("/f.txt")) == b"whole"
+
+    @pytest.mark.asyncio
+    async def test_a_level_without_a_stream_form_answers_whole(self):
+        registry = _streaming_registry()
+        rendered = await registry.call("read",
+                                       "ram",
+                                       None,
+                                       _spec("/books.tally"),
+                                       filetype=".tally",
+                                       stream=True)
+        assert rendered == b"RENDERED"
+        only_whole = OpsRegistry()
+        only_whole.register(
+            RegisteredOp(name="read", vfs="ram", filetype=None,
+                         fn=_whole_read))
+        assert await only_whole.call("read",
+                                     "ram",
+                                     None,
+                                     _spec("/f.txt"),
+                                     stream=True) == b"whole"
+
+
 class TestUserOpOverride:
 
     @pytest.mark.asyncio

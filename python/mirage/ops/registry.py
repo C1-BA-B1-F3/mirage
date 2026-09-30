@@ -22,11 +22,26 @@ from mirage.types import PathSpec
 
 @dataclass
 class RegisteredOp:
+    """One op a mount answers, by name, VFS and (optionally) filetype.
+
+    Args:
+        name (str): the op name (``read``, ``stat``, ...).
+        vfs (str): the VFS it serves.
+        filetype (str | None): the extension it is scoped to, None for
+            every path on the VFS.
+        fn (Callable[..., Any]): the op itself.
+        write (bool): whether it mutates the mount.
+        stream (Callable[..., Any] | None): the op's streaming form, for
+            a whole-file read asked to stream; None when the op only
+            answers whole, which the door then hands out as one chunk.
+    """
+
     name: str
     vfs: str
     filetype: str | None
     fn: Callable[..., Any]
     write: bool = False
+    stream: Callable[..., Any] | None = None
 
 
 def op(
@@ -108,21 +123,34 @@ class OpsRegistry:
         path: PathSpec,
         *args,
         filetype: str | None = None,
+        stream: bool = False,
         **kwargs,
     ):
-        levels = []
+        """Run the op at the first level that answers.
+
+        Filetype-specific, then by VFS, then global. ``stream`` asks
+        each level for its streaming form where it has one; a level
+        without one answers the way it always does, as
+        ``MountEntry.execute_op`` does.
+
+        Args:
+            name (str): the op name.
+            vfs (str): the VFS it runs on.
+            accessor (Accessor): the backend accessor.
+            path (PathSpec): the op's path.
+            filetype (str | None): the extension to try first.
+            stream (bool): prefer each level's streaming form.
+        """
+        keys: list[tuple[str, str | None, str | None]] = []
         if filetype:
-            key: tuple[str, str | None, str | None] = (name, filetype, vfs)
-            if key in self._registered:
-                levels.append(self._registered[key].fn)
-
-        key = (name, None, vfs)
-        if key in self._registered:
-            levels.append(self._registered[key].fn)
-
-        key = (name, None, None)
-        if key in self._registered:
-            levels.append(self._registered[key].fn)
+            keys.append((name, filetype, vfs))
+        keys += [(name, None, vfs), (name, None, None)]
+        levels = []
+        for key in keys:
+            ro = self._registered.get(key)
+            if ro is not None:
+                levels.append(
+                    ro.stream if stream and ro.stream is not None else ro.fn)
 
         if not levels:
             raise KeyError(f"no op registered: {name!r} for VFS {vfs!r}")

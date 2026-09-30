@@ -12,11 +12,9 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import type { IndexCacheStore } from '../../cache/index/store.ts'
 import { childMountNames, namespaceNames } from '../../ops/namespace_view.ts'
 import type { NamespaceLinks } from '../../ops/config.ts'
 import { mountKey } from '../../utils/key_prefix.ts'
-import type { VFS } from '../../vfs/base.ts'
 import { FileStat, FileType, PathSpec } from '../../types.ts'
 import { isFsError } from '../../utils/errors.ts'
 import type { MountEntry } from '../mount/mount.ts'
@@ -62,10 +60,6 @@ export function globOptions(session: SessionState): GlobOptions {
     failglob: session.shopts.failglob ?? SHOPT_DEFAULTS.get('failglob') ?? false,
     globstar: session.shopts.globstar ?? SHOPT_DEFAULTS.get('globstar') ?? false,
   }
-}
-
-export interface ResourceWithGlob extends VFS {
-  glob(paths: readonly PathSpec[], prefix?: string, index?: IndexCacheStore): Promise<PathSpec[]>
 }
 
 // Virtual paths a directory owes the namespace, matching a segment.
@@ -197,7 +191,7 @@ async function levelMatches(
   await owner.ensureReady()
   const prefix = rstripSlash(owner.prefix)
   const out: string[] = []
-  if (owner.vfs.glob !== undefined) {
+  if (owner.hasOp('glob')) {
     const spec = new PathSpec({
       virtual: real,
       directory: real,
@@ -382,8 +376,7 @@ async function walkGlobstar(
 // anything else is asked of the mount that owns the link-resolved path, one
 // stat per match. That mount is readied first, as levelMatches readies one
 // before listing it, because a link can point into a mount nothing has
-// touched yet. statMatch picks which stat answers; a match no stat can
-// classify is dropped, as python's twin drops it.
+// touched yet. The mount's op table supplies stat; an unclassified match is dropped.
 async function isDirectory(
   registry: MountRegistry,
   mount: MountEntry,
@@ -402,32 +395,18 @@ async function isDirectory(
   const owner = mountOf(registry, real, mount)
   const prefix = rstripSlash(owner.prefix)
   if (rstripSlash(real) === prefix) return true
-  await owner.ensureReady()
   let row: unknown
   try {
-    row = await statMatch(registry, owner, real, prefix)
+    await owner.ensureReady()
+    row =
+      registry.opStat === null
+        ? await owner.executeOp('stat', real)
+        : await registry.opStat(owner, PathSpec.fromStrPath(real, mountKey(real, prefix)))
   } catch (err) {
     if (isFsError(err)) return false
     throw err
   }
   return row instanceof FileStat && row.type === FileType.DIRECTORY
-}
-
-// The stat the dispatcher runs for the owning mount's VFS answers, so a
-// trailing-slash glob and `stat` read the same op table, as python's twin
-// asks owner.execute_op("stat"); a VFS with no stat op there answers
-// ENOTSUP and its match is dropped. A registry no workspace has wired (unit
-// tests building one bare) leaves it to the VFS's own stat, and without one
-// the match is dropped too.
-async function statMatch(
-  registry: MountRegistry,
-  owner: MountEntry,
-  real: string,
-  prefix: string,
-): Promise<unknown> {
-  const spec = PathSpec.fromStrPath(real, mountKey(real, prefix))
-  if (registry.opStat !== null) return registry.opStat(owner, spec)
-  return owner.vfs.stat?.(spec, owner.index)
 }
 
 function withTrailingSlash(spec: PathSpec): PathSpec {
@@ -479,7 +458,7 @@ export async function resolveGlobs(
       const linked = !midPath && listingDir(links, directory) !== directory
       const extra =
         midPath || linked ? [] : namespaceChildren(registry, links, directory, item.pattern)
-      if (!linked && mount.vfs.glob === undefined && extra.length === 0) {
+      if (!linked && !mount.hasOp('glob') && extra.length === 0) {
         result.push(item)
         continue
       }

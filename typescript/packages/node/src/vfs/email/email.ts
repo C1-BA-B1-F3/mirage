@@ -12,13 +12,11 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import { BoundVFS } from '@struktoai/mirage-core/vfs/bound'
-import { EMAIL_IO } from '../../commands/builtin/email/io.ts'
+import { BaseVFS } from '@struktoai/mirage-core/vfs/base'
 
 import type { RegisteredCommand } from '@struktoai/mirage-core/commands/config'
 import type { RegisteredOp } from '@struktoai/mirage-core/ops/registry'
 
-import type { VFS } from '@struktoai/mirage-core/vfs/base'
 import { VFSName } from '@struktoai/mirage-core/types'
 
 import { EmailAccessor } from '../../accessor/email.ts'
@@ -37,21 +35,21 @@ export interface EmailVFSState {
   config: EmailConfigRedacted
 }
 
-export class EmailVFS extends BoundVFS<EmailAccessor> implements VFS {
-  readonly kind: string = VFSName.EMAIL
-  readonly cachesReads: boolean = true
+export class EmailVFS extends BaseVFS {
+  override readonly name: string = VFSName.EMAIL
+  override readonly cachesReads: boolean = true
   // Every listed file carries an exact size: .email.json is rendered at
   // readdir from the full message source the listing already fetches, and an
   // attachment's size is its decoded payload length.
-  readonly sizesAlwaysKnown: boolean = true
+  override readonly sizesAlwaysKnown: boolean = true
   override readonly indexTtl: number = 86_400
-  readonly prompt: string = EMAIL_PROMPT
-  readonly writePrompt: string = EMAIL_WRITE_PROMPT
+  override readonly prompt: string = EMAIL_PROMPT
+  override readonly writePrompt: string = EMAIL_WRITE_PROMPT
   readonly config: EmailConfig
-  readonly accessor: EmailAccessor
+  override readonly accessor: EmailAccessor
 
   constructor(config: EmailConfig) {
-    super(EMAIL_IO)
+    super()
     this.config = config
     this.accessor = new EmailAccessor(config)
   }
@@ -61,17 +59,17 @@ export class EmailVFS extends BoundVFS<EmailAccessor> implements VFS {
     await super.close()
   }
 
-  commands(): readonly RegisteredCommand[] {
+  override commands(): readonly RegisteredCommand[] {
     return EMAIL_COMMANDS
   }
 
-  ops(): readonly RegisteredOp[] {
+  override ops(): readonly RegisteredOp[] {
     return EMAIL_OPS
   }
 
   override getState(): Promise<EmailVFSState> {
     return Promise.resolve({
-      type: this.kind,
+      type: this.name,
       config: redactEmailConfig(this.config),
     })
   }

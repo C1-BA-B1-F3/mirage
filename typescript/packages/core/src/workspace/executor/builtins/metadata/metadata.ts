@@ -81,7 +81,7 @@ export function parseTouchStamp(t: string | null, d: string | null): string | nu
     ) {
       throw new Error(t)
     }
-    return isoNoMs(dt)
+    return isoformat(dt)
   }
   if (d !== null) {
     let normalized = d.replace('Z', '+00:00').replace(' ', 'T')
@@ -89,17 +89,22 @@ export function parseTouchStamp(t: string | null, d: string | null): string | nu
     const hasZone = /[+-]\d{2}:\d{2}$/.test(normalized)
     const dt = new Date(hasZone ? normalized : normalized + '+00:00')
     if (Number.isNaN(dt.getTime())) throw new Error(d)
-    return isoNoMs(dt)
+    return isoformat(dt)
   }
   return null
 }
 
-function isoNoMs(dt: Date): string {
-  return dt.toISOString().replace(/\.\d{3}Z$/, '+00:00')
+// Python's `datetime.isoformat()` for a UTC instant, the spelling the Python
+// touch stores: the fraction is written only when there is one, and a Date's
+// milliseconds make its last three microsecond digits zero.
+function isoformat(dt: Date): string {
+  const ms = dt.getUTCMilliseconds()
+  const fraction = ms === 0 ? '' : `.${String(ms).padStart(3, '0')}000`
+  return `${dt.toISOString().slice(0, 19)}${fraction}+00:00`
 }
 
 export function nowIso(): string {
-  return isoNoMs(new Date())
+  return isoformat(new Date())
 }
 
 export function isReadOnlyError(err: unknown): boolean {

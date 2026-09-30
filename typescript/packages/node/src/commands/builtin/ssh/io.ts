@@ -59,6 +59,7 @@ export const SSH_IO: CommandIO<SSHAccessor> = new VFSAdapter<SSHAccessor>({
     setAttrs: sshSetAttrs,
   },
   maxGlobMatches: SCOPE_ERROR,
+  maxDuEntries: null,
   isMounted: () => true,
   local: false,
 }).toCommandIO()

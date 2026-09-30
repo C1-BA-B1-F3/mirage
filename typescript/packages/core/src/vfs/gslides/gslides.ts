@@ -12,8 +12,7 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import { BoundVFS } from '../bound.ts'
-import { GSLIDES_IO } from '../../commands/builtin/gslides/io.ts'
+import { BaseVFS } from '../base.ts'
 import { GSlidesAccessor } from '../../accessor/gslides.ts'
 
 import { GSLIDES_COMMANDS } from '../../commands/builtin/gslides/index.ts'
@@ -23,7 +22,6 @@ import { TokenManager } from '../../core/google/client.ts'
 import { GSLIDES_OPS } from '../../ops/gslides/index.ts'
 import type { RegisteredOp } from '../../ops/registry.ts'
 
-import type { VFS } from '../base.ts'
 import { GSLIDES_PROMPT, GSLIDES_WRITE_PROMPT } from './prompt.ts'
 import { VFSName } from '../../types.ts'
 
@@ -34,35 +32,35 @@ export interface GSlidesVFSState {
   config: GSlidesConfigRedacted
 }
 
-export class GSlidesVFS extends BoundVFS<GSlidesAccessor> implements VFS {
-  readonly kind: string = VFSName.GSLIDES
-  readonly cachesReads: boolean = true
+export class GSlidesVFS extends BaseVFS {
+  override readonly name: string = VFSName.GSLIDES
+  override readonly cachesReads: boolean = true
   override readonly indexTtl: number = 86_400
   // Reads stamp listing metadata; a fresh stat checks Drive by file ID.
-  readonly readRevalidatable: boolean = true
-  readonly prompt: string = GSLIDES_PROMPT
-  readonly writePrompt: string = GSLIDES_WRITE_PROMPT
+  override readonly readRevalidatable: boolean = true
+  override readonly prompt: string = GSLIDES_PROMPT
+  override readonly writePrompt: string = GSLIDES_WRITE_PROMPT
   readonly config: GSlidesConfig
-  readonly accessor: GSlidesAccessor
+  override readonly accessor: GSlidesAccessor
 
   constructor(config: GSlidesConfig) {
-    super(GSLIDES_IO)
+    super()
     this.config = config
     const tm = new TokenManager(config)
     this.accessor = new GSlidesAccessor({ tokenManager: tm })
   }
 
-  commands(): readonly RegisteredCommand[] {
+  override commands(): readonly RegisteredCommand[] {
     return GSLIDES_COMMANDS
   }
 
-  ops(): readonly RegisteredOp[] {
+  override ops(): readonly RegisteredOp[] {
     return GSLIDES_OPS
   }
 
   override getState(): Promise<GSlidesVFSState> {
     return Promise.resolve({
-      type: this.kind,
+      type: this.name,
       config: redactGSlidesConfig(this.config),
     })
   }

@@ -22,7 +22,7 @@ import {
   PathSpec,
   ReadPolicy,
 } from '@struktoai/mirage-core/types'
-import type { VFS } from '@struktoai/mirage-core/vfs/base'
+import type { BaseVFS } from '@struktoai/mirage-core/vfs/base'
 import { RAMVFS } from '@struktoai/mirage-core/vfs/ram/ram'
 import { Mount } from '@struktoai/mirage-core/workspace/mount/spec'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -51,11 +51,11 @@ async function graphOf(data: Uint8Array, childrenAllowed = 0): Promise<FakeGraph
   return serveGraph(graph)
 }
 
-function vfsOf(graph: FakeGraph): Promise<VFS> {
+function vfsOf(graph: FakeGraph): Promise<BaseVFS> {
   return buildVfs('onedrive', { access_token: 't', graph_base_url: graph.url })
 }
 
-function ws(vfs: VFS): Workspace {
+function ws(vfs: BaseVFS): Workspace {
   return new Workspace({
     '/m': new Mount(vfs, {
       mode: MountMode.WRITE,
@@ -182,9 +182,6 @@ describe('onedrive under read: fresh', () => {
       const mount = w.mount('/m')
       const accessor = mount.vfs.accessor
       const index = mount.index
-      if (accessor === undefined || index === undefined) {
-        throw new Error('a Graph mount has an accessor and an index')
-      }
       const items = graph.count('item')
       const listed = (await w.opsRegistry.call(
         'stat',

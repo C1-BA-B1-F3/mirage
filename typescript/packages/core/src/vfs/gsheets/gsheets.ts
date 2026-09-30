@@ -12,8 +12,7 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import { BoundVFS } from '../bound.ts'
-import { GSHEETS_IO } from '../../commands/builtin/gsheets/io.ts'
+import { BaseVFS } from '../base.ts'
 import { GSheetsAccessor } from '../../accessor/gsheets.ts'
 
 import { GSHEETS_COMMANDS } from '../../commands/builtin/gsheets/index.ts'
@@ -23,7 +22,6 @@ import { TokenManager } from '../../core/google/client.ts'
 import { GSHEETS_OPS } from '../../ops/gsheets/index.ts'
 import type { RegisteredOp } from '../../ops/registry.ts'
 
-import type { VFS } from '../base.ts'
 import { GSHEETS_PROMPT, GSHEETS_WRITE_PROMPT } from './prompt.ts'
 import { VFSName } from '../../types.ts'
 
@@ -34,35 +32,35 @@ export interface GSheetsVFSState {
   config: GSheetsConfigRedacted
 }
 
-export class GSheetsVFS extends BoundVFS<GSheetsAccessor> implements VFS {
-  readonly kind: string = VFSName.GSHEETS
-  readonly cachesReads: boolean = true
+export class GSheetsVFS extends BaseVFS {
+  override readonly name: string = VFSName.GSHEETS
+  override readonly cachesReads: boolean = true
   override readonly indexTtl: number = 86_400
   // Reads stamp listing metadata; a fresh stat checks Drive by file ID.
-  readonly readRevalidatable: boolean = true
-  readonly prompt: string = GSHEETS_PROMPT
-  readonly writePrompt: string = GSHEETS_WRITE_PROMPT
+  override readonly readRevalidatable: boolean = true
+  override readonly prompt: string = GSHEETS_PROMPT
+  override readonly writePrompt: string = GSHEETS_WRITE_PROMPT
   readonly config: GSheetsConfig
-  readonly accessor: GSheetsAccessor
+  override readonly accessor: GSheetsAccessor
 
   constructor(config: GSheetsConfig) {
-    super(GSHEETS_IO)
+    super()
     this.config = config
     const tm = new TokenManager(config)
     this.accessor = new GSheetsAccessor({ tokenManager: tm })
   }
 
-  commands(): readonly RegisteredCommand[] {
+  override commands(): readonly RegisteredCommand[] {
     return GSHEETS_COMMANDS
   }
 
-  ops(): readonly RegisteredOp[] {
+  override ops(): readonly RegisteredOp[] {
     return GSHEETS_OPS
   }
 
   override getState(): Promise<GSheetsVFSState> {
     return Promise.resolve({
-      type: this.kind,
+      type: this.name,
       config: redactGSheetsConfig(this.config),
     })
   }

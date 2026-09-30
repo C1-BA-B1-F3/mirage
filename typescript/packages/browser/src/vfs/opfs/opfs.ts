@@ -12,25 +12,17 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import { BoundVFS } from '@struktoai/mirage-core/vfs/bound'
-import { OPFS_IO } from '../../commands/builtin/opfs/io.ts'
-
 import type { RegisteredCommand } from '@struktoai/mirage-core/commands/config'
 import type { RegisteredOp } from '@struktoai/mirage-core/ops/registry'
-
-import type { FindOptions, VFS } from '@struktoai/mirage-core/vfs/base'
+import { BaseVFS } from '@struktoai/mirage-core/vfs/base'
 import { VFSName } from '@struktoai/mirage-core/types'
-import type { PathSpec } from '@struktoai/mirage-core/types'
 import { lstripSlash } from '@struktoai/mirage-core/utils/slash'
 import { compareCodePoints } from '@struktoai/mirage-core/utils/sort'
 import { OPFSAccessor } from '../../accessor/opfs.ts'
 import { OPFS_COMMANDS } from '../../commands/builtin/opfs/index.ts'
-
 import { iterEntries, toWritableChunk } from '../../core/opfs/utils.ts'
-
 import { OPFS_OPS } from '../../ops/opfs/index.ts'
 import { OPFS_PROMPT } from './prompt.ts'
-
 export interface OPFSVFSOptions {
   root?: string
 }
@@ -85,51 +77,22 @@ async function splitAndCreate(
   return handle
 }
 
-export class OPFSVFS extends BoundVFS<OPFSAccessor> implements VFS {
-  declare writeFile: (p: PathSpec, data: Uint8Array) => Promise<void>
-
-  declare appendFile: (p: PathSpec, data: Uint8Array) => Promise<void>
-
-  declare exists: (p: PathSpec) => Promise<boolean>
-
-  declare mkdir: (p: PathSpec, options?: { recursive?: boolean }) => Promise<void>
-
-  declare rmdir: (p: PathSpec) => Promise<void>
-
-  declare unlink: (p: PathSpec) => Promise<void>
-
-  declare rename: (src: PathSpec, dst: PathSpec) => Promise<void>
-
-  declare truncate: (p: PathSpec, length: number) => Promise<void>
-
-  declare copy: (src: PathSpec, dst: PathSpec) => Promise<void>
-
-  declare rmR: (p: PathSpec) => Promise<void>
-
-  declare du: (p: PathSpec) => Promise<number>
-
-  declare find: (p: PathSpec, options?: FindOptions) => Promise<string[]>
-
-  readonly kind = VFSName.OPFS
+export class OPFSVFS extends BaseVFS {
+  override readonly name = VFSName.OPFS
   // OPFS is a real filesystem: getFile().size is the exact byte count a
   // read returns.
-  readonly sizesAlwaysKnown: boolean = true
-  readonly prompt = OPFS_PROMPT
+  override readonly sizesAlwaysKnown: boolean = true
+  override readonly prompt = OPFS_PROMPT
   readonly rootName: string
-  readonly accessor: OPFSAccessor
+  override readonly accessor: OPFSAccessor
   private rootHandle: FileSystemDirectoryHandle | null = null
   private openPromise: Promise<FileSystemDirectoryHandle> | null = null
 
   constructor(options: OPFSVFSOptions = {}) {
-    super(OPFS_IO)
+    super()
     this.rootName = options.root ?? ''
     this.accessor = new OPFSAccessor(this)
   }
-
-  override open(): Promise<void> {
-    return this.ensureOpen().then(() => undefined)
-  }
-
   override async close(): Promise<void> {
     this.rootHandle = null
     this.openPromise = null
@@ -138,10 +101,10 @@ export class OPFSVFS extends BoundVFS<OPFSAccessor> implements VFS {
 
   /**
    * Lazily resolve to a usable root handle. Memoizes `navigator.storage`
-   * traversal so the VFS self-initializes on first method call without
-   * relying on an external orchestrator.
+   * traversal so the VFS self-initializes on the first op, the way the
+   * node redis store connects on its first command.
    */
-  private ensureOpen(): Promise<FileSystemDirectoryHandle> {
+  root(): Promise<FileSystemDirectoryHandle> {
     if (this.rootHandle !== null) return Promise.resolve(this.rootHandle)
     this.openPromise ??= (async () => {
       const origin = await navigator.storage.getDirectory()
@@ -156,37 +119,29 @@ export class OPFSVFS extends BoundVFS<OPFSAccessor> implements VFS {
     return this.openPromise
   }
 
-  requireHandle(): FileSystemDirectoryHandle {
-    if (this.rootHandle === null) {
-      throw new Error('OPFSVFS is not open — call open() first')
-    }
-    return this.rootHandle
-  }
-
-  ops(): readonly RegisteredOp[] {
+  override ops(): readonly RegisteredOp[] {
     return OPFS_OPS
   }
 
-  commands(): readonly RegisteredCommand[] {
+  override commands(): readonly RegisteredCommand[] {
     return OPFS_COMMANDS
   }
-
   override async getState(): Promise<OPFSVFSState> {
-    const handle = await this.ensureOpen()
+    const handle = await this.root()
     const files: Record<string, Uint8Array> = {}
     await walkFiles(handle, '', files)
     const dirs: string[] = []
     await walkDirs(handle, '', dirs)
     dirs.sort(compareCodePoints)
     return {
-      type: this.kind,
+      type: this.name,
       files,
       dirs,
     }
   }
 
   override async loadState(state: OPFSVFSState): Promise<void> {
-    const handle = await this.ensureOpen()
+    const handle = await this.root()
     for (const dir of state.dirs) {
       const rel = lstripSlash(dir)
       if (rel === '') continue

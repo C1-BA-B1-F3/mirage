@@ -28,6 +28,7 @@ OPTIONAL_FILETYPE_DEPS = {}
 
 OPS_INVENTORY = {
     "chroma": [
+        ("glob", "chroma", "", False),
         ("grep", "chroma", "", False),
         ("read", "chroma", "", False),
         ("readdir", "chroma", "", False),
@@ -37,6 +38,7 @@ OPS_INVENTORY = {
     "databricks_volume": [
         ("append", "databricks_volume", "", True),
         ("create", "databricks_volume", "", True),
+        ("glob", "databricks_volume", "", False),
         ("mkdir", "databricks_volume", "", True),
         ("read", "databricks_volume", "", False),
         ("readdir", "databricks_volume", "", False),
@@ -47,6 +49,7 @@ OPS_INVENTORY = {
         ("write", "databricks_volume", "", True),
     ],
     "dify": [
+        ("glob", "dify", "", False),
         ("grep", "dify", "", False),
         ("read", "dify", "", False),
         ("readdir", "dify", "", False),
@@ -54,6 +57,7 @@ OPS_INVENTORY = {
         ("stat", "dify", "", False),
     ],
     "discord": [
+        ("glob", "discord", "", False),
         ("read", "discord", "", False),
         ("readdir", "discord", "", False),
         ("stat", "discord", "", False),
@@ -61,6 +65,7 @@ OPS_INVENTORY = {
     "disk": [
         ("append", "disk", "", True),
         ("create", "disk", "", True),
+        ("glob", "disk", "", False),
         ("mkdir", "disk", "", True),
         ("read", "disk", "", False),
         ("readdir", "disk", "", False),
@@ -75,6 +80,7 @@ OPS_INVENTORY = {
     "dropbox": [
         ("append", "dropbox", "", True),
         ("create", "dropbox", "", True),
+        ("glob", "dropbox", "", False),
         ("mkdir", "dropbox", "", True),
         ("read", "dropbox", "", False),
         ("readdir", "dropbox", "", False),
@@ -86,11 +92,13 @@ OPS_INVENTORY = {
         ("write", "dropbox", "", True),
     ],
     "email": [
+        ("glob", "email", "", False),
         ("read", "email", "", False),
         ("readdir", "email", "", False),
         ("stat", "email", "", False),
     ],
     "gdocs": [
+        ("glob", "gdocs", "", False),
         ("read", "gdocs", ".gdoc.json", False),
         ("read", "gdrive", ".gdoc.json", False),
         ("readdir", "gdocs", "", False),
@@ -99,6 +107,7 @@ OPS_INVENTORY = {
     "gdrive": [
         ("append", "gdrive", "", True),
         ("create", "gdrive", "", True),
+        ("glob", "gdrive", "", False),
         ("mkdir", "gdrive", "", True),
         ("read", "gdrive", "", False),
         ("readdir", "gdrive", "", False),
@@ -110,22 +119,26 @@ OPS_INVENTORY = {
         ("write", "gdrive", "", True),
     ],
     "github": [
+        ("glob", "github", "", False),
         ("read", "github", "", False),
         ("readdir", "github", "", False),
         ("stat", "github", "", False),
     ],
     "gmail": [
+        ("glob", "gmail", "", False),
         ("read", "gmail", "", False),
         ("readdir", "gmail", "", False),
         ("stat", "gmail", "", False),
     ],
     "gsheets": [
+        ("glob", "gsheets", "", False),
         ("read", "gdrive", ".gsheet.json", False),
         ("read", "gsheets", ".gsheet.json", False),
         ("readdir", "gsheets", "", False),
         ("stat", "gsheets", "", False),
     ],
     "gslides": [
+        ("glob", "gslides", "", False),
         ("read", "gdrive", ".gslide.json", False),
         ("read", "gslides", ".gslide.json", False),
         ("readdir", "gslides", "", False),
@@ -134,6 +147,7 @@ OPS_INVENTORY = {
     "hf_buckets": [
         ("append", "hf_buckets", "", True),
         ("create", "hf_buckets", "", True),
+        ("glob", "hf_buckets", "", False),
         ("mkdir", "hf_buckets", "", True),
         ("read", "hf_buckets", "", False),
         ("readdir", "hf_buckets", "", False),
@@ -142,26 +156,31 @@ OPS_INVENTORY = {
         ("write", "hf_buckets", "", True),
     ],
     "history": [
+        ("glob", "history", "", False),
         ("read", "history", "", False),
         ("readdir", "history", "", False),
         ("stat", "history", "", False),
     ],
     "lancedb": [
+        ("glob", "lancedb", "", False),
         ("read", "lancedb", "", False),
         ("readdir", "lancedb", "", False),
         ("stat", "lancedb", "", False),
     ],
     "langfuse": [
+        ("glob", "langfuse", "", False),
         ("read", "langfuse", "", False),
         ("readdir", "langfuse", "", False),
         ("stat", "langfuse", "", False),
     ],
     "linear": [
+        ("glob", "linear", "", False),
         ("read", "linear", "", False),
         ("readdir", "linear", "", False),
         ("stat", "linear", "", False),
     ],
     "mongodb": [
+        ("glob", "mongodb", "", False),
         ("read", "mongodb", "", False),
         ("readdir", "mongodb", "", False),
         ("stat", "mongodb", "", False),
@@ -169,6 +188,7 @@ OPS_INVENTORY = {
     "nextcloud": [
         ("append", "nextcloud", "", True),
         ("create", "nextcloud", "", True),
+        ("glob", "nextcloud", "", False),
         ("mkdir", "nextcloud", "", True),
         ("read", "nextcloud", "", False),
         ("readdir", "nextcloud", "", False),
@@ -180,6 +200,7 @@ OPS_INVENTORY = {
         ("write", "nextcloud", "", True),
     ],
     "notion": [
+        ("glob", "notion", "", False),
         ("read", "notion", "", False),
         ("readdir", "notion", "", False),
         ("stat", "notion", "", False),
@@ -187,6 +208,7 @@ OPS_INVENTORY = {
     "onedrive": [
         ("append", "onedrive", "", True),
         ("create", "onedrive", "", True),
+        ("glob", "onedrive", "", False),
         ("mkdir", "onedrive", "", True),
         ("read", "onedrive", "", False),
         ("readdir", "onedrive", "", False),
@@ -198,11 +220,13 @@ OPS_INVENTORY = {
         ("write", "onedrive", "", True),
     ],
     "postgres": [
+        ("glob", "postgres", "", False),
         ("read", "postgres", "", False),
         ("readdir", "postgres", "", False),
         ("stat", "postgres", "", False),
     ],
     "qdrant": [
+        ("glob", "qdrant", "", False),
         ("read", "qdrant", "", False),
         ("readdir", "qdrant", "", False),
         ("stat", "qdrant", "", False),
@@ -210,6 +234,7 @@ OPS_INVENTORY = {
     "ram": [
         ("append", "ram", "", True),
         ("create", "ram", "", True),
+        ("glob", "ram", "", False),
         ("mkdir", "ram", "", True),
         ("read", "ram", "", False),
         ("readdir", "ram", "", False),
@@ -224,6 +249,7 @@ OPS_INVENTORY = {
     "redis": [
         ("append", "redis", "", True),
         ("create", "redis", "", True),
+        ("glob", "redis", "", False),
         ("mkdir", "redis", "", True),
         ("read", "redis", "", False),
         ("readdir", "redis", "", False),
@@ -238,6 +264,7 @@ OPS_INVENTORY = {
     "s3": [
         ("append", "s3", "", True),
         ("create", "s3", "", True),
+        ("glob", "s3", "", False),
         ("mkdir", "s3", "", True),
         ("read", "s3", "", False),
         ("readdir", "s3", "", False),
@@ -251,6 +278,7 @@ OPS_INVENTORY = {
     "sharepoint": [
         ("append", "sharepoint", "", True),
         ("create", "sharepoint", "", True),
+        ("glob", "sharepoint", "", False),
         ("mkdir", "sharepoint", "", True),
         ("read", "sharepoint", "", False),
         ("readdir", "sharepoint", "", False),
@@ -262,6 +290,7 @@ OPS_INVENTORY = {
         ("write", "sharepoint", "", True),
     ],
     "slack": [
+        ("glob", "slack", "", False),
         ("read", "slack", "", False),
         ("readdir", "slack", "", False),
         ("stat", "slack", "", False),
@@ -269,6 +298,7 @@ OPS_INVENTORY = {
     "ssh": [
         ("append", "ssh", "", True),
         ("create", "ssh", "", True),
+        ("glob", "ssh", "", False),
         ("mkdir", "ssh", "", True),
         ("read", "ssh", "", False),
         ("readdir", "ssh", "", False),
@@ -281,6 +311,7 @@ OPS_INVENTORY = {
         ("write", "ssh", "", True),
     ],
     "trello": [
+        ("glob", "trello", "", False),
         ("read", "trello", "", False),
         ("readdir", "trello", "", False),
         ("stat", "trello", "", False),

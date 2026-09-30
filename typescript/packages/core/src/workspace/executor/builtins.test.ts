@@ -66,13 +66,10 @@ import { parseDuration, parseSignal, signalName } from './builtins/timeout/timeo
 import { ReturnSignal } from '../../shell/errors.ts'
 
 function wireMount(mount: MountEntry): void {
-  const cmds = mount.vfs.commands?.()
-  if (cmds !== undefined) {
-    for (const cmd of cmds) {
-      if (cmd.filetype !== null) mount.register(cmd)
-      else if (cmd.vfs === null) mount.registerGeneral(cmd)
-      else mount.register(cmd)
-    }
+  for (const cmd of mount.vfs.commands()) {
+    if (cmd.filetype !== null) mount.register(cmd)
+    else if (cmd.vfs === null) mount.registerGeneral(cmd)
+    else mount.register(cmd)
   }
   for (const cmd of GENERAL_COMMANDS) {
     mount.registerGeneral(cmd)

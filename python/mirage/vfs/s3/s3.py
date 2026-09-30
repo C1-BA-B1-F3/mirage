@@ -16,38 +16,42 @@ from typing import Any
 
 from mirage.accessor.s3 import S3Accessor, S3Config
 from mirage.commands.builtin.s3 import COMMANDS as S3_COMMANDS
-from mirage.commands.builtin.s3.io import IO
+from mirage.commands.config import RegisteredCommand
+from mirage.commands.registry import registered_commands
 from mirage.core.s3.watch import build_delta_hook
+from mirage.ops.registry import RegisteredOp
 from mirage.ops.s3 import OPS as S3_OPS
 from mirage.types import VFSName
-from mirage.vfs.bound import BoundVFS
+from mirage.vfs.base import BaseVFS
 from mirage.vfs.s3.prompt import PROMPT
 from mirage.watch.base import DeltaHook
 
 
-class S3VFS(BoundVFS):
+class S3VFS(BaseVFS):
 
     accessor: S3Accessor
     name: str = VFSName.S3
     # byte store: stat() sizes every file from metadata
-    SIZES_ALWAYS_KNOWN: bool = True
+    sizes_always_known: bool = True
     caches_reads: bool = True
-    PROMPT: str = PROMPT
-    SUPPORTS_SNAPSHOT: bool = True
+    prompt: str = PROMPT
+    supports_snapshot: bool = True
     # stat and read both stamp the ETag, so the gate compares like with
     # like. Inherited by every S3AliasVFS provider.
-    READ_REVALIDATABLE: bool = True
+    read_revalidatable: bool = True
 
     def __init__(self, config: S3Config) -> None:
-        super().__init__(io=IO)
+        super().__init__()
         self.config = config
         self.accessor = S3Accessor(self.config)
-        for fn in S3_COMMANDS:
-            self.register(fn)
-        for op in S3_OPS:
-            self.register_op(op)
 
-    def storage_id(self) -> str:
+    def ops(self) -> list[RegisteredOp]:
+        return S3_OPS
+
+    def commands(self) -> list[RegisteredCommand]:
+        return registered_commands(S3_COMMANDS)
+
+    def storage_location(self) -> str:
         # Endpoint, bucket and key prefix pin the object namespace. The
         # endpoint matters because the same bucket name on two providers
         # (AWS vs MinIO vs R2) is two different stores. The prefix joins

@@ -282,7 +282,7 @@ def _capabilities() -> dict[str, dict[str, Any]]:
     once mounted is a second hand-maintained surface that drifted just as
     quietly: python kept the 600 s ``index_ttl`` default for postgres and
     mongodb where typescript pins 0, so an ``ls`` of a live schema could
-    be ten minutes stale. ``storage_id`` and ``statfs`` are reported as
+    be ten minutes stale. ``storage_location`` and ``capacity`` are reported as
     "does this class override the base" rather than by value, because the
     base answers are per-instance identity and UNKNOWN. ``has_prompt`` and
     ``has_write_prompt`` say whether the mount describes itself to an
@@ -296,13 +296,14 @@ def _capabilities() -> dict[str, dict[str, Any]]:
         out[name] = {
             "index_ttl": cls.index_ttl,
             "caches_reads": cls.caches_reads,
-            "read_revalidatable": cls.READ_REVALIDATABLE,
-            "supports_snapshot": cls.SUPPORTS_SNAPSHOT,
-            "sizes_always_known": cls.SIZES_ALWAYS_KNOWN,
-            "storage_id": cls.storage_id is not BaseVFS.storage_id,
-            "statfs": cls.statfs is not BaseVFS.statfs,
-            "has_prompt": bool(cls.PROMPT),
-            "has_write_prompt": bool(cls.WRITE_PROMPT),
+            "read_revalidatable": cls.read_revalidatable,
+            "supports_snapshot": cls.supports_snapshot,
+            "sizes_always_known": cls.sizes_always_known,
+            "storage_location": cls.storage_location
+            is not BaseVFS.storage_location,
+            "capacity": cls.capacity is not BaseVFS.capacity,
+            "has_prompt": bool(cls.prompt),
+            "has_write_prompt": bool(cls.write_prompt),
         }
     return out
 

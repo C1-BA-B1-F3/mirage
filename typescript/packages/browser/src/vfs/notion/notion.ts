@@ -12,8 +12,7 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import { BoundVFS } from '@struktoai/mirage-core/vfs/bound'
-import { NOTION_IO } from '@struktoai/mirage-core/commands/builtin/notion/io'
+import { BaseVFS } from '@struktoai/mirage-core/vfs/base'
 import { NotionAccessor } from '@struktoai/mirage-core/accessor/notion'
 
 import { NOTION_COMMANDS } from '@struktoai/mirage-core/commands/builtin/notion/index'
@@ -24,7 +23,6 @@ import type { MCPNotionTransportOptions } from '@struktoai/mirage-core/core/noti
 import { NOTION_OPS } from '@struktoai/mirage-core/ops/notion/index'
 import type { RegisteredOp } from '@struktoai/mirage-core/ops/registry'
 
-import type { VFS } from '@struktoai/mirage-core/vfs/base'
 import { NOTION_PROMPT, NOTION_WRITE_PROMPT } from '@struktoai/mirage-core/vfs/notion/prompt'
 import { VFSName } from '@struktoai/mirage-core/types'
 
@@ -35,33 +33,33 @@ export interface NotionVFSState {
   config: NotionConfigRedacted
 }
 
-export class NotionVFS extends BoundVFS<NotionAccessor> implements VFS {
-  readonly kind: string = VFSName.NOTION
-  readonly cachesReads: boolean = true
-  readonly prompt: string = NOTION_PROMPT
-  readonly writePrompt: string = NOTION_WRITE_PROMPT
+export class NotionVFS extends BaseVFS {
+  override readonly name: string = VFSName.NOTION
+  override readonly cachesReads: boolean = true
+  override readonly prompt: string = NOTION_PROMPT
+  override readonly writePrompt: string = NOTION_WRITE_PROMPT
   readonly config: NotionConfig
-  readonly accessor: NotionAccessor
+  override readonly accessor: NotionAccessor
 
   constructor(config: NotionConfig) {
-    super(NOTION_IO)
+    super()
     this.config = config
     const opts: MCPNotionTransportOptions = { authProvider: config.authProvider }
     if (config.serverUrl !== undefined) opts.serverUrl = config.serverUrl
     this.accessor = new NotionAccessor(new MCPNotionTransport(opts))
   }
 
-  commands(): readonly RegisteredCommand[] {
+  override commands(): readonly RegisteredCommand[] {
     return NOTION_COMMANDS
   }
 
-  ops(): readonly RegisteredOp[] {
+  override ops(): readonly RegisteredOp[] {
     return NOTION_OPS
   }
 
   override getState(): Promise<NotionVFSState> {
     return Promise.resolve({
-      type: this.kind,
+      type: this.name,
       config: redactNotionConfig(this.config),
     })
   }

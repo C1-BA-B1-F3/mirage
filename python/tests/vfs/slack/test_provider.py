@@ -46,4 +46,4 @@ def test_vfs_commands_registered(config):
     # ENOTSUP at the op Slack lacks, + bespoke grep/rg +
     # md5sum/sha1sum/sha384sum/sha512sum); acting on Slack moved to the
     # slack CLI
-    assert len(vfs._commands) == 71
+    assert len(vfs.commands()) == 71

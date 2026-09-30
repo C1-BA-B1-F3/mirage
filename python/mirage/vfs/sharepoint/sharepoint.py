@@ -2,16 +2,18 @@ from typing import Any
 
 from mirage.accessor.sharepoint import SharePointAccessor, SharePointConfig
 from mirage.commands.builtin.sharepoint import COMMANDS as SHAREPOINT_COMMANDS
-from mirage.commands.builtin.sharepoint.io import IO
+from mirage.commands.config import RegisteredCommand
+from mirage.commands.registry import registered_commands
 from mirage.core.sharepoint.watch import build_delta_hook
+from mirage.ops.registry import RegisteredOp
 from mirage.ops.sharepoint import OPS as SHAREPOINT_OPS
 from mirage.types import VFSName
-from mirage.vfs.bound import BoundVFS
+from mirage.vfs.base import BaseVFS
 from mirage.vfs.sharepoint.prompt import PROMPT
 from mirage.watch.base import DeltaHook
 
 
-class SharePointVFS(BoundVFS):
+class SharePointVFS(BaseVFS):
 
     accessor: SharePointAccessor
     name: str = VFSName.SHAREPOINT
@@ -19,26 +21,28 @@ class SharePointVFS(BoundVFS):
     # Graph drive items carry an exact content-length size and the site
     # and drive levels are plain directories; unlike onedrive there is
     # no aggregate-size root item.
-    SIZES_ALWAYS_KNOWN: bool = True
+    sizes_always_known: bool = True
     # An API-backed tree that changes rarely; a day-long index spares the
     # provider a full re-walk every 10 minutes. Mirrors the TypeScript
     # VFS.
     index_ttl: float = 86_400
-    PROMPT: str = PROMPT
-    SUPPORTS_SNAPSHOT: bool = True
+    prompt: str = PROMPT
+    supports_snapshot: bool = True
     # stat and every read that can fill the cache stamp the item's cTag,
     # the read taking it before the bytes, so the gate compares like with
     # like.
-    READ_REVALIDATABLE: bool = True
+    read_revalidatable: bool = True
 
     def __init__(self, config: SharePointConfig) -> None:
-        super().__init__(io=IO)
+        super().__init__()
         self.config = config
         self.accessor = SharePointAccessor(self.config)
-        for fn in SHAREPOINT_COMMANDS:
-            self.register(fn)
-        for op in SHAREPOINT_OPS:
-            self.register_op(op)
+
+    def ops(self) -> list[RegisteredOp]:
+        return SHAREPOINT_OPS
+
+    def commands(self) -> list[RegisteredCommand]:
+        return registered_commands(SHAREPOINT_COMMANDS)
 
     def delta_hook(self) -> DeltaHook:
         return build_delta_hook(self.accessor)

@@ -12,15 +12,12 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import { BoundVFS } from '@struktoai/mirage-core/vfs/bound'
-import { GRIDFS_IO } from '../../commands/builtin/gridfs/io.ts'
+import { BaseVFS } from '@struktoai/mirage-core/vfs/base'
 
 import type { RegisteredCommand } from '@struktoai/mirage-core/commands/config'
 import type { RegisteredOp } from '@struktoai/mirage-core/ops/registry'
 
-import type { FindOptions, VFS } from '@struktoai/mirage-core/vfs/base'
 import { normalizeKeyPrefix } from '@struktoai/mirage-core/vfs/s3/config'
-import type { PathSpec } from '@struktoai/mirage-core/types'
 import { VFSName } from '@struktoai/mirage-core/types'
 
 import { GridFSAccessor } from '../../accessor/gridfs.ts'
@@ -37,45 +34,21 @@ export interface GridFSVFSState {
   config: GridFSConfigRedacted
 }
 
-export class GridFSVFS extends BoundVFS<GridFSAccessor> implements VFS {
-  declare appendFile: (path: PathSpec, data: Uint8Array) => Promise<void>
-
-  declare writeFile: (p: PathSpec, data: Uint8Array) => Promise<void>
-
-  declare exists: (p: PathSpec) => Promise<boolean>
-
-  declare mkdir: (p: PathSpec) => Promise<void>
-
-  declare rmdir: (p: PathSpec) => Promise<void>
-
-  declare unlink: (p: PathSpec) => Promise<void>
-
-  declare rename: (src: PathSpec, dst: PathSpec) => Promise<void>
-
-  declare truncate: (p: PathSpec, length: number) => Promise<void>
-
-  declare copy: (src: PathSpec, dst: PathSpec) => Promise<void>
-
-  declare rmR: (p: PathSpec) => Promise<void>
-
-  declare du: (p: PathSpec) => Promise<number>
-
-  declare find: (p: PathSpec, options?: FindOptions) => Promise<string[]>
-
-  readonly kind: string = VFSName.GRIDFS
-  readonly cachesReads: boolean = true
-  readonly supportsSnapshot: boolean = true
+export class GridFSVFS extends BaseVFS {
+  override readonly name: string = VFSName.GRIDFS
+  override readonly cachesReads: boolean = true
+  override readonly supportsSnapshot: boolean = true
   // byte store: stat() sizes every file from metadata
-  readonly sizesAlwaysKnown: boolean = true
+  override readonly sizesAlwaysKnown: boolean = true
   // stat and read both stamp str(file_id), so the gate compares like
   // with like.
-  readonly readRevalidatable: boolean = true
-  readonly prompt: string = GRIDFS_PROMPT
+  override readonly readRevalidatable: boolean = true
+  override readonly prompt: string = GRIDFS_PROMPT
   readonly config: GridFSConfig
-  readonly accessor: GridFSAccessor
+  override readonly accessor: GridFSAccessor
 
   constructor(config: GridFSConfig) {
-    super(GRIDFS_IO)
+    super()
     const normalized = normalizeKeyPrefix(config.keyPrefix)
     const cfg: GridFSConfig = { ...config }
     if (normalized !== undefined) {
@@ -92,21 +65,21 @@ export class GridFSVFS extends BoundVFS<GridFSAccessor> implements VFS {
     await super.close()
   }
 
-  commands(): readonly RegisteredCommand[] {
+  override commands(): readonly RegisteredCommand[] {
     return GRIDFS_COMMANDS
   }
 
-  ops(): readonly RegisteredOp[] {
+  override ops(): readonly RegisteredOp[] {
     return GRIDFS_OPS
   }
 
-  deltaHook(): DeltaHook {
+  override deltaHook(): DeltaHook {
     return buildDeltaHook(this.accessor)
   }
 
   override getState(): Promise<GridFSVFSState> {
     return Promise.resolve({
-      type: this.kind,
+      type: this.name,
       config: redactConfig(this.config),
     })
   }

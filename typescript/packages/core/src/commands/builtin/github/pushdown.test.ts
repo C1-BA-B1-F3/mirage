@@ -297,7 +297,7 @@ describe('narrowScope over an expired listing', () => {
       gh.set('docs/c.txt', 'x')
       gh.set('newdir/d.txt', 'x')
       const index = ws.registry.mountFor('/gh/docs').index
-      await index?.invalidate()
+      await index.invalidate()
       gh.log.length = 0
       const root = new PathSpec({ virtual: '/gh', directory: '/gh', vfsPath: '', resolved: false })
       const res = await narrowScope(vfs.accessor, [root], 'x', false, true, false, index)
@@ -333,7 +333,7 @@ describe('narrowScope over an expired listing', () => {
       gh.set('docs/c.txt', 'x')
       gh.set('newdir/d.txt', 'x')
       const index = ws.registry.mountFor(prefix).index
-      await index?.invalidate()
+      await index.invalidate()
       gh.log.length = 0
       const virtual = sub === '' ? prefix : `${prefix}/${sub}`
       const scope = new PathSpec({ virtual, directory: virtual, vfsPath: sub, resolved: false })

@@ -1,6 +1,6 @@
 import asyncio
 
-from mirage import (Accessor, FileStat, FileType, GenericVFS, PathSpec,
+from mirage import (Accessor, BaseVFS, FileStat, FileType, PathSpec,
                     ReadFixture, ReadOps, VFSAdapter, Workspace,
                     check_read_contract)
 
@@ -58,10 +58,8 @@ async def main() -> None:
         content=client.files["hello.txt"],
     )
     await check_read_contract(ADAPTER, client, fixture)
-    ws = Workspace({
-        "/resource":
-        GenericVFS(name="resource", accessor=client, io=ADAPTER)
-    })
+    ws = Workspace(
+        {"/resource": BaseVFS(name="resource", accessor=client, io=ADAPTER)})
     try:
         result = await ws.shell("cat /resource/hello.txt")
         assert result.exit_code == 0

@@ -390,11 +390,11 @@ class FailingRAMVFS(RAMVFS):
     def commands(self) -> list[RegisteredCommand]:
         return self._guarded_commands
 
-    def ops_list(self) -> list[RegisteredOp]:
+    def ops(self) -> list[RegisteredOp]:
         return [
             replace(ro, fn=self._guard(ro.fn)) if ro.name in ("stat",
                                                               "read") else ro
-            for ro in super().ops_list()
+            for ro in super().ops()
         ]
 
     def _guard(

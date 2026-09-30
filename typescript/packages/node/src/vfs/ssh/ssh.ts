@@ -12,14 +12,11 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import { BoundVFS } from '@struktoai/mirage-core/vfs/bound'
-import { SSH_IO } from '../../commands/builtin/ssh/io.ts'
+import { BaseVFS } from '@struktoai/mirage-core/vfs/base'
 
 import type { RegisteredCommand } from '@struktoai/mirage-core/commands/config'
 import type { RegisteredOp } from '@struktoai/mirage-core/ops/registry'
 
-import type { FindOptions, VFS } from '@struktoai/mirage-core/vfs/base'
-import type { PathSpec } from '@struktoai/mirage-core/types'
 import { VFSName } from '@struktoai/mirage-core/types'
 
 import { SSHAccessor } from '../../accessor/ssh.ts'
@@ -36,43 +33,19 @@ export interface SSHVFSState {
   config: SSHConfigRedacted
 }
 
-export class SSHVFS extends BoundVFS<SSHAccessor> implements VFS {
-  declare writeFile: (p: PathSpec, data: Uint8Array) => Promise<void>
-
-  declare appendFile: (p: PathSpec, data: Uint8Array) => Promise<void>
-
-  declare exists: (p: PathSpec) => Promise<boolean>
-
-  declare mkdir: (p: PathSpec, options?: { recursive?: boolean }) => Promise<void>
-
-  declare rmdir: (p: PathSpec) => Promise<void>
-
-  declare unlink: (p: PathSpec) => Promise<void>
-
-  declare rename: (src: PathSpec, dst: PathSpec) => Promise<void>
-
-  declare truncate: (p: PathSpec, length: number) => Promise<void>
-
-  declare copy: (src: PathSpec, dst: PathSpec) => Promise<void>
-
-  declare rmR: (p: PathSpec) => Promise<void>
-
-  declare du: (p: PathSpec) => Promise<number>
-
-  declare find: (p: PathSpec, options?: FindOptions) => Promise<string[]>
-
-  readonly kind = VFSName.SSH
-  readonly cachesReads: boolean = true
+export class SSHVFS extends BaseVFS {
+  override readonly name = VFSName.SSH
+  override readonly cachesReads: boolean = true
   // SFTP stat/readdir report the remote inode's exact byte size for every
   // file; reads are the same raw bytes.
-  readonly sizesAlwaysKnown: boolean = true
+  override readonly sizesAlwaysKnown: boolean = true
   override readonly indexTtl: number = 60
-  readonly prompt = SSH_PROMPT
+  override readonly prompt = SSH_PROMPT
   readonly config: SSHConfig
-  readonly accessor: SSHAccessor
+  override readonly accessor: SSHAccessor
 
   constructor(config: SSHConfig) {
-    super(SSH_IO)
+    super()
     this.config = config
     this.accessor = new SSHAccessor(config)
   }
@@ -82,22 +55,22 @@ export class SSHVFS extends BoundVFS<SSHAccessor> implements VFS {
     await super.close()
   }
 
-  ops(): readonly RegisteredOp[] {
+  override ops(): readonly RegisteredOp[] {
     return SSH_OPS
   }
 
-  commands(): readonly RegisteredCommand[] {
+  override commands(): readonly RegisteredCommand[] {
     return SSH_COMMANDS
   }
 
-  deltaHook(): DeltaHook {
+  override deltaHook(): DeltaHook {
     return buildDeltaHook(this.accessor)
   }
 
   // eslint-disable-next-line @typescript-eslint/require-await
   override async getState(): Promise<SSHVFSState> {
     return {
-      type: this.kind,
+      type: this.name,
       config: redactSshConfig(this.config),
     }
   }

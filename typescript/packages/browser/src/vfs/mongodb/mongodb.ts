@@ -12,8 +12,7 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import { BoundVFS } from '@struktoai/mirage-core/vfs/bound'
-import { MONGODB_IO } from '@struktoai/mirage-core/commands/builtin/mongodb/io'
+import { BaseVFS } from '@struktoai/mirage-core/vfs/base'
 import { MongoDBAccessor } from '@struktoai/mirage-core/accessor/mongodb'
 
 import { MONGODB_COMMANDS } from '@struktoai/mirage-core/commands/builtin/mongodb/index'
@@ -23,7 +22,6 @@ import type { MongoDriver } from '@struktoai/mirage-core/core/mongodb/_driver'
 import { MONGODB_OPS } from '@struktoai/mirage-core/ops/mongodb/index'
 import type { RegisteredOp } from '@struktoai/mirage-core/ops/registry'
 
-import type { VFS } from '@struktoai/mirage-core/vfs/base'
 import {
   redactMongoDBConfig,
   resolveMongoDBConfig,
@@ -51,17 +49,17 @@ export interface MongoDBVFSState {
   needs_override: true
 }
 
-export class MongoDBVFS extends BoundVFS<MongoDBAccessor> implements VFS {
-  readonly kind: string = VFSName.MONGODB
-  readonly cachesReads: boolean = false
+export class MongoDBVFS extends BaseVFS {
+  override readonly name: string = VFSName.MONGODB
+  override readonly cachesReads: boolean = false
   override readonly indexTtl: number = 0
-  readonly prompt: string
+  override readonly prompt: string
   readonly config: MongoDBConfigResolved
   readonly driver: MongoDriver
-  readonly accessor: MongoDBAccessor
+  override readonly accessor: MongoDBAccessor
 
   constructor(options: MongoDBVFSOptions | MongoDBConfig) {
-    super(MONGODB_IO)
+    super()
     const { config, prefix, driver, endpoint } =
       'config' in options
         ? options
@@ -74,7 +72,7 @@ export class MongoDBVFS extends BoundVFS<MongoDBAccessor> implements VFS {
 
   override getState(): MongoDBVFSState {
     return {
-      type: this.kind,
+      type: this.name,
       config: redactMongoDBConfig(this.config),
       // TypeScript cannot rebuild a config-backed mount from state:
       // `buildMountArgs` substitutes a RAMVFS for anything it was
@@ -90,11 +88,11 @@ export class MongoDBVFS extends BoundVFS<MongoDBAccessor> implements VFS {
     await super.close()
   }
 
-  ops(): readonly RegisteredOp[] {
+  override ops(): readonly RegisteredOp[] {
     return MONGODB_OPS
   }
 
-  commands(): readonly RegisteredCommand[] {
+  override commands(): readonly RegisteredCommand[] {
     return MONGODB_COMMANDS
   }
 }

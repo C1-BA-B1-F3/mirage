@@ -16,16 +16,18 @@ from typing import Any
 
 from mirage.accessor.gslides import GSlidesAccessor
 from mirage.commands.builtin.gslides import COMMANDS
-from mirage.commands.builtin.gslides.io import IO
+from mirage.commands.config import RegisteredCommand
+from mirage.commands.registry import registered_commands
 from mirage.core.google.client import TokenManager
 from mirage.ops.gslides import OPS as GSLIDES_VFS_OPS
+from mirage.ops.registry import RegisteredOp
 from mirage.types import VFSName
-from mirage.vfs.bound import BoundVFS
+from mirage.vfs.base import BaseVFS
 from mirage.vfs.gslides.config import GSlidesConfig
 from mirage.vfs.gslides.prompt import PROMPT, WRITE_PROMPT
 
 
-class GSlidesVFS(BoundVFS):
+class GSlidesVFS(BaseVFS):
 
     accessor: GSlidesAccessor
     name: str = VFSName.GSLIDES
@@ -35,20 +37,21 @@ class GSlidesVFS(BoundVFS):
     # VFS.
     index_ttl: float = 86_400
     # Reads stamp listing metadata; a fresh stat checks Drive by file ID.
-    READ_REVALIDATABLE: bool = True
-    PROMPT: str = PROMPT
-    WRITE_PROMPT: str = WRITE_PROMPT
+    read_revalidatable: bool = True
+    prompt: str = PROMPT
+    write_prompt: str = WRITE_PROMPT
 
     def __init__(self, config: GSlidesConfig) -> None:
-        super().__init__(io=IO)
+        super().__init__()
         self.config = config
         self._token_manager = TokenManager(config)
         self.accessor = GSlidesAccessor(self.config, self._token_manager)
 
-        for fn in COMMANDS:
-            self.register(fn)
-        for fn in GSLIDES_VFS_OPS:
-            self.register_op(fn)
+    def ops(self) -> list[RegisteredOp]:
+        return GSLIDES_VFS_OPS
+
+    def commands(self) -> list[RegisteredCommand]:
+        return registered_commands(COMMANDS)
 
     async def close(self) -> None:
         """Drain the token manager's connection pool with the VFS."""

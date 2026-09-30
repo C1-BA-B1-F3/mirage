@@ -4,7 +4,7 @@ from unittest.mock import AsyncMock
 import pytest
 import pytest_asyncio
 
-from mirage import (GenericVFS, MountMode, NativeReadOps, PathSpec, ReadOps,
+from mirage import (BaseVFS, MountMode, NativeReadOps, PathSpec, ReadOps,
                     SearchOps, SearchQuery, SessionProfile, VFSAdapter,
                     Workspace, WriteOps)
 from mirage.accessor.ram import RAMAccessor
@@ -27,9 +27,8 @@ async def accessor():
 
 @pytest.mark.asyncio
 async def test_minimal_reads_serve_shell_streams_and_dispatch(accessor):
-    vfs = GenericVFS(name="custom",
-                     accessor=accessor,
-                     io=VFSAdapter(read=READ))
+    adapter = VFSAdapter(read=READ)
+    vfs = BaseVFS(name="custom", accessor=accessor, io=adapter)
     ws = Workspace({"/nested/data": vfs}, mode=MountMode.READ)
     try:
         for line, expected in [
@@ -44,14 +43,15 @@ async def test_minimal_reads_serve_shell_streams_and_dispatch(accessor):
         data, _ = await ws.dispatch("read", PATH, offset=1, size=3)
         assert data == b"ell"
         assert b"".join([
-            chunk async for chunk in vfs.io.read_stream(accessor, PATH)
+            chunk async for chunk in adapter.to_command_io().read_stream(
+                accessor, PATH)
         ]) == b"hello\n"
         refused = await ws.shell("rm /nested/data/a.txt")
         assert refused.exit_code == 1
         assert await refused.stderr_str() == (
             "rm: cannot remove '/nested/data/a.txt': "
             "Read-only file system\n")
-        assert "write" not in {op.name for op in vfs.ops_list()}
+        assert "write" not in {op.name for op in vfs.ops()}
     finally:
         await ws.close()
 
@@ -81,17 +81,18 @@ async def test_native_reads_do_not_enable_writes(accessor):
     adapter = VFSAdapter(read=replace(READ, read_bytes=whole_read),
                          native=NativeReadOps(read_stream=stream,
                                               read_range=native_range))
-    vfs = GenericVFS(name="custom", accessor=accessor, io=adapter)
+    vfs = BaseVFS(name="custom", accessor=accessor, io=adapter)
     ws = Workspace({"/nested/data": vfs})
     try:
         data, _ = await ws.dispatch("read", PATH, offset=1, size=3)
         assert data == b"ell"
         native_range.assert_awaited_once()
         assert b"".join([
-            chunk async for chunk in vfs.io.read_stream(accessor, PATH)
+            chunk async for chunk in adapter.to_command_io().read_stream(
+                accessor, PATH)
         ]) == b"hello\n"
         whole_read.assert_not_awaited()
-        assert "write" not in {op.name for op in vfs.ops_list()}
+        assert "write" not in {op.name for op in vfs.ops()}
     finally:
         await ws.close()
 
@@ -100,9 +101,9 @@ async def test_native_reads_do_not_enable_writes(accessor):
 @pytest.mark.parametrize("mode", [MountMode.READ, MountMode.WRITE])
 async def test_write_capability_obeys_mount_mode(accessor, mode):
     write = AsyncMock(wraps=IO.write)
-    vfs = GenericVFS(name="custom",
-                     accessor=accessor,
-                     io=VFSAdapter(read=READ, writes=WriteOps(write=write)))
+    vfs = BaseVFS(name="custom",
+                  accessor=accessor,
+                  io=VFSAdapter(read=READ, writes=WriteOps(write=write)))
     ws = Workspace({"/nested/data": vfs}, mode=mode)
     try:
         result = await ws.shell("echo changed > /nested/data/a.txt")
@@ -113,8 +114,8 @@ async def test_write_capability_obeys_mount_mode(accessor, mode):
                   if mode == MountMode.READ else "Operation not supported")
         assert await refused.stderr_str() == (
             f"rm: cannot remove '/nested/data/a.txt': {reason}\n")
-        assert "write" in {op.name for op in vfs.ops_list()}
-        assert "unlink" not in {op.name for op in vfs.ops_list()}
+        assert "write" in {op.name for op in vfs.ops()}
+        assert "unlink" not in {op.name for op in vfs.ops()}
     finally:
         await ws.close()
 
@@ -133,7 +134,7 @@ async def test_search_capability_distinguishes_decline_from_no_matches(
                                           }}))
     ws = Workspace({
         "/nested/data":
-        GenericVFS(name="custom", accessor=accessor, io=adapter)
+        BaseVFS(name="custom", accessor=accessor, io=adapter)
     })
     try:
         result = await ws.shell(f"{command} -F hello {PATH.virtual}")
@@ -173,7 +174,7 @@ async def test_search_unsupported_requests_scan_without_calling_backend(
                                           }}))
     ws = Workspace({
         "/nested/data":
-        GenericVFS(name="custom", accessor=accessor, io=adapter)
+        BaseVFS(name="custom", accessor=accessor, io=adapter)
     })
     try:
         result = await ws.shell(f"grep {flags} '{pattern}' {PATH.virtual}")
@@ -195,7 +196,7 @@ async def test_search_errors_do_not_turn_into_fallback_reads(accessor):
                                           }}))
     ws = Workspace({
         "/nested/data":
-        GenericVFS(name="custom", accessor=accessor, io=adapter)
+        BaseVFS(name="custom", accessor=accessor, io=adapter)
     })
     try:
         result = await ws.shell(f"grep hello {PATH.virtual}")
@@ -218,8 +219,8 @@ async def test_native_search_defers_when_subtree_contains_hidden_paths(
                                           }}))
     ws = Workspace(
         {
-            "/nested/data":
-            GenericVFS(name="custom", accessor=accessor, io=adapter)
+            "/nested/data": BaseVFS(
+                name="custom", accessor=accessor, io=adapter)
         },
         profiles={
             "default":
@@ -252,7 +253,7 @@ async def test_resource_search_options_are_independent_of_grep(accessor):
     search.reset_mock()
     ws = Workspace({
         "/nested/data":
-        GenericVFS(name="custom", accessor=accessor, io=adapter)
+        BaseVFS(name="custom", accessor=accessor, io=adapter)
     })
     try:
         for command in ("grep", "rg"):

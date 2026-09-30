@@ -12,8 +12,7 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import { BoundVFS } from '../bound.ts'
-import { LINEAR_IO } from '../../commands/builtin/linear/io.ts'
+import { BaseVFS } from '../base.ts'
 import { LinearAccessor } from '../../accessor/linear.ts'
 
 import { LINEAR_COMMANDS } from '../../commands/builtin/linear/index.ts'
@@ -25,7 +24,6 @@ import type { LinearConfig, LinearConfigRedacted } from '../../core/linear/confi
 import { LINEAR_OPS } from '../../ops/linear/index.ts'
 import type { RegisteredOp } from '../../ops/registry.ts'
 
-import type { VFS } from '../base.ts'
 import { LINEAR_PROMPT, LINEAR_WRITE_PROMPT } from './prompt.ts'
 import { VFSName } from '../../types.ts'
 
@@ -34,20 +32,20 @@ export interface LinearVFSState {
   config: LinearConfigRedacted
 }
 
-export class LinearVFS extends BoundVFS<LinearAccessor> implements VFS {
-  readonly kind: string = VFSName.LINEAR
-  readonly cachesReads: boolean = true
+export class LinearVFS extends BaseVFS {
+  override readonly name: string = VFSName.LINEAR
+  override readonly cachesReads: boolean = true
   // Every file is sized at its parent's readdir from the listing payload
   // (comments.jsonl via one bounded comments call), so stat always reports
   // the rendered byte length and fskit mounts serve exact reads.
-  readonly sizesAlwaysKnown: boolean = true
-  readonly prompt: string = LINEAR_PROMPT
-  readonly writePrompt: string = LINEAR_WRITE_PROMPT
+  override readonly sizesAlwaysKnown: boolean = true
+  override readonly prompt: string = LINEAR_PROMPT
+  override readonly writePrompt: string = LINEAR_WRITE_PROMPT
   readonly config: LinearConfig
-  readonly accessor: LinearAccessor
+  override readonly accessor: LinearAccessor
 
   constructor(config: LinearConfig) {
-    super(LINEAR_IO)
+    super()
     this.config = config
     const transportOpts: { apiKey: string; baseUrl?: string } = { apiKey: config.apiKey }
     if (config.baseUrl !== undefined) transportOpts.baseUrl = config.baseUrl
@@ -56,17 +54,17 @@ export class LinearVFS extends BoundVFS<LinearAccessor> implements VFS {
     this.accessor = new LinearAccessor(new HttpLinearTransport(transportOpts), accessorOpts)
   }
 
-  commands(): readonly RegisteredCommand[] {
+  override commands(): readonly RegisteredCommand[] {
     return LINEAR_COMMANDS
   }
 
-  ops(): readonly RegisteredOp[] {
+  override ops(): readonly RegisteredOp[] {
     return LINEAR_OPS
   }
 
   override getState(): Promise<LinearVFSState> {
     return Promise.resolve({
-      type: this.kind,
+      type: this.name,
       config: redactLinearConfig(this.config),
     })
   }

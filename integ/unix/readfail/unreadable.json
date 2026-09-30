@@ -1,0 +1,153 @@
+{
+  "cases": [
+    {
+      "id": "readfail_unreadable_prep",
+      "seq": 1301069,
+      "targets": [
+        "ssh"
+      ],
+      "command": "mkdir -p /data/rfu/a /data/rfu/unlistable && echo x > /data/rfu/a/f && echo y > /data/rfu/unlistable/s",
+      "expect": {
+        "exit": 0,
+        "stdout": "",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "readfail_unreadable_find_walks_on",
+      "seq": 1301070,
+      "targets": [
+        "ssh"
+      ],
+      "command": "find /data/rfu",
+      "expect": {
+        "exit": 1,
+        "stdout": "/data/rfu\n/data/rfu/a\n/data/rfu/a/f\n/data/rfu/unlistable\n",
+        "stderr": "find: '/data/rfu/unlistable': Permission denied\n"
+      },
+      "note": "GNU find (findutils 4.10) lists the directory it may not open, names it, walks the rest and exits 1; the start point is never blamed."
+    },
+    {
+      "id": "readfail_unreadable_find_type_f",
+      "seq": 1301071,
+      "targets": [
+        "ssh"
+      ],
+      "command": "find /data/rfu -type f",
+      "expect": {
+        "exit": 1,
+        "stdout": "/data/rfu/a/f\n",
+        "stderr": "find: '/data/rfu/unlistable': Permission denied\n"
+      }
+    },
+    {
+      "id": "readfail_unreadable_find_maxdepth_never_opens",
+      "seq": 1301072,
+      "targets": [
+        "ssh"
+      ],
+      "command": "find /data/rfu -maxdepth 1",
+      "expect": {
+        "exit": 0,
+        "stdout": "/data/rfu\n/data/rfu/a\n/data/rfu/unlistable\n",
+        "stderr": ""
+      },
+      "note": "A directory at the depth limit has no row left to print, so GNU never opens it and exits 0."
+    },
+    {
+      "id": "readfail_unreadable_find_start_point",
+      "seq": 1301073,
+      "targets": [
+        "ssh"
+      ],
+      "command": "find /data/rfu/unlistable",
+      "expect": {
+        "exit": 1,
+        "stdout": "/data/rfu/unlistable\n",
+        "stderr": "find: '/data/rfu/unlistable': Permission denied\n"
+      }
+    },
+    {
+      "id": "readfail_unreadable_find_redirect_keeps_line",
+      "seq": 1301074,
+      "targets": [
+        "ssh"
+      ],
+      "command": "echo before; find /data/rfu -type f 2>/dev/null; echo after=$?",
+      "expect": {
+        "exit": 0,
+        "stdout": "before\n/data/rfu/a/f\nafter=1\n",
+        "stderr": ""
+      },
+      "note": "The refusal is find's own stderr, so the redirection hides it and the rest of the line runs."
+    },
+    {
+      "id": "readfail_unreadable_find_pipe_keeps_line",
+      "seq": 1301075,
+      "targets": [
+        "ssh"
+      ],
+      "command": "echo before; find /data/rfu -type f | head -3; echo after=$?",
+      "expect": {
+        "exit": 0,
+        "stdout": "before\n/data/rfu/a/f\nafter=0\n",
+        "stderr": "find: '/data/rfu/unlistable': Permission denied\n"
+      }
+    },
+    {
+      "id": "readfail_unreadable_find_across_mounts",
+      "seq": 1301076,
+      "targets": [
+        "ssh"
+      ],
+      "command": "echo before; find / -name '*zzz*' 2>/dev/null; echo after=$?",
+      "expect": {
+        "exit": 0,
+        "stdout": "before\nafter=1\n",
+        "stderr": ""
+      },
+      "note": "The walk from / crosses every mount; the refusal inside one of them stays find's, so neither echo is lost."
+    },
+    {
+      "id": "readfail_unreadable_du_totals_the_rest",
+      "seq": 1301077,
+      "targets": [
+        "ssh"
+      ],
+      "command": "du -a /data/rfu",
+      "expect": {
+        "exit": 1,
+        "stdout": "2\t/data/rfu/a/f\n2\t/data/rfu/a\n0\t/data/rfu/unlistable\n2\t/data/rfu\n",
+        "stderr": "du: cannot read directory '/data/rfu/unlistable': Permission denied\n"
+      },
+      "note": "GNU du names the directory it may not open, still prints its row (0 bytes under -ab, since it could count nothing below it), totals the rest and exits 1."
+    },
+    {
+      "id": "readfail_unreadable_du_redirect_keeps_line",
+      "seq": 1301078,
+      "targets": [
+        "ssh"
+      ],
+      "command": "echo before; du -s /data/rfu 2>/dev/null; echo after=$?",
+      "expect": {
+        "exit": 0,
+        "stdout": "before\n2\t/data/rfu\nafter=1\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "readfail_unreadable_cleanup",
+      "seq": 1301079,
+      "targets": [
+        "ssh"
+      ],
+      "command": "mv /data/rfu/unlistable /data/rfu/listable && rm -rf /data/rfu && test ! -e /data/rfu && echo gone",
+      "expect": {
+        "exit": 0,
+        "stdout": "gone\n",
+        "stderr": ""
+      },
+      "note": "A rename works by path, so the directory leaves the fake's refusal before the recursive remove has to list it."
+    }
+  ]
+}

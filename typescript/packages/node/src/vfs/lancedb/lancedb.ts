@@ -12,8 +12,7 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import { BoundVFS } from '@struktoai/mirage-core/vfs/bound'
-import { LANCEDB_IO } from '@struktoai/mirage-core/commands/builtin/lancedb/io'
+import { BaseVFS } from '@struktoai/mirage-core/vfs/base'
 import { LanceDBAccessor } from '@struktoai/mirage-core/accessor/lancedb'
 import { LANCEDB_COMMANDS } from '@struktoai/mirage-core/commands/builtin/lancedb/index'
 import type { RegisteredCommand } from '@struktoai/mirage-core/commands/config'
@@ -21,7 +20,6 @@ import type { RegisteredCommand } from '@struktoai/mirage-core/commands/config'
 import { LANCEDB_OPS } from '@struktoai/mirage-core/ops/lancedb/index'
 import type { RegisteredOp } from '@struktoai/mirage-core/ops/registry'
 
-import type { VFS } from '@struktoai/mirage-core/vfs/base'
 import {
   redactLanceDBConfig,
   resolveLanceDBConfig,
@@ -48,20 +46,20 @@ export interface LanceDBVFSState {
   needs_override: true
 }
 
-export class LanceDBVFS extends BoundVFS<LanceDBAccessor> implements VFS {
-  readonly kind: string = VFSName.LANCEDB
-  readonly cachesReads: boolean
+export class LanceDBVFS extends BaseVFS {
+  override readonly name: string = VFSName.LANCEDB
+  override readonly cachesReads: boolean
   // readdir seeds exact card sizes from the widened select and stat falls
   // back to rendering the row itself, so sizes are exact either way.
-  readonly sizesAlwaysKnown: boolean = true
+  override readonly sizesAlwaysKnown: boolean = true
   override readonly indexTtl: number = 0
-  readonly prompt: string = LANCEDB_PROMPT
+  override readonly prompt: string = LANCEDB_PROMPT
   readonly config: LanceDBConfigResolved
   readonly store: LanceDBStore
-  readonly accessor: LanceDBAccessor
+  override readonly accessor: LanceDBAccessor
 
   constructor(options: LanceDBVFSOptions | LanceDBConfig) {
-    super(LANCEDB_IO)
+    super()
     const config = 'config' in options ? options.config : options
     this.config = resolveLanceDBConfig(config)
     this.cachesReads = REMOTE_SCHEMES.some((scheme) => this.config.uri.startsWith(scheme))
@@ -71,7 +69,7 @@ export class LanceDBVFS extends BoundVFS<LanceDBAccessor> implements VFS {
 
   override getState(): LanceDBVFSState {
     return {
-      type: this.kind,
+      type: this.name,
       config: redactLanceDBConfig(this.config),
       // TypeScript cannot rebuild a config-backed mount from state:
       // `buildMountArgs` substitutes a RAMVFS for anything it was
@@ -87,11 +85,11 @@ export class LanceDBVFS extends BoundVFS<LanceDBAccessor> implements VFS {
     await super.close()
   }
 
-  ops(): readonly RegisteredOp[] {
+  override ops(): readonly RegisteredOp[] {
     return LANCEDB_OPS
   }
 
-  commands(): readonly RegisteredCommand[] {
+  override commands(): readonly RegisteredCommand[] {
     return LANCEDB_COMMANDS
   }
 }

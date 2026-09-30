@@ -14,7 +14,6 @@
 
 import type { ByteSource } from '../../../io/types.ts'
 import { IOResult } from '../../../io/types.ts'
-import type { VFS } from '../../../vfs/base.ts'
 import type { PathSpec } from '../../../types.ts'
 import type { FileStat } from '../../../types.ts'
 import type { MountEntry } from '../../mount/mount.ts'
@@ -62,7 +61,6 @@ export interface RunOnMountCtx {
   session: SessionState
   dispatch: DispatchFn
   namespace?: Namespace
-  ensureOpen?: (vfs: VFS) => Promise<void>
   runtimeBindings?: Record<string, Runtime>
   routingDecision?: RouteDecision
   signal?: AbortSignal
@@ -238,7 +236,7 @@ export async function dropMountCaches(registry: MountRegistry): Promise<void> {
     // that was never filled, so a backend whose index *is* its listing
     // (github seeds the whole tree once) cannot tell the drop from an empty
     // repository. Expiring keeps that distinction and the next read refetches.
-    await mount.index?.invalidate()
+    await mount.index.invalidate()
     await mount.cacheManager?.dropPrefix()
   }
 }
@@ -261,8 +259,7 @@ export async function runOnMount(
   flagKwargs: Flags,
   opts: RunOnMountOpts = {},
 ): Promise<[ByteSource | null, IOResult]> {
-  const { registry, session, dispatch, namespace, ensureOpen, runtimeBindings, routingDecision } =
-    ctx
+  const { registry, session, dispatch, namespace, runtimeBindings, routingDecision } = ctx
   const hint = opts.resolveHint ?? null
   let mount = opts.mount ?? null
   if (mount === null) {
@@ -284,10 +281,6 @@ export async function runOnMount(
 
   let flags = flagKwargs
   if (cmdName === 'find') flags = scalarFindFlags(flags)
-
-  if (ensureOpen !== undefined) {
-    await ensureOpen(mount.vfs)
-  }
 
   // The profile, serving mount and workspace entries, in precedence order;
   // the mount folds in the command's declared default and the built-in.
@@ -323,9 +316,9 @@ export async function runOnMount(
   if (denial !== null) return [null, denial]
 
   const signal = mergeSignals(ctx.signal, session.abortSignal)
-  // A leaf that resumes here after the caller aborted (ensureOpen took
-  // longer than the grace) must not reach a mount handler: eager write
-  // handlers do not read the signal, and a cancelled `rm` must not run.
+  // A leaf that resumes here after the caller aborted must not reach a
+  // mount handler: eager write handlers do not read the signal, and a
+  // cancelled `rm` must not run.
   if (signal?.aborted === true) throw makeAbortError(signal)
   try {
     const [initialStdout, io] = await mount.executeCmd(cmdName, paths, texts, flags, {

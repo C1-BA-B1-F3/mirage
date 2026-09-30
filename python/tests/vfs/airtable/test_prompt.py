@@ -40,4 +40,4 @@ def test_write_prompt_names_the_write_verbs_and_the_help():
             rendered)
     assert "/airtable/bases/<base>/<table>/records.jsonl" in rendered
     assert rendered.rstrip().endswith("See airtable --help for every verb.")
-    assert AirtableVFS.WRITE_PROMPT == WRITE_PROMPT
+    assert AirtableVFS.write_prompt == WRITE_PROMPT

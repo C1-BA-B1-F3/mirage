@@ -16,7 +16,9 @@ import argparse
 import asyncio
 import functools
 import os
+import posixpath
 import tempfile
+from collections.abc import AsyncIterator
 
 import asyncssh
 
@@ -31,6 +33,13 @@ import asyncssh
 # interface to listen on, not an address anything can connect to.
 BIND_HOST = os.environ.get("MIRAGE_BIND_HOST", "127.0.0.1")
 
+# A directory the server's own access check refuses to list, the way
+# OpenSSH answers a non-root user opening a root-owned 0700 directory:
+# stat and writes by path still work, the listing is
+# SSH_FX_PERMISSION_DENIED. mirage's chmod keeps owner access on purpose,
+# so the battery cannot make one through the shell.
+UNLISTABLE = b"unlistable"
+
 
 class NoAuthServer(asyncssh.SSHServer):
 
@@ -42,6 +51,12 @@ class ChrootSFTPServer(asyncssh.SFTPServer):
 
     def __init__(self, root: str, chan: asyncssh.SSHServerChannel) -> None:
         super().__init__(chan, chroot=root)
+
+    async def scandir(self, path: bytes) -> AsyncIterator[asyncssh.SFTPName]:
+        if posixpath.basename(path.rstrip(b"/")) == UNLISTABLE:
+            raise asyncssh.SFTPPermissionDenied("Permission denied")
+        async for name in super().scandir(path):
+            yield name
 
 
 async def start_server(root: str, port: int = 0) -> asyncssh.SSHAcceptor:

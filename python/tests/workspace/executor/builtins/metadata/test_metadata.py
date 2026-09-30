@@ -15,9 +15,8 @@ class _OverlayRAMVFS(RAMVFS):
     """RAM VFS with the native setattr op stripped, standing in for
     an API backend that has no attribute slot."""
 
-    def __init__(self) -> None:
-        super().__init__()
-        self._ops_list = [ro for ro in self._ops_list if ro.name != "setattr"]
+    def ops(self):
+        return [ro for ro in super().ops() if ro.name != "setattr"]
 
 
 def _make_overlay_ws(
@@ -78,6 +77,11 @@ def test_parse_touch_stamp_two_digit_year():
 def test_parse_touch_stamp_date_string():
     assert parse_touch_stamp(None, "2026-01-02") == "2026-01-02T00:00:00+00:00"
     assert parse_touch_stamp(None, None) is None
+
+
+def test_parse_touch_stamp_keeps_a_fraction():
+    assert parse_touch_stamp(
+        None, "2024-01-01 00:00:00.5") == "2024-01-01T00:00:00.500000+00:00"
 
 
 def test_parse_touch_stamp_invalid():

@@ -15,7 +15,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { FakeGitHub, blobSha } from '../../core/github/_test_util.ts'
 import { DEFAULT_READ_TTL, MountMode, ReadPolicy } from '../../types.ts'
-import type { VFS } from '../base.ts'
+import type { BaseVFS } from '../base.ts'
 import { RAMVFS } from '../ram/ram.ts'
 import { getTestParser } from '../../workspace/fixtures/workspace_fixture.ts'
 import { Mount } from '../../workspace/mount/spec.ts'
@@ -55,7 +55,7 @@ async function vfsOf(): Promise<GitHubVFS> {
 }
 
 async function ws(
-  vfs: VFS,
+  vfs: BaseVFS,
   policy: ReadPolicy = ReadPolicy.FRESH,
   prefix = '/gh',
 ): Promise<Workspace> {
@@ -320,9 +320,7 @@ describe('github cannot-see versus gone', () => {
   async function clearedWithOverlay(w: Workspace): Promise<void> {
     await out(w, `cat ${PATH}`)
     await w.cache.remove(PATH)
-    const index = w.registry.mountFor(PATH).index
-    if (index === undefined) throw new Error('the github mount has no index to clear')
-    await index.clear()
+    await w.registry.mountFor(PATH).index.clear()
     await overlaid(w)
     gh.fail.set('dir', [404, 'Not Found'])
     gh.fail.set('recursive', [401, 'Bad credentials'])
@@ -412,7 +410,7 @@ describe('github directories cut short', () => {
 })
 
 describe('github snapshot pins', () => {
-  async function pinnedState(vfs?: VFS) {
+  async function pinnedState(vfs?: BaseVFS) {
     const w = await ws(vfs ?? (await vfsOf()))
     try {
       await out(w, `cat ${PATH}`)
@@ -422,7 +420,10 @@ describe('github snapshot pins', () => {
     }
   }
 
-  async function load(state: Awaited<ReturnType<typeof toStateDict>>, vfs: VFS): Promise<string> {
+  async function load(
+    state: Awaited<ReturnType<typeof toStateDict>>,
+    vfs: BaseVFS,
+  ): Promise<string> {
     const loaded = await Workspace.fromState(
       state,
       { shellParser: await getTestParser() },

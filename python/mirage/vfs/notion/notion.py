@@ -16,30 +16,34 @@ from typing import Any
 
 from mirage.accessor.notion import NotionAccessor
 from mirage.commands.builtin.notion import COMMANDS
-from mirage.commands.builtin.notion.io import IO
+from mirage.commands.config import RegisteredCommand
+from mirage.commands.registry import registered_commands
 from mirage.core.notion.config import NotionConfig
 from mirage.ops.notion import OPS as NOTION_VFS_OPS
+from mirage.ops.registry import RegisteredOp
 from mirage.types import VFSName
-from mirage.vfs.bound import BoundVFS
+from mirage.vfs.base import BaseVFS
 from mirage.vfs.notion.prompt import PROMPT, WRITE_PROMPT
 
 
-class NotionVFS(BoundVFS):
+class NotionVFS(BaseVFS):
 
     accessor: NotionAccessor
     name: str = VFSName.NOTION
     caches_reads: bool = True
-    PROMPT: str = PROMPT
-    WRITE_PROMPT: str = WRITE_PROMPT
+    prompt: str = PROMPT
+    write_prompt: str = WRITE_PROMPT
 
     def __init__(self, config: NotionConfig) -> None:
-        super().__init__(io=IO)
+        super().__init__()
         self.config = config
         self.accessor = NotionAccessor(config)
-        for fn in COMMANDS:
-            self.register(fn)
-        for op in NOTION_VFS_OPS:
-            self.register_op(op)
+
+    def ops(self) -> list[RegisteredOp]:
+        return NOTION_VFS_OPS
+
+    def commands(self) -> list[RegisteredCommand]:
+        return registered_commands(COMMANDS)
 
     def get_state(self) -> dict[str, Any]:
         return self.config_state(self.config)

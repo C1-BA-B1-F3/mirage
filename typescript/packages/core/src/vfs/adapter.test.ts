@@ -7,7 +7,7 @@ import { eacces } from '../utils/errors.ts'
 import { getTestParser, stderrStr, stdoutStr } from '../workspace/fixtures/workspace_fixture.ts'
 import { Workspace } from '../workspace/workspace/workspace.ts'
 import { VFSAdapter } from './adapter.ts'
-import { GenericVFS } from './generic.ts'
+import { BaseVFS } from './base.ts'
 import { RAMStore } from './ram/store.ts'
 import type { ReadOps } from './types.ts'
 
@@ -32,7 +32,8 @@ async function makeAccessor(): Promise<RAMAccessor> {
 describe('VFSAdapter', () => {
   it('serves shell, streams and dispatcher from only three read operations', async () => {
     const accessor = await makeAccessor()
-    const vfs = new GenericVFS({ name: 'custom', accessor, io: new VFSAdapter({ read: READ }) })
+    const adapter = new VFSAdapter({ read: READ })
+    const vfs = new BaseVFS({ name: 'custom', accessor, io: adapter })
     const ws = new Workspace(
       { '/nested/data': vfs },
       { mode: MountMode.READ, shellParser: await getTestParser() },
@@ -52,7 +53,7 @@ describe('VFSAdapter', () => {
         ENC.encode('ell'),
       )
       const chunks: Uint8Array[] = []
-      for await (const chunk of vfs.io.readStream(accessor, PATH)) chunks.push(chunk)
+      for await (const chunk of adapter.toCommandIO().readStream(accessor, PATH)) chunks.push(chunk)
       expect(chunks).toEqual([ENC.encode('hello\n')])
       const refused = await ws.shell('rm /nested/data/a.txt')
       expect(refused.exitCode).toBe(1)
@@ -93,7 +94,7 @@ describe('VFSAdapter', () => {
         },
       },
     })
-    const vfs = new GenericVFS({ name: 'custom', accessor, io: adapter })
+    const vfs = new BaseVFS({ name: 'custom', accessor, io: adapter })
     const ws = new Workspace({ '/nested/data': vfs }, { shellParser: await getTestParser() })
     try {
       expect(await ws.dispatch('read', PATH.virtual, [], { offset: 1, size: 3 })).toEqual(
@@ -101,7 +102,8 @@ describe('VFSAdapter', () => {
       )
       expect(readRange).toHaveBeenCalledOnce()
       const received: Uint8Array[] = []
-      for await (const chunk of vfs.io.readStream(accessor, PATH)) received.push(chunk)
+      for await (const chunk of adapter.toCommandIO().readStream(accessor, PATH))
+        received.push(chunk)
       expect(received).toEqual(chunks)
       expect(readBytes).not.toHaveBeenCalled()
       expect(vfs.ops().some((op) => op.name === 'write')).toBe(false)
@@ -115,7 +117,7 @@ describe('VFSAdapter', () => {
     async (mode) => {
       const accessor = await makeAccessor()
       const write = vi.fn(writeBytes)
-      const vfs = new GenericVFS({
+      const vfs = new BaseVFS({
         name: 'custom',
         accessor,
         io: new VFSAdapter({ read: READ, writes: { write } }),
@@ -152,7 +154,7 @@ it.each(['grep', 'rg'])(
         search: { search, meta: { grep: { mode: 'literal' } } },
       })
       const ws = new Workspace(
-        { '/nested/data': new GenericVFS({ name: 'custom', accessor, io: adapter }) },
+        { '/nested/data': new BaseVFS({ name: 'custom', accessor, io: adapter }) },
         { shellParser: await getTestParser() },
       )
       try {
@@ -197,7 +199,7 @@ it.each([
     search: { search, meta: { grep: { mode: 'literal' } } },
   })
   const ws = new Workspace(
-    { '/nested/data': new GenericVFS({ name: 'custom', accessor, io: adapter }) },
+    { '/nested/data': new BaseVFS({ name: 'custom', accessor, io: adapter }) },
     { shellParser: await getTestParser() },
   )
   try {
@@ -219,7 +221,7 @@ it('propagates native search failures without falling back to reads', async () =
     search: { search, meta: { grep: { mode: 'regex' } } },
   })
   const ws = new Workspace(
-    { '/nested/data': new GenericVFS({ name: 'custom', accessor, io: adapter }) },
+    { '/nested/data': new BaseVFS({ name: 'custom', accessor, io: adapter }) },
     { shellParser: await getTestParser() },
   )
   try {
@@ -240,7 +242,7 @@ it('scans through guarded reads when the subtree contains hidden paths', async (
     search: { search, meta: { grep: { mode: 'regex' } } },
   })
   const ws = new Workspace(
-    { '/nested/data': new GenericVFS({ name: 'custom', accessor, io: adapter }) },
+    { '/nested/data': new BaseVFS({ name: 'custom', accessor, io: adapter }) },
     {
       shellParser: await getTestParser(),
       profiles: { default: { paths: { hide: ['/nested/data/secret'] } } },
@@ -269,7 +271,7 @@ it('passes resource options through and scans without grep opt-in', async () => 
   expect(search).toHaveBeenCalledWith(accessor, PATH, query)
   search.mockClear()
   const ws = new Workspace(
-    { '/nested/data': new GenericVFS({ name: 'custom', accessor, io: adapter }) },
+    { '/nested/data': new BaseVFS({ name: 'custom', accessor, io: adapter }) },
     { shellParser: await getTestParser() },
   )
   try {

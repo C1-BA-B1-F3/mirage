@@ -48,7 +48,7 @@ describe('browser VFS registry', () => {
       client_secret: 'secret',
       enterprise_id: 'ent',
     })
-    expect(vfs.kind).toBe('box')
+    expect(vfs.name).toBe('box')
     expect((vfs as unknown as { config: { enterpriseId?: string } }).config.enterpriseId).toBe(
       'ent',
     )
@@ -133,9 +133,9 @@ describe('browser VFS registry', () => {
     const sharePoint = await buildVfs('sharepoint', { access_token: 'token' })
     const mem0 = await buildVfs('mem0', { api_key: 'key', agent_id: 'agent' })
 
-    expect(oneDrive.kind).toBe('onedrive')
-    expect(sharePoint.kind).toBe('sharepoint')
-    expect(mem0.kind).toBe('mem0')
+    expect(oneDrive.name).toBe('onedrive')
+    expect(sharePoint.name).toBe('sharepoint')
+    expect(mem0.name).toBe('mem0')
   })
 
   it('builds each S3-compatible alias with bucket and presignedUrlProvider', async () => {
@@ -156,7 +156,7 @@ describe('browser VFS registry', () => {
         bucket: 'test-bucket',
         presignedUrlProvider: provider,
       })
-      expect(r.kind).toBe(name)
+      expect(r.name).toBe(name)
     }
   })
 
@@ -191,7 +191,7 @@ describe('browser VFS registry', () => {
 
   it('builds RAM with no config', async () => {
     const r = await buildVfs('ram', {})
-    expect(r.kind).toBe('ram')
+    expect(r.name).toBe('ram')
   })
 
   it('builds S3 with bucket and presignedUrlProvider', async () => {
@@ -200,7 +200,7 @@ describe('browser VFS registry', () => {
       bucket: 'test-bucket',
       presignedUrlProvider: provider,
     })
-    expect(r.kind).toBe('s3')
+    expect(r.name).toBe('s3')
   })
 
   it('builds GCS with bucket and presignedUrlProvider', async () => {
@@ -209,7 +209,7 @@ describe('browser VFS registry', () => {
       bucket: 'test-bucket',
       presignedUrlProvider: provider,
     })
-    expect(r.kind).toBe('gcs')
+    expect(r.name).toBe('gcs')
   })
 
   it('builds R2 with bucket, accountId, and presignedUrlProvider', async () => {
@@ -219,7 +219,7 @@ describe('browser VFS registry', () => {
       account_id: 'abc123',
       presignedUrlProvider: provider,
     })
-    expect(r.kind).toBe('r2')
+    expect(r.name).toBe('r2')
   })
 
   it('builds OCI with bucket and presignedUrlProvider', async () => {
@@ -230,7 +230,7 @@ describe('browser VFS registry', () => {
       region: 'us-ashburn-1',
       presignedUrlProvider: provider,
     })
-    expect(r.kind).toBe('oci')
+    expect(r.name).toBe('oci')
   })
 
   it('builds Supabase with bucket, projectRef, and presignedUrlProvider', async () => {
@@ -240,7 +240,7 @@ describe('browser VFS registry', () => {
       project_ref: 'abcdefgh',
       presignedUrlProvider: provider,
     })
-    expect(r.kind).toBe('supabase')
+    expect(r.name).toBe('supabase')
   })
 
   it('builds a NotionVFS via buildVfs', async () => {
@@ -253,7 +253,7 @@ describe('browser VFS registry', () => {
       redirect: (_url: URL): void => undefined,
     })
     const r = await buildVfs('notion', { authProvider: provider })
-    expect(r.kind).toBe('notion')
+    expect(r.name).toBe('notion')
   })
 
   it('throws on unknown name with helpful message', async () => {
@@ -268,14 +268,14 @@ describe('browser VFS registry', () => {
     })
     expect(knownVfsNames()).toContain('mock-fs')
     const r = await buildVfs('mock-fs', {})
-    expect(r.kind).toBe('ram')
+    expect(r.name).toBe('ram')
   })
 })
 
 describe('browser registry: trello', () => {
   it('builds trello VFS with apiKey/apiToken', async () => {
     const r = await buildVfs('trello', { apiKey: 'k', apiToken: 't' })
-    expect(r.kind).toBe(VFSName.TRELLO)
+    expect(r.name).toBe(VFSName.TRELLO)
     expect(r).toBeInstanceOf(TrelloVFS)
   })
 

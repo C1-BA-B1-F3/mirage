@@ -16,7 +16,7 @@ import { describe, expect, it } from 'vitest'
 import { LangfuseAccessor, type LangfuseAccessorConfig } from '../../accessor/langfuse.ts'
 import { RAMIndexCacheStore } from '../../cache/index/ram.ts'
 import { LANGFUSE_IO } from '../../commands/builtin/langfuse/io.ts'
-import { GenericVFS } from '../../vfs/generic.ts'
+import { BaseVFS } from '../../vfs/base.ts'
 import { Workspace } from '../../workspace/workspace/workspace.ts'
 import { getTestParser } from '../../workspace/fixtures/workspace_fixture.ts'
 import { PathSpec } from '../../types.ts'
@@ -155,7 +155,7 @@ describe('langfuse bounded trace listing', () => {
   const TRACES = { '/api/public/traces': { data: [{ id: 't1' }, { id: 't2' }] } }
   it('fetches a full page once through the workspace index view', async () => {
     const transport = new RecordingTransport(TRACES)
-    const vfs = new GenericVFS({
+    const vfs = new BaseVFS({
       name: 'langfuse',
       accessor: accessor(transport, { defaultTraceLimit: 2 }),
       io: LANGFUSE_IO,

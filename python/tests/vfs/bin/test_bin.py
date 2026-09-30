@@ -27,7 +27,7 @@ def test_view_registers_reads_and_refuses_every_write_op():
     # reads the view like any reader, and a line that writes is refused
     # at the op the view does not have.
     assert {"cat", "ls", "stat", "gzip", "rm", "cp"} <= names
-    ops = {op.name: op for op in vfs.ops_list()}
+    ops = {op.name: op for op in vfs.ops()}
     assert {"read", "readdir", "stat"} <= set(ops)
     for name in ("write", "append", "create", "mkdir", "unlink", "rmdir",
                  "rename", "truncate", "setattr"):

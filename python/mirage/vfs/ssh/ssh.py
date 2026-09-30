@@ -16,37 +16,41 @@ from typing import Any
 
 from mirage.accessor.ssh import SSHAccessor
 from mirage.commands.builtin.ssh import COMMANDS as SSH_COMMANDS
-from mirage.commands.builtin.ssh.io import IO
+from mirage.commands.config import RegisteredCommand
+from mirage.commands.registry import registered_commands
 from mirage.core.ssh.config import SSHConfig
 from mirage.core.ssh.watch import build_delta_hook
+from mirage.ops.registry import RegisteredOp
 from mirage.ops.ssh import OPS as SSH_OPS
 from mirage.types import VFSName
-from mirage.vfs.bound import BoundVFS
+from mirage.vfs.base import BaseVFS
 from mirage.vfs.ssh.prompt import PROMPT
 from mirage.watch.base import DeltaHook
 
 
-class SSHVFS(BoundVFS):
+class SSHVFS(BaseVFS):
 
     accessor: SSHAccessor
     name: str = VFSName.SSH
     caches_reads: bool = True
     # SFTP stat/readdir report the remote inode's exact byte size for
     # every file; reads are the same raw bytes.
-    SIZES_ALWAYS_KNOWN: bool = True
+    sizes_always_known: bool = True
     # A remote filesystem: short-lived index, long enough to spare a
     # re-walk inside one command pipeline. Mirrors the TypeScript VFS.
     index_ttl: float = 60
-    PROMPT: str = PROMPT
+    prompt: str = PROMPT
 
     def __init__(self, config: SSHConfig) -> None:
-        super().__init__(io=IO)
+        super().__init__()
         self.config = config
         self.accessor = SSHAccessor(self.config)
-        for fn in SSH_COMMANDS:
-            self.register(fn)
-        for ro in SSH_OPS:
-            self.register_op(ro)
+
+    def ops(self) -> list[RegisteredOp]:
+        return SSH_OPS
+
+    def commands(self) -> list[RegisteredCommand]:
+        return registered_commands(SSH_COMMANDS)
 
     def delta_hook(self) -> DeltaHook:
         return build_delta_hook(self.accessor)

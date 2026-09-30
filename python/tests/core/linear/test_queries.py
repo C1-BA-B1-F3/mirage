@@ -29,7 +29,7 @@ def _selection(query: str, opener: str) -> list[str]:
 
 
 def test_the_listing_and_the_read_select_the_same_issue_fields():
-    """issue.json is sized from the team listing (SIZES_ALWAYS_KNOWN)
+    """issue.json is sized from the team listing (sizes_always_known)
     and read from the issue query, so a field one selects and the other
     does not makes the listed size disagree with the bytes a read
     delivers."""

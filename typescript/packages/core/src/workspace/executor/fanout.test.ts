@@ -29,6 +29,8 @@ import { getTestParser, stdoutStr } from '../fixtures/workspace_fixture.ts'
 import { Workspace } from '../workspace/workspace.ts'
 import { specFlagNames } from '../../commands/spec/flag_view.ts'
 import { specOf } from '../../commands/spec/builtins.ts'
+import type { StatPath } from '../../ops/types.ts'
+import { eacces } from '../../utils/errors.ts'
 
 const NEVER_EXECUTE: ExecuteNodeFn = () => {
   throw new Error('executeNode should not have been called')
@@ -46,13 +48,10 @@ const STAT_ONLY_DISPATCH: DispatchFn = ((op: string, path: PathSpec) => {
 }) as unknown as DispatchFn
 
 function wireMount(mount: MountEntry): void {
-  const cmds = mount.vfs.commands?.()
-  if (cmds !== undefined) {
-    for (const cmd of cmds) {
-      if (cmd.filetype !== null) mount.register(cmd)
-      else if (cmd.vfs === null) mount.registerGeneral(cmd)
-      else mount.register(cmd)
-    }
+  for (const cmd of mount.vfs.commands()) {
+    if (cmd.filetype !== null) mount.register(cmd)
+    else if (cmd.vfs === null) mount.registerGeneral(cmd)
+    else mount.register(cmd)
   }
 }
 
@@ -734,7 +733,6 @@ describe('traversal cancellation', () => {
             undefined,
             undefined,
             undefined,
-            undefined,
             null,
             source === 'caller' ? controller.signal : undefined,
           ),
@@ -838,6 +836,12 @@ it.each([
     null,
     new IOResult({ exitCode: code, stderr: new TextEncoder().encode('backend failed\n') }),
   ])
+  // The reserved /dev mount is placed with its command table too, so it
+  // answers as one more mount that succeeds with nothing to report.
+  for (const m of reg.allMounts()) {
+    if (m !== primary && m !== child)
+      vi.spyOn(m, 'executeCmd').mockResolvedValue([null, new IOResult()])
+  }
   const [, io] = await fanOutTraversal(
     command,
     [PathSpec.fromStrPath('/')],
@@ -852,6 +856,62 @@ it.each([
   )
   expect(io.exitCode).toBe(code)
   expect(new TextDecoder().decode(await materialize(io.stderr))).toBe('backend failed\n')
+})
+
+function duProbe(refused: string): StatPath {
+  return (path: string) => {
+    if (path === refused) return Promise.reject(eacces(path))
+    const type = path === '/empty' || path === '/data' ? FileType.DIRECTORY : FileType.FILE
+    return Promise.resolve(new FileStat({ name: basename(path), type }))
+  }
+}
+
+async function duAcross(primaryRows: string, refused: string): Promise<[string, number, string]> {
+  const reg = new MountRegistry({ '/': new RAMVFS(), '/data': new RAMVFS() }, MountMode.WRITE)
+  const primary = reg.tryMountFor('/')
+  const child = reg.tryMountFor('/data')
+  if (primary === null || child === null) throw new Error('missing test mount')
+  const enc = new TextEncoder()
+  vi.spyOn(primary, 'executeCmd').mockResolvedValue([enc.encode(primaryRows), new IOResult()])
+  vi.spyOn(child, 'executeCmd').mockResolvedValue([
+    enc.encode('4\t/data/x\n4\t/data\n'),
+    new IOResult(),
+  ])
+  for (const mount of reg.allMounts()) {
+    if (mount !== primary && mount !== child)
+      vi.spyOn(mount, 'executeCmd').mockResolvedValue([null, new IOResult()])
+  }
+  const [out, io] = await fanOutTraversal(
+    'du',
+    [PathSpec.fromStrPath('/')],
+    [],
+    {},
+    reg,
+    primary,
+    '/',
+    'du /',
+    null,
+    undefined,
+    duProbe(refused),
+  )
+  const dec = new TextDecoder()
+  return [dec.decode(await materialize(out)), io.exitCode, dec.decode(await materialize(io.stderr))]
+}
+
+it('keeps the du rows when an empty row refuses stat', async () => {
+  const [out, code, err] = await duAcross('0\t/empty\n0\t/sealed\n3\t/f\n3\t/\n', '/sealed')
+  expect(out).toBe('4\t/data\n0\t/empty\n7\t/\n')
+  expect(code).toBe(1)
+  expect(err).toBe("du: cannot access '/sealed': Permission denied\n")
+})
+
+it('keeps the du rows when a mount root refuses stat', async () => {
+  const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+  const [out, code] = await duAcross('3\t/f\n3\t/\n', '/data')
+  expect(out).toBe('4\t/data\n7\t/\n')
+  expect(code).toBe(0)
+  expect(warn).toHaveBeenCalledWith(expect.stringContaining('du: mount root /data refused stat'))
+  warn.mockRestore()
 })
 
 it('keeps every producing mount when the last operand is refused', async () => {

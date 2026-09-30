@@ -18,6 +18,12 @@ import { VFSName } from '@struktoai/mirage-core/types'
 import type { SSHAccessor } from '../../../accessor/ssh.ts'
 import { SSH_IO } from './io.ts'
 
+// Shell traversals need partial results and per-directory errors; the shared
+// readdir/stat walker owns those. Direct VFS aggregate methods remain strict.
+const walkIO = { ...SSH_IO }
+delete walkIO.find
+delete walkIO.du
+
 export const SSH_COMMANDS: readonly RegisteredCommand[] = [
-  ...makeGenericCommands<SSHAccessor>(VFSName.SSH, SSH_IO),
+  ...makeGenericCommands<SSHAccessor>(VFSName.SSH, walkIO),
 ]

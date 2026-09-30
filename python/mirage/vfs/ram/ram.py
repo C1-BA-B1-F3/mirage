@@ -16,31 +16,35 @@ from typing import Any
 
 from mirage.accessor.ram import RAMAccessor
 from mirage.commands.builtin.ram import COMMANDS as RAM_COMMANDS
-from mirage.commands.builtin.ram.io import IO
+from mirage.commands.config import RegisteredCommand
+from mirage.commands.registry import registered_commands
 from mirage.ops.ram import OPS as RAM_OPS
+from mirage.ops.registry import RegisteredOp
 from mirage.types import VFSName
-from mirage.vfs.bound import BoundVFS
+from mirage.vfs.base import BaseVFS
 from mirage.vfs.ram.prompt import PROMPT
 from mirage.vfs.ram.store import RAMStore
 
 
-class RAMVFS(BoundVFS):
+class RAMVFS(BaseVFS):
 
     accessor: RAMAccessor
     name: str = VFSName.RAM
     # byte store: stat() sizes every file from metadata
-    SIZES_ALWAYS_KNOWN: bool = True
+    sizes_always_known: bool = True
     index_ttl: float = 0
-    PROMPT: str = PROMPT
+    prompt: str = PROMPT
 
     def __init__(self) -> None:
-        super().__init__(io=IO)
+        super().__init__()
         self._store = RAMStore()
         self.accessor = RAMAccessor(self._store)
-        for fn in RAM_COMMANDS:
-            self.register(fn)
-        for ro in RAM_OPS:
-            self.register_op(ro)
+
+    def ops(self) -> list[RegisteredOp]:
+        return RAM_OPS
+
+    def commands(self) -> list[RegisteredCommand]:
+        return registered_commands(RAM_COMMANDS)
 
     def get_state(self) -> dict[str, Any]:
         return {

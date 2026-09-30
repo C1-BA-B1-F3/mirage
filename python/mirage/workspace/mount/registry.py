@@ -19,6 +19,8 @@ from typing import Protocol
 from weakref import WeakValueDictionary
 
 from mirage.cache.file.mixin import FileCacheMixin
+from mirage.cache.index import NULL_INDEX, IndexCacheStore, IndexConfig
+from mirage.cache.index.factory import build_index
 from mirage.cache.manager import CacheManager
 from mirage.commands.builtin.general import COMMANDS as GENERAL_COMMANDS
 from mirage.context import effective_path_mode, strongest_mode_under
@@ -135,8 +137,14 @@ class MountRegistry:
         self._file_cache: FileCacheMixin | None = None
         self._reconciler: ReadReconciler | None = None
         # Explicit at the construction site: /dev does not cache reads,
-        # so its policy can only ever be bounded.
-        self.mount(DEV_PREFIX, DevVFS(), MountMode.WRITE, ReadSpec())
+        # so its policy can only ever be bounded, and it keeps no index,
+        # since a path-only index would expose one session's descriptors
+        # to another.
+        self.mount(DEV_PREFIX,
+                   DevVFS(),
+                   MountMode.WRITE,
+                   ReadSpec(),
+                   store=NULL_INDEX)
 
     async def invalidate_after_external(self) -> None:
         """Refetch cached data after native code may have changed files."""
@@ -144,10 +152,10 @@ class MountRegistry:
             await self._file_cache.clear()
         for mount in self.mounts():
             if mount.cache_manager is not None:
-                await mount.cache_manager.clear_index(mount.vfs.index)
+                await mount.cache_manager.clear_index(mount.index_store)
             else:
                 async with mount.use():
-                    await mount.vfs.index.clear()
+                    await mount.index_store.clear()
 
     def set_default_read(self, read: ReadSpec) -> None:
         """Install the workspace-level read policy a mount overrides.
@@ -212,7 +220,7 @@ class MountRegistry:
 
         m.cache_manager = CacheManager(
             self._file_cache,
-            m.vfs.index,
+            m.index_store,
             m.prefix,
             m.vfs.caches_reads,
             lambda path: not m.retiring and self.try_mount_for(path) is m,
@@ -233,15 +241,31 @@ class MountRegistry:
         vfs: BaseVFS,
         mode: MountMode = MountMode.READ,
         read: ReadSpec | None = None,
+        *,
+        index: IndexConfig | None = None,
+        vfs_ref: str | None = None,
+        store: IndexCacheStore | None = None,
     ) -> MountEntry:
-        """Mount a VFS and return the Mount object.
+        """Place a VFS and return its mount.
+
+        The mount is built with everything the tree needs to run the
+        driver: its index store (shared with any earlier mount of the
+        same instance, else ``store``, else built from ``index`` or the
+        driver's ``index_ttl``), the driver's op and command tables, and
+        the reference it was built from.
 
         Args:
-            prefix (str): the mount prefix.
-            vfs (BaseVFS): the backend to mount.
-            mode (MountMode): the mount's mode.
+            prefix (str): the virtual prefix.
+            vfs (BaseVFS): the driver.
+            mode (MountMode): the mount's ceiling.
             read (ReadSpec | None): the mount's read policy; None takes
                 the workspace default.
+            index (IndexConfig | None): the index store to build; None
+                takes a RAM store at the driver's ``index_ttl``.
+            vfs_ref (str | None): the ``vfs:`` value the driver was
+                built from, recorded for snapshots.
+            store (IndexCacheStore | None): a store the placement
+                supplies itself, as the reserved /dev mount does.
         """
         self.check_vfs_available(vfs)
         stripped = prefix.strip("/")
@@ -250,18 +274,23 @@ class MountRegistry:
             if existing.prefix == norm_prefix:
                 raise ValueError(f"duplicate mount prefix: "
                                  f"{norm_prefix!r}")
+        alias = next((e for e in self._mounts if e.vfs is vfs), None)
+        if alias is not None:
+            store = alias.index_store
+            index = alias.index_config
+        elif isinstance(vfs, DevVFS):
+            store = NULL_INDEX
+        elif store is None:
+            store = build_index(index, vfs.index_ttl)
         m = MountEntry(norm_prefix, vfs, mode,
-                       read if read is not None else self._default_read)
-        for existing in self._mounts:
-            if existing.vfs is vfs:
-                m.activity = existing.activity
-                break
-        for cmd in vfs.commands():
-            m.register(cmd)
+                       read if read is not None else self._default_read, store,
+                       vfs_ref, index)
+        if alias is not None:
+            m.activity = alias.activity
+        m.register_fns(vfs.commands())
         for cmd in GENERAL_COMMANDS:
             m.register_general(cmd)
-        for ro in vfs.ops_list():
-            m.register_op(ro)
+        m.register_fns(vfs.ops())
         if self._file_cache is not None:
             self._attach_manager(m)
         self._mounts.append(m)
@@ -535,10 +564,10 @@ class MountRegistry:
                 prefix=m.prefix,
                 resource_type=m.vfs.name,
                 accessor=m.vfs.accessor,
-                index=m.vfs.index,
+                index=m.index_store,
                 mode=m.mode,
-                ops=m.vfs.ops_list(),
-                sizes_always_known=m.vfs.SIZES_ALWAYS_KNOWN,
+                ops=m.vfs.ops(),
+                sizes_always_known=m.vfs.sizes_always_known,
             ) for m in self._mounts
         ]
 

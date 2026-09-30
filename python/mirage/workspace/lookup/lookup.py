@@ -20,7 +20,8 @@ from mirage.runtime.language import LanguageRuntime
 from mirage.runtime.mixin import LineExecutorMixin, ProcessExecutorMixin
 from mirage.runtime.routing.types import RouteDecision
 from mirage.utils.quote import shell_quote
-from mirage.workspace.lookup.constants import (INTERPRETER_NAMES, KEYWORDS,
+from mirage.workspace.lookup.constants import (CAPTURABLE_BUILTINS,
+                                               INTERPRETER_NAMES, KEYWORDS,
                                                NAMESPACE_COMMANDS, SHELL_NAMES,
                                                SHELL_ONLY_BUILTINS)
 from mirage.workspace.lookup.types import Consumer
@@ -146,7 +147,7 @@ def _layers(name: str,
     if name in SHELL_NAMES and installed:
         found = True
         yield (Consumer.EXTERNAL if (native or refused)
-               and name in INTERPRETER_NAMES else Consumer.SESSION)
+               and name in CAPTURABLE_BUILTINS else Consumer.SESSION)
     if installed and name in NAMESPACE_COMMANDS:
         found = True
         yield Consumer.NAMESPACE

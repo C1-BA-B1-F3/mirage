@@ -14,7 +14,7 @@
 
 import { runWithRecording } from '@struktoai/mirage-core/observe/context'
 import { DEFAULT_READ_TTL, MountMode, PathSpec, ReadPolicy } from '@struktoai/mirage-core/types'
-import type { VFS } from '@struktoai/mirage-core/vfs/base'
+import type { BaseVFS } from '@struktoai/mirage-core/vfs/base'
 import { RAMVFS } from '@struktoai/mirage-core/vfs/ram/ram'
 import { Mount } from '@struktoai/mirage-core/workspace/mount/spec'
 import { ContentDriftError } from '@struktoai/mirage-core/workspace/snapshot/drift'
@@ -45,11 +45,11 @@ async function hub(files: Record<string, Uint8Array>): Promise<FakeHub> {
   return serveHub(fake)
 }
 
-function vfsOf(fake: FakeHub): Promise<VFS> {
+function vfsOf(fake: FakeHub): Promise<BaseVFS> {
   return buildVfs('hf_models', { repo_id: 'acme/widget', endpoint: fake.url })
 }
 
-function ws(vfs: VFS, policy: ReadPolicy = ReadPolicy.FRESH): Workspace {
+function ws(vfs: BaseVFS, policy: ReadPolicy = ReadPolicy.FRESH): Workspace {
   return new Workspace({
     '/m': new Mount(vfs, { mode: MountMode.READ, read: { policy, ttl: DEFAULT_READ_TTL } }),
     '/r': [new RAMVFS(), MountMode.WRITE],
@@ -208,7 +208,7 @@ describe('hf_hub under read: fresh', () => {
   })
 })
 
-async function pinnedState(fake: FakeHub, vfs?: VFS) {
+async function pinnedState(fake: FakeHub, vfs?: BaseVFS) {
   const w = ws(vfs ?? (await vfsOf(fake)))
   try {
     await out(w, 'cat /m/a.txt')
@@ -218,7 +218,7 @@ async function pinnedState(fake: FakeHub, vfs?: VFS) {
   }
 }
 
-async function load(state: Awaited<ReturnType<typeof toStateDict>>, vfs: VFS): Promise<void> {
+async function load(state: Awaited<ReturnType<typeof toStateDict>>, vfs: BaseVFS): Promise<void> {
   const loaded = await Workspace.fromState(state, {}, { '/m': vfs })
   try {
     await out(loaded, 'cat /m/a.txt')

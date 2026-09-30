@@ -55,7 +55,7 @@ async def test_late_index_write_cannot_cross_mount_ownership(
     prefix = "/" if shadow else "/data"
     ws = Workspace({prefix: vfs}, index=config)
     ws.add_mount("/alias", vfs)
-    index = vfs.index
+    index = ws.mount(prefix).index_store
     entry = IndexEntry(id="old", name="stale", resource_type="file")
     entered = asyncio.Event()
     release = asyncio.Event()
@@ -94,11 +94,12 @@ async def test_late_index_write_cannot_cross_mount_ownership(
                 await index.entries()
         return ["/data/stale"]
 
-    ws.mount(prefix).register_op(
+    ws.mount(prefix).register_fns([
         RegisteredOp(name="readdir",
                      vfs="ram",
                      filetype=None,
-                     fn=delayed_readdir))
+                     fn=delayed_readdir)
+    ])
     reading = asyncio.create_task(ws.vfs.readdir("/data"))
     changing = None
     replacement = RAMVFS()
@@ -118,11 +119,12 @@ async def test_late_index_write_cannot_cross_mount_ownership(
         if not shadow:
             ws.add_mount("/data", replacement)
             await ws.vfs.readdir("/data")
+        replaced = ws.mount("/data").index_store
         fresh = IndexEntry(id="new", name="fresh", resource_type="file")
-        await replacement.index.put("/data/fresh", fresh)
+        await replaced.put("/data/fresh", fresh)
         release.set()
         await asyncio.wait_for(reading, timeout=5)
-        for candidate in (index, replacement.index):
+        for candidate in (index, replaced):
             assert (
                 await
                 candidate.get("/data/stale")).status == LookupStatus.NOT_FOUND
@@ -131,12 +133,11 @@ async def test_late_index_write_cannot_cross_mount_ownership(
                                          or [])
             if method in ("set_dir", "set_partial_dir"):
                 listing = await candidate.list_dir("/data")
-                shares = (candidate is replacement.index
-                          or store_kind == "redis")
+                shares = (candidate is replaced or store_kind == "redis")
                 own = ["/data/own"] if shares else None
                 assert (listing.entries, listing.partial_entries) == (own,
                                                                       None)
-        assert (await replacement.index.get("/data/fresh")).entry.id == "new"
+        assert (await replaced.get("/data/fresh")).entry.id == "new"
     finally:
         release.set()
         await asyncio.gather(reading,

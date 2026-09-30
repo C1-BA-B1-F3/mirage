@@ -16,18 +16,20 @@ from typing import Any
 
 from mirage.accessor.gdrive import GDriveAccessor
 from mirage.commands.builtin.gdrive import COMMANDS
-from mirage.commands.builtin.gdrive.io import IO
+from mirage.commands.config import RegisteredCommand
+from mirage.commands.registry import registered_commands
 from mirage.core.gdrive.watch import build_delta_hook
 from mirage.core.google.client import TokenManager
 from mirage.ops.gdrive import OPS as GDRIVE_VFS_OPS
+from mirage.ops.registry import RegisteredOp
 from mirage.types import VFSName
-from mirage.vfs.bound import BoundVFS
+from mirage.vfs.base import BaseVFS
 from mirage.vfs.gdrive.config import GoogleDriveConfig
 from mirage.vfs.gdrive.prompt import PROMPT
 from mirage.watch.base import DeltaHook
 
 
-class GoogleDriveVFS(BoundVFS):
+class GoogleDriveVFS(BaseVFS):
 
     accessor: GDriveAccessor
     name: str = VFSName.GDRIVE
@@ -36,19 +38,21 @@ class GoogleDriveVFS(BoundVFS):
     # provider a full re-walk every 10 minutes. Mirrors the TypeScript
     # VFS.
     index_ttl: float = 86_400
-    PROMPT: str = PROMPT
-    SUPPORTS_SNAPSHOT: bool = True
-    READ_REVALIDATABLE: bool = True
+    prompt: str = PROMPT
+    supports_snapshot: bool = True
+    read_revalidatable: bool = True
 
     def __init__(self, config: GoogleDriveConfig) -> None:
-        super().__init__(io=IO)
+        super().__init__()
         self.config = config
         self._token_manager = TokenManager(config)
         self.accessor = GDriveAccessor(self.config, self._token_manager)
-        for fn in COMMANDS:
-            self.register(fn)
-        for op in GDRIVE_VFS_OPS:
-            self.register_op(op)
+
+    def ops(self) -> list[RegisteredOp]:
+        return GDRIVE_VFS_OPS
+
+    def commands(self) -> list[RegisteredCommand]:
+        return registered_commands(COMMANDS)
 
     async def close(self) -> None:
         """Drain the token manager's connection pool with the VFS."""

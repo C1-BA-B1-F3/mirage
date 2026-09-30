@@ -33,6 +33,44 @@ import { ExecutionNode } from '../types.ts'
 import { getTestParser } from '../fixtures/workspace_fixture.ts'
 import { Workspace } from './workspace.ts'
 import { dropMountCaches } from '../executor/command/run.ts'
+import { toStateDict } from '../snapshot/state.ts'
+import { Mount } from '../mount/spec.ts'
+
+it.each(
+  [false, true].flatMap((used) =>
+    [false, true].flatMap((wrapped) =>
+      [false, true].map((unmount) => ({ used, wrapped, unmount })),
+    ),
+  ),
+)(
+  'restoring keeps borrowed drivers open ($used, $wrapped, $unmount)',
+  async ({ used, wrapped, unmount }) => {
+    const vfs = new RAMVFS()
+    vfs.loadState({ type: 'ram', files: { '/file': new TextEncoder().encode('seed') } })
+    const owner = new Workspace({ '/data': vfs }, { shellParser: parser })
+    const override = wrapped ? new Mount(vfs, { index: { ttl: 37 } }) : vfs
+    const replica = await Workspace.fromState(
+      await toStateDict(owner),
+      { shellParser: parser },
+      { '/data': override },
+    )
+    try {
+      if (used) expect((await replica.shell('cat /data/file')).stdoutText).toBe('seed')
+      if (unmount) {
+        await replica.unmount('/data')
+        expect(vfs.isClosed).toBe(false)
+      }
+      await replica.close()
+      expect(vfs.isClosed).toBe(false)
+      expect((await owner.shell('cat /data/file')).stdoutText).toBe('seed')
+      await owner.close()
+      expect(vfs.isClosed).toBe(true)
+    } finally {
+      await replica.close()
+      await owner.close()
+    }
+  },
+)
 
 let parser: ShellParser
 
@@ -288,16 +326,14 @@ it.each([
 it.each(
   [null, 'initial', 'dynamic'].flatMap((alias) =>
     ['op', 'command', 'df'].flatMap((surface) =>
-      (surface === 'df' ? [false] : [false, true]).map((streaming) => ({
-        alias,
-        streaming,
-        surface,
-      })),
+      (surface === 'df' ? [false] : [false, true]).flatMap((streaming) =>
+        [false, true].map((borrowed) => ({ alias, streaming, surface, borrowed })),
+      ),
     ),
   ),
 )(
-  'unmount waits for admitted VFS use ($surface, streaming=$streaming, alias=$alias)',
-  async ({ surface, streaming, alias }) => {
+  'unmount waits for admitted VFS use ($surface, streaming=$streaming, alias=$alias, borrowed=$borrowed)',
+  async ({ surface, streaming, alias, borrowed }) => {
     const vfs = new RAMVFS()
     let entered = (): void => undefined
     let resume = (): void => undefined
@@ -308,10 +344,12 @@ it.each(
       resume = resolve
     })
     let closed = false
+    let indexClosed = false
     async function* chunks(): AsyncGenerator<Uint8Array> {
       entered()
       await release
       expect(closed).toBe(false)
+      expect(indexClosed).toBe(false)
       yield new TextEncoder().encode('value')
     }
     const read = async (): Promise<Uint8Array | AsyncIterable<Uint8Array>> => {
@@ -319,16 +357,21 @@ it.each(
       entered()
       await release
       expect(closed).toBe(false)
+      expect(indexClosed).toBe(false)
       return new TextEncoder().encode('value')
     }
     const mounts: Record<string, RAMVFS> = { '/data': vfs }
     if (alias === 'initial') mounts['/alias'] = vfs
-    const ws = new Workspace(mounts, { shellParser: parser })
+    const owner = new Workspace(mounts, { shellParser: parser })
+    const ws = borrowed
+      ? await Workspace.fromState(await toStateDict(owner), { shellParser: parser }, mounts)
+      : owner
     if (alias === 'dynamic') ws.addMount('/alias', vfs)
-    vi.spyOn(vfs, 'statfs').mockImplementation(async () => {
+    vi.spyOn(vfs, 'capacity').mockImplementation(async () => {
       entered()
       await release
       expect(closed).toBe(false)
+      expect(indexClosed).toBe(false)
       return { state: CapacityState.UNKNOWN }
     })
     ws.opsRegistry.register({ name: 'read', vfs: 'ram', filetype: null, write: false, fn: read })
@@ -340,6 +383,12 @@ it.each(
     })
     if (registered === undefined) throw new Error('missing command')
     ws.mount('/data').register(registered)
+    const index = ws.mount('/data').indexStore
+    const closeIndex = index.close.bind(index)
+    vi.spyOn(index, 'close').mockImplementation(async () => {
+      indexClosed = true
+      await closeIndex()
+    })
     const closeVfs = vfs.close.bind(vfs)
     vi.spyOn(vfs, 'close').mockImplementation(async () => {
       closed = true
@@ -367,6 +416,7 @@ it.each(
       if (alias) {
         await ws.unmount('/data')
         expect(closed).toBe(false)
+        expect(indexClosed).toBe(false)
       }
       let removed = false
       const prefix = alias ? '/alias' : '/data'
@@ -378,14 +428,17 @@ it.each(
       })
       expect(removed).toBe(false)
       expect(closed).toBe(false)
+      expect(indexClosed).toBe(false)
       resume()
       expect(await running).toBe('value')
       await removing
-      expect(closed).toBe(true)
+      expect(closed).toBe(!borrowed)
+      expect(indexClosed).toBe(true)
     } finally {
       resume()
       await Promise.allSettled([running, ...(removing === undefined ? [] : [removing])])
       await ws.close()
+      await owner.close()
     }
   },
 )
@@ -436,46 +489,6 @@ it('workspace close waits for VFS retirements before closing stores', async () =
   }
 })
 
-it('unmount drains an admitted VFS open before closing it', async () => {
-  const vfs = new RAMVFS()
-  const ws = new Workspace({ '/data': vfs }, { shellParser: parser })
-  let entered = (): void => undefined
-  let resume = (): void => undefined
-  const started = new Promise<void>((resolve) => {
-    entered = resolve
-  })
-  const release = new Promise<void>((resolve) => {
-    resume = resolve
-  })
-  let closed = false
-  vi.spyOn(vfs, 'open').mockImplementation(async () => {
-    entered()
-    await release
-  })
-  vi.spyOn(vfs, 'close').mockImplementation(() => {
-    closed = true
-    return Promise.resolve()
-  })
-  const reading = ws.dispatch('read', '/data/file').catch((error: unknown) => error)
-  let removing: Promise<void> | undefined
-  try {
-    await started
-    removing = ws.unmount('/data')
-    await vi.waitFor(() => {
-      expect(ws.registry.tryMountForPrefix('/data')).toBeNull()
-    })
-    expect(closed).toBe(false)
-    resume()
-    await removing
-    expect(closed).toBe(true)
-    expect(await reading).toMatchObject({ code: 'EBUSY' })
-  } finally {
-    resume()
-    await Promise.allSettled([reading, ...(removing === undefined ? [] : [removing])])
-    await ws.close()
-  }
-})
-
 it.each(['service', 'clear'])('unmount drains index invalidation (%s)', async (kind) => {
   const vfs = new RAMVFS()
   const ws = new Workspace({ '/data': vfs })
@@ -488,7 +501,7 @@ it.each(['service', 'clear'])('unmount drains index invalidation (%s)', async (k
   const release = new Promise<void>((resolve) => {
     resume = resolve
   })
-  const index = vfs.index
+  const index = ws.mount('/data').indexStore
   const method = kind === 'service' ? 'invalidate' : 'clear'
   const invalidate = index[method].bind(index)
   await index.put(

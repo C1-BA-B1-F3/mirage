@@ -12,8 +12,7 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import { BoundVFS } from '../bound.ts'
-import { GDOCS_IO } from '../../commands/builtin/gdocs/io.ts'
+import { BaseVFS } from '../base.ts'
 import { GDocsAccessor } from '../../accessor/gdocs.ts'
 import { GDOCS_COMMANDS } from '../../commands/builtin/gdocs/index.ts'
 
@@ -23,7 +22,6 @@ import { TokenManager } from '../../core/google/client.ts'
 import { GDOCS_OPS } from '../../ops/gdocs/index.ts'
 import type { RegisteredOp } from '../../ops/registry.ts'
 
-import type { VFS } from '../base.ts'
 import { GDOCS_PROMPT, GDOCS_WRITE_PROMPT } from './prompt.ts'
 import { VFSName } from '../../types.ts'
 
@@ -34,35 +32,35 @@ export interface GDocsVFSState {
   config: GDocsConfigRedacted
 }
 
-export class GDocsVFS extends BoundVFS<GDocsAccessor> implements VFS {
-  readonly kind: string = VFSName.GDOCS
-  readonly cachesReads: boolean = true
+export class GDocsVFS extends BaseVFS {
+  override readonly name: string = VFSName.GDOCS
+  override readonly cachesReads: boolean = true
   override readonly indexTtl: number = 86_400
   // Reads stamp listing metadata; a fresh stat checks Drive by file ID.
-  readonly readRevalidatable: boolean = true
-  readonly prompt: string = GDOCS_PROMPT
-  readonly writePrompt: string = GDOCS_WRITE_PROMPT
+  override readonly readRevalidatable: boolean = true
+  override readonly prompt: string = GDOCS_PROMPT
+  override readonly writePrompt: string = GDOCS_WRITE_PROMPT
   readonly config: GDocsConfig
-  readonly accessor: GDocsAccessor
+  override readonly accessor: GDocsAccessor
 
   constructor(config: GDocsConfig) {
-    super(GDOCS_IO)
+    super()
     this.config = config
     const tm = new TokenManager(config)
     this.accessor = new GDocsAccessor({ tokenManager: tm })
   }
 
-  commands(): readonly RegisteredCommand[] {
+  override commands(): readonly RegisteredCommand[] {
     return GDOCS_COMMANDS
   }
 
-  ops(): readonly RegisteredOp[] {
+  override ops(): readonly RegisteredOp[] {
     return GDOCS_OPS
   }
 
   override getState(): Promise<GDocsVFSState> {
     return Promise.resolve({
-      type: this.kind,
+      type: this.name,
       config: redactGDocsConfig(this.config),
     })
   }

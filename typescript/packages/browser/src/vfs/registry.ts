@@ -14,14 +14,13 @@
 
 import { resolveConfigSecrets } from '@struktoai/mirage-core/secrets/sources'
 import type { ResolvedSource } from '@struktoai/mirage-core/secrets/types'
-import type { VFS } from '@struktoai/mirage-core/vfs/base'
+import type { BaseVFS } from '@struktoai/mirage-core/vfs/base'
 import { refuseUnknownKeys, z } from '@struktoai/mirage-core/vfs/secrets'
 import { errorSummary } from '@struktoai/mirage-core/secrets/summary'
 import type { OPFSVFSOptions } from './opfs/opfs.ts'
 import type { RedisVFSOptions } from './redis/redis.ts'
 import { normalizeFields } from '@struktoai/mirage-core/utils/normalize'
 import { compareCodePoints } from '@struktoai/mirage-core/utils/sort'
-import { recordVfsRef } from '@struktoai/mirage-core/vfs/base'
 
 /**
  * Construct a VFS by registry name in the browser runtime.
@@ -36,7 +35,7 @@ import { recordVfsRef } from '@struktoai/mirage-core/vfs/base'
  * in JSON/YAML, browser configs are typically constructed
  * programmatically and passed in directly.
  */
-export type VFSFactory = (config: Record<string, unknown>) => Promise<VFS>
+export type VFSFactory = (config: Record<string, unknown>) => Promise<BaseVFS>
 
 // The backends that take their options without a schema, and the option
 // names each takes, so a key outside these is refused rather than ignored,
@@ -305,7 +304,7 @@ export async function buildVfs(
   name: string,
   config: Record<string, unknown> = {},
   sources?: Readonly<Record<string, ResolvedSource>>,
-): Promise<VFS> {
+): Promise<BaseVFS> {
   // A `{from, ref, key}` in the config is fetched here, before the
   // VFS's own schema parses, so every credential reaches its
   // client as the plain string it already reads. Python resolves one
@@ -316,7 +315,7 @@ export async function buildVfs(
   if (factory === undefined) {
     throw new Error(`unknown VFS ${JSON.stringify(name)}; known: ${knownVfsNames().join(', ')}`)
   }
-  let built: VFS
+  let built: BaseVFS
   try {
     built = await factory(resolved)
   } catch (err) {
@@ -327,6 +326,5 @@ export async function buildVfs(
     if (err instanceof z.ZodError) throw new Error(`${name}: ${errorSummary(err)}`)
     throw err
   }
-  recordVfsRef(built, name)
   return built
 }

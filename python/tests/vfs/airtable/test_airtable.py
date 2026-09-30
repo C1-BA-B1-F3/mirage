@@ -45,14 +45,14 @@ def test_the_registry_builds_it_and_refuses_a_typo():
 def test_reads_are_never_served_from_the_file_cache():
     vfs = _vfs()
     assert vfs.caches_reads is False
-    assert vfs.SIZES_ALWAYS_KNOWN is False
-    assert vfs.SUPPORTS_SNAPSHOT is False
+    assert vfs.sizes_always_known is False
+    assert vfs.supports_snapshot is False
 
 
 def test_the_file_surface_is_read_only():
     names = {c.name for c in _vfs().commands()}
     assert {"cat", "ls", "find", "grep", "head", "jq", "wc"} <= names
-    assert not [op.name for op in _vfs().ops_list() if op.write]
+    assert not [op.name for op in _vfs().ops() if op.write]
 
 
 def test_state_redacts_the_token():

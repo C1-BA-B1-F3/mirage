@@ -22,40 +22,44 @@ except ImportError as _err:
 
 from mirage.accessor.redis import RedisAccessor
 from mirage.commands.builtin.redis import COMMANDS as REDIS_COMMANDS
-from mirage.commands.builtin.redis.io import IO
+from mirage.commands.config import RegisteredCommand
+from mirage.commands.registry import registered_commands
 from mirage.ops.redis import OPS as REDIS_OPS
+from mirage.ops.registry import RegisteredOp
 from mirage.types import VFSName
-from mirage.vfs.bound import BoundVFS
+from mirage.vfs.base import BaseVFS
 from mirage.vfs.redis.prompt import PROMPT
 from mirage.vfs.redis.store import RedisStore, escape_glob
 from mirage.vfs.secrets import REDACTED_SECRET
 
 
-class RedisVFS(BoundVFS):
+class RedisVFS(BaseVFS):
 
     accessor: RedisAccessor
     name: str = VFSName.REDIS
     # byte store: stat() sizes every file from metadata
-    SIZES_ALWAYS_KNOWN: bool = True
+    sizes_always_known: bool = True
     index_ttl: float = 0
-    PROMPT: str = PROMPT
+    prompt: str = PROMPT
 
     def __init__(
         self,
         url: str = "redis://localhost:6379/0",
         key_prefix: str = "mirage:fs:",
     ) -> None:
-        super().__init__(io=IO)
+        super().__init__()
         self.url = url
         self.key_prefix = key_prefix
         self._store = RedisStore(url=url, key_prefix=key_prefix)
         self.accessor = RedisAccessor(self._store)
-        for fn in REDIS_COMMANDS:
-            self.register(fn)
-        for ro in REDIS_OPS:
-            self.register_op(ro)
 
-    def storage_id(self) -> str:
+    def ops(self) -> list[RegisteredOp]:
+        return REDIS_OPS
+
+    def commands(self) -> list[RegisteredCommand]:
+        return registered_commands(REDIS_COMMANDS)
+
+    def storage_location(self) -> str:
         # The server URL (host, port and db) plus the key prefix pin the
         # keyspace two mounts would share. The prefix is joined path-like
         # so nested prefixes collapse onto one key.

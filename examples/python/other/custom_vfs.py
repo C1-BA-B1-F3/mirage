@@ -18,13 +18,13 @@ import tempfile
 from copy import deepcopy
 from pathlib import Path
 
-from mirage import (NULL_INDEX, Accessor, CommandSpec, ContentType, FileStat,
-                    FileType, GenericVFS, IndexCacheStore, IOResult, MountMode,
+from mirage import (NULL_INDEX, Accessor, BaseVFS, CommandSpec, ContentType,
+                    FileStat, FileType, IndexCacheStore, IOResult, MountMode,
                     PathSpec, ReadOps, VFSAdapter, Workspace, WriteOps,
                     command, register_vfs)
 
 # A whole custom backend in one script: four async core functions over
-# your data source, a read adapter with optional writes, one GenericVFS. Every
+# your data source, a read adapter with optional writes, one BaseVFS. Every
 # generic command (ls, cat, grep, find, head, wc, ...) works for free,
 # and so does versioning, in the shape the content calls for: the wiki's
 # pages are the VFS's own, so they ride its state and a snapshot
@@ -150,7 +150,7 @@ def make_io(*, writable: bool = True) -> VFSAdapter:
     )
 
 
-class WikiVFS(GenericVFS):
+class WikiVFS(BaseVFS):
     """The backend as a class, so the registry can build it by name."""
 
     def __init__(self, pages: dict | None = None) -> None:
@@ -188,7 +188,7 @@ class WikiVFS(GenericVFS):
 FEED = {"status.md": "All systems go.\n"}
 
 
-class FeedVFS(GenericVFS):
+class FeedVFS(BaseVFS):
 
     def __init__(self) -> None:
         super().__init__(name="feed",

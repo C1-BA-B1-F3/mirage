@@ -17,6 +17,7 @@ import hashlib
 import pytest
 
 from mirage.cache.index import RAMIndexCacheStore
+from mirage.commands.builtin.hf_buckets.io import IO
 from mirage.types import MountMode, PathSpec, ReadPolicy, ReadSpec
 from mirage.vfs.ram import RAMVFS
 from mirage.vfs.registry import build_vfs
@@ -186,7 +187,8 @@ async def test_listing_a_refused_bucket_is_never_absent():
             # green run.
             assert (result.exit_code, await result.stderr_str()) == (
                 1, "ls: fake bucket_paths_info refused\n")
-            assert (await vfs.index.get("/m/a.txt")).entry is None
+            assert (await
+                    ws.mount("/m").index_store.get("/m/a.txt")).entry is None
         finally:
             await ws.close()
 
@@ -324,8 +326,8 @@ async def test_a_window_past_eof_is_empty_on_every_door():
         vfs = _vfs(hub)
         ws = _ws(vfs, ReadPolicy.BOUNDED)
         try:
-            # The ops read op folds a 416 for every backend; the VFS's own
-            # range door has no fold, so the read must answer it itself.
+            # The ops read op folds a 416 for every backend; the table's own
+            # range slot has no fold, so the read must answer it itself.
             via_op = await ws.mount("/m/a.txt").execute_op(
                 "read",
                 "/m/a.txt",
@@ -333,6 +335,7 @@ async def test_a_window_past_eof_is_empty_on_every_door():
                 offset=99,
                 size=5)
             assert via_op == b""
-            assert await vfs.range_read(_spec("a.txt"), 99, 104) == b""
+            assert await IO.read_range(vfs.accessor, _spec("a.txt"),
+                                       RAMIndexCacheStore(), 99, 5) == b""
         finally:
             await ws.close()

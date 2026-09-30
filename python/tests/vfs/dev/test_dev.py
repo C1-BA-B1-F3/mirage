@@ -16,7 +16,8 @@ import asyncio
 
 import pytest
 
-from mirage import Workspace
+from mirage import Mount, Workspace
+from mirage.cache.index import IndexConfig
 from mirage.commands.cli.types import CLISpec
 from mirage.context import reset_current_session, set_current_session
 from mirage.io.types import IOResult
@@ -234,3 +235,33 @@ def test_stale_allocation_cannot_write_or_release_reused_input():
         assert path[4:] not in dev._store.attrs
     finally:
         reset_current_session(token)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("configured", [False, True])
+async def test_alternate_dev_mount_does_not_cache_session_descriptors(
+        configured):
+    dev = DevVFS()
+    ws = Workspace(
+        {
+            "/devices":
+            Mount(dev, index=IndexConfig(ttl=120)) if configured else dev
+        },
+        index=IndexConfig(ttl=600))
+    owner = ws.create_session("owner")
+    ws.create_session("peer")
+    token = set_current_session(owner)
+    try:
+        path, allocation = dev.allocate_input()
+        dev.set_input(path, allocation, b"private")
+    finally:
+        reset_current_session(token)
+    try:
+        result = await ws.shell("ls /devices/fd", session_id="owner")
+        assert result.exit_code == 0
+        assert await result.stdout_str() == "63\n"
+        result = await ws.shell("ls /devices/fd", session_id="peer")
+        assert "63" not in await result.stdout_str()
+        assert result.exit_code != 0
+    finally:
+        await ws.close()

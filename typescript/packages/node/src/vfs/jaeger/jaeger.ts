@@ -12,8 +12,7 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import { BoundVFS } from '@struktoai/mirage-core/vfs/bound'
-import { JAEGER_IO } from '@struktoai/mirage-core/commands/builtin/jaeger/io'
+import { BaseVFS } from '@struktoai/mirage-core/vfs/base'
 import { JaegerAccessor } from '@struktoai/mirage-core/accessor/jaeger'
 
 import { JAEGER_COMMANDS } from '@struktoai/mirage-core/commands/builtin/jaeger/index'
@@ -23,7 +22,6 @@ import { HttpJaegerTransport } from '@struktoai/mirage-core/core/jaeger/client'
 import { JAEGER_OPS } from '@struktoai/mirage-core/ops/jaeger/index'
 import type { RegisteredOp } from '@struktoai/mirage-core/ops/registry'
 
-import type { VFS } from '@struktoai/mirage-core/vfs/base'
 import { JAEGER_PROMPT } from '@struktoai/mirage-core/vfs/jaeger/prompt'
 import { VFSName } from '@struktoai/mirage-core/types'
 
@@ -34,19 +32,19 @@ export interface JaegerVFSState {
   config: JaegerConfigRedacted
 }
 
-export class JaegerVFS extends BoundVFS<JaegerAccessor> implements VFS {
-  readonly kind: string = VFSName.JAEGER
-  readonly cachesReads: boolean = true
+export class JaegerVFS extends BaseVFS {
+  override readonly name: string = VFSName.JAEGER
+  override readonly cachesReads: boolean = true
   // Every listed file carries an exact size: a trace is rendered at readdir
   // from the search payload the listing already fetched, and operations.json
   // is sized by one call per service directory the caller opens.
-  readonly sizesAlwaysKnown: boolean = true
-  readonly prompt: string = JAEGER_PROMPT
+  override readonly sizesAlwaysKnown: boolean = true
+  override readonly prompt: string = JAEGER_PROMPT
   readonly config: JaegerConfig
-  readonly accessor: JaegerAccessor
+  override readonly accessor: JaegerAccessor
 
   constructor(config: JaegerConfig) {
-    super(JAEGER_IO)
+    super()
     this.config = config
     const transportOpts: { host?: string; timeout?: number } = {}
     if (config.host !== undefined) transportOpts.host = config.host
@@ -68,17 +66,17 @@ export class JaegerVFS extends BoundVFS<JaegerAccessor> implements VFS {
     this.accessor = new JaegerAccessor(new HttpJaegerTransport(transportOpts), accessorConfig)
   }
 
-  commands(): readonly RegisteredCommand[] {
+  override commands(): readonly RegisteredCommand[] {
     return JAEGER_COMMANDS
   }
 
-  ops(): readonly RegisteredOp[] {
+  override ops(): readonly RegisteredOp[] {
     return JAEGER_OPS
   }
 
   override getState(): Promise<JaegerVFSState> {
     return Promise.resolve({
-      type: this.kind,
+      type: this.name,
       config: redactJaegerConfig(this.config),
     })
   }

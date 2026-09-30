@@ -2,31 +2,34 @@ from typing import Any
 
 from mirage.accessor.dify import DifyAccessor
 from mirage.commands.builtin.dify import COMMANDS
-from mirage.commands.builtin.dify.io import IO
+from mirage.commands.config import RegisteredCommand
+from mirage.commands.registry import registered_commands
 from mirage.ops.dify import OPS as DIFY_VFS_OPS
+from mirage.ops.registry import RegisteredOp
 from mirage.types import VFSName
-from mirage.vfs.bound import BoundVFS
+from mirage.vfs.base import BaseVFS
 from mirage.vfs.dify.config import DifyConfig
 from mirage.vfs.dify.prompt import PROMPT
 
 
-class DifyVFS(BoundVFS):
+class DifyVFS(BaseVFS):
 
     accessor: DifyAccessor
     name: str = VFSName.DIFY
     caches_reads: bool = True
-    PROMPT: str = PROMPT
-    SUPPORTS_SNAPSHOT: bool = False
+    prompt: str = PROMPT
+    supports_snapshot: bool = False
 
     def __init__(self, config: DifyConfig) -> None:
-        super().__init__(io=IO)
+        super().__init__()
         self.config = config
         self.accessor = DifyAccessor(config)
 
-        for fn in COMMANDS:
-            self.register(fn)
-        for fn in DIFY_VFS_OPS:
-            self.register_op(fn)
+    def ops(self) -> list[RegisteredOp]:
+        return DIFY_VFS_OPS
+
+    def commands(self) -> list[RegisteredCommand]:
+        return registered_commands(COMMANDS)
 
     def get_state(self) -> dict[str, Any]:
         redacted = ["api_key"]

@@ -12,8 +12,7 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import { BoundVFS } from '@struktoai/mirage-core/vfs/bound'
-import { POSTGRES_IO } from '@struktoai/mirage-core/commands/builtin/postgres/io'
+import { BaseVFS } from '@struktoai/mirage-core/vfs/base'
 import { PostgresAccessor } from '@struktoai/mirage-core/accessor/postgres'
 
 import { POSTGRES_COMMANDS } from '@struktoai/mirage-core/commands/builtin/postgres/index'
@@ -23,7 +22,6 @@ import type { PgDriver } from '@struktoai/mirage-core/core/postgres/_driver'
 import { POSTGRES_OPS } from '@struktoai/mirage-core/ops/postgres/index'
 import type { RegisteredOp } from '@struktoai/mirage-core/ops/registry'
 
-import type { VFS } from '@struktoai/mirage-core/vfs/base'
 import {
   redactPostgresConfig,
   resolvePostgresConfig,
@@ -50,17 +48,17 @@ export interface PostgresVFSState {
   needs_override: true
 }
 
-export class PostgresVFS extends BoundVFS<PostgresAccessor> implements VFS {
-  readonly kind: string = VFSName.POSTGRES
-  readonly cachesReads: boolean = false
+export class PostgresVFS extends BaseVFS {
+  override readonly name: string = VFSName.POSTGRES
+  override readonly cachesReads: boolean = false
   override readonly indexTtl: number = 0
-  readonly prompt: string
+  override readonly prompt: string
   readonly config: PostgresConfigResolved
   readonly driver: PgDriver
-  readonly accessor: PostgresAccessor
+  override readonly accessor: PostgresAccessor
 
   constructor(options: PostgresVFSOptions | PostgresConfig) {
-    super(POSTGRES_IO)
+    super()
     const { config, prefix, driver } =
       'config' in options ? options : { config: options, prefix: undefined, driver: undefined }
     this.config = resolvePostgresConfig(config)
@@ -71,7 +69,7 @@ export class PostgresVFS extends BoundVFS<PostgresAccessor> implements VFS {
 
   override getState(): PostgresVFSState {
     return {
-      type: this.kind,
+      type: this.name,
       config: redactPostgresConfig(this.config),
       // TypeScript cannot rebuild a config-backed mount from state:
       // `buildMountArgs` substitutes a RAMVFS for anything it was
@@ -87,11 +85,11 @@ export class PostgresVFS extends BoundVFS<PostgresAccessor> implements VFS {
     await super.close()
   }
 
-  ops(): readonly RegisteredOp[] {
+  override ops(): readonly RegisteredOp[] {
     return POSTGRES_OPS
   }
 
-  commands(): readonly RegisteredCommand[] {
+  override commands(): readonly RegisteredCommand[] {
     return POSTGRES_COMMANDS
   }
 }

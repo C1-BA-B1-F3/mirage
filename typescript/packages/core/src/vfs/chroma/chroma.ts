@@ -12,8 +12,7 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import { BoundVFS } from '../bound.ts'
-import { CHROMA_IO } from '../../commands/builtin/chroma/io.ts'
+import { BaseVFS } from '../base.ts'
 import { ChromaAccessor } from '../../accessor/chroma.ts'
 import { CHROMA_COMMANDS } from '../../commands/builtin/chroma/index.ts'
 import type { RegisteredCommand } from '../../commands/config.ts'
@@ -21,7 +20,6 @@ import type { RegisteredCommand } from '../../commands/config.ts'
 import { CHROMA_OPS } from '../../ops/chroma/index.ts'
 import type { RegisteredOp } from '../../ops/registry.ts'
 import { VFSName } from '../../types.ts'
-import { type VFS } from '../base.ts'
 import {
   type ChromaConfigRedacted,
   redactChromaConfig,
@@ -41,20 +39,20 @@ export interface ChromaVFSState {
   needs_override: true
 }
 
-export class ChromaVFS extends BoundVFS<ChromaAccessor> implements VFS {
-  readonly kind: string = VFSName.CHROMA
-  readonly cachesReads: boolean = false
-  readonly supportsSnapshot: boolean = false
+export class ChromaVFS extends BaseVFS {
+  override readonly name: string = VFSName.CHROMA
+  override readonly cachesReads: boolean = false
+  override readonly supportsSnapshot: boolean = false
   // Every file is sized exactly, by one chunk scan per directory the caller
   // stats; the path tree's own size is the producer's source number and
   // never becomes the reported byte length.
-  readonly sizesAlwaysKnown: boolean = true
-  readonly prompt: string = CHROMA_PROMPT
+  override readonly sizesAlwaysKnown: boolean = true
+  override readonly prompt: string = CHROMA_PROMPT
   readonly config: ChromaConfigResolved
-  readonly accessor: ChromaAccessor
+  override readonly accessor: ChromaAccessor
 
   constructor(options: ChromaVFSOptions | ChromaConfig) {
-    super(CHROMA_IO)
+    super()
     const config = 'config' in options ? options.config : options
     this.config = resolveChromaConfig(config)
     this.accessor = new ChromaAccessor(this.config)
@@ -62,7 +60,7 @@ export class ChromaVFS extends BoundVFS<ChromaAccessor> implements VFS {
 
   override getState(): ChromaVFSState {
     return {
-      type: this.kind,
+      type: this.name,
       config: redactChromaConfig(this.config),
       // TypeScript cannot rebuild a config-backed mount from state:
       // `buildMountArgs` substitutes a RAMVFS for anything it was
@@ -73,11 +71,11 @@ export class ChromaVFS extends BoundVFS<ChromaAccessor> implements VFS {
     }
   }
 
-  ops(): readonly RegisteredOp[] {
+  override ops(): readonly RegisteredOp[] {
     return CHROMA_OPS
   }
 
-  commands(): readonly RegisteredCommand[] {
+  override commands(): readonly RegisteredCommand[] {
     return CHROMA_COMMANDS
   }
 }

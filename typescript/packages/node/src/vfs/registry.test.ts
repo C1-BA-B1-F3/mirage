@@ -73,9 +73,9 @@ describe('node VFS registry', () => {
     const sharePoint = await buildVfs('sharepoint', { access_token: 'token' })
     const mem0 = await buildVfs('mem0', { api_key: 'key', user_id: 'user' })
 
-    expect(oneDrive.kind).toBe('onedrive')
-    expect(sharePoint.kind).toBe('sharepoint')
-    expect(mem0.kind).toBe('mem0')
+    expect(oneDrive.name).toBe('onedrive')
+    expect(sharePoint.name).toBe('sharepoint')
+    expect(mem0.name).toBe('mem0')
   })
 
   // The factories used to double-cast an unvalidated blob, so a bad config
@@ -132,7 +132,7 @@ describe('node VFS registry', () => {
       aws_profile: 'p',
       timeout: 3,
     })
-    expect(vfs.kind).toBe('s3')
+    expect(vfs.name).toBe('s3')
     await expect(
       buildVfs('s3', { bucket: 'b', endpoint_urll: 'http://127.0.0.1:1' }),
     ).rejects.toThrow(/^s3: endpoint_urll: unrecognized_keys$/)
@@ -269,14 +269,14 @@ describe('node VFS registry', () => {
 
   it('builds MongoDB with uri', async () => {
     const r = await buildVfs('mongodb', { uri: 'mongodb://localhost' })
-    expect(r.kind).toBe('mongodb')
+    expect(r.name).toBe('mongodb')
   })
 
   it('builds Postgres with dsn', async () => {
     const r = await buildVfs('postgres', {
       dsn: 'postgres://localhost/db',
     })
-    expect(r.kind).toBe('postgres')
+    expect(r.name).toBe('postgres')
   })
 
   it('Postgres: accepts snake_case max_read_rows → maxReadRows', async () => {
@@ -289,17 +289,17 @@ describe('node VFS registry', () => {
 
   it('builds Notion with api key', async () => {
     const r = await buildVfs('notion', { api_key: 'secret' })
-    expect(r.kind).toBe('notion')
+    expect(r.name).toBe('notion')
   })
 
   it('builds RAM with no config', async () => {
     const r = await buildVfs('ram', {})
-    expect(r.kind).toBe('ram')
+    expect(r.name).toBe('ram')
   })
 
   it('builds Disk with root', async () => {
     const r = await buildVfs('disk', { root: '/tmp' })
-    expect(r.kind).toBe('disk')
+    expect(r.name).toBe('disk')
   })
 
   it('builds S3 with bucket', async () => {
@@ -307,7 +307,7 @@ describe('node VFS registry', () => {
       bucket: 'test-bucket',
       region: 'us-east-1',
     })
-    expect(r.kind).toBe('s3')
+    expect(r.name).toBe('s3')
   })
 
   it('throws on unknown name with helpful message', async () => {
@@ -322,7 +322,7 @@ describe('node VFS registry', () => {
     })
     expect(knownVfsNames()).toContain('mock-fs')
     const r = await buildVfs('mock-fs', {})
-    expect(r.kind).toBe('ram')
+    expect(r.name).toBe('ram')
   })
 
   it('S3: accepts Python YAML snake_case keys', async () => {
@@ -368,11 +368,11 @@ describe('node VFS registry', () => {
   })
 
   it('Redis: snake_case key_prefix → keyPrefix', async () => {
-    const r = (await buildVfs('redis', {
+    const r = await buildVfs('redis', {
       url: 'redis://localhost:6379/0',
       key_prefix: 'mirage:test:',
-    })) as { kind: string }
-    expect(r.kind).toBe('redis')
+    })
+    expect(r.name).toBe('redis')
   })
 
   it('Nextcloud: accepts Python YAML snake_case keys', async () => {
@@ -382,7 +382,7 @@ describe('node VFS registry', () => {
       password: 'secret',
       verify_ssl: false,
     })
-    expect(vfs.kind).toBe('nextcloud')
+    expect(vfs.name).toBe('nextcloud')
     const { config } = vfs as unknown as {
       config: { username?: string; verifySsl?: boolean }
     }
@@ -424,7 +424,7 @@ describe('hf VFS in registry', () => {
       timeout: 30,
       revision: 'main',
     })
-    expect(r.kind).toBe('hf_models')
+    expect(r.name).toBe('hf_models')
     const { config } = r as unknown as {
       config: { repoId: string; keyPrefix?: string; timeoutMs?: number; revision?: string }
     }
@@ -435,9 +435,9 @@ describe('hf VFS in registry', () => {
   })
 
   it('builds hf_buckets, hf_datasets, and hf_spaces', async () => {
-    expect((await buildVfs('hf_buckets', { bucket: 'ns/b' })).kind).toBe('hf_buckets')
-    expect((await buildVfs('hf_datasets', { repo_id: 'ns/d' })).kind).toBe('hf_datasets')
-    expect((await buildVfs('hf_spaces', { repo_id: 'ns/s' })).kind).toBe('hf_spaces')
+    expect((await buildVfs('hf_buckets', { bucket: 'ns/b' })).name).toBe('hf_buckets')
+    expect((await buildVfs('hf_datasets', { repo_id: 'ns/d' })).name).toBe('hf_datasets')
+    expect((await buildVfs('hf_spaces', { repo_id: 'ns/s' })).name).toBe('hf_spaces')
   })
 
   it('rejects an hf repo id the Hub cannot read, but not a bare one', async () => {
@@ -490,8 +490,12 @@ describe('buildVfs colon reference', () => {
   const CORE = pathToFileURL(
     resolve(fileURLToPath(import.meta.url), '../../../../core/dist/index.js'),
   ).href
+  const CORE_BASE = pathToFileURL(
+    resolve(fileURLToPath(import.meta.url), '../../../../core/dist/vfs/base.js'),
+  ).href
   const BACKEND =
     `import {RAMVFS} from ${JSON.stringify(CORE)}\n` +
+    `import {BaseVFS} from ${JSON.stringify(CORE_BASE)}\n` +
     'export class WikiVFS extends RAMVFS {\n' +
     '  constructor(config) { super(); this.config = config }\n' +
     '}\n' +
@@ -500,16 +504,15 @@ describe('buildVfs colon reference', () => {
     '}\n' +
     'export class NotAVFS {}\n' +
     'export class HalfVFS {\n' +
-    '  get kind() { return "half" }\n' +
-    '  async open() {}\n' +
+    '  get name() { return "half" }\n' +
+    '  ops() { return [] }\n' +
+    '  commands() { return [] }\n' +
     '  async close() {}\n' +
-    '}\n' +
-    'export class NamelessVFS {\n' +
-    '  kind = ""\n' +
-    '  async open() {}\n' +
-    '  async close() {}\n' +
-    '  getState() { return {type: ""} }\n' +
+    '  getState() { return {type: "half"} }\n' +
     '  loadState() {}\n' +
+    '}\n' +
+    'export class NamelessVFS extends BaseVFS {\n' +
+    '  name = ""\n' +
     '}\n' +
     'export const NOT_A_CLASS = {name: "wiki"}\n'
 
@@ -555,17 +558,18 @@ describe('buildVfs colon reference', () => {
   it('refuses a class that does not build a VFS', async () => {
     const dir = fixture()
     await expect(buildVfs(`${join(dir, 'wiki.mjs')}:NotAVFS`)).rejects.toThrow(
-      'is missing open, close, getState, loadState',
+      'does not extend BaseVFS',
     )
     rmSync(dir, { recursive: true, force: true })
   })
 
-  it('names the members a half-built VFS left out', async () => {
-    // open/close alone used to pass, and the class reached installMounts and
-    // then crashed Workspace.save() on the getState it never declared.
+  it('refuses a lookalike that spells every member beside the contract', async () => {
+    // The brand is the contract, not a member list: a class declaring
+    // name, the tables, close and both state methods without extending
+    // BaseVFS is refused the same as one declaring none of them.
     const dir = fixture()
     await expect(buildVfs(`${join(dir, 'wiki.mjs')}:HalfVFS`)).rejects.toThrow(
-      'is missing getState, loadState',
+      'does not extend BaseVFS',
     )
     rmSync(dir, { recursive: true, force: true })
   })
@@ -574,7 +578,7 @@ describe('buildVfs colon reference', () => {
     // kind is how a command or op registered for this backend is found, so
     // an empty one registers nothing and fails nowhere.
     const dir = fixture()
-    await expect(buildVfs(`${join(dir, 'wiki.mjs')}:NamelessVFS`)).rejects.toThrow('has no kind')
+    await expect(buildVfs(`${join(dir, 'wiki.mjs')}:NamelessVFS`)).rejects.toThrow('has no name')
     rmSync(dir, { recursive: true, force: true })
   })
 

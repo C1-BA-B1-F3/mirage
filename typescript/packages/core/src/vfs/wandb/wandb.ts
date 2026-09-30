@@ -1,5 +1,4 @@
-import { BoundVFS } from '../bound.ts'
-import { WANDB_IO } from '../../commands/builtin/wandb/io.ts'
+import { BaseVFS } from '../base.ts'
 import { WandbAccessor } from '../../accessor/wandb.ts'
 
 import { WANDB_COMMANDS } from '../../commands/builtin/wandb/index.ts'
@@ -10,7 +9,6 @@ import type { WandbConfig, WandbConfigRedacted } from '../../core/wandb/config.t
 import { WANDB_OPS } from '../../ops/wandb/index.ts'
 import type { RegisteredOp } from '../../ops/registry.ts'
 
-import type { VFS } from '../../vfs/base.ts'
 import { WANDB_PROMPT } from '../../vfs/wandb/prompt.ts'
 import { VFSName } from '../../types.ts'
 
@@ -19,29 +17,29 @@ export interface WandbVFSState {
   config: WandbConfigRedacted
 }
 
-export class WandbVFS extends BoundVFS<WandbAccessor> implements VFS {
-  readonly kind: string = VFSName.WANDB
-  readonly prompt: string = WANDB_PROMPT
+export class WandbVFS extends BaseVFS {
+  override readonly name: string = VFSName.WANDB
+  override readonly prompt: string = WANDB_PROMPT
   readonly config: WandbConfig
-  readonly accessor: WandbAccessor
+  override readonly accessor: WandbAccessor
 
   constructor(config: WandbConfig) {
-    super(WANDB_IO)
+    super()
     this.config = config
     this.accessor = new WandbAccessor(config)
   }
 
-  commands(): readonly RegisteredCommand[] {
+  override commands(): readonly RegisteredCommand[] {
     return WANDB_COMMANDS
   }
 
-  ops(): readonly RegisteredOp[] {
+  override ops(): readonly RegisteredOp[] {
     return WANDB_OPS
   }
 
   override getState(): Promise<WandbVFSState> {
     return Promise.resolve({
-      type: this.kind,
+      type: this.name,
       config: redactWandbConfig(this.config),
     })
   }

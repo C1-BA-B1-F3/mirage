@@ -52,8 +52,8 @@ export interface Capabilities {
   read_revalidatable: boolean | string
   supports_snapshot: boolean | string
   sizes_always_known: boolean | string
-  storage_id: boolean
-  statfs: boolean
+  storage_location: boolean
+  capacity: boolean
   has_prompt: boolean
   has_write_prompt: boolean
 }
@@ -201,9 +201,11 @@ function assignsInConstructor(info: ClassInfo, name: string): boolean {
  *
  * The nearest declaration decides, as it does at runtime: an initializer
  * other than `''`, a getter, or a bare declaration its constructor fills.
- * `prompt` and `writePrompt` are optional members of `VFS` with no
- * `BaseVFS` declaration, and `buildFilePrompt` skips a mount whose prompt
- * is absent, so a class that declares neither describes nothing to an agent.
+ * `BaseVFS` declares both slots without a value: its constructor only
+ * forwards what a table-built driver passes in, which no static read can
+ * see, so reaching the base means the class gives none. `buildFilePrompt`
+ * skips a mount whose prompt is absent, so a class that gives neither
+ * describes nothing to an agent.
  *
  * Args:
  *   ancestry: the class and its ancestors, nearest first.
@@ -211,6 +213,7 @@ function assignsInConstructor(info: ClassInfo, name: string): boolean {
  */
 function givesText(ancestry: readonly ClassInfo[], name: string): boolean {
   for (const info of ancestry) {
+    if (info.decl.name?.text === BASE_CLASS) return false
     for (const member of info.decl.members) {
       if (member.name?.getText(info.source) !== name) continue
       if (ts.isGetAccessorDeclaration(member)) return true
@@ -225,11 +228,10 @@ function givesText(ancestry: readonly ClassInfo[], name: string): boolean {
 /**
  * One class's capability values, resolved up its extends chain.
  *
- * The three boolean capabilities are optional members of the `VFS`
- * interface with no `BaseVFS` declaration, and every reader coerces
- * with `=== true` (`VFS/base.ts`), so a class that declares none of
- * them is false — not undefined. `indexTtl` does have a `BaseVFS`
- * default and is picked up by the same walk.
+ * The three boolean capabilities default to false on `BaseVFS`, as
+ * `indexTtl` defaults to 600, and the walk reads the nearest
+ * declaration up the chain, so a class that declares none of them
+ * reports the base's false.
  *
  * Args:
  *   className: the class the registry constructs.
@@ -255,8 +257,8 @@ export function capabilitiesOf(className: string, classes: Map<string, ClassInfo
     read_revalidatable: booleanCapability(values, 'readRevalidatable', false, className),
     supports_snapshot: booleanCapability(values, 'supportsSnapshot', false, className),
     sizes_always_known: booleanCapability(values, 'sizesAlwaysKnown', false, className),
-    storage_id: overrides.some((info) => declaresMethod(info, 'storageId')),
-    statfs: overrides.some((info) => declaresMethod(info, 'statfs')),
+    storage_location: overrides.some((info) => declaresMethod(info, 'storageLocation')),
+    capacity: overrides.some((info) => declaresMethod(info, 'capacity')),
     has_prompt: givesText(ancestry, 'prompt'),
     has_write_prompt: givesText(ancestry, 'writePrompt'),
   }

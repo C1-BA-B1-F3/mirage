@@ -115,13 +115,9 @@ class CountingCache extends RAMFileCacheStore {
     return await super.get(key)
   }
 
-  constructor() {
-    super()
-    const exists = this.exists
-    this.exists = async (key: string | PathSpec): Promise<boolean> => {
-      this.existsCalls += 1
-      return await exists(key)
-    }
+  override async exists(key: string | PathSpec): Promise<boolean> {
+    this.existsCalls += 1
+    return await super.exists(key)
   }
 }
 

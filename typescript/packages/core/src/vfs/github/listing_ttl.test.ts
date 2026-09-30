@@ -13,6 +13,7 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import type { RegisteredOp } from '../../ops/registry.ts'
 import type { IndexCacheStore } from '../../cache/index/store.ts'
 import { IndexView } from '../../cache/index/view.ts'
 import { FakeGitHub } from '../../core/github/_test_util.ts'
@@ -70,9 +71,7 @@ async function out(w: Workspace, line: string, sessionId?: string): Promise<stri
 }
 
 function indexOf(w: Workspace, path: string): IndexCacheStore {
-  const index = w.registry.mountFor(path).index
-  if (index === undefined) throw new Error(`no index at ${path}`)
-  return index
+  return w.registry.mountFor(path).index
 }
 
 function sessions(w: Workspace, n: number): string[] {
@@ -373,12 +372,18 @@ describe('github listings respect the mount ttl', () => {
     const vfs = await vfsOf()
     const w = await wsOf(vfs, { policy: ReadPolicy.BOUNDED, ttl: 2 })
     try {
-      const glob = vfs.glob.bind(vfs)
-      vi.spyOn(vfs, 'glob').mockImplementation(async (...args) => {
-        const found = await glob(...args)
-        vi.setSystemTime(Date.now() + 3000)
-        return found
-      })
+      const glob = vfs.ops().find((op) => op.name === 'glob')
+      if (glob === undefined) throw new Error('GitHub serves no glob op')
+      w.mount('/gh').registerFns([
+        {
+          ...glob,
+          fn: async (...args) => {
+            const found = await glob.fn(...args)
+            vi.setSystemTime(Date.now() + 3000)
+            return found
+          },
+        } satisfies RegisteredOp,
+      ])
       expect(await out(w, 'echo /gh/*/')).toBe('/gh/docs/\n')
       vi.restoreAllMocks()
       gh.set('docs/c.txt', 'charlie\n')

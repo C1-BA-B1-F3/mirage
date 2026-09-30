@@ -12,8 +12,7 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import { BoundVFS } from '../bound.ts'
-import { GCAL_IO } from '../../commands/builtin/gcal/io.ts'
+import { BaseVFS } from '../base.ts'
 import { GCalAccessor } from '../../accessor/gcal.ts'
 import { GCAL_COMMANDS } from '../../commands/builtin/gcal/index.ts'
 
@@ -23,7 +22,6 @@ import { TokenManager } from '../../core/google/client.ts'
 import { GCAL_OPS } from '../../ops/gcal/index.ts'
 import type { RegisteredOp } from '../../ops/registry.ts'
 
-import type { VFS } from '../base.ts'
 import { GCAL_PROMPT, GCAL_WRITE_PROMPT } from './prompt.ts'
 import { VFSName } from '../../types.ts'
 
@@ -34,37 +32,37 @@ export interface GCalVFSState {
   config: GCalConfigRedacted
 }
 
-export class GCalVFS extends BoundVFS<GCalAccessor> implements VFS {
-  readonly kind: string = VFSName.GCAL
-  readonly cachesReads: boolean = true
+export class GCalVFS extends BaseVFS {
+  override readonly name: string = VFSName.GCAL
+  override readonly cachesReads: boolean = true
   // Shorter than the other Google mounts: a calendar is edited by other
   // people and a day-long index would keep serving a schedule that has
   // already moved.
   override readonly indexTtl: number = 300
-  readonly prompt: string
-  readonly writePrompt: string = GCAL_WRITE_PROMPT
+  override readonly prompt: string
+  override readonly writePrompt: string = GCAL_WRITE_PROMPT
   readonly config: GCalConfig
-  readonly accessor: GCalAccessor
+  override readonly accessor: GCalAccessor
 
   constructor(config: GCalConfig) {
-    super(GCAL_IO)
+    super()
     this.config = config
     const tm = new TokenManager(config)
     this.accessor = new GCalAccessor({ tokenManager: tm, config })
     this.prompt = GCAL_PROMPT + this.accessor.timeRange.prompt()
   }
 
-  commands(): readonly RegisteredCommand[] {
+  override commands(): readonly RegisteredCommand[] {
     return GCAL_COMMANDS
   }
 
-  ops(): readonly RegisteredOp[] {
+  override ops(): readonly RegisteredOp[] {
     return GCAL_OPS
   }
 
   override getState(): Promise<GCalVFSState> {
     return Promise.resolve({
-      type: this.kind,
+      type: this.name,
       config: redactGCalConfig(this.config),
     })
   }

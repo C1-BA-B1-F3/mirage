@@ -16,7 +16,10 @@ from collections.abc import Callable
 
 from mirage.accessor.bin import BinAccessor
 from mirage.commands.builtin.bin import COMMANDS
+from mirage.commands.config import RegisteredCommand
+from mirage.commands.registry import registered_commands
 from mirage.ops.bin import OPS
+from mirage.ops.registry import RegisteredOp
 from mirage.vfs.base import BaseVFS
 
 
@@ -37,13 +40,15 @@ class BinViewVFS(BaseVFS):
     accessor: BinAccessor
     name = "bin"
     # A stub's size is its rendering: cheap, no network, never None.
-    SIZES_ALWAYS_KNOWN: bool = True
+    sizes_always_known: bool = True
 
     def __init__(self, programs: Callable[[], list[str]],
                  note: Callable[[str], str | None]) -> None:
         super().__init__()
         self.accessor = BinAccessor(programs, note)
-        for fn in COMMANDS:
-            self.register(fn)
-        for op in OPS:
-            self.register_op(op)
+
+    def ops(self) -> list[RegisteredOp]:
+        return OPS
+
+    def commands(self) -> list[RegisteredCommand]:
+        return registered_commands(COMMANDS)

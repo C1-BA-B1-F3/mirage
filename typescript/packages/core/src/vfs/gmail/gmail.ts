@@ -12,8 +12,7 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import { BoundVFS } from '../bound.ts'
-import { GMAIL_IO } from '../../commands/builtin/gmail/io.ts'
+import { BaseVFS } from '../base.ts'
 import { GmailAccessor } from '../../accessor/gmail.ts'
 
 import { GMAIL_COMMANDS } from '../../commands/builtin/gmail/index.ts'
@@ -23,7 +22,6 @@ import { TokenManager } from '../../core/google/client.ts'
 import { GMAIL_OPS } from '../../ops/gmail/index.ts'
 import type { RegisteredOp } from '../../ops/registry.ts'
 
-import type { VFS } from '../base.ts'
 import { GMAIL_PROMPT, GMAIL_WRITE_PROMPT } from './prompt.ts'
 import { VFSName } from '../../types.ts'
 
@@ -34,37 +32,37 @@ export interface GmailVFSState {
   config: GmailConfigRedacted
 }
 
-export class GmailVFS extends BoundVFS<GmailAccessor> implements VFS {
-  readonly kind: string = VFSName.GMAIL
-  readonly cachesReads: boolean = true
+export class GmailVFS extends BaseVFS {
+  override readonly name: string = VFSName.GMAIL
+  override readonly cachesReads: boolean = true
   // Every listed file carries an exact size: .gmail.json is rendered at
   // readdir from the full message the listing already fetched, and
   // attachments carry the decoded byte count.
-  readonly sizesAlwaysKnown: boolean = true
+  override readonly sizesAlwaysKnown: boolean = true
   override readonly indexTtl: number = 86_400
-  readonly prompt: string = GMAIL_PROMPT
-  readonly writePrompt: string = GMAIL_WRITE_PROMPT
+  override readonly prompt: string = GMAIL_PROMPT
+  override readonly writePrompt: string = GMAIL_WRITE_PROMPT
   readonly config: GmailConfig
-  readonly accessor: GmailAccessor
+  override readonly accessor: GmailAccessor
 
   constructor(config: GmailConfig) {
-    super(GMAIL_IO)
+    super()
     this.config = config
     const tm = new TokenManager(config)
     this.accessor = new GmailAccessor({ tokenManager: tm })
   }
 
-  commands(): readonly RegisteredCommand[] {
+  override commands(): readonly RegisteredCommand[] {
     return GMAIL_COMMANDS
   }
 
-  ops(): readonly RegisteredOp[] {
+  override ops(): readonly RegisteredOp[] {
     return GMAIL_OPS
   }
 
   override getState(): Promise<GmailVFSState> {
     return Promise.resolve({
-      type: this.kind,
+      type: this.name,
       config: redactGmailConfig(this.config),
     })
   }

@@ -25,7 +25,8 @@ import asyncio
 import subprocess
 from tempfile import TemporaryDirectory
 
-from mirage import MountMode, Workspace, build_vfs, register_vfs
+from mirage import Mount, MountMode, Workspace, build_vfs, register_vfs
+from mirage.cache.index import IndexConfig
 from mirage.vfs.ram import RAMVFS
 
 
@@ -43,8 +44,12 @@ async def check(ws: Workspace, command: str, stdout: str = "") -> None:
 async def write(path: Path) -> None:
     ws = Workspace(
         {
-            "/direct/": RAMVFS(),
-            "/nested/registered/": build_vfs("portable-ram")
+            "/direct/":
+            RAMVFS(),
+            "/nested/registered/":
+            Mount(build_vfs("portable-ram"),
+                  vfs_ref="portable-ram",
+                  index=IndexConfig(ttl=37))
         },
         mode=MountMode.WRITE)
     try:
@@ -62,9 +67,10 @@ async def read(path: Path) -> None:
         await check(ws, "cat /direct/note.txt", "portable\n")
         await check(ws, "cat /nested/registered/*.txt", "registered\n")
         await check(ws, "cat /nested/registered/link", "portable\n")
-        registered = next(m.vfs for m in ws.mounts()
+        registered = next(m for m in ws.mounts()
                           if m.prefix == "/nested/registered/")
-        assert isinstance(registered, PortableRAM)
+        assert isinstance(registered.vfs, PortableRAM)
+        assert registered.index_config == IndexConfig(ttl=37)
     finally:
         await ws.close()
 

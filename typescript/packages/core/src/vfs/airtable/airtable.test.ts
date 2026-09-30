@@ -34,7 +34,7 @@ function vfs(fake: FakeAirtable, overrides: { maxReadRecords?: number } = {}): A
 describe('AirtableVFS', () => {
   it('never serves reads from the file cache', () => {
     const mount = vfs(new FakeAirtable())
-    expect(mount.kind).toBe(VFSName.AIRTABLE)
+    expect(mount.name).toBe(VFSName.AIRTABLE)
     expect(mount.cachesReads).toBe(false)
     expect(mount.sizesAlwaysKnown).toBe(false)
     expect(mount.supportsSnapshot).toBe(false)

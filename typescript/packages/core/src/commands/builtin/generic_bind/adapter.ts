@@ -88,7 +88,7 @@ export interface CommandIO<A extends Accessor = Accessor>
   streamsBytes?: boolean
   local?: boolean
   maxGlobMatches?: number
-  maxDuEntries?: number
+  maxDuEntries?: number | null
   // Child names the namespace owes a directory (nested mount roots and
   // symlinks). Stamped per invocation from opts.childMounts by the
   // factory, because it is session-scoped state while the adapter itself

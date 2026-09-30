@@ -195,7 +195,8 @@ async def test_always_reads_current_github_blob_after_probe(
     ws = Workspace({"/gh": vfs}, read=ReadSpec(policy=ReadPolicy.FRESH))
     try:
         assert (await ws.shell("cat /gh/f.txt")).stdout == b"v1"
-        assert (await vfs.index.get("/gh/f.txt")).entry.id == "v1"
+        index = ws.mount("/gh").index_store
+        assert (await index.get("/gh/f.txt")).entry.id == "v1"
         sha = "v2"
         if surface == "shell":
             assert (await ws.shell("cat /gh/f.txt")).stdout == b"v2"

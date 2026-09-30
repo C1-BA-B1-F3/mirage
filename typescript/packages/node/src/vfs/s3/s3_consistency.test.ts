@@ -82,18 +82,18 @@ describe('S3 cache consistency (mocked)', () => {
               keyPrefix: `consistency:${crypto.randomUUID()}:`,
             }
           : { type }
-      const vfs = new S3VFS(makeConfig())
       const ws = new Workspace(
-        { '/s3/': vfs },
+        { '/s3/': new S3VFS(makeConfig()) },
         {
           mode: MountMode.WRITE,
           read: FRESH,
           index,
         },
       )
+      const store = ws.mount('/s3/').indexStore
       try {
         expect((await ws.shell('ls /s3/')).exitCode).toBe(0)
-        expect((await vfs.index.get('/s3/c.txt')).entry).toBeDefined()
+        expect((await store.get('/s3/c.txt')).entry).toBeDefined()
         expect(DEC.decode((await ws.shell('cat /s3/c.txt')).stdout)).toBe('v1')
         expect(await ws.cache.exists('/s3/c.txt')).toBe(true)
         mock.store.set(BUCKET, 'c.txt', ENC.encode('v2'))
@@ -111,7 +111,7 @@ describe('S3 cache consistency (mocked)', () => {
           await expect(ws.vfs.readFile('/s3/c.txt')).rejects.toMatchObject({ code: 'ENOENT' })
         }
       } finally {
-        await vfs.index.clear()
+        await store.clear()
         await ws.close()
       }
     })
@@ -410,13 +410,14 @@ describe('S3 cache consistency (mocked)', () => {
     }
   })
 
-  it('keeps stat type=text after tee and touch', async () => {
+  it('keeps text content metadata after tee and touch', async () => {
     const ws = new Workspace({ '/s3': new S3VFS(makeConfig()) }, { mode: MountMode.WRITE })
     try {
       const result = await ws.shell('tee /s3/c.txt <<< x; touch /s3/c.txt; stat /s3/c.txt')
       expect(result.exitCode).toBe(0)
-      expect(DEC.decode(result.stdout)).toContain('name=c.txt size=2')
-      expect(DEC.decode(result.stdout)).toContain('type=text')
+      expect(DEC.decode(result.stdout)).toMatch(/File: .*c\.txt\n {2}Size: 2 /)
+      expect(DEC.decode(result.stdout)).toContain('regular file')
+      expect(await ws.stat('/s3/c.txt')).toMatchObject({ content: 'text' })
     } finally {
       await ws.close()
     }

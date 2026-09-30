@@ -16,36 +16,40 @@ from typing import Any
 
 from mirage.accessor.gridfs import GridFSAccessor, GridFSConfig
 from mirage.commands.builtin.gridfs import COMMANDS as GRIDFS_COMMANDS
-from mirage.commands.builtin.gridfs.io import IO
+from mirage.commands.config import RegisteredCommand
+from mirage.commands.registry import registered_commands
 from mirage.core.gridfs.watch import build_delta_hook
 from mirage.ops.gridfs import OPS as GRIDFS_OPS
+from mirage.ops.registry import RegisteredOp
 from mirage.types import VFSName
-from mirage.vfs.bound import BoundVFS
+from mirage.vfs.base import BaseVFS
 from mirage.vfs.gridfs.prompt import PROMPT
 from mirage.watch.base import DeltaHook
 
 
-class GridFSVFS(BoundVFS):
+class GridFSVFS(BaseVFS):
 
     accessor: GridFSAccessor
     name: str = VFSName.GRIDFS
     # byte store: stat() sizes every file from metadata
-    SIZES_ALWAYS_KNOWN: bool = True
+    sizes_always_known: bool = True
     caches_reads: bool = True
-    PROMPT: str = PROMPT
-    SUPPORTS_SNAPSHOT: bool = True
+    prompt: str = PROMPT
+    supports_snapshot: bool = True
     # stat and read both stamp str(file_id), so the gate compares like
     # with like.
-    READ_REVALIDATABLE: bool = True
+    read_revalidatable: bool = True
 
     def __init__(self, config: GridFSConfig) -> None:
-        super().__init__(io=IO)
+        super().__init__()
         self.config = config
         self.accessor = GridFSAccessor(self.config)
-        for fn in GRIDFS_COMMANDS:
-            self.register(fn)
-        for op in GRIDFS_OPS:
-            self.register_op(op)
+
+    def ops(self) -> list[RegisteredOp]:
+        return GRIDFS_OPS
+
+    def commands(self) -> list[RegisteredCommand]:
+        return registered_commands(GRIDFS_COMMANDS)
 
     def delta_hook(self) -> DeltaHook:
         return build_delta_hook(self.accessor)

@@ -14,7 +14,7 @@
 
 import { Accessor } from './base.ts'
 import { TimeRange } from '../core/time_range.ts'
-import type { VFS } from '../vfs/base.ts'
+import type { BaseVFS } from '../vfs/base.ts'
 import type { SlackTransport } from '../core/slack/client.ts'
 
 export class SlackAccessor extends Accessor {
@@ -28,6 +28,6 @@ export class SlackAccessor extends Accessor {
   }
 }
 
-export interface SlackResourceLike extends VFS {
+export interface SlackResourceLike extends BaseVFS {
   readonly accessor: SlackAccessor
 }

@@ -12,8 +12,7 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import { BoundVFS } from '../bound.ts'
-import { DIFY_IO } from '../../commands/builtin/dify/io.ts'
+import { BaseVFS } from '../base.ts'
 import { DifyAccessor } from '../../accessor/dify.ts'
 import { DIFY_COMMANDS } from '../../commands/builtin/dify/index.ts'
 import type { RegisteredCommand } from '../../commands/config.ts'
@@ -21,7 +20,6 @@ import type { RegisteredCommand } from '../../commands/config.ts'
 import { DIFY_OPS } from '../../ops/dify/index.ts'
 import type { RegisteredOp } from '../../ops/registry.ts'
 import { VFSName } from '../../types.ts'
-import { type VFS } from '../base.ts'
 import {
   type DifyConfigRedacted,
   redactDifyConfig,
@@ -41,16 +39,16 @@ export interface DifyVFSState {
   needs_override: true
 }
 
-export class DifyVFS extends BoundVFS<DifyAccessor> implements VFS {
-  readonly kind: string = VFSName.DIFY
-  readonly cachesReads: boolean = true
-  readonly supportsSnapshot: boolean = false
-  readonly prompt: string = DIFY_PROMPT
+export class DifyVFS extends BaseVFS {
+  override readonly name: string = VFSName.DIFY
+  override readonly cachesReads: boolean = true
+  override readonly supportsSnapshot: boolean = false
+  override readonly prompt: string = DIFY_PROMPT
   readonly config: DifyConfigResolved
-  readonly accessor: DifyAccessor
+  override readonly accessor: DifyAccessor
 
   constructor(options: DifyVFSOptions | DifyConfig) {
-    super(DIFY_IO)
+    super()
     const config = 'config' in options ? options.config : options
     this.config = resolveDifyConfig(config)
     this.accessor = new DifyAccessor(this.config)
@@ -58,7 +56,7 @@ export class DifyVFS extends BoundVFS<DifyAccessor> implements VFS {
 
   override getState(): DifyVFSState {
     return {
-      type: this.kind,
+      type: this.name,
       config: redactDifyConfig(this.config),
       // TypeScript cannot rebuild a config-backed mount from state:
       // `buildMountArgs` substitutes a RAMVFS for anything it was
@@ -69,11 +67,11 @@ export class DifyVFS extends BoundVFS<DifyAccessor> implements VFS {
     }
   }
 
-  ops(): readonly RegisteredOp[] {
+  override ops(): readonly RegisteredOp[] {
     return DIFY_OPS
   }
 
-  commands(): readonly RegisteredCommand[] {
+  override commands(): readonly RegisteredCommand[] {
     return DIFY_COMMANDS
   }
 }

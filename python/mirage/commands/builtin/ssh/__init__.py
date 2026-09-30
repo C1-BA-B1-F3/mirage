@@ -12,12 +12,16 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+from dataclasses import replace
+
 from mirage.commands.builtin.generic_bind import make_generic_commands
 from mirage.commands.builtin.ssh.io import IO as _IO
 
+# Shell traversals need partial results and per-directory errors; the shared
+# readdir/stat walker owns those. Direct VFS aggregate methods remain strict.
 COMMANDS = [
     *make_generic_commands(
         "ssh",
-        _IO,
+        replace(_IO, find=None, du=None),
     ),
 ]

@@ -18,6 +18,12 @@ import { VFSName } from '@struktoai/mirage-core/types'
 import type { DiskAccessor } from '../../../accessor/disk.ts'
 import { DISK_IO } from './io.ts'
 
+// Shell traversals need partial results and per-directory errors; the shared
+// readdir/stat walker owns those. Direct VFS aggregate methods remain strict.
+const walkIO = { ...DISK_IO }
+delete walkIO.find
+delete walkIO.du
+
 export const DISK_COMMANDS: readonly RegisteredCommand[] = [
-  ...makeGenericCommands<DiskAccessor>(VFSName.DISK, DISK_IO),
+  ...makeGenericCommands<DiskAccessor>(VFSName.DISK, walkIO),
 ]

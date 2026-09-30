@@ -20,10 +20,8 @@ from typing import Any
 
 import mirage.commands.builtin as builtin
 from mirage.commands.builtin.generic_bind import CommandIO
-from mirage.vfs.bound import BoundVFS
 
 WINDOW = ("offset", "size")
-VFS_RANGE = "range_read"
 
 
 def _takes_window(fn: Callable[..., Any]) -> bool:
@@ -113,21 +111,3 @@ def test_a_wired_range_reader_actually_takes_a_window():
         name for name, io in tables.items()
         if io.read_range is not None and not _takes_window(io.read_range))
     assert not wrong, f"read_range does not take offset/size: {wrong}"
-
-
-def test_a_backend_that_ranges_for_its_vfs_ranges_for_the_ops_path_too():
-    """The two range surfaces have to agree on what a backend can do.
-
-    A ranged read is reachable two ways: ``VFS.range_read(path,
-    start, end)`` on the VFS object, and the ops dispatcher's
-    ``read(path, offset, size)`` through ``CommandIO.read_range``. A
-    backend wired for one and not the other is the same class of bug
-    that left eight readers taking a window nobody handed them: the
-    capability exists, one caller gets it, and the other quietly
-    downloads the whole object and slices.
-    """
-    tables, failed = _tables()
-    assert not failed, f"backend io modules would not import: {failed}"
-    for name, io in tables.items():
-        vfs = BoundVFS(io=io)
-        assert hasattr(vfs, VFS_RANGE) == (io.read_range is not None), name

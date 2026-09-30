@@ -310,9 +310,8 @@ async def board_list(accessor, paths, texts, opts):
 ])
 async def test_native_execution_preserves_command_tokens(kind, head, expected):
     probe = kind(captures=("trello board list", ))
-    ram = RAMVFS()
-    ram.register(board_list)
-    async with workspace({"/": ram}, runtimes=[probe]) as ws:
+    async with workspace({"/": RAMVFS()}, runtimes=[probe]) as ws:
+        ws.mount("/").register_fns([board_list])
         result = await ws.shell(head + " 'a b' '$(echo literal)' ''")
         assert result.exit_code == 0
         tokens = (*expected, "a b", "$(echo literal)", "")
@@ -335,8 +334,6 @@ async def test_native_execution_preserves_command_tokens(kind, head, expected):
 async def test_boundary_expansion_preserves_command_tokens(
         kind, head, prefix, pattern, matches, monkeypatch):
     probe = kind(captures=("trello board list", ))
-    ram = RAMVFS()
-    ram.register(board_list)
     resolve_globs = argv_module.resolve_globs
     pending = True
 
@@ -349,12 +346,13 @@ async def test_boundary_expansion_preserves_command_tokens(
 
     async with workspace(
         {
-            "/": ram,
+            "/": RAMVFS(),
             "/base/inner": RAMVFS(),
             "/base/other": RAMVFS(),
         },
             mode=MountMode.EXEC,
             runtimes=[probe]) as ws:
+        ws.mount("/").register_fns([board_list])
         # Leave the glob pending so command dispatch owns boundary expansion.
         monkeypatch.setattr(argv_module, "resolve_globs", defer_once)
         result = await ws.shell(f"{head} {pattern} 'a b' ''")
@@ -378,10 +376,9 @@ async def test_scripted_multiword_capture_sees_its_full_command(kind, source):
               ctx.commands[-1].command == "trello board list" and ctx.commands[
                   -1].words[-1] == "/allowed")
     probe = kind(captures=("trello board list", ), script=script)
-    ram = RAMVFS()
-    ram.register(board_list)
-    async with workspace({"/": ram},
+    async with workspace({"/": RAMVFS()},
                          runtimes=[probe, MontyRuntime(captures=())]) as ws:
+        ws.mount("/").register_fns([board_list])
         allowed = await ws.shell("echo ok | trello board list /allowed")
         assert allowed.exit_code == 0
         if isinstance(probe, ProcessProbe):
@@ -409,9 +406,8 @@ async def test_external_script_sees_first_unresolved_stage(head):
         script=lambda ctx: seen.append(ctx) or ctx.command == "native-tool")
     named = ProcessProbe(captures=("python3", ))
     named.name = "named"
-    ram = RAMVFS()
-    ram.register(board_list)
-    async with workspace({"/": ram}, runtimes=[probe, named]) as ws:
+    async with workspace({"/": RAMVFS()}, runtimes=[probe, named]) as ws:
+        ws.mount("/").register_fns([board_list])
         ws.register_cli(
             "custom-cli",
             CLISpec(name="custom-cli", fn=lambda inv: (b"ok\n", IOResult())))
@@ -652,7 +648,9 @@ async def test_native_captures_preserve_shell_builtins(kind, willing):
                          mode=MountMode.EXEC,
                          runtimes=[probe]) as ws:
         session = SessionState(session_id="lookup")
-        for name in SHELL_NAMES - {"python", "python3", "node", "js"}:
+        for name in SHELL_NAMES - {
+                "python", "python3", "node", "js", "ps", "kill"
+        }:
             assert lookup(name, session,
                           ws._registry) is Consumer.SESSION, name
             layers = lookup_all(name, session, ws._registry)
@@ -675,3 +673,19 @@ async def test_native_captures_preserve_shell_builtins(kind, willing):
         delegated = probe.requests if isinstance(probe,
                                                  ProcessProbe) else probe.lines
         assert len(delegated) == (4 if willing else 0)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('name,args', [('ps', '-eo pid,cmd'),
+                                       ('kill', '-0 456')])
+@pytest.mark.parametrize('willing', [True, False])
+async def test_explicit_process_command_captures_reach_the_runtime(
+        name, args, willing):
+    probe = ProcessProbe(captures=(name, ), script=lambda ctx: willing)
+    async with workspace({'/': RAMVFS()},
+                         mode=MountMode.EXEC,
+                         runtimes=[probe]) as ws:
+        result = await ws.shell(f'{name} {args}')
+        assert result.exit_code == (0 if willing else 126)
+        assert [r.argv for r in probe.requests
+                ] == ([tuple([name] + args.split())] if willing else [])

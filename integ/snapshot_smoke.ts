@@ -13,7 +13,14 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import assert from 'node:assert/strict'
-import { buildVfs, MountMode, RAMVFS, registerVfsFactory, Workspace } from '@struktoai/mirage-node'
+import {
+  buildVfs,
+  Mount,
+  MountMode,
+  RAMVFS,
+  registerVfsFactory,
+  Workspace,
+} from '@struktoai/mirage-node'
 
 class PortableRAM extends RAMVFS {}
 
@@ -28,7 +35,10 @@ async function write(path: string): Promise<void> {
   const ws = new Workspace(
     {
       '/direct/': new RAMVFS(),
-      '/nested/registered/': await buildVfs('portable-ram'),
+      '/nested/registered/': new Mount(await buildVfs('portable-ram'), {
+        vfsRef: 'portable-ram',
+        index: { ttl: 37 },
+      }),
     },
     { mode: MountMode.WRITE },
   )
@@ -48,7 +58,9 @@ async function read(path: string): Promise<void> {
     await check(ws, 'cat /direct/note.txt', 'portable\n')
     await check(ws, 'cat /nested/registered/*.txt', 'registered\n')
     await check(ws, 'cat /nested/registered/link', 'portable\n')
-    assert(ws.mounts().find((m) => m.prefix === '/nested/registered/')?.vfs instanceof PortableRAM)
+    const registered = ws.mounts().find((m) => m.prefix === '/nested/registered/')
+    assert(registered?.vfs instanceof PortableRAM)
+    assert.equal(registered.indexConfig?.ttl, 37)
   } finally {
     await ws.close()
   }

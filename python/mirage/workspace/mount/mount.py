@@ -16,26 +16,31 @@ import asyncio
 import dataclasses
 import functools
 import inspect
+import logging
 from collections.abc import AsyncIterator, Awaitable, Iterable
 from contextlib import asynccontextmanager
 from typing import Any, Callable
 
 from mirage.cache.context import push_cache_manager
+from mirage.cache.index.config import IndexConfig
+from mirage.cache.index.factory import build_index
 from mirage.cache.index.store import IndexCacheStore
 from mirage.cache.manager import CacheManager
 from mirage.commands.builtin.utils.limit import run_with_timeout
 from mirage.commands.builtin.utils.paths import dispatch_stat, link_follow
 from mirage.commands.config import (CommandOpts, ExecContext,
                                     RegisteredCommand, has_injected_version)
+from mirage.commands.errors import CommandTimeoutError, UsageError
 from mirage.commands.resolve import get_extension
 from mirage.commands.spec import CommandSpec
 from mirage.commands.spec.flag_view import FlagBag
 from mirage.commands.spec.types import FlagValue
+from mirage.commands.spec.usage import read_fail_exit
 from mirage.context import (effective_mount_mode, require_paths_writable,
                             reset_mount_gate, reset_walk_probe, set_mount_gate,
                             set_walk_probe, strongest_mode_under)
 from mirage.io.cachable_iterator import CachableAsyncIterator
-from mirage.io.types import ByteSource, IOResult
+from mirage.io.types import ByteSource, IOResult, materialize
 from mirage.observe.context import (push_mount_context, push_revisions,
                                     reset_active_recorder, reset_revisions,
                                     with_mount_context, with_revisions)
@@ -45,12 +50,14 @@ from mirage.policy import resolve_limit
 from mirage.types import (FileType, Limit, MountMode, PathSpec, Producer,
                           ReadSpec, WalkProbe)
 from mirage.utils.context_scope import ContextScope
-from mirage.utils.errors import ebusy, enotsup
+from mirage.utils.errors import ebusy, enotsup, format_fs_error
 from mirage.utils.ids import uuid7
 from mirage.utils.key_prefix import mount_key
 from mirage.vfs.base import BaseVFS
 from mirage.workspace.mount.activity import VFSActivity
 from mirage.workspace.mount.read_policy import coerce_read_policy
+
+logger = logging.getLogger(__name__)
 
 # Ops that mutate everything under their endpoints in one backend call
 # (a directory rename relocates its whole subtree), so the door also
@@ -58,6 +65,30 @@ from mirage.workspace.mount.read_policy import coerce_read_policy
 # stay per-path: the runtimes compose rmtree from unlink/rmdir, and
 # each of those answers for its own path above.
 _SUBTREE_OPS = frozenset({"rename"})
+
+
+async def _command_output(source: AsyncIterator[bytes], io: IOResult,
+                          command: str,
+                          paths: list[PathSpec]) -> AsyncIterator[bytes]:
+    """Keep a deferred backend failure on its command, after any emitted bytes.
+
+    Args:
+        source (AsyncIterator[bytes]): mount-owned output.
+        io (IOResult): result finalized when the stream is exhausted.
+        command (str): command whose diagnostic and exit code apply.
+        paths (list[PathSpec]): operands for diagnostic spelling.
+    """
+    try:
+        async for chunk in source:
+            yield chunk
+    except CommandTimeoutError:
+        raise
+    except Exception as exc:
+        logger.debug("%s output failed", command, exc_info=True)
+        existing = await materialize(io.stderr) or b""
+        io.stderr = existing + format_fs_error(command, exc, paths)
+        io.exit_code = (exc.exit_code if isinstance(exc, UsageError) else
+                        read_fail_exit(command, exc))
 
 
 def _wrap_cmd_streams(
@@ -153,6 +184,9 @@ class MountEntry:
         vfs: BaseVFS,
         mode: MountMode = MountMode.READ,
         read: ReadSpec | None = None,
+        index: IndexCacheStore | None = None,
+        vfs_ref: str | None = None,
+        index_config: IndexConfig | None = None,
     ) -> None:
         if not prefix.startswith("/"):
             raise ValueError(f"prefix must start with /: {prefix!r}")
@@ -181,6 +215,18 @@ class MountEntry:
         spec = read if read is not None else ReadSpec()
         self.read = dataclasses.replace(spec,
                                         policy=coerce_read_policy(spec.policy))
+        # The store this mount runs its driver under, built by the
+        # registry when the driver is placed and shared with any alias
+        # of the same instance; a bare entry gets a RAM store at the
+        # driver's TTL. ``index`` is the same store scoped by the cache
+        # manager, which is what ops and commands receive.
+        self.index_store: IndexCacheStore = (index if index is not None else
+                                             build_index(None, vfs.index_ttl))
+        # The ``vfs:`` value the driver was built from, recorded for
+        # snapshots; None for one constructed in code.
+        self.vfs_ref = vfs_ref
+        self.index_config = (index_config.model_copy(
+            deep=True) if index_config is not None else None)
         self.activity = VFSActivity()
         self.retiring = False
         self.before_use: Callable[[], Awaitable[None]] | None = None
@@ -218,22 +264,58 @@ class MountEntry:
         finally:
             release()
 
+    def has_op(self, name: str) -> bool:
+        """Whether the op table serves ``name`` on any level of the cascade.
+
+        Args:
+            name (str): the op name.
+        """
+        return bool(
+            self._resolve_cascade(name, None, self._ops, self._general_ops))
+
     async def expand_glob(self, paths: list[PathSpec],
                           prefix: str) -> list[PathSpec]:
-        """Keep the VFS open and prepared while its glob hook runs."""
+        """Expand glob words through the ``glob`` op, one spec at a time.
+
+        A driver whose table carries no ``glob`` leaves every word as
+        typed. The mount stamps each word's mount-relative key before the
+        op sees it, since the key is the placement's to know, and keeps
+        the VFS retained while the walk reads metadata.
+
+        Args:
+            paths (list[PathSpec]): the words, pattern specs among them.
+            prefix (str): the mount prefix without its trailing slash.
+        """
+        levels = self._resolve_cascade("glob", None, self._ops,
+                                       self._general_ops)
+        if not levels:
+            return list(paths)
         async with self.use():
             if self.cache_manager is None:
-                return await self.vfs.resolve_glob(paths, prefix=prefix)
+                return await self._run_glob(levels, paths, prefix,
+                                            self.index_store)
             async with self.cache_manager.mutation():
                 await self.ensure_ready()
-                index = self.cache_manager.scope_index_locked(self.vfs.index)
-                return await self.vfs.resolve_glob(paths,
-                                                   prefix=prefix,
-                                                   index=index)
+                index = self.cache_manager.scope_index_locked(self.index_store)
+                return await self._run_glob(levels, paths, prefix, index)
+
+    async def _run_glob(self, levels: list[RegisteredOp],
+                        paths: list[PathSpec], prefix: str,
+                        index: IndexCacheStore) -> list[PathSpec]:
+        out: list[PathSpec] = []
+        for p in paths:
+            spec = (dataclasses.replace(
+                p, vfs_path=mount_key(p.virtual, prefix)) if prefix else p)
+            for op in levels:
+                matches = await op.fn(self.vfs.accessor, spec, index=index)
+                if matches is not None:
+                    out.extend(matches)
+                    break
+        return out
 
     @property
     def index(self) -> IndexCacheStore:
-        index = self.vfs.index
+        index = self.index_store
         return self.cache_manager.scope_index(
             index) if self.cache_manager else index
 
@@ -398,36 +480,47 @@ class MountEntry:
                 this mount's VFS.
         """
         pname = self.vfs.name
+        # Grouped by name, because a family table fans out over sibling
+        # VFS names: hf_buckets/hf_datasets/hf_models/hf_spaces share one
+        # `make_generic_ops(HF_VFS_NAMES, IO)` table, so most entries a
+        # mount is handed belong to a sibling and are simply skipped. A
+        # name whose entries name only other VFS is the real mistake (a
+        # table built for the wrong backend), and that still raises.
+        cmd_groups: dict[str, tuple[list[RegisteredCommand], set[str]]] = {}
+        op_groups: dict[str, tuple[list[RegisteredOp], set[str]]] = {}
         for fn in fns:
             rcs: list[RegisteredCommand] = ([fn] if isinstance(
                 fn, RegisteredCommand) else getattr(fn, "_registered_commands",
                                                     []))
-            if rcs:
-                matching = [
-                    rc for rc in rcs if rc.vfs is None or rc.vfs == pname
-                ]
-                if rcs and not matching:
-                    vfs_names = sorted(
-                        {rc.vfs
-                         for rc in rcs if rc.vfs is not None})
-                    raise ValueError(f"command {rcs[0].name!r} is for VFS(s) "
-                                     f"{vfs_names!r}, not {pname!r}")
-                for rc in matching:
-                    self.register(rc)
+            for rc in rcs:
+                keep, attempted = cmd_groups.setdefault(rc.name, ([], set()))
+                if rc.vfs is None or rc.vfs == pname:
+                    keep.append(rc)
+                else:
+                    attempted.add(rc.vfs)
             ros: list[RegisteredOp] = ([fn] if isinstance(fn, RegisteredOp)
                                        else getattr(fn, "_registered_ops", []))
-            if ros:
-                matching_ops = [
-                    ro for ro in ros if ro.vfs is None or ro.vfs == pname
-                ]
-                if ros and not matching_ops:
-                    vfs_names = sorted(
-                        {ro.vfs
-                         for ro in ros if ro.vfs is not None})
-                    raise ValueError(f"op {ros[0].name!r} is for VFS(s) "
-                                     f"{vfs_names!r}, not {pname!r}")
-                for ro in matching_ops:
-                    self.register_op(ro)
+            for ro in ros:
+                keep_op, attempted_op = op_groups.setdefault(
+                    ro.name, ([], set()))
+                if ro.vfs is None or ro.vfs == pname:
+                    keep_op.append(ro)
+                else:
+                    attempted_op.add(ro.vfs)
+        for name, (keep, attempted) in cmd_groups.items():
+            if not keep:
+                raise ValueError(f"command {name!r} is for VFS(s) "
+                                 f"{sorted(attempted)!r}, not {pname!r}")
+        for name, (keep_op, attempted_op) in op_groups.items():
+            if not keep_op:
+                raise ValueError(f"op {name!r} is for VFS(s) "
+                                 f"{sorted(attempted_op)!r}, not {pname!r}")
+        for keep, _attempted in cmd_groups.values():
+            for rc in keep:
+                self.register(rc)
+        for keep_op, _attempted_op in op_groups.values():
+            for ro in keep_op:
+                self.register_op(ro)
 
     def unregister(self, names: list[str]) -> None:
         """Remove all commands and ops with the given names.
@@ -726,6 +819,10 @@ class MountEntry:
                         io.producer = Producer(command=cmd_name,
                                                prefixes=(self.prefix, ),
                                                declared=cmd.limit)
+                        if stream is not None and not isinstance(
+                                stream, bytes):
+                            stream = _command_output(stream, io, cmd_name,
+                                                     paths)
                         return stream, io
                 return None, IOResult()
             finally:

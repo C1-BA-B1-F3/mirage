@@ -166,6 +166,7 @@ export class UpstashRedisStore implements RedisStoreLike {
   private readonly token: string
   private readonly fetchImpl: typeof fetch
   private readonly maxRequestBytes: number
+  private rootSeeded: Promise<void> | null = null
 
   constructor(options: UpstashRedisStoreOptions) {
     const target = restTarget(options)
@@ -196,7 +197,29 @@ export class UpstashRedisStore implements RedisStoreLike {
     return `${this.keyPrefix}attrs:${path}`
   }
 
+  // The root directory marker goes out before the first request, once.
+  // Python's store writes it in its constructor and the node store on
+  // connect; a page has neither a sync client nor a connection, so the
+  // first request is the moment.
   private async request(
+    path: string,
+    body: BodyInit,
+    contentType: string,
+    base64: boolean,
+  ): Promise<JsonValue> {
+    this.rootSeeded ??= this.send(
+      '',
+      JSON.stringify(['SADD', this.dk(), '/']),
+      'application/json',
+      false,
+    ).then((reply) => {
+      unwrap(reply)
+    })
+    await this.rootSeeded
+    return this.send(path, body, contentType, base64)
+  }
+
+  private async send(
     path: string,
     body: BodyInit,
     contentType: string,
@@ -290,10 +313,6 @@ export class UpstashRedisStore implements RedisStoreLike {
       for (const key of expectStrings(reply[1] ?? null, 'SCAN')) keys.push(key)
     } while (cursor !== '0')
     return keys
-  }
-
-  async open(): Promise<void> {
-    await this.command(['SADD', this.dk(), '/'])
   }
 
   async getFile(path: string): Promise<Uint8Array | null> {
@@ -479,6 +498,7 @@ export class UpstashRedisStore implements RedisStoreLike {
       }
     }
     await this.command(['DEL', this.dk()])
+    this.rootSeeded = null
   }
 
   close(): Promise<void> {

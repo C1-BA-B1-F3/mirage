@@ -1,5 +1,5 @@
 import {
-  Accessor, FileStat, FileType, GenericVFS, PathSpec, VFSAdapter, Workspace,
+  Accessor, BaseVFS, FileStat, FileType, PathSpec, VFSAdapter, Workspace,
   checkReadContract, eisdir, enoent, enotdir,
 } from '@struktoai/mirage-node'
 
@@ -42,7 +42,7 @@ async function main(): Promise<void> {
     missing: new PathSpec({ virtual: '/resource/missing', directory: '/resource', vfsPath: 'missing' }),
     content: enc.encode('Hello from my resource!\n'),
   })
-  const ws = new Workspace({ '/resource': new GenericVFS({ name: 'resource', accessor: client, io: adapter }) })
+  const ws = new Workspace({ '/resource': new BaseVFS({ name: 'resource', accessor: client, io: adapter }) })
   try {
     const result = await ws.shell('cat /resource/hello.txt')
     if (result.exitCode !== 0) throw new Error('starter mount failed')

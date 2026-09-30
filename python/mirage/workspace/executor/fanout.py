@@ -14,6 +14,7 @@
 
 import dataclasses
 import functools
+import logging
 from collections.abc import Sequence
 from dataclasses import dataclass
 
@@ -53,6 +54,8 @@ from mirage.utils.path import respell_one
 from mirage.workspace.mount import (MountCommandUnsupported, MountEntry,
                                     MountRegistry)
 from mirage.workspace.types import ExecutionNode
+
+logger = logging.getLogger(__name__)
 
 # `tree` is deliberately absent: its output is one document (root line,
 # drawing, summary), so a second per-mount block would print a second of
@@ -685,6 +688,7 @@ async def _fan_out_traversal(
         except CommandTimeoutError:
             raise
         except Exception as exc:
+            logger.debug("%s traversal failed", cmd_name, exc_info=True)
             stdout = None
             io = IOResult(exit_code=read_fail_exit(cmd_name, exc),
                           stderr=format_fs_error(cmd_name, exc, sub_paths))

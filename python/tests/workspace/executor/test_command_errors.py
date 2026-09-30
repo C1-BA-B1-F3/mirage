@@ -1,3 +1,5 @@
+import logging
+
 import pytest
 
 from mirage import RAMVFS, Workspace
@@ -55,9 +57,11 @@ async def test_lazy_errors_remain_on_the_producer(error, tail, expected):
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize('name,lazy', [('find', True), ('du', False)])
-async def test_nested_mount_failure_keeps_the_line(name, lazy):
+async def test_nested_mount_failure_keeps_the_line(name, lazy, caplog):
+    caplog.set_level(logging.DEBUG, logger="mirage.workspace")
     bad = RAMVFS()
-    bad.register(failing_command(name, RuntimeError('remote failure'), lazy))
+    error = RuntimeError('remote failure')
+    bad.register(failing_command(name, error, lazy))
     ws = Workspace({'/bad': bad, '/good': RAMVFS()}, mode='exec')
     try:
         await ws.shell('echo data >/good/file')
@@ -67,6 +71,8 @@ async def test_nested_mount_failure_keeps_the_line(name, lazy):
         assert result.stdout.endswith(b'after=1\n')
         assert b'/good' in result.stdout
         assert not result.stderr
+        assert any(record.exc_info and record.exc_info[1] is error
+                   for record in caplog.records)
     finally:
         await ws.close()
 

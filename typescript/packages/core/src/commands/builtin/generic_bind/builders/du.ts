@@ -159,7 +159,9 @@ export const DU_BUILDER: Builder = {
     // A native du sums the raw tree; under a path rule the walk is what
     // reports a directory the rule refuses to open, where GNU does.
     const native = pathRulesActive() ? undefined : ops.du
-    const budget = new WalkBudget(ops.maxDuEntries ?? DEFAULT_MAX_DU_ENTRIES)
+    const budget = new WalkBudget(
+      ops.maxDuEntries === undefined ? DEFAULT_MAX_DU_ENTRIES : ops.maxDuEntries,
+    )
     const computeSize: ComputeSize =
       native === undefined
         ? (p) => duWalk(ops, accessor, idx, p, budget, null)

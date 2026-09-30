@@ -11,7 +11,7 @@ import { Workspace } from '../workspace.ts'
 
 const DEC = new TextDecoder()
 
-async function setup(kind: string) {
+async function setup(kind: string, count = 0) {
   const root = await mkdtemp(join(tmpdir(), 'mirage-walk-'))
   const opened: string[] = []
   const vfs = kind === 'disk' ? new DiskVFS({ root }) : new SSHVFS({ host: 'fake', root: '/srv' })
@@ -19,6 +19,11 @@ async function setup(kind: string) {
     for (const name of ['a', 'b', 'c']) {
       await mkdir(join(root, name))
       await writeFile(join(root, name, 'f'), 'x')
+    }
+    if (count > 0) {
+      await mkdir(join(root, 'large'))
+      for (let number = 0; number < count; number++)
+        await writeFile(join(root, 'large', String(number)), 'x')
     }
     const original = diskUtils.readEntries
     vi.spyOn(diskUtils, 'readEntries').mockImplementation((path) => {
@@ -28,15 +33,16 @@ async function setup(kind: string) {
       return original(path)
     })
   } else if (vfs instanceof SSHVFS) {
-    const accessor = makeFakeAccessor(
-      {
-        files: new Map(
-          ['a', 'b', 'c'].map((d) => [`/srv/${d}/f`, { data: new Uint8Array([120]) }]),
-        ),
-        dirs: new Map(['/srv', '/srv/a', '/srv/b', '/srv/c'].map((d) => [d, {}])),
-      },
-      '/srv',
-    )
+    const state = {
+      files: new Map(['a', 'b', 'c'].map((d) => [`/srv/${d}/f`, { data: new Uint8Array([120]) }])),
+      dirs: new Map(['/srv', '/srv/a', '/srv/b', '/srv/c'].map((d) => [d, {}])),
+    }
+    const accessor = makeFakeAccessor(state, '/srv')
+    if (count > 0) {
+      state.dirs.set('/srv/large', {})
+      for (let number = 0; number < count; number++)
+        state.files.set(`/srv/large/${String(number)}`, { data: new Uint8Array([120]) })
+    }
     const sftp = await accessor.sftp()
     const readdir = sftp.readdir.bind(sftp)
     vi.spyOn(sftp, 'readdir').mockImplementation((path, cb) => {
@@ -113,3 +119,23 @@ describe.each(['disk', 'ssh'])('partial traversal on %s', (kind) => {
     }
   })
 })
+
+it.each(['disk', 'ssh'])(
+  'du on %s exceeds the default walker budget',
+  async (kind) => {
+    const { ws, close } = await setup(kind, 10001)
+    try {
+      const summary = await ws.shell('du -s /d/large')
+      expect([summary.exitCode, DEC.decode(summary.stderr)]).toEqual([0, ''])
+      expect(DEC.decode(summary.stdout)).toBe('10001\t/d/large\n')
+      const detailed = await ws.shell('du -a /d/large')
+      expect([detailed.exitCode, DEC.decode(detailed.stderr)]).toEqual([0, ''])
+      const rows = DEC.decode(detailed.stdout).trimEnd().split('\n')
+      expect(rows).toHaveLength(10002)
+      expect(rows.at(-1)).toBe('10001\t/d/large')
+    } finally {
+      await close()
+    }
+  },
+  60000,
+)

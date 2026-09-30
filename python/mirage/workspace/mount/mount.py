@@ -16,6 +16,7 @@ import asyncio
 import dataclasses
 import functools
 import inspect
+import logging
 from collections.abc import AsyncIterator, Awaitable, Iterable
 from contextlib import asynccontextmanager
 from typing import Any, Callable
@@ -54,6 +55,8 @@ from mirage.vfs.base import BaseVFS
 from mirage.workspace.mount.activity import VFSActivity
 from mirage.workspace.mount.read_policy import coerce_read_policy
 
+logger = logging.getLogger(__name__)
+
 # Ops that mutate everything under their endpoints in one backend call
 # (a directory rename relocates its whole subtree), so the door also
 # refuses a read-only region below either endpoint. The removal ops
@@ -79,6 +82,7 @@ async def _command_output(source: AsyncIterator[bytes], io: IOResult,
     except CommandTimeoutError:
         raise
     except Exception as exc:
+        logger.debug("%s output failed", command, exc_info=True)
         existing = await materialize(io.stderr) or b""
         io.stderr = existing + format_fs_error(command, exc, paths)
         io.exit_code = (exc.exit_code if isinstance(exc, UsageError) else

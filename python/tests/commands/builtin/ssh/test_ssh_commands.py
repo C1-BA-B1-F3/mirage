@@ -304,14 +304,14 @@ def test_wc(env):
 def test_stat_file(env):
     env.create_file("f.txt", b"hello")
     result = env.run("stat /ssh/f.txt")
-    assert "name=f.txt" in result
-    assert "size=5" in result
+    assert "File: /ssh/f.txt" in result
+    assert "Size: 5 " in result
 
 
 def test_stat_directory(env):
     env.create_file("sub/f.txt", b"hi")
     result = env.run("stat /ssh/sub")
-    assert "name=sub" in result
+    assert "File: /ssh/sub" in result
     assert "directory" in result
 
 

@@ -169,7 +169,7 @@ async def check_partial_read(ws: Workspace, dst: str, label: str) -> None:
     # stat fans out per operand; mtimes vary, so pin shape and exit only.
     out, err, code = await run(ws, f"stat {src} {miss}")
     check(
-        f"{label}: stat keeps good row", "name=a.txt" in out and code == 1
+        f"{label}: stat keeps good row", f"File: {src}\n" in out and code == 1
         and err == f"stat: cannot statx '{miss}': No such file or directory\n")
     out, err, code = await run(ws, f"cut -c1 {src} {miss}")
     check(

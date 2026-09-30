@@ -86,8 +86,8 @@
       }
     },
     {
-      "id": "stat_block_unit_and_birth_sentinels",
-      "cmd": "stat -c \"%B %w %W\" /data/a.txt",
+      "id": "stat_block_unit_and_birth_fields",
+      "cmd": "stat -c %B /data/a.txt; b=$(stat -c %w /data/a.txt); e=$(stat -c %W /data/a.txt); if [ \"$b\" = \"-\" ]; then test \"$e\" = 0; else test \"$e\" -gt 0; fi",
       "matrix": {
         "python": [
           "ram",
@@ -102,7 +102,7 @@
       },
       "expect": {
         "exit": 0,
-        "stdout_text": "512 - 0\n",
+        "stdout_text": "512\n",
         "stderr_text": ""
       }
     }

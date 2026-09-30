@@ -14,10 +14,16 @@ from mirage.vfs.ssh import SSHVFS
 @pytest.fixture(params=['disk', 'ssh'])
 def unreadable_tree(request, tmp_path, monkeypatch):
     opened: list[str] = []
-    if request.param == 'disk':
+    kind, count = (request.param if isinstance(request.param, tuple) else
+                   (request.param, 0))
+    if kind == 'disk':
         for name in ('a', 'b', 'c'):
             (tmp_path / name).mkdir()
             (tmp_path / name / 'f').write_text('x')
+        if count:
+            (tmp_path / 'large').mkdir()
+            for number in range(count):
+                (tmp_path / 'large' / str(number)).write_bytes(b'x')
         module = importlib.import_module('mirage.core.disk.readdir')
         original = module.read_entries
 
@@ -33,11 +39,13 @@ def unreadable_tree(request, tmp_path, monkeypatch):
     vfs = SSHVFS(SSHConfig(host='fake', root='/srv'))
     dirs = {'/srv', '/srv/a', '/srv/b', '/srv/c'}
 
+    files = {f'{d}/f' for d in dirs if d != '/srv'}
+    if count:
+        dirs.add('/srv/large')
+        files.update(f'/srv/large/{number}' for number in range(count))
+
     async def stat(path):
-        if path not in dirs and path not in {
-                f'{d}/f'
-                for d in dirs if d != '/srv'
-        }:
+        if path not in dirs and path not in files:
             raise asyncssh.SFTPNoSuchFile('missing')
         is_dir = path in dirs
         return asyncssh.SFTPAttrs(type=asyncssh.FILEXFER_TYPE_DIRECTORY if
@@ -52,6 +60,10 @@ def unreadable_tree(request, tmp_path, monkeypatch):
         if path == '/srv/c':
             raise asyncssh.SFTPPermissionDenied('Permission denied')
         names = ['a', 'b', 'c'] if path == '/srv' else ['f']
+        if path == '/srv/large':
+            names = [str(number) for number in range(count)]
+        elif count and path == '/srv':
+            names.append('large')
         return [
             asyncssh.SFTPName(name, attrs=await stat(path + '/' + name))
             for name in names
@@ -112,5 +124,25 @@ async def test_depth_limit_does_not_open_children(unreadable_tree):
         result = await ws.shell('find /d/c -maxdepth 0')
         assert (result.exit_code, result.stdout) == (0, b'/d/c\n')
         assert 'c' not in opened
+    finally:
+        await ws.close()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('unreadable_tree', [('disk', 10001), ('ssh', 10001)],
+                         indirect=True)
+async def test_du_accounts_for_more_than_the_default_budget(unreadable_tree):
+    vfs, _ = unreadable_tree
+    ws = Workspace({'/d': vfs})
+    try:
+        summary = await ws.shell('du -s /d/large')
+        assert summary.exit_code == 0
+        assert not summary.stderr
+        assert summary.stdout == b'10001\t/d/large\n'
+        detailed = await ws.shell('du -a /d/large')
+        assert detailed.exit_code == 0
+        assert not detailed.stderr
+        assert len(detailed.stdout.splitlines()) == 10002
+        assert detailed.stdout.endswith(b'10001\t/d/large\n')
     finally:
         await ws.close()

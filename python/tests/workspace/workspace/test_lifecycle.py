@@ -38,6 +38,7 @@ from mirage.vfs.ram import RAMVFS
 from mirage.workspace import Workspace
 from mirage.workspace.executor.builtins.shared import expand_operands
 from mirage.workspace.executor.command.run import drop_mount_caches
+from mirage.workspace.mount.spec import Mount
 from mirage.workspace.snapshot import to_state_dict
 from mirage.workspace.types import ExecutionNode
 
@@ -1019,19 +1020,25 @@ async def test_unmount_drains_service_index_invalidation(monkeypatch, kind):
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("used", [False, True])
-async def test_unmount_leaves_borrowed_mounts_open(used):
+@pytest.mark.parametrize("wrapped", [False, True])
+@pytest.mark.parametrize("unmount", [False, True])
+async def test_restored_workspace_leaves_borrowed_mounts_open(
+        used, wrapped, unmount):
     vfs = RAMVFS()
     vfs.load_state({"files": {"/file": b"seed"}})
     ws = Workspace({"/data": vfs})
     state = await to_state_dict(ws)
-    replica = await Workspace.from_state(state, mounts={"/data": vfs})
+    override = Mount(vfs, index=IndexConfig(ttl=37)) if wrapped else vfs
+    replica = await Workspace.from_state(state, mounts={"/data": override})
     try:
         if used:
             assert (await replica.shell("cat /data/file")).stdout == b"seed"
-        await replica.unmount("/data")
-        assert not vfs.is_closed
+        if unmount:
+            await replica.unmount("/data")
+            assert not vfs.is_closed
         await replica.close()
         assert not vfs.is_closed
+        assert (await ws.shell("cat /data/file")).stdout == b"seed"
         await ws.close()
         assert vfs.is_closed
     finally:

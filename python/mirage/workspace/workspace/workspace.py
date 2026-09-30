@@ -83,6 +83,7 @@ from mirage.workspace.mount import MountEntry, MountRegistry
 from mirage.workspace.mount.namespace import Namespace
 from mirage.workspace.mount.namespace.store import NamespaceStore
 from mirage.workspace.mount.read_policy import check_read_capability
+from mirage.workspace.mount.spec import Mount
 from mirage.workspace.node.explain import explain_line
 from mirage.workspace.session import SessionManager, SessionState, SessionStore
 from mirage.workspace.session.constants import DEFAULT_PROFILE
@@ -1152,7 +1153,10 @@ class Workspace:
                  profiles=profiles,
                  profile=profile)
         if mounts:
-            ws._shared_mounts = {id(r) for r in mounts.values()}
+            ws._shared_mounts = {
+                id(r.vfs if isinstance(r, Mount) else r)
+                for r in mounts.values()
+            }
         await apply_state_dict(ws, state)
         return ws
 

@@ -34,6 +34,43 @@ import { getTestParser } from '../fixtures/workspace_fixture.ts'
 import { Workspace } from './workspace.ts'
 import { dropMountCaches } from '../executor/command/run.ts'
 import { toStateDict } from '../snapshot/state.ts'
+import { Mount } from '../mount/spec.ts'
+
+it.each(
+  [false, true].flatMap((used) =>
+    [false, true].flatMap((wrapped) =>
+      [false, true].map((unmount) => ({ used, wrapped, unmount })),
+    ),
+  ),
+)(
+  'restoring keeps borrowed drivers open ($used, $wrapped, $unmount)',
+  async ({ used, wrapped, unmount }) => {
+    const vfs = new RAMVFS()
+    vfs.loadState({ type: 'ram', files: { '/file': new TextEncoder().encode('seed') } })
+    const owner = new Workspace({ '/data': vfs }, { shellParser: parser })
+    const override = wrapped ? new Mount(vfs, { index: { ttl: 37 } }) : vfs
+    const replica = await Workspace.fromState(
+      await toStateDict(owner),
+      { shellParser: parser },
+      { '/data': override },
+    )
+    try {
+      if (used) expect((await replica.shell('cat /data/file')).stdoutText).toBe('seed')
+      if (unmount) {
+        await replica.unmount('/data')
+        expect(vfs.isClosed).toBe(false)
+      }
+      await replica.close()
+      expect(vfs.isClosed).toBe(false)
+      expect((await owner.shell('cat /data/file')).stdoutText).toBe('seed')
+      await owner.close()
+      expect(vfs.isClosed).toBe(true)
+    } finally {
+      await replica.close()
+      await owner.close()
+    }
+  },
+)
 
 let parser: ShellParser
 

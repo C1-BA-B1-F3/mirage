@@ -51,6 +51,18 @@ describe('chroma readdir on an expired listing', () => {
 
   // The tree is written whole, so an expired folder listing means the tree
   // aged out, not that the folder is gone: refill and answer.
+  it('refilled rows respect index ownership', async () => {
+    const view = new IndexView(
+      new RAMIndexCacheStore(),
+      new RAMFileCacheStore(),
+      '/knowledge',
+      (key) => !key.startsWith('/knowledge/guides'),
+    )
+    for (let i = 0; i < 2; i++) {
+      expect(await readdir(ACCESSOR, pathAt('/knowledge'), view)).toEqual(['/knowledge/api'])
+    }
+  })
+
   it('refills an expired folder under a live root', async () => {
     const index = new RAMIndexCacheStore()
     await readdir(ACCESSOR, pathAt('/knowledge/guides'), index)

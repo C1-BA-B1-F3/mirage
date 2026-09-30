@@ -93,7 +93,14 @@ export class RAMIndexCacheStore extends IndexCacheStore {
     expiredAt?: Date | null,
     options: SetDirOptions = {},
   ): Promise<Evicted[]> {
-    return this.storeDir(vfsPath, entries, expiredAt, false, options.window !== true)
+    return this.storeDir(
+      vfsPath,
+      entries,
+      expiredAt,
+      false,
+      options.window !== true,
+      options.excluded ?? [],
+    )
   }
 
   override setPartialDir(
@@ -110,6 +117,7 @@ export class RAMIndexCacheStore extends IndexCacheStore {
     expiredAt: Date | null | undefined,
     partial: boolean,
     evict: boolean,
+    excluded: readonly string[] = [],
   ): Promise<Evicted[]> {
     return this.lock.withLock(vfsPath, () => {
       const now = Date.now()
@@ -135,8 +143,8 @@ export class RAMIndexCacheStore extends IndexCacheStore {
       const candidates = new Set([...(this.children.get(vfsPath) ?? []), ...buried.keys()])
       const gone = evict
         ? [...candidates]
-            .filter((key) => !named.has(key))
-            .map((key) => this.evict(key, buried.get(key) ?? false))
+            .filter((key) => !named.has(key) && !excluded.some((prefix) => underPath(key, prefix)))
+            .map((key) => this.evict(key, buried.get(key) ?? false, excluded))
         : []
       this.children.set(vfsPath, childKeys)
       this.expiry.set(vfsPath, exp)
@@ -147,13 +155,18 @@ export class RAMIndexCacheStore extends IndexCacheStore {
   }
 
   /** Drop a child a complete listing no longer names. */
-  private evict(key: string, buriedFolder = false): Evicted {
+  private evict(key: string, buriedFolder = false, excluded: readonly string[] = []): Evicted {
     const entry = this.entryMap.get(key)
     this.entryMap.delete(key)
     const folder =
       buriedFolder || this.children.has(key) || entry?.resourceType === ResourceType.FOLDER
-    if (folder) this.dropPrefix(key)
+    if (folder) this.dropPrefix(key, false, excluded)
     return { path: key, folder }
+  }
+
+  invalidateEntry(vfsPath: string): Promise<void> {
+    this.entryMap.delete(vfsPath)
+    return Promise.resolve()
   }
 
   invalidateDir(vfsPath: string): Promise<void> {
@@ -182,25 +195,32 @@ export class RAMIndexCacheStore extends IndexCacheStore {
 
   // Forgetting what is cached is not evidence that anything went away, so an
   // existing tombstone survives for the next complete listing.
-  invalidatePrefix(vfsPath: string): Promise<void> {
-    this.dropPrefix(vfsPath, true)
+  invalidatePrefix(vfsPath: string, excluded: readonly string[] = []): Promise<void> {
+    this.dropPrefix(vfsPath, true, excluded)
     return Promise.resolve()
   }
 
-  private dropPrefix(vfsPath: string, keepTombstones = false): void {
+  private dropPrefix(
+    vfsPath: string,
+    keepTombstones = false,
+    excluded: readonly string[] = [],
+  ): void {
     if (!keepTombstones) {
       for (const key of [...this.tombstones.keys()]) {
-        if (underPath(key, vfsPath)) this.tombstones.delete(key)
+        if (underPath(key, vfsPath) && !excluded.some((prefix) => underPath(key, prefix)))
+          this.tombstones.delete(key)
       }
     }
     for (const key of [...this.entryMap.keys()]) {
-      if (underPath(key, vfsPath)) this.entryMap.delete(key)
+      if (underPath(key, vfsPath) && !excluded.some((prefix) => underPath(key, prefix)))
+        this.entryMap.delete(key)
     }
     for (const key of [...this.children.keys()]) {
-      if (underPath(key, vfsPath)) this.children.delete(key)
+      if (underPath(key, vfsPath) && !excluded.some((prefix) => underPath(key, prefix)))
+        this.children.delete(key)
     }
     for (const key of [...this.expiry.keys()]) {
-      if (underPath(key, vfsPath)) {
+      if (underPath(key, vfsPath) && !excluded.some((prefix) => underPath(key, prefix))) {
         this.expiry.delete(key)
         this.partial.delete(key)
       }

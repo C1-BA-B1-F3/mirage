@@ -5,6 +5,7 @@ from typing import Any
 
 from mirage.accessor.chroma import ChromaAccessor
 from mirage.cache.index import NULL_INDEX, IndexCacheStore, IndexEntry
+from mirage.cache.index.config import IndexSnapshot
 from mirage.core.chroma.client import fetch_path_tree
 from mirage.utils.path import gnu_basename, parent
 
@@ -55,7 +56,7 @@ async def _write_tree(
         await index.set_dir(directory, rows)
         stem = "/" if directory == "/" else directory + "/"
         children[directory] = [stem + name for name, _ in rows]
-    return children
+    return index.scope_snapshot(IndexSnapshot({}, children)).children
 
 
 def parse_path_tree(raw: str) -> dict[str, dict[str, Any]]:

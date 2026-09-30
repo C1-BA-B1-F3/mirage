@@ -335,9 +335,14 @@ export class Namespace {
   // Drop the overlays of a path the backend no longer has, and below. A
   // re-list that finds a folder gone orphans every attribute overlay kept
   // under it; symlink entries are authoritative, so they stay.
-  async dropOverlaysUnder(path: string): Promise<number> {
+  async dropOverlaysUnder(path: string, excluded: readonly string[] = []): Promise<number> {
     const doomed = [...this.nodeTable]
-      .filter(([key, meta]) => meta.target === undefined && underPath(key, path))
+      .filter(
+        ([key, meta]) =>
+          meta.target === undefined &&
+          underPath(key, path) &&
+          !excluded.some((prefix) => underPath(key, prefix)),
+      )
       .map(([key]) => key)
     for (const key of doomed) this.nodeTable.delete(key)
     if (doomed.length > 0) await this.store.delete(doomed)

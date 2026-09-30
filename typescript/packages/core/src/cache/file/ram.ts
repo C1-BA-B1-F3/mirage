@@ -12,6 +12,7 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import { underPath } from '../../utils/key_prefix.ts'
 import { RAMVFS } from '../../vfs/ram/ram.ts'
 import type { PathSpec } from '../../types.ts'
 import { Invalidation } from '../invalidation.ts'
@@ -158,13 +159,13 @@ export class RAMFileCacheStore extends RAMVFS implements FileCache {
     return placed
   }
 
-  async evictPrefix(prefix: string): Promise<void> {
+  async evictPrefix(prefix: string, excluded: readonly string[] = []): Promise<void> {
     // Store-wide: a fill in flight under the prefix has no entry yet, so
     // its key cannot be enumerated below.
     this.invalidation.invalidateAll()
     // A pending fill may not have installed an entry yet.
-    const keys = [...new Set([...this.entries.keys(), ...this.drainTasks.keys()])].filter((k) =>
-      k.startsWith(prefix),
+    const keys = [...new Set([...this.entries.keys(), ...this.drainTasks.keys()])].filter(
+      (k) => k.startsWith(prefix) && !excluded.some((boundary) => underPath(k, boundary)),
     )
     for (const key of keys) await this.remove(key)
   }

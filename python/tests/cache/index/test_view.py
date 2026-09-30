@@ -205,12 +205,14 @@ class _SpyStore(RAMIndexCacheStore):
                       entries,
                       expired_at=None,
                       *,
-                      window=False) -> list[Evicted]:
+                      window=False,
+                      excluded=()) -> list[Evicted]:
         self.asked.append(expired_at)
         return await super().set_dir(vfs_path,
                                      entries,
                                      expired_at,
-                                     window=window)
+                                     window=window,
+                                     excluded=excluded)
 
     async def set_partial_dir(self,
                               vfs_path,

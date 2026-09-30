@@ -16,6 +16,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { GitHubAccessor } from '../accessor/github.ts'
 import { read as githubRead } from '../core/github/read.ts'
 import { stat as githubStat } from '../core/github/stat.ts'
+import { IndexEntry } from '../cache/index/config.ts'
 import { RAMVFS } from '../vfs/ram/ram.ts'
 import {
   type ReadSpec,
@@ -159,7 +160,6 @@ describe('Reconciler', () => {
       const mount = withFresh(mountOf(ws, '/data/d'))
       const rec = new Reconciler(ws.cache, ws.namespace, ws.opsRegistry)
       const index = mount.index
-      if (index === undefined) throw new Error('no index')
       await index.setDir('/data/d', [])
       expect(await rec.mayServeListing(mount, '/data/d')).toBe(false)
       await runInCommandScope(async () => {
@@ -458,6 +458,38 @@ it.each(['gate', 'shell'])('reconciles GitHub IDs before the %s reread', async (
     expect(new TextDecoder().decode(await githubRead(accessor, scope, mount.indexStore))).toBe('v2')
   } finally {
     vi.restoreAllMocks()
+    await ws.close()
+  }
+})
+
+it.each([false, true])('re-list preserves a nested mount subtree (shared=%s)', async (shared) => {
+  const parent = new RAMVFS()
+  const ws = new Workspace(
+    { '/data': parent, '/data/sub/nested': shared ? parent : new RAMVFS() },
+    { index: { ttl: 600 } },
+  )
+  try {
+    await ws.namespace.ensureLoaded()
+    const index = ws.mount('/data').index
+    const nested = ws.mount('/data/sub/nested').index
+    await index.setDir('/data', [
+      ['sub', new IndexEntry({ id: 'sub', name: 'sub', resourceType: 'folder' })],
+    ])
+    await nested.setDir('/data/sub/nested', [
+      ['file', new IndexEntry({ id: 'file', name: 'file', resourceType: 'file' })],
+    ])
+    await ws.cache.set('/data/sub/old', ENC.encode('old'))
+    await ws.cache.set('/data/sub/nested/file', ENC.encode('keep'))
+    await ws.namespace.setAttrs('/data/sub/old', { mode: 0o600 })
+    await ws.namespace.setAttrs('/data/sub/nested/file', { mode: 0o640 })
+    await index.setDir('/data', [])
+    expect(await ws.cache.get('/data/sub/nested/file')).toEqual(ENC.encode('keep'))
+    expect(ws.namespace.metaFor('/data/sub/nested/file')?.mode).toBe(0o640)
+    expect((await nested.listDir('/data/sub/nested')).entries).toEqual(['/data/sub/nested/file'])
+    expect((await nested.get('/data/sub/nested/file')).entry).toBeDefined()
+    expect(await ws.cache.exists('/data/sub/old')).toBe(false)
+    expect(ws.namespace.metaFor('/data/sub/old')).toBeNull()
+  } finally {
     await ws.close()
   }
 })

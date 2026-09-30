@@ -85,7 +85,10 @@ class FileCacheMixin:
     async def clear(self) -> None:
         raise NotImplementedError
 
-    async def evict_prefix(self, prefix: str) -> None:
+    async def evict_prefix(self,
+                           prefix: str,
+                           *,
+                           excluded: tuple[str, ...] = ()) -> None:
         """Drop every cached entry whose key starts with ``prefix``.
 
         The path-unknown counterpart to :meth:`remove`: a mutation that
@@ -97,6 +100,7 @@ class FileCacheMixin:
         Args:
             prefix (str): Cache-key prefix to drop, normally a mount
                 prefix ending in "/".
+            excluded (tuple[str, ...]): nested mount roots to preserve.
         """
         raise NotImplementedError
 

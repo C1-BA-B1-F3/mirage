@@ -58,6 +58,8 @@ export abstract class IndexCacheStore {
   reportGone(_gone: readonly Evicted[]): Promise<void> {
     return Promise.resolve()
   }
+  /** Drop one metadata row while preserving listing history. */
+  abstract invalidateEntry(vfsPath: string): Promise<void>
   abstract invalidateDir(vfsPath: string): Promise<void>
   /**
    * Cache observed children without claiming a complete directory. Stores
@@ -85,7 +87,7 @@ export abstract class IndexCacheStore {
    *
    * Mirrors Python `IndexCacheStore.invalidate_prefix`.
    */
-  abstract invalidatePrefix(vfsPath: string): Promise<void>
+  abstract invalidatePrefix(vfsPath: string, excluded?: readonly string[]): Promise<void>
   /**
    * Mark every entry stale without discarding it.
    *

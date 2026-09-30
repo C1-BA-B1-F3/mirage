@@ -388,7 +388,10 @@ class Namespace:
         await self._store.delete([path])
         return True
 
-    async def drop_overlays_under(self, path: str) -> int:
+    async def drop_overlays_under(self,
+                                  path: str,
+                                  *,
+                                  excluded: tuple[str, ...] = ()) -> int:
         """Drop the overlays of a path the backend no longer has, and below.
 
         A re-list that finds a folder gone orphans every attribute overlay
@@ -397,13 +400,15 @@ class Namespace:
 
         Args:
             path (str): absolute virtual path reported gone.
+            excluded (tuple[str, ...]): nested mount roots to preserve.
 
         Returns:
             int: number of overlay nodes dropped.
         """
         doomed = [
             key for key, meta in self._nodes.items()
-            if meta.target is None and under_path(key, path)
+            if meta.target is None and under_path(key, path) and not any(
+                under_path(key, p) for p in excluded)
         ]
         for key in doomed:
             del self._nodes[key]

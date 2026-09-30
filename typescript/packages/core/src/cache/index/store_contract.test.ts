@@ -45,6 +45,28 @@ for (const backend of ['ram', 'redis']) {
         await store.close()
       })
 
+      it('prefix invalidation preserves excluded subtrees', async () => {
+        for (const path of ['/dir/nested', '/dir/nested/sub', '/dir/nested2']) {
+          await store.put(path, entry(path))
+          await store.setDir(path, [['a', entry()]])
+        }
+        await store.invalidatePrefix('/dir', ['/dir/nested'])
+        for (const path of ['/dir/nested', '/dir/nested/sub']) {
+          expect((await store.get(path)).entry).toBeDefined()
+          expect((await store.listDir(path)).entries).toEqual([path + '/a'])
+        }
+        expect((await store.get('/dir/nested2/a')).status).toBe(LookupStatus.NOT_FOUND)
+      })
+
+      it('invalidates one entry without losing the re-list baseline', async () => {
+        await store.put('/dir', entry('dir'))
+        await store.setDir('/dir', [['a', entry('a')]])
+        await store.invalidateEntry('/dir')
+        expect((await store.get('/dir')).status).toBe(LookupStatus.NOT_FOUND)
+        expect((await store.listDir('/dir')).entries).toEqual(['/dir/a'])
+        expect(await store.setDir('/dir', [])).toEqual([{ path: '/dir/a', folder: false }])
+      })
+
       it('reports the lifetime a listing gets when its writer names none', () => {
         expect(store.ttl).toBe(1)
       })

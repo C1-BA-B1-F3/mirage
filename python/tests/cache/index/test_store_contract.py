@@ -314,3 +314,25 @@ async def test_invalidate_prefix_keeps_an_existing_tombstone(store):
     await store.invalidate_prefix("/dir")
     assert await store.set_dir(
         "/dir", [("a", entry())]) == [Evicted("/dir/b", folder=False)]
+
+
+@pytest.mark.asyncio
+async def test_invalidate_entry_preserves_children_for_relist(store):
+    await store.put("/dir", entry("dir"))
+    await store.set_dir("/dir", [("a", entry())])
+    await store.invalidate_entry("/dir")
+    assert (await store.get("/dir")).status == LookupStatus.NOT_FOUND
+    assert (await store.list_dir("/dir")).entries == ["/dir/a"]
+    assert await store.set_dir("/dir", []) == [Evicted("/dir/a", folder=False)]
+
+
+@pytest.mark.asyncio
+async def test_prefix_invalidation_preserves_excluded_subtrees(store):
+    for path in ["/dir/nested", "/dir/nested/sub", "/dir/nested2"]:
+        await store.put(path, entry(path))
+        await store.set_dir(path, [("a", entry())])
+    await store.invalidate_prefix("/dir", excluded=("/dir/nested", ))
+    for path in ["/dir/nested", "/dir/nested/sub"]:
+        assert (await store.get(path)).entry is not None
+        assert (await store.list_dir(path)).entries == [path + "/a"]
+    assert (await store.get("/dir/nested2/a")).status == LookupStatus.NOT_FOUND

@@ -15,14 +15,17 @@ class WindowSpy(RAMIndexCacheStore):
         super().__init__(ttl=600)
         self.windows: dict[str, bool] = {}
 
-    async def set_dir(self,
-                      vfs_path: str,
-                      entries: list[tuple[str, IndexEntry]],
-                      expired_at: datetime | None = None,
-                      *,
-                      window: bool = False) -> list[Evicted]:
+    async def set_dir(
+        self,
+        vfs_path: str,
+        entries: list[tuple[str, IndexEntry]],
+        expired_at: datetime | None = None,
+        *,
+        window: bool = False,
+        excluded: tuple[str, ...] = ()) -> list[Evicted]:
         self.windows[vfs_path] = window
         return await super().set_dir(vfs_path,
                                      entries,
                                      expired_at,
-                                     window=window)
+                                     window=window,
+                                     excluded=excluded)

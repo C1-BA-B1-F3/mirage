@@ -53,6 +53,38 @@ describe.skipIf(skip)('RedisIndexCacheStore', () => {
     return (store as unknown as { client: () => Promise<RedisClientLike> }).client()
   }
 
+  it('finishes subtree eviction before a newer listing can be written', async () => {
+    const client = await redis()
+    const folder = entry('sub', 'sub', 'folder')
+    const child = entry('new', 'new')
+    await store.setDir('/d', [['sub', folder]])
+    await store.setDir('/d/sub', [['new', child]])
+    const second = new RedisIndexCacheStore({
+      url: REDIS_URL ?? 'redis://127.0.0.1:6379',
+      keyPrefix: prefix,
+    })
+    const evaluate = client.eval.bind(client)
+    let interleave = true
+    const spy = vi.spyOn(client, 'eval').mockImplementation(async (...args) => {
+      const result = await evaluate(...args)
+      if (interleave) {
+        interleave = false
+        await second.setDir('/d', [['sub', folder]])
+        await second.setDir('/d/sub', [['new', child]])
+      }
+      return result
+    })
+    try {
+      await store.setDir('/d', [])
+      expect((await second.get('/d/sub')).entry).toBeDefined()
+      expect((await second.listDir('/d/sub')).entries).toEqual(['/d/sub/new'])
+      expect((await second.get('/d/sub/new')).entry).toBeDefined()
+    } finally {
+      spy.mockRestore()
+      await second.close()
+    }
+  })
+
   it('batches cold snapshot directory tokens in a bounded number of requests', async () => {
     const client = await redis()
     const paths = Array.from({ length: 100 }, (_, i) => `/dir-${String(i)}`)

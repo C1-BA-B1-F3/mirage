@@ -148,8 +148,7 @@ async def cached_entry(index: IndexCacheStore,
     if (entry.resource_type == ResourceType.FOLDER
             and (await index.list_dir(virtual)).entries is not None):
         return entry
-    # A later listing must not revive metadata from an expired generation.
-    await index.invalidate_prefix(virtual)
+    await index.invalidate_entry(virtual)
     return None
 
 

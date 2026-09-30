@@ -18,6 +18,8 @@ from functools import partial
 from mirage.accessor.github import GitHubAccessor
 from mirage.cache.index import IndexCacheStore
 from mirage.commands.builtin.generic.du import du_generic
+from mirage.commands.builtin.generic_bind.adapter import (with_path_guards,
+                                                          with_policy_guard)
 from mirage.commands.builtin.generic_bind.builders.du import (WalkBudget,
                                                               walk_entries,
                                                               walk_size)
@@ -88,7 +90,8 @@ async def _live_size(live: Callable[[], Awaitable[None]],
     # A truncated tree names only some paths and is never refetched, so it
     # is walked folder by folder, as a backend with no tree would be.
     if accessor.truncated:
-        return await walk_size(IO, accessor, index, budget, path)
+        return await walk_size(with_policy_guard(with_path_guards(IO)),
+                               accessor, index, budget, path)
     return await _du_size(accessor, path)
 
 
@@ -98,7 +101,8 @@ async def _live_entries(live: Callable[[], Awaitable[None]],
                         path: PathSpec) -> tuple[list[tuple[str, int]], int]:
     await live()
     if accessor.truncated:
-        return await walk_entries(IO, accessor, index, budget, path)
+        return await walk_entries(with_policy_guard(with_path_guards(IO)),
+                                  accessor, index, budget, path)
     return await _du_entries(accessor, path)
 
 
@@ -127,4 +131,6 @@ async def du(accessor: GitHubAccessor, paths: list[PathSpec], texts: list[str],
                                     budget),
                             partial(_live_entries, live, accessor, opts.index,
                                     budget),
-                            truncated=lambda: budget.hit)
+                            truncated=lambda: budget.hit,
+                            unreadable=lambda: budget.unreadable,
+                            directories=lambda: budget.directories)

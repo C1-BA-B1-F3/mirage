@@ -70,7 +70,12 @@ async function writeTree(
       sorted.map(([name]) => stem + name),
     )
   }
-  return children
+  return new Map(
+    [...index.scopeSnapshot({ entries: new Map(), children }).children].map(([path, rows]) => [
+      path,
+      [...rows],
+    ]),
+  )
 }
 
 export async function parsePathTree(raw: string): Promise<ChromaPathTree> {

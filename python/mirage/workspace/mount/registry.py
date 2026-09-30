@@ -20,8 +20,8 @@ from weakref import WeakValueDictionary
 
 from mirage.cache.file.mixin import FileCacheMixin
 from mirage.cache.index import NULL_INDEX, IndexCacheStore, IndexConfig
-from mirage.cache.index.factory import build_index
 from mirage.cache.index.config import Evicted
+from mirage.cache.index.factory import build_index
 from mirage.cache.manager import CacheManager
 from mirage.commands.builtin.general import COMMANDS as GENERAL_COMMANDS
 from mirage.context import effective_path_mode, strongest_mode_under
@@ -56,7 +56,8 @@ class ReadReconciler(Protocol):
     async def may_serve_cached(self, mount: MountEntry, path: str) -> bool:
         ...
 
-    async def on_gone(self, gone: Evicted) -> None:
+    async def on_gone(self, gone: Evicted, excluded: tuple[str,
+                                                           ...] = ()) -> None:
         ...
 
     async def may_serve_listing(self, mount: MountEntry, folder: str) -> bool:
@@ -256,7 +257,11 @@ class MountRegistry:
             # mount's leftovers go with its teardown instead.
             reconciler = self._reconciler
             if reconciler is not None and not m.retiring:
-                await reconciler.on_gone(gone)
+                await reconciler.on_gone(
+                    gone,
+                    tuple(
+                        e.prefix.rstrip("/")
+                        for e in self.descendant_mounts(gone.path)))
 
         m.cache_manager = CacheManager(
             self._file_cache,
@@ -267,7 +272,10 @@ class MountRegistry:
             gate,
             read_ttl=m.read.ttl,
             on_gone=cleanup,
-            may_serve_listing=listing_gate)
+            may_serve_listing=listing_gate,
+            excluded_prefixes=lambda: tuple(
+                e.prefix.rstrip("/")
+                for e in self.descendant_mounts(m.prefix)))
 
     def check_vfs_available(self, vfs: BaseVFS) -> None:
         """A removed VFS instance cannot start a second lifecycle."""

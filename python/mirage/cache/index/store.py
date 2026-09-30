@@ -60,12 +60,13 @@ class IndexCacheStore:
         raise NotImplementedError
 
     async def set_dir(
-        self,
-        vfs_path: str,
-        entries: list[tuple[str, IndexEntry]],
-        expired_at: datetime | None = None,
-        *,
-        window: bool = False,
+            self,
+            vfs_path: str,
+            entries: list[tuple[str, IndexEntry]],
+            expired_at: datetime | None = None,
+            *,
+            window: bool = False,
+            excluded: tuple[str, ...] = (),
     ) -> list[Evicted]:
         """Cache a complete directory listing.
 
@@ -82,6 +83,7 @@ class IndexCacheStore:
             expired_at (datetime | None): optional freshness deadline.
             window (bool): the entries are a capped window, not every
                 child.
+            excluded (tuple[str, ...]): nested mount roots to preserve.
 
         Returns:
             list[Evicted]: the children the previous listing named and
@@ -124,10 +126,21 @@ class IndexCacheStore:
         for name, entry in entries:
             await self.put(f"{vfs_path.rstrip('/')}/{name}", entry)
 
+    async def invalidate_entry(self, vfs_path: str) -> None:
+        """Drop one metadata row while preserving listing history.
+
+        Args:
+            vfs_path (str): mount-absolute entry key.
+        """
+        raise NotImplementedError
+
     async def invalidate_dir(self, vfs_path: str) -> None:
         raise NotImplementedError
 
-    async def invalidate_prefix(self, vfs_path: str) -> None:
+    async def invalidate_prefix(self,
+                                vfs_path: str,
+                                *,
+                                excluded: tuple[str, ...] = ()) -> None:
         """Drop ``vfs_path`` and everything cached below it.
 
         ``invalidate_dir`` drops one directory's listing and its direct
@@ -138,6 +151,7 @@ class IndexCacheStore:
 
         Args:
             vfs_path (str): Mount-absolute root of the subtree.
+            excluded (tuple[str, ...]): nested mount roots to preserve.
         """
         raise NotImplementedError
 

@@ -133,3 +133,15 @@ async def test_refused_listing_fetches_tree_once(monkeypatch, chroma_accessor,
         fetch.reset_mock()
         assert await readdir(chroma_accessor, path, view)
         assert fetch.await_count == 1
+
+
+@pytest.mark.asyncio
+async def test_refilled_rows_respect_index_ownership(monkeypatch,
+                                                     chroma_accessor,
+                                                     chroma_index,
+                                                     knowledge_root):
+    view = IndexView(chroma_index, RAMFileCacheStore(), "/knowledge",
+                     lambda key: not key.startswith("/knowledge/guides"))
+    for _ in range(2):
+        assert await readdir(chroma_accessor, knowledge_root,
+                             view) == ["/knowledge/api"]

@@ -249,10 +249,10 @@ export class Reconciler {
   // folder takes its cached bytes and overlays beneath it; the prefix
   // eviction is kept to folders because it also cancels every fill in
   // flight across the store.
-  async onGone(gone: Evicted): Promise<void> {
+  async onGone(gone: Evicted, excluded: readonly string[] = []): Promise<void> {
     await this.cache.remove(gone.path)
-    if (gone.folder) await this.cache.evictPrefix(rstripSlash(gone.path) + '/')
-    await this.namespace.dropOverlaysUnder(gone.path)
+    if (gone.folder) await this.cache.evictPrefix(rstripSlash(gone.path) + '/', excluded)
+    await this.namespace.dropOverlaysUnder(gone.path, excluded)
   }
 
   // Apply the deletion reaction: evict cache + GC orphaned overlay. An

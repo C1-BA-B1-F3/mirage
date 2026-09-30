@@ -49,21 +49,30 @@ const SWAP_LISTING = `
 local old = redis.call('GET', KEYS[1])
 local tomb = redis.call('GET', KEYS[2])
 redis.call('DEL', KEYS[2])
+local excluded = cjson.decode(ARGV[6])
+local function protected(path)
+  for _, prefix in ipairs(excluded) do
+    if path == prefix or string.sub(path, 1, #prefix + 1) == prefix .. '/' then
+      return true
+    end
+  end
+  return false
+end
 local named = {}
-for i = 3, #ARGV, 2 do
+for i = 7, #ARGV, 2 do
   named[ARGV[i]] = true
   redis.call('SET', ARGV[2] .. ARGV[i], ARGV[i + 1])
 end
 redis.call('SET', KEYS[1], ARGV[1])
 local seen, gone, folders = {}, {}, {}
 local function drop(path, buried)
-  if named[path] or seen[path] then
+  if named[path] or seen[path] or protected(path) then
     return
   end
   seen[path] = true
   local row = redis.call('GET', ARGV[2] .. path)
   redis.call('DEL', ARGV[2] .. path)
-  local folder = buried
+  local folder = buried or redis.call('EXISTS', ARGV[3] .. path) == 1
     or (row ~= false and cjson.decode(row).resource_type == 'folder')
   gone[#gone + 1] = path
   folders[#folders + 1] = folder and 1 or 0
@@ -78,6 +87,33 @@ if tomb then
   for i, path in ipairs(t.entries) do
     drop(path, t.folders[i] == 1)
   end
+end
+local roots = {}
+for i, path in ipairs(gone) do
+  if folders[i] == 1 then roots[#roots + 1] = path end
+end
+if #roots > 0 then
+  local cursor, doomed = '0', {}
+  repeat
+    local batch = redis.call('SCAN', cursor, 'COUNT', 1000)
+    cursor = batch[1]
+    for _, key in ipairs(batch[2]) do
+      for _, prefix in ipairs({ARGV[2], ARGV[3], ARGV[4], ARGV[5]}) do
+        if string.sub(key, 1, #prefix) == prefix then
+          local path = string.sub(key, #prefix + 1)
+          for _, root in ipairs(roots) do
+            if not protected(path) and (path == root
+              or string.sub(path, 1, #root + 1) == root .. '/') then
+              doomed[#doomed + 1] = key
+              break
+            end
+          end
+          break
+        end
+      end
+    end
+  until cursor == '0'
+  for _, key in ipairs(doomed) do redis.call('DEL', key) end
 end
 return {gone, folders}
 `
@@ -335,7 +371,14 @@ export class RedisIndexCacheStore extends IndexCacheStore {
     expiredAt?: Date | null,
     options: SetDirOptions = {},
   ): Promise<Evicted[]> {
-    return this.storeDir(vfsPath, entries, expiredAt, false, options.window !== true)
+    return this.storeDir(
+      vfsPath,
+      entries,
+      expiredAt,
+      false,
+      options.window !== true,
+      options.excluded ?? [],
+    )
   }
 
   override async setPartialDir(
@@ -352,6 +395,7 @@ export class RedisIndexCacheStore extends IndexCacheStore {
     expiredAt: Date | null | undefined,
     partial: boolean,
     evict: boolean,
+    excluded: readonly string[] = [],
   ): Promise<Evicted[]> {
     await this.flushSeed()
     const c = await this.client()
@@ -385,15 +429,27 @@ export class RedisIndexCacheStore extends IndexCacheStore {
     // listing and replacing it; the diff is against the true predecessor.
     const [gone, folders] = (await c.eval(SWAP_LISTING, {
       keys: [this.childrenKey(vfsPath), this.tombstonePrefix + vfsPath],
-      arguments: [JSON.stringify(listing), this.entryPrefix, ...rows.flat()],
+      arguments: [
+        JSON.stringify(listing),
+        this.entryPrefix,
+        this.childrenPrefix,
+        this.tombstonePrefix,
+        `${this.generationKey}:`,
+        JSON.stringify(excluded.map(rstripSlash)),
+        ...rows.flat(),
+      ],
     })) as [string[], number[]]
     const dropped: Evicted[] = []
     for (const [i, path] of gone.entries()) {
-      const folder = folders[i] === 1 || (await c.exists(this.childrenKey(path))) === 1
-      if (folder) await this.invalidatePrefix(path)
-      dropped.push({ path, folder })
+      dropped.push({ path, folder: folders[i] === 1 })
     }
     return dropped
+  }
+
+  async invalidateEntry(vfsPath: string): Promise<void> {
+    await this.flushSeed()
+    const c = await this.client()
+    await c.del(this.entryKey(vfsPath))
   }
 
   async invalidateDir(vfsPath: string): Promise<void> {
@@ -411,7 +467,11 @@ export class RedisIndexCacheStore extends IndexCacheStore {
     })
   }
 
-  private async scanDelete(prefix: string, vfsPath: string): Promise<void> {
+  private async scanDelete(
+    prefix: string,
+    vfsPath: string,
+    excluded: readonly string[] = [],
+  ): Promise<void> {
     const c = await this.client()
     const pattern = `${globEscape(prefix + rstripSlash(vfsPath))}*`
     const keys: string[] = []
@@ -419,17 +479,18 @@ export class RedisIndexCacheStore extends IndexCacheStore {
       const batch = Array.isArray(k) ? k : [k]
       for (const key of batch) {
         const path = key.slice(prefix.length)
-        if (underPath(path, vfsPath)) keys.push(key)
+        if (underPath(path, vfsPath) && !excluded.some((root) => underPath(path, root)))
+          keys.push(key)
       }
     }
     if (keys.length > 0) await c.del(keys)
   }
 
-  async invalidatePrefix(vfsPath: string): Promise<void> {
+  async invalidatePrefix(vfsPath: string, excluded: readonly string[] = []): Promise<void> {
     await this.flushSeed()
-    await this.scanDelete(this.entryPrefix, vfsPath)
-    await this.scanDelete(this.childrenPrefix, vfsPath)
-    await this.scanDelete(`${this.generationKey}:`, vfsPath)
+    await this.scanDelete(this.entryPrefix, vfsPath, excluded)
+    await this.scanDelete(this.childrenPrefix, vfsPath, excluded)
+    await this.scanDelete(`${this.generationKey}:`, vfsPath, excluded)
   }
 
   async invalidate(): Promise<void> {

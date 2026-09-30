@@ -47,6 +47,23 @@ describe.skipIf(skip)('RedisFileCacheStore', () => {
     await cache.close()
   })
 
+  it('prefix eviction preserves nested mount roots and descendants', async () => {
+    const value = new TextEncoder().encode('value')
+    for (const key of [
+      '/data/sub/old',
+      '/data/sub/nested',
+      '/data/sub/nested/file',
+      '/data/sub/nested2',
+    ]) {
+      await cache.set(key, value)
+    }
+    await cache.evictPrefix('/data/sub/', ['/data/sub/nested'])
+    expect(await cache.get('/data/sub/nested')).toEqual(value)
+    expect(await cache.get('/data/sub/nested/file')).toEqual(value)
+    expect(await cache.get('/data/sub/old')).toBeNull()
+    expect(await cache.get('/data/sub/nested2')).toBeNull()
+  })
+
   it.each(['set', 'add'] as const)(
     '%s discards a fill invalidated while it awaited the client',
     async (method) => {

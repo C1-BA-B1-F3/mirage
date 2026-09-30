@@ -147,6 +147,8 @@ export interface SetDirOptions {
    * days): served as the listing, but they prove nothing absent.
    */
   readonly window?: boolean
+  /** Nested mount roots whose rows and descendants must survive. */
+  readonly excluded?: readonly string[]
 }
 
 /** Entry rows and directory children from one refill. */

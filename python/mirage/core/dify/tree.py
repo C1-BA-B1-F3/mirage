@@ -4,6 +4,7 @@ from typing import Any
 
 from mirage.accessor.dify import DifyAccessor
 from mirage.cache.index import NULL_INDEX, IndexCacheStore, IndexEntry
+from mirage.cache.index.config import IndexSnapshot
 from mirage.core.dify.client import list_all_documents
 from mirage.types import JsonValue
 from mirage.utils.path import gnu_basename, parent
@@ -60,7 +61,7 @@ async def _write_tree(
         await index.set_dir(directory, rows)
         stem = "/" if directory == "/" else directory + "/"
         children[directory] = [stem + name for name, _ in rows]
-    return children
+    return index.scope_snapshot(IndexSnapshot({}, children)).children
 
 
 def build_dir_entries(

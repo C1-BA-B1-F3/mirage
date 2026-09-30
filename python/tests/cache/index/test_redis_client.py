@@ -494,3 +494,32 @@ async def test_seed_initialization_does_not_adopt_replacement_tokens(
     finally:
         await store.close()
         await writer.close()
+
+
+@pytest.mark.asyncio
+async def test_subtree_eviction_finishes_before_a_newer_listing(
+        rolling_client, monkeypatch):
+    client, prefix = rolling_client
+    first = RedisIndexCacheStore(client=client, key_prefix=prefix)
+    second = RedisIndexCacheStore(client=client, key_prefix=prefix)
+    folder = IndexEntry(id="sub", name="sub", resource_type="folder")
+    child = IndexEntry(id="new", name="new", resource_type="file")
+    await first.set_dir("/d", [("sub", folder)])
+    await first.set_dir("/d/sub", [("new", child)])
+    evaluate = client.eval
+    interleave = True
+
+    async def recreate_after_swap(*args, **kwargs):
+        nonlocal interleave
+        result = await evaluate(*args, **kwargs)
+        if interleave:
+            interleave = False
+            await second.set_dir("/d", [("sub", folder)])
+            await second.set_dir("/d/sub", [("new", child)])
+        return result
+
+    monkeypatch.setattr(client, "eval", recreate_after_swap)
+    await first.set_dir("/d", [])
+    assert (await second.get("/d/sub")).entry is not None
+    assert (await second.list_dir("/d/sub")).entries == ["/d/sub/new"]
+    assert (await second.get("/d/sub/new")).entry is not None

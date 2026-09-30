@@ -15,6 +15,7 @@
 import type { GitHubAccessor } from '../../../accessor/github.ts'
 import { size as githubDu, entries as githubDuAll } from '../../../core/github/du/index.ts'
 import { resolveGlobOf } from '../generic_bind/index.ts'
+import { withPathGuards, withPolicyGuard } from '../generic_bind/adapter.ts'
 import { GITHUB_IO } from './io.ts'
 import { ensureLiveTree } from '../../../core/github/tree.ts'
 import { VFSName, type PathSpec } from '../../../types.ts'
@@ -56,16 +57,19 @@ async function duCommand(
     // is walked folder by folder, as a backend with no tree would be.
     async (p) => {
       await live()
-      if (accessor.truncated) return walkSize(GITHUB_IO, accessor, idx, budget, p)
+      if (accessor.truncated)
+        return walkSize(withPolicyGuard(withPathGuards(GITHUB_IO)), accessor, idx, budget, p)
       return githubDu(accessor, p, idx)
     },
     async (p) => {
       await live()
-      if (accessor.truncated) return walkEntries(GITHUB_IO, accessor, idx, budget, p)
+      if (accessor.truncated)
+        return walkEntries(withPolicyGuard(withPathGuards(GITHUB_IO)), accessor, idx, budget, p)
       return githubDuAll(accessor, p, idx)
     },
     () => budget.hit,
     () => budget.unreadable,
+    () => budget.directories,
   )
   return [out.stdout, new IOResult({ stderr: out.stderr, exitCode: out.exitCode })]
 }

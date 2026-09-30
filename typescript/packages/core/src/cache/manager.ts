@@ -74,6 +74,7 @@ export class CacheManager {
     // The listing gate every view of this mount asks before serving a
     // cached listing; undefined serves them all.
     private readonly mayServeListing?: (folder: string) => Promise<boolean>,
+    private readonly excludedPrefixes: () => readonly string[] = () => [],
   ) {
     this.fileCache = fileCache
     this.index = index
@@ -116,7 +117,8 @@ export class CacheManager {
     return this.view
   }
 
-  private viewOptions(): {
+  private viewOptions(locked = false): {
+    excludedPrefixes: () => readonly string[]
     readTtl: number
     onGone?: (gone: Evicted) => Promise<void>
     mayServeListing?: (folder: string) => Promise<boolean>
@@ -124,7 +126,17 @@ export class CacheManager {
   } {
     return {
       readTtl: this.readTtl,
-      ...(this.onGone === undefined ? {} : { onGone: this.onGone }),
+      excludedPrefixes: this.excludedPrefixes,
+      ...(this.onGone === undefined
+        ? {}
+        : {
+            onGone: locked
+              ? this.onGone
+              : (gone: Evicted) =>
+                  this.withMutation(async () => {
+                    if (this.ownsPath(gone.path)) await this.onGone?.(gone)
+                  }),
+          }),
       ...(this.mayServeListing === undefined ? {} : { mayServeListing: this.mayServeListing }),
       noteWritten: (folder) => {
         this.noteWritten(folder)
@@ -159,7 +171,7 @@ export class CacheManager {
     }
     return new IndexView(index, this.fileCache, this.prefix || '/', this.ownsPath, {
       locked: true,
-      ...this.viewOptions(),
+      ...this.viewOptions(true),
     })
   }
 

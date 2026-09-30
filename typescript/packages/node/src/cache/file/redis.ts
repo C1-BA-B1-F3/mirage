@@ -12,6 +12,7 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import { underPath } from '@struktoai/mirage-core/utils/key_prefix'
 import { readFileSync } from 'node:fs'
 import { CacheType } from '@struktoai/mirage-core/cache/file/config'
 import { Invalidation } from '@struktoai/mirage-core/cache/invalidation'
@@ -193,18 +194,21 @@ export class RedisFileCacheStore extends RedisVFS implements FileCache {
     return (await c.ttl(this.dataKey(key))) === -1
   }
 
-  async evictPrefix(prefix: string): Promise<void> {
+  async evictPrefix(prefix: string, excluded: readonly string[] = []): Promise<void> {
     this.invalidation.invalidateAll()
     for (const key of [...this.drainTasks.keys()]) {
-      if (key.startsWith(prefix)) this.drainTasks.delete(key)
+      if (key.startsWith(prefix) && !excluded.some((boundary) => underPath(key, boundary)))
+        this.drainTasks.delete(key)
     }
     const escaped = globEscape(prefix)
     const c = await this.cacheClient()
     for (const base of [this.dataPrefix, this.metaPrefix]) {
       const batch: string[] = []
       for await (const k of c.scanIterator({ MATCH: `${base}${escaped}*` })) {
-        if (Array.isArray(k)) batch.push(...k)
-        else batch.push(k)
+        for (const key of Array.isArray(k) ? k : [k]) {
+          if (!excluded.some((boundary) => underPath(key.slice(base.length), boundary)))
+            batch.push(key)
+        }
       }
       if (batch.length > 0) await c.del(batch)
     }

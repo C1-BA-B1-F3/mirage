@@ -594,3 +594,25 @@ async def test_a_complete_tree_walk_still_reads_the_tree():
             assert hub.counts() == (0, 1, 0)
         finally:
             await ws.close()
+
+
+@pytest.mark.asyncio
+async def test_fresh_tree_refill_preserves_nested_shared_index():
+    with serve(_hub()) as hub:
+        vfs = _vfs(hub)
+        ws = Workspace({
+            "/gh": _mount(vfs, ReadPolicy.FRESH, 600),
+            "/gh/sub/nested": _mount(vfs, ReadPolicy.FRESH, 600)
+        })
+        try:
+            await _out(ws, "ls /gh")
+            await _out(ws, "ls /gh/sub/nested")
+            index = ws.mount("/gh").index_store
+            before = await index.list_dir("/gh/sub/nested")
+            assert before.entries
+            await _out(ws, "ls /gh")
+            assert (await
+                    index.list_dir("/gh/sub/nested")).entries == before.entries
+            assert (await index.get(before.entries[0])).entry is not None
+        finally:
+            await ws.close()

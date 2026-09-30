@@ -31,18 +31,20 @@ class IndexView(IndexCacheStore):
     cannot refill a replacement mount's index.
     """
 
-    def __init__(self,
-                 store: IndexCacheStore,
-                 cache: FileCacheMixin,
-                 prefix: str,
-                 owns: Callable[[str], bool],
-                 *,
-                 locked: bool = False,
-                 read_ttl: float | None = None,
-                 on_gone: Callable[[Evicted], Awaitable[None]] | None = None,
-                 may_serve_listing: Callable[[str], Awaitable[bool]]
-                 | None = None,
-                 note_written: Callable[[str], None] | None = None) -> None:
+    def __init__(
+            self,
+            store: IndexCacheStore,
+            cache: FileCacheMixin,
+            prefix: str,
+            owns: Callable[[str], bool],
+            *,
+            locked: bool = False,
+            read_ttl: float | None = None,
+            on_gone: Callable[[Evicted], Awaitable[None]] | None = None,
+            may_serve_listing: Callable[[str], Awaitable[bool]]
+        | None = None,
+            note_written: Callable[[str], None] | None = None,
+            excluded_prefixes: Callable[[], tuple[str, ...]] = tuple) -> None:
         """Args:
             store (IndexCacheStore): the VFS's own index.
             cache (FileCacheMixin): workspace file cache whose mutation lock
@@ -60,6 +62,8 @@ class IndexView(IndexCacheStore):
                 served; None serves every cached listing.
             note_written (Callable[[str], None] | None): told each folder
                 whose listing this view has just written.
+            excluded_prefixes (Callable[[], tuple[str, ...]]): live nested
+                mount roots protected from recursive deletion.
         """
         super().__init__()
         self._store = store
@@ -71,6 +75,7 @@ class IndexView(IndexCacheStore):
         self._on_gone = on_gone
         self._may_serve_listing = may_serve_listing
         self._note_written = note_written
+        self._excluded_prefixes = excluded_prefixes
 
     @property
     def store(self) -> IndexCacheStore:
@@ -154,17 +159,20 @@ class IndexView(IndexCacheStore):
             if self._owns(vfs_path):
                 await self._store.put(vfs_path, entry)
 
-    async def set_dir(self,
-                      vfs_path: str,
-                      entries: list[tuple[str, IndexEntry]],
-                      expired_at: datetime | None = None,
-                      *,
-                      window: bool = False) -> list[Evicted]:
+    async def set_dir(
+        self,
+        vfs_path: str,
+        entries: list[tuple[str, IndexEntry]],
+        expired_at: datetime | None = None,
+        *,
+        window: bool = False,
+        excluded: tuple[str, ...] = ()) -> list[Evicted]:
         gone = await self._set_dir(vfs_path,
                                    entries,
                                    expired_at,
                                    partial=False,
-                                   window=window)
+                                   window=window,
+                                   excluded=excluded)
         await self.report_gone(gone)
         return gone
 
@@ -178,10 +186,15 @@ class IndexView(IndexCacheStore):
                             partial=True,
                             window=False)
 
-    async def _set_dir(self, vfs_path: str, entries: list[tuple[str,
-                                                                IndexEntry]],
-                       expired_at: datetime | None, *, partial: bool,
-                       window: bool) -> list[Evicted]:
+    async def _set_dir(
+        self,
+        vfs_path: str,
+        entries: list[tuple[str, IndexEntry]],
+        expired_at: datetime | None,
+        *,
+        partial: bool,
+        window: bool,
+        excluded: tuple[str, ...] = ()) -> list[Evicted]:
         async with self._fence():
             if not self._owns(vfs_path):
                 return []
@@ -196,7 +209,9 @@ class IndexView(IndexCacheStore):
             gone = await self._store.set_dir(vfs_path,
                                              owned,
                                              deadline,
-                                             window=window)
+                                             window=window,
+                                             excluded=excluded +
+                                             self._excluded_prefixes())
             self._noted(vfs_path)
             return [child for child in gone if self._owns(child.path)]
 
@@ -248,15 +263,25 @@ class IndexView(IndexCacheStore):
                 for path, entry in entries.items() if self._owns(path)
             }
 
+    async def invalidate_entry(self, vfs_path: str) -> None:
+        async with self._fence():
+            if self._owns(vfs_path):
+                await self._store.invalidate_entry(vfs_path)
+
     async def invalidate_dir(self, vfs_path: str) -> None:
         async with self._fence():
             if self._owns(vfs_path):
                 await self._store.invalidate_dir(vfs_path)
 
-    async def invalidate_prefix(self, vfs_path: str) -> None:
+    async def invalidate_prefix(self,
+                                vfs_path: str,
+                                *,
+                                excluded: tuple[str, ...] = ()) -> None:
         async with self._fence():
             if self._owns(vfs_path):
-                await self._store.invalidate_prefix(vfs_path)
+                await self._store.invalidate_prefix(vfs_path,
+                                                    excluded=excluded +
+                                                    self._excluded_prefixes())
 
     async def invalidate(self) -> None:
         async with self._fence():

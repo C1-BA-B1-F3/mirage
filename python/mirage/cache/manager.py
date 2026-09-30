@@ -53,17 +53,17 @@ class CacheManager:
     """
 
     def __init__(
-        self,
-        file_cache: FileCacheMixin | None,
-        index: IndexCacheStore,
-        prefix: str,
-        caches_reads: bool,
-        owns_path: Callable[[str], bool] = lambda _: True,
-        may_serve_cached: Callable[[str], Awaitable[bool]] = _always_serve,
-        read_ttl: int = DEFAULT_READ_TTL,
-        on_gone: Callable[[Evicted], Awaitable[None]] | None = None,
-        may_serve_listing: Callable[[str], Awaitable[bool]] | None = None
-    ) -> None:
+            self,
+            file_cache: FileCacheMixin | None,
+            index: IndexCacheStore,
+            prefix: str,
+            caches_reads: bool,
+            owns_path: Callable[[str], bool] = lambda _: True,
+            may_serve_cached: Callable[[str], Awaitable[bool]] = _always_serve,
+            read_ttl: int = DEFAULT_READ_TTL,
+            on_gone: Callable[[Evicted], Awaitable[None]] | None = None,
+            may_serve_listing: Callable[[str], Awaitable[bool]] | None = None,
+            excluded_prefixes: Callable[[], tuple[str, ...]] = tuple) -> None:
         """Args:
             file_cache (FileCacheMixin | None): Workspace file cache
                 store; entries are keyed by mount-absolute path.
@@ -88,6 +88,8 @@ class CacheManager:
             may_serve_listing (Callable[[str], Awaitable[bool]] | None):
                 the listing gate every view of this mount asks before
                 serving a cached listing; None serves them all.
+            excluded_prefixes (Callable[[], tuple[str, ...]]): live nested
+                mount roots protected from recursive deletion.
         """
         self._file_cache = file_cache
         self._index = index
@@ -97,6 +99,7 @@ class CacheManager:
         self._may_serve_cached = may_serve_cached
         self._read_ttl = read_ttl
         self._on_gone = on_gone
+        self._excluded_prefixes = excluded_prefixes
         self._may_serve_listing = may_serve_listing
         self._written: dict[str, int] = {}
         self._read_generation = 0
@@ -135,10 +138,16 @@ class CacheManager:
                                    self._prefix,
                                    self._owns_path,
                                    read_ttl=self._read_ttl,
-                                   on_gone=self._on_gone,
+                                   on_gone=self._cleanup,
+                                   excluded_prefixes=self._excluded_prefixes,
                                    may_serve_listing=self._may_serve_listing,
                                    note_written=self._note_written)
         return self._view
+
+    async def _cleanup(self, gone: Evicted) -> None:
+        async with self.mutation():
+            if self._owns_path(gone.path) and self._on_gone is not None:
+                await self._on_gone(gone)
 
     def _note_written(self, folder: str) -> None:
         self._written[folder] = tick()
@@ -180,6 +189,7 @@ class CacheManager:
                          locked=True,
                          read_ttl=self._read_ttl,
                          on_gone=self._on_gone,
+                         excluded_prefixes=self._excluded_prefixes,
                          may_serve_listing=self._may_serve_listing,
                          note_written=self._note_written)
 

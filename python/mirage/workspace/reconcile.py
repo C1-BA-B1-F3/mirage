@@ -269,7 +269,8 @@ class Reconciler:
         if (mount.read.policy is ReadPolicy.FRESH and op in _REVALIDATE_OPS):
             await self.on_missing(path)
 
-    async def on_gone(self, gone: Evicted) -> None:
+    async def on_gone(self, gone: Evicted, excluded: tuple[str,
+                                                           ...] = ()) -> None:
         """Clean up after a re-list that no longer names a child.
 
         A complete re-list is the backend's own answer, so this runs under
@@ -279,11 +280,13 @@ class Reconciler:
 
         Args:
             gone (Evicted): the child the backend no longer has.
+            excluded (tuple[str, ...]): nested mount roots to preserve.
         """
         await self._cache.remove(gone.path)
         if gone.folder:
-            await self._cache.evict_prefix(gone.path.rstrip("/") + "/")
-        await self._namespace.drop_overlays_under(gone.path)
+            await self._cache.evict_prefix(gone.path.rstrip("/") + "/",
+                                           excluded=excluded)
+        await self._namespace.drop_overlays_under(gone.path, excluded=excluded)
 
     async def on_missing(self, path: str) -> None:
         """Apply the deletion reaction: evict cache + GC orphaned overlay.

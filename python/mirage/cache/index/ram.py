@@ -84,18 +84,20 @@ class RAMIndexCacheStore(IndexCacheStore, KeyLockMixin):
         return ListResult(entries=children or [])
 
     async def set_dir(
-        self,
-        vfs_path: str,
-        entries: list[tuple[str, IndexEntry]],
-        expired_at: datetime | None = None,
-        *,
-        window: bool = False,
+            self,
+            vfs_path: str,
+            entries: list[tuple[str, IndexEntry]],
+            expired_at: datetime | None = None,
+            *,
+            window: bool = False,
+            excluded: tuple[str, ...] = (),
     ) -> list[Evicted]:
         return await self._set_dir(vfs_path,
                                    entries,
                                    expired_at,
                                    partial=False,
-                                   evict=not window)
+                                   evict=not window,
+                                   excluded=excluded)
 
     async def set_partial_dir(
         self,
@@ -110,13 +112,14 @@ class RAMIndexCacheStore(IndexCacheStore, KeyLockMixin):
                             evict=False)
 
     async def _set_dir(
-        self,
-        vfs_path: str,
-        entries: list[tuple[str, IndexEntry]],
-        expired_at: datetime | None,
-        *,
-        partial: bool,
-        evict: bool,
+            self,
+            vfs_path: str,
+            entries: list[tuple[str, IndexEntry]],
+            expired_at: datetime | None,
+            *,
+            partial: bool,
+            evict: bool,
+            excluded: tuple[str, ...] = (),
     ) -> list[Evicted]:
         async with self._lock_for(vfs_path):
             now = datetime.now(timezone.utc)
@@ -141,8 +144,9 @@ class RAMIndexCacheStore(IndexCacheStore, KeyLockMixin):
             candidates = dict.fromkeys(self._children.get(vfs_path, []))
             candidates.update(dict.fromkeys(buried))
             gone = [
-                self._evict(key, buried.get(key, False)) for key in candidates
-                if key not in named
+                self._evict(key, buried.get(key, False), excluded)
+                for key in candidates if key not in named and not any(
+                    under_path(key, p) for p in excluded)
             ] if evict else []
             self._children[vfs_path] = child_keys
             self._expiry[vfs_path] = exp
@@ -152,20 +156,28 @@ class RAMIndexCacheStore(IndexCacheStore, KeyLockMixin):
                 self._partial.discard(vfs_path)
             return gone
 
-    def _evict(self, key: str, buried_folder: bool = False) -> Evicted:
+    def _evict(
+        self,
+        key: str,
+        buried_folder: bool = False,
+        excluded: tuple[str, ...] = ()) -> Evicted:
         """Drop a child a complete listing no longer names.
 
         Args:
             key (str): the gone child's key.
             buried_folder (bool): a tombstone recorded it as a folder,
                 after its row was already dropped.
+            excluded (tuple[str, ...]): nested mount roots to preserve.
         """
         entry = self._entries.pop(key, None)
         folder = buried_folder or key in self._children or (
             entry is not None and entry.resource_type == ResourceType.FOLDER)
         if folder:
-            self._drop_prefix(key)
+            self._drop_prefix(key, excluded=excluded)
         return Evicted(key, folder=folder)
+
+    async def invalidate_entry(self, vfs_path: str) -> None:
+        self._entries.pop(vfs_path, None)
 
     async def invalidate_dir(self, vfs_path: str) -> None:
         # The child list is kept as a tombstone, so the next complete
@@ -183,29 +195,47 @@ class RAMIndexCacheStore(IndexCacheStore, KeyLockMixin):
         self._children.pop(vfs_path, None)
         self._partial.discard(vfs_path)
 
-    async def invalidate_prefix(self, vfs_path: str) -> None:
+    async def invalidate_prefix(self,
+                                vfs_path: str,
+                                *,
+                                excluded: tuple[str, ...] = ()) -> None:
         # Forgetting what is cached is not evidence that anything went away,
         # so an existing tombstone survives for the next complete listing.
-        self._drop_prefix(vfs_path, keep_tombstones=True)
+        self._drop_prefix(vfs_path, keep_tombstones=True, excluded=excluded)
 
     def _is_folder(self, key: str) -> bool:
         entry = self._entries.get(key)
         return entry is not None and entry.resource_type == ResourceType.FOLDER
 
-    def _drop_prefix(self,
-                     vfs_path: str,
-                     *,
-                     keep_tombstones: bool = False) -> None:
+    def _drop_prefix(
+        self,
+        vfs_path: str,
+        *,
+        keep_tombstones: bool = False,
+        excluded: tuple[str, ...] = ()) -> None:
         if not keep_tombstones:
             for tomb_key in [
-                    k for k in self._tombstones if under_path(k, vfs_path)
+                    k for k in self._tombstones
+                    if under_path(k, vfs_path) and not any(
+                        under_path(k, p) for p in excluded)
             ]:
                 self._tombstones.pop(tomb_key, None)
-        for entry_key in [k for k in self._entries if under_path(k, vfs_path)]:
+        for entry_key in [
+                k for k in self._entries
+                if under_path(k, vfs_path) and not any(
+                    under_path(k, p) for p in excluded)
+        ]:
             self._entries.pop(entry_key, None)
-        for dir_key in [k for k in self._children if under_path(k, vfs_path)]:
+        for dir_key in [
+                k for k in self._children
+                if under_path(k, vfs_path) and not any(
+                    under_path(k, p) for p in excluded)
+        ]:
             self._children.pop(dir_key, None)
-        for exp_key in [k for k in self._expiry if under_path(k, vfs_path)]:
+        for exp_key in [
+                k for k in self._expiry if under_path(k, vfs_path) and not any(
+                    under_path(k, p) for p in excluded)
+        ]:
             self._expiry.pop(exp_key, None)
             self._partial.discard(exp_key)
 

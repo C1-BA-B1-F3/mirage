@@ -110,3 +110,15 @@ async def test_refused_listing_fetches_tree_once(monkeypatch, dify_accessor,
         fetch.reset_mock()
         assert await readdir.readdir(dify_accessor, path, view)
         assert fetch.await_count == 1
+
+
+@pytest.mark.asyncio
+async def test_refilled_rows_respect_index_ownership(monkeypatch,
+                                                     dify_accessor, dify_index,
+                                                     knowledge_root):
+    monkeypatch.setattr(tree, "list_all_documents", list_basic_documents)
+    view = IndexView(dify_index, RAMFileCacheStore(), "/knowledge",
+                     lambda key: not key.startswith("/knowledge/guides"))
+    for _ in range(2):
+        assert await readdir.readdir(dify_accessor, knowledge_root,
+                                     view) == ["/knowledge/README.md"]

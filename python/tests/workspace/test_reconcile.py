@@ -20,7 +20,8 @@ from uuid import uuid4
 import pytest
 
 from mirage import MountMode, Workspace
-from mirage.cache.index.config import Evicted, RedisIndexConfig
+from mirage.cache.index.config import (Evicted, IndexConfig, IndexEntry,
+                                       RedisIndexConfig)
 from mirage.cache.index.scope import command_scope
 from mirage.types import FileStat, FileType, ReadPolicy, ReadSpec
 from mirage.utils.errors import enotsup
@@ -466,4 +467,74 @@ async def test_bounded_serves_an_entry_that_carries_a_bound():
         assert await rec.may_serve_cached(mount, "/data/f.txt") is True
         assert await ws.cache.exists("/data/f.txt")
     finally:
+        await ws.close()
+
+
+@pytest.mark.asyncio
+async def test_fresh_s3_relist_keeps_deletion_baseline_after_stat():
+    objects = {"sub/a": b"a", "sub/b": b"b"}
+    vfs = S3VFS(
+        S3Config(bucket="test-bucket",
+                 region="us-east-1",
+                 aws_access_key_id="fake",
+                 aws_secret_access_key="fake"))
+    with patch_s3_multi({"test-bucket": objects}):
+        ws = Workspace({"/s3": vfs}, read=ReadSpec(policy=ReadPolicy.FRESH))
+        try:
+            for command in ("ls /s3/sub", "cat /s3/sub/a", "ls /s3"):
+                assert (await ws.shell(command)).exit_code == 0
+            await ws.namespace.set_attrs("/s3/sub/a", mode=0o600)
+            assert await ws.cache.exists("/s3/sub/a")
+            del objects["sub/a"]
+            result = await ws.shell("ls /s3/sub")
+            assert result.stdout == b"b\n"
+            assert not await ws.cache.exists("/s3/sub/a")
+            assert ws.namespace.meta_for("/s3/sub/a") is None
+        finally:
+            await ws.close()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("shared", [False, True])
+@pytest.mark.parametrize("redis", [False, True])
+async def test_relist_preserves_nested_mount_subtree(shared, redis):
+    config = IndexConfig(ttl=600)
+    if redis:
+        url = os.environ.get("REDIS_URL")
+        if not url:
+            pytest.skip("REDIS_URL not set")
+        config = RedisIndexConfig(url=url, key_prefix=f"nested:{uuid4()}:")
+    parent = RAMVFS()
+    ws = Workspace(
+        {
+            "/data": parent,
+            "/data/sub/nested": parent if shared else RAMVFS()
+        },
+        index=config)
+    try:
+        await ws.namespace.ensure_loaded()
+        index = ws.mount("/data").index
+        nested = ws.mount("/data/sub/nested").index
+        await index.set_dir("/data", [
+            ("sub", IndexEntry(id="sub", name="sub", resource_type="folder"))
+        ])
+        await nested.set_dir("/data/sub/nested", [
+            ("file", IndexEntry(id="file", name="file", resource_type="file"))
+        ])
+        await ws.cache.set("/data/sub/old", b"old")
+        await ws.cache.set("/data/sub/nested/file", b"keep")
+        await ws.namespace.set_attrs("/data/sub/old", mode=0o600)
+        await ws.namespace.set_attrs("/data/sub/nested/file", mode=0o640)
+        await index.set_dir("/data", [])
+        assert await ws.cache.get("/data/sub/nested/file") == b"keep"
+        assert ws.namespace.meta_for("/data/sub/nested/file").mode == 0o640
+        assert (await nested.list_dir("/data/sub/nested")).entries == [
+            "/data/sub/nested/file"
+        ]
+        assert (await nested.get("/data/sub/nested/file")).entry is not None
+        assert not await ws.cache.exists("/data/sub/old")
+        assert ws.namespace.meta_for("/data/sub/old") is None
+    finally:
+        await ws.mount("/data").index_store.clear()
+        await ws.mount("/data/sub/nested").index_store.clear()
         await ws.close()

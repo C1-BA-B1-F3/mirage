@@ -488,15 +488,16 @@ def run(request, arm_interrupt, disarm_interrupt):
             sys.stderr = err_text
             _process_stdio = (stdin_text, out_text, err_text)
             sys.argv = list(argv)
-            # The '' entry is CPython's answer for -c and stdin. A script's
-            # own directory stands in its place, and -P's safe path has
-            # neither.
+            # CPython heads sys.path with a script's own directory, or ''
+            # for -c and stdin, ahead of every configured entry; -P's safe
+            # path has neither.
             if '' in sys.path:
-                at = sys.path.index('')
-                if flags.get('P'):
-                    del sys.path[at]
-                elif script:
-                    sys.path[at] = os.path.dirname(os.path.realpath(filename))
+                sys.path.remove('')
+            if not flags.get('P'):
+                sys.path.insert(
+                    0,
+                    os.path.dirname(os.path.realpath(filename))
+                    if script else '')
             main_module = types.ModuleType('__main__')
             user_globals = main_module.__dict__
             user_globals['__annotations__'] = {}

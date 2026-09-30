@@ -227,10 +227,7 @@ class RunArgs:
         cwd (PathSpec | None): virtual working directory for
             filesystem-aware guest runtimes.
         script_path (PathSpec | None): the script file the program was
-            read from, ``raw_path`` as typed; None for a payload, a
-            module, stdin and a script CLI. An engine names the program
-            after it where its real interpreter does (CPython's
-            ``__file__``, frames and ``sys.path[0]``).
+            read from, ``raw_path`` as typed.
         stdin (bytes | None): bytes fed to the interpreter's stdin.
         flags (dict[str, Any]): interpreter-level switches parsed by
             the command's spec (e.g. js module mode). Each runtime

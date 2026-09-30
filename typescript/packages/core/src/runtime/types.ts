@@ -150,12 +150,7 @@ export interface RunArgs {
   env: Record<string, string>
   /** Virtual working directory for filesystem-aware guest runtimes. */
   cwd?: PathSpec
-  /**
-   * The script file the program was read from, `rawPath` as typed;
-   * absent for a payload, a module, stdin and a script CLI. An engine
-   * names the program after it where its real interpreter does
-   * (CPython's `__file__`, frames and `sys.path[0]`).
-   */
+  /** The script file the program was read from, `rawPath` as typed. */
   scriptPath?: PathSpec
   stdin: Uint8Array | null
   /**

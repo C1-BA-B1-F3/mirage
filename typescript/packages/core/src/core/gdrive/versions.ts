@@ -16,36 +16,6 @@ import type { TokenManager } from '../google/client.ts'
 import { driveBase, googleGet, googleGetBytes } from '../google/client.ts'
 import type { ByteWindow } from '../../utils/ranges.ts'
 
-const REVISION_FIELDS = 'nextPageToken,revisions(id,modifiedTime,md5Checksum,size)'
-
-export interface DriveRevision {
-  id: string
-  modifiedTime?: string
-  md5Checksum?: string
-  size?: string
-}
-
-interface ListRevisionsResponse {
-  revisions?: DriveRevision[]
-  nextPageToken?: string
-}
-
-// List a file's revisions via the Drive Revisions API, oldest first.
-export async function listRevisions(tm: TokenManager, fileId: string): Promise<DriveRevision[]> {
-  const revisions: DriveRevision[] = []
-  let pageToken: string | null = null
-  for (;;) {
-    const params: Record<string, string> = { fields: REVISION_FIELDS }
-    if (pageToken !== null) params.pageToken = pageToken
-    const url = `${driveBase(tm)}/files/${fileId}/revisions`
-    const data = (await googleGet(tm, url, params)) as ListRevisionsResponse
-    if (data.revisions !== undefined) revisions.push(...data.revisions)
-    pageToken = data.nextPageToken ?? null
-    if (pageToken === null) break
-  }
-  return revisions
-}
-
 // Download a pinned revision's content (binary files only).
 export async function downloadRevision(
   tm: TokenManager,

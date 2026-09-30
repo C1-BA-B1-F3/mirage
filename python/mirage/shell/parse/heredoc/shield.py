@@ -129,7 +129,7 @@ def protected_source(data: bytes, root: TSNodeLike) -> bytes | None:
     merely opens with the delimiter (see terminator_lookalikes); one
     byte of each such line is masked the same way. Bodies are read
     innermost-first per line, the order the parser's source keeps them
-    in (see relayout).
+    in.
 
     Args:
         data (bytes): the shell source.

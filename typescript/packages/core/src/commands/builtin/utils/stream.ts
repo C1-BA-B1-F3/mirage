@@ -14,6 +14,7 @@
 
 import type { ByteSource } from '../../../io/types.ts'
 import { FileStat, FileType, type PathSpec } from '../../../types.ts'
+import { concat } from '../../../io/cachable_iterator.ts'
 
 export async function readStdinAsync(stdin: ByteSource | null): Promise<Uint8Array | null> {
   if (stdin === null) return null
@@ -39,18 +40,6 @@ export function resolveSource(
   }
   if (stdin instanceof Uint8Array) return wrapBytes(stdin)
   return stdin
-}
-
-function concat(chunks: Uint8Array[]): Uint8Array {
-  let total = 0
-  for (const c of chunks) total += c.byteLength
-  const out = new Uint8Array(total)
-  let offset = 0
-  for (const c of chunks) {
-    out.set(c, offset)
-    offset += c.byteLength
-  }
-  return out
 }
 
 /**

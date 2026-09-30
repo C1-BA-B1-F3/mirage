@@ -96,6 +96,7 @@ import type { SessionState } from '../session/session.ts'
 import { ensureVarVisible, sessionView } from '../session/state.ts'
 import { preSessionGate } from '../../policy/index.ts'
 import { ExecutionNode } from '../types.ts'
+import { concat } from '../../io/cachable_iterator.ts'
 
 type Result = [ByteSource | null, IOResult, ExecutionNode]
 
@@ -486,12 +487,12 @@ async function runCommandBody(
     }
     if (procSubStderr.length > 0) {
       const stderr = await materialize(io.stderr)
-      io.stderr = concatBytes([...procSubStderr, stderr])
+      io.stderr = concat([...procSubStderr, stderr])
       execNode.stderr = io.stderr
     }
     if (xtrace && argv.name !== '') {
       const existing = await materialize(io.stderr)
-      io.stderr = concatBytes([traceCommand([argv.name, ...argv.args]), existing])
+      io.stderr = concat([traceCommand([argv.name, ...argv.args]), existing])
     }
     return [
       procSubInputs.length > 0 && stdout !== null ? await materialize(stdout) : stdout,
@@ -501,18 +502,6 @@ async function runCommandBody(
   } finally {
     for (const [path, allocation] of procSubInputs) dev?.releaseInput(path, allocation)
   }
-}
-
-function concatBytes(chunks: readonly Uint8Array[]): Uint8Array {
-  let total = 0
-  for (const chunk of chunks) total += chunk.byteLength
-  const out = new Uint8Array(total)
-  let offset = 0
-  for (const chunk of chunks) {
-    out.set(chunk, offset)
-    offset += chunk.byteLength
-  }
-  return out
 }
 
 async function runArgv(
@@ -925,10 +914,10 @@ async function routeArgv(
     // meta.
     const enc = new TextEncoder()
     const tail = io.stderr instanceof Uint8Array ? io.stderr : new Uint8Array(0)
-    io.stderr = concatBytes([enc.encode(unsaid(linkErrors, tail).join('')), tail])
+    io.stderr = concat([enc.encode(unsaid(linkErrors, tail).join('')), tail])
     if (io.exitCode === 0) io.exitCode = 1
     const nodeTail = execNode.stderr
-    execNode.stderr = concatBytes([enc.encode(unsaid(linkErrors, nodeTail).join('')), nodeTail])
+    execNode.stderr = concat([enc.encode(unsaid(linkErrors, nodeTail).join('')), nodeTail])
     if (execNode.exitCode === 0) execNode.exitCode = 1
   }
   return [stdout, io, execNode]

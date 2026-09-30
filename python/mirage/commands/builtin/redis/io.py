@@ -56,5 +56,3 @@ IO = VFSAdapter(read=ReadOps(readdir=_readdir, read_bytes=_read, stat=_stat),
                 is_mounted=lambda a: a.store is not None,
                 local=True,
                 max_glob_matches=SCOPE_ERROR).to_command_io()
-
-resolve_glob = IO.resolve_glob

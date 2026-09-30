@@ -18,26 +18,13 @@ from mirage.accessor.hf_buckets import HfBucketsAccessor
 from mirage.cache.index import NULL_INDEX, IndexCacheStore
 from mirage.core.hf_buckets.constants import DEFAULT_CHUNK_SIZE
 from mirage.core.hf_buckets.hub import read_token, resolve_url
-from mirage.core.hf_buckets.read import is_missing, read_bytes
+from mirage.core.hf_buckets.read import is_missing
 from mirage.core.hf_hub.client import HfHubError, hub_stream
 from mirage.core.hf_hub.constants import REFUSED_STATUSES
 from mirage.core.hf_hub.lookup import refusals_denied
 from mirage.observe.context import record_stream
 from mirage.types import PathSpec
 from mirage.utils.errors import eisdir, enoent
-
-
-async def range_read(accessor: HfBucketsAccessor, path: PathSpec, start: int,
-                     end: int) -> bytes:
-    """Read a byte range, in the VFS API's end-exclusive spelling.
-
-    Args:
-        accessor (HfBucketsAccessor): bucket accessor.
-        path (PathSpec): the path to read.
-        start (int): first byte to read.
-        end (int): one past the last byte to read.
-    """
-    return await read_bytes(accessor, path, offset=start, size=end - start)
 
 
 async def read_stream(

@@ -18,7 +18,6 @@ import {
   googleDelete,
   googleGet,
   googleGetBytes,
-  googleGetStream,
   googlePatch,
   googlePost,
   googleSendBytes,
@@ -241,14 +240,6 @@ export async function downloadFile(
 export async function deleteFile(tm: TokenManager, fileId: string): Promise<void> {
   const url = `${driveBase(tm)}/files/${fileId}?supportsAllDrives=true`
   await googleDelete(tm, url)
-}
-
-export async function* downloadFileStream(
-  tm: TokenManager,
-  fileId: string,
-): AsyncIterable<Uint8Array> {
-  const url = `${driveBase(tm)}/files/${fileId}?alt=media&supportsAllDrives=true`
-  for await (const chunk of googleGetStream(tm, url)) yield chunk
 }
 
 export const FOLDER_MIME = 'application/vnd.google-apps.folder'

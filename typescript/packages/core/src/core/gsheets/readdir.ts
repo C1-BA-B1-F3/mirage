@@ -12,95 +12,9 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import { mountPrefixOf } from '../../utils/key_prefix.ts'
-import type { GSheetsAccessor } from '../../accessor/gsheets.ts'
-import { IndexEntry } from '../../cache/index/config.ts'
-import type { IndexCacheStore } from '../../cache/index/store.ts'
-import type { PathSpec } from '../../types.ts'
-import { globToModifiedRange } from '../google/date_glob.ts'
-import { TOP_LEVEL_DIRS } from '../google/constants.ts'
+import { makeAppReaddir } from '../google/readdir.ts'
+import { makeFilename } from '../../vfs/gsheets/sheet_entry.ts'
 import { MIME } from './constants.ts'
 import { detectScope } from './scope.ts'
-import { listAllFiles } from '../google/drive.ts'
-import { makeFilename } from '../../vfs/gsheets/sheet_entry.ts'
-import { stripSlash } from '../../utils/slash.ts'
 
-export async function readdir(
-  accessor: GSheetsAccessor,
-  path: PathSpec,
-  index?: IndexCacheStore,
-): Promise<string[]> {
-  const prefix = mountPrefixOf(path.virtual, path.vfsPath)
-  const modifiedRange = path.pattern ? globToModifiedRange(path.pattern) : null
-  const raw = path.pattern ? path.directory : path.virtual
-  let p = raw
-  if (prefix !== '' && p.startsWith(prefix)) p = p.slice(prefix.length) || '/'
-  const key = stripSlash(p)
-  const virtualKey = key !== '' ? `${prefix}/${key}` : prefix !== '' ? prefix : '/'
-
-  // Bespoke below the classifier: the date-glob push-down filters the
-  // Drive query itself, and a filtered or incomplete listing must not be
-  // cached as the directory, which the kit readdir has no notion of.
-  const match = detectScope(p)
-  if (match.kind === 'root') return TOP_LEVEL_DIRS.map((d) => `${prefix}/${d}`)
-
-  if (match.kind !== 'corpus') {
-    const e = new Error(`ENOENT: ${path.virtual}`) as Error & { code: string }
-    e.code = 'ENOENT'
-    throw e
-  }
-
-  if (index !== undefined && modifiedRange === null) {
-    const cached = await index.listDir(virtualKey)
-    if (cached.entries !== undefined && cached.entries !== null) return cached.entries
-  }
-
-  const { files, complete } = await listAllFiles(accessor.tokenManager, {
-    mimeType: MIME,
-    modifiedAfter: modifiedRange ? modifiedRange[0] : null,
-    modifiedBefore: modifiedRange ? modifiedRange[1] : null,
-  })
-  const isOwned = key === 'owned'
-  const entries: [string, IndexEntry][] = []
-  const names: string[] = []
-  for (const f of files) {
-    const owners = f.owners ?? []
-    const firstOwner = owners[0] ?? {}
-    const fileOwned = firstOwner.me === true
-    if (fileOwned !== isOwned) continue
-    const filename = makeFilename(f.name, f.id, f.modifiedTime ?? '')
-    const sizeRaw = f.size ?? f.quotaBytesUsed ?? '0'
-    const sourceSize = Number.parseInt(sizeRaw, 10)
-    // size stays null: Drive reports the source document's storage size, not
-    // the rendered JSON length (FileStat.size must be render-derived or
-    // null, see the CLAUDE.md FUSE rules). The source size lives in extra.
-    entries.push([
-      filename,
-      new IndexEntry({
-        id: f.id,
-        name: f.name,
-        resourceType: 'gsheets/file',
-        remoteTime: f.modifiedTime ?? '',
-        vfsName: filename,
-        extra: Number.isFinite(sourceSize) && sourceSize > 0 ? { source_size: sourceSize } : {},
-      }),
-    ])
-    names.push(`${prefix}/${key}/${filename}`)
-  }
-
-  if (index !== undefined) {
-    // A modified-range listing is a filtered view rather than the directory,
-    // and an incomplete all-corpora search is a directory Drive could not
-    // finish reading. Neither may stand in for the directory: caching one
-    // would pin a short listing until it expires. The entries are real
-    // either way, so cache those and let the next readdir re-list.
-    if (modifiedRange !== null || !complete) {
-      for (const [name, entry] of entries) {
-        await index.put(`${virtualKey}/${name}`, entry)
-      }
-    } else {
-      await index.setDir(virtualKey, entries)
-    }
-  }
-  return names
-}
+export const readdir = makeAppReaddir(MIME, detectScope, makeFilename, 'gsheets/file')

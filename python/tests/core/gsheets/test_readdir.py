@@ -56,7 +56,7 @@ async def test_readdir_owned(accessor, index):
         },
     ]
     with patch(
-            "mirage.core.gsheets.readdir.list_all_files",
+            "mirage.core.google.readdir.list_all_files",
             new_callable=AsyncMock,
             return_value=(files, True),
     ):
@@ -99,7 +99,7 @@ async def test_readdir_owned_pushes_modified_range(accessor, index):
         captured["mime_type"] = mime_type
         return [], True
 
-    with patch("mirage.core.gsheets.readdir.list_all_files", new=fake_list):
+    with patch("mirage.core.google.readdir.list_all_files", new=fake_list):
         await readdir(
             accessor,
             PathSpec(vfs_path=mount_key("/gsheets/owned/2026-05-*",
@@ -143,7 +143,7 @@ async def test_readdir_owned_filtered_does_not_cache(accessor, index):
             return files, True
         return full_files, True
 
-    with patch("mirage.core.gsheets.readdir.list_all_files", new=fake_list):
+    with patch("mirage.core.google.readdir.list_all_files", new=fake_list):
         await readdir(
             accessor,
             PathSpec(vfs_path=mount_key("/gsheets/owned/2026-05-*",
@@ -195,7 +195,7 @@ async def test_readdir_owned_filtered_bypasses_warm_cache(accessor, index):
             return may_only, True
         return full_files, True
 
-    with patch("mirage.core.gsheets.readdir.list_all_files", new=fake_list):
+    with patch("mirage.core.google.readdir.list_all_files", new=fake_list):
         await readdir(
             accessor,
             PathSpec(vfs_path=mount_key("/gsheets/owned", "/gsheets"),
@@ -220,7 +220,7 @@ async def test_readdir_owned_no_pattern_omits_range(accessor, index):
         captured.update(kwargs)
         return [], True
 
-    with patch("mirage.core.gsheets.readdir.list_all_files", new=fake_list):
+    with patch("mirage.core.google.readdir.list_all_files", new=fake_list):
         await readdir(
             accessor,
             PathSpec(vfs_path=mount_key("/gsheets/owned", "/gsheets"),
@@ -239,7 +239,7 @@ async def test_readdir_owned_non_date_pattern_omits_range(accessor, index):
         captured.update(kwargs)
         return [], True
 
-    with patch("mirage.core.gsheets.readdir.list_all_files", new=fake_list):
+    with patch("mirage.core.google.readdir.list_all_files", new=fake_list):
         await readdir(
             accessor,
             PathSpec(vfs_path=mount_key("/gsheets/owned/*foo*", "/gsheets"),
@@ -265,7 +265,7 @@ async def test_readdir_entry_size_none_source_size_in_extra(accessor, index):
         },
     ]
     with patch(
-            "mirage.core.gsheets.readdir.list_all_files",
+            "mirage.core.google.readdir.list_all_files",
             new_callable=AsyncMock,
             return_value=(files, True),
     ):
@@ -307,7 +307,7 @@ async def test_readdir_incomplete_search_is_not_cached_as_the_directory(
     owned = PathSpec(vfs_path=mount_key("/gsheets/owned", "/gsheets"),
                      virtual="/gsheets/owned",
                      directory="/gsheets/owned")
-    with patch("mirage.core.gsheets.readdir.list_all_files", new=fake_list):
+    with patch("mirage.core.google.readdir.list_all_files", new=fake_list):
         listed = await readdir(accessor, owned, index)
         assert len(listed) == 1
         assert (await index.list_dir("/gsheets/owned")).entries is None

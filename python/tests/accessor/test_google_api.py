@@ -12,23 +12,11 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import asyncio
-from collections.abc import AsyncIterator, Iterator
+from mirage.accessor.gdocs import GDocsAccessor
+from mirage.accessor.google_api import GoogleApiAccessor
 
 
-def async_to_sync_iter(
-    ait: AsyncIterator[bytes],
-    loop: asyncio.AbstractEventLoop,
-) -> Iterator[bytes]:
-    """Convert async iterator to sync, yielding one chunk at a time.
-
-    Args:
-        ait (AsyncIterator[bytes]): The async iterator to convert.
-        loop (asyncio.AbstractEventLoop): The event loop to drive iteration.
-    """
-    while True:
-        try:
-            chunk = loop.run_until_complete(ait.__anext__())
-        except StopAsyncIteration:
-            break
-        yield chunk
+def test_an_app_accessor_is_the_google_api_accessor():
+    accessor = GDocsAccessor(config=None, token_manager="tm")
+    assert isinstance(accessor, GoogleApiAccessor)
+    assert accessor.token_manager == "tm"

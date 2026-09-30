@@ -168,11 +168,6 @@ export function validDay(day: string): boolean {
   return new Date(at).toISOString().slice(0, 10) === day
 }
 
-/** Whether an event time slot is a floating all-day date. */
-export function isAllDay(slot: Record<string, JsonValue>): boolean {
-  return slot.date !== undefined && slot.dateTime === undefined
-}
-
 /**
  * Resolve one event time slot to an absolute instant.
  *

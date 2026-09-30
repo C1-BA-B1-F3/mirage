@@ -75,8 +75,8 @@ would escape above that configured subtree.
 
 ## Supported operations
 
-Reads: `readdir`, `stat`, `exists`, `read_bytes`, `read_stream`,
-`range_read`, and glob resolution. Writes: `write`, `create`, `mkdir`,
+Reads: `readdir`, `stat`, `exists`, `read_bytes` (whole or a byte range),
+`read_stream`, and glob resolution. Writes: `write`, `create`, `mkdir`,
 `rmdir`, `unlink`, recursive `rm`, `cp`, and `mv`.
 
 `mv`/`cp` are non-atomic download + upload — the Files API has no server-side

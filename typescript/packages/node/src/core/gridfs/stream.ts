@@ -18,7 +18,7 @@ import type { PathSpec } from '@struktoai/mirage-core/types'
 import { enoent } from '@struktoai/mirage-core/utils/errors'
 import type { GridFSAccessor } from '../../accessor/gridfs.ts'
 import { bucket, gridfsKey, rawPathOf } from './client.ts'
-import { isNoFileError, read, resolveFileId } from './read.ts'
+import { isNoFileError, resolveFileId } from './read.ts'
 
 const DEFAULT_CHUNK_SIZE = 8192
 
@@ -57,25 +57,4 @@ export async function* stream(accessor: GridFSAccessor, path: PathSpec): AsyncIt
     if (rec !== null) rec.bytes += pending.byteLength
     yield pending
   }
-}
-
-/**
- * The VFS-level `range_read(path, start, end)`, end exclusive.
- *
- * Every other backend's `rangeRead` and all of python's spell the window this
- * way; gridfs read its fourth argument as a length, so `range_read(p, 10, 20)`
- * returned twenty bytes from offset ten where python returned ten.
- *
- * @param accessor the GridFS accessor
- * @param path the file path
- * @param start first byte to read
- * @param end one past the last byte to read
- */
-export async function rangeRead(
-  accessor: GridFSAccessor,
-  path: PathSpec,
-  start: number,
-  end: number,
-): Promise<Uint8Array> {
-  return read(accessor, path, undefined, { offset: start, size: end - start })
 }

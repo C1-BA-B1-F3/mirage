@@ -20,7 +20,6 @@ from mirage.accessor.databricks_volume import DatabricksVolumeAccessor
 from mirage.cache.index import NULL_INDEX, IndexCacheStore
 from mirage.core.databricks_volume.errors import is_not_found
 from mirage.core.databricks_volume.path import backend_path
-from mirage.core.databricks_volume.read import read_bytes
 from mirage.observe.context import record_stream
 from mirage.types import PathSpec
 from mirage.utils.errors import enoent
@@ -74,16 +73,3 @@ async def read_stream(
     finally:
         if contents is not None:
             await asyncio.to_thread(contents.close)
-
-
-async def range_read(
-    accessor: DatabricksVolumeAccessor,
-    path: PathSpec,
-    start: int,
-    end: int,
-) -> bytes:
-    return await read_bytes(accessor,
-                            path,
-                            offset=start,
-                            size=end - start,
-                            index=NULL_INDEX)

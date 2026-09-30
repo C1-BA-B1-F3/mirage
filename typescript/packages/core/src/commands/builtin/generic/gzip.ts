@@ -34,18 +34,7 @@ import {
   replaceOutput,
   suffixRefusal,
 } from './decompress.ts'
-
-function concat(chunks: Uint8Array[]): Uint8Array {
-  let total = 0
-  for (const c of chunks) total += c.byteLength
-  const out = new Uint8Array(total)
-  let offset = 0
-  for (const c of chunks) {
-    out.set(c, offset)
-    offset += c.byteLength
-  }
-  return out
-}
+import { concat } from '../../../io/cachable_iterator.ts'
 
 export async function gzipGeneric(
   paths: PathSpec[],

@@ -25,16 +25,6 @@ from mirage.workspace.types import ExecutionNode
 _USAGE = "shopt: usage: shopt [-pqsu] [-o] [optname ...]"
 
 
-def shopt_enabled(session: SessionState, name: str) -> bool:
-    """Whether a `shopt` option is on for the session.
-
-    Args:
-        session (SessionState): the session holding the option table.
-        name (str): the option's `shopt` spelling.
-    """
-    return session.shopts.get(name, SHOPT_DEFAULTS[name])
-
-
 def _row(name: str, on: bool, reusable: bool, set_o: bool) -> str:
     """One listing line in bash's two shapes.
 

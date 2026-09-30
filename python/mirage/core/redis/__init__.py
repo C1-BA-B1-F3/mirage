@@ -20,7 +20,6 @@ from mirage.core.redis.du import size as du_size
 from mirage.core.redis.exists import exists
 from mirage.core.redis.find import find
 from mirage.core.redis.mkdir import mkdir
-from mirage.core.redis.mkdir_p import mkdir_p
 from mirage.core.redis.read import read_bytes
 from mirage.core.redis.readdir import readdir
 from mirage.core.redis.rename import rename
@@ -41,7 +40,6 @@ __all__ = [
     "exists",
     "find",
     "mkdir",
-    "mkdir_p",
     "read_bytes",
     "readdir",
     "rename",

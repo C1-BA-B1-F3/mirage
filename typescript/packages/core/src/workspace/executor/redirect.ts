@@ -15,7 +15,6 @@
 import { runWithRedirectPaths } from '../../context/session_context.ts'
 import { formatFsError, fsStrerror, isFsError } from '../../utils/errors.ts'
 import { readFailExitCode } from '../../commands/spec/usage.ts'
-import { concatBytes } from '../../core/jq/format.ts'
 import { stripSlash } from '../../utils/slash.ts'
 import type { SharedInput } from '../../io/async_line_iterator.ts'
 import type { ByteSource } from '../../io/types.ts'
@@ -45,6 +44,7 @@ import {
   TO_STDOUT as EXEC_TO_STDOUT,
 } from './builtins/exec/constants.ts'
 import type { ExecuteNodeFn } from './jobs.ts'
+import { concat } from '../../io/cachable_iterator.ts'
 
 type Result = [ByteSource | null, IOResult, ExecutionNode]
 
@@ -281,10 +281,7 @@ export async function handleRedirect(
       // line goes on.
       const name = (execNode.command ?? '').split(' ')[0] ?? ''
       stdoutData = new Uint8Array()
-      io.stderr = concatBytes([
-        await materialize(io.stderr),
-        formatFsError(name, err, execNode.paths),
-      ])
+      io.stderr = concat([await materialize(io.stderr), formatFsError(name, err, execNode.paths)])
       io.exitCode = readFailExitCode(name, err)
     }
     stderrData = await materialize(io.stderr)
@@ -632,16 +629,4 @@ function toScope(path: string): PathSpec {
   const lastSlash = path.lastIndexOf('/')
   const directory = lastSlash >= 0 ? path.slice(0, lastSlash + 1) : '/'
   return new PathSpec({ vfsPath: stripSlash(path), virtual: path, directory, resolved: true })
-}
-
-function concat(chunks: Uint8Array[]): Uint8Array {
-  let total = 0
-  for (const c of chunks) total += c.byteLength
-  const out = new Uint8Array(total)
-  let offset = 0
-  for (const c of chunks) {
-    out.set(c, offset)
-    offset += c.byteLength
-  }
-  return out
 }

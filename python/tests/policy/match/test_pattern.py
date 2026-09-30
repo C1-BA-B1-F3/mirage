@@ -13,9 +13,8 @@
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 from mirage.policy.constants import WILDCARD
-from mirage.policy.match.pattern import (intersect_patterns, pattern_matches,
-                                         pattern_names, pattern_reaches,
-                                         split_pattern)
+from mirage.policy.match.pattern import (pattern_matches, pattern_names,
+                                         pattern_reaches, split_pattern)
 
 
 def test_split_pattern_drops_trailing_wildcards_only():
@@ -70,18 +69,3 @@ def test_pattern_reaches_reads_only_the_words_the_two_share():
     assert pattern_reaches("*", ("anything", "at", "all"))
     # An empty path asks nothing, so nothing can refuse it.
     assert pattern_reaches("linear issue", ())
-
-
-def test_intersect_patterns_unifies_token_by_token():
-    assert intersect_patterns(
-        ("git", ), ("git log", "git diff")) == ("git log", "git diff")
-    assert intersect_patterns(("ls", "cat", "git"),
-                              ("cat", "git log")) == ("cat", "git log")
-    assert intersect_patterns(("*", ), ("ls", )) == ("ls", )
-    assert intersect_patterns(("git * --hard", ),
-                              ("git reset", )) == ("git reset --hard", )
-    assert intersect_patterns(("rm", ), ("ls", )) == ()
-    assert intersect_patterns(("*", ), ("*", )) == ("*", )
-    # Duplicates collapse, order follows the first list.
-    assert intersect_patterns(("git", "git log"),
-                              ("git log", )) == ("git log", )

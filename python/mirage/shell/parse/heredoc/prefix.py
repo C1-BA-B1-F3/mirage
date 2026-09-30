@@ -42,7 +42,7 @@ def body_prefix(redirect_node: TSNodeLike) -> str:
     a later heredoc on the same operator line is measured from the line
     after the earlier body's terminator rather than from the newline
     the two operators share, innermost-first, which is the order the
-    parser's source keeps a line's bodies in (see relayout). What lies
+    parser's source keeps a line's bodies in. What lies
     between that start and the body node is exactly the dropped run when
     it is blank, and is body text nowhere else, so a gap holding anything
     but blanks and newlines yields nothing. The tree's text begins at its

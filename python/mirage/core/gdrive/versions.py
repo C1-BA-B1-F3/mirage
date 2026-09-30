@@ -12,39 +12,9 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-from typing import Any
-
 from mirage.core.google.client import (TokenManager, drive_base, google_get,
                                        google_get_bytes)
 from mirage.utils.ranges import ByteWindow
-
-REVISION_FIELDS = "nextPageToken,revisions(id,modifiedTime,md5Checksum,size)"
-
-
-async def list_revisions(token_manager: TokenManager,
-                         file_id: str) -> list[dict[str, Any]]:
-    """List a file's revisions via the Drive Revisions API.
-
-    Args:
-        token_manager (TokenManager): OAuth2 token manager.
-        file_id (str): file ID.
-
-    Returns:
-        list[dict]: revision metadata dicts, oldest first (API order).
-    """
-    revisions: list[dict[str, Any]] = []
-    page_token: str | None = None
-    while True:
-        params: dict[str, str | int] = {"fields": REVISION_FIELDS}
-        if page_token:
-            params["pageToken"] = page_token
-        url = f"{drive_base(token_manager)}/files/{file_id}/revisions"
-        data = await google_get(token_manager, url, params=params)
-        revisions.extend(data.get("revisions", []))
-        page_token = data.get("nextPageToken")
-        if not page_token:
-            break
-    return revisions
 
 
 async def download_revision(token_manager: TokenManager,

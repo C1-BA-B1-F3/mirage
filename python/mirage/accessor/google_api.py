@@ -12,14 +12,14 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import asyncio
+from mirage.accessor.base import Accessor
+from mirage.core.google.client import TokenManager
+from mirage.core.google.config import GoogleConfig
 
 
-async def run_in_thread(fn, *args):
-    """Run a blocking function in a thread pool.
+class GoogleApiAccessor(Accessor):
 
-    Args:
-        fn: The blocking function to run.
-        *args: Arguments to pass to the function.
-    """
-    return await asyncio.to_thread(fn, *args)
+    def __init__(self, config: GoogleConfig,
+                 token_manager: TokenManager) -> None:
+        self.config = config
+        self.token_manager = token_manager

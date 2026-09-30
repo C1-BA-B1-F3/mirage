@@ -20,6 +20,7 @@ import { guestError } from './errors.ts'
 import { isDirRow, isRegularRow, statResult } from './stat.ts'
 import { ScratchTree } from './tree.ts'
 import type { MontyVFS } from './vfs.ts'
+import { concat } from '../../../io/cachable_iterator.ts'
 
 function pathArg(value: unknown): string | null {
   if (typeof value === 'string') return value
@@ -56,13 +57,6 @@ function urandom(value: unknown): Uint8Array {
     globalThis.crypto.getRandomValues(bytes.subarray(offset, Math.min(offset + 65_536, size)))
   }
   return bytes
-}
-
-function concatBytes(head: Uint8Array, tail: Uint8Array): Uint8Array {
-  const out = new Uint8Array(head.length + tail.length)
-  out.set(head, 0)
-  out.set(tail, head.length)
-  return out
 }
 
 interface TimeZoneMarker {
@@ -473,7 +467,7 @@ export class MirageOSAccess {
   private async appendMounted(path: string, data: unknown, vfs: MontyVFS): Promise<number> {
     const tail = payloadBytes(data)
     const base = this.bases.get(path) ?? (await vfs.readOrNull(path)) ?? new Uint8Array()
-    const whole = concatBytes(base, tail)
+    const whole = concat([base, tail])
     this.bases.set(path, whole)
     await vfs.append(path, tail, whole)
     return typeof data === 'string' ? textLength(data) : tail.length

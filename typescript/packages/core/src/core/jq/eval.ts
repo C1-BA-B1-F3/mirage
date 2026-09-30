@@ -33,7 +33,6 @@ const INPUTS_REF = /(?<![\w$.:])inputs(?![\w:])/
 const INPUT_DEF = /(?<![\w$.:])def\s+input\s*[:(]/
 const INPUTS_DEF = /(?<![\w$.:])def\s+inputs\s*[:(]/
 const ARGS_REF = /\$ARGS(?![\w:])/
-const HALT_REF = /(?<![\w$.:])halt(?:_error)?(?![\w:])/
 const HALT_ERROR_REF = /(?<![\w$.:])halt_error(?![\w:])/
 const ERROR_CALL = /(?<![\w$.])(?<!::)error(?!\w)(?!::)/g
 const TOP_LEVEL_LINE = /(at <top-level>, line )(\d+)/g
@@ -141,11 +140,6 @@ export function streamReads(expr: string): StreamReads {
 /** Report whether a jq program reads the `$ARGS` variable. */
 export function referencesArgs(expr: string): boolean {
   return ARGS_REF.test(codeOnly(expr))
-}
-
-/** Report whether a jq program can call `halt` or `halt_error`. */
-export function halts(expr: string): boolean {
-  return HALT_REF.test(codeOnly(expr))
 }
 
 /** The JSON text of the value `$ARGS` resolves to for a run. */

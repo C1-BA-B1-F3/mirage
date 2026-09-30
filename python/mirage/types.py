@@ -711,9 +711,6 @@ class VFSWriteOp(str, Enum):
     APPEND = "append"
 
 
-WRITE_OPS = frozenset(VFSWriteOp)
-
-
 class VFSName(str, Enum):
     DISK = "disk"
     S3 = "s3"

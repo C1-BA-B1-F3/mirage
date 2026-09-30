@@ -25,6 +25,7 @@ import { sessionView, visibleArrays, visibleAssocs } from '../../../session/stat
 import { ExecutionNode } from '../../../types.ts'
 import { fail, requireView } from '../shared.ts'
 import type { BuiltinCall, ExecuteStringFn, Result } from '../types.ts'
+import { concat } from '../../../../io/cachable_iterator.ts'
 
 const USAGE =
   'mapfile: usage: mapfile [-d delim] [-n count] [-O origin] [-s count] [-t] [-u fd] [-C callback] [-c quantum] [array]'
@@ -137,20 +138,9 @@ export async function handleMapfile(
     if (err instanceof PolicyDenied) return fail(cmd, `${err.message}\n`, 1)
     throw err
   }
-  const stdout = outputs.length > 0 ? concatBytes(outputs) : null
-  const stderr = errs.length > 0 ? concatBytes(errs) : null
+  const stdout = outputs.length > 0 ? concat(outputs) : null
+  const stderr = errs.length > 0 ? concat(errs) : null
   return [stdout, new IOResult({ stderr }), new ExecutionNode({ command: cmd, exitCode: 0 })]
-}
-
-function concatBytes(parts: Uint8Array[]): Uint8Array {
-  const total = parts.reduce((n, p) => n + p.byteLength, 0)
-  const out = new Uint8Array(total)
-  let offset = 0
-  for (const p of parts) {
-    out.set(p, offset)
-    offset += p.byteLength
-  }
-  return out
 }
 
 /** The `mapfile` / `readarray` arm; the head word is what diagnostics name. */

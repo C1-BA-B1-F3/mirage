@@ -52,16 +52,3 @@ export interface BodyRead {
   terminated: boolean
   eofLine: number
 }
-
-/** One statement terminator on a heredoc's operator line. */
-export interface Terminator {
-  /** Offset of the token. */
-  start: number
-  /**
-   * Offset where the text that moves past the body begins: after a `;`,
-   * which the newline before the body replaces, and at a `;;`, `;&`,
-   * `;;&` or `)`, which bash reads at the start of a line and so moves
-   * whole.
-   */
-  resume: number
-}

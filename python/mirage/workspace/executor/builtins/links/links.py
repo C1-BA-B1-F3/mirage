@@ -27,14 +27,9 @@ from mirage.utils.errors import (ELOOP_STRERROR, FS_ERRORS, DotWalkLoop,
                                  fs_strerror)
 from mirage.utils.path import CycleError
 from mirage.workspace.executor.builtins.links.probe import stat_or_none
-from mirage.workspace.executor.builtins.shared import fail, split_flags
+from mirage.workspace.executor.builtins.shared import fail
 from mirage.workspace.executor.builtins.types import Result
 from mirage.workspace.mount.namespace import Namespace
-
-
-def link_flags(args: list[str | PathSpec], known: str) -> set[str]:
-    flags, _ = split_flags(args, known)
-    return flags
 
 
 def follow_parent(namespace: Namespace, virtual: str) -> str:

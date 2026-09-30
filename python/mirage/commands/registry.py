@@ -17,7 +17,7 @@ from dataclasses import dataclass, field
 from types import MappingProxyType
 from typing import Any, TypeAlias, overload
 
-from mirage.commands.config import RegisteredCommand, command, cross_command
+from mirage.commands.config import RegisteredCommand, command
 
 _CommandSource: TypeAlias = RegisteredCommand | Callable[..., Any]
 
@@ -105,5 +105,4 @@ __all__ = [
     "CommandCatalog",
     "RegisteredCommand",
     "command",
-    "cross_command",
 ]

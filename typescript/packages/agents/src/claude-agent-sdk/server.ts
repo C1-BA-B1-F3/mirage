@@ -16,11 +16,7 @@ import { VERSION } from '@struktoai/mirage-core/version'
 import type { Workspace } from '@struktoai/mirage-core/workspace/workspace/workspace'
 import { createSdkMcpServer, tool } from '@anthropic-ai/claude-agent-sdk'
 import { z } from 'zod'
-import {
-  MirageToolOperations,
-  type MirageToolOperationsOptions,
-  type ToolResult,
-} from '../tool-operations.ts'
+import { MirageToolOperations, type MirageToolOperationsOptions } from '../tool-operations.ts'
 import {
   EDIT_DESCRIPTION,
   EXECUTE_DESCRIPTION,
@@ -29,41 +25,6 @@ import {
   READ_DESCRIPTION,
   WRITE_DESCRIPTION,
 } from './descriptions.ts'
-
-export async function runExecute(ws: Workspace, command: string): Promise<ToolResult> {
-  return new MirageToolOperations(ws).execute(command)
-}
-
-export async function runRead(
-  ws: Workspace,
-  path: string,
-  offset = 0,
-  limit = 2000,
-): Promise<ToolResult> {
-  return new MirageToolOperations(ws).read(path, offset, limit)
-}
-
-export async function runWrite(ws: Workspace, path: string, content: string): Promise<ToolResult> {
-  return new MirageToolOperations(ws).write(path, content)
-}
-
-export async function runEdit(
-  ws: Workspace,
-  path: string,
-  oldString: string,
-  newString: string,
-  replaceAll = false,
-): Promise<ToolResult> {
-  return new MirageToolOperations(ws).edit(path, oldString, newString, replaceAll)
-}
-
-export async function runLs(ws: Workspace, path: string): Promise<ToolResult> {
-  return new MirageToolOperations(ws).ls(path)
-}
-
-export async function runGrep(ws: Workspace, pattern: string, path: string): Promise<ToolResult> {
-  return new MirageToolOperations(ws).grep(pattern, path)
-}
 
 export function MirageServer(workspace: Workspace, options: MirageToolOperationsOptions = {}) {
   const operations = new MirageToolOperations(workspace, options)

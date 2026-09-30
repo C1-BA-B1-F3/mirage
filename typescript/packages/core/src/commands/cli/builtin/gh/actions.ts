@@ -43,6 +43,7 @@ import {
   textValue,
   typedOut,
 } from './accessor.ts'
+import { concat } from '../../../../io/cachable_iterator.ts'
 
 const RUN_FIELDS = [
   'attempt',
@@ -164,16 +165,6 @@ export async function runViewCmd(inv: CLIInvocation): Promise<CommandFnResult> {
     row.conclusion !== 'success'
   ) {
     out[1].exitCode = 1
-  }
-  return out
-}
-
-function bytesOf(parts: readonly Uint8Array[]): Uint8Array {
-  const out = new Uint8Array(parts.reduce((size, part) => size + part.length, 0))
-  let at = 0
-  for (const part of parts) {
-    out.set(part, at)
-    at += part.length
   }
   return out
 }
@@ -338,12 +329,12 @@ async function runLog(
       data = await segment.read()
     } catch (err) {
       if (!(err instanceof Error) || printed.length === 0) throw err
-      throw new PartialOutputError(err.message, bytesOf(printed))
+      throw new PartialOutputError(err.message, concat(printed))
     }
     const prefix = ENC.encode(`${segment.job}\t${segment.step}\t`)
     for (const line of logLines(data)) printed.push(prefix, line, ENC.encode('\n'))
   }
-  return bytesOf(printed)
+  return concat(printed)
 }
 
 export async function runRerunCmd(inv: CLIInvocation): Promise<CommandFnResult> {
@@ -426,7 +417,7 @@ async function workflowYaml(
         : `could not find workflow file ${base} on ${gitRef}, try specifying a different ref`,
     )
   }
-  return content.at(-1) === NEWLINE ? content : bytesOf([content, ENC.encode('\n')])
+  return content.at(-1) === NEWLINE ? content : concat([content, ENC.encode('\n')])
 }
 
 async function workflowInputs(inv: CLIInvocation, fl: FlagView): Promise<Record<string, unknown>> {

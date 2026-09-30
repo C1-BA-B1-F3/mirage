@@ -15,8 +15,8 @@
 import asyncio
 
 from mirage.commands.config import (CommandOpts, RegisteredCommand, command,
-                                    cross_command, has_injected_version,
-                                    help_page, standard_request, version_line)
+                                    has_injected_version, help_page,
+                                    standard_request, version_line)
 from mirage.commands.spec import SPECS, CommandSpec, Operand, Option
 from mirage.commands.spec.builtin_specs import registered_spec
 from mirage.version import __version__
@@ -150,22 +150,6 @@ class TestCommandDecoratorWrite:
 
         rc = my_cat._registered_commands[0]
         assert rc.write is False
-
-
-class TestCrossCommandDecorator:
-
-    def test_cross_command_fields(self):
-        spec = CommandSpec()
-
-        @cross_command("cp", src="s3", dst="disk", spec=spec)
-        async def my_cp(ws, paths, *texts, **kw):
-            pass
-
-        rc = my_cp._registered_commands[0]
-        assert rc.name == "cp"
-        assert rc.src == "s3"
-        assert rc.dst == "disk"
-        assert rc.vfs == "s3->disk"
 
 
 class TestVersionSupport:

@@ -66,7 +66,6 @@ vi.mock('../../../../core/hf_hub/admin.ts', () => ({
   createTag: createTagMock,
   deleteTag: deleteTagMock,
   listTags: listTagsMock,
-  deleteRepo: vi.fn(),
   whoami: vi.fn(),
 }))
 

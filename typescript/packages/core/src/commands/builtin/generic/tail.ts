@@ -35,6 +35,7 @@ import {
 import { eisdir, fsErrorLine, fsStrerror, isEisdir, isFsError } from '../../../utils/errors.ts'
 import { readStdinAsync } from '../utils/stream.ts'
 import { quoteText } from '../../quote.ts'
+import { concat } from '../../../io/cachable_iterator.ts'
 
 const ENC = new TextEncoder()
 
@@ -369,18 +370,6 @@ function readsEverything(rawCounts: TailCounts, raw: Uint8Array): boolean {
   if (counts.fromByte !== null || counts.fromLine !== null) return false
   if (counts.byteCount !== null) return counts.byteCount >= raw.byteLength
   return (counts.lines ?? 10) >= countNewlines(raw)
-}
-
-function concat(chunks: Uint8Array[]): Uint8Array {
-  let total = 0
-  for (const c of chunks) total += c.byteLength
-  const out = new Uint8Array(total)
-  let offset = 0
-  for (const c of chunks) {
-    out.set(c, offset)
-    offset += c.byteLength
-  }
-  return out
 }
 
 const RETRY_IGNORED = 'tail: warning: --retry ignored; --retry is useful only when following\n'

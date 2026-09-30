@@ -18,7 +18,6 @@ from mirage.utils.sanitize import NAME_MAX_BYTES
 from mirage.vfs.gcal.event_entry import (PRIMARY_DIR, event_title,
                                          make_calendar_dirname,
                                          make_event_filename,
-                                         parse_calendar_dirname,
                                          parse_event_filename)
 
 EVENT_ID = "la9i1t995acovthi3f761chla0"
@@ -92,16 +91,9 @@ def test_primary_calendar_keeps_its_alias():
     assert make_calendar_dirname("integ@example.com",
                                  "integ@example.com",
                                  primary=True) == PRIMARY_DIR
-    assert parse_calendar_dirname(PRIMARY_DIR) == PRIMARY_DIR
 
 
 def test_calendar_dirname_embeds_the_id_verbatim():
     cal_id = "en.usa#holiday@group.v.calendar.google.com"
     name = make_calendar_dirname("US Holidays", cal_id)
     assert name == f"US_Holidays__{cal_id}"
-    assert parse_calendar_dirname(name) == cal_id
-
-
-def test_calendar_dirname_rejects_a_name_without_an_id():
-    with pytest.raises(FileNotFoundError):
-        parse_calendar_dirname("Engineering")

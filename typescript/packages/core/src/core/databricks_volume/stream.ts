@@ -18,7 +18,6 @@ import { VFSName, type PathSpec } from '../../types.ts'
 import { dbxFetch } from './client.ts'
 import { isNotFound, notFoundError } from './errors.ts'
 import { backendPath } from './path.ts'
-import { readBytes } from './read.ts'
 
 const DEFAULT_CHUNK_SIZE = 8192
 
@@ -76,13 +75,4 @@ export async function* readStream(
       reader.releaseLock()
     }
   }
-}
-
-export async function rangeRead(
-  accessor: DatabricksVolumeAccessor,
-  path: PathSpec,
-  start: number,
-  end: number,
-): Promise<Uint8Array> {
-  return readBytes(accessor, path, undefined, { offset: start, size: end - start })
 }

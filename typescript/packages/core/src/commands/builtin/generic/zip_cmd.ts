@@ -24,6 +24,7 @@ import { lstripSlash, rstripSlash } from '../../../utils/slash.ts'
 import { respellOne } from '../../../utils/path.ts'
 import type { MemberKind } from './archive/types.ts'
 import { OTHER_FILESYSTEM, scanOperand, type StatFn, type WalkFn } from './archive/walk.ts'
+import { concat } from '../../../io/cachable_iterator.ts'
 
 const ENC = new TextEncoder()
 
@@ -68,18 +69,6 @@ interface ZipPlan {
   // The warning for two paths that store under one name, empty when every
   // name is unique.
   repeated: string
-}
-
-function concat(chunks: readonly Uint8Array[]): Uint8Array {
-  let total = 0
-  for (const c of chunks) total += c.byteLength
-  const out = new Uint8Array(total)
-  let offset = 0
-  for (const c of chunks) {
-    out.set(c, offset)
-    offset += c.byteLength
-  }
-  return out
 }
 
 // The stamp every member carries: 1980-01-01 00:00, the DOS epoch and

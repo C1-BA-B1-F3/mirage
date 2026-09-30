@@ -54,9 +54,7 @@ _PATCH_TARGETS = {
         "mirage.core.gdrive.resolve.list_shared_drives",
     ],
     "list_all_files": [
-        "mirage.core.gdocs.readdir.list_all_files",
-        "mirage.core.gsheets.readdir.list_all_files",
-        "mirage.core.gslides.readdir.list_all_files",
+        "mirage.core.google.readdir.list_all_files",
     ],
     "download_file": [
         "mirage.core.gdrive.read.download_file",

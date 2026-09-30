@@ -35,5 +35,3 @@ IO = VFSAdapter(search=SearchOps(search=make_search_op(detect_scope,
                 read=ReadOps(readdir=_readdir, read_bytes=_read, stat=_stat),
                 is_mounted=lambda a: True,
                 local=False).to_command_io()
-
-resolve_glob = IO.resolve_glob

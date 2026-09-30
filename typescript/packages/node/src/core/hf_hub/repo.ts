@@ -15,13 +15,6 @@
 import type { HfHubAccessor } from '../../accessor/hf_hub.ts'
 import { apiUrl, HfHubError, hubGet, revSegment } from './client.ts'
 
-/** The repository's branches, tags and conversion refs. */
-export async function fetchRefs(accessor: HfHubAccessor): Promise<Record<string, unknown>> {
-  const url = apiUrl(accessor.endpoint, accessor.repoType, accessor.repoId, '/refs')
-  const data = await hubGet(accessor.token, url, undefined, accessor.timeoutMs)
-  return typeof data === 'object' && data !== null ? (data as Record<string, unknown>) : {}
-}
-
 /**
  * The commit the mount's revision currently points at.
  *

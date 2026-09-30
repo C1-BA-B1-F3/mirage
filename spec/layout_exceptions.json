@@ -1,10 +1,10 @@
 {
- "baseline": 222,
+ "baseline": 217,
  "baseline_reason": "Every divergence below the excused ones predates the gate and each needs its own decision, so --strict fails on a rise rather than demanding zero. Lower this number whenever a divergence is closed; the gate fails on a drop too, so an improvement cannot be silently spent. Items 31-37 of the cleanup plan are scoped from this report. The unit is one module, never one directory: a one-sided directory counts once per module inside it, so it cannot absorb new modules without moving the number. An excused directory is the deliberate exception -- it excuses its whole subtree, because the excuse is that there is no counterpart to mirror, which makes growth inside it expected rather than drift.",
  "directories": {
   "python_only": {
    "runtime/wasm": "The wasmtime WASI host. npm ships quickjs-emscripten and pyodide with their own hosts and python has no equivalent, so there is nothing to mirror. CLAUDE.md says do not port it.",
-   "bridge": "sync.py and thread.py exist to run an event loop on a worker thread for the FUSE callbacks, which python needs because its FUSE loop is threaded and node's is not.",
+   "bridge": "sync.py exists to run an event loop on a worker thread for the FUSE callbacks, which python needs because its FUSE loop is threaded and node's is not.",
    "agents/agno": "Ecosystem split: agno is a python-only framework.",
    "agents/camel": "Ecosystem split: camel is a python-only framework, and pyproject declares it conflicting with the openai extra.",
    "agents/openai_agents": "Twin of the typescript agents/openai: the python package is named after the openai-agents SDK and the npm subpath after @openai/agents, so the two never pair by name. Each module added to both sides is excused under modules.agents/openai.",

@@ -19,7 +19,7 @@ import { HfBucketsAccessor } from '../../accessor/hf.ts'
 import { HfHubError } from '../hf_hub/client.ts'
 import { type FakeHub, NO_ETAG, xetHash } from '../hf_hub/_test_util.ts'
 import { type FakeHfOperator, fakeHfOperator, installFakeOperator } from './mock.ts'
-import { rangeRead, stream } from './stream.ts'
+import { stream } from './stream.ts'
 
 const BIG = Buffer.from(`${'x'.repeat(1023)}\n`.repeat(300))
 
@@ -129,21 +129,5 @@ describe('hf stream', () => {
   it('serves the prefixed object under a key prefix', async () => {
     const { accessor } = await mounted({ 'pfx/a.txt': 'seed', 'a.txt': 'decoy' }, 'pfx/')
     expect((await drain(accessor, '/a.txt')).toString()).toBe('seed')
-    const window = await rangeRead(accessor, PathSpec.fromStrPath('/a.txt'), 1, 3)
-    expect(Buffer.from(window).toString()).toBe('ee')
-  })
-})
-
-describe('hf rangeRead', () => {
-  it('reads the [start, end) byte range', async () => {
-    const accessor = await accessorWith({ 'f.bin': 'abcdefgh' })
-    const data = await rangeRead(accessor, PathSpec.fromStrPath('/f.bin'), 2, 5)
-    expect(Buffer.from(data).toString()).toBe('cde')
-  })
-
-  it('reads from zero', async () => {
-    const accessor = await accessorWith({ 'f.bin': 'abcdefgh' })
-    const data = await rangeRead(accessor, PathSpec.fromStrPath('/f.bin'), 0, 3)
-    expect(Buffer.from(data).toString()).toBe('abc')
   })
 })

@@ -171,7 +171,6 @@ class CharSet:
 
 
 ALL = CharSet.of((0, MAX_CODE_POINT)).minus_surrogates()
-EMPTY = CharSet()
 
 
 def host_code_point(cp: int) -> str:

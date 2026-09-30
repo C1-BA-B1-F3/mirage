@@ -19,37 +19,13 @@ import pytest
 from mirage.cache.index import IndexEntry
 from mirage.core.gdrive.read import read_file_versioned
 from mirage.core.gdrive.versions import (capture_file_metadata,
-                                         download_revision, list_revisions)
+                                         download_revision)
 from mirage.observe.context import push_revisions, reset_revisions
 
 ENTRY = IndexEntry(id="f1",
                    name="f.txt",
                    resource_type="gdrive/file",
                    vfs_name="f.txt")
-
-
-@pytest.mark.asyncio
-async def test_list_revisions_paginates(gdrive_accessor):
-    pages = [
-        {
-            "revisions": [{
-                "id": "r1"
-            }],
-            "nextPageToken": "next"
-        },
-        {
-            "revisions": [{
-                "id": "r2"
-            }]
-        },
-    ]
-    with patch(
-            "mirage.core.gdrive.versions.google_get",
-            new_callable=AsyncMock,
-            side_effect=pages,
-    ):
-        revs = await list_revisions(gdrive_accessor.token_manager, "f1")
-    assert [r["id"] for r in revs] == ["r1", "r2"]
 
 
 @pytest.mark.asyncio

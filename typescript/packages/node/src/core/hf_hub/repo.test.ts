@@ -15,23 +15,11 @@
 import { describe, expect, it, vi } from 'vitest'
 import { HfHubAccessor } from '../../accessor/hf_hub.ts'
 import * as client from './client.ts'
-import { fetchRefs, headCommit, revisionUrl } from './repo.ts'
+import { headCommit, revisionUrl } from './repo.ts'
 
 function accessor(config: Record<string, unknown> = {}): HfHubAccessor {
   return new HfHubAccessor({ repoId: 'acme/widget', ...config } as never)
 }
-
-describe('fetchRefs', () => {
-  it('reads the refs endpoint', async () => {
-    const spy = vi
-      .spyOn(client, 'hubGet')
-      .mockResolvedValue({ branches: [{ name: 'main' }], tags: [] })
-    const refs = await fetchRefs(accessor())
-    expect((refs.branches as { name: string }[])[0]?.name).toBe('main')
-    expect(String(spy.mock.calls[0]?.[1])).toMatch(/\/refs$/)
-    spy.mockRestore()
-  })
-})
 
 describe('headCommit', () => {
   it('reads the sha', async () => {

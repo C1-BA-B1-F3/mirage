@@ -18,7 +18,7 @@ import { IOResult, materialize, type ByteSource } from '../../../io/types.ts'
 import type { PathSpec } from '../../../types.ts'
 import type { CommandFnResult, CommandOpts } from '../../config.ts'
 import { readStdinAsync } from '../utils/stream.ts'
-import { joinFileBytes } from '../utils/lines.ts'
+import { joinFileBytes, splitLines } from '../utils/lines.ts'
 
 const ENC = new TextEncoder()
 const DEC = new TextDecoder('utf-8', { fatal: false })
@@ -28,13 +28,8 @@ function padRight(s: string, width: number): string {
   return s + ' '.repeat(width - s.length)
 }
 
-function splitLinesNoTrailing(text: string): string[] {
-  const stripped = text.endsWith('\n') ? text.slice(0, -1) : text
-  return stripped === '' ? [] : stripped.split('\n')
-}
-
 function tableFormat(text: string, separator: string | null, outputSep: string): string {
-  const lines = splitLinesNoTrailing(text)
+  const lines = splitLines(text)
   if (lines.length === 0) return ''
   const rows: string[][] = []
   for (const line of lines) {

@@ -67,6 +67,41 @@
         "stdout": "",
         "stderr": ""
       }
+    },
+    {
+      "id": "look_one_empty_line_is_a_line",
+      "seq": 13710003,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "mkdir -p /data/qlook && printf '\\n' > /data/qlook/nl && look '' /data/qlook/nl",
+      "expect": {
+        "exit": 0,
+        "stdout": "\n",
+        "stderr": ""
+      },
+      "note": "The look twin of comm_one_empty_line_is_a_line, pinned on util-linux look in debian:stable-slim."
     }
   ]
 }

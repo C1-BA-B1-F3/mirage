@@ -171,8 +171,6 @@ export interface RegisteredCommandInit {
   fn: CommandFn
   provisionFn?: ProvisionFn | null
   aggregate?: AggregateFn | null
-  src?: string | null
-  dst?: string | null
   write?: boolean
   limit?: Limit | null
   pathGuarded?: boolean
@@ -191,8 +189,6 @@ export class RegisteredCommand {
   readonly fn: CommandFn
   readonly provisionFn: ProvisionFn | null
   readonly aggregate: AggregateFn | null
-  readonly src: string | null
-  readonly dst: string | null
   readonly write: boolean
   readonly pathGuarded: boolean
   readonly limit: Limit | null
@@ -205,8 +201,6 @@ export class RegisteredCommand {
     this.fn = init.fn
     this.provisionFn = init.provisionFn ?? null
     this.aggregate = init.aggregate ?? null
-    this.src = init.src ?? null
-    this.dst = init.dst ?? null
     this.write = init.write ?? false
     this.pathGuarded = init.pathGuarded ?? false
     this.limit = init.limit ?? null
@@ -223,8 +217,6 @@ export class RegisteredCommand {
       fn: overrides.fn ?? this.fn,
       provisionFn: overrides.provision === undefined ? this.provisionFn : overrides.provision,
       aggregate: this.aggregate,
-      src: this.src,
-      dst: this.dst,
       write: this.write,
       limit: this.limit,
       pathGuarded: this.pathGuarded,
@@ -498,24 +490,4 @@ export function command<A extends Accessor = Accessor>(
         pathGuarded: options.pathGuarded ?? false,
       }),
   )
-}
-
-export interface CrossCommandOptions {
-  name: string
-  src: string
-  dst: string
-  spec: CommandSpec
-  fn: CommandFn
-}
-
-export function crossCommand(options: CrossCommandOptions): RegisteredCommand {
-  return new RegisteredCommand({
-    name: options.name,
-    spec: options.spec,
-    vfs: `${options.src}->${options.dst}`,
-    filetype: null,
-    fn: options.fn,
-    src: options.src,
-    dst: options.dst,
-  })
 }

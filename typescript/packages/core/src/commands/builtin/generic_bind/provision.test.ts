@@ -405,8 +405,6 @@ describe('withDefaultProvisions preserves every field', () => {
       fn: () => Promise.resolve(null),
       write: true,
       limit: { timeoutSeconds: 7 } as never,
-      src: 'a',
-      dst: 'b',
     })
     const [out] = withDefaultProvisions([cat], stat as never)
     expect(out?.provisionFn).not.toBeNull()

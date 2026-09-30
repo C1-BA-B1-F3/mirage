@@ -39,7 +39,6 @@ MODIFIED = "M"
 ADDED = "A"
 DELETED = "D"
 RENAMED = "R"
-UNMERGED = "U"
 UNTRACKED = "?"
 # git's own two rename knobs: a pair counts as a rename at 60% shared
 # content, and the search is abandoned entirely once the add-by-delete

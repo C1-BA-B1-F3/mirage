@@ -15,6 +15,7 @@
 import type { Writable } from 'node:stream'
 import type { ExecuteResult } from '@struktoai/mirage-core/workspace/workspace/types'
 import type { ServerChannel } from 'ssh2'
+import { concat } from '@struktoai/mirage-core/io/cachable_iterator'
 
 // How far the client may type or pipe ahead of whoever reads it before
 // the channel is paused and SSH flow control pushes back.
@@ -350,17 +351,6 @@ export class ChannelInput {
       }
     }
   }
-}
-
-function concat(parts: Uint8Array[]): Uint8Array {
-  if (parts.length === 1 && parts[0] !== undefined) return parts[0]
-  const out = new Uint8Array(parts.reduce((n, p) => n + p.byteLength, 0))
-  let offset = 0
-  for (const part of parts) {
-    out.set(part, offset)
-    offset += part.byteLength
-  }
-  return out
 }
 
 function crlf(data: Uint8Array): Uint8Array {

@@ -35,7 +35,6 @@ INPUTS_REF = re.compile(r"(?<![\w$.:])inputs(?![\w:])")
 INPUT_DEF = re.compile(r"(?<![\w$.:])def\s+input\s*[:(]")
 INPUTS_DEF = re.compile(r"(?<![\w$.:])def\s+inputs\s*[:(]")
 ARGS_REF = re.compile(r"\$ARGS(?![\w:])")
-HALT_REF = re.compile(r"(?<![\w$.:])halt(?:_error)?(?![\w:])")
 HALT_ERROR_REF = re.compile(r"(?<![\w$.:])halt_error(?![\w:])")
 ERROR_CALL = re.compile(r"(?<![\w$.])(?<!::)error(?!\w)(?!::)")
 TOP_LEVEL_LINE = re.compile(r"(at <top-level>, line )(\d+)")
@@ -212,15 +211,6 @@ def references_args(expr: str) -> bool:
         expr (str): jq program text.
     """
     return ARGS_REF.search(code_only(expr)) is not None
-
-
-def halts(expr: str) -> bool:
-    """Report whether a jq program can call `halt` or `halt_error`.
-
-    Args:
-        expr (str): jq program text.
-    """
-    return HALT_REF.search(code_only(expr)) is not None
 
 
 def args_text(opts: JqOptions) -> str:

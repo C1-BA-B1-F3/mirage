@@ -124,20 +124,6 @@ async def child_line(session: SessionState,
                             substitution=True)
 
 
-def unescape_heredoc(text: str) -> str:
-    """Unquoted-heredoc escapes: \\$, \\`, \\\\, \\<newline> only.
-
-    Unlike double quotes, \\" stays literal in heredoc bodies.
-    """
-    if "\\" not in text:
-        return text
-    text = text.replace("\\\\", "\x00")
-    text = text.replace("\\$", "$")
-    text = text.replace("\\`", "`")
-    text = text.replace("\\\n", "")
-    return text.replace("\x00", "\\")
-
-
 def _find_first(node: TSNodeLike, ntype: str) -> TSNodeLike | None:
     if node.type == ntype:
         return node

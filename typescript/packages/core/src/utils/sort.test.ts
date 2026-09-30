@@ -13,7 +13,7 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import { describe, expect, it } from 'vitest'
-import { compareCodePoints, sortedByCodePoints } from './sort.ts'
+import { compareCodePoints } from './sort.ts'
 
 // U+E000 is a BMP private-use character; U+1F600 is astral, stored as the
 // surrogate pair D83D DE00. Code-point order puts E000 first, UTF-16 code
@@ -34,14 +34,14 @@ describe('compareCodePoints', () => {
   })
 
   it('matches Python: sorted(["\\ue000.txt", "\\U0001f600.txt"])', () => {
-    expect(sortedByCodePoints([`${ASTRAL}.txt`, `${BMP}.txt`])).toEqual([
+    expect([`${ASTRAL}.txt`, `${BMP}.txt`].sort(compareCodePoints)).toEqual([
       `${BMP}.txt`,
       `${ASTRAL}.txt`,
     ])
   })
 
   it('orders plain ASCII the way it always did', () => {
-    expect(sortedByCodePoints(['b', 'a', 'C', 'A'])).toEqual(['A', 'C', 'a', 'b'])
+    expect(['b', 'a', 'C', 'A'].sort(compareCodePoints)).toEqual(['A', 'C', 'a', 'b'])
   })
 
   it('treats a prefix as smaller than the string extending it', () => {
@@ -61,16 +61,10 @@ describe('compareCodePoints', () => {
   })
 
   it('orders two astral characters by code point', () => {
-    expect(sortedByCodePoints(['\u{1F601}', '\u{1F600}', '\u{10000}'])).toEqual([
+    expect(['\u{1F601}', '\u{1F600}', '\u{10000}'].sort(compareCodePoints)).toEqual([
       '\u{10000}',
       '\u{1F600}',
       '\u{1F601}',
     ])
-  })
-
-  it('copies rather than sorting the caller in place', () => {
-    const names = ['b', 'a']
-    expect(sortedByCodePoints(names)).toEqual(['a', 'b'])
-    expect(names).toEqual(['b', 'a'])
   })
 })

@@ -12,6 +12,7 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import { concat } from '../../../io/cachable_iterator.ts'
 import { chunks } from '../../../io/cooperative.ts'
 import { yieldBytes } from '../../../io/stream.ts'
 import { type ByteSource, IOResult, materialize } from '../../../io/types.ts'
@@ -172,16 +173,6 @@ export async function* truncateStream(
   }
 }
 
-function concat(chunks: Uint8Array[], total: number): Uint8Array {
-  const out = new Uint8Array(total)
-  let offset = 0
-  for (const c of chunks) {
-    out.set(c, offset)
-    offset += c.byteLength
-  }
-  return out
-}
-
 async function* boundedStream(
   src: ByteSource,
   io: IOResult,
@@ -211,11 +202,7 @@ async function* boundedStream(
     if (end > 0) yield chunk.subarray(0, end)
     if (end < chunk.byteLength) {
       const prefix = command === '' ? new Uint8Array() : ENC.encode(`${command}: `)
-      const parts = [await materialize(io.stderr), prefix, buildNotice(limit)]
-      io.stderr = concat(
-        parts,
-        parts.reduce((n, part) => n + part.byteLength, 0),
-      )
+      io.stderr = concat([await materialize(io.stderr), prefix, buildNotice(limit)])
       if (limit.onExceed === OnExceed.ERROR) io.exitCode = 1
       return
     }
@@ -241,11 +228,7 @@ async function* errorStream(
   const outcome = new IOResult()
   const data = await materialize(boundedStream(src, outcome, limit, command))
   if (outcome.stderr !== null) {
-    const parts = [await materialize(io.stderr), await materialize(outcome.stderr)]
-    io.stderr = concat(
-      parts,
-      parts.reduce((n, part) => n + part.byteLength, 0),
-    )
+    io.stderr = concat([await materialize(io.stderr), await materialize(outcome.stderr)])
   }
   if (outcome.exitCode !== 0) io.exitCode = outcome.exitCode
   else if (data.byteLength > 0) yield data

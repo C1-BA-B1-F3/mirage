@@ -497,8 +497,6 @@ class RegisteredCommand:
     fn: CommandFn
     provision_fn: ProvisionFn | None = None
     aggregate: Callable[..., Any] | None = None
-    src: str | None = None
-    dst: str | None = None
     write: bool = False
     limit: Limit | None = None
     path_guarded: bool = False
@@ -556,31 +554,5 @@ def command(
             cmds.append(rc)
         setattr(wrapped_fn, "_registered_commands", cmds)
         return wrapped_fn
-
-    return decorator
-
-
-def cross_command(
-    name: str,
-    *,
-    src: str,
-    dst: str,
-    spec: CommandSpec,
-) -> Callable[..., Any]:
-
-    def decorator(fn: Callable[..., Any]) -> Callable[..., Any]:
-        rc = RegisteredCommand(
-            name=name,
-            spec=spec,
-            vfs=f"{src}->{dst}",
-            filetype=None,
-            fn=cast(CommandFn, fn),
-            src=src,
-            dst=dst,
-        )
-        cmds = getattr(fn, "_registered_commands", [])
-        cmds.append(rc)
-        setattr(fn, "_registered_commands", cmds)
-        return fn
 
     return decorator

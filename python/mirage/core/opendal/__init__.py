@@ -13,6 +13,6 @@
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 from mirage.core.opendal.types import OperatorAccessor
-from mirage.core.opendal.watch import OpendalWalk, build_delta_hook
+from mirage.core.opendal.watch import OpendalWalk
 
-__all__ = ["OperatorAccessor", "OpendalWalk", "build_delta_hook"]
+__all__ = ["OperatorAccessor", "OpendalWalk"]

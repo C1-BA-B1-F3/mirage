@@ -16,7 +16,7 @@ import pytest
 
 from mirage.core.jq import eval as jq_eval_module
 from mirage.core.jq.errors import JqCompileError
-from mirage.core.jq.eval import (halts, jq_check, jq_eval, jq_raised, jq_run,
+from mirage.core.jq.eval import (jq_check, jq_eval, jq_raised, jq_run,
                                  jq_run_texts, references_args, stream_reads)
 from mirage.core.jq.types import JqError, JqHalt, JqRun, StreamReads
 
@@ -318,18 +318,6 @@ def test_a_program_is_checked_without_being_run():
     jq_check("repeat(1)")
     with pytest.raises(JqCompileError, match="1 compile error"):
         jq_check("1 +")
-
-
-@pytest.mark.parametrize("expr, expected", [
-    ("halt", True),
-    ('"x" | halt_error(1)', True),
-    (".halt", False),
-    ('"halt"', False),
-    ("$halt", False),
-    ("def halting: 1; halting", False),
-])
-def test_halts_finds_a_call_to_either_halt(expr, expected):
-    assert halts(expr) is expected
 
 
 # jq_run_texts runs on JSON text and hands back jq's own dump of each

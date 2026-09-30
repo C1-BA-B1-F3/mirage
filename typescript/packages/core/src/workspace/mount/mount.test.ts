@@ -19,7 +19,6 @@ import {
   type CommandFn,
   type CommandOpts,
   type ExecContext,
-  RegisteredCommand,
 } from '../../commands/config.ts'
 import { CommandSpec, Operand, Option } from '../../commands/spec/types.ts'
 import { IOResult, materialize } from '../../io/types.ts'
@@ -507,45 +506,6 @@ describe('Mount.revisions', () => {
     m.registerOp(op)
     await m.executeOp('read', '/ram/x.txt')
     expect(revisionFor('/ram/x.txt')).toBeNull()
-  })
-})
-
-describe('Mount.isGeneralCommand', () => {
-  it('returns true for general commands', () => {
-    const m = makeMount()
-    const [cmd] = command({ name: 'seq', vfs: null, spec: BASIC_SPEC, fn: OK_CMD })
-    if (cmd === undefined) throw new Error('missing')
-    m.registerGeneral(cmd)
-    expect(m.isGeneralCommand('seq')).toBe(true)
-  })
-
-  it('returns false for VFS-specific commands', () => {
-    const m = makeMount()
-    const [cmd] = command({ name: 'cat', vfs: 'ram', spec: BASIC_SPEC, fn: OK_CMD })
-    if (cmd === undefined) throw new Error('missing')
-    m.register(cmd)
-    expect(m.isGeneralCommand('cat')).toBe(false)
-  })
-
-  it('returns false for unknown commands', () => {
-    expect(makeMount().isGeneralCommand('nope')).toBe(false)
-  })
-})
-
-describe('Mount.registerCross / resolveCross', () => {
-  it('round-trips a cross-mount command by (name, targetVfs)', () => {
-    const m = makeMount()
-    const rc = new RegisteredCommand({
-      name: 'cp',
-      spec: BASIC_SPEC,
-      vfs: 'ram->disk',
-      fn: OK_CMD,
-      src: 'ram',
-      dst: 'disk',
-    })
-    m.registerCross(rc, 'disk')
-    expect(m.resolveCross('cp', 'disk')).toBe(rc)
-    expect(m.resolveCross('cp', 'gdrive')).toBeNull()
   })
 })
 

@@ -119,25 +119,3 @@ def make_calendar_dirname(summary: str,
     if primary:
         return PRIMARY_DIR
     return make_id_name(summary, calendar_id)
-
-
-def parse_calendar_dirname(name: str) -> str:
-    """Recover the calendar id a directory name addresses.
-
-    Args:
-        name (str): the directory name as rendered.
-
-    Raises:
-        FileNotFoundError: when the name carries no calendar id.
-
-    Returns:
-        str: the calendar id, or ``primary`` for the primary alias.
-    """
-    if name == PRIMARY_DIR:
-        return PRIMARY_DIR
-    # rpartition, not partition: a calendar id holds "@" and "." but the
-    # sanitized title before it may itself contain "__".
-    _, sep, calendar_id = name.rpartition("__")
-    if not sep or not calendar_id:
-        raise FileNotFoundError(name)
-    return calendar_id

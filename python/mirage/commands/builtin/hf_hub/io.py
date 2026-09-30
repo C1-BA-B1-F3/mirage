@@ -17,7 +17,6 @@ from mirage.core.hf_hub.exists import exists as _exists
 from mirage.core.hf_hub.read import read_bytes as _read
 from mirage.core.hf_hub.readdir import readdir as _readdir
 from mirage.core.hf_hub.stat import stat as _stat
-from mirage.core.hf_hub.stream import range_read as _range_read
 from mirage.core.hf_hub.stream import read_stream as _read_stream
 from mirage.vfs.adapter import VFSAdapter
 from mirage.vfs.types import NativeReadOps, ReadOps
@@ -52,6 +51,3 @@ IO = VFSAdapter(read=ReadOps(readdir=_readdir, read_bytes=_read, stat=_stat),
                 is_mounted=lambda a: True,
                 local=False,
                 max_glob_matches=SCOPE_ERROR).to_command_io()
-
-range_read = _range_read
-resolve_glob = IO.resolve_glob

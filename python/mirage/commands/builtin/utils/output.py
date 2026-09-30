@@ -38,10 +38,4 @@ def format_optional_records(records: Sequence[str]) -> bytes | None:
     return output if output else None
 
 
-def format_record_text(records: Sequence[str]) -> str:
-    if not records:
-        return ""
-    return "\n".join(records) + "\n"
-
-
-__all__ = ["format_optional_records", "format_record_text", "format_records"]
+__all__ = ["format_optional_records", "format_records"]

@@ -21,4 +21,3 @@ from mirage.vfs.types import ReadOps
 IO = VFSAdapter(read=ReadOps(readdir=_readdir, read_bytes=_read, stat=_stat),
                 is_mounted=lambda a: True,
                 local=False).to_command_io()
-resolve_glob = IO.resolve_glob

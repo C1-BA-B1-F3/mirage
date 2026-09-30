@@ -14,6 +14,7 @@
 
 import { formatWcLines, type WcRow } from './generic/wc.ts'
 import { rstripNewlines } from '../../utils/text.ts'
+import { concat } from '../../io/cachable_iterator.ts'
 
 export type AggregateResult = [path: string, data: Uint8Array]
 
@@ -79,16 +80,4 @@ export function wcAggregate(results: AggregateResult[]): Uint8Array {
   }
   if (rows.length === 0) return new Uint8Array(0)
   return enc.encode(formatWcLines(rows).join('\n') + '\n')
-}
-
-function concat(chunks: Uint8Array[]): Uint8Array {
-  let total = 0
-  for (const c of chunks) total += c.byteLength
-  const out = new Uint8Array(total)
-  let offset = 0
-  for (const c of chunks) {
-    out.set(c, offset)
-    offset += c.byteLength
-  }
-  return out
 }

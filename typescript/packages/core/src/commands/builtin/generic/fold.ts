@@ -20,6 +20,7 @@ import type { CommandFnResult, CommandOpts } from '../../config.ts'
 import { readStdinAsync, stdinStream } from '../utils/stream.ts'
 import { operandsIo, readOperands } from '../utils/operands.ts'
 import { mapLines } from '../utils/lines.ts'
+import { concat } from '../../../io/cachable_iterator.ts'
 
 const ENC = new TextEncoder()
 const DEC = new TextDecoder('utf-8', { fatal: false })
@@ -66,16 +67,6 @@ function foldBytes(data: Uint8Array, width: number): Uint8Array {
   return new Uint8Array(output)
 }
 
-function concatBytes(chunks: readonly Uint8Array[]): Uint8Array {
-  const out = new Uint8Array(chunks.reduce((total, chunk) => total + chunk.byteLength, 0))
-  let offset = 0
-  for (const chunk of chunks) {
-    out.set(chunk, offset)
-    offset += chunk.byteLength
-  }
-  return out
-}
-
 export async function foldGeneric(
   paths: PathSpec[],
   opts: CommandOpts,
@@ -93,7 +84,7 @@ export async function foldGeneric(
     const [ok, err] = await readOperands(paths, stream, 'fold')
     const io = operandsIo(err)
     if (ok.length === 0 && err !== '') return [null, io]
-    if (countBytes) return [concatBytes(ok.map((operand) => foldBytes(operand.data, width))), io]
+    if (countBytes) return [concat(ok.map((operand) => foldBytes(operand.data, width))), io]
     // GNU folds each file on its own, a column fresh at its start, and writes
     // a newline only where the file had one: `ab` then `cd` fold to `abcd`,
     // not to two lines. Mirrors Python's fold.

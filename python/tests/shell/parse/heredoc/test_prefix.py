@@ -63,7 +63,7 @@ class _Node:
 
 
 # Two heredocs on one line, laid out as the parser's source keeps them:
-# innermost-first (see relayout), so B's body precedes A's.
+# innermost-first, so B's body precedes A's.
 TWO_ON_A_LINE = b"cat <<A <<B\nb\nB\n\na\nA\n"
 
 
@@ -145,7 +145,7 @@ def test_body_prefix_of_a_heredoc_inside_a_command_substitution():
 def test_body_prefix_of_an_earlier_heredoc_on_the_line():
     # tree-sitter-bash has no tree for two heredocs on one command; were
     # it to grow one, the line's bodies would stand innermost-first as
-    # relayout writes them, so B's body follows the operator line and
+    # the parser's source keeps them, so B's body follows the operator line and
     # A's blank line is measured from the line after B's terminator, not
     # from the operator line's newline the two share.
     first = _heredoc(4, 17)

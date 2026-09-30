@@ -15,6 +15,7 @@
 import { RS, type JqError, type JqHalt, type JqOptions, type JqRun } from './types.ts'
 import { fsStrerror, isEisdir } from '../../utils/errors.ts'
 import { compareCodePoints } from '../../utils/sort.ts'
+import { concat } from '../../io/cachable_iterator.ts'
 
 const ENC = new TextEncoder()
 const DEC = new TextDecoder()
@@ -209,18 +210,6 @@ function terminator(opts: JqOptions): Uint8Array {
   return opts.joinOutput ? EMPTY : NEWLINE
 }
 
-export function concatBytes(parts: readonly Uint8Array[]): Uint8Array {
-  let total = 0
-  for (const p of parts) total += p.byteLength
-  const out = new Uint8Array(total)
-  let offset = 0
-  for (const p of parts) {
-    out.set(p, offset)
-    offset += p.byteLength
-  }
-  return out
-}
-
 /** Render one output, jq's compact dump of it, with its separator. */
 export function formatOne(text: string, opts: JqOptions): Uint8Array {
   const raw = opts.rawOutput && text.startsWith('"')
@@ -233,14 +222,14 @@ export function formatOne(text: string, opts: JqOptions): Uint8Array {
   // RFC 7464 puts the separator before the value, not after it, and jq
   // writes none before a string it prints raw, quoted by -a or not.
   const prefix = opts.seq && !raw ? RS_BYTES : EMPTY
-  return concatBytes([prefix, body, terminator(opts)])
+  return concat([prefix, body, terminator(opts)])
 }
 
 /** Render every output of a jq program, jq's compact dump of each, one per line. */
 export function formatJqOutput(texts: readonly string[], opts: JqOptions): Uint8Array {
   const parts: Uint8Array[] = []
   for (const text of texts) parts.push(formatOne(text, opts))
-  return concatBytes(parts)
+  return concat(parts)
 }
 
 /**

@@ -12,11 +12,6 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import { materialize as ioMaterialize } from '../io/types.ts'
-import type { ByteSource } from '../io/types.ts'
-import type { CommandSpec, FlagValue } from './spec/types.ts'
-import { lstripSlash } from '../utils/slash.ts'
-
 export const COMPOUND_EXTENSIONS: ReadonlySet<string> = new Set([
   '.gdoc.json',
   '.gslide.json',
@@ -33,31 +28,4 @@ export function getExtension(path: string | null): string | null {
   const dot = path.lastIndexOf('.')
   if (dot === -1 || path.slice(dot).includes('/')) return null
   return path.slice(dot)
-}
-
-export async function materializeStdout(stdout: ByteSource | null): Promise<Uint8Array> {
-  return ioMaterialize(stdout)
-}
-
-export function stripPrefixFromPathKwargs(
-  kwargs: Record<string, FlagValue>,
-  spec: CommandSpec,
-  prefix: string,
-): Record<string, FlagValue> {
-  if (prefix === '') return kwargs
-  const result: Record<string, FlagValue> = { ...kwargs }
-  for (const opt of spec.options) {
-    if (opt.type !== 'path') continue
-    for (const flagName of [opt.short, opt.long]) {
-      if (flagName === null) continue
-      const clean = flagName.replace(/^-+/, '')
-      const val = result[clean]
-      if (typeof val === 'string') {
-        if (val.startsWith(`${prefix}/`) || val === prefix) {
-          result[clean] = `/${lstripSlash(val.slice(prefix.length))}`
-        }
-      }
-    }
-  }
-  return result
 }

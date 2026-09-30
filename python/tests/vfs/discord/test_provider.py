@@ -38,7 +38,6 @@ def test_vfs_accessor(config):
     vfs = DiscordVFS(config)
     assert vfs.accessor is not None
     assert vfs.accessor.config is config
-    assert vfs.index is not None
 
 
 def test_vfs_commands(config):
@@ -47,4 +46,4 @@ def test_vfs_commands(config):
     # ENOTSUP at the op Discord lacks, + bespoke grep/rg/head +
     # md5sum/sha1sum/sha384sum/sha512sum); acting on Discord moved to the
     # discord CLI
-    assert len(vfs._commands) == 71
+    assert len(vfs.commands()) == 71

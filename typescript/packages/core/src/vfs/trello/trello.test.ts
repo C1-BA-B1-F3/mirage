@@ -14,6 +14,7 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { TRELLO_OPS } from '../../ops/trello/index.ts'
+import { ops } from '../../test-utils.ts'
 import { PathSpec, VFSName } from '../../types.ts'
 import { mountKey } from '../../utils/key_prefix.ts'
 import { redactTrelloConfig } from './config.ts'
@@ -38,7 +39,7 @@ describe('TrelloVFS', () => {
 
   it('constructs with apiKey/apiToken and exposes expected fields', () => {
     const r = new TrelloVFS({ apiKey: 'k', apiToken: 't' })
-    expect(r.kind).toBe(VFSName.TRELLO)
+    expect(r.name).toBe(VFSName.TRELLO)
     expect(r.cachesReads).toBe(true)
     expect(r.indexTtl).toBe(600)
     expect(r.config).toEqual({ apiKey: 'k', apiToken: 't' })
@@ -79,7 +80,7 @@ describe('TrelloVFS', () => {
     })
     globalThis.fetch = fetchMock as unknown as typeof fetch
     const r = new TrelloVFS({ apiKey: 'KEY', apiToken: 'TOK' })
-    const out = await r.readdir(
+    const out = await ops(r).readdir(
       new PathSpec({
         virtual: '/mnt/trello/workspaces',
         directory: '/mnt/trello/workspaces',
@@ -108,7 +109,7 @@ describe('TrelloVFS', () => {
       apiToken: 't',
       baseUrl: 'https://my.proxy.example/trello',
     })
-    await r.readdir(
+    await ops(r).readdir(
       new PathSpec({
         virtual: '/mnt/trello/workspaces',
         directory: '/mnt/trello/workspaces',
@@ -136,7 +137,7 @@ describe('TrelloVFS', () => {
       ),
     ) as unknown as typeof fetch
     const r = new TrelloVFS({ apiKey: 'k', apiToken: 't', workspaceId: 'w2' })
-    const out = await r.readdir(
+    const out = await ops(r).readdir(
       new PathSpec({
         virtual: '/mnt/trello/workspaces',
         directory: '/mnt/trello/workspaces',

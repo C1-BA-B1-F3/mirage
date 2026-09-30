@@ -83,6 +83,7 @@ from mirage.workspace.mount import MountEntry, MountRegistry
 from mirage.workspace.mount.namespace import Namespace
 from mirage.workspace.mount.namespace.store import NamespaceStore
 from mirage.workspace.mount.read_policy import check_read_capability
+from mirage.workspace.mount.spec import Mount
 from mirage.workspace.node.explain import explain_line
 from mirage.workspace.session import SessionManager, SessionState, SessionStore
 from mirage.workspace.session.constants import DEFAULT_PROFILE
@@ -96,6 +97,7 @@ from mirage.workspace.snapshot import (DriftQueue, apply_state_dict,
                                        read_tar)
 from mirage.workspace.snapshot import snapshot as _write_snapshot
 from mirage.workspace.snapshot import to_state_dict
+from mirage.workspace.snapshot.config import index_config_dump
 from mirage.workspace.snapshot.keys import StateKey
 from mirage.workspace.snapshot.state import (CLIOverrides, reusable_clis,
                                              reusable_mounts)
@@ -535,7 +537,8 @@ class Workspace:
                   prefix: str,
                   vfs: BaseVFS,
                   mode: MountMode = MountMode.READ,
-                  read: ReadSpec | None = None) -> MountEntry:
+                  read: ReadSpec | None = None,
+                  vfs_ref: str | None = None) -> MountEntry:
         """Add a VFS to a running workspace, mirroring TS ``addMount``.
 
         The runtime door runs the same read-policy verdict the
@@ -548,6 +551,8 @@ class Workspace:
             mode (MountMode): access mode, read-only unless explicitly raised.
             read (ReadSpec | None): the mount's read policy; None takes
                 the workspace default.
+            vfs_ref (str | None): the ``vfs:`` value the driver was built
+                from, recorded for snapshots; None for one built in code.
 
         Returns:
             MountEntry: the installed mount, with its normalized prefix.
@@ -562,13 +567,12 @@ class Workspace:
         check_read_capability(prefix, vfs, resolved_read)
         self._registry.check_vfs_available(vfs)
         previous = self._registry.mounts()
-        # Configure before mount() captures the index in its CacheManager.
-        # An alias must retain the index used by the VFS's other mounts.
-        if (self._index_config is not None
-                and self._registry.try_mount_for_prefix(prefix) is None
-                and not any(m.vfs is vfs for m in self._registry.mounts())):
-            vfs.set_index(self._index_config)
-        entry = self._registry.mount(prefix, vfs, mode, resolved_read)
+        entry = self._registry.mount(prefix,
+                                     vfs,
+                                     mode,
+                                     resolved_read,
+                                     index=self._index_config,
+                                     vfs_ref=vfs_ref)
         prepare_added_mount(self._registry, entry, previous)
         self._ops.set_mounts(self._registry.ops_mounts())
         return entry
@@ -971,7 +975,7 @@ class Workspace:
               exposes one — e.g. S3 ``VersionId``).
 
         NOT captured:
-            * Live state of mounts with ``SUPPORTS_SNAPSHOT=False``
+            * Live state of mounts with ``supports_snapshot=False``
               (Gmail, Slack, Linear, etc.). Load logs a warning naming
               them.
             * Files the agent never touched.
@@ -981,7 +985,7 @@ class Workspace:
               source.
 
         Async because fingerprint capture stats each touched path on a
-        ``SUPPORTS_SNAPSHOT`` mount.
+        ``supports_snapshot`` mount.
 
         Args:
             target: filesystem path OR a writable file-like object.
@@ -1100,6 +1104,11 @@ class Workspace:
         shared and local content mounts are reconstructed fresh.
         """
         state = await to_state_dict(self)
+        for mount in self._registry.mounts():
+            for saved in state["mounts"]:
+                if saved["prefix"] == mount.prefix:
+                    saved["index_config"] = index_config_dump(
+                        mount.index_config, reveal=True)
         mounts = reusable_mounts(self._registry.mounts(), state)
         # The declarations travel with the copy the way a live CLI
         # install does: an env pointer restores from state naming its
@@ -1144,7 +1153,10 @@ class Workspace:
                  profiles=profiles,
                  profile=profile)
         if mounts:
-            ws._shared_mounts = {id(r) for r in mounts.values()}
+            ws._shared_mounts = {
+                id(r.vfs if isinstance(r, Mount) else r)
+                for r in mounts.values()
+            }
         await apply_state_dict(ws, state)
         return ws
 

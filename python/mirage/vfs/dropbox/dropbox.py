@@ -16,18 +16,20 @@ from typing import Any
 
 from mirage.accessor.dropbox import DropboxAccessor
 from mirage.commands.builtin.dropbox import COMMANDS
-from mirage.commands.builtin.dropbox.io import IO
+from mirage.commands.config import RegisteredCommand
+from mirage.commands.registry import registered_commands
 from mirage.core.dropbox.client import DropboxTokenManager
 from mirage.core.dropbox.watch import build_delta_hook
 from mirage.ops.dropbox import OPS as DROPBOX_VFS_OPS
+from mirage.ops.registry import RegisteredOp
 from mirage.types import VFSName
-from mirage.vfs.bound import BoundVFS
+from mirage.vfs.base import BaseVFS
 from mirage.vfs.dropbox.config import DropboxConfig
 from mirage.vfs.dropbox.prompt import PROMPT
 from mirage.watch.base import DeltaHook
 
 
-class DropboxVFS(BoundVFS):
+class DropboxVFS(BaseVFS):
 
     accessor: DropboxAccessor
     name: str = VFSName.DROPBOX
@@ -36,18 +38,20 @@ class DropboxVFS(BoundVFS):
     # list_folder carries an exact byte `size` for every file (0 included).
     # Paper docs 409 on raw download, a loud error, never a silent empty
     # read.
-    SIZES_ALWAYS_KNOWN: bool = True
-    PROMPT: str = PROMPT
+    sizes_always_known: bool = True
+    prompt: str = PROMPT
 
     def __init__(self, config: DropboxConfig) -> None:
-        super().__init__(io=IO)
+        super().__init__()
         self.config = config
         self._token_manager = DropboxTokenManager(config)
         self.accessor = DropboxAccessor(config, self._token_manager)
-        for fn in COMMANDS:
-            self.register(fn)
-        for op in DROPBOX_VFS_OPS:
-            self.register_op(op)
+
+    def ops(self) -> list[RegisteredOp]:
+        return DROPBOX_VFS_OPS
+
+    def commands(self) -> list[RegisteredCommand]:
+        return registered_commands(COMMANDS)
 
     async def close(self) -> None:
         """Drain the token manager's connection pool with the VFS."""

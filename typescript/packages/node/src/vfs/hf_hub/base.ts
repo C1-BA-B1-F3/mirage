@@ -12,14 +12,12 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import { BoundVFS } from '@struktoai/mirage-core/vfs/bound'
-import { HF_HUB_IO } from '../../commands/builtin/hf_hub/io.ts'
+import { BaseVFS } from '@struktoai/mirage-core/vfs/base'
 
 import type { RegisteredCommand } from '@struktoai/mirage-core/commands/config'
 import type { RegisteredOp } from '@struktoai/mirage-core/ops/registry'
 
-import type { VFS, VFSStateBase } from '@struktoai/mirage-core/vfs/base'
-import type { PathSpec } from '@struktoai/mirage-core/types'
+import type { VFSStateBase } from '@struktoai/mirage-core/vfs/base'
 
 import type { DeltaHook } from '@struktoai/mirage-core/watch/index'
 import type { HfHubAccessor } from '../../accessor/hf_hub.ts'
@@ -42,40 +40,34 @@ import { HF_HUB_OPS } from '../../ops/hf_hub/index.ts'
  * in spec/layout_exceptions.json.
  */
 
-export abstract class HfHubVFS extends BoundVFS<HfHubAccessor> implements VFS {
-  declare exists: (p: PathSpec) => Promise<boolean>
-
-  constructor() {
-    super(HF_HUB_IO)
-  }
-
-  abstract readonly prompt: string
+export abstract class HfHubVFS extends BaseVFS {
+  abstract override readonly prompt: string
   abstract override readonly accessor: HfHubAccessor
   // Abstract for the same reason the bucket base narrows it: all three carry
   // a config and so owe their own redaction, and inheriting BaseVFS's
   // bare `{type}` would drop it and read back as an empty mount.
   abstract override getState(): Promise<VFSStateBase>
-  readonly cachesReads: boolean = true
+  override readonly cachesReads: boolean = true
   // The Hub tree reports every file's exact byte size, and for an LFS file
   // that is the object's own size rather than the pointer's, so no read can
   // be short.
-  readonly sizesAlwaysKnown: boolean = true
-  readonly supportsSnapshot: boolean = true
-  readonly readRevalidatable: boolean = true
+  override readonly sizesAlwaysKnown: boolean = true
+  override readonly supportsSnapshot: boolean = true
+  override readonly readRevalidatable: boolean = true
   // The index is not a cache in front of a listing, it IS the listing: one
   // recursive fetch seeds it whole. A long TTL therefore spares the Hub a
   // full re-walk rather than risking a stale row.
   override readonly indexTtl: number = 86_400
 
-  commands(): readonly RegisteredCommand[] {
+  override commands(): readonly RegisteredCommand[] {
     return HF_HUB_COMMANDS
   }
 
-  ops(): readonly RegisteredOp[] {
+  override ops(): readonly RegisteredOp[] {
     return HF_HUB_OPS
   }
 
-  deltaHook(): DeltaHook {
+  override deltaHook(): DeltaHook {
     return buildDeltaHook(this.accessor)
   }
 }

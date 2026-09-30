@@ -50,8 +50,8 @@ from mirage.policy import (Ask, Decision, Decisions, Explanation, Outcome,
                            SessionProfile)
 from mirage.policy.types import OpsContext
 from mirage.vfs.base import BaseVFS
-from mirage.vfs.generic import GenericVFS
-from mirage.vfs.testing import ReadFixture, check_read_contract
+from mirage.vfs.testing import (DriverOps, ReadFixture, check_driver_contract,
+                                check_read_contract)
 from mirage.vfs.adapter import VFSAdapter
 from mirage.vfs.types import (DuOps, NativeReadOps, ReadOps, SearchOps,
                               SearchQuery, WriteOps)
@@ -79,7 +79,9 @@ from mirage.utils.glob_walk import DEFAULT_MAX_GLOB_MATCHES, make_resolve_glob
 from mirage.workspace import Session, SessionState
 
 __all__ = [
+    "DriverOps",
     "ReadFixture",
+    "check_driver_contract",
     "check_read_contract",
     "__version__",
     "Workspace",
@@ -124,7 +126,6 @@ __all__ = [
     "Explanation",
     "FileType",
     "FlagView",
-    "GenericVFS",
     "VFSAdapter",
     "SearchOps",
     "SearchQuery",

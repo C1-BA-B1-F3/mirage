@@ -15,14 +15,15 @@
 from typing import TypeVar, overload
 
 from mirage.accessor.ram import RAMAccessor
-from mirage.cache.index import NULL_INDEX, IndexCacheStore
 from mirage.commands.builtin.dev import COMMANDS
-from mirage.commands.builtin.dev.io import IO
+from mirage.commands.config import RegisteredCommand
+from mirage.commands.registry import registered_commands
 from mirage.context import get_current_session
 from mirage.ops.dev import OPS as DEV_OPS
+from mirage.ops.registry import RegisteredOp
 from mirage.types import VFSName
 from mirage.utils.errors import eacces, enoent
-from mirage.vfs.bound import BoundVFS
+from mirage.vfs.base import BaseVFS
 from mirage.vfs.ram.store import RAMStore
 
 _DEV_NAMES = frozenset({"null", "zero"})
@@ -226,26 +227,23 @@ class DevStore(RAMStore):
         self.attrs = {}
 
 
-class DevVFS(BoundVFS):
+class DevVFS(BaseVFS):
 
     accessor: RAMAccessor
     name: str = VFSName.RAM
     # Device metadata is synthetic and needs no content fetch.
-    SIZES_ALWAYS_KNOWN: bool = True
+    sizes_always_known: bool = True
 
     def __init__(self) -> None:
-        super().__init__(io=IO)
+        super().__init__()
         self._store = DevStore()
         self.accessor = RAMAccessor(self._store)
-        for fn in COMMANDS:
-            self.register(fn)
-        for ro in DEV_OPS:
-            self.register_op(ro)
 
-    @property
-    def index(self) -> IndexCacheStore:
-        # A path-only index would expose descriptors across sessions.
-        return NULL_INDEX
+    def ops(self) -> list[RegisteredOp]:
+        return DEV_OPS
+
+    def commands(self) -> list[RegisteredCommand]:
+        return registered_commands(COMMANDS)
 
     def allocate_input(self) -> tuple[str, int]:
         return self._store.files.allocate_input()

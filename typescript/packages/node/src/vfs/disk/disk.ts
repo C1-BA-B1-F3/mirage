@@ -12,8 +12,7 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import { BoundVFS } from '@struktoai/mirage-core/vfs/bound'
-import { DISK_IO } from '../../commands/builtin/disk/io.ts'
+import { BaseVFS } from '@struktoai/mirage-core/vfs/base'
 import {
   chmod,
   mkdir,
@@ -22,12 +21,12 @@ import {
   statfs as fsStatfs,
   writeFile,
 } from 'node:fs/promises'
+import { mkdirSync } from 'node:fs'
 import path from 'node:path'
 
 import type { RegisteredCommand } from '@struktoai/mirage-core/commands/config'
 import type { RegisteredOp } from '@struktoai/mirage-core/ops/registry'
 
-import type { FindOptions, VFS } from '@struktoai/mirage-core/vfs/base'
 import { CapacityState, PathSpec, VFSName } from '@struktoai/mirage-core/types'
 import type { CapacityResult } from '@struktoai/mirage-core/types'
 
@@ -62,59 +61,32 @@ async function walkFiles(current: string, out: string[]): Promise<void> {
   }
 }
 
-export class DiskVFS extends BoundVFS<DiskAccessor> implements VFS {
-  declare writeFile: (p: PathSpec, data: Uint8Array) => Promise<void>
-
-  declare appendFile: (p: PathSpec, data: Uint8Array) => Promise<void>
-
-  declare exists: (p: PathSpec) => Promise<boolean>
-
-  declare mkdir: (p: PathSpec, options?: { recursive?: boolean }) => Promise<void>
-
-  declare rmdir: (p: PathSpec) => Promise<void>
-
-  declare unlink: (p: PathSpec) => Promise<void>
-
-  declare rename: (src: PathSpec, dst: PathSpec) => Promise<void>
-
-  declare truncate: (p: PathSpec, length: number) => Promise<void>
-
-  declare copy: (src: PathSpec, dst: PathSpec) => Promise<void>
-
-  declare rmR: (p: PathSpec) => Promise<void>
-
-  declare du: (p: PathSpec) => Promise<number>
-
-  declare find: (p: PathSpec, options?: FindOptions) => Promise<string[]>
-
-  readonly kind = VFSName.DISK
-  readonly cachesReads: boolean = false
+export class DiskVFS extends BaseVFS {
+  override readonly name = VFSName.DISK
+  override readonly cachesReads: boolean = false
   // byte store: stat() sizes every file from metadata
-  readonly sizesAlwaysKnown: boolean = true
+  override readonly sizesAlwaysKnown: boolean = true
   override readonly indexTtl: number = 60
-  readonly prompt = DISK_PROMPT
+  override readonly prompt = DISK_PROMPT
   readonly root: string
-  readonly accessor: DiskAccessor
+  override readonly accessor: DiskAccessor
 
   constructor(options: DiskVFSOptions) {
-    super(DISK_IO)
+    super()
     this.root = path.resolve(options.root)
+    mkdirSync(this.root, { recursive: true })
     this.accessor = new DiskAccessor(this.root)
   }
 
   // The resolved root is the storage: two DiskVFS instances built on the same
   // directory are one store, however they were spelled.
-  override storageId(): string {
-    return `${this.kind}:${this.root}`
-  }
-
-  override async open(): Promise<void> {
-    await mkdir(this.root, { recursive: true })
+  override storageLocation(): string {
+    return `${this.name}:${this.root}`
   }
 
   // A real filesystem reports real numbers (QUOTA). GNU df: used counts
   // reserved blocks (blocks - bfree), available excludes them (bavail).
-  override async statfs(): Promise<CapacityResult> {
+  override async capacity(): Promise<CapacityResult> {
     const st = await fsStatfs(this.root)
     const bsize = st.bsize
     return {
@@ -128,15 +100,15 @@ export class DiskVFS extends BoundVFS<DiskAccessor> implements VFS {
     }
   }
 
-  ops(): readonly RegisteredOp[] {
+  override ops(): readonly RegisteredOp[] {
     return DISK_OPS
   }
 
-  commands(): readonly RegisteredCommand[] {
+  override commands(): readonly RegisteredCommand[] {
     return DISK_COMMANDS
   }
 
-  deltaHook(): DeltaHook {
+  override deltaHook(): DeltaHook {
     return buildDeltaHook(this.accessor)
   }
 
@@ -156,7 +128,7 @@ export class DiskVFS extends BoundVFS<DiskAccessor> implements VFS {
       modes[rel] = (await fsStat(full)).mode & 0o7777
     }
     return {
-      type: this.kind,
+      type: this.name,
       files,
       modes,
     }

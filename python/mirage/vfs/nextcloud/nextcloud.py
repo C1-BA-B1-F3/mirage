@@ -4,11 +4,13 @@ from pydantic import BaseModel, ConfigDict
 
 from mirage.accessor.nextcloud import NextcloudAccessor
 from mirage.commands.builtin.nextcloud import COMMANDS as NEXTCLOUD_COMMANDS
-from mirage.commands.builtin.nextcloud.io import IO
+from mirage.commands.config import RegisteredCommand
+from mirage.commands.registry import registered_commands
 from mirage.core.nextcloud.watch import build_delta_hook
 from mirage.ops.nextcloud import OPS as NEXTCLOUD_OPS
+from mirage.ops.registry import RegisteredOp
 from mirage.types import VFSName
-from mirage.vfs.bound import BoundVFS
+from mirage.vfs.base import BaseVFS
 from mirage.vfs.nextcloud.prompt import PROMPT
 from mirage.watch.base import DeltaHook
 
@@ -23,25 +25,27 @@ class NextcloudConfig(BaseModel):
     timeout: int = 30
 
 
-class NextcloudVFS(BoundVFS):
+class NextcloudVFS(BaseVFS):
 
     accessor: NextcloudAccessor
     name: str = VFSName.NEXTCLOUD
     caches_reads: bool = True
     # WebDAV PROPFIND carries getcontentlength for every file; readdir
     # backfills any lister-omitted size with one stat per affected file.
-    SIZES_ALWAYS_KNOWN: bool = True
-    PROMPT: str = PROMPT
-    SUPPORTS_SNAPSHOT: bool = True
+    sizes_always_known: bool = True
+    prompt: str = PROMPT
+    supports_snapshot: bool = True
 
     def __init__(self, config: NextcloudConfig) -> None:
-        super().__init__(io=IO)
+        super().__init__()
         self.config = config
         self.accessor = NextcloudAccessor(self.config)
-        for fn in NEXTCLOUD_COMMANDS:
-            self.register(fn)
-        for op in NEXTCLOUD_OPS:
-            self.register_op(op)
+
+    def ops(self) -> list[RegisteredOp]:
+        return NEXTCLOUD_OPS
+
+    def commands(self) -> list[RegisteredCommand]:
+        return registered_commands(NEXTCLOUD_COMMANDS)
 
     def delta_hook(self) -> DeltaHook:
         return build_delta_hook(self.accessor)

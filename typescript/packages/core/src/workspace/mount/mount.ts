@@ -17,8 +17,9 @@ import { captureSessionContext } from '../../context/session_context.ts'
 import { mountKey } from '../../utils/key_prefix.ts'
 import { coerceReadPolicy } from './read_policy.ts'
 import { KeyLock } from '../../cache/lock.ts'
+import type { IndexConfig } from '../../cache/index/config.ts'
+import { buildIndex } from '../../cache/index/factory.ts'
 import type { IndexCacheStore } from '../../cache/index/store.ts'
-import { type Accessor, NOOPAccessor } from '../../accessor/base.ts'
 import type {
   CommandFn,
   CommandFnResult,
@@ -31,7 +32,6 @@ import { ROOT_CWD } from '../../commands/constants.ts'
 import type { OpKwargs } from '../../ops/registry.ts'
 import type { LinkView } from '../../ops/types.ts'
 
-const NOOP_ACCESSOR = new NOOPAccessor()
 import { getExtension } from '../../commands/resolve.ts'
 import { resolveLimit } from '../../policy/index.ts'
 import { runWithTimeout } from '../../commands/builtin/utils/limit.ts'
@@ -55,7 +55,7 @@ import {
 import { uuid7 } from '../../utils/ids.ts'
 import { VFSActivity } from './activity.ts'
 import type { RegisteredOp } from '../../ops/registry.ts'
-import type { VFS } from '../../vfs/base.ts'
+import type { BaseVFS } from '../../vfs/base.ts'
 import {
   type Limit,
   type ReadSpec,
@@ -105,10 +105,18 @@ function crossKey(name: string, targetVfs: string): string {
 
 export interface MountInit {
   prefix: string
-  vfs: VFS
+  vfs: BaseVFS
   mode?: MountMode
   /** How this mount's cached bytes are revalidated. */
   read?: ReadSpec
+  // The store this mount runs its driver under; the registry builds
+  // one, shared with any alias of the same instance. A bare entry gets
+  // a RAM store at the driver's TTL.
+  index?: IndexCacheStore
+  indexConfig?: IndexConfig | undefined
+  // The `vfs:` value the driver was built from, recorded for snapshots;
+  // null for one constructed in code.
+  vfsRef?: string | null
 }
 
 // What the command tier's walk guard proves an operand's `.` and `..` with:
@@ -128,9 +136,14 @@ function withWalkProbe<T>(
 export class MountEntry {
   readonly mountId = uuid7()
   readonly prefix: string
-  readonly vfs: VFS
+  readonly vfs: BaseVFS
   mode: MountMode
   readonly read: ReadSpec
+  // `index` is this same store scoped by the cache manager, which is
+  // what ops and commands receive.
+  readonly indexStore: IndexCacheStore
+  readonly indexConfig: IndexConfig | undefined
+  readonly vfsRef: string | null
   activity = new VFSActivity()
   retiring = false
   beforeUse: (() => Promise<void>) | null = null
@@ -188,33 +201,69 @@ export class MountEntry {
     // at this same point.
     const spec = init.read ?? DEFAULT_READ_SPEC
     this.read = Object.freeze({ ...spec, policy: coerceReadPolicy(spec.policy) })
+    this.indexStore = init.index ?? buildIndex(undefined, init.vfs.indexTtl)
+    this.indexConfig = init.indexConfig === undefined ? undefined : { ...init.indexConfig }
+    this.vfsRef = init.vfsRef ?? null
   }
 
-  /** Prepare and retain the VFS while its glob hook reads metadata. */
+  /** Whether the op table serves `name`, on any level of the cascade. */
+  hasOp(name: string): boolean {
+    return this.resolveCascade(name, null, this.ops, this.generalOps).length > 0
+  }
+
+  /**
+   * Expand glob words through the `glob` op, one pattern spec at a time;
+   * a driver whose table carries none leaves every word as typed. The
+   * mount stamps each word's mount-relative key before the op sees it,
+   * since the key is the placement's to know, and keeps the VFS retained
+   * while the walk reads metadata.
+   */
   async expandGlob(paths: readonly PathSpec[], prefix: string): Promise<PathSpec[]> {
+    const levels = this.resolveCascade('glob', null, this.ops, this.generalOps)
+    if (levels.length === 0) return [...paths]
     return this.use(async () => {
       const manager = this.cacheManager
-      if (manager === null) {
-        await this.ensureReady()
-        return this.vfs.glob === undefined ? [...paths] : this.vfs.glob(paths, prefix)
-      }
+      if (manager === null) return this.runGlob(levels, paths, prefix, this.indexStore)
       return manager.withMutation(async () => {
         await this.ensureReady()
-        if (this.vfs.glob === undefined) return [...paths]
-        const index = this.vfs.index
-        return this.vfs.glob(
-          paths,
-          prefix,
-          index === undefined ? undefined : manager.scopeIndexLocked(index),
-        )
+        return this.runGlob(levels, paths, prefix, manager.scopeIndexLocked(this.indexStore))
       })
     })
   }
 
+  private async runGlob(
+    levels: readonly RegisteredOp[],
+    paths: readonly PathSpec[],
+    prefix: string,
+    index: IndexCacheStore,
+  ): Promise<PathSpec[]> {
+    const kwargs: OpKwargs = { index }
+    const out: PathSpec[] = []
+    for (const p of paths) {
+      const spec = prefix
+        ? new PathSpec({
+            virtual: p.virtual,
+            directory: p.directory,
+            ...(p.pattern !== null ? { pattern: p.pattern } : {}),
+            resolved: p.resolved,
+            vfsPath: mountKey(p.virtual, prefix),
+            rawPath: p.rawPath,
+          })
+        : p
+      for (const op of levels) {
+        const matches = await op.fn(this.vfs.accessor, spec, [], kwargs)
+        if (matches !== null && matches !== undefined) {
+          out.push(...(matches as PathSpec[]))
+          break
+        }
+      }
+    }
+    return out
+  }
+
   /** Metadata access bound to this mount's ownership. */
-  get index(): IndexCacheStore | undefined {
-    const index = this.vfs.index
-    return index === undefined ? undefined : (this.cacheManager?.scopeIndex(index) ?? index)
+  get index(): IndexCacheStore {
+    return this.cacheManager?.scopeIndex(this.indexStore) ?? this.indexStore
   }
 
   /** Finish deferred mount preparation before any backend or cache read. */
@@ -429,7 +478,7 @@ export class MountEntry {
    * mount, throw.
    */
   registerFns(items: readonly (RegisteredCommand | RegisteredOp)[]): void {
-    const kind = this.vfs.kind
+    const kind = this.vfs.name
     interface Group<T> {
       toRegister: T[]
       attempted: Set<string>
@@ -586,7 +635,7 @@ export class MountEntry {
       // see them, so expanding here would lose what the handler needs.
       // Python's dispatcher never expands either.
 
-      const accessor = (this.vfs as { accessor?: Accessor }).accessor ?? NOOP_ACCESSOR
+      const accessor = this.vfs.accessor
       const cmdOpts: CommandOpts = {
         stdin: context.stdin ?? null,
         flags: stampedFlags,
@@ -594,7 +643,7 @@ export class MountEntry {
         mountPrefix,
         command: cmdName,
         cwd: context.cwd ?? ROOT_CWD,
-        ...(this.index !== undefined ? { index: this.index } : {}),
+        index: this.index,
         ...(context.dispatch !== undefined ? { dispatch: context.dispatch } : {}),
         ...(context.sessionId !== undefined ? { sessionId: context.sessionId } : {}),
         ...(context.env !== undefined ? { env: context.env } : {}),
@@ -739,7 +788,7 @@ export class MountEntry {
       const filetype = getExtension(path)
       const levels = this.resolveCascade(opName, filetype, this.ops, this.generalOps)
       if (levels.length === 0) {
-        throw enotsup(this.vfs.kind, opName, path)
+        throw enotsup(this.vfs.name, opName, path)
       }
       if (levels.some((o) => o.write)) {
         const dst = kwargs.dst
@@ -756,10 +805,10 @@ export class MountEntry {
       })
       const effectiveKwargs: OpKwargs = {
         ...kwargs,
-        ...(kwargs.index === undefined && this.index !== undefined ? { index: this.index } : {}),
+        ...(kwargs.index === undefined ? { index: this.index } : {}),
         ...(filetype !== null && kwargs.filetype === undefined ? { filetype } : {}),
       }
-      const accessor = this.vfs.accessor ?? NOOP_ACCESSOR
+      const accessor = this.vfs.accessor
       // Per-op caps are policy and fire at the op door (postOps); only
       // the timeout stays here, bounding the backend call itself.
       const opOverride = this.commandLimits.get(opName) ?? null

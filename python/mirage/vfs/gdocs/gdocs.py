@@ -16,16 +16,18 @@ from typing import Any
 
 from mirage.accessor.gdocs import GDocsAccessor
 from mirage.commands.builtin.gdocs import COMMANDS
-from mirage.commands.builtin.gdocs.io import IO
+from mirage.commands.config import RegisteredCommand
+from mirage.commands.registry import registered_commands
 from mirage.core.google.client import TokenManager
 from mirage.ops.gdocs import OPS as GDOCS_VFS_OPS
+from mirage.ops.registry import RegisteredOp
 from mirage.types import VFSName
-from mirage.vfs.bound import BoundVFS
+from mirage.vfs.base import BaseVFS
 from mirage.vfs.gdocs.config import GDocsConfig
 from mirage.vfs.gdocs.prompt import PROMPT, WRITE_PROMPT
 
 
-class GDocsVFS(BoundVFS):
+class GDocsVFS(BaseVFS):
 
     accessor: GDocsAccessor
     name: str = VFSName.GDOCS
@@ -35,19 +37,21 @@ class GDocsVFS(BoundVFS):
     # VFS.
     index_ttl: float = 86_400
     # Reads stamp listing metadata; a fresh stat checks Drive by file ID.
-    READ_REVALIDATABLE: bool = True
-    PROMPT: str = PROMPT
-    WRITE_PROMPT: str = WRITE_PROMPT
+    read_revalidatable: bool = True
+    prompt: str = PROMPT
+    write_prompt: str = WRITE_PROMPT
 
     def __init__(self, config: GDocsConfig) -> None:
-        super().__init__(io=IO)
+        super().__init__()
         self.config = config
         self._token_manager = TokenManager(config)
         self.accessor = GDocsAccessor(self.config, self._token_manager)
-        for fn in COMMANDS:
-            self.register(fn)
-        for fn in GDOCS_VFS_OPS:
-            self.register_op(fn)
+
+    def ops(self) -> list[RegisteredOp]:
+        return GDOCS_VFS_OPS
+
+    def commands(self) -> list[RegisteredCommand]:
+        return registered_commands(COMMANDS)
 
     async def close(self) -> None:
         """Drain the token manager's connection pool with the VFS."""

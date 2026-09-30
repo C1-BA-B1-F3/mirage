@@ -16,16 +16,18 @@ from typing import Any
 
 from mirage.accessor.hf_buckets import HfBucketsAccessor, HfBucketsConfig
 from mirage.commands.builtin.hf_buckets import COMMANDS as HF_COMMANDS
-from mirage.commands.builtin.hf_buckets.io import IO
+from mirage.commands.config import RegisteredCommand
+from mirage.commands.registry import registered_commands
 from mirage.core.hf_buckets.watch import build_delta_hook
 from mirage.ops.hf_buckets import OPS as HF_OPS
+from mirage.ops.registry import RegisteredOp
 from mirage.types import VFSName
-from mirage.vfs.bound import BoundVFS
+from mirage.vfs.base import BaseVFS
 from mirage.vfs.hf_buckets.prompt import PROMPT
 from mirage.watch.base import DeltaHook
 
 
-class HfBucketsVFS(BoundVFS):
+class HfBucketsVFS(BaseVFS):
 
     accessor: HfBucketsAccessor
     name: str = VFSName.HF_BUCKETS
@@ -33,22 +35,24 @@ class HfBucketsVFS(BoundVFS):
     # The Hub tree API reports each file's exact byte size (the LFS
     # object size for LFS files); readdir backfills any lister-omitted
     # size with one stat.
-    SIZES_ALWAYS_KNOWN: bool = True
-    PROMPT: str = PROMPT
-    SUPPORTS_SNAPSHOT: bool = True
+    sizes_always_known: bool = True
+    prompt: str = PROMPT
+    supports_snapshot: bool = True
     # stat stamps the paths-info xet hash and a read stamps its download's
     # strong ETag, which is that same hash, so a `fresh` probe compares
     # like with like.
-    READ_REVALIDATABLE: bool = True
+    read_revalidatable: bool = True
 
     def __init__(self, config: HfBucketsConfig) -> None:
-        super().__init__(io=IO)
+        super().__init__()
         self.config = config
         self.accessor = HfBucketsAccessor(self.config)
-        for fn in HF_COMMANDS:
-            self.register(fn)
-        for op in HF_OPS:
-            self.register_op(op)
+
+    def ops(self) -> list[RegisteredOp]:
+        return HF_OPS
+
+    def commands(self) -> list[RegisteredCommand]:
+        return registered_commands(HF_COMMANDS)
 
     def delta_hook(self) -> DeltaHook:
         return build_delta_hook(self.accessor)

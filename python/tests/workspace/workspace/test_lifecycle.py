@@ -27,17 +27,18 @@ from mirage.commands.cli.types import CLISpec
 from mirage.commands.config import RegisteredCommand
 from mirage.commands.spec import CommandSpec, Operand
 from mirage.io import IOResult
-from mirage.ops.registry import op
+from mirage.ops.registry import RegisteredOp, op
 from mirage.runtime.base import Runtime
 from mirage.shell.console import (Channel, ConsoleChunk, JobConsole,
                                   RAMConsoleStore)
 from mirage.shell.job_table import JobStatus
 from mirage.types import CapacityResult, CapacityState, MountMode, PathSpec
-from mirage.utils.key_prefix import mount_key
+from mirage.utils.key_prefix import mount_key, mount_prefix_of
 from mirage.vfs.ram import RAMVFS
 from mirage.workspace import Workspace
 from mirage.workspace.executor.builtins.shared import expand_operands
 from mirage.workspace.executor.command.run import drop_mount_caches
+from mirage.workspace.mount.spec import Mount
 from mirage.workspace.snapshot import to_state_dict
 from mirage.workspace.types import ExecutionNode
 
@@ -53,27 +54,37 @@ async def test_first_mount_access_prepares_expansion_and_provision(action):
 
     class IndexedRAM(RAMVFS):
 
-        def set_index(self, config=None):
-            # Keep the backend's shared index across workspace configuration.
-            if not hasattr(self, "_index"):
-                super().set_index(config)
+        def __init__(self, shared):
+            super().__init__()
+            self.shared = shared
 
-        async def resolve_glob(self, paths, prefix="", index=None):
-            scoped = index if index is not None else self.index
-            listing = await scoped.list_dir(paths[0].directory.rstrip("/")
-                                            or "/")
-            if listing.entries is not None:
-                return [
-                    PathSpec.from_str_path(key, mount_key(key, prefix))
-                    for key in listing.entries if fnmatchcase(
-                        key.rsplit("/", 1)[-1], paths[0].pattern or "*")
-                ]
-            return await super().resolve_glob(paths, prefix, index=index)
+        def ops(self):
+            base = super().ops()
+            walk = next(ro.fn for ro in base if ro.name == "glob")
+
+            async def glob(accessor, path, *, index=None, **kwargs):
+                # The listing the ancestor's mount recorded for this
+                # directory, which must not be served stale here.
+                listing = await self.shared.list_dir(
+                    path.directory.rstrip("/") or "/")
+                if listing.entries is not None:
+                    prefix = mount_prefix_of(path.virtual, path.vfs_path)
+                    return [
+                        PathSpec.from_str_path(key, mount_key(key, prefix))
+                        for key in listing.entries if fnmatchcase(
+                            key.rsplit("/", 1)[-1], path.pattern or "*")
+                    ]
+                return await walk(accessor, path, index=index, **kwargs)
+
+            return [ro for ro in base if ro.name != "glob"] + [
+                RegisteredOp(
+                    name="glob", vfs=self.name, filetype=None, fn=glob)
+            ]
 
     ancestor = RAMVFS()
     ws = Workspace({"/": ancestor}, index=IndexConfig(ttl=600))
-    replacement = IndexedRAM()
-    replacement._index = ancestor.index
+    shared = ws.mount("/").index_store
+    replacement = IndexedRAM(shared)
     replacement.load_state({
         "dirs": ["/", "/dir"],
         "files": {
@@ -83,7 +94,7 @@ async def test_first_mount_access_prepares_expansion_and_provision(action):
         }
     })
     directory = "/data/dir" if action == "midpath" else "/data"
-    await ancestor.index.set_dir(
+    await shared.set_dir(
         directory,
         [("stale.txt",
           IndexEntry(id="old", name="stale.txt", resource_type="file"))])
@@ -277,7 +288,7 @@ async def test_unmount_keeps_prefix_reserved_until_cache_cleanup(
     alias_entries = await ws.vfs.readdir("/alias")
     entered = asyncio.Event()
     release = asyncio.Event()
-    store = cache if cache_kind == "file" else vfs.index
+    store = cache if cache_kind == "file" else ws.mount("/data").index_store
     method = "evict_prefix" if cache_kind == "file" else "invalidate_prefix"
     evict = getattr(store, method)
 
@@ -341,7 +352,7 @@ async def test_mount_change_invalidates_index_before_replacement(
     vfs = RAMVFS()
     ws = Workspace({"/" if shadow else "/data": vfs}, index=config)
     ws.add_mount("/alias", vfs)
-    index = vfs.index
+    index = ws.mount("/" if shadow else "/data").index_store
     entry = IndexEntry(id="old", name="private.txt", resource_type="file")
     try:
         await index.put("/data", entry)
@@ -349,11 +360,10 @@ async def test_mount_change_invalidates_index_before_replacement(
             await index.set_dir(path, [("private.txt", entry)])
         if not shadow:
             await ws.unmount("/data")
-        replacement = RAMVFS()
-        ws.add_mount("/data", replacement)
+        ws.add_mount("/data", RAMVFS())
         if shadow:
             assert await ws.vfs.readdir("/data") == []
-        for candidate in (index, replacement.index):
+        for candidate in (index, ws.mount("/data").index_store):
             for path in ("/data", "/data/private.txt",
                          "/data/nested/private.txt"):
                 assert (await
@@ -588,20 +598,29 @@ async def test_unmount_preserves_operations_of_each_surviving_vfs():
             super().__init__()
             self.closes = 0
 
-            @op("identity", vfs="ram")
             async def identity(accessor, path, **kwargs):
                 if self.closes:
                     raise RuntimeError("VFS closed")
                 return label.encode()
 
-            self.register_op(identity)
+            async def unique(accessor, path, **kwargs):
+                return label.encode()
+
+            self.extra = [
+                RegisteredOp(name="identity",
+                             vfs=self.name,
+                             filetype=None,
+                             fn=identity)
+            ]
             if specialized:
+                self.extra.append(
+                    RegisteredOp(name="unique",
+                                 vfs=self.name,
+                                 filetype=None,
+                                 fn=unique))
 
-                @op("unique", vfs="ram")
-                async def unique(accessor, path, **kwargs):
-                    return label.encode()
-
-                self.register_op(unique)
+        def ops(self):
+            return [*super().ops(), *self.extra]
 
         async def close(self):
             self.closes += 1
@@ -708,17 +727,20 @@ async def test_close_settles_pending_profile_persistence(
                                                ("command", True),
                                                ("df", False)])
 @pytest.mark.parametrize("alias", [None, "initial", "dynamic"])
+@pytest.mark.parametrize("borrowed", [False, True])
 async def test_unmount_waits_for_admitted_vfs_use(monkeypatch, surface,
-                                                  streaming, alias):
+                                                  streaming, alias, borrowed):
     vfs = RAMVFS()
     entered = asyncio.Event()
     release = asyncio.Event()
     closed = False
+    index_closed = False
 
     async def chunks():
         entered.set()
         await release.wait()
         assert not closed
+        assert not index_closed
         yield b"value"
 
     async def read_body():
@@ -727,6 +749,7 @@ async def test_unmount_waits_for_admitted_vfs_use(monkeypatch, surface,
         entered.set()
         await release.wait()
         assert not closed
+        assert not index_closed
         return b"value"
 
     @op("read", vfs="ram")
@@ -736,20 +759,23 @@ async def test_unmount_waits_for_admitted_vfs_use(monkeypatch, surface,
     async def command(accessor, paths, texts, opts):
         return await read_body(), IOResult()
 
-    async def statfs():
+    async def capacity():
         entered.set()
         await release.wait()
         assert not closed
+        assert not index_closed
         return CapacityResult(state=CapacityState.UNKNOWN)
 
-    monkeypatch.setattr(vfs, "statfs", statfs)
-    vfs.register_op(read)
+    monkeypatch.setattr(vfs, "capacity", capacity)
     mounts = {"/data": vfs}
     if alias == "initial":
         mounts["/alias"] = vfs
-    ws = Workspace(mounts)
+    owner = Workspace(mounts)
+    ws = (await Workspace.from_state(await to_state_dict(owner), mounts=mounts)
+          if borrowed else owner)
     if alias == "dynamic":
         ws.add_mount("/alias", vfs)
+    ws.mount("/data").register_fns([read])
     ws.mount("/data").register(
         RegisteredCommand(name="readvalue",
                           spec=CommandSpec(rest=Operand(type="path")),
@@ -757,6 +783,15 @@ async def test_unmount_waits_for_admitted_vfs_use(monkeypatch, surface,
                           filetype=None,
                           fn=command))
     close_vfs = vfs.close
+    index = ws.mount("/data").index_store
+    close_index = index.close
+
+    async def close_index_store():
+        nonlocal index_closed
+        index_closed = True
+        await close_index()
+
+    monkeypatch.setattr(index, "close", close_index_store)
 
     async def close():
         nonlocal closed
@@ -785,6 +820,7 @@ async def test_unmount_waits_for_admitted_vfs_use(monkeypatch, surface,
         if alias:
             await ws.unmount("/data")
             assert not closed
+        assert not index_closed
         removing = asyncio.create_task(
             ws.unmount("/alias" if alias else "/data"))
         async with asyncio.timeout(5):
@@ -793,16 +829,19 @@ async def test_unmount_waits_for_admitted_vfs_use(monkeypatch, surface,
                 await asyncio.sleep(0)
         assert not removing.done()
         assert not closed
+        assert not index_closed
         release.set()
         assert await asyncio.wait_for(running, 5) == b"value"
         await asyncio.wait_for(removing, 5)
-        assert closed
+        assert closed == (not borrowed)
+        assert index_closed
     finally:
         release.set()
         await asyncio.gather(running,
                              *([removing] if removing else []),
                              return_exceptions=True)
         await ws.close()
+        await owner.close()
 
 
 @pytest.mark.asyncio
@@ -858,7 +897,7 @@ async def test_unmount_drains_metadata_glob_and_its_index_writes(monkeypatch):
     ws = Workspace({"/data": vfs}, index=IndexConfig(ttl=600))
     entered, release = asyncio.Event(), asyncio.Event()
     closed = False
-    raw = vfs.index
+    raw = ws.mount("/data").index_store
     close_vfs = vfs.close
 
     async def close():
@@ -866,7 +905,7 @@ async def test_unmount_drains_metadata_glob_and_its_index_writes(monkeypatch):
         closed = True
         await close_vfs()
 
-    async def glob(paths, prefix="", index=None):
+    async def glob(accessor, path, **kwargs):
         entered.set()
         await release.wait()
         assert not closed
@@ -875,7 +914,8 @@ async def test_unmount_drains_metadata_glob_and_its_index_writes(monkeypatch):
         ])
         return []
 
-    monkeypatch.setattr(vfs, "resolve_glob", glob)
+    ws.mount("/data").register_fns(
+        [RegisteredOp(name="glob", vfs="ram", filetype=None, fn=glob)])
     monkeypatch.setattr(vfs, "close", close)
     expanding = asyncio.create_task(
         expand_operands(ws._namespace, [
@@ -909,10 +949,10 @@ async def test_unmount_drains_metadata_glob_and_its_index_writes(monkeypatch):
 async def test_a_glob_writes_its_listing_through_a_lock_held_view(monkeypatch):
     vfs = RAMVFS()
     ws = Workspace({"/data": vfs}, index=IndexConfig(ttl=600))
-    raw = vfs.index
+    raw = ws.mount("/data").index_store
     handed = []
 
-    async def glob(paths, prefix="", index=None):
+    async def glob(accessor, path, *, index=None, **kwargs):
         handed.append(index)
         await asyncio.wait_for(
             index.set_dir(
@@ -922,7 +962,8 @@ async def test_a_glob_writes_its_listing_through_a_lock_held_view(monkeypatch):
             1)
         return []
 
-    monkeypatch.setattr(vfs, "resolve_glob", glob)
+    ws.mount("/data").register_fns(
+        [RegisteredOp(name="glob", vfs="ram", filetype=None, fn=glob)])
     try:
         result = await asyncio.wait_for(ws.shell("echo /data/*"), 5)
         assert (result.exit_code, result.stdout) == (0, b"/data/*\n")
@@ -938,7 +979,7 @@ async def test_unmount_drains_service_index_invalidation(monkeypatch, kind):
     vfs = RAMVFS()
     ws = Workspace({"/data": vfs})
     entered, release = asyncio.Event(), asyncio.Event()
-    index = vfs.index
+    index = ws.mount("/data").index_store
     method = "invalidate" if kind == "service" else "clear"
     invalidate = getattr(index, method)
     await index.put("/outside-scope",
@@ -979,19 +1020,25 @@ async def test_unmount_drains_service_index_invalidation(monkeypatch, kind):
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("used", [False, True])
-async def test_unmount_leaves_borrowed_mounts_open(used):
+@pytest.mark.parametrize("wrapped", [False, True])
+@pytest.mark.parametrize("unmount", [False, True])
+async def test_restored_workspace_leaves_borrowed_mounts_open(
+        used, wrapped, unmount):
     vfs = RAMVFS()
     vfs.load_state({"files": {"/file": b"seed"}})
     ws = Workspace({"/data": vfs})
     state = await to_state_dict(ws)
-    replica = await Workspace.from_state(state, mounts={"/data": vfs})
+    override = Mount(vfs, index=IndexConfig(ttl=37)) if wrapped else vfs
+    replica = await Workspace.from_state(state, mounts={"/data": override})
     try:
         if used:
             assert (await replica.shell("cat /data/file")).stdout == b"seed"
-        await replica.unmount("/data")
-        assert not vfs.is_closed
+        if unmount:
+            await replica.unmount("/data")
+            assert not vfs.is_closed
         await replica.close()
         assert not vfs.is_closed
+        assert (await ws.shell("cat /data/file")).stdout == b"seed"
         await ws.close()
         assert vfs.is_closed
     finally:

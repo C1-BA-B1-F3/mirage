@@ -17,9 +17,9 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from mirage.cache.index import IndexCacheStore, RAMIndexCacheStore
+from mirage.cache.index import RAMIndexCacheStore
 from mirage.core.ram.readdir import readdir as ram_readdir
-from mirage.ops.registry import RegisteredOp
+from mirage.ops.registry import RegisteredOp, op
 from mirage.types import MountMode, PathSpec
 from mirage.utils.glob_walk import make_resolve_glob
 from mirage.utils.key_prefix import mount_key
@@ -32,19 +32,19 @@ from mirage.workspace.mount.mount import MountEntry
 
 def _mock_registry(resolve_result=None):
 
-    async def _resolve_glob(scopes, prefix=""):
+    async def _glob(accessor, path, **kwargs):
         if callable(resolve_result):
-            return resolve_result(scopes)
+            return resolve_result([path])
         if resolve_result is not None:
             return resolve_result
-        # A backend holding nothing the patterns match. Echoing the specs
+        # A backend holding nothing the patterns match. Echoing the spec
         # back would stand in for no backend: a real one never answers a
         # dir-shaped ask with the directory itself.
-        return [s for s in scopes if not s.pattern]
+        return [] if path.pattern else [path]
 
-    vfs = RAMVFS()
-    vfs.resolve_glob = _resolve_glob
-    mount = MountEntry("/data/", vfs, MountMode.READ)
+    mount = MountEntry("/data/", RAMVFS(), MountMode.READ)
+    mount.register_fns(
+        [RegisteredOp(name="glob", vfs="ram", filetype=None, fn=_glob)])
 
     reg = MagicMock()
     reg.file_cache = None
@@ -652,32 +652,34 @@ def test_trailing_slash_glob_drives_the_issue_loop():
     assert _out(ws, line) == "sample\nsample\n"
 
 
-class PrefixBlindRAM(RAMVFS):
-    """A RAM mount that ignores the glob hook's ``prefix``, the way the
-    API backends do, and records the keys it was handed."""
+class KeyRecordingRAM(RAMVFS):
+    """A RAM mount whose ``glob`` op records the keys it was handed."""
 
     def __init__(self) -> None:
         super().__init__()
         self.seen: list[tuple[str, str]] = []
 
-    async def resolve_glob(
-            self,
-            paths: list[PathSpec],
-            prefix: str = "",
-            index: IndexCacheStore | None = None) -> list[PathSpec]:
-        for p in paths:
-            self.seen.append((p.virtual, p.vfs_path))
-        return await super().resolve_glob(paths, prefix="", index=index)
+    def ops(self) -> list[RegisteredOp]:
+        table = super().ops()
+        derived = next(ro for ro in table
+                       if ro.name == "glob" and ro.filetype is None)
+        seen = self.seen
+
+        @op("glob", vfs=self.name)
+        async def glob(accessor, path: PathSpec, **kwargs) -> list[PathSpec]:
+            seen.append((path.virtual, path.vfs_path))
+            return await derived.fn(accessor, path, **kwargs)
+
+        return [ro for ro in table if ro is not derived] + glob._registered_ops
 
 
-def test_glob_hook_is_handed_keys_below_a_non_root_prefix():
-    # ``prefix`` is the mount prefix, and every caller stamps each spec's
-    # ``vfs_path`` with ``mount_key(virtual, prefix)`` before the hook runs.
-    # So the two ways a backend treats ``prefix`` (re-derive the key from
-    # it, or read ``vfs_path`` and ignore it) agree, which is why the
-    # storage backends' remap and the API backends' disregard are both
-    # correct. Pinned the same way in typescript's globs.test.ts.
-    vfs = PrefixBlindRAM()
+def test_glob_op_is_handed_keys_below_a_non_root_prefix():
+    # The ``glob`` op never sees the mount prefix: the mount stamps each
+    # spec's ``vfs_path`` with ``mount_key(virtual, prefix)`` before the
+    # op runs, on every door that expands a word (the workspace expander,
+    # its mid-path and globstar walks, and the builtins' operands). Pinned
+    # the same way in typescript's globs.test.ts.
+    vfs = KeyRecordingRAM()
     ws = Workspace({"/mnt/x/": vfs}, mode=MountMode.WRITE)
     ws.create_session("s")
     for line in ("mkdir -p /mnt/x/team/sub", "printf 1 > /mnt/x/team/f1",
@@ -700,8 +702,8 @@ def test_glob_hook_is_handed_keys_below_a_non_root_prefix():
 class NoStatRAM(RAMVFS):
     """A RAM mount that answers listings but registers no ``stat`` op."""
 
-    def ops_list(self) -> list[RegisteredOp]:
-        return [op for op in super().ops_list() if op.name != "stat"]
+    def ops(self) -> list[RegisteredOp]:
+        return [op for op in super().ops() if op.name != "stat"]
 
 
 async def _answers_nothing(_accessor, _path, *args, **kwargs):
@@ -738,7 +740,7 @@ async def test_trailing_slash_glob_keeps_nothing_a_mount_cannot_stat(
     vfs = NoStatRAM() if stat == "missing" else RAMVFS()
     ws = _flat_ws(vfs)
     if stat != "missing":
-        ram_stat = next(op.fn for op in vfs.ops_list() if op.name == "stat")
+        ram_stat = next(op.fn for op in vfs.ops() if op.name == "stat")
         ws.mount("/m").register_op(
             RegisteredOp(name="stat",
                          vfs="ram",

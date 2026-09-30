@@ -14,7 +14,6 @@ describe.skipIf(url === undefined)('redis truncate', () => {
 
   beforeEach(async () => {
     store = new RedisStore({ url: url ?? '', keyPrefix: `test:truncate:${randomUUID()}:` })
-    await store.open()
     await store.setFile('/file', new TextEncoder().encode('hello'))
     accessor = new RedisAccessor(store)
   })

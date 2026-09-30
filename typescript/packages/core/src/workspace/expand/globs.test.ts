@@ -13,9 +13,9 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import { describe, expect, it } from 'vitest'
-import type { IndexCacheStore } from '../../cache/index/store.ts'
 import type { NamespaceLinks } from '../../ops/config.ts'
-import { BaseVFS, type VFS } from '../../vfs/base.ts'
+import type { RegisteredOp } from '../../ops/registry.ts'
+import { BaseVFS } from '../../vfs/base.ts'
 import { RAMVFS } from '../../vfs/ram/ram.ts'
 import { FileStat, FileType, MountMode, PathSpec } from '../../types.ts'
 import { enoent } from '../../utils/errors.ts'
@@ -23,41 +23,59 @@ import { mountKey } from '../../utils/key_prefix.ts'
 import { getTestParser } from '../fixtures/workspace_fixture.ts'
 import { MountRegistry } from '../mount/registry.ts'
 import { Workspace } from '../workspace/workspace.ts'
-import { resolveGlobs, type ResourceWithGlob } from './globs.ts'
+import { resolveGlobs } from './globs.ts'
 
-class PlainVFS extends BaseVFS implements VFS {
-  readonly kind = 'plain'
+class PlainVFS extends BaseVFS {
+  override readonly name = 'plain'
   override close(): Promise<void> {
     return Promise.resolve()
   }
 }
 
 // A VFS that implements nullglob-off on its own: a no-match ask comes
-// back as the spec it was handed. `glob` is a public hook, so the shape
-// resolveGlobs sends is not a contract it can rely on.
-class EchoGlobVFS extends BaseVFS implements ResourceWithGlob {
-  readonly kind = 'echo'
+// back as the spec it was handed. The glob op is the driver's own, so the
+// shape resolveGlobs sends is not a contract it can rely on.
+class EchoGlobVFS extends BaseVFS {
+  override readonly name = 'echo'
   override close(): Promise<void> {
     return Promise.resolve()
   }
-  glob(paths: readonly PathSpec[]): Promise<PathSpec[]> {
-    return Promise.resolve([...paths])
+  override ops(): readonly RegisteredOp[] {
+    return [
+      {
+        name: 'glob',
+        vfs: this.name,
+        filetype: null,
+        write: false,
+        fn: (_accessor, path) => Promise.resolve([path]),
+      },
+    ]
   }
 }
 
 // A VFS whose stat answers only once its mount was readied, the way a
 // mount nothing has touched yet behaves.
-class LazyDirVFS extends BaseVFS implements VFS {
-  readonly kind = 'lazy'
+class LazyDirVFS extends BaseVFS {
+  override readonly name = 'lazy'
   ready = false
   override close(): Promise<void> {
     return Promise.resolve()
   }
-  stat(path: PathSpec): Promise<FileStat> {
-    if (!this.ready) return Promise.reject(enoent(path))
-    return Promise.resolve(
-      new FileStat({ name: path.virtual.split('/').pop() ?? '', type: FileType.DIRECTORY }),
-    )
+  override ops(): readonly RegisteredOp[] {
+    return [
+      {
+        name: 'stat',
+        vfs: this.name,
+        filetype: null,
+        write: false,
+        fn: (_accessor, path) => {
+          if (!this.ready) return Promise.reject(enoent(path))
+          return Promise.resolve(
+            new FileStat({ name: path.virtual.split('/').pop() ?? '', type: FileType.DIRECTORY }),
+          )
+        },
+      },
+    ]
   }
 }
 
@@ -72,16 +90,24 @@ function linkTo(target: string): NamespaceLinks {
   }
 }
 
-class GlobVFS extends BaseVFS implements ResourceWithGlob {
-  readonly kind = 'glob'
+class GlobVFS extends BaseVFS {
+  override readonly name = 'glob'
   constructor(private readonly results: PathSpec[]) {
     super()
   }
   override close(): Promise<void> {
     return Promise.resolve()
   }
-  glob(): Promise<PathSpec[]> {
-    return Promise.resolve(this.results)
+  override ops(): readonly RegisteredOp[] {
+    return [
+      {
+        name: 'glob',
+        vfs: this.name,
+        filetype: null,
+        write: false,
+        fn: () => Promise.resolve(this.results),
+      },
+    ]
   }
 }
 
@@ -135,7 +161,7 @@ describe('resolveGlobs', () => {
     expect(out.map((x) => (x as PathSpec).rawPath)).toEqual(['lnk/'])
   })
 
-  it('expands glob PathSpecs through VFS.glob', async () => {
+  it('expands glob PathSpecs through the glob op', async () => {
     const res = new GlobVFS([
       PathSpec.fromStrPath('/ram/a.txt'),
       PathSpec.fromStrPath('/ram/b.txt'),
@@ -275,30 +301,37 @@ describe('matchRaw via resolveGlobs', () => {
   })
 })
 
-// A RAM mount that ignores the glob hook's `prefix`, the way python's API
-// backends do, and records the keys it was handed.
-class PrefixBlindRAM extends RAMVFS {
+// A RAM mount whose `glob` op records the keys it was handed.
+class KeyRecordingRAM extends RAMVFS {
   readonly seen: [string, string][] = []
 
-  override glob(
-    paths: readonly PathSpec[],
-    _prefix = '',
-    index?: IndexCacheStore,
-  ): Promise<PathSpec[]> {
-    for (const p of paths) this.seen.push([p.virtual, p.vfsPath])
-    return super.glob(paths, '', index)
+  override ops(): readonly RegisteredOp[] {
+    const table = super.ops()
+    const derived = table.find((ro) => ro.name === 'glob' && ro.filetype === null)
+    if (derived === undefined) throw new Error('RAM serves no glob op')
+    const seen = this.seen
+    return [
+      ...table.filter((ro) => ro !== derived),
+      {
+        ...derived,
+        fn: (accessor, path, args, kwargs) => {
+          const spec = path
+          seen.push([spec.virtual, spec.vfsPath])
+          return derived.fn(accessor, path, args, kwargs)
+        },
+      },
+    ]
   }
 }
 
-// `prefix` is the mount prefix, and every caller stamps each spec's
-// `vfsPath` with `mountKey(virtual, prefix)` before the hook runs. So the
-// two ways a backend treats `prefix` (re-derive the key from it, or read
-// `vfsPath` and ignore it) agree, which is why the typescript remap and
-// python's prefix-blind API backends are both correct. Pinned the same way
-// in python's test_globs.py.
-describe('the glob hook under a non-root mount prefix', () => {
+// The `glob` op never sees the mount prefix: the mount stamps each spec's
+// `vfsPath` with `mountKey(virtual, prefix)` before the op runs, on every
+// door that expands a word (the workspace expander, its mid-path and
+// globstar walks, and the builtins' operands). Pinned the same way in
+// python's test_globs.py.
+describe('the glob op under a non-root mount prefix', () => {
   it('is handed keys below the prefix on every expansion path', async () => {
-    const vfs = new PrefixBlindRAM()
+    const vfs = new KeyRecordingRAM()
     const ws = new Workspace(
       { '/mnt/x/': vfs },
       { mode: MountMode.WRITE, shellParser: await getTestParser() },

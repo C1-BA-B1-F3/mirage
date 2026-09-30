@@ -55,7 +55,7 @@ for (const type of [IndexType.RAM, IndexType.REDIS]) {
         const vfs = new RAMVFS()
         const ws = new Workspace({ '/data': vfs }, { index: config, mode: MountMode.WRITE })
         ws.addMount('/alias', vfs)
-        const index = vfs.index
+        const index = ws.mount('/data').indexStore
         let enter = (): void => undefined
         let resume = (): void => undefined
         const entered = new Promise<void>((resolve) => {
@@ -100,19 +100,18 @@ for (const type of [IndexType.RAM, IndexType.REDIS]) {
         try {
           await entered
           await ws.unmount('/data')
-          const replacement = new RAMVFS()
-          ws.addMount('/data', replacement)
+          const fresh = ws.addMount('/data', new RAMVFS()).indexStore
           await ws.vfs.readdir('/data')
-          await replacement.index.put(
+          await fresh.put(
             '/data/fresh',
             new IndexEntry({ id: 'new', name: 'fresh', resourceType: 'file' }),
           )
           resume()
           expect(await reading).toBe(op === 'rename' ? 'EACCES' : 'EINVAL')
-          for (const candidate of [index, replacement.index]) {
+          for (const candidate of [index, fresh]) {
             expect((await candidate.get('/data/stale')).status).toBe(LookupStatus.NOT_FOUND)
           }
-          expect((await replacement.index.get('/data/fresh')).entry?.id).toBe('new')
+          expect((await fresh.get('/data/fresh')).entry?.id).toBe('new')
         } finally {
           resume()
           await reading
@@ -138,7 +137,7 @@ for (const type of [IndexType.RAM, IndexType.REDIS]) {
         const prefix = shadow ? '/' : '/data'
         const ws = new Workspace({ [prefix]: vfs }, { index: config })
         ws.addMount('/alias', vfs)
-        const index = vfs.index
+        const index = ws.mount(prefix).indexStore
         const entry = new IndexEntry({ id: 'old', name: 'stale', resourceType: 'file' })
         let enter = (): void => undefined
         let resume = (): void => undefined
@@ -210,25 +209,26 @@ for (const type of [IndexType.RAM, IndexType.REDIS]) {
             ws.addMount('/data', replacement)
             await ws.vfs.readdir('/data')
           }
-          await replacement.index.put(
+          const fresh = ws.mount('/data').indexStore
+          await fresh.put(
             '/data/fresh',
             new IndexEntry({ id: 'new', name: 'fresh', resourceType: 'file' }),
           )
           resume()
           await reading
-          for (const candidate of [index, replacement.index]) {
+          for (const candidate of [index, fresh]) {
             expect((await candidate.get('/data/stale')).status).toBe(LookupStatus.NOT_FOUND)
             expect((await candidate.listDir('/data')).entries ?? []).not.toContain('/data/stale')
             if (method !== 'put') {
               const listing = await candidate.listDir('/data')
               // One redis keyspace backs every mount, so each handle reads the
               // replacement's own listing; ram gives each mount its own store.
-              const shares = candidate === replacement.index || type === IndexType.REDIS
+              const shares = candidate === fresh || type === IndexType.REDIS
               const own = shares ? ['/data/own'] : null
               expect([listing.entries ?? null, listing.partialEntries ?? null]).toEqual([own, null])
             }
           }
-          expect((await replacement.index.get('/data/fresh')).entry?.id).toBe('new')
+          expect((await fresh.get('/data/fresh')).entry?.id).toBe('new')
         } finally {
           resume()
           await Promise.allSettled([reading, changing])

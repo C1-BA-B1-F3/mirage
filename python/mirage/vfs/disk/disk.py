@@ -19,41 +19,44 @@ from typing import Any
 
 from mirage.accessor.disk import DiskAccessor
 from mirage.commands.builtin.disk import COMMANDS as DISK_COMMANDS
-from mirage.commands.builtin.disk.io import IO
+from mirage.commands.config import RegisteredCommand
+from mirage.commands.registry import registered_commands
 from mirage.core.disk.utils import resolve_inside_sync, walk_entries
 from mirage.core.disk.watch import build_delta_hook
 from mirage.ops.disk import OPS as DISK_OPS
+from mirage.ops.registry import RegisteredOp
 from mirage.types import CapacityResult, CapacityState, PathSpec, VFSName
-from mirage.vfs.bound import BoundVFS
+from mirage.vfs.base import BaseVFS
 from mirage.vfs.disk.prompt import PROMPT
 from mirage.watch.base import DeltaHook
 
 
-class DiskVFS(BoundVFS):
+class DiskVFS(BaseVFS):
 
     name: str = VFSName.DISK
     # byte store: stat() sizes every file from metadata
-    SIZES_ALWAYS_KNOWN: bool = True
+    sizes_always_known: bool = True
     accessor: DiskAccessor
     index_ttl: float = 60
-    PROMPT: str = PROMPT
+    prompt: str = PROMPT
 
     def __init__(self, root: str) -> None:
-        super().__init__(io=IO)
+        super().__init__()
         self.root = Path(root).resolve()
         # The mount root is infrastructure, not a path component a caller
         # asked for, so it is created here rather than on demand by the
         # first write: writes must report ENOENT for a missing parent the
-        # way GNU does. Mirrors TypeScript, where DiskVFS.open() does
-        # the same `mkdir(root, {recursive: true})`.
+        # way GNU does. Mirrors TypeScript's DiskVFS constructor.
         self.root.mkdir(parents=True, exist_ok=True)
         self.accessor = DiskAccessor(self.root)
-        for fn in DISK_COMMANDS:
-            self.register(fn)
-        for ro in DISK_OPS:
-            self.register_op(ro)
 
-    def storage_id(self) -> str:
+    def ops(self) -> list[RegisteredOp]:
+        return DISK_OPS
+
+    def commands(self) -> list[RegisteredCommand]:
+        return registered_commands(DISK_COMMANDS)
+
+    def storage_location(self) -> str:
         # The resolved root is the storage: two DiskVFS instances built on the
         # same directory are one store, however they were spelled.
         return f"{self.name}:{self.root}"
@@ -61,7 +64,7 @@ class DiskVFS(BoundVFS):
     def delta_hook(self) -> DeltaHook:
         return build_delta_hook(self.accessor)
 
-    async def statfs(self) -> CapacityResult:
+    async def capacity(self) -> CapacityResult:
         # A real filesystem reports real numbers (QUOTA). GNU df: used counts
         # reserved blocks (f_blocks - f_bfree), available excludes them
         # (f_bavail); both scaled by the fundamental block size.

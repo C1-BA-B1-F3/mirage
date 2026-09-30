@@ -16,16 +16,18 @@ from typing import Any
 
 from mirage.accessor.gcal import GCalAccessor
 from mirage.commands.builtin.gcal import COMMANDS
-from mirage.commands.builtin.gcal.io import IO
+from mirage.commands.config import RegisteredCommand
+from mirage.commands.registry import registered_commands
 from mirage.core.google.client import TokenManager
 from mirage.ops.gcal import OPS as GCAL_VFS_OPS
+from mirage.ops.registry import RegisteredOp
 from mirage.types import VFSName
-from mirage.vfs.bound import BoundVFS
+from mirage.vfs.base import BaseVFS
 from mirage.vfs.gcal.config import GCalConfig
 from mirage.vfs.gcal.prompt import PROMPT, WRITE_PROMPT
 
 
-class GCalVFS(BoundVFS):
+class GCalVFS(BaseVFS):
 
     accessor: GCalAccessor
     name: str = VFSName.GCAL
@@ -34,19 +36,21 @@ class GCalVFS(BoundVFS):
     # people and a day-long index would keep serving a schedule that has
     # already moved.
     index_ttl: float = 300
-    PROMPT: str = PROMPT
-    WRITE_PROMPT: str = WRITE_PROMPT
+    prompt: str = PROMPT
+    write_prompt: str = WRITE_PROMPT
 
     def __init__(self, config: GCalConfig) -> None:
-        super().__init__(io=IO)
+        super().__init__()
         self.config = config
         self._token_manager = TokenManager(config)
         self.accessor = GCalAccessor(self.config, self._token_manager)
-        self.PROMPT = PROMPT + self.accessor.time_range.prompt()
-        for fn in COMMANDS:
-            self.register(fn)
-        for fn in GCAL_VFS_OPS:
-            self.register_op(fn)
+        self.prompt = PROMPT + self.accessor.time_range.prompt()
+
+    def ops(self) -> list[RegisteredOp]:
+        return GCAL_VFS_OPS
+
+    def commands(self) -> list[RegisteredCommand]:
+        return registered_commands(COMMANDS)
 
     async def close(self) -> None:
         """Drain the token manager's connection pool with the VFS."""

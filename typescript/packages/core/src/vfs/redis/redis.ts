@@ -12,26 +12,18 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import { BoundVFS } from '../bound.ts'
-import { REDIS_IO } from '../../commands/builtin/redis/io.ts'
 import { RedisAccessor } from '../../accessor/redis.ts'
-
 import { REDIS_COMMANDS } from '../../commands/builtin/redis/index.ts'
 import type { RegisteredCommand } from '../../commands/config.ts'
-
 import type { RegisteredOp } from '../../ops/registry.ts'
 import { REDIS_OPS } from '../../ops/redis/index.ts'
-import type { PathSpec } from '../../types.ts'
 import { VFSName } from '../../types.ts'
-
 import { stripSlash } from '../../utils/slash.ts'
 import { compareCodePoints } from '../../utils/sort.ts'
-
-import type { FindOptions, VFS } from '../base.ts'
+import { BaseVFS } from '../base.ts'
 import { REDACTED_SECRET } from '../secrets.ts'
 import { REDIS_PROMPT } from './prompt.ts'
 import type { RedisStoreLike } from './store.ts'
-
 export interface RedisVFSState {
   type: string
   config: {
@@ -53,43 +45,17 @@ export interface RedisVFSState {
  * fetch. Everything a mount does, ops table and commands included, lives here
  * once, because none of it depends on the transport.
  */
-
-export class RedisResourceBase extends BoundVFS<RedisAccessor> implements VFS {
-  declare writeFile: (p: PathSpec, data: Uint8Array) => Promise<void>
-
-  declare appendFile: (p: PathSpec, data: Uint8Array) => Promise<void>
-
-  declare exists: (p: PathSpec) => Promise<boolean>
-
-  declare mkdir: (p: PathSpec, options?: { recursive?: boolean }) => Promise<void>
-
-  declare rmdir: (p: PathSpec) => Promise<void>
-
-  declare unlink: (p: PathSpec) => Promise<void>
-
-  declare rename: (src: PathSpec, dst: PathSpec) => Promise<void>
-
-  declare truncate: (p: PathSpec, length: number) => Promise<void>
-
-  declare copy: (src: PathSpec, dst: PathSpec) => Promise<void>
-
-  declare rmR: (p: PathSpec) => Promise<void>
-
-  declare du: (p: PathSpec) => Promise<number>
-
-  declare find: (p: PathSpec, options?: FindOptions) => Promise<string[]>
-
-  readonly kind: string = VFSName.REDIS
-  readonly cachesReads: boolean = false
+export class RedisResourceBase extends BaseVFS {
+  override readonly name: string = VFSName.REDIS
+  override readonly cachesReads: boolean = false
   // byte store: stat() sizes every file from metadata
-  readonly sizesAlwaysKnown: boolean = true
+  override readonly sizesAlwaysKnown: boolean = true
   override readonly indexTtl: number = 0
-  readonly prompt: string = REDIS_PROMPT
+  override readonly prompt: string = REDIS_PROMPT
   readonly store: RedisStoreLike
-  readonly accessor: RedisAccessor
-
+  override readonly accessor: RedisAccessor
   constructor(store: RedisStoreLike) {
-    super(REDIS_IO)
+    super()
     this.store = store
     this.accessor = new RedisAccessor(store)
   }
@@ -105,29 +71,23 @@ export class RedisResourceBase extends BoundVFS<RedisAccessor> implements VFS {
   // The server URL (host, port and db) plus the key prefix pin the keyspace
   // two mounts would share. The prefix is joined path-like so nested
   // prefixes collapse onto one key.
-  override storageId(): string {
+  override storageLocation(): string {
     const prefix = stripSlash(this.keyPrefix)
-    const base = `${this.kind}:${this.url}`
+    const base = `${this.name}:${this.url}`
     return prefix === '' ? base : `${base}/${prefix}`
   }
-
-  override open(): Promise<void> {
-    return this.store.open()
-  }
-
   override async close(): Promise<void> {
     await this.store.close()
     await super.close()
   }
 
-  ops(): readonly RegisteredOp[] {
+  override ops(): readonly RegisteredOp[] {
     return REDIS_OPS
   }
 
-  commands(): readonly RegisteredCommand[] {
+  override commands(): readonly RegisteredCommand[] {
     return REDIS_COMMANDS
   }
-
   override async getState(): Promise<RedisVFSState> {
     const files: Record<string, Uint8Array> = {}
     for (const key of await this.store.listFiles()) {
@@ -136,7 +96,7 @@ export class RedisResourceBase extends BoundVFS<RedisAccessor> implements VFS {
     }
     const dirs = [...(await this.store.listDirs())].sort(compareCodePoints)
     return {
-      type: this.kind,
+      type: this.name,
       config: {
         url: REDACTED_SECRET,
         keyPrefix: this.keyPrefix,

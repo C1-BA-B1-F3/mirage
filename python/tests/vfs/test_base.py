@@ -12,15 +12,40 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import asyncio
+from dataclasses import replace
+from functools import partial
+
 import pytest
 
+from mirage import MountMode, Workspace
 from mirage.accessor.base import Accessor
-from mirage.cache.index import (RAMIndexCacheStore, RedisIndexCacheStore,
-                                RedisIndexConfig)
-from mirage.commands.config import RegisteredCommand
-from mirage.commands.spec import CommandSpec
+from mirage.accessor.ram import RAMAccessor
+from mirage.cache.index import NULL_INDEX, IndexCacheStore
+from mirage.commands.builtin.generic_bind import CommandIO
+from mirage.commands.builtin.ram.io import IO as RAM_IO
+from mirage.commands.builtin.utils.wrap import stream_from_bytes
+from mirage.commands.cli import CLISpec
+from mirage.commands.config import command
+from mirage.commands.spec import CommandSpec, Operand
+from mirage.commands.spec.types import FlagValue
+from mirage.io.types import IOResult
+from mirage.ops.registry import RegisteredOp
+from mirage.runtime.vfs import RuntimeVFS
+from mirage.types import (CapacityState, ContentType, FileStat, FileType,
+                          PathSpec, ReadPolicy, ReadSpec)
 from mirage.vfs.base import BaseVFS
-from mirage.vfs.ram import RAMVFS
+from mirage.vfs.ram.ram import RAMVFS
+from mirage.vfs.ram.store import RAMStore
+from mirage.workspace.mount.read_policy import check_read_capability
+from tests.fixtures.driver_ops import ops
+
+PAGES = {
+    "guides": {
+        "quickstart.md": "# Quickstart\nHello.\n",
+    },
+    "notes.md": "agents speak bash\n",
+}
 
 
 class ClosingAccessor(Accessor):
@@ -32,22 +57,106 @@ class ClosingAccessor(Accessor):
         self.close_calls += 1
 
 
-def test_default_index_is_ram():
-    r = RAMVFS()
-    assert isinstance(r.index, RAMIndexCacheStore)
+class WikiAccessor(Accessor):
+
+    def __init__(self, pages: dict) -> None:
+        self.pages = pages
 
 
-def test_set_index_redis():
-    r = RAMVFS()
-    r.set_index(RedisIndexConfig(url="redis://localhost:6379/0"))
-    assert isinstance(r.index, RedisIndexCacheStore)
+def _node(pages: dict, key: str):
+    node = pages
+    for part in [p for p in key.split("/") if p]:
+        if not isinstance(node, dict) or part not in node:
+            raise FileNotFoundError(key)
+        node = node[part]
+    return node
 
 
-def test_set_index_none_resets_to_ram():
-    r = RAMVFS()
-    r.set_index(RedisIndexConfig(url="redis://localhost:6379/0"))
-    r.set_index(None)
-    assert isinstance(r.index, RAMIndexCacheStore)
+async def readdir(
+    accessor: WikiAccessor,
+    path: PathSpec,
+    index: IndexCacheStore = NULL_INDEX,
+) -> list[str]:
+    node = _node(accessor.pages, path.vfs_path)
+    if not isinstance(node, dict):
+        raise NotADirectoryError(path.virtual)
+    parent = path.virtual.rstrip("/")
+    return [
+        f"{parent}/{name}" + ("/" if isinstance(child, dict) else "")
+        for name, child in node.items()
+    ]
+
+
+async def read_bytes(
+    accessor: WikiAccessor,
+    path: PathSpec,
+    index: IndexCacheStore = NULL_INDEX,
+) -> bytes:
+    node = _node(accessor.pages, path.vfs_path)
+    if isinstance(node, dict):
+        raise IsADirectoryError(path.virtual)
+    return node.encode()
+
+
+async def stat(
+    accessor: WikiAccessor,
+    path: PathSpec,
+    index: IndexCacheStore = NULL_INDEX,
+) -> FileStat:
+    node = _node(accessor.pages, path.vfs_path)
+    name = path.virtual.rstrip("/").rsplit("/", 1)[-1] or "/"
+    if isinstance(node, dict):
+        return FileStat(name=name, size=None, type=FileType.DIRECTORY)
+    return FileStat(name=name,
+                    size=len(node.encode()),
+                    type=FileType.FILE,
+                    content=ContentType.TEXT)
+
+
+@command("wiki_hello", vfs="wiki", spec=CommandSpec())
+async def wiki_hello(accessor, *texts: str, **flags: FlagValue):
+    return b"hello custom verb\n", IOResult()
+
+
+async def my_read(accessor, path, *, index=None, **kwargs):
+    return b"custom"
+
+
+def make_io() -> CommandIO:
+    return CommandIO(
+        readdir=readdir,
+        read_bytes=read_bytes,
+        read_stream=partial(stream_from_bytes, read_bytes),
+        stat=stat,
+        is_mounted=lambda a: True,
+        local=False,
+    )
+
+
+def make_vfs(**kwargs) -> BaseVFS:
+    return BaseVFS(name="wiki",
+                   accessor=WikiAccessor(PAGES),
+                   io=make_io(),
+                   **kwargs)
+
+
+def command_names(vfs: BaseVFS) -> set[str]:
+    return {rc.name for rc in vfs.commands()}
+
+
+class Marker:
+
+    def __init__(self, **kwargs) -> None:
+        super().__init__(**kwargs)
+        self.marked = True
+
+
+class Mixed(BaseVFS, Marker):
+    pass
+
+
+def test_init_is_cooperative():
+    assert Mixed().marked is True
 
 
 def test_missing_accessor_attribute_raises():
@@ -55,17 +164,42 @@ def test_missing_accessor_attribute_raises():
         Accessor().missing_operation
 
 
-def test_register_accepts_a_command_definition():
+def test_base_serves_no_tables():
     vfs = BaseVFS()
-    registered = RegisteredCommand(name="cat",
-                                   spec=CommandSpec(),
-                                   vfs="ram",
-                                   filetype=None,
-                                   fn=lambda *args, **kwargs: None)
+    assert vfs.ops() == []
+    assert vfs.commands() == []
 
-    vfs.register(registered)
 
-    assert vfs.commands() == [registered]
+def test_a_driver_that_brings_no_accessor_runs_over_the_default():
+    # TypeScript's twin defaults to a no-op accessor the same way, so
+    # neither language's mount branches on an absent one.
+    assert isinstance(BaseVFS().accessor, Accessor)
+
+
+def test_a_table_built_driver_keeps_the_accessor_it_was_handed():
+    accessor = WikiAccessor(PAGES)
+    vfs = BaseVFS(name="wiki", accessor=accessor, io=make_io())
+    assert vfs.accessor is accessor
+
+
+def test_base_has_no_storage_location():
+    assert BaseVFS().storage_location() is None
+
+
+@pytest.mark.asyncio
+async def test_base_capacity_is_unknown():
+    cap = await BaseVFS().capacity()
+    assert cap.state == CapacityState.UNKNOWN
+
+
+def test_base_has_no_delta_hook():
+    assert BaseVFS().delta_hook() is None
+
+
+def test_base_state_is_the_type():
+    vfs = BaseVFS()
+    assert vfs.get_state() == {"type": "base"}
+    vfs.load_state({"type": "base"})
 
 
 @pytest.mark.asyncio
@@ -74,7 +208,288 @@ async def test_close_releases_accessor_once():
     accessor = ClosingAccessor()
     vfs.accessor = accessor
 
+    assert not vfs.is_closed
     await vfs.close()
     await vfs.close()
 
     assert accessor.close_calls == 1
+    assert vfs.is_closed
+
+
+def test_generic_commands_registered():
+    names = command_names(make_vfs())
+    assert {"ls", "cat", "grep", "find", "head", "wc"} <= names
+
+
+def test_write_commands_register_without_write_op():
+    # Their read-only modes (`tee` with no operand, `gzip -c`) run on a
+    # backend without writes; a line that writes answers ENOTSUP there.
+    names = command_names(make_vfs())
+    assert {"tee", "rm", "gzip", "tar"} <= names
+
+
+def test_overrides_suppress_generic():
+    names = command_names(make_vfs(overrides={"grep"}))
+    assert "grep" not in names
+    assert "rg" in names
+
+
+def test_extra_commands_registered():
+    names = command_names(make_vfs(commands=[wiki_hello]))
+    assert "wiki_hello" in names
+
+
+def test_requires_name():
+    with pytest.raises(ValueError):
+        BaseVFS(name="", accessor=WikiAccessor(PAGES), io=make_io())
+
+
+def test_a_table_built_driver_needs_a_name():
+    with pytest.raises(ValueError, match="needs a name"):
+        BaseVFS(accessor=WikiAccessor(PAGES), io=make_io())
+
+
+def test_a_subclass_name_names_a_table_built_driver():
+
+    class Wiki(BaseVFS):
+        name = "wiki"
+
+    assert Wiki(accessor=WikiAccessor(PAGES), io=make_io()).name == "wiki"
+
+
+def test_tables_need_io():
+    with pytest.raises(ValueError, match="pass io"):
+        BaseVFS(name="wiki", commands=[wiki_hello])
+
+
+def test_table_built_state_asks_to_be_handed_back():
+    assert make_vfs().get_state() == {
+        "type": "wiki",
+        "needs_override": True,
+    }
+
+
+def test_declaration_flags_forwarded():
+    vfs = make_vfs(sizes_always_known=True,
+                   supports_snapshot=True,
+                   read_revalidatable=True)
+    assert vfs.sizes_always_known is True
+    assert vfs.supports_snapshot is True
+    assert vfs.read_revalidatable is True
+
+
+def test_declaration_flags_default_off():
+    vfs = make_vfs()
+    assert vfs.sizes_always_known is False
+    assert vfs.supports_snapshot is False
+    assert vfs.read_revalidatable is False
+
+
+def test_prompts_set():
+    vfs = make_vfs(prompt="wiki files", write_prompt="writable")
+    assert vfs.prompt == "wiki files"
+    assert vfs.write_prompt == "writable"
+
+
+@pytest.mark.asyncio
+async def test_glob_op_derived_from_io_readdir():
+    vfs = make_vfs()
+    spec = PathSpec(vfs_path="guides/quick*",
+                    virtual="/guides/quick*",
+                    directory="/guides",
+                    pattern="quick*",
+                    resolved=False)
+    glob = next(ro for ro in vfs.ops() if ro.name == "glob")
+    matches = await glob.fn(vfs.accessor, spec, index=NULL_INDEX)
+    assert [m.virtual for m in matches] == ["/guides/quickstart.md"]
+
+
+@pytest.mark.asyncio
+async def test_workspace_execution_end_to_end():
+    ws = Workspace({"/wiki/": make_vfs(commands=[wiki_hello])},
+                   mode=MountMode.READ)
+
+    result = await ws.shell("ls /wiki/guides")
+    assert "quickstart.md" in await result.stdout_str()
+
+    result = await ws.shell("cat /wiki/notes.md")
+    assert await result.stdout_str() == "agents speak bash\n"
+
+    result = await ws.shell("grep -r Quickstart /wiki/")
+    assert "/wiki/guides/quickstart.md:# Quickstart" in (await
+                                                         result.stdout_str())
+
+    result = await ws.shell("find /wiki -name '*.md'")
+    out = await result.stdout_str()
+    assert "/wiki/guides/quickstart.md" in out
+    assert "/wiki/notes.md" in out
+
+    result = await ws.shell("wiki_hello")
+    assert await result.stdout_str() == "hello custom verb\n"
+
+    # The derived ops serve the VFS surface too, not just the commands.
+    assert "/wiki/guides/quickstart.md" in await ws.readdir("/wiki/guides")
+    assert (await ws.stat("/wiki/notes.md")).size == 18
+
+
+def test_auto_ops_derived_from_table():
+    vfs = make_vfs()
+    names = {(ro.name, ro.write) for ro in vfs.ops()}
+    assert names == {("glob", False), ("read", False), ("readdir", False),
+                     ("stat", False)}
+
+
+def test_auto_ops_disabled():
+    vfs = make_vfs(auto_ops=False)
+    assert vfs.ops() == []
+
+
+def test_user_ops_shadow_derived():
+    custom = RegisteredOp(name="read", vfs="wiki", filetype=None, fn=my_read)
+    vfs = make_vfs(ops=[custom])
+    reads = [ro for ro in vfs.ops() if ro.name == "read"]
+    assert len(reads) == 1
+    assert reads[0].fn is my_read
+
+
+def test_a_script_registered_vfs_is_named_in_the_read_refusal():
+    """`vfs.name` is a plain string here, not a `VFSName`.
+
+    ``str()`` of the enum renders its repr, so the refusal builds the
+    name through a getattr fallback; only a script-registered backend
+    exercises the other side of it.
+    """
+    vfs = make_vfs(caches_reads=True)
+    assert vfs.read_revalidatable is False
+    with pytest.raises(ValueError) as exc:
+        check_read_capability("/w/", vfs, ReadSpec(policy=ReadPolicy.FRESH))
+    assert "wiki does not" in str(exc.value)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("flag", ["-r", "-rv", "-rf", "-d"])
+@pytest.mark.parametrize("mode", [MountMode.READ, MountMode.WRITE])
+async def test_missing_directory_removal_continues_to_later_operands(
+        flag, mode):
+    store = RAMStore()
+    store.dirs.add("/empty")
+    store.files["/file"] = b"keep"
+    vfs = BaseVFS(name="custom",
+                  accessor=RAMAccessor(store),
+                  io=replace(RAM_IO, rm_r=None, rmdir=None))
+    ws = Workspace({"/custom": (vfs, mode)})
+    try:
+        result = await ws.shell(f"rm {flag} /custom/empty /custom/file")
+        reason = ("Read-only file system"
+                  if mode == MountMode.READ else "Operation not supported")
+        expected = f"rm: cannot remove '/custom/empty': {reason}\n"
+        if mode == MountMode.READ:
+            expected += ("rm: cannot remove '/custom/file': "
+                         "Read-only file system\n")
+        assert result.exit_code == 1
+        assert result.stderr.decode() == expected
+        assert "/empty" in store.dirs
+        assert ("/file" in store.files) == (mode == MountMode.READ)
+        assert await result.stdout_str() == (
+            "removed '/custom/file'\n"
+            if flag == "-rv" and mode == MountMode.WRITE else "")
+    finally:
+        await ws.close()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("flags", ["-r", "-rv", "-r --update=all", "-r -n"])
+async def test_custom_vfs_copies_without_native_copy(flags):
+    store = RAMStore()
+    store.dirs.update({"/src", "/src/empty", "/src/sub"})
+    store.files["/src/sub/file"] = b"payload"
+    vfs = BaseVFS(name="custom",
+                  accessor=RAMAccessor(store),
+                  io=replace(RAM_IO, copy=None, find=None))
+    ws = Workspace({"/custom": vfs}, mode=MountMode.WRITE)
+    try:
+        result = await ws.shell(f"cp {flags} /custom/src /custom/dst")
+        assert (result.exit_code, result.stderr or b"") == (0, b"")
+        assert store.files["/dst/sub/file"] == b"payload"
+        assert {"/dst", "/dst/empty", "/dst/sub"} <= store.dirs
+        result = await ws.shell("cp /custom/src/sub/file /custom/plain")
+        assert (result.exit_code, result.stderr or b"") == (0, b"")
+        assert store.files["/plain"] == b"payload"
+    finally:
+        await ws.close()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("flags",
+                         ["-r", "-r --update=older", "-r -n", "-r --backup"])
+@pytest.mark.parametrize("mode", [MountMode.READ, MountMode.WRITE])
+async def test_unavailable_copy_does_not_create_directories(flags, mode):
+    store = RAMStore()
+    store.dirs.update({"/src", "/src/empty"})
+    store.files["/src/file"] = b"payload"
+    before = set(store.dirs)
+    vfs = BaseVFS(name="custom",
+                  accessor=RAMAccessor(store),
+                  io=replace(RAM_IO, copy=None, write=None))
+    ws = Workspace({"/custom": (vfs, mode)})
+    try:
+        result = await ws.shell(f"cp {flags} /custom/src /custom/dst")
+        reason = ("Read-only file system"
+                  if mode == MountMode.READ else "Operation not supported")
+        assert result.exit_code == 1
+        assert result.stderr.decode(
+        ) == f"cp: cannot create directory '/custom/dst': {reason}\n"
+        assert store.dirs == before
+        assert store.files == {"/src/file": b"payload"}
+    finally:
+        await ws.close()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("custom", [False, True])
+async def test_builtin_and_custom_writes_obey_mount_mode(custom):
+    builtin = RAMVFS()
+    path = PathSpec(virtual="/data/a", directory="/data", vfs_path="a")
+    await ops(builtin).write(path, b"before")
+    vfs = BaseVFS(name="probe", accessor=builtin.accessor,
+                  io=RAM_IO) if custom else builtin
+    ws = Workspace({"/data": vfs}, mode=MountMode.READ)
+    try:
+        result = await ws.shell("echo after > /data/a")
+        assert result.exit_code != 0
+        assert await ops(vfs).read(path) == b"before"
+    finally:
+        await ws.close()
+        if custom:
+            await builtin.close()
+
+
+async def _read_cli(inv):
+    assert inv.doors is not None and inv.doors.dispatch is not None
+    return await inv.doors.dispatch("read", inv.paths[0])
+
+
+@pytest.mark.asyncio
+async def test_custom_driver_serves_cli_namespace_and_runtime():
+    ws = Workspace({"/wiki": make_vfs()}, mode=MountMode.WRITE)
+    ws.register_cli(
+        "showpage",
+        CLISpec(name="showpage",
+                positional=(Operand(name="path", type="path",
+                                    required=True), ),
+                fn=_read_cli))
+    try:
+        linked = await ws.shell("ln -s /wiki/notes.md /page")
+        assert linked.exit_code == 0
+        for line in ("cat /page", "showpage /page"):
+            result = await ws.shell(line)
+            assert (result.exit_code,
+                    result.stdout) == (0, b"agents speak bash\n")
+        runtime = RuntimeVFS(ws.dispatch, asyncio.get_running_loop())
+        assert await asyncio.to_thread(runtime.read,
+                                       "/page") == b"agents speak bash\n"
+        row = await asyncio.to_thread(runtime.stat, "/page")
+        assert row.size == 18
+        assert not row.is_dir
+    finally:
+        await ws.close()

@@ -12,8 +12,7 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import { BoundVFS } from '../bound.ts'
-import { QDRANT_IO } from '../../commands/builtin/qdrant/io.ts'
+import { BaseVFS } from '../base.ts'
 import { QdrantAccessor } from '../../accessor/qdrant.ts'
 import { QDRANT_COMMANDS } from '../../commands/builtin/qdrant/index.ts'
 import type { RegisteredCommand } from '../../commands/config.ts'
@@ -21,7 +20,6 @@ import type { RegisteredCommand } from '../../commands/config.ts'
 import { QDRANT_OPS } from '../../ops/qdrant/index.ts'
 import type { RegisteredOp } from '../../ops/registry.ts'
 import { VFSName } from '../../types.ts'
-import { type VFS } from '../base.ts'
 import {
   type QdrantConfigRedacted,
   redactQdrantConfig,
@@ -41,18 +39,18 @@ export interface QdrantVFSState {
   needs_override: true
 }
 
-export class QdrantVFS extends BoundVFS<QdrantAccessor> implements VFS {
-  readonly kind: string = VFSName.QDRANT
+export class QdrantVFS extends BaseVFS {
+  override readonly name: string = VFSName.QDRANT
   // readdir seeds exact rendered sizes from the scroll payloads and stat
   // falls back to rendering the row itself, so sizes are exact either way.
-  readonly sizesAlwaysKnown: boolean = true
-  readonly supportsSnapshot: boolean = false
-  readonly prompt: string = QDRANT_PROMPT
+  override readonly sizesAlwaysKnown: boolean = true
+  override readonly supportsSnapshot: boolean = false
+  override readonly prompt: string = QDRANT_PROMPT
   readonly config: QdrantConfigResolved
-  readonly accessor: QdrantAccessor
+  override readonly accessor: QdrantAccessor
 
   constructor(options: QdrantVFSOptions | QdrantConfig) {
-    super(QDRANT_IO)
+    super()
     const config = 'config' in options ? options.config : options
     this.config = resolveQdrantConfig(config)
     this.accessor = new QdrantAccessor(this.config)
@@ -60,7 +58,7 @@ export class QdrantVFS extends BoundVFS<QdrantAccessor> implements VFS {
 
   override getState(): QdrantVFSState {
     return {
-      type: this.kind,
+      type: this.name,
       config: redactQdrantConfig(this.config),
       // TypeScript cannot rebuild a config-backed mount from state:
       // `buildMountArgs` substitutes a RAMVFS for anything it was
@@ -71,11 +69,11 @@ export class QdrantVFS extends BoundVFS<QdrantAccessor> implements VFS {
     }
   }
 
-  ops(): readonly RegisteredOp[] {
+  override ops(): readonly RegisteredOp[] {
     return QDRANT_OPS
   }
 
-  commands(): readonly RegisteredCommand[] {
+  override commands(): readonly RegisteredCommand[] {
     return QDRANT_COMMANDS
   }
 }

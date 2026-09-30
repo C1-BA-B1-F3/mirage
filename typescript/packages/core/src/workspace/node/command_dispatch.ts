@@ -25,7 +25,6 @@ import type { RouteDecision } from '../../runtime/routing/index.ts'
 import { guardDispatch, mergeSignals } from '../abort.ts'
 import { type ByteSource, IOResult, materialize } from '../../io/types.ts'
 import { DevVFS } from '../../vfs/dev/dev.ts'
-import type { VFS } from '../../vfs/base.ts'
 import { encodeText } from '../../shell/bytes.ts'
 import type { CallStack } from '../../shell/call_stack.ts'
 import {
@@ -117,7 +116,6 @@ export async function executeCommand(
   stdinIn: ByteSource | null,
   callStack: CallStack | null,
   jobTable: JobTable | null,
-  ensureOpen?: (vfs: VFS) => Promise<void>,
   runtimeBindings?: Record<string, Runtime>,
   routingDecision?: RouteDecision,
   signal?: AbortSignal,
@@ -297,7 +295,6 @@ export async function executeCommand(
       stdinIn,
       callStack,
       jobTable,
-      ensureOpen,
       runtimeBindings,
       routingDecision,
       signal,
@@ -337,7 +334,6 @@ async function runCommandBody(
   stdinIn: ByteSource | null,
   callStack: CallStack | null,
   jobTable: JobTable | null,
-  ensureOpen?: (vfs: VFS) => Promise<void>,
   runtimeBindings?: Record<string, Runtime>,
   routingDecision?: RouteDecision,
   signalIn?: AbortSignal,
@@ -453,7 +449,6 @@ async function runCommandBody(
         stdin,
         callStack,
         jobTable,
-        ensureOpen,
         runtimeBindings,
         routingDecision,
         signal,
@@ -536,7 +531,6 @@ async function runArgv(
   stdin: ByteSource | null,
   callStack: CallStack | null,
   jobTable: JobTable | null,
-  ensureOpen?: (vfs: VFS) => Promise<void>,
   runtimeBindings?: Record<string, Runtime>,
   routingDecision?: RouteDecision,
   signal?: AbortSignal,
@@ -641,7 +635,6 @@ async function runArgv(
       stdin,
       callStack,
       jobTable,
-      ensureOpen,
       runtimeBindings,
       routingDecision,
       signal,
@@ -689,7 +682,6 @@ async function routeArgv(
   stdin: ByteSource | null,
   callStack: CallStack | null,
   jobTable: JobTable | null,
-  ensureOpen: ((vfs: VFS) => Promise<void>) | undefined,
   runtimeBindings: Record<string, Runtime> | undefined,
   routingDecision: RouteDecision | undefined,
   signal: AbortSignal | undefined,
@@ -811,7 +803,7 @@ async function routeArgv(
     return handleTouch(namespace, dispatch, session, operands)
   }
 
-  // Capacity (registry-routed: enumerates mounts, reports per-mount statfs;
+  // Capacity (registry-routed: enumerates mounts, reports per-mount capacity;
   // never fabricates numbers).
   if (name === 'df') {
     return handleDf(registry, session, dispatch, operands)
@@ -885,7 +877,6 @@ async function routeArgv(
     stdin,
     callStack,
     jobTable,
-    ensureOpen,
     runtimeBindings,
     namespace,
     routingDecision,

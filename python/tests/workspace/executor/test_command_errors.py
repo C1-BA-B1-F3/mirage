@@ -39,8 +39,8 @@ def failing_command(name, error, lazy=True):
 ])
 async def test_lazy_errors_remain_on_the_producer(error, tail, expected):
     bad = RAMVFS()
-    bad.register(failing_command('cat', error))
     ws = Workspace({'/bad': bad, '/out': RAMVFS()}, mode='exec')
+    ws.mount('/bad').register_fns([failing_command('cat', error)])
     try:
         await ws.shell('echo data >/bad/f')
         result = await ws.shell('echo before; cat /bad/f 2>/dev/null' + tail)
@@ -61,8 +61,8 @@ async def test_nested_mount_failure_keeps_the_line(name, lazy, caplog):
     caplog.set_level(logging.DEBUG, logger="mirage.workspace")
     bad = RAMVFS()
     error = RuntimeError('remote failure')
-    bad.register(failing_command(name, error, lazy))
     ws = Workspace({'/bad': bad, '/good': RAMVFS()}, mode='exec')
+    ws.mount('/bad').register_fns([failing_command(name, error, lazy)])
     try:
         await ws.shell('echo data >/good/file')
         result = await ws.shell(

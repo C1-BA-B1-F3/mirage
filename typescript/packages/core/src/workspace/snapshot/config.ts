@@ -12,6 +12,8 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import { IndexType, type IndexConfig, type RedisIndexConfig } from '../../cache/index/config.ts'
+import { REDACTED_SECRET, hasRedactedSecret } from '../../vfs/secrets.ts'
 import type { CLISpec } from '../../commands/cli/types.ts'
 import type { Mount } from '../mount/spec.ts'
 
@@ -20,4 +22,45 @@ export interface MountArgs {
   mountArgs: Record<string, Mount>
   defaultSessionId: string | undefined
   defaultAgentId: string | null
+}
+
+export interface IndexConfigSnapshot {
+  type: IndexType
+  ttl: number
+  url?: string
+  key_prefix?: string
+}
+
+export function indexConfigDump(
+  config: IndexConfig | undefined,
+  reveal = false,
+): IndexConfigSnapshot | null {
+  if (config === undefined) return null
+  const data: IndexConfigSnapshot = { type: config.type ?? IndexType.RAM, ttl: config.ttl ?? 600 }
+  if (data.type === IndexType.REDIS) {
+    const redis = config as RedisIndexConfig
+    data.url = redis.url ?? 'redis://localhost:6379/0'
+    data.key_prefix = redis.keyPrefix ?? 'mirage:index:'
+    const url = new URL(data.url)
+    if (!reveal && (url.username !== '' || url.password !== '')) data.url = REDACTED_SECRET
+  }
+  return data
+}
+
+export function restoreIndexConfig(
+  data: IndexConfigSnapshot | null | undefined,
+  override: IndexConfig | undefined,
+  prefix: string,
+): IndexConfig | undefined {
+  if (override !== undefined) return override
+  if (data == null) return undefined
+  if (hasRedactedSecret(data)) {
+    throw new Error(
+      `Workspace.load: mount '${prefix}' needs a Mount override with fresh index credentials`,
+    )
+  }
+  const config: RedisIndexConfig = { type: data.type, ttl: data.ttl }
+  if (data.url !== undefined) config.url = data.url
+  if (data.key_prefix !== undefined) config.keyPrefix = data.key_prefix
+  return config
 }

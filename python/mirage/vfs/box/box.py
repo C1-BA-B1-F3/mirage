@@ -16,18 +16,20 @@ from typing import Any
 
 from mirage.accessor.box import BoxAccessor
 from mirage.commands.builtin.box import COMMANDS as BOX_COMMANDS
-from mirage.commands.builtin.box.io import IO
+from mirage.commands.config import RegisteredCommand
+from mirage.commands.registry import registered_commands
 from mirage.core.box.client import BoxTokenManager
 from mirage.core.box.config import BoxConfig
 from mirage.core.box.watch import build_delta_hook
 from mirage.ops.box import OPS as BOX_OPS
+from mirage.ops.registry import RegisteredOp
 from mirage.types import VFSName
-from mirage.vfs.bound import BoundVFS
+from mirage.vfs.base import BaseVFS
 from mirage.vfs.box.prompt import PROMPT
 from mirage.watch.base import DeltaHook
 
 
-class BoxVFS(BoundVFS):
+class BoxVFS(BaseVFS):
 
     accessor: BoxAccessor
     name: str = VFSName.BOX
@@ -35,18 +37,20 @@ class BoxVFS(BoundVFS):
     index_ttl: float = 86_400
     # Box item listings carry an exact byte `size` for every file (0
     # included); sizeless weblinks are filtered out of listings.
-    SIZES_ALWAYS_KNOWN: bool = True
-    PROMPT: str = PROMPT
+    sizes_always_known: bool = True
+    prompt: str = PROMPT
 
     def __init__(self, config: BoxConfig) -> None:
-        super().__init__(io=IO)
+        super().__init__()
         self.config = config
         self._token_manager = BoxTokenManager(config)
         self.accessor = BoxAccessor(self.config, self._token_manager)
-        for fn in BOX_COMMANDS:
-            self.register(fn)
-        for op in BOX_OPS:
-            self.register_op(op)
+
+    def ops(self) -> list[RegisteredOp]:
+        return BOX_OPS
+
+    def commands(self) -> list[RegisteredCommand]:
+        return registered_commands(BOX_COMMANDS)
 
     async def close(self) -> None:
         """Drain the token manager's connection pool with the VFS."""

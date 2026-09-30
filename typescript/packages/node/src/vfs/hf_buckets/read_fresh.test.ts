@@ -16,7 +16,7 @@ import { createHash } from 'node:crypto'
 import { RAMIndexCacheStore } from '@struktoai/mirage-core/cache/index/ram'
 import type { RAMFileCacheStore } from '@struktoai/mirage-core/cache/file/ram'
 import { DEFAULT_READ_TTL, MountMode, PathSpec, ReadPolicy } from '@struktoai/mirage-core/types'
-import type { VFS } from '@struktoai/mirage-core/vfs/base'
+import type { BaseVFS } from '@struktoai/mirage-core/vfs/base'
 import { RAMVFS } from '@struktoai/mirage-core/vfs/ram/ram'
 import { Mount } from '@struktoai/mirage-core/workspace/mount/spec'
 import { ContentDriftError } from '@struktoai/mirage-core/workspace/snapshot/drift'
@@ -61,7 +61,7 @@ async function bucket(files: Record<string, Uint8Array>): Promise<Bucket> {
   return { hub, op }
 }
 
-async function vfsOf({ hub, op }: Bucket, extra: Record<string, string> = {}): Promise<VFS> {
+async function vfsOf({ hub, op }: Bucket, extra: Record<string, string> = {}): Promise<BaseVFS> {
   const vfs = await buildVfs('hf_buckets', { bucket: 'acme/bkt', endpoint: hub.url, ...extra })
   const accessor = vfs.accessor as HfBucketsAccessor
   op.root = accessor.operatorOptions().root ?? ''
@@ -69,7 +69,7 @@ async function vfsOf({ hub, op }: Bucket, extra: Record<string, string> = {}): P
   return vfs
 }
 
-function ws(vfs: VFS, policy: ReadPolicy = ReadPolicy.FRESH): Workspace {
+function ws(vfs: BaseVFS, policy: ReadPolicy = ReadPolicy.FRESH): Workspace {
   return new Workspace({
     '/m': new Mount(vfs, { mode: MountMode.WRITE, read: { policy, ttl: DEFAULT_READ_TTL } }),
     '/r': [new RAMVFS(), MountMode.WRITE],
@@ -190,9 +190,7 @@ describe('hf_buckets under read: fresh', () => {
         1,
         'ls: fake bucket_paths_info refused\n',
       ])
-      const index = vfs.index
-      if (index === undefined) throw new Error('an hf_buckets mount has an index')
-      expect((await index.get('/m/a.txt')).entry ?? null).toBeNull()
+      expect((await w.mount('/m').indexStore.get('/m/a.txt')).entry ?? null).toBeNull()
     } finally {
       await w.close()
     }
@@ -256,7 +254,7 @@ async function pinnedState(b: Bucket) {
 
 async function load(
   state: Awaited<ReturnType<typeof toStateDict>>,
-  vfs: VFS,
+  vfs: BaseVFS,
   command = 'cat /m/a.txt',
 ): Promise<void> {
   // The drift check drains on the first command after the load.

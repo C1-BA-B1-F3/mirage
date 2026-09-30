@@ -16,7 +16,7 @@ import { describe, expect, it } from 'vitest'
 import { runWithRecording } from '@struktoai/mirage-core/observe/context'
 import type { OpRecord } from '@struktoai/mirage-core/observe/record'
 import { MountMode } from '@struktoai/mirage-core/types'
-import type { VFS } from '@struktoai/mirage-core/vfs/base'
+import type { BaseVFS } from '@struktoai/mirage-core/vfs/base'
 import { RAMVFS } from '@struktoai/mirage-core/vfs/ram/ram'
 import { createFakeUpstash, installFakeNavigator, makeMockRoot } from './test-utils.ts'
 import { OPFSVFS } from './vfs/opfs/opfs.ts'
@@ -97,7 +97,7 @@ function underM(records: readonly OpRecord[]): [string, string][] {
     .map((r) => [r.op, r.path])
 }
 
-async function ledger(vfs: VFS): Promise<[string, string][]> {
+async function ledger(vfs: BaseVFS): Promise<[string, string][]> {
   const ws = new Workspace({ '/m': vfs, '/r': new RAMVFS() }, { mode: MountMode.WRITE })
   try {
     expect((await ws.shell('mkdir -p /m/m')).exitCode).toBe(0)
@@ -136,7 +136,6 @@ describe('record paths name the virtual path (browser backends)', () => {
       keyPrefix: 'mirage:fs:',
       fetchImpl: fake.fetch,
     })
-    await vfs.open()
     expect(await ledger(vfs)).toEqual([...SHELL_LEDGER, ['create', C], ['append', C]])
   })
 })

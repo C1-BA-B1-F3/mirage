@@ -17,7 +17,6 @@ import { formatFsError, fsStrerror, isFsError } from '../../utils/errors.ts'
 import { pathAllowed } from '../../context/session_context.ts'
 import { mountKey } from '../../utils/key_prefix.ts'
 import { type ByteSource, IOResult, materialize } from '../../io/types.ts'
-import type { VFS } from '../../vfs/base.ts'
 import { FileType, PathSpec } from '../../types.ts'
 import type { MountEntry } from '../mount/mount.ts'
 import { MountCommandUnsupported, type MountRegistry } from '../mount/registry.ts'
@@ -445,7 +444,6 @@ export async function fanOutTraversal(
   cwd: string,
   cmdStr: string,
   stdin: ByteSource | null,
-  ensureOpen: ((vfs: VFS) => Promise<void>) | undefined,
   // The name plane's facts, offered whole to every sub-run. The mount
   // boundaries, because a rollup total cannot be repaired by line
   // filtering: du must exclude a shadowed subtree while it is
@@ -522,16 +520,7 @@ export async function fanOutTraversal(
         ...(statPath === null ? {} : { statPath }),
         ...(dispatch === undefined ? {} : { dispatch }),
       })
-    const runOperand = runWithFanout(
-      runSingle,
-      registry,
-      cwd,
-      ns,
-      ensureOpen,
-      statPath,
-      signal,
-      dispatch,
-    )
+    const runOperand = runWithFanout(runSingle, registry, cwd, ns, statPath, signal, dispatch)
     const [stdout, io] = await runFanout(
       cmdName as Cmd,
       [...paths],
@@ -672,11 +661,6 @@ export async function fanOutTraversal(
             : respellOne(mountRoot, targetPath, paths[0]?.rawPath ?? targetPath),
         }),
       ]
-    }
-    // A mount that cannot open is a real failure, never a silently missing
-    // slice of the aggregate. Unserved commands return 127 (below).
-    if (ensureOpen !== undefined) {
-      await ensureOpen(mount.vfs)
     }
     // The child-mount names and the dispatcher-backed start-point stat.
     // A start point only the namespace serves (a nested mount's
@@ -868,7 +852,6 @@ export function runWithFanout(
   registry: MountRegistry,
   cwd: string,
   ns: NamespaceView | undefined,
-  ensureOpen: ((vfs: VFS) => Promise<void>) | undefined,
   statPath: StatPath | null = null,
   signal?: AbortSignal,
   dispatch?: DispatchFn,
@@ -897,7 +880,6 @@ export function runWithFanout(
       cwd,
       cmdName,
       stdin,
-      ensureOpen,
       ns,
       statPath,
       signal,

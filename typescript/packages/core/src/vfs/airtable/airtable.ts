@@ -14,7 +14,6 @@
 
 import { AirtableAccessor } from '../../accessor/airtable.ts'
 import { AIRTABLE_COMMANDS } from '../../commands/builtin/airtable/index.ts'
-import { AIRTABLE_IO } from '../../commands/builtin/airtable/io.ts'
 import type { RegisteredCommand } from '../../commands/config.ts'
 import {
   redactAirtableConfig,
@@ -24,8 +23,7 @@ import {
 import { AIRTABLE_OPS } from '../../ops/airtable/index.ts'
 import type { RegisteredOp } from '../../ops/registry.ts'
 import { VFSName } from '../../types.ts'
-import type { VFS } from '../base.ts'
-import { BoundVFS } from '../bound.ts'
+import { BaseVFS } from '../base.ts'
 import { AIRTABLE_PROMPT, AIRTABLE_WRITE_PROMPT } from './prompt.ts'
 
 export interface AirtableVFSState {
@@ -39,35 +37,35 @@ export interface AirtableVFSState {
  * from the file cache; the schema listings still ride the index for its TTL.
  * The transport is plain fetch, so one class serves node and the browser.
  */
-export class AirtableVFS extends BoundVFS<AirtableAccessor> implements VFS {
-  readonly kind: string = VFSName.AIRTABLE
-  readonly cachesReads: boolean = false
+export class AirtableVFS extends BaseVFS {
+  override readonly name: string = VFSName.AIRTABLE
+  override readonly cachesReads: boolean = false
   // records.jsonl and the view files render a paged read, so their size is
   // unknown until the bytes exist.
-  readonly sizesAlwaysKnown: boolean = false
-  readonly supportsSnapshot: boolean = false
-  readonly prompt: string = AIRTABLE_PROMPT
-  readonly writePrompt: string = AIRTABLE_WRITE_PROMPT
-  readonly accessor: AirtableAccessor
+  override readonly sizesAlwaysKnown: boolean = false
+  override readonly supportsSnapshot: boolean = false
+  override readonly prompt: string = AIRTABLE_PROMPT
+  override readonly writePrompt: string = AIRTABLE_WRITE_PROMPT
+  override readonly accessor: AirtableAccessor
 
   private readonly config: AirtableConfig
 
   constructor(config: AirtableConfig, options: { fetchFn?: typeof fetch } = {}) {
-    super(AIRTABLE_IO)
+    super()
     this.config = config
     this.accessor = new AirtableAccessor(config, options)
   }
 
-  commands(): readonly RegisteredCommand[] {
+  override commands(): readonly RegisteredCommand[] {
     return AIRTABLE_COMMANDS
   }
 
-  ops(): readonly RegisteredOp[] {
+  override ops(): readonly RegisteredOp[] {
     return AIRTABLE_OPS
   }
 
   override getState(): AirtableVFSState {
-    return { type: this.kind, config: redactAirtableConfig(this.config) }
+    return { type: this.name, config: redactAirtableConfig(this.config) }
   }
 
   override loadState(_state: AirtableVFSState): Promise<void> {

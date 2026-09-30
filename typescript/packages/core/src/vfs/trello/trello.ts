@@ -12,8 +12,7 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import { BoundVFS } from '../bound.ts'
-import { TRELLO_IO } from '../../commands/builtin/trello/io.ts'
+import { BaseVFS } from '../base.ts'
 import { TrelloAccessor } from '../../accessor/trello.ts'
 
 import { TRELLO_COMMANDS } from '../../commands/builtin/trello/index.ts'
@@ -23,7 +22,6 @@ import { HttpTrelloTransport } from '../../core/trello/client.ts'
 import type { RegisteredOp } from '../../ops/registry.ts'
 import { TRELLO_OPS } from '../../ops/trello/index.ts'
 
-import type { VFS } from '../base.ts'
 import { TRELLO_PROMPT, TRELLO_WRITE_PROMPT } from './prompt.ts'
 import { VFSName } from '../../types.ts'
 
@@ -34,16 +32,16 @@ export interface TrelloVFSState {
   config: TrelloConfigRedacted
 }
 
-export class TrelloVFS extends BoundVFS<TrelloAccessor> implements VFS {
-  readonly kind: string = VFSName.TRELLO
-  readonly cachesReads: boolean = true
-  readonly prompt: string = TRELLO_PROMPT
-  readonly writePrompt: string = TRELLO_WRITE_PROMPT
+export class TrelloVFS extends BaseVFS {
+  override readonly name: string = VFSName.TRELLO
+  override readonly cachesReads: boolean = true
+  override readonly prompt: string = TRELLO_PROMPT
+  override readonly writePrompt: string = TRELLO_WRITE_PROMPT
   readonly config: TrelloConfig
-  readonly accessor: TrelloAccessor
+  override readonly accessor: TrelloAccessor
 
   constructor(config: TrelloConfig) {
-    super(TRELLO_IO)
+    super()
     this.config = config
     const transportOpts: { apiKey: string; apiToken: string; baseUrl?: string } = {
       apiKey: config.apiKey,
@@ -56,17 +54,17 @@ export class TrelloVFS extends BoundVFS<TrelloAccessor> implements VFS {
     this.accessor = new TrelloAccessor(new HttpTrelloTransport(transportOpts), accessorOpts)
   }
 
-  commands(): readonly RegisteredCommand[] {
+  override commands(): readonly RegisteredCommand[] {
     return TRELLO_COMMANDS
   }
 
-  ops(): readonly RegisteredOp[] {
+  override ops(): readonly RegisteredOp[] {
     return TRELLO_OPS
   }
 
   override getState(): Promise<TrelloVFSState> {
     return Promise.resolve({
-      type: this.kind,
+      type: this.name,
       config: redactTrelloConfig(this.config),
     })
   }

@@ -30,6 +30,7 @@ from mirage.types import HiddenPaths, PathSpec
 from mirage.utils.stat_view import DIR_SIZE
 from mirage.vfs.disk import DiskVFS
 from mirage.vfs.ram import RAMVFS
+from tests.fixtures.driver_ops import ops as driver_ops
 
 from .conftest import make_ops_with_dir, run
 
@@ -200,7 +201,7 @@ class TestReads:
 
     def test_access_refuses_write_on_a_read_only_mount(self):
         vfs = RAMVFS()
-        run(vfs.write(PathSpec.from_str_path("/fixed.txt"), b"ro"))
+        run(driver_ops(vfs).write(PathSpec.from_str_path("/fixed.txt"), b"ro"))
         ws = Workspace({"/ro/": (vfs, MountMode.READ)}, mode=MountMode.WRITE)
         patched = make_os_module(ws.vfs)
         assert patched.access("/ro/fixed.txt", os.R_OK) is True

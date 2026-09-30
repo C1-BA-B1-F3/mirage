@@ -12,8 +12,7 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import { BoundVFS } from '../bound.ts'
-import { GDRIVE_IO } from '../../commands/builtin/gdrive/io.ts'
+import { BaseVFS } from '../base.ts'
 import { GDriveAccessor } from '../../accessor/gdrive.ts'
 import { GDRIVE_COMMANDS } from '../../commands/builtin/gdrive/index.ts'
 
@@ -23,7 +22,6 @@ import { TokenManager } from '../../core/google/client.ts'
 import { GDRIVE_OPS } from '../../ops/gdrive/index.ts'
 import type { RegisteredOp } from '../../ops/registry.ts'
 
-import type { VFS } from '../base.ts'
 import { GDRIVE_PROMPT } from './prompt.ts'
 import { VFSName } from '../../types.ts'
 
@@ -36,38 +34,38 @@ export interface GDriveVFSState {
   config: GDriveConfigRedacted
 }
 
-export class GDriveVFS extends BoundVFS<GDriveAccessor> implements VFS {
-  readonly kind: string = VFSName.GDRIVE
-  readonly cachesReads: boolean = true
-  readonly supportsSnapshot: boolean = true
-  readonly readRevalidatable: boolean = true
+export class GDriveVFS extends BaseVFS {
+  override readonly name: string = VFSName.GDRIVE
+  override readonly cachesReads: boolean = true
+  override readonly supportsSnapshot: boolean = true
+  override readonly readRevalidatable: boolean = true
   override readonly indexTtl: number = 86_400
-  readonly prompt: string = GDRIVE_PROMPT
+  override readonly prompt: string = GDRIVE_PROMPT
   readonly config: GDriveConfig
-  readonly accessor: GDriveAccessor
+  override readonly accessor: GDriveAccessor
 
   constructor(config: GDriveConfig) {
-    super(GDRIVE_IO)
+    super()
     this.config = config
     const tm = new TokenManager(config)
     this.accessor = new GDriveAccessor({ tokenManager: tm })
   }
 
-  commands(): readonly RegisteredCommand[] {
+  override commands(): readonly RegisteredCommand[] {
     return GDRIVE_COMMANDS
   }
 
-  ops(): readonly RegisteredOp[] {
+  override ops(): readonly RegisteredOp[] {
     return GDRIVE_OPS
   }
 
-  deltaHook(): DeltaHook {
+  override deltaHook(): DeltaHook {
     return buildDeltaHook(this.accessor)
   }
 
   override getState(): Promise<GDriveVFSState> {
     return Promise.resolve({
-      type: this.kind,
+      type: this.name,
       config: redactGDriveConfig(this.config),
     })
   }

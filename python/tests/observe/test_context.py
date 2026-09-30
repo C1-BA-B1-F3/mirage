@@ -21,7 +21,7 @@ from mirage.observe.context import (RecordingScope, active_recorder,
                                     record_stream, reset_active_recorder,
                                     reset_revisions, revision_for, start_op,
                                     with_mount_context, with_revisions)
-from mirage.ops.registry import op
+from mirage.ops.registry import RegisteredOp, op
 from mirage.types import PathSpec
 from mirage.vfs.ram import RAMVFS
 from mirage.workspace import Workspace
@@ -338,8 +338,6 @@ async def _dispatch_recording_read(recorded: list[str],
     # A custom read on a RAM mount at /m records exactly the paths it is
     # given, inside a real mount frame, so the recorder's own treatment of
     # the path is what the ledger shows.
-    vfs = RAMVFS()
-
     @op("read", vfs="ram")
     async def recording_read(accessor, scope, **kwargs):
         for path in recorded:
@@ -349,8 +347,12 @@ async def _dispatch_recording_read(recorded: list[str],
                 record("read", path, "ram", 0, start_op())
         yield b""
 
-    vfs.register_op(recording_read)
-    ws = Workspace({"/m": vfs})
+    class RecordingRAMVFS(RAMVFS):
+
+        def ops(self) -> list[RegisteredOp]:
+            return [*super().ops(), *recording_read._registered_ops]
+
+    ws = Workspace({"/m": RecordingRAMVFS()})
     scope = RecordingScope()
     try:
         out, _ = await ws.dispatch("read", PathSpec.from_str_path("/m/k.txt"))

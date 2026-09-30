@@ -13,10 +13,8 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import { RAMIndexCacheStore } from '../../cache/index/ram.ts'
-import type { IndexCacheStore } from '../../cache/index/store.ts'
 import { RAMAccessor } from '../../accessor/ram.ts'
 import { DEV_COMMANDS } from '../../commands/builtin/dev/index.ts'
-import { DEV_STREAMING } from '../../commands/builtin/dev/io.ts'
 import { DEV_OPS } from '../../ops/dev/index.ts'
 import type { RegisteredCommand } from '../../commands/config.ts'
 import type { RegisteredOp } from '../../ops/registry.ts'
@@ -25,7 +23,12 @@ import { RAMVFS } from '../ram/ram.ts'
 import type { RAMStore } from '../ram/store.ts'
 import { type DevFiles, DevStore } from './store.ts'
 
-class DevIndex extends RAMIndexCacheStore {
+/**
+ * The index every DevVFS runs under: it never keeps an entry,
+ * because a path-only index would publish one session's descriptors to
+ * another. Mirrors the `NULL_INDEX` Python's registry uses for DevVFS.
+ */
+export class DevIndex extends RAMIndexCacheStore {
   override seed(): void {
     return undefined
   }
@@ -40,17 +43,6 @@ class DevIndex extends RAMIndexCacheStore {
 export class DevVFS extends RAMVFS {
   override readonly store: RAMStore = new DevStore() as unknown as RAMStore
   override readonly accessor: RAMAccessor = new RAMAccessor(this.store)
-
-  constructor() {
-    super(DEV_STREAMING)
-  }
-
-  private readonly descriptorIndex = new DevIndex()
-
-  override get index(): IndexCacheStore {
-    // A path-only index must not publish one session's descriptors to another.
-    return this.descriptorIndex
-  }
 
   allocateInput(): readonly [string, number] {
     return (this.store.files as DevFiles).allocateInput()

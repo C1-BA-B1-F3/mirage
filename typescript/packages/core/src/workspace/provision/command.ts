@@ -23,8 +23,6 @@ import { PathSpec } from '../../types.ts'
 import type { MountRegistry } from '../mount/registry.ts'
 import type { Namespace } from '../mount/namespace/namespace.ts'
 import type { SessionState } from '../session/session.ts'
-import type { Accessor } from '../../accessor/base.ts'
-import type { VFS } from '../../vfs/base.ts'
 import type { CommandOpts } from '../../commands/config.ts'
 import { rstripSlash } from '../../utils/slash.ts'
 import type { FlagValue } from '../../commands/spec/types.ts'
@@ -189,13 +187,7 @@ export async function handleCommandProvision(
       textArgs = scopedParts.slice(1).filter((p): p is string => typeof p === 'string')
     }
 
-    const vfs = mount.vfs as VFS & { accessor?: Accessor }
-    const accessor = vfs.accessor
-    if (accessor === undefined) {
-      return new ProvisionResult({ command: cmdStr, precision: Precision.UNKNOWN })
-    }
-
-    const rawIndex = mount.index ?? null
+    const rawIndex = mount.index
     const opts: CommandOpts = {
       flags: flagKwargs,
       stdin: null,
@@ -207,7 +199,7 @@ export async function handleCommandProvision(
       index: rawIndex,
     }
 
-    const raw = await cmd.provisionFn(accessor, vfsScopes, textArgs, opts)
+    const raw = await cmd.provisionFn(mount.vfs.accessor, vfsScopes, textArgs, opts)
     const result = raw instanceof ProvisionResult ? raw : new ProvisionResult({ command: cmdStr })
     if (result.command === '') {
       result.command = cmdStr

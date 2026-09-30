@@ -25,7 +25,7 @@ export async function truncate(
   noCreate = false,
 ): Promise<void> {
   const timer = startOp()
-  const root = accessor.rootHandle
+  const root = await accessor.root()
   const key = path.mountPath
   let handle: FileSystemFileHandle
   let existing: Uint8Array

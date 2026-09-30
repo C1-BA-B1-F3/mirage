@@ -16,29 +16,33 @@ from typing import Any
 
 from mirage.accessor.langfuse import LangfuseAccessor
 from mirage.commands.builtin.langfuse import COMMANDS
-from mirage.commands.builtin.langfuse.io import IO
+from mirage.commands.config import RegisteredCommand
+from mirage.commands.registry import registered_commands
 from mirage.ops.langfuse import OPS as LANGFUSE_VFS_OPS
+from mirage.ops.registry import RegisteredOp
 from mirage.types import VFSName
-from mirage.vfs.bound import BoundVFS
+from mirage.vfs.base import BaseVFS
 from mirage.vfs.langfuse.config import LangfuseConfig
 from mirage.vfs.langfuse.prompt import PROMPT
 
 
-class LangfuseVFS(BoundVFS):
+class LangfuseVFS(BaseVFS):
 
     accessor: LangfuseAccessor
     name: str = VFSName.LANGFUSE
     caches_reads: bool = True
-    PROMPT: str = PROMPT
+    prompt: str = PROMPT
 
     def __init__(self, config: LangfuseConfig) -> None:
-        super().__init__(io=IO)
+        super().__init__()
         self.config = config
         self.accessor = LangfuseAccessor(self.config)
-        for fn in COMMANDS:
-            self.register(fn)
-        for fn in LANGFUSE_VFS_OPS:
-            self.register_op(fn)
+
+    def ops(self) -> list[RegisteredOp]:
+        return LANGFUSE_VFS_OPS
+
+    def commands(self) -> list[RegisteredCommand]:
+        return registered_commands(COMMANDS)
 
     def get_state(self) -> dict[str, Any]:
         return self.config_state(self.config)

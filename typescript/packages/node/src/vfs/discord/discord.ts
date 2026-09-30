@@ -12,8 +12,7 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import { BoundVFS } from '@struktoai/mirage-core/vfs/bound'
-import { DISCORD_IO } from '@struktoai/mirage-core/commands/builtin/discord/io'
+import { BaseVFS } from '@struktoai/mirage-core/vfs/base'
 import { DiscordAccessor } from '@struktoai/mirage-core/accessor/discord'
 import { DISCORD_COMMANDS } from '@struktoai/mirage-core/commands/builtin/discord/index'
 
@@ -28,7 +27,6 @@ import type {
 import { DISCORD_OPS } from '@struktoai/mirage-core/ops/discord/index'
 import type { RegisteredOp } from '@struktoai/mirage-core/ops/registry'
 
-import type { VFS } from '@struktoai/mirage-core/vfs/base'
 import { DISCORD_PROMPT, DISCORD_WRITE_PROMPT } from '@struktoai/mirage-core/vfs/discord/prompt'
 import { VFSName } from '@struktoai/mirage-core/types'
 
@@ -37,20 +35,20 @@ export interface DiscordVFSState {
   config: DiscordConfigRedacted
 }
 
-export class DiscordVFS extends BoundVFS<DiscordAccessor> implements VFS {
-  readonly kind: string = VFSName.DISCORD
-  readonly cachesReads: boolean = true
+export class DiscordVFS extends BaseVFS {
+  override readonly name: string = VFSName.DISCORD
+  override readonly cachesReads: boolean = true
   // Every listed file carries an exact size: chat.jsonl and members/*.json
   // are rendered at readdir from payloads the listing already fetched, and
   // attachments carry Discord's CDN byte count.
-  readonly sizesAlwaysKnown: boolean = true
-  readonly prompt: string
-  readonly writePrompt: string = DISCORD_WRITE_PROMPT
+  override readonly sizesAlwaysKnown: boolean = true
+  override readonly prompt: string
+  override readonly writePrompt: string = DISCORD_WRITE_PROMPT
   readonly config: DiscordConfig
-  readonly accessor: DiscordAccessor
+  override readonly accessor: DiscordAccessor
 
   constructor(config: DiscordConfig) {
-    super(DISCORD_IO)
+    super()
     this.config = config
     this.accessor = new DiscordAccessor(
       new NodeDiscordTransport(config.token, config.baseUrl),
@@ -59,17 +57,17 @@ export class DiscordVFS extends BoundVFS<DiscordAccessor> implements VFS {
     this.prompt = DISCORD_PROMPT + this.accessor.timeRange.prompt()
   }
 
-  commands(): readonly RegisteredCommand[] {
+  override commands(): readonly RegisteredCommand[] {
     return DISCORD_COMMANDS
   }
 
-  ops(): readonly RegisteredOp[] {
+  override ops(): readonly RegisteredOp[] {
     return DISCORD_OPS
   }
 
   override getState(): Promise<DiscordVFSState> {
     return Promise.resolve({
-      type: this.kind,
+      type: this.name,
       config: redactDiscordConfig(this.config),
     })
   }

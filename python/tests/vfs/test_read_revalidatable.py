@@ -21,6 +21,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from types import ModuleType
 from unittest.mock import AsyncMock
+from weakref import WeakKeyDictionary
 
 import boto3
 import moto.s3.models
@@ -213,6 +214,9 @@ class Fake:
     # Passed to direct IO calls when the backend resolves through its index;
     # github's stat has nothing to answer from without one.
     index: IndexCacheStore | None = None
+    # Whether that index is the one the mount runs under (github's), which
+    # only exists once a workspace places the driver.
+    mount_index: bool = False
     # False where stat answers from its own request (gdrive): it then takes
     # no index, so the unrecorded row compares two independent reads of the
     # object rather than one index entry with itself.
@@ -222,10 +226,28 @@ class Fake:
         return SLOTS[row] if self.stream_mod is not None else "bytes"
 
     def args(self) -> tuple:
+        if self.mount_index:
+            return (own_index(self.vfs), )
         return () if self.index is None else (self.index, )
 
     def stat_args(self) -> tuple:
         return self.args() if self.stat_indexed else ()
+
+
+# The store each driver's mount runs under, filled when a fresh workspace
+# places it. The index is the mount's, so a harness built before the
+# workspace reads it here rather than off the driver.
+_OWN_INDEX: WeakKeyDictionary[BaseVFS, IndexCacheStore] = WeakKeyDictionary()
+
+
+def own_index(vfs: BaseVFS) -> IndexCacheStore:
+    """The store ``vfs``'s mount runs under, or one kept for direct calls
+    made before any workspace placed it."""
+    store = _OWN_INDEX.get(vfs)
+    if store is None:
+        store = RAMIndexCacheStore(ttl=vfs.index_ttl)
+        _OWN_INDEX[vfs] = store
+    return store
 
 
 class _Download:
@@ -380,7 +402,7 @@ def _hf_fake(name: str, shape: str, data: bytes,
         # prefix. On the mount's own index a cold read does it legitimately;
         # on any other store it is the reconcile probe walking the tree.
         async def watched(store, prefix_: str) -> None:
-            if store is not vfs.index:
+            if store is not _OWN_INDEX.get(vfs):
                 reach.append("tree walk on a throwaway index")
             await invalidate(store, prefix_)
 
@@ -536,7 +558,7 @@ def _github_fake(shape: str, data: bytes,
         invalidate = RAMIndexCacheStore.invalidate_prefix
 
         async def watched(store, prefix_: str) -> None:
-            if store is not vfs.index:
+            if store is not _OWN_INDEX.get(vfs):
                 reach.append("tree walk on a throwaway index")
             await invalidate(store, prefix_)
 
@@ -553,7 +575,7 @@ def _github_fake(shape: str, data: bytes,
                    io=GITHUB_IO,
                    read_mod=github_read,
                    stream_mod=None,
-                   index=vfs.index)
+                   mount_index=True)
 
 
 @contextmanager
@@ -615,13 +637,15 @@ B_CASES = _cases(("bytes", "stream"))
 
 
 def _fresh_workspace(vfs: BaseVFS) -> Workspace:
-    return Workspace({
+    ws = Workspace({
         "/m":
         Mount(vfs=vfs,
               mode=MountMode.WRITE,
               read=ReadSpec(policy=ReadPolicy.FRESH)),
         "/r": (RAMVFS(), MountMode.WRITE),
     })
+    _OWN_INDEX[vfs] = ws.mount("/m").index_store
+    return ws
 
 
 async def _line(ws: Workspace, line: str) -> bytes:
@@ -709,7 +733,7 @@ def _declared() -> set[str]:
         entry = REGISTRY.get(name)
         if entry is None:
             continue
-        if getattr(load_attr(entry.vfs_path), "READ_REVALIDATABLE", False):
+        if load_attr(entry.vfs_path).read_revalidatable:
             declared.add(name)
     return declared
 
@@ -757,7 +781,7 @@ def test_each_family_runs_exactly_its_rows():
 
 
 def test_every_declaring_backend_has_a_harness():
-    """Every READ_REVALIDATABLE backend runs the read-token contract.
+    """Every read_revalidatable backend runs the read-token contract.
 
     The flag lets a mount declare ``read: fresh``, which is a claim that
     stat and an ordinary read stamp the same kind of content token. For a
@@ -1154,7 +1178,7 @@ def test_the_contract_goes_red_on_msgraph_stamping_another_kind(monkeypatch):
     with _fake("onedrive", "root", SEED, monkeypatch) as fake:
         monkeypatch.setitem(vars(drive_ops), "capture_item_metadata",
                             etag_instead)
-        monkeypatch.setattr(fake.vfs, "READ_REVALIDATABLE", True)
+        monkeypatch.setattr(fake.vfs, "read_revalidatable", True)
         virtual = "/m/" + fake.key
 
         async def run():

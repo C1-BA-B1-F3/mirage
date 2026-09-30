@@ -16,16 +16,18 @@ from typing import Any
 
 from mirage.accessor.discord import DiscordAccessor
 from mirage.commands.builtin.discord import COMMANDS
-from mirage.commands.builtin.discord.io import IO
+from mirage.commands.config import RegisteredCommand
+from mirage.commands.registry import registered_commands
 from mirage.core.time_range import TimeRange
 from mirage.ops.discord import OPS as DISCORD_VFS_OPS
+from mirage.ops.registry import RegisteredOp
 from mirage.types import VFSName
-from mirage.vfs.bound import BoundVFS
+from mirage.vfs.base import BaseVFS
 from mirage.vfs.discord.config import DiscordConfig
 from mirage.vfs.discord.prompt import PROMPT, WRITE_PROMPT
 
 
-class DiscordVFS(BoundVFS):
+class DiscordVFS(BaseVFS):
 
     accessor: DiscordAccessor
     name: str = VFSName.DISCORD
@@ -33,21 +35,23 @@ class DiscordVFS(BoundVFS):
     # Every listed file carries an exact size: chat.jsonl and members/*.json
     # are rendered at readdir from payloads the listing already fetched, and
     # attachments carry Discord's CDN byte count.
-    SIZES_ALWAYS_KNOWN: bool = True
-    PROMPT: str = PROMPT
-    WRITE_PROMPT: str = WRITE_PROMPT
+    sizes_always_known: bool = True
+    prompt: str = PROMPT
+    write_prompt: str = WRITE_PROMPT
 
     def __init__(self, config: DiscordConfig) -> None:
-        super().__init__(io=IO)
+        super().__init__()
         self.config = config
         self.accessor = DiscordAccessor(
             self.config,
             TimeRange.from_strings(config.start_time, config.end_time))
-        self.PROMPT = PROMPT + self.accessor.time_range.prompt()
-        for fn in COMMANDS:
-            self.register(fn)
-        for fn in DISCORD_VFS_OPS:
-            self.register_op(fn)
+        self.prompt = PROMPT + self.accessor.time_range.prompt()
+
+    def ops(self) -> list[RegisteredOp]:
+        return DISCORD_VFS_OPS
+
+    def commands(self) -> list[RegisteredCommand]:
+        return registered_commands(COMMANDS)
 
     def get_state(self) -> dict[str, Any]:
         return self.config_state(self.config)

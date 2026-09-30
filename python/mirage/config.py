@@ -726,6 +726,7 @@ class WorkspaceConfig(BaseModel):
                 mode=mode,
                 command_limits=block.command_limits,
                 read=read,
+                vfs_ref=block.vfs,
             )
         kwargs: dict[str, Any] = {
             "mounts": mounts,

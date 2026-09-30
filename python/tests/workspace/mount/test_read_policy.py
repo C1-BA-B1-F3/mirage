@@ -258,7 +258,7 @@ def test_fresh_is_allowed_on_a_constructed_alias():
 
 @pytest.mark.parametrize("cls", S3_ALIASES, ids=lambda c: c.__name__)
 def test_every_s3_alias_inherits_the_capability(cls):
-    assert cls.READ_REVALIDATABLE is True
+    assert cls.read_revalidatable is True
     assert cls.caches_reads is True
 
 
@@ -267,7 +267,7 @@ def test_gridfs_is_allowed_fresh_on_a_constructed_instance():
     # verdict on an instance is what proves gridfs can actually declare
     # `fresh`. The token behind the claim is pinned separately, in
     # tests/core/gridfs/test_read_fingerprint.py.
-    assert GridFSVFS.READ_REVALIDATABLE is True
+    assert GridFSVFS.read_revalidatable is True
     vfs = GridFSVFS(GridFSConfig(uri="mongodb://127.0.0.1:27017",
                                  database="d"))
     assert vfs.caches_reads is True
@@ -279,7 +279,7 @@ def test_gdrive_is_allowed_fresh_on_a_constructed_instance():
     # verdict on an instance is what proves gdrive can declare `fresh`. The
     # token behind the claim is pinned by the read-token contract,
     # tests/vfs/test_read_revalidatable.py.
-    assert GoogleDriveVFS.READ_REVALIDATABLE is True
+    assert GoogleDriveVFS.read_revalidatable is True
     vfs = GoogleDriveVFS(
         GoogleDriveConfig(client_id="c", client_secret="s", refresh_token="r"))
     assert vfs.caches_reads is True
@@ -292,7 +292,7 @@ def test_gdrive_is_allowed_fresh_on_a_constructed_instance():
 def test_google_apps_are_allowed_fresh_on_a_constructed_instance(cls, config):
     # Each stamps the file's Drive modifiedTime on stat and read; the
     # read-token contract pins that the two agree.
-    assert cls.READ_REVALIDATABLE is True
+    assert cls.read_revalidatable is True
     vfs = cls(config(client_id="c", client_secret="s", refresh_token="r"))
     assert vfs.caches_reads is True
     assert check_read_capability("/g/", vfs, FRESH) is None
@@ -302,7 +302,7 @@ def test_hf_buckets_is_allowed_fresh_on_a_constructed_instance():
     # The token behind the claim -- stat's paths-info xetHash equals the
     # download's ETag -- is pinned in tests/core/hf_buckets and by the
     # read-token contract; this proves the verdict itself lets it through.
-    assert HfBucketsVFS.READ_REVALIDATABLE is True
+    assert HfBucketsVFS.read_revalidatable is True
     vfs = HfBucketsVFS(HfBucketsConfig(bucket="acme/data"))
     assert vfs.caches_reads is True
     assert check_read_capability("/hf/", vfs, FRESH) is None
@@ -333,7 +333,7 @@ def test_the_revalidatable_roster_is_exactly_these_backends():
         entry = REGISTRY.get(name)
         if entry is None:
             continue
-        if getattr(load_attr(entry.vfs_path), "READ_REVALIDATABLE", False):
+        if getattr(load_attr(entry.vfs_path), "read_revalidatable", False):
             declared.add(name)
     assert declared == REVALIDATABLE
 

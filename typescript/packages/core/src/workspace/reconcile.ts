@@ -13,10 +13,9 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import { RAMIndexCacheStore } from '../cache/index/ram.ts'
-import { NOOPAccessor } from '../accessor/base.ts'
 import type { FileCache } from '../cache/file/mixin.ts'
 import type { OpsRegistry } from '../ops/registry.ts'
-import type { VFS } from '../vfs/base.ts'
+import type { BaseVFS } from '../vfs/base.ts'
 import { FileStat, PathSpec, ReadPolicy } from '../types.ts'
 import { enoent, isEnoent, isEnotdir, isMissingOp } from '../utils/errors.ts'
 import { mountKey } from '../utils/key_prefix.ts'
@@ -24,7 +23,6 @@ import { rstripSlash } from '../utils/slash.ts'
 import type { MountEntry } from './mount/mount.ts'
 import type { Namespace } from './mount/namespace/namespace.ts'
 
-const NOOP_ACCESSOR = new NOOPAccessor()
 const REVALIDATE_OPS = new Set(['read', 'read_bytes', 'stat'])
 
 enum Verdict {
@@ -61,11 +59,11 @@ enum Verdict {
  * honest price until the two tiers share a scope.
  */
 export class Reconciler {
-  private readonly cache: FileCache & VFS
+  private readonly cache: FileCache & BaseVFS
   private readonly namespace: Namespace
   private readonly opsRegistry: OpsRegistry
 
-  constructor(cache: FileCache & VFS, namespace: Namespace, opsRegistry: OpsRegistry) {
+  constructor(cache: FileCache & BaseVFS, namespace: Namespace, opsRegistry: OpsRegistry) {
     this.cache = cache
     this.namespace = namespace
     this.opsRegistry = opsRegistry
@@ -84,18 +82,13 @@ export class Reconciler {
     })
     let remoteStat: unknown
     try {
-      remoteStat = await this.opsRegistry.call(
-        'stat',
-        vfs,
-        vfs.accessor ?? NOOP_ACCESSOR,
-        scope,
-        [],
-        { index: new RAMIndexCacheStore() },
-      )
+      remoteStat = await this.opsRegistry.call('stat', vfs, vfs.accessor, scope, [], {
+        index: new RAMIndexCacheStore(),
+      })
     } catch (err) {
       if (isEnoent(err) || isEnotdir(err)) {
         await this.onMissing(path)
-        await mount.index?.clear()
+        await mount.index.clear()
         return Verdict.GONE
       }
       // A backend that registers no stat op cannot be revalidated at all.
@@ -107,7 +100,7 @@ export class Reconciler {
       // that stamps ENOTSUP itself takes the logged path on both sides.
       if (isMissingOp(err, 'stat')) {
         await this.cache.remove(path)
-        await mount.index?.clear()
+        await mount.index.clear()
         return Verdict.UNKNOWN
       }
       throw err
@@ -115,12 +108,12 @@ export class Reconciler {
     const fp = remoteStat instanceof FileStat ? remoteStat.fingerprint : null
     if (fp === null) {
       await this.cache.remove(path)
-      await mount.index?.clear()
+      await mount.index.clear()
       return Verdict.UNKNOWN
     }
     if (!(await this.cache.isFresh(path, fp))) {
       await this.cache.remove(path)
-      await mount.index?.clear()
+      await mount.index.clear()
       return Verdict.STALE
     }
     return Verdict.FRESH
@@ -142,7 +135,7 @@ export class Reconciler {
       // a log line and a lifetime of cold reads.
       if (err instanceof TypeError || err instanceof ReferenceError) throw err
       await this.cache.remove(path)
-      await mount.index?.clear()
+      await mount.index.clear()
       console.warn(`probe failed for ${path}: ${String(err)}`)
       return Verdict.UNKNOWN
     }
@@ -205,7 +198,7 @@ export class Reconciler {
       await this.probeOrUnknown(mount, path)
     } catch (err) {
       await this.cache.remove(path)
-      await mount.index?.clear()
+      await mount.index.clear()
       console.warn(`reconcile probe failed for ${path}: ${String(err)}`)
     }
   }

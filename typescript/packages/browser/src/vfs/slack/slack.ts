@@ -12,8 +12,7 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import { BoundVFS } from '@struktoai/mirage-core/vfs/bound'
-import { SLACK_IO } from '@struktoai/mirage-core/commands/builtin/slack/io'
+import { BaseVFS } from '@struktoai/mirage-core/vfs/base'
 import { SlackAccessor } from '@struktoai/mirage-core/accessor/slack'
 
 import { SLACK_COMMANDS } from '@struktoai/mirage-core/commands/builtin/slack/index'
@@ -23,7 +22,6 @@ import { BrowserSlackTransport } from '@struktoai/mirage-core/core/slack/client_
 import type { RegisteredOp } from '@struktoai/mirage-core/ops/registry'
 import { SLACK_OPS } from '@struktoai/mirage-core/ops/slack/index'
 
-import type { VFS } from '@struktoai/mirage-core/vfs/base'
 import { SLACK_PROMPT, SLACK_WRITE_PROMPT } from '@struktoai/mirage-core/vfs/slack/prompt'
 import { VFSName } from '@struktoai/mirage-core/types'
 
@@ -34,21 +32,21 @@ export interface SlackVFSState {
   config: SlackConfigRedacted
 }
 
-export class SlackVFS extends BoundVFS<SlackAccessor> implements VFS {
-  readonly kind: string = VFSName.SLACK
-  readonly cachesReads: boolean = true
+export class SlackVFS extends BaseVFS {
+  override readonly name: string = VFSName.SLACK
+  override readonly cachesReads: boolean = true
   // Every listed file carries an exact size: chat.jsonl and users/*.json
   // are rendered at readdir from payloads the listing already fetched
   // (users.list is payload-identical to users.info, verified live), and
   // file blobs carry Slack's upload byte count.
-  readonly sizesAlwaysKnown: boolean = true
-  readonly prompt: string
-  readonly writePrompt: string = SLACK_WRITE_PROMPT
+  override readonly sizesAlwaysKnown: boolean = true
+  override readonly prompt: string
+  override readonly writePrompt: string = SLACK_WRITE_PROMPT
   readonly config: SlackConfig
-  readonly accessor: SlackAccessor
+  override readonly accessor: SlackAccessor
 
   constructor(config: SlackConfig) {
-    super(SLACK_IO)
+    super()
     this.config = config
     this.accessor = new SlackAccessor(
       new BrowserSlackTransport({
@@ -60,17 +58,17 @@ export class SlackVFS extends BoundVFS<SlackAccessor> implements VFS {
     this.prompt = SLACK_PROMPT + this.accessor.timeRange.prompt()
   }
 
-  commands(): readonly RegisteredCommand[] {
+  override commands(): readonly RegisteredCommand[] {
     return SLACK_COMMANDS
   }
 
-  ops(): readonly RegisteredOp[] {
+  override ops(): readonly RegisteredOp[] {
     return SLACK_OPS
   }
 
   override getState(): Promise<SlackVFSState> {
     return Promise.resolve({
-      type: this.kind,
+      type: this.name,
       config: redactSlackConfig(this.config),
     })
   }

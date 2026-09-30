@@ -62,7 +62,7 @@ query TeamMembers($teamId: String!, $first: Int!, $after: String) {
 """
 
 # The one selection an issue renders from. issue.json's size rides the
-# team listing (SIZES_ALWAYS_KNOWN) while a read fetches the issue alone,
+# team listing (sizes_always_known) while a read fetches the issue alone,
 # so the two queries must select the same fields or the listed size
 # disagrees with the bytes a read delivers; both are built from this.
 ISSUE_FIELDS = """

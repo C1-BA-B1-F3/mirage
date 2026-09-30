@@ -38,6 +38,7 @@ export const MountKey = Object.freeze({
   TTL: 'ttl',
   VFS_CLASS: 'vfs_class',
   VFS_REF: 'vfs_ref',
+  INDEX_CONFIG: 'index_config',
   VFS_STATE: 'vfs_state',
 } as const)
 

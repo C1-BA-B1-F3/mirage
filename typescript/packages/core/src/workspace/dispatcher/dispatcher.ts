@@ -13,7 +13,6 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import { RAMIndexCacheStore } from '../../cache/index/ram.ts'
-import { NOOPAccessor } from '../../accessor/base.ts'
 import { applyIo } from '../../cache/file/io.ts'
 import type { FileCache } from '../../cache/file/mixin.ts'
 import { CacheManager } from '../../cache/manager.ts'
@@ -52,7 +51,7 @@ import { type OpKwargs } from '../../ops/registry.ts'
 import { NO_FOLLOW_OPS, STAMP_WRITE_OPS } from '../../ops/config.ts'
 import { mergeReaddir, namespaceListing, namespaceStat } from '../../ops/namespace_view.ts'
 import { ebusy, isMissingPath } from '../../utils/errors.ts'
-import { cachesReads, type VFS } from '../../vfs/base.ts'
+import type { BaseVFS } from '../../vfs/base.ts'
 import {
   type CacheFacts,
   DEFAULT_READ_TTL,
@@ -91,8 +90,6 @@ import {
 } from '../../context/session_context.ts'
 import { moveReveals } from '../../utils/hidden.ts'
 import { removeRemnants, visibleBelow, type RemnantChannel } from '../../utils/remnants.ts'
-
-const NOOP_ACCESSOR_INSTANCE = new NOOPAccessor()
 
 /**
  * Drop listing entries the current session's spec hides.
@@ -157,7 +154,7 @@ function readWindow(kwargs: OpKwargs | undefined): [number, number | null] {
   ]
 }
 
-export type ResolveFn = (path: string) => Promise<[VFS, PathSpec, MountMode]>
+export type ResolveFn = (path: string) => Promise<[BaseVFS, PathSpec, MountMode]>
 
 /**
  * Stamp the caller's report: memory answered, no backend ran.
@@ -187,7 +184,7 @@ function followOrLoop(namespace: Namespace, path: PathSpec, last: boolean): stri
 
 export class Dispatcher {
   private readonly namespace: Namespace
-  private readonly cache: FileCache & VFS
+  private readonly cache: FileCache & BaseVFS
   private readonly opsRegistry: OpsRegistry
   private readonly policies: Policies
   // The snapshot drift queue rides along because this is the one door:
@@ -199,7 +196,7 @@ export class Dispatcher {
 
   constructor(
     namespace: Namespace,
-    cache: FileCache & VFS,
+    cache: FileCache & BaseVFS,
     opsRegistry: OpsRegistry,
     policies?: Policies,
     drift?: DriftQueue,
@@ -380,7 +377,7 @@ export class Dispatcher {
         }
       }
     }
-    let resolved: [VFS, PathSpec, MountMode]
+    let resolved: [BaseVFS, PathSpec, MountMode]
     try {
       resolved = await this.namespace.resolve(p.virtual, false)
     } catch (err) {
@@ -436,7 +433,7 @@ export class Dispatcher {
     ) {
       throw enotempty(p.virtual)
     }
-    const caches = cachesReads(vfs)
+    const caches = vfs.cachesReads
     // The file cache is keyed on the path alone, and what a command put
     // there is the rendered read. A raw read asks for a different value
     // under the same key, so it must not be served from that cache;
@@ -524,14 +521,7 @@ export class Dispatcher {
                 Promise.resolve(
                   opName === 'setattr'
                     ? this.applySetattr(vfs, scope, p, fullKwargs)
-                    : this.opsRegistry.call(
-                        opName,
-                        vfs,
-                        vfs.accessor ?? NOOP_ACCESSOR_INSTANCE,
-                        scope,
-                        fullArgs,
-                        fullKwargs,
-                      ),
+                    : this.opsRegistry.call(opName, vfs, vfs.accessor, scope, fullArgs, fullKwargs),
                 ),
                 opTimeout,
                 opName,
@@ -667,7 +657,7 @@ export class Dispatcher {
    * opsRegistry.call outside dispatch is a bug.
    */
   private async fencedCall(
-    vfs: VFS,
+    vfs: BaseVFS,
     mountPrefix: string,
     mode: MountMode,
     opName: string,
@@ -701,7 +691,7 @@ export class Dispatcher {
         const answer = await runWithMountContext(
           () =>
             runWithRevisions(mount.revisions.size > 0 ? mount.revisions : null, () =>
-              this.opsRegistry.call(opName, vfs, vfs.accessor ?? NOOP_ACCESSOR_INSTANCE, spec, [], {
+              this.opsRegistry.call(opName, vfs, vfs.accessor, spec, [], {
                 ...this.indexKwargs(mount),
                 ...kwargs,
               }),
@@ -749,7 +739,7 @@ export class Dispatcher {
    * Dispatcher._moved_source_is_dir.
    */
   private async movedSourceIsDir(path: PathSpec, issuer?: symbol): Promise<boolean> {
-    let resolved: [VFS, PathSpec, MountMode]
+    let resolved: [BaseVFS, PathSpec, MountMode]
     try {
       resolved = await this.namespace.resolve(path.virtual, false)
     } catch {
@@ -795,7 +785,7 @@ export class Dispatcher {
    * cannot resurface from the node table once the hide lifts.
    */
   private async rmdirRemnants(
-    vfs: VFS,
+    vfs: BaseVFS,
     path: PathSpec,
     mountPrefix: string,
     mode: MountMode,
@@ -1165,7 +1155,7 @@ export class Dispatcher {
    */
   private async probeOp(
     opName: string,
-    resolved: [VFS, PathSpec, MountMode],
+    resolved: [BaseVFS, PathSpec, MountMode],
     issuer?: symbol,
   ): Promise<unknown> {
     const [vfs, scope] = resolved
@@ -1175,7 +1165,7 @@ export class Dispatcher {
     const filetype = getExtension(scope.virtual)
     try {
       const call = () =>
-        this.opsRegistry.call(opName, vfs, vfs.accessor ?? NOOP_ACCESSOR_INSTANCE, scope, [], {
+        this.opsRegistry.call(opName, vfs, vfs.accessor, scope, [], {
           ...this.indexKwargs(mount),
           ...(filetype !== null ? { filetype } : {}),
         })
@@ -1275,7 +1265,7 @@ export class Dispatcher {
       const filetype = getExtension(scope.virtual)
       try {
         const found = await mount.use(() =>
-          this.opsRegistry.call('stat', vfs, vfs.accessor ?? NOOP_ACCESSOR_INSTANCE, scope, [], {
+          this.opsRegistry.call('stat', vfs, vfs.accessor, scope, [], {
             ...this.indexKwargs(mount),
             ...(filetype !== null ? { filetype } : {}),
           }),
@@ -1304,7 +1294,7 @@ export class Dispatcher {
    * gates as the native half. Mirrors Python's Dispatcher._apply_setattr.
    */
   private async applySetattr(
-    vfs: VFS,
+    vfs: BaseVFS,
     scope: PathSpec,
     p: PathSpec,
     kwargs: OpKwargs,
@@ -1312,14 +1302,7 @@ export class Dispatcher {
     if (this.namespace.isLink(p.virtual) || this.opsRegistry.find('setattr', vfs) === null) {
       return this.overlaySetattr(p, kwargs)
     }
-    const raw = await this.opsRegistry.call(
-      'setattr',
-      vfs,
-      vfs.accessor ?? NOOP_ACCESSOR_INSTANCE,
-      scope,
-      [],
-      kwargs,
-    )
+    const raw = await this.opsRegistry.call('setattr', vfs, vfs.accessor, scope, [], kwargs)
     const residual = raw as Record<string, number | string>
     const applied = SETATTR_KEYS.filter(
       (key) => kwargs[key] !== undefined && kwargs[key] !== null && !(key in residual),
@@ -1375,7 +1358,7 @@ export class Dispatcher {
   private managerFor(mount: MountEntry): CacheManager {
     return (
       mount.cacheManager ??
-      new CacheManager(this.cache, mount.vfs.index ?? null, mount.prefix, cachesReads(mount.vfs))
+      new CacheManager(this.cache, mount.indexStore, mount.prefix, mount.vfs.cachesReads)
     )
   }
 
@@ -1418,7 +1401,7 @@ export class Dispatcher {
   // land in the cache and provision reports phantom cache hits.
   cacheFactsFor = (path: string): CacheFacts => {
     const mount = this.namespace.tryMountFor(path)
-    if (mount === null || mount.retiring || !cachesReads(mount.vfs)) {
+    if (mount === null || mount.retiring || !mount.vfs.cachesReads) {
       return { cacheable: false, ttl: DEFAULT_READ_TTL }
     }
     return { cacheable: true, ttl: mount.read.ttl }
@@ -1439,7 +1422,7 @@ export class Dispatcher {
       const prefix = ownerPrefix(mounts.keys(), path)
       const original = prefix === null ? null : mounts.get(prefix)
       const mount = this.namespace.tryMountFor(path)
-      if (mount === null || original !== mount || mount.retiring || !cachesReads(mount.vfs)) {
+      if (mount === null || original !== mount || mount.retiring || !mount.vfs.cachesReads) {
         return { cacheable: false, ttl: DEFAULT_READ_TTL }
       }
       return { cacheable: true, ttl: mount.read.ttl }

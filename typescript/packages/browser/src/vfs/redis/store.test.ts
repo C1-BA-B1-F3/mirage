@@ -51,10 +51,9 @@ function bodyBytesFetch(fake: ReturnType<typeof createFakeUpstash>, sizes: numbe
 }
 
 describe('UpstashRedisStore', () => {
-  it('open seeds the root directory', async () => {
-    const { store } = make()
-    expect(await store.hasDir('/')).toBe(false)
-    await store.open()
+  it('seeds the root directory before the first command', async () => {
+    const { fake, store } = make()
+    expect(fake.keys()).toEqual([])
     expect(await store.hasDir('/')).toBe(true)
   })
 
@@ -110,7 +109,7 @@ describe('UpstashRedisStore', () => {
     expect(fake.commands.filter((c) => c === 'SET')).toHaveLength(1)
     expect(fake.commands.filter((c) => c === 'APPEND')).toHaveLength(2)
     expect(fake.commands.filter((c) => c === 'RENAME')).toHaveLength(1)
-    expect(fake.keys()).toEqual(['mirage:fs:file:/big'])
+    expect(fake.keys()).toEqual(['mirage:fs:dir', 'mirage:fs:file:/big'])
   })
 
   it('a chunked write that fails leaves the previous content and no temp key', async () => {
@@ -134,7 +133,7 @@ describe('UpstashRedisStore', () => {
     failAppend = true
     await expect(store.setFile('/big', ALL_BYTES)).rejects.toThrow(/cannot reach/)
     expect(await store.getFile('/big')).toEqual(ENC.encode('old'))
-    expect(fake.keys()).toEqual(['mirage:fs:file:/big'])
+    expect(fake.keys()).toEqual(['mirage:fs:dir', 'mirage:fs:file:/big'])
   })
 
   it('a chunked write whose RENAME fails leaves the previous content and no temp key', async () => {
@@ -157,7 +156,7 @@ describe('UpstashRedisStore', () => {
     failRename = true
     await expect(store.setFile('/big', ALL_BYTES)).rejects.toThrow(/cannot reach/)
     expect(await store.getFile('/big')).toEqual(ENC.encode('old'))
-    expect(fake.keys()).toEqual(['mirage:fs:file:/big'])
+    expect(fake.keys()).toEqual(['mirage:fs:dir', 'mirage:fs:file:/big'])
   })
 
   it('matches a keyPrefix holding glob metacharacters literally', async () => {
@@ -257,10 +256,10 @@ describe('UpstashRedisStore', () => {
     await store.addDir('/a')
     await store.addDir('/a/b')
     expect(await store.hasDir('/a')).toBe(true)
-    expect(await store.listDirs()).toEqual(new Set(['/a', '/a/b']))
+    expect(await store.listDirs()).toEqual(new Set(['/', '/a', '/a/b']))
     await store.removeDir('/a/b')
     expect(await store.hasDir('/a/b')).toBe(false)
-    expect(await store.listDirs()).toEqual(new Set(['/a']))
+    expect(await store.listDirs()).toEqual(new Set(['/', '/a']))
   })
 
   it('stores and clears the modified timestamp', async () => {
@@ -354,7 +353,6 @@ describe('UpstashRedisStore', () => {
 
   it('clear removes files, side keys and the dir set', async () => {
     const { fake, store } = make({ scanPageSize: 2 })
-    await store.open()
     for (const p of ['/a', '/b', '/c']) {
       await store.setFile(p, ENC.encode(p))
       await store.setModified(p, 't')
@@ -362,6 +360,16 @@ describe('UpstashRedisStore', () => {
     }
     await store.clear()
     expect(fake.keys()).toEqual([])
+  })
+
+  it('recreates the root before using a cleared store', async () => {
+    const { store } = make()
+    await store.addDir('/old')
+    await store.clear()
+    expect(await store.hasDir('/')).toBe(true)
+    expect(await store.hasDir('/old')).toBe(false)
+    await store.setFile('/new', ENC.encode('new'))
+    expect(await store.getFile('/new')).toEqual(ENC.encode('new'))
   })
 
   it('surfaces the server error message', async () => {
@@ -408,7 +416,6 @@ describe('UpstashRedisStore from a redis url', () => {
       fetchImpl: fake.fetch,
     })
     expect(store.url).toBe('https://db.upstash.io')
-    await store.open()
     expect(await store.hasDir('/')).toBe(true)
   })
 
@@ -418,7 +425,6 @@ describe('UpstashRedisStore from a redis url', () => {
       url: 'rediss://default:p%40ss%2Fw%3Ard@db.upstash.io:6379',
       fetchImpl: fake.fetch,
     })
-    await store.open()
     expect(await store.hasDir('/')).toBe(true)
   })
 
@@ -429,7 +435,6 @@ describe('UpstashRedisStore from a redis url', () => {
       token: 's3cret',
       fetchImpl: fake.fetch,
     })
-    await store.open()
     expect(await store.hasDir('/')).toBe(true)
   })
 
@@ -450,6 +455,6 @@ describe('UpstashRedisStore from a redis url', () => {
   it('names the host when no REST listener answers', async () => {
     const fetchImpl: typeof fetch = () => Promise.reject(new TypeError('Failed to fetch'))
     const store = new UpstashRedisStore({ url: 'rediss://default:t@localhost:6379', fetchImpl })
-    await expect(store.open()).rejects.toThrow(/https:\/\/localhost.*REST listener/)
+    await expect(store.hasDir('/')).rejects.toThrow(/https:\/\/localhost.*REST listener/)
   })
 })

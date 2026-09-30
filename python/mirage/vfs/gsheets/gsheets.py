@@ -16,16 +16,18 @@ from typing import Any
 
 from mirage.accessor.gsheets import GSheetsAccessor
 from mirage.commands.builtin.gsheets import COMMANDS
-from mirage.commands.builtin.gsheets.io import IO
+from mirage.commands.config import RegisteredCommand
+from mirage.commands.registry import registered_commands
 from mirage.core.google.client import TokenManager
 from mirage.ops.gsheets import OPS as GSHEETS_VFS_OPS
+from mirage.ops.registry import RegisteredOp
 from mirage.types import VFSName
-from mirage.vfs.bound import BoundVFS
+from mirage.vfs.base import BaseVFS
 from mirage.vfs.gsheets.config import GSheetsConfig
 from mirage.vfs.gsheets.prompt import PROMPT, WRITE_PROMPT
 
 
-class GSheetsVFS(BoundVFS):
+class GSheetsVFS(BaseVFS):
 
     accessor: GSheetsAccessor
     name: str = VFSName.GSHEETS
@@ -35,19 +37,21 @@ class GSheetsVFS(BoundVFS):
     # VFS.
     index_ttl: float = 86_400
     # Reads stamp listing metadata; a fresh stat checks Drive by file ID.
-    READ_REVALIDATABLE: bool = True
-    PROMPT: str = PROMPT
-    WRITE_PROMPT: str = WRITE_PROMPT
+    read_revalidatable: bool = True
+    prompt: str = PROMPT
+    write_prompt: str = WRITE_PROMPT
 
     def __init__(self, config: GSheetsConfig) -> None:
-        super().__init__(io=IO)
+        super().__init__()
         self.config = config
         self._token_manager = TokenManager(config)
         self.accessor = GSheetsAccessor(self.config, self._token_manager)
-        for fn in COMMANDS:
-            self.register(fn)
-        for fn in GSHEETS_VFS_OPS:
-            self.register_op(fn)
+
+    def ops(self) -> list[RegisteredOp]:
+        return GSHEETS_VFS_OPS
+
+    def commands(self) -> list[RegisteredCommand]:
+        return registered_commands(COMMANDS)
 
     async def close(self) -> None:
         """Drain the token manager's connection pool with the VFS."""

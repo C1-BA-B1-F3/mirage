@@ -19,7 +19,7 @@ import { describe, expect, it } from 'vitest'
 import { runWithRecording } from '@struktoai/mirage-core/observe/context'
 import type { OpRecord } from '@struktoai/mirage-core/observe/record'
 import { MountMode } from '@struktoai/mirage-core/types'
-import type { VFS } from '@struktoai/mirage-core/vfs/base'
+import type { BaseVFS } from '@struktoai/mirage-core/vfs/base'
 import { RAMVFS } from '@struktoai/mirage-core/vfs/ram/ram'
 import type { SSHAccessor } from '../accessor/ssh.ts'
 import { type FakeSftp, makeFakeAccessor } from '../core/ssh/_test_utils.ts'
@@ -91,7 +91,7 @@ function underM(records: readonly OpRecord[]): [string, string][] {
     .map((r) => [r.op, r.path])
 }
 
-async function ledger(vfs: VFS, setup: string | null): Promise<[string, string][]> {
+async function ledger(vfs: BaseVFS, setup: string | null): Promise<[string, string][]> {
   const ws = new Workspace({ '/m': vfs, '/r': new RAMVFS() }, { mode: MountMode.WRITE })
   try {
     if (setup !== null) expect((await ws.shell(setup)).exitCode).toBe(0)
@@ -236,7 +236,7 @@ interface Swept {
   mountId: string
 }
 
-async function sweep(vfs: VFS, setup: string | null): Promise<Swept> {
+async function sweep(vfs: BaseVFS, setup: string | null): Promise<Swept> {
   const ws = new Workspace({ '/m': vfs, '/r': new RAMVFS() }, { mode: MountMode.WRITE })
   try {
     if (setup !== null) expect((await ws.shell(setup)).exitCode).toBe(0)

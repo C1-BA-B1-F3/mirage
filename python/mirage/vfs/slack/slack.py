@@ -16,16 +16,18 @@ from typing import Any
 
 from mirage.accessor.slack import SlackAccessor
 from mirage.commands.builtin.slack import COMMANDS
-from mirage.commands.builtin.slack.io import IO
+from mirage.commands.config import RegisteredCommand
+from mirage.commands.registry import registered_commands
 from mirage.core.time_range import TimeRange
+from mirage.ops.registry import RegisteredOp
 from mirage.ops.slack import OPS as SLACK_VFS_OPS
 from mirage.types import VFSName
-from mirage.vfs.bound import BoundVFS
+from mirage.vfs.base import BaseVFS
 from mirage.vfs.slack.config import SlackConfig
 from mirage.vfs.slack.prompt import PROMPT, WRITE_PROMPT
 
 
-class SlackVFS(BoundVFS):
+class SlackVFS(BaseVFS):
 
     accessor: SlackAccessor
     name: str = VFSName.SLACK
@@ -34,21 +36,23 @@ class SlackVFS(BoundVFS):
     # are rendered at readdir from payloads the listing already fetched
     # (users.list is payload-identical to users.info, verified live), and
     # file blobs carry Slack's upload byte count.
-    SIZES_ALWAYS_KNOWN: bool = True
-    PROMPT: str = PROMPT
-    WRITE_PROMPT: str = WRITE_PROMPT
+    sizes_always_known: bool = True
+    prompt: str = PROMPT
+    write_prompt: str = WRITE_PROMPT
 
     def __init__(self, config: SlackConfig) -> None:
-        super().__init__(io=IO)
+        super().__init__()
         self.config = config
         self.accessor = SlackAccessor(
             self.config,
             TimeRange.from_strings(config.start_time, config.end_time))
-        self.PROMPT = PROMPT + self.accessor.time_range.prompt()
-        for fn in COMMANDS:
-            self.register(fn)
-        for fn in SLACK_VFS_OPS:
-            self.register_op(fn)
+        self.prompt = PROMPT + self.accessor.time_range.prompt()
+
+    def ops(self) -> list[RegisteredOp]:
+        return SLACK_VFS_OPS
+
+    def commands(self) -> list[RegisteredCommand]:
+        return registered_commands(COMMANDS)
 
     def get_state(self) -> dict[str, Any]:
         return self.config_state(self.config)

@@ -19,6 +19,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   Accessor,
+  BaseVFS,
   command,
   CommandSpec,
   ContentType,
@@ -27,7 +28,6 @@ import {
   enotdir,
   FileStat,
   FileType,
-  GenericVFS,
   IOResult,
   MountMode,
   type PathSpec,
@@ -38,7 +38,7 @@ import {
 import { rstripSlash } from "@struktoai/mirage-core/utils/slash";
 
 // A whole custom backend in one script: core functions over your
-// data source, a read adapter with optional writes, one GenericVFS. Every generic
+// data source, a read adapter with optional writes, one BaseVFS. Every generic
 // command (ls, cat, grep, find, head, wc, ...) works for free, and so
 // does versioning, in the shape the content calls for: the wiki's pages
 // are the VFS's own, so they ride its state and a snapshot rebuilds
@@ -194,7 +194,7 @@ function makeIO(writable = true): VFSAdapter<WikiAccessor> {
   });
 }
 
-class WikiVFS extends GenericVFS<WikiAccessor> {
+class WikiVFS extends BaseVFS<WikiAccessor> {
   readonly wiki: WikiAccessor;
 
   constructor(pages: Tree = PAGES) {
@@ -218,7 +218,7 @@ class WikiVFS extends GenericVFS<WikiAccessor> {
   // a remote service keeps the default state instead and is only
   // observed, through the fingerprints its stat reports.
   override getState(): { type: string; pages: Tree } {
-    return { type: this.kind, pages: structuredClone(this.wiki.pages) };
+    return { type: this.name, pages: structuredClone(this.wiki.pages) };
   }
 
   // Typed against the saved shape the loader hands back (`type` plus
@@ -237,7 +237,7 @@ class WikiVFS extends GenericVFS<WikiAccessor> {
 // is handed back needs no name in any registry.
 const FEED: Tree = { "status.md": "All systems go.\n" };
 
-class FeedVFS extends GenericVFS<WikiAccessor> {
+class FeedVFS extends BaseVFS<WikiAccessor> {
   constructor() {
     super({
       name: "feed",

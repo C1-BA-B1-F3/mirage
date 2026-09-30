@@ -12,8 +12,7 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import { BoundVFS } from '../bound.ts'
-import { LANGFUSE_IO } from '../../commands/builtin/langfuse/io.ts'
+import { BaseVFS } from '../base.ts'
 import { LangfuseAccessor } from '../../accessor/langfuse.ts'
 
 import { LANGFUSE_COMMANDS } from '../../commands/builtin/langfuse/index.ts'
@@ -23,7 +22,6 @@ import { HttpLangfuseTransport } from '../../core/langfuse/client.ts'
 import { LANGFUSE_OPS } from '../../ops/langfuse/index.ts'
 import type { RegisteredOp } from '../../ops/registry.ts'
 
-import type { VFS } from '../base.ts'
 import { LANGFUSE_PROMPT } from './prompt.ts'
 import { VFSName } from '../../types.ts'
 
@@ -34,15 +32,15 @@ export interface LangfuseVFSState {
   config: LangfuseConfigRedacted
 }
 
-export class LangfuseVFS extends BoundVFS<LangfuseAccessor> implements VFS {
-  readonly kind: string = VFSName.LANGFUSE
-  readonly cachesReads: boolean = true
-  readonly prompt: string = LANGFUSE_PROMPT
+export class LangfuseVFS extends BaseVFS {
+  override readonly name: string = VFSName.LANGFUSE
+  override readonly cachesReads: boolean = true
+  override readonly prompt: string = LANGFUSE_PROMPT
   readonly config: LangfuseConfig
-  readonly accessor: LangfuseAccessor
+  override readonly accessor: LangfuseAccessor
 
   constructor(config: LangfuseConfig) {
-    super(LANGFUSE_IO)
+    super()
     this.config = config
     const transportOpts: { publicKey: string; secretKey: string; host?: string } = {
       publicKey: config.publicKey,
@@ -66,17 +64,17 @@ export class LangfuseVFS extends BoundVFS<LangfuseAccessor> implements VFS {
     this.accessor = new LangfuseAccessor(new HttpLangfuseTransport(transportOpts), accessorConfig)
   }
 
-  commands(): readonly RegisteredCommand[] {
+  override commands(): readonly RegisteredCommand[] {
     return LANGFUSE_COMMANDS
   }
 
-  ops(): readonly RegisteredOp[] {
+  override ops(): readonly RegisteredOp[] {
     return LANGFUSE_OPS
   }
 
   override getState(): Promise<LangfuseVFSState> {
     return Promise.resolve({
-      type: this.kind,
+      type: this.name,
       config: redactLangfuseConfig(this.config),
     })
   }

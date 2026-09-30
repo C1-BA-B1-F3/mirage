@@ -98,10 +98,10 @@ async def test_ls_answers_from_the_refill_it_just_made():
     with serve(_hub()) as hub:
         vfs = _vfs(hub)
         store = expired_on_arrival()
-        vfs._index = store
         ws = _ws(vfs)
+        ws.mount("/m").index_store = store
         try:
-            assert ws._registry.mount_for("/m/d").vfs.index is store
+            assert ws._registry.mount_for("/m/d").index_store is store
             assert await _out(ws, "ls /m/d") == b"b.txt\n"
         finally:
             await ws.close()

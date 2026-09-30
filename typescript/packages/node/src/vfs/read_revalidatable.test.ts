@@ -92,7 +92,8 @@ import { makeFilename as sheetFilename } from '@struktoai/mirage-core/vfs/gsheet
 import { makeFilename as slideFilename } from '@struktoai/mirage-core/vfs/gslides/slide_entry'
 import { GridFSVFS } from './gridfs/gridfs.ts'
 import { SSHVFS } from './ssh/ssh.ts'
-import { readRevalidatable, type VFS } from '@struktoai/mirage-core/vfs/base'
+import type { BaseVFS } from '@struktoai/mirage-core/vfs/base'
+import type { IndexCacheStore } from '@struktoai/mirage-core/cache/index/store'
 import { checkReadCapability } from '@struktoai/mirage-core/workspace/mount/read_policy'
 import { DEFAULT_READ_TTL, ReadPolicy } from '@struktoai/mirage-core/types'
 
@@ -339,7 +340,7 @@ vi.mock('@struktoai/mirage-core/core/render/json', async (importOriginal) => {
   }
 })
 
-// Python declares READ_REVALIDATABLE as a class attribute, so its twin asserts
+// Python declares read_revalidatable as a class attribute, so its twin asserts
 // it straight off each alias class. A TypeScript class field is per-instance,
 // so the equivalent proof is structural: the flag is declared once on S3VFS,
 // and every provider reaches it through the prototype chain without
@@ -406,19 +407,19 @@ describe('readRevalidatable', () => {
 
 // Rule 3 of the verdict -- `fresh` refused on a backend that caches but
 // stamps no comparable token -- is otherwise exercised only against a
-// stub object cast to VFS. Rule 2 has real backends behind it
+// stub object cast to BaseVFS. Rule 2 has real backends behind it
 // (fingerprint_spike.test.ts uses DiskVFS and RAMVFS), so this is the
 // hole. Roughly 25 node backends set cachesReads and not readRevalidatable;
 // ssh is the documented case: it stamps nothing at all on a read.
 //
 describe('a backend that caches but cannot revalidate refuses fresh', () => {
-  const CASES: [string, () => VFS][] = [['ssh', () => new SSHVFS({ host: 'h', username: 'u' })]]
+  const CASES: [string, () => BaseVFS][] = [['ssh', () => new SSHVFS({ host: 'h', username: 'u' })]]
 
   for (const [name, make] of CASES) {
     it(`${name} caches reads, does not revalidate, and is refused`, () => {
       const vfs = make()
       expect(vfs.cachesReads).toBe(true)
-      expect(readRevalidatable(vfs)).toBe(false)
+      expect(vfs.readRevalidatable).toBe(false)
       expect(() => {
         checkReadCapability('/r/', vfs, { policy: ReadPolicy.FRESH, ttl: DEFAULT_READ_TTL })
       }).toThrow(/comparable content token/)
@@ -430,7 +431,7 @@ describe('a backend that caches but cannot revalidate refuses fresh', () => {
     // verdict is shown to discriminate rather than merely to refuse.
     const vfs = new GDriveVFS({ clientId: 'c', clientSecret: 's', refreshToken: 'r' })
     expect(vfs.cachesReads).toBe(true)
-    expect(readRevalidatable(vfs)).toBe(true)
+    expect(vfs.readRevalidatable).toBe(true)
     expect(() => {
       checkReadCapability('/gd/', vfs, { policy: ReadPolicy.FRESH, ttl: DEFAULT_READ_TTL })
     }).not.toThrow()
@@ -577,7 +578,7 @@ const SPEC_VFS = resolve(
 )
 
 interface Fake {
-  vfs: VFS
+  vfs: BaseVFS
   accessor: Accessor
   key: string
   fetches: () => number
@@ -588,6 +589,22 @@ interface Fake {
   // The slot a stream read records in: github's and gdrive's streams are
   // their whole read handed over, which records through `record`.
   streamSlot: 'stream' | 'bytes'
+}
+
+// The store each driver's mount runs under, filled when a fresh workspace
+// places it. The index is the mount's, so a harness built before the
+// workspace reads it here rather than off the driver.
+const OWN_INDEX = new WeakMap<BaseVFS, IndexCacheStore>()
+
+// The store `vfs`'s mount runs under, or one kept for direct calls made
+// before any workspace placed it.
+function ownIndex(vfs: BaseVFS): IndexCacheStore {
+  let store = OWN_INDEX.get(vfs)
+  if (store === undefined) {
+    store = new RAMIndexCacheStore({ ttl: vfs.indexTtl })
+    OWN_INDEX.set(vfs, store)
+  }
+  return store
 }
 
 function slotOf(fake: Fake, row: Row): string {
@@ -752,7 +769,7 @@ async function makeFake(name: string, shape: Shape, data: Uint8Array): Promise<F
       base_url: 'http://github.test',
     })
     const accessor = vfs.accessor as GitHubAccessor
-    expect(readRevalidatable(vfs)).toBe(true)
+    expect(vfs.readRevalidatable).toBe(true)
     const invalidate = Object.getOwnPropertyDescriptor(
       RAMIndexCacheStore.prototype,
       'invalidatePrefix',
@@ -761,7 +778,7 @@ async function makeFake(name: string, shape: Shape, data: Uint8Array): Promise<F
       this: RAMIndexCacheStore,
       path: string,
     ) {
-      if (this !== vfs.index) H.reach.push('tree walk on a throwaway index')
+      if (this !== OWN_INDEX.get(vfs)) H.reach.push('tree walk on a throwaway index')
       return invalidate.call(this, path)
     })
     const blobs = (): number => gh.log.filter((r) => r === 'blob').length
@@ -776,9 +793,9 @@ async function makeFake(name: string, shape: Shape, data: Uint8Array): Promise<F
       rewrite: (next) => {
         gh.files.set(key, next)
       },
-      readBytes: (p) => GITHUB_IO.readBytes(accessor, p, vfs.index),
-      readStream: (p) => GITHUB_IO.readStream(accessor, p, vfs.index),
-      stat: (p) => GITHUB_IO.stat(accessor, p, vfs.index),
+      readBytes: (p) => GITHUB_IO.readBytes(accessor, p, ownIndex(vfs)),
+      readStream: (p) => GITHUB_IO.readStream(accessor, p, ownIndex(vfs)),
+      stat: (p) => GITHUB_IO.stat(accessor, p, ownIndex(vfs)),
       streamSlot: 'bytes',
     }
   }
@@ -800,7 +817,7 @@ async function makeFake(name: string, shape: Shape, data: Uint8Array): Promise<F
       ...(name === 'sharepoint' ? { site: SITE_NAME, drive: DRIVE_NAME } : {}),
       ...(prefix === null ? {} : { key_prefix: prefix }),
     })
-    expect(readRevalidatable(vfs)).toBe(true)
+    expect(vfs.readRevalidatable).toBe(true)
     const before = graph.fetches()
     const rewrite = (next: Uint8Array): void => {
       graph.write(drive, stored, next)
@@ -838,7 +855,7 @@ async function makeFake(name: string, shape: Shape, data: Uint8Array): Promise<F
     const item = gdriveAdd(key, data)
     const vfs = await buildVfs('gdrive', GDRIVE_CONFIG)
     const accessor = vfs.accessor as GDriveAccessor
-    expect(readRevalidatable(vfs)).toBe(true)
+    expect(vfs.readRevalidatable).toBe(true)
     // An id-addressed backend resolves a path only through an index, so its
     // raw reads take one; stat takes none and answers from its own request.
     const index = new RAMIndexCacheStore()
@@ -863,8 +880,7 @@ async function makeFake(name: string, shape: Shape, data: Uint8Array): Promise<F
     const item = gdriveAdd('a', data, mime)
     const vfs = await buildVfs(name, GDRIVE_CONFIG)
     const accessor = vfs.accessor
-    if (accessor === undefined) throw new Error(`${name} built no accessor`)
-    expect(readRevalidatable(vfs)).toBe(true)
+    expect(vfs.readRevalidatable).toBe(true)
     // The fake names no owner, so the file lists under shared/. A rewrite
     // moves modifiedTime within the same day, which keeps the name.
     const fileKey = `shared/${filename('a', item.id, item.modifiedTime)}`
@@ -904,7 +920,7 @@ async function makeFake(name: string, shape: Shape, data: Uint8Array): Promise<F
       ...(prefix === null ? {} : { key_prefix: prefix }),
     })
     const accessor = vfs.accessor as HfBucketsAccessor
-    expect(readRevalidatable(vfs)).toBe(true)
+    expect(vfs.readRevalidatable).toBe(true)
     op.root = accessor.operatorOptions().root ?? ''
     op.reach = H.reach
     vi.spyOn(accessor, 'operator').mockResolvedValue(op as never)
@@ -939,7 +955,7 @@ async function makeFake(name: string, shape: Shape, data: Uint8Array): Promise<F
       ...(prefix === null ? {} : { key_prefix: prefix }),
     })
     const accessor = vfs.accessor as HfHubAccessor
-    expect(readRevalidatable(vfs)).toBe(true)
+    expect(vfs.readRevalidatable).toBe(true)
     expect(accessor.keyPrefix).toBe(prefix ?? '')
     // A whole-tree refill is the one thing that invalidates a store's prefix.
     // On the mount's own index a cold read does it legitimately; on any other
@@ -954,7 +970,7 @@ async function makeFake(name: string, shape: Shape, data: Uint8Array): Promise<F
       this: RAMIndexCacheStore,
       path: string,
     ) {
-      if (this !== vfs.index) H.reach.push('tree walk on a throwaway index')
+      if (this !== OWN_INDEX.get(vfs)) H.reach.push('tree walk on a throwaway index')
       return invalidate.call(this, path)
     })
     const before = hub.count('resolve')
@@ -982,7 +998,7 @@ async function makeFake(name: string, shape: Shape, data: Uint8Array): Promise<F
       ...(prefix === null ? {} : { key_prefix: prefix }),
     })
     const accessor = vfs.accessor as GridFSAccessor
-    expect(readRevalidatable(vfs)).toBe(true)
+    expect(vfs.readRevalidatable).toBe(true)
     expect(accessor.config.keyPrefix ?? null).toBe(prefix)
     const before = H.opened
     return {
@@ -1007,7 +1023,7 @@ async function makeFake(name: string, shape: Shape, data: Uint8Array): Promise<F
     ...(prefix === null ? {} : { key_prefix: prefix }),
   })
   const accessor = vfs.accessor as S3Accessor
-  expect(readRevalidatable(vfs)).toBe(true)
+  expect(vfs.readRevalidatable).toBe(true)
   expect(accessor.config.keyPrefix ?? null).toBe(prefix)
   const before = s3.calls.get('GetObject') ?? 0
   return {
@@ -1074,14 +1090,16 @@ function specFor(virtual: string, key: string): PathSpec {
   })
 }
 
-function freshWorkspace(vfs: VFS): Workspace {
-  return new Workspace({
+function freshWorkspace(vfs: BaseVFS): Workspace {
+  const ws = new Workspace({
     '/m': new Mount(vfs, {
       mode: MountMode.WRITE,
       read: { policy: ReadPolicy.FRESH, ttl: DEFAULT_READ_TTL },
     }),
     '/r': [new RAMVFS(), MountMode.WRITE],
   })
+  OWN_INDEX.set(vfs, ws.mount('/m').indexStore)
+  return ws
 }
 
 async function line(ws: Workspace, command: string): Promise<Uint8Array> {

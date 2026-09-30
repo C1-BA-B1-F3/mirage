@@ -16,15 +16,17 @@ from typing import Any
 
 from mirage.accessor.postgres import PostgresAccessor
 from mirage.commands.builtin.postgres import COMMANDS
-from mirage.commands.builtin.postgres.io import IO
+from mirage.commands.config import RegisteredCommand
+from mirage.commands.registry import registered_commands
 from mirage.ops.postgres import OPS as POSTGRES_VFS_OPS
+from mirage.ops.registry import RegisteredOp
 from mirage.types import VFSName
-from mirage.vfs.bound import BoundVFS
+from mirage.vfs.base import BaseVFS
 from mirage.vfs.postgres.config import PostgresConfig
 from mirage.vfs.postgres.prompt import PROMPT
 
 
-class PostgresVFS(BoundVFS):
+class PostgresVFS(BaseVFS):
 
     accessor: PostgresAccessor
     name: str = VFSName.POSTGRES
@@ -32,16 +34,18 @@ class PostgresVFS(BoundVFS):
     # A live store: every readdir must hit the backend, so the index is
     # not reused across commands. Mirrors the TypeScript VFS.
     index_ttl: float = 0
-    PROMPT: str = PROMPT
+    prompt: str = PROMPT
 
     def __init__(self, config: PostgresConfig) -> None:
-        super().__init__(io=IO)
+        super().__init__()
         self.config = config
         self.accessor = PostgresAccessor(self.config)
-        for fn in COMMANDS:
-            self.register(fn)
-        for op in POSTGRES_VFS_OPS:
-            self.register_op(op)
+
+    def ops(self) -> list[RegisteredOp]:
+        return POSTGRES_VFS_OPS
+
+    def commands(self) -> list[RegisteredCommand]:
+        return registered_commands(COMMANDS)
 
     def get_state(self) -> dict[str, Any]:
         return self.config_state(self.config)

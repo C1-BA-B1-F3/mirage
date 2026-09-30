@@ -17,7 +17,7 @@ import { command } from '../../commands/config.ts'
 import { CommandSpec, type FlagValue, Operand, Option } from '../../commands/spec/types.ts'
 import { IOResult } from '../../io/types.ts'
 import { JobTable } from '../../shell/job_table/index.ts'
-import { BaseVFS, type VFS } from '../../vfs/base.ts'
+import { BaseVFS } from '../../vfs/base.ts'
 import { MountMode, PathSpec } from '../../types.ts'
 import { MountRegistry } from '../mount/registry.ts'
 import { SessionState } from '../session/session.ts'
@@ -28,8 +28,8 @@ import { RAMVFS } from '../../vfs/ram/ram.ts'
 import { getTestParser } from '../fixtures/workspace_fixture.ts'
 import { Workspace } from '../workspace/workspace.ts'
 
-class StubVFS extends BaseVFS implements VFS {
-  constructor(readonly kind: string) {
+class StubVFS extends BaseVFS {
+  constructor(override readonly name: string) {
     super()
   }
   override close(): Promise<void> {

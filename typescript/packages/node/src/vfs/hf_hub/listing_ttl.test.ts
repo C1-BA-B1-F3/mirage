@@ -14,7 +14,7 @@
 
 import { IndexView } from '@struktoai/mirage-core/cache/index/view'
 import { MountMode, ReadPolicy } from '@struktoai/mirage-core/types'
-import type { VFS } from '@struktoai/mirage-core/vfs/base'
+import type { BaseVFS } from '@struktoai/mirage-core/vfs/base'
 import { Mount } from '@struktoai/mirage-core/workspace/mount/spec'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { ExpiredOnArrival, FakeHub, serveHub } from '../../core/hf_hub/_test_util.ts'
@@ -42,11 +42,11 @@ async function hub(): Promise<FakeHub> {
   return serveHub(fake)
 }
 
-function vfsOf(fake: FakeHub): Promise<VFS> {
+function vfsOf(fake: FakeHub): Promise<BaseVFS> {
   return buildVfs('hf_models', { repo_id: 'acme/widget', endpoint: fake.url })
 }
 
-function ws(vfs: VFS, ttl = 600): Workspace {
+function ws(vfs: BaseVFS, ttl = 600): Workspace {
   return new Workspace({
     '/m': new Mount(vfs, { mode: MountMode.READ, read: { policy: ReadPolicy.BOUNDED, ttl } }),
   })
@@ -111,7 +111,7 @@ describe('hf_hub listings under a shared view', () => {
       w.createSession('s1')
       expect(await out(w, 'ls /m/sub')).toBe(OLD_LS)
       const index = w.registry.mountFor('/m/sub').index
-      await index?.invalidate()
+      await index.invalidate()
       gate = gateRefill()
       const before = fake.count('tree')
       first = out(w, 'ls /m/sub', 's0')
@@ -134,8 +134,8 @@ describe('hf_hub refill answers its own caller', () => {
   it('lists a folder whose refill lands already expired', async () => {
     const fake = await hub()
     const vfs = await vfsOf(fake)
-    ;(vfs as unknown as { _index: ExpiredOnArrival })._index = new ExpiredOnArrival()
     const w = ws(vfs)
+    Object.defineProperty(w.mount('/m'), 'indexStore', { value: new ExpiredOnArrival() })
     try {
       expect(await out(w, 'ls /m/sub')).toBe(OLD_LS)
     } finally {

@@ -58,14 +58,18 @@ export type {
 } from './policy/index.ts'
 export { Outcome, Scope } from './policy/index.ts'
 export { ProvisionResult } from './provision/types.ts'
-export type { VFS } from './vfs/base.ts'
+export { BaseVFS } from './vfs/base.ts'
 export { ChromaVFS } from './vfs/chroma/chroma.ts'
 export { normalizeDatabricksVolumeConfig } from './vfs/databricks_volume/config.ts'
 export { DevVFS } from './vfs/dev/dev.ts'
 export { DifyVFS } from './vfs/dify/dify.ts'
-export { GenericVFS } from './vfs/generic.ts'
 export { AirtableVFS } from './vfs/airtable/airtable.ts'
-export { checkReadContract, type ReadFixture } from './vfs/testing.ts'
+export {
+  checkDriverContract,
+  checkReadContract,
+  DriverOps,
+  type ReadFixture,
+} from './vfs/testing.ts'
 export { VFSAdapter } from './vfs/adapter.ts'
 export type {
   NativeReadOps,

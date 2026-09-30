@@ -14,8 +14,11 @@
 
 from dataclasses import dataclass
 from typing import Any
+from urllib.parse import urlsplit
 
+from mirage.cache.index.config import IndexConfig, IndexType, RedisIndexConfig
 from mirage.commands.cli.types import CLISpec
+from mirage.vfs.secrets import REDACTED_SECRET, has_redacted_secret
 
 
 @dataclass
@@ -29,3 +32,44 @@ class MountArgs:
     default_session_id: str
     default_agent_id: str | None
     clis: dict[str, tuple[str | CLISpec, dict[str, Any] | None]] | None = None
+
+
+def index_config_dump(config: IndexConfig | None,
+                      *,
+                      reveal: bool = False) -> dict[str, Any] | None:
+    """Serialize index placement without exposing URL credentials.
+
+    Args:
+        config (IndexConfig | None): the effective mount index config.
+        reveal (bool): keep credentials for an in-memory workspace copy.
+    """
+    if config is None:
+        return None
+    data = config.model_dump(mode="json")
+    if isinstance(config, RedisIndexConfig) and not reveal:
+        url = urlsplit(config.url)
+        if url.username or url.password:
+            data["url"] = REDACTED_SECRET
+    return data
+
+
+def restore_index_config(data: dict[str, Any] | None,
+                         override: IndexConfig | None,
+                         prefix: str) -> IndexConfig | None:
+    """Restore index settings, requiring fresh credentials when redacted.
+
+    Args:
+        data (dict[str, Any] | None): saved index config.
+        override (IndexConfig | None): an explicit replacement config.
+        prefix (str): the mount prefix for diagnostics.
+    """
+    if override is not None:
+        return override
+    if data is None:
+        return None
+    if has_redacted_secret(data):
+        raise ValueError(f"Workspace.load: mount {prefix!r} needs a Mount "
+                         "override with fresh index credentials")
+    model = (RedisIndexConfig
+             if data.get("type") == IndexType.REDIS else IndexConfig)
+    return model.model_validate(data)

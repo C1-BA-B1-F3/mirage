@@ -13,11 +13,13 @@
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import json
+from functools import partial
 from pathlib import Path
 
 import pytest
 
 from mirage import MountMode, Workspace
+from mirage.commands.builtin.disk.io import IO
 from mirage.types import PathSpec
 from mirage.vfs.disk.disk import DiskVFS
 
@@ -131,16 +133,17 @@ async def test_host_link_contract(host_tree):
     vfs, fixture = host_tree
     root = PathSpec.from_str_path("/")
     assert sorted(vfs.get_state()["files"]) == fixture["visible_files"]
-    assert await vfs.find_flat(
-        root, type="f") == ["/" + p for p in fixture["visible_files"]]
-    assert await vfs.du_size(root) == 13
+    assert await IO.find(vfs.accessor, root, type="f") == [
+        "/" + p for p in fixture["visible_files"]
+    ]
+    assert await IO.du.size(vfs.accessor, root) == 13
     for path in fixture["hidden_paths"]:
         spec = PathSpec.from_str_path(path)
-        assert not await vfs.exists(spec)
+        assert not await IO.exists(vfs.accessor, spec)
         with pytest.raises(FileNotFoundError):
-            await vfs.read_bytes(spec)
+            await IO.read_bytes(vfs.accessor, spec)
         with pytest.raises(FileNotFoundError):
-            await vfs.write(spec, b"changed")
+            await IO.write(vfs.accessor, spec, b"changed")
     assert (vfs.root.parent / "outside/secret.txt").read_text() == "outside\n"
 
 
@@ -148,8 +151,8 @@ async def test_host_link_contract(host_tree):
 async def test_copy_requires_an_exact_destination(host_tree):
     vfs, _ = host_tree
     with pytest.raises(IsADirectoryError):
-        await vfs.copy(PathSpec.from_str_path("/plain.txt"),
-                       PathSpec.from_str_path("/destination"))
+        await IO.copy(vfs.accessor, PathSpec.from_str_path("/plain.txt"),
+                      PathSpec.from_str_path("/destination"))
     assert (vfs.root.parent / "outside/secret.txt").read_text() == "outside\n"
 
 
@@ -198,12 +201,12 @@ async def test_unreadable_tree_is_not_absent_or_empty(host_tree):
     directory = vfs.root / "lib"
     directory.chmod(0)
     try:
-        operations = ((vfs.exists, "lib/a.txt"), (vfs.find_flat, "lib"),
-                      (vfs.du_size, "lib"), (vfs.readdir, "lib"))
+        operations = ((IO.exists, "lib/a.txt"), (IO.find, "lib"),
+                      (IO.du.size, "lib"), (IO.readdir, "lib"))
         for operation, key in operations:
             operand = PathSpec.from_str_path("/data/" + key, key)
             with pytest.raises(PermissionError) as caught:
-                await operation(operand)
+                await partial(operation, vfs.accessor)(operand)
             assert caught.value.filename == operand.virtual
     finally:
         directory.chmod(0o700)
@@ -230,5 +233,6 @@ async def test_root_alias_keeps_the_same_visible_tree(host_tree):
     alias = vfs.root.parent / "alias"
     alias.symlink_to(vfs.root)
     mounted = DiskVFS(str(alias))
-    assert await mounted.du_size(PathSpec.from_str_path("/")) == 13
+    assert await IO.du.size(mounted.accessor,
+                            PathSpec.from_str_path("/")) == 13
     assert sorted(mounted.get_state()["files"]) == fixture["visible_files"]

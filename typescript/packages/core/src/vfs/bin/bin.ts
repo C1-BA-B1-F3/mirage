@@ -15,53 +15,33 @@
 import { BinAccessor } from '../../accessor/bin.ts'
 import { BIN_COMMANDS } from '../../commands/builtin/bin/index.ts'
 import type { RegisteredCommand } from '../../commands/config.ts'
-import { read as readCore } from '../../core/bin/read.ts'
-import { readdir as readdirCore } from '../../core/bin/readdir.ts'
-import { stat as statCore } from '../../core/bin/stat.ts'
 import { BIN_OPS } from '../../ops/bin/index.ts'
 import type { RegisteredOp } from '../../ops/registry.ts'
-import type { FileStat } from '../../types.ts'
-import { type PathSpec, VFSName } from '../../types.ts'
-import { BaseVFS, type VFS } from '../base.ts'
+import { VFSName } from '../../types.ts'
+import { BaseVFS } from '../base.ts'
 
 /**
  * Read-only view VFS backing the /usr/bin mount. Lists one executable
  * file per program the session can run, rendered from the workspace's
  * command lookup on every call; holds no storage of its own.
  */
-export class BinViewVFS extends BaseVFS implements VFS {
-  readonly kind = VFSName.BIN
-  readonly cachesReads = false
+export class BinViewVFS extends BaseVFS {
+  override readonly name = VFSName.BIN
+  override readonly cachesReads = false
   // A stub's size is its rendering: cheap, no network, never null.
-  readonly sizesAlwaysKnown = true
-  readonly accessor: BinAccessor
+  override readonly sizesAlwaysKnown = true
+  override readonly accessor: BinAccessor
 
   constructor(programs: () => string[], note: (name: string) => string | null) {
     super()
     this.accessor = new BinAccessor(programs, note)
   }
 
-  override open(): Promise<void> {
-    return Promise.resolve()
-  }
-
-  ops(): readonly RegisteredOp[] {
+  override ops(): readonly RegisteredOp[] {
     return BIN_OPS
   }
 
-  commands(): readonly RegisteredCommand[] {
+  override commands(): readonly RegisteredCommand[] {
     return BIN_COMMANDS
-  }
-
-  readFile(path: PathSpec): Promise<Uint8Array> {
-    return readCore(this.accessor, path)
-  }
-
-  readdir(path: PathSpec): Promise<string[]> {
-    return readdirCore(this.accessor, path)
-  }
-
-  stat(path: PathSpec): Promise<FileStat> {
-    return statCore(this.accessor, path)
   }
 }

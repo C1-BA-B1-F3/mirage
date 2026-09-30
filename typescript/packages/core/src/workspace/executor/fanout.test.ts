@@ -48,13 +48,10 @@ const STAT_ONLY_DISPATCH: DispatchFn = ((op: string, path: PathSpec) => {
 }) as unknown as DispatchFn
 
 function wireMount(mount: MountEntry): void {
-  const cmds = mount.vfs.commands?.()
-  if (cmds !== undefined) {
-    for (const cmd of cmds) {
-      if (cmd.filetype !== null) mount.register(cmd)
-      else if (cmd.vfs === null) mount.registerGeneral(cmd)
-      else mount.register(cmd)
-    }
+  for (const cmd of mount.vfs.commands()) {
+    if (cmd.filetype !== null) mount.register(cmd)
+    else if (cmd.vfs === null) mount.registerGeneral(cmd)
+    else mount.register(cmd)
   }
 }
 
@@ -736,7 +733,6 @@ describe('traversal cancellation', () => {
             undefined,
             undefined,
             undefined,
-            undefined,
             null,
             source === 'caller' ? controller.signal : undefined,
           ),
@@ -840,6 +836,12 @@ it.each([
     null,
     new IOResult({ exitCode: code, stderr: new TextEncoder().encode('backend failed\n') }),
   ])
+  // The reserved /dev mount is placed with its command table too, so it
+  // answers as one more mount that succeeds with nothing to report.
+  for (const m of reg.allMounts()) {
+    if (m !== primary && m !== child)
+      vi.spyOn(m, 'executeCmd').mockResolvedValue([null, new IOResult()])
+  }
   const [, io] = await fanOutTraversal(
     command,
     [PathSpec.fromStrPath('/')],
@@ -875,6 +877,10 @@ async function duAcross(primaryRows: string, refused: string): Promise<[string, 
     enc.encode('4\t/data/x\n4\t/data\n'),
     new IOResult(),
   ])
+  for (const mount of reg.allMounts()) {
+    if (mount !== primary && mount !== child)
+      vi.spyOn(mount, 'executeCmd').mockResolvedValue([null, new IOResult()])
+  }
   const [out, io] = await fanOutTraversal(
     'du',
     [PathSpec.fromStrPath('/')],
@@ -885,7 +891,6 @@ async function duAcross(primaryRows: string, refused: string): Promise<[string, 
     '/',
     'du /',
     null,
-    undefined,
     undefined,
     duProbe(refused),
   )

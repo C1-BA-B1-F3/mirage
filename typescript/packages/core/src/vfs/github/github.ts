@@ -12,11 +12,8 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import { BoundVFS } from '../bound.ts'
-import { GITHUB_IO } from '../../commands/builtin/github/io.ts'
+import { BaseVFS } from '../base.ts'
 import { GitHubAccessor } from '../../accessor/github.ts'
-import { RAMIndexCacheStore } from '../../cache/index/ram.ts'
-import type { IndexCacheStore } from '../../cache/index/store.ts'
 
 import { GITHUB_COMMANDS } from '../../commands/builtin/github/index.ts'
 import type { RegisteredCommand } from '../../commands/config.ts'
@@ -31,7 +28,6 @@ import { buildDeltaHook } from '../../core/github/watch.ts'
 import { GITHUB_OPS } from '../../ops/github/index.ts'
 import type { RegisteredOp } from '../../ops/registry.ts'
 
-import type { VFS } from '../base.ts'
 import { GITHUB_PROMPT } from './prompt.ts'
 import { VFSName } from '../../types.ts'
 
@@ -49,26 +45,25 @@ export interface GitHubVFSState {
   truncated: boolean
 }
 
-export class GitHubVFS extends BoundVFS<GitHubAccessor> implements VFS {
-  readonly kind: string = VFSName.GITHUB
-  readonly cachesReads: boolean = true
+export class GitHubVFS extends BaseVFS {
+  override readonly name: string = VFSName.GITHUB
+  override readonly cachesReads: boolean = true
   // The git tree API reports the exact blob size for every file; the
   // blob read returns those same bytes, and submodule gitlinks (which
   // have no size and no blob) are excluded from the tree.
-  readonly sizesAlwaysKnown: boolean = true
+  override readonly sizesAlwaysKnown: boolean = true
   // stat and a read both stamp the content-addressed blob sha.
-  readonly supportsSnapshot: boolean = true
-  readonly readRevalidatable: boolean = true
+  override readonly supportsSnapshot: boolean = true
+  override readonly readRevalidatable: boolean = true
   override readonly indexTtl: number = 86_400
-  readonly prompt: string = GITHUB_PROMPT
+  override readonly prompt: string = GITHUB_PROMPT
   readonly config: GitHubConfig
-  readonly accessor: GitHubAccessor
+  override readonly accessor: GitHubAccessor
 
-  private constructor(config: GitHubConfig, accessor: GitHubAccessor, index: IndexCacheStore) {
-    super(GITHUB_IO)
+  private constructor(config: GitHubConfig, accessor: GitHubAccessor) {
+    super()
     this.config = config
     this.accessor = accessor
-    this._index = index
   }
 
   static async create(config: GitHubConfig): Promise<GitHubVFS> {
@@ -88,27 +83,24 @@ export class GitHubVFS extends BoundVFS<GitHubAccessor> implements VFS {
       truncated,
       tree: treeMap,
     })
-    // Not seeded here: the index is keyed by mount prefix, which only a
-    // PathSpec knows, so the first read seeds it from the accessor's tree.
-    const index = new RAMIndexCacheStore({ ttl: 86_400 })
-    return new GitHubVFS(config, accessor, index)
+    return new GitHubVFS(config, accessor)
   }
 
-  commands(): readonly RegisteredCommand[] {
+  override commands(): readonly RegisteredCommand[] {
     return GITHUB_COMMANDS
   }
 
-  ops(): readonly RegisteredOp[] {
+  override ops(): readonly RegisteredOp[] {
     return GITHUB_OPS
   }
 
-  deltaHook(): DeltaHook {
+  override deltaHook(): DeltaHook {
     return buildDeltaHook(this.accessor)
   }
 
   override getState(): Promise<GitHubVFSState> {
     return Promise.resolve({
-      type: this.kind,
+      type: this.name,
       config: redactGitHubConfig(this.config),
       defaultBranch: this.accessor.defaultBranch,
       truncated: this.accessor.truncated,

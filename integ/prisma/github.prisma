@@ -74,6 +74,7 @@ model GithubRepo {
   checks      GithubCheck[]
   statuses    GithubStatus[]
   stagedTrees GithubStagedTree[]
+  blobs       GithubBlob[]
 
   @@id([tenant, fullName])
 }
@@ -422,6 +423,23 @@ model GithubStagedEntry {
   tree GithubStagedTree @relation(fields: [tenant, treeSha], references: [tenant, sha])
 
   @@index([tenant, treeSha])
+  @@index([tenant, sha])
+}
+
+// A blob `POST git/blobs` wrote. No tree holds it until a tree entry names
+// it, so it is kept apart from every tree, and a blob some tree already holds
+// is never written here.
+model GithubBlob {
+  pk     Int    @id @default(autoincrement())
+  tenant String
+  repo   String
+  sha    String
+  data   Bytes
+  seq    Int
+
+  repository GithubRepo @relation(fields: [tenant, repo], references: [tenant, fullName])
+
+  @@index([tenant, repo])
   @@index([tenant, sha])
 }
 

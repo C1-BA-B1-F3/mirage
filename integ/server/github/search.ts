@@ -18,7 +18,7 @@ import type { C } from './config.ts'
 import { combinedStatus } from './actions.ts'
 import { issueJson } from './issues.ts'
 import { pullJson } from './pulls.ts'
-import { blobSha, commitJson } from './wire.ts'
+import { blobSha } from './wire.ts'
 import {
   accountsOf,
   allRepos,
@@ -28,6 +28,7 @@ import {
   metaOf,
   scope,
   commitList,
+  commitsJson,
   repoByName,
   searchTree,
   treeOfBranch,
@@ -648,13 +649,12 @@ async function searchCommits(ctx: Ctx<C>): Promise<Reply> {
       if (!words.every((word) => row.message.toLowerCase().includes(word))) continue
       if (q.has('author') && !q.get('author')?.includes(row.authorLogin)) continue
       if (q.has('hash') && !row.sha.startsWith(q.get('hash')?.[0] ?? '')) continue
-      const item = record(commitJson(row))
+      const [item] = await commitsJson(ctx.db, ctx.tenant, repo, [row])
       items.push({
-        ...item,
+        ...record(item ?? null),
         node_id: `C_${row.sha}`,
         repository,
         html_url: `https://github.com/${repo.fullName}/commit/${row.sha}`,
-        parents: row.parentSha ? [{ sha: row.parentSha }] : [],
       })
     }
   }

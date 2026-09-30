@@ -17,9 +17,8 @@ import { API_PREFIXES } from './config.ts'
 import type { C } from './config.ts'
 import { changeJson, diffTrees } from './diff.ts'
 import type { FileChange } from './diff.ts'
-import { commitJson } from './wire.ts'
 import type { CommitRow } from './wire.ts'
-import { commitTree, divergence, forkOwnedBy, resolveRef, treeAt } from './store.ts'
+import { commitTree, commitsJson, divergence, forkOwnedBy, resolveRef, treeAt } from './store.ts'
 import type { RepoRow, Resolved } from './store.ts'
 import { authedRoute, diffReply, everywhere, fail, param, route, withRepo } from './http.ts'
 
@@ -122,7 +121,7 @@ async function compare(ctx: Ctx<C>, repo: RepoRow): Promise<Reply> {
       ahead_by: ahead,
       behind_by: range.behind,
       total_commits: ahead,
-      commits: [...range.ahead].reverse().map(commitJson),
+      commits: await commitsJson(ctx.db, ctx.tenant, home, [...range.ahead].reverse()),
       files: range.changes.map((c) => changeJson(repo.fullName, c, range.before, range.after)),
     },
   }

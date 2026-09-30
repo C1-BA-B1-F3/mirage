@@ -17,7 +17,7 @@ import type { Ctx, JsonValue, KitRoute } from '../kit/typescript/index.ts'
 import { API_PREFIXES, DEFAULT_LOGIN, REPO_DATE } from './config.ts'
 import type { C } from './config.ts'
 import { commitChanges } from './compare.ts'
-import { PROJECTS_CLASSIC_GONE, commitIdentity, commitJson, nodeId, ownerNode } from './wire.ts'
+import { PROJECTS_CLASSIC_GONE, commitIdentity, nodeId, ownerNode } from './wire.ts'
 import type { CommitRow } from './wire.ts'
 import { createReposAllowed, initRepo } from './seed.ts'
 import { commentConnection, issueConnection, issueNode, issueRow } from './issues.ts'
@@ -39,6 +39,7 @@ import {
   perRepoModels,
   branchNames,
   commitList,
+  commitsJson,
   metaOf,
   repoByName,
   repoIsEmpty,
@@ -498,7 +499,8 @@ export function repoRoutes(): KitRoute<C>[] {
           const at = await resolveRef(ctx.db, ctx.tenant, repo, ctx.query.get('sha') ?? '')
           if (at === null) return fail(404, 'Not Found')
           if (at.history.length === 0) return fail(409, 'Git Repository is empty.')
-          return pagedReply(ctx, (await commitsMatching(ctx, repo, at.history)).map(commitJson))
+          const rows = await commitsMatching(ctx, repo, at.history)
+          return pagedReply(ctx, await commitsJson(ctx.db, ctx.tenant, repo, rows))
         }),
       ),
     ),
@@ -770,6 +772,7 @@ async function handOff(db: C, tenant: string, repo: RepoRow): Promise<void> {
   await db.githubCommit.updateMany({ where: moved, data: { repo: heir.fullName } })
   await db.githubStagedTree.updateMany({ where: moved, data: { repo: heir.fullName } })
   await db.githubTag.updateMany({ where: moved, data: { repo: heir.fullName } })
+  await db.githubBlob.updateMany({ where: moved, data: { repo: heir.fullName } })
   const up = metaOf(repo).parent_seq
   for (const row of rest) {
     const meta = metaOf(row)

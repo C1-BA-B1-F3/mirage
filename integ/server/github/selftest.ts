@@ -25,6 +25,7 @@ import type { JsonValue } from '../kit/typescript/types.ts'
 import { start } from '../kit/typescript/serve.ts'
 import { diffTrees, unifiedDiff } from './diff.ts'
 import { githubFake } from './fake.ts'
+import { blobSha } from './wire.ts'
 
 // The routes the corpus does not reach, or cannot exercise fully, because the
 // gh battery drives the porcelain against a one-repository fixture. A client
@@ -426,9 +427,11 @@ async function seededHistory(at: string): Promise<void> {
       await get(`${base}/search/commits?q=${encodeURIComponent(`repo:${REPO} first change`)}`),
       'items',
     ) as JsonValue[]
-    eq('the first change names that root as its parent', field(found[0] ?? null, 'parents'), [
-      { sha: root },
-    ])
+    eq(
+      'the first change names that root as its parent',
+      (field(found[0] ?? null, 'parents') as JsonValue[]).map((p) => field(p, 'sha')),
+      [root],
+    )
     const resolved = await fetch(`${repo}/git/commits/${root}`, { headers: HEADERS })
     eq('that root still resolves as a commit', resolved.status, 200)
     const compared = await fetch(`${repo}/compare/${root}...main`, { headers: HEADERS })
@@ -1975,6 +1978,341 @@ async function listsProfilesAndForks(at: string): Promise<void> {
   })
 }
 
+// The git database as a client builds a commit from it and reads one back:
+// one directory of a rev at any depth, with or without `recursive`; a blob
+// written on its own and named by a tree; a rev walked back with `^` and
+// `~<n>`; every commit rendering naming its parents and a tree id that lists
+// that tree; and a Pages site's builds, one per build request and per push to
+// its source branch.
+async function gitDatabase(at: string): Promise<void> {
+  const run = 'git-database'
+  const base = `${at}/_run/${run}`
+  await post(`${base}/reset`, { run, tenants: [TENANT], fixture: 'v1' })
+  const repo = `${base}/repos/${REPO}`
+  // A refusal has no tree, and reads as no rows rather than a crash.
+  const paths = (body: JsonValue): JsonValue[] =>
+    ((field(body, 'tree') ?? []) as JsonValue[]).map((it) => field(it, 'path'))
+
+  const whole = await get(`${repo}/git/trees/main?recursive=1`)
+  const under = paths(whole)
+    .map(String)
+    .filter((p) => p.startsWith('src/'))
+    .map((p) => p.slice('src/'.length))
+  const deep = await get(`${repo}/git/trees/main:src?recursive=1`)
+  eq('a recursive <rev>:<dir> lists everything under it, relative', paths(deep), under)
+  eq('and is whole', field(deep, 'truncated'), false)
+  eq(
+    'a one-level <rev>:<dir> keeps its own rows',
+    paths(await get(`${repo}/git/trees/main:src`)).includes('auth/__init__.py'),
+    false,
+  )
+  const auth = paths(await get(`${repo}/git/trees/main:src/auth`))
+  eq('a nested <dir> sent with plain slashes resolves', auth.length, 9)
+  eq(
+    'and sent encoded, as one segment',
+    paths(await get(`${repo}/git/trees/${encodeURIComponent('main:src/auth')}`)),
+    auth,
+  )
+  eq("a missing nested <dir> is GitHub's 404", await refusal(`${repo}/git/trees/main:src/nope`), [
+    404,
+    'Not Found',
+  ])
+  eq(
+    'a <dir> through a file is 422',
+    await refusal(`${repo}/git/trees/main:src/auth/__init__.py`),
+    [422, 'Invalid object requested. SHA must identify a commit or a tree.'],
+  )
+  const trunc = `${base}/repos/integ/repo-trunc/git/trees/main:src`
+  const cut = await get(`${trunc}?recursive=1`)
+  eq(
+    'a truncated repository cuts a recursive <rev>:<dir> to its own rows',
+    [field(cut, 'truncated'), paths(cut).some((p) => String(p).includes('/'))],
+    [true, false],
+  )
+  eq('but not a one-level one', field(await get(trunc), 'truncated'), false)
+
+  const seededTree = String(field(await get(`${repo}/git/trees/main`), 'sha'))
+  const rootSha = String(field(field(await get(`${repo}/git/ref/heads/main`), 'object'), 'sha'))
+  eq(
+    'a seeded root names the tree its branch lists',
+    field(field(field(await get(`${repo}/commits/main`), 'commit'), 'tree'), 'sha'),
+    seededTree,
+  )
+  eq(
+    'and git reads it the same',
+    field(field(await get(`${repo}/git/commits/${rootSha}`), 'tree'), 'sha'),
+    seededTree,
+  )
+  eq(
+    'and that id lists that tree',
+    paths(await get(`${repo}/git/trees/${seededTree}?recursive=1`)),
+    paths(whole),
+  )
+  eq('a root has no parents', field(await get(`${repo}/commits/${rootSha}`), 'parents'), [])
+
+  const hello = await post(`${repo}/git/blobs`, { content: 'hello', encoding: 'utf-8' })
+  eq(
+    'a blob is written on its own',
+    [hello.status, field(hello.body, 'sha')],
+    [201, 'b6fc4c620b67d95f953a5c1c1230aaab5db5a1b0'],
+  )
+  eq(
+    'at its own url',
+    field(hello.body, 'url'),
+    `https://api.github.com/repos/${REPO}/git/blobs/b6fc4c620b67d95f953a5c1c1230aaab5db5a1b0`,
+  )
+  eq(
+    'and reads back',
+    field(await get(`${repo}/git/blobs/b6fc4c620b67d95f953a5c1c1230aaab5db5a1b0`), 'content'),
+    `${Buffer.from('hello').toString('base64')}\n`,
+  )
+  const bytes = Buffer.from([0, 255, 1, 254])
+  const binary = await post(`${repo}/git/blobs`, {
+    content: bytes.toString('base64'),
+    encoding: 'base64',
+  })
+  eq('a base64 blob is its decoded bytes', field(binary.body, 'sha'), blobSha(bytes))
+  eq(
+    'text is the default encoding',
+    field((await post(`${repo}/git/blobs`, { content: 'hello' })).body, 'sha'),
+    'b6fc4c620b67d95f953a5c1c1230aaab5db5a1b0',
+  )
+  const refused = await Promise.all(
+    [
+      {},
+      { content: 1 },
+      { content: 'x', encoding: 'latin1' },
+      { content: '!', encoding: 'base64' },
+    ].map(async (body) => {
+      const r = await post(`${repo}/git/blobs`, body)
+      return [r.status, field(r.body, 'message')]
+    }),
+  )
+  eq('a blob body it cannot read is refused', refused, [
+    [422, 'Invalid request.\n\n"content" wasn\'t supplied.'],
+    [422, 'Invalid request.\n\n"content" is invalid.'],
+    [422, 'Invalid request.\n\n"encoding" is invalid.'],
+    [422, 'Invalid request.\n\n"content" is invalid.'],
+  ])
+  const named = await post(`${repo}/git/trees`, {
+    base_tree: seededTree,
+    tree: [{ path: 'hello.txt', mode: '100644', type: 'blob', sha: field(hello.body, 'sha') }],
+  })
+  eq('a tree entry names the written blob', named.status, 201)
+  const made = await post(`${repo}/git/commits`, {
+    message: 'Add hello',
+    tree: field(named.body, 'sha'),
+    parents: [rootSha],
+  })
+  eq(
+    'a commit made from it names its parent and tree',
+    [
+      (field(made.body, 'parents') as JsonValue[]).map((p) => field(p, 'sha')),
+      field(field(made.body, 'tree'), 'sha'),
+    ],
+    [[rootSha], field(named.body, 'sha')],
+  )
+  const moved = await send('PATCH', `${repo}/git/refs/heads/main`, { sha: field(made.body, 'sha') })
+  eq('the ref moves onto it', moved.status, 200)
+  eq(
+    'and the file is on the branch',
+    Buffer.from(
+      String(field(await get(`${repo}/contents/hello.txt`), 'content')),
+      'base64',
+    ).toString(),
+    'hello',
+  )
+  const empty = await post(`${base}/user/repos`, { name: 'blank' })
+  eq('an empty repository takes no blob', empty.status, 201)
+  const blank = await post(`${base}/repos/integ-user/blank/git/blobs`, { content: 'x' })
+  eq(
+    'it answers 409',
+    [blank.status, field(blank.body, 'message')],
+    [409, 'Git Repository is empty.'],
+  )
+
+  const put = await send('PUT', `${repo}/contents/two.txt`, {
+    message: 'Add two',
+    content: Buffer.from('two').toString('base64'),
+  })
+  const first = String(field(made.body, 'sha'))
+  const written = field(put.body, 'commit')
+  const head = String(field(written, 'sha'))
+  eq(
+    'a contents write answers the git commit, with its parent',
+    (field(written, 'parents') as JsonValue[]).map((p) => field(p, 'sha')),
+    [first],
+  )
+  eq(
+    'and its tree, the one git reads',
+    field(field(written, 'tree'), 'sha'),
+    field(field(await get(`${repo}/git/commits/${head}`), 'tree'), 'sha'),
+  )
+  const detail = await get(`${repo}/commits/${head}`)
+  eq(
+    'the REST commit names the same tree',
+    field(field(field(detail, 'commit'), 'tree'), 'sha'),
+    field(field(written, 'tree'), 'sha'),
+  )
+  eq('and links its parent there', (field(detail, 'parents') as JsonValue[])[0] ?? null, {
+    sha: first,
+    url: `https://api.github.com/repos/${REPO}/commits/${first}`,
+    html_url: `https://github.com/${REPO}/commit/${first}`,
+  })
+  eq(
+    'git links it among git commits',
+    field(
+      (field(await get(`${repo}/git/commits/${head}`), 'parents') as JsonValue[])[0] ?? null,
+      'url',
+    ),
+    `https://api.github.com/repos/${REPO}/git/commits/${first}`,
+  )
+  eq(
+    'every listed commit names its parents',
+    ((await get(`${repo}/commits`)) as JsonValue[]).map((c) =>
+      (field(c, 'parents') as JsonValue[]).map((p) => field(p, 'sha')),
+    ),
+    [[first], [rootSha], []],
+  )
+  eq(
+    'a written tree id lists that tree',
+    paths(await get(`${repo}/git/trees/${String(field(field(written, 'tree'), 'sha'))}`)).includes(
+      'two.txt',
+    ),
+    true,
+  )
+
+  const shaOf = async (ref: string): Promise<JsonValue> => {
+    const r = await send('GET', `${repo}/commits/${ref}`)
+    return r.status === 200 ? field(r.body, 'sha') : r.status
+  }
+  const walked = await Promise.all(
+    ['main^', 'main~1', 'main~', 'main~2', 'main^^', 'main~1^', `${head.slice(0, 7)}^`].map(shaOf),
+  )
+  eq('^ and ~<n> walk first parents', walked, [
+    first,
+    first,
+    first,
+    rootSha,
+    rootSha,
+    rootSha,
+    first,
+  ])
+  eq(
+    '^0 and ^{} name the commit itself',
+    await Promise.all(['main^0', 'main~0', 'main^{}', 'main^{commit}'].map(shaOf)),
+    [head, head, head, head],
+  )
+  eq(
+    'a walk past the root, a second parent or a bare suffix names nothing',
+    await Promise.all(['main~3', 'main^2', 'main^{tree}', '~1', 'nope~1'].map(shaOf)),
+    [422, 422, 422, 422, 422],
+  )
+  const compare = await get(`${repo}/compare/${head}^...${head}`)
+  eq(
+    'compare reads a suffixed base',
+    [
+      field(compare, 'status'),
+      field(compare, 'ahead_by'),
+      (field(compare, 'files') as JsonValue[]).map((f) => field(f, 'filename')),
+    ],
+    ['ahead', 1, ['two.txt']],
+  )
+  eq('and a suffixed branch', field(await get(`${repo}/compare/main~2...main`), 'ahead_by'), 2)
+  eq(
+    "a suffixed ref reads that commit's files",
+    [
+      (await send('GET', `${repo}/contents/hello.txt?ref=main~1`)).status,
+      (await send('GET', `${repo}/contents/two.txt?ref=main~1`)).status,
+    ],
+    [200, 404],
+  )
+  eq(
+    'and lists history from it',
+    ((await get(`${repo}/commits?sha=main~1`)) as JsonValue[]).map((c) => field(c, 'sha')),
+    [first, rootSha],
+  )
+  eq('and names one directory of it', paths(await get(`${repo}/git/trees/main~2:src/auth`)), auth)
+
+  const pages = `${repo}/pages`
+  const docs = 'https://docs.github.com/rest/pages/pages#'
+  const missing = await Promise.all(
+    [
+      ['GET', 'builds'],
+      ['POST', 'builds'],
+      ['GET', 'builds/latest'],
+      ['GET', 'builds/1'],
+    ].map(async ([method, path]) => {
+      const r = await send(String(method), `${pages}/${String(path)}`)
+      return [r.status, field(r.body, 'documentation_url')]
+    }),
+  )
+  eq("without a site every build endpoint is GitHub's 404", missing, [
+    [404, `${docs}list-apiname-pages-builds`],
+    [404, `${docs}request-a-apiname-pages-build`],
+    [404, `${docs}get-latest-pages-build`],
+    [404, `${docs}get-apiname-pages-build`],
+  ])
+  await post(pages, { source: { branch: 'main', path: '/' } })
+  const latest = await get(`${pages}/builds/latest`)
+  eq(
+    'a new site has been built from its source',
+    [field(latest, 'status'), field(latest, 'commit'), field(field(latest, 'pusher'), 'login')],
+    ['built', head, 'integ-user'],
+  )
+  eq('at its own url', field(latest, 'url'), `https://api.github.com/repos/${REPO}/pages/builds/1`)
+  const requested = await post(`${pages}/builds`, {})
+  eq(
+    'a requested build is queued',
+    [requested.status, requested.body],
+    [201, { url: `https://api.github.com/repos/${REPO}/pages/builds/latest`, status: 'queued' }],
+  )
+  const pushed = await send('PUT', `${repo}/contents/three.txt`, {
+    message: 'Add three',
+    content: Buffer.from('three').toString('base64'),
+  })
+  const third = String(field(field(pushed.body, 'commit'), 'sha'))
+  await post(`${repo}/git/refs`, { ref: 'refs/heads/gh-pages', sha: third })
+  await send('PUT', `${repo}/contents/other.txt`, {
+    message: 'Off the source',
+    branch: 'gh-pages',
+    content: Buffer.from('x').toString('base64'),
+  })
+  const builds = () =>
+    get(`${pages}/builds`).then((b) =>
+      (b as JsonValue[]).map((it) => [field(it, 'url'), field(it, 'commit')]),
+    )
+  const url = (n: number): string =>
+    `https://api.github.com/repos/${REPO}/pages/builds/${String(n)}`
+  eq('a push to the source branch builds again, newest first', await builds(), [
+    [url(3), third],
+    [url(2), head],
+    [url(1), head],
+  ])
+  eq('one build by its id', field(await get(`${pages}/builds/2`), 'commit'), head)
+  eq(
+    'an id it never had is 404',
+    await Promise.all(
+      ['9', '0', 'x'].map(async (id) => (await send('GET', `${pages}/builds/${id}`)).status),
+    ),
+    [404, 404, 404],
+  )
+  await send('PUT', pages, { source: { branch: 'gh-pages', path: '/' } })
+  const ghPages = String(field(field(await get(`${repo}/git/ref/heads/gh-pages`), 'object'), 'sha'))
+  eq('a new source is built from', field(await get(`${pages}/builds/latest`), 'commit'), ghPages)
+  await send('DELETE', pages)
+  await post(pages, { build_type: 'workflow' })
+  await send('PUT', `${repo}/contents/four.txt`, {
+    message: 'Add four',
+    content: Buffer.from('four').toString('base64'),
+  })
+  eq(
+    'a site a workflow publishes starts over and is not rebuilt by a push',
+    (await builds()).length,
+    1,
+  )
+}
+
 async function main(): Promise<void> {
   const fake = await launch()
   const at = fake.endpoint
@@ -1986,6 +2324,7 @@ async function main(): Promise<void> {
     await supersededBlobs(at)
     await refsNameCommits(at)
     await abandonedRoot(at)
+    await gitDatabase(at)
     await workflowsAndSettings(at)
     await diffsSearchAndHistory(at)
     await diffsMatchGit()

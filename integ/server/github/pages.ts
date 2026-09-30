@@ -13,19 +13,38 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import type { Ctx, JsonValue, KitRoute, Reply } from '../kit/typescript/index.ts'
-import { API_PREFIXES } from './config.ts'
+import { API_PREFIXES, DEFAULT_LOGIN, REPO_DATE } from './config.ts'
 import type { C } from './config.ts'
-import { branchFor, metaOf } from './store.ts'
+import { simpleUser } from './repos.ts'
+import { accountOf, branchFor, metaOf, repoByName, visibleHeadOf } from './store.ts'
 import type { RepoRow } from './store.ts'
-import { authedRoute, everywhere, fail, jsonBodyOf, route, withRepo } from './http.ts'
+import {
+  authedRoute,
+  everywhere,
+  fail,
+  jsonBodyOf,
+  pagedReply,
+  param,
+  route,
+  withRepo,
+} from './http.ts'
 
-// A repository's GitHub Pages site, as the Pages endpoints set it. The fake
-// builds nothing, so a site reads as built from the moment it exists.
+// One Pages build: the commit it built and who pushed it. Its id is its place
+// in the site's list, counting from 1.
+interface Build {
+  commit: string
+  pusher: string
+}
+
+// A repository's GitHub Pages site, as the Pages endpoints set it, and the
+// builds it has had, oldest first. The fake builds instantly, so a site reads
+// as built from the moment it exists and every build as done.
 interface Site {
   build_type: string
   source: { branch: string; path: string }
   cname: string | null
   https_enforced: boolean
+  builds?: Build[]
 }
 
 const BUILD_TYPES = ['legacy', 'workflow']
@@ -58,11 +77,33 @@ function siteJson(repo: RepoRow, site: Site): JsonValue {
   }
 }
 
-async function store(ctx: Ctx<C>, repo: RepoRow, site: Site | null): Promise<void> {
-  await ctx.db.githubRepo.update({
-    where: { tenant_fullName: { tenant: ctx.tenant, fullName: repo.fullName } },
+async function storeSite(db: C, tenant: string, repo: RepoRow, site: Site | null): Promise<void> {
+  await db.githubRepo.update({
+    where: { tenant_fullName: { tenant, fullName: repo.fullName } },
     data: { pagesJson: site === null ? '' : JSON.stringify(site) },
   })
+}
+
+// The site with one more build, of whatever its source branch points at now.
+async function built(db: C, tenant: string, repo: RepoRow, site: Site): Promise<Site> {
+  const commit = await visibleHeadOf(db, tenant, repo, site.source.branch)
+  return { ...site, builds: [...(site.builds ?? []), { commit, pusher: DEFAULT_LOGIN }] }
+}
+
+// A push to the branch a site is built from builds it again, as GitHub
+// rebuilds a branch-sourced site on every push to that branch. A site a
+// workflow publishes is deployed by the workflow, which the fake never runs.
+export async function rebuildOnPush(
+  db: C,
+  tenant: string,
+  fullName: string,
+  branch: string,
+): Promise<void> {
+  const repo = await repoByName(db, tenant, fullName)
+  const site = repo === null ? null : siteOf(repo)
+  if (repo === null || site === null) return
+  if (site.build_type !== 'legacy' || site.source.branch !== branch) return
+  await storeSite(db, tenant, repo, await built(db, tenant, repo, site))
 }
 
 // The site a body asks for on top of `base`, or null when any field it names
@@ -119,7 +160,7 @@ async function createSite(ctx: Ctx<C>, repo: RepoRow): Promise<Reply> {
   if (site === null || (site.build_type === 'legacy' && body.source === undefined)) {
     return fail(422, 'Validation Failed')
   }
-  await store(ctx, repo, site)
+  await storeSite(ctx.db, ctx.tenant, repo, await built(ctx.db, ctx.tenant, repo, site))
   return { status: 201, body: siteJson(repo, site) }
 }
 
@@ -128,14 +169,87 @@ async function updateSite(ctx: Ctx<C>, repo: RepoRow): Promise<Reply> {
   if (current === null) return fail(404, 'Not Found')
   const site = await edited(ctx, repo, current, jsonBodyOf(ctx))
   if (site === null) return fail(422, 'Validation Failed')
-  await store(ctx, repo, site)
+  // A branch-sourced site moved to another source is built from it.
+  const moved =
+    site.build_type === 'legacy' &&
+    (site.source.branch !== current.source.branch || site.source.path !== current.source.path)
+  const next = moved ? await built(ctx.db, ctx.tenant, repo, site) : site
+  await storeSite(ctx.db, ctx.tenant, repo, next)
   return { status: 204 }
 }
 
 async function deleteSite(ctx: Ctx<C>, repo: RepoRow): Promise<Reply> {
   if (siteOf(repo) === null) return fail(404, 'Not Found')
-  await store(ctx, repo, null)
+  await storeSite(ctx.db, ctx.tenant, repo, null)
   return { status: 204 }
+}
+
+// A build endpoint's 404, which points at that endpoint's own documentation,
+// as GitHub's does (measured 2026-09-30 for the list and the latest build).
+function noBuild(anchor: string): Reply {
+  return {
+    status: 404,
+    body: {
+      message: 'Not Found',
+      documentation_url: `https://docs.github.com/rest/pages/pages#${anchor}`,
+    },
+  }
+}
+
+async function buildJson(ctx: Ctx<C>, repo: RepoRow, build: Build, id: number): Promise<JsonValue> {
+  return {
+    url: `https://api.github.com/repos/${repo.fullName}/pages/builds/${String(id)}`,
+    status: 'built',
+    error: { message: null },
+    pusher: simpleUser(await accountOf(ctx.db, ctx.tenant, build.pusher)),
+    commit: build.commit,
+    duration: 0,
+    created_at: REPO_DATE,
+    updated_at: REPO_DATE,
+  }
+}
+
+// Newest first, as GitHub lists them.
+async function listBuilds(ctx: Ctx<C>, repo: RepoRow): Promise<Reply> {
+  const site = siteOf(repo)
+  if (site === null) return noBuild('list-apiname-pages-builds')
+  const builds = site.builds ?? []
+  const items: JsonValue[] = []
+  for (let at = builds.length - 1; at >= 0; at -= 1) {
+    const build = builds[at]
+    if (build !== undefined) items.push(await buildJson(ctx, repo, build, at + 1))
+  }
+  return pagedReply(ctx, items)
+}
+
+// A requested build runs at once, but the request answers as GitHub's does,
+// queued, pointing at the latest build.
+async function requestBuild(ctx: Ctx<C>, repo: RepoRow): Promise<Reply> {
+  const site = siteOf(repo)
+  if (site === null) return noBuild('request-a-apiname-pages-build')
+  await storeSite(ctx.db, ctx.tenant, repo, await built(ctx.db, ctx.tenant, repo, site))
+  return {
+    status: 201,
+    body: {
+      url: `https://api.github.com/repos/${repo.fullName}/pages/builds/latest`,
+      status: 'queued',
+    },
+  }
+}
+
+async function latestBuild(ctx: Ctx<C>, repo: RepoRow): Promise<Reply> {
+  const builds = siteOf(repo)?.builds ?? []
+  const build = builds.at(-1)
+  if (build === undefined) return noBuild('get-latest-pages-build')
+  return { status: 200, body: await buildJson(ctx, repo, build, builds.length) }
+}
+
+async function oneBuild(ctx: Ctx<C>, repo: RepoRow): Promise<Reply> {
+  const raw = param(ctx, 'id')
+  const id = /^\d+$/.test(raw) ? Number(raw) : 0
+  const build = (siteOf(repo)?.builds ?? [])[id - 1]
+  if (build === undefined) return noBuild('get-apiname-pages-build')
+  return { status: 200, body: await buildJson(ctx, repo, build, id) }
 }
 
 export function pageRoutes(): KitRoute<C>[] {
@@ -146,6 +260,10 @@ export function pageRoutes(): KitRoute<C>[] {
       route<C>('POST', pages, authedRoute(withRepo(createSite)), { write: true }),
       route<C>('PUT', pages, authedRoute(withRepo(updateSite)), { write: true }),
       route<C>('DELETE', pages, authedRoute(withRepo(deleteSite)), { write: true }),
+      route<C>('GET', `${pages}/builds`, authedRoute(withRepo(listBuilds))),
+      route<C>('POST', `${pages}/builds`, authedRoute(withRepo(requestBuild)), { write: true }),
+      route<C>('GET', `${pages}/builds/latest`, authedRoute(withRepo(latestBuild))),
+      route<C>('GET', `${pages}/builds/:id`, authedRoute(withRepo(oneBuild))),
     ]
   })
 }

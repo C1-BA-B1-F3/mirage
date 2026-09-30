@@ -12,16 +12,18 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import type { JsonValue, KitRoute } from '../kit/typescript/index.ts'
+import type { JsonValue, KitRoute, Reply } from '../kit/typescript/index.ts'
 import { API_PREFIXES } from './config.ts'
 import type { C } from './config.ts'
 import { commitChanges } from './compare.ts'
 import { changeJson } from './diff.ts'
-import { blobSha, commitJson, commitSha, personJson, treeSha, writtenCommitJson } from './wire.ts'
-import type { GitPerson } from './wire.ts'
+import { rebuildOnPush } from './pages.ts'
+import { blobSha, commitJson, commitSha, gitCommitJson, personJson, treeSha } from './wire.ts'
+import type { CommitRow, GitPerson } from './wire.ts'
 import {
   blobBySha,
   branchFor,
+  commitTreeId,
   directoriesOf,
   keepRoot,
   keepTree,
@@ -30,6 +32,8 @@ import {
   stageTree,
   submodulesOf,
   treeAt,
+  treeById,
+  treeIdOf,
   treeItems,
   treeOf,
   treeOfBranch,
@@ -113,9 +117,10 @@ async function nextCommitSeq(db: Client, tenant: string, repo: string): Promise<
 // insertion order for a stable listing; no identity or history reads it.
 //
 // `advance` moves the branch's ref onto the new commit, which is what a
-// /contents write does: the write IS the ref update. A plumbing commit passes
-// false and is born dangling, reachable by sha but on no branch until a ref
-// update points at it.
+// /contents write does: the write IS the ref update, and a push, so a Pages
+// site built from the branch builds again. A plumbing commit passes false and
+// is born dangling, reachable by sha but on no branch until a ref update
+// points at it.
 export async function recordCommit(
   db: Client,
   tenant: string,
@@ -129,7 +134,7 @@ export async function recordCommit(
   },
   parent: string | null = null,
   advance = true,
-): Promise<{ sha: string; message: string }> {
+): Promise<CommitRow> {
   const seq = await nextCommitSeq(db, tenant, repo.fullName)
   const authorJson = personJson(people.author)
   const committerJson = personJson(people.committer)
@@ -152,7 +157,7 @@ export async function recordCommit(
   const sha = commitSha(
     [repo.fullName, parentSha, stored, authorJson, committerJson, message].join('\0'),
   )
-  await db.githubCommit.create({
+  const row = (await db.githubCommit.create({
     data: {
       tenant,
       repo: repo.fullName,
@@ -166,14 +171,15 @@ export async function recordCommit(
       committerJson,
       seq,
     },
-  })
+  })) as CommitRow
   if (advance) {
     await db.githubBranch.updateMany({
       where: { tenant, repo: repo.fullName, name: branch },
       data: { headSha: sha },
     })
+    await rebuildOnPush(db, tenant, repo.fullName, branch)
   }
-  return { sha, message }
+  return row
 }
 
 export async function writeFile(
@@ -232,6 +238,17 @@ const contents = withRepo(async (ctx, repo) => {
   return { status: 200, body: listing }
 })
 
+// The bytes a base64 payload spells, or null when it spells none. GitHub
+// accepts a wrapped payload, and wraps its own at 60 columns, so whitespace is
+// stripped before validating rather than refused by it. `base64 file` wraps
+// at 76, and rejecting that made the fake stricter than the service it stands
+// in for.
+export function base64Bytes(raw: string): Buffer | null {
+  const packed = raw.split(/\s+/).join('')
+  if (!/^[A-Za-z0-9+/]*={0,2}$/.test(packed) || packed.length % 4 !== 0) return null
+  return Buffer.from(packed, 'base64')
+}
+
 // GitHub requires the current blob sha to replace an existing file and refuses
 // one for a new file; both are enforced, because a task that reads before
 // writing is doing so for this reason.
@@ -242,15 +259,8 @@ const putContents = withRepo(async (ctx, repo) => {
   if (raw === undefined || raw === null) {
     return fail(422, 'Invalid request.\n\n"content" wasn\'t supplied.')
   }
-  // GitHub accepts a wrapped payload, and wraps its own at 60 columns, so
-  // whitespace is stripped before validating rather than refused by it.
-  // `base64 file` wraps at 76, and rejecting that made the fake stricter than
-  // the service it stands in for.
-  const packed = String(raw).split(/\s+/).join('')
-  if (!/^[A-Za-z0-9+/]*={0,2}$/.test(packed) || packed.length % 4 !== 0) {
-    return fail(422, 'Invalid request.\n\n"content" is invalid.')
-  }
-  const data = Buffer.from(packed, 'base64')
+  const data = base64Bytes(String(raw))
+  if (data === null) return fail(422, 'Invalid request.\n\n"content" is invalid.')
   const branch = await branchFor(ctx.db, ctx.tenant, repo, str(body, 'branch'))
   if (branch === null) return fail(404, 'Branch not found')
   const files = await treeOfBranch(ctx.db, ctx.tenant, repo, branch)
@@ -285,7 +295,10 @@ const putContents = withRepo(async (ctx, repo) => {
   )
   return {
     status: created ? 201 : 200,
-    body: { content: fileJson(path, data), commit: writtenCommitJson(commit) },
+    body: {
+      content: fileJson(path, data),
+      commit: gitCommitJson(repo.fullName, commit, commit.treeSha),
+    },
   }
 })
 
@@ -318,7 +331,10 @@ const deleteContents = withRepo(async (ctx, repo) => {
     undefined,
     parent,
   )
-  return { status: 200, body: { content: null, commit: writtenCommitJson(commit) } }
+  return {
+    status: 200,
+    body: { content: null, commit: gitCommitJson(repo.fullName, commit, commit.treeSha) },
+  }
 })
 
 const readme = withRepo(async (ctx, repo) => {
@@ -355,18 +371,45 @@ const oneCommit = withRepo(async (ctx, repo) => {
   return {
     status: 200,
     body: {
-      ...(commitJson(hit) as Record<string, JsonValue>),
+      ...(commitJson(
+        repo.fullName,
+        hit,
+        await commitTreeId(ctx.db, ctx.tenant, repo, hit),
+      ) as Record<string, JsonValue>),
       stats: { total: additions + deletions, additions, deletions },
       files: changes.map((c) => changeJson(repo.fullName, c, parent?.sha ?? '', hit.sha)),
     },
   }
 })
 
-// The backend passes either a ref name (a recursive whole-tree fetch) or a tree
-// sha from a previous listing (the truncation fallback). A ref is resolved
-// through `resolveRef`, which accepts a commit sha too, because a client that
-// resolves a ref to a commit then asks for the tree by that sha: git accepts
-// it, since a commit names its root tree.
+// One tree listing: the directory `at` of `files`, as its own rows, or with
+// `recursive` every row beneath it, paths relative to it. GitHub recurses for
+// any value of the parameter, 0 and false included. A truncated repository
+// cuts a recursive listing to the directory's own rows, the way git drops deep
+// paths past its entry cap; a one-level listing is never cut short, since the
+// per-directory walk asks for one and reading the recursive answer's
+// truncation onto it refused a listing GitHub would have served whole.
+function treeListing(
+  repo: RepoRow,
+  files: Tree,
+  subs: string[],
+  at: string,
+  sha: string,
+  recursive: boolean,
+): Reply {
+  const cut = !recursive || repo.truncated
+  const items = treeItems(files, subs, at).filter((it) => !cut || !it.path.includes('/'))
+  return { status: 200, body: { sha, tree: items, truncated: recursive && repo.truncated } }
+}
+
+// The tree a request names, as git reads a tree-ish: a ref (branch, tag or
+// commit, any of them with an ancestry suffix), a tree id a commit or a
+// listing reported, or `{rev}:{dir}`, one directory of a rev, whose `dir` may
+// hold slashes, sent plain or encoded. The backend asks the last form for a
+// file's parent, and a tree sha from a previous listing as the truncation
+// fallback. A ref is resolved through `resolveRef`, which accepts a commit sha
+// too, because a client that resolves a ref to a commit then asks for the
+// tree by that sha: git accepts it, since a commit names its root tree.
 //
 // An empty repository is answered first, for every form of the request: the
 // recursive and shallow tree of a ref and one directory of it all 409, measured
@@ -374,12 +417,12 @@ const oneCommit = withRepo(async (ctx, repo) => {
 const gitTree = withRepo(async (ctx, repo) => {
   if (await repoIsEmpty(ctx.db, ctx.tenant, repo)) return fail(409, 'Git Repository is empty.')
   const ref = param(ctx, 'ref')
+  if (ref === '') return fail(404, 'Not Found')
+  const recursive = ctx.query.has('recursive')
   const subs = await submodulesOf(ctx.db, ctx.tenant, repo)
-  // `{ref}:{dir}` names one directory of a ref, the way git's rev syntax does:
-  // the point lookup asks for a file's parent this way. A branch name cannot
-  // hold a colon, so the first one splits it. Measured against GitHub
-  // (2026-09-25): a missing directory or ref is 404, and a path through a
-  // file is 422.
+  // A branch name cannot hold a colon, so the first one splits the rev from
+  // its directory. Measured against GitHub (2026-09-25): a missing directory
+  // or ref is 404, and a path through a file is 422.
   const colon = ref.indexOf(':')
   if (colon >= 0) {
     const files = await treeOf(ctx.db, ctx.tenant, repo, ref.slice(0, colon))
@@ -392,33 +435,19 @@ const gitTree = withRepo(async (ctx, repo) => {
       }
     }
     if (at !== '' && !directoriesOf(files).has(at)) return fail(404, 'Not Found')
-    const shallow = treeItems(files, subs, at).filter((it) => !it.path.includes('/'))
-    return { status: 200, body: { sha: treeSha(at), tree: shallow, truncated: false } }
+    const sha = at === '' ? treeIdOf(repo, files) : treeSha(at)
+    return treeListing(repo, files, subs, at, sha, recursive)
   }
   const files = await treeOf(ctx.db, ctx.tenant, repo, ref)
-  if (files === null) {
-    // Not a ref, so it may be one directory's tree sha. A per-sha tree GET is
-    // one level deep in git; only the ref-name request carries recursive=1.
-    const whole = await treeOfBranch(ctx.db, ctx.tenant, repo, repo.defaultBranch)
-    const at = [...directoriesOf(whole)].sort().find((d) => treeSha(d) === ref)
-    if (at === undefined) return fail(404, 'Not Found')
-    const shallow = treeItems(whole, subs, at).filter((it) => !it.path.includes('/'))
-    return { status: 200, body: { sha: treeSha(at), tree: shallow, truncated: false } }
-  }
-  // Without recursive a ref names only its root directory's own rows, and
-  // a listing that small is never cut short: the per-directory walk asks for
-  // the root this way, and reading the recursive answer's truncation onto it
-  // refused a listing GitHub would have served whole.
-  // GitHub recurses for any value of the parameter, 0 and false included.
-  if (!ctx.query.has('recursive')) {
-    const shallow = treeItems(files, subs).filter((it) => !it.path.includes('/'))
-    return { status: 200, body: { sha: treeSha(''), tree: shallow, truncated: false } }
-  }
-  // A truncated recursive tree keeps only the top-level entries, the way git
-  // drops deep paths past its entry cap.
-  let items = treeItems(files, subs)
-  if (repo.truncated) items = items.filter((it) => !it.path.includes('/'))
-  return { status: 200, body: { sha: treeSha(''), tree: items, truncated: repo.truncated } }
+  if (files !== null) return treeListing(repo, files, subs, '', treeIdOf(repo, files), recursive)
+  const whole = await treeById(ctx.db, ctx.tenant, repo, ref)
+  if (whole !== null) return treeListing(repo, whole, subs, '', ref, recursive)
+  // Not a whole tree, so it may be one directory's tree sha, which names that
+  // directory of the default branch.
+  const branch = await treeOfBranch(ctx.db, ctx.tenant, repo, repo.defaultBranch)
+  const at = [...directoriesOf(branch)].sort().find((d) => treeSha(d) === ref)
+  if (at === undefined) return fail(404, 'Not Found')
+  return treeListing(repo, branch, subs, at, ref, recursive)
 })
 
 // GitHub wraps a base64 payload rather than emitting one long line, and so
@@ -445,7 +474,7 @@ export function contentRoutes(): KitRoute<C>[] {
     }),
     route<C>('GET', `${p}/repos/:owner/:repo/readme`, authedRoute(readme)),
     route<C>('GET', `${p}/repos/:owner/:repo/commits/*ref`, authedRoute(oneCommit)),
-    route<C>('GET', `${p}/repos/:owner/:repo/git/trees/:ref`, authedRoute(gitTree)),
+    route<C>('GET', `${p}/repos/:owner/:repo/git/trees/*ref`, authedRoute(gitTree)),
     route<C>(
       'GET',
       `${p}/repos/:owner/:repo/git/blobs/:sha`,

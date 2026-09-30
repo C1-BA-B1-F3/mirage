@@ -18,7 +18,7 @@ import type { Dmmf, JsonValue } from '../kit/typescript/index.ts'
 import { DEFAULT_LOGIN, REPO_DATE, SEARCH_SIZE_LIMIT, config } from './config.ts'
 import type { C } from './config.ts'
 import { languagesOf } from './languages.ts'
-import { blobSha, commitSha, rootCommit, rootSha, treeSha } from './wire.ts'
+import { blobSha, commitJson, commitSha, rootCommit, rootSha, treeSha } from './wire.ts'
 import type { CommitRow } from './wire.ts'
 
 export interface RepoRow {
@@ -329,15 +329,39 @@ export async function blobBySha(
     const files = await treeOfBranch(db, tenant, repo, branch)
     for (const data of files.values()) if (blobSha(data) === sha) return data
   }
+  const network = await networkNames(db, tenant, repo)
   const staged = await db.githubStagedTree.findMany({
-    where: { tenant, repo: { in: await networkNames(db, tenant, repo) } },
+    where: { tenant, repo: { in: network } },
     select: { sha: true },
   })
-  const row = await db.githubStagedEntry.findFirst({
-    where: { tenant, sha, treeSha: { in: staged.map((t) => t.sha) } },
-    select: { data: true },
-  })
+  const row =
+    (await db.githubStagedEntry.findFirst({
+      where: { tenant, sha, treeSha: { in: staged.map((t) => t.sha) } },
+      select: { data: true },
+    })) ??
+    (await db.githubBlob.findFirst({
+      where: { tenant, repo: { in: network }, sha },
+      select: { data: true },
+    }))
   return row === null ? null : Buffer.from(row.data)
+}
+
+// Store a blob `POST git/blobs` wrote, which no tree holds until an entry
+// names it, and answer its sha. A blob is its bytes, so bytes the network
+// can already read are not stored twice.
+export async function storeBlob(
+  db: C,
+  tenant: string,
+  repo: RepoRow,
+  data: Buffer,
+): Promise<string> {
+  const sha = blobSha(data)
+  if ((await blobBySha(db, tenant, repo, sha)) !== null) return sha
+  const count = await db.githubBlob.count({ where: { tenant, repo: repo.fullName } })
+  await db.githubBlob.create({
+    data: { tenant, repo: repo.fullName, sha, data: new Uint8Array(data), seq: count },
+  })
+  return sha
 }
 
 // Stage the tree a write is about to replace, so the bytes it drops stay
@@ -390,13 +414,63 @@ export async function keepRoot(
   })
 }
 
+// The id a whole tree has, staged or not: the one `stageTree` stores it
+// under, so a seeded branch's tree and the snapshot a write later keeps of it
+// are one object.
+export function treeIdOf(repo: RepoRow, files: Tree): string {
+  return treeSha(`${repo.fullName}\0${treeFingerprint(files)}`)
+}
+
+// The whole tree an id names: one a write staged, or the tree a branch holds
+// now, which nothing has staged while the branch is still as seeded.
+export async function treeById(
+  db: C,
+  tenant: string,
+  repo: RepoRow,
+  sha: string,
+): Promise<Tree | null> {
+  const staged = await stagedTree(db, tenant, repo, sha)
+  if (staged !== null) return staged
+  for (const branch of await branchNames(db, tenant, repo)) {
+    const files = await treeOfBranch(db, tenant, repo, branch)
+    if (files.size > 0 && treeIdOf(repo, files) === sha) return files
+  }
+  return null
+}
+
+// The tree a commit names, as every commit rendering reports it: the one it
+// was written with, or for a synthesized root the id of the files it holds.
+export async function commitTreeId(
+  db: C,
+  tenant: string,
+  repo: RepoRow,
+  commit: CommitRow,
+): Promise<string> {
+  if (commit.treeSha !== '') return commit.treeSha
+  return treeIdOf(repo, await commitTree(db, tenant, repo, commit))
+}
+
+// Commits as the REST endpoints list them, each naming its tree.
+export async function commitsJson(
+  db: C,
+  tenant: string,
+  repo: RepoRow,
+  rows: CommitRow[],
+): Promise<JsonValue[]> {
+  const out: JsonValue[] = []
+  for (const row of rows) {
+    out.push(commitJson(repo.fullName, row, await commitTreeId(db, tenant, repo, row)))
+  }
+  return out
+}
+
 export async function stageTree(
   db: C,
   tenant: string,
   repo: RepoRow,
   files: Tree,
 ): Promise<string> {
-  const sha = treeSha(`${repo.fullName}\0${treeFingerprint(files)}`)
+  const sha = treeIdOf(repo, files)
   const already = await db.githubStagedTree.findFirst({
     where: { tenant, repo: repo.fullName, sha },
   })
@@ -538,17 +612,56 @@ async function resolveTag(
   return { branch: null, history: historyFrom(sha, await commitsBySha(db, tenant, repo)) }
 }
 
+// One step of git's ancestry suffix: `^{}` or `^{commit}` peels to the commit,
+// `^<n>` names its nth parent and `~<n>` its nth first-parent ancestor, a bare
+// `^` or `~` meaning 1.
+const ANCESTRY_STEP = /^(?:\^\{(?:commit)?\}|\^(\d*)|~(\d*))/
+
+// How many first parents a suffix walks back, or null for one that names no
+// commit. The fake's history is first parents only, so `^<n>` past 1 names
+// nothing, as it does in git on a commit with one parent.
+function ancestrySteps(suffix: string): number | null {
+  let steps = 0
+  let rest = suffix
+  while (rest !== '') {
+    const step = ANCESTRY_STEP.exec(rest)
+    if (step === null) return null
+    rest = rest.slice(step[0].length)
+    const [, parent, back] = step
+    if (parent !== undefined) {
+      const n = parent === '' ? 1 : Number(parent)
+      if (n > 1) return null
+      steps += n
+    } else if (back !== undefined) {
+      steps += back === '' ? 1 : Number(back)
+    }
+  }
+  return steps
+}
+
 // A fully qualified name stays in its namespace. Otherwise an existing full
 // commit sha wins, followed by a branch, a tag, then an unambiguous
 // abbreviated sha. A name under `tags/` reads in git's order: the tag it
 // names, then a tag or a branch spelled that way whole, so a branch called
 // `tags/release` is still found by that name.
+//
+// Any of them takes git's ancestry suffix, `main~2` or `<sha>^`: a ref name
+// cannot hold `^` or `~`, so the first one starts it. What it names is a
+// commit, never the branch it was walked from.
 export async function resolveRef(
   db: C,
   tenant: string,
   repo: RepoRow,
   ref: string | null,
 ): Promise<Resolved | null> {
+  const cut = ref === null ? -1 : ref.search(/[~^]/)
+  if (ref !== null && cut >= 0) {
+    const steps = ancestrySteps(ref.slice(cut))
+    const from =
+      steps === null || cut === 0 ? null : await resolveRef(db, tenant, repo, ref.slice(0, cut))
+    const history = from === null || steps === null ? [] : from.history.slice(steps)
+    return history.length === 0 ? null : { branch: null, history }
+  }
   if (ref !== null && ref.startsWith('refs/tags/')) {
     return await resolveTag(db, tenant, repo, ref.slice('refs/tags/'.length))
   }

@@ -15,6 +15,8 @@
 import { route } from '../kit/typescript/index.ts'
 import type { Ctx, JsonValue, KitRoute, Reply } from '../kit/typescript/index.ts'
 import type { C } from './config.ts'
+import { unifiedDiff } from './diff.ts'
+import type { FileChange } from './diff.ts'
 import { errorBody } from './wire.ts'
 import { repoByName } from './store.ts'
 import type { RepoRow } from './store.ts'
@@ -29,6 +31,15 @@ export function fail(status: number, message: string): Reply {
   return { status, body: errorBody(message) }
 }
 
+// GitHub's 422 for a request whose fields it read and refused, each refusal
+// named in `errors`, with the page of the docs that describes the endpoint.
+export function validationFailed(errors: JsonValue[], documentation: string): Reply {
+  return {
+    status: 422,
+    body: { message: 'Validation Failed', errors, documentation_url: documentation, status: '422' },
+  }
+}
+
 // Every repository route refuses an unauthenticated caller before it looks
 // anything up, which is what the vendor does and what a golden pins: an
 // anonymous read of a private-by-default fake is 401, not 404.
@@ -37,6 +48,24 @@ export function authedRoute(fn: Handler): Handler {
     const auth = ctx.headers.authorization
     if (auth === undefined || auth === '') return fail(401, 'Requires authentication')
     return await fn(ctx)
+  }
+}
+
+// A pull request, a comparison or a commit asked for as
+// `application/vnd.github.diff` answers its unified diff as text instead of
+// its JSON; null when the caller asked for JSON. Asked for as a patch, which
+// GitHub answers with `git format-patch` mail per commit, it refuses rather
+// than answer JSON the caller would print as a patch.
+export function diffReply(ctx: Ctx<C>, changes: FileChange[]): Reply | null {
+  const accept = ctx.headers.accept ?? ''
+  if (accept.includes('patch')) {
+    return fail(415, 'A patch is a mail per commit, which the integ fake does not model.')
+  }
+  if (!accept.includes('diff')) return null
+  return {
+    status: 200,
+    body: unifiedDiff(changes),
+    headers: { 'Content-Type': 'text/plain' },
   }
 }
 
@@ -90,6 +119,22 @@ export function paged(ctx: Ctx<C>, items: JsonValue[]): Page | null {
     headers.Link = `<${base}?${query.toString()}>; rel="next"`
   }
   return { items: batch, headers }
+}
+
+// A list in the order a `sort` and `direction` ask for, before it is paged.
+// Equal keys fall back to the number in the same direction, since every date
+// the fake stamps is the same one.
+export function ordered<T extends { number: number }>(
+  rows: T[],
+  key: (row: T) => number | string,
+  direction: string,
+): T[] {
+  const sign = direction === 'asc' ? 1 : -1
+  return [...rows].sort((a, b) => {
+    const x = key(a)
+    const y = key(b)
+    return sign * (x < y ? -1 : x > y ? 1 : a.number - b.number)
+  })
 }
 
 export function pagedReply(ctx: Ctx<C>, items: JsonValue[], key?: string): Reply {

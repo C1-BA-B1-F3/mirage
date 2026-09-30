@@ -366,6 +366,10 @@ export const SEARCH_SHAPES: Record<string, [string, string, string][]> = {
   ],
 }
 
+// gh 2.85's `diffHeaderRegexp`, the `diff --git` header `--name-only` reads a
+// name from, with Go's `\s` and `.` spelled out so no host widens them.
+export const DIFF_HEADER = /(?:^|\n)diff[\t\n\f\r ]--git[^\n]*[\t\n\f\r ](["]?)b\/([^\n]*)/g
+
 export const TEMPLATE_TOKEN = /"(?:\\.|[^"\\])*"|`[^`]*`|[^\s|]+|\|/g
 export const TEMPLATE_ACTION = /{{(-?)\s*(.*?)\s*(-?)}}/gs
 export const TEMPLATE_DECLARATION =

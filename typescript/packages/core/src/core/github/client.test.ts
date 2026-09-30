@@ -129,6 +129,15 @@ describe('HttpGitHubTransport', () => {
     expect(SEEN[0]?.url).toBe('https://api.example.test/repos/o/r/contents/%7Btmpl%7D')
   })
 
+  // The same for a path's `:name`, Octokit's legacy placeholder: the head of
+  // `main...owner:branch` lost `:branch` and asked for another comparison.
+  it('keeps a colon in a path instead of reading it as a placeholder', async () => {
+    await transport().get('/repos/o/r/compare/main...fork-owner:feature')
+    expect(SEEN[0]?.url).toBe(
+      'https://api.example.test/repos/o/r/compare/main...fork-owner%3Afeature',
+    )
+  })
+
   it('percent-encodes a space in a path', async () => {
     await transport().get('/repos/o/r/contents/my file.txt')
     expect(SEEN[0]?.url).toBe('https://api.example.test/repos/o/r/contents/my%20file.txt')

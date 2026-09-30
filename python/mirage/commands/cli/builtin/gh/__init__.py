@@ -228,7 +228,10 @@ def _pr() -> CLISpec:
                                description="View changes in a pull request",
                                fn=pull_commands.diff_cmd,
                                positional=(NUMBER, ),
-                               options=(REPO, )),
+                               options=(REPO,
+                                        Option(long="--name-only",
+                                               description="Display only "
+                                               "names of changed files"))),
                        CLISpec(name="checks",
                                description="Show CI checks for a pull request",
                                fn=pull_commands.checks_cmd,

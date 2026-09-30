@@ -12,6 +12,7 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import { DIFF_HEADER } from './constants.ts'
 import { commentsFor, commentsText } from './issue.ts'
 import { FlagView } from '../../../spec/flag_view.ts'
 import type { CommandFnResult } from '../../../config.ts'
@@ -486,7 +487,22 @@ export async function diffCmd(inv: CLIInvocation): Promise<CommandFnResult> {
   const fl = new FlagView(inv.flags)
   const [ref, number] = target(inv, fl)
   const value = await diffPull(ghTransport(inv.config), ref, number)
+  if (fl.asBool('name_only')) {
+    return textOut(
+      changedNames(value)
+        .map((name) => `${name}\n`)
+        .join(''),
+    )
+  }
   return textOut(value.endsWith('\n') ? value : `${value}\n`)
+}
+
+/**
+ * The files a diff changes, as `gh pr diff --name-only` reads them: the `b/`
+ * side of each `diff --git` header, quotes and all.
+ */
+function changedNames(diff: string): string[] {
+  return [...diff.matchAll(DIFF_HEADER)].map((m) => `${m[1] ?? ''}${m[2] ?? ''}`.trim())
 }
 
 function check(value: Record<string, unknown>): Record<string, unknown> {

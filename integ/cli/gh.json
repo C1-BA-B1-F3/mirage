@@ -421,7 +421,7 @@
       "command": "gh api repos/integ/repo-cli/commits/$(gh api repos/integ/repo-cli/commits --jq '.[0].sha') --jq '.files[0] | keys'",
       "expect": {
         "exit": 0,
-        "stdout": "[\"filename\",\"status\"]\n",
+        "stdout": "[\"additions\",\"blob_url\",\"changes\",\"contents_url\",\"deletions\",\"filename\",\"patch\",\"raw_url\",\"sha\",\"status\"]\n",
         "stderr": ""
       },
       "seq": 569033,
@@ -526,7 +526,7 @@
       "targets": [
         "cli-gh"
       ],
-      "command": "echo 'pull body' | gh pr create --title change --head feature --base main --body-file -",
+      "command": "main=$(gh api repos/integ/repo-cli/git/ref/heads/main --jq .object.sha); for b in feature old docs-pass; do gh api repos/integ/repo-cli/git/refs -f ref=refs/heads/$b -f sha=$main >/dev/null; done; gh api repos/integ/repo-cli/contents/README.md -X PUT -f message='Update README.md' -f branch=feature -f content=IyByZXBvLXYxCgpGaXh0dXJlIHJlcG9zaXRvcnkgZm9yIHRoZSBmYWtlIEdpdEh1YiBBUEkgc2VydmVyLgpjaGFuZ2UK -f sha=$(gh api 'repos/integ/repo-cli/contents/README.md?ref=feature' --jq .sha) >/dev/null; for b in old docs-pass; do gh api repos/integ/repo-cli/contents/$b.md -X PUT -f \"message=Add $b.md\" -f branch=$b -f content=$(printf '%s\\n' $b | base64) >/dev/null; done; head=$(gh api repos/integ/repo-cli/git/ref/heads/feature --jq .object.sha); gh api repos/integ/repo-cli/statuses/$head -f state=success -f context=test -f target_url=https://example.test/check/301 -f 'description=All checks passed' >/dev/null; gh api repos/integ/repo-cli/statuses/$head -f state=success -f context=ci/legacy -f target_url=https://example.test/status/legacy -f 'description=Legacy status passed' >/dev/null; echo 'pull body' | gh pr create --title change --head feature --base main --body-file -",
       "expect": {
         "exit": 0,
         "stdout": "https://github.com/integ/repo-cli/pull/5\n",
@@ -729,7 +729,7 @@
       }
     },
     {
-      "id": "gh_pr_checks_merge_statuses_and_bucket_cancellations",
+      "id": "gh_pr_checks_merge_the_head_commit_statuses",
       "seq": 569057,
       "targets": [
         "cli-gh"
@@ -737,7 +737,7 @@
       "command": "gh pr checks 5 --json name,bucket --jq '.[1:]'",
       "expect": {
         "exit": 0,
-        "stdout": "[{\"bucket\":\"cancel\",\"name\":\"flaky\"},{\"bucket\":\"pass\",\"name\":\"ci/legacy\"}]\n",
+        "stdout": "[{\"bucket\":\"pass\",\"name\":\"ci/legacy\"}]\n",
         "stderr": ""
       }
     },
@@ -945,7 +945,7 @@
       "command": "gh repo view --json visibility,stargazerCount,repositoryTopics,primaryLanguage,licenseInfo,isInOrganization,forkCount,defaultBranchRef",
       "expect": {
         "exit": 0,
-        "stdout": "{\"defaultBranchRef\":{\"name\":\"main\"},\"forkCount\":0,\"isInOrganization\":true,\"licenseInfo\":null,\"primaryLanguage\":null,\"repositoryTopics\":null,\"stargazerCount\":0,\"visibility\":\"PUBLIC\"}\n",
+        "stdout": "{\"defaultBranchRef\":{\"name\":\"main\"},\"forkCount\":0,\"isInOrganization\":true,\"licenseInfo\":null,\"primaryLanguage\":{\"name\":\"Python\"},\"repositoryTopics\":null,\"stargazerCount\":0,\"visibility\":\"PUBLIC\"}\n",
         "stderr": ""
       }
     },
@@ -1582,7 +1582,7 @@
       "command": "gh pr view 5 --json statusCheckRollup --jq '.statusCheckRollup | map([.__typename, (.name // .context), (.conclusion // .state), (.workflowName // .targetUrl)])'",
       "expect": {
         "exit": 0,
-        "stdout": "[[\"CheckRun\",\"test\",\"SUCCESS\",\"CI\"],[\"CheckRun\",\"flaky\",\"CANCELLED\",\"CI\"],[\"StatusContext\",\"ci/legacy\",\"SUCCESS\",\"https://example.test/status/legacy\"]]\n",
+        "stdout": "[[\"StatusContext\",\"test\",\"SUCCESS\",\"https://example.test/check/301\"],[\"StatusContext\",\"ci/legacy\",\"SUCCESS\",\"https://example.test/status/legacy\"]]\n",
         "stderr": ""
       }
     },
@@ -2091,6 +2091,149 @@
         "exit": 0,
         "stdout": "name: Renamed\nname: Build\nstatus=1\n[\"CI\"]\nsame-workflow\n",
         "stderr": "gh workflow run: Workflow does not have 'workflow_dispatch' trigger\n"
+      }
+    },
+    {
+      "id": "gh_pr_diff_name_only_lists_the_changed_files",
+      "seq": 569917,
+      "targets": [
+        "cli-gh"
+      ],
+      "command": "gh pr diff 5 --name-only; gh pr diff 5 | tail -2",
+      "expect": {
+        "exit": 0,
+        "stdout": "README.md\n Fixture repository for the fake GitHub API server.\n+change\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "gh_api_pull_request_files_and_counts_are_its_diff",
+      "seq": 569918,
+      "targets": [
+        "cli-gh"
+      ],
+      "command": "gh api repos/integ/repo-cli/pulls/5 --jq '[.additions, .deletions, .changed_files, .commits]'; gh api repos/integ/repo-cli/pulls/5/files --jq 'map([.filename, .status, .additions, .deletions, .patch])'; gh api repos/integ/repo-cli/pulls/5/commits --jq 'map(.commit.message)'",
+      "expect": {
+        "exit": 0,
+        "stdout": "[1,0,1,1]\n[[\"README.md\",\"modified\",1,0,\"@@ -1,3 +1,4 @@\\n # repo-v1\\n \\n Fixture repository for the fake GitHub API server.\\n+change\"]]\n[\"Update README.md\"]\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "gh_api_review_comment_lands_on_a_diff_line",
+      "seq": 569919,
+      "targets": [
+        "cli-gh"
+      ],
+      "command": "gh api repos/integ/repo-cli/pulls/5/comments -f body=nice -f path=README.md -F line=4 --jq '[.line, .side, .path, .diff_hunk]'; gh api repos/integ/repo-cli/pulls/5/comments -f body=off -f path=README.md -F line=9 >/dev/null 2>&1; echo \"exit=$?\"; gh api repos/integ/repo-cli/pulls/5/comments --jq 'map(.body)'",
+      "expect": {
+        "exit": 0,
+        "stdout": "[4,\"RIGHT\",\"README.md\",\"@@ -1,3 +1,4 @@\\n # repo-v1\\n \\n Fixture repository for the fake GitHub API server.\\n+change\"]\nexit=1\n[\"nice\"]\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "gh_api_user_search_reads_the_accounts",
+      "seq": 569920,
+      "targets": [
+        "cli-gh"
+      ],
+      "command": "gh api 'search/users?q=integ' --jq '.items | map([.login, .type])'; gh api 'search/users?q=integ type:user' --jq '.items | map(.login)'; gh api users/integ --jq .type; gh api users/nobody",
+      "expect": {
+        "exit": 1,
+        "stdout": "[[\"integ\",\"Organization\"],[\"integ-user\",\"User\"]]\n[\"integ-user\"]\nOrganization\n{\"message\":\"Not Found\",\"documentation_url\":\"https://docs.github.com/rest\"}",
+        "stderr": "gh: Not Found (HTTP 404)\n"
+      }
+    },
+    {
+      "id": "gh_api_repository_search_narrows_by_repo_and_created",
+      "seq": 569921,
+      "targets": [
+        "cli-gh"
+      ],
+      "command": "gh api 'search/repositories?q=repo:integ/repo-cli' --jq '[.total_count, (.items | map(.full_name))]'; gh api 'search/repositories?q=repo:integ/repo-cli created:<2000-01-01' --jq .total_count",
+      "expect": {
+        "exit": 0,
+        "stdout": "[1,[\"integ/repo-cli\"]]\n0\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "gh_api_commits_page_and_filter",
+      "seq": 569922,
+      "targets": [
+        "cli-gh"
+      ],
+      "command": "gh api 'repos/integ/repo-cli/commits?per_page=1' --jq length; test \"$(gh api 'repos/integ/repo-cli/commits?per_page=1&page=2' --jq '.[0].sha')\" = \"$(gh api 'repos/integ/repo-cli/commits?per_page=2' --jq '.[1].sha')\" && echo page-two; gh api 'repos/integ/repo-cli/commits?path=missing.txt' --jq length; gh api 'repos/integ/repo-cli/commits?until=2000-01-01T00:00:00Z' --jq 'map(.commit.message)'; gh api 'repos/integ/repo-cli/commits?author=nobody' --jq length",
+      "expect": {
+        "exit": 0,
+        "stdout": "1\npage-two\n0\n[\"Initial commit\"]\n0\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "gh_api_search_scopes_by_owner_kind_and_file",
+      "seq": 569923,
+      "targets": [
+        "cli-gh"
+      ],
+      "command": "gh api 'search/repositories?q=owner:integ' --jq '[.items[].full_name]'; gh api 'search/issues?q=repo:integ/repo-cli is:pr sort:created-asc' --jq '[.items[].number][0:2]'; gh api 'search/issues?q=org:no-such-org-zz9' --silent; echo \"exit=$?\"; gh api 'search/code?q=import repo:integ/repo-cli extension:py' --jq '.items | length > 0'; gh api 'search/code?q=import repo:integ/repo-cli language:Haskell' --jq .total_count",
+      "expect": {
+        "exit": 0,
+        "stdout": "[\"integ/repo-cli\"]\n[5,6]\nexit=1\ntrue\n0\n",
+        "stderr": "gh: Validation Failed (HTTP 422)\n"
+      }
+    },
+    {
+      "id": "gh_api_lists_order_and_hold_pull_requests",
+      "seq": 569924,
+      "targets": [
+        "cli-gh"
+      ],
+      "command": "gh api 'repos/integ/repo-cli/pulls?state=all&sort=created&direction=asc&per_page=1' --jq 'map(.number)'; gh api 'repos/integ/repo-cli/issues?state=all&sort=created&direction=asc&per_page=6' --jq 'map([.number, has(\"pull_request\")])'; gh api 'repos/integ/repo-cli/issues?state=all&since=2100-01-01T00:00:00Z' --jq length",
+      "expect": {
+        "exit": 0,
+        "stdout": "[5]\n[[1,false],[2,false],[3,false],[4,false],[5,true],[6,true]]\n0\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "gh_api_profile_languages_and_rate_limit",
+      "seq": 569925,
+      "targets": [
+        "cli-gh"
+      ],
+      "command": "gh api users/integ --jq '[.login, .type, .public_repos]'; gh api repos/integ/repo-cli/languages --jq keys; gh api rate_limit --jq '[.resources.core.limit, .resources.search.limit]'",
+      "expect": {
+        "exit": 0,
+        "stdout": "[\"integ\",\"Organization\",1]\n[\"Python\"]\n[5000,30]\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "gh_api_statuses_belong_to_their_commit",
+      "seq": 569926,
+      "targets": [
+        "cli-gh"
+      ],
+      "command": "gh api repos/integ/repo-cli/commits/feature/status --jq '[.state, .total_count]'; gh api repos/integ/repo-cli/commits/main/status --jq '[.state, .total_count]'; gh api repos/integ/repo-cli/commits/main/check-runs --jq '.check_runs | length'; gh api -X POST repos/integ/repo-cli/check-runs -f name=x -f head_sha=0000000 --silent; echo \"exit=$?\"",
+      "expect": {
+        "exit": 0,
+        "stdout": "[\"success\",2]\n[\"pending\",0]\n0\nexit=1\n",
+        "stderr": "gh: You must authenticate via a GitHub App. (HTTP 403)\n"
+      }
+    },
+    {
+      "id": "gh_api_pull_request_from_a_fork",
+      "seq": 569927,
+      "targets": [
+        "cli-gh"
+      ],
+      "command": "gh repo fork integ/repo-cli --fork-name forked >/dev/null 2>&1; main=$(gh api repos/integ-user/forked/git/ref/heads/main --jq .object.sha); gh api repos/integ-user/forked/git/refs -f ref=refs/heads/from-fork -f sha=$main >/dev/null; gh api repos/integ-user/forked/contents/FORK.md -X PUT -f message='Add FORK.md' -f branch=from-fork -f content=Zm9yawo= >/dev/null; gh api repos/integ/repo-cli/pulls -f title=forked -f head=integ-user:from-fork -f base=main --jq '[.head.label, .head.ref, .head.repo.full_name, .changed_files]'; gh api repos/integ/repo-cli/compare/main...integ-user:from-fork --jq '[.files[].filename]'",
+      "expect": {
+        "exit": 0,
+        "stdout": "[\"integ-user:from-fork\",\"from-fork\",\"integ-user/forked\",1]\n[\"FORK.md\"]\n",
+        "stderr": ""
       }
     }
   ]

@@ -31,7 +31,7 @@ import {
 
 const CREATED_AT = '2026-01-01T00:00:00Z'
 
-interface ReleaseRow {
+export interface ReleaseRow {
   id: number
   tagName: string
   name: string
@@ -42,7 +42,7 @@ interface ReleaseRow {
   createdAt: string
 }
 
-function releaseJson(repo: RepoRow, row: ReleaseRow): JsonValue {
+export function releaseJson(repo: RepoRow, row: ReleaseRow): JsonValue {
   return {
     id: row.id,
     tag_name: row.tagName,

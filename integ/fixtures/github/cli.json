@@ -32,7 +32,7 @@
       "runAttempt": 1,
       "event": "push",
       "headBranch": "main",
-      "headSha": "b74c57783a47b1129aae98054c381cd45eb6fe06",
+      "headSha": "c13318709d4eb753fe20ea762abe77e19a8e5e73",
       "status": "completed",
       "conclusion": "success",
       "createdAt": "2026-01-01T00:00:00Z",
@@ -91,6 +91,44 @@
   "settings": [
     {
       "createRepos": false
+    }
+  ],
+  "checks": [
+    {
+      "repo": "integ/repo-cli",
+      "sha": "c13318709d4eb753fe20ea762abe77e19a8e5e73",
+      "id": 301,
+      "name": "test",
+      "status": "completed",
+      "conclusion": "success",
+      "startedAt": "2026-01-01T00:00:00Z",
+      "completedAt": "2026-01-01T00:01:00Z",
+      "detailsUrl": "https://example.test/check/301",
+      "summary": "All checks passed"
+    },
+    {
+      "repo": "integ/repo-cli",
+      "sha": "c13318709d4eb753fe20ea762abe77e19a8e5e73",
+      "id": 302,
+      "name": "flaky",
+      "status": "completed",
+      "conclusion": "cancelled",
+      "startedAt": "2026-01-01T00:00:00Z",
+      "completedAt": "2026-01-01T00:02:00Z",
+      "detailsUrl": "https://example.test/check/302",
+      "summary": "Cancelled by a newer run"
+    }
+  ],
+  "statuses": [
+    {
+      "repo": "integ/repo-cli",
+      "sha": "c13318709d4eb753fe20ea762abe77e19a8e5e73",
+      "context": "ci/legacy",
+      "state": "success",
+      "targetUrl": "https://example.test/status/legacy",
+      "description": "Legacy status passed",
+      "createdAt": "2026-01-01T00:00:00Z",
+      "updatedAt": "2026-01-01T00:01:30Z"
     }
   ]
 }

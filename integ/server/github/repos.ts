@@ -12,17 +12,28 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import type { JsonValue, KitRoute } from '../kit/typescript/index.ts'
-import { API_PREFIXES, DEFAULT_LOGIN } from './config.ts'
+import { stripSlash } from '../kit/typescript/index.ts'
+import type { Ctx, JsonValue, KitRoute } from '../kit/typescript/index.ts'
+import { API_PREFIXES, DEFAULT_LOGIN, REPO_DATE } from './config.ts'
 import type { C } from './config.ts'
-import { PROJECTS_CLASSIC_GONE, commitJson, nodeId, ownerNode } from './wire.ts'
+import { commitChanges } from './compare.ts'
+import { PROJECTS_CLASSIC_GONE, commitIdentity, commitJson, nodeId, ownerNode } from './wire.ts'
+import type { CommitRow } from './wire.ts'
 import { createReposAllowed, initRepo } from './seed.ts'
 import { commentConnection, issueConnection, issueNode, issueRow } from './issues.ts'
 import type { IssueRow, IssuesArgs } from './issues.ts'
 import { pullRequestConnection, pullRequestNode, pullRow } from './pulls.ts'
 import type { PullRequestsArgs, PullRow } from './pulls.ts'
 import {
+  accountsOf,
   addBranch,
+  headOf,
+  loginsOf,
+  networkNames,
+  primaryLanguage,
+  repoJson,
+  repoLanguages,
+  starsOf,
   allRepos,
   delegateFor,
   perRepoModels,
@@ -33,9 +44,10 @@ import {
   repoIsEmpty,
   resolveRef,
   scope,
+  tagRefs,
   treeOfBranch,
 } from './store.ts'
-import type { RepoRow } from './store.ts'
+import type { AccountRow, RepoRow } from './store.ts'
 import {
   authedRoute as authed,
   everywhere,
@@ -49,32 +61,93 @@ import {
 } from './http.ts'
 import type { Handler } from './http.ts'
 
-// The repository shape every route returns. A fixture's own values win, except
-// default_branch, which seeding decides.
-export function repoJson(repo: RepoRow): JsonValue {
-  const meta = metaOf(repo)
-  const { default_branch: _ignored, parent_seq: _parent, ...rest } = meta
+// An account's id, from its login alone so it is the same on every run:
+// FNV-1a, which spreads the bytes and protects nothing, as an id needs.
+export function accountId(login: string): number {
+  let hash = 0x811c9dc5
+  for (const byte of Buffer.from(login)) hash = Math.imul(hash ^ byte, 0x01000193) >>> 0
+  return hash & 0x7fffffff
+}
+
+/**
+ * One account as `/users/{login}` reports it. `public_repos` counts the
+ * repositories the account owns here.
+ */
+export function accountJson(account: AccountRow, repos: RepoRow[]): JsonValue {
+  const login = account.login
+  const api = `https://api.github.com/users/${login}`
+  const text = (value: string): string | null => (value === '' ? null : value)
   return {
-    name: repo.name,
-    full_name: repo.fullName,
-    default_branch: repo.defaultBranch,
-    owner: { login: repo.owner },
-    html_url: `https://github.com/${repo.fullName}`,
-    description: null,
-    stargazers_count: 0,
-    forks_count: 0,
-    open_issues_count: 0,
-    language: null,
-    topics: [],
-    archived: false,
-    fork: false,
-    has_pages: repo.pagesJson !== '',
-    ...rest,
+    login,
+    id: accountId(login),
+    node_id: nodeId(account.type === 'User' ? '04:User' : '012:Organization', login),
+    avatar_url: `https://avatars.githubusercontent.com/u/${String(accountId(login))}?v=4`,
+    gravatar_id: '',
+    url: api,
+    html_url: `https://github.com/${login}`,
+    followers_url: `${api}/followers`,
+    following_url: `${api}/following{/other_user}`,
+    gists_url: `${api}/gists{/gist_id}`,
+    starred_url: `${api}/starred{/owner}{/repo}`,
+    subscriptions_url: `${api}/subscriptions`,
+    organizations_url: `${api}/orgs`,
+    repos_url: `${api}/repos`,
+    events_url: `${api}/events{/privacy}`,
+    received_events_url: `${api}/received_events`,
+    type: account.type,
+    user_view_type: 'public',
+    site_admin: false,
+    name: text(account.name),
+    company: text(account.company),
+    blog: account.blog,
+    location: text(account.location),
+    email: text(account.email),
+    hireable: account.hireable ? true : null,
+    bio: text(account.bio),
+    twitter_username: text(account.twitterUsername),
+    public_repos: repos.filter((repo) => repo.owner.toLowerCase() === login.toLowerCase()).length,
+    public_gists: account.publicGists,
+    followers: account.followers,
+    following: account.following,
+    created_at: account.createdAt,
+    updated_at: account.updatedAt === '' ? account.createdAt : account.updatedAt,
   }
 }
 
-// Every date the fresh-repository defaults report, unless a fixture states one.
-const REPO_DATE = '2026-01-01T00:00:00Z'
+// The fields GitHub lists a user by wherever it lists several: a search, the
+// stargazers, the contributors.
+const SIMPLE_USER = [
+  'login',
+  'id',
+  'node_id',
+  'avatar_url',
+  'gravatar_id',
+  'url',
+  'html_url',
+  'followers_url',
+  'following_url',
+  'gists_url',
+  'starred_url',
+  'subscriptions_url',
+  'organizations_url',
+  'repos_url',
+  'events_url',
+  'received_events_url',
+  'type',
+  'user_view_type',
+  'site_admin',
+]
+
+export function simpleUser(account: AccountRow): Record<string, JsonValue> {
+  const full = accountJson(account, []) as Record<string, JsonValue>
+  return Object.fromEntries(SIMPLE_USER.map((key) => [key, full[key] ?? null]))
+}
+
+/** One of a repository's dates, its fixture's or the fresh-repository default. */
+export function repoDate(repo: RepoRow, key: string): string {
+  const value = metaOf(repo)[key]
+  return typeof value === 'string' ? value : REPO_DATE
+}
 
 /**
  * The GraphQL `Repository` for one row: the same facts the REST object reports,
@@ -99,7 +172,6 @@ export async function repositoryNode(
   const email = `${DEFAULT_LOGIN}@users.noreply.github.com`
   const where = { ...scope(ctx.tenant), repo: repo.fullName }
   const topics = Array.isArray(meta.topics) ? meta.topics.map(String) : []
-  const language = text('language')
   const owned = repo.owner === DEFAULT_LOGIN
   const user = { id: nodeId('04:User', DEFAULT_LOGIN), login: DEFAULT_LOGIN, name: DEFAULT_LOGIN }
   // A fork records its source by seq, the identity a rename keeps, so the
@@ -125,10 +197,10 @@ export async function repositoryNode(
     sshUrl: `git@github.com:${repo.fullName}.git`,
     mirrorUrl: null,
     securityPolicyUrl: null,
-    createdAt: text('created_at') ?? REPO_DATE,
-    pushedAt: text('pushed_at') ?? REPO_DATE,
-    updatedAt: text('updated_at') ?? REPO_DATE,
-    archivedAt: meta.archived === true ? (text('updated_at') ?? REPO_DATE) : null,
+    createdAt: repoDate(repo, 'created_at'),
+    pushedAt: repoDate(repo, 'pushed_at'),
+    updatedAt: repoDate(repo, 'updated_at'),
+    archivedAt: meta.archived === true ? repoDate(repo, 'updated_at') : null,
     isBlankIssuesEnabled: true,
     isSecurityPolicyEnabled: false,
     hasIssuesEnabled: meta.has_issues !== false,
@@ -139,8 +211,8 @@ export async function repositoryNode(
     squashMergeAllowed: meta.allow_squash_merge !== false,
     rebaseMergeAllowed: meta.allow_rebase_merge !== false,
     forkCount: count('forks_count'),
-    stargazerCount: count('stargazers_count'),
-    watchers: { totalCount: count('watchers_count') },
+    stargazerCount: starsOf(repo),
+    watchers: { totalCount: loginsOf(repo, 'subscribers').length },
     codeOfConduct: null,
     contactLinks: [],
     defaultBranchRef: { name: repo.defaultBranch },
@@ -170,8 +242,15 @@ export async function repositoryNode(
           ? 'PRIVATE'
           : 'PUBLIC',
     repositoryTopics: { nodes: topics.map((name) => ({ topic: { name } })) },
-    primaryLanguage: language === null ? null : { name: language },
-    languages: { edges: language === null ? [] : [{ size: 0, node: { name: language } }] },
+    primaryLanguage: async () => {
+      const name = await primaryLanguage(ctx.db, ctx.tenant, repo)
+      return name === null ? null : { name }
+    },
+    languages: async ({ first }: { first?: number | null }) => ({
+      edges: (await repoLanguages(ctx.db, ctx.tenant, repo))
+        .slice(0, first ?? 100)
+        .map(([name, size]) => ({ size, node: { name } })),
+    }),
     issueTemplates: [],
     pullRequestTemplates: [],
     labels: { nodes: [] },
@@ -196,7 +275,7 @@ export async function repositoryNode(
   }
   // Issues own the comments on a pull request as on an issue.
   const pull = async (row: PullRow): Promise<Record<string, unknown>> => ({
-    ...(await pullRequestNode(ctx, repo, row, node)),
+    ...(await pullRequestNode(ctx, repo, row, node, (other) => repositoryNode(ctx, other))),
     __typename: 'PullRequest',
     comments: commentConnection(ctx, repo, row.number),
   })
@@ -233,15 +312,13 @@ export async function repositoryNode(
 /** The value a GraphQL `RepositoryOrder` field sorts one repository by. */
 function orderKey(repo: RepoRow, field: string): string | number {
   const meta = metaOf(repo)
-  const date = (key: string): string =>
-    typeof meta[key] === 'string' ? (meta[key] as string) : REPO_DATE
   if (field === 'NAME') return repo.name
   if (field === 'STARGAZERS') {
     return typeof meta.stargazers_count === 'number' ? meta.stargazers_count : 0
   }
-  if (field === 'CREATED_AT') return date('created_at')
-  if (field === 'UPDATED_AT') return date('updated_at')
-  return date('pushed_at')
+  if (field === 'CREATED_AT') return repoDate(repo, 'created_at')
+  if (field === 'UPDATED_AT') return repoDate(repo, 'updated_at')
+  return repoDate(repo, 'pushed_at')
 }
 
 interface RepositoriesArgs {
@@ -322,16 +399,18 @@ export function repoRoutes(): KitRoute<C>[] {
         body: { login: DEFAULT_LOGIN, name: DEFAULT_LOGIN, type: 'User' },
       })),
     ),
-    // Whether a named owner is the user or an organization.
+    // One account, by login in any case, the way GitHub reads one.
     route<C>(
       'GET',
       `${p}/users/:owner`,
-      authed((ctx) => {
-        const owner = param(ctx, 'owner')
-        return {
-          status: 200,
-          body: { login: owner, type: owner === DEFAULT_LOGIN ? 'User' : 'Organization' },
-        }
+      authed(async (ctx) => {
+        const login = param(ctx, 'owner').toLowerCase()
+        const found = (await accountsOf(ctx.db, ctx.tenant)).find(
+          (account) => account.login.toLowerCase() === login,
+        )
+        if (found === undefined) return fail(404, 'Not Found')
+        const repos = await allRepos(ctx.db, ctx.tenant)
+        return { status: 200, body: accountJson(found, repos) }
       }),
     ),
     // The API root, so a client probing it gets "this is a GitHub API" rather
@@ -372,7 +451,7 @@ export function repoRoutes(): KitRoute<C>[] {
     route<C>(
       'GET',
       `${p}/repos/:owner/:repo`,
-      authed(withRepo((_c, r) => ({ status: 200, body: repoJson(r) }))),
+      authed(withRepo(async (c, r) => ({ status: 200, body: await repoJson(c.db, c.tenant, r) }))),
     ),
     route<C>('PATCH', `${p}/repos/:owner/:repo`, authed(updateRepo), { write: true }),
     route<C>('GET', `${p}/repos/:owner/:repo/topics`, repoTopics),
@@ -407,12 +486,11 @@ export function repoRoutes(): KitRoute<C>[] {
       'GET',
       `${p}/repos/:owner/:repo/commits`,
       authed(
-        // Not paged, unlike the repository list: the vendor pages this one and
-        // the fake this replaces answered the whole history, which is what the
-        // goldens record. `sha` is "SHA or branch to start listing commits
-        // from", so a commit, full or abbreviated, starts the list at itself.
-        // One that names nothing is 404, measured against GitHub (2026-09-29);
-        // listing the default branch instead answered a question nobody asked.
+        // `sha` is "SHA or branch to start listing commits from", so a commit,
+        // full or abbreviated, starts the list at itself. One that names
+        // nothing is 404, measured against GitHub (2026-09-29); listing the
+        // default branch instead answered a question nobody asked. The list
+        // is filtered, then paged the way the repository list is.
         withRepo(async (ctx, repo) => {
           if (await repoIsEmpty(ctx.db, ctx.tenant, repo)) {
             return fail(409, 'Git Repository is empty.')
@@ -420,22 +498,55 @@ export function repoRoutes(): KitRoute<C>[] {
           const at = await resolveRef(ctx.db, ctx.tenant, repo, ctx.query.get('sha') ?? '')
           if (at === null) return fail(404, 'Not Found')
           if (at.history.length === 0) return fail(409, 'Git Repository is empty.')
-          return { status: 200, body: at.history.map(commitJson) }
+          return pagedReply(ctx, (await commitsMatching(ctx, repo, at.history)).map(commitJson))
         }),
       ),
     ),
-    // Tag refs are not modeled; releases alone do not create git tags here.
-    route<C>('GET', `${p}/repos/:owner/:repo/tags`, authed(withRepo((ctx) => pagedReply(ctx, [])))),
   ])
+}
+
+// The filters `commits` reads. `since` and `until` bound the commit date, and
+// one that is no date bounds everything out, as GitHub's does (measured
+// 2026-09-29: `since=abc` answers `[]`). `author` is the author's login or
+// email. `path` keeps the commits whose change against their first parent
+// touches that file or anything under it, a rename's old name included.
+async function commitsMatching(
+  ctx: Ctx<C>,
+  repo: RepoRow,
+  history: CommitRow[],
+): Promise<CommitRow[]> {
+  const since = ctx.query.get('since')
+  const until = ctx.query.get('until')
+  const author = (ctx.query.get('author') ?? '').toLowerCase()
+  const path = stripSlash(ctx.query.get('path') ?? '')
+  const kept: CommitRow[] = []
+  for (const [i, row] of history.entries()) {
+    const who = commitIdentity(row)
+    const when = Date.parse(who.committed)
+    if (since !== null && !(when >= Date.parse(since))) continue
+    if (until !== null && !(when <= Date.parse(until))) continue
+    if (author !== '' && who.login.toLowerCase() !== author && who.email.toLowerCase() !== author)
+      continue
+    if (path !== '') {
+      const changes = await commitChanges(ctx.db, ctx.tenant, repo, history.slice(i))
+      const touched = changes.flatMap((c) => [
+        c.filename,
+        ...(c.previous === null ? [] : [c.previous]),
+      ])
+      if (!touched.some((p) => p === path || p.startsWith(`${path}/`))) continue
+    }
+    kept.push(row)
+  }
+  return kept
 }
 
 const listRepos: Handler = async (ctx) => {
   const owner = ctx.params.owner ?? DEFAULT_LOGIN
   const repos = await allRepos(ctx.db, ctx.tenant)
-  const items = repos
+  const owned = repos
     .filter((r) => r.owner === owner)
     .sort((a, b) => (a.fullName < b.fullName ? -1 : 1))
-    .map(repoJson)
+  const items = await Promise.all(owned.map((r) => repoJson(ctx.db, ctx.tenant, r)))
   return pagedReply(ctx, items)
 }
 
@@ -485,7 +596,7 @@ const createRepo: Handler = async (ctx) => {
       },
     })
   }
-  return { status: 201, body: repoJson(created) }
+  return { status: 201, body: await repoJson(ctx.db, ctx.tenant, created) }
 }
 
 // Validate every accepted field before writing metadata or moving repository
@@ -577,7 +688,7 @@ const updateRepo: Handler = authed(
         data,
       })) as RepoRow
     }
-    return { status: 200, body: repoJson(current) }
+    return { status: 200, body: await repoJson(ctx.db, ctx.tenant, current) }
   }),
 )
 
@@ -639,12 +750,47 @@ async function renameRepo(db: C, tenant: string, repo: RepoRow, name: string): P
 
 const deleteRepo: Handler = authed(
   withRepo(async (ctx, repo) => {
-    await dropRepo(ctx.db, ctx.tenant, repo.fullName)
+    await dropRepo(ctx.db, ctx.tenant, repo)
     return { status: 204 }
   }),
 )
 
-async function dropRepo(db: C, tenant: string, fullName: string): Promise<void> {
+// The objects a network shares move to the oldest surviving fork when the
+// repository holding them is deleted, and that fork takes the deleted one's
+// place as parent of the rest, as GitHub hands a network to a fork. Without
+// it the forks kept heads naming commits and trees that no longer existed.
+async function handOff(db: C, tenant: string, repo: RepoRow): Promise<void> {
+  const network = await networkNames(db, tenant, repo)
+  const rest = (await allRepos(db, tenant))
+    .filter((r) => network.includes(r.fullName) && r.seq !== repo.seq)
+    .sort((a, b) => a.seq - b.seq)
+  const heir = rest[0]
+  if (heir === undefined) return
+  const moved = { tenant, repo: repo.fullName }
+  await db.githubCommit.updateMany({ where: moved, data: { repo: heir.fullName } })
+  await db.githubStagedTree.updateMany({ where: moved, data: { repo: heir.fullName } })
+  await db.githubTag.updateMany({ where: moved, data: { repo: heir.fullName } })
+  const up = metaOf(repo).parent_seq
+  for (const row of rest) {
+    const meta = metaOf(row)
+    if (meta.parent_seq !== repo.seq) continue
+    const { parent_seq: _was, ...kept } = meta
+    const next =
+      row.seq === heir.seq
+        ? typeof up === 'number'
+          ? { ...kept, parent_seq: up }
+          : kept
+        : { ...kept, parent_seq: heir.seq }
+    await db.githubRepo.updateMany({
+      where: { tenant, fullName: row.fullName },
+      data: { metaJson: JSON.stringify(next) },
+    })
+  }
+}
+
+async function dropRepo(db: C, tenant: string, repo: RepoRow): Promise<void> {
+  await handOff(db, tenant, repo)
+  const fullName = repo.fullName
   const where = { tenant, repo: fullName }
   // A staged entry hangs off a staged TREE rather than off the repository, so
   // it is the one child the schema walk cannot reach: entries are keyed by tree
@@ -667,7 +813,8 @@ const forkRepo: Handler = authed(
     const name = str(body, 'name').trim() === '' ? source.name : str(body, 'name').trim()
     const fullName = `${DEFAULT_LOGIN}/${name}`
     const existing = await repoByName(ctx.db, ctx.tenant, fullName)
-    if (existing !== null) return { status: 202, body: repoJson(existing) }
+    if (existing !== null)
+      return { status: 202, body: await repoJson(ctx.db, ctx.tenant, existing) }
     const fork = (await ctx.db.githubRepo.create({
       data: {
         tenant: ctx.tenant,
@@ -687,8 +834,18 @@ const forkRepo: Handler = authed(
     // copied only the branch trees, submodules and metadata onto it, so a fork
     // does not inherit the source's issues, releases or runs.
     await initRepo(ctx.db, ctx.tenant, fork)
+    // Each branch at the commit its source's points at, and each tag, since
+    // a fork shares its network's history and objects: a pull request from
+    // it then has a merge base with its parent.
     for (const branch of await branchNames(ctx.db, ctx.tenant, source)) {
       await addBranch(ctx.db, ctx.tenant, fullName, branch)
+      const head = await headOf(ctx.db, ctx.tenant, source, branch)
+      if (head !== '') {
+        await ctx.db.githubBranch.updateMany({
+          where: { tenant: ctx.tenant, repo: fullName, name: branch },
+          data: { headSha: head },
+        })
+      }
       const tree = await treeOfBranch(ctx.db, ctx.tenant, source, branch)
       let seq = 0
       for (const [path, data] of tree) {
@@ -705,6 +862,14 @@ const forkRepo: Handler = authed(
         seq += 1
       }
     }
+    for (const tag of await tagRefs(ctx.db, ctx.tenant, source)) {
+      const count = await ctx.db.githubTagRef.count({
+        where: { tenant: ctx.tenant, repo: fullName },
+      })
+      await ctx.db.githubTagRef.create({
+        data: { tenant: ctx.tenant, repo: fullName, name: tag.name, sha: tag.sha, seq: count },
+      })
+    }
     const subs = await ctx.db.githubSubmodule.findMany({
       where: { tenant: ctx.tenant, repo: source.fullName },
       orderBy: { path: 'asc' },
@@ -714,6 +879,6 @@ const forkRepo: Handler = authed(
         data: { tenant: ctx.tenant, repo: fullName, path: s.path },
       })
     }
-    return { status: 202, body: repoJson(fork) }
+    return { status: 202, body: await repoJson(ctx.db, ctx.tenant, fork) }
   }),
 )

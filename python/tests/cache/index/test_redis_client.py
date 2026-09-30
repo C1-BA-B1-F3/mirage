@@ -1,6 +1,8 @@
 import asyncio
 import os
+import re
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
 
@@ -9,6 +11,7 @@ import pytest_asyncio
 from fakeredis.aioredis import FakeRedis
 from redis.asyncio import Redis
 
+from mirage.cache.index import redis as redis_index
 from mirage.cache.index.config import IndexEntry, LookupStatus
 from mirage.cache.index.redis import RedisIndexCacheStore
 
@@ -605,6 +608,7 @@ async def test_path_registry_prunes_removed_rows_but_preserves_tombstones(
     store = RedisIndexCacheStore(client=client, key_prefix=prefix)
     child = IndexEntry(id="child", name="child", resource_type="file")
     registry = prefix + "mirage:idx:paths"
+    await store.clear()
     await store.put("/put-only", child)
     await store.invalidate_entry("/put-only")
     assert await client.zrange(registry, 0, -1) == [""]
@@ -617,7 +621,7 @@ async def test_path_registry_prunes_removed_rows_but_preserves_tombstones(
     assert await client.zrange(registry, 0, -1) == ["", "/d"]
     assert await client.get(prefix + "mirage:idx:tombstone:/d") is not None
     await store.clear()
-    assert await client.exists(registry) == 0
+    assert await client.zrange(registry, 0, -1) == [""]
 
 
 @pytest.mark.asyncio
@@ -636,3 +640,160 @@ async def test_registry_prefix_invalidation_accepts_trailing_slashes(
             store.list_dir("/literal[1]")).status == LookupStatus.NOT_FOUND
     assert (await store.get("/literal[1]/nested/child")).entry is not None
     assert (await store.get("/literal[1]sibling/child")).entry is not None
+
+
+@pytest.mark.asyncio
+async def test_cold_registry_recovery_never_scans_inside_lua(
+        rolling_client, monkeypatch):
+    client, prefix = rolling_client
+    store = RedisIndexCacheStore(client=client,
+                                 key_prefix=prefix + "literal[1]:")
+    child = IndexEntry(id="child", name="child", resource_type="file")
+    await store.put("/d/sub/orphan", child)
+    evaluate = client.eval
+    pipeline = client.pipeline
+    guard = """
+local call = redis.call
+local redis = {call = function(command, ...)
+  if command == 'SCAN' then error('atomic database scan') end
+  return call(command, ...)
+end}
+"""
+
+    async def guarded_eval(script, *args, **kwargs):
+        return await evaluate(guard + script, *args, **kwargs)
+
+    def guarded_pipeline():
+        pipe = pipeline()
+        run = pipe.eval
+
+        def guarded_script(script, *args, **kwargs):
+            return run(guard + script, *args, **kwargs)
+
+        pipe.eval = guarded_script
+        return pipe
+
+    monkeypatch.setattr(client, "eval", guarded_eval)
+    monkeypatch.setattr(client, "pipeline", guarded_pipeline)
+    await client.delete(prefix + "literal[1]:mirage:idx:paths")
+    await store.set_dir(
+        "/d",
+        [("sub", IndexEntry(id="sub", name="sub", resource_type="folder"))])
+    await store.set_dir("/d", [])
+    assert (await store.get("/d/sub/orphan")).entry is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("operation", ["invalidate_prefix", "clear"])
+async def test_large_wipes_page_the_registry(rolling_client, monkeypatch,
+                                             operation):
+    client, prefix = rolling_client
+    store = RedisIndexCacheStore(client=client, key_prefix=prefix)
+    child = IndexEntry(id="child", name="child", resource_type="file")
+    store.seed({f"/d/{i}": child
+                for i in range(400)}, {},
+               datetime.now(timezone.utc) + timedelta(hours=1))
+    await store.set_dir("/other", [])
+    evaluate = client.eval
+    calls = 0
+
+    async def bounded_eval(script, *args, **kwargs):
+        nonlocal calls
+        calls += 1
+        guard = """
+local call = redis.call
+local redis = {call = function(command, ...)
+  if command == 'ZRANGEBYLEX' then
+    local args = {...}
+    if args[4] ~= 'LIMIT' or tonumber(args[6]) > 128 then
+      error('unbounded registry range')
+    end
+  end
+  return call(command, ...)
+end}
+"""
+        return await evaluate(guard + script, *args, **kwargs)
+
+    monkeypatch.setattr(client, "eval", bounded_eval)
+    if operation == "clear":
+        await store.clear()
+    else:
+        await store.invalidate_prefix("/d")
+    assert calls >= 4
+    assert (await store.get("/d/0")).entry is None
+    assert (await store.get("/d/399")).entry is None
+
+
+def test_the_two_inline_lua_copies_are_byte_identical():
+    root = Path(__file__).resolve().parents[4]
+    source = (root /
+              "typescript/packages/core/src/cache/index/redis.ts").read_text()
+    copies = {}
+    for match in re.finditer(
+            r"const ([A-Z_]+)\s*=\s*(?:([A-Z_]+)\s*\+\s*)?`([^`]*)`", source):
+        name, parent, body = match.groups()
+        copies[name] = (copies[parent] if parent else "") + body
+    originals = {
+        name[1:]: value
+        for name, value in vars(redis_index).items() if name.startswith("_")
+        and isinstance(value, str) and "redis.call(" in value
+    }
+    assert copies.keys() == originals.keys()
+    for name, original in originals.items():
+        assert copies[name].encode() == original.encode(), name
+
+
+@pytest.mark.asyncio
+async def test_registry_recovery_restarts_if_evicted_during_a_scan(
+        rolling_client, monkeypatch):
+    client, prefix = rolling_client
+    store = RedisIndexCacheStore(client=client, key_prefix=prefix)
+    child = IndexEntry(id="child", name="child", resource_type="file")
+    folder = IndexEntry(id="sub", name="sub", resource_type="folder")
+    await store.set_dir("/d", [("sub", folder)])
+    await store.put("/d/sub/old", child)
+    await client.delete(prefix + "mirage:idx:paths")
+    scan = client.scan
+    evicted = False
+
+    async def scan_during_eviction(*args, **kwargs):
+        nonlocal evicted
+        result = await scan(*args, **kwargs)
+        if not evicted:
+            evicted = True
+            await client.delete(prefix + "mirage:idx:paths")
+            await store.put("/d/sub/new", child)
+        return result
+
+    monkeypatch.setattr(client, "scan", scan_during_eviction)
+    await store.set_dir("/d", [])
+    assert evicted
+    assert (await store.get("/d/sub/old")).entry is None
+    assert (await store.get("/d/sub/new")).entry is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("directory", ["/d", "/d/nested"])
+async def test_paged_invalidation_cannot_leave_a_refill_naming_deleted_rows(
+        rolling_client, monkeypatch, directory):
+    client, prefix = rolling_client
+    store = RedisIndexCacheStore(client=client, key_prefix=prefix)
+    child = IndexEntry(id="child", name="child", resource_type="file")
+    await store.set_dir(directory, [(f"{i:03}", child) for i in range(300)])
+    evaluate = client.eval
+    refilled = False
+
+    async def refill_between_pages(script, *args, **kwargs):
+        nonlocal refilled
+        result = await evaluate(script, *args, **kwargs)
+        if not refilled and "local removed = cjson.decode(ARGV[5])" in script:
+            refilled = True
+            await store.set_dir(directory, [("000", child), ("zzz", child)])
+        return result
+
+    monkeypatch.setattr(client, "eval", refill_between_pages)
+    await store.invalidate_prefix("/d")
+    assert refilled
+    assert (await store.get(directory + "/zzz")).entry is None
+    assert (await store.list_dir(directory)).status in (LookupStatus.NOT_FOUND,
+                                                        LookupStatus.EXPIRED)

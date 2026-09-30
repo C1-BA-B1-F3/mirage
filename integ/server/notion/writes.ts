@@ -494,7 +494,7 @@ async function createDatabase(
   }
   const named =
     version < DATA_SOURCE_VERSION ? body.properties : asObject(body.initial_data_source).properties
-  const columns = patchSchema({}, asObject(named))
+  const columns = patchSchema({}, asObject(named), minter)
   if (!Array.isArray(columns)) return columns
   if (!columns.some(([, column]) => column.type === 'title')) {
     return validation('A database has exactly one title property.')
@@ -551,6 +551,7 @@ async function patchDatabase(
   db: C,
   tenant: string,
   meta: MetaRow,
+  minter: Minter,
   row: DatabaseRow,
   body: Json,
 ): Promise<Reply | null> {
@@ -569,7 +570,7 @@ async function patchDatabase(
   if (typeof trash === 'boolean') data.inTrash = trash
   if (body.properties !== undefined) {
     const before = schemaOf(row)
-    const columns = patchSchema(before, asObject(body.properties))
+    const columns = patchSchema(before, asObject(body.properties), minter)
     if (!Array.isArray(columns)) return columns
     const schema = Object.fromEntries(columns)
     data.propertiesJson = JSON.stringify(schema)
@@ -598,13 +599,14 @@ async function updateDatabase(
   db: C,
   tenant: string,
   meta: MetaRow,
+  minter: Minter,
   id: string,
   body: Json,
   version: string,
 ): Promise<Reply> {
   const row = (await db.notionDatabase.findFirst({ where: { tenant, id } })) as DatabaseRow | null
   if (row === null) return notFound('database', id)
-  const refused = await patchDatabase(db, tenant, meta, row, body)
+  const refused = await patchDatabase(db, tenant, meta, minter, row, body)
   if (refused !== null) return refused
   const updated = (await db.notionDatabase.findFirst({ where: { tenant, id } })) as DatabaseRow
   return { status: 200, body: databaseJson(updated, version) }
@@ -618,6 +620,7 @@ async function updateDataSource(
   db: C,
   tenant: string,
   meta: MetaRow,
+  minter: Minter,
   id: string,
   body: Json,
 ): Promise<Reply> {
@@ -631,7 +634,7 @@ async function updateDataSource(
       'body.parent moves a data source to another database, which the integ fake does not model.',
     )
   }
-  const refused = await patchDatabase(db, tenant, meta, row, body)
+  const refused = await patchDatabase(db, tenant, meta, minter, row, body)
   if (refused !== null) return refused
   const updated = (await db.notionDatabase.findFirst({
     where: { tenant, id: row.id },
@@ -780,12 +783,21 @@ export async function createDatabaseRoute(ctx: Ctx<C>): Promise<Reply> {
 export async function updateDatabaseRoute(ctx: Ctx<C>): Promise<Reply> {
   const meta = await metaOf(ctx.db, ctx.tenant)
   const id = ctx.params.id ?? ''
-  return updateDatabase(ctx.db, ctx.tenant, meta, id, asObject(ctx.json()), apiVersion(ctx))
+  return updateDatabase(
+    ctx.db,
+    ctx.tenant,
+    meta,
+    ctx.minter,
+    id,
+    asObject(ctx.json()),
+    apiVersion(ctx),
+  )
 }
 
 export async function updateDataSourceRoute(ctx: Ctx<C>): Promise<Reply> {
   const meta = await metaOf(ctx.db, ctx.tenant)
-  return updateDataSource(ctx.db, ctx.tenant, meta, ctx.params.id ?? '', asObject(ctx.json()))
+  const id = ctx.params.id ?? ''
+  return updateDataSource(ctx.db, ctx.tenant, meta, ctx.minter, id, asObject(ctx.json()))
 }
 
 export async function createDataSourceRoute(ctx: Ctx<C>): Promise<Reply> {

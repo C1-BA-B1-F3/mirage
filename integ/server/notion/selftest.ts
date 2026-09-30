@@ -354,8 +354,19 @@ async function databaseWrites(at: string): Promise<void> {
   })
   const id = String(made.id)
   eq('a created database answers its schema', keys(made.properties), ['Name', 'Pages', 'Status'])
-  eq('a created column', (made.properties as Record<string, JsonValue>).Pages, {
-    id: '%3A1',
+  const columnIds = (body: Record<string, JsonValue>): string[] =>
+    Object.values(body.properties as Record<string, Record<string, JsonValue>>).map((column) =>
+      String(column.id),
+    )
+  const pages = (made.properties as Record<string, Record<string, JsonValue>>).Pages!
+  const seen = columnIds(made)
+  check(
+    'created column ids are minted, never the name',
+    seen[0] === 'title' && seen.slice(1).every((one) => /^%3A\d+$/.test(one)),
+    seen.join(' '),
+  )
+  eq('a created column', pages, {
+    id: pages.id!,
     name: 'Pages',
     type: 'number',
     number: { format: 'number' },
@@ -399,13 +410,13 @@ async function databaseWrites(at: string): Promise<void> {
         JsonValue
       >
     ).id,
-    '%3A1',
+    pages.id!,
   )
-  eq(
-    "an added column never takes a removed one's id",
+  const rating = String(
     (updated.properties as Record<string, Record<string, JsonValue>>).Rating!.id,
-    '%3A3',
   )
+  check("an added column never takes a removed one's id", !seen.includes(rating), rating)
+  seen.push(rating)
   const moved = (await v1('GET', `/v1/pages/${String(book.id)}`)).properties as Record<
     string,
     Record<string, JsonValue>
@@ -417,7 +428,7 @@ async function databaseWrites(at: string): Promise<void> {
   )
   eq(
     'a renamed value answers by its old id',
-    (await v1('GET', `/v1/pages/${String(book.id)}/properties/%3A1`)).number,
+    (await v1('GET', `/v1/pages/${String(book.id)}/properties/${String(pages.id)}`)).number,
     412,
   )
   eq(
@@ -452,6 +463,13 @@ async function databaseWrites(at: string): Promise<void> {
     keys((await v1('PATCH', `/v1/databases/${id}`, { properties: { title: null } })).properties),
     ['Name', 'Length'],
   )
+  const later = await v1('PATCH', `/v1/databases/${id}`, { properties: { Score: { number: {} } } })
+  const score = String((later.properties as Record<string, Record<string, JsonValue>>).Score!.id)
+  check(
+    'a later write never reuses a removed id',
+    !seen.includes(score),
+    `${score} ${seen.join(' ')}`,
+  )
   await v1('PATCH', `/v1/databases/${MISSING}`, { title: [] }, 404)
   await v1(
     'POST',
@@ -470,12 +488,11 @@ async function databaseWrites(at: string): Promise<void> {
     parent: { page_id: PAGE },
     properties: { title: { rich_text: {} }, Name: { title: {} } },
   })
-  eq(
+  const titledIds = columnIds(titled)
+  check(
     'a column named title does not take the title id',
-    Object.values(titled.properties as Record<string, Record<string, JsonValue>>).map(
-      (column) => column.id!,
-    ),
-    ['%3A1', 'title'],
+    titledIds[1] === 'title' && titledIds[0] !== 'title',
+    titledIds.join(' '),
   )
   const modern = await request(at, 'POST', '/v1/databases', {
     parent: { page_id: PAGE },

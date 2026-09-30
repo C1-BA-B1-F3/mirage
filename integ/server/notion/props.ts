@@ -16,7 +16,7 @@ import { validation } from './blocks.ts'
 import type { C } from './config.ts'
 import { plainTextOf } from './text.ts'
 import { normalizeRichText } from './text.ts'
-import type { JsonValue, Reply } from '../kit/typescript/index.ts'
+import type { JsonValue, Minter, Reply } from '../kit/typescript/index.ts'
 import type { DatabaseRow, Json, MetaRow } from './types.ts'
 import { asObject } from './wire.ts'
 
@@ -225,22 +225,6 @@ function columnOf(id: string, name: string, kind: string, settings: JsonValue | 
   return { id, name, type: kind, [kind]: config }
 }
 
-// A created column's id is minted short and percent-encoded, the way live
-// Notion's read (`%3A1`, `%3A2`, ...), and never from the column's name: an id
-// spelled like a name let a later column's name shadow it, and a non-title
-// column named `title` took the title column's id. The title column's id is
-// always `title`, as on live Notion. A write mints past the highest id the
-// schema held when it began, so a schema is reproducible across runs and a
-// column removed and one added in the same write never share an id.
-function highestId(columns: Array<[string, Json]>): number {
-  let high = 0
-  for (const [, spec] of columns) {
-    const minted = /^%3A(\d+)$/.exec(String(spec.id))
-    if (minted !== null) high = Math.max(high, Number(minted[1]))
-  }
-  return high
-}
-
 // A schema write, keyed by a column's name or id: null removes the column, a
 // `name` renames it and keeps its id (which is what lets every row follow), a
 // type's settings replace the column's, and a key the schema does not hold
@@ -248,15 +232,23 @@ function highestId(columns: Array<[string, Json]>): number {
 // by a second (API reference, update property schema object). Creating a
 // database is this write on an empty schema. A key resolves by name before
 // id, the order `propByRef` resolves every other reference in, so one key
-// names one column whatever order the schema holds them in. The wording of
-// each refusal is the fake's, except the unknown column, which is live's for a
-// filter.
-export function patchSchema(schema: Json, patch: Json): Array<[string, Json]> | Reply {
+// names one column whatever order the schema holds them in. An added column's
+// id is minted short and percent-encoded, the way live Notion's read (`%3A7`),
+// from the tenant's minter and never from the column's name: an id spelled like
+// a name let a later name shadow it, and a non-title column named `title` took
+// the title column's id. The minter never repeats a number, so an id a removed
+// column held never comes back to name another. The title column's id is
+// always `title`, as on live Notion. The wording of each refusal is the fake's,
+// except the unknown column, which is live's for a filter.
+export function patchSchema(
+  schema: Json,
+  patch: Json,
+  minter: Minter,
+): Array<[string, Json]> | Reply {
   const columns = Object.entries(schema).map(([name, spec]): [string, Json] => [
     name,
     asObject(spec),
   ])
-  let minted = highestId(columns)
   for (const [ref, value] of Object.entries(patch)) {
     const named = columns.findIndex(([name]) => name === ref)
     const at =
@@ -292,10 +284,7 @@ export function patchSchema(schema: Json, patch: Json): Array<[string, Json]> | 
         return validation('A database has exactly one title property.')
       }
       let id = typeof current?.id === 'string' ? current.id : 'title'
-      if (current === undefined && kind !== 'title') {
-        minted += 1
-        id = `%3A${String(minted)}`
-      }
+      if (current === undefined && kind !== 'title') id = `%3A${String(minter.next('property'))}`
       next = columnOf(id, name, kind, spec[kind])
     }
     if (columns.some(([other], i) => other === name && i !== at)) {

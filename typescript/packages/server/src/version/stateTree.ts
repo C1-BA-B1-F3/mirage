@@ -18,7 +18,7 @@ import type { WorkspaceStateDict } from '@struktoai/mirage-core/workspace/snapsh
 
 export type { WorkspaceStateDict }
 
-export type AnyDict = Record<string, unknown>
+type AnyDict = Record<string, unknown>
 
 // The control-plane subtree: everything about the workspace that is
 // not file content lives under one reserved directory, so a commit is

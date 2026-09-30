@@ -50,3 +50,21 @@ export function ioToStr(io: ExecuteResult): string {
   if (stderr) text = stdout ? `${stdout}\n${stderr}` : stderr
   return withRefusal(text, io.refusal)
 }
+
+/**
+ * The edit tools' one substitution: `content` with `oldString` replaced
+ * once, or everywhere under `replaceAll`, beside how many times it occurs.
+ * The replacement is literal (no `$&` or `$1` expansion), as Python's
+ * `str.replace` is; a count other than one without `replaceAll` is the
+ * caller's refusal to word. Mirrors Python's `replace_text`.
+ */
+export function replaceText(
+  content: string,
+  oldString: string,
+  newString: string,
+  replaceAll: boolean,
+): [string, number] {
+  const parts = content.split(oldString)
+  const text = replaceAll ? parts.join(newString) : content.replace(oldString, () => newString)
+  return [text, parts.length - 1]
+}

@@ -15,7 +15,7 @@
 import { describe, expect, it } from 'vitest'
 import type { Refusal } from '@struktoai/mirage-core/types'
 import { ExecuteResult } from '@struktoai/mirage-core/workspace/workspace/workspace'
-import { decode, ioToStr, withRefusal } from './io-text.ts'
+import { decode, ioToStr, replaceText, withRefusal } from './io-text.ts'
 
 const enc = (s: string): Uint8Array => new TextEncoder().encode(s)
 
@@ -151,5 +151,24 @@ describe('ioToStr with a refusal', () => {
     expect(ioToStr(new ExecuteResult(enc('cat: /protected: frozen\n'), enc(''), 1, operand))).toBe(
       'cat: /protected: frozen\n',
     )
+  })
+})
+
+describe('replaceText', () => {
+  it('replaces the first occurrence and counts every one', () => {
+    expect(replaceText('a-a-a', 'a', 'b', false)).toEqual(['b-a-a', 3])
+  })
+
+  it('replaces every occurrence under replaceAll', () => {
+    expect(replaceText('a-a-a', 'a', 'b', true)).toEqual(['b-b-b', 3])
+  })
+
+  it('writes dollar patterns literally', () => {
+    expect(replaceText('x=1', '1', "$$ $& $1 $' $`", false)).toEqual(["x=$$ $& $1 $' $`", 1])
+    expect(replaceText('1,1', '1', '$&$&', true)).toEqual(['$&$&,$&$&', 2])
+  })
+
+  it('reports a miss as a zero count', () => {
+    expect(replaceText('abc', 'z', 'y', false)).toEqual(['abc', 0])
   })
 })

@@ -355,7 +355,7 @@ async function databaseWrites(at: string): Promise<void> {
   const id = String(made.id)
   eq('a created database answers its schema', keys(made.properties), ['Name', 'Pages', 'Status'])
   eq('a created column', (made.properties as Record<string, JsonValue>).Pages, {
-    id: 'Pages',
+    id: '%3A1',
     name: 'Pages',
     type: 'number',
     number: { format: 'number' },
@@ -399,7 +399,12 @@ async function databaseWrites(at: string): Promise<void> {
         JsonValue
       >
     ).id,
-    'Pages',
+    '%3A1',
+  )
+  eq(
+    "an added column never takes a removed one's id",
+    (updated.properties as Record<string, Record<string, JsonValue>>).Rating!.id,
+    '%3A3',
   )
   const moved = (await v1('GET', `/v1/pages/${String(book.id)}`)).properties as Record<
     string,
@@ -412,7 +417,7 @@ async function databaseWrites(at: string): Promise<void> {
   )
   eq(
     'a renamed value answers by its old id',
-    (await v1('GET', `/v1/pages/${String(book.id)}/properties/Pages`)).number,
+    (await v1('GET', `/v1/pages/${String(book.id)}/properties/%3A1`)).number,
     412,
   )
   eq(
@@ -435,6 +440,18 @@ async function databaseWrites(at: string): Promise<void> {
     keys((await v1('GET', `/v1/databases/${id}`)).properties),
     ['Name', 'Length', 'Rating'],
   )
+  await v1('PATCH', `/v1/databases/${id}`, { properties: { Rating: { name: 'title' } } })
+  const item = (ref: string) => v1('GET', `/v1/pages/${String(book.id)}/properties/${ref}`)
+  eq(
+    'a name wins over an id',
+    [(await item('title')).type!, (await item('Name')).object!],
+    ['number', 'list'],
+  )
+  eq(
+    'a schema key resolves by name first',
+    keys((await v1('PATCH', `/v1/databases/${id}`, { properties: { title: null } })).properties),
+    ['Name', 'Length'],
+  )
   await v1('PATCH', `/v1/databases/${MISSING}`, { title: [] }, 404)
   await v1(
     'POST',
@@ -448,6 +465,17 @@ async function databaseWrites(at: string): Promise<void> {
     '/v1/databases',
     { parent: { page_id: MISSING }, properties: { Name: { title: {} } } },
     404,
+  )
+  const titled = await v1('POST', '/v1/databases', {
+    parent: { page_id: PAGE },
+    properties: { title: { rich_text: {} }, Name: { title: {} } },
+  })
+  eq(
+    'a column named title does not take the title id',
+    Object.values(titled.properties as Record<string, Record<string, JsonValue>>).map(
+      (column) => column.id!,
+    ),
+    ['%3A1', 'title'],
   )
   const modern = await request(at, 'POST', '/v1/databases', {
     parent: { page_id: PAGE },
@@ -672,6 +700,12 @@ async function mcpSurface(at: string): Promise<void> {
       )
     }
   }
+  const anonymous = await fetch(`${at}/v1/pages/${PAGE}/comments`)
+  eq(
+    'an unrouted path checks the token first',
+    [anonymous.status, ((await anonymous.json()) as Record<string, JsonValue>).code!],
+    [401, 'unauthorized'],
+  )
   for (const [method, path] of [
     ['GET', `/v1/pages/${PAGE}/comments`],
     ['POST', '/v1/pages/'],

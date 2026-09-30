@@ -225,16 +225,20 @@ function columnOf(id: string, name: string, kind: string, settings: JsonValue | 
   return { id, name, type: kind, [kind]: config }
 }
 
-// A created column's id is its name, percent-encoded the way Notion stores an
-// id, so a schema is reproducible across runs; the title column's is `title`,
-// as on live Notion. A name whose id a renamed column still holds takes the
-// first free numbered spelling.
-function freshId(name: string, columns: Array<[string, Json]>): string {
-  const taken = new Set(columns.map(([, spec]) => spec.id))
-  const base = encodeURIComponent(name)
-  let id = base
-  for (let n = 2; taken.has(id); n += 1) id = `${base}${String(n)}`
-  return id
+// A created column's id is minted short and percent-encoded, the way live
+// Notion's read (`%3A1`, `%3A2`, ...), and never from the column's name: an id
+// spelled like a name let a later column's name shadow it, and a non-title
+// column named `title` took the title column's id. The title column's id is
+// always `title`, as on live Notion. A write mints past the highest id the
+// schema held when it began, so a schema is reproducible across runs and a
+// column removed and one added in the same write never share an id.
+function highestId(columns: Array<[string, Json]>): number {
+  let high = 0
+  for (const [, spec] of columns) {
+    const minted = /^%3A(\d+)$/.exec(String(spec.id))
+    if (minted !== null) high = Math.max(high, Number(minted[1]))
+  }
+  return high
 }
 
 // A schema write, keyed by a column's name or id: null removes the column, a
@@ -242,17 +246,23 @@ function freshId(name: string, columns: Array<[string, Json]>): string {
 // type's settings replace the column's, and a key the schema does not hold
 // adds one. The title column can be renamed but not removed, retyped or joined
 // by a second (API reference, update property schema object). Creating a
-// database is this write on an empty schema. The wording of each refusal is
-// the fake's, except the unknown column, which is live's for a filter.
+// database is this write on an empty schema. A key resolves by name before
+// id, the order `propByRef` resolves every other reference in, so one key
+// names one column whatever order the schema holds them in. The wording of
+// each refusal is the fake's, except the unknown column, which is live's for a
+// filter.
 export function patchSchema(schema: Json, patch: Json): Array<[string, Json]> | Reply {
   const columns = Object.entries(schema).map(([name, spec]): [string, Json] => [
     name,
     asObject(spec),
   ])
+  let minted = highestId(columns)
   for (const [ref, value] of Object.entries(patch)) {
-    const at = columns.findIndex(
-      ([name, spec]) => name === ref || spec.id === ref || spec.id === encodeURIComponent(ref),
-    )
+    const named = columns.findIndex(([name]) => name === ref)
+    const at =
+      named !== -1
+        ? named
+        : columns.findIndex(([, spec]) => spec.id === ref || spec.id === encodeURIComponent(ref))
     const current = columns[at]?.[1]
     if (value === null) {
       if (current === undefined)
@@ -281,12 +291,11 @@ export function patchSchema(schema: Json, patch: Json): Array<[string, Json]> | 
       ) {
         return validation('A database has exactly one title property.')
       }
-      const id =
-        typeof current?.id === 'string'
-          ? current.id
-          : kind === 'title'
-            ? 'title'
-            : freshId(name, columns)
+      let id = typeof current?.id === 'string' ? current.id : 'title'
+      if (current === undefined && kind !== 'title') {
+        minted += 1
+        id = `%3A${String(minted)}`
+      }
       next = columnOf(id, name, kind, spec[kind])
     }
     if (columns.some(([other], i) => other === name && i !== at)) {

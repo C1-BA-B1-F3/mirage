@@ -69,16 +69,22 @@ function write(method: string, path: string, handler: KitHandler<C>): KitRoute<C
 // A path no route matches, answered the way live Notion answers one (a
 // trailing-slash `POST /v1/pages/` gets exactly this). The kit's own reply is a
 // 404 in its own shape, which a client reads as "that page does not exist"
-// about a page it has just read. The stderr line is the kit's `unrouted` line,
-// written here because reaching this route means the kit's `unrouted`, which
-// normally writes it and which CI greps for, never ran. Declared LAST, so
-// every real route wins.
+// about a page it has just read. It is behind the token check like every
+// route, so a caller with no token cannot tell a path that exists from one
+// that does not. The stderr line is the kit's `unrouted` line, written here
+// because reaching this route means the kit's `unrouted`, which normally
+// writes it and which CI greps for, never ran. Declared LAST, so every real
+// route wins.
 function catchAll(): KitRoute<C>[] {
   return ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'].map((method) =>
-    route<C>(method, '/*rest', (ctx: Ctx<C>) => {
-      process.stderr.write(`${unroutedLine(config.service, method, ctx.url.pathname)}\n`)
-      return apiError(400, 'invalid_request_url', 'Invalid request URL.')
-    }),
+    route<C>(
+      method,
+      '/*rest',
+      guarded((ctx: Ctx<C>) => {
+        process.stderr.write(`${unroutedLine(config.service, method, ctx.url.pathname)}\n`)
+        return apiError(400, 'invalid_request_url', 'Invalid request URL.')
+      }),
+    ),
   )
 }
 

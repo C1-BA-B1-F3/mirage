@@ -12,9 +12,8 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import asyncio
-
 from mirage.runtime.sandbox.base import RemoteSandbox
+from mirage.runtime.sandbox.cli import run_cli
 from mirage.runtime.sandbox.docker.config import DockerConfig
 from mirage.runtime.sandbox.docker.constants import DOCKER_CLI_HINT
 from mirage.runtime.types import RunResult
@@ -42,19 +41,7 @@ class DockerRuntime(RemoteSandbox):
                       args: list[str],
                       stdin: bytes | None = None) -> tuple[bytes, bytes, int]:
         """One docker CLI invocation; the seam tests override."""
-        try:
-            process = await asyncio.create_subprocess_exec(
-                "docker",
-                *args,
-                stdin=(asyncio.subprocess.PIPE
-                       if stdin is not None else asyncio.subprocess.DEVNULL),
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-            )
-        except FileNotFoundError:
-            raise RuntimeError(DOCKER_CLI_HINT) from None
-        stdout, stderr = await process.communicate(stdin)
-        return stdout, stderr, process.returncode or 0
+        return await run_cli("docker", DOCKER_CLI_HINT, args, stdin)
 
     async def connect(self) -> None:
         stdout, stderr, code = await self._docker([

@@ -19,6 +19,18 @@ Pyodide is full CPython in WebAssembly: real stdlib, `sys.argv`, stdin,
 and auto-loaded scientific packages. `open()` and `os.listdir` access the
 workspace's existing mounts through Pyodide's filesystem adapter.
 
+A script file runs the way CPython runs one: `__file__` is its path made
+absolute against the working directory, tracebacks name it and quote
+its lines, and `sys.path[0]` is the script's own directory, so a module
+beside it imports; `-P` leaves that directory off. For `-c` and stdin,
+`-P` omits the current-directory entry. Configured `sysPath` entries stay
+available in either mode.
+
+The implemented `-P`, `-O`/`-OO`, and `-B` switches are reflected in a
+read-only `sys.flags` view for that invocation. `-O` and `-OO` also compile the
+modules the program imports from source. Interpreter flags and
+import paths are restored when the invocation ends, including on errors.
+
 Installed Python script CLIs receive bare `argv` (including the installed name at index 0) and `stdin` (bytes, or `None` when absent), on both Monty and Pyodide. Pyodide also keeps `sys.argv` and `sys.stdin`. Ordinary `python3` commands retain their interpreter's existing globals.
 
 ```ts
@@ -120,6 +132,10 @@ virtual paths, so `cd /data; python3 -c "print(open('a.txt').read())"`
 reads `/data/a.txt` through the same mount and policy checks as `cat`.
 The script operand is judged like `cat`'s file too: a rule protecting
 `/data/job.py` refuses `python3 job.py` from `/data`.
+The words after it are the program's argv exactly as typed, globs
+expanded as bash expands them: `python3 job.py data/in.csv` hands the
+script `data/in.csv`, and a word naming another mount is a string the
+script may open, not a second mount for the line.
 `os.getcwd()` and `Path.cwd()` report that virtual directory. Monty 1.0.0's
 JavaScript binding cannot return the native named-tuple stat result that
 `os.chdir()` requires, so changing directories inside the guest raises a
@@ -151,6 +167,8 @@ so a dependency update can revisit them.
   `help`, `callable`, `issubclass`, `super` and
   `compile`. There is no `__dict__` on any object, so none of them can
   be written by hand either.
+- `__file__` is the script's name under the directory the run starts in,
+  so it names the script's own file only when the run starts there.
 - Command-line arguments are the `argv` global; `sys.argv` does not exist.
 - No `sys.stdin` and no third-party imports.
 - `os.environ` reflects the session env only.

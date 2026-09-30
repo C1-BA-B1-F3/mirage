@@ -97,9 +97,10 @@ export class Argv {
  *
  * Uses the cwd mount's CommandSpec (when it has one for the command) to
  * decide which words are TEXT (skip classification) and which are PATH
- * (classify even bare filenames). A native program's line is globbed
- * whatever the slots, as bash globs it, and its words are then
- * classified for the slots the expanded words fill.
+ * (classify even bare filenames). A program's line (a native capture,
+ * or an interpreter run in-process) is globbed whatever the slots, as
+ * bash globs it, and its words are then classified for the slots the
+ * expanded words fill.
  */
 export async function expandArgv(
   parts: TSNodeLike[],
@@ -140,12 +141,15 @@ export async function expandArgv(
   // A native program gets its words the way bash hands them over, with
   // every unquoted glob already expanded, whatever slot the word fills.
   const native = consumer === Consumer.EXTERNAL && !refused
-  // An interpreter run in-process keeps the shell's reading of its words,
-  // which is what its argv is built from, but its script is a file it
-  // opens: the spec's script slot makes that one word a path, so a rule
-  // protecting `secret.py` reads `python3 secret.py` however the script
-  // is spelled.
+  // So does an interpreter run in-process. The words after its program
+  // are that program's argv, handed over as typed, and only its script is
+  // a file it opens: the spec's script slot makes that one word a path, so
+  // a rule protecting `secret.py` reads `python3 secret.py` however the
+  // script is spelled, while `python3 s.py data/in.csv` hands the script
+  // `data/in.csv` and a `/tmp/q.txt` beside a script on /workspace names
+  // no second mount.
   const inProcess = consumer === Consumer.SESSION && INTERPRETER_NAMES.has(name)
+  const program = native || inProcess
   let spec: CommandSpec | null = null
   let wordKinds: (ValueType | null)[] | null = null
   let wordBases: (string | null)[] | null = null
@@ -155,17 +159,14 @@ export async function expandArgv(
     spec = specForCommand(name, registry, session.cwd)
     if (spec !== null) {
       const extra: (ValueType | null)[] = new Array<ValueType | null>(consumed - 1).fill('str')
-      const program = lineWords.slice(consumed)
-      let kinds = specWordKinds(spec, program, name)
-      if (inProcess) kinds = kinds.map((kind) => (kind === 'path' ? kind : null))
-      wordKinds = [...extra, ...kinds]
+      wordKinds = [...extra, ...specWordKinds(spec, lineWords.slice(consumed), name)]
       const bases = specWordBases(spec, lineWords.slice(consumed), session.cwd)
       if (bases !== null) {
         wordBases = [...new Array<string | null>(consumed - 1).fill(null), ...bases]
       }
     }
   }
-  if (native) {
+  if (program) {
     // bash globs every unquoted word before the program reads any of
     // them, whatever slot it fills and whatever it looks like:
     // `python3 s.py *.txt` gets the matches, `.*.txt` the dotfiles and
@@ -202,7 +203,7 @@ export async function expandArgv(
         classified.map((item) =>
           item instanceof PathSpec && item.pattern !== null ? item : literalWord(item),
         )
-  if (native && spec !== null) {
+  if (program && spec !== null) {
     words = programWords(words, spec, name, consumed, registry, session.cwd)
   }
   // The text view renders words as typed (rawPath): bash hands
@@ -219,7 +220,7 @@ export async function expandArgv(
 }
 
 /**
- * Classify a native program's words for the argv it receives.
+ * Classify a program's words for the argv it receives.
  *
  * bash expands every glob before the program parses its argv, so a
  * match can fill a slot of another kind than the word it came from:

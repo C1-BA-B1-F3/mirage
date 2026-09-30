@@ -150,6 +150,8 @@ export interface RunArgs {
   env: Record<string, string>
   /** Virtual working directory for filesystem-aware guest runtimes. */
   cwd?: PathSpec
+  /** The script file the program was read from, `rawPath` as typed. */
+  scriptPath?: PathSpec
   stdin: Uint8Array | null
   /**
    * Interpreter-level switches parsed by the command's spec (e.g. js

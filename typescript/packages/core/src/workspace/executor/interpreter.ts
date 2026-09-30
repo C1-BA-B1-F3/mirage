@@ -113,6 +113,8 @@ export function makeInterpreterHandler(spec: InterpreterSpec): InterpreterHandle
   ): Promise<Result> {
     const label = opts.command ?? spec.label
     let code = opts.code
+    // The file the program is read from, which the runtime names it after.
+    const scriptPath = code === null ? pathScope : null
     const cmdStr =
       pathScope !== null ? `${label} ${pathScope.virtual}` : `${label} ${spec.payloadFlag}`
 
@@ -143,6 +145,7 @@ export function makeInterpreterHandler(spec: InterpreterSpec): InterpreterHandle
         args,
         env: opts.env,
         ...(opts.cwd !== undefined ? { cwd: opts.cwd } : {}),
+        ...(scriptPath !== null ? { scriptPath } : {}),
         stdin: stdinBytes,
         ...(opts.prog !== undefined ? { prog: opts.prog } : {}),
         ...(opts.flags !== undefined ? { flags: opts.flags } : {}),

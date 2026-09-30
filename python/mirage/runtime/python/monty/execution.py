@@ -20,6 +20,7 @@ import signal
 from typing import Any
 
 from mirage.runtime.errors import EvalError
+from mirage.runtime.python.execution import main_filename
 from mirage.runtime.python.monty.binding import pydantic_monty
 from mirage.runtime.python.monty.constants import (DEFAULT_PROG,
                                                    INCOMPLETE_MARKERS)
@@ -85,8 +86,12 @@ class MontyExecution:
         # the same way argv does: raw bytes, None when nothing was piped.
         inputs = {"argv": argv, "stdin": args.stdin}
         cwd = args.cwd.virtual if args.cwd is not None else None
+        # A script is Monty's own script_name, which it keeps the last
+        # part of for `__file__`, under the directory a feed starts in.
+        checkout = (pool.checkout() if args.script_path is None else
+                    pool.checkout(script_name=main_filename(args)))
         try:
-            async with pool.checkout() as session:
+            async with checkout as session:
                 # Read the pid before the turn starts: the getter reports
                 # None while a turn is in flight, and cancelling the await
                 # does NOT stop the worker (0.0.19 runs it in its own

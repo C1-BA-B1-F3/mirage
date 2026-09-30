@@ -70,6 +70,40 @@ export interface InitFlags {
 }
 
 /**
+ * CPython command-line switches for one run's interpreter flags.
+ *
+ * For the engines that spawn a real interpreter, honoring these is just
+ * handing them back to CPython in its own spelling. `-O` and `-b` repeat
+ * rather than taking a number, so level 2 is `-O -O`, which CPython reads
+ * exactly as `-OO`. Mirrors Python's init_argv.
+ *
+ * Args:
+ *   flags: the run's RunArgs.flags bag.
+ */
+export function initArgv(flags: InitFlags): string[] {
+  const bag = flags as Readonly<Record<string, unknown>>
+  const argv: string[] = []
+  for (const key of BOOL_FLAGS) {
+    if (bag[key] === true) argv.push(`-${key}`)
+  }
+  for (const key of COUNT_FLAGS) {
+    const count = Number(bag[key] ?? 0)
+    for (let i = 0; i < count; i++) argv.push(`-${key}`)
+  }
+  for (const key of LIST_FLAGS) {
+    const values = bag[key]
+    for (const value of Array.isArray(values) ? values : []) argv.push(`-${key}`, String(value))
+  }
+  for (const [key, spelling] of Object.entries(VALUE_FLAGS)) {
+    const value = bag[key]
+    // CPython parses this one by hand and rejects --opt=value, so it
+    // goes back as two words whatever the user typed.
+    if (typeof value === 'string' && value !== '') argv.push(spelling, value)
+  }
+  return argv
+}
+
+/**
  * The init switches present on a line that this engine did not act on.
  *
  * A runtime that cannot act on these reports them rather than dropping

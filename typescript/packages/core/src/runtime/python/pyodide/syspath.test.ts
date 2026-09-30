@@ -15,6 +15,7 @@
 import { WorkspaceBinding } from '../../binding.ts'
 import { describe, expect, it } from 'vitest'
 import { PrefixResolver } from '../../resolver.ts'
+import { PathSpec } from '../../../types.ts'
 import { PyodideRuntime } from './runtime.ts'
 import type { BridgeDispatchFn } from '../../types.ts'
 
@@ -63,4 +64,34 @@ describe('PyodideRuntime sysPath', () => {
     expect(decode(result.stdout)).toContain('True')
     await rt.close()
   }, 60_000)
+
+  it.each([
+    ['a script heads it with its own directory', true, "['/ram/app', '/ram/vendor']"],
+    ["a payload heads it with ''", false, "['', '/ram/vendor']"],
+  ])(
+    'puts CPython first entry ahead of a configured one: %s',
+    async (_, script, head) => {
+      const rt = new PyodideRuntime({ config: { sysPath: ['/ram/vendor'] } })
+      rt.bind(new WorkspaceBinding(EMPTY_MOUNT, new PrefixResolver(() => ['/ram/'])))
+      const result = await rt.run({
+        code: 'import sys; print(sys.path[:2])',
+        args: [],
+        env: {},
+        stdin: new Uint8Array(),
+        ...(script
+          ? {
+              prog: '/ram/app/s.py',
+              scriptPath: new PathSpec({
+                virtual: '/ram/app/s.py',
+                directory: '/ram/app/',
+                vfsPath: 'app/s.py',
+              }),
+            }
+          : {}),
+      })
+      expect(decode(result.stdout)).toBe(`${head}\n`)
+      await rt.close()
+    },
+    60_000,
+  )
 })

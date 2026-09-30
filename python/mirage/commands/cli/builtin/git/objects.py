@@ -19,7 +19,7 @@ from typing import IO, Iterator, cast
 
 from dulwich.object_format import SHA1
 from dulwich.object_store import PackCapableObjectStore
-from dulwich.objects import Blob, ObjectID, RawObjectID, ShaFile
+from dulwich.objects import Blob, ObjectID, RawObjectID, ShaFile, sha_to_hex
 from dulwich.pack import Pack, PackData, load_pack_index_file, write_pack_index
 from dulwich.repo import BaseRepo
 
@@ -37,6 +37,7 @@ IDX_SUFFIX = ".idx"
 PACK_SUFFIX = ".pack"
 FANOUT_LEN = 2
 SHA_LEN = 40
+HEX_DIGITS = frozenset(b"0123456789abcdef")
 
 
 def _basename(entry: str) -> str:
@@ -173,6 +174,25 @@ class LooseObjects:
         self._cache[oid] = obj
 
 
+def _packed_under(pack: Pack, prefix: bytes) -> Iterator[ObjectID]:
+    """The ids one pack holds under a hex prefix, found through its
+    index's fan-out table and sorted names rather than by walking them
+    all.
+
+    Args:
+        pack (Pack): the pack.
+        prefix (bytes): lowercase hex id prefix.
+    """
+    whole = len(prefix) // 2 * 2
+    if not whole:
+        yield from (oid for oid in pack if oid.startswith(prefix))
+        return
+    for raw in pack.index.iter_prefix(bytes.fromhex(prefix[:whole].decode())):
+        oid = sha_to_hex(raw)
+        if oid.startswith(prefix):
+            yield oid
+
+
 class VfsObjectStore(PackCapableObjectStore):
     """A git object database whose bytes come from a mirage mount.
 
@@ -240,15 +260,19 @@ class VfsObjectStore(PackCapableObjectStore):
         Overridden because the inherited version walks the whole store,
         which for a lazy database means fetching every object to answer
         an abbreviated id. A pack index is already in memory and sorted,
-        and the loose half narrows to a single fanout directory.
+        so only the fan-out bucket the prefix falls in is read, and the
+        loose half narrows to a single fanout directory. A prefix that is
+        not lowercase hex names no object.
 
         Args:
             prefix (bytes): hex id prefix, as typed.
         """
+        if not set(prefix) <= HEX_DIGITS:
+            return
         seen: set[ObjectID] = set()
         for pack in self._packs:
-            for oid in pack:
-                if oid.startswith(prefix) and oid not in seen:
+            for oid in _packed_under(pack, prefix):
+                if oid not in seen:
                     seen.add(oid)
                     yield oid
         if len(prefix) < FANOUT_LEN:

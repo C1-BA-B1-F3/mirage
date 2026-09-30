@@ -13,6 +13,7 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import { expect, it } from 'vitest'
+import { compareCodePoints } from '../../../../utils/sort.ts'
 import {
   headRef,
   isRootRef,
@@ -21,6 +22,7 @@ import {
   matchShort,
   refKind,
   resolveRef,
+  uniqueWidth,
 } from './ref_list.ts'
 import { RefKind } from './types.ts'
 
@@ -107,4 +109,23 @@ it.each([
   ['refs/notes/commits', RefKind.OTHER],
 ])('takes the kind of %s from its name', (name, kind) => {
   expect(refKind(name)).toBe(kind)
+})
+
+const A1 = `d04348a1${'0'.repeat(32)}`
+const A2 = `d04348a2${'0'.repeat(32)}`
+const FAR = `d0ffff${'0'.repeat(34)}`
+
+it.each([
+  [A1, 7, 8],
+  [A2, 4, 8],
+  [FAR, 4, 4],
+  [`d04348a3${'0'.repeat(32)}`, 4, 8],
+  [A1, 12, 12],
+  [A1, 40, 40],
+])('grows %s from %i past the neighbours it shares', (oid, width, expected) => {
+  expect(uniqueWidth(oid, width, [A1, A2, FAR].sort(compareCodePoints))).toBe(expected)
+})
+
+it('keeps the width of an id alone in its bucket', () => {
+  expect(uniqueWidth(A1, 4, [])).toBe(4)
 })

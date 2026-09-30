@@ -21,6 +21,7 @@ import { abbrevLength, type CommitFacts } from './format.ts'
 import { configValues, gitFs } from './fs.ts'
 import { exists, readNames, readRange, under, writeFile } from './io.ts'
 import { basename } from './path.ts'
+import { compareCodePoints } from '../../../../utils/sort.ts'
 import type { CLIDoors } from '../../types.ts'
 import { gitBool, startPoint } from './util.ts'
 import type { Dispatch, RepoLocation } from './types.ts'
@@ -30,6 +31,14 @@ const IDX_SUFFIX = '.idx'
 // A v2 pack index is a 8-byte header then 256 fanout entries; the last one is
 // the object count, so the total is four bytes at a fixed offset.
 const FANOUT_END = 8 + 256 * 4
+const FANOUT_SIZE = 256 * 4
+// A v2 index opens with this magic; a v1 one has none and starts with the
+// fanout, its entries an offset and a name each rather than names alone.
+const IDX_MAGIC = [0xff, 0x74, 0x4f, 0x63]
+const SHA_BYTES = 20
+const V1_OFFSET_BYTES = 4
+const OBJECTS_DIR = 'objects'
+const LOOSE_NAME_LENGTH = 38
 
 /**
  * A repository living in a mount, opened for reading.
@@ -87,6 +96,63 @@ async function packedCount(dispatch: Dispatch, commondir: string): Promise<numbe
     total += new DataView(head.buffer, head.byteOffset, 4).getUint32(0, false)
   }
   return total
+}
+
+function hex(bytes: Uint8Array): string {
+  return [...bytes].map((byte) => byte.toString(16).padStart(2, '0')).join('')
+}
+
+/**
+ * The ids one pack index holds whose first byte is `byte`: its fanout table
+ * says where that bucket of the sorted names starts and ends, so only the
+ * bucket is read rather than every name.
+ */
+async function packedUnder(dispatch: Dispatch, path: string, byte: number): Promise<string[]> {
+  const head = await readRange(dispatch, path, 0, IDX_MAGIC.length)
+  const v2 = IDX_MAGIC.every((value, i) => head[i] === value)
+  const fanoutAt = v2 ? FANOUT_END - FANOUT_SIZE : 0
+  const fanout = await readRange(dispatch, path, fanoutAt, FANOUT_SIZE)
+  if (fanout.byteLength < FANOUT_SIZE) return []
+  const table = new DataView(fanout.buffer, fanout.byteOffset, FANOUT_SIZE)
+  const start = byte === 0 ? 0 : table.getUint32((byte - 1) * 4, false)
+  const end = table.getUint32(byte * 4, false)
+  if (end <= start) return []
+  const stride = v2 ? SHA_BYTES : SHA_BYTES + V1_OFFSET_BYTES
+  const skip = v2 ? 0 : V1_OFFSET_BYTES
+  const names = await readRange(
+    dispatch,
+    path,
+    fanoutAt + FANOUT_SIZE + start * stride,
+    (end - start) * stride,
+  )
+  const ids: string[] = []
+  for (let at = skip; at + SHA_BYTES <= names.byteLength; at += stride)
+    ids.push(hex(names.subarray(at, at + SHA_BYTES)))
+  return ids
+}
+
+/**
+ * Every id, loose or packed, starting with a two-digit fanout prefix, sorted.
+ * Nothing is read but each pack index's bucket for that byte and the one loose
+ * directory, which is what widening abbreviated ids needs.
+ *
+ * @param fanout two lowercase hex digits
+ */
+export async function idsUnder(repo: Repo, fanout: string): Promise<string[]> {
+  const found = new Set<string>()
+  const byte = parseInt(fanout, 16)
+  const root = under(repo.location.commondir, PACK_DIR)
+  for (const entry of await readNames(repo.dispatch, root)) {
+    const name = basename(entry)
+    if (!name.endsWith(IDX_SUFFIX)) continue
+    for (const oid of await packedUnder(repo.dispatch, under(root, name), byte)) found.add(oid)
+  }
+  const loose = under(repo.location.commondir, `${OBJECTS_DIR}/${fanout}`)
+  for (const entry of await readNames(repo.dispatch, loose)) {
+    const name = basename(entry)
+    if (name.length === LOOSE_NAME_LENGTH) found.add(`${fanout}${name}`)
+  }
+  return [...found].sort(compareCodePoints)
 }
 
 /** Which of commit/tag/tree/blob an id names, null when the repository lacks it. */

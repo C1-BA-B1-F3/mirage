@@ -136,3 +136,24 @@ def test_no_refspec_means_no_upstream_and_dot_means_local():
     local = ref_list.tracking_ref(cfg, "topic", frozenset({"refs/heads/main"}))
     assert local is not None and local.ref == "refs/heads/main"
     assert ref_list.tracking_ref(cfg, "other", frozenset()) is None
+
+
+A1 = "d04348a1" + "0" * 32
+A2 = "d04348a2" + "0" * 32
+FAR = "d0ffff" + "0" * 34
+
+
+@pytest.mark.parametrize("oid,width,expected", [
+    (A1, 7, 8),
+    (A2, 4, 8),
+    (FAR, 4, 4),
+    ("d04348a3" + "0" * 32, 4, 8),
+    (A1, 12, 12),
+    (A1, 40, 40),
+])
+def test_a_width_grows_past_the_neighbours_it_shares(oid, width, expected):
+    assert ref_list.unique_width(oid, width, sorted([A1, A2, FAR])) == expected
+
+
+def test_an_id_alone_in_its_bucket_keeps_its_width():
+    assert ref_list.unique_width(A1, 4, []) == 4

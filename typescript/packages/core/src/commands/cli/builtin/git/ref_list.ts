@@ -32,7 +32,7 @@ import { keptRefs, type RefFilter } from './ref_filter.ts'
 import { parseSortKeys } from './ref_format.ts'
 import { loadRefs, mapped, parseRefspec } from './refs.ts'
 import { DETACHED_AT, DETACHED_FROM, NO_BRANCH } from './render.ts'
-import { commitFacts, objectType, repoArgs, type Repo } from './repo.ts'
+import { commitFacts, idsUnder, objectType, repoArgs, type Repo } from './repo.ts'
 import {
   RefKind,
   type DateMode,
@@ -418,31 +418,62 @@ export function headRef(table: ReadonlyMap<string, string>): string | null {
   return null
 }
 
-/** Widen prefixes against loose and packed objects without reading their contents. */
+const FANOUT_LEN = 2
+
+/** Where `oid` sorts among sorted ids: the first index not below it. */
+function bisectLeft(ids: readonly string[], oid: string): number {
+  let low = 0
+  let high = ids.length
+  while (low < high) {
+    const mid = (low + high) >> 1
+    if (compareCodePoints(ids[mid] ?? '', oid) < 0) low = mid + 1
+    else high = mid
+  }
+  return low
+}
+
+function sharedLength(a: string, b: string): number {
+  let shared = 0
+  while (shared < a.length && a[shared] === b[shared]) shared += 1
+  return shared
+}
+
+/**
+ * The shortest prefix of `oid` no other id shares, no shorter than `width`, as
+ * git's `find_abbrev_len_for_pack` finds it. In sorted ids the longest prefix
+ * any other id shares with `oid` is shared by a neighbour of the place it sorts
+ * to, so only those two are compared. An id the repository lacks (a missing
+ * parent) sorts between its neighbours all the same.
+ *
+ * @param ids every id sharing its fanout byte, sorted
+ */
+export function uniqueWidth(oid: string, width: number, ids: readonly string[]): number {
+  const at = bisectLeft(ids, oid)
+  const after = ids[at] === oid ? at + 1 : at
+  let widest = width
+  for (const other of [...ids.slice(Math.max(at - 1, 0), at), ...ids.slice(after, after + 1)])
+    widest = Math.max(widest, sharedLength(oid, other) + 1)
+  return Math.min(widest, oid.length)
+}
+
+/**
+ * Widen requested prefixes against loose and packed objects, including objects
+ * no selected ref reaches, without reading object contents. Each fanout bucket
+ * the ids fall in is read once, so a listing of many branches costs one pass
+ * over the ids those buckets hold rather than one per branch.
+ */
 async function uniqueAbbreviations(
   repo: Repo,
   widths: ReadonlyMap<string, number>,
 ): Promise<Map<string, number>> {
-  const unique = new Map<string, number>()
-  for (const [oid, requested] of widths) {
-    let width = requested
-    if (width < oid.length) {
-      let matches: string[]
-      try {
-        matches = [await git.expandOid({ ...repoArgs(repo), oid: oid.slice(0, width) })]
-      } catch (err) {
-        if (err instanceof git.Errors.AmbiguousError) matches = err.data.matches
-        // A missing parent/tree is still printed as an abbreviated id by Git.
-        else if (err instanceof git.Errors.NotFoundError) matches = []
-        else throw err
-      }
-      for (const other of matches) {
-        if (other === oid) continue
-        while (other.startsWith(oid.slice(0, width)) && width < oid.length) width += 1
-      }
-    }
-    unique.set(oid, width)
+  const buckets = new Map<string, string[]>()
+  for (const oid of widths.keys()) {
+    const fanout = oid.slice(0, FANOUT_LEN)
+    if (!buckets.has(fanout)) buckets.set(fanout, await idsUnder(repo, fanout))
   }
+  const unique = new Map<string, number>()
+  for (const [oid, width] of widths)
+    unique.set(oid, uniqueWidth(oid, width, buckets.get(oid.slice(0, FANOUT_LEN)) ?? []))
   return unique
 }
 

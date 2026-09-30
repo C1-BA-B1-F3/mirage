@@ -15,9 +15,11 @@
 import asyncio
 import posixpath
 import re
+from bisect import bisect_left
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import replace
 from io import BytesIO
+from os.path import commonprefix
 
 from dulwich.config import ConfigFile
 from dulwich.objects import ObjectID, ShaFile, Tag
@@ -30,7 +32,7 @@ from mirage.commands.cli.builtin.git.errors import GitError
 from mirage.commands.cli.builtin.git.format import short
 from mirage.commands.cli.builtin.git.io import read_names, read_optional
 from mirage.commands.cli.builtin.git.mailmap import load_mailmap
-from mirage.commands.cli.builtin.git.objects import abbrev_for
+from mirage.commands.cli.builtin.git.objects import FANOUT_LEN, abbrev_for
 from mirage.commands.cli.builtin.git.ref_fields import (abbreviation_requests,
                                                         needs_object)
 from mirage.commands.cli.builtin.git.ref_filter import RefFilter, kept_refs
@@ -551,27 +553,53 @@ def _mailmapped(fields: Sequence[RefField]) -> bool:
                for field in fields)
 
 
+def unique_width(oid: str, width: int, ids: Sequence[str]) -> int:
+    """The shortest prefix of ``oid`` no other id shares, no shorter than
+    ``width``, as git's ``find_abbrev_len_for_pack`` finds it.
+
+    In sorted ids the longest prefix any other id shares with ``oid`` is
+    shared by a neighbour of the place it sorts to, so only those two
+    are compared. An id the repository lacks (a missing parent) sorts
+    between its neighbours all the same.
+
+    Args:
+        oid (str): the full hex id.
+        width (int): the width asked for.
+        ids (Sequence[str]): every id sharing its fanout byte, sorted.
+    """
+    at = bisect_left(ids, oid)
+    after = at + 1 if at < len(ids) and ids[at] == oid else at
+    for other in [*ids[max(at - 1, 0):at], *ids[after:after + 1]]:
+        width = max(width, len(commonprefix([oid, other])) + 1)
+    return min(width, len(oid))
+
+
 def _unique_abbreviations(repo: BaseRepo,
                           widths: Mapping[str, int]) -> dict[str, int]:
     """Widen requested prefixes against loose and packed objects, including
     objects no selected ref reaches, without reading object contents.
 
+    Each fanout bucket the ids fall in is read once, so a listing of many
+    branches costs one pass over the ids those buckets hold rather than
+    one per branch.
+
     Args:
         repo (BaseRepo): the opened repository.
         widths (Mapping[str, int]): the smallest requested width per id.
     """
-    unique: dict[str, int] = {}
-    for oid, width in widths.items():
-        if width < len(oid):
-            for candidate in repo.object_store.iter_prefix(
-                    oid[:width].encode()):
-                other = candidate.decode()
-                if other == oid:
-                    continue
-                while other.startswith(oid[:width]) and width < len(oid):
-                    width += 1
-        unique[oid] = width
-    return unique
+    buckets: dict[str, list[str]] = {}
+    for oid in widths:
+        buckets.setdefault(oid[:FANOUT_LEN], [])
+    for fanout, ids in buckets.items():
+        ids.extend(
+            sorted({
+                found.decode()
+                for found in repo.object_store.iter_prefix(fanout.encode())
+            }))
+    return {
+        oid: unique_width(oid, width, buckets[oid[:FANOUT_LEN]])
+        for oid, width in widths.items()
+    }
 
 
 async def ref_listing(

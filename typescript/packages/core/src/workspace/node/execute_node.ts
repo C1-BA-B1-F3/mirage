@@ -883,9 +883,6 @@ async function executeNodeBody(
   }
 
   if (kind === NodeKind.COMMAND) {
-    // One scope per simple command, entered before its words expand, so a
-    // fresh listing this command refreshes is trusted for the rest of it and
-    // nothing older is.
     return runInCommandScope(() =>
       executeCommand(
         recurse,
@@ -1194,8 +1191,6 @@ async function executeNodeBody(
 
   if (kind === NodeKind.FOR || kind === NodeKind.SELECT) {
     const [variable, values, body] = getForParts(node)
-    // The word list expands once, as a command of its own; each body command
-    // then gets its own scope.
     const resolved = await runInCommandScope(async () => {
       const classified = await expandAndClassify(
         values,

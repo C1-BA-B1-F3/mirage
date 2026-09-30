@@ -372,7 +372,6 @@ export async function refillSnapshot(
   index: IndexCacheStore,
   prefix: string,
 ): Promise<IndexSnapshot> {
-  // A first fetch has nothing to compare with, so it reports nothing.
   const previous = accessor.treeLoaded ? new Map(accessor.tree) : null
   const tree = await fetchTree(accessor)
   accessor.tree = tree

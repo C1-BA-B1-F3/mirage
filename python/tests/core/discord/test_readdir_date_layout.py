@@ -115,6 +115,10 @@ async def test_a_channel_and_a_sealed_day_are_written_as_windows(
     assert index.windows[f"/{CHANNEL}/{SEALED_DAY}"] is True
 
 
+async def _soft_day_listing(_accessor, _channel_id, _day):
+    return DirListing(entries=[], window=True)
+
+
 async def test_a_soft_error_files_listing_is_a_window_too(accessor):
     # Reached when the files listing was evicted but the day survived; a
     # soft error there must not evict the attachments it listed before.
@@ -124,12 +128,10 @@ async def test_a_soft_error_files_listing_is_a_window_too(accessor):
                      vfs_name="files",
                      extra={"channel_id": "C001"})
 
-    async def soft(_accessor, _channel_id, _day):
-        return DirListing(entries=[], window=True)
-
     match = ScopeMatch(kind="files",
                        vfs_path=f"{CHANNEL}/2026-05-10/files",
                        slots={"day": "2026-05-10"})
-    with patch("mirage.core.discord.readdir._day_listing", new=soft):
+    with patch("mirage.core.discord.readdir._day_listing",
+               new=_soft_day_listing):
         listing = await _list_files(accessor, match, own)
     assert listing.window is True

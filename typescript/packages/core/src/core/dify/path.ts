@@ -53,7 +53,6 @@ export async function resolvePath(
   }
   const listing = await index.listDir(virtualKey)
   if (listing.entries == null && listing.status === LookupStatus.EXPIRED) {
-    // The tree is written whole: expired means aged out, not gone.
     refilled ??= await refillTree(accessor, index, mountPrefix)
     if (refilled.has(virtualKey))
       return {

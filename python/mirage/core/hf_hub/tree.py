@@ -476,7 +476,6 @@ async def refill_snapshot(
     # The caller holds index_lock through replacement and its final lookup.
     if index is NULL_INDEX:
         return None
-    # A first fetch has nothing to compare with, so it reports nothing.
     previous = dict(accessor.tree) if accessor.tree_loaded else None
     tree = await fetch_tree(accessor)
     accessor.tree = tree

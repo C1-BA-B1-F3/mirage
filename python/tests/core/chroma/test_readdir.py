@@ -65,19 +65,21 @@ async def test_an_expired_folder_under_a_live_root_refills(
     assert entries == ["/knowledge/guides/quickstart"]
 
 
+async def _refuse_listing(_folder: str) -> bool:
+    return False
+
+
 @pytest.mark.asyncio
 async def test_a_refused_folder_listing_refills_and_answers(
         chroma_accessor, chroma_index):
     # A read outside any command under fresh has every cached listing
     # refused; answering ENOENT would fail every such ls of a subfolder.
-    async def refuse(_folder: str) -> bool:
-        return False
 
     view = IndexView(chroma_index,
                      RAMFileCacheStore(),
                      "/knowledge",
                      lambda _key: True,
-                     may_serve_listing=refuse)
+                     may_serve_listing=_refuse_listing)
     await readdir(chroma_accessor, _guides(), view)
     assert await readdir(chroma_accessor, _guides(),
                          view) == ["/knowledge/guides/quickstart"]
@@ -96,14 +98,11 @@ async def test_a_folder_the_tree_lacks_is_still_enoent(chroma_accessor,
 async def test_a_refused_root_listing_refills_and_answers(
         chroma_accessor, chroma_index, knowledge_root):
 
-    async def refuse(_folder: str) -> bool:
-        return False
-
     view = IndexView(chroma_index,
                      RAMFileCacheStore(),
                      "/knowledge",
                      lambda _key: True,
-                     may_serve_listing=refuse)
+                     may_serve_listing=_refuse_listing)
     await readdir(chroma_accessor, knowledge_root, view)
     assert sorted(await
                   readdir(chroma_accessor, knowledge_root,

@@ -392,16 +392,22 @@ class _ExpiredOnArrival(RAMIndexCacheStore):
             if path not in self.live:
                 self._expiry[path] = _EPOCH
 
-    async def _set_dir(self, vfs_path: str, entries: list[tuple[str,
-                                                                IndexEntry]],
-                       expired_at: datetime | None, *, partial: bool,
-                       evict: bool) -> list[Evicted]:
+    async def _set_dir(
+        self,
+        vfs_path: str,
+        entries: list[tuple[str, IndexEntry]],
+        expired_at: datetime | None,
+        *,
+        partial: bool,
+        evict: bool,
+        excluded: tuple[str, ...] = ()) -> list[Evicted]:
         return await super()._set_dir(
             vfs_path,
             entries,
             expired_at if vfs_path in self.live else _EPOCH,
             partial=partial,
-            evict=evict)
+            evict=evict,
+            excluded=excluded)
 
 
 def expired_on_arrival(*live: str) -> RAMIndexCacheStore:

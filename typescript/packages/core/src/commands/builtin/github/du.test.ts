@@ -57,7 +57,7 @@ it('truncated du preserves directory rows and permission errors', async () => {
     out === null ? new Uint8Array() : out instanceof Uint8Array ? out : await materialize(out)
   expect(new TextDecoder().decode(bytes)).toBe('0\t/db/empty\n0\t/db/sealed\n3\t/db\n')
   expect(io.exitCode).toBe(1)
-  expect(new TextDecoder().decode(io.stderr ?? new Uint8Array())).toBe(
+  expect(await io.stderrStr()).toBe(
     "du: cannot read directory '/db/sealed': Permission denied\n" +
       "du: cannot read directory '/db/walled': Permission denied\n",
   )

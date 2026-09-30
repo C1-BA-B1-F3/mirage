@@ -401,10 +401,13 @@ def _hf_fake(name: str, shape: str, data: bytes,
         # A whole-tree refill is the one thing that invalidates a store's
         # prefix. On the mount's own index a cold read does it legitimately;
         # on any other store it is the reconcile probe walking the tree.
-        async def watched(store, prefix_: str) -> None:
+        async def watched(store,
+                          prefix_: str,
+                          *,
+                          excluded: tuple[str, ...] = ()) -> None:
             if store is not _OWN_INDEX.get(vfs):
                 reach.append("tree walk on a throwaway index")
-            await invalidate(store, prefix_)
+            await invalidate(store, prefix_, excluded=excluded)
 
         monkeypatch.setattr(RAMIndexCacheStore, "invalidate_prefix", watched)
 
@@ -557,10 +560,13 @@ def _github_fake(shape: str, data: bytes,
         reach: list[str] = []
         invalidate = RAMIndexCacheStore.invalidate_prefix
 
-        async def watched(store, prefix_: str) -> None:
+        async def watched(store,
+                          prefix_: str,
+                          *,
+                          excluded: tuple[str, ...] = ()) -> None:
             if store is not _OWN_INDEX.get(vfs):
                 reach.append("tree walk on a throwaway index")
-            await invalidate(store, prefix_)
+            await invalidate(store, prefix_, excluded=excluded)
 
         monkeypatch.setattr(RAMIndexCacheStore, "invalidate_prefix", watched)
 

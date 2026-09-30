@@ -18,7 +18,6 @@ async def readdir(
         return resolved.children
     listing = await index.list_dir(resolved.virtual_key)
     if listing.entries is None and listing.status == LookupStatus.EXPIRED:
-        # The tree is written whole: expired means aged out, not gone.
         refilled = await refill_tree(accessor, index, resolved.mount_prefix)
         if resolved.virtual_key in refilled:
             return refilled[resolved.virtual_key]

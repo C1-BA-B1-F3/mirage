@@ -50,19 +50,20 @@ async def test_an_expired_folder_under_a_live_root_refills(
     ]
 
 
+async def _refuse_listing(_folder: str) -> bool:
+    return False
+
+
 @pytest.mark.asyncio
 async def test_a_refused_folder_listing_refills_and_answers(
         monkeypatch, dify_accessor, dify_index):
     monkeypatch.setattr(tree, "list_all_documents", list_basic_documents)
 
-    async def refuse(_folder: str) -> bool:
-        return False
-
     view = IndexView(dify_index,
                      RAMFileCacheStore(),
                      "/knowledge",
                      lambda _key: True,
-                     may_serve_listing=refuse)
+                     may_serve_listing=_refuse_listing)
     await readdir.readdir(dify_accessor, _guides(), view)
     assert await readdir.readdir(dify_accessor, _guides(),
                                  view) == ["/knowledge/guides/quickstart"]
@@ -73,14 +74,11 @@ async def test_a_refused_root_listing_refills_and_answers(
         monkeypatch, dify_accessor, dify_index, knowledge_root):
     monkeypatch.setattr(tree, "list_all_documents", list_basic_documents)
 
-    async def refuse(_folder: str) -> bool:
-        return False
-
     view = IndexView(dify_index,
                      RAMFileCacheStore(),
                      "/knowledge",
                      lambda _key: True,
-                     may_serve_listing=refuse)
+                     may_serve_listing=_refuse_listing)
     await readdir.readdir(dify_accessor, knowledge_root, view)
     assert await readdir.readdir(dify_accessor, knowledge_root, view) == [
         "/knowledge/README.md", "/knowledge/guides"

@@ -32,7 +32,6 @@ export async function readdir(
   if (resolved.children !== undefined) return resolved.children
   const listing = await index.listDir(resolved.virtualKey)
   if (listing.entries == null && listing.status === LookupStatus.EXPIRED) {
-    // The tree is written whole: expired means aged out, not gone.
     const refilled = await refillTree(accessor, index, resolved.mountPrefix)
     const rows = refilled.get(resolved.virtualKey)
     if (rows !== undefined) return rows

@@ -48,6 +48,7 @@ function gate(): [Promise<void>, () => void] {
 
 function fakeManager(log: string[], name: string): CacheInvalidator {
   return {
+    listedSince: () => false,
     invalidateAfterWrite(path) {
       log.push(`${name}:write:${typeof path === 'string' ? path : path.virtual}`)
       return Promise.resolve()

@@ -533,6 +533,10 @@ async def test_a_globbed_label_listing_is_not_cached_as_the_label(
     assert plain == []
 
 
+async def _one_message(_tm, label_id=None, query=None, max_results=50):
+    return [{"id": "x1"}]
+
+
 @pytest.mark.asyncio
 async def test_a_label_and_its_day_are_written_as_windows(accessor):
     # Both fetches stop at MAX_MESSAGES, so what they name is a window: a
@@ -543,12 +547,6 @@ async def test_a_label_and_its_day_are_written_as_windows(accessor):
     async def fake_get_message_raw(_tm, mid):
         return raws[mid]
 
-    async def fake_list_messages(_tm,
-                                 label_id=None,
-                                 query=None,
-                                 max_results=50):
-        return [{"id": "x1"}]
-
     with (
             patch("mirage.core.gmail.readdir.list_labels",
                   new_callable=AsyncMock,
@@ -556,8 +554,7 @@ async def test_a_label_and_its_day_are_written_as_windows(accessor):
                       "id": "INBOX",
                       "type": "system"
                   }]),
-            patch("mirage.core.gmail.readdir.list_messages",
-                  new=fake_list_messages),
+            patch("mirage.core.gmail.readdir.list_messages", new=_one_message),
             patch("mirage.core.gmail.readdir.get_message_raw",
                   new=fake_get_message_raw),
     ):
@@ -581,12 +578,6 @@ async def test_a_day_listed_first_is_written_as_a_window(accessor):
     async def fake_get_message_raw(_tm, mid):
         return raws[mid]
 
-    async def fake_list_messages(_tm,
-                                 label_id=None,
-                                 query=None,
-                                 max_results=50):
-        return [{"id": "x1"}]
-
     with (
             patch("mirage.core.gmail.readdir.list_labels",
                   new_callable=AsyncMock,
@@ -594,8 +585,7 @@ async def test_a_day_listed_first_is_written_as_a_window(accessor):
                       "id": "INBOX",
                       "type": "system"
                   }]),
-            patch("mirage.core.gmail.readdir.list_messages",
-                  new=fake_list_messages),
+            patch("mirage.core.gmail.readdir.list_messages", new=_one_message),
             patch("mirage.core.gmail.readdir.get_message_raw",
                   new=fake_get_message_raw),
     ):

@@ -131,7 +131,6 @@ class CacheManager:
         if self._file_cache is None or isinstance(index, IndexView):
             return index
         if self._view is None or self._view.store is not index:
-            # A new store holds none of what the old one was written.
             self._written.clear()
             self._view = IndexView(index,
                                    self._file_cache,

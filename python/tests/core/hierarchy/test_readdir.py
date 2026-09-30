@@ -380,13 +380,13 @@ def test_a_windowed_listing_seeds_windows_too(accessor):
         detect_scope,
         listers={
             "rooms":
-            lambda a, match: _seed_once(
-                ["/h/rooms/red-a", "/h/rooms/red-b"], window=True)
+            lambda a, match: _seed_once(["/h/rooms/red-a", "/h/rooms/red-b"],
+                                        window=True)
         },
         static_root=("rooms", ))
     index = RAMIndexCacheStore()
-    asyncio.run(
-        index.set_dir("/h/rooms/red", [_room("red-a"), _room("red-b")]))
+    asyncio.run(index.set_dir("/h/rooms/red",
+                              [_room("red-a"), _room("red-b")]))
     asyncio.run(readdir(accessor, spec("/rooms"), index=index))
     assert asyncio.run(index.get("/h/rooms/red/red-b")).entry is not None
 
@@ -394,8 +394,8 @@ def test_a_windowed_listing_seeds_windows_too(accessor):
 def test_a_partial_window_stays_partial_and_seeds_windows(accessor):
     readdir = _sliding(window=True, partial=True)
     index = RAMIndexCacheStore()
-    asyncio.run(
-        index.set_dir("/h/rooms/red", [_room("red-a"), _room("red-z")]))
+    asyncio.run(index.set_dir("/h/rooms/red",
+                              [_room("red-a"), _room("red-z")]))
     asyncio.run(readdir(accessor, spec("/rooms"), index=index))
     assert asyncio.run(index.list_dir("/h/rooms")).entries is None
     assert asyncio.run(index.get("/h/rooms/red/red-z")).entry is not None
@@ -407,6 +407,14 @@ async def _seed_once(_names: list[str], window: bool) -> DirListing:
                       window=window)
 
 
+async def _unchanged_listing(a, match):
+    return DirListing(
+        entries=[(".secret", _room(".secret")[1]),
+                 _room("red"),
+                 _room("blue")],
+        seeds={"red": [_room("red-a"), (".hidden", _room(".hidden")[1])]})
+
+
 def test_relisting_an_unchanged_backend_hands_nothing_to_cleanup(accessor):
     # Every writer here must name every child it names the first time; a
     # dropped hidden name or a seeded child listing that differs between
@@ -416,15 +424,8 @@ def test_relisting_an_unchanged_backend_hands_nothing_to_cleanup(accessor):
     async def on_gone(child: Evicted) -> None:
         gone.append(child)
 
-    async def lister(a, match):
-        return DirListing(entries=[(".secret", _room(".secret")[1]),
-                                   _room("red"),
-                                   _room("blue")],
-                          seeds={"red": [_room("red-a"),
-                                         (".hidden", _room(".hidden")[1])]})
-
     readdir = make_readdir(detect_scope,
-                           listers={"rooms": lister},
+                           listers={"rooms": _unchanged_listing},
                            static_root=("rooms", ))
     store = RAMIndexCacheStore()
     index = IndexView(store,
@@ -437,4 +438,3 @@ def test_relisting_an_unchanged_backend_hands_nothing_to_cleanup(accessor):
     asyncio.run(readdir(accessor, spec("/rooms"), index=index))
     assert gone == []
     assert asyncio.run(store.get("/h/rooms/red/red-a")).entry is not None
-

@@ -822,9 +822,6 @@ async def _execute_node(
 
     # ── command ─────────────────────────────────
     if kind == NodeKind.COMMAND:
-        # One scope per simple command, entered before its words expand,
-        # so a fresh listing this command refreshes is trusted for the rest
-        # of it and nothing older is.
         async with command_scope():
             return await execute_command(recurse,
                                          dispatch,
@@ -1051,8 +1048,6 @@ async def _execute_node(
     # ── for / select ────────────────────────────
     if kind in (NodeKind.FOR, NodeKind.SELECT):
         var, values, body = get_for_parts(node)
-        # The word list expands once, as a command of its own; each body
-        # command then gets its own scope.
         async with command_scope():
             classified = await expand_and_classify(values,
                                                    session,

@@ -104,7 +104,6 @@ export class CacheManager {
   scopeIndex(index: IndexCacheStore): IndexCacheStore {
     if (this.fileCache === null || index instanceof IndexView) return index
     if (this.view?.store !== index) {
-      // A new store holds none of what the old one was written.
       this.written.clear()
       this.view = new IndexView(
         index,

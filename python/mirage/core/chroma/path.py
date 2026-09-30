@@ -50,7 +50,6 @@ async def resolve_path(
         )
     listing = await index.list_dir(virtual_key)
     if listing.entries is None and listing.status == LookupStatus.EXPIRED:
-        # The tree is written whole: expired means aged out, not gone.
         if refilled is None:
             refilled = await refill_tree(accessor, index, mount_prefix)
         if virtual_key in refilled:

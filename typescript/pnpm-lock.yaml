@@ -32,7 +32,8 @@ overrides:
   '@hono/node-server@<2.0.5': '>=2.0.5 <3'
   body-parser@>=2.0.0 <2.3.0: '>=2.3.0 <3'
   qs@>=2.2.5 <6.16.0: '>=6.16.0 <7'
-  axios@>=1.0.0 <1.18.0: '>=1.18.0 <2'
+  axios@>=1.0.0 <1.20.0: '>=1.20.0 <2'
+  '@grpc/grpc-js@>=1.14.0 <1.14.5': '>=1.14.5 <2'
   brace-expansion@>=1.0.0 <1.1.21: '>=1.1.21 <2'
   brace-expansion@>=5.0.0 <5.0.12: '>=5.0.12 <6'
   nanoid@>=3.0.0 <3.3.18: '>=3.3.18 <4'
@@ -142,7 +143,7 @@ importers:
         version: 1.9.29(@langchain/core@1.2.8(@opentelemetry/api@1.9.1)(@opentelemetry/exporter-trace-otlp-proto@0.221.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-trace-base@2.10.0(@opentelemetry/api@1.9.1))(openai@7.4.0(@aws-sdk/credential-provider-node@3.972.81)(@smithy/signature-v4@5.7.3)(ws@8.21.3)(zod@4.3.6))(ws@8.21.3))
       '@mastra/core':
         specifier: ^1.59.0
-        version: 1.59.0(@bufbuild/protobuf@2.13.0)(@grpc/grpc-js@1.14.4)(ai@7.0.66(zod@4.3.6))(express@5.2.1)(zod@4.3.6)
+        version: 1.59.0(@bufbuild/protobuf@2.13.0)(@grpc/grpc-js@1.14.5)(ai@7.0.66(zod@4.3.6))(express@5.2.1)(zod@4.3.6)
       '@openai/agents':
         specifier: ^0.16.0
         version: 0.16.0(@aws-sdk/credential-provider-node@3.972.81)(@smithy/signature-v4@5.7.3)(ws@8.21.3)(zod@4.3.6)
@@ -411,7 +412,7 @@ importers:
         version: 1.9.29(@langchain/core@1.2.8(@opentelemetry/api@1.9.1)(@opentelemetry/exporter-trace-otlp-proto@0.221.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-trace-base@2.10.0(@opentelemetry/api@1.9.1))(openai@7.4.0(@aws-sdk/credential-provider-node@3.972.81)(@smithy/signature-v4@5.7.3)(ws@8.21.3)(zod@4.3.6))(ws@8.21.3))
       '@mastra/core':
         specifier: ^1.59.0
-        version: 1.59.0(@bufbuild/protobuf@2.13.0)(@grpc/grpc-js@1.14.4)(ai@7.0.66(zod@4.3.6))(express@5.2.1)(zod@4.3.6)
+        version: 1.59.0(@bufbuild/protobuf@2.13.0)(@grpc/grpc-js@1.14.5)(ai@7.0.66(zod@4.3.6))(express@5.2.1)(zod@4.3.6)
       '@openai/agents':
         specifier: ^0.16.0
         version: 0.16.0(@aws-sdk/credential-provider-node@3.972.81)(@smithy/signature-v4@5.7.3)(ws@8.21.3)(zod@4.3.6)
@@ -829,7 +830,7 @@ packages:
     engines: {node: '>=18'}
     peerDependencies:
       '@bufbuild/protobuf': ^2.10.2
-      '@grpc/grpc-js': ^1.11.0
+      '@grpc/grpc-js': '>=1.14.5 <2'
       express: ^4.21.2 || ^5.1.0
     peerDependenciesMeta:
       '@bufbuild/protobuf':
@@ -844,7 +845,7 @@ packages:
     engines: {node: '>=20'}
     peerDependencies:
       '@bufbuild/protobuf': ^2.10.2
-      '@grpc/grpc-js': ^1.11.0
+      '@grpc/grpc-js': '>=1.14.5 <2'
       express: ^4.21.2 || ^5.1.0
     peerDependenciesMeta:
       '@bufbuild/protobuf':
@@ -1802,8 +1803,8 @@ packages:
       '@modelcontextprotocol/sdk':
         optional: true
 
-  '@grpc/grpc-js@1.14.4':
-    resolution: {integrity: sha512-k9Dj3DV/itK9D06Y8f190Qgop7/Ui+D0njFV3LHMPwPT75DpXLQohE9Wmz0QElrJnzsjB7KPWiKJbOl7IPDArQ==}
+  '@grpc/grpc-js@1.14.5':
+    resolution: {integrity: sha512-7VZM+SVdEcUUqSQeNI3zM8Qs/BhQKZndPo2h5VkYkAM8Iz0wJIa8mKV5ekQGqG8UUsnkQ0NMxIxwkIHYvj0qOw==}
     engines: {node: '>=12.10.0'}
 
   '@grpc/proto-loader@0.8.1':
@@ -3800,8 +3801,8 @@ packages:
   aws-sdk-client-mock@4.1.0:
     resolution: {integrity: sha512-h/tOYTkXEsAcV3//6C1/7U4ifSpKyJvb6auveAepqqNJl6TdZaPFEtKjBQNf8UxQdDP850knB2i/whq4zlsxJw==}
 
-  axios@1.19.0:
-    resolution: {integrity: sha512-ht/iuYZXEjFxLH/Hkezgd7m6JKlHHXEUSneaDz8uZe1Gj5QZtCnpyDsckvAiEnT89OEbCLmnte4R4sn7P0EKFw==}
+  axios@1.20.0:
+    resolution: {integrity: sha512-r8aOh8j9cGKpgQAqpzrUHnSIc6a59Y3Xf/cv8sy1DrHCkZHzQGEuoq1tARk6qSyDdtQGSDgpb9kFlruzPvrgwg==}
 
   b4a@1.8.1:
     resolution: {integrity: sha512-aiqre1Nr0B/6DgE2N5vwTc+2/oQZ4Wh1t4NznYY4E00y8LCt6NqdRv81so00oo27D8MVKTpUa/MwUUtBLXCoDw==}
@@ -6950,21 +6951,21 @@ snapshots:
     dependencies:
       '@1password/sdk-core': 0.5.0
 
-  '@a2a-js/sdk@0.3.14(@bufbuild/protobuf@2.13.0)(@grpc/grpc-js@1.14.4)(express@5.2.1)':
+  '@a2a-js/sdk@0.3.14(@bufbuild/protobuf@2.13.0)(@grpc/grpc-js@1.14.5)(express@5.2.1)':
     dependencies:
       uuid: 14.0.2
     optionalDependencies:
       '@bufbuild/protobuf': 2.13.0
-      '@grpc/grpc-js': 1.14.4
+      '@grpc/grpc-js': 1.14.5
       express: 5.2.1
 
-  '@a2a-js/sdk@1.0.1(@bufbuild/protobuf@2.13.0)(@grpc/grpc-js@1.14.4)(express@5.2.1)':
+  '@a2a-js/sdk@1.0.1(@bufbuild/protobuf@2.13.0)(@grpc/grpc-js@1.14.5)(express@5.2.1)':
     dependencies:
       jose: 6.2.10
       uuid: 14.0.2
     optionalDependencies:
       '@bufbuild/protobuf': 2.13.0
-      '@grpc/grpc-js': 1.14.4
+      '@grpc/grpc-js': 1.14.5
       express: 5.2.1
 
   '@ai-sdk/gateway@4.0.52(zod@4.3.6)':
@@ -8085,14 +8086,14 @@ snapshots:
 
   '@daytona/analytics-api-client@0.207.0':
     dependencies:
-      axios: 1.19.0
+      axios: 1.20.0
     transitivePeerDependencies:
       - debug
       - supports-color
 
   '@daytona/api-client@0.207.0':
     dependencies:
-      axios: 1.19.0
+      axios: 1.20.0
     transitivePeerDependencies:
       - debug
       - supports-color
@@ -8113,7 +8114,7 @@ snapshots:
       '@opentelemetry/sdk-node': 0.221.0(@opentelemetry/api@1.9.1)
       '@opentelemetry/sdk-trace-base': 2.10.0(@opentelemetry/api@1.9.1)
       '@opentelemetry/semantic-conventions': 1.43.0
-      axios: 1.19.0
+      axios: 1.20.0
       busboy: 1.6.0
       dotenv: 17.4.2
       expand-tilde: 2.0.2
@@ -8134,7 +8135,7 @@ snapshots:
 
   '@daytona/toolbox-api-client@0.207.0':
     dependencies:
-      axios: 1.19.0
+      axios: 1.20.0
     transitivePeerDependencies:
       - debug
       - supports-color
@@ -8155,7 +8156,7 @@ snapshots:
       '@opentelemetry/sdk-node': 0.221.0(@opentelemetry/api@1.9.1)
       '@opentelemetry/sdk-trace-base': 2.10.0(@opentelemetry/api@1.9.1)
       '@opentelemetry/semantic-conventions': 1.43.0
-      axios: 1.19.0
+      axios: 1.20.0
       busboy: 1.6.0
       dotenv: 17.4.2
       expand-tilde: 2.0.2
@@ -8578,7 +8579,7 @@ snapshots:
       - supports-color
       - utf-8-validate
 
-  '@grpc/grpc-js@1.14.4':
+  '@grpc/grpc-js@1.14.5':
     dependencies:
       '@grpc/proto-loader': 0.8.1
       '@js-sdsl/ordered-map': 4.4.2
@@ -8825,10 +8826,10 @@ snapshots:
       '@mariozechner/clipboard-win32-x64-msvc': 0.3.9
     optional: true
 
-  '@mastra/core@1.59.0(@bufbuild/protobuf@2.13.0)(@grpc/grpc-js@1.14.4)(ai@7.0.66(zod@4.3.6))(express@5.2.1)(zod@4.3.6)':
+  '@mastra/core@1.59.0(@bufbuild/protobuf@2.13.0)(@grpc/grpc-js@1.14.5)(ai@7.0.66(zod@4.3.6))(express@5.2.1)(zod@4.3.6)':
     dependencies:
-      '@a2a-js/sdk-v0_3': '@a2a-js/sdk@0.3.14(@bufbuild/protobuf@2.13.0)(@grpc/grpc-js@1.14.4)(express@5.2.1)'
-      '@a2a-js/sdk-v1': '@a2a-js/sdk@1.0.1(@bufbuild/protobuf@2.13.0)(@grpc/grpc-js@1.14.4)(express@5.2.1)'
+      '@a2a-js/sdk-v0_3': '@a2a-js/sdk@0.3.14(@bufbuild/protobuf@2.13.0)(@grpc/grpc-js@1.14.5)(express@5.2.1)'
+      '@a2a-js/sdk-v1': '@a2a-js/sdk@1.0.1(@bufbuild/protobuf@2.13.0)(@grpc/grpc-js@1.14.5)(express@5.2.1)'
       '@ai-sdk/provider-utils-v5': '@ai-sdk/provider-utils@3.0.30(zod@4.3.6)'
       '@ai-sdk/provider-utils-v6': '@ai-sdk/provider-utils@4.0.40(zod@4.3.6)'
       '@ai-sdk/provider-utils-v7': '@ai-sdk/provider-utils@5.0.13(zod@4.3.6)'
@@ -9438,7 +9439,7 @@ snapshots:
 
   '@opentelemetry/otlp-grpc-exporter-base@0.221.0(@opentelemetry/api@1.9.1)':
     dependencies:
-      '@grpc/grpc-js': 1.14.4
+      '@grpc/grpc-js': 1.14.5
       '@opentelemetry/api': 1.9.1
       '@opentelemetry/core': 2.10.0(@opentelemetry/api@1.9.1)
       '@opentelemetry/otlp-exporter-base': 0.221.0(@opentelemetry/api@1.9.1)
@@ -10735,7 +10736,7 @@ snapshots:
       sinon: 18.0.1
       tslib: 2.8.1
 
-  axios@1.19.0:
+  axios@1.20.0:
     dependencies:
       follow-redirects: 1.16.0(debug@4.4.3)
       form-data: 4.0.6

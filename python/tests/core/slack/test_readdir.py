@@ -467,4 +467,3 @@ async def test_a_channel_listing_is_written_as_a_window(accessor):
                                directory="/channels/general__C001"),
                       index=index)
     assert index.windows["/channels/general__C001"] is True
-

@@ -19,8 +19,8 @@ from mirage.accessor.lancedb import LanceDBAccessor
 from mirage.cache.index.ram import RAMIndexCacheStore
 from mirage.core.lancedb.readdir import readdir
 from mirage.types import PathSpec
-from tests.fixtures.index_spy import WindowSpy
 from mirage.vfs.lancedb.config import LanceDBConfig
+from tests.fixtures.index_spy import WindowSpy
 
 
 def _ps(path: str) -> PathSpec:
@@ -285,4 +285,3 @@ async def test_a_capped_listing_is_written_as_a_window(accessor):
     await readdir(accessor, _ps("/animals/cat/big"), index)
     assert index.windows["/animals"] is True
     assert index.windows["/animals/cat/big"] is True
-

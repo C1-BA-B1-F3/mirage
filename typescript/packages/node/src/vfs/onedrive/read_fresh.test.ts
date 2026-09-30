@@ -263,7 +263,7 @@ it('cleans up the bytes and overlay of a file a re-list drops', async () => {
     await w.namespace.setAttrs('/m/a.txt', { mode: 0o600 })
     expect(await w.cache.exists('/m/a.txt')).toBe(true)
     graph.remove(ME, 'a.txt')
-    await w.registry.mountFor('/m/a.txt').index?.invalidate()
+    await w.registry.mountFor('/m/a.txt').index.invalidate()
     expect(await out(w, 'ls /m')).toBe('b.txt\n')
     expect(w.namespace.metaFor('/m/a.txt')).toBeNull()
     expect(await w.cache.exists('/m/a.txt')).toBe(false)

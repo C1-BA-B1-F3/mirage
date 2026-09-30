@@ -204,4 +204,3 @@ async def test_a_trace_listing_is_written_as_a_window(accessor):
                    }]):
             await readdir(accessor, spec("services/checkout/traces"), index)
     assert index.windows["/services/checkout/traces"] is True
-

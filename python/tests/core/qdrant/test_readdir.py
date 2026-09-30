@@ -5,8 +5,8 @@ from mirage.core.qdrant.naming import group_name
 from mirage.core.qdrant.readdir import _blob_size, readdir
 from mirage.core.qdrant.render import blob_bytes, render_json, render_text
 from mirage.types import PathSpec
-from tests.fixtures.index_spy import WindowSpy
 from mirage.utils.sanitize import NAME_MAX_BYTES, byte_len
+from tests.fixtures.index_spy import WindowSpy
 
 
 def _ps(path: str) -> PathSpec:
@@ -204,4 +204,3 @@ async def test_a_capped_listing_is_written_as_a_window(accessor):
     await readdir(accessor, _ps("/animals/cat/big"), index)
     assert index.windows["/animals"] is True
     assert index.windows["/animals/cat/big"] is True
-

@@ -402,4 +402,3 @@ async def test_a_single_page_listing_is_written_as_a_window(
             PathSpec(vfs_path=path.lstrip("/"), virtual=path, directory=path),
             index)
     assert index.windows[path] is True
-

@@ -133,4 +133,3 @@ async def test_a_file_relist_hands_what_it_dropped_to_cleanup() -> None:
     assert sorted(child.path for child in gone) == [
         "/wandb/" + root + "/deep", "/wandb/" + root + "/nested/old.txt"
     ]
-

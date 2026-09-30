@@ -56,7 +56,7 @@ describe('GDriveVFS re-list cleanup', () => {
       await ws.namespace.setAttrs('/gd/dir/b.txt', { mode: 0o600 })
       expect(await ws.cache.exists('/gd/dir/b.txt')).toBe(true)
       fake.items.delete(b)
-      await ws.registry.mountFor('/gd/dir').index?.invalidate()
+      await ws.registry.mountFor('/gd/dir').index.invalidate()
       expect(DEC.decode((await ws.shell('stat -c %n /gd/dir/a.txt')).stdout)).toBe(
         '/gd/dir/a.txt\n',
       )

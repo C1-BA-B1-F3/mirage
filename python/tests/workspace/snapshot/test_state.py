@@ -737,8 +737,7 @@ async def test_the_read_policy_survives_a_snapshot_round_trip():
 
 
 @pytest.mark.asyncio
-async def test_a_snapshot_cannot_restore_fresh_onto_a_mount_that_caches_nothing(
-):
+async def test_snapshot_rejects_fresh_on_a_mount_without_caching():
     # A hand-edited snapshot is input like any other: the load door runs
     # the same verdict as the constructor, listing arm included.
     ws = Workspace({"/d/": RAMVFS()}, mode=MountMode.WRITE)

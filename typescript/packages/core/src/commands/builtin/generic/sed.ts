@@ -30,6 +30,7 @@ import {
   SED_STDOUT,
   SedError,
   compileScript,
+  usesLastAddress,
   type SedProgram,
   type SedScriptPiece,
 } from '../sed_script.ts'
@@ -280,7 +281,12 @@ export async function sedGeneric(
   // reported either. The operands after a directory are still read: the
   // lookahead for `$` opens a directory, finds no data in it and goes on
   // (`sed -n '$p' ok.txt dir ok2.txt` prints ok2.txt's last line, exit 0).
+  // Only a `$` looks ahead, so without one nothing past the directory is
+  // read.
+  const lookAhead = usesLastAddress(program)
   for (const p of paths) {
+    const last = inputs.at(-1)
+    if (last !== undefined && 'fatal' in last && last.fatal && !lookAhead) break
     try {
       inputs.push({ name: p.rawPath, text: DEC.decode(await materialize(stream(p))) })
       if (!isStdin(p)) readOk.push(p.mountPath)

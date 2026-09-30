@@ -924,6 +924,19 @@ def compile_script(pieces: Sequence[SedScriptPiece],
     return _Compiler(extended).compile(pieces)
 
 
+def uses_last_address(program: SedProgram) -> bool:
+    """Whether any command is addressed by ``$``.
+
+    Only a ``$`` makes GNU look past the current file for more input, so
+    only then do the operands after a directory matter.
+
+    Args:
+        program (SedProgram): the compiled script.
+    """
+    return any(addr is not None and addr.kind == "last"
+               for cmd in program.commands for addr in (cmd.a1, cmd.a2))
+
+
 def _max_reference(replacement: str) -> int:
     """The highest group an ``s`` replacement names, 0 for none.
 

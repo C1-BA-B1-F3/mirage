@@ -868,6 +868,15 @@ export function compileScript(pieces: readonly SedScriptPiece[], extended = fals
   return new Compiler(extended).compile(pieces)
 }
 
+/**
+ * Whether any command is addressed by `$`. Only a `$` makes GNU look past
+ * the current file for more input, so only then do the operands after a
+ * directory matter.
+ */
+export function usesLastAddress(program: SedProgram): boolean {
+  return program.commands.some((cmd) => cmd.a1?.kind === 'last' || cmd.a2?.kind === 'last')
+}
+
 // The highest group an `s` replacement names (`\1`..`\9`), 0 for none.
 function maxReference(replacement: string): number {
   let max = 0

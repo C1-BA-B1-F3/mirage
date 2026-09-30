@@ -12,7 +12,8 @@ from mirage.commands.builtin.sed_exec import (SED_LINE_LENGTH, SedFileContent,
                                               SedRunOptions)
 from mirage.commands.builtin.sed_script import (SED_STDERR, SED_STDOUT,
                                                 SedError, SedProgram,
-                                                SedScriptPiece, compile_script)
+                                                SedScriptPiece, compile_script,
+                                                uses_last_address)
 from mirage.commands.builtin.utils.paths import dispatch_stat
 from mirage.commands.builtin.utils.stream import (is_stdin, read_stdin_async,
                                                   stdin_bytes)
@@ -257,8 +258,12 @@ async def sed(
     # opens it, so it is not reported either. The operands after a
     # directory are still read: the lookahead for `$` opens a directory,
     # finds no data in it and goes on (`sed -n '$p' ok.txt dir ok2.txt`
-    # prints ok2.txt's last line, exit 0).
+    # prints ok2.txt's last line, exit 0). Only a `$` looks ahead, so
+    # without one nothing past the directory is read.
+    look_ahead = uses_last_address(program)
     for p in paths:
+        if inputs and inputs[-1].fatal and not look_ahead:
+            break
         try:
             data = await read_bytes(p)
         except FS_ERRORS as exc:

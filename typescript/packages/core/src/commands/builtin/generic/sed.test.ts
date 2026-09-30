@@ -16,6 +16,7 @@ import { describe, expect, it } from 'vitest'
 import { yieldBytes } from '../../../io/stream.ts'
 import { materialize } from '../../../io/types.ts'
 import { PathSpec } from '../../../types.ts'
+import { eisdir } from '../../../utils/errors.ts'
 import type { CommandOpts } from '../../config.ts'
 import { sedGeneric } from './sed.ts'
 
@@ -163,5 +164,47 @@ describe('sed script files across -i files (GNU sed 4.9)', () => {
     await sedBytes(paths, ['s/b/B/;w /f'], { i: true }, files)
     expect(text(files, '/f')).toBe('')
     expect(text(files, '/b')).toBe('B1\nB2\n')
+  })
+})
+
+describe('sed operands after a directory (GNU sed 4.9)', () => {
+  const enc = (text: string): Uint8Array => new TextEncoder().encode(text)
+
+  async function run(script: string): Promise<{ out: string; code: number; reads: string[] }> {
+    const files = new Map([
+      ['/f', enc('one\ntwo\n')],
+      ['/g', enc('x\n')],
+    ])
+    const reads: string[] = []
+    const paths = ['/f', '/d', '/g'].map((p) => PathSpec.fromStrPath(p))
+    const opts = {
+      stdin: null,
+      flags: { n: true },
+      filetypeFns: null,
+      cwd: '/',
+      vfs: { kind: 'ram' } as never,
+    } as CommandOpts
+    const result = await sedGeneric(
+      paths,
+      [script],
+      opts,
+      (p) => {
+        reads.push(p.virtual)
+        if (p.virtual === '/d') throw eisdir(p)
+        return yieldBytes(files.get(p.virtual) ?? new Uint8Array())
+      },
+      () => Promise.resolve(),
+    )
+    if (result === null) throw new Error('sed returned nothing')
+    const out = result[0] === null ? '' : DEC.decode(await materialize(result[0]))
+    return { out, code: result[1].exitCode, reads }
+  }
+
+  it('reads past the directory when a $ looks ahead', async () => {
+    expect(await run('$p')).toEqual({ out: 'x\n', code: 0, reads: ['/f', '/d', '/g'] })
+  })
+
+  it('reads nothing past the directory without a $', async () => {
+    expect(await run('p')).toEqual({ out: 'one\ntwo\n', code: 4, reads: ['/f', '/d'] })
   })
 })

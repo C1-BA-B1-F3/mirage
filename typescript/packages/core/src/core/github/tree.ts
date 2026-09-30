@@ -16,13 +16,13 @@ import type { GitHubAccessor } from '../../accessor/github.ts'
 import { fetchDirTreePage, fetchTree, GitHubApiError } from './client.ts'
 import type { IndexCacheStore } from '../../cache/index/store.ts'
 import { LookupStatus } from '../../cache/index/config.ts'
-import type { Evicted, IndexEntry, IndexSnapshot } from '../../cache/index/config.ts'
+import type { IndexEntry, IndexSnapshot } from '../../cache/index/config.ts'
+import { departed } from '../../cache/index/diff.ts'
 import { withIndexLock } from '../../cache/index/lock.ts'
 import type { GitHubTreeItem } from './client.ts'
 import { indexEntryFromTree, makeTreeEntry, type TreeEntry } from './tree_entry.ts'
 import { rstripSlash, stripSlash } from '../../utils/slash.ts'
 import { DEFER_STATUSES } from './constants.ts'
-import { compareCodePoints } from '../../utils/sort.ts'
 
 export function buildTreeMap(tree: GitHubTreeItem[]): Record<string, TreeEntry> {
   const map: Record<string, TreeEntry> = {}
@@ -150,31 +150,15 @@ export async function refillSnapshot(
   await index.invalidatePrefix(rstripSlash(prefix) || '/')
   const snapshot = await seedIndex(accessor, index, prefix)
   if (previous !== null && !truncated) {
-    await index.reportGone(departed(previous, current, prefix))
+    await index.reportGone(
+      departed(Object.entries(previous), Object.keys(current), prefix, isFolder),
+    )
   }
   return snapshot
 }
 
-/**
- * The paths a refill lost, topmost only.
- *
- * A folder that went takes everything under it, so its descendants are
- * not reported again.
- */
-export function departed(
-  previous: Record<string, TreeEntry>,
-  current: Record<string, TreeEntry>,
-  prefix: string,
-): Evicted[] {
-  const stem = rstripSlash(prefix)
-  const gone = Object.keys(previous)
-    .filter((path) => !(path in current))
-    .sort(compareCodePoints)
-  const top: string[] = []
-  for (const path of gone) {
-    if (!top.some((kept) => path.startsWith(`${kept}/`))) top.push(path)
-  }
-  return top.map((path) => ({ path: `${stem}/${path}`, folder: previous[path]?.type === 'tree' }))
+function isFolder(entry: TreeEntry): boolean {
+  return entry.type === 'tree'
 }
 
 /**

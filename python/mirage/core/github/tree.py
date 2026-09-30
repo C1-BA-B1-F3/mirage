@@ -21,9 +21,10 @@ from urllib.parse import quote
 import aiohttp
 
 from mirage.accessor.github import GitHubAccessor
-from mirage.cache.index import (NULL_INDEX, Evicted, IndexCacheStore,
-                                IndexEntry, LookupStatus)
+from mirage.cache.index import (NULL_INDEX, IndexCacheStore, IndexEntry,
+                                LookupStatus)
 from mirage.cache.index.config import IndexSnapshot
+from mirage.cache.index.diff import departed
 from mirage.cache.index.lock import index_lock
 from mirage.core.api.client import SessionArg
 from mirage.core.github.client import GitHubApiError, github_get
@@ -341,32 +342,13 @@ async def refill_snapshot(
     await index.invalidate_prefix(prefix.rstrip("/") or "/")
     snapshot = seed_index(accessor, index, prefix)
     if previous is not None and not truncated:
-        await index.report_gone(departed(previous, tree, prefix))
+        await index.report_gone(
+            departed(previous.items(), tree, prefix, _is_folder))
     return snapshot
 
 
-def departed(previous: dict[str, TreeEntry], current: dict[str, TreeEntry],
-             prefix: str) -> list[Evicted]:
-    """The paths a refill lost, topmost only.
-
-    A folder that went takes everything under it, so its descendants are
-    not reported again.
-
-    Args:
-        previous (dict[str, TreeEntry]): the tree before the refill.
-        current (dict[str, TreeEntry]): the tree after it.
-        prefix (str): the mount prefix the keys are built against.
-    """
-    stem = prefix.rstrip("/")
-    gone = sorted(path for path in previous if path not in current)
-    top: list[str] = []
-    for path in gone:
-        if not any(path.startswith(kept + "/") for kept in top):
-            top.append(path)
-    return [
-        Evicted(f"{stem}/{path}", folder=previous[path].type == "tree")
-        for path in top
-    ]
+def _is_folder(entry: TreeEntry) -> bool:
+    return entry.type == "tree"
 
 
 async def ensure_live_snapshot(

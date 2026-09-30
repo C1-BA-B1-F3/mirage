@@ -104,8 +104,8 @@ const createBlob = withRepo(async (ctx, repo) => {
 // composes several staged trees into one commit: without it the second tree
 // starts from the branch again and silently drops everything the first one
 // added. Any tree id the fake reported names one, a commit's or one
-// directory's included. A name that matches no tree falls back to the branch
-// rather than failing, which is what the fake this replaces did.
+// directory's included. An unknown base is refused rather than silently
+// substituting another tree. The validation wording is the fake's own.
 const createTree = withRepo(async (ctx, repo) => {
   const body = jsonBodyOf(ctx)
   // `tree` is required, and a body that omits it or spells it as anything but
@@ -119,6 +119,9 @@ const createTree = withRepo(async (ctx, repo) => {
   const entries = body.tree
   const base = str(body, 'base_tree')
   const named = base === '' ? null : await treeById(ctx.db, ctx.tenant, repo, base)
+  if (base !== '' && named === null) {
+    return fail(422, 'Invalid request.\n\n"base_tree" is invalid.')
+  }
   const { files, links } =
     named === null
       ? {
@@ -164,15 +167,12 @@ const createTree = withRepo(async (ctx, repo) => {
 const createCommit = withRepo(async (ctx, repo) => {
   const body = jsonBodyOf(ctx)
   const tree = str(body, 'tree')
-  const staged = await stagedTree(ctx.db, ctx.tenant, repo, tree)
-  const named = staged === null ? await treeById(ctx.db, ctx.tenant, repo, tree) : null
-  if (staged === null && named === null) {
+  const named = await treeById(ctx.db, ctx.tenant, repo, tree)
+  if (named === null) {
     return fail(422, 'Invalid request.\n\n"tree" is invalid.')
   }
-  if (named !== null) {
-    const sub = subtreeOf(named, named.at)
-    await stageTree(ctx.db, ctx.tenant, repo, sub.files, sub.links)
-  }
+  const sub = subtreeOf(named, named.at)
+  await stageTree(ctx.db, ctx.tenant, repo, sub.files, sub.links)
   const message = str(body, 'message') === '' ? 'Update' : str(body, 'message')
   const author = bodyPerson(body, 'author')
   if (author === INVALID_PERSON) return fail(422, 'Invalid request.\n\n"author" is invalid.')

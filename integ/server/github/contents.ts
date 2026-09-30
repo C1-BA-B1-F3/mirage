@@ -445,8 +445,8 @@ const gitTree = withRepo(async (ctx, repo) => {
         return fail(422, 'Invalid object requested. SHA must identify a commit or a tree.')
       }
     }
-    if (at !== '' && !directoriesOf(files).has(at)) return fail(404, 'Not Found')
-    const sha = directoryIds(files, tree.links).get(at) ?? ''
+    const sha = directoryIds(files, tree.links).get(at)
+    if (sha === undefined) return fail(404, 'Not Found')
     return treeListing(repo, tree, at, sha, recursive)
   }
   const tree = await snapshotOf(ctx.db, ctx.tenant, repo, ref)

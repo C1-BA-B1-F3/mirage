@@ -26,6 +26,8 @@ import { start } from '../kit/typescript/serve.ts'
 import { diffTrees, unifiedDiff } from './diff.ts'
 import { githubFake } from './fake.ts'
 import { blobSha } from './wire.ts'
+import { PrismaClient } from '../../generated/github/index.js'
+import { directoryIds, repoByName, stageTree, subtreeOf, treeById } from './store.ts'
 
 // The routes the corpus does not reach, or cannot exercise fully, because the
 // gh battery drives the porcelain against a one-repository fixture. A client
@@ -2397,12 +2399,12 @@ async function gitDatabase(at: string): Promise<void> {
   const linked = await post(`${repo}/git/trees`, {
     base_tree: String(field(await get(`${repo}/git/trees/main`), 'sha')),
     tree: [
-      { path: 'src/vendored-lib', mode: '160000', type: 'commit', sha: link },
+      { path: 'vendor/nested/library', mode: '160000', type: 'commit', sha: link },
       { path: 'extern', mode: '160000', type: 'commit', sha: null },
     ],
   })
   const linkedTree = String(field(linked.body, 'sha'))
-  const relinked = [seeded[0] ?? null, ['src/vendored-lib', '160000', link]]
+  const relinked = [seeded[0] ?? null, ['vendor/nested/library', '160000', link]]
   eq(
     'a commit entry is a gitlink of that tree, and a null sha drops one',
     await gitlinks(`${repo}/git/trees/${linkedTree}?recursive=1`),
@@ -2423,6 +2425,33 @@ async function gitDatabase(at: string): Promise<void> {
     await gitlinks(`${repo}/git/trees/linked?recursive=1`),
     relinked,
   )
+  const linkRoot = await get(`${repo}/git/trees/linked`)
+  eq(
+    'a shallow tree lists a directory containing only gitlinks',
+    paths(linkRoot).includes('vendor'),
+    true,
+  )
+  eq(
+    'a recursive tree includes every gitlink-only ancestor',
+    paths(await get(`${repo}/git/trees/linked?recursive=1`)).filter((path) =>
+      String(path).startsWith('vendor'),
+    ),
+    ['vendor', 'vendor/nested', 'vendor/nested/library'],
+  )
+  eq(
+    'a ref with a gitlink-only directory resolves',
+    await gitlinks(`${repo}/git/trees/linked:vendor/nested`),
+    [['library', '160000', link]],
+  )
+  const vendor =
+    ((field(linkRoot, 'tree') ?? []) as JsonValue[]).find(
+      (row) => field(row, 'path') === 'vendor',
+    ) ?? null
+  eq(
+    'the listed gitlink-only directory id is traversable',
+    paths(await get(`${repo}/git/trees/${String(field(vendor, 'sha'))}`)),
+    ['nested'],
+  )
   await send('PUT', `${repo}/contents/note.txt`, {
     message: 'Add note.txt',
     branch: 'linked',
@@ -2435,26 +2464,173 @@ async function gitDatabase(at: string): Promise<void> {
   )
   eq('while main keeps its own', await gitlinks(`${repo}/git/trees/main?recursive=1`), seeded)
 
-  const fork = `${base}/repos/integ-user/database-fork`
-  eq('a fork is made', (await post(`${repo}/forks`, { name: 'database-fork' })).status, 202)
+  const currentId = await dirId()
+  const currentTree = await get(`${repo}/git/trees/main?recursive=1`)
+  const forked = await post(`${repo}/forks`, { name: 'tree-fork' })
+  eq('a repository with historical directories forks', forked.status, 202)
+  const fork = `${base}/repos/integ-user/tree-fork`
   eq(
-    'and reads a directory id its source reported',
-    paths(await get(`${fork}/git/trees/${after}`)),
-    kept,
+    'a fork reports the same root and directory ids as its source',
+    await get(`${fork}/git/trees/main?recursive=1`),
+    currentTree,
   )
-  const renamed = await send('PATCH', repo, { name: 'renamed-v1' })
-  eq('a rename lands', renamed.status, 200)
-  const moves = `${base}/repos/integ/renamed-v1`
-  eq('and keeps every directory id', paths(await get(`${moves}/git/trees/${after}`)), kept)
-  const rebased = await post(`${moves}/git/trees`, {
-    base_tree: after,
-    tree: [{ path: 'renamed.py', mode: '100644', type: 'blob', content: 'r = 1\n' }],
+  eq(
+    'a fork resolves a historical directory id from its source',
+    paths(await get(`${fork}/git/trees/${before}`)),
+    auth,
+  )
+  const renamed = await send('PATCH', repo, { name: 'tree-renamed' })
+  eq('a repository with indexed directory snapshots renames', renamed.status, 200)
+  const movedRepo = `${base}/repos/integ/tree-renamed`
+  eq(
+    'a rename preserves root and directory ids',
+    await get(`${movedRepo}/git/trees/main?recursive=1`),
+    currentTree,
+  )
+  for (const target of [movedRepo, fork]) {
+    eq(
+      'a historical directory survives the source rename',
+      paths(await get(`${target}/git/trees/${before}`)),
+      auth,
+    )
+    const fromDirectory = await post(`${target}/git/trees`, { base_tree: before, tree: [] })
+    eq(
+      'a historical directory is the exact base after rename or fork',
+      [fromDirectory.status, field(fromDirectory.body, 'sha')],
+      [201, before],
+    )
+    const directoryCommit = await post(`${target}/git/commits`, {
+      message: 'Commit a shared directory',
+      tree: currentId,
+      parents: [],
+    })
+    eq('a directory can be committed in either network member', directoryCommit.status, 201)
+    eq(
+      'the committed directory retains its own paths',
+      (
+        await send(
+          'GET',
+          `${target}/contents/extra.py?ref=${String(field(directoryCommit.body, 'sha'))}`,
+        )
+      ).status,
+      200,
+    )
+  }
+  const badBase = await post(`${movedRepo}/git/trees`, {
+    base_tree: '0'.repeat(40),
+    tree: [{ path: 'wrong.py', content: 'x = 1' }],
   })
+  eq('an unknown tree base is refused instead of replaced', badBase.status, 422)
+  eq('the source with indexed trees can be deleted', (await send('DELETE', movedRepo)).status, 204)
   eq(
-    'so a tree built on one after the rename starts from that directory',
-    paths(await get(`${moves}/git/trees/${String(field(rebased.body, 'sha'))}`)),
-    [...kept, 'renamed.py'].map(String).sort(),
+    'a fork keeps historical directories after its source is deleted',
+    paths(await get(`${fork}/git/trees/${before}`)),
+    auth,
   )
+  eq(
+    'a fork keeps the root tree after its source is deleted',
+    await get(`${fork}/git/trees/${String(field(currentTree, 'sha'))}?recursive=1`),
+    currentTree,
+  )
+  eq(
+    'the last network member deletes its directory index',
+    (await send('DELETE', fork)).status,
+    204,
+  )
+}
+
+async function indexedTrees(): Promise<void> {
+  const home = await start(githubFake, 0)
+  const run = 'indexed-trees'
+  let db: PrismaClient | undefined
+  try {
+    await home.runtime.reset({ run, tenants: [TENANT], fixture: 'v1' })
+    const measured = new PrismaClient({
+      datasourceUrl: `file:${home.runtime.pool.fileFor(run)}`,
+      log: [{ emit: 'event', level: 'query' }],
+    })
+    db = measured
+    let queries = 0
+    measured.$on('query', () => {
+      queries += 1
+    })
+    const repo = await repoByName(measured, TENANT, REPO)
+    if (repo === null) throw new Error('indexed trees fixture has no repository')
+    const old = new Map([['archive/deep/old.txt', Buffer.from('old snapshot')]])
+    const root = await stageTree(measured, TENANT, repo, old, new Map())
+    const directory = directoryIds(old, new Map()).get('archive') ?? ''
+    const lookup = async (): Promise<number> => {
+      queries = 0
+      const hit = await treeById(measured, TENANT, repo, directory)
+      const count = queries
+      eq(
+        'an indexed historical directory loads its original bytes',
+        hit === null
+          ? null
+          : [...subtreeOf(hit, hit.at).files].map(([path, data]) => [path, data.toString()]),
+        [['deep/old.txt', 'old snapshot']],
+      )
+      return count
+    }
+    const short = await lookup()
+    for (let i = 0; i < 24; i += 1) {
+      await stageTree(
+        measured,
+        TENANT,
+        repo,
+        new Map([['archive/new.txt', Buffer.from(String(i))]]),
+        new Map(),
+      )
+    }
+    const long = await lookup()
+    check(
+      'historical lookup query count stays bounded as snapshots grow',
+      short === long && long <= 3,
+      `${short} -> ${long}`,
+    )
+
+    const base = `${home.endpoint}/_run/${run}`
+    const created = await post(`${base}/user/repos`, { name: 'unrelated-trees' })
+    eq('an unrelated repository is created', created.status, 201)
+    const other = await repoByName(measured, TENANT, 'integ-user/unrelated-trees')
+    if (other === null) throw new Error('unrelated repository was not created')
+    eq(
+      'a directory is not visible outside its network',
+      (await treeById(measured, TENANT, other, directory)) === null,
+      true,
+    )
+    eq(
+      'an unrelated repository stores identical content without a collision',
+      await stageTree(measured, TENANT, other, old, new Map()),
+      root,
+    )
+    const duplicate = await treeById(measured, TENANT, other, directory)
+    eq(
+      'its directory resolves in its own network',
+      duplicate?.files.get('archive/deep/old.txt')?.toString() ?? null,
+      'old snapshot',
+    )
+    eq(
+      'deleting one copy of a tree succeeds',
+      (await send('DELETE', `${base}/repos/${REPO}`)).status,
+      204,
+    )
+    const retained = await treeById(measured, TENANT, other, directory)
+    eq(
+      'deletion preserves identical objects in unrelated repositories',
+      retained?.files.get('archive/deep/old.txt')?.toString() ?? null,
+      'old snapshot',
+    )
+    await post(`${base}/reset`, { run, tenants: [TENANT], fixture: 'v1' })
+    eq(
+      'reset removes every directory index row',
+      await measured.githubStagedDir.count({ where: { tenant: TENANT } }),
+      0,
+    )
+  } finally {
+    await db?.$disconnect()
+    await home.close()
+  }
 }
 
 async function main(): Promise<void> {
@@ -2469,6 +2645,7 @@ async function main(): Promise<void> {
     await refsNameCommits(at)
     await abandonedRoot(at)
     await gitDatabase(at)
+    await indexedTrees()
     await workflowsAndSettings(at)
     await diffsSearchAndHistory(at)
     await diffsMatchGit()

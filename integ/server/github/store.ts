@@ -302,11 +302,8 @@ export async function forkOwnedBy(
   return owned[0] ?? null
 }
 
-// Scoped to the repository's network, not the tenant. A staged sha is unique
-// per tenant, so a bare lookup accepted a tree staged in repository A while
-// the caller was operating on an unrelated repository B, and committing it
-// copied A's files into B. A fork reads its network's trees, as git objects
-// are shared across one.
+// Objects are scoped to a fork network even when an unrelated repository
+// holds identical content and therefore the same sha.
 // `mode` narrows the read to blobs or to gitlinks, for a caller that needs
 // only one of them.
 export async function stagedSnapshot(
@@ -320,8 +317,18 @@ export async function stagedSnapshot(
     where: { tenant, repo: { in: await networkNames(db, tenant, repo) }, sha },
   })
   if (tree === null) return null
+  return await storedSnapshot(db, tenant, tree.repo, sha, mode)
+}
+
+async function storedSnapshot(
+  db: C,
+  tenant: string,
+  repo: string,
+  sha: string,
+  mode: string | null = null,
+): Promise<Snapshot> {
   const rows = await db.githubStagedEntry.findMany({
-    where: { tenant, repo: tree.repo, treeSha: sha, ...(mode === null ? {} : { mode }) },
+    where: { tenant, repo, treeSha: sha, ...(mode === null ? {} : { mode }) },
     orderBy: { seq: 'asc' },
   })
   const out: Snapshot = { files: new Map(), links: new Map() }
@@ -526,24 +533,21 @@ export interface TreeAtId extends Snapshot {
   at: string
 }
 
-// The tree an id names, whole or one directory of it: a staged tree by its own
-// id, a directory of one through the index staging keeps, then each branch as
-// it is now, which nothing has staged while it is still as seeded. Each step
-// is an indexed lookup or one pass over a current tree, however much history
-// the repository has.
+// Snapshots index every directory, the root included, so a historical lookup
+// loads only the matching tree. Seeded branches have no snapshot until a
+// write preserves them and are the only trees that still need hashing here.
 export async function treeById(
   db: C,
   tenant: string,
   repo: RepoRow,
   sha: string,
 ): Promise<TreeAtId | null> {
-  const whole = await stagedSnapshot(db, tenant, repo, sha)
-  if (whole !== null) return { ...whole, at: '' }
   const dir = await db.githubStagedDir.findFirst({
     where: { tenant, repo: { in: await networkNames(db, tenant, repo) }, sha },
   })
-  const holder = dir === null ? null : await stagedSnapshot(db, tenant, repo, dir.treeSha)
-  if (dir !== null && holder !== null) return { ...holder, at: dir.path }
+  if (dir !== null) {
+    return { ...(await storedSnapshot(db, tenant, dir.repo, dir.treeSha)), at: dir.path }
+  }
   for (const branch of await branchNames(db, tenant, repo)) {
     const files = await treeOfBranch(db, tenant, repo, branch)
     if (files.size === 0) continue
@@ -597,24 +601,35 @@ export async function stageTree(
   })
   if (already !== null) return sha
   const count = await db.githubStagedTree.count({ where: { tenant, repo: repo.fullName } })
-  const at = { tenant, repo: repo.fullName, treeSha: sha }
-  await db.githubStagedTree.create({ data: { tenant, repo: repo.fullName, sha, seq: count } })
-  let seq = 0
-  for (const [path, data] of files) {
-    await db.githubStagedEntry.create({
-      data: { ...at, path, data: new Uint8Array(data), sha: blobSha(data), mode: BLOB_MODE, seq },
-    })
-    seq += 1
-  }
-  for (const [path, commit] of links) {
-    await db.githubStagedEntry.create({
-      data: { ...at, path, data: new Uint8Array(0), sha: commit, mode: LINK_MODE, seq },
-    })
-    seq += 1
-  }
-  for (const [path, id] of directoryIds(files, links)) {
-    if (path !== '') await db.githubStagedDir.create({ data: { ...at, path, sha: id } })
-  }
+  await db.githubStagedTree.create({
+    data: {
+      tenant,
+      repo: repo.fullName,
+      sha,
+      seq: count,
+      entries: {
+        create: [
+          ...[...files].map(([path, data], seq) => ({
+            path,
+            data: new Uint8Array(data),
+            sha: blobSha(data),
+            mode: BLOB_MODE,
+            seq,
+          })),
+          ...[...links].map(([path, commit], seq) => ({
+            path,
+            data: new Uint8Array(0),
+            sha: commit,
+            mode: LINK_MODE,
+            seq: files.size + seq,
+          })),
+        ],
+      },
+      dirs: {
+        create: [...directoryIds(files, links)].map(([path, id]) => ({ path, sha: id })),
+      },
+    },
+  })
   return sha
 }
 
@@ -1164,7 +1179,7 @@ export function treeItems(tree: Snapshot, at = ''): TreeItem[] {
   const prefix = at === '' ? '' : `${at}/`
   const ids = directoryIds(files, links)
   const items: TreeItem[] = []
-  for (const path of [...directoriesOf(files)].sort()) {
+  for (const path of ids.keys()) {
     if (!path.startsWith(prefix) || path === at) continue
     items.push({
       path: path.slice(prefix.length),

@@ -2300,6 +2300,45 @@
         "stdout": "[]\ntrue\nsame-tree\ntree-resolves\n[\"html_url\",\"sha\",\"url\"]\n",
         "stderr": ""
       }
+    },
+    {
+      "id": "gh_api_historical_directory_survives_fork_and_rename",
+      "seq": 569933,
+      "targets": [
+        "cli-gh"
+      ],
+      "command": "dir=$(gh api repos/integ/repo-cli/git/trees/main:src/auth --jq .sha); files=$(gh api repos/integ/repo-cli/git/trees/$dir --jq \"[.tree[].path]\"); gh api -X PUT repos/integ/repo-cli/contents/src/auth/HISTORY.py -f message=history -f content=eCA9IDEK --silent; gh api -X POST repos/integ/repo-cli/forks -f name=directory-fork --silent; gh api -X PATCH repos/integ-user/directory-fork -f name=directory-renamed --silent; test \"$(gh api repos/integ-user/directory-renamed/git/trees/$dir --jq \"[.tree[].path]\")\" = \"$files\" && echo history-preserved; tree=$(gh api -X POST repos/integ-user/directory-renamed/git/trees -f base_tree=$dir -f \"tree[][path]=ADDED.py\" -f \"tree[][content]=added\" --jq .sha); gh api repos/integ-user/directory-renamed/git/trees/$tree --jq '[.tree[].path]'; gh api -X DELETE repos/integ-user/directory-renamed --silent",
+      "expect": {
+        "exit": 0,
+        "stdout": "history-preserved\n[\"ADDED.py\",\"__init__.py\",\"step_1.py\",\"step_2.py\",\"step_3.py\",\"step_4.py\",\"step_5.py\",\"step_6.py\",\"step_7.py\",\"step_8.py\"]\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "gh_api_unknown_tree_base_is_refused",
+      "seq": 569934,
+      "targets": [
+        "cli-gh"
+      ],
+      "command": "gh api -X POST repos/integ/repo-cli/git/trees -f base_tree=missing -f 'tree[][path]=BAD.md' -f 'tree[][content]=bad' --silent; echo exit=$?",
+      "expect": {
+        "exit": 0,
+        "stdout": "exit=1\n",
+        "stderr": "gh: Invalid request.\n\n\"base_tree\" is invalid. (HTTP 422)\n"
+      }
+    },
+    {
+      "id": "gh_api_tree_traverses_gitlink_only_directories",
+      "seq": 569935,
+      "targets": [
+        "cli-gh"
+      ],
+      "command": "base=$(gh api repos/integ/repo-cli/git/trees/main --jq .sha); tree=$(gh api -X POST repos/integ/repo-cli/git/trees -f base_tree=$base -f \"tree[][path]=vendor/nested/library\" -f \"tree[][mode]=160000\" -f \"tree[][type]=commit\" -f \"tree[][sha]=c0ffee0000000000000000000000000000000000\" --jq .sha); dir=$(gh api repos/integ/repo-cli/git/trees/$tree --jq '.tree[] | select(.path == \"vendor\") | .sha'); gh api repos/integ/repo-cli/git/trees/$dir --jq \"[.tree[].path]\"; gh api \"repos/integ/repo-cli/git/trees/$dir?recursive=1\" --jq \"[.tree[] | [.path, .type]]\"",
+      "expect": {
+        "exit": 0,
+        "stdout": "[\"nested\"]\n[[\"nested\",\"tree\"],[\"nested/library\",\"commit\"]]\n",
+        "stderr": ""
+      }
     }
   ]
 }

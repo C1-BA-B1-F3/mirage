@@ -412,6 +412,7 @@ model GithubStagedTree {
   @@index([tenant, sha])
 }
 
+// A blob entry holds bytes; a gitlink holds its target commit sha and no bytes.
 model GithubStagedEntry {
   pk      Int    @id @default(autoincrement())
   tenant  String
@@ -419,12 +420,7 @@ model GithubStagedEntry {
   treeSha String
   path    String
   data    Bytes
-  // The blob sha of `data`, so a blob no current tree holds is one indexed
-  // lookup rather than a hash of every snapshot the repository kept. For a
-  // gitlink it is the commit the link names, and `data` is empty.
   sha     String @default("")
-  // `100644` for a blob, `160000` for a gitlink: a submodule is a path in a
-  // tree, so each tree carries its own.
   mode    String @default("100644")
   seq     Int
 

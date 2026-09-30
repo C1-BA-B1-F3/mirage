@@ -85,15 +85,12 @@ function parseRows(blocks: readonly Uint8Array[]): [string, number][] {
 // directory: a mount root, or an empty directory a mount reported, both of
 // which print as `0` rows.
 function leavesOf(rows: readonly [string, number][], dirs: readonly string[]): [string, number][] {
-  const paths = new Set(rows.map(([p]) => rstrip(p)))
-  const known = new Set(dirs.map(rstrip))
+  const paths = new Set(rows.map(([p]) => rstripSlash(p)))
+  const known = new Set(dirs.map(rstripSlash))
   return rows.filter(
-    ([p]) => !known.has(rstrip(p)) && ![...paths].some((o) => o.startsWith(rstrip(p) + '/')),
+    ([p]) =>
+      !known.has(rstripSlash(p)) && ![...paths].some((o) => o.startsWith(rstripSlash(p) + '/')),
   )
-}
-
-function rstrip(path: string): string {
-  return path.endsWith('/') && path !== '/' ? rstripSlash(path) : path
 }
 
 // Fold per-mount du blocks into one tree, GNU's way.

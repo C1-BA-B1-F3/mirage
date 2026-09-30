@@ -49,7 +49,7 @@ from mirage.ops.types import NamespaceView, StatPath
 from mirage.runtime.types import DispatchFn
 from mirage.types import FileType, PathSpec, Producer
 from mirage.utils.dates import in_mtime_window, iso_timestamp
-from mirage.utils.errors import format_fs_error
+from mirage.utils.errors import FS_ERRORS, format_fs_error, fs_strerror
 from mirage.utils.path import respell_one
 from mirage.workspace.mount import (MountCommandUnsupported, MountEntry,
                                     MountRegistry)
@@ -86,7 +86,9 @@ async def _mount_dirs(descendants: Sequence[MountEntry],
     directory with no content still earns GNU's ``0`` row while a file
     only shows under ``-a``, and rendered du output cannot say which it
     was looking at. Without a dispatcher the question cannot be asked,
-    and the merge falls back to inferring from the row shape.
+    and the merge falls back to inferring from the row shape. A root
+    that refuses the stat is left to that inference too: the mount's
+    own run already reported it.
 
     Args:
         descendants (Sequence[MountEntry]): the mounts under the operand.
@@ -97,27 +99,34 @@ async def _mount_dirs(descendants: Sequence[MountEntry],
     out: list[str] = []
     for m in descendants:
         root = m.prefix.rstrip("/") or "/"
-        stat = await stat_path(root)
+        try:
+            stat = await stat_path(root)
+        except FS_ERRORS:
+            logger.debug("du mount root %s refused stat", root, exc_info=True)
+            continue
         if stat is not None and stat.type is FileType.DIRECTORY:
             out.append(root)
     return out
 
 
-async def _empty_dirs(blocks: Sequence[bytes],
-                      stat_path: StatPath | None) -> list[str]:
+async def _empty_dirs(
+        blocks: Sequence[bytes], stat_path: StatPath | None
+) -> tuple[list[str], list[tuple[str, OSError]]]:
     """The ``0`` rows of per-mount du blocks that are empty directories.
 
     Rendered du output prints an empty directory and an empty file the
     same way, and only the directory keeps its row without ``-a``, so
     the merge asks the dispatcher which each lone zero row is. The
-    caller asks only when the answer changes what prints.
+    caller asks only when the answer changes what prints. A row that
+    refuses the stat comes back with its error rather than aborting the
+    merge, and gets no row, the way the walk treats a refused stat.
 
     Args:
         blocks (Sequence[bytes]): rendered du output, one per mount.
         stat_path (StatPath | None): dispatcher-backed stat.
     """
     if stat_path is None:
-        return []
+        return [], []
     rows: list[str] = []
     for data in blocks:
         for line in data.decode(errors="replace").splitlines():
@@ -125,13 +134,19 @@ async def _empty_dirs(blocks: Sequence[bytes],
             if size == "0" and label:
                 rows.append(label)
     out: list[str] = []
+    refused: list[tuple[str, OSError]] = []
     for row in rows:
         if any(other.startswith(row.rstrip("/") + "/") for other in rows):
             continue
-        stat = await stat_path(row)
+        try:
+            stat = await stat_path(row)
+        except FS_ERRORS as exc:
+            logger.debug("du row %s refused stat", row, exc_info=True)
+            refused.append((row, exc))
+            continue
         if stat is not None and stat.type is FileType.DIRECTORY:
             out.append(row)
-    return out
+    return out, refused
 
 
 async def _ls_block_mounts(descendants: Sequence[MountEntry],
@@ -785,7 +800,17 @@ async def _fan_out_traversal(
     if du_merge and all_stdout:
         dirs = await _mount_dirs(descendants, stat_path)
         if not du_flags.a and not du_flags.s:
-            dirs += await _empty_dirs(all_stdout, stat_path)
+            empty, refused = await _empty_dirs(all_stdout, stat_path)
+            dirs += empty
+            if refused:
+                notes = "".join(
+                    f"du: cannot access "
+                    f"'{respell_one(row, target_path, paths[0].raw_path)}': "
+                    f"{fs_strerror(exc)}\n" for row, exc in refused)
+                merged_io = await merged_io.merge(
+                    IOResult(exit_code=1, stderr=notes.encode()))
+                exit_codes.append(1)
+                errored.append(True)
         combined = merge_du_blocks(all_stdout,
                                    target_path,
                                    paths[0].raw_path,

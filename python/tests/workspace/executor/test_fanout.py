@@ -329,6 +329,50 @@ def test_fanout_reports_unexpected_backend_error_without_losing_output():
     assert io.stderr == b"tree: backend exploded\n"
 
 
+def _du_probe(refused: str):
+
+    async def stat_path(path):
+        if path == refused:
+            raise PermissionError(13, "Permission denied", path)
+        kind = (FileType.DIRECTORY if path in ("/empty",
+                                               "/data") else FileType.FILE)
+        return FileStat(name=path.rsplit("/", 1)[-1], type=kind)
+
+    return stat_path
+
+
+def test_du_fanout_keeps_the_rows_when_an_empty_row_refuses_stat():
+    primary = TraversalMount("/",
+                             output=b"0\t/empty\n0\t/sealed\n3\t/f\n3\t/\n")
+    child = TraversalMount("/data/", output=b"4\t/data/x\n4\t/data\n")
+    out, io, _ = asyncio.run(
+        _fan_out_traversal("du", [PathSpec.from_str_path("/")], [], {},
+                           TraversalRegistry([child]),
+                           primary,
+                           "/",
+                           "du /",
+                           None,
+                           stat_path=_du_probe("/sealed")))
+    assert out == b"4\t/data\n0\t/empty\n7\t/\n"
+    assert io.exit_code == 1
+    assert io.stderr == b"du: cannot access '/sealed': Permission denied\n"
+
+
+def test_du_fanout_keeps_the_rows_when_a_mount_root_refuses_stat():
+    primary = TraversalMount("/", output=b"3\t/f\n3\t/\n")
+    child = TraversalMount("/data/", output=b"4\t/data/x\n4\t/data\n")
+    out, io, _ = asyncio.run(
+        _fan_out_traversal("du", [PathSpec.from_str_path("/")], [], {},
+                           TraversalRegistry([child]),
+                           primary,
+                           "/",
+                           "du /",
+                           None,
+                           stat_path=_du_probe("/data")))
+    assert out == b"4\t/data\n7\t/\n"
+    assert io.exit_code == 0
+
+
 def test_filter_reads_du_paths_after_the_size_column():
     """du renders SIZE\\tPATH, so the path is the second field; reading
     the first kept every shadowed du row in the parent's output."""

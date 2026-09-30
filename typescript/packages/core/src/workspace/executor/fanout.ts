@@ -13,7 +13,7 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import { readFailExitCode } from '../../commands/spec/usage.ts'
-import { formatFsError } from '../../utils/errors.ts'
+import { formatFsError, fsStrerror, isFsError } from '../../utils/errors.ts'
 import { pathAllowed } from '../../context/session_context.ts'
 import { mountKey } from '../../utils/key_prefix.ts'
 import { type ByteSource, IOResult, materialize } from '../../io/types.ts'
@@ -81,7 +81,8 @@ function depthFlagValue(raw: FlagValue | null): number | null {
 // content still earns GNU's `0` row while a file only shows under `-a`, and
 // rendered du output cannot say which it was looking at. Without a dispatcher
 // the question cannot be asked, and the merge falls back to inferring from the
-// row shape.
+// row shape. A root that refuses the stat is left to that inference too: the
+// mount's own run already reported it.
 async function mountDirs(
   descendants: readonly MountEntry[],
   statPath: StatPath | null,
@@ -90,7 +91,13 @@ async function mountDirs(
   const out: string[] = []
   for (const m of descendants) {
     const root = rstripSlash(m.prefix) || '/'
-    const stat = await statPath(root)
+    let stat
+    try {
+      stat = await statPath(root)
+    } catch (err) {
+      if (!isFsError(err)) throw err
+      continue
+    }
     if (stat !== null && stat.type === FileType.DIRECTORY) out.push(root)
   }
   return out
@@ -100,12 +107,14 @@ async function mountDirs(
 // output prints an empty directory and an empty file the same way, and only
 // the directory keeps its row without `-a`, so the merge asks the dispatcher
 // which each lone zero row is. The caller asks only when the answer changes
-// what prints.
+// what prints. A row that refuses the stat comes back with its error rather
+// than aborting the merge, and gets no row, the way the walk treats a refused
+// stat.
 async function emptyDirs(
   blocks: readonly Uint8Array[],
   statPath: StatPath | null,
-): Promise<string[]> {
-  if (statPath === null) return []
+): Promise<[string[], [string, unknown][]]> {
+  if (statPath === null) return [[], []]
   const dec = new TextDecoder()
   const rows = blocks.flatMap((data) =>
     dec
@@ -115,12 +124,20 @@ async function emptyDirs(
       .map((line) => line.slice(2)),
   )
   const out: string[] = []
+  const refused: [string, unknown][] = []
   for (const row of rows) {
     if (rows.some((other) => other.startsWith(rstripSlash(row) + '/'))) continue
-    const stat = await statPath(row)
+    let stat
+    try {
+      stat = await statPath(row)
+    } catch (err) {
+      if (!isFsError(err)) throw err
+      refused.push([row, err])
+      continue
+    }
     if (stat !== null && stat.type === FileType.DIRECTORY) out.push(row)
   }
-  return out
+  return [out, refused]
 }
 
 /**
@@ -765,14 +782,27 @@ export async function fanOutTraversal(
     }
   }
 
-  const quiet =
-    (cmdName === 'grep' && new FlagView(flagKwargs, specOf('grep')).asBool('q')) ||
-    (cmdName === 'rg' && new FlagView(flagKwargs, specOf('rg')).asBool('quiet'))
-  const finalIoExit = combinedExit(cmdName as Cmd, exitCodes, errored, quiet)
   let combined: ByteSource | null = null
   if (duMerge && allStdout.length > 0) {
     const dirs = await mountDirs(descendants, statPath)
-    if (!duOpts.all && !duOpts.summarize) dirs.push(...(await emptyDirs(allStdout, statPath)))
+    if (!duOpts.all && !duOpts.summarize) {
+      const [empty, refused] = await emptyDirs(allStdout, statPath)
+      dirs.push(...empty)
+      if (refused.length > 0) {
+        const raw = paths[0]?.rawPath ?? targetPath
+        const notes = refused
+          .map(
+            ([row, err]) =>
+              `du: cannot access '${respellOne(row, targetPath, raw)}': ${fsStrerror(err) ?? ''}\n`,
+          )
+          .join('')
+        mergedIo = await mergedIo.merge(
+          new IOResult({ exitCode: 1, stderr: new TextEncoder().encode(notes) }),
+        )
+        exitCodes.push(1)
+        errored.push(true)
+      }
+    }
     combined = mergeDuBlocks(allStdout, targetPath, paths[0]?.rawPath ?? targetPath, {
       ...duOpts,
       dirs,
@@ -797,6 +827,10 @@ export async function fanOutTraversal(
     const sep = cmdName === 'ls' ? '\n\n' : '\n' + runSeparator(cmdName, flagKwargs)
     combined = new TextEncoder().encode(parts.filter((s) => s !== '').join(sep) + '\n')
   }
+  const quiet =
+    (cmdName === 'grep' && new FlagView(flagKwargs, specOf('grep')).asBool('q')) ||
+    (cmdName === 'rg' && new FlagView(flagKwargs, specOf('rg')).asBool('quiet'))
+  const finalIoExit = combinedExit(cmdName as Cmd, exitCodes, errored, quiet)
 
   if (cmdName === 'find') {
     // The structured rows ride out for the command boundary, which

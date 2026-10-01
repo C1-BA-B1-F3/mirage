@@ -24,6 +24,7 @@ import { RAMIndexCacheStore } from './index/ram.ts'
 import { runInCommandScope } from './index/scope.ts'
 import { IndexView } from './index/view.ts'
 import { CacheManager } from './manager.ts'
+import { shiftPerformanceNow } from './_test_util.ts'
 import { enoent } from '../utils/errors.ts'
 
 async function seeded(): Promise<[RAMFileCacheStore, RAMIndexCacheStore]> {
@@ -403,44 +404,31 @@ describe('what a mount has listed since a command started', () => {
 
 describe('which listings a mount trusts', () => {
   afterEach(() => {
-    vi.useRealTimers()
+    vi.restoreAllMocks()
   })
 
   it('trusts a listing for the window outside any command', async () => {
-    vi.useFakeTimers({ toFake: ['Date'] })
+    const clock = shiftPerformanceNow()
     const index = new RAMIndexCacheStore({ ttl: 600 })
     const manager = new CacheManager(new RAMFileCacheStore(), index, '/data/', true)
     await manager.scopeIndex(index).setDir('/data', [])
-    vi.setSystemTime(Date.now() + LISTING_TRUST_WINDOW * 1000 - 10)
     expect(manager.listingTrusted('/data')).toBe(true)
     expect(manager.listingTrusted('/data/other')).toBe(false)
-    vi.setSystemTime(Date.now() + 20)
-    expect(manager.listingTrusted('/data')).toBe(false)
-  })
-
-  // Date.now can step backwards; elapsed time below zero is no evidence the
-  // listing is recent.
-  it('does not extend the window when the clock ran backwards', async () => {
-    vi.useFakeTimers({ toFake: ['Date'] })
-    const index = new RAMIndexCacheStore({ ttl: 600 })
-    const manager = new CacheManager(new RAMFileCacheStore(), index, '/data/', true)
-    await manager.scopeIndex(index).setDir('/data', [])
-    vi.setSystemTime(Date.now() - 5000)
+    clock.advance(LISTING_TRUST_WINDOW * 1000)
     expect(manager.listingTrusted('/data')).toBe(false)
   })
 
   // A listing the previous command wrote a moment ago is still re-listed by
   // the next one: the window is only for reads that belong to no command.
   it('does not apply the window inside a command', async () => {
-    vi.useFakeTimers({ toFake: ['Date'] })
+    const clock = shiftPerformanceNow()
     const index = new RAMIndexCacheStore({ ttl: 600 })
     const manager = new CacheManager(new RAMFileCacheStore(), index, '/data/', true)
     await manager.scopeIndex(index).setDir('/data', [])
-    vi.setSystemTime(Date.now() + 10)
     await runInCommandScope(async () => {
       expect(manager.listingTrusted('/data')).toBe(false)
       await manager.scopeIndex(index).setDir('/data', [])
-      vi.setSystemTime(Date.now() + LISTING_TRUST_WINDOW * 10_000)
+      clock.advance(LISTING_TRUST_WINDOW * 10_000)
       expect(manager.listingTrusted('/data')).toBe(true)
     })
   })

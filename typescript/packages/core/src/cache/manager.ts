@@ -57,7 +57,7 @@ export class CacheManager {
 
   private readGeneration = 0
   private view: IndexView | null = null
-  // Folder to the tick and the wall-clock millisecond its listing was last
+  // Folder to the tick and the monotonic millisecond its listing was last
   // written at, by any view of this mount, shared or lock-held.
   private readonly written = new Map<string, [number, number]>()
   // Cache key to what the freshness probe got from the backend: its command
@@ -171,7 +171,7 @@ export class CacheManager {
   }
 
   private noteWritten(folder: string): void {
-    this.written.set(folder, [tick(), Date.now()])
+    this.written.set(folder, [tick(), performance.now()])
   }
 
   /**
@@ -193,8 +193,7 @@ export class CacheManager {
     const [stamp, at] = written
     const started = commandStarted()
     if (started !== null) return stamp > started
-    const elapsed = Date.now() - at
-    return elapsed >= 0 && elapsed < LISTING_TRUST_WINDOW * 1000
+    return performance.now() - at < LISTING_TRUST_WINDOW * 1000
   }
 
   /**
@@ -237,9 +236,10 @@ export class CacheManager {
    * A read command stats its own operand after the probe already asked the
    * backend; under fresh, asking again resolves through listings the command
    * has not re-checked, and re-lists every folder on the path. The answer is
-   * served only inside the command that probed, and only while no write has
-   * landed since: every invalidation bumps the read generation, so `sed -i`
-   * or `> f` in the same command sends the next stat back to the backend.
+   * served only inside the command that probed, and only while no cache drop
+   * has landed since: a write in the command (`sed -i`, `> f`), the clear
+   * after an external program, and a re-list that found the path gone all
+   * retire it (`retire()`), so the next stat goes back to the backend.
    */
   probedStat(path: PathSpec): FileStat | null {
     const probed = this.probed.get(this.cacheKey(path))

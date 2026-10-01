@@ -734,16 +734,6 @@ async def test_an_overlapping_probe_belongs_only_to_its_command(scoped):
 
 
 @pytest.mark.asyncio
-async def test_a_clock_that_ran_backwards_does_not_extend_the_window(clock):
-    # Elapsed time below zero is no evidence the listing is recent.
-    cache, index = _stores()
-    manager = CacheManager(cache, index, "/data/", True)
-    await manager.scope_index(index).set_dir("/data", [])
-    clock.now -= 5
-    assert manager.listing_trusted("/data") is False
-
-
-@pytest.mark.asyncio
 async def test_one_large_command_does_not_rescan_its_probes_on_every_insert(
         monkeypatch):
     # Past the bound, a prune that frees nothing (every entry is the running

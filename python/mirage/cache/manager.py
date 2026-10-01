@@ -209,7 +209,7 @@ class CacheManager:
         started = command_started()
         if started is not None:
             return stamp > started
-        return 0 <= _now() - at < LISTING_TRUST_WINDOW
+        return _now() - at < LISTING_TRUST_WINDOW
 
     @property
     def generation(self) -> int:

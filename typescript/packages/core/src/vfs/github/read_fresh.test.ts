@@ -15,6 +15,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { FakeGitHub, blobSha } from '../../core/github/_test_util.ts'
 import { LISTING_TRUST_WINDOW } from '../../cache/index/constants.ts'
+import { shiftPerformanceNow } from '../../cache/_test_util.ts'
 import { DEFAULT_READ_TTL, MountMode, ReadPolicy } from '../../types.ts'
 import type { BaseVFS } from '../base.ts'
 import { RAMVFS } from '../ram/ram.ts'
@@ -583,7 +584,7 @@ it.each(['find /gh', 'du -a /gh', 'ls -R /gh'])(
 // the whole tree for every call.
 describe('github op door under read: fresh', () => {
   afterEach(() => {
-    vi.useRealTimers()
+    vi.restoreAllMocks()
   })
 
   it('fetches the tree once for a burst', async () => {
@@ -601,12 +602,12 @@ describe('github op door under read: fresh', () => {
   })
 
   it('sees an outside change after the window', async () => {
-    vi.useFakeTimers({ toFake: ['Date'] })
+    const clock = shiftPerformanceNow()
     const w = await ws(await vfsOf())
     try {
       expect(await w.readdir('/gh/docs')).not.toContain('/gh/docs/c.txt')
       gh.set('docs/c.txt', 'new')
-      vi.setSystemTime(Date.now() + LISTING_TRUST_WINDOW * 1000)
+      clock.advance(LISTING_TRUST_WINDOW * 1000)
       expect(await w.readdir('/gh/docs')).toContain('/gh/docs/c.txt')
     } finally {
       await w.close()

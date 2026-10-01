@@ -16,6 +16,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { RegisteredOp } from '../../ops/registry.ts'
 import type { IndexCacheStore } from '../../cache/index/store.ts'
 import { LISTING_TRUST_WINDOW } from '../../cache/index/constants.ts'
+import { shiftPerformanceNow } from '../../cache/_test_util.ts'
 import { IndexView } from '../../cache/index/view.ts'
 import { FakeGitHub } from '../../core/github/_test_util.ts'
 import { MountMode, ReadPolicy } from '../../types.ts'
@@ -597,7 +598,7 @@ describe('a fresh mount re-lists once per command', () => {
   // listing written within the window: a burst refetches once, not once per
   // call. Task 1.3 is what makes the refetch itself cheaper.
   it('trusts a listing for the window on an unscoped read', async () => {
-    vi.useFakeTimers({ toFake: ['Date'] })
+    const clock = shiftPerformanceNow()
     three()
     const w = await freshOf(await vfsOf())
     try {
@@ -610,7 +611,7 @@ describe('a fresh mount re-lists once per command', () => {
       ])
       await w.vfs.stat('/gh/d1/a.txt')
       expect(gh.counts()).toEqual([0, 0, 0])
-      vi.setSystemTime(Date.now() + LISTING_TRUST_WINDOW * 1000)
+      clock.advance(LISTING_TRUST_WINDOW * 1000)
       await w.vfs.readdir('/gh/d1')
       await w.vfs.stat('/gh/d1/a.txt')
       expect(gh.counts()).toEqual([0, 1, 0])

@@ -18,6 +18,7 @@ import { RAMFileCacheStore } from './file/ram.ts'
 import { LISTING_TRUST_WINDOW } from './index/constants.ts'
 import { RAMIndexCacheStore } from './index/ram.ts'
 import { CacheManager } from './manager.ts'
+import { shiftPerformanceNow } from './_test_util.ts'
 import { PathSpec } from '../types.ts'
 import {
   activeCacheManager,
@@ -154,19 +155,19 @@ it.each(['/data', '/nested/data'])('evicts ancestors under repeated mount %s', a
 
 describe('listingRefreshed', () => {
   afterEach(() => {
-    vi.useRealTimers()
+    vi.restoreAllMocks()
   })
 
   // github's truncated-tree walk asks here rather than through the gate, so a
   // read that belongs to no command trusts a listing for the window too.
   it("follows the manager's listing rule", async () => {
-    vi.useFakeTimers({ toFake: ['Date'] })
+    const clock = shiftPerformanceNow()
     const index = new RAMIndexCacheStore({ ttl: 600 })
     const manager = new CacheManager(new RAMFileCacheStore(), index, '/data/', true)
     await manager.scopeIndex(index).setDir('/data', [])
     await runWithCacheManager(manager, () => {
       expect(listingRefreshed('/data')).toBe(true)
-      vi.setSystemTime(Date.now() + LISTING_TRUST_WINDOW * 1000)
+      clock.advance(LISTING_TRUST_WINDOW * 1000)
       expect(listingRefreshed('/data')).toBe(false)
       return Promise.resolve()
     })

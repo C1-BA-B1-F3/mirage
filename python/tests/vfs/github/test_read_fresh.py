@@ -15,9 +15,10 @@
 import aiohttp
 import pytest
 
+from mirage.cache.index.constants import LISTING_TRUST_WINDOW
 from mirage.core.github.config import GitHubConfig
 from mirage.core.github.tree import fetch_tree
-from mirage.types import MountMode, ReadPolicy, ReadSpec
+from mirage.types import HiddenPaths, MountMode, ReadPolicy, ReadSpec
 from mirage.vfs.github import GitHubVFS
 from mirage.vfs.ram import RAMVFS
 from mirage.vfs.registry import build_vfs
@@ -94,14 +95,14 @@ async def test_a_read_leaves_its_sha_on_the_cache_entry(prefix):
 
 
 # Each cell is (dir listings, whole-tree walks, blob downloads) for one line
-# on a warm fresh mount. cat pays two probes (routing, then the cache door),
-# as hf's table does; cp skips routing's probe. The one walk is fresh
-# checking the listing the path resolves through: a new command re-lists it
-# once, and on github the listing is the whole tree (Task 1.3 makes it
-# cheaper).
+# on a warm fresh mount. cat pays one probe, at routing, as hf's table does;
+# its own stat and the cache door both reuse that answer. cp skips routing's
+# probe, so the cache door asks, and cp's stat resolves through the listing,
+# which fresh re-checks once per command: on github that listing is the
+# whole tree (Task 1.3 makes it cheaper).
 WARM = [
-    ("cat /gh/docs/a.txt", (2, 1, 0)),
-    ("cat /gh/docs/a.txt | head -c 1", (2, 1, 0)),
+    ("cat /gh/docs/a.txt", (1, 0, 0)),
+    ("cat /gh/docs/a.txt | head -c 1", (1, 0, 0)),
     ("cp /gh/docs/a.txt /r/a.txt", (1, 1, 0)),
 ]
 
@@ -121,6 +122,57 @@ async def test_a_warm_fresh_read_costs_one_listing_per_probe(line, cost):
 
 
 @pytest.mark.asyncio
+async def test_a_warm_fresh_stat_prints_what_a_bounded_one_does():
+    # The command's stat now comes from the freshness probe rather than from
+    # the command's own lookup; what it prints must not change with it.
+    outs = []
+    for policy in (ReadPolicy.FRESH, ReadPolicy.BOUNDED):
+        with serve(_hub()) as hub:
+            ws = _ws(_vfs(hub), policy=policy)
+            try:
+                await _out(ws, f"cat {PATH}")
+                outs.append(await _out(ws, f"stat {PATH}"))
+            finally:
+                await ws.close()
+    assert outs[0] == outs[1]
+    assert outs[0]
+
+
+@pytest.mark.asyncio
+async def test_a_warm_probe_does_not_bypass_a_sessions_hidden_path():
+    with serve(_hub()) as hub:
+        ws = _ws(_vfs(hub))
+        try:
+            assert await _out(ws, f"cat {PATH}") == OLD
+            session = ws.create_session("hidden")
+            session.hidden_paths = HiddenPaths(paths=(PATH, ))
+            result = await ws.shell(f"cat {PATH}", session_id="hidden")
+            assert await result.materialize_stdout() == b""
+            assert result.exit_code == 1
+            assert "No such file or directory" in await result.stderr_str()
+        finally:
+            await ws.close()
+
+
+@pytest.mark.asyncio
+async def test_a_cold_stat_of_an_overlaid_path_prints_what_a_bounded_one_does(
+):
+    # Routing probes a path that carries an attribute overlay even when
+    # nothing is cached, so under fresh the command's stat of it comes from
+    # the probe; the overlay must still apply on top.
+    outs = []
+    for policy in (ReadPolicy.FRESH, ReadPolicy.BOUNDED):
+        with serve(_hub()) as hub:
+            ws = _ws(_vfs(hub), policy=policy)
+            try:
+                await ws.namespace.set_attrs(PATH, mode=0o600)
+                outs.append(await _out(ws, f"stat -c '%a %s %n' {PATH}"))
+            finally:
+                await ws.close()
+    assert outs[0] == outs[1] == f"600 {len(OLD)} {PATH}\n".encode()
+
+
+@pytest.mark.asyncio
 async def test_a_changed_file_is_refetched_once_then_served_warm():
     with serve(_hub()) as hub:
         ws = _ws(_vfs(hub))
@@ -129,13 +181,13 @@ async def test_a_changed_file_is_refetched_once_then_served_warm():
             hub.files["docs/a.txt"] = NEW
             hub.log.clear()
             assert await _out(ws, f"cat {PATH}") == NEW
-            # The probe finds a new sha; cat's own stat asks the cleared
-            # index's one directory; the read refills and downloads.
-            assert hub.counts() == (2, 1, 1)
+            # The probe finds a new sha; cat's own stat serves the probe's
+            # answer; the read refills and downloads.
+            assert hub.counts() == (1, 1, 1)
             hub.log.clear()
             assert await _out(ws, f"cat {PATH}") == NEW
-            # Warm now, but a new command re-checks the listing once.
-            assert hub.counts() == (2, 1, 0)
+            # Warm now: the routing probe, and nothing else.
+            assert hub.counts() == (1, 0, 0)
         finally:
             await ws.close()
 
@@ -394,10 +446,10 @@ async def test_a_truncated_parent_listing_is_not_absence():
             hub.log.clear()
             assert await _out(ws, f"cat {PATH}") == OLD
             assert _kept(ws)
-            # One listing of docs/ per probe, each cut short, so each defers
-            # to one walk of the whole tree, which finds the file; plus the
-            # command's one re-check of the listing under fresh.
-            assert hub.counts() == (2, 3, 0)
+            # The routing probe's listing of docs/ is cut short, so it defers
+            # to one walk of the whole tree, which finds the file; cat's own
+            # stat and the cache door reuse its answer.
+            assert hub.counts() == (1, 1, 0)
         finally:
             await ws.close()
 
@@ -421,11 +473,11 @@ async def test_a_truncated_repository_probes_one_directory():
             assert await _out(ws, f"cat {PATH}") == OLD
             hub.log.clear()
             assert await _out(ws, f"cat {PATH}") == OLD
-            # A truncated tree never refills, so the command's re-check of
-            # the listing goes folder by folder: one more listing, reached
-            # through the folder's own tree sha.
-            assert hub.counts() == (3, 0, 0)
-            assert hub.count("sha_dir") == 1
+            # One listing of docs/, by the routing probe; cat's own stat and
+            # the cache door reuse its answer, so the truncated tree is never
+            # walked folder by folder, which would reach docs/ by its sha.
+            assert hub.counts() == (1, 0, 0)
+            assert hub.count("sha_dir") == 0
         finally:
             await ws.close()
 
@@ -559,5 +611,44 @@ async def test_truncated_walk_lists_each_directory_once_per_command(line):
                 kind for kind, _ in hub.log if kind in ("dir", "sha_dir")
             ]
             assert len(listings) == 5
+        finally:
+            await ws.close()
+
+
+def _burst_hub() -> FakeGitHub:
+    return _hub({f"docs/f{n:02}.txt": b"x" for n in range(20)})
+
+
+# The op door is what FUSE, ws.vfs and the agent file tools reach, and none
+# of them runs inside a shell command. One `ls -l` over FUSE is a readdir and
+# a stat per entry; fresh trusts a listing that recent instead of refetching
+# the whole tree for every call.
+@pytest.mark.asyncio
+async def test_an_ops_door_burst_fetches_the_tree_once():
+    with serve(_burst_hub()) as hub:
+        ws = _ws(_vfs(hub))
+        try:
+            names = await ws.readdir("/gh/docs")
+            assert len(names) == 20
+            for name in names:
+                await ws.stat(name if name.startswith("/") else
+                              f"/gh/docs/{name.rsplit('/', 1)[-1]}")
+            assert hub.count("recursive") == 1
+        finally:
+            await ws.close()
+
+
+@pytest.mark.asyncio
+async def test_an_ops_door_read_sees_an_outside_change_after_the_window(
+        monkeypatch):
+    now = [100.0]
+    monkeypatch.setattr("mirage.cache.manager._now", lambda: now[0])
+    with serve(_hub()) as hub:
+        ws = _ws(_vfs(hub))
+        try:
+            assert "/gh/docs/c.txt" not in await ws.readdir("/gh/docs")
+            hub.files["docs/c.txt"] = b"new"
+            now[0] += LISTING_TRUST_WINDOW
+            assert "/gh/docs/c.txt" in await ws.readdir("/gh/docs")
         finally:
             await ws.close()

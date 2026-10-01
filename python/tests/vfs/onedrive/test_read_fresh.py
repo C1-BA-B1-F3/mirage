@@ -145,12 +145,12 @@ async def test_a_pinned_read_gets_that_versions_bytes(pin, expected):
 
 # Measured on the first green run, then pinned. The listing makes every
 # ordinary stat an index hit, so what is left is the reconcile probes: cat
-# pays routing's and the cache gate's, cp skips routing (write commands are
-# not reconciled there) and keeps the gate. A warm read downloads nothing
-# and lists nothing.
+# pays routing's, which the cache gate reuses; cp skips routing (write
+# commands are not reconciled there) and keeps the gate. A warm read
+# downloads nothing and lists nothing.
 WARM = [
-    (CAT, 2),
-    ("cat /m/a.txt | head -c 1", 2),
+    (CAT, 1),
+    ("cat /m/a.txt | head -c 1", 1),
     ("cp /m/a.txt /r/a.txt", 1),
 ]
 

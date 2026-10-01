@@ -216,14 +216,13 @@ describe('hf_buckets under read: fresh', () => {
 })
 
 // Measured on the first green run, then pinned (test plan T23): the routing
-// probe, the handler's stat against a mount index nothing filled, and the
-// cache door's probe. Under fresh an `ls` in an earlier command no longer
-// saves the second: the next command does not trust that listing.
+// probe; the handler's own stat and the cache door reuse its answer.
+// Cross-mount cp skips routing's probe, so the cache door asks, and its stat
+// goes through its own door against a mount index nothing filled.
 const WARM: [string, string, number][] = [
-  ['', 'cat /m/a.txt', 3],
-  ['ls /m', 'cat /m/a.txt', 3],
-  ['', 'cat /m/a.txt | head -c 1', 3],
-  // Cross-mount cp skips routing's probe and stats through its own door.
+  ['', 'cat /m/a.txt', 1],
+  ['ls /m', 'cat /m/a.txt', 1],
+  ['', 'cat /m/a.txt | head -c 1', 1],
   ['', 'cp /m/a.txt /r/a.txt', 2],
 ]
 

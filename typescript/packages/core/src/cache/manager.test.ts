@@ -13,16 +13,18 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import { mountKey } from '../utils/key_prefix.ts'
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { PathSpec } from '../types.ts'
+import { FileStat, FileType, PathSpec } from '../types.ts'
 import { withCacheMutation } from './file/io.ts'
 import { RAMFileCacheStore } from './file/ram.ts'
 import { IndexEntry } from './index/config.ts'
+import { LISTING_TRUST_WINDOW, PROBED_LIMIT } from './index/constants.ts'
 import { RAMIndexCacheStore } from './index/ram.ts'
-import { commandStarted, runInCommandScope } from './index/scope.ts'
+import { runInCommandScope } from './index/scope.ts'
 import { IndexView } from './index/view.ts'
 import { CacheManager } from './manager.ts'
+import { shiftPerformanceNow } from './_test_util.ts'
 import { enoent } from '../utils/errors.ts'
 
 async function seeded(): Promise<[RAMFileCacheStore, RAMIndexCacheStore]> {
@@ -373,11 +375,9 @@ describe('what a mount has listed since a command started', () => {
     const index = new RAMIndexCacheStore({ ttl: 600 })
     const manager = new CacheManager(new RAMFileCacheStore(), index, '/data/', true)
     await runInCommandScope(async () => {
-      const started = commandStarted()
       await manager.scopeIndexLocked(index).setDir('/data', [])
-      expect(started).not.toBeNull()
-      expect(manager.listedSince('/data', started ?? 0)).toBe(true)
-      expect(manager.listedSince('/data/other', started ?? 0)).toBe(false)
+      expect(manager.listingTrusted('/data')).toBe(true)
+      expect(manager.listingTrusted('/data/other')).toBe(false)
     })
   })
 
@@ -386,9 +386,7 @@ describe('what a mount has listed since a command started', () => {
     const manager = new CacheManager(new RAMFileCacheStore(), index, '/data/', true)
     await manager.scopeIndex(index).setDir('/data', [])
     await runInCommandScope(() => {
-      const started = commandStarted()
-      expect(started).not.toBeNull()
-      expect(manager.listedSince('/data', started ?? 0)).toBe(false)
+      expect(manager.listingTrusted('/data')).toBe(false)
       return Promise.resolve()
     })
   })
@@ -397,11 +395,166 @@ describe('what a mount has listed since a command started', () => {
     const index = new RAMIndexCacheStore({ ttl: 600 })
     const manager = new CacheManager(new RAMFileCacheStore(), index, '/data/', true)
     await runInCommandScope(async () => {
-      const started = commandStarted()
       await manager.scopeIndex(index).setDir('/data', [])
       manager.scopeIndex(new RAMIndexCacheStore({ ttl: 600 }))
-      expect(started).not.toBeNull()
-      expect(manager.listedSince('/data', started ?? 0)).toBe(false)
+      expect(manager.listingTrusted('/data')).toBe(false)
+    })
+  })
+})
+
+describe('which listings a mount trusts', () => {
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  it('trusts a listing for the window outside any command', async () => {
+    const clock = shiftPerformanceNow()
+    const index = new RAMIndexCacheStore({ ttl: 600 })
+    const manager = new CacheManager(new RAMFileCacheStore(), index, '/data/', true)
+    await manager.scopeIndex(index).setDir('/data', [])
+    expect(manager.listingTrusted('/data')).toBe(true)
+    expect(manager.listingTrusted('/data/other')).toBe(false)
+    clock.advance(LISTING_TRUST_WINDOW * 1000)
+    expect(manager.listingTrusted('/data')).toBe(false)
+  })
+
+  // A listing the previous command wrote a moment ago is still re-listed by
+  // the next one: the window is only for reads that belong to no command.
+  it('does not apply the window inside a command', async () => {
+    const clock = shiftPerformanceNow()
+    const index = new RAMIndexCacheStore({ ttl: 600 })
+    const manager = new CacheManager(new RAMFileCacheStore(), index, '/data/', true)
+    await manager.scopeIndex(index).setDir('/data', [])
+    await runInCommandScope(async () => {
+      expect(manager.listingTrusted('/data')).toBe(false)
+      await manager.scopeIndex(index).setDir('/data', [])
+      clock.advance(LISTING_TRUST_WINDOW * 10_000)
+      expect(manager.listingTrusted('/data')).toBe(true)
+    })
+  })
+})
+
+describe('what a probe saw this command', () => {
+  const path = PathSpec.fromStrPath('/data/arch/h.txt')
+  const probed = (): FileStat => new FileStat({ name: 'h.txt', size: 4, type: FileType.FILE })
+
+  it('is served for the rest of its command only', async () => {
+    const index = new RAMIndexCacheStore({ ttl: 600 })
+    const manager = new CacheManager(new RAMFileCacheStore(), index, '/data/', true)
+    const stat = probed()
+    await runInCommandScope(() => {
+      manager.noteProbed(path, stat)
+      expect(manager.probedStat(path)).toBe(stat)
+      expect(manager.probedStat(PathSpec.fromStrPath('/data/arch/other'))).toBeNull()
+      return Promise.resolve()
+    })
+    expect(manager.probedStat(path)).toBeNull()
+    await runInCommandScope(() => {
+      expect(manager.probedStat(path)).toBeNull()
+      return Promise.resolve()
+    })
+  })
+
+  it('is never served for a probe outside a command', () => {
+    const index = new RAMIndexCacheStore({ ttl: 600 })
+    const manager = new CacheManager(new RAMFileCacheStore(), index, '/data/', true)
+    manager.noteProbed(path, probed())
+    expect(manager.probedStat(path)).toBeNull()
+  })
+
+  it.each([false, true])('does not reuse an overlapping probe (scoped: %s)', async (scoped) => {
+    const index = new RAMIndexCacheStore({ ttl: 600 })
+    const manager = new CacheManager(new RAMFileCacheStore(), index, '/data/', true)
+    let ready = (): void => undefined
+    let release = (): void => undefined
+    const readyPromise = new Promise<void>((resolve) => {
+      ready = resolve
+    })
+    const releasePromise = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    const note = async (): Promise<void> => {
+      ready()
+      await releasePromise
+      manager.noteProbed(path, probed())
+    }
+    const producer = scoped ? runInCommandScope(note) : note()
+    await readyPromise
+    await runInCommandScope(async () => {
+      release()
+      await producer
+      expect(manager.probedStat(path)).toBeNull()
+    })
+  })
+
+  // Every door that drops cached state: a write the command makes, a clear
+  // after native code ran (an external program, a remote runtime line), a
+  // path-less CLI mutation, and a re-list that found the file gone. Each one
+  // means the backend may no longer match what the probe saw.
+  const DROPS: [string, (manager: CacheManager, index: RAMIndexCacheStore) => Promise<void>][] = [
+    ['a write', (m) => m.invalidateAfterWrite(PathSpec.fromStrPath('/data/elsewhere'))],
+    ['an unlink', (m) => m.invalidateAfterUnlink(PathSpec.fromStrPath('/data/elsewhere'))],
+    ['a subtree drop', (m) => m.invalidateSubtree(PathSpec.fromStrPath('/data/elsewhere'))],
+    ['an external clear', (m, index) => m.clearIndex(index)],
+    ['a path-less drop', (m) => m.dropPrefix()],
+    [
+      'a re-list that found it gone',
+      async (m, index) => {
+        const view = m.scopeIndex(index)
+        await view.setDir('/data/arch', [
+          ['h.txt', new IndexEntry({ id: 'h', name: 'h.txt', resourceType: 'file' })],
+        ])
+        await view.setDir('/data/arch', [])
+      },
+    ],
+  ]
+  for (const [name, drop] of DROPS) {
+    it(`is retired by ${name} in the same command`, async () => {
+      const index = new RAMIndexCacheStore({ ttl: 600 })
+      const manager = new CacheManager(new RAMFileCacheStore(), index, '/data/', true)
+      await runInCommandScope(async () => {
+        manager.noteProbed(path, probed())
+        expect(manager.probedStat(path)).not.toBeNull()
+        await drop(manager, index)
+        expect(manager.probedStat(path)).toBeNull()
+      })
+    })
+  }
+
+  // Only the probing command is ever served an answer, so once the map is
+  // full the other commands' entries are dead weight; dropping one costs at
+  // most a backend stat, never a wrong answer.
+  // Past the bound, a prune that frees nothing (every entry is the running
+  // command's) must not run again on the next insert, or a large walk turns
+  // quadratic: the next prune waits until the map has doubled.
+  it('does not rescan one large command on every insert', async () => {
+    const index = new RAMIndexCacheStore({ ttl: 600 })
+    const manager = new CacheManager(new RAMFileCacheStore(), index, '/data/', true)
+    const spy = vi.spyOn(manager as unknown as { pruneProbes: () => void }, 'pruneProbes')
+    await runInCommandScope(() => {
+      for (let n = 0; n < PROBED_LIMIT * 4; n++) {
+        manager.noteProbed(PathSpec.fromStrPath(`/data/f${String(n)}`), probed())
+      }
+      return Promise.resolve()
+    })
+    expect(spy.mock.calls.length).toBeLessThanOrEqual(3)
+  })
+
+  it('drops finished commands past the bound', async () => {
+    const index = new RAMIndexCacheStore({ ttl: 600 })
+    const manager = new CacheManager(new RAMFileCacheStore(), index, '/data/', true)
+    for (let n = 0; n < PROBED_LIMIT; n++) {
+      await runInCommandScope(() => {
+        manager.noteProbed(PathSpec.fromStrPath(`/data/old${String(n)}`), probed())
+        return Promise.resolve()
+      })
+    }
+    await runInCommandScope(() => {
+      const mine = PathSpec.fromStrPath('/data/mine')
+      manager.noteProbed(mine, probed())
+      expect(manager.probedStat(mine)).not.toBeNull()
+      expect((manager as unknown as { probed: Map<string, unknown> }).probed.size).toBe(1)
+      return Promise.resolve()
     })
   })
 })

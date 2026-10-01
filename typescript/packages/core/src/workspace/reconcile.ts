@@ -14,7 +14,6 @@
 
 import type { Evicted } from '../cache/index/config.ts'
 import { RAMIndexCacheStore } from '../cache/index/ram.ts'
-import { commandStarted } from '../cache/index/scope.ts'
 import type { FileCache } from '../cache/file/mixin.ts'
 import type { OpsRegistry } from '../ops/registry.ts'
 import type { BaseVFS } from '../vfs/base.ts'
@@ -54,12 +53,14 @@ enum Verdict {
  * (RAM local, Redis shared across runtimes), so this is a thin coordinator
  * holding references, not config.
  *
- * The gate and reconcileRead overlap deliberately: a warm named operand is
- * probed once at routing and again at the gate. Deduplicating them needs a
- * fact neither tier owns -- routing runs before any handler, the gate inside
- * one -- so the cheap version was a flag on the command that went stale the
- * moment a backend registered its own reader. Paying the second probe is the
- * honest price until the two tiers share a scope.
+ * The gate and reconcileRead both run for a warm named operand, once at
+ * routing and again at the gate, and they share one scope: the command. The
+ * first probe's backend answer is kept on the mount's CacheManager for the
+ * rest of the command, so the gate, and the command's own stat of the
+ * operand, reuse it instead of asking again. A write in the command, the
+ * clear after an external program, or a re-list that finds the path gone
+ * retires it, and a read outside any command (FUSE, the op door) never sees
+ * it.
  */
 export class Reconciler {
   private readonly cache: FileCache & BaseVFS
@@ -75,6 +76,10 @@ export class Reconciler {
   // Re-stat the backend and apply the matching cache/overlay reaction. A
   // missing path GCs (evict cache + drop overlay); a fingerprint mismatch
   // evicts the stale cache entry. Non-ENOENT errors propagate.
+  //
+  // Inside a command, what an earlier probe of the same command got from the
+  // backend is reused (CacheManager.probedStat) until a write lands: the
+  // verdict and its reactions still run, only the round trip is skipped.
   private async probe(mount: MountEntry, path: string): Promise<Verdict> {
     const vfs = mount.vfs
     const lastSlash = path.lastIndexOf('/')
@@ -83,30 +88,37 @@ export class Reconciler {
       directory: lastSlash > 0 ? path.slice(0, lastSlash + 1) : '/',
       vfsPath: mountKey(path, rstripSlash(mount.prefix)),
     })
-    let remoteStat: unknown
-    try {
-      remoteStat = await this.opsRegistry.call('stat', vfs, vfs.accessor, scope, [], {
-        index: new RAMIndexCacheStore(),
-      })
-    } catch (err) {
-      if (isEnoent(err) || isEnotdir(err)) {
-        await this.onMissing(path)
-        await mount.index.clear()
-        return Verdict.GONE
+    const manager = mount.cacheManager
+    let remoteStat: unknown = manager?.probedStat(scope) ?? null
+    if (remoteStat === null) {
+      const generation = manager?.generation
+      try {
+        remoteStat = await this.opsRegistry.call('stat', vfs, vfs.accessor, scope, [], {
+          index: new RAMIndexCacheStore(),
+        })
+      } catch (err) {
+        if (isEnoent(err) || isEnotdir(err)) {
+          await this.onMissing(path)
+          await mount.index.clear()
+          return Verdict.GONE
+        }
+        // A backend that registers no stat op cannot be revalidated at all.
+        // probeOrUnknown would reach the same verdict, but it would also log
+        // every read: this is a permanent capability of the mount, not an
+        // anomaly worth a log line each time. isMissingOp, not a bare ENOTSUP
+        // check: python catches OperationNotSupportedError, which only the op
+        // door raises, and `stat` is the only op probed here -- so a backend
+        // that stamps ENOTSUP itself takes the logged path on both sides.
+        if (isMissingOp(err, 'stat')) {
+          await this.cache.remove(path)
+          await mount.index.clear()
+          return Verdict.UNKNOWN
+        }
+        throw err
       }
-      // A backend that registers no stat op cannot be revalidated at all.
-      // probeOrUnknown would reach the same verdict, but it would also log
-      // every read: this is a permanent capability of the mount, not an
-      // anomaly worth a log line each time. isMissingOp, not a bare ENOTSUP
-      // check: python catches OperationNotSupportedError, which only the op
-      // door raises, and `stat` is the only op probed here -- so a backend
-      // that stamps ENOTSUP itself takes the logged path on both sides.
-      if (isMissingOp(err, 'stat')) {
-        await this.cache.remove(path)
-        await mount.index.clear()
-        return Verdict.UNKNOWN
+      if (manager !== null && manager.generation === generation && remoteStat instanceof FileStat) {
+        manager.noteProbed(scope, remoteStat)
       }
-      throw err
     }
     const fp = remoteStat instanceof FileStat ? remoteStat.fingerprint : null
     if (fp === null) {
@@ -146,8 +158,8 @@ export class Reconciler {
 
   // Gate a cached read: is the cached copy still valid to serve? Under
   // `bounded` the cache is trusted within its bound. Under `fresh` the
-  // backend is re-stated: a matching
-  // fingerprint serves the cached copy, a mismatch evicts it, a path the
+  // backend probe (reused within its command until a write) supplies the
+  // fingerprint: a match serves the cached copy, a mismatch evicts it, a path the
   // backend no longer has GCs and throws, and a backend that answers no
   // fingerprint at all -- or no stat at all -- cannot be verified, so the
   // copy is dropped and the caller re-reads.
@@ -186,16 +198,15 @@ export class Reconciler {
    *
    * Under `bounded` the listing is trusted within its bound. Under `fresh`
    * it is trusted only if the running command refreshed it itself, so one
-   * command re-lists a folder once however often it reads it; anything
-   * older, and any read outside a command, lists again. Task 1.3 replaces
-   * "list again" with a cheaper check.
+   * command re-lists a folder once however often it reads it; a read outside
+   * any command trusts a listing written within the last
+   * `LISTING_TRUST_WINDOW` seconds instead (`CacheManager.listingTrusted`).
+   * Anything older lists again. Task 1.3 replaces "list again" with a
+   * cheaper check.
    */
   mayServeListing(mount: MountEntry, folder: string): Promise<boolean> {
     if (mount.read.policy !== ReadPolicy.FRESH) return Promise.resolve(true)
-    const started = commandStarted()
-    return Promise.resolve(
-      started !== null && mount.cacheManager?.listedSince(folder, started) === true,
-    )
+    return Promise.resolve(mount.cacheManager?.listingTrusted(folder) === true)
   }
 
   // Reconcile a single-mount shell read before the command runs.

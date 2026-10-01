@@ -12,10 +12,13 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
+import { RAMFileCacheStore } from './file/ram.ts'
+import { LISTING_TRUST_WINDOW } from './index/constants.ts'
 import { RAMIndexCacheStore } from './index/ram.ts'
 import { CacheManager } from './manager.ts'
+import { shiftPerformanceNow } from './_test_util.ts'
 import { PathSpec } from '../types.ts'
 import {
   activeCacheManager,
@@ -23,12 +26,17 @@ import {
   invalidateAfterWrite,
   invalidateAncestors,
   invalidateSubtree,
+  listingRefreshed,
   runWithCacheManager,
 } from './context.ts'
 
 class FakeManager {
-  listedSince(_folder: string, _started: number): boolean {
+  listingTrusted(_folder: string): boolean {
     return false
+  }
+
+  probedStat(): null {
+    return null
   }
 
   readThrough(_path: PathSpec, fetch: () => Promise<Uint8Array>): Promise<Uint8Array> {
@@ -143,4 +151,25 @@ it.each(['/data', '/nested/data'])('evicts ancestors under repeated mount %s', a
   })
   for (const ancestor of ancestors) expect((await index.listDir(ancestor)).entries).toBeUndefined()
   expect((await index.listDir(`${prefix}/unrelated`)).entries).toBeDefined()
+})
+
+describe('listingRefreshed', () => {
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  // github's truncated-tree walk asks here rather than through the gate, so a
+  // read that belongs to no command trusts a listing for the window too.
+  it("follows the manager's listing rule", async () => {
+    const clock = shiftPerformanceNow()
+    const index = new RAMIndexCacheStore({ ttl: 600 })
+    const manager = new CacheManager(new RAMFileCacheStore(), index, '/data/', true)
+    await manager.scopeIndex(index).setDir('/data', [])
+    await runWithCacheManager(manager, () => {
+      expect(listingRefreshed('/data')).toBe(true)
+      clock.advance(LISTING_TRUST_WINDOW * 1000)
+      expect(listingRefreshed('/data')).toBe(false)
+      return Promise.resolve()
+    })
+  })
 })

@@ -12,8 +12,7 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import type { PathSpec } from '../types.ts'
-import { commandStarted } from './index/scope.ts'
+import type { FileStat, PathSpec } from '../types.ts'
 import { type ContextCall, createAsyncContext } from '../utils/async_context.ts'
 
 /**
@@ -30,7 +29,8 @@ export interface CacheInvalidator {
   cachedBytes(path: PathSpec): Promise<Uint8Array | null>
   readThrough(path: PathSpec, fetch: () => Promise<Uint8Array>): Promise<Uint8Array>
   cachedSize(path: PathSpec): Promise<number | null>
-  listedSince(folder: string, stamp: number): boolean
+  listingTrusted(folder: string): boolean
+  probedStat(path: PathSpec): FileStat | null
 }
 
 interface CacheContextState {
@@ -150,9 +150,11 @@ export async function invalidateAncestors(path: PathSpec): Promise<void> {
   }
 }
 
-/** Whether the active mount refreshed a listing during this command. */
+/**
+ * Whether the active mount's listing of `folder` is recent enough: the same
+ * rule as the fresh listing gate, written during this command or within the
+ * trust window when no command is running.
+ */
 export function listingRefreshed(folder: string): boolean {
-  const manager = activeCacheManager()
-  const started = commandStarted()
-  return manager !== null && started !== null && manager.listedSince(folder, started)
+  return activeCacheManager()?.listingTrusted(folder) === true
 }

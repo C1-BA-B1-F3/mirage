@@ -12,19 +12,26 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import time
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
 
 from mirage.cache.file.io import latest_fingerprint, mutation_lock
 from mirage.cache.file.mixin import FileCacheMixin
 from mirage.cache.index.config import Evicted
-from mirage.cache.index.scope import tick
+from mirage.cache.index.constants import LISTING_TRUST_WINDOW, PROBED_LIMIT
+from mirage.cache.index.scope import command_started, tick
 from mirage.cache.index.store import IndexCacheStore
 from mirage.cache.index.view import IndexView
 from mirage.observe.context import active_recorder
 from mirage.observe.record import READ_FINGERPRINT_OPS
-from mirage.types import DEFAULT_READ_TTL, PathSpec
+from mirage.types import DEFAULT_READ_TTL, FileStat, PathSpec
 from mirage.utils.key_prefix import mount_key
+
+
+def _now() -> float:
+    """Monotonic seconds, read through one name so tests can move it."""
+    return time.monotonic()
 
 
 async def _always_serve(_key: str) -> bool:
@@ -101,7 +108,9 @@ class CacheManager:
         self._on_gone = on_gone
         self._excluded_prefixes = excluded_prefixes
         self._may_serve_listing = may_serve_listing
-        self._written: dict[str, int] = {}
+        self._written: dict[str, tuple[int, float]] = {}
+        self._probed: dict[str, tuple[int, int, FileStat]] = {}
+        self._probe_bound = PROBED_LIMIT
         self._read_generation = 0
         self._view: IndexView | None = None
 
@@ -115,8 +124,14 @@ class CacheManager:
             yield
 
     async def clear_index(self, index: IndexCacheStore) -> None:
-        """Clear the whole backend index while this mount still owns it."""
+        """Clear the whole backend index while this mount still owns it.
+
+        The clear that follows native code (an external program, a remote
+        runtime line) that may have changed the mount, so it also retires
+        what the running command's probes saw.
+        """
         async with self.mutation():
+            self._retire()
             if self._owns_path(self._prefix or "/"):
                 await index.clear()
 
@@ -145,24 +160,117 @@ class CacheManager:
 
     async def _cleanup(self, gone: list[Evicted]) -> None:
         async with self.mutation():
-            owned = [child for child in gone if self._owns_path(child.path)]
-            if owned and self._on_gone is not None:
-                await self._on_gone(owned)
+            await self._gone_locked(
+                [child for child in gone if self._owns_path(child.path)])
+
+    async def _gone_locked(self, gone: list[Evicted]) -> None:
+        if not gone:
+            return
+        # A re-list found children gone: the backend changed under the
+        # command, so nothing its probes saw is safe to serve.
+        self._retire()
+        if self._on_gone is not None:
+            await self._on_gone(gone)
+
+    def _retire(self) -> None:
+        """Retire every in-flight read and every remembered probe answer.
+
+        The one step every cache drop takes: a read that began before it
+        must not stamp the cache after it, and a probe answer from before
+        it must not be served after it.
+        """
+        self._read_generation += 1
+        self._probed.clear()
+        self._probe_bound = PROBED_LIMIT
 
     def _note_written(self, folder: str) -> None:
-        self._written[folder] = tick()
+        self._written[folder] = (tick(), _now())
 
-    def listed_since(self, folder: str, stamp: int) -> bool:
-        """Whether this mount wrote ``folder``'s listing after ``stamp``.
+    def listing_trusted(self, folder: str) -> bool:
+        """Whether ``folder``'s listing is recent enough to serve under fresh.
+
+        Inside a command: only if the command wrote it itself, so one
+        command re-lists a folder once however often it reads it. Outside
+        any command (FUSE, a programmatic op) there is no command to
+        belong to, so a listing written within ``LISTING_TRUST_WINDOW``
+        seconds is trusted instead: one ``ls -l`` over FUSE is a burst of
+        calls that can share a re-list until the window expires.
 
         Every view of the mount, shared or lock-held, records into one map,
         so a glob's write counts for the ``ls`` that follows it.
 
         Args:
             folder (str): mount-absolute listing key.
-            stamp (int): the running command's start.
         """
-        return self._written.get(folder, 0) > stamp
+        written = self._written.get(folder)
+        if written is None:
+            return False
+        stamp, at = written
+        started = command_started()
+        if started is not None:
+            return stamp > started
+        return _now() - at < LISTING_TRUST_WINDOW
+
+    @property
+    def generation(self) -> int:
+        """Mutation generation, captured before a freshness probe starts."""
+        return self._read_generation
+
+    def note_probed(self, path: PathSpec, stat: FileStat) -> None:
+        """Remember what the freshness probe got from the backend for ``path``.
+
+        Only the reconciler's probe calls this, and only with an answer it
+        got from the backend, so a stat served from an index row -- which
+        may carry no content token -- never lands here. A path the backend
+        reports gone records nothing: the probe asks the backend only when
+        no answer is servable, so there is nothing left to take back.
+
+        Args:
+            path (PathSpec): the probed path; only ``virtual`` is read.
+            stat (FileStat): the backend's answer.
+        """
+        started = command_started()
+        if started is None:
+            return
+        if len(self._probed) >= self._probe_bound:
+            self._prune_probes(started)
+            # What is left is all the running command's; the next prune
+            # waits for the map to double, so one large walk stays linear.
+            self._probe_bound = max(PROBED_LIMIT, 2 * len(self._probed))
+        self._probed[self._cache_key(path)] = (started, self._read_generation,
+                                               stat)
+
+    def _prune_probes(self, started: int) -> None:
+        # Only the probing command is ever served an answer, so the other
+        # commands' entries are dead weight here.
+        self._probed = {
+            key: probed
+            for key, probed in self._probed.items() if probed[0] == started
+        }
+
+    def probed_stat(self, path: PathSpec) -> FileStat | None:
+        """The backend's answer for ``path`` from this command's probe.
+
+        A read command stats its own operand after the probe already asked
+        the backend; under fresh, asking again resolves through listings the
+        command has not re-checked, and re-lists every folder on the path.
+        The answer is served only inside the command that probed, and only
+        while no cache drop has landed since: a write in the command
+        (``sed -i``, ``> f``), the clear after an external program, and a
+        re-list that found the path gone all retire it (``_retire``), so the
+        next stat goes back to the backend.
+
+        Args:
+            path (PathSpec): the path to look up; only ``virtual`` is read.
+        """
+        probed = self._probed.get(self._cache_key(path))
+        started = command_started()
+        if probed is None or started is None:
+            return None
+        stamp, generation, stat = probed
+        if stamp != started or generation != self._read_generation:
+            return None
+        return stat
 
     def scope_index_locked(self, index: IndexCacheStore) -> IndexCacheStore:
         """A view for a caller already inside ``mutation()``.
@@ -188,7 +296,7 @@ class CacheManager:
                          self._owns_path,
                          locked=True,
                          read_ttl=self._read_ttl,
-                         on_gone=self._on_gone,
+                         on_gone=self._gone_locked,
                          excluded_prefixes=self._excluded_prefixes,
                          may_serve_listing=self._may_serve_listing,
                          note_written=self._note_written)
@@ -335,7 +443,7 @@ class CacheManager:
             path (PathSpec): Path that was written; only ``virtual`` is
                 read.
         """
-        self._read_generation += 1
+        self._retire()
         key = self._cache_key(path)
         if self._caches_reads and self._file_cache is not None:
             await self._file_cache.remove(key)
@@ -348,7 +456,7 @@ class CacheManager:
             path (PathSpec): Path that was removed; only ``virtual`` is
                 read.
         """
-        self._read_generation += 1
+        self._retire()
         key = self._cache_key(path)
         if self._caches_reads and self._file_cache is not None:
             await self._file_cache.remove(key)
@@ -371,7 +479,7 @@ class CacheManager:
             path (PathSpec): Root of the stale subtree; only ``virtual``
                 is read.
         """
-        self._read_generation += 1
+        self._retire()
         key = self._cache_key(path)
         if self._caches_reads and self._file_cache is not None:
             await self._file_cache.remove(key)
@@ -412,7 +520,7 @@ class CacheManager:
         beneath it, since keys are compared by prefix. That costs a
         refetch, which is the safe direction to be wrong in.
         """
-        self._read_generation += 1
+        self._retire()
         if not self._caches_reads or self._file_cache is None:
             return
         await self._file_cache.evict_prefix(self._prefix + "/")

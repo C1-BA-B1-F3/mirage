@@ -65,8 +65,8 @@ No external setup, these run locally or against a connection string you already 
 
 | VFS | Access | Setup | Docs | Notes |
 | --- | --- | --- | --- | --- |
-| OneDrive | read, write | [OneDrive](/home/setup/onedrive) | [<Icon icon="python" />](/python/vfs/onedrive) [<Icon icon="node-js" />](/typescript/setup/onedrive) [<Icon icon="globe" />](/typescript/setup/onedrive) | Files and folders through Microsoft Graph |
-| SharePoint | read, write | [SharePoint](/home/setup/sharepoint) | [<Icon icon="python" />](/python/vfs/sharepoint) [<Icon icon="node-js" />](/typescript/setup/sharepoint) [<Icon icon="globe" />](/typescript/setup/sharepoint) | Document libraries through Microsoft Graph; `site`, `drive`, and `key_prefix` can scope a mount to one folder subtree |
+| OneDrive | read, write | [OneDrive](/home/setup/onedrive) | [<Icon icon="python" />](/python/vfs/onedrive) [<Icon icon="node-js" />](/typescript/setup/onedrive) [<Icon icon="globe" />](/typescript/setup/onedrive) | Files and folders through Microsoft Graph; a write keeps no bytes in the file cache, since a business drive rewrites uploaded Office files |
+| SharePoint | read, write | [SharePoint](/home/setup/sharepoint) | [<Icon icon="python" />](/python/vfs/sharepoint) [<Icon icon="node-js" />](/typescript/setup/sharepoint) [<Icon icon="globe" />](/typescript/setup/sharepoint) | Document libraries through Microsoft Graph; `site`, `drive`, and `key_prefix` can scope a mount to one folder subtree; a write keeps no bytes in the file cache, since the library rewrites uploaded Office files |
 
 ## Cloud Files
 

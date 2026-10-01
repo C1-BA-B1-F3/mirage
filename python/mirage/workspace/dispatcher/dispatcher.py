@@ -1247,8 +1247,12 @@ class Dispatcher:
             mount = self._namespace.try_mount_for(path)
             if (mount is None or original is not mount or mount.retiring
                     or not mount.vfs.caches_reads):
-                return CacheFacts(cacheable=False, ttl=DEFAULT_READ_TTL)
-            return CacheFacts(cacheable=True, ttl=mount.read.ttl)
+                return CacheFacts(cacheable=False,
+                                  ttl=DEFAULT_READ_TTL,
+                                  keeps_writes=True)
+            return CacheFacts(cacheable=True,
+                              ttl=mount.read.ttl,
+                              keeps_writes=mount.vfs.keeps_written_bytes)
 
         return facts
 
@@ -1260,8 +1264,12 @@ class Dispatcher:
         """
         mount = self._namespace.try_mount_for(path)
         if mount is None or mount.retiring or not mount.vfs.caches_reads:
-            return CacheFacts(cacheable=False, ttl=DEFAULT_READ_TTL)
-        return CacheFacts(cacheable=True, ttl=mount.read.ttl)
+            return CacheFacts(cacheable=False,
+                              ttl=DEFAULT_READ_TTL,
+                              keeps_writes=True)
+        return CacheFacts(cacheable=True,
+                          ttl=mount.read.ttl,
+                          keeps_writes=mount.vfs.keeps_written_bytes)
 
     async def invalidate_all_after_remote(self) -> None:
         """Drop the file cache and every mount index wholesale.

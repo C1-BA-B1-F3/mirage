@@ -80,6 +80,13 @@ class BaseVFS:
     # like are never masked by a cached snapshot.
     caches_reads: bool = False
 
+    # Whether the bytes a write sent are the bytes the backend stores, so
+    # the file cache may keep them as the path's content. False on a
+    # backend that rewrites uploads (SharePoint property promotion writes
+    # library metadata into an Office file), where the next read has to
+    # fetch what the backend holds.
+    keeps_written_bytes: bool = True
+
     # Whether this VFS carries enough version information for
     # snapshot+replay drift detection. When True, the VFS's stat()
     # must populate FileStat.fingerprint with a stable per-path marker
@@ -147,6 +154,7 @@ class BaseVFS:
         provision_overrides: dict[str, Callable[..., Any]] | None = None,
         auto_ops: bool = True,
         caches_reads: bool | None = None,
+        keeps_written_bytes: bool | None = None,
         sizes_always_known: bool | None = None,
         supports_snapshot: bool | None = None,
         read_revalidatable: bool | None = None,
@@ -185,6 +193,9 @@ class BaseVFS:
                 serve only the explicit ``ops``.
             caches_reads (bool | None): serve repeat reads from the file
                 cache; enable only for stable, read-mostly content.
+            keeps_written_bytes (bool | None): whether the backend stores
+                exactly the bytes a write sends, so the file cache may keep
+                them; turn off for a backend that rewrites uploads.
             sizes_always_known (bool | None): whether ``io.stat`` sizes
                 every regular file without fetching it, which is also
                 what makes the mount legal on FSKit.
@@ -212,6 +223,8 @@ class BaseVFS:
             self.write_prompt = write_prompt
         if caches_reads is not None:
             self.caches_reads = caches_reads
+        if keeps_written_bytes is not None:
+            self.keeps_written_bytes = keeps_written_bytes
         if sizes_always_known is not None:
             self.sizes_always_known = sizes_always_known
         if supports_snapshot is not None:

@@ -255,11 +255,14 @@ export const DEFAULT_READ_SPEC: ReadSpec = Object.freeze({
  * fill that lands after the command is stamped with the bound of the mount
  * that produced the bytes rather than whatever holds the prefix by then.
  * `cacheable` is read first and short-circuits, so `ttl` is never consulted
- * for a path that is not being cached.
+ * for a path that is not being cached. `keepsWrites` is false where the
+ * backend stores something other than the bytes a write sent, so a write
+ * leaves no entry behind.
  */
 export interface CacheFacts {
   readonly cacheable: boolean
   readonly ttl: number
+  readonly keepsWrites: boolean
 }
 
 /**

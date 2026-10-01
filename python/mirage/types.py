@@ -407,10 +407,13 @@ class CacheFacts:
     the mount that produced the bytes rather than whatever holds the
     prefix by then. ``cacheable`` is read first and short-circuits, so
     ``ttl`` is never consulted for a path that is not being cached.
+    ``keeps_writes`` is False where the backend stores something other
+    than the bytes a write sent, so a write leaves no entry behind.
     """
 
     cacheable: bool
     ttl: int
+    keeps_writes: bool
 
 
 MOUNT_MODE_RANK: dict[MountMode, int] = {

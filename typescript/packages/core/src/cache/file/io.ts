@@ -151,6 +151,12 @@ export async function applyIo(
     if (source === undefined) {
       source = io.writes[path]
       ops = WRITE_FINGERPRINT_OPS
+      if (source !== undefined && cacheFacts !== undefined && !cacheFacts(path).keepsWrites) {
+        // The backend stores something other than these bytes, so keeping
+        // them would serve content it does not hold.
+        await cache.remove(path)
+        continue
+      }
     }
     if (source === undefined) continue
     if (source instanceof Uint8Array) {

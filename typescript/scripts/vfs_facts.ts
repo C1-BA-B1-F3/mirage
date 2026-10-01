@@ -35,6 +35,7 @@ type CapabilityValue = number | boolean | string
 const CAPABILITY_FIELDS = [
   'indexTtl',
   'cachesReads',
+  'keepsWrittenBytes',
   'readRevalidatable',
   'supportsSnapshot',
   'sizesAlwaysKnown',
@@ -49,6 +50,7 @@ const BASE_CLASS = 'BaseVFS'
 export interface Capabilities {
   index_ttl: number | string
   caches_reads: boolean | string
+  keeps_written_bytes: boolean | string
   read_revalidatable: boolean | string
   supports_snapshot: boolean | string
   sizes_always_known: boolean | string
@@ -254,6 +256,7 @@ export function capabilitiesOf(className: string, classes: Map<string, ClassInfo
   return {
     index_ttl: numericCapability(values, 'indexTtl', 600, className),
     caches_reads: booleanCapability(values, 'cachesReads', false, className),
+    keeps_written_bytes: booleanCapability(values, 'keepsWrittenBytes', true, className),
     read_revalidatable: booleanCapability(values, 'readRevalidatable', false, className),
     supports_snapshot: booleanCapability(values, 'supportsSnapshot', false, className),
     sizes_always_known: booleanCapability(values, 'sizesAlwaysKnown', false, className),

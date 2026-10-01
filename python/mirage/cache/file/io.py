@@ -171,6 +171,12 @@ async def apply_io(
         if data is None:
             data = io.writes.get(path)
             ops = WRITE_FINGERPRINT_OPS
+            if (data is not None and cache_facts is not None
+                    and not cache_facts(path).keeps_writes):
+                # The backend stores something other than these bytes, so
+                # keeping them would serve content it does not hold.
+                await cache.remove(path)
+                continue
         if data is None:
             continue
         if isinstance(data, bytes):

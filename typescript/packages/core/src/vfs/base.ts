@@ -131,6 +131,11 @@ export interface VFSOptions<A extends Accessor = Accessor> {
   /** Serve repeat reads from the file cache. Read-mostly content only. */
   cachesReads?: boolean
   /**
+   * Whether the backend stores exactly the bytes a write sends, so the file
+   * cache may keep them. Turn off for a backend that rewrites uploads.
+   */
+  keepsWrittenBytes?: boolean
+  /**
    * Whether `io.stat` sizes every regular file without fetching it. A
    * backend that renders its content on read leaves this false and rides
    * the unknown-size machinery; a byte store sets it, which is also what
@@ -203,6 +208,14 @@ export class BaseVFS<A extends Accessor = Accessor> {
    * are not masked by a cached snapshot.
    */
   readonly cachesReads: boolean = false
+  /**
+   * Whether the bytes a write sent are the bytes the backend stores, so the
+   * file cache may keep them as the path's content. False on a backend that
+   * rewrites uploads (SharePoint property promotion writes library metadata
+   * into an Office file), where the next read has to fetch what the backend
+   * holds.
+   */
+  readonly keepsWrittenBytes: boolean = true
   /**
    * Whether this VFS carries enough version information for
    * snapshot+replay drift detection. When true, the driver's `stat` op
@@ -296,6 +309,7 @@ export class BaseVFS<A extends Accessor = Accessor> {
     this.prompt = options.prompt ?? ''
     this.writePrompt = options.writePrompt ?? ''
     this.cachesReads = options.cachesReads ?? false
+    this.keepsWrittenBytes = options.keepsWrittenBytes ?? true
     this.sizesAlwaysKnown = options.sizesAlwaysKnown ?? false
     this.supportsSnapshot = options.supportsSnapshot ?? false
     this.readRevalidatable = options.readRevalidatable ?? false

@@ -1402,9 +1402,9 @@ export class Dispatcher {
   cacheFactsFor = (path: string): CacheFacts => {
     const mount = this.namespace.tryMountFor(path)
     if (mount === null || mount.retiring || !mount.vfs.cachesReads) {
-      return { cacheable: false, ttl: DEFAULT_READ_TTL }
+      return { cacheable: false, ttl: DEFAULT_READ_TTL, keepsWrites: true }
     }
-    return { cacheable: true, ttl: mount.read.ttl }
+    return { cacheable: true, ttl: mount.read.ttl, keepsWrites: mount.vfs.keepsWrittenBytes }
   }
 
   /**
@@ -1423,9 +1423,9 @@ export class Dispatcher {
       const original = prefix === null ? null : mounts.get(prefix)
       const mount = this.namespace.tryMountFor(path)
       if (mount === null || original !== mount || mount.retiring || !mount.vfs.cachesReads) {
-        return { cacheable: false, ttl: DEFAULT_READ_TTL }
+        return { cacheable: false, ttl: DEFAULT_READ_TTL, keepsWrites: true }
       }
-      return { cacheable: true, ttl: mount.read.ttl }
+      return { cacheable: true, ttl: mount.read.ttl, keepsWrites: mount.vfs.keepsWrittenBytes }
     }
   }
 

@@ -128,8 +128,16 @@ A command pattern is a **prefix of the line**: `git push` covers
 `*` is every command (`git push` and `git push *` are the same rule).
 The same patterns spell the `allow` list.
 
-A rule with `paths` and no command also reaches the VFS op door, so FUSE
-mounts and the cache cannot go around it. A whole-command `deny` refuses
+A rule holds for the entries a command reaches below its operands as well
+as the ones it names. A walk (`grep -r`, `cp -r`, `tar`), a line that
+spans mounts, and bytes another session left in the shared read cache
+are all refused for the running command exactly as a cold read of them
+would be, each in the command's own GNU voice (`grep: <path>: Permission
+denied`). A rule with `paths` and no command also reaches the VFS op door,
+so `ws.vfs` and FUSE mounts cannot go around it. A rule that names a
+command binds that command's own reads and writes. A CLI's or
+interpreter's own file access (`git`, `python3`) is held to its operands
+and to `paths` rules. A whole-command `deny` refuses
 in bash's own voice, `<command>: Permission denied` at exit 126, and the
 reason rides beside the output as the result's `refusal` record
 (`{"kind": "deny", "reason": ..., "policy": ..., "scope": "command"}`,

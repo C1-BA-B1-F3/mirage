@@ -15,13 +15,18 @@
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { RAMIndexCacheStore } from '@struktoai/mirage-core/cache/index/ram'
 import { runInCommandScope } from '@struktoai/mirage-core/cache/index/scope'
-import { FileStat, FileType, MountMode, ReadPolicy } from '@struktoai/mirage-core/types'
+import { FileStat, FileType, MountMode, PathSpec, ReadPolicy } from '@struktoai/mirage-core/types'
+import type { MountEntry } from '@struktoai/mirage-core/workspace/mount/mount'
 import { RAMVFS } from '@struktoai/mirage-core/vfs/ram/ram'
+import { Mount } from '@struktoai/mirage-core/workspace/mount/spec'
 import { Reconciler } from '@struktoai/mirage-core/workspace/reconcile'
 import { Workspace } from '@struktoai/mirage-core/workspace/workspace/workspace'
-import { knownVfsNames } from './registry.ts'
+import { Workspace as NodeWorkspace } from '../workspace.ts'
+import { InlineGitHub } from './fixtures/github.ts'
+import { buildVfs, knownVfsNames } from './registry.ts'
 
 const SPEC_VFS = resolve(
   fileURLToPath(import.meta.url),
@@ -30,10 +35,82 @@ const SPEC_VFS = resolve(
 
 const KINDS = ['none', 'mount', 'folder']
 
+interface Harness {
+  ws: NodeWorkspace
+  key: string
+  nested: string
+  counts: () => [number, number]
+  change: () => void
+}
+
+async function githubHarness(): Promise<Harness> {
+  const gh = new InlineGitHub({ 'docs/sub/a.txt': 'a\n', 'top.txt': 't\n' })
+  vi.stubGlobal('fetch', gh.fetch)
+  const vfs = await buildVfs('github', {
+    token: 't',
+    owner: 'o',
+    repo: 'r',
+    ref: 'main',
+    base_url: gh.url,
+  })
+  const ws = new NodeWorkspace({
+    '/m': new Mount(vfs, { mode: MountMode.READ, read: { policy: ReadPolicy.FRESH, ttl: 600 } }),
+  })
+  return {
+    ws,
+    key: '/m',
+    nested: '/m/docs/sub',
+    counts: () => [gh.count('dir'), gh.count('recursive')],
+    change: () => {
+      gh.set('docs/new.txt', 'n\n')
+    },
+  }
+}
+
 // A declarer gets a harness proving that its check and its fill agree, so
-// the gate's stat and the stored version are one kind of token. None ships
-// yet; each declaring backend adds its row with its declaration.
-const HARNESSES: Record<string, string> = {}
+// the gate's stat and the stored version are one kind of token. Each
+// declaring backend adds its row with its declaration.
+const HARNESSES: Record<string, () => Promise<Harness>> = { github: githubHarness }
+
+async function shell(ws: NodeWorkspace, line: string): Promise<void> {
+  const result = await ws.shell(line)
+  expect([result.exitCode, new TextDecoder().decode(result.stderr)], line).toEqual([0, ''])
+}
+
+async function throwawayStat(ws: NodeWorkspace, mount: MountEntry, key: string): Promise<FileStat> {
+  const spec = new PathSpec({ virtual: key, directory: '/', vfsPath: '' })
+  return (await ws.opsRegistry.call('stat', mount.vfs, mount.vfs.accessor, spec, [], {
+    index: new RAMIndexCacheStore(),
+  })) as FileStat
+}
+
+async function checkContract(name: string): Promise<void> {
+  const make = HARNESSES[name]
+  if (make === undefined) throw new Error(`no harness for ${name}`)
+  const harness = await make()
+  const { ws } = harness
+  try {
+    const mount = ws.registry.mountFor(harness.key)
+    await shell(ws, `ls ${harness.key} ${harness.nested}`)
+    const store = mount.indexStore
+    const stored = (await store.listDir(harness.key)).version ?? null
+    expect(stored).not.toBeNull()
+    expect((await store.listDir(harness.nested)).version ?? null).not.toBeNull()
+    const remote = await throwawayStat(ws, mount, harness.key)
+    expect(remote.fingerprint).toBe(stored)
+    const before = harness.counts()
+    await shell(ws, `ls ${harness.key} ${harness.nested}`)
+    const after = harness.counts()
+    expect([after[0] - before[0], after[1] - before[1]]).toEqual([1, 0])
+    expect(mount.vfs.listingVersion).toBe(manifest()[name]?.listing_version)
+    harness.change()
+    const moved = await throwawayStat(ws, mount, harness.key)
+    expect(moved.fingerprint ?? null).not.toBeNull()
+    expect(moved.fingerprint).not.toBe(stored)
+  } finally {
+    await ws.close()
+  }
+}
 
 function manifest(): Record<string, { listing_version?: unknown }> {
   return (
@@ -69,7 +146,7 @@ describe('listing version declarations', () => {
   it('the harness roster is pinned', () => {
     // A literal, not the derived set: the expectation must not move with the
     // spec it checks.
-    expect(Object.keys(HARNESSES).sort()).toEqual([])
+    expect(Object.keys(HARNESSES).sort()).toEqual(['github'])
   })
 
   const undeclared = (): string[] => {
@@ -101,5 +178,33 @@ describe('listing version declarations', () => {
       vi.restoreAllMocks()
       await ws.close()
     }
+  })
+})
+
+describe('a declarer checks what its fill stored', () => {
+  afterEach(() => {
+    vi.restoreAllMocks()
+    vi.unstubAllGlobals()
+  })
+
+  it.each(Object.keys(HARNESSES).sort())('%s', async (name) => {
+    await checkContract(name)
+  })
+
+  it('goes red on github seeding a tree sha', async () => {
+    // github made to store each listing at a tree's sha while its check
+    // answers the head commit: one kind of token on each side.
+    const seed = Object.getOwnPropertyDescriptor(RAMIndexCacheStore.prototype, 'seed')
+      ?.value as RAMIndexCacheStore['seed']
+    vi.spyOn(RAMIndexCacheStore.prototype, 'seed').mockImplementation(function (
+      this: RAMIndexCacheStore,
+      entries,
+      children,
+      expiresAt,
+      version,
+    ) {
+      seed.call(this, entries, children, expiresAt, version == null ? version : 'f'.repeat(40))
+    })
+    await expect(checkContract('github')).rejects.toThrow()
   })
 })

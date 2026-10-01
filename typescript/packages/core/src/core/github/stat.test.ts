@@ -12,7 +12,7 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { GitHubAccessor } from '../../accessor/github.ts'
 import { RAMIndexCacheStore } from '../../cache/index/ram.ts'
 import { RedisIndexCacheStore } from '../../cache/index/redis.ts'
@@ -21,6 +21,7 @@ import { populateIndex } from './tree.ts'
 import { read } from './read.ts'
 import { stat } from './stat.ts'
 import type { GitHubTreeItem } from './client.ts'
+import { FakeGitHub, servedAccessor } from './_test_util.ts'
 
 for (const backend of ['ram', 'redis']) {
   describe.skipIf(backend === 'redis' && process.env.REDIS_URL === undefined)(
@@ -180,3 +181,52 @@ for (const backend of ['ram', 'redis']) {
     },
   )
 }
+
+const ROOT = new PathSpec({ vfsPath: '', virtual: '/gh', directory: '/gh' })
+
+function three(): FakeGitHub {
+  const gh = new FakeGitHub(
+    Object.fromEntries(
+      ['d1', 'd2', 'd3'].flatMap((d) => ['a', 'b', 'c'].map((n) => [`${d}/${n}.txt`, 'x\n'])),
+    ),
+  )
+  vi.stubGlobal('fetch', gh.fetch)
+  return gh
+}
+
+describe('the root stat names the head commit', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  // A throwaway index has no root listing, so the root's version is asked
+  // with one shallow request, and it is the head commit.
+  it('asks the head through a throwaway index', async () => {
+    const gh = three()
+    const found = await stat(servedAccessor(), ROOT, new RAMIndexCacheStore())
+    expect(found.fingerprint).toBe(await gh.head())
+    expect(gh.counts()).toEqual([1, 0, 0])
+  })
+
+  // With no index at all (the null index) the root still names its version,
+  // for one request; any other path is still absent.
+  it('asks the head once with no index', async () => {
+    const gh = three()
+    const found = await stat(servedAccessor(), ROOT, undefined)
+    expect(found.fingerprint).toBe(await gh.head())
+    expect(gh.counts()).toEqual([1, 0, 0])
+    const file = new PathSpec({ vfsPath: 'd1/a.txt', virtual: '/gh/d1/a.txt', directory: '/gh/d1' })
+    await expect(stat(servedAccessor(), file, undefined)).rejects.toMatchObject({ code: 'ENOENT' })
+  })
+
+  // A refused head names no version, and never falls into a refill.
+  it.each([404, 500])('names no version when the head answers %i', async (status) => {
+    const gh = three()
+    gh.fail.set('dir', [status, 'refused'])
+    const accessor = servedAccessor()
+    const found = await stat(accessor, ROOT, new RAMIndexCacheStore())
+    expect(found.fingerprint).toBeNull()
+    expect(gh.count('recursive')).toBe(0)
+    expect(accessor.tree).toEqual({})
+  })
+})

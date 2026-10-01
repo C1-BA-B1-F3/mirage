@@ -103,12 +103,12 @@ async def test_a_read_leaves_its_sha_on_the_cache_entry(prefix):
 # on a warm fresh mount. cat pays one probe, at routing, as hf's table does;
 # its own stat and the cache door both reuse that answer. cp skips routing's
 # probe, so the cache door asks, and cp's stat resolves through the listing,
-# which fresh re-checks once per command: on github that listing is the
-# whole tree (Task 1.3 makes it cheaper).
+# which fresh re-checks once per command: on github that is one check of the
+# head, which replaces the tree refetch (Task 1.3).
 WARM = [
     ("cat /gh/docs/a.txt", (1, 0, 0)),
     ("cat /gh/docs/a.txt | head -c 1", (1, 0, 0)),
-    ("cp /gh/docs/a.txt /r/a.txt", (1, 1, 0)),
+    ("cp /gh/docs/a.txt /r/a.txt", (2, 0, 0)),
 ]
 
 
@@ -220,9 +220,10 @@ async def test_a_new_mount_asks_one_directory_per_stat_until_it_lists():
             await _out(ws, "ls /gh/docs")
             assert hub.counts() == (2, 1, 0)
             # The listing filled the index, but under fresh the next command
-            # re-checks it once, which on github is one walk of the tree.
+            # re-checks it once: one check of the head, which replaces the
+            # tree refetch (Task 1.3).
             await _out(ws, f"stat {PATH}")
-            assert hub.counts() == (2, 2, 0)
+            assert hub.counts() == (3, 1, 0)
         finally:
             await ws.close()
 
@@ -293,8 +294,9 @@ async def test_a_probe_leaves_find_its_whole_listing():
                 "/gh/top.txt",
             ]
             # The probe left the whole listing; find, a new command, re-checks
-            # it once under fresh.
-            assert hub.count("recursive") == walks + 1
+            # it once under fresh, with a check of the head instead of a
+            # refetch of the tree (Task 1.3).
+            assert hub.count("recursive") == walks
         finally:
             await ws.close()
 

@@ -527,3 +527,61 @@ async def test_the_first_refill_reports_nothing():
         gone, index = _ledgered(RAMIndexCacheStore())
         await refill_snapshot(accessor, index, "/gh")
         assert gone == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "payload,head",
+    [
+        ({"sha": "c0ffee", "tree": [], "truncated": False}, "c0ffee"),
+        ({"tree": [], "truncated": False}, None),
+    ],
+)
+@patch("mirage.core.github.tree.github_get")
+async def test_fetch_tree_returns_the_head_it_answered(
+    mock_get, config, payload, head
+):
+    mock_get.return_value = payload
+    _, _, answered = await fetch_tree(config, "o", "r", "main")
+    assert answered == head
+
+
+@pytest.mark.asyncio
+async def test_a_refill_stamps_its_head_on_every_folder():
+    files = {"d1/a.txt": b"a", "d1/sub/b.txt": b"b", "top.txt": b"t"}
+    with serve(FakeGitHub(files=dict(files))) as gh:
+        accessor = _served_accessor(gh)
+        index = RAMIndexCacheStore()
+        snapshot = await refill_snapshot(accessor, index, "/gh")
+        head = gh.head()
+        assert snapshot.version == head
+        assert accessor.tree_version == head
+        for folder in ("/gh", "/gh/d1", "/gh/d1/sub"):
+            assert (await index.list_dir(folder)).version == head
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("truncated,drop_sha", [(True, False), (False, True)])
+async def test_a_refill_with_no_whole_head_stores_no_version(
+    truncated, drop_sha
+):
+    files = {"d1/a.txt": b"a", "top.txt": b"t"}
+    with serve(
+        FakeGitHub(
+            files=dict(files), truncated_recursive=truncated, drop_sha=drop_sha
+        )
+    ) as gh:
+        accessor = _served_accessor(gh)
+        index = RAMIndexCacheStore()
+        snapshot = await refill_snapshot(accessor, index, "/gh")
+        assert snapshot.version is None
+        assert accessor.tree_version is None
+        assert (await index.list_dir("/gh")).version is None
+
+
+@pytest.mark.asyncio
+async def test_a_bare_tree_fetch_stamps_the_head_it_answered():
+    with serve(FakeGitHub(files={"top.txt": b"t"})) as gh:
+        accessor = _served_accessor(gh)
+        await ensure_tree(accessor)
+        assert accessor.tree_version == gh.head()

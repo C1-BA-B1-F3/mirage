@@ -163,6 +163,9 @@ export class FakeGitHub {
   // A recursive fetch waits on it before answering, so a test can line
   // readers up.
   holdRecursive: Promise<void> | null = null
+  // Answer the recursive tree with no top-level `sha`, the shape of a
+  // response that names no version.
+  dropSha = false
   // Called once the shallow tree of `ref` is built, so a test can change the
   // repository right after a head was answered.
   afterHead: (() => void) | null = null
@@ -312,7 +315,7 @@ export class FakeGitHub {
     if (this.truncatedRecursive) paths = paths.filter((p) => !p.includes('/'))
     const tree = await Promise.all(paths.map((p) => this.row(snap, ids, p, p)))
     const response = json(200, {
-      sha: await snap.head(),
+      ...(this.dropSha ? {} : { sha: await snap.head() }),
       tree,
       truncated: this.truncatedRecursive,
     })

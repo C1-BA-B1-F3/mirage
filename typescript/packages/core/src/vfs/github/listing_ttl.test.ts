@@ -456,28 +456,29 @@ async function freshOf(vfs: GitHubVFS): Promise<Workspace> {
   )
 }
 
-// One recursive tree fetch per command: the listing it writes is trusted
-// for the rest of that command, whatever the command reads it for.
+// One version check per command: the head it answers is trusted for the rest
+// of that command, whatever the command reads the listing for. The version
+// check replaces the tree refetch (Task 1.3).
 const FRESH_BUDGET: [string, [number, number, number]][] = [
-  ['ls /gh/d1', [0, 1, 0]],
-  ['ls -R /gh', [0, 1, 0]],
-  ['ls /gh/d1 /gh/d2 /gh/d3', [0, 1, 0]],
-  ['echo /gh/*/*.txt', [0, 1, 0]],
-  ['find /gh', [0, 1, 0]],
-  ['du -a /gh', [0, 1, 0]],
-  ['stat /gh/d1/a.txt', [0, 1, 0]],
-  ['ls -l /gh/d1', [0, 1, 0]],
-  ['ls /gh/d1 | cat', [0, 1, 0]],
-  ['echo /gh/d1/* $(true) /gh/d2/*', [0, 1, 0]],
-  ['for f in /gh/*/*.txt; do echo $f; done', [0, 1, 0]],
-  ['x=(/gh/*/*.txt); echo ${x[@]}', [0, 1, 0]],
-  ['f() { local x=(/gh/*/*.txt); echo ${x[@]}; }; f', [0, 1, 0]],
-  ['select f in /gh/*/*.txt; do break; done <<< 1 2>/dev/null', [0, 1, 0]],
-  ['cp /gh/*/a.txt /r/', [0, 1, 3]],
+  ['ls /gh/d1', [1, 0, 0]],
+  ['ls -R /gh', [1, 0, 0]],
+  ['ls /gh/d1 /gh/d2 /gh/d3', [1, 0, 0]],
+  ['echo /gh/*/*.txt', [1, 0, 0]],
+  ['find /gh', [1, 0, 0]],
+  ['du -a /gh', [1, 0, 0]],
+  ['stat /gh/d1/a.txt', [1, 0, 0]],
+  ['ls -l /gh/d1', [1, 0, 0]],
+  ['ls /gh/d1 | cat', [1, 0, 0]],
+  ['echo /gh/d1/* $(true) /gh/d2/*', [1, 0, 0]],
+  ['for f in /gh/*/*.txt; do echo $f; done', [1, 0, 0]],
+  ['x=(/gh/*/*.txt); echo ${x[@]}', [1, 0, 0]],
+  ['f() { local x=(/gh/*/*.txt); echo ${x[@]}; }; f', [1, 0, 0]],
+  ['select f in /gh/*/*.txt; do break; done <<< 1 2>/dev/null', [1, 0, 0]],
+  ['cp /gh/*/a.txt /r/', [1, 0, 3]],
 ]
 
 describe('a fresh mount re-lists once per command', () => {
-  it.each(FRESH_BUDGET)('%s refetches the tree once', async (line, expected) => {
+  it.each(FRESH_BUDGET)('%s checks the version once', async (line, expected) => {
     three()
     const w = await freshOf(await vfsOf())
     try {
@@ -500,7 +501,8 @@ describe('a fresh mount re-lists once per command', () => {
       gh.set('d1/new.txt', 'new\n')
       gh.log.length = 0
       expect(await out(w, 'ls /gh/d1')).toBe('a.txt\nb.txt\nc.txt\nnew.txt\n')
-      expect(gh.counts()).toEqual([0, 1, 0])
+      // The check misses, then the tree is fetched once (Task 1.3).
+      expect(gh.counts()).toEqual([1, 1, 0])
     } finally {
       await w.close()
     }
@@ -514,12 +516,14 @@ describe('a fresh mount re-lists once per command', () => {
     try {
       await out(w, 'ls /gh')
       gh.log.length = 0
-      gh.afterRecursive = () => {
+      gh.afterHead = () => {
         if (!gh.files.has('d1/new.txt')) gh.set('d1/new.txt', 'new\n')
       }
       const listed = await out(w, 'for i in 1 2; do ls /gh/d1; done')
       expect(listed.split('new.txt').length - 1).toBe(1)
-      expect(gh.counts()).toEqual([0, 2, 0])
+      // Each command checks the head once; the add lands after the first
+      // check, so only the second misses and walks (Task 1.3).
+      expect(gh.counts()).toEqual([2, 1, 0])
     } finally {
       await w.close()
     }
@@ -561,15 +565,17 @@ describe('a fresh mount re-lists once per command', () => {
       freshHub.log.length = 0
       boundedHub.log.length = 0
       await out(w, 'ls /gh/d1 /gb/d1')
-      expect(freshHub.counts()).toEqual([0, 1, 0])
+      // The version check replaces the tree refetch (Task 1.3).
+      expect(freshHub.counts()).toEqual([1, 0, 0])
       expect(boundedHub.counts()).toEqual([0, 0, 0])
     } finally {
       await w.close()
     }
   })
 
-  // All seven start before the one tree fetch answers, so the refill it
-  // writes lands after every one of their stamps.
+  // Each session may send its own small check, since one sent before its
+  // command began is not trusted; the walk they all miss is fetched once.
+  // The version check replaces the tree refetch (Task 1.3).
   it('shares one refetch across seven fresh sessions', async () => {
     three()
     const w = await freshOf(await vfsOf())
@@ -583,11 +589,18 @@ describe('a fresh mount re-lists once per command', () => {
         release = resolve
       })
       const reads = Promise.all(ids.map((id) => out(w, 'ls /gh/d1', id)))
-      await sleep(200)
+      let seen = -1
+      for (let i = 0; i < 200; i += 1) {
+        await sleep(50)
+        if (gh.count('recursive') > 0 && gh.count('dir') === seen) break
+        seen = gh.count('dir')
+      }
       release()
       expect(await settleWithin(reads, 10000)).toBe('done')
       expect((await reads).every((listed) => listed.includes('new.txt'))).toBe(true)
-      expect(gh.counts()).toEqual([0, 1, 0])
+      expect(gh.count('recursive')).toBe(1)
+      expect(gh.count('dir')).toBeGreaterThanOrEqual(1)
+      expect(gh.count('dir')).toBeLessThanOrEqual(7)
     } finally {
       release()
       await w.close()
@@ -614,7 +627,9 @@ describe('a fresh mount re-lists once per command', () => {
       clock.advance(LISTING_TRUST_WINDOW * 1000)
       await w.vfs.readdir('/gh/d1')
       await w.vfs.stat('/gh/d1/a.txt')
-      expect(gh.counts()).toEqual([0, 1, 0])
+      // One version check answers both calls inside the window; it replaces
+      // the tree refetch (Task 1.3).
+      expect(gh.counts()).toEqual([1, 0, 0])
     } finally {
       await w.close()
     }
@@ -666,7 +681,8 @@ describe('a truncated tree is walked folder by folder', () => {
   })
 
   // The folder-by-folder walk is only for a truncated tree; a complete one
-  // stays a single refetch with no per-folder listing.
+  // stays on the tree with no per-folder listing, and an unchanged head
+  // costs one check instead of a refetch (Task 1.3).
   it('keeps a complete tree walk on the tree', async () => {
     three()
     const w = await freshOf(await vfsOf())
@@ -674,7 +690,7 @@ describe('a truncated tree is walked folder by folder', () => {
       await out(w, 'ls /gh')
       gh.log.length = 0
       await out(w, 'find /gh')
-      expect(gh.counts()).toEqual([0, 1, 0])
+      expect(gh.counts()).toEqual([1, 0, 0])
     } finally {
       await w.close()
     }

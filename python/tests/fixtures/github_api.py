@@ -139,7 +139,10 @@ class FakeGitHub:
             response is built, so a test can change the repository between
             two fetches of one line.
         hold_recursive (threading.Event | None): a recursive fetch waits
-            on it before answering, so a test can line readers up.
+            on it before answering, off the fake's loop, so a test can line
+            readers up while other requests are served.
+        drop_sha (bool): answer the recursive tree with no top-level
+            ``sha``, the shape of a response that names no version.
         after_head (Callable | None): called once the shallow tree of
             ``ref`` is built, so a test can change the repository right
             after a head was answered.
@@ -159,6 +162,7 @@ class FakeGitHub:
     truncated_dirs: dict[str, int] = field(default_factory=dict)
     after_recursive: Callable[[], None] | None = None
     hold_recursive: threading.Event | None = None
+    drop_sha: bool = False
     after_head: Callable[[], None] | None = None
     hold_dir: threading.Event | None = None
     fail: dict[str, tuple[int, str]] = field(default_factory=dict)
@@ -259,7 +263,7 @@ class FakeGitHub:
         raw = request.raw_path.split("/git/trees/", 1)[1].split("?", 1)[0]
         segment = request.match_info["segment"]
         if request.query.get("recursive") == "1":
-            return self._recursive(raw, segment)
+            return await self._recursive(raw, segment)
         if ":" in segment:
             return self._point(raw, segment)
         if segment == self.ref:
@@ -288,7 +292,7 @@ class FakeGitHub:
             self.after_head()
         return response
 
-    def _recursive(self, raw: str, segment: str) -> web.Response:
+    async def _recursive(self, raw: str, segment: str) -> web.Response:
         self.log.append(("recursive", raw))
         refused = self._failure("recursive")
         if refused is not None:
@@ -297,7 +301,9 @@ class FakeGitHub:
         if snap is None:
             return web.json_response({"message": "Not Found"}, status=404)
         if self.hold_recursive is not None:
-            self.hold_recursive.wait(10)
+            await asyncio.get_running_loop().run_in_executor(
+                None, self.hold_recursive.wait, 10
+            )
             if segment == self.ref:
                 snap = self.snapshot()
         self._remember(snap)
@@ -305,13 +311,13 @@ class FakeGitHub:
         paths = sorted(list(snap.files) + list(snap.dirs()))
         if self.truncated_recursive:
             paths = [p for p in paths if "/" not in p]
-        response = web.json_response(
-            {
-                "sha": snap.head(),
-                "tree": [self._row(snap, ids, p, p) for p in paths],
-                "truncated": self.truncated_recursive,
-            }
-        )
+        body: dict[str, Any] = {
+            "tree": [self._row(snap, ids, p, p) for p in paths],
+            "truncated": self.truncated_recursive,
+        }
+        if not self.drop_sha:
+            body["sha"] = snap.head()
+        response = web.json_response(body)
         if self.after_recursive is not None:
             self.after_recursive()
         return response

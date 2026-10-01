@@ -12,6 +12,7 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import asyncio
 import errno as host_errno
 import os
 import time
@@ -20,13 +21,15 @@ import pytest
 
 from mirage.ops.namespace_view import merge_readdir
 from mirage.runtime.resolver import PrefixResolver
-from mirage.runtime.types import VFSStat
+from mirage.runtime.types import VFSEntry, VFSStat
 from mirage.runtime.vfs import RuntimeVFS
-from mirage.runtime.wasm.abi import FT_DIR, FT_REG, FT_SYMLINK, FT_UNKNOWN
+from mirage.runtime.wasm.abi import (FT_CHR, FT_DIR, FT_REG, FT_SYMLINK,
+                                     FT_UNKNOWN)
 from mirage.runtime.wasm.config import WasmFsConfig
-from mirage.runtime.wasm.vfs import WasmVFS
+from mirage.runtime.wasm.vfs import WasmVFS, filetype_of
 from mirage.types import ContentType, FileStat, FileType
-from mirage.utils.stat_view import FILE_MODE, mtime_ns
+from mirage.utils.stat_view import (CHAR_MODE, DIR_MODE, FILE_MODE, LINK_MODE,
+                                    mtime_ns)
 
 # The stamp a link's own row carries, deliberately not the stamp the
 # double gives a file, so a test can tell which row it was answered.
@@ -71,7 +74,10 @@ class FakeVFS(RuntimeVFS):
             if path.startswith(base) and "/" not in path[len(base):]
         }
 
-    def _raw(self, op, path, **kwargs):
+    def _wait(self, pending):
+        return asyncio.run(pending)
+
+    async def _op(self, op, path, **kwargs):
         self.calls.append((op, path, kwargs))
         if op == "stat":
             # The door answers a no-follow stat of a link from the node
@@ -87,7 +93,7 @@ class FakeVFS(RuntimeVFS):
             # for its target: the row says nothing about the link and the
             # mark is the only thing that can.
             if path in self.links:
-                return self._raw("stat", self.links[path], **kwargs)
+                return await self._op("stat", self.links[path], **kwargs)
             if path in self.files:
                 return FileStat(name=path,
                                 size=len(self.files[path]),
@@ -159,10 +165,10 @@ class FailingStatVFS(FakeVFS):
         super().__init__(**kwargs)
         self.failing = failing
 
-    def _raw(self, op, path, **kwargs):
+    async def _op(self, op, path, **kwargs):
         if op == "stat" and path == self.failing:
             raise OSError(host_errno.EIO, "upstream 502 Bad Gateway", path)
-        return super()._raw(op, path, **kwargs)
+        return await super()._op(op, path, **kwargs)
 
 
 def test_mount_prefix_routes_to_bridge_even_when_host_file_exists(tmp_path):
@@ -440,3 +446,22 @@ def test_a_mutation_of_a_build_file_stays_refused(tmp_path):
         fs.symlink("/lib/os.py", "elsewhere.py")
     with pytest.raises(PermissionError):
         fs.setattr("/lib/os.py", atime=None, mtime="x", nofollow=False)
+
+
+def test_filetype_of_answers_a_stat_and_a_listing_row_alike():
+    # One table for path_filestat_get and fd_readdir, so d_type never
+    # disagrees with the stat: a character device lists as one.
+    assert filetype_of(
+        VFSStat(size=3, is_dir=False, mode=LINK_MODE, mtime_ns=0,
+                is_link=True)) == FT_SYMLINK
+    assert filetype_of(VFSStat(size=0, is_dir=True, mode=DIR_MODE,
+                               mtime_ns=0)) == FT_DIR
+    assert filetype_of(
+        VFSStat(size=1, is_dir=False, mode=FILE_MODE, mtime_ns=0)) == FT_REG
+    assert filetype_of(
+        VFSEntry(path="/dev/null", size=0, is_dir=False,
+                 mode=CHAR_MODE)) == FT_CHR
+    assert filetype_of(VFSEntry(path="/data/sub/", size=0,
+                                is_dir=True)) == FT_DIR
+    assert filetype_of(VFSEntry(path="/data/bad", size=0,
+                                is_dir=False)) == FT_UNKNOWN

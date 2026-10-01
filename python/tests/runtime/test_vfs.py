@@ -17,6 +17,7 @@ import logging
 
 import pytest
 
+from mirage.runtime.constants import LISTING_ENTRY_CONCURRENCY
 from mirage.runtime.errors import CrossMountError
 from mirage.runtime.resolver import PrefixResolver
 from mirage.runtime.types import VFSEntry, VFSStat
@@ -39,12 +40,18 @@ class ListingVFS(RuntimeVFS):
         self._listing = list(listing)
         self._stats = dict(stats)
         self.stat_calls = []
+        self.unfollowed = []
 
-    def _raw(self, op, path, **kwargs):
+    def _wait(self, pending):
+        return asyncio.run(pending)
+
+    async def _op(self, op, path, **kwargs):
         if op == "readdir":
             return list(self._listing)
         if op == "stat":
             self.stat_calls.append(path)
+            if kwargs.get("nofollow"):
+                self.unfollowed.append(path)
             st = self._stats.get(path)
             if st is None:
                 raise FileNotFoundError(path)
@@ -224,16 +231,13 @@ def test_readdir_stats_unmarked_directories():
 
 
 def test_readdir_marks_the_names_the_resolver_calls_links():
-    # The mark is the name plane's: stat follows a link, so a live link
-    # to a file reads as that file and nothing in the row says otherwise.
+    # The mark is the name plane's, and a marked row is the link's own,
+    # as a guest's lstat reads it: the node table answers, no backend.
     vfs = ListingVFS(
         listing=["/data/lnk", "/data/a.txt"],
         stats={
             "/data/lnk":
-            FileStat(name="lnk",
-                     size=5,
-                     type=FileType.FILE,
-                     content=ContentType.TEXT),
+            FileStat(name="lnk", size=8, type=FileType.SYMLINK),
             "/data/a.txt":
             FileStat(name="a.txt",
                      size=5,
@@ -244,10 +248,10 @@ def test_readdir_marks_the_names_the_resolver_calls_links():
     )
     assert vfs.readdir("/data/") == [
         VFSEntry(path="/data/lnk",
-                 size=5,
+                 size=8,
                  is_dir=False,
                  is_link=True,
-                 mode=FILE_MODE,
+                 mode=LINK_MODE,
                  mtime_ns=0),
         VFSEntry(path="/data/a.txt",
                  size=5,
@@ -255,6 +259,7 @@ def test_readdir_marks_the_names_the_resolver_calls_links():
                  mode=FILE_MODE,
                  mtime_ns=0),
     ]
+    assert vfs.unfollowed == ["/data/lnk"]
 
 
 def test_stat_projects_one_struct_for_every_surface():
@@ -434,3 +439,26 @@ async def test_an_unregistered_op_surfaces_as_not_implemented():
     vfs = RuntimeVFS(dispatch, asyncio.get_running_loop())
     with pytest.raises(NotImplementedError):
         await asyncio.to_thread(vfs.mkdir, "/data/sub")
+
+
+@pytest.mark.asyncio
+async def test_readdir_is_one_hop_that_stats_at_most_the_cap_at_once():
+    # On a mount that keeps no listing index every classifying stat is a
+    # backend request, so a large directory must not fire them together.
+    names = [f"/ram/{i}.json" for i in range(100)]
+    in_flight = peak = 0
+
+    async def dispatch(op, path, **kwargs):
+        nonlocal in_flight, peak
+        if op == "readdir":
+            return names, None
+        in_flight += 1
+        peak = max(peak, in_flight)
+        await asyncio.sleep(0.001)
+        in_flight -= 1
+        return FileStat(name=path.virtual, size=1, type=FileType.FILE), None
+
+    vfs = RuntimeVFS(dispatch, asyncio.get_running_loop())
+    entries = await asyncio.to_thread(vfs.readdir, "/ram/")
+    assert [entry.path for entry in entries] == names
+    assert peak == LISTING_ENTRY_CONCURRENCY

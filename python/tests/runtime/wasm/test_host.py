@@ -20,19 +20,14 @@ pytest.importorskip("wasmtime")
 
 import wasmtime  # noqa: E402
 
-from mirage.runtime.types import VFSStat  # noqa: E402
 from mirage.runtime.wasm import host  # noqa: E402
 from mirage.runtime.wasm.runtime import epoch_engine  # noqa: E402
 from mirage.runtime.wasm.vfs import WasmVFS  # noqa: E402
 
 from mirage.runtime.wasm.abi import (  # noqa: E402  # isort: skip
-    EINVAL, EIO, ENOENT, FST_ATIM, FST_ATIM_NOW, FST_MTIM, FST_MTIM_NOW,
-    FT_CHR, FT_DIR, FT_REG, FT_SYMLINK)
+    EINVAL, EIO, ENOENT, FST_ATIM, FST_ATIM_NOW, FST_MTIM, FST_MTIM_NOW)
 from mirage.runtime.wasm.host import (  # noqa: E402  # isort: skip
-    WasiFs, _call_guarded, _filetype, _spec, _stamp, install_wasi_fs)
-
-from mirage.utils.stat_view import (  # noqa: E402  # isort: skip
-    CHAR_MODE, DIR_MODE, FILE_MODE, LINK_MODE)
+    WasiFs, _call_guarded, _spec, _stamp, install_wasi_fs)
 
 # End-to-end host-function behavior (path_open buffering, fd table,
 # errno answers inside a real guest) is covered by the live wasi and
@@ -77,21 +72,6 @@ def test_guarded_call_answers_eio_for_an_upstream_failure():
     # not trap the whole run the guest could have finished without it.
     upstream = RuntimeError("upstream 502 Bad Gateway")
     assert _call_guarded(_raising(upstream), None) == EIO
-
-
-def test_filetype_reads_the_kind_link_first():
-    link = VFSStat(size=3,
-                   is_dir=False,
-                   mode=LINK_MODE,
-                   mtime_ns=0,
-                   is_link=True)
-    assert _filetype(link) == FT_SYMLINK
-    assert _filetype(VFSStat(size=0, is_dir=True, mode=DIR_MODE,
-                             mtime_ns=0)) == FT_DIR
-    assert _filetype(VFSStat(size=1, is_dir=False, mode=FILE_MODE,
-                             mtime_ns=0)) == FT_REG
-    assert _filetype(VFSStat(size=0, is_dir=False, mode=CHAR_MODE,
-                             mtime_ns=0)) == FT_CHR
 
 
 def test_stamp_omits_a_field_no_flag_selected():

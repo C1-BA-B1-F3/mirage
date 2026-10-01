@@ -12,6 +12,7 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import asyncio
 import errno
 
 import pytest
@@ -44,7 +45,10 @@ class CountingCore(RuntimeVFS):
         self.dirs = set(dirs or ())
         self.calls: list[tuple[str, str]] = []
 
-    def _raw(self, op, path, **kwargs):
+    def _wait(self, pending):
+        return asyncio.run(pending)
+
+    async def _op(self, op, path, **kwargs):
         self.calls.append((op, path))
         if op == "read":
             if path not in self.files:
@@ -171,7 +175,7 @@ class RefusingCore(CountingCore):
     def __init__(self) -> None:
         super().__init__({})
 
-    def _raw(self, op, path, **kwargs):
+    async def _op(self, op, path, **kwargs):
         self.calls.append((op, path))
         raise PermissionError(errno.EACCES, "denied", path)
 

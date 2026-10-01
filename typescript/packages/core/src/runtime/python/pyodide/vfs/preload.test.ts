@@ -275,19 +275,16 @@ describe('preloadInto', () => {
   })
 
   // One cap for the whole walk: twenty subdirectories of twenty files
-  // must not become twenty listings each reading sixteen files at once.
+  // must not become twenty listings each reading sixteen files at once,
+  // and the door's classifying stats share it with the walk's reads.
   it('keeps the whole walk under one cap, however wide the tree', async () => {
-    const flight = new Map<string, { now: number; peak: number }>()
-    // The walk's own requests (listings and reads) share one counter;
-    // the door's classifying stats are capped on their own.
-    const track = async <T>(op: string, answer: T): Promise<T> => {
-      const kind = op === 'stat' ? 'stat' : 'walk'
-      const f = flight.get(kind) ?? { now: 0, peak: 0 }
-      flight.set(kind, f)
-      f.now += 1
-      f.peak = Math.max(f.peak, f.now)
+    let now = 0
+    let peak = 0
+    const track = async <T>(_op: string, answer: T): Promise<T> => {
+      now += 1
+      peak = Math.max(peak, now)
       await new Promise((resolve) => setTimeout(resolve, 1))
-      f.now -= 1
+      now -= 1
       return answer
     }
     const dirs = Array.from({ length: 20 }, (_, i) => `/ram/d${String(i)}`)
@@ -304,8 +301,7 @@ describe('preloadInto', () => {
     const seed = new MirageFsSeed()
     await preloadInto(seed, new RuntimeVFS(dispatch), '/ram/')
     expect(seed.files.size).toBe(400)
-    expect(flight.get('stat')?.peak).toBe(LISTING_ENTRY_CONCURRENCY)
-    expect(flight.get('walk')?.peak).toBe(LISTING_ENTRY_CONCURRENCY)
+    expect(peak).toBe(LISTING_ENTRY_CONCURRENCY)
   })
 
   it('skips a failing subtree and still preloads sibling files', async () => {

@@ -148,13 +148,20 @@ export class RuntimeVFS {
   private readonly dispatch: BridgeDispatchFn
   private readonly resolver: MountResolver
   private readonly noAppend = new Set<string>()
-  // One cap for every listing this door classifies, so listings that
-  // run together (a preload walking a tree) share it rather than each
-  // bringing its own.
-  private readonly classifying = new ConcurrencyLimiter(LISTING_ENTRY_CONCURRENCY)
 
   constructor(dispatch: BridgeDispatchFn, resolver: MountResolver = new PrefixResolver(() => [])) {
-    this.dispatch = dispatch
+    // One cap on every request this door sends, held for that request
+    // alone, so the stats of listings that run together (a preload
+    // walking a tree) share it with the walk's own reads.
+    const limiter = new ConcurrencyLimiter(LISTING_ENTRY_CONCURRENCY)
+    this.dispatch = async (...args) => {
+      const release = await limiter.acquire()
+      try {
+        return await dispatch(...args)
+      } finally {
+        release()
+      }
+    }
     this.resolver = resolver
   }
 
@@ -229,10 +236,9 @@ export class RuntimeVFS {
    * A backend that slash-marks directories skips the stat; every other
    * entry is classified by its own stat, which is RAM when the readdir
    * filled the index and a backend request when the mount keeps none.
-   * At most `LISTING_ENTRY_CONCURRENCY` of those run at once across
-   * every listing this door serves, so a large directory on an
-   * unindexed mount does not put every entry's request on the wire
-   * together.
+   * At most `LISTING_ENTRY_CONCURRENCY` requests run at once across
+   * everything this door serves, so a large directory on an unindexed
+   * mount does not put every entry's request on the wire together.
    *
    * An entry whose stat fails, for any reason, rides unclassified: a
    * size-0 non-directory with no mode and no stamp, the row that says
@@ -250,11 +256,13 @@ export class RuntimeVFS {
    * The slash-marked and unclassified rows report neither, which is
    * the honest answer for a listing that never learned them.
    *
-   * The link mark comes from the name plane, since stat follows and no
-   * backend listing reports a link. One table read per listing, and it
-   * only ever marks a name the listing itself returned, so a link the
-   * session hides stays hidden: the dispatcher filtered it out of the
-   * entries above and an unmatched mark marks nothing.
+   * The link mark comes from the name plane, since no backend listing
+   * reports a link. One table read per listing, and it only ever marks
+   * a name the listing itself returned, so a link the session hides
+   * stays hidden: the dispatcher filtered it out of the entries above
+   * and an unmatched mark marks nothing. A marked row is the link's
+   * own, as a guest's lstat reads it, since the node table answers that
+   * stat and no backend is asked.
    *
    * @param path guest-absolute virtual path of the directory.
    * @param classify stat each entry to learn its kind. A guest that
@@ -276,32 +284,20 @@ export class RuntimeVFS {
         if (typeof raw !== 'string') {
           throw new TypeError(`runtime vfs: readdir ${path} bad entry shape`)
         }
-        const linked = links.has(baseName(raw)) ? { isLink: true } : {}
+        const linked = links.has(baseName(raw))
+        const mark = linked ? { isLink: true } : {}
         // Backends that mark directories with a trailing slash skip the
         // stat; unmarked entries (e.g. RAM) need one to learn dir-ness.
-        if (raw.endsWith('/')) return { path: raw, size: 0, isDir: true, ...linked }
-        const unclassified: VFSEntry = { path: raw, size: 0, isDir: false, ...linked }
+        if (raw.endsWith('/')) return { path: raw, size: 0, isDir: true, ...mark }
+        const unclassified: VFSEntry = { path: raw, size: 0, isDir: false, ...mark }
         if (!classify) return unclassified
-        const release = await this.classifying.acquire()
-        let st: VFSStat
         try {
-          st = await this.stat(raw)
+          return { path: raw, ...(await this.stat(raw, linked)), ...mark }
         } catch (err) {
           if (!isMissingPath(err)) {
             console.warn(`runtime vfs: readdir ${path}: stat ${raw}: ${String(err)}`)
           }
           return unclassified
-        } finally {
-          release()
-        }
-        return {
-          path: raw,
-          size: st.size,
-          isDir: st.isDir,
-          mode: st.mode,
-          mtimeMs: st.mtimeMs,
-          ...(st.rdev !== undefined ? { rdev: st.rdev } : {}),
-          ...linked,
         }
       }),
     )

@@ -126,10 +126,9 @@ class BoxTokenManager(OAuthTokenManager):
     def __init__(self, config: BoxConfig) -> None:
         super().__init__(TOKEN_BUFFER_SECONDS)
         self._config = config
-        # API base for every non-token, non-upload call, and the upload
-        # base Box serves file uploads from; api.py reads these instead of
-        # the constants so a config endpoint override reaches every
-        # request.
+        # API and upload bases for every non-token call; api.py reads these
+        # instead of the constants so a config endpoint override reaches
+        # every request.
         self.api_base = api_base_of(config)
         self.upload_base = upload_base_of(config)
         self._dev_token_mode = bool(reveal_secret(config.access_token))

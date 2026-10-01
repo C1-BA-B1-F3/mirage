@@ -20,8 +20,7 @@ import { BOX_API_BASE, BOX_TOKEN_URL, BOX_UPLOAD_BASE, TOKEN_BUFFER_SECONDS } fr
 
 export interface BoxConfig {
   // API origin override (e.g. an integ fake: http://127.0.0.1:5096). Token,
-  // API and upload URLs derive from it; defaults to the real api.box.com and
-  // upload.box.com endpoints.
+  // API and upload URLs derive from it; defaults to the real Box hosts.
   endpoint?: string
   clientId?: string
   clientSecret?: string
@@ -129,9 +128,8 @@ async function fetchCcgToken(
 }
 
 export class BoxTokenManager extends OAuthTokenManager {
-  // API base for every non-token, non-upload call, and the upload base Box
-  // serves file uploads from; api.ts reads these instead of the constants so
-  // a config endpoint override reaches every request.
+  // API and upload bases for every non-token call; api.ts reads these instead
+  // of the constants so a config endpoint override reaches every request.
   readonly apiBase: string
   readonly uploadBase: string
   private readonly config: BoxConfig

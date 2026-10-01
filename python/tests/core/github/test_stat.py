@@ -203,7 +203,7 @@ async def test_direct_lookup_after_invalidation(
         new_tree["src/main.py"] = TreeEntry(
             path="src/main.py", type="blob", sha="new-blob", size=9
         )
-    tree_fetch = AsyncMock(return_value=(new_tree, False))
+    tree_fetch = AsyncMock(return_value=(new_tree, False, None))
     dir_fetch = AsyncMock(side_effect=[[new_tree["src"]], new_files])
     blob_fetch = AsyncMock(return_value=b"new bytes")
     monkeypatch.setattr("mirage.core.github.tree.fetch_tree", tree_fetch)
@@ -269,7 +269,7 @@ async def test_parallel_snapshot_readers_share_one_replacement(
 
     async def fetch(*args):
         await asyncio.sleep(0)
-        return fresh, False
+        return fresh, False, None
 
     fetch_mock = AsyncMock(side_effect=fetch)
     monkeypatch.setattr("mirage.core.github.tree.fetch_tree", fetch_mock)

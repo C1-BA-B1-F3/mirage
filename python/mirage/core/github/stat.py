@@ -12,12 +12,30 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import logging
+
+import aiohttp
+
 from mirage.accessor.github import GitHubAccessor
-from mirage.cache.index import NULL_INDEX, IndexCacheStore, IndexEntry
-from mirage.core.github.lookup import locate, lookup_retrying, point_lookup
+from mirage.cache.index import (
+    NULL_INDEX,
+    IndexCacheStore,
+    IndexEntry,
+    LookupStatus,
+)
+from mirage.core.github.lookup import (
+    locate,
+    lookup_retrying,
+    point_lookup,
+    root_of,
+)
+from mirage.core.github.repo import ensure_ref
+from mirage.core.github.tree import fetch_head
 from mirage.types import FileStat, FileType, PathSpec
 from mirage.utils.errors import enoent
 from mirage.utils.filetype import content_type_for_path
+
+log = logging.getLogger(__name__)
 
 
 def stat_of(entry: IndexEntry) -> FileStat:
@@ -61,7 +79,11 @@ async def stat(
     """
     prefix, rel, key = locate(path_spec)
     if not rel:
-        return FileStat(name="/", type=FileType.DIRECTORY)
+        return FileStat(
+            name="/",
+            type=FileType.DIRECTORY,
+            fingerprint=await _root_version(accessor, index, prefix),
+        )
     # A probe through a throwaway index asks for this one path; everything
     # else answers from the mount's listing, filling it if need be.
     found = await point_lookup(accessor, index, prefix, rel)
@@ -70,3 +92,48 @@ async def stat(
     if found.entry is None:
         raise enoent(path_spec.virtual)
     return stat_of(found.entry)
+
+
+async def _root_version(
+    accessor: GitHubAccessor,
+    index: IndexCacheStore,
+    prefix: str,
+) -> str | None:
+    """The version of the whole mount: the head commit its ref is at.
+
+    A live root listing answers with the head it was stored at, read past
+    the listing gate, so a getattr of the root never pays a check. An
+    index with no root listing (a throwaway one, the null index, a mount
+    that has not listed yet) asks the head with one shallow request. An
+    expired listing names no version. Nothing here refills the index: a
+    refused head names no version rather than falling into a lookup.
+
+    Args:
+        accessor (GitHubAccessor): the mount's accessor.
+        index (IndexCacheStore): the index to read the root listing from.
+        prefix (str): the mount prefix the index keys are built against.
+
+    Returns:
+        str | None: the head commit sha, or None when it is not known.
+    """
+    listing = await index.peek_dir(root_of(prefix))
+    if listing.entries is not None:
+        return listing.version
+    if listing.status is not LookupStatus.NOT_FOUND:
+        return None
+    try:
+        return await fetch_head(
+            accessor.config,
+            accessor.owner,
+            accessor.repo,
+            await ensure_ref(accessor),
+            accessor.pool,
+        )
+    except aiohttp.ClientResponseError as exc:
+        log.debug(
+            "head of %s/%s not answered: %s",
+            accessor.owner,
+            accessor.repo,
+            exc,
+        )
+        return None

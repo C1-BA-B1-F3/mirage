@@ -84,7 +84,7 @@ async def test_fetch_tree_parses_entries(mock_get, config):
             {"path": "src/main.py", "type": "blob", "sha": "bbb", "size": 120},
         ],
     }
-    tree, truncated = await fetch_tree(config, "acme", "proj", "main")
+    tree, truncated, _ = await fetch_tree(config, "acme", "proj", "main")
     assert "src" in tree
     assert "src/main.py" in tree
     assert tree["src"] == TreeEntry(
@@ -110,7 +110,7 @@ async def test_fetch_tree_excludes_submodule_gitlinks(mock_get, config):
             {"path": "main.py", "type": "blob", "sha": "bbb", "size": 7},
         ],
     }
-    tree, _ = await fetch_tree(config, "acme", "proj", "main")
+    tree, _, _ = await fetch_tree(config, "acme", "proj", "main")
     assert "extern" not in tree
     assert list(tree) == ["main.py"]
 

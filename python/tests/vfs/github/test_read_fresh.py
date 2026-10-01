@@ -475,7 +475,7 @@ async def test_a_truncated_repository_probes_one_directory():
     files = {"top.txt": b"t", "docs/a.txt": OLD}
     with serve(FakeGitHub(files=files, truncated_recursive=True)) as hub:
         config = GitHubConfig(token="t", base_url=hub.url)
-        tree, truncated = await fetch_tree(config, "o", "r", "main")
+        tree, truncated, _ = await fetch_tree(config, "o", "r", "main")
         vfs = GitHubVFS(
             config,
             "o",
@@ -508,7 +508,7 @@ async def test_a_directory_github_cuts_short_is_not_absence():
     files = {"top.txt": b"t", "docs/a.txt": OLD, "docs/b.txt": b"bravo"}
     with serve(FakeGitHub(files=files, truncated_recursive=True)) as hub:
         config = GitHubConfig(token="t", base_url=hub.url)
-        tree, truncated = await fetch_tree(config, "o", "r", "main")
+        tree, truncated, _ = await fetch_tree(config, "o", "r", "main")
         vfs = GitHubVFS(
             config,
             "o",

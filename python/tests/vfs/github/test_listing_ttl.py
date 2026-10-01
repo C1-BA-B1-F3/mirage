@@ -290,7 +290,7 @@ async def test_a_truncated_tree_is_not_refetched_by_every_find():
     files = {"top.txt": b"t", "docs/a.txt": OLD}
     with serve(FakeGitHub(files=files, truncated_recursive=True)) as hub:
         config = GitHubConfig(token="t", base_url=hub.url)
-        tree, truncated = await fetch_tree(config, "o", "r", "main")
+        tree, truncated, _ = await fetch_tree(config, "o", "r", "main")
         vfs = GitHubVFS(
             config,
             "o",

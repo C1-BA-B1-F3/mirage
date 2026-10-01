@@ -63,7 +63,7 @@ def _offline(
         ) as branch,
         patch(
             "mirage.core.github.tree.fetch_tree",
-            return_value=(tree, truncated),
+            return_value=(tree, truncated, None),
         ) as fetch,
         _listing(tree),
     ):
@@ -267,7 +267,7 @@ async def test_ensure_tree_fetches_once_and_caches() -> None:
     }
     vfs = _make_vfs()
     with patch(
-        "mirage.core.github.tree.fetch_tree", return_value=(tree, False)
+        "mirage.core.github.tree.fetch_tree", return_value=(tree, False, None)
     ) as mock_tree:
         await ensure_tree(vfs.accessor)
         await ensure_tree(vfs.accessor)
@@ -281,13 +281,14 @@ async def test_concurrent_ensure_tree_fetches_once() -> None:
     # on a cold mount cost one tree fetch rather than two.
     vfs = _make_vfs()
     with patch(
-        "mirage.core.github.tree.fetch_tree", return_value=({}, False)
+        "mirage.core.github.tree.fetch_tree", return_value=({}, False, None)
     ) as mock_tree:
         mock_tree.return_value = (
             {
                 "a.py": TreeEntry(path="a.py", type="blob", sha="s", size=1),
             },
             False,
+            None,
         )
         await asyncio.gather(*(ensure_tree(vfs.accessor) for _ in range(8)))
     assert mock_tree.await_count == 1

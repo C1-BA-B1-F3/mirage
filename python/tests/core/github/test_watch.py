@@ -61,7 +61,8 @@ async def test_pull_refreshes_the_accessor_tree() -> None:
     }
     accessor = _accessor(stale)
     with patch(
-        "mirage.core.github.watch.fetch_tree", return_value=(fresh, False)
+        "mirage.core.github.watch.fetch_tree",
+        return_value=(fresh, False, None),
     ):
         await _collect(GitHubWalk(accessor), _root())
     assert accessor.tree == fresh
@@ -72,7 +73,9 @@ async def test_truncated_tree_is_not_adopted() -> None:
     # A partial tree would make find report the missing half as deleted.
     stale = {"a.txt": _entry("a.txt", "sha-a")}
     accessor = _accessor(stale)
-    with patch("mirage.core.github.watch.fetch_tree", return_value=({}, True)):
+    with patch(
+        "mirage.core.github.watch.fetch_tree", return_value=({}, True, None)
+    ):
         with pytest.raises(IncompleteWalkError):
             await _collect(GitHubWalk(accessor), _root())
     assert accessor.tree == stale
@@ -83,7 +86,7 @@ async def test_walk_reports_blobs_with_their_sha() -> None:
     tree = {"a.txt": _entry("a.txt", "sha-a")}
     accessor = _accessor(tree)
     with patch(
-        "mirage.core.github.watch.fetch_tree", return_value=(tree, False)
+        "mirage.core.github.watch.fetch_tree", return_value=(tree, False, None)
     ):
         entries = await _collect(GitHubWalk(accessor), _root())
     assert [(e.virtual, e.fingerprint) for e in entries] == [

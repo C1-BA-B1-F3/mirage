@@ -44,6 +44,15 @@ export abstract class IndexCacheStore {
   abstract put(vfsPath: string, entry: IndexEntry): Promise<void>
   abstract listDir(vfsPath: string): Promise<ListResult>
   /**
+   * Read a stored listing without asking whether it may be served. A store
+   * has no gate, so this is `listDir`. A view answers it past the freshness
+   * gate: a caller reading the listing's own version, which is what a gate
+   * would check, must not trigger one.
+   */
+  peekDir(vfsPath: string): Promise<ListResult> {
+    return this.listDir(vfsPath)
+  }
+  /**
    * Cache a complete directory listing. A complete listing names every
    * child, so a child the previous listing named and this one does not is
    * gone: its row goes, and a gone directory takes its listing and every

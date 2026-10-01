@@ -60,7 +60,7 @@ class GitHubWalk:
         accessor = self._accessor
         prefix = mount_prefix_of(root.virtual, root.vfs_path)
         ref = await ensure_ref(accessor)
-        tree, truncated = await fetch_tree(
+        tree, truncated, head = await fetch_tree(
             accessor.config, accessor.owner, accessor.repo, ref, accessor.pool
         )
         if truncated:
@@ -73,9 +73,11 @@ class GitHubWalk:
         # here left them answering from the tree the mount was built with
         # until an unrelated read happened to refill the index, so a pull
         # that reported a CREATE was followed by a find that could not see
-        # the file.
+        # the file. It carries the head it was walked at, so a walker can
+        # tell it from the tree the index was filled with.
         accessor.tree = tree
         accessor.tree_loaded = True
+        accessor.tree_version = head
         stem = root.mount_path.strip("/")
         base = (stem + "/") if stem else ""
         for entry in tree.values():

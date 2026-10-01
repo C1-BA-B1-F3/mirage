@@ -151,6 +151,9 @@ class IndexView(IndexCacheStore):
             return ListResult(status=LookupStatus.EXPIRED)
         return result
 
+    async def peek_dir(self, vfs_path: str) -> ListResult:
+        return await self._fenced_list_dir(vfs_path)
+
     async def _fenced_list_dir(self, vfs_path: str) -> ListResult:
         async with self._fence():
             if not self._owns(vfs_path):

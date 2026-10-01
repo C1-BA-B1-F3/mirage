@@ -29,7 +29,8 @@ import { GITHUB_OPS } from '../../ops/github/index.ts'
 import type { RegisteredOp } from '../../ops/registry.ts'
 
 import { PROMPT } from './prompt.ts'
-import { VFSName } from '../../types.ts'
+import { COMMIT_SHA } from '../../core/github/constants.ts'
+import { ListingVersion, VFSName } from '../../types.ts'
 
 import type { DeltaHook } from '../../watch/index.ts'
 import {
@@ -45,6 +46,19 @@ export interface GitHubVFSState {
   truncated: boolean
 }
 
+/**
+ * The commit a ref pins every listing at, when it names one outright. Only a
+ * full 40- or 64-hex string can be a commit; GitHub answers shas lowercase,
+ * so the pin is lowercased to compare with what it stores. A branch that
+ * happens to look like one is still safe: its listings are stored at the
+ * head its tree answered, which never equals its name.
+ */
+function pinOf(ref: string | undefined): string | null {
+  if (ref === undefined) return null
+  const lowered = ref.toLowerCase()
+  return COMMIT_SHA.test(lowered) ? lowered : null
+}
+
 export class GitHubVFS extends BaseVFS {
   override readonly name: string = VFSName.GITHUB
   override readonly cachesReads: boolean = true
@@ -55,6 +69,11 @@ export class GitHubVFS extends BaseVFS {
   // stat and a read both stamp the content-addressed blob sha.
   override readonly supportsSnapshot: boolean = true
   override readonly readRevalidatable: boolean = true
+  // One version covers every listing: the head commit the ref resolves to,
+  // which the tree response names as its top-level sha and the root stat
+  // answers with one shallow request.
+  override readonly listingVersion: ListingVersion = ListingVersion.MOUNT
+  override readonly listingsPin: string | null
   override readonly indexTtl: number = 86_400
   override readonly prompt: string = PROMPT
   readonly config: GitHubConfig
@@ -64,6 +83,7 @@ export class GitHubVFS extends BaseVFS {
     super()
     this.config = config
     this.accessor = accessor
+    this.listingsPin = pinOf(config.ref)
   }
 
   static async create(config: GitHubConfig): Promise<GitHubVFS> {
@@ -72,7 +92,12 @@ export class GitHubVFS extends BaseVFS {
     const transport = new HttpGitHubTransport(transportOpts)
     const repoInfo = await fetchGitHubRepoInfo(transport, config.owner, config.repo)
     const ref = config.ref ?? repoInfo.default_branch
-    const { tree, truncated } = await fetchGitHubTree(transport, config.owner, config.repo, ref)
+    const { tree, truncated, sha } = await fetchGitHubTree(
+      transport,
+      config.owner,
+      config.repo,
+      ref,
+    )
     const treeMap = githubBuildTreeMap(tree)
     const accessor = new GitHubAccessor({
       transport,
@@ -82,6 +107,7 @@ export class GitHubVFS extends BaseVFS {
       defaultBranch: repoInfo.default_branch,
       truncated,
       tree: treeMap,
+      treeVersion: truncated ? null : sha,
     })
     return new GitHubVFS(config, accessor)
   }

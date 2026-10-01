@@ -26,6 +26,11 @@ export class GitHubAccessor extends Accessor {
   // listing, so a refetch after a write replaces it wholesale.
   truncated: boolean
   tree: Record<string, TreeEntry>
+  // The head commit that tree was fetched at, as the response named it, or
+  // null when it is not known (a truncated or sha-less response). A tree
+  // walker compares it with the version its index listing was served at and
+  // refills on a difference, since another mount can refill a shared index.
+  treeVersion: string | null
 
   constructor(opts: {
     transport: GitHubTransport
@@ -35,6 +40,7 @@ export class GitHubAccessor extends Accessor {
     defaultBranch: string
     truncated?: boolean
     tree?: Record<string, TreeEntry>
+    treeVersion?: string | null
   }) {
     super()
     this.transport = opts.transport
@@ -44,6 +50,7 @@ export class GitHubAccessor extends Accessor {
     this.defaultBranch = opts.defaultBranch
     this.truncated = opts.truncated ?? false
     this.tree = opts.tree ?? {}
+    this.treeVersion = opts.treeVersion ?? null
   }
 
   get isDefaultBranch(): boolean {

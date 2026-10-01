@@ -286,7 +286,7 @@ async def test_a_file_search_never_indexes_is_still_read(
     )
 
     async def _fetch_tree(config, owner, repo, ref, session=None):
-        return dict(big), False
+        return dict(big), False, None
 
     monkeypatch.setattr("mirage.core.github.tree.fetch_tree", _fetch_tree)
     _answer(monkeypatch, [_hit("src/main.py", "bbb222")])
@@ -347,7 +347,7 @@ async def test_a_truncated_tree_never_trusts_a_narrowing(
     monkeypatch.setitem(_NGLOBALS, "SCOPE_WARN", 1)
 
     async def _fetch_tree(config, owner, repo, ref, session=None):
-        return dict(MOCK_TREE), True
+        return dict(MOCK_TREE), True, None
 
     async def _fetch_dir_tree(config, owner, repo, tree_sha, session=None):
         # The per-directory listing a truncated tree falls back to.
@@ -386,7 +386,7 @@ async def test_a_big_binary_file_is_not_read(
     )
 
     async def _fetch_tree(config, owner, repo, ref, session=None):
-        return dict(big), False
+        return dict(big), False, None
 
     monkeypatch.setattr("mirage.core.github.tree.fetch_tree", _fetch_tree)
     _answer(monkeypatch, [_hit("src/main.py", "bbb222")])
@@ -412,7 +412,7 @@ async def test_a_named_file_is_always_read(
     monkeypatch.setitem(MOCK_BLOBS, "gguf02", b"import weights\n")
 
     async def _fetch_tree(config, owner, repo, ref, session=None):
-        return dict(big), False
+        return dict(big), False, None
 
     monkeypatch.setattr("mirage.core.github.tree.fetch_tree", _fetch_tree)
     calls = _answer(monkeypatch, [_hit("src/main.py", "bbb222")])
@@ -456,7 +456,7 @@ async def test_a_narrowing_left_empty_matches_nothing_and_never_reads_stdin(
     )
 
     async def _fetch_tree(config, owner, repo, ref, session=None):
-        return dict(big), False
+        return dict(big), False, None
 
     monkeypatch.setattr("mirage.core.github.tree.fetch_tree", _fetch_tree)
     _answer(monkeypatch, [])

@@ -126,7 +126,7 @@
       "has_prompt": true,
       "has_write_prompt": false,
       "index_ttl": 60,
-      "listing_version": "none",
+      "listing_version": "folder",
       "read_revalidatable": false,
       "sizes_always_known": true,
       "storage_location": true,

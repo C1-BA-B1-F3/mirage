@@ -41,7 +41,7 @@ export type VFSFactory = (config: Record<string, unknown>) => Promise<BaseVFS>
 // The backends that take their options without a schema, and the option
 // names each takes. Python builds the same three from constructor keywords,
 // so a key outside these is refused on both sides rather than ignored here.
-const DISK_OPTIONS: readonly (keyof DiskVFSOptions)[] = ['root']
+const DISK_OPTIONS: readonly (keyof DiskVFSOptions)[] = ['root', 'folderVersions']
 const REDIS_OPTIONS: readonly (keyof RedisVFSOptions)[] = ['url', 'keyPrefix']
 
 const REGISTRY: Record<string, VFSFactory> = {
@@ -53,7 +53,7 @@ const REGISTRY: Record<string, VFSFactory> = {
   disk: async (config) => {
     refuseUnknownKeys(config, DISK_OPTIONS)
     const { DiskVFS } = await import('./disk/disk.ts')
-    const norm = normalizeFields(config) as { root: string }
+    const norm = normalizeFields(config) as { root: string; folderVersions?: boolean }
     return new DiskVFS(norm)
   },
   redis: async (config) => {

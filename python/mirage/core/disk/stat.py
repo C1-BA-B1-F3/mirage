@@ -19,6 +19,7 @@ import aiofiles.os
 from mirage.accessor.disk import DiskAccessor
 from mirage.cache.index import NULL_INDEX, IndexCacheStore
 from mirage.core.disk.errors import disk_errors
+from mirage.core.disk.listing_version import stamp, wall_ns
 from mirage.core.disk.utils import resolve_inside
 from mirage.types import FileStat, FileType, PathSpec
 from mirage.utils.dates import ns_to_iso
@@ -33,6 +34,7 @@ async def stat(
     virtual = path_spec.virtual
     root = accessor.root
     p = await resolve_inside(root, path_spec)
+    now_ns = wall_ns()
     # One stat, restamped: an existence check first would read ENOTDIR
     # (a path under a plain file) as plain absence.
     with disk_errors(virtual):
@@ -49,10 +51,14 @@ async def stat(
     # in the namespace overlay, merged at the stat-merge layer; host
     # uid/gid numbers would also be machine-dependent noise.
     if S_ISDIR(st.st_mode):
+        # A folder's fingerprint is the version its listing is stored at,
+        # so the listing gate's check and the readdir fill agree.
+        version = stamp(st, now_ns) if accessor.folder_versions else None
         return FileStat(
             name=p.name,
             size=None,
             modified=modified,
+            fingerprint=version,
             type=FileType.DIRECTORY,
             mode=st.st_mode & 0o7777,
             atime=ns_to_iso(st.st_atime_ns),

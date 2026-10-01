@@ -42,7 +42,7 @@ runs:
         docker logs --tail 50 "$NC" 2>&1 || true
         exit 1
 
-    # WebDAV is stateless, so every one of the ~9,400 requests the battery
+    # WebDAV is stateless, so every one of the ~17,000 requests the battery
     # issues re-verifies the Basic credentials, and Nextcloud 30 hashes with
     # Argon2id at 64 MiB / 4 passes: 177 ms per request, measured inside this
     # image. That one number is ~90% of the cost of an authenticated request
@@ -107,6 +107,23 @@ runs:
         occ app:disable files_versions
         occ app:disable files_trashbin
         occ app:disable activity
+
+        # These UI, collaboration and background apps are not reachable
+        # through WebDAV either, yet each one boots on every request, which
+        # is most of what a WebDAV call costs once the hash is cheap: with
+        # them off a PROPFIND drops by about 40% and a PUT, MKCOL, MOVE or
+        # DELETE by about half. opendal asks for
+        # allprop and Nextcloud answers it with the core DAV properties only,
+        # so the multistatus, SEARCH and error bodies the battery reads are
+        # byte-identical with these on or off (diffed on nextcloud:30-apache).
+        for app in app_api bruteforcesettings circles comments \
+            contactsinteraction dashboard federation files_downloadlimit \
+            files_pdfviewer files_reminders firstrunwizard logreader \
+            nextcloud_announcements notifications photos privacy \
+            recommendations related_resources serverinfo sharebymail support \
+            survey_client systemtags text user_status weather_status; do
+          occ app:disable "$app"
+        done
 
         # The admin hash was written at install time under the expensive
         # parameters, and password_verify reads its cost from the stored hash

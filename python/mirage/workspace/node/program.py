@@ -19,7 +19,9 @@ from mirage.io import IOResult
 from mirage.io.stream import async_chain, materialize
 from mirage.policy.decisions import Decisions
 from mirage.policy.types import HandOff
+from mirage.shell.console import JobConsole
 from mirage.shell.constants import ERREXIT_EXEMPT_TYPES
+from mirage.shell.descriptors import ENCLOSING, Recorder, StreamOwner
 from mirage.shell.errors import ExitSignal, ReturnSignal
 from mirage.shell.helpers import get_text
 from mirage.shell.node_kind import pipeline_transparent
@@ -29,7 +31,9 @@ from mirage.workspace.executor.builtins.exec import (divert_statement,
                                                      stdout_to_stderr)
 from mirage.workspace.executor.control import BreakSignal, ContinueSignal
 from mirage.workspace.executor.jobs import handle_background
-from mirage.workspace.executor.statement import (fd0_binding, record_status,
+from mirage.workspace.executor.statement import (fd0_binding, land,
+                                                 record_status,
+                                                 statement_output,
                                                  statement_stdin)
 from mirage.workspace.types import ExecutionNode
 
@@ -45,6 +49,7 @@ async def execute_program(
     dispatch=None,
     handed: HandOff | None = None,
     decisions: Decisions | None = None,
+    sink: JobConsole | None = None,
 ) -> tuple[Any, IOResult, ExecutionNode]:
     """Execute program node (root / semicolon-separated).
 
@@ -52,7 +57,11 @@ async def execute_program(
     can send each statement's output to its file; None (a nested loop
     that is not the program root) leaves output undiverted. ``handed``
     and ``decisions`` are the line's hand-off and its ledger, for a
-    background job to borrow.
+    background job to borrow. ``sink`` takes each statement's output as
+    it finishes, in the order it was written, instead of the result.
+    The outermost program of a session's line routes what a statement
+    wrote to the session's terminal through a copy (``exec 3>&1``); a
+    nested one (``eval``, ``source``) leaves that to it.
     """
     # Every program loop is one parse, which is the unit bash's alias
     # rule counts in: an alias defined on this parse and row is not
@@ -62,12 +71,17 @@ async def execute_program(
     session._parse_seq += 1
     outer_parse = session._parse_current
     session._parse_current = session._parse_seq
+    root = not session._line_open
+    session._line_open = True
     try:
         return await _run_program(recurse, node, session, stdin, call_stack,
                                   job_table, agent_id, dispatch, handed,
-                                  decisions)
+                                  decisions, sink,
+                                  session.terminal if root else None)
     finally:
         session._parse_current = outer_parse
+        if root:
+            session._line_open = False
 
 
 async def _run_program(
@@ -81,6 +95,8 @@ async def _run_program(
     dispatch=None,
     handed: HandOff | None = None,
     decisions: Decisions | None = None,
+    sink: JobConsole | None = None,
+    own: StreamOwner | None = None,
 ) -> tuple[Any, IOResult, ExecutionNode]:
     children = node.children
     all_stdout: list[Any] = []
@@ -165,12 +181,25 @@ async def _run_program(
             # `while read` sees it, and each statement reads on from
             # where the one before it stopped.
             child_stdin = statement_stdin(session, stdin, bound)
+            # Each statement writes to a recorder rather than straight
+            # to the program's output, so what it wrote to the terminal
+            # through a copy (`exec 3>&1`) keeps its place, past an
+            # `exec` diversion, and what it wrote to an enclosing level's
+            # stream goes on there.
+            recorder = Recorder()
+            enclosing = ENCLOSING.set(recorder)
             try:
-                stdout, io, last_exec = await recurse(child, session,
-                                                      child_stdin, call_stack)
+                stdout, io, last_exec = await recurse(child,
+                                                      session,
+                                                      child_stdin,
+                                                      call_stack,
+                                                      sink=recorder)
             except ExitSignal as sig:
                 # exit (or a fatal expansion error) ends the line: keep
                 # what earlier statements produced, drop the rest.
+                merged_io = await land(
+                    await statement_output(recorder, None, IOResult(), own,
+                                           sink), sink, all_stdout, merged_io)
                 if sig.stdout:
                     all_stdout.append(sig.stdout)
                 sig_io = IOResult(exit_code=sig.exit_code,
@@ -188,6 +217,9 @@ async def _run_program(
                 # signal belongs to an enclosing function call.
                 if session.source_depth <= 0:
                     raise
+                merged_io = await land(
+                    await statement_output(recorder, None, IOResult(), own,
+                                           sink), sink, all_stdout, merged_io)
                 if sig.stdout is not None:
                     all_stdout.append(sig.stdout)
                 if sig.stderr:
@@ -203,12 +235,17 @@ async def _run_program(
                 # ends every enclosing loop and execution continues
                 # with the next statement, like bash (which clamps the
                 # level to the actual depth).
+                merged_io = await land(
+                    await statement_output(recorder, None, IOResult(), own,
+                                           sink), sink, all_stdout, merged_io)
                 if sig.stdout is not None:
                     all_stdout.append(sig.stdout)
                 merged_io = await merged_io.merge(sig.io)
                 record_status(session, sig.io.exit_code)
                 i += 1
                 continue
+            finally:
+                ENCLOSING.reset(enclosing)
             # Materialize stdout so lazy exit codes (e.g. from
             # exit_on_empty in grep) are finalized before $? is set.
             drain_err: bytes | None = None
@@ -239,21 +276,22 @@ async def _run_program(
                           io.exit_code,
                           transparent=pipeline_transparent(child))
             i += 1
-
-        # An `exec` redirect sends the shell's own output to a file:
-        # every statement after the `exec` diverts here, so nothing
-        # bubbles to the terminal and stderr lands in its own target.
-        if dispatch is not None and (session.exec_stdout is not None
-                                     or session.exec_stderr is not None):
-            materialized = await materialize(stdout)
-            before_divert = io.exit_code
-            stdout = await divert_statement(dispatch, session, materialized,
-                                            io, last_exec.command or "",
-                                            stdout_to_stderr(child))
-            if io.exit_code != before_divert:
-                # A write the binding refused is the statement's failure,
-                # which `$?` has to show.
-                record_status(session, io.exit_code)
+            written = await statement_output(recorder, stdout, io, own, sink)
+            stdout = None
+            # An `exec` redirect sends the shell's own output to a file:
+            # every statement after the `exec` diverts here, so nothing
+            # bubbles to the terminal and stderr lands in its own target.
+            if dispatch is not None and (session.exec_stdout is not None
+                                         or session.exec_stderr is not None):
+                before_divert = io.exit_code
+                written = await divert_statement(dispatch, session, written,
+                                                 io, last_exec.command or "",
+                                                 stdout_to_stderr(child))
+                if io.exit_code != before_divert:
+                    # A write the binding refused is the statement's
+                    # failure, which `$?` has to show.
+                    record_status(session, io.exit_code)
+            merged_io = await land(written, sink, all_stdout, merged_io)
         if stdout is not None:
             all_stdout.append(stdout)
         merged_io = await merged_io.merge(io)

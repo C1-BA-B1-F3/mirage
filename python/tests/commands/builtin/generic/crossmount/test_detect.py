@@ -59,12 +59,13 @@ def test_strategy_for_stream_commands():
 
 
 def test_strategy_for_fanout_commands():
-    for name in ("grep", "sha256sum", "rm", "tee", "rev"):
+    for name in ("head", "sha256sum", "rm", "tee", "rev"):
         assert strategy_for(name) is Strategy.FANOUT
 
 
 def test_strategy_for_relay_commands():
-    for name in ("cp", "mv", "diff", "cmp", "sort", "wc"):
+    for name in ("cp", "mv", "diff", "cmp", "sort", "wc", "grep", "rg",
+                 "realpath"):
         assert strategy_for(name) is Strategy.RELAY
 
 

@@ -44,8 +44,10 @@ export function lowerTiming(parser: Parser, source: HeredocSource): [HeredocSour
       stack.push(...node.children)
       const negated = node.type === 'negated_command'
       if (negated) {
-        const head = node.namedChildren[0]?.childForFieldName('name')
-        if (head == null || !COMPOUND_HEADS.has(head.text)) continue
+        const body = node.namedChildren[0]
+        const head = body?.childForFieldName('name')
+        const arith = body?.text.startsWith('((') === true
+        if (!arith && (head == null || !COMPOUND_HEADS.has(head.text))) continue
       }
       const name = negated ? node.children[0] : node.childForFieldName('name')
       if (name == null) continue

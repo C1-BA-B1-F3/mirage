@@ -27,7 +27,6 @@ from mirage.io.types import materialize
 from mirage.policy import PolicyDenied, resolve_limit, resolve_producer
 from mirage.policy.types import Claimant, HandOff, SessionContext
 from mirage.runtime.routing import RouteDecision
-from mirage.shell.bytes import encode_text
 from mirage.shell.console import Channel, JobConsole
 from mirage.shell.parse import find_syntax_error, parse, syntax_error_result
 from mirage.shell.types import NodeType as NT
@@ -277,20 +276,6 @@ async def _dispatch_command_body(
     # line stands under the node its text came from.
     claimant = claimant_for(node, handed)
     execute_fn = partial(execute_fn, node=node)
-    parent = node.parent
-    if parent is None or parent.type != NT.REDIRECTED_STATEMENT:
-        for child in node.named_children:
-            if child.type == NT.HERESTRING_REDIRECT:
-                for sc in child.named_children:
-                    content = await expand_node(sc,
-                                                session,
-                                                execute_fn,
-                                                call_stack,
-                                                view=session_view(
-                                                    session,
-                                                    registry.policies))
-                    stdin = encode_text(content) + b"\n"
-                    break
 
     # Buffered virtual files preserve operand identity without host pipes.
     dev: DevVFS | None = None

@@ -61,22 +61,10 @@ def test_parser_append_and_clobber_flags():
 
 @pytest.mark.parametrize("line", [
     "echo x > f", "echo x 2>&1", "echo x >&-", "echo x <&-", "echo x &> f",
-    "echo x >&2", "echo x 1>&1", "cat < f"
+    "echo x >&2", "echo x 1>&1", "cat < f", "echo x 3> f", "echo x 3< f",
+    "echo x <&3", "echo x >&3", "echo x 2>&3", "echo x 3>&1", "echo x 3>&-",
+    "echo x > f 4>&1"
 ])
-def test_shell_descriptors_are_supported(line):
+def test_descriptors_are_supported(line):
     assert unsupported_descriptor(_redirects(line)) is None
-
-
-@pytest.mark.parametrize("line,fd", [
-    ("echo x 3> f", 3),
-    ("echo x 3< f", 3),
-    ("echo x <&3", 3),
-    ("echo x >&3", 3),
-    ("echo x 2>&3", 3),
-    ("echo x 3>&1", 3),
-    ("echo x 3>&-", 3),
-    ("echo x > f 4>&1", 4),
-])
-def test_descriptors_above_two_are_supported(line, fd):
-    assert unsupported_descriptor(_redirects(line)) is None
-    assert bad_descriptor_line(fd) == f"{fd}: Bad file descriptor\n".encode()
+    assert bad_descriptor_line(3) == b"3: Bad file descriptor\n"

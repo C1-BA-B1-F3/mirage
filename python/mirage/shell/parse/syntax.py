@@ -152,24 +152,6 @@ def _empty_compound(node: TSNodeLike) -> str | None:
     return None
 
 
-def _descriptor_digits(node: TSNodeLike, error: TSNodeLike) -> bool:
-    """Whether an error is the descriptor of the redirect it touches.
-
-    After a compound command the grammar reads ``0<f`` as an error ``0``
-    and an undecorated redirect, where bash reads the digits touching
-    the operator as the descriptor (``get_redirects`` claims them).
-
-    Args:
-        node (TSNodeLike): the error's parent.
-        error (TSNodeLike): the ERROR child.
-    """
-    after = error.next_sibling
-    return (node.type == "redirected_statement"
-            and (error.text or b"").strip().isdigit() and after is not None
-            and after.type == "file_redirect"
-            and after.start_byte == error.end_byte)
-
-
 def _walk_named(node: TSNodeLike) -> Iterator[TSNodeLike]:
     yield node
     for child in node.named_children:
@@ -255,8 +237,7 @@ def find_syntax_error(node: TSNodeLike) -> str | None:
             return text.decode(errors="replace") if text else ""
         if (child.type == "ERROR" and _is_structural_error(child)
                 and not (node.type == "for_statement" and
-                         (child.text or b"").strip() == b"in")
-                and not _descriptor_digits(node, child)):
+                         (child.text or b"").strip() == b"in")):
             if _is_recovered_quoted_heredoc_end(previous, child):
                 previous = child
                 continue

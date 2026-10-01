@@ -22,7 +22,7 @@ from mirage.shell.parse.heredoc.line import (construct_closer, construct_end,
 from mirage.shell.parse.heredoc.prefix import body_prefix, tree_root
 from mirage.shell.parse.heredoc.shield import (first_content_line,
                                                heredoc_operators,
-                                               protected_source, same_shape,
+                                               protected_source,
                                                terminator_lookalikes)
 from mirage.shell.parse.heredoc.types import HeredocOperator
 
@@ -42,7 +42,6 @@ __all__ = [
     "protected_source",
     "quote_end",
     "reserved_word",
-    "same_shape",
     "terminator_line",
     "terminator_lookalikes",
     "tree_root",

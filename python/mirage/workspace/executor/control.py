@@ -141,6 +141,28 @@ async def carried(sig: Exception, stdout: ByteSource | None,
     return sig
 
 
+async def _absorbed(sig: BreakSignal | ContinueSignal,
+                    all_stdout: list[ByteSource | None],
+                    merged_io: IOResult) -> IOResult:
+    """Fold a ``break`` or ``continue`` into the loop it reached; one
+    aimed further out (``break 2``) goes on with a level spent and the
+    loop's output in front of its own.
+
+    Args:
+        sig (BreakSignal | ContinueSignal): what the body raised.
+        all_stdout (list[ByteSource | None]): the loop's output so far,
+            extended in place.
+        merged_io (IOResult): the loop's result so far.
+    """
+    all_stdout.append(sig.stdout)
+    merged_io = await merged_io.merge(sig.io)
+    if sig.levels > 1:
+        sig.stdout, sig.io = _chain_streams(all_stdout), merged_io
+        sig.levels -= 1
+        raise sig
+    return merged_io
+
+
 def _collect_loop_result(
     all_stdout: list[ByteSource | None],
     merged_io: IOResult,
@@ -232,23 +254,10 @@ async def handle_for(
             stdout, io, _ = await _execute_body(execute_node, body, session,
                                                 stdin, call_stack, job_table,
                                                 agent_id, handed, decisions)
-        except BreakSignal as sig:
-            if sig.stdout is not None:
-                all_stdout.append(sig.stdout)
-            merged_io = await merged_io.merge(sig.io)
-            if sig.levels > 1:
-                raise BreakSignal(stdout=_chain_streams(all_stdout),
-                                  io=merged_io,
-                                  levels=sig.levels - 1)
-            break
-        except ContinueSignal as sig:
-            if sig.stdout is not None:
-                all_stdout.append(sig.stdout)
-            merged_io = await merged_io.merge(sig.io)
-            if sig.levels > 1:
-                raise ContinueSignal(stdout=_chain_streams(all_stdout),
-                                     io=merged_io,
-                                     levels=sig.levels - 1)
+        except (BreakSignal, ContinueSignal) as sig:
+            merged_io = await _absorbed(sig, all_stdout, merged_io)
+            if isinstance(sig, BreakSignal):
+                break
             continue
         merged_io = await merged_io.merge(io)
         all_stdout.append(stdout)
@@ -299,24 +308,11 @@ async def _condition_loop(
             stdout, io, _ = await _execute_body(execute_node, body, session,
                                                 stdin, call_stack, job_table,
                                                 agent_id, handed, decisions)
-        except BreakSignal as sig:
-            hit_limit = False
-            if sig.stdout is not None:
-                all_stdout.append(sig.stdout)
-            merged_io = await merged_io.merge(sig.io)
-            if sig.levels > 1:
-                raise BreakSignal(stdout=_chain_streams(all_stdout),
-                                  io=merged_io,
-                                  levels=sig.levels - 1)
-            break
-        except ContinueSignal as sig:
-            if sig.stdout is not None:
-                all_stdout.append(sig.stdout)
-            merged_io = await merged_io.merge(sig.io)
-            if sig.levels > 1:
-                raise ContinueSignal(stdout=_chain_streams(all_stdout),
-                                     io=merged_io,
-                                     levels=sig.levels - 1)
+        except (BreakSignal, ContinueSignal) as sig:
+            merged_io = await _absorbed(sig, all_stdout, merged_io)
+            if isinstance(sig, BreakSignal):
+                hit_limit = False
+                break
             continue
         merged_io = await merged_io.merge(io)
         all_stdout.append(stdout)
@@ -384,24 +380,11 @@ async def handle_cfor(
                                                     session, stdin, call_stack,
                                                     job_table, agent_id,
                                                     handed, decisions)
-            except BreakSignal as sig:
-                hit_limit = False
-                if sig.stdout is not None:
-                    all_stdout.append(sig.stdout)
-                merged_io = await merged_io.merge(sig.io)
-                if sig.levels > 1:
-                    raise BreakSignal(stdout=_chain_streams(all_stdout),
-                                      io=merged_io,
-                                      levels=sig.levels - 1)
-                break
-            except ContinueSignal as sig:
-                if sig.stdout is not None:
-                    all_stdout.append(sig.stdout)
-                merged_io = await merged_io.merge(sig.io)
-                if sig.levels > 1:
-                    raise ContinueSignal(stdout=_chain_streams(all_stdout),
-                                         io=merged_io,
-                                         levels=sig.levels - 1)
+            except (BreakSignal, ContinueSignal) as sig:
+                merged_io = await _absorbed(sig, all_stdout, merged_io)
+                if isinstance(sig, BreakSignal):
+                    hit_limit = False
+                    break
                 # bash runs the update expression after `continue`.
                 await eval_expr(exprs[2], 0)
                 continue
@@ -652,23 +635,10 @@ async def handle_select(
             stdout, io, _ = await _execute_body(execute_node, body, session,
                                                 stdin, call_stack, job_table,
                                                 agent_id, handed, decisions)
-        except BreakSignal as sig:
-            if sig.stdout is not None:
-                all_stdout.append(sig.stdout)
-            merged_io = await merged_io.merge(sig.io)
-            if sig.levels > 1:
-                raise BreakSignal(stdout=_chain_streams(all_stdout),
-                                  io=merged_io,
-                                  levels=sig.levels - 1)
-            break
-        except ContinueSignal as sig:
-            if sig.stdout is not None:
-                all_stdout.append(sig.stdout)
-            merged_io = await merged_io.merge(sig.io)
-            if sig.levels > 1:
-                raise ContinueSignal(stdout=_chain_streams(all_stdout),
-                                     io=merged_io,
-                                     levels=sig.levels - 1)
+        except (BreakSignal, ContinueSignal) as sig:
+            merged_io = await _absorbed(sig, all_stdout, merged_io)
+            if isinstance(sig, BreakSignal):
+                break
         else:
             merged_io = await merged_io.merge(io)
             all_stdout.append(stdout)

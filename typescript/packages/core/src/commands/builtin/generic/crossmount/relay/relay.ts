@@ -33,7 +33,6 @@ import { GREP_BUILDER } from '../../../generic_bind/builders/grep.ts'
 import { RG_BUILDER } from '../../../generic_bind/builders/rg.ts'
 import { REALPATH_BUILDER } from '../../../generic_bind/builders/realpath.ts'
 import { runDispatch } from '../../../generic_bind/dispatch.ts'
-import { crossOpts } from '../utils.ts'
 import { Cmd, type CrossResult, type DispatchFn, type RunSingle } from '../types.ts'
 import type { FlagValue } from '../../../../spec/types.ts'
 import type { NamespaceView, SessionView } from '../../../../../ops/types.ts'
@@ -92,20 +91,7 @@ export async function runRelay(
   if (cmdName === Cmd.ZIP) return runZip(scopes, flagKwargs, dispatch, ns)
   const builder = DISPATCH_BUILDERS.get(cmdName)
   if (builder !== undefined) {
-    return runDispatch(
-      builder,
-      scopes,
-      textArgs,
-      {
-        ...crossOpts(flagKwargs),
-        cwd,
-        stdin,
-        dispatch,
-        ...(ns === undefined ? {} : { ns }),
-        ...(sessionView === undefined ? {} : { sessionView }),
-      },
-      dispatch,
-    )
+    return runDispatch(builder, scopes, textArgs, flagKwargs, dispatch, cwd, ns, stdin)
   }
   return runCmp(scopes, textArgs, flagKwargs, dispatch, stdin)
 }

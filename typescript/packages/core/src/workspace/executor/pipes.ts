@@ -25,7 +25,9 @@ import {
   carryStatus,
   fd0Binding,
   finishStatement,
+  land,
   recordStatus,
+  statementOutput,
   statementStdin,
 } from './statement.ts'
 import type { CallStack } from '../../shell/call_stack.ts'
@@ -42,6 +44,8 @@ import type { Decisions } from '../../policy/decisions.ts'
 import type { HandOff } from '../../policy/types.ts'
 
 import { PipeConsole } from '../../shell/console/pipe.ts'
+import type { JobConsole } from '../../shell/console/index.ts'
+import { ENCLOSING, Recorder } from '../../shell/descriptors.ts'
 import { Channel } from '../../shell/console/types.ts'
 import { runWithSession } from '../../context/session_context.ts'
 import { asyncContextIsolatesTasks } from '../../utils/async_context.ts'
@@ -370,10 +374,15 @@ export async function handleSubshell(
   // The line's hand-off and its ledger, for a background job to borrow.
   handed: HandOff | null = null,
   decisions: Decisions | null = null,
+  // Where each statement's output goes as it finishes; the body is a shell
+  // of its own, which routes what it wrote to its terminal through a copy,
+  // so a program nested in it (`$( )`, `eval`) leaves that to it.
+  sink: JobConsole | null = null,
 ): Promise<Result> {
   const saved = session.snapshot()
+  session.lineOpen = true
   try {
-    const allStdout: ByteSource[] = []
+    const allStdout: (ByteSource | null)[] = []
     let mergedIo = new IOResult()
     let lastExec = new ExecutionNode({ command: '()', exitCode: 0 })
     const bound = fd0Binding(session)
@@ -433,14 +442,22 @@ export async function handleSubshell(
       let stdout: ByteSource | null
       let io: IOResult
       let childExec: ExecutionNode
+      const recorder = new Recorder()
       try {
         const childStdin = statementStdin(session, stdin, bound)
-        ;[stdout, io, childExec] = await executeNode(child, session, childStdin, callStack)
+        ;[stdout, io, childExec] = await ENCLOSING.run(recorder, () =>
+          executeNode(child, session, childStdin, callStack, { sink: recorder }),
+        )
       } catch (err) {
         if (!(err instanceof ExitSignal)) throw err
         // A subshell is its own shell: exit (or ${var:?}) ends the
         // subshell only, becoming its exit status.
-        if (err.stdout !== null && err.stdout.byteLength > 0) allStdout.push(err.stdout)
+        mergedIo = await land(
+          await statementOutput(recorder, err.stdout, new IOResult(), session.terminal, sink),
+          sink,
+          allStdout,
+          mergedIo,
+        )
         const sigIo = new IOResult({ exitCode: err.containedCode, stderr: err.stderr })
         mergedIo = await mergedIo.merge(sigIo)
         mergedIo.exitCode = err.containedCode
@@ -453,20 +470,20 @@ export async function handleSubshell(
         break
       }
       stdout = await finishStatement(stdout, io, session, child, childExec)
+      let written = await statementOutput(recorder, stdout, io, session.terminal, sink)
       if (dispatch !== undefined && (session.execStdout !== null || session.execStderr !== null)) {
-        const bytes = stdout === null ? null : await materialize(stdout)
         const beforeDivert = io.exitCode
-        stdout = await divertStatement(
+        written = await divertStatement(
           dispatch,
           session,
-          bytes,
+          written,
           io,
           childExec.command ?? '',
           stdoutToStderr(child),
         )
         if (io.exitCode !== beforeDivert) recordStatus(session, io.exitCode)
       }
-      if (stdout !== null) allStdout.push(stdout)
+      mergedIo = await land(written, sink, allStdout, mergedIo)
       mergedIo = await mergedIo.merge(io)
       lastExec = childExec
       if (
@@ -479,10 +496,11 @@ export async function handleSubshell(
         break
       }
     }
-    if (allStdout.length === 1 && allStdout[0] !== undefined) {
-      return [allStdout[0], mergedIo, lastExec]
+    const parts = allStdout.filter((part): part is ByteSource => part !== null)
+    if (parts.length === 1 && parts[0] !== undefined) {
+      return [parts[0], mergedIo, lastExec]
     }
-    const combined = allStdout.length > 0 ? asyncChain(allStdout) : null
+    const combined = parts.length > 0 ? asyncChain(parts) : null
     return [combined, mergedIo, lastExec]
   } finally {
     session.restore(saved)

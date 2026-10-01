@@ -882,7 +882,7 @@ async function executeNodeBody(
 
   if (kind === NodeKind.PROGRAM) {
     return executeProgram(
-      stream,
+      recurse,
       node,
       session,
       stdin,
@@ -892,6 +892,7 @@ async function executeNodeBody(
       dispatch,
       deps.handed ?? null,
       registry.decisions,
+      sink ?? null,
     )
   }
 
@@ -977,7 +978,7 @@ async function executeNodeBody(
     const subTable = new JobTable(null, jobTable.processes)
     const abort = new AbortController()
     const subDeps: ExecuteNodeDeps = {
-      ...deps,
+      ...captureDeps,
       jobTable: subTable,
       signal:
         deps.signal === undefined ? abort.signal : AbortSignal.any([deps.signal, abort.signal]),
@@ -1022,6 +1023,7 @@ async function executeNodeBody(
               dispatch,
               deps.handed ?? null,
               registry.decisions,
+              sink ?? null,
             )
           result = await runWithSession(childSession, () =>
             asProgram ? runAsProgram(childSession, body) : body(),

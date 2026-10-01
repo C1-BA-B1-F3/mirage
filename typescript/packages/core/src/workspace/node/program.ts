@@ -30,7 +30,10 @@ import { formatFsError, isFsError } from '../../utils/errors.ts'
 import { ReturnSignal } from '../../shell/errors.ts'
 import { BreakSignal, ContinueSignal } from '../executor/control.ts'
 import { divertStatement, stdoutToStderr } from '../executor/builtins/exec/index.ts'
-import { handleBackground } from '../executor/jobs.ts'
+import { type ExecuteNodeFn, handleBackground } from '../executor/jobs.ts'
+import { land, statementOutput } from '../executor/statement.ts'
+import { ENCLOSING, Recorder, type StreamOwner } from '../../shell/descriptors.ts'
+import type { JobConsole } from '../../shell/console/index.ts'
 import type { Decisions } from '../../policy/decisions.ts'
 import type { HandOff } from '../../policy/types.ts'
 import type { DispatchFn } from '../../runtime/types.ts'
@@ -40,12 +43,7 @@ import { ExecutionNode } from '../types.ts'
 type Result = [ByteSource | null, IOResult, ExecutionNode]
 
 export async function executeProgram(
-  recurse: (
-    n: TSNodeLike,
-    s: SessionState,
-    i: ByteSource | null,
-    cs: CallStack | null,
-  ) => Promise<Result>,
+  recurse: ExecuteNodeFn,
   node: TSNodeLike,
   session: SessionState,
   stdin: ByteSource | null,
@@ -59,6 +57,11 @@ export async function executeProgram(
   // The line's hand-off and its ledger, for a background job to borrow.
   handed: HandOff | null = null,
   decisions: Decisions | null = null,
+  // Takes each statement's output as it finishes, in the order it was
+  // written, instead of the result. The outermost program of a session's
+  // line routes what a statement wrote to the session's terminal through a
+  // copy (`exec 3>&1`); a nested one (`eval`, `source`) leaves that to it.
+  sink: JobConsole | null = null,
 ): Promise<Result> {
   // Every program loop is one parse, which is the unit bash's alias rule
   // counts in: an alias defined on this parse and row is not expanded by
@@ -67,6 +70,8 @@ export async function executeProgram(
   session.parseSeq += 1
   const outerParse = session.parseCurrent
   session.parseCurrent = session.parseSeq
+  const root = !session.lineOpen
+  session.lineOpen = true
   try {
     return await runProgram(
       recurse,
@@ -79,19 +84,17 @@ export async function executeProgram(
       dispatch,
       handed,
       decisions,
+      sink,
+      root ? session.terminal : null,
     )
   } finally {
     session.parseCurrent = outerParse
+    if (root) session.lineOpen = false
   }
 }
 
 async function runProgram(
-  recurse: (
-    n: TSNodeLike,
-    s: SessionState,
-    i: ByteSource | null,
-    cs: CallStack | null,
-  ) => Promise<Result>,
+  recurse: ExecuteNodeFn,
   node: TSNodeLike,
   session: SessionState,
   stdin: ByteSource | null,
@@ -101,9 +104,11 @@ async function runProgram(
   dispatch?: DispatchFn,
   handed: HandOff | null = null,
   decisions: Decisions | null = null,
+  sink: JobConsole | null = null,
+  own: StreamOwner | null = null,
 ): Promise<Result> {
   const children = node.children
-  const allStdout: ByteSource[] = []
+  const allStdout: (ByteSource | null)[] = []
   let mergedIo = new IOResult()
   let lastExec = new ExecutionNode({ command: '', exitCode: 0 })
   // Source lines and the highest one `set -v` has already echoed.
@@ -214,13 +219,34 @@ async function runProgram(
       let s: ByteSource | null
       let ioResult: IOResult
       let execNode: ExecutionNode
+      // Each statement writes to a recorder rather than straight to the
+      // program's output, so what it wrote to the terminal through a copy
+      // (`exec 3>&1`) keeps its place, past an `exec` diversion, and what it
+      // wrote to an enclosing level's stream goes on there.
+      const recorder = new Recorder()
       try {
         // `exec < file` feeds the shell's stdin: a later `read` or
         // `while read` sees it, and each statement reads on from where
         // the one before it stopped.
         const childStdin = statementStdin(session, stdin, bound)
-        ;[s, ioResult, execNode] = await recurse(child, session, childStdin, callStack)
+        ;[s, ioResult, execNode] = await ENCLOSING.run(recorder, () =>
+          recurse(child, session, childStdin, callStack, { sink: recorder }),
+        )
       } catch (err) {
+        if (
+          err instanceof ExitSignal ||
+          err instanceof ReturnSignal ||
+          err instanceof BreakSignal ||
+          err instanceof ContinueSignal
+        ) {
+          if (err instanceof ReturnSignal && session.sourceDepth <= 0) throw err
+          mergedIo = await land(
+            await statementOutput(recorder, null, new IOResult(), own, sink),
+            sink,
+            allStdout,
+            mergedIo,
+          )
+        }
         if (err instanceof ExitSignal) {
           // exit (or a fatal expansion error) ends the line: keep
           // what earlier statements produced, drop the rest.
@@ -240,7 +266,6 @@ async function runProgram(
           // `return` inside a sourced file ends the source; the file's
           // status becomes the return's. Anywhere else the signal
           // belongs to an enclosing function call.
-          if (session.sourceDepth <= 0) throw err
           if (err.stdout !== null) allStdout.push(err.stdout)
           if (err.stderr.byteLength > 0) {
             mergedIo = await mergedIo.merge(new IOResult({ stderr: err.stderr }))
@@ -299,26 +324,28 @@ async function runProgram(
       io = ioResult
       lastExec = execNode
       i += 1
+      let written = await statementOutput(recorder, stdout, io, own, sink)
+      stdout = null
+      // An `exec` redirect sends the shell's own output to a file: every
+      // statement after the `exec` diverts here, so nothing bubbles to the
+      // terminal and stderr lands in its own target.
+      if (dispatch !== undefined && (session.execStdout !== null || session.execStderr !== null)) {
+        const beforeDivert = io.exitCode
+        written = await divertStatement(
+          dispatch,
+          session,
+          written,
+          io,
+          lastExec.command ?? '',
+          stdoutToStderr(child),
+        )
+        // A write the binding refused is the statement's failure, which
+        // `$?` has to show.
+        if (io.exitCode !== beforeDivert) recordStatus(session, io.exitCode)
+      }
+      mergedIo = await land(written, sink, allStdout, mergedIo)
     }
 
-    // An `exec` redirect sends the shell's own output to a file: every
-    // statement after the `exec` diverts here, so nothing bubbles to the
-    // terminal and stderr lands in its own target.
-    if (dispatch !== undefined && (session.execStdout !== null || session.execStderr !== null)) {
-      const bytes = stdout === null ? null : await materialize(stdout)
-      const beforeDivert = io.exitCode
-      stdout = await divertStatement(
-        dispatch,
-        session,
-        bytes,
-        io,
-        lastExec.command ?? '',
-        stdoutToStderr(child),
-      )
-      // A write the binding refused is the statement's failure, which
-      // `$?` has to show.
-      if (io.exitCode !== beforeDivert) recordStatus(session, io.exitCode)
-    }
     if (stdout !== null) allStdout.push(stdout)
     mergedIo = await mergedIo.merge(io)
 
@@ -334,9 +361,10 @@ async function runProgram(
     }
   }
 
-  if (allStdout.length === 1 && allStdout[0] !== undefined) {
-    return [allStdout[0], mergedIo, lastExec]
+  const parts = allStdout.filter((part): part is ByteSource => part !== null)
+  if (parts.length === 1 && parts[0] !== undefined) {
+    return [parts[0], mergedIo, lastExec]
   }
-  const combined = allStdout.length > 0 ? asyncChain(allStdout) : null
+  const combined = parts.length > 0 ? asyncChain(parts) : null
   return [combined, mergedIo, lastExec]
 }

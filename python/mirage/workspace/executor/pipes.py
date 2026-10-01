@@ -26,10 +26,12 @@ from mirage.policy.types import HandOff
 from mirage.process.supervisor import ProcessSupervisor
 from mirage.runtime.types import DispatchFn
 from mirage.shell.call_stack import CallStack
+from mirage.shell.console import JobConsole
 from mirage.shell.console.pipe import PipeConsole
 from mirage.shell.console.types import Channel
 from mirage.shell.constants import (ERREXIT_EXEMPT_TYPES, FORK_FAILED,
                                     FORK_FAILED_STATUS)
+from mirage.shell.descriptors import ENCLOSING, Recorder
 from mirage.shell.errors import ExitSignal, PipeClosed
 from mirage.shell.job_table import JobTable
 from mirage.shell.types import NodeType as NT
@@ -40,8 +42,9 @@ from mirage.workspace.executor.builtins.exec import (divert_statement,
 from mirage.workspace.executor.control import UNWINDING, carried
 from mirage.workspace.executor.jobs import handle_background, pump
 from mirage.workspace.executor.statement import (carry_status, fd0_binding,
-                                                 finish_statement,
+                                                 finish_statement, land,
                                                  record_status,
+                                                 statement_output,
                                                  statement_stdin)
 from mirage.workspace.session import (SessionState, reset_current_session,
                                       set_current_session)
@@ -279,6 +282,7 @@ async def handle_subshell(
     dispatch: DispatchFn | None = None,
     handed: HandOff | None = None,
     decisions: Decisions | None = None,
+    sink: JobConsole | None = None,
 ) -> tuple[ByteSource | None, IOResult, ExecutionNode]:
     """Execute body in isolated env.
 
@@ -298,8 +302,13 @@ async def handle_subshell(
             an `exec` redirect the way the program loop does. A subshell
             is a child shell, so the redirect it installs is restored
             with the rest of the snapshot when the body ends.
+        sink (JobConsole | None): where each statement's output goes as
+            it finishes; the body is a shell of its own, which routes
+            what it wrote to its terminal through a copy, so a program
+            nested in it (``$( )``, ``eval``) leaves that to it.
     """
     saved = session.snapshot()
+    session._line_open = True
     try:
         all_stdout: list[Any] = []
         merged_io = IOResult()
@@ -343,14 +352,21 @@ async def handle_subshell(
                 continue
             i += 1
             child_stdin = statement_stdin(session, stdin, bound)
+            recorder = Recorder()
+            enclosing = ENCLOSING.set(recorder)
             try:
-                stdout, io, last_exec = await execute_node(
-                    child, session, child_stdin, call_stack)
+                stdout, io, last_exec = await execute_node(child,
+                                                           session,
+                                                           child_stdin,
+                                                           call_stack,
+                                                           sink=recorder)
             except ExitSignal as sig:
                 # A subshell is its own shell: exit (or ${var:?}) ends
                 # the subshell only, becoming its exit status.
-                if sig.stdout:
-                    all_stdout.append(sig.stdout)
+                merged_io = await land(
+                    await statement_output(recorder, sig.stdout or None,
+                                           IOResult(), session.terminal, sink),
+                    sink, all_stdout, merged_io)
                 sig_io = IOResult(exit_code=sig.contained_code,
                                   stderr=sig.stderr or None)
                 merged_io = await merged_io.merge(sig_io)
@@ -360,20 +376,21 @@ async def handle_subshell(
                                           exit_code=sig.contained_code,
                                           stderr=sig.stderr)
                 break
+            finally:
+                ENCLOSING.reset(enclosing)
             stdout = await finish_statement(stdout, io, session, child,
                                             last_exec)
+            written = await statement_output(recorder, stdout, io,
+                                             session.terminal, sink)
             if dispatch is not None and (session.exec_stdout is not None
                                          or session.exec_stderr is not None):
-                materialized = await materialize(stdout)
                 before_divert = io.exit_code
-                stdout = await divert_statement(dispatch, session,
-                                                materialized, io,
-                                                last_exec.command or "",
-                                                stdout_to_stderr(child))
+                written = await divert_statement(dispatch, session, written,
+                                                 io, last_exec.command or "",
+                                                 stdout_to_stderr(child))
                 if io.exit_code != before_divert:
                     record_status(session, io.exit_code)
-            if stdout is not None:
-                all_stdout.append(stdout)
+            merged_io = await land(written, sink, all_stdout, merged_io)
             merged_io = await merged_io.merge(io)
             if (io.exit_code != 0 and session.shell_options.get("errexit")
                     and child.type not in ERREXIT_EXEMPT_TYPES

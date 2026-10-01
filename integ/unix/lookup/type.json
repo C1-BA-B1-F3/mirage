@@ -6,10 +6,10 @@
       "targets": [
         "ram"
       ],
-      "command": "f() { :; }; type -t f",
+      "command": "f() { :; }; type -t f; type f; g() { if [ -n \"$1\" ]; then for i in a b; do echo $i >&2; done; elif true; then :; fi; case $1 in a|b) echo hit;;& *) ;; esac; cat <<EOF\nbody $1\nEOF\n} >/dev/null; declare -f g",
       "expect": {
         "exit": 0,
-        "stdout": "function\n",
+        "stdout": "function\nf is a function\nf () \n{ \n    :\n}\ng () \n{ \n    if [ -n \"$1\" ]; then\n        for i in a b;\n        do\n            echo $i 1>&2;\n        done;\n    else\n        if true; then\n            :;\n        fi;\n    fi;\n    case $1 in \n        a | b)\n            echo hit\n        ;;&\n        *)\n\n        ;;\n    esac;\n    cat <<EOF\nbody $1\nEOF\n\n} > /dev/null\n",
         "stderr": ""
       }
     },
@@ -100,7 +100,7 @@
       "command": "then() { echo x; }; type -a then",
       "expect": {
         "exit": 0,
-        "stdout": "then is a shell keyword\nthen is a function\n",
+        "stdout": "then is a shell keyword\nthen is a function\nfunction then () \n{ \n    echo x\n}\n",
         "stderr": ""
       }
     },

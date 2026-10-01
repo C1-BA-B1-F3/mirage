@@ -326,9 +326,9 @@ FUNC_JOB_CASES = [
      "f(){ :; }; g(){ :; }; declare -F; declare -F f; echo rc=$?; "
      "declare -F nothere; echo rc=$?",
      "declare -f f\ndeclare -f g\nf\nrc=0\nrc=1\n", "", 0),
-    ("declare_f_names_row",
+    ("declare_f_prints_the_body",
      "h(){ :; }; declare -f h; echo rc=$?; declare -f nothere; echo rc=$?",
-     "declare -f h\nrc=0\nrc=1\n", "", 0),
+     "h () \n{ \n    :\n}\nrc=0\nrc=1\n", "", 0),
     ("jobs_r_running_only", "sleep 5 & echo hi & sleep 0.3; jobs -r",
      "[1] running sleep 5\n", "", 0),
     ("jobs_p_pids_only", "sleep 5 & a=$!; sleep 5 & b=$!; set -- $(jobs -p); "

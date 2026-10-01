@@ -14,6 +14,8 @@
 
 import { FD_BOTH, FD_CLOSE } from './constants.ts'
 import { SharedInput } from '../io/async_line_iterator.ts'
+import { createAsyncContext } from '../utils/async_context.ts'
+import { type Channel, JobConsole } from './console/index.ts'
 import type { PathSpec } from '../types.ts'
 import { ebadfStdin } from '../utils/errors.ts'
 import { RedirectKind, type Redirect } from './types.ts'
@@ -84,9 +86,73 @@ export class FileInput extends SharedInput {
   }
 }
 
+/**
+ * Who a stream a level was given belongs to: a redirect level's recorder,
+ * or a session, whose own line its terminal streams are. Mirrors Python's
+ * StreamOwner.
+ */
+export type StreamOwner = symbol
+
+/**
+ * The stdout or stderr a level was given rather than opened. A descriptor
+ * copied from it (`3>&1`, `exec 3>&1`) keeps naming it after the level
+ * rebinds its own (`3>&1 >f`), as bash's copy keeps the open file
+ * description. Mirrors Python's Inherited.
+ */
+export class Inherited {
+  constructor(
+    readonly owner: StreamOwner,
+    readonly channel: Channel,
+  ) {}
+}
+
+/**
+ * What one level's command wrote, in order, for the level to route. A chunk
+ * on a channel goes through the level's descriptor table; one written to a
+ * stream another level owns stays in place on its way up to that level, so it
+ * lands among the bytes written around it. Mirrors Python's Recorder.
+ */
+export class Recorder extends JobConsole {
+  readonly chunks: [Channel | Inherited, Uint8Array][] = []
+  readonly owner: StreamOwner = Symbol('recorder')
+  override emit(channel: Channel, data: Uint8Array): Promise<void> {
+    this.chunks.push([channel, data])
+    return Promise.resolve()
+  }
+  emitTo(stream: Inherited, data: Uint8Array): void {
+    this.chunks.push([stream, data])
+  }
+}
+
+/**
+ * The recorder of the innermost level running a command, for a level whose
+ * output is a value (a substitution's) to send another level's stream bytes
+ * toward it. Mirrors Python's ENCLOSING.
+ */
+export const ENCLOSING = createAsyncContext<Recorder>()
+
+/**
+ * Send bytes written to a stream another level owns toward it: up through
+ * the sink, or the enclosing level's recorder when the level returns its
+ * output as a value. A console that keeps no streams takes them on their
+ * channel. False when there is nowhere above. Mirrors Python's deliver.
+ */
+export async function deliver(
+  sink: JobConsole | null,
+  stream: Inherited,
+  data: Uint8Array,
+): Promise<boolean> {
+  const target = sink ?? ENCLOSING.getStore() ?? null
+  if (target instanceof Recorder) target.emitTo(stream, data)
+  else if (target !== null) await target.emit(stream.channel, data)
+  else return false
+  return true
+}
+
 export interface Descriptor {
   readonly identity: string
   readonly append: boolean
   readonly source: SharedInput | null
   readonly file: FileDescription | null
+  readonly stream?: Inherited | null
 }

@@ -61,10 +61,10 @@
         "gdrive-folder",
         "box"
       ],
-      "command": "for i in 1 2; do for j in a b; do if [ $j = a ]; then continue 2; fi; echo $i$j; done; echo inner:$i; done; echo after",
+      "command": "for i in 1 2; do for j in a b; do if [ $j = a ]; then continue 2; fi; echo $i$j; done; echo inner:$i; done; echo after; for ((k=0;k<2;k++)); do for j in x; do echo k$k; continue 2; done; echo no; done",
       "expect": {
         "exit": 0,
-        "stdout": "after\n",
+        "stdout": "after\nk0\nk1\n",
         "stderr": ""
       }
     }

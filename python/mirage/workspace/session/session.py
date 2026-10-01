@@ -26,7 +26,7 @@ from mirage.secrets.config import EnvVar
 from mirage.shell.array import ShellArray
 from mirage.shell.constants import (BIN_PREFIX, IFS_DEFAULT, RANDOM,
                                     RANDOM_UNSET, SHELL_ARGV0)
-from mirage.shell.descriptors import Descriptor
+from mirage.shell.descriptors import Descriptor, StreamOwner
 from mirage.shell.types import FunctionBody
 from mirage.shell.variable import (ManagedRef, ShellVar, VarAttr,
                                    attrs_from_letters, stored_attrs,
@@ -395,6 +395,13 @@ class SessionState:
     _exec_opened: set[str] = field(default_factory=set, repr=False)
     _parse_seq: int = field(default=0, repr=False)
     _parse_current: int = field(default=0, repr=False)
+    # The owner of this session's terminal streams, which an `exec` copy
+    # of one names (`exec 3>&1`), and whether a line of the session is
+    # running, whose outermost program routes what was written to them.
+    # Each fork gets its own: a child shell writing to its parent's
+    # terminal is writing to a stream it did not open.
+    terminal: StreamOwner = field(default_factory=StreamOwner, repr=False)
+    _line_open: bool = field(default=False, repr=False)
     _alias_marks: dict[str, tuple[int, int]] = field(default_factory=dict,
                                                      repr=False)
     _alias_stack: list[str] = field(default_factory=list, repr=False)

@@ -1884,6 +1884,37 @@
         "stdout": "\\first\nsecond\nafter\n",
         "stderr": ""
       }
+    },
+    {
+      "id": "heredoc_bad_substitution_fails_the_command",
+      "seq": 501342,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "s3-prefix",
+        "databricks-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder"
+      ],
+      "command": "cat <<END\nconst x = ${a * b};\nEND\necho \"rc=$?\"; cat <<END\nconst y = `${a * b}`;\nEND\necho \"rc=$?\"",
+      "expect": {
+        "exit": 0,
+        "stdout": "rc=1\nconst y = ;\nrc=0\n",
+        "stderr": "bash: const x = ${a * b};\n: bad substitution\nbash: ${a * b}: bad substitution\n"
+      }
     }
   ]
 }

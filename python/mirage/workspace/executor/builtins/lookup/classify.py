@@ -13,6 +13,7 @@
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 from mirage.shell.constants import BIN_PREFIX
+from mirage.shell.printer import function_text
 from mirage.workspace.executor.builtins.lookup.constants import DESCRIPTIONS
 from mirage.workspace.executor.builtins.lookup.types import NameKind
 from mirage.workspace.lookup import Consumer, lookup, lookup_all, program
@@ -150,14 +151,21 @@ def describe(name: str,
              session: SessionState | None = None) -> str:
     """Render the verbose line ``command -V`` and ``type`` print.
 
+    A function's line is followed by its body as ``declare -f`` prints it.
+
     Args:
         name (str): the operand word.
         kind (NameKind): the classification.
-        session (SessionState | None): shell session, needed only to read an
-            alias's value; every other kind renders from the name alone.
+        session (SessionState | None): shell session, needed to read an
+            alias's value and a function's body; every other kind renders
+            from the name alone.
     """
     if kind is NameKind.ALIAS and session is not None:
         return f"{name} is aliased to `{session.aliases[name]}'"
+    if (kind is NameKind.FUNCTION and session is not None
+            and name in session.functions):
+        return (f"{name} is a function\n"
+                f"{function_text(name, session.functions[name])}")
     if kind is NameKind.FILE:
         return f"{name} is {program_file(name)}"
     return f"{name} is {DESCRIPTIONS[kind]}"

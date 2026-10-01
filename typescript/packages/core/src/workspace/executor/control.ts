@@ -172,6 +172,25 @@ export async function carried(
   return sig
 }
 
+/**
+ * Fold a `break` or `continue` into the loop it reached; one aimed further
+ * out (`break 2`) goes on with a level spent and the loop's output in front
+ * of its own. Mirrors Python's _absorbed.
+ */
+async function absorbed(
+  sig: BreakSignal | ContinueSignal,
+  allStdout: (ByteSource | null)[],
+  mergedIo: IOResult,
+): Promise<IOResult> {
+  allStdout.push(sig.stdout)
+  const merged = await mergedIo.merge(sig.io)
+  if (sig.levels > 1) {
+    const Signal = sig instanceof BreakSignal ? BreakSignal : ContinueSignal
+    throw new Signal(chainNonNull(allStdout), merged, sig.levels - 1)
+  }
+  return merged
+}
+
 function collectLoopResult(
   allStdout: readonly (ByteSource | null)[],
   mergedIo: IOResult,
@@ -300,23 +319,10 @@ export async function handleFor(
       allStdout.push(stdout)
       mergedIo = await mergedIo.merge(io)
     } catch (sig) {
-      if (sig instanceof BreakSignal) {
-        if (sig.stdout !== null) allStdout.push(sig.stdout)
-        mergedIo = await mergedIo.merge(sig.io)
-        if (sig.levels > 1) {
-          throw new BreakSignal(chainNonNull(allStdout), mergedIo, sig.levels - 1)
-        }
-        break
-      }
-      if (sig instanceof ContinueSignal) {
-        if (sig.stdout !== null) allStdout.push(sig.stdout)
-        mergedIo = await mergedIo.merge(sig.io)
-        if (sig.levels > 1) {
-          throw new ContinueSignal(chainNonNull(allStdout), mergedIo, sig.levels - 1)
-        }
-        continue
-      }
-      throw sig
+      if (!(sig instanceof BreakSignal || sig instanceof ContinueSignal)) throw sig
+      mergedIo = await absorbed(sig, allStdout, mergedIo)
+      if (sig instanceof BreakSignal) break
+      continue
     }
   }
   // The loop variable is an ordinary variable in bash and keeps its
@@ -385,24 +391,13 @@ async function conditionLoop(
       allStdout.push(stdout)
       mergedIo = await mergedIo.merge(io)
     } catch (sig) {
+      if (!(sig instanceof BreakSignal || sig instanceof ContinueSignal)) throw sig
+      mergedIo = await absorbed(sig, allStdout, mergedIo)
       if (sig instanceof BreakSignal) {
         hitLimit = false
-        if (sig.stdout !== null) allStdout.push(sig.stdout)
-        mergedIo = await mergedIo.merge(sig.io)
-        if (sig.levels > 1) {
-          throw new BreakSignal(chainNonNull(allStdout), mergedIo, sig.levels - 1)
-        }
         break
       }
-      if (sig instanceof ContinueSignal) {
-        if (sig.stdout !== null) allStdout.push(sig.stdout)
-        mergedIo = await mergedIo.merge(sig.io)
-        if (sig.levels > 1) {
-          throw new ContinueSignal(chainNonNull(allStdout), mergedIo, sig.levels - 1)
-        }
-        continue
-      }
-      throw sig
+      continue
     }
   }
 
@@ -477,25 +472,14 @@ export async function handleCfor(
         allStdout.push(stdout)
         mergedIo = await mergedIo.merge(io)
       } catch (sig) {
+        if (!(sig instanceof BreakSignal || sig instanceof ContinueSignal)) throw sig
+        mergedIo = await absorbed(sig, allStdout, mergedIo)
         if (sig instanceof BreakSignal) {
           hitLimit = false
-          if (sig.stdout !== null) allStdout.push(sig.stdout)
-          mergedIo = await mergedIo.merge(sig.io)
-          if (sig.levels > 1) {
-            throw new BreakSignal(chainNonNull(allStdout), mergedIo, sig.levels - 1)
-          }
           break
         }
-        if (sig instanceof ContinueSignal) {
-          if (sig.stdout !== null) allStdout.push(sig.stdout)
-          mergedIo = await mergedIo.merge(sig.io)
-          if (sig.levels > 1) {
-            throw new ContinueSignal(chainNonNull(allStdout), mergedIo, sig.levels - 1)
-          }
-          await evalExpr(exprs[2] ?? [], 0)
-          continue
-        }
-        throw sig
+        await evalExpr(exprs[2] ?? [], 0)
+        continue
       }
       await evalExpr(exprs[2] ?? [], 0)
     }
@@ -767,20 +751,9 @@ export async function handleSelect(
       allStdout.push(stdout)
       mergedIo = await mergedIo.merge(io)
     } catch (sig) {
-      if (sig instanceof BreakSignal) {
-        if (sig.stdout !== null) allStdout.push(sig.stdout)
-        mergedIo = await mergedIo.merge(sig.io)
-        if (sig.levels > 1) {
-          throw new BreakSignal(chainNonNull(allStdout), mergedIo, sig.levels - 1)
-        }
-        break
-      }
-      if (!(sig instanceof ContinueSignal)) throw sig
-      if (sig.stdout !== null) allStdout.push(sig.stdout)
-      mergedIo = await mergedIo.merge(sig.io)
-      if (sig.levels > 1) {
-        throw new ContinueSignal(chainNonNull(allStdout), mergedIo, sig.levels - 1)
-      }
+      if (!(sig instanceof BreakSignal || sig instanceof ContinueSignal)) throw sig
+      mergedIo = await absorbed(sig, allStdout, mergedIo)
+      if (sig instanceof BreakSignal) break
     }
     showMenu = (visibleEnv(session).REPLY ?? '') === ''
   }

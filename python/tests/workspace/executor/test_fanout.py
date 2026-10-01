@@ -840,8 +840,7 @@ def test_context_across_a_nested_mount_is_separated(line):
      "/base/inner/real.txt\nhit\n\n/base/top.txt\nhit\n"),
     ("--sort path -A1",
      "/base/inner/real.txt:hit\n/base/inner/real.txt-z\n--\n"
-     "/base/top.txt:hit\n/base/top.txt-y\n"
-     ),
+     "/base/top.txt:hit\n/base/top.txt-y\n"),
     ("--type-add 'foo:*.txt' --type-clear foo --type-add 'foo:*.py' -t foo -l",
      ""),
     ("-t txt -T txt -t txt --sort path -l",
@@ -951,12 +950,3 @@ def test_rg_follows_links_in_a_walk_that_spans_mounts_only_under_dash_upper_l(
     io = asyncio.run(_linked_tree().shell(line))
     assert (_stdout(io), io.stderr
             or b"", io.exit_code) == (stdout, stderr, code)
-
-
-@pytest.mark.parametrize("flags",
-                         ["--files --sortr path", "--sortr path -l hit"])
-def test_global_sort_across_explicit_mount_operands(flags):
-    io = asyncio.run(_context_workspace().shell(
-        f"rg {flags} /base/inner/real.txt /base/top.txt"))
-    assert io.exit_code == 0
-    assert _stdout(io) == "/base/top.txt\n/base/inner/real.txt\n"

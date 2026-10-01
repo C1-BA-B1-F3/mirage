@@ -13,6 +13,7 @@
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import re
+from typing import Any
 
 import tree_sitter
 import tree_sitter_bash
@@ -21,8 +22,7 @@ from mirage.shell.parameter import scan_parameter
 from mirage.shell.parse.constants import (ARITH_OPEN_TOKEN, QUOTES,
                                           VERBATIM_TYPES)
 from mirage.shell.parse.expansion import expansion_source
-from mirage.shell.parse.heredoc import (heredoc_operators, protected_source,
-                                        same_shape)
+from mirage.shell.parse.heredoc import heredoc_operators, protected_source
 from mirage.shell.parse.heredoc.constants import BACKSLASH
 from mirage.shell.parse.heredoc.lower import (drop_bytes, drop_source_bytes,
                                               lower_heredocs, rebase_source)
@@ -101,28 +101,124 @@ def _is_arithmetic(data: bytes, start: int) -> bool:
     return not TS_PARSER.parse(data[start:end]).root_node.has_error
 
 
-def _readwrite_source(data: bytes, root: tree_sitter.Node) -> bytes:
-    shielded = bytearray(data)
+_UNLEXED = frozenset({
+    "test_command", "arithmetic_expansion", "string_content", "raw_string",
+    "ansi_c_string", "expansion", "heredoc_content", "comment",
+    "binary_expression", "unary_expression", "postfix_expression"
+})
+_WORD_START = b" \t\n;&|(){}"
+_DIGITS = re.compile(rb"\d+")
+_LAST_ARM = re.compile(rb"\s*esac(?![^\s;&|()<>])")
+
+
+def _operator_source(data: bytes, root: TSNodeLike) -> bytes:
+    """Spell operators the way the grammar can lex them.
+
+    bash reads ``<>`` and ``<<<`` as one operator each, and a digit
+    string that starts a word and touches ``<`` or ``>`` as the
+    descriptor. tree-sitter-bash reads ``<>`` as ``<`` then ``>``,
+    ``<<<`` after a compound command or a descriptor as ``<<`` then
+    ``<``, and a digit string with a leading zero (``0<f``) as a
+    number. The same-width spelling here hands it ``>>``, ``<  `` and a
+    nonzero first digit; ``SourceNode`` reads the original bytes, so a
+    redirect whose text opens with ``<<<`` is the herestring it was. A
+    last case arm's ``;&`` or ``;;&``, which the grammar refuses, ends it
+    as ``;;`` does, there being no arm after it, so it is spelled so. An
+    operator inside an error region gets its own token only once the
+    operators before it are respelled, so the pass repeats on its own
+    parse until nothing changes.
+
+    Args:
+        data (bytes): shell source.
+        root (TSNodeLike): the parse of ``data``.
+    """
+    lexed = _respelled(data, root)
+    while lexed != data:
+        data = lexed
+        lexed = _respelled(data, TS_PARSER.parse(data).root_node)
+    return data
+
+
+def _respelled(data: bytes, root: TSNodeLike) -> bytes:
+    out = bytearray(data)
     stack = [root]
     while stack:
         node = stack.pop()
-        if node.type in ("test_command", "arithmetic_expansion", "string",
-                         "raw_string"):
+        if node.type in _UNLEXED:
             continue
-        if node.type == "<" and data[node.start_byte:node.start_byte +
-                                     2] == b"<>":
-            shielded[node.start_byte] = ord(">")
         stack.extend(node.children)
-    return bytes(shielded)
+        start = node.start_byte
+        if node.type == "<" and data[start:start + 2] == b"<>":
+            out[start] = ord(">")
+        elif node.type in ("<<<", "<<") and data[start:start + 3] == b"<<<":
+            out[start + 1:start + 3] = b"  "
+        elif node.type in (";&", ";;&") and _LAST_ARM.match(
+                data, node.end_byte):
+            out[start:node.end_byte] = b";;".ljust(node.end_byte - start)
+        digits = None if node.children else _DIGITS.match(data, start)
+        if (digits is not None and data[start] == ord("0")
+                and data[digits.end():digits.end() + 1] in (b"<", b">")
+                and (start == 0 or data[start - 1] in _WORD_START)):
+            out[start] = ord("1")
+    return bytes(out)
 
 
-def _parse_bytes(data: bytes) -> tree_sitter.Node:
+class SourceNode:
+    """A node of a shielded parse that reads the original bytes.
+
+    Every shield keeps the source's width, so a span names the same bytes
+    in both and only ``text`` differs. Reparsing the original against the
+    shielded tree did the same until tree-sitter relexed a statement on
+    its own, which it does at a line's end.
+    """
+
+    def __init__(self, node: tree_sitter.Node, data: bytes) -> None:
+        self._node = node
+        self._data = data
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._node, name)
+
+    def _wrap(self, node: tree_sitter.Node | None) -> "SourceNode | None":
+        return None if node is None else SourceNode(node, self._data)
+
+    @property
+    def text(self) -> bytes:
+        return self._data[self._node.start_byte:self._node.end_byte]
+
+    @property
+    def children(self) -> list["SourceNode"]:
+        return [SourceNode(node, self._data) for node in self._node.children]
+
+    @property
+    def named_children(self) -> list["SourceNode"]:
+        return [
+            SourceNode(node, self._data) for node in self._node.named_children
+        ]
+
+    @property
+    def parent(self) -> "SourceNode | None":
+        return self._wrap(self._node.parent)
+
+    @property
+    def prev_sibling(self) -> "SourceNode | None":
+        return self._wrap(self._node.prev_sibling)
+
+    @property
+    def next_sibling(self) -> "SourceNode | None":
+        return self._wrap(self._node.next_sibling)
+
+    def child_by_field_name(self, name: str) -> "SourceNode | None":
+        return self._wrap(self._node.child_by_field_name(name))
+
+
+def _parse_bytes(data: bytes) -> TSNodeLike:
     """Parse structure using same-width lexical shields.
 
-    Heredoc bodies and substring operands need word grammar where
-    tree-sitter's lexer otherwise rejects them. The shielded tree is reused
-    against the original bytes without edits, retaining every source span.
-    Verify reuse node by node; if shielding or reuse fails, keep the original
+    Heredoc bodies, substring operands and redirect operators need word
+    grammar where tree-sitter's lexer otherwise rejects them. The shielded
+    tree is read against the original bytes (``SourceNode``), retaining
+    every source span. When shielding adds an error, keep the original
     parse so a real structural error still reaches syntax validation.
 
     Args:
@@ -132,19 +228,16 @@ def _parse_bytes(data: bytes) -> tree_sitter.Node:
     shielded_data = (protected_source(data, tree.root_node)
                      if b"<<" in data else None) or data
     shielded_data = expansion_source(shielded_data, tree.root_node)
-    shielded_data = _readwrite_source(shielded_data, tree.root_node)
+    shielded_data = _operator_source(shielded_data, tree.root_node)
     if shielded_data == data:
         return tree.root_node
-    shielded = TS_PARSER.parse(shielded_data)
-    if shielded.root_node.has_error:
+    shielded = TS_PARSER.parse(shielded_data).root_node
+    if not _errors(shielded) <= _errors(tree.root_node):
         return tree.root_node
-    reused = TS_PARSER.parse(data, old_tree=shielded)
-    if not same_shape(shielded.root_node, reused.root_node):
-        return tree.root_node
-    return reused.root_node
+    return SourceNode(shielded, data)
 
 
-def _failed_arith_openers(root: tree_sitter.Node) -> list[int]:
+def _failed_arith_openers(root: TSNodeLike) -> list[int]:
     """Byte offsets of ``((`` tokens the parser could not make sense of.
 
     Only openers inside an ERROR subtree are reported. A genuine
@@ -152,10 +245,10 @@ def _failed_arith_openers(root: tree_sitter.Node) -> list[int]:
     so it cannot be picked up here.
 
     Args:
-        root (tree_sitter.Node): root of a tree that has an error.
+        root (TSNodeLike): root of a tree that has an error.
     """
     offsets: list[int] = []
-    stack: list[tuple[tree_sitter.Node, bool]] = [(root, False)]
+    stack: list[tuple[TSNodeLike, bool]] = [(root, False)]
     while stack:
         node, in_error = stack.pop()
         errored = in_error or node.type == "ERROR"
@@ -166,12 +259,12 @@ def _failed_arith_openers(root: tree_sitter.Node) -> list[int]:
     return offsets
 
 
-def _verbatim_spans(root: tree_sitter.Node) -> list[tuple[int, int]]:
+def _verbatim_spans(root: TSNodeLike) -> list[tuple[int, int]]:
     """Byte spans whose backslashes escape nothing: comments and strings
     in single quotes, ANSI-C ones included.
 
     Args:
-        root (tree_sitter.Node): root of the parsed tree.
+        root (TSNodeLike): root of the parsed tree.
     """
     spans: list[tuple[int, int]] = []
     stack = [root]
@@ -231,7 +324,7 @@ def join_continuations(command: str) -> str:
     return drop_bytes(data, continuation_bytes(data)).decode()
 
 
-def _orphaned_dollar_offsets(root: tree_sitter.Node, data: bytes) -> list[int]:
+def _orphaned_dollar_offsets(root: TSNodeLike, data: bytes) -> list[int]:
     """Byte offsets of literal ``$`` tokens cut off from their name.
 
     tree-sitter-bash 0.25.1 stops lexing a later unbraced expansion in a
@@ -244,7 +337,7 @@ def _orphaned_dollar_offsets(root: tree_sitter.Node, data: bytes) -> list[int]:
     a simple_expansion is that expansion's own token and is skipped.
 
     Args:
-        root (tree_sitter.Node): root of the parsed tree.
+        root (TSNodeLike): root of the parsed tree.
         data (bytes): the source the tree was parsed from.
     """
     offsets: list[int] = []
@@ -284,8 +377,7 @@ def _rebrace_dollar(data: bytes, offset: int) -> bytes:
             data[offset + consumed:])
 
 
-def _repair_orphaned_dollars(root: tree_sitter.Node,
-                             data: bytes) -> tree_sitter.Node:
+def _repair_orphaned_dollars(root: TSNodeLike, data: bytes) -> TSNodeLike:
     """Rebrace mis-lexed expansions and reparse until none remain.
 
     Every rebrace consumes one bare ``$`` and never writes a new one,
@@ -293,7 +385,7 @@ def _repair_orphaned_dollars(root: tree_sitter.Node,
     parses worse than what it replaces is discarded.
 
     Args:
-        root (tree_sitter.Node): tree parsed from ``data``.
+        root (TSNodeLike): tree parsed from ``data``.
         data (bytes): the source ``root`` was parsed from.
     """
     for _ in range(data.count(b"$")):
@@ -309,8 +401,8 @@ def _repair_orphaned_dollars(root: tree_sitter.Node,
     return root
 
 
-def _repair_redirect_dashes(root: tree_sitter.Node,
-                            data: bytes) -> tuple[tree_sitter.Node, bytes]:
+def _repair_redirect_dashes(root: TSNodeLike,
+                            data: bytes) -> tuple[TSNodeLike, bytes]:
     # tree-sitter-bash drops a bare dash immediately before an explicit fd.
     # Quote only a dash in an uncovered gap, never text inside a word/body.
     offsets: list[int] = []
@@ -337,8 +429,7 @@ _NAME = re.compile(rb"\w+")
 _FOLLOWER = re.compile(rb"\s*(in|do)(?![^\s;&|()<>])")
 
 
-def _header_inserts(root: tree_sitter.Node,
-                    data: bytes) -> list[tuple[int, bytes]]:
+def _header_inserts(root: TSNodeLike, data: bytes) -> list[tuple[int, bytes]]:
     heads: list[int] = []
     stack = [root]
     while stack:
@@ -363,8 +454,8 @@ def _header_inserts(root: tree_sitter.Node,
     return inserts
 
 
-def _repair_for_headers(root: tree_sitter.Node,
-                        data: bytes) -> tuple[tree_sitter.Node, bytes]:
+def _repair_for_headers(root: TSNodeLike,
+                        data: bytes) -> tuple[TSNodeLike, bytes]:
     # Encode invalid names for runtime validation and supply omitted "$@".
     # Repeat to expose nested headers; accept only repairs adding no errors.
     repaired, retried = data, root
@@ -372,17 +463,18 @@ def _repair_for_headers(root: tree_sitter.Node,
         for offset, text in sorted(inserts, reverse=True):
             repaired = repaired[:offset] + text + repaired[offset:]
         retried = _parse_bytes(repaired)
-    clean = retried is not root and _errors(retried) <= _errors(root)
+    clean = retried is not root and len(_errors(retried)) <= len(_errors(root))
     return (retried, repaired) if clean else (root, data)
 
 
-def _errors(root: tree_sitter.Node) -> int:
-    stack, count = [root], 0
+def _errors(root: TSNodeLike) -> set[tuple[int, int]]:
+    stack, spans = [root], set()
     while stack:
         node = stack.pop()
         stack.extend(node.children)
-        count += node.is_error or node.is_missing
-    return count
+        if node.type == "ERROR" or node.is_missing:
+            spans.add((node.start_byte, node.end_byte))
+    return spans
 
 
 def _statement_boundaries(data: bytes) -> bytes:
@@ -449,8 +541,12 @@ def parse(command: str) -> TSNodeLike:
     original = command.encode()
     source = None
     if b"<<" in original:
-        hints = heredoc_operators(TS_PARSER.parse(original).root_node)
-        documents = discover_heredocs(original, hints)
+        # The operators are read off a tree that lexes `0<<EOF` as one.
+        hinted = TS_PARSER.parse(original).root_node
+        lexed = _operator_source(original, hinted)
+        if lexed != original:
+            hinted = TS_PARSER.parse(lexed).root_node
+        documents = discover_heredocs(original, heredoc_operators(hinted))
         if documents:
             source = lower_heredocs(original, documents)
     if source is not None:

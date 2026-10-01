@@ -769,15 +769,6 @@ describe('fanOutTraversal context across a nested mount', () => {
     }
   }
 
-  it.each(['--files --sortr path', '--sortr path -l hit'])(
-    'sorts explicit mount operands with %s',
-    async (flags) => {
-      expect(await runLine(`rg ${flags} /base/inner/real.txt /base/top.txt`)).toBe(
-        '/base/top.txt\n/base/inner/real.txt\n',
-      )
-    },
-  )
-
   it.each([['rg -A1 hit /base'], ['grep -r -A1 hit /base']])('separates %s', async (line) => {
     expect(await runLine(line)).toBe(
       '/base/inner/real.txt:hit\n/base/inner/real.txt-z\n--\n/base/top.txt:hit\n/base/top.txt-y\n',

@@ -89,6 +89,8 @@ TRANSIENT_FIELDS: tuple[str, ...] = (
     "_random_last",
     "_parse_seq",
     "_parse_current",
+    "_line_open",
+    "terminal",
     "_alias_marks",
     "_alias_stack",
     "status_writer",

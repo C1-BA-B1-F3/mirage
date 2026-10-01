@@ -34,6 +34,11 @@ TO_STDERR = "&2"
 # write to it fails as one to stdin's end does.
 OPEN_FOR_READING = "<"
 
+# What `exec 3<>f` binds a descriptor to: the file opened for reading and
+# writing, `<>` then the virtual path. It starts with OPEN_FOR_READING, so
+# every reader of a descriptor reads this one too.
+OPEN_FOR_READ_WRITE = "<>"
+
 # The session fields an `exec` redirect line binds, put back as one
 # unit when a later redirect on the line fails.
 EXEC_STREAM_FIELDS = ("exec_stdout", "exec_stdout_append", "exec_stdout_input",

@@ -14,9 +14,11 @@
 
 import errno
 from collections.abc import AsyncIterator, Awaitable, Callable, Iterable
+from contextvars import ContextVar
 from dataclasses import dataclass
 
 from mirage.io.async_line_iterator import SharedInput
+from mirage.shell.console import Channel, JobConsole
 from mirage.shell.constants import FD_BOTH, FD_CLOSE
 from mirage.shell.types import Redirect, RedirectKind
 from mirage.types import PathSpec
@@ -92,9 +94,77 @@ class FileDescription:
     emit: Callable[[bytes], Awaitable[None]] | None = None
 
 
+class StreamOwner:
+    """Who a stream a level was given belongs to: a redirect level's
+    recorder, or a session, whose own line its terminal streams are."""
+
+
+@dataclass(frozen=True, eq=False)
+class Inherited:
+    """The stdout or stderr a level was given rather than opened.
+
+    A descriptor copied from it (``3>&1``, ``exec 3>&1``) keeps naming it
+    after the level rebinds its own (``3>&1 >f``), as bash's copy keeps
+    the open file description.
+    """
+    owner: StreamOwner
+    channel: Channel
+
+
+class Recorder(JobConsole, StreamOwner):
+    """What one level's command wrote, in order, for the level to route.
+
+    A chunk on a channel goes through the level's descriptor table; one
+    written to a stream another level owns stays in place on its way up
+    to that level, so it lands among the bytes written around it.
+    """
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.chunks: list[tuple[Channel | Inherited, bytes]] = []
+
+    async def emit(self, channel: Channel, data: bytes) -> None:
+        self.chunks.append((channel, data))
+
+    async def emit_to(self, stream: Inherited, data: bytes) -> None:
+        self.chunks.append((stream, data))
+
+
+# The recorder of the innermost level running a command, for a level
+# whose output is a value (a substitution's) to send another level's
+# stream bytes toward it.
+ENCLOSING: ContextVar[Recorder | None] = ContextVar("enclosing_recorder",
+                                                    default=None)
+
+
+async def deliver(sink: JobConsole | None, stream: Inherited,
+                  data: bytes) -> bool:
+    """Send bytes written to a stream another level owns toward it.
+
+    They go up through the sink, or the enclosing level's recorder when
+    the level returns its output as a value. A console that keeps no
+    streams takes them on their channel. False when there is nowhere
+    above.
+
+    Args:
+        sink (JobConsole | None): where the level writes.
+        stream (Inherited): the stream the bytes were written to.
+        data (bytes): the bytes.
+    """
+    target = sink if sink is not None else ENCLOSING.get()
+    if isinstance(target, Recorder):
+        await target.emit_to(stream, data)
+    elif target is not None:
+        await target.emit(stream.channel, data)
+    else:
+        return False
+    return True
+
+
 @dataclass(frozen=True)
 class Descriptor:
     identity: str
     append: bool = False
     source: SharedInput | None = None
     file: FileDescription | None = None
+    stream: Inherited | None = None

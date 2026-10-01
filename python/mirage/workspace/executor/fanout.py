@@ -35,7 +35,7 @@ from mirage.commands.builtin.generic.grep import filename_mode
 from mirage.commands.builtin.generic.rg import (label_flags,
                                                 walks_descendant_mounts)
 from mirage.commands.builtin.generic_bind.dispatch import run_dispatch
-from mirage.commands.config import CommandOpts, ExecContext
+from mirage.commands.config import ExecContext
 from mirage.commands.errors import (CommandTimeoutError, FindParseError,
                                     UsageError)
 from mirage.commands.spec import SPECS
@@ -560,16 +560,9 @@ async def _fan_out_traversal(
     """
     if cmd_name in DISPATCH_BUILDERS and dispatch is not None:
         try:
-            stdout, io = await run_dispatch(
-                DISPATCH_BUILDERS[cmd_name], paths, texts,
-                CommandOpts(flags=flag_kwargs,
-                            stdin=stdin,
-                            cwd=PathSpec(virtual=cwd,
-                                         directory=cwd,
-                                         vfs_path=cwd.strip("/")),
-                            ns=ns,
-                            dispatch=dispatch), dispatch)
-            stdout = await materialize(stdout)
+            stdout, io = await run_dispatch(DISPATCH_BUILDERS[cmd_name], paths,
+                                            texts, flag_kwargs, dispatch, cwd,
+                                            ns, stdin)
         except UsageError as exc:
             stdout = None
             io = IOResult(exit_code=exc.exit_code, stderr=f"{exc}\n".encode())

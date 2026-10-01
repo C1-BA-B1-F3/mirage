@@ -9,8 +9,9 @@ from mirage.shell.parse.heredoc.types import HeredocSource
 PREFIX = re.compile(rb"time(?=[ \t\r\n;|&)]|$)[ \t]*"
                     rb"(?:(-p)(?=[ \t\r\n;|&)]|$)[ \t]*)?"
                     rb"(?:--(?=[ \t\r\n;|&)]|$)[ \t]*)?")
-COMPOUND_HEADS = frozenset({b"{", b"if", b"for", b"select", b"while",
-                            b"until", b"case", b"!", b"time"})
+COMPOUND_HEADS = frozenset({
+    b"{", b"if", b"for", b"select", b"while", b"until", b"case", b"!", b"time"
+})
 STATEMENTS = frozenset({
     "command", "test_command", "arithmetic_expansion", "pipeline",
     "redirected_statement", "negated_command", "subshell",
@@ -43,7 +44,9 @@ def lower_timing(
             if negated:
                 body = node.named_children[0]
                 head = body.child_by_field_name("name")
-                if head is None or head.text not in COMPOUND_HEADS:
+                arith = data[body.start_byte:body.start_byte + 2] == b"(("
+                if not arith and (head is None
+                                  or head.text not in COMPOUND_HEADS):
                     continue
             name = node.children[0] if negated else node.child_by_field_name(
                 "name")

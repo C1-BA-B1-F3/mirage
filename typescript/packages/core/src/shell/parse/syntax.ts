@@ -161,23 +161,6 @@ function emptyCompound(node: TSNodeLike): string | null {
   return null
 }
 
-/**
- * Whether an error is the descriptor of the redirect it touches. After a
- * compound command the grammar reads `0<f` as an error `0` and an
- * undecorated redirect, where bash reads the digits touching the operator as
- * the descriptor (getRedirects claims them). Mirrors Python's
- * _descriptor_digits.
- */
-function descriptorDigits(node: TSNodeLike, error: TSNodeLike): boolean {
-  const after = error.nextSibling
-  return (
-    node.type === 'redirected_statement' &&
-    /^\d+$/.test(error.text.trim()) &&
-    after?.type === 'file_redirect' &&
-    after.startIndex === error.endIndex
-  )
-}
-
 function walkNamed(node: TSNodeLike): TSNodeLike[] {
   const out: TSNodeLike[] = [node]
   for (const child of node.namedChildren) out.push(...walkNamed(child))
@@ -265,8 +248,7 @@ export function findSyntaxError(
     if (
       child.type === 'ERROR' &&
       isStructuralError(child) &&
-      !(node.type === 'for_statement' && child.text.trim() === 'in') &&
-      !descriptorDigits(node, child)
+      !(node.type === 'for_statement' && child.text.trim() === 'in')
     ) {
       if (isRecoveredQuotedHeredocEnd(previous, child)) {
         previous = child

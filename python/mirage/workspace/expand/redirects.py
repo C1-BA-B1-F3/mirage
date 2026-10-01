@@ -61,11 +61,20 @@ async def expand_redirects(
         if r.kind in (RedirectKind.HEREDOC, RedirectKind.HERESTRING):
             body = r.target
             if r.target_node is not None and r.expand_vars:
-                body = await expand_node(r.target_node,
-                                         session,
-                                         execute_fn,
-                                         call_stack,
-                                         view=view)
+                try:
+                    body = await expand_node(r.target_node,
+                                             session,
+                                             execute_fn,
+                                             call_stack,
+                                             view=view)
+                except ExitSignal as exc:
+                    if r.kind != RedirectKind.HEREDOC:
+                        raise
+                    expanded.append(
+                        Redirect(fd=r.fd,
+                                 target=exc,
+                                 kind=RedirectKind.UNEXPANDED))
+                    continue
             elif isinstance(body, str) and r.expand_vars:
                 for var, val in visible_env(session).items():
                     body = body.replace("$" + var, val)

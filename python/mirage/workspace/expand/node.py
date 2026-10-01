@@ -21,7 +21,7 @@ from mirage.ops.types import SessionView
 from mirage.shell.arith import evaluate_arith
 from mirage.shell.backticks import split_backtick_region
 from mirage.shell.call_stack import CallStack
-from mirage.shell.errors import ArithError, ExitSignal
+from mirage.shell.errors import ArithError, BadSubstitution, ExitSignal, named
 from mirage.shell.escapes import (decode_ansi_c, unescape_dquoted,
                                   unescape_unquoted)
 from mirage.shell.helpers import byte_offset, get_text, quoted_parts
@@ -168,8 +168,29 @@ async def expand_arith(
     ``$``-expansions substitute textually (bash performs expansions
     before arithmetic evaluation), while bare variable names stay as
     names so the evaluator can resolve and assign them
-    (``$(( y = 3 ))`` needs ``y``, not its value).
+    (``$(( y = 3 ))`` needs ``y``, not its value). A bad substitution
+    names the expression as written.
     """
+    return await named(
+        _arith_inside(ts_node),
+        _arith_text(ts_node, session, execute_fn, call_stack, view))
+
+
+def _arith_inside(ts_node: TSNodeLike) -> str:
+    text = get_text(ts_node).lstrip()
+    for opener, closer in (("$((", "))"), ("((", "))"), ("$[", "]")):
+        if text.startswith(opener) and text.endswith(closer):
+            return text[len(opener):-len(closer)]
+    return text
+
+
+async def _arith_text(
+    ts_node: TSNodeLike,
+    session: SessionState,
+    execute_fn: Callable[..., Any],
+    call_stack: CallStack | None,
+    view: SessionView | None,
+) -> str:
     parts = []
     raw = ts_node.text or b""
     end = 0
@@ -182,11 +203,8 @@ async def expand_arith(
         if child.type in (NT.BINARY_EXPRESSION, NT.UNARY_EXPRESSION,
                           NT.PARENTHESIZED_EXPRESSION, NT.TERNARY_EXPRESSION,
                           NT.POSTFIX_EXPRESSION):
-            parts.append(await expand_arith(child,
-                                            session,
-                                            execute_fn,
-                                            call_stack,
-                                            view=view))
+            parts.append(await _arith_text(child, session, execute_fn,
+                                           call_stack, view))
         elif child.type == "subscript":
             parts.append(await _arith_subscript(child, session, execute_fn,
                                                 call_stack, view))
@@ -339,6 +357,21 @@ async def expand_chunks(
             the expansions that write; None outside a workspace.
         quoted (bool): whether the node sits inside double quotes.
     """
+    try:
+        return await _node_chunks(ts_node, session, execute_fn, call_stack,
+                                  view, quoted)
+    except BadSubstitution as exc:
+        raise exc.within(get_text(ts_node).lstrip())
+
+
+async def _node_chunks(
+    ts_node: TSNodeLike,
+    session: SessionState,
+    execute_fn: Callable[..., Any],
+    call_stack: CallStack | None,
+    view: SessionView | None,
+    quoted: bool,
+) -> list[Chunk]:
     ntype = ts_node.type
 
     if ntype == NT.WORD:
@@ -468,6 +501,9 @@ async def _string_chunks(node: TSNodeLike, session: SessionState,
     empty parameter is one empty word. Only the element count decides
     that, never the rendered text.
 
+    A bad substitution names what the quotes enclose, or the whole
+    document of a heredoc the string stands for.
+
     Args:
         node (TSNodeLike): the string node.
         session (SessionState): shell session state.
@@ -478,16 +514,21 @@ async def _string_chunks(node: TSNodeLike, session: SessionState,
     chunks: list[Chunk] = [Piece("")]
     splat = False
     yielded = False
+    document = getattr(node.parent, "heredoc", None)
+    inside = (document.body.decode()
+              if document is not None else get_text(node)[1:-1])
     for part in quoted_parts(node):
         if isinstance(part, str):
             chunks.append(Piece(mark_globs(part)))
             continue
-        pieces = await expand_chunks(part,
-                                     session,
-                                     execute_fn,
-                                     call_stack,
-                                     view=view,
-                                     quoted=True)
+        pieces = await named(
+            inside,
+            expand_chunks(part,
+                          session,
+                          execute_fn,
+                          call_stack,
+                          view=view,
+                          quoted=True))
         if is_at_splat(part):
             splat = True
             yielded = yielded or bool(pieces)

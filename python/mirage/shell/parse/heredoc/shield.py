@@ -165,20 +165,3 @@ def protected_source(data: bytes, root: TSNodeLike) -> bytes | None:
                 and data[line + 1] in ESCAPE_PARTNERS):
             out[line + 1] = filler
     return bytes(out) if changed else None
-
-
-def same_shape(left: TSNodeLike, right: TSNodeLike) -> bool:
-    """Whether two trees agree on every node's type and byte span.
-
-    Args:
-        left (TSNodeLike): one tree's root.
-        right (TSNodeLike): the other tree's root.
-    """
-    stack = [(left, right)]
-    while stack:
-        a, b = stack.pop()
-        if (a.type != b.type or a.start_byte != b.start_byte
-                or a.end_byte != b.end_byte or a.child_count != b.child_count):
-            return False
-        stack.extend(zip(a.children, b.children))
-    return True

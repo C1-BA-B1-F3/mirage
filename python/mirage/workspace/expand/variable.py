@@ -23,10 +23,11 @@ from mirage.shell.array import (ShellArray, array_extent, array_get, array_has,
                                 array_indices, array_slice, array_values)
 from mirage.shell.call_stack import CallStack
 from mirage.shell.constants import RANDOM
-from mirage.shell.errors import ArithError, ExitSignal, UnboundVariable
+from mirage.shell.errors import (ArithError, BadSubstitution, ExitSignal,
+                                 UnboundVariable, named)
 from mirage.shell.escapes import decode_ansi_c
 from mirage.shell.helpers import get_text, source_parts
-from mirage.shell.parameter import scan_parameter
+from mirage.shell.parameter import bad_substitution, scan_parameter
 from mirage.shell.types import ArithWrite
 from mirage.shell.types import NodeType as NT
 from mirage.shell.types import TSNodeLike
@@ -696,13 +697,14 @@ async def _nested_string(node: TSNodeLike,
         expand_child (ExpandChild): nested-node expander.
     """
     out: list[Chunk] = [Piece("")]
+    inside = get_text(node)[1:-1]
     for part in source_parts(node):
         if isinstance(part, str) or part.type == NT.STRING_CONTENT:
             text = part if isinstance(part, str) else get_text(part)
         elif part.type == NT.DQUOTE:
             text = get_text(part)[:-1]
         else:
-            out.extend(await expand_child(part, True))
+            out.extend(await named(inside, expand_child(part, True)))
             continue
         out.append(Piece(mark_globs(_unescape_all(text))))
     return out
@@ -940,8 +942,19 @@ async def _operator_word(p: _BraceParse, expand_child: ExpandChild,
     """
     if not p.groups:
         return []
-    return await _word_chunks(p.groups[0], expand_child, quoted, session,
-                              call_stack)
+    return await named(
+        _source(p.groups[0]),
+        _word_chunks(p.groups[0], expand_child, quoted, session, call_stack))
+
+
+def _source(parts: tuple[str | TSNodeLike, ...]) -> str:
+    """An operand's text as written, the word a bad substitution names.
+
+    Args:
+        parts (tuple[str | TSNodeLike, ...]): the operand's source parts.
+    """
+    return "".join(part if isinstance(part, str) else get_text(part)
+                   for part in parts)
 
 
 def _word_result(chunks: list[Chunk], quoted: bool) -> list[Chunk]:
@@ -1052,6 +1065,9 @@ async def _expand_braces(node: TSNodeLike, session: SessionState,
                          call_stack: CallStack | None,
                          expand_child: ExpandChild, view: SessionView | None,
                          operand: _ArithOperand, quoted: bool) -> list[Chunk]:
+    text = get_text(node).lstrip()
+    if bad_substitution(text):
+        raise BadSubstitution(text)
     p = _parse_braces(node)
     env = visible_env(session)
     arrays = visible_arrays(session)
@@ -1069,12 +1085,15 @@ async def _expand_braces(node: TSNodeLike, session: SessionState,
     if p.op != ":" and p.op not in _LAZY_OPS:
         for gi, group in enumerate(p.groups):
             if gi == 0 and p.op in _PATTERN_OPS:
-                groups.append(await _pattern_group(group, expand_child,
-                                                   session, call_stack))
+                groups.append(await named(
+                    _source(group),
+                    _pattern_group(group, expand_child, session, call_stack)))
             else:
                 groups.append(
-                    chunks_text(await _word_chunks(group, expand_child, False,
-                                                   session, call_stack)))
+                    chunks_text(await named(
+                        _source(group),
+                        _word_chunks(group, expand_child, False, session,
+                                     call_stack))))
 
     splat = _splat_source(p, session, call_stack, env, arrays, assocs)
     if splat is not None:
@@ -1096,7 +1115,7 @@ async def _expand_braces(node: TSNodeLike, session: SessionState,
         # (GNU warns "bad array subscript" on stderr and expands
         # empty; expansion has no warning channel, so the empty
         # answer stands alone).
-        key = await _expand_subscript_key(p, expand_child)
+        key = await named(p.subscript, _expand_subscript_key(p, expand_child))
         val = amap.get(key, "")
         var_in_env = key in amap
         write_key = key
@@ -1108,7 +1127,8 @@ async def _expand_braces(node: TSNodeLike, session: SessionState,
             arr = [env[p.var_name]] if p.var_name in env else []
         # Expanded first (`${a[$k]}` resolves $k, `${a[i+1]}` stays
         # arithmetic), then evaluated as an index.
-        sub_text = await _expand_subscript_key(p, expand_child)
+        sub_text = await named(p.subscript,
+                               _expand_subscript_key(p, expand_child))
         idx = await _expansion_index(session, view, sub_text)
         if idx < 0:
             idx += array_extent(arr)

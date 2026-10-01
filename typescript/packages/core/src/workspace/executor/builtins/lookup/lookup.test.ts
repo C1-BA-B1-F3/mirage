@@ -20,6 +20,9 @@ import { CLIRegistry } from '../../../cli/registry.ts'
 import type { MountRegistry } from '../../../mount/registry.ts'
 import { SessionState } from '../../../session/session.ts'
 import { handleType, handleWhich } from './lookup.ts'
+import { getFunctionBody } from '../../../../shell/helpers.ts'
+import type { TSNodeLike } from '../../../../shell/types.ts'
+import { getTestParser } from '../../../fixtures/workspace_fixture.ts'
 
 // Mirrors python/tests/workspace/executor/builtins/lookup/test_handle.py.
 
@@ -42,6 +45,12 @@ function makeRegistry(withCli = false): MountRegistry {
     mountForCommand: (name: string): unknown => (MOUNT_COMMANDS.has(name) ? {} : null),
     clis,
   } as unknown as MountRegistry
+}
+
+async function parsedBody(definition: string): Promise<TSNodeLike[] | null> {
+  const parser = await getTestParser()
+  const node = parser.parse(definition).namedChildren[0]
+  return node === undefined ? null : getFunctionBody(node)
 }
 
 function makeSession(): SessionState {
@@ -72,9 +81,11 @@ describe('handleType', () => {
 
   it('-a prints the function under a keyword', async () => {
     const session = makeSession()
-    session.functions.then = 'then() { :; }'
+    session.functions.then = await parsedBody('then() { echo x; }')
     const [out] = handleType(['-a', 'then'], session, makeRegistry())
-    expect(await body(out)).toBe('then is a shell keyword\nthen is a function\n')
+    expect(await body(out)).toBe(
+      'then is a shell keyword\nthen is a function\nfunction then () \n{ \n    echo x\n}\n',
+    )
   })
 
   it('reports an installed CLI by its file', async () => {
@@ -119,9 +130,11 @@ describe('handleType', () => {
 
   it('-a prints every layer holding the name', async () => {
     const session = makeSession()
-    session.functions.linear = 'linear() { :; }'
+    session.functions.linear = await parsedBody('linear() { :; }')
     const [out] = handleType(['-a', 'linear'], session, makeRegistry(true))
-    expect(await body(out)).toBe('linear is a function\nlinear is /usr/bin/linear\n')
+    expect(await body(out)).toBe(
+      'linear is a function\nlinear () \n{ \n    :\n}\nlinear is /usr/bin/linear\n',
+    )
     const [words] = handleType(['-at', 'linear'], session, makeRegistry(true))
     expect(await body(words)).toBe('function\nfile\n')
     const [echo] = handleType(['-a', 'echo'], makeSession(), makeRegistry())

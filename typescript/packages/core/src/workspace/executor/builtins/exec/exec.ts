@@ -20,9 +20,13 @@ import { FD_BOTH, FD_CLOSE, FD_STDERR, FD_STDIN, FD_STDOUT } from '../../../../s
 import {
   FileDescription,
   FileInput,
+  Inherited,
   badDescriptorLine,
   unsupportedDescriptor,
 } from '../../../../shell/descriptors.ts'
+import { Channel } from '../../../../shell/console/index.ts'
+import type { Written } from '../../statement.ts'
+import { ExitSignal } from '../../../../shell/errors.ts'
 import { type Redirect, RedirectKind } from '../../../../shell/types.ts'
 import { fsStrerror, isFsError, isMissingPath } from '../../../../utils/errors.ts'
 import { PathSpec } from '../../../../types.ts'
@@ -33,7 +37,14 @@ import { ExecutionNode } from '../../../types.ts'
 import { createFile, writeDescription } from '../../create.ts'
 import { toScope } from '../scope.ts'
 import type { EXEC_STREAM_FIELDS } from './constants.ts'
-import { CLOSED, OPEN_FOR_READING, TO_STDERR, TO_STDIN, TO_STDOUT } from './constants.ts'
+import {
+  CLOSED,
+  OPEN_FOR_READ_WRITE,
+  OPEN_FOR_READING,
+  TO_STDERR,
+  TO_STDIN,
+  TO_STDOUT,
+} from './constants.ts'
 import type { BuiltinCall, Result } from '../types.ts'
 import { concat } from '../../../../io/cachable_iterator.ts'
 
@@ -127,12 +138,14 @@ function bind(
   append: boolean,
   input: SharedInput | null = null,
   file: FileDescription | null = null,
+  stream: Inherited | null = null,
 ): void {
   session.descriptors.set(fd, {
     identity: id,
     append,
     source: input,
     file: input instanceof FileInput ? input.description : file,
+    stream,
   })
   if (fd > FD_STDERR) return
   if (fd === FD_STDIN) {
@@ -170,7 +183,7 @@ async function route(
     await writeDescription(dispatch, session, descriptor.file, data)
     return [null, null, false]
   }
-  if (target.startsWith('<>')) {
+  if (target.startsWith(OPEN_FOR_READ_WRITE)) {
     const source = own === TO_STDOUT ? session.execStdoutInput : session.execStderrInput
     if (source instanceof FileInput) {
       await writeDescription(dispatch, session, source.description, data)
@@ -275,6 +288,9 @@ async function installDescriptor(
     const word = target instanceof PathSpec ? target.rawPath : String(target)
     return new TextEncoder().encode(`${word}: ambiguous redirect\n`)
   }
+  if (redirect.kind === RedirectKind.UNEXPANDED && target instanceof ExitSignal) {
+    return target.stderr
+  }
   if (redirect.kind === RedirectKind.HEREDOC || redirect.kind === RedirectKind.HERESTRING) {
     const data = String(target) + (redirect.kind === RedirectKind.HERESTRING ? '\n' : '')
     bind(session, fd, OPEN_FOR_READING, false, new SharedInput(new TextEncoder().encode(data)))
@@ -285,14 +301,19 @@ async function installDescriptor(
     const [id, append] =
       target === FD_CLOSE ? ([CLOSED, false] as const) : identity(session, target)
     if (id === CLOSED && target !== FD_CLOSE) return badDescriptorLine(target)
-    bind(
-      session,
-      fd,
-      id,
-      append,
-      readEnd(session, target, stdin),
-      session.descriptors.get(target)?.file ?? null,
+    // Copies share the open description, including its offset, and one of
+    // the terminal's streams stays that stream when the shell later rebinds
+    // its own (`exec 3>&1; exec >f`).
+    const original = session.descriptors.get(target)
+    let stream = original?.stream ?? null
+    if (
+      stream === null &&
+      fd > FD_STDERR &&
+      (original?.file ?? null) === null &&
+      (id === TO_STDOUT || id === TO_STDERR)
     )
+      stream = new Inherited(session.terminal, id === TO_STDOUT ? Channel.STDOUT : Channel.STDERR)
+    bind(session, fd, id, append, readEnd(session, target, stdin), original?.file ?? null, stream)
     return null
   }
   const scope = scopeOf(target)
@@ -305,13 +326,13 @@ async function installDescriptor(
         if (redirect.kind !== RedirectKind.READWRITE || !isMissingPath(error)) throw error
         data = new Uint8Array()
       }
-      const bytes = (await materialize(data)) ?? new Uint8Array()
+      const bytes = await materialize(data)
       if (redirect.kind === RedirectKind.READWRITE) {
         await createFile(dispatch, session, scope, new Uint8Array(), true)
         const file = new FileDescription(scope)
         file.opened = true
         file.source = new FileInput(file, bytes)
-        bind(session, fd, '<>' + scope.virtual, false, file.source)
+        bind(session, fd, OPEN_FOR_READ_WRITE + scope.virtual, false, file.source)
       } else bind(session, fd, OPEN_FOR_READING + scope.virtual, false, new SharedInput(bytes))
     } else {
       await openTarget(dispatch, session, scope, redirect.append)
@@ -346,18 +367,6 @@ async function openTarget(
 }
 
 /**
- * Send one statement's output where the shell's `exec` bindings point. A
- * stream bound to a file is appended to it (the first write to each
- * target having truncated it at `exec` time), one bound to the other
- * terminal stream crosses over (`exec 2>&1` puts stderr on stdout), a
- * closed one is dropped, and one bound to stdin fails with bash's `write
- * error: Bad file descriptor`, which is reported on stderr through
- * stderr's own binding and makes the statement's status 1. `command` is
- * the statement's recorded line; its first word names the writer in a
- * write error. Returns the stdout that should still bubble up (null once
- * nothing is left for the terminal).
- */
-/**
  * Whether a statement sends its own stdout to stderr (`>&2`): what tells
  * a writer's failed write from a lost diagnostic under an unwritable
  * stderr. bash's `echo hi >&2` reports 1 when the write fails, while a
@@ -369,18 +378,35 @@ export function stdoutToStderr(node: TSNodeLike): boolean {
   return redirects.some((r) => r.target === FD_STDERR && (r.fd === FD_STDOUT || r.fd === FD_BOTH))
 }
 
+/**
+ * Send one statement's output where the shell's `exec` bindings point. A
+ * stream bound to a file is appended to it (the first write to each
+ * target having truncated it at `exec` time), one bound to the other
+ * terminal stream crosses over (`exec 2>&1` puts stderr on stdout), a
+ * closed one is dropped, and one bound to stdin fails with bash's `write
+ * error: Bad file descriptor`, which is reported on stderr through
+ * stderr's own binding and makes the statement's status 1. `command` is
+ * the statement's recorded line; its first word names the writer in a
+ * write error. `written` is the statement's output in order; what went to
+ * the terminal through a copy keeps its place. Returns what is left for the
+ * terminal: the bytes a copy took there first, then what the bindings send
+ * there. Mirrors Python's divert_statement.
+ */
 export async function divertStatement(
   dispatch: DispatchFn,
   session: SessionState,
-  stdout: Uint8Array | null,
+  written: readonly Written[],
   io: IOResult,
   command: string,
   stdoutDiverted = false,
-): Promise<Uint8Array | null> {
+): Promise<Written[]> {
+  const plain = (channel: Channel): Uint8Array =>
+    concat(written.filter(([c, , kept]) => c === channel && !kept).map(([, d]) => d))
+  const stdout = plain(Channel.STDOUT)
   const outParts: Uint8Array[] = []
   const errParts: Uint8Array[] = []
   let failed = false
-  if (stdout !== null && stdout.byteLength > 0) {
+  if (stdout.byteLength > 0) {
     const [out, err, unwritable] = await route(
       dispatch,
       session,
@@ -392,7 +418,7 @@ export async function divertStatement(
     if (err !== null) errParts.push(err)
     failed = unwritable
   }
-  let stderr = await materialize(io.stderr)
+  let stderr = plain(Channel.STDERR)
   if (failed) {
     const first = command.trim().split(/\s+/)[0]
     const name = first === undefined || first === '' ? 'bash' : first
@@ -420,8 +446,11 @@ export async function divertStatement(
     // the work.
     if (unwritable && stdoutDiverted && io.exitCode === 0) io.exitCode = 1
   }
-  io.stderr = errParts.length > 0 ? concat(errParts) : null
-  return outParts.length > 0 ? concat(outParts) : null
+  return [
+    ...written.filter(([, , kept]) => kept),
+    ...outParts.map((data): Written => [Channel.STDOUT, data, false]),
+    ...errParts.map((data): Written => [Channel.STDERR, data, false]),
+  ]
 }
 
 async function appendTo(

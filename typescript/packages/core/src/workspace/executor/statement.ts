@@ -14,12 +14,20 @@
 
 import { readFailExitCode } from '../../commands/spec/usage.ts'
 import type { SharedInput } from '../../io/async_line_iterator.ts'
-import type { ByteSource, IOResult } from '../../io/types.ts'
-import { materialize } from '../../io/types.ts'
+import type { ByteSource } from '../../io/types.ts'
+import { IOResult, materialize } from '../../io/types.ts'
 import { formatFsError } from '../../utils/errors.ts'
 import type { ExecutionNode } from '../types.ts'
 import { applyBarrier, BarrierPolicy } from '../../shell/barrier.ts'
-import { unreadableStdin } from '../../shell/descriptors.ts'
+import {
+  Inherited,
+  type Recorder,
+  type StreamOwner,
+  deliver,
+  unreadableStdin,
+} from '../../shell/descriptors.ts'
+import { Channel, type JobConsole } from '../../shell/console/index.ts'
+import { concat } from '../../io/cachable_iterator.ts'
 import { pipelineTransparent } from '../../shell/node_kind.ts'
 import type { TSNodeLike } from '../../shell/types.ts'
 import type { SessionState, StatusWriter } from '../session/session.ts'
@@ -226,4 +234,59 @@ export function statementStdin(
 export function assignmentStatus(session: SessionState, seqBefore: number): number {
   if (session.cmdsubSeq !== seqBefore) return session.cmdsubStatus
   return 0
+}
+
+/**
+ * One piece of what a statement wrote, in order: its channel, its bytes, and
+ * whether it went to the terminal through a copy, which an `exec` diversion of
+ * the shell's own output leaves where it is. Mirrors Python's Written.
+ */
+export type Written = readonly [Channel, Uint8Array, boolean]
+
+/**
+ * What a statement wrote that stays with the shell running it. Bytes written
+ * to the shell's terminal through a copy (`exec 3>&1`, whose owner is `own`)
+ * stay, flagged; bytes written to an enclosing level's stream go on there.
+ * What the statement returned rather than wrote comes last, its stderr taken
+ * off `io`. Mirrors Python's statement_output.
+ */
+export async function statementOutput(
+  recorder: Recorder,
+  stdout: ByteSource | null,
+  io: IOResult,
+  own: StreamOwner | null,
+  sink: JobConsole | null,
+): Promise<Written[]> {
+  const written: Written[] = []
+  for (const [key, data] of recorder.chunks) {
+    if (!(key instanceof Inherited)) written.push([key, data, false])
+    else if (key.owner === own || !(await deliver(sink, key, data)))
+      written.push([key.channel, data, true])
+  }
+  const out = await materialize(stdout)
+  if (out.byteLength > 0) written.push([Channel.STDOUT, out, false])
+  const err = await materialize(io.stderr)
+  io.stderr = null
+  if (err.byteLength > 0) written.push([Channel.STDERR, err, false])
+  return written
+}
+
+/**
+ * Put a statement's output where its shell's goes: the sink, in order, or the
+ * stdout and stderr the shell returns. Mirrors Python's land.
+ */
+export async function land(
+  written: readonly Written[],
+  sink: JobConsole | null,
+  allStdout: (ByteSource | null)[],
+  mergedIo: IOResult,
+): Promise<IOResult> {
+  if (sink !== null) {
+    for (const [channel, data] of written) await sink.emit(channel, data)
+    return mergedIo
+  }
+  const stdout = concat(written.filter(([c]) => c === Channel.STDOUT).map(([, d]) => d))
+  if (stdout.byteLength > 0) allStdout.push(stdout)
+  const stderr = concat(written.filter(([c]) => c === Channel.STDERR).map(([, d]) => d))
+  return stderr.byteLength > 0 ? mergedIo.merge(new IOResult({ stderr })) : mergedIo
 }

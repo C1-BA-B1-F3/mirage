@@ -1,4 +1,4 @@
-import type { Descriptor } from '../../shell/descriptors.ts'
+import type { Descriptor, StreamOwner } from '../../shell/descriptors.ts'
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -491,6 +491,13 @@ export class SessionState {
   aliasStack: string[] = []
   parseSeq = 0
   parseCurrent = 0
+  // The owner of this session's terminal streams, which an `exec` copy of
+  // one names (`exec 3>&1`), and whether a line of the session is running,
+  // whose outermost program routes what was written to them. Each fork gets
+  // its own: a child shell writing to its parent's terminal is writing to a
+  // stream it did not open. Mirrors Python's terminal and _line_open.
+  readonly terminal: StreamOwner = Symbol('terminal')
+  lineOpen = false
   // File-creation mask. bash's default for a fresh shell.
   umask = 0o022
   // `exec` redirect-only state: where the shell's own stdout, stderr and

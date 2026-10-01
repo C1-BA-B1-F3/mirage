@@ -61,11 +61,11 @@
         "gdrive-folder",
         "box"
       ],
-      "command": "for i in 1 2; do for j in a b; do echo $i$j; break 2; done; done",
+      "command": "for i in 1 2; do for j in a b; do echo $i$j; break 2; done; done; select s in p q; do while :; do echo s$s; break 2; done; done <<< 2; echo rc=$?",
       "expect": {
         "exit": 0,
-        "stdout": "1a\n",
-        "stderr": ""
+        "stdout": "1a\nsq\nrc=0\n",
+        "stderr": "1) p\n2) q\n#? "
       }
     },
     {

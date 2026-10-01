@@ -22,14 +22,19 @@ import { encodeText } from '../../shell/bytes.ts'
 import type { CallStack } from '../../shell/call_stack.ts'
 import { FD_BOTH, FD_CLOSE, FD_STDERR, FD_STDIN, FD_STDOUT } from '../../shell/constants.ts'
 import {
+  ENCLOSING,
   FileDescription,
   FileInput,
+  Inherited,
+  Recorder,
   type Descriptor,
   badDescriptorLine,
+  deliver,
   unreadableStdin,
   unsupportedDescriptor,
 } from '../../shell/descriptors.ts'
 import { getText } from '../../shell/helpers.ts'
+import { ExitSignal } from '../../shell/errors.ts'
 import { type Redirect, RedirectKind } from '../../shell/types.ts'
 import { FileStat, FileType, PathSpec } from '../../types.ts'
 import type { TSNodeLike } from '../../shell/types.ts'
@@ -39,6 +44,7 @@ import type { DispatchFn } from '../../runtime/types.ts'
 import { writeDescription } from './create.ts'
 import {
   CLOSED as EXEC_CLOSED,
+  OPEN_FOR_READ_WRITE,
   OPEN_FOR_READING,
   TO_STDERR as EXEC_TO_STDERR,
   TO_STDIN as EXEC_TO_STDIN,
@@ -46,7 +52,8 @@ import {
 } from './builtins/exec/constants.ts'
 import { drained, type ExecuteNodeFn, pump } from './jobs.ts'
 import { carried, isUnwinding, type Unwinding } from './control.ts'
-import { Channel, JobConsole } from '../../shell/console/index.ts'
+import type { JobConsole } from '../../shell/console/index.ts'
+import { Channel } from '../../shell/console/index.ts'
 import { concat } from '../../io/cachable_iterator.ts'
 
 type Result = [ByteSource | null, IOResult, ExecutionNode]
@@ -57,7 +64,7 @@ const TO_STDERR = Symbol('stderr')
 // command whose stdout was closed reports the write failure the way GNU
 // echo does.
 const CLOSED = Symbol('closed')
-type FdDest = typeof TO_STDOUT | typeof TO_STDERR | typeof CLOSED | FileDescription
+type FdDest = typeof TO_STDOUT | typeof TO_STDERR | typeof CLOSED | FileDescription | Inherited
 
 /** Ordered descriptor bindings for one command, restored after execution.
  * Output opens remain deferred until admission completes so a refused command
@@ -117,6 +124,9 @@ export async function handleRedirect(
     if (r.kind === RedirectKind.AMBIGUOUS) {
       const word = r.target instanceof PathSpec ? r.target.rawPath : String(r.target)
       return shellFailure(encodeText(`${word}: ambiguous redirect\n`))
+    }
+    if (r.kind === RedirectKind.UNEXPANDED && r.target instanceof ExitSignal) {
+      return shellFailure(r.target.stderr, r.target.exitCode)
     }
     if (typeof r.target === 'number') {
       if (r.target === FD_CLOSE) {
@@ -196,7 +206,7 @@ export async function handleRedirect(
   }
   const refusal = await openRefusal(dispatch, session, redirects)
   if (refusal !== null) return refusal
-  const recorder = new JobConsole()
+  const recorder = new Recorder()
   for (const file of files) {
     if (file.source !== null) continue
     for (const [fd, channel] of [
@@ -218,7 +228,10 @@ export async function handleRedirect(
     ...saved,
     ...[...outputs]
       .filter(([fd]) => fd > 2 || claimed.has(fd))
-      .map(([fd, output]) => [fd, describe(output, inputs.get(fd) ?? null)] as const),
+      .map(
+        ([fd, output]) =>
+          [fd, describe(output, inputs.get(fd) ?? null, fd > 2 ? recorder : null)] as const,
+      ),
   ])
   const targets = redirects
     .filter(
@@ -237,13 +250,15 @@ export async function handleRedirect(
     } else {
       const [, execIo, execNode] = await drained(
         recorder,
-        ...(await runWithRedirectPaths(command, targets, () =>
-          executeNode(
-            command,
-            session,
-            given === UNREADABLE ? unreadableStdin() : given,
-            callStack,
-            { sink: recorder },
+        ...(await ENCLOSING.run(recorder, () =>
+          runWithRedirectPaths(command, targets, () =>
+            executeNode(
+              command,
+              session,
+              given === UNREADABLE ? unreadableStdin() : given,
+              callStack,
+              { sink: recorder },
+            ),
           ),
         )),
       )
@@ -262,8 +277,7 @@ export async function handleRedirect(
       else session.descriptors.delete(fd)
     }
   }
-  const [recorded] = await recorder.readFrom(0)
-  const chunks: [Channel, Uint8Array][] = recorded.map((c) => [c.channel, c.data])
+  const chunks = recorder.chunks
   if (refused) {
     outputs.clear()
     outputs.set(0, CLOSED)
@@ -280,7 +294,12 @@ export async function handleRedirect(
     chunks.push([Channel.STDERR, closedWriteLine(command)])
     io.exitCode = 1
   }
-  const routed: [Channel, Uint8Array][] = []
+  const dest = (key: Channel | Inherited): FdDest | undefined => {
+    if (!(key instanceof Inherited)) return outputs.get(key === Channel.STDOUT ? 1 : 2)
+    if (key.owner !== recorder.owner) return key
+    return key.channel === Channel.STDOUT ? TO_STDOUT : TO_STDERR
+  }
+  const routed: [Channel | Inherited, Uint8Array][] = []
   const writeFiles = async () => {
     const consumed = new Set<FileDescription>()
     let failedScope: PathSpec | null = null
@@ -291,11 +310,7 @@ export async function handleRedirect(
           const unique =
             files.filter((other) => other.scope.virtual === file.scope.virtual).length === 1
           const data = unique
-            ? concat(
-                chunks
-                  .filter(([channel]) => outputs.get(channel === Channel.STDOUT ? 1 : 2) === file)
-                  .map(([, data]) => data),
-              )
+            ? concat(chunks.filter(([key]) => dest(key) === file).map(([, data]) => data))
             : new Uint8Array()
           await writeDescription(dispatch, session, file, data)
           if (unique) {
@@ -303,14 +318,15 @@ export async function handleRedirect(
             if (data.byteLength > 0) io.writes[file.scope.virtual] = data
           }
         }
-      for (const [channel, data] of chunks) {
-        const dest = outputs.get(channel === Channel.STDOUT ? 1 : 2)
-        if (dest === TO_STDOUT) routed.push([Channel.STDOUT, data])
-        else if (dest === TO_STDERR) routed.push([Channel.STDERR, data])
-        else if (dest instanceof FileDescription && !consumed.has(dest)) {
-          failedScope = dest.scope
-          await writeDescription(dispatch, session, dest, data)
-          io.writes[dest.scope.virtual] = data
+      for (const [key, data] of chunks) {
+        const target = dest(key)
+        if (target === TO_STDOUT) routed.push([Channel.STDOUT, data])
+        else if (target === TO_STDERR) routed.push([Channel.STDERR, data])
+        else if (target instanceof Inherited) routed.push([target, data])
+        else if (target instanceof FileDescription && !consumed.has(target)) {
+          failedScope = target.scope
+          await writeDescription(dispatch, session, target, data)
+          io.writes[target.scope.virtual] = data
         }
       }
     } catch (error) {
@@ -323,10 +339,17 @@ export async function handleRedirect(
   else await runWithRedirectPaths(command, targets, writeFiles)
   let stdout: Uint8Array | null = null
   io.stderr = null
-  if (sink !== undefined) for (const [channel, data] of routed) await sink.emit(channel, data)
+  const kept: [Channel, Uint8Array][] = []
+  for (const [key, data] of routed) {
+    if (key instanceof Inherited) {
+      if (!(await deliver(sink ?? null, key, data))) kept.push([key.channel, data])
+    } else if (sink !== undefined) await sink.emit(key, data)
+    else kept.push([key, data])
+  }
+  if (sink !== undefined) for (const [channel, data] of kept) await sink.emit(channel, data)
   else {
     const joined = (channel: Channel): Uint8Array | null => {
-      const data = concat(routed.filter(([c]) => c === channel).map(([, d]) => d))
+      const data = concat(kept.filter(([c]) => c === channel).map(([, d]) => d))
       return data.byteLength === 0 ? null : data
     }
     stdout = joined(Channel.STDOUT)
@@ -337,6 +360,7 @@ export async function handleRedirect(
 }
 
 function descriptorOutput(descriptor: Descriptor): FdDest {
+  if (descriptor.stream != null) return descriptor.stream
   if (descriptor.file !== null) return descriptor.file
   if (descriptor.identity === EXEC_TO_STDOUT) return TO_STDOUT
   if (descriptor.identity === EXEC_TO_STDERR) return TO_STDERR
@@ -348,11 +372,33 @@ function descriptorOutput(descriptor: Descriptor): FdDest {
   return CLOSED
 }
 
-function describe(output: FdDest, source: Input): Descriptor {
+/**
+ * The binding a descriptor holds for the command a level runs. A copy of the
+ * level's own stdout or stderr (`3>&1`) names it through `owner`, the level,
+ * so it keeps reaching that stream when the command rebinds its own (`>f`);
+ * fds 1 and 2 stay the command's. Mirrors Python's _describe.
+ */
+function describe(output: FdDest, source: Input, owner: Recorder | null): Descriptor {
   const input = source instanceof SharedInput ? source : null
+  if (output instanceof Inherited)
+    return {
+      identity: output.channel === Channel.STDOUT ? EXEC_TO_STDOUT : EXEC_TO_STDERR,
+      append: false,
+      source: null,
+      file: null,
+      stream: output,
+    }
+  if (owner !== null && (output === TO_STDOUT || output === TO_STDERR))
+    return {
+      identity: output === TO_STDOUT ? EXEC_TO_STDOUT : EXEC_TO_STDERR,
+      append: false,
+      source: null,
+      file: null,
+      stream: new Inherited(owner.owner, output === TO_STDOUT ? Channel.STDOUT : Channel.STDERR),
+    }
   if (output instanceof FileDescription)
     return {
-      identity: (source instanceof FileInput ? '<>' : '') + output.scope.virtual,
+      identity: (source instanceof FileInput ? OPEN_FOR_READ_WRITE : '') + output.scope.virtual,
       append: output.append,
       source: input,
       file: output,
@@ -414,9 +460,9 @@ function redirectFailure(scope: PathSpec, err: unknown): Result {
  * failure, so this replaces the whole result. Returning an IOResult rather
  * than rethrowing is what keeps the rest of the line alive.
  */
-function shellFailure(line: Uint8Array): Result {
-  const io = new IOResult({ exitCode: 1, stderr: line })
-  return [null, io, new ExecutionNode({ command: 'redirect', exitCode: 1 })]
+function shellFailure(line: Uint8Array, status = 1): Result {
+  const io = new IOResult({ exitCode: status, stderr: line })
+  return [null, io, new ExecutionNode({ command: 'redirect', exitCode: status })]
 }
 
 /** Whether a redirect target is a character device (`/dev/null`). */
@@ -521,9 +567,7 @@ async function openRefusal(
       const earlier = await applyPendingOpens(dispatch, pending)
       if (earlier !== null) return earlier
       const detail = isDir ? 'Is a directory' : 'cannot overwrite existing file'
-      const err = new TextEncoder().encode(`${scope.rawPath}: ${detail}\n`)
-      const io = new IOResult({ exitCode: 1, stderr: err })
-      return [null, io, new ExecutionNode({ command: 'redirect', exitCode: 1 })]
+      return shellFailure(new TextEncoder().encode(`${scope.rawPath}: ${detail}\n`))
     }
     // This open succeeds, so the target exists for every redirect after
     // it, and a truncating one leaves it empty to be found. Without the

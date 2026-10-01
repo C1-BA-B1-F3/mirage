@@ -14,7 +14,7 @@
 
 import { describe, expect, it } from 'vitest'
 
-import { scanParameter } from './parameter.ts'
+import { badSubstitution, scanParameter } from './parameter.ts'
 
 describe('scanParameter', () => {
   const cases: [string, string, string][] = [
@@ -74,5 +74,65 @@ describe('scanParameter', () => {
     'name',
   ])('leaves nonreferences and complex expansions %s to their caller', (reference) => {
     expect(scanParameter(reference, 0)).toBeNull()
+  })
+})
+
+describe('badSubstitution', () => {
+  it.each([
+    '${}',
+    '${ a}',
+    '${a b}',
+    '${a }',
+    '${1a}',
+    '${.}',
+    '${a.b}',
+    '${%a}',
+    '${-a}',
+    '${$a}',
+    '${a:}',
+    '${a*}',
+    '${#a b}',
+    '${#a-x}',
+    '${#%}',
+    '${#!x}',
+    '${!a b}',
+    '${!$}',
+    '${a[]}',
+    '${a[1]x}',
+    '${@a}',
+    '${a;b}',
+    '${a\\ b}',
+    '${a"b"}',
+  ])('refuses %s as bash does', (text) => {
+    expect(badSubstitution(text)).toBe(true)
+  })
+  it.each([
+    '${a}',
+    '${_}',
+    '${10}',
+    '${00}',
+    '${-}',
+    '${?}',
+    '${#}',
+    '${##}',
+    '${#-}',
+    '${#a}',
+    '${#a[@]}',
+    '${##a}',
+    '${#:-x}',
+    '${!a}',
+    '${!#}',
+    '${!a*}',
+    '${!a[@]}',
+    '${a:-}',
+    '${a::}',
+    '${a: }',
+    '${a@Q}',
+    '${a~}',
+    '${a[x y]}',
+    '${@:1}',
+    '${a-b c}',
+  ])('passes %s as bash does', (text) => {
+    expect(badSubstitution(text)).toBe(false)
   })
 })

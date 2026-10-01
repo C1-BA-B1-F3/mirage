@@ -1,5 +1,3 @@
-import { DISPATCH_BUILDERS } from '../../commands/builtin/generic/crossmount/relay/relay.ts'
-import { runDispatch } from '../../commands/builtin/generic_bind/dispatch.ts'
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -37,7 +35,9 @@ import { parseFindExpression, type FindExpr } from '../../commands/builtin/find_
 import { CommandTimeoutError, FindParseError, UsageError } from '../../commands/errors.ts'
 import type { FlagValue } from '../../commands/spec/types.ts'
 import type { Cmd, DispatchFn, RunSingle } from '../../commands/builtin/generic/crossmount/types.ts'
-import { crossOpts, runSeparator } from '../../commands/builtin/generic/crossmount/utils.ts'
+import { runSeparator } from '../../commands/builtin/generic/crossmount/utils.ts'
+import { DISPATCH_BUILDERS } from '../../commands/builtin/generic/crossmount/relay/relay.ts'
+import { runDispatch } from '../../commands/builtin/generic_bind/dispatch.ts'
 import type { NamespaceView, StatPath } from '../../ops/types.ts'
 import { inMtimeWindow } from '../../utils/dates.ts'
 import { modifiedTs } from '../../core/generic/find.ts'
@@ -457,22 +457,17 @@ export async function fanOutTraversal(
     let stdout: ByteSource | null = null
     let io = new IOResult()
     try {
-      const result = await runDispatch(
+      ;[stdout, io] = await runDispatch(
         dispatchBuilder,
-        [...paths],
-        [...texts],
-        {
-          ...crossOpts(flagKwargs),
-          cwd,
-          stdin,
-          dispatch,
-          ...(signal !== undefined ? { signal } : {}),
-          ...(ns === undefined ? {} : { ns }),
-        },
+        paths,
+        texts,
+        flagKwargs,
         dispatch,
+        cwd,
+        ns,
+        stdin,
+        signal,
       )
-      io = result[1]
-      stdout = await materialize(result[0])
     } catch (err) {
       if (!(err instanceof UsageError)) throw err
       io = new IOResult({

@@ -348,7 +348,7 @@ async function runCommandBody(
   seedPrefix?: (command: string) => void,
   sink?: JobConsole,
 ): Promise<Result> {
-  let stdin = stdinIn
+  const stdin = stdinIn
   // A background job's kill channel rides the session; fold it in so
   // builtins (sleep) and the mount layer observe the kill.
   const signal = mergeSignals(signalIn, session.abortSignal)
@@ -359,24 +359,6 @@ async function runCommandBody(
   // the node its text came from.
   const claimant = claimantFor(node, handed)
   const executeFn: ExecuteFn = (cmd, opts) => executeFnIn(cmd, { node, ...opts })
-
-  if (node.parent?.type !== NT.REDIRECTED_STATEMENT) {
-    for (const child of node.namedChildren) {
-      if (child.type === NT.HERESTRING_REDIRECT) {
-        for (const sc of child.namedChildren) {
-          const content = await expandNode(
-            sc,
-            session,
-            executeFn,
-            callStack,
-            sessionView(session, registry.policies),
-          )
-          stdin = encodeText(`${content}\n`)
-          break
-        }
-      }
-    }
-  }
 
   // Input substitutions are buffered virtual files, not host pipes. Each
   // operand has its own lifetime; they never consume the caller's stdin.

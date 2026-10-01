@@ -836,9 +836,17 @@ async def _execute_node(
 
     # ── program (root / semicolons) ─────────────
     if kind == NodeKind.PROGRAM:
-        return await execute_program(stream, node, session, stdin, cs,
-                                     job_table, agent_id, dispatch, handed,
-                                     registry.decisions)
+        return await execute_program(recurse,
+                                     node,
+                                     session,
+                                     stdin,
+                                     cs,
+                                     job_table,
+                                     agent_id,
+                                     dispatch,
+                                     handed,
+                                     registry.decisions,
+                                     sink=sink)
 
     # ── command ─────────────────────────────────
     if kind == NodeKind.COMMAND:
@@ -920,7 +928,6 @@ async def _execute_node(
                               agent_id,
                               cancel=cancel,
                               routing_decision=routing_decision,
-                              sink=sink,
                               handed=handed)
         child_session = session.fork()
         as_program = program_invocation(session)
@@ -933,9 +940,15 @@ async def _execute_node(
             try:
                 result = await handle_subshell(sub_recurse,
                                                list(node.children),
-                                               child_session, stdin, cs,
-                                               sub_table, agent_id, dispatch,
-                                               handed, registry.decisions)
+                                               child_session,
+                                               stdin,
+                                               cs,
+                                               sub_table,
+                                               agent_id,
+                                               dispatch,
+                                               handed,
+                                               registry.decisions,
+                                               sink=sink)
                 results.append(result)
                 return result[1].exit_code
             finally:

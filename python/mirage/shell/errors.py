@@ -11,7 +11,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import TYPE_CHECKING
+from collections.abc import Awaitable
+from typing import TYPE_CHECKING, TypeVar
 
 if TYPE_CHECKING:
     from mirage.io.types import ByteSource
@@ -94,6 +95,54 @@ class UnboundVariable(ExitSignal):
         super().__init__(127,
                          stderr=f"bash: {name}: unbound variable\n".encode(),
                          contained_code=1)
+
+
+class BadSubstitution(ExitSignal):
+    """A ``${...}`` bash cannot read, found as its word expands.
+
+    bash names the text of the expansion it was running: the whole word,
+    a double-quoted part's inside, an operator's word, an arithmetic
+    expression, a heredoc's body. Each level the error leaves renames it
+    (``within``) until one of those fixes the name. Fatal with status 1,
+    as ``$((1/0))`` is, and contained the same way.
+
+    Args:
+        text (str): the expansion as written.
+    """
+
+    def __init__(self, text: str) -> None:
+        super().__init__(1, contained_code=1)
+        self.fixed = False
+        self.within(text)
+
+    def within(self, word: str, fixed: bool = False) -> "BadSubstitution":
+        """Name the word being expanded, unless a boundary already has.
+
+        Args:
+            word (str): the text of the expansion the error leaves.
+            fixed (bool): whether this level's name is final.
+        """
+        if not self.fixed:
+            self.stderr = f"bash: {word}: bad substitution\n".encode()
+            self.fixed = fixed
+        return self
+
+
+T = TypeVar("T")
+
+
+async def named(word: str, pending: Awaitable[T]) -> T:
+    """Await an expansion of ``word``, which a bad substitution names.
+
+    Args:
+        word (str): what bash names: a double-quoted part's inside, an
+            operator's word, an arithmetic expression.
+        pending (Awaitable[T]): the expansion.
+    """
+    try:
+        return await pending
+    except BadSubstitution as exc:
+        raise exc.within(word, fixed=True)
 
 
 class ReturnSignal(Exception):

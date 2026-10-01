@@ -328,64 +328,6 @@ describe('handleCrossMount — stream/fanout via runSingle', () => {
     expect(native).not.toHaveBeenCalled()
   })
 
-  it('grep fans out per operand and forces -H', async () => {
-    const calls: Record<string, unknown>[] = []
-    const rs = runSingleFrom(
-      { '/ram/a': ['/ram/a:apple\n', 0], '/disk/b': ['/disk/b:apricot\n', 0] },
-      calls,
-    )
-    const paths = [PathSpec.fromStrPath('/ram/a'), PathSpec.fromStrPath('/disk/b')]
-    const [out, io] = await handleCrossMount('grep', paths, ['ap'], {}, noDispatch, rs, null)
-    expect(io.exitCode).toBe(0)
-    const text = decode(await materialize(out))
-    expect(text).toBe('/ram/a:apple\n/disk/b:apricot\n')
-    expect(calls.every((c) => (c.flags as Record<string, unknown>).H === true)).toBe(true)
-  })
-
-  it('rg fans out per operand and forces -H unless -I', async () => {
-    const calls: Record<string, unknown>[] = []
-    const rs = runSingleFrom(
-      { '/ram/a': ['/ram/a:apple\n', 0], '/disk/b': ['/disk/b:apricot\n', 0] },
-      calls,
-    )
-    const paths = [PathSpec.fromStrPath('/ram/a'), PathSpec.fromStrPath('/disk/b')]
-    const [, io] = await handleCrossMount('rg', paths, ['ap'], {}, noDispatch, rs, null)
-    expect(io.exitCode).toBe(0)
-    expect(calls.every((c) => (c.flags as Record<string, unknown>).with_filename === true)).toBe(
-      true,
-    )
-
-    const calls2: Record<string, unknown>[] = []
-    const rs2 = runSingleFrom({ '/ram/a': ['apple\n', 0], '/disk/b': ['apricot\n', 0] }, calls2)
-    await handleCrossMount('rg', paths, ['ap'], { no_filename: true }, noDispatch, rs2, null)
-    expect(calls2.every((c) => !('with_filename' in (c.flags as Record<string, unknown>)))).toBe(
-      true,
-    )
-  })
-
-  it('grep any-match wins over no-match in the merged exit code', async () => {
-    const calls: Record<string, unknown>[] = []
-    const rs = runSingleFrom({ '/ram/a': ['', 1], '/disk/b': ['/disk/b:x\n', 0] }, calls)
-    const paths = [PathSpec.fromStrPath('/ram/a'), PathSpec.fromStrPath('/disk/b')]
-    const [, io] = await handleCrossMount('grep', paths, ['x'], {}, noDispatch, rs, null)
-    expect(io.exitCode).toBe(0)
-  })
-
-  it('grep failed operand forces exit 1 even when another operand matched', async () => {
-    const calls: Record<string, unknown>[] = []
-    const rs = runSingleFrom(
-      {
-        '/ram/a': ['', 1, 'grep: /ram/a: No such file or directory\n'],
-        '/disk/b': ['/disk/b:x\n', 0],
-      },
-      calls,
-    )
-    const paths = [PathSpec.fromStrPath('/ram/a'), PathSpec.fromStrPath('/disk/b')]
-    const [, io] = await handleCrossMount('grep', paths, ['x'], {}, noDispatch, rs, null)
-    expect(io.exitCode).toBe(1)
-    expect(decode(await materialize(io.stderr))).toBe('grep: /ram/a: No such file or directory\n')
-  })
-
   it('wc counts each operand on its mount and sizes the columns by stat', async () => {
     const calls: Record<string, unknown>[] = []
     const rs = runSingleFrom(

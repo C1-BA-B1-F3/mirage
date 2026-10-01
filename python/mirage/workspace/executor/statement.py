@@ -19,7 +19,9 @@ from mirage.io import IOResult
 from mirage.io.async_line_iterator import SharedInput
 from mirage.io.types import ByteSource, materialize
 from mirage.shell.barrier import BarrierPolicy, apply_barrier
-from mirage.shell.descriptors import unreadable_stdin
+from mirage.shell.console import Channel, JobConsole
+from mirage.shell.descriptors import (Inherited, Recorder, StreamOwner,
+                                      deliver, unreadable_stdin)
 from mirage.shell.node_kind import pipeline_transparent
 from mirage.shell.types import TSNodeLike
 from mirage.utils.errors import format_fs_error
@@ -268,3 +270,67 @@ def assignment_status(session: SessionState, seq_before: int) -> int:
     if session._cmdsub_seq != seq_before:
         return session._cmdsub_status
     return 0
+
+
+# One piece of what a statement wrote, in order: its channel, its
+# bytes, and whether it went to the terminal through a copy, which an
+# `exec` diversion of the shell's own output leaves where it is.
+Written = tuple[Channel, bytes, bool]
+
+
+async def statement_output(recorder: Recorder, stdout: ByteSource | None,
+                           io: IOResult, own: StreamOwner | None,
+                           sink: JobConsole | None) -> list[Written]:
+    """What a statement wrote that stays with the shell running it.
+
+    Bytes written to the shell's terminal through a copy (``exec 3>&1``,
+    whose owner is ``own``) stay, flagged; bytes written to an enclosing
+    level's stream go on there. What the statement returned rather than
+    wrote comes last, its stderr taken off ``io``.
+
+    Args:
+        recorder (Recorder): what the statement wrote.
+        stdout (ByteSource | None): what it returned.
+        io (IOResult): its result.
+        own (StreamOwner | None): the terminal of the shell this loop
+            runs, None for a nested program of the same shell.
+        sink (JobConsole | None): where the loop writes, if anywhere.
+    """
+    written: list[Written] = []
+    for key, data in recorder.chunks:
+        if not isinstance(key, Inherited):
+            written.append((key, data, False))
+        elif key.owner is own or not await deliver(sink, key, data):
+            written.append((key.channel, data, True))
+    out = await materialize(stdout)
+    if out:
+        written.append((Channel.STDOUT, out, False))
+    err = await materialize(io.stderr)
+    io.stderr = None
+    if err:
+        written.append((Channel.STDERR, err, False))
+    return written
+
+
+async def land(written: list[Written], sink: JobConsole | None,
+               all_stdout: list[ByteSource | None],
+               merged_io: IOResult) -> IOResult:
+    """Put a statement's output where its shell's goes: the sink, in
+    order, or the stdout and stderr the shell returns.
+
+    Args:
+        written (list[Written]): the statement's output in order.
+        sink (JobConsole | None): the shell's sink, if it has one.
+        all_stdout (list[ByteSource | None]): stdout so far, extended.
+        merged_io (IOResult): the result so far.
+    """
+    if sink is not None:
+        for channel, data, _ in written:
+            await sink.emit(channel, data)
+        return merged_io
+    stdout = b"".join(d for c, d, _ in written if c == Channel.STDOUT)
+    if stdout:
+        all_stdout.append(stdout)
+    stderr = b"".join(d for c, d, _ in written if c == Channel.STDERR)
+    return await merged_io.merge(IOResult(
+        stderr=stderr)) if stderr else merged_io

@@ -1,6 +1,9 @@
 import pytest
 
 from mirage.commands.cli.types import CLISpec
+from mirage.shell.helpers import get_function_body
+from mirage.shell.parse import parse
+from mirage.shell.types import FunctionBody
 from mirage.workspace.cli.registry import CLIRegistry
 from mirage.workspace.executor.builtins.lookup.lookup import (handle_type,
                                                               handle_which)
@@ -28,6 +31,10 @@ def make_session() -> SessionState:
     return SessionState(session_id="s1")
 
 
+def _body(definition: str) -> FunctionBody:
+    return get_function_body(parse(definition).named_children[0])
+
+
 def make_registry(with_cli: bool = False) -> FakeRegistry:
     return FakeRegistry({"cat", "grep", "ls", "jq"}, with_cli=with_cli)
 
@@ -50,10 +57,11 @@ def test_type_reports_keyword():
 
 def test_type_a_prints_the_function_under_a_keyword():
     session = make_session()
-    session.functions["then"] = []
+    session.functions["then"] = _body("then() { echo x; }")
     assert _out(handle_type(
         ["-a", "then"], session,
-        make_registry())) == ("then is a shell keyword\nthen is a function\n")
+        make_registry())) == ("then is a shell keyword\nthen is a function\n"
+                              "function then () \n{ \n    echo x\n}\n")
 
 
 def test_type_reports_installed_cli_by_its_file():
@@ -105,10 +113,11 @@ def test_type_p_prints_a_programs_file_and_P_searches_past_a_builtin():
 
 def test_type_a_prints_every_layer():
     session = make_session()
-    session.functions["linear"] = []
+    session.functions["linear"] = _body("linear() { :; }")
     assert _out(handle_type(
         ["-a", "linear"], session, make_registry(True))) == (
-            "linear is a function\nlinear is /usr/bin/linear\n")
+            "linear is a function\nlinear () \n{ \n    :\n}\n"
+            "linear is /usr/bin/linear\n")
     assert _out(handle_type(["-at", "linear"], session,
                             make_registry(True))) == "function\nfile\n"
     assert _out(handle_type(

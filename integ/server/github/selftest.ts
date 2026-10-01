@@ -2033,8 +2033,13 @@ async function gitDatabase(at: string): Promise<void> {
   )
   eq('but not a one-level one', field(await get(trunc), 'truncated'), false)
 
-  const seededTree = String(field(await get(`${repo}/git/trees/main`), 'sha'))
+  const seededTree = String(field(await get(`${repo}/git/trees/main:`), 'sha'))
   const rootSha = String(field(field(await get(`${repo}/git/ref/heads/main`), 'object'), 'sha'))
+  eq(
+    "a ref's tree names the commit it resolved to, and <ref>: its root tree",
+    [field(await get(`${repo}/git/trees/main`), 'sha'), rootSha === seededTree],
+    [rootSha, false],
+  )
   eq(
     'a seeded root names the tree its branch lists',
     field(field(field(await get(`${repo}/commits/main`), 'commit'), 'tree'), 'sha'),

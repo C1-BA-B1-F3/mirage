@@ -55,6 +55,23 @@ def dir_oid(path: str) -> str:
     return hashlib.sha1(b"tree " + path.encode()).hexdigest()
 
 
+def commit_sha(repo: tuple[str, str], files: dict[str, bytes]) -> str:
+    rows = sorted(f"{path}\0{blob_oid(data)}" for path, data in files.items())
+    return hashlib.sha1(
+        b"commit "
+        + "\0".join(repo).encode()
+        + b"\n"
+        + "\n".join(rows).encode()
+    ).hexdigest()
+
+
+def _sha40(rev: str) -> str | None:
+    lowered = rev.lower()
+    if len(lowered) == 40 and all(c in "0123456789abcdef" for c in lowered):
+        return lowered
+    return None
+
+
 @dataclass
 class FakeHub:
     """A Hugging Face Hub on a local port, for tests that need the wire.
@@ -67,6 +84,14 @@ class FakeHub:
     oid, exactly the case that separates checking the whole row from
     checking the oid alone.
 
+    ``/revision/{rev}`` answers the repo object with the head commit as
+    its ``sha``, derived per repo from the files at request time, so a
+    test that edits ``repos`` directly moves it; ``expand[]=sha`` trims
+    the answer to ``{_id, id, sha}``. Every head the fake answers is
+    remembered with the files it named, and tree and paths-info at that
+    sha serve them; a 40-hex rev the fake never answered is 404
+    RevisionNotFound. Any other rev reads the current files.
+
     Args:
         repos (dict): ``(api segment, repo id)`` to ``{path: bytes}``.
         xet (bool): serve files Xet-shaped.
@@ -75,7 +100,9 @@ class FakeHub:
             download; every id in the row describes that older version.
         etags (dict): path to the final ETag resolve serves instead.
         fail (dict): route name to ``(status, error code)`` it answers.
-        log (list): ``(route, path)`` for every Hub-facing request.
+        log (list): ``(route, path, rev, query)`` for every Hub-facing
+            request, rev and query "" where the route has none.
+        history (dict): commit sha to the files it named.
         posts (list): each paths-info request's content type and body.
         auth (dict): bucket route name to the ``Authorization`` header of
             each request it answered, "" when none was sent.
@@ -98,14 +125,35 @@ class FakeHub:
     listed: dict[str, bytes] = field(default_factory=dict)
     etags: dict[str, str] = field(default_factory=dict)
     fail: dict[str, tuple[int, str]] = field(default_factory=dict)
-    log: list[tuple[str, str]] = field(default_factory=list)
+    log: list[tuple[str, str, str, str]] = field(default_factory=list)
     posts: list[dict[str, Any]] = field(default_factory=list)
     auth: dict[str, list[str]] = field(default_factory=dict)
     statuses: list[tuple[str, int]] = field(default_factory=list)
+    history: dict[str, dict[str, bytes]] = field(default_factory=dict)
     url: str = ""
 
     def count(self, route: str) -> int:
-        return sum(1 for name, _ in self.log if name == route)
+        return sum(1 for entry in self.log if entry[0] == route)
+
+    def head(self, repo: tuple[str, str]) -> str:
+        return commit_sha(repo, self.repos[repo])
+
+    def _at(self, request: web.Request) -> dict[str, bytes] | web.Response:
+        info = request.match_info
+        repo = (info["seg"], f"{info['ns']}/{info['name']}")
+        files = self.repos.get(repo)
+        if files is None:
+            return _error(404, "RepoNotFound", "Repository not found")
+        rev = info["rev"]
+        sha = _sha40(rev)
+        current = dict(files)
+        head = commit_sha(repo, current)
+        self.history.setdefault(head, current)
+        if sha is None or sha == head:
+            return current
+        if sha in self.history:
+            return self.history[sha]
+        return _error(404, "RevisionNotFound", f"Invalid rev id: {rev}")
 
     def row(self, path: str, data: bytes) -> dict[str, Any]:
         data = self.listed.get(path, data)
@@ -141,13 +189,15 @@ class FakeHub:
 
     async def tree(self, request: web.Request) -> web.Response:
         prefix = request.match_info.get("prefix", "").strip("/")
-        self.log.append(("tree", prefix))
+        self.log.append(
+            ("tree", prefix, request.match_info["rev"], request.query_string)
+        )
         refused = self._failure("tree")
         if refused is not None:
             return refused
-        files = self._files(request)
-        if files is None:
-            return _error(404, "RepoNotFound", "Repository not found")
+        files = self._at(request)
+        if isinstance(files, web.Response):
+            return files
         under = prefix + "/" if prefix else ""
         rows = [
             self.row(p, d) for p, d in files.items() if p.startswith(under)
@@ -170,15 +220,22 @@ class FakeHub:
         body = await request.read()
         kind = request.headers.get("Content-Type", "")
         self.posts.append({"content_type": kind, "body": body})
-        self.log.append(("paths_info", body.decode(errors="replace")))
+        self.log.append(
+            (
+                "paths_info",
+                body.decode(errors="replace"),
+                request.match_info["rev"],
+                request.query_string,
+            )
+        )
         refused = self._failure("paths_info")
         if refused is not None:
             return refused
         if "json" not in kind:
             return web.json_response({"error": INVALID_PATHS}, status=400)
-        files = self._files(request)
-        if files is None:
-            return _error(404, "RepoNotFound", "Repository not found")
+        files = self._at(request)
+        if isinstance(files, web.Response):
+            return files
         rows = []
         for path in json.loads(body).get("paths", []):
             if path in files:
@@ -187,10 +244,32 @@ class FakeHub:
                 rows.append(_dir_row(path.rstrip("/")))
         return web.json_response(rows)
 
+    async def revision(self, request: web.Request) -> web.Response:
+        info = request.match_info
+        self.log.append(("revision", "", info["rev"], request.query_string))
+        refused = self._failure("revision")
+        if refused is not None:
+            return refused
+        files = self._at(request)
+        if isinstance(files, web.Response):
+            return files
+        repo_id = f"{info['ns']}/{info['name']}"
+        full: dict[str, Any] = {
+            "_id": hashlib.sha1(repo_id.encode()).hexdigest()[:24],
+            "id": repo_id,
+            "sha": commit_sha((info["seg"], repo_id), files),
+            "siblings": [{"rfilename": path} for path in sorted(files)],
+        }
+        expand = request.query.getall("expand[]", [])
+        if not expand:
+            return web.json_response(full)
+        keep = {"_id", "id", *expand}
+        return web.json_response({k: v for k, v in full.items() if k in keep})
+
     async def resolve(self, request: web.Request) -> web.Response:
         info = request.match_info
         path = info["path"]
-        self.log.append(("resolve", path))
+        self.log.append(("resolve", path, info["rev"], request.query_string))
         refused = self._failure("resolve")
         if refused is not None:
             return refused
@@ -228,7 +307,9 @@ class FakeHub:
         body = await request.read()
         kind = request.headers.get("Content-Type", "")
         self.posts.append({"content_type": kind, "body": body})
-        self.log.append(("bucket_paths_info", body.decode(errors="replace")))
+        self.log.append(
+            ("bucket_paths_info", body.decode(errors="replace"), "", "")
+        )
         self._heard("bucket_paths_info", request)
         refused = self._failure("bucket_paths_info")
         if refused is not None:
@@ -254,7 +335,7 @@ class FakeHub:
     async def bucket_resolve(self, request: web.Request) -> web.Response:
         info = request.match_info
         path = info["path"]
-        self.log.append(("bucket_resolve", path))
+        self.log.append(("bucket_resolve", path, "", ""))
         self._heard("bucket_resolve", request)
         refused = self._failure("bucket_resolve")
         if refused is not None:
@@ -334,6 +415,7 @@ def _app(hub: FakeHub) -> web.Application:
     app.router.add_get(repo + "/tree/{rev}", hub.tree)
     app.router.add_get(repo + "/tree/{rev}/{prefix:.*}", hub.tree)
     app.router.add_post(repo + "/paths-info/{rev}", hub.paths_info)
+    app.router.add_get(repo + "/revision/{rev}", hub.revision)
     app.router.add_get("/cdn/{seg}/{ns}/{name}/{path:.*}", hub.cdn)
     for seg, route in SEGMENTS.items():
 

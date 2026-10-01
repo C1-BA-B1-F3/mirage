@@ -23,10 +23,12 @@ import type {
 import { RAMIndexCacheStore } from '../../cache/index/ram.ts'
 import { HttpGitHubTransport } from './client.ts'
 import { refillSnapshot } from './tree.ts'
+import { sha1Hex } from '../../utils/hash.ts'
 import { compareCodePoints } from '../../utils/sort.ts'
 
 export const BASE = 'http://github.test'
 const ENC = new TextEncoder()
+const SHA40 = /^[0-9a-fA-F]{40}$/
 
 export async function blobSha(data: Uint8Array | string): Promise<string> {
   const bytes = typeof data === 'string' ? ENC.encode(data) : data
@@ -34,14 +36,27 @@ export async function blobSha(data: Uint8Array | string): Promise<string> {
   const all = new Uint8Array(head.length + bytes.length)
   all.set(head)
   all.set(bytes, head.length)
-  const digest = new Uint8Array(await crypto.subtle.digest('SHA-1', all))
-  return [...digest].map((b) => b.toString(16).padStart(2, '0')).join('')
+  return sha1Hex(all)
 }
 
-// Unique per directory and hex like a real tree sha, so it is one plain
-// path segment; it only has to name the directory back to this fake.
-export function treeSha(path: string): string {
-  return [...ENC.encode(`tree ${path}`)].map((b) => b.toString(16).padStart(2, '0')).join('')
+function sha40(segment: string): string | null {
+  return SHA40.test(segment) ? segment.toLowerCase() : null
+}
+
+function concat(parts: Uint8Array[]): Uint8Array {
+  const out = new Uint8Array(parts.reduce((n, p) => n + p.length, 0))
+  let at = 0
+  for (const part of parts) {
+    out.set(part, at)
+    at += part.length
+  }
+  return out
+}
+
+function hexBytes(hex: string): Uint8Array {
+  const out = new Uint8Array(hex.length / 2)
+  for (let i = 0; i < out.length; i += 1) out[i] = parseInt(hex.slice(i * 2, i * 2 + 2), 16)
+  return out
 }
 
 function json(status: number, body: unknown): Response {
@@ -49,6 +64,62 @@ function json(status: number, body: unknown): Response {
     status,
     headers: { 'content-type': 'application/json' },
   })
+}
+
+/** The files of one commit, as the fake serves them. */
+export class Snapshot {
+  constructor(
+    readonly files: ReadonlyMap<string, Uint8Array>,
+    readonly symlinks: ReadonlySet<string>,
+  ) {}
+
+  mode(path: string): string {
+    return this.symlinks.has(path) ? '120000' : '100644'
+  }
+
+  dirs(): Set<string> {
+    const out = new Set<string>()
+    for (const path of this.files.keys()) {
+      const parts = path.split('/').slice(0, -1)
+      for (let i = 1; i <= parts.length; i += 1) out.add(parts.slice(0, i).join('/'))
+    }
+    return out
+  }
+
+  async head(): Promise<string> {
+    const rows = await Promise.all(
+      [...this.files].map(
+        async ([path, data]) => `${path}\0${this.mode(path)}\0${await blobSha(data)}`,
+      ),
+    )
+    return sha1Hex(ENC.encode(`commit ${rows.sort(compareCodePoints).join('\n')}`))
+  }
+
+  async treeIds(): Promise<Map<string, string>> {
+    const children = new Map<string, Map<string, [string, string]>>([['', new Map()]])
+    for (const at of this.dirs()) children.set(at, new Map())
+    for (const [path, data] of this.files) {
+      const cut = path.lastIndexOf('/')
+      children
+        .get(cut < 0 ? '' : path.slice(0, cut))
+        ?.set(path.slice(cut + 1), [this.mode(path), await blobSha(data)])
+    }
+    const depth = (d: string): number => (d === '' ? -1 : d.split('/').length - 1)
+    const ids = new Map<string, string>()
+    for (const at of [...children.keys()].sort((a, b) => depth(b) - depth(a))) {
+      const rows = [...(children.get(at) ?? [])].sort(([a], [b]) => compareCodePoints(a, b))
+      const body = concat(
+        rows.flatMap(([name, [mode, sha]]) => [ENC.encode(`${mode} ${name}\0`), hexBytes(sha)]),
+      )
+      const id = await sha1Hex(concat([ENC.encode(`tree ${String(body.length)}\0`), body]))
+      ids.set(at, id)
+      if (at !== '') {
+        const cut = at.lastIndexOf('/')
+        children.get(cut < 0 ? '' : at.slice(0, cut))?.set(at.slice(cut + 1), ['40000', id])
+      }
+    }
+    return ids
+  }
 }
 
 /**
@@ -62,6 +133,15 @@ function json(status: number, body: unknown): Response {
  * own sha and length), the shallow tree of a tree sha, and a blob by sha.
  * Shas are real git blob shas, so different bytes always name a different
  * blob, and a blob once served stays readable after the file changes.
+ *
+ * A tree asked by ref answers the head commit as its top-level `sha`, as
+ * GitHub does (measured 2026-09-30), and `{ref}:` answers the root tree. Both
+ * derive from the files at request time, so a test that edits `files`
+ * directly moves them. A folder's sha is the git tree sha over its children,
+ * so it moves only when something under it changes. Every head and tree the
+ * fake answers is remembered with the files it named: a head is served as
+ * `{sha}`, `{sha}:{dir}` and recursively, in either case and answered in
+ * lowercase, and a folder sha keeps listing what that folder held.
  *
  * The segment after `git/trees/` is routed only as one path segment, so a
  * request whose `/` inside it went unencoded is not routed and 404s, and one
@@ -83,7 +163,15 @@ export class FakeGitHub {
   // A recursive fetch waits on it before answering, so a test can line
   // readers up.
   holdRecursive: Promise<void> | null = null
+  // Called once the shallow tree of `ref` is built, so a test can change the
+  // repository right after a head was answered.
+  afterHead: (() => void) | null = null
+  // The shallow tree of `ref` waits on it before answering, while other
+  // requests are served.
+  holdDir: Promise<void> | null = null
   readonly log: [string, string][] = []
+  readonly history = new Map<string, Snapshot>()
+  readonly trees = new Map<string, [Snapshot, string]>()
   private readonly blobs = new Map<string, Uint8Array>()
   readonly url = BASE
 
@@ -108,40 +196,67 @@ export class FakeGitHub {
     return [this.count('dir'), this.count('recursive'), this.count('blob')]
   }
 
-  private dirs(): Set<string> {
-    const out = new Set<string>()
-    for (const path of this.files.keys()) {
-      const parts = path.split('/').slice(0, -1)
-      for (let i = 1; i <= parts.length; i += 1) out.add(parts.slice(0, i).join('/'))
-    }
-    return out
+  snapshot(): Snapshot {
+    return new Snapshot(new Map(this.files), new Set(this.symlinks))
   }
 
-  private async row(path: string, name: string): Promise<Record<string, unknown>> {
-    const data = this.files.get(path)
+  head(): Promise<string> {
+    return this.snapshot().head()
+  }
+
+  private async remember(snap: Snapshot): Promise<void> {
+    const head = await snap.head()
+    if (!this.history.has(head)) this.history.set(head, snap)
+    for (const [at, sha] of await snap.treeIds()) {
+      if (!this.trees.has(sha)) this.trees.set(sha, [snap, at])
+    }
+  }
+
+  private async commit(rev: string): Promise<Snapshot | null> {
+    if (rev === this.ref) return this.snapshot()
+    const sha = sha40(rev)
+    if (sha === null) return null
+    const current = this.snapshot()
+    if (sha === (await current.head())) return current
+    return this.history.get(sha) ?? null
+  }
+
+  private async namedTree(segment: string): Promise<[Snapshot, string] | null> {
+    const sha = sha40(segment)
+    if (sha === null) return null
+    const current = this.snapshot()
+    for (const [at, id] of await current.treeIds()) if (id === sha) return [current, at]
+    return this.trees.get(sha) ?? null
+  }
+
+  private async row(
+    snap: Snapshot,
+    ids: Map<string, string>,
+    path: string,
+    name: string,
+  ): Promise<Record<string, unknown>> {
+    const data = snap.files.get(path)
     if (data === undefined) {
-      return { path: name, mode: '040000', type: 'tree', sha: treeSha(path) }
+      return { path: name, mode: '040000', type: 'tree', sha: ids.get(path) }
     }
     const sha = await blobSha(data)
     this.blobs.set(sha, data)
-    return {
-      path: name,
-      mode: this.symlinks.has(path) ? '120000' : '100644',
-      type: 'blob',
-      sha,
-      size: data.length,
-    }
+    return { path: name, mode: snap.mode(path), type: 'blob', sha, size: data.length }
   }
 
-  private async shallow(at: string): Promise<Record<string, unknown>[]> {
+  private async shallow(
+    snap: Snapshot,
+    ids: Map<string, string>,
+    at: string,
+  ): Promise<Record<string, unknown>[]> {
     const prefix = at === '' ? '' : `${at}/`
     const names = new Set<string>()
-    for (const path of [...this.files.keys(), ...this.dirs()]) {
+    for (const path of [...snap.files.keys(), ...snap.dirs()]) {
       if (!path.startsWith(prefix) || path === at) continue
       names.add(path.slice(prefix.length).split('/')[0] ?? '')
     }
     return Promise.all(
-      [...names].sort(compareCodePoints).map((name) => this.row(prefix + name, name)),
+      [...names].sort(compareCodePoints).map((name) => this.row(snap, ids, prefix + name, name)),
     )
   }
 
@@ -150,58 +265,94 @@ export class FakeGitHub {
     return failure === undefined ? null : json(failure[0], { message: failure[1] })
   }
 
-  private async listing(route: string | null, raw: string, at: string): Promise<Response> {
+  private async listing(
+    route: string | null,
+    raw: string,
+    snap: Snapshot,
+    at: string,
+    head: string | null,
+  ): Promise<Response> {
     if (route !== null) {
       this.log.push([route, raw])
       const refused = this.refused(route)
       if (refused !== null) return refused
     }
-    let rows = await this.shallow(at)
+    await this.remember(snap)
+    const ids = await snap.treeIds()
+    let rows = await this.shallow(snap, ids, at)
     const keep = this.truncatedDirs.get(at)
     if (keep !== undefined) rows = rows.slice(0, keep)
-    return json(200, { sha: treeSha(at), tree: rows, truncated: keep !== undefined })
+    return json(200, { sha: head ?? ids.get(at), tree: rows, truncated: keep !== undefined })
+  }
+
+  private async headListing(raw: string): Promise<Response> {
+    this.log.push(['dir', raw])
+    const refused = this.refused('dir')
+    if (refused !== null) return refused
+    if (this.holdDir !== null) await this.holdDir
+    const snap = this.snapshot()
+    const response = await this.listing(null, raw, snap, '', await snap.head())
+    this.afterHead?.()
+    return response
+  }
+
+  private async recursive(raw: string, segment: string): Promise<Response> {
+    this.log.push(['recursive', raw])
+    const refused = this.refused('recursive')
+    if (refused !== null) return refused
+    let snap = await this.commit(segment)
+    if (snap === null) return json(404, { message: 'Not Found' })
+    if (this.holdRecursive !== null) {
+      await this.holdRecursive
+      if (segment === this.ref) snap = this.snapshot()
+    }
+    await this.remember(snap)
+    const ids = await snap.treeIds()
+    let paths = [...snap.files.keys(), ...snap.dirs()].sort(compareCodePoints)
+    if (this.truncatedRecursive) paths = paths.filter((p) => !p.includes('/'))
+    const tree = await Promise.all(paths.map((p) => this.row(snap, ids, p, p)))
+    const response = json(200, {
+      sha: await snap.head(),
+      tree,
+      truncated: this.truncatedRecursive,
+    })
+    this.afterRecursive?.()
+    return response
+  }
+
+  private async point(raw: string, segment: string, colon: number): Promise<Response> {
+    this.log.push(['dir', raw])
+    const refused = this.refused('dir')
+    if (refused !== null) return refused
+    const snap = await this.commit(segment.slice(0, colon))
+    if (snap === null) return json(404, { message: 'Not Found' })
+    const at = segment.slice(colon + 1).replace(/^\/+|\/+$/g, '')
+    const parts = at === '' ? [] : at.split('/')
+    for (let depth = 1; depth <= parts.length; depth += 1) {
+      if (snap.files.has(parts.slice(0, depth).join('/'))) {
+        return json(422, {
+          message: 'Invalid object requested. SHA must identify a commit or a tree.',
+        })
+      }
+    }
+    if (at !== '' && !snap.dirs().has(at)) return json(404, { message: 'Not Found' })
+    return this.listing(null, raw, snap, at, null)
   }
 
   private async tree(raw: string, recursive: boolean): Promise<Response> {
     const segment = decodeURIComponent(raw)
-    if (recursive) {
-      this.log.push(['recursive', raw])
-      const refused = this.refused('recursive')
-      if (refused !== null) return refused
-      if (segment !== this.ref) return json(404, { message: 'Not Found' })
-      if (this.holdRecursive !== null) await this.holdRecursive
-      let paths = [...this.files.keys(), ...this.dirs()].sort(compareCodePoints)
-      if (this.truncatedRecursive) paths = paths.filter((p) => !p.includes('/'))
-      const tree = await Promise.all(paths.map((p) => this.row(p, p)))
-      const response = json(200, { sha: treeSha(''), tree, truncated: this.truncatedRecursive })
-      this.afterRecursive?.()
-      return response
-    }
+    if (recursive) return this.recursive(raw, segment)
     const colon = segment.indexOf(':')
-    if (colon >= 0) {
-      this.log.push(['dir', raw])
-      const refused = this.refused('dir')
-      if (refused !== null) return refused
-      if (segment.slice(0, colon) !== this.ref) return json(404, { message: 'Not Found' })
-      const at = segment.slice(colon + 1).replace(/^\/+|\/+$/g, '')
-      const parts = at === '' ? [] : at.split('/')
-      for (let depth = 1; depth <= parts.length; depth += 1) {
-        if (this.files.has(parts.slice(0, depth).join('/'))) {
-          return json(422, {
-            message: 'Invalid object requested. SHA must identify a commit or a tree.',
-          })
-        }
-      }
-      if (at !== '' && !this.dirs().has(at)) return json(404, { message: 'Not Found' })
-      return this.listing(null, raw, at)
-    }
-    if (segment === this.ref) return this.listing('dir', raw, '')
-    const at = [...this.dirs()].find((d) => treeSha(d) === segment)
-    if (at === undefined) {
+    if (colon >= 0) return this.point(raw, segment, colon)
+    if (segment === this.ref) return this.headListing(raw)
+    const snap = await this.commit(segment)
+    if (snap !== null) return this.listing('dir', raw, snap, '', await snap.head())
+    const named = await this.namedTree(segment)
+    if (named === null) {
       this.log.push(['sha_dir', raw])
       return json(404, { message: 'Not Found' })
     }
-    return this.listing('sha_dir', raw, at)
+    return this.listing('sha_dir', raw, named[0], named[1], null)
   }
 
   private async blob(sha: string): Promise<Response> {

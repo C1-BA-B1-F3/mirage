@@ -31,14 +31,67 @@ from mirage.core.github.tree import refill_snapshot
 
 SYMLINK = "120000"
 REGULAR = "100644"
+HEX = frozenset("0123456789abcdef")
 
 
 def blob_sha(data: bytes) -> str:
     return hashlib.sha1(b"blob %d\0" % len(data) + data).hexdigest()
 
 
-def tree_sha(path: str) -> str:
-    return hashlib.sha1(b"tree " + path.encode()).hexdigest()
+def _sha40(segment: str) -> str | None:
+    lowered = segment.lower()
+    if len(lowered) == 40 and set(lowered) <= HEX:
+        return lowered
+    return None
+
+
+@dataclass(frozen=True)
+class Snapshot:
+    """The files of one commit, as the fake serves them.
+
+    Args:
+        files (dict): repo-relative path to bytes.
+        symlinks (frozenset): paths among ``files`` that are symlinks.
+    """
+
+    files: dict[str, bytes]
+    symlinks: frozenset[str]
+
+    def mode(self, path: str) -> str:
+        return SYMLINK if path in self.symlinks else REGULAR
+
+    def dirs(self) -> set[str]:
+        return {
+            "/".join(path.split("/")[:depth])
+            for path in self.files
+            for depth in range(1, path.count("/") + 1)
+        }
+
+    def head(self) -> str:
+        rows = sorted(
+            f"{path}\0{self.mode(path)}\0{blob_sha(data)}"
+            for path, data in self.files.items()
+        )
+        return hashlib.sha1(b"commit " + "\n".join(rows).encode()).hexdigest()
+
+    def tree_ids(self) -> dict[str, str]:
+        children: dict[str, dict[str, tuple[str, str]]] = {"": {}}
+        for at in self.dirs():
+            children.setdefault(at, {})
+        for path, data in self.files.items():
+            parent, _, name = path.rpartition("/")
+            children[parent][name] = (self.mode(path), blob_sha(data))
+        ids: dict[str, str] = {}
+        for at in sorted(children, key=lambda d: (-d.count("/"), d == "")):
+            body = b"".join(
+                f"{mode} {child}".encode() + b"\0" + bytes.fromhex(sha)
+                for child, (mode, sha) in sorted(children[at].items())
+            )
+            ids[at] = hashlib.sha1(b"tree %d\0" % len(body) + body).hexdigest()
+            if at:
+                parent, _, name = at.rpartition("/")
+                children[parent][name] = ("40000", ids[at])
+        return ids
 
 
 @dataclass
@@ -54,6 +107,16 @@ class FakeGitHub:
     real git blob shas, so different bytes always name a different blob,
     and a blob once served stays readable after the file changes, as on
     GitHub.
+
+    A tree asked by ref answers the head commit as its top-level ``sha``,
+    as GitHub does (measured 2026-09-30), and ``{ref}:`` answers the root
+    tree. Both derive from the files at request time, so a test that edits
+    ``files`` directly moves them. A folder's sha is the git tree sha over
+    its children, so it moves only when something under it changes. Every
+    head and tree the fake answers is remembered with the files it named:
+    a head is served as ``{sha}``, ``{sha}:{dir}`` and recursively, in
+    either case and answered in lowercase, and a folder sha keeps listing
+    what that folder held.
 
     The ``{ref}:{dir}`` segment is matched as one path segment, so a
     request whose ``/`` inside it went unencoded is not routed and 404s,
@@ -77,8 +140,16 @@ class FakeGitHub:
             two fetches of one line.
         hold_recursive (threading.Event | None): a recursive fetch waits
             on it before answering, so a test can line readers up.
+        after_head (Callable | None): called once the shallow tree of
+            ``ref`` is built, so a test can change the repository right
+            after a head was answered.
+        hold_dir (threading.Event | None): the shallow tree of ``ref``
+            waits on it, off the fake's loop, so other requests are served
+            meanwhile.
         fail (dict): route name to ``(status, message)`` it answers.
         log (list): ``(route, raw segment)`` for every request.
+        history (dict): commit sha to the files it named.
+        trees (dict): tree sha to the files and the folder it named.
     """
 
     files: dict[str, bytes] = field(default_factory=dict)
@@ -88,9 +159,13 @@ class FakeGitHub:
     truncated_dirs: dict[str, int] = field(default_factory=dict)
     after_recursive: Callable[[], None] | None = None
     hold_recursive: threading.Event | None = None
+    after_head: Callable[[], None] | None = None
+    hold_dir: threading.Event | None = None
     fail: dict[str, tuple[int, str]] = field(default_factory=dict)
     log: list[tuple[str, str]] = field(default_factory=list)
     blobs: dict[str, bytes] = field(default_factory=dict)
+    history: dict[str, Snapshot] = field(default_factory=dict)
+    trees: dict[str, tuple[Snapshot, str]] = field(default_factory=dict)
     # Unroutable until serve() sets it, so a config built too early fails
     # rather than reaching api.github.com.
     url: str = "http://127.0.0.1:9"
@@ -101,23 +176,48 @@ class FakeGitHub:
     def counts(self) -> tuple[int, int, int]:
         return (self.count("dir"), self.count("recursive"), self.count("blob"))
 
-    def _dirs(self) -> set[str]:
-        return {
-            path.rsplit("/", 1)[0] for path in self.files if "/" in path
-        } | {
-            "/".join(path.split("/")[:depth])
-            for path in self.files
-            for depth in range(1, path.count("/"))
-        }
+    def snapshot(self) -> Snapshot:
+        return Snapshot(dict(self.files), frozenset(self.symlinks))
 
-    def _row(self, path: str, name: str) -> dict[str, Any]:
-        if path in self.files:
-            data = self.files[path]
+    def head(self) -> str:
+        return self.snapshot().head()
+
+    def _remember(self, snap: Snapshot) -> None:
+        self.history.setdefault(snap.head(), snap)
+        for at, sha in snap.tree_ids().items():
+            self.trees.setdefault(sha, (snap, at))
+
+    def _commit(self, rev: str) -> Snapshot | None:
+        if rev == self.ref:
+            return self.snapshot()
+        sha = _sha40(rev)
+        if sha is None:
+            return None
+        current = self.snapshot()
+        if sha == current.head():
+            return current
+        return self.history.get(sha)
+
+    def _named_tree(self, segment: str) -> tuple[Snapshot, str] | None:
+        sha = _sha40(segment)
+        if sha is None:
+            return None
+        current = self.snapshot()
+        for at, tree in current.tree_ids().items():
+            if tree == sha:
+                return current, at
+        return self.trees.get(sha)
+
+    def _row(
+        self, snap: Snapshot, ids: dict[str, str], path: str, name: str
+    ) -> dict[str, Any]:
+        if path in snap.files:
+            data = snap.files[path]
             sha = blob_sha(data)
             self.blobs[sha] = data
             return {
                 "path": name,
-                "mode": SYMLINK if path in self.symlinks else REGULAR,
+                "mode": snap.mode(path),
                 "type": "blob",
                 "sha": sha,
                 "size": len(data),
@@ -126,19 +226,21 @@ class FakeGitHub:
             "path": name,
             "mode": "040000",
             "type": "tree",
-            "sha": tree_sha(path),
+            "sha": ids[path],
         }
 
-    def _shallow(self, at: str) -> list[dict[str, Any]]:
+    def _shallow(
+        self, snap: Snapshot, ids: dict[str, str], at: str
+    ) -> list[dict[str, Any]]:
         prefix = at + "/" if at else ""
         names = sorted(
             {
                 path[len(prefix) :].split("/", 1)[0]
-                for path in list(self.files) + list(self._dirs())
+                for path in list(snap.files) + list(snap.dirs())
                 if path.startswith(prefix) and path != at
             }
         )
-        return [self._row(prefix + name, name) for name in names]
+        return [self._row(snap, ids, prefix + name, name) for name in names]
 
     def _failure(self, route: str) -> web.Response | None:
         if route not in self.fail:
@@ -161,29 +263,52 @@ class FakeGitHub:
         if ":" in segment:
             return self._point(raw, segment)
         if segment == self.ref:
-            return self._listing("dir", raw, "")
-        at = next((d for d in self._dirs() if tree_sha(d) == segment), None)
-        if at is None:
+            return await self._head_listing(raw)
+        snap = self._commit(segment)
+        if snap is not None:
+            return self._listing("dir", raw, snap, "", snap.head())
+        named = self._named_tree(segment)
+        if named is None:
             self.log.append(("sha_dir", raw))
             return web.json_response({"message": "Not Found"}, status=404)
-        return self._listing("sha_dir", raw, at)
+        return self._listing("sha_dir", raw, named[0], named[1], None)
+
+    async def _head_listing(self, raw: str) -> web.Response:
+        self.log.append(("dir", raw))
+        refused = self._failure("dir")
+        if refused is not None:
+            return refused
+        if self.hold_dir is not None:
+            await asyncio.get_running_loop().run_in_executor(
+                None, self.hold_dir.wait, 10
+            )
+        snap = self.snapshot()
+        response = self._listing(None, raw, snap, "", snap.head())
+        if self.after_head is not None:
+            self.after_head()
+        return response
 
     def _recursive(self, raw: str, segment: str) -> web.Response:
         self.log.append(("recursive", raw))
         refused = self._failure("recursive")
         if refused is not None:
             return refused
-        if segment != self.ref:
+        snap = self._commit(segment)
+        if snap is None:
             return web.json_response({"message": "Not Found"}, status=404)
         if self.hold_recursive is not None:
             self.hold_recursive.wait(10)
-        paths = sorted(list(self.files) + list(self._dirs()))
+            if segment == self.ref:
+                snap = self.snapshot()
+        self._remember(snap)
+        ids = snap.tree_ids()
+        paths = sorted(list(snap.files) + list(snap.dirs()))
         if self.truncated_recursive:
             paths = [p for p in paths if "/" not in p]
         response = web.json_response(
             {
-                "sha": tree_sha(""),
-                "tree": [self._row(p, p) for p in paths],
+                "sha": snap.head(),
+                "tree": [self._row(snap, ids, p, p) for p in paths],
                 "truncated": self.truncated_recursive,
             }
         )
@@ -198,11 +323,12 @@ class FakeGitHub:
         refused = self._failure("dir")
         if refused is not None:
             return refused
-        if ref != self.ref:
+        snap = self._commit(ref)
+        if snap is None:
             return web.json_response({"message": "Not Found"}, status=404)
         parts = at.split("/") if at else []
         for depth in range(1, len(parts) + 1):
-            if "/".join(parts[:depth]) in self.files:
+            if "/".join(parts[:depth]) in snap.files:
                 return web.json_response(
                     {
                         "message": "Invalid object requested. SHA must identify a "
@@ -210,23 +336,36 @@ class FakeGitHub:
                     },
                     status=422,
                 )
-        if at and at not in self._dirs():
+        if at and at not in snap.dirs():
             return web.json_response({"message": "Not Found"}, status=404)
-        return self._listing(None, raw, at)
+        return self._listing(None, raw, snap, at, None)
 
-    def _listing(self, route: str | None, raw: str, at: str) -> web.Response:
+    def _listing(
+        self,
+        route: str | None,
+        raw: str,
+        snap: Snapshot,
+        at: str,
+        head: str | None,
+    ) -> web.Response:
         if route is not None:
             self.log.append((route, raw))
             refused = self._failure(route)
             if refused is not None:
                 return refused
-        rows = self._shallow(at)
+        self._remember(snap)
+        ids = snap.tree_ids()
+        rows = self._shallow(snap, ids, at)
         truncated = False
         if at in self.truncated_dirs:
             rows = rows[: self.truncated_dirs[at]]
             truncated = True
         return web.json_response(
-            {"sha": tree_sha(at), "tree": rows, "truncated": truncated}
+            {
+                "sha": head if head is not None else ids[at],
+                "tree": rows,
+                "truncated": truncated,
+            }
         )
 
     async def blob(self, request: web.Request) -> web.Response:

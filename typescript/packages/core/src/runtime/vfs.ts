@@ -13,7 +13,8 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import { ConcurrencyLimiter } from '../concurrency/limiter.ts'
-import { isMissingOp, isMissingPath } from '../utils/errors.ts'
+import { classify } from '../errors/index.ts'
+import { eexist, eisdir, enoent, isMissingOp, isMissingPath } from '../utils/errors.ts'
 import {
   contentSize,
   deviceRdev,
@@ -23,14 +24,21 @@ import {
   mtimeMs,
   posixMode,
 } from '../utils/stat_view.ts'
-import { LISTING_ENTRY_CONCURRENCY } from './constants.ts'
+import { ABSENT_PATH, LISTING_ENTRY_CONCURRENCY } from './constants.ts'
 import { CrossMountError } from './errors.ts'
 import { normDir, rstripSlash } from '../utils/slash.ts'
 import { planFlush } from './handles/index.ts'
+import type { OpenMode } from './handles/mode.ts'
 import { PrefixResolver, type MountResolver } from './resolver.ts'
 import type { BridgeDispatchFn, RuntimeContext } from './types.ts'
 import type { FileStat, SetAttrFields } from '../types.ts'
 import { concat } from '../io/cachable_iterator.ts'
+
+/** Whether a failure is the mount saying the path is not there. */
+function isAbsent(err: unknown): boolean {
+  const condition = classify(err)
+  return condition !== null && ABSENT_PATH.has(condition)
+}
 
 /** One directory entry as the mounts report it. */
 export interface VFSEntry {
@@ -191,6 +199,26 @@ export class RuntimeVFS {
     return owner === null ? null : normDir(owner)
   }
 
+  /**
+   * Whether the workspace answers for `path`.
+   *
+   * A guest routes on this: a path the workspace does not serve is the
+   * engine's own (monty's scratch tree). A mount serves what is under
+   * it, and a namespace link serves what is reached through it wherever
+   * it lives, because the dispatcher follows a link outside every mount
+   * the same way. With no mounts wired there is no scoping, and every
+   * path routes here.
+   */
+  serves(path: string): boolean {
+    if (this.prefixes().length === 0 || this.mountOf(path) !== null) return true
+    let directory = '/'
+    for (const name of path.replace(/^\/+|\/+$/g, '').split('/')) {
+      if (this.resolver.linkChildren(directory).has(name)) return true
+      directory = directory.replace(/\/$/, '') + '/' + name
+    }
+    return false
+  }
+
   async read(path: string): Promise<Uint8Array> {
     const out = await this.dispatch('read', path)
     if (!(out instanceof Uint8Array)) {
@@ -228,6 +256,75 @@ export class RuntimeVFS {
       throw new TypeError(`runtime vfs: stat ${path} bad shape`)
     }
     return statRow(out as FileStat)
+  }
+
+  /**
+   * The path's row, or null when the mount says it is not there. Only an
+   * absence (`ABSENT_PATH`) answers null; anything else throws, since a
+   * refusal is not an answer about the path.
+   */
+  async statOrNull(path: string, nofollow = false): Promise<VFSStat | null> {
+    try {
+      return await this.stat(path, nofollow)
+    } catch (err) {
+      if (isAbsent(err)) return null
+      throw err
+    }
+  }
+
+  /**
+   * The directory's unclassified rows, or null when it is not one: the
+   * question a guest asks of a path with no row of its own, a directory
+   * a mount only implies (the root above a nested mount), so nothing
+   * per entry is stat'd. Asked in the directory form, so a prefix store
+   * never answers `/s3/f` with the keys of `/s3/foo.txt`.
+   */
+  async listingOrNull(path: string): Promise<VFSEntry[] | null> {
+    try {
+      return await this.readdir(normDir(path), false)
+    } catch (err) {
+      if (isAbsent(err)) return null
+      throw err
+    }
+  }
+
+  /**
+   * Apply an open's effect on the mount, before any byte moves.
+   *
+   * One rule for every guest open, however it is spelled (a mode string,
+   * preview1 oflags): a directory refuses, an exclusive create refuses
+   * what exists, a missing path is created when the mode creates and
+   * refused when it does not, and a truncating mode empties what exists.
+   * The effect lands at open because CPython's `open('w')` leaves an
+   * empty file behind even when nothing is written; a bare open and
+   * close never flushes.
+   *
+   * Returns the file's row when its content survives the open (a read
+   * or an append), null when it starts empty (created or truncated).
+   * Throws EEXIST for an exclusive create that found the path, a
+   * dangling link included, EISDIR for a directory, a mount's implied
+   * one included, and ENOENT for a missing path the mode does not
+   * create.
+   */
+  async open(path: string, mode: OpenMode): Promise<VFSStat | null> {
+    // An exclusive create follows no link (POSIX O_CREAT|O_EXCL), so a
+    // dangling one is a name that is there. A path with no row may still
+    // be a directory the mount lists, and a create there would put a
+    // file at a directory's name.
+    const row = await this.statOrNull(path, mode.exclusive)
+    const listed = row !== null ? row.isDir : (await this.listingOrNull(path)) !== null
+    if (mode.exclusive && (row !== null || listed)) throw eexist(path)
+    if (listed) throw eisdir(path)
+    if (row === null) {
+      if (!mode.create) throw enoent(path)
+      await this.create(path)
+      return null
+    }
+    if (mode.truncate) {
+      await this.truncate(path)
+      return null
+    }
+    return row
   }
 
   /**
@@ -426,10 +523,13 @@ export class RuntimeVFS {
    * per call.
    *
    * The fallback needs the whole file. An encoder that already holds
-   * it (monty's in-memory tree, a closing file handle) passes it; one
-   * that does not (pyodide's mutation replay, which recorded only the
-   * tail) omits it and the fallback reads the base first. Only a
-   * confirmed absence starts from an empty base, since an append may
+   * it (a closing file handle) passes it; one that does not (monty's
+   * appends, pyodide's mutation replay, which recorded only the tail)
+   * omits it, and the fallback reads the base fresh. Fresh every time,
+   * never a copy from an earlier append: an append lands after whatever
+   * the file holds now, so a write another action made between two
+   * appends is kept, as O_APPEND keeps it.
+   * Only a confirmed absence starts from an empty base, since an append may
    * create the file — every other read failure propagates, because
    * writing the tail alone over a file that exists but is momentarily
    * unreadable would replace content this run never saw.

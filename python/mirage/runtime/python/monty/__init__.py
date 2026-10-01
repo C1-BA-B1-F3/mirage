@@ -14,10 +14,8 @@
 
 from mirage.runtime.python.monty.osaccess import MirageOSAccess
 from mirage.runtime.python.monty.runtime import MontyRuntime
-from mirage.runtime.python.monty.vfs import MontyVFS
 
 __all__ = [
     "MirageOSAccess",
     "MontyRuntime",
-    "MontyVFS",
 ]

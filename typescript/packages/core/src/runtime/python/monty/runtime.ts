@@ -24,7 +24,6 @@ import type {
 } from '../../types.ts'
 import { RuntimeVFS } from '../../vfs.ts'
 import { unhonoredNotice, type InitFlags } from '../flags.ts'
-import { MontyVFS } from './vfs.ts'
 import { MontyExecution } from './execution.ts'
 
 /**
@@ -128,7 +127,7 @@ export class MontyRuntime extends PythonRuntime implements Evaluator {
     return this.execution.close()
   }
 
-  private perRunVfs(context?: RuntimeContext): MontyVFS | null {
-    return context === undefined ? null : new MontyVFS(RuntimeVFS.of(context))
+  private perRunVfs(context?: RuntimeContext): RuntimeVFS | null {
+    return context === undefined ? null : RuntimeVFS.of(context)
   }
 }

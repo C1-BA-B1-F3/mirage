@@ -12,6 +12,8 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import type { FsCondition } from '../../../errors/index.ts'
+
 export const MISSING_PACKAGE_HINT =
   "monty runtime requires the '@pydantic/monty' package — install it or select the pyodide runtime"
 
@@ -27,3 +29,18 @@ export const EVAL_INTERRUPT_SECONDS = 10
 // monty's own traceback wording, so a version that rephrases either
 // line turns every continuation into an error at the prompt.
 export const INCOMPLETE_MARKERS = ['unexpected EOF', 'Expected an indented block'] as const
+
+/**
+ * What a refused readlink may mean "no link here". EINVAL is the backend
+ * saying the path is not one, and the other three are CPython's own
+ * `_ignore_error` list, which is what `Path.is_symlink` swallows around
+ * its lstat. Everything else propagates: CPython re-raises
+ * PermissionError out of `is_symlink`, and reporting a refusal as "not a
+ * link" is an answer the guest cannot tell from one.
+ */
+export const NOT_A_LINK: ReadonlySet<FsCondition> = new Set<FsCondition>([
+  'EINVAL',
+  'ENOENT',
+  'ENOTDIR',
+  'ELOOP',
+])

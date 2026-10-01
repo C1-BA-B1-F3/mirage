@@ -19,6 +19,7 @@ import { CHAR_MODE, DIR_MODE, DIR_SIZE, FILE_MODE, LINK_MODE } from '../utils/st
 import { LISTING_ENTRY_CONCURRENCY } from './constants.ts'
 import { CrossMountError } from './errors.ts'
 import type { BridgeDispatchFn } from './types.ts'
+import { parseMode } from './handles/mode.ts'
 import { RuntimeVFS } from './vfs.ts'
 import { PrefixResolver } from './resolver.ts'
 
@@ -401,6 +402,108 @@ describe('RuntimeVFS routing', () => {
   })
 })
 
+interface World {
+  files?: string[]
+  dirs?: string[]
+  implied?: string[]
+  links?: string[]
+}
+
+// A small world: files, directories, implied directories (they list
+// but have no row, the root above a nested mount) and dangling links
+// (a row only for a no-follow stat). Mutations are recorded.
+function world(shape: World, refusal?: Error): { vfs: RuntimeVFS; mutations: string[] } {
+  const mutations: string[] = []
+  const gone = (path: string): Promise<never> =>
+    Promise.reject(Object.assign(new Error(path), { code: 'ENOENT' }))
+  const dispatch = vi.fn<BridgeDispatchFn>((op, path, _bytes, _dst, attrs) => {
+    if (refusal !== undefined) return Promise.reject(refusal)
+    if (op === 'stat') {
+      if (shape.files?.includes(path) === true) {
+        return Promise.resolve(new FileStat({ name: path, size: 1, type: FileType.FILE }))
+      }
+      if (shape.dirs?.includes(path) === true) {
+        return Promise.resolve(new FileStat({ name: path, type: FileType.DIRECTORY }))
+      }
+      if (shape.links?.includes(path) === true && attrs?.nofollow === true) {
+        return Promise.resolve(new FileStat({ name: path, size: 8, type: FileType.SYMLINK }))
+      }
+      return gone(path)
+    }
+    if (op === 'readdir') {
+      const bare = path.replace(/\/$/, '')
+      const listed = shape.dirs?.includes(bare) === true || shape.implied?.includes(bare) === true
+      return listed ? Promise.resolve([]) : gone(path)
+    }
+    mutations.push(`${op} ${path}`)
+    return Promise.resolve(undefined)
+  })
+  return { vfs: new RuntimeVFS(dispatch, new PrefixResolver(() => ['/data/'])), mutations }
+}
+
+const F = '/data/f'
+
+describe('RuntimeVFS guest rules', () => {
+  it('serves the mounted paths, and every path when none are wired', () => {
+    const scoped = new RuntimeVFS(vi.fn(), new PrefixResolver(() => ['/data/']))
+    expect(scoped.serves('/data/a.txt')).toBe(true)
+    expect(scoped.serves('/tmp/a.txt')).toBe(false)
+    expect(new RuntimeVFS(vi.fn()).serves('/tmp/a.txt')).toBe(true)
+  })
+
+  // The dispatcher follows a link outside every mount, so what is
+  // reached through one is the workspace's too.
+  it('serves a path reached through a link outside every mount', () => {
+    const links = (directory: string): Set<string> =>
+      directory === '/' ? new Set(['alias']) : new Set<string>()
+    const door = new RuntimeVFS(vi.fn(), new PrefixResolver(() => ['/data/'], links))
+    expect(door.serves('/alias')).toBe(true)
+    expect(door.serves('/alias/inner.txt')).toBe(true)
+    expect(door.serves('/tmp/a.txt')).toBe(false)
+  })
+
+  it.each<[string, World, string[], boolean, string | null]>([
+    ['r', { files: [F] }, [], true, null],
+    ['r', {}, [], false, 'ENOENT'],
+    ['r', { dirs: [F] }, [], false, 'EISDIR'],
+    ['r', { implied: [F] }, [], false, 'EISDIR'],
+    ['r', { links: [F] }, [], false, 'ENOENT'],
+    ['w', { files: [F] }, [`truncate ${F}`], false, null],
+    ['w', {}, [`create ${F}`], false, null],
+    ['w', { implied: [F] }, [], false, 'EISDIR'],
+    ['a', { files: [F] }, [], true, null],
+    ['a', {}, [`create ${F}`], false, null],
+    ['a', { implied: [F] }, [], false, 'EISDIR'],
+    ['wx', { files: [F] }, [], false, 'EEXIST'],
+    ['wx', { links: [F] }, [], false, 'EEXIST'],
+    ['wx', { implied: [F] }, [], false, 'EEXIST'],
+    ['wx', {}, [`create ${F}`], false, null],
+  ])(
+    "open '%s' over %j lands its effect before any byte moves",
+    async (mode, shape, effect, kept, refusal) => {
+      const { vfs, mutations } = world(shape)
+      if (refusal === null) {
+        expect((await vfs.open(F, parseMode(mode))) !== null).toBe(kept)
+      } else {
+        await expect(vfs.open(F, parseMode(mode))).rejects.toMatchObject({ code: refusal })
+      }
+      expect(mutations).toEqual(effect)
+    },
+  )
+
+  // A backend that will not answer has said nothing about whether the
+  // path is there, and "not there" is the one answer a guest cannot
+  // tell from the truth.
+  it('reads a refusal as itself, never as an absence', async () => {
+    const denied = Object.assign(new Error('denied'), { code: 'EACCES' })
+    const { vfs } = world({}, denied)
+    await expect(vfs.statOrNull(F)).rejects.toBe(denied)
+    await expect(vfs.listingOrNull(F)).rejects.toBe(denied)
+    expect(await world({}).vfs.statOrNull(F)).toBeNull()
+    expect(await world({}).vfs.listingOrNull(F)).toBeNull()
+  })
+})
+
 describe('RuntimeVFS append', () => {
   it('ships only the tail when the mount takes an append', async () => {
     const dispatch = vi.fn<BridgeDispatchFn>(() => Promise.resolve(undefined))
@@ -439,6 +542,25 @@ describe('RuntimeVFS append', () => {
     const write = dispatch.mock.calls.find((c) => c[0] === 'write')
     if (write?.[2] === undefined) throw new Error('unreachable')
     expect(new TextDecoder().decode(write[2])).toBe('headtail')
+  })
+
+  // The fallback reads the base fresh each time: an append lands after
+  // whatever the file holds now, as O_APPEND does, so a copy kept from
+  // the last append would overwrite another action's write.
+  it('keeps a write made since the last append', async () => {
+    let stored: Uint8Array = enc.encode('head')
+    const dispatch = vi.fn<BridgeDispatchFn>((op, _path, bytes) => {
+      if (op === 'append') return Promise.reject(enotsup('s3', 'append', '/a/x'))
+      if (op === 'read') return Promise.resolve(stored)
+      if (op === 'write' && bytes !== undefined) stored = bytes
+      return Promise.resolve(undefined)
+    })
+    const door = new RuntimeVFS(dispatch, new PrefixResolver(() => ['/a']))
+    await door.append('/a/x', enc.encode('-1'))
+    stored = enc.encode('other')
+    await door.append('/a/x', enc.encode('-2'))
+    const writes = dispatch.mock.calls.filter((c) => c[0] === 'write')
+    expect(writes.map((c) => new TextDecoder().decode(c[2]))).toEqual(['head-1', 'other-2'])
   })
 
   it('starts from an empty base when the file is simply absent', async () => {

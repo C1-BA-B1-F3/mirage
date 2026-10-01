@@ -2133,6 +2133,91 @@ async def test_a_write_through_the_command_dispatcher_meets_the_rules():
         await ws.close()
 
 
+WARM_DOC = {
+    "paths": {
+        "hide": ["/data/w/h.txt"]
+    },
+    "commands": {
+        "allow": ["cat", "grep", "rg", "cp", "tar", "find"],
+        "deny": [{
+            "reason": "sealed",
+            "commands": {
+                name: ["/data/w/a.txt"]
+                for name in ("grep", "rg", "cat", "cp", "tar")
+            }
+        }, {
+            "reason": "walled",
+            "paths": ["/data/w/p.txt"]
+        }],
+    }
+}
+
+WARM_LINES = ("grep -r secret /data/w", "rg secret /data/w", "cat /data/w/*",
+              "cp -r /data/w /data/c; find /data/c",
+              "tar -cf /data/x.tar /data/w; tar -tf /data/x.tar",
+              "tar -cf - /data/w | tar -tf -")
+
+
+async def _warm_ws(warm: bool) -> tuple[Workspace, RAMVFS]:
+    # A caching mount, seeded and optionally read whole by the
+    # unrestricted default session, whose reads fill the shared cache.
+    ram = RAMVFS()
+    ram.caches_reads = True
+    ws = Workspace({"/data/": (ram, MountMode.WRITE)},
+                   mode=MountMode.WRITE,
+                   profiles={"limited": WARM_DOC})
+    ws.create_session("g", profile="limited")
+    await ws.shell("mkdir -p /data/w && echo 'secret a' > /data/w/a.txt && "
+                   "echo 'secret p' > /data/w/p.txt && "
+                   "echo 'secret h' > /data/w/h.txt && "
+                   "echo 'secret open' > /data/w/b.txt")
+    if warm:
+        await ws.shell("cat /data/w/a.txt /data/w/p.txt /data/w/h.txt "
+                       "/data/w/b.txt > /dev/null")
+    return ws, ram
+
+
+@pytest.mark.asyncio
+async def test_a_warm_walk_is_refused_as_the_cold_walk_is():
+    # The cache is shared by every session, so bytes another session
+    # read must not reach a walk the running command's rules refuse:
+    # every walk answers warm exactly as it answers cold.
+    differs = []
+    for line in WARM_LINES:
+        answers = []
+        for warm in (False, True):
+            ws, _ = await _warm_ws(warm)
+            try:
+                answers.append(await _line(ws, line, "g"))
+            finally:
+                await ws.close()
+        if answers[1] != answers[0]:
+            differs.append(line)
+    assert differs == []
+    ws, _ = await _warm_ws(True)
+    try:
+        assert await _line(ws, "grep -r secret /data/w",
+                           "g") == (2, "/data/w/b.txt:secret open\n",
+                                    "grep: /data/w/a.txt: Permission denied\n"
+                                    "grep: /data/w/p.txt: Permission denied\n")
+    finally:
+        await ws.close()
+
+
+@pytest.mark.asyncio
+async def test_a_warm_entry_no_rule_refuses_is_still_served_from_cache():
+    # The backend changes behind the cache's back: the walk still sees
+    # the bytes the cache holds, so only refused entries go cold.
+    ws, ram = await _warm_ws(True)
+    try:
+        ram._store.files["/w/b.txt"] = b"secret changed\n"
+        _, out, _ = await _line(ws, "grep -r secret /data/w", "g")
+        assert "/data/w/b.txt:secret open\n" in out
+        assert "changed" not in out
+    finally:
+        await ws.close()
+
+
 @pytest.mark.asyncio
 async def test_a_relayed_walk_never_names_a_hidden_entry():
     # A rule on a hidden path stays silent: the relayed walk passes the

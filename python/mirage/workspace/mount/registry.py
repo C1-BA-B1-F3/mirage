@@ -24,7 +24,8 @@ from mirage.cache.index.config import Evicted
 from mirage.cache.index.factory import build_index
 from mirage.cache.manager import CacheManager
 from mirage.commands.builtin.general import COMMANDS as GENERAL_COMMANDS
-from mirage.context import effective_path_mode, strongest_mode_under
+from mirage.context import (effective_path_mode, get_admission,
+                            strongest_mode_under)
 from mirage.ops.config import OpsMount
 from mirage.policy import Decisions, MountRootPolicy, OutputCapPolicy, Policies
 from mirage.process.types import ProcessView
@@ -245,6 +246,15 @@ class MountRegistry:
     def _attach_manager(self, m: MountEntry) -> None:
 
         async def gate(key: str) -> bool:
+            # The cache is shared by every session, so a warm entry the
+            # running command may not read is not served: the read goes
+            # cold to the guarded backend read, which refuses it exactly
+            # as a cold read. Asked before the reconciler, so a refused
+            # path costs no freshness probe. Only this door asks; the
+            # dispatcher's has no command tier behind it to refuse.
+            admission = get_admission()
+            if admission is not None and admission.refuses(key):
+                return False
             return await self._may_serve_cached(m, key)
 
         async def listing_gate(folder: str) -> bool:

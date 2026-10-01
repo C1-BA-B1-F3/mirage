@@ -30,10 +30,11 @@ import type {
 } from '../policy/index.ts'
 import { Outcome, Scope, type AskHandler } from '../policy/index.ts'
 import { RAMVFS } from '../vfs/ram/ram.ts'
+import { ops } from '../test-utils.ts'
 import { Runtime } from '../runtime/base.ts'
 import { LINE_EXECUTOR, type LineExecutor } from '../runtime/mixin.ts'
 import type { RunResult } from '../runtime/types.ts'
-import { MountMode, VFSName } from '../types.ts'
+import { MountMode, PathSpec, VFSName } from '../types.ts'
 import { cliSpecFor } from '../commands/cli/specs.ts'
 import { parseSessionProfile, type SessionProfile } from '../policy/profile.ts'
 import { getTestParser, stdoutStr, voicedStderr } from './fixtures/workspace_fixture.ts'
@@ -2363,5 +2364,93 @@ describe('a relayed walk meets the command rules', () => {
       expect(out).not.toContain('ghost')
       expect(err).not.toContain('ghost')
     }
+  })
+})
+
+describe('a warm walk is refused as the cold walk is', () => {
+  const WARM_DOC: SessionProfile = parseSessionProfile({
+    paths: { hide: ['/data/w/h.txt'] },
+    commands: {
+      allow: ['cat', 'grep', 'rg', 'cp', 'tar', 'find'],
+      deny: [
+        {
+          reason: 'sealed',
+          commands: Object.fromEntries(
+            ['grep', 'rg', 'cat', 'cp', 'tar'].map((name) => [name, ['/data/w/a.txt']]),
+          ),
+        },
+        { reason: 'walled', paths: ['/data/w/p.txt'] },
+      ],
+    },
+  })
+  const WARM_LINES = [
+    'grep -r secret /data/w',
+    'rg secret /data/w',
+    'cat /data/w/*',
+    'cp -r /data/w /data/c; find /data/c',
+    'tar -cf /data/x.tar /data/w; tar -tf /data/x.tar',
+    'tar -cf - /data/w | tar -tf -',
+  ]
+
+  // A caching mount, seeded and optionally read whole by the unrestricted
+  // default session, whose reads fill the shared cache.
+  async function warmWs(warm: boolean): Promise<[Workspace, RAMVFS]> {
+    const parser = await getTestParser()
+    const ram = new RAMVFS()
+    ;(ram as unknown as { cachesReads: boolean }).cachesReads = true
+    const ws = new Workspace(
+      { '/data': ram },
+      { mode: MountMode.WRITE, shellParser: parser, profiles: { limited: WARM_DOC } },
+    )
+    open.push(ws)
+    ws.createSession('g', { profile: 'limited' })
+    await ws.shell(
+      "mkdir -p /data/w && echo 'secret a' > /data/w/a.txt && " +
+        "echo 'secret p' > /data/w/p.txt && echo 'secret h' > /data/w/h.txt && " +
+        "echo 'secret open' > /data/w/b.txt",
+    )
+    if (warm) {
+      await ws.shell('cat /data/w/a.txt /data/w/p.txt /data/w/h.txt /data/w/b.txt > /dev/null')
+    }
+    return [ws, ram]
+  }
+
+  async function line(ws: Workspace, text: string): Promise<[number, string, string]> {
+    const r = await ws.shell(text, { sessionId: 'g' })
+    return [r.exitCode, stdoutStr(r), voicedStderr(r)]
+  }
+
+  // The cache is shared by every session, so bytes another session read
+  // must not reach a walk the running command's rules refuse: every walk
+  // answers warm exactly as it answers cold.
+  it('answers every walk warm as it answers it cold', async () => {
+    const differs: string[] = []
+    for (const text of WARM_LINES) {
+      const [cold] = await warmWs(false)
+      const [warm] = await warmWs(true)
+      if (JSON.stringify(await line(warm, text)) !== JSON.stringify(await line(cold, text))) {
+        differs.push(text)
+      }
+    }
+    expect(differs).toEqual([])
+    const [ws] = await warmWs(true)
+    expect(await line(ws, 'grep -r secret /data/w')).toEqual([
+      2,
+      '/data/w/b.txt:secret open\n',
+      'grep: /data/w/a.txt: Permission denied\ngrep: /data/w/p.txt: Permission denied\n',
+    ])
+  })
+
+  // The backend changes behind the cache's back: the walk still sees the
+  // bytes the cache holds, so only refused entries go cold.
+  it('still serves a warm entry no rule refuses from the cache', async () => {
+    const [ws, ram] = await warmWs(true)
+    await ops(ram).write(
+      PathSpec.fromStrPath('/w/b.txt'),
+      new TextEncoder().encode('secret changed\n'),
+    )
+    const [, out] = await line(ws, 'grep -r secret /data/w')
+    expect(out).toContain('/data/w/b.txt:secret open\n')
+    expect(out).not.toContain('changed')
   })
 })

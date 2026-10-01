@@ -441,7 +441,10 @@ export class Dispatcher {
     // whole fix. Mirrors Python's Dispatcher.dispatch.
     await mount.ensureReady()
     const raw = kwargs?.filetype === null
-    if (caches && !raw && DISPATCH_READ_OPS.has(opName)) {
+    // A renderer registered beside the VFS is never what a command read, so
+    // an entry a command left is raw bytes, not this read's rendering.
+    const renders = this.opsRegistry.rendersUserRead(vfs, getExtension(p.virtual))
+    if (caches && !raw && !renders && DISPATCH_READ_OPS.has(opName)) {
       const cached = await this.cache.get(p.virtual)
       if (
         cached !== null &&

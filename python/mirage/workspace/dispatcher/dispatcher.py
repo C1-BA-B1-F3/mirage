@@ -415,8 +415,12 @@ class Dispatcher:
         # from that cache; nothing populates it from here, so skipping
         # the probe is the whole fix.
         raw = "filetype" in kwargs and kwargs["filetype"] is None
+        # A renderer added on the mount is never what a command read, so
+        # an entry a command left is raw bytes, not this read's rendering.
+        renders = mount.renders_user_read(path.virtual)
 
-        if caches_reads and not raw and op in DISPATCH_READ_OPS:
+        if (caches_reads and not raw and not renders
+                and op in DISPATCH_READ_OPS):
             cached = await self._cache.get(path.virtual)
             if (cached is not None and await self._reconciler.may_serve_cached(
                     mount, path.virtual) and not mount.retiring

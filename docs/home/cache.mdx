@@ -23,6 +23,8 @@ A fresh directory listing proves a child absent only when that child is not list
 
 A write can leave its bytes in the file cache. `tee`, `sed -i`, `sort -o` and `uniq IN OUT` keep what they wrote as the path's cached content, so the next read costs no download; every other write (a redirect, `cp`, `mv`, ...) drops the cached copy instead. OneDrive and SharePoint never keep written bytes: SharePoint property promotion writes library metadata into an uploaded Office, `.eml`, `.msg` or `.tiff` file, and OneDrive for Business is a SharePoint library, so the next read on those mounts downloads what the drive stored. A VFS declares this with `keeps_written_bytes` (`keepsWrittenBytes` in TypeScript), which defaults to on.
 
+The file cache holds what commands read, which goes through the VFS's own IO. A filetype renderer registered on a mount (a `read` op scoped to an extension that the VFS does not ship itself) is never what a command reads, so a rendered read of such a path (`ws.vfs.read`, FUSE) is never served from the file cache: it always runs the renderer. A renderer the VFS ships in its own `ops()`, as Google Docs, Sheets and Slides do, has to render what the VFS's command reads return, and its cached entries are served as usual.
+
 ## Stores
 
 Each layer is a pluggable store with two built-ins:

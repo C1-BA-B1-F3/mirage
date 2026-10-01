@@ -429,8 +429,18 @@ async def test_dispatch_rule_guard_asks_the_bound_gate_before_the_door():
             await dispatch("rename",
                            _spec("/data/a"),
                            dst=_spec("/data/locked/y"))
+        # Every PathSpec the op carries is asked, not only the first.
+        with pytest.raises(PermissionError):
+            await dispatch("copy",
+                           _spec("/data/a"),
+                           src=_spec("/data/b"),
+                           dst=_spec("/data/locked/y"))
+        # A listing asks about the directory it lists.
+        with pytest.raises(PermissionError):
+            await dispatch("readdir", _spec("/data/locked/y"))
         # A metadata op is never refused: deny is present and refused.
         await dispatch("stat", _spec("/data/locked/y"))
+        await dispatch("exists", _spec("/data/locked/y"))
         # A hidden path is the door's to answer as missing, so the gate
         # is never asked and never names it.
         await dispatch("read", _spec("/data/hidden/k"))
@@ -438,8 +448,11 @@ async def test_dispatch_rule_guard_asks_the_bound_gate_before_the_door():
         reset_current_session(st)
         reset_admission(token)
     assert calls == [("read", "/data/locked/y"), ("stat", "/data/locked/y"),
-                     ("read", "/data/hidden/k")]
-    assert gate.asked == ["/data/locked/y", "/data/a", "/data/locked/y"]
+                     ("exists", "/data/locked/y"), ("read", "/data/hidden/k")]
+    assert gate.asked == [
+        "/data/locked/y", "/data/a", "/data/locked/y", "/data/a", "/data/b",
+        "/data/locked/y", "/data/locked/y"
+    ]
 
 
 class _SealedRead(Policy):

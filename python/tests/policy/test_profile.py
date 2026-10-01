@@ -2040,11 +2040,16 @@ RELAY_DOC = {
         "hide": ["/data/r/ghost"]
     },
     "commands": {
-        "allow": ["mkdir", "echo", "cat", "cp", "tar", "find", "split", "ls"],
+        "allow": [
+            "mkdir", "echo", "cat", "cp", "tar", "find", "split", "ls", "awk",
+            "csplit"
+        ],
         "deny": [{
             "reason": "cut",
             "commands": {
-                "split": ["/data/out/xab"]
+                "split": ["/data/out/xab"],
+                "csplit": ["/data/out/xx01"],
+                "awk": ["/data/out/locked"]
             }
         }, {
             "reason": "tarred",
@@ -2128,7 +2133,14 @@ async def test_a_write_through_the_command_dispatcher_meets_the_rules():
         assert await _line(
             ws, "split -l 1 /data/f /data/out/x",
             "g") == (1, "", "split: /data/out/xab: Permission denied\n")
-        assert (await _line(ws, "ls /data/out", "g"))[1] == "xaa\n"
+        assert await _line(
+            ws, "csplit -f /data/out/xx /data/f 2",
+            "g") == (1, "2\n", "csplit: /data/out/xx01: Permission denied\n")
+        assert await _line(
+            ws, "awk '{print > \"/data/out/locked\"}' /data/f",
+            "g") == (2, "", "awk: cannot open \"/data/out/locked\" for "
+                     "output (Permission denied)\n")
+        assert (await _line(ws, "ls /data/out", "g"))[1] == "xaa\nxx00\n"
     finally:
         await ws.close()
 
@@ -2214,6 +2226,80 @@ async def test_a_warm_entry_no_rule_refuses_is_still_served_from_cache():
         _, out, _ = await _line(ws, "grep -r secret /data/w", "g")
         assert "/data/w/b.txt:secret open\n" in out
         assert "changed" not in out
+    finally:
+        await ws.close()
+
+
+FANOUT_DOC = {
+    "commands": {
+        "allow": ["rg", "find", "tree", "ls", "mkdir", "echo"],
+        "deny": [{
+            "reason": "sealed",
+            "commands": {
+                "rg": ["/data/w/a.txt"],
+                "find": ["/data/w/a.txt"],
+                "tree": ["/data/sub/x"]
+            }
+        }],
+    }
+}
+
+
+async def _fanout_ws() -> Workspace:
+    # A mount nested inside the walked one sends rg's ordered walk and
+    # find's actions through the executor's own dispatcher.
+    ws = Workspace(
+        {
+            "/data/": (RAMVFS(), MountMode.WRITE),
+            "/data/sub/": (RAMVFS(), MountMode.WRITE)
+        },
+        mode=MountMode.WRITE,
+        profiles={"limited": FANOUT_DOC})
+    ws.create_session("g", profile="limited")
+    await ws.shell("mkdir -p /data/w && echo 'secret a' > /data/w/a.txt && "
+                   "echo 'secret b' > /data/w/b.txt")
+    return ws
+
+
+@pytest.mark.asyncio
+async def test_an_ordered_rg_across_mounts_meets_the_command_rules():
+    # --sort walks every mount through the dispatcher in one ordered
+    # pass; the entry the rule names is refused as the plain walk does.
+    ws = await _fanout_ws()
+    try:
+        expected = (2, "/data/w/b.txt:secret b\n",
+                    "rg: /data/w/a.txt: Permission denied (os error 13)\n")
+        assert await _line(ws, "rg secret /data", "g") == expected
+        assert await _line(ws, "rg --sort path secret /data", "g") == expected
+    finally:
+        await ws.close()
+
+
+@pytest.mark.asyncio
+async def test_tree_across_mounts_marks_the_directory_it_may_not_open():
+    # tree lists a nested mount through the dispatcher; a directory the
+    # rule names is marked inline as on a single mount, never listed.
+    ws = await _fanout_ws()
+    try:
+        await ws.shell("mkdir -p /data/sub/x && echo s > /data/sub/x/k")
+        assert await _line(ws, "tree /data", "g") == (
+            2, "/data\n|-- sub\n|   `-- x  [error opening dir]\n`-- w\n"
+            "    |-- a.txt\n    `-- b.txt\n\n4 directories, 2 files\n", "")
+    finally:
+        await ws.close()
+
+
+@pytest.mark.asyncio
+async def test_find_delete_meets_the_command_rules():
+    # The deletion is find's own write: an entry the rule names stays,
+    # reported with the rule's reason, as a paths rule's refusal at the
+    # op door already is.
+    ws = await _fanout_ws()
+    try:
+        assert await _line(
+            ws, "find /data/w -name a.txt -delete",
+            "g") == (1, "", "find: cannot delete '/data/w/a.txt': sealed\n")
+        assert (await _line(ws, "ls /data/w", "g"))[1] == "a.txt\nb.txt\n"
     finally:
         await ws.close()
 

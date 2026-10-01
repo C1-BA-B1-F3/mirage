@@ -46,6 +46,7 @@ from mirage.commands.builtin.generic.rg import (
     rg,
     walks_descendant_mounts,
 )
+from mirage.commands.builtin.generic_bind.adapter import with_dispatch_rule_guard
 from mirage.commands.config import CommandOpts, ExecContext
 from mirage.commands.errors import (
     CommandTimeoutError,
@@ -602,6 +603,7 @@ async def _fan_out_traversal(
             for name in ("max_depth", "sort", "sortr", "sort_files")
         )
     ):
+        guarded = with_dispatch_rule_guard(dispatch)
         try:
             stdout, io = await rg(
                 flat_scopes(paths),
@@ -612,11 +614,11 @@ async def _fan_out_traversal(
                         virtual=cwd, directory=cwd, vfs_path=cwd.strip("/")
                     ),
                     ns=ns,
-                    dispatch=dispatch,
+                    dispatch=guarded,
                 ),
-                readdir=functools.partial(relay, dispatch, "readdir"),
-                stat=functools.partial(relay, dispatch, "stat"),
-                read_bytes=functools.partial(relay, dispatch, "read"),
+                readdir=functools.partial(relay, guarded, "readdir"),
+                stat=functools.partial(relay, guarded, "stat"),
+                read_bytes=functools.partial(relay, guarded, "read"),
                 read_stream=None,
                 stdin=stdin,
             )

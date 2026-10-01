@@ -12,6 +12,7 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import { withDispatchRuleGuard } from '../../../commands/builtin/generic_bind/adapter.ts'
 import type { ByteSource } from '../../../io/types.ts'
 import { IOResult } from '../../../io/types.ts'
 import type { PathSpec } from '../../../types.ts'
@@ -240,7 +241,8 @@ export async function runOnMount(
   // The same door for a listing: a walker whose output is one document
   // (tree) reads the subtree under a nested mount through here, because
   // that subtree lives in a VFS its own accessor cannot open.
-  const readdirPath: ReaddirPath = (path: string) => pathReaddir(dispatch, path)
+  const guarded = withDispatchRuleGuard(dispatch)
+  const readdirPath: ReaddirPath = (path: string) => pathReaddir(guarded, path)
 
   const [lineRuntime, denial] = lineRuntimeFor(
     cmdName,

@@ -392,8 +392,21 @@ describe('withDispatchRuleGuard', () => {
         await expect(
           dispatch('write', spec('/data/a'), [], { dst: spec('/data/locked/y') }),
         ).rejects.toThrow('refused')
+        // Every PathSpec the op carries is asked, not only the first.
+        await expect(
+          dispatch('copy', spec('/data/a'), [spec('/data/b'), spec('/data/locked/y')]),
+        ).rejects.toThrow('refused')
+        await expect(
+          dispatch('copy', spec('/data/a'), [], {
+            src: spec('/data/b'),
+            dst: spec('/data/locked/y'),
+          }),
+        ).rejects.toThrow('refused')
+        // A listing asks about the directory it lists.
+        await expect(dispatch('readdir', spec('/data/locked/y'))).rejects.toThrow('refused')
         // A metadata op is never refused: deny is present and refused.
         await dispatch('stat', spec('/data/locked/y'))
+        await dispatch('exists', spec('/data/locked/y'))
         // A hidden path is the door's to answer as missing, so the gate is
         // never asked and never names it.
         await dispatch('read', spec('/data/hidden/k'))
@@ -402,6 +415,7 @@ describe('withDispatchRuleGuard', () => {
     expect(calls).toEqual([
       ['read', '/data/locked/y'],
       ['stat', '/data/locked/y'],
+      ['exists', '/data/locked/y'],
       ['read', '/data/hidden/k'],
     ])
     expect(asked).toEqual([
@@ -409,6 +423,13 @@ describe('withDispatchRuleGuard', () => {
       '/data/a',
       '/data/locked/y',
       '/data/a',
+      '/data/locked/y',
+      '/data/a',
+      '/data/b',
+      '/data/locked/y',
+      '/data/a',
+      '/data/b',
+      '/data/locked/y',
       '/data/locked/y',
     ])
   })

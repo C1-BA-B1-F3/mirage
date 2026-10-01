@@ -175,7 +175,7 @@ async def _finish_find(
         session_id=session.session_id,
         ns=ns,
         stat_path=stat_path,
-        dispatch=dispatch,
+        dispatch=with_dispatch_rule_guard(dispatch),
         identity=identity_from(ns, session_view(session, registry.policies)),
         stdin=stdin,
         starts=starts,

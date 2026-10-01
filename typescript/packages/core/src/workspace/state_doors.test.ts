@@ -2278,9 +2278,16 @@ describe('a relayed walk meets the command rules', () => {
   const RELAY_DOC: SessionProfile = parseSessionProfile({
     paths: { hide: ['/data/r/ghost'] },
     commands: {
-      allow: ['mkdir', 'echo', 'cat', 'cp', 'tar', 'find', 'split', 'ls'],
+      allow: ['mkdir', 'echo', 'cat', 'cp', 'tar', 'find', 'split', 'ls', 'awk', 'csplit'],
       deny: [
-        { reason: 'cut', commands: { split: ['/data/out/xab'] } },
+        {
+          reason: 'cut',
+          commands: {
+            split: ['/data/out/xab'],
+            csplit: ['/data/out/xx01'],
+            awk: ['/data/out/locked'],
+          },
+        },
         { reason: 'tarred', commands: { tar: ['/data/r/sec', '/data/r/ghost'] } },
         { reason: 'copied', commands: { cp: ['/data/r/sec', '/data/dst/sec', '/data/r/ghost'] } },
       ],
@@ -2352,7 +2359,17 @@ describe('a relayed walk meets the command rules', () => {
       '',
       'split: /data/out/xab: Permission denied\n',
     ])
-    expect((await line(ws, 'ls /data/out'))[1]).toBe('xaa\n')
+    expect(await line(ws, 'csplit -f /data/out/xx /data/f 2')).toEqual([
+      1,
+      '2\n',
+      'csplit: /data/out/xx01: Permission denied\n',
+    ])
+    expect(await line(ws, `awk '{print > "/data/out/locked"}' /data/f`)).toEqual([
+      2,
+      '',
+      'awk: cannot open "/data/out/locked" for output (Permission denied)\n',
+    ])
+    expect((await line(ws, 'ls /data/out'))[1]).toBe('xaa\nxx00\n')
   })
 
   // A rule on a hidden path stays silent: the relayed walk passes the
@@ -2452,5 +2469,79 @@ describe('a warm walk is refused as the cold walk is', () => {
     const [, out] = await line(ws, 'grep -r secret /data/w')
     expect(out).toContain('/data/w/b.txt:secret open\n')
     expect(out).not.toContain('changed')
+  })
+})
+
+describe('a walk the executor fans out meets the command rules', () => {
+  const FANOUT_DOC: SessionProfile = parseSessionProfile({
+    commands: {
+      allow: ['rg', 'find', 'tree', 'ls', 'mkdir', 'echo'],
+      deny: [
+        {
+          reason: 'sealed',
+          commands: { rg: ['/data/w/a.txt'], find: ['/data/w/a.txt'], tree: ['/data/sub/x'] },
+        },
+      ],
+    },
+  })
+
+  // A mount nested inside the walked one sends rg's ordered walk and
+  // find's actions through the executor's own dispatcher.
+  async function fanoutWs(): Promise<Workspace> {
+    const parser = await getTestParser()
+    const ws = new Workspace(
+      { '/data': new RAMVFS(), '/data/sub': new RAMVFS() },
+      { mode: MountMode.WRITE, shellParser: parser, profiles: { limited: FANOUT_DOC } },
+    )
+    open.push(ws)
+    ws.createSession('g', { profile: 'limited' })
+    await ws.shell(
+      "mkdir -p /data/w && echo 'secret a' > /data/w/a.txt && echo 'secret b' > /data/w/b.txt",
+    )
+    return ws
+  }
+
+  async function line(ws: Workspace, text: string): Promise<[number, string, string]> {
+    const r = await ws.shell(text, { sessionId: 'g' })
+    return [r.exitCode, stdoutStr(r), voicedStderr(r)]
+  }
+
+  // --sort walks every mount through the dispatcher in one ordered pass;
+  // the entry the rule names is refused as the plain walk does.
+  it('refuses an ordered rg across mounts as the plain walk does', async () => {
+    const ws = await fanoutWs()
+    const expected = [
+      2,
+      '/data/w/b.txt:secret b\n',
+      'rg: /data/w/a.txt: Permission denied (os error 13)\n',
+    ]
+    expect(await line(ws, 'rg secret /data')).toEqual(expected)
+    expect(await line(ws, 'rg --sort path secret /data')).toEqual(expected)
+  })
+
+  // tree lists a nested mount through the dispatcher; a directory the rule
+  // names is marked inline as on a single mount, never listed.
+  it('marks a directory across mounts tree may not open', async () => {
+    const ws = await fanoutWs()
+    await ws.shell('mkdir -p /data/sub/x && echo s > /data/sub/x/k')
+    expect(await line(ws, 'tree /data')).toEqual([
+      2,
+      '/data\n|-- sub\n|   `-- x  [error opening dir]\n`-- w\n' +
+        '    |-- a.txt\n    `-- b.txt\n\n4 directories, 2 files\n',
+      '',
+    ])
+  })
+
+  // The deletion is find's own write: an entry the rule names stays,
+  // reported with the rule's reason, as a paths rule's refusal at the op
+  // door already is.
+  it('keeps an entry find -delete may not remove', async () => {
+    const ws = await fanoutWs()
+    expect(await line(ws, 'find /data/w -name a.txt -delete')).toEqual([
+      1,
+      '',
+      "find: cannot delete '/data/w/a.txt': sealed\n",
+    ])
+    expect((await line(ws, 'ls /data/w'))[1]).toBe('a.txt\nb.txt\n')
   })
 })

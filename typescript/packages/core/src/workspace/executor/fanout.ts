@@ -47,6 +47,7 @@ import type { NamespaceView, StatPath } from '../../ops/types.ts'
 import { inMtimeWindow } from '../../utils/dates.ts'
 import { modifiedTs } from '../../core/generic/find.ts'
 import { combinedExit } from '../../commands/builtin/generic/crossmount/fanout/exit.ts'
+import { withDispatchRuleGuard } from '../../commands/builtin/generic_bind/adapter.ts'
 import { runFanout } from '../../commands/builtin/generic/crossmount/fanout/fanout.ts'
 import { mergeDuBlocks } from '../../commands/builtin/generic/crossmount/fanout/du.ts'
 import { compareCodePoints } from '../../utils/sort.ts'
@@ -466,6 +467,7 @@ export async function fanOutTraversal(
   ) {
     let stdout: ByteSource | null = null
     let io = new IOResult()
+    const guarded = withDispatchRuleGuard(dispatch)
     try {
       const result = await rgGeneric(
         flatten([...paths]),
@@ -476,11 +478,11 @@ export async function fanOutTraversal(
           stdin,
           ...(signal !== undefined ? { signal } : {}),
           ...(ns === undefined ? {} : { ns }),
-          dispatch,
+          dispatch: guarded,
         },
-        statOp(dispatch),
-        readdirOp(dispatch),
-        streamOp(dispatch),
+        statOp(guarded),
+        readdirOp(guarded),
+        streamOp(guarded),
       )
       if (result !== null) {
         io = result[1]

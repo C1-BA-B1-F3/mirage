@@ -139,7 +139,7 @@ async function finishFind(
       sessionId: session.sessionId,
       ns: ns ?? null,
       statPath,
-      dispatch,
+      dispatch: withDispatchRuleGuard(dispatch),
       identity: identityFrom(ns, sessionView(session, registry.policies)),
       stdin,
       starts,

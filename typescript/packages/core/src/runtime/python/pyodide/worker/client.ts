@@ -151,7 +151,7 @@ export class PyodideWorkerClient {
     signal?: AbortSignal,
   ): Promise<RunResult | EvalResult> {
     if (this.failure !== null) throw this.failure
-    const vfs = new RuntimeVFS(context.dispatch, context.resolver)
+    const vfs = RuntimeVFS.of(context)
     const { dispatch, scope } = context
     const responses = new Set<Promise<void>>()
     const processes = new GuestProcessTable(

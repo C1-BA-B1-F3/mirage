@@ -12,6 +12,7 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import { Activity } from '../utils/activity.ts'
 import { coerceRuntimeConfig, type RuntimeConfig } from './config.ts'
 import type { WorkspaceBinding } from './binding.ts'
 import { UnsupportedExecutionError } from './errors.ts'
@@ -71,6 +72,8 @@ export abstract class Runtime {
   config: RuntimeConfig
   script?: RouteScript
   private binding: WorkspaceBinding | null = null
+  private readonly activity = new Activity()
+  private retired = false
 
   constructor(
     options: RuntimeOptions<RuntimeConfig> = {},
@@ -100,6 +103,8 @@ export abstract class Runtime {
 
   /** Attach workspace services; a runtime instance belongs to one workspace. */
   bind(binding: WorkspaceBinding): void {
+    if (this.retired)
+      throw new Error(`${this.name}: runtime was removed from its workspace; construct a new one`)
     if (this.binding !== null && this.binding !== binding)
       throw new Error(`${this.name}: runtime is already bound to another workspace`)
     this.binding = binding
@@ -107,13 +112,30 @@ export abstract class Runtime {
 
   /** Engine entry point; Workspace.shell still owns shell admission and routing. */
   async execute(request: ExecutionRequest, context?: RuntimeContext): Promise<RunResult> {
-    const current = context ?? this.captureContext()
-    if (current !== undefined) {
-      if (current.binding !== this.binding)
-        throw new Error(`${this.name}: context belongs to another binding`)
-      return current.scope.run(() => this.executeRequest(request, current))
+    const release = this.admit()
+    try {
+      const current = context ?? this.captureContext()
+      if (current !== undefined) {
+        if (current.binding !== this.binding)
+          throw new Error(`${this.name}: context belongs to another binding`)
+        return await current.scope.run(() => this.executeRequest(request, current))
+      }
+      return await this.executeRequest(request)
+    } finally {
+      release()
     }
-    return this.executeRequest(request)
+  }
+
+  /** Count one unit of work, refused once the runtime is retired. */
+  admit(): () => void {
+    if (this.retired) throw new Error(`${this.name}: runtime was removed from the workspace`)
+    return this.activity.acquire()
+  }
+
+  /** Refuse new executions and binds, then wait for running ones. */
+  async retire(): Promise<void> {
+    this.retired = true
+    await this.activity.wait()
   }
 
   protected captureContext(): RuntimeContext | undefined {

@@ -20,7 +20,7 @@ import type { DispatchFn } from '../../../../runtime/types.ts'
 import type { Namespace } from '../../../mount/namespace/namespace.ts'
 import type { SessionState } from '../../../session/session.ts'
 import { absPath, fail, result, splitFlags } from '../shared.ts'
-import { pathExists } from './probe.ts'
+import { pathExists } from '../../../mount/namespace/probe.ts'
 import type { Result } from '../types.ts'
 
 // Any filesystem answer other than a target: a refusal (session view or

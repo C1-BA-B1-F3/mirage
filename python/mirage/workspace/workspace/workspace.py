@@ -81,6 +81,7 @@ from mirage.workspace.lookup.types import Consumer
 from mirage.workspace.mount import MountEntry, MountRegistry
 from mirage.workspace.mount.namespace import Namespace
 from mirage.workspace.mount.namespace.store import NamespaceStore
+from mirage.workspace.mount.namespace.view import namespace_view_of
 from mirage.workspace.mount.read_policy import check_read_capability
 from mirage.workspace.mount.spec import Mount
 from mirage.workspace.node.explain import explain_line
@@ -704,8 +705,6 @@ class Workspace:
         With no id, use this workspace's active session or its default.
         Calling a runtime directly remains a host API, outside shell admission.
         """
-        from mirage.workspace.executor.command.run import namespace_view_of
-
         session = (self._session_mgr.get(session_id)
                    if session_id is not None else self._op_session())
         token = set_current_session(session, self._session_mgr)
@@ -838,6 +837,10 @@ class Workspace:
 
         return ChildProcess(process, input_stream, output, cancel)
 
+    def runtimes(self) -> list[Runtime]:
+        """The ordered runtime world, first capturer first."""
+        return list(self._runtimes.entries)
+
     def add_runtime(self, runtime: Runtime | str) -> Runtime:
         """Append a runtime entry to the workspace's ordered set.
 
@@ -851,6 +854,16 @@ class Workspace:
         if self._shutting_down:
             raise RuntimeError("Workspace is closed")
         return self._runtimes.add(runtime)
+
+    async def remove_runtime(self, name: str) -> None:
+        """Remove a runtime entry, closing it once its runs finish.
+
+        Args:
+            name (str): the entry's name; ``workspace`` is permanent.
+        """
+        if self._shutting_down:
+            raise RuntimeError("Workspace is closed")
+        await self._runtimes.remove(name)
 
     @property
     def _cwd(self) -> str:

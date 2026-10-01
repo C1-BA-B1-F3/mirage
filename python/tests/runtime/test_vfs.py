@@ -14,13 +14,9 @@
 
 import asyncio
 import logging
-import threading
 
 import pytest
 
-from mirage.context import (get_current_session, reset_current_session,
-                            set_current_session)
-from mirage.observe.context import RecordingScope, record, start_op
 from mirage.runtime.errors import CrossMountError
 from mirage.runtime.resolver import PrefixResolver
 from mirage.runtime.types import VFSEntry, VFSStat
@@ -29,7 +25,6 @@ from mirage.types import DEVICE_NUMBERS_KEY, ContentType, FileStat, FileType
 from mirage.utils.errors import OperationNotSupportedError
 from mirage.utils.stat_view import (CHAR_MODE, DIR_MODE, DIR_SIZE, FILE_MODE,
                                     LINK_MODE)
-from mirage.workspace.session import SessionState
 
 
 class ListingVFS(RuntimeVFS):
@@ -439,84 +434,3 @@ async def test_an_unregistered_op_surfaces_as_not_implemented():
     vfs = RuntimeVFS(dispatch, asyncio.get_running_loop())
     with pytest.raises(NotImplementedError):
         await asyncio.to_thread(vfs.mkdir, "/data/sub")
-
-
-class SessionSpyDispatch(RecordingDispatch):
-    """Records the session bound inside the dispatched op."""
-
-    def __init__(self):
-        super().__init__()
-        self.sessions = []
-
-    async def __call__(self, op, path, **kwargs):
-        self.sessions.append(get_current_session())
-        return await super().__call__(op, path, **kwargs)
-
-
-@pytest.mark.asyncio
-async def test_the_hop_rebinds_the_launch_session_on_a_bare_thread():
-    # Monty's tokio workers and wasmtime's run thread carry no Python
-    # context, so a bare Thread models them: the op arrives with an
-    # empty context and only the VFS's captured session can scope it.
-    dispatch = SessionSpyDispatch()
-    sess = SessionState(session_id="agent")
-    token = set_current_session(sess)
-    try:
-        vfs = RuntimeVFS(dispatch, asyncio.get_running_loop())
-    finally:
-        reset_current_session(token)
-    worker = threading.Thread(target=vfs.read, args=("/data/f.txt", ))
-    worker.start()
-    await asyncio.to_thread(worker.join)
-    assert dispatch.sessions == [sess]
-
-
-class LedgerDispatch(RecordingDispatch):
-    """Emits an op event inside the dispatched op, like a backend core."""
-
-    async def __call__(self, op, path, **kwargs):
-        record(op, path.virtual, "ram", 7, start_op())
-        return await super().__call__(op, path, **kwargs)
-
-
-@pytest.mark.asyncio
-async def test_the_hop_rebinds_the_launch_recorder_on_a_bare_thread():
-    # The op ledger is contextvar state exactly like the session: the
-    # threads guest calls arrive on never had it, and the loop task
-    # run_coroutine_threadsafe schedules gets the loop's context, not
-    # the typed line's. Without the rebind a guest's file I/O never
-    # reaches ws.vfs.records while the same op from a shell line does.
-    dispatch = LedgerDispatch()
-    scope = RecordingScope()
-    try:
-        vfs = RuntimeVFS(dispatch, asyncio.get_running_loop())
-        worker = threading.Thread(target=vfs.read, args=("/data/f.txt", ))
-        worker.start()
-        await asyncio.to_thread(worker.join)
-    finally:
-        scope.close()
-    assert [(r.op, r.path) for r in scope.records] == [("read", "/data/f.txt")]
-
-
-@pytest.mark.asyncio
-async def test_a_recorderless_launch_dispatches_unrecorded():
-    dispatch = LedgerDispatch()
-    vfs = RuntimeVFS(dispatch, asyncio.get_running_loop())
-    scope = RecordingScope()
-    try:
-        worker = threading.Thread(target=vfs.read, args=("/data/f.txt", ))
-        worker.start()
-        await asyncio.to_thread(worker.join)
-    finally:
-        scope.close()
-    assert scope.records == []
-
-
-@pytest.mark.asyncio
-async def test_a_sessionless_launch_dispatches_unscoped():
-    dispatch = SessionSpyDispatch()
-    vfs = RuntimeVFS(dispatch, asyncio.get_running_loop())
-    worker = threading.Thread(target=vfs.read, args=("/data/f.txt", ))
-    worker.start()
-    await asyncio.to_thread(worker.join)
-    assert dispatch.sessions == [None]

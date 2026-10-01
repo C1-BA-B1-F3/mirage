@@ -12,13 +12,13 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import { FileStat, FileType, PathSpec } from '../../../../types.ts'
-import { ELOOP_STRERROR, isEnotdir, isMissError } from '../../../../utils/errors.ts'
-import { gnuBasename, posixNormpath } from '../../../../utils/path.ts'
-import { rstripSlash } from '../../../../utils/slash.ts'
-import type { StatOverlay } from '../../../../ops/types.ts'
-import type { DispatchFn } from '../../../../runtime/types.ts'
-import type { Namespace } from '../../../mount/namespace/namespace.ts'
+import { FileStat, FileType, PathSpec } from '../../../types.ts'
+import { ELOOP_STRERROR, isEnotdir, isMissError } from '../../../utils/errors.ts'
+import { gnuBasename, posixNormpath } from '../../../utils/path.ts'
+import { rstripSlash } from '../../../utils/slash.ts'
+import type { StatOverlay } from '../../../ops/types.ts'
+import type { DispatchFn } from '../../../runtime/types.ts'
+import type { Namespace } from './namespace.ts'
 
 export async function statOrNull(dispatch: DispatchFn, path: PathSpec): Promise<FileStat | null> {
   // A missing destination is an expected mv case (plain rename), not an

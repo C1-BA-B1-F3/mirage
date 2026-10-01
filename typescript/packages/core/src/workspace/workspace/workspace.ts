@@ -85,7 +85,7 @@ import {
   runWithSession,
   runAsProgram,
 } from '../../context/session_context.ts'
-import { namespaceViewOf } from '../executor/command/run.ts'
+import { namespaceViewOf } from '../mount/namespace/view.ts'
 import { asyncContextIsolatesTasks } from '../../utils/async_context.ts'
 import { makeVar, VarAttr } from '../../shell/variable.ts'
 import { enoent } from '../../utils/errors.ts'
@@ -183,7 +183,7 @@ export class Workspace {
     return this.closing !== null || this.closed
   }
   private readonly watchManager: WatchManager
-  private readonly runtimes: Runtimes
+  private readonly runtimeWorld: Runtimes
   // Named for what it holds: the source declarations, never a secret.
   private readonly declaredSecretSources: Readonly<Record<string, SecretSource>>
   private secretSourcesBuilt: Readonly<Record<string, ResolvedSource>> | null = null
@@ -204,6 +204,12 @@ export class Workspace {
   // can't mount), so the core Workspace carries no FUSE state.
 
   constructor(mounts: Record<string, MountSpec>, options: WorkspaceOptions = {}) {
+    if ('python' in options) {
+      throw new Error(
+        "the 'python' workspace option was removed: configure the engine on its runtimes entry, " +
+          'e.g. new PyodideRuntime({ config: { denyPackages } })',
+      )
+    }
     // The workspace-level default a mount overrides, as `mode` is.
     this.readDefault = options.read ?? DEFAULT_READ_SPEC
     const normalized = normalizeMounts(mounts, this.readDefault, options.index)
@@ -435,18 +441,15 @@ export class Workspace {
       },
       { bind: (sessionId, run) => this.bindSession(sessionId, run) },
     )
-    this.runtimes = new Runtimes({
+    this.runtimeWorld = new Runtimes({
       registry: this.registry,
       entries: options.runtimes,
-      pythonConfig: options.python ?? {},
       binding: this.runtimeBinding,
-      registerCloser: (fn) => {
-        this.closers.push(fn)
-      },
     })
+    this.closers.push(() => this.runtimeWorld.close())
     this.router = new Router(
       this.registry,
-      this.runtimes,
+      this.runtimeWorld,
       this.routePolicy,
       this.agentId,
       sandboxResolver,
@@ -478,15 +481,21 @@ export class Workspace {
     return prefixes
   }
 
+  /** The ordered runtime world, first capturer first. */
+  runtimes(): readonly Runtime[] {
+    return this.runtimeWorld.entries
+  }
+
   /** Append a runtime entry to the workspace's ordered world (last, first capturer still wins). */
   addRuntime(runtime: RuntimeEntry): Runtime {
     if (this.isShuttingDown()) throw new Error('Workspace is closed')
-    return this.runtimes.add(runtime)
+    return this.runtimeWorld.add(runtime)
   }
 
-  /** The ordered runtime world, as a read-only view of the live list. */
-  get runtimeEntries(): readonly Runtime[] {
-    return this.runtimes.entries
+  /** Remove a runtime entry, closing it once its runs finish; `workspace` is permanent. */
+  async removeRuntime(name: string): Promise<void> {
+    if (this.isShuttingDown()) throw new Error('Workspace is closed')
+    await this.runtimeWorld.remove(name)
   }
 
   /**
@@ -1403,7 +1412,7 @@ export class Workspace {
       jobTable: this.jobTable,
       agentId: this.agentId,
       workspaceId: this.wsId,
-      runtimes: this.runtimes,
+      runtimes: this.runtimeWorld,
       router: this.router,
       secretSources: () => this.secretSources(),
       registerCloser: (fn) => {
@@ -1504,14 +1513,19 @@ export class Workspace {
   async executePythonRepl(code: string, options: { sessionId?: string } = {}): Promise<EvalResult> {
     if (this.isShuttingDown()) throw new Error('Workspace is closed')
     const sessionId = options.sessionId ?? this.sessionManager.defaultId
-    const bound = this.runtimes.bindings.python3
+    const bound = this.runtimeWorld.bindings.python3
     if (bound === undefined || !isEvaluator(bound)) {
       throw new Error('no evaluator runtime bound for the repl')
     }
     try {
-      return await this.serializeLine(sessionId, undefined, () =>
-        bound.eval(code, { session: sessionId }),
-      )
+      return await this.serializeLine(sessionId, undefined, async () => {
+        const release = bound.admit()
+        try {
+          return await bound.eval(code, { session: sessionId })
+        } finally {
+          release()
+        }
+      })
     } catch (err) {
       const unavailable =
         err instanceof PyodideUnavailableError || err instanceof MontyUnavailableError

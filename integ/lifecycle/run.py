@@ -151,6 +151,10 @@ async def action(ws: Workspace, step: dict[str, Any],
         return sorted(ws.clis())
     elif op == "add_runtime":
         return ws.add_runtime(step["name"]).name
+    elif op == "remove_runtime":
+        await ws.remove_runtime(step["name"])
+    elif op == "runtimes":
+        return [entry.name for entry in ws.runtimes()]
     elif op == "register_policy":
         if step["id"] in policies:
             raise ValueError("policy already registered")

@@ -809,7 +809,7 @@ async function runCase(suite: string, testCase: Case): Promise<string[]> {
   const problems: string[] = []
   try {
     for (const [name, operations] of Object.entries(testCase.filesystem ?? {})) {
-      const runtime = ws.runtimeEntries.find((entry) => entry.name === name)
+      const runtime = ws.runtimes().find((entry) => entry.name === name)
       if (runtime === undefined) throw new Error(`Missing runtime ${name}`)
       const supported = new Set<string>(runtime.capabilities.filesystem)
       for (const [operation, expected] of Object.entries(operations)) {

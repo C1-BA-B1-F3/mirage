@@ -258,6 +258,20 @@ the selected runtime consumes its block and it rejects option keys it
 does not know, so one config stays portable across runtimes and
 languages. `monty` embeds its interpreter and has no options yet.
 
+## Adding and removing on a live workspace
+
+Runtimes come and go like mounts: `add_runtime` appends an entry (the first
+capturer still wins), `remove_runtime` takes one out, and `runtimes()` lists them. To
+swap engines, remove the old one first:
+
+```python
+await ws.remove_runtime("monty")  # python3 rebinds at once
+ws.add_runtime(WasiRuntime(config={"home": "/opt/cpython-wasi"}))
+```
+
+A line already running on a removed runtime finishes before it closes;
+a removed instance cannot be added again, and `workspace` is permanent.
+
 ## Resource limits
 
 `python3` is a command like any other: the same `command_limits`

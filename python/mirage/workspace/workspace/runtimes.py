@@ -12,6 +12,7 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import asyncio
 from collections.abc import Mapping
 
 from mirage.runtime.base import Runtime
@@ -28,10 +29,10 @@ from mirage.workspace.workspace.guard import reject_config_script
 class Runtimes:
     """The workspace's ordered runtime entries.
 
-    Owns the entry list and everything that reads it: building it from
-    config, appending to it, and answering which entry takes a whole
-    line. Adding a runtime kind touches this module rather than the
-    workspace.
+    Owns the entry list and everything that reads or changes it:
+    building it from config, adding and removing entries, closing them,
+    and answering which entry takes a whole line. Adding a runtime kind
+    touches this module rather than the workspace.
 
     Args:
         registry (MountRegistry): carries the resolved bindings and the
@@ -45,6 +46,7 @@ class Runtimes:
         self._registry = registry
         self._binding = binding
         self._entries: list[Runtime] = []
+        self._retiring: dict[int, asyncio.Task[None]] = {}
 
     @property
     def entries(self) -> list[Runtime]:
@@ -89,8 +91,10 @@ class Runtimes:
         for entry in entries:
             reject_config_script(f"runtime {entry.name!r} script",
                                  entry.script)
+        bindings = bind_commands(entries)
+        for entry in entries:
             entry.bind(self._binding)
-        self._entries = entries
+        self._install(entries, bindings)
         return entries
 
     def add(self, runtime: Runtime | str) -> Runtime:
@@ -114,10 +118,57 @@ class Runtimes:
         candidate = [*self._entries, entry]
         bindings = bind_commands(candidate)
         entry.bind(self._binding)
-        self._entries = candidate
-        self._registry.runtime_bindings = bindings
-        self._registry.runtime_entries = candidate
+        self._install(candidate, bindings)
         return entry
+
+    async def remove(self, name: str) -> None:
+        """Unbind an entry's commands now and close it once it is idle.
+
+        Args:
+            name (str): the entry's name.
+
+        Raises:
+            ValueError: the name is the workspace runtime or no entry.
+        """
+        if name == WorkspaceRuntime.name:
+            raise ValueError(
+                "cannot remove the workspace runtime: it serves every "
+                "command no other runtime captures")
+        entry = next((e for e in self._entries if e.name == name), None)
+        if entry is None:
+            raise ValueError(f"no runtime entry: {name!r}")
+        remaining = [e for e in self._entries if e is not entry]
+        self._install(remaining, bind_commands(remaining))
+        identity = id(entry)
+        closing = asyncio.create_task(_retire(entry))
+        self._retiring[identity] = closing
+        try:
+            await asyncio.shield(closing)
+        finally:
+            if closing.done():
+                self._retiring.pop(identity, None)
+
+    async def close(self) -> None:
+        """Close every entry, including the ones still being removed."""
+        results = await asyncio.gather(*(entry.close()
+                                         for entry in self._entries),
+                                       *(asyncio.shield(task)
+                                         for task in self._retiring.values()),
+                                       return_exceptions=True)
+        failures = [r for r in results if isinstance(r, BaseException)]
+        if failures:
+            raise (failures[0] if len(failures) == 1 else BaseExceptionGroup(
+                "runtime close failed", failures))
+
+    def _install(self, entries: list[Runtime],
+                 bindings: dict[str, Runtime]) -> None:
+        self._entries = entries
+        self._registry.runtime_entries = entries
+        self._registry.runtime_bindings = bindings
+        self._registry.workspace_runtime = next(
+            (entry
+             for entry in entries if isinstance(entry, WorkspaceRuntime)),
+            None)
 
     def whole_line(self,
                    decision: RouteDecision | None) -> LineExecutorMixin | None:
@@ -140,3 +191,8 @@ class Runtimes:
                           | None] = (decision.bindings if decision is not None
                                      else self._registry.runtime_bindings)
         return whole_line_runtime(bindings)
+
+
+async def _retire(entry: Runtime) -> None:
+    await entry.retire()
+    await entry.close()

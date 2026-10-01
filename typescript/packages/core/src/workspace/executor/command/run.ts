@@ -15,27 +15,12 @@
 import type { ByteSource } from '../../../io/types.ts'
 import { IOResult } from '../../../io/types.ts'
 import type { PathSpec } from '../../../types.ts'
-import type { FileStat } from '../../../types.ts'
 import type { MountEntry } from '../../mount/mount.ts'
-import type {
-  LinkView,
-  MountView,
-  NamespaceView,
-  ReaddirPath,
-  StatOverlay,
-  StatPath,
-} from '../../../ops/types.ts'
-import { namespaceNames } from '../../../ops/namespace_view.ts'
+import type { ReaddirPath, StatPath } from '../../../ops/types.ts'
 import type { Namespace } from '../../mount/namespace/namespace.ts'
 import { envSnapshot, sessionView } from '../../session/state.ts'
-import {
-  linkTargetStat,
-  pathExists,
-  pathReaddir,
-  pathStat,
-  resolveLink,
-} from '../builtins/links/index.ts'
-import { mergeOverlayStat } from '../../mount/namespace/overlay.ts'
+import { pathReaddir, pathStat } from '../../mount/namespace/probe.ts'
+import { namespaceViewOf } from '../../mount/namespace/view.ts'
 import { MountCommandUnsupported, type MountRegistry } from '../../mount/registry.ts'
 import { ownLimit } from '../../../policy/builtin/output_cap.ts'
 import type { Runtime } from '../../../runtime/base.ts'
@@ -44,7 +29,6 @@ import type { RouteDecision } from '../../../runtime/routing/index.ts'
 import type { SessionState } from '../../session/session.ts'
 import type { DispatchFn, ShellFn } from '../../../runtime/types.ts'
 import type { ExecuteFn } from '../../expand/node.ts'
-import { pathAllowed } from '../../../context/session_context.ts'
 import { CommandTimeoutError } from '../../../commands/errors.ts'
 import { UsageError } from '../../../commands/errors.ts'
 import { readFailExitCode } from '../../../commands/spec/usage.ts'
@@ -161,55 +145,6 @@ function scalarFindFlags(flagKwargs: Flags): Flags {
     }
   }
   return out
-}
-
-// Merge namespace attr overlays into one stat row (ls/stat rendering). Only
-// what chmod/chown/chgrp/touch recorded: a path never chown'd keeps uid and
-// gid null, and the owner-rendering commands fall back through `Identity`
-// (the workspace user for the owner, the session's profile for the group),
-// which is the one rule ls -l, stat -c and find -printf share.
-function namespaceStatOverlay(namespace: Namespace, virtual: string, stat: FileStat): FileStat {
-  return mergeOverlayStat(namespace.metaFor(virtual), stat)
-}
-
-/**
- * The mount prefix serving a virtual path, "/" when none does.
- *
- * A mount boundary is a filesystem boundary, which is what a caller walking up a
- * tree needs in order to stop: `git` looks for a `.git` no further than the
- * mount root, the way real git stops discovery at a filesystem boundary. A path
- * under no mount answers "/" so the walk still terminates.
- */
-function mountRootOf(registry: MountRegistry, virtual: string): string {
-  return registry.tryMountFor(virtual)?.prefix ?? '/'
-}
-
-/**
- * The mount-boundary facts on offer to every command.
- *
- * A command that does not read `mounts` off its context simply ignores it, so
- * there is no list of boundary-aware commands to keep in step.
- */
-function mountRootsBelow(registry: MountRegistry, path: string): string[] {
-  // Every one, unfiltered: this is the list a caller avoids a boundary
-  // with, and a mount the session cannot see still shadows the parent
-  // backend's keys under its prefix.
-  return registry.descendantMounts(path).map((m) => rstripSlash(m.prefix) || '/')
-}
-
-function mountView(registry: MountRegistry): MountView {
-  return {
-    descendants: (path: string) => mountRootsBelow(registry, path),
-    // The list a caller *names* a boundary from. The mount table is not
-    // session state, so nothing below filters it: a row in a tree, a
-    // member in an archive and a "different filesystem" warning are each
-    // produced above every backend, and each one hands back a name the
-    // session's hides were meant to withhold.
-    visibleDescendants: (path: string) =>
-      mountRootsBelow(registry, path).filter((root) => pathAllowed(root)),
-    isRoot: (path: string) => registry.isMountRoot(path),
-    rootOf: (path: string) => mountRootOf(registry, path),
-  }
 }
 
 /**
@@ -383,57 +318,4 @@ function prefixKeys(obj: Record<string, ByteSource>, prefix: string): Record<str
     out[prefix + k] = v
   }
   return out
-}
-
-// The live symlink facts on offer, or null without a namespace, built
-// with the namespace's own attr overlay so a link's target stat carries
-// the same rows `ls -l` renders.
-function linkViewFor(namespace: Namespace | null, dispatch: DispatchFn): LinkView | null {
-  const overlay =
-    namespace !== null
-      ? (virtual: string, stat: FileStat) => namespaceStatOverlay(namespace, virtual, stat)
-      : null
-  return linkView(namespace, dispatch, overlay)
-}
-
-function linkView(
-  namespace: Namespace | null,
-  dispatch: DispatchFn,
-  overlay: StatOverlay | null,
-): LinkView | null {
-  if (namespace === null) return null
-  return {
-    statAt: (path: string) => namespace.linkStatAt(path),
-    children: (directory: string) => namespace.linkStatsUnder(directory),
-    subtree: (directory: string) => namespace.linkStatsBelow(directory),
-    resolve: (path: string) => resolveLink(namespace, path),
-    exists: (path: string) => pathExists(dispatch, path),
-    targetStat: (path: string) => linkTargetStat(namespace, dispatch, path, overlay),
-  }
-}
-
-// The name plane's facts on offer, bundled as one view: symlinks, mount
-// boundaries, the attr overlay, the child names the namespace owes a
-// directory, and the workspace user. Which commands receive it is decided by whether the handler
-// reads `ns` off its context, so there is no list of aware commands to
-// keep in step here or anywhere else. Exported for the mount fan-out,
-// which reaches `executeCmd` without going through `runOnMount` and
-// would otherwise run every sub-command name-plane-blind.
-export function namespaceViewOf(
-  registry: MountRegistry,
-  namespace: Namespace | null,
-  dispatch: DispatchFn,
-): NamespaceView {
-  const links = linkViewFor(namespace, dispatch)
-  const statOverlay =
-    namespace !== null
-      ? (virtual: string, stat: FileStat) => namespaceStatOverlay(namespace, virtual, stat)
-      : null
-  return {
-    ...(links !== null ? { links } : {}),
-    mounts: mountView(registry),
-    ...(statOverlay !== null ? { statOverlay } : {}),
-    childMounts: (parent: string) => namespaceNames(registry.mountPrefixes(), namespace, parent),
-    ...(namespace !== null && namespace.user !== null ? { user: namespace.user } : {}),
-  }
 }

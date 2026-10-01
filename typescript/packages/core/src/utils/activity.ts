@@ -12,13 +12,28 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-export {
-  acceptsLine,
-  followDirectoryLinks,
-  followPaths,
-  prepareMv,
-  settleMoves,
-  stripLinkOperands,
-} from './links.ts'
-export { handleLn } from './ln.ts'
-export { handleReadlink } from './readlink.ts'
+/** Work in flight on one resource, awaited before it is released. */
+export class Activity {
+  private count = 0
+  private waiters: (() => void)[] = []
+
+  acquire(): () => void {
+    this.count++
+    let released = false
+    return () => {
+      if (released) return
+      released = true
+      this.count--
+      if (this.count === 0) {
+        for (const resolve of this.waiters.splice(0)) resolve()
+      }
+    }
+  }
+
+  wait(): Promise<void> {
+    if (this.count === 0) return Promise.resolve()
+    return new Promise((resolve) => {
+      this.waiters.push(resolve)
+    })
+  }
+}

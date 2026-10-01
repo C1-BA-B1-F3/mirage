@@ -28,8 +28,8 @@ from mirage.commands.cli.types import CLIDoors
 from mirage.types import MountMode
 from mirage.vfs.disk import DiskVFS
 from mirage.workspace import Workspace
-from mirage.workspace.executor.builtins.links import path_stat
-from mirage.workspace.executor.command.run import (mount_root_of,
+from mirage.workspace.mount.namespace.probe import path_stat
+from mirage.workspace.mount.namespace.view import (mount_root_of,
                                                    namespace_view_of)
 from mirage.workspace.session import SessionState
 from mirage.workspace.session.state import session_view

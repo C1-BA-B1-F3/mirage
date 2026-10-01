@@ -15,32 +15,10 @@
 import { CachableAsyncIterator } from '../../io/cachable_iterator.ts'
 import type { ByteSource } from '../../io/types.ts'
 import { KeyLock } from '../../cache/lock.ts'
+import { Activity } from '../../utils/activity.ts'
 
 /** Calls and streams sharing one VFS, including its removed aliases. */
-export class VFSActivity {
-  private count = 0
-  private waiters: (() => void)[] = []
-
-  acquire(): () => void {
-    this.count++
-    let released = false
-    return () => {
-      if (released) return
-      released = true
-      this.count--
-      if (this.count === 0) {
-        for (const resolve of this.waiters.splice(0)) resolve()
-      }
-    }
-  }
-
-  wait(): Promise<void> {
-    if (this.count === 0) return Promise.resolve()
-    return new Promise((resolve) => {
-      this.waiters.push(resolve)
-    })
-  }
-
+export class VFSActivity extends Activity {
   hold(source: ByteSource): ByteSource {
     if (source instanceof Uint8Array) return source
     if (source instanceof CachableAsyncIterator) {

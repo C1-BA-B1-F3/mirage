@@ -309,10 +309,10 @@ export class MirageService extends Service {
    * sandbox can act around the gate. Answers before `ready` from the
    * constructor-resolved entries (mounts resolve asynchronously,
    * runtimes never do) and from the live workspace afterwards, so a
-   * later `addRuntime` is seen.
+   * later `addRuntime` or `removeRuntime` is seen.
    */
   get vfsOnly(): boolean {
-    const entries = this.built === null ? (this.plannedRuntimes ?? []) : this.built.runtimeEntries
+    const entries = this.built === null ? (this.plannedRuntimes ?? []) : this.built.runtimes()
     return entries.every((entry) => entry.reach === 'workspace')
   }
 

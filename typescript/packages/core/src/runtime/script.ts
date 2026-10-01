@@ -1,5 +1,5 @@
 import { runWithTimeout } from '../commands/builtin/utils/limit.ts'
-import type { Runtime } from './base.ts'
+import { Runtime } from './base.ts'
 import { LanguageRuntime } from './language.ts'
 import { isEvaluator, type Evaluator } from './mixin.ts'
 import type { ScriptSource } from './routing/types.ts'
@@ -75,10 +75,15 @@ export async function evalWithCtx(
   timeoutSeconds: number,
   label: string,
 ): Promise<EvalValue> {
-  const result = await runWithTimeout(
-    evaluator.eval(source, { inputs: { [CTX_GLOBAL]: ctx } }),
-    timeoutSeconds,
-    label,
-  )
-  return result.value
+  const release = evaluator instanceof Runtime ? evaluator.admit() : undefined
+  try {
+    const result = await runWithTimeout(
+      evaluator.eval(source, { inputs: { [CTX_GLOBAL]: ctx } }),
+      timeoutSeconds,
+      label,
+    )
+    return result.value
+  } finally {
+    release?.()
+  }
 }

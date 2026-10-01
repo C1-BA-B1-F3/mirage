@@ -40,7 +40,6 @@ from mirage.runtime.types import DispatchFn
 from mirage.shell.call_stack import CallStack
 from mirage.shell.job_table import JobTable
 from mirage.types import PathSpec, Producer
-from mirage.workspace.executor.builtins.links import path_stat
 from mirage.workspace.executor.command.cli import (CLIContext,
                                                    drops_mount_caches,
                                                    handle_cli)
@@ -69,14 +68,16 @@ from mirage.workspace.lookup import (JOB_BUILTINS, Consumer, dereferences,
                                      lookup)
 from mirage.workspace.mount import MountCommandUnsupported, MountRegistry
 from mirage.workspace.mount.namespace import Namespace
+from mirage.workspace.mount.namespace.probe import path_stat
+from mirage.workspace.mount.namespace.view import namespace_view_of
 from mirage.workspace.mount.storage import make_storage_key
 from mirage.workspace.session import SessionState
 from mirage.workspace.session.state import session_view
 from mirage.workspace.types import ExecuteLine, ExecutionNode
 
 from mirage.workspace.executor.command.run import (  # isort: skip
-    drop_mount_caches, exec_node, find_start_points, namespace_view_of,
-    run_on_mount, scalar_find_flags)
+    drop_mount_caches, exec_node, find_start_points, run_on_mount,
+    scalar_find_flags)
 
 # One handler per JOB_BUILTINS member; lookup already narrowed the name.
 JOB_HANDLERS = {

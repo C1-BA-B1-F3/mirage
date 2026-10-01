@@ -20,7 +20,7 @@ import { eisdir, fsStrerror } from '../../../../utils/errors.ts'
 import type { SessionState } from '../../../session/session.ts'
 import { ExecutionNode } from '../../../types.ts'
 import type { DispatchFn } from '../../../../runtime/types.ts'
-import { resolvePathStat } from '../links/index.ts'
+import { resolvePathStat } from '../../../mount/namespace/probe.ts'
 import { toScope } from '../scope.ts'
 import type { Result } from '../types.ts'
 

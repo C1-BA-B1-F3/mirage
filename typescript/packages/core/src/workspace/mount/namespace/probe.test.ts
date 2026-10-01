@@ -14,10 +14,10 @@
 
 import { describe, expect, it } from 'vitest'
 
-import { IOResult } from '../../../../io/types.ts'
-import { FileStat, FileType, PathSpec } from '../../../../types.ts'
+import { IOResult } from '../../../io/types.ts'
+import { FileStat, FileType, PathSpec } from '../../../types.ts'
 import { resolvePathStat } from './probe.ts'
-import type { DispatchFn } from '../../../../runtime/types.ts'
+import type { DispatchFn } from '../../../runtime/types.ts'
 
 /** Fake op dispatcher answering stat and readdir independently. */
 function dispatcher(

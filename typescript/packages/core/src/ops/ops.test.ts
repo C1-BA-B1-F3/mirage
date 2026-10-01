@@ -16,6 +16,7 @@ import { describe, expect, it } from 'vitest'
 import { runWithSession } from '../context/session_context.ts'
 import { LimitExceededError } from '../commands/errors.ts'
 import { OpsRegistry } from './registry.ts'
+import type { RegisteredOp } from './registry.ts'
 import type { Policy } from '../policy/base.ts'
 import { PolicyDenied, PolicyError } from '../policy/errors.ts'
 import type { Action, OpsContext, OpsResultContext } from '../policy/types.ts'
@@ -391,9 +392,9 @@ describe('Ops is one door with the dispatcher', () => {
   })
 
   it('does not serve a raw read from the file cache', async () => {
-    // A rendering command's read lands in the file cache keyed on the
-    // path alone (that is what `applyIo` does with an IOResult), so the
-    // rendering sits under the very key a raw read asks for. Seeding
+    // A command's read lands in the file cache keyed on the path alone
+    // (that is what `applyIo` does with an IOResult), so whatever it
+    // returned sits under the very key a raw read asks for. Seeding
     // the cache directly is the same state one command earlier reaches.
     // Mirrors Python's tests/ops/test_raw_read.py.
     const vfs = new RAMVFS()
@@ -405,6 +406,95 @@ describe('Ops is one door with the dispatcher', () => {
     await ws.cache.set('/m/doc.gdoc.json', new TextEncoder().encode('rendered'), { ttl: 600 })
     expect(await ws.vfs.readFileText('/m/doc.gdoc.json')).toBe('rendered')
     expect(DEC.decode(await ws.vfs.readFile('/m/doc.gdoc.json', { raw: true }))).toBe('stored')
+  })
+
+  // Commands fill the cache with what their own reads return, which a
+  // renderer registered beside the mount never sees: serving the entry
+  // would answer a rendered read with raw bytes.
+  it('never serves a user renderer from the file cache', async () => {
+    const vfs = new RAMVFS()
+    Object.assign(vfs, { cachesReads: true })
+    const ops = new OpsRegistry()
+    ops.registerVfs(vfs)
+    ops.register({
+      name: 'read',
+      vfs: vfs.name,
+      filetype: '.tally',
+      write: false,
+      fn: () => Promise.resolve(new TextEncoder().encode('rendered')),
+    })
+    const ws = new Workspace({ '/m': vfs }, { mode: MountMode.WRITE, ops })
+    await ws.vfs.writeFile('/m/books.tally', 'stored')
+    await ws.cache.set('/m/books.tally', new TextEncoder().encode('cached'), { ttl: 600 })
+    expect(await ws.vfs.readFileText('/m/books.tally')).toBe('rendered')
+    await ws.vfs.writeFile('/m/notes.txt', 'stored')
+    await ws.cache.set('/m/notes.txt', new TextEncoder().encode('cached'), { ttl: 600 })
+    expect(await ws.vfs.readFileText('/m/notes.txt')).toBe('cached')
+    const named = await ws.dispatch('read', '/m/notes.txt', [], { filetype: '.tally' })
+    expect(new TextDecoder().decode(named as Uint8Array)).toBe('rendered')
+  })
+
+  // A VFS that ships the renderer itself (gdocs) reads the same rendering
+  // through its commands, so its entry is still served warm.
+  it('still serves a renderer the VFS ships from the file cache', async () => {
+    const vfs = new RAMVFS()
+    Object.assign(vfs, { cachesReads: true })
+    const rendering: RegisteredOp = {
+      name: 'read',
+      vfs: vfs.name,
+      filetype: '.tally',
+      write: false,
+      fn: () => Promise.resolve(new TextEncoder().encode('rendered')),
+    }
+    const own = vfs.ops.bind(vfs)
+    Object.assign(vfs, { ops: () => [...own(), rendering] })
+    const ops = new OpsRegistry()
+    ops.registerVfs(vfs)
+    const ws = new Workspace({ '/m': vfs }, { mode: MountMode.WRITE, ops })
+    await ws.vfs.writeFile('/m/books.tally', 'stored')
+    await ws.cache.set('/m/books.tally', new TextEncoder().encode('cached'), { ttl: 600 })
+    expect(await ws.vfs.readFileText('/m/books.tally')).toBe('cached')
+  })
+
+  // Same key as the renderer the VFS ships, a different op: the commands
+  // still read through the VFS, so the entry is not this rendering.
+  it('never serves a user override of a VFS renderer from the file cache', async () => {
+    const vfs = new RAMVFS()
+    Object.assign(vfs, { cachesReads: true })
+    const shipped: RegisteredOp = {
+      name: 'read',
+      vfs: vfs.name,
+      filetype: '.tally',
+      write: false,
+      fn: () => Promise.resolve(new TextEncoder().encode('rendered')),
+    }
+    const own = vfs.ops.bind(vfs)
+    Object.assign(vfs, { ops: () => [...own(), shipped] })
+    const ops = new OpsRegistry()
+    ops.registerVfs(vfs)
+    const ws = new Workspace({ '/m': vfs }, { mode: MountMode.WRITE, ops })
+    ops.register({ ...shipped, fn: () => Promise.resolve(new TextEncoder().encode('user')) })
+    await ws.vfs.writeFile('/m/books.tally', 'stored')
+    await ws.cache.set('/m/books.tally', new TextEncoder().encode('cached'), { ttl: 600 })
+    expect(await ws.vfs.readFileText('/m/books.tally')).toBe('user')
+  })
+
+  it('still serves an extensionless path beside a user renderer warm', async () => {
+    const vfs = new RAMVFS()
+    Object.assign(vfs, { cachesReads: true })
+    const ops = new OpsRegistry()
+    ops.registerVfs(vfs)
+    ops.register({
+      name: 'read',
+      vfs: vfs.name,
+      filetype: '.tally',
+      write: false,
+      fn: () => Promise.resolve(new TextEncoder().encode('rendered')),
+    })
+    const ws = new Workspace({ '/m': vfs }, { mode: MountMode.WRITE, ops })
+    await ws.vfs.writeFile('/m/README', 'stored')
+    await ws.cache.set('/m/README', new TextEncoder().encode('cached'), { ttl: 600 })
+    expect(await ws.vfs.readFileText('/m/README')).toBe('cached')
   })
 
   it('refuses a write to a read-only mount at the door', async () => {

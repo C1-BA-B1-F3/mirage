@@ -66,19 +66,84 @@ async def test_raw_read_leaves_an_unregistered_extension_alone():
 
 @pytest.mark.asyncio
 async def test_raw_read_is_not_served_from_the_file_cache():
-    # A command's rendered read lands in the file cache keyed on the
-    # path alone, so a raw read of that same path must not be served it.
+    # The file cache is keyed on the path alone, so a raw read of a path
+    # whose cached entry may be a rendering must not be served it.
     ws = _workspace(_CachingRAM())
     await ws.vfs.write("/data/books.tally", b"STORED")
-    # Distinct from the filetype op's own bytes, so a warm hit is
-    # distinguishable from the op running again.
+    # Distinct from both the stored and the rendered bytes, so a warm hit
+    # is distinguishable from either op running.
     await ws.apply_io(
         IOResult(
             reads={"/data/books.tally": b"CACHED"}, cache=["/data/books.tally"]
         )
     )
-    assert await ws.vfs.read("/data/books.tally") == b"CACHED"
     assert await ws.vfs.read("/data/books.tally", raw=True) == b"STORED"
+
+
+class _RenderingRAM(_CachingRAM):
+    """A VFS that ships the renderer itself, as gdocs does, so its own
+    command reads already return what the filetype op renders."""
+
+    def ops(self):
+        return [*super().ops(), *_read_tally._registered_ops]
+
+
+async def _seed(ws: Workspace, path: str) -> None:
+    await ws.vfs.write(path, b"STORED")
+    await ws.apply_io(IOResult(reads={path: b"CACHED"}, cache=[path]))
+
+
+@pytest.mark.asyncio
+async def test_a_user_renderer_is_never_served_from_the_file_cache():
+    # Commands fill the cache with what their own reads return, which a
+    # renderer registered on the mount never sees: serving the entry would
+    # answer a rendered read with raw bytes.
+    ws = _workspace(_CachingRAM())
+    await _seed(ws, "/data/books.tally")
+    assert await ws.vfs.read("/data/books.tally") == b"RENDERED"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "line",
+    [
+        "cat /data/books.tally",
+        "echo T | tee /data/books.tally",
+    ],
+    ids=["cat", "tee"],
+)
+async def test_a_user_renderer_renders_after_a_shell_command(line):
+    ws = _workspace(_CachingRAM())
+    await ws.vfs.write("/data/books.tally", b"STORED\n")
+    result = await ws.shell(line)
+    await result.materialize_stdout()
+    assert result.exit_code == 0
+    assert await ws.cache.exists("/data/books.tally")
+    assert await ws.vfs.read("/data/books.tally") == b"RENDERED"
+
+
+@pytest.mark.asyncio
+async def test_a_renderer_named_by_filetype_is_never_served_warm():
+    ws = _workspace(_CachingRAM())
+    await _seed(ws, "/data/notes.txt")
+    data, _ = await ws.dispatch(
+        "read", PathSpec.from_str_path("/data/notes.txt"), filetype=".tally"
+    )
+    assert data == b"RENDERED"
+
+
+@pytest.mark.asyncio
+async def test_a_vfs_own_renderer_is_still_served_from_the_file_cache():
+    ws = Workspace({"/data/": _RenderingRAM()}, mode=MountMode.WRITE)
+    await _seed(ws, "/data/books.tally")
+    assert await ws.vfs.read("/data/books.tally") == b"CACHED"
+
+
+@pytest.mark.asyncio
+async def test_a_plain_path_beside_a_user_renderer_is_still_served_warm():
+    ws = _workspace(_CachingRAM())
+    await _seed(ws, "/data/notes.txt")
+    assert await ws.vfs.read("/data/notes.txt") == b"CACHED"
 
 
 @pytest.mark.asyncio
@@ -108,3 +173,25 @@ async def test_a_cold_and_a_warm_ranged_read_agree():
         IOResult(reads={"/data/f.bin": b"0123456789"}, cache=["/data/f.bin"])
     )
     assert await ws.vfs.read("/data/f.bin", 2, 3) == cold
+
+
+@op("read", vfs="ram", filetype=".tally")
+async def _read_tally_override(accessor, path: PathSpec, **kwargs) -> bytes:
+    return b"USER"
+
+
+@pytest.mark.asyncio
+async def test_a_user_override_of_a_vfs_renderer_is_never_served_warm():
+    # Same key as the renderer the VFS ships, a different op: the commands
+    # still read through the VFS, so the entry is not this rendering.
+    ws = Workspace({"/data/": _RenderingRAM()}, mode=MountMode.WRITE)
+    ws.mount("/data/").register_fns([_read_tally_override])
+    await _seed(ws, "/data/books.tally")
+    assert await ws.vfs.read("/data/books.tally") == b"USER"
+
+
+@pytest.mark.asyncio
+async def test_an_extensionless_path_beside_a_user_renderer_is_served_warm():
+    ws = _workspace(_CachingRAM())
+    await _seed(ws, "/data/README")
+    assert await ws.vfs.read("/data/README") == b"CACHED"

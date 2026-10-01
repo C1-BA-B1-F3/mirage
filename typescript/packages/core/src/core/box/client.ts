@@ -128,8 +128,6 @@ async function fetchCcgToken(
 }
 
 export class BoxTokenManager extends OAuthTokenManager {
-  // API and upload bases for every non-token call; api.ts reads these instead
-  // of the constants so a config endpoint override reaches every request.
   readonly apiBase: string
   readonly uploadBase: string
   private readonly config: BoxConfig
@@ -140,6 +138,8 @@ export class BoxTokenManager extends OAuthTokenManager {
   constructor(config: BoxConfig) {
     super(TOKEN_BUFFER_SECONDS)
     this.config = config
+    // API and upload bases for every non-token call; api.ts reads these instead
+    // of the constants so a config endpoint override reaches every request.
     this.apiBase = apiBaseOf(config)
     this.uploadBase = uploadBaseOf(config)
     this.devTokenMode = config.accessToken !== undefined && config.accessToken !== ''

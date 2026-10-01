@@ -14,11 +14,12 @@
 
 import asyncio
 
-from mirage.accessor.gridfs import GridFSAccessor, GridFSConfig
+from mirage.accessor.gridfs import GridFSAccessor
 from mirage.cache.context import push_cache_manager
 from mirage.core.gridfs import driver as gridfs_driver
 from mirage.core.gridfs.write import write_bytes
 from mirage.types import PathSpec
+from mirage.vfs.gridfs.config import GridFSConfig
 
 
 class _FakeManager:

@@ -1,0 +1,620 @@
+// ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+// ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
+
+import { describe, expect, it } from 'vitest'
+import { parseSessionProfile } from '../../../policy/profile.ts'
+import { MontyRuntime } from '../../../runtime/python/monty/runtime.ts'
+import { MountMode } from '../../../types.ts'
+import { RAMVFS } from '../../../vfs/ram/ram.ts'
+import {
+  getTestParser,
+  makeWorkspace,
+  stderrStr,
+  stdoutStr,
+} from '../../../workspace/fixtures/workspace_fixture.ts'
+import { Workspace } from '../../../workspace/workspace/workspace.ts'
+
+const GUARDED = parseSessionProfile({
+  commands: { deny: [{ reason: 'protected', commands: { python3: ['/secret.py'] } }] },
+})
+
+async function guarded(): Promise<Workspace> {
+  return new Workspace(
+    { '/': new RAMVFS() },
+    {
+      mode: MountMode.EXEC,
+      shellParser: await getTestParser(),
+      runtimes: [new MontyRuntime(), 'workspace'],
+      profiles: { default: GUARDED },
+    },
+  )
+}
+
+describe('python3: a rule on the script', () => {
+  it.each([
+    ['python3 secret.py', 'secret.py'],
+    ['python3 ./secret.py', './secret.py'],
+    ['python3 -u -- secret.py', 'secret.py'],
+  ])('reads %s however it is typed', async (line, shown) => {
+    const ws = await guarded()
+    try {
+      await ws.shell("printf 'print(1)\\n' > /secret.py")
+      const io = await ws.shell(line)
+      expect(io.exitCode).toBe(1)
+      expect(stdoutStr(io)).toBe('')
+      expect(stderrStr(io)).toBe(`python3: ${shown}: protected\n`)
+    } finally {
+      await ws.close()
+    }
+  })
+
+  it.each([
+    'python3 s.py secret.py',
+    "python3 -c 'print(argv[1:])' secret.py",
+    "echo 'print(argv[1:])' | python3 - secret.py",
+  ])('keeps the words after the script as its argv: %s', async (line) => {
+    const ws = await guarded()
+    try {
+      await ws.shell("printf 'print(argv[1:])\\n' > /s.py")
+      const io = await ws.shell(line)
+      expect(io.exitCode).toBe(0)
+      expect(stdoutStr(io)).toBe("['secret.py']\n")
+    } finally {
+      await ws.close()
+    }
+  })
+})
+
+describe('python3: the program argv and its own file', { timeout: 60000 }, () => {
+  async function seeded(): Promise<Awaited<ReturnType<typeof makeWorkspace>>> {
+    const made = await makeWorkspace()
+    await made.ws.shell('mkdir -p /disk/app /disk/data')
+    await made.ws.shell("printf 'import sys\\nprint(sys.argv[1:])\\n' > /disk/app/argv.py")
+    await made.ws.shell("printf 'print(__file__)\\n' > /disk/app/file.py")
+    await made.ws.shell("printf 'x = 1\\nprint(x / 0)\\n' > /disk/app/err.py")
+    await made.ws.shell(
+      "printf 'import sys\\nprint(repr(sys.path[0]))\\nimport helper\\n' > /disk/app/imp.py",
+    )
+    await made.ws.shell('echo \'print("helper imported")\' > /disk/app/helper.py')
+    await made.ws.shell('echo x > /disk/data/in.csv')
+    return made
+  }
+
+  it.each([
+    [
+      'cd /disk && python3 app/argv.py data/in.csv data/in ./data/in.csv /disk/data/',
+      "['data/in.csv', 'data/in', './data/in.csv', '/disk/data/']",
+    ],
+    [
+      `cd /disk && python3 -c 'import os, sys; print(os.path.join("backup", sys.argv[1]))' data/in.csv`,
+      'backup/data/in.csv',
+    ],
+    ["cd /disk && python3 app/argv.py data/*.csv 'data/*.csv'", "['data/in.csv', 'data/*.csv']"],
+    ['python3 /disk/app/argv.py /ram/notes.txt', "['/ram/notes.txt']"],
+    ['python3 /disk/app/argv.py /ram/new.csv', "['/ram/new.csv']"],
+    [
+      "python3 -c 'import sys; print(sys.argv[1:])' /ram/notes.txt /disk/data/in.csv",
+      "['/ram/notes.txt', '/disk/data/in.csv']",
+    ],
+    [
+      'cd /ram && python3 /disk/app/argv.py --input /ram/notes.txt --out=/ram/o.csv',
+      "['--input', '/ram/notes.txt', '--out=/ram/o.csv']",
+    ],
+  ])('hands a path-shaped word over as typed: %s', async (line, argv) => {
+    // bash hands the words over as typed, globs expanded, and the program
+    // opens what it likes: a word naming another mount is no second mount
+    // for the line.
+    const { ws } = await seeded()
+    try {
+      const io = await ws.shell(line)
+      expect(stderrStr(io)).toBe('')
+      expect(io.exitCode).toBe(0)
+      expect(stdoutStr(io)).toBe(`${argv}\n`)
+    } finally {
+      await ws.close()
+    }
+  })
+
+  it.each([
+    ['python3 /disk/app/file.py', '/disk/app/file.py'],
+    ['cd /disk && python3 app/file.py', '/disk/app/file.py'],
+    ['cd /disk && python3 ./app/file.py', '/disk/./app/file.py'],
+    ['cat /disk/app/file.py | python3 -', '<stdin>'],
+    ['cat /disk/app/file.py | python3', '<stdin>'],
+  ])('binds __file__ the way CPython names the file: %s', async (line, file) => {
+    // CPython 3.13.5: the operand made absolute as typed, never
+    // normalized, and <stdin> for a program piped in.
+    const { ws } = await seeded()
+    try {
+      const io = await ws.shell(line)
+      expect(stderrStr(io)).toBe('')
+      expect(stdoutStr(io)).toBe(`${file}\n`)
+    } finally {
+      await ws.close()
+    }
+  })
+
+  it('binds no __file__ for a payload', async () => {
+    const { ws } = await seeded()
+    try {
+      const io = await ws.shell("python3 -c 'print(__file__)'")
+      expect(io.exitCode).toBe(1)
+      expect(stderrStr(io)).toContain("NameError: name '__file__' is not defined")
+    } finally {
+      await ws.close()
+    }
+  })
+
+  it('names the script and quotes its line in a traceback', async () => {
+    const { ws } = await seeded()
+    try {
+      const io = await ws.shell('python3 /disk/app/err.py')
+      expect(io.exitCode).toBe(1)
+      expect(stderrStr(io)).toContain('  File "/disk/app/err.py", line 2, in <module>\n')
+      expect(stderrStr(io)).toContain('    print(x / 0)\n')
+    } finally {
+      await ws.close()
+    }
+  })
+
+  it("heads sys.path with the script's own directory", async () => {
+    const { ws } = await seeded()
+    try {
+      const io = await ws.shell('python3 /disk/app/imp.py')
+      expect(stderrStr(io)).toBe('')
+      expect(stdoutStr(io)).toBe("'/disk/app'\nhelper imported\n")
+    } finally {
+      await ws.close()
+    }
+  })
+
+  it('hands Monty the script, which it names under the directory it starts in', async () => {
+    const ws = new Workspace(
+      { '/': new RAMVFS() },
+      {
+        mode: MountMode.EXEC,
+        shellParser: await getTestParser(),
+        runtimes: [new MontyRuntime(), 'workspace'],
+      },
+    )
+    try {
+      await ws.shell("mkdir /w && printf 'print(__file__)\\n' > /w/s.py")
+      const io = await ws.shell('cd /w && python3 s.py')
+      expect(stderrStr(io)).toBe('')
+      expect(stdoutStr(io)).toBe('/w/s.py\n')
+    } finally {
+      await ws.close()
+    }
+  })
+
+  it('honors -P: neither the script directory nor the working directory', async () => {
+    const { ws } = await seeded()
+    try {
+      const io = await ws.shell('cd /disk/app && python3 -P imp.py')
+      expect(io.exitCode).toBe(1)
+      expect(stdoutStr(io)).not.toContain("''")
+      expect(stdoutStr(io)).not.toContain("'/disk/app'")
+      expect(stderrStr(io)).toContain("ModuleNotFoundError: No module named 'helper'")
+      expect(stderrStr(io)).not.toContain('-P is ignored')
+    } finally {
+      await ws.close()
+    }
+  })
+})
+
+// All tests in this file are direct ports of Python mirage's python3 tests
+// in tests/workspace/test_workspace.py. Citations are in the `it()` title.
+
+describe('python3: core (ports of Python tests_workspace)', { timeout: 30000 }, () => {
+  it('reports the Pyodide guest version through every version spelling', async () => {
+    const { ws } = await makeWorkspace()
+    try {
+      const guest = await ws.shell("python3 -c 'import sys; print(sys.version.split()[0])'")
+      expect(guest.exitCode).toBe(0)
+      const expected = `Python ${stdoutStr(guest).trim()} (pyodide)\n`
+      for (const name of ['python', 'python3']) {
+        for (const flag of ['--version', '-V', '-VV']) {
+          const io = await ws.shell(`${name} ${flag}`)
+          expect(io.exitCode).toBe(0)
+          expect(stdoutStr(io)).toBe(expected)
+          expect(stderrStr(io)).toBe('')
+        }
+      }
+    } finally {
+      await ws.close()
+    }
+  }, 60_000)
+
+  it('passes a program its own --version argument', async () => {
+    const { ws } = await makeWorkspace()
+    try {
+      await ws.shell("echo 'import sys; print(sys.argv[-1])' > /ram/version.py")
+      for (const line of [
+        "python3 -c 'import sys; print(sys.argv[-1])' --version",
+        'python3 /ram/version.py --version',
+        "echo 'import sys; print(sys.argv[-1])' | python3 - --version",
+      ]) {
+        const io = await ws.shell(line)
+        expect(io.exitCode).toBe(0)
+        expect(stdoutStr(io)).toBe('--version\n')
+      }
+    } finally {
+      await ws.close()
+    }
+  }, 60_000)
+
+  it('test_python3_c_simple (L1364): print(42) → "42\\n"', async () => {
+    const { ws } = await makeWorkspace()
+    const io = await ws.shell('python3 -c "print(42)"')
+    expect(io.exitCode).toBe(0)
+    expect(stdoutStr(io)).toBe('42\n')
+    await ws.close()
+  }, 60_000)
+
+  it('test_python3_c_multiline (L1371): multi-stmt -c', async () => {
+    const { ws } = await makeWorkspace()
+    // Port note: Python test uses double quotes; the TS shell parser has a
+    // pre-existing quirk where newlines inside "..." are stripped. Single
+    // quotes preserve newlines and the behavioral assertion is identical.
+    const io = await ws.shell("python3 -c 'x = 2\nprint(x * 3)'")
+    expect(stdoutStr(io)).toBe('6\n')
+    await ws.close()
+  })
+
+  it('test_python3_c_with_stdin (L1377): echo hello | python3 -c', async () => {
+    const { ws } = await makeWorkspace()
+    const io = await ws.shell(
+      'echo hello | python3 -c "import sys; print(sys.stdin.read().strip().upper())"',
+    )
+    expect(stdoutStr(io)).toBe('HELLO\n')
+    await ws.close()
+  })
+
+  it('test_python3_c_path_in_code (L1385): paths in -c stay text', async () => {
+    const { ws } = await makeWorkspace()
+    const io = await ws.shell('python3 -c "print(\'/s3/data/file.txt\')"')
+    expect(io.exitCode).toBe(0)
+    expect(stdoutStr(io)).toContain('/s3/data/file.txt')
+    await ws.close()
+  })
+
+  it('test_python3_c_with_star (L1393): * in -c not glob-expanded', async () => {
+    const { ws } = await makeWorkspace()
+    const io = await ws.shell('python3 -c "print(2 * 3)"')
+    expect(stdoutStr(io)).toBe('6\n')
+    await ws.close()
+  })
+
+  it('test_python3_script_file (L1400): python3 /disk/script.py', async () => {
+    const { ws } = await makeWorkspace()
+    await ws.shell("echo 'print(99)' > /disk/script.py")
+    const io = await ws.shell('python3 /disk/script.py')
+    expect(io.exitCode).toBe(0)
+    expect(stdoutStr(io)).toBe('99\n')
+    await ws.close()
+  })
+
+  it('test_python3_session_env (L1408): export MY_VAR → os.environ', async () => {
+    const { ws } = await makeWorkspace()
+    await ws.shell('export MY_VAR=hello_mirage')
+    const io = await ws.shell("python3 -c \"import os; print(os.environ.get('MY_VAR', 'none'))\"")
+    expect(stdoutStr(io)).toBe('hello_mirage\n')
+    await ws.close()
+  })
+
+  it('test_python3_no_args (L1417): bare python3 → exit 1 "no input"', async () => {
+    const { ws } = await makeWorkspace()
+    const io = await ws.shell('python3')
+    expect(io.exitCode).toBe(1)
+    expect(stderrStr(io)).toContain('no input')
+    await ws.close()
+  })
+
+  it('bare-filename script in cwd: python3 script.py runs the file', async () => {
+    const { ws } = await makeWorkspace()
+    const io = await ws.shell('python3 script.py')
+    expect(io.exitCode).toBe(0)
+    expect(stdoutStr(io)).toBe('6\n')
+    await ws.close()
+  })
+
+  it('bare-filename script in subdir: python3 sub/deep.py runs via cwd', async () => {
+    const { ws, disk } = await makeWorkspace()
+    disk.store.files.set('/sub/deep.py', new TextEncoder().encode("print('deep ok')\n"))
+    ws.getSession(ws.defaultSessionId).cwd = '/disk'
+    const io = await ws.shell('python3 sub/deep.py')
+    expect(io.exitCode).toBe(0)
+    expect(stdoutStr(io)).toBe('deep ok\n')
+    await ws.close()
+  })
+
+  it('bare-filename script not found → exit 1, "No such file" on stderr', async () => {
+    const { ws } = await makeWorkspace()
+    const io = await ws.shell('python3 missing.py')
+    expect(io.exitCode).toBe(1)
+    expect(stderrStr(io)).toContain('No such file')
+    await ws.close()
+  })
+
+  // ── flag-conditional argv classification (no-c vs -c)
+  // These guard the spec/parser interaction: positional args after `-c "code"`
+  // must NOT be path-resolved (raw text → sys.argv); without -c, the first
+  // positional IS the script (PATH), and subsequent positionals are argv.
+
+  it('python3 -c "code" arg1 arg2 → argv stays bare (no path prefix)', async () => {
+    const { ws } = await makeWorkspace()
+    const io = await ws.shell('python3 -c "import sys; print(sys.argv[1:])" alpha beta')
+    expect(io.exitCode).toBe(0)
+    expect(stdoutStr(io)).toBe("['alpha', 'beta']\n")
+    await ws.close()
+  })
+
+  it('python3 -c "code" /abs/path → abs path stays as text argv', async () => {
+    const { ws } = await makeWorkspace()
+    const io = await ws.shell('python3 -c "import sys; print(sys.argv[1:])" /disk/some_file')
+    expect(io.exitCode).toBe(0)
+    expect(stdoutStr(io)).toBe("['/disk/some_file']\n")
+    await ws.close()
+  })
+
+  it('python3 /abs/script.py arg1 arg2 → script reads, argv passes through', async () => {
+    const { ws } = await makeWorkspace()
+    await ws.shell("echo 'import sys; print(sys.argv[1:])' > /disk/argv.py")
+    const io = await ws.shell('python3 /disk/argv.py alpha beta')
+    expect(io.exitCode).toBe(0)
+    expect(stdoutStr(io)).toBe("['alpha', 'beta']\n")
+    await ws.close()
+  })
+
+  it('python3 script.py one two (bare name + argv via cwd)', async () => {
+    const { ws, disk } = await makeWorkspace()
+    disk.store.files.set(
+      '/with_argv.py',
+      new TextEncoder().encode('import sys; print(sys.argv[1:])\n'),
+    )
+    ws.getSession(ws.defaultSessionId).cwd = '/disk'
+    const io = await ws.shell('python3 with_argv.py one two')
+    expect(io.exitCode).toBe(0)
+    expect(stdoutStr(io)).toBe("['one', 'two']\n")
+    await ws.close()
+  })
+
+  it('test_python_pipe (L848): python3 -c ... | grep', async () => {
+    const { ws } = await makeWorkspace()
+    const io = await ws.shell("python3 -c 'print(42)' | grep 42")
+    expect(io.exitCode).toBe(0)
+    await ws.close()
+  })
+
+  it('test_python_pipe_stdin (L1653): echo code | python3', async () => {
+    const { ws } = await makeWorkspace()
+    const io = await ws.shell('echo "print(1+2)" | python3')
+    expect(io.exitCode).toBe(0)
+    expect(stdoutStr(io)).toBe('3\n')
+    await ws.close()
+  })
+
+  it('test_python_heredoc (L1748): python3 << PYEOF', async () => {
+    const { ws } = await makeWorkspace()
+    const io = await ws.shell("python3 << 'PYEOF'\nprint(1 + 2)\nPYEOF")
+    expect(stdoutStr(io)).toBe('3\n')
+    await ws.close()
+  })
+
+  it('test_python_heredoc_dash_strips_indentation (L1783): <<-PYEOF', async () => {
+    const { ws } = await makeWorkspace()
+    const io = await ws.shell('python3 <<-PYEOF\n\tfor i in range(3):\n\t    print(i)\n\tPYEOF')
+    expect(stdoutStr(io)).toBe('0\n1\n2\n')
+    await ws.close()
+  })
+
+  it('test_python_heredoc_quoted_keeps_dollar_literal (L1794): $X stays literal', async () => {
+    const { ws } = await makeWorkspace()
+    await ws.shell('export X=shellval')
+    const io = await ws.shell("python3 << 'PYEOF'\nprint('$X')\nPYEOF")
+    expect(stdoutStr(io).trim()).toBe('$X')
+    await ws.close()
+  })
+
+  it('test_python_heredoc_unquoted_expands (L1806): unquoted heredoc expands', async () => {
+    const { ws } = await makeWorkspace()
+    await ws.shell('export X=shellval')
+    const io = await ws.shell("python3 << PYEOF\nprint('$X')\nPYEOF")
+    expect(stdoutStr(io).trim()).toBe('shellval')
+    await ws.close()
+  })
+
+  it('test_heredoc_pipe (L1932): python3 heredoc | head -n 1', async () => {
+    const { ws } = await makeWorkspace()
+    const io = await ws.shell(
+      "python3 << 'PYEOF' | head -n 1\nfor i in range(5):\n    print(i)\nPYEOF",
+    )
+    expect(stdoutStr(io)).toBe('0\n')
+    await ws.close()
+  })
+})
+
+describe('python3: TS-specific (Pyodide isolation + mechanics)', { timeout: 30000 }, () => {
+  // These have no Python-subprocess analog — they pin the Pyodide-layer
+  // isolation invariants documented in §14 of the design doc.
+
+  it('SystemExit(int) honors exit code', async () => {
+    const { ws } = await makeWorkspace()
+    const io = await ws.shell('python3 -c "import sys; sys.exit(3)"')
+    expect(io.exitCode).toBe(3)
+    await ws.close()
+  })
+
+  it('SystemExit() (no arg) → exit 0', async () => {
+    const { ws } = await makeWorkspace()
+    const io = await ws.shell('python3 -c "import sys; sys.exit()"')
+    expect(io.exitCode).toBe(0)
+    await ws.close()
+  })
+
+  it('SystemExit("msg") → exit 1 + msg on stderr', async () => {
+    const { ws } = await makeWorkspace()
+    const io = await ws.shell('python3 -c "import sys; sys.exit(\\"boom\\")"')
+    expect(io.exitCode).toBe(1)
+    expect(stderrStr(io)).toContain('boom')
+    await ws.close()
+  })
+
+  it('uncaught exception → exit 1 + traceback', async () => {
+    const { ws } = await makeWorkspace()
+    const io = await ws.shell('python3 -c "raise RuntimeError(\\"oops\\")"')
+    expect(io.exitCode).toBe(1)
+    expect(stderrStr(io)).toContain('RuntimeError')
+    expect(stderrStr(io)).toContain('oops')
+    await ws.close()
+  })
+
+  it('cross-call env isolation: mutations die with the call', async () => {
+    const { ws } = await makeWorkspace()
+    await ws.shell("python3 -c \"import os; os.environ['LEAKED'] = 'yes'\"")
+    const io = await ws.shell("python3 -c \"import os; print(os.environ.get('LEAKED', 'absent'))\"")
+    expect(stdoutStr(io).trim()).toBe('absent')
+    await ws.close()
+  })
+
+  it('cross-call namespace isolation: top-level vars do not leak', async () => {
+    const { ws } = await makeWorkspace()
+    await ws.shell('python3 -c "leaked_var = 42"')
+    const io = await ws.shell('python3 -c "print(\'leaked_var\' in dir())"')
+    expect(stdoutStr(io).trim()).toBe('False')
+    await ws.close()
+  })
+
+  it('sys.modules sharing within workspace (intentional divergence)', async () => {
+    const { ws } = await makeWorkspace()
+    await ws.shell('python3 -c "import json"')
+    const io = await ws.shell('python3 -c "import sys; print(\'json\' in sys.modules)"')
+    expect(stdoutStr(io).trim()).toBe('True')
+    await ws.close()
+  })
+
+  it('script file not found → exit 1, "No such file" on stderr', async () => {
+    const { ws } = await makeWorkspace()
+    const io = await ws.shell('python3 /ram/does_not_exist.py')
+    expect(io.exitCode).toBe(1)
+    expect(stderrStr(io)).toContain('No such file')
+    await ws.close()
+  })
+
+  it('cross-workspace isolation: different workspaces have different envs', async () => {
+    const a = await makeWorkspace()
+    const b = await makeWorkspace()
+    await a.ws.shell('export NAME=alpha')
+    await b.ws.shell('export NAME=beta')
+    const [ra, rb] = await Promise.all([
+      a.ws.shell('python3 -c "import os; print(os.environ[\'NAME\'])"'),
+      b.ws.shell('python3 -c "import os; print(os.environ[\'NAME\'])"'),
+    ])
+    expect(stdoutStr(ra).trim()).toBe('alpha')
+    expect(stdoutStr(rb).trim()).toBe('beta')
+    await a.ws.close()
+    await b.ws.close()
+  }, 30000)
+
+  it('concurrent calls — each sees its own os.environ mutations atomically', async () => {
+    const { ws } = await makeWorkspace()
+    // Each python3 call sets and reads os.environ['VAR'] internally — no
+    // session-level export. The JS queue + Python try/finally guarantees
+    // that call N's snapshot/set/read/restore is atomic w.r.t. call N+1.
+    // Without the queue, two concurrent calls would race on os.environ.
+    const N = 8
+    const results = await Promise.all(
+      Array.from({ length: N }, (_, i) =>
+        ws.shell(
+          `python3 -c "import os; os.environ['VAR'] = '${String(i)}'; ` +
+            `import time; print(os.environ['VAR'])"`,
+        ),
+      ),
+    )
+    for (let i = 0; i < N; i++) {
+      const r = results[i]
+      if (r === undefined) throw new Error(`missing result at index ${String(i)}`)
+      expect(stdoutStr(r).trim()).toBe(String(i))
+    }
+    // After all calls, os.environ['VAR'] should NOT leak (restored by finally).
+    const check = await ws.shell('python3 -c "import os; print(\'VAR\' in os.environ)"')
+    expect(stdoutStr(check).trim()).toBe('False')
+    await ws.close()
+  }, 60_000)
+
+  it('a shadowing function receives the words as typed', async () => {
+    // bash's own rule: a function of the same name takes the line. It has
+    // no CPython option table, so the `--` the interpreter's handoff would
+    // need must not be inserted into its arguments.
+    const { ws } = await makeWorkspace()
+    await ws.shell('python3() { echo "$@"; }')
+    const io = await ws.shell('python3 -c payload -u x')
+    expect(io.exitCode).toBe(0)
+    expect(stdoutStr(io)).toBe('-c payload -u x\n')
+    await ws.close()
+  })
+
+  it('command bypasses the function and restores the handoff', async () => {
+    // `command` masks the function for its inner run, so the interpreter
+    // is what runs and -u belongs to the program again.
+    const { ws } = await makeWorkspace()
+    await ws.shell('python3() { echo "$@"; }')
+    const io = await ws.shell('command python3 -c "import sys; print(sys.argv)" -u x')
+    expect(io.exitCode).toBe(0)
+    expect(stdoutStr(io)).toBe("['-c', '-u', 'x']\n")
+    await ws.close()
+  }, 60_000)
+
+  it('an invalid -W filter is reported and the program still runs', async () => {
+    // CPython names a bad filter at startup and runs the program anyway;
+    // aborting would kill a line every other runtime completes.
+    const { ws } = await makeWorkspace()
+    const io = await ws.shell('python3 -W nonsense -c "print(42)"')
+    expect(io.exitCode).toBe(0)
+    expect(stdoutStr(io)).toBe('42\n')
+    expect(stderrStr(io)).toBe("Invalid -W option ignored: invalid action: 'nonsense'\n")
+    await ws.close()
+  }, 60_000)
+
+  it('a known -X name is reported as unhonored', async () => {
+    // -X dev's real effect is read out of sys.flags, which is read-only,
+    // so populating sys._xoptions is all this engine can do for it.
+    const { ws } = await makeWorkspace()
+    const io = await ws.shell('python3 -X dev -c "print(7)"')
+    expect(io.exitCode).toBe(0)
+    expect(stdoutStr(io)).toBe('7\n')
+    expect(stderrStr(io)).toContain("-X dev is ignored by the 'pyodide' runtime")
+    await ws.close()
+  }, 60_000)
+
+  it('an arbitrary -X name lands in sys._xoptions in silence', async () => {
+    // On CPython it does nothing but land in the dict either.
+    const { ws } = await makeWorkspace()
+    const io = await ws.shell('python3 -X nosuchopt -c "import sys; print(sys._xoptions)"')
+    expect(io.exitCode).toBe(0)
+    expect(stdoutStr(io)).toBe("{'nosuchopt': True}\n")
+    expect(stderrStr(io)).toBe('')
+    await ws.close()
+  }, 60_000)
+
+  it('unsetting the function restores the handoff', async () => {
+    const { ws } = await makeWorkspace()
+    await ws.shell('python3() { echo "$@"; }')
+    await ws.shell('unset -f python3')
+    const io = await ws.shell('python3 -c "import sys; print(sys.argv)" -u x')
+    expect(io.exitCode).toBe(0)
+    expect(stdoutStr(io)).toBe("['-c', '-u', 'x']\n")
+    await ws.close()
+  }, 60_000)
+})

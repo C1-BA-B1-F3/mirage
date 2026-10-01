@@ -29,11 +29,10 @@ from mirage.commands.spec.argmatch import ArgmatchMatch, argmatch
 from mirage.commands.spec.flag_view import FlagView
 from mirage.commands.spec.types import FlagValue
 from mirage.commands.spec.usage import argmatch_error
-from mirage.io.stream import async_chain
+from mirage.io.stream import async_chain, ensure_stream
 from mirage.io.types import ByteSource, IOResult
 from mirage.types import FileType, PathSpec, PolymorphicReadFn, StatFn
 from mirage.utils.errors import FS_ERRORS, fs_error_line, fs_strerror
-from mirage.utils.stream import ensure_stream
 
 DEFAULT_SLEEP_INTERVAL = 1.0
 # GNU's `follow_mode_string`, in declaration order.

@@ -922,7 +922,8 @@ class TestJqDiskBackend:
 
 class TestJqS3Backend:
     def _s3_ws(self):
-        from mirage.vfs.s3.s3 import S3VFS, S3Config
+        from mirage.vfs.s3.config import S3Config
+        from mirage.vfs.s3.s3 import S3VFS
         from mirage.workspace import Workspace
 
         config = S3Config(bucket="test-bucket", region="us-east-1")

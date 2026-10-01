@@ -37,7 +37,8 @@ import {
   validRefName,
   writeRef,
 } from './refs.ts'
-import { objectType, openRepo, opened, repoArgs, storePack, type Repo } from './repo.ts'
+import { objectType, openRepo, repoArgs, storePack, type Repo } from './repo.ts'
+import { opened } from './session.ts'
 import { compareCodePoints } from '../../../../utils/sort.ts'
 import {
   displayUrl,

@@ -900,7 +900,7 @@ describe('Workspace with the monty runtime', () => {
 
 describe('monty unavailable', () => {
   it('handlePython maps MontyUnavailableError to exit 127', async () => {
-    const { handlePython } = await import('../../../workspace/executor/python/handle.ts')
+    const { handlePython } = await import('../../../commands/builtin/general/python.ts')
     const { MontyUnavailableError } = await import('./index.ts')
     class UnavailableMonty extends MontyRuntime {
       override run(): Promise<never> {

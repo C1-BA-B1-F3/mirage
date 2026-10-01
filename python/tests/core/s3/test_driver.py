@@ -3,8 +3,8 @@ from unittest.mock import AsyncMock, MagicMock, Mock
 
 import pytest
 
-from mirage.accessor.s3 import S3Config
 from mirage.core.s3.driver import DRIVER, S3Conn
+from mirage.vfs.s3.config import S3Config
 
 
 @pytest.mark.asyncio

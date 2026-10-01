@@ -12,6 +12,19 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-from mirage.vfs.hf_datasets.hf_datasets import HfDatasetsConfig, HfDatasetsVFS
+from typing import TYPE_CHECKING
+
+from mirage.vfs.hf_datasets.config import HfDatasetsConfig
+
+if TYPE_CHECKING:
+    from mirage.vfs.hf_datasets.hf_datasets import HfDatasetsVFS
 
 __all__ = ["HfDatasetsConfig", "HfDatasetsVFS"]
+
+
+def __getattr__(name: str) -> "type[HfDatasetsVFS]":
+    if name == "HfDatasetsVFS":
+        from mirage.vfs.hf_datasets.hf_datasets import HfDatasetsVFS
+
+        return HfDatasetsVFS
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

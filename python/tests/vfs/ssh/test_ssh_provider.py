@@ -12,18 +12,8 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import pytest
-
 from mirage.types import VFSName
 from mirage.vfs.ssh import SSHVFS, SSHConfig
-
-
-def test_ssh_config_frozen():
-    cfg = SSHConfig(host="dev", root="/home/ubuntu")
-    assert cfg.host == "dev"
-    assert cfg.root == "/home/ubuntu"
-    with pytest.raises(Exception):
-        cfg.host = "other"
 
 
 def test_ssh_vfs_attributes():

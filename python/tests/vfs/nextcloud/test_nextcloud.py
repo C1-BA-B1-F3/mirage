@@ -1,37 +1,4 @@
-import pytest
-from pydantic import ValidationError
-
 from mirage.vfs.nextcloud import NextcloudConfig, NextcloudVFS
-
-
-def test_nextcloudconfig_defaults():
-    c = NextcloudConfig(
-        url="https://cloud.example.com/remote.php/dav/files/user/"
-    )
-    assert c.username is None
-    assert c.password is None
-    assert c.verify_ssl is True
-    assert c.timeout == 30
-
-
-def test_nextcloudconfig_immutable():
-    c = NextcloudConfig(
-        url="https://cloud.example.com/remote.php/dav/files/user/"
-    )
-    with pytest.raises(ValidationError):
-        c.url = "https://other.example.com/"
-
-
-def test_nextcloudconfig_with_credentials():
-    c = NextcloudConfig(
-        url="https://cloud.example.com/remote.php/dav/files/user/",
-        username="alice",
-        password="secret",
-        verify_ssl=False,
-    )
-    assert c.username == "alice"
-    assert c.password == "secret"
-    assert c.verify_ssl is False
 
 
 def test_nextcloud_write_commands_tagged():

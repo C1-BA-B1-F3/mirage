@@ -56,7 +56,8 @@ import {
   writeRef,
 } from './refs.ts'
 import { under as inside } from './pathspec.ts'
-import { opened, repoArgs, type Repo } from './repo.ts'
+import { repoArgs, type Repo } from './repo.ts'
+import { opened } from './session.ts'
 import { resolveCommit } from './revparse.ts'
 import { restored } from './reset.ts'
 import { commitEntries, type TreeEntry } from './tree.ts'

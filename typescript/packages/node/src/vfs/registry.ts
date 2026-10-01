@@ -94,18 +94,18 @@ const REGISTRY: Record<string, VFSFactory> = {
   },
   hf_datasets: async (config) => {
     const { HfDatasetsVFS } = await import('./hf_datasets/hf_datasets.ts')
-    const { normalizeHfRepoConfig } = await import('./hf_buckets/config.ts')
-    return new HfDatasetsVFS(normalizeHfRepoConfig(config))
+    const { normalizeHfDatasetsConfig } = await import('./hf_datasets/config.ts')
+    return new HfDatasetsVFS(normalizeHfDatasetsConfig(config))
   },
   hf_models: async (config) => {
     const { HfModelsVFS } = await import('./hf_models/hf_models.ts')
-    const { normalizeHfRepoConfig } = await import('./hf_buckets/config.ts')
-    return new HfModelsVFS(normalizeHfRepoConfig(config))
+    const { normalizeHfModelsConfig } = await import('./hf_models/config.ts')
+    return new HfModelsVFS(normalizeHfModelsConfig(config))
   },
   hf_spaces: async (config) => {
     const { HfSpacesVFS } = await import('./hf_spaces/hf_spaces.ts')
-    const { normalizeHfRepoConfig } = await import('./hf_buckets/config.ts')
-    return new HfSpacesVFS(normalizeHfRepoConfig(config))
+    const { normalizeHfSpacesConfig } = await import('./hf_spaces/config.ts')
+    return new HfSpacesVFS(normalizeHfSpacesConfig(config))
   },
   supabase: async (config) => {
     const { SupabaseVFS } = await import('./supabase/supabase.ts')

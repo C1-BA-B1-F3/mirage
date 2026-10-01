@@ -1,5 +1,5 @@
 {
- "baseline": 48,
+ "baseline": 2,
  "baseline_reason": "Every divergence below the excused ones predates the gate and each needs its own decision, so --strict fails on a rise rather than demanding zero. Lower this number whenever a divergence is closed; the gate fails on a drop too, so an improvement cannot be silently spent. Items 31-37 of the cleanup plan are scoped from this report. The unit is one module, never one directory: a one-sided directory counts once per module inside it, so it cannot absorb new modules without moving the number. An excused directory is the deliberate exception -- it excuses its whole subtree, because the excuse is that there is no counterpart to mirror, which makes growth inside it expected rather than drift.",
  "directories": {
   "python_only": {
@@ -9,10 +9,7 @@
    "agents/camel": "Ecosystem split: camel is a python-only framework, and pyproject declares it conflicting with the openai extra.",
    "agents/openai_agents": "Twin of the typescript agents/openai: the python package is named after the openai-agents SDK and the npm subpath after @openai/agents, so the two never pair by name. Each module added to both sides is excused under modules.agents/openai.",
    "agents/openhands": "Ecosystem split: openhands is a python-only framework.",
-   "agents/pydantic_ai": "Ecosystem split: pydantic-ai is a python-only framework.",
-   "commands/builtin/hf_buckets": "hf_buckets is python's name for the backend typescript calls hf; the alias is already declared in spec/parity_exceptions.json under command_io_aliases.",
-   "core/hf_buckets": "Same hf_buckets/hf alias as above.",
-   "core/hf_buckets/du": "Same hf_buckets/hf alias as above."
+   "agents/pydantic_ai": "Ecosystem split: pydantic-ai is a python-only framework."
   },
   "typescript_only": {
    "runtime/python/pyodide": "Pyodide is the JavaScript-hosted CPython engine, including its VFS and worker transport. Python uses native CPython or WASI and has no Pyodide host adapter to mirror.",
@@ -23,13 +20,11 @@
    "generated": "browser/src/generated/wasm.ts is a build artifact embedded for the browser bundle, not a source module.",
    "cli/bin": "An npm package declares its executable as a real file under bin/; python declares console_scripts in pyproject.toml instead.",
    "server/bin": "Same npm bin convention as cli/bin.",
-   "commands/builtin/hf": "typescript's name for python's hf_buckets; see the alias in spec/parity_exceptions.json.",
-   "core/hf": "Same hf/hf_buckets alias as above.",
-   "core/hf/du": "Same hf/hf_buckets alias as above.",
    "runtime/python/pyodide/worker": "Pyodide worker transport for synchronous WASM filesystem callbacks. Python bridges WASI from a native thread and has no JavaScript worker transport.",
    "runtime/python/pyodide/vfs": "The Emscripten filesystem adapter for Pyodide. Python uses the shared WASI host or native filesystem integration instead.",
    "agents/openai": "Twin of the python agents/openai_agents (excused there): the npm subpath is named after @openai/agents and the python package after the openai-agents SDK.",
-   "agents/pi": "Ecosystem split: pi is an npm-only coding agent."
+   "agents/pi": "Ecosystem split: pi is an npm-only coding agent.",
+   "agents/read_file": "Constants (the MIME tables) of the TypeScript-only read_file tool; see modules.agents.typescript_only.read_file."
   }
  },
  "modules": {
@@ -44,6 +39,9 @@
   "accessor": {
    "python_only": {
     "pool": "One open client per event loop, keyed by the loop object. Only python has the hazard: an aiobotocore client binds to the loop that opened it, and a process runs many loops over its lifetime (every asyncio.run makes one), so a cached client outlives the loop it belongs to and has to be released against a loop that is already closed. Node has one loop and an AWS SDK v3 client that is not bound to it, so S3Accessor there holds config and opens nothing -- there is no lifetime to manage and nothing to mirror."
+   },
+   "typescript_only": {
+    "opfs": "The OPFS accessor, browser-only; see directories.typescript_only.vfs/opfs."
    }
   },
   "runtime/js/quickjs": {
@@ -70,6 +68,9 @@
     "slash": "What Python's standard library already provides: Leading and trailing slash trimming; Python spells it str.strip('/').",
     "sort": "What Python's standard library already provides: Code-point string order; Python's str comparison is code-point order, where JavaScript's default compares UTF-16 code units.",
     "text": "What Python's standard library already provides: Trailing newline trimming; Python spells it str.rstrip('\\n')."
+   },
+   "python_only": {
+    "json_canonical": "Folds integral floats in pymongo/asyncpg rows to int so json.dumps prints 1, not 1.0. JavaScript has one number type and JSON.stringify already prints 1."
    }
   },
   "runtime/python": {
@@ -111,17 +112,21 @@
   },
   "vfs/mongodb": {
    "typescript_only": {
-    "http_driver": "The browser's mongodb driver, over the caller's HTTP proxy (see core/mongodb/_driver). Python has no browser runtime."
+    "http_driver": "The browser's mongodb driver, over the caller's HTTP proxy (see core/mongodb/_driver). Python has no browser runtime.",
+    "store": "Node's MongoDriver over the npm mongodb driver, plugged into core/mongodb/_driver (already excused). Python's accessor/mongodb.py opens pymongo's AsyncMongoClient itself."
    }
   },
   "vfs/postgres": {
    "typescript_only": {
-    "neon_driver": "The browser's postgres driver, over Neon's serverless HTTP endpoint (see core/postgres/_driver). Python has no browser runtime."
+    "neon_driver": "The browser's postgres driver, over Neon's serverless HTTP endpoint (see core/postgres/_driver). Python has no browser runtime.",
+    "store": "Node's PgDriver over npm pg, plugged into core/postgres/_driver (already excused). Python's accessor/postgres.py opens asyncpg itself."
    }
   },
   ".": {
    "typescript_only": {
-    "optional_peer": "node's re-export of utils/optional_peer for its own optional peers, excused there."
+    "optional_peer": "node's re-export of utils/optional_peer for its own optional peers, excused there.",
+    "compression_codecs": "Node registers bzip2 and xz codecs from npm (seek-bzip, @napi-rs/lzma) into core's runtime-agnostic codec registry. Python's utils/compress.py calls the standard library's bz2 and lzma directly.",
+    "workspace": "The per-runtime Workspace each npm runtime package exports (node and browser wire their own VFS registry, runtimes and, on node, FUSE over core's Workspace). Python has one runtime, so workspace/workspace/workspace.py is its only Workspace."
    }
   },
   "commands/builtin": {
@@ -137,6 +142,63 @@
   "cache/index": {
    "python_only": {
     "null": "NullIndexCacheStore, the do-nothing default a handler's index parameter takes. TypeScript spells the same default as an optional `index?: IndexCacheStore`, so it needs no null object."
+   }
+  },
+  "commands/cli/builtin/git": {
+   "python_only": {
+    "lazyfile": "dulwich reads pack data only through a seekable file object, so Python serves a mount path as a block-cached read/seek window marshalled onto the workspace loop; isomorphic-git reads packfiles through its fs client (fs.ts) and takes no file object.",
+    "objects": "dulwich's object store is synchronous, so Python hand-builds a lazy BaseObjectStore over the dispatcher (loose objects fetched by id, packs opened through LazyFile, writes stored loose); isomorphic-git is async and reads loose objects and packs itself through fs.ts."
+   },
+   "typescript_only": {
+    "fs": "isomorphic-git reaches a repository only through a PromiseFsClient, and this is that client over the dispatcher plus the config readers built on isomorphic-git's GitConfigManager; dulwich takes an object store and a refs container instead, which Python builds in objects.py and refs.py.",
+    "similarity": "A port of dulwich's _similarity_score, which Python's rename detection calls directly (changes.py, diff_output.py); isomorphic-git has no rename scoring, and the two must agree digit for digit at the 60% threshold."
+   }
+  },
+  "agents": {
+   "typescript_only": {
+    "read_file": "The read-file tool body (sniffs a workspace file into a text, image, PDF or binary part), shared by the npm-only vercel and opencode adapters and the openai adapter's read_file tool. No Python adapter exposes a read-file tool (openai_agents attaches files through MirageRunner), so there is nothing to mirror."
+   }
+  },
+  "fuse": {
+   "python_only": {
+    "darwin": "Fills macFUSE's Darwin-only fuse_operations tail (setattr_x, fsetattr_x, renamex) into mfusepy's ctypes struct, which leaves those slots NULL so FSKit creates and renames fail with ENOSYS. Node's @zkochan/fuse-native is a compiled addon with no ctypes struct to fill."
+   }
+  },
+  "server": {
+   "python_only": {
+    "daemon": "The uvicorn import target (mirage.server.daemon:app) the CLI spawns. Its twin is TypeScript's server/bin/daemon.ts, under the npm bin directory already excused as server/bin."
+   }
+  },
+  "core/databricks_volume": {
+   "typescript_only": {
+    "client": "A hand-rolled fetch client for the Databricks Files REST API. Python calls the databricks-sdk WorkspaceClient, which has no npm equivalent."
+   }
+  },
+  "vfs/databricks_volume": {
+   "typescript_only": {
+    "profile": "Parses ~/.databrickscfg for a named profile on node. Python's databricks-sdk resolves profiles itself."
+   }
+  },
+  "vfs/lancedb": {
+   "typescript_only": {
+    "store": "Node's LanceDriver (core/lancedb/query.ts) over @lancedb/lancedb. Core's accessor takes a driver, so runtime-agnostic code never imports a native npm module; Python's accessor/lancedb.py opens lancedb itself."
+   }
+  },
+  "vfs/s3": {
+   "typescript_only": {
+    "remap": "Retags S3's ops and commands onto an alias's VFS name for the node and browser S3AliasVFS. Python's S3AliasVFS keeps the s3 name and inherits S3VFS.ops()/commands() untouched, so there is nothing to retag.",
+    "storage_id": "s3StorageLocation, shared by the node and browser S3VFS classes, which are two runtime twins of Python's one vfs/s3/s3.py (where storage_location is a method). Core cannot hold the class because each runtime's accessor differs."
+   }
+  },
+  "workspace/snapshot": {
+   "typescript_only": {
+    "fs": "Core is runtime-agnostic, so the node:fs read and write of a snapshot path load behind a runtime guard here. Python's tarfile opens the path itself inside tar_io.write_tar/read_tar.",
+    "types": "The snapshot JSON shapes as TypeScript interfaces, so the checker can type the parsed state. Python spells the same keys as StrEnums in snapshot/keys.py and carries the state as dict[str, Any]."
+   }
+  },
+  "vfs/notion": {
+   "typescript_only": {
+    "config": "The browser NotionVFS's config: an MCP OAuthClientProvider for Notion's hosted MCP server, which only the browser build talks to. Python's NotionConfig is the API-key model in core/notion/config, twin of TypeScript's core/notion/config.ts."
    }
   }
  }

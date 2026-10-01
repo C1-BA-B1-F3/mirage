@@ -44,7 +44,8 @@ import {
   under,
 } from './io.ts'
 import { matched, repoRelative, under as inside } from './pathspec.ts'
-import { opened, repoArgs, type Repo } from './repo.ts'
+import { repoArgs, type Repo } from './repo.ts'
+import { opened } from './session.ts'
 import { restored } from './reset.ts'
 import { COMMIT, TREE, resolveObject, unwrapped } from './revparse.ts'
 import { commitEntries, treeEntries, type TreeEntry } from './tree.ts'

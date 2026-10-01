@@ -19,6 +19,7 @@ import pytest
 
 from mirage.context import reset_current_session, set_current_session
 from mirage.errors import FsCondition, posix_errno
+from mirage.io import IOResult
 from mirage.policy import (Action, CommandRule, Deny, OpsContext, Policies,
                            Policy, PolicyDenied)
 from mirage.policy.rule import RulePolicy
@@ -1075,4 +1076,14 @@ async def test_a_backend_that_rewrites_uploads_keeps_no_written_bytes(line):
 async def test_a_backend_that_rewrites_uploads_keeps_no_self_overwrite():
     ws = await _seeded(_RewritingRAM())
     await _run(ws, "cat /data/a.docx | tee /data/a.docx")
+    assert not await ws.cache.exists("/data/a.docx")
+
+
+@pytest.mark.asyncio
+async def test_a_bare_apply_io_keeps_no_bytes_a_rewriting_backend_was_sent():
+    # An embedder calling apply_io with no captured facts gets the live
+    # ones, which must carry the mount's flag too.
+    ws = await _seeded(_RewritingRAM())
+    await ws.apply_io(
+        IOResult(writes={"/data/a.docx": b"sent"}, cache=["/data/a.docx"]))
     assert not await ws.cache.exists("/data/a.docx")

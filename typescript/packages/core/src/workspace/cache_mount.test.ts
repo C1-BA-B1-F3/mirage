@@ -377,6 +377,21 @@ describe('what a write leaves in the file cache', () => {
     },
   )
 
+  // An embedder calling applyIo with no captured facts gets the live ones,
+  // which must carry the mount's flag too.
+  it('keeps nothing a bare applyIo wrote on a backend that rewrites uploads', async () => {
+    const ws = await seeded(false)
+    try {
+      const disp = (ws as unknown as { dispatcher: Dispatcher }).dispatcher
+      await disp.applyIo(
+        new IOResult({ writes: { '/data/a.docx': ENC.encode('sent') }, cache: ['/data/a.docx'] }),
+      )
+      expect(await ws.cache.exists('/data/a.docx')).toBe(false)
+    } finally {
+      await ws.close()
+    }
+  })
+
   it('keeps nothing a self-overwrite wrote on a backend that rewrites uploads', async () => {
     const ws = await seeded(false)
     try {

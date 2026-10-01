@@ -196,7 +196,12 @@ export interface Case {
 }
 
 export type ScenarioStep =
-  | { mutate: { path: string; content: string } | { command: string } }
+  | {
+      mutate:
+        | { path: string; content: string }
+        | { path: string; delete: true }
+        | { command: string }
+    }
   | { command: string }
 
 export interface ExplainRow {
@@ -505,6 +510,7 @@ export async function seedMountRoot(ws: ExecWorkspace, mountPath: string): Promi
 export async function runScenario(
   ws: ExecWorkspace,
   mutate: (path: string, content: Uint8Array) => Promise<void>,
+  remove: (path: string) => Promise<void>,
   mutateLine: (command: string) => Promise<void>,
   steps: ScenarioStep[],
 ): Promise<{ exitCode: number; out: string; err: string }> {
@@ -515,6 +521,7 @@ export async function runScenario(
     if ('mutate' in step) {
       const spec = step.mutate
       if ('command' in spec) await mutateLine(spec.command)
+      else if ('delete' in spec) await remove(spec.path)
       else await mutate(spec.path, ENC.encode(spec.content))
       continue
     }
@@ -530,6 +537,7 @@ export async function runScenario(
 export interface ScenarioOpen {
   ws: ExecWorkspace
   mutate: (path: string, content: Uint8Array) => Promise<void>
+  remove: (path: string) => Promise<void>
   mutateLine: (command: string) => Promise<void>
   cleanup: () => Promise<void>
 }
@@ -573,6 +581,7 @@ export async function runConsistencyCase(
     const { exitCode, out, err } = await runScenario(
       opened.ws,
       opened.mutate,
+      opened.remove,
       opened.mutateLine,
       c.scenario ?? [],
     )

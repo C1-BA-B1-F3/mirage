@@ -644,7 +644,7 @@ async def run_case(
 
 
 async def run_scenario(
-    read_ws, mutate, mutate_line, steps: list[dict]
+    read_ws, mutate, remove, mutate_line, steps: list[dict]
 ) -> tuple[int, str, str]:
     outs: list[str] = []
     errs: list[str] = []
@@ -654,6 +654,8 @@ async def run_scenario(
             spec = step["mutate"]
             if "command" in spec:
                 await mutate_line(spec["command"])
+            elif spec.get("delete") is True:
+                await remove(spec["path"])
             else:
                 await mutate(spec["path"], spec["content"].encode())
             continue

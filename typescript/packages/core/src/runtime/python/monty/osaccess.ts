@@ -122,6 +122,12 @@ function dateMarker(): Record<string, unknown> {
   }
 }
 
+/** The parent directory of an absolute guest path. */
+function parentOf(path: string): string {
+  const slash = path.replace(/\/+$/, '').lastIndexOf('/')
+  return slash <= 0 ? '/' : path.slice(0, slash)
+}
+
 /**
  * Monty's OS door: a mounted path is the workspace's, any other scratch.
  *
@@ -293,32 +299,46 @@ export class MirageOSAccess {
       case 'open': {
         const mode = typeof args[1] === 'string' ? args[1] : 'r'
         const handle = new this.fileHandle(path, mode)
-        this.tree.open(path, parseMode(mode))
-        return handle
+        const facts = parseMode(mode)
+        const open = (): unknown => {
+          this.tree.open(path, facts)
+          return handle
+        }
+        return facts.writable ? this.creating(path, open) : open()
       }
       case 'Path.read_text':
         return this.tree.readText(path)
       case 'Path.read_bytes':
         return this.tree.readBytes(path)
       case 'Path.write_text':
-        this.tree.write(path, String(args[1]))
-        return textLength(args[1])
+        return this.creating(path, () => {
+          this.tree.write(path, String(args[1]))
+          return textLength(args[1])
+        })
       case 'Path.write_bytes': {
         const data = payloadBytes(args[1])
-        this.tree.write(path, data)
-        return data.length
+        return this.creating(path, () => {
+          this.tree.write(path, data)
+          return data.length
+        })
       }
       case 'Path.append_text':
-        this.tree.append(path, String(args[1]))
-        return textLength(args[1])
+        return this.creating(path, () => {
+          this.tree.append(path, String(args[1]))
+          return textLength(args[1])
+        })
       case 'Path.append_bytes': {
         const data = payloadBytes(args[1])
-        this.tree.append(path, data)
-        return data.length
+        return this.creating(path, () => {
+          this.tree.append(path, data)
+          return data.length
+        })
       }
       case 'Path.mkdir':
-        this.tree.mkdir(path, kwargs.parents === true, kwargs.exist_ok === true)
-        return null
+        return this.creating(path, () => {
+          this.tree.mkdir(path, kwargs.parents === true, kwargs.exist_ok === true)
+          return null
+        })
       case 'Path.unlink':
         this.tree.unlink(path)
         return null
@@ -331,8 +351,10 @@ export class MirageOSAccess {
         // Crossing into a mount is the same filesystem boundary as
         // crossing out of one.
         if (this.door?.serves(dst) === true) throw guestError('EXDEV', path, dst)
-        this.tree.rename(path, dst)
-        return null
+        return this.creating(dst, () => {
+          this.tree.rename(path, dst)
+          return null
+        })
       }
       case 'Path.exists':
       case 'Path.is_dir':
@@ -351,6 +373,25 @@ export class MirageOSAccess {
       default:
         return this.notHandled
     }
+  }
+
+  /**
+   * Run a scratch create once its parent is a tree directory, making it
+   * one when only the workspace has it. A directory the workspace lists
+   * but no mount claims (the root above nested mounts) is one the guest
+   * sees as a directory, so a scratch file may be created in it like in
+   * any other; the tree holds it from then on, and its listing merges
+   * both.
+   */
+  private creating(path: string, run: () => unknown): unknown {
+    const parent = parentOf(path)
+    if (this.tree.exists(parent)) return run()
+    const listed = this.listable(parent)
+    if (listed === false) return run()
+    return Promise.resolve(listed).then((found) => {
+      if (found) this.tree.mkdir(parent, true, true)
+      return run()
+    })
   }
 
   /**

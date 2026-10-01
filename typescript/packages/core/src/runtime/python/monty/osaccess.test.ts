@@ -203,9 +203,9 @@ describe('MirageOSAccess scratch paths', () => {
     // makes its scratch directories before writing under them.
     const access = accessOn(noop)
     await expect(Promise.resolve(access.handle('Path.exists', ['/tmp/x']))).resolves.toBe(false)
-    expect(() => access.handle('Path.write_text', ['/tmp/x', 'hi'])).toThrow(
-      'No such file or directory',
-    )
+    await expect(
+      Promise.resolve(access.handle('Path.write_text', ['/tmp/x', 'hi'])),
+    ).rejects.toThrow('No such file or directory')
     access.handle('Path.mkdir', ['/tmp'], {})
     expect(access.handle('Path.write_text', ['/tmp/x', 'hi'])).toBe(2)
     expect(access.handle('Path.read_text', ['/tmp/x'])).toBe('hi')
@@ -235,10 +235,16 @@ describe('MirageOSAccess scratch paths', () => {
     )
   })
 
-  it('mkdir honors parents and exist_ok in the tree', () => {
+  it('mkdir honors parents and exist_ok in the tree', async () => {
     const access = accessOn(noop)
-    expect(() => access.handle('Path.mkdir', ['/tmp/a/b'], {})).toThrow('No such file or directory')
-    expect(access.handle('Path.mkdir', ['/tmp/a/b'], { parents: true, exist_ok: false })).toBeNull()
+    await expect(Promise.resolve(access.handle('Path.mkdir', ['/tmp/a/b'], {}))).rejects.toThrow(
+      'No such file or directory',
+    )
+    await expect(
+      Promise.resolve(
+        access.handle('Path.mkdir', ['/tmp/a/b'], { parents: true, exist_ok: false }),
+      ),
+    ).resolves.toBeNull()
     expect(() => access.handle('Path.mkdir', ['/tmp/a/b'], {})).toThrow('File exists')
     expect(access.handle('Path.mkdir', ['/tmp/a/b'], { parents: false, exist_ok: true })).toBeNull()
   })
@@ -250,6 +256,20 @@ describe('MirageOSAccess scratch paths', () => {
     expect(() => access.handle('Path.rename', ['/tmp/x', '/ram/y'])).toThrow(
       '[Errno 18] Invalid cross-device link',
     )
+  })
+
+  // A directory the workspace lists but no mount claims is one the guest
+  // sees, so a scratch file may be created in it.
+  it('creates a scratch file under a directory only the workspace lists', async () => {
+    const access = accessOn(listing(['/parent/child'], ['/parent/child']), {}, ['/parent/child'])
+    await expect(
+      Promise.resolve(access.handle('Path.write_text', ['/parent/new.txt', 'hi'])),
+    ).resolves.toBe(2)
+    expect(access.handle('Path.read_text', ['/parent/new.txt'])).toBe('hi')
+    await expect(Promise.resolve(access.handle('Path.iterdir', ['/parent']))).resolves.toEqual([
+      '/parent/child',
+      '/parent/new.txt',
+    ])
   })
 
   it('merges the workspace listing into a scratch iterdir, so / shows the mounts', async () => {

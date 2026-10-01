@@ -451,6 +451,17 @@ describe('RuntimeVFS guest rules', () => {
     expect(new RuntimeVFS(vi.fn()).serves('/tmp/a.txt')).toBe(true)
   })
 
+  // The dispatcher follows a link outside every mount, so what is
+  // reached through one is the workspace's too.
+  it('serves a path reached through a link outside every mount', () => {
+    const links = (directory: string): Set<string> =>
+      directory === '/' ? new Set(['alias']) : new Set<string>()
+    const door = new RuntimeVFS(vi.fn(), new PrefixResolver(() => ['/data/'], links))
+    expect(door.serves('/alias')).toBe(true)
+    expect(door.serves('/alias/inner.txt')).toBe(true)
+    expect(door.serves('/tmp/a.txt')).toBe(false)
+  })
+
   it.each<[string, World, string[], boolean, string | null]>([
     ['r', { files: [F] }, [], true, null],
     ['r', {}, [], false, 'ENOENT'],
@@ -459,10 +470,13 @@ describe('RuntimeVFS guest rules', () => {
     ['r', { links: [F] }, [], false, 'ENOENT'],
     ['w', { files: [F] }, [`truncate ${F}`], false, null],
     ['w', {}, [`create ${F}`], false, null],
+    ['w', { implied: [F] }, [], false, 'EISDIR'],
     ['a', { files: [F] }, [], true, null],
     ['a', {}, [`create ${F}`], false, null],
+    ['a', { implied: [F] }, [], false, 'EISDIR'],
     ['wx', { files: [F] }, [], false, 'EEXIST'],
     ['wx', { links: [F] }, [], false, 'EEXIST'],
+    ['wx', { implied: [F] }, [], false, 'EEXIST'],
     ['wx', {}, [`create ${F}`], false, null],
   ])(
     "open '%s' over %j lands its effect before any byte moves",
@@ -528,6 +542,22 @@ describe('RuntimeVFS append', () => {
     const write = dispatch.mock.calls.find((c) => c[0] === 'write')
     if (write?.[2] === undefined) throw new Error('unreachable')
     expect(new TextDecoder().decode(write[2])).toBe('headtail')
+  })
+
+  // A write loop on a mount without append would otherwise read the
+  // whole growing file back once per line.
+  it('reads the base back once for a run of appends', async () => {
+    const dispatch = vi.fn<BridgeDispatchFn>((op) => {
+      if (op === 'append') return Promise.reject(enotsup('s3', 'append', '/a/x'))
+      if (op === 'read') return Promise.resolve(enc.encode('head'))
+      return Promise.resolve(undefined)
+    })
+    const door = new RuntimeVFS(dispatch, new PrefixResolver(() => ['/a']))
+    await door.append('/a/x', enc.encode('-1'))
+    await door.append('/a/x', enc.encode('-2'))
+    const writes = dispatch.mock.calls.filter((c) => c[0] === 'write')
+    expect(writes.map((c) => new TextDecoder().decode(c[2]))).toEqual(['head-1', 'head-1-2'])
+    expect(dispatch.mock.calls.filter((c) => c[0] === 'read')).toHaveLength(1)
   })
 
   it('starts from an empty base when the file is simply absent', async () => {

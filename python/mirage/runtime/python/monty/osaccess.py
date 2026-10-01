@@ -130,6 +130,23 @@ class MirageOSAccess(OSAccess):
         with _as_guest(str(path)):
             return self._core.listing_or_none(str(path))
 
+    def _scratch_parent(self, path: PurePosixPath) -> None:
+        """Make a scratch path's parent a tree directory when only the
+        workspace has it.
+
+        A directory the workspace lists but no mount claims (the root
+        above nested mounts) is one the guest sees as a directory, so a
+        scratch file may be created in it like in any other; the tree
+        holds it from then on, and its listing merges both.
+
+        Args:
+            path (PurePosixPath): the scratch path about to be created.
+        """
+        parent = path.parent
+        if super().path_exists(parent) or self._listing(parent) is None:
+            return
+        super().path_mkdir(parent, True, True)
+
     def path_exists(self, path: PurePosixPath) -> bool:
         door = self._door(path)
         if door is not None:
@@ -220,6 +237,8 @@ class MirageOSAccess(OSAccess):
     def path_open(self, path: PurePosixPath, mode: str) -> MontyFileHandle:
         door = self._door(path)
         if door is None:
+            if MontyFileHandle(str(path), mode).writable:
+                self._scratch_parent(path)
             return super().path_open(path, mode)
         # Built first, as monty's own tree does: a malformed mode must
         # raise before any effect lands on the mount.
@@ -245,6 +264,7 @@ class MirageOSAccess(OSAccess):
         self, path: PurePosixPath | MontyFileHandle, data: str
     ) -> int:
         if self._door(path_from_arg(path)) is None:
+            self._scratch_parent(path_from_arg(path))
             return int(super().path_write_text(path, data))
         self.path_write_bytes(path, data.encode())
         return len(data)
@@ -255,6 +275,7 @@ class MirageOSAccess(OSAccess):
         target = path_from_arg(path)
         door = self._door(target)
         if door is None:
+            self._scratch_parent(target)
             return int(super().path_write_bytes(path, data))
         with _as_guest(str(target)):
             door.write(str(target), bytes(data))
@@ -264,6 +285,7 @@ class MirageOSAccess(OSAccess):
         self, path: PurePosixPath | MontyFileHandle, data: str
     ) -> int:
         if self._door(path_from_arg(path)) is None:
+            self._scratch_parent(path_from_arg(path))
             return int(super().path_append_text(path, data))
         self.path_append_bytes(path, data.encode())
         return len(data)
@@ -285,6 +307,7 @@ class MirageOSAccess(OSAccess):
         target = path_from_arg(path)
         door = self._door(target)
         if door is None:
+            self._scratch_parent(target)
             return int(super().path_append_bytes(path, data))
         with _as_guest(str(target)):
             door.append(str(target), bytes(data))
@@ -308,6 +331,7 @@ class MirageOSAccess(OSAccess):
         """
         door = self._door(path)
         if door is None:
+            self._scratch_parent(path)
             super().path_mkdir(path, parents, exist_ok)
             return
         row = self._row(door, path)
@@ -358,6 +382,7 @@ class MirageOSAccess(OSAccess):
         if (door is None) != (self._door(target) is None):
             raise guest_error(FsCondition.CROSS_MOUNT, str(path), str(target))
         if door is None:
+            self._scratch_parent(target)
             super().path_rename(path, target)
             self._restamp(target)
             return

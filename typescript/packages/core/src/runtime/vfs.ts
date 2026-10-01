@@ -156,6 +156,10 @@ export class RuntimeVFS {
   private readonly dispatch: BridgeDispatchFn
   private readonly resolver: MountResolver
   private readonly noAppend = new Set<string>()
+  // What the append fallback last wrote whole per path, so the next
+  // append on a mount without the op extends it instead of reading the
+  // file back; every other write through this door forgets it.
+  private readonly whole = new Map<string, Uint8Array>()
 
   constructor(dispatch: BridgeDispatchFn, resolver: MountResolver = new PrefixResolver(() => [])) {
     // One cap on every request this door sends, held for that request
@@ -200,14 +204,23 @@ export class RuntimeVFS {
   }
 
   /**
-   * Whether a mount serves `path`, so the workspace answers for it.
+   * Whether the workspace answers for `path`.
    *
-   * A guest routes on this: a path no mount serves is the engine's own
-   * (monty's scratch tree). With no mounts wired there is no scoping,
-   * and every path routes here.
+   * A guest routes on this: a path the workspace does not serve is the
+   * engine's own (monty's scratch tree). A mount serves what is under
+   * it, and a namespace link serves what is reached through it wherever
+   * it lives, because the dispatcher follows a link outside every mount
+   * the same way. With no mounts wired there is no scoping, and every
+   * path routes here.
    */
   serves(path: string): boolean {
-    return this.prefixes().length === 0 || this.mountOf(path) !== null
+    if (this.prefixes().length === 0 || this.mountOf(path) !== null) return true
+    let directory = '/'
+    for (const name of path.replace(/^\/+|\/+$/g, '').split('/')) {
+      if (this.resolver.linkChildren(directory).has(name)) return true
+      directory = directory.replace(/\/$/, '') + '/' + name
+    }
+    return false
   }
 
   async read(path: string): Promise<Uint8Array> {
@@ -219,6 +232,7 @@ export class RuntimeVFS {
   }
 
   async write(path: string, bytes: Uint8Array): Promise<void> {
+    this.whole.delete(path)
     const out = await this.dispatch('write', path, bytes)
     if (out !== undefined) {
       throw new TypeError(`runtime vfs: write ${path} expected void, got ${typeof out}`)
@@ -299,18 +313,18 @@ export class RuntimeVFS {
    */
   async open(path: string, mode: OpenMode): Promise<VFSStat | null> {
     // An exclusive create follows no link (POSIX O_CREAT|O_EXCL), so a
-    // dangling one is a name that is there.
+    // dangling one is a name that is there. A path with no row may still
+    // be a directory the mount lists, and a create there would put a
+    // file at a directory's name.
     const row = await this.statOrNull(path, mode.exclusive)
-    if (row !== null && mode.exclusive) throw eexist(path)
+    const listed = row !== null ? row.isDir : (await this.listingOrNull(path)) !== null
+    if (mode.exclusive && (row !== null || listed)) throw eexist(path)
+    if (listed) throw eisdir(path)
     if (row === null) {
-      if (mode.create) {
-        await this.create(path)
-        return null
-      }
-      if ((await this.listingOrNull(path)) !== null) throw eisdir(path)
-      throw enoent(path)
+      if (!mode.create) throw enoent(path)
+      await this.create(path)
+      return null
     }
-    if (row.isDir) throw eisdir(path)
     if (mode.truncate) {
       await this.truncate(path)
       return null
@@ -407,6 +421,7 @@ export class RuntimeVFS {
    * records the op a create is.
    */
   async create(path: string): Promise<void> {
+    this.whole.delete(path)
     await this.dispatch('create', path)
   }
 
@@ -416,10 +431,12 @@ export class RuntimeVFS {
    * ftruncate to a length operates on its open handle's buffer.
    */
   async truncate(path: string): Promise<void> {
+    this.whole.delete(path)
     await this.dispatch('truncate', path)
   }
 
   async unlink(path: string): Promise<void> {
+    this.whole.delete(path)
     await this.dispatch('unlink', path)
   }
 
@@ -454,6 +471,7 @@ export class RuntimeVFS {
    */
   async rename(src: string, dst: string): Promise<void> {
     if (this.mountOf(src) !== this.mountOf(dst)) throw new CrossMountError(src, dst)
+    this.whole.clear()
     await this.dispatch('rename', src, undefined, dst)
   }
 
@@ -514,10 +532,11 @@ export class RuntimeVFS {
    * per call.
    *
    * The fallback needs the whole file. An encoder that already holds
-   * it (monty's in-memory tree, a closing file handle) passes it; one
-   * that does not (pyodide's mutation replay, which recorded only the
-   * tail) omits it and the fallback reads the base first. Only a
-   * confirmed absence starts from an empty base, since an append may
+   * it (a closing file handle) passes it; one that does not (monty's
+   * appends, pyodide's mutation replay, which recorded only the tail)
+   * omits it, and the fallback extends what it last wrote whole for the
+   * path, so a write loop reads the file back once, not once per line.
+   * Only a confirmed absence starts from an empty base, since an append may
    * create the file — every other read failure propagates, because
    * writing the tail alone over a file that exists but is momentarily
    * unreadable would replace content this run never saw.
@@ -529,17 +548,21 @@ export class RuntimeVFS {
    */
   async append(path: string, tail: Uint8Array, whole?: Uint8Array): Promise<void> {
     if (await this.appendDelta(path, tail)) return
-    if (whole !== undefined) {
-      await this.write(path, whole)
-      return
+    let next = whole
+    if (next === undefined) {
+      let base = this.whole.get(path)
+      if (base === undefined) {
+        try {
+          base = await this.read(path)
+        } catch (err) {
+          if (!isMissingPath(err)) throw err
+          base = new Uint8Array()
+        }
+      }
+      next = concat([base, tail])
     }
-    let base: Uint8Array = new Uint8Array()
-    try {
-      base = await this.read(path)
-    } catch (err) {
-      if (!isMissingPath(err)) throw err
-    }
-    await this.write(path, concat([base, tail]))
+    await this.write(path, next)
+    this.whole.set(path, next)
   }
 
   private async appendDelta(path: string, tail: Uint8Array): Promise<boolean> {

@@ -195,6 +195,22 @@ def test_serves_scopes_to_the_mounts_and_an_unscoped_door_serves_all():
     assert RecordingVFS().serves("/tmp/a.txt") is True
 
 
+def test_serves_a_path_reached_through_a_link_outside_every_mount():
+    # The dispatcher follows a link outside every mount, so what is
+    # reached through one is the workspace's too.
+    door = RuntimeVFS(
+        dispatch=None,
+        loop=None,
+        resolver=PrefixResolver(
+            lambda: ["/data/"],
+            lambda directory: {"alias"} if directory == "/" else set(),
+        ),
+    )
+    assert door.serves("/alias") is True
+    assert door.serves("/alias/inner.txt") is True
+    assert door.serves("/tmp/a.txt") is False
+
+
 F = "/data/f"
 
 
@@ -207,10 +223,13 @@ F = "/data/f"
         ("r", {"implied": [F]}, [], False, IsADirectoryError),
         ("w", {"files": [F]}, [("truncate", F)], False, None),
         ("w", {}, [("create", F)], False, None),
+        ("w", {"implied": [F]}, [], False, IsADirectoryError),
         ("a", {"files": [F]}, [], True, None),
         ("a", {}, [("create", F)], False, None),
+        ("a", {"implied": [F]}, [], False, IsADirectoryError),
         ("wx", {"files": [F]}, [], False, FileExistsError),
         ("wx", {"links": [F]}, [], False, FileExistsError),
+        ("wx", {"implied": [F]}, [], False, FileExistsError),
         ("wx", {}, [("create", F)], False, None),
         ("r", {"links": [F]}, [], False, FileNotFoundError),
     ],
@@ -501,11 +520,13 @@ class NoAppendVFS(RuntimeVFS):
         )
         self.files = dict(files)
         self.writes = []
+        self.reads = 0
 
     def _raw(self, op, path, **kwargs):
         if op == "append":
             raise OperationNotSupportedError("append")
         if op == "read":
+            self.reads += 1
             if path not in self.files:
                 raise FileNotFoundError(path)
             return self.files[path]
@@ -521,6 +542,16 @@ def test_append_without_a_whole_file_reads_its_own_base(files, written):
     vfs = NoAppendVFS(files)
     vfs.append("/s3/a", b"tail")
     assert vfs.writes == [("/s3/a", written)]
+
+
+def test_a_run_of_appends_reads_the_base_back_once():
+    # A write loop on a mount without append would otherwise read the
+    # whole growing file back once per line.
+    vfs = NoAppendVFS({"/s3/a": b"head"})
+    vfs.append("/s3/a", b"-1")
+    vfs.append("/s3/a", b"-2")
+    assert vfs.writes == [("/s3/a", b"head-1"), ("/s3/a", b"head-1-2")]
+    assert vfs.reads == 1
 
 
 def test_flush_ships_only_the_delta():

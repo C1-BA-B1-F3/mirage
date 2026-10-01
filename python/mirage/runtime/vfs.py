@@ -114,6 +114,7 @@ class RuntimeVFS:
         self._loop = loop
         self._resolver = resolver
         self._no_append: set[str] = set()
+        self._whole: dict[str, bytes] = {}
         self._limiter = ConcurrencyLimiter(LISTING_ENTRY_CONCURRENCY)
 
     @classmethod
@@ -187,16 +188,28 @@ class RuntimeVFS:
         return None if owner is None else norm(owner)
 
     def serves(self, path: str) -> bool:
-        """Whether a mount serves `path`, so the workspace answers for it.
+        """Whether the workspace answers for `path`.
 
-        A guest routes on this: a path no mount serves is the engine's
-        own (monty's scratch tree, a wasm build directory). With no
-        mounts wired there is no scoping, and every path routes here.
+        A guest routes on this: a path the workspace does not serve is
+        the engine's own (monty's scratch tree). A mount serves what is
+        under it, and a namespace link serves what is reached through
+        it wherever it lives, because the dispatcher follows a link
+        outside every mount the same way. With no mounts wired there
+        is no scoping, and every path routes here.
 
         Args:
             path (str): guest-absolute virtual path.
         """
-        return not self.prefixes() or self.mount_of(path) is not None
+        if not self.prefixes() or self.mount_of(path) is not None:
+            return True
+        if self._resolver is None:
+            return False
+        directory = "/"
+        for name in path.strip("/").split("/"):
+            if name in self._resolver.link_children(directory):
+                return True
+            directory = directory.rstrip("/") + "/" + name
+        return False
 
     def read(self, path: str) -> bytes:
         data = self.call("read", path)
@@ -205,6 +218,7 @@ class RuntimeVFS:
         return bytes(data)
 
     def write(self, path: str, data: bytes) -> None:
+        self._whole.pop(path, None)
         self.call("write", path, data=data)
 
     def stat(self, path: str, *, nofollow: bool = False) -> VFSStat:
@@ -287,19 +301,23 @@ class RuntimeVFS:
                 not create.
         """
         # An exclusive create follows no link (POSIX O_CREAT|O_EXCL), so
-        # a dangling one is a name that is there.
+        # a dangling one is a name that is there. A path with no row may
+        # still be a directory the mount lists, and a create there would
+        # put a file at a directory's name.
         row = self.stat_or_none(path, nofollow=mode.exclusive)
-        if row is not None and mode.exclusive:
+        if row is not None:
+            listed = row.is_dir
+        else:
+            listed = self.listing_or_none(path) is not None
+        if mode.exclusive and (row is not None or listed):
             raise _refused(errno.EEXIST, FileExistsError, path)
-        if row is None:
-            if mode.create:
-                self.create(path)
-                return None
-            if self.listing_or_none(path) is not None:
-                raise _refused(errno.EISDIR, IsADirectoryError, path)
-            raise _refused(errno.ENOENT, FileNotFoundError, path)
-        if row.is_dir:
+        if listed:
             raise _refused(errno.EISDIR, IsADirectoryError, path)
+        if row is None:
+            if not mode.create:
+                raise _refused(errno.ENOENT, FileNotFoundError, path)
+            self.create(path)
+            return None
         if mode.truncate:
             self.truncate(path)
             return None
@@ -437,12 +455,15 @@ class RuntimeVFS:
         )
 
     def create(self, path: str) -> None:
+        self._whole.pop(path, None)
         self.call("create", path)
 
     def truncate(self, path: str, length: int = 0) -> None:
+        self._whole.pop(path, None)
         self.call("truncate", path, length=length)
 
     def unlink(self, path: str) -> None:
+        self._whole.pop(path, None)
         self.call("unlink", path)
 
     def mkdir(self, path: str, *, parents: bool = False) -> None:
@@ -463,6 +484,7 @@ class RuntimeVFS:
         """
         if self.mount_of(src) != self.mount_of(dst):
             raise CrossMountError(src, dst)
+        self._whole.clear()
         self.call("rename", src, dst=PathSpec.from_str_path(dst))
 
     def symlink(self, path: str, target: str) -> None:
@@ -545,9 +567,11 @@ class RuntimeVFS:
         `rename` without it), so a mount that declines is remembered:
         the fallback then costs one failed dispatch per mount rather
         than one per call. The fallback writes `whole` when the caller
-        holds it, and otherwise reads the base itself, a missing file
-        starting empty, so a caller that only ever appends keeps no copy
-        of the file for a mount that may never need one.
+        holds it. Otherwise it extends what it last wrote whole for the
+        path, so a write loop on such a mount reads the file back once,
+        not once per line, and reads the base only the first time, a
+        missing file starting empty. Every other write through this
+        door forgets that copy.
 
         Args:
             path (str): guest-absolute virtual path.
@@ -558,11 +582,15 @@ class RuntimeVFS:
         if self._append_delta(path, data):
             return
         if whole is None:
-            try:
-                whole = self.read(path) + data
-            except FileNotFoundError:
-                whole = data
+            base = self._whole.get(path)
+            if base is None:
+                try:
+                    base = self.read(path)
+                except FileNotFoundError:
+                    base = b""
+            whole = base + data
         self.write(path, whole)
+        self._whole[path] = whole
 
     def _append_delta(self, path: str, data: bytes) -> bool:
         mount = self.mount_of(path) or path

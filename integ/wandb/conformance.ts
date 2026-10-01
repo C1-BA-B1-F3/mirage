@@ -5,7 +5,7 @@ import { startWandb } from '../server/wandb/fake.ts'
 import { API_KEY } from '../server/wandb/store.ts'
 import { checkSchema } from './schema.ts'
 
-function uv(args: string[], label: string, env = process.env, timeout?: number): Promise<string> {
+function uv(args: string[], label: string, timeout: number, env = process.env): Promise<string> {
   return new Promise((resolve, reject) => {
     const child = spawn('uv', args, { env, stdio: ['ignore', 'pipe', 'pipe'] })
     let output = ''
@@ -15,15 +15,15 @@ function uv(args: string[], label: string, env = process.env, timeout?: number):
     child.stderr.on('data', (data: Buffer) => {
       output += data.toString()
     })
-    const timer =
-      timeout === undefined ? undefined : setTimeout(() => child.kill('SIGTERM'), timeout)
+    const timer = setTimeout(() => child.kill('SIGTERM'), timeout)
     child.on('error', (error) => {
       clearTimeout(timer)
       reject(error)
     })
     child.on('close', (code) => {
       clearTimeout(timer)
-      if (code !== 0) reject(new Error(`${label} failed:\n${output}`))
+      const reason = child.killed ? `timed out after ${timeout / 1000} s` : 'failed'
+      if (code !== 0) reject(new Error(`${label} ${reason}:\n${output}`))
       else resolve(output)
     })
   })
@@ -36,7 +36,7 @@ try {
     const start = server.requests.length
     const requirements = fileURLToPath(new URL(`./requirements-${version}.txt`, import.meta.url))
     const script = fileURLToPath(new URL('./sdk.py', import.meta.url))
-    const python = [
+    const run = [
       'run',
       '--isolated',
       '--no-project',
@@ -44,13 +44,12 @@ try {
       '3.12',
       '--with-requirements',
       requirements,
-      'python',
-      '-I',
     ]
-    await uv([...python, '-c', ''], `W&B SDK ${version} install`)
+    await uv([...run, 'python', '-I', '-c', ''], `W&B SDK ${version} install`, 300000)
     const output = await uv(
-      [...python, script],
+      [...run, '--offline', 'python', '-I', script],
       `W&B SDK ${version}`,
+      120000,
       {
         ...process.env,
         WANDB_BASE_URL: server.base,
@@ -58,7 +57,6 @@ try {
         MIRAGE_WANDB_SDK_VERSION: version,
         WANDB_CONSOLE: 'off',
       },
-      120000,
     )
     assert(output.includes('"status": "passed"'), output)
     for (const line of output.split('\n'))

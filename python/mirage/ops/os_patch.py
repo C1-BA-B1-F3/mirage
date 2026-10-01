@@ -19,7 +19,7 @@ import os as _real_os
 import posixpath
 import time
 import types
-from collections.abc import Awaitable, Callable, Iterator
+from collections.abc import Awaitable, Callable, Iterator, Mapping
 from hashlib import blake2b
 from stat import S_ISDIR, S_ISLNK, S_ISREG
 from typing import Any, TypeVar, cast
@@ -29,13 +29,124 @@ from mirage.errors import FsCondition
 from mirage.errors.posix import gnu_phrase, posix_errno
 from mirage.ops import Ops
 from mirage.ops.host_io import in_host_io
-from mirage.runtime.verbs import REFUSED_VERBS, ROUTED_VERBS
+from mirage.runtime.constants import HARD_LINK_REFUSAL
 from mirage.types import FileStat
 from mirage.utils.dates import iso_timestamp, timestamp_iso
 from mirage.utils.path import owner_prefix
 from mirage.utils.stat_view import LINK_MODE, content_size, is_dir, posix_mode
 
 T = TypeVar("T")
+
+# The `os` functions this patch answers, keyed by name. ROUTED_CALLS
+# names the ops each goes through: several share one op and a few need
+# two (lstat reads the node table before the mount), so a value is a
+# tuple. REFUSED_CALLS answers with a condition, and PASSTHROUGH_CALLS
+# keeps the host function, because nothing it takes is a path a mount
+# could serve. A path-taking name in none of the three keeps the host
+# function with a mounted path in hand, which is why the coverage test
+# in tests/ops/test_os_patch.py fails on any such name.
+ROUTED_CALLS: Mapping[str, tuple[str, ...]] = {
+    "access": ("stat",),
+    "chmod": ("setattr",),
+    "chown": ("setattr",),
+    "getxattr": ("getxattr",),
+    "lchmod": ("setattr",),
+    "lchown": ("setattr",),
+    "listdir": ("readdir",),
+    "listxattr": ("listxattr",),
+    "lstat": ("readlink", "stat"),
+    "makedirs": ("mkdir",),
+    "mkdir": ("mkdir",),
+    "readlink": ("readlink",),
+    "remove": ("unlink",),
+    "removedirs": ("rmdir",),
+    "removexattr": ("removexattr",),
+    "rename": ("rename",),
+    "renames": ("rename",),
+    "replace": ("rename",),
+    "rmdir": ("rmdir",),
+    "scandir": ("readdir", "stat"),
+    "setxattr": ("setxattr",),
+    "stat": ("stat",),
+    "symlink": ("symlink",),
+    "truncate": ("truncate",),
+    "unlink": ("unlink",),
+    "utime": ("setattr",),
+    "walk": ("readdir", "stat"),
+}
+
+# REFUSED is every verb whose fact has nowhere to live. A mount stores
+# content and a name plane stores links and attribute overlays; none of
+# them holds a second name for one inode, a device number, or a
+# filesystem-wide block count, so these cannot be faked without lying
+# to the guest.
+#
+# `open` is the fd tier rather than a missing fact: serving it means an
+# fd table with host-visible numbers, which `runtime/handles` builds for
+# the runtimes and os_patch has no equivalent of. `chdir` is refused
+# because a host process cwd cannot be a virtual path; a runtime whose
+# guest has its own cwd (Emscripten does) serves it inside that guest
+# and never reaches this table.
+# `link`, `mkfifo` and `mknod` refuse with EPERM instead, because that
+# is what link(2) and mknod(2) document for a filesystem that does not
+# support the requested node (vfat answers link() exactly this way), so
+# the refusal arrives in the errno real programs already handle.
+
+REFUSED_CALLS: Mapping[str, FsCondition] = {
+    "chdir": FsCondition.ENOTSUP,
+    "chflags": FsCondition.ENOTSUP,
+    "chroot": FsCondition.ENOTSUP,
+    "fwalk": FsCondition.ENOTSUP,
+    "lchflags": FsCondition.ENOTSUP,
+    "link": HARD_LINK_REFUSAL,
+    "mkfifo": FsCondition.EPERM,
+    "mknod": FsCondition.EPERM,
+    "open": FsCondition.ENOTSUP,
+    "statvfs": FsCondition.ENOTSUP,
+}
+
+# Names whose path-shaped argument is not a mount-addressable path:
+# string conversions, environment and sysconf keys, descriptor-to-
+# descriptor transfers, and the exec and spawn families, which name a
+# program for the host to run rather than a file to serve. They keep
+# host behavior even when a mounted path is spelled, so a surface must
+# not route or refuse them.
+
+PASSTHROUGH_CALLS: frozenset[str] = frozenset(
+    {
+        "confstr",
+        "copy_file_range",
+        "execl",
+        "execle",
+        "execlp",
+        "execlpe",
+        "execv",
+        "execve",
+        "execvp",
+        "execvpe",
+        "fpathconf",
+        "fsdecode",
+        "fsencode",
+        "fspath",
+        "memfd_create",
+        "pathconf",
+        "posix_spawn",
+        "posix_spawnp",
+        "putenv",
+        "spawnl",
+        "spawnle",
+        "spawnlp",
+        "spawnlpe",
+        "spawnv",
+        "spawnve",
+        "spawnvp",
+        "spawnvpe",
+        "splice",
+        "sysconf",
+        "unsetenv",
+    }
+)
+
 
 # The block size every mirage stat translator reports; a backend has no
 # block size of its own, and 4 KiB is what the FUSE adapters already
@@ -232,7 +343,7 @@ class _MountScandir:
 class _OsRouter:
     """Every routed `os` verb, answered on a mount or left to the host.
 
-    One method per name in ``ROUTED_VERBS``; the table, not this class,
+    One method per name in ``ROUTED_CALLS``; the table, not this class,
     decides which names exist, and ``make_os_module`` installs them by
     that table so a verb classified as routed cannot be left pointing at
     the host by omission. A path no mount owns falls through to the real
@@ -1131,10 +1242,10 @@ def os_routing(
 ) -> dict[str, Callable[..., Any]]:
     """Every `os` name that must not answer from the host, and what does.
 
-    Built from ``runtime/verbs.py``, the decision every runtime surface
-    shares: a routed name gets the workspace door, a refused name gets
-    that table's errno on a mounted path, and a passthrough name is
-    absent here because it is a program or a string, never a file. A
+    Built from the three tables above: a routed name gets the workspace
+    door, a refused name gets that table's errno on a mounted path, and a
+    passthrough name is absent here because it is a program or a string,
+    never a file. A
     name the host python does not have (``lchmod`` off macOS) is absent
     too, so ``hasattr`` still reports what it did before.
 
@@ -1153,10 +1264,10 @@ def os_routing(
     """
     router = _OsRouter(ops, loop)
     table: dict[str, Callable[..., Any]] = {}
-    for verb in ROUTED_VERBS:
+    for verb in ROUTED_CALLS:
         if hasattr(_real_os, verb):
             table[verb] = getattr(router, verb)
-    for verb, condition in REFUSED_VERBS.items():
+    for verb, condition in REFUSED_CALLS.items():
         if hasattr(_real_os, verb):
             table[verb] = _refusal(router, verb, condition)
     return table

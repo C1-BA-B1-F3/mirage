@@ -16,7 +16,7 @@ import errno as host_errno
 import struct
 
 from mirage.errors import FsCondition
-from mirage.runtime.verbs import refusal_of
+from mirage.runtime.constants import HARD_LINK_REFUSAL
 from mirage.runtime.wasm.abi import (
     EACCES,
     EEXIST,
@@ -153,7 +153,7 @@ def test_link_refusal_comes_from_the_verb_table():
     # The surface renders the refusal, the table decides it: pinning the
     # translation rather than the number is what keeps a change to the
     # table from silently leaving preview1 behind.
-    assert LINK_REFUSAL == wasi_errno(refusal_of("link"))
+    assert LINK_REFUSAL == wasi_errno(HARD_LINK_REFUSAL)
     assert LINK_REFUSAL == WASI[FsCondition.EPERM]
 
 

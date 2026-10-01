@@ -219,14 +219,19 @@ describe('the root stat names the head commit', () => {
     await expect(stat(servedAccessor(), file, undefined)).rejects.toMatchObject({ code: 'ENOENT' })
   })
 
-  // A refused head names no version, and never falls into a refill.
+  // A refused head names no version, never falls into a refill, and says why
+  // on stderr, the way Python logs it.
   it.each([404, 500])('names no version when the head answers %i', async (status) => {
     const gh = three()
     gh.fail.set('dir', [status, 'refused'])
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
     const accessor = servedAccessor()
     const found = await stat(accessor, ROOT, new RAMIndexCacheStore())
     expect(found.fingerprint).toBeNull()
     expect(gh.count('recursive')).toBe(0)
     expect(accessor.tree).toEqual({})
+    expect(warn).toHaveBeenCalledTimes(1)
+    expect(String(warn.mock.calls[0]?.[0])).toMatch(/^head of [^/]+\/[^ ]+ not answered: /)
+    warn.mockRestore()
   })
 })

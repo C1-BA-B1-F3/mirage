@@ -324,9 +324,14 @@ describe('hf_hub versions a listing by its head commit', () => {
         await out(w, 'ls /m')
         fake.fail.set('revision', [status, code])
         fake.log.length = 0
+        const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
         const found = await stat(accessorOf(vfs), ROOT, new RAMIndexCacheStore())
         expect(found.fingerprint).toBeNull()
         expect([fake.count('revision'), fake.count('tree')]).toEqual([1, 0])
+        // Said on stderr, the way Python logs it.
+        expect(warn).toHaveBeenCalledTimes(1)
+        expect(String(warn.mock.calls[0]?.[0])).toMatch(/^head of \S+ not answered: /)
+        warn.mockRestore()
       } finally {
         await w.close()
       }

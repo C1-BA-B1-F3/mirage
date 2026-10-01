@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ast
 import json
 import re
 import subprocess
@@ -226,6 +227,44 @@ def check_python_cli() -> list[str]:
     ]
 
 
+def barrel_collisions(init: Path) -> list[str]:
+    """The lazy names a package barrel shares with its own submodules.
+
+    Importing ``pkg.name`` binds the module as the package attribute
+    ``name``, so a lazy ``name`` that never reached ``__getattr__`` reads
+    back as the module from then on.
+
+    Args:
+        init (Path): a package ``__init__.py``.
+
+    Returns:
+        list[str]: the exported names that are also submodule names.
+    """
+    exports: dict[str, tuple[str, ...]] = {}
+    for node in ast.parse(init.read_text()).body:
+        if (isinstance(node, ast.AnnAssign)
+                and isinstance(node.target, ast.Name)
+                and node.target.id == "_EXPORTS" and node.value is not None):
+            exports = ast.literal_eval(node.value)
+    children = {p.stem for p in init.parent.glob("*.py")}
+    children |= {p.parent.name for p in init.parent.glob("*/__init__.py")}
+    return sorted({n for names in exports.values() for n in names} & children)
+
+
+def check_python_barrels() -> list[str]:
+    """Fail when a lazy barrel exports a name its submodule also takes.
+
+    Returns:
+        list[str]: one line per shadowed name.
+    """
+    return [
+        f"python {init.parent.relative_to(ROOT)} exports {name}, "
+        f"which its submodule {name} shadows once imported"
+        for init in sorted((ROOT / "python/mirage").rglob("__init__.py"))
+        for name in barrel_collisions(init)
+    ]
+
+
 def check_splitting() -> list[str]:
     """Fail if tsup's code splitting has been turned off.
 
@@ -330,8 +369,19 @@ def selftest(tmp: Path) -> int:
         if got != want:
             failures += 1
             print(f"  python: {statement!r} -> heavy={got}, want {want}")
+    package = tmp / "pkg"
+    package.mkdir()
+    (package / "leaf.py").write_text("")
+    init = package / "__init__.py"
+    for exported, expected in (("leaf", ["leaf"]), ("other", [])):
+        init.write_text(f"_EXPORTS: dict = {{'pkg.leaf': ({exported!r}, )}}\n")
+        shadowed = barrel_collisions(init)
+        if shadowed != expected:
+            failures += 1
+            print(f"  barrel name {exported!r} -> {shadowed}, "
+                  f"want {expected}")
     total = (len(SELFTEST_IMPORTS) + len(SELFTEST_BARREL) +
-             len(SELFTEST_PYTHON) + 1)
+             len(SELFTEST_PYTHON) + 3)
     if failures:
         print(f"\n{failures} of {total} selftest case(s) failed; the gate "
               f"is blind to a shape it claims to catch")
@@ -345,17 +395,18 @@ def main() -> int:
         with tempfile.TemporaryDirectory() as tmp:
             return selftest(Path(tmp))
     problems = (check_entries() + check_cli_sources() + check_splitting() +
-                check_python_cli())
+                check_python_cli() + check_python_barrels())
     if problems:
         print(f"{len(problems)} cold-start regression(s):")
         for line in problems:
             print(f"  {line}")
-        print("\nThe mirage CLI pays every one of these on every spawn. "
+        print("\nEach one costs every mirage spawn or breaks a lazy barrel. "
               "See the barrel note under Patterns in CLAUDE.md.")
         return 1
     print(f"cli cold start: {len(gated_entries())} entries reach no heavy "
           f"package; no cli source imports the server barrel bare; "
-          f"python {PY_CLI_ENTRY} loads no heavy module")
+          f"python {PY_CLI_ENTRY} loads no heavy module; no lazy barrel "
+          f"name is a submodule's")
     return 0
 
 

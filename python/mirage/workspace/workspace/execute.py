@@ -40,11 +40,12 @@ from mirage.workspace.abort import (MirageAbortError, StatusWriter,
                                     set_line_writer)
 from mirage.workspace.executor.statement import (StatusSnapshot, record_status,
                                                  snapshot_status)
-from mirage.workspace.node import provision_node, run_command_tree
 from mirage.workspace.node.admission import (admit_line, is_pending,
                                              is_pending_refusal)
 from mirage.workspace.node.explain import prejudge_line, unrefused_nodes
 from mirage.workspace.node.occurrence import evaluated_from
+from mirage.workspace.node.provision_node import provision_node
+from mirage.workspace.node.run_tree import run_command_tree
 from mirage.workspace.session import (SessionState, get_current_session_for,
                                       reset_current_session,
                                       set_current_session)

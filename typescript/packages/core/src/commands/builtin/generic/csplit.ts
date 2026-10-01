@@ -14,6 +14,8 @@
 
 import { specOf } from '../../spec/builtins.ts'
 import { FlagView } from '../../spec/flag_view.ts'
+import { CommandName } from '../../spec/types.ts'
+import { missingOperandError } from '../../spec/usage.ts'
 import { fsStrerror, isFsError } from '../../../utils/errors.ts'
 import { mountKey } from '../../../utils/key_prefix.ts'
 import { resolvePath } from '../../../utils/path.ts'
@@ -58,11 +60,16 @@ function checkLineNumbers(patterns: readonly string[]): [string, boolean] {
 }
 
 /**
- * Cut `lines` into pieces, and report the pattern the input ran out on: line
- * N ends the piece before it, so N at the current line is an empty piece, and
- * a number with no such line, or a regex with no match, takes the rest as its
- * piece and is the run's error, returned as GNU's diagnostic. Mirrors
- * Python's `_split_by_patterns`.
+ * Cut `lines` into pieces as GNU csplit does, and report a failure. GNU keeps
+ * two cursors: the first line not yet written (`head`) and the last line it
+ * examined (`seen`, counted from 1). A regex searches from the line after
+ * `seen`, so a repeated regex never matches the line the previous one stopped
+ * at; line N writes up to the line before it, an empty piece once `head` is
+ * past it. A line number fails when no line follows `seen`, a regex when
+ * nothing matches, and the piece being built takes what is left.
+ * `--suppress-matched` drops the line each pattern stops at. The rest of the
+ * input is always the last piece, empty or not. Mirrors Python's
+ * `_split_by_patterns`.
  */
 function splitByPatterns(
   lines: readonly string[],
@@ -70,36 +77,47 @@ function splitByPatterns(
   suppressMatched: boolean,
 ): [string[][], string | null] {
   const parts: string[][] = []
-  let currentStart = 0
+  let head = 0
+  let seen = 0
   for (const pat of patterns) {
+    const outOfRange = `csplit: '${pat}': line number out of range\n`
     if (isRegex(pat)) {
       const regex = new RegExp(pat.slice(1, -1))
       let found = -1
-      for (let idx = currentStart; idx < lines.length; idx++) {
+      for (let idx = seen; idx < lines.length; idx++) {
         if (regex.test(lines[idx] ?? '')) {
           found = idx
           break
         }
       }
       if (found === -1) {
-        parts.push(lines.slice(currentStart))
+        parts.push(lines.slice(head))
         return [parts, `csplit: '${pat}': match not found\n`]
       }
-      parts.push(lines.slice(currentStart, found))
-      currentStart = suppressMatched ? found + 1 : found
+      parts.push(lines.slice(head, found))
+      head = found
+      seen = found + 1
     } else {
-      const splitAt = Number.parseInt(pat, 10) - 1
-      if (splitAt >= lines.length) {
-        parts.push(lines.slice(currentStart))
-        return [parts, `csplit: '${pat}': line number out of range\n`]
+      if (suppressMatched && seen >= lines.length) {
+        parts.push([])
+        return [parts, outOfRange]
       }
-      parts.push(lines.slice(currentStart, splitAt))
-      currentStart = splitAt
+      const stop = Math.max(head, Number.parseInt(pat, 10) - 1)
+      if (stop > lines.length) {
+        parts.push(lines.slice(head))
+        return [parts, outOfRange]
+      }
+      parts.push(lines.slice(head, stop))
+      head = stop
+      seen = Math.max(seen, stop)
+      if (!suppressMatched && seen >= lines.length) return [parts, outOfRange]
+    }
+    if (suppressMatched && head < lines.length) {
+      head += 1
+      seen = Math.max(seen, head)
     }
   }
-  if (currentStart < lines.length) {
-    parts.push(lines.slice(currentStart))
-  }
+  parts.push(lines.slice(head))
   return [parts, null]
 }
 
@@ -128,6 +146,10 @@ export async function csplitGeneric(
   unlink: (p: PathSpec) => Promise<void>,
   relay = false,
 ): Promise<CommandFnResult> {
+  // GNU wants FILE and a PATTERN before it opens anything.
+  if (texts.length === 0) {
+    throw missingOperandError(CommandName.CSPLIT, paths[paths.length - 1]?.rawPath ?? null)
+  }
   const fl = new FlagView(opts.flags, specOf('csplit'))
   // An output is the -f prefix, or `xx` in the working directory, plus its
   // suffix, wherever the input lives: GNU writes `xx00` to the cwd, names it

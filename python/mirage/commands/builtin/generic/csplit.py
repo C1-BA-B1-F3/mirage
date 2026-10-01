@@ -3,6 +3,8 @@ from collections.abc import Awaitable, Callable
 
 from mirage.commands.builtin.utils.lines import split_lines
 from mirage.commands.builtin.utils.stream import read_stdin_async
+from mirage.commands.spec.types import CommandName
+from mirage.commands.spec.usage import missing_operand_error
 from mirage.io.types import ByteSource, IOResult
 from mirage.types import PathSpec
 from mirage.utils.errors import FS_ERRORS, fs_strerror
@@ -53,34 +55,56 @@ def _split_by_patterns(
     patterns: list[str],
     suppress_matched: bool,
 ) -> tuple[list[list[str]], str | None]:
-    """Cut *lines* into pieces, and report the pattern the input ran out on.
+    """Cut *lines* into pieces as GNU csplit does, and report a failure.
 
-    Line N ends the piece before it, so N at the current line is an empty
-    piece. A number with no such line, or a regex with no match, takes
-    the rest of the input as its piece and is the run's error, returned
-    as GNU's diagnostic.
+    GNU keeps two cursors: the first line not yet written (``head``) and
+    the last line it examined (``seen``, counted from 1). A regex searches
+    from the line after ``seen``, so a repeated regex never matches the
+    line the previous one stopped at; line N writes up to the line before
+    it, an empty piece once ``head`` is past it. A line number fails when
+    no line follows ``seen``, a regex when nothing matches, and the piece
+    being built takes what is left. ``--suppress-matched`` drops the line
+    each pattern stops at. The rest of the input is always the last
+    piece, empty or not.
+
+    Args:
+        lines (list[str]): The input lines.
+        patterns (list[str]): The patterns as typed.
+        suppress_matched (bool): Drop the line each pattern stops at.
+
+    Returns:
+        tuple[list[list[str]], str | None]: The pieces, and GNU's
+            diagnostic when the run fails.
     """
     parts: list[list[str]] = []
-    current_start = 0
+    head = seen = 0
     for pat in patterns:
+        out_of_range = f"csplit: '{pat}': line number out of range\n"
         if _is_regex(pat):
             regex = re.compile(pat[1:-1])
-            found = next((idx for idx in range(current_start, len(lines))
+            found = next((idx for idx in range(seen, len(lines))
                           if regex.search(lines[idx])), None)
             if found is None:
-                parts.append(lines[current_start:])
+                parts.append(lines[head:])
                 return parts, f"csplit: '{pat}': match not found\n"
-            parts.append(lines[current_start:found])
-            current_start = found + 1 if suppress_matched else found
+            parts.append(lines[head:found])
+            head, seen = found, found + 1
         else:
-            split_at = int(pat) - 1
-            if split_at >= len(lines):
-                parts.append(lines[current_start:])
-                return parts, f"csplit: '{pat}': line number out of range\n"
-            parts.append(lines[current_start:split_at])
-            current_start = split_at
-    if current_start < len(lines):
-        parts.append(lines[current_start:])
+            if suppress_matched and seen >= len(lines):
+                parts.append([])
+                return parts, out_of_range
+            stop = max(head, int(pat) - 1)
+            if stop > len(lines):
+                parts.append(lines[head:])
+                return parts, out_of_range
+            parts.append(lines[head:stop])
+            head, seen = stop, max(seen, stop)
+            if not suppress_matched and seen >= len(lines):
+                return parts, out_of_range
+        if suppress_matched and head < len(lines):
+            head += 1
+            seen = max(seen, head)
+    parts.append(lines[head:])
     return parts, None
 
 
@@ -107,6 +131,10 @@ async def csplit(
     # its suffix, wherever the input lives: GNU writes `xx00` to the cwd,
     # names it as it formed it (`csplit: xx00`), and stops at the first
     # one it cannot create, -k or not.
+    if not patterns:
+        # GNU wants FILE and a PATTERN before it opens anything.
+        raise missing_operand_error(CommandName.CSPLIT,
+                                    paths[-1].raw_path if paths else None)
     if isinstance(prefix, PathSpec):
         prefix_virtual, typed_prefix = prefix.virtual, prefix.raw_path
     else:

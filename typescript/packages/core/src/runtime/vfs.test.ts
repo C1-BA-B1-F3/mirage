@@ -230,11 +230,14 @@ describe('RuntimeVFS transport', () => {
     expect(dispatch).toHaveBeenCalledTimes(1)
   })
 
-  // The mark is the name plane's, since stat follows a link and no
-  // backend listing reports one.
-  it('marks the names the resolver calls links', async () => {
-    const dispatch = vi.fn<BridgeDispatchFn>((op) => {
+  // The mark is the name plane's, since no backend listing reports a
+  // link, and a marked row is the link's own, as a guest's lstat reads
+  // it: the node table answers, no backend.
+  it('marks the names the resolver calls links, with their own rows', async () => {
+    const dispatch = vi.fn<BridgeDispatchFn>((op, _path, _bytes, _dst, attrs) => {
       if (op === 'readdir') return Promise.resolve(['/ram/lnk', '/ram/a.txt'])
+      if (attrs?.nofollow === true)
+        return Promise.resolve(new FileStat({ name: 'lnk', size: 8, type: FileType.SYMLINK }))
       return Promise.resolve(
         new FileStat({ name: 'x', size: 2, type: FileType.FILE, content: ContentType.TEXT }),
       )
@@ -244,7 +247,7 @@ describe('RuntimeVFS transport', () => {
       () => new Set(['lnk']),
     )
     expect(await new RuntimeVFS(dispatch, resolver).readdir('/ram/')).toEqual([
-      { path: '/ram/lnk', size: 2, isDir: false, mode: FILE_MODE, mtimeMs: 0, isLink: true },
+      { path: '/ram/lnk', size: 8, isDir: false, mode: LINK_MODE, mtimeMs: 0, isLink: true },
       { path: '/ram/a.txt', size: 2, isDir: false, mode: FILE_MODE, mtimeMs: 0 },
     ])
   })

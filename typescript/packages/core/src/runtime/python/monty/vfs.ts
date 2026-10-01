@@ -308,7 +308,7 @@ export class MontyVFS {
       this.missing.add(path)
       return null
     }
-    if (found.isDir || found.mode !== undefined) return found
+    if (found.isDir) return found
     const row = await this.orNull(path, ABSENT_PATH, () => this.core.stat(path))
     if (row === null) {
       if (found.isLink === true) return found

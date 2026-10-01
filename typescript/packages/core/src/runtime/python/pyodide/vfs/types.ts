@@ -26,7 +26,7 @@ export interface SyncVFS {
   process?(payload: string): string
   read(path: string): Uint8Array
   stat(path: string): VFSStat
-  readdir(path: string): VFSEntry[]
+  readdir(path: string, classify?: boolean): VFSEntry[]
   readlink(path: string): string
   flush(mutations: MirageMutation[]): FlushFailure | undefined
   /**
@@ -94,6 +94,8 @@ export interface FSNode {
   unreadable?: boolean
   /** Placed from an unclassified listing row; `getattr` asks the mount first. */
   unclassified?: boolean
+  /** A directory whose children came from a listing of the mount. */
+  listed?: boolean
   loaded?: boolean
   /**
    * A symlink's target, verbatim as it was typed. Emscripten's own

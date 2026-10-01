@@ -25,6 +25,7 @@ export interface VfsRequest {
   args?: Parameters<BridgeDispatchFn>
   mutations?: MirageMutation[]
   payload?: string
+  classify?: boolean
 }
 export interface ExecuteRequest {
   kind: 'execute'

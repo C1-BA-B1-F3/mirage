@@ -17,7 +17,6 @@ import logging
 import posixpath
 import time
 from dataclasses import dataclass
-from stat import S_ISCHR
 from typing import Any, Callable, Literal
 
 # yapf: disable
@@ -27,16 +26,16 @@ from mirage.runtime.types import VFSStat
 from mirage.runtime.wasm.abi import (EBADF, EEXIST, EINVAL, EIO, EISDIR,
                                      ENOENT, ENOTDIR, FDFLAG_APPEND, FST_ATIM,
                                      FST_ATIM_NOW, FST_MTIM, FST_MTIM_NOW,
-                                     FT_CHR, FT_DIR, FT_REG, FT_SYMLINK,
-                                     LINK_REFUSAL, LOOKUP_SYMLINK_FOLLOW,
-                                     OFLAG_CREAT, OFLAG_DIRECTORY, OFLAG_EXCL,
-                                     OFLAG_TRUNC, OK, RIGHT_FD_WRITE,
-                                     errno_for, pack_dirent, pack_fdstat,
-                                     pack_filestat, pack_prestat, pack_u32,
-                                     pack_u64, unpack_iovs)
+                                     FT_CHR, FT_DIR, FT_REG, LINK_REFUSAL,
+                                     LOOKUP_SYMLINK_FOLLOW, OFLAG_CREAT,
+                                     OFLAG_DIRECTORY, OFLAG_EXCL, OFLAG_TRUNC,
+                                     OK, RIGHT_FD_WRITE, errno_for,
+                                     pack_dirent, pack_fdstat, pack_filestat,
+                                     pack_prestat, pack_u32, pack_u64,
+                                     unpack_iovs)
 # yapf: enable
 from mirage.runtime.wasm.slab import install_slab_lock
-from mirage.runtime.wasm.vfs import WasmVFS
+from mirage.runtime.wasm.vfs import WasmVFS, filetype_of
 from mirage.utils.dates import timestamp_iso
 
 logger = logging.getLogger(__name__)
@@ -62,19 +61,6 @@ else:
     Func = _Func
     FuncType = _FuncType
     ValType = _ValType
-
-
-def _filetype(st: VFSStat) -> int:
-    """The preview1 filetype for one guest stat.
-
-    Args:
-        st (VFSStat): the stat to classify.
-    """
-    if st.is_link:
-        return FT_SYMLINK
-    if S_ISCHR(st.mode):
-        return FT_CHR
-    return FT_DIR if st.is_dir else FT_REG
 
 
 def _stamp(fst_flags: int, set_bit: int, now_bit: int, value: int,
@@ -440,7 +426,7 @@ class WasiFs:
         # its target and os.path.islink was always False.
         follow = bool(flags & LOOKUP_SYMLINK_FOLLOW)
         st = self._fs.stat(path) if follow else self._fs.lstat(path)
-        packed = pack_filestat(st.size, st.mtime_ns, _filetype(st),
+        packed = pack_filestat(st.size, st.mtime_ns, filetype_of(st),
                                self._ino(path))
         self._store(caller, buf, packed)
         return OK

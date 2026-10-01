@@ -14,9 +14,11 @@
 
 import asyncio
 import logging
-from collections.abc import Awaitable
-from typing import Any
+from collections.abc import Coroutine, Iterator
+from typing import Any, TypeVar
 
+from mirage.concurrency.limiter import ConcurrencyLimiter
+from mirage.runtime.constants import LISTING_ENTRY_CONCURRENCY
 from mirage.runtime.errors import CrossMountError
 from mirage.runtime.handles import plan_flush
 from mirage.runtime.resolver import MountResolver
@@ -30,9 +32,22 @@ from mirage.utils.stat_view import (content_size, device_rdev, is_dir, is_link,
 
 logger = logging.getLogger(__name__)
 
+T = TypeVar("T")
 
-async def _settle(pending: Awaitable[Any]) -> Any:
-    return await pending
+
+def _listed(raw: str, links: set[str]) -> VFSEntry:
+    """One listing row before any stat: its slash mark and its link mark.
+
+    The link mark is compared by final segment: backends disagree on
+    entry shape (bare names, trailing-slash names, full paths) and the
+    name is the part they agree on, the normalization merge_readdir uses.
+
+    Args:
+        raw (str): the entry as the listing spelled it.
+        links (set[str]): the link names the namespace owes the directory.
+    """
+    linked = raw.rstrip("/").rsplit("/", 1)[-1] in links
+    return VFSEntry(path=raw, size=0, is_dir=raw.endswith("/"), is_link=linked)
 
 
 class RuntimeVFS:
@@ -77,6 +92,7 @@ class RuntimeVFS:
         self._loop = loop
         self._resolver = resolver
         self._no_append: set[str] = set()
+        self._limiter = ConcurrencyLimiter(LISTING_ENTRY_CONCURRENCY)
 
     @classmethod
     def of(cls, context: RuntimeContext) -> "RuntimeVFS":
@@ -88,11 +104,17 @@ class RuntimeVFS:
         return cls(context.dispatch, asyncio.get_running_loop(),
                    context.resolver)
 
-    def _raw(self, op: str, path: str, **kwargs: Any) -> Any:
-        pending = self._dispatch(op, PathSpec.from_str_path(path), **kwargs)
-        result, _ = asyncio.run_coroutine_threadsafe(_settle(pending),
-                                                     self._loop).result()
+    async def _op(self, op: str, path: str, **kwargs: Any) -> Any:
+        async with self._limiter.acquire():
+            result, _ = await self._dispatch(op, PathSpec.from_str_path(path),
+                                             **kwargs)
         return result
+
+    def _wait(self, pending: Coroutine[Any, Any, T]) -> T:
+        return asyncio.run_coroutine_threadsafe(pending, self._loop).result()
+
+    def _raw(self, op: str, path: str, **kwargs: Any) -> Any:
+        return self._wait(self._op(op, path, **kwargs))
 
     def call(self, op: str, path: str, **kwargs: Any) -> Any:
         """Run one workspace op and return its result.
@@ -191,8 +213,10 @@ class RuntimeVFS:
         A backend that slash-marks directories skips the stat; every
         other entry is classified by its own stat, which is RAM when
         the readdir filled the index and a backend request when the
-        mount keeps none. One entry at a time, since each op hops to
-        the loop and blocks this thread.
+        mount keeps none. The whole listing is one hop to the loop,
+        where the stats run together, at most
+        ``LISTING_ENTRY_CONCURRENCY`` requests at once across everything
+        this door serves.
 
         An entry whose stat fails, for any reason, rides unclassified:
         a size-0 non-directory with no mode and no mtime, the row that
@@ -211,11 +235,13 @@ class RuntimeVFS:
         both, which is the honest answer for a listing that never
         learned them.
 
-        The link mark comes from the name plane, since stat follows and
-        no backend listing reports a link. One table read per listing,
-        and it only ever marks a name the listing itself returned, so a
-        link the session hides stays hidden: the dispatcher filtered it
-        out of the entries above and an unmatched mark marks nothing.
+        The link mark comes from the name plane, since no backend
+        listing reports a link. One table read per listing, and it only
+        ever marks a name the listing itself returned, so a link the
+        session hides stays hidden: the dispatcher filtered it out of
+        the entries above and an unmatched mark marks nothing. A marked
+        row is the link's own, as a guest's lstat reads it, since the
+        node table answers that stat and no backend is asked.
 
         Args:
             path (str): guest-absolute virtual path.
@@ -224,61 +250,55 @@ class RuntimeVFS:
                 every row comes back unclassified, one request for the
                 listing and none per entry, as a POSIX readdir costs.
         """
-        entries: list[VFSEntry] = []
-        listing = self.call("readdir", path)
+        try:
+            return self._wait(self._list(path, classify))
+        except OperationNotSupportedError as exc:
+            raise NotImplementedError(str(exc)) from exc
+
+    async def _list(self, path: str, classify: bool) -> list[VFSEntry]:
+        listing = await self._op("readdir", path)
         # After the listing, not before: a directory that will not list
         # (ENOENT, or a link cycle the namespace refuses to resolve)
         # must fail as readdir, not as the mark read.
-        links = self._link_names(path)
-        for raw in listing:
-            linked = raw.rstrip("/").rsplit("/", 1)[-1] in links
-            if raw.endswith("/"):
-                entries.append(
-                    VFSEntry(path=raw, size=0, is_dir=True, is_link=linked))
-                continue
-            unclassified = VFSEntry(path=raw,
-                                    size=0,
-                                    is_dir=False,
-                                    is_link=linked)
-            if not classify:
-                entries.append(unclassified)
-                continue
-            try:
-                st = self.stat(raw)
-            except (FileNotFoundError, NotADirectoryError) as exc:
-                logger.debug("runtime vfs: readdir %s: stat %s: %s", path, raw,
-                             exc)
-                entries.append(unclassified)
-                continue
-            except Exception as exc:
-                logger.warning("runtime vfs: readdir %s: stat %s: %s", path,
-                               raw, exc)
-                entries.append(unclassified)
-                continue
-            entries.append(
-                VFSEntry(path=raw,
-                         size=st.size,
-                         is_dir=st.is_dir,
-                         is_link=linked,
-                         mode=st.mode,
-                         mtime_ns=st.mtime_ns,
-                         rdev=st.rdev))
-        return entries
+        links = (self._resolver.link_children(path)
+                 if self._resolver is not None else set())
+        rows = [_listed(raw, links) for raw in listing]
+        if classify:
+            # A fixed set of workers, not a task per entry, so a wide
+            # directory costs the cap's worth of tasks, never its width.
+            pending = [(i, row) for i, row in enumerate(rows)
+                       if not row.is_dir]
+            queue = iter(pending)
+            workers = min(LISTING_ENTRY_CONCURRENCY, len(pending))
+            await asyncio.gather(*(self._classify(path, rows, queue)
+                                   for _ in range(workers)))
+        return rows
 
-    def _link_names(self, directory: str) -> set[str]:
-        """The link names the namespace owes `directory`, empty when none.
+    async def _classify(self, directory: str, rows: list[VFSEntry],
+                        queue: Iterator[tuple[int, VFSEntry]]) -> None:
+        for index, row in queue:
+            rows[index] = await self._classified(directory, row)
 
-        Compared by final segment, because backends disagree on entry
-        shape (bare names, trailing-slash names, full paths) and the
-        name is the part they agree on. The same normalization
-        ``merge_readdir`` dedupes on.
-
-        Args:
-            directory (str): guest-absolute virtual path being listed.
-        """
-        if self._resolver is None:
-            return set()
-        return self._resolver.link_children(directory)
+    async def _classified(self, directory: str, row: VFSEntry) -> VFSEntry:
+        try:
+            st = self._row(await self._op("stat",
+                                          row.path,
+                                          nofollow=row.is_link))
+        except (FileNotFoundError, NotADirectoryError) as exc:
+            logger.debug("runtime vfs: readdir %s: stat %s: %s", directory,
+                         row.path, exc)
+            return row
+        except Exception as exc:
+            logger.warning("runtime vfs: readdir %s: stat %s: %s", directory,
+                           row.path, exc)
+            return row
+        return VFSEntry(path=row.path,
+                        size=st.size,
+                        is_dir=st.is_dir,
+                        is_link=row.is_link,
+                        mode=st.mode,
+                        mtime_ns=st.mtime_ns,
+                        rdev=st.rdev)
 
     def create(self, path: str) -> None:
         self.call("create", path)

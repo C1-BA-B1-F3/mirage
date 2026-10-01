@@ -187,6 +187,16 @@ class InputReader:
             return UNKNOWN_POSITION
         return f"{self._name}:{self._line}"
 
+    async def close(self) -> None:
+        """Close the input the reader stopped in, as jq's exit closes its
+        file: a parse error, a halt, or a program that takes one `input`
+        leaves it part read, and left to the garbage collector its
+        backend stream stays open until a collection finds it."""
+        chunks, self._chunks = self._chunks, None
+        close = getattr(chunks, "aclose", None)
+        if close is not None:
+            await close()
+
     async def next_input(self) -> "str | JqParseError | NoValue":
         """The JSON text of the next value of the stream, the parse error
         that stops it, or NO_VALUE once it is used up

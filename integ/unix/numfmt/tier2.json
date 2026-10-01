@@ -5,6 +5,7 @@
       "seq": 910002,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "numfmt --from=si --to=iec-i --suffix=B 2KB",
@@ -24,6 +25,7 @@
       "seq": 910003,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "numfmt --grouping 1234567",
@@ -41,6 +43,7 @@
       "seq": 910045,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "printf '1000 foo\\n2000   bar baz\\n' | numfmt --to=si",

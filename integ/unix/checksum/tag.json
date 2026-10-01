@@ -5,6 +5,7 @@
       "seq": 910042,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "mkdir -p /data/qcktag && printf 'hello' > /data/qcktag/h.txt && md5sum --tag /data/qcktag/h.txt",
@@ -22,6 +23,7 @@
       "seq": 910043,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "sha1sum --tag /data/qcktag/h.txt",
@@ -39,6 +41,7 @@
       "seq": 910044,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "sha384sum --tag /data/qcktag/h.txt",
@@ -56,6 +59,7 @@
       "seq": 910045,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "sha512sum --tag /data/qcktag/h.txt",
@@ -73,6 +77,7 @@
       "seq": 910046,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "sha256sum -b /data/qcktag/h.txt; sha256sum -t /data/qcktag/h.txt",
@@ -91,6 +96,7 @@
       "seq": 910047,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "mkdir -p /data/qckrt && sha512sum --tag /data/qcktag/h.txt > /data/qckrt/sums && sha512sum -c /data/qckrt/sums; echo rc=$?",

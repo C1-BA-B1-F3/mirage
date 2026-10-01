@@ -26,7 +26,7 @@ export { clearTenants, deleteOrder, untenanted } from './clear.ts'
 export { Clock, TICK_MS } from './clock.ts'
 export { parseConfig } from './config.ts'
 export type { KitConfig } from './config.ts'
-export { ClientPool } from './db.ts'
+export { ClientPool, prepareTemplate } from './db.ts'
 export type { ClientCtor, MinimalClient, PoolOptions } from './db.ts'
 export {
   FixtureError,

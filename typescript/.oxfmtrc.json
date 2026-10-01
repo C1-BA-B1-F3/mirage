@@ -6,11 +6,5 @@
   "printWidth": 100,
   "arrowParens": "always",
   "sortPackageJson": false,
-  "ignorePatterns": [
-    "dist/",
-    "node_modules/",
-    "pnpm-lock.yaml",
-    "*.tsbuildinfo",
-    "**/generated/**"
-  ]
+  "ignorePatterns": ["dist/", "node_modules/", "pnpm-lock.yaml", "*.tsbuildinfo", "**/generated/**"]
 }

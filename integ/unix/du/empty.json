@@ -7,7 +7,8 @@
         "disk",
         "ssh",
         "ram",
-        "redis"
+        "redis",
+        "opfs"
       ],
       "command": "mkdir -p /data/due/e /data/due/g/h && echo hi > /data/due/f",
       "expect": {
@@ -36,7 +37,8 @@
       "seq": 1301082,
       "targets": [
         "ram",
-        "redis"
+        "redis",
+        "opfs"
       ],
       "command": "du /data/due",
       "expect": {
@@ -96,7 +98,8 @@
         "disk",
         "ssh",
         "ram",
-        "redis"
+        "redis",
+        "opfs"
       ],
       "command": "rm -rf /data/due && test ! -e /data/due && echo gone",
       "expect": {

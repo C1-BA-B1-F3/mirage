@@ -13,6 +13,7 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import type { C } from './client.ts'
+import type { Rows } from './save.ts'
 import type { GwsState } from './state.ts'
 
 // One tenant's loaded world, kept between requests, because `loadState` reads
@@ -30,6 +31,10 @@ import type { GwsState } from './state.ts'
 // the same run and tenant.
 interface Cached {
   world: GwsState | undefined
+  // The rows the last flush of `world` wrote, which the next flush diffs
+  // against. Set only beside the world that produced them and cleared with
+  // it, so a world that came from `loadState` flushes whole once.
+  flushed: Rows | undefined
   // Bumped by every drop, and by a write installing what it flushed.
   //
   // A read does not join the run's write queue (`Router.run`), so one that
@@ -53,7 +58,7 @@ function entry(db: C, tenant: string): Cached {
   }
   let row = live.get(tenant)
   if (row === undefined) {
-    row = { world: undefined, generation: 0 }
+    row = { world: undefined, flushed: undefined, generation: 0 }
     live.set(tenant, row)
   }
   return row
@@ -75,9 +80,10 @@ export async function withState(
   return world
 }
 
-export function installFlushed(db: C, tenant: string, st: GwsState): void {
+export function installFlushed(db: C, tenant: string, st: GwsState, rows: Rows): void {
   const row = entry(db, tenant)
   row.world = st
+  row.flushed = rows
   row.generation += 1
 }
 
@@ -87,11 +93,17 @@ export function dropState(db: C, tenant: string): void {
   const row = WORLDS.get(db)?.get(tenant)
   if (row === undefined) return
   row.world = undefined
+  row.flushed = undefined
   row.generation += 1
 }
 
 export function dropTenants(db: C, tenants: readonly string[]): void {
   for (const tenant of tenants) dropState(db, tenant)
+}
+
+export function flushedRows(db: C, tenant: string): Rows | undefined {
+  const row = WORLDS.get(db)?.get(tenant)
+  return row?.world === undefined ? undefined : row.flushed
 }
 
 // The selftest's window onto what a request would be handed. No route reads it.

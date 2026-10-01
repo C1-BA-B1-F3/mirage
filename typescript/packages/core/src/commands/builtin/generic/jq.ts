@@ -489,6 +489,7 @@ export class MainLoop {
       this.io.exitCode =
         this.reader.failures() > 0 ? ERROR_SYSTEM : exitCode(this.statuses, this.opts)
       if (this.reports.length > 0) this.io.stderr = ENC.encode(this.reports.join(''))
+      await this.reader.close()
     }
   }
 

@@ -151,6 +151,7 @@
       "seq": 611026,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "echo /data/lns/alias/* && echo /data/lns/a*/a/f.txt",

@@ -5,6 +5,7 @@
       "seq": 910027,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "mkdir -p /data/t2split1 && printf 'a\nb\nc\n' > /data/t2split1/in && split --lines 2 --numeric-suffixes=7 --suffix-length 2 --additional-suffix=.part /data/t2split1/in /data/t2split1/n && ls /data/t2split1 | grep '^n' | sort | tr '\n' ' '",
@@ -25,6 +26,7 @@
       "seq": 910028,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "mkdir -p /data/t2split2 && printf 'abcdef' > /data/t2split2/in && split --bytes 3 --hex-suffixes=10 /data/t2split2/in /data/t2split2/h && cat /data/t2split2/h10 && printf '|' && cat /data/t2split2/h11",
@@ -43,6 +45,7 @@
       "seq": 910029,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "mkdir -p /data/t2split3 && printf 'abcdef' > /data/t2split3/in && split --number 2 /data/t2split3/in /data/t2split3/n && cat /data/t2split3/naa && printf '|' && cat /data/t2split3/nab",
@@ -60,6 +63,7 @@
       "seq": 910030,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "mkdir -p /data/t2split4 && printf 'a|b|c|' > /data/t2split4/in && split --lines 2 --separator='|' /data/t2split4/in /data/t2split4/s && cat /data/t2split4/saa && cat /data/t2split4/sab",
@@ -78,6 +82,7 @@
       "seq": 910047,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "mkdir -p /data/t2split5 && printf 'a||' > /data/t2split5/in && split --lines 1 --separator='|' /data/t2split5/in /data/t2split5/s && ls /data/t2split5 | grep '^s' | sort | tr '\\n' ' '",

@@ -6,7 +6,8 @@
       "targets": [
         "ram",
         "disk",
-        "redis"
+        "redis",
+        "opfs"
       ],
       "command": "mkdir -p /data/fp && printf a > /data/fp/a && touch -d '2020-01-01 00:00:00' /data/fp/a && printf b > /data/fp/b && [ /data/fp/b -nt /data/fp/a ]; echo $?; [ /data/fp/a -nt /data/fp/b ]; echo $?; [ /data/fp/a -ot /data/fp/b ]; echo $?; [ /data/fp/a -ef /data/fp/a ]; echo $?; [ /data/fp/a -ef /data/fp/b ]; echo $?; [ /data/fp/a -nt /data/fp/nope ]; echo $?; [ /data/fp/nope -nt /data/fp/a ]; echo $?; [ /data/fp/nope -ot /data/fp/a ]; echo $?; [[ /data/fp/b -nt /data/fp/a ]]; echo $?; rm -r /data/fp",
       "expect": {
@@ -21,7 +22,8 @@
       "targets": [
         "ram",
         "disk",
-        "redis"
+        "redis",
+        "opfs"
       ],
       "command": "mkdir -p /data/fl; touch /data/fl/f; cd /data/fl; ln -s loop loop; [ loop -ef loop ]; echo $?; [ loop -nt missing ]; echo $?; [ missing -ot loop ]; echo $?; [ f -nt loop ]; echo $?; [ -e loop ]; echo $?; [[ loop -ef loop ]]; echo $?; test -L loop; echo $?; cd /; rm -r /data/fl",
       "expect": {

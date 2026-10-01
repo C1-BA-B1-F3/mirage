@@ -5,6 +5,7 @@
       "seq": 1338100,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "mkdir -p /data/escaped; touch '/data/escaped/a b' '/data/escaped/back\\slash' '/data/escaped/tab\there' '/data/escaped/line\nhere' '/data/escaped/\u0007\b\u000b\f\r\u001b' '/data/escaped/' '/data/escaped/é🌍' '/data/escaped/quote'\"'\"'\"' /data/escaped/a:b",
@@ -22,6 +23,7 @@
       "seq": 1338101,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "ls -b /data/escaped",
@@ -39,6 +41,7 @@
       "seq": 1338102,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "ls --escape /data/escaped",
@@ -56,6 +59,7 @@
       "seq": 1338103,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "ls -bd '/data/escaped/a b'",
@@ -73,6 +77,7 @@
       "seq": 1338104,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "mkdir -p $'/data/escaped/dir\\nname'; touch $'/data/escaped/dir\\nname/k\\tz'; ls -bRF /data/escaped",
@@ -90,6 +95,7 @@
       "seq": 1338105,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "ln -s $'tab\\there' $'/data/escaped/link\\nname'; ls -lb /data/escaped | sed -n '/link/p' | sed 's/^.* link/link/'",
@@ -107,6 +113,7 @@
       "seq": 1338106,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "ls -bd '/data/escaped/a b' /",
@@ -124,6 +131,7 @@
       "seq": 1338120,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "mkdir /data/width; touch $'/data/width/\\t' /data/width/aa /data/width/b; ls -b --sort=width /data/width",
@@ -141,6 +149,7 @@
       "seq": 1338121,
       "targets": [
         "ram",
+        "opfs",
         "disk"
       ],
       "command": "ls -bd --hyperlink=always '/data/escaped/a b'",

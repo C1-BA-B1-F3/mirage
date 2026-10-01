@@ -872,6 +872,26 @@ async def test_a_parse_error_exits_five_under_exit_status_too():
 
 
 @pytest.mark.asyncio
+async def test_a_parse_error_closes_the_input_it_stopped_in():
+    opened = []
+
+    def tracked(path: PathSpec):
+        stream = _read_stream(path)
+        opened.append(stream)
+        return stream
+
+    source, io = await jq(
+        [_path("/d/mid.json"), _path("/d/a.json")],
+        ".",
+        read_bytes=_read_bytes,
+        read_stream=tracked,
+    )
+    assert await materialize(source) == b"1\n"
+    assert io.exit_code == 5
+    assert opened[0].ag_frame is None
+
+
+@pytest.mark.asyncio
 async def test_a_slurp_that_meets_a_parse_error_prints_nothing():
     assert await _flagged(["/d/bad.json"], ".", slurp=True) == (
         b"",

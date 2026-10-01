@@ -41,7 +41,8 @@
       "id": "mkdir_tier2_mode_invalid",
       "seq": 910043,
       "targets": [
-        "ram"
+        "ram",
+        "opfs"
       ],
       "command": "mkdir -m zz /data/t2mkdirbad 2>&1; echo rc=$?",
       "expect": {

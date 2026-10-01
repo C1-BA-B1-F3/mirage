@@ -401,9 +401,11 @@ async function openRedis(target: Target): Promise<Open> {
 
 async function openOpfs(target: Target): Promise<Open> {
   const restoreNav = installFakeNavigator(() => makeMockRoot())
-  const mounts: Record<string, OPFSVFS> = {}
+  const mounts: Record<string, OPFSVFS | [OPFSVFS, MountMode]> = {}
   target.mounts.forEach((m, i) => {
-    mounts[m.path] = i === 0 ? new OPFSVFS() : new OPFSVFS({ root: `xm${String(i)}` })
+    const vfs = i === 0 ? new OPFSVFS() : new OPFSVFS({ root: `xm${String(i)}` })
+    mounts[m.path] =
+      m.mode === 'read' ? [vfs, MountMode.READ] : m.mode === 'exec' ? [vfs, MountMode.EXEC] : vfs
   })
   const ws = new BrowserWorkspace(mounts, { mode: MountMode.WRITE })
   const cleanup = async (): Promise<void> => {

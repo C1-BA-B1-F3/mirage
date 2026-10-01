@@ -12,7 +12,7 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import { execFileSync } from 'node:child_process'
+import { execFile, execFileSync } from 'node:child_process'
 import { createRequire } from 'node:module'
 import { copyFileSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -55,17 +55,71 @@ function prismaBin(): string {
 function pushTemplate(schema: string, target: string): void {
   writeFileSync(target, '', { flag: 'a' })
   try {
-    execFileSync('node', [prismaBin(), 'db', 'push', '--schema', schema, '--skip-generate'], {
-      env: { ...process.env, [SCHEMA_ENV]: `file:${target}` },
+    execFileSync('node', pushArgs(schema), {
+      env: pushEnv(target),
       stdio: 'pipe',
       timeout: 30_000,
     })
   } catch (err: unknown) {
-    const stderr =
-      err instanceof Error && 'stderr' in err ? String(err.stderr as Buffer | string).trim() : ''
-    const head = String(err).split('\n')[0] ?? String(err)
-    throw new KitError(`db push failed for ${schema}: ${head}${stderr === '' ? '' : `\n${stderr}`}`)
+    throw pushFailure(schema, err)
   }
+}
+
+function pushArgs(schema: string): string[] {
+  return [prismaBin(), 'db', 'push', '--schema', schema, '--skip-generate']
+}
+
+function pushEnv(target: string): NodeJS.ProcessEnv {
+  return { ...process.env, [SCHEMA_ENV]: `file:${target}` }
+}
+
+function pushFailure(schema: string, err: unknown): KitError {
+  const stderr =
+    err instanceof Error && 'stderr' in err ? String(err.stderr as Buffer | string).trim() : ''
+  const head = String(err).split('\n')[0] ?? String(err)
+  return new KitError(`db push failed for ${schema}: ${head}${stderr === '' ? '' : `\n${stderr}`}`)
+}
+
+// The same push, built ahead of the pools that need it and off the event
+// loop. A launcher starts its fakes one at a time so a failure names the fake
+// that caused it, which made the pushes one at a time too: ~1s each, with the
+// whole process blocked for every one of them. Built here first, all at once,
+// a pool whose schema is ready copies it instead of pushing; one that is not
+// still pushes for itself.
+const PREPARED = new Map<string, string>()
+const PREPARING = new Map<string, Promise<string>>()
+let preparedRoot: string | null = null
+let preparedFiles = 0
+
+function preparedDir(): string {
+  if (preparedRoot === null) {
+    const root = mkdtempSync(join(tmpdir(), `mirage-kit-templates-${runId()}-`))
+    process.once('exit', () => {
+      rmSync(root, { recursive: true, force: true })
+    })
+    preparedRoot = root
+  }
+  return preparedRoot
+}
+
+export function prepareTemplate(schema: string): Promise<string> {
+  const live = PREPARING.get(schema)
+  if (live !== undefined) return live
+  const target = join(preparedDir(), `${String(preparedFiles++)}.db`)
+  writeFileSync(target, '', { flag: 'a' })
+  const made = new Promise<string>((resolve, reject) => {
+    execFile('node', pushArgs(schema), { env: pushEnv(target), timeout: 30_000 }, (err) => {
+      if (err === null) {
+        PREPARED.set(schema, target)
+        resolve(target)
+      } else reject(pushFailure(schema, err))
+    })
+  })
+  made.catch(() => {
+    if (PREPARING.get(schema) === made) PREPARING.delete(schema)
+  })
+  PREPARING.set(schema, made)
+  return made
 }
 
 // One SQLite FILE per run, keyed by run name. This is the isolation
@@ -120,9 +174,13 @@ export class ClientPool<C extends MinimalClient> {
 
   private ensureTemplate(): string {
     if (this.template === null) {
-      const path = join(this.internal, 'schema.db')
-      pushTemplate(this.schema, path)
-      this.template = path
+      const prepared = PREPARED.get(this.schema)
+      if (prepared !== undefined) this.template = prepared
+      else {
+        const path = join(this.internal, 'schema.db')
+        pushTemplate(this.schema, path)
+        this.template = path
+      }
     }
     return this.template
   }

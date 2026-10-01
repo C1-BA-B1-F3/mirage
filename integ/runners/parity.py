@@ -33,8 +33,8 @@ def load(path: str) -> dict[tuple[str, str], dict]:
     return {(r["target"], r["id"]): r for r in rows}
 
 
-def emit_python(out: str, target_args: list[str]) -> None:
-    subprocess.run(
+def emit_python(out: str, target_args: list[str]) -> int:
+    return subprocess.run(
         [
             sys.executable,
             str(INTEG / "runners" / "python" / "main.py"),
@@ -42,12 +42,12 @@ def emit_python(out: str, target_args: list[str]) -> None:
             out,
             *target_args,
         ],
-        check=True,
-    )
+        check=False,
+    ).returncode
 
 
-def emit_typescript(out: str, target_args: list[str]) -> None:
-    subprocess.run(
+def emit_typescript(out: str, target_args: list[str]) -> int:
+    return subprocess.run(
         [
             "pnpm",
             "exec",
@@ -58,8 +58,8 @@ def emit_typescript(out: str, target_args: list[str]) -> None:
             *target_args,
         ],
         cwd=INTEG,
-        check=True,
-    )
+        check=False,
+    ).returncode
 
 
 def diff_row(a: dict, b: dict) -> list[str]:
@@ -75,6 +75,18 @@ def diff_row(a: dict, b: dict) -> list[str]:
     return diffs
 
 
+def load_dir(path: Path) -> dict[tuple[str, str], dict]:
+    """Every emit a battery job left in one host's directory, merged.
+
+    Args:
+        path (Path): a directory of emit files from one host.
+    """
+    rows: dict[tuple[str, str], dict] = {}
+    for file in sorted(path.glob("*.json")):
+        rows.update(load(str(file)))
+    return rows
+
+
 def main() -> None:
     default_targets = list(SHARED_TARGETS + GRAPH_TARGETS + MEMORY_TARGETS)
     if os.environ.get("S3_ENDPOINT"):
@@ -83,18 +95,52 @@ def main() -> None:
         default_targets += SSH_TARGETS
     if os.environ.get("GWS_URL"):
         default_targets += GDRIVE_TARGETS
-    targets = sys.argv[1:] or default_targets
-    target_args: list[str] = []
-    for t in targets:
-        target_args += ["--target", t]
-
-    with tempfile.TemporaryDirectory() as tmp:
-        py_out = str(Path(tmp) / "py.json")
-        ts_out = str(Path(tmp) / "ts.json")
-        emit_python(py_out, target_args)
-        emit_typescript(ts_out, target_args)
-        py = load(py_out)
-        ts = load(ts_out)
+    args = sys.argv[1:]
+    # `--from DIR` diffs the emits the battery jobs already wrote, one
+    # subdirectory per host, instead of running both hosts again.
+    source = None
+    if args[:1] == ["--from"] and len(args) >= 2:
+        source = Path(args[1])
+        args = args[2:]
+    targets = args or default_targets
+    failed: list[str] = []
+    if source is not None:
+        wanted = set(targets)
+        py = {
+            k: v
+            for k, v in load_dir(source / "python").items()
+            if k[0] in wanted
+        }
+        ts = {
+            k: v
+            for k, v in load_dir(source / "typescript").items()
+            if k[0] in wanted
+        }
+        # A battery job that never uploaded a target's emit drops it from
+        # both sides at once, which no ONLY-PY/ONLY-TS row would show.
+        missing = sorted(wanted - {k[0] for k in py.keys() | ts.keys()})
+        if missing:
+            print(
+                f"no rows in {source} for: {', '.join(missing)}",
+                file=sys.stderr,
+            )
+            sys.exit(2)
+    else:
+        target_args: list[str] = []
+        for t in targets:
+            target_args += ["--target", t]
+        with tempfile.TemporaryDirectory() as tmp:
+            py_out = str(Path(tmp) / "py.json")
+            ts_out = str(Path(tmp) / "ts.json")
+            if emit_python(py_out, target_args):
+                failed.append("python")
+            if emit_typescript(ts_out, target_args):
+                failed.append("typescript")
+            # A runner whose target raised wrote no emit and said why.
+            if not (Path(py_out).exists() and Path(ts_out).exists()):
+                sys.exit(2)
+            py = load(py_out)
+            ts = load(ts_out)
 
     mismatches = 0
     for key in sorted(py.keys() | ts.keys()):
@@ -124,7 +170,11 @@ def main() -> None:
     if compared == 0:
         print("no case/target pairs compared", file=sys.stderr)
         sys.exit(2)
-    if mismatches:
+    # Each runner checks its own goldens too, and a case that misses its
+    # golden the same way on both hosts agrees with itself here.
+    if failed:
+        print(f"battery failed on: {', '.join(failed)}", file=sys.stderr)
+    if mismatches or failed:
         sys.exit(1)
 
 

@@ -27,12 +27,12 @@ from mirage.vfs.slack import SlackConfig, SlackVFS
 
 CALLS: list[tuple[str, str]] = []
 
-BOT = SecretRef(provider="op",
-                ref="op://mirage/SLACK_BOT_TOKEN",
-                key="credential")
-USER = SecretRef(provider="op",
-                 ref="op://mirage/SLACK_USER_TOKEN",
-                 key="credential")
+BOT = SecretRef(
+    provider="op", ref="op://mirage/SLACK_BOT_TOKEN", key="credential"
+)
+USER = SecretRef(
+    provider="op", ref="op://mirage/SLACK_USER_TOKEN", key="credential"
+)
 
 
 class DemoConfig(BaseModel):
@@ -46,7 +46,8 @@ async def fetch_demo(config: DemoConfig, ref: str) -> ResolvedSecret:
     if ref.endswith("MISSING"):
         raise RuntimeError("no item at /host/vault.sqlite")
     return ResolvedSecret(
-        fields={"credential": f"xoxb-{ref.rsplit('/', 1)[-1]}"})
+        fields={"credential": f"xoxb-{ref.rsplit('/', 1)[-1]}"}
+    )
 
 
 @pytest.fixture(autouse=True)
@@ -58,26 +59,17 @@ def fresh_custom(monkeypatch):
 
 async def demo_sources(account: str = "team"):
     return await resolve_sources(
-        {"op": SecretSource(source="demo", config={"account": account})})
+        {"op": SecretSource(source="demo", config={"account": account})}
+    )
 
 
 def yaml_config(**config):
     return load_config(
         {
             "mode": "READ",
-            "mounts": {
-                "/slack": {
-                    "vfs": "slack",
-                    "config": config
-                }
-            },
+            "mounts": {"/slack": {"vfs": "slack", "config": config}},
             "secrets": {
-                "op": {
-                    "source": "demo",
-                    "config": {
-                        "account": "yaml"
-                    }
-                }
+                "op": {"source": "demo", "config": {"account": "yaml"}}
             },
         },
         env={},
@@ -87,7 +79,8 @@ def yaml_config(**config):
 @pytest.mark.asyncio
 async def test_the_yaml_door_resolves_a_mount_pointer():
     cfg = await resolve_secrets(
-        yaml_config(token=BOT.model_dump(by_alias=True)))
+        yaml_config(token=BOT.model_dump(by_alias=True))
+    )
     ws = Workspace(**cfg.to_workspace_kwargs())
     token = ws._registry.mount_for_prefix("/slack").vfs.config.token
     # The credential field never sees a pointer: it is fetched before
@@ -113,12 +106,7 @@ async def test_a_config_with_no_sources_declared_needs_no_fetch():
         {
             "mode": "READ",
             "mounts": {
-                "/slack": {
-                    "vfs": "slack",
-                    "config": {
-                        "token": "xoxb-literal"
-                    }
-                }
+                "/slack": {"vfs": "slack", "config": {"token": "xoxb-literal"}}
             },
         },
         env={},
@@ -129,7 +117,8 @@ async def test_a_config_with_no_sources_declared_needs_no_fetch():
 
 @pytest.mark.asyncio
 async def test_a_pointer_needs_no_secrets_block_to_name_a_builtin_source(
-        monkeypatch):
+    monkeypatch,
+):
     # `fetch_secret` builds an undeclared builtin from ambient
     # defaults, so a deployment with one account writes no block.
     monkeypatch.setenv("SLACK_BOT_TOKEN", "xoxb-ambient")
@@ -141,16 +130,14 @@ async def test_a_pointer_needs_no_secrets_block_to_name_a_builtin_source(
                     "/slack": {
                         "vfs": "slack",
                         "config": {
-                            "token": {
-                                "from": "env",
-                                "key": "SLACK_BOT_TOKEN"
-                            }
-                        }
+                            "token": {"from": "env", "key": "SLACK_BOT_TOKEN"}
+                        },
                     }
                 },
             },
             env={},
-        ))
+        )
+    )
     ws = Workspace(**cfg.to_workspace_kwargs())
     token = ws._registry.mount_for_prefix("/slack").vfs.config.token
     assert token.get_secret_value() == "xoxb-ambient"
@@ -164,7 +151,8 @@ async def test_an_application_mixes_a_vanilla_token_and_a_remote_one():
     from_remote = SlackVFS(config=SlackConfig(**remote))
     from_dotenv = SlackVFS(config=SlackConfig(token="xoxb-from-dotenv"))
     assert from_remote.config.token.get_secret_value() == (
-        "xoxb-SLACK_BOT_TOKEN")
+        "xoxb-SLACK_BOT_TOKEN"
+    )
     assert from_dotenv.config.token.get_secret_value() == "xoxb-from-dotenv"
 
 
@@ -172,10 +160,8 @@ async def test_an_application_mixes_a_vanilla_token_and_a_remote_one():
 async def test_a_literal_and_a_pointer_coexist_in_one_config():
     sources = await demo_sources()
     out = await resolve_config_secrets(
-        {
-            "token": "xoxb-literal",
-            "search_token": USER
-        }, sources)
+        {"token": "xoxb-literal", "search_token": USER}, sources
+    )
     assert out["token"] == "xoxb-literal"
     assert out["search_token"] == "xoxb-SLACK_USER_TOKEN"
 
@@ -186,20 +172,23 @@ async def test_two_fields_on_one_secret_cost_one_fetch():
     await resolve_config_secrets(
         {
             "token": BOT,
-            "search_token": BOT.model_copy(update={"key": "credential"})
-        }, sources)
+            "search_token": BOT.model_copy(update={"key": "credential"}),
+        },
+        sources,
+    )
     assert CALLS == [("team", "op://mirage/SLACK_BOT_TOKEN")]
 
 
 @pytest.mark.asyncio
 async def test_an_unreachable_secret_is_reported_redacted():
     sources = await demo_sources()
-    missing = SecretRef(provider="op",
-                        ref="op://mirage/MISSING",
-                        key="credential")
+    missing = SecretRef(
+        provider="op", ref="op://mirage/MISSING", key="credential"
+    )
     with pytest.raises(SecretsError) as err:
-        await resolve_config_secrets({"token": missing}, sources,
-                                     "mounts./slack.config")
+        await resolve_config_secrets(
+            {"token": missing}, sources, "mounts./slack.config"
+        )
     assert "mounts./slack.config.token: cannot fetch from op" in str(err.value)
     # The source's own words name a host path; they go to the log.
     assert "/host/vault.sqlite" not in str(err.value)
@@ -214,18 +203,11 @@ async def test_a_cli_config_reads_a_pointer_too():
             "clis": {
                 "demo": {
                     "cli": "git",
-                    "config": {
-                        "token": BOT.model_dump(by_alias=True)
-                    },
+                    "config": {"token": BOT.model_dump(by_alias=True)},
                 }
             },
             "secrets": {
-                "op": {
-                    "source": "demo",
-                    "config": {
-                        "account": "cli"
-                    }
-                }
+                "op": {"source": "demo", "config": {"account": "cli"}}
             },
         },
         env={},

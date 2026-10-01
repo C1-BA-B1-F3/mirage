@@ -191,33 +191,27 @@ export function gwsRoutes(runTokenPattern = gwsConfig.runTokenPattern): KitRoute
   ]
   return [
     ...tokenRoutes(issued, runTokenPattern),
-    ...apiRoutes.map(
-      (r): KitRoute<C> => ({
-        ...r,
-        handler: (ctx) => {
-          const auth = header(ctx.headers, 'authorization')
-          if (auth === '') {
-            return googleError(
-              403,
-              "Method doesn't allow unregistered callers.",
-              'PERMISSION_DENIED',
-            )
-          }
-          const token = /^Bearer\s+(\S+)$/i.exec(auth)?.[1]
-          if (
-            token === undefined ||
-            (token !== FIXTURE_TOKEN && !issued.has(credentialKey(ctx, token)))
-          ) {
-            return googleError(
-              401,
-              'Request had invalid authentication credentials.',
-              'UNAUTHENTICATED',
-            )
-          }
-          return r.handler(ctx)
-        },
-      }),
-    ),
+    ...apiRoutes.map((r): KitRoute<C> => ({
+      ...r,
+      handler: (ctx) => {
+        const auth = header(ctx.headers, 'authorization')
+        if (auth === '') {
+          return googleError(403, "Method doesn't allow unregistered callers.", 'PERMISSION_DENIED')
+        }
+        const token = /^Bearer\s+(\S+)$/i.exec(auth)?.[1]
+        if (
+          token === undefined ||
+          (token !== FIXTURE_TOKEN && !issued.has(credentialKey(ctx, token)))
+        ) {
+          return googleError(
+            401,
+            'Request had invalid authentication credentials.',
+            'UNAUTHENTICATED',
+          )
+        }
+        return r.handler(ctx)
+      },
+    })),
   ]
 }
 

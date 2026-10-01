@@ -27,5 +27,6 @@ class Subscriber:
             each is a virtual path that may carry glob segments
             (``/nc/data/*.txt``); the root's shape defines the depth.
     """
+
     queue: WatchQueue
     roots: tuple[str, ...]

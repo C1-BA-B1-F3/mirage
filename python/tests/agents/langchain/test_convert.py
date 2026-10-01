@@ -12,9 +12,11 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-from mirage.agents.langchain.convert import (io_to_execute_response,
-                                             io_to_file_infos,
-                                             io_to_grep_matches)
+from mirage.agents.langchain.convert import (
+    io_to_execute_response,
+    io_to_file_infos,
+    io_to_grep_matches,
+)
 from mirage.io.types import IOResult
 
 
@@ -41,8 +43,9 @@ def test_io_to_execute_response_stderr_appended():
 
 
 def test_io_to_grep_matches():
-    io = IOResult(stdout=b"/a.txt:1:hello world\n/b.txt:5:hello there\n",
-                  exit_code=0)
+    io = IOResult(
+        stdout=b"/a.txt:1:hello world\n/b.txt:5:hello there\n", exit_code=0
+    )
     matches = io_to_grep_matches(io)
     assert len(matches) == 2
     assert matches[0]["path"] == "/a.txt"
@@ -57,8 +60,9 @@ def test_io_to_grep_matches_empty():
 
 
 def test_io_to_file_infos():
-    io = IOResult(stdout=b"/foo/bar.txt\n/foo/baz.py\n/foo/sub/\n",
-                  exit_code=0)
+    io = IOResult(
+        stdout=b"/foo/bar.txt\n/foo/baz.py\n/foo/sub/\n", exit_code=0
+    )
     infos = io_to_file_infos(io)
     assert len(infos) == 3
     dirs = [i for i in infos if i.get("is_dir")]

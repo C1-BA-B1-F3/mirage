@@ -51,4 +51,5 @@ async def test_eager_error_respells_relative_operand():
     io = await ws.shell("cat sub/missing.txt")
     assert io.exit_code == 1
     assert (io.stderr or b"").decode() == (
-        "cat: sub/missing.txt: No such file or directory\n")
+        "cat: sub/missing.txt: No such file or directory\n"
+    )

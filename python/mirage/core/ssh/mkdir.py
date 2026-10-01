@@ -18,9 +18,9 @@ from mirage.core.ssh.client import _abs
 from mirage.types import PathSpec
 
 
-async def mkdir(accessor: SSHAccessor,
-                path: PathSpec,
-                parents: bool = False) -> None:
+async def mkdir(
+    accessor: SSHAccessor, path: PathSpec, parents: bool = False
+) -> None:
     config = accessor.config
     sftp = await accessor.sftp()
     if parents:

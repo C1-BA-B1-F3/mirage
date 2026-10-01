@@ -26,10 +26,12 @@ from mirage.workspace.executor.builtins.script import shebang_words
 
 @pytest.fixture()
 def ws() -> Workspace:
-    return Workspace(mounts={
-        "/": (RAMVFS(), MountMode.WRITE),
-        "/work/": (RAMVFS(), MountMode.WRITE),
-    })
+    return Workspace(
+        mounts={
+            "/": (RAMVFS(), MountMode.WRITE),
+            "/work/": (RAMVFS(), MountMode.WRITE),
+        }
+    )
 
 
 def _run(ws: Workspace, line: str):
@@ -87,7 +89,7 @@ def test_unknown_interpreter_reports_command_not_found(ws):
 
 def test_child_shell_state_does_not_leak(ws):
     _run(ws, "printf 'cd /work\\nexit 3\\n' > /child.sh")
-    result = _run(ws, "/child.sh; echo \"$?:$(pwd)\"")
+    result = _run(ws, '/child.sh; echo "$?:$(pwd)"')
     assert result.stdout == b"3:/\n"
 
 
@@ -105,7 +107,8 @@ def test_shebang_words_consumes_env_split_string():
     assert shebang_words("#!/usr/bin/env -S bash -x\n") == ["bash", "-x"]
     assert shebang_words("#!/usr/bin/env -Sbash -x\n") == ["bash", "-x"]
     assert shebang_words("#!/usr/bin/env --split-string=bash -x\n") == [
-        "bash", "-x"
+        "bash",
+        "-x",
     ]
     assert shebang_words("#!/usr/bin/env -S /bin/bash -x\n") == ["bash", "-x"]
 
@@ -127,11 +130,18 @@ def test_path_guard_sees_the_executed_file():
             "/data/": (prod, MountMode.WRITE),
         },
         profiles={
-            "default":
-            SessionProfile(commands=CommandsBlock(
-                deny=(CommandRule(reason="production scripts are sealed",
-                                  paths=("/data/prod/*", )), )))
-        })
+            "default": SessionProfile(
+                commands=CommandsBlock(
+                    deny=(
+                        CommandRule(
+                            reason="production scripts are sealed",
+                            paths=("/data/prod/*",),
+                        ),
+                    )
+                )
+            )
+        },
+    )
     result = _run(ws, "/data/prod/run.sh")
     assert result.exit_code == 1
     assert b"production scripts are sealed" in result.stderr
@@ -167,10 +177,8 @@ async def test_virtual_program_needs_only_its_own_permission(ws):
 async def test_virtual_program_still_checks_target_policy(ws):
     ws.create_session(
         "narrow",
-        profile={"commands": {
-            "allow": ["echo"],
-            "deny": ["echo blocked"]
-        }})
+        profile={"commands": {"allow": ["echo"], "deny": ["echo blocked"]}},
+    )
     io = await ws.shell("/usr/bin/echo blocked", session_id="narrow")
     assert io.exit_code == 126
     assert io.stdout in (None, b"")
@@ -178,10 +186,12 @@ async def test_virtual_program_still_checks_target_policy(ws):
 
 @pytest.mark.asyncio
 async def test_virtual_program_skips_functions_and_preserves_caller(ws):
-    await ws.shell("cat() { echo shadow; }; alias cat='echo alias'; "
-                   "shopt -s expand_aliases")
+    await ws.shell(
+        "cat() { echo shadow; }; alias cat='echo alias'; "
+        "shopt -s expand_aliases"
+    )
     io = await ws.shell("/usr/bin/cat /usr/bin/echo")
     assert io.exit_code == 0
-    assert b'command echo' in io.stdout
+    assert b"command echo" in io.stdout
     io = await ws.shell("cat")
     assert io.stdout == b"alias\n"

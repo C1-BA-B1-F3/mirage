@@ -51,6 +51,8 @@ def test_losing_the_mint_race_reads_the_winner(tmp_path, monkeypatch):
     path.write_bytes(winner.export_private_key())
     real_exists = Path.exists
     monkeypatch.setattr(
-        Path, "exists", lambda self: False
-        if self == path else real_exists(self))
+        Path,
+        "exists",
+        lambda self: False if self == path else real_exists(self),
+    )
     assert _public(load_host_key(path)) == _public(winner)

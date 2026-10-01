@@ -30,20 +30,25 @@ def _ops(chunks):
             raise FileNotFoundError(path.virtual)
         return {"size": 0}
 
-    return CommandIO(readdir=None,
-                     read_bytes=None,
-                     read_stream=_streamer(chunks),
-                     stat=stat,
-                     is_mounted=lambda a: True,
-                     local=False)
+    return CommandIO(
+        readdir=None,
+        read_bytes=None,
+        read_stream=_streamer(chunks),
+        stat=stat,
+        is_mounted=lambda a: True,
+        local=False,
+    )
 
 
 def _paths(*names: str) -> list[PathSpec]:
     return [
-        PathSpec(vfs_path=mount_key(n, ""),
-                 virtual=n,
-                 directory="/data",
-                 resolved=True) for n in names
+        PathSpec(
+            vfs_path=mount_key(n, ""),
+            virtual=n,
+            directory="/data",
+            resolved=True,
+        )
+        for n in names
     ]
 
 
@@ -76,12 +81,17 @@ async def test_head_multi_streaming_with_headers():
         "/data/b.txt": [b"b1\nb2\n"],
     }
     acc = S3Accessor.__new__(S3Accessor)
-    out, _ = await head(_ops(chunks), acc, _paths('/data/a.txt',
-                                                  '/data/b.txt'), [],
-                        CommandOpts(flags={'lines': '2'}))
+    out, _ = await head(
+        _ops(chunks),
+        acc,
+        _paths("/data/a.txt", "/data/b.txt"),
+        [],
+        CommandOpts(flags={"lines": "2"}),
+    )
     data = await _collect(out)
-    assert data == (b"==> /data/a.txt <==\na1\na2\n"
-                    b"\n==> /data/b.txt <==\nb1\nb2\n")
+    assert data == (
+        b"==> /data/a.txt <==\na1\na2\n\n==> /data/b.txt <==\nb1\nb2\n"
+    )
 
 
 @pytest.mark.asyncio
@@ -91,9 +101,14 @@ async def test_tail_multi_streaming_with_headers():
         "/data/b.txt": [b"b1\nb2\nb3\n"],
     }
     acc = S3Accessor.__new__(S3Accessor)
-    out, _ = await tail(_ops(chunks), acc, _paths('/data/a.txt',
-                                                  '/data/b.txt'), [],
-                        CommandOpts(flags={'n': '2'}))
+    out, _ = await tail(
+        _ops(chunks),
+        acc,
+        _paths("/data/a.txt", "/data/b.txt"),
+        [],
+        CommandOpts(flags={"n": "2"}),
+    )
     data = await _collect(out)
-    assert data == (b"==> /data/a.txt <==\na2\na3\n"
-                    b"\n==> /data/b.txt <==\nb2\nb3\n")
+    assert data == (
+        b"==> /data/a.txt <==\na2\na3\n\n==> /data/b.txt <==\nb2\nb3\n"
+    )

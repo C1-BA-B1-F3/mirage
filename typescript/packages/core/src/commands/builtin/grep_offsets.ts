@@ -40,7 +40,7 @@ export function decodeLine(raw: Uint8Array): string {
   const parts: string[] = []
   const units = new Uint16Array(Math.min(raw.length, 8192))
   let used = 0
-  for (let i = 0; i < raw.length; ) {
+  for (let i = 0; i < raw.length;) {
     const byte = raw[i] ?? 0
     const second = raw[i + 1] ?? 0
     const third = raw[i + 2] ?? 0

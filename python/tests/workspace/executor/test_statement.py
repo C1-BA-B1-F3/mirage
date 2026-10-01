@@ -16,10 +16,12 @@ import pytest
 
 from mirage.io import IOResult
 from mirage.workspace.abort import StatusWriter
-from mirage.workspace.executor.statement import (assignment_status,
-                                                 finish_statement,
-                                                 restore_status,
-                                                 snapshot_status)
+from mirage.workspace.executor.statement import (
+    assignment_status,
+    finish_statement,
+    restore_status,
+    snapshot_status,
+)
 from mirage.workspace.session import SessionState
 
 
@@ -78,8 +80,8 @@ def test_restore_status_puts_back_the_captured_shell_status():
     session.pipe_status = (0, 3)
     before = snapshot_status(session)
     session.last_exit_code = 0
-    session.pipe_status = (0, )
-    session._pipe_status_pending = (1, )
+    session.pipe_status = (0,)
+    session._pipe_status_pending = (1,)
     restore_status(session, before, None)
     assert session.last_exit_code == 3
     assert session.pipe_status == (0, 3)
@@ -98,12 +100,12 @@ def test_restore_status_declines_over_a_status_another_line_stamped():
     before = snapshot_status(session)
 
     session.last_exit_code = 0
-    session.pipe_status = (0, )
+    session.pipe_status = (0,)
     session.status_writer = theirs
 
     restore_status(session, before, mine)
     assert session.last_exit_code == 0
-    assert session.pipe_status == (0, )
+    assert session.pipe_status == (0,)
 
     restore_status(session, before, theirs)
     assert session.last_exit_code == 1

@@ -27,7 +27,6 @@ from mirage.watch.base import DeltaHook
 
 
 class GridFSVFS(BaseVFS):
-
     accessor: GridFSAccessor
     name: str = VFSName.GRIDFS
     # byte store: stat() sizes every file from metadata

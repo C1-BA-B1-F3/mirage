@@ -26,5 +26,6 @@ __all__ = ["GDocsConfig", "DocEntry", "GDocsVFS"]
 def __getattr__(name: str) -> "type[GDocsVFS]":
     if name == "GDocsVFS":
         from mirage.vfs.gdocs.gdocs import GDocsVFS
+
         return GDocsVFS
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

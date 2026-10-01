@@ -41,13 +41,16 @@ async def main() -> None:
     ws.register_cli("himalaya", HIMALAYA, config.model_dump())
 
     print("=== not-found errors show the full virtual path ===")
-    for cmd in ("cat /email/__nf_missing__.txt",
-                "head /email/__nf_missing__.txt",
-                "stat /email/__nf_missing__.txt"):
+    for cmd in (
+        "cat /email/__nf_missing__.txt",
+        "head /email/__nf_missing__.txt",
+        "stat /email/__nf_missing__.txt",
+    ):
         result = await ws.shell(cmd)
         print(f"$ {cmd}")
-        print(f"  exit={result.exit_code}  "
-              f"{(await result.stderr_str()).strip()}")
+        print(
+            f"  exit={result.exit_code}  {(await result.stderr_str()).strip()}"
+        )
 
     print("=== ls /email/ ===")
     result = await ws.shell("ls /email/")
@@ -82,8 +85,9 @@ async def main() -> None:
         return
     first_filename = msg_files[0]
     first_msg = f"/email/{folder}/{first_date}/{first_filename}"
-    uid = first_filename.rsplit("__",
-                                maxsplit=1)[-1].removesuffix(".email.json")
+    uid = first_filename.rsplit("__", maxsplit=1)[-1].removesuffix(
+        ".email.json"
+    )
 
     print(f"=== cat {first_msg} ===")
     result = await ws.shell(f"cat {first_msg}")
@@ -102,17 +106,19 @@ async def main() -> None:
     # +0c drops them and -1k keeps them).
     print(f"=== find /email/{folder}/ -name '*.email.json' | head -n 5 ===")
     result = await ws.shell(
-        f'find /email/{folder}/ -name "*.email.json" | head -n 5')
+        f'find /email/{folder}/ -name "*.email.json" | head -n 5'
+    )
     print(await result.stdout_str())
 
-    print(f"=== find /email/{folder}/ -path '*{first_date}*'"
-          " | head -n 5 ===")
+    print(f"=== find /email/{folder}/ -path '*{first_date}*' | head -n 5 ===")
     result = await ws.shell(
-        f'find /email/{folder}/ -path "*{first_date}*" | head -n 5')
+        f'find /email/{folder}/ -path "*{first_date}*" | head -n 5'
+    )
     print(await result.stdout_str())
 
-    print(f"=== find /email/{folder}/ -maxdepth 1 -size +0c"
-          " (dirs drop out) ===")
+    print(
+        f"=== find /email/{folder}/ -maxdepth 1 -size +0c (dirs drop out) ==="
+    )
     result = await ws.shell(f"find /email/{folder}/ -maxdepth 1 -size +0c")
     print(f"  exit={result.exit_code}")
     print(await result.stdout_str())
@@ -121,24 +127,31 @@ async def main() -> None:
     # workspace namespace (durable, snapshot-captured) and merge into
     # dispatch-level stat.
     print(f"=== metadata overlay on {first_msg} ===")
-    meta_res = await ws.shell(f'chmod 640 "{first_msg}"'
-                              f' && chown 500:dev "{first_msg}"'
-                              f' && touch -t 202601021530 "{first_msg}"')
+    meta_res = await ws.shell(
+        f'chmod 640 "{first_msg}"'
+        f' && chown 500:dev "{first_msg}"'
+        f' && touch -t 202601021530 "{first_msg}"'
+    )
     print(f"  chmod/chown/touch exit={meta_res.exit_code}")
-    meta_st, _ = await ws.dispatch("stat",
-                                   PathSpec.from_str_path(f"{first_msg}"))
-    print(f"  dispatch stat: mode={oct(meta_st.mode)[2:]} uid={meta_st.uid} "
-          f"gid={meta_st.gid} mtime={meta_st.modified}")
+    meta_st, _ = await ws.dispatch(
+        "stat", PathSpec.from_str_path(f"{first_msg}")
+    )
+    print(
+        f"  dispatch stat: mode={oct(meta_st.mode)[2:]} uid={meta_st.uid} "
+        f"gid={meta_st.gid} mtime={meta_st.modified}"
+    )
 
     print("=== himalaya envelope list -m <folder> --page-size 5 ===")
     result = await ws.shell(
-        f'himalaya envelope list -m "{folder}" --page-size 5')
+        f'himalaya envelope list -m "{folder}" --page-size 5'
+    )
     print((await result.stdout_str())[:500])
 
     print("=== himalaya envelope search not flag seen order by date desc ===")
     result = await ws.shell(
         f'himalaya envelope search -m "{folder}" --page-size 5 '
-        f"not flag seen order by date desc")
+        f"not flag seen order by date desc"
+    )
     print((await result.stdout_str())[:500])
 
     print(f"=== himalaya message read {uid} ===")
@@ -151,8 +164,10 @@ async def main() -> None:
 
     # ── native search dispatch (IMAP TEXT search via -r at folder level) ──
     for label, cmd in [
-        (f"grep -r Hi /email/{folder}/ (folder scope, IMAP search)",
-         f"grep -r Hi /email/{folder}/"),
+        (
+            f"grep -r Hi /email/{folder}/ (folder scope, IMAP search)",
+            f"grep -r Hi /email/{folder}/",
+        ),
         (f"rg Hi /email/{folder}/ (folder scope)", f"rg Hi /email/{folder}/"),
     ]:
         print(f"\n=== {label} ===")

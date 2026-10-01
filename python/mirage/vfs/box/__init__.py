@@ -25,5 +25,6 @@ __all__ = ["BoxConfig", "BoxVFS"]
 def __getattr__(name: str) -> "type[BoxVFS]":
     if name == "BoxVFS":
         from mirage.vfs.box.box import BoxVFS
+
         return BoxVFS
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

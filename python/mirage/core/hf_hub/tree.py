@@ -19,15 +19,27 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from mirage.accessor.hf_hub import HfHubAccessor
-from mirage.cache.index import (NULL_INDEX, IndexCacheStore, IndexEntry,
-                                LookupStatus)
+from mirage.cache.index import (
+    NULL_INDEX,
+    IndexCacheStore,
+    IndexEntry,
+    LookupStatus,
+)
 from mirage.cache.index.config import IndexSnapshot
 from mirage.cache.index.diff import departed
 from mirage.cache.index.lock import index_lock
-from mirage.core.hf_hub.client import (HfHubError, api_url, hub_get_response,
-                                       hub_post, rev_segment)
-from mirage.core.hf_hub.constants import (MAX_TREE_PAGES, TREE_PAGE_SIZE,
-                                          TREE_PAGE_SIZE_EXPANDED)
+from mirage.core.hf_hub.client import (
+    HfHubError,
+    api_url,
+    hub_get_response,
+    hub_post,
+    rev_segment,
+)
+from mirage.core.hf_hub.constants import (
+    MAX_TREE_PAGES,
+    TREE_PAGE_SIZE,
+    TREE_PAGE_SIZE_EXPANDED,
+)
 from mirage.core.hf_hub.tree_entry import TreeEntry
 from mirage.utils import key_prefix as kp
 
@@ -121,8 +133,9 @@ def tree_url(accessor: HfHubAccessor) -> str:
     stem = accessor.key_prefix.strip("/")
     if stem:
         suffix += "/" + stem
-    return api_url(accessor.endpoint, accessor.repo_type, accessor.repo_id,
-                   suffix)
+    return api_url(
+        accessor.endpoint, accessor.repo_type, accessor.repo_id, suffix
+    )
 
 
 def paths_info_url(accessor: HfHubAccessor) -> str:
@@ -138,12 +151,17 @@ def paths_info_url(accessor: HfHubAccessor) -> str:
     Returns:
         str: the absolute URL.
     """
-    return api_url(accessor.endpoint, accessor.repo_type, accessor.repo_id,
-                   f"/paths-info/{rev_segment(accessor.revision)}")
+    return api_url(
+        accessor.endpoint,
+        accessor.repo_type,
+        accessor.repo_id,
+        f"/paths-info/{rev_segment(accessor.revision)}",
+    )
 
 
-async def fetch_path(accessor: HfHubAccessor,
-                     rel: str) -> dict[str, TreeEntry]:
+async def fetch_path(
+    accessor: HfHubAccessor, rel: str
+) -> dict[str, TreeEntry]:
     """The listing row for one mount-relative path, in one request.
 
     The row is folded by ``collect``, the same as a tree page, so it keys
@@ -163,24 +181,27 @@ async def fetch_path(accessor: HfHubAccessor,
         HfHubError: the Hub refused, or answered rows for another path.
     """
     asked = accessor.repo_path(rel)
-    rows = await hub_post(accessor.token,
-                          paths_info_url(accessor), {
-                              "paths": [asked],
-                              "expand": accessor.expand_commits is True
-                          },
-                          session=accessor.pool)
+    rows = await hub_post(
+        accessor.token,
+        paths_info_url(accessor),
+        {"paths": [asked], "expand": accessor.expand_commits is True},
+        session=accessor.pool,
+    )
     if not isinstance(rows, list):
         # Only an empty list says the path is missing; an answer of any
         # other shape is one the client cannot read, not an absence.
-        raise HfHubError(f"paths-info answered no list for {asked}", 0,
-                         "InvalidResponse")
+        raise HfHubError(
+            f"paths-info answered no list for {asked}", 0, "InvalidResponse"
+        )
     matching = [
-        row for row in rows
+        row
+        for row in rows
         if isinstance(row, dict) and row.get("path") == asked
     ]
     if rows and not matching:
-        raise HfHubError(f"paths-info answered no row for {asked}", 0,
-                         "PathMismatch")
+        raise HfHubError(
+            f"paths-info answered no row for {asked}", 0, "PathMismatch"
+        )
     into: dict[str, TreeEntry] = {}
     collect(matching, accessor.key_prefix, into)
     return into
@@ -231,8 +252,9 @@ def truncated(repo_id: str) -> HfHubError:
     Returns:
         HfHubError: carrying the ceiling in its message.
     """
-    return HfHubError(f"hf: {repo_id}: listing exceeds {MAX_TREE_PAGES} pages",
-                      0)
+    return HfHubError(
+        f"hf: {repo_id}: listing exceeds {MAX_TREE_PAGES} pages", 0
+    )
 
 
 async def walk_pages(
@@ -262,17 +284,19 @@ async def walk_pages(
     """
     for _ in range(limit):
         try:
-            response = await hub_get_response(accessor.token,
-                                              url,
-                                              params,
-                                              session=accessor.pool)
+            response = await hub_get_response(
+                accessor.token, url, params, session=accessor.pool
+            )
         except HfHubError as exc:
             # Only a request carrying first-page params can learn that the
             # subtree is missing; a cursor page failing means the listing
             # broke part way, and keeping what came before would pass a
             # partial tree off as the whole one.
-            if (params is not None and exc.status == 404
-                    and exc.error_code == _MISSING_SUBTREE):
+            if (
+                params is not None
+                and exc.status == 404
+                and exc.error_code == _MISSING_SUBTREE
+            ):
                 log.debug("hf tree %s answered %s: %s", url, exc.status, exc)
                 return ""
             raise
@@ -322,11 +346,9 @@ async def fetch_tree(accessor: HfHubAccessor) -> dict[str, TreeEntry]:
     if expand is not False:
         # One page, and no cursor followed: whether a second page exists
         # is exactly the question being asked.
-        left = await walk_pages(accessor,
-                                url,
-                                page_params(True),
-                                result,
-                                limit=1)
+        left = await walk_pages(
+            accessor, url, page_params(True), result, limit=1
+        )
         if not left:
             return result
         if expand:
@@ -344,8 +366,8 @@ async def fetch_tree(accessor: HfHubAccessor) -> dict[str, TreeEntry]:
 
 
 def index_rows(
-        tree: dict[str, TreeEntry],
-        prefix: str) -> tuple[dict[str, IndexEntry], dict[str, list[str]]]:
+    tree: dict[str, TreeEntry], prefix: str
+) -> tuple[dict[str, IndexEntry], dict[str, list[str]]]:
     """Turn a Hub tree into the index's entry and children tables.
 
     Keyed by mount-absolute path, the way every other backend keys its
@@ -382,15 +404,18 @@ def index_rows(
         if entry.xet_hash:
             extra["xet_hash"] = entry.xet_hash
         dirs[parent].append(
-            (name,
-             IndexEntry(
-                 id=entry.oid,
-                 name=name,
-                 resource_type=("folder" if entry.is_dir else "file"),
-                 remote_time=entry.last_modified,
-                 size=None if entry.is_dir else entry.size,
-                 extra=extra,
-             )))
+            (
+                name,
+                IndexEntry(
+                    id=entry.oid,
+                    name=name,
+                    resource_type=("folder" if entry.is_dir else "file"),
+                    remote_time=entry.last_modified,
+                    size=None if entry.is_dir else entry.size,
+                    extra=extra,
+                ),
+            )
+        )
         # A tree row names its parent directories implicitly. The Hub's
         # recursive listing does emit a row per directory, but a page
         # boundary can deliver a child before its parent, so the parent's
@@ -427,8 +452,9 @@ def seed_index(
         IndexSnapshot: the rows it wrote.
     """
     entries, children = index_rows(accessor.tree, prefix)
-    index.seed(entries, children,
-               datetime.now(timezone.utc) + timedelta(days=365))
+    index.seed(
+        entries, children, datetime.now(timezone.utc) + timedelta(days=365)
+    )
     return IndexSnapshot(entries=entries, children=children)
 
 
@@ -488,7 +514,8 @@ async def refill_snapshot(
     snapshot = seed_index(accessor, index, prefix)
     if previous is not None:
         await index.report_gone(
-            departed(previous.items(), tree, prefix, _is_folder))
+            departed(previous.items(), tree, prefix, _is_folder)
+        )
     return snapshot
 
 
@@ -520,9 +547,10 @@ async def ensure_live_snapshot(
     """
     if index is NULL_INDEX:
         return None
-    if (await index.list_dir(prefix.rstrip("/")
-                             or "/")).status not in (LookupStatus.NOT_FOUND,
-                                                     LookupStatus.EXPIRED):
+    if (await index.list_dir(prefix.rstrip("/") or "/")).status not in (
+        LookupStatus.NOT_FOUND,
+        LookupStatus.EXPIRED,
+    ):
         return None
     return await refill_snapshot(accessor, index, prefix)
 
@@ -530,7 +558,7 @@ async def ensure_live_snapshot(
 async def ensure_tree(
     accessor: HfHubAccessor,
     index: IndexCacheStore = NULL_INDEX,
-    prefix: str = '',
+    prefix: str = "",
 ) -> None:
     """Fetch the tree if this mount has not got one yet.
 

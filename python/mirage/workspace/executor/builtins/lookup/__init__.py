@@ -12,11 +12,15 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-from mirage.workspace.executor.builtins.lookup.classify import (classify,
-                                                                describe,
-                                                                program_file)
-from mirage.workspace.executor.builtins.lookup.lookup import (handle_type,
-                                                              handle_which)
+from mirage.workspace.executor.builtins.lookup.classify import (
+    classify,
+    describe,
+    program_file,
+)
+from mirage.workspace.executor.builtins.lookup.lookup import (
+    handle_type,
+    handle_which,
+)
 
 # The package's public surface: what other packages consume. Inside the
 # package, and in its tests, the modules are imported directly.

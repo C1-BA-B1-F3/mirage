@@ -36,17 +36,29 @@ SEED = [
 # "host" runs the line with no session, which is the workspace's own
 # unrestricted view: no profile, so no program.
 LINES = [
-    ("reviewer", "cat /repo/notes.txt",
-     "pre_command read the file and found no marker"),
+    (
+        "reviewer",
+        "cat /repo/notes.txt",
+        "pre_command read the file and found no marker",
+    ),
     ("reviewer", "cat /repo/flagged.txt", "and refuses one that holds it"),
-    ("reviewer", "echo x > /scratch/cold/f",
-     "pre_ops refuses a write at the op door"),
+    (
+        "reviewer",
+        "echo x > /scratch/cold/f",
+        "pre_ops refuses a write at the op door",
+    ),
     ("reviewer", "export AWS_SECRET=x", "pre_session refuses a credential"),
-    ("reviewer", "export SAFE=1 && echo $SAFE",
-     "silence where no hook objects"),
+    (
+        "reviewer",
+        "export SAFE=1 && echo $SAFE",
+        "silence where no hook objects",
+    ),
     ("host", "cat /repo/flagged.txt", "no profile, so no program"),
-    ("host", "export AWS_SECRET=x",
-     "the program is the profile's, not the workspace's"),
+    (
+        "host",
+        "export AWS_SECRET=x",
+        "the program is the profile's, not the workspace's",
+    ),
 ]
 
 
@@ -72,10 +84,12 @@ async def main() -> None:
         ws.create_session("reviewer", profile="reviewer")
 
         for who, line, note in LINES:
-            res = await ws.shell(line,
-                                 session_id=None if who == "host" else who)
-            outcome = answer(res.stdout or b"", res.stderr or b"",
-                             res.exit_code)
+            res = await ws.shell(
+                line, session_id=None if who == "host" else who
+            )
+            outcome = answer(
+                res.stdout or b"", res.stderr or b"", res.exit_code
+            )
             print(f"{who:9} {line:30} {outcome}")
             print(f"{'':9} {'':30} {note}")
     finally:

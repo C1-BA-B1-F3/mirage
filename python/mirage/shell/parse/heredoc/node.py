@@ -69,9 +69,17 @@ class HeredocNode:
     def heredoc(self) -> Heredoc | None:
         if self.type != "file_redirect":
             return None
-        return next((doc for start, doc in self._source.documents
-                     if any(child.type == "<" and child.start_byte == start
-                            for child in self._node.children)), None)
+        return next(
+            (
+                doc
+                for start, doc in self._source.documents
+                if any(
+                    child.type == "<" and child.start_byte == start
+                    for child in self._node.children
+                )
+            ),
+            None,
+        )
 
     @property
     def warnings(self) -> bytes:
@@ -79,16 +87,19 @@ class HeredocNode:
             f"mirage: line {doc.eof_line}: warning: here-document at line "
             f"{doc.line} delimited by end-of-file (wanted `{doc.delimiter}')\n"
             for _, doc in self._source.documents
-            if not doc.terminated).encode()
+            if not doc.terminated
+        ).encode()
 
     @property
     def source_text(self) -> bytes:
         if self._node.parent is None:
             return self._source.original
-        if not any(self.start_byte <= start < self.end_byte
-                   for start, _ in self._source.documents):
+        if not any(
+            self.start_byte <= start < self.end_byte
+            for start, _ in self._source.documents
+        ):
             return self._node.text or b""
-        positions = self._source.offsets[self.start_byte:self.end_byte]
+        positions = self._source.offsets[self.start_byte : self.end_byte]
         if not positions:
             return b""
-        return self._source.original[min(positions):max(positions) + 1]
+        return self._source.original[min(positions) : max(positions) + 1]

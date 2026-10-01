@@ -58,26 +58,32 @@ async def build_override_mounts(
         if isinstance(block, dict) and block.get("vfs") is not None
     }
     sources = await resolve_sources_for(
-        declared, [config for _, config in blocks.values()])
+        declared, [config for _, config in blocks.values()]
+    )
     out: dict[str, Any] = {}
     for prefix, (vfs_name, config) in blocks.items():
         built = build_vfs(
-            vfs_name, await resolve_config_secrets(config, sources,
-                                                   f"mounts.{prefix}.config"))
+            vfs_name,
+            await resolve_config_secrets(
+                config, sources, f"mounts.{prefix}.config"
+            ),
+        )
         out[norm_mount_prefix(prefix)] = Mount(vfs=built, vfs_ref=vfs_name)
     return out
 
 
-def _existing_redacted_mounts(ws: Workspace, state: dict[str, Any],
-                              skip: set[str]) -> dict[str, Any]:
+def _existing_redacted_mounts(
+    ws: Workspace, state: dict[str, Any], skip: set[str]
+) -> dict[str, Any]:
     auto_prefixes = {
         "/dev/",
         norm_mount_prefix(HISTORY_PREFIX),
-        norm_mount_prefix(BIN_PREFIX)
+        norm_mount_prefix(BIN_PREFIX),
     }
     prefix_to_vfs = {
         m.prefix: m.vfs
-        for m in ws._registry.mounts() if m.prefix not in auto_prefixes
+        for m in ws._registry.mounts()
+        if m.prefix not in auto_prefixes
     }
     out: dict[str, Any] = {}
     for m in state["mounts"]:
@@ -89,9 +95,9 @@ def _existing_redacted_mounts(ws: Workspace, state: dict[str, Any],
     return out
 
 
-async def clone_workspace_with_override(src_ws: Workspace,
-                                        override: dict[str, Any]
-                                        | None) -> Workspace:
+async def clone_workspace_with_override(
+    src_ws: Workspace, override: dict[str, Any] | None
+) -> Workspace:
     """Snapshot ``src_ws`` and rebuild a fresh workspace from state.
 
     Behavior:
@@ -122,8 +128,8 @@ async def clone_workspace_with_override(src_ws: Workspace,
     supplied = (override or {}).get("secrets")
     secrets = supplied if supplied is not None else src_ws.declared_sources
     override_mounts = await build_override_mounts(override, secrets)
-    existing = _existing_redacted_mounts(src_ws,
-                                         state,
-                                         skip=set(override_mounts))
+    existing = _existing_redacted_mounts(
+        src_ws, state, skip=set(override_mounts)
+    )
     merged = {**existing, **override_mounts}
     return await Workspace._from_state(state, mounts=merged, secrets=secrets)

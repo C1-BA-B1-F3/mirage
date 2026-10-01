@@ -18,7 +18,6 @@ from mirage.vfs.s3_alias import S3AliasVFS
 
 
 class DigitalOceanVFS(S3AliasVFS):
-
     prompt: str = PROMPT
 
     def __init__(self, config: DigitalOceanConfig) -> None:

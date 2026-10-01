@@ -19,9 +19,9 @@ from weakref import WeakKeyDictionary
 
 from mirage.cache.index.store import IndexCacheStore
 
-_locks: WeakKeyDictionary[IndexCacheStore,
-                          dict[str, tuple[asyncio.Lock,
-                                          int]]] = WeakKeyDictionary()
+_locks: WeakKeyDictionary[
+    IndexCacheStore, dict[str, tuple[asyncio.Lock, int]]
+] = WeakKeyDictionary()
 
 
 @asynccontextmanager

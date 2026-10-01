@@ -23,23 +23,29 @@ from mirage.io.types import ByteSource, IOResult, materialize
 
 
 async def send(
-        inv: CLIInvocation[EmailConfig]) -> tuple[ByteSource | None, IOResult]:
+    inv: CLIInvocation[EmailConfig],
+) -> tuple[ByteSource | None, IOResult]:
     # The operand is a whole RFC 5322 message, so tokens rejoin with a
     # space and literal \n become real line breaks, the way upstream's
     # MessageArg resolves an inline message.
     inline = " ".join(inv.texts).replace("\\r", "").replace("\\n", "\n")
     raw = inline.encode() if inline else await materialize(inv.stdin)
     if not raw.strip():
-        raise ValueError("no message provided: pass it as an argument "
-                         "or pipe it via standard input")
-    message, warning = await deliver(inv.config, raw,
-                                     FlagView(inv.flags).as_str("save"))
+        raise ValueError(
+            "no message provided: pass it as an argument "
+            "or pipe it via standard input"
+        )
+    message, warning = await deliver(
+        inv.config, raw, FlagView(inv.flags).as_str("save")
+    )
     result = {
         "status": "sent",
         "to": message["To"],
         "subject": message["Subject"],
     }
-    out = json.dumps(result, ensure_ascii=False,
-                     separators=(",", ":")).encode()
+    out = json.dumps(
+        result, ensure_ascii=False, separators=(",", ":")
+    ).encode()
     return yield_bytes(out), IOResult(
-        stderr=warning.encode() if warning else None)
+        stderr=warning.encode() if warning else None
+    )

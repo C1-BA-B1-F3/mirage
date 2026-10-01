@@ -44,36 +44,39 @@ def index():
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("config", [
-    {
-        "default_trace_limit": 2
-    },
-    {
-        "default_from_timestamp": "2026-01-01T00:00:00Z"
-    },
-])
+@pytest.mark.parametrize(
+    "config",
+    [
+        {"default_trace_limit": 2},
+        {"default_from_timestamp": "2026-01-01T00:00:00Z"},
+    ],
+)
 async def test_partial_trace_page_serves_child_stats_without_refetch(
-        config, index):
+    config, index
+):
     with patch("mirage.accessor.langfuse.Langfuse"):
-        accessor = LangfuseAccessor(config=LangfuseConfig(
-            public_key="pk-test", secret_key="sk-test", **config))
-    parent = PathSpec(vfs_path="traces",
-                      virtual="/traces",
-                      directory="/traces")
-    with patch("mirage.core.langfuse.readdir.fetch_traces",
-               new_callable=AsyncMock,
-               return_value=[{
-                   "id": "t1"
-               }, {
-                   "id": "t2"
-               }]) as fetch:
+        accessor = LangfuseAccessor(
+            config=LangfuseConfig(
+                public_key="pk-test", secret_key="sk-test", **config
+            )
+        )
+    parent = PathSpec(
+        vfs_path="traces", virtual="/traces", directory="/traces"
+    )
+    with patch(
+        "mirage.core.langfuse.readdir.fetch_traces",
+        new_callable=AsyncMock,
+        return_value=[{"id": "t1"}, {"id": "t2"}],
+    ) as fetch:
         paths = await readdir(accessor, parent, index)
         for path in paths:
             await stat(
                 accessor,
-                PathSpec(vfs_path=path.lstrip("/"),
-                         virtual=path,
-                         directory=path), index)
+                PathSpec(
+                    vfs_path=path.lstrip("/"), virtual=path, directory=path
+                ),
+                index,
+            )
         assert fetch.await_count == 1
         # A new directory read must still refresh the bounded page.
         await readdir(accessor, parent, index)
@@ -83,18 +86,22 @@ async def test_partial_trace_page_serves_child_stats_without_refetch(
 @pytest.mark.asyncio
 async def test_workspace_long_listing_fetches_a_full_trace_page_once():
     with patch("mirage.accessor.langfuse.Langfuse"):
-        accessor = LangfuseAccessor(config=LangfuseConfig(
-            public_key="pk-test", secret_key="sk-test", default_trace_limit=2))
+        accessor = LangfuseAccessor(
+            config=LangfuseConfig(
+                public_key="pk-test",
+                secret_key="sk-test",
+                default_trace_limit=2,
+            )
+        )
     ws = Workspace(
-        {"/nested/lf/": BaseVFS(name="langfuse", accessor=accessor, io=IO)})
+        {"/nested/lf/": BaseVFS(name="langfuse", accessor=accessor, io=IO)}
+    )
     try:
-        with patch("mirage.core.langfuse.readdir.fetch_traces",
-                   new_callable=AsyncMock,
-                   return_value=[{
-                       "id": "t1"
-                   }, {
-                       "id": "t2"
-                   }]) as fetch:
+        with patch(
+            "mirage.core.langfuse.readdir.fetch_traces",
+            new_callable=AsyncMock,
+            return_value=[{"id": "t1"}, {"id": "t2"}],
+        ) as fetch:
             result = await ws.shell("ls -l /nested/lf/traces")
             assert result.exit_code == 0
             assert "t1.json" in await result.stdout_str()
@@ -106,32 +113,29 @@ async def test_workspace_long_listing_fetches_a_full_trace_page_once():
 
 @pytest.mark.asyncio
 async def test_readdir_root(accessor, index):
-    result = await readdir(accessor,
-                           PathSpec(vfs_path="", virtual="/", directory="/"),
-                           index)
+    result = await readdir(
+        accessor, PathSpec(vfs_path="", virtual="/", directory="/"), index
+    )
     assert result == ["/traces", "/sessions", "/prompts", "/datasets"]
 
 
 @pytest.mark.asyncio
 async def test_readdir_traces(accessor, index):
     with patch(
-            "mirage.core.langfuse.readdir.fetch_traces",
-            new_callable=AsyncMock,
-            return_value=[
-                {
-                    "id": "abc123",
-                    "name": "chat"
-                },
-                {
-                    "id": "def456",
-                    "name": "search"
-                },
-            ],
+        "mirage.core.langfuse.readdir.fetch_traces",
+        new_callable=AsyncMock,
+        return_value=[
+            {"id": "abc123", "name": "chat"},
+            {"id": "def456", "name": "search"},
+        ],
     ):
         result = await readdir(
             accessor,
-            PathSpec(vfs_path="traces", virtual="/traces",
-                     directory="/traces"), index)
+            PathSpec(
+                vfs_path="traces", virtual="/traces", directory="/traces"
+            ),
+            index,
+        )
 
     assert "/traces/abc123.json" in result
     assert "/traces/def456.json" in result
@@ -140,19 +144,17 @@ async def test_readdir_traces(accessor, index):
 @pytest.mark.asyncio
 async def test_readdir_sessions(accessor, index):
     with patch(
-            "mirage.core.langfuse.readdir.fetch_sessions",
-            new_callable=AsyncMock,
-            return_value=[{
-                "id": "session-1"
-            }, {
-                "id": "session-2"
-            }],
+        "mirage.core.langfuse.readdir.fetch_sessions",
+        new_callable=AsyncMock,
+        return_value=[{"id": "session-1"}, {"id": "session-2"}],
     ):
         result = await readdir(
             accessor,
-            PathSpec(vfs_path="sessions",
-                     virtual="/sessions",
-                     directory="/sessions"), index)
+            PathSpec(
+                vfs_path="sessions", virtual="/sessions", directory="/sessions"
+            ),
+            index,
+        )
 
     assert "/sessions/session-1" in result
     assert "/sessions/session-2" in result
@@ -161,24 +163,20 @@ async def test_readdir_sessions(accessor, index):
 @pytest.mark.asyncio
 async def test_readdir_prompts(accessor, index):
     with patch(
-            "mirage.core.langfuse.readdir.fetch_prompts",
-            new_callable=AsyncMock,
-            return_value=[
-                {
-                    "name": "summarize",
-                    "versions": [1]
-                },
-                {
-                    "name": "translate",
-                    "versions": [1]
-                },
-            ],
+        "mirage.core.langfuse.readdir.fetch_prompts",
+        new_callable=AsyncMock,
+        return_value=[
+            {"name": "summarize", "versions": [1]},
+            {"name": "translate", "versions": [1]},
+        ],
     ):
         result = await readdir(
             accessor,
-            PathSpec(vfs_path="prompts",
-                     virtual="/prompts",
-                     directory="/prompts"), index)
+            PathSpec(
+                vfs_path="prompts", virtual="/prompts", directory="/prompts"
+            ),
+            index,
+        )
 
     assert "/prompts/summarize" in result
     assert "/prompts/translate" in result
@@ -187,19 +185,17 @@ async def test_readdir_prompts(accessor, index):
 @pytest.mark.asyncio
 async def test_readdir_datasets(accessor, index):
     with patch(
-            "mirage.core.langfuse.readdir.fetch_datasets",
-            new_callable=AsyncMock,
-            return_value=[{
-                "name": "qa-eval"
-            }, {
-                "name": "chat-eval"
-            }],
+        "mirage.core.langfuse.readdir.fetch_datasets",
+        new_callable=AsyncMock,
+        return_value=[{"name": "qa-eval"}, {"name": "chat-eval"}],
     ):
         result = await readdir(
             accessor,
-            PathSpec(vfs_path="datasets",
-                     virtual="/datasets",
-                     directory="/datasets"), index)
+            PathSpec(
+                vfs_path="datasets", virtual="/datasets", directory="/datasets"
+            ),
+            index,
+        )
 
     assert "/datasets/qa-eval" in result
     assert "/datasets/chat-eval" in result
@@ -209,15 +205,19 @@ async def test_readdir_datasets(accessor, index):
 async def test_readdir_dataset_contents(accessor, index):
     items = [{"id": "i-1", "input": "a"}, {"id": "i-2", "input": "b"}]
     with patch(
-            "mirage.core.langfuse.readdir.fetch_dataset_items",
-            new_callable=AsyncMock,
-            return_value=items,
+        "mirage.core.langfuse.readdir.fetch_dataset_items",
+        new_callable=AsyncMock,
+        return_value=items,
     ):
         result = await readdir(
             accessor,
-            PathSpec(vfs_path="datasets/qa-eval",
-                     virtual="/datasets/qa-eval",
-                     directory="/datasets/qa-eval"), index)
+            PathSpec(
+                vfs_path="datasets/qa-eval",
+                virtual="/datasets/qa-eval",
+                directory="/datasets/qa-eval",
+            ),
+            index,
+        )
     assert "/datasets/qa-eval/items.jsonl" in result
     assert "/datasets/qa-eval/runs" in result
     lookup = await index.get("/datasets/qa-eval/items.jsonl")
@@ -228,15 +228,19 @@ async def test_readdir_dataset_contents(accessor, index):
 async def test_readdir_dataset_runs_sized(accessor, index):
     runs = [{"name": "run-a", "metadata": {"k": "v"}}, {"name": "run-b"}]
     with patch(
-            "mirage.core.langfuse.readdir.fetch_dataset_runs",
-            new_callable=AsyncMock,
-            return_value=runs,
+        "mirage.core.langfuse.readdir.fetch_dataset_runs",
+        new_callable=AsyncMock,
+        return_value=runs,
     ):
         await readdir(
             accessor,
-            PathSpec(vfs_path="datasets/qa-eval/runs",
-                     virtual="/datasets/qa-eval/runs",
-                     directory="/datasets/qa-eval/runs"), index)
+            PathSpec(
+                vfs_path="datasets/qa-eval/runs",
+                virtual="/datasets/qa-eval/runs",
+                directory="/datasets/qa-eval/runs",
+            ),
+            index,
+        )
     lookup = await index.get("/datasets/qa-eval/runs/run-a.jsonl")
     assert lookup.entry.size == len(jsonl_bytes([runs[0]]))
 
@@ -246,9 +250,11 @@ async def test_readdir_dotfile_raises(accessor, index):
     with pytest.raises(FileNotFoundError):
         await readdir(
             accessor,
-            PathSpec(vfs_path=".hidden",
-                     virtual="/.hidden",
-                     directory="/.hidden"), index)
+            PathSpec(
+                vfs_path=".hidden", virtual="/.hidden", directory="/.hidden"
+            ),
+            index,
+        )
 
 
 @pytest.mark.asyncio
@@ -256,9 +262,13 @@ async def test_readdir_dotfile_nested_raises(accessor, index):
     with pytest.raises(FileNotFoundError):
         await readdir(
             accessor,
-            PathSpec(vfs_path="traces/.DS_Store",
-                     virtual="/traces/.DS_Store",
-                     directory="/traces/.DS_Store"), index)
+            PathSpec(
+                vfs_path="traces/.DS_Store",
+                virtual="/traces/.DS_Store",
+                directory="/traces/.DS_Store",
+            ),
+            index,
+        )
 
 
 @pytest.mark.asyncio
@@ -266,24 +276,22 @@ async def test_readdir_prompt_versions(accessor, index):
     # PromptMeta carries every version in a `versions` array; a scalar
     # `version` read would collapse the directory to a single 0.json.
     with patch(
-            "mirage.core.langfuse.readdir.fetch_prompts",
-            new_callable=AsyncMock,
-            return_value=[
-                {
-                    "name": "summarize",
-                    "versions": [2, 1, 10]
-                },
-                {
-                    "name": "translate",
-                    "versions": [1]
-                },
-            ],
+        "mirage.core.langfuse.readdir.fetch_prompts",
+        new_callable=AsyncMock,
+        return_value=[
+            {"name": "summarize", "versions": [2, 1, 10]},
+            {"name": "translate", "versions": [1]},
+        ],
     ):
         result = await readdir(
             accessor,
-            PathSpec(vfs_path="prompts/summarize",
-                     virtual="/prompts/summarize",
-                     directory="/prompts/summarize"), index)
+            PathSpec(
+                vfs_path="prompts/summarize",
+                virtual="/prompts/summarize",
+                directory="/prompts/summarize",
+            ),
+            index,
+        )
 
     assert result == [
         "/prompts/summarize/1.json",
@@ -300,8 +308,11 @@ async def test_readdir_traces_applies_no_window_by_default(accessor, index):
     with patch("mirage.core.langfuse.readdir.fetch_traces", fake):
         result = await readdir(
             accessor,
-            PathSpec(vfs_path="traces", virtual="/traces",
-                     directory="/traces"), index)
+            PathSpec(
+                vfs_path="traces", virtual="/traces", directory="/traces"
+            ),
+            index,
+        )
 
     assert result == ["/traces/old-trace.json"]
     assert fake.await_args.kwargs["from_timestamp"] is None
@@ -320,42 +331,50 @@ async def test_readdir_traces_passes_explicit_window(index):
     with patch("mirage.core.langfuse.readdir.fetch_traces", fake):
         await readdir(
             windowed,
-            PathSpec(vfs_path="traces", virtual="/traces",
-                     directory="/traces"), index)
+            PathSpec(
+                vfs_path="traces", virtual="/traces", directory="/traces"
+            ),
+            index,
+        )
 
     assert fake.await_args.kwargs["from_timestamp"] == "2026-01-01T00:00:00Z"
 
 
 def _bounded_accessor(**knobs) -> LangfuseAccessor:
-    config = LangfuseConfig(public_key="pk-test",
-                            secret_key="sk-test",
-                            **knobs)
+    config = LangfuseConfig(
+        public_key="pk-test", secret_key="sk-test", **knobs
+    )
     with patch("mirage.accessor.langfuse.Langfuse"):
         return LangfuseAccessor(config=config)
 
 
 async def _list_traces_dir(accessor, index, traces):
-    with patch("mirage.core.langfuse.readdir.fetch_traces",
-               new_callable=AsyncMock,
-               return_value=traces):
+    with patch(
+        "mirage.core.langfuse.readdir.fetch_traces",
+        new_callable=AsyncMock,
+        return_value=traces,
+    ):
         return await readdir(
             accessor,
-            PathSpec(vfs_path="traces", virtual="/traces",
-                     directory="/traces"), index)
+            PathSpec(
+                vfs_path="traces", virtual="/traces", directory="/traces"
+            ),
+            index,
+        )
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("knobs", [
-    {
-        "default_trace_limit": 2
-    },
-    {
-        "default_from_timestamp": "2026-01-01T00:00:00Z"
-    },
-],
-                         ids=["full page", "time window"])
+@pytest.mark.parametrize(
+    "knobs",
+    [
+        {"default_trace_limit": 2},
+        {"default_from_timestamp": "2026-01-01T00:00:00Z"},
+    ],
+    ids=["full page", "time window"],
+)
 async def test_a_bounded_trace_listing_is_not_cached_as_the_directory(
-        knobs, index):
+    knobs, index
+):
     """A full page or a set window leaves older traces out, so the
     listing must not become the index's proof that they are absent."""
     accessor = _bounded_accessor(**knobs)
@@ -374,31 +393,33 @@ async def test_a_trace_listing_short_of_the_limit_is_the_directory(index):
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("path, fetch, rows", [
-    ("/sessions", "fetch_sessions", [{
-        "id": "session-1"
-    }]),
-    ("/prompts", "fetch_prompts", [{
-        "name": "summarize",
-        "versions": [1]
-    }]),
-    ("/datasets", "fetch_datasets", [{
-        "name": "qa-eval"
-    }]),
-    ("/datasets/qa-eval/runs", "fetch_dataset_runs", [{
-        "name": "run-a"
-    }]),
-])
+@pytest.mark.parametrize(
+    "path, fetch, rows",
+    [
+        ("/sessions", "fetch_sessions", [{"id": "session-1"}]),
+        (
+            "/prompts",
+            "fetch_prompts",
+            [{"name": "summarize", "versions": [1]}],
+        ),
+        ("/datasets", "fetch_datasets", [{"name": "qa-eval"}]),
+        ("/datasets/qa-eval/runs", "fetch_dataset_runs", [{"name": "run-a"}]),
+    ],
+)
 async def test_a_single_page_listing_is_written_as_a_window(
-        accessor, path, fetch, rows):
+    accessor, path, fetch, rows
+):
     # Each of these is one page of the newest entries: an older one that
     # drops off the page has not been deleted.
     index = WindowSpy()
-    with patch(f"mirage.core.langfuse.readdir.{fetch}",
-               new_callable=AsyncMock,
-               return_value=rows):
+    with patch(
+        f"mirage.core.langfuse.readdir.{fetch}",
+        new_callable=AsyncMock,
+        return_value=rows,
+    ):
         await readdir(
             accessor,
             PathSpec(vfs_path=path.lstrip("/"), virtual=path, directory=path),
-            index)
+            index,
+        )
     assert index.windows[path] is True

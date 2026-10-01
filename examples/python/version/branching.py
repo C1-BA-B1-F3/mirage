@@ -39,8 +39,10 @@ def run(env: dict, *args: str) -> dict | list:
     cmd = [sys.executable, "-m", "mirage.cli.main", *args]
     proc = subprocess.run(cmd, env=env, capture_output=True, timeout=60)
     if proc.returncode != 0:
-        raise RuntimeError(f"mirage {' '.join(args)} exited "
-                           f"{proc.returncode}\n{proc.stderr.decode()}")
+        raise RuntimeError(
+            f"mirage {' '.join(args)} exited "
+            f"{proc.returncode}\n{proc.stderr.decode()}"
+        )
     out = proc.stdout.strip()
     return json.loads(out) if out else {}
 
@@ -100,7 +102,8 @@ def main() -> None:
             [sys.executable, "-m", "mirage.cli.main", "daemon", "stop"],
             env=env,
             capture_output=True,
-            timeout=30)
+            timeout=30,
+        )
         shutil.rmtree(work, ignore_errors=True)
 
 

@@ -21,8 +21,9 @@ from mirage.core.postgres.scope import ENTITY_FILES, KIND_DIRS, detect_scope
 from mirage.utils.errors import enoent
 
 
-async def schema_guard(accessor: PostgresAccessor, match: ScopeMatch,
-                       virtual: str) -> None:
+async def schema_guard(
+    accessor: PostgresAccessor, match: ScopeMatch, virtual: str
+) -> None:
     pool = await accessor.pool()
     async with pool.acquire() as conn:
         schemas = await client.list_schemas(conn, accessor.config.schemas)
@@ -30,8 +31,9 @@ async def schema_guard(accessor: PostgresAccessor, match: ScopeMatch,
         raise enoent(virtual)
 
 
-async def entity_guard(accessor: PostgresAccessor, match: ScopeMatch,
-                       virtual: str) -> None:
+async def entity_guard(
+    accessor: PostgresAccessor, match: ScopeMatch, virtual: str
+) -> None:
     schema = match.slots["schema"]
     kind = match.slots["kind"]
     pool = await accessor.pool()
@@ -40,8 +42,9 @@ async def entity_guard(accessor: PostgresAccessor, match: ScopeMatch,
         # listing chain wherever it runs, so a table under a schema the
         # mount's `schemas` leaves out would otherwise read, stat and
         # list as if the mount could see it.
-        if schema not in await client.list_schemas(conn,
-                                                   accessor.config.schemas):
+        if schema not in await client.list_schemas(
+            conn, accessor.config.schemas
+        ):
             raise enoent(virtual)
         if kind == "tables":
             names = await client.list_tables(conn, schema)
@@ -53,8 +56,9 @@ async def entity_guard(accessor: PostgresAccessor, match: ScopeMatch,
         raise enoent(virtual)
 
 
-async def entity_exists(accessor: PostgresAccessor, match: ScopeMatch,
-                        virtual: str) -> bool:
+async def entity_exists(
+    accessor: PostgresAccessor, match: ScopeMatch, virtual: str
+) -> bool:
     """Whether ``entity_guard`` admits the entity a match names.
 
     For the bespoke fast paths (``tail -n`` and ``wc -l`` on
@@ -76,40 +80,57 @@ async def entity_exists(accessor: PostgresAccessor, match: ScopeMatch,
     return True
 
 
-async def _list_root(accessor: PostgresAccessor,
-                     match: ScopeMatch) -> list[tuple[str, IndexEntry]]:
+async def _list_root(
+    accessor: PostgresAccessor, match: ScopeMatch
+) -> list[tuple[str, IndexEntry]]:
     pool = await accessor.pool()
     async with pool.acquire() as conn:
         schemas = await client.list_schemas(conn, accessor.config.schemas)
-    entries: list[tuple[str, IndexEntry]] = [(
-        "database.json",
-        IndexEntry(id="database.json",
-                   name="database.json",
-                   resource_type="postgres/database_json",
-                   vfs_name="database.json"),
-    )]
+    entries: list[tuple[str, IndexEntry]] = [
+        (
+            "database.json",
+            IndexEntry(
+                id="database.json",
+                name="database.json",
+                resource_type="postgres/database_json",
+                vfs_name="database.json",
+            ),
+        )
+    ]
     for s in schemas:
-        entries.append((s,
-                        IndexEntry(id=s,
-                                   name=s,
-                                   resource_type="postgres/schema",
-                                   vfs_name=s)))
+        entries.append(
+            (
+                s,
+                IndexEntry(
+                    id=s, name=s, resource_type="postgres/schema", vfs_name=s
+                ),
+            )
+        )
     return entries
 
 
-async def _list_schema(accessor: PostgresAccessor,
-                       match: ScopeMatch) -> list[tuple[str, IndexEntry]]:
+async def _list_schema(
+    accessor: PostgresAccessor, match: ScopeMatch
+) -> list[tuple[str, IndexEntry]]:
     # tables/ and views/ exist by construction under every schema, the
     # same way the entity files below do under every entity.
-    return [(name,
-             IndexEntry(id=name,
-                        name=name,
-                        resource_type="postgres/kind",
-                        vfs_name=name)) for name in KIND_DIRS]
+    return [
+        (
+            name,
+            IndexEntry(
+                id=name,
+                name=name,
+                resource_type="postgres/kind",
+                vfs_name=name,
+            ),
+        )
+        for name in KIND_DIRS
+    ]
 
 
-async def _list_entities(accessor: PostgresAccessor,
-                         match: ScopeMatch) -> list[tuple[str, IndexEntry]]:
+async def _list_entities(
+    accessor: PostgresAccessor, match: ScopeMatch
+) -> list[tuple[str, IndexEntry]]:
     schema = match.slots["schema"]
     kind = match.slots["kind"]
     pool = await accessor.pool()
@@ -120,21 +141,32 @@ async def _list_entities(accessor: PostgresAccessor,
             views = await client.list_views(conn, schema)
             mviews = await client.list_matviews(conn, schema)
             names = sorted(set(views) | set(mviews))
-    return [(n,
-             IndexEntry(id=n,
-                        name=n,
-                        resource_type=f"postgres/{kind[:-1]}",
-                        vfs_name=n)) for n in names]
+    return [
+        (
+            n,
+            IndexEntry(
+                id=n, name=n, resource_type=f"postgres/{kind[:-1]}", vfs_name=n
+            ),
+        )
+        for n in names
+    ]
 
 
 async def _list_entity_files(
-        accessor: PostgresAccessor,
-        match: ScopeMatch) -> list[tuple[str, IndexEntry]]:
-    return [(name,
-             IndexEntry(id=name,
-                        name=name,
-                        resource_type="postgres/entity_file",
-                        vfs_name=name)) for name in ENTITY_FILES]
+    accessor: PostgresAccessor, match: ScopeMatch
+) -> list[tuple[str, IndexEntry]]:
+    return [
+        (
+            name,
+            IndexEntry(
+                id=name,
+                name=name,
+                resource_type="postgres/entity_file",
+                vfs_name=name,
+            ),
+        )
+        for name in ENTITY_FILES
+    ]
 
 
 readdir = make_readdir(

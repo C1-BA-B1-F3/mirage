@@ -21,11 +21,13 @@ from mirage.utils.errors import einval
 from mirage.utils.path import norm
 
 
-async def read(accessor: RAMAccessor,
-               path: PathSpec,
-               index: IndexCacheStore = NULL_INDEX,
-               offset: int = 0,
-               size: int | None = None) -> bytes:
+async def read(
+    accessor: RAMAccessor,
+    path: PathSpec,
+    index: IndexCacheStore = NULL_INDEX,
+    offset: int = 0,
+    size: int | None = None,
+) -> bytes:
     """Read a /dev path.
 
     ``/dev/null`` is always empty. ``/dev/zero`` answers a ranged read
@@ -39,6 +41,7 @@ async def read(accessor: RAMAccessor,
     if device == "null":
         return b""
     if size is None:
-        raise einval(path.virtual,
-                     "cannot read an endless device without a size")
+        raise einval(
+            path.virtual, "cannot read an endless device without a size"
+        )
     return b"\x00" * size

@@ -44,12 +44,12 @@ class OneDriveConfig(MsGraphConfig):
             raise ValueError(
                 f"OneDriveConfig names {len(named)} drives "
                 f"({', '.join(named)}); set exactly one, or none for the "
-                "signed-in user's drive")
+                "signed-in user's drive"
+            )
         return self
 
 
 class OneDriveAccessor(SessionAccessor):
-
     def __init__(self, config: OneDriveConfig) -> None:
         super().__init__(timeout=aiohttp.ClientTimeout(total=config.timeout))
         self.config = config

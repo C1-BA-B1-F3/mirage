@@ -97,13 +97,17 @@ async def main():
     # namespace (durable, snapshot-captured) and merge into
     # dispatch-level stat.
     print(f"=== metadata overlay on {coll_doc} ===")
-    meta_res = await ws.shell(f'chmod 640 "{coll_doc}"'
-                              f' && chown 500:dev "{coll_doc}"'
-                              f' && touch -t 202601021530 "{coll_doc}"')
+    meta_res = await ws.shell(
+        f'chmod 640 "{coll_doc}"'
+        f' && chown 500:dev "{coll_doc}"'
+        f' && touch -t 202601021530 "{coll_doc}"'
+    )
     print(f"  chmod/chown/touch exit={meta_res.exit_code}")
     meta_st, _ = await ws.dispatch("stat", PathSpec.from_str_path(coll_doc))
-    print(f"  dispatch stat: mode={oct(meta_st.mode)[2:]} uid={meta_st.uid} "
-          f"gid={meta_st.gid} mtime={meta_st.modified}")
+    print(
+        f"  dispatch stat: mode={oct(meta_st.mode)[2:]} uid={meta_st.uid} "
+        f"gid={meta_st.gid} mtime={meta_st.modified}"
+    )
     await _run(ws, f'head -n 2 "{view_doc}"')
 
     print("\n" + "=" * 60)
@@ -132,8 +136,8 @@ async def main():
     await _run(ws, f'jq -r ".title" "{coll_doc}" | head -n 5')
     await _run(ws, f'jq -r \'._id["$oid"]\' "{coll_doc}" | head -n 5')
     await _run(
-        ws, f'jq -r "select(.year >= 2024) | .title" "{coll_doc}"'
-        " | head -n 5")
+        ws, f'jq -r "select(.year >= 2024) | .title" "{coll_doc}" | head -n 5'
+    )
     await _run(ws, f'jq -r ".body" "{text_doc}" | head -n 3')
 
     print("\n" + "=" * 60)
@@ -149,7 +153,7 @@ async def main():
     await ws.shell(f'cd "/mongodb/{DB}/collections/{COLL_HET}"')
     await _run(ws, "pwd")
     await _run(ws, "ls")
-    await _run(ws, 'head -n 1 documents.jsonl')
+    await _run(ws, "head -n 1 documents.jsonl")
 
 
 if __name__ == "__main__":

@@ -15,8 +15,16 @@
 SANDLOCK_CLI_HINT = (
     "the sandlock runtime needs the sandlock CLI on PATH "
     "(https://github.com/multikernel/sandlock); Linux only, and the full "
-    "ruleset wants Landlock ABI v6 (Linux 6.12+)")
+    "ruleset wants Landlock ABI v6 (Linux 6.12+)"
+)
 
 # Common loader/runtime paths. Non-system installations need explicit grants.
-SYSTEM_READABLE: tuple[str, ...] = ("/usr", "/lib", "/lib64", "/bin", "/etc",
-                                    "/proc", "/dev")
+SYSTEM_READABLE: tuple[str, ...] = (
+    "/usr",
+    "/lib",
+    "/lib64",
+    "/bin",
+    "/etc",
+    "/proc",
+    "/dev",
+)

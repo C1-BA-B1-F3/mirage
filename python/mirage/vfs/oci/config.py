@@ -18,8 +18,10 @@ from mirage.vfs.s3_alias import RegionEndpointConfig
 class OCIConfig(RegionEndpointConfig):
     """Oracle Cloud object storage, addressed by tenancy namespace."""
 
-    ENDPOINT = ("https://{namespace}.compat.objectstorage."
-                "{region}.oci.customer-oci.com")
+    ENDPOINT = (
+        "https://{namespace}.compat.objectstorage."
+        "{region}.oci.customer-oci.com"
+    )
 
     namespace: str
     path_style: bool = True

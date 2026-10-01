@@ -21,8 +21,12 @@ def canonicalize_value(value: Any) -> Any:
         return {k: canonicalize_value(v) for k, v in value.items()}
     if isinstance(value, list):
         return [canonicalize_value(v) for v in value]
-    if (isinstance(value, float) and not isinstance(value, bool)
-            and math.isfinite(value) and value.is_integer()):
+    if (
+        isinstance(value, float)
+        and not isinstance(value, bool)
+        and math.isfinite(value)
+        and value.is_integer()
+    ):
         return int(value)
     return value
 

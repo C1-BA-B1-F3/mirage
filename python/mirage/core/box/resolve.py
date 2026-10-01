@@ -28,8 +28,9 @@ def root_id(accessor: BoxAccessor) -> str:
     return accessor.config.root_folder_id or ROOT_FOLDER_ID
 
 
-async def resolve_chain(accessor: BoxAccessor,
-                        parts: list[str]) -> list[dict[str, Any]]:
+async def resolve_chain(
+    accessor: BoxAccessor, parts: list[str]
+) -> list[dict[str, Any]]:
     """Walk folder listings to resolve each component of a path.
 
     Box has no path-addressing endpoint, so ids are resolved by listing
@@ -56,8 +57,9 @@ async def resolve_chain(accessor: BoxAccessor,
     return chain
 
 
-async def resolve_item(accessor: BoxAccessor,
-                       parts: list[str]) -> dict[str, Any] | None:
+async def resolve_item(
+    accessor: BoxAccessor, parts: list[str]
+) -> dict[str, Any] | None:
     """Resolve a mount-relative path to its Box item.
 
     Returns None if any component is missing, or a non-final component
@@ -73,8 +75,9 @@ async def resolve_item(accessor: BoxAccessor,
     return chain[-1]
 
 
-async def resolve_parent_id(accessor: BoxAccessor,
-                            parts: list[str]) -> str | None:
+async def resolve_parent_id(
+    accessor: BoxAccessor, parts: list[str]
+) -> str | None:
     if len(parts) <= 1:
         return root_id(accessor)
     parent = await resolve_item(accessor, parts[:-1])
@@ -83,8 +86,9 @@ async def resolve_parent_id(accessor: BoxAccessor,
     return parent["id"]
 
 
-def mount_relative_key(item: dict[str, Any],
-                       root_folder_id: str) -> str | None:
+def mount_relative_key(
+    item: dict[str, Any], root_folder_id: str
+) -> str | None:
     """Mount-relative path of an item, from its ``path_collection``.
 
     Box lists an item's ancestors from the account root down to its

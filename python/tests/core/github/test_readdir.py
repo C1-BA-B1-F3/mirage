@@ -55,43 +55,48 @@ def _index_from_tree(tree: dict[str, TreeEntry]) -> RAMIndexCacheStore:
         )
         dirs[parent].append((name, idx_entry))
     for parent, entries in dirs.items():
-        index._entries.update({
-            ("/" + parent.strip("/") + "/" + name).replace("//", "/"):
-            e
-            for name, e in entries
-        })
+        index._entries.update(
+            {
+                ("/" + parent.strip("/") + "/" + name).replace("//", "/"): e
+                for name, e in entries
+            }
+        )
         child_keys = sorted(
             ("/" + parent.strip("/") + "/" + name).replace("//", "/")
-            for name, _ in entries)
+            for name, _ in entries
+        )
         index._children[parent] = child_keys
-        index._expiry[parent] = datetime.now(
-            timezone.utc) + timedelta(days=365)
+        index._expiry[parent] = datetime.now(timezone.utc) + timedelta(
+            days=365
+        )
     return index
 
 
 @pytest.fixture
 def tree():
     return {
-        "src":
-        TreeEntry(path="src", type="tree", sha="aaa", size=None),
-        "src/main.py":
-        TreeEntry(path="src/main.py", type="blob", sha="bbb", size=120),
-        "src/utils":
-        TreeEntry(path="src/utils", type="tree", sha="ccc", size=None),
-        "src/utils/helpers.py":
-        TreeEntry(path="src/utils/helpers.py", type="blob", sha="ddd",
-                  size=80),
-        "README.md":
-        TreeEntry(path="README.md", type="blob", sha="eee", size=50),
+        "src": TreeEntry(path="src", type="tree", sha="aaa", size=None),
+        "src/main.py": TreeEntry(
+            path="src/main.py", type="blob", sha="bbb", size=120
+        ),
+        "src/utils": TreeEntry(
+            path="src/utils", type="tree", sha="ccc", size=None
+        ),
+        "src/utils/helpers.py": TreeEntry(
+            path="src/utils/helpers.py", type="blob", sha="ddd", size=80
+        ),
+        "README.md": TreeEntry(
+            path="README.md", type="blob", sha="eee", size=50
+        ),
     }
 
 
 @pytest.mark.asyncio
 async def test_readdir_root(tree):
     index = _index_from_tree(tree)
-    result = await readdir(None,
-                           PathSpec(vfs_path="", virtual="/", directory="/"),
-                           index)
+    result = await readdir(
+        None, PathSpec(vfs_path="", virtual="/", directory="/"), index
+    )
     assert result == ["/README.md", "/src"]
 
 
@@ -99,8 +104,8 @@ async def test_readdir_root(tree):
 async def test_readdir_subdirectory(tree):
     index = _index_from_tree(tree)
     result = await readdir(
-        None, PathSpec(vfs_path="src", virtual="/src", directory="/src"),
-        index)
+        None, PathSpec(vfs_path="src", virtual="/src", directory="/src"), index
+    )
     assert result == ["/src/main.py", "/src/utils"]
 
 
@@ -109,9 +114,11 @@ async def test_readdir_nested(tree):
     index = _index_from_tree(tree)
     result = await readdir(
         None,
-        PathSpec(vfs_path="src/utils",
-                 virtual="/src/utils",
-                 directory="/src/utils"), index)
+        PathSpec(
+            vfs_path="src/utils", virtual="/src/utils", directory="/src/utils"
+        ),
+        index,
+    )
     assert result == ["/src/utils/helpers.py"]
 
 
@@ -123,9 +130,13 @@ async def test_readdir_missing_directory(tree):
     with pytest.raises(FileNotFoundError):
         await readdir(
             accessor,
-            PathSpec(vfs_path="nonexistent",
-                     virtual="/nonexistent",
-                     directory="/nonexistent"), index)
+            PathSpec(
+                vfs_path="nonexistent",
+                virtual="/nonexistent",
+                directory="/nonexistent",
+            ),
+            index,
+        )
 
 
 # The index *is* the listing here, seeded once from the recursive tree, so
@@ -146,9 +157,9 @@ async def test_readdir_refills_an_expired_index(tree, monkeypatch):
     monkeypatch.setattr(mirage.core.github.tree, "fetch_tree", fake_fetch_tree)
     accessor = MagicMock()
     accessor.truncated = False
-    result = await readdir(accessor,
-                           PathSpec(vfs_path="", virtual="/", directory="/"),
-                           index)
+    result = await readdir(
+        accessor, PathSpec(vfs_path="", virtual="/", directory="/"), index
+    )
     assert result == ["/README.md", "/src"]
     assert len(calls) == 1
 
@@ -171,9 +182,13 @@ async def test_readdir_does_not_refill_on_a_real_miss(tree, monkeypatch):
     with pytest.raises(FileNotFoundError):
         await readdir(
             accessor,
-            PathSpec(vfs_path="nonexistent",
-                     virtual="/nonexistent",
-                     directory="/nonexistent"), index)
+            PathSpec(
+                vfs_path="nonexistent",
+                virtual="/nonexistent",
+                directory="/nonexistent",
+            ),
+            index,
+        )
     assert calls == []
 
 
@@ -181,57 +196,94 @@ async def test_readdir_does_not_refill_on_a_real_miss(tree, monkeypatch):
 @pytest.mark.parametrize("backend", ["ram", "redis"])
 @pytest.mark.parametrize("replacement", ["tree", "blob", "missing"])
 async def test_truncated_tree_refills_expired_directory(
-        backend, replacement, monkeypatch):
+    backend, replacement, monkeypatch
+):
     client = FakeRedis()
-    index = RAMIndexCacheStore() if backend == "ram" else RedisIndexCacheStore(
-        client=client)
-    await index.set_dir("/repo", [
-        ("src", IndexEntry(id="old-src", name="src", resource_type="folder"))
-    ])
+    index = (
+        RAMIndexCacheStore()
+        if backend == "ram"
+        else RedisIndexCacheStore(client=client)
+    )
+    await index.set_dir(
+        "/repo",
+        [
+            (
+                "src",
+                IndexEntry(id="old-src", name="src", resource_type="folder"),
+            )
+        ],
+    )
     await index.set_dir(
         "/repo/src",
-        [("nested",
-          IndexEntry(id="old-nested", name="nested", resource_type="folder"))])
-    await index.set_dir("/repo/src/nested", [],
-                        datetime.now(timezone.utc) - timedelta(seconds=1))
-    parent = [] if replacement == "missing" else [
-        TreeEntry(path="nested", type=replacement, sha="new-nested", size=None)
-    ]
-    fetch = AsyncMock(side_effect=[
-        [TreeEntry(path="src", type="tree", sha="new-src", size=None)],
-        parent,
-        [TreeEntry(path="new.py", type="blob", sha="new", size=2)],
-    ])
+        [
+            (
+                "nested",
+                IndexEntry(
+                    id="old-nested", name="nested", resource_type="folder"
+                ),
+            )
+        ],
+    )
+    await index.set_dir(
+        "/repo/src/nested",
+        [],
+        datetime.now(timezone.utc) - timedelta(seconds=1),
+    )
+    parent = (
+        []
+        if replacement == "missing"
+        else [
+            TreeEntry(
+                path="nested", type=replacement, sha="new-nested", size=None
+            )
+        ]
+    )
+    fetch = AsyncMock(
+        side_effect=[
+            [TreeEntry(path="src", type="tree", sha="new-src", size=None)],
+            parent,
+            [TreeEntry(path="new.py", type="blob", sha="new", size=2)],
+        ]
+    )
     monkeypatch.setitem(readdir.__globals__, "fetch_dir_tree", fetch)
     blob_fetch = AsyncMock(return_value=b"replacement")
     monkeypatch.setitem(read.__globals__, "read_bytes", blob_fetch)
     accessor = MagicMock()
     accessor.ref = "main"
     accessor.truncated = True
-    path = PathSpec(vfs_path="src/nested",
-                    virtual="/repo/src/nested",
-                    directory="/repo/src/nested")
+    path = PathSpec(
+        vfs_path="src/nested",
+        virtual="/repo/src/nested",
+        directory="/repo/src/nested",
+    )
     try:
         if replacement == "tree":
             for _ in range(2):
-                assert await readdir(accessor, path,
-                                     index) == ["/repo/src/nested/new.py"]
-            assert [call.args[3] for call in fetch.await_args_list
-                    ] == ["main", "new-src", "new-nested"]
+                assert await readdir(accessor, path, index) == [
+                    "/repo/src/nested/new.py"
+                ]
+            assert [call.args[3] for call in fetch.await_args_list] == [
+                "main",
+                "new-src",
+                "new-nested",
+            ]
         else:
             with pytest.raises(FileNotFoundError):
                 await readdir(accessor, path, index)
             if replacement == "blob":
-                assert (await stat(accessor, path,
-                                   index)).type == FileType.FILE
+                assert (
+                    await stat(accessor, path, index)
+                ).type == FileType.FILE
                 assert await read(accessor, path, index) == b"replacement"
                 assert blob_fetch.await_args.args[3] == "new-nested"
             else:
                 for reader in (stat, read):
                     with pytest.raises(FileNotFoundError):
                         await reader(accessor, path, index)
-            assert [call.args[3]
-                    for call in fetch.await_args_list] == ["main", "new-src"]
+            assert [call.args[3] for call in fetch.await_args_list] == [
+                "main",
+                "new-src",
+            ]
     finally:
         await index.close()
         await client.aclose()
@@ -241,29 +293,54 @@ async def test_truncated_tree_refills_expired_directory(
 @pytest.mark.parametrize("backend", ["ram", "redis"])
 @pytest.mark.parametrize("replacement", ["missing", "blob"])
 async def test_complete_refill_removes_obsolete_directories(
-        backend, replacement, monkeypatch):
+    backend, replacement, monkeypatch
+):
     client = FakeRedis()
-    index = RAMIndexCacheStore() if backend == "ram" else RedisIndexCacheStore(
-        client=client)
+    index = (
+        RAMIndexCacheStore()
+        if backend == "ram"
+        else RedisIndexCacheStore(client=client)
+    )
     accessor = MagicMock()
     accessor.truncated = False
-    tree = {} if replacement == "missing" else {
-        "src": TreeEntry(path="src", type="blob", sha="new", size=3)
-    }
+    tree = (
+        {}
+        if replacement == "missing"
+        else {"src": TreeEntry(path="src", type="blob", sha="new", size=3)}
+    )
     fetch = AsyncMock(return_value=(tree, False))
     monkeypatch.setattr(mirage.core.github.tree, "fetch_tree", fetch)
     path = PathSpec(vfs_path="src", virtual="/repo/src", directory="/repo/src")
     try:
-        await index.set_dir("/other", [
-            ("keep", IndexEntry(id="keep", name="keep", resource_type="file"))
-        ])
-        await index.set_dir("/repo", [
-            ("src", IndexEntry(id="old", name="src", resource_type="folder"))
-        ])
+        await index.set_dir(
+            "/other",
+            [
+                (
+                    "keep",
+                    IndexEntry(id="keep", name="keep", resource_type="file"),
+                )
+            ],
+        )
+        await index.set_dir(
+            "/repo",
+            [
+                (
+                    "src",
+                    IndexEntry(id="old", name="src", resource_type="folder"),
+                )
+            ],
+        )
         await index.set_dir(
             "/repo/src",
-            [("old.py",
-              IndexEntry(id="old-file", name="old.py", resource_type="file"))])
+            [
+                (
+                    "old.py",
+                    IndexEntry(
+                        id="old-file", name="old.py", resource_type="file"
+                    ),
+                )
+            ],
+        )
         await index.invalidate()
         for _ in range(2):
             with pytest.raises(FileNotFoundError):
@@ -282,26 +359,32 @@ async def test_complete_refill_removes_obsolete_directories(
 @pytest.mark.parametrize("partial_children", [False, True])
 @pytest.mark.parametrize("refresh", [False, True])
 async def test_truncated_refill_does_not_cache_partial_listings(
-        backend, prefix, partial_children, refresh, monkeypatch):
+    backend, prefix, partial_children, refresh, monkeypatch
+):
     client = FakeRedis()
-    index = RAMIndexCacheStore() if backend == "ram" else RedisIndexCacheStore(
-        client=client)
+    index = (
+        RAMIndexCacheStore()
+        if backend == "ram"
+        else RedisIndexCacheStore(client=client)
+    )
     root = prefix or "/"
     folder = TreeEntry(path="docs", type="tree", sha="docs-sha", size=None)
     partial_tree = {"docs": folder}
     if partial_children:
-        partial_tree["docs/first.md"] = TreeEntry(path="docs/first.md",
-                                                  type="blob",
-                                                  sha="first",
-                                                  size=1)
+        partial_tree["docs/first.md"] = TreeEntry(
+            path="docs/first.md", type="blob", sha="first", size=1
+        )
     tree_fetch = AsyncMock(return_value=(partial_tree, True))
-    dir_fetch = AsyncMock(side_effect=[
-        [folder], [folder],
-        [
-            TreeEntry(path="first.md", type="blob", sha="first", size=1),
-            TreeEntry(path="second.md", type="blob", sha="second", size=2),
+    dir_fetch = AsyncMock(
+        side_effect=[
+            [folder],
+            [folder],
+            [
+                TreeEntry(path="first.md", type="blob", sha="first", size=1),
+                TreeEntry(path="second.md", type="blob", sha="second", size=2),
+            ],
         ]
-    ])
+    )
     monkeypatch.setattr(mirage.core.github.tree, "fetch_tree", tree_fetch)
     monkeypatch.setitem(readdir.__globals__, "fetch_dir_tree", dir_fetch)
     accessor = MagicMock()
@@ -317,11 +400,15 @@ async def test_truncated_refill_does_not_cache_partial_listings(
         for _ in range(2):
             assert await readdir(accessor, root_path, index) == [docs]
             assert await readdir(accessor, docs_path, index) == [
-                docs + "/first.md", docs + "/second.md"
+                docs + "/first.md",
+                docs + "/second.md",
             ]
         tree_fetch.assert_awaited_once()
-        assert [call.args[3] for call in dir_fetch.await_args_list
-                ] == ["main", "main", "docs-sha"]
+        assert [call.args[3] for call in dir_fetch.await_args_list] == [
+            "main",
+            "main",
+            "docs-sha",
+        ]
     finally:
         await index.close()
         await client.aclose()
@@ -331,16 +418,20 @@ async def test_truncated_refill_does_not_cache_partial_listings(
 async def test_the_truncated_walk_caches_each_listing_on_the_way_down():
     files = {"top.txt": b"t", "docs/sub/b.txt": b"b"}
     with serve(FakeGitHub(files=files, truncated_recursive=True)) as gh:
-        accessor = GitHubAccessor(GitHubConfig(token="t", base_url=gh.url),
-                                  "o",
-                                  "r",
-                                  "main",
-                                  tree={},
-                                  truncated=True)
+        accessor = GitHubAccessor(
+            GitHubConfig(token="t", base_url=gh.url),
+            "o",
+            "r",
+            "main",
+            tree={},
+            truncated=True,
+        )
         index = RAMIndexCacheStore()
-        path = PathSpec(vfs_path="docs/sub",
-                        virtual="/gh/docs/sub",
-                        directory="/gh/docs/sub")
+        path = PathSpec(
+            vfs_path="docs/sub",
+            virtual="/gh/docs/sub",
+            directory="/gh/docs/sub",
+        )
         assert await readdir(accessor, path, index) == ["/gh/docs/sub/b.txt"]
         # The root and docs listings on the way down, then docs/sub itself.
         for listed in ("/gh", "/gh/docs", "/gh/docs/sub"):
@@ -353,12 +444,14 @@ async def test_the_truncated_walk_refuses_a_directory_github_cut_short():
     files = {"top.txt": b"t", "big/a.txt": b"a", "big/b.txt": b"b"}
     with serve(FakeGitHub(files=files, truncated_recursive=True)) as gh:
         gh.truncated_dirs["big"] = 1
-        accessor = GitHubAccessor(GitHubConfig(token="t", base_url=gh.url),
-                                  "o",
-                                  "r",
-                                  "main",
-                                  tree={},
-                                  truncated=True)
+        accessor = GitHubAccessor(
+            GitHubConfig(token="t", base_url=gh.url),
+            "o",
+            "r",
+            "main",
+            tree={},
+            truncated=True,
+        )
         index = RAMIndexCacheStore()
         path = PathSpec(vfs_path="big", virtual="/gh/big", directory="/gh/big")
         with pytest.raises(GitHubApiError, match="truncated the tree listing"):
@@ -372,13 +465,15 @@ ROOT = PathSpec(vfs_path="", virtual="/gh", directory="/gh")
 
 
 def _live_accessor(gh: FakeGitHub) -> GitHubAccessor:
-    return GitHubAccessor(GitHubConfig(token="t", base_url=gh.url),
-                          "o",
-                          "r",
-                          "main",
-                          "main",
-                          tree={},
-                          truncated=False)
+    return GitHubAccessor(
+        GitHubConfig(token="t", base_url=gh.url),
+        "o",
+        "r",
+        "main",
+        "main",
+        tree={},
+        truncated=False,
+    )
 
 
 def _seed_listed(index: RAMIndexCacheStore, files: dict[str, bytes]) -> None:
@@ -386,20 +481,20 @@ def _seed_listed(index: RAMIndexCacheStore, files: dict[str, bytes]) -> None:
     docs = sorted("/gh/" + path for path in files if path.startswith("docs/"))
     index.seed(
         {
-            key:
-            IndexEntry(id=key,
-                       name=key.rsplit("/", 1)[1],
-                       resource_type="folder" if key == "/gh/docs" else "file")
+            key: IndexEntry(
+                id=key,
+                name=key.rsplit("/", 1)[1],
+                resource_type="folder" if key == "/gh/docs" else "file",
+            )
             for key in names + docs
-        }, {
-            "/gh": names,
-            "/gh/docs": docs
         },
-        datetime.now(timezone.utc) + timedelta(days=1))
+        {"/gh": names, "/gh/docs": docs},
+        datetime.now(timezone.utc) + timedelta(days=1),
+    )
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("live", [(), ("/gh", )])
+@pytest.mark.parametrize("live", [(), ("/gh",)])
 async def test_readdir_answers_from_the_refill_it_just_made(live):
     files = {"docs/a.txt": b"a", "docs/b.txt": b"b", "top.txt": b"t"}
     with serve(FakeGitHub(files=files)) as gh:
@@ -424,20 +519,26 @@ async def test_readdir_reports_a_folder_the_fresh_tree_dropped_as_missing():
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("path,owns", [
-    (ROOT, lambda _key: False),
-    (DOCS, lambda key: not key.startswith("/gh/docs")),
-],
-                         ids=["retiring", "nested"])
+@pytest.mark.parametrize(
+    "path,owns",
+    [
+        (ROOT, lambda _key: False),
+        (DOCS, lambda key: not key.startswith("/gh/docs")),
+    ],
+    ids=["retiring", "nested"],
+)
 async def test_readdir_under_a_view_that_refuses_the_folder_is_missing(
-        path, owns):
+    path, owns
+):
     files = {"docs/a.txt": b"a", "top.txt": b"t"}
     with serve(FakeGitHub(files=files)) as gh:
-        view = IndexView(RAMIndexCacheStore(ttl=86400),
-                         RAMFileCacheStore(),
-                         "/gh",
-                         owns,
-                         read_ttl=600)
+        view = IndexView(
+            RAMIndexCacheStore(ttl=86400),
+            RAMFileCacheStore(),
+            "/gh",
+            owns,
+            read_ttl=600,
+        )
         with pytest.raises(FileNotFoundError):
             await asyncio.wait_for(readdir(_live_accessor(gh), path, view), 5)
         assert gh.counts() == (0, 1, 0)
@@ -448,9 +549,11 @@ async def test_readdir_after_a_truncated_refill_walks_the_folder():
     files = {"docs/deep/x.txt": b"x", "top.txt": b"t"}
     with serve(FakeGitHub(files=files, truncated_recursive=True)) as gh:
         accessor = _live_accessor(gh)
-        deep = PathSpec(vfs_path="docs/deep",
-                        virtual="/gh/docs/deep",
-                        directory="/gh/docs/deep")
+        deep = PathSpec(
+            vfs_path="docs/deep",
+            virtual="/gh/docs/deep",
+            directory="/gh/docs/deep",
+        )
         listed = await readdir(accessor, deep, expired_on_arrival())
         assert listed == ["/gh/docs/deep/x.txt"]
         assert accessor.truncated is True
@@ -461,8 +564,13 @@ async def test_readdir_after_a_truncated_refill_walks_the_folder():
 async def test_refill_snapshot_filters_children_owned_by_another_mount():
     files = {"docs/a.txt": b"a", "docs/b.txt": b"b"}
     with serve(FakeGitHub(files=files)) as gh:
-        view = IndexView(expired_on_arrival(), RAMFileCacheStore(), "/gh",
-                         lambda key: key != "/gh/docs/b.txt")
-        assert await readdir(_live_accessor(gh), DOCS,
-                             view) == ["/gh/docs/a.txt"]
+        view = IndexView(
+            expired_on_arrival(),
+            RAMFileCacheStore(),
+            "/gh",
+            lambda key: key != "/gh/docs/b.txt",
+        )
+        assert await readdir(_live_accessor(gh), DOCS, view) == [
+            "/gh/docs/a.txt"
+        ]
         assert gh.counts() == (0, 1, 0)

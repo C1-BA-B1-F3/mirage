@@ -23,9 +23,9 @@ def _accessor() -> SharePointAccessor:
 
 def _spec(rel: str) -> PathSpec:
     virtual = f"/sp/Engineering/Documents/{rel}"
-    return PathSpec(vfs_path=mount_key(virtual, "/sp"),
-                    virtual=virtual,
-                    directory=virtual)
+    return PathSpec(
+        vfs_path=mount_key(virtual, "/sp"), virtual=virtual, directory=virtual
+    )
 
 
 @pytest.mark.asyncio
@@ -50,10 +50,8 @@ async def test_mkdir_tolerates_existing_item():
         m.post(
             _DRIVE + "/root/children",
             status=409,
-            payload={"error": {
-                "code": "nameAlreadyExists",
-                "message": "x"
-            }})
+            payload={"error": {"code": "nameAlreadyExists", "message": "x"}},
+        )
         await mkdir(_accessor(), _spec("new"))
         assert len(m.requests[("POST", URL(_DRIVE + "/root/children"))]) == 1
 
@@ -64,10 +62,8 @@ async def test_mkdir_raises_on_other_errors():
         m.post(
             _DRIVE + "/root/children",
             status=507,
-            payload={"error": {
-                "code": "insufficientStorage",
-                "message": "x"
-            }})
+            payload={"error": {"code": "insufficientStorage", "message": "x"}},
+        )
         with pytest.raises(GraphError):
             await mkdir(_accessor(), _spec("new"))
 
@@ -95,10 +91,13 @@ _NOT_FOUND = {"error": {"code": "itemNotFound", "message": "x"}}
 
 def _scoped_accessor() -> SharePointAccessor:
     accessor = SharePointAccessor(
-        SharePointConfig(access_token="tok",
-                         site="Engineering",
-                         drive="Documents",
-                         key_prefix="team/root"))
+        SharePointConfig(
+            access_token="tok",
+            site="Engineering",
+            drive="Documents",
+            key_prefix="team/root",
+        )
+    )
     accessor.site_cache["Engineering"] = _SITE_ID
     accessor.drive_cache[(_SITE_ID, "Documents")] = _DRIVE_ID
     return accessor
@@ -106,9 +105,9 @@ def _scoped_accessor() -> SharePointAccessor:
 
 def _scoped_spec(rel: str) -> PathSpec:
     virtual = f"/sp/{rel}"
-    return PathSpec(vfs_path=mount_key(virtual, "/sp"),
-                    virtual=virtual,
-                    directory=virtual)
+    return PathSpec(
+        vfs_path=mount_key(virtual, "/sp"), virtual=virtual, directory=virtual
+    )
 
 
 def _recording(posts: list[str], status: int = 201):
@@ -125,12 +124,15 @@ def _recording(posts: list[str], status: int = 201):
 async def test_mkdir_creates_a_missing_mount_root_then_retries():
     posts: list[str] = []
     with aioresponses() as m:
-        m.post(_DRIVE + "/root:/team/root:/children",
-               callback=_recording(posts, 404))
+        m.post(
+            _DRIVE + "/root:/team/root:/children",
+            callback=_recording(posts, 404),
+        )
         m.post(_DRIVE + "/root/children", callback=_recording(posts))
         m.post(_DRIVE + "/root:/team:/children", callback=_recording(posts))
-        m.post(_DRIVE + "/root:/team/root:/children",
-               callback=_recording(posts))
+        m.post(
+            _DRIVE + "/root:/team/root:/children", callback=_recording(posts)
+        )
         await mkdir(_scoped_accessor(), _scoped_spec("lt"))
     assert posts == [
         "404 " + _DRIVE + "/root:/team/root:/children",
@@ -144,8 +146,10 @@ async def test_mkdir_creates_a_missing_mount_root_then_retries():
 async def test_mkdir_does_not_retry_a_404_below_the_mount_root():
     posts: list[str] = []
     with aioresponses() as m:
-        m.post(_DRIVE + "/root:/team/root/a:/children",
-               callback=_recording(posts, 404))
+        m.post(
+            _DRIVE + "/root:/team/root/a:/children",
+            callback=_recording(posts, 404),
+        )
         with pytest.raises(GraphError):
             await mkdir(_scoped_accessor(), _scoped_spec("a/b"))
     assert posts == ["404 " + _DRIVE + "/root:/team/root/a:/children"]

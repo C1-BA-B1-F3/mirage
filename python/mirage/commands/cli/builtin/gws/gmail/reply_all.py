@@ -24,13 +24,14 @@ from mirage.io.types import ByteSource, IOResult
 
 
 async def reply_all(
-        inv: CLIInvocation[GoogleConfig]
+    inv: CLIInvocation[GoogleConfig],
 ) -> tuple[ByteSource | None, IOResult]:
     fl = FlagView(inv.flags)
     async with TokenManager(inv.config) as tm:
-        result = await reply_all_message(tm,
-                                         fl.as_str("message_id") or "",
-                                         fl.as_str("body") or "")
-    out = json.dumps(result, ensure_ascii=False,
-                     separators=(",", ":")).encode()
+        result = await reply_all_message(
+            tm, fl.as_str("message_id") or "", fl.as_str("body") or ""
+        )
+    out = json.dumps(
+        result, ensure_ascii=False, separators=(",", ":")
+    ).encode()
     return yield_bytes(out), IOResult()

@@ -17,7 +17,8 @@ from mirage.runtime.python.monty.errors import cpython_error
 
 MISSING_EXTRA_HINT = (
     "the monty runtime requires the 'monty' extra. Install with: "
-    "pip install mirage-ai[monty], or select the 'local' runtime")
+    "pip install mirage-ai[monty], or select the 'local' runtime"
+)
 
 # What argv[0] is when the caller has no program name of its own.
 DEFAULT_PROG = "main.py"

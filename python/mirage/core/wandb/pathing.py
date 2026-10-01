@@ -9,16 +9,19 @@ LEAVES = ("run.json", "config.json", "summary.json", "history.jsonl")
 def parts(accessor: WandbAccessor, path: PathSpec) -> list[str]:
     key = path.mount_path.strip("/")
     result = key.split("/") if key else []
-    if any(not safe_name(p)
-           for p in result) or (result
-                                and result[0] not in accessor.config.entities):
+    if any(not safe_name(p) for p in result) or (
+        result and result[0] not in accessor.config.entities
+    ):
         raise enoent(path)
     return result
 
 
 def safe_name(name: str) -> bool:
-    return bool(name) and name not in (".", "..") and not any(
-        c in name for c in ("/", "\\", "\x00"))
+    return (
+        bool(name)
+        and name not in (".", "..")
+        and not any(c in name for c in ("/", "\\", "\x00"))
+    )
 
 
 def run_vars(segments: list[str]) -> RunVariables:

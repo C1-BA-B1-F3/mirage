@@ -50,11 +50,13 @@ class WorkspaceStateStore(ABC):
     table it points into.
     """
 
-    def __init__(self,
-                 *,
-                 namespace: "WorkspaceStateStore | None" = None,
-                 observer: "WorkspaceStateStore | None" = None,
-                 workspace: "WorkspaceStateStore | None" = None) -> None:
+    def __init__(
+        self,
+        *,
+        namespace: "WorkspaceStateStore | None" = None,
+        observer: "WorkspaceStateStore | None" = None,
+        workspace: "WorkspaceStateStore | None" = None,
+    ) -> None:
         self._namespace_override = namespace
         self._observer_override = observer
         self._workspace_override = workspace
@@ -62,37 +64,57 @@ class WorkspaceStateStore(ABC):
 
     def namespace(self, workspace_id: str) -> NamespaceStore:
         """The namespace plane (nodes) for one workspace."""
-        target = (self._namespace_override
-                  if self._namespace_override is not None else self)
+        target = (
+            self._namespace_override
+            if self._namespace_override is not None
+            else self
+        )
         return target._make_namespace(workspace_id)
 
     def observer(self, workspace_id: str) -> ObserverStore:
         """The observer plane (history events) for one workspace."""
-        target = (self._observer_override
-                  if self._observer_override is not None else self)
+        target = (
+            self._observer_override
+            if self._observer_override is not None
+            else self
+        )
         return target._make_observer(workspace_id)
 
     def sessions(self, workspace_id: str) -> SessionStore:
         """The session table for one workspace."""
-        target = (self._workspace_override
-                  if self._workspace_override is not None else self)
+        target = (
+            self._workspace_override
+            if self._workspace_override is not None
+            else self
+        )
         return target._make_sessions(workspace_id)
 
     async def load_meta(self, workspace_id: str) -> WorkspaceFields | None:
         """Read one workspace's metadata record; None when never written."""
-        target = (self._workspace_override
-                  if self._workspace_override is not None else self)
+        target = (
+            self._workspace_override
+            if self._workspace_override is not None
+            else self
+        )
         return await target._load_meta(workspace_id)
 
-    async def set_meta(self, workspace_id: str,
-                       fields: WorkspaceFields) -> None:
+    async def set_meta(
+        self, workspace_id: str, fields: WorkspaceFields
+    ) -> None:
         """Insert or update one workspace's metadata record."""
-        target = (self._workspace_override
-                  if self._workspace_override is not None else self)
+        target = (
+            self._workspace_override
+            if self._workspace_override is not None
+            else self
+        )
         await target._set_meta(workspace_id, fields)
 
-    async def cas_set_meta(self, workspace_id: str, fields: WorkspaceFields,
-                           expected_generation: int) -> bool:
+    async def cas_set_meta(
+        self,
+        workspace_id: str,
+        fields: WorkspaceFields,
+        expected_generation: int,
+    ) -> bool:
         """Write the metadata record iff its stored generation matches.
 
         Same optimistic-concurrency contract as SessionStore.cas_set: a
@@ -101,11 +123,13 @@ class WorkspaceStateStore(ABC):
         Returns True when the write landed, False on conflict.
         """
         target = self._workspace_override or self
-        return await target._cas_set_meta(workspace_id, fields,
-                                          expected_generation)
+        return await target._cas_set_meta(
+            workspace_id, fields, expected_generation
+        )
 
-    async def replace_meta(self, workspace_id: str,
-                           fields: WorkspaceFields) -> WorkspaceFields:
+    async def replace_meta(
+        self, workspace_id: str, fields: WorkspaceFields
+    ) -> WorkspaceFields:
         """CAS-write ``fields`` over the stored record, retrying on
         conflict.
 
@@ -126,16 +150,21 @@ class WorkspaceStateStore(ABC):
             }
             if await self.cas_set_meta(workspace_id, merged, expected):
                 return merged
-        raise RuntimeError(f"workspace {workspace_id!r} meta kept "
-                           "conflicting with another writer")
+        raise RuntimeError(
+            f"workspace {workspace_id!r} meta kept "
+            "conflicting with another writer"
+        )
 
     async def close(self) -> None:
         """Release connections held by this provider and its overrides."""
         if self._closed:
             return
         self._closed = True
-        for override in (self._namespace_override, self._observer_override,
-                         self._workspace_override):
+        for override in (
+            self._namespace_override,
+            self._observer_override,
+            self._workspace_override,
+        ):
             if override is not None:
                 await override.close()
         await self._close()
@@ -157,13 +186,18 @@ class WorkspaceStateStore(ABC):
         """Backend read of one metadata record."""
 
     @abstractmethod
-    async def _set_meta(self, workspace_id: str,
-                        fields: WorkspaceFields) -> None:
+    async def _set_meta(
+        self, workspace_id: str, fields: WorkspaceFields
+    ) -> None:
         """Backend write of one metadata record."""
 
     @abstractmethod
-    async def _cas_set_meta(self, workspace_id: str, fields: WorkspaceFields,
-                            expected_generation: int) -> bool:
+    async def _cas_set_meta(
+        self,
+        workspace_id: str,
+        fields: WorkspaceFields,
+        expected_generation: int,
+    ) -> bool:
         """Backend conditional write of one metadata record."""
 
     @abstractmethod

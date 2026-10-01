@@ -6,18 +6,31 @@ from io import BytesIO
 from dulwich.config import ConfigFile
 from dulwich.repo import BaseRepo
 
-from mirage.commands.builtin.utils.bre import (BreError, PosixSyntax,
-                                               translate_ere)
+from mirage.commands.builtin.utils.bre import (
+    BreError,
+    PosixSyntax,
+    translate_ere,
+)
 from mirage.commands.cli.builtin.git.errors import GitError, NoWorkspaceError
-from mirage.commands.cli.builtin.git.history import (LogFlags, parse_flags,
-                                                     ref_commits, select)
+from mirage.commands.cli.builtin.git.history import (
+    LogFlags,
+    parse_flags,
+    ref_commits,
+    select,
+)
 from mirage.commands.cli.builtin.git.io import read_file, read_optional
 from mirage.commands.cli.builtin.git.refs import read_head
-from mirage.commands.cli.builtin.git.revparse import (resolve_object,
-                                                      split_revisions)
+from mirage.commands.cli.builtin.git.revparse import (
+    resolve_object,
+    split_revisions,
+)
 from mirage.commands.cli.builtin.git.session import opened
-from mirage.commands.cli.builtin.git.util import (check_operands, escaped,
-                                                  fatal, start_point)
+from mirage.commands.cli.builtin.git.util import (
+    check_operands,
+    escaped,
+    fatal,
+    start_point,
+)
 from mirage.commands.cli.types import CLIDoors, CLIInvocation
 from mirage.commands.spec.flag_view import FlagView
 from mirage.io.types import ByteSource, IOResult
@@ -32,12 +45,15 @@ async def repo_config(inv: CLIInvocation[None], fl: FlagView) -> ConfigFile:
     _, location = await opened(fl, doors)
     assert doors.dispatch is not None
     return ConfigFile.from_file(
-        BytesIO(await read_file(doors.dispatch,
-                                f"{location.commondir}/config")))
+        BytesIO(
+            await read_file(doors.dispatch, f"{location.commondir}/config")
+        )
+    )
 
 
 async def remote(
-        inv: CLIInvocation[None]) -> tuple[ByteSource | None, IOResult]:
+    inv: CLIInvocation[None],
+) -> tuple[ByteSource | None, IOResult]:
     fl = FlagView(inv.flags)
     try:
         check_operands(inv.texts, marked=escaped(inv.argv))
@@ -61,8 +77,9 @@ async def remote(
         return fatal(exc)
 
 
-async def global_sources(inv: CLIInvocation[None],
-                         listing: bool) -> list[tuple[str, ConfigFile]]:
+async def global_sources(
+    inv: CLIInvocation[None], listing: bool
+) -> list[tuple[str, ConfigFile]]:
     """The per-user config files ``--global`` reads, in git's order.
 
     ``$GIT_CONFIG_GLOBAL`` alone when set, else the XDG file then
@@ -83,22 +100,26 @@ async def global_sources(inv: CLIInvocation[None],
         raise GitError("$HOME not set")
     target = override or posixpath.join(home, ".gitconfig")
     xdg = inv.env.get("XDG_CONFIG_HOME") or posixpath.join(home, ".config")
-    paths = [target] if override is not None else [
-        posixpath.join(xdg, "git/config"), target
-    ]
+    paths = (
+        [target]
+        if override is not None
+        else [posixpath.join(xdg, "git/config"), target]
+    )
     sources = []
     for source in paths:
         data = await read_optional(dispatch, source)
         if data is not None:
             sources.append((source, ConfigFile.from_file(BytesIO(data))))
     if not sources and listing:
-        raise GitError(f"unable to read config file '{target}': "
-                       "No such file or directory")
+        raise GitError(
+            f"unable to read config file '{target}': No such file or directory"
+        )
     return sources
 
 
 async def config(
-        inv: CLIInvocation[None]) -> tuple[ByteSource | None, IOResult]:
+    inv: CLIInvocation[None],
+) -> tuple[ByteSource | None, IOResult]:
     fl = FlagView(inv.flags)
     try:
         if fl.as_bool("global"):
@@ -117,49 +138,69 @@ async def config(
         regexp = fl.as_bool("get_regexp")
         origin = fl.as_bool("show_origin")
         if not listing and not inv.texts:
-            return None, IOResult(exit_code=129,
-                                  stderr=b"error: wrong number of arguments\n")
+            return None, IOResult(
+                exit_code=129, stderr=b"error: wrong number of arguments\n"
+            )
         key = inv.texts[0] if inv.texts else ""
         try:
-            pattern = compile_posix_regex(
-                translate_ere(config_key(key),
-                              PosixSyntax.EXTENDED)[0]) if regexp else None
+            pattern = (
+                compile_posix_regex(
+                    translate_ere(config_key(key), PosixSyntax.EXTENDED)[0]
+                )
+                if regexp
+                else None
+            )
         except (BreError, re.error):
             return None, IOResult(
                 exit_code=6,
-                stderr=f"error: invalid key pattern: {key}\n".encode())
+                stderr=f"error: invalid key pattern: {key}\n".encode(),
+            )
         values = []
         for source, cfg in sources:
             for section in cfg.sections():
                 for name, value in cfg.items(section):
                     full = b".".join((*section, name.lower())).decode()
-                    if listing or (pattern.search(full)
-                                   if pattern else full == config_key(key)):
+                    if listing or (
+                        pattern.search(full)
+                        if pattern
+                        else full == config_key(key)
+                    ):
                         values.append((source, full, value.decode()))
         if not listing and not regexp:
             values = values[-1:]
         lines = [
-            (f"file:{source}\t" if origin else "") +
-            (name + ("=" if listing else " ") if listing or regexp else "") +
-            value + "\n" for source, name, value in values
+            (f"file:{source}\t" if origin else "")
+            + (name + ("=" if listing else " ") if listing or regexp else "")
+            + value
+            + "\n"
+            for source, name, value in values
         ]
         return "".join(lines).encode(), IOResult(
-            exit_code=0 if values or listing else 1)
+            exit_code=0 if values or listing else 1
+        )
 
     except GitError as exc:
         return fatal(exc)
 
 
 def _show_refs(repo: BaseRepo, patterns: tuple[str, ...]) -> bytes:
-    return "".join(f"{repo.refs[ref].decode()} {ref.decode()}\n"
-                   for ref in sorted(repo.refs.allkeys())
-                   if ref.startswith(b"refs/") and (not patterns or any(
-                       ref.decode() == p or ref.decode().endswith('/' + p)
-                       for p in patterns))).encode()
+    return "".join(
+        f"{repo.refs[ref].decode()} {ref.decode()}\n"
+        for ref in sorted(repo.refs.allkeys())
+        if ref.startswith(b"refs/")
+        and (
+            not patterns
+            or any(
+                ref.decode() == p or ref.decode().endswith("/" + p)
+                for p in patterns
+            )
+        )
+    ).encode()
 
 
 async def show_ref(
-        inv: CLIInvocation[None]) -> tuple[ByteSource | None, IOResult]:
+    inv: CLIInvocation[None],
+) -> tuple[ByteSource | None, IOResult]:
     try:
         repo, _ = await opened(FlagView(inv.flags), inv.doors or CLIDoors())
         out = await asyncio.to_thread(_show_refs, repo, tuple(inv.texts))
@@ -168,8 +209,9 @@ async def show_ref(
         return fatal(exc)
 
 
-def _revisions(repo: BaseRepo, revisions: tuple[str, ...],
-               flags: LogFlags) -> list[bytes]:
+def _revisions(
+    repo: BaseRepo, revisions: tuple[str, ...], flags: LogFlags
+) -> list[bytes]:
     starts, hidden = split_revisions(repo, revisions)
     if flags.all_refs:
         starts[:0] = ref_commits(repo)
@@ -177,7 +219,8 @@ def _revisions(repo: BaseRepo, revisions: tuple[str, ...],
 
 
 async def rev_list(
-        inv: CLIInvocation[None]) -> tuple[ByteSource | None, IOResult]:
+    inv: CLIInvocation[None],
+) -> tuple[ByteSource | None, IOResult]:
     fl = FlagView(inv.flags)
     try:
         check_operands(inv.texts, marked=escaped(inv.argv))
@@ -186,29 +229,36 @@ async def rev_list(
         if not inv.texts and not flags.all_refs:
             return None, IOResult(
                 exit_code=129,
-                stderr=b"usage: git rev-list [<options>] <commit>...\n")
-        commits = await asyncio.to_thread(_revisions, repo, tuple(inv.texts),
-                                          flags)
-        return (f"{len(commits)}\n".encode() if fl.as_bool("count") else
-                b"".join(oid + b"\n" for oid in commits)), IOResult()
+                stderr=b"usage: git rev-list [<options>] <commit>...\n",
+            )
+        commits = await asyncio.to_thread(
+            _revisions, repo, tuple(inv.texts), flags
+        )
+        return (
+            f"{len(commits)}\n".encode()
+            if fl.as_bool("count")
+            else b"".join(oid + b"\n" for oid in commits)
+        ), IOResult()
     except GitError as exc:
         return fatal(exc)
 
 
 async def version(
-        inv: CLIInvocation[None]) -> tuple[ByteSource | None, IOResult]:
+    inv: CLIInvocation[None],
+) -> tuple[ByteSource | None, IOResult]:
     return f"git version {__version__} (Mirage)\n".encode(), IOResult()
 
 
 def config_key(key: str) -> str:
-    parts = key.split('.')
+    parts = key.split(".")
     parts[0] = parts[0].lower()
     parts[-1] = parts[-1].lower()
-    return '.'.join(parts)
+    return ".".join(parts)
 
 
-def _parse_revision(repo: BaseRepo, revision: str, abbrev: bool,
-                    head_ref: str | None) -> bytes:
+def _parse_revision(
+    repo: BaseRepo, revision: str, abbrev: bool, head_ref: str | None
+) -> bytes:
     """Resolve an object or its abbreviated symbolic name.
 
     Args:
@@ -219,20 +269,26 @@ def _parse_revision(repo: BaseRepo, revision: str, abbrev: bool,
     """
     oid = resolve_object(repo, revision).id
     if not abbrev:
-        return oid + b'\n'
-    if revision == 'HEAD':
+        return oid + b"\n"
+    if revision == "HEAD":
         return (
-            (head_ref.removeprefix('refs/heads/') if head_ref else 'HEAD') +
-            '\n').encode()
+            (head_ref.removeprefix("refs/heads/") if head_ref else "HEAD")
+            + "\n"
+        ).encode()
     refs = repo.refs.allkeys()
-    for name in (revision, 'refs/' + revision, 'refs/tags/' + revision,
-                 'refs/heads/' + revision, 'refs/remotes/' + revision):
+    for name in (
+        revision,
+        "refs/" + revision,
+        "refs/tags/" + revision,
+        "refs/heads/" + revision,
+        "refs/remotes/" + revision,
+    ):
         if name.encode() in refs:
-            for prefix in ('refs/heads/', 'refs/tags/', 'refs/remotes/'):
+            for prefix in ("refs/heads/", "refs/tags/", "refs/remotes/"):
                 if name.startswith(prefix):
-                    return (name.removeprefix(prefix) + '\n').encode()
-            return (name + '\n').encode()
-    return b''
+                    return (name.removeprefix(prefix) + "\n").encode()
+            return (name + "\n").encode()
+    return b""
 
 
 def _revisions_before(argv: tuple[str, ...], count: int, option: str) -> int:
@@ -249,12 +305,13 @@ def _revisions_before(argv: tuple[str, ...], count: int, option: str) -> int:
     """
     if option not in argv:
         return 0
-    after = argv[argv.index(option) + 1:]
+    after = argv[argv.index(option) + 1 :]
     return count - sum(1 for word in after if not word.startswith("-"))
 
 
 async def rev_parse(
-        inv: CLIInvocation[None]) -> tuple[ByteSource | None, IOResult]:
+    inv: CLIInvocation[None],
+) -> tuple[ByteSource | None, IOResult]:
     """Resolve revisions supplied to rev-parse.
 
     Args:
@@ -269,13 +326,20 @@ async def rev_parse(
         assert doors.dispatch is not None
         head = await read_head(doors.dispatch, location.gitdir)
         rows = [
-            await asyncio.to_thread(_parse_revision, repo, revision,
-                                    fl.as_bool("abbrev_ref"), head.ref)
+            await asyncio.to_thread(
+                _parse_revision,
+                repo,
+                revision,
+                fl.as_bool("abbrev_ref"),
+                head.ref,
+            )
             for revision in inv.texts
         ]
         if toplevel:
-            rows.insert(_revisions_before(inv.argv, len(rows), SHOW_TOPLEVEL),
-                        f"{location.worktree}\n".encode())
+            rows.insert(
+                _revisions_before(inv.argv, len(rows), SHOW_TOPLEVEL),
+                f"{location.worktree}\n".encode(),
+            )
         return b"".join(rows), IOResult()
     except GitError as exc:
         return fatal(exc)

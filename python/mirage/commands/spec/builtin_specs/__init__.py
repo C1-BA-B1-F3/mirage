@@ -12,13 +12,30 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-from mirage.commands.spec.builtin_specs import (archive, fs_mutate, hashing,
-                                                listing, net, runtime, search,
-                                                text_proc, viewing)
+from mirage.commands.spec.builtin_specs import (
+    archive,
+    fs_mutate,
+    hashing,
+    listing,
+    net,
+    runtime,
+    search,
+    text_proc,
+    viewing,
+)
 from mirage.commands.spec.types import CommandSpec
 
-_MODULES = (archive, fs_mutate, hashing, listing, net, runtime, search,
-            text_proc, viewing)
+_MODULES = (
+    archive,
+    fs_mutate,
+    hashing,
+    listing,
+    net,
+    runtime,
+    search,
+    text_proc,
+    viewing,
+)
 
 SPECS: dict[str, CommandSpec] = {}
 for _module in _MODULES:

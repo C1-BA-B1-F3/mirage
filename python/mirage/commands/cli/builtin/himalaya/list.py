@@ -13,9 +13,11 @@
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 from mirage.accessor.email import EmailAccessor
-from mirage.commands.cli.builtin.himalaya.query import (page_slice,
-                                                        sort_headers,
-                                                        uid_budget)
+from mirage.commands.cli.builtin.himalaya.query import (
+    page_slice,
+    sort_headers,
+    uid_budget,
+)
 from mirage.commands.cli.types import CLIInvocation
 from mirage.commands.spec.flag_view import FlagView
 from mirage.core.email.client import fetch_headers, list_message_uids
@@ -28,7 +30,8 @@ DEFAULT_PAGE_SIZE = 25
 
 
 async def list_envelopes(
-        inv: CLIInvocation[EmailConfig]) -> tuple[ByteSource | None, IOResult]:
+    inv: CLIInvocation[EmailConfig],
+) -> tuple[ByteSource | None, IOResult]:
     fl = FlagView(inv.flags)
     mailbox = fl.as_str("mailbox") or "INBOX"
     page = fl.as_int("page") or 1

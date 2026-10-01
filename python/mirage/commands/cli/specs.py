@@ -119,6 +119,8 @@ def cli_spec_for(name: str) -> CLISpec:
     if name in _ENTRY_POINT_SPECS:
         return _load_ref(_ENTRY_POINT_SPECS[name])
     known = ", ".join(
-        sorted({*CLI_SPECS, *BUILTIN_CLI_SPECS, *_ENTRY_POINT_SPECS}))
+        sorted({*CLI_SPECS, *BUILTIN_CLI_SPECS, *_ENTRY_POINT_SPECS})
+    )
     raise ValueError(
-        f"unknown cli {name!r} (known: {known or 'none registered'})")
+        f"unknown cli {name!r} (known: {known or 'none registered'})"
+    )

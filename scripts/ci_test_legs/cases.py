@@ -119,161 +119,157 @@ class PackageCase(Fixture):
 CLEAN = {"a": f"--filter {CORE} run test", "b": f"--filter {NODE} run test"}
 LEG_CASES = (
     LegCase(name="clean table", scripts=CLEAN),
-    LegCase(name="package claimed by no leg",
-            scripts={"a": CLEAN["a"]},
-            declared=["a"],
-            expect="claimed by no leg"),
-    LegCase(name="package claimed twice",
-            scripts={
-                **CLEAN, "b": f"--filter {CORE} --filter {NODE} run test"
-            },
-            expect="more than one leg"),
-    LegCase(name="filter names a package that does not exist",
-            scripts={
-                **CLEAN, "a": f"{CLEAN['a']} --filter @struktoai/ghost"
-            },
-            expect="is not a workspace package"),
-    LegCase(name="filter names a package that lost its test script",
-            scripts={
-                **CLEAN, "a": f"--filter {CORE} --filter {DSH} run test"
-            },
-            known=BOTH | {DSH},
-            expect="declares no `test` script"),
-    LegCase(name="script the matrix never runs",
-            scripts=CLEAN,
-            declared=["a"],
-            expect="is never run"),
-    LegCase(name="matrix leg with no script",
-            scripts={"a": f"--filter {CORE} --filter {NODE} run test"},
-            expect="has no test:leg:b"),
-    LegCase(name="leg script runs the wrong verb",
-            scripts={
-                **CLEAN, "a": f"--filter {CORE} run build"
-            },
-            expect="not `test`"),
-    LegCase(name="ellipsis selector",
-            scripts={
-                **CLEAN, "a": f"--filter {CORE}... run test"
-            },
-            expect="dependency closure"),
-    LegCase(name="same package filtered twice in one leg",
-            scripts={
-                **CLEAN, "a": f"--filter {CORE} --filter {CORE} run test"
-            },
-            expect="more than once"),
-    LegCase(name="--filter=name is read, not missed",
-            scripts={
-                **CLEAN, "a": f"--filter={CORE} run test"
-            }),
-    LegCase(name="a quoted name is read, not reported stale",
-            scripts={
-                "a": f"--filter '{CORE}' run test",
-                "b": f'--filter "{NODE}" run test'
-            }),
+    LegCase(
+        name="package claimed by no leg",
+        scripts={"a": CLEAN["a"]},
+        declared=["a"],
+        expect="claimed by no leg",
+    ),
+    LegCase(
+        name="package claimed twice",
+        scripts={**CLEAN, "b": f"--filter {CORE} --filter {NODE} run test"},
+        expect="more than one leg",
+    ),
+    LegCase(
+        name="filter names a package that does not exist",
+        scripts={**CLEAN, "a": f"{CLEAN['a']} --filter @struktoai/ghost"},
+        expect="is not a workspace package",
+    ),
+    LegCase(
+        name="filter names a package that lost its test script",
+        scripts={**CLEAN, "a": f"--filter {CORE} --filter {DSH} run test"},
+        known=BOTH | {DSH},
+        expect="declares no `test` script",
+    ),
+    LegCase(
+        name="script the matrix never runs",
+        scripts=CLEAN,
+        declared=["a"],
+        expect="is never run",
+    ),
+    LegCase(
+        name="matrix leg with no script",
+        scripts={"a": f"--filter {CORE} --filter {NODE} run test"},
+        expect="has no test:leg:b",
+    ),
+    LegCase(
+        name="leg script runs the wrong verb",
+        scripts={**CLEAN, "a": f"--filter {CORE} run build"},
+        expect="not `test`",
+    ),
+    LegCase(
+        name="ellipsis selector",
+        scripts={**CLEAN, "a": f"--filter {CORE}... run test"},
+        expect="dependency closure",
+    ),
+    LegCase(
+        name="same package filtered twice in one leg",
+        scripts={**CLEAN, "a": f"--filter {CORE} --filter {CORE} run test"},
+        expect="more than once",
+    ),
+    LegCase(
+        name="--filter=name is read, not missed",
+        scripts={**CLEAN, "a": f"--filter={CORE} run test"},
+    ),
+    LegCase(
+        name="a quoted name is read, not reported stale",
+        scripts={
+            "a": f"--filter '{CORE}' run test",
+            "b": f'--filter "{NODE}" run test',
+        },
+    ),
 )
 
 TYPECHECK = {"typecheck": ["Typecheck"]}
 EXAMPLES = {"examples": ["Examples"]}
 GATE_CASES = (
-    GateCase(name="every gated key is set",
-             include=[{
-                 "leg": "cli",
-                 "typecheck": True
-             }],
-             gated=TYPECHECK),
-    GateCase(name="a gated key no include row sets",
-             include=[],
-             gated=EXAMPLES,
-             expect="skipped on every leg"),
-    GateCase(name="a gated key set to false",
-             include=[{
-                 "leg": "cli",
-                 "typecheck": False
-             }],
-             gated=TYPECHECK,
-             expect="falsy value"),
-    GateCase(name="a gated key set to an empty string",
-             include=[{
-                 "leg": "cli",
-                 "examples": ""
-             }],
-             gated=EXAMPLES,
-             expect="falsy value"),
-    GateCase(name="an include row for an undeclared leg",
-             include=[{
-                 "leg": "ghost",
-                 "examples": True
-             }],
-             gated=EXAMPLES,
-             expect="matches no declared leg"),
+    GateCase(
+        name="every gated key is set",
+        include=[{"leg": "cli", "typecheck": True}],
+        gated=TYPECHECK,
+    ),
+    GateCase(
+        name="a gated key no include row sets",
+        include=[],
+        gated=EXAMPLES,
+        expect="skipped on every leg",
+    ),
+    GateCase(
+        name="a gated key set to false",
+        include=[{"leg": "cli", "typecheck": False}],
+        gated=TYPECHECK,
+        expect="falsy value",
+    ),
+    GateCase(
+        name="a gated key set to an empty string",
+        include=[{"leg": "cli", "examples": ""}],
+        gated=EXAMPLES,
+        expect="falsy value",
+    ),
+    GateCase(
+        name="an include row for an undeclared leg",
+        include=[{"leg": "ghost", "examples": True}],
+        gated=EXAMPLES,
+        expect="matches no declared leg",
+    ),
 )
 
 DEAD = "no step runs"
 INVOCATION_CASES = (
-    InvocationCase(name="a step runs the selected leg",
-                   job={"steps": [{
-                       "run": LIVE
-                   }]}),
-    InvocationCase(name="no step runs any leg",
-                   job={"steps": [{
-                       "run": "pnpm -r build"
-                   }]},
-                   expect=DEAD),
-    InvocationCase(name="a step hardcodes one leg",
-                   job={"steps": [{
-                       "run": "pnpm run test:leg:core"
-                   }]},
-                   expect=DEAD),
-    InvocationCase(name="the step is allowed to fail",
-                   job={"steps": [{
-                       "run": LIVE,
-                       "continue-on-error": True
-                   }]},
-                   expect=DEAD),
-    InvocationCase(name="the step is turned off with if: false",
-                   job={"steps": [{
-                       "run": LIVE,
-                       "if": False
-                   }]},
-                   expect=DEAD),
-    InvocationCase(name="the step is turned off with ${{ false }}",
-                   job={"steps": [{
-                       "run": LIVE,
-                       "if": "${{ false }}"
-                   }]},
-                   expect=DEAD),
-    InvocationCase(name="the leg is only named in a comment",
-                   job={"steps": [{
-                       "run": f"# {LIVE}\necho skipped"
-                   }]},
-                   expect=DEAD),
-    InvocationCase(name="the leg is only echoed, not run",
-                   job={"steps": [{
-                       "run": f'echo "{LIVE}"'
-                   }]},
-                   expect=DEAD),
-    InvocationCase(name="the whole job is allowed to fail",
-                   job={
-                       "continue-on-error": True,
-                       "steps": [{
-                           "run": LIVE
-                       }]
-                   },
-                   expect="continue-on-error: true"),
+    InvocationCase(
+        name="a step runs the selected leg", job={"steps": [{"run": LIVE}]}
+    ),
+    InvocationCase(
+        name="no step runs any leg",
+        job={"steps": [{"run": "pnpm -r build"}]},
+        expect=DEAD,
+    ),
+    InvocationCase(
+        name="a step hardcodes one leg",
+        job={"steps": [{"run": "pnpm run test:leg:core"}]},
+        expect=DEAD,
+    ),
+    InvocationCase(
+        name="the step is allowed to fail",
+        job={"steps": [{"run": LIVE, "continue-on-error": True}]},
+        expect=DEAD,
+    ),
+    InvocationCase(
+        name="the step is turned off with if: false",
+        job={"steps": [{"run": LIVE, "if": False}]},
+        expect=DEAD,
+    ),
+    InvocationCase(
+        name="the step is turned off with ${{ false }}",
+        job={"steps": [{"run": LIVE, "if": "${{ false }}"}]},
+        expect=DEAD,
+    ),
+    InvocationCase(
+        name="the leg is only named in a comment",
+        job={"steps": [{"run": f"# {LIVE}\necho skipped"}]},
+        expect=DEAD,
+    ),
+    InvocationCase(
+        name="the leg is only echoed, not run",
+        job={"steps": [{"run": f'echo "{LIVE}"'}]},
+        expect=DEAD,
+    ),
+    InvocationCase(
+        name="the whole job is allowed to fail",
+        job={"continue-on-error": True, "steps": [{"run": LIVE}]},
+        expect="continue-on-error: true",
+    ),
 )
 
 PACKAGE_CASES = (
-    PackageCase(name="every package has a test",
-                members={
-                    "a": True,
-                    "b": True
-                }),
-    PackageCase(name="a package with no test script",
-                members={
-                    "a": True,
-                    "b": False
-                },
-                expect="declares no `test` script"),
+    PackageCase(
+        name="every package has a test", members={"a": True, "b": True}
+    ),
+    PackageCase(
+        name="a package with no test script",
+        members={"a": True, "b": False},
+        expect="declares no `test` script",
+    ),
 )
 
 GROUPS: tuple[tuple[str, tuple[Fixture, ...]], ...] = (

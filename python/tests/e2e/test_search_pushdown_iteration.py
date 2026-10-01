@@ -33,23 +33,30 @@ async def test_slack_grep_glob_expanded_to_60_paths_reads_those_60_days():
     # It is 60 named files: read them. The saving was real and is gone with
     # it; the answer it bought was not the question asked.
     slack = SlackVFS(
-        config=SlackConfig(token="xoxb-test", search_token="xoxp-test"))
+        config=SlackConfig(token="xoxb-test", search_token="xoxp-test")
+    )
     ws = Workspace({"/slack": (slack, MountMode.READ)}, mode=MountMode.READ)
-    expanded = " ".join(f"/slack/channels/general__C1/{day}/chat.jsonl"
-                        for day in DAYS)
+    expanded = " ".join(
+        f"/slack/channels/general__C1/{day}/chat.jsonl" for day in DAYS
+    )
     read = AsyncMock(return_value=b'{"text":"hello there"}\n')
-    stat = AsyncMock(return_value=FileStat(name="chat.jsonl",
-                                           type=FileType.FILE,
-                                           content=ContentType.TEXT,
-                                           size=23))
+    stat = AsyncMock(
+        return_value=FileStat(
+            name="chat.jsonl",
+            type=FileType.FILE,
+            content=ContentType.TEXT,
+            size=23,
+        )
+    )
     try:
-        with patch(
+        with (
+            patch(
                 "mirage.commands.builtin.slack.grep.search_messages",
                 new=AsyncMock(),
-        ) as fake_search, patch(
-                "mirage.commands.builtin.slack.grep.slack_read",
-                new=read), patch("mirage.commands.builtin.slack.grep._stat",
-                                 new=stat):
+            ) as fake_search,
+            patch("mirage.commands.builtin.slack.grep.slack_read", new=read),
+            patch("mirage.commands.builtin.slack.grep._stat", new=stat),
+        ):
             result = await ws.shell(f"grep -iw hello {expanded}")
         fake_search.assert_not_awaited()
         assert read.await_count == len(DAYS)

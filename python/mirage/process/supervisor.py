@@ -24,14 +24,16 @@ class ProcessSupervisor:
         self._lock = RLock()
         self._stopped = False
 
-    def start(self,
-              *,
-              session_id: str,
-              command: str,
-              cwd: PathSpec,
-              run: ProcessRunner,
-              parent_pid: int | None = None,
-              limit: int | None = None) -> ProcessHandle:
+    def start(
+        self,
+        *,
+        session_id: str,
+        command: str,
+        cwd: PathSpec,
+        run: ProcessRunner,
+        parent_pid: int | None = None,
+        limit: int | None = None,
+    ) -> ProcessHandle:
         """Track a runner; its caller owns admission before command effects.
 
         Args:
@@ -51,29 +53,44 @@ class ProcessSupervisor:
         with self._lock:
             if self._stopped:
                 raise RuntimeError("process supervisor is stopped")
-            if limit is not None and sum(
-                    1 for _, handle in self._live.values()
-                    if handle.info.session_id == session_id) >= limit:
-                raise BlockingIOError(errno.EAGAIN,
-                                      "Resource temporarily unavailable")
+            if (
+                limit is not None
+                and sum(
+                    1
+                    for _, handle in self._live.values()
+                    if handle.info.session_id == session_id
+                )
+                >= limit
+            ):
+                raise BlockingIOError(
+                    errno.EAGAIN, "Resource temporarily unavailable"
+                )
             pid = self._next_pid
             self._next_pid += 1
-            parent = self._live.get(
-                parent_pid) if parent_pid is not None else None
+            parent = (
+                self._live.get(parent_pid) if parent_pid is not None else None
+            )
             if parent_pid is not None and (
-                    parent is None or parent[1].info.cancellation_requested):
+                parent is None or parent[1].info.cancellation_requested
+            ):
                 raise RuntimeError(
-                    "parent process is no longer accepting children")
+                    "parent process is no longer accepting children"
+                )
             group_id = parent[1].info.group_id if parent is not None else pid
             handle = ProcessHandle(
-                ProcessInfo(pid,
-                            session_id,
-                            command,
-                            cwd,
-                            time.time(),
-                            parent_pid=parent_pid,
-                            group_id=group_id), run, self._retire,
-                lambda: self.terminate_children(pid))
+                ProcessInfo(
+                    pid,
+                    session_id,
+                    command,
+                    cwd,
+                    time.time(),
+                    parent_pid=parent_pid,
+                    group_id=group_id,
+                ),
+                run,
+                self._retire,
+                lambda: self.terminate_children(pid),
+            )
             self._live[pid] = (self._generations.get(session_id, 0), handle)
             return handle
 
@@ -88,8 +105,9 @@ class ProcessSupervisor:
             pid (int): the parent or group leader.
         """
         for child in self.live():
-            if child.info.parent_pid == pid or (child.info.group_id == pid
-                                                and child.info.pid != pid):
+            if child.info.parent_pid == pid or (
+                child.info.group_id == pid and child.info.pid != pid
+            ):
                 child.terminate()
 
     def _retire(self, pid: int) -> None:
@@ -99,7 +117,7 @@ class ProcessSupervisor:
     def view(
         self,
         session_id: str,
-        permissions: Callable[[], ProcessPermissions] = ProcessPermissions
+        permissions: Callable[[], ProcessPermissions] = ProcessPermissions,
     ) -> ProcessView:
         with self._lock:
             generation = self._generations.get(session_id, 0)
@@ -108,13 +126,15 @@ class ProcessSupervisor:
             return self._generations.get(session_id, 0) == generation
 
         def allowed(scope: ProcessScope, handle: ProcessHandle) -> bool:
-            return (scope == "workspace"
-                    or handle.info.session_id == session_id)
+            return scope == "workspace" or handle.info.session_id == session_id
 
         def visible(handle: ProcessHandle) -> ProcessInfo | None:
             entry = self._live.get(handle.info.pid)
-            if (handle.info.session_id == session_id and entry is not None
-                    and entry[0] != generation):
+            if (
+                handle.info.session_id == session_id
+                and entry is not None
+                and entry[0] != generation
+            ):
                 return None
             if not valid() or not allowed(permissions().list, handle):
                 return None
@@ -122,8 +142,11 @@ class ProcessSupervisor:
 
         def list_visible() -> tuple[ProcessInfo, ...]:
             with self._lock:
-                return tuple(info for _, handle in self._live.values()
-                             if (info := visible(handle)) is not None)
+                return tuple(
+                    info
+                    for _, handle in self._live.values()
+                    if (info := visible(handle)) is not None
+                )
 
         def get_visible(pid: int) -> ProcessInfo | None:
             with self._lock:
@@ -160,12 +183,14 @@ class ProcessSupervisor:
             await handle.join()
             return visible(handle)
 
-        return ProcessView(list=list_visible,
-                           get=get_visible,
-                           check_spawn=check_spawn,
-                           probe=probe,
-                           terminate=terminate,
-                           wait=wait)
+        return ProcessView(
+            list=list_visible,
+            get=get_visible,
+            check_spawn=check_spawn,
+            probe=probe,
+            terminate=terminate,
+            wait=wait,
+        )
 
     def revoke_session(self, session_id: str) -> None:
         """Revoke the session's views and cancel its runners.
@@ -178,8 +203,9 @@ class ProcessSupervisor:
             session_id (str): session being closed or re-profiled.
         """
         with self._lock:
-            self._generations[session_id] = self._generations.get(
-                session_id, 0) + 1
+            self._generations[session_id] = (
+                self._generations.get(session_id, 0) + 1
+            )
         for process in self.live():
             if process.info.session_id == session_id:
                 process.terminate()

@@ -33,21 +33,14 @@ def test_bool_and_string_and_non_finite_untouched():
 
 
 def test_recurses_into_dicts_and_lists():
-    assert canonicalize_value({
-        "r": 5.0,
-        "xs": [1.0, 2.5]
-    }) == {
+    assert canonicalize_value({"r": 5.0, "xs": [1.0, 2.5]}) == {
         "r": 5,
         "xs": [1, 2.5],
     }
 
 
 def test_canonicalize_row_maps_every_value():
-    assert canonicalize_row({
-        "a": 1.0,
-        "b": "x",
-        "c": 2.5
-    }) == {
+    assert canonicalize_row({"a": 1.0, "b": "x", "c": 2.5}) == {
         "a": 1,
         "b": "x",
         "c": 2.5,

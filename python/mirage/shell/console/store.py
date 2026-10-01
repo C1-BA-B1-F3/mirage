@@ -39,9 +39,9 @@ class ConsoleStore(Protocol):
         """
         ...
 
-    async def read_from(self,
-                        seq: int,
-                        limit: int | None = None) -> ReadResult:
+    async def read_from(
+        self, seq: int, limit: int | None = None
+    ) -> ReadResult:
         """Read chunks at or after a cursor.
 
         Returns the chunks, the cursor to pass next time, and whether the

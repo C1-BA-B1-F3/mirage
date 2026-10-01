@@ -46,13 +46,16 @@ backend = PydanticAIWorkspace(ws)
 agent = Agent(
     "anthropic:claude-sonnet-4-6",
     system_prompt=build_system_prompt(
-        mount_info={"/s3/": "S3 bucket with PDF documents"}),
+        mount_info={"/s3/": "S3 bucket with PDF documents"}
+    ),
     deps_type=Deps,
     toolsets=[create_console_toolset(document_support=True)],
 )
 
-task = ("Read the PDF at /s3/data/example.pdf."
-        " Summarize the first 5 pages of the paper.")
+task = (
+    "Read the PDF at /s3/data/example.pdf."
+    " Summarize the first 5 pages of the paper."
+)
 result = agent.run_sync(task, deps=Deps(backend=backend))
 print(result.output)
 
@@ -61,5 +64,7 @@ if records:
     total = sum(r.bytes for r in records)
     print(f"\n--- {len(records)} ops, {total:,} bytes ---")
     for r in records:
-        print(f"  {r.op:<8} {r.source:<8} {r.bytes:>10,} B "
-              f"{r.duration_ms:>5} ms  {r.path}")
+        print(
+            f"  {r.op:<8} {r.source:<8} {r.bytes:>10,} B "
+            f"{r.duration_ms:>5} ms  {r.path}"
+        )

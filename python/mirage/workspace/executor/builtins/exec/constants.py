@@ -36,7 +36,14 @@ OPEN_FOR_READING = "<"
 
 # The session fields an `exec` redirect line binds, put back as one
 # unit when a later redirect on the line fails.
-EXEC_STREAM_FIELDS = ("exec_stdout", "exec_stdout_append", "exec_stdout_input",
-                      "exec_stderr", "exec_stderr_append", "exec_stderr_input",
-                      "exec_stdin", "exec_stdin_unreadable",
-                      "exec_stdin_identity")
+EXEC_STREAM_FIELDS = (
+    "exec_stdout",
+    "exec_stdout_append",
+    "exec_stdout_input",
+    "exec_stderr",
+    "exec_stderr_append",
+    "exec_stderr_input",
+    "exec_stdin",
+    "exec_stdin_unreadable",
+    "exec_stdin_identity",
+)

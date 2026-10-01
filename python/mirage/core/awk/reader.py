@@ -33,8 +33,11 @@ class RecordReader:
         separator (Callable[[], str]): reads the current RS.
     """
 
-    def __init__(self, source: bytes | AsyncIterator[bytes],
-                 separator: Callable[[], str]) -> None:
+    def __init__(
+        self,
+        source: bytes | AsyncIterator[bytes],
+        separator: Callable[[], str],
+    ) -> None:
         self.pulled = chunks(source)
         self.separator = separator
         self.decoder = codecs.getincrementaldecoder("utf-8")(errors="replace")
@@ -47,16 +50,18 @@ class RecordReader:
         """Read the next record, or None once the input is exhausted."""
         while True:
             await self.budget.run()
-            record, self.start = take_record(self.buffer, self.start,
-                                             self.separator(), self.final)
+            record, self.start = take_record(
+                self.buffer, self.start, self.separator(), self.final
+            )
             if record is not None:
                 return record
             if self.final:
                 return None
             data = await anext(self.pulled, None)
             self.final = data is None
-            self.buffer = self.buffer[self.start:] + self.decoder.decode(
-                data or b"", self.final)
+            self.buffer = self.buffer[self.start :] + self.decoder.decode(
+                data or b"", self.final
+            )
             self.start = 0
 
     async def close(self) -> None:

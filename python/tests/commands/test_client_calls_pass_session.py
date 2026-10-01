@@ -23,7 +23,8 @@ def _session_takers() -> dict[tuple[str, str], int | None]:
     takers: dict[tuple[str, str], int | None] = {}
     for path in MIRAGE.glob("core/*/client.py"):
         module = ".".join(
-            path.relative_to(MIRAGE.parent).with_suffix("").parts)
+            path.relative_to(MIRAGE.parent).with_suffix("").parts
+        )
         for node in ast.parse(path.read_text()).body:
             if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
                 continue
@@ -36,28 +37,33 @@ def _session_takers() -> dict[tuple[str, str], int | None]:
     return takers
 
 
-def _unpooled_calls(path: Path, takers: dict[tuple[str, str],
-                                             int | None]) -> list[str]:
+def _unpooled_calls(
+    path: Path, takers: dict[tuple[str, str], int | None]
+) -> list[str]:
     tree = ast.parse(path.read_text())
     names: dict[str, tuple[str, str]] = {}
     for node in ast.walk(tree):
         if isinstance(node, ast.ImportFrom) and node.module:
             for alias in node.names:
                 if (node.module, alias.name) in takers:
-                    names[alias.asname
-                          or alias.name] = (node.module, alias.name)
+                    names[alias.asname or alias.name] = (
+                        node.module,
+                        alias.name,
+                    )
     out = []
     for node in ast.walk(tree):
-        if not (isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
-                and node.func.id in names):
+        if not (
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Name)
+            and node.func.id in names
+        ):
             continue
         if any(k.arg in ("session", None) for k in node.keywords):
             continue
         position = takers[names[node.func.id]]
         if position is not None and len(node.args) > position:
             continue
-        out.append(f"{path.relative_to(MIRAGE)}:{node.lineno} "
-                   f"{node.func.id}")
+        out.append(f"{path.relative_to(MIRAGE)}:{node.lineno} {node.func.id}")
     return out
 
 

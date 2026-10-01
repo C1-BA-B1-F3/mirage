@@ -15,27 +15,34 @@
 
 def test_wc_l(env):
     env.create_file("f.txt", b"a\nb\nc\n")
-    assert env.mirage("wc -l /data/f.txt").strip().split()[0] == env.native(
-        "wc -l f.txt").strip().split()[0]
+    assert (
+        env.mirage("wc -l /data/f.txt").strip().split()[0]
+        == env.native("wc -l f.txt").strip().split()[0]
+    )
 
 
 def test_wc_w(env):
     env.create_file("f.txt", b"hello world\nfoo\n")
-    assert env.mirage("wc -w /data/f.txt").strip().split()[0] == env.native(
-        "wc -w f.txt").strip().split()[0]
+    assert (
+        env.mirage("wc -w /data/f.txt").strip().split()[0]
+        == env.native("wc -w f.txt").strip().split()[0]
+    )
 
 
 def test_wc_c(env):
     env.create_file("f.txt", b"hello\n")
-    assert env.mirage("wc -c /data/f.txt").strip().split()[0] == env.native(
-        "wc -c f.txt").strip().split()[0]
+    assert (
+        env.mirage("wc -c /data/f.txt").strip().split()[0]
+        == env.native("wc -c f.txt").strip().split()[0]
+    )
 
 
 def test_wc_stdin_l(env):
     data = b"a\nb\nc\n"
-    assert env.mirage("wc -l",
-                      stdin=data).strip() == env.native("wc -l",
-                                                        stdin=data).strip()
+    assert (
+        env.mirage("wc -l", stdin=data).strip()
+        == env.native("wc -l", stdin=data).strip()
+    )
 
 
 def test_wc_default_counts(env):
@@ -47,27 +54,34 @@ def test_wc_default_counts(env):
 
 def test_wc_L(env):
     env.create_file("f.txt", b"short\na much longer line\nmed\n")
-    assert env.mirage("wc -L /data/f.txt").strip().split()[0] == env.native(
-        "wc -L f.txt").strip().split()[0]
+    assert (
+        env.mirage("wc -L /data/f.txt").strip().split()[0]
+        == env.native("wc -L f.txt").strip().split()[0]
+    )
 
 
 def test_wc_L_stdin(env):
     data = b"short\na much longer line\nmed\n"
-    assert env.mirage("wc -L",
-                      stdin=data).strip() == env.native("wc -L",
-                                                        stdin=data).strip()
+    assert (
+        env.mirage("wc -L", stdin=data).strip()
+        == env.native("wc -L", stdin=data).strip()
+    )
 
 
 def test_wc_L_empty(env):
     env.create_file("f.txt", b"")
-    assert env.mirage("wc -L /data/f.txt").strip().split()[0] == env.native(
-        "wc -L f.txt").strip().split()[0]
+    assert (
+        env.mirage("wc -L /data/f.txt").strip().split()[0]
+        == env.native("wc -L f.txt").strip().split()[0]
+    )
 
 
 def test_wc_L_single_line(env):
     env.create_file("f.txt", b"hello world\n")
-    assert env.mirage("wc -L /data/f.txt").strip().split()[0] == env.native(
-        "wc -L f.txt").strip().split()[0]
+    assert (
+        env.mirage("wc -L /data/f.txt").strip().split()[0]
+        == env.native("wc -L f.txt").strip().split()[0]
+    )
 
 
 def test_wc_m(env):

@@ -20,8 +20,10 @@ from mirage.workspace.executor.builtins.metadata.getfattr import encode_value
 
 # Every expectation below is what Debian's attr 2.5.2 printed for the
 # same line in docker (debian:stable-slim).
-USAGE = ("Usage: getfattr [-hRLP] [-n name|-d] [-e en] [-m pattern] path...\n"
-         "Try `getfattr --help' for more information.\n")
+USAGE = (
+    "Usage: getfattr [-hRLP] [-n name|-d] [-e en] [-m pattern] path...\n"
+    "Try `getfattr --help' for more information.\n"
+)
 
 
 async def _seeded() -> Workspace:
@@ -39,18 +41,21 @@ async def _run(ws: Workspace, line: str) -> tuple[int, bytes, str]:
     return r.exit_code, await r.materialize_stdout(), await r.stderr_str()
 
 
-@pytest.mark.parametrize("value, encoding, shown", [
-    (b"one", None, b'"one"'),
-    (b"", None, b'""'),
-    (b"a\nb", None, b"0sYQpi"),
-    (b"a\nb", "text", b'"a\\012b"'),
-    (b"\nabcdefg", None, b'"\\012abcdefg"'),
-    (b"abc\0", None, b'"abc"'),
-    (b'"q"\\', None, b'"\\"q\\"\\\\"'),
-    (b"caf\xc3\xa9", None, b"0sY2Fmw6k="),
-    (b"hi", "hex", b"0x6869"),
-    (b"", "base64", b"0s"),
-])
+@pytest.mark.parametrize(
+    "value, encoding, shown",
+    [
+        (b"one", None, b'"one"'),
+        (b"", None, b'""'),
+        (b"a\nb", None, b"0sYQpi"),
+        (b"a\nb", "text", b'"a\\012b"'),
+        (b"\nabcdefg", None, b'"\\012abcdefg"'),
+        (b"abc\0", None, b'"abc"'),
+        (b'"q"\\', None, b'"\\"q\\"\\\\"'),
+        (b"caf\xc3\xa9", None, b"0sY2Fmw6k="),
+        (b"hi", "hex", b"0x6869"),
+        (b"", "base64", b"0s"),
+    ],
+)
 def test_encode_value_matches_getfattr(value, encoding, shown):
     assert encode_value(value, encoding) == shown
 
@@ -65,8 +70,9 @@ async def test_names_are_sorted_under_a_file_header():
 @pytest.mark.asyncio
 async def test_dump_prints_values_and_hides_other_namespaces():
     _, out, _ = await _run(await _seeded(), "getfattr -d d/f")
-    assert out == (b'# file: d/f\nuser.a="one"\nuser.b="two"\n'
-                   b"user.nl=0sYQpi\n\n")
+    assert out == (
+        b'# file: d/f\nuser.a="one"\nuser.b="two"\nuser.nl=0sYQpi\n\n'
+    )
     _, every, _ = await _run(await _seeded(), "getfattr -d -m - d/f")
     assert b'trusted.t="tee"' in every
 
@@ -83,11 +89,16 @@ async def test_name_and_only_values():
 @pytest.mark.asyncio
 async def test_a_missing_attribute_and_a_missing_file():
     ws = await _seeded()
-    assert await _run(
-        ws, "getfattr -n user.zz d/f") == (1, b"",
-                                           "d/f: user.zz: No such attribute\n")
+    assert await _run(ws, "getfattr -n user.zz d/f") == (
+        1,
+        b"",
+        "d/f: user.zz: No such attribute\n",
+    )
     assert await _run(ws, "getfattr -d d/nope") == (
-        1, b"", "getfattr: d/nope: No such file or directory\n")
+        1,
+        b"",
+        "getfattr: d/nope: No such file or directory\n",
+    )
 
 
 @pytest.mark.asyncio
@@ -113,9 +124,15 @@ async def test_messages_name_an_absolute_path_as_typed():
     # No header is printed, so there is no note about stripping one.
     ws = await _seeded()
     assert await _run(ws, "getfattr -n user.zz /r/d/f") == (
-        1, b"", "/r/d/f: user.zz: No such attribute\n")
+        1,
+        b"",
+        "/r/d/f: user.zz: No such attribute\n",
+    )
     assert await _run(ws, "getfattr -n user.a /r/d/nope") == (
-        1, b"", "getfattr: /r/d/nope: No such file or directory\n")
+        1,
+        b"",
+        "getfattr: /r/d/nope: No such file or directory\n",
+    )
 
 
 @pytest.mark.asyncio
@@ -127,17 +144,21 @@ async def test_an_empty_match_matches_every_name():
 @pytest.mark.asyncio
 async def test_recursive_walk_reports_links_without_descending():
     _, out, _ = await _run(await _seeded(), "getfattr -R -n user.b d")
-    assert out == (b'# file: d/f\nuser.b="two"\n\n'
-                   b'# file: d/l\nuser.b="two"\n\n')
+    assert out == (
+        b'# file: d/f\nuser.b="two"\n\n# file: d/l\nuser.b="two"\n\n'
+    )
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("line, first", [
-    ("getfattr", ""),
-    ("getfattr -Z d/f", "getfattr: invalid option -- 'Z'\n"),
-    ("getfattr -n", "getfattr: option requires an argument -- 'n'\n"),
-    ("getfattr -e bogus -d d/f", ""),
-])
+@pytest.mark.parametrize(
+    "line, first",
+    [
+        ("getfattr", ""),
+        ("getfattr -Z d/f", "getfattr: invalid option -- 'Z'\n"),
+        ("getfattr -n", "getfattr: option requires an argument -- 'n'\n"),
+        ("getfattr -e bogus -d d/f", ""),
+    ],
+)
 async def test_usage_errors_exit_2_with_the_usage_block(line, first):
     assert await _run(await _seeded(), line) == (2, b"", first + USAGE)
 
@@ -145,4 +166,7 @@ async def test_usage_errors_exit_2_with_the_usage_block(line, first):
 @pytest.mark.asyncio
 async def test_a_bad_match_pattern():
     assert await _run(await _seeded(), "getfattr -m '[' -d d/f") == (
-        1, b"", 'getfattr: invalid regular expression "["\n')
+        1,
+        b"",
+        'getfattr: invalid regular expression "["\n',
+    )

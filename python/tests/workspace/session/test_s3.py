@@ -25,22 +25,28 @@ BUCKET = "state-bucket"
 
 
 def _config() -> S3Config:
-    return S3Config(bucket=BUCKET,
-                    region="us-east-1",
-                    aws_access_key_id="fake",
-                    aws_secret_access_key="fake",
-                    key_prefix="mirage/ws1/")
+    return S3Config(
+        bucket=BUCKET,
+        region="us-east-1",
+        aws_access_key_id="fake",
+        aws_secret_access_key="fake",
+        key_prefix="mirage/ws1/",
+    )
 
 
-async def cas_increment(store: S3SessionStore, worker: str,
-                        rounds: int) -> None:
+async def cas_increment(
+    store: S3SessionStore, worker: str, rounds: int
+) -> None:
     """Read-modify-CAS one counter, retrying until each round lands."""
     for _ in range(rounds):
         for _ in range(200):
-            record = (await store.load()).get("hot", {
-                "session_id": "hot",
-                "env": {},
-            })
+            record = (await store.load()).get(
+                "hot",
+                {
+                    "session_id": "hot",
+                    "env": {},
+                },
+            )
             env = dict(record.get("env", {}))
             env[worker] = str(int(env.get(worker, "0")) + 1)
             expected = int(record.get("generation", 0))
@@ -61,16 +67,14 @@ async def test_set_load_roundtrip():
         store = S3SessionStore(_config())
         await store.set("s1", {"session_id": "s1", "cwd": "/a", "env": {}})
         await store.set(
-            "s2", {
+            "s2",
+            {
                 "session_id": "s2",
                 "cwd": "/",
-                "env": {
-                    "K": "v"
-                },
-                "mount_modes": {
-                    "/data": "read"
-                }
-            })
+                "env": {"K": "v"},
+                "mount_modes": {"/data": "read"},
+            },
+        )
         entries = await store.load()
         await store.close()
     assert entries["s1"]["cwd"] == "/a"
@@ -101,10 +105,10 @@ async def test_cas_create_only_once():
         store = S3SessionStore(_config())
         first = {"session_id": "s", "generation": 1}
         assert await store.cas_set("s", first, 0) is True
-        assert await store.cas_set("s", {
-            "session_id": "s",
-            "generation": 1
-        }, 0) is False
+        assert (
+            await store.cas_set("s", {"session_id": "s", "generation": 1}, 0)
+            is False
+        )
         await store.close()
     stored = json.loads(client.objects[(BUCKET, "mirage/ws1/sessions/s.json")])
     assert stored == first
@@ -116,15 +120,16 @@ async def test_cas_stale_generation_rejected():
     with patch_record_s3(client):
         store = S3SessionStore(_config())
         await store.set("s", {"session_id": "s", "generation": 2})
-        assert await store.cas_set("s", {
-            "session_id": "s",
-            "generation": 2
-        }, 1) is False
-        assert await store.cas_set("s", {
-            "session_id": "s",
-            "cwd": "/x",
-            "generation": 3
-        }, 2) is True
+        assert (
+            await store.cas_set("s", {"session_id": "s", "generation": 2}, 1)
+            is False
+        )
+        assert (
+            await store.cas_set(
+                "s", {"session_id": "s", "cwd": "/x", "generation": 3}, 2
+            )
+            is True
+        )
         entries = await store.load()
         await store.close()
     assert entries["s"]["cwd"] == "/x"
@@ -136,10 +141,10 @@ async def test_cas_legacy_record_counts_as_generation_zero():
     with patch_record_s3(client):
         store = S3SessionStore(_config())
         await store.set("s", {"session_id": "s"})
-        assert await store.cas_set("s", {
-            "session_id": "s",
-            "generation": 1
-        }, 0) is True
+        assert (
+            await store.cas_set("s", {"session_id": "s", "generation": 1}, 0)
+            is True
+        )
         await store.close()
 
 
@@ -155,11 +160,9 @@ class RaceOnceClient(FakeConditionalS3Client):
         response = await super().get_object(Bucket, Key)
         if not self.raced:
             self.raced = True
-            self.objects[(Bucket, Key)] = json.dumps({
-                "session_id": "s",
-                "cwd": "/winner",
-                "generation": 2
-            }).encode()
+            self.objects[(Bucket, Key)] = json.dumps(
+                {"session_id": "s", "cwd": "/winner", "generation": 2}
+            ).encode()
         return response
 
 
@@ -170,11 +173,12 @@ async def test_cas_write_race_detected_by_conditional_put():
         store = S3SessionStore(_config())
         await store.set("s", {"session_id": "s", "generation": 1})
         client.raced = False
-        assert await store.cas_set("s", {
-            "session_id": "s",
-            "cwd": "/loser",
-            "generation": 2
-        }, 1) is False
+        assert (
+            await store.cas_set(
+                "s", {"session_id": "s", "cwd": "/loser", "generation": 2}, 1
+            )
+            is False
+        )
         entries = await store.load()
         await store.close()
     assert entries["s"]["cwd"] == "/winner"
@@ -186,8 +190,9 @@ async def test_concurrent_cas_writers_lose_nothing():
     with patch_record_s3(client):
         store = S3SessionStore(_config())
         workers = [f"w{i}" for i in range(5)]
-        await asyncio.gather(*(cas_increment(store, worker, 5)
-                               for worker in workers))
+        await asyncio.gather(
+            *(cas_increment(store, worker, 5) for worker in workers)
+        )
         record = (await store.load())["hot"]
         await store.close()
     assert record["generation"] == 25

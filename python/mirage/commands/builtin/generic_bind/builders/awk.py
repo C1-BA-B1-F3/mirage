@@ -15,18 +15,24 @@
 from mirage.accessor.base import Accessor
 from mirage.commands.builtin.generic.awk import awk as generic_awk
 from mirage.commands.builtin.generic.awk import served_here
-from mirage.commands.builtin.generic_bind.adapter import (Builder, CommandIO,
-                                                          bound_op,
-                                                          resolve_or_empty)
+from mirage.commands.builtin.generic_bind.adapter import (
+    Builder,
+    CommandIO,
+    bound_op,
+    resolve_or_empty,
+)
 from mirage.commands.config import CommandOpts
 from mirage.core.awk.builtins import split_assignment
 from mirage.io.types import ByteSource, IOResult
 from mirage.types import PathSpec
 
 
-async def resolve_operands(ops: CommandIO, accessor: Accessor,
-                           paths: list[PathSpec],
-                           opts: CommandOpts) -> list[PathSpec]:
+async def resolve_operands(
+    ops: CommandIO,
+    accessor: Accessor,
+    paths: list[PathSpec],
+    opts: CommandOpts,
+) -> list[PathSpec]:
     """Expand awk's file operands, keeping ``var=value`` ones in place.
 
     An assignment operand names no file, so it is never globbed: awk
@@ -43,8 +49,9 @@ async def resolve_operands(ops: CommandIO, accessor: Accessor,
     out: list[PathSpec] = []
     run: list[PathSpec] = []
     for path in paths:
-        if (split_assignment(path.raw_path) is None
-                and served_here(opts.ns, opts.mount_prefix, path)):
+        if split_assignment(path.raw_path) is None and served_here(
+            opts.ns, opts.mount_prefix, path
+        ):
             run.append(path)
             continue
         out.extend(await resolve_or_empty(ops, accessor, run, opts.index))
@@ -54,9 +61,13 @@ async def resolve_operands(ops: CommandIO, accessor: Accessor,
     return out
 
 
-async def awk(ops: CommandIO, accessor: Accessor, paths: list[PathSpec],
-              texts: list[str],
-              opts: CommandOpts) -> tuple[ByteSource | None, IOResult]:
+async def awk(
+    ops: CommandIO,
+    accessor: Accessor,
+    paths: list[PathSpec],
+    texts: list[str],
+    opts: CommandOpts,
+) -> tuple[ByteSource | None, IOResult]:
     paths = await resolve_operands(ops, accessor, paths, opts)
     return await generic_awk(
         paths,
@@ -74,4 +85,4 @@ async def awk(ops: CommandIO, accessor: Accessor, paths: list[PathSpec],
     )
 
 
-BUILDER = Builder('awk', awk, read=True)
+BUILDER = Builder("awk", awk, read=True)

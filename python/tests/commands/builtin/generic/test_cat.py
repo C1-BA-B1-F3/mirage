@@ -96,10 +96,13 @@ async def test_cat_show_ends_no_trailing_newline():
 async def test_cat_combined_n_E_s():
     """Combined flags: number all kept lines, show ends, squeeze blanks."""
     out = await _drain(
-        cat(b"a\n\n\n\nb\n",
+        cat(
+            b"a\n\n\n\nb\n",
             number_lines=True,
             show_ends=True,
-            squeeze_blank=True))
+            squeeze_blank=True,
+        )
+    )
     # Kept lines: "a", "" (first blank, kept), "b". Numbered 1, 2, 3.
     assert out == b"     1\ta$\n     2\t$\n     3\tb$\n"
 
@@ -166,19 +169,25 @@ async def test_cat_show_tabs_renders_caret_i():
 
 @pytest.mark.asyncio
 async def test_cat_show_all_combines_tabs_and_ends():
-    out = b"".join([
-        c async for c in cat(b"a\tb\nx\n",
-                             show_tabs=True,
-                             show_ends=True,
-                             show_nonprinting=True)
-    ])
+    out = b"".join(
+        [
+            c
+            async for c in cat(
+                b"a\tb\nx\n",
+                show_tabs=True,
+                show_ends=True,
+                show_nonprinting=True,
+            )
+        ]
+    )
     assert out == b"a^Ib$\nx$\n"
 
 
 @pytest.mark.asyncio
 async def test_cat_show_nonprinting_caret_and_meta_notation():
     out = b"".join(
-        [c async for c in cat(b"\x01\x7f\xff\n", show_nonprinting=True)])
+        [c async for c in cat(b"\x01\x7f\xff\n", show_nonprinting=True)]
+    )
     assert out == b"^A^?M-^?\n"
 
 
@@ -197,11 +206,9 @@ async def test_cat_generic_reports_a_refused_read_and_goes_on():
         yield files[p.virtual]
 
     paths = [PathSpec.from_str_path(p) for p in files]
-    out, io = await cat_generic(paths, [],
-                                CommandOpts(),
-                                stat,
-                                read,
-                                local=False)
+    out, io = await cat_generic(
+        paths, [], CommandOpts(), stat, read, local=False
+    )
     assert await materialize(out) == b"b1\nb2\n"
     assert io.stderr == b"cat: /a.txt: File too large\n"
     assert io.exit_code == 1

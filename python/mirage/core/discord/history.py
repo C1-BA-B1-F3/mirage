@@ -44,12 +44,13 @@ def date_to_snowflake(date_str: str, end: bool = False) -> str:
 
 
 async def stream_messages_for_day(
-        config: DiscordConfig,
-        channel_id: str,
-        date_str: str,
-        scope: TimeRange,
-        page_size: int = 100,
-        session: SessionArg = None) -> AsyncIterator[list[dict[str, Any]]]:
+    config: DiscordConfig,
+    channel_id: str,
+    date_str: str,
+    scope: TimeRange,
+    page_size: int = 100,
+    session: SessionArg = None,
+) -> AsyncIterator[list[dict[str, Any]]]:
     """Stream message pages for a channel-day.
 
     Walks ``/channels/<id>/messages?after=<snowflake>&limit=N``
@@ -73,14 +74,16 @@ async def stream_messages_for_day(
     first = (round(start * 1000) - DISCORD_EPOCH) << 22
     before_int = (round(end * 1000) - DISCORD_EPOCH) << 22
     after = str(max(0, first - 1))
-    async for page in after_id_pages(config,
-                                     f"/channels/{channel_id}/messages",
-                                     base_params={},
-                                     last_id_fn=lambda m: m["id"],
-                                     page_size=page_size,
-                                     start_after=after,
-                                     newest_first=True,
-                                     session=session):
+    async for page in after_id_pages(
+        config,
+        f"/channels/{channel_id}/messages",
+        base_params={},
+        last_id_fn=lambda m: m["id"],
+        page_size=page_size,
+        start_after=after,
+        newest_first=True,
+        session=session,
+    ):
         in_range = [m for m in page if first <= int(m["id"]) < before_int]
         if in_range:
             yield in_range
@@ -89,12 +92,13 @@ async def stream_messages_for_day(
 
 
 async def list_messages_for_day(
-        config: DiscordConfig,
-        channel_id: str,
-        date_str: str,
-        scope: TimeRange,
-        page_size: int = 100,
-        session: SessionArg = None) -> list[dict[str, Any]]:
+    config: DiscordConfig,
+    channel_id: str,
+    date_str: str,
+    scope: TimeRange,
+    page_size: int = 100,
+    session: SessionArg = None,
+) -> list[dict[str, Any]]:
     """List all messages for a channel-day (eager).
 
     Args:
@@ -109,22 +113,21 @@ async def list_messages_for_day(
         list[dict]: messages within the date, sorted oldest-first.
     """
     out: list[dict[str, Any]] = []
-    async for page in stream_messages_for_day(config,
-                                              channel_id,
-                                              date_str,
-                                              scope,
-                                              page_size,
-                                              session=session):
+    async for page in stream_messages_for_day(
+        config, channel_id, date_str, scope, page_size, session=session
+    ):
         out.extend(page)
     out.sort(key=lambda m: int(m["id"]))
     return out
 
 
-async def get_history_jsonl(config: DiscordConfig,
-                            channel_id: str,
-                            date_str: str,
-                            scope: TimeRange,
-                            session: SessionArg = None) -> bytes:
+async def get_history_jsonl(
+    config: DiscordConfig,
+    channel_id: str,
+    date_str: str,
+    scope: TimeRange,
+    session: SessionArg = None,
+) -> bytes:
     """Fetch channel messages for a date as JSONL.
 
     Args:
@@ -137,19 +140,18 @@ async def get_history_jsonl(config: DiscordConfig,
     Returns:
         bytes: JSONL-encoded messages.
     """
-    messages = await list_messages_for_day(config,
-                                           channel_id,
-                                           date_str,
-                                           scope,
-                                           session=session)
+    messages = await list_messages_for_day(
+        config, channel_id, date_str, scope, session=session
+    )
     return history_jsonl_bytes(messages)
 
 
 async def fetch_recent_messages(
-        config: DiscordConfig,
-        channel_id: str,
-        limit: int = 20,
-        session: SessionArg = None) -> list[dict[str, Any]]:
+    config: DiscordConfig,
+    channel_id: str,
+    limit: int = 20,
+    session: SessionArg = None,
+) -> list[dict[str, Any]]:
     """Fetch the most recent messages of a channel (one API page).
 
     Args:
@@ -161,11 +163,16 @@ async def fetch_recent_messages(
     Returns:
         list[dict]: messages sorted oldest-first.
     """
-    page = await discord_get(config,
-                             f"/channels/{channel_id}/messages",
-                             {"limit": limit},
-                             session=session)
-    items = [m for m in page
-             if isinstance(m, dict)] if isinstance(page, list) else []
+    page = await discord_get(
+        config,
+        f"/channels/{channel_id}/messages",
+        {"limit": limit},
+        session=session,
+    )
+    items = (
+        [m for m in page if isinstance(m, dict)]
+        if isinstance(page, list)
+        else []
+    )
     items.sort(key=lambda m: int(m["id"]))
     return items

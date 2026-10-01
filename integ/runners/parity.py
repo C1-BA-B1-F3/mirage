@@ -34,21 +34,32 @@ def load(path: str) -> dict[tuple[str, str], dict]:
 
 
 def emit_python(out: str, target_args: list[str]) -> int:
-    return subprocess.run([
-        sys.executable,
-        str(INTEG / "runners" / "python" / "main.py"), "--emit", out,
-        *target_args
-    ],
-                          check=False).returncode
+    return subprocess.run(
+        [
+            sys.executable,
+            str(INTEG / "runners" / "python" / "main.py"),
+            "--emit",
+            out,
+            *target_args,
+        ],
+        check=False,
+    ).returncode
 
 
 def emit_typescript(out: str, target_args: list[str]) -> int:
-    return subprocess.run([
-        "pnpm", "exec", "tsx", "runners/typescript/main.ts", "--emit", out,
-        *target_args
-    ],
-                          cwd=INTEG,
-                          check=False).returncode
+    return subprocess.run(
+        [
+            "pnpm",
+            "exec",
+            "tsx",
+            "runners/typescript/main.ts",
+            "--emit",
+            out,
+            *target_args,
+        ],
+        cwd=INTEG,
+        check=False,
+    ).returncode
 
 
 def diff_row(a: dict, b: dict) -> list[str]:
@@ -97,7 +108,8 @@ def main() -> None:
         wanted = set(targets)
         py = {
             k: v
-            for k, v in load_dir(source / "python").items() if k[0] in wanted
+            for k, v in load_dir(source / "python").items()
+            if k[0] in wanted
         }
         ts = {
             k: v
@@ -108,8 +120,10 @@ def main() -> None:
         # both sides at once, which no ONLY-PY/ONLY-TS row would show.
         missing = sorted(wanted - {k[0] for k in py.keys() | ts.keys()})
         if missing:
-            print(f"no rows in {source} for: {', '.join(missing)}",
-                  file=sys.stderr)
+            print(
+                f"no rows in {source} for: {', '.join(missing)}",
+                file=sys.stderr,
+            )
             sys.exit(2)
     else:
         target_args: list[str] = []
@@ -146,8 +160,10 @@ def main() -> None:
             print(f"DIFF [{target}] {case_id}: {'; '.join(diffs)}")
 
     compared = len(py.keys() & ts.keys())
-    print(f"\n{compared} case/target pairs compared, {mismatches} mismatch(es)"
-          f" across targets: {', '.join(targets)}")
+    print(
+        f"\n{compared} case/target pairs compared, {mismatches} mismatch(es)"
+        f" across targets: {', '.join(targets)}"
+    )
     # Both emit runs skip a target whose service never came up, and a run
     # that compared nothing agrees with itself trivially. Zero pairs is a
     # broken run, never a clean one.

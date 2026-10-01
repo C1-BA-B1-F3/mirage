@@ -28,35 +28,48 @@ def accessor(tmp_path):
 
 @pytest.mark.asyncio
 async def test_copy_duplicates_a_file(accessor):
-    await copy(accessor, PathSpec.from_str_path("/src"),
-               PathSpec.from_str_path("/dst"))
+    await copy(
+        accessor,
+        PathSpec.from_str_path("/src"),
+        PathSpec.from_str_path("/dst"),
+    )
     assert (accessor.root / "dst").read_text() == "X"
 
 
 @pytest.mark.asyncio
 async def test_copy_does_not_create_the_destination_parent(accessor):
     with pytest.raises(FileNotFoundError):
-        await copy(accessor, PathSpec.from_str_path("/src"),
-                   PathSpec.from_str_path("/a/b/dst"))
+        await copy(
+            accessor,
+            PathSpec.from_str_path("/src"),
+            PathSpec.from_str_path("/a/b/dst"),
+        )
     assert not (accessor.root / "a").exists()
 
 
 @pytest.mark.asyncio
 async def test_copy_blames_the_destination_when_its_parent_is_missing(
-        accessor):
+    accessor,
+):
     # copy2 answers ENOENT for a missing source too, so the failure has to be
     # attributed to the destination rather than assumed to be the source.
     with pytest.raises(FileNotFoundError) as excinfo:
-        await copy(accessor, PathSpec.from_str_path("/src"),
-                   PathSpec.from_str_path("/a/b/dst"))
+        await copy(
+            accessor,
+            PathSpec.from_str_path("/src"),
+            PathSpec.from_str_path("/a/b/dst"),
+        )
     assert excinfo.value.filename == "/a/b/dst"
 
 
 @pytest.mark.asyncio
 async def test_copy_blames_the_source_when_it_is_the_missing_operand(accessor):
     with pytest.raises(FileNotFoundError) as excinfo:
-        await copy(accessor, PathSpec.from_str_path("/nope"),
-                   PathSpec.from_str_path("/dst"))
+        await copy(
+            accessor,
+            PathSpec.from_str_path("/nope"),
+            PathSpec.from_str_path("/dst"),
+        )
     assert excinfo.value.filename == "/nope"
 
 
@@ -64,6 +77,9 @@ async def test_copy_blames_the_source_when_it_is_the_missing_operand(accessor):
 async def test_copy_never_leaks_the_host_path(accessor):
     for src, dst in (("/src", "/a/b/dst"), ("/nope", "/dst")):
         with pytest.raises(OSError) as excinfo:
-            await copy(accessor, PathSpec.from_str_path(src),
-                       PathSpec.from_str_path(dst))
+            await copy(
+                accessor,
+                PathSpec.from_str_path(src),
+                PathSpec.from_str_path(dst),
+            )
         assert str(accessor.root) not in str(excinfo.value)

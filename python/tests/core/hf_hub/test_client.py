@@ -21,11 +21,20 @@ from aiohttp import web
 from pydantic import SecretStr
 
 from mirage.core.api.client import SessionPool
-from mirage.core.hf_hub.client import (HfHubError, _error_of, api_url,
-                                       etag_value, hub_bytes_tagged,
-                                       hub_headers, hub_post, hub_stream,
-                                       quote_path, resolve_url, rev_segment,
-                                       stall_timeout)
+from mirage.core.hf_hub.client import (
+    HfHubError,
+    _error_of,
+    api_url,
+    etag_value,
+    hub_bytes_tagged,
+    hub_headers,
+    hub_post,
+    hub_stream,
+    quote_path,
+    resolve_url,
+    rev_segment,
+    stall_timeout,
+)
 from mirage.utils.ranges import ByteWindow
 
 
@@ -38,21 +47,29 @@ def test_hub_headers_carry_a_bearer_token():
     assert headers["Authorization"] == "Bearer tok"
 
 
-@pytest.mark.parametrize("repo_type,expected", [
-    ("model", "https://huggingface.co/api/models/a/b/refs"),
-    ("dataset", "https://huggingface.co/api/datasets/a/b/refs"),
-    ("space", "https://huggingface.co/api/spaces/a/b/refs"),
-])
+@pytest.mark.parametrize(
+    "repo_type,expected",
+    [
+        ("model", "https://huggingface.co/api/models/a/b/refs"),
+        ("dataset", "https://huggingface.co/api/datasets/a/b/refs"),
+        ("space", "https://huggingface.co/api/spaces/a/b/refs"),
+    ],
+)
 def test_api_url_pluralizes_every_repo_type(repo_type, expected):
-    assert api_url("https://huggingface.co", repo_type, "a/b",
-                   "/refs") == expected
+    assert (
+        api_url("https://huggingface.co", repo_type, "a/b", "/refs")
+        == expected
+    )
 
 
-@pytest.mark.parametrize("repo_type,expected", [
-    ("model", "https://huggingface.co/a/b/resolve/main/f.json"),
-    ("dataset", "https://huggingface.co/datasets/a/b/resolve/main/f.json"),
-    ("space", "https://huggingface.co/spaces/a/b/resolve/main/f.json"),
-])
+@pytest.mark.parametrize(
+    "repo_type,expected",
+    [
+        ("model", "https://huggingface.co/a/b/resolve/main/f.json"),
+        ("dataset", "https://huggingface.co/datasets/a/b/resolve/main/f.json"),
+        ("space", "https://huggingface.co/spaces/a/b/resolve/main/f.json"),
+    ],
+)
 def test_resolve_url_puts_a_model_at_the_bare_repo_id(repo_type, expected):
     """The content host is not the API host's table.
 
@@ -60,19 +77,25 @@ def test_resolve_url_puts_a_model_at_the_bare_repo_id(repo_type, expected):
     space's sit under their own segment, so reusing the API's plural
     here would 404 every model read.
     """
-    assert resolve_url("https://huggingface.co", repo_type, "a/b", "main",
-                       "f.json") == expected
+    assert (
+        resolve_url(
+            "https://huggingface.co", repo_type, "a/b", "main", "f.json"
+        )
+        == expected
+    )
 
 
 def test_resolve_url_percent_encodes_the_path():
-    url = resolve_url("https://huggingface.co", "model", "a/b", "main",
-                      "dir/a file#1.txt")
+    url = resolve_url(
+        "https://huggingface.co", "model", "a/b", "main", "dir/a file#1.txt"
+    )
     assert url.endswith("/resolve/main/dir/a%20file%231.txt")
 
 
 def test_resolve_url_keeps_slashes_between_segments():
-    url = resolve_url("https://huggingface.co", "model", "a/b", "main",
-                      "deep/nested/f.txt")
+    url = resolve_url(
+        "https://huggingface.co", "model", "a/b", "main", "deep/nested/f.txt"
+    )
     assert url.endswith("/resolve/main/deep/nested/f.txt")
 
 
@@ -119,12 +142,15 @@ def test_error_of_without_a_code_is_empty():
     assert _error_of(resp, "").error_code == ""
 
 
-@pytest.mark.parametrize("raw,expected", [
-    ('"abc"', "abc"),
-    ('W/"abc"', "abc"),
-    ("abc", "abc"),
-    ("", ""),
-])
+@pytest.mark.parametrize(
+    "raw,expected",
+    [
+        ('"abc"', "abc"),
+        ('W/"abc"', "abc"),
+        ("abc", "abc"),
+        ("", ""),
+    ],
+)
 def test_etag_value_strips_the_weak_prefix_and_quotes(raw, expected):
     assert etag_value(raw) == expected
 
@@ -146,10 +172,10 @@ async def _cdn(request: web.Request) -> web.Response:
     headers = {"ETag": '"final-hop"'}
     span = request.headers.get("Range", "")
     if span and not SERVE["ignore_range"]:
-        first, _, last = span[len("bytes="):].partition("-")
-        return web.Response(status=206,
-                            body=body[int(first):int(last) + 1],
-                            headers=headers)
+        first, _, last = span[len("bytes=") :].partition("-")
+        return web.Response(
+            status=206, body=body[int(first) : int(last) + 1], headers=headers
+        )
     return web.Response(body=body, headers=headers)
 
 
@@ -204,8 +230,9 @@ async def test_hub_bytes_tagged_returns_the_final_hops_etag(hub_url):
 
 @pytest.mark.asyncio
 async def test_hub_bytes_tagged_sends_the_window(hub_url):
-    data, _ = await hub_bytes_tagged(None, hub_url + "/resolve",
-                                     ByteWindow(2, 3))
+    data, _ = await hub_bytes_tagged(
+        None, hub_url + "/resolve", ByteWindow(2, 3)
+    )
     assert data == b"234"
     assert SEEN[-1]["range"] == "bytes=2-4"
 
@@ -213,14 +240,16 @@ async def test_hub_bytes_tagged_sends_the_window(hub_url):
 @pytest.mark.asyncio
 async def test_hub_bytes_tagged_trims_an_ignored_range(hub_url):
     SERVE["ignore_range"] = True
-    data, _ = await hub_bytes_tagged(None, hub_url + "/resolve",
-                                     ByteWindow(2, 3))
+    data, _ = await hub_bytes_tagged(
+        None, hub_url + "/resolve", ByteWindow(2, 3)
+    )
     assert data == b"234"
 
 
 @pytest.mark.asyncio
 async def test_hub_stream_reports_the_final_headers_before_the_first_chunk(
-        hub_url):
+    hub_url,
+):
     order: list[str] = []
     seen: list[dict] = []
 
@@ -228,10 +257,9 @@ async def test_hub_stream_reports_the_final_headers_before_the_first_chunk(
         order.append("headers")
         seen.append(dict(headers))
 
-    async for chunk in hub_stream(None,
-                                  hub_url + "/resolve",
-                                  4,
-                                  on_response=on_response):
+    async for chunk in hub_stream(
+        None, hub_url + "/resolve", 4, on_response=on_response
+    ):
         order.append(chunk.decode())
     assert order == ["headers", "0123", "4567", "89"]
     # Keys are lower-cased, so a reader's .get("etag") finds the server's
@@ -244,8 +272,10 @@ async def test_hub_stream_reports_headers_for_an_empty_file(hub_url):
     SERVE["body"] = b""
     calls: list[dict] = []
     chunks = [
-        c async for c in hub_stream(
-            None, hub_url + "/resolve", 4, on_response=calls.append)
+        c
+        async for c in hub_stream(
+            None, hub_url + "/resolve", 4, on_response=calls.append
+        )
     ]
     # An empty file yields no chunk, so a callback fired lazily on the
     # first one would never stamp it.
@@ -272,8 +302,11 @@ def test_stall_timeout_bounds_progress_not_the_whole_request():
 @pytest.mark.parametrize("seconds", [0, -1])
 def test_a_bound_of_zero_or_less_is_none(seconds):
     bound = stall_timeout(seconds)
-    assert (bound.total, bound.sock_connect, bound.sock_read) == (None, None,
-                                                                  None)
+    assert (bound.total, bound.sock_connect, bound.sock_read) == (
+        None,
+        None,
+        None,
+    )
 
 
 @pytest.mark.asyncio
@@ -308,10 +341,9 @@ async def test_a_download_that_stops_flowing_fails_at_the_bound(hub_url):
     pool = SessionPool(timeout=stall_timeout(STALL))
     try:
         with pytest.raises(asyncio.TimeoutError):
-            async for _ in hub_stream(None,
-                                      hub_url + "/stall",
-                                      2,
-                                      session=pool):
+            async for _ in hub_stream(
+                None, hub_url + "/stall", 2, session=pool
+            ):
                 pass
     finally:
         await pool.close()

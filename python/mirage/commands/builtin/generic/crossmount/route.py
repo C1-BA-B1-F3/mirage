@@ -18,9 +18,11 @@ from mirage.commands.builtin.generic.crossmount.detect import strategy_for
 from mirage.commands.builtin.generic.crossmount.fanout import run_fanout
 from mirage.commands.builtin.generic.crossmount.relay import run_relay
 from mirage.commands.builtin.generic.crossmount.stream import run_stream
-from mirage.commands.builtin.generic.crossmount.types import (CrossResult,
-                                                              RunSingle,
-                                                              Strategy)
+from mirage.commands.builtin.generic.crossmount.types import (
+    CrossResult,
+    RunSingle,
+    Strategy,
+)
 from mirage.commands.builtin.utils.stream import is_stdin, resolve_source
 from mirage.commands.errors import UsageError
 from mirage.commands.spec.types import FlagValue
@@ -34,18 +36,18 @@ from mirage.utils.errors import FS_ERRORS, format_fs_error
 
 
 async def handle_cross_mount(
-        cmd_name: str,
-        scopes: list[PathSpec],
-        text_args: list[str],
-        flag_kwargs: dict[str, FlagValue],
-        dispatch: DispatchFn,
-        run_single: RunSingle,
-        stdin: ByteSource | None = None,
-        storage_key: Callable[[PathSpec], str] | None = None,
-        ns: NamespaceView | None = None,
-        session_view: SessionView | None = None,
-        cwd: str = "/",
-        argv: tuple[str, ...] = (),
+    cmd_name: str,
+    scopes: list[PathSpec],
+    text_args: list[str],
+    flag_kwargs: dict[str, FlagValue],
+    dispatch: DispatchFn,
+    run_single: RunSingle,
+    stdin: ByteSource | None = None,
+    storage_key: Callable[[PathSpec], str] | None = None,
+    ns: NamespaceView | None = None,
+    session_view: SessionView | None = None,
+    cwd: str = "/",
+    argv: tuple[str, ...] = (),
 ) -> CrossResult:
     """Run a command whose path operands span mounts.
 
@@ -81,9 +83,13 @@ async def handle_cross_mount(
     native = run_single
     input_source = resolve_source(stdin)
 
-    async def run_input(name: str, paths: list[PathSpec], texts: list[str],
-                        flags: dict[str,
-                                    FlagValue], **options: Any) -> CrossResult:
+    async def run_input(
+        name: str,
+        paths: list[PathSpec],
+        texts: list[str],
+        flags: dict[str, FlagValue],
+        **options: Any,
+    ) -> CrossResult:
         if any(is_stdin(path) for path in paths):
             options["stdin"] = input_source
         return await native(name, paths, texts, flags, **options)
@@ -92,24 +98,36 @@ async def handle_cross_mount(
     try:
         strategy = strategy_for(cmd_name)
         if strategy is Strategy.RELAY:
-            return await run_relay(cmd_name, scopes, text_args, flag_kwargs,
-                                   dispatch, run_single, storage_key, ns,
-                                   session_view, stdin, cwd, argv)
+            return await run_relay(
+                cmd_name,
+                scopes,
+                text_args,
+                flag_kwargs,
+                dispatch,
+                run_single,
+                storage_key,
+                ns,
+                session_view,
+                stdin,
+                cwd,
+                argv,
+            )
         if strategy is Strategy.STREAM:
-            return await run_stream(cmd_name, scopes, text_args, flag_kwargs,
-                                    run_single)
-        return await run_fanout(cmd_name,
-                                scopes,
-                                text_args,
-                                flag_kwargs,
-                                run_single,
-                                stdin=stdin)
+            return await run_stream(
+                cmd_name, scopes, text_args, flag_kwargs, run_single
+            )
+        return await run_fanout(
+            cmd_name, scopes, text_args, flag_kwargs, run_single, stdin=stdin
+        )
     except UsageError as exc:
         # The command's own usage refusal (cmp's bad skip, an extra
         # operand) is its result, and the rest of the line runs, as the
         # single-mount path answers it.
-        return None, IOResult(exit_code=exc.exit_code,
-                              stderr=f"{exc}\n".encode())
+        return None, IOResult(
+            exit_code=exc.exit_code, stderr=f"{exc}\n".encode()
+        )
     except FS_ERRORS as exc:
-        return None, IOResult(exit_code=read_fail_exit(cmd_name, exc),
-                              stderr=format_fs_error(cmd_name, exc, scopes))
+        return None, IOResult(
+            exit_code=read_fail_exit(cmd_name, exc),
+            stderr=format_fs_error(cmd_name, exc, scopes),
+        )

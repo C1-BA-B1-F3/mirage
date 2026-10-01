@@ -14,28 +14,43 @@
 
 import pytest
 
-from mirage.utils.sanitize import (ESCAPE_LEAD, NAME_MAX_BYTES, SAFE_SLASH,
-                                   byte_len, is_blank, path_safe_name,
-                                   sanitize_label, sanitize_name)
+from mirage.utils.sanitize import (
+    ESCAPE_LEAD,
+    NAME_MAX_BYTES,
+    SAFE_SLASH,
+    byte_len,
+    is_blank,
+    path_safe_name,
+    sanitize_label,
+    sanitize_name,
+)
 
 
 def test_sanitize_label_replaces_unsafe_and_spaces():
-    assert sanitize_label("Hello World", fallback="X",
-                          max_len=100) == "Hello_World"
-    assert sanitize_label("My/Doc: A\\Test", fallback="X",
-                          max_len=100) == "My_Doc_A_Test"
+    assert (
+        sanitize_label("Hello World", fallback="X", max_len=100)
+        == "Hello_World"
+    )
+    assert (
+        sanitize_label("My/Doc: A\\Test", fallback="X", max_len=100)
+        == "My_Doc_A_Test"
+    )
 
 
 def test_sanitize_label_collapses_and_trims_underscores():
-    assert sanitize_label("Hello   //  World", fallback="X",
-                          max_len=100) == "Hello_World"
+    assert (
+        sanitize_label("Hello   //  World", fallback="X", max_len=100)
+        == "Hello_World"
+    )
     assert sanitize_label("__edge__", fallback="X", max_len=100) == "edge"
 
 
 def test_sanitize_label_uses_fallback_for_blank():
     assert sanitize_label("", fallback="Untitled", max_len=100) == "Untitled"
-    assert sanitize_label("   ", fallback="No_Subject",
-                          max_len=80) == "No_Subject"
+    assert (
+        sanitize_label("   ", fallback="No_Subject", max_len=80)
+        == "No_Subject"
+    )
 
 
 def test_sanitize_label_ellipsizes_past_budget():
@@ -50,9 +65,13 @@ def test_sanitize_label_keeps_non_ascii_letters():
     # the same class as `\p{L}\p{N}_`. The per-backend copies this replaced
     # used a javascript `\w`, which is ascii-only and turned a CJK title into
     # a row of underscores.
-    assert sanitize_label("日本語の文書", fallback="X", max_len=100) == "日本語の文書"
-    assert sanitize_label("Café Notes", fallback="X",
-                          max_len=100) == "Café_Notes"
+    assert (
+        sanitize_label("日本語の文書", fallback="X", max_len=100)
+        == "日本語の文書"
+    )
+    assert (
+        sanitize_label("Café Notes", fallback="X", max_len=100) == "Café_Notes"
+    )
 
 
 def test_sanitize_label_budget_counts_code_points():
@@ -88,7 +107,9 @@ def test_sanitize_label_honors_the_byte_ceiling_within_the_char_budget():
 def test_sanitize_label_byte_budget_is_the_callers_remaining_room():
     # What the gdocs/gmail filenames pass: NAME_MAX minus the id, the
     # separators and the suffix.
-    result = sanitize_label("会" * 200, fallback="X", max_len=100, max_bytes=60)
+    result = sanitize_label(
+        "会" * 200, fallback="X", max_len=100, max_bytes=60
+    )
     assert byte_len(result) <= 60
     assert result.endswith("...")
     assert "\ufffd" not in result
@@ -97,8 +118,10 @@ def test_sanitize_label_byte_budget_is_the_callers_remaining_room():
 def test_sanitize_label_drops_the_ellipsis_when_it_cannot_fit():
     # Three dots and nothing is not a name; a budget this small yields
     # whatever of the label actually fits.
-    assert sanitize_label("abcdef", fallback="X", max_len=100,
-                          max_bytes=2) == "ab"
+    assert (
+        sanitize_label("abcdef", fallback="X", max_len=100, max_bytes=2)
+        == "ab"
+    )
 
 
 def test_path_safe_name_renders_a_slash_as_the_shared_stand_in():
@@ -150,26 +173,32 @@ def test_unsafe_chars_read_the_same_white_space_class():
 # Every hierarchy classifier treats a dot-led segment as hidden, so a label
 # that rendered one was dropped from its listing and refused as a path; an
 # empty one rendered `__<id>`, which no `label__id` slot decodes.
-@pytest.mark.parametrize(("raw", "name"), [
-    (".plan", "plan"),
-    ("..", "unknown"),
-    (".", "unknown"),
-    ("_.env", "env"),
-    (" .x", "x"),
-    ("..x..", "x.."),
-    ("!!!", "unknown"),
-    ("🚀🚀", "unknown"),
-    ("a.b.", "a.b."),
-])
+@pytest.mark.parametrize(
+    ("raw", "name"),
+    [
+        (".plan", "plan"),
+        ("..", "unknown"),
+        (".", "unknown"),
+        ("_.env", "env"),
+        (" .x", "x"),
+        ("..x..", "x.."),
+        ("!!!", "unknown"),
+        ("🚀🚀", "unknown"),
+        ("a.b.", "a.b."),
+    ],
+)
 def test_sanitize_name_is_never_dot_led_or_empty(raw, name):
     assert sanitize_name(raw) == name
 
 
-@pytest.mark.parametrize(("raw", "label"), [
-    (".plan", "plan"),
-    ("...", "No_Subject"),
-    ("!!!", "No_Subject"),
-    ("_.x", "x"),
-])
+@pytest.mark.parametrize(
+    ("raw", "label"),
+    [
+        (".plan", "plan"),
+        ("...", "No_Subject"),
+        ("!!!", "No_Subject"),
+        ("_.x", "x"),
+    ],
+)
 def test_sanitize_label_is_never_dot_led_or_empty(raw, label):
     assert sanitize_label(raw, fallback="No_Subject", max_len=80) == label

@@ -41,13 +41,15 @@ def _to_virtual(node_path: str, files_prefix: str, mount: str) -> str:
         mount (str): Mirage mount root (e.g. ``/nc``).
     """
     prefix = "/" + files_prefix.strip("/")
-    rel = node_path[len(prefix):] if node_path.startswith(
-        prefix) else node_path
+    rel = (
+        node_path[len(prefix) :] if node_path.startswith(prefix) else node_path
+    )
     return mount.rstrip("/") + "/" + rel.strip("/")
 
 
-def nextcloud_change(payload: dict, files_prefix: str,
-                     mount: str) -> FileEvent | None:
+def nextcloud_change(
+    payload: dict, files_prefix: str, mount: str
+) -> FileEvent | None:
     """Map one Nextcloud webhook payload to a FileEvent.
 
     Returns None for event classes the watcher does not model.
@@ -61,22 +63,30 @@ def nextcloud_change(payload: dict, files_prefix: str,
     kind = _KIND_BY_CLASS.get(event.get("class", ""))
     if kind is None:
         return None
-    observed = datetime.fromtimestamp(int(payload.get("time", 0)),
-                                      tz=timezone.utc)
+    observed = datetime.fromtimestamp(
+        int(payload.get("time", 0)), tz=timezone.utc
+    )
     if kind is FileChangeKind.MOVE:
         source = event.get("source", {}).get("path", "")
         target = event.get("target", {}).get("path", "")
-        return FileEvent(kind=kind,
-                         path=PathSpec.from_str_path(
-                             _to_virtual(target, files_prefix, mount)),
-                         previous_path=PathSpec.from_str_path(
-                             _to_virtual(source, files_prefix, mount)),
-                         timestamp=observed)
+        return FileEvent(
+            kind=kind,
+            path=PathSpec.from_str_path(
+                _to_virtual(target, files_prefix, mount)
+            ),
+            previous_path=PathSpec.from_str_path(
+                _to_virtual(source, files_prefix, mount)
+            ),
+            timestamp=observed,
+        )
     node_path = event.get("node", {}).get("path", "")
-    return FileEvent(kind=kind,
-                     path=PathSpec.from_str_path(
-                         _to_virtual(node_path, files_prefix, mount)),
-                     timestamp=observed)
+    return FileEvent(
+        kind=kind,
+        path=PathSpec.from_str_path(
+            _to_virtual(node_path, files_prefix, mount)
+        ),
+        timestamp=observed,
+    )
 
 
 def make_app(sink: object, files_prefix: str, mount: str) -> web.Application:

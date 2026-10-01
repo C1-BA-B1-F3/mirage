@@ -25,7 +25,6 @@ def accessor() -> DifyAccessor:
 
 
 class SleepRecorder:
-
     def __init__(self) -> None:
         self.delays: list[float] = []
 
@@ -56,7 +55,8 @@ async def test_accessor_uses_configured_request_timeout():
             base_url="https://dify.example/v1",
             dataset_id="dataset-1",
             request_timeout=12.5,
-        ))
+        )
+    )
 
     session = dify_accessor.pool.get()
 
@@ -69,49 +69,49 @@ async def test_accessor_uses_configured_request_timeout():
 async def test_list_all_documents_paginates_and_filters():
     dify_accessor = accessor()
     with aioresponses() as m:
-        m.get(f"{DOCUMENTS}?limit=100&page=1",
-              payload={
-                  "data": [
-                      {
-                          "id": "doc-1",
-                          "enabled": True,
-                          "indexing_status": "completed",
-                          "archived": False,
-                          "data_source_detail_dict": {
-                              "upload_file": {
-                                  "size": 10
-                              }
-                          },
-                      },
-                      {
-                          "id": "doc-2",
-                          "enabled": False,
-                          "indexing_status": "completed",
-                          "archived": False,
-                      },
-                  ],
-                  "has_more":
-                  True,
-              })
-        m.get(f"{DOCUMENTS}?limit=100&page=2",
-              payload={
-                  "data": [
-                      {
-                          "id": "doc-3",
-                          "enabled": True,
-                          "indexing_status": "completed",
-                          "archived": False,
-                      },
-                      {
-                          "id": "doc-4",
-                          "enabled": True,
-                          "indexing_status": "indexing",
-                          "archived": False,
-                      },
-                  ],
-                  "has_more":
-                  False,
-              })
+        m.get(
+            f"{DOCUMENTS}?limit=100&page=1",
+            payload={
+                "data": [
+                    {
+                        "id": "doc-1",
+                        "enabled": True,
+                        "indexing_status": "completed",
+                        "archived": False,
+                        "data_source_detail_dict": {
+                            "upload_file": {"size": 10}
+                        },
+                    },
+                    {
+                        "id": "doc-2",
+                        "enabled": False,
+                        "indexing_status": "completed",
+                        "archived": False,
+                    },
+                ],
+                "has_more": True,
+            },
+        )
+        m.get(
+            f"{DOCUMENTS}?limit=100&page=2",
+            payload={
+                "data": [
+                    {
+                        "id": "doc-3",
+                        "enabled": True,
+                        "indexing_status": "completed",
+                        "archived": False,
+                    },
+                    {
+                        "id": "doc-4",
+                        "enabled": True,
+                        "indexing_status": "indexing",
+                        "archived": False,
+                    },
+                ],
+                "has_more": False,
+            },
+        )
         try:
             documents = await client.list_all_documents(dify_accessor)
         finally:
@@ -138,8 +138,9 @@ async def test_dify_get_retries_rate_limit(monkeypatch):
         m.get(DOCUMENTS, status=429, payload={"message": "rate limit"})
         m.get(DOCUMENTS, payload={"ok": True})
         try:
-            payload = await client.dify_get(dify_accessor,
-                                            "/datasets/dataset-1/documents")
+            payload = await client.dify_get(
+                dify_accessor, "/datasets/dataset-1/documents"
+            )
         finally:
             await dify_accessor.close()
 
@@ -153,14 +154,17 @@ async def test_dify_get_honors_retry_after(monkeypatch):
     monkeypatch.setattr(api_client.asyncio, "sleep", sleep)
     dify_accessor = accessor()
     with aioresponses() as m:
-        m.get(DOCUMENTS,
-              status=429,
-              headers={"Retry-After": "3"},
-              payload={"message": "rate limit"})
+        m.get(
+            DOCUMENTS,
+            status=429,
+            headers={"Retry-After": "3"},
+            payload={"message": "rate limit"},
+        )
         m.get(DOCUMENTS, payload={"ok": True})
         try:
-            payload = await client.dify_get(dify_accessor,
-                                            "/datasets/dataset-1/documents")
+            payload = await client.dify_get(
+                dify_accessor, "/datasets/dataset-1/documents"
+            )
         finally:
             await dify_accessor.close()
 
@@ -178,8 +182,9 @@ async def test_dify_get_raises_after_retryable_errors(monkeypatch):
             m.get(DOCUMENTS, status=503, payload={"message": "unavailable"})
         try:
             with pytest.raises(aiohttp.ClientResponseError) as exc_info:
-                await client.dify_get(dify_accessor,
-                                      "/datasets/dataset-1/documents")
+                await client.dify_get(
+                    dify_accessor, "/datasets/dataset-1/documents"
+                )
         finally:
             await dify_accessor.close()
 
@@ -198,14 +203,16 @@ async def test_dify_get_uses_configured_retry_policy(monkeypatch):
             dataset_id="dataset-1",
             retry_attempts=2,
             retry_max_delay=0.5,
-        ))
+        )
+    )
     with aioresponses() as m:
         for _ in range(2):
             m.get(DOCUMENTS, status=503, payload={"message": "unavailable"})
         try:
             with pytest.raises(aiohttp.ClientResponseError):
-                await client.dify_get(dify_accessor,
-                                      "/datasets/dataset-1/documents")
+                await client.dify_get(
+                    dify_accessor, "/datasets/dataset-1/documents"
+                )
         finally:
             await dify_accessor.close()
         sent = m.requests[("GET", URL(DOCUMENTS))]
@@ -220,12 +227,15 @@ async def test_dify_get_retries_transport_errors(monkeypatch):
     monkeypatch.setattr(api_client.asyncio, "sleep", sleep)
     dify_accessor = accessor()
     with aioresponses() as m:
-        m.get(DOCUMENTS,
-              exception=aiohttp.ClientConnectionError("connection failed"))
+        m.get(
+            DOCUMENTS,
+            exception=aiohttp.ClientConnectionError("connection failed"),
+        )
         m.get(DOCUMENTS, payload={"ok": True})
         try:
-            payload = await client.dify_get(dify_accessor,
-                                            "/datasets/dataset-1/documents")
+            payload = await client.dify_get(
+                dify_accessor, "/datasets/dataset-1/documents"
+            )
         finally:
             await dify_accessor.close()
 
@@ -240,8 +250,9 @@ async def test_dify_get_raises_http_status_errors():
         m.get(DOCUMENTS, status=401, payload={"message": "unauthorized"})
         try:
             with pytest.raises(aiohttp.ClientResponseError) as exc_info:
-                await client.dify_get(dify_accessor,
-                                      "/datasets/dataset-1/documents")
+                await client.dify_get(
+                    dify_accessor, "/datasets/dataset-1/documents"
+                )
         finally:
             await dify_accessor.close()
 
@@ -258,9 +269,11 @@ async def test_dify_post_sends_json_and_retries_server_error(monkeypatch):
         m.post(url, status=500, payload={"message": "temporary"})
         m.post(url, payload={"ok": True})
         try:
-            payload = await client.dify_post(dify_accessor,
-                                             "/datasets/dataset-1/retrieve",
-                                             {"query": "hello"})
+            payload = await client.dify_post(
+                dify_accessor,
+                "/datasets/dataset-1/retrieve",
+                {"query": "hello"},
+            )
         finally:
             await dify_accessor.close()
         sent = m.requests[("POST", URL(url))]
@@ -279,23 +292,24 @@ async def test_get_document_segments_paginates_with_server_filters():
     page_2 = f"{segments_url}?enabled=true&limit=100&page=2&status=completed"
     dify_accessor = accessor()
     with aioresponses() as m:
-        m.get(page_1,
-              payload={
-                  "data": [{
-                      "content": "first"
-                  }],
-                  "has_more": True,
-              })
-        m.get(page_2,
-              payload={
-                  "data": [{
-                      "content": "second"
-                  }],
-                  "has_more": False,
-              })
+        m.get(
+            page_1,
+            payload={
+                "data": [{"content": "first"}],
+                "has_more": True,
+            },
+        )
+        m.get(
+            page_2,
+            payload={
+                "data": [{"content": "second"}],
+                "has_more": False,
+            },
+        )
         try:
             segments = await client.get_document_segments(
-                dify_accessor, "doc-1")
+                dify_accessor, "doc-1"
+            )
         finally:
             await dify_accessor.close()
         first = m.requests[("GET", URL(page_1))]

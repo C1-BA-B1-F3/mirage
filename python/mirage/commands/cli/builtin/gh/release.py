@@ -14,20 +14,39 @@
 
 from typing import Any
 
-from mirage.commands.cli.builtin.gh.accessor import (body_value, camel,
-                                                     csv_values, list_limit,
-                                                     repo_for, text_out,
-                                                     typed_out)
+from mirage.commands.cli.builtin.gh.accessor import (
+    body_value,
+    camel,
+    csv_values,
+    list_limit,
+    repo_for,
+    text_out,
+    typed_out,
+)
 from mirage.commands.cli.types import CLIInvocation
 from mirage.commands.spec.flag_view import FlagView
 from mirage.core.github.config import GhConfig
-from mirage.core.github.release import (create_release, get_latest_release,
-                                        get_release, list_releases)
+from mirage.core.github.release import (
+    create_release,
+    get_latest_release,
+    get_release,
+    list_releases,
+)
 from mirage.io.types import ByteSource, IOResult
 from mirage.types import JsonValue
 
-RELEASE_FIELDS = ("body", "createdAt", "isDraft", "isLatest", "isPrerelease",
-                  "name", "publishedAt", "tagName", "targetCommitish", "url")
+RELEASE_FIELDS = (
+    "body",
+    "createdAt",
+    "isDraft",
+    "isLatest",
+    "isPrerelease",
+    "name",
+    "publishedAt",
+    "tagName",
+    "targetCommitish",
+    "url",
+)
 
 
 def _release(value: JsonValue) -> dict[str, Any]:
@@ -42,10 +61,19 @@ def _release(value: JsonValue) -> dict[str, Any]:
 
 
 def _list_line(row: dict[str, Any]) -> str:
-    kind = ("Draft" if row.get("isDraft") else "Pre-release" if row.get(
-        "isPrerelease") else "Latest" if row.get("isLatest") else "")
-    return (f'{row.get("name", "")}\t{row.get("tagName", "")}\t{kind}\t'
-            f'{row.get("publishedAt", "")}\n')
+    kind = (
+        "Draft"
+        if row.get("isDraft")
+        else "Pre-release"
+        if row.get("isPrerelease")
+        else "Latest"
+        if row.get("isLatest")
+        else ""
+    )
+    return (
+        f"{row.get('name', '')}\t{row.get('tagName', '')}\t{kind}\t"
+        f"{row.get('publishedAt', '')}\n"
+    )
 
 
 def _list_text(rows: list[dict[str, Any]]) -> str:
@@ -53,22 +81,31 @@ def _list_text(rows: list[dict[str, Any]]) -> str:
 
 
 async def list_cmd(
-        inv: CLIInvocation[GhConfig]) -> tuple[ByteSource | None, IOResult]:
+    inv: CLIInvocation[GhConfig],
+) -> tuple[ByteSource | None, IOResult]:
     fl = FlagView(inv.flags)
     rows = [
-        _release(value) for value in await list_releases(
-            inv.config, repo_for(inv, fl), list_limit(fl, 30))
+        _release(value)
+        for value in await list_releases(
+            inv.config, repo_for(inv, fl), list_limit(fl, 30)
+        )
     ]
-    latest = next((row for row in rows
-                   if not row.get("isDraft") and not row.get("isPrerelease")),
-                  None)
+    latest = next(
+        (
+            row
+            for row in rows
+            if not row.get("isDraft") and not row.get("isPrerelease")
+        ),
+        None,
+    )
     if latest is not None:
         latest["isLatest"] = True
     return await typed_out(rows, fl, _list_text(rows), RELEASE_FIELDS)
 
 
 async def view_cmd(
-        inv: CLIInvocation[GhConfig]) -> tuple[ByteSource | None, IOResult]:
+    inv: CLIInvocation[GhConfig],
+) -> tuple[ByteSource | None, IOResult]:
     fl = FlagView(inv.flags)
     tag = inv.texts[0] if inv.texts else ""
     if not tag:
@@ -79,16 +116,19 @@ async def view_cmd(
         latest = await get_latest_release(inv.config, ref)
         latest_row = _release(latest) if latest is not None else {}
         row["isLatest"] = latest_row.get("tagName") == row.get("tagName")
-    human = (f'title:\t{row.get("name", "")}\n'
-             f'tag:\t{row.get("tagName", "")}\n'
-             f'draft:\t{str(bool(row.get("isDraft"))).lower()}\n'
-             f'prerelease:\t{str(bool(row.get("isPrerelease"))).lower()}\n--\n'
-             f'{row.get("body", "")}\n')
+    human = (
+        f"title:\t{row.get('name', '')}\n"
+        f"tag:\t{row.get('tagName', '')}\n"
+        f"draft:\t{str(bool(row.get('isDraft'))).lower()}\n"
+        f"prerelease:\t{str(bool(row.get('isPrerelease'))).lower()}\n--\n"
+        f"{row.get('body', '')}\n"
+    )
     return await typed_out(row, fl, human, RELEASE_FIELDS)
 
 
 async def create_cmd(
-        inv: CLIInvocation[GhConfig]) -> tuple[ByteSource | None, IOResult]:
+    inv: CLIInvocation[GhConfig],
+) -> tuple[ByteSource | None, IOResult]:
     fl = FlagView(inv.flags)
     tag = inv.texts[0] if inv.texts else ""
     if not tag:
@@ -104,6 +144,7 @@ async def create_cmd(
     }
     if fl.as_str("target") is not None:
         body["target_commitish"] = fl.as_str("target") or ""
-    created = _release(await create_release(inv.config, repo_for(inv, fl),
-                                            body))
-    return text_out(f'{created.get("url", "")}\n')
+    created = _release(
+        await create_release(inv.config, repo_for(inv, fl), body)
+    )
+    return text_out(f"{created.get('url', '')}\n")

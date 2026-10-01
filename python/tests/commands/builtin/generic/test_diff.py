@@ -20,10 +20,12 @@ from mirage.types import FileStat, FileType, PathSpec
 
 
 def _operand(raw: str, virtual: str) -> PathSpec:
-    return PathSpec(virtual=virtual,
-                    directory=virtual,
-                    vfs_path=virtual.removeprefix("/d/"),
-                    raw_path=raw)
+    return PathSpec(
+        virtual=virtual,
+        directory=virtual,
+        vfs_path=virtual.removeprefix("/d/"),
+        raw_path=raw,
+    )
 
 
 DASH = _operand("-", "/d/-")
@@ -35,7 +37,7 @@ FILES = {
     "/d/a.txt": b"hello\n",
     "/d/sub/x": b"1\n",
     "/d/sub2/x": b"2\n",
-    "/d/sub2/y": b"3\n"
+    "/d/sub2/y": b"3\n",
 }
 DIRS = {"/d/sub": ["x"], "/d/sub2": ["x", "y"]}
 
@@ -54,20 +56,25 @@ async def _stat(path: PathSpec) -> FileStat:
 
 
 async def _run(paths: list[PathSpec], stdin: bytes | None = None, **flags):
-    out, io = await diff(paths,
-                         read_bytes=_read,
-                         readdir_fn=_readdir,
-                         stat_fn=_stat,
-                         stdin=stdin,
-                         **flags)
+    out, io = await diff(
+        paths,
+        read_bytes=_read,
+        readdir_fn=_readdir,
+        stat_fn=_stat,
+        stdin=stdin,
+        **flags,
+    )
     body = b"" if out is None else await materialize(out)
     return body.decode(), (io.stderr or b"").decode(), io.exit_code
 
 
 @pytest.mark.asyncio
 async def test_a_dash_operand_reads_stdin_and_is_named_dash():
-    assert await _run([DASH, FILE], b"x\n",
-                      q=True) == ("Files - and a.txt differ\n", "", 1)
+    assert await _run([DASH, FILE], b"x\n", q=True) == (
+        "Files - and a.txt differ\n",
+        "",
+        1,
+    )
 
 
 @pytest.mark.asyncio
@@ -83,31 +90,41 @@ async def test_two_stdin_operands_are_one_file():
     async def unread(path: PathSpec) -> bytes:
         raise AssertionError(f"read {path.virtual}")
 
-    out, io = await diff([DASH, DEV_STDIN],
-                         read_bytes=unread,
-                         readdir_fn=_readdir,
-                         stat_fn=_stat,
-                         stdin=b"abc")
+    out, io = await diff(
+        [DASH, DEV_STDIN],
+        read_bytes=unread,
+        readdir_fn=_readdir,
+        stat_fn=_stat,
+        stdin=b"abc",
+    )
     assert (out, io.exit_code) == (None, 0)
 
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("paths", [[DASH, SUB], [SUB, DASH]])
 async def test_a_dash_against_a_directory_is_refused(paths):
-    assert await _run(
-        paths, b"x\n") == ("", "diff: cannot compare '-' to a directory\n", 2)
+    assert await _run(paths, b"x\n") == (
+        "",
+        "diff: cannot compare '-' to a directory\n",
+        2,
+    )
 
 
 @pytest.mark.asyncio
 async def test_a_lone_operand_is_gnus_missing_operand_usage_error():
     with pytest.raises(UsageError) as exc:
         await _run([FILE])
-    assert str(exc.value) == ("diff: missing operand after 'a.txt'\n"
-                              "diff: Try 'diff --help' for more information.")
+    assert str(exc.value) == (
+        "diff: missing operand after 'a.txt'\n"
+        "diff: Try 'diff --help' for more information."
+    )
     assert exc.value.exit_code == 2
 
 
 @pytest.mark.asyncio
 async def test_recursive_output_names_children_under_the_typed_operands():
     assert await _run([SUB, SUB2], r=True) == (
-        "diff -r sub/x sub2/x\n1c1\n< 1\n---\n> 2\nOnly in sub2: y\n", "", 1)
+        "diff -r sub/x sub2/x\n1c1\n< 1\n---\n> 2\nOnly in sub2: y\n",
+        "",
+        1,
+    )

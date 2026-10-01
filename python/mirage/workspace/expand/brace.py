@@ -12,8 +12,12 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-from mirage.workspace.expand.constants import (CHAR_SEQ, INERT_CLOSE,
-                                               INERT_OPEN, NUM_SEQ)
+from mirage.workspace.expand.constants import (
+    CHAR_SEQ,
+    INERT_CLOSE,
+    INERT_OPEN,
+    NUM_SEQ,
+)
 from mirage.workspace.expand.types import Chunk, Piece
 
 
@@ -53,7 +57,7 @@ def substitute(word: str, values: list[list[Chunk]]) -> list[Chunk]:
         if j < 0:
             return out
         k = word.index(INERT_CLOSE, j)
-        out.extend(values[int(word[j + 1:k])])
+        out.extend(values[int(word[j + 1 : k])])
         i = k + 1
 
 
@@ -93,16 +97,18 @@ def _gen_sequence(amble: str) -> list[str] | None:
     m = NUM_SEQ.match(amble)
     if m:
         lo_text, hi_text, step_text = m.group(1), m.group(2), m.group(3)
-        values = _seq_values(int(lo_text), int(hi_text),
-                             _parse_step(step_text))
+        values = _seq_values(
+            int(lo_text), int(hi_text), _parse_step(step_text)
+        )
         if _is_padded(lo_text) or _is_padded(hi_text):
             width = max(len(lo_text), len(hi_text))
             return [f"{v:0{width}d}" for v in values]
         return [str(v) for v in values]
     m = CHAR_SEQ.match(amble)
     if m:
-        values = _seq_values(ord(m.group(1)), ord(m.group(2)),
-                             _parse_step(m.group(3)))
+        values = _seq_values(
+            ord(m.group(1)), ord(m.group(2)), _parse_step(m.group(3))
+        )
         return [chr(v) for v in values]
     return None
 
@@ -175,7 +181,7 @@ def _expand(template: str) -> list[str]:
         if close < 0:
             i += 1
             continue
-        amble = template[i + 1:close]
+        amble = template[i + 1 : close]
         alternatives = _gen_sequence(amble)
         if alternatives is None:
             alts = _split_alternatives(amble)
@@ -186,9 +192,10 @@ def _expand(template: str) -> list[str]:
                 continue
             alternatives = [w for alt in alts for w in _expand(alt)]
         prefix = template[:i]
-        suffixes = _expand(template[close + 1:])
+        suffixes = _expand(template[close + 1 :])
         return [
-            prefix + alt + suffix for alt in alternatives
+            prefix + alt + suffix
+            for alt in alternatives
             for suffix in suffixes
         ]
     return [template]

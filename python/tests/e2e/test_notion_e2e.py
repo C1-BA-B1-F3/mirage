@@ -41,16 +41,20 @@ def vfs(config):
 @pytest.mark.asyncio
 async def test_readdir_root(vfs):
     from mirage.core.notion.readdir import readdir
-    entries = await readdir(vfs.accessor, PathSpec.from_str_path("/"),
-                            ops(vfs).index)
+
+    entries = await readdir(
+        vfs.accessor, PathSpec.from_str_path("/"), ops(vfs).index
+    )
     assert any("pages" in e for e in entries)
 
 
 @pytest.mark.asyncio
 async def test_readdir_pages(vfs):
     from mirage.core.notion.readdir import readdir
-    entries = await readdir(vfs.accessor, PathSpec.from_str_path("/pages"),
-                            ops(vfs).index)
+
+    entries = await readdir(
+        vfs.accessor, PathSpec.from_str_path("/pages"), ops(vfs).index
+    )
     assert len(entries) > 0
 
 
@@ -58,14 +62,18 @@ async def test_readdir_pages(vfs):
 async def test_read_page_json(vfs):
     from mirage.core.notion.read import read
     from mirage.core.notion.readdir import readdir
-    pages = await readdir(vfs.accessor, PathSpec.from_str_path("/pages"),
-                          ops(vfs).index)
+
+    pages = await readdir(
+        vfs.accessor, PathSpec.from_str_path("/pages"), ops(vfs).index
+    )
     if not pages:
         pytest.skip("No pages found")
     first_page = pages[0]
-    data = await read(vfs.accessor,
-                      PathSpec.from_str_path(f"{first_page}/page.json"),
-                      ops(vfs).index)
+    data = await read(
+        vfs.accessor,
+        PathSpec.from_str_path(f"{first_page}/page.json"),
+        ops(vfs).index,
+    )
     page = json.loads(data)
     assert "page_id" in page
     assert "title" in page
@@ -78,5 +86,6 @@ async def test_read_page_json(vfs):
 @pytest.mark.asyncio
 async def test_search(vfs):
     from mirage.core.notion.pages import search_pages
+
     results = await search_pages(vfs.config, query="", page_size=5)
     assert isinstance(results, list)

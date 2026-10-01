@@ -17,8 +17,9 @@ from collections.abc import Iterable
 from typing import Any
 
 
-def validate_max_drain_bytes(cache_limit: int,
-                             max_drain_bytes: int | None) -> None:
+def validate_max_drain_bytes(
+    cache_limit: int, max_drain_bytes: int | None
+) -> None:
     if cache_limit < 0:
         raise ValueError("cache_limit must be non-negative")
     if max_drain_bytes is not None and max_drain_bytes < 0:
@@ -41,18 +42,22 @@ class FileCacheMixin:
     async def get(self, key: str) -> bytes | None:
         raise NotImplementedError
 
-    async def set(self,
-                  key: str,
-                  data: bytes,
-                  fingerprint: str | None = None,
-                  ttl: int | None = None) -> None:
+    async def set(
+        self,
+        key: str,
+        data: bytes,
+        fingerprint: str | None = None,
+        ttl: int | None = None,
+    ) -> None:
         raise NotImplementedError
 
-    async def add(self,
-                  key: str,
-                  data: bytes,
-                  fingerprint: str | None = None,
-                  ttl: int | None = None) -> bool:
+    async def add(
+        self,
+        key: str,
+        data: bytes,
+        fingerprint: str | None = None,
+        ttl: int | None = None,
+    ) -> bool:
         raise NotImplementedError
 
     async def remove(self, key: str) -> None:
@@ -85,10 +90,9 @@ class FileCacheMixin:
     async def clear(self) -> None:
         raise NotImplementedError
 
-    async def evict_prefix(self,
-                           prefix: str,
-                           *,
-                           excluded: tuple[str, ...] = ()) -> None:
+    async def evict_prefix(
+        self, prefix: str, *, excluded: tuple[str, ...] = ()
+    ) -> None:
         """Drop every cached entry whose key starts with ``prefix``.
 
         The path-unknown counterpart to :meth:`remove`: a mutation that

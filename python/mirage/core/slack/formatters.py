@@ -95,20 +95,27 @@ def format_grep_results(
         ts_raw = msg.get("ts", "0")
         try:
             ts_float = float(ts_raw)
-            date_str = datetime.fromtimestamp(
-                ts_float, tz=timezone.utc).date().isoformat()
+            date_str = (
+                datetime.fromtimestamp(ts_float, tz=timezone.utc)
+                .date()
+                .isoformat()
+            )
         except (TypeError, ValueError):
             date_str = ""
         # The dirname readdir emits, not a second spelling of it: the
         # label's byte budget depends on the id, so composing the pair here
         # reported a path that does not exist as soon as a long channel name
         # was trimmed on one side and not the other.
-        dirname = (channel_dirname({
-            "id": ch_id,
-            "name": ch_name
-        }) if ch_id else path_safe_name(ch_name))
-        path = (f"{prefix}/{container}/{dirname}/{date_str}/chat.jsonl"
-                if date_str else f"{prefix}/{container}/{dirname}")
+        dirname = (
+            channel_dirname({"id": ch_id, "name": ch_name})
+            if ch_id
+            else path_safe_name(ch_name)
+        )
+        path = (
+            f"{prefix}/{container}/{dirname}/{date_str}/chat.jsonl"
+            if date_str
+            else f"{prefix}/{container}/{dirname}"
+        )
         author = msg.get("username") or msg.get("user") or "?"
         text = (msg.get("text") or "").replace("\n", " ")
         lines.append(f"{path}:[{author}] {text}")
@@ -135,25 +142,31 @@ def format_file_grep_results(
     lines: list[str] = []
     for f in matches:
         fid = f.get("id", "")
-        title = (f.get("title") or f.get("name") or fid)
+        title = f.get("title") or f.get("name") or fid
         blob_name = file_blob_name(f)
         ts = f.get("timestamp", 0)
         try:
-            date_str = datetime.fromtimestamp(
-                float(ts), tz=timezone.utc).date().isoformat()
+            date_str = (
+                datetime.fromtimestamp(float(ts), tz=timezone.utc)
+                .date()
+                .isoformat()
+            )
         except (TypeError, ValueError):
             date_str = ""
         if not scope.channel_id:
             continue
         ch_id = scope.channel_id
         ch_name = scope.channel_name or ""
-        dirname = (channel_dirname({
-            "id": ch_id,
-            "name": ch_name
-        }) if ch_name else ch_id)
+        dirname = (
+            channel_dirname({"id": ch_id, "name": ch_name})
+            if ch_name
+            else ch_id
+        )
         container = scope.container or "channels"
-        path = (f"{prefix}/{container}/{dirname}/{date_str}/files/{blob_name}"
-                if date_str else
-                f"{prefix}/{container}/{dirname}/files/{blob_name}")
+        path = (
+            f"{prefix}/{container}/{dirname}/{date_str}/files/{blob_name}"
+            if date_str
+            else f"{prefix}/{container}/{dirname}/files/{blob_name}"
+        )
         lines.append(f"{path}:[file] {title}")
     return lines

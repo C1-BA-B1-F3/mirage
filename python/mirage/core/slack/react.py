@@ -19,11 +19,13 @@ from mirage.core.slack.client import slack_get, slack_post
 from mirage.core.slack.config import SlackConfig
 
 
-async def add_reaction(config: SlackConfig,
-                       channel_id: str,
-                       timestamp: str,
-                       reaction: str,
-                       session: SessionArg = None) -> dict[str, Any]:
+async def add_reaction(
+    config: SlackConfig,
+    channel_id: str,
+    timestamp: str,
+    reaction: str,
+    session: SessionArg = None,
+) -> dict[str, Any]:
     """Add a reaction to a message.
 
     Args:
@@ -36,19 +38,24 @@ async def add_reaction(config: SlackConfig,
     Returns:
         dict: API response.
     """
-    return await slack_post(config,
-                            "reactions.add", {
-                                "channel": channel_id,
-                                "timestamp": timestamp,
-                                "name": reaction,
-                            },
-                            session=session)
+    return await slack_post(
+        config,
+        "reactions.add",
+        {
+            "channel": channel_id,
+            "timestamp": timestamp,
+            "name": reaction,
+        },
+        session=session,
+    )
 
 
-async def get_reactions(config: SlackConfig,
-                        channel_id: str,
-                        timestamp: str,
-                        session: SessionArg = None) -> dict[str, Any]:
+async def get_reactions(
+    config: SlackConfig,
+    channel_id: str,
+    timestamp: str,
+    session: SessionArg = None,
+) -> dict[str, Any]:
     """Get the reactions on a message.
 
     Args:
@@ -60,11 +67,14 @@ async def get_reactions(config: SlackConfig,
     Returns:
         dict: the message item with its reactions array.
     """
-    data = await slack_get(config,
-                           "reactions.get", {
-                               "channel": channel_id,
-                               "timestamp": timestamp,
-                           },
-                           session=session)
+    data = await slack_get(
+        config,
+        "reactions.get",
+        {
+            "channel": channel_id,
+            "timestamp": timestamp,
+        },
+        session=session,
+    )
     message = data.get("message")
     return message if isinstance(message, dict) else {}

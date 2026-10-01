@@ -23,19 +23,16 @@ ASK_REASON = "removal needs sign-off"
 def _guarded_config() -> dict:
     return {
         "config": {
-            "mounts": {
-                "/": {
-                    "vfs": "ram",
-                    "mode": "WRITE"
-                }
-            },
+            "mounts": {"/": {"vfs": "ram", "mode": "WRITE"}},
             "profiles": {
                 "guarded": {
                     "commands": {
-                        "ask": [{
-                            "commands": ["rm"],
-                            "reason": ASK_REASON,
-                        }],
+                        "ask": [
+                            {
+                                "commands": ["rm"],
+                                "reason": ASK_REASON,
+                            }
+                        ],
                     },
                 },
             },
@@ -50,22 +47,20 @@ async def _create_workspace(client: AsyncClient) -> str:
 
 
 async def _create_session(client: AsyncClient, wid: str, sid: str) -> None:
-    r = await client.post(f"/v1/workspaces/{wid}/sessions",
-                          json={
-                              "session_id": sid,
-                              "profile": "guarded"
-                          })
+    r = await client.post(
+        f"/v1/workspaces/{wid}/sessions",
+        json={"session_id": sid, "profile": "guarded"},
+    )
     assert r.status_code == 201, r.text
 
 
 async def _raise_ask(client: AsyncClient, wid: str, sid: str) -> str:
     """Run the guarded line once: it is refused pending and the ask id
     is what the pending list now holds."""
-    r = await client.post(f"/v1/workspaces/{wid}/execute",
-                          json={
-                              "command": "rm /f.txt",
-                              "session_id": sid
-                          })
+    r = await client.post(
+        f"/v1/workspaces/{wid}/execute",
+        json={"command": "rm /f.txt", "session_id": sid},
+    )
     assert r.status_code == 200, r.text
     body = r.json()
     assert body["exit_code"] == 126
@@ -82,15 +77,15 @@ async def _raise_ask(client: AsyncClient, wid: str, sid: str) -> str:
 async def test_ask_allow_round_trip():
     app = build_app(idle_grace_seconds=10.0)
     transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport,
-                           base_url="http://test") as client:
+    async with AsyncClient(
+        transport=transport, base_url="http://test"
+    ) as client:
         wid = await _create_workspace(client)
         await _create_session(client, wid, "agent_a")
-        await client.post(f"/v1/workspaces/{wid}/execute",
-                          json={
-                              "command": "touch /f.txt",
-                              "session_id": "agent_a"
-                          })
+        await client.post(
+            f"/v1/workspaces/{wid}/execute",
+            json={"command": "touch /f.txt", "session_id": "agent_a"},
+        )
         ask_id = await _raise_ask(client, wid, "agent_a")
 
         r = await client.get(f"/v1/workspaces/{wid}/asks")
@@ -102,11 +97,10 @@ async def test_ask_allow_round_trip():
         assert record["reason"] == ASK_REASON
         assert record["outcome"] is None
 
-        r = await client.post(f"/v1/workspaces/{wid}/asks/{ask_id}",
-                              json={
-                                  "answer": "allow",
-                                  "note": "reviewed"
-                              })
+        r = await client.post(
+            f"/v1/workspaces/{wid}/asks/{ask_id}",
+            json={"answer": "allow", "note": "reviewed"},
+        )
         assert r.status_code == 200, r.text
         settled = r.json()
         assert settled["outcome"] == "allow"
@@ -118,11 +112,10 @@ async def test_ask_allow_round_trip():
         r = await client.get(f"/v1/workspaces/{wid}/asks?all=true")
         assert [a["id"] for a in r.json()] == [ask_id]
 
-        r = await client.post(f"/v1/workspaces/{wid}/execute",
-                              json={
-                                  "command": "rm /f.txt",
-                                  "session_id": "agent_a"
-                              })
+        r = await client.post(
+            f"/v1/workspaces/{wid}/execute",
+            json={"command": "rm /f.txt", "session_id": "agent_a"},
+        )
         assert r.json()["exit_code"] == 0, r.text
         # The ONCE answer is consumed by the retry that used it.
         r = await client.get(f"/v1/workspaces/{wid}/asks?all=true")
@@ -133,22 +126,23 @@ async def test_ask_allow_round_trip():
 async def test_ask_deny_refuses_the_retry():
     app = build_app(idle_grace_seconds=10.0)
     transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport,
-                           base_url="http://test") as client:
+    async with AsyncClient(
+        transport=transport, base_url="http://test"
+    ) as client:
         wid = await _create_workspace(client)
         await _create_session(client, wid, "agent_a")
         ask_id = await _raise_ask(client, wid, "agent_a")
 
-        r = await client.post(f"/v1/workspaces/{wid}/asks/{ask_id}",
-                              json={"answer": "deny"})
+        r = await client.post(
+            f"/v1/workspaces/{wid}/asks/{ask_id}", json={"answer": "deny"}
+        )
         assert r.status_code == 200, r.text
         assert r.json()["outcome"] == "deny"
 
-        r = await client.post(f"/v1/workspaces/{wid}/execute",
-                              json={
-                                  "command": "rm /f.txt",
-                                  "session_id": "agent_a"
-                              })
+        r = await client.post(
+            f"/v1/workspaces/{wid}/execute",
+            json={"command": "rm /f.txt", "session_id": "agent_a"},
+        )
         body = r.json()
         assert body["exit_code"] == 126
         assert body["stderr"] == "rm: Permission denied\n"
@@ -160,31 +154,29 @@ async def test_ask_deny_refuses_the_retry():
 async def test_session_scope_covers_the_next_matching_line():
     app = build_app(idle_grace_seconds=10.0)
     transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport,
-                           base_url="http://test") as client:
+    async with AsyncClient(
+        transport=transport, base_url="http://test"
+    ) as client:
         wid = await _create_workspace(client)
         await _create_session(client, wid, "agent_a")
-        await client.post(f"/v1/workspaces/{wid}/execute",
-                          json={
-                              "command": "touch /f.txt /g.txt",
-                              "session_id": "agent_a"
-                          })
+        await client.post(
+            f"/v1/workspaces/{wid}/execute",
+            json={"command": "touch /f.txt /g.txt", "session_id": "agent_a"},
+        )
         ask_id = await _raise_ask(client, wid, "agent_a")
 
-        r = await client.post(f"/v1/workspaces/{wid}/asks/{ask_id}",
-                              json={
-                                  "answer": "allow",
-                                  "scope": "session"
-                              })
+        r = await client.post(
+            f"/v1/workspaces/{wid}/asks/{ask_id}",
+            json={"answer": "allow", "scope": "session"},
+        )
         assert r.status_code == 200, r.text
         assert r.json()["scope"] == "session"
 
         for target in ("/f.txt", "/g.txt"):
-            r = await client.post(f"/v1/workspaces/{wid}/execute",
-                                  json={
-                                      "command": f"rm {target}",
-                                      "session_id": "agent_a"
-                                  })
+            r = await client.post(
+                f"/v1/workspaces/{wid}/execute",
+                json={"command": f"rm {target}", "session_id": "agent_a"},
+            )
             assert r.json()["exit_code"] == 0, r.text
 
 
@@ -192,8 +184,9 @@ async def test_session_scope_covers_the_next_matching_line():
 async def test_list_asks_filters_by_session():
     app = build_app(idle_grace_seconds=10.0)
     transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport,
-                           base_url="http://test") as client:
+    async with AsyncClient(
+        transport=transport, base_url="http://test"
+    ) as client:
         wid = await _create_workspace(client)
         await _create_session(client, wid, "agent_a")
         await _create_session(client, wid, "agent_b")
@@ -212,32 +205,36 @@ async def test_list_asks_filters_by_session():
 async def test_answer_refusals():
     app = build_app(idle_grace_seconds=10.0)
     transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport,
-                           base_url="http://test") as client:
+    async with AsyncClient(
+        transport=transport, base_url="http://test"
+    ) as client:
         wid = await _create_workspace(client)
         await _create_session(client, wid, "agent_a")
         ask_id = await _raise_ask(client, wid, "agent_a")
 
-        r = await client.post(f"/v1/workspaces/{wid}/asks/{ask_id}",
-                              json={"answer": "ask"})
+        r = await client.post(
+            f"/v1/workspaces/{wid}/asks/{ask_id}", json={"answer": "ask"}
+        )
         assert r.status_code == 422
 
-        r = await client.post(f"/v1/workspaces/{wid}/asks/{ask_id}",
-                              json={
-                                  "answer": "deny",
-                                  "scope": "session"
-                              })
+        r = await client.post(
+            f"/v1/workspaces/{wid}/asks/{ask_id}",
+            json={"answer": "deny", "scope": "session"},
+        )
         assert r.status_code == 422
 
-        r = await client.post(f"/v1/workspaces/{wid}/asks/nope",
-                              json={"answer": "allow"})
+        r = await client.post(
+            f"/v1/workspaces/{wid}/asks/nope", json={"answer": "allow"}
+        )
         assert r.status_code == 404
 
-        r = await client.post(f"/v1/workspaces/{wid}/asks/{ask_id}",
-                              json={"answer": "allow"})
+        r = await client.post(
+            f"/v1/workspaces/{wid}/asks/{ask_id}", json={"answer": "allow"}
+        )
         assert r.status_code == 200
-        r = await client.post(f"/v1/workspaces/{wid}/asks/{ask_id}",
-                              json={"answer": "allow"})
+        r = await client.post(
+            f"/v1/workspaces/{wid}/asks/{ask_id}", json={"answer": "allow"}
+        )
         assert r.status_code == 409
 
         r = await client.get("/v1/workspaces/nope/asks")

@@ -12,15 +12,21 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-from mirage.core.google.client import (TokenManager, drive_base, google_get,
-                                       google_get_bytes)
+from mirage.core.google.client import (
+    TokenManager,
+    drive_base,
+    google_get,
+    google_get_bytes,
+)
 from mirage.utils.ranges import ByteWindow
 
 
-async def download_revision(token_manager: TokenManager,
-                            file_id: str,
-                            revision_id: str,
-                            window: ByteWindow | None = None) -> bytes:
+async def download_revision(
+    token_manager: TokenManager,
+    file_id: str,
+    revision_id: str,
+    window: ByteWindow | None = None,
+) -> bytes:
     """Download a pinned revision's content (binary files only).
 
     Args:
@@ -30,13 +36,16 @@ async def download_revision(token_manager: TokenManager,
         window (ByteWindow | None): the byte window to fetch, or None
             for all of it.
     """
-    url = (f"{drive_base(token_manager)}/files/{file_id}"
-           f"/revisions/{revision_id}?alt=media")
+    url = (
+        f"{drive_base(token_manager)}/files/{file_id}"
+        f"/revisions/{revision_id}?alt=media"
+    )
     return await google_get_bytes(token_manager, url, window)
 
 
-async def capture_file_metadata(token_manager: TokenManager,
-                                file_id: str) -> tuple[str | None, str | None]:
+async def capture_file_metadata(
+    token_manager: TokenManager, file_id: str
+) -> tuple[str | None, str | None]:
     """Fetch a file's md5 and head revision at read time.
 
     Returned raw rather than coalesced, because the caller checks the md5

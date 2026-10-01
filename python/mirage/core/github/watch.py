@@ -41,7 +41,7 @@ class GitHubWalk:
 
     def __init__(self, accessor: GitHubAccessor) -> None:
         """Args:
-            accessor (GitHubAccessor): Backend handle.
+        accessor (GitHubAccessor): Backend handle.
         """
         self._accessor = accessor
 
@@ -60,12 +60,14 @@ class GitHubWalk:
         accessor = self._accessor
         prefix = mount_prefix_of(root.virtual, root.vfs_path)
         ref = await ensure_ref(accessor)
-        tree, truncated = await fetch_tree(accessor.config, accessor.owner,
-                                           accessor.repo, ref, accessor.pool)
+        tree, truncated = await fetch_tree(
+            accessor.config, accessor.owner, accessor.repo, ref, accessor.pool
+        )
         if truncated:
             raise IncompleteWalkError(
                 f"github tree for {accessor.owner}/{accessor.repo}"
-                f"@{ref} was truncated; cannot diff a partial tree")
+                f"@{ref} was truncated; cannot diff a partial tree"
+            )
         # A complete tree for the ref is exactly what the accessor holds,
         # and find/du/grep's scope counter read it directly. Discarding it
         # here left them answering from the tree the mount was built with
@@ -79,15 +81,20 @@ class GitHubWalk:
         for entry in tree.values():
             if base and not entry.path.startswith(base):
                 continue
-            virtual = (prefix.rstrip("/") + "/" +
-                       entry.path if prefix else "/" + entry.path)
+            virtual = (
+                prefix.rstrip("/") + "/" + entry.path
+                if prefix
+                else "/" + entry.path
+            )
             if entry.type == "tree":
                 yield WalkEntry(virtual=virtual, is_dir=True, fingerprint=None)
                 continue
-            yield WalkEntry(virtual=virtual,
-                            is_dir=False,
-                            fingerprint=entry.sha,
-                            size=entry.size)
+            yield WalkEntry(
+                virtual=virtual,
+                is_dir=False,
+                fingerprint=entry.sha,
+                size=entry.size,
+            )
 
 
 def build_delta_hook(accessor: GitHubAccessor) -> DeltaHook:

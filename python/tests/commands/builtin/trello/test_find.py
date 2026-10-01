@@ -38,20 +38,25 @@ def _find_command():
 
 
 def _spec(virtual: str) -> PathSpec:
-    return PathSpec(virtual=virtual,
-                    directory=virtual,
-                    vfs_path=virtual.strip("/"))
+    return PathSpec(
+        virtual=virtual, directory=virtual, vfs_path=virtual.strip("/")
+    )
 
 
 async def _run(paths, *texts: str, **flags) -> list[str]:
     accessor = TrelloAccessor(TrelloConfig(api_key="k", api_token="t"))
     find = _find_command()
-    with patch("mirage.core.trello.readdir.list_workspaces",
-               new_callable=AsyncMock,
-               return_value=WORKSPACES):
+    with patch(
+        "mirage.core.trello.readdir.list_workspaces",
+        new_callable=AsyncMock,
+        return_value=WORKSPACES,
+    ):
         stdout, _io = await find(
-            accessor, paths, list(texts),
-            CommandOpts(index=RAMIndexCacheStore(), flags={**flags}))
+            accessor,
+            paths,
+            list(texts),
+            CommandOpts(index=RAMIndexCacheStore(), flags={**flags}),
+        )
         data = await materialize(stdout)
     return data.decode().splitlines()
 

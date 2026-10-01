@@ -14,8 +14,10 @@
 
 from mirage.accessor.mongodb import MongoDBAccessor
 from mirage.commands.builtin.generic.cat import cat_generic
-from mirage.commands.builtin.generic_bind.adapter import (bound_op,
-                                                          resolve_or_empty)
+from mirage.commands.builtin.generic_bind.adapter import (
+    bound_op,
+    resolve_or_empty,
+)
 from mirage.commands.builtin.mongodb.io import IO
 from mirage.commands.config import CommandOpts, command
 from mirage.commands.spec import SPECS
@@ -25,13 +27,18 @@ from mirage.types import PathSpec
 
 
 @command("cat", vfs="mongodb", spec=SPECS["cat"])
-async def cat(accessor: MongoDBAccessor, paths: list[PathSpec],
-              texts: list[str],
-              opts: CommandOpts) -> tuple[ByteSource | None, IOResult]:
+async def cat(
+    accessor: MongoDBAccessor,
+    paths: list[PathSpec],
+    texts: list[str],
+    opts: CommandOpts,
+) -> tuple[ByteSource | None, IOResult]:
     resolved = await resolve_or_empty(IO, accessor, paths, opts.index)
-    return await cat_generic(resolved,
-                             list(texts),
-                             opts,
-                             bound_op(IO.stat, accessor, opts.index),
-                             bound_op(stream_any, accessor, opts.index),
-                             local=IO.local)
+    return await cat_generic(
+        resolved,
+        list(texts),
+        opts,
+        bound_op(IO.stat, accessor, opts.index),
+        bound_op(stream_any, accessor, opts.index),
+        local=IO.local,
+    )

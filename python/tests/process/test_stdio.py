@@ -33,11 +33,14 @@ async def test_a_closed_input_refuses_writes():
 
 @pytest.mark.asyncio
 async def test_output_routes_stderr_to_its_own_pipe_unless_merged():
-    for merged, expected in ((False, (b"out", b"err")), (True, (b"outerr",
-                                                                b""))):
+    for merged, expected in (
+        (False, (b"out", b"err")),
+        (True, (b"outerr", b"")),
+    ):
         output = ProcessOutput(merge_stderr=merged)
-        reads = asyncio.gather(_read(output.stdout.stream()),
-                               _read(output.stderr.stream()))
+        reads = asyncio.gather(
+            _read(output.stdout.stream()), _read(output.stderr.stream())
+        )
         await output.emit(Channel.STDOUT, b"out")
         await output.emit(Channel.STDERR, b"err")
         output.end()

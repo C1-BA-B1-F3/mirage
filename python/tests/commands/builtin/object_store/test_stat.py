@@ -30,29 +30,31 @@ _OVERLAY_MTIME = "2024-01-01T00:00:00Z"
 
 
 def _backend_stat() -> FileStat:
-    return FileStat(name="f.txt",
-                    size=6,
-                    modified=_BACKEND_MTIME,
-                    mode=0o644,
-                    type=FileType.FILE,
-                    content=ContentType.TEXT)
+    return FileStat(
+        name="f.txt",
+        size=6,
+        modified=_BACKEND_MTIME,
+        mode=0o644,
+        type=FileType.FILE,
+        content=ContentType.TEXT,
+    )
 
 
-async def _fake_stat_core(_accessor: Accessor,
-                          _path: PathSpec,
-                          index: IndexCacheStore = NULL_INDEX) -> FileStat:
+async def _fake_stat_core(
+    _accessor: Accessor, _path: PathSpec, index: IndexCacheStore = NULL_INDEX
+) -> FileStat:
     return _backend_stat()
 
 
-async def _unused_readdir(_accessor: Accessor,
-                          _path: PathSpec,
-                          index: IndexCacheStore = NULL_INDEX) -> list[str]:
+async def _unused_readdir(
+    _accessor: Accessor, _path: PathSpec, index: IndexCacheStore = NULL_INDEX
+) -> list[str]:
     raise AssertionError("readdir must not run for a plain operand")
 
 
-async def _unused_read(_accessor: Accessor,
-                       _path: PathSpec,
-                       index: IndexCacheStore = NULL_INDEX) -> bytes:
+async def _unused_read(
+    _accessor: Accessor, _path: PathSpec, index: IndexCacheStore = NULL_INDEX
+) -> bytes:
     raise AssertionError("read must not run")
 
 
@@ -60,22 +62,30 @@ def _overlay(_virtual: str, st: FileStat) -> FileStat:
     return st.model_copy(update={"mode": 0o600, "modified": _OVERLAY_MTIME})
 
 
-_IO = CommandIO(readdir=_unused_readdir,
-                read_bytes=_unused_read,
-                read_stream=_unused_read,
-                stat=_fake_stat_core,
-                is_mounted=lambda a: True)
+_IO = CommandIO(
+    readdir=_unused_readdir,
+    read_bytes=_unused_read,
+    read_stream=_unused_read,
+    stat=_fake_stat_core,
+    is_mounted=lambda a: True,
+)
 
 stat = make_stat("s3", _IO)
 
 
-async def _render(fmt: str,
-                  stat_overlay: StatOverlay | None = None) -> tuple[int, str]:
+async def _render(
+    fmt: str, stat_overlay: StatOverlay | None = None
+) -> tuple[int, str]:
     out, io = await stat(
-        cast(Accessor, object()), [PathSpec.from_str_path('/s3/f.txt')], [],
-        CommandOpts(index=NULL_INDEX,
-                    ns=NamespaceView(stat_overlay=stat_overlay),
-                    flags={'c': fmt}))
+        cast(Accessor, object()),
+        [PathSpec.from_str_path("/s3/f.txt")],
+        [],
+        CommandOpts(
+            index=NULL_INDEX,
+            ns=NamespaceView(stat_overlay=stat_overlay),
+            flags={"c": fmt},
+        ),
+    )
     return io.exit_code, (await materialize(out)).decode()
 
 

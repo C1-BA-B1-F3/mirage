@@ -43,7 +43,16 @@ def test_vfs_registers_ops():
 def test_vfs_registers_commands():
     res = _vfs()
     expected = {
-        "cat", "find", "grep", "head", "ls", "rg", "stat", "tail", "tree", "wc"
+        "cat",
+        "find",
+        "grep",
+        "head",
+        "ls",
+        "rg",
+        "stat",
+        "tail",
+        "tree",
+        "wc",
     }
     assert expected <= {c.name for c in res.commands()}
 
@@ -62,10 +71,12 @@ def test_vfs_get_state_redacts_api_key():
 
 
 def test_cloud_config_fields_and_remote():
-    res = _vfs(uri="db://my-db",
-               api_key="sk-xxx",
-               region="us-west-2",
-               host_override="https://my-db.region.api.lancedb.com")
+    res = _vfs(
+        uri="db://my-db",
+        api_key="sk-xxx",
+        region="us-west-2",
+        host_override="https://my-db.region.api.lancedb.com",
+    )
     assert res.caches_reads is True
     assert res.config.region == "us-west-2"
     assert res.config.host_override == "https://my-db.region.api.lancedb.com"

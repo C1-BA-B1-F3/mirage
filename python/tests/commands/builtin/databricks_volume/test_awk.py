@@ -17,9 +17,11 @@ import pytest
 
 @pytest.mark.asyncio
 async def test_workspace_execute_databricks_volume_awk(
-        databricks_text_workspace):
+    databricks_text_workspace,
+):
     io = await databricks_text_workspace.shell(
-        "awk '{print $1}' /dbx/table.csv")
+        "awk '{print $1}' /dbx/table.csv"
+    )
 
     assert io.exit_code == 0
     assert io.stdout == b"name,score\nann,2\nbob,3\n"

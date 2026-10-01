@@ -26,10 +26,13 @@ def test_pipefail_zero_when_all_pass(shell):
 
 
 def test_pipefail_disabled_via_plus_o(shell):
-    assert shell.mirage("set -o pipefail; set +o pipefail; false | true; "
-                        "echo $?") == "0\n"
+    assert (
+        shell.mirage("set -o pipefail; set +o pipefail; false | true; echo $?")
+        == "0\n"
+    )
 
 
 def test_pipefail_rightmost_failure(shell):
-    assert shell.mirage(
-        "set -o pipefail; false | false | true; echo $?") == "1\n"
+    assert (
+        shell.mirage("set -o pipefail; false | false | true; echo $?") == "1\n"
+    )

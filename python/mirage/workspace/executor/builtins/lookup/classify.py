@@ -40,8 +40,9 @@ def _kind(consumer: Consumer, name: str) -> NameKind:
     return NameKind.FILE
 
 
-def classify(name: str, session: SessionState,
-             registry: MountRegistry) -> NameKind | None:
+def classify(
+    name: str, session: SessionState, registry: MountRegistry
+) -> NameKind | None:
     """Classify the name as the layer that would run it, None if none does.
 
     A layer that would run a program reports one only where the name
@@ -67,8 +68,9 @@ def classify(name: str, session: SessionState,
     return kind
 
 
-def classify_all(name: str, session: SessionState,
-                 registry: MountRegistry) -> list[NameKind]:
+def classify_all(
+    name: str, session: SessionState, registry: MountRegistry
+) -> list[NameKind]:
     """Classify every layer holding the name, most-preferred first.
 
     A reserved word goes first and does not end the walk: bash prints
@@ -110,11 +112,13 @@ def classify_all(name: str, session: SessionState,
     return kinds
 
 
-def locations(name: str,
-              session: SessionState,
-              registry: MountRegistry,
-              all_mode: bool,
-              drop: NameKind | None = None) -> list[NameKind]:
+def locations(
+    name: str,
+    session: SessionState,
+    registry: MountRegistry,
+    all_mode: bool,
+    drop: NameKind | None = None,
+) -> list[NameKind]:
     """The kinds to report for one name: hide a layer, then take the top.
 
     Hiding is a filter over the layer list, never an edit to the
@@ -145,9 +149,9 @@ def program_file(name: str) -> str:
     return f"{BIN_PREFIX}/{name}"
 
 
-def describe(name: str,
-             kind: NameKind,
-             session: SessionState | None = None) -> str:
+def describe(
+    name: str, kind: NameKind, session: SessionState | None = None
+) -> str:
     """Render the verbose line ``command -V`` and ``type`` print.
 
     Args:

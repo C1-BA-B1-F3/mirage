@@ -40,13 +40,15 @@ def load_attr(spec: str) -> Any:
     """
     if ":" not in spec:
         raise ValueError(
-            f"invalid backend spec {spec!r}, expected 'source:ClassName'")
+            f"invalid backend spec {spec!r}, expected 'source:ClassName'"
+        )
 
     source, attr_name = spec.rsplit(":", 1)
 
     if "/" in source or source.endswith(".py"):
         module_spec = importlib.util.spec_from_file_location(
-            SCRIPT_MODULE_NAME, source)
+            SCRIPT_MODULE_NAME, source
+        )
         if module_spec is None or module_spec.loader is None:
             raise ValueError(f"cannot load script {source!r}")
         module = importlib.util.module_from_spec(module_spec)

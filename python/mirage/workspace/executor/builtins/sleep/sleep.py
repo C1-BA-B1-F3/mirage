@@ -19,15 +19,20 @@ from mirage.commands.quote import quote_text
 from mirage.commands.spec import SPECS
 from mirage.commands.spec.constants import NUMERIC_SHORT
 from mirage.commands.spec.standard import help_page, version_line
-from mirage.commands.spec.usage import (ambiguous_option_error,
-                                        unexpected_value_error,
-                                        unknown_option_error, usage_hint)
+from mirage.commands.spec.usage import (
+    ambiguous_option_error,
+    unexpected_value_error,
+    unknown_option_error,
+    usage_hint,
+)
 from mirage.io import IOResult
 from mirage.io.stream import yield_bytes
 from mirage.io.types import ByteSource
 from mirage.workspace.abort import cancellable_sleep
-from mirage.workspace.executor.builtins.sleep.constants import (SLEEP_INTERVAL,
-                                                                SLEEP_SUFFIXES)
+from mirage.workspace.executor.builtins.sleep.constants import (
+    SLEEP_INTERVAL,
+    SLEEP_SUFFIXES,
+)
 from mirage.workspace.executor.builtins.types import BuiltinCall, Result
 from mirage.workspace.types import ExecutionNode
 
@@ -50,12 +55,13 @@ def _standard_matches(name: str) -> tuple[str, ...]:
             off, as typed.
     """
     if name in _STANDARD_OPTIONS:
-        return (name, )
+        return (name,)
     return tuple(word for word in _STANDARD_OPTIONS if word.startswith(name))
 
 
 def _standard_response(
-        option: str) -> tuple[ByteSource | None, IOResult, ExecutionNode]:
+    option: str,
+) -> tuple[ByteSource | None, IOResult, ExecutionNode]:
     """sleep's answer to `--help` or `--version`: stdout, exit 0.
 
     The page is built by ``help_page``, the one function every
@@ -70,10 +76,16 @@ def _standard_response(
     Args:
         option (str): the canonical spelling, from _standard_option.
     """
-    text = (help_page("sleep", SPECS["sleep"])
-            if option == "--help" else version_line("sleep"))
-    return yield_bytes(text), IOResult(), ExecutionNode(command="sleep",
-                                                        exit_code=0)
+    text = (
+        help_page("sleep", SPECS["sleep"])
+        if option == "--help"
+        else version_line("sleep")
+    )
+    return (
+        yield_bytes(text),
+        IOResult(),
+        ExecutionNode(command="sleep", exit_code=0),
+    )
 
 
 def _sleep_operands(args: list[str]) -> tuple[list[str], str | None]:
@@ -103,10 +115,13 @@ def _sleep_operands(args: list[str]) -> tuple[list[str], str | None]:
     operands: list[str] = []
     for index, arg in enumerate(args):
         if arg == "--":
-            operands.extend(args[index + 1:])
+            operands.extend(args[index + 1 :])
             break
-        if (arg.startswith("-") and len(arg) > 1
-                and not NUMERIC_SHORT.match(arg)):
+        if (
+            arg.startswith("-")
+            and len(arg) > 1
+            and not NUMERIC_SHORT.match(arg)
+        ):
             # GNU names the whole token for a long option and the first
             # offending character for a short one, which is the split
             # unknown_option_error already words.
@@ -163,25 +178,30 @@ async def handle_sleep(
             # getopt_long quotes the WHOLE token here where the
             # doesn't-allow-an-argument refusal quotes the canonical
             # spelling.
-            message, code = ambiguous_option_error("sleep", bad_option,
-                                                   matches)
+            message, code = ambiguous_option_error(
+                "sleep", bad_option, matches
+            )
         elif not matches:
             message, code = unknown_option_error("sleep", bad_option)
         elif not eq:
             return _standard_response(matches[0])
         else:
             message, code = unexpected_value_error("sleep", matches[0])
-        return None, IOResult(exit_code=code,
-                              stderr=message), ExecutionNode(command="sleep",
-                                                             exit_code=code)
+        return (
+            None,
+            IOResult(exit_code=code, stderr=message),
+            ExecutionNode(command="sleep", exit_code=code),
+        )
     if not operands:
         # Missing operand is the same `usage (EXIT_FAILURE)` refusal the
         # invalid-interval one is, so it carries the same Try-help line
         # (measured on 9.4: `sleep` is two lines, not one).
         err = (f"sleep: missing operand\n{usage_hint('sleep')}\n").encode()
-        return None, IOResult(exit_code=1,
-                              stderr=err), ExecutionNode(command="sleep",
-                                                         exit_code=1)
+        return (
+            None,
+            IOResult(exit_code=1, stderr=err),
+            ExecutionNode(command="sleep", exit_code=1),
+        )
     # `NUMBER[SUFFIX]...`: every operand is an interval and the line
     # sleeps their SUM (measured on 9.7: `sleep 0.3 0.3` takes 0.6s).
     # All of them are checked before any of them is slept, so a bad one
@@ -213,11 +233,18 @@ async def handle_sleep(
         # 1x` names 1x twice). Each operand goes through gnulib's
         # `quote()` like every other coreutils operand diagnostic
         # (measured on 9.4: `sleep -- <e-acute>` names `'\303\251'`).
-        err = ("".join(f"sleep: invalid time interval '{quote_text(raw)}'\n"
-                       for raw in bad) + f"{usage_hint('sleep')}\n").encode()
-        return None, IOResult(exit_code=1,
-                              stderr=err), ExecutionNode(command="sleep",
-                                                         exit_code=1)
+        err = (
+            "".join(
+                f"sleep: invalid time interval '{quote_text(raw)}'\n"
+                for raw in bad
+            )
+            + f"{usage_hint('sleep')}\n"
+        ).encode()
+        return (
+            None,
+            IOResult(exit_code=1, stderr=err),
+            ExecutionNode(command="sleep", exit_code=1),
+        )
     await cancellable_sleep(total, cancel)
     return None, IOResult(), ExecutionNode(command="sleep", exit_code=0)
 

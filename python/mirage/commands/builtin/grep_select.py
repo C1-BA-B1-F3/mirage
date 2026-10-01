@@ -26,6 +26,7 @@ class FileGlob:
         glob (str): the basename pattern, fnmatch wildcards.
         admit (bool): True for --include, False for --exclude.
     """
+
     glob: str
     admit: bool
 
@@ -41,6 +42,7 @@ class WalkFilters:
     binary. The empty value admits everything, which is what every
     caller without the flags passes.
     """
+
     file_globs: tuple[FileGlob, ...] = ()
     exclude_dir: tuple[str, ...] = ()
     text: bool = False
@@ -64,7 +66,8 @@ def parse_file_globs(fl: FlagView) -> tuple[FileGlob, ...]:
     for name in fl.typed_order("include", "exclude"):
         admit = name == "include"
         rules.extend(
-            FileGlob(glob=glob, admit=admit) for glob in fl.as_list(name))
+            FileGlob(glob=glob, admit=admit) for glob in fl.as_list(name)
+        )
     return tuple(rules)
 
 
@@ -106,4 +109,5 @@ def dir_admitted(path: str, filters: WalkFilters) -> bool:
     """
     base = path.rstrip("/").rsplit("/", 1)[-1]
     return not any(
-        fnmatch.fnmatchcase(base, glob) for glob in filters.exclude_dir)
+        fnmatch.fnmatchcase(base, glob) for glob in filters.exclude_dir
+    )

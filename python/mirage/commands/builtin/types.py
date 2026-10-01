@@ -27,6 +27,7 @@ class ExecAction:
         batch (bool): ``{} +`` (one run over every match) rather than
             ``;`` (one run per match).
     """
+
     argv: tuple[str, ...]
     batch: bool = False
 
@@ -42,6 +43,7 @@ class RowAction:
         kind (RowActionKind): ``-print``, ``-print0``, ``-ls`` or
             ``-delete``.
     """
+
     kind: RowActionKind
 
 
@@ -54,6 +56,7 @@ class PrintfAction:
         format (str): the format as typed, escapes and directives
             unexpanded.
     """
+
     format: str
 
 
@@ -68,6 +71,7 @@ class RegexSyntax(Enum):
     PCRE2's (grep -P, rg -P) and ``RUST`` is ripgrep's default engine.
     The value is also the spelling a pushed-down search carries.
     """
+
     BASIC = "basic"
     EXTENDED = "extended"
     PERL = "perl"
@@ -84,6 +88,7 @@ class GrepSearchOptions:
         whole_word (bool): -w.
         syntax (RegexSyntax): the pattern's dialect.
     """
+
     ignore_case: bool = False
     fixed_string: bool = True
     whole_word: bool = False
@@ -93,5 +98,6 @@ class GrepSearchOptions:
 @dataclass(frozen=True, slots=True)
 class GrepSearchMeta:
     """The grep integration's declared search dialect and scan strategy."""
+
     mode: Literal["literal", "regex"]
     stream: bool = False

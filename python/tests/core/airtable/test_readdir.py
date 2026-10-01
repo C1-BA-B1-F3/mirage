@@ -26,22 +26,24 @@ TABLE = f"{BASE}/Features__tblFeatures000001"
 
 
 def _spec(virtual: str) -> PathSpec:
-    return PathSpec(virtual=virtual,
-                    directory=virtual,
-                    vfs_path=mount_key(virtual, ROOT))
+    return PathSpec(
+        virtual=virtual, directory=virtual, vfs_path=mount_key(virtual, ROOT)
+    )
 
 
 @pytest.mark.asyncio
 async def test_the_root_is_the_bases_directory(airtable_api):
-    listed = await readdir(make_accessor(), _spec(f"{ROOT}/"),
-                           RAMIndexCacheStore())
+    listed = await readdir(
+        make_accessor(), _spec(f"{ROOT}/"), RAMIndexCacheStore()
+    )
     assert listed == [f"{ROOT}/bases"]
 
 
 @pytest.mark.asyncio
 async def test_bases_list_as_named_directories(airtable_api):
-    listed = await readdir(make_accessor(), _spec(f"{ROOT}/bases"),
-                           RAMIndexCacheStore())
+    listed = await readdir(
+        make_accessor(), _spec(f"{ROOT}/bases"), RAMIndexCacheStore()
+    )
     assert listed == [
         f"{ROOT}/bases/Product_Roadmap__appRoadmapBase001",
         f"{ROOT}/bases/Ops_Finance__appOpsFinance0001",
@@ -65,7 +67,9 @@ async def test_one_schema_call_seeds_every_table_and_views_dir(airtable_api):
     views = await readdir(accessor, _spec(f"{TABLE}/views"), index)
     assert len(airtable_api.calls) == before
     assert table == [
-        f"{TABLE}/table.json", f"{TABLE}/records.jsonl", f"{TABLE}/views"
+        f"{TABLE}/table.json",
+        f"{TABLE}/records.jsonl",
+        f"{TABLE}/views",
     ]
     assert views == [
         f"{TABLE}/views/Grid_view__viwGrid0000000001.jsonl",
@@ -82,9 +86,14 @@ async def test_a_cold_table_listing_warms_through_its_base(airtable_api):
 @pytest.mark.asyncio
 async def test_an_unknown_or_out_of_scope_base_is_enoent(airtable_api):
     with pytest.raises(FileNotFoundError):
-        await readdir(make_accessor(),
-                      _spec(f"{ROOT}/bases/X__appNope000000001"),
-                      RAMIndexCacheStore())
+        await readdir(
+            make_accessor(),
+            _spec(f"{ROOT}/bases/X__appNope000000001"),
+            RAMIndexCacheStore(),
+        )
     with pytest.raises(FileNotFoundError):
-        await readdir(make_accessor(base_ids=["appOpsFinance0001"]),
-                      _spec(BASE), RAMIndexCacheStore())
+        await readdir(
+            make_accessor(base_ids=["appOpsFinance0001"]),
+            _spec(BASE),
+            RAMIndexCacheStore(),
+        )

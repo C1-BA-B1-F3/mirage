@@ -27,7 +27,6 @@ from mirage.vfs.gslides.prompt import PROMPT, WRITE_PROMPT
 
 
 class GSlidesVFS(BaseVFS):
-
     accessor: GSlidesAccessor
     name: str = VFSName.GSLIDES
     caches_reads: bool = True

@@ -19,9 +19,13 @@ import pytest
 from mirage.secrets import onepassword
 from mirage.secrets.config import OnePasswordConfig
 from mirage.secrets.errors import SecretsError
-from mirage.secrets.onepassword import (TOKEN_VAR, fetch_onepassword,
-                                        fields_from_item, onepassword_client,
-                                        parse_op_ref)
+from mirage.secrets.onepassword import (
+    TOKEN_VAR,
+    fetch_onepassword,
+    fields_from_item,
+    onepassword_client,
+    parse_op_ref,
+)
 from mirage.version import __version__
 
 
@@ -38,7 +42,6 @@ def item(fields, notes=""):
 
 
 class StubSecrets:
-
     def __init__(self, values):
         self.values = values
         self.refs = []
@@ -49,7 +52,6 @@ class StubSecrets:
 
 
 class StubVaults:
-
     def __init__(self, vaults):
         self.vaults = vaults
         self.calls = 0
@@ -60,7 +62,6 @@ class StubVaults:
 
 
 class StubItems:
-
     def __init__(self, overviews, items):
         self.overviews = overviews
         self.items = items
@@ -75,7 +76,6 @@ class StubItems:
 
 
 class StubClient:
-
     def __init__(self, *, vaults=(), overviews=None, items=None, values=None):
         self.vaults = StubVaults(list(vaults))
         self.items = StubItems(overviews or {}, items or {})
@@ -83,7 +83,6 @@ class StubClient:
 
 
 class StubAuth:
-
     calls = []
 
     @classmethod
@@ -97,8 +96,10 @@ class StubAuth:
     [
         ("op://mirage/SLACK_BOT_TOKEN", ("mirage", "SLACK_BOT_TOKEN", "")),
         ("op://mirage/tok/credential", ("mirage", "tok", "credential")),
-        ("op://mirage/aws/keys/access_key_id",
-         ("mirage", "aws", "access_key_id")),
+        (
+            "op://mirage/aws/keys/access_key_id",
+            ("mirage", "aws", "access_key_id"),
+        ),
     ],
 )
 def test_parse_op_ref(ref, parsed):
@@ -122,8 +123,8 @@ def test_parse_op_ref_refuses(ref, message):
 
 def test_fields_from_item_keys_by_label():
     fields = fields_from_item(
-        item([field("username", "u"),
-              field("credential", "shh")]))
+        item([field("username", "u"), field("credential", "shh")])
+    )
     assert fields == {"username": "u", "credential": "shh"}
 
 
@@ -133,10 +134,9 @@ def test_fields_from_item_folds_in_the_note():
 
 
 def test_fields_from_item_skips_an_unlabelled_field():
-    assert fields_from_item(item([field("", "x"),
-                                  field("credential", "shh")])) == {
-                                      "credential": "shh"
-                                  }
+    assert fields_from_item(
+        item([field("", "x"), field("credential", "shh")])
+    ) == {"credential": "shh"}
 
 
 def test_fields_from_item_keeps_a_dunder_label():
@@ -150,7 +150,8 @@ def test_fields_from_item_keeps_a_dunder_label():
 
 def test_fields_from_item_keeps_a_notes_field_over_the_note():
     fields = fields_from_item(
-        item([field("notesPlain", "from-field")], notes="from-note"))
+        item([field("notesPlain", "from-field")], notes="from-note")
+    )
     assert fields == {"notesPlain": "from-field"}
 
 
@@ -160,11 +161,12 @@ async def test_fetch_reads_every_field_of_an_item_ref(monkeypatch):
         vaults=[overview("v1", "mirage")],
         overviews={"v1": [overview("i1", "aws")]},
         items={
-            "i1":
-            item([
-                field("access_key_id", "AKIA"),
-                field("secret_access_key", "shh"),
-            ])
+            "i1": item(
+                [
+                    field("access_key_id", "AKIA"),
+                    field("secret_access_key", "shh"),
+                ]
+            )
         },
     )
 
@@ -175,7 +177,7 @@ async def test_fetch_reads_every_field_of_an_item_ref(monkeypatch):
     secret = await fetch_onepassword(OnePasswordConfig(), "op://mirage/aws")
     assert secret.fields == {
         "access_key_id": "AKIA",
-        "secret_access_key": "shh"
+        "secret_access_key": "shh",
     }
     assert secret.expires_at is None
     assert client.items.gets == [("v1", "i1")]
@@ -228,8 +230,10 @@ async def test_fetch_refuses_an_unknown_vault(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_fetch_refuses_an_unknown_item(monkeypatch):
-    client = StubClient(vaults=[overview("v1", "mirage")],
-                        overviews={"v1": [overview("i1", "other")]})
+    client = StubClient(
+        vaults=[overview("v1", "mirage")],
+        overviews={"v1": [overview("i1", "other")]},
+    )
 
     async def stub_client(config):
         return client

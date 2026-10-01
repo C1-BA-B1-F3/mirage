@@ -72,8 +72,10 @@ def main() -> int:
     expected = load_expected(truth)
     actual = find_actual(sys.stdin)
     if actual is None:
-        print(f"FAIL: {truth} not satisfied (no JSON result in output)",
-              file=sys.stderr)
+        print(
+            f"FAIL: {truth} not satisfied (no JSON result in output)",
+            file=sys.stderr,
+        )
         return 1
     rc = 0
     matched = 0
@@ -82,8 +84,10 @@ def main() -> int:
             print(f"MISSING: {key}", file=sys.stderr)
             rc = 1
         elif actual[key] != want:
-            print(f"MISMATCH: {key} expected {want!r}, got {actual[key]!r}",
-                  file=sys.stderr)
+            print(
+                f"MISMATCH: {key} expected {want!r}, got {actual[key]!r}",
+                file=sys.stderr,
+            )
             rc = 1
         else:
             matched += 1

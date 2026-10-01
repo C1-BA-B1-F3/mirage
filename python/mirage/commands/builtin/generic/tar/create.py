@@ -1,7 +1,11 @@
 from mirage.commands.builtin.generic.archive.types import Entry, MemberKind
-from mirage.commands.builtin.generic.archive.walk import (OTHER_FILESYSTEM,
-                                                          DirProbe, StatFn,
-                                                          WalkFn, scan_operand)
+from mirage.commands.builtin.generic.archive.walk import (
+    OTHER_FILESYSTEM,
+    DirProbe,
+    StatFn,
+    WalkFn,
+    scan_operand,
+)
 from mirage.commands.builtin.generic.tar import constants
 from mirage.commands.builtin.generic.tar.types import CreateResult, Member
 from mirage.ops.types import LinkView, MountView
@@ -12,10 +16,12 @@ from mirage.utils.path import respell_one
 
 
 def _refusal(notices: list[str]) -> CreateResult:
-    return CreateResult(members=(),
-                        notices=tuple(notices),
-                        exit_code=constants.CREATE_ERROR_EXIT,
-                        write=False)
+    return CreateResult(
+        members=(),
+        notices=tuple(notices),
+        exit_code=constants.CREATE_ERROR_EXIT,
+        write=False,
+    )
 
 
 def excluded(name: str, pattern: str) -> bool:
@@ -39,7 +45,7 @@ def excluded(name: str, pattern: str) -> bool:
         return True
     cut = bare.find("/")
     while cut != -1:
-        if fnmatch(bare[cut + 1:], pattern):
+        if fnmatch(bare[cut + 1 :], pattern):
             return True
         cut = bare.find("/", cut + 1)
     return False
@@ -97,8 +103,8 @@ def strip_prefix(spelled: str) -> tuple[str, str]:
         if segment == "..":
             last = i
     if last >= 0:
-        rest = "/".join(segments[last + 1:])
-        prefix = "/".join(segments[:last + 1])
+        rest = "/".join(segments[last + 1 :])
+        prefix = "/".join(segments[: last + 1])
         return rest, prefix + "/" if rest else prefix
     if spelled.startswith("/"):
         return spelled.lstrip("/"), "/"
@@ -114,8 +120,9 @@ def removing_leading(prefix: str) -> str:
     return f"tar: Removing leading `{prefix}' from member names"
 
 
-def _announce_prefix(prefix: str, dropped: list[str],
-                     notices: list[str]) -> None:
+def _announce_prefix(
+    prefix: str, dropped: list[str], notices: list[str]
+) -> None:
     """Announce a removed prefix the first time this run drops it.
 
     Emitted in place rather than collected and prepended, because GNU
@@ -153,8 +160,9 @@ def member_name(spelled: str, kind: MemberKind) -> str:
     return name
 
 
-async def check_directories(directories: list[PathSpec], is_dir: DirProbe,
-                            stat: StatFn) -> list[str]:
+async def check_directories(
+    directories: list[PathSpec], is_dir: DirProbe, stat: StatFn
+) -> list[str]:
     """Check each chdir before writing or extracting members.
 
     Args:
@@ -174,7 +182,7 @@ async def check_directories(directories: list[PathSpec], is_dir: DirProbe,
             reason = fs_strerror(exc) or str(exc)
         return [
             f"tar: {directory.raw_path}: Cannot open: {reason}",
-            constants.FATAL_TRAILER
+            constants.FATAL_TRAILER,
         ]
     return []
 
@@ -236,9 +244,13 @@ async def plan_create(
                 notices.append(constants.EMPTY_MEMBER)
             _announce_prefix(
                 strip_prefix(path.raw_path.rstrip("/") or path.raw_path)[1],
-                dropped, notices)
-            notices.append(f"tar: {path.raw_path}: Cannot stat: "
-                           f"{fs_strerror(walk_refusal(path))}")
+                dropped,
+                notices,
+            )
+            notices.append(
+                f"tar: {path.raw_path}: Cannot stat: "
+                f"{fs_strerror(walk_refusal(path))}"
+            )
             exit_code = constants.CREATE_ERROR_EXIT
             continue
         # GNU strips a trailing slash off the operand before naming the
@@ -247,13 +259,15 @@ async def plan_create(
         # exactly as `tar -cf a.tar dlink` does.
         raw = path.raw_path.rstrip("/") or path.raw_path
         base = path.virtual.rstrip("/") or "/"
-        scan = await scan_operand(path,
-                                  stat=stat,
-                                  walk=walk,
-                                  links=links,
-                                  mounts=mounts,
-                                  dereference=dereference,
-                                  recurse=True)
+        scan = await scan_operand(
+            path,
+            stat=stat,
+            walk=walk,
+            links=links,
+            mounts=mounts,
+            dereference=dereference,
+            recurse=True,
+        )
         # GNU announces the prefix it refuses to store before it reports
         # what it could not read, and keeps both in operand order -- a
         # later operand's notice must not jump ahead of an earlier
@@ -292,20 +306,26 @@ async def plan_create(
             if name not in keep:
                 continue
             read = entry.read
-            if (archive.raw_path != "-" and read is not None
-                    and read.virtual == archive.virtual):
+            if (
+                archive.raw_path != "-"
+                and read is not None
+                and read.virtual == archive.virtual
+            ):
                 notices.append(f"tar: {name}: {constants.SELF_DUMP}")
                 continue
             members.append(
-                Member(name=name,
-                       kind=entry.kind,
-                       path=entry.read,
-                       target=entry.target,
-                       spelled=spelled))
+                Member(
+                    name=name,
+                    kind=entry.kind,
+                    path=entry.read,
+                    target=entry.target,
+                    spelled=spelled,
+                )
+            )
     if exit_code:
         # GNU closes a run that failed an operand with one trailer, after
         # everything it did manage to name.
         notices.append(constants.ERROR_TRAILER)
-    return CreateResult(members=tuple(members),
-                        notices=tuple(notices),
-                        exit_code=exit_code)
+    return CreateResult(
+        members=tuple(members), notices=tuple(notices), exit_code=exit_code
+    )

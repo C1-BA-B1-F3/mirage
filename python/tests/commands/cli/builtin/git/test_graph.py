@@ -38,8 +38,9 @@ def _drawn(commits: list[_Commit], first_parent: bool = False) -> list[str]:
     lines: list[str] = []
     for commit in commits:
         graph.update(commit)
-        text = (graph.show_commit() + commit.id.decode() +
-                graph.show_message(""))
+        text = (
+            graph.show_commit() + commit.id.decode() + graph.show_message("")
+        )
         lines.extend(text.split("\n"))
     return lines
 
@@ -97,8 +98,8 @@ def test_draws_a_parent_the_walk_does_not_show_as_no_line_at_all():
 
 def test_draws_a_merge_as_one_line_under_first_parent():
     assert _drawn(
-        [_commit("M", "A", "B"), _commit("A")],
-        first_parent=True) == ["* M", "* A"]
+        [_commit("M", "A", "B"), _commit("A")], first_parent=True
+    ) == ["* M", "* A"]
 
 
 def test_marks_a_commit_whose_predecessor_never_finished_with_an_ellipsis():

@@ -1,10 +1,20 @@
 import asyncio
 
-from mirage.shell.array import (array_count, array_extent, array_get,
-                                array_has, array_indices, array_set,
-                                array_slice, array_unset, array_values,
-                                build_assoc_literal, build_indexed_literal,
-                                keyed_word, make_array)
+from mirage.shell.array import (
+    array_count,
+    array_extent,
+    array_get,
+    array_has,
+    array_indices,
+    array_set,
+    array_slice,
+    array_unset,
+    array_values,
+    build_assoc_literal,
+    build_indexed_literal,
+    keyed_word,
+    make_array,
+)
 
 
 def test_make_array_is_dense_from_zero():
@@ -121,11 +131,13 @@ async def _int_of(text: str) -> int:
 
 def test_build_indexed_literal_places_and_continues():
     built = asyncio.run(
-        build_indexed_literal(None, ["[3]=x", "y", "[1]=z"], False, _int_of))
+        build_indexed_literal(None, ["[3]=x", "y", "[1]=z"], False, _int_of)
+    )
     assert built == [None, "z", None, "x", "y"]
     # `+=` starts the cursor at the extent; last index wins.
     appended = asyncio.run(
-        build_indexed_literal(["a"], ["b", "[0]=A"], True, _int_of))
+        build_indexed_literal(["a"], ["b", "[0]=A"], True, _int_of)
+    )
     assert appended == ["A", "b"]
 
 

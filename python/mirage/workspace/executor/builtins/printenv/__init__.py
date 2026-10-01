@@ -12,8 +12,9 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-from mirage.workspace.executor.builtins.printenv.printenv import \
-    handle_printenv
+from mirage.workspace.executor.builtins.printenv.printenv import (
+    handle_printenv,
+)
 
 __all__ = [
     "handle_printenv",

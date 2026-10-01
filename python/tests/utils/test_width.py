@@ -20,8 +20,9 @@ import pytest
 from mirage.utils.generated.width_data import WHITESPACE, WIDE, ZERO_WIDTH
 from mirage.utils.width import TAB_WIDTH, advance_column, char_width, is_space
 
-_FIXTURE = (Path(__file__).parents[3] / "integ" / "fixtures" / "wc" /
-            "width.json")
+_FIXTURE = (
+    Path(__file__).parents[3] / "integ" / "fixtures" / "wc" / "width.json"
+)
 
 
 def test_shared_parity_fixture_pins_every_range():
@@ -34,22 +35,25 @@ def test_shared_parity_fixture_pins_every_range():
     assert [list(pair) for pair in WHITESPACE] == tables["whitespace"]
 
 
-@pytest.mark.parametrize(("char", "expected"), [
-    ("a", 1),
-    ("\u4e2d", 2),
-    ("\u6587", 2),
-    ("\U0001f600", 2),
-    ("\u0301", 0),
-    ("\u1160", 0),
-    ("\u11a8", 0),
-    ("\u200b", 0),
-    ("\ufeff", 0),
-    ("\u061c", 0),
-    ("\x00", 0),
-    ("\x08", 0),
-    ("\x1b", 0),
-    ("\x0b", 0),
-])
+@pytest.mark.parametrize(
+    ("char", "expected"),
+    [
+        ("a", 1),
+        ("\u4e2d", 2),
+        ("\u6587", 2),
+        ("\U0001f600", 2),
+        ("\u0301", 0),
+        ("\u1160", 0),
+        ("\u11a8", 0),
+        ("\u200b", 0),
+        ("\ufeff", 0),
+        ("\u061c", 0),
+        ("\x00", 0),
+        ("\x08", 0),
+        ("\x1b", 0),
+        ("\x0b", 0),
+    ],
+)
 def test_char_width(char: str, expected: int) -> None:
     assert char_width(char) == expected
 
@@ -61,27 +65,30 @@ def test_prepended_concatenation_marks_are_one_column(char: str) -> None:
     assert char_width(char) == 1
 
 
-@pytest.mark.parametrize(("char", "expected"), [
-    (" ", True),
-    ("\t", True),
-    ("\n", True),
-    ("\r", True),
-    ("\v", True),
-    ("\f", True),
-    ("\u00a0", True),
-    ("\u1680", True),
-    ("\u2000", True),
-    ("\u200a", True),
-    ("\u2028", True),
-    ("\u2029", True),
-    ("\u202f", True),
-    ("\u205f", True),
-    ("\u3000", True),
-    ("a", False),
-    ("\u200b", False),
-    ("\u202a", False),
-    ("\u180e", False),
-])
+@pytest.mark.parametrize(
+    ("char", "expected"),
+    [
+        (" ", True),
+        ("\t", True),
+        ("\n", True),
+        ("\r", True),
+        ("\v", True),
+        ("\f", True),
+        ("\u00a0", True),
+        ("\u1680", True),
+        ("\u2000", True),
+        ("\u200a", True),
+        ("\u2028", True),
+        ("\u2029", True),
+        ("\u202f", True),
+        ("\u205f", True),
+        ("\u3000", True),
+        ("a", False),
+        ("\u200b", False),
+        ("\u202a", False),
+        ("\u180e", False),
+    ],
+)
 def test_is_space(char: str, expected: bool) -> None:
     assert is_space(char) is expected
 

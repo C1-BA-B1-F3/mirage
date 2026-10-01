@@ -12,11 +12,13 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-from mirage.workspace.dispatcher.constants import (DISPATCH_READ_OPS,
-                                                   DISPATCH_WRITE_OPS,
-                                                   NAMESPACE_TABLE_OPS,
-                                                   POLICY_WRITE_OPS,
-                                                   SETATTR_KEYS)
+from mirage.workspace.dispatcher.constants import (
+    DISPATCH_READ_OPS,
+    DISPATCH_WRITE_OPS,
+    NAMESPACE_TABLE_OPS,
+    POLICY_WRITE_OPS,
+    SETATTR_KEYS,
+)
 from mirage.workspace.dispatcher.dispatcher import Dispatcher
 
 __all__ = [

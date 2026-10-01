@@ -15,8 +15,9 @@
 from typing import Any
 
 from mirage.accessor.databricks_volume import DatabricksVolumeAccessor
-from mirage.commands.builtin.databricks_volume import \
-    COMMANDS as DATABRICKS_VOLUME_COMMANDS
+from mirage.commands.builtin.databricks_volume import (
+    COMMANDS as DATABRICKS_VOLUME_COMMANDS,
+)
 from mirage.commands.config import RegisteredCommand, registered_commands
 from mirage.ops.databricks_volume import OPS as DATABRICKS_VOLUME_OPS
 from mirage.ops.registry import RegisteredOp

@@ -16,7 +16,8 @@
 def test_cut_f_d(env):
     env.create_file("f.txt", b"a:b:c\nd:e:f\n")
     assert env.mirage("cut -f 1 -d : /data/f.txt") == env.native(
-        "cut -f 1 -d : f.txt")
+        "cut -f 1 -d : f.txt"
+    )
 
 
 def test_cut_f_tab(env):
@@ -27,13 +28,15 @@ def test_cut_f_tab(env):
 def test_cut_c(env):
     env.create_file("f.txt", b"hello world\n")
     assert env.mirage("cut -c 1-5 /data/f.txt") == env.native(
-        "cut -c 1-5 f.txt")
+        "cut -c 1-5 f.txt"
+    )
 
 
 def test_cut_stdin(env):
     data = b"a,b,c\nd,e,f\n"
-    assert env.mirage("cut -f 1 -d ,",
-                      stdin=data) == env.native("cut -f 1 -d ,", stdin=data)
+    assert env.mirage("cut -f 1 -d ,", stdin=data) == env.native(
+        "cut -f 1 -d ,", stdin=data
+    )
 
 
 def test_cut_complement(env):

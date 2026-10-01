@@ -1,17 +1,19 @@
 from mirage.commands.cli.types import CLISpec
 from mirage.workspace.cli.registry import CLIRegistry
-from mirage.workspace.executor.builtins.lookup.classify import (classify,
-                                                                classify_all,
-                                                                describe)
+from mirage.workspace.executor.builtins.lookup.classify import (
+    classify,
+    classify_all,
+    describe,
+)
 from mirage.workspace.executor.builtins.lookup.types import NameKind
 from mirage.workspace.session.session import SessionState
 
-TREE = CLISpec(name="linear",
-               subcommands=(CLISpec(name="issue", fn=lambda: None), ))
+TREE = CLISpec(
+    name="linear", subcommands=(CLISpec(name="issue", fn=lambda: None),)
+)
 
 
 class FakeRegistry:
-
     def __init__(self, commands: set[str], with_cli: bool = False):
         self._commands = commands
         self.runtime_bindings = {}
@@ -59,8 +61,10 @@ def test_classify_function_and_not_found():
 
 
 def test_classify_installed_cli():
-    assert classify("linear", make_session(),
-                    make_registry(True)) is NameKind.FILE
+    assert (
+        classify("linear", make_session(), make_registry(True))
+        is NameKind.FILE
+    )
 
 
 def test_classify_all_reports_a_function_shadowing_a_cli():
@@ -68,8 +72,10 @@ def test_classify_all_reports_a_function_shadowing_a_cli():
     registry = make_registry(True)
     assert classify_all("linear", session, registry) == [NameKind.FILE]
     session.functions["linear"] = []
-    assert classify_all("linear", session,
-                        registry) == [NameKind.FUNCTION, NameKind.FILE]
+    assert classify_all("linear", session, registry) == [
+        NameKind.FUNCTION,
+        NameKind.FILE,
+    ]
 
 
 def test_classify_all_dedupes_one_kind_held_by_two_layers():
@@ -82,8 +88,10 @@ def test_classify_all_ends_a_builtin_that_is_also_a_program_with_its_file():
     # bash: `type -a echo` prints the builtin line, then /usr/bin/echo.
     session = make_session()
     registry = make_registry()
-    assert classify_all("echo", session,
-                        registry) == [NameKind.BUILTIN, NameKind.FILE]
+    assert classify_all("echo", session, registry) == [
+        NameKind.BUILTIN,
+        NameKind.FILE,
+    ]
     assert classify_all("cd", session, registry) == [NameKind.BUILTIN]
 
 
@@ -93,7 +101,8 @@ def test_classify_all_keeps_the_layers_under_a_keyword():
     session = make_session()
     session.functions["then"] = []
     assert classify_all("then", session, make_registry()) == [
-        NameKind.KEYWORD, NameKind.FUNCTION
+        NameKind.KEYWORD,
+        NameKind.FUNCTION,
     ]
 
 

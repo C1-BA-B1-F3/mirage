@@ -13,31 +13,80 @@
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 from mirage.policy.base import Policy
-from mirage.policy.builtin import (DEFAULT_COMMAND_LIMITS, FALLBACK_LIMIT,
-                                   MountRootPolicy, OutputCapPolicy,
-                                   PermissionsPolicy, resolve_limit,
-                                   resolve_producer)
-from mirage.policy.constants import (DEFAULT_ASK_REASON, DEFAULT_DENY_REASON,
-                                     POLICY_DENIED_EXIT)
-from mirage.policy.decisions import (AskHandler, Decisions, ask_rule, covers,
-                                     decision_id)
+from mirage.policy.builtin import (
+    DEFAULT_COMMAND_LIMITS,
+    FALLBACK_LIMIT,
+    MountRootPolicy,
+    OutputCapPolicy,
+    PermissionsPolicy,
+    resolve_limit,
+    resolve_producer,
+)
+from mirage.policy.constants import (
+    DEFAULT_ASK_REASON,
+    DEFAULT_DENY_REASON,
+    POLICY_DENIED_EXIT,
+)
+from mirage.policy.decisions import (
+    AskHandler,
+    Decisions,
+    ask_rule,
+    covers,
+    decision_id,
+)
 from mirage.policy.errors import PolicyDenied, PolicyError
-from mirage.policy.policies import (Policies, describe_refusal,
-                                    post_execute_gate, post_ops_gate,
-                                    pre_ops_gate, pre_session_gate, refusal_of,
-                                    render_deny, render_pending, says_why)
-from mirage.policy.profile import (CommandsBlock, CompiledProfile,
-                                   MountCommandsBlock, PathsBlock,
-                                   ProfileMount, SessionProfile, VarsBlock)
+from mirage.policy.policies import (
+    Policies,
+    describe_refusal,
+    post_execute_gate,
+    post_ops_gate,
+    pre_ops_gate,
+    pre_session_gate,
+    refusal_of,
+    render_deny,
+    render_pending,
+    says_why,
+)
+from mirage.policy.profile import (
+    CommandsBlock,
+    CompiledProfile,
+    MountCommandsBlock,
+    PathsBlock,
+    ProfileMount,
+    SessionProfile,
+    VarsBlock,
+)
 from mirage.policy.script import ScriptPolicy
-
-from mirage.policy.types import (  # isort: skip
-    VALIDITY, Abandoned, Action, Ask, Claim, Claimant, CommandContext,
-    CommandRule, AdmissionRules, Decision, Deny, DenyScope,
-    ExecuteResultContext, Explanation, HandOff, Limit, MountRootQuery,
-    Occurrence, OpsContext, OpsResultContext, Outcome, Pending, ProfileScript,
-    Scope, SessionCommandsQuery, SessionContext, SessionDecisionsQuery,
-    SessionScriptsQuery)
+from mirage.policy.types import (
+    VALIDITY,
+    Abandoned,
+    Action,
+    AdmissionRules,
+    Ask,
+    Claim,
+    Claimant,
+    CommandContext,
+    CommandRule,
+    Decision,
+    Deny,
+    DenyScope,
+    ExecuteResultContext,
+    Explanation,
+    HandOff,
+    Limit,
+    MountRootQuery,
+    Occurrence,
+    OpsContext,
+    OpsResultContext,
+    Outcome,
+    Pending,
+    ProfileScript,
+    Scope,
+    SessionCommandsQuery,
+    SessionContext,
+    SessionDecisionsQuery,
+    SessionScriptsQuery,
+)
 
 __all__ = [
     "Abandoned",

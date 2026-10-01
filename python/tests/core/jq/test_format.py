@@ -14,9 +14,19 @@
 
 import pytest
 
-from mirage.core.jq import (JqError, JqHalt, JqOptions, JqRun, dump_text,
-                            error_report, format_jq_output, halt_report,
-                            jq_run_texts, load_failure, printable)
+from mirage.core.jq import (
+    JqError,
+    JqHalt,
+    JqOptions,
+    JqRun,
+    dump_text,
+    error_report,
+    format_jq_output,
+    halt_report,
+    jq_run_texts,
+    load_failure,
+    printable,
+)
 from mirage.core.jq.format import _indented, _sorted
 
 PRETTY = JqOptions()
@@ -27,45 +37,77 @@ RAW = JqOptions(raw_output=True, compact=True)
 # prints for it under each set of flags.
 DOC = '{"b":1.000,"1":[1E+2,-0,{},[]],"a":[],"é":"ü😀\\u007f"}'
 LAYOUTS = [
-    (JqOptions(), b'{\n  "b": 1.000,\n  "1": [\n    1E+2,\n    -0,\n    {},\n'
-     b'    []\n  ],\n  "a": [],\n  "\xc3\xa9": "\xc3\xbc\xf0\x9f\x98\x80'
-     b'\\u007f"\n}\n'),
-    (JqOptions(compact=True), b'{"b":1.000,"1":[1E+2,-0,{},[]],"a":[],'
-     b'"\xc3\xa9":"\xc3\xbc\xf0\x9f\x98\x80\\u007f"}\n'),
-    (JqOptions(sort_keys=True), b'{\n  "1": [\n    1E+2,\n    -0,\n    {},\n'
-     b'    []\n  ],\n  "a": [],\n  "b": 1.000,\n  "\xc3\xa9": "\xc3\xbc'
-     b'\xf0\x9f\x98\x80\\u007f"\n}\n'),
-    (JqOptions(sort_keys=True, compact=True),
-     b'{"1":[1E+2,-0,{},[]],"a":[],"b":1.000,"\xc3\xa9":"\xc3\xbc\xf0\x9f'
-     b'\x98\x80\\u007f"}\n'),
-    (JqOptions(tab=True), b'{\n\t"b": 1.000,\n\t"1": [\n\t\t1E+2,\n\t\t-0,\n'
-     b'\t\t{},\n\t\t[]\n\t],\n\t"a": [],\n\t"\xc3\xa9": "\xc3\xbc\xf0\x9f'
-     b'\x98\x80\\u007f"\n}\n'),
-    (JqOptions(indent=0), b'{\n"b": 1.000,\n"1": [\n1E+2,\n-0,\n{},\n[]\n],\n'
-     b'"a": [],\n"\xc3\xa9": "\xc3\xbc\xf0\x9f\x98\x80\\u007f"\n}\n'),
-    (JqOptions(indent=7), b'{\n       "b": 1.000,\n       "1": [\n'
-     b'              1E+2,\n              -0,\n              {},\n'
-     b'              []\n       ],\n       "a": [],\n       "\xc3\xa9": '
-     b'"\xc3\xbc\xf0\x9f\x98\x80\\u007f"\n}\n'),
-    (JqOptions(ascii_output=True), b'{\n  "b": 1.000,\n  "1": [\n    1E+2,\n'
-     b'    -0,\n    {},\n    []\n  ],\n  "a": [],\n  "\\u00e9": "\\u00fc'
-     b'\\ud83d\\ude00\\u007f"\n}\n'),
-    (JqOptions(ascii_output=True, sort_keys=True, tab=True),
-     b'{\n\t"1": [\n\t\t1E+2,\n\t\t-0,\n\t\t{},\n\t\t[]\n\t],\n\t"a": [],\n'
-     b'\t"b": 1.000,\n\t"\\u00e9": "\\u00fc\\ud83d\\ude00\\u007f"\n}\n'),
-    (JqOptions(raw_output=True), b'{\n  "b": 1.000,\n  "1": [\n    1E+2,\n'
-     b'    -0,\n    {},\n    []\n  ],\n  "a": [],\n  "\xc3\xa9": "\xc3\xbc'
-     b'\xf0\x9f\x98\x80\\u007f"\n}\n'),
+    (
+        JqOptions(),
+        b'{\n  "b": 1.000,\n  "1": [\n    1E+2,\n    -0,\n    {},\n'
+        b'    []\n  ],\n  "a": [],\n  "\xc3\xa9": "\xc3\xbc\xf0\x9f\x98\x80'
+        b'\\u007f"\n}\n',
+    ),
+    (
+        JqOptions(compact=True),
+        b'{"b":1.000,"1":[1E+2,-0,{},[]],"a":[],'
+        b'"\xc3\xa9":"\xc3\xbc\xf0\x9f\x98\x80\\u007f"}\n',
+    ),
+    (
+        JqOptions(sort_keys=True),
+        b'{\n  "1": [\n    1E+2,\n    -0,\n    {},\n'
+        b'    []\n  ],\n  "a": [],\n  "b": 1.000,\n  "\xc3\xa9": "\xc3\xbc'
+        b'\xf0\x9f\x98\x80\\u007f"\n}\n',
+    ),
+    (
+        JqOptions(sort_keys=True, compact=True),
+        b'{"1":[1E+2,-0,{},[]],"a":[],"b":1.000,"\xc3\xa9":"\xc3\xbc\xf0\x9f'
+        b'\x98\x80\\u007f"}\n',
+    ),
+    (
+        JqOptions(tab=True),
+        b'{\n\t"b": 1.000,\n\t"1": [\n\t\t1E+2,\n\t\t-0,\n'
+        b'\t\t{},\n\t\t[]\n\t],\n\t"a": [],\n\t"\xc3\xa9": "\xc3\xbc\xf0\x9f'
+        b'\x98\x80\\u007f"\n}\n',
+    ),
+    (
+        JqOptions(indent=0),
+        b'{\n"b": 1.000,\n"1": [\n1E+2,\n-0,\n{},\n[]\n],\n'
+        b'"a": [],\n"\xc3\xa9": "\xc3\xbc\xf0\x9f\x98\x80\\u007f"\n}\n',
+    ),
+    (
+        JqOptions(indent=7),
+        b'{\n       "b": 1.000,\n       "1": [\n'
+        b"              1E+2,\n              -0,\n              {},\n"
+        b'              []\n       ],\n       "a": [],\n       "\xc3\xa9": '
+        b'"\xc3\xbc\xf0\x9f\x98\x80\\u007f"\n}\n',
+    ),
+    (
+        JqOptions(ascii_output=True),
+        b'{\n  "b": 1.000,\n  "1": [\n    1E+2,\n'
+        b'    -0,\n    {},\n    []\n  ],\n  "a": [],\n  "\\u00e9": "\\u00fc'
+        b'\\ud83d\\ude00\\u007f"\n}\n',
+    ),
+    (
+        JqOptions(ascii_output=True, sort_keys=True, tab=True),
+        b'{\n\t"1": [\n\t\t1E+2,\n\t\t-0,\n\t\t{},\n\t\t[]\n\t],\n\t"a": [],\n'
+        b'\t"b": 1.000,\n\t"\\u00e9": "\\u00fc\\ud83d\\ude00\\u007f"\n}\n',
+    ),
+    (
+        JqOptions(raw_output=True),
+        b'{\n  "b": 1.000,\n  "1": [\n    1E+2,\n'
+        b'    -0,\n    {},\n    []\n  ],\n  "a": [],\n  "\xc3\xa9": "\xc3\xbc'
+        b'\xf0\x9f\x98\x80\\u007f"\n}\n',
+    ),
 ]
 
 # A string, and what jq 1.8.2 prints for it.
 STRING = '"ü😀\\u007f\\u0000"'
 STRING_LAYOUTS = [
     (JqOptions(raw_output=True), b"\xc3\xbc\xf0\x9f\x98\x80\x7f\x00\n"),
-    (JqOptions(raw_output=True,
-               ascii_output=True), b'"\\u00fc\\ud83d\\ude00\\u007f\\u0000"\n'),
-    (JqOptions(raw_output=True,
-               join_output=True), b"\xc3\xbc\xf0\x9f\x98\x80\x7f\x00"),
+    (
+        JqOptions(raw_output=True, ascii_output=True),
+        b'"\\u00fc\\ud83d\\ude00\\u007f\\u0000"\n',
+    ),
+    (
+        JqOptions(raw_output=True, join_output=True),
+        b"\xc3\xbc\xf0\x9f\x98\x80\x7f\x00",
+    ),
     (JqOptions(ascii_output=True), b'"\\u00fc\\ud83d\\ude00\\u007f\\u0000"\n'),
 ]
 
@@ -93,9 +135,13 @@ def test_a_value_nested_past_orjson_is_laid_out_by_hand():
     pretty = dump_text(deep, PRETTY)
     assert pretty.startswith("[\n  [\n    [")
     assert "\n" + " " * 600 + "1.000\n" in pretty
-    assert dump_text('{"b":' * 300 + '{"a":1}' + "}" * 300,
-                     JqOptions(compact=True,
-                               sort_keys=True)).count('"b"') == 300
+    assert (
+        dump_text(
+            '{"b":' * 300 + '{"a":1}' + "}" * 300,
+            JqOptions(compact=True, sort_keys=True),
+        ).count('"b"')
+        == 300
+    )
 
 
 @pytest.mark.parametrize("compact", [True, False])
@@ -105,8 +151,9 @@ def test_sort_keys_orders_by_code_point_and_reads_escaped_keys(compact):
     ordered = '{"\\u0001":6,"a\\"":3,"z":2,"é":1,"ｚ":5,"😀":4}'
     assert _sorted(text) == ordered
     opts = JqOptions(compact=compact, sort_keys=True)
-    assert dump_text(text, opts) == dump_text(ordered,
-                                              JqOptions(compact=compact))
+    assert dump_text(text, opts) == dump_text(
+        ordered, JqOptions(compact=compact)
+    )
 
 
 def test_format_jq_no_outputs_is_empty_bytes():
@@ -124,17 +171,18 @@ def test_join_output_writes_no_separator():
 
 
 def test_raw_output0_terminates_with_nul_and_beats_join():
-    opts = JqOptions(raw_output=True,
-                     join_output=True,
-                     nul_output=True,
-                     compact=True)
+    opts = JqOptions(
+        raw_output=True, join_output=True, nul_output=True, compact=True
+    )
     assert format_jq_output(['"a"', '"b"'], opts) == b"a\x00b\x00"
 
 
 def test_seq_puts_rs_before_each_value_but_not_a_raw_string():
     opts = JqOptions(seq=True, raw_output=True, compact=True)
-    assert format_jq_output(["1.000", '"x"', "[]"],
-                            opts) == b"\x1e1.000\nx\n\x1e[]\n"
+    assert (
+        format_jq_output(["1.000", '"x"', "[]"], opts)
+        == b"\x1e1.000\nx\n\x1e[]\n"
+    )
 
 
 def test_raw_output0_refuses_a_string_holding_a_nul():
@@ -146,48 +194,62 @@ def test_raw_output0_refuses_a_string_holding_a_nul():
         ['"x"'],
         JqError(
             "Cannot dump a string containing NUL with --raw-output0 option",
-            True))
+            True,
+        ),
+    )
     assert printable(JqRun(['"a\\\\u0000"']), opts) == JqRun(['"a\\\\u0000"'])
     assert printable(run, JqOptions(raw_output=True, compact=True)) == run
     assert printable(run, JqOptions(nul_output=True, ascii_output=True)) == run
 
 
 def test_outputs_keep_the_spelling_jq_gives_them():
-    run = jq_run_texts('{"b":1.000,"1":2}',
-                       '., .b, (.b + 0), (1e17 * 1), -0, keys_unsorted')
-    assert format_jq_output(
-        run.outputs,
-        COMPACT) == (b'{"b":1.000,"1":2}\n1.000\n1\n1e+17\n0\n["b","1"]\n')
+    run = jq_run_texts(
+        '{"b":1.000,"1":2}', "., .b, (.b + 0), (1e17 * 1), -0, keys_unsorted"
+    )
+    assert format_jq_output(run.outputs, COMPACT) == (
+        b'{"b":1.000,"1":2}\n1.000\n1\n1e+17\n0\n["b","1"]\n'
+    )
 
 
 def test_error_report_words_an_error_the_way_jq_does():
-    assert error_report("<stdin>:1", JqError("boom",
-                                             True)) == ("jq: error (at "
-                                                        "<stdin>:1): boom\n")
-    assert error_report("<unknown>", JqError(
-        '{"a":1}',
-        False)) == ('jq: error (at <unknown>) (not a string): {"a":1}\n')
+    assert error_report("<stdin>:1", JqError("boom", True)) == (
+        "jq: error (at <stdin>:1): boom\n"
+    )
+    assert error_report("<unknown>", JqError('{"a":1}', False)) == (
+        'jq: error (at <unknown>) (not a string): {"a":1}\n'
+    )
 
 
 def test_error_report_ends_a_string_message_at_a_nul():
-    assert error_report("f:0", JqError("a\0b",
-                                       True)) == "jq: error (at f:0): a\n"
+    assert (
+        error_report("f:0", JqError("a\0b", True)) == "jq: error (at f:0): a\n"
+    )
 
 
-@pytest.mark.parametrize("message, string, expected", [
-    ("bye\n", True, "bye\n"),
-    ('{"a":1}', False, '{"a":1}\n'),
-    (None, False, ""),
-])
-def test_halt_report_writes_what_jq_writes_for_a_halt(message, string,
-                                                      expected):
+@pytest.mark.parametrize(
+    "message, string, expected",
+    [
+        ("bye\n", True, "bye\n"),
+        ('{"a":1}', False, '{"a":1}\n'),
+        (None, False, ""),
+    ],
+)
+def test_halt_report_writes_what_jq_writes_for_a_halt(
+    message, string, expected
+):
     assert halt_report(JqHalt(message, string, 5)) == expected
 
 
-@pytest.mark.parametrize("exc, expected", [
-    (FileNotFoundError("f"), "Could not open f: No such file or directory"),
-    (PermissionError("f"), "Could not open f: Permission denied"),
-    (IsADirectoryError("f"), "Could not open f: It's a directory"),
-])
+@pytest.mark.parametrize(
+    "exc, expected",
+    [
+        (
+            FileNotFoundError("f"),
+            "Could not open f: No such file or directory",
+        ),
+        (PermissionError("f"), "Could not open f: Permission denied"),
+        (IsADirectoryError("f"), "Could not open f: It's a directory"),
+    ],
+)
 def test_load_failure_words_a_file_jq_could_not_load(exc, expected):
     assert load_failure("f", exc) == expected

@@ -59,24 +59,27 @@ def _extract_parts(msg) -> tuple[str, str, list[dict[str, Any]]]:
 
             if "attachment" in disposition:
                 payload = part.get_payload(decode=True) or b""
-                attachments.append({
-                    "filename": part.get_filename() or "unnamed",
-                    "content_type": content_type,
-                    "size": len(payload),
-                })
+                attachments.append(
+                    {
+                        "filename": part.get_filename() or "unnamed",
+                        "content_type": content_type,
+                        "size": len(payload),
+                    }
+                )
             elif content_type == "text/plain" and not text:
-                text = (part.get_payload(decode=True)
-                        or b"").decode(part.get_content_charset() or "utf-8",
-                                       errors="replace")
+                text = (part.get_payload(decode=True) or b"").decode(
+                    part.get_content_charset() or "utf-8", errors="replace"
+                )
             elif content_type == "text/html" and not html:
-                html = (part.get_payload(decode=True)
-                        or b"").decode(part.get_content_charset() or "utf-8",
-                                       errors="replace")
+                html = (part.get_payload(decode=True) or b"").decode(
+                    part.get_content_charset() or "utf-8", errors="replace"
+                )
     else:
         content_type = msg.get_content_type()
         payload = msg.get_payload(decode=True) or b""
-        decoded = payload.decode(msg.get_content_charset() or "utf-8",
-                                 errors="replace")
+        decoded = payload.decode(
+            msg.get_content_charset() or "utf-8", errors="replace"
+        )
         if content_type == "text/html":
             html = decoded
         else:
@@ -89,8 +92,8 @@ def _parse_address(raw: str) -> dict[str, str]:
     if not raw:
         return {"name": "", "email": ""}
     if "<" in raw and ">" in raw:
-        name = raw[:raw.index("<")].strip().strip('"')
-        email = raw[raw.index("<") + 1:raw.index(">")]
+        name = raw[: raw.index("<")].strip().strip('"')
+        email = raw[raw.index("<") + 1 : raw.index(">")]
         return {"name": name, "email": email}
     return {"name": "", "email": raw.strip()}
 

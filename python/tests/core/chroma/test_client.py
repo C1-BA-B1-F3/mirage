@@ -25,8 +25,9 @@ async def test_fetch_path_tree(chroma_accessor):
 
 
 @pytest.mark.asyncio
-async def test_fetch_path_tree_missing_raises(chroma_accessor,
-                                              chroma_collection):
+async def test_fetch_path_tree_missing_raises(
+    chroma_accessor, chroma_collection
+):
     del chroma_collection.documents["__path_tree__"]
     chroma_collection.get = _empty_get
     with pytest.raises(FileNotFoundError):
@@ -38,17 +39,18 @@ async def _empty_get(**kwargs):
 
 
 @pytest.mark.asyncio
-async def test_page_chunks_reads_in_batches(monkeypatch, chroma_accessor,
-                                            chroma_collection):
+async def test_page_chunks_reads_in_batches(
+    monkeypatch, chroma_accessor, chroma_collection
+):
     monkeypatch.setattr(client, "PAGE_CHUNK_BATCH_SIZE", 1)
 
     chunks = await page_chunks(chroma_accessor, "guides/quickstart")
 
     assert [chunk["document"] for chunk in chunks] == ["first", "second"]
     page_calls = [
-        call for call in chroma_collection.get_calls if call.get("where") == {
-            "page_slug": "guides/quickstart"
-        }
+        call
+        for call in chroma_collection.get_calls
+        if call.get("where") == {"page_slug": "guides/quickstart"}
     ]
     assert [call["limit"] for call in page_calls] == [1, 1, 1]
     assert [call["offset"] for call in page_calls] == [0, 1, 2]

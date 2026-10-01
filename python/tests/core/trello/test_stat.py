@@ -48,18 +48,22 @@ async def test_stat_workspaces(accessor, index):
 async def test_stat_workspace_entry(accessor, index):
     await index.set_dir(
         "/workspaces",
-        [("Engineering__ws1",
-          IndexEntry(
-              id="ws1",
-              name="Engineering",
-              resource_type="trello/workspace",
-              remote_time="",
-              vfs_name="Engineering__ws1",
-          ))],
+        [
+            (
+                "Engineering__ws1",
+                IndexEntry(
+                    id="ws1",
+                    name="Engineering",
+                    resource_type="trello/workspace",
+                    remote_time="",
+                    vfs_name="Engineering__ws1",
+                ),
+            )
+        ],
     )
-    result = await stat(accessor,
-                        PathSpec.from_str_path("/workspaces/Engineering__ws1"),
-                        index)
+    result = await stat(
+        accessor, PathSpec.from_str_path("/workspaces/Engineering__ws1"), index
+    )
     assert result.type == FileType.DIRECTORY
     assert result.extra["workspace_id"] == "ws1"
 
@@ -68,19 +72,24 @@ async def test_stat_workspace_entry(accessor, index):
 async def test_stat_board_entry(accessor, index):
     await index.set_dir(
         "/workspaces/Engineering__ws1/boards",
-        [("Product_Roadmap__b1",
-          IndexEntry(
-              id="b1",
-              name="Product Roadmap",
-              resource_type="trello/board",
-              remote_time="2026-04-05T00:00:00.000Z",
-              vfs_name="Product_Roadmap__b1",
-          ))],
+        [
+            (
+                "Product_Roadmap__b1",
+                IndexEntry(
+                    id="b1",
+                    name="Product Roadmap",
+                    resource_type="trello/board",
+                    remote_time="2026-04-05T00:00:00.000Z",
+                    vfs_name="Product_Roadmap__b1",
+                ),
+            )
+        ],
     )
     result = await stat(
         accessor,
         PathSpec.from_str_path(
-            "/workspaces/Engineering__ws1/boards/Product_Roadmap__b1"),
+            "/workspaces/Engineering__ws1/boards/Product_Roadmap__b1"
+        ),
         index,
     )
     assert result.type == FileType.DIRECTORY
@@ -93,21 +102,26 @@ async def test_stat_card_json(accessor, index):
     await index.set_dir(
         "/workspaces/Engineering__ws1/boards/Product_Roadmap__b1"
         "/lists/Backlog__l1/cards/Fix_login__c1",
-        [("card.json",
-          IndexEntry(
-              id="c1",
-              name="card.json",
-              resource_type="trello/card_json",
-              vfs_name="card.json",
-              size=42,
-              remote_time="2026-04-05T00:00:00.000Z",
-          ))],
+        [
+            (
+                "card.json",
+                IndexEntry(
+                    id="c1",
+                    name="card.json",
+                    resource_type="trello/card_json",
+                    vfs_name="card.json",
+                    size=42,
+                    remote_time="2026-04-05T00:00:00.000Z",
+                ),
+            )
+        ],
     )
     result = await stat(
         accessor,
         PathSpec.from_str_path(
             "/workspaces/Engineering__ws1/boards/Product_Roadmap__b1"
-            "/lists/Backlog__l1/cards/Fix_login__c1/card.json"),
+            "/lists/Backlog__l1/cards/Fix_login__c1/card.json"
+        ),
         index,
     )
     assert result.content == ContentType.JSON
@@ -120,19 +134,24 @@ async def test_stat_comments_jsonl(accessor, index):
     await index.set_dir(
         "/workspaces/Engineering__ws1/boards/Product_Roadmap__b1"
         "/lists/Backlog__l1/cards/Fix_login__c1",
-        [("comments.jsonl",
-          IndexEntry(
-              id="c1",
-              name="comments.jsonl",
-              resource_type="trello/comments_jsonl",
-              vfs_name="comments.jsonl",
-          ))],
+        [
+            (
+                "comments.jsonl",
+                IndexEntry(
+                    id="c1",
+                    name="comments.jsonl",
+                    resource_type="trello/comments_jsonl",
+                    vfs_name="comments.jsonl",
+                ),
+            )
+        ],
     )
     result = await stat(
         accessor,
         PathSpec.from_str_path(
             "/workspaces/Engineering__ws1/boards/Product_Roadmap__b1"
-            "/lists/Backlog__l1/cards/Fix_login__c1/comments.jsonl"),
+            "/lists/Backlog__l1/cards/Fix_login__c1/comments.jsonl"
+        ),
         index,
     )
     assert result.content == ContentType.TEXT
@@ -142,5 +161,6 @@ async def test_stat_comments_jsonl(accessor, index):
 @pytest.mark.asyncio
 async def test_stat_missing_path(accessor, index):
     with pytest.raises(FileNotFoundError):
-        await stat(accessor, PathSpec.from_str_path("/nonexistent/path"),
-                   index)
+        await stat(
+            accessor, PathSpec.from_str_path("/nonexistent/path"), index
+        )

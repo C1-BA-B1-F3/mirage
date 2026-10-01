@@ -20,8 +20,9 @@ from mirage.workspace import Workspace
 
 
 def _ws() -> Workspace:
-    return Workspace({"/data": (RAMVFS(), MountMode.WRITE)},
-                     mode=MountMode.WRITE)
+    return Workspace(
+        {"/data": (RAMVFS(), MountMode.WRITE)}, mode=MountMode.WRITE
+    )
 
 
 @pytest.mark.asyncio
@@ -40,10 +41,11 @@ async def test_rm_f_of_the_empty_name_removes_nothing():
 @pytest.mark.asyncio
 async def test_a_loop_fails_its_operand_not_the_line():
     ws = _ws()
-    await ws.shell("echo a > /data/a.txt; echo b > /data/b.txt; "
-                   "ln -s /data/l2 /data/l1; ln -s /data/l1 /data/l2")
+    await ws.shell(
+        "echo a > /data/a.txt; echo b > /data/b.txt; "
+        "ln -s /data/l2 /data/l1; ln -s /data/l1 /data/l2"
+    )
     r = await ws.shell("cat /data/a.txt /data/l1 /data/b.txt")
     assert r.exit_code == 1
     assert r.stdout == b"a\nb\n"
-    assert r.stderr == (b"cat: /data/l1: Too many levels of symbolic "
-                        b"links\n")
+    assert r.stderr == (b"cat: /data/l1: Too many levels of symbolic links\n")

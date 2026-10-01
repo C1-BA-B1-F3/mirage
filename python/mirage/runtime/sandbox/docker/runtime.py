@@ -37,25 +37,33 @@ class DockerRuntime(RemoteSandbox):
     config_cls = DockerConfig
     config: DockerConfig
 
-    async def _docker(self,
-                      args: list[str],
-                      stdin: bytes | None = None) -> tuple[bytes, bytes, int]:
+    async def _docker(
+        self, args: list[str], stdin: bytes | None = None
+    ) -> tuple[bytes, bytes, int]:
         """One docker CLI invocation; the seam tests override."""
         return await run_cli("docker", DOCKER_CLI_HINT, args, stdin)
 
     async def connect(self) -> None:
-        stdout, stderr, code = await self._docker([
-            "inspect", "--format", "{{.State.Running}}", self.config.container
-        ])
+        stdout, stderr, code = await self._docker(
+            [
+                "inspect",
+                "--format",
+                "{{.State.Running}}",
+                self.config.container,
+            ]
+        )
         if code != 0:
             raise RuntimeError(
-                f"docker inspect failed: {stderr.decode().strip()}")
+                f"docker inspect failed: {stderr.decode().strip()}"
+            )
         if stdout.decode().strip() != "true":
             raise RuntimeError(
-                f"container {self.config.container} is not running")
+                f"container {self.config.container} is not running"
+            )
 
-    async def exec_line(self, line: str, stdin: bytes | None,
-                        env: dict[str, str], cwd: str) -> RunResult:
+    async def exec_line(
+        self, line: str, stdin: bytes | None, env: dict[str, str], cwd: str
+    ) -> RunResult:
         args = ["exec", "-i", "-w", cwd]
         for key, value in env.items():
             args += ["-e", f"{key}={value}"]

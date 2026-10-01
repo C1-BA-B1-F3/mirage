@@ -15,16 +15,23 @@
 from typing import Any
 
 from mirage.commands.cli.builtin.ntn.failure import HintedAPIError, source_hint
-from mirage.commands.cli.builtin.ntn.util import (first_text, notion_config,
-                                                  parse_json_text, pretty_json,
-                                                  property_cell)
+from mirage.commands.cli.builtin.ntn.util import (
+    first_text,
+    notion_config,
+    parse_json_text,
+    pretty_json,
+    property_cell,
+)
 from mirage.commands.cli.types import CLIDoors, CLIInvocation
 from mirage.commands.errors import UsageError
 from mirage.commands.spec.flag_view import FlagView
 from mirage.core.notion.client import NotionAPIError
 from mirage.core.notion.config import NotionConfig
-from mirage.core.notion.pages import (get_data_source, get_database,
-                                      query_data_source_page)
+from mirage.core.notion.pages import (
+    get_data_source,
+    get_database,
+    query_data_source_page,
+)
 from mirage.io.stream import yield_bytes
 from mirage.io.types import ByteSource, IOResult
 from mirage.types import JsonValue
@@ -103,8 +110,9 @@ async def resolve_source(config: NotionConfig, ref: str) -> dict[str, Any]:
     return await get_data_source(config, str(stubs[0].get("id", "")))
 
 
-async def filter_body(fl: FlagView,
-                      doors: CLIDoors | None) -> dict[str, JsonValue]:
+async def filter_body(
+    fl: FlagView, doors: CLIDoors | None
+) -> dict[str, JsonValue]:
     """Read the query filter from `--filter` or `--filter-file`.
 
     Args:
@@ -130,7 +138,7 @@ async def filter_body(fl: FlagView,
 
 
 async def query(
-        inv: CLIInvocation[NotionConfig]
+    inv: CLIInvocation[NotionConfig],
 ) -> tuple[ByteSource | None, IOResult]:
     fl = FlagView(inv.flags)
     # The whole request body is built before the first call, so a bad
@@ -164,9 +172,8 @@ async def query(
     # `<id>\t<title>` rather than as one title among seven blanks.
     rows = result.get("results") or []
     columns = sorted(
-        {name
-         for row in rows
-         for name in (row.get("properties") or {})})
+        {name for row in rows for name in (row.get("properties") or {})}
+    )
     lines: list[str] = []
     for row in rows:
         props = row.get("properties") or {}
@@ -174,7 +181,9 @@ async def query(
         lines.append("\t".join([str(row.get("id", "")), *cells]) + "\n")
     out = yield_bytes("".join(lines).encode())
     if result.get("has_more") and result.get("next_cursor"):
-        notice = ("\nMore results available. Use --start-cursor "
-                  f"{result['next_cursor']} to continue.\n")
+        notice = (
+            "\nMore results available. Use --start-cursor "
+            f"{result['next_cursor']} to continue.\n"
+        )
         return out, IOResult(stderr=notice.encode())
     return out, IOResult()

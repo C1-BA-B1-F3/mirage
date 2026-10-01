@@ -25,9 +25,14 @@ from mirage.utils.errors import enoent
 
 
 async def resolve_app_entry(
-        token_manager: TokenManager, match: ScopeMatch, path: PathSpec,
-        index: IndexCacheStore, mime: str, resource_type: str,
-        filename: Callable[[str, str, str], str]) -> IndexEntry:
+    token_manager: TokenManager,
+    match: ScopeMatch,
+    path: PathSpec,
+    index: IndexCacheStore,
+    mime: str,
+    resource_type: str,
+    filename: Callable[[str, str, str], str],
+) -> IndexEntry:
     """Resolve a native app file without an account-wide search.
 
     Args:
@@ -44,9 +49,9 @@ async def resolve_app_entry(
     if listing.entries is not None and path.virtual not in listing.entries:
         raise enoent(path.virtual)
     hit = await index.get(path.virtual)
-    if hit.entry is not None and path.virtual in (listing.entries
-                                                  or listing.partial_entries
-                                                  or []):
+    if hit.entry is not None and path.virtual in (
+        listing.entries or listing.partial_entries or []
+    ):
         return hit.entry
     try:
         item = await get_file(token_manager, match.slots["file_id"])
@@ -59,9 +64,12 @@ async def resolve_app_entry(
     name = filename(item["name"], item["id"], modified)
     owners = item.get("owners", [])
     owned = bool(owners) and owners[0].get("me") is True
-    if (item.get("trashed", False) or item.get("mimeType") != mime
-            or owned != (match.slots["corpus"] == "owned")
-            or name != path.vfs_path.rsplit("/", 1)[-1]):
+    if (
+        item.get("trashed", False)
+        or item.get("mimeType") != mime
+        or owned != (match.slots["corpus"] == "owned")
+        or name != path.vfs_path.rsplit("/", 1)[-1]
+    ):
         await index.invalidate_prefix(path.virtual)
         raise enoent(path.virtual)
     source_size = int(item.get("size") or item.get("quotaBytesUsed") or 0)
@@ -71,6 +79,7 @@ async def resolve_app_entry(
         resource_type=resource_type,
         remote_time=modified,
         vfs_name=name,
-        extra={"source_size": source_size} if source_size > 0 else {})
+        extra={"source_size": source_size} if source_size > 0 else {},
+    )
     await index.put(path.virtual, entry)
     return entry

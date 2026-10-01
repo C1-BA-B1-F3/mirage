@@ -44,8 +44,11 @@ PRINTF_CASES = [
     (["[%+d]", "5"], b"[+5]", 0),
     (["[% d]", "-5"], b"[-5]", 0),
     # integer bases + alt form + 64-bit wrap
-    (["[%o][%u][%x][%X]\n", "64", "64", "255",
-      "255"], b"[100][64][ff][FF]\n", 0),
+    (
+        ["[%o][%u][%x][%X]\n", "64", "64", "255", "255"],
+        b"[100][64][ff][FF]\n",
+        0,
+    ),
     (["%x\n", "-1"], b"ffffffffffffffff\n", 0),
     (["%X\n", "-1"], b"FFFFFFFFFFFFFFFF\n", 0),
     (["%o\n", "-1"], b"1777777777777777777777\n", 0),
@@ -112,15 +115,27 @@ async def test_printf_no_args_is_empty():
 # message. Measured on bash 5.2.21, where the coreutils binary of the
 # same name is lenient and prints the word; mirage ships the builtin.
 @pytest.mark.asyncio
-@pytest.mark.parametrize("args,bad", [(["--zzz"], "--"), (["--zzz=x"], "--"),
-                                      (["--hel"], "--"), (["--help=x"], "--"),
-                                      (["--version"], "--"), (["-Q"], "-Q")])
+@pytest.mark.parametrize(
+    "args,bad",
+    [
+        (["--zzz"], "--"),
+        (["--zzz=x"], "--"),
+        (["--hel"], "--"),
+        (["--help=x"], "--"),
+        (["--version"], "--"),
+        (["-Q"], "-Q"),
+    ],
+)
 async def test_printf_unknown_option_reports_the_first_character(args, bad):
     _, io, node = await handle_printf(args, SessionState(session_id="s1"))
     assert io.exit_code == 2
-    assert io.stderr == (
-        f"printf: {bad}: invalid option\n"
-        f"printf: usage: printf [-v var] format [arguments]\n").encode()
+    assert (
+        io.stderr
+        == (
+            f"printf: {bad}: invalid option\n"
+            f"printf: usage: printf [-v var] format [arguments]\n"
+        ).encode()
+    )
     assert node.exit_code == 2
 
 
@@ -130,8 +145,9 @@ async def test_printf_unknown_option_reports_the_first_character(args, bad):
 # on bash 5.2.37).
 @pytest.mark.asyncio
 async def test_printf_help_prints_the_page_to_stdout_and_exits_2():
-    out, io, node = await handle_printf(["--help"],
-                                        SessionState(session_id="s1"))
+    out, io, node = await handle_printf(
+        ["--help"], SessionState(session_id="s1")
+    )
     assert io.exit_code == 2
     assert not io.stderr
     assert b"".join([chunk async for chunk in out]) == _HELP.encode()
@@ -159,10 +175,12 @@ def test_printf_help_drops_only_the_conversions_mirage_lacks():
     assert "%Q" not in _HELP
     assert "%(fmt)T" not in _HELP
     # Everything else bash writes is present, in bash's words.
-    assert _HELP.endswith("    Exit Status:\n"
-                          "    Returns success unless an invalid option is "
-                          "given or a write or assignment\n"
-                          "    error occurs.\n")
+    assert _HELP.endswith(
+        "    Exit Status:\n"
+        "    Returns success unless an invalid option is "
+        "given or a write or assignment\n"
+        "    error occurs.\n"
+    )
 
 
 @pytest.mark.asyncio
@@ -198,8 +216,10 @@ async def test_printf_no_conversion_ignores_excess_args():
 
 @pytest.mark.asyncio
 async def test_printf_inf_and_nan():
-    assert await printf_bytes(["%f|%e|%g\n", "inf", "inf", "inf"]) == \
-        b"inf|inf|inf\n"
+    assert (
+        await printf_bytes(["%f|%e|%g\n", "inf", "inf", "inf"])
+        == b"inf|inf|inf\n"
+    )
     assert await printf_bytes(["%f\n", "-inf"]) == b"-inf\n"
     assert await printf_bytes(["%F|%G\n", "nan", "nan"]) == b"NAN|NAN\n"
 
@@ -326,8 +346,9 @@ async def test_printf_v_readonly_array_element_is_rejected():
     set_attr(session, "A", VarAttr.READONLY)
     out, io, node = await handle_printf(["-v", "A[0]", "%d", "nope"], session)
     assert node.exit_code == 1
-    assert io.stderr == (b"printf: nope: invalid number\n"
-                         b"bash: A: readonly variable\n")
+    assert io.stderr == (
+        b"printf: nope: invalid number\nbash: A: readonly variable\n"
+    )
     assert session.arrays["A"] == ["x", "y"]
 
 
@@ -378,32 +399,40 @@ async def program_printf(args: list[str]) -> tuple[bytes | None, bytes, int]:
     finally:
         reset_program_invocation(token)
     assert io.exit_code == node.exit_code
-    return (out if isinstance(out, bytes) else None, await
-            materialize(io.stderr), node.exit_code)
+    return (
+        out if isinstance(out, bytes) else None,
+        await materialize(io.stderr),
+        node.exit_code,
+    )
 
 
 def _excess(word: str) -> bytes:
-    return ("printf: warning: ignoring excess arguments, starting with "
-            f"{word}\n").encode()
+    return (
+        f"printf: warning: ignoring excess arguments, starting with {word}\n"
+    ).encode()
 
 
 # coreutils 9.7 (debian:stable-slim), which a program run answers as.
 @pytest.mark.asyncio
-@pytest.mark.parametrize("args, out, err", [
-    (["x\n", "a", "b"], b"x\n", _excess("'a'")),
-    (["%%s\n", "x"], b"%s\n", _excess("'x'")),
-    (["", "a"], b"", _excess("'a'")),
-    (["x\n", "it's"], b"x\n", _excess("'it\\'s'")),
-    (["x\n", "é"], b"x\n", _excess("'\\303\\251'")),
-    (["x\n", "a\tb"], b"x\n", _excess("'a\\tb'")),
-    (["x\n", ""], b"x\n", _excess("''")),
-    (["--", "x\n", "a"], b"x\n", _excess("'a'")),
-    (["-v", "v", "x\n"], b"-v", _excess("'v'")),
-    (["%s-%s\n", "a", "b", "c"], b"a-b\nc-\n", b""),
-    (["x\\c", "a"], b"x", b""),
-])
+@pytest.mark.parametrize(
+    "args, out, err",
+    [
+        (["x\n", "a", "b"], b"x\n", _excess("'a'")),
+        (["%%s\n", "x"], b"%s\n", _excess("'x'")),
+        (["", "a"], b"", _excess("'a'")),
+        (["x\n", "it's"], b"x\n", _excess("'it\\'s'")),
+        (["x\n", "é"], b"x\n", _excess("'\\303\\251'")),
+        (["x\n", "a\tb"], b"x\n", _excess("'a\\tb'")),
+        (["x\n", ""], b"x\n", _excess("''")),
+        (["--", "x\n", "a"], b"x\n", _excess("'a'")),
+        (["-v", "v", "x\n"], b"-v", _excess("'v'")),
+        (["%s-%s\n", "a", "b", "c"], b"a-b\nc-\n", b""),
+        (["x\\c", "a"], b"x", b""),
+    ],
+)
 async def test_printf_run_as_a_program_warns_about_what_it_drops(
-        args: list[str], out: bytes, err: bytes):
+    args: list[str], out: bytes, err: bytes
+):
     assert await program_printf(args) == (out, err, 0)
 
 
@@ -411,8 +440,11 @@ async def test_printf_run_as_a_program_warns_about_what_it_drops(
 @pytest.mark.parametrize("args", [[], ["--"]])
 async def test_printf_run_as_a_program_needs_a_format(args: list[str]):
     assert await program_printf(args) == (
-        None, b"printf: missing operand\n"
-        b"Try 'printf --help' for more information.\n", 1)
+        None,
+        b"printf: missing operand\n"
+        b"Try 'printf --help' for more information.\n",
+        1,
+    )
 
 
 @pytest.mark.asyncio
@@ -423,14 +455,18 @@ async def test_printf_builtin_drops_excess_arguments_silently():
 
 # Each of these execs its command, so printf is coreutils' there.
 @pytest.mark.asyncio
-@pytest.mark.parametrize("line, word", [
-    ("env printf 'x\\n' a", "a"),
-    ("echo a | xargs printf 'x\\n'", "a"),
-    ("timeout 5 printf 'x\\n' a", "a"),
-    ("find /data -maxdepth 0 -exec printf 'x\\n' {} \\;", "/data"),
-])
+@pytest.mark.parametrize(
+    "line, word",
+    [
+        ("env printf 'x\\n' a", "a"),
+        ("echo a | xargs printf 'x\\n'", "a"),
+        ("timeout 5 printf 'x\\n' a", "a"),
+        ("find /data -maxdepth 0 -exec printf 'x\\n' {} \\;", "/data"),
+    ],
+)
 async def test_printf_under_a_command_runner_is_the_program(
-        line: str, word: str):
+    line: str, word: str
+):
     ws = Workspace({"/data": RAMVFS()}, mode=MountMode.WRITE)
     io = await ws.shell(line)
     assert await materialize(io.stdout) == b"x\n"
@@ -440,13 +476,17 @@ async def test_printf_under_a_command_runner_is_the_program(
 
 # A function one of them runs is shell code, whose printf is the shell's.
 @pytest.mark.asyncio
-@pytest.mark.parametrize("runner",
-                         ["env g", "echo a | xargs g", "timeout 5 g"])
+@pytest.mark.parametrize(
+    "runner", ["env g", "echo a | xargs g", "timeout 5 g"]
+)
 async def test_printf_in_a_function_a_command_runner_runs_is_the_builtin(
-        runner: str):
+    runner: str,
+):
     ws = Workspace({"/data": RAMVFS()}, mode=MountMode.WRITE)
-    io = await ws.shell("g() { printf -v r ok; printf 'x\\n' extra; "
-                        f"echo \"[$r]\"; }}; {runner}")
+    io = await ws.shell(
+        "g() { printf -v r ok; printf 'x\\n' extra; "
+        f'echo "[$r]"; }}; {runner}'
+    )
     assert await materialize(io.stdout) == b"x\n[ok]\n"
     assert await materialize(io.stderr) == b""
     assert io.exit_code == 0
@@ -456,8 +496,9 @@ async def test_printf_in_a_function_a_command_runner_runs_is_the_builtin(
 # warning to stderr and leaves the status alone.
 @pytest.mark.asyncio
 async def test_printf_missing_digit_warns_and_exits_0():
-    out, io, node = await handle_printf(["\\x|"],
-                                        SessionState(session_id="s1"))
+    out, io, node = await handle_printf(
+        ["\\x|"], SessionState(session_id="s1")
+    )
     assert out == b"\\x|"
     assert io.exit_code == 0
     assert io.stderr == b"printf: missing hex digit for \\x\n"
@@ -482,8 +523,9 @@ async def test_printf_v_readonly_writes_the_warning_before_the_refusal():
     set_attr(session, "R", VarAttr.READONLY)
     out, io, node = await handle_printf(["-v", "R", "\\x"], session)
     assert node.exit_code == 1
-    assert io.stderr == (b"printf: missing hex digit for \\x\n"
-                         b"bash: R: readonly variable\n")
+    assert io.stderr == (
+        b"printf: missing hex digit for \\x\nbash: R: readonly variable\n"
+    )
     assert session.env["R"] == "orig"
 
 
@@ -491,8 +533,9 @@ async def test_printf_v_readonly_writes_the_warning_before_the_refusal():
 # status, with or without -v; a readonly -v target still fails.
 @pytest.mark.asyncio
 async def test_printf_stop_from_b_exits_0_after_an_invalid_number():
-    out, io, node = await handle_printf(["%d%b", "abc", "\\c"],
-                                        SessionState(session_id="s1"))
+    out, io, node = await handle_printf(
+        ["%d%b", "abc", "\\c"], SessionState(session_id="s1")
+    )
     assert out == b"0"
     assert io.exit_code == 0
     assert io.stderr == b"printf: abc: invalid number\n"
@@ -503,11 +546,13 @@ async def test_printf_stop_from_b_exits_0_after_an_invalid_number():
 async def test_printf_v_stop_from_b_exits_0_and_still_assigns():
     session = SessionState(session_id="s1")
     out, io, node = await handle_printf(
-        ["-v", "V", "%d%b", "abc", "x", "def", "\\c"], session)
+        ["-v", "V", "%d%b", "abc", "x", "def", "\\c"], session
+    )
     assert out is None
     assert node.exit_code == 0
-    assert io.stderr == (b"printf: abc: invalid number\n"
-                         b"printf: def: invalid number\n")
+    assert io.stderr == (
+        b"printf: abc: invalid number\nprintf: def: invalid number\n"
+    )
     assert session.env["V"] == "0x0"
 
 
@@ -516,9 +561,11 @@ async def test_printf_v_readonly_still_fails_after_a_stop_from_b():
     session = SessionState(session_id="s1")
     seed_var(session, "R", "orig")
     set_attr(session, "R", VarAttr.READONLY)
-    out, io, node = await handle_printf(["-v", "R", "%d%b", "abc", "\\c"],
-                                        session)
+    out, io, node = await handle_printf(
+        ["-v", "R", "%d%b", "abc", "\\c"], session
+    )
     assert node.exit_code == 1
-    assert io.stderr == (b"printf: abc: invalid number\n"
-                         b"bash: R: readonly variable\n")
+    assert io.stderr == (
+        b"printf: abc: invalid number\nbash: R: readonly variable\n"
+    )
     assert session.env["R"] == "orig"

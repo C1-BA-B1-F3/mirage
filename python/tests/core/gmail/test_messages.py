@@ -16,10 +16,15 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from mirage.core.gmail.messages import (_decode_body, _extract_header,
-                                        _parse_address, _parse_address_list,
-                                        get_message_processed, get_message_raw,
-                                        list_messages)
+from mirage.core.gmail.messages import (
+    _decode_body,
+    _extract_header,
+    _parse_address,
+    _parse_address_list,
+    get_message_processed,
+    get_message_raw,
+    list_messages,
+)
 from mirage.core.google.client import TokenManager
 from mirage.core.google.config import GoogleConfig
 
@@ -39,14 +44,8 @@ def token_manager():
 
 def test_extract_header():
     headers = [
-        {
-            "name": "From",
-            "value": "alice@example.com"
-        },
-        {
-            "name": "Subject",
-            "value": "Hello"
-        },
+        {"name": "From", "value": "alice@example.com"},
+        {"name": "Subject", "value": "Hello"},
     ]
     assert _extract_header(headers, "From") == "alice@example.com"
     assert _extract_header(headers, "subject") == "Hello"
@@ -78,19 +77,19 @@ def test_parse_address_list_empty():
 
 def test_decode_body_plain():
     import base64
+
     text = "Hello, world!"
     encoded = base64.urlsafe_b64encode(text.encode()).decode().rstrip("=")
     payload = {
         "mimeType": "text/plain",
-        "body": {
-            "data": encoded
-        },
+        "body": {"data": encoded},
     }
     assert _decode_body(payload) == text
 
 
 def test_decode_body_multipart():
     import base64
+
     text = "Nested text"
     encoded = base64.urlsafe_b64encode(text.encode()).decode().rstrip("=")
     payload = {
@@ -98,9 +97,7 @@ def test_decode_body_multipart():
         "parts": [
             {
                 "mimeType": "text/plain",
-                "body": {
-                    "data": encoded
-                },
+                "body": {"data": encoded},
             },
         ],
     }
@@ -116,20 +113,14 @@ def test_decode_body_empty():
 async def test_list_messages(token_manager):
     api_response = {
         "messages": [
-            {
-                "id": "msg1",
-                "threadId": "t1"
-            },
-            {
-                "id": "msg2",
-                "threadId": "t2"
-            },
+            {"id": "msg1", "threadId": "t1"},
+            {"id": "msg2", "threadId": "t2"},
         ]
     }
     with patch(
-            "mirage.core.gmail.messages.google_get",
-            new_callable=AsyncMock,
-            return_value=api_response,
+        "mirage.core.gmail.messages.google_get",
+        new_callable=AsyncMock,
+        return_value=api_response,
     ):
         result = await list_messages(token_manager, label_id="INBOX")
         assert len(result) == 2
@@ -140,9 +131,9 @@ async def test_list_messages(token_manager):
 async def test_get_message_raw(token_manager):
     msg = {"id": "msg1", "payload": {"headers": []}}
     with patch(
-            "mirage.core.gmail.messages.google_get",
-            new_callable=AsyncMock,
-            return_value=msg,
+        "mirage.core.gmail.messages.google_get",
+        new_callable=AsyncMock,
+        return_value=msg,
     ):
         result = await get_message_raw(token_manager, "msg1")
         assert result["id"] == "msg1"
@@ -151,6 +142,7 @@ async def test_get_message_raw(token_manager):
 @pytest.mark.asyncio
 async def test_get_message_processed(token_manager):
     import base64
+
     body_text = "Hello!"
     encoded = base64.urlsafe_b64encode(body_text.encode()).decode().rstrip("=")
     msg = {
@@ -159,35 +151,20 @@ async def test_get_message_processed(token_manager):
         "snippet": "Hello!",
         "labelIds": ["INBOX"],
         "payload": {
-            "mimeType":
-            "text/plain",
-            "body": {
-                "data": encoded
-            },
+            "mimeType": "text/plain",
+            "body": {"data": encoded},
             "headers": [
-                {
-                    "name": "From",
-                    "value": "alice@example.com"
-                },
-                {
-                    "name": "To",
-                    "value": "bob@example.com"
-                },
-                {
-                    "name": "Subject",
-                    "value": "Test"
-                },
-                {
-                    "name": "Date",
-                    "value": "Mon, 1 Apr 2026 00:00:00 +0000"
-                },
+                {"name": "From", "value": "alice@example.com"},
+                {"name": "To", "value": "bob@example.com"},
+                {"name": "Subject", "value": "Test"},
+                {"name": "Date", "value": "Mon, 1 Apr 2026 00:00:00 +0000"},
             ],
         },
     }
     with patch(
-            "mirage.core.gmail.messages.google_get",
-            new_callable=AsyncMock,
-            return_value=msg,
+        "mirage.core.gmail.messages.google_get",
+        new_callable=AsyncMock,
+        return_value=msg,
     ):
         result = await get_message_processed(token_manager, "msg1")
         assert result["id"] == "msg1"
@@ -205,30 +182,31 @@ async def test_get_message_processed_includes_attachment_paths(token_manager):
         "labelIds": [],
         "snippet": "",
         "payload": {
-            "headers": [{
-                "name": "Subject",
-                "value": "With Attach"
-            }],
-            "parts": [{
-                "filename": "invoice.pdf",
-                "mimeType": "application/pdf",
-                "body": {
-                    "attachmentId": "att-xyz",
-                    "size": 4096,
-                },
-            }],
+            "headers": [{"name": "Subject", "value": "With Attach"}],
+            "parts": [
+                {
+                    "filename": "invoice.pdf",
+                    "mimeType": "application/pdf",
+                    "body": {
+                        "attachmentId": "att-xyz",
+                        "size": 4096,
+                    },
+                }
+            ],
         },
     }
     with patch(
-            "mirage.core.gmail.messages.google_get",
-            new_callable=AsyncMock,
-            return_value=msg,
+        "mirage.core.gmail.messages.google_get",
+        new_callable=AsyncMock,
+        return_value=msg,
     ):
         result = await get_message_processed(token_manager, "msg2")
-        assert result["attachments"] == [{
-            "id": "att-xyz",
-            "filename": "invoice.pdf",
-            "path": "attachments/att-xyz_invoice.pdf",
-            "mime_type": "application/pdf",
-            "size": 4096,
-        }]
+        assert result["attachments"] == [
+            {
+                "id": "att-xyz",
+                "filename": "invoice.pdf",
+                "path": "attachments/att-xyz_invoice.pdf",
+                "mime_type": "application/pdf",
+                "size": 4096,
+            }
+        ]

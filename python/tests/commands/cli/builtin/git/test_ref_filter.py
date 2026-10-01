@@ -12,17 +12,20 @@
 # limitations under the License.
 
 from mirage.commands.cli.builtin.git import GIT
-from mirage.commands.cli.builtin.git.ref_filter import (FilterWord,
-                                                        filter_words,
-                                                        list_mode_option,
-                                                        without_filter_values)
+from mirage.commands.cli.builtin.git.ref_filter import (
+    FilterWord,
+    filter_words,
+    list_mode_option,
+    without_filter_values,
+)
 from mirage.commands.cli.types import CLIInvocation
 
 
 def _words(verb: str, *argv: str) -> list[FilterWord]:
     spec = next(node for node in GIT.subcommands if node.name == verb)
     return filter_words(
-        CLIInvocation(None, argv=(verb, *argv), texts=(), flags={}, spec=spec))
+        CLIInvocation(None, argv=(verb, *argv), texts=(), flags={}, spec=spec)
+    )
 
 
 # parse-options' LASTARG_DEFAULT: the next word, whatever it looks like,
@@ -66,11 +69,15 @@ def test_takes_points_at_as_a_value_option_the_parser_consumed():
 
 def test_drops_the_values_the_parser_left_among_the_operands_once_each():
     found = _words("branch", "--contains", "side", "side", "x*")
-    assert without_filter_values(("side", "side", "x*"),
-                                 found) == ("side", "x*")
+    assert without_filter_values(("side", "side", "x*"), found) == (
+        "side",
+        "x*",
+    )
 
 
 def test_names_the_filter_git_refuses_first_in_gits_order():
-    assert list_mode_option(_words("tag", "--merged", "a", "--contains",
-                                   "b")) == "--contains"
+    assert (
+        list_mode_option(_words("tag", "--merged", "a", "--contains", "b"))
+        == "--contains"
+    )
     assert list_mode_option([]) is None

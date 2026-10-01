@@ -42,8 +42,9 @@ async def _fake_acquire():
 
 @pytest.fixture
 def accessor():
-    a = PostgresAccessor(config=PostgresConfig(
-        dsn="postgres://u:p@localhost:5432/db"))
+    a = PostgresAccessor(
+        config=PostgresConfig(dsn="postgres://u:p@localhost:5432/db")
+    )
     pool = MagicMock()
     pool.acquire = lambda: _fake_acquire()
     a.pool = AsyncMock(return_value=pool)
@@ -54,31 +55,44 @@ def accessor():
 def _guard_reads(monkeypatch):
     # The stat guard is captured by the search factory at import, so fake
     # what it reads at call time: the pool (above) and the client queries.
-    monkeypatch.setattr("mirage.core.postgres.client.list_schemas",
-                        AsyncMock(return_value=["public"]))
-    monkeypatch.setattr("mirage.core.postgres.client.list_tables",
-                        AsyncMock(return_value=["authors", "books"]))
-    monkeypatch.setattr("mirage.core.postgres.client.list_views",
-                        AsyncMock(return_value=[]))
-    monkeypatch.setattr("mirage.core.postgres.client.list_matviews",
-                        AsyncMock(return_value=[]))
-    monkeypatch.setattr("mirage.core.postgres.client.fetch_columns",
-                        AsyncMock(return_value=[]))
-    monkeypatch.setattr("mirage.core.postgres.client.estimated_row_count",
-                        AsyncMock(return_value=0))
-    monkeypatch.setattr("mirage.core.postgres.client.table_size_bytes",
-                        AsyncMock(return_value=0))
+    monkeypatch.setattr(
+        "mirage.core.postgres.client.list_schemas",
+        AsyncMock(return_value=["public"]),
+    )
+    monkeypatch.setattr(
+        "mirage.core.postgres.client.list_tables",
+        AsyncMock(return_value=["authors", "books"]),
+    )
+    monkeypatch.setattr(
+        "mirage.core.postgres.client.list_views", AsyncMock(return_value=[])
+    )
+    monkeypatch.setattr(
+        "mirage.core.postgres.client.list_matviews", AsyncMock(return_value=[])
+    )
+    monkeypatch.setattr(
+        "mirage.core.postgres.client.fetch_columns", AsyncMock(return_value=[])
+    )
+    monkeypatch.setattr(
+        "mirage.core.postgres.client.estimated_row_count",
+        AsyncMock(return_value=0),
+    )
+    monkeypatch.setattr(
+        "mirage.core.postgres.client.table_size_bytes",
+        AsyncMock(return_value=0),
+    )
 
 
 def _glob_path() -> PathSpec:
     # The dispatcher hands a glob operand through with the trailing segment
     # in `pattern` and the wildcard still in `directory`; detect_scope would
     # otherwise read the "*" as an entity literally named "*".
-    return PathSpec(virtual=GLOB,
-                    directory="/public/tables",
-                    vfs_path=GLOB.strip("/"),
-                    pattern="rows.jsonl",
-                    resolved=False)
+    return PathSpec(
+        virtual=GLOB,
+        directory="/public/tables",
+        vfs_path=GLOB.strip("/"),
+        pattern="rows.jsonl",
+        resolved=False,
+    )
 
 
 def _resolved_pair() -> list[PathSpec]:
@@ -107,15 +121,20 @@ async def test_grep_glob_skips_pushdown_and_expands(accessor):
         seen["generic"] = [p.virtual for p in paths]
         return b"", IOResult()
 
-    with patch(
+    with (
+        patch(
             SEARCH_ENTITY,
             new=AsyncMock(side_effect=AssertionError("pushdown ran on glob")),
-    ), patch(
+        ),
+        patch(
             RESOLVE,
             new=_fake_resolver(_resolve_pair),
-    ), patch.dict(GENERICS, {"grep": fake_generic}):
-        _, io = await grep(accessor, [_glob_path()], ['ada'],
-                           CommandOpts(index=NULL_INDEX))
+        ),
+        patch.dict(GENERICS, {"grep": fake_generic}),
+    ):
+        _, io = await grep(
+            accessor, [_glob_path()], ["ada"], CommandOpts(index=NULL_INDEX)
+        )
 
     assert io.exit_code == 0
     assert seen["generic"] == [
@@ -127,45 +146,53 @@ async def test_grep_glob_skips_pushdown_and_expands(accessor):
 @pytest.mark.asyncio
 async def test_grep_concrete_path_still_uses_pushdown(accessor, _guard_reads):
     search = AsyncMock(return_value=[])
-    with patch(
+    with (
+        patch(
             SEARCH_ENTITY,
             new=search,
-    ), patch(
+        ),
+        patch(
             RESOLVE,
             new=_fake_resolver(
-                AsyncMock(side_effect=AssertionError("glob ran"))),
+                AsyncMock(side_effect=AssertionError("glob ran"))
+            ),
+        ),
     ):
-        _, io = await grep(accessor, [
-            PathSpec(virtual=CONCRETE,
-                     directory='/public/tables/books',
-                     vfs_path=CONCRETE.strip('/'))
-        ], ['ada'], CommandOpts(index=NULL_INDEX))
+        _, io = await grep(
+            accessor,
+            [
+                PathSpec(
+                    virtual=CONCRETE,
+                    directory="/public/tables/books",
+                    vfs_path=CONCRETE.strip("/"),
+                )
+            ],
+            ["ada"],
+            CommandOpts(index=NULL_INDEX),
+        )
 
     assert io.exit_code == 1
     search.assert_awaited_once()
 
 
 def _concrete_path() -> PathSpec:
-    return PathSpec(virtual=CONCRETE,
-                    directory="/public/tables/books",
-                    vfs_path=CONCRETE.strip("/"))
+    return PathSpec(
+        virtual=CONCRETE,
+        directory="/public/tables/books",
+        vfs_path=CONCRETE.strip("/"),
+    )
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("flags", [
-    {
-        "v": True
-    },
-    {
-        "c": True
-    },
-    {
-        "args_l": True
-    },
-    {
-        "n": True
-    },
-])
+@pytest.mark.parametrize(
+    "flags",
+    [
+        {"v": True},
+        {"c": True},
+        {"args_l": True},
+        {"n": True},
+    ],
+)
 async def test_grep_shaping_flag_skips_pushdown(accessor, flags):
     # A shaping flag cannot be honored by the ILIKE push-down (which prints
     # whole matching rows), so the wrapper must defer to the generic scan.
@@ -178,15 +205,23 @@ async def test_grep_shaping_flag_skips_pushdown(accessor, flags):
         seen["generic"] = [p.virtual for p in paths]
         return b"", IOResult()
 
-    with patch(
+    with (
+        patch(
             SEARCH_ENTITY,
             new=AsyncMock(side_effect=AssertionError("pushdown ran w/ flag")),
-    ), patch(
+        ),
+        patch(
             RESOLVE,
             new=_fake_resolver(_resolve_one),
-    ), patch.dict(GENERICS, {"grep": fake_generic}):
-        await grep(accessor, [_concrete_path()], ['ada'],
-                   CommandOpts(index=NULL_INDEX, flags={**flags}))
+        ),
+        patch.dict(GENERICS, {"grep": fake_generic}),
+    ):
+        await grep(
+            accessor,
+            [_concrete_path()],
+            ["ada"],
+            CommandOpts(index=NULL_INDEX, flags={**flags}),
+        )
 
     assert seen["generic"] == [CONCRETE]
 
@@ -204,24 +239,34 @@ async def test_grep_regex_pattern_skips_pushdown(accessor):
         seen["generic"] = [p.virtual for p in paths]
         return b"", IOResult()
 
-    with patch(
+    with (
+        patch(
             SEARCH_ENTITY,
             new=AsyncMock(side_effect=AssertionError("pushdown ran on regex")),
-    ), patch(
+        ),
+        patch(
             RESOLVE,
             new=_fake_resolver(_resolve_one),
-    ), patch.dict(GENERICS, {"grep": fake_generic}):
-        await grep(accessor, [_concrete_path()], ['a.b'],
-                   CommandOpts(index=NULL_INDEX))
+        ),
+        patch.dict(GENERICS, {"grep": fake_generic}),
+    ):
+        await grep(
+            accessor,
+            [_concrete_path()],
+            ["a.b"],
+            CommandOpts(index=NULL_INDEX),
+        )
 
     assert seen["generic"] == [CONCRETE]
 
 
 def _second_path() -> PathSpec:
     other = "/public/tables/authors/rows.jsonl"
-    return PathSpec(virtual=other,
-                    directory="/public/tables/authors",
-                    vfs_path=other.strip("/"))
+    return PathSpec(
+        virtual=other,
+        directory="/public/tables/authors",
+        vfs_path=other.strip("/"),
+    )
 
 
 @pytest.mark.asyncio
@@ -237,16 +282,23 @@ async def test_grep_second_operand_skips_pushdown(accessor):
         seen["generic"] = [p.virtual for p in paths]
         return b"", IOResult()
 
-    with patch(
+    with (
+        patch(
             SEARCH_ENTITY,
             new=AsyncMock(side_effect=AssertionError("pushdown ran on 2 ops")),
-    ), patch(
+        ),
+        patch(
             RESOLVE,
             new=_fake_resolver(_resolve_two),
-    ), patch.dict(GENERICS, {"grep": fake_generic}):
-        await grep(accessor,
-                   [_concrete_path(), _second_path()], ['ada'],
-                   CommandOpts(index=NULL_INDEX))
+        ),
+        patch.dict(GENERICS, {"grep": fake_generic}),
+    ):
+        await grep(
+            accessor,
+            [_concrete_path(), _second_path()],
+            ["ada"],
+            CommandOpts(index=NULL_INDEX),
+        )
 
     assert seen["generic"] == [CONCRETE, "/public/tables/authors/rows.jsonl"]
 
@@ -262,15 +314,23 @@ async def test_rg_second_operand_skips_pushdown(accessor):
         seen["generic"] = [p.virtual for p in paths]
         return b"", IOResult()
 
-    with patch(
+    with (
+        patch(
             SEARCH_ENTITY,
             new=AsyncMock(side_effect=AssertionError("pushdown ran on 2 ops")),
-    ), patch(
+        ),
+        patch(
             RESOLVE,
             new=_fake_resolver(_resolve_two),
-    ), patch.dict(GENERICS, {"rg": fake_generic}):
-        await rg(accessor, [_concrete_path(), _second_path()], ['ada'],
-                 CommandOpts(index=NULL_INDEX))
+        ),
+        patch.dict(GENERICS, {"rg": fake_generic}),
+    ):
+        await rg(
+            accessor,
+            [_concrete_path(), _second_path()],
+            ["ada"],
+            CommandOpts(index=NULL_INDEX),
+        )
 
     assert seen["generic"] == [CONCRETE, "/public/tables/authors/rows.jsonl"]
 
@@ -283,15 +343,20 @@ async def test_rg_glob_skips_pushdown_and_expands(accessor):
         seen["generic"] = [p.virtual for p in paths]
         return b"", IOResult()
 
-    with patch(
+    with (
+        patch(
             SEARCH_ENTITY,
             new=AsyncMock(side_effect=AssertionError("pushdown ran on glob")),
-    ), patch(
+        ),
+        patch(
             RESOLVE,
             new=_fake_resolver(_resolve_pair),
-    ), patch.dict(GENERICS, {"rg": fake_generic}):
-        _, io = await rg(accessor, [_glob_path()], ['ada'],
-                         CommandOpts(index=NULL_INDEX))
+        ),
+        patch.dict(GENERICS, {"rg": fake_generic}),
+    ):
+        _, io = await rg(
+            accessor, [_glob_path()], ["ada"], CommandOpts(index=NULL_INDEX)
+        )
 
     assert io.exit_code == 0
     assert seen["generic"] == [
@@ -312,21 +377,31 @@ async def test_tail_follow_reads_the_relation_whole(accessor, flags):
         reached.append(paths)
         return b"", IOResult()
 
-    concrete = PathSpec(virtual=CONCRETE,
-                        directory="/public/tables/books",
-                        vfs_path=CONCRETE.strip("/"))
-    with patch(
+    concrete = PathSpec(
+        virtual=CONCRETE,
+        directory="/public/tables/books",
+        vfs_path=CONCRETE.strip("/"),
+    )
+    with (
+        patch(
             "mirage.commands.builtin.postgres.tail.client.count_rows",
             new=AsyncMock(side_effect=AssertionError("pushdown ran under -f")),
-    ), patch(
+        ),
+        patch(
             "mirage.commands.builtin.postgres.tail.resolve_or_empty",
             new=AsyncMock(return_value=[concrete]),
-    ), patch(
+        ),
+        patch(
             "mirage.commands.builtin.postgres.tail.tail_generic",
             new=fake_generic,
+        ),
     ):
-        _, io = await tail(accessor, [concrete], [],
-                           CommandOpts(index=NULL_INDEX, flags=flags))
+        _, io = await tail(
+            accessor,
+            [concrete],
+            [],
+            CommandOpts(index=NULL_INDEX, flags=flags),
+        )
     assert io.exit_code == 0
     assert reached == [[concrete]]
 
@@ -341,18 +416,27 @@ async def test_tail_glob_does_not_query_a_relation_named_star(accessor):
     async def fake_generic(paths, _texts, _opts, _stat, _stream):
         return b"", IOResult()
 
-    with patch(
+    with (
+        patch(
             "mirage.commands.builtin.postgres.tail.client.count_rows",
             new=AsyncMock(side_effect=AssertionError("pushdown ran on glob")),
-    ), patch(
+        ),
+        patch(
             "mirage.commands.builtin.postgres.tail.resolve_or_empty",
             new=lambda _ops, _accessor, _paths, _index: fake_resolve(
-                _accessor, _paths),
-    ), patch(
+                _accessor, _paths
+            ),
+        ),
+        patch(
             "mirage.commands.builtin.postgres.tail.tail_generic",
             new=fake_generic,
+        ),
     ):
-        _, io = await tail(accessor, [_glob_path()], [],
-                           CommandOpts(index=NULL_INDEX, flags={'n': '1'}))
+        _, io = await tail(
+            accessor,
+            [_glob_path()],
+            [],
+            CommandOpts(index=NULL_INDEX, flags={"n": "1"}),
+        )
 
     assert io.exit_code == 0

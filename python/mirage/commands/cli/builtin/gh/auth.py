@@ -8,7 +8,8 @@ from mirage.io.types import IOResult
 
 
 async def status(
-        inv: CLIInvocation[GhConfig]) -> tuple[bytes | None, IOResult]:
+    inv: CLIInvocation[GhConfig],
+) -> tuple[bytes | None, IOResult]:
     """Check the configured credential without accessing a mount.
 
     The config stores a resolved secret, not its environment/file origin, so
@@ -25,13 +26,18 @@ async def status(
     except GitHubApiError as exc:
         if exc.status not in (401, 403):
             raise
-        text = (f"{host}\n  X Failed to log in using the token in "
-                f"Mirage configuration (HTTP {exc.status})\n")
+        text = (
+            f"{host}\n  X Failed to log in using the token in "
+            f"Mirage configuration (HTTP {exc.status})\n"
+        )
         return None, IOResult(exit_code=1, stderr=text.encode())
     if not account:
         return None, IOResult(
             exit_code=1,
-            stderr=f"{host}: authenticated response has no login\n".encode())
-    text = (f"{host}\n  ✓ Logged in to {host} account {account} "
-            "(Mirage configuration)\n  - Active account: true\n")
+            stderr=f"{host}: authenticated response has no login\n".encode(),
+        )
+    text = (
+        f"{host}\n  ✓ Logged in to {host} account {account} "
+        "(Mirage configuration)\n  - Active account: true\n"
+    )
     return text.encode(), IOResult()

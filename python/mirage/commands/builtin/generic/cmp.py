@@ -1,8 +1,11 @@
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass
 
-from mirage.commands.builtin.constants import (CMP_SIZE_UNITS, INTMAX,
-                                               XSTRTOUMAX_PATTERN)
+from mirage.commands.builtin.constants import (
+    CMP_SIZE_UNITS,
+    INTMAX,
+    XSTRTOUMAX_PATTERN,
+)
 from mirage.commands.builtin.utils.constants import STDIN_OPERAND
 from mirage.commands.builtin.utils.output import format_records
 from mirage.commands.builtin.utils.size_suffix import parse_base0
@@ -12,8 +15,11 @@ from mirage.commands.errors import UsageError
 from mirage.commands.spec import SPECS
 from mirage.commands.spec.flag_view import FlagView
 from mirage.commands.spec.types import CommandName, FlagValue
-from mirage.commands.spec.usage import (extra_operand_error,
-                                        missing_operand_error, usage_hint)
+from mirage.commands.spec.usage import (
+    extra_operand_error,
+    missing_operand_error,
+    usage_hint,
+)
 from mirage.io.types import ByteSource, IOResult, materialize
 from mirage.types import PathSpec
 from mirage.utils.errors import FS_ERRORS, format_fs_error
@@ -113,8 +119,9 @@ def offset_width(sizes: list[int], limit: int | None) -> int:
     return len(str(max(most, 0)))
 
 
-def operand_skips(texts: Sequence[str], skip: tuple[int,
-                                                    int]) -> tuple[int, int]:
+def operand_skips(
+    texts: Sequence[str], skip: tuple[int, int]
+) -> tuple[int, int]:
     """The skips cmp's SKIP1 and SKIP2 operands give, beside -i's.
 
     Each is read as -i reads its counts, and each file keeps the larger
@@ -139,17 +146,17 @@ def operand_skips(texts: Sequence[str], skip: tuple[int,
 
 
 async def cmp_cmd(
-        paths: list[PathSpec],
-        texts: Sequence[str] = (),
-        *,
-        read_bytes: Callable[..., Awaitable[bytes]],
-        stdin: ByteSource | None = None,
-        silent: bool = False,
-        verbose: bool = False,
-        limit: int | None = None,
-        print_bytes: bool = False,
-        skip: tuple[int, int] = (0, 0),
-        argv: Sequence[str] = (),
+    paths: list[PathSpec],
+    texts: Sequence[str] = (),
+    *,
+    read_bytes: Callable[..., Awaitable[bytes]],
+    stdin: ByteSource | None = None,
+    silent: bool = False,
+    verbose: bool = False,
+    limit: int | None = None,
+    print_bytes: bool = False,
+    skip: tuple[int, int] = (0, 0),
+    argv: Sequence[str] = (),
 ) -> tuple[ByteSource | None, IOResult]:
     if not paths:
         raise missing_operand_error(CommandName.CMP, None, argv)
@@ -157,8 +164,9 @@ async def cmp_cmd(
     # A lone FILE1 is compared with stdin, which GNU names `-`.
     p0, p1 = paths[0], paths[1] if len(paths) > 1 else STDIN_OPERAND
     if is_stdin(p0) and is_stdin(p1):
-        return await _one_stdin_twice(read_bytes, stdin, p0, skip, silent,
-                                      verbose, limit, print_bytes)
+        return await _one_stdin_twice(
+            read_bytes, stdin, p0, skip, silent, verbose, limit, print_bytes
+        )
     names = (p0.raw_path or p0.virtual, p1.raw_path or p1.virtual)
     read = stdin_bytes(read_bytes, stdin)
     # GNU cmp reserves exit 1 for "files differ"; trouble is exit 2.
@@ -178,25 +186,40 @@ async def cmp_cmd(
         except FS_ERRORS as exc:
             return None, IOResult(
                 exit_code=2,
-                stderr=None if silent else format_fs_error("cmp", exc, paths))
+                stderr=None if silent else format_fs_error("cmp", exc, paths),
+            )
     if p0.virtual == p1.virtual and skip[0] == skip[1]:
         return None, IOResult()
     if unread is not None:
-        return None, IOResult(exit_code=2,
-                              stderr=format_fs_error("cmp", unread, paths))
+        return None, IOResult(
+            exit_code=2, stderr=format_fs_error("cmp", unread, paths)
+        )
     data1, data2 = data
     sizes = [len(data1) - skip[0]] if not is_stdin(p0) else []
     if not is_stdin(p1):
         sizes.append(len(data2) - skip[1])
-    return _compared(data1[skip[0]:], data2[skip[1]:], names, sizes, silent,
-                     verbose, limit, print_bytes)
+    return _compared(
+        data1[skip[0] :],
+        data2[skip[1] :],
+        names,
+        sizes,
+        silent,
+        verbose,
+        limit,
+        print_bytes,
+    )
 
 
 async def _one_stdin_twice(
-        read_bytes: Callable[..., Awaitable[bytes]], stdin: ByteSource | None,
-        p: PathSpec, skip: tuple[int, int], silent: bool, verbose: bool,
-        limit: int | None,
-        print_bytes: bool) -> tuple[ByteSource | None, IOResult]:
+    read_bytes: Callable[..., Awaitable[bytes]],
+    stdin: ByteSource | None,
+    p: PathSpec,
+    skip: tuple[int, int],
+    silent: bool,
+    verbose: bool,
+    limit: int | None,
+    print_bytes: bool,
+) -> tuple[ByteSource | None, IOResult]:
     """Both operands naming the one stdin, as diffutils 3.10 answers it.
 
     The same file at the same offset is equal unread. Otherwise cmp
@@ -218,17 +241,32 @@ async def _one_stdin_twice(
     if skip[0] == skip[1]:
         return None, IOResult()
     data = await stdin_bytes(read_bytes, stdin)(p)
-    stdout, io = _compared(data[skip[0] + skip[1]:], b"", ("-", "-"), [],
-                           silent, verbose, limit, print_bytes)
+    stdout, io = _compared(
+        data[skip[0] + skip[1] :],
+        b"",
+        ("-", "-"),
+        [],
+        silent,
+        verbose,
+        limit,
+        print_bytes,
+    )
     held = await materialize(io.stderr) if io.stderr is not None else b""
     io.stderr = held + b"cmp: -: Bad file descriptor\n"
     io.exit_code = 2
     return stdout, io
 
 
-def _compared(data1: bytes, data2: bytes, names: tuple[str, str],
-              sizes: list[int], silent: bool, verbose: bool, limit: int | None,
-              print_bytes: bool) -> tuple[ByteSource | None, IOResult]:
+def _compared(
+    data1: bytes,
+    data2: bytes,
+    names: tuple[str, str],
+    sizes: list[int],
+    silent: bool,
+    verbose: bool,
+    limit: int | None,
+    print_bytes: bool,
+) -> tuple[ByteSource | None, IOResult]:
     """cmp's answer for two inputs already past their skips.
 
     Args:
@@ -272,14 +310,18 @@ def _compared(data1: bytes, data2: bytes, names: tuple[str, str],
             # GNU counts in `byte` under -b and in `char` otherwise, on
             # the same offset -- the word tracks the flag, not a unit.
             unit = "byte" if print_bytes else "char"
-            msg = (f"{names[0]} {names[1]}"
-                   f" differ: {unit} {idx + 1}, line {line}")
+            msg = (
+                f"{names[0]} {names[1]} differ: {unit} {idx + 1}, line {line}"
+            )
             if print_bytes:
-                msg += (f" is {data1[idx]:>3o} {visible(data1[idx])}"
-                        f" {data2[idx]:>3o} {visible(data2[idx])}")
+                msg += (
+                    f" is {data1[idx]:>3o} {visible(data1[idx])}"
+                    f" {data2[idx]:>3o} {visible(data2[idx])}"
+                )
             return format_records([msg]), IOResult(exit_code=1)
-    return None, IOResult(exit_code=1,
-                          stderr=_eof_error(names, data1, data2, verbose))
+    return None, IOResult(
+        exit_code=1, stderr=_eof_error(names, data1, data2, verbose)
+    )
 
 
 def _eof_error(
@@ -309,8 +351,11 @@ def _eof_error(
     msg = f"cmp: EOF on {shorter} after byte {len(held)}"
     if not verbose:
         lines = held.count(_NEWLINE)
-        msg += (f", line {lines}"
-                if held[-1] == _NEWLINE else f", in line {lines + 1}")
+        msg += (
+            f", line {lines}"
+            if held[-1] == _NEWLINE
+            else f", in line {lines + 1}"
+        )
     return (msg + "\n").encode()
 
 
@@ -352,13 +397,15 @@ async def cmp_generic(
     read_bytes: Callable[..., Awaitable[bytes]],
 ) -> tuple[ByteSource | None, IOResult]:
     parsed = parse_flags(opts.flags)
-    return await cmp_cmd(paths,
-                         texts,
-                         read_bytes=read_bytes,
-                         stdin=opts.stdin,
-                         silent=parsed.silent,
-                         verbose=parsed.verbose,
-                         limit=parsed.limit,
-                         print_bytes=parsed.print_bytes,
-                         skip=parsed.skip,
-                         argv=opts.argv)
+    return await cmp_cmd(
+        paths,
+        texts,
+        read_bytes=read_bytes,
+        stdin=opts.stdin,
+        silent=parsed.silent,
+        verbose=parsed.verbose,
+        limit=parsed.limit,
+        print_bytes=parsed.print_bytes,
+        skip=parsed.skip,
+        argv=opts.argv,
+    )

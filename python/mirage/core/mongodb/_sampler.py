@@ -40,8 +40,11 @@ def _scalar_tag(v) -> str:
         # tell a whole-valued double from an int (Number.isInteger). Mirror
         # that here so py and ts classify identically (a whole-valued double
         # is typed int, matching how it renders as a bare integer).
-        return (BsonTypeTag.INT
-                if math.isfinite(v) and v.is_integer() else BsonTypeTag.DOUBLE)
+        return (
+            BsonTypeTag.INT
+            if math.isfinite(v) and v.is_integer()
+            else BsonTypeTag.DOUBLE
+        )
     if isinstance(v, str):
         return BsonTypeTag.STRING
     if isinstance(v, ObjectId):
@@ -66,8 +69,8 @@ def _array_tag(items: Iterable[Any]) -> str:
     if not items:
         return BsonTypeTag.ARRAY
     if all(
-            isinstance(x, (int, float)) and not isinstance(x, bool)
-            for x in items):
+        isinstance(x, (int, float)) and not isinstance(x, bool) for x in items
+    ):
         return f"array<{BsonTypeTag.DOUBLE}>({len(items)})"
     if all(isinstance(x, str) for x in items):
         return f"array<{BsonTypeTag.STRING}>"
@@ -88,8 +91,9 @@ def _walk(value, prefix: str, counts: dict[str, dict[str, int]]) -> None:
         _bump(counts, prefix, _scalar_tag(value))
 
 
-async def sample_field_types(col,
-                             sample_size: int = 100) -> list[dict[str, Any]]:
+async def sample_field_types(
+    col, sample_size: int = 100
+) -> list[dict[str, Any]]:
     counts: dict[str, dict[str, int]] = {}
     total = 0
     # Read the first sample_size docs sorted by _id (deterministic), not
@@ -105,12 +109,11 @@ async def sample_field_types(col,
         if path == PRIMARY_KEY:
             continue
         presence_count = sum(type_counts.values())
-        fields.append({
-            "path": path,
-            "presence": presence_count / total,
-            "types": {
-                t: c / total
-                for t, c in type_counts.items()
-            },
-        })
+        fields.append(
+            {
+                "path": path,
+                "presence": presence_count / total,
+                "types": {t: c / total for t, c in type_counts.items()},
+            }
+        )
     return fields

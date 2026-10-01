@@ -40,7 +40,8 @@ async def fetch_dead(config: DeadConfig, ref: str) -> ResolvedSecret:
 
 
 def build_secrets_env(
-        kind: str) -> tuple[dict[str, object], Callable[[], Awaitable[None]]]:
+    kind: str,
+) -> tuple[dict[str, object], Callable[[], Awaitable[None]]]:
     """The env plane a secrets target declares, plus its cleanup.
 
     Registers the counting fake (fresh per-ref counters per open, so the
@@ -76,14 +77,8 @@ def build_secrets_env(
     if kind == "dead":
         register_secrets("dead", DeadConfig, fetch_dead)
         return {
-            "DEAD": {
-                "from": "dead",
-                "ref": "x"
-            },
-            "DEAD2": {
-                "from": "dead",
-                "ref": "y"
-            },
+            "DEAD": {"from": "dead", "ref": "x"},
+            "DEAD2": {"from": "dead", "ref": "y"},
         }, _noop
     if kind == "gated":
         register_secrets("gated", DeadConfig, fetch_dead)
@@ -98,58 +93,38 @@ def build_secrets_env(
         os.environ["MIRAGE_INTEG_ARITH_HOP"] = "ARITH_END"
         os.environ["MIRAGE_INTEG_ARITH_END"] = "9"
         return {
-            "HOME": {
-                "from": "env",
-                "key": "MIRAGE_INTEG_HOME_DIR"
-            },
-            "OLDPWD": {
-                "from": "env",
-                "key": "MIRAGE_INTEG_OLDPWD_DIR"
-            },
-            "CDPATH": {
-                "from": "env",
-                "key": "MIRAGE_INTEG_CDPATH_DIR"
-            },
-            "OPTIND": {
-                "from": "env",
-                "key": "MIRAGE_INTEG_OPTIND_START"
-            },
-            "OPTERR": {
-                "from": "env",
-                "key": "MIRAGE_INTEG_OPTERR"
-            },
-            "ARITH_BOUND": {
-                "from": "env",
-                "key": "MIRAGE_INTEG_ARITH_BOUND"
-            },
-            "ARITH_HOP": {
-                "from": "env",
-                "key": "MIRAGE_INTEG_ARITH_HOP"
-            },
-            "ARITH_END": {
-                "from": "env",
-                "key": "MIRAGE_INTEG_ARITH_END"
-            },
+            "HOME": {"from": "env", "key": "MIRAGE_INTEG_HOME_DIR"},
+            "OLDPWD": {"from": "env", "key": "MIRAGE_INTEG_OLDPWD_DIR"},
+            "CDPATH": {"from": "env", "key": "MIRAGE_INTEG_CDPATH_DIR"},
+            "OPTIND": {"from": "env", "key": "MIRAGE_INTEG_OPTIND_START"},
+            "OPTERR": {"from": "env", "key": "MIRAGE_INTEG_OPTERR"},
+            "ARITH_BOUND": {"from": "env", "key": "MIRAGE_INTEG_ARITH_BOUND"},
+            "ARITH_HOP": {"from": "env", "key": "MIRAGE_INTEG_ARITH_HOP"},
+            "ARITH_END": {"from": "env", "key": "MIRAGE_INTEG_ARITH_END"},
         }, _noop
     counts: dict[str, int] = {}
 
-    async def fetch_counting(config: CounterConfig,
-                             ref: str) -> ResolvedSecret:
+    async def fetch_counting(
+        config: CounterConfig, ref: str
+    ) -> ResolvedSecret:
         counts[ref] = counts.get(ref, 0) + 1
         n = counts[ref]
-        return ResolvedSecret(fields={
-            "token": f"tok{n}",
-            "user": f"u{n}",
-            "pass": f"p{n}",
-        })
+        return ResolvedSecret(
+            fields={
+                "token": f"tok{n}",
+                "user": f"u{n}",
+                "pass": f"p{n}",
+            }
+        )
 
     register_secrets("counter", CounterConfig, fetch_counting)
     os.environ["MIRAGE_INTEG_ENV_SECRET"] = "from-process-env"
-    dotfile = tempfile.NamedTemporaryFile(mode="w",
-                                          suffix=".env",
-                                          delete=False)
-    dotfile.write("DOTFILE_SECRET=from-dotenv\n"
-                  "DOTFILE_TEMPLATE=${DOTFILE_SECRET}-lit\n")
+    dotfile = tempfile.NamedTemporaryFile(
+        mode="w", suffix=".env", delete=False
+    )
+    dotfile.write(
+        "DOTFILE_SECRET=from-dotenv\nDOTFILE_TEMPLATE=${DOTFILE_SECRET}-lit\n"
+    )
     dotfile.close()
 
     async def cleanup() -> None:
@@ -157,85 +132,39 @@ def build_secrets_env(
 
     env: dict[str, object] = {
         "APP_NAME": "integ",
-        "EDITOR": {
-            "value": "vi",
-            "readonly": True
-        },
+        "EDITOR": {"value": "vi", "readonly": True},
         "FROZEN_TOKEN": {
             "from": "counter",
             "ref": "frozen",
             "key": "token",
-            "readonly": True
+            "readonly": True,
         },
-        "TOKEN": {
-            "from": "counter",
-            "ref": "tok",
-            "key": "token"
-        },
-        "DB_USER": {
-            "from": "counter",
-            "ref": "db",
-            "key": "user"
-        },
-        "DB_PASS": {
-            "from": "counter",
-            "ref": "db",
-            "key": "pass"
-        },
+        "TOKEN": {"from": "counter", "ref": "tok", "key": "token"},
+        "DB_USER": {"from": "counter", "ref": "db", "key": "user"},
+        "DB_PASS": {"from": "counter", "ref": "db", "key": "pass"},
         "EAGER_PAIR": {
             "from": "counter",
             "ref": "pair",
             "key": "token",
-            "fetch": "eager"
+            "fetch": "eager",
         },
-        "LAZY_PAIR": {
-            "from": "counter",
-            "ref": "pair",
-            "key": "user"
-        },
-        "FROM_ENV": {
-            "from": "env",
-            "key": "MIRAGE_INTEG_ENV_SECRET"
-        },
+        "LAZY_PAIR": {"from": "counter", "ref": "pair", "key": "user"},
+        "FROM_ENV": {"from": "env", "key": "MIRAGE_INTEG_ENV_SECRET"},
         "FROM_DOTFILE": {
             "from": "dotenv",
             "ref": dotfile.name,
-            "key": "DOTFILE_SECRET"
+            "key": "DOTFILE_SECRET",
         },
         "FROM_DOTFILE_LITERAL": {
             "from": "dotenv",
             "ref": dotfile.name,
-            "key": "DOTFILE_TEMPLATE"
+            "key": "DOTFILE_TEMPLATE",
         },
-        "FN_TOKEN": {
-            "from": "counter",
-            "ref": "fn",
-            "key": "token"
-        },
-        "IND_TOKEN": {
-            "from": "counter",
-            "ref": "ind",
-            "key": "token"
-        },
-        "ALIAS_TOKEN": {
-            "from": "counter",
-            "ref": "alias",
-            "key": "token"
-        },
-        "CLEAN_TOKEN": {
-            "from": "counter",
-            "ref": "clean",
-            "key": "token"
-        },
-        "REDEF_TOKEN": {
-            "from": "counter",
-            "ref": "redef",
-            "key": "token"
-        },
-        "APPEND_TOKEN": {
-            "from": "counter",
-            "ref": "app",
-            "key": "token"
-        },
+        "FN_TOKEN": {"from": "counter", "ref": "fn", "key": "token"},
+        "IND_TOKEN": {"from": "counter", "ref": "ind", "key": "token"},
+        "ALIAS_TOKEN": {"from": "counter", "ref": "alias", "key": "token"},
+        "CLEAN_TOKEN": {"from": "counter", "ref": "clean", "key": "token"},
+        "REDEF_TOKEN": {"from": "counter", "ref": "redef", "key": "token"},
+        "APPEND_TOKEN": {"from": "counter", "ref": "app", "key": "token"},
     }
     return env, cleanup

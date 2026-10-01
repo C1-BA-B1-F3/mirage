@@ -21,15 +21,18 @@ import pytest
 
 from mirage.fuse.backend import MountBackend
 from mirage.fuse.fs import MirageFS
-from mirage.fuse.mount import (_await_ready, _prepare_mountpoint, _run_fuse,
-                               load_fuse)
+from mirage.fuse.mount import (
+    _await_ready,
+    _prepare_mountpoint,
+    _run_fuse,
+    load_fuse,
+)
 from mirage.types import MountMode
 from mirage.vfs.ram import RAMVFS
 from mirage.workspace import Workspace
 
 
 class _CaptureFuse:
-
     kwargs: dict = {}
     args: tuple = ()
 
@@ -39,7 +42,6 @@ class _CaptureFuse:
 
 
 class _AliveThread:
-
     def is_alive(self) -> bool:
         return True
 
@@ -160,17 +162,24 @@ assert "mfusepy" not in sys.modules
 
 
 def test_import_does_not_load_mfusepy():
-    proc = subprocess.run([sys.executable, "-c", _NO_LIBFUSE_PROBE],
-                          capture_output=True,
-                          text=True)
+    proc = subprocess.run(
+        [sys.executable, "-c", _NO_LIBFUSE_PROBE],
+        capture_output=True,
+        text=True,
+    )
     assert proc.returncode == 0, proc.stderr
 
 
-@pytest.mark.parametrize("err", [
-    ImportError("No module named 'mfusepy'"),
-    OSError("Unable to find libfuse"),
-    AttributeError("Found library libfuse.so.3 has wrong major version: 3"),
-])
+@pytest.mark.parametrize(
+    "err",
+    [
+        ImportError("No module named 'mfusepy'"),
+        OSError("Unable to find libfuse"),
+        AttributeError(
+            "Found library libfuse.so.3 has wrong major version: 3"
+        ),
+    ],
+)
 def test_load_fuse_reports_missing_driver(monkeypatch, err):
     # Every way mfusepy can fail to resolve libfuse means the same thing to
     # a caller, so all of them have to arrive as the actionable RuntimeError
@@ -188,9 +197,11 @@ def test_load_fuse_installs_macfuse_extensions(monkeypatch):
     # the loader is the only place left that declares them.
     module = SimpleNamespace()
     install = Mock()
-    monkeypatch.setattr("mirage.fuse.mount.importlib.import_module",
-                        Mock(return_value=module))
-    monkeypatch.setattr("mirage.fuse.mount.install_macfuse_extensions",
-                        install)
+    monkeypatch.setattr(
+        "mirage.fuse.mount.importlib.import_module", Mock(return_value=module)
+    )
+    monkeypatch.setattr(
+        "mirage.fuse.mount.install_macfuse_extensions", install
+    )
     assert load_fuse() is module
     install.assert_called_once_with(module)

@@ -29,16 +29,24 @@ async def test_github_stat_returns_fingerprint_from_blob_sha():
         resource_type="file",
         size=42,
     )
-    await index.set_dir("/", [
-        ("src", IndexEntry(id="dir_sha", name="src", resource_type="folder"))
-    ])
+    await index.set_dir(
+        "/",
+        [
+            (
+                "src",
+                IndexEntry(id="dir_sha", name="src", resource_type="folder"),
+            )
+        ],
+    )
     await index.set_dir("/src", [("main.py", entry)])
 
     result = await stat(
         None,
-        PathSpec(vfs_path="src/main.py",
-                 virtual="/src/main.py",
-                 directory="/src/main.py"),
+        PathSpec(
+            vfs_path="src/main.py",
+            virtual="/src/main.py",
+            directory="/src/main.py",
+        ),
         index,
     )
 

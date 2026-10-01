@@ -85,8 +85,9 @@ async def test_a_commit_lands_on_the_branch(git_rw, repo_path: Path):
 
 @pytest.mark.asyncio
 async def test_the_diffstat_counts_lines(git_rw, repo_path: Path):
-    (repo_path / "a.txt").write_text("one changed\nand another\n",
-                                     encoding="utf-8")
+    (repo_path / "a.txt").write_text(
+        "one changed\nand another\n", encoding="utf-8"
+    )
     await run(git_rw, "add -A")
     _code, out, _err = await run(git_rw, "commit -m more")
     assert b" 1 file changed, 1 insertion(+)\n" in out
@@ -109,8 +110,9 @@ async def test_a_removal_gets_a_delete_mode_line(git_rw, repo_path: Path):
 
 
 @pytest.mark.asyncio
-async def test_the_parent_is_the_commit_that_was_there(git_rw,
-                                                       repo_path: Path):
+async def test_the_parent_is_the_commit_that_was_there(
+    git_rw, repo_path: Path
+):
     before = head_commit(repo_path).id
     (repo_path / "a.txt").write_text("next\n", encoding="utf-8")
     await run(git_rw, "add -A")
@@ -130,17 +132,21 @@ async def test_nothing_staged_prints_the_status_on_stdout(git_rw):
 
 @pytest.mark.asyncio
 async def test_an_untracked_file_alone_is_still_nothing_to_commit(
-        git_rw, repo_path: Path):
+    git_rw, repo_path: Path
+):
     (repo_path / "fresh.txt").write_text("x\n", encoding="utf-8")
     code, out, _err = await run(git_rw, "commit -m nope")
     assert code == 1
-    assert out.endswith(b'nothing added to commit but untracked files '
-                        b'present (use "git add" to track)\n')
+    assert out.endswith(
+        b"nothing added to commit but untracked files "
+        b'present (use "git add" to track)\n'
+    )
 
 
 @pytest.mark.asyncio
 async def test_no_message_is_refused_rather_than_invented(
-        git_rw, repo_path: Path):
+    git_rw, repo_path: Path
+):
     (repo_path / "a.txt").write_text("changed\n", encoding="utf-8")
     await run(git_rw, "add -A")
     code, _out, err = await run(git_rw, "commit")
@@ -193,20 +199,23 @@ def test_no_environment_leaves_the_stated_default():
 def test_a_hidden_variable_is_not_read_as_an_identity():
     # The door filters hidden names, so a hidden GIT_AUTHOR_NAME reads
     # as unset rather than leaking into a commit the session can see.
-    session = SessionState(session_id="s",
-                           hidden_vars=HiddenVars(patterns=("GIT_AUTHOR_*", )))
+    session = SessionState(
+        session_id="s", hidden_vars=HiddenVars(patterns=("GIT_AUTHOR_*",))
+    )
     seed_var(session, "GIT_AUTHOR_NAME", "Secret")
     seed_var(session, "GIT_AUTHOR_EMAIL", "s@x")
-    assert identity(FlagView({}),
-                    session_view(session)) == (b"mirage <mirage@localhost>")
+    assert identity(FlagView({}), session_view(session)) == (
+        b"mirage <mirage@localhost>"
+    )
 
 
 @pytest.mark.asyncio
 async def test_commit_records_the_environment_author(git_rw, repo_path: Path):
     (repo_path / "a.txt").write_text("changed\n", encoding="utf-8")
     assert (await run(git_rw, "add -A"))[0] == 0
-    line = ("GIT_AUTHOR_NAME=Ada GIT_AUTHOR_EMAIL=ada@x "
-            "git -C /repo commit -m env")
+    line = (
+        "GIT_AUTHOR_NAME=Ada GIT_AUTHOR_EMAIL=ada@x git -C /repo commit -m env"
+    )
     assert (await git_rw.shell(line)).exit_code == 0
     with Repo(str(repo_path)) as repo:
         head = repo[repo.refs[b"HEAD"]]
@@ -215,15 +224,17 @@ async def test_commit_records_the_environment_author(git_rw, repo_path: Path):
 
 @pytest.mark.asyncio
 async def test_all_stages_tracked_changes_but_no_new_file(
-        git_rw, repo_path: Path):
+    git_rw, repo_path: Path
+):
     (repo_path / "a.txt").write_text("edited\n", encoding="utf-8")
     (repo_path / "b.txt").unlink()
     (repo_path / "fresh.txt").write_text("x\n", encoding="utf-8")
     code, out, _err = await run(git_rw, "commit -a -m both")
     assert code == 0
-    assert out.split(
-        b"\n", 1)[1] == (b" 2 files changed, 1 insertion(+), 2 deletions(-)\n"
-                         b" delete mode 100644 b.txt\n")
+    assert out.split(b"\n", 1)[1] == (
+        b" 2 files changed, 1 insertion(+), 2 deletions(-)\n"
+        b" delete mode 100644 b.txt\n"
+    )
     assert (await run(git_rw, "status --porcelain"))[1] == b"?? fresh.txt\n"
 
 
@@ -237,12 +248,16 @@ async def test_all_with_nothing_changed_leaves_the_index_alone(git_rw):
 @pytest.mark.asyncio
 async def test_all_with_paths_is_gits_fatal(git_rw):
     assert await run(git_rw, "commit -a -m x a.txt") == (
-        128, b"", b"fatal: paths 'a.txt ...' with -a does not make sense\n")
+        128,
+        b"",
+        b"fatal: paths 'a.txt ...' with -a does not make sense\n",
+    )
 
 
 @pytest.mark.asyncio
 async def test_paths_without_all_are_refused_not_ignored(
-        git_rw, repo_path: Path):
+    git_rw, repo_path: Path
+):
     # Committing the whole index while the caller named one path would
     # record changes nobody asked for.
     (repo_path / "a.txt").write_text("edited\n", encoding="utf-8")
@@ -258,6 +273,7 @@ async def test_paths_without_all_are_refused_not_ignored(
 async def test_a_move_is_summarized_as_a_rename(git_rw):
     await run(git_rw, "mv b.txt c.txt")
     _code, out, _err = await run(git_rw, "commit -m moved")
-    assert out.split(
-        b"\n", 1)[1] == (b" 1 file changed, 0 insertions(+), 0 deletions(-)\n"
-                         b" rename b.txt => c.txt (100%)\n")
+    assert out.split(b"\n", 1)[1] == (
+        b" 1 file changed, 0 insertions(+), 0 deletions(-)\n"
+        b" rename b.txt => c.txt (100%)\n"
+    )

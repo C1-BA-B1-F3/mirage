@@ -33,18 +33,21 @@ def test_every_exception_name_is_a_real_python_builtin():
         assert issubclass(exc, OSError)
 
 
-@pytest.mark.parametrize("cond,exception,number", [
-    (FsCondition.ENOENT, "FileNotFoundError", 2),
-    (FsCondition.ENOTDIR, "NotADirectoryError", 20),
-    (FsCondition.EISDIR, "IsADirectoryError", 21),
-    (FsCondition.EEXIST, "FileExistsError", 17),
-    (FsCondition.EACCES, "PermissionError", 13),
-    (FsCondition.EPERM, "PermissionError", 1),
-    (FsCondition.EXDEV, "OSError", 18),
-    (FsCondition.CROSS_MOUNT, "OSError", 18),
-    (FsCondition.ENOTEMPTY, "OSError", 39),
-    (FsCondition.ELOOP, "OSError", 40),
-])
+@pytest.mark.parametrize(
+    "cond,exception,number",
+    [
+        (FsCondition.ENOENT, "FileNotFoundError", 2),
+        (FsCondition.ENOTDIR, "NotADirectoryError", 20),
+        (FsCondition.EISDIR, "IsADirectoryError", 21),
+        (FsCondition.EEXIST, "FileExistsError", 17),
+        (FsCondition.EACCES, "PermissionError", 13),
+        (FsCondition.EPERM, "PermissionError", 1),
+        (FsCondition.EXDEV, "OSError", 18),
+        (FsCondition.CROSS_MOUNT, "OSError", 18),
+        (FsCondition.ENOTEMPTY, "OSError", 39),
+        (FsCondition.ELOOP, "OSError", 40),
+    ],
+)
 def test_rows_are_cpython_on_linux(cond, exception, number):
     # A guest interpreter is platform-neutral, so its numbering must not
     # wobble with the host: the rows pin CPython-on-Linux errnos, the

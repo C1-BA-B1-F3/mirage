@@ -68,9 +68,10 @@ def number_lines(text: str, offset: int, limit: int) -> str:
         lines = [part + "\n" for part in parts[:-1]]
         if parts[-1]:
             lines.append(parts[-1])
-    sliced = lines[offset:offset + limit]
-    return "".join(f"{i + offset + 1:>6}\t{line}"
-                   for i, line in enumerate(sliced))
+    sliced = lines[offset : offset + limit]
+    return "".join(
+        f"{i + offset + 1:>6}\t{line}" for i, line in enumerate(sliced)
+    )
 
 
 async def ensure_parents(ws: Workspace, path: str) -> None:
@@ -102,9 +103,9 @@ class MirageToolOperations:
             file that changed since it read it.
     """
 
-    def __init__(self,
-                 workspace: Workspace,
-                 stale_write_protection: bool = True) -> None:
+    def __init__(
+        self, workspace: Workspace, stale_write_protection: bool = True
+    ) -> None:
         self._ws = workspace
         self._versions = FileVersionTracker(workspace, stale_write_protection)
 
@@ -119,10 +120,9 @@ class MirageToolOperations:
         """
         return _io_result(await self._ws.shell(command))
 
-    async def read(self,
-                   path: str,
-                   offset: int = 0,
-                   limit: int = DEFAULT_READ_LIMIT) -> ToolResult:
+    async def read(
+        self, path: str, offset: int = 0, limit: int = DEFAULT_READ_LIMIT
+    ) -> ToolResult:
         """Read a file as line-numbered text.
 
         Args:
@@ -157,11 +157,13 @@ class MirageToolOperations:
         await self._versions.write(path, content)
         return ToolResult(f"Written: {path}")
 
-    async def edit(self,
-                   path: str,
-                   old_string: str,
-                   new_string: str,
-                   replace_all: bool = False) -> ToolResult:
+    async def edit(
+        self,
+        path: str,
+        old_string: str,
+        new_string: str,
+        replace_all: bool = False,
+    ) -> ToolResult:
         """Replace a string in an existing file.
 
         Args:
@@ -181,15 +183,18 @@ class MirageToolOperations:
             if not await self._ws.vfs.exists(path):
                 return ToolResult(f"Error: file '{path}' not found", True)
             return ToolResult(f"Error: {exc}", True)
-        new_content, count = replace_text(content, old_string, new_string,
-                                          replace_all)
+        new_content, count = replace_text(
+            content, old_string, new_string, replace_all
+        )
         if count == 0:
             return ToolResult(
-                f"Error: string not found in file: '{old_string}'", True)
+                f"Error: string not found in file: '{old_string}'", True
+            )
         if count > 1 and not replace_all:
             return ToolResult(
                 f"Error: string appears {count} times. Pass replace_all=true",
-                True)
+                True,
+            )
         try:
             await self._versions.write_edit(path, new_content)
         except StaleMirageFileError as exc:
@@ -219,7 +224,8 @@ class MirageToolOperations:
             ToolResult: The matches.
         """
         io = await self._ws.shell(
-            f"grep -rn {shlex.quote(pattern)} {shlex.quote(path)}")
+            f"grep -rn {shlex.quote(pattern)} {shlex.quote(path)}"
+        )
         # grep exits 1 for "no match", which is a normal empty answer,
         # and >1 for a real failure (bad regex, unreadable path). Only
         # the second is a tool error; reporting the first as one would

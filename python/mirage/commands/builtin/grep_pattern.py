@@ -16,12 +16,17 @@ import re
 from collections.abc import Awaitable, Callable, Sequence
 
 from mirage.commands.builtin.types import RegexSyntax
-from mirage.commands.builtin.utils.bre import (BreError, translate_bre,
-                                               translate_ere)
+from mirage.commands.builtin.utils.bre import (
+    BreError,
+    translate_bre,
+    translate_ere,
+)
 from mirage.commands.builtin.utils.pcre import PcreError, translate_pcre
-from mirage.commands.builtin.utils.rust_regex import (RustRegexError,
-                                                      translate_rust,
-                                                      whole_word)
+from mirage.commands.builtin.utils.rust_regex import (
+    RustRegexError,
+    translate_rust,
+    whole_word,
+)
 from mirage.commands.builtin.utils.types import HostRegex
 from mirage.commands.builtin.utils.wrap import call_read_bytes
 from mirage.commands.errors import UsageError
@@ -43,9 +48,9 @@ PERL_WORD = ("(?<!\\w)(?:", ")(?!\\w)")
 PATTERN_KEYS = {"grep": "e", "zgrep": "e", "rg": "regexp"}
 
 
-def pattern_arg(texts: Sequence[str],
-                flags: FlagView,
-                pattern_key: str = "e") -> str | None:
+def pattern_arg(
+    texts: Sequence[str], flags: FlagView, pattern_key: str = "e"
+) -> str | None:
     """Resolve the pattern-list argument from -e values or the positional.
 
     Args:
@@ -94,13 +99,13 @@ async def resolve_pattern(
 
     pattern_file = flags.raw(file_key)
     if isinstance(pattern_file, (PathSpec, list)):
-        raw = (pattern_file
-               if isinstance(pattern_file, list) else [pattern_file])
+        raw = (
+            pattern_file if isinstance(pattern_file, list) else [pattern_file]
+        )
         for pf in [item for item in raw if isinstance(item, PathSpec)]:
-            file_data = await call_read_bytes(read_bytes,
-                                              pf,
-                                              prefix=mount_prefix_of(
-                                                  pf.virtual, pf.vfs_path))
+            file_data = await call_read_bytes(
+                read_bytes, pf, prefix=mount_prefix_of(pf.virtual, pf.vfs_path)
+            )
             pattern = merge_pattern_list(pattern, file_data)
         if pattern is None:
             return NEVER_MATCH, True
@@ -179,9 +184,9 @@ def ere_source(part: str) -> str:
         raise UsageError(f"grep: {exc}") from exc
 
 
-def matcher_syntax(fl: FlagView,
-                   prog: str = "grep",
-                   perl: str = "perl_regexp") -> RegexSyntax:
+def matcher_syntax(
+    fl: FlagView, prog: str = "grep", perl: str = "perl_regexp"
+) -> RegexSyntax:
     """The dialect grep's matcher options pick, refusing a mixture.
 
     GNU grep 3.11 keeps one matcher: -G, -E, -F and -P each name one,
@@ -210,9 +215,9 @@ def matcher_syntax(fl: FlagView,
     return RegexSyntax.BASIC
 
 
-def pattern_warnings(pattern: str,
-                     syntax: RegexSyntax,
-                     prog: str = "grep") -> bytes:
+def pattern_warnings(
+    pattern: str, syntax: RegexSyntax, prog: str = "grep"
+) -> bytes:
     """GNU grep's compile-time warnings for a pattern list, as stderr.
 
     Only an extended expression has any: dfa.c warns about a repetition
@@ -251,10 +256,9 @@ def _source_of(part: str, fixed_string: bool, syntax: RegexSyntax) -> str:
     return ere_source(part)
 
 
-def perl_regex(pattern: str,
-               ignore_case: bool,
-               whole: bool,
-               unicode: bool = False) -> tuple[str, bool]:
+def perl_regex(
+    pattern: str, ignore_case: bool, whole: bool, unicode: bool = False
+) -> tuple[str, bool]:
     """grep -P's one pattern as host source, or grep's refusal.
 
     Args:
@@ -280,8 +284,9 @@ def perl_regex(pattern: str,
     return translated.source, translated.ignore_case
 
 
-def rust_source(pattern: str, fixed_string: bool, whole: bool,
-                ignore_case: bool) -> HostRegex:
+def rust_source(
+    pattern: str, fixed_string: bool, whole: bool, ignore_case: bool
+) -> HostRegex:
     """ripgrep's default-engine pattern list as host source.
 
     Args:
@@ -311,8 +316,9 @@ def rust_escape(text: str) -> str:
     Args:
         text (str): the literal.
     """
-    return "".join("\\" + ch if ch in "\\.+*?()|[]{}^$#&-~" else ch
-                   for ch in text)
+    return "".join(
+        "\\" + ch if ch in "\\.+*?()|[]{}^$#&-~" else ch for ch in text
+    )
 
 
 def build_pattern_str(
@@ -367,10 +373,12 @@ def compile_pattern(
         syntax (RegexSyntax): the dialect the patterns are written in.
     """
     if syntax is RegexSyntax.RUST:
-        translated = rust_source(pattern, fixed_string, whole_word,
-                                 ignore_case)
-        return re.compile(translated.source,
-                          re.IGNORECASE if translated.ignore_case else 0)
+        translated = rust_source(
+            pattern, fixed_string, whole_word, ignore_case
+        )
+        return re.compile(
+            translated.source, re.IGNORECASE if translated.ignore_case else 0
+        )
     if syntax is RegexSyntax.PERL and not fixed_string:
         source, fold = perl_regex(pattern, ignore_case, whole_word)
         return compile_posix_regex(source, re.IGNORECASE if fold else 0)

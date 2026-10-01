@@ -23,7 +23,7 @@ from mirage.io.types import ByteSource, IOResult
 
 
 async def edit(
-        inv: CLIInvocation[DiscordConfig]
+    inv: CLIInvocation[DiscordConfig],
 ) -> tuple[ByteSource | None, IOResult]:
     fl = FlagView(inv.flags)
     result = await edit_message(
@@ -32,6 +32,7 @@ async def edit(
         fl.as_str("message") or "",
         fl.as_str("text") or "",
     )
-    out = json.dumps(result, ensure_ascii=False,
-                     separators=(",", ":")).encode()
+    out = json.dumps(
+        result, ensure_ascii=False, separators=(",", ":")
+    ).encode()
     return yield_bytes(out), IOResult()

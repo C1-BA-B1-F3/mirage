@@ -39,6 +39,7 @@ class _Entry:
         client (Any): the open client.
         manager (ClientManager): releases the client on exit.
     """
+
     client: Any
     manager: ClientManager
 
@@ -156,7 +157,10 @@ class LoopClientCache:
                 # entry stays, and `close` is where a failure is reported.
                 logger.debug(
                     "%s: releasing a dead loop's client failed, "
-                    "will retry: %s", self.what, exc)
+                    "will retry: %s",
+                    self.what,
+                    exc,
+                )
         self._drop_dead_locks()
 
     async def close(self) -> None:
@@ -180,7 +184,8 @@ class LoopClientCache:
                 failures.append(exc)
         self._drop_dead_locks()
         for extra in failures[1:]:
-            logger.debug("%s: releasing a client also failed: %s", self.what,
-                         extra)
+            logger.debug(
+                "%s: releasing a client also failed: %s", self.what, extra
+            )
         if failures:
             raise failures[0]

@@ -12,15 +12,22 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-from .conftest import (EXAMPLE_JSON, EXAMPLE_JSONL, jq, jq_all, jq_slurp,
-                       jq_slurp_all, write_to_backend)
+from .conftest import (
+    EXAMPLE_JSON,
+    EXAMPLE_JSONL,
+    jq,
+    jq_all,
+    jq_slurp,
+    jq_slurp_all,
+    write_to_backend,
+)
 
 
 class TestJqExampleJson:
-
     def _load(self, backend):
-        write_to_backend(backend, "/tmp/example.json",
-                         EXAMPLE_JSON.read_bytes())
+        write_to_backend(
+            backend, "/tmp/example.json", EXAMPLE_JSON.read_bytes()
+        )
 
     def test_top_level_keys(self, backend):
         self._load(backend)
@@ -52,34 +59,43 @@ class TestJqExampleJson:
 
     def test_nested_team_names(self, backend):
         self._load(backend)
-        result = jq_all(backend, "/tmp/example.json",
-                        ".departments[0].teams[] | .name")
+        result = jq_all(
+            backend, "/tmp/example.json", ".departments[0].teams[] | .name"
+        )
         assert "Platform" in result
 
     def test_deep_member_access(self, backend):
         self._load(backend)
-        result = jq(backend, "/tmp/example.json",
-                    ".departments[0].teams[0].lead")
+        result = jq(
+            backend, "/tmp/example.json", ".departments[0].teams[0].lead"
+        )
         assert result == "Alice Chen"
 
     def test_select_high_budget(self, backend):
         self._load(backend)
-        result = jq(backend, "/tmp/example.json",
-                    ".departments[] | select(.budget > 2000000) | .name")
+        result = jq(
+            backend,
+            "/tmp/example.json",
+            ".departments[] | select(.budget > 2000000) | .name",
+        )
         assert "Engineering" in result
 
     def test_map_department_budgets(self, backend):
         self._load(backend)
-        result = jq(backend, "/tmp/example.json",
-                    ".departments | map(.budget)")
+        result = jq(
+            backend, "/tmp/example.json", ".departments | map(.budget)"
+        )
         assert isinstance(result, list)
         assert len(result) == 3
         assert all(isinstance(b, int) for b in result)
 
     def test_nested_array_slice(self, backend):
         self._load(backend)
-        result = jq(backend, "/tmp/example.json",
-                    ".departments[0].quarterly_spend | .[0:2]")
+        result = jq(
+            backend,
+            "/tmp/example.json",
+            ".departments[0].quarterly_spend | .[0:2]",
+        )
         assert len(result) == 2
 
     def test_keys_of_nested_object(self, backend):
@@ -89,8 +105,9 @@ class TestJqExampleJson:
 
     def test_sort_by_budget(self, backend):
         self._load(backend)
-        result = jq(backend, "/tmp/example.json",
-                    ".departments | sort_by(.budget)")
+        result = jq(
+            backend, "/tmp/example.json", ".departments | sort_by(.budget)"
+        )
         assert result[0]["budget"] <= result[-1]["budget"]
 
     def test_has_key(self, backend):
@@ -105,24 +122,27 @@ class TestJqExampleJson:
 
     def test_contains_department(self, backend):
         self._load(backend)
-        result = jq(backend, "/tmp/example.json",
-                    'contains({"company": "Strukto"})')
+        result = jq(
+            backend, "/tmp/example.json", 'contains({"company": "Strukto"})'
+        )
         assert result is True
 
 
 class TestJqExampleJsonl:
-
     # A JSON Lines file is a stream of documents, one run each; these read
     # it as one array of them, which is what `jq -s` does.
 
     def _load(self, backend):
-        write_to_backend(backend, "/tmp/example.jsonl",
-                         EXAMPLE_JSONL.read_bytes())
+        write_to_backend(
+            backend, "/tmp/example.jsonl", EXAMPLE_JSONL.read_bytes()
+        )
 
     def test_each_line_runs_on_its_own(self, backend):
         self._load(backend)
-        assert jq_all(backend, "/tmp/example.jsonl",
-                      ".type")[0] == "queue-operation"
+        assert (
+            jq_all(backend, "/tmp/example.jsonl", ".type")[0]
+            == "queue-operation"
+        )
 
     def test_total_lines(self, backend):
         self._load(backend)
@@ -144,8 +164,10 @@ class TestJqExampleJsonl:
     def test_select_queue_operations(self, backend):
         self._load(backend)
         result = jq_slurp_all(
-            backend, "/tmp/example.jsonl",
-            '.[] | select(.type == "queue-operation") | .operation')
+            backend,
+            "/tmp/example.jsonl",
+            '.[] | select(.type == "queue-operation") | .operation',
+        )
         assert "enqueue" in result
         assert "dequeue" in result
 
@@ -161,8 +183,11 @@ class TestJqExampleJsonl:
 
     def test_count_user_messages(self, backend):
         self._load(backend)
-        result = jq_slurp(backend, "/tmp/example.jsonl",
-                          'map(select(.type == "user")) | length')
+        result = jq_slurp(
+            backend,
+            "/tmp/example.jsonl",
+            'map(select(.type == "user")) | length',
+        )
         assert result > 0
 
     def test_slice_first_five(self, backend):
@@ -178,7 +203,8 @@ class TestJqExampleJsonl:
 
     def test_group_by_type_first_ten(self, backend):
         self._load(backend)
-        result = jq_slurp(backend, "/tmp/example.jsonl",
-                          ".[0:10] | group_by(.type)")
+        result = jq_slurp(
+            backend, "/tmp/example.jsonl", ".[0:10] | group_by(.type)"
+        )
         assert isinstance(result, list)
         assert all(isinstance(g, list) for g in result)

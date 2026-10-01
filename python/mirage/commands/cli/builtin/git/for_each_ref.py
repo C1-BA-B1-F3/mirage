@@ -17,30 +17,48 @@ from dataclasses import replace
 
 from mirage.commands.builtin.utils.stream import read_stdin_async
 from mirage.commands.cli.builtin.git.dates import date_clock
-from mirage.commands.cli.builtin.git.errors import (FormatUsageError, GitError,
-                                                    UnknownSwitchError)
-from mirage.commands.cli.builtin.git.ref_filter import (filter_words,
-                                                        ref_filter,
-                                                        without_filter_values)
-from mirage.commands.cli.builtin.git.ref_format import (format_refs,
-                                                        parse_format,
-                                                        used_fields)
-from mirage.commands.cli.builtin.git.ref_list import (is_root_ref,
-                                                      listing_result,
-                                                      match_as_path,
-                                                      read_config, ref_listing,
-                                                      sort_keys)
+from mirage.commands.cli.builtin.git.errors import (
+    FormatUsageError,
+    GitError,
+    UnknownSwitchError,
+)
+from mirage.commands.cli.builtin.git.ref_filter import (
+    filter_words,
+    ref_filter,
+    without_filter_values,
+)
+from mirage.commands.cli.builtin.git.ref_format import (
+    format_refs,
+    parse_format,
+    used_fields,
+)
+from mirage.commands.cli.builtin.git.ref_list import (
+    is_root_ref,
+    listing_result,
+    match_as_path,
+    read_config,
+    ref_listing,
+    sort_keys,
+)
 from mirage.commands.cli.builtin.git.session import opened
 from mirage.commands.cli.builtin.git.types import QuoteStyle, RefKind
-from mirage.commands.cli.builtin.git.util import (check_operands, escaped,
-                                                  fatal, switches)
+from mirage.commands.cli.builtin.git.util import (
+    check_operands,
+    escaped,
+    fatal,
+    switches,
+)
 from mirage.commands.cli.types import CLIDoors, CLIInvocation
 from mirage.commands.spec.flag_view import FlagView
 from mirage.io.types import ByteSource, IOResult
 
 DEFAULT_FORMAT = "%(objectname) %(objecttype)\t%(refname)"
-QUOTE_OPTIONS = (("shell", QuoteStyle.SHELL), ("perl", QuoteStyle.PERL),
-                 ("python", QuoteStyle.PYTHON), ("tcl", QuoteStyle.TCL))
+QUOTE_OPTIONS = (
+    ("shell", QuoteStyle.SHELL),
+    ("perl", QuoteStyle.PERL),
+    ("python", QuoteStyle.PYTHON),
+    ("tcl", QuoteStyle.TCL),
+)
 
 
 def quote_style(fl: FlagView) -> QuoteStyle:
@@ -59,7 +77,8 @@ def quote_style(fl: FlagView) -> QuoteStyle:
 
 
 async def for_each_ref(
-        inv: CLIInvocation[None]) -> tuple[ByteSource | None, IOResult]:
+    inv: CLIInvocation[None],
+) -> tuple[ByteSource | None, IOResult]:
     """Format the repository's references, as git's ref-filter does.
 
     The refs are chosen by the path patterns, ``--exclude`` and the
@@ -74,8 +93,9 @@ async def for_each_ref(
     words = filter_words(inv)
     texts = without_filter_values(inv.texts, words)
     try:
-        check_operands(texts, UnknownSwitchError, escaped(inv.argv),
-                       switches(inv))
+        check_operands(
+            texts, UnknownSwitchError, escaped(inv.argv), switches(inv)
+        )
         repo, location = await opened(fl, doors)
         assert doors.dispatch is not None
         filt = await asyncio.to_thread(ref_filter, repo, words)
@@ -83,16 +103,18 @@ async def for_each_ref(
         if count < 0:
             raise FormatUsageError(f"invalid --count argument: `{count}'")
         template = fl.as_str("format")
-        fmt = parse_format(DEFAULT_FORMAT if template is None else template,
-                           quote_style(fl))
-        keys = sort_keys(fl, ("refname", ))
+        fmt = parse_format(
+            DEFAULT_FORMAT if template is None else template, quote_style(fl)
+        )
+        keys = sort_keys(fl, ("refname",))
         icase = fl.as_bool("ignore_case")
         patterns = texts
         if fl.as_bool("stdin"):
             if texts:
                 raise GitError("unknown arguments supplied with --stdin")
-            text = (await read_stdin_async(inv.stdin)
-                    or b"").decode("utf-8", "replace")
+            text = (await read_stdin_async(inv.stdin) or b"").decode(
+                "utf-8", "replace"
+            )
             lines = text.split("\n")
             if lines[-1] == "":
                 lines.pop()
@@ -102,18 +124,29 @@ async def for_each_ref(
 
         def wanted(name: str) -> bool:
             listed = name.startswith("refs/") or (roots and is_root_ref(name))
-            return (listed and match_as_path(name, patterns, icase) and
-                    not (excludes and match_as_path(name, excludes, icase)))
+            return (
+                listed
+                and match_as_path(name, patterns, icase)
+                and not (excludes and match_as_path(name, excludes, icase))
+            )
 
         items, ctx, errors = await ref_listing(
-            doors.dispatch, repo, location,
+            doors.dispatch,
+            repo,
+            location,
             await read_config(doors.dispatch, location),
-            used_fields(fmt, keys
-                        or ()), wanted, filt, date_clock(inv.env), roots)
+            used_fields(fmt, keys or ()),
+            wanted,
+            filt,
+            date_clock(inv.env),
+            roots,
+        )
         if roots:
             items = [
                 replace(item, kind=RefKind.ROOT)
-                if item.kind is RefKind.DETACHED else item for item in items
+                if item.kind is RefKind.DETACHED
+                else item
+                for item in items
             ]
         out, stopped = format_refs(
             fmt,
@@ -124,7 +157,8 @@ async def for_each_ref(
             omit_empty=fl.as_bool("omit_empty"),
             icase=icase,
             stream=filt is None
-            or (filt.merged is None and filt.no_merged is None))
+            or (filt.merged is None and filt.no_merged is None),
+        )
     except GitError as exc:
         return fatal(exc)
     return listing_result(out, errors, stopped)

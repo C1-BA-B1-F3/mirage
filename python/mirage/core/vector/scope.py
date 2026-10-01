@@ -26,12 +26,16 @@ def blob_leaf(ext: str) -> Leaf:
     Args:
         ext (str): the configured blob extension.
     """
-    return ("row_blob", Codec(suffix="." + ext),
-            content_type_for_extension(ext))
+    return (
+        "row_blob",
+        Codec(suffix="." + ext),
+        content_type_for_extension(ext),
+    )
 
 
-def row_scopes(pinned: bool, groups: Sequence[Codec],
-               leaves: Sequence[Leaf]) -> tuple[Scope, ...]:
+def row_scopes(
+    pinned: bool, groups: Sequence[Codec], leaves: Sequence[Leaf]
+) -> tuple[Scope, ...]:
     """A mount's scope table, shaped by its config.
 
     The tree is a function of the mount config, not of the backend: a
@@ -50,17 +54,22 @@ def row_scopes(pinned: bool, groups: Sequence[Codec],
         leaves (Sequence[Leaf]): each leaf's kind, suffix codec and
             content type.
     """
-    prefix: tuple[Segment, ...] = () if pinned else (Slot("table"), )
+    prefix: tuple[Segment, ...] = () if pinned else (Slot("table"),)
     slots = tuple(Slot(f"g{i}", codec) for i, codec in enumerate(groups))
     scopes = [
         Scope(kind="group", segments=prefix + slots[:depth])
-        for depth in range(len(slots) + 1) if depth or prefix
+        for depth in range(len(slots) + 1)
+        if depth or prefix
     ]
     scopes.extend(
-        Scope(kind=kind,
-              segments=prefix + slots + (Slot("row_id", codec), ),
-              leaf=True,
-              filetype=filetype) for kind, codec, filetype in leaves)
+        Scope(
+            kind=kind,
+            segments=prefix + slots + (Slot("row_id", codec),),
+            leaf=True,
+            filetype=filetype,
+        )
+        for kind, codec, filetype in leaves
+    )
     return tuple(scopes)
 
 

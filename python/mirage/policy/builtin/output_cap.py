@@ -23,9 +23,9 @@ _DEFAULT_MAX_LINES = 2000
 _DEFAULT_TIMEOUT_SECONDS = 600.0
 
 DEFAULT_COMMAND_LIMITS: dict[str, Limit] = {
-    name:
-    Limit(max_lines=_DEFAULT_MAX_LINES,
-          timeout_seconds=_DEFAULT_TIMEOUT_SECONDS)
+    name: Limit(
+        max_lines=_DEFAULT_MAX_LINES, timeout_seconds=_DEFAULT_TIMEOUT_SECONDS
+    )
     for name in ("cat", "grep", "rg", "head", "tail")
 }
 
@@ -68,10 +68,14 @@ def resolve_limit(
     spanned = list(mounts)
     if spanned:
         return Limit.aggr(
-            resolve_limit(name,
-                          command_default=command_default,
-                          mount_override=m.command_limits.get(name),
-                          workspace_limits=workspace_limits) for m in spanned)
+            resolve_limit(
+                name,
+                command_default=command_default,
+                mount_override=m.command_limits.get(name),
+                workspace_limits=workspace_limits,
+            )
+            for m in spanned
+        )
     if workspace_limits is not None and name in workspace_limits:
         return workspace_limits[name]
     if command_default is not None:
@@ -80,10 +84,11 @@ def resolve_limit(
 
 
 def resolve_producer(
-        producer: Producer,
-        override_for: OverrideLookup,
-        workspace_limits: Mapping[str, Limit] | None = None,
-        profile_limits: Mapping[str, Limit] | None = None) -> Limit | None:
+    producer: Producer,
+    override_for: OverrideLookup,
+    workspace_limits: Mapping[str, Limit] | None = None,
+    profile_limits: Mapping[str, Limit] | None = None,
+) -> Limit | None:
     """Resolve the bound a producer's facts name.
 
     Shared by command output guards and dispatch timeouts. Resolution
@@ -102,16 +107,20 @@ def resolve_producer(
     if not producer.command:
         return None
     if not producer.prefixes:
-        return resolve_limit(producer.command,
-                             command_default=producer.declared,
-                             workspace_limits=workspace_limits,
-                             profile_limits=profile_limits)
+        return resolve_limit(
+            producer.command,
+            command_default=producer.declared,
+            workspace_limits=workspace_limits,
+            profile_limits=profile_limits,
+        )
     per_mount = [
-        resolve_limit(producer.command,
-                      command_default=producer.declared,
-                      mount_override=override_for(prefix, producer.command),
-                      workspace_limits=workspace_limits,
-                      profile_limits=profile_limits)
+        resolve_limit(
+            producer.command,
+            command_default=producer.declared,
+            mount_override=override_for(prefix, producer.command),
+            workspace_limits=workspace_limits,
+            profile_limits=profile_limits,
+        )
         for prefix in producer.prefixes
     ]
     return Limit.aggr(per_mount)

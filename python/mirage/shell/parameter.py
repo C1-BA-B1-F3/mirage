@@ -31,7 +31,7 @@ def scan_parameter(text: str, start: int) -> tuple[str, int] | None:
     if start < 0 or start >= len(text) or text[start] != "$":
         return None
     begin = start + 1
-    braced = text[begin:begin + 1] == "{"
+    braced = text[begin : begin + 1] == "{"
     if braced:
         begin += 1
     match = PARAMETER_NAME.match(text, begin)
@@ -42,7 +42,7 @@ def scan_parameter(text: str, start: int) -> tuple[str, int] | None:
         end = begin + 1
     name = text[begin:end]
     if braced:
-        if text[end:end + 1] != "}":
+        if text[end : end + 1] != "}":
             return None
         end += 1
     return name, end

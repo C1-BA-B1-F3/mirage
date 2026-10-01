@@ -86,8 +86,7 @@ async def test_head(ws):
 async def test_grep(ws):
     await _run(
         ws,
-        "echo 'hello world\nfoo bar\nhello again' "
-        "> /data/f.txt",
+        "echo 'hello world\nfoo bar\nhello again' > /data/f.txt",
     )
     result = await _run(ws, "grep hello /data/f.txt")
     assert "hello world" in result

@@ -59,8 +59,10 @@ async def get_message_raw(
     Returns:
         dict: full message resource.
     """
-    url = (f"{gmail_base(token_manager)}/users/me/messages"
-           f"/{message_id}?format=full")
+    url = (
+        f"{gmail_base(token_manager)}/users/me/messages"
+        f"/{message_id}?format=full"
+    )
     return await google_get(token_manager, url)
 
 
@@ -69,7 +71,8 @@ def _decode_body(payload: dict[str, Any]) -> str:
         data = payload.get("body", {}).get("data", "")
         if data:
             return base64.urlsafe_b64decode(data + "==").decode(
-                "utf-8", errors="replace")
+                "utf-8", errors="replace"
+            )
     for part in payload.get("parts", []):
         text = _decode_body(part)
         if text:
@@ -86,8 +89,8 @@ def _extract_header(headers: list[dict[str, Any]], name: str) -> str:
 
 def _parse_address(raw: str) -> dict[str, str]:
     if "<" in raw and ">" in raw:
-        name = raw[:raw.index("<")].strip().strip('"')
-        email = raw[raw.index("<") + 1:raw.index(">")].strip()
+        name = raw[: raw.index("<")].strip().strip('"')
+        email = raw[raw.index("<") + 1 : raw.index(">")].strip()
         return {"name": name, "email": email}
     return {"name": "", "email": raw.strip()}
 
@@ -113,8 +116,10 @@ async def get_attachment(
     Returns:
         bytes: decoded attachment content.
     """
-    url = (f"{gmail_base(token_manager)}/users/me/messages"
-           f"/{message_id}/attachments/{attachment_id}")
+    url = (
+        f"{gmail_base(token_manager)}/users/me/messages"
+        f"/{message_id}/attachments/{attachment_id}"
+    )
     data = await google_get(token_manager, url)
     raw = data.get("data", "")
     return base64.urlsafe_b64decode(raw + "==")
@@ -136,24 +141,28 @@ def _extract_attachments(payload: dict[str, Any]) -> list[dict[str, Any]]:
         body = part.get("body", {})
         attachment_id = body.get("attachmentId", "")
         if filename and attachment_id:
-            attachments.append({
-                "filename": filename,
-                "attachment_id": attachment_id,
-                "size": body.get("size", 0),
-                "mime_type": part.get("mimeType", ""),
-            })
+            attachments.append(
+                {
+                    "filename": filename,
+                    "attachment_id": attachment_id,
+                    "size": body.get("size", 0),
+                    "mime_type": part.get("mimeType", ""),
+                }
+            )
         if part.get("parts"):
             for sub in part["parts"]:
                 fn = sub.get("filename", "")
                 bd = sub.get("body", {})
                 aid = bd.get("attachmentId", "")
                 if fn and aid:
-                    attachments.append({
-                        "filename": fn,
-                        "attachment_id": aid,
-                        "size": bd.get("size", 0),
-                        "mime_type": sub.get("mimeType", ""),
-                    })
+                    attachments.append(
+                        {
+                            "filename": fn,
+                            "attachment_id": aid,
+                            "size": bd.get("size", 0),
+                            "mime_type": sub.get("mimeType", ""),
+                        }
+                    )
     return attachments
 
 
@@ -201,13 +210,16 @@ def process_message(raw: dict[str, Any]) -> dict[str, Any]:
     headers = raw.get("payload", {}).get("headers", [])
     body_text = _decode_body(raw.get("payload", {}))
     raw_atts = _extract_attachments(raw.get("payload", {}))
-    attachments = [{
-        "id": a["attachment_id"],
-        "filename": a["filename"],
-        "path": f"attachments/{a['attachment_id']}_{a['filename']}",
-        "mime_type": a.get("mime_type", ""),
-        "size": a["size"],
-    } for a in raw_atts]
+    attachments = [
+        {
+            "id": a["attachment_id"],
+            "filename": a["filename"],
+            "path": f"attachments/{a['attachment_id']}_{a['filename']}",
+            "mime_type": a.get("mime_type", ""),
+            "size": a["size"],
+        }
+        for a in raw_atts
+    ]
     return {
         "id": raw.get("id", ""),
         "thread_id": raw.get("threadId", ""),

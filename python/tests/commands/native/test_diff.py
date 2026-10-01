@@ -17,7 +17,8 @@ def test_diff_identical(env):
     env.create_file("a.txt", b"same\n")
     env.create_file("b.txt", b"same\n")
     assert env.mirage("diff /data/a.txt /data/b.txt") == env.native(
-        "diff a.txt b.txt")
+        "diff a.txt b.txt"
+    )
 
 
 def test_diff_different(env):
@@ -35,7 +36,8 @@ def test_diff_i(env):
     env.create_file("a.txt", b"Hello\n")
     env.create_file("b.txt", b"hello\n")
     assert env.mirage("diff -i /data/a.txt /data/b.txt") == env.native(
-        "diff -i a.txt b.txt")
+        "diff -i a.txt b.txt"
+    )
 
 
 def test_diff_u(env):

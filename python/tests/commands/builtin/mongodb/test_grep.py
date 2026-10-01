@@ -31,22 +31,28 @@ SEARCH_COLLECTION = "mirage.core.mongodb.search.search_entity"
 
 @pytest.fixture
 def accessor():
-    return MongoDBAccessor(config=MongoDBConfig(
-        uri="mongodb://localhost:27017"))
+    return MongoDBAccessor(
+        config=MongoDBConfig(uri="mongodb://localhost:27017")
+    )
 
 
 @pytest.fixture
 def _stat_reads(monkeypatch):
     # The stat guard is captured by the search factory at import, so fake
     # what it reads at call time: the existence probes and the counters.
-    monkeypatch.setattr("mirage.core.mongodb.readdir.entity_exists",
-                        AsyncMock(return_value=True))
-    monkeypatch.setattr("mirage.core.mongodb.client.count_documents",
-                        AsyncMock(return_value=5))
-    monkeypatch.setattr("mirage.core.mongodb.client.is_view",
-                        AsyncMock(return_value=False))
-    monkeypatch.setattr("mirage.core.mongodb.client.get_indexes",
-                        AsyncMock(return_value=[]))
+    monkeypatch.setattr(
+        "mirage.core.mongodb.readdir.entity_exists",
+        AsyncMock(return_value=True),
+    )
+    monkeypatch.setattr(
+        "mirage.core.mongodb.client.count_documents", AsyncMock(return_value=5)
+    )
+    monkeypatch.setattr(
+        "mirage.core.mongodb.client.is_view", AsyncMock(return_value=False)
+    )
+    monkeypatch.setattr(
+        "mirage.core.mongodb.client.get_indexes", AsyncMock(return_value=[])
+    )
 
 
 def _path(s: str = "/db1/collections/coll1/documents.jsonl") -> PathSpec:
@@ -74,8 +80,9 @@ async def test_grep_streams_and_finds_match(accessor, _stat_reads):
             yield d
 
     with patch("mirage.core.mongodb.stream.iter_documents", new=_fake):
-        source, io = await grep(accessor, [_path()], ['target'],
-                                CommandOpts(index=NULL_INDEX))
+        source, io = await grep(
+            accessor, [_path()], ["target"], CommandOpts(index=NULL_INDEX)
+        )
         data = await _drain(source)
     text = data.decode()
     assert "target-2" in text
@@ -93,8 +100,12 @@ async def test_grep_m1_short_circuits_after_first_match(accessor, _stat_reads):
             yield {"_id": ObjectId(), "i": i, "tag": tag}
 
     with patch("mirage.core.mongodb.stream.iter_documents", new=_fake):
-        source, _ = await grep(accessor, [_path()], ['FOUND'],
-                               CommandOpts(index=NULL_INDEX, flags={'m': '1'}))
+        source, _ = await grep(
+            accessor,
+            [_path()],
+            ["FOUND"],
+            CommandOpts(index=NULL_INDEX, flags={"m": "1"}),
+        )
         data = await _drain(source)
     assert b"FOUND" in data
     assert len(consumed) < 100
@@ -111,17 +122,22 @@ async def test_grep_second_operand_skips_pushdown(accessor):
         seen["generic"] = [p.virtual for p in paths]
         return b"", IOResult()
 
-    with patch(
+    with (
+        patch(
             SEARCH_COLLECTION,
             new=AsyncMock(side_effect=AssertionError("pushdown ran on 2 ops")),
-    ), patch(
+        ),
+        patch(
             "mirage.core.mongodb.readdir.entity_exists",
             new=AsyncMock(side_effect=AssertionError("stat ran on 2 ops")),
-    ), patch.dict(GENERICS, {"grep": fake_generic}):
-        await grep(accessor, ops, ['target'], CommandOpts(index=NULL_INDEX))
+        ),
+        patch.dict(GENERICS, {"grep": fake_generic}),
+    ):
+        await grep(accessor, ops, ["target"], CommandOpts(index=NULL_INDEX))
 
     assert seen["generic"] == [
-        "/db1/collections/coll1", "/db1/collections/coll2"
+        "/db1/collections/coll1",
+        "/db1/collections/coll2",
     ]
 
 
@@ -129,12 +145,19 @@ async def test_grep_second_operand_skips_pushdown(accessor):
 async def test_grep_lone_collection_still_uses_pushdown(accessor, _stat_reads):
     search = AsyncMock(return_value=[])
     generic = AsyncMock(side_effect=AssertionError("generic path ran"))
-    with patch(
+    with (
+        patch(
             SEARCH_COLLECTION,
             new=search,
-    ), patch.dict(GENERICS, {"grep": generic}):
-        _, io = await grep(accessor, [_path("/db1/collections/coll1")],
-                           ['target'], CommandOpts(index=NULL_INDEX))
+        ),
+        patch.dict(GENERICS, {"grep": generic}),
+    ):
+        _, io = await grep(
+            accessor,
+            [_path("/db1/collections/coll1")],
+            ["target"],
+            CommandOpts(index=NULL_INDEX),
+        )
 
     search.assert_awaited_once()
     assert io.exit_code == 1
@@ -149,7 +172,11 @@ async def test_grep_no_match_returns_exit_code_1(accessor, _stat_reads):
             yield d
 
     with patch("mirage.core.mongodb.stream.iter_documents", new=_fake):
-        source, io = await grep(accessor, [_path()], ['absent_pattern_xyz'],
-                                CommandOpts(index=NULL_INDEX))
+        source, io = await grep(
+            accessor,
+            [_path()],
+            ["absent_pattern_xyz"],
+            CommandOpts(index=NULL_INDEX),
+        )
         _ = await _drain(source)
     assert io.exit_code == 1

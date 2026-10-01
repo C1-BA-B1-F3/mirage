@@ -18,8 +18,13 @@ import os
 from dotenv import load_dotenv
 
 from mirage import MountMode, Workspace
-from mirage.secrets import (EnvVar, SecretRef, SecretSource,
-                            resolve_config_secrets, resolve_sources)
+from mirage.secrets import (
+    EnvVar,
+    SecretRef,
+    SecretSource,
+    resolve_config_secrets,
+    resolve_sources,
+)
 from mirage.vfs.slack import SlackConfig, SlackVFS
 
 load_dotenv(".env.development")
@@ -31,12 +36,12 @@ OP = SecretSource(
     },
 )
 
-BOT = SecretRef(provider="op",
-                ref="op://mirage/SLACK_BOT_TOKEN",
-                key="credential")
-USER = SecretRef(provider="op",
-                 ref="op://mirage/SLACK_USER_TOKEN",
-                 key="credential")
+BOT = SecretRef(
+    provider="op", ref="op://mirage/SLACK_BOT_TOKEN", key="credential"
+)
+USER = SecretRef(
+    provider="op", ref="op://mirage/SLACK_USER_TOKEN", key="credential"
+)
 
 LINES = [
     "ls /remote | head -n 3",
@@ -62,9 +67,10 @@ async def show(ws: Workspace, line: str) -> None:
     result = await ws.shell(line)
     print(f"$ {line}")
     print(f"  exit {result.exit_code}")
-    for stream, text in (("out", await
-                          result.stdout_str()), ("err", await
-                                                 result.stderr_str())):
+    for stream, text in (
+        ("out", await result.stdout_str()),
+        ("err", await result.stderr_str()),
+    ):
         if text.strip():
             print(f"  {stream}: {text.strip()}")
     print()
@@ -72,27 +78,26 @@ async def show(ws: Workspace, line: str) -> None:
 
 async def main() -> None:
     sources = await resolve_sources({"op": OP})
-    remote = await resolve_config_secrets({
-        "token": BOT,
-        "search_token": USER
-    }, sources)
+    remote = await resolve_config_secrets(
+        {"token": BOT, "search_token": USER}, sources
+    )
     ws = Workspace(
         {
-            "/remote":
-            SlackVFS(config=SlackConfig(**remote)),
-            "/local":
-            SlackVFS(config=SlackConfig(token=os.environ["SLACK_BOT_TOKEN"])),
+            "/remote": SlackVFS(config=SlackConfig(**remote)),
+            "/local": SlackVFS(
+                config=SlackConfig(token=os.environ["SLACK_BOT_TOKEN"])
+            ),
         },
         mode=MountMode.READ,
         secrets={"op": OP},
         env={
-            "SLACK_BOT_TOKEN":
-            BOT,
-            "SLACK_USER_TOKEN":
-            EnvVar(provider=USER.provider,
-                   ref=USER.ref,
-                   key=USER.key,
-                   readonly=True),
+            "SLACK_BOT_TOKEN": BOT,
+            "SLACK_USER_TOKEN": EnvVar(
+                provider=USER.provider,
+                ref=USER.ref,
+                key=USER.key,
+                readonly=True,
+            ),
         },
     )
     for line in LINES:

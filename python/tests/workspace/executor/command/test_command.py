@@ -23,8 +23,9 @@ from mirage.workspace import Workspace
 async def test_the_empty_name_routes_nowhere():
     # Its `virtual` is the working directory, here the root mount, which
     # used to make the line span mounts it never names.
-    ws = Workspace({"/data": (RAMVFS(), MountMode.WRITE)},
-                   mode=MountMode.WRITE)
+    ws = Workspace(
+        {"/data": (RAMVFS(), MountMode.WRITE)}, mode=MountMode.WRITE
+    )
     await ws.shell("echo a > /data/a.txt")
     r = await ws.shell("cd / && cat '' /data/a.txt")
     assert r.exit_code == 1
@@ -33,17 +34,21 @@ async def test_the_empty_name_routes_nowhere():
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("line,err", [
-    ("cmp -s", "cmp: missing operand after '-s'\n"),
-    ("cmp -n 5 --", "cmp: missing operand after '--'\n"),
-    ("diff -u", "diff: missing operand after '-u'\n"),
-    ("cd /data && join a.txt -t ,", "join: missing operand after ','\n"),
-])
+@pytest.mark.parametrize(
+    "line,err",
+    [
+        ("cmp -s", "cmp: missing operand after '-s'\n"),
+        ("cmp -n 5 --", "cmp: missing operand after '--'\n"),
+        ("diff -u", "diff: missing operand after '-u'\n"),
+        ("cd /data && join a.txt -t ,", "join: missing operand after ','\n"),
+    ],
+)
 async def test_a_handler_sees_the_words_the_line_spelled(line, err):
     # The words after the command name reach the handler as typed, which
     # is where GNU's `missing operand after '<word>'` reads its word.
-    ws = Workspace({"/data": (RAMVFS(), MountMode.WRITE)},
-                   mode=MountMode.WRITE)
+    ws = Workspace(
+        {"/data": (RAMVFS(), MountMode.WRITE)}, mode=MountMode.WRITE
+    )
     await ws.shell("echo a > /data/a.txt")
     r = await ws.shell(line)
     assert (r.stderr or b"").decode().startswith(err)
@@ -54,23 +59,33 @@ async def test_a_handler_sees_the_words_the_line_spelled(line, err):
 # under /dev, is no cross-mount line (DOOR_FLAG_KEYS). Positional
 # operands still route.
 @pytest.mark.asyncio
-@pytest.mark.parametrize("line,out", [
-    ("jq -c -n --slurpfile t /work/t.json "
-     "--slurpfile f <(echo '{\"x\":1}') '[$t, $f]'",
-     b'[[{"a":1}],[{"x":1}]]\n'),
-    ("jq -c --slurpfile t /work/t.json '[., $t]' /data/d.json",
-     b'[{"b":2},[{"a":1}]]\n'),
-    ("cd /work && jq -c -n --rawfile r /data/r.txt '$r'", b'"raw\\n"\n'),
-])
+@pytest.mark.parametrize(
+    "line,out",
+    [
+        (
+            "jq -c -n --slurpfile t /work/t.json "
+            "--slurpfile f <(echo '{\"x\":1}') '[$t, $f]'",
+            b'[[{"a":1}],[{"x":1}]]\n',
+        ),
+        (
+            "jq -c --slurpfile t /work/t.json '[., $t]' /data/d.json",
+            b'[{"b":2},[{"a":1}]]\n',
+        ),
+        ("cd /work && jq -c -n --rawfile r /data/r.txt '$r'", b'"raw\\n"\n'),
+    ],
+)
 async def test_door_options_route_nothing(line, out):
     ws = Workspace(
         {
             "/data": (RAMVFS(), MountMode.WRITE),
-            "/work": (RAMVFS(), MountMode.WRITE)
+            "/work": (RAMVFS(), MountMode.WRITE),
         },
-        mode=MountMode.WRITE)
-    await ws.shell("echo '{\"a\":1}' > /work/t.json; "
-                   "echo '{\"b\":2}' > /data/d.json; echo raw > /data/r.txt")
+        mode=MountMode.WRITE,
+    )
+    await ws.shell(
+        "echo '{\"a\":1}' > /work/t.json; "
+        "echo '{\"b\":2}' > /data/d.json; echo raw > /data/r.txt"
+    )
     r = await ws.shell(line)
     assert (r.exit_code, r.stdout, r.stderr or b"") == (0, out, b"")
 
@@ -80,11 +95,14 @@ async def test_positional_operands_on_two_mounts_still_refused():
     ws = Workspace(
         {
             "/data": (RAMVFS(), MountMode.WRITE),
-            "/work": (RAMVFS(), MountMode.WRITE)
+            "/work": (RAMVFS(), MountMode.WRITE),
         },
-        mode=MountMode.WRITE)
+        mode=MountMode.WRITE,
+    )
     await ws.shell("echo 1 > /work/t.json; echo 2 > /data/d.json")
     r = await ws.shell("jq . /work/t.json /data/d.json")
     assert r.exit_code == 1
-    assert r.stderr == (b"jq: paths span multiple mounts (/data/, /work/), "
-                        b"cross-mount not supported\n")
+    assert r.stderr == (
+        b"jq: paths span multiple mounts (/data/, /work/), "
+        b"cross-mount not supported\n"
+    )

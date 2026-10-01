@@ -38,7 +38,7 @@ async def test_workspace_override_meta_lands_on_override():
     await base.set_meta("ws", {"workspace_id": "ws", "created_at": 1.0})
     assert await control.load_meta("ws") == {
         "workspace_id": "ws",
-        "created_at": 1.0
+        "created_at": 1.0,
     }
     assert await base._load_meta("ws") is None
 
@@ -48,7 +48,6 @@ async def test_close_closes_overrides_too():
     closed: list[str] = []
 
     class _Probe(RAMWorkspaceStateStore):
-
         async def _close(self) -> None:
             closed.append("probe")
 
@@ -62,7 +61,6 @@ async def test_close_is_idempotent_and_deduplicates_overrides():
     closed: list[str] = []
 
     class _Probe(RAMWorkspaceStateStore):
-
         async def _close(self) -> None:
             closed.append("probe")
 

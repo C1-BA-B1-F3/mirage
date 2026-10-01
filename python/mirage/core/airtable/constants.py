@@ -20,13 +20,15 @@ META_KEY = "meta"
 
 # A view is looked up by id when the value is shaped like one, and by name
 # otherwise; each miss has its own type.
-NOT_FOUND_TYPES = frozenset({
-    "NOT_FOUND",
-    "MODEL_ID_NOT_FOUND",
-    "INVALID_PERMISSIONS_OR_MODEL_NOT_FOUND",
-    "VIEW_ID_NOT_FOUND",
-    "VIEW_NAME_NOT_FOUND",
-})
+NOT_FOUND_TYPES = frozenset(
+    {
+        "NOT_FOUND",
+        "MODEL_ID_NOT_FOUND",
+        "INVALID_PERMISSIONS_OR_MODEL_NOT_FOUND",
+        "VIEW_ID_NOT_FOUND",
+        "VIEW_NAME_NOT_FOUND",
+    }
+)
 
 # Airtable takes at most ten records in one create, update or delete.
 MAX_BATCH = 10
@@ -38,18 +40,20 @@ LINE_KEYS = frozenset({"record_id", "created_time", "fields"})
 
 # The field types Airtable computes and refuses a write to. A mount line
 # carries every one of them, so a line piped back drops them first.
-COMPUTED_TYPES = frozenset({
-    "aiText",
-    "autoNumber",
-    "button",
-    "count",
-    "createdBy",
-    "createdTime",
-    "externalSyncSource",
-    "formula",
-    "lastModifiedBy",
-    "lastModifiedTime",
-    "lookup",
-    "multipleLookupValues",
-    "rollup",
-})
+COMPUTED_TYPES = frozenset(
+    {
+        "aiText",
+        "autoNumber",
+        "button",
+        "count",
+        "createdBy",
+        "createdTime",
+        "externalSyncSource",
+        "formula",
+        "lastModifiedBy",
+        "lastModifiedTime",
+        "lookup",
+        "multipleLookupValues",
+        "rollup",
+    }
+)

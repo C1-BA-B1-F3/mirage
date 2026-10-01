@@ -90,7 +90,7 @@ def drive_ref_path(config: OneDriveConfig, folder: str = "") -> str:
         config (OneDriveConfig): mount config.
         folder (str): mount-relative folder; empty for the mount root.
     """
-    base = drive_base(config)[len(graph_api(config)):]
+    base = drive_base(config)[len(graph_api(config)) :]
     full = _full_path(config, folder)
     if full:
         return f"{base}/root:/{encoded_path(full)}"
@@ -99,8 +99,10 @@ def drive_ref_path(config: OneDriveConfig, folder: str = "") -> str:
 
 def drive_loc(config: OneDriveConfig, path: str) -> DriveLoc:
     stripped = path.strip("/")
-    return DriveLoc(drive="",
-                    path=stripped,
-                    virt=stripped,
-                    url=partial(item_url, config),
-                    ref=partial(drive_ref_path, config))
+    return DriveLoc(
+        drive="",
+        path=stripped,
+        virt=stripped,
+        url=partial(item_url, config),
+        ref=partial(drive_ref_path, config),
+    )

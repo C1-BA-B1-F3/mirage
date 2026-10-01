@@ -25,8 +25,9 @@ async def rm_r(accessor: SharePointAccessor, path: PathSpec) -> None:
     resolved = await resolve(accessor, path)
     if resolved.drive_id is None or resolved.item_path is None:
         return
-    await graph_delete(accessor.config,
-                       drive_loc(accessor.config, resolved,
-                                 path.vfs_path).item(),
-                       session=accessor.pool)
+    await graph_delete(
+        accessor.config,
+        drive_loc(accessor.config, resolved, path.vfs_path).item(),
+        session=accessor.pool,
+    )
     await invalidate_subtree(path)

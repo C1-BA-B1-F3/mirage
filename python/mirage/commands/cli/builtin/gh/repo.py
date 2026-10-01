@@ -15,30 +15,53 @@
 from dataclasses import dataclass
 from typing import Any, Literal
 
-from mirage.commands.cli.builtin.gh.accessor import (camel, csv_values,
-                                                     gh_repo, json_fields,
-                                                     list_limit, text_out,
-                                                     typed_out)
+from mirage.commands.cli.builtin.gh.accessor import (
+    camel,
+    csv_values,
+    gh_repo,
+    json_fields,
+    list_limit,
+    text_out,
+    typed_out,
+)
 from mirage.commands.cli.builtin.gh.constants import REPO_EDIT_FIELDS
-from mirage.commands.cli.builtin.gh.shape import (ListOf, Shape, exported,
-                                                  pointer, struct)
+from mirage.commands.cli.builtin.gh.shape import (
+    ListOf,
+    Shape,
+    exported,
+    pointer,
+    struct,
+)
 from mirage.commands.cli.types import CLIInvocation
 from mirage.commands.errors import UsageError
 from mirage.commands.spec.constants import flag_kwarg_name
 from mirage.commands.spec.flag_view import FlagView
 from mirage.core.github.config import GhConfig
-from mirage.core.github.repo import (create_repo, delete_repo, edit_repo,
-                                     fork_repo, list_repos,
-                                     list_repository_fields, login,
-                                     read_readme, rename_repo, repo_topics,
-                                     repository_fields, set_repo_topics,
-                                     view_repo)
+from mirage.core.github.repo import (
+    create_repo,
+    delete_repo,
+    edit_repo,
+    fork_repo,
+    list_repos,
+    list_repository_fields,
+    login,
+    read_readme,
+    rename_repo,
+    repo_topics,
+    repository_fields,
+    set_repo_topics,
+    view_repo,
+)
 from mirage.io.types import ByteSource, IOResult
 from mirage.types import JsonValue
 
 _OWNER = struct(("id", "string"), ("login", "string"))
-_USER = struct(("id", "string"), ("login", "string"), ("name", "string"),
-               ("databaseId", "int"))
+_USER = struct(
+    ("id", "string"),
+    ("login", "string"),
+    ("name", "string"),
+    ("databaseId", "int"),
+)
 _COUNT = struct(("totalCount", "int"))
 # gh prints a related repository (a fork's parent, a template) as three
 # facts.
@@ -58,6 +81,7 @@ class RepoField:
             node, which prints null rather than ``[]`` for a repository
             with none.
     """
+
     select: str
     shape: Shape
     unwrap: Literal["nodes", "edges", "topics"] | None = None
@@ -70,143 +94,255 @@ def _plain(name: str, shape: Shape) -> tuple[str, RepoField]:
 # Every field `gh repo view --json` and `gh repo list --json` accept in
 # gh 2.85, each with the selection gh put on the wire for it (captured
 # with GH_DEBUG=api) and the shape of gh's own Repository type.
-REPO_FIELD_TABLE: dict[str, RepoField] = dict([
-    _plain("archivedAt", "raw"),
-    ("assignableUsers",
-     RepoField("assignableUsers(first:100){nodes{id,login,name}}",
-               ListOf(_USER), "nodes")),
-    ("codeOfConduct",
-     RepoField(
-         "codeOfConduct{key,name,url}",
-         pointer(("key", "string"), ("name", "string"), ("url", "string")))),
-    ("contactLinks",
-     RepoField(
-         "contactLinks{about,name,url}",
-         ListOf(
-             struct(("about", "string"), ("name", "string"),
-                    ("url", "string"))))),
-    _plain("createdAt", "time"),
-    ("defaultBranchRef",
-     RepoField("defaultBranchRef{name}", struct(("name", "string")))),
-    _plain("deleteBranchOnMerge", "bool"),
-    _plain("description", "string"),
-    _plain("diskUsage", "int"),
-    _plain("forkCount", "int"),
-    ("fundingLinks",
-     RepoField("fundingLinks{platform,url}",
-               ListOf(struct(("platform", "string"), ("url", "string"))))),
-    _plain("hasDiscussionsEnabled", "bool"),
-    _plain("hasIssuesEnabled", "bool"),
-    _plain("hasProjectsEnabled", "bool"),
-    _plain("hasWikiEnabled", "bool"),
-    _plain("homepageUrl", "string"),
-    _plain("id", "string"),
-    _plain("isArchived", "bool"),
-    _plain("isBlankIssuesEnabled", "bool"),
-    _plain("isEmpty", "bool"),
-    _plain("isFork", "bool"),
-    _plain("isInOrganization", "bool"),
-    _plain("isMirror", "bool"),
-    _plain("isPrivate", "bool"),
-    _plain("isSecurityPolicyEnabled", "bool"),
-    _plain("isTemplate", "bool"),
-    _plain("isUserConfigurationRepository", "bool"),
-    ("issueTemplates",
-     RepoField(
-         "issueTemplates{name,title,body,about}",
-         ListOf(
-             struct(("name", "string"), ("title", "string"),
-                    ("body", "string"), ("about", "string"))))),
-    ("issues", RepoField("issues(states:OPEN){totalCount}", _COUNT)),
-    ("labels",
-     RepoField(
-         "labels(first:100){nodes{id,color,name,description}}",
-         ListOf(
-             struct(("id", "string"), ("name", "string"),
-                    ("description", "string"), ("color", "string"))),
-         "nodes")),
-    ("languages",
-     RepoField(
-         "languages(first:100){edges{size,node{name}}}",
-         ListOf(struct(("size", "int"), ("node", struct(("name", "string"))))),
-         "edges")),
-    ("latestRelease",
-     RepoField(
-         "latestRelease{publishedAt,tagName,name,url}",
-         pointer(("name", "string"), ("tagName", "string"), ("url", "string"),
-                 ("publishedAt", "time")))),
-    ("licenseInfo",
-     RepoField(
-         "licenseInfo{key,name,nickname}",
-         pointer(("key", "string"), ("name", "string"),
-                 ("nickname", "string")))),
-    ("mentionableUsers",
-     RepoField("mentionableUsers(first:100){nodes{id,login,name}}",
-               ListOf(_USER), "nodes")),
-    _plain("mergeCommitAllowed", "bool"),
-    ("milestones",
-     RepoField(
-         "milestones(first:100,states:OPEN)"
-         "{nodes{number,title,description,dueOn}}",
-         ListOf(
-             struct(("number", "int"), ("title", "string"),
-                    ("description", "string"), ("dueOn", "raw"))), "nodes")),
-    _plain("mirrorUrl", "string"),
-    _plain("name", "string"),
-    _plain("nameWithOwner", "string"),
-    _plain("openGraphImageUrl", "string"),
-    ("owner", RepoField("owner{id,login}", _OWNER)),
-    ("parent", RepoField("parent{id,name,owner{id,login}}", _RELATED)),
-    ("primaryLanguage",
-     RepoField("primaryLanguage{name}", pointer(("name", "string")))),
-    ("projects",
-     RepoField(
-         "projects(first:100,states:OPEN)"
-         "{nodes{id,name,number,body,resourcePath}}",
-         ListOf(
-             struct(("id", "string"), ("name", "string"), ("number", "int"),
-                    ("resourcePath", "string"))), "nodes")),
-    # gh has no flattening for this one, so it prints its Go struct as
-    # is: the untagged `Nodes` field under its own capitalised name.
-    ("projectsV2",
-     RepoField(
-         'projectsV2(first:100,query:"is:open")'
-         "{nodes{id,number,title,resourcePath,closed,url}}",
-         struct(
-             ("Nodes",
-              ListOf(
-                  struct(("id", "string"), ("title", "string"),
-                         ("number", "int"), ("resourcePath", "string"),
-                         ("closed", "bool"), ("url", "string"))), "nodes")))),
-    ("pullRequestTemplates",
-     RepoField("pullRequestTemplates{body,filename}",
-               ListOf(struct(("filename", "string"), ("body", "string"))))),
-    ("pullRequests", RepoField("pullRequests(states:OPEN){totalCount}",
-                               _COUNT)),
-    _plain("pushedAt", "raw"),
-    _plain("rebaseMergeAllowed", "bool"),
-    ("repositoryTopics",
-     RepoField("repositoryTopics(first:100){nodes{topic{name}}}",
-               ListOf(struct(("name", "string"))), "topics")),
-    _plain("securityPolicyUrl", "string"),
-    _plain("squashMergeAllowed", "bool"),
-    _plain("sshUrl", "string"),
-    _plain("stargazerCount", "int"),
-    ("templateRepository",
-     RepoField("templateRepository{id,name,owner{id,login}}", _RELATED)),
-    _plain("updatedAt", "time"),
-    _plain("url", "string"),
-    _plain("usesCustomOpenGraphImage", "bool"),
-    _plain("viewerCanAdminister", "bool"),
-    _plain("viewerDefaultCommitEmail", "string"),
-    _plain("viewerDefaultMergeMethod", "string"),
-    _plain("viewerHasStarred", "bool"),
-    _plain("viewerPermission", "string"),
-    _plain("viewerPossibleCommitEmails", ListOf("string")),
-    _plain("viewerSubscription", "string"),
-    _plain("visibility", "string"),
-    ("watchers", RepoField("watchers{totalCount}", _COUNT)),
-])
+REPO_FIELD_TABLE: dict[str, RepoField] = dict(
+    [
+        _plain("archivedAt", "raw"),
+        (
+            "assignableUsers",
+            RepoField(
+                "assignableUsers(first:100){nodes{id,login,name}}",
+                ListOf(_USER),
+                "nodes",
+            ),
+        ),
+        (
+            "codeOfConduct",
+            RepoField(
+                "codeOfConduct{key,name,url}",
+                pointer(
+                    ("key", "string"), ("name", "string"), ("url", "string")
+                ),
+            ),
+        ),
+        (
+            "contactLinks",
+            RepoField(
+                "contactLinks{about,name,url}",
+                ListOf(
+                    struct(
+                        ("about", "string"),
+                        ("name", "string"),
+                        ("url", "string"),
+                    )
+                ),
+            ),
+        ),
+        _plain("createdAt", "time"),
+        (
+            "defaultBranchRef",
+            RepoField("defaultBranchRef{name}", struct(("name", "string"))),
+        ),
+        _plain("deleteBranchOnMerge", "bool"),
+        _plain("description", "string"),
+        _plain("diskUsage", "int"),
+        _plain("forkCount", "int"),
+        (
+            "fundingLinks",
+            RepoField(
+                "fundingLinks{platform,url}",
+                ListOf(struct(("platform", "string"), ("url", "string"))),
+            ),
+        ),
+        _plain("hasDiscussionsEnabled", "bool"),
+        _plain("hasIssuesEnabled", "bool"),
+        _plain("hasProjectsEnabled", "bool"),
+        _plain("hasWikiEnabled", "bool"),
+        _plain("homepageUrl", "string"),
+        _plain("id", "string"),
+        _plain("isArchived", "bool"),
+        _plain("isBlankIssuesEnabled", "bool"),
+        _plain("isEmpty", "bool"),
+        _plain("isFork", "bool"),
+        _plain("isInOrganization", "bool"),
+        _plain("isMirror", "bool"),
+        _plain("isPrivate", "bool"),
+        _plain("isSecurityPolicyEnabled", "bool"),
+        _plain("isTemplate", "bool"),
+        _plain("isUserConfigurationRepository", "bool"),
+        (
+            "issueTemplates",
+            RepoField(
+                "issueTemplates{name,title,body,about}",
+                ListOf(
+                    struct(
+                        ("name", "string"),
+                        ("title", "string"),
+                        ("body", "string"),
+                        ("about", "string"),
+                    )
+                ),
+            ),
+        ),
+        ("issues", RepoField("issues(states:OPEN){totalCount}", _COUNT)),
+        (
+            "labels",
+            RepoField(
+                "labels(first:100){nodes{id,color,name,description}}",
+                ListOf(
+                    struct(
+                        ("id", "string"),
+                        ("name", "string"),
+                        ("description", "string"),
+                        ("color", "string"),
+                    )
+                ),
+                "nodes",
+            ),
+        ),
+        (
+            "languages",
+            RepoField(
+                "languages(first:100){edges{size,node{name}}}",
+                ListOf(
+                    struct(
+                        ("size", "int"), ("node", struct(("name", "string")))
+                    )
+                ),
+                "edges",
+            ),
+        ),
+        (
+            "latestRelease",
+            RepoField(
+                "latestRelease{publishedAt,tagName,name,url}",
+                pointer(
+                    ("name", "string"),
+                    ("tagName", "string"),
+                    ("url", "string"),
+                    ("publishedAt", "time"),
+                ),
+            ),
+        ),
+        (
+            "licenseInfo",
+            RepoField(
+                "licenseInfo{key,name,nickname}",
+                pointer(
+                    ("key", "string"),
+                    ("name", "string"),
+                    ("nickname", "string"),
+                ),
+            ),
+        ),
+        (
+            "mentionableUsers",
+            RepoField(
+                "mentionableUsers(first:100){nodes{id,login,name}}",
+                ListOf(_USER),
+                "nodes",
+            ),
+        ),
+        _plain("mergeCommitAllowed", "bool"),
+        (
+            "milestones",
+            RepoField(
+                "milestones(first:100,states:OPEN)"
+                "{nodes{number,title,description,dueOn}}",
+                ListOf(
+                    struct(
+                        ("number", "int"),
+                        ("title", "string"),
+                        ("description", "string"),
+                        ("dueOn", "raw"),
+                    )
+                ),
+                "nodes",
+            ),
+        ),
+        _plain("mirrorUrl", "string"),
+        _plain("name", "string"),
+        _plain("nameWithOwner", "string"),
+        _plain("openGraphImageUrl", "string"),
+        ("owner", RepoField("owner{id,login}", _OWNER)),
+        ("parent", RepoField("parent{id,name,owner{id,login}}", _RELATED)),
+        (
+            "primaryLanguage",
+            RepoField("primaryLanguage{name}", pointer(("name", "string"))),
+        ),
+        (
+            "projects",
+            RepoField(
+                "projects(first:100,states:OPEN)"
+                "{nodes{id,name,number,body,resourcePath}}",
+                ListOf(
+                    struct(
+                        ("id", "string"),
+                        ("name", "string"),
+                        ("number", "int"),
+                        ("resourcePath", "string"),
+                    )
+                ),
+                "nodes",
+            ),
+        ),
+        # gh has no flattening for this one, so it prints its Go struct as
+        # is: the untagged `Nodes` field under its own capitalised name.
+        (
+            "projectsV2",
+            RepoField(
+                'projectsV2(first:100,query:"is:open")'
+                "{nodes{id,number,title,resourcePath,closed,url}}",
+                struct(
+                    (
+                        "Nodes",
+                        ListOf(
+                            struct(
+                                ("id", "string"),
+                                ("title", "string"),
+                                ("number", "int"),
+                                ("resourcePath", "string"),
+                                ("closed", "bool"),
+                                ("url", "string"),
+                            )
+                        ),
+                        "nodes",
+                    )
+                ),
+            ),
+        ),
+        (
+            "pullRequestTemplates",
+            RepoField(
+                "pullRequestTemplates{body,filename}",
+                ListOf(struct(("filename", "string"), ("body", "string"))),
+            ),
+        ),
+        (
+            "pullRequests",
+            RepoField("pullRequests(states:OPEN){totalCount}", _COUNT),
+        ),
+        _plain("pushedAt", "raw"),
+        _plain("rebaseMergeAllowed", "bool"),
+        (
+            "repositoryTopics",
+            RepoField(
+                "repositoryTopics(first:100){nodes{topic{name}}}",
+                ListOf(struct(("name", "string"))),
+                "topics",
+            ),
+        ),
+        _plain("securityPolicyUrl", "string"),
+        _plain("squashMergeAllowed", "bool"),
+        _plain("sshUrl", "string"),
+        _plain("stargazerCount", "int"),
+        (
+            "templateRepository",
+            RepoField("templateRepository{id,name,owner{id,login}}", _RELATED),
+        ),
+        _plain("updatedAt", "time"),
+        _plain("url", "string"),
+        _plain("usesCustomOpenGraphImage", "bool"),
+        _plain("viewerCanAdminister", "bool"),
+        _plain("viewerDefaultCommitEmail", "string"),
+        _plain("viewerDefaultMergeMethod", "string"),
+        _plain("viewerHasStarred", "bool"),
+        _plain("viewerPermission", "string"),
+        _plain("viewerPossibleCommitEmails", ListOf("string")),
+        _plain("viewerSubscription", "string"),
+        _plain("visibility", "string"),
+        ("watchers", RepoField("watchers{totalCount}", _COUNT)),
+    ]
+)
 
 REPO_FIELDS = tuple(REPO_FIELD_TABLE)
 
@@ -218,8 +354,9 @@ def _repo_selection(fields: list[str]) -> str:
     Args:
         fields (list[str]): the ``--json`` fields.
     """
-    return ",".join(REPO_FIELD_TABLE[field].select
-                    for field in dict.fromkeys(fields))
+    return ",".join(
+        REPO_FIELD_TABLE[field].select for field in dict.fromkeys(fields)
+    )
 
 
 def _exported_repo(node: dict[str, Any], fields: list[str]) -> dict[str, Any]:
@@ -282,16 +419,19 @@ def summary(repo: JsonValue, readme: str | None) -> str:
     fields = repo if isinstance(repo, dict) else {}
     name = fields.get("full_name")
     description = fields.get("description")
-    head = (f"name:\t{name if isinstance(name, str) else ''}\n"
-            f"description:\t"
-            f"{description if isinstance(description, str) else ''}\n")
+    head = (
+        f"name:\t{name if isinstance(name, str) else ''}\n"
+        f"description:\t"
+        f"{description if isinstance(description, str) else ''}\n"
+    )
     if readme is None:
         return head
     return f"{head}--\n{readme}"
 
 
 async def view(
-        inv: CLIInvocation[GhConfig]) -> tuple[ByteSource | None, IOResult]:
+    inv: CLIInvocation[GhConfig],
+) -> tuple[ByteSource | None, IOResult]:
     """``gh repo view``.
 
     With ``--json`` it asks GraphQL for exactly the fields named, the
@@ -306,18 +446,24 @@ async def view(
     ref = gh_repo(inv.config, operand or fl.as_str("repo"))
     fields = json_fields(fl, REPO_FIELDS)
     if fields is not None:
-        node = await repository_fields(inv.config, ref,
-                                       _repo_selection(fields))
-        return await typed_out(_exported_repo(node, fields), fl, "",
-                               REPO_FIELDS)
+        node = await repository_fields(
+            inv.config, ref, _repo_selection(fields)
+        )
+        return await typed_out(
+            _exported_repo(node, fields), fl, "", REPO_FIELDS
+        )
     repo = await view_repo(inv.config, ref)
-    return await typed_out(repo, fl,
-                           summary(repo, await read_readme(inv.config, ref)),
-                           REPO_FIELDS)
+    return await typed_out(
+        repo,
+        fl,
+        summary(repo, await read_readme(inv.config, ref)),
+        REPO_FIELDS,
+    )
 
 
 async def list_cmd(
-        inv: CLIInvocation[GhConfig]) -> tuple[ByteSource | None, IOResult]:
+    inv: CLIInvocation[GhConfig],
+) -> tuple[ByteSource | None, IOResult]:
     """``gh repo list``, over GraphQL for ``--json`` as ``view`` is.
 
     Args:
@@ -328,28 +474,37 @@ async def list_cmd(
     limit = list_limit(fl, 30)
     fields = json_fields(fl, REPO_FIELDS)
     if fields is not None:
-        nodes = await list_repository_fields(inv.config, owner, limit,
-                                             _repo_selection(fields))
+        nodes = await list_repository_fields(
+            inv.config, owner, limit, _repo_selection(fields)
+        )
         return await typed_out(
-            [_exported_repo(node, fields) for node in nodes], fl, "",
-            REPO_FIELDS)
+            [_exported_repo(node, fields) for node in nodes],
+            fl,
+            "",
+            REPO_FIELDS,
+        )
     rows = [
         _repo(value) for value in await list_repos(inv.config, owner, limit)
     ]
-    human = "".join(f'{row.get("nameWithOwner", "")}\t'
-                    f'{row.get("description", "")}\t'
-                    f'{row.get("visibility", "")}\t'
-                    f'{row.get("updatedAt", "")}\n' for row in rows)
+    human = "".join(
+        f"{row.get('nameWithOwner', '')}\t"
+        f"{row.get('description', '')}\t"
+        f"{row.get('visibility', '')}\t"
+        f"{row.get('updatedAt', '')}\n"
+        for row in rows
+    )
     return await typed_out(rows, fl, human, REPO_FIELDS)
 
 
 async def create_cmd(
-        inv: CLIInvocation[GhConfig]) -> tuple[ByteSource | None, IOResult]:
+    inv: CLIInvocation[GhConfig],
+) -> tuple[ByteSource | None, IOResult]:
     fl = FlagView(inv.flags)
     spec = inv.texts[0] if inv.texts else ""
     if not spec:
         raise ValueError(
-            "a repository name is required in noninteractive mode")
+            "a repository name is required in noninteractive mode"
+        )
     parts = spec.split("/")
     if len(parts) > 2 or any(not part for part in parts):
         raise ValueError(f'invalid repository name: "{spec}"')
@@ -362,30 +517,37 @@ async def create_cmd(
         "private": fl.as_bool("private"),
         "auto_init": fl.as_bool("add_readme"),
     }
-    for flag, key in (("description", "description"), ("homepage",
-                                                       "homepage")):
+    for flag, key in (
+        ("description", "description"),
+        ("homepage", "homepage"),
+    ):
         value = fl.as_str(flag)
         if value is not None:
             body[key] = value
     created = _repo(await create_repo(inv.config, owner, body))
-    return text_out(f'{created.get("url", "")}\n')
+    return text_out(f"{created.get('url', '')}\n")
 
 
 async def fork(
-        inv: CLIInvocation[GhConfig]) -> tuple[ByteSource | None, IOResult]:
+    inv: CLIInvocation[GhConfig],
+) -> tuple[ByteSource | None, IOResult]:
     fl = FlagView(inv.flags)
     operand = inv.texts[0] if inv.texts else None
     source = gh_repo(inv.config, operand)
     name = fl.as_str("fork_name")
     forked = await fork_repo(inv.config, source, name)
     landed = forked.get("full_name") if isinstance(forked, dict) else None
-    full = landed if isinstance(
-        landed, str) else (f"{await login(inv.config)}/{name or source.repo}")
+    full = (
+        landed
+        if isinstance(landed, str)
+        else (f"{await login(inv.config)}/{name or source.repo}")
+    )
     return text_out(f"✓ Created fork {full}\n")
 
 
 async def rename(
-        inv: CLIInvocation[GhConfig]) -> tuple[ByteSource | None, IOResult]:
+    inv: CLIInvocation[GhConfig],
+) -> tuple[ByteSource | None, IOResult]:
     fl = FlagView(inv.flags)
     # gh takes the *new name* as the operand and the repository to rename as
     # -R, which is the reverse of what the shape of the line suggests.
@@ -400,7 +562,8 @@ async def rename(
 
 
 async def edit_cmd(
-        inv: CLIInvocation[GhConfig]) -> tuple[ByteSource | None, IOResult]:
+    inv: CLIInvocation[GhConfig],
+) -> tuple[ByteSource | None, IOResult]:
     """``gh repo edit``.
 
     The settings named on the line in one PATCH, and topics read and
@@ -435,16 +598,21 @@ async def edit_cmd(
     accepted = fl.as_bool("accept_visibility_change_consequences")
     if not (body or security or adds or removes or accepted):
         raise UsageError(
-            "specify properties to edit when not running interactively", 1)
+            "specify properties to edit when not running interactively", 1
+        )
     if "visibility" in body and not accepted:
         raise UsageError(
             "use of --visibility flag requires "
-            "--accept-visibility-change-consequences flag", 1)
+            "--accept-visibility-change-consequences flag",
+            1,
+        )
     if security:
         node = await repository_fields(inv.config, ref, "viewerCanAdminister")
         if node.get("viewerCanAdminister") is not True:
-            raise ValueError("you do not have sufficient permissions to edit "
-                             "repository security and analysis features")
+            raise ValueError(
+                "you do not have sufficient permissions to edit "
+                "repository security and analysis features"
+            )
         body["security_and_analysis"] = security
     if body:
         await edit_repo(inv.config, ref, body)
@@ -458,7 +626,8 @@ async def edit_cmd(
 
 
 async def delete_cmd(
-        inv: CLIInvocation[GhConfig]) -> tuple[ByteSource | None, IOResult]:
+    inv: CLIInvocation[GhConfig],
+) -> tuple[ByteSource | None, IOResult]:
     """``gh repo delete REPO --yes``.
 
     A name with no owner is the viewer's, as gh reads it. The current
@@ -475,13 +644,18 @@ async def delete_cmd(
     if spec is None and confirmed:
         raise UsageError(
             "cannot non-interactively delete current repository. Please "
-            "specify a repository or run interactively", 1)
+            "specify a repository or run interactively",
+            1,
+        )
     if not confirmed:
         raise UsageError("--yes required when not running interactively", 1)
     named = spec or ""
     if "/" not in named:
         named = f"{await login(inv.config)}/{named}"
     await delete_repo(inv.config, gh_repo(inv.config, named))
-    warning = (b"Flag --confirm has been deprecated, use `--yes` instead\n"
-               if fl.as_bool("confirm") else b"")
+    warning = (
+        b"Flag --confirm has been deprecated, use `--yes` instead\n"
+        if fl.as_bool("confirm")
+        else b""
+    )
     return b"", IOResult(stderr=warning)

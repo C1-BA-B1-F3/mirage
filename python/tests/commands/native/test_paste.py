@@ -17,14 +17,16 @@ def test_paste_two_files(env):
     env.create_file("a.txt", b"1\n2\n3\n")
     env.create_file("b.txt", b"a\nb\nc\n")
     assert env.mirage("paste /data/a.txt /data/b.txt") == env.native(
-        "paste a.txt b.txt")
+        "paste a.txt b.txt"
+    )
 
 
 def test_paste_d(env):
     env.create_file("a.txt", b"x\ny\n")
     env.create_file("b.txt", b"1\n2\n")
     assert env.mirage("paste -d , /data/a.txt /data/b.txt") == env.native(
-        "paste -d , a.txt b.txt")
+        "paste -d , a.txt b.txt"
+    )
 
 
 def test_paste_stdin(env):

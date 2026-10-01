@@ -26,7 +26,8 @@ def test_r2config_defaults():
     assert config.region == "auto"
     assert config.timeout == 30
     assert config.resolved_endpoint_url() == (
-        "https://account-123.r2.cloudflarestorage.com")
+        "https://account-123.r2.cloudflarestorage.com"
+    )
 
 
 def test_r2config_immutable():
@@ -48,7 +49,8 @@ def test_r2config_to_s3_config():
     assert s3_config.bucket == "my-bucket"
     assert s3_config.region == "auto"
     assert s3_config.endpoint_url == (
-        "https://account-123.r2.cloudflarestorage.com")
+        "https://account-123.r2.cloudflarestorage.com"
+    )
     assert reveal_secret(s3_config.aws_access_key_id) == "access-key"
     assert reveal_secret(s3_config.aws_secret_access_key) == "secret-key"
     assert s3_config.proxy is not None
@@ -75,7 +77,8 @@ def test_r2resource_uses_s3_resource_type():
     assert vfs.caches_reads is True
     assert isinstance(vfs.config, S3Config)
     assert vfs.config.endpoint_url == (
-        "https://account-123.r2.cloudflarestorage.com")
+        "https://account-123.r2.cloudflarestorage.com"
+    )
 
 
 def test_r2vfs_preserves_original_config():

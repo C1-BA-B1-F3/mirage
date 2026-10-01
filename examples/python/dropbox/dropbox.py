@@ -58,8 +58,7 @@ async def main() -> None:
     await show("du /dropbox/")
     print("=== not-found errors show the full virtual path ===")
     result = await ws.shell("cat /dropbox/__nf_missing__.txt")
-    print(f"exit={result.exit_code}  "
-          f"{(await result.stderr_str()).strip()}")
+    print(f"exit={result.exit_code}  {(await result.stderr_str()).strip()}")
 
     # ── write roundtrip (scoped to a unique folder, cleaned up) ──
     scratch = f"/dropbox/_mirage_example/{uuid.uuid4().hex[:8]}"

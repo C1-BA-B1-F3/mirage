@@ -16,11 +16,20 @@ import asyncio
 
 import pytest
 
-from mirage.observe.context import (RecordingScope, active_recorder,
-                                    push_mount_context, push_revisions, record,
-                                    record_stream, reset_active_recorder,
-                                    reset_revisions, revision_for, start_op,
-                                    with_mount_context, with_revisions)
+from mirage.observe.context import (
+    RecordingScope,
+    active_recorder,
+    push_mount_context,
+    push_revisions,
+    record,
+    record_stream,
+    reset_active_recorder,
+    reset_revisions,
+    revision_for,
+    start_op,
+    with_mount_context,
+    with_revisions,
+)
 from mirage.ops.registry import RegisteredOp, op
 from mirage.types import PathSpec
 from mirage.vfs.ram import RAMVFS
@@ -28,7 +37,6 @@ from mirage.workspace import Workspace
 
 
 class ClosingIterator:
-
     def __init__(self) -> None:
         self.yielded = False
         self.closed = False
@@ -115,8 +123,9 @@ def test_push_mount_context_no_recorder_is_noop():
         reset_active_recorder(token)
 
 
-async def _record_under_mount(mount_id: str, path: str, opened: set[str],
-                              other: str) -> None:
+async def _record_under_mount(
+    mount_id: str, path: str, opened: set[str], other: str
+) -> None:
     token = push_mount_context(mount_id)
     try:
         opened.add(mount_id)
@@ -135,9 +144,11 @@ async def test_push_mount_context_is_task_local_across_concurrent_branches():
     try:
         await asyncio.gather(
             asyncio.create_task(
-                _record_under_mount("A", "/a/x.txt", opened, "B")),
+                _record_under_mount("A", "/a/x.txt", opened, "B")
+            ),
             asyncio.create_task(
-                _record_under_mount("B", "/b/y.txt", opened, "A")),
+                _record_under_mount("B", "/b/y.txt", opened, "A")
+            ),
         )
     finally:
         scope.close()
@@ -148,7 +159,6 @@ async def test_push_mount_context_is_task_local_across_concurrent_branches():
 
 
 class RecordingIterator:
-
     def __init__(self, paths: list[str]) -> None:
         self.paths = list(paths)
 
@@ -167,8 +177,9 @@ async def test_with_mount_context_keeps_mount_id_across_steps():
     # The consumer runs under a foreign mount's frame; every lazy record the
     # wrapped stream emits must still carry the captured mount's identity.
     scope = RecordingScope()
-    wrapped = with_mount_context(RecordingIterator(["/s3/a", "/s3/b"]),
-                                 "mount-a")
+    wrapped = with_mount_context(
+        RecordingIterator(["/s3/a", "/s3/b"]), "mount-a"
+    )
     outer = push_mount_context("mount-b")
     try:
         chunks = [chunk async for chunk in wrapped]
@@ -236,13 +247,9 @@ def test_record_carries_revision_when_passed():
 def test_record_carries_both_when_passed():
     scope = RecordingScope()
     records = scope.records
-    record("read",
-           "/s3/x",
-           "s3",
-           10,
-           start_op(),
-           fingerprint="abc",
-           revision="v1")
+    record(
+        "read", "/s3/x", "s3", 10, start_op(), fingerprint="abc", revision="v1"
+    )
     scope.close()
     assert records[0].fingerprint == "abc"
     assert records[0].revision == "v1"
@@ -333,8 +340,9 @@ def test_inactive_scope_joins_enclosing():
     assert joined.records == []
 
 
-async def _dispatch_recording_read(recorded: list[str],
-                                   stream: bool) -> list[str]:
+async def _dispatch_recording_read(
+    recorded: list[str], stream: bool
+) -> list[str]:
     # A custom read on a RAM mount at /m records exactly the paths it is
     # given, inside a real mount frame, so the recorder's own treatment of
     # the path is what the ledger shows.
@@ -348,7 +356,6 @@ async def _dispatch_recording_read(recorded: list[str],
         yield b""
 
     class RecordingRAMVFS(RAMVFS):
-
         def ops(self) -> list[RegisteredOp]:
             return [*super().ops(), *recording_read._registered_ops]
 

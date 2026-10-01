@@ -16,10 +16,17 @@ import pytest
 import tree_sitter
 
 from mirage.shell import parse
-from mirage.shell.helpers import (get_command_name, get_for_parts,
-                                  get_if_branches, get_list_parts, get_parts,
-                                  get_pipeline_commands, get_redirects,
-                                  get_text, get_while_parts)
+from mirage.shell.helpers import (
+    get_command_name,
+    get_for_parts,
+    get_if_branches,
+    get_list_parts,
+    get_parts,
+    get_pipeline_commands,
+    get_redirects,
+    get_text,
+    get_while_parts,
+)
 from mirage.shell.parse import join_continuations
 from mirage.shell.types import NodeType as NT
 
@@ -136,8 +143,9 @@ def test_if_else():
 
 
 def test_if_elif_else():
-    node = parse("if true; then echo a; elif false; then echo b; "
-                 "else echo c; fi").named_children[0]
+    node = parse(
+        "if true; then echo a; elif false; then echo b; else echo c; fi"
+    ).named_children[0]
     branches, else_body = get_if_branches(node)
     assert len(branches) == 2
     assert else_body is not None
@@ -223,15 +231,16 @@ def test_preserves_expansions():
 
 
 def test_preserves_quotes():
-    cmd = parse('echo "hello" \'world\'').named_children[0]
+    cmd = parse("echo \"hello\" 'world'").named_children[0]
     types = [c.type for c in cmd.named_children if c.type != NT.COMMAND_NAME]
     assert NT.STRING in types
     assert NT.RAW_STRING in types
 
 
 def test_complex_command():
-    root = parse("for f in $(ls /data/); do "
-                 "cat $f | grep error > /out/$f; done")
+    root = parse(
+        "for f in $(ls /data/); do cat $f | grep error > /out/$f; done"
+    )
     assert root.named_children[0].type == NT.FOR_STATEMENT
 
 
@@ -315,7 +324,7 @@ def test_unrelated_syntax_error_still_reports():
         ("echo a\\ b", "echo a\\ b"),
         # Mid-line, the pair goes wherever the reader sees it.
         ("echo a\\\nb", "echo ab"),
-        ("echo \"a\\\nb\"", "echo \"ab\""),
+        ('echo "a\\\nb"', 'echo "ab"'),
         ("echo $\\\n{x} $((1\\\n+2))", "echo ${x} $((1+2))"),
         ("ec\\\nho a", "echo a"),
         ("echo a\\\\\nb", "echo a\\\\\nb"),
@@ -325,8 +334,9 @@ def test_unrelated_syntax_error_still_reports():
         ("echo $'a\\\nb'", "echo $'a\\\nb'"),
         ("echo a # c \\\necho b", "echo a # c \\\necho b"),
         ("echo \"$(echo 'u\\\nv')\"", "echo \"$(echo 'u\\\nv')\""),
-        ("echo \"it's a\\\nb\"", "echo \"it's ab\""),
-    ])
+        ('echo "it\'s a\\\nb"', 'echo "it\'s ab"'),
+    ],
+)
 def test_join_continuations(command, expected):
     assert join_continuations(command) == expected
 
@@ -347,16 +357,19 @@ def test_unquoted_heredoc_body_joins_its_lines():
 # stays behind as a literal token and the rest splits into a sibling
 # word (`/api/$c/$id.json` -> `/api/$c/$` + `id.json`). parse() rebraces
 # the orphaned expansion and reparses, so consumers see one whole word.
-@pytest.mark.parametrize(("command", "target"), [
-    ("echo hi > /api/$c/$id.json", "/api/$c/${id}.json"),
-    ("echo hi > /api/$c/$id-x", "/api/$c/${id}-x"),
-    ("echo hi > /w/$a/$b/$c", "/w/$a/${b}/$c"),
-    ("echo hi > ${a}.$b.json", "${a}.${b}.json"),
-    ("echo hi > /w/$c/$1.json", "/w/$c/${1}.json"),
-    ("echo hi > /w/$c/$12.json", "/w/$c/${1}2.json"),
-    ("echo hi > /é💡/$c/$123abc.json", "/é💡/$c/${1}23abc.json"),
-    ("echo hi > /w/$c/$_id9.json", "/w/$c/${_id9}.json"),
-])
+@pytest.mark.parametrize(
+    ("command", "target"),
+    [
+        ("echo hi > /api/$c/$id.json", "/api/$c/${id}.json"),
+        ("echo hi > /api/$c/$id-x", "/api/$c/${id}-x"),
+        ("echo hi > /w/$a/$b/$c", "/w/$a/${b}/$c"),
+        ("echo hi > ${a}.$b.json", "${a}.${b}.json"),
+        ("echo hi > /w/$c/$1.json", "/w/$c/${1}.json"),
+        ("echo hi > /w/$c/$12.json", "/w/$c/${1}2.json"),
+        ("echo hi > /é💡/$c/$123abc.json", "/é💡/$c/${1}23abc.json"),
+        ("echo hi > /w/$c/$_id9.json", "/w/$c/${_id9}.json"),
+    ],
+)
 def test_redirect_target_later_unbraced_var_stays_one_word(command, target):
     node = parse(command).named_children[0]
     assert node.type == NT.REDIRECTED_STATEMENT
@@ -385,22 +398,30 @@ def test_assignment_later_unbraced_var_stays_one_assignment():
         # A `$` bash keeps literal is left alone: no name character follows.
         ("echo a$ b", ["echo", "a$", "b"]),
         ("echo $", ["echo", "$"]),
-    ])
+    ],
+)
 def test_literal_dollar_words_stay_untouched(command, words):
     cmd = parse(command).named_children[0]
     assert [get_text(p) for p in get_parts(cmd)] == words
 
 
-@pytest.mark.parametrize("command, body", [
-    ("cat <<'EOF'\n\\first\nsecond\nEOF", "\\first\nsecond\n"),
-    ("cat <<'EOF'\n\\first\n\\second\nthird\nEOF",
-     "\\first\n\\second\nthird\n"),
-    ("cat <<'EOF'\n  first\nsecond\nEOF", "  first\nsecond\n"),
-    ("cat <<'EOF'\n\\begin{table}\n  \\begin{center}\nEOF",
-     "\\begin{table}\n  \\begin{center}\n"),
-    ("cat <<'EOF'\n\\item Don't\nsecond\nEOF", "\\item Don't\nsecond\n"),
-    ('cat <<"E\\$F"\n\\first\nE$F', "\\first\n"),
-])
+@pytest.mark.parametrize(
+    "command, body",
+    [
+        ("cat <<'EOF'\n\\first\nsecond\nEOF", "\\first\nsecond\n"),
+        (
+            "cat <<'EOF'\n\\first\n\\second\nthird\nEOF",
+            "\\first\n\\second\nthird\n",
+        ),
+        ("cat <<'EOF'\n  first\nsecond\nEOF", "  first\nsecond\n"),
+        (
+            "cat <<'EOF'\n\\begin{table}\n  \\begin{center}\nEOF",
+            "\\begin{table}\n  \\begin{center}\n",
+        ),
+        ("cat <<'EOF'\n\\item Don't\nsecond\nEOF", "\\item Don't\nsecond\n"),
+        ('cat <<"E\\$F"\n\\first\nE$F', "\\first\n"),
+    ],
+)
 def test_heredoc_reader_preserves_body_and_source(command, body):
     root = parse(command)
     assert not root.has_error
@@ -452,15 +473,24 @@ def _heredoc_bodies_by_delimiter(command: str) -> dict[str, str]:
 
 # Keep the operator-line regressions from #1071. The source reader now
 # preserves their typed source while lowering bodies before grammar parsing.
-@pytest.mark.parametrize("command", [
-    'cat <<EOF; echo x\nhi\nEOF\n', 'cat <<EOF;echo x\nhi\nEOF\n',
-    'cat <<EOF>out\nhi\nEOF\n', 'cat <<EOF|wc -l\nhi\nEOF\n',
-    'cat <<EOF&&echo x\nhi\nEOF\n', "cat <<'EOF'; echo x\nhi\nEOF\n",
-    'cat <<EOF;\nhi\nEOF;\nEOF\n', '(cat <<EOF)\nhi\nEOF)\nEOF\n',
-    'cat <<A && cat <<B\na\nA\nb\nB\n', 'cat <<A; cat <<B\na\nA\nb\nB\n',
-    '(cat <<EOF)\nhi\nEOF\n', 'case x in x) cat <<EOF;; esac\nhi\nEOF\n',
-    '{ cat <<EOF; }\nhi\nEOF\n'
-])
+@pytest.mark.parametrize(
+    "command",
+    [
+        "cat <<EOF; echo x\nhi\nEOF\n",
+        "cat <<EOF;echo x\nhi\nEOF\n",
+        "cat <<EOF>out\nhi\nEOF\n",
+        "cat <<EOF|wc -l\nhi\nEOF\n",
+        "cat <<EOF&&echo x\nhi\nEOF\n",
+        "cat <<'EOF'; echo x\nhi\nEOF\n",
+        "cat <<EOF;\nhi\nEOF;\nEOF\n",
+        "(cat <<EOF)\nhi\nEOF)\nEOF\n",
+        "cat <<A && cat <<B\na\nA\nb\nB\n",
+        "cat <<A; cat <<B\na\nA\nb\nB\n",
+        "(cat <<EOF)\nhi\nEOF\n",
+        "case x in x) cat <<EOF;; esac\nhi\nEOF\n",
+        "{ cat <<EOF; }\nhi\nEOF\n",
+    ],
+)
 def test_heredoc_operator_line_preserves_original_source(command):
     root = parse(command)
     assert not root.has_error
@@ -469,16 +499,18 @@ def test_heredoc_operator_line_preserves_original_source(command):
 
 def test_two_heredocs_on_one_line_keep_their_own_bodies():
     assert _heredoc_bodies_by_delimiter(
-        "cat <<A && cat <<B\na\nA\nb\nB\n") == {
-            "A": "a\n",
-            "B": "b\n",
-        }
+        "cat <<A && cat <<B\na\nA\nb\nB\n"
+    ) == {
+        "A": "a\n",
+        "B": "b\n",
+    }
     assert _heredoc_bodies_by_delimiter(
-        "cat <<A | cat <<B; cat <<C\na\nA\nb\nB\nc\nC\n") == {
-            "A": "a\n",
-            "B": "b\n",
-            "C": "c\n",
-        }
+        "cat <<A | cat <<B; cat <<C\na\nA\nb\nB\nc\nC\n"
+    ) == {
+        "A": "a\n",
+        "B": "b\n",
+        "C": "c\n",
+    }
 
 
 def test_heredoc_semicolon_tail_keeps_the_bodys_indentation():
@@ -498,26 +530,30 @@ def test_heredoc_delimiter_word_is_checked_on_a_clean_tree():
     # `EOF;` is tree-sitter's token and a body line at once, so the typed
     # source parses clean with a body one line short; bash's word is EOF.
     assert _heredoc_bodies_by_delimiter(
-        "cat <<EOF; echo x\nhi\nEOF;\nEOF\n") == {
-            "EOF": "hi\nEOF;\n",
-        }
+        "cat <<EOF; echo x\nhi\nEOF;\nEOF\n"
+    ) == {
+        "EOF": "hi\nEOF;\n",
+    }
     assert _heredoc_bodies_by_delimiter(
-        "cat <<EOF|tr a-z A-Z\nhi\nEOF|tr a-z A-Z\nEOF\n") == {
-            "EOF": "hi\nEOF|tr a-z A-Z\n",
-        }
+        "cat <<EOF|tr a-z A-Z\nhi\nEOF|tr a-z A-Z\nEOF\n"
+    ) == {
+        "EOF": "hi\nEOF|tr a-z A-Z\n",
+    }
 
 
 def test_heredoc_body_keeps_a_line_that_only_opens_with_the_delimiter():
     # tree-sitter-bash's scanner compares a line's first bytes with the
     # delimiter and stops there; bash wants the whole line.
     assert _heredoc_bodies_by_delimiter(
-        "cat <<EOF\nEOFX\nEOF;\n EOF\nEOF\n") == {
-            "EOF": "EOFX\nEOF;\n EOF\n",
-        }
+        "cat <<EOF\nEOFX\nEOF;\n EOF\nEOF\n"
+    ) == {
+        "EOF": "EOFX\nEOF;\n EOF\n",
+    }
     assert _heredoc_bodies_by_delimiter(
-        "cat <<-EOF\n\thi\n\tEOFX\n  EOF\n\tEOF\n") == {
-            "EOF": "hi\nEOFX\n  EOF\n",
-        }
+        "cat <<-EOF\n\thi\n\tEOFX\n  EOF\n\tEOF\n"
+    ) == {
+        "EOF": "hi\nEOFX\n  EOF\n",
+    }
 
 
 def test_heredoc_lookalike_line_keeps_its_expansion():

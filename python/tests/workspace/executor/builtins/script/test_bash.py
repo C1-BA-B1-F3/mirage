@@ -23,14 +23,17 @@ def test_parse_bash_args_clustered_c_keeps_set_options():
     parsed = parse_bash_args(["-xc", "echo hi", "name", "a"])
     assert parsed.script == "echo hi"
     assert parsed.argv == ["name", "a"]
-    assert parsed.settings == (("xtrace", True), )
+    assert parsed.settings == (("xtrace", True),)
 
 
 def test_parse_bash_args_maps_set_flags_to_options():
     parsed = parse_bash_args(["-eux", "run.sh"])
     assert parsed.path == "run.sh"
-    assert parsed.settings == (("errexit", True), ("nounset", True), ("xtrace",
-                                                                      True))
+    assert parsed.settings == (
+        ("errexit", True),
+        ("nounset", True),
+        ("xtrace", True),
+    )
 
 
 def test_parse_bash_args_last_sign_wins_within_one_invocation():
@@ -48,7 +51,7 @@ def test_parse_bash_args_dash_s_keeps_operands_positional():
 def test_parse_bash_args_applies_o_and_its_value():
     parsed = parse_bash_args(["-o", "pipefail", "run.sh"])
     assert parsed.path == "run.sh"
-    assert parsed.settings == (("pipefail", True), )
+    assert parsed.settings == (("pipefail", True),)
 
 
 def test_parse_bash_args_long_option_consumes_its_value():

@@ -37,9 +37,10 @@ def test_create_file_makes_every_missing_parent():
     async def _run():
         ws = _workspace()
         result = await MirageEditor(ws).create_file(
-            ApplyPatchOperation(type="create_file",
-                                path="/a/b/c/new.py",
-                                diff="+print('hi')\n"))
+            ApplyPatchOperation(
+                type="create_file", path="/a/b/c/new.py", diff="+print('hi')\n"
+            )
+        )
         assert result.status == "completed"
         assert await ws.vfs.read("/a/b/c/new.py") == b"print('hi')"
 
@@ -50,9 +51,10 @@ def test_create_file_under_a_read_only_mount_fails():
 
     async def _run():
         result = await MirageEditor(_workspace()).create_file(
-            ApplyPatchOperation(type="create_file",
-                                path="/ro/sub/new.py",
-                                diff="+x\n"))
+            ApplyPatchOperation(
+                type="create_file", path="/ro/sub/new.py", diff="+x\n"
+            )
+        )
         assert result.status == "failed"
         assert "Read-only file system" in (result.output or "")
 

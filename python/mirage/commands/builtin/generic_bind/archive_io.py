@@ -15,9 +15,13 @@ from mirage.vfs.types import OperationFn
 logger = logging.getLogger(__name__)
 
 
-async def _walk(readdir: OperationFn, stat: OperationFn,
-                index: IndexCacheStore | None, path: PathSpec,
-                find_type: str) -> Walked:
+async def _walk(
+    readdir: OperationFn,
+    stat: OperationFn,
+    index: IndexCacheStore | None,
+    path: PathSpec,
+    find_type: str,
+) -> Walked:
     """One subtree listing, filtered to files or to directories.
 
     Reuses find's walk so an archiver classifies an entry exactly the
@@ -35,17 +39,23 @@ async def _walk(readdir: OperationFn, stat: OperationFn,
         find_type (str): "d" or "f".
     """
     unreadable: list[str] = []
-    paths = await walk_find(path,
-                            readdir=readdir,
-                            stat=stat,
-                            index=index,
-                            args=parse_find_args((), type=find_type),
-                            unreadable=unreadable)
+    paths = await walk_find(
+        path,
+        readdir=readdir,
+        stat=stat,
+        index=index,
+        args=parse_find_args((), type=find_type),
+        unreadable=unreadable,
+    )
     return Walked(paths=tuple(paths), unreadable=tuple(unreadable))
 
 
-async def _is_dir(stat: OperationFn, readdir: OperationFn, path: PathSpec,
-                  index: IndexCacheStore | None) -> bool:
+async def _is_dir(
+    stat: OperationFn,
+    readdir: OperationFn,
+    path: PathSpec,
+    index: IndexCacheStore | None,
+) -> bool:
     """Whether a path is a directory an archiver could chdir into.
 
     Two channels, because a stat miss alone is not absence: on a prefix
@@ -66,13 +76,17 @@ async def _is_dir(stat: OperationFn, readdir: OperationFn, path: PathSpec,
     try:
         return bool(await readdir(path, index))
     except (FileNotFoundError, NotADirectoryError, ValueError) as exc:
-        logger.debug("archive: %s is not a directory on either channel: %r",
-                     path.virtual, exc)
+        logger.debug(
+            "archive: %s is not a directory on either channel: %r",
+            path.virtual,
+            exc,
+        )
         return False
 
 
-def walk_of(ops: CommandIO, accessor: Accessor,
-            index: IndexCacheStore) -> WalkFn:
+def walk_of(
+    ops: CommandIO, accessor: Accessor, index: IndexCacheStore
+) -> WalkFn:
     """The subtree listing tar and zip both walk with.
 
     Args:
@@ -80,12 +94,17 @@ def walk_of(ops: CommandIO, accessor: Accessor,
         accessor (Accessor): the mount's accessor.
         index (IndexCacheStore): the per-call cache index.
     """
-    return partial(_walk, partial(ops.readdir, accessor),
-                   partial(ops.stat, accessor), index)
+    return partial(
+        _walk,
+        partial(ops.readdir, accessor),
+        partial(ops.stat, accessor),
+        index,
+    )
 
 
-def is_dir_of(ops: CommandIO, accessor: Accessor,
-              index: IndexCacheStore) -> DirProbe:
+def is_dir_of(
+    ops: CommandIO, accessor: Accessor, index: IndexCacheStore
+) -> DirProbe:
     """The directory probe tar's ``-C`` check uses.
 
     Args:
@@ -93,15 +112,17 @@ def is_dir_of(ops: CommandIO, accessor: Accessor,
         accessor (Accessor): the mount's accessor.
         index (IndexCacheStore): the per-call cache index.
     """
-    return partial(_is_dir,
-                   partial(ops.stat, accessor),
-                   partial(ops.readdir, accessor),
-                   index=index)
+    return partial(
+        _is_dir,
+        partial(ops.stat, accessor),
+        partial(ops.readdir, accessor),
+        index=index,
+    )
 
 
-async def _relayed_stat(dispatch: DispatchFn,
-                        path: PathSpec,
-                        index: IndexCacheStore | None = None) -> FileStat:
+async def _relayed_stat(
+    dispatch: DispatchFn, path: PathSpec, index: IndexCacheStore | None = None
+) -> FileStat:
     """Stat one path on the mount that owns it.
 
     Args:
@@ -114,10 +135,12 @@ async def _relayed_stat(dispatch: DispatchFn,
     return found
 
 
-async def _own_listing(dispatch: DispatchFn,
-                       owed: ChildMounts | None,
-                       path: PathSpec,
-                       index: IndexCacheStore | None = None) -> list[str]:
+async def _own_listing(
+    dispatch: DispatchFn,
+    owed: ChildMounts | None,
+    path: PathSpec,
+    index: IndexCacheStore | None = None,
+) -> list[str]:
     """One directory as its own backend lists it, through the dispatcher.
 
     The door adds the names the namespace owes a directory (nested
@@ -139,7 +162,8 @@ async def _own_listing(dispatch: DispatchFn,
         return list(entries)
     names = set(owed(path.virtual))
     return [
-        entry for entry in entries
+        entry
+        for entry in entries
         if entry.rstrip("/").rsplit("/", 1)[-1] not in names
     ]
 
@@ -156,8 +180,12 @@ def relay_walk_of(dispatch: DispatchFn, owed: ChildMounts | None) -> WalkFn:
         owed (ChildMounts | None): the names the namespace owes a
             directory, which the scan merges itself.
     """
-    return partial(_walk, partial(_own_listing, dispatch, owed),
-                   partial(_relayed_stat, dispatch), None)
+    return partial(
+        _walk,
+        partial(_own_listing, dispatch, owed),
+        partial(_relayed_stat, dispatch),
+        None,
+    )
 
 
 def relay_is_dir_of(dispatch: DispatchFn) -> DirProbe:
@@ -166,7 +194,9 @@ def relay_is_dir_of(dispatch: DispatchFn) -> DirProbe:
     Args:
         dispatch (DispatchFn): the workspace op dispatcher.
     """
-    return partial(_is_dir,
-                   partial(_relayed_stat, dispatch),
-                   partial(_own_listing, dispatch, None),
-                   index=None)
+    return partial(
+        _is_dir,
+        partial(_relayed_stat, dispatch),
+        partial(_own_listing, dispatch, None),
+        index=None,
+    )

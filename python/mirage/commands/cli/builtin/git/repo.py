@@ -52,8 +52,9 @@ async def open_repo(dispatch: DispatchFn, location: RepoLocation) -> BaseRepo:
     return BaseRepo(store, refs)
 
 
-async def config_values(dispatch: DispatchFn, location: RepoLocation,
-                        section: bytes, name: bytes) -> list[bytes]:
+async def config_values(
+    dispatch: DispatchFn, location: RepoLocation, section: bytes, name: bytes
+) -> list[bytes]:
     """Every value a variable takes in the repository's config, in order.
 
     Only the repository's own config is reachable from a mount, and a
@@ -70,13 +71,18 @@ async def config_values(dispatch: DispatchFn, location: RepoLocation,
         return []
     config = ConfigFile.from_file(BytesIO(data))
     try:
-        return list(config.get_multivar((section, ), name))
+        return list(config.get_multivar((section,), name))
     except KeyError:
         return []
 
 
-async def config_bool(dispatch: DispatchFn, location: RepoLocation,
-                      section: bytes, name: bytes, default: bool) -> bool:
+async def config_bool(
+    dispatch: DispatchFn,
+    location: RepoLocation,
+    section: bytes,
+    name: bytes,
+    default: bool,
+) -> bool:
     """A boolean from the repository's config, read the way git reads one.
 
     Args:

@@ -9,25 +9,22 @@ from tests.fixtures.driver_ops import ops
 
 
 class FakeClient:
-
     async def get_all(self, options=None):
         return {
-            "count":
-            2,
-            "next":
-            None,
+            "count": 2,
+            "next": None,
             "results": [
                 {
                     "id": "aaa",
                     "memory": "loves bananas",
-                    "categories": ["food"]
+                    "categories": ["food"],
                 },
                 {
                     "id": "bbb",
                     "memory": "likes sci-fi",
-                    "categories": ["movies"]
+                    "categories": ["movies"],
                 },
-            ]
+            ],
         }
 
 
@@ -38,8 +35,11 @@ def _res():
 
 
 def _command(vfs: Mem0VFS, name: str):
-    return next(command.fn for command in vfs.commands()
-                if command.name == name and command.filetype is None)
+    return next(
+        command.fn
+        for command in vfs.commands()
+        if command.name == name and command.filetype is None
+    )
 
 
 async def _bytes(source):
@@ -52,8 +52,9 @@ async def _bytes(source):
 async def test_rg_recursive_by_default_matches_content():
     res = _res()
     p = PathSpec(virtual="/mem", directory="/mem", vfs_path="")
-    source, _io = await _command(res, "rg")(res.accessor, [p], ["bananas"],
-                                            CommandOpts(index=ops(res).index))
+    source, _io = await _command(res, "rg")(
+        res.accessor, [p], ["bananas"], CommandOpts(index=ops(res).index)
+    )
     out = await _bytes(source)
     assert b"bananas" in out
     assert b"sci-fi" not in out

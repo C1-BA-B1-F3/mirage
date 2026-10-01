@@ -73,9 +73,15 @@ async def set_attrs(
         residual["gid"] = gid
     if atime is not None or mtime is not None:
         st = await aiofiles.os.stat(p)
-        new_atime = (datetime.fromisoformat(atime).timestamp()
-                     if atime is not None else st.st_atime)
-        new_mtime = (datetime.fromisoformat(mtime).timestamp()
-                     if mtime is not None else st.st_mtime)
+        new_atime = (
+            datetime.fromisoformat(atime).timestamp()
+            if atime is not None
+            else st.st_atime
+        )
+        new_mtime = (
+            datetime.fromisoformat(mtime).timestamp()
+            if mtime is not None
+            else st.st_mtime
+        )
         await aio_utime(p, (new_atime, new_mtime))
     return residual

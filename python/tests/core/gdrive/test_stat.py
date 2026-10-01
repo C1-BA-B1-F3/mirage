@@ -55,33 +55,41 @@ def index():
 
 
 async def _populate_index(index):
-    await index.set_dir("/", [
-        ("report.pdf",
-         IndexEntry(
-             id="f1",
-             name="report",
-             resource_type="gdrive/file",
-             remote_time="2026-04-01T00:00:00.000Z",
-             vfs_name="report.pdf",
-             size=1024,
-         )),
-        ("docs",
-         IndexEntry(
-             id="folder1",
-             name="docs",
-             resource_type="gdrive/folder",
-             remote_time="2026-04-01T00:00:00.000Z",
-             vfs_name="docs",
-         )),
-    ])
+    await index.set_dir(
+        "/",
+        [
+            (
+                "report.pdf",
+                IndexEntry(
+                    id="f1",
+                    name="report",
+                    resource_type="gdrive/file",
+                    remote_time="2026-04-01T00:00:00.000Z",
+                    vfs_name="report.pdf",
+                    size=1024,
+                ),
+            ),
+            (
+                "docs",
+                IndexEntry(
+                    id="folder1",
+                    name="docs",
+                    resource_type="gdrive/folder",
+                    remote_time="2026-04-01T00:00:00.000Z",
+                    vfs_name="docs",
+                ),
+            ),
+        ],
+    )
     return index
 
 
 @pytest.mark.asyncio
 async def test_stat_root(accessor, index):
     idx = await _populate_index(index)
-    result = await stat(accessor,
-                        PathSpec(vfs_path="", virtual="/", directory="/"), idx)
+    result = await stat(
+        accessor, PathSpec(vfs_path="", virtual="/", directory="/"), idx
+    )
     assert result.type == FileType.DIRECTORY
     assert result.name == "/"
 
@@ -91,9 +99,13 @@ async def test_stat_file(accessor, index):
     idx = await _populate_index(index)
     result = await stat(
         accessor,
-        PathSpec(vfs_path="report.pdf",
-                 virtual="/report.pdf",
-                 directory="/report.pdf"), idx)
+        PathSpec(
+            vfs_path="report.pdf",
+            virtual="/report.pdf",
+            directory="/report.pdf",
+        ),
+        idx,
+    )
     assert result.name == "report.pdf"
     assert result.size == 1024
     assert result.extra["file_id"] == "f1"
@@ -104,29 +116,38 @@ async def test_stat_file(accessor, index):
 async def test_stat_folder(accessor, index):
     idx = await _populate_index(index)
     result = await stat(
-        accessor, PathSpec(vfs_path="docs", virtual="/docs",
-                           directory="/docs"), idx)
+        accessor,
+        PathSpec(vfs_path="docs", virtual="/docs", directory="/docs"),
+        idx,
+    )
     assert result.type == FileType.DIRECTORY
     assert result.extra["file_id"] == "folder1"
 
 
 @pytest.mark.asyncio
 async def test_stat_shared_drive_is_directory(accessor, index):
-    await index.set_dir("/", [
-        ("Team Drive",
-         IndexEntry(
-             id="drive1",
-             name="Team Drive",
-             resource_type="gdrive/shared_drive",
-             vfs_name="Team Drive",
-             extra={"drive_id": "drive1"},
-         )),
-    ])
+    await index.set_dir(
+        "/",
+        [
+            (
+                "Team Drive",
+                IndexEntry(
+                    id="drive1",
+                    name="Team Drive",
+                    resource_type="gdrive/shared_drive",
+                    vfs_name="Team Drive",
+                    extra={"drive_id": "drive1"},
+                ),
+            ),
+        ],
+    )
     result = await stat(
         accessor,
-        PathSpec(vfs_path="Team Drive",
-                 virtual="/Team Drive",
-                 directory="/Team Drive"),
+        PathSpec(
+            vfs_path="Team Drive",
+            virtual="/Team Drive",
+            directory="/Team Drive",
+        ),
         index,
     )
     assert result.type == FileType.DIRECTORY
@@ -136,46 +157,60 @@ async def test_stat_shared_drive_is_directory(accessor, index):
 @pytest.mark.asyncio
 async def test_stat_not_found(accessor, index):
     idx = await _populate_index(index)
-    with patch(
+    with (
+        patch(
             "mirage.core.gdrive.readdir.list_files",
             new_callable=AsyncMock,
             return_value=[],
-    ), patch(
+        ),
+        patch(
             "mirage.core.gdrive.resolve.list_files",
             new_callable=AsyncMock,
             return_value=[],
-    ), patch(
+        ),
+        patch(
             "mirage.core.gdrive.resolve.list_shared_drives",
             new_callable=AsyncMock,
             return_value=[],
+        ),
     ):
         with pytest.raises(FileNotFoundError):
             await stat(
                 accessor,
-                PathSpec(vfs_path="nonexistent.txt",
-                         virtual="/nonexistent.txt",
-                         directory="/nonexistent.txt"), idx)
+                PathSpec(
+                    vfs_path="nonexistent.txt",
+                    virtual="/nonexistent.txt",
+                    directory="/nonexistent.txt",
+                ),
+                idx,
+            )
 
 
 @pytest.mark.asyncio
 async def test_stat_cache_miss_falls_back_via_readdir(accessor, index):
-    files = [{
-        "id": "f99",
-        "name": "fresh.pdf",
-        "mimeType": "application/pdf",
-        "modifiedTime": "2026-04-15T00:00:00.000Z",
-        "size": "2048",
-    }]
+    files = [
+        {
+            "id": "f99",
+            "name": "fresh.pdf",
+            "mimeType": "application/pdf",
+            "modifiedTime": "2026-04-15T00:00:00.000Z",
+            "size": "2048",
+        }
+    ]
     with patch(
-            "mirage.core.gdrive.readdir.list_files",
-            new_callable=AsyncMock,
-            return_value=files,
+        "mirage.core.gdrive.readdir.list_files",
+        new_callable=AsyncMock,
+        return_value=files,
     ) as mock_list:
         result = await stat(
             accessor,
-            PathSpec(vfs_path="fresh.pdf",
-                     virtual="/fresh.pdf",
-                     directory="/fresh.pdf"), index)
+            PathSpec(
+                vfs_path="fresh.pdf",
+                virtual="/fresh.pdf",
+                directory="/fresh.pdf",
+            ),
+            index,
+        )
     assert result.name == "fresh.pdf"
     assert result.extra["file_id"] == "f99"
     # binary files download raw, so Drive's size is the rendered length
@@ -186,9 +221,11 @@ async def test_stat_cache_miss_falls_back_via_readdir(accessor, index):
 @pytest.mark.asyncio
 async def test_stat_propagates_parent_refresh_failure(accessor, index):
     failure = RuntimeError("drive unavailable")
-    with patch("mirage.core.gdrive.stat._readdir",
-               new_callable=AsyncMock,
-               side_effect=failure):
+    with patch(
+        "mirage.core.gdrive.stat._readdir",
+        new_callable=AsyncMock,
+        side_effect=failure,
+    ):
         with pytest.raises(RuntimeError, match="drive unavailable"):
             await stat(accessor, PathSpec.from_str_path("/missing.txt"), index)
 
@@ -196,27 +233,32 @@ async def test_stat_propagates_parent_refresh_failure(accessor, index):
 @pytest.mark.asyncio
 @pytest.mark.parametrize("change", ["updated", "deleted"])
 async def test_stat_revalidates_orphan_from_incomplete_root(
-        accessor, index, change, monkeypatch):
+    accessor, index, change, monkeypatch
+):
     """A best-effort root listing must not make a child a permanent hit."""
     phase = "initial"
 
     async def list_files(_tm, folder_id="root", **_kwargs):
         assert folder_id == "root"
         if phase == "initial":
-            return [{
-                "id": "old-file",
-                "name": "readme.txt",
-                "mimeType": "text/plain",
-                "size": "3",
-            }]
+            return [
+                {
+                    "id": "old-file",
+                    "name": "readme.txt",
+                    "mimeType": "text/plain",
+                    "size": "3",
+                }
+            ]
         if change == "deleted":
             return []
-        return [{
-            "id": "new-file",
-            "name": "readme.txt",
-            "mimeType": "text/plain",
-            "size": "42",
-        }]
+        return [
+            {
+                "id": "new-file",
+                "name": "readme.txt",
+                "mimeType": "text/plain",
+                "size": "42",
+            }
+        ]
 
     async def list_shared_drives(_tm):
         if phase == "initial":
@@ -224,11 +266,13 @@ async def test_stat_revalidates_orphan_from_incomplete_root(
         return []
 
     monkeypatch.setattr("mirage.core.gdrive.readdir.list_files", list_files)
-    monkeypatch.setattr("mirage.core.gdrive.readdir.list_shared_drives",
-                        list_shared_drives)
+    monkeypatch.setattr(
+        "mirage.core.gdrive.readdir.list_shared_drives", list_shared_drives
+    )
     monkeypatch.setattr("mirage.core.gdrive.resolve.list_files", list_files)
-    monkeypatch.setattr("mirage.core.gdrive.resolve.list_shared_drives",
-                        list_shared_drives)
+    monkeypatch.setattr(
+        "mirage.core.gdrive.resolve.list_shared_drives", list_shared_drives
+    )
     try:
         root = PathSpec.from_str_path("/")
         await readdir(accessor, root, index)
@@ -257,39 +301,57 @@ async def test_stat_revalidates_orphan_from_incomplete_root(
 STAMP = "2026-04-01T00:00:00.000Z"
 
 
-@pytest.mark.parametrize("extra,expected", [
-    ({
-        "md5_checksum": "abc",
-        "head_revision_id": "r3"
-    }, "abc"),
-    ({
-        "head_revision_id": "r3"
-    }, "r3"),
-    ({}, None),
-],
-                         ids=["md5", "head-revision", "neither"])
+@pytest.mark.parametrize(
+    "extra,expected",
+    [
+        ({"md5_checksum": "abc", "head_revision_id": "r3"}, "abc"),
+        ({"head_revision_id": "r3"}, "r3"),
+        ({}, None),
+    ],
+    ids=["md5", "head-revision", "neither"],
+)
 @pytest.mark.asyncio
 async def test_stat_stamps_a_file_with_content_by_its_tokens(
-        accessor, index, extra, expected):
-    await index.set_dir("/", [("report.pdf",
-                               IndexEntry(id="file123",
-                                          name="report",
-                                          resource_type="gdrive/file",
-                                          remote_time=STAMP,
-                                          vfs_name="report.pdf",
-                                          extra=extra))])
+    accessor, index, extra, expected
+):
+    await index.set_dir(
+        "/",
+        [
+            (
+                "report.pdf",
+                IndexEntry(
+                    id="file123",
+                    name="report",
+                    resource_type="gdrive/file",
+                    remote_time=STAMP,
+                    vfs_name="report.pdf",
+                    extra=extra,
+                ),
+            )
+        ],
+    )
     result = await stat(accessor, PathSpec.from_str_path("/report.pdf"), index)
     assert result.fingerprint == expected
 
 
 @pytest.mark.asyncio
 async def test_stat_stamps_a_doc_by_its_modified_time(accessor, index):
-    await index.set_dir("/", [("doc.gdoc.json",
-                               IndexEntry(id="doc123",
-                                          name="doc",
-                                          resource_type="gdrive/gdoc",
-                                          remote_time=STAMP,
-                                          vfs_name="doc.gdoc.json"))])
-    result = await stat(accessor, PathSpec.from_str_path("/doc.gdoc.json"),
-                        index)
+    await index.set_dir(
+        "/",
+        [
+            (
+                "doc.gdoc.json",
+                IndexEntry(
+                    id="doc123",
+                    name="doc",
+                    resource_type="gdrive/gdoc",
+                    remote_time=STAMP,
+                    vfs_name="doc.gdoc.json",
+                ),
+            )
+        ],
+    )
+    result = await stat(
+        accessor, PathSpec.from_str_path("/doc.gdoc.json"), index
+    )
     assert result.fingerprint == STAMP

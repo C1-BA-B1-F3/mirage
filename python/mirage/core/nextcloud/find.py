@@ -8,12 +8,21 @@ from opendal.types import EntryMode
 
 from mirage.accessor.nextcloud import NextcloudAccessor
 from mirage.cache.index import NULL_INDEX, IndexCacheStore
-from mirage.commands.builtin.find_eval import (FindEntry, PredNode, build_tree,
-                                               keep, start_basename,
-                                               tree_has_empty)
-from mirage.core.nextcloud.search import (Bounds, FilesSearchQuery,
-                                          SearchEntry, search_files,
-                                          supports_query)
+from mirage.commands.builtin.find_eval import (
+    FindEntry,
+    PredNode,
+    build_tree,
+    keep,
+    start_basename,
+    tree_has_empty,
+)
+from mirage.core.nextcloud.search import (
+    Bounds,
+    FilesSearchQuery,
+    SearchEntry,
+    search_files,
+    supports_query,
+)
 from mirage.types import FindType, PathSpec
 from mirage.utils.stat_view import DIR_SIZE
 
@@ -21,18 +30,14 @@ logger = logging.getLogger(__name__)
 
 
 class _EntryMetadata(Protocol):
+    @property
+    def mode(self) -> EntryMode: ...
 
     @property
-    def mode(self) -> EntryMode:
-        ...
+    def content_length(self) -> int: ...
 
     @property
-    def content_length(self) -> int:
-        ...
-
-    @property
-    def last_modified(self) -> datetime | None:
-        ...
+    def last_modified(self) -> datetime | None: ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -46,9 +51,11 @@ class _FindScope:
         relative = path.mount_path.strip("/")
         base_key = "/" + relative if relative else "/"
         scan_key = relative + "/" if relative else "/"
-        return cls(base_key=base_key,
-                   scan_key=scan_key,
-                   start_name=start_basename(path))
+        return cls(
+            base_key=base_key,
+            scan_key=scan_key,
+            start_name=start_basename(path),
+        )
 
     def contains(self, key: str) -> bool:
         if self.base_key == "/":
@@ -110,11 +117,15 @@ def _basename(key: str) -> str:
     return key.rstrip("/").rsplit("/", 1)[-1]
 
 
-def _candidate_from_metadata(key: str, name: str,
-                             metadata: _EntryMetadata) -> _Candidate:
+def _candidate_from_metadata(
+    key: str, name: str, metadata: _EntryMetadata
+) -> _Candidate:
     is_dir = metadata.mode == EntryMode.Dir
-    modified = (metadata.last_modified.timestamp()
-                if metadata.last_modified is not None else None)
+    modified = (
+        metadata.last_modified.timestamp()
+        if metadata.last_modified is not None
+        else None
+    )
     return _Candidate(
         key=key,
         name=name,
@@ -144,11 +155,13 @@ async def _stat_candidate(
         try:
             metadata = await operator.stat("/")
         except NotFound:
-            return _Candidate(key="/",
-                              name=name,
-                              kind=FindType.DIRECTORY,
-                              size=0,
-                              modified=None)
+            return _Candidate(
+                key="/",
+                name=name,
+                kind=FindType.DIRECTORY,
+                size=0,
+                modified=None,
+            )
         return _candidate_from_metadata("/", name, metadata)
     relative = key.strip("/")
     try:
@@ -161,11 +174,13 @@ async def _stat_candidate(
     return _candidate_from_metadata(key, name, metadata)
 
 
-def _matches(candidate: _Candidate, scope: _FindScope,
-             criteria: _FindCriteria) -> bool:
+def _matches(
+    candidate: _Candidate, scope: _FindScope, criteria: _FindCriteria
+) -> bool:
     if not scope.contains(candidate.key):
         raise ValueError(
-            f"Nextcloud Files Search out-of-scope path: {candidate.key}")
+            f"Nextcloud Files Search out-of-scope path: {candidate.key}"
+        )
     depth = scope.depth(candidate.key)
     if criteria.max_depth is not None and depth > criteria.max_depth:
         return False
@@ -183,16 +198,21 @@ def _matches(candidate: _Candidate, scope: _FindScope,
         if not criteria.size.contains(size):
             return False
     if criteria.modified.constrained:
-        if (candidate.modified is None
-                or not criteria.modified.contains(candidate.modified)):
+        if candidate.modified is None or not criteria.modified.contains(
+            candidate.modified
+        ):
             return False
     return True
 
 
-def _matching_keys(entries: dict[str, _Candidate], scope: _FindScope,
-                   criteria: _FindCriteria) -> list[str]:
-    return sorted(candidate.key for candidate in entries.values()
-                  if _matches(candidate, scope, criteria))
+def _matching_keys(
+    entries: dict[str, _Candidate], scope: _FindScope, criteria: _FindCriteria
+) -> list[str]:
+    return sorted(
+        candidate.key
+        for candidate in entries.values()
+        if _matches(candidate, scope, criteria)
+    )
 
 
 async def _find_with_search(
@@ -202,8 +222,9 @@ async def _find_with_search(
     criteria: _FindCriteria,
 ) -> list[str] | None:
     if criteria.max_depth == 0 and not tree_has_empty(criteria.predicate):
-        start = await _stat_candidate(accessor, scope.base_key,
-                                      scope.start_name)
+        start = await _stat_candidate(
+            accessor, scope.base_key, scope.start_name
+        )
         if start is None:
             return []
         return _matching_keys({scope.base_key: start}, scope, criteria)
@@ -230,11 +251,13 @@ def _scan_key(raw_key: str) -> str:
 
 
 def _directory_candidate(key: str) -> _Candidate:
-    return _Candidate(key=key,
-                      name=_basename(key),
-                      kind=FindType.DIRECTORY,
-                      size=0,
-                      modified=None)
+    return _Candidate(
+        key=key,
+        name=_basename(key),
+        kind=FindType.DIRECTORY,
+        size=0,
+        modified=None,
+    )
 
 
 async def _collect_scan_candidates(
@@ -257,17 +280,19 @@ async def _collect_scan_candidates(
             )
             for parent_key in scope.parent_keys(key):
                 nonempty_directories.add(parent_key)
-                candidates.setdefault(parent_key,
-                                      _directory_candidate(parent_key))
+                candidates.setdefault(
+                    parent_key, _directory_candidate(parent_key)
+                )
     except NotFound as exc:
-        logger.debug("Nextcloud scan path not found: %s",
-                     scope.scan_key,
-                     exc_info=exc)
+        logger.debug(
+            "Nextcloud scan path not found: %s", scope.scan_key, exc_info=exc
+        )
     return candidates, nonempty_directories
 
 
-def _empty_state(candidate: _Candidate,
-                 nonempty_directories: set[str]) -> bool:
+def _empty_state(
+    candidate: _Candidate, nonempty_directories: set[str]
+) -> bool:
     if candidate.is_directory:
         return candidate.key not in nonempty_directories
     return candidate.size == 0
@@ -280,8 +305,11 @@ async def _hydrate_scan_candidate(
     criteria: _FindCriteria,
 ) -> _Candidate:
     hydrated = candidate
-    if (criteria.needs_modified and candidate.is_directory
-            and candidate.modified is None):
+    if (
+        criteria.needs_modified
+        and candidate.is_directory
+        and candidate.modified is None
+    ):
         stat = await _stat_candidate(accessor, candidate.key, candidate.name)
         if stat is not None:
             hydrated = stat
@@ -297,7 +325,8 @@ async def _find_with_scan(
     criteria: _FindCriteria,
 ) -> list[str]:
     candidates, nonempty_directories = await _collect_scan_candidates(
-        accessor, scope)
+        accessor, scope
+    )
     start = await _stat_candidate(accessor, scope.base_key, scope.start_name)
     if start is None:
         return []
@@ -332,14 +361,18 @@ async def find(
     tree: PredNode | None = None,
     index: IndexCacheStore = NULL_INDEX,
 ) -> list[str]:
-    predicate = tree if tree is not None else build_tree(
-        name=name,
-        iname=iname,
-        path_pattern=path_pattern,
-        type=type,
-        name_exclude=name_exclude,
-        or_names=or_names,
-        empty=empty,
+    predicate = (
+        tree
+        if tree is not None
+        else build_tree(
+            name=name,
+            iname=iname,
+            path_pattern=path_pattern,
+            type=type,
+            name_exclude=name_exclude,
+            or_names=or_names,
+            empty=empty,
+        )
     )
     scope = _FindScope.from_path(path)
     criteria = _FindCriteria(

@@ -22,16 +22,16 @@ def _accessor() -> SharePointAccessor:
 
 
 def _ps(virtual: str) -> PathSpec:
-    return PathSpec(vfs_path=mount_key(virtual, "/sp"),
-                    virtual=virtual,
-                    directory=virtual)
+    return PathSpec(
+        vfs_path=mount_key(virtual, "/sp"), virtual=virtual, directory=virtual
+    )
 
 
 @pytest.mark.asyncio
 async def test_stat_root_is_directory():
-    path = PathSpec(vfs_path=mount_key("/sp/", "/sp"),
-                    virtual="/sp/",
-                    directory="/sp/")
+    path = PathSpec(
+        vfs_path=mount_key("/sp/", "/sp"), virtual="/sp/", directory="/sp/"
+    )
     result = await stat(_accessor(), path)
     assert result.type == FileType.DIRECTORY
 
@@ -39,28 +39,34 @@ async def test_stat_root_is_directory():
 @pytest.mark.asyncio
 async def test_stat_site_is_directory():
     with aioresponses() as m:
-        m.get(f"{_BASE}/sites",
-              payload={
-                  "value": [
-                      {
-                          "id": _SITE_ID,
-                          "displayName": "Engineering",
-                          "name": "eng"
-                      },
-                  ]
-              })
-        path = PathSpec(vfs_path=mount_key("/sp/Engineering", "/sp"),
-                        virtual="/sp/Engineering",
-                        directory="/sp/Engineering")
+        m.get(
+            f"{_BASE}/sites",
+            payload={
+                "value": [
+                    {
+                        "id": _SITE_ID,
+                        "displayName": "Engineering",
+                        "name": "eng",
+                    },
+                ]
+            },
+        )
+        path = PathSpec(
+            vfs_path=mount_key("/sp/Engineering", "/sp"),
+            virtual="/sp/Engineering",
+            directory="/sp/Engineering",
+        )
         result = await stat(_accessor(), path)
     assert result.type == FileType.DIRECTORY
 
 
 @pytest.mark.asyncio
 async def test_stat_drive_is_directory():
-    path = PathSpec(vfs_path=mount_key("/sp/Engineering/Documents", "/sp"),
-                    virtual="/sp/Engineering/Documents",
-                    directory="/sp/Engineering/Documents")
+    path = PathSpec(
+        vfs_path=mount_key("/sp/Engineering/Documents", "/sp"),
+        virtual="/sp/Engineering/Documents",
+        directory="/sp/Engineering/Documents",
+    )
     result = await stat(_accessor(), path)
     assert result.type == FileType.DIRECTORY
 
@@ -69,22 +75,23 @@ async def test_stat_drive_is_directory():
 async def test_stat_file_from_api():
     url = f"{_BASE}/drives/{_DRIVE_ID}/root:/report.docx"
     with aioresponses() as m:
-        m.get(url,
-              payload={
-                  "id": "01ITEM",
-                  "name": "report.docx",
-                  "size": 1234,
-                  "lastModifiedDateTime": "2026-05-01T10:00:00Z",
-                  "cTag": "ctag-abc",
-                  "eTag": "etag-xyz",
-                  "file": {
-                      "mimeType": "application/vnd.openxml"
-                  },
-              })
-        path = PathSpec(vfs_path=mount_key(
-            "/sp/Engineering/Documents/report.docx", "/sp"),
-                        virtual="/sp/Engineering/Documents/report.docx",
-                        directory="/sp/Engineering/Documents/report.docx")
+        m.get(
+            url,
+            payload={
+                "id": "01ITEM",
+                "name": "report.docx",
+                "size": 1234,
+                "lastModifiedDateTime": "2026-05-01T10:00:00Z",
+                "cTag": "ctag-abc",
+                "eTag": "etag-xyz",
+                "file": {"mimeType": "application/vnd.openxml"},
+            },
+        )
+        path = PathSpec(
+            vfs_path=mount_key("/sp/Engineering/Documents/report.docx", "/sp"),
+            virtual="/sp/Engineering/Documents/report.docx",
+            directory="/sp/Engineering/Documents/report.docx",
+        )
         result = await stat(_accessor(), path)
     assert result.name == "report.docx"
     assert result.size == 1234
@@ -96,20 +103,21 @@ async def test_stat_file_from_api():
 async def test_stat_folder_from_api():
     url = f"{_BASE}/drives/{_DRIVE_ID}/root:/src"
     with aioresponses() as m:
-        m.get(url,
-              payload={
-                  "id": "02FOLDER",
-                  "name": "src",
-                  "size": 4096,
-                  "lastModifiedDateTime": "2026-05-01T10:00:00Z",
-                  "folder": {
-                      "childCount": 2
-                  },
-              })
-        path = PathSpec(vfs_path=mount_key("/sp/Engineering/Documents/src",
-                                           "/sp"),
-                        virtual="/sp/Engineering/Documents/src",
-                        directory="/sp/Engineering/Documents/src")
+        m.get(
+            url,
+            payload={
+                "id": "02FOLDER",
+                "name": "src",
+                "size": 4096,
+                "lastModifiedDateTime": "2026-05-01T10:00:00Z",
+                "folder": {"childCount": 2},
+            },
+        )
+        path = PathSpec(
+            vfs_path=mount_key("/sp/Engineering/Documents/src", "/sp"),
+            virtual="/sp/Engineering/Documents/src",
+            directory="/sp/Engineering/Documents/src",
+        )
         result = await stat(_accessor(), path)
     assert result.type == FileType.DIRECTORY
     assert result.name == "src"
@@ -119,16 +127,16 @@ async def test_stat_folder_from_api():
 async def test_stat_missing_raises_file_not_found():
     url = f"{_BASE}/drives/{_DRIVE_ID}/root:/nope.txt"
     with aioresponses() as m:
-        m.get(url,
-              status=404,
-              payload={"error": {
-                  "code": "itemNotFound",
-                  "message": "no"
-              }})
-        path = PathSpec(vfs_path=mount_key(
-            "/sp/Engineering/Documents/nope.txt", "/sp"),
-                        virtual="/sp/Engineering/Documents/nope.txt",
-                        directory="/sp/Engineering/Documents/nope.txt")
+        m.get(
+            url,
+            status=404,
+            payload={"error": {"code": "itemNotFound", "message": "no"}},
+        )
+        path = PathSpec(
+            vfs_path=mount_key("/sp/Engineering/Documents/nope.txt", "/sp"),
+            virtual="/sp/Engineering/Documents/nope.txt",
+            directory="/sp/Engineering/Documents/nope.txt",
+        )
         with pytest.raises(FileNotFoundError):
             await stat(_accessor(), path)
 
@@ -137,27 +145,31 @@ async def test_stat_missing_raises_file_not_found():
 async def test_stat_from_index_after_readdir():
     index = RAMIndexCacheStore()
     with aioresponses() as m:
-        m.get(f"{_BASE}/drives/{_DRIVE_ID}/root/children",
-              payload={
-                  "value": [
-                      {
-                          "id": "1",
-                          "name": "notes.txt",
-                          "size": 42,
-                          "file": {},
-                          "lastModifiedDateTime": "2026-06-19T09:28:00Z"
-                      },
-                  ]
-              })
-        parent = PathSpec(vfs_path=mount_key("/sp/Engineering/Documents",
-                                             "/sp"),
-                          virtual="/sp/Engineering/Documents",
-                          directory="/sp/Engineering/Documents")
+        m.get(
+            f"{_BASE}/drives/{_DRIVE_ID}/root/children",
+            payload={
+                "value": [
+                    {
+                        "id": "1",
+                        "name": "notes.txt",
+                        "size": 42,
+                        "file": {},
+                        "lastModifiedDateTime": "2026-06-19T09:28:00Z",
+                    },
+                ]
+            },
+        )
+        parent = PathSpec(
+            vfs_path=mount_key("/sp/Engineering/Documents", "/sp"),
+            virtual="/sp/Engineering/Documents",
+            directory="/sp/Engineering/Documents",
+        )
         await readdir(_accessor(), parent, index)
-    path = PathSpec(vfs_path=mount_key("/sp/Engineering/Documents/notes.txt",
-                                       "/sp"),
-                    virtual="/sp/Engineering/Documents/notes.txt",
-                    directory="/sp/Engineering/Documents/notes.txt")
+    path = PathSpec(
+        vfs_path=mount_key("/sp/Engineering/Documents/notes.txt", "/sp"),
+        virtual="/sp/Engineering/Documents/notes.txt",
+        directory="/sp/Engineering/Documents/notes.txt",
+    )
     result = await stat(_accessor(), path, index)
     assert result.name == "notes.txt"
     assert result.size == 42
@@ -170,32 +182,37 @@ async def test_stat_from_index_carries_the_ctag():
     # carries the same token a network stat does; a folder carries none.
     index = RAMIndexCacheStore()
     with aioresponses() as m:
-        m.get(f"{_BASE}/drives/{_DRIVE_ID}/root/children",
-              payload={
-                  "value": [{
-                      "id": "1",
-                      "name": "notes.txt",
-                      "size": 42,
-                      "file": {},
-                      "cTag": "c1",
-                      "eTag": "e1",
-                      "lastModifiedDateTime": "2026-06-19T09:28:00Z"
-                  }, {
-                      "id": "2",
-                      "name": "Docs",
-                      "folder": {
-                          "childCount": 1
-                      },
-                      "cTag": "cf",
-                      "eTag": "ef",
-                      "lastModifiedDateTime": "2026-06-19T09:28:00Z"
-                  }]
-              })
+        m.get(
+            f"{_BASE}/drives/{_DRIVE_ID}/root/children",
+            payload={
+                "value": [
+                    {
+                        "id": "1",
+                        "name": "notes.txt",
+                        "size": 42,
+                        "file": {},
+                        "cTag": "c1",
+                        "eTag": "e1",
+                        "lastModifiedDateTime": "2026-06-19T09:28:00Z",
+                    },
+                    {
+                        "id": "2",
+                        "name": "Docs",
+                        "folder": {"childCount": 1},
+                        "cTag": "cf",
+                        "eTag": "ef",
+                        "lastModifiedDateTime": "2026-06-19T09:28:00Z",
+                    },
+                ]
+            },
+        )
         await readdir(_accessor(), _ps("/sp/Engineering/Documents"), index)
-    notes = await stat(_accessor(), _ps("/sp/Engineering/Documents/notes.txt"),
-                       index)
-    docs = await stat(_accessor(), _ps("/sp/Engineering/Documents/Docs"),
-                      index)
+    notes = await stat(
+        _accessor(), _ps("/sp/Engineering/Documents/notes.txt"), index
+    )
+    docs = await stat(
+        _accessor(), _ps("/sp/Engineering/Documents/Docs"), index
+    )
     assert notes.fingerprint == "c1"
     assert (notes.extra["ctag"], notes.extra["etag"]) == ("c1", "e1")
     assert docs.type == FileType.DIRECTORY
@@ -204,17 +221,20 @@ async def test_stat_from_index_carries_the_ctag():
 
 @pytest.mark.asyncio
 async def test_stat_site_and_drive_have_no_metadata():
-    site_path = PathSpec(vfs_path=mount_key("/sp/Engineering", "/sp"),
-                         virtual="/sp/Engineering",
-                         directory="/sp/Engineering")
+    site_path = PathSpec(
+        vfs_path=mount_key("/sp/Engineering", "/sp"),
+        virtual="/sp/Engineering",
+        directory="/sp/Engineering",
+    )
     result = await stat(_accessor(), site_path)
     assert result.size is None
     assert result.modified is None
 
-    drive_path = PathSpec(vfs_path=mount_key("/sp/Engineering/Documents",
-                                             "/sp"),
-                          virtual="/sp/Engineering/Documents",
-                          directory="/sp/Engineering/Documents")
+    drive_path = PathSpec(
+        vfs_path=mount_key("/sp/Engineering/Documents", "/sp"),
+        virtual="/sp/Engineering/Documents",
+        directory="/sp/Engineering/Documents",
+    )
     result = await stat(_accessor(), drive_path)
     assert result.size is None
     assert result.modified is None
@@ -234,47 +254,54 @@ async def test_stat_size_matches_read_for_every_file():
     index = RAMIndexCacheStore()
     accessor = _accessor()
     with aioresponses() as m:
-        m.get(drive + "/root/children",
-              payload={
-                  "value": [
-                      {
-                          "id": "1",
-                          "name": "notes.txt",
-                          "size": len(contents["/notes.txt"]),
-                          "file": {},
-                          "lastModifiedDateTime": "2026-06-19T09:28:00Z",
-                      },
-                      {
-                          "id": "2",
-                          "name": "Docs",
-                          "size": 9000,
-                          "folder": {
-                              "childCount": 2
-                          },
-                          "lastModifiedDateTime": "2026-06-19T09:28:00Z",
-                      },
-                  ]
-              })
-        m.get(drive + "/root:/Docs:/children",
-              payload={
-                  "value": [{
-                      "id": "3",
-                      "name": "empty.bin",
-                      "size": 0,
-                      "file": {},
-                      "lastModifiedDateTime": "2026-06-19T09:28:00Z",
-                  }, {
-                      "id": "4",
-                      "name": "report.docx",
-                      "size": len(contents["/Docs/report.docx"]),
-                      "file": {},
-                      "lastModifiedDateTime": "2026-06-19T09:28:00Z",
-                  }]
-              })
+        m.get(
+            drive + "/root/children",
+            payload={
+                "value": [
+                    {
+                        "id": "1",
+                        "name": "notes.txt",
+                        "size": len(contents["/notes.txt"]),
+                        "file": {},
+                        "lastModifiedDateTime": "2026-06-19T09:28:00Z",
+                    },
+                    {
+                        "id": "2",
+                        "name": "Docs",
+                        "size": 9000,
+                        "folder": {"childCount": 2},
+                        "lastModifiedDateTime": "2026-06-19T09:28:00Z",
+                    },
+                ]
+            },
+        )
+        m.get(
+            drive + "/root:/Docs:/children",
+            payload={
+                "value": [
+                    {
+                        "id": "3",
+                        "name": "empty.bin",
+                        "size": 0,
+                        "file": {},
+                        "lastModifiedDateTime": "2026-06-19T09:28:00Z",
+                    },
+                    {
+                        "id": "4",
+                        "name": "report.docx",
+                        "size": len(contents["/Docs/report.docx"]),
+                        "file": {},
+                        "lastModifiedDateTime": "2026-06-19T09:28:00Z",
+                    },
+                ]
+            },
+        )
         for path, body in contents.items():
             download = f"https://download.example{path}"
-            m.get(drive + f"/root:{path}",
-                  payload={"@microsoft.graph.downloadUrl": download})
+            m.get(
+                drive + f"/root:{path}",
+                payload={"@microsoft.graph.downloadUrl": download},
+            )
             m.get(download, body=body)
         files: list[str] = []
         stack = ["/sp/Engineering/Documents"]

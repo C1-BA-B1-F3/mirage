@@ -102,12 +102,13 @@ class FakeGitHub:
         return (self.count("dir"), self.count("recursive"), self.count("blob"))
 
     def _dirs(self) -> set[str]:
-        return {path.rsplit("/", 1)[0]
-                for path in self.files if "/" in path} | {
-                    "/".join(path.split("/")[:depth])
-                    for path in self.files
-                    for depth in range(1, path.count("/"))
-                }
+        return {
+            path.rsplit("/", 1)[0] for path in self.files if "/" in path
+        } | {
+            "/".join(path.split("/")[:depth])
+            for path in self.files
+            for depth in range(1, path.count("/"))
+        }
 
     def _row(self, path: str, name: str) -> dict[str, Any]:
         if path in self.files:
@@ -125,16 +126,18 @@ class FakeGitHub:
             "path": name,
             "mode": "040000",
             "type": "tree",
-            "sha": tree_sha(path)
+            "sha": tree_sha(path),
         }
 
     def _shallow(self, at: str) -> list[dict[str, Any]]:
         prefix = at + "/" if at else ""
-        names = sorted({
-            path[len(prefix):].split("/", 1)[0]
-            for path in list(self.files) + list(self._dirs())
-            if path.startswith(prefix) and path != at
-        })
+        names = sorted(
+            {
+                path[len(prefix) :].split("/", 1)[0]
+                for path in list(self.files) + list(self._dirs())
+                if path.startswith(prefix) and path != at
+            }
+        )
         return [self._row(prefix + name, name) for name in names]
 
     def _failure(self, route: str) -> web.Response | None:
@@ -177,11 +180,13 @@ class FakeGitHub:
         paths = sorted(list(self.files) + list(self._dirs()))
         if self.truncated_recursive:
             paths = [p for p in paths if "/" not in p]
-        response = web.json_response({
-            "sha": tree_sha(""),
-            "tree": [self._row(p, p) for p in paths],
-            "truncated": self.truncated_recursive,
-        })
+        response = web.json_response(
+            {
+                "sha": tree_sha(""),
+                "tree": [self._row(p, p) for p in paths],
+                "truncated": self.truncated_recursive,
+            }
+        )
         if self.after_recursive is not None:
             self.after_recursive()
         return response
@@ -200,11 +205,11 @@ class FakeGitHub:
             if "/".join(parts[:depth]) in self.files:
                 return web.json_response(
                     {
-                        "message":
-                        "Invalid object requested. SHA must identify a "
+                        "message": "Invalid object requested. SHA must identify a "
                         "commit or a tree."
                     },
-                    status=422)
+                    status=422,
+                )
         if at and at not in self._dirs():
             return web.json_response({"message": "Not Found"}, status=404)
         return self._listing(None, raw, at)
@@ -218,13 +223,11 @@ class FakeGitHub:
         rows = self._shallow(at)
         truncated = False
         if at in self.truncated_dirs:
-            rows = rows[:self.truncated_dirs[at]]
+            rows = rows[: self.truncated_dirs[at]]
             truncated = True
-        return web.json_response({
-            "sha": tree_sha(at),
-            "tree": rows,
-            "truncated": truncated
-        })
+        return web.json_response(
+            {"sha": tree_sha(at), "tree": rows, "truncated": truncated}
+        )
 
     async def blob(self, request: web.Request) -> web.Response:
         sha = request.match_info["sha"]
@@ -237,12 +240,14 @@ class FakeGitHub:
         if sha not in self.blobs:
             return web.json_response({"message": "Not Found"}, status=404)
         data = self.blobs[sha]
-        return web.json_response({
-            "sha": sha,
-            "size": len(data),
-            "encoding": "base64",
-            "content": base64.encodebytes(data).decode(),
-        })
+        return web.json_response(
+            {
+                "sha": sha,
+                "size": len(data),
+                "encoding": "base64",
+                "content": base64.encodebytes(data).decode(),
+            }
+        )
 
 
 def _app(hub: FakeGitHub) -> web.Application:
@@ -295,7 +300,6 @@ def serve(hub: FakeGitHub | None = None) -> Iterator[FakeGitHub]:
 # retry sees real data; a root child would let ensure_live_snapshot's root
 # probe consume it instead.
 class _ClearedAtList(RAMIndexCacheStore):
-
     def __init__(self, parent: str) -> None:
         super().__init__()
         self.parent = parent
@@ -309,7 +313,6 @@ class _ClearedAtList(RAMIndexCacheStore):
 
 
 class _StaleListing(RAMIndexCacheStore):
-
     def __init__(self, parent: str, key: str) -> None:
         super().__init__()
         self.parent = parent
@@ -329,7 +332,6 @@ class _StaleListing(RAMIndexCacheStore):
 
 
 class _ClearedMidLookup(RAMIndexCacheStore):
-
     def __init__(self) -> None:
         super().__init__()
         self.fired = False
@@ -342,7 +344,6 @@ class _ClearedMidLookup(RAMIndexCacheStore):
 
 
 class _ClearedAndReseeded(RAMIndexCacheStore):
-
     def __init__(self) -> None:
         super().__init__()
         self.accessor: GitHubAccessor | None = None
@@ -380,13 +381,16 @@ _EPOCH = datetime.fromtimestamp(0, timezone.utc)
 
 
 class _ExpiredOnArrival(RAMIndexCacheStore):
-
     def __init__(self, live: frozenset[str]) -> None:
         super().__init__()
         self.live = live
 
-    def seed(self, entries: dict[str, IndexEntry],
-             children: dict[str, list[str]], expires_at: datetime) -> None:
+    def seed(
+        self,
+        entries: dict[str, IndexEntry],
+        children: dict[str, list[str]],
+        expires_at: datetime,
+    ) -> None:
         super().seed(entries, children, expires_at)
         for path in children:
             if path not in self.live:
@@ -400,14 +404,16 @@ class _ExpiredOnArrival(RAMIndexCacheStore):
         *,
         partial: bool,
         evict: bool,
-        excluded: tuple[str, ...] = ()) -> list[Evicted]:
+        excluded: tuple[str, ...] = (),
+    ) -> list[Evicted]:
         return await super()._set_dir(
             vfs_path,
             entries,
             expired_at if vfs_path in self.live else _EPOCH,
             partial=partial,
             evict=evict,
-            excluded=excluded)
+            excluded=excluded,
+        )
 
 
 def expired_on_arrival(*live: str) -> RAMIndexCacheStore:

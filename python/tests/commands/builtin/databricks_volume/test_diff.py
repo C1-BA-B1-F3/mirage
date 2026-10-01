@@ -17,9 +17,11 @@ import pytest
 
 @pytest.mark.asyncio
 async def test_workspace_execute_databricks_volume_diff(
-        databricks_text_workspace):
+    databricks_text_workspace,
+):
     io = await databricks_text_workspace.shell(
-        "diff -u /dbx/old.txt /dbx/new.txt")
+        "diff -u /dbx/old.txt /dbx/new.txt"
+    )
 
     assert io.exit_code == 1
     assert b"-old" in io.stdout
@@ -28,9 +30,11 @@ async def test_workspace_execute_databricks_volume_diff(
 
 @pytest.mark.asyncio
 async def test_workspace_execute_databricks_volume_diff_resolves_glob(
-        databricks_text_workspace):
+    databricks_text_workspace,
+):
     io = await databricks_text_workspace.shell(
-        "diff /dbx/old*.txt /dbx/new*.txt")
+        "diff /dbx/old*.txt /dbx/new*.txt"
+    )
 
     assert io.exit_code == 1
     assert b"old" in io.stdout

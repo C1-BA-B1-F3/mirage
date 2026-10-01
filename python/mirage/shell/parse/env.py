@@ -12,15 +12,24 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-from mirage.shell.parse.constants import (CD_ANCHORS, DECL_PRINTER_HEADS,
-                                          IMPLICIT_HEAD_READS, NAMEREF_HEADS)
-from mirage.shell.parse.names import (command_args, command_invocations,
-                                      literal_text, walk_named_outside_defs)
+from mirage.shell.parse.constants import (
+    CD_ANCHORS,
+    DECL_PRINTER_HEADS,
+    IMPLICIT_HEAD_READS,
+    NAMEREF_HEADS,
+)
+from mirage.shell.parse.names import (
+    command_args,
+    command_invocations,
+    literal_text,
+    walk_named_outside_defs,
+)
 from mirage.shell.types import TSNodeLike
 
 
 def _declaration_parts(
-        node: TSNodeLike) -> tuple[str, list[str], list[TSNodeLike]]:
+    node: TSNodeLike,
+) -> tuple[str, list[str], list[TSNodeLike]]:
     """Split a declaration_command into head word, flag words, operands.
 
     Args:
@@ -53,8 +62,11 @@ def _flag_has(flags: list[str], letter: str) -> bool:
         letter (str): the option letter looked for.
     """
     return any(
-        flag.startswith("-") and not flag.startswith("--")
-        and letter in flag[1:] for flag in flags)
+        flag.startswith("-")
+        and not flag.startswith("--")
+        and letter in flag[1:]
+        for flag in flags
+    )
 
 
 def _env_exclusions(args: list[TSNodeLike]) -> frozenset[str] | None:
@@ -98,7 +110,7 @@ def _env_exclusions(args: list[TSNodeLike]) -> frozenset[str] | None:
             i += 2
             continue
         if literal.startswith("--unset="):
-            excluded.add(literal[len("--unset="):])
+            excluded.add(literal[len("--unset=") :])
             i += 1
             continue
         if literal in ("-0", "--null"):
@@ -112,7 +124,7 @@ def _env_exclusions(args: list[TSNodeLike]) -> frozenset[str] | None:
                 if ch == "i":
                     return None
                 if ch == "u":
-                    rest = literal[pos + 2:]
+                    rest = literal[pos + 2 :]
                     if rest:
                         excluded.add(rest)
                     elif i + 1 < len(args):
@@ -228,8 +240,7 @@ def env_reads(node: TSNodeLike) -> tuple[bool, frozenset[str], frozenset[str]]:
                     skipped = prefix
             if skipped is not None:
                 whole = True
-                excluded = (skipped if excluded is None else excluded
-                            & skipped)
+                excluded = skipped if excluded is None else excluded & skipped
         elif n.type == "declaration_command":
             head, flags, operands = _declaration_parts(n)
             if head not in DECL_PRINTER_HEADS:

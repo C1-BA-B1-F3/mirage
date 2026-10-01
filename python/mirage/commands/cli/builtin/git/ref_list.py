@@ -33,18 +33,30 @@ from mirage.commands.cli.builtin.git.format import short
 from mirage.commands.cli.builtin.git.io import read_names, read_optional
 from mirage.commands.cli.builtin.git.mailmap import load_mailmap
 from mirage.commands.cli.builtin.git.objects import FANOUT_LEN, abbrev_for
-from mirage.commands.cli.builtin.git.ref_fields import (abbreviation_requests,
-                                                        needs_object)
+from mirage.commands.cli.builtin.git.ref_fields import (
+    abbreviation_requests,
+    needs_object,
+)
 from mirage.commands.cli.builtin.git.ref_filter import RefFilter, kept_refs
 from mirage.commands.cli.builtin.git.ref_format import parse_sort_keys
 from mirage.commands.cli.builtin.git.refs import mapped, parse_refspec
-from mirage.commands.cli.builtin.git.render import (DETACHED_AT, DETACHED_FROM,
-                                                    NO_BRANCH)
-from mirage.commands.cli.builtin.git.types import (DateMode, HeadRef,
-                                                   RefContext, RefField,
-                                                   RefItem, RefKind, RefObject,
-                                                   RefSortKey, RefUpstream,
-                                                   RepoLocation)
+from mirage.commands.cli.builtin.git.render import (
+    DETACHED_AT,
+    DETACHED_FROM,
+    NO_BRANCH,
+)
+from mirage.commands.cli.builtin.git.types import (
+    DateMode,
+    HeadRef,
+    RefContext,
+    RefField,
+    RefItem,
+    RefKind,
+    RefObject,
+    RefSortKey,
+    RefUpstream,
+    RepoLocation,
+)
 from mirage.commands.cli.builtin.git.util import git_bool
 from mirage.commands.spec.flag_view import FlagView
 from mirage.io.types import IOResult
@@ -57,12 +69,19 @@ SYMREF_PREFIX = "ref: "
 SYMREF_DEPTH = 5
 ROOT_REF_SYNTAX = re.compile(r"[A-Z_]+")
 PSEUDO_REFS = ("FETCH_HEAD", "MERGE_HEAD")
-IRREGULAR_ROOT_REFS = ("HEAD", "AUTO_MERGE", "BISECT_EXPECTED_REV",
-                       "NOTES_MERGE_PARTIAL", "NOTES_MERGE_REF",
-                       "MERGE_AUTOSTASH")
-KIND_PREFIXES = (("refs/heads/", RefKind.BRANCH),
-                 ("refs/remotes/", RefKind.REMOTE), ("refs/tags/",
-                                                     RefKind.TAG))
+IRREGULAR_ROOT_REFS = (
+    "HEAD",
+    "AUTO_MERGE",
+    "BISECT_EXPECTED_REV",
+    "NOTES_MERGE_PARTIAL",
+    "NOTES_MERGE_REF",
+    "MERGE_AUTOSTASH",
+)
+KIND_PREFIXES = (
+    ("refs/heads/", RefKind.BRANCH),
+    ("refs/remotes/", RefKind.REMOTE),
+    ("refs/tags/", RefKind.TAG),
+)
 # match_pattern strips the first of these before a tag or branch pattern
 # is matched, so `v1.*` and `origin/*` name refs by their short names.
 SHORT_PREFIXES = ("refs/tags/", "refs/heads/", "refs/remotes/", "refs/")
@@ -97,8 +116,9 @@ def ref_kind(name: str) -> RefKind:
     return RefKind.ROOT if is_root_ref(name) else RefKind.OTHER
 
 
-def resolve_ref(table: Mapping[str, str],
-                name: str) -> tuple[str | None, str | None]:
+def resolve_ref(
+    table: Mapping[str, str], name: str
+) -> tuple[str | None, str | None]:
     """What a ref resolves to, following symbolic refs as git reads them.
 
     Args:
@@ -112,8 +132,11 @@ def resolve_ref(table: Mapping[str, str],
         ref names, None for an ordinary ref.
     """
     raw = table.get(name)
-    target = raw[len(SYMREF_PREFIX):].strip() if raw is not None and \
-        raw.startswith(SYMREF_PREFIX) else None
+    target = (
+        raw[len(SYMREF_PREFIX) :].strip()
+        if raw is not None and raw.startswith(SYMREF_PREFIX)
+        else None
+    )
     current = name
     for _ in range(SYMREF_DEPTH + 1):
         value = table.get(current)
@@ -121,13 +144,13 @@ def resolve_ref(table: Mapping[str, str],
             return None, target
         if not value.startswith(SYMREF_PREFIX):
             return value.strip(), target
-        current = value[len(SYMREF_PREFIX):].strip()
+        current = value[len(SYMREF_PREFIX) :].strip()
     return None, target
 
 
 def known_names(
-    table: Mapping[str,
-                   str], root_files: Sequence[str] = ()) -> frozenset[str]:
+    table: Mapping[str, str], root_files: Sequence[str] = ()
+) -> frozenset[str]:
     """Every name that resolves, which is what makes a short name
     ambiguous: each ref, and the root refs the git directory holds.
 
@@ -137,8 +160,9 @@ def known_names(
             directory.
     """
     names = {name for name in table if resolve_ref(table, name)[0]}
-    names.update(name for name in root_files
-                 if ROOT_REF_SYNTAX.fullmatch(name))
+    names.update(
+        name for name in root_files if ROOT_REF_SYNTAX.fullmatch(name)
+    )
     return frozenset(names)
 
 
@@ -154,18 +178,20 @@ def _path_match(parts: list[str], name: list[str]) -> bool:
     head, rest = parts[0], parts[1:]
     if head == "**":
         return any(_path_match(rest, name[i:]) for i in range(len(name) + 1))
-    return bool(name) and fnmatch(name[0], head) and _path_match(
-        rest, name[1:])
+    return (
+        bool(name) and fnmatch(name[0], head) and _path_match(rest, name[1:])
+    )
 
 
 def _folded(text: str, icase: bool) -> str:
     return "".join(
-        chr(ord(c) + 32) if icase and "A" <= c <= "Z" else c for c in text)
+        chr(ord(c) + 32) if icase and "A" <= c <= "Z" else c for c in text
+    )
 
 
-def match_as_path(name: str,
-                  patterns: Sequence[str],
-                  icase: bool = False) -> bool:
+def match_as_path(
+    name: str, patterns: Sequence[str], icase: bool = False
+) -> bool:
     """``match_name_as_path``: for-each-ref's pattern rule.
 
     A pattern selects a ref it spells in full or up to a ``/`` (always
@@ -183,18 +209,20 @@ def match_as_path(name: str,
         return True
     components = _folded(name, icase).split("/")
     for pattern in patterns:
-        if name.startswith(pattern) and (len(name) == len(pattern)
-                                         or name[len(pattern)] == "/"
-                                         or pattern.endswith("/")):
+        if name.startswith(pattern) and (
+            len(name) == len(pattern)
+            or name[len(pattern)] == "/"
+            or pattern.endswith("/")
+        ):
             return True
         if _path_match(_folded(pattern, icase).split("/"), components):
             return True
     return False
 
 
-def match_short(name: str,
-                patterns: Sequence[str],
-                icase: bool = False) -> bool:
+def match_short(
+    name: str, patterns: Sequence[str], icase: bool = False
+) -> bool:
     """``match_pattern``: tag's and branch's pattern rule, a glob over
     the name less its ``refs/tags/``, ``refs/heads/``, ``refs/remotes/``
     or ``refs/``, where ``*`` crosses a ``/``.
@@ -206,18 +234,20 @@ def match_short(name: str,
     """
     if not patterns:
         return True
-    short = next((name[len(p):] for p in SHORT_PREFIXES if name.startswith(p)),
-                 name)
+    short = next(
+        (name[len(p) :] for p in SHORT_PREFIXES if name.startswith(p)), name
+    )
     return any(
         fnmatch(_folded(short, icase), _folded(pattern, icase))
-        for pattern in patterns)
+        for pattern in patterns
+    )
 
 
 def _object(repo: BaseRepo, oid: str) -> RefObject:
     obj: ShaFile = repo.object_store[ObjectID(oid.encode())]
-    return RefObject(oid=oid,
-                     type=obj.type_name.decode(),
-                     raw=obj.as_raw_string())
+    return RefObject(
+        oid=oid, type=obj.type_name.decode(), raw=obj.as_raw_string()
+    )
 
 
 def _peeled(repo: BaseRepo, obj: RefObject) -> RefObject:
@@ -230,14 +260,19 @@ def _peeled(repo: BaseRepo, obj: RefObject) -> RefObject:
     shown: ShaFile = repo.object_store[ObjectID(obj.oid.encode())]
     while isinstance(shown, Tag):
         shown = repo.object_store[shown.object[1]]
-    return RefObject(oid=shown.id.decode(),
-                     type=shown.type_name.decode(),
-                     raw=shown.as_raw_string())
+    return RefObject(
+        oid=shown.id.decode(),
+        type=shown.type_name.decode(),
+        raw=shown.as_raw_string(),
+    )
 
 
-def listed_refs(repo: BaseRepo, table: Mapping[str, str],
-                wanted: Callable[[str], bool],
-                fields: Sequence[RefField]) -> tuple[list[RefItem], str]:
+def listed_refs(
+    repo: BaseRepo,
+    table: Mapping[str, str],
+    wanted: Callable[[str], bool],
+    fields: Sequence[RefField],
+) -> tuple[list[RefItem], str]:
     """The refs a listing holds, in name order, each loaded as far as
     its fields read it.
 
@@ -272,10 +307,13 @@ def listed_refs(repo: BaseRepo, table: Mapping[str, str],
         item = RefItem(name=name, oid=oid, kind=ref_kind(name), symref=symref)
         if objects:
             obj = _object(repo, oid)
-            item = replace(item,
-                           obj=obj,
-                           peeled=_peeled(repo, obj)
-                           if peeled and obj.type == "tag" else None)
+            item = replace(
+                item,
+                obj=obj,
+                peeled=_peeled(repo, obj)
+                if peeled and obj.type == "tag"
+                else None,
+            )
         items.append(item)
     return items, "".join(errors)
 
@@ -290,13 +328,15 @@ def ref_table(repo: BaseRepo) -> dict[str, str]:
     for key in repo.refs.allkeys():
         raw = repo.refs.read_loose_ref(key)
         if raw is not None:
-            table[key.decode("utf-8",
-                             "replace")] = raw.decode("utf-8", "replace")
+            table[key.decode("utf-8", "replace")] = raw.decode(
+                "utf-8", "replace"
+            )
     return table
 
 
-def config_values(cfg: ConfigFile, section: tuple[bytes, ...],
-                  name: bytes) -> list[bytes]:
+def config_values(
+    cfg: ConfigFile, section: tuple[bytes, ...], name: bytes
+) -> list[bytes]:
     """Every value one variable takes in a config section, in order.
 
     Args:
@@ -310,8 +350,9 @@ def config_values(cfg: ConfigFile, section: tuple[bytes, ...],
     return [value for key, value in cfg.items(section) if key.lower() == name]
 
 
-def tracking_ref(cfg: ConfigFile, branch: str,
-                 known: frozenset[str]) -> RefUpstream | None:
+def tracking_ref(
+    cfg: ConfigFile, branch: str, known: frozenset[str]
+) -> RefUpstream | None:
     """``branch_get_upstream``: the ref a branch's upstream lands in.
 
     ``branch.<name>.merge`` is mapped through the remote's fetch
@@ -338,15 +379,25 @@ def tracking_ref(cfg: ConfigFile, branch: str,
             return RefUpstream(ref=dst, remote=remote, merge=merged)
     if remote != ".":
         return None
-    found = next((rule.format(merged)
-                  for rule in DWIM_RULES if rule.format(merged) in known),
-                 merged)
+    found = next(
+        (
+            rule.format(merged)
+            for rule in DWIM_RULES
+            if rule.format(merged) in known
+        ),
+        merged,
+    )
     return RefUpstream(ref=found, remote=remote, merge=merged)
 
 
-def with_upstreams(repo: BaseRepo, cfg: ConfigFile, items: list[RefItem],
-                   table: Mapping[str, str], known: frozenset[str],
-                   counted: bool) -> list[RefItem]:
+def with_upstreams(
+    repo: BaseRepo,
+    cfg: ConfigFile,
+    items: list[RefItem],
+    table: Mapping[str, str],
+    known: frozenset[str],
+    counted: bool,
+) -> list[RefItem]:
     """Each local branch with its upstream and, when a field reads
     them, how far the two have moved apart. Synchronous, for a worker
     thread: the counts walk history.
@@ -364,7 +415,7 @@ def with_upstreams(repo: BaseRepo, cfg: ConfigFile, items: list[RefItem],
         if not item.name.startswith("refs/heads/"):
             out.append(item)
             continue
-        up = tracking_ref(cfg, item.name[len("refs/heads/"):], known)
+        up = tracking_ref(cfg, item.name[len("refs/heads/") :], known)
         if up is not None:
             theirs, _ = resolve_ref(table, up.ref)
             if theirs is None:
@@ -372,23 +423,26 @@ def with_upstreams(repo: BaseRepo, cfg: ConfigFile, items: list[RefItem],
             elif counted:
                 ours = {
                     e.commit.id
-                    for e in Walker(repo.object_store,
-                                    [ObjectID(item.oid.encode())])
+                    for e in Walker(
+                        repo.object_store, [ObjectID(item.oid.encode())]
+                    )
                 }
                 there = {
                     e.commit.id
-                    for e in Walker(repo.object_store,
-                                    [ObjectID(theirs.encode())])
+                    for e in Walker(
+                        repo.object_store, [ObjectID(theirs.encode())]
+                    )
                 }
-                up = replace(up,
-                             ahead=len(ours - there),
-                             behind=len(there - ours))
+                up = replace(
+                    up, ahead=len(ours - there), behind=len(there - ours)
+                )
         out.append(replace(item, upstream=up))
     return out
 
 
-async def read_config(dispatch: DispatchFn,
-                      location: RepoLocation) -> ConfigFile:
+async def read_config(
+    dispatch: DispatchFn, location: RepoLocation
+) -> ConfigFile:
     """The repository's own config, empty when it has none.
 
     Args:
@@ -399,8 +453,9 @@ async def read_config(dispatch: DispatchFn,
     return ConfigFile.from_file(BytesIO(data or b""))
 
 
-async def root_names(dispatch: DispatchFn,
-                     location: RepoLocation) -> list[str]:
+async def root_names(
+    dispatch: DispatchFn, location: RepoLocation
+) -> list[str]:
     """The names at the top of this checkout's git directory.
 
     Args:
@@ -413,8 +468,9 @@ async def root_names(dispatch: DispatchFn,
     ]
 
 
-async def worktree_heads(dispatch: DispatchFn,
-                         location: RepoLocation) -> dict[str, str]:
+async def worktree_heads(
+    dispatch: DispatchFn, location: RepoLocation
+) -> dict[str, str]:
     """``get_worktrees``: the branch each worktree has checked out, and
     where that worktree is.
 
@@ -432,14 +488,17 @@ async def worktree_heads(dispatch: DispatchFn,
         data = await read_optional(dispatch, f"{gitdir}/{HEAD_FILE}")
         text = (data or b"").decode("utf-8", "replace").strip()
         if text.startswith(SYMREF_PREFIX) and path:
-            heads.setdefault(text[len(SYMREF_PREFIX):].strip(), path)
+            heads.setdefault(text[len(SYMREF_PREFIX) :].strip(), path)
 
     common = location.commondir
     if location.gitdir == common:
         main = location.worktree
     else:
-        main = posixpath.dirname(common) if posixpath.basename(
-            common) == ".git" else ""
+        main = (
+            posixpath.dirname(common)
+            if posixpath.basename(common) == ".git"
+            else ""
+        )
     await note(common, main)
     root = f"{common}/{WORKTREES}"
     for entry in await read_names(dispatch, root):
@@ -448,8 +507,9 @@ async def worktree_heads(dispatch: DispatchFn,
         if data is None:
             continue
         path = data.decode("utf-8", "replace").strip()
-        await note(linked,
-                   path[:-len("/.git")] if path.endswith("/.git") else path)
+        await note(
+            linked, path[: -len("/.git")] if path.endswith("/.git") else path
+        )
     return heads
 
 
@@ -470,8 +530,8 @@ def _detached_label(repo: BaseRepo, target: str, moved: bytes) -> str:
     """
     refs = repo.refs.allkeys()
     found = [
-        name for name in dict.fromkeys(
-            rule.format(target) for rule in DWIM_RULES)
+        name
+        for name in dict.fromkeys(rule.format(target) for rule in DWIM_RULES)
         if name.encode() in refs
     ]
     if target != "HEAD" and len(found) == 1:
@@ -479,13 +539,17 @@ def _detached_label(repo: BaseRepo, target: str, moved: bytes) -> str:
         while isinstance(obj, Tag):
             obj = repo.object_store[obj.object[1]]
         if obj.id == moved:
-            return found[0].removeprefix("refs/tags/").removeprefix(
-                "refs/remotes/")
+            return (
+                found[0]
+                .removeprefix("refs/tags/")
+                .removeprefix("refs/remotes/")
+            )
     return short(moved, abbrev_for(repo))
 
 
-async def detached_line(dispatch: DispatchFn, repo: BaseRepo,
-                        location: RepoLocation, head: HeadRef) -> str:
+async def detached_line(
+    dispatch: DispatchFn, repo: BaseRepo, location: RepoLocation, head: HeadRef
+) -> str:
     """The first line of a status on a detached HEAD, read off the reflog.
 
     git names the target of the newest ``checkout: moving from`` entry,
@@ -500,14 +564,15 @@ async def detached_line(dispatch: DispatchFn, repo: BaseRepo,
         location (RepoLocation): the discovered repository.
         head (HeadRef): what HEAD points at.
     """
-    log = await read_optional(dispatch,
-                              posixpath.join(location.gitdir, "logs/HEAD"))
+    log = await read_optional(
+        dispatch, posixpath.join(location.gitdir, "logs/HEAD")
+    )
     for row in reversed((log or b"").splitlines()):
         record, _, message = row.partition(b"\t")
         text = message.decode("utf-8", "replace")
         if not text.startswith(CHECKOUT_MOVE) or " to " not in text:
             continue
-        target = text[len(CHECKOUT_MOVE):].split(" to ", 1)[1]
+        target = text[len(CHECKOUT_MOVE) :].split(" to ", 1)[1]
         moved = record.split(b" ")[1]
         label = await asyncio.to_thread(_detached_label, repo, target, moved)
         at = head.commit is not None and head.commit.encode() == moved
@@ -515,8 +580,9 @@ async def detached_line(dispatch: DispatchFn, repo: BaseRepo,
     return NO_BRANCH
 
 
-async def head_description(dispatch: DispatchFn, repo: BaseRepo,
-                           location: RepoLocation, head: HeadRef) -> str:
+async def head_description(
+    dispatch: DispatchFn, repo: BaseRepo, location: RepoLocation, head: HeadRef
+) -> str:
     """``get_head_description``: how a detached HEAD row names itself
     in a branch listing, the status line in parentheses.
 
@@ -544,13 +610,15 @@ def head_ref(table: Mapping[str, str]) -> str | None:
             return None
         if not value.startswith(SYMREF_PREFIX):
             return current
-        current = value[len(SYMREF_PREFIX):].strip()
+        current = value[len(SYMREF_PREFIX) :].strip()
     return None
 
 
 def _mailmapped(fields: Sequence[RefField]) -> bool:
-    return any(field.option == "mailmap" or "mailmap" in field.words
-               for field in fields)
+    return any(
+        field.option == "mailmap" or "mailmap" in field.words
+        for field in fields
+    )
 
 
 def unique_width(oid: str, width: int, ids: Sequence[str]) -> int:
@@ -569,13 +637,14 @@ def unique_width(oid: str, width: int, ids: Sequence[str]) -> int:
     """
     at = bisect_left(ids, oid)
     after = at + 1 if at < len(ids) and ids[at] == oid else at
-    for other in [*ids[max(at - 1, 0):at], *ids[after:after + 1]]:
+    for other in [*ids[max(at - 1, 0) : at], *ids[after : after + 1]]:
         width = max(width, len(commonprefix([oid, other])) + 1)
     return min(width, len(oid))
 
 
-def _unique_abbreviations(repo: BaseRepo,
-                          widths: Mapping[str, int]) -> dict[str, int]:
+def _unique_abbreviations(
+    repo: BaseRepo, widths: Mapping[str, int]
+) -> dict[str, int]:
     """Widen requested prefixes against loose and packed objects, including
     objects no selected ref reaches, without reading object contents.
 
@@ -592,10 +661,13 @@ def _unique_abbreviations(repo: BaseRepo,
         buckets.setdefault(oid[:FANOUT_LEN], [])
     for fanout, ids in buckets.items():
         ids.extend(
-            sorted({
-                found.decode()
-                for found in repo.object_store.iter_prefix(fanout.encode())
-            }))
+            sorted(
+                {
+                    found.decode()
+                    for found in repo.object_store.iter_prefix(fanout.encode())
+                }
+            )
+        )
     return {
         oid: unique_width(oid, width, buckets[oid[:FANOUT_LEN]])
         for oid, width in widths.items()
@@ -603,15 +675,16 @@ def _unique_abbreviations(repo: BaseRepo,
 
 
 async def ref_listing(
-        dispatch: DispatchFn,
-        repo: BaseRepo,
-        location: RepoLocation,
-        cfg: ConfigFile,
-        fields: Sequence[RefField],
-        wanted: Callable[[str], bool],
-        filt: RefFilter | None,
-        date: DateMode,
-        roots: bool = False) -> tuple[list[RefItem], RefContext, str]:
+    dispatch: DispatchFn,
+    repo: BaseRepo,
+    location: RepoLocation,
+    cfg: ConfigFile,
+    fields: Sequence[RefField],
+    wanted: Callable[[str], bool],
+    filt: RefFilter | None,
+    date: DateMode,
+    roots: bool = False,
+) -> tuple[list[RefItem], RefContext, str]:
     """The refs one listing prints and the facts their fields read.
 
     Everything a field could want is loaded only when some field wants
@@ -644,45 +717,58 @@ async def ref_listing(
             if data:
                 table[name] = data.decode("utf-8", "replace").split("\n", 1)[0]
     known = known_names(table, names)
-    items, errors = await asyncio.to_thread(listed_refs, repo, table, wanted,
-                                            fields)
+    items, errors = await asyncio.to_thread(
+        listed_refs, repo, table, wanted, fields
+    )
     if filt is not None:
         pairs = [(item.name, item.oid.encode()) for item in items]
         kept = await asyncio.to_thread(kept_refs, repo, filt, pairs)
         items = [item for item in items if item.name in kept]
     upstreams = [field for field in fields if field.field == "upstream"]
     if upstreams:
-        counted = any(field.option in ("track", "trackshort")
-                      for field in upstreams)
-        items = await asyncio.to_thread(with_upstreams, repo, cfg, items,
-                                        table, known, counted)
+        counted = any(
+            field.option in ("track", "trackshort") for field in upstreams
+        )
+        items = await asyncio.to_thread(
+            with_upstreams, repo, cfg, items, table, known, counted
+        )
     if any(field.field == "worktreepath" for field in fields):
         heads = await worktree_heads(dispatch, location)
         items = [
             replace(item, worktree=heads.get(item.name, "")) for item in items
         ]
-    suffixes = config_values(cfg, (b"versionsort", ), b"suffix") or \
-        config_values(cfg, (b"versionsort", ), b"prereleasesuffix")
+    suffixes = config_values(
+        cfg, (b"versionsort",), b"suffix"
+    ) or config_values(cfg, (b"versionsort",), b"prereleasesuffix")
     ctx = RefContext(
         known=known,
-        strict=git_bool(config_values(cfg, (b"core", ), b"warnambiguousrefs"),
-                        "core.warnambiguousrefs", True),
+        strict=git_bool(
+            config_values(cfg, (b"core",), b"warnambiguousrefs"),
+            "core.warnambiguousrefs",
+            True,
+        ),
         head=head_ref(table),
         abbrev=abbrev_for(repo),
         mailmap=await load_mailmap(dispatch, location)
-        if _mailmapped(fields) else (),
+        if _mailmapped(fields)
+        else (),
         date=date,
-        suffixes=tuple(value.decode("utf-8", "replace") for value in suffixes))
+        suffixes=tuple(value.decode("utf-8", "replace") for value in suffixes),
+    )
     widths = abbreviation_requests(fields, items, ctx)
     if widths:
-        ctx = replace(ctx,
-                      abbreviations=await
-                      asyncio.to_thread(_unique_abbreviations, repo, widths))
+        ctx = replace(
+            ctx,
+            abbreviations=await asyncio.to_thread(
+                _unique_abbreviations, repo, widths
+            ),
+        )
     return items, ctx, errors
 
 
-def sort_keys(fl: FlagView,
-              defaults: Sequence[str]) -> tuple[RefSortKey, ...] | None:
+def sort_keys(
+    fl: FlagView, defaults: Sequence[str]
+) -> tuple[RefSortKey, ...] | None:
     """The line's sort keys, primary first; None when there are none.
 
     Each ``--sort`` adds a key after the defaults (the config's
@@ -713,13 +799,17 @@ def configured_sort(cfg: ConfigFile, verb: bytes) -> tuple[str, ...]:
         cfg (ConfigFile): the repository's config.
         verb (bytes): ``tag`` or ``branch``.
     """
-    values = config_values(cfg, (verb, ), b"sort")
-    return tuple(v.decode("utf-8", "replace")
-                 for v in values) if values else ("refname", )
+    values = config_values(cfg, (verb,), b"sort")
+    return (
+        tuple(v.decode("utf-8", "replace") for v in values)
+        if values
+        else ("refname",)
+    )
 
 
-def listing_result(out: str, errors: str,
-                   stopped: GitError | None) -> tuple[bytes, IOResult]:
+def listing_result(
+    out: str, errors: str, stopped: GitError | None
+) -> tuple[bytes, IOResult]:
     """A listing's output: what printed, then the refusal it stopped at.
 
     Args:
@@ -729,8 +819,12 @@ def listing_result(out: str, errors: str,
     """
     stderr = errors
     if stopped is not None:
-        stderr += (f"{stopped}\n" if stopped.prefix is None else
-                   f"{stopped.prefix}: {stopped}\n")
+        stderr += (
+            f"{stopped}\n"
+            if stopped.prefix is None
+            else f"{stopped.prefix}: {stopped}\n"
+        )
     return encode_text(out), IOResult(
         exit_code=stopped.code if stopped is not None else 0,
-        stderr=stderr.encode())
+        stderr=stderr.encode(),
+    )

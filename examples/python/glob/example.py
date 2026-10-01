@@ -77,11 +77,13 @@ async def main():
     print("\n=== GDRIVE: GREP WITH STREAMING ===\n")
 
     r = await ws.shell(
-        "grep queue-operation /gdrive/mirage/example.jsonl | wc -l")
+        "grep queue-operation /gdrive/mirage/example.jsonl | wc -l"
+    )
     print(f"grep | wc: {(await r.stdout_str()).strip()} matches")
 
-    r = await ws.shell("grep queue-operation /gdrive/mirage/example.jsonl"
-                       " | head -n 3")
+    r = await ws.shell(
+        "grep queue-operation /gdrive/mirage/example.jsonl | head -n 3"
+    )
     lines = (await r.stdout_str()).strip().splitlines()
     print(f"grep | head -n 3: {len(lines)} lines")
 

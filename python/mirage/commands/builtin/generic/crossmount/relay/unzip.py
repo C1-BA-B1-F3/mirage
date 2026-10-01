@@ -13,8 +13,9 @@
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 from mirage.commands.builtin.generic.crossmount.types import CrossResult
-from mirage.commands.builtin.generic.crossmount.utils import \
-    transfer_primitives
+from mirage.commands.builtin.generic.crossmount.utils import (
+    transfer_primitives,
+)
 from mirage.commands.builtin.generic.unzip import unzip_generic
 from mirage.commands.config import CommandOpts
 from mirage.commands.spec import SPECS
@@ -24,9 +25,12 @@ from mirage.runtime.types import DispatchFn
 from mirage.types import PathSpec
 
 
-async def run_unzip(scopes: list[PathSpec], text_args: list[str],
-                    flag_kwargs: dict[str, FlagValue],
-                    dispatch: DispatchFn) -> CrossResult:
+async def run_unzip(
+    scopes: list[PathSpec],
+    text_args: list[str],
+    flag_kwargs: dict[str, FlagValue],
+    dispatch: DispatchFn,
+) -> CrossResult:
     """Run an unzip whose archive and -d destination span mounts.
 
     Pure wiring: the shared generic runs on dispatch-relayed doors, so
@@ -48,11 +52,13 @@ async def run_unzip(scopes: list[PathSpec], text_args: list[str],
     # the archive is the first scope that is not the destination.
     dest = fl.as_str("d")
     operands = [s for s in scopes if s.virtual != dest]
-    return await unzip_generic(operands or scopes,
-                               list(text_args),
-                               CommandOpts(flags=flag_kwargs),
-                               read_bytes=prim["read_bytes"],
-                               write_bytes=prim["write"],
-                               mkdir_fn=prim["mkdir"],
-                               stat=prim["stat"],
-                               relay=True)
+    return await unzip_generic(
+        operands or scopes,
+        list(text_args),
+        CommandOpts(flags=flag_kwargs),
+        read_bytes=prim["read_bytes"],
+        write_bytes=prim["write"],
+        mkdir_fn=prim["mkdir"],
+        stat=prim["stat"],
+        relay=True,
+    )

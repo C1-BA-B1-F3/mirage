@@ -19,12 +19,15 @@ from mirage.core.onedrive.client import drive_loc
 from mirage.types import PathSpec
 
 
-async def rename(accessor: OneDriveAccessor, src: PathSpec,
-                 dst: PathSpec) -> None:
+async def rename(
+    accessor: OneDriveAccessor, src: PathSpec, dst: PathSpec
+) -> None:
     config = accessor.config
-    await rename_replace(config,
-                         drive_loc(config, src.vfs_path),
-                         drive_loc(config, dst.vfs_path),
-                         session=accessor.pool)
+    await rename_replace(
+        config,
+        drive_loc(config, src.vfs_path),
+        drive_loc(config, dst.vfs_path),
+        session=accessor.pool,
+    )
     await invalidate_subtree(dst)
     await invalidate_subtree(src)

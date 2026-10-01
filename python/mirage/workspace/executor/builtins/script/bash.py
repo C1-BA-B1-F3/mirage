@@ -23,9 +23,13 @@ from mirage.runtime.types import DispatchFn
 from mirage.shell.constants import IFS_DEFAULT
 from mirage.shell.options import parse_option_word
 from mirage.workspace.executor.builtins.script.constants import (
-    BASH_LONG_OPTIONS, BASH_START_FLAGS)
-from mirage.workspace.executor.builtins.script.script import (read_script_file,
-                                                              script_error)
+    BASH_LONG_OPTIONS,
+    BASH_START_FLAGS,
+)
+from mirage.workspace.executor.builtins.script.script import (
+    read_script_file,
+    script_error,
+)
 from mirage.workspace.executor.builtins.script.types import BashArgs
 from mirage.workspace.executor.builtins.types import BuiltinCall, Result
 from mirage.workspace.session import SessionState
@@ -73,17 +77,19 @@ def parse_bash_args(args: list[str]) -> BashArgs:
         if "c" in word.other:
             if i + word.consumed >= len(args):
                 return BashArgs(needs_value="-c")
-            return BashArgs(script=args[i + word.consumed],
-                            argv=args[i + word.consumed + 1:],
-                            settings=tuple(settings))
+            return BashArgs(
+                script=args[i + word.consumed],
+                argv=args[i + word.consumed + 1 :],
+                settings=tuple(settings),
+            )
         i += word.consumed
     # The program comes from stdin whenever no operand names one, which
     # is the rule `-s` states explicitly for the case where operands do
     # follow: `bash -s A B` reads stdin and makes A and B positional.
     if i < len(args) and not read_stdin:
-        return BashArgs(path=args[i],
-                        argv=args[i + 1:],
-                        settings=tuple(settings))
+        return BashArgs(
+            path=args[i], argv=args[i + 1 :], settings=tuple(settings)
+        )
     return BashArgs(argv=args[i:], settings=tuple(settings))
 
 
@@ -125,15 +131,17 @@ async def handle_bash(
         return script_error(name, f"{parsed.invalid}: unsupported option", 2)
     if parsed.needs_value is not None:
         return script_error(
-            name, f"{parsed.needs_value}: option requires an argument", 2)
+            name, f"{parsed.needs_value}: option requires an argument", 2
+        )
     script = parsed.script
     named = script is not None and bool(parsed.argv)
     script_name = parsed.argv[0] if named else name
     positional = parsed.argv[1:] if script is not None else parsed.argv
     if script is None and parsed.path is not None:
         script_name = parsed.path
-        script, failure = await read_script_file(dispatch, name, parsed.path,
-                                                 session)
+        script, failure = await read_script_file(
+            dispatch, name, parsed.path, session
+        )
         if failure is not None:
             return failure
     if script is None and stdin is not None:
@@ -159,9 +167,9 @@ async def handle_bash(
     # its builtins again, whatever `find -exec` marked the outer line.
     token = clear_program_invocation()
     try:
-        io = await execute_fn(script,
-                              session_id=session.session_id,
-                              stdin=stdin)
+        io = await execute_fn(
+            script, session_id=session.session_id, stdin=stdin
+        )
     finally:
         reset_program_invocation(token)
         session.restore(saved)
@@ -176,6 +184,11 @@ async def bash_builtin(call: BuiltinCall) -> Result:
         call (BuiltinCall): the invocation; the head word names the
             shell the nested program reports itself as.
     """
-    return await handle_bash(call.dispatch, call.execute_fn,
-                             list(call.argv.args), call.session, call.stdin,
-                             str(call.argv.name))
+    return await handle_bash(
+        call.dispatch,
+        call.execute_fn,
+        list(call.argv.args),
+        call.session,
+        call.stdin,
+        str(call.argv.name),
+    )

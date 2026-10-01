@@ -14,9 +14,11 @@
 
 import asyncio
 
-from mirage.commands.builtin.generic.archive.extract import (dir_exists,
-                                                             ensure_dir,
-                                                             extract_dest)
+from mirage.commands.builtin.generic.archive.extract import (
+    dir_exists,
+    ensure_dir,
+    extract_dest,
+)
 from mirage.types import FileStat, FileType, PathSpec
 
 
@@ -41,9 +43,11 @@ def _stat_factory(dirs: set[str]):
 
     async def stat(path: PathSpec) -> FileStat:
         if path.virtual in dirs:
-            return FileStat(path=path.virtual,
-                            name=path.virtual.rsplit("/", 1)[-1],
-                            type=FileType.DIRECTORY)
+            return FileStat(
+                path=path.virtual,
+                name=path.virtual.rsplit("/", 1)[-1],
+                type=FileType.DIRECTORY,
+            )
         raise FileNotFoundError(path.virtual)
 
     return stat

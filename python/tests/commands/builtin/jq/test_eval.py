@@ -25,8 +25,15 @@ from mirage.commands.config import CommandOpts
 from mirage.core.jq import jq_eval
 from mirage.types import MountMode, PathSpec
 
-from .conftest import (collect, eval_one, jq, jq_all, mem_ws, run_raw,
-                       write_to_backend)
+from .conftest import (
+    collect,
+    eval_one,
+    jq,
+    jq_all,
+    mem_ws,
+    run_raw,
+    write_to_backend,
+)
 
 
 async def _const_bytes(data, accessor, path, index=None):
@@ -88,7 +95,7 @@ def test_jq_select(backend):
 
 
 def test_jq_map(backend):
-    write_to_backend(backend, "/tmp/f.json", b'[1, 2, 3]')
+    write_to_backend(backend, "/tmp/f.json", b"[1, 2, 3]")
     result = jq(backend, "/tmp/f.json", "map(. > 1)")
     assert result == [False, True, True]
 
@@ -117,13 +124,13 @@ def test_jq_object_values_via_spread(backend):
 
 
 def test_jq_array_slice(backend):
-    write_to_backend(backend, "/tmp/f.json", b'[10, 20, 30, 40, 50]')
+    write_to_backend(backend, "/tmp/f.json", b"[10, 20, 30, 40, 50]")
     result = jq(backend, "/tmp/f.json", ".[1:3]")
     assert result == [20, 30]
 
 
 def test_jq_length(backend):
-    write_to_backend(backend, "/tmp/f.json", b'[1, 2, 3]')
+    write_to_backend(backend, "/tmp/f.json", b"[1, 2, 3]")
     result = jq(backend, "/tmp/f.json", "length")
     assert result == 3
 
@@ -157,7 +164,6 @@ def test_jq_try_no_catch_swallows_real_error():
 
 
 class TestJqMapValues:
-
     def test_map_values_dict(self):
         result = eval_one({"a": 1, "b": 2}, "map_values(. > 1)")
         assert result == {"a": False, "b": True}
@@ -167,12 +173,11 @@ class TestJqMapValues:
         assert result == [False, True, True]
 
     def test_map_values_dict_arithmetic(self):
-        result = eval_one({"x": 10, "y": 20}, 'map_values(type)')
+        result = eval_one({"x": 10, "y": 20}, "map_values(type)")
         assert result == {"x": "number", "y": "number"}
 
 
 class TestJqHas:
-
     def test_has_present_key(self):
         assert eval_one({"name": "alice"}, 'has("name")') is True
 
@@ -186,7 +191,6 @@ class TestJqHas:
 
 
 class TestJqContains:
-
     def test_contains_string_in_string(self):
         assert eval_one("foobar", 'contains("foo")') is True
 
@@ -207,7 +211,6 @@ class TestJqContains:
 
 
 class TestJqComparisons:
-
     def test_eq_true(self):
         assert eval_one({"a": 1}, ".a == 1") is True
 
@@ -249,16 +252,17 @@ class TestJqComparisons:
 
 
 class TestJqPipes:
-
     def test_three_stage_pipe(self, backend):
-        write_to_backend(backend, "/tmp/f.json",
-                         b'{"data": {"items": [1, 2, 3]}}')
+        write_to_backend(
+            backend, "/tmp/f.json", b'{"data": {"items": [1, 2, 3]}}'
+        )
         result = jq(backend, "/tmp/f.json", ".data | .items | length")
         assert result == 3
 
     def test_pipe_with_iteration_and_select(self, backend):
-        write_to_backend(backend, "/tmp/f.json",
-                         b'[{"x": 1}, {"x": 5}, {"x": 10}]')
+        write_to_backend(
+            backend, "/tmp/f.json", b'[{"x": 1}, {"x": 5}, {"x": 10}]'
+        )
         result = jq_all(backend, "/tmp/f.json", ".[] | select(.x > 3)")
         assert result == [{"x": 5}, {"x": 10}]
 
@@ -279,7 +283,6 @@ class TestJqPipes:
 
 
 class TestJqArrayAccess:
-
     def test_index_access(self):
         result = eval_one({"items": ["a", "b", "c"]}, ".items[0]")
         assert result == "a"
@@ -289,8 +292,11 @@ class TestJqArrayAccess:
         assert result == "c"
 
     def test_nested_array_iteration(self, backend):
-        write_to_backend(backend, "/tmp/f.json",
-                         b'{"users": [{"name": "alice"}, {"name": "bob"}]}')
+        write_to_backend(
+            backend,
+            "/tmp/f.json",
+            b'{"users": [{"name": "alice"}, {"name": "bob"}]}',
+        )
         result = jq_all(backend, "/tmp/f.json", ".users[].name")
         assert result == ["alice", "bob"]
 
@@ -304,7 +310,6 @@ class TestJqArrayAccess:
 
 
 class TestJqEdgeCases:
-
     def test_empty_object(self):
         assert eval_one({}, ".") == {}
 
@@ -366,7 +371,6 @@ class TestJqEdgeCases:
 
 
 class TestJqComplex:
-
     def test_map_select_keys(self):
         data = [{"a": 1, "b": 2}, {"a": 3, "b": 4}]
         result = jq_eval(data, "map(select(.a > 1)) | .[] | .b")
@@ -376,7 +380,12 @@ class TestJqComplex:
         data = [1, "hello", True, None, [1], {"a": 1}]
         result = jq_eval(data, ".[] | type")
         assert result == [
-            "number", "string", "boolean", "null", "array", "object"
+            "number",
+            "string",
+            "boolean",
+            "null",
+            "array",
+            "object",
         ]
 
     def test_flatten_then_unique_then_sort(self):
@@ -396,7 +405,6 @@ class TestJqComplex:
 
 
 class TestJqArithmetic:
-
     def test_add_numbers(self):
         assert eval_one({"a": 1, "b": 2}, ".a + .b") == 3
 
@@ -410,17 +418,15 @@ class TestJqArithmetic:
         assert eval_one({"a": 10, "b": 2}, ".a / .b") == 5.0
 
     def test_add_string_concat(self):
-        assert eval_one({
-            "a": "hello",
-            "b": " world"
-        }, ".a + .b") == "hello world"
+        assert (
+            eval_one({"a": "hello", "b": " world"}, ".a + .b") == "hello world"
+        )
 
     def test_add_literal_number(self):
         assert eval_one({"a": 1}, ".a + 10") == 11
 
 
 class TestJqObjectConstruction:
-
     def test_object_construction(self):
         data = {"name": "alice", "age": 30}
         result = eval_one(data, "{name: .name}")
@@ -433,7 +439,6 @@ class TestJqObjectConstruction:
 
 
 class TestJqAlternative:
-
     def test_alternative_with_null(self):
         assert eval_one({"a": None}, '.a // "default"') == "default"
 
@@ -445,7 +450,6 @@ class TestJqAlternative:
 
 
 class TestJqIfThenElse:
-
     def test_if_then_else_true(self):
         result = eval_one({"x": 5}, 'if .x > 3 then "big" else "small" end')
         assert result == "big"
@@ -456,7 +460,6 @@ class TestJqIfThenElse:
 
 
 class TestJqSortByGroupBy:
-
     def test_sort_by(self):
         data = [{"a": 3}, {"a": 1}, {"a": 2}]
         result = eval_one(data, "sort_by(.a)")
@@ -466,22 +469,12 @@ class TestJqSortByGroupBy:
         data = [{"k": "a", "v": 1}, {"k": "b", "v": 2}, {"k": "a", "v": 3}]
         result = eval_one(data, "group_by(.k)")
         assert result == [
-            [{
-                "k": "a",
-                "v": 1
-            }, {
-                "k": "a",
-                "v": 3
-            }],
-            [{
-                "k": "b",
-                "v": 2
-            }],
+            [{"k": "a", "v": 1}, {"k": "a", "v": 3}],
+            [{"k": "b", "v": 2}],
         ]
 
 
 class TestJqBugFixes:
-
     def test_double_array_iteration(self):
         data = [[1, 2], [3, 4]]
         result = jq_eval(data, ".[] | .[]")
@@ -511,13 +504,13 @@ class TestJqBugFixes:
 
 
 class TestJqParensAndArrayConstruction:
-
     def test_parens_unwrap_single(self):
         assert eval_one({"items": [1, 2, 3]}, "(.items | length)") == 3
 
     def test_parens_in_object_value(self):
-        result = eval_one({"items": [1, 2, 3]},
-                          "{n: (.items | length), first: .items[0]}")
+        result = eval_one(
+            {"items": [1, 2, 3]}, "{n: (.items | length), first: .items[0]}"
+        )
         assert result == {"n": 3, "first": 1}
 
     def test_array_construction_collects_spread(self):
@@ -546,82 +539,61 @@ class TestJqParensAndArrayConstruction:
 
     def test_full_slides_summary_expression(self):
         data = {
-            "title":
-            "Deck",
+            "title": "Deck",
             "slides": [
                 {
-                    "objectId":
-                    "s1",
+                    "objectId": "s1",
                     "pageElements": [
                         {
                             "shape": {
                                 "shapeType": "TITLE",
                                 "text": {
                                     "textElements": [
-                                        {
-                                            "textRun": {
-                                                "content": "Hello "
-                                            }
-                                        },
-                                        {
-                                            "textRun": {
-                                                "content": "world"
-                                            }
-                                        },
+                                        {"textRun": {"content": "Hello "}},
+                                        {"textRun": {"content": "world"}},
                                     ]
                                 },
                             }
                         },
-                        {
-                            "image": {
-                                "url": "..."
-                            }
-                        },
+                        {"image": {"url": "..."}},
                     ],
                 },
                 {
-                    "objectId":
-                    "s2",
-                    "pageElements": [{
-                        "shape": {
-                            "shapeType": "TEXT_BOX",
-                            "text": {
-                                "textElements": [{
-                                    "textRun": {
-                                        "content": "Bye"
-                                    }
-                                }]
-                            },
+                    "objectId": "s2",
+                    "pageElements": [
+                        {
+                            "shape": {
+                                "shapeType": "TEXT_BOX",
+                                "text": {
+                                    "textElements": [
+                                        {"textRun": {"content": "Bye"}}
+                                    ]
+                                },
+                            }
                         }
-                    }],
+                    ],
                 },
             ],
         }
-        expr = ('{title: .title, slideCount: (.slides | length), '
-                'slides: [.slides[] | {objectId, '
-                'elements: [.pageElements[] | select(.shape != null) | '
-                '{type: .shape.shapeType, '
-                'text: [.shape.text.textElements[].textRun.content] '
-                '| join("")}]}]}')
+        expr = (
+            "{title: .title, slideCount: (.slides | length), "
+            "slides: [.slides[] | {objectId, "
+            "elements: [.pageElements[] | select(.shape != null) | "
+            "{type: .shape.shapeType, "
+            "text: [.shape.text.textElements[].textRun.content] "
+            '| join("")}]}]}'
+        )
         assert eval_one(data, expr) == {
-            "title":
-            "Deck",
-            "slideCount":
-            2,
+            "title": "Deck",
+            "slideCount": 2,
             "slides": [
                 {
                     "objectId": "s1",
-                    "elements": [{
-                        "type": "TITLE",
-                        "text": "Hello world"
-                    }],
+                    "elements": [{"type": "TITLE", "text": "Hello world"}],
                 },
                 {
                     "objectId": "s2",
-                    "elements": [{
-                        "type": "TEXT_BOX",
-                        "text": "Bye"
-                    }],
+                    "elements": [{"type": "TEXT_BOX", "text": "Bye"}],
                 },
             ],
         }
@@ -634,31 +606,19 @@ class TestJqRealLibjqExpressions:
 
     def _slides_doc(self) -> dict:
         return {
-            "title":
-            "Deck",
+            "title": "Deck",
             "slides": [
                 {
-                    "objectId":
-                    "s1",
+                    "objectId": "s1",
                     "pageElements": [
                         {
                             "shape": {
                                 "shapeType": "TITLE",
                                 "text": {
                                     "textElements": [
-                                        {
-                                            "textRun": {
-                                                "content": "Hello "
-                                            }
-                                        },
-                                        {
-                                            "paragraphMarker": {}
-                                        },
-                                        {
-                                            "textRun": {
-                                                "content": "world"
-                                            }
-                                        },
+                                        {"textRun": {"content": "Hello "}},
+                                        {"paragraphMarker": {}},
+                                        {"textRun": {"content": "world"}},
                                     ]
                                 },
                             }
@@ -666,64 +626,61 @@ class TestJqRealLibjqExpressions:
                     ],
                 },
                 {
-                    "objectId":
-                    "s2",
-                    "pageElements": [{
-                        "shape": {
-                            "shapeType": "TEXT_BOX",
-                            "text": {
-                                "textElements": [{
-                                    "textRun": {
-                                        "content": "Bye"
-                                    }
-                                }]
-                            },
+                    "objectId": "s2",
+                    "pageElements": [
+                        {
+                            "shape": {
+                                "shapeType": "TEXT_BOX",
+                                "text": {
+                                    "textElements": [
+                                        {"textRun": {"content": "Bye"}}
+                                    ]
+                                },
+                            }
                         }
-                    }],
+                    ],
                 },
             ],
         }
 
     def test_user_query_with_select_textRun_then_join(self):
-        expr = ('[.slides[].pageElements[].shape.text.textElements[] | '
-                'select(.textRun != null) | .textRun.content] | join("")')
+        expr = (
+            "[.slides[].pageElements[].shape.text.textElements[] | "
+            'select(.textRun != null) | .textRun.content] | join("")'
+        )
         assert eval_one(self._slides_doc(), expr) == "Hello worldBye"
 
     def test_user_query_array_per_slide_then_join(self):
-        expr = ('[.slides[] | '
-                '[.pageElements[].shape.text.textElements[].textRun.content] '
-                '| join("")]')
+        expr = (
+            "[.slides[] | "
+            "[.pageElements[].shape.text.textElements[].textRun.content] "
+            '| join("")]'
+        )
         # paragraphMarker has no textRun -> jq returns null; join treats null
         # as empty -> "Hello world" for s1, "Bye" for s2.
         assert eval_one(self._slides_doc(), expr) == ["Hello world", "Bye"]
 
     def test_user_query_full_summary_object(self):
-        expr = ('{title: .title, '
-                'slideCount: (.slides | length), '
-                'slides: [.slides[] | {objectId, '
-                'elements: [.pageElements[] | select(.shape != null) | '
-                '{type: .shape.shapeType, '
-                'text: [.shape.text.textElements[].textRun.content] '
-                '| join("")}]}]}')
+        expr = (
+            "{title: .title, "
+            "slideCount: (.slides | length), "
+            "slides: [.slides[] | {objectId, "
+            "elements: [.pageElements[] | select(.shape != null) | "
+            "{type: .shape.shapeType, "
+            "text: [.shape.text.textElements[].textRun.content] "
+            '| join("")}]}]}'
+        )
         assert eval_one(self._slides_doc(), expr) == {
-            "title":
-            "Deck",
-            "slideCount":
-            2,
+            "title": "Deck",
+            "slideCount": 2,
             "slides": [
                 {
                     "objectId": "s1",
-                    "elements": [{
-                        "type": "TITLE",
-                        "text": "Hello world"
-                    }],
+                    "elements": [{"type": "TITLE", "text": "Hello world"}],
                 },
                 {
                     "objectId": "s2",
-                    "elements": [{
-                        "type": "TEXT_BOX",
-                        "text": "Bye"
-                    }],
+                    "elements": [{"type": "TEXT_BOX", "text": "Bye"}],
                 },
             ],
         }
@@ -762,35 +719,30 @@ class TestJqRealLibjqExpressions:
         # `walk` is a real jq builtin the homegrown didn't have.
         data = {"a": "FOO", "b": ["BAR", "BAZ"]}
         result = eval_one(
-            data, 'walk(if type == "string" then ascii_downcase else . end)')
+            data, 'walk(if type == "string" then ascii_downcase else . end)'
+        )
         assert result == {"a": "foo", "b": ["bar", "baz"]}
 
     def test_nested_object_with_paren_value(self):
         data = {"items": [1, 2, 3]}
         result = eval_one(
-            data, "{count: (.items | length), max: (.items | max), "
-            "sum: ([.items[]] | add)}")
+            data,
+            "{count: (.items | length), max: (.items | max), "
+            "sum: ([.items[]] | add)}",
+        )
         assert result == {"count": 3, "max": 3, "sum": 6}
 
     def test_select_chain_inside_array_construction(self):
         data = {
             "users": [
-                {
-                    "name": "alice",
-                    "active": True
-                },
-                {
-                    "name": "bob",
-                    "active": False
-                },
-                {
-                    "name": "carol",
-                    "active": True
-                },
+                {"name": "alice", "active": True},
+                {"name": "bob", "active": False},
+                {"name": "carol", "active": True},
             ]
         }
         result = eval_one(
-            data, "[.users[] | select(.active) | .name] | join(\", \")")
+            data, '[.users[] | select(.active) | .name] | join(", ")'
+        )
         assert result == "alice, carol"
 
     def test_top_level_select_produces_no_output(self):
@@ -800,10 +752,9 @@ class TestJqRealLibjqExpressions:
 
 
 class TestJqMemoryBackend:
-
     def test_single_path(self):
         ws = mem_ws({"/data.json": b'{"key": "value"}'})
-        stdout, _ = run_raw(ws, 'jq .key /data/data.json')
+        stdout, _ = run_raw(ws, "jq .key /data/data.json")
         result = json.loads(collect(stdout))
         assert result == "value"
 
@@ -821,7 +772,7 @@ class TestJqMemoryBackend:
         assert result == "stdin-test"
 
     def test_dot_returns_full(self):
-        ws = mem_ws({"/f.json": b'[1, 2, 3]'})
+        ws = mem_ws({"/f.json": b"[1, 2, 3]"})
         stdout, _ = run_raw(ws, "jq . /data/f.json")
         result = json.loads(collect(stdout))
         assert result == [1, 2, 3]
@@ -851,14 +802,14 @@ class TestJqMemoryBackend:
         assert result == ["a", "b"]
 
     def test_spread_array_iteration(self):
-        ws = mem_ws({"/f.json": b'[10, 20, 30]'})
+        ws = mem_ws({"/f.json": b"[10, 20, 30]"})
         stdout, _ = run_raw(ws, "jq '.[]' /data/f.json")
         lines = collect(stdout).strip().splitlines()
         result = [json.loads(line) for line in lines]
         assert result == [10, 20, 30]
 
     def test_no_spread_dot_on_array(self):
-        ws = mem_ws({"/f.json": b'[10, 20, 30]'})
+        ws = mem_ws({"/f.json": b"[10, 20, 30]"})
         stdout, _ = run_raw(ws, "jq '.' /data/f.json")
         result = json.loads(collect(stdout))
         assert result == [10, 20, 30]
@@ -872,14 +823,14 @@ class TestJqMemoryBackend:
 
     def test_spread_via_stdin(self):
         ws = mem_ws()
-        stdout, _ = run_raw(ws, "jq '.[]'", stdin=b'[1, 2, 3]')
+        stdout, _ = run_raw(ws, "jq '.[]'", stdin=b"[1, 2, 3]")
         lines = collect(stdout).strip().splitlines()
         result = [json.loads(line) for line in lines]
         assert result == [1, 2, 3]
 
     def test_no_spread_dot_via_stdin(self):
         ws = mem_ws()
-        stdout, _ = run_raw(ws, "jq '.'", stdin=b'[1, 2, 3]')
+        stdout, _ = run_raw(ws, "jq '.'", stdin=b"[1, 2, 3]")
         result = json.loads(collect(stdout))
         assert result == [1, 2, 3]
 
@@ -898,15 +849,16 @@ class TestJqMemoryBackend:
 
 
 class TestJqDiskBackend:
-
     def _disk_ws(self, tmp_path, files):
         from mirage.vfs.disk.disk import DiskVFS
+
         for name, data in files.items():
             fp = tmp_path / name.lstrip("/")
             fp.parent.mkdir(parents=True, exist_ok=True)
             fp.write_bytes(data)
         disk = DiskVFS(str(tmp_path))
         from mirage.workspace import Workspace
+
         return Workspace(
             {"/disk": (disk, MountMode.WRITE)},
             mode=MountMode.WRITE,
@@ -938,7 +890,7 @@ class TestJqDiskBackend:
         assert result == [10, 20, 30]
 
     def test_pipe_length(self, tmp_path):
-        ws = self._disk_ws(tmp_path, {"/f.json": b'[1, 2, 3, 4]'})
+        ws = self._disk_ws(tmp_path, {"/f.json": b"[1, 2, 3, 4]"})
         stdout, _ = run_raw(ws, "jq '. | length' /disk/f.json")
         result = json.loads(collect(stdout))
         assert result == 4
@@ -949,14 +901,14 @@ class TestJqDiskBackend:
         assert io.exit_code != 0
 
     def test_spread_iteration(self, tmp_path):
-        ws = self._disk_ws(tmp_path, {"/f.json": b'[1, 2, 3]'})
+        ws = self._disk_ws(tmp_path, {"/f.json": b"[1, 2, 3]"})
         stdout, _ = run_raw(ws, "jq '.[]' /disk/f.json")
         lines = collect(stdout).strip().splitlines()
         result = [json.loads(line) for line in lines]
         assert result == [1, 2, 3]
 
     def test_no_spread_dot_array(self, tmp_path):
-        ws = self._disk_ws(tmp_path, {"/f.json": b'[1, 2, 3]'})
+        ws = self._disk_ws(tmp_path, {"/f.json": b"[1, 2, 3]"})
         stdout, _ = run_raw(ws, "jq '.' /disk/f.json")
         result = json.loads(collect(stdout))
         assert result == [1, 2, 3]
@@ -969,10 +921,10 @@ class TestJqDiskBackend:
 
 
 class TestJqS3Backend:
-
     def _s3_ws(self):
         from mirage.vfs.s3.s3 import S3VFS, S3Config
         from mirage.workspace import Workspace
+
         config = S3Config(bucket="test-bucket", region="us-east-1")
         s3 = S3VFS(config)
         return Workspace(
@@ -995,23 +947,28 @@ class TestJqS3Backend:
 
     def test_stdin_length(self):
         ws = self._s3_ws()
-        stdout, _ = run_raw(ws, "jq length", stdin=b'[1, 2, 3]')
+        stdout, _ = run_raw(ws, "jq length", stdin=b"[1, 2, 3]")
         result = json.loads(collect(stdout))
         assert result == 3
 
     def _run_jq_path(self, data, expr):
-        ops = CommandIO(readdir=None,
-                        read_bytes=partial(_const_bytes, data),
-                        read_stream=partial(_const_stream, data),
-                        stat=None,
-                        is_mounted=lambda a: True,
-                        local=False)
-        path = PathSpec(vfs_path="s3/data.json",
-                        virtual="/s3/data.json",
-                        directory="/s3",
-                        resolved=True)
+        ops = CommandIO(
+            readdir=None,
+            read_bytes=partial(_const_bytes, data),
+            read_stream=partial(_const_stream, data),
+            stat=None,
+            is_mounted=lambda a: True,
+            local=False,
+        )
+        path = PathSpec(
+            vfs_path="s3/data.json",
+            virtual="/s3/data.json",
+            directory="/s3",
+            resolved=True,
+        )
         return asyncio.run(
-            _collect_jq(ops, S3Accessor.__new__(S3Accessor), [path], expr))
+            _collect_jq(ops, S3Accessor.__new__(S3Accessor), [path], expr)
+        )
 
     def test_path_with_mock(self):
         out = self._run_jq_path(b'{"name": "from-s3"}', ".name")
@@ -1027,30 +984,31 @@ class TestJqS3Backend:
         assert json.loads(out) == 3
 
     def test_spread_iteration_mock(self):
-        out = self._run_jq_path(b'[10, 20, 30]', ".[]")
+        out = self._run_jq_path(b"[10, 20, 30]", ".[]")
         result = [json.loads(line) for line in out.strip().splitlines()]
         assert result == [10, 20, 30]
 
     def test_no_spread_dot_mock(self):
-        out = self._run_jq_path(b'[10, 20, 30]', ".")
+        out = self._run_jq_path(b"[10, 20, 30]", ".")
         assert json.loads(out) == [10, 20, 30]
 
     def test_spread_stdin(self):
         ws = self._s3_ws()
-        stdout, _ = run_raw(ws, "jq '.[]'", stdin=b'[1, 2, 3]')
+        stdout, _ = run_raw(ws, "jq '.[]'", stdin=b"[1, 2, 3]")
         lines = collect(stdout).strip().splitlines()
         result = [json.loads(line) for line in lines]
         assert result == [1, 2, 3]
 
     def test_no_spread_dot_stdin(self):
         ws = self._s3_ws()
-        stdout, _ = run_raw(ws, "jq '.'", stdin=b'[1, 2, 3]')
+        stdout, _ = run_raw(ws, "jq '.'", stdin=b"[1, 2, 3]")
         result = json.loads(collect(stdout))
         assert result == [1, 2, 3]
 
     def test_disk_multiple_paths(self, tmp_path):
         from mirage.vfs.disk.disk import DiskVFS
         from mirage.workspace import Workspace
+
         (tmp_path / "a.json").write_bytes(b'{"x": 1}')
         (tmp_path / "b.json").write_bytes(b'{"x": 2}')
         disk = DiskVFS(str(tmp_path))

@@ -26,7 +26,6 @@ from mirage.vfs.email.prompt import PROMPT, WRITE_PROMPT
 
 
 class EmailVFS(BaseVFS):
-
     accessor: EmailAccessor
     name: str = VFSName.EMAIL
     caches_reads: bool = True

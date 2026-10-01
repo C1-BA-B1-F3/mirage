@@ -18,9 +18,14 @@ import pytest
 
 from mirage.core.google.client import TokenManager
 from mirage.core.google.config import GoogleConfig
-from mirage.core.google.drive import (delete_file, download_file, get_file,
-                                      list_all_files, list_files,
-                                      list_shared_drives)
+from mirage.core.google.drive import (
+    delete_file,
+    download_file,
+    get_file,
+    list_all_files,
+    list_files,
+    list_shared_drives,
+)
 
 
 @pytest.fixture
@@ -44,22 +49,18 @@ def token_manager(config):
 async def test_list_files(token_manager):
     mock_response = {
         "files": [
-            {
-                "id": "f1",
-                "name": "doc.txt",
-                "mimeType": "text/plain"
-            },
+            {"id": "f1", "name": "doc.txt", "mimeType": "text/plain"},
             {
                 "id": "f2",
                 "name": "sheet",
-                "mimeType": "application/vnd.google-apps.spreadsheet"
+                "mimeType": "application/vnd.google-apps.spreadsheet",
             },
         ],
     }
     with patch(
-            "mirage.core.google.drive.google_get",
-            new_callable=AsyncMock,
-            return_value=mock_response,
+        "mirage.core.google.drive.google_get",
+        new_callable=AsyncMock,
+        return_value=mock_response,
     ) as mock_get:
         result = await list_files(token_manager, folder_id="folder123")
         assert len(result) == 2
@@ -73,13 +74,13 @@ async def test_list_files(token_manager):
 @pytest.mark.asyncio
 async def test_list_files_shared_drive_sets_corpus_params(token_manager):
     with patch(
-            "mirage.core.google.drive.google_get",
-            new_callable=AsyncMock,
-            return_value={"files": []},
+        "mirage.core.google.drive.google_get",
+        new_callable=AsyncMock,
+        return_value={"files": []},
     ) as mock_get:
-        await list_files(token_manager,
-                         folder_id="folder123",
-                         drive_id="drive123")
+        await list_files(
+            token_manager, folder_id="folder123", drive_id="drive123"
+        )
 
     params = mock_get.call_args.kwargs["params"]
     assert params["corpora"] == "drive"
@@ -92,35 +93,23 @@ async def test_list_files_shared_drive_sets_corpus_params(token_manager):
 async def test_list_shared_drives_paginates(token_manager):
     responses = [
         {
-            "drives": [{
-                "id": "drive1",
-                "name": "Team"
-            }],
+            "drives": [{"id": "drive1", "name": "Team"}],
             "nextPageToken": "next",
         },
         {
-            "drives": [{
-                "id": "drive2",
-                "name": "Projects"
-            }],
+            "drives": [{"id": "drive2", "name": "Projects"}],
         },
     ]
     with patch(
-            "mirage.core.google.drive.google_get",
-            new_callable=AsyncMock,
-            side_effect=responses,
+        "mirage.core.google.drive.google_get",
+        new_callable=AsyncMock,
+        side_effect=responses,
     ) as mock_get:
         result = await list_shared_drives(token_manager)
 
     assert result == [
-        {
-            "id": "drive1",
-            "name": "Team"
-        },
-        {
-            "id": "drive2",
-            "name": "Projects"
-        },
+        {"id": "drive1", "name": "Team"},
+        {"id": "drive2", "name": "Projects"},
     ]
     assert mock_get.call_count == 2
     assert "pageToken" not in mock_get.call_args_list[0].kwargs["params"]
@@ -130,24 +119,16 @@ async def test_list_shared_drives_paginates(token_manager):
 @pytest.mark.asyncio
 async def test_list_all_files(token_manager):
     page1 = {
-        "files": [{
-            "id": "f1",
-            "name": "a.txt",
-            "mimeType": "text/plain"
-        }],
+        "files": [{"id": "f1", "name": "a.txt", "mimeType": "text/plain"}],
         "nextPageToken": "token2",
     }
     page2 = {
-        "files": [{
-            "id": "f2",
-            "name": "b.txt",
-            "mimeType": "text/plain"
-        }],
+        "files": [{"id": "f2", "name": "b.txt", "mimeType": "text/plain"}],
     }
     with patch(
-            "mirage.core.google.drive.google_get",
-            new_callable=AsyncMock,
-            side_effect=[page1, page2],
+        "mirage.core.google.drive.google_get",
+        new_callable=AsyncMock,
+        side_effect=[page1, page2],
     ):
         result, complete = await list_all_files(token_manager)
         assert len(result) == 2
@@ -160,9 +141,9 @@ async def test_list_all_files(token_manager):
 async def test_download_file(token_manager):
     content = b"file content bytes"
     with patch(
-            "mirage.core.google.drive.google_get_bytes",
-            new_callable=AsyncMock,
-            return_value=content,
+        "mirage.core.google.drive.google_get_bytes",
+        new_callable=AsyncMock,
+        return_value=content,
     ) as mock_get:
         result = await download_file(token_manager, "file123")
         assert result == content
@@ -172,8 +153,8 @@ async def test_download_file(token_manager):
 @pytest.mark.asyncio
 async def test_delete_file_supports_shared_drives(token_manager):
     with patch(
-            "mirage.core.google.drive.google_delete",
-            new_callable=AsyncMock,
+        "mirage.core.google.drive.google_delete",
+        new_callable=AsyncMock,
     ) as mock_delete:
         await delete_file(token_manager, "file123")
 
@@ -239,18 +220,15 @@ async def test_list_all_files_reports_an_incomplete_search(token_manager):
     directory.
     """
     page1 = {
-        "files": [{
-            "id": "f1",
-            "name": "a.txt"
-        }],
+        "files": [{"id": "f1", "name": "a.txt"}],
         "incompleteSearch": True,
         "nextPageToken": "token2",
     }
     page2 = {"files": [{"id": "f2", "name": "b.txt"}]}
     with patch(
-            "mirage.core.google.drive.google_get",
-            new_callable=AsyncMock,
-            side_effect=[page1, page2],
+        "mirage.core.google.drive.google_get",
+        new_callable=AsyncMock,
+        side_effect=[page1, page2],
     ):
         result, complete = await list_all_files(token_manager)
     assert [f["id"] for f in result] == ["f1", "f2"]
@@ -341,7 +319,7 @@ async def test_list_files_asks_for_both_content_tokens(token_manager):
         await list_files(token_manager=token_manager, folder_id="root")
 
     fields = captured["params"]["fields"]
-    inner = fields[fields.index("files(") + len("files("):]
+    inner = fields[fields.index("files(") + len("files(") :]
     assert "md5Checksum" in inner
     assert "headRevisionId" in inner
 

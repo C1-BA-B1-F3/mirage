@@ -28,8 +28,10 @@ ws = Workspace({"/data": RAMVFS()}, mode=MountMode.WRITE)
 agent = Agent(
     model=OpenAIChat(id="gpt-4o"),
     tools=[MirageToolkit(ws)],
-    instructions=("You have access to a virtual filesystem via shell "
-                  "tools. Use them to explore and read files."),
+    instructions=(
+        "You have access to a virtual filesystem via shell "
+        "tools. Use them to explore and read files."
+    ),
     markdown=True,
 )
 
@@ -45,8 +47,10 @@ async def main() -> None:
         total = sum(r.bytes for r in records)
         print(f"\n--- {len(records)} ops, {total:,} bytes ---")
         for r in records:
-            print(f"  {r.op:<8} {r.source:<8} {r.bytes:>10,} B "
-                  f"{r.duration_ms:>5} ms  {r.path}")
+            print(
+                f"  {r.op:<8} {r.source:<8} {r.bytes:>10,} B "
+                f"{r.duration_ms:>5} ms  {r.path}"
+            )
 
 
 if __name__ == "__main__":

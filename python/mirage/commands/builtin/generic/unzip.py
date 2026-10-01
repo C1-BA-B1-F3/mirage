@@ -5,12 +5,19 @@ import zipfile
 from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass
 
-from mirage.commands.builtin.generic.archive.extract import (ensure_dir,
-                                                             extract_dest)
+from mirage.commands.builtin.generic.archive.extract import (
+    ensure_dir,
+    extract_dest,
+)
 from mirage.commands.builtin.generic.archive.walk import StatFn
-from mirage.commands.builtin.generic.archive.zipinfo import (  # yapf: disable
-    ZipRow, render_header, render_row, render_totals, render_verbose,
-    zipinfo_layout)
+from mirage.commands.builtin.generic.archive.zipinfo import (
+    ZipRow,
+    render_header,
+    render_row,
+    render_totals,
+    render_verbose,
+    zipinfo_layout,
+)
 from mirage.commands.builtin.utils.copy import path_exists
 from mirage.commands.config import CommandOpts
 from mirage.commands.errors import UsageError
@@ -36,20 +43,26 @@ CENTRAL_SIGNATURE = b"PK\x01\x02"
 # unzip signs it below, zipinfo signs it below under its own name, and
 # -p names the archive above it and does not sign. The exit codes are
 # theirs too: 9 for no archive, 3 for a corrupt one.
-NO_EOCD = ("  End-of-central-directory signature not found.  Either this file"
-           " is not\n  a zipfile, or it constitutes one disk of a multi-part"
-           " archive.  In the\n  latter case the central directory and zipfile"
-           " comment will be found on\n  the last disk(s) of this archive.\n")
-UNZIP_NO_DIRECTORY = ("unzip:  cannot find zipfile directory in one of {0} or"
-                      "\n        {0}.zip, and cannot find {0}.ZIP, period.\n")
+NO_EOCD = (
+    "  End-of-central-directory signature not found.  Either this file"
+    " is not\n  a zipfile, or it constitutes one disk of a multi-part"
+    " archive.  In the\n  latter case the central directory and zipfile"
+    " comment will be found on\n  the last disk(s) of this archive.\n"
+)
+UNZIP_NO_DIRECTORY = (
+    "unzip:  cannot find zipfile directory in one of {0} or"
+    "\n        {0}.zip, and cannot find {0}.ZIP, period.\n"
+)
 ZIPINFO_NO_DIRECTORY = (
     "zipinfo:  cannot find zipfile directory in one of {0} or"
-    "\n          {0}.zip, and cannot find {0}.ZIP, period.\n")
+    "\n          {0}.zip, and cannot find {0}.ZIP, period.\n"
+)
 CORRUPT_CDIR = (
     "error [{0}]:  start of central directory not found;\n"
     "  zipfile corrupt.\n"
     "  (please check that you have transferred or created the zipfile in the"
-    "\n  appropriate BINARY mode and that you have compiled UnZip properly)\n")
+    "\n  appropriate BINARY mode and that you have compiled UnZip properly)\n"
+)
 NO_ARCHIVE_EXIT = 9
 CORRUPT_EXIT = 3
 # Info-ZIP's refusals of a create: a member it cannot write (exit 50,
@@ -57,10 +70,13 @@ CORRUPT_EXIT = 3
 # directory it cannot make (exit 2, before any member). The strerror
 # line hangs under the text after the label, as UnZip 6.00 indents it.
 CREATE_ERROR = "error:  cannot {0} {1}\n        {2}\n"
-CHECKDIR_ERROR = ("checkdir error:  cannot create {0}\n                 {1}\n"
-                  "                 unable to process {2}.\n")
-CHECKDIR_DEST = ("checkdir:  cannot create extraction directory: {0}\n"
-                 "           {1}\n")
+CHECKDIR_ERROR = (
+    "checkdir error:  cannot create {0}\n                 {1}\n"
+    "                 unable to process {2}.\n"
+)
+CHECKDIR_DEST = (
+    "checkdir:  cannot create extraction directory: {0}\n           {1}\n"
+)
 CREATE_EXIT = 50
 DEST_EXIT = 2
 # The end record says where the central directory should start; bytes
@@ -69,10 +85,14 @@ DEST_EXIT = 2
 # offset shifted, or as an error (exit 2) when bytes are missing instead.
 # Info-ZIP prints this on stdout under -t and between the header and
 # the rows under -Z; mirage keeps every diagnostic on stderr.
-EXTRA_BYTES = ("warning [{0}]:  {1} extra byte{2} at beginning or within "
-               "zipfile\n  (attempting to process anyway)\n")
-MISSING_BYTES = ("error [{0}]:  missing {1} bytes in zipfile\n"
-                 "  (attempting to process anyway)\n")
+EXTRA_BYTES = (
+    "warning [{0}]:  {1} extra byte{2} at beginning or within "
+    "zipfile\n  (attempting to process anyway)\n"
+)
+MISSING_BYTES = (
+    "error [{0}]:  missing {1} bytes in zipfile\n"
+    "  (attempting to process anyway)\n"
+)
 ZERO_TESTED = "Caution:  zero files tested in {0}.\n"
 WARN_EXIT = 1
 MISSING_EXIT = 2
@@ -90,9 +110,9 @@ def _spec_index(name: bytes, members: tuple[bytes, ...]) -> int | None:
 
 
 def _select(
-    infos: list[zipfile.ZipInfo], members: tuple[str,
-                                                 ...], excludes: tuple[str,
-                                                                       ...]
+    infos: list[zipfile.ZipInfo],
+    members: tuple[str, ...],
+    excludes: tuple[str, ...],
 ) -> tuple[list[zipfile.ZipInfo], list[str], list[str]]:
     """Choose the entries the member and exclude patterns leave.
 
@@ -159,8 +179,8 @@ def _offset_slack(data: bytes) -> int:
     at = data.rfind(EOCD_SIGNATURE, max(0, len(data) - EOCD_SEARCH))
     if at < 0 or at + 20 > len(data):
         return 0
-    cd_size = int.from_bytes(data[at + 12:at + 16], "little")
-    cd_offset = int.from_bytes(data[at + 16:at + 20], "little")
+    cd_size = int.from_bytes(data[at + 12 : at + 16], "little")
+    cd_offset = int.from_bytes(data[at + 16 : at + 20], "little")
     return at - (cd_offset + cd_size)
 
 
@@ -173,8 +193,9 @@ def _slack_warning(slack: int, archive: str) -> tuple[str, int]:
     """
     if slack < 0:
         return MISSING_BYTES.format(archive, -slack), MISSING_EXIT
-    return EXTRA_BYTES.format(archive, slack,
-                              "" if slack == 1 else "s"), WARN_EXIT
+    return EXTRA_BYTES.format(
+        archive, slack, "" if slack == 1 else "s"
+    ), WARN_EXIT
 
 
 def _central_directory_tiles(data: bytes) -> bool:
@@ -194,24 +215,28 @@ def _central_directory_tiles(data: bytes) -> bool:
     at = data.rfind(EOCD_SIGNATURE, max(0, len(data) - EOCD_SEARCH))
     if at < 0 or at + 20 > len(data):
         return False
-    count = int.from_bytes(data[at + 10:at + 12], "little")
-    cd_size = int.from_bytes(data[at + 12:at + 16], "little")
+    count = int.from_bytes(data[at + 10 : at + 12], "little")
+    cd_size = int.from_bytes(data[at + 12 : at + 16], "little")
     offset = at - cd_size
     for _ in range(count):
-        if offset < 0 or offset + 46 > at or not data.startswith(
-                CENTRAL_SIGNATURE, offset):
+        if (
+            offset < 0
+            or offset + 46 > at
+            or not data.startswith(CENTRAL_SIGNATURE, offset)
+        ):
             return False
-        name_len = int.from_bytes(data[offset + 28:offset + 30], "little")
-        extra_len = int.from_bytes(data[offset + 30:offset + 32], "little")
-        comment_len = int.from_bytes(data[offset + 32:offset + 34], "little")
+        name_len = int.from_bytes(data[offset + 28 : offset + 30], "little")
+        extra_len = int.from_bytes(data[offset + 30 : offset + 32], "little")
+        comment_len = int.from_bytes(data[offset + 32 : offset + 34], "little")
         offset += 46 + name_len + extra_len + comment_len
         if offset > at:
             return False
     return offset == at
 
 
-def _refusal(data: bytes, archive: str, *, zipinfo: bool,
-             pipe: bool) -> IOResult:
+def _refusal(
+    data: bytes, archive: str, *, zipinfo: bool, pipe: bool
+) -> IOResult:
     """Info-ZIP's answer to a file zipfile could not open.
 
     Args:
@@ -228,34 +253,49 @@ def _refusal(data: bytes, archive: str, *, zipinfo: bool,
             tail = ZIPINFO_NO_DIRECTORY.format(archive)
         else:
             tail = UNZIP_NO_DIRECTORY.format(archive)
-        return IOResult(exit_code=NO_ARCHIVE_EXIT,
-                        stderr=(head + NO_EOCD + tail).encode())
-    return IOResult(exit_code=CORRUPT_EXIT,
-                    stderr=CORRUPT_CDIR.format(archive).encode())
+        return IOResult(
+            exit_code=NO_ARCHIVE_EXIT, stderr=(head + NO_EOCD + tail).encode()
+        )
+    return IOResult(
+        exit_code=CORRUPT_EXIT, stderr=CORRUPT_CDIR.format(archive).encode()
+    )
 
 
 def _row(info: zipfile.ZipInfo) -> ZipRow:
-    return ZipRow(name=info.filename,
-                  size=info.file_size,
-                  csize=info.compress_size,
-                  method=info.compress_type,
-                  flags=info.flag_bits,
-                  internal_attr=info.internal_attr,
-                  external_attr=info.external_attr,
-                  host=info.create_system,
-                  host_version=info.create_version,
-                  date_time=info.date_time,
-                  has_extra=bool(info.extra),
-                  crc=info.CRC,
-                  comment=info.comment)
+    return ZipRow(
+        name=info.filename,
+        size=info.file_size,
+        csize=info.compress_size,
+        method=info.compress_type,
+        flags=info.flag_bits,
+        internal_attr=info.internal_attr,
+        external_attr=info.external_attr,
+        host=info.create_system,
+        host_version=info.create_version,
+        date_time=info.date_time,
+        has_extra=bool(info.extra),
+        crc=info.CRC,
+        comment=info.comment,
+    )
 
 
-def _zipinfo(archive: str, zip_size: int, infos: list[zipfile.ZipInfo],
-             selected: list[zipfile.ZipInfo], unmatched: list[str],
-             unmatched_excludes: list[str], filtered: bool, *,
-             names_only: bool, names_headers: bool, long: bool, medium: bool,
-             short: bool, header: bool,
-             totals: bool) -> tuple[ByteSource | None, IOResult]:
+def _zipinfo(
+    archive: str,
+    zip_size: int,
+    infos: list[zipfile.ZipInfo],
+    selected: list[zipfile.ZipInfo],
+    unmatched: list[str],
+    unmatched_excludes: list[str],
+    filtered: bool,
+    *,
+    names_only: bool,
+    names_headers: bool,
+    long: bool,
+    medium: bool,
+    short: bool,
+    header: bool,
+    totals: bool,
+) -> tuple[ByteSource | None, IOResult]:
     """The ``-Z`` listing: zipinfo's rows, header and totals.
 
     zipinfo prints every unmatched pattern as a caution and exits 11
@@ -278,14 +318,16 @@ def _zipinfo(archive: str, zip_size: int, infos: list[zipfile.ZipInfo],
         header (bool): ``-h``.
         totals (bool): ``-t``.
     """
-    layout = zipinfo_layout(names_only=names_only,
-                            names_headers=names_headers,
-                            long=long,
-                            medium=medium,
-                            short=short,
-                            header=header,
-                            totals=totals,
-                            has_members=filtered)
+    layout = zipinfo_layout(
+        names_only=names_only,
+        names_headers=names_headers,
+        long=long,
+        medium=medium,
+        short=short,
+        header=header,
+        totals=totals,
+        has_members=filtered,
+    )
     rows = [_row(info) for info in selected]
     parts: list[str] = []
     if layout.header:
@@ -303,8 +345,12 @@ def _zipinfo(archive: str, zip_size: int, infos: list[zipfile.ZipInfo],
     return listing, IOResult(exit_code=exit_code, stderr=stderr)
 
 
-async def _make_dirs(dir_path: str, mkdir_fn: Callable[..., Awaitable[None]],
-                     stat: StatFn | None, made: set[str]) -> None:
+async def _make_dirs(
+    dir_path: str,
+    mkdir_fn: Callable[..., Awaitable[None]],
+    stat: StatFn | None,
+    made: set[str],
+) -> None:
     """Create the chain for one entry, per door space.
 
     With a stat door the shared single-level walk runs (dispatch mkdir
@@ -361,14 +407,16 @@ async def unzip(
             if given:
                 raise UsageError(
                     f"unzip: {letter} is a ZipInfo option and needs -Z",
-                    exit_code=USAGE_EXIT)
+                    exit_code=USAGE_EXIT,
+                )
     archive_path = paths[0]
     if relay:
         # Relay doors address by full virtual path (flat_scopes'
         # convention), not by the mount-relative key the wrapper's
         # accessor stamped.
         archive_path = dataclasses.replace(
-            archive_path, vfs_path=archive_path.virtual.strip("/"))
+            archive_path, vfs_path=archive_path.virtual.strip("/")
+        )
     data = await read_bytes(archive_path)
     if not _central_directory_tiles(data):
         return None, _refusal(data, archive_path.virtual, zipinfo=Z, pipe=p)
@@ -377,18 +425,44 @@ async def unzip(
     except zipfile.BadZipFile:
         return None, _refusal(data, archive_path.virtual, zipinfo=Z, pipe=p)
     with zf:
-        out, result = await _run(zf, data, archive_path, members, x,
-                                 write_bytes, mkdir_fn, stat, args_l, d, q, p,
-                                 t, v, Z, args_1, args_2, s, m, h, cwd, relay)
+        out, result = await _run(
+            zf,
+            data,
+            archive_path,
+            members,
+            x,
+            write_bytes,
+            mkdir_fn,
+            stat,
+            args_l,
+            d,
+            q,
+            p,
+            t,
+            v,
+            Z,
+            args_1,
+            args_2,
+            s,
+            m,
+            h,
+            cwd,
+            relay,
+        )
     slack = _offset_slack(data)
     if slack == 0:
         return out, result
     warning, floor = _slack_warning(slack, archive_path.virtual)
-    stderr = warning.encode() + (bytes(result.stderr) if isinstance(
-        result.stderr, (bytes, bytearray)) else b"")
-    return out, IOResult(exit_code=max(result.exit_code, floor),
-                         stderr=stderr,
-                         writes=result.writes)
+    stderr = warning.encode() + (
+        bytes(result.stderr)
+        if isinstance(result.stderr, (bytes, bytearray))
+        else b""
+    )
+    return out, IOResult(
+        exit_code=max(result.exit_code, floor),
+        stderr=stderr,
+        writes=result.writes,
+    )
 
 
 async def _run(
@@ -449,27 +523,32 @@ async def _run(
     filtered = bool(members or excludes)
     nothing_left = filtered and not selected
     if Z:
-        return _zipinfo(archive_path.virtual,
-                        len(data),
-                        infos,
-                        selected,
-                        unmatched,
-                        unmatched_excludes,
-                        filtered,
-                        names_only=args_1,
-                        names_headers=args_2,
-                        long=args_l,
-                        medium=m,
-                        short=s,
-                        header=h,
-                        totals=t)
+        return _zipinfo(
+            archive_path.virtual,
+            len(data),
+            infos,
+            selected,
+            unmatched,
+            unmatched_excludes,
+            filtered,
+            names_only=args_1,
+            names_headers=args_2,
+            long=args_l,
+            medium=m,
+            short=s,
+            header=h,
+            totals=t,
+        )
     # Info-ZIP lists only when neither -t nor -p asks for another mode,
     # and -v widens -l's columns into the verbose table.
     if (args_l or v) and not (t or p):
         if v:
-            listing = render_verbose(archive_path.virtual,
-                                     [_row(info) for info in selected], q,
-                                     zf.comment)
+            listing = render_verbose(
+                archive_path.virtual,
+                [_row(info) for info in selected],
+                q,
+                zf.comment,
+            )
         else:
             lines = ["  Length      Name", "---------  ----"]
             for info in selected:
@@ -486,8 +565,9 @@ async def _run(
         # a filter that leaves nothing is its own caution.
         cautions = _cautions(unmatched, unmatched_excludes)
         if unmatched:
-            msg = cautions + (f"At least one error was detected in "
-                              f"{archive_path.virtual}.\n")
+            msg = cautions + (
+                f"At least one error was detected in {archive_path.virtual}.\n"
+            )
             return msg.encode(), IOResult(exit_code=11)
         if nothing_left:
             msg = cautions + ZERO_TESTED.format(archive_path.virtual)
@@ -518,8 +598,8 @@ async def _run(
                 # lookup resolves every duplicate to the last one.
                 chunks.append(zf.read(info))
         return b"".join(chunks), IOResult(
-            exit_code=exit_code,
-            stderr=cautions.encode() if cautions else None)
+            exit_code=exit_code, stderr=cautions.encode() if cautions else None
+        )
     dest = extract_dest(d, cwd, relay)
     base = dest.rstrip("/")
     # Info-ZIP names an extracted path as the -d directory was typed
@@ -528,7 +608,7 @@ async def _run(
     typed_dest = (d.raw_path if isinstance(d, PathSpec) else d) or ""
 
     def shown(virtual: str) -> str:
-        rel = virtual[len(base):].lstrip("/")
+        rel = virtual[len(base) :].lstrip("/")
         return f"{typed_dest.rstrip('/')}/{rel}" if typed_dest else rel
 
     writes: dict[str, ByteSource] = {}
@@ -539,11 +619,17 @@ async def _run(
         try:
             await _make_dirs(dest, mkdir_fn, stat, made)
         except FS_ERRORS as exc:
-            output = ("\n".join(output_lines) +
-                      "\n").encode() if output_lines else None
-            return output, IOResult(exit_code=DEST_EXIT,
-                                    stderr=CHECKDIR_DEST.format(
-                                        typed_dest, fs_strerror(exc)).encode())
+            output = (
+                ("\n".join(output_lines) + "\n").encode()
+                if output_lines
+                else None
+            )
+            return output, IOResult(
+                exit_code=DEST_EXIT,
+                stderr=CHECKDIR_DEST.format(
+                    typed_dest, fs_strerror(exc)
+                ).encode(),
+            )
     for info in selected:
         entry_name = info.filename.lstrip("/")
         out_path = base + "/" + entry_name.rstrip("/")
@@ -555,8 +641,10 @@ async def _run(
                 await _make_dirs(chain, mkdir_fn, stat, made)
         except FS_ERRORS as exc:
             errors.append(
-                CHECKDIR_ERROR.format(shown(error_path(exc)), fs_strerror(exc),
-                                      info.filename))
+                CHECKDIR_ERROR.format(
+                    shown(error_path(exc)), fs_strerror(exc), info.filename
+                )
+            )
             continue
         if info.is_dir():
             if not q:
@@ -569,10 +657,15 @@ async def _run(
             # -o unlinks a file already there before it writes, so a
             # refusal of that is its own verb.
             existed = stat is not None and await path_exists(
-                stat, PathSpec.from_str_path(out_path))
+                stat, PathSpec.from_str_path(out_path)
+            )
             errors.append(
-                CREATE_ERROR.format("delete old" if existed else "create",
-                                    shown(out_path), fs_strerror(exc)))
+                CREATE_ERROR.format(
+                    "delete old" if existed else "create",
+                    shown(out_path),
+                    fs_strerror(exc),
+                )
+            )
             continue
         if not relay:
             # Relay writes land on whichever mount owns each path and
@@ -581,12 +674,15 @@ async def _run(
             writes[out_path] = content
         if not q:
             output_lines.append(f"  inflating: {shown(out_path)}")
-    output = ("\n".join(output_lines) +
-              "\n").encode() if output_lines else None
+    output = (
+        ("\n".join(output_lines) + "\n").encode() if output_lines else None
+    )
     stderr = (cautions + "".join(errors)).encode()
-    return output, IOResult(exit_code=CREATE_EXIT if errors else exit_code,
-                            stderr=stderr or None,
-                            writes=writes)
+    return output, IOResult(
+        exit_code=CREATE_EXIT if errors else exit_code,
+        stderr=stderr or None,
+        writes=writes,
+    )
 
 
 __all__ = ["unzip"]
@@ -642,25 +738,27 @@ async def unzip_generic(
     relay: bool = False,
 ) -> tuple[ByteSource | None, IOResult]:
     parsed = parse_flags(opts.flags)
-    return await unzip(paths,
-                       read_bytes=read_bytes,
-                       write_bytes=write_bytes,
-                       mkdir_fn=mkdir_fn,
-                       stat=stat,
-                       members=tuple(texts),
-                       o=parsed.overwrite,
-                       args_l=parsed.list_only,
-                       d=parsed.dest,
-                       q=parsed.quiet,
-                       p=parsed.to_stdout,
-                       t=parsed.test_only,
-                       v=parsed.verbose,
-                       x=parsed.excludes,
-                       Z=parsed.zipinfo,
-                       args_1=parsed.names_only,
-                       args_2=parsed.names_headers,
-                       s=parsed.short,
-                       m=parsed.medium,
-                       h=parsed.header,
-                       cwd=opts.cwd,
-                       relay=relay)
+    return await unzip(
+        paths,
+        read_bytes=read_bytes,
+        write_bytes=write_bytes,
+        mkdir_fn=mkdir_fn,
+        stat=stat,
+        members=tuple(texts),
+        o=parsed.overwrite,
+        args_l=parsed.list_only,
+        d=parsed.dest,
+        q=parsed.quiet,
+        p=parsed.to_stdout,
+        t=parsed.test_only,
+        v=parsed.verbose,
+        x=parsed.excludes,
+        Z=parsed.zipinfo,
+        args_1=parsed.names_only,
+        args_2=parsed.names_headers,
+        s=parsed.short,
+        m=parsed.medium,
+        h=parsed.header,
+        cwd=opts.cwd,
+        relay=relay,
+    )

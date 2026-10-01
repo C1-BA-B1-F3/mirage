@@ -18,8 +18,9 @@ from mirage.core.ssh.client import _abs
 from mirage.types import PathSpec
 
 
-async def append_bytes(accessor: SSHAccessor, path: PathSpec,
-                       data: bytes) -> None:
+async def append_bytes(
+    accessor: SSHAccessor, path: PathSpec, data: bytes
+) -> None:
     config = accessor.config
     sftp = await accessor.sftp()
     async with sftp.open(_abs(config, path.mount_path), "ab") as f:

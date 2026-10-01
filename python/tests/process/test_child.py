@@ -10,12 +10,18 @@ from mirage.shell.console import Channel
 from mirage.types import PathSpec
 
 
-def _child(supervisor: ProcessSupervisor, stdin: ProcessInput,
-           output: ProcessOutput, run: ProcessRunner) -> ChildProcess:
-    process = supervisor.start(session_id="a",
-                               command="child",
-                               cwd=PathSpec.from_str_path("/"),
-                               run=run)
+def _child(
+    supervisor: ProcessSupervisor,
+    stdin: ProcessInput,
+    output: ProcessOutput,
+    run: ProcessRunner,
+) -> ChildProcess:
+    process = supervisor.start(
+        session_id="a",
+        command="child",
+        cwd=PathSpec.from_str_path("/"),
+        run=run,
+    )
     return ChildProcess(process, stdin, output, process.terminate)
 
 
@@ -32,8 +38,11 @@ async def test_communicate_feeds_stdin_and_drains_both_outputs():
     child = _child(ProcessSupervisor(), stdin, output, run)
     assert child.poll() is None
     result = await child.communicate(b"hello")
-    assert (result.stdout, result.stderr, result.exit_code) == (b"HELLO",
-                                                                b"warn", 3)
+    assert (result.stdout, result.stderr, result.exit_code) == (
+        b"HELLO",
+        b"warn",
+        3,
+    )
     assert child.poll() == 3
 
 

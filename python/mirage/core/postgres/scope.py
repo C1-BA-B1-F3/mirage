@@ -36,30 +36,52 @@ KIND = Codec(validate=is_kind)
 # search push-down all classify through it, so the file surface and the
 # search surface cannot disagree about what a path means.
 SCOPES = (
-    Scope(kind="database_json",
-          segments=("database.json", ),
-          leaf=True,
-          filetype=ContentType.JSON,
-          probed=False),
-    Scope(kind="schema", segments=(Slot("schema"), )),
+    Scope(
+        kind="database_json",
+        segments=("database.json",),
+        leaf=True,
+        filetype=ContentType.JSON,
+        probed=False,
+    ),
+    Scope(kind="schema", segments=(Slot("schema"),)),
     Scope(kind="kind", segments=(Slot("schema"), Slot("kind", KIND))),
-    Scope(kind="entity",
-          segments=(Slot("schema"), Slot("kind", KIND), Slot("entity"))),
-    Scope(kind="entity_schema",
-          segments=(Slot("schema"), Slot("kind",
-                                         KIND), Slot("entity"), "schema.json"),
-          leaf=True,
-          filetype=ContentType.JSON),
-    Scope(kind="entity_semantic",
-          segments=(Slot("schema"), Slot("kind", KIND), Slot("entity"),
-                    "semantic.json"),
-          leaf=True,
-          filetype=ContentType.JSON),
-    Scope(kind="entity_rows",
-          segments=(Slot("schema"), Slot("kind",
-                                         KIND), Slot("entity"), "rows.jsonl"),
-          leaf=True,
-          filetype=ContentType.TEXT),
+    Scope(
+        kind="entity",
+        segments=(Slot("schema"), Slot("kind", KIND), Slot("entity")),
+    ),
+    Scope(
+        kind="entity_schema",
+        segments=(
+            Slot("schema"),
+            Slot("kind", KIND),
+            Slot("entity"),
+            "schema.json",
+        ),
+        leaf=True,
+        filetype=ContentType.JSON,
+    ),
+    Scope(
+        kind="entity_semantic",
+        segments=(
+            Slot("schema"),
+            Slot("kind", KIND),
+            Slot("entity"),
+            "semantic.json",
+        ),
+        leaf=True,
+        filetype=ContentType.JSON,
+    ),
+    Scope(
+        kind="entity_rows",
+        segments=(
+            Slot("schema"),
+            Slot("kind", KIND),
+            Slot("entity"),
+            "rows.jsonl",
+        ),
+        leaf=True,
+        filetype=ContentType.TEXT,
+    ),
 )
 
 detect_scope = make_detect_scope(SCOPES)

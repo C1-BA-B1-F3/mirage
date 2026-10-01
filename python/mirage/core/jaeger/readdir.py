@@ -16,16 +16,24 @@ from mirage.accessor.jaeger import JaegerAccessor
 from mirage.cache.index import IndexEntry
 from mirage.core.hierarchy.readdir import DirListing, make_readdir
 from mirage.core.hierarchy.scope import ScopeMatch
-from mirage.core.jaeger.client import (fetch_operations, fetch_services,
-                                       fetch_traces, is_trace_id)
-from mirage.core.jaeger.scope import (OPERATIONS_FILE, TOP_LEVEL_DIRS,
-                                      detect_scope)
+from mirage.core.jaeger.client import (
+    fetch_operations,
+    fetch_services,
+    fetch_traces,
+    is_trace_id,
+)
+from mirage.core.jaeger.scope import (
+    OPERATIONS_FILE,
+    TOP_LEVEL_DIRS,
+    detect_scope,
+)
 from mirage.core.render.json import json_bytes
 from mirage.utils.errors import enoent
 
 
-async def assert_service(accessor: JaegerAccessor, service: str,
-                         virtual: str) -> None:
+async def assert_service(
+    accessor: JaegerAccessor, service: str, virtual: str
+) -> None:
     """Raise ENOENT unless the service is known to Jaeger.
 
     The operations endpoint answers 200 with an empty list for a service
@@ -45,51 +53,64 @@ async def assert_service(accessor: JaegerAccessor, service: str,
         raise enoent(virtual)
 
 
-async def service_guard(accessor: JaegerAccessor, match: ScopeMatch,
-                        virtual: str) -> None:
+async def service_guard(
+    accessor: JaegerAccessor, match: ScopeMatch, virtual: str
+) -> None:
     await assert_service(accessor, match.slots["service"], virtual)
 
 
-async def _list_services(accessor: JaegerAccessor,
-                         match: ScopeMatch) -> list[tuple[str, IndexEntry]]:
+async def _list_services(
+    accessor: JaegerAccessor, match: ScopeMatch
+) -> list[tuple[str, IndexEntry]]:
     services = await fetch_services(accessor)
-    return [(service,
-             IndexEntry(
-                 id=service,
-                 name=service,
-                 resource_type="jaeger/service",
-                 vfs_name=service,
-             )) for service in services]
+    return [
+        (
+            service,
+            IndexEntry(
+                id=service,
+                name=service,
+                resource_type="jaeger/service",
+                vfs_name=service,
+            ),
+        )
+        for service in services
+    ]
 
 
-async def _list_service(accessor: JaegerAccessor,
-                        match: ScopeMatch) -> list[tuple[str, IndexEntry]]:
+async def _list_service(
+    accessor: JaegerAccessor, match: ScopeMatch
+) -> list[tuple[str, IndexEntry]]:
     service = match.slots["service"]
     # One operations call per service directory actually entered: nothing
     # in the services listing carries operation names, so operations.json
     # can only be sized here, and only for services the caller opens.
     operations = await fetch_operations(accessor, service)
     return [
-        (OPERATIONS_FILE,
-         IndexEntry(
-             id=f"{service}/operations",
-             name=OPERATIONS_FILE,
-             resource_type="jaeger/operations",
-             vfs_name=OPERATIONS_FILE,
-             size=len(json_bytes(operations)),
-         )),
-        ("traces",
-         IndexEntry(
-             id=f"{service}/traces",
-             name="traces",
-             resource_type="jaeger/traces_dir",
-             vfs_name="traces",
-         )),
+        (
+            OPERATIONS_FILE,
+            IndexEntry(
+                id=f"{service}/operations",
+                name=OPERATIONS_FILE,
+                resource_type="jaeger/operations",
+                vfs_name=OPERATIONS_FILE,
+                size=len(json_bytes(operations)),
+            ),
+        ),
+        (
+            "traces",
+            IndexEntry(
+                id=f"{service}/traces",
+                name="traces",
+                resource_type="jaeger/traces_dir",
+                vfs_name="traces",
+            ),
+        ),
     ]
 
 
-async def _list_traces(accessor: JaegerAccessor,
-                       match: ScopeMatch) -> DirListing:
+async def _list_traces(
+    accessor: JaegerAccessor, match: ScopeMatch
+) -> DirListing:
     service = match.slots["service"]
     traces = await fetch_traces(
         accessor,

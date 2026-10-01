@@ -57,8 +57,10 @@ def _on_tenant(site: dict[str, Any], tenant_host: str) -> bool:
             ``contoso.sharepoint.com``.
     """
     web_url = _text(site.get("webUrl"))
-    return bool(web_url) and urlsplit(
-        web_url).netloc.lower() == tenant_host.lower()
+    return (
+        bool(web_url)
+        and urlsplit(web_url).netloc.lower() == tenant_host.lower()
+    )
 
 
 async def _site_items(accessor: SharePointAccessor) -> list[dict[str, Any]]:
@@ -67,23 +69,28 @@ async def _site_items(accessor: SharePointAccessor) -> list[dict[str, Any]]:
         "search": config.site_filter or "*",
         "$select": "id,displayName,name,webUrl",
     }
-    sites = await graph_list(config,
-                             f"{graph_api(config)}/sites",
-                             params=params,
-                             session=accessor.pool)
+    sites = await graph_list(
+        config,
+        f"{graph_api(config)}/sites",
+        params=params,
+        session=accessor.pool,
+    )
     tenant_host = config.tenant_host
     if tenant_host is None:
         return sites
     return [s for s in sites if _on_tenant(s, tenant_host)]
 
 
-async def _drive_items(accessor: SharePointAccessor,
-                       site_id: str) -> list[dict[str, Any]]:
+async def _drive_items(
+    accessor: SharePointAccessor, site_id: str
+) -> list[dict[str, Any]]:
     url = f"{graph_api(accessor.config)}/sites/{id_segment(site_id)}/drives"
-    return await graph_list(accessor.config,
-                            url,
-                            params={"$select": "id,name"},
-                            session=accessor.pool)
+    return await graph_list(
+        accessor.config,
+        url,
+        params={"$select": "id,name"},
+        session=accessor.pool,
+    )
 
 
 async def site_entries(accessor: SharePointAccessor) -> list[tuple[str, str]]:
@@ -114,8 +121,9 @@ async def list_sites(accessor: SharePointAccessor) -> list[str]:
     return [name for name, _ in await site_entries(accessor)]
 
 
-async def drive_entries(accessor: SharePointAccessor,
-                        site_id: str) -> list[tuple[str, str]]:
+async def drive_entries(
+    accessor: SharePointAccessor, site_id: str
+) -> list[tuple[str, str]]:
     """A site's document libraries as (name, id), sorted by name.
 
     Args:
@@ -137,23 +145,26 @@ async def list_drives(accessor: SharePointAccessor, site_id: str) -> list[str]:
     return [name for name, _ in await drive_entries(accessor, site_id)]
 
 
-async def _resolve_site_id(accessor: SharePointAccessor,
-                           name: str) -> str | None:
+async def _resolve_site_id(
+    accessor: SharePointAccessor, name: str
+) -> str | None:
     if name not in accessor.site_cache:
         await site_entries(accessor)
     return accessor.site_cache.get(name)
 
 
-async def _resolve_drive_id(accessor: SharePointAccessor, site_id: str,
-                            name: str) -> str | None:
+async def _resolve_drive_id(
+    accessor: SharePointAccessor, site_id: str, name: str
+) -> str | None:
     key = (site_id, name)
     if key not in accessor.drive_cache:
         await drive_entries(accessor, site_id)
     return accessor.drive_cache.get(key)
 
 
-async def resolve(accessor: SharePointAccessor,
-                  path: PathSpec) -> ResolvedPath:
+async def resolve(
+    accessor: SharePointAccessor, path: PathSpec
+) -> ResolvedPath:
     """Resolve a mount path to its site, drive and drive-relative item.
 
     A mount scoped to one site and drive (both configured) lives inside
@@ -175,13 +186,15 @@ async def resolve(accessor: SharePointAccessor,
             return ResolvedPath(level="drive", site_id=site_id)
         item_path = _scoped_item_path(config.key_prefix, raw)
         if not item_path:
-            return ResolvedPath(level="drive",
-                                site_id=site_id,
-                                drive_id=drive_id)
-        return ResolvedPath(level="item",
-                            site_id=site_id,
-                            drive_id=drive_id,
-                            item_path=item_path)
+            return ResolvedPath(
+                level="drive", site_id=site_id, drive_id=drive_id
+            )
+        return ResolvedPath(
+            level="item",
+            site_id=site_id,
+            drive_id=drive_id,
+            item_path=item_path,
+        )
     if not raw:
         return ResolvedPath(level="root")
     parts = raw.split("/", 2)
@@ -195,10 +208,9 @@ async def resolve(accessor: SharePointAccessor,
         return ResolvedPath(level="drive", site_id=site_id)
     if len(parts) == 2:
         return ResolvedPath(level="drive", site_id=site_id, drive_id=drive_id)
-    return ResolvedPath(level="item",
-                        site_id=site_id,
-                        drive_id=drive_id,
-                        item_path=parts[2])
+    return ResolvedPath(
+        level="item", site_id=site_id, drive_id=drive_id, item_path=parts[2]
+    )
 
 
 def require_item(path: PathSpec, resolved: ResolvedPath) -> None:
@@ -213,20 +225,24 @@ def require_item(path: PathSpec, resolved: ResolvedPath) -> None:
         raise enoent(path)
 
 
-async def resolve_item(accessor: SharePointAccessor,
-                       path: PathSpec) -> ResolvedPath:
+async def resolve_item(
+    accessor: SharePointAccessor, path: PathSpec
+) -> ResolvedPath:
     resolved = await resolve(accessor, path)
     require_item(path, resolved)
     return resolved
 
 
-def drive_loc(config: MsGraphConfig, resolved: ResolvedPath,
-              virt: str) -> DriveLoc:
+def drive_loc(
+    config: MsGraphConfig, resolved: ResolvedPath, virt: str
+) -> DriveLoc:
     drive_id = resolved.drive_id
     if drive_id is None:
         raise ValueError("SharePoint path has no drive")
-    return DriveLoc(drive=drive_id,
-                    path=resolved.item_path or "",
-                    virt=virt.strip("/"),
-                    url=partial(item_url, config, drive_id),
-                    ref=partial(drive_ref_path, drive_id))
+    return DriveLoc(
+        drive=drive_id,
+        path=resolved.item_path or "",
+        virt=virt.strip("/"),
+        url=partial(item_url, config, drive_id),
+        ref=partial(drive_ref_path, drive_id),
+    )

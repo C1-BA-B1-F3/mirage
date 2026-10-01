@@ -42,8 +42,8 @@ class OpendalWalk:
 
     def __init__(self, accessor: OperatorAccessor) -> None:
         """Args:
-            accessor (OperatorAccessor): Backend handle exposing an
-                opendal operator.
+        accessor (OperatorAccessor): Backend handle exposing an
+            opendal operator.
         """
         self._accessor = accessor
 
@@ -67,29 +67,39 @@ class OpendalWalk:
                 continue
             is_dir = relative.endswith("/")
             vfs_rel = relative.rstrip("/")
-            virtual = (prefix.rstrip("/") + "/" + vfs_rel if prefix else "/" +
-                       vfs_rel)
+            virtual = (
+                prefix.rstrip("/") + "/" + vfs_rel if prefix else "/" + vfs_rel
+            )
             if is_dir:
                 yield WalkEntry(virtual=virtual, is_dir=True, fingerprint=None)
                 continue
             meta = entry.metadata
-            if meta is None or (meta.etag is None
-                                and meta.last_modified is None
-                                and meta.content_length is None):
+            if meta is None or (
+                meta.etag is None
+                and meta.last_modified is None
+                and meta.content_length is None
+            ):
                 meta = await self._stat(op, vfs_rel)
-            modified = meta.last_modified.isoformat() \
-                if meta and meta.last_modified else None
+            modified = (
+                meta.last_modified.isoformat()
+                if meta and meta.last_modified
+                else None
+            )
             size = meta.content_length if meta else None
-            fingerprint = stat_fingerprint(meta.etag if meta else None,
-                                           modified, size)
-            yield WalkEntry(virtual=virtual,
-                            is_dir=False,
-                            fingerprint=fingerprint,
-                            size=size,
-                            modified=modified)
+            fingerprint = stat_fingerprint(
+                meta.etag if meta else None, modified, size
+            )
+            yield WalkEntry(
+                virtual=virtual,
+                is_dir=False,
+                fingerprint=fingerprint,
+                size=size,
+                modified=modified,
+            )
 
-    async def _stat(self, op: opendal.AsyncOperator,
-                    key: str) -> Metadata | None:
+    async def _stat(
+        self, op: opendal.AsyncOperator, key: str
+    ) -> Metadata | None:
         """Fetch one entry's metadata when the listing omitted it.
 
         Args:

@@ -18,10 +18,21 @@ import hashlib
 from collections.abc import Awaitable, Callable, Sequence
 
 from mirage.policy.match import Outcome
-from mirage.policy.types import (Abandoned, Ask, Claim, Claimant,
-                                 CommandContext, CommandRule, Decision, Deny,
-                                 HandOff, Occurrence, Pending, Scope,
-                                 SessionDecisionsQuery)
+from mirage.policy.types import (
+    Abandoned,
+    Ask,
+    Claim,
+    Claimant,
+    CommandContext,
+    CommandRule,
+    Decision,
+    Deny,
+    HandOff,
+    Occurrence,
+    Pending,
+    Scope,
+    SessionDecisionsQuery,
+)
 
 # A host that answers an Ask inside the line.
 #
@@ -113,12 +124,13 @@ def ask_rule(ctx: CommandContext, ask: Ask) -> CommandRule:
     """
     if ask.rule is not None:
         return ask.rule
-    program = " ".join(ctx.program or (ctx.command, ))
-    return CommandRule(reason=ask.reason, commands=(program, ))
+    program = " ".join(ctx.program or (ctx.command,))
+    return CommandRule(reason=ask.reason, commands=(program,))
 
 
-def covers(record: Decision, rule: CommandRule, argv: tuple[str, ...],
-           cwd: str) -> bool:
+def covers(
+    record: Decision, rule: CommandRule, argv: tuple[str, ...], cwd: str
+) -> bool:
     """Whether an answered record answers this rule of this line.
 
     A ONCE answer covers the exact line it was given for, compared
@@ -201,9 +213,11 @@ class Decisions:
             which is what a host polling ``list`` wants.
     """
 
-    def __init__(self,
-                 sessions: SessionDecisionsQuery | None = None,
-                 on_ask: AskHandler | None = None) -> None:
+    def __init__(
+        self,
+        sessions: SessionDecisionsQuery | None = None,
+        on_ask: AskHandler | None = None,
+    ) -> None:
         self._sessions = sessions
         self._on_ask = on_ask
         self._memory: dict[str, tuple[Decision, ...]] = {}
@@ -234,11 +248,13 @@ class Decisions:
         """
         return tuple(r for r in self.list(session_id) if r.outcome is None)
 
-    async def answer(self,
-                     decision_id: str,
-                     outcome: Outcome,
-                     scope: Scope = Scope.ONCE,
-                     note: str = "") -> None:
+    async def answer(
+        self,
+        decision_id: str,
+        outcome: Outcome,
+        scope: Scope = Scope.ONCE,
+        note: str = "",
+    ) -> None:
         """Answer a waiting record, yes or no.
 
         ALLOW at ONCE passes the one line it was given for and is
@@ -263,8 +279,9 @@ class Decisions:
         self._write_answer(decision_id, outcome, scope, note)
         await self._flush()
 
-    def _write_answer(self, decision_id: str, outcome: Outcome, scope: Scope,
-                      note: str) -> Decision:
+    def _write_answer(
+        self, decision_id: str, outcome: Outcome, scope: Scope, note: str
+    ) -> Decision:
         """Settle a waiting record in the session's records, leaving the
         store to be flushed by the caller.
 
@@ -293,12 +310,12 @@ class Decisions:
             for index, record in enumerate(records):
                 if record.id != decision_id or record.outcome is not None:
                     continue
-                answered = dataclasses.replace(record,
-                                               outcome=outcome,
-                                               scope=scope,
-                                               note=note)
-                self._set(key,
-                          (*records[:index], answered, *records[index + 1:]))
+                answered = dataclasses.replace(
+                    record, outcome=outcome, scope=scope, note=note
+                )
+                self._set(
+                    key, (*records[:index], answered, *records[index + 1 :])
+                )
                 return answered
         raise KeyError(decision_id)
 
@@ -356,21 +373,32 @@ class Decisions:
             the host has not decided, an Abandoned for a run killed
             mid-question.
         """
-        rules = ask.rules or (ask_rule(ctx, ask), )
+        rules = ask.rules or (ask_rule(ctx, ask),)
         argv = (ctx.command, *ctx.argv)
         held = self._standing(ctx.session_id, claimant)
-        answers = [(rule, self._settled(held, rule, argv, ctx.cwd))
-                   for rule in rules]
-        refused = next((rule for rule, r in answers
-                        if r is not None and r.outcome is Outcome.DENY), None)
+        answers = [
+            (rule, self._settled(held, rule, argv, ctx.cwd)) for rule in rules
+        ]
+        refused = next(
+            (
+                rule
+                for rule, r in answers
+                if r is not None and r.outcome is Outcome.DENY
+            ),
+            None,
+        )
         if refused is not None:
             # A standing refusal refuses this line in place, whichever
             # pass reads it: a line that does not run has no later pass
             # to hand anything to.
             await self._spend(
                 ctx.session_id,
-                tuple(r for _rule, r in answers
-                      if r is not None and r.scope is Scope.ONCE))
+                tuple(
+                    r
+                    for _rule, r in answers
+                    if r is not None and r.scope is Scope.ONCE
+                ),
+            )
             return Deny(refused.reason)
         for rule, record in answers:
             if record is not None:
@@ -385,16 +413,18 @@ class Decisions:
         # re-read, the grant it gave THIS line would still be standing
         # for the next identical one, and whoever allowed once would have
         # allowed twice.
-        once = self._once_answers(ctx.session_id, rules, argv, ctx.cwd,
-                                  claimant)
+        once = self._once_answers(
+            ctx.session_id, rules, argv, ctx.cwd, claimant
+        )
         if claimant is None:
             await self._spend(ctx.session_id, once)
             return None
         self._claim(ctx.session_id, claimant, once)
         return None
 
-    def _claim(self, session_id: str, claimant: Claimant,
-               once: tuple[Decision, ...]) -> None:
+    def _claim(
+        self, session_id: str, claimant: Claimant, once: tuple[Decision, ...]
+    ) -> None:
         """Bind the grants behind a command to its place on the line,
         for the line's end to spend.
 
@@ -421,8 +451,9 @@ class Decisions:
         if not any(h is handed for h in live):
             live.append(handed)
 
-    def split(self, session_id: str, handed: HandOff,
-              scope: Occurrence) -> HandOff:
+    def split(
+        self, session_id: str, handed: HandOff, scope: Occurrence
+    ) -> HandOff:
         """Share the claims made for one part of a line with a run of
         its own: a background job, whose gates run after the line has
         returned and which ends on its own clock.
@@ -452,7 +483,8 @@ class Decisions:
         for owner in lineage(handed):
             for claim in owner.claimed:
                 if encloses(scope, claim.occurrence) and not any(
-                        c.decision is claim.decision for c in job.claimed):
+                    c.decision is claim.decision for c in job.claimed
+                ):
                     job.claimed.append(claim)
         if job.claimed:
             self._live.setdefault(session_id, []).append(job)
@@ -484,8 +516,11 @@ class Decisions:
         if parent is None:
             raise ValueError("a typed line's claims are spent, not handed up")
         known = [c.decision for c in parent.claimed]
-        parent.claimed.extend(c for c in handed.claimed
-                              if not any(c.decision is k for k in known))
+        parent.claimed.extend(
+            c
+            for c in handed.claimed
+            if not any(c.decision is k for k in known)
+        )
         live = self._live.setdefault(session_id, [])
         if parent.claimed and not any(h is parent for h in live):
             live.append(parent)
@@ -516,13 +551,19 @@ class Decisions:
             handed (HandOff): the line's hand-off.
         """
         elsewhere = [
-            c.decision for other in self._live.get(session_id, ())
-            if other is not handed for c in other.claimed
+            c.decision
+            for other in self._live.get(session_id, ())
+            if other is not handed
+            for c in other.claimed
         ]
         await self._spend(
             session_id,
-            tuple(c.decision for c in handed.claimed
-                  if not any(c.decision is e for e in elsewhere)))
+            tuple(
+                c.decision
+                for c in handed.claimed
+                if not any(c.decision is e for e in elsewhere)
+            ),
+        )
         self.release(session_id, handed)
 
     def release(self, session_id: str, handed: HandOff) -> None:
@@ -542,8 +583,9 @@ class Decisions:
         live = self._live.get(session_id, [])
         self._live[session_id] = [h for h in live if h is not handed]
 
-    def _standing(self, session_id: str,
-                  claimant: Claimant | None) -> tuple[Decision, ...]:
+    def _standing(
+        self, session_id: str, claimant: Claimant | None
+    ) -> tuple[Decision, ...]:
         """The session's records as one reader may see them.
 
         A claimed grant is on offer to exactly one place: the command it
@@ -574,11 +616,15 @@ class Decisions:
         offered: list[Decision] = []
         if claimant is not None:
             offered = [
-                c.decision for h in lineage(claimant.line) for c in h.claimed
+                c.decision
+                for h in lineage(claimant.line)
+                for c in h.claimed
                 if c.occurrence == claimant.occurrence
             ]
         taken = [
-            c.decision for other in live for c in other.claimed
+            c.decision
+            for other in live
+            for c in other.claimed
             if not any(c.decision is o for o in offered)
         ]
         if not taken:
@@ -609,13 +655,13 @@ class Decisions:
         """
         held = self._standing(session_id, claimant)
         found = (self._settled(held, rule, argv, cwd) for rule in rules)
-        return tuple(r for r in found
-                     if r is not None and r.scope is Scope.ONCE)
+        return tuple(
+            r for r in found if r is not None and r.scope is Scope.ONCE
+        )
 
-    def held(self,
-             ctx: CommandContext,
-             ask: Ask,
-             claimant: Claimant | None = None) -> Deny | Pending | None:
+    def held(
+        self, ctx: CommandContext, ask: Ask, claimant: Claimant | None = None
+    ) -> Deny | Pending | None:
         """What the settled records alone say about an asked line.
 
         The read-only half of :meth:`resolve`, and the only half a dry
@@ -640,17 +686,26 @@ class Decisions:
         """
         argv = (ctx.command, *ctx.argv)
         held = self._standing(ctx.session_id, claimant)
-        answers = [(rule, self._settled(held, rule, argv, ctx.cwd))
-                   for rule in (ask.rules or (ask_rule(ctx, ask), ))]
-        refused = next((rule for rule, r in answers
-                        if r is not None and r.outcome is Outcome.DENY), None)
+        answers = [
+            (rule, self._settled(held, rule, argv, ctx.cwd))
+            for rule in (ask.rules or (ask_rule(ctx, ask),))
+        ]
+        refused = next(
+            (
+                rule
+                for rule, r in answers
+                if r is not None and r.outcome is Outcome.DENY
+            ),
+            None,
+        )
         if refused is not None:
             return Deny(refused.reason)
         unanswered = next((rule for rule, r in answers if r is None), None)
         if unanswered is None:
             return None
-        return Pending(decision_id(ctx.session_id, ctx.cwd, argv),
-                       unanswered.reason)
+        return Pending(
+            decision_id(ctx.session_id, ctx.cwd, argv), unanswered.reason
+        )
 
     async def _raise(
         self,
@@ -697,15 +752,17 @@ class Decisions:
         """
         record = self._waiting(ctx, rule, argv)
         if record is None:
-            record = Decision(id=decision_id(ctx.session_id, ctx.cwd, argv),
-                              session_id=ctx.session_id,
-                              agent_id=ctx.agent_id,
-                              command=ctx.command,
-                              argv=tuple(ctx.argv),
-                              cwd=ctx.cwd,
-                              paths=tuple(p.virtual for p in ctx.paths),
-                              reason=rule.reason,
-                              rule=rule)
+            record = Decision(
+                id=decision_id(ctx.session_id, ctx.cwd, argv),
+                session_id=ctx.session_id,
+                agent_id=ctx.agent_id,
+                command=ctx.command,
+                argv=tuple(ctx.argv),
+                cwd=ctx.cwd,
+                paths=tuple(p.virtual for p in ctx.paths),
+                reason=rule.reason,
+                rule=rule,
+            )
             self._add(ctx.session_id, record)
             await self._flush()
         on_ask = self._on_ask
@@ -716,18 +773,23 @@ class Decisions:
             return said
         if said is None or said.outcome is None:
             return Pending(record.id, rule.reason)
-        settled = self._write_answer(record.id, said.outcome, said.scope,
-                                     said.note)
-        if (claimant is not None and settled.outcome is Outcome.ALLOW
-                and settled.scope is Scope.ONCE):
-            self._claim(ctx.session_id, claimant, (settled, ))
+        settled = self._write_answer(
+            record.id, said.outcome, said.scope, said.note
+        )
+        if (
+            claimant is not None
+            and settled.outcome is Outcome.ALLOW
+            and settled.scope is Scope.ONCE
+        ):
+            self._claim(ctx.session_id, claimant, (settled,))
         await self._flush()
         if said.outcome is Outcome.DENY:
             return Deny(rule.reason)
         return None
 
-    def _waiting(self, ctx: CommandContext, rule: CommandRule,
-                 argv: tuple[str, ...]) -> Decision | None:
+    def _waiting(
+        self, ctx: CommandContext, rule: CommandRule, argv: tuple[str, ...]
+    ) -> Decision | None:
         """The question already recorded for this rule of this line.
 
         Args:
@@ -736,15 +798,22 @@ class Decisions:
             argv (tuple[str, ...]): the line's words, name first.
         """
         for record in self._records(ctx.session_id):
-            if (record.outcome is None and record.rule == rule
-                    and (record.command, *record.argv) == argv
-                    and record.cwd == ctx.cwd):
+            if (
+                record.outcome is None
+                and record.rule == rule
+                and (record.command, *record.argv) == argv
+                and record.cwd == ctx.cwd
+            ):
                 return record
         return None
 
     @staticmethod
-    def _settled(held: tuple[Decision, ...], rule: CommandRule,
-                 argv: tuple[str, ...], cwd: str) -> Decision | None:
+    def _settled(
+        held: tuple[Decision, ...],
+        rule: CommandRule,
+        argv: tuple[str, ...],
+        cwd: str,
+    ) -> Decision | None:
         """The answered record standing behind one rule of a line, None
         when nobody has answered it.
 
@@ -759,12 +828,14 @@ class Decisions:
                 return record
         for record in held:
             if record.scope is Scope.SESSION and covers(
-                    record, rule, argv, cwd):
+                record, rule, argv, cwd
+            ):
                 return record
         return None
 
-    async def _spend(self, session_id: str, spent: tuple[Decision,
-                                                         ...]) -> None:
+    async def _spend(
+        self, session_id: str, spent: tuple[Decision, ...]
+    ) -> None:
         """Drop the ONCE answers this line just used up.
 
         Args:
@@ -774,8 +845,10 @@ class Decisions:
         if not spent:
             return
         held = self._records(session_id)
-        self._set(session_id,
-                  tuple(r for r in held if not any(r is s for s in spent)))
+        self._set(
+            session_id,
+            tuple(r for r in held if not any(r is s for s in spent)),
+        )
         await self._flush()
 
     def _keys(self) -> tuple[str, ...]:

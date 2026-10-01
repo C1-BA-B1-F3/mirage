@@ -37,18 +37,18 @@ REPO = "test-repo"
 
 @pytest.fixture(autouse=True)
 def no_network() -> Iterator[None]:
-    with patch("mirage.core.github.client.api_request",
-               side_effect=AssertionError(
-                   "unexpected GitHub network request")) as request:
+    with patch(
+        "mirage.core.github.client.api_request",
+        side_effect=AssertionError("unexpected GitHub network request"),
+    ) as request:
         yield
         request.assert_not_called()
 
 
 @contextmanager
 def _offline(
-        tree: dict,
-        truncated: bool = False,
-        default_branch: str = "main") -> Iterator[tuple[AsyncMock, AsyncMock]]:
+    tree: dict, truncated: bool = False, default_branch: str = "main"
+) -> Iterator[tuple[AsyncMock, AsyncMock]]:
     """Patch branch discovery, recursive trees, and directory lookups together.
 
     Args:
@@ -56,10 +56,17 @@ def _offline(
         truncated (bool): Whether to report it truncated.
         default_branch (str): Branch the repo endpoint reports.
     """
-    with (patch("mirage.core.github.repo.fetch_default_branch",
-                return_value=default_branch) as branch,
-          patch("mirage.core.github.tree.fetch_tree",
-                return_value=(tree, truncated)) as fetch, _listing(tree)):
+    with (
+        patch(
+            "mirage.core.github.repo.fetch_default_branch",
+            return_value=default_branch,
+        ) as branch,
+        patch(
+            "mirage.core.github.tree.fetch_tree",
+            return_value=(tree, truncated),
+        ) as fetch,
+        _listing(tree),
+    ):
         yield branch, fetch
 
 
@@ -74,20 +81,25 @@ def _listing(tree: dict):
         at = tree_sha.partition(":")[2]
         stem = at + "/" if at else ""
         return [
-            TreeEntry(path=path[len(stem):],
-                      type=entry.type,
-                      sha=entry.sha,
-                      size=entry.size) for path, entry in tree.items()
-            if path.startswith(stem) and "/" not in path[len(stem):]
+            TreeEntry(
+                path=path[len(stem) :],
+                type=entry.type,
+                sha=entry.sha,
+                size=entry.size,
+            )
+            for path, entry in tree.items()
+            if path.startswith(stem) and "/" not in path[len(stem) :]
         ], False
 
     return patch("mirage.core.github.tree.fetch_dir_page", new=page)
 
 
-def _make_vfs(ref: str = "main",
-              default_branch: str | None = "main",
-              tree: dict | None = None,
-              truncated: bool = False) -> GitHubVFS:
+def _make_vfs(
+    ref: str = "main",
+    default_branch: str | None = "main",
+    tree: dict | None = None,
+    truncated: bool = False,
+) -> GitHubVFS:
     return GitHubVFS(
         config=CONFIG,
         owner=OWNER,
@@ -118,10 +130,9 @@ def test_bind_args() -> None:
 
 
 def test_owner_repo_ref_fall_back_to_config() -> None:
-    config = GitHubConfig(token="test-token",
-                          owner="cfg-owner",
-                          repo="cfg-repo",
-                          ref="cfg-ref")
+    config = GitHubConfig(
+        token="test-token", owner="cfg-owner", repo="cfg-repo", ref="cfg-ref"
+    )
     vfs = GitHubVFS(config=config)
     assert vfs.accessor.owner == "cfg-owner"
     assert vfs.accessor.repo == "cfg-repo"
@@ -129,14 +140,12 @@ def test_owner_repo_ref_fall_back_to_config() -> None:
 
 
 def test_kwargs_take_precedence_over_config() -> None:
-    config = GitHubConfig(token="test-token",
-                          owner="cfg-owner",
-                          repo="cfg-repo",
-                          ref="cfg-ref")
-    vfs = GitHubVFS(config=config,
-                    owner="kw-owner",
-                    repo="kw-repo",
-                    ref="kw-ref")
+    config = GitHubConfig(
+        token="test-token", owner="cfg-owner", repo="cfg-repo", ref="cfg-ref"
+    )
+    vfs = GitHubVFS(
+        config=config, owner="kw-owner", repo="kw-repo", ref="kw-ref"
+    )
     assert vfs.accessor.owner == "kw-owner"
     assert vfs.accessor.repo == "kw-repo"
     assert vfs.accessor.ref == "kw-ref"
@@ -168,8 +177,9 @@ def test_is_default_branch_is_unknown_before_hydration() -> None:
 @pytest.mark.asyncio
 async def test_is_default_branch_answers_once_hydrated() -> None:
     vfs = _make_vfs(ref="main", default_branch=None)
-    with patch("mirage.core.github.repo.fetch_default_branch",
-               return_value="main"):
+    with patch(
+        "mirage.core.github.repo.fetch_default_branch", return_value="main"
+    ):
         await ensure_default_branch(vfs.accessor)
     assert vfs.is_default_branch is True
 
@@ -177,31 +187,37 @@ async def test_is_default_branch_answers_once_hydrated() -> None:
 @pytest.mark.asyncio
 async def test_stat_returns_sha_fingerprint() -> None:
     tree = {
-        "src/main.py":
-        TreeEntry(path="src/main.py", type="blob", sha="abc123", size=100),
+        "src/main.py": TreeEntry(
+            path="src/main.py", type="blob", sha="abc123", size=100
+        ),
     }
     vfs = _make_vfs(tree=tree)
     with _offline(tree):
-        result = await stat(vfs.accessor,
-                            PathSpec.from_str_path("/src/main.py"),
-                            ops(vfs).index)
+        result = await stat(
+            vfs.accessor,
+            PathSpec.from_str_path("/src/main.py"),
+            ops(vfs).index,
+        )
     assert result.fingerprint == "abc123"
 
 
 @pytest.mark.asyncio
 async def test_replacing_index_still_serves_the_tree() -> None:
     tree = {
-        "src/main.py":
-        TreeEntry(path="src/main.py", type="blob", sha="abc123", size=100),
+        "src/main.py": TreeEntry(
+            path="src/main.py", type="blob", sha="abc123", size=100
+        ),
     }
     vfs = _make_vfs(tree=tree)
 
     # The fresh store is empty, which reads as not-live, so the stat asks
     # the parent directory rather than reporting the path gone.
     with _offline(tree):
-        result = await stat(vfs.accessor,
-                            PathSpec.from_str_path("/src/main.py"),
-                            RAMIndexCacheStore())
+        result = await stat(
+            vfs.accessor,
+            PathSpec.from_str_path("/src/main.py"),
+            RAMIndexCacheStore(),
+        )
     assert result.fingerprint == "abc123"
 
 
@@ -209,8 +225,11 @@ async def test_replacing_index_still_serves_the_tree() -> None:
 async def test_stat_raises_when_path_not_in_tree() -> None:
     vfs = _make_vfs()
     with _offline({}), pytest.raises(FileNotFoundError):
-        await stat(vfs.accessor, PathSpec.from_str_path("/nonexistent.py"),
-                   ops(vfs).index)
+        await stat(
+            vfs.accessor,
+            PathSpec.from_str_path("/nonexistent.py"),
+            ops(vfs).index,
+        )
 
 
 def test_the_constructor_reaches_no_network() -> None:
@@ -228,24 +247,28 @@ def test_the_constructor_reaches_no_network() -> None:
 @pytest.mark.asyncio
 async def test_ensure_default_branch_fetches_once_and_caches() -> None:
     vfs = _make_vfs(default_branch=None)
-    with patch("mirage.core.github.repo.fetch_default_branch",
-               return_value="develop") as mock_branch:
+    with patch(
+        "mirage.core.github.repo.fetch_default_branch", return_value="develop"
+    ) as mock_branch:
         assert await ensure_default_branch(vfs.accessor) == "develop"
         assert await ensure_default_branch(vfs.accessor) == "develop"
     assert vfs.accessor.default_branch == "develop"
-    mock_branch.assert_awaited_once_with(CONFIG, OWNER, REPO,
-                                         vfs.accessor.pool)
+    mock_branch.assert_awaited_once_with(
+        CONFIG, OWNER, REPO, vfs.accessor.pool
+    )
 
 
 @pytest.mark.asyncio
 async def test_ensure_tree_fetches_once_and_caches() -> None:
     tree = {
-        "src/main.py":
-        TreeEntry(path="src/main.py", type="blob", sha="abc123", size=100),
+        "src/main.py": TreeEntry(
+            path="src/main.py", type="blob", sha="abc123", size=100
+        ),
     }
     vfs = _make_vfs()
-    with patch("mirage.core.github.tree.fetch_tree",
-               return_value=(tree, False)) as mock_tree:
+    with patch(
+        "mirage.core.github.tree.fetch_tree", return_value=(tree, False)
+    ) as mock_tree:
         await ensure_tree(vfs.accessor)
         await ensure_tree(vfs.accessor)
     assert vfs.accessor.tree == tree
@@ -257,23 +280,30 @@ async def test_concurrent_ensure_tree_fetches_once() -> None:
     # The lock is the whole reason a first `find` and a first `du` racing
     # on a cold mount cost one tree fetch rather than two.
     vfs = _make_vfs()
-    with patch("mirage.core.github.tree.fetch_tree",
-               return_value=({}, False)) as mock_tree:
-        mock_tree.return_value = ({
-            "a.py":
-            TreeEntry(path="a.py", type="blob", sha="s", size=1),
-        }, False)
+    with patch(
+        "mirage.core.github.tree.fetch_tree", return_value=({}, False)
+    ) as mock_tree:
+        mock_tree.return_value = (
+            {
+                "a.py": TreeEntry(path="a.py", type="blob", sha="s", size=1),
+            },
+            False,
+        )
         await asyncio.gather(*(ensure_tree(vfs.accessor) for _ in range(8)))
     assert mock_tree.await_count == 1
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("mode,refusal", [
-    (MountMode.READ, "Read-only file system"),
-    (MountMode.WRITE, "Operation not supported"),
-])
+@pytest.mark.parametrize(
+    "mode,refusal",
+    [
+        (MountMode.READ, "Read-only file system"),
+        (MountMode.WRITE, "Operation not supported"),
+    ],
+)
 async def test_removing_a_tree_entry_is_refused_not_missing(
-        mode: MountMode, refusal: str) -> None:
+    mode: MountMode, refusal: str
+) -> None:
     # Cold stats and warmed listings must agree on existence, so removal
     # reports the mount's refusal rather than ENOENT, including with -f.
     tree = {
@@ -283,16 +313,11 @@ async def test_removing_a_tree_entry_is_refused_not_missing(
     with _offline(tree):
         ws = Workspace({"/gh": _make_vfs()}, mode=mode)
         lines = {
-            "rm /gh/top.txt":
-            f"rm: cannot remove '/gh/top.txt': {refusal}\n",
-            "rm -f /gh/top.txt":
-            f"rm: cannot remove '/gh/top.txt': {refusal}\n",
-            "rmdir /gh/empty":
-            f"rmdir: failed to remove '/gh/empty': {refusal}\n",
-            "unlink /gh/top.txt":
-            f"unlink: cannot unlink '/gh/top.txt': {refusal}\n",
-            "rm /gh/nope":
-            "rm: cannot remove '/gh/nope': No such file or directory\n",
+            "rm /gh/top.txt": f"rm: cannot remove '/gh/top.txt': {refusal}\n",
+            "rm -f /gh/top.txt": f"rm: cannot remove '/gh/top.txt': {refusal}\n",
+            "rmdir /gh/empty": f"rmdir: failed to remove '/gh/empty': {refusal}\n",
+            "unlink /gh/top.txt": f"unlink: cannot unlink '/gh/top.txt': {refusal}\n",
+            "rm /gh/nope": "rm: cannot remove '/gh/nope': No such file or directory\n",
         }
         for line, stderr in lines.items():
             result = await ws.shell(line)

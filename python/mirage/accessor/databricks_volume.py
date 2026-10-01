@@ -31,7 +31,6 @@ else:
 
 
 class DatabricksVolumeAccessor(Accessor):
-
     def __init__(
         self,
         config: DatabricksVolumeConfig,
@@ -44,9 +43,11 @@ class DatabricksVolumeAccessor(Accessor):
     def client(self) -> Any:
         if self._client is None:
             if WorkspaceClient is None or WorkspaceConfig is None:
-                raise ImportError("DatabricksVolumeVFS requires the "
-                                  "'databricks' extra. Install with: "
-                                  "pip install mirage-ai[databricks]")
+                raise ImportError(
+                    "DatabricksVolumeVFS requires the "
+                    "'databricks' extra. Install with: "
+                    "pip install mirage-ai[databricks]"
+                )
             kwargs: dict[str, Any] = {
                 "host": self.config.host,
                 "token": self.config.token,
@@ -54,10 +55,9 @@ class DatabricksVolumeAccessor(Accessor):
                 "auth_type": "pat" if self.config.token is not None else None,
                 "http_timeout_seconds": self.config.timeout,
             }
-            sdk_config = WorkspaceConfig(**{
-                k: v
-                for k, v in kwargs.items() if v is not None
-            })
+            sdk_config = WorkspaceConfig(
+                **{k: v for k, v in kwargs.items() if v is not None}
+            )
             self._client = WorkspaceClient(config=sdk_config)
         return self._client
 

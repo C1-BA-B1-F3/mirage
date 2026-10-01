@@ -28,12 +28,17 @@ from mirage.utils.quote import single_quote
 from mirage.workspace.executor.builtins.shared import fail, require_view
 from mirage.workspace.executor.builtins.types import BuiltinCall, Result
 from mirage.workspace.session import SessionState
-from mirage.workspace.session.state import (session_view, visible_arrays,
-                                            visible_assocs)
+from mirage.workspace.session.state import (
+    session_view,
+    visible_arrays,
+    visible_assocs,
+)
 from mirage.workspace.types import ExecutionNode
 
-_USAGE = ("mapfile: usage: mapfile [-d delim] [-n count] [-O origin] "
-          "[-s count] [-t] [-u fd] [-C callback] [-c quantum] [array]")
+_USAGE = (
+    "mapfile: usage: mapfile [-d delim] [-n count] [-O origin] "
+    "[-s count] [-t] [-u fd] [-C callback] [-c quantum] [array]"
+)
 _IDENTIFIER = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
 _DEFAULT_QUANTUM = 5000
 
@@ -80,14 +85,21 @@ async def handle_mapfile(
     """
     parse = parse_shell_options(SHELL_SPECS["mapfile"], args)
     if parse.invalid is not None:
-        token = (parse.invalid
-                 if parse.invalid.startswith("--") else f"-{parse.invalid}")
-        return fail(cmd, f"bash: {cmd}: {token}: invalid option\n{_USAGE}\n",
-                    2)
+        token = (
+            parse.invalid
+            if parse.invalid.startswith("--")
+            else f"-{parse.invalid}"
+        )
+        return fail(
+            cmd, f"bash: {cmd}: {token}: invalid option\n{_USAGE}\n", 2
+        )
     if parse.needs_value is not None:
         return fail(
-            cmd, f"bash: {cmd}: -{parse.needs_value}: option requires an "
-            f"argument\n{_USAGE}\n", 2)
+            cmd,
+            f"bash: {cmd}: -{parse.needs_value}: option requires an "
+            f"argument\n{_USAGE}\n",
+            2,
+        )
     flags = parse.flags
     delim = b"\n"
     if "d" in flags:
@@ -97,16 +109,19 @@ async def handle_mapfile(
     origin = 0
     skip = 0
     quantum = _DEFAULT_QUANTUM
-    for key, label, target in (("n", "line count",
-                                "limit"), ("O", "array origin", "origin"),
-                               ("s", "line count",
-                                "skip"), ("c", "callback quantum", "quantum")):
+    for key, label, target in (
+        ("n", "line count", "limit"),
+        ("O", "array origin", "origin"),
+        ("s", "line count", "skip"),
+        ("c", "callback quantum", "quantum"),
+    ):
         if key not in flags:
             continue
         value = _count(str(flags[key]))
         if value is None or (key == "c" and value == 0):
-            return fail(cmd, f"bash: {cmd}: {flags[key]}: invalid {label}\n",
-                        1)
+            return fail(
+                cmd, f"bash: {cmd}: {flags[key]}: invalid {label}\n", 1
+            )
         if target == "limit":
             limit = value
         elif target == "origin":
@@ -117,8 +132,11 @@ async def handle_mapfile(
             quantum = value
     if "u" in flags and str(flags["u"]) != "0":
         return fail(
-            cmd, f"bash: {cmd}: {flags['u']}: invalid file descriptor: "
-            "Bad file descriptor\n", 1)
+            cmd,
+            f"bash: {cmd}: {flags['u']}: invalid file descriptor: "
+            "Bad file descriptor\n",
+            1,
+        )
     strip = bool(flags.get("t"))
     callback = str(flags["C"]) if "C" in flags else None
     name = parse.operands[0] if parse.operands else "MAPFILE"
@@ -133,8 +151,9 @@ async def handle_mapfile(
     buffer = line_buffer(stdin) if stdin is not None else None
 
     existing = visible_arrays(session).get(name)
-    arr: ShellArray = (list(existing)
-                       if existing is not None and "O" in flags else [])
+    arr: ShellArray = (
+        list(existing) if existing is not None and "O" in flags else []
+    )
     index = origin
     stored = 0
     seen = 0
@@ -157,8 +176,10 @@ async def handle_mapfile(
             # line with `sh_single_quote`, so a record reading `x; rm f`
             # arrives as one argument rather than running a second
             # command.
-            io = await execute_fn(f"{callback} {index} {single_quote(text)}",
-                                  session_id=session.session_id)
+            io = await execute_fn(
+                f"{callback} {index} {single_quote(text)}",
+                session_id=session.session_id,
+            )
             out = await materialize(io.stdout)
             if out:
                 outputs.append(out)
@@ -174,8 +195,11 @@ async def handle_mapfile(
         return fail(cmd, f"{exc.strerror}\n", 1)
     stdout = b"".join(outputs) or None
     stderr = b"".join(errors) or None
-    return stdout, IOResult(stderr=stderr), ExecutionNode(command=cmd,
-                                                          exit_code=0)
+    return (
+        stdout,
+        IOResult(stderr=stderr),
+        ExecutionNode(command=cmd, exit_code=0),
+    )
 
 
 async def mapfile_builtin(call: BuiltinCall) -> Result:
@@ -185,10 +209,11 @@ async def mapfile_builtin(call: BuiltinCall) -> Result:
         call (BuiltinCall): the invocation; the head word is what the
             diagnostics name.
     """
-    return await handle_mapfile(list(call.argv.args),
-                                call.session,
-                                call.stdin,
-                                call.execute_fn,
-                                session_view(call.session,
-                                             call.namespace.registry.policies),
-                                cmd=str(call.argv.name))
+    return await handle_mapfile(
+        list(call.argv.args),
+        call.session,
+        call.stdin,
+        call.execute_fn,
+        session_view(call.session, call.namespace.registry.policies),
+        cmd=str(call.argv.name),
+    )

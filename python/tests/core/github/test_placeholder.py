@@ -21,8 +21,10 @@ CONFIG = GhConfig(token="t", repo="acme/tools", branch="main")
 
 
 def test_expands_the_three_gh_documents():
-    assert expand("repos/{owner}/{repo}/branches/{branch}",
-                  CONFIG) == "repos/acme/tools/branches/main"
+    assert (
+        expand("repos/{owner}/{repo}/branches/{branch}", CONFIG)
+        == "repos/acme/tools/branches/main"
+    )
 
 
 def test_leaves_a_path_with_no_braces_untouched():

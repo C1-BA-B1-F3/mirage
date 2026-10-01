@@ -26,8 +26,10 @@ from mirage.core.trello.stat import stat
 from mirage.types import PathSpec
 from mirage.vfs.trello.config import TrelloConfig
 
-CARDS = ("/workspaces/Engineering__ws1/boards/Product_Roadmap__b1"
-         "/lists/Backlog__l1/cards")
+CARDS = (
+    "/workspaces/Engineering__ws1/boards/Product_Roadmap__b1"
+    "/lists/Backlog__l1/cards"
+)
 
 
 @pytest.fixture
@@ -41,11 +43,12 @@ def index():
 
 
 def _entry(name: str, ident: str, kind: str) -> tuple[str, IndexEntry]:
-    return (name,
-            IndexEntry(id=ident,
-                       name=name,
-                       resource_type=f"trello/{kind}",
-                       vfs_name=name))
+    return (
+        name,
+        IndexEntry(
+            id=ident, name=name, resource_type=f"trello/{kind}", vfs_name=name
+        ),
+    )
 
 
 async def _seed_card(index: RAMIndexCacheStore) -> None:
@@ -57,15 +60,19 @@ async def _seed_card(index: RAMIndexCacheStore) -> None:
 @pytest.mark.asyncio
 async def test_read_workspace_json(accessor, index):
     workspaces = [{"id": "ws1", "displayName": "Engineering", "name": "eng"}]
-    await index.set_dir("/workspaces",
-                        [_entry("Engineering__ws1", "ws1", "workspace")])
-    with patch("mirage.core.trello.read.list_workspaces",
-               new_callable=AsyncMock,
-               return_value=workspaces):
+    await index.set_dir(
+        "/workspaces", [_entry("Engineering__ws1", "ws1", "workspace")]
+    )
+    with patch(
+        "mirage.core.trello.read.list_workspaces",
+        new_callable=AsyncMock,
+        return_value=workspaces,
+    ):
         result = await read(
             accessor,
             PathSpec.from_str_path(
-                "/workspaces/Engineering__ws1/workspace.json"),
+                "/workspaces/Engineering__ws1/workspace.json"
+            ),
             index,
         )
     payload = json.loads(result)
@@ -81,29 +88,26 @@ async def test_read_card_json(accessor, index):
         "idBoard": "b1",
         "idList": "l1",
         "idMembers": ["m1"],
-        "labels": [{
-            "id": "lb1",
-            "name": "bug"
-        }],
+        "labels": [{"id": "lb1", "name": "bug"}],
         "due": "2026-04-10",
         "dueComplete": False,
         "closed": False,
         "desc": "Login is broken",
         "shortUrl": "https://trello.com/c/abc",
-        "members": [{
-            "id": "m1",
-            "username": "alice"
-        }],
+        "members": [{"id": "m1", "username": "alice"}],
     }
     await _seed_card(index)
-    with patch("mirage.core.trello.read.get_card",
-               new_callable=AsyncMock,
-               return_value=card):
+    with patch(
+        "mirage.core.trello.read.get_card",
+        new_callable=AsyncMock,
+        return_value=card,
+    ):
         result = await read(
             accessor,
             PathSpec.from_str_path(
                 "/workspaces/Engineering__ws1/boards/Product_Roadmap__b1"
-                "/lists/Backlog__l1/cards/Fix_login__c1/card.json"),
+                "/lists/Backlog__l1/cards/Fix_login__c1/card.json"
+            ),
             index,
         )
     payload = json.loads(result)
@@ -113,26 +117,26 @@ async def test_read_card_json(accessor, index):
 
 @pytest.mark.asyncio
 async def test_read_comments_jsonl(accessor, index):
-    comments = [{
-        "id": "act1",
-        "date": "2026-04-05T10:00:00Z",
-        "memberCreator": {
-            "id": "m1",
-            "fullName": "Alice"
-        },
-        "data": {
-            "text": "This needs fixing"
-        },
-    }]
+    comments = [
+        {
+            "id": "act1",
+            "date": "2026-04-05T10:00:00Z",
+            "memberCreator": {"id": "m1", "fullName": "Alice"},
+            "data": {"text": "This needs fixing"},
+        }
+    ]
     await _seed_card(index)
-    with patch("mirage.core.trello.read.list_card_comments",
-               new_callable=AsyncMock,
-               return_value=comments):
+    with patch(
+        "mirage.core.trello.read.list_card_comments",
+        new_callable=AsyncMock,
+        return_value=comments,
+    ):
         result = await read(
             accessor,
             PathSpec.from_str_path(
                 "/workspaces/Engineering__ws1/boards/Product_Roadmap__b1"
-                "/lists/Backlog__l1/cards/Fix_login__c1/comments.jsonl"),
+                "/lists/Backlog__l1/cards/Fix_login__c1/comments.jsonl"
+            ),
             index,
         )
     line = json.loads(result.decode().strip())
@@ -143,8 +147,9 @@ async def test_read_comments_jsonl(accessor, index):
 @pytest.mark.asyncio
 async def test_read_missing_path(accessor, index):
     with pytest.raises(FileNotFoundError):
-        await read(accessor, PathSpec.from_str_path("/nonexistent/path"),
-                   index)
+        await read(
+            accessor, PathSpec.from_str_path("/nonexistent/path"), index
+        )
 
 
 WS1 = {"id": "ws1", "displayName": "Engineering", "name": "eng"}
@@ -160,18 +165,26 @@ async def test_a_board_outside_board_ids_is_absent_on_every_surface(index):
     used to go straight to the id in the path: ``cat`` served a board
     ``ls`` and ``stat`` both reported absent."""
     accessor = TrelloAccessor(
-        TrelloConfig(api_key="key", api_token="token", board_ids=["b1"]))
-    get_board = AsyncMock(side_effect=lambda config, board_id, session: {
-        "b1": B1,
-        "b2": B2
-    }[board_id])
+        TrelloConfig(api_key="key", api_token="token", board_ids=["b1"])
+    )
+    get_board = AsyncMock(
+        side_effect=lambda config, board_id, session: {"b1": B1, "b2": B2}[
+            board_id
+        ]
+    )
     get_card = AsyncMock(return_value={"id": "c9", "name": "Payroll"})
-    with patch("mirage.core.trello.readdir.list_workspaces",
-               AsyncMock(return_value=[WS1])), \
-            patch("mirage.core.trello.readdir.list_workspace_boards",
-                  AsyncMock(return_value=[B1, B2])), \
-            patch("mirage.core.trello.read.get_board", get_board), \
-            patch("mirage.core.trello.read.get_card", get_card):
+    with (
+        patch(
+            "mirage.core.trello.readdir.list_workspaces",
+            AsyncMock(return_value=[WS1]),
+        ),
+        patch(
+            "mirage.core.trello.readdir.list_workspace_boards",
+            AsyncMock(return_value=[B1, B2]),
+        ),
+        patch("mirage.core.trello.read.get_board", get_board),
+        patch("mirage.core.trello.read.get_card", get_card),
+    ):
         board_json = PathSpec.from_str_path(SECRET + "/board.json")
         for surface in (read, stat):
             with pytest.raises(FileNotFoundError):
@@ -182,34 +195,53 @@ async def test_a_board_outside_board_ids_is_absent_on_every_surface(index):
             await read(
                 accessor,
                 PathSpec.from_str_path(
-                    SECRET + "/lists/Todo__l9/cards/Payroll__c9/card.json"),
-                index)
+                    SECRET + "/lists/Todo__l9/cards/Payroll__c9/card.json"
+                ),
+                index,
+            )
         get_board.assert_not_awaited()
         get_card.assert_not_awaited()
         scoped = await read(
             accessor,
-            PathSpec.from_str_path("/workspaces/Engineering__ws1/boards"
-                                   "/Product_Roadmap__b1/board.json"), index)
+            PathSpec.from_str_path(
+                "/workspaces/Engineering__ws1/boards"
+                "/Product_Roadmap__b1/board.json"
+            ),
+            index,
+        )
     assert json.loads(scoped)["board_id"] == "b1"
 
 
 @pytest.mark.asyncio
 async def test_a_workspace_outside_workspace_id_is_absent_to_read(index):
     accessor = TrelloAccessor(
-        TrelloConfig(api_key="key", api_token="token", workspace_id="ws1"))
-    with patch("mirage.core.trello.readdir.list_workspaces",
-               AsyncMock(return_value=[WS1, WS2])), \
-            patch("mirage.core.trello.read.list_workspaces",
-                  AsyncMock(return_value=[WS1, WS2])):
+        TrelloConfig(api_key="key", api_token="token", workspace_id="ws1")
+    )
+    with (
+        patch(
+            "mirage.core.trello.readdir.list_workspaces",
+            AsyncMock(return_value=[WS1, WS2]),
+        ),
+        patch(
+            "mirage.core.trello.read.list_workspaces",
+            AsyncMock(return_value=[WS1, WS2]),
+        ),
+    ):
         with pytest.raises(FileNotFoundError):
             await read(
                 accessor,
-                PathSpec.from_str_path("/workspaces/Finance__ws2"
-                                       "/workspace.json"), index)
+                PathSpec.from_str_path(
+                    "/workspaces/Finance__ws2/workspace.json"
+                ),
+                index,
+            )
         scoped = await read(
             accessor,
-            PathSpec.from_str_path("/workspaces/Engineering__ws1"
-                                   "/workspace.json"), index)
+            PathSpec.from_str_path(
+                "/workspaces/Engineering__ws1/workspace.json"
+            ),
+            index,
+        )
     assert json.loads(scoped)["workspace_id"] == "ws1"
 
 
@@ -221,12 +253,19 @@ async def test_a_dot_led_board_title_is_listed_and_addressable(index):
     readable, with no error anywhere."""
     accessor = TrelloAccessor(TrelloConfig(api_key="key", api_token="token"))
     board = {"id": "b1", "name": ".plan"}
-    with patch("mirage.core.trello.readdir.list_workspaces",
-               AsyncMock(return_value=[WS1])), \
-            patch("mirage.core.trello.readdir.list_workspace_boards",
-                  AsyncMock(return_value=[board])), \
-            patch("mirage.core.trello.read.get_board",
-                  AsyncMock(return_value=board)):
+    with (
+        patch(
+            "mirage.core.trello.readdir.list_workspaces",
+            AsyncMock(return_value=[WS1]),
+        ),
+        patch(
+            "mirage.core.trello.readdir.list_workspace_boards",
+            AsyncMock(return_value=[board]),
+        ),
+        patch(
+            "mirage.core.trello.read.get_board", AsyncMock(return_value=board)
+        ),
+    ):
         boards = PathSpec.from_str_path("/workspaces/Engineering__ws1/boards")
         listed = await readdir(accessor, boards, index)
         assert listed == ["/workspaces/Engineering__ws1/boards/plan__b1"]

@@ -27,7 +27,6 @@ async def _pages_gen(pages):
 
 
 class _FakeClient:
-
     def __init__(self, pages):
         self._pages = pages
 
@@ -45,7 +44,6 @@ class _FakeClient:
 
 
 class _FakeSession:
-
     def __init__(self, pages):
         self._pages = pages
 
@@ -59,16 +57,17 @@ def _session_for(pages, config):
 
 def _spec(vfs_path):
     if vfs_path:
-        return PathSpec(virtual="/mnt/" + vfs_path,
-                        directory="/mnt/",
-                        vfs_path=vfs_path)
+        return PathSpec(
+            virtual="/mnt/" + vfs_path, directory="/mnt/", vfs_path=vfs_path
+        )
     return PathSpec(virtual="/mnt", directory="/", vfs_path="")
 
 
 def _run_find(monkeypatch, keys, vfs_path="data", **kwargs):
     pages = [{"Contents": [{"Key": key, "Size": size} for key, size in keys]}]
-    monkeypatch.setattr(s3_driver, "async_session",
-                        partial(_session_for, pages))
+    monkeypatch.setattr(
+        s3_driver, "async_session", partial(_session_for, pages)
+    )
     accessor = S3Accessor(S3Config(bucket="b"))
     return asyncio.run(find(accessor, _spec(vfs_path), **kwargs))
 
@@ -89,18 +88,24 @@ def test_find_orphan_marker_gets_parents(monkeypatch):
 
 
 def test_find_marker_plus_files_no_duplicates(monkeypatch):
-    out = _run_find(monkeypatch, [("data/a/", 0), ("data/a/x.txt", 1)],
-                    type="d")
+    out = _run_find(
+        monkeypatch, [("data/a/", 0), ("data/a/x.txt", 1)], type="d"
+    )
     assert out == ["/data", "/data/a"]
 
 
 def test_find_file_shadowed_by_implicit_dir_emits_once(monkeypatch):
     keys = [("data/a", 1), ("data/a/b.txt", 2)]
-    assert _run_find(monkeypatch,
-                     keys) == ["/data", "/data/a", "/data/a/b.txt"]
+    assert _run_find(monkeypatch, keys) == [
+        "/data",
+        "/data/a",
+        "/data/a/b.txt",
+    ]
     assert _run_find(monkeypatch, keys, type="d") == ["/data", "/data/a"]
-    assert _run_find(monkeypatch, keys,
-                     type="f") == ["/data/a", "/data/a/b.txt"]
+    assert _run_find(monkeypatch, keys, type="f") == [
+        "/data/a",
+        "/data/a/b.txt",
+    ]
 
 
 def test_find_empty_matches_marker_only_start(monkeypatch):

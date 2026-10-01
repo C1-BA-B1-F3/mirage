@@ -22,12 +22,12 @@ SPEC = ROOT / "spec"
 PYTHON = SPEC / "python" / "general"
 TYPESCRIPT = [
     SPEC / "typescript" / "node" / "general",
-    SPEC / "typescript" / "browser" / "general"
+    SPEC / "typescript" / "browser" / "general",
 ]
 PYTHON_VFS_COMMANDS = SPEC / "python" / "vfs_commands"
 TYPESCRIPT_VFS_COMMANDS = [
     SPEC / "typescript" / "node" / "vfs_commands",
-    SPEC / "typescript" / "browser" / "vfs_commands"
+    SPEC / "typescript" / "browser" / "vfs_commands",
 ]
 EXCEPTIONS = SPEC / "parity_exceptions.json"
 
@@ -73,14 +73,17 @@ def load_vfs_trees() -> dict[str, dict[str, Any]]:
     loaded: dict[str, dict[str, Any]] = {}
     for tree, path in trees.items():
         if not path.is_file():
-            raise SystemExit(f"missing {path}\nrun scripts/gen_specs.py and "
-                             "typescript/scripts/gen-specs.ts first")
+            raise SystemExit(
+                f"missing {path}\nrun scripts/gen_specs.py and "
+                "typescript/scripts/gen-specs.ts first"
+            )
         loaded[tree] = json.loads(path.read_text())
     return loaded
 
 
-def merge_variants(loaded: dict[str, dict[str, Any]], key: str,
-                   language_only: set[str]) -> dict[str, Any]:
+def merge_variants(
+    loaded: dict[str, dict[str, Any]], key: str, language_only: set[str]
+) -> dict[str, Any]:
     """One typescript view of ``key``, node's entry winning over browser's.
 
     Where only one runtime carries a real entry — the browser registers
@@ -111,9 +114,12 @@ def merge_variants(loaded: dict[str, dict[str, Any]], key: str,
     return out
 
 
-def check_variant_facts(loaded: dict[str, dict[str, Any]], key: str,
-                        allowed: dict[str, dict[str, str]],
-                        used: set[str]) -> list[str]:
+def check_variant_facts(
+    loaded: dict[str, dict[str, Any]],
+    key: str,
+    allowed: dict[str, dict[str, str]],
+    used: set[str],
+) -> list[str]:
     """Node against browser for one VFS-fact table.
 
     A backend both runtimes register is one backend, and it should not
@@ -146,17 +152,20 @@ def check_variant_facts(loaded: dict[str, dict[str, Any]], key: str,
             if field in exempt:
                 used.add(f"{key}:{name}:{field}")
                 continue
-            failures.append(f"{key}[{name}].{field}: typescript node="
-                            f"{a.get(field)!r} browser={b.get(field)!r}")
+            failures.append(
+                f"{key}[{name}].{field}: typescript node="
+                f"{a.get(field)!r} browser={b.get(field)!r}"
+            )
     return failures
 
 
-def check_capabilities(loaded: dict[str, dict[str, Any]],
-                       expansions: dict[str,
-                                        list[str]], language_only: set[str],
-                       allowed: dict[str,
-                                     dict[str,
-                                          str]], used: set[str]) -> list[str]:
+def check_capabilities(
+    loaded: dict[str, dict[str, Any]],
+    expansions: dict[str, list[str]],
+    language_only: set[str],
+    allowed: dict[str, dict[str, str]],
+    used: set[str],
+) -> list[str]:
     """Per-VFS behavior values: TTLs, caching, snapshot support.
 
     Registry membership says a backend can be built; these say what it
@@ -182,8 +191,10 @@ def check_capabilities(loaded: dict[str, dict[str, Any]],
     for name in sorted(set(py) & set(ts)):
         a, b = py[name], ts[name]
         if b is None:
-            failures.append(f"capabilities[{name}]: python builds it, no "
-                            f"typescript runtime does")
+            failures.append(
+                f"capabilities[{name}]: python builds it, no "
+                f"typescript runtime does"
+            )
             continue
         exempt = allowed.get(name, {})
         for key in sorted(set(a) | set(b)):
@@ -192,16 +203,20 @@ def check_capabilities(loaded: dict[str, dict[str, Any]],
             if key in exempt:
                 used.add(f"{name}:{key}")
                 continue
-            failures.append(f"capabilities[{name}].{key}: "
-                            f"python={a.get(key)!r} typescript={b.get(key)!r}")
+            failures.append(
+                f"capabilities[{name}].{key}: "
+                f"python={a.get(key)!r} typescript={b.get(key)!r}"
+            )
     return failures
 
 
-def check_command_io(loaded: dict[str, dict[str, Any]], aliases: dict[str,
-                                                                      str],
-                     language_only: set[str], allowed: dict[str, dict[str,
-                                                                      str]],
-                     used: set[str]) -> list[str]:
+def check_command_io(
+    loaded: dict[str, dict[str, Any]],
+    aliases: dict[str, str],
+    language_only: set[str],
+    allowed: dict[str, dict[str, str]],
+    used: set[str],
+) -> list[str]:
     """The wired ``CommandIO`` slots per backend.
 
     The adapter's slot set is a hand-filled literal that nothing else
@@ -236,12 +251,16 @@ def check_command_io(loaded: dict[str, dict[str, Any]], aliases: dict[str,
             if key == "slots":
                 only_py = sorted(set(a["slots"]) - set(b["slots"]))
                 only_ts = sorted(set(b["slots"]) - set(a["slots"]))
-                failures.append(f"command_io[{name}].slots: "
-                                f"python-only={only_py} "
-                                f"typescript-only={only_ts}")
+                failures.append(
+                    f"command_io[{name}].slots: "
+                    f"python-only={only_py} "
+                    f"typescript-only={only_ts}"
+                )
                 continue
-            failures.append(f"command_io[{name}].{key}: "
-                            f"python={a.get(key)!r} typescript={b.get(key)!r}")
+            failures.append(
+                f"command_io[{name}].{key}: "
+                f"python={a.get(key)!r} typescript={b.get(key)!r}"
+            )
     return failures
 
 
@@ -255,18 +274,22 @@ def snake_to_camel(snake: str) -> str:
         str: the camelCase spelling ``normalizeFields`` produces by default.
     """
     parts = snake.split("_")
-    return parts[0] + "".join(part[:1].upper() + part[1:]
-                              for part in parts[1:])
+    return parts[0] + "".join(
+        part[:1].upper() + part[1:] for part in parts[1:]
+    )
 
 
 def _fold(name: str) -> str:
     return name.replace("_", "").lower()
 
 
-def check_configs(loaded: dict[str, dict[str, Any]],
-                  expansions: dict[str, list[str]], language_only: set[str],
-                  allowed: dict[str, dict[str,
-                                          str]], used: set[str]) -> list[str]:
+def check_configs(
+    loaded: dict[str, dict[str, Any]],
+    expansions: dict[str, list[str]],
+    language_only: set[str],
+    allowed: dict[str, dict[str, str]],
+    used: set[str],
+) -> list[str]:
     """Per-VFS config field sets: what a mount can be told.
 
     Python dumps its pydantic wire names; TypeScript dumps the zod shape
@@ -315,12 +338,16 @@ def check_configs(loaded: dict[str, dict[str, Any]],
             if exempt(name, "door"):
                 continue
             side = "python" if a is None else "typescript"
-            failures.append(f"configs[{name}]: {side} declares no config "
-                            "class while the other side validates one")
+            failures.append(
+                f"configs[{name}]: {side} declares no config "
+                "class while the other side validates one"
+            )
             continue
         if not b.get("validates", False) and not exempt(name, "validates"):
-            failures.append(f"configs[{name}]: the typescript normalizer "
-                            "does not parse its schema")
+            failures.append(
+                f"configs[{name}]: the typescript normalizer "
+                "does not parse its schema"
+            )
         rename: dict[str, str] = b.get("rename", {})
         ts_fields: dict[str, Any] = b.get("fields", {})
         reached: set[str] = set()
@@ -330,26 +357,32 @@ def check_configs(loaded: dict[str, dict[str, Any]],
             if target not in ts_fields:
                 if exempt(name, wire):
                     continue
-                failures.append(f"configs[{name}].{wire}: python declares it, "
-                                f"no typescript field answers to {target!r}")
+                failures.append(
+                    f"configs[{name}].{wire}: python declares it, "
+                    f"no typescript field answers to {target!r}"
+                )
                 continue
             if bool(meta["required"]) != bool(ts_fields[target]["required"]):
                 if exempt(name, wire):
                     continue
-                failures.append(f"configs[{name}].{wire}: required python="
-                                f"{meta['required']!r} typescript="
-                                f"{ts_fields[target]['required']!r}")
+                failures.append(
+                    f"configs[{name}].{wire}: required python="
+                    f"{meta['required']!r} typescript="
+                    f"{ts_fields[target]['required']!r}"
+                )
         for field in sorted(set(ts_fields) - reached):
             if exempt(name, field):
                 continue
             failures.append(
                 f"configs[{name}].{field}: typescript declares it, "
-                "no python wire name reaches it")
+                "no python wire name reaches it"
+            )
     return failures
 
 
-def _membership(py: dict[str, Any], ts: dict[str, Any],
-                language_only: set[str], label: str) -> list[str]:
+def _membership(
+    py: dict[str, Any], ts: dict[str, Any], language_only: set[str], label: str
+) -> list[str]:
     only_py = sorted(set(py) - set(ts) - language_only)
     only_ts = sorted(set(ts) - set(py) - language_only)
     failures: list[str] = []
@@ -360,9 +393,12 @@ def _membership(py: dict[str, Any], ts: dict[str, Any],
     return failures
 
 
-def check_vfs_names(loaded: dict[str, dict[str, Any]], language_only: set[str],
-                    expansions: dict[str, list[str]],
-                    unconstructible: dict[str, dict[str, str]]) -> list[str]:
+def check_vfs_names(
+    loaded: dict[str, dict[str, Any]],
+    language_only: set[str],
+    expansions: dict[str, list[str]],
+    unconstructible: dict[str, dict[str, str]],
+) -> list[str]:
     """Registry membership, the surface the command specs cannot see.
 
     A VFS's ``_meta`` entries say it registers commands; nothing said
@@ -391,17 +427,21 @@ def check_vfs_names(loaded: dict[str, dict[str, Any]], language_only: set[str],
                 f"{tree}: these VFS register builtin commands but "
                 f"cannot be built by name: {unexpected}\n"
                 f"    add a registry factory, or document the omission in "
-                f"{EXCEPTIONS.name} under unconstructible_vfs_names.{tree}")
+                f"{EXCEPTIONS.name} under unconstructible_vfs_names.{tree}"
+            )
         stale = sorted(set(allowed) - set(orphans))
         if stale:
-            failures.append(f"stale unconstructible_vfs_names.{tree} entries "
-                            f"in {EXCEPTIONS.name}: {stale}")
+            failures.append(
+                f"stale unconstructible_vfs_names.{tree} entries "
+                f"in {EXCEPTIONS.name}: {stale}"
+            )
 
     py_registry: set[str] = set()
     for name in loaded["python"]["registry"]:
         py_registry.update(expansions.get(name, [name]))
     ts_registry = set(loaded["node"]["registry"]) | set(
-        loaded["browser"]["registry"])
+        loaded["browser"]["registry"]
+    )
     only_py = sorted(py_registry - ts_registry - language_only)
     only_ts = sorted(ts_registry - py_registry - language_only)
     if only_py:
@@ -413,14 +453,17 @@ def check_vfs_names(loaded: dict[str, dict[str, Any]], language_only: set[str],
 
 def load_dir(path: Path) -> dict[str, Any]:
     if not path.is_dir():
-        raise SystemExit(f"missing spec directory: {path}\n"
-                         "run scripts/gen_specs.py and "
-                         "typescript/scripts/gen-specs.ts first")
+        raise SystemExit(
+            f"missing spec directory: {path}\n"
+            "run scripts/gen_specs.py and "
+            "typescript/scripts/gen-specs.ts first"
+        )
     return {f.stem: json.loads(f.read_text()) for f in path.glob("*.json")}
 
 
-def expand_by_vfs(by_vfs: dict[str, Any],
-                  expansions: dict[str, list[str]]) -> dict[str, Any]:
+def expand_by_vfs(
+    by_vfs: dict[str, Any], expansions: dict[str, list[str]]
+) -> dict[str, Any]:
     out: dict[str, Any] = {}
     for name, entry in by_vfs.items():
         for alias in expansions.get(name, [name]):
@@ -433,15 +476,20 @@ def merge_by_vfs(variants: list[dict[str, Any]]) -> dict[str, Any]:
     for variant in variants:
         for name, entry in variant.items():
             if name in out and out[name] != entry:
-                raise SystemExit(f"typescript variants disagree on the "
-                                 f"metadata for VFS {name!r}")
+                raise SystemExit(
+                    f"typescript variants disagree on the "
+                    f"metadata for VFS {name!r}"
+                )
             out[name] = entry
     return out
 
 
-def compare_command(py: dict[str, Any], ts: dict[str, Any],
-                    py_by_vfs: dict[str, Any],
-                    ts_by_vfs: dict[str, Any]) -> list[str]:
+def compare_command(
+    py: dict[str, Any],
+    ts: dict[str, Any],
+    py_by_vfs: dict[str, Any],
+    ts_by_vfs: dict[str, Any],
+) -> list[str]:
     """Every divergence between one command's two specs, before exemptions.
 
     Per-VFS metadata differences are reported one key at a time as
@@ -485,8 +533,9 @@ def compare_command(py: dict[str, Any], ts: dict[str, Any],
     return diffs
 
 
-def exempted(diff: str, fields: set[str], by_vfs: dict[str,
-                                                       list[str]]) -> bool:
+def exempted(
+    diff: str, fields: set[str], by_vfs: dict[str, list[str]]
+) -> bool:
     if diff in fields:
         return True
     if not diff.startswith(f"{BY_VFS}:"):
@@ -495,31 +544,40 @@ def exempted(diff: str, fields: set[str], by_vfs: dict[str,
     return key in by_vfs.get(name, [])
 
 
-def describe(diff: str, py: dict[str, Any], ts: dict[str, Any],
-             py_by_vfs: dict[str, Any], ts_by_vfs: dict[str, Any]) -> str:
+def describe(
+    diff: str,
+    py: dict[str, Any],
+    ts: dict[str, Any],
+    py_by_vfs: dict[str, Any],
+    ts_by_vfs: dict[str, Any],
+) -> str:
     if diff.startswith(f"{BY_VFS}:"):
         _, name, key = diff.split(":", 2)
-        return (f"    {BY_VFS}[{name}].{key}: "
-                f"python={py_by_vfs[name].get(key)!r} "
-                f"typescript={ts_by_vfs[name].get(key)!r}")
+        return (
+            f"    {BY_VFS}[{name}].{key}: "
+            f"python={py_by_vfs[name].get(key)!r} "
+            f"typescript={ts_by_vfs[name].get(key)!r}"
+        )
     if diff in (BY_VFS_KEYS, "_meta.vfs_names"):
         a, b = set(py_by_vfs), set(ts_by_vfs)
-        return (f"    {diff}: python-only={sorted(a - b)} "
-                f"typescript-only={sorted(b - a)}")
+        return (
+            f"    {diff}: python-only={sorted(a - b)} "
+            f"typescript-only={sorted(b - a)}"
+        )
     if diff.startswith("_meta."):
         key = diff.split(".", 1)[1]
-        return (f"    {diff}: python={py['_meta'].get(key)!r} "
-                f"typescript={ts['_meta'].get(key)!r}")
+        return (
+            f"    {diff}: python={py['_meta'].get(key)!r} "
+            f"typescript={ts['_meta'].get(key)!r}"
+        )
     if diff == "options":
         # An option that declares only one spelling carries only that
         # key, since the dumps omit anything left at its default.
         py_by_name = {
-            o.get("long") or o.get("short"): o
-            for o in py.get("options", [])
+            o.get("long") or o.get("short"): o for o in py.get("options", [])
         }
         ts_by_name = {
-            o.get("long") or o.get("short"): o
-            for o in ts.get("options", [])
+            o.get("long") or o.get("short"): o for o in ts.get("options", [])
         }
         lines = [f"    {diff}:"]
         for key in sorted(set(py_by_name) | set(ts_by_name)):
@@ -533,9 +591,11 @@ def describe(diff: str, py: dict[str, Any], ts: dict[str, Any],
             else:
                 for k in sorted(set(py_opt) | set(ts_opt)):
                     if py_opt.get(k) != ts_opt.get(k):
-                        lines.append(f"      {key}.{k}: "
-                                     f"python={py_opt.get(k)!r} "
-                                     f"typescript={ts_opt.get(k)!r}")
+                        lines.append(
+                            f"      {key}.{k}: "
+                            f"python={py_opt.get(k)!r} "
+                            f"typescript={ts_opt.get(k)!r}"
+                        )
         return "\n".join(lines)
     return f"    {diff}: python={py.get(diff)!r} typescript={ts.get(diff)!r}"
 
@@ -559,12 +619,14 @@ def compare_variants(variants: list[dict[str, Any]]) -> list[str]:
         a, b = node[name], browser[name]
         diffs = [f for f in spec_fields(a, b) if a.get(f) != b.get(f)]
         diffs += [
-            f"_meta.{f}" for f in meta_fields(a["_meta"], b["_meta"])
+            f"_meta.{f}"
+            for f in meta_fields(a["_meta"], b["_meta"])
             if f != "vfs_names" and a["_meta"].get(f) != b["_meta"].get(f)
         ]
         if diffs:
-            failures.append(f"typescript node and browser disagree on "
-                            f"{name}: {diffs}")
+            failures.append(
+                f"typescript node and browser disagree on {name}: {diffs}"
+            )
     return failures
 
 
@@ -572,18 +634,18 @@ def main() -> int:
     exceptions = json.loads(EXCEPTIONS.read_text())
     expansions: dict[str, list[str]] = exceptions["vfs_expansions"]["python"]
     language_only = set(exceptions["language_only_vfs_names"])
-    unconstructible: dict[str,
-                          dict[str,
-                               str]] = exceptions["unconstructible_vfs_names"]
+    unconstructible: dict[str, dict[str, str]] = exceptions[
+        "unconstructible_vfs_names"
+    ]
     allowed: dict[str, Any] = exceptions["commands"]
-    capability_exempt: dict[str, dict[str,
-                                      str]] = exceptions["vfs_capabilities"]
+    capability_exempt: dict[str, dict[str, str]] = exceptions[
+        "vfs_capabilities"
+    ]
     io_exempt: dict[str, dict[str, str]] = exceptions["command_io"]
     io_aliases: dict[str, str] = exceptions["command_io_aliases"]["python"]
-    variant_exempt: dict[str,
-                         dict[str,
-                              dict[str,
-                                   str]]] = exceptions["variant_vfs_facts"]
+    variant_exempt: dict[str, dict[str, dict[str, str]]] = exceptions[
+        "variant_vfs_facts"
+    ]
     config_exempt: dict[str, dict[str, str]] = exceptions["config_fields"]
 
     # A backend verb carries its spec inline rather than in SPECS, so the
@@ -615,22 +677,31 @@ def main() -> int:
     trees = load_vfs_trees()
     failures.extend(compare_variants(ts_variants))
     failures.extend(
-        check_vfs_names(trees, language_only, expansions, unconstructible))
+        check_vfs_names(trees, language_only, expansions, unconstructible)
+    )
     # Before python is compared against the merged typescript view, since
     # that merge prefers node and would otherwise discard the difference.
     for table in ("capabilities", "command_io"):
         failures.extend(
-            check_variant_facts(trees, table, variant_exempt.get(table, {}),
-                                used_facts))
+            check_variant_facts(
+                trees, table, variant_exempt.get(table, {}), used_facts
+            )
+        )
     failures.extend(
-        check_capabilities(trees, expansions, language_only, capability_exempt,
-                           used_facts))
+        check_capabilities(
+            trees, expansions, language_only, capability_exempt, used_facts
+        )
+    )
     failures.extend(
-        check_command_io(trees, io_aliases, language_only, io_exempt,
-                         used_facts))
+        check_command_io(
+            trees, io_aliases, language_only, io_exempt, used_facts
+        )
+    )
     failures.extend(
-        check_configs(trees, expansions, language_only, config_exempt,
-                      used_facts))
+        check_configs(
+            trees, expansions, language_only, config_exempt, used_facts
+        )
+    )
     declared = {
         f"{name}:{key}"
         for table in (capability_exempt, io_exempt)
@@ -650,9 +721,11 @@ def main() -> int:
     }
     stale_facts = sorted(declared - used_facts)
     if stale_facts:
-        failures.append(f"stale VFS-fact exemptions in "
-                        f"{EXCEPTIONS.name}, the divergence they cover is "
-                        f"gone: {stale_facts}")
+        failures.append(
+            f"stale VFS-fact exemptions in "
+            f"{EXCEPTIONS.name}, the divergence they cover is "
+            f"gone: {stale_facts}"
+        )
 
     for name in sorted(set(py_specs) & set(ts_variants[0])):
         py, ts = py_specs[name], ts_variants[0][name]
@@ -660,7 +733,8 @@ def main() -> int:
         ts_by_vfs = {
             k: v
             for k, v in merge_by_vfs(
-                [v[name]["_meta"]["by_vfs"] for v in ts_variants]).items()
+                [v[name]["_meta"]["by_vfs"] for v in ts_variants]
+            ).items()
             if k not in language_only
         }
         diffs = compare_command(py, ts, py_by_vfs, ts_by_vfs)
@@ -676,13 +750,16 @@ def main() -> int:
         if not real:
             continue
         detail = "\n".join(
-            describe(d, py, ts, py_by_vfs, ts_by_vfs) for d in real)
+            describe(d, py, ts, py_by_vfs, ts_by_vfs) for d in real
+        )
         failures.append(f"{name}:\n{detail}")
 
     stale = sorted(set(allowed) - used)
     if stale:
-        failures.append(f"stale entries in {EXCEPTIONS.name}, the divergence "
-                        f"they cover is gone: {stale}")
+        failures.append(
+            f"stale entries in {EXCEPTIONS.name}, the divergence "
+            f"they cover is gone: {stale}"
+        )
 
     if failures:
         print("command spec parity check FAILED\n")

@@ -20,21 +20,35 @@ from typing import Any
 
 from mirage.cli.env import ENV_DAEMON_URL, ENV_TOKEN
 from mirage.server.auth import storage as auth_storage
-from mirage.server.auth.config import (ENV_AUTH_MODE, ENV_JWT_ALG,
-                                       ENV_JWT_AUDIENCE,
-                                       ENV_JWT_AUTHORIZED_PARTIES,
-                                       ENV_JWT_CLOCK_SKEW, ENV_JWT_ISSUER,
-                                       ENV_JWT_PUBKEY_FILE)
-from mirage.server.daemon_config import (ALLOWED_KEYS, NUMERIC_KEYS,
-                                         DaemonConfigError, read_daemon_table)
-from mirage.server.env import (ENV_ALLOWED_HOSTS, ENV_DAEMON_PORT,
-                               ENV_IDLE_GRACE_SECONDS)
+from mirage.server.auth.config import (
+    ENV_AUTH_MODE,
+    ENV_JWT_ALG,
+    ENV_JWT_AUDIENCE,
+    ENV_JWT_AUTHORIZED_PARTIES,
+    ENV_JWT_CLOCK_SKEW,
+    ENV_JWT_ISSUER,
+    ENV_JWT_PUBKEY_FILE,
+)
+from mirage.server.daemon_config import (
+    ALLOWED_KEYS,
+    NUMERIC_KEYS,
+    DaemonConfigError,
+    read_daemon_table,
+)
+from mirage.server.env import (
+    ENV_ALLOWED_HOSTS,
+    ENV_DAEMON_PORT,
+    ENV_IDLE_GRACE_SECONDS,
+)
 from mirage.server.host_validation_constants import DEFAULT_ALLOWED_HOSTS
 from mirage.server.paths import mirage_home
 from mirage.server.ssh.config import default_ssh_dir
-from mirage.server.ssh.constants import (AUTHORIZED_KEYS_NAME,
-                                         DEFAULT_SSH_HOST, HOST_KEY_NAME,
-                                         SSH_ENV_KEYS)
+from mirage.server.ssh.constants import (
+    AUTHORIZED_KEYS_NAME,
+    DEFAULT_SSH_HOST,
+    HOST_KEY_NAME,
+    SSH_ENV_KEYS,
+)
 
 DEFAULT_DAEMON_URL = "http://127.0.0.1:8765"
 
@@ -107,7 +121,8 @@ def load_daemon_settings(path: Path | None = None) -> DaemonSettings:
         settings.auth_token = env_token
     if not settings.auth_token:
         file_token = auth_storage.read_token_file(
-            auth_storage.default_token_file())
+            auth_storage.default_token_file()
+        )
         if file_token:
             settings.auth_token = file_token
     return settings
@@ -163,8 +178,10 @@ def resolved_config() -> dict[str, tuple[str, str]]:
 
 def _check_key(key: str) -> None:
     if key not in ALLOWED_KEYS:
-        raise DaemonConfigError(f"unknown config key: {key!r}; allowed: "
-                                f"{', '.join(sorted(ALLOWED_KEYS))}")
+        raise DaemonConfigError(
+            f"unknown config key: {key!r}; allowed: "
+            f"{', '.join(sorted(ALLOWED_KEYS))}"
+        )
 
 
 def _format_value(key: str, value: str) -> str:
@@ -287,8 +304,12 @@ def unset_config(key: str, path: Path | None = None) -> None:
             continue
         if stripped.startswith("["):
             in_daemon = False
-        if (in_daemon and "=" in stripped and not stripped.startswith("#")
-                and stripped.split("=", 1)[0].strip() == key):
+        if (
+            in_daemon
+            and "=" in stripped
+            and not stripped.startswith("#")
+            and stripped.split("=", 1)[0].strip() == key
+        ):
             continue
         kept.append(line)
     use_path.write_text("\n".join(kept) + "\n")

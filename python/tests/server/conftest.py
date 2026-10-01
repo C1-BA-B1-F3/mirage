@@ -44,5 +44,6 @@ def _disable_auth_for_legacy_tests(monkeypatch, request, tmp_path_factory):
         return
     monkeypatch.setenv("MIRAGE_AUTH_MODE", "local")
     monkeypatch.delenv("MIRAGE_AUTH_TOKEN", raising=False)
-    monkeypatch.setenv("MIRAGE_HOME",
-                       str(tmp_path_factory.mktemp("mirage_home")))
+    monkeypatch.setenv(
+        "MIRAGE_HOME", str(tmp_path_factory.mktemp("mirage_home"))
+    )

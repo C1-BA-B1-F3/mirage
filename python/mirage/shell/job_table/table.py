@@ -16,11 +16,19 @@ import asyncio
 import logging
 
 from mirage.process.supervisor import ProcessSupervisor
-from mirage.shell.console import (KILLED_OUTCOME, Channel, JobConsole,
-                                  exit_outcome)
+from mirage.shell.console import (
+    KILLED_OUTCOME,
+    Channel,
+    JobConsole,
+    exit_outcome,
+)
 from mirage.shell.job_table.constants import KILLED_EXIT_CODE
-from mirage.shell.job_table.types import (ConsoleFactory, Job, JobRunner,
-                                          JobStatus)
+from mirage.shell.job_table.types import (
+    ConsoleFactory,
+    Job,
+    JobRunner,
+    JobStatus,
+)
 from mirage.types import PathSpec
 
 logger = logging.getLogger(__name__)
@@ -91,8 +99,9 @@ async def _settle(run: JobRunner, job: Job) -> int:
             try:
                 await asyncio.shield(marker)
             except asyncio.CancelledError:
-                logger.debug("job %d cancelled again while marking killed",
-                             job.id)
+                logger.debug(
+                    "job %d cancelled again while marking killed", job.id
+                )
         marker.result()
         raise
     except Exception as exc:
@@ -140,9 +149,11 @@ class JobTable:
     test) shares.
     """
 
-    def __init__(self,
-                 console_factory: ConsoleFactory | None = None,
-                 processes: ProcessSupervisor | None = None) -> None:
+    def __init__(
+        self,
+        console_factory: ConsoleFactory | None = None,
+        processes: ProcessSupervisor | None = None,
+    ) -> None:
         """Create a table, optionally choosing where consoles live.
 
         Args:
@@ -216,25 +227,29 @@ class JobTable:
                 return await _settle(run, job)
             return job.exit_code
 
-        process = self.processes.start(session_id=session_id,
-                                       command=command,
-                                       cwd=PathSpec.from_str_path(cwd),
-                                       run=execute,
-                                       parent_pid=parent_pid,
-                                       limit=limit)
+        process = self.processes.start(
+            session_id=session_id,
+            command=command,
+            cwd=PathSpec.from_str_path(cwd),
+            run=execute,
+            parent_pid=parent_pid,
+            limit=limit,
+        )
         try:
             if self._console_factory is None:
                 console = JobConsole()
             else:
                 console = self._console_factory(job_id)
                 self._factory_consoles.append(console)
-            job = Job(id=job_id,
-                      command=command,
-                      task=None,
-                      cwd=cwd,
-                      agent=agent,
-                      session_id=session_id,
-                      console=console)
+            job = Job(
+                id=job_id,
+                command=command,
+                task=None,
+                cwd=cwd,
+                agent=agent,
+                session_id=session_id,
+                console=console,
+            )
         except Exception:
             process.terminate()
             raise
@@ -262,7 +277,8 @@ class JobTable:
 
     def running_jobs(self, session_id: str = "") -> list[Job]:
         return [
-            j for j in self.list_jobs(session_id)
+            j
+            for j in self.list_jobs(session_id)
             if j.status == JobStatus.RUNNING
         ]
 

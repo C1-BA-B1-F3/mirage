@@ -25,16 +25,20 @@ ROOT_ID = "aaaa1111-2222-3333-4444-555566667777"
 NESTED_ID = "bbbb1111-2222-3333-4444-555566667777"
 
 _TREE: dict[str, list[dict[str, Any]]] = {
-    f"/blocks/{ROOT_ID}/children": [{
-        "id": NESTED_ID,
-        "type": "toggle",
-        "has_children": True,
-    }],
-    f"/blocks/{NESTED_ID}/children": [{
-        "id": "cccc1111-2222-3333-4444-555566667777",
-        "type": "paragraph",
-        "has_children": False,
-    }],
+    f"/blocks/{ROOT_ID}/children": [
+        {
+            "id": NESTED_ID,
+            "type": "toggle",
+            "has_children": True,
+        }
+    ],
+    f"/blocks/{NESTED_ID}/children": [
+        {
+            "id": "cccc1111-2222-3333-4444-555566667777",
+            "type": "paragraph",
+            "has_children": False,
+        }
+    ],
 }
 
 
@@ -62,17 +66,16 @@ async def test_one_page_query_refuses_an_incomplete_page(monkeypatch):
 
     async def post(*_args, **_kwargs) -> dict[str, Any]:
         return {
-            "results": [{
-                "id": "partial"
-            }],
+            "results": [{"id": "partial"}],
             "has_more": False,
             "request_status": {
                 "type": "incomplete",
-                "incomplete_reason": "query_result_limit_reached"
+                "incomplete_reason": "query_result_limit_reached",
             },
         }
 
     monkeypatch.setattr(pages_mod, "notion_post", post)
     with pytest.raises(NotionAPIError, match="query_result_limit_reached"):
-        await pages_mod.query_data_source_page(NotionConfig(api_key="key"),
-                                               "ds", {"page_size": 10})
+        await pages_mod.query_data_source_page(
+            NotionConfig(api_key="key"), "ds", {"page_size": 10}
+        )

@@ -33,7 +33,8 @@ async def _fake_acquire():
 
 def _accessor(**config) -> PostgresAccessor:
     a = PostgresAccessor(
-        PostgresConfig(dsn="postgres://localhost/db", **config))
+        PostgresConfig(dsn="postgres://localhost/db", **config)
+    )
     pool = MagicMock()
     pool.acquire = lambda: _fake_acquire()
     a.pool = AsyncMock(return_value=pool)
@@ -48,10 +49,14 @@ async def _catalog_schemas(conn, allowlist):
 
 @pytest.fixture
 def catalog(monkeypatch):
-    monkeypatch.setattr("mirage.core.postgres.client.list_schemas",
-                        AsyncMock(side_effect=_catalog_schemas))
-    monkeypatch.setattr("mirage.core.postgres.client.list_tables",
-                        AsyncMock(return_value=["users"]))
+    monkeypatch.setattr(
+        "mirage.core.postgres.client.list_schemas",
+        AsyncMock(side_effect=_catalog_schemas),
+    )
+    monkeypatch.setattr(
+        "mirage.core.postgres.client.list_tables",
+        AsyncMock(return_value=["users"]),
+    )
 
 
 def _path(s: str) -> PathSpec:
@@ -60,7 +65,8 @@ def _path(s: str) -> PathSpec:
 
 @pytest.mark.asyncio
 async def test_the_row_fast_path_refuses_a_table_outside_schemas(
-        monkeypatch, catalog):
+    monkeypatch, catalog
+):
     """``tail -n`` counted and fetched the relation by the names in the
     path, so a table under a schema ``schemas`` leaves out answered with
     its rows while ``ls`` and ``cat`` said it was not there."""
@@ -68,8 +74,11 @@ async def test_the_row_fast_path_refuses_a_table_outside_schemas(
     monkeypatch.setattr("mirage.core.postgres.client.count_rows", count)
     accessor = _accessor(schemas=["public"])
     out, io = await tail(
-        accessor, [_path("/secret/tables/users/rows.jsonl")], [],
-        CommandOpts(index=RAMIndexCacheStore(), flags={"n": "5"}))
+        accessor,
+        [_path("/secret/tables/users/rows.jsonl")],
+        [],
+        CommandOpts(index=RAMIndexCacheStore(), flags={"n": "5"}),
+    )
     assert await materialize(out) == b""
     assert io.exit_code == 1
     assert b"No such file or directory" in await materialize(io.stderr)
@@ -81,20 +90,28 @@ def table(monkeypatch, catalog):
     rows = [{"id": i} for i in range(1500)]
 
     async def fetch_rows(conn, schema, entity, *, limit, offset):
-        return rows[offset:offset + limit]
+        return rows[offset : offset + limit]
 
-    monkeypatch.setattr("mirage.core.postgres.client.count_rows",
-                        AsyncMock(return_value=len(rows)))
-    monkeypatch.setattr("mirage.core.postgres.client.fetch_rows",
-                        AsyncMock(side_effect=fetch_rows))
+    monkeypatch.setattr(
+        "mirage.core.postgres.client.count_rows",
+        AsyncMock(return_value=len(rows)),
+    )
+    monkeypatch.setattr(
+        "mirage.core.postgres.client.fetch_rows",
+        AsyncMock(side_effect=fetch_rows),
+    )
     return rows
 
 
-async def _tail(accessor: PostgresAccessor,
-                n: int) -> tuple[list[bytes], int, bytes]:
+async def _tail(
+    accessor: PostgresAccessor, n: int
+) -> tuple[list[bytes], int, bytes]:
     out, io = await tail(
-        accessor, [_path("/public/tables/users/rows.jsonl")], [],
-        CommandOpts(index=RAMIndexCacheStore(), flags={"n": str(n)}))
+        accessor,
+        [_path("/public/tables/users/rows.jsonl")],
+        [],
+        CommandOpts(index=RAMIndexCacheStore(), flags={"n": str(n)}),
+    )
     data = await materialize(out)
     return data.splitlines(), io.exit_code, await materialize(io.stderr)
 
@@ -115,5 +132,7 @@ async def test_tail_past_the_read_ceiling_stops_and_says_so(table):
     assert len(lines) == 100
     assert lines[-1] == b'{"id":1499}'
     assert code == 1
-    assert err == (b"tail: /public/tables/users/rows.jsonl: stopped at 100 "
-                   b"rows (max_read_rows); the output is incomplete\n")
+    assert err == (
+        b"tail: /public/tables/users/rows.jsonl: stopped at 100 "
+        b"rows (max_read_rows); the output is incomplete\n"
+    )

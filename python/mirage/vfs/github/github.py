@@ -29,7 +29,6 @@ from mirage.watch.base import DeltaHook
 
 
 class GitHubVFS(BaseVFS):
-
     accessor: GitHubAccessor
     name: str = VFSName.GITHUB
     caches_reads: bool = True
@@ -102,15 +101,19 @@ class GitHubVFS(BaseVFS):
         repo = repo or config.repo
         ref = ref or config.ref
         if owner is None or repo is None:
-            raise ValueError("GitHubVFS requires owner and repo, either as "
-                             "constructor kwargs or in GitHubConfig")
-        self.accessor = GitHubAccessor(config,
-                                       owner,
-                                       repo,
-                                       ref,
-                                       default_branch,
-                                       tree=tree,
-                                       truncated=truncated)
+            raise ValueError(
+                "GitHubVFS requires owner and repo, either as "
+                "constructor kwargs or in GitHubConfig"
+            )
+        self.accessor = GitHubAccessor(
+            config,
+            owner,
+            repo,
+            ref,
+            default_branch,
+            tree=tree,
+            truncated=truncated,
+        )
         super().__init__()
 
     def ops(self) -> list[RegisteredOp]:

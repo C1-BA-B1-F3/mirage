@@ -2,11 +2,16 @@ from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass
 
 from mirage.commands.builtin.utils.lines import split_lines_keepends
-from mirage.commands.builtin.utils.operands import (materialized_read,
-                                                    merge_split_errors,
-                                                    split_readable)
-from mirage.commands.builtin.utils.stream import (read_stdin_async, stdin_stat,
-                                                  stdin_stream)
+from mirage.commands.builtin.utils.operands import (
+    materialized_read,
+    merge_split_errors,
+    split_readable,
+)
+from mirage.commands.builtin.utils.stream import (
+    read_stdin_async,
+    stdin_stat,
+    stdin_stream,
+)
 from mirage.commands.config import CommandOpts
 from mirage.commands.spec import SPECS
 from mirage.commands.spec.flag_view import FlagView
@@ -77,8 +82,9 @@ async def unexpand(
         # unfinished continues into the next one, column and all.
         texts = [(await read_bytes(p)).decode(errors="replace") for p in paths]
         return "".join(
-            _unexpand_line(ln, tabsize, all_spaces) for ln in
-            split_lines_keepends("".join(texts))).encode(), IOResult()
+            _unexpand_line(ln, tabsize, all_spaces)
+            for ln in split_lines_keepends("".join(texts))
+        ).encode(), IOResult()
 
     raw = await read_stdin_async(stdin)
     if raw is None:
@@ -112,12 +118,16 @@ async def unexpand_generic(
     if err and not readable:
         return None, IOResult(exit_code=1, stderr=err)
     return await merge_split_errors(
-        await unexpand(readable,
-                       read_bytes=materialized_read(stream),
-                       stdin=opts.stdin,
-                       tabsize=parsed.tabsize,
-                       all_spaces=parsed.all_spaces,
-                       first_only=parsed.first_only), err)
+        await unexpand(
+            readable,
+            read_bytes=materialized_read(stream),
+            stdin=opts.stdin,
+            tabsize=parsed.tabsize,
+            all_spaces=parsed.all_spaces,
+            first_only=parsed.first_only,
+        ),
+        err,
+    )
 
 
 __all__ = ["unexpand", "unexpand_generic"]

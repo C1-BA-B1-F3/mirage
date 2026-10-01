@@ -22,14 +22,15 @@ from mirage.vfs.gcal.config import GCalConfig
 
 
 class GCalAccessor(GoogleApiAccessor):
-
     config: GCalConfig
 
-    def __init__(self, config: GCalConfig,
-                 token_manager: TokenManager) -> None:
+    def __init__(
+        self, config: GCalConfig, token_manager: TokenManager
+    ) -> None:
         super().__init__(config, token_manager)
-        self.time_range = TimeRange.from_strings(config.start_time,
-                                                 config.end_time)
+        self.time_range = TimeRange.from_strings(
+            config.start_time, config.end_time
+        )
 
     def today(self, tz: str) -> date:
         """The day the default listing window centres on.

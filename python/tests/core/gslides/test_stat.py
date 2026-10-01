@@ -38,9 +38,13 @@ def index():
 async def test_stat_root(accessor, index):
     result = await stat(
         accessor,
-        PathSpec(vfs_path=mount_key("/gslides", "/gslides"),
-                 virtual="/gslides",
-                 directory="/gslides"), index)
+        PathSpec(
+            vfs_path=mount_key("/gslides", "/gslides"),
+            virtual="/gslides",
+            directory="/gslides",
+        ),
+        index,
+    )
     assert result.type == FileType.DIRECTORY
     assert result.name == "/"
 
@@ -49,30 +53,43 @@ async def test_stat_root(accessor, index):
 async def test_stat_owned_dir(accessor, index):
     result = await stat(
         accessor,
-        PathSpec(vfs_path=mount_key("/gslides/owned", "/gslides"),
-                 virtual="/gslides/owned",
-                 directory="/gslides/owned"), index)
+        PathSpec(
+            vfs_path=mount_key("/gslides/owned", "/gslides"),
+            virtual="/gslides/owned",
+            directory="/gslides/owned",
+        ),
+        index,
+    )
     assert result.type == FileType.DIRECTORY
     assert result.name == "owned"
 
 
 @pytest.mark.asyncio
 async def test_stat_deck_from_cache(accessor, index):
-    await index.set_dir("/gslides/owned", [
-        ("2026-04-01_My_Deck__d1.gslide.json",
-         IndexEntry(id="d1",
+    await index.set_dir(
+        "/gslides/owned",
+        [
+            (
+                "2026-04-01_My_Deck__d1.gslide.json",
+                IndexEntry(
+                    id="d1",
                     name="My Deck",
                     resource_type="gslides/file",
                     remote_time="2026-04-01T00:00:00.000Z",
                     vfs_name="2026-04-01_My_Deck__d1.gslide.json",
-                    size=2048)),
-    ])
+                    size=2048,
+                ),
+            ),
+        ],
+    )
     target = "/gslides/owned/2026-04-01_My_Deck__d1.gslide.json"
     result = await stat(
         accessor,
-        PathSpec(vfs_path=mount_key(target, "/gslides"),
-                 virtual=target,
-                 directory=target),
+        PathSpec(
+            vfs_path=mount_key(target, "/gslides"),
+            virtual=target,
+            directory=target,
+        ),
         index,
     )
     assert result.content == ContentType.JSON
@@ -83,27 +100,31 @@ async def test_stat_deck_from_cache(accessor, index):
 
 @pytest.mark.asyncio
 async def test_stat_cache_miss_fetches_metadata_by_id(accessor, index):
-    files = [{
-        "mimeType": "application/vnd.google-apps.presentation",
-        "id": "d1",
-        "name": "My Deck",
-        "modifiedTime": "2026-04-01T00:00:00.000Z",
-        "size": "2048",
-        "owners": [{
-            "me": True
-        }],
-    }]
+    files = [
+        {
+            "mimeType": "application/vnd.google-apps.presentation",
+            "id": "d1",
+            "name": "My Deck",
+            "modifiedTime": "2026-04-01T00:00:00.000Z",
+            "size": "2048",
+            "owners": [{"me": True}],
+        }
+    ]
     target = "/gslides/owned/2026-04-01_My_Deck__d1.gslide.json"
     with patch(
-            "mirage.core.google.entry.get_file",
-            new_callable=AsyncMock,
-            return_value=files[0],
+        "mirage.core.google.entry.get_file",
+        new_callable=AsyncMock,
+        return_value=files[0],
     ) as mock_list:
         result = await stat(
             accessor,
-            PathSpec(vfs_path=mount_key(target, "/gslides"),
-                     virtual=target,
-                     directory=target), index)
+            PathSpec(
+                vfs_path=mount_key(target, "/gslides"),
+                virtual=target,
+                directory=target,
+            ),
+            index,
+        )
     assert result.content == ContentType.JSON
     assert result.extra["doc_id"] == "d1"
     assert mock_list.call_count == 1
@@ -111,24 +132,29 @@ async def test_stat_cache_miss_fetches_metadata_by_id(accessor, index):
 
 @pytest.mark.asyncio
 async def test_stat_not_found_after_fallback(accessor, index):
-    files = [{
-        "mimeType": "application/vnd.google-apps.presentation",
-        "id": "d1",
-        "name": "Other",
-        "modifiedTime": "2026-04-01T00:00:00.000Z",
-        "owners": [{
-            "me": True
-        }],
-    }]
+    files = [
+        {
+            "mimeType": "application/vnd.google-apps.presentation",
+            "id": "d1",
+            "name": "Other",
+            "modifiedTime": "2026-04-01T00:00:00.000Z",
+            "owners": [{"me": True}],
+        }
+    ]
     with patch(
-            "mirage.core.google.entry.get_file",
-            new_callable=AsyncMock,
-            return_value=files[0],
+        "mirage.core.google.entry.get_file",
+        new_callable=AsyncMock,
+        return_value=files[0],
     ):
         with pytest.raises(FileNotFoundError):
             await stat(
                 accessor,
-                PathSpec(vfs_path=mount_key("/gslides/owned/nope.gslide.json",
-                                            "/gslides"),
-                         virtual="/gslides/owned/nope.gslide.json",
-                         directory="/gslides/owned/nope.gslide.json"), index)
+                PathSpec(
+                    vfs_path=mount_key(
+                        "/gslides/owned/nope.gslide.json", "/gslides"
+                    ),
+                    virtual="/gslides/owned/nope.gslide.json",
+                    directory="/gslides/owned/nope.gslide.json",
+                ),
+                index,
+            )

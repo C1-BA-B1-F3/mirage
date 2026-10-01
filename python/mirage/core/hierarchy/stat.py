@@ -16,16 +16,22 @@ from collections.abc import Awaitable, Callable, Mapping
 
 from mirage.cache.index import NULL_INDEX, IndexCacheStore, IndexEntry
 from mirage.cache.index.ram import RAMIndexCacheStore
-from mirage.core.hierarchy.probe import (A, ReaddirFn, assert_listed,
-                                         listed_size, resolve_entry)
+from mirage.core.hierarchy.probe import (
+    A,
+    ReaddirFn,
+    assert_listed,
+    listed_size,
+    resolve_entry,
+)
 from mirage.core.hierarchy.readdir import Guard
 from mirage.core.hierarchy.scope import ROOT, DetectFn, ScopeMatch
 from mirage.types import ContentType, FileStat, FileType, PathSpec
 from mirage.utils.errors import enoent
 
 ExtraFn = Callable[[ScopeMatch], dict[str, str]]
-StatHook = Callable[[A, ScopeMatch, PathSpec, IndexCacheStore],
-                    Awaitable[FileStat]]
+StatHook = Callable[
+    [A, ScopeMatch, PathSpec, IndexCacheStore], Awaitable[FileStat]
+]
 EntryStatFn = Callable[[ScopeMatch, PathSpec, IndexEntry], FileStat]
 
 
@@ -45,8 +51,9 @@ def entry_stat(id_field: str, filetype: ContentType | FileType) -> EntryStatFn:
         filetype (ContentType | FileType): the node's kind.
     """
 
-    def build(match: ScopeMatch, path: PathSpec,
-              entry: IndexEntry) -> FileStat:
+    def build(
+        match: ScopeMatch, path: PathSpec, entry: IndexEntry
+    ) -> FileStat:
         if isinstance(filetype, FileType):
             return FileStat(
                 name=entry.vfs_name,
@@ -100,9 +107,9 @@ def make_stat(
             absent entry is ENOENT.
     """
 
-    async def stat(accessor: A,
-                   path: PathSpec,
-                   index: IndexCacheStore = NULL_INDEX) -> FileStat:
+    async def stat(
+        accessor: A, path: PathSpec, index: IndexCacheStore = NULL_INDEX
+    ) -> FileStat:
         if index is NULL_INDEX or index is None:
             # Entry resolution and listed_size read what the probe's
             # parent listing just wrote, so a caller with no cache still
@@ -117,13 +124,13 @@ def make_stat(
         scope = match.scope
         if scope is None:
             raise enoent(virtual)
-        override = (overrides.get(match.kind)
-                    if overrides is not None else None)
+        override = overrides.get(match.kind) if overrides is not None else None
         if override is not None:
             return await override(accessor, match, path, index)
         guard = guards.get(match.kind) if guards is not None else None
-        entry_fn = (entry_stats.get(match.kind)
-                    if entry_stats is not None else None)
+        entry_fn = (
+            entry_stats.get(match.kind) if entry_stats is not None else None
+        )
         if entry_fn is not None:
             if guard is not None:
                 await guard(accessor, match, virtual)
@@ -144,7 +151,8 @@ def make_stat(
             name=name,
             type=FileType.FILE,
             content=scope.filetype
-            if scope.filetype is not None else ContentType.JSON,
+            if scope.filetype is not None
+            else ContentType.JSON,
             size=await listed_size(index, path),
             extra=extra,
         )

@@ -21,7 +21,9 @@ from mirage.vfs.types import NativeReadOps, ReadOps
 
 # The history view is read-only (the recorder owns mutation), so only the
 # read ops are wired, and a stream is the whole rendered histfile.
-IO = VFSAdapter(read=ReadOps(readdir=_readdir, read_bytes=_read, stat=_stat),
-                native=NativeReadOps(find=find),
-                is_mounted=lambda a: True,
-                local=False).to_command_io()
+IO = VFSAdapter(
+    read=ReadOps(readdir=_readdir, read_bytes=_read, stat=_stat),
+    native=NativeReadOps(find=find),
+    is_mounted=lambda a: True,
+    local=False,
+).to_command_io()

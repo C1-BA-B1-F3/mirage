@@ -30,8 +30,12 @@ from mirage.runtime.types import RuntimeReach, ScriptSource
 # One source of truth, preference order (sandboxed first, host last).
 # The command -> runtime mapping is derived from each class's captures,
 # never hand-maintained. Process sandboxes are registered separately.
-RUNTIMES: tuple[type[Runtime], ...] = (MontyRuntime, WasiRuntime, LocalRuntime,
-                                       QuickJsRuntime)
+RUNTIMES: tuple[type[Runtime], ...] = (
+    MontyRuntime,
+    WasiRuntime,
+    LocalRuntime,
+    QuickJsRuntime,
+)
 
 
 class WorkspaceRuntime(Runtime):
@@ -63,10 +67,11 @@ class WorkspaceRuntime(Runtime):
     captures: tuple[str, ...] = ()
 
     def __init__(
-            self,
-            captures: Sequence[str] | None = None,
-            config: RuntimeConfig | dict[str, Any] | None = None,
-            script: Callable[..., Any] | ScriptSource | None = None) -> None:
+        self,
+        captures: Sequence[str] | None = None,
+        config: RuntimeConfig | dict[str, Any] | None = None,
+        script: Callable[..., Any] | ScriptSource | None = None,
+    ) -> None:
         # Declaring captures (even empty) turns the catch-all off; the
         # dispatcher reads this bit, not the tuple's length.
         self.restricted = captures is not None
@@ -82,8 +87,7 @@ NAMED[SandlockRuntime.name] = SandlockRuntime
 # eagerly would put that cost on every `import mirage`, so the table
 # holds module paths and imports the class only when the name is built.
 SANDBOX_MODULES: dict[str, str] = {
-    "apple_container":
-    "mirage.runtime.sandbox.apple_container:AppleContainerRuntime",
+    "apple_container": "mirage.runtime.sandbox.apple_container:AppleContainerRuntime",
     "daytona": "mirage.runtime.sandbox.daytona:DaytonaRuntime",
     "docker": "mirage.runtime.sandbox.docker:DockerRuntime",
     "e2b": "mirage.runtime.sandbox.e2b:E2BRuntime",
@@ -144,16 +148,21 @@ DEFAULT_PYTHON: str = MontyRuntime.name
 # hint per invocation); an explicitly listed name still fails loud.
 # `local` is deliberately absent: a sandboxed default must never
 # silently escalate to host execution.
-DEFAULT_ENTRIES: tuple[str, ...] = (DEFAULT_PYTHON, QuickJsRuntime.name,
-                                    WorkspaceRuntime.name)
+DEFAULT_ENTRIES: tuple[str, ...] = (
+    DEFAULT_PYTHON,
+    QuickJsRuntime.name,
+    WorkspaceRuntime.name,
+)
 
 # TypeScript-only runtime names a cross-language config may carry.
 TS_ONLY_HINTS: dict[str, str] = {
-    "pyodide": ("runtime 'pyodide' is TypeScript-only (a WASM CPython for "
-                "runtimes without a host Python); Python supports 'monty' "
-                "(sandboxed, default), 'wasi' (sandboxed full CPython), "
-                "'sandlock' (confined native processes), 'local' (the host "
-                "CPython), and 'quickjs' (sandboxed JavaScript)"),
+    "pyodide": (
+        "runtime 'pyodide' is TypeScript-only (a WASM CPython for "
+        "runtimes without a host Python); Python supports 'monty' "
+        "(sandboxed, default), 'wasi' (sandboxed full CPython), "
+        "'sandlock' (confined native processes), 'local' (the host "
+        "CPython), and 'quickjs' (sandboxed JavaScript)"
+    ),
 }
 
 
@@ -177,13 +186,15 @@ def build_runtime(name: str, **options: Any) -> Runtime:
         if name in TS_ONLY_HINTS:
             raise ValueError(TS_ONLY_HINTS[name])
         known = ", ".join(repr(n) for n in known_runtimes())
-        raise ValueError(f"unknown runtime: {name!r} "
-                         f"(expected one of {known})")
+        raise ValueError(
+            f"unknown runtime: {name!r} (expected one of {known})"
+        )
     return cls(**options)
 
 
-def runtime_bindings_for(entries: list[Runtime],
-                         name: str) -> dict[str, Runtime]:
+def runtime_bindings_for(
+    entries: list[Runtime], name: str
+) -> dict[str, Runtime]:
     """Resolve an explicit runtime name into a binding override map.
 
     Naming a runtime places a line's captured stages on it without
@@ -206,8 +217,9 @@ def runtime_bindings_for(entries: list[Runtime],
         if entry.name == name:
             return {command: entry for command in entry.captures}
     known = ", ".join(repr(e.name) for e in entries)
-    raise ValueError(f"unknown runtime: {name!r} "
-                     f"(workspace runtimes: {known})")
+    raise ValueError(
+        f"unknown runtime: {name!r} (workspace runtimes: {known})"
+    )
 
 
 def bind_commands(entries: list[Runtime]) -> dict[str, Runtime]:
@@ -229,7 +241,8 @@ def bind_commands(entries: list[Runtime]) -> dict[str, Runtime]:
     seen: set[str] = set()
     for entry in entries:
         if EXTERNAL_COMMANDS in entry.captures and not isinstance(
-                entry, (LineExecutorMixin, ProcessExecutorMixin)):
+            entry, (LineExecutorMixin, ProcessExecutorMixin)
+        ):
             raise ValueError("@external requires process or shell execution")
         if entry.name in seen:
             raise ValueError(f"duplicate runtime entry: {entry.name!r}")
@@ -241,7 +254,8 @@ def bind_commands(entries: list[Runtime]) -> dict[str, Runtime]:
 
 
 def whole_line_runtime(
-    bindings: Mapping[str, Runtime | None], ) -> LineExecutorMixin | None:
+    bindings: Mapping[str, Runtime | None],
+) -> LineExecutorMixin | None:
     """The runtime that runs this entire line, if any.
 
     Only an explicit "*" capture claims a whole line. Named captures

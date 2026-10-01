@@ -50,8 +50,9 @@ def normalize_base_summary(base: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def normalize_base(base: dict[str, Any],
-                   tables: list[dict[str, Any]]) -> dict[str, Any]:
+def normalize_base(
+    base: dict[str, Any], tables: list[dict[str, Any]]
+) -> dict[str, Any]:
     """base.json: the base and the tables it holds.
 
     Args:
@@ -60,11 +61,14 @@ def normalize_base(base: dict[str, Any],
     """
     return {
         **normalize_base_summary(base),
-        "tables": [{
-            "table_id": table.get("id"),
-            "table_name": table.get("name"),
-            "primary_field_id": table.get("primaryFieldId"),
-        } for table in tables],
+        "tables": [
+            {
+                "table_id": table.get("id"),
+                "table_name": table.get("name"),
+                "primary_field_id": table.get("primaryFieldId"),
+            }
+            for table in tables
+        ],
     }
 
 

@@ -35,8 +35,9 @@ class VisibleRemnant(OSError):
     """
 
     def __init__(self, virtual: str) -> None:
-        super().__init__(errno.ENOTEMPTY, os.strerror(errno.ENOTEMPTY),
-                         virtual)
+        super().__init__(
+            errno.ENOTEMPTY, os.strerror(errno.ENOTEMPTY), virtual
+        )
 
 
 class RemnantChannel(Protocol):
@@ -53,17 +54,13 @@ class RemnantChannel(Protocol):
     channel here is the bug this contract exists to prevent.
     """
 
-    def readdir(self, spec: PathSpec) -> Awaitable[list[str]]:
-        ...
+    def readdir(self, spec: PathSpec) -> Awaitable[list[str]]: ...
 
-    def stat(self, spec: PathSpec) -> Awaitable[FileStat]:
-        ...
+    def stat(self, spec: PathSpec) -> Awaitable[FileStat]: ...
 
-    def unlink(self, spec: PathSpec) -> Awaitable[None]:
-        ...
+    def unlink(self, spec: PathSpec) -> Awaitable[None]: ...
 
-    def rmdir(self, spec: PathSpec) -> Awaitable[None]:
-        ...
+    def rmdir(self, spec: PathSpec) -> Awaitable[None]: ...
 
 
 def entry_name(entry: str) -> str:
@@ -105,13 +102,16 @@ def child_spec(spec: PathSpec, name: str) -> PathSpec:
     """
     base = spec.virtual.rstrip("/")
     key = spec.vfs_path.rstrip("/")
-    return PathSpec(virtual=f"{base}/{name}",
-                    directory=spec.virtual,
-                    vfs_path=f"{key}/{name}" if key else name)
+    return PathSpec(
+        virtual=f"{base}/{name}",
+        directory=spec.virtual,
+        vfs_path=f"{key}/{name}" if key else name,
+    )
 
 
-async def remove_remnants(channel: RemnantChannel, allowed: Allowed,
-                          spec: PathSpec) -> None:
+async def remove_remnants(
+    channel: RemnantChannel, allowed: Allowed, spec: PathSpec
+) -> None:
     """Remove one directory and everything under it, children first,
     revalidating visibility at every step.
 

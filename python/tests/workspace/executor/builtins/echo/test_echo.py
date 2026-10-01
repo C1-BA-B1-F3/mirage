@@ -67,8 +67,10 @@ async def test_stop_ends_later_operands():
 
 @pytest.mark.asyncio
 async def test_unicode_escapes_write_utf8():
-    assert await echo_bytes(["-ne",
-                             "\\u00e9\\U0001F600"]) == "é\U0001F600".encode()
+    assert (
+        await echo_bytes(["-ne", "\\u00e9\\U0001F600"])
+        == "é\U0001f600".encode()
+    )
     assert await echo_bytes(["-ne", "\\uD800"]) == b"\xed\xa0\x80"
 
 

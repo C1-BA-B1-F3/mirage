@@ -14,7 +14,7 @@
 import asyncio
 import time
 
-YIELD_INTERVAL = .01
+YIELD_INTERVAL = 0.01
 
 
 class YieldBudget:
@@ -27,5 +27,5 @@ class YieldBudget:
         if time.monotonic() < self._next_yield:
             return
         # A positive delay lets due timers run before this task resumes.
-        await asyncio.sleep(.000001)
+        await asyncio.sleep(0.000001)
         self._next_yield = time.monotonic() + YIELD_INTERVAL

@@ -103,8 +103,9 @@ async def test_stat_size_matches_read_for_every_file(make_acc):
                 stack.append(trimmed)
                 continue
             assert info.size is not None, trimmed
-            body = await read_bytes(acc, PathSpec.from_str_path(trimmed),
-                                    index)
+            body = await read_bytes(
+                acc, PathSpec.from_str_path(trimmed), index
+            )
             assert info.size == len(body), trimmed
             files.append(trimmed)
     assert sorted(files) == ["/a.txt", "/docs/b.bin", "/empty.txt"]

@@ -22,10 +22,16 @@ from mirage.runtime.errors import EvalError
 from mirage.runtime.language import LanguageRuntime
 from mirage.runtime.mixin import EvaluatorMixin
 from mirage.runtime.routing.errors import RouteDeny, RouteError
-from mirage.runtime.routing.types import (DenyResult, RouteContext,
-                                          RouteDecision, RouteOutcome,
-                                          RoutePolicy, RouteResult,
-                                          RouteScript, ScriptSource)
+from mirage.runtime.routing.types import (
+    DenyResult,
+    RouteContext,
+    RouteDecision,
+    RouteOutcome,
+    RoutePolicy,
+    RouteResult,
+    RouteScript,
+    ScriptSource,
+)
 from mirage.runtime.script import eval_with_ctx
 from mirage.runtime.table import bind_commands, catch_all, runtime_bindings_for
 from mirage.runtime.types import EvalValue, Language
@@ -33,8 +39,9 @@ from mirage.runtime.types import EvalValue, Language
 POLICY_EVAL_TIMEOUT_SECONDS = 10.0
 
 
-def evaluator_of(entries: list[Runtime],
-                 language: Language | None = None) -> EvaluatorMixin | None:
+def evaluator_of(
+    entries: list[Runtime], language: Language | None = None
+) -> EvaluatorMixin | None:
     """The world's policy engine for a script.
 
     Config-borne policy scripts run on it; any runtime inheriting
@@ -57,14 +64,18 @@ def evaluator_of(entries: list[Runtime],
         if isinstance(entry, EvaluatorMixin):
             if first is None:
                 first = entry
-            if (language is not None and isinstance(entry, LanguageRuntime)
-                    and entry.language == language):
+            if (
+                language is not None
+                and isinstance(entry, LanguageRuntime)
+                and entry.language == language
+            ):
                 return entry
     return first
 
 
-def runtime_for_language(entries: list[Runtime],
-                         language: Language) -> LanguageRuntime | None:
+def runtime_for_language(
+    entries: list[Runtime], language: Language
+) -> LanguageRuntime | None:
     """The world's interpreter for a script CLI, evaluator_of's run twin.
 
     The first entry whose ``run`` speaks the language wins, the same
@@ -77,13 +88,21 @@ def runtime_for_language(entries: list[Runtime],
         language (Language): the script's language ("python" or "js").
     """
     return next(
-        (entry for entry in entries
-         if isinstance(entry, LanguageRuntime) and entry.language == language),
-        None)
+        (
+            entry
+            for entry in entries
+            if isinstance(entry, LanguageRuntime)
+            and entry.language == language
+        ),
+        None,
+    )
 
 
-async def _eval_source(source: str, ctx_payload: dict[str, EvalValue],
-                       evaluator: EvaluatorMixin | None) -> EvalValue:
+async def _eval_source(
+    source: str,
+    ctx_payload: dict[str, EvalValue],
+    evaluator: EvaluatorMixin | None,
+) -> EvalValue:
     """Evaluate a config script on the world's evaluator.
 
     The script sees the ctx payload as the `ctx` global and its LAST
@@ -103,16 +122,22 @@ async def _eval_source(source: str, ctx_payload: dict[str, EvalValue],
         raise ValueError(
             "policy scripts need an evaluator runtime in the workspace "
             "(install with: pip install mirage-ai[monty], or use a "
-            "Python callable instead)")
+            "Python callable instead)"
+        )
     try:
-        return await eval_with_ctx(source, ctx_payload, evaluator,
-                                   POLICY_EVAL_TIMEOUT_SECONDS)
+        return await eval_with_ctx(
+            source, ctx_payload, evaluator, POLICY_EVAL_TIMEOUT_SECONDS
+        )
     except asyncio.TimeoutError as exc:
-        raise RouteError(f"policy script timed out after "
-                         f"{POLICY_EVAL_TIMEOUT_SECONDS:g}s") from exc
+        raise RouteError(
+            f"policy script timed out after {POLICY_EVAL_TIMEOUT_SECONDS:g}s"
+        ) from exc
     except EvalError as exc:
-        prefix = ("policy script syntax error: "
-                  if exc.syntax else "policy script failed: ")
+        prefix = (
+            "policy script syntax error: "
+            if exc.syntax
+            else "policy script failed: "
+        )
         raise ValueError(prefix + str(exc))
 
 
@@ -121,7 +146,8 @@ async def evaluate_script(
     ctx: RouteContext,
     runtime: Runtime,
     entries: list[Runtime],
-    external_commands: Container[str] = ()) -> bool:
+    external_commands: Container[str] = (),
+) -> bool:
     """Ask one runtime's script whether it wants the line.
 
     The script sees the runtime's own view of the context
@@ -147,8 +173,11 @@ async def evaluate_script(
     view = ctx.for_runtime(runtime, external_commands)
     verdict: Any
     if isinstance(script, ScriptSource):
-        verdict = await _eval_source(script.source, view.to_dict(runtime),
-                                     evaluator_of(entries, script.language))
+        verdict = await _eval_source(
+            script.source,
+            view.to_dict(runtime),
+            evaluator_of(entries, script.language),
+        )
     else:
         verdict = script(view)
         if inspect.isawaitable(verdict):
@@ -156,7 +185,8 @@ async def evaluate_script(
     if isinstance(verdict, (Mapping, RouteOutcome)):
         raise RouteError(
             f"entry scripts answer a boolean (deny and placement belong "
-            f"to the global policy), got {verdict!r} from {runtime.name!r}")
+            f"to the global policy), got {verdict!r} from {runtime.name!r}"
+        )
     return bool(verdict)
 
 
@@ -193,14 +223,18 @@ def parse_verdict(verdict: Any) -> str | None:
         name = verdict.get("runtime")
         if isinstance(name, str):
             return name
-        raise RouteError("policy verdict dict needs a 'runtime' name "
-                         "or a 'deny' reason")
-    raise RouteError(f"policy must return a runtime name, a verdict "
-                     f"dict, or None, got {verdict!r}")
+        raise RouteError(
+            "policy verdict dict needs a 'runtime' name or a 'deny' reason"
+        )
+    raise RouteError(
+        f"policy must return a runtime name, a verdict "
+        f"dict, or None, got {verdict!r}"
+    )
 
 
-async def evaluate_policy(policy: RoutePolicy, ctx: RouteContext,
-                          entries: list[Runtime]) -> str | None:
+async def evaluate_policy(
+    policy: RoutePolicy, ctx: RouteContext, entries: list[Runtime]
+) -> str | None:
     """Run the global policy, returning a runtime name or None to pass.
 
     Args:
@@ -217,8 +251,11 @@ async def evaluate_policy(policy: RoutePolicy, ctx: RouteContext,
     """
     verdict: Any
     if isinstance(policy, ScriptSource):
-        verdict = await _eval_source(policy.source, ctx.to_dict(),
-                                     evaluator_of(entries, policy.language))
+        verdict = await _eval_source(
+            policy.source,
+            ctx.to_dict(),
+            evaluator_of(entries, policy.language),
+        )
     else:
         verdict = policy(ctx)
         if inspect.isawaitable(verdict):
@@ -231,7 +268,7 @@ async def decide_line(
     policy: RoutePolicy | None,
     ctx: RouteContext,
     static_bindings: dict[str, Runtime],
-    external_commands: Container[str] = ()
+    external_commands: Container[str] = (),
 ) -> RouteDecision:
     """Resolve the policy ladder for one line: policy, then scripts.
 
@@ -257,23 +294,25 @@ async def decide_line(
         name = await evaluate_policy(policy, ctx, entries)
         if name is not None:
             overlay = runtime_bindings_for(entries, name)
-            return RouteDecision(bindings={
-                **static_bindings,
-                **overlay
-            },
-                                 fallback=catch_all(entries))
+            return RouteDecision(
+                bindings={**static_bindings, **overlay},
+                fallback=catch_all(entries),
+            )
     willing: list[Runtime] = []
     for entry in entries:
-        wants = (True if entry.script is None else await evaluate_script(
-            entry.script, ctx, entry, entries, external_commands))
+        wants = (
+            True
+            if entry.script is None
+            else await evaluate_script(
+                entry.script, ctx, entry, entries, external_commands
+            )
+        )
         if wants:
             willing.append(entry)
     # Every captured command resolves: to its first willing capturer,
     # or to None (all capturers refused -> admission failure).
     bindings: dict[str, Runtime | None] = {
-        command: None
-        for entry in entries
-        for command in entry.captures
+        command: None for entry in entries for command in entry.captures
     }
     bindings.update(bind_commands(willing))
     return RouteDecision(bindings=bindings, fallback=catch_all(willing))

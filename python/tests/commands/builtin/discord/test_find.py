@@ -38,20 +38,25 @@ def _find_command():
 
 
 def _spec(virtual: str) -> PathSpec:
-    return PathSpec(virtual=virtual,
-                    directory=virtual,
-                    vfs_path=virtual.strip("/"))
+    return PathSpec(
+        virtual=virtual, directory=virtual, vfs_path=virtual.strip("/")
+    )
 
 
 async def _run(paths, *texts: str, **flags) -> list[str]:
     accessor = DiscordAccessor(DiscordConfig(token="t"))
     find = _find_command()
-    with patch("mirage.core.discord.readdir.list_guilds",
-               new_callable=AsyncMock,
-               return_value=GUILDS):
+    with patch(
+        "mirage.core.discord.readdir.list_guilds",
+        new_callable=AsyncMock,
+        return_value=GUILDS,
+    ):
         stdout, _io = await find(
-            accessor, paths, list(texts),
-            CommandOpts(index=RAMIndexCacheStore(), flags={**flags}))
+            accessor,
+            paths,
+            list(texts),
+            CommandOpts(index=RAMIndexCacheStore(), flags={**flags}),
+        )
         data = await materialize(stdout)
     return data.decode().splitlines()
 

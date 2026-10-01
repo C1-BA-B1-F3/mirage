@@ -91,7 +91,8 @@ class Reconciler:
             # Resolve backend IDs without reusing cached metadata.
             try:
                 remote_stat = await mount.execute_op(
-                    "stat", path, index=RAMIndexCacheStore())
+                    "stat", path, index=RAMIndexCacheStore()
+                )
             except (FileNotFoundError, NotADirectoryError):
                 await self.on_missing(path)
                 await mount.index.clear()
@@ -105,8 +106,11 @@ class Reconciler:
                 await self._cache.remove(path)
                 await mount.index.clear()
                 return Verdict.UNKNOWN
-            if (manager is not None and manager.generation == generation
-                    and isinstance(remote_stat, FileStat)):
+            if (
+                manager is not None
+                and manager.generation == generation
+                and isinstance(remote_stat, FileStat)
+            ):
                 manager.note_probed(spec, remote_stat)
         if remote_stat is None or remote_stat.fingerprint is None:
             await self._cache.remove(path)
@@ -250,8 +254,9 @@ class Reconciler:
         """
         if mount.read.policy is not ReadPolicy.FRESH:
             return
-        if (self._namespace.meta_for(path) is None
-                and not await self._cache.exists(path)):
+        if self._namespace.meta_for(
+            path
+        ) is None and not await self._cache.exists(path):
             return
         try:
             await self._probe_or_unknown(mount, path)
@@ -260,8 +265,9 @@ class Reconciler:
             await mount.index.clear()
             logger.warning("reconcile probe failed for %s: %s", path, exc)
 
-    async def on_op_missing(self, mount: MountEntry, op: str,
-                            path: str) -> None:
+    async def on_op_missing(
+        self, mount: MountEntry, op: str, path: str
+    ) -> None:
         """React to a read/stat op that the backend reported gone.
 
         Keyed on the mount's policy rather than fired unconditionally,
@@ -281,11 +287,12 @@ class Reconciler:
             op (str): the op that raised.
             path (str): absolute virtual path the backend reports gone.
         """
-        if (mount.read.policy is ReadPolicy.FRESH and op in _REVALIDATE_OPS):
+        if mount.read.policy is ReadPolicy.FRESH and op in _REVALIDATE_OPS:
             await self.on_missing(path)
 
     async def on_gone(
-        self, gone: list[Evicted], excluded: tuple[str, ...] = ()) -> None:
+        self, gone: list[Evicted], excluded: tuple[str, ...] = ()
+    ) -> None:
         """Clean up the children a complete re-list removed or replaced.
 
         Args:
@@ -294,19 +301,20 @@ class Reconciler:
         """
         paths = dict.fromkeys(child.path.rstrip("/") or "/" for child in gone)
         folders = {
-            child.path.rstrip("/") or "/"
-            for child in gone if child.folder
+            child.path.rstrip("/") or "/" for child in gone if child.folder
         }
         for path in paths:
             parents = ancestors(path) + (["/"] if path != "/" else [])
             if folders.isdisjoint(parents):
                 await self._cache.remove(path)
                 if path in folders:
-                    await self._cache.evict_prefix(path.rstrip("/") + "/",
-                                                   excluded=excluded)
+                    await self._cache.evict_prefix(
+                        path.rstrip("/") + "/", excluded=excluded
+                    )
         if paths:
-            await self._namespace.drop_overlays_under(list(paths),
-                                                      excluded=excluded)
+            await self._namespace.drop_overlays_under(
+                list(paths), excluded=excluded
+            )
 
     async def on_missing(self, path: str) -> None:
         """Apply the deletion reaction: evict cache + GC orphaned overlay.

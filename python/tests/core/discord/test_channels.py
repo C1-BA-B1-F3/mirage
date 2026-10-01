@@ -28,31 +28,15 @@ def config():
 @pytest.mark.asyncio
 async def test_list_channels(config):
     mock_data = [
-        {
-            "id": "C001",
-            "name": "general",
-            "type": 0
-        },
-        {
-            "id": "C002",
-            "name": "announcements",
-            "type": 5
-        },
-        {
-            "id": "C003",
-            "name": "forum",
-            "type": 15
-        },
-        {
-            "id": "C004",
-            "name": "voice-chat",
-            "type": 2
-        },
+        {"id": "C001", "name": "general", "type": 0},
+        {"id": "C002", "name": "announcements", "type": 5},
+        {"id": "C003", "name": "forum", "type": 15},
+        {"id": "C004", "name": "voice-chat", "type": 2},
     ]
     with patch(
-            "mirage.core.discord.channels.discord_get",
-            new_callable=AsyncMock,
-            return_value=mock_data,
+        "mirage.core.discord.channels.discord_get",
+        new_callable=AsyncMock,
+        return_value=mock_data,
     ) as mock_get:
         result = await list_channels(config, "G001")
 
@@ -60,29 +44,21 @@ async def test_list_channels(config):
     assert result[0]["name"] == "general"
     assert result[1]["name"] == "announcements"
     assert result[2]["name"] == "forum"
-    mock_get.assert_called_once_with(config,
-                                     "/guilds/G001/channels",
-                                     session=None)
+    mock_get.assert_called_once_with(
+        config, "/guilds/G001/channels", session=None
+    )
 
 
 @pytest.mark.asyncio
 async def test_list_channels_filters_voice(config):
     mock_data = [
-        {
-            "id": "C001",
-            "name": "voice-chat",
-            "type": 2
-        },
-        {
-            "id": "C002",
-            "name": "stage",
-            "type": 13
-        },
+        {"id": "C001", "name": "voice-chat", "type": 2},
+        {"id": "C002", "name": "stage", "type": 13},
     ]
     with patch(
-            "mirage.core.discord.channels.discord_get",
-            new_callable=AsyncMock,
-            return_value=mock_data,
+        "mirage.core.discord.channels.discord_get",
+        new_callable=AsyncMock,
+        return_value=mock_data,
     ):
         result = await list_channels(config, "G001")
 

@@ -18,14 +18,21 @@ from mirage.ops.types import SessionView
 from mirage.policy import PolicyDenied
 from mirage.shell.arith import evaluate_arith
 from mirage.shell.errors import ArithError
-from mirage.workspace.executor.builtins.shared import (readonly_refusal,
-                                                       refusal, require_view)
+from mirage.workspace.executor.builtins.shared import (
+    readonly_refusal,
+    refusal,
+    require_view,
+)
 from mirage.workspace.executor.builtins.types import BuiltinCall, Result
 from mirage.workspace.session import SessionState
 from mirage.workspace.session.elements import assign_element
-from mirage.workspace.session.state import (ensure_var_visible, random_reader,
-                                            session_elements, session_view,
-                                            visible_env)
+from mirage.workspace.session.state import (
+    ensure_var_visible,
+    random_reader,
+    session_elements,
+    session_view,
+    visible_env,
+)
 from mirage.workspace.types import ExecutionNode
 
 
@@ -52,10 +59,11 @@ async def handle_let(
     """
     if not args:
         err = b"bash: let: expression expected\n"
-        return None, IOResult(exit_code=1,
-                              stderr=err), ExecutionNode(command="let",
-                                                         exit_code=1,
-                                                         stderr=err)
+        return (
+            None,
+            IOResult(exit_code=1, stderr=err),
+            ExecutionNode(command="let", exit_code=1, stderr=err),
+        )
     view = require_view(state)
     value = 0
     for expr in args:
@@ -63,11 +71,13 @@ async def handle_let(
         error: ArithError | None = None
         value = 0
         try:
-            arith = evaluate_arith(expr,
-                                   visible_env(session),
-                                   elements=session_elements(session, reader),
-                                   read_var=reader.read,
-                                   wrote_var=reader.wrote)
+            arith = evaluate_arith(
+                expr,
+                visible_env(session),
+                elements=session_elements(session, reader),
+                read_var=reader.read,
+                wrote_var=reader.wrote,
+            )
             writes, value = arith.writes, arith.value
         except ArithError as exc:
             # bash bound the assignments made before the error; they
@@ -82,20 +92,25 @@ async def handle_let(
                 return readonly_refusal("let", write.name)
         try:
             for write in writes:
-                await assign_element(session, view, write.name, write.key,
-                                     write.value)
+                await assign_element(
+                    session, view, write.name, write.key, write.value
+                )
             reader.settle()
         except PolicyDenied as exc:
             return refusal("let", exc)
         if error is not None:
             err = f"bash: let: {expr}: {error}\n".encode()
-            return None, IOResult(exit_code=1,
-                                  stderr=err), ExecutionNode(command="let",
-                                                             exit_code=1,
-                                                             stderr=err)
+            return (
+                None,
+                IOResult(exit_code=1, stderr=err),
+                ExecutionNode(command="let", exit_code=1, stderr=err),
+            )
     code = 0 if value != 0 else 1
-    return None, IOResult(exit_code=code), ExecutionNode(command="let",
-                                                         exit_code=code)
+    return (
+        None,
+        IOResult(exit_code=code),
+        ExecutionNode(command="let", exit_code=code),
+    )
 
 
 async def let_builtin(call: BuiltinCall) -> Result:
@@ -105,5 +120,7 @@ async def let_builtin(call: BuiltinCall) -> Result:
         call (BuiltinCall): the invocation.
     """
     return await handle_let(
-        list(call.argv.args), call.session,
-        session_view(call.session, call.namespace.registry.policies))
+        list(call.argv.args),
+        call.session,
+        session_view(call.session, call.namespace.registry.policies),
+    )

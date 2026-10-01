@@ -21,13 +21,15 @@ from mirage.types import ContentType, FileStat, FileType, PathSpec
 from mirage.utils.filetype import content_type_for_path
 
 
-def _dir_stat(match: ScopeMatch, path: PathSpec,
-              entry: IndexEntry) -> FileStat:
+def _dir_stat(
+    match: ScopeMatch, path: PathSpec, entry: IndexEntry
+) -> FileStat:
     return FileStat(name=entry.vfs_name, type=FileType.DIRECTORY)
 
 
-def _message_stat(match: ScopeMatch, path: PathSpec,
-                  entry: IndexEntry) -> FileStat:
+def _message_stat(
+    match: ScopeMatch, path: PathSpec, entry: IndexEntry
+) -> FileStat:
     return FileStat(
         name=entry.vfs_name,
         type=FileType.FILE,
@@ -37,8 +39,9 @@ def _message_stat(match: ScopeMatch, path: PathSpec,
     )
 
 
-def _attachment_dir_stat(match: ScopeMatch, path: PathSpec,
-                         entry: IndexEntry) -> FileStat:
+def _attachment_dir_stat(
+    match: ScopeMatch, path: PathSpec, entry: IndexEntry
+) -> FileStat:
     return FileStat(
         name=entry.vfs_name,
         type=FileType.DIRECTORY,
@@ -46,8 +49,9 @@ def _attachment_dir_stat(match: ScopeMatch, path: PathSpec,
     )
 
 
-def _attachment_stat(match: ScopeMatch, path: PathSpec,
-                     entry: IndexEntry) -> FileStat:
+def _attachment_stat(
+    match: ScopeMatch, path: PathSpec, entry: IndexEntry
+) -> FileStat:
     return FileStat(
         name=entry.vfs_name,
         type=FileType.FILE,

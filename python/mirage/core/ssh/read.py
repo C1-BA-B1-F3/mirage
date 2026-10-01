@@ -22,11 +22,13 @@ from mirage.types import PathSpec
 from mirage.utils.errors import enoent
 
 
-async def read_bytes(accessor: SSHAccessor,
-                     path_spec: PathSpec,
-                     index: IndexCacheStore = NULL_INDEX,
-                     offset: int = 0,
-                     size: int | None = None) -> bytes:
+async def read_bytes(
+    accessor: SSHAccessor,
+    path_spec: PathSpec,
+    index: IndexCacheStore = NULL_INDEX,
+    offset: int = 0,
+    size: int | None = None,
+) -> bytes:
     virtual = path_spec.virtual
     path = path_spec.mount_path
     config = accessor.config

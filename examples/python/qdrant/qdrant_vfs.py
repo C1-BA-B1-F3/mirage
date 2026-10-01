@@ -36,8 +36,10 @@ def _client() -> QdrantClient:
     url = os.environ.get("QDRANT_URL")
     if url:
         return QdrantClient(url=url, api_key=os.environ.get("QDRANT_API_KEY"))
-    return QdrantClient(host=os.environ.get("QDRANT_HOST", "localhost"),
-                        port=int(os.environ.get("QDRANT_PORT", "6333")))
+    return QdrantClient(
+        host=os.environ.get("QDRANT_HOST", "localhost"),
+        port=int(os.environ.get("QDRANT_PORT", "6333")),
+    )
 
 
 async def show(ws: Workspace, cmd: str) -> None:
@@ -102,12 +104,16 @@ async def main() -> None:
     meta_res = await ws.shell(
         'chmod 640 "/fashion/Men/Shoes/White/3.json"'
         ' && chown 500:dev "/fashion/Men/Shoes/White/3.json"'
-        ' && touch -t 202601021530 "/fashion/Men/Shoes/White/3.json"')
+        ' && touch -t 202601021530 "/fashion/Men/Shoes/White/3.json"'
+    )
     print(f"  chmod/chown/touch exit={meta_res.exit_code}")
     meta_st, _ = await ws.dispatch(
-        "stat", PathSpec.from_str_path("/fashion/Men/Shoes/White/3.json"))
-    print(f"  dispatch stat: mode={oct(meta_st.mode)[2:]} uid={meta_st.uid} "
-          f"gid={meta_st.gid} mtime={meta_st.modified}")
+        "stat", PathSpec.from_str_path("/fashion/Men/Shoes/White/3.json")
+    )
+    print(
+        f"  dispatch stat: mode={oct(meta_st.mode)[2:]} uid={meta_st.uid} "
+        f"gid={meta_st.gid} mtime={meta_st.modified}"
+    )
 
     await show(ws, 'search "white running sneakers" /fashion')
 

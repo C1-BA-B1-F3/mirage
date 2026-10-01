@@ -17,8 +17,11 @@ import stat
 
 import pytest
 
-from mirage.server.auth.storage import (default_token_file, ensure_token_file,
-                                        read_token_file)
+from mirage.server.auth.storage import (
+    default_token_file,
+    ensure_token_file,
+    read_token_file,
+)
 from mirage.server.env import ENV_HOME
 
 

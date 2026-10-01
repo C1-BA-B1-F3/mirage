@@ -55,25 +55,35 @@ def _ops(removed: list[str] | None = None) -> CommandIO:
         removed.append(path.virtual)
 
     writes = {} if removed is None else {"unlink": remove, "rm_r": remove}
-    return CommandIO(readdir=readdir,
-                     read_bytes=read_bytes,
-                     read_stream=read_bytes,
-                     stat=stat,
-                     is_mounted=lambda _a: True,
-                     **writes)
+    return CommandIO(
+        readdir=readdir,
+        read_bytes=read_bytes,
+        read_stream=read_bytes,
+        stat=stat,
+        is_mounted=lambda _a: True,
+        **writes,
+    )
 
 
 def _spec(virtual: str) -> PathSpec:
-    return PathSpec(virtual=virtual,
-                    directory=virtual,
-                    vfs_path=virtual.lstrip("/"),
-                    resolved=True)
+    return PathSpec(
+        virtual=virtual,
+        directory=virtual,
+        vfs_path=virtual.lstrip("/"),
+        resolved=True,
+    )
 
 
-async def _rm(ops: CommandIO, *paths: str,
-              **flags: bool) -> tuple[int, str, str]:
-    out, io = await rm(ops, object(), [_spec(p) for p in paths], [],
-                       CommandOpts(flags=flags, index=INDEX))
+async def _rm(
+    ops: CommandIO, *paths: str, **flags: bool
+) -> tuple[int, str, str]:
+    out, io = await rm(
+        ops,
+        object(),
+        [_spec(p) for p in paths],
+        [],
+        CommandOpts(flags=flags, index=INDEX),
+    )
     stdout = (await materialize(out)).decode() if out is not None else ""
     stderr = io.stderr.decode() if io.stderr else ""
     return io.exit_code, stdout, stderr

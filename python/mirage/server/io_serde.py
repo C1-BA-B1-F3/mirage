@@ -31,15 +31,12 @@ async def io_result_to_dict(result: IOResult | None) -> dict[str, Any]:
         stdout = await result.materialize_stdout()
         stderr = await result.materialize_stderr()
         return {
-            "kind":
-            "io",
-            "exit_code":
-            result.exit_code,
-            "stdout":
-            stdout.decode(errors="replace"),
-            "stderr":
-            stderr.decode(errors="replace"),
-            "refusal":
-            (asdict(result.refusal) if result.refusal is not None else None),
+            "kind": "io",
+            "exit_code": result.exit_code,
+            "stdout": stdout.decode(errors="replace"),
+            "stderr": stderr.decode(errors="replace"),
+            "refusal": (
+                asdict(result.refusal) if result.refusal is not None else None
+            ),
         }
     return {"kind": "raw", "value": str(result)}

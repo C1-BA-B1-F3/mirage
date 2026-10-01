@@ -91,10 +91,13 @@ def main() -> None:
     data._store.files["/api.json"] = CONTENT
     data._store.files["/existing.txt"] = b"old\n"
 
-    with Workspace({
-            "/data":
-            Mount(data, mode=MountMode.WRITE, backend=MountBackend.FSKIT),
-    }) as ws:
+    with Workspace(
+        {
+            "/data": Mount(
+                data, mode=MountMode.WRITE, backend=MountBackend.FSKIT
+            ),
+        }
+    ) as ws:
         mp = ws.fuse_mountpoints["/data"]
         print(f"=== mounted at {mp} ===")
 
@@ -117,16 +120,25 @@ def main() -> None:
         print("  the two agree, which is what fskit needs sizes for\n")
 
         print("=== writes: metadata plus appends ===")
-        print("  append to existing -> " +
-              attempt(lambda: open(f"{mp}/existing.txt", "ab").write(b"x\n")))
-        print("  unlink existing    -> " +
-              attempt(lambda: os.unlink(f"{mp}/existing.txt")))
-        print("  create new file    -> " +
-              attempt(lambda: open(f"{mp}/new.txt", "wb").close()))
-        print("  mkdir              -> " +
-              attempt(lambda: os.mkdir(f"{mp}/sub")))
-        print("  rename             -> " +
-              attempt(lambda: os.rename(f"{mp}/api.json", f"{mp}/moved.json")))
+        print(
+            "  append to existing -> "
+            + attempt(lambda: open(f"{mp}/existing.txt", "ab").write(b"x\n"))
+        )
+        print(
+            "  unlink existing    -> "
+            + attempt(lambda: os.unlink(f"{mp}/existing.txt"))
+        )
+        print(
+            "  create new file    -> "
+            + attempt(lambda: open(f"{mp}/new.txt", "wb").close())
+        )
+        print(
+            "  mkdir              -> " + attempt(lambda: os.mkdir(f"{mp}/sub"))
+        )
+        print(
+            "  rename             -> "
+            + attempt(lambda: os.rename(f"{mp}/api.json", f"{mp}/moved.json"))
+        )
         payload = b"fresh\n"
         with open(f"{mp}/new.txt", "wb") as out:
             out.write(payload)

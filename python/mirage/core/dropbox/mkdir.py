@@ -22,8 +22,9 @@ from mirage.types import PathSpec
 from mirage.utils.errors import enoent
 
 
-async def _metadata_tag(accessor: DropboxAccessor,
-                        api_path: str) -> str | None:
+async def _metadata_tag(
+    accessor: DropboxAccessor, api_path: str
+) -> str | None:
     try:
         entry = await get_metadata(accessor.token_manager, api_path)
     except DropboxApiError as exc:
@@ -33,9 +34,9 @@ async def _metadata_tag(accessor: DropboxAccessor,
     return "folder" if entry.get(".tag") == "folder" else "file"
 
 
-async def mkdir(accessor: DropboxAccessor,
-                path: PathSpec,
-                parents: bool = False) -> None:
+async def mkdir(
+    accessor: DropboxAccessor, path: PathSpec, parents: bool = False
+) -> None:
     """create_folder_v2 auto-creates missing parents and rejects existing
     paths, so the GNU semantics (EEXIST without -p on an existing dir,
     ENOENT on a missing parent without -p) live here.
@@ -58,8 +59,10 @@ async def mkdir(accessor: DropboxAccessor,
         raise FileExistsError(path.virtual)
     if not parents:
         parent = api_path.rsplit("/", 1)[0]
-        if (parent != accessor.root_path
-                and await _metadata_tag(accessor, parent) != "folder"):
+        if (
+            parent != accessor.root_path
+            and await _metadata_tag(accessor, parent) != "folder"
+        ):
             raise enoent(path.virtual)
     timer = start_op()
     try:

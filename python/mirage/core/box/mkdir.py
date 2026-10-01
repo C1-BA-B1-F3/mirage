@@ -32,13 +32,15 @@ async def _invalidate_levels(path: PathSpec, count: int) -> None:
         depth = len(segments) - count + i + 1
         level_virtual = "/".join(segments[:depth]) or "/"
         await invalidate_after_write(
-            PathSpec.from_str_path(level_virtual,
-                                   mount_key(level_virtual, prefix)))
+            PathSpec.from_str_path(
+                level_virtual, mount_key(level_virtual, prefix)
+            )
+        )
 
 
-async def mkdir(accessor: BoxAccessor,
-                path: PathSpec,
-                parents: bool = False) -> None:
+async def mkdir(
+    accessor: BoxAccessor, path: PathSpec, parents: bool = False
+) -> None:
     parts = path_parts(path)
     if not parts:
         return

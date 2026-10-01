@@ -25,7 +25,6 @@ from mirage.types import PathSpec
 
 
 class _FakeManager:
-
     async def invalidate_ancestors(self, path: PathSpec) -> None:
         pass
 
@@ -40,7 +39,6 @@ class _FakeManager:
 
 
 class _FakeFiles:
-
     def __init__(self, docs: dict[str, str]) -> None:
         self.docs = docs
 
@@ -60,19 +58,22 @@ class _FakeFiles:
     def find(self, query: dict[str, Any], projection: Any = None) -> Any:
         return self._iter(self._match(query))
 
-    async def update_one(self, query: dict[str, Any],
-                         update: dict[str, Any]) -> None:
+    async def update_one(
+        self, query: dict[str, Any], update: dict[str, Any]
+    ) -> None:
         self.docs[query["_id"]] = update["$set"]["filename"]
 
-    async def update_many(self, query: dict[str, Any],
-                          update: dict[str, Any]) -> None:
+    async def update_many(
+        self, query: dict[str, Any], update: dict[str, Any]
+    ) -> None:
         for doc_id in self._match(query):
             self.docs[doc_id] = update["$set"]["filename"]
 
 
 def _accessor() -> GridFSAccessor:
     return GridFSAccessor(
-        GridFSConfig(uri="mongodb://localhost:27017", database="db"))
+        GridFSConfig(uri="mongodb://localhost:27017", database="db")
+    )
 
 
 def _spec(key: str) -> PathSpec:
@@ -88,8 +89,9 @@ def _install(monkeypatch, files: _FakeFiles) -> None:
 
 def _latest_of(files: _FakeFiles):
 
-    async def latest_file(accessor: GridFSAccessor,
-                          key: str) -> dict[str, Any] | None:
+    async def latest_file(
+        accessor: GridFSAccessor, key: str
+    ) -> dict[str, Any] | None:
         for doc_id, name in files.docs.items():
             if name == key:
                 return {"_id": doc_id, "filename": name}
@@ -100,8 +102,9 @@ def _latest_of(files: _FakeFiles):
 
 def _delete_of(files: _FakeFiles):
 
-    async def delete_all(accessor: GridFSAccessor, query: dict[str,
-                                                               Any]) -> None:
+    async def delete_all(
+        accessor: GridFSAccessor, query: dict[str, Any]
+    ) -> None:
         for doc_id in files._match(query):
             files.docs.pop(doc_id, None)
 
@@ -116,12 +119,14 @@ async def test_rename_moves_a_whole_directory_prefix(monkeypatch):
     ``mv`` reported "No such file or directory" for a directory that
     ``ls`` had just listed.
     """
-    files = _FakeFiles({
-        "1": "d/",
-        "2": "d/f.txt",
-        "3": "d/sub/g.txt",
-        "4": "keep.txt",
-    })
+    files = _FakeFiles(
+        {
+            "1": "d/",
+            "2": "d/f.txt",
+            "3": "d/sub/g.txt",
+            "4": "keep.txt",
+        }
+    )
     _install(monkeypatch, files)
     prev = push_cache_manager(_FakeManager())
     try:

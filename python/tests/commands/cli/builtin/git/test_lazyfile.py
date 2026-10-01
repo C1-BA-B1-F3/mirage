@@ -45,8 +45,9 @@ async def opened(ws) -> LazyFile:
     Args:
         ws (Workspace): the workspace holding the blob.
     """
-    return LazyFile(ws.dispatch, PATH, len(CONTENT),
-                    asyncio.get_running_loop())
+    return LazyFile(
+        ws.dispatch, PATH, len(CONTENT), asyncio.get_running_loop()
+    )
 
 
 @pytest_asyncio.fixture
@@ -77,7 +78,7 @@ async def test_a_read_spanning_several_blocks(ram_ws, block_size):
     f = await opened(ram_ws)
     await asyncio.to_thread(f.seek, SMALL_BLOCK - 3)
     got = await asyncio.to_thread(f.read, SMALL_BLOCK * 2 + 6)
-    assert got == CONTENT[SMALL_BLOCK - 3:SMALL_BLOCK * 3 + 3]
+    assert got == CONTENT[SMALL_BLOCK - 3 : SMALL_BLOCK * 3 + 3]
 
 
 @pytest.mark.asyncio
@@ -100,7 +101,8 @@ async def test_a_block_is_fetched_once(ram_ws, block_size, monkeypatch):
 
 @pytest.mark.asyncio
 async def test_a_read_only_fetches_the_blocks_it_lands_in(
-        ram_ws, block_size, monkeypatch):
+    ram_ws, block_size, monkeypatch
+):
     calls = []
     original = lazyfile.read_range
 

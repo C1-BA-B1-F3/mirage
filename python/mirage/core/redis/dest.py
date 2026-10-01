@@ -19,8 +19,9 @@ from mirage.utils.path import ancestors
 from mirage.vfs.redis.store import RedisStore
 
 
-async def check_dest_parents(store: RedisStore, dst_spec: PathSpec,
-                             d: str) -> None:
+async def check_dest_parents(
+    store: RedisStore, dst_spec: PathSpec, d: str
+) -> None:
     """Reject a destination whose parent chain is not all directories.
 
     Mirrors how ``rename(2)`` resolves the destination: a component that
@@ -74,8 +75,9 @@ async def lookup_error(store: RedisStore, spec: PathSpec, key: str) -> OSError:
     return broken if broken is not None else enoent(spec)
 
 
-async def _broken_parent(store: RedisStore, spec: PathSpec,
-                         key: str) -> OSError | None:
+async def _broken_parent(
+    store: RedisStore, spec: PathSpec, key: str
+) -> OSError | None:
     for ancestor in ancestors(key):
         if await store.has_dir(ancestor):
             continue
@@ -85,8 +87,9 @@ async def _broken_parent(store: RedisStore, spec: PathSpec,
     return None
 
 
-async def check_write_target(store: RedisStore, spec: PathSpec,
-                             key: str) -> None:
+async def check_write_target(
+    store: RedisStore, spec: PathSpec, key: str
+) -> None:
     """Reject a byte write whose target is a directory.
 
     ``open(2)`` for writing answers a directory with EISDIR whatever the
@@ -108,8 +111,9 @@ async def check_write_target(store: RedisStore, spec: PathSpec,
         raise eisdir(spec)
 
 
-async def check_mkdir_target(store: RedisStore, spec: PathSpec, key: str,
-                             parents: bool) -> None:
+async def check_mkdir_target(
+    store: RedisStore, spec: PathSpec, key: str, parents: bool
+) -> None:
     """Reject a ``mkdir`` the store cannot satisfy.
 
     The companion of :func:`check_dest_parents` for the one op that may

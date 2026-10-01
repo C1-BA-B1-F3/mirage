@@ -15,8 +15,10 @@
 from mirage.agents.openai_agents.capability import MirageCapability
 from mirage.agents.openai_agents.editor import MirageEditor
 from mirage.agents.openai_agents.runner import MirageRunner
-from mirage.agents.openai_agents.sandbox import (MirageSandboxClient,
-                                                 MirageSandboxSession)
+from mirage.agents.openai_agents.sandbox import (
+    MirageSandboxClient,
+    MirageSandboxSession,
+)
 from mirage.agents.openai_agents.shell import MirageShellExecutor
 from mirage.agents.prompt import MIRAGE_SYSTEM_PROMPT, build_system_prompt
 

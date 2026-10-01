@@ -21,8 +21,12 @@ from mirage.context import get_current_session
 from mirage.runtime.mixin import ProcessExecutorMixin
 from mirage.runtime.sandbox.apple_container.config import AppleContainerConfig
 from mirage.runtime.sandbox.apple_container.constants import (
-    APPLE_CONTAINER_CLI_HINT, PRELUDE, RUNNING_STATE, no_container_hint,
-    not_running_hint)
+    APPLE_CONTAINER_CLI_HINT,
+    PRELUDE,
+    RUNNING_STATE,
+    no_container_hint,
+    not_running_hint,
+)
 from mirage.runtime.sandbox.base import RemoteSandbox
 from mirage.runtime.sandbox.cli import run_cli
 from mirage.runtime.sandbox.config import SandboxConfig
@@ -60,26 +64,27 @@ class AppleContainerRuntime(RemoteSandbox, ProcessExecutorMixin):
     config: AppleContainerConfig
 
     def __init__(
-            self,
-            captures: Sequence[str] | None = None,
-            config: SandboxConfig | dict[str, Any] | None = None,
-            script: Callable[..., Any] | ScriptSource | None = None) -> None:
+        self,
+        captures: Sequence[str] | None = None,
+        config: SandboxConfig | dict[str, Any] | None = None,
+        script: Callable[..., Any] | ScriptSource | None = None,
+    ) -> None:
         super().__init__(captures, config, script)
         self._running: set[str] = set()
         self._probe_lock = asyncio.Lock()
 
     async def _container(
-            self,
-            args: list[str],
-            stdin: bytes | None = None) -> tuple[bytes, bytes, int]:
+        self, args: list[str], stdin: bytes | None = None
+    ) -> tuple[bytes, bytes, int]:
         """Run one container CLI invocation.
 
         Args:
             args (list[str]): CLI arguments after the executable.
             stdin (bytes | None): input delivered to the guest command.
         """
-        return await run_cli("container", APPLE_CONTAINER_CLI_HINT, args,
-                             stdin)
+        return await run_cli(
+            "container", APPLE_CONTAINER_CLI_HINT, args, stdin
+        )
 
     async def connect(self) -> None:
         """Attach nothing up front.
@@ -92,8 +97,11 @@ class AppleContainerRuntime(RemoteSandbox, ProcessExecutorMixin):
         """The container this line's session runs in, probed once."""
         session = get_current_session()
         session_id = session.session_id if session is not None else None
-        container = (self.config.containers.get(session_id)
-                     if session_id is not None else None)
+        container = (
+            self.config.containers.get(session_id)
+            if session_id is not None
+            else None
+        )
         if container is None:
             container = self.config.container
         if container is None:
@@ -116,29 +124,39 @@ class AppleContainerRuntime(RemoteSandbox, ProcessExecutorMixin):
         stdout, stderr, code = await self._container(["inspect", container])
         if code != 0:
             raise RuntimeError(
-                f"container inspect failed: {stderr.decode().strip()}")
+                f"container inspect failed: {stderr.decode().strip()}"
+            )
         try:
             state = json.loads(stdout)[0]["status"]["state"]
         except (ValueError, LookupError, TypeError) as exc:
-            raise RuntimeError("container inspect returned unreadable "
-                               f"json: {exc}") from exc
+            raise RuntimeError(
+                f"container inspect returned unreadable json: {exc}"
+            ) from exc
         if state != RUNNING_STATE:
             raise RuntimeError(not_running_hint(container, str(state)))
 
-    async def exec_line(self, line: str, stdin: bytes | None,
-                        env: dict[str, str], cwd: str) -> RunResult:
+    async def exec_line(
+        self, line: str, stdin: bytes | None, env: dict[str, str], cwd: str
+    ) -> RunResult:
         return await self._exec_argv(("sh", "-c", line), stdin, env, cwd)
 
     async def run_process(self, request: ProcessExecution) -> RunResult:
         if not request.argv:
             raise ValueError("process argv must not be empty")
-        return await self._exec_argv(request.argv, request.stdin, {
-            **self.config.env,
-            **request.env
-        }, request.cwd.virtual)
+        return await self._exec_argv(
+            request.argv,
+            request.stdin,
+            {**self.config.env, **request.env},
+            request.cwd.virtual,
+        )
 
-    async def _exec_argv(self, argv: tuple[str, ...], stdin: bytes | None,
-                         env: dict[str, str], cwd: str) -> RunResult:
+    async def _exec_argv(
+        self,
+        argv: tuple[str, ...],
+        stdin: bytes | None,
+        env: dict[str, str],
+        cwd: str,
+    ) -> RunResult:
         container = await self._target()
         args = ["exec", "-i", "-w", "/"]
         for key, value in env.items():

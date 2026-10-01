@@ -17,14 +17,21 @@ import errno
 import pytest
 
 from mirage.types import FileStat, FileType, PathSpec
-from mirage.utils.remnants import (VisibleRemnant, child_spec, entry_name,
-                                   remove_remnants, visible_below)
+from mirage.utils.remnants import (
+    VisibleRemnant,
+    child_spec,
+    entry_name,
+    remove_remnants,
+    visible_below,
+)
 
 
 def _spec(virtual: str) -> PathSpec:
-    return PathSpec(virtual=virtual,
-                    directory=virtual.rsplit("/", 1)[0] or "/",
-                    vfs_path=virtual.lstrip("/"))
+    return PathSpec(
+        virtual=virtual,
+        directory=virtual.rsplit("/", 1)[0] or "/",
+        vfs_path=virtual.lstrip("/"),
+    )
 
 
 def _nothing_visible(virtual: str) -> bool:
@@ -49,7 +56,7 @@ class TreeChannel:
         names = set()
         for p in self.dirs | self.files | self.ghosts:
             if p.startswith(base + "/"):
-                names.add(p[len(base) + 1:].split("/", 1)[0])
+                names.add(p[len(base) + 1 :].split("/", 1)[0])
         return sorted(names)
 
     async def stat(self, spec: PathSpec) -> FileStat:
@@ -61,8 +68,9 @@ class TreeChannel:
 
     async def unlink(self, spec: PathSpec) -> None:
         if spec.virtual in self.readonly:
-            raise PermissionError(errno.EROFS, "Read-only file system",
-                                  spec.virtual)
+            raise PermissionError(
+                errno.EROFS, "Read-only file system", spec.virtual
+            )
         if spec.virtual not in self.files:
             raise FileNotFoundError(spec.virtual)
         self.files.remove(spec.virtual)
@@ -81,14 +89,16 @@ async def test_removes_a_nested_tree_children_first():
     await remove_remnants(ch, _nothing_visible, _spec("/d"))
     assert not ch.dirs and not ch.files
     assert ch.removed.index(("unlink", "/d/sub/b")) < ch.removed.index(
-        ("rmdir", "/d/sub"))
+        ("rmdir", "/d/sub")
+    )
     assert ch.removed[-1] == ("rmdir", "/d")
 
 
 @pytest.mark.asyncio
 async def test_a_visible_entry_aborts_before_it_is_touched():
-    ch = TreeChannel(dirs={"/d", "/d/sec"},
-                     files={"/d/sec/k", "/d/sec/new.txt"})
+    ch = TreeChannel(
+        dirs={"/d", "/d/sec"}, files={"/d/sec/k", "/d/sec/new.txt"}
+    )
     with pytest.raises(VisibleRemnant) as exc:
         await remove_remnants(ch, lambda v: v == "/d/sec/new.txt", _spec("/d"))
     assert exc.value.errno == errno.ENOTEMPTY

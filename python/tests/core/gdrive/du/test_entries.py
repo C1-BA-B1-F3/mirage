@@ -35,14 +35,18 @@ def seed_tree(fake_drive) -> None:
 @pytest.mark.asyncio
 async def test_entries_with_total(fake_drive, gdrive_accessor):
     seed_tree(fake_drive)
-    assert await entries(gdrive_accessor, spec("/sub")) == ([
-        ("/sub/big.bin", 2048),
-        ("/sub/small.bin", 16),
-    ], 2064)
+    assert await entries(gdrive_accessor, spec("/sub")) == (
+        [
+            ("/sub/big.bin", 2048),
+            ("/sub/small.bin", 16),
+        ],
+        2064,
+    )
 
 
 @pytest.mark.asyncio
-async def test_entries_on_file_reports_its_own_size(fake_drive,
-                                                    gdrive_accessor):
+async def test_entries_on_file_reports_its_own_size(
+    fake_drive, gdrive_accessor
+):
     seed_tree(fake_drive)
     assert await entries(gdrive_accessor, spec("/a.txt")) == ([], 4)

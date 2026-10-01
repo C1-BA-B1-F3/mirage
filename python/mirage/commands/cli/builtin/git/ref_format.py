@@ -15,14 +15,24 @@
 from collections.abc import Sequence
 from functools import cmp_to_key
 
-from mirage.commands.cli.builtin.git.errors import (FormatUsageError, GitError,
-                                                    UnparsableFormatError)
+from mirage.commands.cli.builtin.git.errors import (
+    FormatUsageError,
+    GitError,
+    UnparsableFormatError,
+)
 from mirage.commands.cli.builtin.git.ref_fields import field_value, parse_field
-from mirage.commands.cli.builtin.git.types import (FieldCompare, FieldValue,
-                                                   FormatFrame, QuoteStyle,
-                                                   RefContext, RefField,
-                                                   RefFormat, RefItem, RefKind,
-                                                   RefSortKey)
+from mirage.commands.cli.builtin.git.types import (
+    FieldCompare,
+    FieldValue,
+    FormatFrame,
+    QuoteStyle,
+    RefContext,
+    RefField,
+    RefFormat,
+    RefItem,
+    RefKind,
+    RefSortKey,
+)
 from mirage.shell.bytes import byte_char
 from mirage.utils.width import char_width
 
@@ -40,9 +50,44 @@ TCL_ESCAPES = {"\f": "\\f", "\r": "\\r", "\n": "\\n", "\t": "\\t", "\v": "\\v"}
 S_N, S_I, S_F, S_Z = 0, 3, 6, 9
 CMP, LEN = 2, 3
 NEXT_STATE = (S_N, S_I, S_Z, S_N, S_I, S_I, S_N, S_F, S_F, S_N, S_F, S_Z)
-RESULT_TYPE = (CMP, CMP, CMP, CMP, LEN, CMP, CMP, CMP, CMP, CMP, -1, -1, 1,
-               LEN, LEN, 1, LEN, LEN, CMP, CMP, CMP, CMP, CMP, CMP, CMP, CMP,
-               CMP, CMP, 1, 1, -1, CMP, CMP, -1, CMP, CMP)
+RESULT_TYPE = (
+    CMP,
+    CMP,
+    CMP,
+    CMP,
+    LEN,
+    CMP,
+    CMP,
+    CMP,
+    CMP,
+    CMP,
+    -1,
+    -1,
+    1,
+    LEN,
+    LEN,
+    1,
+    LEN,
+    LEN,
+    CMP,
+    CMP,
+    CMP,
+    CMP,
+    CMP,
+    CMP,
+    CMP,
+    CMP,
+    CMP,
+    CMP,
+    1,
+    1,
+    -1,
+    CMP,
+    CMP,
+    -1,
+    CMP,
+    CMP,
+)
 
 
 def _next_field(template: str, start: int) -> int:
@@ -79,7 +124,7 @@ def literal_text(text: str) -> str:
                 out.append("%")
                 i += 2
                 continue
-            pair = text[i + 1:i + 3]
+            pair = text[i + 1 : i + 3]
             if len(pair) == 2 and pair[0] in HEX and pair[1] in HEX:
                 out.append(byte_char(int(pair, 16)))
                 i += 3
@@ -89,8 +134,9 @@ def literal_text(text: str) -> str:
     return "".join(out)
 
 
-def parse_format(template: str,
-                 quote: QuoteStyle = QuoteStyle.NONE) -> RefFormat:
+def parse_format(
+    template: str, quote: QuoteStyle = QuoteStyle.NONE
+) -> RefFormat:
     """Read a ``--format`` the way git's ``verify_ref_format`` does.
 
     Every field is parsed here, before any ref is read, so a bad one is
@@ -114,17 +160,22 @@ def parse_format(template: str,
         end = template.find(")", start)
         if end == -1:
             raise FormatUsageError(
-                f"malformed format string {template[start:]}")
+                f"malformed format string {template[start:]}"
+            )
         if start > cursor:
             pieces.append(literal_text(template[cursor:start]))
-        name = template[start + 2:end]
+        name = template[start + 2 : end]
         field = parse_field(name)
         if field.field == "rest":
             raise GitError(f"this command reject atom %({name})")
-        if (quote in TEXT_QUOTES and field.field == "raw"
-                and field.option == "bare"):
-            raise GitError(f"--format={name} cannot be used with "
-                           "--python, --shell, --tcl")
+        if (
+            quote in TEXT_QUOTES
+            and field.field == "raw"
+            and field.option == "bare"
+        ):
+            raise GitError(
+                f"--format={name} cannot be used with --python, --shell, --tcl"
+            )
         pieces.append(field)
         cursor = end + 1
     if cursor < len(template):
@@ -143,7 +194,8 @@ def listing_format(template: str) -> RefFormat:
         return parse_format(template)
     except FormatUsageError as exc:
         raise UnparsableFormatError(
-            str(exc).removeprefix("malformed format string ")) from exc
+            str(exc).removeprefix("malformed format string ")
+        ) from exc
 
 
 def parse_sort_keys(spellings: Sequence[str]) -> tuple[RefSortKey, ...]:
@@ -159,19 +211,24 @@ def parse_sort_keys(spellings: Sequence[str]) -> tuple[RefSortKey, ...]:
     for spelling in spellings:
         reverse = spelling.startswith("-")
         rest = spelling[1:] if reverse else spelling
-        prefix = next((p for p in VERSION_PREFIXES if rest.startswith(p)),
-                      None)
+        prefix = next(
+            (p for p in VERSION_PREFIXES if rest.startswith(p)), None
+        )
         if prefix is not None:
-            rest = rest[len(prefix):]
+            rest = rest[len(prefix) :]
         keys.append(
-            RefSortKey(field=parse_field(rest),
-                       reverse=reverse,
-                       version=prefix is not None))
+            RefSortKey(
+                field=parse_field(rest),
+                reverse=reverse,
+                version=prefix is not None,
+            )
+        )
     return tuple(reversed(keys))
 
 
 def used_fields(
-    fmt: RefFormat, keys: Sequence[RefSortKey] = ()) -> tuple[RefField, ...]:
+    fmt: RefFormat, keys: Sequence[RefSortKey] = ()
+) -> tuple[RefField, ...]:
     """Every distinct field a listing reads, format fields first.
 
     Args:
@@ -204,7 +261,7 @@ def quote_text(text: str, style: QuoteStyle) -> str:
     if style is QuoteStyle.TCL:
         out = []
         for char in text:
-            if char in "[]{}$\\\"":
+            if char in '[]{}$\\"':
                 out.append("\\" + char)
             else:
                 out.append(TCL_ESCAPES.get(char, char))
@@ -240,17 +297,18 @@ class ValueTable:
         row = self._rows.get(item.name)
         if row is None:
             row = {
-                f.name: field_value(f, item, self._ctx)
-                for f in self._fields
+                f.name: field_value(f, item, self._ctx) for f in self._fields
             }
             self._rows[item.name] = row
         found = row.get(field.name)
-        return found if found is not None else field_value(
-            field, item, self._ctx)
+        return (
+            found if found is not None else field_value(field, item, self._ctx)
+        )
 
 
-def _swap_prereleases(a: str, b: str, off: int,
-                      suffixes: Sequence[str]) -> int | None:
+def _swap_prereleases(
+    a: str, b: str, off: int, suffixes: Sequence[str]
+) -> int | None:
     """``swap_prereleases``: a ``versionsort.suffix`` around the first
     difference sorts its version before the one without it.
 
@@ -347,12 +405,14 @@ def _ascii_lower(text: str) -> str:
     return "".join(chr(ord(c) + 32) if "A" <= c <= "Z" else c for c in text)
 
 
-def sort_refs(items: Sequence[RefItem],
-              keys: Sequence[RefSortKey],
-              table: ValueTable,
-              ctx: RefContext,
-              icase: bool = False,
-              detached_first: bool = False) -> list[RefItem]:
+def sort_refs(
+    items: Sequence[RefItem],
+    keys: Sequence[RefSortKey],
+    table: ValueTable,
+    ctx: RefContext,
+    icase: bool = False,
+    detached_first: bool = False,
+) -> list[RefItem]:
     """``ref_array_sort``: order refs by each key in turn, then by name.
 
     The name that breaks a tie is never reversed, so ``-committerdate``
@@ -461,7 +521,8 @@ def _end(stack: list[FormatFrame], quote: QuoteStyle) -> None:
     block = "".join(current.out)
     stack.pop()
     stack[-1].out.append(
-        quote_text(block, quote) if len(stack) == 1 else block)
+        quote_text(block, quote) if len(stack) == 1 else block
+    )
 
 
 def render_ref(fmt: RefFormat, item: RefItem, table: ValueTable) -> str:
@@ -494,7 +555,8 @@ def render_ref(fmt: RefFormat, item: RefItem, table: ValueTable) -> str:
             frame = stack[-1]
             if frame.kind != "if":
                 raise GitError(
-                    "format: %(then) atom used without a %(if) atom")
+                    "format: %(then) atom used without a %(if) atom"
+                )
             if (frame.head or frame).then_seen:
                 raise GitError("format: %(then) atom used more than once")
             frame.then_seen = True
@@ -504,15 +566,18 @@ def render_ref(fmt: RefFormat, item: RefItem, table: ValueTable) -> str:
             frame = stack[-1]
             if frame.kind != "if":
                 raise GitError(
-                    "format: %(else) atom used without a %(if) atom")
+                    "format: %(else) atom used without a %(if) atom"
+                )
             owner = frame.head or frame
             if not owner.then_seen:
                 raise GitError(
-                    "format: %(else) atom used without a %(then) atom")
+                    "format: %(else) atom used without a %(then) atom"
+                )
             if frame.head is not None:
                 raise GitError("format: %(else) atom used more than once")
             stack.append(
-                FormatFrame(kind="if", opener=frame.opener, head=frame))
+                FormatFrame(kind="if", opener=frame.opener, head=frame)
+            )
         elif head == "end":
             _end(stack, fmt.quote)
         elif len(stack) == 1:
@@ -524,15 +589,17 @@ def render_ref(fmt: RefFormat, item: RefItem, table: ValueTable) -> str:
     return "".join(stack[0].out)
 
 
-def format_refs(fmt: RefFormat,
-                items: Sequence[RefItem],
-                ctx: RefContext,
-                keys: Sequence[RefSortKey] | None,
-                count: int = 0,
-                omit_empty: bool = False,
-                icase: bool = False,
-                detached_first: bool = False,
-                stream: bool = True) -> tuple[str, GitError | None]:
+def format_refs(
+    fmt: RefFormat,
+    items: Sequence[RefItem],
+    ctx: RefContext,
+    keys: Sequence[RefSortKey] | None,
+    count: int = 0,
+    omit_empty: bool = False,
+    icase: bool = False,
+    detached_first: bool = False,
+    stream: bool = True,
+) -> tuple[str, GitError | None]:
     """``filter_and_format_refs``: sort the refs, then print each one.
 
     A listing sorted by name alone is printed ref by ref, as git streams
@@ -564,12 +631,17 @@ def format_refs(fmt: RefFormat,
         ordered = list(items)
         # Git 2.50.1's can_do_iterative_format checks the atom type, even
         # for :short/:lstrip after --no-sort removes the default tie-breaker.
-        by_name = keys is None or (len(keys) == 1 and not keys[0].reverse
-                                   and not keys[0].version and not icase
-                                   and keys[0].field.field == "refname")
+        by_name = keys is None or (
+            len(keys) == 1
+            and not keys[0].reverse
+            and not keys[0].version
+            and not icase
+            and keys[0].field.field == "refname"
+        )
         if not (stream and by_name) and keys:
-            ordered = sort_refs(ordered, keys, table, ctx, icase,
-                                detached_first)
+            ordered = sort_refs(
+                ordered, keys, table, ctx, icase, detached_first
+            )
         for item in ordered[:count] if count else ordered:
             row = render_ref(fmt, item, table)
             if row or not omit_empty:

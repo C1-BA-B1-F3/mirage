@@ -17,6 +17,7 @@ Set/unset/print/query pinned against bash 5.2.37; ``nullglob``,
 ``failglob``, ``dotglob`` and ``globstar`` verified through real
 expansions, and ``extglob`` refused because the parser has no such mode.
 """
+
 import pytest
 
 from mirage.types import MountMode
@@ -95,8 +96,9 @@ async def test_dotglob():
 async def test_globstar():
     ws = _ws()
     await _run(
-        ws, "mkdir -p /data/d/e; touch /data/f.txt /data/d/g.txt "
-        "/data/d/e/h.txt")
+        ws,
+        "mkdir -p /data/d/e; touch /data/f.txt /data/d/g.txt /data/d/e/h.txt",
+    )
     out, _ = await _run(ws, "shopt -s globstar; echo /data/**/*.txt")
     assert out == "/data/d/e/h.txt /data/d/g.txt /data/f.txt\n"
     out, _ = await _run(ws, "shopt -s globstar; echo /data/d/**")

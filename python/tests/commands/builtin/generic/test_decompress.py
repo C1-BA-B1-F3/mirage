@@ -2,9 +2,11 @@ import gzip
 
 import pytest
 
-from mirage.commands.builtin.generic.decompress import (decompress_inputs,
-                                                        gzip_suffix,
-                                                        suffix_refusal)
+from mirage.commands.builtin.generic.decompress import (
+    decompress_inputs,
+    gzip_suffix,
+    suffix_refusal,
+)
 from mirage.io.types import materialize
 from mirage.types import FileStat, FileType, PathSpec
 
@@ -37,10 +39,12 @@ def _files(files: dict[str, bytes]):
 
 
 def _typed(virtual: str, typed: str) -> PathSpec:
-    return PathSpec(virtual=virtual,
-                    directory=virtual[:virtual.rfind("/") + 1],
-                    vfs_path=virtual.strip("/"),
-                    raw_path=typed)
+    return PathSpec(
+        virtual=virtual,
+        directory=virtual[: virtual.rfind("/") + 1],
+        vfs_path=virtual.strip("/"),
+        raw_path=typed,
+    )
 
 
 @pytest.mark.asyncio
@@ -59,10 +63,9 @@ async def test_fatal_input_never_reads_later_operands_or_stdin(suffix):
     paths = [
         PathSpec.from_str_path(p) for p in ("/a/bad.gz", "/b/missing.gz", "-")
     ]
-    body, io = await decompress_inputs(paths,
-                                       read=read,
-                                       stdin=stdin(),
-                                       to_stdout=True)
+    body, io = await decompress_inputs(
+        paths, read=read, stdin=stdin(), to_stdout=True
+    )
     assert await materialize(body) == (b"" if suffix is None else b"hello")
     assert reads == ["/a/bad.gz"]
     assert io.exit_code == 1
@@ -77,28 +80,38 @@ async def test_trailing_warning_keeps_in_place_output_and_continues():
     _, io = await decompress_inputs(paths, **ops)
     assert files == {"/data/a": b"hello", "/data/b": b"w"}
     assert io.exit_code == 2
-    assert io.stderr == (b"\ngzip: /data/a.gz: decompression OK, "
-                         b"trailing garbage ignored\n")
+    assert io.stderr == (
+        b"\ngzip: /data/a.gz: decompression OK, trailing garbage ignored\n"
+    )
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("suffix,tried,shown", [
-    (".gz", ["/d/x", "/d/x.gz", "/d/x.z", "/d/x-z", "/d/x.Z"], "x.gz"),
-    (".y", ["/d/x", "/d/x.y", "/d/x.gz", "/d/x.z", "/d/x-z", "/d/x.Z"], "x.y"),
-])
+@pytest.mark.parametrize(
+    "suffix,tried,shown",
+    [
+        (".gz", ["/d/x", "/d/x.gz", "/d/x.z", "/d/x-z", "/d/x.Z"], "x.gz"),
+        (
+            ".y",
+            ["/d/x", "/d/x.y", "/d/x.gz", "/d/x.z", "/d/x-z", "/d/x.Z"],
+            "x.y",
+        ),
+    ],
+)
 async def test_a_missing_name_is_retried_with_each_suffix(
-        suffix, tried, shown):
+    suffix, tried, shown
+):
     # gzip 1.13 opens the name, then the name with each suffix, and
     # names the -S one when every open misses.
     reads, ops = _files({})
-    body, io = await decompress_inputs([_typed("/d/x", "x")],
-                                       to_stdout=True,
-                                       suffix=suffix,
-                                       **ops)
+    body, io = await decompress_inputs(
+        [_typed("/d/x", "x")], to_stdout=True, suffix=suffix, **ops
+    )
     assert await materialize(body) == b""
     assert reads == tried
     assert (io.exit_code, io.stderr) == (
-        1, f"gzip: {shown}: No such file or directory\n".encode())
+        1,
+        f"gzip: {shown}: No such file or directory\n".encode(),
+    )
 
 
 @pytest.mark.asyncio
@@ -120,11 +133,13 @@ async def test_a_name_with_a_known_suffix_is_not_retried():
 @pytest.mark.asyncio
 async def test_the_empty_name_tries_the_suffixes_themselves():
     reads, ops = _files({})
-    empty = PathSpec(virtual="/d",
-                     directory="/",
-                     vfs_path="d",
-                     raw_path="",
-                     walk_error="ENOENT")
+    empty = PathSpec(
+        virtual="/d",
+        directory="/",
+        vfs_path="d",
+        raw_path="",
+        walk_error="ENOENT",
+    )
 
     async def read(path):
         reads.append(path.raw_path)
@@ -137,32 +152,38 @@ async def test_the_empty_name_tries_the_suffixes_themselves():
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("quiet,stderr,code", [
-    (False, b"gzip: /d/a.txt: unknown suffix -- ignored\n", 2),
-    (True, None, 0),
-])
+@pytest.mark.parametrize(
+    "quiet,stderr,code",
+    [
+        (False, b"gzip: /d/a.txt: unknown suffix -- ignored\n", 2),
+        (True, None, 0),
+    ],
+)
 async def test_in_place_skips_a_name_without_a_known_suffix(
-        quiet, stderr, code):
+    quiet, stderr, code
+):
     files = {"/d/a.txt": HELLO}
     _, ops = _files(files)
-    _, io = await decompress_inputs([PathSpec.from_str_path("/d/a.txt")],
-                                    quiet=quiet,
-                                    **ops)
+    _, io = await decompress_inputs(
+        [PathSpec.from_str_path("/d/a.txt")], quiet=quiet, **ops
+    )
     assert (io.stderr, io.exit_code) == (stderr, code)
     assert files == {"/d/a.txt": HELLO}
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("quiet,stderr", [
-    (False, b"gzip: /d/dir is a directory -- ignored\n"),
-    (True, None),
-])
+@pytest.mark.parametrize(
+    "quiet,stderr",
+    [
+        (False, b"gzip: /d/dir is a directory -- ignored\n"),
+        (True, None),
+    ],
+)
 async def test_a_directory_is_a_warning_that_quiet_silences(quiet, stderr):
     _, ops = _files({})
-    body, io = await decompress_inputs([PathSpec.from_str_path("/d/dir")],
-                                       to_stdout=True,
-                                       quiet=quiet,
-                                       **ops)
+    body, io = await decompress_inputs(
+        [PathSpec.from_str_path("/d/dir")], to_stdout=True, quiet=quiet, **ops
+    )
     assert await materialize(body) == b""
     assert (io.stderr, io.exit_code) == (stderr, 2)
 
@@ -172,26 +193,25 @@ async def test_tgz_and_taz_decompress_to_tar():
     files = {"/d/a.TGZ": HELLO, "/d/b.taz": HELLO}
     _, ops = _files(files)
     await decompress_inputs(
-        [PathSpec.from_str_path(p) for p in ("/d/a.TGZ", "/d/b.taz")], **ops)
+        [PathSpec.from_str_path(p) for p in ("/d/a.TGZ", "/d/b.taz")], **ops
+    )
     assert files == {"/d/a.tar": b"hello", "/d/b.tar": b"hello"}
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("force,code,after", [
-    (False, 2, {
-        "/d/e.gz": HELLO,
-        "/d/e": b"old"
-    }),
-    (True, 0, {
-        "/d/e": b"hello"
-    }),
-])
+@pytest.mark.parametrize(
+    "force,code,after",
+    [
+        (False, 2, {"/d/e.gz": HELLO, "/d/e": b"old"}),
+        (True, 0, {"/d/e": b"hello"}),
+    ],
+)
 async def test_an_output_already_there_needs_force(force, code, after):
     files = {"/d/e.gz": HELLO, "/d/e": b"old"}
     _, ops = _files(files)
-    _, io = await decompress_inputs([PathSpec.from_str_path("/d/e.gz")],
-                                    force=force,
-                                    **ops)
+    _, io = await decompress_inputs(
+        [PathSpec.from_str_path("/d/e.gz")], force=force, **ops
+    )
     assert (io.exit_code, files) == (code, after)
     if not force:
         assert io.stderr == b"gzip: /d/e already exists;\tnot overwritten\n"
@@ -217,19 +237,21 @@ async def test_a_bad_header_outranks_an_output_already_there():
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("data,out", [
-    (b"plain\n", b"plain\n"),
-    (b"", b""),
-    (b"\x1f", b"\x1f"),
-    (HELLO + b"junk", b"hellojunk"),
-    (HELLO + b"\0\0", b"hello\0\0"),
-])
+@pytest.mark.parametrize(
+    "data,out",
+    [
+        (b"plain\n", b"plain\n"),
+        (b"", b""),
+        (b"\x1f", b"\x1f"),
+        (HELLO + b"junk", b"hellojunk"),
+        (HELLO + b"\0\0", b"hello\0\0"),
+    ],
+)
 async def test_force_copies_what_is_not_gzip_to_stdout(data, out):
     _, ops = _files({"/d/f": data})
-    body, io = await decompress_inputs([PathSpec.from_str_path("/d/f")],
-                                       to_stdout=True,
-                                       force=True,
-                                       **ops)
+    body, io = await decompress_inputs(
+        [PathSpec.from_str_path("/d/f")], to_stdout=True, force=True, **ops
+    )
     assert (await materialize(body), io.exit_code, io.stderr) == (out, 0, None)
 
 
@@ -244,58 +266,71 @@ async def test_stdin_that_is_not_gzip_ends_the_run():
         [PathSpec.from_str_path(p) for p in ("-", "/d/x.gz")],
         stdin=stdin(),
         to_stdout=True,
-        **ops)
+        **ops,
+    )
     assert await materialize(body) == b""
     assert reads == []
-    assert (io.exit_code,
-            io.stderr) == (1, b"\ngzip: stdin: not in gzip format\n")
+    assert (io.exit_code, io.stderr) == (
+        1,
+        b"\ngzip: stdin: not in gzip format\n",
+    )
 
 
 @pytest.mark.asyncio
 async def test_quiet_keeps_the_trailing_garbage_exit_code():
     _, ops = _files({"/d/f.gz": HELLO + b"junk"})
-    body, io = await decompress_inputs([PathSpec.from_str_path("/d/f.gz")],
-                                       to_stdout=True,
-                                       quiet=True,
-                                       **ops)
-    assert (await
-            materialize(body), io.exit_code, io.stderr) == (b"hello", 2, None)
+    body, io = await decompress_inputs(
+        [PathSpec.from_str_path("/d/f.gz")], to_stdout=True, quiet=True, **ops
+    )
+    assert (await materialize(body), io.exit_code, io.stderr) == (
+        b"hello",
+        2,
+        None,
+    )
 
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("suffix", ["", "." + "a" * 30])
 async def test_an_unusable_suffix_is_refused_before_any_input(suffix):
     reads, ops = _files({"/d/x.gz": HELLO})
-    _, io = await decompress_inputs([PathSpec.from_str_path("/d/x.gz")],
-                                    suffix=suffix,
-                                    **ops)
+    _, io = await decompress_inputs(
+        [PathSpec.from_str_path("/d/x.gz")], suffix=suffix, **ops
+    )
     assert reads == []
-    assert (io.exit_code,
-            io.stderr) == (1, f"gzip: invalid suffix '{suffix}'\n".encode())
+    assert (io.exit_code, io.stderr) == (
+        1,
+        f"gzip: invalid suffix '{suffix}'\n".encode(),
+    )
 
 
-@pytest.mark.parametrize("name,suffix,found", [
-    ("a.gz", ".gz", ".gz"),
-    ("a.GZ", ".gz", ".GZ"),
-    ("a.Tgz", ".gz", ".Tgz"),
-    ("a_z", ".gz", "_z"),
-    ("a-GZ", ".gz", "-GZ"),
-    ("a.txt", ".gz", None),
-    (".gz", ".gz", None),
-    ("d/.gz", ".gz", None),
-    ("a.xy", ".XY", ".xy"),
-    ("a.gz", "z", ".gz"),
-    ("az", "z", "z"),
-])
+@pytest.mark.parametrize(
+    "name,suffix,found",
+    [
+        ("a.gz", ".gz", ".gz"),
+        ("a.GZ", ".gz", ".GZ"),
+        ("a.Tgz", ".gz", ".Tgz"),
+        ("a_z", ".gz", "_z"),
+        ("a-GZ", ".gz", "-GZ"),
+        ("a.txt", ".gz", None),
+        (".gz", ".gz", None),
+        ("d/.gz", ".gz", None),
+        ("a.xy", ".XY", ".xy"),
+        ("a.gz", "z", ".gz"),
+        ("az", "z", "z"),
+    ],
+)
 def test_gzip_suffix_reads_gzips_suffix_table(name, suffix, found):
     assert gzip_suffix(name, suffix) == found
 
 
-@pytest.mark.parametrize("suffix,refused", [
-    (".gz", False),
-    ("", True),
-    ("." + "a" * 29, False),
-    ("." + "a" * 30, True),
-])
+@pytest.mark.parametrize(
+    "suffix,refused",
+    [
+        (".gz", False),
+        ("", True),
+        ("." + "a" * 29, False),
+        ("." + "a" * 30, True),
+    ],
+)
 def test_suffix_refusal_takes_one_to_thirty_bytes(suffix, refused):
     assert (suffix_refusal(suffix) is not None) is refused

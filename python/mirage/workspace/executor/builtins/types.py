@@ -57,6 +57,7 @@ class BuiltinCall:
         execute_fn (Callable[..., Any]): runs a text line in this
             session (``eval``, ``source``, ``xargs``, ...).
     """
+
     argv: Argv
     session: SessionState
     stdin: ByteSource | None

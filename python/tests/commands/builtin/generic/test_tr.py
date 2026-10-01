@@ -58,16 +58,15 @@ async def test_long_forms():
 
 @pytest.mark.asyncio
 async def test_delete_without_squeeze_names_the_second_operand_as_extra():
-    with pytest.raises(ValueError,
-                       match="extra operand 'b'\n"
-                       "Only one string may be given"):
+    with pytest.raises(
+        ValueError, match="extra operand 'b'\nOnly one string may be given"
+    ):
         await _run(["a", "b"], {"delete": True}, b"x")
     with pytest.raises(Exception, match=r"extra operand 'b'\nTry"):
         await _run(["a", "b", "c"], {"delete": True}, b"x")
     with pytest.raises(Exception, match=r"extra operand 'c'\nTry"):
-        await _run(["a", "b", "c"], {
-            "delete": True,
-            "squeeze_repeats": True
-        }, b"x")
+        await _run(
+            ["a", "b", "c"], {"delete": True, "squeeze_repeats": True}, b"x"
+        )
     with pytest.raises(Exception, match=r"extra operand 'c'\nTry"):
         await _run(["a", "b", "c"], {}, b"x")

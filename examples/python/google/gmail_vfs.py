@@ -46,8 +46,9 @@ async def main():
             print(f"  {date}")
 
         first_date = dates[0] if dates else None
-        entries = os.listdir(
-            f"/gmail/INBOX/{first_date}") if first_date else []
+        entries = (
+            os.listdir(f"/gmail/INBOX/{first_date}") if first_date else []
+        )
         messages = [e for e in entries if e.endswith(".gmail.json")]
         for msg in messages[:5]:
             print(f"  {first_date}/{msg}")

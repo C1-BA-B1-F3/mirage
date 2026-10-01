@@ -18,9 +18,11 @@ from mirage.core.gdrive.resolve import resolve_key
 from mirage.types import PathSpec
 
 
-async def exists(accessor: GDriveAccessor,
-                 path: PathSpec,
-                 index: IndexCacheStore = NULL_INDEX) -> bool:
+async def exists(
+    accessor: GDriveAccessor,
+    path: PathSpec,
+    index: IndexCacheStore = NULL_INDEX,
+) -> bool:
     key = path.vfs_path
     if not key:
         return True

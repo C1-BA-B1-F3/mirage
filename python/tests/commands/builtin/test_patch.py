@@ -54,40 +54,45 @@ async def _collect(ait):
 
 def test_patch_apply():
     ws = _ws(**{"/hello.txt": b"hello\nworld\n"})
-    diff_text = ("--- a/hello.txt\n"
-                 "+++ b/hello.txt\n"
-                 "@@ -1,2 +1,2 @@\n"
-                 " hello\n"
-                 "-world\n"
-                 "+universe\n")
+    diff_text = (
+        "--- a/hello.txt\n"
+        "+++ b/hello.txt\n"
+        "@@ -1,2 +1,2 @@\n"
+        " hello\n"
+        "-world\n"
+        "+universe\n"
+    )
     _run_raw(ws, "patch -p1", cwd="/data", stdin=diff_text.encode())
     stdout, _ = _run_raw(ws, "cat /data/hello.txt")
     assert b"universe" in _bytes(stdout)
 
 
 def test_patch_i():
-    diff_text = ("--- a/hello.txt\n"
-                 "+++ b/hello.txt\n"
-                 "@@ -1,2 +1,2 @@\n"
-                 " hello\n"
-                 "-world\n"
-                 "+universe\n")
-    ws = _ws(**{
-        "/hello.txt": b"hello\nworld\n",
-        "/fix.patch": diff_text.encode()
-    })
+    diff_text = (
+        "--- a/hello.txt\n"
+        "+++ b/hello.txt\n"
+        "@@ -1,2 +1,2 @@\n"
+        " hello\n"
+        "-world\n"
+        "+universe\n"
+    )
+    ws = _ws(
+        **{"/hello.txt": b"hello\nworld\n", "/fix.patch": diff_text.encode()}
+    )
     _run_raw(ws, "patch -p1 -i /data/fix.patch", cwd="/data")
     stdout, _ = _run_raw(ws, "cat /data/hello.txt")
     assert b"universe" in _bytes(stdout)
 
 
 def test_patch_N():
-    diff_text = ("--- a/hello.txt\n"
-                 "+++ b/hello.txt\n"
-                 "@@ -1,2 +1,2 @@\n"
-                 " hello\n"
-                 "-world\n"
-                 "+universe\n")
+    diff_text = (
+        "--- a/hello.txt\n"
+        "+++ b/hello.txt\n"
+        "@@ -1,2 +1,2 @@\n"
+        " hello\n"
+        "-world\n"
+        "+universe\n"
+    )
     ws = _ws(**{"/hello.txt": b"hello\nuniverse\n"})
     _run_raw(ws, "patch -p1 -N", cwd="/data", stdin=diff_text.encode())
     stdout, _ = _run_raw(ws, "cat /data/hello.txt")
@@ -98,8 +103,10 @@ def test_patch_N():
 @pytest.mark.parametrize("prefix", ["", "/data", "/nested/data"])
 @pytest.mark.parametrize("source", ["stdin", "operand", "input"])
 async def test_patch_preserves_virtual_paths_for_mounted_io(prefix, source):
-    patch_data = (b"--- a/hello.txt\n+++ b/hello.txt\n@@ -1,2 +1,2 @@\n"
-                  b" hello\n-world\n+universe\n")
+    patch_data = (
+        b"--- a/hello.txt\n+++ b/hello.txt\n@@ -1,2 +1,2 @@\n"
+        b" hello\n-world\n+universe\n"
+    )
     files = {"hello.txt": b"hello\nworld\n", "fix.diff": patch_data}
     seen = []
 
@@ -117,9 +124,11 @@ async def test_patch_preserves_virtual_paths_for_mounted_io(prefix, source):
     flags = {"p": "1"}
     if source == "input":
         flags["i"] = input_path
-    opts = CommandOpts(flags=flags,
-                       mount_prefix=prefix,
-                       stdin=patch_data if source == "stdin" else None)
+    opts = CommandOpts(
+        flags=flags,
+        mount_prefix=prefix,
+        stdin=patch_data if source == "stdin" else None,
+    )
     operands = [orig_path, input_path] if source == "operand" else []
     await patch_generic(operands, [], opts, read, write, True)
     assert "hello.txt" in seen

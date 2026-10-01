@@ -29,21 +29,25 @@ from mirage.utils.errors import enoent
 from mirage.utils.key_prefix import mount_key, mount_prefix_of
 
 
-async def _ancestor_entry(accessor: DiscordAccessor, path: PathSpec,
-                          index: IndexCacheStore,
-                          up: int) -> IndexEntry | None:
+async def _ancestor_entry(
+    accessor: DiscordAccessor, path: PathSpec, index: IndexCacheStore, up: int
+) -> IndexEntry | None:
     virtual = path.virtual.rstrip("/")
     for _ in range(up):
         virtual = virtual.rsplit("/", 1)[0]
     prefix = mount_prefix_of(path.virtual, path.vfs_path)
-    spec = PathSpec(virtual=virtual,
-                    directory=virtual,
-                    vfs_path=mount_key(virtual, prefix))
+    spec = PathSpec(
+        virtual=virtual, directory=virtual, vfs_path=mount_key(virtual, prefix)
+    )
     return await resolve_entry(readdir, accessor, spec, index)
 
 
-async def _read_chat(accessor: DiscordAccessor, match: ScopeMatch,
-                     path: PathSpec, index: IndexCacheStore) -> bytes:
+async def _read_chat(
+    accessor: DiscordAccessor,
+    match: ScopeMatch,
+    path: PathSpec,
+    index: IndexCacheStore,
+) -> bytes:
     """Render one day's history; the channel id comes from the listing.
 
     The typed ``name__id`` dirname is only trusted once the listing
@@ -67,21 +71,27 @@ async def _read_chat(accessor: DiscordAccessor, match: ScopeMatch,
         if channel is None:
             raise enoent(path.virtual)
         channel_id = channel.id
-    return await get_history_jsonl(accessor.config,
-                                   channel_id,
-                                   match.slots["day"],
-                                   accessor.time_range,
-                                   session=accessor.pool)
+    return await get_history_jsonl(
+        accessor.config,
+        channel_id,
+        match.slots["day"],
+        accessor.time_range,
+        session=accessor.pool,
+    )
 
 
-async def _read_member(accessor: DiscordAccessor, match: ScopeMatch,
-                       path: PathSpec, index: IndexCacheStore) -> bytes:
+async def _read_member(
+    accessor: DiscordAccessor,
+    match: ScopeMatch,
+    path: PathSpec,
+    index: IndexCacheStore,
+) -> bytes:
     entry = await resolve_entry(readdir, accessor, path, index)
     if entry is None:
         raise enoent(path.virtual)
-    members = await list_members(accessor.config,
-                                 match.slots["guild_id"],
-                                 session=accessor.pool)
+    members = await list_members(
+        accessor.config, match.slots["guild_id"], session=accessor.pool
+    )
     for m in members:
         user = m.get("user", {})
         if user.get("id") == entry.id:
@@ -89,8 +99,9 @@ async def _read_member(accessor: DiscordAccessor, match: ScopeMatch,
     raise enoent(path.virtual)
 
 
-async def _blob_url(accessor: DiscordAccessor, path: PathSpec,
-                    index: IndexCacheStore) -> str:
+async def _blob_url(
+    accessor: DiscordAccessor, path: PathSpec, index: IndexCacheStore
+) -> str:
     await guard_day(accessor, detect_scope(path), path.virtual)
     entry = await resolve_entry(readdir, accessor, path, index)
     if entry is None:
@@ -101,21 +112,31 @@ async def _blob_url(accessor: DiscordAccessor, path: PathSpec,
     return url
 
 
-async def _read_blob(accessor: DiscordAccessor, match: ScopeMatch,
-                     path: PathSpec, index: IndexCacheStore) -> bytes:
-    return await download_file(await _blob_url(accessor, path, index),
-                               0,
-                               None,
-                               session=accessor.pool)
+async def _read_blob(
+    accessor: DiscordAccessor,
+    match: ScopeMatch,
+    path: PathSpec,
+    index: IndexCacheStore,
+) -> bytes:
+    return await download_file(
+        await _blob_url(accessor, path, index), 0, None, session=accessor.pool
+    )
 
 
-async def _read_blob_range(accessor: DiscordAccessor, match: ScopeMatch,
-                           path: PathSpec, index: IndexCacheStore, offset: int,
-                           size: int | None) -> bytes:
-    return await download_file(await _blob_url(accessor, path, index),
-                               offset,
-                               size,
-                               session=accessor.pool)
+async def _read_blob_range(
+    accessor: DiscordAccessor,
+    match: ScopeMatch,
+    path: PathSpec,
+    index: IndexCacheStore,
+    offset: int,
+    size: int | None,
+) -> bytes:
+    return await download_file(
+        await _blob_url(accessor, path, index),
+        offset,
+        size,
+        session=accessor.pool,
+    )
 
 
 read = make_read(

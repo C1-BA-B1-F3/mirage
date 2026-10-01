@@ -2,10 +2,15 @@ import stat
 
 from dulwich.refs import Ref
 
-from mirage.commands.cli.builtin.git.constants import (EXECUTABLE, GIT_DIR,
-                                                       HEAD, HEAD_REF,
-                                                       OWNER_EXECUTE, REGULAR,
-                                                       SYMLINK)
+from mirage.commands.cli.builtin.git.constants import (
+    EXECUTABLE,
+    GIT_DIR,
+    HEAD,
+    HEAD_REF,
+    OWNER_EXECUTE,
+    REGULAR,
+    SYMLINK,
+)
 
 
 def test_tree_modes_are_gits_own():

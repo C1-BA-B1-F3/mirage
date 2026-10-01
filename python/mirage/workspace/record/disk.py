@@ -77,8 +77,9 @@ def _release_lock(fd: int, lock_path: str) -> None:
     except FileNotFoundError:
         # Only reachable when another writer reclaimed this lock as
         # stale; the record write already landed, nothing to undo.
-        logger.warning("lock %s vanished before release (reclaimed?)",
-                       lock_path)
+        logger.warning(
+            "lock %s vanished before release (reclaimed?)", lock_path
+        )
 
 
 class DiskRecordClient:
@@ -116,8 +117,9 @@ class DiskRecordClient:
         await aiofiles.os.makedirs(self._dir, exist_ok=True)
         await self._write_record(self.path(name), fields)
 
-    async def cas_put(self, name: str, fields: dict[str, Any],
-                      expected_generation: int) -> bool:
+    async def cas_put(
+        self, name: str, fields: dict[str, Any], expected_generation: int
+    ) -> bool:
         """Write one record iff its stored generation matches.
 
         Take the record's lockfile, re-read under the lock, check the
@@ -184,7 +186,8 @@ class DiskRecordClient:
         records = await asyncio.gather(*(self.get(name) for name in names))
         return {
             name: fields
-            for name, (fields, _) in zip(names, records) if fields is not None
+            for name, (fields, _) in zip(names, records)
+            if fields is not None
         }
 
     async def delete(self, names: Iterable[str]) -> None:

@@ -12,9 +12,14 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-from mirage.workspace.executor.builtins.control.control import (  # isort: skip
-    handle_colon, handle_exit, handle_false, handle_return, handle_true,
-    loop_levels)
+from mirage.workspace.executor.builtins.control.control import (
+    handle_colon,
+    handle_exit,
+    handle_false,
+    handle_return,
+    handle_true,
+    loop_levels,
+)
 
 __all__ = [
     "handle_colon",

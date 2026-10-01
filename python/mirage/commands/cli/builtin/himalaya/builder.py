@@ -34,6 +34,7 @@ class Attachment:
         content_type (str): full maintype/subtype pair.
         data (bytes): the file's bytes, read through the workspace.
     """
+
     filename: str
     content_type: str
     data: bytes
@@ -55,6 +56,7 @@ class Compose:
         attachments (tuple[Attachment, ...]): files attached via
             --attach, already read into memory.
     """
+
     sender: str
     to: tuple[str, ...] = ()
     cc: tuple[str, ...] = ()
@@ -75,6 +77,7 @@ class Source:
         posting_style (PostingStyle): user body above or below the quote.
         quote_headline (str): literal line placed before the quote.
     """
+
     message: dict[str, Any]
     mode: SourceMode
     posting_style: PostingStyle = "top"
@@ -138,7 +141,7 @@ def has_prefix(subject: str, prefix: str) -> bool:
     """
     head = subject.lstrip()
     marker = prefix.strip()
-    return head[:len(marker)].lower() == marker.lower()
+    return head[: len(marker)].lower() == marker.lower()
 
 
 def reply_recipients(message: dict[str, Any]) -> tuple[str, ...]:
@@ -152,7 +155,7 @@ def reply_recipients(message: dict[str, Any]) -> tuple[str, ...]:
         return tuple(format_address(entry) for entry in reply_to)
     sender = message.get("from") or {}
     rendered = format_address(sender) if isinstance(sender, dict) else ""
-    return (rendered, ) if rendered else ()
+    return (rendered,) if rendered else ()
 
 
 def quote_text(source_text: str, headline: str) -> str:
@@ -173,8 +176,9 @@ def quote_text(source_text: str, headline: str) -> str:
     return "\n".join(lines)
 
 
-def compose_body(user_body: str, quote: str, signature: str,
-                 style: PostingStyle) -> str:
+def compose_body(
+    user_body: str, quote: str, signature: str, style: PostingStyle
+) -> str:
     """Lay out the user's body, the quoted source and the signature.
 
     Args:
@@ -216,8 +220,11 @@ def build(compose: Compose, source: Source | None = None) -> EmailMessage:
         prefix = PREFIXES[source.mode]
         original_subject = str(original.get("subject", ""))
         if subject is None:
-            subject = (original_subject if has_prefix(original_subject, prefix)
-                       else f"{prefix}{original_subject}")
+            subject = (
+                original_subject
+                if has_prefix(original_subject, prefix)
+                else f"{prefix}{original_subject}"
+            )
         if source.mode == "reply" and not recipients:
             recipients = reply_recipients(original)
         message_id = str(original.get("message_id", ""))
@@ -237,15 +244,21 @@ def build(compose: Compose, source: Source | None = None) -> EmailMessage:
     message["Subject"] = subject or ""
     style: PostingStyle = source.posting_style if source else "top"
     headline = source.quote_headline if source else ""
-    body = compose_body(compose.body, quote_text(source_text, headline),
-                        compose.signature or "", style)
+    body = compose_body(
+        compose.body,
+        quote_text(source_text, headline),
+        compose.signature or "",
+        style,
+    )
     message.set_content(body)
     for attachment in compose.attachments:
         maintype, _, subtype = attachment.content_type.partition("/")
-        message.add_attachment(attachment.data,
-                               maintype=maintype,
-                               subtype=subtype,
-                               filename=attachment.filename)
+        message.add_attachment(
+            attachment.data,
+            maintype=maintype,
+            subtype=subtype,
+            filename=attachment.filename,
+        )
     if compose.attachments:
         message.set_boundary(mixed_boundary(body, compose.attachments))
     return message

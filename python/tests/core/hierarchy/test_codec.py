@@ -12,8 +12,15 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-from mirage.core.hierarchy.codec import (DATE, INT_JSON, JSON_NAME, JSONL_NAME,
-                                         PATH_SAFE, RAW, ascii_digits)
+from mirage.core.hierarchy.codec import (
+    DATE,
+    INT_JSON,
+    JSON_NAME,
+    JSONL_NAME,
+    PATH_SAFE,
+    RAW,
+    ascii_digits,
+)
 
 
 def test_raw_takes_any_nonempty_segment():

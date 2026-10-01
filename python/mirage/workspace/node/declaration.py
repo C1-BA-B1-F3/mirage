@@ -22,19 +22,27 @@ from mirage.shell.errors import ExitSignal
 from mirage.shell.helpers import get_declaration_keyword, get_text
 from mirage.shell.types import NodeType as NT
 from mirage.shell.variable import VarAttr
+from mirage.workspace.executor.builtins import (
+    handle_declare_functions,
+    handle_declare_print,
+    handle_export,
+    handle_local,
+    handle_readonly,
+    note_local_array,
+)
 from mirage.workspace.expand import expand_node
 from mirage.workspace.mount import MountRegistry
 from mirage.workspace.mount.namespace import Namespace
 from mirage.workspace.node.assignment import expand_array_items
 from mirage.workspace.session import SessionState
-from mirage.workspace.session.state import (conversion_scalar,
-                                            ensure_var_visible, seed_var,
-                                            session_view, set_attr)
+from mirage.workspace.session.state import (
+    conversion_scalar,
+    ensure_var_visible,
+    seed_var,
+    session_view,
+    set_attr,
+)
 from mirage.workspace.types import ExecutionNode
-
-from mirage.workspace.executor.builtins import (  # isort: skip
-    handle_declare_functions, handle_declare_print, handle_export,
-    handle_local, handle_readonly, note_local_array)
 
 
 def _merge_conversion_errors(
@@ -58,11 +66,13 @@ def _merge_conversion_errors(
     extra = ("\n".join(errors) + "\n").encode()
     prior = io.stderr if isinstance(io.stderr, bytes) else b""
     merged = prior + extra
-    new_io = IOResult(exit_code=1,
-                      stderr=merged,
-                      reads=io.reads,
-                      writes=io.writes,
-                      cache=io.cache)
+    new_io = IOResult(
+        exit_code=1,
+        stderr=merged,
+        reads=io.reads,
+        writes=io.writes,
+        cache=io.cache,
+    )
     new_node = ExecutionNode(command=node.command, exit_code=1, stderr=merged)
     return stream, new_io, new_node
 
@@ -75,7 +85,8 @@ def _merge_conversion_errors(
 _DECLARE_LETTERS = frozenset("aAfFgiIlnprtux")
 _DECLARE_USAGE = (
     "declare: usage: declare [-aAfFgiIlnrtux] [name[=value] ...] "
-    "or declare -p [-aAfFilnrtux] [name ...]")
+    "or declare -p [-aAfFilnrtux] [name ...]"
+)
 # The stored attributes a `-letter` / `+letter` toggles.
 _ATTR_LETTERS = {
     "i": VarAttr.INTEGER,
@@ -107,16 +118,25 @@ def _declare_option_refusal(
         session (SessionState): shell session state (unused today, kept so
             a later check that reads it does not change the signature).
     """
-    bad = next((c for c in sorted(flag_chars | plus_chars)
-                if c not in _DECLARE_LETTERS), None)
+    bad = next(
+        (
+            c
+            for c in sorted(flag_chars | plus_chars)
+            if c not in _DECLARE_LETTERS
+        ),
+        None,
+    )
     if bad is None:
         return None
     sign = "-" if bad in flag_chars else "+"
-    err = (f"bash: {cmd}: {sign}{bad}: invalid option\n"
-           f"{_DECLARE_USAGE}\n").encode()
-    return None, IOResult(exit_code=2, stderr=err), ExecutionNode(command=cmd,
-                                                                  exit_code=2,
-                                                                  stderr=err)
+    err = (
+        f"bash: {cmd}: {sign}{bad}: invalid option\n{_DECLARE_USAGE}\n"
+    ).encode()
+    return (
+        None,
+        IOResult(exit_code=2, stderr=err),
+        ExecutionNode(command=cmd, exit_code=2, stderr=err),
+    )
 
 
 async def _plus_refusals(
@@ -153,18 +173,23 @@ async def _plus_refusals(
     for name in names:
         if "r" in plus_chars and view.is_readonly(name):
             err = f"bash: {cmd}: {name}: readonly variable\n".encode()
-            return None, IOResult(exit_code=1,
-                                  stderr=err), ExecutionNode(command=cmd,
-                                                             exit_code=1,
-                                                             stderr=err)
-        if (("a" in plus_chars and name in session.arrays)
-                or ("A" in plus_chars and name in session.assocs)):
-            err = (f"bash: {cmd}: {name}: cannot destroy array variables "
-                   "in this way\n").encode()
-            return None, IOResult(exit_code=1,
-                                  stderr=err), ExecutionNode(command=cmd,
-                                                             exit_code=1,
-                                                             stderr=err)
+            return (
+                None,
+                IOResult(exit_code=1, stderr=err),
+                ExecutionNode(command=cmd, exit_code=1, stderr=err),
+            )
+        if ("a" in plus_chars and name in session.arrays) or (
+            "A" in plus_chars and name in session.assocs
+        ):
+            err = (
+                f"bash: {cmd}: {name}: cannot destroy array variables "
+                "in this way\n"
+            ).encode()
+            return (
+                None,
+                IOResult(exit_code=1, stderr=err),
+                ExecutionNode(command=cmd, exit_code=1, stderr=err),
+            )
     return None
 
 
@@ -199,12 +224,14 @@ async def _stamp_attrs(
             literals from the same declaration.
         stored (list[str]): the names the handler actually stored.
     """
-    refused = await _stamp_export(session, view, flag_chars, assignments,
-                                  staged, stored)
+    refused = await _stamp_export(
+        session, view, flag_chars, assignments, staged, stored
+    )
     if refused is not None:
         return refused
     on_attrs = [
-        _ATTR_LETTERS[c] for c in "ilunt"
+        _ATTR_LETTERS[c]
+        for c in "ilunt"
         if c in flag_chars and c not in plus_chars
     ]
     if "l" in flag_chars and "u" in flag_chars:
@@ -233,10 +260,11 @@ async def _stamp_attrs(
                 await view.mark(name, attr, False)
     except PolicyDenied as exc:
         err = f"{exc.strerror}\n".encode()
-        return None, IOResult(exit_code=1,
-                              stderr=err), ExecutionNode(command="declare",
-                                                         exit_code=1,
-                                                         stderr=err)
+        return (
+            None,
+            IOResult(exit_code=1, stderr=err),
+            ExecutionNode(command="declare", exit_code=1, stderr=err),
+        )
     return None
 
 
@@ -299,10 +327,11 @@ async def _stamp_export(
             await view.mark(name, VarAttr.EXPORT, True)
         except PolicyDenied as exc:
             err = f"{exc.strerror}\n".encode()
-            return None, IOResult(exit_code=1,
-                                  stderr=err), ExecutionNode(command="declare",
-                                                             exit_code=1,
-                                                             stderr=err)
+            return (
+                None,
+                IOResult(exit_code=1, stderr=err),
+                ExecutionNode(command="declare", exit_code=1, stderr=err),
+            )
     return None
 
 
@@ -353,32 +382,38 @@ async def execute_declaration(
             ]
             if val_nodes and val_nodes[0].type == NT.ARRAY:
                 key = get_text(child).partition("=")[0]
-                items = await expand_array_items(val_nodes[0], session,
-                                                 execute_fn, registry,
-                                                 namespace, cs)
+                items = await expand_array_items(
+                    val_nodes[0], session, execute_fn, registry, namespace, cs
+                )
                 staged.append(
-                    (key.removesuffix("+"), key.endswith("+"), items))
+                    (key.removesuffix("+"), key.endswith("+"), items)
+                )
                 continue
-            expanded = await expand_node(child,
-                                         session,
-                                         execute_fn,
-                                         cs,
-                                         view=view)
+            expanded = await expand_node(
+                child, session, execute_fn, cs, view=view
+            )
             assignments.append(expanded)
-        elif child.type in (NT.SIMPLE_EXPANSION, NT.EXPANSION,
-                            NT.CONCATENATION, NT.WORD, NT.VARIABLE_NAME,
-                            NT.STRING, NT.RAW_STRING, NT.ANSI_C_STRING,
-                            NT.TRANSLATED_STRING):
+        elif child.type in (
+            NT.SIMPLE_EXPANSION,
+            NT.EXPANSION,
+            NT.CONCATENATION,
+            NT.WORD,
+            NT.VARIABLE_NAME,
+            NT.STRING,
+            NT.RAW_STRING,
+            NT.ANSI_C_STRING,
+            NT.TRANSLATED_STRING,
+        ):
             # A bare `readonly NAME` / `export NAME` operand parses as
             # a variable_name, not a word, and a quoted assignment
             # (`export 'FOO=bar'`) as a plain string operand.
-            expanded = await expand_node(child,
-                                         session,
-                                         execute_fn,
-                                         cs,
-                                         view=view)
-            if not expanded and child.type in (NT.SIMPLE_EXPANSION,
-                                               NT.EXPANSION):
+            expanded = await expand_node(
+                child, session, execute_fn, cs, view=view
+            )
+            if not expanded and child.type in (
+                NT.SIMPLE_EXPANSION,
+                NT.EXPANSION,
+            ):
                 # An *unquoted* expansion that came back empty is
                 # removed by word splitting, so `export $UNSET` is a
                 # bare `export` and prints the listing. A quoted one
@@ -387,16 +422,22 @@ async def execute_declaration(
                 # ``export: `': not a valid identifier``, so it has
                 # to reach the builtin rather than vanish here.
                 continue
-            if (not opts_done and expanded.startswith("-")
-                    and len(expanded) > 1):
+            if (
+                not opts_done
+                and expanded.startswith("-")
+                and len(expanded) > 1
+            ):
                 flag_words.append(expanded)
                 if expanded == "--":
                     opts_done = True
                 else:
                     flag_chars.update(expanded[1:])
-            elif (not opts_done and expanded.startswith("+")
-                  and len(expanded) > 1
-                  and keyword in (NT.LOCAL, "declare", "typeset")):
+            elif (
+                not opts_done
+                and expanded.startswith("+")
+                and len(expanded) > 1
+                and keyword in (NT.LOCAL, "declare", "typeset")
+            ):
                 # `+attr` turns an attribute off. Only the declare
                 # family reads it: `export +x` and `readonly +r` are
                 # `not a valid identifier` in GNU, so for those two
@@ -407,22 +448,30 @@ async def execute_declaration(
                 assignments.append(expanded)
     cmd_word = "local" if keyword == NT.LOCAL else str(keyword)
     if keyword in (NT.LOCAL, "declare", "typeset"):
-        refused = _declare_option_refusal(cmd_word, flag_chars, plus_chars,
-                                          session)
+        refused = _declare_option_refusal(
+            cmd_word, flag_chars, plus_chars, session
+        )
         if refused is not None:
             return refused
-    if (("f" in flag_chars or "F" in flag_chars)
-            and keyword in (NT.LOCAL, "declare", "typeset")):
+    if ("f" in flag_chars or "F" in flag_chars) and keyword in (
+        NT.LOCAL,
+        "declare",
+        "typeset",
+    ):
         # `-f`/`-F` select functions, not variables: `-rf` freezes,
         # `-f NAME` prints the body, `-F NAME` prints the name, and
         # a missing name is exit 1 without a word.
-        return handle_declare_functions(cmd_word, session, flag_chars,
-                                        assignments)
+        return handle_declare_functions(
+            cmd_word, session, flag_chars, assignments
+        )
     is_readonly = keyword == "readonly" or "r" in flag_chars
     # `-l` and `-u` cannot both hold; a cluster naming both sets
     # neither (pinned: `declare -lu s=aBc` prints `declare -- s`).
-    shaping = frozenset(_ATTR_LETTERS[c] for c in "ilu"
-                        if c in flag_chars and c not in plus_chars)
+    shaping = frozenset(
+        _ATTR_LETTERS[c]
+        for c in "ilu"
+        if c in flag_chars and c not in plus_chars
+    )
     if VarAttr.LOWER in shaping and VarAttr.UPPER in shaping:
         shaping = shaping - {VarAttr.LOWER, VarAttr.UPPER}
     conversion_errors: list[str] = []
@@ -448,12 +497,14 @@ async def execute_declaration(
             if want_assoc and bare in session.arrays:
                 conversion_errors.append(
                     f"bash: {cmd_word}: {bare}: cannot convert indexed "
-                    "to associative array")
+                    "to associative array"
+                )
                 continue
             if not want_assoc and bare in session.assocs:
                 conversion_errors.append(
                     f"bash: {cmd_word}: {bare}: cannot convert "
-                    "associative to indexed array")
+                    "associative to indexed array"
+                )
                 continue
             if "g" not in flag_chars and note_local_array(session, bare):
                 # Inside a function this shadows whatever the caller
@@ -465,8 +516,9 @@ async def execute_declaration(
                 # at the literal key "0" (GNU allows scalar-to-
                 # associative conversion, unlike indexed).
                 scalar = conversion_scalar(session, bare)
-                seed_var(session, bare,
-                         {} if scalar is None else {"0": scalar})
+                seed_var(
+                    session, bare, {} if scalar is None else {"0": scalar}
+                )
             elif not want_assoc and bare not in session.arrays:
                 # At top level an existing scalar becomes element 0.
                 scalar = conversion_scalar(session, bare)
@@ -480,26 +532,37 @@ async def execute_declaration(
         # Only the `readonly` keyword owns -p / illegal-option
         # handling; `declare -r` keeps names only.
         if keyword == "readonly":
-            result = await handle_readonly(flag_words + assignments,
-                                           session,
-                                           decl_view,
-                                           arrays=staged,
-                                           stored=stored,
-                                           assoc="A" in flag_chars,
-                                           shaping=shaping)
+            result = await handle_readonly(
+                flag_words + assignments,
+                session,
+                decl_view,
+                arrays=staged,
+                stored=stored,
+                assoc="A" in flag_chars,
+                shaping=shaping,
+            )
         else:
-            result = await handle_readonly(assignments,
-                                           session,
-                                           decl_view,
-                                           arrays=staged,
-                                           stored=stored,
-                                           assoc="A" in flag_chars,
-                                           shaping=shaping)
+            result = await handle_readonly(
+                assignments,
+                session,
+                decl_view,
+                arrays=staged,
+                stored=stored,
+                assoc="A" in flag_chars,
+                shaping=shaping,
+            )
         # `declare -rx X=1` carries both attributes: GNU prints
         # `declare -rx X="1"`. Readonly answers first, so the export
         # stamp has to land here too, or `-r` silently ate the `-x`.
-        refused = await _stamp_attrs(session, decl_view, flag_chars,
-                                     plus_chars, assignments, staged, stored)
+        refused = await _stamp_attrs(
+            session,
+            decl_view,
+            flag_chars,
+            plus_chars,
+            assignments,
+            staged,
+            stored,
+        )
         if refused is not None:
             return refused
         return _merge_conversion_errors(result, conversion_errors)
@@ -509,8 +572,10 @@ async def execute_declaration(
     if keyword in (NT.LOCAL, "declare", "typeset"):
         # `-p` prints rather than declares, so it is answered before
         # the assignment path runs at all.
-        if (("p" in flag_chars or "p" in plus_chars)
-                and keyword in ("declare", "typeset")):
+        if ("p" in flag_chars or "p" in plus_chars) and keyword in (
+            "declare",
+            "typeset",
+        ):
             return await handle_declare_print(assignments, session)
         decl_view = session_view(session, namespace.registry.policies)
         stored = []
@@ -526,20 +591,30 @@ async def execute_declaration(
             assoc="A" in flag_chars,
             shaping=shaping,
             nameref="n" in flag_chars and "n" not in plus_chars,
-            global_scope="g" in flag_chars)
-        plus_refused = await _plus_refusals(cmd_word, session, decl_view,
-                                            plus_chars, assignments, staged)
+            global_scope="g" in flag_chars,
+        )
+        plus_refused = await _plus_refusals(
+            cmd_word, session, decl_view, plus_chars, assignments, staged
+        )
         if plus_refused is not None:
             return plus_refused
-        refused = await _stamp_attrs(session, decl_view, flag_chars,
-                                     plus_chars, assignments, staged, stored)
+        refused = await _stamp_attrs(
+            session,
+            decl_view,
+            flag_chars,
+            plus_chars,
+            assignments,
+            staged,
+            stored,
+        )
         if refused is not None:
             return refused
         return _merge_conversion_errors(result, conversion_errors)
     # Pass export flags through so -p / bare print and bad options work.
-    result = await handle_export(flag_words + assignments,
-                                 session,
-                                 session_view(session,
-                                              namespace.registry.policies),
-                                 arrays=staged)
+    result = await handle_export(
+        flag_words + assignments,
+        session,
+        session_view(session, namespace.registry.policies),
+        arrays=staged,
+    )
     return _merge_conversion_errors(result, conversion_errors)

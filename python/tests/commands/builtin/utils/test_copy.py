@@ -18,20 +18,25 @@ from mirage.commands.builtin.utils.copy import landing_name
 from mirage.types import PathSpec
 
 
-@pytest.mark.parametrize("typed,virtual,name", [
-    ("al", "/data/a.txt", "al"),
-    ("dir/al/", "/data/a.txt", "al"),
-    ("/data/x/y", "/data/x/y", "y"),
-    ("", "/data/sub", "sub"),
-    (".", "/data/sub", "sub"),
-    ("sub/..", "/data", "data"),
-])
+@pytest.mark.parametrize(
+    "typed,virtual,name",
+    [
+        ("al", "/data/a.txt", "al"),
+        ("dir/al/", "/data/a.txt", "al"),
+        ("/data/x/y", "/data/x/y", "y"),
+        ("", "/data/sub", "sub"),
+        (".", "/data/sub", "sub"),
+        ("sub/..", "/data", "data"),
+    ],
+)
 def test_landing_name_is_the_operand_as_typed(typed, virtual, name):
     # GNU names a source inside a directory after the operand as typed,
     # so a followed link lands under its own name; the empty name, `.`
     # and `..` name no entry, so they keep what they resolve to.
-    src = PathSpec(virtual=virtual,
-                   directory=virtual.rsplit("/", 1)[0] or "/",
-                   vfs_path=virtual.strip("/"),
-                   raw_path=typed)
+    src = PathSpec(
+        virtual=virtual,
+        directory=virtual.rsplit("/", 1)[0] or "/",
+        vfs_path=virtual.strip("/"),
+        raw_path=typed,
+    )
     assert landing_name(src) == name

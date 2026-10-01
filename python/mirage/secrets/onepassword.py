@@ -55,14 +55,16 @@ def parse_op_ref(ref: str) -> tuple[str, str, str]:
             or one naming less than a vault and an item.
     """
     if not ref:
-        raise SecretsError("the '1password' source needs a ref: "
-                           "op://<vault>/<item>")
+        raise SecretsError(
+            "the '1password' source needs a ref: op://<vault>/<item>"
+        )
     if not ref.startswith(OP_SCHEME):
         raise SecretsError(f"a '1password' ref is an op:// url, got {ref!r}")
-    parts = ref[len(OP_SCHEME):].split("/")
+    parts = ref[len(OP_SCHEME) :].split("/")
     if len(parts) < 2 or not all(parts):
         raise SecretsError(
-            f"a '1password' ref names a vault and an item, got {ref!r}")
+            f"a '1password' ref names a vault and an item, got {ref!r}"
+        )
     return parts[0], parts[1], parts[-1] if len(parts) > 2 else ""
 
 
@@ -82,15 +84,21 @@ async def onepassword_client(config: OnePasswordConfig) -> Client:
         SecretsError: neither the config nor the process env carries a
             service account token.
     """
-    token = (config.token.get_secret_value()
-             if config.token is not None else os.environ.get(TOKEN_VAR, ""))
+    token = (
+        config.token.get_secret_value()
+        if config.token is not None
+        else os.environ.get(TOKEN_VAR, "")
+    )
     if not token:
         raise SecretsError(
             "the '1password' source needs a service account token: set "
-            f"{TOKEN_VAR}, or give the source a 'token'")
-    return await Client.authenticate(auth=token,
-                                     integration_name=INTEGRATION_NAME,
-                                     integration_version=__version__)
+            f"{TOKEN_VAR}, or give the source a 'token'"
+        )
+    return await Client.authenticate(
+        auth=token,
+        integration_name=INTEGRATION_NAME,
+        integration_version=__version__,
+    )
 
 
 async def find_vault_id(client: Client, name: str) -> str:
@@ -154,8 +162,9 @@ def fields_from_item(item: Item) -> dict[str, str]:
     return fields
 
 
-async def fetch_onepassword(config: OnePasswordConfig,
-                            ref: str) -> ResolvedSecret:
+async def fetch_onepassword(
+    config: OnePasswordConfig, ref: str
+) -> ResolvedSecret:
     """Fetch one secret from 1Password.
 
     A field reference is one ``resolve`` call and returns that field
@@ -179,8 +188,10 @@ async def fetch_onepassword(config: OnePasswordConfig,
     client = await onepassword_client(config)
     if field:
         return ResolvedSecret(
-            fields={field: await client.secrets.resolve(ref)})
+            fields={field: await client.secrets.resolve(ref)}
+        )
     vault_id = await find_vault_id(client, vault)
     item_id = await find_item_id(client, vault_id, item)
     return ResolvedSecret(
-        fields=fields_from_item(await client.items.get(vault_id, item_id)))
+        fields=fields_from_item(await client.items.get(vault_id, item_id))
+    )

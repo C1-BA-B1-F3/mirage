@@ -31,7 +31,6 @@ def _read(ops, path):
 
 
 class TestPatchedOpen:
-
     def test_read_mounted(self):
         ops, _ = make_ops_with_dir()
         _write(ops, "/data/dir/f.txt", b"patched")

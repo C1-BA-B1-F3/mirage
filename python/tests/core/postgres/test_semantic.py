@@ -18,54 +18,38 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from mirage.accessor.postgres import PostgresAccessor
-from mirage.core.postgres.semantic import (SAMPLE_VALUES_LIMIT,
-                                           build_column_entry,
-                                           build_entity_semantic_json,
-                                           build_relationships,
-                                           classify_column)
+from mirage.core.postgres.semantic import (
+    SAMPLE_VALUES_LIMIT,
+    build_column_entry,
+    build_entity_semantic_json,
+    build_relationships,
+    classify_column,
+)
 from mirage.vfs.postgres.config import PostgresConfig
 
 COLUMNS = [
-    {
-        "name": "order_id",
-        "type": "integer",
-        "nullable": False
-    },
-    {
-        "name": "customer_id",
-        "type": "integer",
-        "nullable": True
-    },
-    {
-        "name": "status",
-        "type": "USER-DEFINED",
-        "nullable": True
-    },
-    {
-        "name": "channel",
-        "type": "text",
-        "nullable": True
-    },
-    {
-        "name": "total_amount",
-        "type": "numeric",
-        "nullable": True
-    },
+    {"name": "order_id", "type": "integer", "nullable": False},
+    {"name": "customer_id", "type": "integer", "nullable": True},
+    {"name": "status", "type": "USER-DEFINED", "nullable": True},
+    {"name": "channel", "type": "text", "nullable": True},
+    {"name": "total_amount", "type": "numeric", "nullable": True},
     {
         "name": "placed_at",
         "type": "timestamp with time zone",
-        "nullable": True
+        "nullable": True,
     },
 ]
 
-FOREIGN_KEYS = [{
-    "columns": ["customer_id"],
-    "references": {
-        "schema": "public",
-        "table": "customers",
-        "columns": ["id"],
-    },
-}]
+FOREIGN_KEYS = [
+    {
+        "columns": ["customer_id"],
+        "references": {
+            "schema": "public",
+            "table": "customers",
+            "columns": ["id"],
+        },
+    }
+]
 
 
 @asynccontextmanager
@@ -89,26 +73,22 @@ def accessor():
 @pytest.fixture
 def client(monkeypatch):
     fakes = {
-        "fetch_columns":
-        AsyncMock(return_value=COLUMNS),
-        "fetch_primary_key":
-        AsyncMock(return_value=["order_id"]),
-        "fetch_foreign_keys":
-        AsyncMock(return_value=FOREIGN_KEYS),
-        "fetch_table_comment":
-        AsyncMock(return_value="Customer orders."),
-        "fetch_column_comments":
-        AsyncMock(return_value={"total_amount": "Order total in USD."}),
-        "fetch_enum_columns":
-        AsyncMock(
+        "fetch_columns": AsyncMock(return_value=COLUMNS),
+        "fetch_primary_key": AsyncMock(return_value=["order_id"]),
+        "fetch_foreign_keys": AsyncMock(return_value=FOREIGN_KEYS),
+        "fetch_table_comment": AsyncMock(return_value="Customer orders."),
+        "fetch_column_comments": AsyncMock(
+            return_value={"total_amount": "Order total in USD."}
+        ),
+        "fetch_enum_columns": AsyncMock(
             return_value={
                 "status": {
                     "type": "order_status",
                     "labels": ["pending", "shipped", "cancelled"],
                 }
-            }),
-        "fetch_column_stats":
-        AsyncMock(
+            }
+        ),
+        "fetch_column_stats": AsyncMock(
             return_value={
                 "channel": {
                     "n_distinct": 3.0,
@@ -118,7 +98,8 @@ def client(monkeypatch):
                     "n_distinct": -1.0,
                     "most_common_vals": [],
                 },
-            }),
+            }
+        ),
     }
     for name, fake in fakes.items():
         monkeypatch.setattr(f"mirage.core.postgres.client.{name}", fake)
@@ -143,73 +124,70 @@ def test_classify_text_is_dimension():
 
 
 def test_column_entry_omits_absent_metadata():
-    entry = build_column_entry({
-        "name": "channel",
-        "type": "text"
-    }, None, None, None)
+    entry = build_column_entry(
+        {"name": "channel", "type": "text"}, None, None, None
+    )
     assert entry == {"name": "channel", "expr": "channel", "data_type": "text"}
 
 
 def test_column_entry_uses_enum_type_and_labels():
-    entry = build_column_entry({
-        "name": "status",
-        "type": "USER-DEFINED"
-    }, None, {
-        "type": "order_status",
-        "labels": ["pending", "shipped"]
-    }, None)
+    entry = build_column_entry(
+        {"name": "status", "type": "USER-DEFINED"},
+        None,
+        {"type": "order_status", "labels": ["pending", "shipped"]},
+        None,
+    )
     assert entry["data_type"] == "order_status"
     assert entry["is_enum"] is True
     assert entry["sample_values"] == ["pending", "shipped"]
 
 
 def test_column_entry_takes_sample_values_from_stats():
-    entry = build_column_entry({
-        "name": "channel",
-        "type": "text"
-    }, None, None, {
-        "n_distinct": 3.0,
-        "most_common_vals": ["web", "retail"]
-    })
+    entry = build_column_entry(
+        {"name": "channel", "type": "text"},
+        None,
+        None,
+        {"n_distinct": 3.0, "most_common_vals": ["web", "retail"]},
+    )
     assert entry["sample_values"] == ["web", "retail"]
     assert "is_enum" not in entry
 
 
 def test_column_entry_skips_sample_values_when_stats_empty():
-    entry = build_column_entry({
-        "name": "total_amount",
-        "type": "numeric"
-    }, None, None, {
-        "n_distinct": -1.0,
-        "most_common_vals": []
-    })
+    entry = build_column_entry(
+        {"name": "total_amount", "type": "numeric"},
+        None,
+        None,
+        {"n_distinct": -1.0, "most_common_vals": []},
+    )
     assert "sample_values" not in entry
 
 
 def test_column_entry_caps_sample_values():
     many = [str(i) for i in range(SAMPLE_VALUES_LIMIT + 5)]
-    entry = build_column_entry({
-        "name": "channel",
-        "type": "text"
-    }, None, None, {
-        "n_distinct": 15.0,
-        "most_common_vals": many
-    })
+    entry = build_column_entry(
+        {"name": "channel", "type": "text"},
+        None,
+        None,
+        {"n_distinct": 15.0, "most_common_vals": many},
+    )
     assert len(entry["sample_values"]) == SAMPLE_VALUES_LIMIT
 
 
 def test_build_relationships_pairs_columns():
     rels = build_relationships(FOREIGN_KEYS, "public", "orders")
-    assert rels == [{
-        "left_table":
-        "public.orders",
-        "right_table":
-        "public.customers",
-        "relationship_columns": [{
-            "left_column": "customer_id",
-            "right_column": "id",
-        }],
-    }]
+    assert rels == [
+        {
+            "left_table": "public.orders",
+            "right_table": "public.customers",
+            "relationship_columns": [
+                {
+                    "left_column": "customer_id",
+                    "right_column": "id",
+                }
+            ],
+        }
+    ]
 
 
 def test_build_relationships_empty_without_foreign_keys():
@@ -218,18 +196,24 @@ def test_build_relationships_empty_without_foreign_keys():
 
 @pytest.mark.asyncio
 async def test_semantic_json_splits_roles(accessor, client):
-    doc = await build_entity_semantic_json(accessor, "public", "orders",
-                                           "table")
-    assert [d["name"] for d in doc["dimensions"]
-            ] == ["order_id", "customer_id", "status", "channel"]
+    doc = await build_entity_semantic_json(
+        accessor, "public", "orders", "table"
+    )
+    assert [d["name"] for d in doc["dimensions"]] == [
+        "order_id",
+        "customer_id",
+        "status",
+        "channel",
+    ]
     assert [d["name"] for d in doc["time_dimensions"]] == ["placed_at"]
     assert [d["name"] for d in doc["facts"]] == ["total_amount"]
 
 
 @pytest.mark.asyncio
 async def test_semantic_json_carries_comments(accessor, client):
-    doc = await build_entity_semantic_json(accessor, "public", "orders",
-                                           "table")
+    doc = await build_entity_semantic_json(
+        accessor, "public", "orders", "table"
+    )
     assert doc["description"] == "Customer orders."
     total = next(f for f in doc["facts"] if f["name"] == "total_amount")
     assert total["description"] == "Order total in USD."
@@ -237,8 +221,9 @@ async def test_semantic_json_carries_comments(accessor, client):
 
 @pytest.mark.asyncio
 async def test_semantic_json_carries_enum_and_samples(accessor, client):
-    doc = await build_entity_semantic_json(accessor, "public", "orders",
-                                           "table")
+    doc = await build_entity_semantic_json(
+        accessor, "public", "orders", "table"
+    )
     status = next(d for d in doc["dimensions"] if d["name"] == "status")
     assert status["data_type"] == "order_status"
     assert status["sample_values"] == ["pending", "shipped", "cancelled"]
@@ -248,8 +233,9 @@ async def test_semantic_json_carries_enum_and_samples(accessor, client):
 
 @pytest.mark.asyncio
 async def test_semantic_json_head_fields(accessor, client):
-    doc = await build_entity_semantic_json(accessor, "public", "orders",
-                                           "table")
+    doc = await build_entity_semantic_json(
+        accessor, "public", "orders", "table"
+    )
     assert doc["name"] == "orders"
     assert doc["schema"] == "public"
     assert doc["kind"] == "table"
@@ -258,23 +244,30 @@ async def test_semantic_json_head_fields(accessor, client):
 
 
 @pytest.mark.asyncio
-async def test_semantic_json_omits_empty_sections(accessor, monkeypatch,
-                                                  client):
+async def test_semantic_json_omits_empty_sections(
+    accessor, monkeypatch, client
+):
     monkeypatch.setattr(
         "mirage.core.postgres.client.fetch_columns",
-        AsyncMock(return_value=[{
-            "name": "note",
-            "type": "text",
-            "nullable": True
-        }]))
-    monkeypatch.setattr("mirage.core.postgres.client.fetch_primary_key",
-                        AsyncMock(return_value=[]))
-    monkeypatch.setattr("mirage.core.postgres.client.fetch_foreign_keys",
-                        AsyncMock(return_value=[]))
-    monkeypatch.setattr("mirage.core.postgres.client.fetch_table_comment",
-                        AsyncMock(return_value=None))
-    doc = await build_entity_semantic_json(accessor, "public", "notes",
-                                           "table")
+        AsyncMock(
+            return_value=[{"name": "note", "type": "text", "nullable": True}]
+        ),
+    )
+    monkeypatch.setattr(
+        "mirage.core.postgres.client.fetch_primary_key",
+        AsyncMock(return_value=[]),
+    )
+    monkeypatch.setattr(
+        "mirage.core.postgres.client.fetch_foreign_keys",
+        AsyncMock(return_value=[]),
+    )
+    monkeypatch.setattr(
+        "mirage.core.postgres.client.fetch_table_comment",
+        AsyncMock(return_value=None),
+    )
+    doc = await build_entity_semantic_json(
+        accessor, "public", "notes", "table"
+    )
     assert "facts" not in doc
     assert "time_dimensions" not in doc
     assert "relationships" not in doc
@@ -283,11 +276,15 @@ async def test_semantic_json_omits_empty_sections(accessor, monkeypatch,
 
 
 @pytest.mark.asyncio
-async def test_semantic_json_survives_missing_pg_stats(accessor, monkeypatch,
-                                                       client):
-    monkeypatch.setattr("mirage.core.postgres.client.fetch_column_stats",
-                        AsyncMock(return_value={}))
-    doc = await build_entity_semantic_json(accessor, "public", "orders",
-                                           "table")
+async def test_semantic_json_survives_missing_pg_stats(
+    accessor, monkeypatch, client
+):
+    monkeypatch.setattr(
+        "mirage.core.postgres.client.fetch_column_stats",
+        AsyncMock(return_value={}),
+    )
+    doc = await build_entity_semantic_json(
+        accessor, "public", "orders", "table"
+    )
     channel = next(d for d in doc["dimensions"] if d["name"] == "channel")
     assert "sample_values" not in channel

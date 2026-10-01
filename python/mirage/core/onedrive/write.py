@@ -20,12 +20,15 @@ from mirage.observe.context import record, start_op
 from mirage.types import PathSpec
 
 
-async def write_bytes(accessor: OneDriveAccessor, path: PathSpec,
-                      data: bytes) -> None:
+async def write_bytes(
+    accessor: OneDriveAccessor, path: PathSpec, data: bytes
+) -> None:
     timer = start_op()
-    await write_item(accessor.config,
-                     drive_loc(accessor.config, path.vfs_path),
-                     data,
-                     session=accessor.pool)
+    await write_item(
+        accessor.config,
+        drive_loc(accessor.config, path.vfs_path),
+        data,
+        session=accessor.pool,
+    )
     record("write", path.virtual, "onedrive", len(data), timer)
     await invalidate_after_write(path)

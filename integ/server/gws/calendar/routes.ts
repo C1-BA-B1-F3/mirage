@@ -108,12 +108,10 @@ function freeBusy(ctx: GwsCtx): Reply {
       .filter((ev) => ev.status !== 'cancelled')
       .filter((ev) => eventEndMs(ev, cal.timeZone) > lo && eventStartMs(ev, cal.timeZone) < hi)
       .sort((a, b) => eventStartMs(a, cal.timeZone) - eventStartMs(b, cal.timeZone))
-      .map(
-        (ev): JsonValue => ({
-          start: new Date(eventStartMs(ev, cal.timeZone)).toISOString(),
-          end: new Date(eventEndMs(ev, cal.timeZone)).toISOString(),
-        }),
-      )
+      .map((ev): JsonValue => ({
+        start: new Date(eventStartMs(ev, cal.timeZone)).toISOString(),
+        end: new Date(eventEndMs(ev, cal.timeZone)).toISOString(),
+      }))
     calendars[wanted] = { busy }
   }
   return ok({ kind: 'calendar#freeBusy', timeMin, timeMax, calendars })
@@ -126,16 +124,14 @@ export function calendarRoutes(): KitRoute<C>[] {
       const items = [...ctx.db.calendars.values()].filter((c) => showHidden || c.hidden !== true)
       return ok({
         kind: 'calendar#calendarList',
-        items: items.map(
-          (c): JsonValue => ({
-            kind: 'calendar#calendarListEntry',
-            id: c.id,
-            summary: c.summary,
-            timeZone: c.timeZone,
-            accessRole: c.accessRole,
-            ...(c.primary === true ? { primary: true } : {}),
-          }),
-        ),
+        items: items.map((c): JsonValue => ({
+          kind: 'calendar#calendarListEntry',
+          id: c.id,
+          summary: c.summary,
+          timeZone: c.timeZone,
+          accessRole: c.accessRole,
+          ...(c.primary === true ? { primary: true } : {}),
+        })),
       })
     }),
     route('POST', '/calendar/v3/freeBusy', freeBusy),

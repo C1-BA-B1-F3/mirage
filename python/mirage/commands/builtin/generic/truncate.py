@@ -42,11 +42,18 @@ def parse_size(value: str, current: int) -> int:
         # A sign after <, >, / or % is a second relative modifier, refused
         # before the number is read (`<+4` is not an invalid number).
         raise UsageError(
-            "truncate: multiple relative modifiers specified" + _TRY_HELP, 1)
+            "truncate: multiple relative modifiers specified" + _TRY_HELP, 1
+        )
     raw = remainder[1:] if sign else remainder
-    suffix = next((unit for unit in sorted(_UNITS, key=len, reverse=True)
-                   if raw.endswith(unit)), "")
-    digits = raw[:-len(suffix)] if suffix else raw
+    suffix = next(
+        (
+            unit
+            for unit in sorted(_UNITS, key=len, reverse=True)
+            if raw.endswith(unit)
+        ),
+        "",
+    )
+    digits = raw[: -len(suffix)] if suffix else raw
     # GNU quotes what xdectoimax saw: the remainder past the skipped
     # whitespace and mode character, sign included (`<abc` says 'abc').
     if _DIGITS.fullmatch(digits) is None:
@@ -57,7 +64,9 @@ def parse_size(value: str, current: int) -> int:
     if number > _OFF_T_MAX + (1 if sign == "-" else 0):
         raise UsageError(
             f"truncate: Invalid number: '{remainder}': "
-            "Value too large for defined data type", 1)
+            "Value too large for defined data type",
+            1,
+        )
     if number == 0 and operation in {"/", "%"}:
         raise UsageError("truncate: division by zero", 1)
     if sign == "+":
@@ -83,6 +92,7 @@ class TruncateFlags:
         size (str): the ``-s`` spec, as typed.
         no_create (bool): ``-c``; an absent name stays absent, silently.
     """
+
     size: str
     no_create: bool
 
@@ -164,7 +174,8 @@ async def _truncate_one(
         current = (await stat(path)).size or 0
     except (FileNotFoundError, NotADirectoryError) as exc:
         if isinstance(exc, NotADirectoryError) and (
-                flags.no_create or not path.raw_path.endswith("/")):
+            flags.no_create or not path.raw_path.endswith("/")
+        ):
             raise
         why = await absent_dest_strerror(stat, path)
         if why == "Not a directory":

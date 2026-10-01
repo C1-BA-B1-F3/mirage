@@ -29,7 +29,6 @@ class FakeResult:
 
 
 class FakeHandle:
-
     def __init__(self, command: str, stdin: bool):
         self.command = command
         self.input = bytearray()
@@ -52,10 +51,9 @@ class FakeHandle:
         if self.command == "sleep":
             await asyncio.Event().wait()
         if self.command == "exit 3":
-            raise CommandExitException(stderr="boom-err",
-                                       stdout="partial",
-                                       exit_code=3,
-                                       error=None)
+            raise CommandExitException(
+                stderr="boom-err", stdout="partial", exit_code=3, error=None
+            )
         assert self.eof
         return FakeResult(self.input.hex(), "warn", 0)
 
@@ -67,7 +65,6 @@ class FakeHandle:
 
 
 class FakeCommands:
-
     def __init__(self):
         self.calls = []
         self.handles = []
@@ -120,15 +117,16 @@ def test_sandbox_id_is_required():
 @pytest.mark.parametrize("data", [None, b"", b"a\nb\n", bytes(range(256))])
 async def test_native_stdin_eof_and_command_are_preserved(data):
     runtime = E2BRuntime(config={"sandbox_id": "sb-live"})
-    result = await runtime.run_line("wc -l | cat", data, {"E": "1"},
-                                    "/workspace")
+    result = await runtime.run_line(
+        "wc -l | cat", data, {"E": "1"}, "/workspace"
+    )
     assert result.exit_code == 0
     assert result.stdout == (data or b"").hex().encode()
     assert result.stderr == b"warn"
     sandbox = FakeSandbox.last
-    assert sandbox.commands.calls == [("wc -l | cat", {
-        "E": "1"
-    }, "/workspace", data is not None)]
+    assert sandbox.commands.calls == [
+        ("wc -l | cat", {"E": "1"}, "/workspace", data is not None)
+    ]
     handle = sandbox.commands.handles[0]
     assert handle.eof and handle.disconnected and not handle.killed
 
@@ -136,15 +134,20 @@ async def test_native_stdin_eof_and_command_are_preserved(data):
 @pytest.mark.asyncio
 @pytest.mark.parametrize("early_exit", [False, True])
 async def test_nonzero_exit_preserves_output_even_when_stdin_loses_exit_race(
-        early_exit):
+    early_exit,
+):
     runtime = E2BRuntime(config={"sandbox_id": "sb-live"})
     await runtime.connect()
     if early_exit:
         FakeSandbox.last.commands.input_error = NotFoundException(
-            "process exited")
+            "process exited"
+        )
     result = await runtime.exec_line("exit 3", b"input", {}, "/workspace")
-    assert (result.exit_code, result.stdout, result.stderr) == (3, b"partial",
-                                                                b"boom-err")
+    assert (result.exit_code, result.stdout, result.stderr) == (
+        3,
+        b"partial",
+        b"boom-err",
+    )
     handle = FakeSandbox.last.commands.handles[0]
     assert handle.disconnected and not handle.killed
 
@@ -154,21 +157,22 @@ async def test_parallel_calls_connect_once_and_keep_input_separate():
     runtime = E2BRuntime(config={"sandbox_id": "sb-live"})
     payloads = [bytes([i]) * 100 for i in range(6)]
     results = await asyncio.gather(
-        *(runtime.run_line("cat", data, {}, "/workspace")
-          for data in payloads))
+        *(runtime.run_line("cat", data, {}, "/workspace") for data in payloads)
+    )
     assert len(FakeSandbox.connected) == 1
-    assert [r.stdout
-            for r in results] == [data.hex().encode() for data in payloads]
+    assert [r.stdout for r in results] == [
+        data.hex().encode() for data in payloads
+    ]
     assert all(h.disconnected for h in FakeSandbox.last.commands.handles)
 
 
 @pytest.mark.asyncio
-async def test_input_transport_failure_kills_only_its_command_and_disconnects(
-):
+async def test_input_transport_failure_kills_only_its_command_and_disconnects():
     runtime = E2BRuntime(config={"sandbox_id": "sb-live"})
     await runtime.connect()
     FakeSandbox.last.commands.input_error = RuntimeError(
-        "stdin transport failed")
+        "stdin transport failed"
+    )
     with pytest.raises(RuntimeError, match="stdin transport failed"):
         await runtime.exec_line("cat", b"input", {}, "/workspace")
     handle = FakeSandbox.last.commands.handles[0]
@@ -180,7 +184,8 @@ async def test_cancellation_kills_command_and_disconnects():
     runtime = E2BRuntime(config={"sandbox_id": "sb-live"})
     await runtime.connect()
     task = asyncio.create_task(
-        runtime.exec_line("sleep", None, {}, "/workspace"))
+        runtime.exec_line("sleep", None, {}, "/workspace")
+    )
     await asyncio.sleep(0)
     handle = FakeSandbox.last.commands.handles[0]
     await handle.waiting.wait()

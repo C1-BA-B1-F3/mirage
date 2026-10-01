@@ -47,24 +47,29 @@ def _ops(removed: list[str] | None = None) -> CommandIO:
         removed.append(path.virtual)
 
     writes = {} if removed is None else {"rmdir": remove}
-    return CommandIO(readdir=readdir,
-                     read_bytes=read_bytes,
-                     read_stream=read_bytes,
-                     stat=stat,
-                     is_mounted=lambda _a: True,
-                     **writes)
+    return CommandIO(
+        readdir=readdir,
+        read_bytes=read_bytes,
+        read_stream=read_bytes,
+        stat=stat,
+        is_mounted=lambda _a: True,
+        **writes,
+    )
 
 
 def _spec(virtual: str) -> PathSpec:
-    return PathSpec(virtual=virtual,
-                    directory=virtual,
-                    vfs_path=virtual.lstrip("/"),
-                    resolved=True)
+    return PathSpec(
+        virtual=virtual,
+        directory=virtual,
+        vfs_path=virtual.lstrip("/"),
+        resolved=True,
+    )
 
 
 async def _rmdir(ops: CommandIO, *paths: str) -> tuple[int, str]:
-    _, io = await rmdir(ops, object(), [_spec(p) for p in paths], [],
-                        CommandOpts(index=INDEX))
+    _, io = await rmdir(
+        ops, object(), [_spec(p) for p in paths], [], CommandOpts(index=INDEX)
+    )
     return io.exit_code, io.stderr.decode() if io.stderr else ""
 
 
@@ -78,12 +83,16 @@ async def test_rmdir_stats_its_operand_through_the_index():
 @pytest.mark.asyncio
 async def test_rmdir_reports_an_existing_directory_it_cannot_remove():
     assert await _rmdir(_ops(), "/m/empty") == (
-        1, "rmdir: failed to remove '/m/empty': Operation not supported\n")
+        1,
+        "rmdir: failed to remove '/m/empty': Operation not supported\n",
+    )
 
 
 @pytest.mark.asyncio
 async def test_rmdir_reports_a_refused_stat_and_removes_the_rest():
     removed: list[str] = []
     assert await _rmdir(_ops(removed), "/m/locked/sub", "/m/empty") == (
-        1, "rmdir: failed to remove '/m/locked/sub': Permission denied\n")
+        1,
+        "rmdir: failed to remove '/m/locked/sub': Permission denied\n",
+    )
     assert removed == ["/m/empty"]

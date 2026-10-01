@@ -22,8 +22,12 @@ from mirage.core.object_store.exists import make_exists
 from mirage.core.object_store.rename import make_rename
 from mirage.core.object_store.stat import make_stat
 from mirage.observe.context import RecordingScope
-from tests.core.object_store.conftest import (FakeManager, FakeStore,
-                                              make_driver, spec)
+from tests.core.object_store.conftest import (
+    FakeManager,
+    FakeStore,
+    make_driver,
+    spec,
+)
 
 
 def _rename_for(store: FakeStore):
@@ -44,7 +48,8 @@ def _managed(coro):
 def test_rename_moves_a_file(accessor):
     store = FakeStore({"a/src.txt": b"hi"})
     manager = _managed(
-        _rename_for(store)(accessor, spec("/a/src.txt"), spec("/b/dst.txt")))
+        _rename_for(store)(accessor, spec("/a/src.txt"), spec("/b/dst.txt"))
+    )
     assert store.objects == {"b/dst.txt": b"hi"}
     assert manager.subtrees == ["/b/dst.txt", "/a/src.txt"]
     assert manager.writes == []
@@ -66,7 +71,8 @@ def test_rename_missing_source_is_enoent(accessor):
 def test_rename_onto_the_same_key_is_a_guarded_no_op(accessor):
     store = FakeStore({"a.txt": b"hi"})
     manager = _managed(
-        _rename_for(store)(accessor, spec("/a.txt"), spec("/a.txt")))
+        _rename_for(store)(accessor, spec("/a.txt"), spec("/a.txt"))
+    )
     assert store.objects == {"a.txt": b"hi"}
     assert manager.unlinks == []
     assert manager.subtrees == []
@@ -75,13 +81,14 @@ def test_rename_onto_the_same_key_is_a_guarded_no_op(accessor):
 def test_rename_onto_the_same_key_still_fails_when_absent(accessor):
     with pytest.raises(FileNotFoundError):
         _managed(
-            _rename_for(FakeStore())(accessor, spec("/a.txt"), spec("/a.txt")))
+            _rename_for(FakeStore())(accessor, spec("/a.txt"), spec("/a.txt"))
+        )
 
 
 def test_rename_without_native_move_refuses_to_build():
-    driver = replace(make_driver(FakeStore()),
-                     move_file=None,
-                     move_prefix=None)
+    driver = replace(
+        make_driver(FakeStore()), move_file=None, move_prefix=None
+    )
     with pytest.raises(ValueError, match="no native move"):
         make_rename(driver, make_exists(make_stat(driver)))
 
@@ -104,18 +111,23 @@ def test_rename_records_a_retraction_for_both_paths(accessor):
     nothing under the name is retracted."""
     store = FakeStore({"a.txt": b"x"})
     assert _recorded(
-        make_rename(make_driver(store),
-                    _exists)(accessor, spec("/a.txt"),
-                             spec("/b.txt"))) == [("rename", "/mnt/a.txt"),
-                                                  ("rename", "/mnt/b.txt")]
+        make_rename(make_driver(store), _exists)(
+            accessor, spec("/a.txt"), spec("/b.txt")
+        )
+    ) == [("rename", "/mnt/a.txt"), ("rename", "/mnt/b.txt")]
 
 
 def test_self_rename_records_nothing(accessor):
     """POSIX rename(2) of a path onto itself performs no other action."""
     store = FakeStore({"a.txt": b"x"})
-    assert _recorded(
-        make_rename(make_driver(store), _exists)(accessor, spec("/a.txt"),
-                                                 spec("/a.txt"))) == []
+    assert (
+        _recorded(
+            make_rename(make_driver(store), _exists)(
+                accessor, spec("/a.txt"), spec("/a.txt")
+            )
+        )
+        == []
+    )
 
 
 async def _exists(accessor, path) -> bool:
@@ -145,19 +157,22 @@ def test_rename_records_both_retractions_when_the_prefix_walk_fails(accessor):
     driver = replace(make_driver(store), move_prefix=_boom)
     assert _recorded_failure(
         make_rename(driver, _exists)(accessor, spec("/d"), spec("/e")),
-        RuntimeError, "boom") == [("rename_prefix", "/mnt/d"),
-                                  ("rename_prefix", "/mnt/e")]
+        RuntimeError,
+        "boom",
+    ) == [("rename_prefix", "/mnt/d"), ("rename_prefix", "/mnt/e")]
 
 
 def test_rename_evicts_both_subtrees_when_the_prefix_walk_raises(accessor):
     """The eviction rides with the records, on the same condition."""
 
     async def run():
-        driver = replace(make_driver(FakeStore({"d/f.txt": b"x"})),
-                         move_prefix=_boom)
+        driver = replace(
+            make_driver(FakeStore({"d/f.txt": b"x"})), move_prefix=_boom
+        )
         with pytest.raises(RuntimeError):
-            await make_rename(driver, _exists)(accessor, spec("/d"),
-                                               spec("/e"))
+            await make_rename(driver, _exists)(
+                accessor, spec("/d"), spec("/e")
+            )
 
     manager = _managed(run())
     assert manager.subtrees == ["/e", "/d"]
@@ -166,8 +181,12 @@ def test_rename_evicts_both_subtrees_when_the_prefix_walk_raises(accessor):
 def test_rename_of_a_missing_source_records_nothing(accessor):
     """Both calls answering a clean False is the store saying nothing
     moved at all, which is the one outcome safe to skip."""
-    assert _recorded_failure(
-        make_rename(make_driver(FakeStore()), _exists)(accessor,
-                                                       spec("/a.txt"),
-                                                       spec("/b.txt")),
-        FileNotFoundError) == []
+    assert (
+        _recorded_failure(
+            make_rename(make_driver(FakeStore()), _exists)(
+                accessor, spec("/a.txt"), spec("/b.txt")
+            ),
+            FileNotFoundError,
+        )
+        == []
+    )

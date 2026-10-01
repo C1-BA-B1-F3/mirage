@@ -5,25 +5,34 @@ from mirage.types import PathSpec
 
 
 def _spec(path: str) -> PathSpec:
-    return PathSpec(vfs_path=(path).strip("/"),
-                    virtual=path,
-                    directory=path,
-                    resolved=True)
+    return PathSpec(
+        vfs_path=(path).strip("/"), virtual=path, directory=path, resolved=True
+    )
 
 
 def _make_backend(files: dict[str, bytes]):
     store = dict(files)
 
     async def read_bytes(path):
-        spec = path if isinstance(path, PathSpec) else PathSpec(
-            vfs_path=(path).strip("/"), virtual=path, directory=path)
+        spec = (
+            path
+            if isinstance(path, PathSpec)
+            else PathSpec(
+                vfs_path=(path).strip("/"), virtual=path, directory=path
+            )
+        )
         if spec.virtual not in store:
             raise FileNotFoundError(spec.virtual)
         return store[spec.virtual]
 
     async def write_bytes(path, data):
-        spec = path if isinstance(path, PathSpec) else PathSpec(
-            vfs_path=(path).strip("/"), virtual=path, directory=path)
+        spec = (
+            path
+            if isinstance(path, PathSpec)
+            else PathSpec(
+                vfs_path=(path).strip("/"), virtual=path, directory=path
+            )
+        )
         store[spec.virtual] = data
 
     return read_bytes, write_bytes, store
@@ -71,10 +80,12 @@ async def test_sed_inplace_simple_sub_writes_file():
 
 @pytest.mark.asyncio
 async def test_sed_inplace_multi_path_writes_all():
-    rb, wb, store = _make_backend({
-        "/a.txt": b"hello a\n",
-        "/b.txt": b"hello b\n",
-    })
+    rb, wb, store = _make_backend(
+        {
+            "/a.txt": b"hello a\n",
+            "/b.txt": b"hello b\n",
+        }
+    )
     _output, io = await sed(
         [_spec("/a.txt"), _spec("/b.txt")],
         "s/hello/bye/",
@@ -161,304 +172,286 @@ async def test_sed_no_paths_no_stdin_reports_no_input_files():
 @pytest.mark.asyncio
 async def test_sed_numeric_count_replaces_nth_occurrence():
     rb, wb, _ = _make_backend({})
-    output, _ = await sed([],
-                          "s/o/O/2",
-                          read_bytes=rb,
-                          write_bytes=wb,
-                          stdin=b"oooo\n")
+    output, _ = await sed(
+        [], "s/o/O/2", read_bytes=rb, write_bytes=wb, stdin=b"oooo\n"
+    )
     assert output == b"oOoo\n"
 
 
 @pytest.mark.asyncio
 async def test_sed_numeric_count_with_g_replaces_nth_onward():
     rb, wb, _ = _make_backend({})
-    output, _ = await sed([],
-                          "s/o/O/2g",
-                          read_bytes=rb,
-                          write_bytes=wb,
-                          stdin=b"oooo\n")
+    output, _ = await sed(
+        [], "s/o/O/2g", read_bytes=rb, write_bytes=wb, stdin=b"oooo\n"
+    )
     assert output == b"oOOO\n"
 
 
 @pytest.mark.asyncio
 async def test_sed_count_is_per_line():
     rb, wb, _ = _make_backend({})
-    output, _ = await sed([],
-                          "s/o/O/2",
-                          read_bytes=rb,
-                          write_bytes=wb,
-                          stdin=b"oo\noo\n")
+    output, _ = await sed(
+        [], "s/o/O/2", read_bytes=rb, write_bytes=wb, stdin=b"oo\noo\n"
+    )
     assert output == b"oO\noO\n"
 
 
 @pytest.mark.asyncio
 async def test_sed_empty_match_after_a_match_is_skipped():
     rb, wb, _ = _make_backend({})
-    output, _ = await sed([],
-                          "s/b*/X/g;s/x*/-/g",
-                          read_bytes=rb,
-                          write_bytes=wb,
-                          stdin=b"abbb\nabxd\n")
+    output, _ = await sed(
+        [],
+        "s/b*/X/g;s/x*/-/g",
+        read_bytes=rb,
+        write_bytes=wb,
+        stdin=b"abbb\nabxd\n",
+    )
     assert output == b"-X-a-X-\n-X-a-X-X-d-X-\n"
 
 
 @pytest.mark.asyncio
 async def test_sed_skipped_empty_match_is_not_counted():
     rb, wb, _ = _make_backend({})
-    output, _ = await sed([],
-                          "s/b*/X/3",
-                          read_bytes=rb,
-                          write_bytes=wb,
-                          stdin=b"abbb\n")
+    output, _ = await sed(
+        [], "s/b*/X/3", read_bytes=rb, write_bytes=wb, stdin=b"abbb\n"
+    )
     assert output == b"abbb\n"
 
 
 @pytest.mark.asyncio
 async def test_sed_p_flag_prints_substituted_line_twice():
     rb, wb, _ = _make_backend({})
-    output, _ = await sed([],
-                          "s/hi/HI/p",
-                          read_bytes=rb,
-                          write_bytes=wb,
-                          stdin=b"hi\nbye\n")
+    output, _ = await sed(
+        [], "s/hi/HI/p", read_bytes=rb, write_bytes=wb, stdin=b"hi\nbye\n"
+    )
     assert output == b"HI\nHI\nbye\n"
 
 
 @pytest.mark.asyncio
 async def test_sed_p_flag_under_suppress_prints_only_substituted():
     rb, wb, _ = _make_backend({})
-    output, _ = await sed([],
-                          "s/hi/HI/p",
-                          read_bytes=rb,
-                          write_bytes=wb,
-                          stdin=b"hi\nbye\n",
-                          suppress=True)
+    output, _ = await sed(
+        [],
+        "s/hi/HI/p",
+        read_bytes=rb,
+        write_bytes=wb,
+        stdin=b"hi\nbye\n",
+        suppress=True,
+    )
     assert output == b"HI\n"
 
 
 @pytest.mark.asyncio
 async def test_sed_y_transliterate():
     rb, wb, _ = _make_backend({})
-    output, _ = await sed([],
-                          "y/el/ip/",
-                          read_bytes=rb,
-                          write_bytes=wb,
-                          stdin=b"hello\n")
+    output, _ = await sed(
+        [], "y/el/ip/", read_bytes=rb, write_bytes=wb, stdin=b"hello\n"
+    )
     assert output == b"hippo\n"
 
 
 @pytest.mark.asyncio
 async def test_sed_y_mismatched_lengths_refused():
     rb, wb, _ = _make_backend({})
-    output, io = await sed([],
-                           "y/ab/x/",
-                           read_bytes=rb,
-                           write_bytes=wb,
-                           stdin=b"a\n")
+    output, io = await sed(
+        [], "y/ab/x/", read_bytes=rb, write_bytes=wb, stdin=b"a\n"
+    )
     assert output is None
     assert io.exit_code == 1
-    assert io.stderr == (b"sed: -e expression #1, char 7: strings for `y' "
-                         b"command are different lengths\n")
+    assert io.stderr == (
+        b"sed: -e expression #1, char 7: strings for `y' "
+        b"command are different lengths\n"
+    )
 
 
 @pytest.mark.asyncio
 async def test_sed_c_no_address_changes_every_line():
     rb, wb, _ = _make_backend({})
-    output, _ = await sed([],
-                          "c\\\nX",
-                          read_bytes=rb,
-                          write_bytes=wb,
-                          stdin=b"a\nb\nc\n")
+    output, _ = await sed(
+        [], "c\\\nX", read_bytes=rb, write_bytes=wb, stdin=b"a\nb\nc\n"
+    )
     assert output == b"X\nX\nX\n"
 
 
 @pytest.mark.asyncio
 async def test_sed_c_single_address():
     rb, wb, _ = _make_backend({})
-    output, _ = await sed([],
-                          "2c\\\nX",
-                          read_bytes=rb,
-                          write_bytes=wb,
-                          stdin=b"a\nb\nc\n")
+    output, _ = await sed(
+        [], "2c\\\nX", read_bytes=rb, write_bytes=wb, stdin=b"a\nb\nc\n"
+    )
     assert output == b"a\nX\nc\n"
 
 
 @pytest.mark.asyncio
 async def test_sed_c_range_emits_once():
     rb, wb, _ = _make_backend({})
-    output, _ = await sed([],
-                          "2,3c\\\nX",
-                          read_bytes=rb,
-                          write_bytes=wb,
-                          stdin=b"a\nb\nc\nd\n")
+    output, _ = await sed(
+        [], "2,3c\\\nX", read_bytes=rb, write_bytes=wb, stdin=b"a\nb\nc\nd\n"
+    )
     assert output == b"a\nX\nd\n"
 
 
 @pytest.mark.asyncio
 async def test_sed_bre_group_and_backref():
     rb, wb, _ = _make_backend({})
-    output, _ = await sed([],
-                          r"s/\(foo\)/[\1]/",
-                          read_bytes=rb,
-                          write_bytes=wb,
-                          stdin=b"foo\n")
+    output, _ = await sed(
+        [], r"s/\(foo\)/[\1]/", read_bytes=rb, write_bytes=wb, stdin=b"foo\n"
+    )
     assert output == b"[foo]\n"
 
 
 @pytest.mark.asyncio
 async def test_sed_bre_plus_is_literal():
     rb, wb, _ = _make_backend({})
-    output, _ = await sed([],
-                          "s/a+/X/",
-                          read_bytes=rb,
-                          write_bytes=wb,
-                          stdin=b"a+b\n")
+    output, _ = await sed(
+        [], "s/a+/X/", read_bytes=rb, write_bytes=wb, stdin=b"a+b\n"
+    )
     assert output == b"Xb\n"
 
 
 @pytest.mark.asyncio
 async def test_sed_bre_backslash_plus_is_one_or_more():
     rb, wb, _ = _make_backend({})
-    output, _ = await sed([],
-                          r"s/a\+/X/",
-                          read_bytes=rb,
-                          write_bytes=wb,
-                          stdin=b"aaab\n")
+    output, _ = await sed(
+        [], r"s/a\+/X/", read_bytes=rb, write_bytes=wb, stdin=b"aaab\n"
+    )
     assert output == b"Xb\n"
 
 
 @pytest.mark.asyncio
 async def test_sed_ere_group_and_plus():
     rb, wb, _ = _make_backend({})
-    output, _ = await sed([],
-                          r"s/(foo)/[\1]/",
-                          read_bytes=rb,
-                          write_bytes=wb,
-                          stdin=b"foo\n",
-                          extended=True)
+    output, _ = await sed(
+        [],
+        r"s/(foo)/[\1]/",
+        read_bytes=rb,
+        write_bytes=wb,
+        stdin=b"foo\n",
+        extended=True,
+    )
     assert output == b"[foo]\n"
-    output, _ = await sed([],
-                          "s/a+/X/",
-                          read_bytes=rb,
-                          write_bytes=wb,
-                          stdin=b"aaab\n",
-                          extended=True)
+    output, _ = await sed(
+        [],
+        "s/a+/X/",
+        read_bytes=rb,
+        write_bytes=wb,
+        stdin=b"aaab\n",
+        extended=True,
+    )
     assert output == b"Xb\n"
 
 
 @pytest.mark.asyncio
 async def test_sed_ere_address():
     rb, wb, _ = _make_backend({})
-    output, _ = await sed([],
-                          "/a+/d",
-                          read_bytes=rb,
-                          write_bytes=wb,
-                          stdin=b"aaa\nbbb\n",
-                          extended=True)
+    output, _ = await sed(
+        [],
+        "/a+/d",
+        read_bytes=rb,
+        write_bytes=wb,
+        stdin=b"aaa\nbbb\n",
+        extended=True,
+    )
     assert output == b"bbb\n"
 
 
 @pytest.mark.asyncio
 async def test_sed_negate_line():
     rb, wb, _ = _make_backend({})
-    output, _ = await sed([],
-                          "2!d",
-                          read_bytes=rb,
-                          write_bytes=wb,
-                          stdin=b"a\nb\nc\n")
+    output, _ = await sed(
+        [], "2!d", read_bytes=rb, write_bytes=wb, stdin=b"a\nb\nc\n"
+    )
     assert output == b"b\n"
 
 
 @pytest.mark.asyncio
 async def test_sed_negate_regex():
     rb, wb, _ = _make_backend({})
-    output, _ = await sed([],
-                          "/b/!d",
-                          read_bytes=rb,
-                          write_bytes=wb,
-                          stdin=b"a\nb\nc\n")
+    output, _ = await sed(
+        [], "/b/!d", read_bytes=rb, write_bytes=wb, stdin=b"a\nb\nc\n"
+    )
     assert output == b"b\n"
 
 
 @pytest.mark.asyncio
 async def test_sed_negate_last_with_suppress():
     rb, wb, _ = _make_backend({})
-    output, _ = await sed([],
-                          "$!p",
-                          read_bytes=rb,
-                          write_bytes=wb,
-                          stdin=b"a\nb\nc\n",
-                          suppress=True)
+    output, _ = await sed(
+        [],
+        "$!p",
+        read_bytes=rb,
+        write_bytes=wb,
+        stdin=b"a\nb\nc\n",
+        suppress=True,
+    )
     assert output == b"a\nb\n"
 
 
 @pytest.mark.asyncio
 async def test_sed_negate_range():
     rb, wb, _ = _make_backend({})
-    output, _ = await sed([],
-                          "1,2!s/./X/",
-                          read_bytes=rb,
-                          write_bytes=wb,
-                          stdin=b"a\nb\nc\nd\n")
+    output, _ = await sed(
+        [], "1,2!s/./X/", read_bytes=rb, write_bytes=wb, stdin=b"a\nb\nc\nd\n"
+    )
     assert output == b"a\nb\nX\nX\n"
 
 
 @pytest.mark.asyncio
 async def test_sed_join_all_idiom():
     rb, wb, _ = _make_backend({})
-    output, _ = await sed([],
-                          r":a;N;$!ba;s/\n/,/g",
-                          read_bytes=rb,
-                          write_bytes=wb,
-                          stdin=b"a\nb\nc\n")
+    output, _ = await sed(
+        [],
+        r":a;N;$!ba;s/\n/,/g",
+        read_bytes=rb,
+        write_bytes=wb,
+        stdin=b"a\nb\nc\n",
+    )
     assert output == b"a,b,c\n"
 
 
 @pytest.mark.asyncio
 async def test_sed_hold_accumulate():
     rb, wb, _ = _make_backend({})
-    output, _ = await sed([],
-                          "H;${x;p}",
-                          read_bytes=rb,
-                          write_bytes=wb,
-                          stdin=b"a\nb\n",
-                          suppress=True)
+    output, _ = await sed(
+        [],
+        "H;${x;p}",
+        read_bytes=rb,
+        write_bytes=wb,
+        stdin=b"a\nb\n",
+        suppress=True,
+    )
     assert output == b"\na\nb\n"
 
 
 @pytest.mark.asyncio
 async def test_sed_preserves_missing_final_newline():
     rb, wb, _ = _make_backend({})
-    output, _ = await sed([],
-                          "s/o/O/",
-                          read_bytes=rb,
-                          write_bytes=wb,
-                          stdin=b"foo")
+    output, _ = await sed(
+        [], "s/o/O/", read_bytes=rb, write_bytes=wb, stdin=b"foo"
+    )
     assert output == b"fOo"
 
 
 @pytest.mark.asyncio
 async def test_sed_escaped_delimiter():
     rb, wb, _ = _make_backend({})
-    output, _ = await sed([],
-                          r"s/a\/b/c/",
-                          read_bytes=rb,
-                          write_bytes=wb,
-                          stdin=b"a/b\n")
+    output, _ = await sed(
+        [], r"s/a\/b/c/", read_bytes=rb, write_bytes=wb, stdin=b"a/b\n"
+    )
     assert output == b"c\n"
 
 
 @pytest.mark.asyncio
 async def test_sed_zero_count_rejected():
     rb, wb, _ = _make_backend({})
-    _, io = await sed([],
-                      "s/o/O/0",
-                      read_bytes=rb,
-                      write_bytes=wb,
-                      stdin=b"oo\n")
+    _, io = await sed(
+        [], "s/o/O/0", read_bytes=rb, write_bytes=wb, stdin=b"oo\n"
+    )
     assert io.exit_code == 1
-    assert io.stderr == (b"sed: -e expression #1, char 7: number option to "
-                         b"`s' command may not be zero\n")
+    assert io.stderr == (
+        b"sed: -e expression #1, char 7: number option to "
+        b"`s' command may not be zero\n"
+    )
 
 
 @pytest.mark.asyncio
@@ -616,14 +609,13 @@ async def test_sed_address_range_with_escaped_delimiters():
 @pytest.mark.asyncio
 async def test_sed_unterminated_address_refused():
     rb, wb, _ = _make_backend({})
-    _, io = await sed([],
-                      "/a\\/b",
-                      read_bytes=rb,
-                      write_bytes=wb,
-                      stdin=b"x\n")
+    _, io = await sed(
+        [], "/a\\/b", read_bytes=rb, write_bytes=wb, stdin=b"x\n"
+    )
     assert io.exit_code == 1
-    assert io.stderr == (b"sed: -e expression #1, char 5: unterminated "
-                         b"address regex\n")
+    assert io.stderr == (
+        b"sed: -e expression #1, char 5: unterminated address regex\n"
+    )
 
 
 @pytest.mark.asyncio
@@ -649,8 +641,9 @@ async def test_sed_text_escapes_above_ascii_write_raw_bytes():
         write_bytes=wb,
         stdin=b"x\ny\n",
     )
-    assert output == (b"x\n[\xff][\xc8][\xff][\x80][\xc3\xa9][\x00]\n"
-                      b"[\xe9]\n[\xe9][\xe9]\n")
+    assert output == (
+        b"x\n[\xff][\xc8][\xff][\x80][\xc3\xa9][\x00]\n[\xe9]\n[\xe9][\xe9]\n"
+    )
 
 
 @pytest.mark.asyncio
@@ -669,11 +662,13 @@ async def test_sed_inplace_text_escape_above_ascii_writes_raw_byte():
 @pytest.mark.asyncio
 async def test_sed_inplace_r_reads_an_earlier_edit():
     rb, wb, store = _make_backend({"/f": b"one\ntwo\n", "/b": b"b1\nb2\n"})
-    await sed([_spec("/f"), _spec("/b")],
-              "1r /f",
-              read_bytes=rb,
-              write_bytes=wb,
-              in_place=True)
+    await sed(
+        [_spec("/f"), _spec("/b")],
+        "1r /f",
+        read_bytes=rb,
+        write_bytes=wb,
+        in_place=True,
+    )
     assert store["/f"] == b"one\none\ntwo\ntwo\n"
     assert store["/b"] == b"b1\none\none\ntwo\ntwo\nb2\n"
 
@@ -681,22 +676,26 @@ async def test_sed_inplace_r_reads_an_earlier_edit():
 @pytest.mark.asyncio
 async def test_sed_inplace_R_reads_the_file_as_compiled():
     rb, wb, store = _make_backend({"/f": b"one\ntwo\n", "/b": b"b1\nb2\n"})
-    await sed([_spec("/f"), _spec("/b")],
-              "R /f",
-              read_bytes=rb,
-              write_bytes=wb,
-              in_place=True)
+    await sed(
+        [_spec("/f"), _spec("/b")],
+        "R /f",
+        read_bytes=rb,
+        write_bytes=wb,
+        in_place=True,
+    )
     assert store["/b"] == b"b1\none\nb2\ntwo\n"
 
 
 @pytest.mark.asyncio
 async def test_sed_inplace_keeps_a_w_file_it_then_edited():
     rb, wb, store = _make_backend({"/b": b"b1\nb2\n", "/f": b"old\n"})
-    await sed([_spec("/b"), _spec("/f")],
-              "s/b/B/;w /f",
-              read_bytes=rb,
-              write_bytes=wb,
-              in_place=True)
+    await sed(
+        [_spec("/b"), _spec("/f")],
+        "s/b/B/;w /f",
+        read_bytes=rb,
+        write_bytes=wb,
+        in_place=True,
+    )
     assert store["/f"] == b""
     assert store["/b"] == b"B1\nB2\n"
 
@@ -715,21 +714,24 @@ async def test_sed_reads_operands_after_a_directory_for_last_line():
         "$p",
         read_bytes=read,
         write_bytes=wb,
-        suppress=True)
+        suppress=True,
+    )
     assert output == b"x\n"
     assert io.exit_code == 0
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("script,out", [
-    ("n;p", b"two\nL1\n"),
-    ("N;p", b"one\ntwo\nthree\nL1\n"),
-])
+@pytest.mark.parametrize(
+    "script,out",
+    [
+        ("n;p", b"two\nL1\n"),
+        ("N;p", b"one\ntwo\nthree\nL1\n"),
+    ],
+)
 async def test_sed_n_looks_past_a_directory(script, out):
-    rb, wb, store = _make_backend({
-        "/f": b"one\ntwo\nthree\n",
-        "/g": b"L1\nL2\n"
-    })
+    rb, wb, store = _make_backend(
+        {"/f": b"one\ntwo\nthree\n", "/g": b"L1\nL2\n"}
+    )
 
     async def read(path):
         if path.virtual == "/d":
@@ -741,7 +743,8 @@ async def test_sed_n_looks_past_a_directory(script, out):
         script,
         read_bytes=read,
         write_bytes=wb,
-        suppress=True)
+        suppress=True,
+    )
     assert output == out
     assert io.exit_code == 0
 
@@ -762,7 +765,8 @@ async def test_sed_reads_nothing_after_a_directory_without_last_line():
         "p",
         read_bytes=read,
         write_bytes=wb,
-        suppress=True)
+        suppress=True,
+    )
     assert output == b"one\ntwo\n"
     assert io.exit_code == 4
     assert reads == ["/f", "/d"]
@@ -770,10 +774,9 @@ async def test_sed_reads_nothing_after_a_directory_without_last_line():
 
 @pytest.mark.asyncio
 async def test_sed_separate_reads_nothing_after_a_directory():
-    rb, wb, store = _make_backend({
-        "/f": b"one\ntwo\nthree\n",
-        "/g": b"L1\nL2\n"
-    })
+    rb, wb, store = _make_backend(
+        {"/f": b"one\ntwo\nthree\n", "/g": b"L1\nL2\n"}
+    )
     reads: list[str] = []
 
     async def read(path):
@@ -788,7 +791,8 @@ async def test_sed_separate_reads_nothing_after_a_directory():
         read_bytes=read,
         write_bytes=wb,
         suppress=True,
-        separate=True)
+        separate=True,
+    )
     assert output == b"two\n"
     assert io.exit_code == 4
     assert reads == ["/f", "/d"]

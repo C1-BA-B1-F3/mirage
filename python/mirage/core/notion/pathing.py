@@ -37,7 +37,8 @@ def format_segment(title: str, object_id: str) -> str:
         str: dirname of shape ``<label>__<id>``.
     """
     return fit_id_name(
-        sanitize_name(title) if title else "untitled", object_id)
+        sanitize_name(title) if title else "untitled", object_id
+    )
 
 
 def page_dirname(page: dict[str, Any]) -> str:
@@ -49,8 +50,9 @@ def database_dirname(database: dict[str, Any]) -> str:
 
 
 def data_source_dirname(data_source: dict[str, Any]) -> str:
-    return format_segment(extract_data_source_title(data_source),
-                          data_source["id"])
+    return format_segment(
+        extract_data_source_title(data_source), data_source["id"]
+    )
 
 
 def extract_data_source_title(data_source: dict[str, Any]) -> str:

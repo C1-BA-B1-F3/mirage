@@ -6,12 +6,14 @@ from mirage.vfs.qdrant.config import QdrantConfig
 
 
 def _cfg(**kw) -> QdrantConfig:
-    base = dict(group_by=["label", "kind"],
-                id_field="id",
-                text_field="name",
-                blob_field="image_bytes",
-                blob_ext="png",
-                vector_field="vector")
+    base = dict(
+        group_by=["label", "kind"],
+        id_field="id",
+        text_field="name",
+        blob_field="image_bytes",
+        blob_ext="png",
+        vector_field="vector",
+    )
     base.update(kw)
     return QdrantConfig(**base)
 
@@ -31,7 +33,7 @@ def test_row_json():
     assert match.slots["row_id"] == "3"
     assert filters_of(config.group_by, match) == {
         "label": "cat",
-        "kind": "big"
+        "kind": "big",
     }
 
 

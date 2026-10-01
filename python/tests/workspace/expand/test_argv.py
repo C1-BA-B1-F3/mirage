@@ -21,14 +21,16 @@ from mirage.workspace.expand.argv import Argv
 
 
 def _ps(virtual: str) -> PathSpec:
-    return PathSpec(virtual=virtual,
-                    directory=virtual[:virtual.rfind("/") + 1],
-                    vfs_path="",
-                    resolved=True)
+    return PathSpec(
+        virtual=virtual,
+        directory=virtual[: virtual.rfind("/") + 1],
+        vfs_path="",
+        resolved=True,
+    )
 
 
 def test_words_includes_name():
-    argv = Argv(name="cat", args=("f.txt", ), operands=(_ps("/ram/f.txt"), ))
+    argv = Argv(name="cat", args=("f.txt",), operands=(_ps("/ram/f.txt"),))
     assert argv.words == ["cat", _ps("/ram/f.txt")]
 
 
@@ -38,18 +40,18 @@ def test_words_empty_command():
 
 def test_views_differ_only_in_type():
     pattern = _ps("/ram/*.txt")
-    argv = Argv(name="ls", args=("/ram/*.txt", ), operands=(pattern, ))
+    argv = Argv(name="ls", args=("/ram/*.txt",), operands=(pattern,))
     assert len(argv.args) == len(argv.operands)
     assert argv.args[0] == argv.operands[0].virtual
 
 
 def test_with_operands_replaces_only_operands():
-    argv = Argv(name="rm", args=("link", ), operands=(_ps("/ram/link"), ))
+    argv = Argv(name="rm", args=("link",), operands=(_ps("/ram/link"),))
     rewritten = argv.with_operands([_ps("/ram/target")])
-    assert rewritten.operands == (_ps("/ram/target"), )
+    assert rewritten.operands == (_ps("/ram/target"),)
     assert rewritten.name == "rm"
-    assert rewritten.args == ("link", )
-    assert argv.operands == (_ps("/ram/link"), )
+    assert rewritten.args == ("link",)
+    assert argv.operands == (_ps("/ram/link"),)
 
 
 def test_frozen():

@@ -80,19 +80,19 @@ async def expand_pattern(
     if ntype == NT.ANSI_C_STRING:
         return escape_glob(decode_ansi_c(get_text(ts_node)[2:-1]))
     if ntype == NT.STRING:
-        return escape_glob(await expand_node(ts_node,
-                                             session,
-                                             execute_fn,
-                                             call_stack,
-                                             view=view))
+        return escape_glob(
+            await expand_node(
+                ts_node, session, execute_fn, call_stack, view=view
+            )
+        )
     if ntype == NT.TRANSLATED_STRING:
         for child in ts_node.named_children:
             if child.type == NT.STRING:
-                return escape_glob(await expand_node(child,
-                                                     session,
-                                                     execute_fn,
-                                                     call_stack,
-                                                     view=view))
+                return escape_glob(
+                    await expand_node(
+                        child, session, execute_fn, call_stack, view=view
+                    )
+                )
         return ""
     if ntype == NT.CONCATENATION:
         parts = []
@@ -101,17 +101,18 @@ async def expand_pattern(
             # A $"..." inside a concatenation arrives as an anonymous
             # `$` token followed by the string node; the `$` is the
             # translation marker, not text (same rule as expand_node).
-            if (child.type == "$" and position + 1 < len(children)
-                    and children[position + 1].type == NT.STRING):
+            if (
+                child.type == "$"
+                and position + 1 < len(children)
+                and children[position + 1].type == NT.STRING
+            ):
                 continue
-            parts.append(await expand_pattern(child,
-                                              session,
-                                              execute_fn,
-                                              call_stack,
-                                              view=view))
+            parts.append(
+                await expand_pattern(
+                    child, session, execute_fn, call_stack, view=view
+                )
+            )
         return "".join(parts)
-    return await expand_node(ts_node,
-                             session,
-                             execute_fn,
-                             call_stack,
-                             view=view)
+    return await expand_node(
+        ts_node, session, execute_fn, call_stack, view=view
+    )

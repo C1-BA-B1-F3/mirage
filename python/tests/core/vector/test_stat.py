@@ -40,7 +40,8 @@ async def test_a_group_is_a_directory_of_an_existing_table(tree, accessor):
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    "path", ["/zoo/cat", "/zoo/cat/1.txt", "/animals/cat/1.weird/x"])
+    "path", ["/zoo/cat", "/zoo/cat/1.txt", "/animals/cat/1.weird/x"]
+)
 async def test_a_missing_table_or_shape_is_absent(tree, accessor, path):
     stat, _ = _stat(tree)
     with pytest.raises(FileNotFoundError):
@@ -53,11 +54,14 @@ async def test_a_seeded_size_answers_without_a_read(tree, accessor):
     index = RAMIndexCacheStore()
     await index.put(
         "/animals/cat/1.txt",
-        IndexEntry(id="1",
-                   name="1.txt",
-                   resource_type="stub/row_text",
-                   vfs_name="1.txt",
-                   size=999))
+        IndexEntry(
+            id="1",
+            name="1.txt",
+            resource_type="stub/row_text",
+            vfs_name="1.txt",
+            size=999,
+        ),
+    )
     s = await stat(accessor, _ps("/animals/cat/1.txt"), index)
     assert (s.size, s.content, accessor.reads) == (999, ContentType.TEXT, 0)
 
@@ -75,5 +79,8 @@ async def test_an_unsized_entry_is_sized_by_its_read(tree, accessor):
 async def test_a_leaf_takes_its_scope_content_type(tree, accessor):
     stat, _ = _stat(tree)
     s = await stat(accessor, _ps("/animals/cat/1.png"))
-    assert (s.type, s.content, s.size) == (FileType.FILE,
-                                           ContentType.IMAGE_PNG, 3)
+    assert (s.type, s.content, s.size) == (
+        FileType.FILE,
+        ContentType.IMAGE_PNG,
+        3,
+    )

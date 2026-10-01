@@ -37,13 +37,15 @@ class Watcher:
     reacting to a change always reads fresh content.
     """
 
-    def __init__(self,
-                 registry: WatchRegistry,
-                 queue_factory: QueueFactory = RAMWatchQueue) -> None:
+    def __init__(
+        self,
+        registry: WatchRegistry,
+        queue_factory: QueueFactory = RAMWatchQueue,
+    ) -> None:
         """Args:
-            registry (WatchRegistry): Mount table of the workspace.
-            queue_factory (QueueFactory): Builds the delivery queue for
-                a watch root when the caller does not supply one.
+        registry (WatchRegistry): Mount table of the workspace.
+        queue_factory (QueueFactory): Builds the delivery queue for
+            a watch root when the caller does not supply one.
         """
         self._registry = registry
         self._queue_factory = queue_factory
@@ -62,8 +64,9 @@ class Watcher:
             virtual (str): Workspace-virtual path.
         """
         norm = "/" + virtual.strip("/")
-        vfs_path = norm[len(entry.prefix):] if norm.startswith(
-            entry.prefix) else ""
+        vfs_path = (
+            norm[len(entry.prefix) :] if norm.startswith(entry.prefix) else ""
+        )
         return PathSpec.from_str_path(norm, vfs_path=vfs_path)
 
     def _matches(self, sub: Subscriber, change: FileEvent) -> bool:
@@ -74,7 +77,8 @@ class Watcher:
             change (FileEvent): Candidate change.
         """
         return any(
-            self._in_scope(root, change.path.virtual) for root in sub.roots)
+            self._in_scope(root, change.path.virtual) for root in sub.roots
+        )
 
     def _in_scope(self, root: str, virtual: str) -> bool:
         """Whether ``virtual`` falls inside one watch root.
@@ -108,8 +112,9 @@ class Watcher:
         root = root.rstrip("/")
         return virtual == root or virtual.startswith(root + "/")
 
-    async def _evict(self, entry: WatchMount, path: PathSpec,
-                     kind: FileChangeKind) -> None:
+    async def _evict(
+        self, entry: WatchMount, path: PathSpec, kind: FileChangeKind
+    ) -> None:
         """Evict one path and every cached ancestor listing above it.
 
         The whole ancestor chain is invalidated, not just the path: an
@@ -158,13 +163,17 @@ class Watcher:
             change (FileEvent): Change whose path is now stale.
         """
         await self._evict(entry, change.path, change.kind)
-        if change.kind is FileChangeKind.MOVE \
-                and change.previous_path is not None:
+        if (
+            change.kind is FileChangeKind.MOVE
+            and change.previous_path is not None
+        ):
             prev_virtual = change.previous_path.virtual
             prev_entry = self._registry.mount_for(prev_virtual)
-            await self._evict(prev_entry, self._frame(prev_entry,
-                                                      prev_virtual),
-                              FileChangeKind.DELETE)
+            await self._evict(
+                prev_entry,
+                self._frame(prev_entry, prev_virtual),
+                FileChangeKind.DELETE,
+            )
 
     async def notify(self, change: FileEvent) -> None:
         """Inject one externally observed change.
@@ -189,10 +198,11 @@ class Watcher:
                 await sub.queue.push(framed)
 
     async def watch(
-            self,
-            path: PathSpec | Sequence[PathSpec],
-            *,
-            queue: WatchQueue | None = None) -> AsyncIterator[FileEvent]:
+        self,
+        path: PathSpec | Sequence[PathSpec],
+        *,
+        queue: WatchQueue | None = None,
+    ) -> AsyncIterator[FileEvent]:
         """Stream changes under ``path`` until the caller stops
         iterating or the watcher closes.
 
@@ -220,16 +230,20 @@ class Watcher:
             raise ValueError("watch requires at least one path")
         roots = tuple(
             self._frame(self._registry.mount_for(p.virtual), p.virtual)
-            for p in paths)
+            for p in paths
+        )
         # Scope strings keep a trailing slash: /nc/data/*/ (inside
         # matched dirs) and /nc/data/* (the entries themselves) are
         # different scopes, while _frame normalizes it away.
         scopes = tuple(
-            "/" + p.virtual.strip("/") +
-            ("/" if p.virtual.endswith("/") and p.virtual.strip("/") else "")
-            for p in paths)
-        sub = Subscriber(queue=queue or self._queue_factory(roots),
-                         roots=scopes)
+            "/"
+            + p.virtual.strip("/")
+            + ("/" if p.virtual.endswith("/") and p.virtual.strip("/") else "")
+            for p in paths
+        )
+        sub = Subscriber(
+            queue=queue or self._queue_factory(roots), roots=scopes
+        )
         self._subscribers.append(sub)
         try:
             while True:

@@ -71,10 +71,9 @@ def _trashed(item: dict) -> dict:
     return {**item, "path_collection": {"total_count": 1, "entries": [TRASH]}}
 
 
-def _event(event_type: str,
-           source: dict,
-           event_id: str = "",
-           created_at: str = "") -> dict:
+def _event(
+    event_type: str, source: dict, event_id: str = "", created_at: str = ""
+) -> dict:
     event = {
         "type": "event",
         "event_id": event_id or f"{event_type}-{source['id']}",
@@ -113,16 +112,21 @@ class FakeBox:
         return found, str(self.position)
 
 
-async def _pull(fake: FakeBox, hook: BoxDeltaHook, root: PathSpec,
-                checkpoint: str | None):
+async def _pull(
+    fake: FakeBox, hook: BoxDeltaHook, root: PathSpec, checkpoint: str | None
+):
     with ExitStack() as stack:
-        for target in ("mirage.core.box.watch.list_folder_items",
-                       "mirage.core.box.resolve.list_folder_items"):
+        for target in (
+            "mirage.core.box.watch.list_folder_items",
+            "mirage.core.box.resolve.list_folder_items",
+        ):
             stack.enter_context(patch(target, fake.list_folder_items))
         stack.enter_context(
-            patch("mirage.core.box.watch.events_now", fake.events_now))
+            patch("mirage.core.box.watch.events_now", fake.events_now)
+        )
         stack.enter_context(
-            patch("mirage.core.box.watch.events_since", fake.events_since))
+            patch("mirage.core.box.watch.events_since", fake.events_since)
+        )
         return await hook.pull(root, checkpoint)
 
 
@@ -149,16 +153,18 @@ async def test_idle_pull_is_one_events_read_and_no_listing() -> None:
     assert delta.changes == ()
     assert fake.calls == ["since 100"]
     # The walk time carries over: only a walk moves it.
-    assert json.loads(delta.checkpoint)["w"] == json.loads(
-        base.checkpoint)["w"]
+    assert (
+        json.loads(delta.checkpoint)["w"] == json.loads(base.checkpoint)["w"]
+    )
 
 
 @pytest.mark.asyncio
 async def test_events_classify_create_update_delete() -> None:
-    fake = FakeBox({
-        "0": [_file("1", "a.txt", "s1"),
-              _file("2", "b.txt", "s2")],
-    })
+    fake = FakeBox(
+        {
+            "0": [_file("1", "a.txt", "s1"), _file("2", "b.txt", "s2")],
+        }
+    )
     hook = BoxDeltaHook(_accessor())
     base = await _pull(fake, hook, _root(), None)
     fake.pending = [
@@ -190,10 +196,12 @@ async def test_same_bytes_uploaded_again_is_no_change() -> None:
 
 @pytest.mark.asyncio
 async def test_folder_rename_carries_its_subtree() -> None:
-    fake = FakeBox({
-        "0": [_folder("10", "team")],
-        "10": [_file("1", "a.txt", "s1", TEAM)],
-    })
+    fake = FakeBox(
+        {
+            "0": [_folder("10", "team")],
+            "10": [_file("1", "a.txt", "s1", TEAM)],
+        }
+    )
     hook = BoxDeltaHook(_accessor())
     base = await _pull(fake, hook, _root(), None)
     fake.pending = [_event("ITEM_RENAME", _folder("10", "crew"))]
@@ -213,11 +221,12 @@ async def test_folder_rename_carries_its_subtree() -> None:
 
 @pytest.mark.asyncio
 async def test_trashed_folder_takes_its_subtree() -> None:
-    fake = FakeBox({
-        "0": [_folder("10", "team"),
-              _file("2", "keep.txt", "s2")],
-        "10": [_file("1", "a.txt", "s1", TEAM)],
-    })
+    fake = FakeBox(
+        {
+            "0": [_folder("10", "team"), _file("2", "keep.txt", "s2")],
+            "10": [_file("1", "a.txt", "s1", TEAM)],
+        }
+    )
     hook = BoxDeltaHook(_accessor())
     base = await _pull(fake, hook, _root(), None)
     fake.pending = [_event("ITEM_TRASH", _trashed(_folder("10", "team")))]
@@ -231,11 +240,12 @@ async def test_trashed_folder_takes_its_subtree() -> None:
 @pytest.mark.asyncio
 async def test_a_file_and_a_folder_with_one_id_stay_apart() -> None:
     docs = {"type": "folder", "id": "7", "name": "docs"}
-    fake = FakeBox({
-        "0": [_file("7", "a.txt", "s7"),
-              _folder("7", "docs")],
-        "7": [_file("8", "x.txt", "s8", docs)],
-    })
+    fake = FakeBox(
+        {
+            "0": [_file("7", "a.txt", "s7"), _folder("7", "docs")],
+            "7": [_file("8", "x.txt", "s8", docs)],
+        }
+    )
     hook = BoxDeltaHook(_accessor())
     base = await _pull(fake, hook, _root(), None)
     fake.pending = [_event("ITEM_TRASH", _trashed(_file("7", "a.txt", "s7")))]
@@ -260,11 +270,12 @@ async def test_copied_folder_is_walked_for_its_contents() -> None:
 
 @pytest.mark.asyncio
 async def test_events_outside_the_watch_root_are_dropped() -> None:
-    fake = FakeBox({
-        "0": [_folder("10", "team"),
-              _folder("11", "other")],
-        "10": [],
-    })
+    fake = FakeBox(
+        {
+            "0": [_folder("10", "team"), _folder("11", "other")],
+            "10": [],
+        }
+    )
     hook = BoxDeltaHook(_accessor())
     root = _root("team")
     base = await _pull(fake, hook, root, None)
@@ -289,10 +300,12 @@ async def test_move_out_of_the_root_is_a_delete() -> None:
 
 @pytest.mark.asyncio
 async def test_trash_of_the_watch_root_walks_again() -> None:
-    fake = FakeBox({
-        "0": [_folder("10", "team")],
-        "10": [_file("1", "a.txt", "s1", TEAM)],
-    })
+    fake = FakeBox(
+        {
+            "0": [_folder("10", "team")],
+            "10": [_file("1", "a.txt", "s1", TEAM)],
+        }
+    )
     hook = BoxDeltaHook(_accessor())
     root = _root("team")
     base = await _pull(fake, hook, root, None)
@@ -309,11 +322,13 @@ async def test_trash_of_the_watch_root_walks_again() -> None:
 @pytest.mark.asyncio
 async def test_rename_above_the_watch_root_walks_again() -> None:
     docs = {"type": "folder", "id": "11", "name": "docs"}
-    fake = FakeBox({
-        "0": [_folder("10", "team")],
-        "10": [_folder("11", "docs", TEAM)],
-        "11": [_file("1", "a.txt", "s1", TEAM, docs)],
-    })
+    fake = FakeBox(
+        {
+            "0": [_folder("10", "team")],
+            "10": [_folder("11", "docs", TEAM)],
+            "11": [_file("1", "a.txt", "s1", TEAM, docs)],
+        }
+    )
     hook = BoxDeltaHook(_accessor())
     root = _root("team/docs")
     base = await _pull(fake, hook, root, None)
@@ -370,14 +385,18 @@ async def test_events_apply_in_the_order_they_happened() -> None:
     hook = BoxDeltaHook(_accessor())
     base = await _pull(fake, hook, _root(), None)
     fake.pending = [
-        _event("ITEM_RENAME",
-               _file("1", "c.txt", "s1"),
-               event_id="e2",
-               created_at="2026-09-21T10:00:02-07:00"),
-        _event("ITEM_RENAME",
-               _file("1", "b.txt", "s1"),
-               event_id="e1",
-               created_at="2026-09-21T17:00:01Z"),
+        _event(
+            "ITEM_RENAME",
+            _file("1", "c.txt", "s1"),
+            event_id="e2",
+            created_at="2026-09-21T10:00:02-07:00",
+        ),
+        _event(
+            "ITEM_RENAME",
+            _file("1", "b.txt", "s1"),
+            event_id="e1",
+            created_at="2026-09-21T17:00:01Z",
+        ),
     ]
     delta = await _pull(fake, hook, _root(), base.checkpoint)
     assert _kinds(delta) == {
@@ -397,7 +416,7 @@ async def test_a_repeated_event_applies_once() -> None:
         _event("ITEM_UPLOAD", _file("1", "a.txt", "s2"), event_id="e1"),
     ]
     delta = await _pull(fake, hook, _root(), base.checkpoint)
-    (change, ) = delta.changes
+    (change,) = delta.changes
     assert change.kind is FileChangeKind.UPDATE
     assert change.metadata.fingerprint == "s3|4"
 
@@ -430,9 +449,14 @@ async def test_a_walk_older_than_the_replay_window_walks_again() -> None:
 
 async def _mapped(hook: BoxEventHook, event_type: str, source: dict):
     out = await hook.to_events(_root(), event_type, _event(event_type, source))
-    return [(c.kind, c.path.virtual,
-             c.previous_path.virtual if c.previous_path else None)
-            for c in out]
+    return [
+        (
+            c.kind,
+            c.path.virtual,
+            c.previous_path.virtual if c.previous_path else None,
+        )
+        for c in out
+    ]
 
 
 @pytest.mark.asyncio
@@ -447,31 +471,32 @@ async def test_event_hook_tracks_ids_across_events() -> None:
     assert await _mapped(hook, "ITEM_RENAME", _file("1", "b.txt", "s2")) == [
         (FileChangeKind.MOVE, "/box/b.txt", "/box/a.txt")
     ]
-    assert await _mapped(hook, "ITEM_TRASH",
-                         _trashed(_file("1", "b.txt", "s2"))) == [
-                             (FileChangeKind.DELETE, "/box/b.txt", None)
-                         ]
+    assert await _mapped(
+        hook, "ITEM_TRASH", _trashed(_file("1", "b.txt", "s2"))
+    ) == [(FileChangeKind.DELETE, "/box/b.txt", None)]
 
 
 @pytest.mark.asyncio
 async def test_event_hook_move_of_unknown_item_is_unknown_on_parent() -> None:
     hook = BoxEventHook(_accessor())
-    assert await _mapped(hook, "ITEM_MOVE",
-                         _file("7", "a.txt", "s7", TEAM)) == [
-                             (FileChangeKind.UNKNOWN, "/box/team", None)
-                         ]
+    assert await _mapped(
+        hook, "ITEM_MOVE", _file("7", "a.txt", "s7", TEAM)
+    ) == [(FileChangeKind.UNKNOWN, "/box/team", None)]
 
 
 @pytest.mark.asyncio
 async def test_event_hook_ignores_items_outside_the_mount() -> None:
     hook = BoxEventHook(_accessor("10"))
     elsewhere = {"type": "folder", "id": "11", "name": "other"}
-    assert await _mapped(hook, "ITEM_UPLOAD",
-                         _file("5", "n.txt", "s5", elsewhere)) == []
-    assert await _mapped(hook, "ITEM_UPLOAD",
-                         _file("6", "m.txt", "s6", TEAM)) == [
-                             (FileChangeKind.CREATE, "/box/m.txt", None)
-                         ]
+    assert (
+        await _mapped(
+            hook, "ITEM_UPLOAD", _file("5", "n.txt", "s5", elsewhere)
+        )
+        == []
+    )
+    assert await _mapped(
+        hook, "ITEM_UPLOAD", _file("6", "m.txt", "s6", TEAM)
+    ) == [(FileChangeKind.CREATE, "/box/m.txt", None)]
 
 
 @pytest.mark.asyncio
@@ -487,10 +512,9 @@ async def test_event_hook_folder_places_are_unknown() -> None:
         (FileChangeKind.UNKNOWN, "/box/team", None),
         (FileChangeKind.UNKNOWN, "/box/crew", None),
     ]
-    assert await _mapped(hook, "ITEM_TRASH",
-                         _trashed(_folder("10", "crew"))) == [
-                             (FileChangeKind.UNKNOWN, "/box/crew", None)
-                         ]
+    assert await _mapped(
+        hook, "ITEM_TRASH", _trashed(_folder("10", "crew"))
+    ) == [(FileChangeKind.UNKNOWN, "/box/crew", None)]
 
 
 @pytest.mark.asyncio
@@ -501,24 +525,23 @@ async def test_event_hook_moves_and_forgets_what_a_folder_holds() -> None:
     await _mapped(hook, "ITEM_UPLOAD", _file("1", "a.txt", "s1", TEAM))
     await _mapped(hook, "ITEM_UPLOAD", _file("2", "b.txt", "s2", TEAM))
     await _mapped(hook, "ITEM_RENAME", _folder("10", "crew"))
-    assert await _mapped(hook, "ITEM_TRASH",
-                         _trashed(_file("1", "a.txt", "s1"))) == [
-                             (FileChangeKind.DELETE, "/box/crew/a.txt", None)
-                         ]
-    assert await _mapped(hook, "ITEM_UPLOAD",
-                         _file("2", "b.txt", "s3", crew)) == [
-                             (FileChangeKind.UPDATE, "/box/crew/b.txt", None)
-                         ]
+    assert await _mapped(
+        hook, "ITEM_TRASH", _trashed(_file("1", "a.txt", "s1"))
+    ) == [(FileChangeKind.DELETE, "/box/crew/a.txt", None)]
+    assert await _mapped(
+        hook, "ITEM_UPLOAD", _file("2", "b.txt", "s3", crew)
+    ) == [(FileChangeKind.UPDATE, "/box/crew/b.txt", None)]
     await _mapped(hook, "ITEM_TRASH", _trashed(_folder("10", "crew")))
-    assert await _mapped(hook, "ITEM_TRASH",
-                         _trashed(_file("2", "b.txt", "s3"))) == []
+    assert (
+        await _mapped(hook, "ITEM_TRASH", _trashed(_file("2", "b.txt", "s3")))
+        == []
+    )
 
 
 @pytest.mark.asyncio
 async def test_event_hook_mount_root_trash_is_unknown_on_the_mount() -> None:
     hook = BoxEventHook(_accessor("10"))
-    assert await _mapped(hook, "ITEM_TRASH",
-                         _trashed(_folder("10", "team"))) == [
-                             (FileChangeKind.UNKNOWN, "/box", None)
-                         ]
+    assert await _mapped(
+        hook, "ITEM_TRASH", _trashed(_folder("10", "team"))
+    ) == [(FileChangeKind.UNKNOWN, "/box", None)]
     assert await _mapped(hook, "ITEM_RENAME", _folder("10", "crew")) == []

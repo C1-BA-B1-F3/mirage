@@ -21,8 +21,10 @@ from starlette.types import ASGIApp, Receive, Scope, Send
 
 from mirage.server.daemon_config import read_daemon_table
 from mirage.server.env import ENV_ALLOWED_HOSTS
-from mirage.server.host_validation_constants import (DEFAULT_ALLOWED_HOSTS,
-                                                     HOST_PATTERN)
+from mirage.server.host_validation_constants import (
+    DEFAULT_ALLOWED_HOSTS,
+    HOST_PATTERN,
+)
 from mirage.server.paths import mirage_home
 
 logger = logging.getLogger(__name__)
@@ -46,7 +48,8 @@ def parse_allowed_hosts(value: str | None) -> list[str]:
 
 
 def resolve_allowed_hosts(
-        allowed_hosts: Iterable[str] | None = None) -> list[str]:
+    allowed_hosts: Iterable[str] | None = None,
+) -> list[str]:
     """Resolve allowed hosts from explicit arg or env var.
 
     Args:
@@ -123,8 +126,9 @@ class HostHeaderMiddleware:
         self.allowed_hosts = allowed_hosts
         self.allow_any = "*" in allowed_hosts
 
-    async def __call__(self, scope: Scope, receive: Receive,
-                       send: Send) -> None:
+    async def __call__(
+        self, scope: Scope, receive: Receive, send: Send
+    ) -> None:
         if scope["type"] not in ("http", "websocket") or self.allow_any:
             await self.app(scope, receive, send)
             return
@@ -136,6 +140,10 @@ class HostHeaderMiddleware:
         client = scope.get("client") or ("?", 0)
         logger.warning(
             "rejecting request from %s:%s: Host=%r not in allowlist %s",
-            client[0], client[1], raw_host, self.allowed_hosts)
+            client[0],
+            client[1],
+            raw_host,
+            self.allowed_hosts,
+        )
         response = PlainTextResponse("Invalid host header", status_code=400)
         await response(scope, receive, send)

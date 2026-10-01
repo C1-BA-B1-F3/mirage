@@ -26,16 +26,21 @@ from mirage.io.stream import yield_bytes
 from mirage.io.types import ByteSource, IOResult
 from mirage.types import PathSpec
 
-SPEC = CommandSpec(options=(
-    Option(long="--card_id", type="str"),
-    Option(long="--label_id", type="str"),
-), )
+SPEC = CommandSpec(
+    options=(
+        Option(long="--card_id", type="str"),
+        Option(long="--label_id", type="str"),
+    ),
+)
 
 
 @command("trello card unlabel", vfs="trello", spec=SPEC, write=True)
 async def trello_card_label_remove(
-        accessor: TrelloAccessor, paths: list[PathSpec], texts: list[str],
-        opts: CommandOpts) -> tuple[ByteSource | None, IOResult]:
+    accessor: TrelloAccessor,
+    paths: list[PathSpec],
+    texts: list[str],
+    opts: CommandOpts,
+) -> tuple[ByteSource | None, IOResult]:
     fl = FlagView(opts.flags, spec=SPEC)
     config = accessor.config
     card_id = fl.as_str("card_id")
@@ -48,11 +53,11 @@ async def trello_card_label_remove(
     # grant can admit it (a write-granting carve-out names no card).
     require_mount_writable()
     await require_card(accessor, card_id)
-    card = await card_remove_label(config,
-                                   card_id=card_id,
-                                   label_id=label_id,
-                                   session=accessor.pool)
+    card = await card_remove_label(
+        config, card_id=card_id, label_id=label_id, session=accessor.pool
+    )
     return yield_bytes(
-        json.dumps(normalize_card(card),
-                   ensure_ascii=False,
-                   separators=(",", ":")).encode()), IOResult()
+        json.dumps(
+            normalize_card(card), ensure_ascii=False, separators=(",", ":")
+        ).encode()
+    ), IOResult()

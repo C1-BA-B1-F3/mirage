@@ -30,7 +30,7 @@ WORKSPACE_CONFIG_CANDIDATES = (
     "mirage.yml",
 )
 
-DEFAULT_ENV_NAMES = ("MIRAGE_CONFIG", )
+DEFAULT_ENV_NAMES = ("MIRAGE_CONFIG",)
 
 
 def _require_config(path: Path) -> Path:
@@ -40,10 +40,11 @@ def _require_config(path: Path) -> Path:
 
 
 def resolve_workspace_config(
-        config: str | Path | None = None,
-        cwd: str | Path | None = None,
-        env: dict[str, str] | None = None,
-        env_names: tuple[str, ...] = DEFAULT_ENV_NAMES) -> Path:
+    config: str | Path | None = None,
+    cwd: str | Path | None = None,
+    env: dict[str, str] | None = None,
+    env_names: tuple[str, ...] = DEFAULT_ENV_NAMES,
+) -> Path:
     """Find the workspace config a command should load.
 
     An explicit path wins, then the first environment variable that is
@@ -81,7 +82,8 @@ def resolve_workspace_config(
                 return path
     raise FileNotFoundError(
         "No Mirage workspace config found. Pass a config path or set "
-        f"{' or '.join(env_names)}.")
+        f"{' or '.join(env_names)}."
+    )
 
 
 async def build_workspace_from_config(config_path: str | Path) -> "Workspace":

@@ -20,8 +20,12 @@ import uuid
 
 import pytest
 
-from mirage.shell.console import (Channel, ConsoleChunk, JobConsole,
-                                  RAMConsoleStore)
+from mirage.shell.console import (
+    Channel,
+    ConsoleChunk,
+    JobConsole,
+    RAMConsoleStore,
+)
 from mirage.shell.job_table import Job, JobStatus
 from mirage.types import MountMode
 from mirage.vfs.disk import DiskVFS
@@ -75,8 +79,10 @@ def test_workspace_load_with_disk_override(tmp_path):
     src_root = tmp_path / "src"
     src_root.mkdir()
     (src_root / "a.txt").write_bytes(b"hello\n")
-    src = Workspace({"/m": (DiskVFS(root=str(src_root)), MountMode.WRITE)},
-                    mode=MountMode.WRITE)
+    src = Workspace(
+        {"/m": (DiskVFS(root=str(src_root)), MountMode.WRITE)},
+        mode=MountMode.WRITE,
+    )
 
     snap = tmp_path / "ws.tar"
     asyncio.run(src.snapshot(snap))
@@ -179,16 +185,18 @@ def _finished_console(stdout: bytes) -> JobConsole:
 
 def test_finished_jobs_survive(tmp_path):
     src = Workspace({"/m": (RAMVFS(), MountMode.WRITE)}, mode=MountMode.WRITE)
-    finished = Job(id=1,
-                   command="echo done",
-                   task=None,
-                   cwd="/",
-                   status=JobStatus.COMPLETED,
-                   exit_code=0,
-                   console=_finished_console(b"done\n"),
-                   created_at=time.time(),
-                   agent="test",
-                   session_id="default")
+    finished = Job(
+        id=1,
+        command="echo done",
+        task=None,
+        cwd="/",
+        status=JobStatus.COMPLETED,
+        exit_code=0,
+        console=_finished_console(b"done\n"),
+        created_at=time.time(),
+        agent="test",
+        session_id="default",
+    )
     src.job_table.load(finished)
 
     snap = tmp_path / "ws.tar"
@@ -216,7 +224,8 @@ def test_copy_shares_redis_backend():
     prefix = f"mirage:test:copy:{uuid.uuid4().hex}:"
     src = Workspace(
         {"/r": (RedisVFS(url=REDIS_URL, key_prefix=prefix), MountMode.WRITE)},
-        mode=MountMode.WRITE)
+        mode=MountMode.WRITE,
+    )
 
     sc = sync_redis.Redis.from_url(REDIS_URL)
     sc.set(f"{prefix}file:/seed.txt", b"shared")
@@ -256,19 +265,24 @@ def test_copy_independence_of_cache():
 
 
 def test_workspace_save_load_s3_mounted(tmp_path):
-    cfg_src = S3Config(bucket="src-bkt",
-                       region="us-east-1",
-                       aws_access_key_id="OLD-AKIA-OBVIOUS",
-                       aws_secret_access_key="OLD-SECRET-OBVIOUS")
-    cfg_dst = S3Config(bucket="dst-bkt",
-                       region="us-east-1",
-                       aws_access_key_id="NEW-AKIA",
-                       aws_secret_access_key="NEW-SECRET")
+    cfg_src = S3Config(
+        bucket="src-bkt",
+        region="us-east-1",
+        aws_access_key_id="OLD-AKIA-OBVIOUS",
+        aws_secret_access_key="OLD-SECRET-OBVIOUS",
+    )
+    cfg_dst = S3Config(
+        bucket="dst-bkt",
+        region="us-east-1",
+        aws_access_key_id="NEW-AKIA",
+        aws_secret_access_key="NEW-SECRET",
+    )
     buckets: dict = {"src-bkt": {}, "dst-bkt": {}}
 
     with patch_s3_multi(buckets):
-        src = Workspace({"/s3": (S3VFS(cfg_src), MountMode.WRITE)},
-                        mode=MountMode.WRITE)
+        src = Workspace(
+            {"/s3": (S3VFS(cfg_src), MountMode.WRITE)}, mode=MountMode.WRITE
+        )
         snap = tmp_path / "ws.tar"
         asyncio.run(src.snapshot(snap))
 
@@ -292,14 +306,17 @@ def test_override_drops_saved_index(tmp_path):
     VFS. We verify by checking the loaded mount is the override
     object itself.
     """
-    cfg = S3Config(bucket="b",
-                   region="us-east-1",
-                   aws_access_key_id="x",
-                   aws_secret_access_key="y")
+    cfg = S3Config(
+        bucket="b",
+        region="us-east-1",
+        aws_access_key_id="x",
+        aws_secret_access_key="y",
+    )
     buckets: dict = {"b": {}}
     with patch_s3_multi(buckets):
-        src = Workspace({"/s3": (S3VFS(cfg), MountMode.WRITE)},
-                        mode=MountMode.WRITE)
+        src = Workspace(
+            {"/s3": (S3VFS(cfg), MountMode.WRITE)}, mode=MountMode.WRITE
+        )
 
         snap = tmp_path / "ws.tar"
         asyncio.run(src.snapshot(snap))

@@ -15,8 +15,10 @@
 import json
 
 from mirage.accessor.trello import TrelloAccessor
-from mirage.commands.builtin.trello._input import (file_operand,
-                                                   resolve_text_input)
+from mirage.commands.builtin.trello._input import (
+    file_operand,
+    resolve_text_input,
+)
 from mirage.commands.builtin.trello._scope import require_list
 from mirage.commands.config import CommandOpts, command
 from mirage.commands.spec.flag_view import FlagView
@@ -28,18 +30,23 @@ from mirage.io.stream import yield_bytes
 from mirage.io.types import ByteSource, IOResult
 from mirage.types import PathSpec
 
-SPEC = CommandSpec(options=(
-    Option(long="--list_id", type="str"),
-    Option(long="--name", type="str"),
-    Option(long="--desc", type="str"),
-    Option(long="--desc_file", type="path"),
-), )
+SPEC = CommandSpec(
+    options=(
+        Option(long="--list_id", type="str"),
+        Option(long="--name", type="str"),
+        Option(long="--desc", type="str"),
+        Option(long="--desc_file", type="path"),
+    ),
+)
 
 
 @command("trello card create", vfs="trello", spec=SPEC, write=True)
 async def trello_card_create(
-        accessor: TrelloAccessor, paths: list[PathSpec], texts: list[str],
-        opts: CommandOpts) -> tuple[ByteSource | None, IOResult]:
+    accessor: TrelloAccessor,
+    paths: list[PathSpec],
+    texts: list[str],
+    opts: CommandOpts,
+) -> tuple[ByteSource | None, IOResult]:
     fl = FlagView(opts.flags, spec=SPEC)
     config = accessor.config
     list_id = fl.as_str("list_id")
@@ -49,8 +56,11 @@ async def trello_card_create(
     if not name:
         raise ValueError("--name is required")
     desc = None
-    if (fl.as_str("desc") or file_operand(fl, "desc_file")
-            or opts.stdin is not None):
+    if (
+        fl.as_str("desc")
+        or file_operand(fl, "desc_file")
+        or opts.stdin is not None
+    ):
         desc = await resolve_text_input(
             accessor,
             inline_text=fl.as_str("desc"),
@@ -70,6 +80,7 @@ async def trello_card_create(
         session=accessor.pool,
     )
     return yield_bytes(
-        json.dumps(normalize_card(card),
-                   ensure_ascii=False,
-                   separators=(",", ":")).encode()), IOResult()
+        json.dumps(
+            normalize_card(card), ensure_ascii=False, separators=(",", ":")
+        ).encode()
+    ), IOResult()

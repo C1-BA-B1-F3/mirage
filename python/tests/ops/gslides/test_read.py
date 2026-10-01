@@ -23,9 +23,11 @@ from mirage.utils.key_prefix import mount_key
 
 
 def _scope(path: str, prefix: str = "/gslides") -> PathSpec:
-    return PathSpec(vfs_path=mount_key(path, prefix),
-                    virtual=path,
-                    directory=path.rsplit("/", 1)[0] or "/")
+    return PathSpec(
+        vfs_path=mount_key(path, prefix),
+        virtual=path,
+        directory=path.rsplit("/", 1)[0] or "/",
+    )
 
 
 @pytest.fixture
@@ -37,16 +39,19 @@ def accessor():
 async def test_read_calls_core(accessor):
     fn = read._registered_ops[0].fn
     with patch(
-            "mirage.ops.gslides.read.core_read",
-            new_callable=AsyncMock,
-            return_value=b'{"presentationId": "slide1"}',
+        "mirage.ops.gslides.read.core_read",
+        new_callable=AsyncMock,
+        return_value=b'{"presentationId": "slide1"}',
     ) as mock:
         scope = _scope("/gslides/owned/Deck__slide1.gslide.json")
         result = await fn(accessor, scope, index=None)
         mock.assert_called_once_with(
             accessor,
-            _scope("/gslides/owned/Deck__slide1.gslide.json",
-                   prefix="/gslides"), None)
+            _scope(
+                "/gslides/owned/Deck__slide1.gslide.json", prefix="/gslides"
+            ),
+            None,
+        )
         assert b"slide1" in result
 
 
@@ -54,11 +59,13 @@ async def test_read_calls_core(accessor):
 async def test_read_not_found(accessor):
     fn = read._registered_ops[0].fn
     with patch(
-            "mirage.ops.gslides.read.core_read",
-            new_callable=AsyncMock,
-            side_effect=FileNotFoundError("not found"),
+        "mirage.ops.gslides.read.core_read",
+        new_callable=AsyncMock,
+        side_effect=FileNotFoundError("not found"),
     ):
         with pytest.raises(FileNotFoundError):
-            await fn(accessor,
-                     _scope("/gslides/owned/Nonexistent__slide9.gslide.json"),
-                     index=None)
+            await fn(
+                accessor,
+                _scope("/gslides/owned/Nonexistent__slide9.gslide.json"),
+                index=None,
+            )

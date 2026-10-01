@@ -9,37 +9,20 @@ from mirage.types import PathSpec
 
 _BASE = "https://graph.microsoft.com/v1.0/me/drive"
 _TREE = {
-    _BASE + "/root": {
-        "id": "root",
-        "folder": {
-            "childCount": 2
-        }
-    },
+    _BASE + "/root": {"id": "root", "folder": {"childCount": 2}},
     _BASE + "/root/children": {
         "value": [
-            {
-                "id": "1",
-                "name": "a.txt",
-                "size": 3,
-                "file": {}
-            },
+            {"id": "1", "name": "a.txt", "size": 3, "file": {}},
             {
                 "id": "2",
                 "name": "sub",
                 "size": 99,
-                "folder": {
-                    "childCount": 1
-                }
+                "folder": {"childCount": 1},
             },
         ]
     },
     _BASE + "/root:/sub:/children": {
-        "value": [{
-            "id": "3",
-            "name": "b.txt",
-            "size": 5,
-            "file": {}
-        }]
+        "value": [{"id": "3", "name": "b.txt", "size": 5, "file": {}}]
     },
 }
 
@@ -64,9 +47,9 @@ def _accessor() -> OneDriveAccessor:
 
 @pytest.mark.asyncio
 async def test_du_walks_one_list_per_folder_with_file_sizes_only(seen):
-    entries, total = await IO.du.entries(_accessor(),
-                                         PathSpec.from_str_path("/od", ""),
-                                         RAMIndexCacheStore())
+    entries, total = await IO.du.entries(
+        _accessor(), PathSpec.from_str_path("/od", ""), RAMIndexCacheStore()
+    )
     assert entries == [("/a.txt", 3), ("/sub/b.txt", 5)]
     assert total == 8
     assert seen == [

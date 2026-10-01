@@ -9,18 +9,14 @@ from mirage.vfs.mem0.config import Mem0Config
 
 
 class FakeClient:
-
     async def get_all(self, options=None):
         return {
             "count": 2,
             "next": None,
-            "results": [{
-                "id": "aaa",
-                "memory": "x"
-            }, {
-                "id": "bbb",
-                "memory": "y"
-            }]
+            "results": [
+                {"id": "aaa", "memory": "x"},
+                {"id": "bbb", "memory": "y"},
+            ],
         }
 
 
@@ -34,10 +30,12 @@ def _accessor():
 @pytest.mark.asyncio
 async def test_passthrough_non_pattern():
     acc = _accessor()
-    p = PathSpec(virtual="/mem/aaa.json",
-                 directory="/mem",
-                 vfs_path="aaa.json",
-                 resolved=True)
+    p = PathSpec(
+        virtual="/mem/aaa.json",
+        directory="/mem",
+        vfs_path="aaa.json",
+        resolved=True,
+    )
     out = await resolve_glob(acc, [p], RAMIndexCacheStore())
     assert out == [p]
 
@@ -45,10 +43,12 @@ async def test_passthrough_non_pattern():
 @pytest.mark.asyncio
 async def test_expands_star():
     acc = _accessor()
-    p = PathSpec(virtual="/mem/*.json",
-                 directory="/mem",
-                 vfs_path="*.json",
-                 pattern="*.json",
-                 resolved=False)
+    p = PathSpec(
+        virtual="/mem/*.json",
+        directory="/mem",
+        vfs_path="*.json",
+        pattern="*.json",
+        resolved=False,
+    )
     out = await resolve_glob(acc, [p], RAMIndexCacheStore())
     assert sorted(x.virtual for x in out) == ["/mem/aaa.json", "/mem/bbb.json"]

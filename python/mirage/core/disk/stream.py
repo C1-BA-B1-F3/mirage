@@ -24,10 +24,12 @@ from mirage.observe.context import record_stream
 from mirage.types import PathSpec
 
 
-async def read_stream(accessor: DiskAccessor,
-                      path_spec: PathSpec,
-                      index: IndexCacheStore = NULL_INDEX,
-                      chunk_size: int = 8192) -> AsyncIterator[bytes]:
+async def read_stream(
+    accessor: DiskAccessor,
+    path_spec: PathSpec,
+    index: IndexCacheStore = NULL_INDEX,
+    chunk_size: int = 8192,
+) -> AsyncIterator[bytes]:
     virtual = path_spec.virtual
     root = accessor.root
     rec = record_stream("read", virtual, "disk")

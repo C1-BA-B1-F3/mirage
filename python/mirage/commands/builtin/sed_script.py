@@ -16,8 +16,12 @@ import re
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 
-from mirage.commands.builtin.utils.bre import (BreError, PosixSyntax,
-                                               translate_bre, translate_ere)
+from mirage.commands.builtin.utils.bre import (
+    BreError,
+    PosixSyntax,
+    translate_bre,
+    translate_ere,
+)
 from mirage.shell.bytes import byte_char, encode_text
 from mirage.utils.posix import compile_posix_regex
 
@@ -69,7 +73,7 @@ def _line_anchors(source: str) -> str:
     out: list[str] = []
     i = 0
     while i < len(source):
-        pair = source[i:i + 2]
+        pair = source[i : i + 2]
         if pair == "\\Z":
             out.append("$")
         elif pair == "\\A":
@@ -173,10 +177,9 @@ class SedError(ValueError):
     panics (an undefined label).
     """
 
-    def __init__(self,
-                 message: str,
-                 exit_code: int = 1,
-                 wfiles: Sequence[str] = ()) -> None:
+    def __init__(
+        self, message: str, exit_code: int = 1, wfiles: Sequence[str] = ()
+    ) -> None:
         super().__init__(message)
         self.exit_code = exit_code
         self.wfiles = tuple(wfiles)
@@ -320,12 +323,14 @@ class _Compiler:
             self._compile_program()
             self.first_script = False
         self._check_final()
-        return SedProgram(commands=self.commands,
-                          no_default_output=self.no_default_output,
-                          wfiles=self.wfiles,
-                          rfiles=self.rfiles,
-                          reader_files=self.reader_files,
-                          end_where=self._block_where())
+        return SedProgram(
+            commands=self.commands,
+            no_default_output=self.no_default_output,
+            wfiles=self.wfiles,
+            rfiles=self.rfiles,
+            reader_files=self.reader_files,
+            end_where=self._block_where(),
+        )
 
     def _where(self, unread: int = 0) -> str:
         """Where GNU reports an error.
@@ -337,7 +342,7 @@ class _Compiler:
         """
         if self.name is not None:
             return f"file {self.name} line {self.line}"
-        consumed = len(encode_text("".join(self.chars[:self.pos]))) - unread
+        consumed = len(encode_text("".join(self.chars[: self.pos]))) - unread
         return f"-e expression #{self.expr_count}, char {consumed}"
 
     def _bad(self, why: str, unread: int = 0) -> SedError:
@@ -415,8 +420,12 @@ class _Compiler:
         """
         out: list[str] = []
         ch = self._in_nonblank()
-        while (ch is not None and ch != "\n" and not _is_blank(ch)
-               and ch not in (";", "}", "#")):
+        while (
+            ch is not None
+            and ch != "\n"
+            and not _is_blank(ch)
+            and ch not in (";", "}", "#")
+        ):
             out.append(ch)
             ch = self._inchar()
         self._savchar(ch)
@@ -495,11 +504,9 @@ class _Compiler:
             self._savchar(ch)
         return None
 
-    def _regex(self,
-               pattern: str,
-               icase: bool,
-               multiline: bool,
-               reference: int = 0) -> SedRegex | None:
+    def _regex(
+        self, pattern: str, icase: bool, multiline: bool, reference: int = 0
+    ) -> SedRegex | None:
         """GNU's compile_regex.
 
         normalize_text's escapes, then regcomp in the basic or extended
@@ -527,8 +534,9 @@ class _Compiler:
                 if close >= 0:
                     translate_ere(normalized[:close], PosixSyntax.EXTENDED)
                     raise BreError(UNMATCHED_CLOSE)
-                source, groups, _ = translate_ere(normalized,
-                                                  PosixSyntax.EXTENDED)
+                source, groups, _ = translate_ere(
+                    normalized, PosixSyntax.EXTENDED
+                )
             else:
                 source, groups = translate_bre(normalized, True)
         except BreError as exc:
@@ -542,7 +550,8 @@ class _Compiler:
             raise self._bad(INVALID_PATTERN) from exc
         if reference > groups:
             raise self._bad(
-                f"invalid reference \\{reference} on `s' command's RHS")
+                f"invalid reference \\{reference} on `s' command's RHS"
+            )
         if _confusing_bracket(normalized):
             raise SedError(f"sed: {CONFUSING_BRACKET}", 4, self.wfiles)
         return regex
@@ -582,8 +591,11 @@ class _Compiler:
                 digits = 0
                 limit = 1
                 while i < len(buf) and limit <= 255:
-                    d = int(buf[i], 16) if buf[i] in "0123456789abcdefABCDEF" \
+                    d = (
+                        int(buf[i], 16)
+                        if buf[i] in "0123456789abcdefABCDEF"
                         else base
+                    )
                     if d >= base:
                         break
                     value = value * base + d
@@ -602,7 +614,7 @@ class _Compiler:
                 out.append(chr(ord(upper) ^ 0x40))
                 i += 1
                 if x == "\\":
-                    if buf[i:i + 1] != "\\":
+                    if buf[i : i + 1] != "\\":
                         raise self._bad(RECURSIVE_ESCAPE_C)
                     i += 1
                 continue
@@ -667,8 +679,9 @@ class _Compiler:
                     multiline = True
                 else:
                     self._savchar(ch)
-                    return SedAddr("regex",
-                                   re=self._regex(pattern, icase, multiline))
+                    return SedAddr(
+                        "regex", re=self._regex(pattern, icase, multiline)
+                    )
         if _is_digit(ch):
             n = self._in_integer(ch)
             ch = self._in_nonblank()
@@ -676,8 +689,11 @@ class _Compiler:
                 self._savchar(ch)
                 return SedAddr("num", n=n)
             step = self._in_integer(self._in_nonblank())
-            return SedAddr("mod", n=n, step=step) if step > 0 else SedAddr(
-                "num", n=n)
+            return (
+                SedAddr("mod", n=n, step=step)
+                if step > 0
+                else SedAddr("num", n=n)
+            )
         if ch in ("+", "~"):
             step = self._in_integer(self._in_nonblank())
             if step == 0:
@@ -749,9 +765,14 @@ class _Compiler:
                         raise self._bad(BAD_COMMA)
                     cmd.a2 = a2
                     ch = self._in_nonblank()
-                if a1.kind == "num" and a1.n == 0 and (
-                    (cmd.a2 is None and ch != "r") or
-                    (cmd.a2 is not None and cmd.a2.kind != "regex")):
+                if (
+                    a1.kind == "num"
+                    and a1.n == 0
+                    and (
+                        (cmd.a2 is None and ch != "r")
+                        or (cmd.a2 is not None and cmd.a2.kind != "regex")
+                    )
+                ):
                     raise self._bad(INVALID_LINE_0)
             if ch == "!":
                 cmd.bang = True
@@ -778,8 +799,12 @@ class _Compiler:
             if cmd.a1 is not None:
                 raise self._bad(NO_SHARP_ADDR)
             c = self._inchar()
-            if (c == "n" and self.first_script and self.line < 2
-                    and self.pos == 2):
+            if (
+                c == "n"
+                and self.first_script
+                and self.line < 2
+                and self.pos == 2
+            ):
                 self.no_default_output = True
             while c is not None and c != "\n":
                 c = self._inchar()
@@ -849,8 +874,12 @@ class _Compiler:
             cmd.fname = name
             if name not in self.rfiles:
                 self.rfiles.append(name)
-            if (cmd.a1 is not None and cmd.a1.kind == "num" and cmd.a1.n == 0
-                    and cmd.a2 is None):
+            if (
+                cmd.a1 is not None
+                and cmd.a1.kind == "num"
+                and cmd.a1.n == 0
+                and cmd.a2 is None
+            ):
                 cmd.a1 = SedAddr("num", n=1)
                 cmd.prepend = True
             return True
@@ -870,8 +899,9 @@ class _Compiler:
                 raise self._bad(UNTERM_S_CMD)
             sub = SedSubst(re=None, replacement=replacement)
             icase, multiline = self._mark_subst_opts(sub)
-            sub.re = self._regex(pattern, icase, multiline,
-                                 _max_reference(replacement))
+            sub.re = self._regex(
+                pattern, icase, multiline, _max_reference(replacement)
+            )
             cmd.subst = sub
             return True
         if ch == "y":
@@ -888,14 +918,16 @@ class _Compiler:
                 raise self._bad(Y_CMD_LEN)
             self._read_end_of_cmd()
             return True
-        raise self._bad(f"unknown command: `{_first_byte(ch)}'",
-                        len(encode_text(ch)) - 1)
+        raise self._bad(
+            f"unknown command: `{_first_byte(ch)}'", len(encode_text(ch)) - 1
+        )
 
     def _check_final(self) -> None:
         if self.blocks:
             _, where = self.blocks[-1]
-            raise SedError(f"sed: {where}: {EXCESS_OPEN_BRACE}", 1,
-                           self.wfiles)
+            raise SedError(
+                f"sed: {where}: {EXCESS_OPEN_BRACE}", 1, self.wfiles
+            )
         if self.pending_text is not None and self.old_text_cmd is not None:
             self.old_text_cmd.text = self.pending_text or None
             self.pending_text = None
@@ -904,14 +936,18 @@ class _Compiler:
             if target is not None:
                 self.commands[index].jump = target
             elif label:
-                raise SedError(f"sed: can't find label for jump to `{label}'",
-                               4, self.wfiles)
+                raise SedError(
+                    f"sed: can't find label for jump to `{label}'",
+                    4,
+                    self.wfiles,
+                )
             else:
                 self.commands[index].jump = len(self.commands)
 
 
-def compile_script(pieces: Sequence[SedScriptPiece],
-                   extended: bool = False) -> SedProgram:
+def compile_script(
+    pieces: Sequence[SedScriptPiece], extended: bool = False
+) -> SedProgram:
     """Compile a sed script given as its -e and -f pieces, as GNU 4.9 does.
 
     Raises SedError with GNU's wording, ``sed: -e expression #N, char M:``
@@ -936,9 +972,13 @@ def looks_ahead(program: SedProgram) -> bool:
         program (SedProgram): the compiled script.
     """
     return any(
-        cmd.cmd in ("n", "N") or any(addr is not None and addr.kind == "last"
-                                     for addr in (cmd.a1, cmd.a2))
-        for cmd in program.commands)
+        cmd.cmd in ("n", "N")
+        or any(
+            addr is not None and addr.kind == "last"
+            for addr in (cmd.a1, cmd.a2)
+        )
+        for cmd in program.commands
+    )
 
 
 def _max_reference(replacement: str) -> int:
@@ -951,7 +991,7 @@ def _max_reference(replacement: str) -> int:
     i = 0
     while i < len(replacement):
         if replacement[i] == "\\":
-            nxt = replacement[i + 1:i + 2]
+            nxt = replacement[i + 1 : i + 2]
             if nxt.isdigit() and nxt.isascii():
                 top = max(top, int(nxt))
             i += 2
@@ -968,12 +1008,12 @@ def _bracket_end(pattern: str, start: int) -> int:
         start (int): the index of the ``[``.
     """
     j = start + 1
-    if pattern[j:j + 1] == "^":
+    if pattern[j : j + 1] == "^":
         j += 1
-    if pattern[j:j + 1] == "]":
+    if pattern[j : j + 1] == "]":
         j += 1
     while j < len(pattern) and pattern[j] != "]":
-        opener = pattern[j + 1:j + 2]
+        opener = pattern[j + 1 : j + 2]
         if pattern[j] == "[" and opener in (":", ".", "="):
             close = pattern.find(opener + "]", j + 2)
             j = len(pattern) if close < 0 else close + 2
@@ -1029,9 +1069,9 @@ def _confusing_bracket(pattern: str) -> bool:
             i += 1
             continue
         j = i + 1
-        if pattern[j:j + 1] == "^":
+        if pattern[j : j + 1] == "^":
             j += 1
-        state = 1 if pattern[j:j + 1] == ":" else 0
+        state = 1 if pattern[j : j + 1] == ":" else 0
         first = True
         while True:
             if j >= n:
@@ -1042,17 +1082,18 @@ def _confusing_bracket(pattern: str) -> bool:
                 break
             first = False
             state &= ~2
-            opener = pattern[j + 1:j + 2]
+            opener = pattern[j + 1 : j + 2]
             if c == "[" and opener in (":", ".", "="):
                 k = j + 2
-                while k < n and not (pattern[k] == opener
-                                     and pattern[k + 1:k + 2] == "]"):
+                while k < n and not (
+                    pattern[k] == opener and pattern[k + 1 : k + 2] == "]"
+                ):
                     k += 1
                 j = k + 2
                 state |= 8
                 continue
-            end = pattern[j + 2:j + 3]
-            if pattern[j + 1:j + 2] == "-" and end and end != "]":
+            end = pattern[j + 2 : j + 3]
+            if pattern[j + 1 : j + 2] == "-" and end and end != "]":
                 state |= 8
                 j += 3
                 continue

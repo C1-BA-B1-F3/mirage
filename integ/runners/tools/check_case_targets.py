@@ -30,8 +30,9 @@ UNRELATED_DIRS = ("integ/cli", "integ/vfs", "integ/runtime")
 
 
 def case_files() -> list[Path]:
-    return sorted(p for p in CASE_ROOT.rglob("*.json")
-                  if "node_modules" not in p.parts)
+    return sorted(
+        p for p in CASE_ROOT.rglob("*.json") if "node_modules" not in p.parts
+    )
 
 
 def case_targets(paths: list[Path]) -> dict[str, set[str]]:
@@ -82,8 +83,9 @@ def modal_set(sets: list[set[str]]) -> set[str]:
         set[str]: the modal target set.
     """
     counts = collections.Counter(frozenset(s) for s in sets)
-    best = max(counts.items(),
-               key=lambda kv: (kv[1], len(kv[0]), sorted(kv[0])))
+    best = max(
+        counts.items(), key=lambda kv: (kv[1], len(kv[0]), sorted(kv[0]))
+    )
     return set(best[0])
 
 
@@ -102,8 +104,9 @@ def collect(targets: dict[str, set[str]]) -> dict[str, list[str]]:
     Returns:
         dict[str, list[str]]: case key to the targets it is missing.
     """
-    by_dir: dict[str, list[tuple[str,
-                                 set[str]]]] = collections.defaultdict(list)
+    by_dir: dict[str, list[tuple[str, set[str]]]] = collections.defaultdict(
+        list
+    )
     for rel, names in targets.items():
         parent = str(Path(rel.split(" :: ", 1)[0]).parent)
         if parent.startswith(UNRELATED_DIRS):
@@ -129,9 +132,8 @@ def load_exceptions() -> dict[str, object]:
 
 
 def excuse(
-        found: dict[str, list[str]],
-        exceptions: dict[str,
-                         object]) -> tuple[dict[str, list[str]], list[str]]:
+    found: dict[str, list[str]], exceptions: dict[str, object]
+) -> tuple[dict[str, list[str]], list[str]]:
     """Drop excused gaps and name any exception that no longer applies.
 
     A stale entry is the failure mode every hand-maintained allowlist in
@@ -181,8 +183,9 @@ def total(remaining: dict[str, list[str]]) -> int:
     return sum(len(v) for v in remaining.values())
 
 
-def report(remaining: dict[str, list[str]], stale: list[str],
-           baseline: int) -> None:
+def report(
+    remaining: dict[str, list[str]], stale: list[str], baseline: int
+) -> None:
     for rel, missing in sorted(remaining.items()):
         print(f"  {rel}: drops {missing}")
     if stale:
@@ -190,13 +193,15 @@ def report(remaining: dict[str, list[str]], stale: list[str],
         for entry in stale:
             print(f"  STALE exception (the gap is gone): {entry}")
     print()
-    print(f"unexcused dropped targets: {total(remaining)} "
-          f"(baseline {baseline})")
+    print(
+        f"unexcused dropped targets: {total(remaining)} (baseline {baseline})"
+    )
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(
-        description="Find backends a case drops that its siblings test.")
+        description="Find backends a case drops that its siblings test."
+    )
     # Advisory by default because the existing gaps predate the gate and
     # each needs its own decision. --strict does not demand zero: it fails
     # only when the count moves off the baseline, in either direction, so
@@ -222,25 +227,32 @@ def main() -> int:
                 },
                 indent=2,
                 sort_keys=True,
-            ))
+            )
+        )
     else:
         report(remaining, stale, baseline)
 
     if not args.strict:
         return 0
     if stale:
-        print(f"\nFAIL: {len(stale)} stale entries in {EXCEPTIONS.name}; "
-              "delete them or restore the omission they describe.")
+        print(
+            f"\nFAIL: {len(stale)} stale entries in {EXCEPTIONS.name}; "
+            "delete them or restore the omission they describe."
+        )
         return 1
     if total(remaining) > baseline:
-        print(f"\nFAIL: dropped targets rose from {baseline} to "
-              f"{total(remaining)}. Add the target to the case, or add it "
-              f"to {EXCEPTIONS.name} with a reason.")
+        print(
+            f"\nFAIL: dropped targets rose from {baseline} to "
+            f"{total(remaining)}. Add the target to the case, or add it "
+            f"to {EXCEPTIONS.name} with a reason."
+        )
         return 1
     if total(remaining) < baseline:
-        print(f"\nFAIL: dropped targets fell from {baseline} to "
-              f"{total(remaining)}. Lower the baseline in "
-              f"{EXCEPTIONS.name} to lock the improvement in.")
+        print(
+            f"\nFAIL: dropped targets fell from {baseline} to "
+            f"{total(remaining)}. Lower the baseline in "
+            f"{EXCEPTIONS.name} to lock the improvement in."
+        )
         return 1
     return 0
 

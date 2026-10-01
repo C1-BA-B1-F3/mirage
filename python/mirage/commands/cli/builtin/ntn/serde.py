@@ -28,8 +28,9 @@ INVALID_NUMBER = "invalid number"
 KEY_MUST_BE_STRING = "key must be a string"
 NUMBER_OUT_OF_RANGE = "number out of range"
 RECURSION_LIMIT = "recursion limit exceeded"
-STRING_CONTROL = ("control character (\\u0000-\\u001F) found while parsing "
-                  "a string")
+STRING_CONTROL = (
+    "control character (\\u0000-\\u001F) found while parsing a string"
+)
 TRAILING_CHARACTERS = "trailing characters"
 TRAILING_COMMA = "trailing comma"
 UNEXPECTED_HEX_END = "unexpected end of hex escape"
@@ -54,7 +55,7 @@ SPACE = 0x20
 ZERO = 0x30
 
 HEX_DIGITS = b"0123456789ABCDEFabcdef"
-SHORT_ESCAPES = b"\"\\/bfnrt"
+SHORT_ESCAPES = b'"\\/bfnrt'
 WHITESPACE = b" \n\r\t"
 EXPONENTS = (0x65, 0x45)
 SIGNS = (PLUS, MINUS)
@@ -113,8 +114,7 @@ class SerdeScan:
         Args:
             code (str): serde_json's ErrorCode text.
         """
-        return SerdeRefusal(f"{code} at line {self.line} "
-                            f"column {self.column}")
+        return SerdeRefusal(f"{code} at line {self.line} column {self.column}")
 
     def peek(self) -> int | None:
         return self.raw[self.at] if self.at < len(self.raw) else None
@@ -301,7 +301,7 @@ class SerdeScan:
         if self.at + HEX_WIDTH > len(self.raw):
             self.drain()
             raise self.fail(EOF_STRING)
-        chunk = self.raw[self.at:self.at + HEX_WIDTH]
+        chunk = self.raw[self.at : self.at + HEX_WIDTH]
         for _ in range(HEX_WIDTH):
             self.take()
         if any(byte not in HEX_DIGITS for byte in chunk):
@@ -354,7 +354,7 @@ class SerdeScan:
             self.run_digits()
         # An integer too wide for u64/i64 becomes an f64 in serde too,
         # so overflow is the one range error either shape can hit.
-        if math.isinf(float(self.raw[start:self.at].decode("ascii"))):
+        if math.isinf(float(self.raw[start : self.at].decode("ascii"))):
             raise self.fail(NUMBER_OUT_OF_RANGE)
 
 

@@ -14,9 +14,13 @@
 
 import pytest
 
-from mirage.commands.builtin.cut_ranges import (_OPEN_END, _cut_record,
-                                                _select_positions,
-                                                _split_records, parse_ranges)
+from mirage.commands.builtin.cut_ranges import (
+    _OPEN_END,
+    _cut_record,
+    _select_positions,
+    _split_records,
+    parse_ranges,
+)
 
 _TRY = "Try 'cut --help' for more information."
 
@@ -63,7 +67,6 @@ _POSITION_REFUSALS = [
 
 
 class TestParseRanges:
-
     def test_single(self):
         assert parse_ranges("3", "fields") == [(3, 3)]
 
@@ -89,8 +92,9 @@ class TestParseRanges:
 class TestParseRangesRefusals:
     """GNU's four -f messages, -c/-b's own wording, and the two-line stderr."""
 
-    @pytest.mark.parametrize("spec,mode,message",
-                             _GNU_REFUSALS + _POSITION_REFUSALS)
+    @pytest.mark.parametrize(
+        "spec,mode,message", _GNU_REFUSALS + _POSITION_REFUSALS
+    )
     def test_message_and_try_line(self, spec, mode, message):
         with pytest.raises(ValueError) as refusal:
             parse_ranges(spec, mode)
@@ -99,12 +103,12 @@ class TestParseRangesRefusals:
     def test_zero_low_bound_of_a_range_is_the_zero_message(self):
         with pytest.raises(ValueError) as refusal:
             parse_ranges("0-2", "fields")
-        assert str(refusal.value) == (f"cut: fields are numbered from 1\n"
-                                      f"{_TRY}")
+        assert str(refusal.value) == (
+            f"cut: fields are numbered from 1\n{_TRY}"
+        )
 
 
 class TestSelectPositions:
-
     def test_ascending_dedup(self):
         assert _select_positions([(3, 3), (1, 1)], 4, False) == [1, 3]
 
@@ -119,49 +123,154 @@ class TestSelectPositions:
 
 
 class TestCutRecordChars:
-
     def test_char_range(self):
-        assert _cut_record(b"abcdefgh", [(2, 5)], "characters", "\t", False,
-                           False, None, False, None) == b"bcde"
+        assert (
+            _cut_record(
+                b"abcdefgh",
+                [(2, 5)],
+                "characters",
+                "\t",
+                False,
+                False,
+                None,
+                False,
+                None,
+            )
+            == b"bcde"
+        )
 
     def test_char_overlap_dedup(self):
-        assert _cut_record(b"abcdef", [(1, 3), (2, 4)], "characters", "\t",
-                           False, False, None, False, None) == b"abcd"
+        assert (
+            _cut_record(
+                b"abcdef",
+                [(1, 3), (2, 4)],
+                "characters",
+                "\t",
+                False,
+                False,
+                None,
+                False,
+                None,
+            )
+            == b"abcd"
+        )
 
     def test_char_open(self):
-        assert _cut_record(b"abcdef", [(3, _OPEN_END)], "characters", "\t",
-                           False, False, None, False, None) == b"cdef"
+        assert (
+            _cut_record(
+                b"abcdef",
+                [(3, _OPEN_END)],
+                "characters",
+                "\t",
+                False,
+                False,
+                None,
+                False,
+                None,
+            )
+            == b"cdef"
+        )
 
 
 class TestCutRecordFields:
-
     def test_single_field(self):
-        assert _cut_record(b"a\tb\tc", [(2, 2)], "fields", "\t", False, False,
-                           None, False, None) == b"b"
+        assert (
+            _cut_record(
+                b"a\tb\tc",
+                [(2, 2)],
+                "fields",
+                "\t",
+                False,
+                False,
+                None,
+                False,
+                None,
+            )
+            == b"b"
+        )
 
     def test_field_order_is_file_order(self):
-        assert _cut_record(b"a\tb\tc", [(3, 3), (1, 1)], "fields", "\t", False,
-                           False, None, False, None) == b"a\tc"
+        assert (
+            _cut_record(
+                b"a\tb\tc",
+                [(3, 3), (1, 1)],
+                "fields",
+                "\t",
+                False,
+                False,
+                None,
+                False,
+                None,
+            )
+            == b"a\tc"
+        )
 
     def test_open_field_range(self):
-        assert _cut_record(b"a\tb\tc\td", [(2, _OPEN_END)], "fields", "\t",
-                           False, False, None, False, None) == b"b\tc\td"
+        assert (
+            _cut_record(
+                b"a\tb\tc\td",
+                [(2, _OPEN_END)],
+                "fields",
+                "\t",
+                False,
+                False,
+                None,
+                False,
+                None,
+            )
+            == b"b\tc\td"
+        )
 
     def test_no_delimiter_passthrough(self):
-        assert _cut_record(b"nodelim", [(2, 2)], "fields", "\t", False, False,
-                           None, False, None) == b"nodelim"
+        assert (
+            _cut_record(
+                b"nodelim",
+                [(2, 2)],
+                "fields",
+                "\t",
+                False,
+                False,
+                None,
+                False,
+                None,
+            )
+            == b"nodelim"
+        )
 
     def test_custom_delimiter(self):
-        assert _cut_record(b"root:x:0", [(1, 1)], "fields", ":", False, False,
-                           None, False, None) == b"root"
+        assert (
+            _cut_record(
+                b"root:x:0",
+                [(1, 1)],
+                "fields",
+                ":",
+                False,
+                False,
+                None,
+                False,
+                None,
+            )
+            == b"root"
+        )
 
     def test_complement(self):
-        assert _cut_record(b"a\tb\tc", [(2, 2)], "fields", "\t", True, False,
-                           None, False, None) == b"a\tc"
+        assert (
+            _cut_record(
+                b"a\tb\tc",
+                [(2, 2)],
+                "fields",
+                "\t",
+                True,
+                False,
+                None,
+                False,
+                None,
+            )
+            == b"a\tc"
+        )
 
 
 class TestSplitRecords:
-
     def test_drops_trailing_empty(self):
         assert _split_records(b"a\nb\n", False) == [b"a", b"b"]
 
@@ -178,22 +287,28 @@ class TestSplitRecords:
 # `shuf` and `expr` (ground truth NL3-A). Before this, cut interpolated
 # the raw bytes, so `cut -f 2-3<e-acute>` emitted the character where GNU
 # emits two octal escapes.
-@pytest.mark.parametrize("mode,label", [
-    ("fields", "invalid field value"),
-    ("bytes", "invalid byte/character position"),
-    ("characters", "invalid byte/character position"),
-])
-@pytest.mark.parametrize("spec,quoted", [
-    ("2-3é", r"\303\251"),
-    ("1,é", r"\303\251"),
-    ("xé", r"x\303\251"),
-    ("1,2\\x", r"\\x"),
-    ("1,2'x", r"\'x"),
-    ("1,2\tx", "x"),
-    ("1,2\nx", r"\nx"),
-    ("x\x01y", r"x\001y"),
-    ("\U0001f600", r"\360\237\230\200"),
-])
+@pytest.mark.parametrize(
+    "mode,label",
+    [
+        ("fields", "invalid field value"),
+        ("bytes", "invalid byte/character position"),
+        ("characters", "invalid byte/character position"),
+    ],
+)
+@pytest.mark.parametrize(
+    "spec,quoted",
+    [
+        ("2-3é", r"\303\251"),
+        ("1,é", r"\303\251"),
+        ("xé", r"x\303\251"),
+        ("1,2\\x", r"\\x"),
+        ("1,2'x", r"\'x"),
+        ("1,2\tx", "x"),
+        ("1,2\nx", r"\nx"),
+        ("x\x01y", r"x\001y"),
+        ("\U0001f600", r"\360\237\230\200"),
+    ],
+)
 def test_cut_quotes_the_remainder_through_gnulib(mode, label, spec, quoted):
     with pytest.raises(ValueError) as refusal:
         parse_ranges(spec, mode)

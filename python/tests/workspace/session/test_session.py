@@ -21,11 +21,17 @@ from mirage.secrets.config import EnvVar
 from mirage.shell.variable import ManagedRef, ShellVar, VarAttr
 from mirage.types import MountMode
 from mirage.workspace.session import SessionState
-from mirage.workspace.session.constants import (CHILD_SHELL_FIELDS,
-                                                INHERITED_FIELDS,
-                                                TRANSIENT_FIELDS)
-from mirage.workspace.session.session import (vars_from_entries, vars_from_env,
-                                              vars_from_fields, vars_to_fields)
+from mirage.workspace.session.constants import (
+    CHILD_SHELL_FIELDS,
+    INHERITED_FIELDS,
+    TRANSIENT_FIELDS,
+)
+from mirage.workspace.session.session import (
+    vars_from_entries,
+    vars_from_env,
+    vars_from_fields,
+    vars_to_fields,
+)
 from mirage.workspace.session.state import seed_var, set_attr
 
 
@@ -72,9 +78,9 @@ def test_session_exit_code():
 
 
 def test_session_to_dict():
-    s = SessionState(session_id="s1",
-                     cwd="/data",
-                     vars=vars_from_env({"K": "V"}))
+    s = SessionState(
+        session_id="s1", cwd="/data", vars=vars_from_env({"K": "V"})
+    )
     d = s.to_dict()
     assert d["session_id"] == "s1"
     assert d["cwd"] == "/data"
@@ -82,7 +88,7 @@ def test_session_to_dict():
         "K": "V",
         "PWD": "/data",
         "PATH": "/usr/bin",
-        "IFS": " \t\n"
+        "IFS": " \t\n",
     }
     assert "created_at" in d
 
@@ -91,10 +97,8 @@ def test_session_from_dict():
     d = {
         "session_id": "s2",
         "cwd": "/tmp",
-        "env": {
-            "A": "1"
-        },
-        "created_at": 123.0
+        "env": {"A": "1"},
+        "created_at": 123.0,
     }
     s = SessionState.from_dict(d)
     assert s.session_id == "s2"
@@ -104,9 +108,9 @@ def test_session_from_dict():
 
 
 def test_session_roundtrip():
-    original = SessionState(session_id="rt",
-                            cwd="/x",
-                            vars=vars_from_env({"K": "V"}))
+    original = SessionState(
+        session_id="rt", cwd="/x", vars=vars_from_env({"K": "V"})
+    )
     restored = SessionState.from_dict(original.to_dict())
     assert restored.session_id == original.session_id
     assert restored.cwd == original.cwd
@@ -156,7 +160,7 @@ def test_fork_copies_every_field_including_mount_modes():
         "FOO": "bar",
         "PWD": "/disk",
         "PATH": "/usr/bin",
-        "IFS": " \t\n"
+        "IFS": " \t\n",
     }
     assert forked.mount_modes == {
         "/s3": MountMode.READ,
@@ -171,11 +175,13 @@ def test_fork_copies_every_field_including_mount_modes():
 
 
 def test_to_dict_round_trips_mount_modes():
-    s = SessionState(session_id="s",
-                     mount_modes={
-                         "/s3": MountMode.READ,
-                         "/scratch": MountMode.WRITE,
-                     })
+    s = SessionState(
+        session_id="s",
+        mount_modes={
+            "/s3": MountMode.READ,
+            "/scratch": MountMode.WRITE,
+        },
+    )
     data = s.to_dict()
     assert data["mount_modes"] == {"/s3": "read", "/scratch": "write"}
     restored = SessionState.from_dict(data)
@@ -194,9 +200,9 @@ def test_to_dict_omits_grants_when_unrestricted():
 
 
 def test_fork_overrides_apply_without_mutating_original():
-    original = SessionState(session_id="orig",
-                            cwd="/disk",
-                            vars=vars_from_env({"FOO": "bar"}))
+    original = SessionState(
+        session_id="orig", cwd="/disk", vars=vars_from_env({"FOO": "bar"})
+    )
     forked = original.fork(cwd="/ram", vars=vars_from_env({"BAZ": "qux"}))
     assert forked.cwd == "/ram"
     # `$PWD` follows the caller-supplied cwd rather than staying stale.
@@ -204,14 +210,14 @@ def test_fork_overrides_apply_without_mutating_original():
         "BAZ": "qux",
         "PWD": "/ram",
         "PATH": "/usr/bin",
-        "IFS": " \t\n"
+        "IFS": " \t\n",
     }
     assert original.cwd == "/disk"
     assert original.env == {
         "FOO": "bar",
         "PWD": "/disk",
         "PATH": "/usr/bin",
-        "IFS": " \t\n"
+        "IFS": " \t\n",
     }
 
 
@@ -219,9 +225,9 @@ def test_fork_drops_the_logical_cwd_when_the_caller_overrides_cwd():
     # A caller-supplied cwd has no typed spelling behind it, so carrying
     # the source's logical name over would make the fork's `pwd` describe
     # a directory it is not in -- the bug an `execute(cwd=...)` call hit.
-    original = SessionState(session_id="orig",
-                            cwd="/data/deep/real",
-                            logical_cwd="/data/lk")
+    original = SessionState(
+        session_id="orig", cwd="/data/deep/real", logical_cwd="/data/lk"
+    )
     assert original.fork(cwd="/ram").logical_cwd is None
     assert original.fork().logical_cwd == "/data/lk"
 
@@ -233,11 +239,13 @@ def test_fork_keeps_an_explicit_logical_cwd_beside_a_cwd_override():
 
 
 def test_fork_deep_copies_mutable_containers():
-    original = SessionState(session_id="orig",
-                            vars={
-                                "FOO": ShellVar("bar"),
-                                "A": ShellVar(["1"]),
-                            })
+    original = SessionState(
+        session_id="orig",
+        vars={
+            "FOO": ShellVar("bar"),
+            "A": ShellVar(["1"]),
+        },
+    )
     forked = original.fork()
     seed_var(forked, "NEW", "leaked?")
     forked.arrays["A"].append("2")
@@ -262,9 +270,9 @@ def test_fork_carries_every_inherited_field():
 
 
 def test_snapshot_and_restore_undo_a_child_shell():
-    session = SessionState(session_id="s",
-                           cwd="/data",
-                           vars=vars_from_env({"A": "1"}))
+    session = SessionState(
+        session_id="s", cwd="/data", vars=vars_from_env({"A": "1"})
+    )
     saved = session.snapshot()
     session.cwd = "/other"
     seed_var(session, "A", "2")
@@ -276,7 +284,7 @@ def test_snapshot_and_restore_undo_a_child_shell():
         "A": "1",
         "PWD": "/data",
         "PATH": "/usr/bin",
-        "IFS": " \t\n"
+        "IFS": " \t\n",
     }
     assert session.functions == {}
     assert session.script_name is None
@@ -291,8 +299,9 @@ def test_to_dict_carries_the_attributes_beside_the_values():
     s = SessionState(session_id="s1")
     seed_var(s, "PLAIN", "hello")
     s.vars["EXPO"] = ShellVar("world", frozenset({VarAttr.EXPORT}))
-    s.vars["MARKED"] = ShellVar(None,
-                                frozenset({VarAttr.EXPORT, VarAttr.READONLY}))
+    s.vars["MARKED"] = ShellVar(
+        None, frozenset({VarAttr.EXPORT, VarAttr.READONLY})
+    )
     data = s.to_dict()
     # `env` stays a plain name/value map, the shape an embedder writes
     # and the other language reads; the letters ride beside it. An unset
@@ -302,7 +311,7 @@ def test_to_dict_carries_the_attributes_beside_the_values():
         "PATH": "/usr/bin",
         "IFS": " \t\n",
         "PLAIN": "hello",
-        "EXPO": "world"
+        "EXPO": "world",
     }
     assert data["var_attrs"] == {"PWD": "x", "EXPO": "x", "MARKED": "rx"}
 
@@ -348,27 +357,31 @@ def test_a_payload_with_no_attributes_is_read_as_a_process_environment():
 
 
 def test_session_command_tier_round_trips_through_the_record():
-    own = AdmissionRules(allow=("ls", "git log"),
-                         ask=(CommandRule(reason="sign-off",
-                                          commands=("git push", ),
-                                          paths=("/repo/*", ),
-                                          mount="/repo"), ),
-                         deny=(CommandRule(reason="no", commands=("rm", )), ))
+    own = AdmissionRules(
+        allow=("ls", "git log"),
+        ask=(
+            CommandRule(
+                reason="sign-off",
+                commands=("git push",),
+                paths=("/repo/*",),
+                mount="/repo",
+            ),
+        ),
+        deny=(CommandRule(reason="no", commands=("rm",)),),
+    )
     s = SessionState(session_id="s1", commands=own)
     d = s.to_dict()
     assert d["commands"] == {
         "allow": ["ls", "git log"],
-        "ask": [{
-            "reason": "sign-off",
-            "commands": ["git push"],
-            "paths": ["/repo/*"],
-            "mount": "/repo"
-        }],
-        "deny": [{
-            "reason": "no",
-            "commands": ["rm"],
-            "paths": []
-        }],
+        "ask": [
+            {
+                "reason": "sign-off",
+                "commands": ["git push"],
+                "paths": ["/repo/*"],
+                "mount": "/repo",
+            }
+        ],
+        "deny": [{"reason": "no", "commands": ["rm"], "paths": []}],
     }
     assert SessionState.from_dict(d).commands == own
     # None means unstated and is not written; a tier without an allow
@@ -376,34 +389,41 @@ def test_session_command_tier_round_trips_through_the_record():
     assert "commands" not in SessionState(session_id="s2").to_dict()
     bare = SessionState(
         session_id="s3",
-        commands=AdmissionRules(deny=(CommandRule(reason="x"), )))
+        commands=AdmissionRules(deny=(CommandRule(reason="x"),)),
+    )
     assert bare.to_dict()["commands"]["allow"] is None
     assert SessionState.from_dict(bare.to_dict()).commands == bare.commands
 
 
 def test_session_decisions_round_trip_through_the_record():
-    rule = CommandRule(reason="sign-off", commands=("git push", ))
-    records = (Decision(id="d1",
-                        session_id="s1",
-                        agent_id="a",
-                        command="git",
-                        argv=("push", ),
-                        cwd="/repo",
-                        paths=(),
-                        reason="sign-off",
-                        rule=rule,
-                        outcome=Outcome.ALLOW,
-                        scope=Scope.SESSION),
-               Decision(id="d2",
-                        session_id="s1",
-                        agent_id="a",
-                        command="git",
-                        argv=("push", "--force"),
-                        cwd="/repo",
-                        paths=(),
-                        reason="sign-off",
-                        rule=rule,
-                        outcome=Outcome.DENY))
+    rule = CommandRule(reason="sign-off", commands=("git push",))
+    records = (
+        Decision(
+            id="d1",
+            session_id="s1",
+            agent_id="a",
+            command="git",
+            argv=("push",),
+            cwd="/repo",
+            paths=(),
+            reason="sign-off",
+            rule=rule,
+            outcome=Outcome.ALLOW,
+            scope=Scope.SESSION,
+        ),
+        Decision(
+            id="d2",
+            session_id="s1",
+            agent_id="a",
+            command="git",
+            argv=("push", "--force"),
+            cwd="/repo",
+            paths=(),
+            reason="sign-off",
+            rule=rule,
+            outcome=Outcome.DENY,
+        ),
+    )
     s = SessionState(session_id="s1", decisions=records)
     d = s.to_dict()
     assert [r["id"] for r in d["decisions"]] == ["d1", "d2"]
@@ -421,24 +441,26 @@ def test_vars_from_entries_literal_short_form_exports():
 
 
 def test_vars_from_entries_literal_long_form_attrs():
-    out = vars_from_entries({
-        "EDITOR": EnvVar(value="vi", readonly=True),
-        "LOCAL": EnvVar(value="x", export=False),
-    })
+    out = vars_from_entries(
+        {
+            "EDITOR": EnvVar(value="vi", readonly=True),
+            "LOCAL": EnvVar(value="x", export=False),
+        }
+    )
     assert out["EDITOR"] == ShellVar(
-        "vi", frozenset({VarAttr.EXPORT, VarAttr.READONLY}))
+        "vi", frozenset({VarAttr.EXPORT, VarAttr.READONLY})
+    )
     assert out["LOCAL"] == ShellVar("x", frozenset())
 
 
 def test_vars_from_entries_managed_is_exported_unset():
-    out = vars_from_entries({
-        "TOKEN":
-        EnvVar.model_validate({
-            "from": "aws-sm",
-            "ref": "prod/tokens",
-            "key": "api"
-        })
-    })
+    out = vars_from_entries(
+        {
+            "TOKEN": EnvVar.model_validate(
+                {"from": "aws-sm", "ref": "prod/tokens", "key": "api"}
+            )
+        }
+    )
     var = out["TOKEN"]
     assert var.value is None
     assert var.attrs == frozenset({VarAttr.EXPORT})
@@ -452,22 +474,18 @@ def test_vars_from_entries_key_defaults_to_the_name():
 
 def test_vars_from_entries_eager_flag():
     out = vars_from_entries(
-        {"T": EnvVar.model_validate({
-            "from": "env",
-            "fetch": "eager"
-        })})
+        {"T": EnvVar.model_validate({"from": "env", "fetch": "eager"})}
+    )
     assert out["T"].managed == ManagedRef("env", "", "T", True)
 
 
 def test_vars_from_entries_coerces_raw_mappings():
-    out = vars_from_entries({
-        "A": {
-            "value": "1"
-        },
-        "B": {
-            "from": "env"
-        },
-    })
+    out = vars_from_entries(
+        {
+            "A": {"value": "1"},
+            "B": {"from": "env"},
+        }
+    )
     assert out["A"] == ShellVar("1", frozenset({VarAttr.EXPORT}))
     assert out["B"].managed == ManagedRef("env", "", "B", False)
 
@@ -484,17 +502,17 @@ def _managed_session() -> SessionState:
     return SessionState(
         session_id="s1",
         vars={
-            "FETCHED":
-            ShellVar("s3cr3t",
-                     exported,
-                     managed=ManagedRef("aws-sm", "prod", "api", False)),
-            "PENDING":
-            ShellVar(None,
-                     exported,
-                     managed=ManagedRef("env", "", "PENDING", True)),
-            "PLAIN":
-            ShellVar("hello", frozenset()),
-        })
+            "FETCHED": ShellVar(
+                "s3cr3t",
+                exported,
+                managed=ManagedRef("aws-sm", "prod", "api", False),
+            ),
+            "PENDING": ShellVar(
+                None, exported, managed=ManagedRef("env", "", "PENDING", True)
+            ),
+            "PLAIN": ShellVar("hello", frozenset()),
+        },
+    )
 
 
 def test_managed_vars_serialize_as_pointers_never_values():
@@ -504,16 +522,12 @@ def test_managed_vars_serialize_as_pointers_never_values():
     assert "PENDING" not in d["env"]
     assert "s3cr3t" not in json.dumps(d)
     assert d["managed"] == {
-        "FETCHED": {
-            "from": "aws-sm",
-            "ref": "prod",
-            "key": "api"
-        },
+        "FETCHED": {"from": "aws-sm", "ref": "prod", "key": "api"},
         "PENDING": {
             "from": "env",
             "ref": "",
             "key": "PENDING",
-            "fetch": "eager"
+            "fetch": "eager",
         },
     }
     # The letters still record, so a stripped payload keeps the name.
@@ -529,7 +543,8 @@ def test_managed_vars_restore_declared_but_unfetched():
         assert var.attrs == frozenset({VarAttr.EXPORT}), name
         assert var.managed is not None and var.managed.eager is eager, name
     assert restored.vars["FETCHED"].managed == ManagedRef(
-        "aws-sm", "prod", "api", False)
+        "aws-sm", "prod", "api", False
+    )
     assert restored.vars["PLAIN"] == ShellVar("hello", frozenset())
 
 
@@ -548,35 +563,31 @@ def test_a_session_with_no_managed_vars_writes_no_managed_key():
 
 
 def test_vars_fields_round_trip_keeps_the_pointer_never_a_value():
-    table = vars_from_entries({
-        "TOKEN": {
-            "from": "aws-sm",
-            "ref": "prod",
-            "key": "api"
-        },
-        "MODE": "prod",
-    })
+    table = vars_from_entries(
+        {
+            "TOKEN": {"from": "aws-sm", "ref": "prod", "key": "api"},
+            "MODE": "prod",
+        }
+    )
     fields = vars_to_fields(table)
     assert "TOKEN" not in fields["env"]
     assert fields["managed"]["TOKEN"] == {
         "from": "aws-sm",
         "ref": "prod",
-        "key": "api"
+        "key": "api",
     }
     restored = vars_from_fields(fields)
     assert restored["TOKEN"].value is None
-    assert restored["TOKEN"].managed == ManagedRef("aws-sm", "prod", "api",
-                                                   False)
+    assert restored["TOKEN"].managed == ManagedRef(
+        "aws-sm", "prod", "api", False
+    )
     assert restored["MODE"] == table["MODE"]
 
 
 def test_vars_fields_round_trip_keeps_eager():
     table = vars_from_entries(
-        {"E": {
-            "from": "aws-sm",
-            "ref": "prod",
-            "fetch": "eager"
-        }})
+        {"E": {"from": "aws-sm", "ref": "prod", "fetch": "eager"}}
+    )
     restored = vars_from_fields(vars_to_fields(table))
     managed = restored["E"].managed
     assert managed is not None and managed.eager

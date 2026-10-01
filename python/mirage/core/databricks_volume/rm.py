@@ -82,8 +82,9 @@ async def rm_recursive(
         return [path.mount_path]
     remote_root = backend_path(accessor.config, path)
     try:
-        removed = await asyncio.to_thread(_remove_tree_sync, accessor,
-                                          remote_root)
+        removed = await asyncio.to_thread(
+            _remove_tree_sync, accessor, remote_root
+        )
     except Exception as exc:
         if is_not_found(exc):
             raise enoent(path) from exc

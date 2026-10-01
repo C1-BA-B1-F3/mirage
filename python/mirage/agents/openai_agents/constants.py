@@ -19,4 +19,5 @@ DEFAULT_WRITE_YIELD_MS = 250
 NO_STDIN = "stdin is not available for this process"
 MOUNTS_INTRO = "The filesystem is a Mirage workspace with these mounts:"
 NOT_MIRAGE_SESSION = (
-    "MirageCapability needs a session from MirageSandboxClient")
+    "MirageCapability needs a session from MirageSandboxClient"
+)

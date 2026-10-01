@@ -48,9 +48,9 @@ def make_read(tree: VectorTree[A]) -> ReadFn:
 
     read_for = per_accessor(build)
 
-    async def read(accessor: A,
-                   path: PathSpec,
-                   index: IndexCacheStore = NULL_INDEX) -> bytes:
+    async def read(
+        accessor: A, path: PathSpec, index: IndexCacheStore = NULL_INDEX
+    ) -> bytes:
         return await read_for(accessor)(accessor, path, index)
 
     return read

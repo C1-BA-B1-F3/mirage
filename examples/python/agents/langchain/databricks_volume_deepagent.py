@@ -19,10 +19,15 @@ from deepagents import create_deep_agent
 from dotenv import load_dotenv
 
 from mirage import MountMode, Workspace
-from mirage.agents.langchain import (LangchainWorkspace, build_system_prompt,
-                                     extract_text)
-from mirage.vfs.databricks_volume import (DatabricksVolumeConfig,
-                                          DatabricksVolumeVFS)
+from mirage.agents.langchain import (
+    LangchainWorkspace,
+    build_system_prompt,
+    extract_text,
+)
+from mirage.vfs.databricks_volume import (
+    DatabricksVolumeConfig,
+    DatabricksVolumeVFS,
+)
 
 load_dotenv(".env.development")
 
@@ -35,18 +40,23 @@ vfs = DatabricksVolumeVFS(
         host=os.environ.get("DATABRICKS_HOST"),
         token=os.environ.get("DATABRICKS_TOKEN"),
         profile=os.environ.get("DATABRICKS_CONFIG_PROFILE"),
-    ))
+    )
+)
 
 ws = Workspace({"/dbx/": vfs}, mode=MountMode.READ)
 
 agent = create_deep_agent(
-    model=ChatDatabricks(endpoint=os.environ["DATABRICKS_CHAT_ENDPOINT"], ),
+    model=ChatDatabricks(
+        endpoint=os.environ["DATABRICKS_CHAT_ENDPOINT"],
+    ),
     system_prompt=build_system_prompt(workspace=ws),
     backend=LangchainWorkspace(ws),
 )
 
-task = ("Inspect /dbx/, identify the most relevant text or markdown files, "
-        "and summarize their contents. Use head for large files.")
+task = (
+    "Inspect /dbx/, identify the most relevant text or markdown files, "
+    "and summarize their contents. Use head for large files."
+)
 result = agent.invoke({"messages": [{"role": "user", "content": task}]})
 
 for text in extract_text(result["messages"][-1:]):
@@ -57,5 +67,7 @@ if records:
     total = sum(record.bytes for record in records)
     print(f"\n--- {len(records)} ops, {total:,} bytes ---")
     for record in records:
-        print(f"  {record.op:<8} {record.source:<18} {record.bytes:>10,} B "
-              f"{record.duration_ms:>5} ms  {record.path}")
+        print(
+            f"  {record.op:<8} {record.source:<18} {record.bytes:>10,} B "
+            f"{record.duration_ms:>5} ms  {record.path}"
+        )

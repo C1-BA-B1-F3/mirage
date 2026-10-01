@@ -7,9 +7,11 @@ from mirage.types import ContentType, FileStat, FileType, PathSpec
 from mirage.utils.errors import enoent
 
 
-async def stat(accessor: WandbAccessor,
-               path: PathSpec,
-               index: IndexCacheStore = NULL_INDEX) -> FileStat:
+async def stat(
+    accessor: WandbAccessor,
+    path: PathSpec,
+    index: IndexCacheStore = NULL_INDEX,
+) -> FileStat:
     ps = parts(accessor, path)
     if not ps:
         return FileStat(name="/", type=FileType.DIRECTORY, size=0)
@@ -28,7 +30,9 @@ async def stat(accessor: WandbAccessor,
             content = ContentType.JSON
         else:
             content = ContentType.TEXT
-    return FileStat(name=ps[-1],
-                    type=FileType.DIRECTORY if directory else FileType.FILE,
-                    size=found.size,
-                    content=content)
+    return FileStat(
+        name=ps[-1],
+        type=FileType.DIRECTORY if directory else FileType.FILE,
+        size=found.size,
+        content=content,
+    )

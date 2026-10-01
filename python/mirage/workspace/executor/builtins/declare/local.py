@@ -19,16 +19,29 @@ from mirage.policy import PolicyDenied
 from mirage.shell.errors import ArithError
 from mirage.shell.variable import VarAttr
 from mirage.workspace.executor.builtins.declare.declare import (
-    identifier_failure, identifier_refusal, nameref_refusal, premark,
-    store_staged_arrays, write_global)
-from mirage.workspace.executor.builtins.shared import (arith_refusal,
-                                                       readonly_refusal,
-                                                       refusal, require_view)
+    identifier_failure,
+    identifier_refusal,
+    nameref_refusal,
+    premark,
+    store_staged_arrays,
+    write_global,
+)
+from mirage.workspace.executor.builtins.shared import (
+    arith_refusal,
+    readonly_refusal,
+    refusal,
+    require_view,
+)
 from mirage.workspace.executor.builtins.types import BuiltinCall, Result
 from mirage.workspace.session import SessionState
-from mirage.workspace.session.state import (env_get, in_call_env, session_view,
-                                            shadow_local, visible_arrays,
-                                            visible_assocs)
+from mirage.workspace.session.state import (
+    env_get,
+    in_call_env,
+    session_view,
+    shadow_local,
+    visible_arrays,
+    visible_assocs,
+)
 from mirage.workspace.types import ExecutionNode
 
 
@@ -80,23 +93,26 @@ async def handle_local(
         # them globally and exited 0, which is the silent-accept this
         # whole tier exists to remove.
         err = b"bash: local: can only be used in a function\n"
-        return None, IOResult(exit_code=1,
-                              stderr=err), ExecutionNode(command=cmd,
-                                                         exit_code=1,
-                                                         stderr=err)
+        return (
+            None,
+            IOResult(exit_code=1, stderr=err),
+            ExecutionNode(command=cmd, exit_code=1, stderr=err),
+        )
     view = require_view(state)
     errors: list[str] = []
     if arrays:
-        refused = await store_staged_arrays(cmd,
-                                            session,
-                                            view,
-                                            arrays,
-                                            fatal=session._local_vars is None,
-                                            stored=stored,
-                                            assoc=assoc,
-                                            errors=errors,
-                                            shaping=shaping,
-                                            global_scope=global_scope)
+        refused = await store_staged_arrays(
+            cmd,
+            session,
+            view,
+            arrays,
+            fatal=session._local_vars is None,
+            stored=stored,
+            assoc=assoc,
+            errors=errors,
+            shaping=shaping,
+            global_scope=global_scope,
+        )
         if refused is not None:
             return refused
     for assign in assignments:
@@ -131,13 +147,18 @@ async def handle_local(
             if local_vars is not None:
                 fresh = assign not in local_vars
                 shadow_local(session, local_vars, assign)
-                refused = (await _fresh_local(session, view, cmd, assign)
-                           if fresh else None)
+                refused = (
+                    await _fresh_local(session, view, cmd, assign)
+                    if fresh
+                    else None
+                )
                 if refused is not None:
                     return refused
-            if (env_get(session, assign) is None
-                    and assign not in visible_arrays(session)
-                    and assign not in visible_assocs(session)):
+            if (
+                env_get(session, assign) is None
+                and assign not in visible_arrays(session)
+                and assign not in visible_assocs(session)
+            ):
                 # A bare declaration of an existing array re-scopes it;
                 # a scalar write here would erase it. Visible reads: a
                 # hidden name counts as unset, so the write is
@@ -161,8 +182,9 @@ async def handle_local(
     return None, IOResult(), ExecutionNode(command=cmd, exit_code=0)
 
 
-async def _fresh_local(session: SessionState, view: SessionView, cmd: str,
-                       name: str) -> Result | None:
+async def _fresh_local(
+    session: SessionState, view: SessionView, cmd: str, name: str
+) -> Result | None:
     """Start a bare ``local NAME`` unset, as bash 5.2 does.
 
     Only a name the frame did not shadow yet: a second ``local x``, or
@@ -206,5 +228,7 @@ async def local_builtin(call: BuiltinCall) -> Result:
         call (BuiltinCall): the invocation.
     """
     return await handle_local(
-        list(call.argv.args), call.session,
-        session_view(call.session, call.namespace.registry.policies))
+        list(call.argv.args),
+        call.session,
+        session_view(call.session, call.namespace.registry.policies),
+    )

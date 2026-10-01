@@ -38,13 +38,16 @@ async def main() -> None:
     ws.register_cli("gws", GWS, config.model_dump())
 
     print("=== not-found errors show the full virtual path ===")
-    for cmd in ("cat /gdrive/__nf_missing__.txt",
-                "head /gdrive/__nf_missing__.txt",
-                "stat /gdrive/__nf_missing__.txt"):
+    for cmd in (
+        "cat /gdrive/__nf_missing__.txt",
+        "head /gdrive/__nf_missing__.txt",
+        "stat /gdrive/__nf_missing__.txt",
+    ):
         result = await ws.shell(cmd)
         print(f"$ {cmd}")
-        print(f"  exit={result.exit_code}  "
-              f"{(await result.stderr_str()).strip()}")
+        print(
+            f"  exit={result.exit_code}  {(await result.stderr_str()).strip()}"
+        )
 
     print("=== ls /gdrive/ ===")
     result = await ws.shell("ls /gdrive/")
@@ -64,14 +67,19 @@ async def main() -> None:
     # workspace namespace (durable, snapshot-captured) and merge into
     # dispatch-level stat.
     print(f"=== metadata overlay on /gdrive/{first} ===")
-    result = await ws.shell(f'chmod 640 "/gdrive/{first}" && chown 500:dev'
-                            f' "/gdrive/{first}"'
-                            f' && touch -t 202601021530 "/gdrive/{first}"')
+    result = await ws.shell(
+        f'chmod 640 "/gdrive/{first}" && chown 500:dev'
+        f' "/gdrive/{first}"'
+        f' && touch -t 202601021530 "/gdrive/{first}"'
+    )
     print(f"  chmod/chown/touch exit={result.exit_code}")
-    st, _ = await ws.dispatch("stat",
-                              PathSpec.from_str_path(f"/gdrive/{first}"))
-    print(f"  dispatch stat: mode={oct(st.mode)[2:]} uid={st.uid} "
-          f"gid={st.gid} mtime={st.modified}")
+    st, _ = await ws.dispatch(
+        "stat", PathSpec.from_str_path(f"/gdrive/{first}")
+    )
+    print(
+        f"  dispatch stat: mode={oct(st.mode)[2:]} uid={st.uid} "
+        f"gid={st.gid} mtime={st.modified}"
+    )
 
     if first.endswith("/"):
         print(f"=== ls /gdrive/{first} ===")
@@ -149,14 +157,17 @@ async def main() -> None:
         print(await result.stdout_str())
 
     print("=== gws docs documents create ===")
-    result = await ws.shell('gws docs documents create'
-                            ' --json \'{"title": "Test from MIRAGE gdrive"}\'')
+    result = await ws.shell(
+        "gws docs documents create"
+        ' --json \'{"title": "Test from MIRAGE gdrive"}\''
+    )
     print((await result.stdout_str())[:300])
 
     print("=== gws sheets spreadsheets create ===")
     result = await ws.shell(
-        'gws sheets spreadsheets create'
-        ' --json \'{"properties": {"title": "Test Sheet from gdrive"}}\'')
+        "gws sheets spreadsheets create"
+        ' --json \'{"properties": {"title": "Test Sheet from gdrive"}}\''
+    )
     print((await result.stdout_str())[:300])
 
 

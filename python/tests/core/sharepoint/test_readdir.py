@@ -28,24 +28,18 @@ def _accessor() -> SharePointAccessor:
 async def test_readdir_root_lists_sites():
     index = RAMIndexCacheStore()
     with aioresponses() as m:
-        m.get(_SITES_RE,
-              payload={
-                  "value": [
-                      {
-                          "id": "s1",
-                          "displayName": "Engineering",
-                          "name": "eng"
-                      },
-                      {
-                          "id": "s2",
-                          "displayName": "Marketing",
-                          "name": "mkt"
-                      },
-                  ]
-              })
-        path = PathSpec(vfs_path=mount_key("/sp/", "/sp"),
-                        virtual="/sp/",
-                        directory="/sp/")
+        m.get(
+            _SITES_RE,
+            payload={
+                "value": [
+                    {"id": "s1", "displayName": "Engineering", "name": "eng"},
+                    {"id": "s2", "displayName": "Marketing", "name": "mkt"},
+                ]
+            },
+        )
+        path = PathSpec(
+            vfs_path=mount_key("/sp/", "/sp"), virtual="/sp/", directory="/sp/"
+        )
         names = await readdir(_accessor(), path, index)
     assert "/sp/Engineering" in names
     assert "/sp/Marketing" in names
@@ -55,22 +49,20 @@ async def test_readdir_root_lists_sites():
 async def test_readdir_site_lists_drives():
     index = RAMIndexCacheStore()
     with aioresponses() as m:
-        m.get(_DRIVES_RE,
-              payload={
-                  "value": [
-                      {
-                          "id": _DRIVE_ID,
-                          "name": "Documents"
-                      },
-                      {
-                          "id": "b!other",
-                          "name": "Archives"
-                      },
-                  ]
-              })
-        path = PathSpec(vfs_path=mount_key("/sp/Engineering", "/sp"),
-                        virtual="/sp/Engineering",
-                        directory="/sp/Engineering")
+        m.get(
+            _DRIVES_RE,
+            payload={
+                "value": [
+                    {"id": _DRIVE_ID, "name": "Documents"},
+                    {"id": "b!other", "name": "Archives"},
+                ]
+            },
+        )
+        path = PathSpec(
+            vfs_path=mount_key("/sp/Engineering", "/sp"),
+            virtual="/sp/Engineering",
+            directory="/sp/Engineering",
+        )
         names = await readdir(_accessor(), path, index)
     assert "/sp/Engineering/Archives" in names
     assert "/sp/Engineering/Documents" in names
@@ -80,30 +72,32 @@ async def test_readdir_site_lists_drives():
 async def test_readdir_drive_root_lists_children():
     index = RAMIndexCacheStore()
     with aioresponses() as m:
-        m.get(f"{_BASE}/drives/{_DRIVE_ID}/root/children",
-              payload={
-                  "value": [
-                      {
-                          "id": "1",
-                          "name": "readme.md",
-                          "size": 100,
-                          "file": {},
-                          "lastModifiedDateTime": "2026-06-01T10:00:00Z"
-                      },
-                      {
-                          "id": "2",
-                          "name": "src",
-                          "size": 0,
-                          "folder": {
-                              "childCount": 5
-                          },
-                          "lastModifiedDateTime": "2026-06-02T10:00:00Z"
-                      },
-                  ]
-              })
-        path = PathSpec(vfs_path=mount_key("/sp/Engineering/Documents", "/sp"),
-                        virtual="/sp/Engineering/Documents",
-                        directory="/sp/Engineering/Documents")
+        m.get(
+            f"{_BASE}/drives/{_DRIVE_ID}/root/children",
+            payload={
+                "value": [
+                    {
+                        "id": "1",
+                        "name": "readme.md",
+                        "size": 100,
+                        "file": {},
+                        "lastModifiedDateTime": "2026-06-01T10:00:00Z",
+                    },
+                    {
+                        "id": "2",
+                        "name": "src",
+                        "size": 0,
+                        "folder": {"childCount": 5},
+                        "lastModifiedDateTime": "2026-06-02T10:00:00Z",
+                    },
+                ]
+            },
+        )
+        path = PathSpec(
+            vfs_path=mount_key("/sp/Engineering/Documents", "/sp"),
+            virtual="/sp/Engineering/Documents",
+            directory="/sp/Engineering/Documents",
+        )
         names = await readdir(_accessor(), path, index)
     assert "/sp/Engineering/Documents/readme.md" in names
     assert "/sp/Engineering/Documents/src" in names
@@ -113,21 +107,25 @@ async def test_readdir_drive_root_lists_children():
 async def test_readdir_populates_index_with_metadata():
     index = RAMIndexCacheStore()
     with aioresponses() as m:
-        m.get(f"{_BASE}/drives/{_DRIVE_ID}/root/children",
-              payload={
-                  "value": [
-                      {
-                          "id": "1",
-                          "name": "a.txt",
-                          "size": 42,
-                          "file": {},
-                          "lastModifiedDateTime": "2026-06-15T08:00:00Z"
-                      },
-                  ]
-              })
-        path = PathSpec(vfs_path=mount_key("/sp/Engineering/Documents", "/sp"),
-                        virtual="/sp/Engineering/Documents",
-                        directory="/sp/Engineering/Documents")
+        m.get(
+            f"{_BASE}/drives/{_DRIVE_ID}/root/children",
+            payload={
+                "value": [
+                    {
+                        "id": "1",
+                        "name": "a.txt",
+                        "size": 42,
+                        "file": {},
+                        "lastModifiedDateTime": "2026-06-15T08:00:00Z",
+                    },
+                ]
+            },
+        )
+        path = PathSpec(
+            vfs_path=mount_key("/sp/Engineering/Documents", "/sp"),
+            virtual="/sp/Engineering/Documents",
+            directory="/sp/Engineering/Documents",
+        )
         await readdir(_accessor(), path, index)
     lookup = await index.get("/sp/Engineering/Documents/a.txt")
     assert lookup.entry is not None
@@ -139,21 +137,19 @@ async def test_readdir_populates_index_with_metadata():
 async def test_readdir_subfolder():
     index = RAMIndexCacheStore()
     with aioresponses() as m:
-        m.get(f"{_BASE}/drives/{_DRIVE_ID}/root:/src:/children",
-              payload={
-                  "value": [
-                      {
-                          "id": "3",
-                          "name": "main.py",
-                          "size": 200,
-                          "file": {}
-                      },
-                  ]
-              })
-        path = PathSpec(vfs_path=mount_key("/sp/Engineering/Documents/src",
-                                           "/sp"),
-                        virtual="/sp/Engineering/Documents/src",
-                        directory="/sp/Engineering/Documents/src")
+        m.get(
+            f"{_BASE}/drives/{_DRIVE_ID}/root:/src:/children",
+            payload={
+                "value": [
+                    {"id": "3", "name": "main.py", "size": 200, "file": {}},
+                ]
+            },
+        )
+        path = PathSpec(
+            vfs_path=mount_key("/sp/Engineering/Documents/src", "/sp"),
+            virtual="/sp/Engineering/Documents/src",
+            directory="/sp/Engineering/Documents/src",
+        )
         names = await readdir(_accessor(), path, index)
     assert "/sp/Engineering/Documents/src/main.py" in names
 
@@ -162,23 +158,20 @@ async def test_readdir_subfolder():
 async def test_readdir_of_file_raises_not_a_directory():
     index = RAMIndexCacheStore()
     with aioresponses() as m:
-        m.get(f"{_BASE}/drives/{_DRIVE_ID}/root:/a.txt:/children",
-              status=404,
-              payload={"error": {
-                  "code": "itemNotFound",
-                  "message": "x"
-              }})
-        m.get(f"{_BASE}/drives/{_DRIVE_ID}/root:/a.txt",
-              payload={
-                  "id": "1",
-                  "name": "a.txt",
-                  "size": 3,
-                  "file": {}
-              })
-        path = PathSpec(vfs_path=mount_key("/sp/Engineering/Documents/a.txt",
-                                           "/sp"),
-                        virtual="/sp/Engineering/Documents/a.txt",
-                        directory="/sp/Engineering/Documents")
+        m.get(
+            f"{_BASE}/drives/{_DRIVE_ID}/root:/a.txt:/children",
+            status=404,
+            payload={"error": {"code": "itemNotFound", "message": "x"}},
+        )
+        m.get(
+            f"{_BASE}/drives/{_DRIVE_ID}/root:/a.txt",
+            payload={"id": "1", "name": "a.txt", "size": 3, "file": {}},
+        )
+        path = PathSpec(
+            vfs_path=mount_key("/sp/Engineering/Documents/a.txt", "/sp"),
+            virtual="/sp/Engineering/Documents/a.txt",
+            directory="/sp/Engineering/Documents",
+        )
         with pytest.raises(NotADirectoryError):
             await readdir(_accessor(), path, index)
 
@@ -187,20 +180,19 @@ async def test_readdir_of_file_raises_not_a_directory():
 async def test_readdir_cache_hit():
     index = RAMIndexCacheStore()
     with aioresponses() as m:
-        m.get(f"{_BASE}/drives/{_DRIVE_ID}/root/children",
-              payload={
-                  "value": [
-                      {
-                          "id": "1",
-                          "name": "cached.txt",
-                          "size": 10,
-                          "file": {}
-                      },
-                  ]
-              })
-        path = PathSpec(vfs_path=mount_key("/sp/Engineering/Documents", "/sp"),
-                        virtual="/sp/Engineering/Documents",
-                        directory="/sp/Engineering/Documents")
+        m.get(
+            f"{_BASE}/drives/{_DRIVE_ID}/root/children",
+            payload={
+                "value": [
+                    {"id": "1", "name": "cached.txt", "size": 10, "file": {}},
+                ]
+            },
+        )
+        path = PathSpec(
+            vfs_path=mount_key("/sp/Engineering/Documents", "/sp"),
+            virtual="/sp/Engineering/Documents",
+            directory="/sp/Engineering/Documents",
+        )
         await readdir(_accessor(), path, index)
         # Second call should hit cache, no extra HTTP call
         names = await readdir(_accessor(), path, index)

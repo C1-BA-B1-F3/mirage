@@ -46,7 +46,7 @@ COMMAND_PRECEDERS = frozenset(b"\n;|&()")
 # both quotes and a double quote takes a backtick, while a `'` inside
 # double quotes is an ordinary byte (`"it's"` is one word).
 NESTED_QUOTES = {
-    DOUBLE_QUOTE: frozenset((BACKTICK, )),
+    DOUBLE_QUOTE: frozenset((BACKTICK,)),
     BACKTICK: frozenset((SINGLE_QUOTE, DOUBLE_QUOTE)),
 }
 

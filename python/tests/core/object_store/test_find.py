@@ -28,8 +28,9 @@ def test_find_synthesizes_the_implicit_parent_chain(accessor):
 def test_find_type_f_drops_synthesized_dirs(accessor):
     store = FakeStore({"data/a/b.txt": b"x"})
     find = make_find(make_driver(store))
-    assert asyncio.run(find(accessor, spec("/data"),
-                            type="f")) == ["/data/a/b.txt"]
+    assert asyncio.run(find(accessor, spec("/data"), type="f")) == [
+        "/data/a/b.txt"
+    ]
 
 
 def test_find_marker_only_start_is_empty(accessor):

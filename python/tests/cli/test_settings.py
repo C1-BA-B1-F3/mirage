@@ -14,9 +14,16 @@
 
 import pytest
 
-from mirage.cli.settings import (DEFAULT_DAEMON_URL, config_path, get_config,
-                                 list_config, load_daemon_settings,
-                                 resolved_config, set_config, unset_config)
+from mirage.cli.settings import (
+    DEFAULT_DAEMON_URL,
+    config_path,
+    get_config,
+    list_config,
+    load_daemon_settings,
+    resolved_config,
+    set_config,
+    unset_config,
+)
 from mirage.server.daemon_config import DaemonConfigError
 from mirage.server.env import ENV_HOME
 
@@ -58,7 +65,8 @@ def test_load_daemon_settings_config_wins_over_file(tmp_path, monkeypatch):
 
 
 def test_load_daemon_settings_no_sources_yields_empty_token(
-        tmp_path, monkeypatch):
+    tmp_path, monkeypatch
+):
     monkeypatch.delenv("MIRAGE_TOKEN", raising=False)
     monkeypatch.delenv("MIRAGE_DAEMON_URL", raising=False)
     monkeypatch.setenv(ENV_HOME, str(tmp_path))
@@ -74,12 +82,14 @@ def test_config_path_follows_mirage_home(tmp_path, monkeypatch):
 
 
 def test_load_daemon_settings_reads_config_under_mirage_home(
-        tmp_path, monkeypatch):
+    tmp_path, monkeypatch
+):
     monkeypatch.delenv("MIRAGE_TOKEN", raising=False)
     monkeypatch.delenv("MIRAGE_DAEMON_URL", raising=False)
     monkeypatch.setenv(ENV_HOME, str(tmp_path))
-    (tmp_path /
-     "config.toml").write_text('[daemon]\nurl = "http://127.0.0.1:9999"\n')
+    (tmp_path / "config.toml").write_text(
+        '[daemon]\nurl = "http://127.0.0.1:9999"\n'
+    )
     settings = load_daemon_settings()
     assert settings.url == "http://127.0.0.1:9999"
 
@@ -88,7 +98,7 @@ def test_set_config_creates_file(tmp_path):
     p = tmp_path / "config.toml"
     set_config("socket", "/tmp/s.sock", path=p)
     assert get_config("socket", path=p) == "/tmp/s.sock"
-    assert '[daemon]' in p.read_text()
+    assert "[daemon]" in p.read_text()
 
 
 def test_set_config_updates_existing_key(tmp_path):
@@ -122,7 +132,7 @@ def test_list_config_returns_written_keys(tmp_path):
     set_config("socket", "/tmp/s.sock", path=p)
     assert list_config(path=p) == {
         "url": "http://a:1",
-        "socket": "/tmp/s.sock"
+        "socket": "/tmp/s.sock",
     }
 
 
@@ -159,7 +169,8 @@ def test_unset_config_chmods_0600(tmp_path):
 
 
 def test_load_daemon_settings_missing_explicit_path_returns_defaults(
-        tmp_path, monkeypatch):
+    tmp_path, monkeypatch
+):
     monkeypatch.delenv("MIRAGE_TOKEN", raising=False)
     monkeypatch.delenv("MIRAGE_DAEMON_URL", raising=False)
     monkeypatch.setenv(ENV_HOME, str(tmp_path))
@@ -171,8 +182,9 @@ def test_resolved_config_reports_origins(monkeypatch, tmp_path):
     monkeypatch.setenv(ENV_HOME, str(tmp_path))
     monkeypatch.setenv("MIRAGE_DAEMON_PORT", "9314")
     monkeypatch.delenv("MIRAGE_DAEMON_URL", raising=False)
-    (tmp_path /
-     "config.toml").write_text('[daemon]\nport = 9001\nurl = "http://f:1"\n')
+    (tmp_path / "config.toml").write_text(
+        '[daemon]\nport = 9001\nurl = "http://f:1"\n'
+    )
     resolved = resolved_config()
     assert resolved["port"] == ("9314", "env MIRAGE_DAEMON_PORT")
     assert resolved["url"] == ("http://f:1", "file")
@@ -180,8 +192,12 @@ def test_resolved_config_reports_origins(monkeypatch, tmp_path):
 
 def test_resolved_config_defaults_when_nothing_set(monkeypatch, tmp_path):
     monkeypatch.setenv(ENV_HOME, str(tmp_path))
-    for name in ("MIRAGE_DAEMON_URL", "MIRAGE_TOKEN", "MIRAGE_DAEMON_PORT",
-                 "MIRAGE_IDLE_GRACE_SECONDS"):
+    for name in (
+        "MIRAGE_DAEMON_URL",
+        "MIRAGE_TOKEN",
+        "MIRAGE_DAEMON_PORT",
+        "MIRAGE_IDLE_GRACE_SECONDS",
+    ):
         monkeypatch.delenv(name, raising=False)
     resolved = resolved_config()
     assert resolved["url"] == (DEFAULT_DAEMON_URL, "default")
@@ -199,13 +215,19 @@ def test_resolved_config_includes_port(monkeypatch, tmp_path):
 
 def test_resolved_config_includes_the_ssh_door(monkeypatch, tmp_path):
     monkeypatch.setenv(ENV_HOME, str(tmp_path))
-    for name in ("MIRAGE_SSH_PORT", "MIRAGE_SSH_HOST",
-                 "MIRAGE_SSH_HOST_KEY_FILE", "MIRAGE_SSH_AUTHORIZED_KEYS"):
+    for name in (
+        "MIRAGE_SSH_PORT",
+        "MIRAGE_SSH_HOST",
+        "MIRAGE_SSH_HOST_KEY_FILE",
+        "MIRAGE_SSH_AUTHORIZED_KEYS",
+    ):
         monkeypatch.delenv(name, raising=False)
     resolved = resolved_config()
     assert resolved["ssh_port"] == ("", "default")
     assert resolved["ssh_host"] == ("127.0.0.1", "default")
-    assert resolved["ssh_authorized_keys"] == (str(
-        tmp_path / "ssh" / "authorized_keys"), "default")
+    assert resolved["ssh_authorized_keys"] == (
+        str(tmp_path / "ssh" / "authorized_keys"),
+        "default",
+    )
     monkeypatch.setenv("MIRAGE_SSH_PORT", "2222")
     assert resolved_config()["ssh_port"] == ("2222", "env MIRAGE_SSH_PORT")

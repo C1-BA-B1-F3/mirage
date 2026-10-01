@@ -20,9 +20,9 @@ from mirage.types import PathSpec
 
 
 def spec(virtual: str) -> PathSpec:
-    return PathSpec(vfs_path=virtual.lstrip("/"),
-                    virtual=virtual,
-                    directory=virtual)
+    return PathSpec(
+        vfs_path=virtual.lstrip("/"), virtual=virtual, directory=virtual
+    )
 
 
 @pytest.mark.asyncio

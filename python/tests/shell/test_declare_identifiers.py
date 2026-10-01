@@ -24,37 +24,70 @@ import pytest
 # `$1` followed by `BAD`.
 CASES = [
     # Every declaration builtin refuses, each in its own voice.
-    ("export 1BAD=x; echo rc=$?", "rc=1\n",
-     "bash: export: `1BAD=x': not a valid identifier\n"),
-    ("readonly 2BAD=y; echo rc=$?", "rc=1\n",
-     "bash: readonly: `2BAD=y': not a valid identifier\n"),
-    ("f() { local 3BAD=z; echo rc=$?; }; f", "rc=1\n",
-     "bash: local: `3BAD=z': not a valid identifier\n"),
+    (
+        "export 1BAD=x; echo rc=$?",
+        "rc=1\n",
+        "bash: export: `1BAD=x': not a valid identifier\n",
+    ),
+    (
+        "readonly 2BAD=y; echo rc=$?",
+        "rc=1\n",
+        "bash: readonly: `2BAD=y': not a valid identifier\n",
+    ),
+    (
+        "f() { local 3BAD=z; echo rc=$?; }; f",
+        "rc=1\n",
+        "bash: local: `3BAD=z': not a valid identifier\n",
+    ),
     # `declare`/`typeset` share `local`'s handler and must still name
     # themselves rather than answer as `local`.
-    ("declare 4BAD=w; echo rc=$?", "rc=1\n",
-     "bash: declare: `4BAD=w': not a valid identifier\n"),
-    ("typeset 4BAD=w; echo rc=$?", "rc=1\n",
-     "bash: typeset: `4BAD=w': not a valid identifier\n"),
+    (
+        "declare 4BAD=w; echo rc=$?",
+        "rc=1\n",
+        "bash: declare: `4BAD=w': not a valid identifier\n",
+    ),
+    (
+        "typeset 4BAD=w; echo rc=$?",
+        "rc=1\n",
+        "bash: typeset: `4BAD=w': not a valid identifier\n",
+    ),
     # The bare form refuses too, and quotes the word as typed.
-    ("export 5BAD; echo rc=$?", "rc=1\n",
-     "bash: export: `5BAD': not a valid identifier\n"),
-    ("readonly 6BAD; echo rc=$?", "rc=1\n",
-     "bash: readonly: `6BAD': not a valid identifier\n"),
+    (
+        "export 5BAD; echo rc=$?",
+        "rc=1\n",
+        "bash: export: `5BAD': not a valid identifier\n",
+    ),
+    (
+        "readonly 6BAD; echo rc=$?",
+        "rc=1\n",
+        "bash: readonly: `6BAD': not a valid identifier\n",
+    ),
     # `-n` is still an export, so it validates like the on direction.
-    ("export -n 7BAD; echo rc=$?", "rc=1\n",
-     "bash: export: `7BAD': not a valid identifier\n"),
+    (
+        "export -n 7BAD; echo rc=$?",
+        "rc=1\n",
+        "bash: export: `7BAD': not a valid identifier\n",
+    ),
     # A hyphen is not an identifier character; the whole word is quoted.
-    ("export A-B=1; echo rc=$?", "rc=1\n",
-     "bash: export: `A-B=1': not a valid identifier\n"),
+    (
+        "export A-B=1; echo rc=$?",
+        "rc=1\n",
+        "bash: export: `A-B=1': not a valid identifier\n",
+    ),
     # An array element parses as an assignment target but is not a plain
     # name, and GNU quotes just the target rather than the whole word.
-    ("export arr[0]=1; echo rc=$?", "rc=1\n",
-     "bash: export: `arr[0]': not a valid identifier\n"),
+    (
+        "export arr[0]=1; echo rc=$?",
+        "rc=1\n",
+        "bash: export: `arr[0]': not a valid identifier\n",
+    ),
     # One line per bad operand, in operand order.
-    ("export 1BAD=x 2BAD=y; echo rc=$?", "rc=1\n",
-     "bash: export: `1BAD=x': not a valid identifier\n"
-     "bash: export: `2BAD=y': not a valid identifier\n"),
+    (
+        "export 1BAD=x 2BAD=y; echo rc=$?",
+        "rc=1\n",
+        "bash: export: `1BAD=x': not a valid identifier\n"
+        "bash: export: `2BAD=y': not a valid identifier\n",
+    ),
     # A leading underscore and a trailing digit are both legal.
     ("export _ok=1; echo rc=$?; export A1=2; echo rc=$?", "rc=0\nrc=0\n", ""),
 ]
@@ -69,10 +102,9 @@ def test_good_names_on_the_same_line_still_land(shell):
     # GNU reports each bad operand and keeps going, so the valid ones are
     # stored: refusing the whole line would be a second divergence.
     rc, out, err = shell.mirage_result(
-        "export GOOD=1 1BAD=x GOOD2=2; echo rc=$?; declare -p GOOD GOOD2")
-    assert out == ('rc=1\n'
-                   'declare -x GOOD="1"\n'
-                   'declare -x GOOD2="2"\n')
+        "export GOOD=1 1BAD=x GOOD2=2; echo rc=$?; declare -p GOOD GOOD2"
+    )
+    assert out == ('rc=1\ndeclare -x GOOD="1"\ndeclare -x GOOD2="2"\n')
     assert err == "bash: export: `1BAD=x': not a valid identifier\n"
 
 
@@ -82,7 +114,10 @@ def test_quoting_decides_whether_an_empty_operand_survives(shell):
     # listing. A quoted one is a real, empty operand and is refused.
     empty = "bash: export: `': not a valid identifier\n"
     assert shell.mirage_result('export ""; echo rc=$?') == (0, "rc=1\n", empty)
-    assert shell.mirage_result('export "$NOPE"; echo rc=$?') == (0, "rc=1\n",
-                                                                 empty)
+    assert shell.mirage_result('export "$NOPE"; echo rc=$?') == (
+        0,
+        "rc=1\n",
+        empty,
+    )
     listed = shell.mirage("export $NOPE")
     assert listed.startswith("declare -x ")

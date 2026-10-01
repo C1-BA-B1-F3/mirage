@@ -21,8 +21,12 @@ from mirage.commands.spec import SPECS
 from mirage.secrets.summary import error_summary
 from mirage.types import JsonValue
 from mirage.workspace.cli.types import CLIInstall
-from mirage.workspace.names import (JOB_BUILTINS, KEYWORDS, NAMESPACE_COMMANDS,
-                                    SHELL_NAMES)
+from mirage.workspace.names import (
+    JOB_BUILTINS,
+    KEYWORDS,
+    NAMESPACE_COMMANDS,
+    SHELL_NAMES,
+)
 
 
 class CLIRegistry:
@@ -54,7 +58,7 @@ class CLIRegistry:
         self,
         name: str,
         spec: CLISpec,
-        config: Mapping[str, JsonValue] | BaseModel | None = None
+        config: Mapping[str, JsonValue] | BaseModel | None = None,
     ) -> CLIInstall:
         """Install a CLI under a head word.
 
@@ -73,23 +77,27 @@ class CLIRegistry:
         if name in self._installs:
             raise ValueError(f"CLI name {name!r} is already installed")
         if name in SHELL_NAMES or name in JOB_BUILTINS:
-            raise ValueError(f"CLI name {name!r} collides with a shell "
-                             f"builtin")
+            raise ValueError(
+                f"CLI name {name!r} collides with a shell builtin"
+            )
         # A reserved word never reaches dispatch (the parser consumes it),
         # so an install under one would be unreachable rather than wrong.
         if name in KEYWORDS:
             raise ValueError(f"CLI name {name!r} is a shell keyword")
         if name in NAMESPACE_COMMANDS or name in SPECS:
-            raise ValueError(f"CLI name {name!r} collides with a general "
-                             f"command")
+            raise ValueError(
+                f"CLI name {name!r} collides with a general command"
+            )
         validated = self._validate_config(name, spec, config)
         install = CLIInstall(name=name, spec=spec, config=validated)
         self._installs[name] = install
         return install
 
     def _validate_config(
-        self, name: str, spec: CLISpec,
-        config: Mapping[str, JsonValue] | BaseModel | None
+        self,
+        name: str,
+        spec: CLISpec,
+        config: Mapping[str, JsonValue] | BaseModel | None,
     ) -> BaseModel | dict[str, JsonValue] | None:
         """Validate an installation config against the spec's model.
 
@@ -108,18 +116,25 @@ class CLIRegistry:
         if model is not None and isinstance(config, model):
             return config
         if config is not None and not isinstance(config, Mapping):
-            expected = ("a mapping" if model is None else
-                        f"a mapping or a {model.__name__}")
-            raise ValueError(f"CLI {name!r}: config must be {expected}, "
-                             f"got {type(config).__name__}")
+            expected = (
+                "a mapping"
+                if model is None
+                else f"a mapping or a {model.__name__}"
+            )
+            raise ValueError(
+                f"CLI {name!r}: config must be {expected}, "
+                f"got {type(config).__name__}"
+            )
         if spec.script is not None:
             # A script spec has no config_model: the mapping passes
             # through as-is for the program to consume.
             return dict(config) if config else None
         if model is None:
             if config:
-                raise ValueError(f"CLI {name!r}: config given but "
-                                 f"{spec.name!r} declares no config_model")
+                raise ValueError(
+                    f"CLI {name!r}: config given but "
+                    f"{spec.name!r} declares no config_model"
+                )
             return None
         # Unknown keys fail loud (a typo'd YAML key must not be
         # silently ignored) unless the model itself opts into extras.
@@ -127,8 +142,7 @@ class CLIRegistry:
             unknown = set(config or {}) - set(model.model_fields)
             if unknown:
                 names = ", ".join(sorted(unknown))
-                raise ValueError(f"CLI {name!r}: unknown config keys: "
-                                 f"{names}")
+                raise ValueError(f"CLI {name!r}: unknown config keys: {names}")
         try:
             return model(**(config or {}))
         except ValidationError as exc:

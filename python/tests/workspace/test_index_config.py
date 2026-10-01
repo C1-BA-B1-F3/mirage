@@ -15,8 +15,12 @@
 import pytest
 
 from mirage import Workspace
-from mirage.cache.index import (IndexConfig, RAMIndexCacheStore,
-                                RedisIndexCacheStore, RedisIndexConfig)
+from mirage.cache.index import (
+    IndexConfig,
+    RAMIndexCacheStore,
+    RedisIndexCacheStore,
+    RedisIndexConfig,
+)
 from mirage.cache.index.config import LookupStatus
 from mirage.config import MountBlock, RedisIndexBlock, WorkspaceConfig
 from mirage.types import MountMode
@@ -29,8 +33,10 @@ def test_redis_index_config_default_key_prefix():
 
 
 def test_workspace_index_param_applies_to_mounts():
-    ws = Workspace({"/m": RAMVFS()},
-                   index=RedisIndexConfig(url="redis://localhost:6379/0"))
+    ws = Workspace(
+        {"/m": RAMVFS()},
+        index=RedisIndexConfig(url="redis://localhost:6379/0"),
+    )
     assert isinstance(ws.mount("/m/").index_store, RedisIndexCacheStore)
 
 
@@ -66,11 +72,9 @@ async def test_added_mount_inherits_redis_index():
 async def test_mount_own_index_wins_over_the_workspace_config():
     own = RedisIndexConfig(url="redis://127.0.0.1:1/0", key_prefix="own:")
     ws = Workspace(
-        {
-            "/own": Mount(vfs=RAMVFS(), index=own),
-            "/shared": RAMVFS()
-        },
-        index=IndexConfig(ttl=5))
+        {"/own": Mount(vfs=RAMVFS(), index=own), "/shared": RAMVFS()},
+        index=IndexConfig(ttl=5),
+    )
     try:
         assert isinstance(ws.mount("/own/").index_store, RedisIndexCacheStore)
         assert isinstance(ws.mount("/shared/").index_store, RAMIndexCacheStore)
@@ -86,15 +90,15 @@ async def test_added_mount_inherits_index_ttl():
         for prefix in ("/initial/", "/late/"):
             store = ws.mount(prefix).index_store
             await store.set_dir("/listing", [])
-            assert (await store.list_dir("/listing")).status == \
-                LookupStatus.EXPIRED
+            assert (
+                await store.list_dir("/listing")
+            ).status == LookupStatus.EXPIRED
     finally:
         await ws.close()
 
 
 @pytest.mark.asyncio
-async def test_added_mount_keeps_index_coherent_across_aliases_and_duplicates(
-):
+async def test_added_mount_keeps_index_coherent_across_aliases_and_duplicates():
     ws = Workspace({}, index=IndexConfig(ttl=3600))
     vfs = RAMVFS()
     entry = ws.add_mount("/late", vfs, MountMode.WRITE)

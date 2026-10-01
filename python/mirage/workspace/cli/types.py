@@ -39,6 +39,7 @@ class CLIInstall:
             mapping passes through as-is (the program consumes it);
             None without either.
     """
+
     name: str
     spec: CLISpec
     config: "BaseModel | dict[str, JsonValue] | None" = None

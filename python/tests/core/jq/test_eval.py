@@ -16,8 +16,15 @@ import pytest
 
 from mirage.core.jq import eval as jq_eval_module
 from mirage.core.jq.errors import JqCompileError
-from mirage.core.jq.eval import (jq_check, jq_eval, jq_raised, jq_run,
-                                 jq_run_texts, references_args, stream_reads)
+from mirage.core.jq.eval import (
+    jq_check,
+    jq_eval,
+    jq_raised,
+    jq_run,
+    jq_run_texts,
+    references_args,
+    stream_reads,
+)
 from mirage.core.jq.types import JqError, JqHalt, JqRun, StreamReads
 
 
@@ -27,11 +34,9 @@ def test_single_output_is_a_one_element_list():
 
 def test_collector_program_evaluates_to_a_single_value():
     # `[.a[] | .t]` emits ONE array, so the caller prints one line.
-    assert jq_eval({"a": [{
-        "t": "x"
-    }, {
-        "t": "y"
-    }]}, "[.a[] | .t]") == [["x", "y"]]
+    assert jq_eval({"a": [{"t": "x"}, {"t": "y"}]}, "[.a[] | .t]") == [
+        ["x", "y"]
+    ]
 
 
 def test_spread_program_evaluates_to_one_output_per_element():
@@ -93,8 +98,9 @@ def test_input_takes_the_first_unread_document():
 
 
 def test_inputs_starts_after_the_document_input_took():
-    assert jq_eval(None, "input as $h | [$h, [inputs]]", None,
-                   [1, 2, 3]) == [[1, [2, 3]]]
+    assert jq_eval(None, "input as $h | [$h, [inputs]]", None, [1, 2, 3]) == [
+        [1, [2, 3]]
+    ]
     assert jq_eval(None, "[input, inputs]", None, [1, 2, 3]) == [[1, 2, 3]]
 
 
@@ -131,24 +137,34 @@ def test_stream_reads_finds_whole_words_only():
     assert stream_reads("[inputs]") == StreamReads(input=False, inputs=True)
     assert stream_reads("reduce inputs as $x (0; . + $x)").inputs
     assert stream_reads("input") == StreamReads(input=True, inputs=False)
-    assert stream_reads("input as $h | [inputs]") == StreamReads(input=True,
-                                                                 inputs=True)
+    assert stream_reads("input as $h | [inputs]") == StreamReads(
+        input=True, inputs=True
+    )
     assert not stream_reads(".myinputs").inputs
     assert not stream_reads(".inputs_total").inputs
     assert not stream_reads("input_filename").input
     assert not stream_reads("input_line_number").input
 
 
-@pytest.mark.parametrize("expr", [
-    ".inputs", ".a.inputs", "$inputs", "{inputs: .a}", "{inputs}",
-    "{a, inputs}", "m::inputs"
-])
+@pytest.mark.parametrize(
+    "expr",
+    [
+        ".inputs",
+        ".a.inputs",
+        "$inputs",
+        "{inputs: .a}",
+        "{inputs}",
+        "{a, inputs}",
+        "m::inputs",
+    ],
+)
 def test_stream_reads_ignores_inputs_spelling_data(expr: str):
     assert not stream_reads(expr).inputs
 
 
 @pytest.mark.parametrize(
-    "expr", [".input", "$input", "{input: 1}", "{input}", "m::input"])
+    "expr", [".input", "$input", "{input: 1}", "{input}", "m::input"]
+)
 def test_stream_reads_ignores_input_spelling_data(expr: str):
     assert not stream_reads(expr).input
 
@@ -182,28 +198,35 @@ def test_references_args_ignores_strings_and_comments():
     assert not references_args("$ARGSX")
 
 
-@pytest.mark.parametrize("expr, run", [
-    ('.a, error("boom"), .a', JqRun([1], JqError("boom", True))),
-    ('error({"b": 2})', JqRun([], JqError('{"b":2}', False))),
-    ("error(null)", JqRun([], JqError("null", False))),
-    ('error("null")', JqRun([], JqError("null", True))),
-    (".a | .b",
-     JqRun([], JqError('Cannot index number with string ("b")', True))),
-    ('"bye\\n" | halt_error', JqRun([], JqHalt("bye\n", True, 5))),
-    ("[1] | halt_error(2)", JqRun([], JqHalt("[1]", False, 2))),
-    ("null | halt_error", JqRun([], JqHalt(None, False, 5))),
-    ('"a", halt', JqRun(["a"], JqHalt(None, False, None))),
-    ("1, [halt_error(2)], 3", JqRun([1], JqHalt('{"a":1}', False, 2))),
-    ("[.a] | map(halt_error(4))", JqRun([], JqHalt("1", False, 4))),
-    ('try ("failure" | halt_error(3)) catch "continued"',
-     JqRun([], JqHalt("failure", True, 3))),
-    ('try (.a, halt) catch "c"', JqRun([1], JqHalt(None, False, None))),
-    ('{"__mirage_jq_error": [true, "x"]}',
-     JqRun([{
-         "__mirage_jq_error": [True, "x"]
-     }])),
-    ('try error("x") catch .', JqRun(["x"])),
-])
+@pytest.mark.parametrize(
+    "expr, run",
+    [
+        ('.a, error("boom"), .a', JqRun([1], JqError("boom", True))),
+        ('error({"b": 2})', JqRun([], JqError('{"b":2}', False))),
+        ("error(null)", JqRun([], JqError("null", False))),
+        ('error("null")', JqRun([], JqError("null", True))),
+        (
+            ".a | .b",
+            JqRun([], JqError('Cannot index number with string ("b")', True)),
+        ),
+        ('"bye\\n" | halt_error', JqRun([], JqHalt("bye\n", True, 5))),
+        ("[1] | halt_error(2)", JqRun([], JqHalt("[1]", False, 2))),
+        ("null | halt_error", JqRun([], JqHalt(None, False, 5))),
+        ('"a", halt', JqRun(["a"], JqHalt(None, False, None))),
+        ("1, [halt_error(2)], 3", JqRun([1], JqHalt('{"a":1}', False, 2))),
+        ("[.a] | map(halt_error(4))", JqRun([], JqHalt("1", False, 4))),
+        (
+            'try ("failure" | halt_error(3)) catch "continued"',
+            JqRun([], JqHalt("failure", True, 3)),
+        ),
+        ('try (.a, halt) catch "c"', JqRun([1], JqHalt(None, False, None))),
+        (
+            '{"__mirage_jq_error": [true, "x"]}',
+            JqRun([{"__mirage_jq_error": [True, "x"]}]),
+        ),
+        ('try error("x") catch .', JqRun(["x"])),
+    ],
+)
 def test_a_run_hands_back_what_stopped_it(expr, run):
     assert jq_run({"a": 1}, expr) == run
 
@@ -211,10 +234,9 @@ def test_a_run_hands_back_what_stopped_it(expr, run):
 def test_a_halt_whose_message_no_second_run_recovers_reads_as_the_default():
     # A halt in the program's own `try` inside a collector still ends the
     # run, but neither redefinition hands its message back.
-    assert jq_run(1, '[try halt_error(2) catch "c"]') == JqRun([],
-                                                               JqHalt(
-                                                                   None, False,
-                                                                   5))
+    assert jq_run(1, '[try halt_error(2) catch "c"]') == JqRun(
+        [], JqHalt(None, False, 5)
+    )
 
 
 def test_a_halt_reads_back_past_outputs_that_differ_from_run_to_run():
@@ -227,8 +249,10 @@ def test_a_program_that_can_halt_reads_jqs_own_clock_at_each_call():
     # The work between the two readings takes well over the microsecond
     # jq's clock counts in.
     run = jq_run(
-        None, "now as $a | ([range(100000)] | length) as $n | "
-        "now as $b | ($b > $a), halt")
+        None,
+        "now as $a | ([range(100000)] | length) as $n | "
+        "now as $b | ($b > $a), halt",
+    )
     assert run == JqRun([True], JqHalt(None, False, None))
 
 
@@ -239,9 +263,11 @@ def test_named_arguments_named_like_the_preludes_variables_stay_the_programs():
         "__mirage_jq_inputs": "i",
         "__mirage_jq_args": "a",
     }
-    program = ("., [$__mirage_jq_value, $__mirage_jq_named, "
-               "$__mirage_jq_inputs, $__mirage_jq_args], input, "
-               "($ARGS.named | keys)")
+    program = (
+        "., [$__mirage_jq_value, $__mirage_jq_named, "
+        "$__mirage_jq_inputs, $__mirage_jq_args], input, "
+        "($ARGS.named | keys)"
+    )
     args = {"positional": [], "named": named}
     run = jq_run({"a": 1}, program, named, [2], args)
     assert run == JqRun([{"a": 1}, ["v", "n", "i", "a"], 2, sorted(named)])
@@ -249,36 +275,40 @@ def test_named_arguments_named_like_the_preludes_variables_stay_the_programs():
 
 def test_halt_error_refuses_a_code_that_is_not_a_number_as_jq_does():
     assert jq_run(1, 'halt_error("x")') == JqRun(
-        [], JqError("number (1) halt_error/1: number required", True))
+        [], JqError("number (1) halt_error/1: number required", True)
+    )
 
 
 # gojq tells an error the program raised with `error` from a builtin's,
 # which jq never does; each verdict is gh 2.85's gojq's.
-@pytest.mark.parametrize("expr, raised", [
-    ('.a, error("boom")', True),
-    ('error({"b": 2})', True),
-    ("error(null)", True),
-    ('"x" | error', True),
-    ("try (.a | .b) catch error", True),
-    ('[error("in")]', True),
-    ('first(error("in"))', True),
-    ('label $out | error("in")', True),
-    ('{v:error("tight")}', True),
-    ('def f: error("in f"); try f catch error', True),
-    ('(try error("x") catch .), error("y")', True),
-    ('try error("x") catch error("wrapped: " + .)', True),
-    ('now, error("x")', True),
-    ('[now] | .[0], error("y")', True),
-    ('range(20000), error("many")', True),
-    (".a | .b", False),
-    ("label $out | .a | .b", False),
-    ('try error("x") catch (.a | .b)', False),
-    ('(try error("x") catch .), (.a | .b)', False),
-    (".error, (.a | .b)", False),
-    ('"error" as $e | .a | .b # error', False),
-    ("def error: 7; error | .b", False),
-    ("limit(-1; .a)", False),
-])
+@pytest.mark.parametrize(
+    "expr, raised",
+    [
+        ('.a, error("boom")', True),
+        ('error({"b": 2})', True),
+        ("error(null)", True),
+        ('"x" | error', True),
+        ("try (.a | .b) catch error", True),
+        ('[error("in")]', True),
+        ('first(error("in"))', True),
+        ('label $out | error("in")', True),
+        ('{v:error("tight")}', True),
+        ('def f: error("in f"); try f catch error', True),
+        ('(try error("x") catch .), error("y")', True),
+        ('try error("x") catch error("wrapped: " + .)', True),
+        ('now, error("x")', True),
+        ('[now] | .[0], error("y")', True),
+        ('range(20000), error("many")', True),
+        (".a | .b", False),
+        ("label $out | .a | .b", False),
+        ('try error("x") catch (.a | .b)', False),
+        ('(try error("x") catch .), (.a | .b)', False),
+        (".error, (.a | .b)", False),
+        ('"error" as $e | .a | .b # error', False),
+        ("def error: 7; error | .b", False),
+        ("limit(-1; .a)", False),
+    ],
+)
 def test_jq_raised_tells_the_programs_own_error_from_a_builtins(expr, raised):
     run = jq_run({"a": 1}, expr)
     assert isinstance(run.stop, JqError)
@@ -323,45 +353,66 @@ def test_a_program_is_checked_without_being_run():
 # jq_run_texts runs on JSON text and hands back jq's own dump of each
 # output; every expectation is what jq 1.8.2 prints for the same program.
 def test_a_text_run_keeps_every_literal_and_the_key_order_jq_reads():
-    run = jq_run_texts('{"b":1,"1":2,"a":{"z":1,"0":2}}',
-                       '., keys, keys_unsorted, (. + {"c":3})')
-    assert run == JqRun([
-        '{"b":1,"1":2,"a":{"z":1,"0":2}}', '["1","a","b"]', '["b","1","a"]',
-        '{"b":1,"1":2,"a":{"z":1,"0":2},"c":3}'
-    ])
-    run = jq_run_texts("[1.000, 1e2, -0, 100000000000000000001]",
-                       ".[], (.[3] + 1), (.[0] | tojson), map(. * 1)")
+    run = jq_run_texts(
+        '{"b":1,"1":2,"a":{"z":1,"0":2}}',
+        '., keys, keys_unsorted, (. + {"c":3})',
+    )
+    assert run == JqRun(
+        [
+            '{"b":1,"1":2,"a":{"z":1,"0":2}}',
+            '["1","a","b"]',
+            '["b","1","a"]',
+            '{"b":1,"1":2,"a":{"z":1,"0":2},"c":3}',
+        ]
+    )
+    run = jq_run_texts(
+        "[1.000, 1e2, -0, 100000000000000000001]",
+        ".[], (.[3] + 1), (.[0] | tojson), map(. * 1)",
+    )
     assert run.outputs == [
-        "1.000", "1E+2", "-0", "100000000000000000001", "1e+20", '"1.000"',
-        "[1,100,-0,1e+20]"
+        "1.000",
+        "1E+2",
+        "-0",
+        "100000000000000000001",
+        "1e+20",
+        '"1.000"',
+        "[1,100,-0,1e+20]",
     ]
 
 
 def test_a_text_run_reports_errors_and_halts_in_jqs_own_spelling():
     assert jq_run_texts("1.000", '. + "a"').stop == JqError(
-        'number (1.000) and string ("a") cannot be added', True)
-    assert jq_run_texts('{"b":1.000,"1":2}',
-                        "error").stop == JqError('{"b":1.000,"1":2}', False)
-    assert jq_run_texts('{"b":1.000,"1":2}',
-                        "halt_error").stop == JqHalt('{"b":1.000,"1":2}',
-                                                     False, 5)
+        'number (1.000) and string ("a") cannot be added', True
+    )
+    assert jq_run_texts('{"b":1.000,"1":2}', "error").stop == JqError(
+        '{"b":1.000,"1":2}', False
+    )
+    assert jq_run_texts('{"b":1.000,"1":2}', "halt_error").stop == JqHalt(
+        '{"b":1.000,"1":2}', False, 5
+    )
 
 
 def test_a_text_run_binds_its_arguments_and_unread_documents_as_text():
-    run = jq_run_texts("null", "$v, $ARGS, input, [inputs]",
-                       {"v": '{"b":1,"1":2.50}'}, ["1.0", "2.00", "3e2"],
-                       '{"positional":[1.0],"named":{"v":{"b":1,"1":2.50}}}')
+    run = jq_run_texts(
+        "null",
+        "$v, $ARGS, input, [inputs]",
+        {"v": '{"b":1,"1":2.50}'},
+        ["1.0", "2.00", "3e2"],
+        '{"positional":[1.0],"named":{"v":{"b":1,"1":2.50}}}',
+    )
     assert run.outputs == [
         '{"b":1,"1":2.50}',
-        '{"positional":[1.0],"named":{"v":{"b":1,"1":2.50}}}', "1.0",
-        "[2.00,3E+2]"
+        '{"positional":[1.0],"named":{"v":{"b":1,"1":2.50}}}',
+        "1.0",
+        "[2.00,3E+2]",
     ]
 
 
 def test_a_text_run_meets_the_parse_error_past_the_unread_documents():
     message = "Unfinished JSON term at EOF at line 1, column 3"
-    assert jq_run_texts("null", "[inputs]", None, ["1.0"], None,
-                        message) == JqRun([], JqError(message, True))
+    assert jq_run_texts(
+        "null", "[inputs]", None, ["1.0"], None, message
+    ) == JqRun([], JqError(message, True))
 
 
 def test_a_text_run_dumps_a_program_its_comment_carries_on_past_a_line():
@@ -374,25 +425,35 @@ def test_a_text_run_dumps_a_program_its_comment_carries_on_past_a_line():
 @pytest.mark.parametrize("definition", ["42", "empty", 'error("shadow")'])
 @pytest.mark.parametrize("suffix", ["", " # c", " # c \\"])
 def test_output_dumping_is_independent_of_user_defined_tojson(
-        definition, suffix):
+    definition, suffix
+):
     doc = '{"b":1.000,"1":[-0,100000000000000000001]}'
-    assert jq_run_texts(doc,
-                        f"def tojson: {definition}; .{suffix}") == JqRun([doc])
+    assert jq_run_texts(doc, f"def tojson: {definition}; .{suffix}") == JqRun(
+        [doc]
+    )
 
 
 def test_as_typed_dumping_preserves_user_calls_and_each_output():
     assert jq_run_texts("1.000", "def tojson: 42; ., tojson # c \\") == JqRun(
-        ["1.000", "42"])
+        ["1.000", "42"]
+    )
 
 
 def test_as_typed_dumping_preserves_bindings_and_unread_documents():
     assert jq_run_texts(
-        "null", "def tojson: empty; $v, $ARGS, input, [inputs] # c \\",
-        {"v": '{"b":1.000,"1":2}'}, ["-0", "1e2"],
-        '{"positional":[2.50],"named":{}}') == JqRun([
-            '{"b":1.000,"1":2}', '{"positional":[2.50],"named":{}}', "-0",
-            "[1E+2]"
-        ])
+        "null",
+        "def tojson: empty; $v, $ARGS, input, [inputs] # c \\",
+        {"v": '{"b":1.000,"1":2}'},
+        ["-0", "1e2"],
+        '{"positional":[2.50],"named":{}}',
+    ) == JqRun(
+        [
+            '{"b":1.000,"1":2}',
+            '{"positional":[2.50],"named":{}}',
+            "-0",
+            "[1E+2]",
+        ]
+    )
 
 
 def test_a_program_compiles_once_for_every_document():

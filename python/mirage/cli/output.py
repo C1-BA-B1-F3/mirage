@@ -98,6 +98,7 @@ def format_table(headers: list[str], rows: list[list[str]]) -> str:
             widths[i] = max(widths[i], len(cell))
     lines = ["  ".join(h.ljust(w) for h, w in zip(headers, widths)).rstrip()]
     for row in rows:
-        lines.append("  ".join(c.ljust(w)
-                               for c, w in zip(row, widths)).rstrip())
+        lines.append(
+            "  ".join(c.ljust(w) for c, w in zip(row, widths)).rstrip()
+        )
     return "\n".join(lines)

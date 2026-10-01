@@ -16,17 +16,31 @@ import math
 from functools import partial
 
 from mirage.commands.builtin.utils.formatting import human_scaled, human_size
-from mirage.commands.builtin.utils.paths import (dispatch_stat,
-                                                 nearest_ancestor, typed_spec)
+from mirage.commands.builtin.utils.paths import (
+    dispatch_stat,
+    nearest_ancestor,
+    typed_spec,
+)
 from mirage.runtime.types import DispatchFn
 from mirage.types import CapacityResult, CapacityState, PathSpec
-from mirage.utils.errors import (DotWalkError, enoent, enotdir, fs_error_line,
-                                 walk_refusal)
-from mirage.workspace.executor.builtins.df.constants import (BLOCK_SUFFIX,
-                                                             SI_UNITS)
-from mirage.workspace.executor.builtins.shared import (fail, ok, operand_text,
-                                                       result,
-                                                       split_value_flags)
+from mirage.utils.errors import (
+    DotWalkError,
+    enoent,
+    enotdir,
+    fs_error_line,
+    walk_refusal,
+)
+from mirage.workspace.executor.builtins.df.constants import (
+    BLOCK_SUFFIX,
+    SI_UNITS,
+)
+from mirage.workspace.executor.builtins.shared import (
+    fail,
+    ok,
+    operand_text,
+    result,
+    split_value_flags,
+)
 from mirage.workspace.executor.builtins.types import Result
 from mirage.workspace.mount.mount import MountEntry
 from mirage.workspace.mount.registry import MountRegistry
@@ -83,7 +97,7 @@ def _last_format(args: list[str | PathSpec]) -> str | None:
             if c in "hHkB":
                 last = c
             if c == "B":
-                if not body[j + 1:]:
+                if not body[j + 1 :]:
                     i += 1
                 break
         i += 1
@@ -128,8 +142,9 @@ def _use_pct(used: int, avail: int) -> str:
     return f"{math.ceil(used * 100 / denom)}%"
 
 
-def _num_cells(cap: CapacityResult, human: bool, si: bool, block: int,
-               inodes: bool) -> list[str]:
+def _num_cells(
+    cap: CapacityResult, human: bool, si: bool, block: int, inodes: bool
+) -> list[str]:
     """The three numeric cells (block or inode) for one mount, or three
     ``-`` when capacity is not a known quota (never a fabricated 0).
 
@@ -158,7 +173,7 @@ def _num_cells(cap: CapacityResult, human: bool, si: bool, block: int,
         return [
             _scale(cap.total, block),
             _scale(used, block),
-            _scale(avail, block)
+            _scale(avail, block),
         ]
     return ["-", "-", "-"]
 
@@ -181,8 +196,9 @@ def _pct_cell(cap: CapacityResult, inodes: bool) -> str:
     return _use_pct(cap.used or 0, cap.available or 0)
 
 
-async def _operand_error(dispatch: DispatchFn,
-                         spec: PathSpec) -> OSError | None:
+async def _operand_error(
+    dispatch: DispatchFn, spec: PathSpec
+) -> OSError | None:
     """What stat-ing one FILE operand answers, None when it is there.
 
     GNU df stats each FILE to find its filesystem and names the one it
@@ -208,8 +224,11 @@ async def _operand_error(dispatch: DispatchFn,
 
 
 async def _target_mounts(
-        registry: MountRegistry, dispatch: DispatchFn, session: SessionState,
-        operands: list[str | PathSpec]) -> tuple[list[MountEntry], list[str]]:
+    registry: MountRegistry,
+    dispatch: DispatchFn,
+    session: SessionState,
+    operands: list[str | PathSpec],
+) -> tuple[list[MountEntry], list[str]]:
     """Resolve df operands to the mounts to report, deduped and ordered.
 
     No operand (or the workspace root ``/``) reports every mount; a path
@@ -266,8 +285,9 @@ async def _target_mounts(
     return out, errors
 
 
-def _render_table(header: list[str], rows: list[list[str]],
-                  show_type: bool) -> str:
+def _render_table(
+    header: list[str], rows: list[list[str]], show_type: bool
+) -> str:
     """GNU df column layout: Filesystem left-justified (min width 14), Type
     (when present) left, numeric columns right-justified, Mounted on left
     with no trailing pad, single-space separators.
@@ -345,8 +365,9 @@ async def handle_df(
     inodes = "i" in flags
     show_type = "T" in flags
 
-    mounts, errors = await _target_mounts(registry, dispatch, session,
-                                          operands)
+    mounts, errors = await _target_mounts(
+        registry, dispatch, session, operands
+    )
 
     if inodes:
         num_headers = ["Inodes", "IUsed", "IFree"]

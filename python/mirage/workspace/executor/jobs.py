@@ -38,13 +38,17 @@ from mirage.shell.types import TSNodeLike
 from mirage.workspace.executor.builtins.getopt import scan_options
 from mirage.workspace.executor.statement import statement_stdin
 from mirage.workspace.node.occurrence import occurrence_of
-from mirage.workspace.session import (SessionState, reset_current_session,
-                                      set_current_session)
+from mirage.workspace.session import (
+    SessionState,
+    reset_current_session,
+    set_current_session,
+)
 from mirage.workspace.types import ExecutionNode
 
 
-async def pump(console: JobConsole, channel: Channel,
-               stream: ByteSource | None) -> None:
+async def pump(
+    console: JobConsole, channel: Channel, stream: ByteSource | None
+) -> None:
     """Send a command's output to a console as chunks arrive.
 
     Consuming the stream piece by piece rather than materializing it
@@ -104,9 +108,13 @@ async def handle_background(
     """
     bg_session = session.fork()
     bg_call_stack = call_stack.fork() if call_stack is not None else None
-    job_handed = (decisions.split(session.session_id, handed,
-                                  occurrence_of(left, handed))
-                  if handed is not None and decisions is not None else None)
+    job_handed = (
+        decisions.split(
+            session.session_id, handed, occurrence_of(left, handed)
+        )
+        if handed is not None and decisions is not None
+        else None
+    )
 
     async def _run_bg(job: Job) -> tuple[IOResult, ExecutionNode]:
         # Background jobs don't receive stdin, matching real shell
@@ -132,36 +140,44 @@ async def handle_background(
                 # caller's to abort, as bash leaves a background job alone
                 # on SIGINT and a TypeScript job runs under its own
                 # controller: it runs without the line's event.
-                stdout, io, exec_node = await execute_node(left,
-                                                           bg_session,
-                                                           None,
-                                                           bg_call_stack,
-                                                           sink=console,
-                                                           handed=job_handed,
-                                                           cancel=None)
+                stdout, io, exec_node = await execute_node(
+                    left,
+                    bg_session,
+                    None,
+                    bg_call_stack,
+                    sink=console,
+                    handed=job_handed,
+                    cancel=None,
+                )
             except CommandTimeoutError as exc:
                 msg = (str(exc) + "\n").encode()
                 stdout = b""
                 io = IOResult(exit_code=124, stderr=msg)
-                exec_node = ExecutionNode(command=cmd_str_inner,
-                                          stderr=msg,
-                                          exit_code=124)
+                exec_node = ExecutionNode(
+                    command=cmd_str_inner, stderr=msg, exit_code=124
+                )
             except ExitSignal as sig:
                 # A background job is its own shell: exit ends the job
                 # only.
                 stdout = sig.stdout or b""
-                io = IOResult(exit_code=sig.contained_code,
-                              stderr=sig.stderr or None)
-                exec_node = ExecutionNode(command=cmd_str_inner,
-                                          stderr=sig.stderr,
-                                          exit_code=sig.contained_code)
+                io = IOResult(
+                    exit_code=sig.contained_code, stderr=sig.stderr or None
+                )
+                exec_node = ExecutionNode(
+                    command=cmd_str_inner,
+                    stderr=sig.stderr,
+                    exit_code=sig.contained_code,
+                )
             except ReturnSignal as sig:
                 stdout = None
-                io = IOResult(exit_code=sig.exit_code,
-                              stderr=sig.stderr or None)
-                exec_node = ExecutionNode(command=cmd_str_inner,
-                                          stderr=sig.stderr,
-                                          exit_code=sig.exit_code)
+                io = IOResult(
+                    exit_code=sig.exit_code, stderr=sig.stderr or None
+                )
+                exec_node = ExecutionNode(
+                    command=cmd_str_inner,
+                    stderr=sig.stderr,
+                    exit_code=sig.exit_code,
+                )
             # Drain inside the rebind: pumping the stream can still run
             # ops that read the ambient session.
             await pump(console, Channel.STDOUT, stdout)
@@ -174,18 +190,20 @@ async def handle_background(
             if job_handed is not None and decisions is not None:
                 await decisions.revoke(session.session_id, job_handed)
 
-    cmd_str = get_text(left) if hasattr(left, 'text') else str(left)
+    cmd_str = get_text(left) if hasattr(left, "text") else str(left)
 
     # Non-interactive bash announces nothing on launch ("[1] <pid>" is
     # interactive-only); the job stays discoverable via $! and `jobs`.
     try:
-        job = job_table.submit(command=cmd_str,
-                               run=_run_bg,
-                               cwd=bg_session.cwd,
-                               agent=agent_id or "",
-                               session_id=session.session_id,
-                               parent_pid=session.process_id,
-                               limit=session.processes.max)
+        job = job_table.submit(
+            command=cmd_str,
+            run=_run_bg,
+            cwd=bg_session.cwd,
+            agent=agent_id or "",
+            session_id=session.session_id,
+            parent_pid=session.process_id,
+            limit=session.processes.max,
+        )
     except Exception as exc:
         # A submission that fails (a console the table cannot build, a
         # session at its process cap) starts no runner, so nothing would
@@ -196,25 +214,34 @@ async def handle_background(
         if isinstance(exc, BlockingIOError):
             raise ExitSignal(FORK_FAILED_STATUS, stderr=FORK_FAILED) from exc
         raise
-    bg_session.process_id = (job.process.info.pid
-                             if job.process is not None else None)
+    bg_session.process_id = (
+        job.process.info.pid if job.process is not None else None
+    )
     session.last_bg_job_id = job.pid
 
     if right is None:
-        return None, IOResult(), ExecutionNode(
-            op="&",
-            exit_code=0,
-            children=[ExecutionNode(command=cmd_str, exit_code=0)])
+        return (
+            None,
+            IOResult(),
+            ExecutionNode(
+                op="&",
+                exit_code=0,
+                children=[ExecutionNode(command=cmd_str, exit_code=0)],
+            ),
+        )
 
     right_stdout, right_io, right_exec = await execute_node(
-        right, session, stdin, call_stack)
+        right, session, stdin, call_stack
+    )
     children = [
         ExecutionNode(command=cmd_str, exit_code=0),
         right_exec,
     ]
-    return right_stdout, right_io, ExecutionNode(op="&",
-                                                 exit_code=right_io.exit_code,
-                                                 children=children)
+    return (
+        right_stdout,
+        right_io,
+        ExecutionNode(op="&", exit_code=right_io.exit_code, children=children),
+    )
 
 
 async def run_statement(
@@ -255,15 +282,25 @@ async def run_statement(
         decisions (Decisions | None): ledger that holds those claims.
     """
     if not is_backgrounded(node):
-        return await execute_node(node, session,
-                                  statement_stdin(session, stdin, bound),
-                                  call_stack)
+        return await execute_node(
+            node, session, statement_stdin(session, stdin, bound), call_stack
+        )
     if job_table is None:
         raise RuntimeError(
-            f"`{get_text(node)} &` needs a job table; none was wired")
-    return await handle_background(execute_node, node, None, session,
-                                   job_table, agent_id, stdin, call_stack,
-                                   handed, decisions)
+            f"`{get_text(node)} &` needs a job table; none was wired"
+        )
+    return await handle_background(
+        execute_node,
+        node,
+        None,
+        session,
+        job_table,
+        agent_id,
+        stdin,
+        call_stack,
+        handed,
+        decisions,
+    )
 
 
 _WAIT_USAGE = "wait: usage: wait [-fn] [-p var] [id ...]"
@@ -272,13 +309,14 @@ _IDENTIFIER = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
 
 
 def _job_result(
-        cmd_str: str, msg: str,
-        code: int) -> tuple[ByteSource | None, IOResult, ExecutionNode]:
+    cmd_str: str, msg: str, code: int
+) -> tuple[ByteSource | None, IOResult, ExecutionNode]:
     err = msg.encode()
-    return None, IOResult(exit_code=code,
-                          stderr=err), ExecutionNode(command=cmd_str,
-                                                     exit_code=code,
-                                                     stderr=err)
+    return (
+        None,
+        IOResult(exit_code=code, stderr=err),
+        ExecutionNode(command=cmd_str, exit_code=code, stderr=err),
+    )
 
 
 def _session_of(session: SessionState | None) -> str:
@@ -291,8 +329,9 @@ def _session_of(session: SessionState | None) -> str:
     return session.session_id if session is not None else ""
 
 
-def _process_view(job_table: JobTable,
-                  session: SessionState | None) -> ProcessView:
+def _process_view(
+    job_table: JobTable, session: SessionState | None
+) -> ProcessView:
     """The managed runners `ps` and numeric `kill` reach, scoped by the
     session's profile.
 
@@ -302,8 +341,9 @@ def _process_view(job_table: JobTable,
     """
     if session is None:
         return job_table.processes.view("")
-    return job_table.processes.view(session.session_id,
-                                    lambda: session.processes)
+    return job_table.processes.view(
+        session.session_id, lambda: session.processes
+    )
 
 
 def _job_numbered(jobs: list[Job], job_id: int) -> Job | None:
@@ -335,7 +375,8 @@ def _resolve_spec(jobs: list[Job], spec: str) -> tuple[Job | None, str]:
     if spec.isdigit():
         job = next((j for j in jobs if j.pid == int(spec)), None)
         return job, "" if job is not None else (
-            f"pid {spec} is not a child of this shell")
+            f"pid {spec} is not a child of this shell"
+        )
     return None, f"`{spec}': not a pid or valid job spec"
 
 
@@ -353,8 +394,9 @@ async def _wait_first(job_table: JobTable, jobs: list[Job]) -> Job:
         asyncio.ensure_future(job_table.wait(job.id, job.session_id)): job
         for job in jobs
     }
-    done, pending = await asyncio.wait(tasks,
-                                       return_when=asyncio.FIRST_COMPLETED)
+    done, pending = await asyncio.wait(
+        tasks, return_when=asyncio.FIRST_COMPLETED
+    )
     for task in pending:
         task.cancel()
     first = min(done, key=lambda t: tasks[t].id)
@@ -362,8 +404,8 @@ async def _wait_first(job_table: JobTable, jobs: list[Job]) -> Job:
 
 
 async def _adopt(
-        job_table: JobTable, job: Job,
-        cmd_str: str) -> tuple[ByteSource | None, IOResult, ExecutionNode]:
+    job_table: JobTable, job: Job, cmd_str: str
+) -> tuple[ByteSource | None, IOResult, ExecutionNode]:
     """Report one finished job's output and status, and reap it.
 
     Args:
@@ -376,10 +418,14 @@ async def _adopt(
     # Reaped like GNU bash reaps a job waited on by id, so a later bare
     # `wait` does not adopt this console a second time.
     job_table.reap(job.id, job.session_id)
-    return stdout, IOResult(
-        exit_code=job.exit_code,
-        stderr=stderr or None,
-    ), ExecutionNode(command=cmd_str, exit_code=job.exit_code)
+    return (
+        stdout,
+        IOResult(
+            exit_code=job.exit_code,
+            stderr=stderr or None,
+        ),
+        ExecutionNode(command=cmd_str, exit_code=job.exit_code),
+    )
 
 
 async def handle_wait(
@@ -423,7 +469,7 @@ async def handle_wait(
             i += 1
             continue
         if word == "--":
-            specs.extend(parts[i + 1:])
+            specs.extend(parts[i + 1 :])
             break
         j = 1
         while j < len(word):
@@ -433,7 +479,7 @@ async def handle_wait(
             elif ch == "f":
                 pass
             elif ch == "p":
-                rest = word[j + 1:]
+                rest = word[j + 1 :]
                 if rest:
                     var = rest
                 elif i + 1 < len(parts):
@@ -441,23 +487,31 @@ async def handle_wait(
                     var = parts[i]
                 else:
                     return _job_result(
-                        cmd_str, f"bash: wait: -p: option requires an "
-                        f"argument\n{_WAIT_USAGE}\n", 2)
+                        cmd_str,
+                        f"bash: wait: -p: option requires an "
+                        f"argument\n{_WAIT_USAGE}\n",
+                        2,
+                    )
                 break
             else:
                 return _job_result(
                     cmd_str,
-                    f"bash: wait: -{ch}: invalid option\n{_WAIT_USAGE}\n", 2)
+                    f"bash: wait: -{ch}: invalid option\n{_WAIT_USAGE}\n",
+                    2,
+                )
             j += 1
         i += 1
     if var is not None:
         if _IDENTIFIER.fullmatch(var) is None:
             return _job_result(
-                cmd_str, f"bash: wait: `{var}': not a valid identifier\n", 1)
+                cmd_str, f"bash: wait: `{var}': not a valid identifier\n", 1
+            )
         if view is not None and view.is_readonly(var):
             return _job_result(
                 cmd_str,
-                f"bash: wait: {var}: cannot unset: readonly variable\n", 1)
+                f"bash: wait: {var}: cannot unset: readonly variable\n",
+                1,
+            )
         if view is not None:
             await view.unset(var)
     errors: list[str] = []
@@ -476,10 +530,11 @@ async def handle_wait(
             # Nothing to wait for: the specs were all bad, or there are
             # no jobs. bash reports any bad spec and answers 127.
             code = 127
-            return None, IOResult(exit_code=code,
-                                  stderr=err_text.encode()
-                                  or None), ExecutionNode(command=cmd_str,
-                                                          exit_code=code)
+            return (
+                None,
+                IOResult(exit_code=code, stderr=err_text.encode() or None),
+                ExecutionNode(command=cmd_str, exit_code=code),
+            )
         job = await _wait_first(job_table, candidates)
         if var is not None and view is not None:
             await view.set(var, str(job.pid))
@@ -502,8 +557,11 @@ async def handle_wait(
             out += await finished.console.snapshot(Channel.STDOUT)
             err += await finished.console.snapshot(Channel.STDERR)
         job_table.pop_completed(sid)
-        return out or None, IOResult(stderr=err or None), ExecutionNode(
-            command=cmd_str, exit_code=0)
+        return (
+            out or None,
+            IOResult(stderr=err or None),
+            ExecutionNode(command=cmd_str, exit_code=0),
+        )
     if not picked:
         # Every spec was refused: bash answers 127 for a job it cannot
         # find and 1 for a word that is not a spec at all, the last
@@ -529,11 +587,11 @@ async def handle_wait(
     # form leaves the variable unset, since it reports no one job.
     if var is not None and view is not None and last_job is not None:
         await view.set(var, str(last_job.pid))
-    return b"".join(outs) or None, IOResult(exit_code=last_code,
-                                            stderr=b"".join(errs)
-                                            or None), ExecutionNode(
-                                                command=cmd_str,
-                                                exit_code=last_code)
+    return (
+        b"".join(outs) or None,
+        IOResult(exit_code=last_code, stderr=b"".join(errs) or None),
+        ExecutionNode(command=cmd_str, exit_code=last_code),
+    )
 
 
 async def handle_disown(
@@ -563,7 +621,9 @@ async def handle_disown(
     if scan.bad is not None:
         return _job_result(
             cmd_str,
-            f"bash: disown: {scan.bad}: invalid option\n{_DISOWN_USAGE}\n", 2)
+            f"bash: disown: {scan.bad}: invalid option\n{_DISOWN_USAGE}\n",
+            2,
+        )
     all_jobs = "a" in scan.letters
     running_only = "r" in scan.letters
     keep = "h" in scan.letters
@@ -579,22 +639,27 @@ async def handle_disown(
                 continue
             targets.append(job)
     elif all_jobs or running_only:
-        targets = ([j for j in jobs if j.status == JobStatus.RUNNING]
-                   if running_only else jobs)
+        targets = (
+            [j for j in jobs if j.status == JobStatus.RUNNING]
+            if running_only
+            else jobs
+        )
     else:
         if not jobs:
-            return _job_result(cmd_str, "bash: disown: current: no such job\n",
-                               1)
+            return _job_result(
+                cmd_str, "bash: disown: current: no such job\n", 1
+            )
         targets = [jobs[-1]]
     if not keep:
         for job in targets:
             job_table.disown(job.id, sid)
     err = ("\n".join(errors) + "\n").encode() if errors else None
     code = 1 if errors else 0
-    return None, IOResult(exit_code=code,
-                          stderr=err), ExecutionNode(command=cmd_str,
-                                                     exit_code=code,
-                                                     stderr=err or b"")
+    return (
+        None,
+        IOResult(exit_code=code, stderr=err),
+        ExecutionNode(command=cmd_str, exit_code=code, stderr=err or b""),
+    )
 
 
 async def handle_fg(
@@ -621,10 +686,11 @@ async def handle_fg(
         running = [j for j in jobs if j.status == JobStatus.RUNNING]
         if not running:
             err = b"fg: current: no such job\n"
-            return None, IOResult(exit_code=1,
-                                  stderr=err), ExecutionNode(command=cmd_str,
-                                                             exit_code=1,
-                                                             stderr=err)
+            return (
+                None,
+                IOResult(exit_code=1, stderr=err),
+                ExecutionNode(command=cmd_str, exit_code=1, stderr=err),
+            )
         job_id = running[-1].id
     else:
         raw = parts[1].lstrip("%")
@@ -632,29 +698,37 @@ async def handle_fg(
             job_id = int(raw)
         except ValueError:
             err = f"fg: {parts[1]}: no such job\n".encode()
-            return None, IOResult(exit_code=1,
-                                  stderr=err), ExecutionNode(command=cmd_str,
-                                                             exit_code=1,
-                                                             stderr=err)
+            return (
+                None,
+                IOResult(exit_code=1, stderr=err),
+                ExecutionNode(command=cmd_str, exit_code=1, stderr=err),
+            )
         if _job_numbered(jobs, job_id) is None:
             err = f"fg: {parts[1]}: no such job\n".encode()
-            return None, IOResult(exit_code=1,
-                                  stderr=err), ExecutionNode(command=cmd_str,
-                                                             exit_code=1,
-                                                             stderr=err)
+            return (
+                None,
+                IOResult(exit_code=1, stderr=err),
+                ExecutionNode(command=cmd_str, exit_code=1, stderr=err),
+            )
     job = await job_table.wait(job_id, sid)
     header = (job.command + "\n").encode()
     stdout = header + await job.console.snapshot(Channel.STDOUT)
     stderr = await job.console.snapshot(Channel.STDERR)
     job_table.reap(job_id, sid)
-    return stdout, IOResult(
-        exit_code=job.exit_code,
-        stderr=stderr or None,
-    ), ExecutionNode(command=cmd_str, exit_code=job.exit_code)
+    return (
+        stdout,
+        IOResult(
+            exit_code=job.exit_code,
+            stderr=stderr or None,
+        ),
+        ExecutionNode(command=cmd_str, exit_code=job.exit_code),
+    )
 
 
-_KILL_USAGE = ("kill: usage: kill [-s sigspec | -n signum | -sigspec] pid | "
-               "jobspec ... or kill -l [sigspec]")
+_KILL_USAGE = (
+    "kill: usage: kill [-s sigspec | -n signum | -sigspec] pid | "
+    "jobspec ... or kill -l [sigspec]"
+)
 
 # The signals a managed runner answers besides the probe (0). Each one ends
 # the runner through its cancellation channel, so the waited status is the
@@ -698,8 +772,11 @@ def _kill_pid(jobs: list[Job], operand: str) -> tuple[int | None, str]:
             return None, f"{operand}: no such job"
         return job.pid, ""
     digits = operand[1:] if operand.startswith("-") else operand
-    if (not digits.isascii() or not digits.isdigit()
-            or int(digits) > _MAX_PID_OPERAND):
+    if (
+        not digits.isascii()
+        or not digits.isdigit()
+        or int(digits) > _MAX_PID_OPERAND
+    ):
         return None, f"{operand}: arguments must be process or job IDs"
     return int(operand), ""
 
@@ -735,7 +812,8 @@ async def handle_kill(
         if word in ("-s", "-n"):
             if len(words) < 2:
                 return _job_result(
-                    cmd_str, f"kill: {word}: option requires an argument\n", 1)
+                    cmd_str, f"kill: {word}: option requires an argument\n", 1
+                )
             spec, words = words[1], words[2:]
         elif word == "--":
             words = words[1:]
@@ -749,7 +827,8 @@ async def handle_kill(
         number = _signal_number(spec)
         if number is None:
             return _job_result(
-                cmd_str, f"kill: {spec}: invalid signal specification\n", 1)
+                cmd_str, f"kill: {spec}: invalid signal specification\n", 1
+            )
         signal = number
     if not words:
         return _job_result(cmd_str, f"{_KILL_USAGE}\n", 2)
@@ -784,8 +863,9 @@ async def handle_kill(
 
 
 _JOBS_FLAGS = frozenset("lnprs")
-_JOBS_USAGE = ("jobs: usage: jobs [-lnprs] [jobspec ...] "
-               "or jobs -x command [args]")
+_JOBS_USAGE = (
+    "jobs: usage: jobs [-lnprs] [jobspec ...] or jobs -x command [args]"
+)
 
 
 def _job_row(job: Job, long: bool) -> str:
@@ -830,10 +910,14 @@ async def handle_jobs(
                 continue
             bad = next((c for c in word[1:] if c not in _JOBS_FLAGS), None)
             if bad is not None:
-                err = (f"bash: jobs: -{bad}: invalid option\n"
-                       f"{_JOBS_USAGE}\n").encode()
-                return None, IOResult(exit_code=2, stderr=err), ExecutionNode(
-                    command=cmd_str, exit_code=2, stderr=err)
+                err = (
+                    f"bash: jobs: -{bad}: invalid option\n{_JOBS_USAGE}\n"
+                ).encode()
+                return (
+                    None,
+                    IOResult(exit_code=2, stderr=err),
+                    ExecutionNode(command=cmd_str, exit_code=2, stderr=err),
+                )
             flags.update(word[1:])
         else:
             specs.append(word)
@@ -845,8 +929,11 @@ async def handle_jobs(
             job = _job_numbered(jobs, int(raw)) if raw.isdigit() else None
             if job is None:
                 err = f"bash: jobs: {spec}: no such job\n".encode()
-                return None, IOResult(exit_code=1, stderr=err), ExecutionNode(
-                    command=cmd_str, exit_code=1, stderr=err)
+                return (
+                    None,
+                    IOResult(exit_code=1, stderr=err),
+                    ExecutionNode(command=cmd_str, exit_code=1, stderr=err),
+                )
             picked.append(job)
         jobs = picked
     if "r" in flags:
@@ -865,11 +952,13 @@ async def handle_jobs(
 
 
 # procps-ng 4.0.4's usage block, printed under every option error.
-_PS_USAGE = ("\nUsage:\n ps [options]\n\n"
-             " Try 'ps --help <simple|list|output|threads|misc|all>'\n"
-             "  or 'ps --help <s|l|o|t|m|a>'\n"
-             " for additional help text.\n\n"
-             "For more details see ps(1).\n")
+_PS_USAGE = (
+    "\nUsage:\n ps [options]\n\n"
+    " Try 'ps --help <simple|list|output|threads|misc|all>'\n"
+    "  or 'ps --help <s|l|o|t|m|a>'\n"
+    " for additional help text.\n\n"
+    "For more details see ps(1).\n"
+)
 
 # The -o columns a managed runner can answer, as procps-ng 4.0.4 lays them
 # out: header, width, right-aligned. The last column is never padded.
@@ -894,6 +983,7 @@ class _PsOptions:
         all (bool): a letter that selects every process was given.
         columns (tuple[tuple[str, str], ...]): ``-o`` keys and headers.
     """
+
     pids: frozenset[int]
     all: bool
     columns: tuple[tuple[str, str], ...]
@@ -938,7 +1028,8 @@ def _ps_columns(value: str, option: str) -> list[tuple[str, str]]:
             key, equal, header = token.partition("=")
             if key not in _PS_COLUMNS:
                 raise ValueError(
-                    f'unknown user-defined format specifier "{key}"')
+                    f'unknown user-defined format specifier "{key}"'
+                )
             columns.append((key, header if equal else _PS_COLUMNS[key][0]))
     return columns
 
@@ -1062,7 +1153,8 @@ async def handle_ps(
     except ValueError as exc:
         return _job_result(cmd_str, f"error: {exc}\n{_PS_USAGE}", 1)
     processes = [
-        info for info in _process_view(job_table, session).list()
+        info
+        for info in _process_view(job_table, session).list()
         if options.all or not options.pids or info.pid in options.pids
     ]
     if options.columns:
@@ -1077,5 +1169,8 @@ async def handle_ps(
         lines = [f"{info.pid}\t{info.command}" for info in processes]
     code = 0 if processes else 1
     out = ("\n".join(lines) + "\n").encode() if lines else b""
-    return out, IOResult(exit_code=code), ExecutionNode(command=cmd_str,
-                                                        exit_code=code)
+    return (
+        out,
+        IOResult(exit_code=code),
+        ExecutionNode(command=cmd_str, exit_code=code),
+    )

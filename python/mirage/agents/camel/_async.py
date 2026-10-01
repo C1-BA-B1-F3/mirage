@@ -19,7 +19,6 @@ from typing import Any
 
 
 class AsyncRunner:
-
     def __init__(self) -> None:
         self._loop: asyncio.AbstractEventLoop | None = None
         self._thread: threading.Thread | None = None

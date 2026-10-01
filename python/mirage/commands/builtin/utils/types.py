@@ -34,5 +34,6 @@ class HostRegex:
             the host when the whole pattern is caseless, which keeps the
             source plain enough for the grep prefilter to read.
     """
+
     source: str
     ignore_case: bool = False

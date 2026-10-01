@@ -39,26 +39,24 @@ def _strip_markdown_code_fence(text: str) -> str:
     if text.startswith("```"):
         lines = text.splitlines()
         return "\n".join(
-            lines[1:-1] if lines[-1].startswith("```") else lines[1:])
+            lines[1:-1] if lines[-1].startswith("```") else lines[1:]
+        )
     return text
 
 
 def test_write_text_file_then_read(toolkit):
-    msg = toolkit.write_to_file(title="Hello",
-                                content="hi there",
-                                filename="/notes/hello.md")
+    msg = toolkit.write_to_file(
+        title="Hello", content="hi there", filename="/notes/hello.md"
+    )
     assert "hello.md" in msg
     out = toolkit.read_file(file_paths="/notes/hello.md")
     assert "hi there" in out
 
 
 def test_write_json_file_then_read(toolkit):
-    msg = toolkit.write_to_file(title="data",
-                                content={
-                                    "a": 1,
-                                    "b": [2, 3]
-                                },
-                                filename="/data.json")
+    msg = toolkit.write_to_file(
+        title="data", content={"a": 1, "b": [2, 3]}, filename="/data.json"
+    )
     assert "data.json" in msg
     out = toolkit.read_file(file_paths="/data.json")
     parsed = json.loads(_strip_markdown_code_fence(out))
@@ -67,9 +65,9 @@ def test_write_json_file_then_read(toolkit):
 
 def test_edit_file_replaces_content(toolkit):
     toolkit.write_to_file(title="t", content="old\nkeep\n", filename="/e.txt")
-    msg = toolkit.edit_file(file_path="/e.txt",
-                            old_content="old",
-                            new_content="new")
+    msg = toolkit.edit_file(
+        file_path="/e.txt", old_content="old", new_content="new"
+    )
     assert "successfully" in msg.lower() or "edited" in msg.lower()
     out = toolkit.read_file(file_paths="/e.txt")
     assert "new" in out and "keep" in out and "old" not in out.split("keep")[0]
@@ -90,9 +88,9 @@ def test_glob_files(toolkit):
 
 
 def test_grep_files(toolkit):
-    toolkit.write_to_file(title="a",
-                          content="needle here\n",
-                          filename="/q/a.txt")
+    toolkit.write_to_file(
+        title="a", content="needle here\n", filename="/q/a.txt"
+    )
     toolkit.write_to_file(title="b", content="haystack\n", filename="/q/b.txt")
     out = toolkit.grep_files(pattern="needle", path="/q")
     assert "needle" in out
@@ -102,10 +100,13 @@ def test_grep_files(toolkit):
 def test_search_files_names_the_reason_beside_a_refusal():
     # stderr is bash's bare `Permission denied`; the reason rides the
     # refusal record, and a text surface appends it as one more line.
-    ws = Workspace({"/": RAMVFS()},
-                   mode=MountMode.WRITE,
-                   route_policy=lambda ctx: {"deny": "no walks"}
-                   if ctx.command == "find" else None)
+    ws = Workspace(
+        {"/": RAMVFS()},
+        mode=MountMode.WRITE,
+        route_policy=lambda ctx: (
+            {"deny": "no walks"} if ctx.command == "find" else None
+        ),
+    )
     tk = MirageFileToolkit(ws)
     try:
         out = tk.search_files(file_name="a.txt", path="/")

@@ -38,8 +38,9 @@ def test_owner_of_answers_none_off_every_mount():
 
 def test_link_children_reflects_the_live_source_per_directory():
     links = {"/data": {"lnk"}}
-    resolver = PrefixResolver(lambda: ["/data/"],
-                              lambda directory: links.get(directory, set()))
+    resolver = PrefixResolver(
+        lambda: ["/data/"], lambda directory: links.get(directory, set())
+    )
     assert resolver.link_children("/data") == {"lnk"}
     assert resolver.link_children("/other") == set()
     links["/data"] = {"lnk", "later"}

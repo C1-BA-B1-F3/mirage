@@ -19,7 +19,7 @@ def parse_limit(limit: str | int) -> int:
     s = limit.strip().upper()
     for suffix, mult in [("GB", 1 << 30), ("MB", 1 << 20), ("KB", 1 << 10)]:
         if s.endswith(suffix):
-            return int(s[:-len(suffix)]) * mult
+            return int(s[: -len(suffix)]) * mult
     return int(s)
 
 

@@ -198,21 +198,24 @@ async def test_getattr_of_a_link_reports_the_nodes_own_row():
     await ws.shell("tee /a.txt", stdin=b"hello")
     await ws.shell("ln -s a.txt /link")
     core = MountCore(ws.vfs)
-    await ws.dispatch("setattr",
-                      PathSpec.from_str_path("/link"),
-                      mode=None,
-                      uid=None,
-                      gid=None,
-                      atime=None,
-                      mtime="2020-01-02T03:04:05Z",
-                      nofollow=True)
+    await ws.dispatch(
+        "setattr",
+        PathSpec.from_str_path("/link"),
+        mode=None,
+        uid=None,
+        gid=None,
+        atime=None,
+        mtime="2020-01-02T03:04:05Z",
+        nofollow=True,
+    )
     attrs = core.getattr("/link")
     assert attrs["st_mode"] == stat.S_IFLNK | 0o777
     assert attrs["st_size"] == len("a.txt")
     assert attrs["st_mtime"] == mtime_ns(
-        FileStat(name="link",
-                 type=FileType.SYMLINK,
-                 modified="2020-01-02T03:04:05Z"))
+        FileStat(
+            name="link", type=FileType.SYMLINK, modified="2020-01-02T03:04:05Z"
+        )
+    )
 
 
 @pytest.mark.asyncio
@@ -226,11 +229,9 @@ async def test_scoped_mount_may_not_touch_a_link_on_hidden_turf():
     # (only a hidden name under a visible directory keeps EACCES),
     # while every other op on a hidden path is ENOENT under the
     # no-name-leak rule.
-    ws = Workspace({
-        "/data/": RAMVFS(),
-        "/extra/": RAMVFS()
-    },
-                   mode=MountMode.WRITE)
+    ws = Workspace(
+        {"/data/": RAMVFS(), "/extra/": RAMVFS()}, mode=MountMode.WRITE
+    )
     await ws.shell("tee /data/greeting.txt", stdin=b"hello")
     await ws.shell("tee /extra/secret.txt", stdin=b"classified")
     await ws.shell("ln -s secret.txt /extra/lk")
@@ -291,11 +292,9 @@ async def test_rename_across_mounts_reports_exdev():
     # A whole-workspace mount spans several backends; the kernel probes
     # rename first and falls back to copy+unlink only on EXDEV, so the
     # facade's refusal is what keeps `mv` between two backends working.
-    ws = Workspace({
-        "/data/": RAMVFS(),
-        "/other/": RAMVFS()
-    },
-                   mode=MountMode.WRITE)
+    ws = Workspace(
+        {"/data/": RAMVFS(), "/other/": RAMVFS()}, mode=MountMode.WRITE
+    )
     core = MountCore(ws.vfs)
     core.write("/data/x.txt", b"body", 0, None)
     with pytest.raises(OSError) as exc:
@@ -310,7 +309,6 @@ async def _read_tally(accessor, path: PathSpec, **kwargs) -> bytes:
 
 
 class _Sizeless:
-
     def __init__(self, ops):
         self._inner = ops
 
@@ -397,20 +395,25 @@ def new_york_clock():
 
 @pytest.mark.asyncio
 async def test_overlay_mtime_reads_offsetless_stamps_as_utc(
-        seeded, new_york_clock):
+    seeded, new_york_clock
+):
     # The R6 acceptance pin: the FUSE translator answers the same epoch
     # as mirage.utils.stat_view for an offset-less stamp. Only a
     # backend can produce one (the touch overlay always emits Z), so
     # this is latent until a backend like nextcloud reports naive
     # stamps; the pin is what keeps it latent.
-    naive = FileStat(name="f",
-                     type=FileType.FILE,
-                     content=ContentType.TEXT,
-                     modified="2026-01-02T03:04:05")
-    aware = FileStat(name="f",
-                     type=FileType.FILE,
-                     content=ContentType.TEXT,
-                     modified="2026-01-02T03:04:05+00:00")
+    naive = FileStat(
+        name="f",
+        type=FileType.FILE,
+        content=ContentType.TEXT,
+        modified="2026-01-02T03:04:05",
+    )
+    aware = FileStat(
+        name="f",
+        type=FileType.FILE,
+        content=ContentType.TEXT,
+        modified="2026-01-02T03:04:05+00:00",
+    )
     entry = {"st_mode": 0o100644, "st_mtime": 0, "st_ctime": 0}
     got_naive = seeded._apply_stat_attrs(dict(entry), naive)
     got_aware = seeded._apply_stat_attrs(dict(entry), aware)
@@ -423,10 +426,12 @@ async def test_epoch_zero_mtime_lands_instead_of_reading_as_unknown(seeded):
     # 1970-01-01T00:00:00Z is a real answer, not a missing stamp: the
     # fold keys on None, so epoch zero overwrites the construction-time
     # default instead of leaving it in place.
-    epoch = FileStat(name="f",
-                     type=FileType.FILE,
-                     content=ContentType.TEXT,
-                     modified="1970-01-01T00:00:00Z")
+    epoch = FileStat(
+        name="f",
+        type=FileType.FILE,
+        content=ContentType.TEXT,
+        modified="1970-01-01T00:00:00Z",
+    )
     entry = {"st_mode": 0o100644, "st_mtime": 12345, "st_ctime": 12345}
     got = seeded._apply_stat_attrs(dict(entry), epoch)
     assert got["st_mtime"] == 0
@@ -435,13 +440,15 @@ async def test_epoch_zero_mtime_lands_instead_of_reading_as_unknown(seeded):
 
 def test_drain_ops_omits_internal_mount_identity():
     ws = Workspace({"/data": RAMVFS()})
-    record = OpRecord(op="read",
-                      path="/data/file",
-                      source="ram",
-                      bytes=3,
-                      timestamp=1,
-                      duration_ms=2,
-                      mount_id="internal-mount")
+    record = OpRecord(
+        op="read",
+        path="/data/file",
+        source="ram",
+        bytes=3,
+        timestamp=1,
+        duration_ms=2,
+        mount_id="internal-mount",
+    )
     ws.vfs.records.append(record)
     core = MountCore(ws.vfs)
     assert core.drain_ops() == [record.to_dict()]

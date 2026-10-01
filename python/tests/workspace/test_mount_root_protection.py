@@ -29,6 +29,7 @@ Covers two related behaviors enforced by the command dispatcher
 Together these make mount roots behave like first-class directories
 that the user can navigate but not accidentally destroy.
 """
+
 import asyncio
 
 from mirage.types import MountMode
@@ -39,17 +40,21 @@ from mirage.workspace import Workspace
 
 
 def _ws_two_mounts() -> Workspace:
-    return Workspace({
-        "/r2": (RAMVFS(), MountMode.WRITE),
-        "/ram": (RAMVFS(), MountMode.WRITE),
-    })
+    return Workspace(
+        {
+            "/r2": (RAMVFS(), MountMode.WRITE),
+            "/ram": (RAMVFS(), MountMode.WRITE),
+        }
+    )
 
 
 def _ws_nested() -> Workspace:
-    return Workspace({
-        "/data": (RAMVFS(), MountMode.WRITE),
-        "/data/inner": (RAMVFS(), MountMode.WRITE),
-    })
+    return Workspace(
+        {
+            "/data": (RAMVFS(), MountMode.WRITE),
+            "/data/inner": (RAMVFS(), MountMode.WRITE),
+        }
+    )
 
 
 async def _exec(ws: Workspace, cmd: str):
@@ -399,8 +404,9 @@ def test_find_filters_parent_paths_under_descendant_mount():
         ws = _ws_nested()
         # Put a key in the parent /data VFS that lives at the
         # SAME path as the /data/inner mount root.
-        await _exec(ws, "mkdir /data/inner"
-                    )  # blocked: /data/inner is a mount root → File exists
+        await _exec(
+            ws, "mkdir /data/inner"
+        )  # blocked: /data/inner is a mount root → File exists
         # Instead, write under the inner mount and verify no parent leak.
         await _exec(ws, "touch /data/inner/from-inner")
         r = await _exec(ws, "find /data")
@@ -513,8 +519,10 @@ def test_rm_no_preserve_root_still_cannot_remove_mount_root():
     # mirage protection is structural: --no-preserve-root does not disable it.
     async def go():
         ws = _ws_two_mounts()
-        for cmd in ("rm --preserve-root -rf /",
-                    "rm --no-preserve-root -rf /r2"):
+        for cmd in (
+            "rm --preserve-root -rf /",
+            "rm --no-preserve-root -rf /r2",
+        ):
             r = await _exec(ws, cmd)
             assert r.exit_code == 1
             assert b"Device or resource busy" in (r.stderr or b"")

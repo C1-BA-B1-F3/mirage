@@ -43,7 +43,12 @@ class PythonRuntime(LanguageRuntime):
         if self.reach != "workspace":
             return await super().version(env)
         return await self.run(
-            RunArgs(code=("import sys\n"
-                          "print('Python ' + sys.version.split()[0] + "
-                          f"{self.version_suffix!r})"),
-                    env=env))
+            RunArgs(
+                code=(
+                    "import sys\n"
+                    "print('Python ' + sys.version.split()[0] + "
+                    f"{self.version_suffix!r})"
+                ),
+                env=env,
+            )
+        )

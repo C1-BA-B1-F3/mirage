@@ -21,6 +21,7 @@ present).
 Run from repo root:
     ./python/.venv/bin/python scripts/google_oauth.py
 """
+
 import os
 import re
 import sys
@@ -50,8 +51,10 @@ def main() -> None:
     client_id = os.environ.get("GOOGLE_CLIENT_ID", "")
     client_secret = os.environ.get("GOOGLE_CLIENT_SECRET", "")
     if not client_id or not client_secret:
-        sys.exit("GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET missing in "
-                 ".env.development")
+        sys.exit(
+            "GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET missing in "
+            ".env.development"
+        )
 
     client_config = {
         "installed": {
@@ -73,8 +76,10 @@ def main() -> None:
     )
 
     if not creds.refresh_token:
-        sys.exit("No refresh_token returned. Re-run with prompt=consent "
-                 "in OAuth screen.")
+        sys.exit(
+            "No refresh_token returned. Re-run with prompt=consent "
+            "in OAuth screen."
+        )
 
     print()
     print("=" * 60)
@@ -85,10 +90,12 @@ def main() -> None:
     contents = ENV_PATH.read_text()
     new_line = f"GOOGLE_REFRESH_TOKEN={creds.refresh_token}"
     if re.search(r"^GOOGLE_REFRESH_TOKEN=.*$", contents, re.MULTILINE):
-        contents = re.sub(r"^GOOGLE_REFRESH_TOKEN=.*$",
-                          new_line,
-                          contents,
-                          flags=re.MULTILINE)
+        contents = re.sub(
+            r"^GOOGLE_REFRESH_TOKEN=.*$",
+            new_line,
+            contents,
+            flags=re.MULTILINE,
+        )
     else:
         if not contents.endswith("\n"):
             contents += "\n"

@@ -58,9 +58,11 @@ export function gmailRoutes(): KitRoute<C>[] {
   return [
     route('GET', '/gmail/v1/users/me/labels', (ctx) =>
       ok({
-        labels: [...ctx.db.labels.values()].map(
-          (label): JsonValue => ({ id: label.id, name: label.name, type: label.type }),
-        ),
+        labels: [...ctx.db.labels.values()].map((label): JsonValue => ({
+          id: label.id,
+          name: label.name,
+          type: label.type,
+        })),
       }),
     ),
     route('GET', '/gmail/v1/users/me/messages', (ctx) => listGmailMessages(ctx.db, ctx.query)),

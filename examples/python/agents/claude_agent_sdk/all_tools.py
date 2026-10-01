@@ -25,8 +25,12 @@ Usage:
 
 import asyncio
 
-from claude_agent_sdk import (AssistantMessage, ResultMessage, ToolUseBlock,
-                              query)
+from claude_agent_sdk import (
+    AssistantMessage,
+    ResultMessage,
+    ToolUseBlock,
+    query,
+)
 from dotenv import load_dotenv
 
 from mirage import MountMode, Workspace
@@ -73,8 +77,12 @@ async def main() -> None:
     print("\n=== tools used ===")
     print(used)
     missing = EXPECTED - set(used)
-    print("all six tools exercised:", not missing, "| missing:", missing
-          or "none")
+    print(
+        "all six tools exercised:",
+        not missing,
+        "| missing:",
+        missing or "none",
+    )
 
     final = await ws.vfs.read("/notes.txt")
     print("\n=== /notes.txt final content (from the Mirage workspace) ===")

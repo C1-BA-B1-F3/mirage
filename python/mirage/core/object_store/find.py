@@ -16,11 +16,21 @@ from collections.abc import Awaitable
 from typing import Protocol
 
 from mirage.cache.index import NULL_INDEX, IndexCacheStore
-from mirage.commands.builtin.find_eval import (FindEntry, PredNode, build_tree,
-                                               emit_start_path, keep,
-                                               start_basename)
-from mirage.core.object_store.driver import (A, A_contra, C, FindHints,
-                                             ObjectStoreDriver)
+from mirage.commands.builtin.find_eval import (
+    FindEntry,
+    PredNode,
+    build_tree,
+    emit_start_path,
+    keep,
+    start_basename,
+)
+from mirage.core.object_store.driver import (
+    A,
+    A_contra,
+    C,
+    FindHints,
+    ObjectStoreDriver,
+)
 from mirage.core.object_store.readdir import read_tree
 from mirage.types import PathSpec
 from mirage.utils import key_prefix as kp
@@ -28,26 +38,26 @@ from mirage.utils.stat_view import DIR_SIZE
 
 
 class FindFn(Protocol[A_contra]):
-
-    def __call__(self,
-                 accessor: A_contra,
-                 path_spec: PathSpec,
-                 name: str | None = ...,
-                 type: str | None = ...,
-                 min_size: int | None = ...,
-                 max_size: int | None = ...,
-                 maxdepth: int | None = ...,
-                 name_exclude: str | None = ...,
-                 or_names: list[str] | None = ...,
-                 mtime_min: float | None = ...,
-                 mtime_max: float | None = ...,
-                 iname: str | None = ...,
-                 path_pattern: str | None = ...,
-                 mindepth: int | None = ...,
-                 empty: bool = ...,
-                 tree: PredNode | None = ...,
-                 index: IndexCacheStore = ...) -> Awaitable[list[str]]:
-        ...
+    def __call__(
+        self,
+        accessor: A_contra,
+        path_spec: PathSpec,
+        name: str | None = ...,
+        type: str | None = ...,
+        min_size: int | None = ...,
+        max_size: int | None = ...,
+        maxdepth: int | None = ...,
+        name_exclude: str | None = ...,
+        or_names: list[str] | None = ...,
+        mtime_min: float | None = ...,
+        mtime_max: float | None = ...,
+        iname: str | None = ...,
+        path_pattern: str | None = ...,
+        mindepth: int | None = ...,
+        empty: bool = ...,
+        tree: PredNode | None = ...,
+        index: IndexCacheStore = ...,
+    ) -> Awaitable[list[str]]: ...
 
 
 def make_find(driver: ObjectStoreDriver[A, C]) -> FindFn[A]:
@@ -113,25 +123,39 @@ def make_find(driver: ObjectStoreDriver[A, C]) -> FindFn[A]:
         # synthesized client-side from key paths, so any server-side file
         # exclusion would also drop the evidence for a matching parent
         # directory.
-        pushdown = (tree is None and name_exclude is None and or_names is None
-                    and path_pattern is None and not empty and type == "f")
-        tree = tree if tree is not None else build_tree(
+        pushdown = (
+            tree is None
+            and name_exclude is None
+            and or_names is None
+            and path_pattern is None
+            and not empty
+            and type == "f"
+        )
+        tree = (
+            tree
+            if tree is not None
+            else build_tree(
+                name=name,
+                iname=iname,
+                path_pattern=path_pattern,
+                type=type,
+                name_exclude=name_exclude,
+                or_names=or_names,
+                empty=empty,
+            )
+        )
+        hints = FindHints(
             name=name,
             iname=iname,
-            path_pattern=path_pattern,
-            type=type,
-            name_exclude=name_exclude,
-            or_names=or_names,
-            empty=empty)
-        hints = FindHints(name=name,
-                          iname=iname,
-                          min_size=min_size,
-                          max_size=max_size,
-                          pushdown=pushdown)
+            min_size=min_size,
+            max_size=max_size,
+            pushdown=pushdown,
+        )
         saw_descendant = False
         dir_marker_seen = False
-        rows, saw_descendant = await read_tree(driver, accessor, path_spec,
-                                               index, hints)
+        rows, saw_descendant = await read_tree(
+            driver, accessor, path_spec, index, hints
+        )
         for tree_entry in rows:
             key = tree_entry.key
             if key == pfx:
@@ -146,8 +170,9 @@ def make_find(driver: ObjectStoreDriver[A, C]) -> FindFn[A]:
                 if full_path in seen_dirs:
                     continue
                 seen_dirs.add(full_path)
-            entries: list[tuple[str,
-                                str]] = [(full_path, "d" if is_dir else "f")]
+            entries: list[tuple[str, str]] = [
+                (full_path, "d" if is_dir else "f")
+            ]
             # Implicit directories exist only as key prefixes;
             # synthesize the parent chain so find agrees with readdir
             # on externally-populated buckets.
@@ -162,13 +187,18 @@ def make_find(driver: ObjectStoreDriver[A, C]) -> FindFn[A]:
                 depth = ep.count("/") - base_depth
                 if maxdepth is not None and depth > maxdepth:
                     continue
-                is_empty = (None if not empty else
-                            (size == 0 if kind == "f" else False))
-                entry = FindEntry(key=ep,
-                                  name=entry_name,
-                                  kind=kind,
-                                  depth=depth,
-                                  is_empty=is_empty)
+                is_empty = (
+                    None
+                    if not empty
+                    else (size == 0 if kind == "f" else False)
+                )
+                entry = FindEntry(
+                    key=ep,
+                    name=entry_name,
+                    kind=kind,
+                    depth=depth,
+                    is_empty=is_empty,
+                )
                 if not keep(entry, tree, mindepth):
                     continue
                 if min_size is not None or max_size is not None:
@@ -179,17 +209,19 @@ def make_find(driver: ObjectStoreDriver[A, C]) -> FindFn[A]:
                         continue
                 results.append(ep)
         if saw_descendant or dir_marker_seen:
-            emit_start_path(results,
-                            base,
-                            start_name,
-                            kind="d",
-                            is_empty=(not saw_descendant) if empty else None,
-                            exists=True,
-                            tree=tree,
-                            maxdepth=maxdepth,
-                            mindepth=mindepth,
-                            min_size=min_size,
-                            max_size=max_size)
+            emit_start_path(
+                results,
+                base,
+                start_name,
+                kind="d",
+                is_empty=(not saw_descendant) if empty else None,
+                exists=True,
+                tree=tree,
+                maxdepth=maxdepth,
+                mindepth=mindepth,
+                min_size=min_size,
+                max_size=max_size,
+            )
         # A file key and a synthesized directory can name the same path
         # (`data/a` alongside `data/a/b.txt`), which these stores allow and
         # a filesystem does not; find prints such a path once.

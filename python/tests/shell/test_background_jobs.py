@@ -29,8 +29,9 @@ async def _failing_run(job):
 
 async def _successful_run(job):
     await job.console.emit(Channel.STDOUT, b"hello")
-    return IOResult(exit_code=0), ExecutionNode(command="echo hello",
-                                                exit_code=0)
+    return IOResult(exit_code=0), ExecutionNode(
+        command="echo hello", exit_code=0
+    )
 
 
 async def _never_ending_run(job):

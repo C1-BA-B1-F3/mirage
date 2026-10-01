@@ -28,9 +28,11 @@ from mirage.vfs.redis import RedisVFS
 from mirage.vfs.s3 import S3VFS, S3Config
 
 S3_BUCKET = "mirage-integ-cross"
-CREDS = dict(aws_access_key_id="testing",
-             aws_secret_access_key="testing",
-             region_name="us-east-1")
+CREDS = dict(
+    aws_access_key_id="testing",
+    aws_secret_access_key="testing",
+    region_name="us-east-1",
+)
 
 _fail = 0
 
@@ -56,8 +58,9 @@ async def seed_tree(ws: Workspace, base: str) -> None:
     await run(ws, f"printf 'bbb\\n' > {base}/dir/sub/b.txt")
 
 
-async def check_recursive(ws: Workspace, dst: str, label: str,
-                          expect_dirs: bool) -> None:
+async def check_recursive(
+    ws: Workspace, dst: str, label: str, expect_dirs: bool
+) -> None:
     # cp -r the whole tree across mounts and verify the files (and, for
     # backends with real directories, the empty subdirectory) landed.
     await run(ws, f"cp -r /ram/dir {dst}/copied")
@@ -85,8 +88,10 @@ async def check_no_clobber(ws: Workspace, dst: str, label: str) -> None:
 async def check_omit_directory(ws: Workspace, dst: str, label: str) -> None:
     # cp without -r on a directory is an error (GNU), not a silent copy.
     _, err, code = await run(ws, f"cp /ram/dir {dst}/nope")
-    check(f"{label}: cp dir without -r fails", code == 1
-          and "omitting directory" in err)
+    check(
+        f"{label}: cp dir without -r fails",
+        code == 1 and "omitting directory" in err,
+    )
 
 
 async def check_read_family(ws: Workspace, dst: str, label: str) -> None:
@@ -99,18 +104,23 @@ async def check_read_family(ws: Workspace, dst: str, label: str) -> None:
     out, _, _ = await run(ws, f"cat {src} {other}")
     check(f"{label}: cat aggregates", out == "aaa\nbbb\n")
     out, _, _ = await run(ws, f"head -n 1 {src} {copied}")
-    check(f"{label}: head banners", f"==> {src} <==" in out
-          and f"==> {copied} <==" in out)
+    check(
+        f"{label}: head banners",
+        f"==> {src} <==" in out and f"==> {copied} <==" in out,
+    )
     out, _, _ = await run(ws, f"tail -n 1 {src} {other}")
     check(f"{label}: tail banners", f"==> {src} <==" in out and "bbb" in out)
     out, _, _ = await run(ws, f"wc -l {src} {copied}")
     check(f"{label}: wc total", "total" in out)
     out, _, _ = await run(ws, f"grep aaa {src} {copied}")
-    check(f"{label}: grep prefixes", f"{src}:aaa" in out
-          and f"{copied}:aaa" in out)
+    check(
+        f"{label}: grep prefixes",
+        f"{src}:aaa" in out and f"{copied}:aaa" in out,
+    )
     out, _, _ = await run(ws, f"rg aaa {src} {copied}")
-    check(f"{label}: rg prefixes", f"{src}:aaa" in out
-          and f"{copied}:aaa" in out)
+    check(
+        f"{label}: rg prefixes", f"{src}:aaa" in out and f"{copied}:aaa" in out
+    )
     # A non-numeric -n is rejected by the shared head/tail generic, exit 1.
     _, err, code = await run(ws, f"head -n abc {src} {copied}")
     check(f"{label}: head invalid -n", code == 1 and "abc" in err)
@@ -120,15 +130,20 @@ async def check_read_family(ws: Workspace, dst: str, label: str) -> None:
     # cat exercises the STREAM strategy, grep the FANOUT strategy.
     miss = f"{dst}/copied/missing.txt"
     _, err, code = await run(ws, f"cat {src} {miss}")
-    check(f"{label}: cat missing strerror", code == 1
-          and err == f"cat: {miss}: No such file or directory\n")
+    check(
+        f"{label}: cat missing strerror",
+        code == 1 and err == f"cat: {miss}: No such file or directory\n",
+    )
     # grep still searches the good operand, and the missing operand still
     # decides the exit status: GNU prints the lines it did find and exits 2
     # anyway, so a match does not excuse an operand it could not read.
     out, err, code = await run(ws, f"grep aaa {src} {miss}")
     check(
-        f"{label}: grep missing strerror", code == 2 and f"{src}:aaa" in out
-        and err == f"grep: {miss}: No such file or directory\n")
+        f"{label}: grep missing strerror",
+        code == 2
+        and f"{src}:aaa" in out
+        and err == f"grep: {miss}: No such file or directory\n",
+    )
 
 
 async def check_partial_read(ws: Workspace, dst: str, label: str) -> None:
@@ -139,59 +154,94 @@ async def check_partial_read(ws: Workspace, dst: str, label: str) -> None:
     miss = f"{dst}/copied/nope.txt"
     out, err, code = await run(ws, f"cat {src} {miss}")
     check(
-        f"{label}: cat keeps partial output", out == "aaa\n" and code == 1
-        and err == f"cat: {miss}: No such file or directory\n")
+        f"{label}: cat keeps partial output",
+        out == "aaa\n"
+        and code == 1
+        and err == f"cat: {miss}: No such file or directory\n",
+    )
     out, err, code = await run(ws, f"wc -l {src} {miss}")
     check(
-        f"{label}: wc keeps total", out == f"1 {src}\n1 total\n" and code == 1
-        and err == f"wc: {miss}: No such file or directory\n")
+        f"{label}: wc keeps total",
+        out == f"1 {src}\n1 total\n"
+        and code == 1
+        and err == f"wc: {miss}: No such file or directory\n",
+    )
     out, err, code = await run(ws, f"head -n 1 {src} {miss}")
     check(
-        f"{label}: head keeps banner", out == f"==> {src} <==\naaa\n"
-        and code == 1 and err ==
-        f"head: cannot open '{miss}' for reading: No such file or directory\n")
+        f"{label}: head keeps banner",
+        out == f"==> {src} <==\naaa\n"
+        and code == 1
+        and err
+        == f"head: cannot open '{miss}' for reading: No such file or directory\n",
+    )
     out, err, code = await run(ws, f"tail -n 1 {src} {miss}")
     check(
-        f"{label}: tail keeps banner", out == f"==> {src} <==\naaa\n"
-        and code == 1 and err ==
-        f"tail: cannot open '{miss}' for reading: No such file or directory\n")
+        f"{label}: tail keeps banner",
+        out == f"==> {src} <==\naaa\n"
+        and code == 1
+        and err
+        == f"tail: cannot open '{miss}' for reading: No such file or directory\n",
+    )
     # nl rides the STREAM strategy cross-mount: the error line must carry
     # nl's own name, not the cat sub-run that fetched the operand.
     out, err, code = await run(ws, f"nl {src} {miss}")
     check(
-        f"{label}: nl keeps output, own name", out == "     1\taaa\n"
-        and code == 1 and err == f"nl: {miss}: No such file or directory\n")
+        f"{label}: nl keeps output, own name",
+        out == "     1\taaa\n"
+        and code == 1
+        and err == f"nl: {miss}: No such file or directory\n",
+    )
     out, err, code = await run(ws, f"md5 {src} {miss}")
     check(
         f"{label}: md5 keeps good hash",
-        out == f"5c9597f3c8245907ea71a89d9d39d08e  {src}\n" and code == 1
-        and err == f"md5: {miss}: No such file or directory\n")
+        out == f"5c9597f3c8245907ea71a89d9d39d08e  {src}\n"
+        and code == 1
+        and err == f"md5: {miss}: No such file or directory\n",
+    )
     # stat fans out per operand; mtimes vary, so pin shape and exit only.
     out, err, code = await run(ws, f"stat {src} {miss}")
     check(
-        f"{label}: stat keeps good row", f"File: {src}\n" in out and code == 1
-        and err == f"stat: cannot statx '{miss}': No such file or directory\n")
+        f"{label}: stat keeps good row",
+        f"File: {src}\n" in out
+        and code == 1
+        and err == f"stat: cannot statx '{miss}': No such file or directory\n",
+    )
     out, err, code = await run(ws, f"cut -c1 {src} {miss}")
     check(
-        f"{label}: cut keeps partial output", out == "a\n" and code == 1
-        and err == f"cut: {miss}: No such file or directory\n")
+        f"{label}: cut keeps partial output",
+        out == "a\n"
+        and code == 1
+        and err == f"cut: {miss}: No such file or directory\n",
+    )
     out, err, code = await run(ws, f"tac {src} {miss}")
     check(
-        f"{label}: tac keeps partial output", out == "aaa\n" and code == 1
-        and err == (f"tac: failed to open '{miss}' for reading: "
-                    "No such file or directory\n"))
+        f"{label}: tac keeps partial output",
+        out == "aaa\n"
+        and code == 1
+        and err
+        == (
+            f"tac: failed to open '{miss}' for reading: "
+            "No such file or directory\n"
+        ),
+    )
     # sed and sort exit 2 on a failed operand where the commands above exit
     # 1: the code belongs to the command, not to the errno (GNU sed 4.9,
     # coreutils 9.7).
     out, err, code = await run(ws, f"sed s/a/X/ {src} {miss}")
     check(
-        f"{label}: sed keeps partial output", out == "Xaa\n" and code == 2
-        and err == f"sed: can't read {miss}: No such file or directory\n")
+        f"{label}: sed keeps partial output",
+        out == "Xaa\n"
+        and code == 2
+        and err == f"sed: can't read {miss}: No such file or directory\n",
+    )
     # sort aborts on any failed operand, single- and cross-mount alike.
     out, err, code = await run(ws, f"sort {src} {miss}")
     check(
-        f"{label}: sort aborts", out == "" and code == 2
-        and err == f"sort: cannot read: {miss}: No such file or directory\n")
+        f"{label}: sort aborts",
+        out == ""
+        and code == 2
+        and err == f"sort: cannot read: {miss}: No such file or directory\n",
+    )
 
 
 async def check_compare(ws: Workspace, dst: str, label: str) -> None:
@@ -203,8 +253,9 @@ async def check_compare(ws: Workspace, dst: str, label: str) -> None:
     out, _, code = await run(ws, f"diff {src} {same}")
     check(f"{label}: diff identical", code == 0 and out == "")
     out, _, code = await run(ws, f"diff {src} {other}")
-    check(f"{label}: diff differing", code == 1 and "aaa" in out
-          and "bbb" in out)
+    check(
+        f"{label}: diff differing", code == 1 and "aaa" in out and "bbb" in out
+    )
     _, _, code = await run(ws, f"cmp {src} {same}")
     check(f"{label}: cmp identical", code == 0)
     out, _, code = await run(ws, f"cmp {src} {other}")
@@ -213,8 +264,10 @@ async def check_compare(ws: Workspace, dst: str, label: str) -> None:
     # GNU diff exits 2 on trouble.
     miss = f"{dst}/copied/missing.txt"
     _, err, code = await run(ws, f"diff {src} {miss}")
-    check(f"{label}: diff missing strerror", code == 2
-          and err == f"diff: {miss}: No such file or directory\n")
+    check(
+        f"{label}: diff missing strerror",
+        code == 2 and err == f"diff: {miss}: No such file or directory\n",
+    )
 
 
 async def check_cd_cross_mount(ws: Workspace, dst: str, label: str) -> None:
@@ -230,10 +283,12 @@ async def check_cd_cross_mount(ws: Workspace, dst: str, label: str) -> None:
     out, _, _ = await run(ws, "(cd /ram/dir && cd / && pwd)")
     check(f"{label}: cd / above mounts", out.strip() == "/")
     out, _, _ = await run(ws, f"(cd /ram/dir && cd {rel} && pwd)")
-    check(f"{label}: relative .. crosses mounts",
-          out.strip() == f"{dst}/copied")
-    out, _, _ = await run(ws,
-                          f"(cd /ram && cd {dst} && cd - > /dev/null && pwd)")
+    check(
+        f"{label}: relative .. crosses mounts", out.strip() == f"{dst}/copied"
+    )
+    out, _, _ = await run(
+        ws, f"(cd /ram && cd {dst} && cd - > /dev/null && pwd)"
+    )
     check(f"{label}: cd - swaps mounts", out.strip() == "/ram")
     out, _, _ = await run(ws, f"(cd //{bare}/copied && pwd)")
     check(f"{label}: // collapses on mount", out.strip() == f"{dst}/copied")
@@ -241,8 +296,9 @@ async def check_cd_cross_mount(ws: Workspace, dst: str, label: str) -> None:
     check(f"{label}: cd -P cross-mount", out.strip() == f"{dst}/copied")
     out, _, _ = await run(ws, f"(cd /ram && cd -- {dst}/copied && pwd)")
     check(f"{label}: cd -- cross-mount", out.strip() == f"{dst}/copied")
-    out, _, _ = await run(ws,
-                          f"(export CDPATH=/ram:{dst} && cd copied && pwd)")
+    out, _, _ = await run(
+        ws, f"(export CDPATH=/ram:{dst} && cd copied && pwd)"
+    )
     last = out.strip().splitlines()[-1] if out.strip() else ""
     check(f"{label}: CDPATH spans mounts", last == f"{dst}/copied")
 
@@ -258,8 +314,9 @@ async def check_move(ws: Workspace, dst: str, label: str) -> None:
     check(f"{label}: mv removes source", code != 0)
 
 
-async def check_cross_mount_cache(ws: Workspace, s3_client,
-                                  label: str) -> None:
+async def check_cross_mount_cache(
+    ws: Workspace, s3_client, label: str
+) -> None:
     # A cross-mount read relays through the dispatcher; that relayed path must
     # serve warm bytes from the file cache, not re-fetch the backend. Warm the
     # S3 object with a single-mount cat, mutate it out-of-band via boto3, then
@@ -268,28 +325,35 @@ async def check_cross_mount_cache(ws: Workspace, s3_client,
     # every command; a relayed path that skipped the cache would fetch v2
     # (nomatch) and these checks would fail. wc discriminates on line count
     # (cached 3 vs v2's 1) and grep on a v1-only token.
-    s3_client.put_object(Bucket=S3_BUCKET,
-                         Key="cache/x.txt",
-                         Body=b"keepme\nmid\nlast\n")
+    s3_client.put_object(
+        Bucket=S3_BUCKET, Key="cache/x.txt", Body=b"keepme\nmid\nlast\n"
+    )
     out, _, _ = await run(ws, "cat /s3/cache/x.txt")
     check(f"{label}: warm read caches v1", out == "keepme\nmid\nlast\n")
-    s3_client.put_object(Bucket=S3_BUCKET,
-                         Key="cache/x.txt",
-                         Body=b"nomatch\n")
+    s3_client.put_object(
+        Bucket=S3_BUCKET, Key="cache/x.txt", Body=b"nomatch\n"
+    )
     src = "/ram/dir/a.txt"
     x = "/s3/cache/x.txt"
     out, _, _ = await run(ws, f"cat {src} {x}")
-    check(f"{label}: cross cat serves cached",
-          out == "aaa\nkeepme\nmid\nlast\n")
+    check(
+        f"{label}: cross cat serves cached", out == "aaa\nkeepme\nmid\nlast\n"
+    )
     out, _, _ = await run(ws, f"printf 'pipe\\n' | cat {src} - {x}")
-    check(f"{label}: cross cat mixes stdin and cached bytes",
-          out == "aaa\npipe\nkeepme\nmid\nlast\n")
+    check(
+        f"{label}: cross cat mixes stdin and cached bytes",
+        out == "aaa\npipe\nkeepme\nmid\nlast\n",
+    )
     out, _, _ = await run(ws, f"head -n 1 {src} {x}")
-    check(f"{label}: cross head serves cached", "keepme" in out
-          and "nomatch" not in out)
+    check(
+        f"{label}: cross head serves cached",
+        "keepme" in out and "nomatch" not in out,
+    )
     out, _, _ = await run(ws, f"tail -n 1 {src} {x}")
-    check(f"{label}: cross tail serves cached", "last" in out
-          and "nomatch" not in out)
+    check(
+        f"{label}: cross tail serves cached",
+        "last" in out and "nomatch" not in out,
+    )
     out, _, _ = await run(ws, f"wc -l {src} {x}")
     check(f"{label}: cross wc serves cached", "4 total" in out)
     out, _, _ = await run(ws, f"grep keepme {src} {x}")
@@ -303,29 +367,36 @@ async def check_glob_cache(ws: Workspace, s3_client, label: str) -> None:
     # bytes (a.txt's stale v1, not v2). a.txt's v2 grows to two lines so wc and
     # the line-shape commands discriminate cache from backend; grep keys on a
     # v1-only token.
-    s3_client.put_object(Bucket=S3_BUCKET,
-                         Key="glob/a.txt",
-                         Body=b"alpha-v1\n")
-    s3_client.put_object(Bucket=S3_BUCKET,
-                         Key="glob/b.txt",
-                         Body=b"bravo-v1\n")
+    s3_client.put_object(
+        Bucket=S3_BUCKET, Key="glob/a.txt", Body=b"alpha-v1\n"
+    )
+    s3_client.put_object(
+        Bucket=S3_BUCKET, Key="glob/b.txt", Body=b"bravo-v1\n"
+    )
     await run(ws, "cat /s3/glob/a.txt /s3/glob/b.txt")
-    s3_client.put_object(Bucket=S3_BUCKET,
-                         Key="glob/a.txt",
-                         Body=b"alpha-v2\nEXTRA\n")
+    s3_client.put_object(
+        Bucket=S3_BUCKET, Key="glob/a.txt", Body=b"alpha-v2\nEXTRA\n"
+    )
     g = "/s3/glob/*.txt"
     out, _, _ = await run(ws, f"head -n 1 {g}")
-    check(f"{label}: glob head serves cached", "alpha-v1" in out
-          and "alpha-v2" not in out)
+    check(
+        f"{label}: glob head serves cached",
+        "alpha-v1" in out and "alpha-v2" not in out,
+    )
     out, _, _ = await run(ws, f"tail -n 1 {g}")
-    check(f"{label}: glob tail serves cached", "alpha-v1" in out
-          and "EXTRA" not in out)
+    check(
+        f"{label}: glob tail serves cached",
+        "alpha-v1" in out and "EXTRA" not in out,
+    )
     out, _, _ = await run(ws, f"wc -l {g}")
-    check(f"{label}: glob wc serves cached", "2 total" in out
-          and "3 total" not in out)
+    check(
+        f"{label}: glob wc serves cached",
+        "2 total" in out and "3 total" not in out,
+    )
     out, _, _ = await run(ws, f"grep alpha-v1 {g}")
-    check(f"{label}: glob grep serves cached", "/s3/glob/a.txt:alpha-v1"
-          in out)
+    check(
+        f"{label}: glob grep serves cached", "/s3/glob/a.txt:alpha-v1" in out
+    )
 
 
 async def check_symlinks(ws: Workspace, dst: str, label: str) -> None:
@@ -355,8 +426,9 @@ async def check_symlinks(ws: Workspace, dst: str, label: str) -> None:
     check(f"{label}: ls through cross-mount dir link", "a.txt" in out)
     await run(ws, "mv /ram/xl.txt /ram/xl2.txt")
     out, _, _ = await run(ws, "readlink /ram/xl2.txt")
-    check(f"{label}: mv keeps link target",
-          out.strip() == f"{dst}/copied/a.txt")
+    check(
+        f"{label}: mv keeps link target", out.strip() == f"{dst}/copied/a.txt"
+    )
     _, _, code = await run(ws, f"rm /ram/xl2.txt {dst}/rl.txt /ram/xdir")
     check(f"{label}: rm links exits 0", code == 0)
     out, _, _ = await run(ws, f"cat {dst}/copied/a.txt")
@@ -365,17 +437,23 @@ async def check_symlinks(ws: Workspace, dst: str, label: str) -> None:
 
     await run(ws, f"ln -s {dst}/copied/a.txt /ram/sl.txt")
     _, err, code = await run(ws, f"ln -s {dst}/copied/sub/b.txt /ram/sl.txt")
-    check(f"{label}: ln onto existing link fails", code == 1
-          and "File exists" in err)
+    check(
+        f"{label}: ln onto existing link fails",
+        code == 1 and "File exists" in err,
+    )
     _, _, code = await run(ws, f"ln -sf {dst}/copied/sub/b.txt /ram/sl.txt")
     out, _, _ = await run(ws, "readlink /ram/sl.txt")
-    check(f"{label}: ln -sf re-points link", code == 0
-          and out.strip() == f"{dst}/copied/sub/b.txt")
+    check(
+        f"{label}: ln -sf re-points link",
+        code == 0 and out.strip() == f"{dst}/copied/sub/b.txt",
+    )
     out, _, code = await run(ws, f"readlink {dst}/copied/a.txt")
     check(f"{label}: readlink non-link exits 1", code == 1 and out == "")
     out, _, _ = await run(ws, "ls -l /ram")
-    check(f"{label}: ls -l shows link arrow",
-          f"sl.txt -> {dst}/copied/sub/b.txt" in out)
+    check(
+        f"{label}: ls -l shows link arrow",
+        f"sl.txt -> {dst}/copied/sub/b.txt" in out,
+    )
     out, _, _ = await run(ws, "ls -F /ram")
     check(f"{label}: ls -F marks link with @", "sl.txt@" in out)
     await run(ws, "ln -s /ram/sl.txt /ram/sl2.txt")
@@ -383,14 +461,18 @@ async def check_symlinks(ws: Workspace, dst: str, label: str) -> None:
     check(f"{label}: link chain resolves across mounts", out == "bbb\n")
     await run(ws, f"mv /ram/sl2.txt {dst}/slmoved.txt")
     out, _, _ = await run(ws, f"readlink {dst}/slmoved.txt")
-    check(f"{label}: mv link across mounts keeps target",
-          out.strip() == "/ram/sl.txt")
+    check(
+        f"{label}: mv link across mounts keeps target",
+        out.strip() == "/ram/sl.txt",
+    )
     await run(ws, f"ln -s {dst}/copied/nope.txt /ram/dl.txt")
     _, _, code = await run(ws, "cat /ram/dl.txt")
     check(f"{label}: dangling link read fails", code != 0)
     out, _, _ = await run(ws, "ls -l /ram")
-    check(f"{label}: dangling link still listed",
-          f"dl.txt -> {dst}/copied/nope.txt" in out)
+    check(
+        f"{label}: dangling link still listed",
+        f"dl.txt -> {dst}/copied/nope.txt" in out,
+    )
     _, _, code = await run(ws, f"rm /ram/sl.txt /ram/dl.txt {dst}/slmoved.txt")
     check(f"{label}: rm link surface exits 0", code == 0)
 
@@ -400,47 +482,64 @@ async def stat_of(ws: Workspace, path: str):
     return st
 
 
-async def check_metadata(ws: Workspace, dst: str, label: str,
-                         native_attrs: bool) -> None:
+async def check_metadata(
+    ws: Workspace, dst: str, label: str, native_attrs: bool
+) -> None:
     # setattr is resolve-then-act: chmod/chown/touch on a dst-homed file,
     # directly and through links homed on another mount, must land on the
     # target mount (natively or in the namespace overlay) and read back
     # through dispatch-stat identically.
     await run(ws, f"printf 'mmm\n' > {dst}/copied/m.txt")
     await run(
-        ws, f"chmod 601 {dst}/copied/m.txt && chown 500:dev {dst}/copied/m.txt"
-        f" && touch -t 202601021530 {dst}/copied/m.txt")
+        ws,
+        f"chmod 601 {dst}/copied/m.txt && chown 500:dev {dst}/copied/m.txt"
+        f" && touch -t 202601021530 {dst}/copied/m.txt",
+    )
     st = await stat_of(ws, f"{dst}/copied/m.txt")
     check(f"{label}: chmod lands on dst mount", st.mode == 0o601)
-    check(f"{label}: chown lands on dst mount",
-          (st.uid, st.gid) == (500, "dev"))
-    check(f"{label}: touch stamps dst mtime",
-          (st.modified or "").startswith("2026-01-02T15:30"))
+    check(
+        f"{label}: chown lands on dst mount", (st.uid, st.gid) == (500, "dev")
+    )
+    check(
+        f"{label}: touch stamps dst mtime",
+        (st.modified or "").startswith("2026-01-02T15:30"),
+    )
     await run(ws, f"ln -s {dst}/copied/m.txt /ram/ml.txt")
     await run(ws, "chmod 640 /ram/ml.txt && touch -t 202603041200 /ram/ml.txt")
     st = await stat_of(ws, f"{dst}/copied/m.txt")
-    check(f"{label}: chmod through cross-mount link hits target",
-          st.mode == 0o640)
-    check(f"{label}: touch through cross-mount link hits target",
-          (st.modified or "").startswith("2026-03-04T12:00"))
+    check(
+        f"{label}: chmod through cross-mount link hits target",
+        st.mode == 0o640,
+    )
+    check(
+        f"{label}: touch through cross-mount link hits target",
+        (st.modified or "").startswith("2026-03-04T12:00"),
+    )
     await run(ws, "touch -h -t 202601010000 /ram/ml.txt")
     st = await stat_of(ws, f"{dst}/copied/m.txt")
-    check(f"{label}: touch -h writes link node, target untouched",
-          (st.modified or "").startswith("2026-03-04T12:00"))
+    check(
+        f"{label}: touch -h writes link node, target untouched",
+        (st.modified or "").startswith("2026-03-04T12:00"),
+    )
     await run(ws, f"ln -s {dst}/copied /ram/mdir")
     await run(ws, "touch -t 202601021530 /ram/mdir/created.txt")
     out, _, _ = await run(ws, f"ls {dst}/copied")
-    check(f"{label}: touch creates through cross-mount dir link", "created.txt"
-          in out)
+    check(
+        f"{label}: touch creates through cross-mount dir link",
+        "created.txt" in out,
+    )
     await run(
-        ws, f"rm /ram/ml.txt /ram/mdir {dst}/copied/m.txt"
-        f" {dst}/copied/created.txt")
+        ws,
+        f"rm /ram/ml.txt /ram/mdir {dst}/copied/m.txt"
+        f" {dst}/copied/created.txt",
+    )
 
     await run(ws, f"printf 'nnn\n' > {dst}/copied/n.txt")
     await run(ws, f"chmod g+w {dst}/copied/n.txt")
     st = await stat_of(ws, f"{dst}/copied/n.txt")
-    check(f"{label}: symbolic chmod applies against 644 base",
-          st.mode == 0o664)
+    check(
+        f"{label}: symbolic chmod applies against 644 base", st.mode == 0o664
+    )
     await run(ws, f"chown 500:dev {dst}/copied/n.txt")
     await run(ws, f"touch -t 202603041200 {dst}/copied/n.txt")
     # ls builds rows from the backend stat, which carries chmod/chown/touch
@@ -454,22 +553,30 @@ async def check_metadata(ws: Workspace, dst: str, label: str,
         check(f"{label}: ls -l renders touched mtime", "Mar  4  2026" in out)
     await run(ws, f"touch -r {dst}/copied/n.txt /ram/tref.txt")
     st = await stat_of(ws, "/ram/tref.txt")
-    check(f"{label}: touch -r copies mtime across mounts",
-          (st.modified or "").startswith("2026-03-04T12:00"))
+    check(
+        f"{label}: touch -r copies mtime across mounts",
+        (st.modified or "").startswith("2026-03-04T12:00"),
+    )
     _, _, code = await run(ws, f"touch -c {dst}/copied/absent.txt")
     out, _, _ = await run(ws, f"ls {dst}/copied")
-    check(f"{label}: touch -c does not create", code == 0
-          and "absent.txt" not in out)
+    check(
+        f"{label}: touch -c does not create",
+        code == 0 and "absent.txt" not in out,
+    )
     await run(ws, f"ln -s {dst}/copied/n.txt /ram/nl.txt")
     await run(ws, "chown -h 501:ops /ram/nl.txt")
     st = await stat_of(ws, f"{dst}/copied/n.txt")
-    check(f"{label}: chown -h leaves target owner",
-          (st.uid, st.gid) == (500, "dev"))
+    check(
+        f"{label}: chown -h leaves target owner",
+        (st.uid, st.gid) == (500, "dev"),
+    )
     await run(ws, "printf 'x\n' >> /ram/nl.txt")
     st = await stat_of(ws, f"{dst}/copied/n.txt")
     check(
-        f"{label}: append via link clears times keeps mode", st.mode == 0o664
-        and not (st.modified or "").startswith("2026-03-04T12:00"))
+        f"{label}: append via link clears times keeps mode",
+        st.mode == 0o664
+        and not (st.modified or "").startswith("2026-03-04T12:00"),
+    )
     await run(ws, f"rm {dst}/copied/n.txt")
     await run(ws, f"printf 'nnn\n' > {dst}/copied/n.txt")
     st = await stat_of(ws, f"{dst}/copied/n.txt")
@@ -482,18 +589,19 @@ async def check_symlink_cache(ws: Workspace, s3_client, label: str) -> None:
     # the link keys the cache under the REAL path, so a direct read of the
     # target serves the same cached bytes after an out-of-band mutation (and
     # vice versa a fresh link to a warmed target hits warm).
-    s3_client.put_object(Bucket=S3_BUCKET,
-                         Key="lcache/y.txt",
-                         Body=b"link-v1\n")
+    s3_client.put_object(
+        Bucket=S3_BUCKET, Key="lcache/y.txt", Body=b"link-v1\n"
+    )
     await run(ws, "ln -s /s3/lcache/y.txt /ram/cl.txt")
     out, _, _ = await run(ws, "cat /ram/cl.txt")
     check(f"{label}: warm via link reads v1", out == "link-v1\n")
-    s3_client.put_object(Bucket=S3_BUCKET,
-                         Key="lcache/y.txt",
-                         Body=b"link-v2\n")
+    s3_client.put_object(
+        Bucket=S3_BUCKET, Key="lcache/y.txt", Body=b"link-v2\n"
+    )
     out, _, _ = await run(ws, "cat /s3/lcache/y.txt")
-    check(f"{label}: direct read hits cache warmed via link",
-          out == "link-v1\n")
+    check(
+        f"{label}: direct read hits cache warmed via link", out == "link-v1\n"
+    )
     out, _, _ = await run(ws, "cat /ram/cl.txt")
     check(f"{label}: link read serves cached target bytes", out == "link-v1\n")
     await run(ws, "rm /ram/cl.txt")
@@ -501,8 +609,10 @@ async def check_symlink_cache(ws: Workspace, s3_client, label: str) -> None:
 
 async def check_whoami(ws: Workspace) -> None:
     out, _, code = await run(ws, "whoami")
-    check("whoami: prints the launch agent_id", out == "integ-agent\n"
-          and code == 0)
+    check(
+        "whoami: prints the launch agent_id",
+        out == "integ-agent\n" and code == 0,
+    )
     out, _, _ = await run(ws, "export USER=bob; whoami")
     check("whoami: ignores $USER (GNU effective user)", out == "integ-agent\n")
 
@@ -519,8 +629,9 @@ async def check_reverse(ws: Workspace, dst: str, label: str) -> None:
     check(f"{label}: cp -r back to ram a.txt", out == "rrr\n")
     out, _, _ = await run(ws, f"cat /ram/rev_{label}/sub/b.txt")
     check(f"{label}: cp -r back to ram sub/b.txt", out == "sss\n")
-    out, _, _ = await run(ws,
-                          f"cat {dst}/rev/a.txt /ram/rev_{label}/sub/b.txt")
+    out, _, _ = await run(
+        ws, f"cat {dst}/rev/a.txt /ram/rev_{label}/sub/b.txt"
+    )
     check(f"{label}: cat aggregates dst-first", out == "rrr\nsss\n")
     await run(ws, f"mkdir -p {dst}/revmove/sub")
     await run(ws, f"printf 'm\\n' > {dst}/revmove/sub/c.txt")
@@ -531,11 +642,13 @@ async def check_reverse(ws: Workspace, dst: str, label: str) -> None:
     check(f"{label}: mv back removes source", code != 0)
 
 
-async def exercise(ws: Workspace,
-                   dst: str,
-                   label: str,
-                   expect_dirs: bool,
-                   native_attrs: bool = True) -> None:
+async def exercise(
+    ws: Workspace,
+    dst: str,
+    label: str,
+    expect_dirs: bool,
+    native_attrs: bool = True,
+) -> None:
     print(f"===== ram -> {label} =====")
     await check_recursive(ws, dst, label, expect_dirs)
     await check_cd_cross_mount(ws, dst, label)
@@ -561,12 +674,15 @@ async def main() -> None:
 
     mounts = {"/ram": RAMVFS(), "/ram2": RAMVFS()}
     mounts["/s3"] = S3VFS(
-        S3Config(bucket=S3_BUCKET,
-                 region="us-east-1",
-                 endpoint_url=endpoint,
-                 aws_access_key_id="testing",
-                 aws_secret_access_key="testing",
-                 path_style=True))
+        S3Config(
+            bucket=S3_BUCKET,
+            region="us-east-1",
+            endpoint_url=endpoint,
+            aws_access_key_id="testing",
+            aws_secret_access_key="testing",
+            path_style=True,
+        )
+    )
     redis_url = os.environ.get("REDIS_URL")
     if redis_url:
         prefix = f"mirage-integ-cross-{uuid.uuid4().hex[:8]}/"

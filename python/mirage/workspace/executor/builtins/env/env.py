@@ -29,10 +29,11 @@ from mirage.workspace.types import ExecutionNode
 
 def _env_error(message: str) -> tuple[None, IOResult, ExecutionNode]:
     err = (message + "\n" + ENV_HELP_HINT).encode()
-    return None, IOResult(exit_code=125,
-                          stderr=err), ExecutionNode(command="env",
-                                                     exit_code=125,
-                                                     stderr=err)
+    return (
+        None,
+        IOResult(exit_code=125, stderr=err),
+        ExecutionNode(command="env", exit_code=125, stderr=err),
+    )
 
 
 async def handle_env(
@@ -85,7 +86,7 @@ async def handle_env(
             i += 2
             continue
         if tok.startswith("--unset="):
-            unset.append(tok[len("--unset="):])
+            unset.append(tok[len("--unset=") :])
             i += 1
             continue
         if tok.startswith("--"):
@@ -100,7 +101,7 @@ async def handle_env(
                 elif ch == "0":
                     null = True
                 elif ch == "u":
-                    rest = tok[j + 1:]
+                    rest = tok[j + 1 :]
                     if rest:
                         unset.append(rest)
                     elif i + 1 < len(args):
@@ -108,7 +109,8 @@ async def handle_env(
                         consumed_next = True
                     else:
                         return _env_error(
-                            "env: option requires an argument -- 'u'")
+                            "env: option requires an argument -- 'u'"
+                        )
                     break
                 else:
                     return _env_error(f"env: invalid option -- '{ch}'")
@@ -150,9 +152,9 @@ async def handle_env(
     # as the program.
     token = set_program_invocation(session)
     try:
-        io = await execute_fn(shell_join(command),
-                              session_id=session.session_id,
-                              stdin=stdin)
+        io = await execute_fn(
+            shell_join(command), session_id=session.session_id, stdin=stdin
+        )
     finally:
         reset_program_invocation(token)
         session.vars = saved
@@ -165,5 +167,6 @@ async def env_builtin(call: BuiltinCall) -> Result:
     Args:
         call (BuiltinCall): the invocation.
     """
-    return await handle_env(call.execute_fn, list(call.argv.args),
-                            call.session, call.stdin)
+    return await handle_env(
+        call.execute_fn, list(call.argv.args), call.session, call.stdin
+    )

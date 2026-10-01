@@ -22,9 +22,8 @@ DirArgs = list[str | PathSpec]
 
 
 def split_mode_options(
-        args: DirArgs,
-        letters: str = CD_OPTIONS,
-        default: bool = False) -> tuple[DirArgs, str | None, bool]:
+    args: DirArgs, letters: str = CD_OPTIONS, default: bool = False
+) -> tuple[DirArgs, str | None, bool]:
     """Split leading ``-L``/``-P`` option flags from the operands.
 
     Shared by ``cd`` (which also takes ``-e -@``) and ``pwd``, so the
@@ -116,8 +115,9 @@ def typed_path(val: str | PathSpec) -> str:
     return val
 
 
-def resolve_target(combined: str, links: dict[str, str],
-                   physical: bool) -> str:
+def resolve_target(
+    combined: str, links: dict[str, str], physical: bool
+) -> str:
     """Resolve a combined ``cd`` path, following symlinks per mode.
 
     Logical (``-L``, default) simplifies ``..`` textually first, then

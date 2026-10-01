@@ -47,32 +47,25 @@ def index():
 def messages_with_files():
     return [
         {
-            "type":
-            "message",
-            "user":
-            "U1",
-            "ts":
-            "1712707200.0",
-            "text":
-            "here's the report",
-            "files": [{
-                "id":
-                "F1ABC",
-                "name":
-                "report.pdf",
-                "title":
-                "report.pdf",
-                "filetype":
-                "pdf",
-                "mimetype":
-                "application/pdf",
-                "size":
-                4096,
-                "url_private_download": ("https://files.slack.com/files-pri"
-                                         "/T1-F1ABC/download/report.pdf"),
-                "timestamp":
-                1712707200,
-            }],
+            "type": "message",
+            "user": "U1",
+            "ts": "1712707200.0",
+            "text": "here's the report",
+            "files": [
+                {
+                    "id": "F1ABC",
+                    "name": "report.pdf",
+                    "title": "report.pdf",
+                    "filetype": "pdf",
+                    "mimetype": "application/pdf",
+                    "size": 4096,
+                    "url_private_download": (
+                        "https://files.slack.com/files-pri"
+                        "/T1-F1ABC/download/report.pdf"
+                    ),
+                    "timestamp": 1712707200,
+                }
+            ],
         },
         {
             "type": "message",
@@ -84,31 +77,50 @@ def messages_with_files():
 
 
 @pytest.mark.asyncio
-async def test_files_dir_listing_from_messages(accessor, index,
-                                               messages_with_files):
-    await index.set_dir("/channels", [
-        ("general__C001",
-         IndexEntry(id="C001",
+async def test_files_dir_listing_from_messages(
+    accessor, index, messages_with_files
+):
+    await index.set_dir(
+        "/channels",
+        [
+            (
+                "general__C001",
+                IndexEntry(
+                    id="C001",
                     name="general",
                     resource_type="slack/channel",
                     vfs_name="general__C001",
-                    remote_time="1700000000")),
-    ])
-    await index.set_dir("/channels/general__C001", [
-        ("2026-04-10",
-         IndexEntry(id="C001:2026-04-10",
+                    remote_time="1700000000",
+                ),
+            ),
+        ],
+    )
+    await index.set_dir(
+        "/channels/general__C001",
+        [
+            (
+                "2026-04-10",
+                IndexEntry(
+                    id="C001:2026-04-10",
                     name="2026-04-10",
                     resource_type="slack/date_dir",
-                    vfs_name="2026-04-10")),
-    ])
-    with patch("mirage.core.slack.readdir.fetch_messages_for_day",
-               new_callable=AsyncMock,
-               return_value=messages_with_files):
+                    vfs_name="2026-04-10",
+                ),
+            ),
+        ],
+    )
+    with patch(
+        "mirage.core.slack.readdir.fetch_messages_for_day",
+        new_callable=AsyncMock,
+        return_value=messages_with_files,
+    ):
         result = await readdir(
             accessor,
-            PathSpec(vfs_path="channels/general__C001/2026-04-10/files",
-                     virtual="/channels/general__C001/2026-04-10/files",
-                     directory="/channels/general__C001/2026-04-10/files"),
+            PathSpec(
+                vfs_path="channels/general__C001/2026-04-10/files",
+                virtual="/channels/general__C001/2026-04-10/files",
+                directory="/channels/general__C001/2026-04-10/files",
+            ),
             index=index,
         )
     assert result == [
@@ -118,70 +130,105 @@ async def test_files_dir_listing_from_messages(accessor, index,
 
 @pytest.mark.asyncio
 async def test_files_dir_empty_on_no_attachments(accessor, index):
-    await index.set_dir("/channels", [
-        ("general__C001",
-         IndexEntry(id="C001",
+    await index.set_dir(
+        "/channels",
+        [
+            (
+                "general__C001",
+                IndexEntry(
+                    id="C001",
                     name="general",
                     resource_type="slack/channel",
                     vfs_name="general__C001",
-                    remote_time="1700000000")),
-    ])
-    await index.set_dir("/channels/general__C001", [
-        ("2026-04-10",
-         IndexEntry(id="C001:2026-04-10",
+                    remote_time="1700000000",
+                ),
+            ),
+        ],
+    )
+    await index.set_dir(
+        "/channels/general__C001",
+        [
+            (
+                "2026-04-10",
+                IndexEntry(
+                    id="C001:2026-04-10",
                     name="2026-04-10",
                     resource_type="slack/date_dir",
-                    vfs_name="2026-04-10")),
-    ])
-    no_file_msgs = [{
-        "type": "message",
-        "user": "U1",
-        "ts": "1712707200.0",
-        "text": "hi"
-    }]
-    with patch("mirage.core.slack.readdir.fetch_messages_for_day",
-               new_callable=AsyncMock,
-               return_value=no_file_msgs):
+                    vfs_name="2026-04-10",
+                ),
+            ),
+        ],
+    )
+    no_file_msgs = [
+        {"type": "message", "user": "U1", "ts": "1712707200.0", "text": "hi"}
+    ]
+    with patch(
+        "mirage.core.slack.readdir.fetch_messages_for_day",
+        new_callable=AsyncMock,
+        return_value=no_file_msgs,
+    ):
         result = await readdir(
             accessor,
-            PathSpec(vfs_path="channels/general__C001/2026-04-10/files",
-                     virtual="/channels/general__C001/2026-04-10/files",
-                     directory="/channels/general__C001/2026-04-10/files"),
+            PathSpec(
+                vfs_path="channels/general__C001/2026-04-10/files",
+                virtual="/channels/general__C001/2026-04-10/files",
+                directory="/channels/general__C001/2026-04-10/files",
+            ),
             index=index,
         )
     assert result == []
 
 
 @pytest.mark.asyncio
-async def test_file_blob_index_entry_stores_url(accessor, index,
-                                                messages_with_files):
-    await index.set_dir("/channels", [
-        ("general__C001",
-         IndexEntry(id="C001",
+async def test_file_blob_index_entry_stores_url(
+    accessor, index, messages_with_files
+):
+    await index.set_dir(
+        "/channels",
+        [
+            (
+                "general__C001",
+                IndexEntry(
+                    id="C001",
                     name="general",
                     resource_type="slack/channel",
                     vfs_name="general__C001",
-                    remote_time="1700000000")),
-    ])
-    await index.set_dir("/channels/general__C001", [
-        ("2026-04-10",
-         IndexEntry(id="C001:2026-04-10",
+                    remote_time="1700000000",
+                ),
+            ),
+        ],
+    )
+    await index.set_dir(
+        "/channels/general__C001",
+        [
+            (
+                "2026-04-10",
+                IndexEntry(
+                    id="C001:2026-04-10",
                     name="2026-04-10",
                     resource_type="slack/date_dir",
-                    vfs_name="2026-04-10")),
-    ])
-    with patch("mirage.core.slack.readdir.fetch_messages_for_day",
-               new_callable=AsyncMock,
-               return_value=messages_with_files):
+                    vfs_name="2026-04-10",
+                ),
+            ),
+        ],
+    )
+    with patch(
+        "mirage.core.slack.readdir.fetch_messages_for_day",
+        new_callable=AsyncMock,
+        return_value=messages_with_files,
+    ):
         await readdir(
             accessor,
-            PathSpec(vfs_path="channels/general__C001/2026-04-10/files",
-                     virtual="/channels/general__C001/2026-04-10/files",
-                     directory="/channels/general__C001/2026-04-10/files"),
+            PathSpec(
+                vfs_path="channels/general__C001/2026-04-10/files",
+                virtual="/channels/general__C001/2026-04-10/files",
+                directory="/channels/general__C001/2026-04-10/files",
+            ),
             index=index,
         )
     blob = await index.get(
-        "/channels/general__C001/2026-04-10/files/report__F1ABC.pdf")
+        "/channels/general__C001/2026-04-10/files/report__F1ABC.pdf"
+    )
     assert blob.entry is not None
     assert blob.entry.id == "F1ABC"
     assert blob.entry.size == 4096
@@ -191,12 +238,16 @@ async def test_file_blob_index_entry_stores_url(accessor, index,
     assert blob.entry.extra["ts"] == "1712707200.0"
 
 
-@pytest.mark.parametrize("raw_name,expected_tail", [
-    ("会議" * 100 + ".txt", ".txt"),
-    ("会議" * 100, ""),
-])
+@pytest.mark.parametrize(
+    "raw_name,expected_tail",
+    [
+        ("会議" * 100 + ".txt", ".txt"),
+        ("会議" * 100, ""),
+    ],
+)
 def test_a_long_filename_fits_name_max_and_keeps_id_and_extension(
-        raw_name, expected_tail):
+    raw_name, expected_tail
+):
     """The stem is the only part that gives.
 
     A trimmed id stops addressing the file and a trimmed extension changes

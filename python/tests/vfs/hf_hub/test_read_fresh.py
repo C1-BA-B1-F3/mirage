@@ -35,18 +35,20 @@ def _hub(files: dict[str, bytes], **kwargs) -> FakeHub:
 
 
 def _vfs(hub: FakeHub):
-    return build_vfs("hf_models", {
-        "repo_id": "acme/widget",
-        "endpoint": hub.url
-    })
+    return build_vfs(
+        "hf_models", {"repo_id": "acme/widget", "endpoint": hub.url}
+    )
 
 
 def _ws(vfs, policy: ReadPolicy = ReadPolicy.FRESH) -> Workspace:
-    return Workspace({
-        "/m":
-        Mount(vfs=vfs, mode=MountMode.READ, read=ReadSpec(policy=policy)),
-        "/r": (RAMVFS(), MountMode.WRITE),
-    })
+    return Workspace(
+        {
+            "/m": Mount(
+                vfs=vfs, mode=MountMode.READ, read=ReadSpec(policy=policy)
+            ),
+            "/r": (RAMVFS(), MountMode.WRITE),
+        }
+    )
 
 
 async def _out(ws: Workspace, line: str) -> bytes:
@@ -137,7 +139,8 @@ async def test_a_mount_that_cannot_see_its_repo_fails_loudly():
             cat = await ws.shell("cat /m/a.txt")
             assert cat.exit_code == 1
             assert await cat.stderr_str() == (
-                "cat: /m/a.txt: Permission denied\n")
+                "cat: /m/a.txt: Permission denied\n"
+            )
         finally:
             await ws.close()
 
@@ -147,13 +150,16 @@ async def test_a_refused_mount_does_not_hide_the_other_mounts():
     # One hf mount the token cannot see must not blank out a search across
     # the workspace: the walk reports that mount and keeps going.
     with serve(_hub({"a.txt": OLD}, fail={"tree": (401, "")})) as hub:
-        ws = Workspace({
-            "/h": (_vfs(hub), MountMode.READ),
-            "/r": (RAMVFS(), MountMode.WRITE),
-        })
+        ws = Workspace(
+            {
+                "/h": (_vfs(hub), MountMode.READ),
+                "/r": (RAMVFS(), MountMode.WRITE),
+            }
+        )
         try:
-            await (await ws.shell("tee /r/n.txt",
-                                  stdin=b"needle\n")).materialize_stdout()
+            await (
+                await ws.shell("tee /r/n.txt", stdin=b"needle\n")
+            ).materialize_stdout()
             grep = await ws.shell("grep -r needle /")
             assert await grep.materialize_stdout() == b"/r/n.txt:needle\n"
             assert "Permission denied" in await grep.stderr_str()
@@ -166,15 +172,19 @@ async def test_a_refused_mount_does_not_hide_the_other_mounts():
 @pytest.mark.asyncio
 async def test_a_gated_download_does_not_hide_the_other_mounts():
     # The tree lists but the file download is refused, as for a gated repo.
-    with serve(_hub({"a.txt": b"needle\n"}, fail={"resolve":
-                                                  (403, "")})) as hub:
-        ws = Workspace({
-            "/h": (_vfs(hub), MountMode.READ),
-            "/r": (RAMVFS(), MountMode.WRITE),
-        })
+    with serve(
+        _hub({"a.txt": b"needle\n"}, fail={"resolve": (403, "")})
+    ) as hub:
+        ws = Workspace(
+            {
+                "/h": (_vfs(hub), MountMode.READ),
+                "/r": (RAMVFS(), MountMode.WRITE),
+            }
+        )
         try:
-            await (await ws.shell("tee /r/n.txt",
-                                  stdin=b"needle\n")).materialize_stdout()
+            await (
+                await ws.shell("tee /r/n.txt", stdin=b"needle\n")
+            ).materialize_stdout()
             grep = await ws.shell("grep -r needle /")
             assert await grep.materialize_stdout() == b"/r/n.txt:needle\n"
             assert "Permission denied" in await grep.stderr_str()
@@ -296,8 +306,11 @@ async def test_a_warm_fresh_read_costs_one_path_per_probe(line, posts, walks):
             await _out(ws, "cat /m/a.txt")
             hub.log.clear()
             await _out(ws, line)
-            assert (hub.count("paths_info"), hub.count("tree"),
-                    hub.count("resolve")) == (posts, walks, 0)
+            assert (
+                hub.count("paths_info"),
+                hub.count("tree"),
+                hub.count("resolve"),
+            ) == (posts, walks, 0)
         finally:
             await ws.close()
 
@@ -316,10 +329,9 @@ async def test_a_new_mount_loads_its_tree_once_and_never_asks_one_path():
 
 
 def _spec(path: str) -> PathSpec:
-    return PathSpec(virtual="/" + path,
-                    directory="/",
-                    vfs_path=path,
-                    raw_path="/" + path)
+    return PathSpec(
+        virtual="/" + path, directory="/", vfs_path=path, raw_path="/" + path
+    )
 
 
 @pytest.mark.asyncio
@@ -331,10 +343,9 @@ async def test_a_ranged_read_stamps_the_whole_files_oid(override, expected):
         vfs = _vfs(hub)
         scope = RecordingScope()
         try:
-            data = await read_bytes(vfs.accessor,
-                                    _spec("a.txt"),
-                                    offset=2,
-                                    size=3)
+            data = await read_bytes(
+                vfs.accessor, _spec("a.txt"), offset=2, size=3
+            )
         finally:
             scope.close()
             await vfs.accessor.close()

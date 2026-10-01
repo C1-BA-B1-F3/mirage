@@ -57,9 +57,11 @@ class DirListing:
             the window has not been deleted. The listing and its seeds
             are cached as directories but evict nothing.
     """
+
     entries: list[tuple[str, IndexEntry]]
-    seeds: Mapping[str, list[tuple[str,
-                                   IndexEntry]]] = field(default_factory=dict)
+    seeds: Mapping[str, list[tuple[str, IndexEntry]]] = field(
+        default_factory=dict
+    )
     partial: bool = False
     window: bool = False
 
@@ -72,9 +74,11 @@ PatternTest = Callable[[str], bool]
 
 
 def _drop_hidden(
-        listed: list[tuple[str, IndexEntry]]) -> list[tuple[str, IndexEntry]]:
-    return [(name, entry) for name, entry in listed
-            if not name.startswith(".")]
+    listed: list[tuple[str, IndexEntry]],
+) -> list[tuple[str, IndexEntry]]:
+    return [
+        (name, entry) for name, entry in listed if not name.startswith(".")
+    ]
 
 
 def make_readdir(
@@ -151,17 +155,19 @@ def make_readdir(
 
     globbed_kinds = pattern_kinds if pattern_kinds is not None else {}
     resolved = entry_listers if entry_listers is not None else {}
-    parented = (parent_entry_listers
-                if parent_entry_listers is not None else {})
+    parented = parent_entry_listers if parent_entry_listers is not None else {}
     tables = [set(listers), set(resolved), set(parented)]
-    overlap = ((tables[0] & tables[1]) | (tables[0] & tables[2])
-               | (tables[1] & tables[2]))
+    overlap = (
+        (tables[0] & tables[1])
+        | (tables[0] & tables[2])
+        | (tables[1] & tables[2])
+    )
     if overlap:
         raise ValueError(f"kinds in several lister tables: {sorted(overlap)}")
 
-    async def readdir(accessor: A,
-                      path_spec: PathSpec,
-                      index: IndexCacheStore = NULL_INDEX) -> list[str]:
+    async def readdir(
+        accessor: A, path_spec: PathSpec, index: IndexCacheStore = NULL_INDEX
+    ) -> list[str]:
         if index is NULL_INDEX or index is None:
             # Entry resolution and the parent-listing warm both read what
             # readdir just wrote, so a caller with no cache still needs
@@ -178,8 +184,11 @@ def make_readdir(
         if match.kind == INVALID:
             raise enoent(virtual)
         pushable = globbed_kinds.get(match.kind)
-        globbed = (path_spec.pattern is not None and pushable is not None
-                   and pushable(path_spec.pattern))
+        globbed = (
+            path_spec.pattern is not None
+            and pushable is not None
+            and pushable(path_spec.pattern)
+        )
         if globbed:
             match = replace(match, pattern=path_spec.pattern)
         if match.kind == ROOT and static_root is not None:
@@ -188,8 +197,11 @@ def make_readdir(
         entry_lister = resolved.get(match.kind)
         parent_lister = parented.get(match.kind)
         if lister is None and entry_lister is None and parent_lister is None:
-            if (match.scope is not None and match.scope.leaf
-                    and leaf_error == "enotdir"):
+            if (
+                match.scope is not None
+                and match.scope.leaf
+                and leaf_error == "enotdir"
+            ):
                 raise enotdir(virtual)
             raise enoent(virtual)
         guard = guards.get(match.kind) if guards is not None else None
@@ -204,10 +216,15 @@ def make_readdir(
             if parent_lister is not None:
                 proof_key = virtual_key.rsplit("/", 1)[0] or "/"
             own = await resolve_entry(
-                readdir, accessor,
-                PathSpec(virtual=proof_key,
-                         directory=proof_key,
-                         vfs_path=mount_key(proof_key, prefix)), index)
+                readdir,
+                accessor,
+                PathSpec(
+                    virtual=proof_key,
+                    directory=proof_key,
+                    vfs_path=mount_key(proof_key, prefix),
+                ),
+                index,
+            )
             if own is None:
                 raise enoent(virtual)
             # The resolve may have warmed this very listing: a parent's
@@ -243,9 +260,11 @@ def make_readdir(
         else:
             await index.set_dir(virtual_key, entries, window=window)
         for rel, child_entries in seeds.items():
-            await index.set_dir(f"{stem}/{rel.strip('/')}",
-                                _drop_hidden(child_entries),
-                                window=window)
+            await index.set_dir(
+                f"{stem}/{rel.strip('/')}",
+                _drop_hidden(child_entries),
+                window=window,
+            )
         return [f"{stem}/{name}" for name, _ in entries]
 
     return readdir

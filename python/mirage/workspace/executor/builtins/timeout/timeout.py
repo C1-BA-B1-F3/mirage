@@ -23,10 +23,13 @@ from mirage.commands.quote import quote_text
 from mirage.commands.spec.help import render_help
 from mirage.commands.spec.shell import SHELL_SPECS, parse_shell_options
 from mirage.commands.spec.standard import version_line
-from mirage.commands.spec.usage import (ambiguous_option_error,
-                                        missing_value_error,
-                                        unexpected_value_error,
-                                        unknown_option_error, usage_hint)
+from mirage.commands.spec.usage import (
+    ambiguous_option_error,
+    missing_value_error,
+    unexpected_value_error,
+    unknown_option_error,
+    usage_hint,
+)
 from mirage.context import reset_program_invocation, set_program_invocation
 from mirage.io import IOResult
 from mirage.io.stream import materialize, yield_bytes
@@ -34,8 +37,16 @@ from mirage.io.types import ByteSource
 from mirage.shell.join import shell_join
 from mirage.utils.stream import ensure_stream
 from mirage.workspace.executor.builtins.timeout.constants import (
-    CONTINUE_SIGNALS, SELF_KILLING_SIGNALS, SIGCHLD, SIGKILL, SIGNAL_NAMES,
-    SIGRTMAX, SIGRTMIN, SIGSTOP, STOP_SIGNALS)
+    CONTINUE_SIGNALS,
+    SELF_KILLING_SIGNALS,
+    SIGCHLD,
+    SIGKILL,
+    SIGNAL_NAMES,
+    SIGRTMAX,
+    SIGRTMIN,
+    SIGSTOP,
+    STOP_SIGNALS,
+)
 from mirage.workspace.executor.builtins.types import BuiltinCall, Result
 from mirage.workspace.lookup.lookup import execs
 from mirage.workspace.mount.registry import MountRegistry
@@ -44,19 +55,22 @@ from mirage.workspace.types import ExecutionNode
 
 _SYNOPSIS = "timeout [OPTION] DURATION COMMAND [ARG]..."
 
-_FLOAT = re.compile(r"[ \t\n\v\f\r]*([+-]?)("
-                    r"0[xX](?:[0-9a-fA-F]+(?:\.[0-9a-fA-F]*)?|\.[0-9a-fA-F]+)"
-                    r"(?:[pP][+-]?[0-9]+)?"
-                    r"|(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)(?:[eE][+-]?[0-9]+)?"
-                    r"|[iI][nN][fF](?:[iI][nN][iI][tT][yY])?"
-                    r"|[nN][aA][nN](?:\([0-9A-Za-z_]*\))?)")
+_FLOAT = re.compile(
+    r"[ \t\n\v\f\r]*([+-]?)("
+    r"0[xX](?:[0-9a-fA-F]+(?:\.[0-9a-fA-F]*)?|\.[0-9a-fA-F]+)"
+    r"(?:[pP][+-]?[0-9]+)?"
+    r"|(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)(?:[eE][+-]?[0-9]+)?"
+    r"|[iI][nN][fF](?:[iI][nN][iI][tT][yY])?"
+    r"|[nN][aA][nN](?:\([0-9A-Za-z_]*\))?)"
+)
 
 _LONG = re.compile(r"[ \t\n\v\f\r]*[+-]?[0-9]+")
 
 _UNIT_SECONDS = {"": 1.0, "s": 1.0, "m": 60.0, "h": 3600.0, "d": 86400.0}
 
-_UPPER = str.maketrans("abcdefghijklmnopqrstuvwxyz",
-                       "ABCDEFGHIJKLMNOPQRSTUVWXYZ")
+_UPPER = str.maketrans(
+    "abcdefghijklmnopqrstuvwxyz", "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+)
 
 _SIGNUM_BOUND = SIGRTMAX
 
@@ -69,11 +83,14 @@ def _usage_error(message: str) -> tuple[None, IOResult, ExecutionNode]:
     return _refuse(f"timeout: {message}\n{usage_hint('timeout')}\n".encode())
 
 
-def _refuse(stderr: bytes,
-            exit_code: int = 125) -> tuple[None, IOResult, ExecutionNode]:
-    return None, IOResult(exit_code=exit_code,
-                          stderr=stderr), ExecutionNode(command="timeout",
-                                                        exit_code=exit_code)
+def _refuse(
+    stderr: bytes, exit_code: int = 125
+) -> tuple[None, IOResult, ExecutionNode]:
+    return (
+        None,
+        IOResult(exit_code=exit_code, stderr=stderr),
+        ExecutionNode(command="timeout", exit_code=exit_code),
+    )
 
 
 def timeout_missing(name: str) -> str:
@@ -82,8 +99,10 @@ def timeout_missing(name: str) -> str:
     Args:
         name (str): the command word.
     """
-    return (f"timeout: failed to run command '{quote_text(name)}': "
-            "No such file or directory\n")
+    return (
+        f"timeout: failed to run command '{quote_text(name)}': "
+        "No such file or directory\n"
+    )
 
 
 def parse_duration(raw: str) -> float | None:
@@ -100,15 +119,16 @@ def parse_duration(raw: str) -> float | None:
     if match is None:
         return None
     sign, body = match.groups()
-    suffix = raw[match.end():]
+    suffix = raw[match.end() :]
     if suffix not in _UNIT_SECONDS:
         return None
     lowered = body.lower()
     if lowered.startswith("nan"):
         return None
     try:
-        value = (float.fromhex(body)
-                 if lowered.startswith("0x") else float(body))
+        value = (
+            float.fromhex(body) if lowered.startswith("0x") else float(body)
+        )
     except OverflowError:
         value = math.inf
     if sign == "-":
@@ -223,20 +243,26 @@ async def handle_timeout(
     kill_after = 0.0
     for name, value in parse.given:
         if name == "help":
-            text = render_help("timeout",
-                               SHELL_SPECS["timeout"],
-                               synopsis=_SYNOPSIS).encode()
-            return yield_bytes(text), IOResult(), ExecutionNode(
-                command="timeout", exit_code=0)
+            text = render_help(
+                "timeout", SHELL_SPECS["timeout"], synopsis=_SYNOPSIS
+            ).encode()
+            return (
+                yield_bytes(text),
+                IOResult(),
+                ExecutionNode(command="timeout", exit_code=0),
+            )
         if name == "version":
-            return yield_bytes(
-                version_line("timeout")), IOResult(), ExecutionNode(
-                    command="timeout", exit_code=0)
+            return (
+                yield_bytes(version_line("timeout")),
+                IOResult(),
+                ExecutionNode(command="timeout", exit_code=0),
+            )
         if name == "k" and isinstance(value, str):
             after = parse_duration(value)
             if after is None:
                 return _usage_error(
-                    f"invalid time interval '{quote_text(value)}'")
+                    f"invalid time interval '{quote_text(value)}'"
+                )
             kill_after = after if after < math.inf else 0.0
         if name == "s" and isinstance(value, str):
             number = parse_signal(value)
@@ -244,13 +270,16 @@ async def handle_timeout(
                 return _usage_error(f"'{quote_text(value)}': invalid signal")
             signal = number
     if parse.invalid is not None:
-        stderr, code = (ambiguous_option_error(
-            "timeout", parse.invalid, parse.candidates) if parse.candidates
-                        else unknown_option_error("timeout", parse.invalid))
+        stderr, code = (
+            ambiguous_option_error("timeout", parse.invalid, parse.candidates)
+            if parse.candidates
+            else unknown_option_error("timeout", parse.invalid)
+        )
         return _refuse(stderr, code)
     if parse.unexpected_value is not None:
         return _refuse(
-            *unexpected_value_error("timeout", parse.unexpected_value))
+            *unexpected_value_error("timeout", parse.unexpected_value)
+        )
     if parse.needs_value is not None:
         return _refuse(*missing_value_error("timeout", parse.needs_value))
     if len(parse.operands) < 2:
@@ -263,16 +292,30 @@ async def handle_timeout(
     command = parse.operands[1:]
     if registry is not None and not execs(command[0], session, registry):
         return _refuse(timeout_missing(command[0]).encode(), 127)
-    return await _supervise(execute_fn, shell_join(command), session, stdin,
-                            seconds, signal, kill_after, parse.flags,
-                            command[0])
+    return await _supervise(
+        execute_fn,
+        shell_join(command),
+        session,
+        stdin,
+        seconds,
+        signal,
+        kill_after,
+        parse.flags,
+        command[0],
+    )
 
 
 async def _supervise(
-        execute_fn: Callable[..., Any], inner: str, session: SessionState,
-        stdin: ByteSource | None, seconds: float, signal: int,
-        kill_after: float, flags: dict[str, str | bool],
-        name: str) -> tuple[ByteSource | None, IOResult, ExecutionNode]:
+    execute_fn: Callable[..., Any],
+    inner: str,
+    session: SessionState,
+    stdin: ByteSource | None,
+    seconds: float,
+    signal: int,
+    kill_after: float,
+    flags: dict[str, str | bool],
+    name: str,
+) -> tuple[ByteSource | None, IOResult, ExecutionNode]:
     """Run the inner line under the deadline and answer as GNU does.
 
     Args:
@@ -296,23 +339,42 @@ async def _supervise(
     token = set_program_invocation(session)
     try:
         task = asyncio.ensure_future(
-            _execute_drained(execute_fn, inner, session.session_id, stdin,
-                             drained, held))
+            _execute_drained(
+                execute_fn, inner, session.session_id, stdin, drained, held
+            )
+        )
     finally:
         reset_program_invocation(token)
     try:
-        return await _deadline(task, drained, held, seconds, signal,
-                               kill_after, foreground, preserve, verbose, name)
+        return await _deadline(
+            task,
+            drained,
+            held,
+            seconds,
+            signal,
+            kill_after,
+            foreground,
+            preserve,
+            verbose,
+            name,
+        )
     finally:
         if not task.done():
             await _cancel(task)
 
 
 async def _deadline(
-        task: _Run, drained: list[bytes], held: list[IOResult], seconds: float,
-        signal: int, kill_after: float, foreground: bool, preserve: bool,
-        verbose: bool,
-        name: str) -> tuple[ByteSource | None, IOResult, ExecutionNode]:
+    task: _Run,
+    drained: list[bytes],
+    held: list[IOResult],
+    seconds: float,
+    signal: int,
+    kill_after: float,
+    foreground: bool,
+    preserve: bool,
+    verbose: bool,
+    name: str,
+) -> tuple[ByteSource | None, IOResult, ExecutionNode]:
     """Wait for the run, and at the deadline do what the signal does.
 
     Args:
@@ -331,15 +393,20 @@ async def _deadline(
     done, _ = await asyncio.wait({task}, timeout=deadline)
     if task in done:
         stdout, io = task.result()
-        return stdout, io, ExecutionNode(command="timeout",
-                                         exit_code=io.exit_code)
+        return (
+            stdout,
+            io,
+            ExecutionNode(command="timeout", exit_code=io.exit_code),
+        )
 
     said: list[str] = []
 
     def say(number: int) -> None:
         if verbose:
-            said.append(f"timeout: sending signal {signal_name(number)} to "
-                        f"command '{quote_text(name)}'\n")
+            said.append(
+                f"timeout: sending signal {signal_name(number)} to "
+                f"command '{quote_text(name)}'\n"
+            )
 
     say(signal)
     stops = signal in STOP_SIGNALS and (foreground or signal == SIGSTOP)
@@ -357,7 +424,8 @@ async def _deadline(
         return await _ended(drained, held, said, 137)
     if signal in CONTINUE_SIGNALS or signal in STOP_SIGNALS:
         done, _ = await asyncio.wait(
-            {task}, timeout=kill_after if kill_after else None)
+            {task}, timeout=kill_after if kill_after else None
+        )
         if task not in done:
             await _cancel(task)
             say(SIGKILL)
@@ -365,8 +433,9 @@ async def _deadline(
         code = task.result()[1].exit_code if preserve else 124
         return await _ended(drained, held, said, code, finished=True)
     await _cancel(task)
-    if signal in SELF_KILLING_SIGNALS and (not foreground
-                                           or signal == SIGKILL):
+    if signal in SELF_KILLING_SIGNALS and (
+        not foreground or signal == SIGKILL
+    ):
         return await _ended(drained, held, said, 128 + signal)
     return await _ended(drained, held, said, 128 + signal if preserve else 124)
 
@@ -406,9 +475,11 @@ async def _ended(
     tail = "".join(said).encode()
     head = stderr if isinstance(stderr, bytes) else b""
     out = b"".join(drained) or None
-    return out, IOResult(exit_code=exit_code, stderr=head + tail
-                         or None), ExecutionNode(command="timeout",
-                                                 exit_code=exit_code)
+    return (
+        out,
+        IOResult(exit_code=exit_code, stderr=head + tail or None),
+        ExecutionNode(command="timeout", exit_code=exit_code),
+    )
 
 
 async def _execute_drained(
@@ -451,5 +522,10 @@ async def timeout_builtin(call: BuiltinCall) -> Result:
     Args:
         call (BuiltinCall): the invocation.
     """
-    return await handle_timeout(call.execute_fn, list(call.argv.args),
-                                call.session, call.stdin, call.registry)
+    return await handle_timeout(
+        call.execute_fn,
+        list(call.argv.args),
+        call.session,
+        call.stdin,
+        call.registry,
+    )

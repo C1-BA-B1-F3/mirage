@@ -17,34 +17,42 @@ from mirage.core.hierarchy.scope import Scope, Slot, make_detect_scope
 from mirage.types import ContentType
 
 _BASE = ("bases", Slot("base", id_key="base_id"))
-_TABLE = _BASE + (Slot("table", id_key="table_id"), )
+_TABLE = _BASE + (Slot("table", id_key="table_id"),)
 
 # One description of the tree for readdir, stat and read. A base holds
 # only tables, so a table directory sits right under its base beside
 # base.json; the literal leaves are declared before the table slot, and a
 # table's `label__tbl...` name can never spell one of them anyway.
 SCOPES = (
-    Scope(kind="bases", segments=("bases", ), probed=False),
+    Scope(kind="bases", segments=("bases",), probed=False),
     Scope(kind="base", segments=_BASE),
-    Scope(kind="base_json",
-          segments=_BASE + ("base.json", ),
-          leaf=True,
-          filetype=ContentType.JSON),
+    Scope(
+        kind="base_json",
+        segments=_BASE + ("base.json",),
+        leaf=True,
+        filetype=ContentType.JSON,
+    ),
     Scope(kind="table", segments=_TABLE),
-    Scope(kind="table_json",
-          segments=_TABLE + ("table.json", ),
-          leaf=True,
-          filetype=ContentType.JSON),
-    Scope(kind="records",
-          segments=_TABLE + ("records.jsonl", ),
-          leaf=True,
-          filetype=ContentType.TEXT),
-    Scope(kind="views", segments=_TABLE + ("views", )),
-    Scope(kind="view",
-          segments=_TABLE +
-          ("views", Slot("view", JSONL_NAME, id_key="view_id")),
-          leaf=True,
-          filetype=ContentType.TEXT),
+    Scope(
+        kind="table_json",
+        segments=_TABLE + ("table.json",),
+        leaf=True,
+        filetype=ContentType.JSON,
+    ),
+    Scope(
+        kind="records",
+        segments=_TABLE + ("records.jsonl",),
+        leaf=True,
+        filetype=ContentType.TEXT,
+    ),
+    Scope(kind="views", segments=_TABLE + ("views",)),
+    Scope(
+        kind="view",
+        segments=_TABLE
+        + ("views", Slot("view", JSONL_NAME, id_key="view_id")),
+        leaf=True,
+        filetype=ContentType.TEXT,
+    ),
 )
 
 detect_scope = make_detect_scope(SCOPES)

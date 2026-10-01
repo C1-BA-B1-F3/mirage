@@ -15,8 +15,11 @@
 from pydantic import SecretStr
 
 from mirage.core.ssh.config import SSHConfig
-from mirage.vfs.secrets import (REDACTED_SECRET, redacted_config_dump,
-                                reveal_secret)
+from mirage.vfs.secrets import (
+    REDACTED_SECRET,
+    redacted_config_dump,
+    reveal_secret,
+)
 
 
 def test_password_and_passphrase_are_secrets():
@@ -29,7 +32,8 @@ def test_password_and_passphrase_are_secrets():
 
 def test_snapshot_state_redacts_both():
     dump = redacted_config_dump(
-        SSHConfig(host="h", password="pw", passphrase="pp"))
+        SSHConfig(host="h", password="pw", passphrase="pp")
+    )
     assert dump["password"] == REDACTED_SECRET
     assert dump["passphrase"] == REDACTED_SECRET
     assert dump["host"] == "h"

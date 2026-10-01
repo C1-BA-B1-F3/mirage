@@ -38,8 +38,10 @@ def restore_defaults():
 
 def _ws(limits: dict | None = None) -> Workspace:
     if limits:
-        return Workspace({"/data": (RAMVFS(), MountMode.WRITE, limits)},
-                         mode=MountMode.WRITE)
+        return Workspace(
+            {"/data": (RAMVFS(), MountMode.WRITE, limits)},
+            mode=MountMode.WRITE,
+        )
     return Workspace({"/data": RAMVFS()}, mode=MountMode.WRITE)
 
 
@@ -100,8 +102,10 @@ async def test_mount_override_beats_command_default():
     ws = _ws(limits=overrides)
     mount = next(m for m in ws._registry._mounts if m.prefix == "/data/")
     from mirage.policy import resolve_limit
-    resolved = resolve_limit("cat",
-                             mount_override=mount.command_limits.get("cat"))
+
+    resolved = resolve_limit(
+        "cat", mount_override=mount.command_limits.get("cat")
+    )
     assert resolved.timeout_seconds == 999.0
 
 
@@ -115,14 +119,17 @@ class _SuspendingStore(RAMSessionStore):
 
 @pytest.mark.asyncio
 async def test_timeout_answers_124_when_the_session_store_suspends(
-        restore_defaults):
+    restore_defaults,
+):
     # The timeout is the line's answer, not an abort of the invocation:
     # the caller's event stays untouched, the line flushes and is
     # recorded, and `$?` is 124.
     sg.DEFAULT_COMMAND_LIMITS["sleep"] = Limit(timeout_seconds=0.05)
-    ws = Workspace({"/data": RAMVFS()},
-                   mode=MountMode.WRITE,
-                   session_store=_SuspendingStore())
+    ws = Workspace(
+        {"/data": RAMVFS()},
+        mode=MountMode.WRITE,
+        session_store=_SuspendingStore(),
+    )
     cancel = asyncio.Event()
     r = await ws.shell("export MARK=1; sleep 1", cancel=cancel)
     assert r.exit_code == 124
@@ -155,11 +162,14 @@ async def test_nested_timeout_does_not_abort_the_outer_line(restore_defaults):
 
 @pytest.mark.asyncio
 async def test_foreground_timeout_leaves_a_background_job_alone(
-        restore_defaults):
+    restore_defaults,
+):
     sg.DEFAULT_COMMAND_LIMITS["sleep"] = Limit(timeout_seconds=0.3)
     ws = _ws()
-    r = await ws.shell("{ sleep 0.2; sleep 0.2; echo bg-done; } & sleep 1",
-                       cancel=asyncio.Event())
+    r = await ws.shell(
+        "{ sleep 0.2; sleep 0.2; echo bg-done; } & sleep 1",
+        cancel=asyncio.Event(),
+    )
     assert r.exit_code == 124
     await ws.job_table.wait(1, ws.default_session_id)
     job = ws.job_table.get(1, ws.default_session_id)
@@ -207,12 +217,11 @@ async def test_cross_mount_honors_per_mount_timeout_override():
     b._store.files["/y.txt"] = b"yo\n"
     ws = Workspace(
         {
-            "/a/": (a, MountMode.WRITE, {
-                "cat": Limit(timeout_seconds=3.0)
-            }),
+            "/a/": (a, MountMode.WRITE, {"cat": Limit(timeout_seconds=3.0)}),
             "/b/": b,
         },
-        mode=MountMode.WRITE)
+        mode=MountMode.WRITE,
+    )
     r = await ws.shell("cat /a/x.txt /b/y.txt")
     assert r.producer is not None
     resolved = resolve_producer(r.producer, ws._registry.limit_override)
@@ -230,13 +239,15 @@ async def test_fan_out_uses_tightest_timeout_among_mounts():
     child._store.files["/b.txt"] = b"yo\n"
     ws = Workspace(
         {
-            "/p/":
-            parent,
-            "/p/sub/": (child, MountMode.WRITE, {
-                "find": Limit(timeout_seconds=2.0)
-            }),
+            "/p/": parent,
+            "/p/sub/": (
+                child,
+                MountMode.WRITE,
+                {"find": Limit(timeout_seconds=2.0)},
+            ),
         },
-        mode=MountMode.WRITE)
+        mode=MountMode.WRITE,
+    )
     r = await ws.shell("find /p")
     assert r.producer is not None
     resolved = resolve_producer(r.producer, ws._registry.limit_override)
@@ -254,14 +265,19 @@ async def test_fan_out_tightest_when_parent_is_tighter():
     child._store.files["/b.txt"] = b"yo\n"
     ws = Workspace(
         {
-            "/p/": (parent, MountMode.WRITE, {
-                "find": Limit(timeout_seconds=2.0)
-            }),
-            "/p/sub/": (child, MountMode.WRITE, {
-                "find": Limit(timeout_seconds=9.0)
-            }),
+            "/p/": (
+                parent,
+                MountMode.WRITE,
+                {"find": Limit(timeout_seconds=2.0)},
+            ),
+            "/p/sub/": (
+                child,
+                MountMode.WRITE,
+                {"find": Limit(timeout_seconds=9.0)},
+            ),
         },
-        mode=MountMode.WRITE)
+        mode=MountMode.WRITE,
+    )
     r = await ws.shell("find /p")
     assert r.producer is not None
     resolved = resolve_producer(r.producer, ws._registry.limit_override)
@@ -333,7 +349,8 @@ async def test_truncation_keeps_lazy_exit_zero_on_match():
 
 @pytest.mark.asyncio
 async def test_timeout_preserves_partial_records_and_logs(
-        caplog, restore_defaults):
+    caplog, restore_defaults
+):
     sg.DEFAULT_COMMAND_LIMITS["sleep"] = Limit(timeout_seconds=0.1)
     ws = _ws()
     await ws.shell("echo hello > /data/f.txt")
@@ -355,14 +372,19 @@ async def test_cross_mount_cat_aggregates_tightest_limit():
     b._store.files["/y.txt"] = b"4\n5\n6\n"
     ws = Workspace(
         {
-            "/a/": (a, MountMode.WRITE, {
-                "cat": Limit(max_lines=100, on_exceed=OnExceed.TRUNCATE)
-            }),
-            "/b/": (b, MountMode.WRITE, {
-                "cat": Limit(max_lines=1, on_exceed=OnExceed.ERROR)
-            }),
+            "/a/": (
+                a,
+                MountMode.WRITE,
+                {"cat": Limit(max_lines=100, on_exceed=OnExceed.TRUNCATE)},
+            ),
+            "/b/": (
+                b,
+                MountMode.WRITE,
+                {"cat": Limit(max_lines=1, on_exceed=OnExceed.ERROR)},
+            ),
         },
-        mode=MountMode.WRITE)
+        mode=MountMode.WRITE,
+    )
     r = await ws.shell("cat /a/x.txt /b/y.txt")
     resolved = resolve_producer(r.producer, ws._registry.limit_override)
     assert resolved.max_lines == 1
@@ -372,9 +394,9 @@ async def test_cross_mount_cat_aggregates_tightest_limit():
 @pytest.mark.asyncio
 async def test_python3_default_limit_fires_like_any_command(restore_defaults):
     sg.DEFAULT_COMMAND_LIMITS["python3"] = Limit(timeout_seconds=0.2)
-    ws = Workspace({"/data": RAMVFS()},
-                   mode=MountMode.EXEC,
-                   runtimes=[LocalRuntime()])
+    ws = Workspace(
+        {"/data": RAMVFS()}, mode=MountMode.EXEC, runtimes=[LocalRuntime()]
+    )
     r = await ws.shell('python3 -c "import time; time.sleep(5)"')
     assert r.exit_code == 124
     assert "python3: timed out after 0.2s" in (await r.stderr_str())
@@ -385,12 +407,15 @@ async def test_python3_default_limit_fires_like_any_command(restore_defaults):
 async def test_python3_mount_limit_fires_like_any_command(restore_defaults):
     ws = Workspace(
         {
-            "/data": (RAMVFS(), MountMode.EXEC, {
-                "python3": Limit(timeout_seconds=0.2)
-            })
+            "/data": (
+                RAMVFS(),
+                MountMode.EXEC,
+                {"python3": Limit(timeout_seconds=0.2)},
+            )
         },
         mode=MountMode.EXEC,
-        runtimes=[LocalRuntime()])
+        runtimes=[LocalRuntime()],
+    )
     r = await ws.shell('cd /data && python3 -c "import time; time.sleep(5)"')
     assert r.exit_code == 124
     assert "python3: timed out after 0.2s" in (await r.stderr_str())
@@ -420,12 +445,15 @@ async def test_python3_mount_limit_follows_script_path(restore_defaults):
     ram._store.files["/slow.py"] = b"import time; time.sleep(5)\n"
     ws = Workspace(
         {
-            "/data": (ram, MountMode.EXEC, {
-                "python3": Limit(timeout_seconds=0.2)
-            })
+            "/data": (
+                ram,
+                MountMode.EXEC,
+                {"python3": Limit(timeout_seconds=0.2)},
+            )
         },
         mode=MountMode.EXEC,
-        runtimes=[LocalRuntime()])
+        runtimes=[LocalRuntime()],
+    )
     r = await ws.shell("python3 /data/slow.py")
     assert r.exit_code == 124
     assert "python3: timed out after 0.2s" in (await r.stderr_str())
@@ -433,8 +461,9 @@ async def test_python3_mount_limit_follows_script_path(restore_defaults):
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("command",
-                         ["wc /big", "grep -c line /big", "cat /big | wc"])
+@pytest.mark.parametrize(
+    "command", ["wc /big", "grep -c line /big", "cat /big | wc"]
+)
 async def test_large_ram_command_honors_caller_cancel(command):
     from mirage.workspace.abort import MirageAbortError
 
@@ -442,7 +471,7 @@ async def test_large_ram_command_honors_caller_cancel(command):
     ram.accessor.store.files["/big"] = b"line\n" * 200_000
     ws = Workspace({"/": ram})
     cancel = asyncio.Event()
-    timer = asyncio.get_running_loop().call_later(.005, cancel.set)
+    timer = asyncio.get_running_loop().call_later(0.005, cancel.set)
     try:
         with pytest.raises(MirageAbortError):
             await ws.shell(command, cancel=cancel)

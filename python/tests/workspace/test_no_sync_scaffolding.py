@@ -21,7 +21,8 @@ from mirage.workspace import Workspace
 def test_workspace_has_no_sync_attribute():
     assert not hasattr(Workspace, "sync"), (
         "Workspace.sync() was a no-op (DirtyTracker always empty); "
-        "should be removed in Phase 1 cleanup.")
+        "should be removed in Phase 1 cleanup."
+    )
 
 
 def test_sync_policy_enum_removed():

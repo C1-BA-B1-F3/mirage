@@ -180,7 +180,8 @@ async def test_clear_while_a_writer_is_parked_discards_its_write(operation):
 @pytest.mark.asyncio
 @pytest.mark.parametrize("operation", ["set", "add"])
 async def test_evict_prefix_while_a_writer_is_parked_discards_its_write(
-        operation):
+    operation,
+):
     cache = RAMFileCacheStore()
     lock = cache._lock_for("/large")
     await lock.acquire()
@@ -199,7 +200,8 @@ async def test_evict_prefix_while_a_writer_is_parked_discards_its_write(
 @pytest.mark.asyncio
 @pytest.mark.parametrize("operation", ["set", "add"])
 async def test_a_writer_queued_behind_a_removal_of_its_key_is_discarded(
-        operation):
+    operation,
+):
     # The per-key counter, which the clear/evict_prefix cases above cannot
     # reach: they bump the store-wide epoch instead. The second writer holds
     # bytes read before the removal, so it must not repopulate the key that
@@ -274,14 +276,17 @@ async def test_a_snapshot_round_trip_preserves_both_token_states():
     src = RAMFileCacheStore()
     await src.set("/none", b"data")
     await src.set("/tok", b"data", fingerprint="etag-1")
-    captured = [{
-        CacheKey.KEY: k,
-        CacheKey.DATA: src._store.files[k],
-        CacheKey.FINGERPRINT: e.fingerprint,
-        CacheKey.TTL: e.ttl,
-        CacheKey.CACHED_AT: e.cached_at,
-        CacheKey.SIZE: e.size,
-    } for k, e in src._entries.items()]
+    captured = [
+        {
+            CacheKey.KEY: k,
+            CacheKey.DATA: src._store.files[k],
+            CacheKey.FINGERPRINT: e.fingerprint,
+            CacheKey.TTL: e.ttl,
+            CacheKey.CACHED_AT: e.cached_at,
+            CacheKey.SIZE: e.size,
+        }
+        for k, e in src._entries.items()
+    ]
     # Through JSON, because that is what a snapshot actually survives.
     for entry in captured:
         entry[CacheKey.DATA] = entry[CacheKey.DATA].decode()
@@ -306,7 +311,8 @@ async def test_a_snapshot_round_trip_preserves_both_token_states():
 @pytest.mark.asyncio
 @pytest.mark.parametrize("stored", ["", None])
 async def test_a_restored_entry_folds_a_tokenless_spelling_like_a_write(
-        stored):
+    stored,
+):
     # The snapshot is a third door into the entry table, and it has to
     # agree with `set`/`add` about what "no token" is. A document is not
     # obliged to spell it the way this version does: an older writer
@@ -322,18 +328,22 @@ async def test_a_restored_entry_folds_a_tokenless_spelling_like_a_write(
     ws = _WS()
     ws._cache = cache
     _restore_cache(
-        ws, {
+        ws,
+        {
             "cache": {
-                "entries": [{
-                    CacheKey.KEY: "/a",
-                    CacheKey.DATA: b"x",
-                    CacheKey.FINGERPRINT: stored,
-                    CacheKey.TTL: None,
-                    CacheKey.CACHED_AT: 0,
-                    CacheKey.SIZE: 1,
-                }]
+                "entries": [
+                    {
+                        CacheKey.KEY: "/a",
+                        CacheKey.DATA: b"x",
+                        CacheKey.FINGERPRINT: stored,
+                        CacheKey.TTL: None,
+                        CacheKey.CACHED_AT: 0,
+                        CacheKey.SIZE: 1,
+                    }
+                ]
             }
-        })
+        },
+    )
     assert cache._entries["/a"].fingerprint is None
     assert not await cache.is_fresh("/a", "")
 

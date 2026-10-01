@@ -609,16 +609,14 @@ async function recordReview(
     data: { tenant: ctx.tenant, repo: repo.fullName, pullNumber: pull.number, ...made, seq },
   })
   const first = (await reviewCommentRows(ctx, repo, pull.number)).length + 1
-  const rows = comments.map(
-    (comment, i): ReviewCommentRow => ({
-      id: 900_000 + pull.number * 1000 + first + i,
-      reviewId: made.id,
-      user: made.user,
-      commitId: made.commitId,
-      createdAt: COMMENTED_AT,
-      ...comment,
-    }),
-  )
+  const rows = comments.map((comment, i): ReviewCommentRow => ({
+    id: 900_000 + pull.number * 1000 + first + i,
+    reviewId: made.id,
+    user: made.user,
+    commitId: made.commitId,
+    createdAt: COMMENTED_AT,
+    ...comment,
+  }))
   for (const [i, row] of rows.entries()) {
     await ctx.db.githubReviewComment.create({
       data: {

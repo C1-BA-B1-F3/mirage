@@ -28,14 +28,14 @@ from mirage.vfs.types import ReadOps, SearchOps
 # relation (kept bespoke). Postgres is read-only, so the generic byte-mutation
 # commands are intentionally absent (no write op wired). There is no native
 # streaming read, so the stream op is synthesized from the whole-row read.
-IO = VFSAdapter(search=SearchOps(
-    search=make_search_op(detect_scope, SEARCHERS, _stat),
-    meta={"grep": {
-        "mode": "literal",
-        "stream": False
-    }}),
-                read=ReadOps(readdir=_readdir, read_bytes=_read, stat=_stat),
-                is_mounted=lambda a: True,
-                local=False).to_command_io()
+IO = VFSAdapter(
+    search=SearchOps(
+        search=make_search_op(detect_scope, SEARCHERS, _stat),
+        meta={"grep": {"mode": "literal", "stream": False}},
+    ),
+    read=ReadOps(readdir=_readdir, read_bytes=_read, stat=_stat),
+    is_mounted=lambda a: True,
+    local=False,
+).to_command_io()
 
 resolve_glob = IO.resolve_glob

@@ -127,25 +127,33 @@ def test_the_column_counts_bytes_not_characters():
 
 
 def test_a_newline_advances_the_line_and_zeroes_the_column():
-    assert serde_message(
-        "{\n") == "EOF while parsing an object at line 2 column 0"
-    assert serde_message(
-        "[1,\n2") == "EOF while parsing a list at line 2 column 1"
+    assert (
+        serde_message("{\n")
+        == "EOF while parsing an object at line 2 column 0"
+    )
+    assert (
+        serde_message("[1,\n2")
+        == "EOF while parsing a list at line 2 column 1"
+    )
     assert serde_message('"a\nb"') == (
         "control character (\\u0000-\\u001F) found while parsing a string "
-        "at line 2 column 0")
+        "at line 2 column 0"
+    )
 
 
 def test_a_raw_control_character_is_named_in_full():
     assert serde_message('"a\tb"') == (
         "control character (\\u0000-\\u001F) found while parsing a string "
-        "at line 1 column 3")
+        "at line 1 column 3"
+    )
 
 
 def test_the_recursion_limit_is_serdes_own_128():
     # 127 nested lists parse; the 128th is refused at its own bracket.
     assert serde_message("[" * 127 + "]" * 127) is None
     assert serde_message("[" * 128 + "]" * 128) == (
-        "recursion limit exceeded at line 1 column 128")
+        "recursion limit exceeded at line 1 column 128"
+    )
     assert serde_message("[" * 400 + "]" * 400) == (
-        "recursion limit exceeded at line 1 column 128")
+        "recursion limit exceeded at line 1 column 128"
+    )

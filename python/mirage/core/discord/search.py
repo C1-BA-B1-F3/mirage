@@ -36,12 +36,13 @@ def _flatten_contexts(contexts: list[Any]) -> list[dict[str, Any]]:
 
 
 async def search_guild_stream(
-        config: DiscordConfig,
-        guild_id: str,
-        query: str,
-        channel_id: str | None = None,
-        max_pages: int | None = None,
-        session: SessionArg = None) -> AsyncIterator[list[dict[str, Any]]]:
+    config: DiscordConfig,
+    guild_id: str,
+    query: str,
+    channel_id: str | None = None,
+    max_pages: int | None = None,
+    session: SessionArg = None,
+) -> AsyncIterator[list[dict[str, Any]]]:
     """Stream guild-search pages, one flattened batch per round-trip.
 
     Args:
@@ -59,25 +60,29 @@ async def search_guild_stream(
     base_params: dict[str, str | int] = {"content": query}
     if channel_id:
         base_params["channel_id"] = channel_id
-    async for raw in offset_pages(config,
-                                  f"/guilds/{guild_id}/messages/search",
-                                  base_params=base_params,
-                                  items_path=("messages", ),
-                                  total_key="total_results",
-                                  page_size=PAGE_SIZE,
-                                  max_pages=max_pages,
-                                  session=session):
+    async for raw in offset_pages(
+        config,
+        f"/guilds/{guild_id}/messages/search",
+        base_params=base_params,
+        items_path=("messages",),
+        total_key="total_results",
+        page_size=PAGE_SIZE,
+        max_pages=max_pages,
+        session=session,
+    ):
         flat = _flatten_contexts(raw)
         if flat:
             yield flat
 
 
-async def search_guild(config: DiscordConfig,
-                       guild_id: str,
-                       query: str,
-                       channel_id: str | None = None,
-                       limit: int = 100,
-                       session: SessionArg = None) -> list[dict[str, Any]]:
+async def search_guild(
+    config: DiscordConfig,
+    guild_id: str,
+    query: str,
+    channel_id: str | None = None,
+    limit: int = 100,
+    session: SessionArg = None,
+) -> list[dict[str, Any]]:
     """Search messages in a guild, optionally filtered to one channel.
 
     Args:
@@ -92,11 +97,9 @@ async def search_guild(config: DiscordConfig,
         list[dict]: matching messages sorted oldest-first.
     """
     messages: list[dict[str, Any]] = []
-    async for page in search_guild_stream(config,
-                                          guild_id,
-                                          query,
-                                          channel_id,
-                                          session=session):
+    async for page in search_guild_stream(
+        config, guild_id, query, channel_id, session=session
+    ):
         for msg in page:
             messages.append(msg)
             if len(messages) >= limit:

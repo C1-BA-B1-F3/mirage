@@ -20,9 +20,9 @@ from mirage.utils.dates import now_iso
 from mirage.utils.path import norm
 
 
-async def mkdir(accessor: RAMAccessor,
-                path_spec: PathSpec,
-                parents: bool = False) -> None:
+async def mkdir(
+    accessor: RAMAccessor, path_spec: PathSpec, parents: bool = False
+) -> None:
     path = path_spec.mount_path
     store = accessor.store
     p = norm(path)

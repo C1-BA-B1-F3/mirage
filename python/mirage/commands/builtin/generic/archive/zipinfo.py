@@ -19,10 +19,40 @@ from typing import Literal
 # indexed by the host byte of "version made by" and by compression
 # method. A host past the table reads as the last "???" slot, as the
 # MIN(host, NUM_HOSTS) clamp does there.
-HOSTS = ("fat", "ami", "vms", "unx", "cms", "atr", "hpf", "mac", "zzz", "cpm",
-         "t20", "ntf", "qds", "aco", "vft", "mvs", "be ", "nsk", "ths", "osx",
-         "???", "???", "???", "???", "???", "???", "???", "???", "???", "???",
-         "ath", "???")
+HOSTS = (
+    "fat",
+    "ami",
+    "vms",
+    "unx",
+    "cms",
+    "atr",
+    "hpf",
+    "mac",
+    "zzz",
+    "cpm",
+    "t20",
+    "ntf",
+    "qds",
+    "aco",
+    "vft",
+    "mvs",
+    "be ",
+    "nsk",
+    "ths",
+    "osx",
+    "???",
+    "???",
+    "???",
+    "???",
+    "???",
+    "???",
+    "???",
+    "???",
+    "???",
+    "???",
+    "ath",
+    "???",
+)
 METHODS = {
     0: "stor",
     1: "shrk",
@@ -43,8 +73,20 @@ METHODS = {
     98: "ppmd",
 }
 DEFLATE_LEVELS = "NXFS"
-MONTHS = ("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct",
-          "Nov", "Dec")
+MONTHS = (
+    "Jan",
+    "Feb",
+    "Mar",
+    "Apr",
+    "May",
+    "Jun",
+    "Jul",
+    "Aug",
+    "Sep",
+    "Oct",
+    "Nov",
+    "Dec",
+)
 # Hosts whose external attributes are DOS attribute bytes rather than a
 # Unix mode: FS_FAT_, VM_CMS_, FS_HPFS_, FS_NTFS_, ACORN_, FS_VFAT_,
 # MVS_. VMS, Amiga and Theos have their own layouts in zipinfo.c and are
@@ -76,9 +118,11 @@ LIST_METHODS = {
 }
 VERBOSE_HEADER = (
     " Length   Method    Size  Cmpr    Date    Time   CRC-32   Name\n"
-    "--------  ------  ------- ---- ---------- ----- --------  ----\n")
-VERBOSE_RULE = ("--------          -------  ---                            "
-                "-------\n")
+    "--------  ------  ------- ---- ---------- ----- --------  ----\n"
+)
+VERBOSE_RULE = (
+    "--------          -------  ---                            -------\n"
+)
 # Info-ZIP's comment filter (fileio.c, do_string): a comment ends at
 # NUL, loses CR and ^S, and shows ESC as "^[".
 COMMENT_DROPPED = b"\r\x13"
@@ -105,6 +149,7 @@ class ZipRow:
         crc (int): the CRC-32 the central entry records.
         comment (bytes): the central entry comment, as stored.
     """
+
     name: str
     size: int
     csize: int
@@ -132,14 +177,23 @@ class ZipinfoLayout:
         header (bool): print the ``Archive:`` and ``Zip file size`` lines.
         totals (bool): print the trailing totals line.
     """
+
     rows: ZipinfoRows
     header: bool
     totals: bool
 
 
-def zipinfo_layout(*, names_only: bool, names_headers: bool, long: bool,
-                   medium: bool, short: bool, header: bool, totals: bool,
-                   has_members: bool) -> ZipinfoLayout:
+def zipinfo_layout(
+    *,
+    names_only: bool,
+    names_headers: bool,
+    long: bool,
+    medium: bool,
+    short: bool,
+    header: bool,
+    totals: bool,
+    has_members: bool,
+) -> ZipinfoLayout:
     """Resolve zipinfo's -1/-2/-s/-m/-l/-h/-t interplay (zipinfo.c, zi_opts).
 
     -1 prints names and nothing else, whatever -h/-t say. -2 prints
@@ -178,8 +232,11 @@ def zipinfo_layout(*, names_only: bool, names_headers: bool, long: bool,
         rows = "short"
     else:
         rows = "short"
-    return ZipinfoLayout(rows, not (has_members and not header),
-                         not (has_members and not totals))
+    return ZipinfoLayout(
+        rows,
+        not (has_members and not header),
+        not (has_members and not totals),
+    )
 
 
 def _unix_attribs(xattr: int) -> str:
@@ -233,10 +290,14 @@ def _attribs(row: ZipRow) -> str:
     # A FAT host whose Unix bits merely restate its DOS attribute byte
     # (read, write unless read-only, execute when a directory) has no
     # mode of its own to show, so zipinfo renders the DOS byte instead.
-    dos_shadow = 0o400 | ((0 if row.external_attr & 1 else 1) << 7) | (
-        (row.external_attr & 0x10) << 2)
-    if row.host in DOS_HOSTS and (row.host != 0 or
-                                  (xattr & 0o700) != dos_shadow):
+    dos_shadow = (
+        0o400
+        | ((0 if row.external_attr & 1 else 1) << 7)
+        | ((row.external_attr & 0x10) << 2)
+    )
+    if row.host in DOS_HOSTS and (
+        row.host != 0 or (xattr & 0o700) != dos_shadow
+    ):
         perms = _dos_attribs(row.external_attr, row.name)
     else:
         perms = _unix_attribs(xattr)
@@ -248,8 +309,9 @@ def _method(row: ZipRow) -> str:
     if text is None:
         return f"u{row.method:03d}"
     if row.method == 6:
-        return (f"i{'8' if row.flags & 2 else '4'}:"
-                f"{'3' if row.flags & 4 else '2'}")
+        return (
+            f"i{'8' if row.flags & 2 else '4'}:{'3' if row.flags & 4 else '2'}"
+        )
     if row.method in (8, 9):
         return text[:3] + DEFLATE_LEVELS[(row.flags >> 1) & 3]
     return text
@@ -267,8 +329,9 @@ def _kind_flags(row: ZipRow) -> str:
         first = "T" if text else "B"
     else:
         first = "t" if text else "b"
-    extra = row.has_extra or (bool(row.external_attr & 0x8000)
-                              and row.host in UNIX_TIME_HOSTS)
+    extra = row.has_extra or (
+        bool(row.external_attr & 0x8000) and row.host in UNIX_TIME_HOSTS
+    )
     if row.flags & 8:
         second = "X" if extra else "l"
     else:
@@ -315,8 +378,10 @@ def render_header(archive: str, zip_size: int, entries: int) -> str:
         zip_size (int): the archive's byte length.
         entries (int): the central directory's entry count.
     """
-    return (f"Archive:  {archive}\n"
-            f"Zip file size: {zip_size} bytes, number of entries: {entries}\n")
+    return (
+        f"Archive:  {archive}\n"
+        f"Zip file size: {zip_size} bytes, number of entries: {entries}\n"
+    )
 
 
 def compression_ratio(uncompressed: int, compressed: int) -> int:
@@ -334,10 +399,13 @@ def compression_ratio(uncompressed: int, compressed: int) -> int:
             return (uncompressed - compressed + (denom >> 1)) // denom
         return -((compressed - uncompressed + (denom >> 1)) // denom)
     if uncompressed >= compressed:
-        return (1000 * (uncompressed - compressed) +
-                (uncompressed >> 1)) // uncompressed
-    return -((1000 * (compressed - uncompressed) +
-              (uncompressed >> 1)) // uncompressed)
+        return (
+            1000 * (uncompressed - compressed) + (uncompressed >> 1)
+        ) // uncompressed
+    return -(
+        (1000 * (compressed - uncompressed) + (uncompressed >> 1))
+        // uncompressed
+    )
 
 
 def render_totals(rows: list[ZipRow]) -> str:
@@ -355,9 +423,11 @@ def render_totals(rows: list[ZipRow]) -> str:
     sign = "-" if ratio < 0 else ""
     ratio = abs(ratio)
     plural = "" if len(rows) == 1 else "s"
-    return (f"{len(rows)} file{plural}, {uncompressed} bytes uncompressed, "
-            f"{compressed} bytes compressed:  {sign}{ratio // 10}."
-            f"{ratio % 10}%\n")
+    return (
+        f"{len(rows)} file{plural}, {uncompressed} bytes uncompressed, "
+        f"{compressed} bytes compressed:  {sign}{ratio // 10}."
+        f"{ratio % 10}%\n"
+    )
 
 
 def _list_method(row: ZipRow) -> str:
@@ -402,8 +472,9 @@ def _comment(raw: bytes) -> bytes:
     return text + b"\n" if text and not text.endswith(b"\n") else text
 
 
-def render_verbose(archive: str, rows: list[ZipRow], quiet: bool,
-                   comment: bytes) -> bytes:
+def render_verbose(
+    archive: str, rows: list[ZipRow], quiet: bool, comment: bytes
+) -> bytes:
     """``unzip -v`` with an archive: Info-ZIP's verbose listing (list.c).
 
     The ``-l`` columns plus the method, compressed size, percent saved
@@ -417,26 +488,29 @@ def render_verbose(archive: str, rows: list[ZipRow], quiet: bool,
         quiet (bool): ``-q``.
         comment (bytes): the archive comment as stored.
     """
-    parts = [] if quiet else [
-        f"Archive:  {archive}\n".encode(),
-        _comment(comment)
-    ]
+    parts = (
+        [] if quiet else [f"Archive:  {archive}\n".encode(), _comment(comment)]
+    )
     parts.append(VERBOSE_HEADER.encode())
     for row in rows:
         year, month, day, hour, minute, _ = row.date_time
         csize = _compressed(row)
-        parts.append(f"{row.size:>8}  {_list_method(row):<7}{csize:>8} "
-                     f"{_saved(row.size, csize):>4} {year:04d}-{month:02d}-"
-                     f"{day:02d} {hour:02d}:{minute:02d} {row.crc:08x}  "
-                     f"{row.name}\n".encode())
+        parts.append(
+            f"{row.size:>8}  {_list_method(row):<7}{csize:>8} "
+            f"{_saved(row.size, csize):>4} {year:04d}-{month:02d}-"
+            f"{day:02d} {hour:02d}:{minute:02d} {row.crc:08x}  "
+            f"{row.name}\n".encode()
+        )
         if not quiet:
             parts.append(_comment(row.comment))
     size = sum(r.size for r in rows)
     csize = sum(_compressed(r) for r in rows)
     plural = "" if len(rows) == 1 else "s"
-    parts.append(f"{VERBOSE_RULE}{size:>8}         {csize:>8} "
-                 f"{_saved(size, csize):>4}{' ' * 28}{len(rows)} "
-                 f"file{plural}\n".encode())
+    parts.append(
+        f"{VERBOSE_RULE}{size:>8}         {csize:>8} "
+        f"{_saved(size, csize):>4}{' ' * 28}{len(rows)} "
+        f"file{plural}\n".encode()
+    )
     return b"".join(parts)
 
 

@@ -13,12 +13,16 @@
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 from mirage.accessor.gmail import GmailAccessor
-from mirage.commands.builtin.generic.rg import (parse_flags,
-                                                refuse_missing_pattern)
+from mirage.commands.builtin.generic.rg import (
+    parse_flags,
+    refuse_missing_pattern,
+)
 from mirage.commands.builtin.generic.rg import rg as generic_rg
 from mirage.commands.builtin.generic_bind.adapter import bound_op
-from mirage.commands.builtin.gmail.grep import (RG_SEARCH_HONORED,
-                                                SEARCH_MAX_RESULTS)
+from mirage.commands.builtin.gmail.grep import (
+    RG_SEARCH_HONORED,
+    SEARCH_MAX_RESULTS,
+)
 from mirage.commands.builtin.gmail.io import resolve_glob
 from mirage.commands.builtin.grep_pattern import pattern_arg
 from mirage.commands.builtin.grep_pushdown import pushdown_operand
@@ -37,21 +41,30 @@ from mirage.utils.key_prefix import mount_prefix_of
 
 
 @command("rg", vfs="gmail", spec=SPECS["rg"])
-async def rg(accessor: GmailAccessor, paths: list[PathSpec], texts: list[str],
-             opts: CommandOpts) -> tuple[ByteSource | None, IOResult]:
+async def rg(
+    accessor: GmailAccessor,
+    paths: list[PathSpec],
+    texts: list[str],
+    opts: CommandOpts,
+) -> tuple[ByteSource | None, IOResult]:
     fl = FlagView(opts.flags, spec=SPECS["rg"])
     pattern_str = pattern_arg(texts, fl, "regexp")
     refuse_missing_pattern(pattern_str, fl, parse_flags(fl))
     # Same gate as gmail grep, from the same table: only a lone concrete
     # operand with no reshaping flag may be answered by the search API.
-    operand = pushdown_operand(paths, opts.flags, pattern_str,
-                               RG_SEARCH_HONORED)
-    if (operand is not None and pattern_str is not None
-            and fl.as_bool("word_regexp")):
+    operand = pushdown_operand(
+        paths, opts.flags, pattern_str, RG_SEARCH_HONORED
+    )
+    if (
+        operand is not None
+        and pattern_str is not None
+        and fl.as_bool("word_regexp")
+    ):
         match = detect_scope(operand)
         if match.kind in NATIVE_KINDS:
-            file_prefix = mount_prefix_of(operand.virtual,
-                                          operand.vfs_path) or ""
+            file_prefix = (
+                mount_prefix_of(operand.virtual, operand.vfs_path) or ""
+            )
             rows = await search_messages(
                 accessor.token_manager,
                 pattern_str,
@@ -59,8 +72,9 @@ async def rg(accessor: GmailAccessor, paths: list[PathSpec], texts: list[str],
                 date_str=match.slots.get("day"),
                 max_results=SEARCH_MAX_RESULTS,
             )
-            lines = format_grep_results(rows, match.slots.get("label"),
-                                        file_prefix, pattern_str)
+            lines = format_grep_results(
+                rows, match.slots.get("label"), file_prefix, pattern_str
+            )
             if not lines:
                 return b"", IOResult(exit_code=1)
             return format_records(lines), IOResult()

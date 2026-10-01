@@ -21,9 +21,11 @@ from mirage.shell.types import ShellBuiltin as SB
 from mirage.types import PathSpec, word_text
 from mirage.workspace.executor.builtins.condition.flat import eval_flat
 from mirage.workspace.executor.builtins.condition.tree import eval_cond
-from mirage.workspace.executor.builtins.condition.types import (CondContext,
-                                                                CondError,
-                                                                CondNode)
+from mirage.workspace.executor.builtins.condition.types import (
+    CondContext,
+    CondError,
+    CondNode,
+)
 from mirage.workspace.executor.builtins.types import BuiltinCall, Result
 from mirage.workspace.mount.namespace import Namespace
 from mirage.workspace.session import SessionState
@@ -51,11 +53,13 @@ async def handle_test(
         view (SessionView | None): the session plane's gated door, for
             an assignment inside a numeric operand.
     """
-    ctx = CondContext(dispatch=dispatch,
-                      namespace=namespace,
-                      session=session,
-                      name=name,
-                      view=view)
+    ctx = CondContext(
+        dispatch=dispatch,
+        namespace=namespace,
+        session=session,
+        name=name,
+        view=view,
+    )
     try:
         if isinstance(args, list):
             result = await eval_flat(ctx, args)
@@ -67,14 +71,19 @@ async def handle_test(
             # A bad [[ ]] operator is a bash PARSE error: the whole
             # input line dies, not just this command.
             raise ExitSignal(2, stderr=stderr, contained_code=2)
-        return None, IOResult(exit_code=err.exit_code,
-                              stderr=stderr), ExecutionNode(
-                                  command="test",
-                                  exit_code=err.exit_code,
-                                  stderr=stderr)
+        return (
+            None,
+            IOResult(exit_code=err.exit_code, stderr=stderr),
+            ExecutionNode(
+                command="test", exit_code=err.exit_code, stderr=stderr
+            ),
+        )
     code = 0 if result else 1
-    return None, IOResult(exit_code=code), ExecutionNode(command="test",
-                                                         exit_code=code)
+    return (
+        None,
+        IOResult(exit_code=code),
+        ExecutionNode(command="test", exit_code=code),
+    )
 
 
 async def test_builtin(call: BuiltinCall) -> Result:
@@ -91,15 +100,16 @@ async def test_builtin(call: BuiltinCall) -> Result:
             test_args = test_args[:-1]
         else:
             err = b"[: missing `]'\n"
-            return None, IOResult(exit_code=2,
-                                  stderr=err), ExecutionNode(command="[",
-                                                             exit_code=2,
-                                                             stderr=err)
-    return await handle_test(call.dispatch,
-                             call.namespace,
-                             test_args,
-                             call.session,
-                             name=test_name,
-                             view=session_view(
-                                 call.session,
-                                 call.namespace.registry.policies))
+            return (
+                None,
+                IOResult(exit_code=2, stderr=err),
+                ExecutionNode(command="[", exit_code=2, stderr=err),
+            )
+    return await handle_test(
+        call.dispatch,
+        call.namespace,
+        test_args,
+        call.session,
+        name=test_name,
+        view=session_view(call.session, call.namespace.registry.policies),
+    )

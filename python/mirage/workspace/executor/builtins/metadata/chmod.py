@@ -16,10 +16,17 @@ from mirage.runtime.types import DispatchFn
 from mirage.types import FileType, PathSpec
 from mirage.utils.mode import DEFAULT_DIR_MODE, DEFAULT_FILE_MODE, parse_chmod
 from mirage.workspace.executor.builtins.metadata.metadata import (
-    apply_attrs, resolve_operand, walk_stats)
-from mirage.workspace.executor.builtins.shared import (expand_operands, fail,
-                                                       finish, operand_text,
-                                                       split_value_flags)
+    apply_attrs,
+    resolve_operand,
+    walk_stats,
+)
+from mirage.workspace.executor.builtins.shared import (
+    expand_operands,
+    fail,
+    finish,
+    operand_text,
+    split_value_flags,
+)
 from mirage.workspace.executor.builtins.types import Result
 from mirage.workspace.mount.namespace import Namespace
 
@@ -55,8 +62,9 @@ async def handle_chmod(
     recursive = "R" in flags
     errors: list[str] = []
     for target in await expand_operands(namespace, operands[1:]):
-        found = await resolve_operand(namespace, dispatch, "chmod", target,
-                                      errors)
+        found = await resolve_operand(
+            namespace, dispatch, "chmod", target, errors
+        )
         if found is None:
             continue
         resolved, stat = found
@@ -70,11 +78,15 @@ async def handle_chmod(
             if path_stat.mode is not None:
                 current = path_stat.mode
             else:
-                current = (DEFAULT_DIR_MODE if path_stat.type
-                           == FileType.DIRECTORY else DEFAULT_FILE_MODE)
+                current = (
+                    DEFAULT_DIR_MODE
+                    if path_stat.type == FileType.DIRECTORY
+                    else DEFAULT_FILE_MODE
+                )
             new_mode = parse_chmod(mode_text, current)
             if new_mode is None:
-                return fail("chmod", f"chmod: invalid mode: '{mode_text}'\n",
-                            1)
+                return fail(
+                    "chmod", f"chmod: invalid mode: '{mode_text}'\n", 1
+                )
             await apply_attrs(dispatch, "chmod", path, errors, mode=new_mode)
     return finish("chmod", errors)

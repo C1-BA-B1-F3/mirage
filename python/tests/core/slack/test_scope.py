@@ -13,8 +13,12 @@
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 from mirage.core.hierarchy.scope import INVALID, ROOT
-from mirage.core.slack.scope import (NATIVE_KINDS, SearchTarget, detect_scope,
-                                     search_target)
+from mirage.core.slack.scope import (
+    NATIVE_KINDS,
+    SearchTarget,
+    detect_scope,
+    search_target,
+)
 
 
 def test_root():
@@ -97,9 +101,9 @@ def test_unknown_root_is_invalid():
 
 def test_search_target_from_channel():
     match = detect_scope("/channels/general__C001/2024-04-10")
-    assert search_target(match) == SearchTarget(container="channels",
-                                                channel_name="general",
-                                                channel_id="C001")
+    assert search_target(match) == SearchTarget(
+        container="channels", channel_name="general", channel_id="C001"
+    )
 
 
 def test_search_target_from_container_root():

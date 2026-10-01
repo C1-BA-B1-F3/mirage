@@ -148,16 +148,19 @@ async def test_directory_read_says_so_without_naming_it(template):
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    "template", sorted(set(GNU_READ_EXIT) - SILENT_HERE - set(BARE_HERE)))
+    "template", sorted(set(GNU_READ_EXIT) - SILENT_HERE - set(BARE_HERE))
+)
 async def test_directory_read_says_is_a_directory(template):
     ws = await _ws()
     result = await ws.shell(template.format(p="/ram/dir"))
     stderr = (result.stderr or b"").decode()
-    assert ("/ram/dir: Is a directory" in stderr
-            or "/ram/dir: read error: Is a directory" in stderr
-            or "error reading '/ram/dir': Is a directory" in stderr
-            or 'cannot open "/ram/dir" (Is a directory)' in stderr
-            or "gzip: /ram/dir is a directory -- ignored" in stderr)
+    assert (
+        "/ram/dir: Is a directory" in stderr
+        or "/ram/dir: read error: Is a directory" in stderr
+        or "error reading '/ram/dir': Is a directory" in stderr
+        or 'cannot open "/ram/dir" (Is a directory)' in stderr
+        or "gzip: /ram/dir is a directory -- ignored" in stderr
+    )
     assert "No such file" not in stderr
 
 
@@ -169,51 +172,96 @@ async def test_directory_read_says_is_a_directory(template):
 # failure because it needs all input before it can sort.
 # (command line, exit, stdout, stderr)
 GNU_SED_MULTI = [
-    ("sed -n p /ram/nope /ram/ok.txt", 2, "a\nb\n",
-     "sed: can't read /ram/nope: No such file or directory\n"),
-    ("sed -n p /ram/dir /ram/ok.txt", 4, "",
-     "sed: read error on /ram/dir: Is a directory\n"),
-    ("sed -n p /ram/ok.txt /ram/dir /ram/ok2.txt", 4, "a\nb\n",
-     "sed: read error on /ram/dir: Is a directory\n"),
-    ("sed -n p /ram/ok.txt /ram/nope /ram/ok2.txt", 2, "a\nb\nc\nd\n",
-     "sed: can't read /ram/nope: No such file or directory\n"),
-    ("sed -n p /ram/dir /ram/dir", 4, "",
-     "sed: read error on /ram/dir: Is a directory\n"),
-    ("sed -n p /ram/nope /ram/dir", 4, "",
-     "sed: can't read /ram/nope: No such file or directory\n"
-     "sed: read error on /ram/dir: Is a directory\n"),
-    ("sort /ram/ok.txt /ram/dir /ram/ok2.txt", 2, "",
-     "sort: read failed: /ram/dir: Is a directory\n"),
-    ("cat /ram/ok.txt /ram/dir /ram/ok2.txt", 1, "a\nb\nc\nd\n",
-     "cat: /ram/dir: Is a directory\n"),
-    ("zcat /ram/dir /ram/nope", 1, "",
-     "gzip: /ram/dir is a directory -- ignored\n"
-     "gzip: /ram/nope.gz: No such file or directory\n"),
+    (
+        "sed -n p /ram/nope /ram/ok.txt",
+        2,
+        "a\nb\n",
+        "sed: can't read /ram/nope: No such file or directory\n",
+    ),
+    (
+        "sed -n p /ram/dir /ram/ok.txt",
+        4,
+        "",
+        "sed: read error on /ram/dir: Is a directory\n",
+    ),
+    (
+        "sed -n p /ram/ok.txt /ram/dir /ram/ok2.txt",
+        4,
+        "a\nb\n",
+        "sed: read error on /ram/dir: Is a directory\n",
+    ),
+    (
+        "sed -n p /ram/ok.txt /ram/nope /ram/ok2.txt",
+        2,
+        "a\nb\nc\nd\n",
+        "sed: can't read /ram/nope: No such file or directory\n",
+    ),
+    (
+        "sed -n p /ram/dir /ram/dir",
+        4,
+        "",
+        "sed: read error on /ram/dir: Is a directory\n",
+    ),
+    (
+        "sed -n p /ram/nope /ram/dir",
+        4,
+        "",
+        "sed: can't read /ram/nope: No such file or directory\n"
+        "sed: read error on /ram/dir: Is a directory\n",
+    ),
+    (
+        "sort /ram/ok.txt /ram/dir /ram/ok2.txt",
+        2,
+        "",
+        "sort: read failed: /ram/dir: Is a directory\n",
+    ),
+    (
+        "cat /ram/ok.txt /ram/dir /ram/ok2.txt",
+        1,
+        "a\nb\nc\nd\n",
+        "cat: /ram/dir: Is a directory\n",
+    ),
+    (
+        "zcat /ram/dir /ram/nope",
+        1,
+        "",
+        "gzip: /ram/dir is a directory -- ignored\n"
+        "gzip: /ram/nope.gz: No such file or directory\n",
+    ),
     # gzip's error outranks its warning in EITHER order, so the reversed
     # line is 1 too: `progerror` assigns ERROR outright while `WARN`
     # assigns only when nothing has failed yet. Two warnings and no error
     # stay 2.
-    ("zcat /ram/nope /ram/dir", 1, "",
-     "gzip: /ram/nope.gz: No such file or directory\n"
-     "gzip: /ram/dir is a directory -- ignored\n"),
-    ("zcat /ram/dir /ram/dir", 2, "",
-     "gzip: /ram/dir is a directory -- ignored\n"
-     "gzip: /ram/dir is a directory -- ignored\n"),
+    (
+        "zcat /ram/nope /ram/dir",
+        1,
+        "",
+        "gzip: /ram/nope.gz: No such file or directory\n"
+        "gzip: /ram/dir is a directory -- ignored\n",
+    ),
+    (
+        "zcat /ram/dir /ram/dir",
+        2,
+        "",
+        "gzip: /ram/dir is a directory -- ignored\n"
+        "gzip: /ram/dir is a directory -- ignored\n",
+    ),
 ]
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("line,code,out,err",
-                         GNU_SED_MULTI,
-                         ids=[c[0] for c in GNU_SED_MULTI])
+@pytest.mark.parametrize(
+    "line,code,out,err", GNU_SED_MULTI, ids=[c[0] for c in GNU_SED_MULTI]
+)
 async def test_multi_operand_read_failures_match_gnu(line, code, out, err):
     ws = await _ws()
     await ws.shell("printf 'a\\nb\\n' > /ram/ok.txt")
     await ws.shell("printf 'c\\nd\\n' > /ram/ok2.txt")
     result = await ws.shell(line)
     assert (result.stderr or b"").decode() == err
-    assert (await result.stdout_str()
-            if result.stdout is not None else "") == out
+    assert (
+        await result.stdout_str() if result.stdout is not None else ""
+    ) == out
     assert result.exit_code == code
 
 

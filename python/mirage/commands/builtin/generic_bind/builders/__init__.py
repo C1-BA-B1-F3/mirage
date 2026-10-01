@@ -12,7 +12,6 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-# yapf: disable
 # isort: skip_file
 from mirage.commands.builtin.generic_bind.builders import awk
 from mirage.commands.builtin.generic_bind.builders import base64
@@ -85,7 +84,6 @@ from mirage.commands.builtin.generic_bind.builders import xxd
 from mirage.commands.builtin.generic_bind.builders import zcat
 from mirage.commands.builtin.generic_bind.builders import zgrep
 from mirage.commands.builtin.generic_bind.builders import zip_cmd
-# yapf: enable
 
 BUILDERS = (
     awk.BUILDER,

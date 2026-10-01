@@ -15,11 +15,15 @@
 import logging
 
 from mirage.accessor.discord import DiscordAccessor
-from mirage.commands.builtin.discord.grep import (RG_SEARCH_HONORED,
-                                                  SEARCH_MAX_RESULTS)
+from mirage.commands.builtin.discord.grep import (
+    RG_SEARCH_HONORED,
+    SEARCH_MAX_RESULTS,
+)
 from mirage.commands.builtin.discord.io import resolve_glob
-from mirage.commands.builtin.generic.rg import (parse_flags,
-                                                refuse_missing_pattern)
+from mirage.commands.builtin.generic.rg import (
+    parse_flags,
+    refuse_missing_pattern,
+)
 from mirage.commands.builtin.generic.rg import rg as generic_rg
 from mirage.commands.builtin.generic_bind.adapter import bound_op
 from mirage.commands.builtin.grep_pattern import pattern_arg
@@ -44,9 +48,12 @@ logger = logging.getLogger(__name__)
 
 
 @command("rg", vfs="discord", spec=SPECS["rg"])
-async def rg(accessor: DiscordAccessor, paths: list[PathSpec],
-             texts: list[str],
-             opts: CommandOpts) -> tuple[ByteSource | None, IOResult]:
+async def rg(
+    accessor: DiscordAccessor,
+    paths: list[PathSpec],
+    texts: list[str],
+    opts: CommandOpts,
+) -> tuple[ByteSource | None, IOResult]:
     fl = FlagView(opts.flags, spec=SPECS["rg"])
     pattern_str = pattern_arg(texts, fl, "regexp")
     refuse_missing_pattern(pattern_str, fl, parse_flags(fl))
@@ -54,10 +61,14 @@ async def rg(accessor: DiscordAccessor, paths: list[PathSpec],
     pushdown_warnings: list[str] = []
     # Output-shaping flags, a glob operand and a multi-operand line all need
     # the generic scan; see SEARCH_HONORED above.
-    operand = pushdown_operand(paths, opts.flags, pattern_str,
-                               RG_SEARCH_HONORED)
-    if (operand is not None and pattern_str is not None
-            and fl.as_bool("word_regexp")):
+    operand = pushdown_operand(
+        paths, opts.flags, pattern_str, RG_SEARCH_HONORED
+    )
+    if (
+        operand is not None
+        and pattern_str is not None
+        and fl.as_bool("word_regexp")
+    ):
         match = detect_scope(operand)
         if not accessor.time_range.bounded and match.kind in NATIVE_KINDS:
             guild_id = match.slots["guild_id"]
@@ -68,16 +79,19 @@ async def rg(accessor: DiscordAccessor, paths: list[PathSpec],
                     pattern_str,
                     channel_id=match.slots.get("channel_id"),
                     limit=SEARCH_MAX_RESULTS,
-                    session=accessor.pool)
-                file_prefix = mount_prefix_of(operand.virtual,
-                                              operand.vfs_path) or ""
+                    session=accessor.pool,
+                )
+                file_prefix = (
+                    mount_prefix_of(operand.virtual, operand.vfs_path) or ""
+                )
                 vfs_first = match.vfs_path.strip("/").split("/", 1)[0]
-                channels = await list_channels(accessor.config,
-                                               guild_id,
-                                               session=accessor.pool)
+                channels = await list_channels(
+                    accessor.config, guild_id, session=accessor.pool
+                )
                 channel_map = {c["id"]: channel_dirname(c) for c in channels}
-                lines = format_grep_results(msgs, file_prefix, vfs_first,
-                                            channel_map)
+                lines = format_grep_results(
+                    msgs, file_prefix, vfs_first, channel_map
+                )
                 if not lines:
                     return b"", IOResult(exit_code=1)
                 return format_records(lines), IOResult()
@@ -85,19 +99,27 @@ async def rg(accessor: DiscordAccessor, paths: list[PathSpec],
                 msg = str(exc)
                 pushdown_warnings.append(
                     f"discord: native search push-down failed ({msg}); "
-                    f"falling back to per-file scan")
-                if ("403" in msg or "Forbidden" in msg
-                        or "missing access" in msg.lower()):
+                    f"falling back to per-file scan"
+                )
+                if (
+                    "403" in msg
+                    or "Forbidden" in msg
+                    or "missing access" in msg.lower()
+                ):
                     pushdown_warnings.append(
                         "discord: hint - ensure the bot has the "
                         "READ_MESSAGE_HISTORY permission for this guild "
-                        "and the MESSAGE CONTENT privileged intent enabled")
+                        "and the MESSAGE CONTENT privileged intent enabled"
+                    )
                 logger.warning(
                     "discord search push-down failed (%s); "
-                    "falling back to per-file scan", exc)
+                    "falling back to per-file scan",
+                    exc,
+                )
 
-    resolved = await resolve_glob(accessor, paths,
-                                  index=opts.index) if paths else []
+    resolved = (
+        await resolve_glob(accessor, paths, index=opts.index) if paths else []
+    )
     stdout, io = await generic_rg(
         resolved,
         texts,

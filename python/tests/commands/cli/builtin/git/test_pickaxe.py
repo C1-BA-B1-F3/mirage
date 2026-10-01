@@ -77,13 +77,16 @@ def test_moving_a_line_between_files_is_reported(repo_path):
     # commit and the moving commit are listed.
     (repo_path / "a.txt").write_text("moved\n", encoding="utf-8")
     (repo_path / "b.txt").write_text("one changed\n", encoding="utf-8")
-    porcelain.add(str(repo_path),
-                  paths=[str(repo_path / "a.txt"),
-                         str(repo_path / "b.txt")])
-    porcelain.commit(str(repo_path),
-                     message=b"moved the line",
-                     author=AUTHOR,
-                     committer=AUTHOR)
+    porcelain.add(
+        str(repo_path),
+        paths=[str(repo_path / "a.txt"), str(repo_path / "b.txt")],
+    )
+    porcelain.commit(
+        str(repo_path),
+        message=b"moved the line",
+        author=AUTHOR,
+        committer=AUTHOR,
+    )
     with Repo(str(repo_path)) as repo:
         head = commits_of(repo_path)[0]
         assert touches(repo.object_store, head, b"one changed")

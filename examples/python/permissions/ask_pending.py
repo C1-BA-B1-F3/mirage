@@ -21,15 +21,13 @@ from mirage.vfs.ram import RAMVFS
 ROLE = {
     "commands": {
         "allow": ["ls", "cat", "rm"],
-        "ask": [{
-            "reason": "secrets are reviewed",
-            "commands": {
-                "cat": ["/data/secret.txt"]
-            }
-        }, {
-            "reason": "deletes are reviewed",
-            "commands": ["rm"]
-        }],
+        "ask": [
+            {
+                "reason": "secrets are reviewed",
+                "commands": {"cat": ["/data/secret.txt"]},
+            },
+            {"reason": "deletes are reviewed", "commands": ["rm"]},
+        ],
     },
 }
 
@@ -46,9 +44,9 @@ async def main() -> None:
     # No `on_ask`: nobody answers inline, so an asked line is refused for
     # now and its question waits in the ledger under an id the agent is
     # told to quote.
-    ws = Workspace({"/data/": RAMVFS()},
-                   mode=MountMode.WRITE,
-                   profiles={"agent": ROLE})
+    ws = Workspace(
+        {"/data/": RAMVFS()}, mode=MountMode.WRITE, profiles={"agent": ROLE}
+    )
     ws.create_session("agent", profile="agent")
     try:
         await run(ws, "cat /data/secret.txt")
@@ -59,8 +57,10 @@ async def main() -> None:
         for waiting in ws.decisions.pending("agent"):
             scope = Scope.ONCE if waiting.command == "cat" else Scope.SESSION
             words = " ".join(waiting.argv)
-            print(f"host: {waiting.id} asks {waiting.command} {words}"
-                  f" ({waiting.reason}): allow {scope.value}")
+            print(
+                f"host: {waiting.id} asks {waiting.command} {words}"
+                f" ({waiting.reason}): allow {scope.value}"
+            )
             await ws.decisions.answer(waiting.id, Outcome.ALLOW, scope)
         # Each retry consumes its answer.
         await run(ws, "cat /data/secret.txt")

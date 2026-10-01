@@ -12,24 +12,29 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-from mirage.shell.parse.heredoc import (HeredocOperator, clean_delimiter,
-                                        heredoc_bodies, next_line,
-                                        terminator_line)
+from mirage.shell.parse.heredoc import (
+    HeredocOperator,
+    clean_delimiter,
+    heredoc_bodies,
+    next_line,
+    terminator_line,
+)
 
 
 def _operator(command: str, token: str, dash: bool = False) -> HeredocOperator:
     arrow = "<<-" if dash else "<<"
     word_start = command.index(arrow + token) + len(arrow)
-    return HeredocOperator(word_start=word_start,
-                           word_end=word_start + len(token),
-                           delimiter=clean_delimiter(token),
-                           allows_indent=dash)
+    return HeredocOperator(
+        word_start=word_start,
+        word_end=word_start + len(token),
+        delimiter=clean_delimiter(token),
+        allows_indent=dash,
+    )
 
 
-def _bodies(command: str,
-            *tokens: str,
-            dash: bool = False,
-            nested: bool = False):
+def _bodies(
+    command: str, *tokens: str, dash: bool = False, nested: bool = False
+):
     operators = [_operator(command, token, dash) for token in tokens]
     return heredoc_bodies(command.encode(), operators, nested=nested)
 
@@ -90,14 +95,16 @@ def test_body_matches_an_escaped_double_quoted_delimiter():
 
 def test_dash_body_allows_a_tab_indented_terminator():
     cmd = "cat <<-EOF\n\tbody\n\tEOF\n"
-    assert _bodies(cmd, "EOF",
-                   dash=True) == [(cmd.index("\tbody"), cmd.index("\tEOF"))]
+    assert _bodies(cmd, "EOF", dash=True) == [
+        (cmd.index("\tbody"), cmd.index("\tEOF"))
+    ]
 
 
 def test_dash_body_ignores_a_space_indented_terminator():
     # Only tabs are stripped, so the body runs on to the end.
-    assert _bodies("cat <<-EOF\n  body\n  EOF\n", "EOF",
-                   dash=True) == [(11, 24)]
+    assert _bodies("cat <<-EOF\n  body\n  EOF\n", "EOF", dash=True) == [
+        (11, 24)
+    ]
 
 
 def test_unterminated_body_runs_to_the_end_of_the_source():
@@ -110,13 +117,17 @@ def test_body_without_a_body_line_is_none():
 
 
 def test_second_body_on_the_line_starts_after_the_first_terminator():
-    assert _bodies("cat <<A <<B\none\nA\ntwo\nB\n", "A", "B") == [(12, 16),
-                                                                  (18, 22)]
+    assert _bodies("cat <<A <<B\none\nA\ntwo\nB\n", "A", "B") == [
+        (12, 16),
+        (18, 22),
+    ]
 
 
 def test_bodies_keep_the_order_given():
-    assert _bodies("cat <<A <<B\none\nA\ntwo\nB\n", "B", "A") == [(18, 22),
-                                                                  (12, 16)]
+    assert _bodies("cat <<A <<B\none\nA\ntwo\nB\n", "B", "A") == [
+        (18, 22),
+        (12, 16),
+    ]
 
 
 def test_second_body_never_starts_when_the_first_runs_to_the_end():
@@ -129,24 +140,29 @@ def test_second_body_is_none_when_the_first_terminator_ends_the_source():
 
 def test_a_later_line_starts_its_own_body_after_its_own_operator_line():
     cmd = "cat <<A <<B\none\nA\ntwo\nB\ncat <<C\nthree\nC\n"
-    assert _bodies(cmd, "A", "B",
-                   "C") == [(12, 16), (18, 22),
-                            (cmd.index("three"), cmd.rindex("C"))]
+    assert _bodies(cmd, "A", "B", "C") == [
+        (12, 16),
+        (18, 22),
+        (cmd.index("three"), cmd.rindex("C")),
+    ]
 
 
 def test_operator_inside_an_earlier_body_is_text():
     cmd = "cat <<EOF\na <<X\nsecond\nEOF\n"
-    assert _bodies(cmd, "EOF",
-                   "X") == [(cmd.index("a <<X"), cmd.rindex("EOF")), None]
+    assert _bodies(cmd, "EOF", "X") == [
+        (cmd.index("a <<X"), cmd.rindex("EOF")),
+        None,
+    ]
 
 
 def test_dollar_quoted_delimiter_closes_its_own_body():
     # $'A' names A, so the first body ends at the A line and the second
     # operator still gets the lines after it.
     cmd = "cat <<$'A' <<'B'\nfirst\nA\n\\second\nB\n"
-    assert _bodies(cmd, "$'A'",
-                   "'B'") == [(cmd.index("first"), cmd.index("A\n")),
-                              (cmd.index("\\second"), cmd.rindex("B"))]
+    assert _bodies(cmd, "$'A'", "'B'") == [
+        (cmd.index("first"), cmd.index("A\n")),
+        (cmd.index("\\second"), cmd.rindex("B")),
+    ]
 
 
 def test_continued_delimiter_closes_its_own_body():
@@ -168,14 +184,17 @@ def test_nested_reads_a_lines_bodies_innermost_first():
     command = "cat <<A && cat <<B\nb\nB\na\nA\n"
     b_start = command.index("\nb\n") + 1
     a_start = command.index("\na\n") + 1
-    assert _bodies(command, "A", "B", nested=True) == [(a_start, a_start + 2),
-                                                       (b_start, b_start + 2)]
+    assert _bodies(command, "A", "B", nested=True) == [
+        (a_start, a_start + 2),
+        (b_start, b_start + 2),
+    ]
 
 
 def test_nested_and_bash_order_agree_on_a_single_heredoc_per_line():
     command = "cat <<A\na\nA\ncat <<B\nb\nB\n"
-    assert _bodies(command, "A", "B",
-                   nested=True) == _bodies(command, "A", "B")
+    assert _bodies(command, "A", "B", nested=True) == _bodies(
+        command, "A", "B"
+    )
 
 
 def test_nested_still_treats_an_operator_inside_a_body_as_text():

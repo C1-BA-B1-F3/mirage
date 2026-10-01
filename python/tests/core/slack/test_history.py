@@ -30,28 +30,21 @@ def config():
 @pytest.mark.asyncio
 async def test_get_history_jsonl(config):
     mock_data = {
-        "ok":
-        True,
+        "ok": True,
         "messages": [
-            {
-                "text": "second",
-                "ts": "1700000002.000000"
-            },
-            {
-                "text": "first",
-                "ts": "1700000001.000000"
-            },
+            {"text": "second", "ts": "1700000002.000000"},
+            {"text": "first", "ts": "1700000001.000000"},
         ],
-        "has_more":
-        False,
+        "has_more": False,
     }
     with patch(
-            "mirage.core.slack.paginate.slack_get",
-            new_callable=AsyncMock,
-            return_value=mock_data,
+        "mirage.core.slack.paginate.slack_get",
+        new_callable=AsyncMock,
+        return_value=mock_data,
     ):
-        result = await get_history_jsonl(config, "C001", "2023-11-14",
-                                         TimeRange())
+        result = await get_history_jsonl(
+            config, "C001", "2023-11-14", TimeRange()
+        )
 
     lines = result.decode().strip().split("\n")
     assert len(lines) == 2
@@ -70,11 +63,12 @@ async def test_get_history_empty(config):
         "has_more": False,
     }
     with patch(
-            "mirage.core.slack.paginate.slack_get",
-            new_callable=AsyncMock,
-            return_value=mock_data,
+        "mirage.core.slack.paginate.slack_get",
+        new_callable=AsyncMock,
+        return_value=mock_data,
     ):
-        result = await get_history_jsonl(config, "C001", "2023-11-14",
-                                         TimeRange())
+        result = await get_history_jsonl(
+            config, "C001", "2023-11-14", TimeRange()
+        )
 
     assert result == b""

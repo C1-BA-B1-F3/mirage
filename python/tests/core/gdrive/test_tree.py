@@ -55,6 +55,8 @@ async def test_iter_tree_missing_root_raises(fake_drive, gdrive_accessor):
 
 
 def test_vfs_name_renders_native_suffix():
-    assert vfs_name({"name": "Report", "mimeType": DOC_MIME}) == \
-        "Report.gdoc.json"
+    assert (
+        vfs_name({"name": "Report", "mimeType": DOC_MIME})
+        == "Report.gdoc.json"
+    )
     assert vfs_name({"name": "a.txt", "mimeType": "text/plain"}) == "a.txt"

@@ -31,20 +31,23 @@ def test_tail_c5(env):
 
 def test_tail_stdin(env):
     data = b"a\nb\nc\nd\ne\n"
-    assert env.mirage("tail -n 3", stdin=data) == env.native("tail -n 3",
-                                                             stdin=data)
+    assert env.mirage("tail -n 3", stdin=data) == env.native(
+        "tail -n 3", stdin=data
+    )
 
 
 def test_tail_plus_n(env):
     env.create_file("f.txt", b"a\nb\nc\nd\ne\n")
     assert env.mirage("tail -n +3 /data/f.txt") == env.native(
-        "tail -n +3 f.txt")
+        "tail -n +3 f.txt"
+    )
 
 
 def test_tail_plus_n_stdin(env):
     data = b"a\nb\nc\nd\ne\n"
-    assert env.mirage("tail -n +2", stdin=data) == env.native("tail -n +2",
-                                                              stdin=data)
+    assert env.mirage("tail -n +2", stdin=data) == env.native(
+        "tail -n +2", stdin=data
+    )
 
 
 def test_tail_q(env):

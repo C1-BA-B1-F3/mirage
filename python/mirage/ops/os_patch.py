@@ -57,7 +57,8 @@ def _ident(text: str) -> int:
         text (str): the virtual path or mount prefix to identify.
     """
     return int.from_bytes(
-        blake2b(text.encode(), digest_size=7).digest(), "big")
+        blake2b(text.encode(), digest_size=7).digest(), "big"
+    )
 
 
 # setxattr(2)'s flags as linux numbers them, the one platform whose os
@@ -111,8 +112,9 @@ class _MountDirEntry:
 
     __slots__ = ("_router", "_path", "_marked", "_stat", "_lstat")
 
-    def __init__(self, router: "_OsRouter", path: str,
-                 marked_dir: bool) -> None:
+    def __init__(
+        self, router: "_OsRouter", path: str, marked_dir: bool
+    ) -> None:
         self._router = router
         self._path = path
         self._marked = marked_dir
@@ -206,7 +208,7 @@ class _MountScandir:
         entries (list[_MountDirEntry]): the listing, already resolved.
     """
 
-    __slots__ = ("_entries", )
+    __slots__ = ("_entries",)
 
     def __init__(self, entries: list[_MountDirEntry]) -> None:
         self._entries: Iterator[_MountDirEntry] = iter(entries)
@@ -250,8 +252,9 @@ class _OsRouter:
             coroutines run on; None gives each call a throwaway loop.
     """
 
-    def __init__(self, ops: Ops,
-                 loop: asyncio.AbstractEventLoop | None) -> None:
+    def __init__(
+        self, ops: Ops, loop: asyncio.AbstractEventLoop | None
+    ) -> None:
         self._ops = ops
         self._loop = loop
         # The host functions as they were when this router was built.
@@ -268,8 +271,8 @@ class _OsRouter:
         self._now = time.time()
         # Windows has no getuid/getgid, and the ids are irrelevant
         # there; mirrors fuse/core.py.
-        self._uid = (_real_os.getuid() if hasattr(_real_os, "getuid") else 0)
-        self._gid = (_real_os.getgid() if hasattr(_real_os, "getgid") else 0)
+        self._uid = _real_os.getuid() if hasattr(_real_os, "getuid") else 0
+        self._gid = _real_os.getgid() if hasattr(_real_os, "getgid") else 0
 
     def _run(self, coro: Awaitable[T]) -> T:
         return run_async_from_sync(coro, self._loop)
@@ -305,13 +308,21 @@ class _OsRouter:
         owner = owner_prefix(self._ops.mount_prefixes(), virtual)
         if owner is None:
             return False
-        return any(prefix == owner
-                   for prefix, _ in self._ops.writable_mounts())
+        return any(
+            prefix == owner for prefix, _ in self._ops.writable_mounts()
+        )
 
-    def _result(self, virtual: str, mode: int, size: int, nlink: int,
-                uid: int | str | None, gid: int | str | None,
-                atime: float | None,
-                mtime: float | None) -> _real_os.stat_result:
+    def _result(
+        self,
+        virtual: str,
+        mode: int,
+        size: int,
+        nlink: int,
+        uid: int | str | None,
+        gid: int | str | None,
+        atime: float | None,
+        mtime: float | None,
+    ) -> _real_os.stat_result:
         """One `os.stat_result` from the fields a FileStat carries.
 
         Every optional field is filled explicitly, because built from a
@@ -337,29 +348,45 @@ class _OsRouter:
         access = stamp if atime is None else atime
         prefix = owner_prefix(self._ops.mount_prefixes(), virtual) or "/"
         return _real_os.stat_result(
-            (mode, _ident(virtual), _ident(prefix), nlink,
-             uid if isinstance(uid, int) else self._uid,
-             gid if isinstance(gid, int) else self._gid, size, int(access),
-             int(stamp), int(stamp)), {
-                 "st_atime": access,
-                 "st_mtime": stamp,
-                 "st_ctime": stamp,
-                 "st_atime_ns": int(access * 1_000_000_000),
-                 "st_mtime_ns": int(stamp * 1_000_000_000),
-                 "st_ctime_ns": int(stamp * 1_000_000_000),
-                 "st_birthtime": stamp,
-                 "st_blksize": _BLKSIZE,
-                 "st_blocks": -(-size // 512),
-                 "st_rdev": 0,
-                 "st_flags": 0,
-                 "st_gen": 0,
-             })
+            (
+                mode,
+                _ident(virtual),
+                _ident(prefix),
+                nlink,
+                uid if isinstance(uid, int) else self._uid,
+                gid if isinstance(gid, int) else self._gid,
+                size,
+                int(access),
+                int(stamp),
+                int(stamp),
+            ),
+            {
+                "st_atime": access,
+                "st_mtime": stamp,
+                "st_ctime": stamp,
+                "st_atime_ns": int(access * 1_000_000_000),
+                "st_mtime_ns": int(stamp * 1_000_000_000),
+                "st_ctime_ns": int(stamp * 1_000_000_000),
+                "st_birthtime": stamp,
+                "st_blksize": _BLKSIZE,
+                "st_blocks": -(-size // 512),
+                "st_rdev": 0,
+                "st_flags": 0,
+                "st_gen": 0,
+            },
+        )
 
     def _stat_of(self, virtual: str, st: FileStat) -> _real_os.stat_result:
-        return self._result(virtual, posix_mode(st), content_size(st),
-                            2 if is_dir(st) else 1, st.uid, st.gid,
-                            iso_timestamp(st.atime),
-                            iso_timestamp(st.modified))
+        return self._result(
+            virtual,
+            posix_mode(st),
+            content_size(st),
+            2 if is_dir(st) else 1,
+            st.uid,
+            st.gid,
+            iso_timestamp(st.atime),
+            iso_timestamp(st.modified),
+        )
 
     def _link_target(self, virtual: str) -> str | None:
         """The stored target when `virtual` is a link, else None.
@@ -426,11 +453,13 @@ class _OsRouter:
         ]
         return _MountScandir(entries)
 
-    def walk(self,
-             top: Any,
-             topdown: bool = True,
-             onerror: Callable[[OSError], None] | None = None,
-             followlinks: bool = False) -> Iterator[Any]:
+    def walk(
+        self,
+        top: Any,
+        topdown: bool = True,
+        onerror: Callable[[OSError], None] | None = None,
+        followlinks: bool = False,
+    ) -> Iterator[Any]:
         """Walk a tree, yielding (top, dirs, files) per directory.
 
         Args:
@@ -445,9 +474,13 @@ class _OsRouter:
             return
         yield from self._walk(virtual, topdown, onerror, followlinks)
 
-    def _walk(self, top: str, topdown: bool,
-              onerror: Callable[[OSError], None] | None,
-              followlinks: bool) -> Iterator[tuple[str, list[str], list[str]]]:
+    def _walk(
+        self,
+        top: str,
+        topdown: bool,
+        onerror: Callable[[OSError], None] | None,
+        followlinks: bool,
+    ) -> Iterator[tuple[str, list[str], list[str]]]:
         """One directory of a mounted walk, then its subdirectories.
 
         CPython's own shape: the listing error goes to ``onerror`` and
@@ -482,31 +515,34 @@ class _OsRouter:
         for name in list(dirs):
             if name in links and not followlinks:
                 continue
-            yield from self._walk(posixpath.join(top, name), topdown, onerror,
-                                  followlinks)
+            yield from self._walk(
+                posixpath.join(top, name), topdown, onerror, followlinks
+            )
         if not topdown:
             yield top, dirs, files
 
-    def stat(self,
-             path: Any,
-             *,
-             dir_fd: int | None = None,
-             follow_symlinks: bool = True) -> _real_os.stat_result:
+    def stat(
+        self,
+        path: Any,
+        *,
+        dir_fd: int | None = None,
+        follow_symlinks: bool = True,
+    ) -> _real_os.stat_result:
         virtual = self._virtual(path)
         if virtual is None:
             return cast(
                 _real_os.stat_result,
-                self._host.stat(path,
-                                dir_fd=dir_fd,
-                                follow_symlinks=follow_symlinks))
+                self._host.stat(
+                    path, dir_fd=dir_fd, follow_symlinks=follow_symlinks
+                ),
+            )
         if not follow_symlinks:
             return self.lstat(virtual)
         return self._stat_of(virtual, self._run(self._ops.stat(virtual)))
 
-    def lstat(self,
-              path: Any,
-              *,
-              dir_fd: int | None = None) -> _real_os.stat_result:
+    def lstat(
+        self, path: Any, *, dir_fd: int | None = None
+    ) -> _real_os.stat_result:
         """Stat without following, so a link reports as itself.
 
         The node table is asked first because a link is namespace state
@@ -524,8 +560,9 @@ class _OsRouter:
         """
         virtual = self._virtual(path)
         if virtual is None:
-            return cast(_real_os.stat_result,
-                        self._host.lstat(path, dir_fd=dir_fd))
+            return cast(
+                _real_os.stat_result, self._host.lstat(path, dir_fd=dir_fd)
+            )
         target = self._link_target(virtual)
         if target is None:
             return self._stat_of(virtual, self._run(self._ops.stat(virtual)))
@@ -534,17 +571,27 @@ class _OsRouter:
         if row is None:
             # A facade built without a link table: the target string is
             # the only fact there is.
-            return self._result(virtual, LINK_MODE, len(target.encode()), 1,
-                                None, None, None, None)
+            return self._result(
+                virtual,
+                LINK_MODE,
+                len(target.encode()),
+                1,
+                None,
+                None,
+                None,
+                None,
+            )
         return self._stat_of(virtual, row)
 
-    def access(self,
-               path: Any,
-               mode: int,
-               *,
-               dir_fd: int | None = None,
-               effective_ids: bool = False,
-               follow_symlinks: bool = True) -> bool:
+    def access(
+        self,
+        path: Any,
+        mode: int,
+        *,
+        dir_fd: int | None = None,
+        effective_ids: bool = False,
+        follow_symlinks: bool = True,
+    ) -> bool:
         """Whether the caller may reach `path` the requested way.
 
         Read is granted by existence and write by the owning mount's
@@ -565,11 +612,14 @@ class _OsRouter:
         if virtual is None:
             return cast(
                 bool,
-                self._host.access(path,
-                                  mode,
-                                  dir_fd=dir_fd,
-                                  effective_ids=effective_ids,
-                                  follow_symlinks=follow_symlinks))
+                self._host.access(
+                    path,
+                    mode,
+                    dir_fd=dir_fd,
+                    effective_ids=effective_ids,
+                    follow_symlinks=follow_symlinks,
+                ),
+            )
         try:
             st = self.stat(virtual, follow_symlinks=follow_symlinks)
         except OSError:
@@ -580,115 +630,136 @@ class _OsRouter:
             return False
         return True
 
-    def chmod(self,
-              path: Any,
-              mode: int,
-              *,
-              dir_fd: int | None = None,
-              follow_symlinks: bool = True) -> None:
+    def chmod(
+        self,
+        path: Any,
+        mode: int,
+        *,
+        dir_fd: int | None = None,
+        follow_symlinks: bool = True,
+    ) -> None:
         virtual = self._virtual(path)
         if virtual is None:
-            self._host.chmod(path,
-                             mode,
-                             dir_fd=dir_fd,
-                             follow_symlinks=follow_symlinks)
+            self._host.chmod(
+                path, mode, dir_fd=dir_fd, follow_symlinks=follow_symlinks
+            )
             return
         self._run(
-            self._ops.setattr(virtual, mode=mode,
-                              nofollow=not follow_symlinks))
+            self._ops.setattr(virtual, mode=mode, nofollow=not follow_symlinks)
+        )
 
-    def chown(self,
-              path: Any,
-              uid: int,
-              gid: int,
-              *,
-              dir_fd: int | None = None,
-              follow_symlinks: bool = True) -> None:
+    def chown(
+        self,
+        path: Any,
+        uid: int,
+        gid: int,
+        *,
+        dir_fd: int | None = None,
+        follow_symlinks: bool = True,
+    ) -> None:
         virtual = self._virtual(path)
         if virtual is None:
-            self._host.chown(path,
-                             uid,
-                             gid,
-                             dir_fd=dir_fd,
-                             follow_symlinks=follow_symlinks)
+            self._host.chown(
+                path, uid, gid, dir_fd=dir_fd, follow_symlinks=follow_symlinks
+            )
             return
         # -1 is POSIX's "leave this one alone", which the door spells
         # None; passing it through would store an id of -1.
         self._run(
-            self._ops.setattr(virtual,
-                              uid=None if uid == -1 else uid,
-                              gid=None if gid == -1 else gid,
-                              nofollow=not follow_symlinks))
+            self._ops.setattr(
+                virtual,
+                uid=None if uid == -1 else uid,
+                gid=None if gid == -1 else gid,
+                nofollow=not follow_symlinks,
+            )
+        )
 
-    def getxattr(self,
-                 path: Any,
-                 attribute: str | bytes,
-                 *,
-                 follow_symlinks: bool = True) -> bytes:
+    def getxattr(
+        self,
+        path: Any,
+        attribute: str | bytes,
+        *,
+        follow_symlinks: bool = True,
+    ) -> bytes:
         virtual = self._virtual(path)
         if virtual is None:
             return cast(
                 bytes,
-                self._host.getxattr(path,
-                                    attribute,
-                                    follow_symlinks=follow_symlinks))
+                self._host.getxattr(
+                    path, attribute, follow_symlinks=follow_symlinks
+                ),
+            )
         return bytes(
             self._run(
-                self._ops.getxattr(virtual,
-                                   _real_os.fsdecode(attribute),
-                                   nofollow=not follow_symlinks)))
+                self._ops.getxattr(
+                    virtual,
+                    _real_os.fsdecode(attribute),
+                    nofollow=not follow_symlinks,
+                )
+            )
+        )
 
-    def listxattr(self,
-                  path: Any = None,
-                  *,
-                  follow_symlinks: bool = True) -> list[str]:
+    def listxattr(
+        self, path: Any = None, *, follow_symlinks: bool = True
+    ) -> list[str]:
         virtual = self._virtual(path)
         if virtual is None:
             return cast(
                 list[str],
-                self._host.listxattr(path, follow_symlinks=follow_symlinks))
+                self._host.listxattr(path, follow_symlinks=follow_symlinks),
+            )
         return list(
             self._run(
-                self._ops.listxattr(virtual, nofollow=not follow_symlinks)))
+                self._ops.listxattr(virtual, nofollow=not follow_symlinks)
+            )
+        )
 
-    def setxattr(self,
-                 path: Any,
-                 attribute: str | bytes,
-                 value: bytes,
-                 flags: int = 0,
-                 *,
-                 follow_symlinks: bool = True) -> None:
+    def setxattr(
+        self,
+        path: Any,
+        attribute: str | bytes,
+        value: bytes,
+        flags: int = 0,
+        *,
+        follow_symlinks: bool = True,
+    ) -> None:
         virtual = self._virtual(path)
         if virtual is None:
-            self._host.setxattr(path,
-                                attribute,
-                                value,
-                                flags,
-                                follow_symlinks=follow_symlinks)
+            self._host.setxattr(
+                path, attribute, value, flags, follow_symlinks=follow_symlinks
+            )
             return
         self._run(
-            self._ops.setxattr(virtual,
-                               _real_os.fsdecode(attribute),
-                               bytes(value),
-                               create=bool(flags & _XATTR_CREATE),
-                               replace=bool(flags & _XATTR_REPLACE),
-                               nofollow=not follow_symlinks))
+            self._ops.setxattr(
+                virtual,
+                _real_os.fsdecode(attribute),
+                bytes(value),
+                create=bool(flags & _XATTR_CREATE),
+                replace=bool(flags & _XATTR_REPLACE),
+                nofollow=not follow_symlinks,
+            )
+        )
 
-    def removexattr(self,
-                    path: Any,
-                    attribute: str | bytes,
-                    *,
-                    follow_symlinks: bool = True) -> None:
+    def removexattr(
+        self,
+        path: Any,
+        attribute: str | bytes,
+        *,
+        follow_symlinks: bool = True,
+    ) -> None:
         virtual = self._virtual(path)
         if virtual is None:
-            self._host.removexattr(path,
-                                   attribute,
-                                   follow_symlinks=follow_symlinks)
+            self._host.removexattr(
+                path, attribute, follow_symlinks=follow_symlinks
+            )
             return
         self._run(
-            self._ops.removexattr(virtual,
-                                  _real_os.fsdecode(attribute),
-                                  nofollow=not follow_symlinks))
+            self._ops.removexattr(
+                virtual,
+                _real_os.fsdecode(attribute),
+                nofollow=not follow_symlinks,
+            )
+        )
 
     def lchmod(self, path: Any, mode: int) -> None:
         virtual = self._virtual(path)
@@ -704,13 +775,15 @@ class _OsRouter:
             return
         self.chown(virtual, uid, gid, follow_symlinks=False)
 
-    def utime(self,
-              path: Any,
-              times: tuple[float, float] | None = None,
-              *,
-              ns: tuple[int, int] | None = None,
-              dir_fd: int | None = None,
-              follow_symlinks: bool = True) -> None:
+    def utime(
+        self,
+        path: Any,
+        times: tuple[float, float] | None = None,
+        *,
+        ns: tuple[int, int] | None = None,
+        dir_fd: int | None = None,
+        follow_symlinks: bool = True,
+    ) -> None:
         """Set the access and modification times, now by default.
 
         Args:
@@ -722,21 +795,20 @@ class _OsRouter:
         """
         if ns is not None and times is not None:
             raise ValueError(
-                "utime: you may specify either 'times' or 'ns' but not both")
+                "utime: you may specify either 'times' or 'ns' but not both"
+            )
         virtual = self._virtual(path)
         if virtual is None:
             # `ns=None` is not the same as an absent `ns` to the real
             # utime: it type-checks the tuple before reading `times`.
             if ns is None:
-                self._host.utime(path,
-                                 times,
-                                 dir_fd=dir_fd,
-                                 follow_symlinks=follow_symlinks)
+                self._host.utime(
+                    path, times, dir_fd=dir_fd, follow_symlinks=follow_symlinks
+                )
             else:
-                self._host.utime(path,
-                                 ns=ns,
-                                 dir_fd=dir_fd,
-                                 follow_symlinks=follow_symlinks)
+                self._host.utime(
+                    path, ns=ns, dir_fd=dir_fd, follow_symlinks=follow_symlinks
+                )
             return
         if ns is not None:
             access, stamp = (value / 1_000_000_000 for value in ns)
@@ -745,26 +817,26 @@ class _OsRouter:
         else:
             access = stamp = time.time()
         self._run(
-            self._ops.setattr(virtual,
-                              atime=timestamp_iso(access),
-                              mtime=timestamp_iso(stamp),
-                              nofollow=not follow_symlinks))
+            self._ops.setattr(
+                virtual,
+                atime=timestamp_iso(access),
+                mtime=timestamp_iso(stamp),
+                nofollow=not follow_symlinks,
+            )
+        )
 
-    def mkdir(self,
-              path: Any,
-              mode: int = 0o777,
-              *,
-              dir_fd: int | None = None) -> None:
+    def mkdir(
+        self, path: Any, mode: int = 0o777, *, dir_fd: int | None = None
+    ) -> None:
         virtual = self._virtual(path)
         if virtual is None:
             self._host.mkdir(path, mode, dir_fd=dir_fd)
             return
         self._run(self._ops.mkdir(virtual))
 
-    def makedirs(self,
-                 name: Any,
-                 mode: int = 0o777,
-                 exist_ok: bool = False) -> None:
+    def makedirs(
+        self, name: Any, mode: int = 0o777, exist_ok: bool = False
+    ) -> None:
         """Create a directory and every missing ancestor.
 
         The ancestors are walked here because the mkdir op is one level
@@ -786,19 +858,25 @@ class _OsRouter:
         # deployment's own configuration and creating one is refused
         # (EBUSY), so a backend that does not stat its own root would
         # otherwise turn makedirs into that refusal.
-        root = (owner_prefix(self._ops.mount_prefixes(), virtual)
-                or "/").rstrip("/")
+        root = (
+            owner_prefix(self._ops.mount_prefixes(), virtual) or "/"
+        ).rstrip("/")
         missing: list[str] = []
         probe = virtual.rstrip("/")
-        while (probe and probe != "/" and probe != root
-               and not self._exists(probe)):
+        while (
+            probe
+            and probe != "/"
+            and probe != root
+            and not self._exists(probe)
+        ):
             missing.append(probe)
             probe = posixpath.dirname(probe)
         if not missing:
             if exist_ok and self._isdir(virtual):
                 return
-            raise FileExistsError(errno.EEXIST,
-                                  _real_os.strerror(errno.EEXIST), virtual)
+            raise FileExistsError(
+                errno.EEXIST, _real_os.strerror(errno.EEXIST), virtual
+            )
         for path in reversed(missing):
             self._run(self._ops.mkdir(path))
 
@@ -841,24 +919,34 @@ class _OsRouter:
     def unlink(self, path: Any, *, dir_fd: int | None = None) -> None:
         self.remove(path, dir_fd=dir_fd)
 
-    def rename(self,
-               src: Any,
-               dst: Any,
-               *,
-               src_dir_fd: int | None = None,
-               dst_dir_fd: int | None = None) -> None:
+    def rename(
+        self,
+        src: Any,
+        dst: Any,
+        *,
+        src_dir_fd: int | None = None,
+        dst_dir_fd: int | None = None,
+    ) -> None:
         self._move(src, dst, src_dir_fd, dst_dir_fd, replace=False)
 
-    def replace(self,
-                src: Any,
-                dst: Any,
-                *,
-                src_dir_fd: int | None = None,
-                dst_dir_fd: int | None = None) -> None:
+    def replace(
+        self,
+        src: Any,
+        dst: Any,
+        *,
+        src_dir_fd: int | None = None,
+        dst_dir_fd: int | None = None,
+    ) -> None:
         self._move(src, dst, src_dir_fd, dst_dir_fd, replace=True)
 
-    def _move(self, src: Any, dst: Any, src_dir_fd: int | None,
-              dst_dir_fd: int | None, replace: bool) -> None:
+    def _move(
+        self,
+        src: Any,
+        dst: Any,
+        src_dir_fd: int | None,
+        dst_dir_fd: int | None,
+        replace: bool,
+    ) -> None:
         """Rename within the mounts or within the host, never across.
 
         One end on a mount and the other on the host is EXDEV, the same
@@ -878,12 +966,17 @@ class _OsRouter:
         """
         source, dest = self._virtual(src), self._virtual(dst)
         if source is None and dest is None:
-            move = (self._host.replace if replace else self._host.rename)
+            move = self._host.replace if replace else self._host.rename
             move(src, dst, src_dir_fd=src_dir_fd, dst_dir_fd=dst_dir_fd)
             return
         if source is None or dest is None:
-            raise OSError(errno.EXDEV, _real_os.strerror(errno.EXDEV),
-                          _spelled(src), None, _spelled(dst))
+            raise OSError(
+                errno.EXDEV,
+                _real_os.strerror(errno.EXDEV),
+                _spelled(src),
+                None,
+                _spelled(dst),
+            )
         self._run(self._ops.rename(source, dest))
 
     def renames(self, old: Any, new: Any) -> None:
@@ -913,12 +1006,14 @@ class _OsRouter:
                     # too: the rename is what the caller asked for.
                     pass
 
-    def symlink(self,
-                src: Any,
-                dst: Any,
-                target_is_directory: bool = False,
-                *,
-                dir_fd: int | None = None) -> None:
+    def symlink(
+        self,
+        src: Any,
+        dst: Any,
+        target_is_directory: bool = False,
+        *,
+        dir_fd: int | None = None,
+    ) -> None:
         """Create a link at `dst` pointing at `src`.
 
         The gate is the link's own location, never its target: a link
@@ -963,8 +1058,9 @@ class _OsRouter:
         self._run(self._ops.truncate(virtual, length))
 
 
-def _refusal(router: _OsRouter, verb: str,
-             condition: FsCondition) -> Callable[..., Any]:
+def _refusal(
+    router: _OsRouter, verb: str, condition: FsCondition
+) -> Callable[..., Any]:
     """A wrapper that refuses `verb` on a mount and passes it through off one.
 
     The refusal carries the same condition every other mirage surface
@@ -985,15 +1081,17 @@ def _refusal(router: _OsRouter, verb: str,
         for value in (*args, *kwargs.values()):
             virtual = router._virtual(value)
             if virtual is not None:
-                raise OSError(posix_errno(condition), gnu_phrase(condition),
-                              virtual)
+                raise OSError(
+                    posix_errno(condition), gnu_phrase(condition), virtual
+                )
         return real(*args, **kwargs)
 
     return refuse
 
 
-def _rebind(module: types.ModuleType,
-            replacements: dict[str, Any]) -> types.ModuleType:
+def _rebind(
+    module: types.ModuleType, replacements: dict[str, Any]
+) -> types.ModuleType:
     """A copy of `module` whose functions read `replacements` as globals.
 
     ``os.path`` is a module of functions that call ``os.stat`` and
@@ -1011,19 +1109,25 @@ def _rebind(module: types.ModuleType,
     copy.__dict__.update(module.__dict__)
     copy.__dict__.update(replacements)
     for name, value in list(vars(module).items()):
-        if (not isinstance(value, types.FunctionType)
-                or value.__globals__ is not module.__dict__):
+        if (
+            not isinstance(value, types.FunctionType)
+            or value.__globals__ is not module.__dict__
+        ):
             continue
-        rebound = types.FunctionType(value.__code__, copy.__dict__, name,
-                                     value.__defaults__, value.__closure__)
+        rebound = types.FunctionType(
+            value.__code__,
+            copy.__dict__,
+            name,
+            value.__defaults__,
+            value.__closure__,
+        )
         rebound.__kwdefaults__ = value.__kwdefaults__
         copy.__dict__[name] = rebound
     return copy
 
 
 def os_routing(
-    ops: Ops,
-    loop: asyncio.AbstractEventLoop | None = None
+    ops: Ops, loop: asyncio.AbstractEventLoop | None = None
 ) -> dict[str, Callable[..., Any]]:
     """Every `os` name that must not answer from the host, and what does.
 
@@ -1059,8 +1163,8 @@ def os_routing(
 
 
 def make_os_module(
-        ops: Ops,
-        loop: asyncio.AbstractEventLoop | None = None) -> types.ModuleType:
+    ops: Ops, loop: asyncio.AbstractEventLoop | None = None
+) -> types.ModuleType:
     """A standalone copy of `os` that routes mounted paths.
 
     A copy, not a patch, for a caller that wants the routing without

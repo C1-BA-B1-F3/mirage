@@ -52,11 +52,13 @@ def _binds_through_defaults(node: ast.AST, enclosing: frozenset[str]) -> bool:
         return False
     defaults = [
         *node.args.defaults,
-        *[d for d in node.args.kw_defaults if d is not None]
+        *[d for d in node.args.kw_defaults if d is not None],
     ]
     return any(
         isinstance(name, ast.Name) and name.id in enclosing
-        for default in defaults for name in ast.walk(default))
+        for default in defaults
+        for name in ast.walk(default)
+    )
 
 
 def _offenders(path: Path, rel: str) -> list[str]:
@@ -66,14 +68,18 @@ def _offenders(path: Path, rel: str) -> list[str]:
 
     def visit(table: symtable.SymbolTable, enclosing: frozenset[str] | None):
         for child in table.get_children():
-            is_def = (child.get_type() == "function"
-                      and child.get_name() not in SYNTHETIC)
+            is_def = (
+                child.get_type() == "function"
+                and child.get_name() not in SYNTHETIC
+            )
             if is_def and enclosing is not None and not child.get_frees():
                 node = positions.get((child.get_name(), child.get_lineno()))
                 if node is None or not _binds_through_defaults(
-                        node, enclosing):
+                    node, enclosing
+                ):
                     found.append(
-                        f"{rel}:{child.get_lineno()} {child.get_name()}")
+                        f"{rel}:{child.get_lineno()} {child.get_name()}"
+                    )
             locals_ = frozenset(child.get_locals()) if is_def else enclosing
             visit(child, locals_ if is_def else enclosing)
 
@@ -104,4 +110,5 @@ def test_nested_functions_capture_enclosing_state():
     assert not offenders, (
         "these nested functions capture nothing from the scope around "
         "them, so nesting them only hides them -- move them to module "
-        "level:\n" + "\n".join(offenders))
+        "level:\n" + "\n".join(offenders)
+    )

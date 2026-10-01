@@ -32,7 +32,8 @@ def test_supabase_config_defaults():
     )
     assert config.timeout == 30
     assert config.resolved_endpoint_url() == (
-        "https://project-123.storage.supabase.co/storage/v1/s3")
+        "https://project-123.storage.supabase.co/storage/v1/s3"
+    )
 
 
 def test_supabase_config_immutable():
@@ -62,7 +63,8 @@ def test_supabase_config_to_s3_config():
     assert s3_config.bucket == "my-bucket"
     assert s3_config.region == "us-west-2"
     assert (
-        s3_config.endpoint_url == "https://example.supabase.co/storage/v1/s3")
+        s3_config.endpoint_url == "https://example.supabase.co/storage/v1/s3"
+    )
     assert reveal_secret(s3_config.aws_access_key_id) == "access-key"
     assert reveal_secret(s3_config.aws_secret_access_key) == "secret-key"
     assert reveal_secret(s3_config.aws_session_token) == "session-token"
@@ -90,7 +92,8 @@ def test_supabase_resource_uses_s3_resource_type():
             region="us-west-2",
             access_key_id="access-key",
             secret_access_key="secret-key",
-        ))
+        )
+    )
     assert vfs.name == VFSName.S3
     assert vfs.caches_reads is True
     assert isinstance(vfs.config, S3Config)

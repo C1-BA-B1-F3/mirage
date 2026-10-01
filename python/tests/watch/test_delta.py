@@ -14,9 +14,11 @@ def _walk_from(tree: dict[str, str | None]):
 
     async def _walk(root: PathSpec) -> AsyncIterator[WalkEntry]:
         for virtual, fingerprint in tree.items():
-            yield WalkEntry(virtual=virtual,
-                            is_dir=fingerprint is None,
-                            fingerprint=fingerprint)
+            yield WalkEntry(
+                virtual=virtual,
+                is_dir=fingerprint is None,
+                fingerprint=fingerprint,
+            )
 
     return _walk
 
@@ -74,15 +76,18 @@ async def test_delete_detected():
 async def test_metadata_carries_size_and_modified():
 
     async def _walk(root: PathSpec) -> AsyncIterator[WalkEntry]:
-        yield WalkEntry(virtual="/nc/a.txt",
-                        is_dir=False,
-                        fingerprint="e2",
-                        size=2,
-                        modified="2026-01-02T00:00:00")
+        yield WalkEntry(
+            virtual="/nc/a.txt",
+            is_dir=False,
+            fingerprint="e2",
+            size=2,
+            modified="2026-01-02T00:00:00",
+        )
 
     hook = ListingDeltaHook(_walk)
-    base = await ListingDeltaHook(_walk_from({"/nc/a.txt":
-                                              "e1"})).pull(_root(), None)
+    base = await ListingDeltaHook(_walk_from({"/nc/a.txt": "e1"})).pull(
+        _root(), None
+    )
     delta = await hook.pull(_root(), base.checkpoint)
     meta = delta.changes[0].metadata
     assert delta.changes[0].kind is FileChangeKind.UPDATE

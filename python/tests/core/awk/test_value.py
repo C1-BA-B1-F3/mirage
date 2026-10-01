@@ -2,22 +2,37 @@ import math
 
 import pytest
 
-from mirage.core.awk.value import (UNINIT, ValueKind, compare, format_num,
-                                   is_true, looks_numeric, num, parse_number,
-                                   strnum, text, to_int, to_num, to_str)
+from mirage.core.awk.value import (
+    UNINIT,
+    ValueKind,
+    compare,
+    format_num,
+    is_true,
+    looks_numeric,
+    num,
+    parse_number,
+    strnum,
+    text,
+    to_int,
+    to_num,
+    to_str,
+)
 
 
-@pytest.mark.parametrize("raw,expected", [
-    ("12", True),
-    (" +1.5e3 ", True),
-    (".5", True),
-    ("7.", True),
-    ("0x1A", False),
-    ("1e", False),
-    ("", False),
-    ("abc", False),
-    ("٣", False),
-])
+@pytest.mark.parametrize(
+    "raw,expected",
+    [
+        ("12", True),
+        (" +1.5e3 ", True),
+        (".5", True),
+        ("7.", True),
+        ("0x1A", False),
+        ("1e", False),
+        ("", False),
+        ("abc", False),
+        ("٣", False),
+    ],
+)
 def test_looks_numeric(raw, expected):
     assert looks_numeric(raw) is expected
 
@@ -28,33 +43,39 @@ def test_strnum_tags_only_numeric_looking_input():
     assert strnum("").kind is ValueKind.STR
 
 
-@pytest.mark.parametrize("raw,expected", [
-    ("12abc", 12.0),
-    ("  42  ", 42.0),
-    (".5x", 0.5),
-    ("1e", 1.0),
-    ("0x1A", 0.0),
-    ("abc", 0.0),
-    ("-", 0.0),
-])
+@pytest.mark.parametrize(
+    "raw,expected",
+    [
+        ("12abc", 12.0),
+        ("  42  ", 42.0),
+        (".5x", 0.5),
+        ("1e", 1.0),
+        ("0x1A", 0.0),
+        ("abc", 0.0),
+        ("-", 0.0),
+    ],
+)
 def test_parse_number_reads_a_prefix(raw, expected):
     assert parse_number(raw) == expected
 
 
-@pytest.mark.parametrize("value,expected", [
-    (17.0, "17"),
-    (-0.0, "0"),
-    (1e6, "1000000"),
-    (1e16, "10000000000000000"),
-    (2.0**60, "1152921504606846976"),
-    (0.1 + 0.2, "0.3"),
-    (1 / 3, "0.333333"),
-    (1e-7, "1e-07"),
-    (123456789.123, "1.23457e+08"),
-    (math.inf, "inf"),
-    (-math.inf, "-inf"),
-    (math.nan, "nan"),
-])
+@pytest.mark.parametrize(
+    "value,expected",
+    [
+        (17.0, "17"),
+        (-0.0, "0"),
+        (1e6, "1000000"),
+        (1e16, "10000000000000000"),
+        (2.0**60, "1152921504606846976"),
+        (0.1 + 0.2, "0.3"),
+        (1 / 3, "0.333333"),
+        (1e-7, "1e-07"),
+        (123456789.123, "1.23457e+08"),
+        (math.inf, "inf"),
+        (-math.inf, "-inf"),
+        (math.nan, "nan"),
+    ],
+)
 def test_format_num(value, expected):
     assert format_num(value, "%.6g") == expected
 

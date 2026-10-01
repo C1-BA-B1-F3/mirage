@@ -20,14 +20,50 @@ STREAM_COMMANDS = frozenset({Cmd.CAT, Cmd.NL, Cmd.CUT})
 # then `cd` prints two lines), so the merged stream carries that newline.
 # `cat` joins the bytes as they are.
 LINE_STREAM_COMMANDS = frozenset({Cmd.NL, Cmd.CUT})
-FANOUT_COMMANDS = frozenset({
-    Cmd.REV, Cmd.GREP, Cmd.RG, Cmd.HEAD, Cmd.TAIL, Cmd.DU, Cmd.FILE, Cmd.MD5,
-    Cmd.MD5SUM, Cmd.SHA1SUM, Cmd.SHA256SUM, Cmd.SHA384SUM, Cmd.SHA512SUM,
-    Cmd.STAT, Cmd.STRINGS, Cmd.TAC, Cmd.FIND, Cmd.RM, Cmd.RMDIR, Cmd.UNLINK,
-    Cmd.TOUCH, Cmd.MKDIR, Cmd.TEE
-})
-RELAY_COMMANDS = frozenset({
-    Cmd.CP, Cmd.MV, Cmd.DIFF, Cmd.CMP, Cmd.PASTE, Cmd.COMM, Cmd.JOIN, Cmd.TAR,
-    Cmd.UNZIP, Cmd.ZIP, Cmd.LS, Cmd.SORT, Cmd.WC, Cmd.AWK, Cmd.SED
-})
+FANOUT_COMMANDS = frozenset(
+    {
+        Cmd.REV,
+        Cmd.GREP,
+        Cmd.RG,
+        Cmd.HEAD,
+        Cmd.TAIL,
+        Cmd.DU,
+        Cmd.FILE,
+        Cmd.MD5,
+        Cmd.MD5SUM,
+        Cmd.SHA1SUM,
+        Cmd.SHA256SUM,
+        Cmd.SHA384SUM,
+        Cmd.SHA512SUM,
+        Cmd.STAT,
+        Cmd.STRINGS,
+        Cmd.TAC,
+        Cmd.FIND,
+        Cmd.RM,
+        Cmd.RMDIR,
+        Cmd.UNLINK,
+        Cmd.TOUCH,
+        Cmd.MKDIR,
+        Cmd.TEE,
+    }
+)
+RELAY_COMMANDS = frozenset(
+    {
+        Cmd.CP,
+        Cmd.MV,
+        Cmd.DIFF,
+        Cmd.CMP,
+        Cmd.PASTE,
+        Cmd.COMM,
+        Cmd.JOIN,
+        Cmd.TAR,
+        Cmd.UNZIP,
+        Cmd.ZIP,
+        Cmd.LS,
+        Cmd.SORT,
+        Cmd.WC,
+        Cmd.AWK,
+        Cmd.SED,
+    }
+)
 CROSS_MOUNT_COMMANDS = STREAM_COMMANDS | FANOUT_COMMANDS | RELAY_COMMANDS

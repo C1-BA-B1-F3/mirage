@@ -22,11 +22,13 @@ def search_available(config: SlackConfig) -> bool:
     return slack_search_available(config)
 
 
-async def search_messages(config: SlackConfig,
-                          query: str,
-                          count: int = 20,
-                          page: int = 1,
-                          session: SessionArg = None) -> bytes:
+async def search_messages(
+    config: SlackConfig,
+    query: str,
+    count: int = 20,
+    page: int = 1,
+    session: SessionArg = None,
+) -> bytes:
     """Search messages across workspace (single page).
 
     Args:
@@ -45,18 +47,19 @@ async def search_messages(config: SlackConfig,
         "page": page,
         "sort": "timestamp",
     }
-    data = await slack_get(config,
-                           "search.messages",
-                           params=params,
-                           session=session)
+    data = await slack_get(
+        config, "search.messages", params=params, session=session
+    )
     return compact_json_bytes(data)
 
 
-async def search_files(config: SlackConfig,
-                       query: str,
-                       count: int = 20,
-                       page: int = 1,
-                       session: SessionArg = None) -> bytes:
+async def search_files(
+    config: SlackConfig,
+    query: str,
+    count: int = 20,
+    page: int = 1,
+    session: SessionArg = None,
+) -> bytes:
     """Search files across workspace via search.files (single page).
 
     Args:
@@ -75,8 +78,7 @@ async def search_files(config: SlackConfig,
         "page": page,
         "sort": "timestamp",
     }
-    data = await slack_get(config,
-                           "search.files",
-                           params=params,
-                           session=session)
+    data = await slack_get(
+        config, "search.files", params=params, session=session
+    )
     return compact_json_bytes(data)

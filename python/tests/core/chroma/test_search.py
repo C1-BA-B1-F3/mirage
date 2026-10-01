@@ -7,14 +7,17 @@ from mirage.utils.key_prefix import mount_key
 
 @pytest.mark.asyncio
 async def test_search_segments_scopes_folder_to_candidate_slugs(
-        chroma_accessor, chroma_index):
+    chroma_accessor, chroma_index
+):
     result = await search.search_segments(
         chroma_accessor,
         "setup",
         [
-            PathSpec(vfs_path=mount_key("/knowledge/guides", "/knowledge"),
-                     virtual="/knowledge/guides",
-                     directory="/knowledge/guides")
+            PathSpec(
+                vfs_path=mount_key("/knowledge/guides", "/knowledge"),
+                virtual="/knowledge/guides",
+                directory="/knowledge/guides",
+            )
         ],
         chroma_index,
         top_k=3,
@@ -22,9 +25,7 @@ async def test_search_segments_scopes_folder_to_candidate_slugs(
 
     assert result == b"/knowledge/guides/quickstart:0.90\nquickstart chunk\n"
     assert chroma_accessor.collection.queries[0]["where"] == {
-        "page_slug": {
-            "$in": ["guides/quickstart"]
-        }
+        "page_slug": {"$in": ["guides/quickstart"]}
     }
     assert chroma_accessor.collection.queries[0]["query_texts"] == ["setup"]
     assert chroma_accessor.collection.queries[0]["n_results"] == 3
@@ -32,12 +33,14 @@ async def test_search_segments_scopes_folder_to_candidate_slugs(
 
 @pytest.mark.asyncio
 async def test_search_segments_empty_paths_searches_collection(
-        chroma_accessor, chroma_index):
-    result = await search.search_segments(chroma_accessor,
-                                          "setup", [],
-                                          chroma_index,
-                                          mount_prefix="/knowledge/")
+    chroma_accessor, chroma_index
+):
+    result = await search.search_segments(
+        chroma_accessor, "setup", [], chroma_index, mount_prefix="/knowledge/"
+    )
 
-    assert result == (b"/knowledge/guides/quickstart:0.90\nquickstart chunk\n"
-                      b"/knowledge/api/reference:0.75\napi chunk\n")
+    assert result == (
+        b"/knowledge/guides/quickstart:0.90\nquickstart chunk\n"
+        b"/knowledge/api/reference:0.75\napi chunk\n"
+    )
     assert "where" not in chroma_accessor.collection.queries[0]

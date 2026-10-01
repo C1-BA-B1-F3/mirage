@@ -24,8 +24,9 @@ from mirage.core.notion.scope import detect_scope
 from mirage.types import ContentType, FileStat, FileType, PathSpec
 
 
-def _page_stat(match: ScopeMatch, path: PathSpec,
-               entry: IndexEntry) -> FileStat:
+def _page_stat(
+    match: ScopeMatch, path: PathSpec, entry: IndexEntry
+) -> FileStat:
     return FileStat(
         name=entry.vfs_name,
         type=FileType.DIRECTORY,
@@ -34,8 +35,12 @@ def _page_stat(match: ScopeMatch, path: PathSpec,
     )
 
 
-async def _row_stat(accessor: NotionAccessor, match: ScopeMatch,
-                    path: PathSpec, index: IndexCacheStore) -> FileStat:
+async def _row_stat(
+    accessor: NotionAccessor,
+    match: ScopeMatch,
+    path: PathSpec,
+    index: IndexCacheStore,
+) -> FileStat:
     await assert_parent(stat, accessor, path, index)
     page = await resolve_row(accessor, match, path.virtual)
     name = page_dirname(page)
@@ -47,24 +52,32 @@ async def _row_stat(accessor: NotionAccessor, match: ScopeMatch,
     )
 
 
-async def _row_json_stat(accessor: NotionAccessor, match: ScopeMatch,
-                         path: PathSpec, index: IndexCacheStore) -> FileStat:
+async def _row_json_stat(
+    accessor: NotionAccessor,
+    match: ScopeMatch,
+    path: PathSpec,
+    index: IndexCacheStore,
+) -> FileStat:
     await assert_parent(stat, accessor, path, index)
-    return FileStat(name="page.json",
-                    type=FileType.FILE,
-                    content=ContentType.JSON)
+    return FileStat(
+        name="page.json", type=FileType.FILE, content=ContentType.JSON
+    )
 
 
-def _page_json_stat(match: ScopeMatch, path: PathSpec,
-                    entry: IndexEntry) -> FileStat:
-    return FileStat(name=entry.vfs_name,
-                    type=FileType.FILE,
-                    content=ContentType.JSON,
-                    size=entry.size)
+def _page_json_stat(
+    match: ScopeMatch, path: PathSpec, entry: IndexEntry
+) -> FileStat:
+    return FileStat(
+        name=entry.vfs_name,
+        type=FileType.FILE,
+        content=ContentType.JSON,
+        size=entry.size,
+    )
 
 
-def _database_stat(match: ScopeMatch, path: PathSpec,
-                   entry: IndexEntry) -> FileStat:
+def _database_stat(
+    match: ScopeMatch, path: PathSpec, entry: IndexEntry
+) -> FileStat:
     return FileStat(
         name=entry.vfs_name,
         type=FileType.DIRECTORY,
@@ -73,8 +86,9 @@ def _database_stat(match: ScopeMatch, path: PathSpec,
     )
 
 
-def _database_json_stat(match: ScopeMatch, path: PathSpec,
-                        entry: IndexEntry) -> FileStat:
+def _database_json_stat(
+    match: ScopeMatch, path: PathSpec, entry: IndexEntry
+) -> FileStat:
     return FileStat(
         name=entry.vfs_name,
         type=FileType.FILE,
@@ -84,8 +98,9 @@ def _database_json_stat(match: ScopeMatch, path: PathSpec,
     )
 
 
-def _data_source_stat(match: ScopeMatch, path: PathSpec,
-                      entry: IndexEntry) -> FileStat:
+def _data_source_stat(
+    match: ScopeMatch, path: PathSpec, entry: IndexEntry
+) -> FileStat:
     return FileStat(
         name=entry.vfs_name,
         type=FileType.DIRECTORY,
@@ -94,8 +109,9 @@ def _data_source_stat(match: ScopeMatch, path: PathSpec,
     )
 
 
-def _data_source_json_stat(match: ScopeMatch, path: PathSpec,
-                           entry: IndexEntry) -> FileStat:
+def _data_source_json_stat(
+    match: ScopeMatch, path: PathSpec, entry: IndexEntry
+) -> FileStat:
     return FileStat(
         name=entry.vfs_name,
         type=FileType.FILE,
@@ -105,8 +121,9 @@ def _data_source_json_stat(match: ScopeMatch, path: PathSpec,
     )
 
 
-def _rows_jsonl_stat(match: ScopeMatch, path: PathSpec,
-                     entry: IndexEntry) -> FileStat:
+def _rows_jsonl_stat(
+    match: ScopeMatch, path: PathSpec, entry: IndexEntry
+) -> FileStat:
     return FileStat(
         name=entry.vfs_name,
         type=FileType.FILE,
@@ -119,12 +136,8 @@ def _rows_jsonl_stat(match: ScopeMatch, path: PathSpec,
 stat = make_stat(
     detect_scope,
     readdir,
-    overrides={
-        "row": _row_stat,
-        "row_json": _row_json_stat
-    },
-    guards={kind: guard_row
-            for kind in ("page", "page_json")},
+    overrides={"row": _row_stat, "row_json": _row_json_stat},
+    guards={kind: guard_row for kind in ("page", "page_json")},
     entry_stats={
         "page": _page_stat,
         "page_json": _page_json_stat,

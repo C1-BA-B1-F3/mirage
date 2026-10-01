@@ -18,8 +18,11 @@ from pathlib import Path
 
 import pytest
 
-from mirage.shell.parse import (find_syntax_error, find_unterminated_backtick,
-                                parse)
+from mirage.shell.parse import (
+    find_syntax_error,
+    find_unterminated_backtick,
+    parse,
+)
 from mirage.vfs.ram import RAMVFS
 from mirage.workspace import Workspace
 
@@ -29,12 +32,15 @@ def test_partial_quoted_heredoc_end_is_not_syntax_error():
     assert find_syntax_error(root) is None
 
 
-@pytest.mark.parametrize("command", [
-    "echo `echo a",
-    "echo \"`echo '`'`\"",
-    "echo a`",
-    "`",
-])
+@pytest.mark.parametrize(
+    "command",
+    [
+        "echo `echo a",
+        "echo \"`echo '`'`\"",
+        "echo a`",
+        "`",
+    ],
+)
 def test_find_unterminated_backtick_flags_open_region(command):
     assert find_unterminated_backtick(command) is not None
 
@@ -52,75 +58,91 @@ def test_find_unterminated_backtick_flags_open_region(command):
         "echo `echo \\`nested\\``",
         "echo a",
         "cat <<EOF\nplain\nEOF",
-    ])
+    ],
+)
 def test_find_unterminated_backtick_accepts_balanced(command):
     assert find_unterminated_backtick(command) is None
 
 
-@pytest.mark.parametrize("bad_cmd", [
-    "if then fi",
-    "echo (",
-    "for x do done",
-    "for",
-    "if",
-    "if; fi",
-    'echo "unterm',
-    ";s",
-    "| s",
-    "&& s",
-    "& s",
-    "echo a ; ; echo b",
-    "echo bg &; echo fg",
-    "true;;s",
-    "echo a ;& echo b",
-])
+@pytest.mark.parametrize(
+    "bad_cmd",
+    [
+        "if then fi",
+        "echo (",
+        "for x do done",
+        "for",
+        "if",
+        "if; fi",
+        'echo "unterm',
+        ";s",
+        "| s",
+        "&& s",
+        "& s",
+        "echo a ; ; echo b",
+        "echo bg &; echo fg",
+        "true;;s",
+        "echo a ;& echo b",
+    ],
+)
 def test_find_syntax_error_detects_error_nodes(bad_cmd):
     ast = parse(bad_cmd)
     snippet = find_syntax_error(ast)
     assert snippet is not None, (
-        f"expected syntax error for {bad_cmd!r}, got None")
+        f"expected syntax error for {bad_cmd!r}, got None"
+    )
 
 
-@pytest.mark.parametrize("good_cmd", [
-    "echo hi",
-    "for x in a b; do echo $x; done",
-    "if true; then echo y; fi",
-    "cat /tmp/x | sort",
-    "echo bg & echo fg",
-    "echo a &",
-    "echo a;",
-    "case x in a) echo a;; esac",
-    "case x in a) echo a;& b) echo b;;& c) echo c;; esac",
-])
+@pytest.mark.parametrize(
+    "good_cmd",
+    [
+        "echo hi",
+        "for x in a b; do echo $x; done",
+        "if true; then echo y; fi",
+        "cat /tmp/x | sort",
+        "echo bg & echo fg",
+        "echo a &",
+        "echo a;",
+        "case x in a) echo a;; esac",
+        "case x in a) echo a;& b) echo b;;& c) echo c;; esac",
+    ],
+)
 def test_find_syntax_error_returns_none_for_valid(good_cmd):
     assert find_syntax_error(parse(good_cmd)) is None
 
 
-@pytest.mark.parametrize("bad_cmd", [
-    "if then fi",
-    "echo (",
-    "for x do done",
-    ";s",
-    "true;;s",
-])
+@pytest.mark.parametrize(
+    "bad_cmd",
+    [
+        "if then fi",
+        "echo (",
+        "for x do done",
+        ";s",
+        "true;;s",
+    ],
+)
 def test_execute_returns_clear_syntax_error(bad_cmd):
     ws = Workspace({"/data": RAMVFS()})
     io = asyncio.run(ws.shell(bad_cmd))
     assert io.exit_code == 2, (
-        f"expected exit 2 for {bad_cmd!r}, got {io.exit_code}")
+        f"expected exit 2 for {bad_cmd!r}, got {io.exit_code}"
+    )
     stderr = io.stderr or b""
     assert b"syntax error" in stderr, (
-        f"expected 'syntax error' in stderr for {bad_cmd!r}, got {stderr!r}")
+        f"expected 'syntax error' in stderr for {bad_cmd!r}, got {stderr!r}"
+    )
 
 
-@pytest.mark.parametrize("bad_cmd, token", [
-    (";s", ";"),
-    ("| s", "|"),
-    ("&& s", "&&"),
-    ("echo a ; ; echo b", ";"),
-    ("echo bg &; echo fg", ";"),
-    ("true;;s", ";;"),
-])
+@pytest.mark.parametrize(
+    "bad_cmd, token",
+    [
+        (";s", ";"),
+        ("| s", "|"),
+        ("&& s", "&&"),
+        ("echo a ; ; echo b", ";"),
+        ("echo bg &; echo fg", ";"),
+        ("true;;s", ";;"),
+    ],
+)
 def test_stray_separator_is_a_syntax_error_and_nothing_runs(bad_cmd, token):
     ws = Workspace({"/data": RAMVFS()})
     io = asyncio.run(ws.shell(bad_cmd))
@@ -129,16 +151,20 @@ def test_stray_separator_is_a_syntax_error_and_nothing_runs(bad_cmd, token):
     assert not io.stdout
 
 
-@pytest.mark.parametrize("bad_cmd", [
-    "echo `echo a",
-    "echo \"`echo '`'`\"",
-])
+@pytest.mark.parametrize(
+    "bad_cmd",
+    [
+        "echo `echo a",
+        "echo \"`echo '`'`\"",
+    ],
+)
 def test_unterminated_backtick_is_a_syntax_error(bad_cmd):
     """tree-sitter parses these as complete; bash exits 2 and so do we."""
     ws = Workspace({"/data": RAMVFS()})
     io = asyncio.run(ws.shell(bad_cmd))
     assert io.exit_code == 2, (
-        f"expected exit 2 for {bad_cmd!r}, got {io.exit_code}")
+        f"expected exit 2 for {bad_cmd!r}, got {io.exit_code}"
+    )
     assert b"syntax error" in (io.stderr or b"")
 
 
@@ -150,7 +176,8 @@ def test_unterminated_backtick_is_a_syntax_error(bad_cmd):
         ("echo a\\", b"a\n"),
         ("echo \\", b"\n"),
         ("echo a\\\\", b"a\\\n"),
-    ])
+    ],
+)
 def test_trailing_backslash_is_a_line_continuation(command, expected):
     ws = Workspace({"/data": RAMVFS()})
     io = asyncio.run(ws.shell(command))
@@ -159,15 +186,21 @@ def test_trailing_backslash_is_a_line_continuation(command, expected):
 
 
 MISSING_QUOTE_CASES = json.loads(
-    (Path(__file__).resolve().parents[4] /
-     "integ/bash/syntax/quoting.json").read_text())["cases"]
+    (
+        Path(__file__).resolve().parents[4] / "integ/bash/syntax/quoting.json"
+    ).read_text()
+)["cases"]
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("command", [
-    case["command"]
-    for case in MISSING_QUOTE_CASES if case["expect"]["exit"] == 2
-])
+@pytest.mark.parametrize(
+    "command",
+    [
+        case["command"]
+        for case in MISSING_QUOTE_CASES
+        if case["expect"]["exit"] == 2
+    ],
+)
 async def test_missing_nested_quote_refuses_before_any_execution(command):
     ws = Workspace({"/data": RAMVFS()})
     try:
@@ -183,12 +216,15 @@ async def test_missing_nested_quote_refuses_before_any_execution(command):
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("command,expected", [
-    ("echo \"it's fine\"", "it's fine\n"),
-    ("echo ok # unterminated '\"", "ok\n"),
-    ("cat <<'EOF'\n'\"\nEOF", "'\"\n"),
-    ("echo $'closed\\\''", "closed'\n"),
-])
+@pytest.mark.parametrize(
+    "command,expected",
+    [
+        ('echo "it\'s fine"', "it's fine\n"),
+        ("echo ok # unterminated '\"", "ok\n"),
+        ("cat <<'EOF'\n'\"\nEOF", "'\"\n"),
+        ("echo $'closed\\''", "closed'\n"),
+    ],
+)
 async def test_literal_quotes_are_not_reported_as_unclosed(command, expected):
     ws = Workspace({"/data": RAMVFS()})
     try:

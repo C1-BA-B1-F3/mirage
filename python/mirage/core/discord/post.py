@@ -15,16 +15,21 @@
 from typing import Any
 
 from mirage.core.api.client import SessionArg
-from mirage.core.discord.client import (discord_delete, discord_patch,
-                                        discord_post)
+from mirage.core.discord.client import (
+    discord_delete,
+    discord_patch,
+    discord_post,
+)
 from mirage.core.discord.config import DiscordConfig
 
 
-async def send_message(config: DiscordConfig,
-                       channel_id: str,
-                       text: str,
-                       message_reference_id: str | None = None,
-                       session: SessionArg = None) -> dict[str, Any]:
+async def send_message(
+    config: DiscordConfig,
+    channel_id: str,
+    text: str,
+    message_reference_id: str | None = None,
+    session: SessionArg = None,
+) -> dict[str, Any]:
     """Send a message to a channel.
 
     Args:
@@ -40,17 +45,18 @@ async def send_message(config: DiscordConfig,
     body: dict[str, Any] = {"content": text}
     if message_reference_id:
         body["message_reference"] = {"message_id": message_reference_id}
-    return await discord_post(config,
-                              f"/channels/{channel_id}/messages",
-                              body,
-                              session=session)
+    return await discord_post(
+        config, f"/channels/{channel_id}/messages", body, session=session
+    )
 
 
-async def edit_message(config: DiscordConfig,
-                       channel_id: str,
-                       message_id: str,
-                       text: str,
-                       session: SessionArg = None) -> dict[str, Any]:
+async def edit_message(
+    config: DiscordConfig,
+    channel_id: str,
+    message_id: str,
+    text: str,
+    session: SessionArg = None,
+) -> dict[str, Any]:
     """Edit the content of a message the bot authored.
 
     Args:
@@ -63,16 +69,20 @@ async def edit_message(config: DiscordConfig,
     Returns:
         dict: the updated message.
     """
-    return await discord_patch(config,
-                               f"/channels/{channel_id}/messages/{message_id}",
-                               {"content": text},
-                               session=session)
+    return await discord_patch(
+        config,
+        f"/channels/{channel_id}/messages/{message_id}",
+        {"content": text},
+        session=session,
+    )
 
 
-async def delete_message(config: DiscordConfig,
-                         channel_id: str,
-                         message_id: str,
-                         session: SessionArg = None) -> None:
+async def delete_message(
+    config: DiscordConfig,
+    channel_id: str,
+    message_id: str,
+    session: SessionArg = None,
+) -> None:
     """Delete a message.
 
     Args:
@@ -81,18 +91,22 @@ async def delete_message(config: DiscordConfig,
         message_id (str): message ID.
         session (SessionArg): pool or live session to ride.
     """
-    await discord_delete(config,
-                         f"/channels/{channel_id}/messages/{message_id}",
-                         session=session)
+    await discord_delete(
+        config,
+        f"/channels/{channel_id}/messages/{message_id}",
+        session=session,
+    )
 
 
-async def send_poll(config: DiscordConfig,
-                    channel_id: str,
-                    question: str,
-                    answers: list[str],
-                    duration_hours: int = 24,
-                    multiselect: bool = False,
-                    session: SessionArg = None) -> dict[str, Any]:
+async def send_poll(
+    config: DiscordConfig,
+    channel_id: str,
+    question: str,
+    answers: list[str],
+    duration_hours: int = 24,
+    multiselect: bool = False,
+    session: SessionArg = None,
+) -> dict[str, Any]:
     """Post a poll message to a channel.
 
     Args:
@@ -109,19 +123,14 @@ async def send_poll(config: DiscordConfig,
     """
     body: dict[str, Any] = {
         "poll": {
-            "question": {
-                "text": question
-            },
-            "answers": [{
-                "poll_media": {
-                    "text": answer
-                }
-            } for answer in answers],
+            "question": {"text": question},
+            "answers": [
+                {"poll_media": {"text": answer}} for answer in answers
+            ],
             "duration": duration_hours,
             "allow_multiselect": multiselect,
         }
     }
-    return await discord_post(config,
-                              f"/channels/{channel_id}/messages",
-                              body,
-                              session=session)
+    return await discord_post(
+        config, f"/channels/{channel_id}/messages", body, session=session
+    )

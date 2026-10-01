@@ -22,11 +22,13 @@ _FAKE_EXPIRES_IN = 9999999999
 
 _FOLDER_MIME = "application/vnd.google-apps.folder"
 _FILE_MIME = "application/octet-stream"
-_NATIVE_MIMES = frozenset({
-    "application/vnd.google-apps.document",
-    "application/vnd.google-apps.spreadsheet",
-    "application/vnd.google-apps.presentation",
-})
+_NATIVE_MIMES = frozenset(
+    {
+        "application/vnd.google-apps.document",
+        "application/vnd.google-apps.spreadsheet",
+        "application/vnd.google-apps.presentation",
+    }
+)
 
 
 def _is_native(mime: str) -> bool:
@@ -86,7 +88,6 @@ _PATCH_TARGETS = {
 
 
 class FakeGDrive:
-
     def __init__(self) -> None:
         self._next_id: int = 1
         self._children: dict[str, list[dict]] = {"root": []}
@@ -96,10 +97,9 @@ class FakeGDrive:
         # Mirrors `tests/e2e/s3_mock.py`'s `MultiBucketS3Client.calls`.
         self.calls: Counter[str] = Counter()
 
-    def add_file(self,
-                 path: str,
-                 content: bytes,
-                 mime: str = _FILE_MIME) -> str:
+    def add_file(
+        self, path: str, content: bytes, mime: str = _FILE_MIME
+    ) -> str:
         parts = [p for p in path.strip("/").split("/") if p]
         if not parts:
             raise ValueError(f"invalid file path: {path}")
@@ -137,8 +137,11 @@ class FakeGDrive:
         """
         parts = [p for p in path.strip("/").split("/") if p]
         parent_id = self._lookup_dirs(parts[:-1])
-        entry = (None if parent_id is None else self._find_child(
-            parent_id, parts[-1]))
+        entry = (
+            None
+            if parent_id is None
+            else self._find_child(parent_id, parts[-1])
+        )
         if entry is None:
             raise FileNotFoundError(path)
         entry["modifiedTime"] = stamp
@@ -175,7 +178,8 @@ class FakeGDrive:
         """
         out = dict(entry)
         if entry["mimeType"] != _FOLDER_MIME and not _is_native(
-                entry["mimeType"]):
+            entry["mimeType"]
+        ):
             data = self._bytes.get(entry["id"], b"")
             out["md5Checksum"] = hashlib.md5(data).hexdigest()
             out["headRevisionId"] = f"{entry['id']}-r1"
@@ -267,7 +271,7 @@ def _sliced(data: bytes, range_header: str | None) -> bytes:
     span = range_header.split("=", 1)[1]
     start_text, _, end_text = span.partition("-")
     start = int(start_text)
-    return data[start:int(end_text) + 1] if end_text else data[start:]
+    return data[start : int(end_text) + 1] if end_text else data[start:]
 
 
 def _bytes_for(fake, registry, file_id: str) -> bytes:
@@ -345,16 +349,17 @@ def _build_fakes(registry):
         if fake is None:
             return [], True
         return [
-            f for f in fake.all_files()
+            f
+            for f in fake.all_files()
             if mime_type is None or f["mimeType"] == mime_type
         ], True
 
     async def fake_list_shared_drives(token_manager) -> list[dict]:
         return []
 
-    async def fake_download_file(token_manager,
-                                 file_id: str,
-                                 range_header: str | None = None) -> bytes:
+    async def fake_download_file(
+        token_manager, file_id: str, range_header: str | None = None
+    ) -> bytes:
         # The Range is served here rather than ignored: Drive honours it
         # for a binary file, so a fake that returned the whole object
         # would hide a ranged read asking for the wrong window.
@@ -375,7 +380,8 @@ def _build_fakes(registry):
         return entry
 
     async def fake_capture_file_metadata(
-            token_manager, file_id: str) -> tuple[str | None, str | None]:
+        token_manager, file_id: str
+    ) -> tuple[str | None, str | None]:
         # Reads the bytes directly rather than through `fake_download_file`,
         # so the download counter stays honest: the real call is a metadata
         # GET and must not read as a download.
@@ -420,8 +426,11 @@ def patch_gdrive(*pairs) -> ExitStack:
     fakes = _build_fakes(registry)
     stack = ExitStack()
     stack.enter_context(
-        patch("mirage.core.google.client.refresh_access_token",
-              new=fakes["refresh"]))
+        patch(
+            "mirage.core.google.client.refresh_access_token",
+            new=fakes["refresh"],
+        )
+    )
     for name, targets in _PATCH_TARGETS.items():
         for target in targets:
             # A target that will not resolve used to be skipped, which is
@@ -435,5 +444,6 @@ def patch_gdrive(*pairs) -> ExitStack:
                 raise AssertionError(
                     f"gdrive_mock cannot patch {target!r}: {exc}. Fix the "
                     "target in _PATCH_TARGETS; leaving it unpatched sends "
-                    "the test to the real Drive API.") from exc
+                    "the test to the real Drive API."
+                ) from exc
     return stack

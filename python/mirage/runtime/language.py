@@ -18,9 +18,15 @@ from typing import ClassVar
 
 from mirage.runtime.base import Runtime
 from mirage.runtime.errors import UnsupportedExecutionError
-from mirage.runtime.types import (CodeExecution, ExecutionRequest, Language,
-                                  RunArgs, RunResult, RuntimeCapabilities,
-                                  RuntimeContext)
+from mirage.runtime.types import (
+    CodeExecution,
+    ExecutionRequest,
+    Language,
+    RunArgs,
+    RunResult,
+    RuntimeCapabilities,
+    RuntimeContext,
+)
 
 
 class LanguageRuntime(Runtime):
@@ -50,10 +56,11 @@ class LanguageRuntime(Runtime):
 
     @property
     def capabilities(self) -> RuntimeCapabilities:
-        return replace(super().capabilities, languages=(self.language, ))
+        return replace(super().capabilities, languages=(self.language,))
 
-    async def _execute(self, request: ExecutionRequest,
-                       context: RuntimeContext | None) -> RunResult:
+    async def _execute(
+        self, request: ExecutionRequest, context: RuntimeContext | None
+    ) -> RunResult:
         if isinstance(request, CodeExecution):
             if request.language != self.language:
                 raise UnsupportedExecutionError(
@@ -62,8 +69,9 @@ class LanguageRuntime(Runtime):
             return await self._execute_code(request, context)
         return await super()._execute(request, context)
 
-    async def _execute_code(self, args: RunArgs,
-                            context: RuntimeContext | None) -> RunResult:
+    async def _execute_code(
+        self, args: RunArgs, context: RuntimeContext | None
+    ) -> RunResult:
         return await self.run(args)
 
     async def version(self, env: dict[str, str]) -> RunResult:
@@ -75,7 +83,8 @@ class LanguageRuntime(Runtime):
         return RunResult(
             stdout=b"",
             stderr=f"{self.name}: version information unavailable\n".encode(),
-            exit_code=1)
+            exit_code=1,
+        )
 
     @abstractmethod
     async def run(self, args: RunArgs) -> RunResult:

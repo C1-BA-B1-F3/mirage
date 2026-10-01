@@ -19,8 +19,11 @@ from functools import partial
 from typing import Any, Callable
 
 from mirage.cache.index.scope import command_scope
-from mirage.context import (program_invocation, reset_program_invocation,
-                            set_program_invocation)
+from mirage.context import (
+    program_invocation,
+    reset_program_invocation,
+    set_program_invocation,
+)
 from mirage.io import IOResult
 from mirage.io.async_line_iterator import share
 from mirage.io.stream import async_chain
@@ -34,9 +37,30 @@ from mirage.shell.arith import evaluate_arith
 from mirage.shell.barrier import BarrierPolicy, apply_barrier
 from mirage.shell.call_stack import CallStack
 from mirage.shell.console import Channel, JobConsole
-from mirage.shell.constants import (ERREXIT_EXEMPT_TYPES, FORK_FAILED,
-                                    FORK_FAILED_STATUS)
+from mirage.shell.constants import (
+    ERREXIT_EXEMPT_TYPES,
+    FORK_FAILED,
+    FORK_FAILED_STATUS,
+)
 from mirage.shell.errors import ArithError, ExitSignal, ReadonlyError
+from mirage.shell.helpers import (
+    get_case_items,
+    get_case_word,
+    get_cfor_parts,
+    get_for_parts,
+    get_function_body,
+    get_function_name,
+    get_if_branches,
+    get_list_parts,
+    get_negated_command,
+    get_parts,
+    get_pipeline_stages,
+    get_redirects,
+    get_text,
+    get_unset_args,
+    get_while_parts,
+    take_continuation,
+)
 from mirage.shell.job_table import JobTable
 from mirage.shell.node_kind import NodeKind, node_kind, pipeline_transparent
 from mirage.shell.types import NodeType as NT
@@ -45,19 +69,33 @@ from mirage.types import PathSpec
 from mirage.workspace.abort import MirageAbortError
 from mirage.workspace.executor.builtins import handle_test, handle_unset
 from mirage.workspace.executor.builtins.exec import install_exec_redirects
-from mirage.workspace.executor.control import (handle_case, handle_cfor,
-                                               handle_for, handle_if,
-                                               handle_select, handle_until,
-                                               handle_while)
+from mirage.workspace.executor.control import (
+    handle_case,
+    handle_cfor,
+    handle_for,
+    handle_if,
+    handle_select,
+    handle_until,
+    handle_while,
+)
 from mirage.workspace.executor.jobs import pump, run_statement
-from mirage.workspace.executor.pipes import (handle_connection, handle_pipe,
-                                             handle_subshell)
+from mirage.workspace.executor.pipes import (
+    handle_connection,
+    handle_pipe,
+    handle_subshell,
+)
 from mirage.workspace.executor.redirect import handle_redirect
-from mirage.workspace.executor.statement import (assignment_status,
-                                                 fd0_binding, finish_statement,
-                                                 record_status)
-from mirage.workspace.expand import (expand_and_classify, expand_node,
-                                     expand_redirects)
+from mirage.workspace.executor.statement import (
+    assignment_status,
+    fd0_binding,
+    finish_statement,
+    record_status,
+)
+from mirage.workspace.expand import (
+    expand_and_classify,
+    expand_node,
+    expand_redirects,
+)
 from mirage.workspace.expand.globs import glob_options, resolve_globs
 from mirage.workspace.expand.node import expand_arith
 from mirage.workspace.expand.pattern import expand_pattern
@@ -67,22 +105,25 @@ from mirage.workspace.node.assignment import execute_assignment
 from mirage.workspace.node.command_dispatch import execute_command
 from mirage.workspace.node.declaration import execute_declaration
 from mirage.workspace.node.program import execute_program
-from mirage.workspace.node.test_expr import (expand_double_bracket,
-                                             expand_test_expr)
+from mirage.workspace.node.test_expr import (
+    expand_double_bracket,
+    expand_test_expr,
+)
 from mirage.workspace.node.timing import timing_report
-from mirage.workspace.session import (SessionState, reset_current_session,
-                                      set_current_session)
+from mirage.workspace.session import (
+    SessionState,
+    reset_current_session,
+    set_current_session,
+)
 from mirage.workspace.session.elements import assign_element
-from mirage.workspace.session.state import (ensure_var_visible, random_reader,
-                                            session_elements, session_view,
-                                            visible_env)
+from mirage.workspace.session.state import (
+    ensure_var_visible,
+    random_reader,
+    session_elements,
+    session_view,
+    visible_env,
+)
 from mirage.workspace.types import ExecutionNode
-
-from mirage.shell.helpers import (  # isort: skip
-    get_case_items, get_case_word, get_cfor_parts, get_for_parts,
-    get_function_body, get_function_name, get_if_branches, get_list_parts,
-    get_negated_command, get_parts, get_pipeline_stages, get_redirects,
-    get_text, get_unset_args, get_while_parts, take_continuation)
 
 
 async def _eval_cfor_expr(
@@ -119,10 +160,14 @@ async def _eval_cfor_expr(
         return default
     # One comma expression, evaluated once, so an assignment early in
     # the slot is seen by the expressions after it.
-    text = ", ".join([
-        await expand_arith(expr, session, execute_fn, call_stack, view=view)
-        for expr in exprs
-    ])
+    text = ", ".join(
+        [
+            await expand_arith(
+                expr, session, execute_fn, call_stack, view=view
+            )
+            for expr in exprs
+        ]
+    )
     reader = random_reader(session)
     error: ArithError | None = None
     value = 0
@@ -130,11 +175,13 @@ async def _eval_cfor_expr(
         # Reads resolve against the visible env so a hidden name counts
         # as unset; a hidden write refuses through the session door
         # (ensure_var_visible), caught by the loop beside ReadonlyError.
-        result = evaluate_arith(text,
-                                visible_env(session),
-                                elements=session_elements(session, reader),
-                                read_var=reader.read,
-                                wrote_var=reader.wrote)
+        result = evaluate_arith(
+            text,
+            visible_env(session),
+            elements=session_elements(session, reader),
+            read_var=reader.read,
+            wrote_var=reader.wrote,
+        )
         writes, value = result.writes, result.value
     except ArithError as exc:
         # bash bound the assignments made before the error; they land
@@ -155,20 +202,22 @@ async def _eval_cfor_expr(
     return int(value)
 
 
-STREAMING_KINDS = frozenset({
-    NodeKind.PROGRAM,
-    NodeKind.COMPOUND,
-    NodeKind.LIST,
-    NodeKind.SUBSHELL,
-    NodeKind.IF,
-    NodeKind.FOR,
-    NodeKind.CFOR,
-    NodeKind.SELECT,
-    NodeKind.WHILE,
-    NodeKind.UNTIL,
-    NodeKind.CASE,
-    NodeKind.NEGATED,
-})
+STREAMING_KINDS = frozenset(
+    {
+        NodeKind.PROGRAM,
+        NodeKind.COMPOUND,
+        NodeKind.LIST,
+        NodeKind.SUBSHELL,
+        NodeKind.IF,
+        NodeKind.FOR,
+        NodeKind.CFOR,
+        NodeKind.SELECT,
+        NodeKind.WHILE,
+        NodeKind.UNTIL,
+        NodeKind.CASE,
+        NodeKind.NEGATED,
+    }
+)
 
 
 async def _recurse_reassociated(
@@ -213,9 +262,19 @@ async def _recurse_reassociated(
     # expansion-time write (`${X:=d}`, `$((X=5))`) lands through it,
     # so a pre_session rule governs those exactly as it governs `X=d`.
     view = session_view(session, registry.policies)
-    return await _run_redirected(recurse, dispatch, execute_fn, registry, view,
-                                 right, redirects, processes, session, stdin,
-                                 call_stack)
+    return await _run_redirected(
+        recurse,
+        dispatch,
+        execute_fn,
+        registry,
+        view,
+        right,
+        redirects,
+        processes,
+        session,
+        stdin,
+        call_stack,
+    )
 
 
 async def _recurse_lifted(
@@ -252,8 +311,17 @@ async def _recurse_lifted(
     """
     if node is not right:
         return await recurse(node, session, stdin, call_stack, sink=sink)
-    return await _run_pipeline(recurse, dispatch, execute_fn, registry, stages,
-                               session, stdin, call_stack, processes)
+    return await _run_pipeline(
+        recurse,
+        dispatch,
+        execute_fn,
+        registry,
+        stages,
+        session,
+        stdin,
+        call_stack,
+        processes,
+    )
 
 
 async def _recurse_stage(
@@ -299,21 +367,34 @@ async def _recurse_stage(
         bound = list(hoisted)
         if any(target is node for target in targets):
             bound.append(
-                Redirect(fd=2, target=1, kind=RedirectKind.STDERR_TO_STDOUT))
+                Redirect(fd=2, target=1, kind=RedirectKind.STDERR_TO_STDOUT)
+            )
         view = session_view(session, registry.policies)
-        return await _run_redirected(recurse, dispatch, execute_fn, registry,
-                                     view, node, bound, processes, session,
-                                     stdin, call_stack)
-    return await _recurse_pipe_stderr(recurse,
-                                      dispatch,
-                                      execute_fn,
-                                      registry,
-                                      targets,
-                                      node,
-                                      session,
-                                      stdin,
-                                      call_stack,
-                                      sink=sink)
+        return await _run_redirected(
+            recurse,
+            dispatch,
+            execute_fn,
+            registry,
+            view,
+            node,
+            bound,
+            processes,
+            session,
+            stdin,
+            call_stack,
+        )
+    return await _recurse_pipe_stderr(
+        recurse,
+        dispatch,
+        execute_fn,
+        registry,
+        targets,
+        node,
+        session,
+        stdin,
+        call_stack,
+        sink=sink,
+    )
 
 
 async def _run_pipeline(
@@ -348,22 +429,45 @@ async def _run_pipeline(
     """
     if stages.lead is not None:
         left, op, right = stages.lead
-        wrapped = partial(_recurse_lifted, recurse,
-                          dispatch, execute_fn, registry,
-                          replace(stages, lead=None), processes, right)
-        return await handle_connection(wrapped, left, op, right, session,
-                                       stdin, call_stack)
+        wrapped = partial(
+            _recurse_lifted,
+            recurse,
+            dispatch,
+            execute_fn,
+            registry,
+            replace(stages, lead=None),
+            processes,
+            right,
+        )
+        return await handle_connection(
+            wrapped, left, op, right, session, stdin, call_stack
+        )
     commands = list(stages.commands)
     stderr_flags = list(stages.stderr_flags)
     targets = [
-        command for i, command in enumerate(commands)
+        command
+        for i, command in enumerate(commands)
         if i < len(stderr_flags) and stderr_flags[i]
     ]
-    pipe_recurse = partial(_recurse_stage, recurse, dispatch, execute_fn,
-                           registry, stages, targets, processes)
-    stdout, io, exec_node = await handle_pipe(pipe_recurse, commands,
-                                              stderr_flags, session, stdin,
-                                              call_stack, processes)
+    pipe_recurse = partial(
+        _recurse_stage,
+        recurse,
+        dispatch,
+        execute_fn,
+        registry,
+        stages,
+        targets,
+        processes,
+    )
+    stdout, io, exec_node = await handle_pipe(
+        pipe_recurse,
+        commands,
+        stderr_flags,
+        session,
+        stdin,
+        call_stack,
+        processes,
+    )
     if stages.negated:
         io = IOResult(
             exit_code=0 if io.exit_code != 0 else 1,
@@ -399,19 +503,18 @@ async def _recurse_pipe_stderr(
         return await recurse(node, session, stdin, call_stack, sink=sink)
     command, redirects = get_redirects(node)
     redirects.append(
-        Redirect(fd=2, target=1, kind=RedirectKind.STDERR_TO_STDOUT))
-    expanded, pipe_node = await expand_redirects(redirects,
-                                                 session,
-                                                 execute_fn,
-                                                 registry,
-                                                 call_stack,
-                                                 view=view)
-    stdout, io, exec_node = await handle_redirect(recurse, dispatch, command,
-                                                  expanded, session, stdin,
-                                                  call_stack)
+        Redirect(fd=2, target=1, kind=RedirectKind.STDERR_TO_STDOUT)
+    )
+    expanded, pipe_node = await expand_redirects(
+        redirects, session, execute_fn, registry, call_stack, view=view
+    )
+    stdout, io, exec_node = await handle_redirect(
+        recurse, dispatch, command, expanded, session, stdin, call_stack
+    )
     if pipe_node is not None and stdout is not None:
-        stdout, io2, exec_node2 = await recurse(pipe_node, session, stdout,
-                                                call_stack)
+        stdout, io2, exec_node2 = await recurse(
+            pipe_node, session, stdout, call_stack
+        )
         io = await io.merge(io2)
         exec_node = exec_node2
     return stdout, io, exec_node
@@ -439,9 +542,9 @@ async def _negated(
     # bash reports the negated pipeline's own statuses in PIPESTATUS
     # (`! false` leaves `1`), so what `!` wraps is closed as a statement
     # of its own before `$?` inverts.
-    record_status(session,
-                  io.exit_code,
-                  transparent=pipeline_transparent(inner))
+    record_status(
+        session, io.exit_code, transparent=pipeline_transparent(inner)
+    )
     io = IOResult(
         exit_code=0 if io.exit_code != 0 else 1,
         stderr=io.stderr,
@@ -502,44 +605,74 @@ async def _run_redirected(
         # Compound and subshell bodies keep the whole-body redirect
         # (bash group semantics).
         left, op, right = get_list_parts(command)
-        wrapped = partial(_recurse_reassociated, recurse, dispatch, execute_fn,
-                          registry, redirects, processes, right)
-        return await handle_connection(wrapped, left, op, right, session,
-                                       stdin, call_stack)
+        wrapped = partial(
+            _recurse_reassociated,
+            recurse,
+            dispatch,
+            execute_fn,
+            registry,
+            redirects,
+            processes,
+            right,
+        )
+        return await handle_connection(
+            wrapped, left, op, right, session, stdin, call_stack
+        )
     if command is not None and command.type == NT.PIPELINE:
-        return await _run_pipeline(recurse, dispatch, execute_fn, registry,
-                                   get_pipeline_stages(command, redirects),
-                                   session, stdin, call_stack, processes)
+        return await _run_pipeline(
+            recurse,
+            dispatch,
+            execute_fn,
+            registry,
+            get_pipeline_stages(command, redirects),
+            session,
+            stdin,
+            call_stack,
+            processes,
+        )
     if command is not None and command.type == NT.NEGATED_COMMAND:
         # `! cmd < f` parses as redirected(negated(cmd), < f), but the
         # redirect is the command's: bash negates what `cmd < f` returns,
         # a redirect that failed to open included.
         inner = get_negated_command(command)
-        stdout, io, exec_node = await _run_redirected(recurse, dispatch,
-                                                      execute_fn, registry,
-                                                      view, inner, redirects,
-                                                      processes, session,
-                                                      stdin, call_stack)
+        stdout, io, exec_node = await _run_redirected(
+            recurse,
+            dispatch,
+            execute_fn,
+            registry,
+            view,
+            inner,
+            redirects,
+            processes,
+            session,
+            stdin,
+            call_stack,
+        )
         return await _negated(stdout, io, exec_node, session, inner)
-    expanded_redirects, pipe_node = await expand_redirects(redirects,
-                                                           session,
-                                                           execute_fn,
-                                                           registry,
-                                                           call_stack,
-                                                           view=view)
+    expanded_redirects, pipe_node = await expand_redirects(
+        redirects, session, execute_fn, registry, call_stack, view=view
+    )
     # `exec > file` with no command installs the redirects on the
     # shell for every later statement, rather than applying them to
     # one command. `exec cmd > file` still has a command and falls
     # through to the ordinary path, which refuses the command form.
     if _is_bare_exec(command):
-        return await install_exec_redirects(dispatch, session,
-                                            expanded_redirects)
-    stdout, io, exec_node = await handle_redirect(recurse, dispatch, command,
-                                                  expanded_redirects, session,
-                                                  stdin, call_stack)
+        return await install_exec_redirects(
+            dispatch, session, expanded_redirects
+        )
+    stdout, io, exec_node = await handle_redirect(
+        recurse,
+        dispatch,
+        command,
+        expanded_redirects,
+        session,
+        stdin,
+        call_stack,
+    )
     if pipe_node is not None and stdout is not None:
-        stdout, io2, exec_node2 = await recurse(pipe_node, session, stdout,
-                                                call_stack)
+        stdout, io2, exec_node2 = await recurse(
+            pipe_node, session, stdout, call_stack
+        )
         io = await io.merge(io2)
         exec_node = exec_node2
     return stdout, io, exec_node
@@ -580,10 +713,12 @@ async def _run_continuation(
     if not steps:
         return await run_left(session, stdin, call_stack)
     op, right = steps[-1]
-    wrapped = partial(_recurse_continuation, recurse, run_left, left,
-                      steps[:-1])
-    return await handle_connection(wrapped, left, op, right, session, stdin,
-                                   call_stack)
+    wrapped = partial(
+        _recurse_continuation, recurse, run_left, left, steps[:-1]
+    )
+    return await handle_connection(
+        wrapped, left, op, right, session, stdin, call_stack
+    )
 
 
 async def _recurse_continuation(
@@ -611,8 +746,9 @@ async def _recurse_continuation(
         call_stack (CallStack | None): shell call stack.
     """
     if node is left:
-        return await _run_continuation(recurse, run_left, left, steps, session,
-                                       stdin, call_stack)
+        return await _run_continuation(
+            recurse, run_left, left, steps, session, stdin, call_stack
+        )
     return await recurse(node, session, stdin, call_stack)
 
 
@@ -630,8 +766,11 @@ def _is_bare_exec(command: Any) -> bool:
     if command is None or command.type != NT.COMMAND:
         return False
     named = get_parts(command)
-    return (len(named) == 1 and named[0].type == NT.COMMAND_NAME
-            and get_text(named[0]) == "exec")
+    return (
+        len(named) == 1
+        and named[0].type == NT.COMMAND_NAME
+        and get_text(named[0]) == "exec"
+    )
 
 
 async def execute_node(
@@ -653,12 +792,22 @@ async def execute_node(
     outer = session._diagnostics
     session._diagnostics = []
     try:
-        stdout, io, exec_node = await _execute_node(dispatch, registry,
-                                                    namespace, job_table,
-                                                    execute_fn, agent_id, node,
-                                                    session, stdin, call_stack,
-                                                    cancel, routing_decision,
-                                                    sink, handed)
+        stdout, io, exec_node = await _execute_node(
+            dispatch,
+            registry,
+            namespace,
+            job_table,
+            execute_fn,
+            agent_id,
+            node,
+            session,
+            stdin,
+            call_stack,
+            cancel,
+            routing_decision,
+            sink,
+            handed,
+        )
         if session._diagnostics:
             err = _diagnostic_stderr(node, session)
             io.stderr = err + await io.materialize_stderr()
@@ -675,14 +824,19 @@ def _diagnostic_stderr(node: Any, session: SessionState) -> bytes:
     if not session._diagnostics:
         return b""
     head = get_text(node).split(None, 1)[0]
-    builtin = head if head in {
-        "export", "declare", "local", "readonly", "read", "printf", "let"
-    } else ""
+    builtin = (
+        head
+        if head
+        in {"export", "declare", "local", "readonly", "read", "printf", "let"}
+        else ""
+    )
     prefix = f"bash: {builtin}: " if builtin else "bash: "
     return b"".join(
-        message if isinstance(message, bytes) else (prefix + message +
-                                                    "\n").encode()
-        for message in session._diagnostics)
+        message
+        if isinstance(message, bytes)
+        else (prefix + message + "\n").encode()
+        for message in session._diagnostics
+    )
 
 
 async def _execute_node(
@@ -763,16 +917,18 @@ async def _execute_node(
     # die of an abort that was never the job's.
     execute_fn = partial(execute_fn, handed=handed, cancel=cancel)
 
-    recurse = partial(execute_node,
-                      dispatch,
-                      registry,
-                      namespace,
-                      job_table,
-                      execute_fn,
-                      agent_id,
-                      cancel=cancel,
-                      routing_decision=routing_decision,
-                      handed=handed)
+    recurse = partial(
+        execute_node,
+        dispatch,
+        registry,
+        namespace,
+        job_table,
+        execute_fn,
+        agent_id,
+        cancel=cancel,
+        routing_decision=routing_decision,
+        handed=handed,
+    )
 
     kind = node_kind(node)
 
@@ -807,7 +963,8 @@ async def _execute_node(
         elapsed = time.monotonic() - started
         report = b"".join(
             timing_report(elapsed, portable, session.env.get("TIMEFORMAT"))
-            for portable in reversed(node.timing))
+            for portable in reversed(node.timing)
+        )
         io.stderr = (await io.materialize_stderr()) + report
         return stdout, io, exec_node
 
@@ -816,27 +973,38 @@ async def _execute_node(
 
     # ── program (root / semicolons) ─────────────
     if kind == NodeKind.PROGRAM:
-        return await execute_program(stream, node, session, stdin, cs,
-                                     job_table, agent_id, dispatch, handed,
-                                     registry.decisions)
+        return await execute_program(
+            stream,
+            node,
+            session,
+            stdin,
+            cs,
+            job_table,
+            agent_id,
+            dispatch,
+            handed,
+            registry.decisions,
+        )
 
     # ── command ─────────────────────────────────
     if kind == NodeKind.COMMAND:
         async with command_scope():
-            return await execute_command(recurse,
-                                         dispatch,
-                                         registry,
-                                         namespace,
-                                         execute_fn,
-                                         node,
-                                         session,
-                                         stdin,
-                                         cs,
-                                         job_table,
-                                         cancel=cancel,
-                                         routing_decision=routing_decision,
-                                         agent_id=agent_id,
-                                         handed=handed)
+            return await execute_command(
+                recurse,
+                dispatch,
+                registry,
+                namespace,
+                execute_fn,
+                node,
+                session,
+                stdin,
+                cs,
+                job_table,
+                cancel=cancel,
+                routing_decision=routing_decision,
+                agent_id=agent_id,
+                handed=handed,
+            )
 
     # ── pipeline ────────────────────────────────
     if kind == NodeKind.PIPELINE:
@@ -845,15 +1013,23 @@ async def _execute_node(
         # the stages are read the way bash reads them rather than as the
         # parse nested them (see get_pipeline_stages).
         return await _run_pipeline(
-            recurse, dispatch, execute_fn, registry, get_pipeline_stages(node),
-            session, stdin, cs,
-            job_table.processes if job_table is not None else None)
+            recurse,
+            dispatch,
+            execute_fn,
+            registry,
+            get_pipeline_stages(node),
+            session,
+            stdin,
+            cs,
+            job_table.processes if job_table is not None else None,
+        )
 
     # ── list (&&, ||) ───────────────────────────
     if kind == NodeKind.LIST:
         left, op, right = get_list_parts(node)
-        return await handle_connection(stream, left, op, right, session, stdin,
-                                       cs)
+        return await handle_connection(
+            stream, left, op, right, session, stdin, cs
+        )
 
     # ── redirected statement ────────────────────
     if kind == NodeKind.REDIRECT:
@@ -864,13 +1040,21 @@ async def _execute_node(
         # had the parser read the line the way bash does.
         continuation = take_continuation(redirects)
         run_left = partial(
-            _run_redirected, recurse, dispatch, execute_fn, registry, view,
-            command, redirects,
-            job_table.processes if job_table is not None else None)
+            _run_redirected,
+            recurse,
+            dispatch,
+            execute_fn,
+            registry,
+            view,
+            command,
+            redirects,
+            job_table.processes if job_table is not None else None,
+        )
         if not continuation:
             return await run_left(session, stdin, cs)
-        return await _run_continuation(recurse, run_left, node, continuation,
-                                       session, stdin, cs)
+        return await _run_continuation(
+            recurse, run_left, node, continuation, session, stdin, cs
+        )
 
     # ── subshell ────────────────────────────────
     if kind == NodeKind.SUBSHELL:
@@ -879,32 +1063,43 @@ async def _execute_node(
         # see them; the parent's table never does), mirroring bash's
         # forked process.
         sub_table = JobTable(
-            processes=job_table.processes if job_table is not None else None)
-        sub_recurse = partial(execute_node,
-                              dispatch,
-                              registry,
-                              namespace,
-                              sub_table,
-                              execute_fn,
-                              agent_id,
-                              cancel=cancel,
-                              routing_decision=routing_decision,
-                              sink=sink,
-                              handed=handed)
+            processes=job_table.processes if job_table is not None else None
+        )
+        sub_recurse = partial(
+            execute_node,
+            dispatch,
+            registry,
+            namespace,
+            sub_table,
+            execute_fn,
+            agent_id,
+            cancel=cancel,
+            routing_decision=routing_decision,
+            sink=sink,
+            handed=handed,
+        )
         child_session = session.fork()
         as_program = program_invocation(session)
         results: list[tuple[ByteSource | None, IOResult, ExecutionNode]] = []
 
         async def run_subshell() -> int:
             token = set_current_session(child_session)
-            program_token = set_program_invocation(
-                child_session) if as_program else None
+            program_token = (
+                set_program_invocation(child_session) if as_program else None
+            )
             try:
-                result = await handle_subshell(sub_recurse,
-                                               list(node.children),
-                                               child_session, stdin, cs,
-                                               sub_table, agent_id, dispatch,
-                                               handed, registry.decisions)
+                result = await handle_subshell(
+                    sub_recurse,
+                    list(node.children),
+                    child_session,
+                    stdin,
+                    cs,
+                    sub_table,
+                    agent_id,
+                    dispatch,
+                    handed,
+                    registry.decisions,
+                )
                 results.append(result)
                 return result[1].exit_code
             finally:
@@ -913,13 +1108,14 @@ async def _execute_node(
                     reset_program_invocation(program_token)
 
         try:
-            process = sub_table.processes.start(session_id=session.session_id,
-                                                command=get_text(node),
-                                                cwd=PathSpec.from_str_path(
-                                                    session.cwd),
-                                                parent_pid=session.process_id,
-                                                run=run_subshell,
-                                                limit=session.processes.max)
+            process = sub_table.processes.start(
+                session_id=session.session_id,
+                command=get_text(node),
+                cwd=PathSpec.from_str_path(session.cwd),
+                parent_pid=session.process_id,
+                run=run_subshell,
+                limit=session.processes.max,
+            )
         except BlockingIOError as exc:
             raise ExitSignal(FORK_FAILED_STATUS, stderr=FORK_FAILED) from exc
         child_session.process_id = process.info.pid
@@ -927,8 +1123,11 @@ async def _execute_node(
         return results[0]
 
     # ── arithmetic command ((( ... ))) ──────────
-    if (kind == NodeKind.COMPOUND and node.children
-            and node.children[0].type == NT.ARITH_OPEN):
+    if (
+        kind == NodeKind.COMPOUND
+        and node.children
+        and node.children[0].type == NT.ARITH_OPEN
+    ):
         text = get_text(node)
         expr = await expand_arith(node, session, execute_fn, cs, view=view)
         reader = random_reader(session)
@@ -938,11 +1137,13 @@ async def _execute_node(
             # Reads resolve against the visible env so a hidden name
             # counts as unset; a hidden write refuses below, in this
             # command's own voice like the readonly refusal.
-            arith = evaluate_arith(expr,
-                                   visible_env(session),
-                                   elements=session_elements(session, reader),
-                                   read_var=reader.read,
-                                   wrote_var=reader.wrote)
+            arith = evaluate_arith(
+                expr,
+                visible_env(session),
+                elements=session_elements(session, reader),
+                read_var=reader.read,
+                wrote_var=reader.wrote,
+            )
             writes, value = arith.writes, arith.value
         except ArithError as exc:
             # bash bound the assignments made before the error; they
@@ -954,36 +1155,44 @@ async def _execute_node(
                 ensure_var_visible(session, name)
             except PolicyDenied as exc:
                 err = f"bash: {exc.strerror}\n".encode()
-                return None, IOResult(exit_code=1,
-                                      stderr=err), ExecutionNode(command=text,
-                                                                 exit_code=1,
-                                                                 stderr=err)
+                return (
+                    None,
+                    IOResult(exit_code=1, stderr=err),
+                    ExecutionNode(command=text, exit_code=1, stderr=err),
+                )
             if name in session.readonly_vars:
                 err = f"bash: {name}: readonly variable\n".encode()
-                return None, IOResult(exit_code=1,
-                                      stderr=err), ExecutionNode(command=text,
-                                                                 exit_code=1,
-                                                                 stderr=err)
+                return (
+                    None,
+                    IOResult(exit_code=1, stderr=err),
+                    ExecutionNode(command=text, exit_code=1, stderr=err),
+                )
         try:
             for write in writes:
-                await assign_element(session, view, write.name, write.key,
-                                     write.value)
+                await assign_element(
+                    session, view, write.name, write.key, write.value
+                )
             reader.settle()
         except PolicyDenied as exc:
             err = f"bash: {exc.strerror}\n".encode()
-            return None, IOResult(exit_code=1,
-                                  stderr=err), ExecutionNode(command=text,
-                                                             exit_code=1,
-                                                             stderr=err)
+            return (
+                None,
+                IOResult(exit_code=1, stderr=err),
+                ExecutionNode(command=text, exit_code=1, stderr=err),
+            )
         if error is not None:
             err = f"bash: ((: {expr}: {error}\n".encode()
-            return None, IOResult(exit_code=1,
-                                  stderr=err), ExecutionNode(command=text,
-                                                             exit_code=1,
-                                                             stderr=err)
+            return (
+                None,
+                IOResult(exit_code=1, stderr=err),
+                ExecutionNode(command=text, exit_code=1, stderr=err),
+            )
         code = 0 if value != 0 else 1
-        return None, IOResult(exit_code=code), ExecutionNode(command=text,
-                                                             exit_code=code)
+        return (
+            None,
+            IOResult(exit_code=code),
+            ExecutionNode(command=text, exit_code=code),
+        )
 
     # ── compound statement ({ ... }) ───────────
     if kind == NodeKind.COMPOUND:
@@ -995,15 +1204,27 @@ async def _execute_node(
             if child.type == NT.COMMENT:
                 continue
             stdout, io, last_exec = await run_statement(
-                stream, child, session, stdin, bound, cs, job_table, agent_id,
-                handed, registry.decisions)
+                stream,
+                child,
+                session,
+                stdin,
+                bound,
+                cs,
+                job_table,
+                agent_id,
+                handed,
+                registry.decisions,
+            )
             stdout = await finish_statement(stdout, io, session, child)
             if stdout is not None:
                 all_stdout.append(stdout)
             merged_io = await merged_io.merge(io)
-            if (io.exit_code != 0 and session.shell_options.get("errexit")
-                    and child.type not in ERREXIT_EXEMPT_TYPES
-                    and not session.errexit_immune):
+            if (
+                io.exit_code != 0
+                and session.shell_options.get("errexit")
+                and child.type not in ERREXIT_EXEMPT_TYPES
+                and not session.errexit_immune
+            ):
                 merged_io.exit_code = io.exit_code
                 break
         if len(all_stdout) == 1:
@@ -1014,48 +1235,56 @@ async def _execute_node(
     # ── if ──────────────────────────────────────
     if kind == NodeKind.IF:
         branches, else_body = get_if_branches(node)
-        return await handle_if(stream,
-                               branches,
-                               else_body,
-                               session,
-                               stdin,
-                               cs,
-                               job_table=job_table,
-                               agent_id=agent_id,
-                               handed=handed,
-                               decisions=registry.decisions)
+        return await handle_if(
+            stream,
+            branches,
+            else_body,
+            session,
+            stdin,
+            cs,
+            job_table=job_table,
+            agent_id=agent_id,
+            handed=handed,
+            decisions=registry.decisions,
+        )
 
     # ── C-style for (for ((init;cond;update))) ──
     if kind == NodeKind.CFOR:
         exprs, body = get_cfor_parts(node)
-        eval_expr = partial(_eval_cfor_expr,
-                            session=session,
-                            execute_fn=execute_fn,
-                            call_stack=cs,
-                            view=view)
-        return await handle_cfor(stream,
-                                 exprs,
-                                 body,
-                                 eval_expr,
-                                 session,
-                                 stdin,
-                                 cs,
-                                 job_table=job_table,
-                                 agent_id=agent_id,
-                                 handed=handed,
-                                 decisions=registry.decisions)
+        eval_expr = partial(
+            _eval_cfor_expr,
+            session=session,
+            execute_fn=execute_fn,
+            call_stack=cs,
+            view=view,
+        )
+        return await handle_cfor(
+            stream,
+            exprs,
+            body,
+            eval_expr,
+            session,
+            stdin,
+            cs,
+            job_table=job_table,
+            agent_id=agent_id,
+            handed=handed,
+            decisions=registry.decisions,
+        )
 
     # ── for / select ────────────────────────────
     if kind in (NodeKind.FOR, NodeKind.SELECT):
         var, values, body = get_for_parts(node)
         async with command_scope():
-            classified = await expand_and_classify(values,
-                                                   session,
-                                                   execute_fn,
-                                                   registry,
-                                                   session.cwd,
-                                                   cs,
-                                                   view=view)
+            classified = await expand_and_classify(
+                values,
+                session,
+                execute_fn,
+                registry,
+                session.cwd,
+                cs,
+                view=view,
+            )
             # The loop word list is consumed by the shell (WordPolicy.SHELL):
             # globs resolve to matches before iteration starts.
             classified = await resolve_globs(
@@ -1063,57 +1292,66 @@ async def _execute_node(
                 registry,
                 noglob=bool(session.shell_options.get("noglob")),
                 links=namespace,
-                options=glob_options(session))
+                options=glob_options(session),
+            )
         if kind == NodeKind.SELECT:
-            return await handle_select(stream,
-                                       var,
-                                       classified,
-                                       body,
-                                       session,
-                                       stdin,
-                                       cs,
-                                       policies=namespace.registry.policies,
-                                       job_table=job_table,
-                                       agent_id=agent_id,
-                                       handed=handed,
-                                       decisions=registry.decisions)
-        return await handle_for(stream,
-                                var,
-                                classified,
-                                body,
-                                session,
-                                stdin,
-                                cs,
-                                policies=namespace.registry.policies,
-                                job_table=job_table,
-                                agent_id=agent_id,
-                                handed=handed,
-                                decisions=registry.decisions)
+            return await handle_select(
+                stream,
+                var,
+                classified,
+                body,
+                session,
+                stdin,
+                cs,
+                policies=namespace.registry.policies,
+                job_table=job_table,
+                agent_id=agent_id,
+                handed=handed,
+                decisions=registry.decisions,
+            )
+        return await handle_for(
+            stream,
+            var,
+            classified,
+            body,
+            session,
+            stdin,
+            cs,
+            policies=namespace.registry.policies,
+            job_table=job_table,
+            agent_id=agent_id,
+            handed=handed,
+            decisions=registry.decisions,
+        )
 
     # ── while / until ───────────────────────────
     if kind in (NodeKind.WHILE, NodeKind.UNTIL):
         condition, body = get_while_parts(node)
         if kind == NodeKind.UNTIL:
-            return await handle_until(stream,
-                                      condition,
-                                      body,
-                                      session,
-                                      stdin,
-                                      cs,
-                                      job_table=job_table,
-                                      agent_id=agent_id,
-                                      handed=handed,
-                                      decisions=registry.decisions)
-        return await handle_while(stream,
-                                  condition,
-                                  body,
-                                  session,
-                                  stdin,
-                                  cs,
-                                  job_table=job_table,
-                                  agent_id=agent_id,
-                                  handed=handed,
-                                  decisions=registry.decisions)
+            return await handle_until(
+                stream,
+                condition,
+                body,
+                session,
+                stdin,
+                cs,
+                job_table=job_table,
+                agent_id=agent_id,
+                handed=handed,
+                decisions=registry.decisions,
+            )
+        return await handle_while(
+            stream,
+            condition,
+            body,
+            session,
+            stdin,
+            cs,
+            job_table=job_table,
+            agent_id=agent_id,
+            handed=handed,
+            decisions=registry.decisions,
+        )
 
     # ── case ────────────────────────────────────
     if kind == NodeKind.CASE:
@@ -1126,16 +1364,18 @@ async def _execute_node(
                 for p in pattern_nodes
             ]
             case_items.append((patterns, body, terminator))
-        return await handle_case(stream,
-                                 word,
-                                 case_items,
-                                 session,
-                                 stdin,
-                                 cs,
-                                 job_table=job_table,
-                                 agent_id=agent_id,
-                                 handed=handed,
-                                 decisions=registry.decisions)
+        return await handle_case(
+            stream,
+            word,
+            case_items,
+            session,
+            stdin,
+            cs,
+            job_table=job_table,
+            agent_id=agent_id,
+            handed=handed,
+            decisions=registry.decisions,
+        )
 
     # ── function definition ─────────────────────
     if kind == NodeKind.FUNCTION_DEF:
@@ -1145,51 +1385,51 @@ async def _execute_node(
             # refuses with `f: readonly function`, exit 1, and the old
             # body stays, pinned on 5.2.37.
             err = f"bash: {name}: readonly function\n".encode()
-            return None, IOResult(exit_code=1, stderr=err), ExecutionNode(
-                command=f"function {name}", exit_code=1, stderr=err)
+            return (
+                None,
+                IOResult(exit_code=1, stderr=err),
+                ExecutionNode(
+                    command=f"function {name}", exit_code=1, stderr=err
+                ),
+            )
         func_body = get_function_body(node)
         session.functions[name] = func_body
-        return None, IOResult(), ExecutionNode(command=f"function {name}",
-                                               exit_code=0)
+        return (
+            None,
+            IOResult(),
+            ExecutionNode(command=f"function {name}", exit_code=0),
+        )
 
     # ── declaration (export/local/declare/readonly) ──
     if kind == NodeKind.DECLARATION:
         async with command_scope():
-            return await execute_declaration(node, session, execute_fn,
-                                             registry, namespace, cs, view)
+            return await execute_declaration(
+                node, session, execute_fn, registry, namespace, cs, view
+            )
 
     # ── unset ───────────────────────────────────
     if kind == NodeKind.UNSET:
         args = get_unset_args(node)
         return await handle_unset(
-            args, session, session_view(session, namespace.registry.policies))
+            args, session, session_view(session, namespace.registry.policies)
+        )
 
     # ── test ([ ] or [[ ]]) ─────────────────────
     if kind == NodeKind.TEST:
         opener = node.children[0].type if node.children else "["
         if opener == "[[":
-            tree = await expand_double_bracket(node,
-                                               session,
-                                               execute_fn,
-                                               cs,
-                                               view=view)
-            return await handle_test(dispatch,
-                                     namespace,
-                                     tree,
-                                     session,
-                                     name="[[",
-                                     view=view)
-        test_argv = await expand_test_expr(node,
-                                           session,
-                                           execute_fn,
-                                           cs,
-                                           view=view)
-        return await handle_test(dispatch,
-                                 namespace,
-                                 test_argv,
-                                 session,
-                                 name="[",
-                                 view=view)
+            tree = await expand_double_bracket(
+                node, session, execute_fn, cs, view=view
+            )
+            return await handle_test(
+                dispatch, namespace, tree, session, name="[[", view=view
+            )
+        test_argv = await expand_test_expr(
+            node, session, execute_fn, cs, view=view
+        )
+        return await handle_test(
+            dispatch, namespace, test_argv, session, name="[", view=view
+        )
 
     # ── negated command ─────────────────────────
     if kind == NodeKind.NEGATED:
@@ -1199,8 +1439,9 @@ async def _execute_node(
 
     # ── variable assignment at top level ────────
     if kind == NodeKind.VAR_ASSIGN:
-        return await execute_assignment(node, session, execute_fn, registry,
-                                        namespace, cs)
+        return await execute_assignment(
+            node, session, execute_fn, registry, namespace, cs
+        )
 
     # ── assignment-only statement (a=1 b=2) ─────
     if kind == NodeKind.VAR_ASSIGNS:
@@ -1215,15 +1456,19 @@ async def _execute_node(
         # performed across ALL its assignments, not the last child's.
         code = assignment_status(session, sub_seq)
         merged_io.exit_code = code
-        return None, merged_io, ExecutionNode(command=get_text(node),
-                                              exit_code=code)
+        return (
+            None,
+            merged_io,
+            ExecutionNode(command=get_text(node), exit_code=code),
+        )
 
     # Constructs the parser accepts but the executor cannot honor
     # (tree-sitter ERROR nodes, future grammar additions). Mirrors the
     # unsupported-builtin diagnostic so agents see a capability gap,
     # not a crash.
     err = f"mirage: unsupported shell construct: {node.type}\n".encode()
-    return None, IOResult(exit_code=2,
-                          stderr=err), ExecutionNode(command=get_text(node),
-                                                     exit_code=2,
-                                                     stderr=err)
+    return (
+        None,
+        IOResult(exit_code=2, stderr=err),
+        ExecutionNode(command=get_text(node), exit_code=2, stderr=err),
+    )

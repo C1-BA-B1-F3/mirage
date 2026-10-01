@@ -26,7 +26,6 @@ from mirage.vfs.trello.prompt import PROMPT, WRITE_PROMPT
 
 
 class TrelloVFS(BaseVFS):
-
     accessor: TrelloAccessor
     name: str = VFSName.TRELLO
     caches_reads: bool = True

@@ -36,15 +36,15 @@ async def test_mkdir_tolerates_existing_item():
         m.post(
             _BASE + "/root:/parent:/children",
             status=409,
-            payload={"error": {
-                "code": "nameAlreadyExists",
-                "message": "x"
-            }})
+            payload={"error": {"code": "nameAlreadyExists", "message": "x"}},
+        )
         await mkdir(_accessor(), PathSpec.from_str_path("/parent/new"))
         # Tolerating the 409 means returning after the one POST, not
         # retrying it with a different conflict behavior.
-        assert len(m.requests[("POST",
-                               URL(_BASE + "/root:/parent:/children"))]) == 1
+        assert (
+            len(m.requests[("POST", URL(_BASE + "/root:/parent:/children"))])
+            == 1
+        )
 
 
 @pytest.mark.asyncio
@@ -53,10 +53,8 @@ async def test_mkdir_raises_on_other_errors():
         m.post(
             _BASE + "/root:/parent:/children",
             status=507,
-            payload={"error": {
-                "code": "insufficientStorage",
-                "message": "x"
-            }})
+            payload={"error": {"code": "insufficientStorage", "message": "x"}},
+        )
         with pytest.raises(GraphError):
             await mkdir(_accessor(), PathSpec.from_str_path("/parent/new"))
 
@@ -97,15 +95,20 @@ def _recording(posts: list[str], status: int = 201):
 async def test_mkdir_creates_a_missing_mount_root_then_retries(parents):
     posts: list[str] = []
     with aioresponses() as m:
-        m.post(_BASE + "/root:/team/root:/children",
-               callback=_recording(posts, 404))
+        m.post(
+            _BASE + "/root:/team/root:/children",
+            callback=_recording(posts, 404),
+        )
         m.post(_BASE + "/root/children", callback=_recording(posts))
         m.post(_BASE + "/root:/team:/children", callback=_recording(posts))
-        m.post(_BASE + "/root:/team/root:/children",
-               callback=_recording(posts))
-        await mkdir(_accessor(key_prefix="team/root"),
-                    PathSpec.from_str_path("/lt"),
-                    parents=parents)
+        m.post(
+            _BASE + "/root:/team/root:/children", callback=_recording(posts)
+        )
+        await mkdir(
+            _accessor(key_prefix="team/root"),
+            PathSpec.from_str_path("/lt"),
+            parents=parents,
+        )
     assert posts == [
         "404 " + _BASE + "/root:/team/root:/children",
         "201 " + _BASE + "/root/children",
@@ -118,11 +121,15 @@ async def test_mkdir_creates_a_missing_mount_root_then_retries(parents):
 async def test_mkdir_does_not_retry_a_404_below_the_mount_root():
     posts: list[str] = []
     with aioresponses() as m:
-        m.post(_BASE + "/root:/team/root/a:/children",
-               callback=_recording(posts, 404))
+        m.post(
+            _BASE + "/root:/team/root/a:/children",
+            callback=_recording(posts, 404),
+        )
         with pytest.raises(GraphError):
-            await mkdir(_accessor(key_prefix="team/root"),
-                        PathSpec.from_str_path("/a/b"))
+            await mkdir(
+                _accessor(key_prefix="team/root"),
+                PathSpec.from_str_path("/a/b"),
+            )
     assert posts == ["404 " + _BASE + "/root:/team/root/a:/children"]
 
 

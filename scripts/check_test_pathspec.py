@@ -17,8 +17,10 @@ PY = REPO / "python"
 # AttributeError waiting for the branch to be reached -- which is
 # exactly how it survived in tests/e2e/test_snapshot_drift_live.py,
 # skipped without a live versioned bucket.
-PATTERN = re.compile(r'^(?P<loc>[^:]+:\d+): error: Argument .*? has '
-                     r'incompatible type "str"; expected "PathSpec')
+PATTERN = re.compile(
+    r"^(?P<loc>[^:]+:\d+): error: Argument .*? has "
+    r'incompatible type "str"; expected "PathSpec'
+)
 
 
 def main() -> int:
@@ -29,26 +31,33 @@ def main() -> int:
     """
     proc = subprocess.run(
         [
-            str(PY / ".venv/bin/mypy"), "--namespace-packages",
-            "--explicit-package-bases", "tests"
+            str(PY / ".venv/bin/mypy"),
+            "--namespace-packages",
+            "--explicit-package-bases",
+            "tests",
         ],
         cwd=PY,
         capture_output=True,
         text=True,
     )
     hits = [
-        m.group("loc") for line in proc.stdout.splitlines()
+        m.group("loc")
+        for line in proc.stdout.splitlines()
         if (m := PATTERN.match(line))
     ]
     if hits:
-        print(f"{len(hits)} test call site(s) pass a str where the callee "
-              f"declares PathSpec. Wrap the path in a PathSpec -- the callee "
-              f"reads its fields, so the string only survives until that "
-              f"branch runs:\n  " + "\n  ".join(hits),
-              file=sys.stderr)
+        print(
+            f"{len(hits)} test call site(s) pass a str where the callee "
+            f"declares PathSpec. Wrap the path in a PathSpec -- the callee "
+            f"reads its fields, so the string only survives until that "
+            f"branch runs:\n  " + "\n  ".join(hits),
+            file=sys.stderr,
+        )
         return 1
-    print("test PathSpec discipline: no bare strings passed to PathSpec "
-          "parameters")
+    print(
+        "test PathSpec discipline: no bare strings passed to PathSpec "
+        "parameters"
+    )
     return 0
 
 

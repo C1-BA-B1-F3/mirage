@@ -19,11 +19,18 @@ from dataclasses import replace
 import pytest
 
 from mirage.cache.context import push_cache_manager
-from mirage.core.object_store.remove import (make_remove_prefix, make_rmdir,
-                                             make_unlink)
+from mirage.core.object_store.remove import (
+    make_remove_prefix,
+    make_rmdir,
+    make_unlink,
+)
 from mirage.observe.context import RecordingScope
-from tests.core.object_store.conftest import (FakeManager, FakeStore,
-                                              make_driver, spec)
+from tests.core.object_store.conftest import (
+    FakeManager,
+    FakeStore,
+    make_driver,
+    spec,
+)
 
 
 def _managed(coro):
@@ -41,7 +48,8 @@ def test_unlink_deletes_and_invalidates_every_ancestor_listing(accessor):
     # implied prefixes; the stale-ancestor eviction is the pinned fix.
     store = FakeStore({"a/b/c.txt": b"hi"})
     manager = _managed(
-        make_unlink(make_driver(store))(accessor, spec("/a/b/c.txt")))
+        make_unlink(make_driver(store))(accessor, spec("/a/b/c.txt"))
+    )
     assert store.objects == {}
     assert manager.unlinks == ["/a/b/c.txt"]
     assert manager.writes == []
@@ -51,7 +59,8 @@ def test_unlink_deletes_and_invalidates_every_ancestor_listing(accessor):
 def test_remove_prefix_deletes_the_subtree_and_ancestors_evict(accessor):
     store = FakeStore({"a/b/c.txt": b"hi", "a/b/d/e.txt": b"x"})
     manager = _managed(
-        make_remove_prefix(make_driver(store))(accessor, spec("/a/b")))
+        make_remove_prefix(make_driver(store))(accessor, spec("/a/b"))
+    )
     assert store.objects == {}
     # A subtree evict, not an unlink: every key below /a/b went with it,
     # and each one was cached under its own key.
@@ -166,17 +175,15 @@ def _recorded(coro):
 def test_unlink_records_a_retraction(accessor):
     store = FakeStore({"a/b.txt": b"x"})
     assert _recorded(
-        make_unlink(make_driver(store))(accessor, spec("/a/b.txt"))) == [
-            ("unlink", "/mnt/a/b.txt")
-        ]
+        make_unlink(make_driver(store))(accessor, spec("/a/b.txt"))
+    ) == [("unlink", "/mnt/a/b.txt")]
 
 
 def test_remove_prefix_records_a_retraction(accessor):
     store = FakeStore({"a/b.txt": b"x"})
     assert _recorded(
-        make_remove_prefix(make_driver(store))(accessor, spec("/a"))) == [
-            ("rm_r", "/mnt/a")
-        ]
+        make_remove_prefix(make_driver(store))(accessor, spec("/a"))
+    ) == [("rm_r", "/mnt/a")]
 
 
 def test_rmdir_records_a_retraction_when_it_deletes_the_marker(accessor):
@@ -189,8 +196,10 @@ def test_rmdir_records_a_retraction_when_it_deletes_the_marker(accessor):
 def test_rmdir_on_a_keyless_root_records_nothing(accessor):
     """It deletes nothing and raises nothing, so a record there would
     retract a pin for an object no one touched."""
-    assert _recorded(
-        make_rmdir(make_driver(FakeStore()))(accessor, spec("/"))) == []
+    assert (
+        _recorded(make_rmdir(make_driver(FakeStore()))(accessor, spec("/")))
+        == []
+    )
 
 
 def test_unlink_records_even_when_the_delete_raises(accessor):

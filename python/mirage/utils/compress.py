@@ -31,8 +31,9 @@ GZIP_TRAILING = "\ngzip: {}: decompression OK, trailing garbage ignored"
 GZIP_METHOD = "gzip: {{}}: unknown method {} -- not supported"
 GZIP_ENCRYPTED = "gzip: {} is encrypted -- not supported"
 GZIP_FLAGS = "gzip: {{}} has flags 0x{:x} -- not supported"
-GZIP_HEADER_CHECKSUM = ("gzip: {{}}: header checksum 0x{:04x} "
-                        "!= computed checksum 0x{:04x}")
+GZIP_HEADER_CHECKSUM = (
+    "gzip: {{}}: header checksum 0x{:04x} != computed checksum 0x{:04x}"
+)
 # The member layout of gzip.h: method 8 is deflate, the flag bits
 # announce the optional header fields, and the CRC-32 and the length
 # modulo 2**32 of the decoded bytes close the member.
@@ -61,8 +62,9 @@ def gzip_compress(data: bytes, level: int = -1, name: str = "") -> bytes:
         return compressed
     header = bytearray(compressed[:GZIP_FIXED_HEADER])
     header[3] |= GZIP_ORIG_NAME
-    return (bytes(header) + name.encode() + b"\0" +
-            compressed[GZIP_FIXED_HEADER:])
+    return (
+        bytes(header) + name.encode() + b"\0" + compressed[GZIP_FIXED_HEADER:]
+    )
 
 
 async def gzip_compress_stream(
@@ -150,8 +152,9 @@ class GzipDecoder:
             reason (str): gzip's description, ``{}`` for the name.
             exit_code (int): One for an error, two for trailing garbage.
         """
-        return GzipDataError((reason, ), False, exit_code, self._seen,
-                             not self._seen)
+        return GzipDataError(
+            (reason,), False, exit_code, self._seen, not self._seen
+        )
 
     def _read_header(self, data: bytes) -> int | None:
         """Consume header fields incrementally, retaining only fixed fields.
@@ -170,8 +173,11 @@ class GzipDecoder:
             part = self._header_part
             if part is HeaderPart.FIXED:
                 if available >= 2 and not data.startswith(GZIP_MAGIC):
-                    raise (self._refusal(GZIP_TRAILING, 2)
-                           if self._seen else self._refusal(GZIP_NOT_GZIP))
+                    raise (
+                        self._refusal(GZIP_TRAILING, 2)
+                        if self._seen
+                        else self._refusal(GZIP_NOT_GZIP)
+                    )
                 if available >= 3 and data[2] != GZIP_DEFLATED:
                     raise self._refusal(GZIP_METHOD.format(data[2]))
                 if available >= 4:
@@ -180,7 +186,8 @@ class GzipDecoder:
                         raise self._refusal(GZIP_ENCRYPTED)
                     if self._header_flags & GZIP_RESERVED:
                         raise self._refusal(
-                            GZIP_FLAGS.format(self._header_flags))
+                            GZIP_FLAGS.format(self._header_flags)
+                        )
                 if available < GZIP_FIXED_HEADER:
                     self._pending = data[offset:]
                     return None
@@ -192,7 +199,8 @@ class GzipDecoder:
                         self._pending = data[offset:]
                         return None
                     self._extra_remaining = int.from_bytes(
-                        data[offset:offset + 2], "little")
+                        data[offset : offset + 2], "little"
+                    )
                     offset += 2
                 self._header_part = HeaderPart.EXTRA
             elif part is HeaderPart.EXTRA:
@@ -202,32 +210,41 @@ class GzipDecoder:
                 if not self._extra_remaining:
                     self._header_part = HeaderPart.NAME
             elif part in (HeaderPart.NAME, HeaderPart.COMMENT):
-                flag = (GZIP_ORIG_NAME
-                        if part is HeaderPart.NAME else GZIP_COMMENT)
+                flag = (
+                    GZIP_ORIG_NAME if part is HeaderPart.NAME else GZIP_COMMENT
+                )
                 if self._header_flags & flag:
                     nul = data.find(b"\0", offset)
                     offset = len(data) if nul == -1 else nul + 1
                     if nul == -1:
-                        self._header_crc = zlib.crc32(data[start:offset],
-                                                      self._header_crc)
+                        self._header_crc = zlib.crc32(
+                            data[start:offset], self._header_crc
+                        )
                         return None
-                self._header_part = (HeaderPart.COMMENT if part
-                                     is HeaderPart.NAME else HeaderPart.CRC)
+                self._header_part = (
+                    HeaderPart.COMMENT
+                    if part is HeaderPart.NAME
+                    else HeaderPart.CRC
+                )
             else:
                 if self._header_flags & GZIP_HEADER_CRC:
                     if available < 2:
                         self._pending = data[offset:]
                         return None
-                    stored = int.from_bytes(data[offset:offset + 2], "little")
+                    stored = int.from_bytes(
+                        data[offset : offset + 2], "little"
+                    )
                     computed = self._header_crc & 0xFFFF
                     if stored != computed:
                         raise self._refusal(
-                            GZIP_HEADER_CHECKSUM.format(stored, computed))
+                            GZIP_HEADER_CHECKSUM.format(stored, computed)
+                        )
                     offset += 2
                 self._header_part = HeaderPart.DONE
             if part is not HeaderPart.CRC:
-                self._header_crc = zlib.crc32(data[start:offset],
-                                              self._header_crc)
+                self._header_crc = zlib.crc32(
+                    data[start:offset], self._header_crc
+                )
             if self._header_part is part:
                 return None
         return offset
@@ -293,9 +310,12 @@ class GzipDecoder:
             try:
                 out = inflater.decompress(data, GZIP_CHUNK_SIZE)
             except zlib.error as exc:
-                raise GzipDataError((GZIP_CORRUPT, ), True) from exc
-            data = (inflater.unused_data
-                    if inflater.eof else inflater.unconsumed_tail)
+                raise GzipDataError((GZIP_CORRUPT,), True) from exc
+            data = (
+                inflater.unused_data
+                if inflater.eof
+                else inflater.unconsumed_tail
+            )
             if out:
                 self._crc = zlib.crc32(out, self._crc)
                 self._size += len(out)
@@ -334,26 +354,33 @@ class GzipDecoder:
         Returns:
             bytes: the input a pass-through run still has to copy.
         """
-        boundary = (self._part is MemberPart.HEADER
-                    and self._header_part is HeaderPart.FIXED)
-        if self._copying or (self._passthrough and boundary
-                             and len(self._pending) < len(GZIP_MAGIC)):
+        boundary = (
+            self._part is MemberPart.HEADER
+            and self._header_part is HeaderPart.FIXED
+        )
+        if self._copying or (
+            self._passthrough
+            and boundary
+            and len(self._pending) < len(GZIP_MAGIC)
+        ):
             tail, self._pending = self._pending, b""
             return tail
         if not self._seen or not boundary or self._pending:
-            whole = (self._part is MemberPart.TRAILER
-                     or self._part is MemberPart.HEADER and self._seen)
+            whole = (
+                self._part is MemberPart.TRAILER
+                or self._part is MemberPart.HEADER
+                and self._seen
+            )
             first = not self._seen and self._part is MemberPart.HEADER
-            raise GzipDataError((GZIP_EOF, ),
-                                True,
-                                keeps_output=whole,
-                                first_header=first)
+            raise GzipDataError(
+                (GZIP_EOF,), True, keeps_output=whole, first_header=first
+            )
         return b""
 
 
-async def gunzip_stream(source: AsyncIterator[bytes],
-                        test: bool = False,
-                        passthrough: bool = False) -> AsyncIterator[bytes]:
+async def gunzip_stream(
+    source: AsyncIterator[bytes], test: bool = False, passthrough: bool = False
+) -> AsyncIterator[bytes]:
     """Decode concatenated members, yielding before reading more input.
 
     Args:
@@ -371,8 +398,8 @@ async def gunzip_stream(source: AsyncIterator[bytes],
 
 
 def gunzip_partial(
-        data: bytes,
-        passthrough: bool = False) -> tuple[bytes, GzipDataError | None]:
+    data: bytes, passthrough: bool = False
+) -> tuple[bytes, GzipDataError | None]:
     """What ``gzip -d`` writes from ``data`` before it stops, and why.
 
     Args:

@@ -55,8 +55,9 @@ async def test_send_reads_the_message_from_stdin(sent):
 
 @pytest.mark.asyncio
 async def test_send_takes_an_inline_message_with_escaped_newlines(sent):
-    await send(CLIInvocation(CONFIG,
-                             texts=("From:", "me@x", "\\n\\n", "body")))
+    await send(
+        CLIInvocation(CONFIG, texts=("From:", "me@x", "\\n\\n", "body"))
+    )
     assert sent["raw"] == b"From: me@x \n\n body"
 
 

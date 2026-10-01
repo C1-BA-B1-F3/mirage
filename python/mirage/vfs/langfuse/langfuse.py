@@ -26,7 +26,6 @@ from mirage.vfs.langfuse.prompt import PROMPT
 
 
 class LangfuseVFS(BaseVFS):
-
     accessor: LangfuseAccessor
     name: str = VFSName.LANGFUSE
     caches_reads: bool = True

@@ -24,8 +24,13 @@ from mirage.runtime.types import VFSEntry, VFSStat
 from mirage.runtime.vfs import RuntimeVFS
 from mirage.types import DEVICE_NUMBERS_KEY, ContentType, FileStat, FileType
 from mirage.utils.errors import OperationNotSupportedError
-from mirage.utils.stat_view import (CHAR_MODE, DIR_MODE, DIR_SIZE, FILE_MODE,
-                                    LINK_MODE)
+from mirage.utils.stat_view import (
+    CHAR_MODE,
+    DIR_MODE,
+    DIR_SIZE,
+    FILE_MODE,
+    LINK_MODE,
+)
 
 
 class ListingVFS(RuntimeVFS):
@@ -33,10 +38,11 @@ class ListingVFS(RuntimeVFS):
 
     def __init__(self, listing, stats, links=()):
         names = set(links)
-        super().__init__(dispatch=None,
-                         loop=None,
-                         resolver=PrefixResolver(lambda: [],
-                                                 lambda _dir: names))
+        super().__init__(
+            dispatch=None,
+            loop=None,
+            resolver=PrefixResolver(lambda: [], lambda _dir: names),
+        )
         self._listing = list(listing)
         self._stats = dict(stats)
         self.stat_calls = []
@@ -65,9 +71,11 @@ class RecordingVFS(RuntimeVFS):
     """Core with a recorded dispatch, so the routing under test is real."""
 
     def __init__(self, prefixes=(), no_append=()):
-        super().__init__(dispatch=None,
-                         loop=None,
-                         resolver=PrefixResolver(lambda: list(prefixes)))
+        super().__init__(
+            dispatch=None,
+            loop=None,
+            resolver=PrefixResolver(lambda: list(prefixes)),
+        )
         self.calls = []
         self._declines = set(no_append)
 
@@ -143,20 +151,23 @@ def test_readdir_lifts_names_into_entries():
     vfs = ListingVFS(
         listing=["/data/sub/", "/data/a.txt", "/data/ghost.txt"],
         stats={
-            "/data/a.txt":
-            FileStat(name="a.txt",
-                     size=4,
-                     type=FileType.FILE,
-                     content=ContentType.TEXT),
+            "/data/a.txt": FileStat(
+                name="a.txt",
+                size=4,
+                type=FileType.FILE,
+                content=ContentType.TEXT,
+            ),
         },
     )
     assert vfs.readdir("/data/") == [
         VFSEntry(path="/data/sub/", size=0, is_dir=True),
-        VFSEntry(path="/data/a.txt",
-                 size=4,
-                 is_dir=False,
-                 mode=FILE_MODE,
-                 mtime_ns=0),
+        VFSEntry(
+            path="/data/a.txt",
+            size=4,
+            is_dir=False,
+            mode=FILE_MODE,
+            mtime_ns=0,
+        ),
         VFSEntry(path="/data/ghost.txt", size=0, is_dir=False),
     ]
     # A slash-marked directory skips the stat; a vanished entry (or a
@@ -179,16 +190,19 @@ def test_readdir_keeps_the_listing_when_one_stat_fails(caplog):
     )
     with caplog.at_level(logging.WARNING, logger="mirage.runtime.vfs"):
         assert vfs.readdir("/data/") == [
-            VFSEntry(path="/data/a.txt",
-                     size=4,
-                     is_dir=False,
-                     mode=FILE_MODE,
-                     mtime_ns=0),
+            VFSEntry(
+                path="/data/a.txt",
+                size=4,
+                is_dir=False,
+                mode=FILE_MODE,
+                mtime_ns=0,
+            ),
             VFSEntry(path="/data/bad.txt", size=0, is_dir=False),
             VFSEntry(path="/data/gone.txt", size=0, is_dir=False),
         ]
     assert [
-        r.getMessage() for r in caplog.records
+        r.getMessage()
+        for r in caplog.records
         if r.name == "mirage.runtime.vfs"
     ] == [
         "runtime vfs: readdir /data/: stat /data/bad.txt: "
@@ -222,11 +236,13 @@ def test_readdir_stats_unmarked_directories():
         },
     )
     assert vfs.readdir("/data/") == [
-        VFSEntry(path="/data/sub",
-                 size=DIR_SIZE,
-                 is_dir=True,
-                 mode=DIR_MODE,
-                 mtime_ns=0),
+        VFSEntry(
+            path="/data/sub",
+            size=DIR_SIZE,
+            is_dir=True,
+            mode=DIR_MODE,
+            mtime_ns=0,
+        ),
     ]
 
 
@@ -236,28 +252,32 @@ def test_readdir_marks_the_names_the_resolver_calls_links():
     vfs = ListingVFS(
         listing=["/data/lnk", "/data/a.txt"],
         stats={
-            "/data/lnk":
-            FileStat(name="lnk", size=8, type=FileType.SYMLINK),
-            "/data/a.txt":
-            FileStat(name="a.txt",
-                     size=5,
-                     type=FileType.FILE,
-                     content=ContentType.TEXT),
+            "/data/lnk": FileStat(name="lnk", size=8, type=FileType.SYMLINK),
+            "/data/a.txt": FileStat(
+                name="a.txt",
+                size=5,
+                type=FileType.FILE,
+                content=ContentType.TEXT,
+            ),
         },
         links=["lnk"],
     )
     assert vfs.readdir("/data/") == [
-        VFSEntry(path="/data/lnk",
-                 size=8,
-                 is_dir=False,
-                 is_link=True,
-                 mode=LINK_MODE,
-                 mtime_ns=0),
-        VFSEntry(path="/data/a.txt",
-                 size=5,
-                 is_dir=False,
-                 mode=FILE_MODE,
-                 mtime_ns=0),
+        VFSEntry(
+            path="/data/lnk",
+            size=8,
+            is_dir=False,
+            is_link=True,
+            mode=LINK_MODE,
+            mtime_ns=0,
+        ),
+        VFSEntry(
+            path="/data/a.txt",
+            size=5,
+            is_dir=False,
+            mode=FILE_MODE,
+            mtime_ns=0,
+        ),
     ]
     assert vfs.unfollowed == ["/data/lnk"]
 
@@ -270,29 +290,33 @@ def test_stat_projects_one_struct_for_every_surface():
     vfs = ListingVFS(
         listing=[],
         stats={
-            "/data/a.txt":
-            FileStat(name="a.txt",
-                     size=4,
-                     type=FileType.FILE,
-                     content=ContentType.TEXT,
-                     mode=0o700,
-                     modified="2026-07-15T00:00:00Z"),
+            "/data/a.txt": FileStat(
+                name="a.txt",
+                size=4,
+                type=FileType.FILE,
+                content=ContentType.TEXT,
+                mode=0o700,
+                modified="2026-07-15T00:00:00Z",
+            ),
         },
     )
     st = vfs.stat("/data/a.txt")
-    assert st == VFSStat(size=4,
-                         is_dir=False,
-                         mode=(FILE_MODE & ~0o7777) | 0o700,
-                         mtime_ns=st.mtime_ns)
+    assert st == VFSStat(
+        size=4,
+        is_dir=False,
+        mode=(FILE_MODE & ~0o7777) | 0o700,
+        mtime_ns=st.mtime_ns,
+    )
     assert st.mtime_ns > 0
 
 
 def test_stat_reports_an_unknown_stamp_as_epoch_zero():
-    vfs = ListingVFS(listing=[],
-                     stats={
-                         "/data/a.txt":
-                         FileStat(name="a.txt", size=1, type=FileType.FILE)
-                     })
+    vfs = ListingVFS(
+        listing=[],
+        stats={
+            "/data/a.txt": FileStat(name="a.txt", size=1, type=FileType.FILE)
+        },
+    )
     assert vfs.stat("/data/a.txt").mtime_ns == 0
 
 
@@ -300,17 +324,16 @@ def test_stat_projects_character_type_bits_and_logical_device_numbers():
     vfs = ListingVFS(
         listing=[],
         stats={
-            "/dev/zero":
-            FileStat(name="zero",
-                     type=FileType.CHAR_DEVICE,
-                     extra={DEVICE_NUMBERS_KEY: [1, 5]}),
+            "/dev/zero": FileStat(
+                name="zero",
+                type=FileType.CHAR_DEVICE,
+                extra={DEVICE_NUMBERS_KEY: [1, 5]},
+            ),
         },
     )
-    assert vfs.stat("/dev/zero") == VFSStat(size=0,
-                                            is_dir=False,
-                                            mode=CHAR_MODE,
-                                            mtime_ns=0,
-                                            rdev=0x105)
+    assert vfs.stat("/dev/zero") == VFSStat(
+        size=0, is_dir=False, mode=CHAR_MODE, mtime_ns=0, rdev=0x105
+    )
 
 
 def test_stat_nofollow_asks_the_door_for_the_link_row():
@@ -335,13 +358,14 @@ def test_readdir_carries_the_metadata_only_where_it_stated():
     vfs = ListingVFS(
         listing=["/data/sub/", "/data/a.txt"],
         stats={
-            "/data/a.txt":
-            FileStat(name="a.txt",
-                     size=4,
-                     type=FileType.FILE,
-                     content=ContentType.TEXT,
-                     mode=0o600,
-                     modified="2026-07-15T00:00:00Z"),
+            "/data/a.txt": FileStat(
+                name="a.txt",
+                size=4,
+                type=FileType.FILE,
+                content=ContentType.TEXT,
+                mode=0o600,
+                modified="2026-07-15T00:00:00Z",
+            ),
         },
     )
     marked, stated = vfs.readdir("/data/")
@@ -374,8 +398,9 @@ def test_readdir_marks_nothing_without_a_link_source():
 def test_flush_ships_only_the_delta():
     vfs = RecordingVFS(prefixes=["/data/"])
     vfs.flush("/data/log.txt", 3, 3, b"abcXYZ")
-    assert [(op, kwargs.get("data"))
-            for op, _, kwargs in vfs.calls] == [("append", b"XYZ")]
+    assert [(op, kwargs.get("data")) for op, _, kwargs in vfs.calls] == [
+        ("append", b"XYZ")
+    ]
 
 
 def test_flush_falls_back_to_a_whole_write_and_remembers_the_mount():
@@ -397,7 +422,6 @@ def test_symlink_sends_the_target_verbatim():
 def test_readlink_returns_the_stored_target():
 
     class LinkVFS(RecordingVFS):
-
         def _raw(self, op, path, **kwargs):
             super()._raw(op, path, **kwargs)
             return "../up/t.txt"
@@ -408,14 +432,20 @@ def test_readlink_returns_the_stored_target():
 def test_setattr_passes_every_field_so_the_door_reads_the_whole_set():
     vfs = RecordingVFS(prefixes=["/data/"])
     vfs.setattr("/data/f.txt", mode=0o600, mtime="1970-01-01T00:03:20+00:00")
-    assert vfs.calls == [("setattr", "/data/f.txt", {
-        "mode": 0o600,
-        "uid": None,
-        "gid": None,
-        "atime": None,
-        "mtime": "1970-01-01T00:03:20+00:00",
-        "nofollow": False,
-    })]
+    assert vfs.calls == [
+        (
+            "setattr",
+            "/data/f.txt",
+            {
+                "mode": 0o600,
+                "uid": None,
+                "gid": None,
+                "atime": None,
+                "mtime": "1970-01-01T00:03:20+00:00",
+                "nofollow": False,
+            },
+        )
+    ]
 
 
 def test_setattr_forwards_nofollow_for_the_dash_h_family():

@@ -30,41 +30,35 @@ class CacheInvalidator(Protocol):
     core mutators -> cache.context <- mount (pushes a manager).
     """
 
-    async def invalidate_after_write(self, path: PathSpec) -> None:
-        ...
+    async def invalidate_after_write(self, path: PathSpec) -> None: ...
 
-    async def invalidate_after_unlink(self, path: PathSpec) -> None:
-        ...
+    async def invalidate_after_unlink(self, path: PathSpec) -> None: ...
 
-    async def invalidate_subtree(self, path: PathSpec) -> None:
-        ...
+    async def invalidate_subtree(self, path: PathSpec) -> None: ...
 
-    async def invalidate_ancestors(self, path: PathSpec) -> None:
-        ...
+    async def invalidate_ancestors(self, path: PathSpec) -> None: ...
 
-    async def cached_bytes(self, path: PathSpec) -> bytes | None:
-        ...
+    async def cached_bytes(self, path: PathSpec) -> bytes | None: ...
 
-    async def read_through(self, path: PathSpec,
-                           fetch: Callable[[], Awaitable[bytes]]) -> bytes:
-        ...
+    async def read_through(
+        self, path: PathSpec, fetch: Callable[[], Awaitable[bytes]]
+    ) -> bytes: ...
 
-    async def cached_size(self, path: PathSpec) -> int | None:
-        ...
+    async def cached_size(self, path: PathSpec) -> int | None: ...
 
-    def listing_trusted(self, folder: str) -> bool:
-        ...
+    def listing_trusted(self, folder: str) -> bool: ...
 
-    def probed_stat(self, path: PathSpec) -> FileStat | None:
-        ...
+    def probed_stat(self, path: PathSpec) -> FileStat | None: ...
 
 
 _active: ContextVar[CacheInvalidator | None] = ContextVar(
-    "_active_cache_manager", default=None)
+    "_active_cache_manager", default=None
+)
 
 
 def push_cache_manager(
-        manager: CacheInvalidator | None) -> CacheInvalidator | None:
+    manager: CacheInvalidator | None,
+) -> CacheInvalidator | None:
     """Set the active cache manager for the current async context.
 
     The mount entry point pushes its manager before dispatching a
@@ -138,8 +132,9 @@ async def invalidate_subtree(path: PathSpec) -> None:
         await manager.invalidate_subtree(path)
 
 
-async def invalidate_subtree_after(path: PathSpec,
-                                   op: Awaitable[None]) -> None:
+async def invalidate_subtree_after(
+    path: PathSpec, op: Awaitable[None]
+) -> None:
     """Run ``op``, then evict the subtree at ``path``, also when ``op``
     fails: an op that fails partway (a folder copy that merged some
     children) has already changed what lies below ``path``. After a
@@ -156,8 +151,9 @@ async def invalidate_subtree_after(path: PathSpec,
         try:
             await invalidate_subtree(path)
         except Exception as exc:
-            logger.debug("evicting %s after a failed op: %s", path.virtual,
-                         exc)
+            logger.debug(
+                "evicting %s after a failed op: %s", path.virtual, exc
+            )
         raise
     await invalidate_subtree(path)
 

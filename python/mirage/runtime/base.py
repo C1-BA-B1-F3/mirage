@@ -19,12 +19,22 @@ from typing import Any, Callable, ClassVar
 from mirage.runtime.binding import WorkspaceBinding
 from mirage.runtime.config import RuntimeConfig
 from mirage.runtime.errors import UnsupportedExecutionError
-from mirage.runtime.mixin import (EvaluatorMixin, LineExecutorMixin,
-                                  ProcessExecutorMixin)
-from mirage.runtime.types import (ExecutionRequest, FilesystemOperation,
-                                  ProcessExecution, RunResult,
-                                  RuntimeCapabilities, RuntimeContext,
-                                  RuntimeReach, ScriptSource, ShellExecution)
+from mirage.runtime.mixin import (
+    EvaluatorMixin,
+    LineExecutorMixin,
+    ProcessExecutorMixin,
+)
+from mirage.runtime.types import (
+    ExecutionRequest,
+    FilesystemOperation,
+    ProcessExecution,
+    RunResult,
+    RuntimeCapabilities,
+    RuntimeContext,
+    RuntimeReach,
+    ScriptSource,
+    ShellExecution,
+)
 from mirage.utils.activity import Activity
 
 
@@ -74,10 +84,11 @@ class Runtime(ABC):
     _retired: bool = False
 
     def __init__(
-            self,
-            captures: Sequence[str] | None = None,
-            config: RuntimeConfig | dict[str, Any] | None = None,
-            script: Callable[..., Any] | ScriptSource | None = None) -> None:
+        self,
+        captures: Sequence[str] | None = None,
+        config: RuntimeConfig | dict[str, Any] | None = None,
+        script: Callable[..., Any] | ScriptSource | None = None,
+    ) -> None:
         """Every runtime is constructed the same way.
 
         Args:
@@ -101,27 +112,30 @@ class Runtime(ABC):
 
     @property
     def capabilities(self) -> RuntimeCapabilities:
-        return RuntimeCapabilities(process=isinstance(self,
-                                                      ProcessExecutorMixin),
-                                   shell=isinstance(self, LineExecutorMixin),
-                                   evaluate=isinstance(self, EvaluatorMixin),
-                                   reach=self.reach,
-                                   filesystem=self.filesystem)
+        return RuntimeCapabilities(
+            process=isinstance(self, ProcessExecutorMixin),
+            shell=isinstance(self, LineExecutorMixin),
+            evaluate=isinstance(self, EvaluatorMixin),
+            reach=self.reach,
+            filesystem=self.filesystem,
+        )
 
     def bind(self, binding: WorkspaceBinding) -> None:
         """Bind this instance to one workspace."""
         if self._retired:
             raise ValueError(
                 f"{self.name}: runtime was removed from its workspace; "
-                "construct a new one")
+                "construct a new one"
+            )
         if self._binding is not None and self._binding is not binding:
             raise ValueError(
-                f"{self.name}: runtime is already bound to another workspace")
+                f"{self.name}: runtime is already bound to another workspace"
+            )
         self._binding = binding
 
-    async def execute(self,
-                      request: ExecutionRequest,
-                      context: RuntimeContext | None = None) -> RunResult:
+    async def execute(
+        self, request: ExecutionRequest, context: RuntimeContext | None = None
+    ) -> RunResult:
         """Execute directly, or under the bound workspace's captured context.
 
         This is the engine door. Workspace.shell remains the shell admission
@@ -134,9 +148,11 @@ class Runtime(ABC):
             if context is not None:
                 if context.binding is not self._binding:
                     raise ValueError(
-                        f"{self.name}: context belongs to another binding")
+                        f"{self.name}: context belongs to another binding"
+                    )
                 return await context.scope.run(
-                    lambda: self._execute(request, context))
+                    lambda: self._execute(request, context)
+                )
             return await self._execute(request, None)
         finally:
             release()
@@ -145,7 +161,8 @@ class Runtime(ABC):
         """Count one unit of work, refused once the runtime is retired."""
         if self._retired:
             raise RuntimeError(
-                f"{self.name}: runtime was removed from the workspace")
+                f"{self.name}: runtime was removed from the workspace"
+            )
         if self._activity is None:
             self._activity = Activity()
         return self._activity.acquire()
@@ -159,19 +176,24 @@ class Runtime(ABC):
     def _capture_context(self) -> RuntimeContext | None:
         return self._binding.capture() if self._binding is not None else None
 
-    async def _execute(self, request: ExecutionRequest,
-                       context: RuntimeContext | None) -> RunResult:
+    async def _execute(
+        self, request: ExecutionRequest, context: RuntimeContext | None
+    ) -> RunResult:
         if isinstance(request, ProcessExecution) and isinstance(
-                self, ProcessExecutorMixin):
+            self, ProcessExecutorMixin
+        ):
             if not request.argv:
                 raise ValueError("process argv must not be empty")
             return await self.run_process(request)
         if isinstance(request, ShellExecution) and isinstance(
-                self, LineExecutorMixin):
-            return await self.run_line(request.line, request.stdin,
-                                       request.env, request.cwd.virtual)
+            self, LineExecutorMixin
+        ):
+            return await self.run_line(
+                request.line, request.stdin, request.env, request.cwd.virtual
+            )
         raise UnsupportedExecutionError(
-            f"{self.name}: {request.kind} execution is unsupported")
+            f"{self.name}: {request.kind} execution is unsupported"
+        )
 
     async def close(self) -> None:
         """Release engine resources. Default: nothing held."""

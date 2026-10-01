@@ -10,25 +10,42 @@ from mirage.commands.quote import quote_text
 from mirage.commands.spec import SPECS
 from mirage.commands.spec.flag_view import FlagView
 from mirage.commands.spec.types import CommandName, FlagValue
-from mirage.commands.spec.usage import (extra_operand_error,
-                                        missing_operand_error)
+from mirage.commands.spec.usage import (
+    extra_operand_error,
+    missing_operand_error,
+)
 from mirage.io.types import ByteSource, IOResult
 from mirage.types import PathSpec
 
 IDX_MAX = 2**63 - 1
-INTMAX_MIN = -2**63
+INTMAX_MIN = -(2**63)
 WHOLE_LINE = b"\n"
 FIELD_RUN = re.compile(rb"[^ \t\n]+")
 INTEGER = re.compile(r"[ \t\n\v\f\r]*([+-]?[0-9]+)", re.ASCII)
 OUTLIST_SEPARATORS = re.compile(r"[, \t]")
-ASCII_UPPER = bytes.maketrans(b"abcdefghijklmnopqrstuvwxyz",
-                              b"ABCDEFGHIJKLMNOPQRSTUVWXYZ")
-OPTIONS = ("a", "v", "e", "ignore_case", "args_1", "2", "j", "o", "t",
-           "zero_terminated", "check_order", "nocheck_order", "header")
+ASCII_UPPER = bytes.maketrans(
+    b"abcdefghijklmnopqrstuvwxyz", b"ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+)
+OPTIONS = (
+    "a",
+    "v",
+    "e",
+    "ignore_case",
+    "args_1",
+    "2",
+    "j",
+    "o",
+    "t",
+    "zero_terminated",
+    "check_order",
+    "nocheck_order",
+    "header",
+)
 
 
 class CheckOrder(Enum):
     """join.c's ``check_input_order``: whether disorder is diagnosed."""
+
     DEFAULT = "default"
     ENABLED = "enabled"
     DISABLED = "disabled"
@@ -56,6 +73,7 @@ class JoinFlags:
         check_order (CheckOrder): --check-order and --nocheck-order.
         header (bool): --header.
     """
+
     field1: int = 0
     field2: int = 0
     tab: bytes | None = None
@@ -98,8 +116,9 @@ def _join_field(text: str) -> int:
     if value is not None and not INTMAX_MIN <= value <= IDX_MAX:
         value = IDX_MAX
     if value is None or value <= 0:
-        raise UsageError(f"join: invalid field number: '{quote_text(text)}'",
-                         1)
+        raise UsageError(
+            f"join: invalid field number: '{quote_text(text)}'", 1
+        )
     return value - 1
 
 
@@ -125,15 +144,18 @@ def _field_spec(spec: str) -> tuple[int, int]:
     if head == "0":
         if len(spec) > 1:
             raise UsageError(
-                f"join: invalid field specifier: '{quote_text(spec)}'", 1)
+                f"join: invalid field specifier: '{quote_text(spec)}'", 1
+            )
         return 0, 0
     if head in ("1", "2"):
         if spec[1:2] != ".":
             raise UsageError(
-                f"join: invalid field specifier: '{quote_text(spec)}'", 1)
+                f"join: invalid field specifier: '{quote_text(spec)}'", 1
+            )
         return int(head), _join_field(spec[2:])
     raise UsageError(
-        f"join: invalid file number in field spec: '{quote_text(spec)}'", 1)
+        f"join: invalid file number in field spec: '{quote_text(spec)}'", 1
+    )
 
 
 def _field_list(text: str) -> list[tuple[int, int]]:
@@ -149,23 +171,25 @@ def _field_list(text: str) -> list[tuple[int, int]]:
     rest = text
     while True:
         match = OUTLIST_SEPARATORS.search(rest)
-        item = rest if match is None else rest[:match.start()]
+        item = rest if match is None else rest[: match.start()]
         specs.append(_field_spec(item))
         if match is None or match.end() == len(rest):
             return specs
-        rest = rest[match.end():]
+        rest = rest[match.end() :]
 
 
 def _set_join_field(current: int | None, value: int) -> int:
     if current is not None and current != value:
-        raise UsageError(f"join: incompatible join fields {current}, {value}",
-                         1)
+        raise UsageError(
+            f"join: incompatible join fields {current}, {value}", 1
+        )
     return value
 
 
 @dataclass(slots=True)
 class _Options:
     """The state join.c's option loop builds, before it is frozen."""
+
     field1: int | None = None
     field2: int | None = None
     tab: bytes | None = None
@@ -186,7 +210,8 @@ class _Options:
         if len(raw) > 1:
             if raw != b"\\0":
                 raise UsageError(
-                    f"join: multi-character tab '{quote_text(text)}'", 1)
+                    f"join: multi-character tab '{quote_text(text)}'", 1
+                )
             tab = b"\0"
         if self.tab is not None and self.tab != tab:
             raise UsageError("join: incompatible tabs", 1)
@@ -203,7 +228,8 @@ class _Options:
             raw = _raw(text)
             if self.empty_filler is not None and self.empty_filler != raw:
                 raise UsageError(
-                    "join: conflicting empty-field replacement strings", 1)
+                    "join: conflicting empty-field replacement strings", 1
+                )
             self.empty_filler = raw
         elif name == "args_1":
             self.field1 = _set_join_field(self.field1, _join_field(text))
@@ -231,22 +257,28 @@ class _Options:
             self.header = True
 
     def freeze(self) -> JoinFlags:
-        separator = self.tab if self.tab is not None and (
-            self.tab != WHOLE_LINE or self.literal_tab) else b" "
-        return JoinFlags(field1=self.field1 or 0,
-                         field2=self.field2 or 0,
-                         tab=self.tab,
-                         output_separator=separator,
-                         unpairables1=self.unpairables[0],
-                         unpairables2=self.unpairables[1],
-                         pairables=self.pairables,
-                         empty_filler=self.empty_filler,
-                         outlist=tuple(self.outlist),
-                         autoformat=self.autoformat,
-                         ignore_case=self.ignore_case,
-                         eol=b"\0" if self.zero else b"\n",
-                         check_order=self.check_order,
-                         header=self.header)
+        separator = (
+            self.tab
+            if self.tab is not None
+            and (self.tab != WHOLE_LINE or self.literal_tab)
+            else b" "
+        )
+        return JoinFlags(
+            field1=self.field1 or 0,
+            field2=self.field2 or 0,
+            tab=self.tab,
+            output_separator=separator,
+            unpairables1=self.unpairables[0],
+            unpairables2=self.unpairables[1],
+            pairables=self.pairables,
+            empty_filler=self.empty_filler,
+            outlist=tuple(self.outlist),
+            autoformat=self.autoformat,
+            ignore_case=self.ignore_case,
+            eol=b"\0" if self.zero else b"\n",
+            check_order=self.check_order,
+            header=self.header,
+        )
 
 
 def parse_flags(flags: Mapping[str, FlagValue]) -> JoinFlags:
@@ -261,8 +293,9 @@ def parse_flags(flags: Mapping[str, FlagValue]) -> JoinFlags:
         flags (Mapping[str, FlagValue]): flags parsed against join's spec.
     """
     options = _Options()
-    for name, value in FlagView(flags,
-                                spec=SPECS["join"]).occurrences(*OPTIONS):
+    for name, value in FlagView(flags, spec=SPECS["join"]).occurrences(
+        *OPTIONS
+    ):
         options.apply(name, value)
     return options.freeze()
 
@@ -283,7 +316,7 @@ def _fields(record: bytes, tab: bytes | None) -> tuple[bytes, ...]:
     if tab is None:
         return tuple(FIELD_RUN.findall(record))
     if tab == WHOLE_LINE:
-        return (record, )
+        return (record,)
     return tuple(record.split(tab))
 
 
@@ -317,8 +350,12 @@ class _Merge:
         inputs (tuple[list[bytes], list[bytes]]): each file's records.
     """
 
-    def __init__(self, flags: JoinFlags, names: tuple[bytes, bytes],
-                 inputs: tuple[list[bytes], list[bytes]]) -> None:
+    def __init__(
+        self,
+        flags: JoinFlags,
+        names: tuple[bytes, bytes],
+        inputs: tuple[list[bytes], list[bytes]],
+    ) -> None:
         self.flags = flags
         self.names = names
         self.inputs = inputs
@@ -341,8 +378,10 @@ class _Merge:
         index = self.fields[which]
         key = fields[index] if index < len(fields) else b""
         line = _Line(
-            record, fields,
-            key.translate(ASCII_UPPER) if self.flags.ignore_case else key)
+            record,
+            fields,
+            key.translate(ASCII_UPPER) if self.flags.ignore_case else key,
+        )
         previous = self.previous[which]
         self.previous[which] = line
         if previous is not None and self.check_order(previous, line, which):
@@ -365,9 +404,15 @@ class _Merge:
         if _keycmp(previous.key, line.key) <= 0:
             return False
         text = line.record.split(b"\0", 1)[0]
-        self.err.append(b"join: " + self.names[which] + b":" +
-                        str(self.read[which]).encode() + b": is not sorted: " +
-                        text + b"\n")
+        self.err.append(
+            b"join: "
+            + self.names[which]
+            + b":"
+            + str(self.read[which]).encode()
+            + b": is not sorted: "
+            + text
+            + b"\n"
+        )
         if mode is CheckOrder.ENABLED:
             self.fatal = True
         else:
@@ -381,10 +426,14 @@ class _Merge:
         return self.flags.empty_filler
 
     def prfields(self, line: _Line, which: int) -> list[bytes]:
-        count = (self.autocount[which]
-                 if self.flags.autoformat else len(line.fields))
+        count = (
+            self.autocount[which]
+            if self.flags.autoformat
+            else len(line.fields)
+        )
         return [
-            self.prfield(i, line) for i in range(count)
+            self.prfield(i, line)
+            for i in range(count)
             if i != self.fields[which]
         ]
 
@@ -404,7 +453,8 @@ class _Merge:
         else:
             parts = [key, *self.prfields(line1, 0), *self.prfields(line2, 1)]
         self.out.append(
-            self.flags.output_separator.join(parts) + self.flags.eol)
+            self.flags.output_separator.join(parts) + self.flags.eol
+        )
 
     def first(self, which: int) -> list[_Line]:
         line = self.get_line(which)
@@ -438,16 +488,21 @@ class _Merge:
             run (list[_Line]): the file's current line, or nothing.
         """
         unpairables = (self.flags.unpairables1, self.flags.unpairables2)[which]
-        checktail = (self.flags.check_order is not CheckOrder.DISABLED
-                     and not all(self.warned))
+        checktail = (
+            self.flags.check_order is not CheckOrder.DISABLED
+            and not all(self.warned)
+        )
         if not run or not (unpairables or checktail):
             return
         line: _Line | None = run[0]
         while line is not None:
             if unpairables:
                 self.emit(*((line, BLANK) if which == 0 else (BLANK, line)))
-            line = (None if self.warned[which] and not unpairables else
-                    self.get_line(which))
+            line = (
+                None
+                if self.warned[which] and not unpairables
+                else self.get_line(which)
+            )
 
     def run(self) -> None:
         seq1 = self.first(0)
@@ -490,8 +545,9 @@ class _Merge:
         stderr = b"".join(self.err)
         if not self.fatal and any(self.warned):
             stderr += b"join: input is not in sorted order\n"
-        return b"".join(self.out), IOResult(stderr=stderr or None,
-                                            exit_code=1 if stderr else 0)
+        return b"".join(self.out), IOResult(
+            stderr=stderr or None, exit_code=1 if stderr else 0
+        )
 
 
 def _operand_name(path: PathSpec) -> bytes:
@@ -499,12 +555,12 @@ def _operand_name(path: PathSpec) -> bytes:
 
 
 async def join(
-        paths: list[PathSpec],
-        *,
-        read_bytes: Callable[..., Awaitable[bytes]],
-        stdin: ByteSource | None = None,
-        flags: JoinFlags = JoinFlags(),
-        argv: Sequence[str] = (),
+    paths: list[PathSpec],
+    *,
+    read_bytes: Callable[..., Awaitable[bytes]],
+    stdin: ByteSource | None = None,
+    flags: JoinFlags = JoinFlags(),
+    argv: Sequence[str] = (),
 ) -> tuple[ByteSource | None, IOResult]:
     """GNU ``join`` of two files over already-parsed options.
 
@@ -516,20 +572,27 @@ async def join(
         argv (Sequence[str]): the line's words, for the usage error.
     """
     if len(paths) > 2:
-        raise extra_operand_error(CommandName.JOIN, paths[2].raw_path
-                                  or paths[2].virtual)
+        raise extra_operand_error(
+            CommandName.JOIN, paths[2].raw_path or paths[2].virtual
+        )
     if len(paths) < 2:
         raise missing_operand_error(
             CommandName.JOIN,
-            paths[-1].raw_path or paths[-1].virtual if paths else None, argv)
+            paths[-1].raw_path or paths[-1].virtual if paths else None,
+            argv,
+        )
     if paths[0].raw_path == "-" and paths[1].raw_path == "-":
         return None, IOResult(
-            exit_code=1, stderr=b"join: both files cannot be standard input\n")
+            exit_code=1, stderr=b"join: both files cannot be standard input\n"
+        )
     read = stdin_bytes(read_bytes, stdin)
     data1 = await read(paths[0])
     data2 = await read(paths[1])
-    merge = _Merge(flags, (_operand_name(paths[0]), _operand_name(paths[1])),
-                   (_records(data1, flags.eol), _records(data2, flags.eol)))
+    merge = _Merge(
+        flags,
+        (_operand_name(paths[0]), _operand_name(paths[1])),
+        (_records(data1, flags.eol), _records(data2, flags.eol)),
+    )
     merge.run()
     return merge.result()
 
@@ -548,11 +611,13 @@ async def join_generic(
         opts (CommandOpts): the line's flags, stdin and words.
         read_bytes (Callable): reads one operand's bytes.
     """
-    return await join(paths,
-                      read_bytes=read_bytes,
-                      stdin=opts.stdin,
-                      flags=parse_flags(opts.flags),
-                      argv=opts.argv)
+    return await join(
+        paths,
+        read_bytes=read_bytes,
+        stdin=opts.stdin,
+        flags=parse_flags(opts.flags),
+        argv=opts.argv,
+    )
 
 
 __all__ = ["JoinFlags", "join", "join_generic", "parse_flags"]

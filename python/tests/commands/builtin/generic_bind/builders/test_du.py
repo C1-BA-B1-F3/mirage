@@ -42,34 +42,39 @@ def _ops(max_du_entries: int | None = None) -> CommandIO:
         if virtual in TREE:
             return FileStat(name=virtual, type=FileType.DIRECTORY)
         if virtual in SIZES:
-            return FileStat(type=FileType.FILE,
-                            name=virtual,
-                            size=SIZES[virtual])
+            return FileStat(
+                type=FileType.FILE, name=virtual, size=SIZES[virtual]
+            )
         raise FileNotFoundError(virtual)
 
     async def read_bytes(_accessor, _path, _index=None):
         return b""
 
-    return CommandIO(readdir=readdir,
-                     read_bytes=read_bytes,
-                     read_stream=read_bytes,
-                     stat=stat,
-                     is_mounted=lambda _a: True,
-                     max_du_entries=max_du_entries)
+    return CommandIO(
+        readdir=readdir,
+        read_bytes=read_bytes,
+        read_stream=read_bytes,
+        stat=stat,
+        is_mounted=lambda _a: True,
+        max_du_entries=max_du_entries,
+    )
 
 
 def _spec(virtual: str) -> PathSpec:
-    return PathSpec(virtual=virtual,
-                    directory=virtual,
-                    vfs_path=virtual.lstrip("/"))
+    return PathSpec(
+        virtual=virtual, directory=virtual, vfs_path=virtual.lstrip("/")
+    )
 
 
 async def _run(ops: CommandIO, path: str, **flags) -> tuple[str, int, str]:
-    stream, io = await du(ops, object(), [_spec(path)], [],
-                          CommandOpts(flags={**flags}))
-    return ((await
-             materialize(stream)).decode(), io.exit_code, (io.stderr
-                                                           or b"").decode())
+    stream, io = await du(
+        ops, object(), [_spec(path)], [], CommandOpts(flags={**flags})
+    )
+    return (
+        (await materialize(stream)).decode(),
+        io.exit_code,
+        (io.stderr or b"").decode(),
+    )
 
 
 def test_walk_budget_stops_once_spent():
@@ -98,32 +103,38 @@ async def test_fallback_walk_sums_a_tree():
 @pytest.mark.asyncio
 async def test_fallback_walk_lists_entries_for_a():
     out, _, _ = await _run(_ops(), "/db", a=True)
-    assert out == ("3\t/db/a.txt\n"
-                   "2\t/db/sub/b.txt\n"
-                   "2\t/db/sub\n"
-                   "5\t/db\n")
+    assert out == ("3\t/db/a.txt\n2\t/db/sub/b.txt\n2\t/db/sub\n5\t/db\n")
 
 
 @pytest.mark.asyncio
 async def test_missing_operand_is_reported_and_exits_one():
     """GNU names the operand it could not stat and still prints the rest."""
     ops = _ops()
-    stream, io = await du(ops, object(),
-                          [_spec('/nope'), _spec('/db')], [], CommandOpts())
+    stream, io = await du(
+        ops, object(), [_spec("/nope"), _spec("/db")], [], CommandOpts()
+    )
     out = (await materialize(stream)).decode()
     assert out == "2\t/db/sub\n5\t/db\n"
     assert io.exit_code == 1
     assert (io.stderr or b"").decode() == (
-        "du: cannot access '/nope': No such file or directory\n")
+        "du: cannot access '/nope': No such file or directory\n"
+    )
 
 
 @pytest.mark.asyncio
 async def test_no_operand_walks_the_working_directory():
     """GNU du with no operand summarises '.'; mirage uses the session cwd."""
     stream, io = await du(
-        _ops(), object(), [], [],
-        CommandOpts(cwd=PathSpec(
-            virtual='/db', directory='/db', vfs_path='db', resolved=False)))
+        _ops(),
+        object(),
+        [],
+        [],
+        CommandOpts(
+            cwd=PathSpec(
+                virtual="/db", directory="/db", vfs_path="db", resolved=False
+            )
+        ),
+    )
     assert (await materialize(stream)).decode() == "2\t/db/sub\n5\t/db\n"
     assert io.exit_code == 0
 
@@ -134,7 +145,8 @@ async def test_d_is_an_alias_for_max_depth():
     # canonical dest, so the builder never sees a separate `d`.
     short = parse_to_kwargs(parse_command(SPECS["du"], ["-d", "0"], cwd="/"))
     long = parse_to_kwargs(
-        parse_command(SPECS["du"], ["--max-depth", "0"], cwd="/"))
+        parse_command(SPECS["du"], ["--max-depth", "0"], cwd="/")
+    )
     assert short == long == {"max_depth": "0"}
     out, _, _ = await _run(_ops(), "/db", **short)
     assert out == "5\t/db\n"
@@ -160,8 +172,9 @@ async def test_exhausted_budget_reports_partial_output_and_exits_one():
 @pytest.mark.asyncio
 async def test_budget_is_shared_across_operands():
     ops = _ops(max_du_entries=1)
-    stream, io = await du(ops, object(),
-                          [_spec('/db'), _spec('/db/sub')], [], CommandOpts())
+    stream, io = await du(
+        ops, object(), [_spec("/db"), _spec("/db/sub")], [], CommandOpts()
+    )
     assert io.exit_code == 1
     assert len((await materialize(stream)).decode().splitlines()) == 2
 
@@ -198,8 +211,10 @@ def _sealed_ops() -> CommandIO:
 async def test_a_directory_no_file_points_at_still_gets_its_row():
     # GNU prints a row for an empty directory and for one it cannot open
     # (0 under -ab); a refused stat names the path but proves no directory.
-    notes = ("du: cannot read directory '/db/sealed': Permission denied\n"
-             "du: cannot read directory '/db/walled': Permission denied\n")
+    notes = (
+        "du: cannot read directory '/db/sealed': Permission denied\n"
+        "du: cannot read directory '/db/walled': Permission denied\n"
+    )
     rows = "0\t/db/empty\n0\t/db/sealed\n3\t/db\n"
     assert await _run(_sealed_ops(), "/db") == (rows, 1, notes)
     everything = "3\t/db/a.txt\n" + rows

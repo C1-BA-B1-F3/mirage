@@ -52,21 +52,28 @@ def accessor():
 def _exists(monkeypatch):
     # The guards are captured by make_stat at import, so patch the client
     # functions they read at call time rather than names on the stat module.
-    monkeypatch.setattr("mirage.core.postgres.client.list_schemas",
-                        AsyncMock(return_value=["public", "analytics"]))
-    monkeypatch.setattr("mirage.core.postgres.client.list_tables",
-                        AsyncMock(return_value=["users"]))
-    monkeypatch.setattr("mirage.core.postgres.client.list_views",
-                        AsyncMock(return_value=["daily_revenue"]))
-    monkeypatch.setattr("mirage.core.postgres.client.list_matviews",
-                        AsyncMock(return_value=[]))
+    monkeypatch.setattr(
+        "mirage.core.postgres.client.list_schemas",
+        AsyncMock(return_value=["public", "analytics"]),
+    )
+    monkeypatch.setattr(
+        "mirage.core.postgres.client.list_tables",
+        AsyncMock(return_value=["users"]),
+    )
+    monkeypatch.setattr(
+        "mirage.core.postgres.client.list_views",
+        AsyncMock(return_value=["daily_revenue"]),
+    )
+    monkeypatch.setattr(
+        "mirage.core.postgres.client.list_matviews", AsyncMock(return_value=[])
+    )
 
 
 @pytest.mark.asyncio
 async def test_stat_root(accessor, index):
-    result = await stat(accessor,
-                        PathSpec(vfs_path="", virtual="/", directory="/"),
-                        index)
+    result = await stat(
+        accessor, PathSpec(vfs_path="", virtual="/", directory="/"), index
+    )
     assert result.type == FileType.DIRECTORY
     assert result.name == "/"
 
@@ -75,9 +82,13 @@ async def test_stat_root(accessor, index):
 async def test_stat_database_json(accessor, index):
     result = await stat(
         accessor,
-        PathSpec(vfs_path="database.json",
-                 virtual="/database.json",
-                 directory="/database.json"), index)
+        PathSpec(
+            vfs_path="database.json",
+            virtual="/database.json",
+            directory="/database.json",
+        ),
+        index,
+    )
     assert result.content == ContentType.JSON
     assert result.name == "database.json"
 
@@ -87,7 +98,8 @@ async def test_stat_schema(accessor, index):
     result = await stat(
         accessor,
         PathSpec(vfs_path="public", virtual="/public", directory="/public"),
-        index)
+        index,
+    )
     assert result.type == FileType.DIRECTORY
     assert result.extra["schema"] == "public"
 
@@ -96,9 +108,13 @@ async def test_stat_schema(accessor, index):
 async def test_stat_kind_tables(accessor, index):
     result = await stat(
         accessor,
-        PathSpec(vfs_path="public/tables",
-                 virtual="/public/tables",
-                 directory="/public/tables"), index)
+        PathSpec(
+            vfs_path="public/tables",
+            virtual="/public/tables",
+            directory="/public/tables",
+        ),
+        index,
+    )
     assert result.type == FileType.DIRECTORY
     assert result.extra == {"schema": "public", "kind": "tables"}
 
@@ -107,9 +123,13 @@ async def test_stat_kind_tables(accessor, index):
 async def test_stat_kind_views(accessor, index):
     result = await stat(
         accessor,
-        PathSpec(vfs_path="analytics/views",
-                 virtual="/analytics/views",
-                 directory="/analytics/views"), index)
+        PathSpec(
+            vfs_path="analytics/views",
+            virtual="/analytics/views",
+            directory="/analytics/views",
+        ),
+        index,
+    )
     assert result.type == FileType.DIRECTORY
     assert result.extra == {"schema": "analytics", "kind": "views"}
 
@@ -118,15 +138,19 @@ async def test_stat_kind_views(accessor, index):
 async def test_stat_entity_table(accessor, index):
     result = await stat(
         accessor,
-        PathSpec(vfs_path="public/tables/users",
-                 virtual="/public/tables/users",
-                 directory="/public/tables/users"), index)
+        PathSpec(
+            vfs_path="public/tables/users",
+            virtual="/public/tables/users",
+            directory="/public/tables/users",
+        ),
+        index,
+    )
     assert result.type == FileType.DIRECTORY
     assert result.name == "users"
     assert result.extra == {
         "schema": "public",
         "kind": "tables",
-        "name": "users"
+        "name": "users",
     }
 
 
@@ -134,15 +158,19 @@ async def test_stat_entity_table(accessor, index):
 async def test_stat_entity_schema_json(accessor, index):
     result = await stat(
         accessor,
-        PathSpec(vfs_path="public/tables/users/schema.json",
-                 virtual="/public/tables/users/schema.json",
-                 directory="/public/tables/users/schema.json"), index)
+        PathSpec(
+            vfs_path="public/tables/users/schema.json",
+            virtual="/public/tables/users/schema.json",
+            directory="/public/tables/users/schema.json",
+        ),
+        index,
+    )
     assert result.content == ContentType.JSON
     assert result.name == "schema.json"
     assert result.extra == {
         "schema": "public",
         "kind": "tables",
-        "name": "users"
+        "name": "users",
     }
 
 
@@ -150,27 +178,30 @@ async def test_stat_entity_schema_json(accessor, index):
 async def test_stat_entity_rows_jsonl(accessor, index, monkeypatch):
     monkeypatch.setattr(
         "mirage.core.postgres.client.fetch_columns",
-        AsyncMock(return_value=[
-            {
-                "name": "id",
-                "type": "uuid",
-                "nullable": False
-            },
-            {
-                "name": "email",
-                "type": "text",
-                "nullable": False
-            },
-        ]))
-    monkeypatch.setattr("mirage.core.postgres.client.estimated_row_count",
-                        AsyncMock(return_value=42))
-    monkeypatch.setattr("mirage.core.postgres.client.table_size_bytes",
-                        AsyncMock(return_value=4096))
+        AsyncMock(
+            return_value=[
+                {"name": "id", "type": "uuid", "nullable": False},
+                {"name": "email", "type": "text", "nullable": False},
+            ]
+        ),
+    )
+    monkeypatch.setattr(
+        "mirage.core.postgres.client.estimated_row_count",
+        AsyncMock(return_value=42),
+    )
+    monkeypatch.setattr(
+        "mirage.core.postgres.client.table_size_bytes",
+        AsyncMock(return_value=4096),
+    )
     result = await stat(
         accessor,
-        PathSpec(vfs_path="public/tables/users/rows.jsonl",
-                 virtual="/public/tables/users/rows.jsonl",
-                 directory="/public/tables/users/rows.jsonl"), index)
+        PathSpec(
+            vfs_path="public/tables/users/rows.jsonl",
+            virtual="/public/tables/users/rows.jsonl",
+            directory="/public/tables/users/rows.jsonl",
+        ),
+        index,
+    )
     assert result.content == ContentType.TEXT
     assert result.name == "rows.jsonl"
     assert result.size is None
@@ -186,38 +217,56 @@ async def test_stat_entity_rows_jsonl(accessor, index, monkeypatch):
 async def test_stat_view_entity_rows(accessor, index, monkeypatch):
     monkeypatch.setattr(
         "mirage.core.postgres.client.fetch_columns",
-        AsyncMock(return_value=[
-            {
-                "name": "team",
-                "type": "text",
-                "nullable": True
-            },
-        ]))
-    monkeypatch.setattr("mirage.core.postgres.client.estimated_row_count",
-                        AsyncMock(return_value=2))
-    monkeypatch.setattr("mirage.core.postgres.client.table_size_bytes",
-                        AsyncMock(return_value=128))
+        AsyncMock(
+            return_value=[
+                {"name": "team", "type": "text", "nullable": True},
+            ]
+        ),
+    )
+    monkeypatch.setattr(
+        "mirage.core.postgres.client.estimated_row_count",
+        AsyncMock(return_value=2),
+    )
+    monkeypatch.setattr(
+        "mirage.core.postgres.client.table_size_bytes",
+        AsyncMock(return_value=128),
+    )
     result = await stat(
         accessor,
-        PathSpec(vfs_path="analytics/views/daily_revenue/rows.jsonl",
-                 virtual="/analytics/views/daily_revenue/rows.jsonl",
-                 directory="/analytics/views/daily_revenue/rows.jsonl"), index)
+        PathSpec(
+            vfs_path="analytics/views/daily_revenue/rows.jsonl",
+            virtual="/analytics/views/daily_revenue/rows.jsonl",
+            directory="/analytics/views/daily_revenue/rows.jsonl",
+        ),
+        index,
+    )
     assert result.content == ContentType.TEXT
     assert result.extra["kind"] == "views"
 
 
 @pytest.mark.asyncio
 async def test_stat_does_not_fetch_data_or_planner_statistics(
-        accessor, index, monkeypatch):
-    for name in ("fetch_columns", "estimated_row_count", "table_size_bytes",
-                 "fetch_rows"):
-        monkeypatch.setattr("mirage.core.postgres.client." + name,
-                            AsyncMock(side_effect=AssertionError(name)))
+    accessor, index, monkeypatch
+):
+    for name in (
+        "fetch_columns",
+        "estimated_row_count",
+        "table_size_bytes",
+        "fetch_rows",
+    ):
+        monkeypatch.setattr(
+            "mirage.core.postgres.client." + name,
+            AsyncMock(side_effect=AssertionError(name)),
+        )
     result = await stat(
         accessor,
-        PathSpec(vfs_path="public/tables/users/rows.jsonl",
-                 virtual="/pg/public/tables/users/rows.jsonl",
-                 directory="/pg/public/tables/users"), index)
+        PathSpec(
+            vfs_path="public/tables/users/rows.jsonl",
+            virtual="/pg/public/tables/users/rows.jsonl",
+            directory="/pg/public/tables/users",
+        ),
+        index,
+    )
     assert result.size is None
     assert result.fingerprint is None
 
@@ -227,30 +276,44 @@ async def test_stat_invalid_raises(accessor, index):
     with pytest.raises(FileNotFoundError):
         await stat(
             accessor,
-            PathSpec(vfs_path="public/tables/users/extra/foo",
-                     virtual="/public/tables/users/extra/foo",
-                     directory="/public/tables/users/extra/foo"), index)
+            PathSpec(
+                vfs_path="public/tables/users/extra/foo",
+                virtual="/public/tables/users/extra/foo",
+                directory="/public/tables/users/extra/foo",
+            ),
+            index,
+        )
 
 
 @pytest.mark.asyncio
 async def test_stat_missing_schema_raises(accessor, index, monkeypatch):
-    monkeypatch.setattr("mirage.core.postgres.client.list_schemas",
-                        AsyncMock(return_value=[]))
+    monkeypatch.setattr(
+        "mirage.core.postgres.client.list_schemas", AsyncMock(return_value=[])
+    )
     with pytest.raises(FileNotFoundError):
         await stat(
             accessor,
-            PathSpec(vfs_path=mount_key("/pg/__nf_missing__.txt", "/pg"),
-                     virtual="/pg/__nf_missing__.txt",
-                     directory="/pg/__nf_missing__.txt"), index)
+            PathSpec(
+                vfs_path=mount_key("/pg/__nf_missing__.txt", "/pg"),
+                virtual="/pg/__nf_missing__.txt",
+                directory="/pg/__nf_missing__.txt",
+            ),
+            index,
+        )
 
 
 @pytest.mark.asyncio
 async def test_stat_missing_entity_raises(accessor, index, monkeypatch):
-    monkeypatch.setattr("mirage.core.postgres.client.list_tables",
-                        AsyncMock(return_value=[]))
+    monkeypatch.setattr(
+        "mirage.core.postgres.client.list_tables", AsyncMock(return_value=[])
+    )
     with pytest.raises(FileNotFoundError):
         await stat(
             accessor,
-            PathSpec(vfs_path="public/tables/nope",
-                     virtual="/public/tables/nope",
-                     directory="/public/tables/nope"), index)
+            PathSpec(
+                vfs_path="public/tables/nope",
+                virtual="/public/tables/nope",
+                directory="/public/tables/nope",
+            ),
+            index,
+        )

@@ -52,10 +52,11 @@ class LocalRuntime(PythonRuntime):
     config: HomeConfig
 
     def __init__(
-            self,
-            captures: Sequence[str] | None = None,
-            config: HomeConfig | dict[str, Any] | None = None,
-            script: Callable[..., Any] | ScriptSource | None = None) -> None:
+        self,
+        captures: Sequence[str] | None = None,
+        config: HomeConfig | dict[str, Any] | None = None,
+        script: Callable[..., Any] | ScriptSource | None = None,
+    ) -> None:
         super().__init__(captures, config, script)
         chosen = self.config.home or os.environ.get(LOCAL_HOME_ENV)
         if chosen:
@@ -64,7 +65,8 @@ class LocalRuntime(PythonRuntime):
                 raise FileNotFoundError(
                     f"local python interpreter not found: {chosen!r} "
                     "(from the runtime entry's config `home` or "
-                    f"{LOCAL_HOME_ENV})")
+                    f"{LOCAL_HOME_ENV})"
+                )
             self._python = resolved
         else:
             self._python = sys.executable
@@ -78,23 +80,21 @@ class LocalRuntime(PythonRuntime):
         # real interpreter, which is why this tier gets them exactly
         # right (sys.flags included) where an in-process engine cannot.
         return await self._run(
-            [*init_argv(args.flags), "-c",
-             prepare_source(args), *args.args], args.env, args.stdin)
+            [*init_argv(args.flags), "-c", prepare_source(args), *args.args],
+            args.env,
+            args.stdin,
+        )
 
-    async def _run(self,
-                   argv: list[str],
-                   env: dict[str, str],
-                   stdin: bytes | None = None) -> RunResult:
+    async def _run(
+        self, argv: list[str], env: dict[str, str], stdin: bytes | None = None
+    ) -> RunResult:
         proc = await asyncio.create_subprocess_exec(
             self._python,
             *argv,
             stdin=asyncio.subprocess.PIPE,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
-            env={
-                **os.environ,
-                **env
-            },
+            env={**os.environ, **env},
         )
         try:
             stdout, stderr = await proc.communicate(input=stdin)

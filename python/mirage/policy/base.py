@@ -12,8 +12,14 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-from mirage.policy.types import (Action, CommandContext, ExecuteResultContext,
-                                 OpsContext, OpsResultContext, SessionContext)
+from mirage.policy.types import (
+    Action,
+    CommandContext,
+    ExecuteResultContext,
+    OpsContext,
+    OpsResultContext,
+    SessionContext,
+)
 
 
 class Policy:

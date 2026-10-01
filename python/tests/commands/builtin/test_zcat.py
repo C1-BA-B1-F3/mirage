@@ -59,8 +59,9 @@ def test_zcat_reports_a_plain_input_and_goes_on():
     _run_raw(ws, "tee /data/h.gz", stdin=gzip.compress(b"hi\n"))
     stdout, io = _run_raw(ws, "zcat /data/plain.txt /data/h.gz")
     assert _bytes(stdout) == b"hi\n"
-    assert _bytes(
-        io.stderr) == b"\ngzip: /data/plain.txt: not in gzip format\n"
+    assert (
+        _bytes(io.stderr) == b"\ngzip: /data/plain.txt: not in gzip format\n"
+    )
     assert io.exit_code == 1
 
 
@@ -70,24 +71,26 @@ def test_zcat_stops_at_a_truncated_archive():
     _run_raw(ws, "tee /data/h.gz", stdin=gzip.compress(b"hi\n"))
     stdout, io = _run_raw(ws, "zcat /data/cut.gz /data/h.gz")
     assert _bytes(stdout) == b""
-    assert _bytes(
-        io.stderr) == b"\ngzip: /data/cut.gz: unexpected end of file\n"
+    assert (
+        _bytes(io.stderr) == b"\ngzip: /data/cut.gz: unexpected end of file\n"
+    )
     assert io.exit_code == 1
 
 
 def test_zcat_calls_empty_stdin_an_unexpected_end():
     ws, _ = _ws()
     stdout, io = _run_raw(ws, "zcat")
-    assert (_bytes(io.stderr),
-            io.exit_code) == (b"\ngzip: stdin: unexpected end of file\n", 1)
+    assert (_bytes(io.stderr), io.exit_code) == (
+        b"\ngzip: stdin: unexpected end of file\n",
+        1,
+    )
 
 
 def test_zcat_reads_a_dash_after_a_refused_operand():
     ws, _ = _ws()
     _run_raw(ws, "tee /data/plain.txt", stdin=b"hello\n")
-    stdout, io = _run_raw(ws,
-                          "zcat plain.txt -",
-                          cwd="/data",
-                          stdin=gzip.compress(b"hi\n"))
+    stdout, io = _run_raw(
+        ws, "zcat plain.txt -", cwd="/data", stdin=gzip.compress(b"hi\n")
+    )
     assert _bytes(stdout) == b"hi\n"
     assert _bytes(io.stderr) == b"\ngzip: plain.txt: not in gzip format\n"

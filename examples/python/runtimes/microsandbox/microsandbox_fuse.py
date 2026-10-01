@@ -45,35 +45,40 @@ def s3_config() -> S3Config:
 
 async def main():
     print("=== Mirage FUSE-mounting S3 on the host ===")
-    with Workspace({
-            "/s3/":
-            Mount(S3VFS(s3_config()),
-                  mode=MountMode.READ,
-                  backend=MountBackend.FUSE)
-    }) as ws:
+    with Workspace(
+        {
+            "/s3/": Mount(
+                S3VFS(s3_config()),
+                mode=MountMode.READ,
+                backend=MountBackend.FUSE,
+            )
+        }
+    ) as ws:
         host_s3 = ws.fuse_mountpoint
         print(f"  host mountpoint: {host_s3}")
 
         print(
-            "\n=== booting microVM (S3 mount bind-mounted in, no network) ===")
+            "\n=== booting microVM (S3 mount bind-mounted in, no network) ==="
+        )
         async with await Sandbox.create(
-                "mirage-fuse",
-                image="python",
-                memory=1024,
-                cpus=1,
-                volumes={
-                    "/s3": Volume.bind(host_s3, readonly=True),
-                    "/prog": Volume.bind(str(REMOTE_DIR), readonly=True),
-                },
-                replace=True,
+            "mirage-fuse",
+            image="python",
+            memory=1024,
+            cpus=1,
+            volumes={
+                "/s3": Volume.bind(host_s3, readonly=True),
+                "/prog": Volume.bind(str(REMOTE_DIR), readonly=True),
+            },
+            replace=True,
         ) as sandbox:
             result = await sandbox.exec("python", ["/prog/guest.py"])
             print("=== guest output ===")
             print(result.stdout_text.rstrip())
             if result.exit_code != 0:
                 print(result.stderr_text, file=sys.stderr)
-                print(f"\n=== exit code: {result.exit_code} ===",
-                      file=sys.stderr)
+                print(
+                    f"\n=== exit code: {result.exit_code} ===", file=sys.stderr
+                )
                 sys.exit(result.exit_code)
 
         records = ws.vfs.records

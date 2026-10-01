@@ -14,15 +14,24 @@
 
 from mirage.commands.builtin.constants import EXEC_PLACEHOLDER
 from mirage.commands.builtin.find_parse import FindExpr, parse_find_expression
-from mirage.commands.builtin.find_printf import (expand_printf,
-                                                 printf_needs_stat)
-from mirage.commands.builtin.types import (ExecAction, FindAction,
-                                           PrintfAction, RowAction)
+from mirage.commands.builtin.find_printf import (
+    expand_printf,
+    printf_needs_stat,
+)
+from mirage.commands.builtin.types import (
+    ExecAction,
+    FindAction,
+    PrintfAction,
+    RowAction,
+)
 from mirage.commands.builtin.utils.formatting import format_find_ls
 from mirage.commands.builtin.utils.identity import Identity
 from mirage.commands.errors import is_entry_error
-from mirage.context import (get_current_session, reset_program_invocation,
-                            set_program_invocation)
+from mirage.context import (
+    get_current_session,
+    reset_program_invocation,
+    set_program_invocation,
+)
 from mirage.errors.classify import failure_text
 from mirage.io.stream import SharedStdin, materialize
 from mirage.io.types import ByteSource
@@ -62,8 +71,9 @@ def exec_words(action: ExecAction, paths: list[str]) -> list[str]:
     return words
 
 
-async def _head_state(head: str, registry: MountRegistry, cwd: str,
-                      stat_path: StatPath | None) -> tuple[bool, bool]:
+async def _head_state(
+    head: str, registry: MountRegistry, cwd: str, stat_path: StatPath | None
+) -> tuple[bool, bool]:
     """Whether ``execvp`` would fail to find an ``-exec`` head word, and
     whether a shell function shadows the program it would find.
 
@@ -90,26 +100,37 @@ async def _head_state(head: str, registry: MountRegistry, cwd: str,
             workspace, where the loader answers for itself.
     """
     if "/" in head:
-        return (stat_path is not None
-                and await stat_path(resolve_path(head, cwd)) is None), False
+        return (
+            stat_path is not None
+            and await stat_path(resolve_path(head, cwd)) is None
+        ), False
     sess = get_current_session()
     if sess is None:
         return False, False
     layers = lookup_all(head, sess, registry)
-    program = any(layer is not Consumer.FUNCTION and (
-        layer is not Consumer.SESSION or head not in SHELL_ONLY_BUILTINS)
-                  for layer in layers)
+    program = any(
+        layer is not Consumer.FUNCTION
+        and (layer is not Consumer.SESSION or head not in SHELL_ONLY_BUILTINS)
+        for layer in layers
+    )
     # An alias is as invisible to execvp as a function, and `command`
     # masks both for the run.
     shadowed = Consumer.FUNCTION in layers or head in sess.aliases
     return not program, shadowed
 
 
-async def _run_exec(execute_fn: ExecuteLine, session_id: str,
-                    registry: MountRegistry, cwd: str,
-                    stat_path: StatPath | None, action: ExecAction,
-                    paths: list[str], out: list[bytes], errors: list[bytes],
-                    stdin: SharedStdin | None) -> bool:
+async def _run_exec(
+    execute_fn: ExecuteLine,
+    session_id: str,
+    registry: MountRegistry,
+    cwd: str,
+    stat_path: StatPath | None,
+    action: ExecAction,
+    paths: list[str],
+    out: list[bytes],
+    errors: list[bytes],
+    stdin: SharedStdin | None,
+) -> bool:
     """Run one ``-exec`` invocation, collecting its streams.
 
     A command that cannot be found is GNU's ``find: 'cmd': No such file
@@ -150,9 +171,9 @@ async def _run_exec(execute_fn: ExecuteLine, session_id: str,
     sess = get_current_session()
     token = set_program_invocation(sess) if sess is not None else None
     try:
-        io = await execute_fn(f"( {line} )",
-                              session_id=session_id,
-                              stdin=stdin)
+        io = await execute_fn(
+            f"( {line} )", session_id=session_id, stdin=stdin
+        )
     finally:
         if token is not None:
             reset_program_invocation(token)
@@ -167,9 +188,13 @@ async def _run_exec(execute_fn: ExecuteLine, session_id: str,
     return io.exit_code == 0
 
 
-async def _delete(ps: PathSpec, ns: NamespaceView | None,
-                  dispatch: DispatchFn | None, errors: list[bytes],
-                  stat_path: StatPath | None) -> bool:
+async def _delete(
+    ps: PathSpec,
+    ns: NamespaceView | None,
+    dispatch: DispatchFn | None,
+    errors: list[bytes],
+    stat_path: StatPath | None,
+) -> bool:
     """Remove a matched entry through the shared operation door.
 
     The dispatcher owns admission, backend support, cache invalidation and
@@ -187,26 +212,39 @@ async def _delete(ps: PathSpec, ns: NamespaceView | None,
         errors.append(b"find: -delete requires an operation dispatcher\n")
         return False
     try:
-        link = (ns is not None and ns.links is not None
-                and ns.links.stat_at(ps.virtual) is not None)
-        st = (await stat_path(ps.virtual)
-              if not link and stat_path is not None else None)
+        link = (
+            ns is not None
+            and ns.links is not None
+            and ns.links.stat_at(ps.virtual) is not None
+        )
+        st = (
+            await stat_path(ps.virtual)
+            if not link and stat_path is not None
+            else None
+        )
         if not link and stat_path is not None and st is None:
             raise enoent(ps)
-        op = ("rmdir" if st is not None and st.type == FileType.DIRECTORY else
-              "unlink")
+        op = (
+            "rmdir"
+            if st is not None and st.type == FileType.DIRECTORY
+            else "unlink"
+        )
         await dispatch(op, ps)
         return True
     except (OSError, ValueError) as exc:
-        why = ((exc.strerror if isinstance(exc, OSError) else None)
-               or failure_text(exc))
+        why = (
+            exc.strerror if isinstance(exc, OSError) else None
+        ) or failure_text(exc)
         errors.append(f"find: cannot delete '{path}': {why}\n".encode())
         return False
 
 
-async def _row_stat(ps: PathSpec, ns: NamespaceView | None,
-                    stat_path: StatPath | None,
-                    errors: list[bytes]) -> FileStat | None:
+async def _row_stat(
+    ps: PathSpec,
+    ns: NamespaceView | None,
+    stat_path: StatPath | None,
+    errors: list[bytes],
+) -> FileStat | None:
     """The facts ``find -ls`` renders one accepted row from.
 
     They come from the two doors the command boundary has: a symlink is
@@ -230,8 +268,11 @@ async def _row_stat(ps: PathSpec, ns: NamespaceView | None,
     if stat_path is None:
         errors.append(f"find: '{path}': no stat door\n".encode())
         return None
-    link = (ns.links.stat_at(ps.virtual)
-            if ns is not None and ns.links is not None else None)
+    link = (
+        ns.links.stat_at(ps.virtual)
+        if ns is not None and ns.links is not None
+        else None
+    )
     try:
         st = link if link is not None else await stat_path(ps.virtual)
     except Exception as exc:
@@ -239,13 +280,15 @@ async def _row_stat(ps: PathSpec, ns: NamespaceView | None,
             raise
         # GNU words it with the errno text; a policy refusal carries its
         # reason there.
-        why = ((exc.strerror if isinstance(exc, OSError) else None)
-               or failure_text(exc))
+        why = (
+            exc.strerror if isinstance(exc, OSError) else None
+        ) or failure_text(exc)
         errors.append(f"find: '{path}': {why}\n".encode())
         return None
     if st is None:
         errors.append(
-            f"find: '{path}': {fs_strerror(FileNotFoundError())}\n".encode())
+            f"find: '{path}': {fs_strerror(FileNotFoundError())}\n".encode()
+        )
         return None
     return st
 
@@ -264,9 +307,15 @@ def _ls_row(ps: PathSpec, st: FileStat, identity: Identity | None) -> bytes:
     return (row + "\n").encode()
 
 
-async def _printf_row(action: PrintfAction, ps: PathSpec, start: PathSpec,
-                      st: FileStat | None, ns: NamespaceView | None,
-                      warnings: list[str], identity: Identity | None) -> bytes:
+async def _printf_row(
+    action: PrintfAction,
+    ps: PathSpec,
+    start: PathSpec,
+    st: FileStat | None,
+    ns: NamespaceView | None,
+    warnings: list[str],
+    identity: Identity | None,
+) -> bytes:
     """Render one accepted row through a ``-printf`` format.
 
     A symlink row is the link itself, and ``%Y`` reads what it points at
@@ -287,11 +336,22 @@ async def _printf_row(action: PrintfAction, ps: PathSpec, start: PathSpec,
             directives on an entry that reports no owner of its own.
     """
     links = ns.links if ns is not None else None
-    target = (await links.target_stat(ps.virtual)
-              if st is not None and links is not None
-              and links.stat_at(ps.virtual) is not None else None)
-    return expand_printf(action.format, ps.raw_path or ps.virtual, start, st,
-                         warnings, target, identity).encode()
+    target = (
+        await links.target_stat(ps.virtual)
+        if st is not None
+        and links is not None
+        and links.stat_at(ps.virtual) is not None
+        else None
+    )
+    return expand_printf(
+        action.format,
+        ps.raw_path or ps.virtual,
+        start,
+        st,
+        warnings,
+        target,
+        identity,
+    ).encode()
 
 
 def _reads_stat(action: FindAction) -> bool:
@@ -316,9 +376,14 @@ def _tests_stat(expr: FindExpr) -> bool:
     Args:
         expr (FindExpr): the parsed expression.
     """
-    return (expr.min_size is not None or expr.max_size is not None
-            or expr.mtime_min is not None or expr.mtime_max is not None
-            or expr.uses_empty or bool(expr.newer))
+    return (
+        expr.min_size is not None
+        or expr.max_size is not None
+        or expr.mtime_min is not None
+        or expr.mtime_max is not None
+        or expr.uses_empty
+        or bool(expr.newer)
+    )
 
 
 def _has_actions(expr: FindExpr) -> bool:
@@ -332,7 +397,8 @@ def _has_actions(expr: FindExpr) -> bool:
     """
     return len(expr.actions) > 1 or any(
         not (isinstance(a, RowAction) and a.kind == "print")
-        for a in expr.actions)
+        for a in expr.actions
+    )
 
 
 def depth_first_key(path: str) -> tuple[tuple[str, int], ...]:
@@ -365,8 +431,9 @@ def _structural(path: PathSpec, registry: MountRegistry) -> bool:
         registry (MountRegistry): the mount table.
     """
     virtual = path.virtual
-    return (registry.is_mount_root(virtual)
-            or bool(registry.descendant_mounts(virtual)))
+    return registry.is_mount_root(virtual) or bool(
+        registry.descendant_mounts(virtual)
+    )
 
 
 async def _apply_find_actions(
@@ -473,9 +540,12 @@ async def _apply_find_actions(
     cwd_start = PathSpec(virtual=cwd, directory=cwd, vfs_path="", raw_path=".")
     matches = [
         (match, starts[i] if starts and i < len(starts) else cwd_start)
-        for i, run in enumerate(matched_runs) for match in (
-            sorted(run, key=lambda p: depth_first_key(p.raw_path or p.virtual)
-                   ) if reorders else run)
+        for i, run in enumerate(matched_runs)
+        for match in (
+            sorted(run, key=lambda p: depth_first_key(p.raw_path or p.virtual))
+            if reorders
+            else run
+        )
     ]
     # An expression with no action of its own prints, which is the one
     # implicit action -depth reorders.
@@ -494,17 +564,29 @@ async def _apply_find_actions(
         # taken before any action of the chain can remove the row; a row
         # it never statted is looked up by the first action that reads
         # it, and held from there, as GNU stats a row once.
-        held = (await _row_stat(match, ns, stat_path, []) if stats and
-                (statted or match.virtual in start_virtuals) else None)
+        held = (
+            await _row_stat(match, ns, stat_path, [])
+            if stats and (statted or match.virtual in start_virtuals)
+            else None
+        )
         for position, action in enumerate(actions):
             if isinstance(action, ExecAction):
                 if action.batch:
                     batches.setdefault(position, []).append(path)
                     continue
                 assert execute_fn is not None
-                if not await _run_exec(execute_fn, session_id, registry, cwd,
-                                       stat_path, action, [path], out, errors,
-                                       once):
+                if not await _run_exec(
+                    execute_fn,
+                    session_id,
+                    registry,
+                    cwd,
+                    stat_path,
+                    action,
+                    [path],
+                    out,
+                    errors,
+                    once,
+                ):
                     break
             elif _reads_stat(action):
                 if held is None:
@@ -514,13 +596,19 @@ async def _apply_find_actions(
                     # chain ends for it, as GNU's does.
                     exit_code = 1
                     break
-                out.append(await _printf_row(action, match, start, held, ns,
-                                             warnings, identity)
-                           if isinstance(action, PrintfAction
-                                         ) else _ls_row(match, held, identity))
+                out.append(
+                    await _printf_row(
+                        action, match, start, held, ns, warnings, identity
+                    )
+                    if isinstance(action, PrintfAction)
+                    else _ls_row(match, held, identity)
+                )
             elif isinstance(action, PrintfAction):
-                out.append(await _printf_row(action, match, start, None, ns,
-                                             warnings, identity))
+                out.append(
+                    await _printf_row(
+                        action, match, start, None, ns, warnings, identity
+                    )
+                )
             elif action.kind == "delete":
                 # A structural row is skipped, not refused, the way Unix
                 # leaves a mount point in place.
@@ -531,15 +619,26 @@ async def _apply_find_actions(
                     break
             else:
                 out.append(
-                    path.encode("utf-8") +
-                    (b"\x00" if action.kind == "print0" else b"\n"))
+                    path.encode("utf-8")
+                    + (b"\x00" if action.kind == "print0" else b"\n")
+                )
     for position, action in enumerate(actions):
         paths = batches.get(position)
         if not isinstance(action, ExecAction) or not paths:
             continue
         assert execute_fn is not None
-        if not await _run_exec(execute_fn, session_id, registry, cwd,
-                               stat_path, action, paths, out, errors, once):
+        if not await _run_exec(
+            execute_fn,
+            session_id,
+            registry,
+            cwd,
+            stat_path,
+            action,
+            paths,
+            out,
+            errors,
+            once,
+        ):
             exit_code = 1
     body = b"".join(out)
     # GNU warns about a directive it cannot render once, ahead of anything

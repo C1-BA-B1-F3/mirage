@@ -61,14 +61,18 @@ def _read_only_gzip_mount() -> tuple[Workspace, RAMVFS]:
     return Workspace({"/ro/": (vfs, MountMode.READ)}), vfs
 
 
-@pytest.mark.parametrize("line,stdout", [
-    ("cd /ro && printf 'x\\n' | gzip | gunzip", b"x\n"),
-    ("gzip -c /ro/f.txt | gunzip", b"hello\n"),
-    ("gzip -dc /ro/f.txt.gz", b"hello\n"),
-    ("cd /ro && printf 'x\\n' | gzip - | gunzip -", b"x\n"),
-])
+@pytest.mark.parametrize(
+    "line,stdout",
+    [
+        ("cd /ro && printf 'x\\n' | gzip | gunzip", b"x\n"),
+        ("gzip -c /ro/f.txt | gunzip", b"hello\n"),
+        ("gzip -dc /ro/f.txt.gz", b"hello\n"),
+        ("cd /ro && printf 'x\\n' | gzip - | gunzip -", b"x\n"),
+    ],
+)
 def test_a_read_only_mount_runs_gzip_where_it_writes_nothing(
-        line: str, stdout: bytes):
+    line: str, stdout: bytes
+):
     ws, vfs = _read_only_gzip_mount()
     before = dict(vfs._store.files)
     result = asyncio.run(ws.shell(line))
@@ -79,19 +83,37 @@ def test_a_read_only_mount_runs_gzip_where_it_writes_nothing(
 _EXISTS = "gzip: /ro/f.txt.gz already exists;\tnot overwritten\n"
 
 
-@pytest.mark.parametrize("line,code,stderr", [
-    ("gzip /ro/f.txt", 2, _EXISTS),
-    ("gzip -k /ro/f.txt", 2, _EXISTS),
-    ("gzip -f /ro/f.txt", 1, "gzip: /ro/f.txt.gz: Read-only file system\n"),
-    ("gzip /ro/g.txt", 1, "\ngzip: /ro/g.txt.gz: Read-only file system\n"),
-    ("gzip /ro/f.txt /ro/g.txt", 1,
-     _EXISTS + "\ngzip: /ro/g.txt.gz: Read-only file system\n"),
-    ("gzip -d /ro/f.txt.gz", 2,
-     "gzip: /ro/f.txt already exists;\tnot overwritten\n"),
-    ("gzip -df /ro/f.txt.gz", 1, "gzip: /ro/f.txt: Read-only file system\n"),
-])
-def test_a_read_only_mount_refuses_gzip_at_the_write(line: str, code: int,
-                                                     stderr: str):
+@pytest.mark.parametrize(
+    "line,code,stderr",
+    [
+        ("gzip /ro/f.txt", 2, _EXISTS),
+        ("gzip -k /ro/f.txt", 2, _EXISTS),
+        (
+            "gzip -f /ro/f.txt",
+            1,
+            "gzip: /ro/f.txt.gz: Read-only file system\n",
+        ),
+        ("gzip /ro/g.txt", 1, "\ngzip: /ro/g.txt.gz: Read-only file system\n"),
+        (
+            "gzip /ro/f.txt /ro/g.txt",
+            1,
+            _EXISTS + "\ngzip: /ro/g.txt.gz: Read-only file system\n",
+        ),
+        (
+            "gzip -d /ro/f.txt.gz",
+            2,
+            "gzip: /ro/f.txt already exists;\tnot overwritten\n",
+        ),
+        (
+            "gzip -df /ro/f.txt.gz",
+            1,
+            "gzip: /ro/f.txt: Read-only file system\n",
+        ),
+    ],
+)
+def test_a_read_only_mount_refuses_gzip_at_the_write(
+    line: str, code: int, stderr: str
+):
     # Nothing refuses the command before it runs: the write of the
     # replacement file is what the mount refuses, in gzip's own voice,
     # and the operand it would have replaced is left in place. An output
@@ -108,17 +130,20 @@ def test_a_read_only_mount_refuses_gzip_at_the_write(line: str, code: int,
 
 @pytest.mark.asyncio
 async def test_a_dash_goes_to_stdout_while_files_compress_in_place():
-    ws = Workspace({"/data": (RAMVFS(), MountMode.WRITE)},
-                   mode=MountMode.WRITE)
+    ws = Workspace(
+        {"/data": (RAMVFS(), MountMode.WRITE)}, mode=MountMode.WRITE
+    )
     await ws.shell("tee /data/a.txt > /dev/null", stdin=b"file\n")
-    r = await ws.shell("cd /data && gzip - a.txt | gzip -dc; ls",
-                       stdin=b"hi\n")
+    r = await ws.shell(
+        "cd /data && gzip - a.txt | gzip -dc; ls", stdin=b"hi\n"
+    )
     assert await r.materialize_stdout() == b"hi\na.txt.gz\n"
 
 
 async def _with_link(line: str) -> tuple[Workspace, str, int]:
-    ws = Workspace({"/data": (RAMVFS(), MountMode.WRITE)},
-                   mode=MountMode.WRITE)
+    ws = Workspace(
+        {"/data": (RAMVFS(), MountMode.WRITE)}, mode=MountMode.WRITE
+    )
     await ws.shell("cd /data && printf 'hello\\n' > a.txt && ln -s a.txt al")
     r = await ws.shell(f"cd /data && {line}")
     return ws, (await r.materialize_stderr()).decode(), r.exit_code
@@ -128,17 +153,22 @@ async def _with_link(line: str) -> tuple[Workspace, str, int]:
 @pytest.mark.parametrize("line", ["gzip al", "gzip -k al", "gzip -q al"])
 async def test_compressing_in_place_refuses_a_link(line: str):
     ws, stderr, code = await _with_link(line)
-    assert (stderr, code) == ("gzip: al: Too many levels of symbolic links\n",
-                              1)
+    assert (stderr, code) == (
+        "gzip: al: Too many levels of symbolic links\n",
+        1,
+    )
     r = await ws.shell("cd /data && ls -F")
     assert await r.materialize_stdout() == b"a.txt\nal@\n"
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("line,listing", [
-    ("gzip -f al", b"a.txt\nal.gz\n"),
-    ("gzip -kf al", b"a.txt\nal@\nal.gz\n"),
-])
+@pytest.mark.parametrize(
+    "line,listing",
+    [
+        ("gzip -f al", b"a.txt\nal.gz\n"),
+        ("gzip -kf al", b"a.txt\nal@\nal.gz\n"),
+    ],
+)
 async def test_f_compresses_beside_the_link(line: str, listing: bytes):
     ws, stderr, code = await _with_link(line)
     r = await ws.shell("cd /data && ls -F && gunzip -c al.gz")
@@ -149,7 +179,8 @@ async def test_f_compresses_beside_the_link(line: str, listing: bytes):
 @pytest.mark.asyncio
 @pytest.mark.parametrize("skipped", [False, True])
 async def test_compression_skips_suffixed_streams_and_reports_late_errors(
-        skipped):
+    skipped,
+):
     reads = []
     writes = {}
     removed = []
@@ -169,14 +200,17 @@ async def test_compression_skips_suffixed_streams_and_reports_late_errors(
         removed.append(path.virtual)
 
     _, io = await compress_inputs(
-        [PathSpec.from_str_path(name),
-         PathSpec.from_str_path("/good")],
+        [PathSpec.from_str_path(name), PathSpec.from_str_path("/good")],
         read_bytes=read,
         write_bytes=write,
-        unlink=unlink)
+        unlink=unlink,
+    )
     assert io.exit_code == (0 if skipped else 1)
-    assert io.stderr == (b"gzip: /bad.gz already has .gz suffix -- unchanged\n"
-                         if skipped else b"\ngzip: /bad: Permission denied\n")
+    assert io.stderr == (
+        b"gzip: /bad.gz already has .gz suffix -- unchanged\n"
+        if skipped
+        else b"\ngzip: /bad: Permission denied\n"
+    )
     assert reads == ([name, "/good"] if skipped else [name, "continued"])
     assert removed == (["/good"] if skipped else [])
     assert set(writes) == ({"/good.gz"} if skipped else set())

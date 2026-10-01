@@ -82,5 +82,6 @@ def test_rekey_matches_mount_key():
     prefix = "/data"
     parent_key = mount_key(parent_original, prefix)
     child = "/data/sub/deep/y.txt"
-    assert rekey(parent_original, parent_key,
-                 child) == mount_key(child, prefix)
+    assert rekey(parent_original, parent_key, child) == mount_key(
+        child, prefix
+    )

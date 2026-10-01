@@ -17,14 +17,29 @@ from collections.abc import Generator, Iterator, Sequence
 from dataclasses import dataclass
 from typing import Any
 
-from mirage.policy import (Abandoned, Ask, Claimant, CommandContext, Deny,
-                           Explanation, HandOff, Occurrence, Pending,
-                           refusal_of, render_deny, render_pending)
+from mirage.policy import (
+    Abandoned,
+    Ask,
+    Claimant,
+    CommandContext,
+    Deny,
+    Explanation,
+    HandOff,
+    Occurrence,
+    Pending,
+    refusal_of,
+    render_deny,
+    render_pending,
+)
 from mirage.policy.match import Outcome, decide
 from mirage.shell import parse
-from mirage.shell.helpers import (get_parts, get_text,
-                                  input_substitution_redirect, literal_word,
-                                  split_env_prefix)
+from mirage.shell.helpers import (
+    get_parts,
+    get_text,
+    input_substitution_redirect,
+    literal_word,
+    split_env_prefix,
+)
 from mirage.shell.parse import opaque_reads, referenced_names
 from mirage.shell.types import NodeType
 from mirage.types import PathSpec
@@ -32,15 +47,26 @@ from mirage.utils.path import resolve_path
 from mirage.workspace.abort import MirageAbortError
 from mirage.workspace.mount import MountRegistry
 from mirage.workspace.mount.namespace import Namespace
-from mirage.workspace.node.admission import (Refused, admit, classified_words,
-                                             gate, is_pending_refusal,
-                                             redirect_paths,
-                                             statement_redirects)
+from mirage.workspace.node.admission import (
+    Refused,
+    admit,
+    classified_words,
+    gate,
+    is_pending_refusal,
+    redirect_paths,
+    statement_redirects,
+)
 from mirage.workspace.node.inner_lines import Word, inner_lines
-from mirage.workspace.node.occurrence import (Frame, argv_frame, body_frame,
-                                              line_frame, occurrence_in,
-                                              root_frame, segment_frames,
-                                              whole_occurrence)
+from mirage.workspace.node.occurrence import (
+    Frame,
+    argv_frame,
+    body_frame,
+    line_frame,
+    occurrence_in,
+    root_frame,
+    segment_frames,
+    whole_occurrence,
+)
 from mirage.workspace.session import SessionState
 from mirage.workspace.session.shell_dirs import home_dir
 
@@ -49,11 +75,13 @@ UNREADABLE = "cannot read {raw} before the runtime expands it"
 # Nodes that run their commands in a child shell: a ``cd`` inside one
 # applies to the rest of that child and is gone when it exits. A
 # pipeline is not here because it forks per segment, not once.
-FORK_SCOPES = frozenset({
-    NodeType.SUBSHELL,
-    NodeType.COMMAND_SUBSTITUTION,
-    NodeType.PROCESS_SUBSTITUTION,
-})
+FORK_SCOPES = frozenset(
+    {
+        NodeType.SUBSHELL,
+        NodeType.COMMAND_SUBSTITUTION,
+        NodeType.PROCESS_SUBSTITUTION,
+    }
+)
 
 
 def _unreadable(raw: str) -> Explanation:
@@ -65,18 +93,22 @@ def _unreadable(raw: str) -> Explanation:
     reason = UNREADABLE.format(raw=raw)
     deny = Deny(reason)
     err, code = render_deny(raw, deny)
-    return Explanation(command=raw,
-                       outcome=Outcome.DENY,
-                       reason=reason,
-                       exit_code=code,
-                       stderr=err.decode(),
-                       refusal=refusal_of(deny))
+    return Explanation(
+        command=raw,
+        outcome=Outcome.DENY,
+        reason=reason,
+        exit_code=code,
+        stderr=err.decode(),
+        refusal=refusal_of(deny),
+    )
 
 
-def _from_refusal(name: str,
-                  args: tuple[str, ...],
-                  refusal: Refused,
-                  missing: str | None = None) -> Explanation:
+def _from_refusal(
+    name: str,
+    args: tuple[str, ...],
+    refusal: Refused,
+    missing: str | None = None,
+) -> Explanation:
     """The explanation of a head word the session cannot see.
 
     Args:
@@ -93,12 +125,16 @@ def _from_refusal(name: str,
         source="commands.allow",
         exit_code=refusal.exit_code,
         stderr=refusal.stderr.decode() if missing is None else missing,
-        refusal=refusal.refusal)
+        refusal=refusal.refusal,
+    )
 
 
-def _explained(ctx: CommandContext, session: SessionState,
-               registry: MountRegistry,
-               asked: Deny | Ask | None) -> Explanation:
+def _explained(
+    ctx: CommandContext,
+    session: SessionState,
+    registry: MountRegistry,
+    asked: Deny | Ask | None,
+) -> Explanation:
     """One command's explanation, rendered from the same table the gate
     renders a refusal with.
 
@@ -115,32 +151,42 @@ def _explained(ctx: CommandContext, session: SessionState,
         asked (Deny | Ask | None): what the policy chain answered.
     """
     decision = decide(ctx, session.commands)
-    base = Explanation(command=ctx.command,
-                       argv=ctx.argv,
-                       outcome=decision.outcome,
-                       rule=decision.rule,
-                       reason=decision.rule.reason if decision.rule else "",
-                       source=decision.source,
-                       matched_path=decision.matched_path,
-                       paths=tuple(p.virtual for p in ctx.paths))
-    action: Deny | Pending | None = (registry.decisions.held(ctx, asked)
-                                     if isinstance(asked, Ask) else asked)
+    base = Explanation(
+        command=ctx.command,
+        argv=ctx.argv,
+        outcome=decision.outcome,
+        rule=decision.rule,
+        reason=decision.rule.reason if decision.rule else "",
+        source=decision.source,
+        matched_path=decision.matched_path,
+        paths=tuple(p.virtual for p in ctx.paths),
+    )
+    action: Deny | Pending | None = (
+        registry.decisions.held(ctx, asked)
+        if isinstance(asked, Ask)
+        else asked
+    )
     if action is None:
         return base
-    err, code = (render_pending(ctx.command, action) if isinstance(
-        action, Pending) else render_deny(ctx.command, action))
+    err, code = (
+        render_pending(ctx.command, action)
+        if isinstance(action, Pending)
+        else render_deny(ctx.command, action)
+    )
     reason = action.reason if base.reason == "" else base.reason
-    return Explanation(command=base.command,
-                       argv=base.argv,
-                       outcome=base.outcome,
-                       rule=base.rule,
-                       reason=reason,
-                       source=base.source,
-                       matched_path=base.matched_path,
-                       paths=base.paths,
-                       exit_code=code,
-                       stderr=err.decode(),
-                       refusal=refusal_of(action))
+    return Explanation(
+        command=base.command,
+        argv=base.argv,
+        outcome=base.outcome,
+        rule=base.rule,
+        reason=reason,
+        source=base.source,
+        matched_path=base.matched_path,
+        paths=base.paths,
+        exit_code=code,
+        stderr=err.decode(),
+        refusal=refusal_of(action),
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -224,51 +270,73 @@ async def _judge_words(
     head = words[0]
     if head.text is None:
         return [Judged(_unreadable(head.raw), occurrence, False)]
-    stated = stated and all(w.text is not None
-                            for w in [*words, *redirect_words])
+    stated = stated and all(
+        w.text is not None for w in [*words, *redirect_words]
+    )
     name = head.value
     args = [w.value for w in words[1:]]
     classified = classified_words(name, args, session, registry)
-    gated = await gate(name,
-                       args,
-                       classified[1:],
-                       session,
-                       registry,
-                       namespace,
-                       agent_id,
-                       redirects=redirect_paths(redirect_words, registry,
-                                                session.cwd),
-                       intrinsic=intrinsic)
+    gated = await gate(
+        name,
+        args,
+        classified[1:],
+        session,
+        registry,
+        namespace,
+        agent_id,
+        redirects=redirect_paths(redirect_words, registry, session.cwd),
+        intrinsic=intrinsic,
+    )
     if isinstance(gated, Refused):
         return [
-            Judged(_from_refusal(name, tuple(args), gated, missing),
-                   occurrence, stated, intrinsic)
+            Judged(
+                _from_refusal(name, tuple(args), gated, missing),
+                occurrence,
+                stated,
+                intrinsic,
+            )
         ]
     ctx, asked = gated
     out = [
-        Judged(_explained(ctx, session, registry, asked), occurrence, stated,
-               intrinsic)
+        Judged(
+            _explained(ctx, session, registry, asked),
+            occurrence,
+            stated,
+            intrinsic,
+        )
     ]
     for inner in inner_lines(name, words[1:]):
         if not inner.readable:
             continue
         if inner.line is not None:
-            out.extend(await _judge_line(parse(inner.line), session, registry,
-                                         namespace, agent_id,
-                                         line_frame(inner.line, occurrence),
-                                         stated and not inner.open))
+            out.extend(
+                await _judge_line(
+                    parse(inner.line),
+                    session,
+                    registry,
+                    namespace,
+                    agent_id,
+                    line_frame(inner.line, occurrence),
+                    stated and not inner.open,
+                )
+            )
         else:
             argv = list(inner.argv)
             within = whole_occurrence(
-                argv_frame([w.value for w in argv], occurrence))
-            out.extend(await _judge_words(argv,
-                                          within,
-                                          session,
-                                          registry,
-                                          namespace,
-                                          agent_id,
-                                          stated=stated and not inner.open,
-                                          missing=inner.missing))
+                argv_frame([w.value for w in argv], occurrence)
+            )
+            out.extend(
+                await _judge_words(
+                    argv,
+                    within,
+                    session,
+                    registry,
+                    namespace,
+                    agent_id,
+                    stated=stated and not inner.open,
+                    missing=inner.missing,
+                )
+            )
     return out
 
 
@@ -376,8 +444,9 @@ def _words_of(node: Any, home: str | None) -> list[Word]:
     return [Word(get_text(part), literal_word(part, home)) for part in parts]
 
 
-def _walk_substitution(tree: Any, session: SessionState, home: str | None,
-                       frame: Frame) -> Walk:
+def _walk_substitution(
+    tree: Any, session: SessionState, home: str | None, frame: Frame
+) -> Walk:
     """Walk a substitution as the evaluator parses and admits it.
 
     Args:
@@ -391,15 +460,20 @@ def _walk_substitution(tree: Any, session: SessionState, home: str | None,
         return (yield from _walk_node(tree, session, home, frame))
     target = redirect.target_node
     assert target is not None
-    yield Walked([Word("cat", "cat")],
-                 (Word(get_text(target), literal_word(target, home)), ),
-                 session, occurrence_in(tree, frame), True)
+    yield Walked(
+        [Word("cat", "cat")],
+        (Word(get_text(target), literal_word(target, home)),),
+        session,
+        occurrence_in(tree, frame),
+        True,
+    )
     yield from _walk_node(target, session, home, frame)
     return session
 
 
-def _walk_node(node: Any, session: SessionState, home: str | None,
-               frame: Frame) -> Walk:
+def _walk_node(
+    node: Any, session: SessionState, home: str | None, frame: Frame
+) -> Walk:
     """Every command under one node, in source order, each with the
     session it is judged in; returns the session the node leaves behind.
 
@@ -436,8 +510,12 @@ def _walk_node(node: Any, session: SessionState, home: str | None,
         walked = session
         words = _words_of(node, home)
         if words:
-            yield Walked(words, statement_redirects(node, home), session,
-                         occurrence_in(node, frame))
+            yield Walked(
+                words,
+                statement_redirects(node, home),
+                session,
+                occurrence_in(node, frame),
+            )
             walked = _after_cd(words, session)
         for child in node.children:
             # A substitution among the words runs in its own shell.
@@ -451,16 +529,22 @@ def _walk_node(node: Any, session: SessionState, home: str | None,
             # lexes touching pairs as one node whose subtree is not
             # what runs.
             for segment in segments:
-                yield from _walk_substitution(parse(segment.text), session,
-                                              home, segment)
+                yield from _walk_substitution(
+                    parse(segment.text), session, home, segment
+                )
             return session
         inner = body_frame(node, frame)
         if node.type == NodeType.COMMAND_SUBSTITUTION and inner is not None:
-            yield from _walk_substitution(parse(inner.text), session, home,
-                                          Frame(inner.text, 0, inner.parent))
+            yield from _walk_substitution(
+                parse(inner.text),
+                session,
+                home,
+                Frame(inner.text, 0, inner.parent),
+            )
             return session
-        yield from _walk_children(node, session, home,
-                                  frame if inner is None else inner)
+        yield from _walk_children(
+            node, session, home, frame if inner is None else inner
+        )
         return session
     if node.type == NodeType.PIPELINE:
         for child in node.children:
@@ -469,8 +553,9 @@ def _walk_node(node: Any, session: SessionState, home: str | None,
     return (yield from _walk_children(node, session, home, frame))
 
 
-def _walk_children(node: Any, session: SessionState, home: str | None,
-                   frame: Frame) -> Walk:
+def _walk_children(
+    node: Any, session: SessionState, home: str | None, frame: Frame
+) -> Walk:
     """One scope's children in order, threading the cwd between them;
     returns the session the scope ends in.
 
@@ -514,9 +599,9 @@ def _after_cd(words: list[Word], session: SessionState) -> SessionState:
     return session.fork(cwd=resolve_path(target, session.cwd))
 
 
-def _walked_line(ast: Any,
-                 session: SessionState,
-                 frame: Frame | None = None) -> Iterator[Walked]:
+def _walked_line(
+    ast: Any, session: SessionState, frame: Frame | None = None
+) -> Iterator[Walked]:
     """Every command of a line with its redirect targets, the session
     it is judged in and its place on the line.
 
@@ -654,14 +739,21 @@ async def prejudge_line(
     for item in _walked_line(ast, session, frame):
         if item.words[0].text is None:
             continue
-        judged.append((item, await _judge_words(item.words,
-                                                item.occurrence,
-                                                item.session,
-                                                registry,
-                                                namespace,
-                                                agent_id,
-                                                item.redirects,
-                                                intrinsic=item.intrinsic)))
+        judged.append(
+            (
+                item,
+                await _judge_words(
+                    item.words,
+                    item.occurrence,
+                    item.session,
+                    registry,
+                    namespace,
+                    agent_id,
+                    item.redirects,
+                    intrinsic=item.intrinsic,
+                ),
+            )
+        )
     if sum(len(explained) for _, explained in judged) < 2:
         return None
     for item, explained in judged:
@@ -692,7 +784,8 @@ async def prejudge_line(
                 # when the line ends: one question per run, not per
                 # pass.
                 claimant=Claimant(handed, one.occurrence),
-                intrinsic=one.intrinsic)
+                intrinsic=one.intrinsic,
+            )
             if isinstance(answered, Refused):
                 return answered
             # The host answered this one inline. The rest of the line
@@ -742,15 +835,17 @@ async def _verdict_refuses(
     claimant = Claimant(handed, judged.occurrence)
     args = list(expl.argv)
     classified = classified_words(expl.command, args, walked, registry)
-    gated = await gate(expl.command,
-                       args,
-                       classified[1:],
-                       walked,
-                       registry,
-                       namespace,
-                       agent_id,
-                       redirects=redirects,
-                       intrinsic=judged.intrinsic)
+    gated = await gate(
+        expl.command,
+        args,
+        classified[1:],
+        walked,
+        registry,
+        namespace,
+        agent_id,
+        redirects=redirects,
+        intrinsic=judged.intrinsic,
+    )
     if isinstance(gated, Refused):
         return True
     ctx, asked = gated
@@ -791,8 +886,9 @@ def _defines_function(node: Any) -> bool:
     return False
 
 
-def _sole_literal_command(node: Any, session: SessionState,
-                          frame: Frame) -> Walked | None:
+def _sole_literal_command(
+    node: Any, session: SessionState, frame: Frame
+) -> Walked | None:
     """The node's one fully-literal command, when nothing else in the
     node can read a name.
 
@@ -845,9 +941,15 @@ async def _command_refused(
         cancel (asyncio.Event | None): the run's kill channel.
     """
     walked = item.session
-    explained = await _judge_words(item.words, item.occurrence, walked,
-                                   registry, namespace, agent_id,
-                                   item.redirects)
+    explained = await _judge_words(
+        item.words,
+        item.occurrence,
+        walked,
+        registry,
+        namespace,
+        agent_id,
+        item.redirects,
+    )
     targets = redirect_paths(item.redirects, registry, walked.cwd)
     for index, judged in enumerate(explained):
         # A question about a spelling the runtime completes is the
@@ -858,9 +960,16 @@ async def _command_refused(
         # _judge_words lists the statement's own command first and
         # the lines it runs after it, so only the first explanation
         # is the command the redirects belong to.
-        if await _verdict_refuses(judged, targets if index == 0 else (),
-                                  walked, registry, namespace, agent_id,
-                                  handed, cancel):
+        if await _verdict_refuses(
+            judged,
+            targets if index == 0 else (),
+            walked,
+            registry,
+            namespace,
+            agent_id,
+            handed,
+            cancel,
+        ):
             return True
     return False
 
@@ -920,13 +1029,15 @@ async def unrefused_nodes(
         # with a rest word no reader can spell (``line_nodes``), so it
         # is never one literal command and its frame goes unread; its
         # gate reads it under the word that invoked it.
-        item = _sole_literal_command(node, session,
-                                     root_frame(node, handed.origin))
+        item = _sole_literal_command(
+            node, session, root_frame(node, handed.origin)
+        )
         if item is None:
             out.append(node)
             continue
-        if await _command_refused(item, registry, namespace, agent_id, handed,
-                                  cancel):
+        if await _command_refused(
+            item, registry, namespace, agent_id, handed, cancel
+        ):
             if position == 0:
                 return []
             continue
@@ -959,15 +1070,19 @@ async def _judge_line(
     """
     out: list[Judged] = []
     for item in _walked_line(ast, session, frame):
-        out.extend(await _judge_words(item.words,
-                                      item.occurrence,
-                                      item.session,
-                                      registry,
-                                      namespace,
-                                      agent_id,
-                                      item.redirects,
-                                      stated,
-                                      intrinsic=item.intrinsic))
+        out.extend(
+            await _judge_words(
+                item.words,
+                item.occurrence,
+                item.session,
+                registry,
+                namespace,
+                agent_id,
+                item.redirects,
+                stated,
+                intrinsic=item.intrinsic,
+            )
+        )
     return out
 
 
@@ -999,6 +1114,7 @@ async def explain_line(
         namespace (Namespace | None): the link table.
         agent_id (str): the agent the line is attributed to.
     """
-    judged = await _judge_line(ast, session, registry, namespace, agent_id,
-                               root_frame(ast, None))
+    judged = await _judge_line(
+        ast, session, registry, namespace, agent_id, root_frame(ast, None)
+    )
     return [one.explanation for one in judged]

@@ -57,7 +57,7 @@ def repo_relative(location: RepoLocation, start: str, operand: str) -> str:
         return ""
     if not absolute.startswith(prefix):
         raise OutsideRepositoryError(operand, root)
-    return absolute[len(prefix):]
+    return absolute[len(prefix) :]
 
 
 def under(path: str, directory: str) -> bool:

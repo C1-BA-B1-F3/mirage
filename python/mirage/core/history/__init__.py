@@ -14,8 +14,11 @@
 
 from mirage.core.history.read import read
 from mirage.core.history.readdir import readdir
-from mirage.core.history.render import (HISTSIZE, render_bash_history,
-                                        render_history_listing)
+from mirage.core.history.render import (
+    HISTSIZE,
+    render_bash_history,
+    render_history_listing,
+)
 from mirage.core.history.stat import stat
 
 __all__ = [

@@ -21,9 +21,11 @@ from mirage.utils.errors import enotempty
 from mirage.utils.path import norm
 
 
-async def rmdir(accessor: RedisAccessor,
-                path_spec: PathSpec,
-                index: IndexCacheStore = NULL_INDEX) -> None:
+async def rmdir(
+    accessor: RedisAccessor,
+    path_spec: PathSpec,
+    index: IndexCacheStore = NULL_INDEX,
+) -> None:
     path = path_spec.mount_path
     store = accessor.store
     p = norm(path)
@@ -33,7 +35,8 @@ async def rmdir(accessor: RedisAccessor,
     all_files = await store.list_files()
     all_dirs = await store.list_dirs()
     children = [
-        k for k in all_files + list(all_dirs)
+        k
+        for k in all_files + list(all_dirs)
         if k.startswith(prefix) and k != p
     ]
     if children:

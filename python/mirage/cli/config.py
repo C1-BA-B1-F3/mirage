@@ -17,12 +17,18 @@ from typing import Any
 import typer
 
 from mirage.cli.output import emit, fail
-from mirage.cli.settings import (get_config, list_config, resolved_config,
-                                 set_config, unset_config)
+from mirage.cli.settings import (
+    get_config,
+    list_config,
+    resolved_config,
+    set_config,
+    unset_config,
+)
 from mirage.server.daemon_config import ALLOWED_KEYS, DaemonConfigError
 
-app = typer.Typer(no_args_is_help=True,
-                  help="Read and write daemon settings in config.toml.")
+app = typer.Typer(
+    no_args_is_help=True, help="Read and write daemon settings in config.toml."
+)
 
 
 def _mask(key: str, value: str) -> str:
@@ -36,8 +42,9 @@ def _human_table(table: dict[str, Any]) -> str:
 
 
 def _human_resolved(table: dict[str, Any]) -> str:
-    return "\n".join(f"{k} = {e['value']}  ({e['origin']})"
-                     for k, e in table.items())
+    return "\n".join(
+        f"{k} = {e['value']}  ({e['origin']})" for k, e in table.items()
+    )
 
 
 def _list_resolved() -> None:
@@ -61,13 +68,14 @@ def _list_file() -> None:
         typer.echo(
             "warning: unknown [daemon] keys (daemon will refuse to "
             f"start): {', '.join(unknown)}",
-            err=True)
+            err=True,
+        )
     emit(table, human=_human_table)
 
 
-_RESOLVED_OPTION = typer.Option(False,
-                                "--resolved",
-                                help="show effective values and their origins")
+_RESOLVED_OPTION = typer.Option(
+    False, "--resolved", help="show effective values and their origins"
+)
 
 
 @app.command("list")
@@ -98,8 +106,8 @@ def get_cmd(key: str = typer.Argument(..., help="config key")) -> None:
 
 @app.command("set")
 def set_cmd(
-        key: str = typer.Argument(..., help="config key"),
-        value: str = typer.Argument(..., help="value to store"),
+    key: str = typer.Argument(..., help="config key"),
+    value: str = typer.Argument(..., help="value to store"),
 ) -> None:
     """Write a [daemon] key to config.toml.
 

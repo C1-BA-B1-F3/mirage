@@ -31,8 +31,9 @@ def command_name(command: str) -> str:
     return words[0] if words else ""
 
 
-def fork_for_call(session: SessionState, cwd: str | None,
-                  env: dict[str, str] | None) -> SessionState:
+def fork_for_call(
+    session: SessionState, cwd: str | None, env: dict[str, str] | None
+) -> SessionState:
     """Session a single ``shell`` call runs in.
 
     A per-call ``cwd``/``env`` runs in an ephemeral clone, matching a

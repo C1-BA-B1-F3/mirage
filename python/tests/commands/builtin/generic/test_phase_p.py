@@ -11,10 +11,9 @@ from mirage.types import PathSpec
 
 
 def _spec(path: str) -> PathSpec:
-    return PathSpec(vfs_path=(path).strip("/"),
-                    virtual=path,
-                    directory=path,
-                    resolved=True)
+    return PathSpec(
+        vfs_path=(path).strip("/"), virtual=path, directory=path, resolved=True
+    )
 
 
 def _make_backend(files: dict[str, bytes]):
@@ -48,27 +47,22 @@ async def _drain(stdout) -> bytes:
 @pytest.mark.asyncio
 async def test_gzip_compress_then_decompress_round_trip():
     rb, wb, un, _ = _make_backend({})
-    compressed_iter, _ = await gzip([],
-                                    read_bytes=rb,
-                                    write_bytes=wb,
-                                    unlink=un,
-                                    stdin=b"hello world\n")
+    compressed_iter, _ = await gzip(
+        [], read_bytes=rb, write_bytes=wb, unlink=un, stdin=b"hello world\n"
+    )
     compressed = await _drain(compressed_iter)
-    decompressed_iter, _ = await gunzip([],
-                                        read_bytes=rb,
-                                        write_bytes=wb,
-                                        unlink=un,
-                                        stdin=compressed)
+    decompressed_iter, _ = await gunzip(
+        [], read_bytes=rb, write_bytes=wb, unlink=un, stdin=compressed
+    )
     assert await _drain(decompressed_iter) == b"hello world\n"
 
 
 @pytest.mark.asyncio
 async def test_gzip_file_writes_gz_and_deletes_source():
     rb, wb, un, store = _make_backend({"/a.txt": b"payload data"})
-    _, io = await gzip([_spec("/a.txt")],
-                       read_bytes=rb,
-                       write_bytes=wb,
-                       unlink=un)
+    _, io = await gzip(
+        [_spec("/a.txt")], read_bytes=rb, write_bytes=wb, unlink=un
+    )
     assert "/a.txt.gz" in store
     assert "/a.txt" not in store
     assert "/a.txt.gz" in io.writes
@@ -77,11 +71,9 @@ async def test_gzip_file_writes_gz_and_deletes_source():
 @pytest.mark.asyncio
 async def test_gzip_file_keep_preserves_source():
     rb, wb, un, store = _make_backend({"/a.txt": b"payload"})
-    await gzip([_spec("/a.txt")],
-               read_bytes=rb,
-               write_bytes=wb,
-               unlink=un,
-               keep=True)
+    await gzip(
+        [_spec("/a.txt")], read_bytes=rb, write_bytes=wb, unlink=un, keep=True
+    )
     assert "/a.txt" in store
     assert "/a.txt.gz" in store
 
@@ -89,11 +81,13 @@ async def test_gzip_file_keep_preserves_source():
 @pytest.mark.asyncio
 async def test_gzip_to_stdout_does_not_modify_store():
     rb, wb, un, store = _make_backend({"/a.txt": b"payload"})
-    output, _ = await gzip([_spec("/a.txt")],
-                           read_bytes=rb,
-                           write_bytes=wb,
-                           unlink=un,
-                           to_stdout=True)
+    output, _ = await gzip(
+        [_spec("/a.txt")],
+        read_bytes=rb,
+        write_bytes=wb,
+        unlink=un,
+        to_stdout=True,
+    )
     assert "/a.txt" in store
     assert "/a.txt.gz" not in store
     assert gziplib.decompress(output) == b"payload"
@@ -113,11 +107,13 @@ async def test_gunzip_decompresses_file_and_removes_source():
 async def test_gunzip_test_only_verifies_integrity():
     raw = gziplib.compress(b"valid")
     rb, wb, un, store = _make_backend({"/a.gz": raw})
-    output, io = await gunzip([_spec("/a.gz")],
-                              read_bytes=rb,
-                              write_bytes=wb,
-                              unlink=un,
-                              test_only=True)
+    output, io = await gunzip(
+        [_spec("/a.gz")],
+        read_bytes=rb,
+        write_bytes=wb,
+        unlink=un,
+        test_only=True,
+    )
     assert output is None
     assert io.exit_code == 0
     assert "/a.gz" in store
@@ -127,11 +123,13 @@ async def test_gunzip_test_only_verifies_integrity():
 async def test_gunzip_to_stdout():
     raw = gziplib.compress(b"hi there")
     rb, wb, un, _ = _make_backend({"/a.gz": raw})
-    output, _ = await gunzip([_spec("/a.gz")],
-                             read_bytes=rb,
-                             write_bytes=wb,
-                             unlink=un,
-                             to_stdout=True)
+    output, _ = await gunzip(
+        [_spec("/a.gz")],
+        read_bytes=rb,
+        write_bytes=wb,
+        unlink=un,
+        to_stdout=True,
+    )
     assert await materialize(output) == b"hi there"
 
 
@@ -197,10 +195,12 @@ async def test_zgrep_ignore_case():
 
 @pytest.mark.asyncio
 async def test_zgrep_files_only_multi():
-    rb, _, _, _ = _make_backend({
-        "/a.gz": gziplib.compress(b"foo\n"),
-        "/b.gz": gziplib.compress(b"bar\n"),
-    })
+    rb, _, _, _ = _make_backend(
+        {
+            "/a.gz": gziplib.compress(b"foo\n"),
+            "/b.gz": gziplib.compress(b"bar\n"),
+        }
+    )
     output, _ = await zgrep(
         [_spec("/a.gz"), _spec("/b.gz")],
         ["foo"],

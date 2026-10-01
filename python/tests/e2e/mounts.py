@@ -31,7 +31,6 @@ SSH_ROOT = "/data"
 
 
 class MountState:
-
     def __init__(self, ptype: str, mount_path: str, idx: int) -> None:
         self.ptype = ptype
         self.mount_path = mount_path
@@ -47,10 +46,12 @@ class MountState:
 
 
 def _make_s3_vfs(bucket: str) -> S3VFS:
-    config = S3Config(bucket=bucket,
-                      region="us-east-1",
-                      aws_access_key_id="testing",
-                      aws_secret_access_key="testing")
+    config = S3Config(
+        bucket=bucket,
+        region="us-east-1",
+        aws_access_key_id="testing",
+        aws_secret_access_key="testing",
+    )
     return S3VFS(config)
 
 

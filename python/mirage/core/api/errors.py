@@ -26,5 +26,6 @@ class PaginationStalledError(RuntimeError):
 
     def __init__(self, cursor: str) -> None:
         super().__init__(
-            f"pagination did not advance: cursor {cursor!r} came back twice")
+            f"pagination did not advance: cursor {cursor!r} came back twice"
+        )
         self.cursor = cursor

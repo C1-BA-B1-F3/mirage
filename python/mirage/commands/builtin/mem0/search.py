@@ -46,23 +46,34 @@ def parse_flags(fl: FlagView, default_limit: int) -> SearchFlags:
 
 
 @command("search", vfs="mem0", spec=SPECS["search"])
-async def search(accessor: Mem0Accessor, paths: list[PathSpec],
-                 texts: list[str],
-                 opts: CommandOpts) -> tuple[ByteSource | None, IOResult]:
+async def search(
+    accessor: Mem0Accessor,
+    paths: list[PathSpec],
+    texts: list[str],
+    opts: CommandOpts,
+) -> tuple[ByteSource | None, IOResult]:
     if not texts:
         raise UsageError("search: query is required")
     query = texts[0]
-    parsed = parse_flags(FlagView(opts.flags, spec=SPECS["search"]),
-                         accessor.config.default_search_limit)
+    parsed = parse_flags(
+        FlagView(opts.flags, spec=SPECS["search"]),
+        accessor.config.default_search_limit,
+    )
     if parsed.method != "semantic":
         raise UsageError("search: only the 'semantic' method is supported")
     target_paths = default_paths(paths, opts.cwd)
     output = await search_resources(
-        IO.search, accessor, target_paths,
-        SearchQuery(query,
-                    options={
-                        "top_k": parsed.top_k,
-                        "method": parsed.method,
-                        "threshold": parsed.threshold
-                    }), opts.index)
+        IO.search,
+        accessor,
+        target_paths,
+        SearchQuery(
+            query,
+            options={
+                "top_k": parsed.top_k,
+                "method": parsed.method,
+                "threshold": parsed.threshold,
+            },
+        ),
+        opts.index,
+    )
     return output, IOResult()

@@ -59,15 +59,17 @@ def _file_sizes(root: Path, spec: PathSpec) -> Iterator[tuple[str, int]]:
             try:
                 info = full.lstat()
             except FileNotFoundError:
-                logger.debug("File vanished during disk traversal",
-                             exc_info=True)
+                logger.debug(
+                    "File vanished during disk traversal", exc_info=True
+                )
                 continue
             if stat.S_ISREG(info.st_mode):
                 yield "/" + full.relative_to(root).as_posix(), info.st_size
 
 
-def entries_sync(root: Path,
-                 spec: PathSpec) -> tuple[list[tuple[str, int]], int]:
+def entries_sync(
+    root: Path, spec: PathSpec
+) -> tuple[list[tuple[str, int]], int]:
     """Collect sorted file sizes and their total.
 
     Args:

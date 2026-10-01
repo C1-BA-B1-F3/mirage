@@ -31,22 +31,79 @@ class TokKind(StrEnum):
     OP = "OP"
 
 
-KEYWORDS = frozenset({
-    "BEGIN", "END", "function", "func", "break", "continue", "delete", "do",
-    "else", "exit", "for", "getline", "if", "in", "next", "nextfile", "print",
-    "printf", "return", "while"
-})
+KEYWORDS = frozenset(
+    {
+        "BEGIN",
+        "END",
+        "function",
+        "func",
+        "break",
+        "continue",
+        "delete",
+        "do",
+        "else",
+        "exit",
+        "for",
+        "getline",
+        "if",
+        "in",
+        "next",
+        "nextfile",
+        "print",
+        "printf",
+        "return",
+        "while",
+    }
+)
 
-BUILTIN_FUNCS = frozenset({
-    "atan2", "close", "cos", "exp", "fflush", "gsub", "index", "int", "length",
-    "log", "match", "rand", "sin", "split", "sprintf", "sqrt", "srand", "sub",
-    "substr", "system", "tolower", "toupper"
-})
+BUILTIN_FUNCS = frozenset(
+    {
+        "atan2",
+        "close",
+        "cos",
+        "exp",
+        "fflush",
+        "gsub",
+        "index",
+        "int",
+        "length",
+        "log",
+        "match",
+        "rand",
+        "sin",
+        "split",
+        "sprintf",
+        "sqrt",
+        "srand",
+        "sub",
+        "substr",
+        "system",
+        "tolower",
+        "toupper",
+    }
+)
 
-THREE_CHAR_OPS = ("**=", )
+THREE_CHAR_OPS = ("**=",)
 
-TWO_CHAR_OPS = ("+=", "-=", "*=", "/=", "%=", "^=", "==", "!=", "<=", ">=",
-                "&&", "||", "!~", "++", "--", ">>", "**")
+TWO_CHAR_OPS = (
+    "+=",
+    "-=",
+    "*=",
+    "/=",
+    "%=",
+    "^=",
+    "==",
+    "!=",
+    "<=",
+    ">=",
+    "&&",
+    "||",
+    "!~",
+    "++",
+    "--",
+    ">>",
+    "**",
+)
 
 ONE_CHAR_OPS = "{}()[],;+-*/%^!><|?:~$="
 
@@ -82,7 +139,6 @@ class Token:
 
 
 class Lexer:
-
     def __init__(self, src: str) -> None:
         self.src = src
         self.pos = 0
@@ -105,8 +161,12 @@ class Lexer:
         if not self.tokens:
             return False
         last = self.tokens[-1]
-        if last.kind in (TokKind.NUMBER, TokKind.STRING, TokKind.NAME,
-                         TokKind.ERE):
+        if last.kind in (
+            TokKind.NUMBER,
+            TokKind.STRING,
+            TokKind.NAME,
+            TokKind.ERE,
+        ):
             return True
         if last.kind is TokKind.BUILTIN:
             return True
@@ -134,8 +194,11 @@ class Lexer:
             esc = self.src[self.pos]
             if esc in OCTAL_DIGITS:
                 digits = ""
-                while (len(digits) < 3 and self.pos < len(self.src)
-                       and self.src[self.pos] in OCTAL_DIGITS):
+                while (
+                    len(digits) < 3
+                    and self.pos < len(self.src)
+                    and self.src[self.pos] in OCTAL_DIGITS
+                ):
                     digits += self.src[self.pos]
                     self.pos += 1
                 out.append(chr(int(digits, 8)))
@@ -184,19 +247,20 @@ class Lexer:
             if self.pos < len(self.src) and self.src[self.pos] in "+-":
                 self.pos += 1
             if self.pos < len(self.src) and self.src[self.pos] in DIGITS:
-                while self.pos < len(
-                        self.src) and self.src[self.pos] in DIGITS:
+                while (
+                    self.pos < len(self.src) and self.src[self.pos] in DIGITS
+                ):
                     self.pos += 1
             else:
                 self.pos = save
-        text = self.src[start:self.pos]
+        text = self.src[start : self.pos]
         return Token(TokKind.NUMBER, text, text)
 
     def read_word(self) -> Token:
         start = self.pos
         while self.pos < len(self.src) and self.src[self.pos] in WORD_CHARS:
             self.pos += 1
-        word = self.src[start:self.pos]
+        word = self.src[start : self.pos]
         if word in KEYWORDS:
             return Token(TokKind.KEYWORD, word, word)
         if word in BUILTIN_FUNCS:
@@ -250,8 +314,11 @@ class Lexer:
             if ch == "/" and not self.prev_ends_expression():
                 self.tokens.append(self.read_ere())
                 continue
-            if ch in DIGITS or (ch == "." and self.pos + 1 < len(self.src)
-                                and self.src[self.pos + 1] in DIGITS):
+            if ch in DIGITS or (
+                ch == "."
+                and self.pos + 1 < len(self.src)
+                and self.src[self.pos + 1] in DIGITS
+            ):
                 self.tokens.append(self.read_number())
                 continue
             if ch in WORD_START:

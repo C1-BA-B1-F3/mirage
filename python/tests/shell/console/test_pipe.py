@@ -36,8 +36,7 @@ async def test_writes_are_buffered_before_the_reader_takes_them():
 
 
 @pytest.mark.asyncio
-async def test_reader_close_releases_a_draining_writer_and_refuses_more_output(
-):
+async def test_reader_close_releases_a_draining_writer_and_refuses_more_output():
     pipe = PipeConsole()
     await asyncio.wait_for(pipe.emit(Channel.STDOUT, b"first"), 1)
     drain = asyncio.create_task(pipe.drain())

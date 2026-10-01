@@ -12,8 +12,11 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-from mirage.commands.cli.builtin.linear.util import (first_text, resolve_issue,
-                                                     resolve_project_id)
+from mirage.commands.cli.builtin.linear.util import (
+    first_text,
+    resolve_issue,
+    resolve_project_id,
+)
 from mirage.commands.cli.types import CLIInvocation
 from mirage.commands.spec.flag_view import FlagView
 from mirage.core.linear.client import get_issue, issue_update
@@ -24,20 +27,24 @@ from mirage.io.types import ByteSource, IOResult
 
 
 async def set_project(
-        inv: CLIInvocation[LinearConfig]
+    inv: CLIInvocation[LinearConfig],
 ) -> tuple[ByteSource | None, IOResult]:
     fl = FlagView(inv.flags)
-    issue_id = await resolve_issue(inv.config,
-                                   first_text(inv.texts, "issue key"))
+    issue_id = await resolve_issue(
+        inv.config, first_text(inv.texts, "issue key")
+    )
     project_id = fl.as_str("project")
     if not project_id:
         issue = await get_issue(inv.config, issue_id)
         team_id = (issue.get("team") or {}).get("id") or ""
-        project_id = await resolve_project_id(inv.config, team_id, None,
-                                              fl.as_str("project_name"))
-    updated = await issue_update(inv.config,
-                                 issue_id=issue_id,
-                                 title=None,
-                                 description=None,
-                                 project_id=project_id)
+        project_id = await resolve_project_id(
+            inv.config, team_id, None, fl.as_str("project_name")
+        )
+    updated = await issue_update(
+        inv.config,
+        issue_id=issue_id,
+        title=None,
+        description=None,
+        project_id=project_id,
+    )
     return yield_bytes(to_json_bytes(normalize_issue(updated))), IOResult()

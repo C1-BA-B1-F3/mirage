@@ -16,13 +16,17 @@ from functools import partial
 
 import pytest
 
-from mirage.commands.builtin.generic.rg import parse_flags
+from mirage.commands.builtin.generic.rg import parse_flags, walk_filter
 from mirage.commands.builtin.generic.rg import rg as generic_rg
-from mirage.commands.builtin.generic.rg import walk_filter
-from mirage.commands.builtin.rg_scan import (WalkFilter, loop_error_line,
-                                             on_other_mount, open_error_line,
-                                             os_error_text, walk_candidates,
-                                             walk_error_line)
+from mirage.commands.builtin.rg_scan import (
+    WalkFilter,
+    loop_error_line,
+    on_other_mount,
+    open_error_line,
+    os_error_text,
+    walk_candidates,
+    walk_error_line,
+)
 from mirage.commands.builtin.utils.wrap import to_pathspec
 from mirage.commands.config import CommandOpts
 from mirage.commands.spec import SPECS
@@ -82,19 +86,25 @@ async def rg(backend, path, pattern, **kwargs):
         dest = _DESTS.get(key)
         if dest is None or value is None or value is False:
             continue
-        flags[dest] = str(value) if isinstance(
-            value, int) and not isinstance(value, bool) else value
+        flags[dest] = (
+            str(value)
+            if isinstance(value, int) and not isinstance(value, bool)
+            else value
+        )
     if kwargs.get("file_type") is not None:
         flags["type"] = [kwargs["file_type"]]
     if kwargs.get("glob_pattern") is not None:
         flags["glob"] = [kwargs["glob_pattern"]]
     accessor = backend.accessor
-    out, io = await generic_rg([to_pathspec(path)], [pattern],
-                               CommandOpts(flags=flags),
-                               readdir=partial(readdir, accessor),
-                               stat=partial(stat, accessor),
-                               read_bytes=partial(read, accessor),
-                               read_stream=None)
+    out, io = await generic_rg(
+        [to_pathspec(path)],
+        [pattern],
+        CommandOpts(flags=flags),
+        readdir=partial(readdir, accessor),
+        stat=partial(stat, accessor),
+        read_bytes=partial(read, accessor),
+        read_stream=None,
+    )
     data = await materialize(out) if out is not None else b""
     if kwargs.get("warnings") is not None and io.stderr:
         stderr = await materialize(io.stderr)
@@ -111,7 +121,6 @@ def _walk(**flags) -> WalkFilter:
 
 
 class TestWalkFilter:
-
     def test_hidden_excluded(self):
         assert not _walk().admits_file(".hidden", ".hidden", None)
 
@@ -128,8 +137,9 @@ class TestWalkFilter:
         assert _walk(glob=["*.py"]).admits_file("file.py", "file.py", None)
 
     def test_glob_no_match(self):
-        assert not _walk(glob=["*.py"]).admits_file("file.txt", "file.txt",
-                                                    None)
+        assert not _walk(glob=["*.py"]).admits_file(
+            "file.txt", "file.txt", None
+        )
 
     def test_a_type_or_glob_keeps_a_hidden_file(self):
         # ripgrep 14.1.1: `rg -t txt` and `rg -g '*.txt'` search
@@ -155,15 +165,16 @@ class TestWalkFilter:
         assert _walk(binary=True).admits_file("m.gguf", "m.gguf", None)
         assert _walk(unrestricted=3).admits_file("m.gguf", "m.gguf", None)
         assert not _walk(text=True, no_text=True).admits_file(
-            "m.gguf", "m.gguf", None)
+            "m.gguf", "m.gguf", None
+        )
 
 
 class TestBasicMatching:
-
     @pytest.mark.anyio
     async def test_single_file_match(self, backend):
-        await _write(backend, "/tmp/a.txt",
-                     "hello world\nfoo bar\nhello again")
+        await _write(
+            backend, "/tmp/a.txt", "hello world\nfoo bar\nhello again"
+        )
         result = await rg(backend, "/tmp/a.txt", "hello")
         assert result == ["1:hello world", "3:hello again"]
 
@@ -175,7 +186,6 @@ class TestBasicMatching:
 
 
 class TestRecursive:
-
     @pytest.mark.anyio
     async def test_recursive_default(self, backend):
         await _mkdir(backend, "/tmp/sub")
@@ -202,7 +212,6 @@ class TestRecursive:
 
 
 class TestIgnoreCase:
-
     @pytest.mark.anyio
     async def test_ignore_case_matches(self, backend):
         await _write(backend, "/tmp/a.txt", "Hello World\nhello world\nHELLO")
@@ -217,7 +226,6 @@ class TestIgnoreCase:
 
 
 class TestInvert:
-
     @pytest.mark.anyio
     async def test_invert_match(self, backend):
         await _write(backend, "/tmp/a.txt", "hello\nworld\nhello again")
@@ -232,7 +240,6 @@ class TestInvert:
 
 
 class TestLineNumbers:
-
     @pytest.mark.anyio
     async def test_line_numbers_default_true(self, backend):
         await _write(backend, "/tmp/a.txt", "foo\nbar\nfoo baz")
@@ -247,7 +254,6 @@ class TestLineNumbers:
 
 
 class TestCountOnly:
-
     @pytest.mark.anyio
     async def test_count_only(self, backend):
         await _write(backend, "/tmp/a.txt", "foo\nbar\nfoo baz")
@@ -262,7 +268,6 @@ class TestCountOnly:
 
 
 class TestFilesOnly:
-
     @pytest.mark.anyio
     async def test_files_only_match(self, backend):
         await _write(backend, "/tmp/a.txt", "foo\nbar")
@@ -286,7 +291,6 @@ class TestFilesOnly:
 
 
 class TestFixedString:
-
     @pytest.mark.anyio
     async def test_fixed_string_dots(self, backend):
         await _write(backend, "/tmp/a.txt", "a.b\nacb\na*b")
@@ -301,7 +305,6 @@ class TestFixedString:
 
 
 class TestWholeWord:
-
     @pytest.mark.anyio
     async def test_whole_word_matches(self, backend):
         await _write(backend, "/tmp/a.txt", "foo\nfoobar\nfoo baz")
@@ -316,7 +319,6 @@ class TestWholeWord:
 
 
 class TestOnlyMatching:
-
     @pytest.mark.anyio
     async def test_only_matching(self, backend):
         await _write(backend, "/tmp/a.txt", "hello world\nfoo hello bar")
@@ -331,7 +333,6 @@ class TestOnlyMatching:
 
 
 class TestMaxCount:
-
     @pytest.mark.anyio
     async def test_max_count_limits(self, backend):
         await _write(backend, "/tmp/a.txt", "foo\nfoo\nfoo\nfoo")
@@ -346,7 +347,6 @@ class TestMaxCount:
 
 
 class TestFileType:
-
     @pytest.mark.anyio
     async def test_file_type_py(self, backend):
         await _mkdir(backend, "/tmp/src")
@@ -372,7 +372,6 @@ class TestFileType:
 
 
 class TestGlobPattern:
-
     @pytest.mark.anyio
     async def test_glob_pattern_match(self, backend):
         await _mkdir(backend, "/tmp/src")
@@ -391,7 +390,6 @@ class TestGlobPattern:
 
 
 class TestHidden:
-
     @pytest.mark.anyio
     async def test_hidden_files_excluded_by_default(self, backend):
         await _write(backend, "/tmp/.hidden.txt", "hello")
@@ -424,25 +422,20 @@ class TestHidden:
 
 
 class TestMixedFlags:
-
     @pytest.mark.anyio
     async def test_ignore_case_with_count(self, backend):
         await _write(backend, "/tmp/a.txt", "Hello\nhello\nHELLO\nworld")
-        result = await rg(backend,
-                          "/tmp/a.txt",
-                          "hello",
-                          ignore_case=True,
-                          count_only=True)
+        result = await rg(
+            backend, "/tmp/a.txt", "hello", ignore_case=True, count_only=True
+        )
         assert result == ["3"]
 
     @pytest.mark.anyio
     async def test_fixed_string_with_ignore_case(self, backend):
         await _write(backend, "/tmp/a.txt", "A.B\na.b\nacb")
-        result = await rg(backend,
-                          "/tmp/a.txt",
-                          "a.b",
-                          fixed_string=True,
-                          ignore_case=True)
+        result = await rg(
+            backend, "/tmp/a.txt", "a.b", fixed_string=True, ignore_case=True
+        )
         assert result == ["1:A.B", "2:a.b"]
 
     @pytest.mark.anyio
@@ -453,15 +446,13 @@ class TestMixedFlags:
 
 
 class TestWarnings:
-
     @pytest.mark.anyio
     async def test_warnings_on_missing_file(self, backend):
         # The path named the way the operand was typed.
         warnings = []
-        result = await rg(backend,
-                          "/tmp/nonexistent.txt",
-                          "foo",
-                          warnings=warnings)
+        result = await rg(
+            backend, "/tmp/nonexistent.txt", "foo", warnings=warnings
+        )
         assert result == []
         assert warnings == [
             "rg: /tmp/nonexistent.txt: IO error for operation on "
@@ -470,10 +461,9 @@ class TestWarnings:
 
     @pytest.mark.anyio
     async def test_warnings_none_does_not_error(self, backend):
-        result = await rg(backend,
-                          "/tmp/nonexistent.txt",
-                          "foo",
-                          warnings=None)
+        result = await rg(
+            backend, "/tmp/nonexistent.txt", "foo", warnings=None
+        )
         assert result == []
 
     @pytest.mark.anyio
@@ -500,56 +490,47 @@ class TestOnlyMatchingDirectoryWalk:
     async def test_every_match_on_the_line(self, backend):
         await _mkdir(backend, "/tmp/d")
         await _write(backend, "/tmp/d/x.txt", "a1b2c\n")
-        result = await rg(backend,
-                          "/tmp/d",
-                          "[0-9]",
-                          only_matching=True,
-                          line_numbers=False)
+        result = await rg(
+            backend, "/tmp/d", "[0-9]", only_matching=True, line_numbers=False
+        )
         assert result == ["/tmp/d/x.txt:1", "/tmp/d/x.txt:2"]
 
     @pytest.mark.anyio
     async def test_line_numbers_repeat_per_match(self, backend):
         await _mkdir(backend, "/tmp/d")
         await _write(backend, "/tmp/d/x.txt", "a1b2c\n")
-        result = await rg(backend,
-                          "/tmp/d",
-                          "[0-9]",
-                          only_matching=True,
-                          line_numbers=True)
+        result = await rg(
+            backend, "/tmp/d", "[0-9]", only_matching=True, line_numbers=True
+        )
         assert result == ["/tmp/d/x.txt:1:1", "/tmp/d/x.txt:1:2"]
 
     @pytest.mark.anyio
     async def test_empty_matches_print_under_the_label(self, backend):
         await _mkdir(backend, "/tmp/d")
         await _write(backend, "/tmp/d/y.txt", "ab\n")
-        result = await rg(backend,
-                          "/tmp/d",
-                          "[0-9]*",
-                          only_matching=True,
-                          line_numbers=False)
+        result = await rg(
+            backend, "/tmp/d", "[0-9]*", only_matching=True, line_numbers=False
+        )
         assert result == ["/tmp/d/y.txt:"] * 3
 
     @pytest.mark.anyio
     async def test_an_empty_match_right_after_a_match_is_skipped(
-            self, backend):
+        self, backend
+    ):
         await _mkdir(backend, "/tmp/d")
         await _write(backend, "/tmp/d/z.txt", "1a22b\n")
-        result = await rg(backend,
-                          "/tmp/d",
-                          "[0-9]*",
-                          only_matching=True,
-                          line_numbers=False)
+        result = await rg(
+            backend, "/tmp/d", "[0-9]*", only_matching=True, line_numbers=False
+        )
         assert result == ["/tmp/d/z.txt:1", "/tmp/d/z.txt:22", "/tmp/d/z.txt:"]
 
     @pytest.mark.anyio
     async def test_count_counts_every_match(self, backend):
         await _mkdir(backend, "/tmp/d")
         await _write(backend, "/tmp/d/y.txt", "ab\n")
-        result = await rg(backend,
-                          "/tmp/d",
-                          "[0-9]*",
-                          only_matching=True,
-                          count_only=True)
+        result = await rg(
+            backend, "/tmp/d", "[0-9]*", only_matching=True, count_only=True
+        )
         assert result == ["/tmp/d/y.txt:3"]
 
 
@@ -559,65 +540,61 @@ class TestRgByteOffsets:
     @pytest.mark.anyio
     async def test_single_file_prints_the_line_start_offset(self, backend):
         await _write(backend, "/tmp/f1", "abc\ndefabc\nabc abc\n")
-        result = await rg(backend,
-                          "/tmp/f1",
-                          "abc",
-                          line_numbers=False,
-                          byte_offsets=True)
+        result = await rg(
+            backend, "/tmp/f1", "abc", line_numbers=False, byte_offsets=True
+        )
         assert result == ["0:abc", "4:defabc", "11:abc abc"]
 
     @pytest.mark.anyio
     async def test_single_file_prints_the_match_offset_under_o(self, backend):
         await _write(backend, "/tmp/f1", "abc\ndefabc\nabc abc\n")
-        result = await rg(backend,
-                          "/tmp/f1",
-                          "abc",
-                          line_numbers=False,
-                          only_matching=True,
-                          byte_offsets=True)
+        result = await rg(
+            backend,
+            "/tmp/f1",
+            "abc",
+            line_numbers=False,
+            only_matching=True,
+            byte_offsets=True,
+        )
         assert result == ["0:abc", "7:abc", "11:abc", "15:abc"]
 
     @pytest.mark.anyio
     async def test_field_order_is_line_then_byte(self, backend):
         await _write(backend, "/tmp/f1", "abc\ndefabc\n")
-        result = await rg(backend,
-                          "/tmp/f1",
-                          "abc",
-                          line_numbers=True,
-                          byte_offsets=True)
+        result = await rg(
+            backend, "/tmp/f1", "abc", line_numbers=True, byte_offsets=True
+        )
         assert result == ["1:0:abc", "2:4:defabc"]
 
     @pytest.mark.anyio
     async def test_offsets_count_bytes_not_characters(self, backend):
         await _write(backend, "/tmp/f5", "café abc\nxéy abc\n")
-        result = await rg(backend,
-                          "/tmp/f5",
-                          "abc",
-                          line_numbers=False,
-                          only_matching=True,
-                          byte_offsets=True)
+        result = await rg(
+            backend,
+            "/tmp/f5",
+            "abc",
+            line_numbers=False,
+            only_matching=True,
+            byte_offsets=True,
+        )
         assert result == ["6:abc", "15:abc"]
 
     @pytest.mark.anyio
     async def test_walk_keeps_the_filename_ahead_of_the_fields(self, backend):
         await _mkdir(backend, "/tmp/d")
         await _write(backend, "/tmp/d/x.txt", "abc\ndefabc\n")
-        result = await rg(backend,
-                          "/tmp/d",
-                          "abc",
-                          line_numbers=True,
-                          byte_offsets=True)
+        result = await rg(
+            backend, "/tmp/d", "abc", line_numbers=True, byte_offsets=True
+        )
         assert result == ["/tmp/d/x.txt:1:0:abc", "/tmp/d/x.txt:2:4:defabc"]
 
     @pytest.mark.anyio
     async def test_a_count_carries_no_offset(self, backend):
         await _mkdir(backend, "/tmp/d")
         await _write(backend, "/tmp/d/x.txt", "abc\ndefabc\n")
-        result = await rg(backend,
-                          "/tmp/d",
-                          "abc",
-                          count_only=True,
-                          byte_offsets=True)
+        result = await rg(
+            backend, "/tmp/d", "abc", count_only=True, byte_offsets=True
+        )
         assert result == ["/tmp/d/x.txt:2"]
 
 
@@ -633,39 +610,47 @@ class TestRgFullReportsSelection:
         await _mkdir(backend, "/tmp/d")
         await _write(backend, "/tmp/d/y.txt", "ab\n")
         io = IOResult(exit_code=1)
-        result = await rg(backend,
-                          "/tmp/d",
-                          "[0-9]*",
-                          only_matching=True,
-                          line_numbers=False,
-                          io=io)
+        result = await rg(
+            backend,
+            "/tmp/d",
+            "[0-9]*",
+            only_matching=True,
+            line_numbers=False,
+            io=io,
+        )
         assert (result, io.exit_code) == (["/tmp/d/y.txt:"] * 3, 0)
 
     @pytest.mark.anyio
     async def test_directory_with_no_match_leaves_the_status_alone(
-            self, backend):
+        self, backend
+    ):
         await _mkdir(backend, "/tmp/d")
         await _write(backend, "/tmp/d/y.txt", "ab\n")
         io = IOResult(exit_code=1)
-        result = await rg(backend,
-                          "/tmp/d",
-                          "[0-9]",
-                          only_matching=True,
-                          line_numbers=False,
-                          io=io)
+        result = await rg(
+            backend,
+            "/tmp/d",
+            "[0-9]",
+            only_matching=True,
+            line_numbers=False,
+            io=io,
+        )
         assert (result, io.exit_code) == ([], 1)
 
     @pytest.mark.anyio
     async def test_single_file_of_empty_matches_reports_selection(
-            self, backend):
+        self, backend
+    ):
         await _write(backend, "/tmp/y.txt", "ab\n")
         io = IOResult(exit_code=1)
-        result = await rg(backend,
-                          "/tmp/y.txt",
-                          "[0-9]*",
-                          only_matching=True,
-                          line_numbers=False,
-                          io=io)
+        result = await rg(
+            backend,
+            "/tmp/y.txt",
+            "[0-9]*",
+            only_matching=True,
+            line_numbers=False,
+            io=io,
+        )
         assert (result, io.exit_code) == ([""] * 3, 0)
 
 
@@ -692,25 +677,31 @@ class TestRgSplitsOnNewlinesOnly:
 
     @pytest.mark.anyio
     async def test_carriage_return_counts_toward_the_byte_offset(
-            self, backend):
+        self, backend
+    ):
         await _write_bytes(backend, "/tmp/crlf.txt", b"a\r\nb\r\n")
-        result = await rg(backend,
-                          "/tmp/crlf.txt",
-                          "b",
-                          line_numbers=False,
-                          byte_offsets=True)
+        result = await rg(
+            backend,
+            "/tmp/crlf.txt",
+            "b",
+            line_numbers=False,
+            byte_offsets=True,
+        )
         assert result == ["3:b\r"]
 
     @pytest.mark.anyio
     async def test_the_terminator_does_not_open_a_last_empty_line(
-            self, backend):
+        self, backend
+    ):
         await _write_bytes(backend, "/tmp/ab.txt", b"a\nb\n")
-        result = await rg(backend,
-                          "/tmp/ab.txt",
-                          "zzz",
-                          invert=True,
-                          count_only=True,
-                          line_numbers=False)
+        result = await rg(
+            backend,
+            "/tmp/ab.txt",
+            "zzz",
+            invert=True,
+            count_only=True,
+            line_numbers=False,
+        )
         assert result == ["2"]
 
     @pytest.mark.anyio
@@ -738,21 +729,17 @@ class TestRgMaxCountZeroSelectsNothing:
     @pytest.mark.anyio
     async def test_single_file_counts_nothing(self, backend):
         await _write(backend, "/tmp/m.txt", "a\nab\nb\n")
-        result = await rg(backend,
-                          "/tmp/m.txt",
-                          "a",
-                          max_count=0,
-                          count_only=True)
+        result = await rg(
+            backend, "/tmp/m.txt", "a", max_count=0, count_only=True
+        )
         assert result == []
 
     @pytest.mark.anyio
     async def test_single_file_names_nothing(self, backend):
         await _write(backend, "/tmp/m.txt", "a\nab\nb\n")
-        result = await rg(backend,
-                          "/tmp/m.txt",
-                          "a",
-                          max_count=0,
-                          files_only=True)
+        result = await rg(
+            backend, "/tmp/m.txt", "a", max_count=0, files_only=True
+        )
         assert result == []
 
     @pytest.mark.anyio
@@ -775,34 +762,36 @@ class TestRgOnlyMatchingWithInvertPrintsLinesWhole:
     async def test_single_file_prints_the_line_whole(self, backend):
         await _write(backend, "/tmp/ov.txt", "abc\ndef\n")
         io = IOResult(exit_code=1)
-        result = await rg(backend,
-                          "/tmp/ov.txt",
-                          "abc",
-                          only_matching=True,
-                          invert=True,
-                          io=io)
+        result = await rg(
+            backend,
+            "/tmp/ov.txt",
+            "abc",
+            only_matching=True,
+            invert=True,
+            io=io,
+        )
         assert (result, io.exit_code) == (["2:def"], 0)
 
     @pytest.mark.anyio
     async def test_single_file_counts_no_matches(self, backend):
         await _write(backend, "/tmp/ov.txt", "abc\ndef\n")
-        result = await rg(backend,
-                          "/tmp/ov.txt",
-                          "abc",
-                          only_matching=True,
-                          invert=True,
-                          count_only=True)
+        result = await rg(
+            backend,
+            "/tmp/ov.txt",
+            "abc",
+            only_matching=True,
+            invert=True,
+            count_only=True,
+        )
         assert result == ["0"]
 
     @pytest.mark.anyio
     async def test_a_walk_prints_the_line_whole(self, backend):
         await _mkdir(backend, "/tmp/ovd")
         await _write(backend, "/tmp/ovd/x.txt", "abc\ndef\n")
-        result = await rg(backend,
-                          "/tmp/ovd",
-                          "abc",
-                          only_matching=True,
-                          invert=True)
+        result = await rg(
+            backend, "/tmp/ovd", "abc", only_matching=True, invert=True
+        )
         assert result == ["/tmp/ovd/x.txt:2:def"]
 
 
@@ -817,22 +806,22 @@ class TestRgOffsetsOverSmuggledBytes:
     @pytest.mark.anyio
     async def test_line_offset_counts_one_byte(self, backend):
         await _write_bytes(backend, "/tmp/inv.bin", b"\xff\na\n")
-        result = await rg(backend,
-                          "/tmp/inv.bin",
-                          "a",
-                          line_numbers=False,
-                          byte_offsets=True)
+        result = await rg(
+            backend, "/tmp/inv.bin", "a", line_numbers=False, byte_offsets=True
+        )
         assert result == ["2:a"]
 
     @pytest.mark.anyio
     async def test_match_offset_counts_one_byte(self, backend):
         await _write_bytes(backend, "/tmp/inv2.bin", b"\xffa\n")
-        result = await rg(backend,
-                          "/tmp/inv2.bin",
-                          "a",
-                          line_numbers=False,
-                          only_matching=True,
-                          byte_offsets=True)
+        result = await rg(
+            backend,
+            "/tmp/inv2.bin",
+            "a",
+            line_numbers=False,
+            only_matching=True,
+            byte_offsets=True,
+        )
         assert result == ["1:a"]
 
     @pytest.mark.anyio
@@ -840,12 +829,14 @@ class TestRgOffsetsOverSmuggledBytes:
         # section Q6 of the GNU truth file: the match on line one is at byte
         # 6, not at the character index 5, and line two's is at 15.
         await _write(backend, "/tmp/f5.txt", "café abc\nxéy abc\n")
-        result = await rg(backend,
-                          "/tmp/f5.txt",
-                          "abc",
-                          line_numbers=False,
-                          only_matching=True,
-                          byte_offsets=True)
+        result = await rg(
+            backend,
+            "/tmp/f5.txt",
+            "abc",
+            line_numbers=False,
+            only_matching=True,
+            byte_offsets=True,
+        )
         assert result == ["6:abc", "15:abc"]
 
     @pytest.mark.anyio
@@ -855,11 +846,13 @@ class TestRgOffsetsOverSmuggledBytes:
         # puts it back as itself, which is what ripgrep prints (measured
         # 14.1.1: `\377` reaches the terminal raw, never as U+FFFD).
         await _write_bytes(backend, "/tmp/inv3.bin", b"\xffa\n")
-        result = await rg(backend,
-                          "/tmp/inv3.bin",
-                          "a",
-                          line_numbers=False,
-                          byte_offsets=True)
+        result = await rg(
+            backend,
+            "/tmp/inv3.bin",
+            "a",
+            line_numbers=False,
+            byte_offsets=True,
+        )
         assert result == ["0:\udcffa"]
 
 
@@ -919,14 +912,17 @@ class TestFilesWithoutMatch:
     @pytest.mark.anyio
     async def test_lists_the_matchless_file(self, backend):
         await _write(backend, "/tmp/a.txt", "bar\nbaz")
-        assert await rg(backend, "/tmp/a.txt", "foo",
-                        files_without_match=True) == ["/tmp/a.txt"]
+        assert await rg(
+            backend, "/tmp/a.txt", "foo", files_without_match=True
+        ) == ["/tmp/a.txt"]
 
     @pytest.mark.anyio
     async def test_a_matching_file_is_not_listed(self, backend):
         await _write(backend, "/tmp/a.txt", "foo\nbar")
-        assert await rg(backend, "/tmp/a.txt", "foo",
-                        files_without_match=True) == []
+        assert (
+            await rg(backend, "/tmp/a.txt", "foo", files_without_match=True)
+            == []
+        )
 
     @pytest.mark.anyio
     async def test_walk_lists_only_the_matchless_files(self, backend):
@@ -941,25 +937,37 @@ class TestFilesWithoutMatch:
         # ripgrep 14.1.1: `--files-without-match -c` prints counts and
         # `-c --files-without-match` lists the matchless files.
         await _write(backend, "/tmp/a.txt", "foo\nfoo")
-        assert await rg(backend,
-                        "/tmp/a.txt",
-                        "foo",
-                        files_without_match=True,
-                        count_only=True) == ["2"]
-        assert await rg(backend,
-                        "/tmp/a.txt",
-                        "foo",
-                        count_only=True,
-                        files_without_match=True) == []
+        assert await rg(
+            backend,
+            "/tmp/a.txt",
+            "foo",
+            files_without_match=True,
+            count_only=True,
+        ) == ["2"]
+        assert (
+            await rg(
+                backend,
+                "/tmp/a.txt",
+                "foo",
+                count_only=True,
+                files_without_match=True,
+            )
+            == []
+        )
 
     @pytest.mark.anyio
     async def test_m0_lists_nothing(self, backend):
         await _write(backend, "/tmp/a.txt", "bar")
-        assert await rg(backend,
-                        "/tmp/a.txt",
-                        "foo",
-                        max_count=0,
-                        files_without_match=True) == []
+        assert (
+            await rg(
+                backend,
+                "/tmp/a.txt",
+                "foo",
+                max_count=0,
+                files_without_match=True,
+            )
+            == []
+        )
 
 
 class TestWalkContext:
@@ -976,19 +984,25 @@ class TestWalkContext:
         await _write(backend, "/tmp/w/a.txt", "x\nhit\ny\n")
         await _write(backend, "/tmp/w/b.txt", "hit\nz\n")
         assert await rg(backend, "/tmp/w", "hit", context_after=1) == [
-            "/tmp/w/a.txt:2:hit", "/tmp/w/a.txt-3-y", "--",
-            "/tmp/w/b.txt:1:hit", "/tmp/w/b.txt-2-z"
+            "/tmp/w/a.txt:2:hit",
+            "/tmp/w/a.txt-3-y",
+            "--",
+            "/tmp/w/b.txt:1:hit",
+            "/tmp/w/b.txt-2-z",
         ]
 
     @pytest.mark.anyio
     async def test_a_file_with_nothing_printed_adds_no_separator(
-            self, backend):
+        self, backend
+    ):
         await _mkdir(backend, "/tmp/w")
         await _write(backend, "/tmp/w/a.txt", "hit\n")
         await _write(backend, "/tmp/w/b.txt", "miss\n")
         await _write(backend, "/tmp/w/c.txt", "hit\n")
         assert await rg(backend, "/tmp/w", "hit", context_after=1) == [
-            "/tmp/w/a.txt:1:hit", "--", "/tmp/w/c.txt:1:hit"
+            "/tmp/w/a.txt:1:hit",
+            "--",
+            "/tmp/w/c.txt:1:hit",
         ]
 
     @pytest.mark.anyio
@@ -996,13 +1010,9 @@ class TestWalkContext:
         await _mkdir(backend, "/tmp/w")
         await _write(backend, "/tmp/w/a.txt", "hit\n")
         await _write(backend, "/tmp/w/b.txt", "hit\n")
-        assert await rg(backend,
-                        "/tmp/w",
-                        "hit",
-                        context_after=1,
-                        count_only=True) == [
-                            "/tmp/w/a.txt:1", "/tmp/w/b.txt:1"
-                        ]
+        assert await rg(
+            backend, "/tmp/w", "hit", context_after=1, count_only=True
+        ) == ["/tmp/w/a.txt:1", "/tmp/w/b.txt:1"]
 
 
 def _scope(virtual: str = "/data") -> PathSpec:
@@ -1010,31 +1020,44 @@ def _scope(virtual: str = "/data") -> PathSpec:
 
 
 def _candidate(virtual: str) -> PathSpec:
-    return PathSpec(vfs_path=virtual.removeprefix("/data/"),
-                    virtual=virtual,
-                    directory="",
-                    resolved=True)
+    return PathSpec(
+        vfs_path=virtual.removeprefix("/data/"),
+        virtual=virtual,
+        directory="",
+        resolved=True,
+    )
 
 
 class TestWalkCandidates:
     """Narrowed candidates pass the filters the walk they replace applies."""
 
     def test_drops_dotfiles_below_the_scope(self):
-        kept = walk_candidates([
-            _candidate("/data/.env"),
-            _candidate("/data/.git/config"),
-            _candidate("/data/a.txt")
-        ], [_scope()], _walk(), "/")
+        kept = walk_candidates(
+            [
+                _candidate("/data/.env"),
+                _candidate("/data/.git/config"),
+                _candidate("/data/a.txt"),
+            ],
+            [_scope()],
+            _walk(),
+            "/",
+        )
         assert [p.virtual for p in kept] == ["/data/a.txt"]
 
     def test_hidden_flag_keeps_dotfiles(self):
         paths = [_candidate("/data/.env"), _candidate("/data/a.txt")]
-        assert walk_candidates(paths, [_scope()], _walk(hidden=True),
-                               "/") == paths
+        assert (
+            walk_candidates(paths, [_scope()], _walk(hidden=True), "/")
+            == paths
+        )
 
     def test_ignores_dots_in_the_scope_itself(self):
-        kept = walk_candidates([_candidate("/data/.cfg/a.txt")],
-                               [_scope("/data/.cfg")], _walk(), "/")
+        kept = walk_candidates(
+            [_candidate("/data/.cfg/a.txt")],
+            [_scope("/data/.cfg")],
+            _walk(),
+            "/",
+        )
         assert [p.virtual for p in kept] == ["/data/.cfg/a.txt"]
 
     def test_applies_type_and_glob_to_the_file(self):
@@ -1072,51 +1095,67 @@ class TestNamedOperandsAreNeverFiltered:
         await _mkdir(backend, "/tmp/w")
         await _write(backend, "/tmp/w/in", "b\n")
         await _write(backend, "/tmp/w/.hid.rs", "b\n")
-        assert await rg(backend, "/tmp/w", "b",
-                        file_type="rust") == ["/tmp/w/.hid.rs:1:b"]
+        assert await rg(backend, "/tmp/w", "b", file_type="rust") == [
+            "/tmp/w/.hid.rs:1:b"
+        ]
 
 
 def test_walk_candidates_prunes_below_the_longest_matching_scope():
     scopes = [_scope(), _scope("/data/.cfg")]
     kept = walk_candidates(
-        [_candidate("/data/.cfg/a.txt"),
-         _candidate("/data/.cfg/.secret")], scopes, _walk(), "/")
+        [_candidate("/data/.cfg/a.txt"), _candidate("/data/.cfg/.secret")],
+        scopes,
+        _walk(),
+        "/",
+    )
     assert [p.virtual for p in kept] == ["/data/.cfg/a.txt"]
 
 
 def test_os_error_text_numbers_what_the_vocabulary_names():
     # Rust's io::Error display: the strerror, then Linux's errno. A failure
     # the vocabulary cannot number keeps its own words.
-    assert os_error_text(
-        FileNotFoundError("x")) == "No such file or directory (os error 2)"
-    assert os_error_text(
-        RuntimeError("Server disconnected")) == ("Server disconnected")
+    assert (
+        os_error_text(FileNotFoundError("x"))
+        == "No such file or directory (os error 2)"
+    )
+    assert os_error_text(RuntimeError("Server disconnected")) == (
+        "Server disconnected"
+    )
 
 
 def test_walker_and_searcher_lines_take_ripgreps_two_shapes():
     # ripgrep 14.1.1: the walker names the path twice, the searcher once.
     assert walk_error_line("nope", FileNotFoundError("nope")) == (
         "rg: nope: IO error for operation on nope: "
-        "No such file or directory (os error 2)")
+        "No such file or directory (os error 2)"
+    )
     assert open_error_line("locked", PermissionError("locked")) == (
-        "rg: locked: Permission denied (os error 13)")
+        "rg: locked: Permission denied (os error 13)"
+    )
 
 
 def test_a_loop_line_names_the_link_then_the_ancestor_it_leads_to():
     # ripgrep 14.1.1's ignore crate, for a link -L follows back up the walk.
     assert loop_error_line("s/sub/up", "s") == (
-        "rg: File system loop found: s/sub/up points to an ancestor s")
+        "rg: File system loop found: s/sub/up points to an ancestor s"
+    )
 
 
-@pytest.mark.parametrize("path, crosses", [
-    ("/data/s", False),
-    ("/data/m", True),
-    ("/ro/sub", True),
-])
+@pytest.mark.parametrize(
+    "path, crosses",
+    [
+        ("/data/s", False),
+        ("/data/m", True),
+        ("/ro/sub", True),
+    ],
+)
 def test_one_file_system_keeps_the_walk_on_the_operands_mount(
-        path: str, crosses: bool):
+    path: str, crosses: bool
+):
     # A directory crosses by being a mount root, a link by leading onto
     # another mount: both are a different mount root than the operand's.
     roots = {"/data/m": "/data/m/", "/ro/sub": "/ro/"}
-    assert on_other_mount(lambda p: roots.get(p, "/data/"), "/data/",
-                          path) is crosses
+    assert (
+        on_other_mount(lambda p: roots.get(p, "/data/"), "/data/", path)
+        is crosses
+    )

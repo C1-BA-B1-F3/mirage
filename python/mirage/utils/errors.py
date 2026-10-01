@@ -86,12 +86,14 @@ class GzipDataError(ValueError):
             member's header.
     """
 
-    def __init__(self,
-                 reasons: tuple[str, ...],
-                 fatal: bool,
-                 exit_code: int = 1,
-                 keeps_output: bool = False,
-                 first_header: bool = False) -> None:
+    def __init__(
+        self,
+        reasons: tuple[str, ...],
+        fatal: bool,
+        exit_code: int = 1,
+        keeps_output: bool = False,
+        first_header: bool = False,
+    ) -> None:
         super().__init__("\n".join(reasons))
         self.reasons = reasons
         self.fatal = fatal
@@ -105,8 +107,9 @@ class GzipDataError(ValueError):
         Args:
             label (str): the input as the diagnostic names it.
         """
-        return "".join(f"{reason.replace('{}', label)}\n"
-                       for reason in self.reasons)
+        return "".join(
+            f"{reason.replace('{}', label)}\n" for reason in self.reasons
+        )
 
 
 class FileTooLargeError(OSError):
@@ -186,9 +189,12 @@ WALK_ERRORS: tuple[type[Exception], ...] = (*FS_ERRORS, ValueError)
 # WALK_ERRORS, because a permission or missing-capability error is not
 # absence, and mapping it to one would report a path that exists as
 # missing. Mirrors TS isMissError.
-MISS_ERRORS: tuple[type[Exception],
-                   ...] = (FileNotFoundError, NotADirectoryError,
-                           IsADirectoryError, ValueError)
+MISS_ERRORS: tuple[type[Exception], ...] = (
+    FileNotFoundError,
+    NotADirectoryError,
+    IsADirectoryError,
+    ValueError,
+)
 
 
 def _virtual_of(path: str | PathSpec) -> str:
@@ -211,8 +217,9 @@ def walk_refusal(path: PathSpec) -> DotWalkError:
     """
     if path.walk_error == "ELOOP":
         return DotWalkLoop(errno.ELOOP, ELOOP_STRERROR, path.raw_path)
-    return DotWalkMissing(errno.ENOENT, "No such file or directory",
-                          path.raw_path)
+    return DotWalkMissing(
+        errno.ENOENT, "No such file or directory", path.raw_path
+    )
 
 
 def efbig(path: str | PathSpec) -> FileTooLargeError:
@@ -289,9 +296,12 @@ def eloop(path: str | PathSpec) -> DotWalkLoop:
     return DotWalkLoop(errno.ELOOP, ELOOP_STRERROR, _virtual_of(path))
 
 
-async def readdir_error(path: str | PathSpec, key: str,
-                        is_file: Callable[[str], Awaitable[bool]],
-                        is_dir: Callable[[str], Awaitable[bool]]) -> OSError:
+async def readdir_error(
+    path: str | PathSpec,
+    key: str,
+    is_file: Callable[[str], Awaitable[bool]],
+    is_dir: Callable[[str], Awaitable[bool]],
+) -> OSError:
     """The errno a failed directory listing should report.
 
     ``opendir`` reports ENOTDIR only when a component of the path exists and
@@ -339,9 +349,12 @@ async def readdir_error(path: str | PathSpec, key: str,
     return enoent(path)
 
 
-async def listing_error(path: str | PathSpec, key: str,
-                        is_file: Callable[[str], Awaitable[bool]],
-                        is_dir: Callable[[str], Awaitable[bool]]) -> OSError:
+async def listing_error(
+    path: str | PathSpec,
+    key: str,
+    is_file: Callable[[str], Awaitable[bool]],
+    is_dir: Callable[[str], Awaitable[bool]],
+) -> OSError:
     """``readdir_error`` for a store that cannot hold an orphan.
 
     An object store's key implies every prefix of it, and a hierarchy the
@@ -371,8 +384,9 @@ async def listing_error(path: str | PathSpec, key: str,
     return await readdir_error(path, key, is_file, is_dir)
 
 
-def enotsup(vfs: str, op_name: str,
-            path: str | PathSpec) -> OperationNotSupportedError:
+def enotsup(
+    vfs: str, op_name: str, path: str | PathSpec
+) -> OperationNotSupportedError:
     """Missing-capability error for an op a backend does not register.
 
     ``filename`` carries the virtual path so ``format_fs_error`` reports
@@ -384,9 +398,9 @@ def enotsup(vfs: str, op_name: str,
         op_name (str): The unresolvable op (e.g. ``unlink``).
         path (object): The operand; ``virtual`` is the reported spelling.
     """
-    return OperationNotSupportedError(errno.ENOTSUP,
-                                      f"{vfs}: no op {op_name!r}",
-                                      _virtual_of(path))
+    return OperationNotSupportedError(
+        errno.ENOTSUP, f"{vfs}: no op {op_name!r}", _virtual_of(path)
+    )
 
 
 def fs_strerror(exc: BaseException) -> str | None:
@@ -455,9 +469,11 @@ def _segments(path: str) -> list[str]:
 # The failures that happen after the open, which GNU words as the read
 # step: a directory opens and then refuses the read, and the backend
 # contract raises the other two for a read it will not serve.
-READ_FAILURES: tuple[type[OSError],
-                     ...] = (IsADirectoryError, FileTooLargeError,
-                             BadDescriptorError)
+READ_FAILURES: tuple[type[OSError], ...] = (
+    IsADirectoryError,
+    FileTooLargeError,
+    BadDescriptorError,
+)
 
 _CANNOT_OPEN = "cannot open {quoted} for reading: {strerror}"
 
@@ -477,16 +493,24 @@ FAILURE_WORDING: dict[str, tuple[str | None, str | None]] = {
     "csplit": (_CANNOT_OPEN, None),
     "fmt": (_CANNOT_OPEN, None),
     "head": (_CANNOT_OPEN, "error reading {quoted}: {strerror}"),
-    "sed":
-    ("can't read {bare}: {strerror}", "read error on {bare}: {strerror}"),
+    "sed": (
+        "can't read {bare}: {strerror}",
+        "read error on {bare}: {strerror}",
+    ),
     "split": (_CANNOT_OPEN, None),
-    "stat":
-    ("cannot statx {quoted}: {strerror}", "cannot statx {quoted}: {strerror}"),
-    "tac": ("failed to open {quoted} for reading: {strerror}",
-            "{shown}: read error: {strerror}"),
+    "stat": (
+        "cannot statx {quoted}: {strerror}",
+        "cannot statx {quoted}: {strerror}",
+    ),
+    "tac": (
+        "failed to open {quoted} for reading: {strerror}",
+        "{shown}: read error: {strerror}",
+    ),
     "tail": (_CANNOT_OPEN, "error reading {quoted}: {strerror}"),
-    "truncate": ("cannot open {quoted} for writing: {strerror}",
-                 "cannot open {quoted} for writing: {strerror}"),
+    "truncate": (
+        "cannot open {quoted} for writing: {strerror}",
+        "cannot open {quoted} for writing: {strerror}",
+    ),
     "tsort": (None, "{shown}: read error: {strerror}"),
     "uniq": (None, "error reading {quoted}: {strerror}"),
 }
@@ -515,8 +539,9 @@ def _step_wording(cmd_name: str, label: str, exc: BaseException) -> str | None:
     return wording[1] if isinstance(exc, READ_FAILURES) else wording[0]
 
 
-def fs_error_line(cmd_name: str, path: str | PathSpec,
-                  exc: BaseException) -> str:
+def fs_error_line(
+    cmd_name: str, path: str | PathSpec, exc: BaseException
+) -> str:
     """GNU coreutils stderr line for one failed path operand.
 
     Produces ``<cmd>: <path>: <strerror>``, byte-identical with the
@@ -541,10 +566,12 @@ def fs_error_line(cmd_name: str, path: str | PathSpec,
     strerror = fs_strerror(exc)
     template = _step_wording(cmd_name, label, exc)
     if template is not None and strerror is not None:
-        line = template.format(quoted=shell_quote_always(label),
-                               shown=shell_quote(label),
-                               bare=label,
-                               strerror=strerror)
+        line = template.format(
+            quoted=shell_quote_always(label),
+            shown=shell_quote(label),
+            bare=label,
+            strerror=strerror,
+        )
         return f"{cmd_name}: {line}\n"
     if quotes_operands(cmd_name):
         label = shell_quote(label)
@@ -553,8 +580,9 @@ def fs_error_line(cmd_name: str, path: str | PathSpec,
     return f"{cmd_name}: {label}\n"
 
 
-def revoice_fs_error_line(line: str, from_cmd: str, cmd_name: str,
-                          operand: str | PathSpec) -> str:
+def revoice_fs_error_line(
+    line: str, from_cmd: str, cmd_name: str, operand: str | PathSpec
+) -> str:
     """Re-say another command's failed-operand line in `cmd_name`'s voice.
 
     A command that reads its operands through another one (the
@@ -582,12 +610,12 @@ def revoice_fs_error_line(line: str, from_cmd: str, cmd_name: str,
         if fs_error_line(from_cmd, operand, exc) == f"{line}\n":
             return fs_error_line(cmd_name, operand, exc).removesuffix("\n")
         break
-    return f"{cmd_name}: {line[len(prefix):]}"
+    return f"{cmd_name}: {line[len(prefix) :]}"
 
 
-def format_fs_error(cmd_name: str,
-                    exc: Exception,
-                    paths: list[PathSpec] | None = None) -> bytes:
+def format_fs_error(
+    cmd_name: str, exc: Exception, paths: list[PathSpec] | None = None
+) -> bytes:
     """Format a thrown command error as a GNU coreutils stderr line.
 
     The chokepoint variant of ``fs_error_line`` for callers that only hold

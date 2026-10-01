@@ -20,9 +20,10 @@ from mirage.workspace.executor.command.flags import parse_flags
 
 
 def _view(argv: list[str]) -> FlagView:
-    return FlagView(parse_flags(argv, SPEC, "trello card update",
-                                "/").flag_kwargs,
-                    spec=SPEC)
+    return FlagView(
+        parse_flags(argv, SPEC, "trello card update", "/").flag_kwargs,
+        spec=SPEC,
+    )
 
 
 def test_file_flag_reads_the_promoted_path():
@@ -44,13 +45,16 @@ def test_file_flag_keeps_the_mount_relative_path():
     which only survives if the promotion hands back the executor's own
     scoped spec rather than a synthesized one.
     """
-    scoped = PathSpec(virtual="/board/w/x.json",
-                      directory="/board/w/",
-                      vfs_path="w/x.json",
-                      raw_path="/board/w/x.json",
-                      resolved=True)
-    parsed = parse_flags(["--desc_file", scoped], SPEC, "trello card update",
-                         "/")
+    scoped = PathSpec(
+        virtual="/board/w/x.json",
+        directory="/board/w/",
+        vfs_path="w/x.json",
+        raw_path="/board/w/x.json",
+        resolved=True,
+    )
+    parsed = parse_flags(
+        ["--desc_file", scoped], SPEC, "trello card update", "/"
+    )
     spec = file_operand(FlagView(parsed.flag_kwargs, spec=SPEC), "desc_file")
     assert spec is not None
     assert spec.vfs_path == "w/x.json"

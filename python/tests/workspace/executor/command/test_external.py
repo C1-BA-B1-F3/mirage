@@ -39,7 +39,7 @@ from mirage.workspace.session import SessionState
 
 class ProcessProbe(Runtime, ProcessExecutorMixin):
     name = "probe"
-    captures = (EXTERNAL_COMMANDS, )
+    captures = (EXTERNAL_COMMANDS,)
 
     def __init__(self, **options):
         super().__init__(**options)
@@ -47,9 +47,11 @@ class ProcessProbe(Runtime, ProcessExecutorMixin):
 
     async def run_process(self, request: ProcessExecution) -> RunResult:
         self.requests.append(request)
-        return RunResult(stdout=request.stdin or b"GPU ready\nother\n",
-                         stderr=None,
-                         exit_code=0)
+        return RunResult(
+            stdout=request.stdin or b"GPU ready\nother\n",
+            stderr=None,
+            exit_code=0,
+        )
 
 
 class DelayedProcessProbe(ProcessProbe):
@@ -77,15 +79,16 @@ async def workspace(*args, **kwargs):
 @pytest.mark.asyncio
 async def test_external_fallback_preserves_vfs_pipes_and_redirects():
     probe = ProcessProbe()
-    async with workspace({"/": RAMVFS()},
-                         mode=MountMode.EXEC,
-                         runtimes=[probe]) as ws:
+    async with workspace(
+        {"/": RAMVFS()}, mode=MountMode.EXEC, runtimes=[probe]
+    ) as ws:
         result = await ws.shell(
-            "printf 'GPU ready\nother\n' | native-tool | grep GPU > /out")
+            "printf 'GPU ready\nother\n' | native-tool | grep GPU > /out"
+        )
         assert result.exit_code == 0
         assert await result.stdout_str() == ""
         assert await (await ws.shell("cat /out")).stdout_str() == "GPU ready\n"
-        assert probe.requests[0].argv == ("native-tool", )
+        assert probe.requests[0].argv == ("native-tool",)
         assert probe.requests[0].stdin == b"GPU ready\nother\n"
         assert len(probe.requests) == 1
 
@@ -93,16 +96,24 @@ async def test_external_fallback_preserves_vfs_pipes_and_redirects():
 @pytest.mark.asyncio
 async def test_native_argv_preserves_empty_words_and_interpreter_options():
     probe = ProcessProbe(captures=("python3", EXTERNAL_COMMANDS))
-    async with workspace({"/work": RAMVFS()},
-                         mode=MountMode.EXEC,
-                         runtimes=[probe]) as ws:
+    async with workspace(
+        {"/work": RAMVFS()}, mode=MountMode.EXEC, runtimes=[probe]
+    ) as ws:
         await ws.shell("cd /work")
         result = await ws.shell(
-            "TOKEN=one python3 -c 'print(1)' -u 'a b' '$(echo literal)' ''")
+            "TOKEN=one python3 -c 'print(1)' -u 'a b' '$(echo literal)' ''"
+        )
         assert result.exit_code == 0
         request = probe.requests[0]
-        assert request.argv == ("python3", "-c", "print(1)", "-u", "a b",
-                                "$(echo literal)", "")
+        assert request.argv == (
+            "python3",
+            "-c",
+            "print(1)",
+            "-u",
+            "a b",
+            "$(echo literal)",
+            "",
+        )
         assert request.cwd.virtual == "/work"
         assert request.env["TOKEN"] == "one"
         await ws.shell("native-tool")
@@ -112,14 +123,18 @@ async def test_native_argv_preserves_empty_words_and_interpreter_options():
 @pytest.mark.asyncio
 async def test_external_globs_expand_against_the_workspace():
     probe = ProcessProbe()
-    async with workspace({"/work": RAMVFS()},
-                         mode=MountMode.EXEC,
-                         runtimes=[probe]) as ws:
+    async with workspace(
+        {"/work": RAMVFS()}, mode=MountMode.EXEC, runtimes=[probe]
+    ) as ws:
         await ws.shell("touch /work/a.txt /work/b.txt")
         result = await ws.shell("native-tool /work/*.txt '/work/*.txt'")
         assert result.exit_code == 0
-        assert probe.requests[0].argv == ("native-tool", "/work/a.txt",
-                                          "/work/b.txt", "/work/*.txt")
+        assert probe.requests[0].argv == (
+            "native-tool",
+            "/work/a.txt",
+            "/work/b.txt",
+            "/work/*.txt",
+        )
 
 
 @pytest.mark.asyncio
@@ -128,20 +143,25 @@ async def test_external_fallback_globs_every_unquoted_word():
     # dotfiles and `x=*` a file named `x=1`, and a quoted or unmatched
     # pattern stays the word as typed.
     probe = ProcessProbe()
-    async with workspace({"/work": RAMVFS()},
-                         mode=MountMode.EXEC,
-                         runtimes=[probe]) as ws:
+    async with workspace(
+        {"/work": RAMVFS()}, mode=MountMode.EXEC, runtimes=[probe]
+    ) as ws:
         await ws.shell("touch /work/.a.txt '/work/x=1'")
         await ws.shell("cd /work")
         result = await ws.shell("native-tool .*.txt x=* '.*.txt' .none*")
         assert result.exit_code == 0
-        assert probe.requests[0].argv == ("native-tool", ".a.txt", "x=1",
-                                          ".*.txt", ".none*")
+        assert probe.requests[0].argv == (
+            "native-tool",
+            ".a.txt",
+            "x=1",
+            ".*.txt",
+            ".none*",
+        )
 
 
 @pytest.mark.asyncio
 async def test_runtime_refusal_cannot_fall_through_to_external_capture():
-    named = ProcessProbe(captures=("native-tool", ), script=lambda ctx: False)
+    named = ProcessProbe(captures=("native-tool",), script=lambda ctx: False)
     fallback = ProcessProbe()
     fallback.name = "fallback"
     async with workspace({"/": RAMVFS()}, runtimes=[named, fallback]) as ws:
@@ -152,11 +172,14 @@ async def test_runtime_refusal_cannot_fall_through_to_external_capture():
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("captures", [("native-tool", ),
-                                      (EXTERNAL_COMMANDS, )],
-                         ids=["named", "fallback"])
+@pytest.mark.parametrize(
+    "captures",
+    [("native-tool",), (EXTERNAL_COMMANDS,)],
+    ids=["named", "fallback"],
+)
 async def test_refused_external_capture_does_not_expand_globs(
-        monkeypatch, captures):
+    monkeypatch, captures
+):
     probe = ProcessProbe(captures=captures, script=lambda ctx: False)
     async with workspace({"/": RAMVFS()}, runtimes=[probe]) as ws:
         assert await (await ws.shell("echo mirage")).stdout_str() == "mirage\n"
@@ -172,61 +195,72 @@ async def test_refused_external_capture_does_not_expand_globs(
         monkeypatch.setattr(argv_module, "resolve_globs", track_globs)
         result = await ws.shell("native-tool /api/*")
         assert result.exit_code == 126
-        assert await result.stderr_str(
-        ) == "native-tool: no runtime accepted this line\n"
+        assert (
+            await result.stderr_str()
+            == "native-tool: no runtime accepted this line\n"
+        )
         assert not globbed
         assert not probe.requests
 
 
 @pytest.mark.asyncio
-async def test_shell_function_precedes_external_and_discovery_names_the_route(
-):
+async def test_shell_function_precedes_external_and_discovery_names_the_route():
     probe = ProcessProbe(captures=("named-tool", EXTERNAL_COMMANDS))
     async with workspace({"/": RAMVFS()}, runtimes=[probe]) as ws:
-        assert await (await
-                      ws.shell("type -t named-tool")).stdout_str() == "file\n"
+        assert (
+            await (await ws.shell("type -t named-tool")).stdout_str()
+            == "file\n"
+        )
         await ws.shell("native-tool() { echo function; }")
-        assert await (await
-                      ws.shell("native-tool")).stdout_str() == "function\n"
+        assert (
+            await (await ws.shell("native-tool")).stdout_str() == "function\n"
+        )
         assert not probe.requests
 
 
 @pytest.mark.asyncio
 async def test_a_name_only_the_fallback_takes_runs_but_is_not_found():
     probe = ProcessProbe()
-    async with workspace({"/": RAMVFS()},
-                         mode=MountMode.EXEC,
-                         runtimes=[probe]) as ws:
-        for line in ("which native-tool", "command -v native-tool",
-                     "type -t native-tool", "cat /usr/bin/native-tool"):
+    async with workspace(
+        {"/": RAMVFS()}, mode=MountMode.EXEC, runtimes=[probe]
+    ) as ws:
+        for line in (
+            "which native-tool",
+            "command -v native-tool",
+            "type -t native-tool",
+            "cat /usr/bin/native-tool",
+        ):
             result = await ws.shell(line)
             assert result.exit_code == 1, line
             assert await result.stdout_str() == "", line
         result = await ws.shell("type native-tool")
         assert await result.stderr_str() == "type: native-tool: not found\n"
         assert (await ws.shell("native-tool")).exit_code == 0
-        assert probe.requests[0].argv == ("native-tool", )
+        assert probe.requests[0].argv == ("native-tool",)
 
 
 @pytest.mark.parametrize(
     "entry",
-    ["- name: sandlock", '- name: sandlock\n  captures: ["@external"]'])
+    ["- name: sandlock", '- name: sandlock\n  captures: ["@external"]'],
+)
 def test_yaml_external_capture_matches_the_sdk_default(entry):
     entries = _build_runtime_entries(yaml.safe_load(entry))
-    assert entries[0].captures == (EXTERNAL_COMMANDS, )
+    assert entries[0].captures == (EXTERNAL_COMMANDS,)
 
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("name", ["native-tool", "python3"])
 @pytest.mark.parametrize("timeout", [1, 0, None])
-async def test_external_mount_timeout_replaces_default(monkeypatch, name,
-                                                       timeout):
-    monkeypatch.setitem(DEFAULT_COMMAND_LIMITS, name,
-                        Limit(timeout_seconds=0.05))
+async def test_external_mount_timeout_replaces_default(
+    monkeypatch, name, timeout
+):
+    monkeypatch.setitem(
+        DEFAULT_COMMAND_LIMITS, name, Limit(timeout_seconds=0.05)
+    )
     probe = DelayedProcessProbe(captures=("python3", EXTERNAL_COMMANDS))
-    async with workspace({"/": RAMVFS()},
-                         mode=MountMode.EXEC,
-                         runtimes=[probe]) as ws:
+    async with workspace(
+        {"/": RAMVFS()}, mode=MountMode.EXEC, runtimes=[probe]
+    ) as ws:
         for mount in ws._registry.mounts():
             mount.command_limits[name] = Limit(timeout_seconds=timeout)
         result = await ws.shell(f"PROGRAM={name}; $PROGRAM")
@@ -244,16 +278,21 @@ async def test_external_timeout_cancels_process(monkeypatch, source):
         "native-tool",
         Limit(timeout_seconds=0.05 if source == "default" else 1),
     )
-    overrides = ({
-        "native-tool": Limit(timeout_seconds=0.05)
-    } if source == "mount" else {})
+    overrides = (
+        {"native-tool": Limit(timeout_seconds=0.05)}
+        if source == "mount"
+        else {}
+    )
     probe = DelayedProcessProbe()
-    async with workspace({"/": (RAMVFS(), MountMode.EXEC, overrides)},
-                         mode=MountMode.EXEC,
-                         runtimes=[probe]) as ws:
+    async with workspace(
+        {"/": (RAMVFS(), MountMode.EXEC, overrides)},
+        mode=MountMode.EXEC,
+        runtimes=[probe],
+    ) as ws:
         result = await ws.shell("native-tool")
         assert result.exit_code == 124
-        assert "native-tool: timed out after 0.05s" in await result.stderr_str(
+        assert (
+            "native-tool: timed out after 0.05s" in await result.stderr_str()
         )
         assert len(probe.requests) == 1
         assert probe.cancelled
@@ -261,8 +300,9 @@ async def test_external_timeout_cancels_process(monkeypatch, source):
 
 @pytest.mark.asyncio
 async def test_external_timeout_includes_stdin_materialization(monkeypatch):
-    monkeypatch.setitem(DEFAULT_COMMAND_LIMITS, "native-tool",
-                        Limit(timeout_seconds=0.05))
+    monkeypatch.setitem(
+        DEFAULT_COMMAND_LIMITS, "native-tool", Limit(timeout_seconds=0.05)
+    )
     cancelled = False
 
     async def slow_stdin():
@@ -277,7 +317,8 @@ async def test_external_timeout_includes_stdin_materialization(monkeypatch):
     async with workspace({"/": RAMVFS()}, runtimes=[probe]) as ws:
         result = await ws.shell("native-tool", stdin=slow_stdin())
         assert result.exit_code == 124
-        assert "native-tool: timed out after 0.05s" in await result.stderr_str(
+        assert (
+            "native-tool: timed out after 0.05s" in await result.stderr_str()
         )
         assert not probe.requests
         assert cancelled
@@ -295,21 +336,26 @@ class ShellProbe(Runtime, LineExecutorMixin):
         return RunResult(stdout=b"ok\n", stderr=None, exit_code=0)
 
 
-@command("trello board list",
-         vfs="ram",
-         spec=CommandSpec(positional=(Operand(), ), rest=Operand(type="str")))
+@command(
+    "trello board list",
+    vfs="ram",
+    spec=CommandSpec(positional=(Operand(),), rest=Operand(type="str")),
+)
 async def board_list(accessor, paths, texts, opts):
     return b"ok\n", IOResult()
 
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("kind", [ProcessProbe, ShellProbe])
-@pytest.mark.parametrize("head, expected", [
-    ("trello board list", ("trello", "board", "list")),
-    ("'trello board list'", ("trello board list", )),
-])
+@pytest.mark.parametrize(
+    "head, expected",
+    [
+        ("trello board list", ("trello", "board", "list")),
+        ("'trello board list'", ("trello board list",)),
+    ],
+)
 async def test_native_execution_preserves_command_tokens(kind, head, expected):
-    probe = kind(captures=("trello board list", ))
+    probe = kind(captures=("trello board list",))
     async with workspace({"/": RAMVFS()}, runtimes=[probe]) as ws:
         ws.mount("/").register_fns([board_list])
         result = await ws.shell(head + " 'a b' '$(echo literal)' ''")
@@ -323,17 +369,24 @@ async def test_native_execution_preserves_command_tokens(kind, head, expected):
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("kind", [ProcessProbe, ShellProbe])
-@pytest.mark.parametrize("head, prefix", [
-    ("trello board list", ("trello", "board", "list")),
-    ("'trello board list'", ("trello board list", )),
-])
-@pytest.mark.parametrize("pattern, matches", [
-    ("/base/i*", ("/base/inner", )),
-    ("/base/*", ("/base/inner", "/base/other")),
-])
+@pytest.mark.parametrize(
+    "head, prefix",
+    [
+        ("trello board list", ("trello", "board", "list")),
+        ("'trello board list'", ("trello board list",)),
+    ],
+)
+@pytest.mark.parametrize(
+    "pattern, matches",
+    [
+        ("/base/i*", ("/base/inner",)),
+        ("/base/*", ("/base/inner", "/base/other")),
+    ],
+)
 async def test_boundary_expansion_preserves_command_tokens(
-        kind, head, prefix, pattern, matches, monkeypatch):
-    probe = kind(captures=("trello board list", ))
+    kind, head, prefix, pattern, matches, monkeypatch
+):
+    probe = kind(captures=("trello board list",))
     resolve_globs = argv_module.resolve_globs
     pending = True
 
@@ -350,8 +403,9 @@ async def test_boundary_expansion_preserves_command_tokens(
             "/base/inner": RAMVFS(),
             "/base/other": RAMVFS(),
         },
-            mode=MountMode.EXEC,
-            runtimes=[probe]) as ws:
+        mode=MountMode.EXEC,
+        runtimes=[probe],
+    ) as ws:
         ws.mount("/").register_fns([board_list])
         # Leave the glob pending so command dispatch owns boundary expansion.
         monkeypatch.setattr(argv_module, "resolve_globs", defer_once)
@@ -368,49 +422,74 @@ async def test_boundary_expansion_preserves_command_tokens(
 @pytest.mark.parametrize("kind", [ProcessProbe, ShellProbe])
 @pytest.mark.parametrize("source", [False, True])
 async def test_scripted_multiword_capture_sees_its_full_command(kind, source):
-    script = (ScriptSource(
-        "ctx['command'] == 'trello board list' and "
-        "ctx['commands'][-1]['command'] == 'trello board list' and "
-        "ctx['commands'][-1]['words'][-1] == '/allowed'")
-              if source else lambda ctx: ctx.command == "trello board list" and
-              ctx.commands[-1].command == "trello board list" and ctx.commands[
-                  -1].words[-1] == "/allowed")
-    probe = kind(captures=("trello board list", ), script=script)
-    async with workspace({"/": RAMVFS()},
-                         runtimes=[probe, MontyRuntime(captures=())]) as ws:
+    script = (
+        ScriptSource(
+            "ctx['command'] == 'trello board list' and "
+            "ctx['commands'][-1]['command'] == 'trello board list' and "
+            "ctx['commands'][-1]['words'][-1] == '/allowed'"
+        )
+        if source
+        else lambda ctx: (
+            ctx.command == "trello board list"
+            and ctx.commands[-1].command == "trello board list"
+            and ctx.commands[-1].words[-1] == "/allowed"
+        )
+    )
+    probe = kind(captures=("trello board list",), script=script)
+    async with workspace(
+        {"/": RAMVFS()}, runtimes=[probe, MontyRuntime(captures=())]
+    ) as ws:
         ws.mount("/").register_fns([board_list])
         allowed = await ws.shell("echo ok | trello board list /allowed")
         assert allowed.exit_code == 0
         if isinstance(probe, ProcessProbe):
-            assert probe.requests[0].argv == ("trello", "board", "list",
-                                              "/allowed")
+            assert probe.requests[0].argv == (
+                "trello",
+                "board",
+                "list",
+                "/allowed",
+            )
             probe.requests.clear()
         else:
-            assert shlex.split(
-                probe.lines[0]) == ["trello", "board", "list", "/allowed"]
+            assert shlex.split(probe.lines[0]) == [
+                "trello",
+                "board",
+                "list",
+                "/allowed",
+            ]
             probe.lines.clear()
         denied = await ws.shell("echo ok | trello board list /denied")
         assert denied.exit_code == 126
-        assert not (probe.requests
-                    if isinstance(probe, ProcessProbe) else probe.lines)
+        assert not (
+            probe.requests if isinstance(probe, ProcessProbe) else probe.lines
+        )
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("head", [
-    "echo ok", "cat /input", "custom-stage", "trello board list", "custom-cli",
-    "python3"
-])
+@pytest.mark.parametrize(
+    "head",
+    [
+        "echo ok",
+        "cat /input",
+        "custom-stage",
+        "trello board list",
+        "custom-cli",
+        "python3",
+    ],
+)
 async def test_external_script_sees_first_unresolved_stage(head):
     seen = []
     probe = ProcessProbe(
-        script=lambda ctx: seen.append(ctx) or ctx.command == "native-tool")
-    named = ProcessProbe(captures=("python3", ))
+        script=lambda ctx: seen.append(ctx) or ctx.command == "native-tool"
+    )
+    named = ProcessProbe(captures=("python3",))
     named.name = "named"
     async with workspace({"/": RAMVFS()}, runtimes=[probe, named]) as ws:
         ws.mount("/").register_fns([board_list])
         ws.register_cli(
             "custom-cli",
-            CLISpec(name="custom-cli", fn=lambda inv: (b"ok\n", IOResult())))
+            CLISpec(name="custom-cli", fn=lambda inv: (b"ok\n", IOResult())),
+        )
         await ws.shell("echo ok > /input")
         await ws.shell("custom-stage() { echo ok; }")
         seen.clear()
@@ -420,9 +499,11 @@ async def test_external_script_sees_first_unresolved_stage(head):
         assert seen[0].command == "native-tool"
         assert not seen[0].builtin
         assert seen[0].line == head + " | native-tool"
-        assert seen[0].commands[0].command == ("trello board list"
-                                               if head == "trello board list"
-                                               else head.split()[0])
+        assert seen[0].commands[0].command == (
+            "trello board list"
+            if head == "trello board list"
+            else head.split()[0]
+        )
         probe.requests.clear()
         denied = await ws.shell(head + " | denied-tool")
         assert denied.exit_code == 126
@@ -431,51 +512,66 @@ async def test_external_script_sees_first_unresolved_stage(head):
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("kind", [ProcessProbe, ShellProbe])
-@pytest.mark.parametrize("line", [
-    "cat secret.txt",
-    "cat ./secret.txt",
-    "cat /work/secret.txt",
-    "cat -- secret.txt",
-    "cat s*.txt",
-    "grep pattern secret.txt",
-    "tar -cf archive.tar -C /work secret.txt",
-])
+@pytest.mark.parametrize(
+    "line",
+    [
+        "cat secret.txt",
+        "cat ./secret.txt",
+        "cat /work/secret.txt",
+        "cat -- secret.txt",
+        "cat s*.txt",
+        "grep pattern secret.txt",
+        "tar -cf archive.tar -C /work secret.txt",
+    ],
+)
 async def test_named_external_capture_cannot_bypass_path_policy(kind, line):
     probe = kind(captures=("cat", "grep", "tar"))
     policy = RulePolicy(
-        CommandRule(reason="protected",
-                    commands=("cat", "grep", "tar"),
-                    paths=("/work/secret.txt", )))
-    async with workspace({"/work": RAMVFS()},
-                         runtimes=[probe],
-                         policies=[policy],
-                         mode=MountMode.EXEC) as ws:
-        assert (await
-                ws.shell("echo secret > /work/secret.txt")).exit_code == 0
+        CommandRule(
+            reason="protected",
+            commands=("cat", "grep", "tar"),
+            paths=("/work/secret.txt",),
+        )
+    )
+    async with workspace(
+        {"/work": RAMVFS()},
+        runtimes=[probe],
+        policies=[policy],
+        mode=MountMode.EXEC,
+    ) as ws:
+        assert (
+            await ws.shell("echo secret > /work/secret.txt")
+        ).exit_code == 0
         await ws.shell("cd /work")
         result = await ws.shell(line)
         assert result.exit_code != 0
         assert "protected" in await result.stderr_str()
-        assert not (probe.requests
-                    if isinstance(probe, ProcessProbe) else probe.lines)
+        assert not (
+            probe.requests if isinstance(probe, ProcessProbe) else probe.lines
+        )
 
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("kind", [ProcessProbe, ShellProbe])
 async def test_external_spec_preserves_text_words_and_shell_globs(kind):
-    probe = kind(captures=("grep", ))
+    probe = kind(captures=("grep",))
     policy = RulePolicy(
-        CommandRule(reason="protected",
-                    commands=("grep", ),
-                    paths=("/work/secret.txt", )))
-    async with workspace({"/work": RAMVFS()},
-                         runtimes=[probe],
-                         policies=[policy],
-                         mode=MountMode.EXEC) as ws:
-        assert (await
-                ws.shell("echo secret > /work/secret.txt")).exit_code == 0
-        assert (await
-                ws.shell("echo public > /work/public.txt")).exit_code == 0
+        CommandRule(
+            reason="protected", commands=("grep",), paths=("/work/secret.txt",)
+        )
+    )
+    async with workspace(
+        {"/work": RAMVFS()},
+        runtimes=[probe],
+        policies=[policy],
+        mode=MountMode.EXEC,
+    ) as ws:
+        assert (
+            await ws.shell("echo secret > /work/secret.txt")
+        ).exit_code == 0
+        assert (
+            await ws.shell("echo public > /work/public.txt")
+        ).exit_code == 0
         await ws.shell("cd /work")
         result = await ws.shell("grep secret.txt public*.txt")
         assert result.exit_code == 0
@@ -488,27 +584,38 @@ async def test_external_spec_preserves_text_words_and_shell_globs(kind):
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("kind", [ProcessProbe, ShellProbe])
-@pytest.mark.parametrize("line, tokens", [
-    ("python3 s.py *.txt", ("python3", "s.py", "a.txt", "b.txt")),
-    ("python3 -c p /work/*.txt",
-     ("python3", "-c", "p", "/work/a.txt", "/work/b.txt")),
-    ("python3 s.py ../work/?.txt",
-     ("python3", "s.py", "../work/a.txt", "../work/b.txt")),
-    ("python3 s.py '*.txt' \\*.txt", ("python3", "s.py", "*.txt", "*.txt")),
-    ("python3 s.py *.none", ("python3", "s.py", "*.none")),
-    ("python3 s.py .*.txt", ("python3", "s.py", ".a.txt")),
-    ("python3 s.py x=*", ("python3", "s.py", "x=1")),
-    ("python3 s.py .none*", ("python3", "s.py", ".none*")),
-    ("shopt -s nullglob; python3 s.py *.none x", ("python3", "s.py", "x")),
-    ("set -f; python3 s.py *.txt", ("python3", "s.py", "*.txt")),
-])
+@pytest.mark.parametrize(
+    "line, tokens",
+    [
+        ("python3 s.py *.txt", ("python3", "s.py", "a.txt", "b.txt")),
+        (
+            "python3 -c p /work/*.txt",
+            ("python3", "-c", "p", "/work/a.txt", "/work/b.txt"),
+        ),
+        (
+            "python3 s.py ../work/?.txt",
+            ("python3", "s.py", "../work/a.txt", "../work/b.txt"),
+        ),
+        (
+            "python3 s.py '*.txt' \\*.txt",
+            ("python3", "s.py", "*.txt", "*.txt"),
+        ),
+        ("python3 s.py *.none", ("python3", "s.py", "*.none")),
+        ("python3 s.py .*.txt", ("python3", "s.py", ".a.txt")),
+        ("python3 s.py x=*", ("python3", "s.py", "x=1")),
+        ("python3 s.py .none*", ("python3", "s.py", ".none*")),
+        ("shopt -s nullglob; python3 s.py *.none x", ("python3", "s.py", "x")),
+        ("set -f; python3 s.py *.txt", ("python3", "s.py", "*.txt")),
+    ],
+)
 async def test_external_text_slot_globs_expand_like_bash(kind, line, tokens):
-    probe = kind(captures=("python3", ))
-    async with workspace({"/work": RAMVFS()},
-                         runtimes=[probe],
-                         mode=MountMode.EXEC) as ws:
-        await ws.shell("touch /work/a.txt /work/b.txt /work/.a.txt '/work/x=1'"
-                       )
+    probe = kind(captures=("python3",))
+    async with workspace(
+        {"/work": RAMVFS()}, runtimes=[probe], mode=MountMode.EXEC
+    ) as ws:
+        await ws.shell(
+            "touch /work/a.txt /work/b.txt /work/.a.txt '/work/x=1'"
+        )
         await ws.shell("cd /work")
         result = await ws.shell(line)
         assert result.exit_code == 0
@@ -521,17 +628,18 @@ async def test_external_text_slot_globs_expand_like_bash(kind, line, tokens):
 @pytest.mark.asyncio
 @pytest.mark.parametrize("kind", [ProcessProbe, ShellProbe])
 async def test_external_text_slot_glob_obeys_failglob(kind):
-    probe = kind(captures=("python3", ))
-    async with workspace({"/work": RAMVFS()},
-                         runtimes=[probe],
-                         mode=MountMode.EXEC) as ws:
+    probe = kind(captures=("python3",))
+    async with workspace(
+        {"/work": RAMVFS()}, runtimes=[probe], mode=MountMode.EXEC
+    ) as ws:
         await ws.shell("cd /work")
         await ws.shell("shopt -s failglob")
         result = await ws.shell("python3 s.py *.none")
         assert result.exit_code == 1
         assert await result.stderr_str() == "bash: no match: *.none\n"
-        assert not (probe.requests
-                    if isinstance(probe, ProcessProbe) else probe.lines)
+        assert not (
+            probe.requests if isinstance(probe, ProcessProbe) else probe.lines
+        )
 
 
 @pytest.mark.asyncio
@@ -539,25 +647,33 @@ async def test_external_text_slot_glob_obeys_failglob(kind):
 async def test_external_admission_reads_the_expanded_argv(kind):
     probe = kind(captures=("grep", "python3"))
     policy = RulePolicy(
-        CommandRule(reason="protected",
-                    commands=("grep", "python3"),
-                    paths=("/work/secret.txt", )))
-    async with workspace({"/work": RAMVFS()},
-                         runtimes=[probe],
-                         policies=[policy],
-                         mode=MountMode.EXEC) as ws:
-        assert (await
-                ws.shell("echo secret > /work/secret.txt")).exit_code == 0
-        assert (await
-                ws.shell("echo public > /work/public.txt")).exit_code == 0
+        CommandRule(
+            reason="protected",
+            commands=("grep", "python3"),
+            paths=("/work/secret.txt",),
+        )
+    )
+    async with workspace(
+        {"/work": RAMVFS()},
+        runtimes=[probe],
+        policies=[policy],
+        mode=MountMode.EXEC,
+    ) as ws:
+        assert (
+            await ws.shell("echo secret > /work/secret.txt")
+        ).exit_code == 0
+        assert (
+            await ws.shell("echo public > /work/public.txt")
+        ).exit_code == 0
         await ws.shell("cd /work")
         # One word fills grep's pattern and its file operand, so the
         # match that lands in the file slot is a path the gate reads.
         refused = await ws.shell("grep *.txt")
         assert refused.exit_code != 0
         assert "protected" in await refused.stderr_str()
-        assert not (probe.requests
-                    if isinstance(probe, ProcessProbe) else probe.lines)
+        assert not (
+            probe.requests if isinstance(probe, ProcessProbe) else probe.lines
+        )
         # A match in a text slot is text, as the word typed by hand is.
         for line, tokens in (
             ("grep s*.txt public.txt", ("grep", "secret.txt", "public.txt")),
@@ -573,37 +689,43 @@ async def test_external_admission_reads_the_expanded_argv(kind):
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("kind", [ProcessProbe, ShellProbe])
-@pytest.mark.parametrize("line", [
-    "python3 /work/steal.py",
-    "python3 steal.py",
-    "python3 ./steal.py",
-    "python3 -u steal.py",
-    "python3 -W ignore -- steal.py",
-    "node steal.js",
-    "node -- /work/steal.js",
-    "python ./-",
-    "python3 -- /work/-",
-    "js ./-",
-    "node -- /work/-",
-])
+@pytest.mark.parametrize(
+    "line",
+    [
+        "python3 /work/steal.py",
+        "python3 steal.py",
+        "python3 ./steal.py",
+        "python3 -u steal.py",
+        "python3 -W ignore -- steal.py",
+        "node steal.js",
+        "node -- /work/steal.js",
+        "python ./-",
+        "python3 -- /work/-",
+        "js ./-",
+        "node -- /work/-",
+    ],
+)
 async def test_interpreter_script_cannot_bypass_path_policy(kind, line):
     # The script is a file the runtime reads on its own machine, outside
     # every op door, so the gate has to see it as the path it is
     # (`python3 steal.py` reads /work/steal.py exactly as `cat steal.py`
     # does), whatever option run precedes it.
     probe = kind(captures=("python", "python3", "js", "node"))
-    policy = RulePolicy(CommandRule(reason="protected", paths=("/work/*", )))
-    async with workspace({"/work": RAMVFS()},
-                         runtimes=[probe],
-                         policies=[policy],
-                         mode=MountMode.EXEC) as ws:
+    policy = RulePolicy(CommandRule(reason="protected", paths=("/work/*",)))
+    async with workspace(
+        {"/work": RAMVFS()},
+        runtimes=[probe],
+        policies=[policy],
+        mode=MountMode.EXEC,
+    ) as ws:
         await ws.shell("cd /work")
         result = await ws.shell(line)
         name, operand = line.split()[0], line.split()[-1]
         assert result.exit_code == 1
         assert await result.stderr_str() == f"{name}: {operand}: protected\n"
-        assert not (probe.requests
-                    if isinstance(probe, ProcessProbe) else probe.lines)
+        assert not (
+            probe.requests if isinstance(probe, ProcessProbe) else probe.lines
+        )
 
 
 @pytest.mark.asyncio
@@ -613,29 +735,37 @@ async def test_interpreter_program_operands_are_not_paths(kind):
     # program's argv, as are the words after a script; none is a file
     # the rule reads, and each reaches the runtime as typed.
     probe = kind(captures=("python", "python3", "js", "node"))
-    policy = RulePolicy(CommandRule(reason="protected", paths=("/work/*", )))
+    policy = RulePolicy(CommandRule(reason="protected", paths=("/work/*",)))
     lines = [
         ("python - /work/arg", ("python", "-", "/work/arg")),
         ("python3 -u -- - -c x", ("python3", "-u", "--", "-", "-c", "x")),
         ("js -- - /work/arg", ("js", "--", "-", "/work/arg")),
         ("node - -e x", ("node", "-", "-e", "x")),
-        ("python3 -c 'print(1)' steal.py", ("python3", "-c", "print(1)",
-                                            "steal.py")),
-        ("python3 -m json.tool steal.py", ("python3", "-m", "json.tool",
-                                           "steal.py")),
+        (
+            "python3 -c 'print(1)' steal.py",
+            ("python3", "-c", "print(1)", "steal.py"),
+        ),
+        (
+            "python3 -m json.tool steal.py",
+            ("python3", "-m", "json.tool", "steal.py"),
+        ),
         ("node -e 1 steal.js", ("node", "-e", "1", "steal.js")),
         ("python3 /open.py steal.py", ("python3", "/open.py", "steal.py")),
     ]
-    async with workspace({"/work": RAMVFS()},
-                         runtimes=[probe],
-                         policies=[policy],
-                         mode=MountMode.EXEC) as ws:
+    async with workspace(
+        {"/work": RAMVFS()},
+        runtimes=[probe],
+        policies=[policy],
+        mode=MountMode.EXEC,
+    ) as ws:
         await ws.shell("cd /work")
         for line, _ in lines:
             assert (await ws.shell(line)).exit_code == 0, line
-        delegated = ([r.argv for r in probe.requests] if isinstance(
-            probe, ProcessProbe) else
-                     [tuple(shlex.split(run)) for run in probe.lines])
+        delegated = (
+            [r.argv for r in probe.requests]
+            if isinstance(probe, ProcessProbe)
+            else [tuple(shlex.split(run)) for run in probe.lines]
+        )
         assert delegated == [tokens for _, tokens in lines]
 
 
@@ -644,48 +774,61 @@ async def test_interpreter_program_operands_are_not_paths(kind):
 @pytest.mark.parametrize("willing", [True, False])
 async def test_native_captures_preserve_shell_builtins(kind, willing):
     probe = kind(captures=tuple(SHELL_NAMES), script=lambda ctx: willing)
-    async with workspace({"/work": RAMVFS()},
-                         mode=MountMode.EXEC,
-                         runtimes=[probe]) as ws:
+    async with workspace(
+        {"/work": RAMVFS()}, mode=MountMode.EXEC, runtimes=[probe]
+    ) as ws:
         session = SessionState(session_id="lookup")
         for name in SHELL_NAMES - {
-                "python", "python3", "node", "js", "ps", "kill"
+            "python",
+            "python3",
+            "node",
+            "js",
+            "ps",
+            "kill",
         }:
-            assert lookup(name, session,
-                          ws._registry) is Consumer.SESSION, name
+            assert lookup(name, session, ws._registry) is Consumer.SESSION, (
+                name
+            )
             layers = lookup_all(name, session, ws._registry)
             assert layers[0] is Consumer.SESSION, name
             assert Consumer.EXTERNAL not in layers, name
         assert (await ws.shell("cd /work")).exit_code == 0
         assert await (await ws.shell("pwd")).stdout_str() == "/work\n"
         assert (await ws.shell("export NATIVE_TEST=kept")).exit_code == 0
-        assert await (
-            await
-            ws.shell('printf "%s\n" "$NATIVE_TEST"')).stdout_str() == "kept\n"
+        assert (
+            await (await ws.shell('printf "%s\n" "$NATIVE_TEST"')).stdout_str()
+            == "kept\n"
+        )
         assert await (await ws.shell("echo shell")).stdout_str() == "shell\n"
         assert await (await ws.shell("type -a echo")).stdout_str() == (
-            "echo is a shell builtin\necho is /usr/bin/echo\n")
-        assert not (probe.requests
-                    if isinstance(probe, ProcessProbe) else probe.lines)
+            "echo is a shell builtin\necho is /usr/bin/echo\n"
+        )
+        assert not (
+            probe.requests if isinstance(probe, ProcessProbe) else probe.lines
+        )
         for name in ("python", "python3", "node", "js"):
             result = await ws.shell(name + " --version")
             assert result.exit_code == (0 if willing else 126)
-        delegated = probe.requests if isinstance(probe,
-                                                 ProcessProbe) else probe.lines
+        delegated = (
+            probe.requests if isinstance(probe, ProcessProbe) else probe.lines
+        )
         assert len(delegated) == (4 if willing else 0)
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize('name,args', [('ps', '-eo pid,cmd'),
-                                       ('kill', '-0 456')])
-@pytest.mark.parametrize('willing', [True, False])
+@pytest.mark.parametrize(
+    "name,args", [("ps", "-eo pid,cmd"), ("kill", "-0 456")]
+)
+@pytest.mark.parametrize("willing", [True, False])
 async def test_explicit_process_command_captures_reach_the_runtime(
-        name, args, willing):
-    probe = ProcessProbe(captures=(name, ), script=lambda ctx: willing)
-    async with workspace({'/': RAMVFS()},
-                         mode=MountMode.EXEC,
-                         runtimes=[probe]) as ws:
-        result = await ws.shell(f'{name} {args}')
+    name, args, willing
+):
+    probe = ProcessProbe(captures=(name,), script=lambda ctx: willing)
+    async with workspace(
+        {"/": RAMVFS()}, mode=MountMode.EXEC, runtimes=[probe]
+    ) as ws:
+        result = await ws.shell(f"{name} {args}")
         assert result.exit_code == (0 if willing else 126)
-        assert [r.argv for r in probe.requests
-                ] == ([tuple([name] + args.split())] if willing else [])
+        assert [r.argv for r in probe.requests] == (
+            [tuple([name] + args.split())] if willing else []
+        )

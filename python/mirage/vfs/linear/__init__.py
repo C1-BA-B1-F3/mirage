@@ -25,5 +25,6 @@ __all__ = ["LinearConfig", "LinearVFS"]
 def __getattr__(name: str) -> "type[LinearVFS]":
     if name == "LinearVFS":
         from mirage.vfs.linear.linear import LinearVFS
+
         return LinearVFS
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

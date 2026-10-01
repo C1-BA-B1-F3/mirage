@@ -23,9 +23,14 @@ from mirage.shell.job_table import Job, JobStatus, JobTable
 from mirage.types import MountMode
 from mirage.vfs.ram import RAMVFS
 from mirage.workspace import Workspace
-from mirage.workspace.executor.jobs import (handle_disown, handle_fg,
-                                            handle_jobs, handle_kill,
-                                            handle_ps, handle_wait)
+from mirage.workspace.executor.jobs import (
+    handle_disown,
+    handle_fg,
+    handle_jobs,
+    handle_kill,
+    handle_ps,
+    handle_wait,
+)
 from mirage.workspace.types import ExecutionNode
 
 
@@ -45,8 +50,10 @@ async def _run_bg(cmd: str, job_id: int = 1) -> tuple[bytes, bytes]:
     await ws.job_table.wait(job_id, ws.default_session_id)
     job = ws.job_table.get(job_id, ws.default_session_id)
     assert job is not None
-    return (await job.console.snapshot(Channel.STDOUT), await
-            job.console.snapshot(Channel.STDERR))
+    return (
+        await job.console.snapshot(Channel.STDOUT),
+        await job.console.snapshot(Channel.STDERR),
+    )
 
 
 # ── streaming: output lands while the job is still running ──────────
@@ -81,8 +88,10 @@ def test_loop_body_streams_each_iteration_instead_of_batching():
         ("echo one && echo two &", b"one\ntwo\n"),
         ("(echo s1; echo s2) &", b"s1\ns2\n"),
         ("if true; then echo yes; fi &", b"yes\n"),
-        ("i=0; while [ $i -lt 2 ]; do echo w$i; i=$((i+1)); done &",
-         b"w0\nw1\n"),
+        (
+            "i=0; while [ $i -lt 2 ]; do echo w$i; i=$((i+1)); done &",
+            b"w0\nw1\n",
+        ),
         ("for i in a b; do echo $i; done &", b"a\nb\n"),
     ],
 )
@@ -185,10 +194,8 @@ def test_stderr_is_routed_to_its_own_channel():
 
 
 async def _emit_and_settle(
-        job: Job,
-        stdout: bytes = b"",
-        stderr: bytes = b"",
-        exit_code: int = 0) -> tuple[IOResult, ExecutionNode]:
+    job: Job, stdout: bytes = b"", stderr: bytes = b"", exit_code: int = 0
+) -> tuple[IOResult, ExecutionNode]:
     """A runner that prints to its console and ends with a status.
 
     Args:
@@ -214,17 +221,20 @@ async def _run_forever(job: Job) -> tuple[IOResult, ExecutionNode]:
     return IOResult(), ExecutionNode()
 
 
-def _submit_settled(table: JobTable,
-                    command: str = "foo",
-                    stdout: bytes = b"",
-                    stderr: bytes = b"",
-                    exit_code: int = 0) -> Job:
-    return table.submit(command=command,
-                        run=partial(_emit_and_settle,
-                                    stdout=stdout,
-                                    stderr=stderr,
-                                    exit_code=exit_code),
-                        cwd="/")
+def _submit_settled(
+    table: JobTable,
+    command: str = "foo",
+    stdout: bytes = b"",
+    stderr: bytes = b"",
+    exit_code: int = 0,
+) -> Job:
+    return table.submit(
+        command=command,
+        run=partial(
+            _emit_and_settle, stdout=stdout, stderr=stderr, exit_code=exit_code
+        ),
+        cwd="/",
+    )
 
 
 def _submit_pending(table: JobTable, command: str = "sleep") -> Job:
@@ -276,32 +286,40 @@ async def test_wait_accepts_the_percent_job_id_spelling():
     assert io.exit_code == 0
 
 
-_KILL_USAGE = (b"kill: usage: kill [-s sigspec | -n signum | -sigspec] pid"
-               b" | jobspec ... or kill -l [sigspec]\n")
+_KILL_USAGE = (
+    b"kill: usage: kill [-s sigspec | -n signum | -sigspec] pid"
+    b" | jobspec ... or kill -l [sigspec]\n"
+)
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("args,code,stderr", [
-    ([], 2, _KILL_USAGE),
-    (["-9"], 2, _KILL_USAGE),
-    (["--"], 2, _KILL_USAGE),
-    (["-?"], 2, _KILL_USAGE),
-    (["-s"], 1, b"kill: -s: option requires an argument\n"),
-    (["-n"], 1, b"kill: -n: option requires an argument\n"),
-    (["-FOO"], 1, b"kill: FOO: invalid signal specification\n"),
-    (["-s", "FOO", "1"], 1, b"kill: FOO: invalid signal specification\n"),
-    (["-65", "1"], 1, b"kill: 65: invalid signal specification\n"),
-    (["abc"], 1, b"kill: abc: arguments must be process or job IDs\n"),
-    (["0x1"], 1, b"kill: 0x1: arguments must be process or job IDs\n"),
-    (["--", "-"], 1, b"kill: -: arguments must be process or job IDs\n"),
-    ([""], 1, b"kill: `': not a pid or valid job spec\n"),
-    (["999"], 1, b"kill: (999) - No such process\n"),
-    (["-0", "999"], 1, b"kill: (999) - No such process\n"),
-    (["%3"], 1, b"kill: %3: no such job\n"),
-    (["%abc"], 1, b"kill: %abc: no such job\n"),
-    (["999", "998"
-      ], 1, b"kill: (999) - No such process\nkill: (998) - No such process\n"),
-])
+@pytest.mark.parametrize(
+    "args,code,stderr",
+    [
+        ([], 2, _KILL_USAGE),
+        (["-9"], 2, _KILL_USAGE),
+        (["--"], 2, _KILL_USAGE),
+        (["-?"], 2, _KILL_USAGE),
+        (["-s"], 1, b"kill: -s: option requires an argument\n"),
+        (["-n"], 1, b"kill: -n: option requires an argument\n"),
+        (["-FOO"], 1, b"kill: FOO: invalid signal specification\n"),
+        (["-s", "FOO", "1"], 1, b"kill: FOO: invalid signal specification\n"),
+        (["-65", "1"], 1, b"kill: 65: invalid signal specification\n"),
+        (["abc"], 1, b"kill: abc: arguments must be process or job IDs\n"),
+        (["0x1"], 1, b"kill: 0x1: arguments must be process or job IDs\n"),
+        (["--", "-"], 1, b"kill: -: arguments must be process or job IDs\n"),
+        ([""], 1, b"kill: `': not a pid or valid job spec\n"),
+        (["999"], 1, b"kill: (999) - No such process\n"),
+        (["-0", "999"], 1, b"kill: (999) - No such process\n"),
+        (["%3"], 1, b"kill: %3: no such job\n"),
+        (["%abc"], 1, b"kill: %abc: no such job\n"),
+        (
+            ["999", "998"],
+            1,
+            b"kill: (999) - No such process\nkill: (998) - No such process\n",
+        ),
+    ],
+)
 async def test_kill_refuses_in_bash_words(args, code, stderr):
     _, io, _ = await handle_kill(JobTable(), ["kill", *args])
     assert (io.exit_code, io.stderr) == (code, stderr)
@@ -362,11 +380,14 @@ async def test_ps_prints_nothing_when_no_job_is_running():
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("line", [
-    "true && ps < /m/f | cat",
-    "ps | cat 2>/dev/null",
-    "true && ps | cat 2>/dev/null",
-])
+@pytest.mark.parametrize(
+    "line",
+    [
+        "true && ps < /m/f | cat",
+        "ps | cat 2>/dev/null",
+        "true && ps | cat 2>/dev/null",
+    ],
+)
 async def test_ps_lists_the_stages_of_a_pipeline_under_a_redirect(line):
     ws = _workspace()
     try:
@@ -455,8 +476,10 @@ async def test_wait_p_names_the_job_whose_status_is_returned():
     """`wait id1 id2` answers with the last id's status, so `-p` names
     that job however many ids were waited for."""
     ws = Workspace({"data": RAMVFS()}, mode=MountMode.WRITE)
-    io = await ws.shell("(exit 3) & (exit 5) & p=$!; wait -p V %1 %2; "
-                        "echo rc=$?; test \"$V\" = \"$p\" && echo pid-match")
+    io = await ws.shell(
+        "(exit 3) & (exit 5) & p=$!; wait -p V %1 %2; "
+        'echo rc=$?; test "$V" = "$p" && echo pid-match'
+    )
     assert (await io.stdout_str()) == "rc=5\npid-match\n"
     await ws.close()
 
@@ -466,8 +489,7 @@ async def test_wait_p_with_no_operand_leaves_the_variable_unset():
     """The no-operand form waits for everything and reports no one job,
     so bash leaves the variable unset (having cleared it first)."""
     ws = Workspace({"data": RAMVFS()}, mode=MountMode.WRITE)
-    io = await ws.shell("(exit 0) & V=stale; wait -p V; "
-                        "echo \"V=[${V-UNSET}]\"")
+    io = await ws.shell('(exit 0) & V=stale; wait -p V; echo "V=[${V-UNSET}]"')
     assert (await io.stdout_str()) == "V=[UNSET]\n"
     await ws.close()
 
@@ -513,8 +535,9 @@ async def test_loop_body_jobs_are_still_running_when_the_loop_ends():
 @pytest.mark.asyncio
 async def test_wait_adopts_loop_body_jobs_in_id_order_after_the_foreground():
     ws = _workspace()
-    res = await ws.shell("for i in 1 2; do echo $i & done; echo launched; wait"
-                         )
+    res = await ws.shell(
+        "for i in 1 2; do echo $i & done; echo launched; wait"
+    )
     assert res.stdout == b"launched\n1\n2\n"
 
 
@@ -538,22 +561,40 @@ async def test_errexit_does_not_trip_on_a_body_launch():
 @pytest.mark.parametrize(
     "line,expected,code",
     [
-        ('if false & then echo yes; else echo no; fi; wait "$!"', 'yes\n', 1),
-        ('if false; then echo no; elif false & then echo yes; fi; wait "$!"',
-         'yes\n', 1),
-        ('while false & do echo yes; break; done; wait "$!"', 'yes\n', 1),
-        ('until false & do echo no; break; done; echo yes; wait "$!"', 'yes\n',
-         1),
-        ('f() { { sleep 0.05; printf "%s:%s:%s\\n" "$1" "$#" "$*"; } & }'
-         '; f first second; wait', 'first:2:first second\n', 0),
-        ('f() { { sleep 0.05; printf "%s:%s\\n" "$1" "$#"; } & shift; }'
-         '; f first second; wait', 'first:2\n', 0),
-        ('f() { { shift; sleep 0.05; printf "bg:%s:%s\\n" "$1" "$#"; } &'
-         ' sleep 0.1; printf "fg:%s:%s\\n" "$1" "$#"; wait; }'
-         '; f first second', 'fg:first:2\nbg:second:1\n', 0),
-        ('f() { return 7 & j=$!; wait "$j"; }; f', '', 7),
-        ('f() { { sleep 0.05; return 9; } & }; f; wait "$!"', '', 9),
-        ('f() { false; return & j=$!; wait "$j"; }; f', '', 1),
+        ('if false & then echo yes; else echo no; fi; wait "$!"', "yes\n", 1),
+        (
+            'if false; then echo no; elif false & then echo yes; fi; wait "$!"',
+            "yes\n",
+            1,
+        ),
+        ('while false & do echo yes; break; done; wait "$!"', "yes\n", 1),
+        (
+            'until false & do echo no; break; done; echo yes; wait "$!"',
+            "yes\n",
+            1,
+        ),
+        (
+            'f() { { sleep 0.05; printf "%s:%s:%s\\n" "$1" "$#" "$*"; } & }'
+            "; f first second; wait",
+            "first:2:first second\n",
+            0,
+        ),
+        (
+            'f() { { sleep 0.05; printf "%s:%s\\n" "$1" "$#"; } & shift; }'
+            "; f first second; wait",
+            "first:2\n",
+            0,
+        ),
+        (
+            'f() { { shift; sleep 0.05; printf "bg:%s:%s\\n" "$1" "$#"; } &'
+            ' sleep 0.1; printf "fg:%s:%s\\n" "$1" "$#"; wait; }'
+            "; f first second",
+            "fg:first:2\nbg:second:1\n",
+            0,
+        ),
+        ('f() { return 7 & j=$!; wait "$j"; }; f', "", 7),
+        ('f() { { sleep 0.05; return 9; } & }; f; wait "$!"', "", 9),
+        ('f() { false; return & j=$!; wait "$j"; }; f', "", 1),
     ],
 )
 async def test_background_condition_and_function_scope(line, expected, code):
@@ -699,7 +740,8 @@ async def test_ps_and_kill_reach_other_sessions_as_far_as_the_profile_says():
         io = await ws.shell(stop, session_id="audit")
         assert (await io.stdout_str(), await io.stderr_str()) == (
             "rc=1\n",
-            f"kill: ({pid.decode().strip()}) - Operation not permitted\n")
+            f"kill: ({pid.decode().strip()}) - Operation not permitted\n",
+        )
         assert (await ws.shell(stop, session_id="ops")).stdout == b"rc=0\n"
     finally:
         await ws.close()
@@ -716,11 +758,17 @@ async def test_a_session_at_its_process_cap_cannot_fork():
         return await io.stdout_str(), await io.stderr_str(), io.exit_code
 
     try:
-        assert await run("(sleep 30 & echo in); echo sub=$?") == ("sub=254\n",
-                                                                  refusal, 0)
+        assert await run("(sleep 30 & echo in); echo sub=$?") == (
+            "sub=254\n",
+            refusal,
+            0,
+        )
         assert await run("sleep 30 & echo one") == ("one\n", "", 0)
-        for line in ("(echo sub); echo no", "echo x | cat; echo no",
-                     "sleep 30 & echo no"):
+        for line in (
+            "(echo sub); echo no",
+            "echo x | cat; echo no",
+            "sleep 30 & echo no",
+        ):
             assert await run(line) == ("", refusal, 254)
         assert await run("echo $?") == ("254\n", "", 0)
         assert await run("kill %1") == ("", "", 0)
@@ -738,142 +786,162 @@ async def test_a_runaway_loop_stops_at_the_process_cap():
         io = await asyncio.wait_for(
             ws.shell(
                 "n=0; while true; do sleep 30 & n=$((n+1)); done; echo no",
-                session_id="capped"), 10)
+                session_id="capped",
+            ),
+            10,
+        )
         assert io.exit_code == 254
         io = await ws.shell("echo $n; jobs", session_id="capped")
-        assert io.stdout == (b"2\n[1] running sleep 30\n"
-                             b"[2] running sleep 30\n")
+        assert io.stdout == (
+            b"2\n[1] running sleep 30\n[2] running sleep 30\n"
+        )
     finally:
         await ws.close()
 
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    'selector', ['-TERM', '-15', '-s TERM', '-n 15', '-SIGTERM', '-9'])
+    "selector", ["-TERM", "-15", "-s TERM", "-n 15", "-SIGTERM", "-9"]
+)
 async def test_ps_columns_and_signal_probes_share_managed_processes(selector):
-    ws = Workspace({'/': RAMVFS()}, mode='exec')
+    ws = Workspace({"/": RAMVFS()}, mode="exec")
     try:
-        started = await ws.shell('sleep 30 & echo $!')
+        started = await ws.shell("sleep 30 & echo $!")
         pid = int(started.stdout)
         result = await ws.shell(
-            f'kill -0 {pid}; echo alive=$?; ps -p{pid} -o pid=,ppid=,comm=')
+            f"kill -0 {pid}; echo alive=$?; ps -p{pid} -o pid=,ppid=,comm="
+        )
         lines = result.stdout.decode().splitlines()
-        assert lines[0] == 'alive=0'
+        assert lines[0] == "alive=0"
         assert lines[1].split()[0] == str(pid)
-        assert lines[1].split()[-1] == 'sleep'
+        assert lines[1].split()[-1] == "sleep"
         assert not result.stderr
-        result = await ws.shell(f'ps --pid={pid} --format=pid= -o args=')
-        assert result.stdout.decode().split() == [str(pid), 'sleep', '30']
-        result = await ws.shell('ps -eo pid,cmd')
-        assert result.stdout.decode().splitlines()[0].split() == ['PID', 'CMD']
-        assert f'{pid}' in result.stdout.decode()
-        assert (await ws.shell(f'kill {selector} {pid}')).exit_code == 0
+        result = await ws.shell(f"ps --pid={pid} --format=pid= -o args=")
+        assert result.stdout.decode().split() == [str(pid), "sleep", "30"]
+        result = await ws.shell("ps -eo pid,cmd")
+        assert result.stdout.decode().splitlines()[0].split() == ["PID", "CMD"]
+        assert f"{pid}" in result.stdout.decode()
+        assert (await ws.shell(f"kill {selector} {pid}")).exit_code == 0
         await ws.processes.drain()
-        result = await ws.shell(f'ps -p {pid} -o pid=; echo absent=$?')
-        assert result.stdout == b'absent=1\n'
+        result = await ws.shell(f"ps -p {pid} -o pid=; echo absent=$?")
+        assert result.stdout == b"absent=1\n"
     finally:
         await ws.close()
 
 
 @pytest.mark.asyncio
 async def test_kill_zero_respects_signal_permissions_without_cancelling():
-    ws = Workspace({'/': RAMVFS()}, mode='exec')
-    ws.create_session('owner')
-    ws.create_session('audit', profile={'processes': {'list': 'workspace'}})
+    ws = Workspace({"/": RAMVFS()}, mode="exec")
+    ws.create_session("owner")
+    ws.create_session("audit", profile={"processes": {"list": "workspace"}})
     try:
-        pid = int((await ws.shell('sleep 30 & echo $!',
-                                  session_id='owner')).stdout)
-        result = await ws.shell(f'kill -0 {pid}', session_id='audit')
+        pid = int(
+            (await ws.shell("sleep 30 & echo $!", session_id="owner")).stdout
+        )
+        result = await ws.shell(f"kill -0 {pid}", session_id="audit")
         assert result.exit_code == 1
-        assert b'Operation not permitted' in result.stderr
-        assert (await ws.shell(f'kill -0 {pid}',
-                               session_id='owner')).exit_code == 0
-        assert ws.processes.view('owner').get(
-            pid).cancellation_requested is False
+        assert b"Operation not permitted" in result.stderr
+        assert (
+            await ws.shell(f"kill -0 {pid}", session_id="owner")
+        ).exit_code == 0
+        assert (
+            ws.processes.view("owner").get(pid).cancellation_requested is False
+        )
     finally:
         await ws.close()
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("spelling",
-                         ["-kill", "-SIGkill", "-s kill", "-n KILL", "-s 9"])
+@pytest.mark.parametrize(
+    "spelling", ["-kill", "-SIGkill", "-s kill", "-n KILL", "-s 9"]
+)
 async def test_kill_reads_signal_names_in_any_case(spelling):
-    ws = Workspace({'/': RAMVFS()}, mode='exec')
+    ws = Workspace({"/": RAMVFS()}, mode="exec")
     try:
-        pid = int((await ws.shell('sleep 30 & echo $!')).stdout)
-        result = await ws.shell(f'kill {spelling} {pid}')
-        assert (result.exit_code, result.stderr or b'') == (0, b'')
+        pid = int((await ws.shell("sleep 30 & echo $!")).stdout)
+        result = await ws.shell(f"kill {spelling} {pid}")
+        assert (result.exit_code, result.stderr or b"") == (0, b"")
     finally:
         await ws.close()
 
 
 @pytest.mark.asyncio
 async def test_kill_succeeds_when_any_operand_was_signalled():
-    ws = Workspace({'/': RAMVFS()}, mode='exec')
+    ws = Workspace({"/": RAMVFS()}, mode="exec")
     try:
-        pid = int((await ws.shell('sleep 30 & echo $!')).stdout)
-        result = await ws.shell(f'kill 999999 %9 abc {pid}; echo rc=$?')
-        assert result.stdout == b'rc=0\n'
+        pid = int((await ws.shell("sleep 30 & echo $!")).stdout)
+        result = await ws.shell(f"kill 999999 %9 abc {pid}; echo rc=$?")
+        assert result.stdout == b"rc=0\n"
         assert result.stderr == (
-            b'kill: (999999) - No such process\nkill: %9: no such job\n'
-            b'kill: abc: arguments must be process or job IDs\n')
+            b"kill: (999999) - No such process\nkill: %9: no such job\n"
+            b"kill: abc: arguments must be process or job IDs\n"
+        )
     finally:
         await ws.close()
 
 
 @pytest.mark.asyncio
 async def test_ps_lays_columns_out_as_procps_does():
-    ws = Workspace({'/': RAMVFS()}, mode='exec')
+    ws = Workspace({"/": RAMVFS()}, mode="exec")
     try:
-        pid = int((await ws.shell('sleep 30 & echo $!')).stdout)
+        pid = int((await ws.shell("sleep 30 & echo $!")).stdout)
         cases = {
-            f'ps -o pid,ppid,cmd -p {pid}':
-            f'    PID    PPID CMD\n{pid:>7}       1 sleep 30\n',
-            f'ps -o cmd,pid -p {pid}':
-            f'CMD{" " * 25}    PID\nsleep 30{" " * 20}{pid:>7}\n',
-            f'ps -o comm,args -p {pid}':
-            'COMMAND         COMMAND\nsleep           sleep 30\n',
-            f'ps -o pid,cmd= -p {pid}': f'    PID \n{pid:>7} sleep 30\n',
-            f'ps -o pid=,cmd -p {pid}': f'        CMD\n{pid:>7} sleep 30\n',
-            f'ps -o pid=X,cmd=Y -p {pid}': f'      X Y\n{pid:>7} sleep 30\n',
-            f'ps -o "pid cmd" -p {pid},{pid}':
-            f'    PID CMD\n{pid:>7} sleep 30\n',
-            f'ps ax -o pid= -p {pid} | grep -c .': None,
+            f"ps -o pid,ppid,cmd -p {pid}": (
+                f"    PID    PPID CMD\n{pid:>7}       1 sleep 30\n"
+            ),
+            f"ps -o cmd,pid -p {pid}": (
+                f"CMD{' ' * 25}    PID\nsleep 30{' ' * 20}{pid:>7}\n"
+            ),
+            f"ps -o comm,args -p {pid}": (
+                "COMMAND         COMMAND\nsleep           sleep 30\n"
+            ),
+            f"ps -o pid,cmd= -p {pid}": f"    PID \n{pid:>7} sleep 30\n",
+            f"ps -o pid=,cmd -p {pid}": f"        CMD\n{pid:>7} sleep 30\n",
+            f"ps -o pid=X,cmd=Y -p {pid}": f"      X Y\n{pid:>7} sleep 30\n",
+            f'ps -o "pid cmd" -p {pid},{pid}': f"    PID CMD\n{pid:>7} sleep 30\n",
+            f"ps ax -o pid= -p {pid} | grep -c .": None,
         }
         for line, out in cases.items():
             result = await ws.shell(line)
             if out is not None:
                 assert result.stdout.decode() == out, line
-            assert (result.exit_code, result.stderr or b'') == (0, b''), line
+            assert (result.exit_code, result.stderr or b"") == (0, b""), line
     finally:
         await ws.close()
 
 
-_PS_USAGE = (b"\nUsage:\n ps [options]\n\n"
-             b" Try 'ps --help <simple|list|output|threads|misc|all>'\n"
-             b"  or 'ps --help <s|l|o|t|m|a>'\n for additional help text.\n\n"
-             b"For more details see ps(1).\n")
+_PS_USAGE = (
+    b"\nUsage:\n ps [options]\n\n"
+    b" Try 'ps --help <simple|list|output|threads|misc|all>'\n"
+    b"  or 'ps --help <s|l|o|t|m|a>'\n for additional help text.\n\n"
+    b"For more details see ps(1).\n"
+)
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("args,message", [
-    (["-p"], b"list of process IDs must follow -p"),
-    (["-p", ""], b"list of process IDs must follow -p"),
-    (["--pid"], b"list of process IDs must follow --pid"),
-    (["-p", "1,x"], b"process ID list syntax error"),
-    (["-p", "0"], b"process ID out of range"),
-    (["-p", "-1"], b"process ID out of range"),
-    (["-o"], b"format specification must follow -o"),
-    (["--format"], b"format specification must follow --format"),
-    (["-o", "pid,,cmd"], b"improper format list"),
-    (["-o", "foo"], b'unknown user-defined format specifier "foo"'),
-    (["-o", "="], b'unknown user-defined format specifier ""'),
-    (["-K"], b"unsupported SysV option"),
-    (["--bogus"], b"unknown gnu long option"),
-    (["bogus"], b"unsupported option (BSD syntax)"),
-])
+@pytest.mark.parametrize(
+    "args,message",
+    [
+        (["-p"], b"list of process IDs must follow -p"),
+        (["-p", ""], b"list of process IDs must follow -p"),
+        (["--pid"], b"list of process IDs must follow --pid"),
+        (["-p", "1,x"], b"process ID list syntax error"),
+        (["-p", "0"], b"process ID out of range"),
+        (["-p", "-1"], b"process ID out of range"),
+        (["-o"], b"format specification must follow -o"),
+        (["--format"], b"format specification must follow --format"),
+        (["-o", "pid,,cmd"], b"improper format list"),
+        (["-o", "foo"], b'unknown user-defined format specifier "foo"'),
+        (["-o", "="], b'unknown user-defined format specifier ""'),
+        (["-K"], b"unsupported SysV option"),
+        (["--bogus"], b"unknown gnu long option"),
+        (["bogus"], b"unsupported option (BSD syntax)"),
+    ],
+)
 async def test_ps_refuses_in_procps_words(args, message):
     out, io, _ = await handle_ps(JobTable(), ["ps", *args])
     assert out is None
-    assert (io.exit_code,
-            io.stderr) == (1, b"error: " + message + b"\n" + _PS_USAGE)
+    assert (io.exit_code, io.stderr) == (
+        1,
+        b"error: " + message + b"\n" + _PS_USAGE,
+    )

@@ -40,8 +40,7 @@ def test_falls_back_to_bare_name_without_description():
 
 def test_epilog_trails_the_flag_table_after_a_blank_line():
     spec = CommandSpec(
-        options=(Option(long="--help", type="bool",
-                        description="Show help"), ),
+        options=(Option(long="--help", type="bool", description="Show help"),),
         epilog="Services:\n  drive\n",
     )
     out = render_help("gws", spec)
@@ -56,35 +55,34 @@ def test_epilog_is_omitted_when_absent():
 def test_render_help_with_subcommands_lists_commands():
     spec = CommandSpec(
         description="Google Workspace",
-        options=(Option(short="-C",
-                        long="--cwd",
-                        type="str",
-                        description="run as if started there"), ),
+        options=(
+            Option(
+                short="-C",
+                long="--cwd",
+                type="str",
+                description="run as if started there",
+            ),
+        ),
     )
     rows = [("gmail", "Gmail messages\nlong tail ignored"), ("docs", "")]
-    assert render_help(
-        "gws", spec,
-        subcommands=rows) == ("gws: Google Workspace\n"
-                              "\n"
-                              "Usage: gws [flags] <command> [<args>]\n"
-                              "\n"
-                              "Commands:\n"
-                              "  docs\n"
-                              "  gmail  Gmail messages\n"
-                              "\n"
-                              "Flags:\n"
-                              "  -C, --cwd <text>  run as if started there\n")
+    assert render_help("gws", spec, subcommands=rows) == (
+        "gws: Google Workspace\n"
+        "\n"
+        "Usage: gws [flags] <command> [<args>]\n"
+        "\n"
+        "Commands:\n"
+        "  docs\n"
+        "  gmail  Gmail messages\n"
+        "\n"
+        "Flags:\n"
+        "  -C, --cwd <text>  run as if started there\n"
+    )
 
 
 def test_render_help_with_subcommands_minimal():
-    assert render_help("tool", CommandSpec(), subcommands=[
-        ("run", "")
-    ]) == ("tool\n"
-           "\n"
-           "Usage: tool <command> [<args>]\n"
-           "\n"
-           "Commands:\n"
-           "  run\n")
+    assert render_help("tool", CommandSpec(), subcommands=[("run", "")]) == (
+        "tool\n\nUsage: tool <command> [<args>]\n\nCommands:\n  run\n"
+    )
 
 
 def test_clap_heads_the_page_with_a_bare_description():
@@ -92,16 +90,19 @@ def test_clap_heads_the_page_with_a_bare_description():
     # ntn 0.21.9's own `--help`.
     spec = CommandSpec(description="Manage pages")
     argparse_first = render_help("ntn pages", spec).split("\n")[0]
-    clap_first = render_help("ntn pages", spec,
-                             style=UsageStyle.CLAP).split("\n")[0]
+    clap_first = render_help("ntn pages", spec, style=UsageStyle.CLAP).split(
+        "\n"
+    )[0]
     assert argparse_first == "ntn pages: Manage pages"
     assert clap_first == "Manage pages"
 
 
 def test_clap_usage_line_spells_options_and_command_its_own_way():
-    spec = CommandSpec(description="Manage pages",
-                       options=(Option(long="--json", type="bool"), ))
-    rows = (("get", "Retrieve a page"), )
+    spec = CommandSpec(
+        description="Manage pages",
+        options=(Option(long="--json", type="bool"),),
+    )
+    rows = (("get", "Retrieve a page"),)
     text = render_help("ntn pages", spec, rows, UsageStyle.CLAP)
     assert "Usage: ntn pages [OPTIONS] <COMMAND>" in text
     plain = render_help("ntn pages", spec, rows)
@@ -111,15 +112,17 @@ def test_clap_usage_line_spells_options_and_command_its_own_way():
 def test_clap_names_operand_slots_and_marks_optional_ones():
     spec = CommandSpec(
         description="Retrieve a page",
-        positional=(Operand(type="str", name="PAGE_ID", required=True), ),
+        positional=(Operand(type="str", name="PAGE_ID", required=True),),
     )
     assert "Usage: ntn pages get <PAGE_ID>" in render_help(
-        "ntn pages get", spec, style=UsageStyle.CLAP)
-    loose = CommandSpec(description="Call the API",
-                        rest=Operand(type="str", name="PATH"))
-    assert "Usage: ntn api [PATH]..." in render_help("ntn api",
-                                                     loose,
-                                                     style=UsageStyle.CLAP)
+        "ntn pages get", spec, style=UsageStyle.CLAP
+    )
+    loose = CommandSpec(
+        description="Call the API", rest=Operand(type="str", name="PATH")
+    )
+    assert "Usage: ntn api [PATH]..." in render_help(
+        "ntn api", loose, style=UsageStyle.CLAP
+    )
 
 
 def test_clap_keeps_subcommands_in_declaration_order():
@@ -140,8 +143,9 @@ def test_clap_keeps_subcommands_in_declaration_order():
 
 
 def test_clap_heads_the_option_list_options_not_flags():
-    spec = CommandSpec(description="x",
-                       options=(Option(long="--json", type="bool"), ))
+    spec = CommandSpec(
+        description="x", options=(Option(long="--json", type="bool"),)
+    )
     assert "Options:" in render_help("ntn whoami", spec, style=UsageStyle.CLAP)
     assert "Flags:" in render_help("ntn whoami", spec)
 
@@ -151,6 +155,9 @@ def test_option_metavar_derives_from_the_long_spelling():
     assert option_metavar(derived) == "START_CURSOR"
     # Declared wins, which is the only reason the field exists: four of
     # ntn's options override the derived name.
-    assert option_metavar(
-        Option(long="--notion-version", type="str",
-               metavar="VERSION")) == "VERSION"
+    assert (
+        option_metavar(
+            Option(long="--notion-version", type="str", metavar="VERSION")
+        )
+        == "VERSION"
+    )

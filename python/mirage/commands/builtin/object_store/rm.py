@@ -22,8 +22,10 @@ from mirage.commands.builtin.generic.cp import walk
 from mirage.commands.builtin.generic.rm_cmd import rm_without_operands
 from mirage.commands.builtin.generic_bind.adapter import CommandIO, Operation
 from mirage.commands.builtin.utils.output import format_optional_records
-from mirage.commands.builtin.utils.slash_links import (is_slashed_link,
-                                                       rm_link_refusal)
+from mirage.commands.builtin.utils.slash_links import (
+    is_slashed_link,
+    rm_link_refusal,
+)
 from mirage.commands.builtin.utils.verbose import removal_lines
 from mirage.commands.config import CommandOpts, command
 from mirage.commands.spec import SPECS
@@ -48,7 +50,8 @@ def make_rm(vfs: str, io: CommandIO) -> Callable[..., Any]:
     rm_r = io.rm_r
     if rm_r is None:
         raise NotImplementedError(
-            "operation 'rm_r' is not supported on this backend")
+            "operation 'rm_r' is not supported on this backend"
+        )
 
     async def _rm(
         accessor: Accessor,
@@ -83,32 +86,45 @@ def make_rm(vfs: str, io: CommandIO) -> Callable[..., Any]:
         try:
             s = await stat(accessor, path, index=index)
         except FS_ERRORS as exc:
-            if force and isinstance(exc,
-                                    (FileNotFoundError, NotADirectoryError)):
+            if force and isinstance(
+                exc, (FileNotFoundError, NotADirectoryError)
+            ):
                 return None, []
             return f"rm: cannot remove '{label}': {fs_strerror(exc)}", []
         except ValueError:
             if force:
                 return None, []
-            return (f"rm: cannot remove '{label}': "
-                    "No such file or directory"), []
+            return (
+                f"rm: cannot remove '{label}': No such file or directory"
+            ), []
         try:
             if s.type == FileType.DIRECTORY:
                 if recursive:
-                    lines = removal_lines(await walk(
-                        functools.partial(readdir, accessor, index=index),
-                        functools.partial(stat, accessor, index=index),
-                        path)) if verbose else []
+                    lines = (
+                        removal_lines(
+                            await walk(
+                                functools.partial(
+                                    readdir, accessor, index=index
+                                ),
+                                functools.partial(stat, accessor, index=index),
+                                path,
+                            )
+                        )
+                        if verbose
+                        else []
+                    )
                     await rm_r(accessor, path)
                     return None, lines
                 if remove_dir:
                     children = await readdir(accessor, path, index)
                     if children:
-                        return (f"rm: cannot remove '{label}': "
-                                "Directory not empty"), []
+                        return (
+                            f"rm: cannot remove '{label}': Directory not empty"
+                        ), []
                     await rmdir(accessor, path)
-                    return None, ([f"removed directory '{label}'"]
-                                  if verbose else [])
+                    return None, (
+                        [f"removed directory '{label}'"] if verbose else []
+                    )
                 return f"rm: cannot remove '{label}': Is a directory", []
             await unlink(accessor, path)
         except FS_ERRORS as exc:
@@ -145,13 +161,15 @@ def make_rm(vfs: str, io: CommandIO) -> Callable[..., Any]:
                     errors.append(refusal)
                 continue
             # GNU rm reports the operand and keeps removing the rest.
-            error, entry_lines = await _rm(accessor,
-                                           p,
-                                           recursive=r,
-                                           force=f,
-                                           remove_dir=d,
-                                           verbose=v,
-                                           index=opts.index)
+            error, entry_lines = await _rm(
+                accessor,
+                p,
+                recursive=r,
+                force=f,
+                remove_dir=d,
+                verbose=v,
+                index=opts.index,
+            )
             if error is not None:
                 errors.append(error)
                 continue
@@ -159,13 +177,11 @@ def make_rm(vfs: str, io: CommandIO) -> Callable[..., Any]:
             verbose_parts.extend(entry_lines)
         output = format_optional_records(verbose_parts) if v else None
         stderr = ("\n".join(errors) + "\n").encode() if errors else None
-        return output, IOResult(writes=removed,
-                                stderr=stderr,
-                                exit_code=1 if errors else 0)
+        return output, IOResult(
+            writes=removed, stderr=stderr, exit_code=1 if errors else 0
+        )
 
-    wrapped: Callable[..., Any] = command("rm",
-                                          vfs=vfs,
-                                          spec=SPECS["rm"],
-                                          write=True,
-                                          path_guarded=True)(rm)
+    wrapped: Callable[..., Any] = command(
+        "rm", vfs=vfs, spec=SPECS["rm"], write=True, path_guarded=True
+    )(rm)
     return wrapped

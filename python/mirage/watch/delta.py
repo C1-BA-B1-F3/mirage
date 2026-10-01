@@ -16,8 +16,15 @@ import json
 from datetime import datetime, timezone
 
 from mirage.ops.host_io import with_host_io
-from mirage.types import (Delta, FileChangeKind, FileEvent, FileMetadata,
-                          PathSpec, WalkEntry, WalkFn)
+from mirage.types import (
+    Delta,
+    FileChangeKind,
+    FileEvent,
+    FileMetadata,
+    PathSpec,
+    WalkEntry,
+    WalkFn,
+)
 from mirage.watch.constants import DIR_FINGERPRINT
 
 
@@ -36,9 +43,13 @@ def spec_for(root: PathSpec, virtual: str) -> PathSpec:
     return PathSpec.from_str_path(virtual, vfs_path=virtual[cut:].strip("/"))
 
 
-def diff_snapshots(root: PathSpec, previous: dict[str, str],
-                   current: dict[str, str], entries: dict[str, WalkEntry],
-                   observed: datetime) -> tuple[FileEvent, ...]:
+def diff_snapshots(
+    root: PathSpec,
+    previous: dict[str, str],
+    current: dict[str, str],
+    entries: dict[str, WalkEntry],
+    observed: datetime,
+) -> tuple[FileEvent, ...]:
     """Classify two ``{virtual: fingerprint}`` snapshots as changes.
 
     A key only in ``current`` is a CREATE, one only in ``previous`` a
@@ -67,16 +78,24 @@ def diff_snapshots(root: PathSpec, previous: dict[str, str],
             kind = FileChangeKind.UPDATE
         entry = entries.get(virtual)
         metadata = None
-        if (entry is not None and not entry.is_dir
-                and kind is not FileChangeKind.DELETE):
-            metadata = FileMetadata(fingerprint=entry.fingerprint,
-                                    size=entry.size,
-                                    modified=entry.modified)
+        if (
+            entry is not None
+            and not entry.is_dir
+            and kind is not FileChangeKind.DELETE
+        ):
+            metadata = FileMetadata(
+                fingerprint=entry.fingerprint,
+                size=entry.size,
+                modified=entry.modified,
+            )
         changes.append(
-            FileEvent(kind=kind,
-                      path=spec_for(root, virtual),
-                      timestamp=observed,
-                      metadata=metadata))
+            FileEvent(
+                kind=kind,
+                path=spec_for(root, virtual),
+                timestamp=observed,
+                metadata=metadata,
+            )
+        )
     return tuple(changes)
 
 
@@ -93,8 +112,8 @@ class ListingDeltaHook:
 
     def __init__(self, walk: WalkFn) -> None:
         """Args:
-            walk (WalkFn): Async generator over all entries under a
-                root, reading the backend directly.
+        walk (WalkFn): Async generator over all entries under a
+            root, reading the backend directly.
         """
         self._walk = walk
 
@@ -121,6 +140,9 @@ class ListingDeltaHook:
         if checkpoint is None:
             return Delta(changes=(), checkpoint=serialized)
         previous: dict[str, str] = json.loads(checkpoint)
-        return Delta(changes=diff_snapshots(root, previous, snapshot, entries,
-                                            datetime.now(timezone.utc)),
-                     checkpoint=serialized)
+        return Delta(
+            changes=diff_snapshots(
+                root, previous, snapshot, entries, datetime.now(timezone.utc)
+            ),
+            checkpoint=serialized,
+        )

@@ -20,10 +20,12 @@ from mirage.types import PathSpec
 from mirage.utils.errors import enotsup
 
 
-async def truncate(accessor: SSHAccessor,
-                   path: PathSpec,
-                   length: int = 0,
-                   no_create: bool = False) -> None:
+async def truncate(
+    accessor: SSHAccessor,
+    path: PathSpec,
+    length: int = 0,
+    no_create: bool = False,
+) -> None:
     if no_create:
         raise enotsup("ssh", "truncate --no-create", path)
     config = accessor.config

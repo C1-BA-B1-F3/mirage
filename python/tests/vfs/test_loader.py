@@ -35,14 +35,17 @@ def _cat_sync(backend, path):
 def test_load_from_module():
     cls = load_backend_class("mirage.vfs.ram.ram:RAMVFS")
     from mirage.vfs.ram import RAMVFS
+
     assert cls is RAMVFS
 
 
 def test_load_from_script_file(tmp_path):
     script = tmp_path / "custom_backend.py"
-    script.write_text("from mirage.vfs.ram import RAMVFS\n"
-                      "class CustomBackend(RAMVFS):\n"
-                      "    pass\n")
+    script.write_text(
+        "from mirage.vfs.ram import RAMVFS\n"
+        "class CustomBackend(RAMVFS):\n"
+        "    pass\n"
+    )
     cls = load_backend_class(f"{script}:CustomBackend")
     assert cls.__name__ == "CustomBackend"
     instance = cls()

@@ -130,29 +130,31 @@ async def test_process_substitution_is_private_to_its_session():
     owner = asyncio.create_task(
         ws.shell(
             'consume() { ls /dev/fd >/dev/null; hold; cat "$1"; }; '
-            'consume <(echo private)',
-            session_id="owner"))
+            "consume <(echo private)",
+            session_id="owner",
+        )
+    )
     try:
         await asyncio.wait_for(ready.wait(), timeout=5)
         for command in [
-                'cat /dev/fd/63',
-                'stat /dev/fd/63',
-                'ls /dev/fd',
-                'echo corrupt > /dev/fd/63',
-                'rm /dev/fd/63',
-                'mkdir -p /dev/fd/63',
-                'mv /dev/fd /dev/stolen',
+            "cat /dev/fd/63",
+            "stat /dev/fd/63",
+            "ls /dev/fd",
+            "echo corrupt > /dev/fd/63",
+            "rm /dev/fd/63",
+            "mkdir -p /dev/fd/63",
+            "mv /dev/fd /dev/stolen",
         ]:
             result = await ws.shell(command, session_id="peer")
             assert result.exit_code != 0, command
             assert b"private" not in (result.stdout or b"")
-        result = await ws.shell('cat <(echo peer)', session_id="peer")
+        result = await ws.shell("cat <(echo peer)", session_id="peer")
         assert result.stdout == b"peer\n"
         release.set()
         result = await owner
         assert result.exit_code == 0
         assert result.stdout == b"private\n"
-        result = await ws.shell('ls /dev', session_id="owner")
+        result = await ws.shell("ls /dev", session_id="owner")
         assert b"fd" not in (result.stdout or b"")
     finally:
         release.set()
@@ -183,15 +185,19 @@ async def test_process_substitution_cleanup_preserves_reused_descriptor():
     owner = asyncio.create_task(
         ws.shell(
             'consume() { echo "$1"; rm "$1"; hold-old; }; consume <(echo old)',
-            session_id="owner"))
+            session_id="owner",
+        )
+    )
     peer = None
     try:
         await asyncio.wait_for(old_ready.wait(), timeout=5)
         peer = asyncio.create_task(
             ws.shell(
                 'consume() { echo "$1"; hold-new; cat "$1"; }; '
-                'consume <(echo new)',
-                session_id="peer"))
+                "consume <(echo new)",
+                session_id="peer",
+            )
+        )
         await asyncio.wait_for(new_ready.wait(), timeout=5)
         old_release.set()
         old_result = await owner
@@ -201,7 +207,7 @@ async def test_process_substitution_cleanup_preserves_reused_descriptor():
         new_result = await peer
         assert new_result.exit_code == 0
         assert new_result.stdout == b"/dev/fd/63\nnew\n"
-        assert (await ws.shell('ls /dev/fd', session_id="peer")).exit_code != 0
+        assert (await ws.shell("ls /dev/fd", session_id="peer")).exit_code != 0
     finally:
         old_release.set()
         new_release.set()
@@ -240,14 +246,17 @@ def test_stale_allocation_cannot_write_or_release_reused_input():
 @pytest.mark.asyncio
 @pytest.mark.parametrize("configured", [False, True])
 async def test_alternate_dev_mount_does_not_cache_session_descriptors(
-        configured):
+    configured,
+):
     dev = DevVFS()
     ws = Workspace(
         {
-            "/devices":
-            Mount(dev, index=IndexConfig(ttl=120)) if configured else dev
+            "/devices": Mount(dev, index=IndexConfig(ttl=120))
+            if configured
+            else dev
         },
-        index=IndexConfig(ttl=600))
+        index=IndexConfig(ttl=600),
+    )
     owner = ws.create_session("owner")
     ws.create_session("peer")
     token = set_current_session(owner)

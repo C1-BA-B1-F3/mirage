@@ -21,7 +21,9 @@ from mirage.types import MountMode
 from mirage.vfs.ram import RAMVFS
 from mirage.workspace import Workspace
 
-SPEC = CommandSpec(rest=Operand(type="path"), )
+SPEC = CommandSpec(
+    rest=Operand(type="path"),
+)
 
 
 @command("testcmd", vfs="ram", filetype=".custom", spec=SPEC)
@@ -36,7 +38,7 @@ async def _testcmd_default(store, paths, *texts, **kw):
 
 @command("testcmd2", vfs="ram", filetype=".special", spec=SPEC)
 async def _testcmd2_special(store, paths, *texts, **kw):
-    return b"special handler", IOResult()  # noqa
+    return b"special handler", IOResult()
 
 
 @command("testcmd2", vfs="ram", spec=SPEC)

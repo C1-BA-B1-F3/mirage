@@ -19,6 +19,6 @@ from mirage.core.gslides.scope import detect_scope
 from mirage.core.hierarchy.probe import ReaddirFn
 from mirage.vfs.gslides.slide_entry import make_filename
 
-readdir: ReaddirFn[GSlidesAccessor] = make_app_readdir(MIME, detect_scope,
-                                                       make_filename,
-                                                       "gslides/file")
+readdir: ReaddirFn[GSlidesAccessor] = make_app_readdir(
+    MIME, detect_scope, make_filename, "gslides/file"
+)

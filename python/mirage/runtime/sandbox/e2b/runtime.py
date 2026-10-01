@@ -49,16 +49,16 @@ class E2BRuntime(RemoteSandbox):
     async def connect(self) -> None:
         if sdk.AsyncSandbox is None:
             raise ImportError(sdk_install_hint("e2b"))
-        self._sandbox = await sdk.AsyncSandbox.connect(self.config.sandbox_id,
-                                                       **self._api_params())
+        self._sandbox = await sdk.AsyncSandbox.connect(
+            self.config.sandbox_id, **self._api_params()
+        )
 
-    async def exec_line(self, line: str, stdin: bytes | None,
-                        env: dict[str, str], cwd: str) -> RunResult:
-        handle = await self._sandbox.commands.run(line,
-                                                  envs=env,
-                                                  cwd=cwd,
-                                                  background=True,
-                                                  stdin=stdin is not None)
+    async def exec_line(
+        self, line: str, stdin: bytes | None, env: dict[str, str], cwd: str
+    ) -> RunResult:
+        handle = await self._sandbox.commands.run(
+            line, envs=env, cwd=cwd, background=True, stdin=stdin is not None
+        )
         try:
             try:
                 if stdin is not None:
@@ -81,6 +81,8 @@ class E2BRuntime(RemoteSandbox):
             raise
         finally:
             await handle.disconnect()
-        return RunResult(stdout=str(result.stdout).encode(),
-                         stderr=str(result.stderr).encode(),
-                         exit_code=int(result.exit_code))
+        return RunResult(
+            stdout=str(result.stdout).encode(),
+            stderr=str(result.stderr).encode(),
+            exit_code=int(result.exit_code),
+        )

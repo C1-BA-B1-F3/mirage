@@ -29,7 +29,8 @@ def _make_ws():
         {
             "/a": (src, MountMode.WRITE),
             "/b": (dst, MountMode.WRITE),
-        }, )
+        },
+    )
     return ws, src, dst
 
 

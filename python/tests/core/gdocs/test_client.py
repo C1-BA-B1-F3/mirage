@@ -34,9 +34,9 @@ def config():
 async def test_token_manager_refreshes_on_first_call(config):
     mgr = TokenManager(config)
     with patch(
-            "mirage.core.google.client.refresh_access_token",
-            new_callable=AsyncMock,
-            return_value=("new-token", 3600),
+        "mirage.core.google.client.refresh_access_token",
+        new_callable=AsyncMock,
+        return_value=("new-token", 3600),
     ) as mock_refresh:
         token = await mgr.get_token()
         assert token == "new-token"
@@ -47,9 +47,9 @@ async def test_token_manager_refreshes_on_first_call(config):
 async def test_token_manager_caches_token(config):
     mgr = TokenManager(config)
     with patch(
-            "mirage.core.google.client.refresh_access_token",
-            new_callable=AsyncMock,
-            return_value=("cached-token", 3600),
+        "mirage.core.google.client.refresh_access_token",
+        new_callable=AsyncMock,
+        return_value=("cached-token", 3600),
     ) as mock_refresh:
         t1 = await mgr.get_token()
         t2 = await mgr.get_token()
@@ -61,18 +61,18 @@ async def test_token_manager_caches_token(config):
 async def test_token_manager_refreshes_when_expired(config):
     mgr = TokenManager(config)
     with patch(
-            "mirage.core.google.client.refresh_access_token",
-            new_callable=AsyncMock,
-            return_value=("token-1", 3600),
+        "mirage.core.google.client.refresh_access_token",
+        new_callable=AsyncMock,
+        return_value=("token-1", 3600),
     ):
         await mgr.get_token()
 
     mgr._expires_at = time.time() - 1
 
     with patch(
-            "mirage.core.google.client.refresh_access_token",
-            new_callable=AsyncMock,
-            return_value=("token-2", 3600),
+        "mirage.core.google.client.refresh_access_token",
+        new_callable=AsyncMock,
+        return_value=("token-2", 3600),
     ):
         token = await mgr.get_token()
         assert token == "token-2"
@@ -82,9 +82,9 @@ async def test_token_manager_refreshes_when_expired(config):
 async def test_google_headers(config):
     mgr = TokenManager(config)
     with patch(
-            "mirage.core.google.client.refresh_access_token",
-            new_callable=AsyncMock,
-            return_value=("my-token", 3600),
+        "mirage.core.google.client.refresh_access_token",
+        new_callable=AsyncMock,
+        return_value=("my-token", 3600),
     ):
         headers = await google_headers(mgr)
         assert headers["Authorization"] == "Bearer my-token"

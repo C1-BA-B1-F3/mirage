@@ -25,5 +25,6 @@ __all__ = ["GoogleDriveConfig", "GoogleDriveVFS"]
 def __getattr__(name: str) -> "type[GoogleDriveVFS]":
     if name == "GoogleDriveVFS":
         from mirage.vfs.gdrive.gdrive import GoogleDriveVFS
+
         return GoogleDriveVFS
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

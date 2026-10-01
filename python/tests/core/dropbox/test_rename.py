@@ -32,19 +32,25 @@ def make_accessor() -> DropboxAccessor:
 @pytest.mark.asyncio
 async def test_rename_replaces_existing_destination_file():
     conflict = DropboxApiError("conflict", 409, "to/conflict/file/...")
-    with patch("mirage.core.dropbox.rename.move_path",
-               new_callable=AsyncMock,
-               side_effect=[conflict, None]) as moved:
-        with patch("mirage.core.dropbox.rename.get_metadata",
-                   new_callable=AsyncMock,
-                   return_value={
-                       ".tag": "file",
-                       "name": "b.txt"
-                   }):
-            with patch("mirage.core.dropbox.rename.delete_path",
-                       new_callable=AsyncMock) as deleted:
-                await rename(make_accessor(), PathSpec.from_str_path("/a.txt"),
-                             PathSpec.from_str_path("/b.txt"))
+    with patch(
+        "mirage.core.dropbox.rename.move_path",
+        new_callable=AsyncMock,
+        side_effect=[conflict, None],
+    ) as moved:
+        with patch(
+            "mirage.core.dropbox.rename.get_metadata",
+            new_callable=AsyncMock,
+            return_value={".tag": "file", "name": "b.txt"},
+        ):
+            with patch(
+                "mirage.core.dropbox.rename.delete_path",
+                new_callable=AsyncMock,
+            ) as deleted:
+                await rename(
+                    make_accessor(),
+                    PathSpec.from_str_path("/a.txt"),
+                    PathSpec.from_str_path("/b.txt"),
+                )
     assert deleted.await_args.args[1] == "/b.txt"
     assert moved.await_count == 2
 
@@ -52,23 +58,30 @@ async def test_rename_replaces_existing_destination_file():
 @pytest.mark.asyncio
 async def test_rename_conflict_replaces_empty_dir_destination():
     conflict = DropboxApiError("conflict", 409, "to/conflict/folder/...")
-    with patch("mirage.core.dropbox.rename.move_path",
-               new_callable=AsyncMock,
-               side_effect=[conflict, None]) as moved:
-        with patch("mirage.core.dropbox.rename.get_metadata",
-                   new_callable=AsyncMock,
-                   return_value={
-                       ".tag": "folder",
-                       "name": "dst"
-                   }):
-            with patch("mirage.core.dropbox.rename.list_folder",
-                       new_callable=AsyncMock,
-                       return_value=[]):
-                with patch("mirage.core.dropbox.rename.delete_path",
-                           new_callable=AsyncMock) as deleted:
-                    await rename(make_accessor(),
-                                 PathSpec.from_str_path("/src"),
-                                 PathSpec.from_str_path("/dst"))
+    with patch(
+        "mirage.core.dropbox.rename.move_path",
+        new_callable=AsyncMock,
+        side_effect=[conflict, None],
+    ) as moved:
+        with patch(
+            "mirage.core.dropbox.rename.get_metadata",
+            new_callable=AsyncMock,
+            return_value={".tag": "folder", "name": "dst"},
+        ):
+            with patch(
+                "mirage.core.dropbox.rename.list_folder",
+                new_callable=AsyncMock,
+                return_value=[],
+            ):
+                with patch(
+                    "mirage.core.dropbox.rename.delete_path",
+                    new_callable=AsyncMock,
+                ) as deleted:
+                    await rename(
+                        make_accessor(),
+                        PathSpec.from_str_path("/src"),
+                        PathSpec.from_str_path("/dst"),
+                    )
     assert deleted.await_args.args[1] == "/dst"
     assert moved.await_count == 2
 
@@ -76,40 +89,48 @@ async def test_rename_conflict_replaces_empty_dir_destination():
 @pytest.mark.asyncio
 async def test_rename_conflict_keeps_error_for_nonempty_dir():
     conflict = DropboxApiError("conflict", 409, "to/conflict/folder/...")
-    with patch("mirage.core.dropbox.rename.move_path",
-               new_callable=AsyncMock,
-               side_effect=[conflict, None]) as moved:
-        with patch("mirage.core.dropbox.rename.get_metadata",
-                   new_callable=AsyncMock,
-                   return_value={
-                       ".tag": "folder",
-                       "name": "dst"
-                   }):
-            with patch("mirage.core.dropbox.rename.list_folder",
-                       new_callable=AsyncMock,
-                       return_value=[{
-                           ".tag": "file",
-                           "name": "keep.txt"
-                       }]):
-                with patch("mirage.core.dropbox.rename.delete_path",
-                           new_callable=AsyncMock) as deleted:
+    with patch(
+        "mirage.core.dropbox.rename.move_path",
+        new_callable=AsyncMock,
+        side_effect=[conflict, None],
+    ) as moved:
+        with patch(
+            "mirage.core.dropbox.rename.get_metadata",
+            new_callable=AsyncMock,
+            return_value={".tag": "folder", "name": "dst"},
+        ):
+            with patch(
+                "mirage.core.dropbox.rename.list_folder",
+                new_callable=AsyncMock,
+                return_value=[{".tag": "file", "name": "keep.txt"}],
+            ):
+                with patch(
+                    "mirage.core.dropbox.rename.delete_path",
+                    new_callable=AsyncMock,
+                ) as deleted:
                     with pytest.raises(DropboxApiError):
-                        await rename(make_accessor(),
-                                     PathSpec.from_str_path("/src"),
-                                     PathSpec.from_str_path("/dst"))
+                        await rename(
+                            make_accessor(),
+                            PathSpec.from_str_path("/src"),
+                            PathSpec.from_str_path("/dst"),
+                        )
     assert deleted.await_count == 0
     assert moved.await_count == 1
 
 
 @pytest.mark.asyncio
 async def test_rename_missing_source_raises_enoent():
-    with patch("mirage.core.dropbox.rename.move_path",
-               new_callable=AsyncMock,
-               side_effect=DropboxApiError("nf", 409,
-                                           "from_lookup/not_found/...")):
+    with patch(
+        "mirage.core.dropbox.rename.move_path",
+        new_callable=AsyncMock,
+        side_effect=DropboxApiError("nf", 409, "from_lookup/not_found/..."),
+    ):
         with pytest.raises(FileNotFoundError):
-            await rename(make_accessor(), PathSpec.from_str_path("/ghost"),
-                         PathSpec.from_str_path("/b.txt"))
+            await rename(
+                make_accessor(),
+                PathSpec.from_str_path("/ghost"),
+                PathSpec.from_str_path("/b.txt"),
+            )
 
 
 @pytest.mark.asyncio
@@ -118,19 +139,18 @@ async def test_rename_conflict_probe_is_bounded_to_one_entry(dropbox_accessor):
     # follows every continuation cursor, so asking it with a small page
     # size made one request per child to answer a yes/no.
     conflict = DropboxApiError("conflict", 409, "to/conflict/folder/...")
-    rpc = FakeDropboxRpc(entries=[{
-        ".tag": "file",
-        "name": "keep.txt"
-    }] * 3,
-                         metadata={
-                             ".tag": "folder",
-                             "name": "dst"
-                         },
-                         move_errors=[conflict])
+    rpc = FakeDropboxRpc(
+        entries=[{".tag": "file", "name": "keep.txt"}] * 3,
+        metadata={".tag": "folder", "name": "dst"},
+        move_errors=[conflict],
+    )
     with patch("mirage.core.dropbox.api.dropbox_rpc", new=rpc):
         with pytest.raises(DropboxApiError):
-            await rename(dropbox_accessor, PathSpec.from_str_path("/src"),
-                         PathSpec.from_str_path("/dst"))
+            await rename(
+                dropbox_accessor,
+                PathSpec.from_str_path("/src"),
+                PathSpec.from_str_path("/dst"),
+            )
     assert rpc.list_limits == [1]
     assert rpc.list_requests == 1
     assert rpc.deleted == []

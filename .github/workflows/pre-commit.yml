@@ -113,11 +113,11 @@ jobs:
           if [ "$EVENT" = "pull_request" ]; then
             # Version files too, not just config: a `rev:` pins every
             # python tool, but the typescript hooks are `language: system`
-            # and take theirs from the lockfile, so a bot's prettier bump
+            # and take theirs from the lockfile, so a bot's oxfmt bump
             # would reflow the tree behind a one-file diff. uv.lock counts
             # because check_test_pathspec.py shells out to the venv's mypy.
             # knip's inputs are absent because this job skips ts-knip.
-            wide='^(\.pre-commit-config\.yaml|\.github/workflows/pre-commit\.yml|ruff\.toml|\.isort\.cfg|python/(pyproject\.toml|uv\.lock)|typescript/(package\.json|pnpm-lock\.yaml|pnpm-workspace\.yaml|tsconfig\.base\.json|packages/[^/]+/tsconfig(\.build)?\.json|eslint\.config\.js|\.prettierrc\.json|\.prettierignore|scripts/precommit-run\.sh)|integ/(package\.json|eslint\.config\.js|\.prettierrc\.json|\.prettierignore|scripts/precommit-run\.sh))$'
+            wide='^(\.pre-commit-config\.yaml|\.github/workflows/pre-commit\.yml|ruff\.toml|python/(pyproject\.toml|uv\.lock)|typescript/(package\.json|pnpm-lock\.yaml|pnpm-workspace\.yaml|tsconfig\.base\.json|packages/[^/]+/tsconfig(\.build)?\.json|eslint\.config\.js|\.oxfmtrc\.json|scripts/precommit-run\.sh)|integ/(package\.json|eslint\.config\.js|\.oxfmtrc\.jsonc|scripts/precommit-run\.sh))$'
             # Captured, not piped: `grep -q` exits on its first match, so
             # under `pipefail` git's SIGPIPE would become the status and
             # invert this test in the case where a config DID change.

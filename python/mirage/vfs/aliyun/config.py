@@ -16,5 +16,4 @@ from mirage.vfs.s3_alias import RegionEndpointConfig
 
 
 class AliyunConfig(RegionEndpointConfig):
-
     ENDPOINT = "https://s3.oss-{region}.aliyuncs.com"

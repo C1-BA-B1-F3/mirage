@@ -28,7 +28,6 @@ ADD_LUA = (files("mirage.cache.file") / "add.lua").read_text(encoding="utf-8")
 
 
 class RedisFileCacheStore(RedisVFS, FileCacheMixin):
-
     def __init__(
         self,
         cache_limit: str | int = "512MB",
@@ -114,10 +113,11 @@ class RedisFileCacheStore(RedisVFS, FileCacheMixin):
             # fingerprint and TTL in one Redis execution so shared-cache
             # writers cannot interleave.
             inserted = await self._add(
-                keys=[self._data_key(key),
-                      self._meta_key(key)],
+                keys=[self._data_key(key), self._meta_key(key)],
                 args=[
-                    data, fingerprint or "", "" if ttl is None else str(ttl)
+                    data,
+                    fingerprint or "",
+                    "" if ttl is None else str(ttl),
                 ],
             )
             return bool(inserted)
@@ -156,8 +156,8 @@ class RedisFileCacheStore(RedisVFS, FileCacheMixin):
             task.cancel()
         self._drain_tasks.clear()
         for pattern in (
-                f"{self._data_prefix}*",
-                f"{self._meta_prefix}*",
+            f"{self._data_prefix}*",
+            f"{self._meta_prefix}*",
         ):
             keys: list[Any] = []
             async for k in self._cache_client.scan_iter(pattern):
@@ -165,15 +165,15 @@ class RedisFileCacheStore(RedisVFS, FileCacheMixin):
             if keys:
                 await self._cache_client.delete(*keys)
 
-    async def evict_prefix(self,
-                           prefix: str,
-                           *,
-                           excluded: tuple[str, ...] = ()) -> None:
+    async def evict_prefix(
+        self, prefix: str, *, excluded: tuple[str, ...] = ()
+    ) -> None:
         self._invalidation.invalidate_all()
         for key in [
-                k for k in self._drain_tasks
-                if k.startswith(prefix) and not any(
-                    under_path(k, p) for p in excluded)
+            k
+            for k in self._drain_tasks
+            if k.startswith(prefix)
+            and not any(under_path(k, p) for p in excluded)
         ]:
             task = self._drain_tasks.pop(key)
             task.cancel()
@@ -181,7 +181,7 @@ class RedisFileCacheStore(RedisVFS, FileCacheMixin):
         for base in (self._data_prefix, self._meta_prefix):
             keys: list[Any] = []
             async for k in self._cache_client.scan_iter(f"{base}{escaped}*"):
-                key = (k.decode() if isinstance(k, bytes) else k)[len(base):]
+                key = (k.decode() if isinstance(k, bytes) else k)[len(base) :]
                 if not any(under_path(key, p) for p in excluded):
                     keys.append(k)
             if keys:

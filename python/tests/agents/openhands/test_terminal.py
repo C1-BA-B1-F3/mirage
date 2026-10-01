@@ -16,13 +16,15 @@ import pytest
 
 pytest.importorskip("openhands")
 
-from openhands.sdk.tool import list_registered_tools  # noqa: E402
+from openhands.sdk.tool import list_registered_tools
 
-from mirage.agents.openhands import MirageWorkspace  # noqa: E402
-from mirage.agents.openhands import register_mirage_terminal  # noqa: E402
-from mirage.types import MountMode  # noqa: E402
-from mirage.vfs.ram import RAMVFS  # noqa: E402
-from mirage.workspace import Workspace  # noqa: E402
+from mirage.agents.openhands import (
+    MirageWorkspace,
+    register_mirage_terminal,
+)
+from mirage.types import MountMode
+from mirage.vfs.ram import RAMVFS
+from mirage.workspace import Workspace
 
 
 def test_register_mirage_terminal_uses_tool_definition():

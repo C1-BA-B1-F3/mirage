@@ -14,8 +14,13 @@
 
 import pytest
 
-from mirage.io.async_line_iterator import (AsyncLineIterator, SharedInput,
-                                           char_width, line_buffer, share)
+from mirage.io.async_line_iterator import (
+    AsyncLineIterator,
+    SharedInput,
+    char_width,
+    line_buffer,
+    share,
+)
 from mirage.io.cooperative import chunks
 from mirage.io.types import DeviceInput, materialize
 
@@ -169,14 +174,14 @@ async def test_skip_nonmatching_lines_retains_candidates_across_chunks():
             yield chunk
 
     lines = AsyncLineIterator(source())
-    assert lines.skip_nonmatching_lines((b"needle", )) == (0, 0)
+    assert lines.skip_nonmatching_lines((b"needle",)) == (0, 0)
     assert await lines.readline() == b"first"
-    assert lines.skip_nonmatching_lines((b"needle", )) == (2, 10)
-    assert lines.skip_nonmatching_lines((b"needle", )) == (0, 0)
+    assert lines.skip_nonmatching_lines((b"needle",)) == (2, 10)
+    assert lines.skip_nonmatching_lines((b"needle",)) == (0, 0)
     assert await lines.readline() == b"needle"
-    assert lines.skip_nonmatching_lines((b"needle", )) == (1, 5)
+    assert lines.skip_nonmatching_lines((b"needle",)) == (1, 5)
     assert await lines.readline() == b"needle"
-    assert lines.skip_nonmatching_lines((b"needle", )) == (0, 0)
+    assert lines.skip_nonmatching_lines((b"needle",)) == (0, 0)
     assert await lines.readline() == b"tail"
     assert await lines.readline() is None
 
@@ -192,19 +197,24 @@ async def test_skip_nonmatching_lines_interleaves_needles_under_folding():
         if line is None:
             break
         seen.append((skipped, line))
-    assert seen == [((0, 0), b"A1"), ((2, 4), b"b2"), ((1, 2), b"a3"),
-                    ((1, 2), b"B4"), ((0, 0), b"x")]
+    assert seen == [
+        ((0, 0), b"A1"),
+        ((2, 4), b"b2"),
+        ((1, 2), b"a3"),
+        ((1, 2), b"B4"),
+        ((0, 0), b"x"),
+    ]
 
 
 @pytest.mark.asyncio
 async def test_skip_nonmatching_lines_by_another_delimiter():
     lines = AsyncLineIterator(_chunks([b"a\nb\0needle\nc\0d\0nee", b"dle\0"]))
     assert await lines.read_until(b"\0") == (b"a\nb", True)
-    assert lines.skip_nonmatching_lines((b"needle", ), False, b"\0") == (0, 0)
+    assert lines.skip_nonmatching_lines((b"needle",), False, b"\0") == (0, 0)
     assert await lines.read_until(b"\0") == (b"needle\nc", True)
-    assert lines.skip_nonmatching_lines((b"needle", ), False, b"\0") == (1, 2)
+    assert lines.skip_nonmatching_lines((b"needle",), False, b"\0") == (1, 2)
     assert await lines.read_until(b"\0") == (b"needle", True)
-    assert lines.skip_nonmatching_lines((b"needle", ), False, b"\0") == (0, 0)
+    assert lines.skip_nonmatching_lines((b"needle",), False, b"\0") == (0, 0)
     assert await lines.read_until(b"\0") == (b"", False)
 
 

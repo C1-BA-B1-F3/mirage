@@ -18,6 +18,7 @@ the shell (and across later lines of the same session); ``exec cmd`` has
 no OS-process referent and is refused loudly. Output is read back from a
 second session, since the first has its own output diverted.
 """
+
 import pytest
 
 from mirage.types import MountMode
@@ -69,7 +70,8 @@ async def test_stdin_redirect_feeds_read():
     io = await ws.shell(
         "printf 'l1\\nl2\\n' > /data/in; exec < /data/in; read a; read b; "
         "echo $a-$b",
-        session_id="reader")
+        session_id="reader",
+    )
     assert (await io.stdout_str()) == "l1-l2\n"
     await ws.close()
 
@@ -82,7 +84,8 @@ async def test_stdin_dup_onto_itself_keeps_the_bound_file():
     io = await ws.shell(
         "printf 'l1\\nl2\\n' > /data/in; exec < /data/in; exec 0<&0; "
         "read a; exec 0>&0; read b; echo $a-$b; exec <&-; read c; echo rc=$?",
-        session_id="reader")
+        session_id="reader",
+    )
     assert (await io.stdout_str()) == "l1-l2\nrc=1\n"
     await ws.close()
 
@@ -119,8 +122,9 @@ async def test_append_creates_the_target_with_no_output():
     """bash opens an `exec >>` target as it processes the exec, so the
     file is there before any statement runs."""
     ws = _ws()
-    io = await ws.shell("( exec >> /data/new; ); test -e /data/new",
-                        session_id="reader")
+    io = await ws.shell(
+        "( exec >> /data/new; ); test -e /data/new", session_id="reader"
+    )
     assert io.exit_code == 0
     await ws.close()
 
@@ -130,7 +134,8 @@ async def test_append_open_keeps_existing_bytes():
     ws = _ws()
     io = await ws.shell(
         "echo old > /data/keep; ( exec >> /data/keep; ); cat /data/keep",
-        session_id="reader")
+        session_id="reader",
+    )
     assert (await io.stdout_str()) == "old\n"
     await ws.close()
 
@@ -143,7 +148,8 @@ async def test_opened_targets_take_the_umask_mode():
     io = await ws.shell(
         "umask 077; ( exec > /data/m; echo z ); ( exec >> /data/a; ); "
         "stat -c '%a %n' /data/m /data/a",
-        session_id="reader")
+        session_id="reader",
+    )
     assert (await io.stdout_str()) == "600 /data/m\n600 /data/a\n"
     await ws.close()
 
@@ -156,19 +162,21 @@ async def test_standard_descriptors_open_in_the_other_direction():
     ws = _ws()
     try:
         await ws.shell(
-            "echo original > /data/input; echo readable > /data/source")
-        io = await ws.shell("( exec 0>/data/input; echo rc=$?; cat; "
-                            "echo rc=$?; read v; echo rc=$? )")
+            "echo original > /data/input; echo readable > /data/source"
+        )
+        io = await ws.shell(
+            "( exec 0>/data/input; echo rc=$?; cat; "
+            "echo rc=$?; read v; echo rc=$? )"
+        )
         assert await io.stdout_str() == "rc=0\nrc=1\nrc=1\n"
         assert "cat: -: Bad file descriptor" in (await io.stderr_str())
         assert await _file(ws, "/data/input") == ""
-        io = await ws.shell("( exec 1</data/source; echo hi; "
-                            "echo rc=$? >&2 )")
+        io = await ws.shell("( exec 1</data/source; echo hi; echo rc=$? >&2 )")
         assert await io.stdout_str() == ""
         assert await io.stderr_str() == (
-            "echo: write error: Bad file descriptor\nrc=1\n")
-        io = await ws.shell("( exec 2</data/source; echo hi >&2; "
-                            "echo rc=$? )")
+            "echo: write error: Bad file descriptor\nrc=1\n"
+        )
+        io = await ws.shell("( exec 2</data/source; echo hi >&2; echo rc=$? )")
         assert await io.stdout_str() == "rc=1\n"
     finally:
         await ws.close()
@@ -194,15 +202,21 @@ async def test_a_failed_later_redirect_puts_every_earlier_one_back():
     missing = "/data/missing: No such file or directory\n"
     try:
         io = await ws.shell("exec > /data/good < /data/missing; echo visible")
-        assert (await io.stdout_str(), await
-                io.stderr_str(), io.exit_code) == ("visible\n", missing, 0)
+        assert (
+            await io.stdout_str(),
+            await io.stderr_str(),
+            io.exit_code,
+        ) == ("visible\n", missing, 0)
         assert await _file(ws, "/data/good") == ""
         io = await ws.shell("exec 2> /data/e < /data/missing; echo toerr >&2")
-        assert (await io.stdout_str(), await
-                io.stderr_str()) == ("", "toerr\n")
+        assert (await io.stdout_str(), await io.stderr_str()) == (
+            "",
+            "toerr\n",
+        )
         assert await _file(ws, "/data/e") == missing
         io = await ws.shell(
-            "exec > /data/g2; exec >> /data/g3 < /data/missing; echo where")
+            "exec > /data/g2; exec >> /data/g3 < /data/missing; echo where"
+        )
         assert (await io.stdout_str(), await io.stderr_str()) == ("", missing)
         assert await _file(ws, "/data/g2") == "where\n"
         assert await _file(ws, "/data/g3") == ""
@@ -218,18 +232,22 @@ async def test_dups_copy_the_terminal_stream_they_name():
     ws = _ws()
     try:
         io = await ws.shell("( exec 2>&1; echo err >&2 ); echo after >&2")
-        assert (await io.stdout_str(), await
-                io.stderr_str()) == ("err\n", "after\n")
+        assert (await io.stdout_str(), await io.stderr_str()) == (
+            "err\n",
+            "after\n",
+        )
         io = await ws.shell("( exec 1>&2; echo a ); echo b")
         assert (await io.stdout_str(), await io.stderr_str()) == ("b\n", "a\n")
         io = await ws.shell("( exec 1>&2; exec 2>&1; echo a; echo b >&2 )")
         assert (await io.stdout_str(), await io.stderr_str()) == ("", "a\nb\n")
         io = await ws.shell(
-            "( exec 2>&1 < /data/missing; echo out; echo err >&2 )")
-        assert (await io.stdout_str(), await
-                io.stderr_str(), io.exit_code) == (
-                    "/data/missing: No such file or directory\nout\n", "err\n",
-                    0)
+            "( exec 2>&1 < /data/missing; echo out; echo err >&2 )"
+        )
+        assert (
+            await io.stdout_str(),
+            await io.stderr_str(),
+            io.exit_code,
+        ) == ("/data/missing: No such file or directory\nout\n", "err\n", 0)
     finally:
         await ws.close()
 
@@ -242,10 +260,13 @@ async def test_a_stream_bound_to_stdin_cannot_be_written():
     ws = _ws()
     try:
         io = await ws.shell(
-            "( exec 1>&0; echo hi; echo rc=$? >&2; echo again ); echo back")
+            "( exec 1>&0; echo hi; echo rc=$? >&2; echo again ); echo back"
+        )
         assert (await io.stdout_str(), await io.stderr_str()) == (
-            "back\n", "echo: write error: Bad file descriptor\nrc=1\n"
-            "echo: write error: Bad file descriptor\n")
+            "back\n",
+            "echo: write error: Bad file descriptor\nrc=1\n"
+            "echo: write error: Bad file descriptor\n",
+        )
         io = await ws.shell("( exec 2>&0; echo hi >&2; echo rc=$? )")
         assert (await io.stdout_str(), await io.stderr_str()) == ("rc=1\n", "")
     finally:
@@ -256,72 +277,172 @@ async def test_a_stream_bound_to_stdin_cannot_be_written():
 @pytest.mark.parametrize(
     "command,stdout,stderr,code",
     [
-        ('printf x >/data/f; exec 1</data/f; exec 0<&1; cat >&2', '', 'x', 0),
+        ("printf x >/data/f; exec 1</data/f; exec 0<&1; cat >&2", "", "x", 0),
         # A stream aliased onto stdin's read end reads what stdin reads, and
         # keeps the file a `exec <f` bound even after `exec 0<&-`.
-        ('printf x >/data/f; exec </data/f; exec 1<&0; cat <&1 >&2; '
-         'echo rc=$? >&2', '', 'xrc=0\n', 0),
-        ('printf x >/data/f; exec </data/f; exec 1<&0; exec 0<&-;'
-         'cat <&1 >&2; '
-         'echo rc=$? >&2', '', 'xrc=0\n', 0),
-        ('printf x >/data/f; exec </data/f; exec 2<&0; cat <&2 >&2', '', '',
-         1),
-        ('printf x | { exec 1<&0; cat <&1 >&2; }; echo rc=$? >&2', '',
-         'xrc=0\n', 0),
-        ('printf xy >/data/f; exec 1</data/f; exec 0<&1; exec 1>&-; cat >&2',
-         '', 'xy', 0),
-        ('printf x >/data/f; exec 1</data/f; exec 0<&1; exec 1>&2; cat', '',
-         'x', 0),
-        ('printf x >/data/f; exec 2</data/f; exec 0<&2; cat >&2', '', '', 1),
-        ('printf x >/data/f; exec 1</data/f; cat <&1 >&2; echo rc=$? >&2', '',
-         'xrc=0\n', 0),
+        (
+            "printf x >/data/f; exec </data/f; exec 1<&0; cat <&1 >&2; "
+            "echo rc=$? >&2",
+            "",
+            "xrc=0\n",
+            0,
+        ),
+        (
+            "printf x >/data/f; exec </data/f; exec 1<&0; exec 0<&-;"
+            "cat <&1 >&2; "
+            "echo rc=$? >&2",
+            "",
+            "xrc=0\n",
+            0,
+        ),
+        (
+            "printf x >/data/f; exec </data/f; exec 2<&0; cat <&2 >&2",
+            "",
+            "",
+            1,
+        ),
+        (
+            "printf x | { exec 1<&0; cat <&1 >&2; }; echo rc=$? >&2",
+            "",
+            "xrc=0\n",
+            0,
+        ),
+        (
+            "printf xy >/data/f; exec 1</data/f; exec 0<&1; exec 1>&-; cat >&2",
+            "",
+            "xy",
+            0,
+        ),
+        (
+            "printf x >/data/f; exec 1</data/f; exec 0<&1; exec 1>&2; cat",
+            "",
+            "x",
+            0,
+        ),
+        ("printf x >/data/f; exec 2</data/f; exec 0<&2; cat >&2", "", "", 1),
+        (
+            "printf x >/data/f; exec 1</data/f; cat <&1 >&2; echo rc=$? >&2",
+            "",
+            "xrc=0\n",
+            0,
+        ),
         # A dup is another descriptor on the same open file: a read
         # through either moves the one offset, whatever fd 0 was bound
         # to in between, and each open starts its own.
-        ("printf 'a\\nb\\n' >/data/f; exec </data/f; exec 1<&0; "
-         "read x; exec 0<&1; read y; echo \"[$x][$y]\" >&2", "", "[a][b]\n", 0
-         ),
-        ("printf 'a\\nb\\n' >/data/f; exec 1</data/f; read x <&1; "
-         "read y <&1; echo \"[$x][$y]\" >&2", "", "[a][b]\n", 0),
-        ("printf 'a\\nb\\n' >/data/f; exec 1</data/f; exec 0<&1; "
-         "read x; exec 1</data/f; exec 0<&1; read y; "
-         "echo \"[$x][$y]\" >&2", "", "[a][a]\n", 0),
-        ("printf 'a\\nb\\n' >/data/f; exec </data/f; exec 1<&0; "
-         "exec </data/f; read x; read y; exec 0<&1; read z; "
-         "echo \"[$x][$y][$z]\" >&2", "", "[a][b][a]\n", 0),
-        ("printf 'a\\n' >/data/f; exec 1</data/f; cat <&1 >&2; "
-         "cat <&1 >&2; echo rc=$? >&2", "", "a\nrc=0\n", 0),
-        ("printf 'a\\nb\\n' >/data/f; exec 1</data/f; ( read x <&1; "
-         "echo \"[$x]\" >&2 ); read y <&1; echo \"[$y]\" >&2", "",
-         "[a]\n[b]\n", 0),
-        ("printf 'a\\nb\\nc\\n' >/data/f; exec 1</data/f; exec 0<&1; "
-         "read x; read y <&1; read z; echo \"[$x][$y][$z]\" >&2", "",
-         "[a][b][c]\n", 0),
-        ("printf 'a\\nb\\n' >/data/f; ( exec 2</data/f; exec 1<&2; "
-         "read x <&1; read y <&2; echo \"[$x][$y]\" >/data/o ); "
-         "cat /data/o", "[a][b]\n", "", 0),
-        ("printf 'a\\nb\\n' >/data/f; ( exec 1</data/f; exec 2>&1; "
-         "read x <&2; read y <&1; echo \"[$x][$y]\" >/data/o ); "
-         "cat /data/o", "[a][b]\n", "", 0),
-        ("printf 'a\\n' >/data/f; printf 'p\\n' | ( exec 1<&0; "
-         "exec </data/f; exec 0<&1; read x; echo \"[$x]\" >&2 )", "", "[p]\n",
-         0),
-        ("printf 'a\\n' >/data/f; exec 1</data/f; rm /data/f; "
-         "read x <&1; echo \"[$x]\" >&2", "", "[a]\n", 0),
-        ('exec 0>/data/f; echo x >&0; echo y >&0; cat /data/f', 'x\ny\n', '',
-         0),
-        ('exec 0>/data/f; { echo a; echo b; } >&0; cat /data/f', 'a\nb\n', '',
-         0),
-        ('exec 0>/data/f; echo x >&0; exec 0<&-; cat /data/f', 'x\n', '', 0),
-        ('exec 0>/data/f; echo x >&0; exec 1>&0; echo y; exec 1>&2; '
-         'cat /data/f >&2', '', 'x\ny\n', 0),
-        ('exec 0>/data/f; echo x 1>&0 2>&0; cat /data/f', 'x\n', '', 0),
-        ('exec 0<&1; echo x >&0', 'x\n', '', 0),
-        ('echo x >&0; echo rc=$?', 'rc=1\n',
-         'echo: write error: Bad file descriptor\n', 0),
-    ])
-async def test_descriptor_identities_survive_dups(command, stdout, stderr,
-                                                  code):
+        (
+            "printf 'a\\nb\\n' >/data/f; exec </data/f; exec 1<&0; "
+            'read x; exec 0<&1; read y; echo "[$x][$y]" >&2',
+            "",
+            "[a][b]\n",
+            0,
+        ),
+        (
+            "printf 'a\\nb\\n' >/data/f; exec 1</data/f; read x <&1; "
+            'read y <&1; echo "[$x][$y]" >&2',
+            "",
+            "[a][b]\n",
+            0,
+        ),
+        (
+            "printf 'a\\nb\\n' >/data/f; exec 1</data/f; exec 0<&1; "
+            "read x; exec 1</data/f; exec 0<&1; read y; "
+            'echo "[$x][$y]" >&2',
+            "",
+            "[a][a]\n",
+            0,
+        ),
+        (
+            "printf 'a\\nb\\n' >/data/f; exec </data/f; exec 1<&0; "
+            "exec </data/f; read x; read y; exec 0<&1; read z; "
+            'echo "[$x][$y][$z]" >&2',
+            "",
+            "[a][b][a]\n",
+            0,
+        ),
+        (
+            "printf 'a\\n' >/data/f; exec 1</data/f; cat <&1 >&2; "
+            "cat <&1 >&2; echo rc=$? >&2",
+            "",
+            "a\nrc=0\n",
+            0,
+        ),
+        (
+            "printf 'a\\nb\\n' >/data/f; exec 1</data/f; ( read x <&1; "
+            'echo "[$x]" >&2 ); read y <&1; echo "[$y]" >&2',
+            "",
+            "[a]\n[b]\n",
+            0,
+        ),
+        (
+            "printf 'a\\nb\\nc\\n' >/data/f; exec 1</data/f; exec 0<&1; "
+            'read x; read y <&1; read z; echo "[$x][$y][$z]" >&2',
+            "",
+            "[a][b][c]\n",
+            0,
+        ),
+        (
+            "printf 'a\\nb\\n' >/data/f; ( exec 2</data/f; exec 1<&2; "
+            'read x <&1; read y <&2; echo "[$x][$y]" >/data/o ); '
+            "cat /data/o",
+            "[a][b]\n",
+            "",
+            0,
+        ),
+        (
+            "printf 'a\\nb\\n' >/data/f; ( exec 1</data/f; exec 2>&1; "
+            'read x <&2; read y <&1; echo "[$x][$y]" >/data/o ); '
+            "cat /data/o",
+            "[a][b]\n",
+            "",
+            0,
+        ),
+        (
+            "printf 'a\\n' >/data/f; printf 'p\\n' | ( exec 1<&0; "
+            'exec </data/f; exec 0<&1; read x; echo "[$x]" >&2 )',
+            "",
+            "[p]\n",
+            0,
+        ),
+        (
+            "printf 'a\\n' >/data/f; exec 1</data/f; rm /data/f; "
+            'read x <&1; echo "[$x]" >&2',
+            "",
+            "[a]\n",
+            0,
+        ),
+        (
+            "exec 0>/data/f; echo x >&0; echo y >&0; cat /data/f",
+            "x\ny\n",
+            "",
+            0,
+        ),
+        (
+            "exec 0>/data/f; { echo a; echo b; } >&0; cat /data/f",
+            "a\nb\n",
+            "",
+            0,
+        ),
+        ("exec 0>/data/f; echo x >&0; exec 0<&-; cat /data/f", "x\n", "", 0),
+        (
+            "exec 0>/data/f; echo x >&0; exec 1>&0; echo y; exec 1>&2; "
+            "cat /data/f >&2",
+            "",
+            "x\ny\n",
+            0,
+        ),
+        ("exec 0>/data/f; echo x 1>&0 2>&0; cat /data/f", "x\n", "", 0),
+        ("exec 0<&1; echo x >&0", "x\n", "", 0),
+        (
+            "echo x >&0; echo rc=$?",
+            "rc=1\n",
+            "echo: write error: Bad file descriptor\n",
+            0,
+        ),
+    ],
+)
+async def test_descriptor_identities_survive_dups(
+    command, stdout, stderr, code
+):
     # bash 5.2 on debian:stable-slim with stdin from /dev/null: a stream
     # opened for reading keeps the file through a dup (`exec 1<f; exec
     # 0<&1`) and answers a transient `<&1`; fd 0 opened for writing takes

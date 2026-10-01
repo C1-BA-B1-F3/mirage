@@ -25,9 +25,9 @@ from mirage.utils.errors import ReadOnlyError
 @pytest.mark.asyncio
 async def test_refuse_answers_every_write_as_a_read_only_file_system():
     accessor = BinAccessor(lambda: ["ls"], lambda n: None)
-    path = PathSpec(virtual="/usr/bin/ls",
-                    directory="/usr/bin",
-                    vfs_path="/ls")
+    path = PathSpec(
+        virtual="/usr/bin/ls", directory="/usr/bin", vfs_path="/ls"
+    )
     with pytest.raises(ReadOnlyError) as info:
         await refuse(accessor, path, b"data")
     assert info.value.errno == errno.EROFS

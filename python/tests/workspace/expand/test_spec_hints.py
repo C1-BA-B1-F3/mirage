@@ -16,8 +16,10 @@ import pytest
 
 from mirage import RAMVFS, MountMode, Workspace
 from mirage.commands.spec import SPECS
-from mirage.workspace.expand.spec_hints import (spec_for_command,
-                                                spec_word_kinds)
+from mirage.workspace.expand.spec_hints import (
+    spec_for_command,
+    spec_word_kinds,
+)
 
 PATH = "path"
 TEXT = "str"
@@ -63,8 +65,9 @@ def test_mixed_cluster_value_is_text():
 
 
 def test_repeated_dash_e_values_are_text():
-    kinds = spec_word_kinds(SPECS["grep"],
-                            ["-e", "foo", "-e", "bar", "/a.txt"])
+    kinds = spec_word_kinds(
+        SPECS["grep"], ["-e", "foo", "-e", "bar", "/a.txt"]
+    )
     assert kinds == [TEXT, TEXT, TEXT, TEXT, PATH]
 
 
@@ -82,8 +85,9 @@ def test_find_ignore_tokens_classified_as_text():
     real one. Invisible until a start point that does not exist became
     an error, which is what GNU does.
     """
-    kinds = spec_word_kinds(SPECS["find"],
-                            ["/data", "(", "-name", "*.txt", ")"])
+    kinds = spec_word_kinds(
+        SPECS["find"], ["/data", "(", "-name", "*.txt", ")"]
+    )
     assert kinds[0] == PATH
     assert kinds[1] == TEXT
     assert kinds[4] == TEXT
@@ -96,19 +100,24 @@ def test_find_bare_bang_is_text_in_every_expression_position():
     first word on the line, straight after the start points, or between
     two predicates.
     """
-    assert spec_word_kinds(SPECS["find"],
-                           ["/data", "!", "-empty"]) == [PATH, TEXT, TEXT]
-    assert spec_word_kinds(SPECS["find"],
-                           ["/data", "-empty", "!", "-name", "x"]) == [
-                               PATH, TEXT, TEXT, TEXT, TEXT
-                           ]
+    assert spec_word_kinds(SPECS["find"], ["/data", "!", "-empty"]) == [
+        PATH,
+        TEXT,
+        TEXT,
+    ]
+    assert spec_word_kinds(
+        SPECS["find"], ["/data", "-empty", "!", "-name", "x"]
+    ) == [PATH, TEXT, TEXT, TEXT, TEXT]
     assert spec_word_kinds(SPECS["find"], ["!", "-empty"]) == [TEXT, TEXT]
 
 
 def test_find_bang_as_a_name_pattern_keeps_its_slot():
     """A `!` filling an option's value slot is that value, not grammar."""
-    assert spec_word_kinds(SPECS["find"],
-                           ["/data", "-name", "!"]) == [PATH, TEXT, TEXT]
+    assert spec_word_kinds(SPECS["find"], ["/data", "-name", "!"]) == [
+        PATH,
+        TEXT,
+        TEXT,
+    ]
 
 
 def test_duplicate_word_text_and_path_slots():
@@ -121,12 +130,16 @@ def test_duplicate_word_text_and_path_slots():
 def test_attached_path_value_is_not_a_relative_path():
     # `-o/` is a well-formed first directory, so the shape heuristic
     # took each of these words for a path under the cwd.
-    assert spec_word_kinds(SPECS["sort"],
-                           ["-o/data/s1.txt", "/data/in.txt"]) == [TEXT, PATH]
-    assert spec_word_kinds(SPECS["grep"],
-                           ["-f/data/p.txt", "/data/in.txt"]) == [TEXT, PATH]
-    assert spec_word_kinds(SPECS["tar"],
-                           ["-cf/data/a.tar", "t"]) == [TEXT, PATH]
+    assert spec_word_kinds(
+        SPECS["sort"], ["-o/data/s1.txt", "/data/in.txt"]
+    ) == [TEXT, PATH]
+    assert spec_word_kinds(
+        SPECS["grep"], ["-f/data/p.txt", "/data/in.txt"]
+    ) == [TEXT, PATH]
+    assert spec_word_kinds(SPECS["tar"], ["-cf/data/a.tar", "t"]) == [
+        TEXT,
+        PATH,
+    ]
 
 
 @pytest.mark.asyncio
@@ -138,7 +151,8 @@ async def test_sort_attached_output_writes_the_file():
     io = await ws.shell("cat /data/s1.txt")
     assert await io.stdout_str() == "a\nb\n"
     io = await ws.shell(
-        "cd /data && sort -osub/s2.txt in.txt && cat sub/s2.txt")
+        "cd /data && sort -osub/s2.txt in.txt && cat sub/s2.txt"
+    )
     assert await io.stdout_str() == "a\nb\n"
 
 

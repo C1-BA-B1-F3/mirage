@@ -42,16 +42,19 @@ def _quickjs_available() -> bool:
 
 wasi_live = pytest.mark.skipif(
     not _wasi_available(),
-    reason=f"{WASI_HOME_ENV} does not point at a CPython WASI build")
+    reason=f"{WASI_HOME_ENV} does not point at a CPython WASI build",
+)
 quickjs_live = pytest.mark.skipif(
     not _quickjs_available(),
-    reason=f"{QUICKJS_HOME_ENV} does not point at a quickjs WASI build")
+    reason=f"{QUICKJS_HOME_ENV} does not point at a quickjs WASI build",
+)
 
-GUARDS = {"monty": (), "wasi": (wasi_live, ), "quickjs": (quickjs_live, )}
+GUARDS = {"monty": (), "wasi": (wasi_live,), "quickjs": (quickjs_live,)}
 
 APPEND_AMPLIFIED = (
     "the shared wasm transport has no append op: every open-for-append "
-    "close re-flushes the whole file, so n appends ship O(n^2) bytes")
+    "close re-flushes the whole file, so n appends ship O(n^2) bytes"
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -119,8 +122,9 @@ class CountingDispatch:
         if op == "readdir":
             prefix = virtual.rstrip("/") + "/"
             names = {
-                p[len(prefix):].split("/")[0]
-                for p in self.files if p.startswith(prefix)
+                p[len(prefix) :].split("/")[0]
+                for p in self.files
+                if p.startswith(prefix)
             }
             return sorted(names), None
         if op == "write":
@@ -152,306 +156,451 @@ class CountingDispatch:
 
     def _stat(self, virtual: str) -> FileStat:
         if virtual in self.files:
-            return FileStat(name=virtual.rsplit("/", 1)[-1],
-                            size=len(self.files[virtual]),
-                            type=FileType.FILE,
-                            content=ContentType.TEXT)
+            return FileStat(
+                name=virtual.rsplit("/", 1)[-1],
+                size=len(self.files[virtual]),
+                type=FileType.FILE,
+                content=ContentType.TEXT,
+            )
         trimmed = virtual.rstrip("/")
         is_dir = trimmed in self.dirs or any(
-            p.startswith(trimmed + "/") for p in self.files)
+            p.startswith(trimmed + "/") for p in self.files
+        )
         if not is_dir:
             raise FileNotFoundError(virtual)
-        return FileStat(name=trimmed.rsplit("/", 1)[-1],
-                        type=FileType.DIRECTORY)
+        return FileStat(
+            name=trimmed.rsplit("/", 1)[-1], type=FileType.DIRECTORY
+        )
 
     def mutation_bytes(self) -> int:
-        return sum(size for op, _, size in self.ops
-                   if op in ("write", "append", "create", "truncate"))
+        return sum(
+            size
+            for op, _, size in self.ops
+            if op in ("write", "append", "create", "truncate")
+        )
 
     def mutation_ops(self) -> list[str]:
         return [
-            op for op, _, _ in self.ops
+            op
+            for op, _, _ in self.ops
             if op in ("write", "append", "create", "truncate")
         ]
 
 
 MONTY_ROWS = (
-    Row("mkdir",
+    Row(
+        "mkdir",
         "Path.mkdir",
         "python3 -c \"from pathlib import Path; Path('/data/made').mkdir()\"",
-        checks=(("ls /data", "made"), )),
-    Row("unlink",
-        "Path.unlink", "python3 -c "
+        checks=(("ls /data", "made"),),
+    ),
+    Row(
+        "unlink",
+        "Path.unlink",
+        "python3 -c "
         "\"from pathlib import Path; Path('/data/gone.txt').unlink()\"",
-        setup=("echo -n x > /data/gone.txt", ),
-        checks=(("ls /data", "!gone.txt"), )),
-    Row("rmdir",
-        "Path.rmdir", "python3 -c \"from pathlib import Path; "
+        setup=("echo -n x > /data/gone.txt",),
+        checks=(("ls /data", "!gone.txt"),),
+    ),
+    Row(
+        "rmdir",
+        "Path.rmdir",
+        'python3 -c "from pathlib import Path; '
         "Path('/data/hollow').rmdir()\"",
-        setup=("mkdir /data/hollow", ),
-        checks=(("ls /data", "!hollow"), )),
-    Row("rename",
-        "Path.rename", "python3 -c \"from pathlib import Path; "
+        setup=("mkdir /data/hollow",),
+        checks=(("ls /data", "!hollow"),),
+    ),
+    Row(
+        "rename",
+        "Path.rename",
+        'python3 -c "from pathlib import Path; '
         "Path('/data/a.txt').rename('/data/b.txt')\"",
-        setup=("echo -n one > /data/a.txt", ),
-        checks=(("cat /data/b.txt", "one"), ("ls /data", "!a.txt"))),
-    Row("rename-cross",
-        "Path.rename", "python3 -c \"from pathlib import Path; "
+        setup=("echo -n one > /data/a.txt",),
+        checks=(("cat /data/b.txt", "one"), ("ls /data", "!a.txt")),
+    ),
+    Row(
+        "rename-cross",
+        "Path.rename",
+        'python3 -c "from pathlib import Path; '
         "Path('/data/c.txt').rename('/other/c.txt')\"",
-        setup=("echo -n keep > /data/c.txt", ),
+        setup=("echo -n keep > /data/c.txt",),
         exit_code=1,
-        checks=(("cat /data/c.txt", "keep"), ("ls /other", "!c.txt"))),
-    Row("read",
+        checks=(("cat /data/c.txt", "keep"), ("ls /other", "!c.txt")),
+    ),
+    Row(
+        "read",
         "open",
         "python3 -c \"print(open('/data/r.txt').read())\"",
-        setup=("echo -n seen > /data/r.txt", ),
-        line_out="seen"),
-    Row("write",
-        "open", "python3 -c \"f = open('/data/w1.txt', 'w'); "
+        setup=("echo -n seen > /data/r.txt",),
+        line_out="seen",
+    ),
+    Row(
+        "write",
+        "open",
+        "python3 -c \"f = open('/data/w1.txt', 'w'); "
         "f.write('data'); f.close()\"",
-        checks=(("cat /data/w1.txt", "data"), )),
-    Row("write",
-        "Path.write_text", "python3 -c \"from pathlib import Path; "
+        checks=(("cat /data/w1.txt", "data"),),
+    ),
+    Row(
+        "write",
+        "Path.write_text",
+        'python3 -c "from pathlib import Path; '
         "Path('/data/w2.txt').write_text('data')\"",
-        checks=(("cat /data/w2.txt", "data"), )),
-    Row("write-readonly",
+        checks=(("cat /data/w2.txt", "data"),),
+    ),
+    Row(
+        "write-readonly",
         "open",
         "python3 -c \"open('/ro/x.txt', 'w').write('nope')\"",
         exit_code=1,
-        checks=(("ls /ro", "!x.txt"), )),
-    Row("write-readonly",
-        "Path.write_text", "python3 -c \"from pathlib import Path; "
+        checks=(("ls /ro", "!x.txt"),),
+    ),
+    Row(
+        "write-readonly",
+        "Path.write_text",
+        'python3 -c "from pathlib import Path; '
         "Path('/ro/y.txt').write_text('nope')\"",
         exit_code=1,
-        checks=(("ls /ro", "!y.txt"), )),
-    Row("stat",
-        "Path.stat", "python3 -c \"from pathlib import Path; "
+        checks=(("ls /ro", "!y.txt"),),
+    ),
+    Row(
+        "stat",
+        "Path.stat",
+        'python3 -c "from pathlib import Path; '
         "print(Path('/data/st.txt').stat().st_size)\"",
-        setup=("echo -n four > /data/st.txt", ),
-        line_out="4"),
-    Row("append",
-        "open", "python3 -c \"\nfor part in ['b', 'c', 'd']:\n"
+        setup=("echo -n four > /data/st.txt",),
+        line_out="4",
+    ),
+    Row(
+        "append",
+        "open",
+        "python3 -c \"\nfor part in ['b', 'c', 'd']:\n"
         "    with open('/data/log.txt', 'a') as f:\n"
-        "        f.write(part)\n\"",
-        setup=("echo -n a > /data/log.txt", ),
-        checks=(("cat /data/log.txt", "abcd"), )),
-    Row("append-preserves",
-        "open", "python3 -c \"f = open('/data/keep.txt', 'a'); "
+        '        f.write(part)\n"',
+        setup=("echo -n a > /data/log.txt",),
+        checks=(("cat /data/log.txt", "abcd"),),
+    ),
+    Row(
+        "append-preserves",
+        "open",
+        "python3 -c \"f = open('/data/keep.txt', 'a'); "
         "f.write('Z'); f.close()\"",
-        setup=("echo -n a > /data/keep.txt", ),
-        checks=(("cat /data/keep.txt", "aZ"), )),
-    Row("lstat",
-        "Path.is_symlink", "python3 -c \"from pathlib import Path; "
+        setup=("echo -n a > /data/keep.txt",),
+        checks=(("cat /data/keep.txt", "aZ"),),
+    ),
+    Row(
+        "lstat",
+        "Path.is_symlink",
+        'python3 -c "from pathlib import Path; '
         "print(Path('/data/l').is_symlink(), "
         "Path('/data/t.txt').is_symlink())\"",
         setup=("echo -n x > /data/t.txt", "ln -s t.txt /data/l"),
-        line_out="True False"),
+        line_out="True False",
+    ),
 )
 
 WASI_ROWS = (
-    Row("mkdir",
+    Row(
+        "mkdir",
         "os.mkdir",
         "python3 -c \"import os; os.mkdir('/data/m1')\"",
-        checks=(("ls /data", "m1"), )),
-    Row("mkdir",
+        checks=(("ls /data", "m1"),),
+    ),
+    Row(
+        "mkdir",
         "os.makedirs",
         "python3 -c \"import os; os.makedirs('/data/m2/deep')\"",
-        checks=(("ls /data/m2", "deep"), )),
-    Row("mkdir",
+        checks=(("ls /data/m2", "deep"),),
+    ),
+    Row(
+        "mkdir",
         "Path.mkdir",
         "python3 -c \"from pathlib import Path; Path('/data/m3').mkdir()\"",
-        checks=(("ls /data", "m3"), )),
-    Row("unlink",
+        checks=(("ls /data", "m3"),),
+    ),
+    Row(
+        "unlink",
         "os.remove",
         "python3 -c \"import os; os.remove('/data/f1.txt')\"",
-        setup=("echo -n x > /data/f1.txt", ),
-        checks=(("ls /data", "!f1.txt"), )),
-    Row("unlink",
-        "Path.unlink", "python3 -c "
+        setup=("echo -n x > /data/f1.txt",),
+        checks=(("ls /data", "!f1.txt"),),
+    ),
+    Row(
+        "unlink",
+        "Path.unlink",
+        "python3 -c "
         "\"from pathlib import Path; Path('/data/f2.txt').unlink()\"",
-        setup=("echo -n x > /data/f2.txt", ),
-        checks=(("ls /data", "!f2.txt"), )),
-    Row("rmdir",
+        setup=("echo -n x > /data/f2.txt",),
+        checks=(("ls /data", "!f2.txt"),),
+    ),
+    Row(
+        "rmdir",
         "os.rmdir",
         "python3 -c \"import os; os.rmdir('/data/d1')\"",
-        setup=("mkdir /data/d1", ),
-        checks=(("ls /data", "!d1"), )),
-    Row("rmdir",
+        setup=("mkdir /data/d1",),
+        checks=(("ls /data", "!d1"),),
+    ),
+    Row(
+        "rmdir",
         "Path.rmdir",
         "python3 -c \"from pathlib import Path; Path('/data/d2').rmdir()\"",
-        setup=("mkdir /data/d2", ),
-        checks=(("ls /data", "!d2"), )),
-    Row("rmdir",
+        setup=("mkdir /data/d2",),
+        checks=(("ls /data", "!d2"),),
+    ),
+    Row(
+        "rmdir",
         "shutil.rmtree",
         "python3 -c \"import shutil; shutil.rmtree('/data/d3')\"",
         setup=("mkdir /data/d3", "echo -n x > /data/d3/inner.txt"),
-        checks=(("ls /data", "!d3"), )),
-    Row("rename",
+        checks=(("ls /data", "!d3"),),
+    ),
+    Row(
+        "rename",
         "os.rename",
         "python3 -c \"import os; os.rename('/data/a1.txt', '/data/b1.txt')\"",
-        setup=("echo -n one > /data/a1.txt", ),
-        checks=(("cat /data/b1.txt", "one"), ("ls /data", "!a1.txt"))),
-    Row("rename",
+        setup=("echo -n one > /data/a1.txt",),
+        checks=(("cat /data/b1.txt", "one"), ("ls /data", "!a1.txt")),
+    ),
+    Row(
+        "rename",
         "os.replace",
         "python3 -c \"import os; os.replace('/data/a2.txt', '/data/b2.txt')\"",
-        setup=("echo -n one > /data/a2.txt", ),
-        checks=(("cat /data/b2.txt", "one"), )),
-    Row("rename",
-        "Path.rename", "python3 -c \"from pathlib import Path; "
+        setup=("echo -n one > /data/a2.txt",),
+        checks=(("cat /data/b2.txt", "one"),),
+    ),
+    Row(
+        "rename",
+        "Path.rename",
+        'python3 -c "from pathlib import Path; '
         "Path('/data/a3.txt').rename('/data/b3.txt')\"",
-        setup=("echo -n one > /data/a3.txt", ),
-        checks=(("cat /data/b3.txt", "one"), )),
-    Row("rename",
-        "shutil.move", "python3 -c \"import shutil; "
+        setup=("echo -n one > /data/a3.txt",),
+        checks=(("cat /data/b3.txt", "one"),),
+    ),
+    Row(
+        "rename",
+        "shutil.move",
+        'python3 -c "import shutil; '
         "shutil.move('/data/a4.txt', '/data/b4.txt')\"",
-        setup=("echo -n one > /data/a4.txt", ),
-        checks=(("cat /data/b4.txt", "one"), )),
-    Row("rename-cross",
+        setup=("echo -n one > /data/a4.txt",),
+        checks=(("cat /data/b4.txt", "one"),),
+    ),
+    Row(
+        "rename-cross",
         "os.rename",
         "python3 -c \"import os; os.rename('/data/c.txt', '/other/c.txt')\"",
-        setup=("echo -n keep > /data/c.txt", ),
+        setup=("echo -n keep > /data/c.txt",),
         exit_code=1,
-        checks=(("cat /data/c.txt", "keep"), ("ls /other", "!c.txt"))),
-    Row("read",
+        checks=(("cat /data/c.txt", "keep"), ("ls /other", "!c.txt")),
+    ),
+    Row(
+        "read",
         "open",
         "python3 -c \"print(open('/data/r.txt').read())\"",
-        setup=("echo -n seen > /data/r.txt", ),
-        line_out="seen"),
-    Row("write",
-        "open", "python3 -c \"f = open('/data/w1.txt', 'w'); "
+        setup=("echo -n seen > /data/r.txt",),
+        line_out="seen",
+    ),
+    Row(
+        "write",
+        "open",
+        "python3 -c \"f = open('/data/w1.txt', 'w'); "
         "f.write('data'); f.close()\"",
-        checks=(("cat /data/w1.txt", "data"), )),
-    Row("write",
-        "Path.write_text", "python3 -c \"from pathlib import Path; "
+        checks=(("cat /data/w1.txt", "data"),),
+    ),
+    Row(
+        "write",
+        "Path.write_text",
+        'python3 -c "from pathlib import Path; '
         "Path('/data/w2.txt').write_text('data')\"",
-        checks=(("cat /data/w2.txt", "data"), )),
-    Row("write-readonly",
+        checks=(("cat /data/w2.txt", "data"),),
+    ),
+    Row(
+        "write-readonly",
         "open",
         "python3 -c \"open('/ro/x.txt', 'w').write('nope')\"",
         exit_code=1,
-        checks=(("ls /ro", "!x.txt"), )),
-    Row("stat",
-        "Path.stat", "python3 -c \"from pathlib import Path; "
+        checks=(("ls /ro", "!x.txt"),),
+    ),
+    Row(
+        "stat",
+        "Path.stat",
+        'python3 -c "from pathlib import Path; '
         "print(Path('/data/st.txt').stat().st_size)\"",
-        setup=("echo -n four > /data/st.txt", ),
-        line_out="4"),
-    Row("append",
-        "open", "python3 -c \"\nfor part in ['b', 'c', 'd']:\n"
+        setup=("echo -n four > /data/st.txt",),
+        line_out="4",
+    ),
+    Row(
+        "append",
+        "open",
+        "python3 -c \"\nfor part in ['b', 'c', 'd']:\n"
         "    with open('/data/log.txt', 'a') as f:\n"
-        "        f.write(part)\n\"",
-        setup=("echo -n a > /data/log.txt", ),
-        checks=(("cat /data/log.txt", "abcd"), )),
-    Row("append-preserves",
-        "open", "python3 -c \"f = open('/data/keep.txt', 'a'); "
+        '        f.write(part)\n"',
+        setup=("echo -n a > /data/log.txt",),
+        checks=(("cat /data/log.txt", "abcd"),),
+    ),
+    Row(
+        "append-preserves",
+        "open",
+        "python3 -c \"f = open('/data/keep.txt', 'a'); "
         "f.write('Z'); f.close()\"",
-        setup=("echo -n a > /data/keep.txt", ),
-        checks=(("cat /data/keep.txt", "aZ"), )),
-    Row("symlink",
+        setup=("echo -n a > /data/keep.txt",),
+        checks=(("cat /data/keep.txt", "aZ"),),
+    ),
+    Row(
+        "symlink",
         "os.symlink",
         "python3 -c \"import os; os.symlink('t.txt', '/data/made')\"",
-        setup=("echo -n hi > /data/t.txt", ),
-        checks=(("readlink /data/made", "t.txt"), ("cat /data/made", "hi"))),
-    Row("readlink",
+        setup=("echo -n hi > /data/t.txt",),
+        checks=(("readlink /data/made", "t.txt"), ("cat /data/made", "hi")),
+    ),
+    Row(
+        "readlink",
         "os.readlink",
         "python3 -c \"import os; print(os.readlink('/data/l'))\"",
         setup=("echo -n x > /data/t.txt", "ln -s t.txt /data/l"),
-        line_out="t.txt"),
-    Row("lstat",
-        "os.path.islink", "python3 -c \"import os; "
+        line_out="t.txt",
+    ),
+    Row(
+        "lstat",
+        "os.path.islink",
+        'python3 -c "import os; '
         "print(os.path.islink('/data/l'), os.path.islink('/data/t.txt'))\"",
         setup=("echo -n x > /data/t.txt", "ln -s t.txt /data/l"),
-        line_out="True False"),
-    Row("lstat",
-        "os.lstat", "python3 -c \"import os, stat; st = os.lstat('/data/l'); "
-        "print(stat.S_ISLNK(st.st_mode), st.st_size)\"",
-        setup=("echo -n longer-than-target > /data/t.txt",
-               "ln -s t.txt /data/l"),
-        line_out="True 5"),
-    Row("utime",
+        line_out="True False",
+    ),
+    Row(
+        "lstat",
+        "os.lstat",
+        "python3 -c \"import os, stat; st = os.lstat('/data/l'); "
+        'print(stat.S_ISLNK(st.st_mode), st.st_size)"',
+        setup=(
+            "echo -n longer-than-target > /data/t.txt",
+            "ln -s t.txt /data/l",
+        ),
+        line_out="True 5",
+    ),
+    Row(
+        "utime",
         "os.utime",
         "python3 -c \"import os; os.utime('/data/t.txt', (100.0, 200.0))\"",
-        setup=("echo -n x > /data/t.txt", ),
-        checks=(("stat -c %Y /data/t.txt", "200"), )),
+        setup=("echo -n x > /data/t.txt",),
+        checks=(("stat -c %Y /data/t.txt", "200"),),
+    ),
     # A hard link is a second name for one inode and nothing above a
     # mount holds that, so it is refused rather than faked. EPERM is
     # what link(2) documents for a filesystem that cannot make one.
-    Row("link-refused",
-        "os.link", "python3 -c \"import errno, os\ntry:\n"
+    Row(
+        "link-refused",
+        "os.link",
+        'python3 -c "import errno, os\ntry:\n'
         "    os.link('/data/t.txt', '/data/hard')\n"
-        "except OSError as exc:\n    print(exc.errno == errno.EPERM)\"",
-        setup=("echo -n x > /data/t.txt", ),
+        'except OSError as exc:\n    print(exc.errno == errno.EPERM)"',
+        setup=("echo -n x > /data/t.txt",),
         line_out="True",
-        checks=(("ls /data", "!hard"), )),
+        checks=(("ls /data", "!hard"),),
+    ),
 )
 
 QUICKJS_ROWS = (
-    Row("mkdir",
-        "os.mkdir", "node -e \"const rc = os.mkdir('/data/m1'); "
+    Row(
+        "mkdir",
+        "os.mkdir",
+        "node -e \"const rc = os.mkdir('/data/m1'); "
         "if (rc !== 0) throw new Error('rc ' + rc)\"",
-        checks=(("ls /data", "m1"), )),
-    Row("unlink",
-        "os.remove", "node -e \"const rc = os.remove('/data/f1.txt'); "
+        checks=(("ls /data", "m1"),),
+    ),
+    Row(
+        "unlink",
+        "os.remove",
+        "node -e \"const rc = os.remove('/data/f1.txt'); "
         "if (rc !== 0) throw new Error('rc ' + rc)\"",
-        setup=("echo -n x > /data/f1.txt", ),
-        checks=(("ls /data", "!f1.txt"), )),
-    Row("rmdir",
-        "os.remove", "node -e \"const rc = os.remove('/data/d1'); "
+        setup=("echo -n x > /data/f1.txt",),
+        checks=(("ls /data", "!f1.txt"),),
+    ),
+    Row(
+        "rmdir",
+        "os.remove",
+        "node -e \"const rc = os.remove('/data/d1'); "
         "if (rc !== 0) throw new Error('rc ' + rc)\"",
-        setup=("mkdir /data/d1", ),
-        checks=(("ls /data", "!d1"), )),
-    Row("rename",
+        setup=("mkdir /data/d1",),
+        checks=(("ls /data", "!d1"),),
+    ),
+    Row(
+        "rename",
         "os.rename",
         "node -e \"const rc = os.rename('/data/a1.txt', '/data/b1.txt'); "
         "if (rc !== 0) throw new Error('rc ' + rc)\"",
-        setup=("echo -n one > /data/a1.txt", ),
-        checks=(("cat /data/b1.txt", "one"), ("ls /data", "!a1.txt"))),
-    Row("rename-cross",
+        setup=("echo -n one > /data/a1.txt",),
+        checks=(("cat /data/b1.txt", "one"), ("ls /data", "!a1.txt")),
+    ),
+    Row(
+        "rename-cross",
         "os.rename",
         "node -e \"console.log(os.rename('/data/c.txt', '/other/c.txt'))\"",
-        setup=("echo -n keep > /data/c.txt", ),
+        setup=("echo -n keep > /data/c.txt",),
         line_out="-44",
-        checks=(("cat /data/c.txt", "keep"), ("ls /other", "!c.txt"))),
-    Row("read",
-        "std.open", "node -e \"const f = std.open('/data/r.txt', 'r'); "
-        "console.log(f.readAsString()); f.close()\"",
-        setup=("echo -n seen > /data/r.txt", ),
-        line_out="seen"),
-    Row("write",
-        "std.open", "node -e \"const w = std.open('/data/w1.txt', 'w'); "
+        checks=(("cat /data/c.txt", "keep"), ("ls /other", "!c.txt")),
+    ),
+    Row(
+        "read",
+        "std.open",
+        "node -e \"const f = std.open('/data/r.txt', 'r'); "
+        'console.log(f.readAsString()); f.close()"',
+        setup=("echo -n seen > /data/r.txt",),
+        line_out="seen",
+    ),
+    Row(
+        "write",
+        "std.open",
+        "node -e \"const w = std.open('/data/w1.txt', 'w'); "
         "w.puts('data'); w.close()\"",
-        checks=(("cat /data/w1.txt", "data"), )),
-    Row("write-readonly",
+        checks=(("cat /data/w1.txt", "data"),),
+    ),
+    Row(
+        "write-readonly",
         "std.open",
         "node -e \"const e = {}; const w = std.open('/ro/x.txt', 'w', e); "
-        "console.log(w === null, e.errno)\"",
+        'console.log(w === null, e.errno)"',
         line_out="true 2",
-        checks=(("ls /ro", "!x.txt"), )),
-    Row("stat",
-        "os.stat", "node -e \"const [st, e] = os.stat('/data/st.txt'); "
-        "console.log(e, st.size)\"",
-        setup=("echo -n four > /data/st.txt", ),
-        line_out="0 4"),
-    Row("append",
-        "std.open", "node -e \"for (const part of ['b', 'c', 'd']) { "
+        checks=(("ls /ro", "!x.txt"),),
+    ),
+    Row(
+        "stat",
+        "os.stat",
+        "node -e \"const [st, e] = os.stat('/data/st.txt'); "
+        'console.log(e, st.size)"',
+        setup=("echo -n four > /data/st.txt",),
+        line_out="0 4",
+    ),
+    Row(
+        "append",
+        "std.open",
+        "node -e \"for (const part of ['b', 'c', 'd']) { "
         "const w = std.open('/data/log.txt', 'a'); "
-        "w.puts(part); w.close() }\"",
-        setup=("echo -n a > /data/log.txt", ),
-        checks=(("cat /data/log.txt", "abcd"), )),
-    Row("append-preserves",
-        "std.open", "node -e \"const w = std.open('/data/keep.txt', 'a'); "
+        'w.puts(part); w.close() }"',
+        setup=("echo -n a > /data/log.txt",),
+        checks=(("cat /data/log.txt", "abcd"),),
+    ),
+    Row(
+        "append-preserves",
+        "std.open",
+        "node -e \"const w = std.open('/data/keep.txt', 'a'); "
         "w.puts('Z'); w.close()\"",
-        setup=("echo -n a > /data/keep.txt", ),
-        checks=(("cat /data/keep.txt", "aZ"), )),
+        setup=("echo -n a > /data/keep.txt",),
+        checks=(("cat /data/keep.txt", "aZ"),),
+    ),
     # The only metadata verb this engine has: qjs-wasi's `os` module
     # ships no symlink, readlink or lstat at all (probed live), so a
     # link is not addressable from a quickjs guest and utimes is the
     # whole setattr surface. Stamps are milliseconds both ways.
-    Row("utime",
-        "os.utimes", "node -e \"const rc = "
+    Row(
+        "utime",
+        "os.utimes",
+        'node -e "const rc = '
         "os.utimes('/data/t.txt', 100000, 200000); "
         "if (rc !== 0) throw new Error('rc ' + rc)\"",
-        setup=("echo -n x > /data/t.txt", ),
-        checks=(("stat -c %Y /data/t.txt", "200"), )),
+        setup=("echo -n x > /data/t.txt",),
+        checks=(("stat -c %Y /data/t.txt", "200"),),
+    ),
 )
 
 
@@ -475,15 +624,21 @@ async def _sh(ws: Workspace, line: str) -> tuple[int, str]:
 
 def _rows():
     out = []
-    tables = (("monty", MONTY_ROWS), ("wasi", WASI_ROWS), ("quickjs",
-                                                           QUICKJS_ROWS))
+    tables = (
+        ("monty", MONTY_ROWS),
+        ("wasi", WASI_ROWS),
+        ("quickjs", QUICKJS_ROWS),
+    )
     for runtime, rows in tables:
         for row in rows:
             out.append(
-                pytest.param(runtime,
-                             row,
-                             id=f"{runtime}-{row.capability}-{row.spelling}",
-                             marks=GUARDS[runtime]))
+                pytest.param(
+                    runtime,
+                    row,
+                    id=f"{runtime}-{row.capability}-{row.spelling}",
+                    marks=GUARDS[runtime],
+                )
+            )
     return out
 
 
@@ -519,10 +674,8 @@ async def test_capability_reaches_the_mount(runtime: str, row: Row):
         await ws.close()
 
 
-ROOT_WRITE_PY = ("from pathlib import Path\n"
-                 "Path('/mine.txt').write_text('R')")
-ROOT_WRITE_JS = ("const w = std.open('/mine.txt', 'w'); "
-                 "w.puts('R'); w.close()")
+ROOT_WRITE_PY = "from pathlib import Path\nPath('/mine.txt').write_text('R')"
+ROOT_WRITE_JS = "const w = std.open('/mine.txt', 'w'); w.puts('R'); w.close()"
 
 
 @pytest.mark.asyncio
@@ -547,9 +700,9 @@ async def test_a_root_mount_is_served_like_any_other(runtime: str):
     Args:
         runtime (str): registry name of the runtime under test.
     """
-    ws = Workspace({"/": RAMVFS()},
-                   mode=MountMode.EXEC,
-                   runtimes=[runtime, "workspace"])
+    ws = Workspace(
+        {"/": RAMVFS()}, mode=MountMode.EXEC, runtimes=[runtime, "workspace"]
+    )
     try:
         line = ROOT_WRITE_JS if runtime == "quickjs" else ROOT_WRITE_PY
         prefix = "node -e" if runtime == "quickjs" else "python3 -c"
@@ -562,12 +715,16 @@ async def test_a_root_mount_is_served_like_any_other(runtime: str):
         await ws.close()
 
 
-APPEND_LOOP_PY = ("for i in range(8):\n"
-                  "    with open('/data/log.txt', 'a') as f:\n"
-                  "        f.write('xyz')")
-APPEND_LOOP_JS = ("for (let i = 0; i < 8; i++) { "
-                  "const w = std.open('/data/log.txt', 'a'); "
-                  "w.puts('xyz'); w.close() }")
+APPEND_LOOP_PY = (
+    "for i in range(8):\n"
+    "    with open('/data/log.txt', 'a') as f:\n"
+    "        f.write('xyz')"
+)
+APPEND_LOOP_JS = (
+    "for (let i = 0; i < 8; i++) { "
+    "const w = std.open('/data/log.txt', 'a'); "
+    "w.puts('xyz'); w.close() }"
+)
 
 
 @pytest.mark.asyncio

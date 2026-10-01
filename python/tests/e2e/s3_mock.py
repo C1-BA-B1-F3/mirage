@@ -32,7 +32,6 @@ _CORE_MODULES = [
 
 
 class _AsyncMockBody:
-
     def __init__(self, data: bytes) -> None:
         self._data = data
 
@@ -41,7 +40,7 @@ class _AsyncMockBody:
 
     async def iter_chunks(self, chunk_size: int = 8192):
         for i in range(0, len(self._data), chunk_size):
-            yield self._data[i:i + chunk_size]
+            yield self._data[i : i + chunk_size]
 
 
 def _mock_s3_error(code: str) -> Exception:
@@ -74,7 +73,7 @@ def _paginate_directory(objects, prefix):
     for key, data in sorted(objects.items()):
         if not key.startswith(prefix):
             continue
-        relative = key[len(prefix):]
+        relative = key[len(prefix) :]
         if not relative:
             contents.append(_content_entry(key, data))
             continue
@@ -84,9 +83,7 @@ def _paginate_directory(objects, prefix):
             continue
         contents.append(_content_entry(key, data))
     return {
-        "CommonPrefixes": [{
-            "Prefix": v
-        } for v in sorted(common_prefixes)],
+        "CommonPrefixes": [{"Prefix": v} for v in sorted(common_prefixes)],
         "Contents": contents,
     }
 
@@ -94,7 +91,8 @@ def _paginate_directory(objects, prefix):
 def _paginate_flat(objects, prefix):
     return {
         "Contents": [
-            _content_entry(k, v) for k, v in sorted(objects.items())
+            _content_entry(k, v)
+            for k, v in sorted(objects.items())
             if k.startswith(prefix)
         ]
     }
@@ -106,20 +104,21 @@ def _slice_range(data: bytes, range_spec: str) -> bytes:
     bounds = range_spec.removeprefix("bytes=").split("-", 1)
     start = int(bounds[0]) if bounds[0] else 0
     end = int(bounds[1]) if bounds[1] else len(data) - 1
-    return data[start:end + 1]
+    return data[start : end + 1]
 
 
 class _MultiBucketPaginator:
-
-    def __init__(self, buckets: dict[str, dict[str, bytes]],
-                 bucket_calls: Counter[tuple[str, str]]) -> None:
+    def __init__(
+        self,
+        buckets: dict[str, dict[str, bytes]],
+        bucket_calls: Counter[tuple[str, str]],
+    ) -> None:
         self.buckets = buckets
         self.bucket_calls = bucket_calls
 
-    async def paginate(self,
-                       Bucket: str,
-                       Prefix: str = "",
-                       Delimiter: str | None = None):
+    async def paginate(
+        self, Bucket: str, Prefix: str = "", Delimiter: str | None = None
+    ):
         self.bucket_calls["list_objects_v2", Bucket] += 1
         objects = self.buckets.get(Bucket, {})
         if Delimiter == "/":
@@ -129,11 +128,12 @@ class _MultiBucketPaginator:
 
 
 class MultiBucketS3Client:
-
-    def __init__(self,
-                 buckets: dict[str, dict[str, bytes]],
-                 versioned: set[str] | None = None,
-                 etag_suffix: str = "") -> None:
+    def __init__(
+        self,
+        buckets: dict[str, dict[str, bytes]],
+        versioned: set[str] | None = None,
+        etag_suffix: str = "",
+    ) -> None:
         self.buckets = buckets
         self.versioned = versioned or set()
         self._versions: dict[tuple[str, str], list[tuple[str, bytes]]] = {}
@@ -166,11 +166,13 @@ class MultiBucketS3Client:
             history.append((vid, current))
         return history[-1][0]
 
-    async def get_object(self,
-                         Bucket: str,
-                         Key: str,
-                         Range: str | None = None,
-                         VersionId: str | None = None) -> dict:
+    async def get_object(
+        self,
+        Bucket: str,
+        Key: str,
+        Range: str | None = None,
+        VersionId: str | None = None,
+    ) -> dict:
         self.calls["get_object"] += 1
         self.bucket_calls["get_object", Bucket] += 1
         vid_for_resp = self._track(Bucket, Key)
@@ -235,8 +237,9 @@ class MultiBucketS3Client:
         self.bucket_calls["delete_object", Bucket] += 1
         self._objects(Bucket).pop(Key, None)
 
-    async def copy_object(self, Bucket: str, CopySource: dict,
-                          Key: str) -> None:
+    async def copy_object(
+        self, Bucket: str, CopySource: dict, Key: str
+    ) -> None:
         # Deliberately lenient: a self-copy is accepted, the way a
         # non-AWS S3-compatible store might. That is what makes the
         # same-key guard observable in tests (#150).
@@ -259,22 +262,26 @@ class MultiBucketS3Client:
         for obj in Delete.get("Objects", []):
             key = obj["Key"]
             if key in self.undeletable:
-                errors.append({
-                    "Key": key,
-                    "Code": "AccessDenied",
-                    "Message": "Access Denied",
-                })
+                errors.append(
+                    {
+                        "Key": key,
+                        "Code": "AccessDenied",
+                        "Message": "Access Denied",
+                    }
+                )
                 continue
             objects.pop(key, None)
             deleted.append({"Key": key})
         return {"Deleted": deleted, "Errors": errors}
 
-    async def list_objects_v2(self,
-                              Bucket: str,
-                              Prefix: str = "",
-                              Delimiter: str = "",
-                              MaxKeys: int = 1000,
-                              **kwargs) -> dict:
+    async def list_objects_v2(
+        self,
+        Bucket: str,
+        Prefix: str = "",
+        Delimiter: str = "",
+        MaxKeys: int = 1000,
+        **kwargs,
+    ) -> dict:
         del MaxKeys, kwargs
         self.bucket_calls["list_objects_v2", Bucket] += 1
         objects = self._objects(Bucket)
@@ -290,14 +297,15 @@ class MultiBucketS3Client:
 
 
 class MultiBucketSession:
-
-    def __init__(self,
-                 buckets: dict[str, dict[str, bytes]],
-                 versioned: set[str] | None = None,
-                 etag_suffix: str = "") -> None:
-        self._client = MultiBucketS3Client(buckets,
-                                           versioned=versioned,
-                                           etag_suffix=etag_suffix)
+    def __init__(
+        self,
+        buckets: dict[str, dict[str, bytes]],
+        versioned: set[str] | None = None,
+        etag_suffix: str = "",
+    ) -> None:
+        self._client = MultiBucketS3Client(
+            buckets, versioned=versioned, etag_suffix=etag_suffix
+        )
 
     def client(self, **kwargs):
         return self._client
@@ -306,11 +314,13 @@ class MultiBucketSession:
 def patch_s3_session(session: MultiBucketSession) -> ExitStack:
     stack = ExitStack()
     for mod in _CORE_MODULES:
-        stack.enter_context(patch(f"{mod}.async_session",
-                                  return_value=session))
+        stack.enter_context(
+            patch(f"{mod}.async_session", return_value=session)
+        )
     return stack
 
 
-def patch_s3_multi(buckets: dict[str, dict[str, bytes]],
-                   versioned: set[str] | None = None) -> ExitStack:
+def patch_s3_multi(
+    buckets: dict[str, dict[str, bytes]], versioned: set[str] | None = None
+) -> ExitStack:
     return patch_s3_session(MultiBucketSession(buckets, versioned=versioned))

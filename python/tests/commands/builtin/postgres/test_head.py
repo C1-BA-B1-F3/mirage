@@ -35,7 +35,8 @@ async def _fake_acquire():
 
 def _accessor(**config) -> PostgresAccessor:
     a = PostgresAccessor(
-        PostgresConfig(dsn="postgres://localhost/db", **config))
+        PostgresConfig(dsn="postgres://localhost/db", **config)
+    )
     pool = MagicMock()
     pool.acquire = lambda: _fake_acquire()
     a.pool = AsyncMock(return_value=pool)
@@ -48,29 +49,44 @@ def table(monkeypatch):
     rows: list[dict[str, int]] = []
 
     async def fetch_rows(conn, schema, entity, *, limit, offset):
-        return rows[offset:offset + limit]
+        return rows[offset : offset + limit]
 
-    monkeypatch.setattr("mirage.core.postgres.client.list_schemas",
-                        AsyncMock(return_value=["public"]))
-    monkeypatch.setattr("mirage.core.postgres.client.list_tables",
-                        AsyncMock(return_value=["users"]))
-    monkeypatch.setattr("mirage.core.postgres.client.fetch_columns",
-                        AsyncMock(return_value=[]))
-    monkeypatch.setattr("mirage.core.postgres.client.estimated_row_count",
-                        AsyncMock(return_value=0))
-    monkeypatch.setattr("mirage.core.postgres.client.table_size_bytes",
-                        AsyncMock(return_value=0))
-    monkeypatch.setattr("mirage.core.postgres.client.fetch_rows",
-                        AsyncMock(side_effect=fetch_rows))
+    monkeypatch.setattr(
+        "mirage.core.postgres.client.list_schemas",
+        AsyncMock(return_value=["public"]),
+    )
+    monkeypatch.setattr(
+        "mirage.core.postgres.client.list_tables",
+        AsyncMock(return_value=["users"]),
+    )
+    monkeypatch.setattr(
+        "mirage.core.postgres.client.fetch_columns", AsyncMock(return_value=[])
+    )
+    monkeypatch.setattr(
+        "mirage.core.postgres.client.estimated_row_count",
+        AsyncMock(return_value=0),
+    )
+    monkeypatch.setattr(
+        "mirage.core.postgres.client.table_size_bytes",
+        AsyncMock(return_value=0),
+    )
+    monkeypatch.setattr(
+        "mirage.core.postgres.client.fetch_rows",
+        AsyncMock(side_effect=fetch_rows),
+    )
     return rows
 
 
-async def _head(accessor: PostgresAccessor,
-                n: int) -> tuple[bytes, int, bytes]:
+async def _head(
+    accessor: PostgresAccessor, n: int
+) -> tuple[bytes, int, bytes]:
     path = PathSpec(virtual=ROWS, directory=ROWS, vfs_path=ROWS.strip("/"))
     out, io = await head(
-        accessor, [path], [],
-        CommandOpts(index=RAMIndexCacheStore(), flags={"lines": str(n)}))
+        accessor,
+        [path],
+        [],
+        CommandOpts(index=RAMIndexCacheStore(), flags={"lines": str(n)}),
+    )
     data = await materialize(out)
     return data, io.exit_code, await materialize(io.stderr)
 
@@ -91,8 +107,10 @@ async def test_head_past_the_read_ceiling_stops_and_says_so(table):
     data, code, err = await _head(_accessor(max_read_rows=20), 25)
     assert len(data.splitlines()) == 20
     assert code == 1
-    assert err == (b"head: /public/tables/users/rows.jsonl: stopped at 20 "
-                   b"rows (max_read_rows); the output is incomplete\n")
+    assert err == (
+        b"head: /public/tables/users/rows.jsonl: stopped at 20 "
+        b"rows (max_read_rows); the output is incomplete\n"
+    )
 
 
 @pytest.mark.asyncio

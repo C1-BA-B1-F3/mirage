@@ -17,24 +17,41 @@ from collections.abc import AsyncIterator, Callable
 from typing import Any
 
 from mirage.accessor.airtable import AirtableAccessor
+from mirage.commands.cli.builtin.airtable.util import (
+    Outcome,
+    find_table,
+    json_object,
+    no_operands,
+    one_operand,
+    optional_operand,
+    parse_json,
+    run,
+    scoped_base,
+    stdin_text,
+)
 from mirage.commands.cli.types import CLIInvocation
 from mirage.commands.errors import UsageError
 from mirage.commands.spec.flag_view import FlagView
-from mirage.core.airtable.client import (create_comment, create_records,
-                                         delete_records, list_tables,
-                                         update_records)
+from mirage.core.airtable.client import (
+    create_comment,
+    create_records,
+    delete_records,
+    list_tables,
+    update_records,
+)
 from mirage.core.airtable.config import AirtableConfig
 from mirage.core.airtable.constants import COMPUTED_TYPES, LINE_KEYS
-from mirage.core.airtable.normalize import (as_row, as_rows, deletions_jsonl,
-                                            normalize_comment, records_jsonl,
-                                            to_json_bytes)
+from mirage.core.airtable.normalize import (
+    as_row,
+    as_rows,
+    deletions_jsonl,
+    normalize_comment,
+    records_jsonl,
+    to_json_bytes,
+)
 from mirage.core.render.json import compact_json_text
 from mirage.io.stream import yield_bytes
 from mirage.io.types import IOResult
-
-from mirage.commands.cli.builtin.airtable.util import (  # isort: skip
-    Outcome, find_table, json_object, no_operands, one_operand,
-    optional_operand, parse_json, run, scoped_base, stdin_text)
 
 Rows = list[dict[str, Any]]
 
@@ -67,7 +84,8 @@ def record_lines(text: str, *, need_id: bool, need_fields: bool) -> Rows:
         unknown = sorted(set(row) - LINE_KEYS)
         if unknown:
             raise UsageError(
-                f"{where}: unknown key {compact_json_text(unknown[0])}")
+                f"{where}: unknown key {compact_json_text(unknown[0])}"
+            )
         if "fields" in row and not isinstance(row["fields"], dict):
             raise UsageError(f'{where}: "fields" must be an object')
         if need_id and "record_id" not in row:
@@ -80,8 +98,9 @@ def record_lines(text: str, *, need_id: bool, need_fields: bool) -> Rows:
     return rows
 
 
-async def writable(accessor: AirtableAccessor, base_id: str, table: str,
-                   cells: Rows) -> Rows:
+async def writable(
+    accessor: AirtableAccessor, base_id: str, table: str, cells: Rows
+) -> Rows:
     """The cells with every computed field of the table taken out.
 
     Args:
@@ -99,8 +118,9 @@ async def writable(accessor: AirtableAccessor, base_id: str, table: str,
     return [{k: v for k, v in c.items() if k not in computed} for c in cells]
 
 
-async def landed(batches: AsyncIterator[Rows],
-                 render: Callable[[Rows], bytes]) -> Outcome:
+async def landed(
+    batches: AsyncIterator[Rows], render: Callable[[Rows], bytes]
+) -> Outcome:
     """Everything the batches wrote, and the failure that stopped them.
 
     Batches land one request at a time, so a failure part way leaves
@@ -122,14 +142,17 @@ async def landed(batches: AsyncIterator[Rows],
     except Exception as exc:
         if not done:
             raise
-        return yield_bytes(render(done)), IOResult(exit_code=1,
-                                                   stderr=f"{exc}\n".encode())
+        return yield_bytes(render(done)), IOResult(
+            exit_code=1, stderr=f"{exc}\n".encode()
+        )
     return yield_bytes(render(done)), IOResult()
 
 
-async def _record_create(accessor: AirtableAccessor,
-                         inv: CLIInvocation[AirtableConfig],
-                         fl: FlagView) -> Outcome:
+async def _record_create(
+    accessor: AirtableAccessor,
+    inv: CLIInvocation[AirtableConfig],
+    fl: FlagView,
+) -> Outcome:
     no_operands(inv.texts)
     fields = fl.as_str("fields")
     table = fl.as_str("table") or ""
@@ -137,26 +160,26 @@ async def _record_create(accessor: AirtableAccessor,
     if fields is not None:
         cells = [json_object("--fields", fields)]
     elif inv.stdin is not None:
-        rows = record_lines(await stdin_text(inv.stdin),
-                            need_id=False,
-                            need_fields=True)
+        rows = record_lines(
+            await stdin_text(inv.stdin), need_id=False, need_fields=True
+        )
         cells = [row["fields"] for row in rows]
     else:
         raise UsageError("--fields or records on stdin are required")
     base_id = scoped_base(inv.config, fl.as_str("base") or "")
     if rows:
         cells = await writable(accessor, base_id, table, cells)
-    batches = create_records(accessor,
-                             base_id,
-                             table,
-                             cells,
-                             typecast=fl.as_bool("typecast"))
+    batches = create_records(
+        accessor, base_id, table, cells, typecast=fl.as_bool("typecast")
+    )
     return await landed(batches, records_jsonl)
 
 
-async def _record_update(accessor: AirtableAccessor,
-                         inv: CLIInvocation[AirtableConfig],
-                         fl: FlagView) -> Outcome:
+async def _record_update(
+    accessor: AirtableAccessor,
+    inv: CLIInvocation[AirtableConfig],
+    fl: FlagView,
+) -> Outcome:
     record_id = optional_operand(inv.texts)
     fields = fl.as_str("fields")
     table = fl.as_str("table") or ""
@@ -169,9 +192,9 @@ async def _record_update(accessor: AirtableAccessor,
         ids = [record_id]
         cells = [json_object("--fields", fields)]
     elif inv.stdin is not None:
-        rows = record_lines(await stdin_text(inv.stdin),
-                            need_id=True,
-                            need_fields=True)
+        rows = record_lines(
+            await stdin_text(inv.stdin), need_id=True, need_fields=True
+        )
         ids = [row["record_id"] for row in rows]
         cells = [row["fields"] for row in rows]
     else:
@@ -179,35 +202,42 @@ async def _record_update(accessor: AirtableAccessor,
     base_id = scoped_base(inv.config, fl.as_str("base") or "")
     if rows:
         cells = await writable(accessor, base_id, table, cells)
-    batches = update_records(accessor,
-                             base_id,
-                             table,
-                             list(zip(ids, cells)),
-                             typecast=fl.as_bool("typecast"))
+    batches = update_records(
+        accessor,
+        base_id,
+        table,
+        list(zip(ids, cells)),
+        typecast=fl.as_bool("typecast"),
+    )
     return await landed(batches, records_jsonl)
 
 
-async def _record_delete(accessor: AirtableAccessor,
-                         inv: CLIInvocation[AirtableConfig],
-                         fl: FlagView) -> Outcome:
+async def _record_delete(
+    accessor: AirtableAccessor,
+    inv: CLIInvocation[AirtableConfig],
+    fl: FlagView,
+) -> Outcome:
     if inv.texts:
         record_ids = list(inv.texts)
     elif inv.stdin is not None:
-        rows = record_lines(await stdin_text(inv.stdin),
-                            need_id=True,
-                            need_fields=False)
+        rows = record_lines(
+            await stdin_text(inv.stdin), need_id=True, need_fields=False
+        )
         record_ids = [row["record_id"] for row in rows]
     else:
         raise UsageError("RECORD or records on stdin are required")
     base_id = scoped_base(inv.config, fl.as_str("base") or "")
-    batches = delete_records(accessor, base_id,
-                             fl.as_str("table") or "", record_ids)
+    batches = delete_records(
+        accessor, base_id, fl.as_str("table") or "", record_ids
+    )
     return await landed(batches, deletions_jsonl)
 
 
-async def _comment_add(accessor: AirtableAccessor,
-                       inv: CLIInvocation[AirtableConfig],
-                       fl: FlagView) -> Outcome:
+async def _comment_add(
+    accessor: AirtableAccessor,
+    inv: CLIInvocation[AirtableConfig],
+    fl: FlagView,
+) -> Outcome:
     record_id = one_operand(inv.texts, "RECORD")
     text = fl.as_str("text")
     if text is None:
@@ -218,8 +248,9 @@ async def _comment_add(accessor: AirtableAccessor,
     if not text:
         raise UsageError("the comment text is empty")
     base_id = scoped_base(inv.config, fl.as_str("base") or "")
-    comment = await create_comment(accessor, base_id,
-                                   fl.as_str("table") or "", record_id, text)
+    comment = await create_comment(
+        accessor, base_id, fl.as_str("table") or "", record_id, text
+    )
     return yield_bytes(to_json_bytes(normalize_comment(comment))), IOResult()
 
 

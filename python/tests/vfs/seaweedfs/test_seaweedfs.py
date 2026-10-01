@@ -81,7 +81,8 @@ def test_seaweedfs_resource_uses_s3_resource_type():
             endpoint_url="http://localhost:8333",
             access_key_id="k",
             secret_access_key="s",
-        ))
+        )
+    )
     assert vfs.name == VFSName.S3
     assert vfs.caches_reads is True
     assert isinstance(vfs.config, S3Config)

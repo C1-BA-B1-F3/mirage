@@ -17,8 +17,12 @@ from mirage.cache.index import NULL_INDEX, IndexCacheStore
 from mirage.cache.index.ram import RAMIndexCacheStore
 from mirage.core.airtable.client import list_bases, list_records, list_tables
 from mirage.core.airtable.errors import AirtableAPIError
-from mirage.core.airtable.normalize import (normalize_base, normalize_table,
-                                            records_jsonl, to_json_bytes)
+from mirage.core.airtable.normalize import (
+    normalize_base,
+    normalize_table,
+    records_jsonl,
+    to_json_bytes,
+)
 from mirage.core.airtable.readdir import readdir, schema_table
 from mirage.core.airtable.scope import detect_scope
 from mirage.core.airtable.stat import stat
@@ -29,8 +33,9 @@ from mirage.types import PathSpec
 from mirage.utils.errors import efbig, enoent
 
 
-async def ensure_listed(accessor: AirtableAccessor, path: PathSpec,
-                        index: IndexCacheStore) -> None:
+async def ensure_listed(
+    accessor: AirtableAccessor, path: PathSpec, index: IndexCacheStore
+) -> None:
     """Refuse a file its parent listing does not hold.
 
     ``make_read`` proves every file's parent through stat. A view file is
@@ -50,8 +55,12 @@ async def ensure_listed(accessor: AirtableAccessor, path: PathSpec,
         raise enoent(path.virtual)
 
 
-async def _read_base_json(accessor: AirtableAccessor, match: ScopeMatch,
-                          path: PathSpec, index: IndexCacheStore) -> bytes:
+async def _read_base_json(
+    accessor: AirtableAccessor,
+    match: ScopeMatch,
+    path: PathSpec,
+    index: IndexCacheStore,
+) -> bytes:
     base_id = match.slots["base_id"]
     for base in await list_bases(accessor):
         if base.get("id") == base_id:
@@ -60,8 +69,12 @@ async def _read_base_json(accessor: AirtableAccessor, match: ScopeMatch,
     raise enoent(path.virtual)
 
 
-async def _read_table_json(accessor: AirtableAccessor, match: ScopeMatch,
-                           path: PathSpec, index: IndexCacheStore) -> bytes:
+async def _read_table_json(
+    accessor: AirtableAccessor,
+    match: ScopeMatch,
+    path: PathSpec,
+    index: IndexCacheStore,
+) -> bytes:
     try:
         table = await schema_table(accessor, match)
     except FileNotFoundError:
@@ -69,9 +82,14 @@ async def _read_table_json(accessor: AirtableAccessor, match: ScopeMatch,
     return to_json_bytes(normalize_table(table, match.slots["base_id"]))
 
 
-async def _render_records(accessor: AirtableAccessor, match: ScopeMatch,
-                          path: PathSpec, view: str | None, limit: int | None,
-                          offset: int | None) -> bytes:
+async def _render_records(
+    accessor: AirtableAccessor,
+    match: ScopeMatch,
+    path: PathSpec,
+    view: str | None,
+    limit: int | None,
+    offset: int | None,
+) -> bytes:
     cap = accessor.config.max_read_records
     skip = offset or 0
     # A window is a record count pushed into maxRecords. One record past
@@ -79,11 +97,13 @@ async def _render_records(accessor: AirtableAccessor, match: ScopeMatch,
     # through the rest of a large table first.
     wanted = cap + 1 if limit is None else min(skip + limit, cap + 1)
     try:
-        records = await list_records(accessor,
-                                     match.slots["base_id"],
-                                     match.slots["table_id"],
-                                     view=view,
-                                     max_records=wanted)
+        records = await list_records(
+            accessor,
+            match.slots["base_id"],
+            match.slots["table_id"],
+            view=view,
+            max_records=wanted,
+        )
     except AirtableAPIError as exc:
         if exc.not_found:
             raise enoent(path.virtual) from None
@@ -95,18 +115,29 @@ async def _render_records(accessor: AirtableAccessor, match: ScopeMatch,
     return records_jsonl(records[skip:])
 
 
-async def _read_records(accessor: AirtableAccessor, match: ScopeMatch,
-                        path: PathSpec, index: IndexCacheStore,
-                        limit: int | None, offset: int | None) -> bytes:
+async def _read_records(
+    accessor: AirtableAccessor,
+    match: ScopeMatch,
+    path: PathSpec,
+    index: IndexCacheStore,
+    limit: int | None,
+    offset: int | None,
+) -> bytes:
     return await _render_records(accessor, match, path, None, limit, offset)
 
 
-async def _read_view(accessor: AirtableAccessor, match: ScopeMatch,
-                     path: PathSpec, index: IndexCacheStore, limit: int | None,
-                     offset: int | None) -> bytes:
+async def _read_view(
+    accessor: AirtableAccessor,
+    match: ScopeMatch,
+    path: PathSpec,
+    index: IndexCacheStore,
+    limit: int | None,
+    offset: int | None,
+) -> bytes:
     await ensure_listed(accessor, path, index)
-    return await _render_records(accessor, match, path, match.slots["view_id"],
-                                 limit, offset)
+    return await _render_records(
+        accessor, match, path, match.slots["view_id"], limit, offset
+    )
 
 
 read = make_read(

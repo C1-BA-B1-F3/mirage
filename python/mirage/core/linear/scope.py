@@ -25,46 +25,60 @@ _ISSUE = _TEAM + ("issues", Slot("issue", id_key="issue_id"))
 # in the slots (a team's label is itself two-part, `KEY__Name`, which the
 # LAST-separator split keeps intact).
 SCOPES = (
-    Scope(kind="teams", segments=("teams", ), probed=False),
+    Scope(kind="teams", segments=("teams",), probed=False),
     Scope(kind="team", segments=_TEAM),
-    Scope(kind="team_json",
-          segments=_TEAM + ("team.json", ),
-          leaf=True,
-          filetype=ContentType.JSON),
-    Scope(kind="members", segments=_TEAM + ("members", )),
-    Scope(kind="member",
-          segments=_TEAM +
-          ("members", Slot("member", JSON_NAME, id_key="member_id")),
-          leaf=True,
-          filetype=ContentType.JSON),
-    Scope(kind="issues", segments=_TEAM + ("issues", )),
+    Scope(
+        kind="team_json",
+        segments=_TEAM + ("team.json",),
+        leaf=True,
+        filetype=ContentType.JSON,
+    ),
+    Scope(kind="members", segments=_TEAM + ("members",)),
+    Scope(
+        kind="member",
+        segments=_TEAM
+        + ("members", Slot("member", JSON_NAME, id_key="member_id")),
+        leaf=True,
+        filetype=ContentType.JSON,
+    ),
+    Scope(kind="issues", segments=_TEAM + ("issues",)),
     Scope(kind="issue", segments=_ISSUE),
-    Scope(kind="issue_json",
-          segments=_ISSUE + ("issue.json", ),
-          leaf=True,
-          filetype=ContentType.JSON),
-    Scope(kind="comments_jsonl",
-          segments=_ISSUE + ("comments.jsonl", ),
-          leaf=True,
-          filetype=ContentType.TEXT),
-    Scope(kind="projects", segments=_TEAM + ("projects", )),
-    Scope(kind="project",
-          segments=_TEAM +
-          ("projects", Slot("project", JSON_NAME, id_key="project_id")),
-          leaf=True,
-          filetype=ContentType.JSON),
-    Scope(kind="cycles", segments=_TEAM + ("cycles", )),
-    Scope(kind="cycle",
-          segments=_TEAM +
-          ("cycles", Slot("cycle", JSON_NAME, id_key="cycle_id")),
-          leaf=True,
-          filetype=ContentType.JSON),
-    Scope(kind="documents", segments=_TEAM + ("documents", )),
-    Scope(kind="document",
-          segments=_TEAM +
-          ("documents", Slot("document", JSON_NAME, id_key="document_id")),
-          leaf=True,
-          filetype=ContentType.JSON),
+    Scope(
+        kind="issue_json",
+        segments=_ISSUE + ("issue.json",),
+        leaf=True,
+        filetype=ContentType.JSON,
+    ),
+    Scope(
+        kind="comments_jsonl",
+        segments=_ISSUE + ("comments.jsonl",),
+        leaf=True,
+        filetype=ContentType.TEXT,
+    ),
+    Scope(kind="projects", segments=_TEAM + ("projects",)),
+    Scope(
+        kind="project",
+        segments=_TEAM
+        + ("projects", Slot("project", JSON_NAME, id_key="project_id")),
+        leaf=True,
+        filetype=ContentType.JSON,
+    ),
+    Scope(kind="cycles", segments=_TEAM + ("cycles",)),
+    Scope(
+        kind="cycle",
+        segments=_TEAM
+        + ("cycles", Slot("cycle", JSON_NAME, id_key="cycle_id")),
+        leaf=True,
+        filetype=ContentType.JSON,
+    ),
+    Scope(kind="documents", segments=_TEAM + ("documents",)),
+    Scope(
+        kind="document",
+        segments=_TEAM
+        + ("documents", Slot("document", JSON_NAME, id_key="document_id")),
+        leaf=True,
+        filetype=ContentType.JSON,
+    ),
 )
 
 detect_scope = make_detect_scope(SCOPES)

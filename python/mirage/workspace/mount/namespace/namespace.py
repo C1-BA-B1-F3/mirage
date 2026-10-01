@@ -72,17 +72,21 @@ class NodeMeta:
     xattrs: dict[str, bytes] = field(default_factory=dict)
 
     def is_empty(self) -> bool:
-        return (all(getattr(self, key) is None for key in NodeMetaKey)
-                and not self.xattrs)
+        return (
+            all(getattr(self, key) is None for key in NodeMetaKey)
+            and not self.xattrs
+        )
 
     def to_fields(self) -> NodeFields:
         fields: NodeFields = {
             str(key): value
-            for key in NodeMetaKey if (value := getattr(self, key)) is not None
+            for key in NodeMetaKey
+            if (value := getattr(self, key)) is not None
         }
         for name, value in self.xattrs.items():
-            fields[XATTR_FIELD_PREFIX +
-                   name] = base64.b64encode(value).decode("ascii")
+            fields[XATTR_FIELD_PREFIX + name] = base64.b64encode(value).decode(
+                "ascii"
+            )
         return fields
 
     @classmethod
@@ -101,12 +105,14 @@ class NodeMeta:
             uid=uid if isinstance(uid, (int, str)) else None,
             gid=gid if isinstance(gid, (int, str)) else None,
             atime=atime if isinstance(atime, str) else None,
-            observed_mtime=(float(observed) if isinstance(
-                observed, (int, float)) else None),
+            observed_mtime=(
+                float(observed) if isinstance(observed, (int, float)) else None
+            ),
             xattrs={
-                key[len(XATTR_FIELD_PREFIX):]: base64.b64decode(value)
-                for key, value in entry.items() if
-                key.startswith(XATTR_FIELD_PREFIX) and isinstance(value, str)
+                key[len(XATTR_FIELD_PREFIX) :]: base64.b64decode(value)
+                for key, value in entry.items()
+                if key.startswith(XATTR_FIELD_PREFIX)
+                and isinstance(value, str)
             },
         )
 
@@ -162,10 +168,12 @@ class Namespace:
     link's own parent at resolution time), so ``readlink`` is GNU-faithful.
     """
 
-    def __init__(self,
-                 registry: MountRegistry,
-                 store: NamespaceStore | None = None,
-                 user: str | None = None) -> None:
+    def __init__(
+        self,
+        registry: MountRegistry,
+        store: NamespaceStore | None = None,
+        user: str | None = None,
+    ) -> None:
         self._registry = registry
         self._store = store if store is not None else RAMNamespaceStore()
         self._nodes: dict[str, NodeMeta] = {}
@@ -235,10 +243,9 @@ class Namespace:
         self._nodes = dict(entries)
         self._loaded = True
         await self._resolve_user()
-        await self._store.replace_all({
-            path: meta.to_fields()
-            for path, meta in entries.items()
-        })
+        await self._store.replace_all(
+            {path: meta.to_fields() for path, meta in entries.items()}
+        )
 
     async def close(self) -> None:
         await self._store.close()
@@ -246,7 +253,8 @@ class Namespace:
     def symlink_targets(self) -> dict[str, str]:
         return {
             path: meta.target
-            for path, meta in self._nodes.items() if meta.target is not None
+            for path, meta in self._nodes.items()
+            if meta.target is not None
         }
 
     def has_links(self) -> bool:
@@ -387,10 +395,9 @@ class Namespace:
         await self._store.delete([path])
         return True
 
-    async def drop_overlays_under(self,
-                                  paths: list[str],
-                                  *,
-                                  excluded: tuple[str, ...] = ()) -> int:
+    async def drop_overlays_under(
+        self, paths: list[str], *, excluded: tuple[str, ...] = ()
+    ) -> int:
         """Drop orphaned overlays in one pass, retaining symlinks.
 
         Args:
@@ -415,9 +422,9 @@ class Namespace:
             await self._store.delete(doomed)
         return len(doomed)
 
-    async def clear_times(self,
-                          path: str,
-                          observed: float | None = None) -> None:
+    async def clear_times(
+        self, path: str, observed: float | None = None
+    ) -> None:
         """Drop overlay times after a content write.
 
         write(2) refreshes mtime, so a stored overlay time would
@@ -524,7 +531,7 @@ class Namespace:
         resolved = self.follow(above)
         if resolved == above:
             return path
-        return resolved.rstrip("/") + path[len(parent):]
+        return resolved.rstrip("/") + path[len(parent) :]
 
     def link_stat_at(self, path: str) -> FileStat | None:
         """lstat a path: the link's own stat, or None when not a link.
@@ -552,9 +559,11 @@ class Namespace:
             directory (str): absolute virtual directory path.
         """
         base = directory.rstrip("/") + "/"
-        return [(path, link_stat(path.rsplit("/", 1)[-1], meta))
-                for path, meta in self._nodes.items()
-                if meta.target is not None and path.startswith(base)]
+        return [
+            (path, link_stat(path.rsplit("/", 1)[-1], meta))
+            for path, meta in self._nodes.items()
+            if meta.target is not None and path.startswith(base)
+        ]
 
     def link_stats_under(self, directory: str) -> list[FileStat]:
         """Stat rows for the links living directly under a directory.
@@ -600,9 +609,13 @@ class Namespace:
             directory (str): absolute virtual directory path.
         """
         base = directory.rstrip("/") + "/"
-        return [(path[len(base):], meta) for path, meta in self._nodes.items()
-                if meta.target is not None and path.startswith(base)
-                and "/" not in path[len(base):]]
+        return [
+            (path[len(base) :], meta)
+            for path, meta in self._nodes.items()
+            if meta.target is not None
+            and path.startswith(base)
+            and "/" not in path[len(base) :]
+        ]
 
     async def rename_under(self, src: str, dst: str) -> int:
         """Re-anchor every node below one directory onto another.
@@ -621,22 +634,26 @@ class Namespace:
             int: number of entries re-anchored.
         """
         base = src.rstrip("/") + "/"
-        moved = [(path, meta) for path, meta in self._nodes.items()
-                 if path.startswith(base)]
+        moved = [
+            (path, meta)
+            for path, meta in self._nodes.items()
+            if path.startswith(base)
+        ]
         if not moved:
             return 0
         landing = dst.rstrip("/")
         for path, meta in moved:
             del self._nodes[path]
         for path, meta in moved:
-            target = f"{landing}/{path[len(base):]}"
+            target = f"{landing}/{path[len(base) :]}"
             self._nodes[target] = meta
             await self._store.set(target, meta.to_fields())
         await self._store.delete([path for path, _meta in moved])
         return len(moved)
 
     async def purge_under(
-        self, directory: str, keep: frozenset[str] = frozenset()) -> int:
+        self, directory: str, keep: frozenset[str] = frozenset()
+    ) -> int:
         """Drop every node entry under a directory (``rm -r`` semantics).
 
         Args:
@@ -648,7 +665,8 @@ class Namespace:
         """
         base = directory.rstrip("/") + "/"
         doomed = [
-            path for path in self._nodes
+            path
+            for path in self._nodes
             if path.startswith(base) and path not in keep
         ]
         for path in doomed:
@@ -657,10 +675,9 @@ class Namespace:
             await self._store.delete(doomed)
         return len(doomed)
 
-    def resolve(self,
-                path: str,
-                *,
-                follow: bool = True) -> tuple[BaseVFS, str, MountMode]:
+    def resolve(
+        self, path: str, *, follow: bool = True
+    ) -> tuple[BaseVFS, str, MountMode]:
         """Map a virtual path to ``(VFS, vfs_path, mode)``.
 
         Args:

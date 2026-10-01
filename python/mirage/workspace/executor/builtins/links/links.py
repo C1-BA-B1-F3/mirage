@@ -23,8 +23,12 @@ from mirage.commands.spec.flag_view import FlagView
 from mirage.commands.spec.types import FlagValue
 from mirage.runtime.types import DispatchFn
 from mirage.types import FileStat, FileType, PathSpec
-from mirage.utils.errors import (ELOOP_STRERROR, FS_ERRORS, DotWalkLoop,
-                                 fs_strerror)
+from mirage.utils.errors import (
+    ELOOP_STRERROR,
+    FS_ERRORS,
+    DotWalkLoop,
+    fs_strerror,
+)
 from mirage.utils.path import CycleError
 from mirage.workspace.executor.builtins.shared import fail
 from mirage.workspace.executor.builtins.types import Result
@@ -94,8 +98,11 @@ def follow_paths(
             continue
         last = follow_last or (slash_follows and item.raw_path.endswith("/"))
         try:
-            followed = (namespace.follow(item.virtual)
-                        if last else follow_parent(namespace, item.virtual))
+            followed = (
+                namespace.follow(item.virtual)
+                if last
+                else follow_parent(namespace, item.virtual)
+            )
         except CycleError:
             out.append(dataclasses.replace(item, walk_error="ELOOP"))
             continue
@@ -111,17 +118,19 @@ def follow_paths(
             out.append(item)
             continue
         out.append(
-            dataclasses.replace(item,
-                                virtual=virtual,
-                                directory=virtual[:virtual.rfind("/") + 1]
-                                or "/",
-                                vfs_path=""))
+            dataclasses.replace(
+                item,
+                virtual=virtual,
+                directory=virtual[: virtual.rfind("/") + 1] or "/",
+                vfs_path="",
+            )
+        )
     return out
 
 
 async def follow_directory_links(
-        namespace: Namespace, dispatch: DispatchFn,
-        items: list[str | PathSpec]) -> list[str | PathSpec]:
+    namespace: Namespace, dispatch: DispatchFn, items: list[str | PathSpec]
+) -> list[str | PathSpec]:
     """Resolve each command-line link that leads to a directory.
 
     GNU ls's default (ls.c's DEREF_COMMAND_LINE_SYMLINK_TO_DIR, coreutils
@@ -139,8 +148,11 @@ async def follow_directory_links(
     """
     out: list[str | PathSpec] = []
     for item in items:
-        if (not isinstance(item, PathSpec) or item.walk_error is not None
-                or not namespace.is_link(item.virtual)):
+        if (
+            not isinstance(item, PathSpec)
+            or item.walk_error is not None
+            or not namespace.is_link(item.virtual)
+        ):
             out.append(item)
             continue
         followed = follow_paths(namespace, [item])[0]
@@ -150,14 +162,16 @@ async def follow_directory_links(
                 target = await stat_or_none(dispatch, followed)
             except DotWalkLoop:
                 target = None
-            leads_to_dir = (target is not None
-                            and target.type == FileType.DIRECTORY)
+            leads_to_dir = (
+                target is not None and target.type == FileType.DIRECTORY
+            )
         out.append(followed if leads_to_dir else item)
     return out
 
 
-def accepts_line(name: str, args: tuple[str, ...], items: list[str | PathSpec],
-                 cwd: str) -> bool:
+def accepts_line(
+    name: str, args: tuple[str, ...], items: list[str | PathSpec], cwd: str
+) -> bool:
     """Whether the command layer will act on this line as written.
 
     A link entry lives in the namespace, so ``strip_link_operands``
@@ -239,24 +253,32 @@ async def strip_link_operands(
     force = False
     if name == "rm":
         force = bool(
-            parse_command(SPECS["rm"], list(args), cwd, "rm").flags.get("-f"))
+            parse_command(SPECS["rm"], list(args), cwd, "rm").flags.get("-f")
+        )
     verb = "remove" if name == "rm" else "unlink"
     handled = 0
     errors: list[str] = []
     kept: list[str | PathSpec] = []
     for item in items:
-        if (isinstance(item, PathSpec) and not item.raw_path.endswith("/")
-                and namespace.is_link(item.virtual)):
+        if (
+            isinstance(item, PathSpec)
+            and not item.raw_path.endswith("/")
+            and namespace.is_link(item.virtual)
+        ):
             handled += 1
             try:
                 await dispatch("unlink", item)
             except FileNotFoundError as exc:
                 if not force:
-                    errors.append(f"{name}: cannot {verb} '{item.raw_path}': "
-                                  f"{fs_strerror(exc)}\n")
+                    errors.append(
+                        f"{name}: cannot {verb} '{item.raw_path}': "
+                        f"{fs_strerror(exc)}\n"
+                    )
             except FS_ERRORS as exc:
-                errors.append(f"{name}: cannot {verb} '{item.raw_path}': "
-                              f"{fs_strerror(exc)}\n")
+                errors.append(
+                    f"{name}: cannot {verb} '{item.raw_path}': "
+                    f"{fs_strerror(exc)}\n"
+                )
             continue
         kept.append(item)
     return kept, handled, errors
@@ -291,26 +313,31 @@ async def _slashed_link_refusal(
         followed = namespace.follow(src.virtual)
     except CycleError:
         return fail(
-            "mv", f"mv: cannot stat '{src.raw_path}': "
-            f"{ELOOP_STRERROR}\n")
+            "mv", f"mv: cannot stat '{src.raw_path}': {ELOOP_STRERROR}\n"
+        )
     target = await stat_or_none(dispatch, PathSpec.from_str_path(followed))
     if target is None:
         return fail(
-            "mv", f"mv: cannot stat '{src.raw_path}': "
-            "No such file or directory\n")
+            "mv",
+            f"mv: cannot stat '{src.raw_path}': No such file or directory\n",
+        )
     if target.type != FileType.DIRECTORY:
-        return fail("mv",
-                    f"mv: cannot stat '{src.raw_path}': Not a directory\n")
+        return fail(
+            "mv", f"mv: cannot stat '{src.raw_path}': Not a directory\n"
+        )
     if dst_stat is not None and dst_stat.type != FileType.DIRECTORY:
         return fail(
-            "mv", f"mv: cannot overwrite non-directory '{dst.raw_path}' "
-            f"with directory '{src.raw_path}'\n")
+            "mv",
+            f"mv: cannot overwrite non-directory '{dst.raw_path}' "
+            f"with directory '{src.raw_path}'\n",
+        )
     landing = dst.raw_path
     if dst_stat is not None:
         landing = landing.rstrip("/") + "/" + posixpath.basename(src.virtual)
     return fail(
-        "mv", f"mv: cannot move '{src.raw_path}' to '{landing}': "
-        "Not a directory\n")
+        "mv",
+        f"mv: cannot move '{src.raw_path}' to '{landing}': Not a directory\n",
+    )
 
 
 async def prepare_mv(
@@ -330,9 +357,10 @@ async def prepare_mv(
         cwd (str): Working directory for parsing.
     """
     paths = [p for p in items if isinstance(p, PathSpec)]
-    fl = FlagView(parse_to_kwargs(
-        parse_command(SPECS["mv"], list(args), cwd, "mv")),
-                  spec=SPECS["mv"])
+    fl = FlagView(
+        parse_to_kwargs(parse_command(SPECS["mv"], list(args), cwd, "mv")),
+        spec=SPECS["mv"],
+    )
     target = fl.raw("target_directory")
     if target is not None or len(paths) > 2:
         return _prepare_many(namespace, items, paths, target)
@@ -341,8 +369,9 @@ async def prepare_mv(
     return await _prepare_pair(namespace, dispatch, items, paths, fl)
 
 
-async def settle_moves(namespace: Namespace, moves: list[tuple[str,
-                                                               str]]) -> None:
+async def settle_moves(
+    namespace: Namespace, moves: list[tuple[str, str]]
+) -> None:
     """Re-anchor only the renames the generic actually completed.
 
     Args:
@@ -385,10 +414,17 @@ def _prepare_many(
         target (FlagValue | None): ``-t``'s resolved value, if given.
     """
     if target is not None:
-        spelled = target.virtual if isinstance(target,
-                                               PathSpec) else str(target)
-        dst = next((p for p in paths
-                    if _landing_key(p.virtual) == _landing_key(spelled)), None)
+        spelled = (
+            target.virtual if isinstance(target, PathSpec) else str(target)
+        )
+        dst = next(
+            (
+                p
+                for p in paths
+                if _landing_key(p.virtual) == _landing_key(spelled)
+            ),
+            None,
+        )
         if dst is None:
             return items, None
     else:
@@ -424,15 +460,24 @@ async def _prepare_pair(
         # land on; the generic mv reports it through its own stat, which
         # cannot see a link source. A link is a non-directory, and GNU
         # stats an empty destination as a directory (see mv_generic).
-        if (dst.raw_path == "" and src.walk_error is None
-                and namespace.is_link(src.virtual)):
+        if (
+            dst.raw_path == ""
+            and src.walk_error is None
+            and namespace.is_link(src.virtual)
+        ):
             return items, fail(
-                "mv", "mv: cannot overwrite directory '' with "
-                f"non-directory '{src.raw_path}'\n")
-        if (dst.walk_error == "ELOOP" and src.walk_error is None
-                and namespace.is_link(src.virtual)):
+                "mv",
+                "mv: cannot overwrite directory '' with "
+                f"non-directory '{src.raw_path}'\n",
+            )
+        if (
+            dst.walk_error == "ELOOP"
+            and src.walk_error is None
+            and namespace.is_link(src.virtual)
+        ):
             return items, fail(
-                "mv", f"mv: cannot stat '{dst.raw_path}': {ELOOP_STRERROR}\n")
+                "mv", f"mv: cannot stat '{dst.raw_path}': {ELOOP_STRERROR}\n"
+            )
         return items, None
 
     # Where the move lands: inside a directory destination (followed, so
@@ -444,14 +489,21 @@ async def _prepare_pair(
         followed: str | None = namespace.follow(dst.virtual)
     except CycleError:
         followed = None
-    stat = (None if followed is None else await stat_or_none(
-        dispatch, PathSpec.from_str_path(followed)))
-    into_dir = (not fl.as_bool("no_target_directory") and stat is not None
-                and stat.type == FileType.DIRECTORY)
+    stat = (
+        None
+        if followed is None
+        else await stat_or_none(dispatch, PathSpec.from_str_path(followed))
+    )
+    into_dir = (
+        not fl.as_bool("no_target_directory")
+        and stat is not None
+        and stat.type == FileType.DIRECTORY
+    )
     if namespace.is_link(src.virtual):
         if src.raw_path.endswith("/"):
-            return items, await _slashed_link_refusal(namespace, dispatch, src,
-                                                      dst, stat)
+            return items, await _slashed_link_refusal(
+                namespace, dispatch, src, dst, stat
+            )
         if not into_dir and dst.raw_path.endswith("/"):
             # rename(2) never follows the source, so a link is not a
             # directory whatever it points at, and a slashed destination
@@ -460,15 +512,19 @@ async def _prepare_pair(
             # same two wordings a regular source gets from the generic,
             # whose chain walk also keeps an absent parent's ENOENT
             # (`mv dlnk nodir/name/`) ahead of the slash.
-            _, _, verdict = await dest_kind(partial(dispatch_stat, dispatch),
-                                            dst)
+            _, _, verdict = await dest_kind(
+                partial(dispatch_stat, dispatch), dst
+            )
             if verdict == "Not a directory":
                 return items, fail(
-                    "mv", f"mv: cannot stat '{dst.raw_path}': "
-                    "Not a directory\n")
+                    "mv",
+                    f"mv: cannot stat '{dst.raw_path}': Not a directory\n",
+                )
             return items, fail(
-                "mv", f"mv: cannot move '{src.raw_path}' to "
-                f"'{dst.raw_path}': {verdict or 'Not a directory'}\n")
+                "mv",
+                f"mv: cannot move '{src.raw_path}' to "
+                f"'{dst.raw_path}': {verdict or 'Not a directory'}\n",
+            )
     rewritten = items
     if into_dir and namespace.is_link(dst.virtual):
         rewritten = [

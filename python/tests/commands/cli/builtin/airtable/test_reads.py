@@ -16,8 +16,14 @@ import json
 
 import pytest
 
-from tests.fixtures.airtable_api import (DONE, DONE_FORMULA, FEATURES,
-                                         MODEL_NOT_FOUND, OPS, ROADMAP)
+from tests.fixtures.airtable_api import (
+    DONE,
+    DONE_FORMULA,
+    FEATURES,
+    MODEL_NOT_FOUND,
+    OPS,
+    ROADMAP,
+)
 
 BASE_DIR = "/at/bases/Product_Roadmap__appRoadmapBase001"
 TABLE_DIR = f"{BASE_DIR}/Features__tblFeatures000001"
@@ -32,14 +38,17 @@ async def _run(ws, line: str) -> tuple[int, str, str]:
 
 @pytest.mark.asyncio
 async def test_base_list_is_scoped_by_base_ids(airtable_ws):
-    code, out, _ = await _run(airtable_ws(base_ids=[OPS]),
-                              "airtable base list")
+    code, out, _ = await _run(
+        airtable_ws(base_ids=[OPS]), "airtable base list"
+    )
     assert code == 0
-    assert json.loads(out) == [{
-        "base_id": OPS,
-        "base_name": "Ops / Finance ✓",
-        "permission_level": "read",
-    }]
+    assert json.loads(out) == [
+        {
+            "base_id": OPS,
+            "base_name": "Ops / Finance ✓",
+            "permission_level": "read",
+        }
+    ]
 
 
 @pytest.mark.asyncio
@@ -49,8 +58,9 @@ async def test_base_and_table_get_print_the_mounts_own_files(airtable_ws):
     _, base_json, _ = await _run(ws, f"cat {BASE_DIR}/base.json")
     assert base == base_json
     for ref in (FEATURES, "Features"):
-        _, table, _ = await _run(ws,
-                                 f"airtable table get --base {ROADMAP} {ref}")
+        _, table, _ = await _run(
+            ws, f"airtable table get --base {ROADMAP} {ref}"
+        )
         _, table_json, _ = await _run(ws, f"cat {TABLE_DIR}/table.json")
         assert table == table_json
 
@@ -59,9 +69,15 @@ async def test_base_and_table_get_print_the_mounts_own_files(airtable_ws):
 async def test_an_unknown_base_or_table_is_an_error(airtable_ws):
     ws = airtable_ws()
     assert await _run(ws, "airtable base get appNope0000000001") == (
-        1, "", "airtable base get: appNope0000000001: no such base\n")
+        1,
+        "",
+        "airtable base get: appNope0000000001: no such base\n",
+    )
     assert await _run(ws, f"airtable table get --base {ROADMAP} Nope") == (
-        1, "", f"airtable table get: Nope: no such table in {ROADMAP}\n")
+        1,
+        "",
+        f"airtable table get: Nope: no such table in {ROADMAP}\n",
+    )
 
 
 @pytest.mark.asyncio
@@ -74,14 +90,17 @@ async def test_record_list_prints_records_jsonl_lines(airtable_ws):
 
 
 @pytest.mark.asyncio
-async def test_the_read_cap_refuses_rather_than_paging(airtable_ws,
-                                                       airtable_api):
+async def test_the_read_cap_refuses_rather_than_paging(
+    airtable_ws, airtable_api
+):
     ws = airtable_ws(max_read_records=5)
     code, out, err = await _run(ws, f"airtable record list {AT}")
     assert (code, out) == (1, "")
-    assert err == ("airtable record list: more than 5 records match "
-                   "(max_read_records); narrow them with --formula or --view,"
-                   " or take the first N with --max-records N\n")
+    assert err == (
+        "airtable record list: more than 5 records match "
+        "(max_read_records); narrow them with --formula or --view,"
+        " or take the first N with --max-records N\n"
+    )
     assert [c["maxRecords"] for c in airtable_api.record_calls()] == ["6"] * 2
 
 
@@ -93,15 +112,20 @@ async def test_max_records_is_honored_as_asked(airtable_ws, airtable_api):
     assert len(out.splitlines()) == 7
     assert airtable_api.record_calls()[0]["maxRecords"] == "7"
     assert await _run(ws, f"airtable record list {AT} --max-records 0") == (
-        2, "", "--max-records must be at least 1\n")
+        2,
+        "",
+        "--max-records must be at least 1\n",
+    )
 
 
 @pytest.mark.asyncio
 async def test_formula_and_view_pass_through(airtable_ws, airtable_api):
     ws = airtable_ws()
     code, out, _ = await _run(
-        ws, f"airtable record list {AT} --view {DONE} "
-        f"--formula \"{DONE_FORMULA}\" | jq -r .fields.Priority")
+        ws,
+        f"airtable record list {AT} --view {DONE} "
+        f'--formula "{DONE_FORMULA}" | jq -r .fields.Priority',
+    )
     assert (code, out) == (0, "1\n3\n5\n7\n")
     call = airtable_api.record_calls()[0]
     assert (call["view"], call["filterByFormula"]) == (DONE, DONE_FORMULA)
@@ -115,9 +139,12 @@ async def test_record_get_prints_one_line(airtable_ws):
     assert out.count("\n") == 1
     assert json.loads(out)["record_id"] == FIRST
     assert await _run(ws, f"airtable record get {AT} recZZZZZZZZZZZZZZ") == (
-        1, "", "airtable record get: Airtable API error (GET "
+        1,
+        "",
+        "airtable record get: Airtable API error (GET "
         f"/{ROADMAP}/{FEATURES}/recZZZZZZZZZZZZZZ): HTTP 403: "
-        f"INVALID_PERMISSIONS_OR_MODEL_NOT_FOUND: {MODEL_NOT_FOUND}\n")
+        f"INVALID_PERMISSIONS_OR_MODEL_NOT_FOUND: {MODEL_NOT_FOUND}\n",
+    )
 
 
 @pytest.mark.asyncio
@@ -128,40 +155,63 @@ async def test_comment_list_is_normalized_in_api_order(airtable_ws):
     comments = json.loads(out)
     assert [c["text"] for c in comments] == ["Shipped it.", "Looks good."]
     assert list(comments[0]) == [
-        "comment_id", "author_id", "author_email", "author_name", "text",
-        "created_time", "last_updated_time"
+        "comment_id",
+        "author_id",
+        "author_email",
+        "author_name",
+        "text",
+        "created_time",
+        "last_updated_time",
     ]
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("line", [
-    f"airtable base get {OPS}",
-    f"airtable table get --base {OPS} tblBudget00000001",
-    f"airtable record list --base {OPS} --table tblBudget00000001",
-    f"airtable record get --base {OPS} --table tblBudget00000001 {FIRST}",
-    f"airtable comment list --base {OPS} --table tblBudget00000001 {FIRST}",
-])
+@pytest.mark.parametrize(
+    "line",
+    [
+        f"airtable base get {OPS}",
+        f"airtable table get --base {OPS} tblBudget00000001",
+        f"airtable record list --base {OPS} --table tblBudget00000001",
+        f"airtable record get --base {OPS} --table tblBudget00000001 {FIRST}",
+        f"airtable comment list --base {OPS} --table tblBudget00000001 {FIRST}",
+    ],
+)
 async def test_a_base_outside_the_scope_is_refused_unsent(
-        airtable_ws, airtable_api, line):
+    airtable_ws, airtable_api, line
+):
     ws = airtable_ws(base_ids=[ROADMAP])
     verb = " ".join(line.split()[:3])
-    assert await _run(ws,
-                      line) == (1, "", f"{verb}: {OPS}: Permission denied\n")
+    assert await _run(ws, line) == (
+        1,
+        "",
+        f"{verb}: {OPS}: Permission denied\n",
+    )
     assert airtable_api.calls == []
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("line, message", [
-    ("airtable base list extra", "unrecognized arguments: extra"),
-    ("airtable base get", "the following arguments are required: BASE"),
-    (f"airtable base get {ROADMAP} {OPS}", f"unrecognized arguments: {OPS}"),
-    (f"airtable table get --base {ROADMAP}",
-     "the following arguments are required: TABLE"),
-    (f"airtable record get {AT}",
-     "the following arguments are required: RECORD"),
-    (f"airtable comment list {AT} a b", "unrecognized arguments: b"),
-])
-async def test_operand_refusals_are_usage_errors(airtable_ws, airtable_api,
-                                                 line, message):
+@pytest.mark.parametrize(
+    "line, message",
+    [
+        ("airtable base list extra", "unrecognized arguments: extra"),
+        ("airtable base get", "the following arguments are required: BASE"),
+        (
+            f"airtable base get {ROADMAP} {OPS}",
+            f"unrecognized arguments: {OPS}",
+        ),
+        (
+            f"airtable table get --base {ROADMAP}",
+            "the following arguments are required: TABLE",
+        ),
+        (
+            f"airtable record get {AT}",
+            "the following arguments are required: RECORD",
+        ),
+        (f"airtable comment list {AT} a b", "unrecognized arguments: b"),
+    ],
+)
+async def test_operand_refusals_are_usage_errors(
+    airtable_ws, airtable_api, line, message
+):
     assert await _run(airtable_ws(), line) == (2, "", f"{message}\n")
     assert airtable_api.calls == []

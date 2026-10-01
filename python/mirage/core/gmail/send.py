@@ -16,8 +16,11 @@ import base64
 from email.mime.text import MIMEText
 from typing import Any
 
-from mirage.core.gmail.messages import (_extract_header, get_message_processed,
-                                        get_message_raw)
+from mirage.core.gmail.messages import (
+    _extract_header,
+    get_message_processed,
+    get_message_raw,
+)
 from mirage.core.google.client import TokenManager, gmail_base, google_post
 
 
@@ -149,9 +152,11 @@ async def forward_message(
     subject = processed.get("subject", "")
     if not subject.lower().startswith("fwd:"):
         subject = f"Fwd: {subject}"
-    fwd_body = (f"---------- Forwarded message ----------\n"
-                f"From: {processed['from'].get('email', '')}\n"
-                f"Date: {processed.get('date', '')}\n"
-                f"Subject: {processed.get('subject', '')}\n\n"
-                f"{processed.get('body_text', '')}")
+    fwd_body = (
+        f"---------- Forwarded message ----------\n"
+        f"From: {processed['from'].get('email', '')}\n"
+        f"Date: {processed.get('date', '')}\n"
+        f"Subject: {processed.get('subject', '')}\n\n"
+        f"{processed.get('body_text', '')}"
+    )
     return await send_message(token_manager, to, subject, fwd_body)

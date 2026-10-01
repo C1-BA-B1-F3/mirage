@@ -37,7 +37,7 @@ def frontmatter(text: str) -> str | None:
     end = text.find(f"\n{FENCE}", len(FENCE))
     if end == -1:
         return None
-    return text[len(FENCE) + 1:end]
+    return text[len(FENCE) + 1 : end]
 
 
 def check(path: Path) -> str | None:

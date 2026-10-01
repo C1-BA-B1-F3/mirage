@@ -67,8 +67,10 @@ async def test_redirect_chain_compounds():
     # chain executes left to right instead of hoisting.
     ws = await _workspace()
     out = await _out(
-        ws, "echo a > /data/c && echo b >> /data/c && cat /data/c"
-        " && wc -l < /data/c")
+        ws,
+        "echo a > /data/c && echo b >> /data/c && cat /data/c"
+        " && wc -l < /data/c",
+    )
     assert out == "a\nb\n2\n"
 
 
@@ -91,7 +93,8 @@ async def test_redirect_subshell_keeps_whole_body():
 async def test_redirect_pipeline_right_side():
     ws = await _workspace()
     out = await _out(
-        ws, "echo x && echo y | tr a-z A-Z > /data/up && cat /data/up")
+        ws, "echo x && echo y | tr a-z A-Z > /data/up && cat /data/up"
+    )
     assert out == "x\nY\n"
 
 
@@ -117,52 +120,113 @@ BINDS = [
     ("(cd /data && printf 'x\\n' | cat < b.txt)", "1\n2\n3\n", "", 0),
     ("true && printf 'x\\n' | cat | cat < /data/b.txt", "1\n2\n3\n", "", 0),
     ("false && true || printf 'x\\n' | cat < /data/b.txt", "1\n2\n3\n", "", 0),
-    ("true && printf 'x\\n' | cat < /nonexistent" + PS, "rc=1 ps=0 1\n",
-     "/nonexistent: No such file or directory\n", 0),
-    ("true && printf 'x\\n' | cat < /data/b.txt && echo after",
-     "1\n2\n3\nafter\n", "", 0),
-    ("f() { true && printf 'x\\n' | cat < /data/b.txt; }; f", "1\n2\n3\n", "",
-     0),
-    ("true && { echo e1 >&2; echo o; } | { cat; echo e2 >&2; } 2> /data/e;"
-     " echo ---; cat /data/e", "o\n---\ne2\n", "e1\n", 0),
-    ("false || { echo e1 >&2; echo o; } | { cat; echo e2 >&2; } 2>&1",
-     "o\ne2\n", "e1\n", 0),
+    (
+        "true && printf 'x\\n' | cat < /nonexistent" + PS,
+        "rc=1 ps=0 1\n",
+        "/nonexistent: No such file or directory\n",
+        0,
+    ),
+    (
+        "true && printf 'x\\n' | cat < /data/b.txt && echo after",
+        "1\n2\n3\nafter\n",
+        "",
+        0,
+    ),
+    (
+        "f() { true && printf 'x\\n' | cat < /data/b.txt; }; f",
+        "1\n2\n3\n",
+        "",
+        0,
+    ),
+    (
+        "true && { echo e1 >&2; echo o; } | { cat; echo e2 >&2; } 2> /data/e;"
+        " echo ---; cat /data/e",
+        "o\n---\ne2\n",
+        "e1\n",
+        0,
+    ),
+    (
+        "false || { echo e1 >&2; echo o; } | { cat; echo e2 >&2; } 2>&1",
+        "o\ne2\n",
+        "e1\n",
+        0,
+    ),
     ("true && printf 'x\\n' | cat <<EOF\nH\nEOF", "H\n", "", 0),
     ("true && { printf 'x\\n' | cat; } < /data/b.txt", "x\n", "", 0),
     ("true && (printf 'x\\n' | cat) < /data/b.txt", "x\n", "", 0),
-    ("true && printf 'x\\n' | cat < /data/b.txt | tr 3 Z" + PS,
-     "1\n2\nZ\nrc=0 ps=0 0 0\n", "", 0),
-    ("false && printf 'x\\n' | cat < /data/b.txt | cat" + PS, "rc=1 ps=1\n",
-     "", 0),
-    ("false && cat <<EOF | tr a-z A-Z\nhi\nEOF\n" + PS[2:], "rc=1 ps=1\n", "",
-     0),
-    ("printf 'x\\n' | false && cat < /data/b.txt | tr 1 X" + PS,
-     "rc=1 ps=0 1\n", "", 0),
-    ("(set -e; false && cat < /data/b.txt | tr 1 X; echo survived)",
-     "survived\n", "", 0),
-    ("printf 'x\\n' | cat < /data/b.txt | cat" + PS,
-     "1\n2\n3\nrc=0 ps=0 0 0\n", "", 0),
-    ("! printf 'x\\n' | cat < /data/b.txt | cat" + PS,
-     "1\n2\n3\nrc=1 ps=0 0 0\n", "", 0),
+    (
+        "true && printf 'x\\n' | cat < /data/b.txt | tr 3 Z" + PS,
+        "1\n2\nZ\nrc=0 ps=0 0 0\n",
+        "",
+        0,
+    ),
+    (
+        "false && printf 'x\\n' | cat < /data/b.txt | cat" + PS,
+        "rc=1 ps=1\n",
+        "",
+        0,
+    ),
+    (
+        "false && cat <<EOF | tr a-z A-Z\nhi\nEOF\n" + PS[2:],
+        "rc=1 ps=1\n",
+        "",
+        0,
+    ),
+    (
+        "printf 'x\\n' | false && cat < /data/b.txt | tr 1 X" + PS,
+        "rc=1 ps=0 1\n",
+        "",
+        0,
+    ),
+    (
+        "(set -e; false && cat < /data/b.txt | tr 1 X; echo survived)",
+        "survived\n",
+        "",
+        0,
+    ),
+    (
+        "printf 'x\\n' | cat < /data/b.txt | cat" + PS,
+        "1\n2\n3\nrc=0 ps=0 0 0\n",
+        "",
+        0,
+    ),
+    (
+        "! printf 'x\\n' | cat < /data/b.txt | cat" + PS,
+        "1\n2\n3\nrc=1 ps=0 0 0\n",
+        "",
+        0,
+    ),
     ("! cat < /data/b.txt | tr 1 X" + PS, "X\n2\n3\nrc=1 ps=0 0\n", "", 0),
     ("! false | true > /dev/null" + PS, "rc=1 ps=1 0\n", "", 0),
-    ("! cat < /nonexistent" + PS, "rc=0 ps=1\n",
-     "/nonexistent: No such file or directory\n", 0),
-    ("true && { echo e >&2; echo o; } |& cat > /data/p; cat /data/p", "e\no\n",
-     "", 0),
+    (
+        "! cat < /nonexistent" + PS,
+        "rc=0 ps=1\n",
+        "/nonexistent: No such file or directory\n",
+        0,
+    ),
+    (
+        "true && { echo e >&2; echo o; } |& cat > /data/p; cat /data/p",
+        "e\no\n",
+        "",
+        0,
+    ),
 ]
 
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("line,stdout,stderr,code", BINDS)
 async def test_trailing_redirect_binds_to_the_command_it_follows(
-        line, stdout, stderr, code):
+    line, stdout, stderr, code
+):
     ws = await _workspace()
     try:
         await ws.shell("printf '1\\n2\\n3\\n' > /data/b.txt")
         io = await ws.shell(line)
-        assert (await io.stdout_str(), await
-                io.stderr_str(), io.exit_code) == (stdout, stderr, code)
+        assert (
+            await io.stdout_str(),
+            await io.stderr_str(),
+            io.exit_code,
+        ) == (stdout, stderr, code)
     finally:
         await ws.close()
 
@@ -428,11 +492,14 @@ async def test_write_target_unwritable_keeps_earlier_target():
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("line", [
-    "echo x >> /nodir/f",
-    "echo x 2> /nodir/f",
-    "> /nodir/f",
-])
+@pytest.mark.parametrize(
+    "line",
+    [
+        "echo x >> /nodir/f",
+        "echo x 2> /nodir/f",
+        "> /nodir/f",
+    ],
+)
 async def test_write_target_unwritable_same_line_for_every_form(line: str):
     # GNU spells the append, stderr and command-less forms identically.
     ws = await _workspace()
@@ -442,17 +509,23 @@ async def test_write_target_unwritable_same_line_for_every_form(line: str):
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("line,expected", [
-    ("cat 0<&1; echo rc=$?", ("rc=1\n", "cat: -: Bad file descriptor\n")),
-    ("cat 0<&2; echo rc=$?", ("rc=1\n", "cat: -: Bad file descriptor\n")),
-    ("cat <&-; echo rc=$?", ("rc=1\n", "cat: -: Bad file descriptor\n")),
-    ("true 0<&1; echo rc=$?", ("rc=0\n", "")),
-    ("echo hi 0<&1; echo rc=$?", ("hi\nrc=0\n", "")),
-    ("read x 0<&1; echo rc=$?",
-     ("rc=1\n", "bash: read: read error: 0: Bad file descriptor\n")),
-])
+@pytest.mark.parametrize(
+    "line,expected",
+    [
+        ("cat 0<&1; echo rc=$?", ("rc=1\n", "cat: -: Bad file descriptor\n")),
+        ("cat 0<&2; echo rc=$?", ("rc=1\n", "cat: -: Bad file descriptor\n")),
+        ("cat <&-; echo rc=$?", ("rc=1\n", "cat: -: Bad file descriptor\n")),
+        ("true 0<&1; echo rc=$?", ("rc=0\n", "")),
+        ("echo hi 0<&1; echo rc=$?", ("hi\nrc=0\n", "")),
+        (
+            "read x 0<&1; echo rc=$?",
+            ("rc=1\n", "bash: read: read error: 0: Bad file descriptor\n"),
+        ),
+    ],
+)
 async def test_stdin_from_a_closed_or_write_only_descriptor_is_unreadable(
-        line, expected):
+    line, expected
+):
     # bash 5.2.37 opens the command all the same and the first read
     # fails with EBADF; a command that never reads succeeds. GNU cat's
     # `closing standard input` second line after `<&-` is not rendered.
@@ -470,29 +543,37 @@ async def test_stdin_from_a_closed_or_write_only_descriptor_is_unreadable(
 # used to make `|| echo` a phantom pipe stage: the body was lost and the
 # recovery never ran.
 @pytest.mark.asyncio
-@pytest.mark.parametrize("line,expected", [
-    ("false <<'EOF' || echo recovered\nignored\nEOF", ("recovered\n", 0)),
-    ("cat <<'EOF' && echo after\nhello\nEOF", ("hello\nafter\n", 0)),
-    ("cat <<EOF 2>/dev/null || echo fb\nhello\nEOF", ("hello\n", 0)),
-    ("true <<'EOF' || echo notrun\nx\nEOF", ("", 0)),
-    ("false <<'EOF' && echo notrun\nx\nEOF", ("", 1)),
-    ("cat <<EOF | tr a-z A-Z && echo done\nabc\nEOF", ("ABC\ndone\n", 0)),
-    ("cat <<EOF | tr a-z A-Z | rev && echo c\nabc\nEOF", ("CBA\nc\n", 0)),
-    ("cat <<EOF | tr a-z A-Z || echo c && echo d\nabc\nEOF", ("ABC\nd\n", 0)),
-    ("false <<EOF || echo a && echo b\nx\nEOF", ("a\nb\n", 0)),
-    ("true <<EOF || echo a && echo b\nx\nEOF", ("b\n", 0)),
-    ("false <<EOF || echo a || echo b\nx\nEOF", ("a\n", 0)),
-    ("false <<EOF || echo a | tr a A\nx\nEOF", ("A\n", 0)),
-    ("false <<EOF || { echo a; echo b; }\nx\nEOF", ("a\nb\n", 0)),
-    ("false <<EOF || (echo x)\nx\nEOF", ("x\n", 0)),
-    ("false <<EOF || ! true\nx\nEOF", ("", 1)),
-    ("true && cat <<EOF || echo x\nbody\nEOF", ("body\n", 0)),
-    ("cat <<-EOF && echo after\n\thello\n\tEOF", ("hello\nafter\n", 0)),
-    ("x=$(cat <<EOF && echo after\nhello\nEOF\n); echo \"[$x]\"",
-     ("[hello\nafter]\n", 0)),
-    ("if false <<EOF || true\nx\nEOF\nthen echo yes; fi", ("yes\n", 0)),
-    ("cat /nonexistent <<EOF 2>/dev/null || echo fb\nx\nEOF", ("fb\n", 0)),
-])
+@pytest.mark.parametrize(
+    "line,expected",
+    [
+        ("false <<'EOF' || echo recovered\nignored\nEOF", ("recovered\n", 0)),
+        ("cat <<'EOF' && echo after\nhello\nEOF", ("hello\nafter\n", 0)),
+        ("cat <<EOF 2>/dev/null || echo fb\nhello\nEOF", ("hello\n", 0)),
+        ("true <<'EOF' || echo notrun\nx\nEOF", ("", 0)),
+        ("false <<'EOF' && echo notrun\nx\nEOF", ("", 1)),
+        ("cat <<EOF | tr a-z A-Z && echo done\nabc\nEOF", ("ABC\ndone\n", 0)),
+        ("cat <<EOF | tr a-z A-Z | rev && echo c\nabc\nEOF", ("CBA\nc\n", 0)),
+        (
+            "cat <<EOF | tr a-z A-Z || echo c && echo d\nabc\nEOF",
+            ("ABC\nd\n", 0),
+        ),
+        ("false <<EOF || echo a && echo b\nx\nEOF", ("a\nb\n", 0)),
+        ("true <<EOF || echo a && echo b\nx\nEOF", ("b\n", 0)),
+        ("false <<EOF || echo a || echo b\nx\nEOF", ("a\n", 0)),
+        ("false <<EOF || echo a | tr a A\nx\nEOF", ("A\n", 0)),
+        ("false <<EOF || { echo a; echo b; }\nx\nEOF", ("a\nb\n", 0)),
+        ("false <<EOF || (echo x)\nx\nEOF", ("x\n", 0)),
+        ("false <<EOF || ! true\nx\nEOF", ("", 1)),
+        ("true && cat <<EOF || echo x\nbody\nEOF", ("body\n", 0)),
+        ("cat <<-EOF && echo after\n\thello\n\tEOF", ("hello\nafter\n", 0)),
+        (
+            'x=$(cat <<EOF && echo after\nhello\nEOF\n); echo "[$x]"',
+            ("[hello\nafter]\n", 0),
+        ),
+        ("if false <<EOF || true\nx\nEOF\nthen echo yes; fi", ("yes\n", 0)),
+        ("cat /nonexistent <<EOF 2>/dev/null || echo fb\nx\nEOF", ("fb\n", 0)),
+    ],
+)
 async def test_heredoc_operator_line_list(line, expected):
     ws = Workspace({"/": RAMVFS()}, mode=MountMode.WRITE)
     try:
@@ -515,44 +596,54 @@ async def test_heredoc_file_redirect_then_list():
 # ends at a metacharacter, and the bodies of two heredocs on one line
 # follow in source order (issue #1070).
 @pytest.mark.asyncio
-@pytest.mark.parametrize("line,expected", [
-    ("cat <<EOF; echo x\nhi\nEOF", ("hi\nx\n", 0)),
-    ("cat <<EOF;echo x\nhi\nEOF", ("hi\nx\n", 0)),
-    ("cat <<EOF>/hs; cat /hs\nhi\nEOF", ("hi\n", 0)),
-    ("cat <<EOF|wc -l\nhi\nEOF", ("1\n", 0)),
-    ("cat <<EOF&&echo x\nhi\nEOF", ("hi\nx\n", 0)),
-    ("cat <<'EOF'; echo x\nhi $HOME\nEOF", ("hi $HOME\nx\n", 0)),
-    ("cat <<A && cat <<B\na\nA\nb\nB", ("a\nb\n", 0)),
-    ("cat <<A | cat <<B\na\nA\nb\nB", ("b\n", 0)),
-    ("cat <<A || cat <<B\na\nA\nb\nB", ("a\n", 0)),
-    ("false <<A || cat <<B\na\nA\nb\nB", ("b\n", 0)),
-    ("cat <<A; cat <<B\na\nA\nb\nB", ("a\nb\n", 0)),
-    ("cat <<A && cat <<B; echo c\na\nA\nb\nB", ("a\nb\nc\n", 0)),
-    ("cat <<A && false <<B || echo no\na\nA\nb\nB", ("a\nno\n", 0)),
-    ("cat <<A | tr a-z A-Z <<B; echo z\na\nA\nb\nB", ("B\nz\n", 0)),
-    ("echo a; cat <<E1 | cat <<E2; echo z\n1\nE1\n2\nE2", ("a\n2\nz\n", 0)),
-    ("cat <<A && cat <<B\n\na\nA\n\nb\nB", ("\na\n\nb\n", 0)),
-    ("(cat <<EOF)\nhi\nEOF", ("hi\n", 0)),
-    ("{ cat <<EOF; }\nhi\nEOF", ("hi\n", 0)),
-    ("if true; then cat <<EOF; fi\nhi\nEOF", ("hi\n", 0)),
-    ("case x in x) cat <<EOF;; esac\nhi\nEOF", ("hi\n", 0)),
-    ("cat <<EOF; # comment\nhi\nEOF", ("hi\n", 0)),
-    ("cat <<-EOF; echo x\n\thi\n\tEOF", ("hi\nx\n", 0)),
-    ("true; cat <<EOF; echo x\nhi\nEOF", ("hi\nx\n", 0)),
-    ("cat <<EOF; cat <<EOF\na\nEOF\nb\nEOF", ("a\nb\n", 0)),
-    ("cat <<EOF; echo x; echo y\nhi\nEOF", ("hi\nx\ny\n", 0)),
-    ("for i in 1 2; do cat <<EOF; done\n$i\nEOF", ("1\n2\n", 0)),
-    ("f() { cat <<EOF; }; f; f\nhi\nEOF", ("hi\nhi\n", 0)),
-    ("while read l; do echo \"[$l]\"; done <<EOF; echo done\na\nb\nEOF",
-     ("[a]\n[b]\ndone\n", 0)),
-    ("false <<EOF; echo $?\nEOF", ("1\n", 0)),
-    ("cat <<EOF; echo x\n  hi\nEOF", ("  hi\nx\n", 0)),
-    ("cat <<EOF;\nhi\nEOF", ("hi\n", 0)),
-    ("cat <<EOF; case y in y) echo z;; esac\nhi\nEOF", ("hi\nz\n", 0)),
-    ("cat <<EOF; for ((i=0;i<2;i++)); do echo $i; done\nhi\nEOF",
-     ("hi\n0\n1\n", 0)),
-    ("x=1; cat <<EOF; echo $x\n$x\nEOF", ("1\n1\n", 0)),
-])
+@pytest.mark.parametrize(
+    "line,expected",
+    [
+        ("cat <<EOF; echo x\nhi\nEOF", ("hi\nx\n", 0)),
+        ("cat <<EOF;echo x\nhi\nEOF", ("hi\nx\n", 0)),
+        ("cat <<EOF>/hs; cat /hs\nhi\nEOF", ("hi\n", 0)),
+        ("cat <<EOF|wc -l\nhi\nEOF", ("1\n", 0)),
+        ("cat <<EOF&&echo x\nhi\nEOF", ("hi\nx\n", 0)),
+        ("cat <<'EOF'; echo x\nhi $HOME\nEOF", ("hi $HOME\nx\n", 0)),
+        ("cat <<A && cat <<B\na\nA\nb\nB", ("a\nb\n", 0)),
+        ("cat <<A | cat <<B\na\nA\nb\nB", ("b\n", 0)),
+        ("cat <<A || cat <<B\na\nA\nb\nB", ("a\n", 0)),
+        ("false <<A || cat <<B\na\nA\nb\nB", ("b\n", 0)),
+        ("cat <<A; cat <<B\na\nA\nb\nB", ("a\nb\n", 0)),
+        ("cat <<A && cat <<B; echo c\na\nA\nb\nB", ("a\nb\nc\n", 0)),
+        ("cat <<A && false <<B || echo no\na\nA\nb\nB", ("a\nno\n", 0)),
+        ("cat <<A | tr a-z A-Z <<B; echo z\na\nA\nb\nB", ("B\nz\n", 0)),
+        (
+            "echo a; cat <<E1 | cat <<E2; echo z\n1\nE1\n2\nE2",
+            ("a\n2\nz\n", 0),
+        ),
+        ("cat <<A && cat <<B\n\na\nA\n\nb\nB", ("\na\n\nb\n", 0)),
+        ("(cat <<EOF)\nhi\nEOF", ("hi\n", 0)),
+        ("{ cat <<EOF; }\nhi\nEOF", ("hi\n", 0)),
+        ("if true; then cat <<EOF; fi\nhi\nEOF", ("hi\n", 0)),
+        ("case x in x) cat <<EOF;; esac\nhi\nEOF", ("hi\n", 0)),
+        ("cat <<EOF; # comment\nhi\nEOF", ("hi\n", 0)),
+        ("cat <<-EOF; echo x\n\thi\n\tEOF", ("hi\nx\n", 0)),
+        ("true; cat <<EOF; echo x\nhi\nEOF", ("hi\nx\n", 0)),
+        ("cat <<EOF; cat <<EOF\na\nEOF\nb\nEOF", ("a\nb\n", 0)),
+        ("cat <<EOF; echo x; echo y\nhi\nEOF", ("hi\nx\ny\n", 0)),
+        ("for i in 1 2; do cat <<EOF; done\n$i\nEOF", ("1\n2\n", 0)),
+        ("f() { cat <<EOF; }; f; f\nhi\nEOF", ("hi\nhi\n", 0)),
+        (
+            'while read l; do echo "[$l]"; done <<EOF; echo done\na\nb\nEOF',
+            ("[a]\n[b]\ndone\n", 0),
+        ),
+        ("false <<EOF; echo $?\nEOF", ("1\n", 0)),
+        ("cat <<EOF; echo x\n  hi\nEOF", ("  hi\nx\n", 0)),
+        ("cat <<EOF;\nhi\nEOF", ("hi\n", 0)),
+        ("cat <<EOF; case y in y) echo z;; esac\nhi\nEOF", ("hi\nz\n", 0)),
+        (
+            "cat <<EOF; for ((i=0;i<2;i++)); do echo $i; done\nhi\nEOF",
+            ("hi\n0\n1\n", 0),
+        ),
+        ("x=1; cat <<EOF; echo $x\n$x\nEOF", ("1\n1\n", 0)),
+    ],
+)
 async def test_heredoc_operator_line_terminators(line, expected):
     ws = Workspace({"/": RAMVFS()}, mode=MountMode.WRITE)
     try:
@@ -571,9 +662,13 @@ async def test_slashed_redirect_target_is_refused_before_the_command():
     # behind the slash gets the same answer and keeps its bytes.
     ws = await _workspace()
     await ws.shell("printf y > /data/reg")
-    for line in ("echo hi > /data/missing/", "echo hi >> /data/missing/",
-                 "echo hi > /data/reg/", "echo hi >> /data/reg/",
-                 "touch /data/marker > /data/missing/"):
+    for line in (
+        "echo hi > /data/missing/",
+        "echo hi >> /data/missing/",
+        "echo hi > /data/reg/",
+        "echo hi >> /data/reg/",
+        "touch /data/marker > /data/missing/",
+    ):
         io = await ws.shell(line)
         assert io.exit_code == 1, line
         target = line.split()[-1]
@@ -601,8 +696,10 @@ async def test_an_earlier_failed_open_wins_over_a_later_refusal():
     # target written after it, and nothing is created.
     ws = await _workspace()
     await ws.shell("printf y > /data/reg")
-    for line in ("echo hi > /data/nodir/f > /data/missing/",
-                 "set -C; echo hi > /data/nodir/f > /data/reg"):
+    for line in (
+        "echo hi > /data/nodir/f > /data/missing/",
+        "set -C; echo hi > /data/nodir/f > /data/reg",
+    ):
         io = await ws.shell(line)
         assert io.exit_code == 1, line
         assert io.stderr == b"/data/nodir/f: No such file or directory\n", line

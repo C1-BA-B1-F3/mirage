@@ -13,12 +13,18 @@
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 from mirage.types import PathSpec
-from mirage.workspace.executor.builtins.condition.constants import (BINARY_OPS,
-                                                                    UNARY_OPS)
+from mirage.workspace.executor.builtins.condition.constants import (
+    BINARY_OPS,
+    UNARY_OPS,
+)
 from mirage.workspace.executor.builtins.condition.operators import (
-    apply_binary, apply_unary)
-from mirage.workspace.executor.builtins.condition.types import (CondContext,
-                                                                CondError)
+    apply_binary,
+    apply_unary,
+)
+from mirage.workspace.executor.builtins.condition.types import (
+    CondContext,
+    CondError,
+)
 from mirage.workspace.executor.builtins.scope import _scope_path
 
 

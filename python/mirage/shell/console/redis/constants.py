@@ -19,7 +19,8 @@ from importlib.resources import files
 # kill marker against a runner's last emit) cannot collide on an id.
 # Shipped next to this module; byte-identical to the TypeScript
 # append.lua.
-APPEND_LUA = (files("mirage.shell.console.redis") /
-              "append.lua").read_text(encoding="utf-8")
+APPEND_LUA = (files("mirage.shell.console.redis") / "append.lua").read_text(
+    encoding="utf-8"
+)
 
 BLOCK_MS = 250

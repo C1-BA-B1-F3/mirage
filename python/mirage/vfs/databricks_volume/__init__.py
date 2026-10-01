@@ -17,15 +17,18 @@ from typing import TYPE_CHECKING
 from mirage.vfs.databricks_volume.config import DatabricksVolumeConfig
 
 if TYPE_CHECKING:
-    from mirage.vfs.databricks_volume.databricks_volume import \
-        DatabricksVolumeVFS
+    from mirage.vfs.databricks_volume.databricks_volume import (
+        DatabricksVolumeVFS,
+    )
 
 __all__ = ["DatabricksVolumeConfig", "DatabricksVolumeVFS"]
 
 
 def __getattr__(name: str) -> "type[DatabricksVolumeVFS]":
     if name == "DatabricksVolumeVFS":
-        from mirage.vfs.databricks_volume.databricks_volume import \
-            DatabricksVolumeVFS
+        from mirage.vfs.databricks_volume.databricks_volume import (
+            DatabricksVolumeVFS,
+        )
+
         return DatabricksVolumeVFS
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

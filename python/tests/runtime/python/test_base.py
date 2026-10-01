@@ -25,14 +25,15 @@ class ProcessRuntime(PythonRuntime):
 
     async def run(self, args: RunArgs) -> RunResult:
         self.runs += 1
-        return RunResult(stdout=b"unexpected execution",
-                         stderr=None,
-                         exit_code=0)
+        return RunResult(
+            stdout=b"unexpected execution", stderr=None, exit_code=0
+        )
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("mode",
-                         [MountMode.READ, MountMode.WRITE, MountMode.EXEC])
+@pytest.mark.parametrize(
+    "mode", [MountMode.READ, MountMode.WRITE, MountMode.EXEC]
+)
 async def test_custom_process_version_never_executes_code(mode):
     runtime = ProcessRuntime()
     assert runtime.reach == "process"
@@ -42,8 +43,10 @@ async def test_custom_process_version_never_executes_code(mode):
             io = await ws.shell(line, env={"PYTHONPATH": "/startup"})
             assert io.exit_code == 1
             assert await io.stdout_str() == ""
-            assert await io.stderr_str(
-            ) == "custom-process: version information unavailable\n"
+            assert (
+                await io.stderr_str()
+                == "custom-process: version information unavailable\n"
+            )
             assert runtime.runs == 0
     finally:
         await ws.close()

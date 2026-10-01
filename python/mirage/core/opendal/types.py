@@ -24,5 +24,4 @@ class OperatorAccessor(Protocol):
     structurally, which is what lets one walk serve both.
     """
 
-    def operator(self) -> opendal.AsyncOperator:
-        ...
+    def operator(self) -> opendal.AsyncOperator: ...

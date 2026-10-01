@@ -25,8 +25,9 @@ from mirage.utils.filetype import content_type_for_path
 from mirage.utils.key_prefix import mount_key, mount_prefix_of
 
 
-def _label_stat(match: ScopeMatch, path: PathSpec,
-                entry: IndexEntry) -> FileStat:
+def _label_stat(
+    match: ScopeMatch, path: PathSpec, entry: IndexEntry
+) -> FileStat:
     return FileStat(
         name=entry.vfs_name,
         type=FileType.DIRECTORY,
@@ -34,22 +35,21 @@ def _label_stat(match: ScopeMatch, path: PathSpec,
     )
 
 
-def _message_stat(match: ScopeMatch, path: PathSpec,
-                  entry: IndexEntry) -> FileStat:
+def _message_stat(
+    match: ScopeMatch, path: PathSpec, entry: IndexEntry
+) -> FileStat:
     return FileStat(
         name=entry.vfs_name,
         type=FileType.FILE,
         content=ContentType.JSON,
         size=entry.size,
-        extra={
-            "message_id": entry.id,
-            **entry.extra
-        },
+        extra={"message_id": entry.id, **entry.extra},
     )
 
 
-def _attachment_dir_stat(match: ScopeMatch, path: PathSpec,
-                         entry: IndexEntry) -> FileStat:
+def _attachment_dir_stat(
+    match: ScopeMatch, path: PathSpec, entry: IndexEntry
+) -> FileStat:
     return FileStat(
         name=entry.vfs_name,
         type=FileType.DIRECTORY,
@@ -57,8 +57,9 @@ def _attachment_dir_stat(match: ScopeMatch, path: PathSpec,
     )
 
 
-def _attachment_stat(match: ScopeMatch, path: PathSpec,
-                     entry: IndexEntry) -> FileStat:
+def _attachment_stat(
+    match: ScopeMatch, path: PathSpec, entry: IndexEntry
+) -> FileStat:
     return FileStat(
         name=entry.vfs_name,
         type=FileType.FILE,
@@ -68,8 +69,12 @@ def _attachment_stat(match: ScopeMatch, path: PathSpec,
     )
 
 
-async def _stat_day(accessor: GmailAccessor, match: ScopeMatch, path: PathSpec,
-                    index: IndexCacheStore) -> FileStat:
+async def _stat_day(
+    accessor: GmailAccessor,
+    match: ScopeMatch,
+    path: PathSpec,
+    index: IndexCacheStore,
+) -> FileStat:
     """Stat a day directory, which resolves beyond the listed window.
 
     The label listing groups a bounded number of recent messages into
@@ -88,9 +93,11 @@ async def _stat_day(accessor: GmailAccessor, match: ScopeMatch, path: PathSpec,
         return FileStat(name=entry.vfs_name, type=FileType.DIRECTORY)
     label_virtual = path.virtual.rstrip("/").rsplit("/", 1)[0]
     prefix = mount_prefix_of(path.virtual, path.vfs_path)
-    label_spec = PathSpec(virtual=label_virtual,
-                          directory=label_virtual,
-                          vfs_path=mount_key(label_virtual, prefix))
+    label_spec = PathSpec(
+        virtual=label_virtual,
+        directory=label_virtual,
+        vfs_path=mount_key(label_virtual, prefix),
+    )
     if await resolve_entry(readdir, accessor, label_spec, index) is None:
         raise enoent(path.virtual)
     return FileStat(name=match.slots["day"], type=FileType.DIRECTORY)

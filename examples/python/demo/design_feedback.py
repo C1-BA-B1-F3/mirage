@@ -43,28 +43,35 @@ GITHUB_REF = os.environ.get("MIRAGE_GITHUB_REF", "main")
 
 
 async def main() -> None:
-    slack = SlackVFS(config=SlackConfig(
-        token=os.environ["SLACK_BOT_TOKEN"],
-        search_token=os.environ.get("SLACK_USER_TOKEN"),
-    ))
+    slack = SlackVFS(
+        config=SlackConfig(
+            token=os.environ["SLACK_BOT_TOKEN"],
+            search_token=os.environ.get("SLACK_USER_TOKEN"),
+        )
+    )
     github = GitHubVFS(
         config=GitHubConfig(token=os.environ["GITHUB_TOKEN"]),
         owner=GITHUB_OWNER,
         repo=GITHUB_REPO,
         ref=GITHUB_REF,
     )
-    linear = LinearVFS(config=LinearConfig(
-        api_key=os.environ["LINEAR_API_KEY"]))
+    linear = LinearVFS(
+        config=LinearConfig(api_key=os.environ["LINEAR_API_KEY"])
+    )
 
-    ws = Workspace({
-        "/": (RAMVFS(), MountMode.WRITE),
-        "/slack": (slack, MountMode.READ),
-        "/github": (github, MountMode.READ),
-        "/linear": (linear, MountMode.WRITE),
-    })
+    ws = Workspace(
+        {
+            "/": (RAMVFS(), MountMode.WRITE),
+            "/slack": (slack, MountMode.READ),
+            "/github": (github, MountMode.READ),
+            "/linear": (linear, MountMode.WRITE),
+        }
+    )
     ws.register_cli(
-        "linear", LINEAR,
-        LinearConfig(api_key=os.environ["LINEAR_API_KEY"]).model_dump())
+        "linear",
+        LINEAR,
+        LinearConfig(api_key=os.environ["LINEAR_API_KEY"]).model_dump(),
+    )
 
     _orig_exec = ws.shell
 
@@ -86,11 +93,13 @@ async def main() -> None:
         instructions=ws.file_prompt,
     )
 
-    task = ("Triage the latest user feedback about Mirage from the Slack "
-            "incident channel: read the message and any attached screenshot, "
-            "find the relevant code in the Mirage GitHub repo, then file a "
-            "design issue in the Strukto-ai team on Linear using "
-            "`linear issue create` with the feedback and code references.")
+    task = (
+        "Triage the latest user feedback about Mirage from the Slack "
+        "incident channel: read the message and any attached screenshot, "
+        "find the relevant code in the Mirage GitHub repo, then file a "
+        "design issue in the Strukto-ai team on Linear using "
+        "`linear issue create` with the feedback and code references."
+    )
 
     result = await Runner.run(
         agent,

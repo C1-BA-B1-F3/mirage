@@ -43,6 +43,7 @@ class CharSet:
     Args:
         ranges (tuple[Range, ...]): inclusive ``(low, high)`` pairs.
     """
+
     ranges: tuple[Range, ...] = ()
 
     @staticmethod
@@ -245,10 +246,11 @@ def host_class(cs: CharSet) -> str:
     if single is not None:
         return host_char(single)
     if cs.is_empty():
-        return "[^" + class_body(((0, MAX_CODE_POINT), )) + "]"
+        return "[^" + class_body(((0, MAX_CODE_POINT),)) + "]"
     complement = cs.negate()
     if len(complement.ranges) < len(cs.ranges):
-        excluded = complement.union(CharSet.of(
-            (SURROGATE_LOW, SURROGATE_HIGH)))
+        excluded = complement.union(
+            CharSet.of((SURROGATE_LOW, SURROGATE_HIGH))
+        )
         return "[^" + class_body(excluded.ranges) + "]"
     return "[" + class_body(cs.ranges) + "]"

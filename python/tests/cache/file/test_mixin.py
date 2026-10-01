@@ -22,7 +22,6 @@ from mirage.cache.file.redis import RedisFileCacheStore
 
 
 class TestGetSet:
-
     @pytest.mark.asyncio
     async def test_set_and_get(self):
         cache = RAMFileCacheStore(cache_limit="1MB")
@@ -51,7 +50,6 @@ class TestGetSet:
 
 
 class TestAdd:
-
     @pytest.mark.asyncio
     async def test_add_new_key(self):
         cache = RAMFileCacheStore(cache_limit="1MB")
@@ -69,7 +67,6 @@ class TestAdd:
 
 
 class TestMulti:
-
     @pytest.mark.asyncio
     async def test_multi_get(self):
         cache = RAMFileCacheStore(cache_limit="1MB")
@@ -82,7 +79,6 @@ class TestMulti:
 
 
 class TestExistsRemoveClear:
-
     @pytest.mark.asyncio
     async def test_exists(self):
         cache = RAMFileCacheStore(cache_limit="1MB")
@@ -151,7 +147,6 @@ class TestExistsRemoveClear:
 
 
 class TestTTL:
-
     @pytest.mark.asyncio
     async def test_ttl_not_expired(self):
         cache = RAMFileCacheStore(cache_limit="1MB")
@@ -177,7 +172,6 @@ class TestTTL:
 
 
 class TestFingerprint:
-
     @pytest.mark.asyncio
     async def test_is_fresh_match(self):
         cache = RAMFileCacheStore(cache_limit="1MB")
@@ -197,7 +191,6 @@ class TestFingerprint:
 
 
 class TestDrainBudget:
-
     def test_defaults_to_cache_limit(self):
         cache = RAMFileCacheStore(cache_limit="1KB")
         assert cache.max_drain_bytes is None
@@ -216,30 +209,33 @@ class TestDrainBudget:
         assert cache.drain_budget == 0
 
     def test_explicit_above_limit_rejected(self):
-        with pytest.raises(ValueError,
-                           match="max_drain_bytes cannot exceed cache_limit"):
+        with pytest.raises(
+            ValueError, match="max_drain_bytes cannot exceed cache_limit"
+        ):
             RAMFileCacheStore(cache_limit="1KB", max_drain_bytes=1025)
 
     def test_negative_explicit_value_rejected(self):
-        with pytest.raises(ValueError,
-                           match="max_drain_bytes must be non-negative"):
+        with pytest.raises(
+            ValueError, match="max_drain_bytes must be non-negative"
+        ):
             RAMFileCacheStore(cache_limit="1KB", max_drain_bytes=-1)
 
     def test_invalid_setter_preserves_previous_value(self):
         cache = RAMFileCacheStore(cache_limit="1KB", max_drain_bytes=100)
-        with pytest.raises(ValueError,
-                           match="max_drain_bytes cannot exceed cache_limit"):
+        with pytest.raises(
+            ValueError, match="max_drain_bytes cannot exceed cache_limit"
+        ):
             cache.max_drain_bytes = 1025
         assert cache.max_drain_bytes == 100
 
     def test_redis_rejects_invalid_budget_before_connecting(self):
-        with pytest.raises(ValueError,
-                           match="max_drain_bytes cannot exceed cache_limit"):
+        with pytest.raises(
+            ValueError, match="max_drain_bytes cannot exceed cache_limit"
+        ):
             RedisFileCacheStore(cache_limit="1KB", max_drain_bytes=1025)
 
 
 class TestEviction:
-
     @pytest.mark.asyncio
     async def test_lru_evicts_oldest(self):
         cache = RAMFileCacheStore(cache_limit=100)

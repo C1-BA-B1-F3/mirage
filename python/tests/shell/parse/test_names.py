@@ -14,9 +14,15 @@
 
 import pytest
 
-from mirage.shell.parse import (arith_reads, assignment_values,
-                                command_invocations, command_words,
-                                identifier_names, parse, referenced_names)
+from mirage.shell.parse import (
+    arith_reads,
+    assignment_values,
+    command_invocations,
+    command_words,
+    identifier_names,
+    parse,
+    referenced_names,
+)
 
 
 @pytest.mark.parametrize(
@@ -55,7 +61,8 @@ from mirage.shell.parse import (arith_reads, assignment_values,
         # layer joins invoked bodies back in through line_nodes.
         ('f() { echo "$T"; }', set()),
         ('f() { echo "$T"; }; echo $U', {"U"}),
-    ])
+    ],
+)
 def test_referenced_names(command, names):
     assert referenced_names(parse(command)) == frozenset(names)
 
@@ -77,7 +84,8 @@ def test_referenced_names(command, names):
         # A definition's body runs at invocation; only the call is a
         # command word here.
         ("f() { python3 x.py; }; f", {"f"}),
-    ])
+    ],
+)
 def test_command_words(command, words):
     assert command_words(parse(command)) == frozenset(words)
 
@@ -85,20 +93,23 @@ def test_command_words(command, words):
 @pytest.mark.parametrize(
     ("command", "invocations"),
     [
-        ("ntn api get PAGE", (("ntn", ("api", "get", "PAGE")), )),
+        ("ntn api get PAGE", (("ntn", ("api", "get", "PAGE")),)),
         # A dynamic word arrives as None, distinguishable from absent.
-        ("slack msg send --to $u", (("slack",
-                                     ("msg", "send", "--to", None)), )),
+        (
+            "slack msg send --to $u",
+            (("slack", ("msg", "send", "--to", None)),),
+        ),
         # A dynamic head is None too: the program itself is
         # undecidable before expansion.
-        ("$tool api get", ((None, ("api", "get")), )),
-        ('"$t"x run', ((None, ("run", )), )),
-        ("A=1 mycli run", (("mycli", ("run", )), )),
-        ("mycli 'lit arg' \"plain\"", (("mycli", ("lit arg", "plain")), )),
-        ("mycli run > out.txt", (("mycli", ("run", )), )),
+        ("$tool api get", ((None, ("api", "get")),)),
+        ('"$t"x run', ((None, ("run",)),)),
+        ("A=1 mycli run", (("mycli", ("run",)),)),
+        ("mycli 'lit arg' \"plain\"", (("mycli", ("lit arg", "plain")),)),
+        ("mycli run > out.txt", (("mycli", ("run",)),)),
         ("export X=1", ()),
         ("f() { inner verb; }", ()),
-    ])
+    ],
+)
 def test_command_invocations(command, invocations):
     assert command_invocations(parse(command)) == invocations
 
@@ -113,7 +124,8 @@ def test_command_invocations(command, invocations):
         # that names nothing real.
         ("0x1f", {"x1f"}),
         ("", set()),
-    ])
+    ],
+)
 def test_identifier_names(text, names):
     assert identifier_names(text) == frozenset(names)
 
@@ -133,8 +145,10 @@ def test_identifier_names(text, names):
         ("echo ${a[i+1]}", {"a", "i"}),
         ("echo ${v:1+off}", {"off"}),
         ('echo "${v:$off:$length}"', {"off", "length"}),
-        ('echo "${v:flag?off:other:length}"',
-         {"flag", "off", "other", "length"}),
+        (
+            'echo "${v:flag?off:other:length}"',
+            {"flag", "off", "other", "length"},
+        ),
         ("echo ${v:-$d}", set()),
         # The [[ numeric comparators resolve bare words as variables;
         # string comparison and test/[ never do.
@@ -147,7 +161,8 @@ def test_identifier_names(text, names):
         ("echo $name", set()),
         # A definition's body runs at invocation, not here.
         ("f() { echo $((q)); }", set()),
-    ])
+    ],
+)
 def test_arith_reads(command, names):
     assert arith_reads(parse(command)) == frozenset(names)
 
@@ -155,18 +170,19 @@ def test_arith_reads(command, names):
 @pytest.mark.parametrize(
     ("command", "values"),
     [
-        ("n=TOKEN; echo $((n))", (("n", "TOKEN", frozenset()), )),
-        ("n='lit'", (("n", "lit", frozenset()), )),
+        ("n=TOKEN; echo $((n))", (("n", "TOKEN", frozenset()),)),
+        ("n='lit'", (("n", "lit", frozenset()),)),
         # A dynamic value reports its reads instead of a literal.
-        ("n=$other", (("n", None, frozenset({"other"})), )),
-        ("n=", (("n", "", frozenset()), )),
+        ("n=$other", (("n", None, frozenset({"other"})),)),
+        ("n=", (("n", "", frozenset()),)),
         # += reports its reads with the target among them: the append
         # starts from the standing value.
-        ("n+=$q", (("n", None, frozenset({"n", "q"})), )),
+        ("n+=$q", (("n", None, frozenset({"n", "q"})),)),
         # An element write never replaces the whole value.
         ("a[0]=x", ()),
         # A prefix assignment is one too.
-        ("N=v printenv", (("N", "v", frozenset()), )),
-    ])
+        ("N=v printenv", (("N", "v", frozenset()),)),
+    ],
+)
 def test_assignment_values(command, values):
     assert assignment_values(parse(command)) == values

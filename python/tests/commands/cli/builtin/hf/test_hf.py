@@ -42,7 +42,13 @@ def test_uses_the_argparse_dialect():
 
 def test_the_verb_tree_is_the_one_upstream_offers():
     assert [c.name for c in HF.subcommands] == [
-        "auth", "repo", "repo-files", "download", "upload", "env", "version"
+        "auth",
+        "repo",
+        "repo-files",
+        "download",
+        "upload",
+        "env",
+        "version",
     ]
 
 

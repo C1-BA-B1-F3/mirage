@@ -78,9 +78,11 @@ def test_uintmax_boundary_is_exact():
     assert parse_count("0xffffffffffffffff", "-N") == 2**64 - 1
     with pytest.raises(UsageError) as exc:
         parse_count("18446744073709551616", "-N")
-    assert str(exc.value) == ("od: -N argument '18446744073709551616' "
-                              "too large")
+    assert str(exc.value) == (
+        "od: -N argument '18446744073709551616' too large"
+    )
     with pytest.raises(UsageError) as exc:
         parse_count("0x10000000000000000", "-j")
-    assert str(exc.value) == ("od: -j argument '0x10000000000000000' "
-                              "too large")
+    assert str(exc.value) == (
+        "od: -j argument '0x10000000000000000' too large"
+    )

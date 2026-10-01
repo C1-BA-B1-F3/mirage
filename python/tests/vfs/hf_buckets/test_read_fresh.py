@@ -40,26 +40,27 @@ def _hub(files: dict[str, bytes]) -> FakeHub:
 def _vfs(hub: FakeHub, **config: str):
     # The opendal fake lists and writes the very dict the Hub serves, so a
     # write through the mount is what the next HTTP read downloads.
-    vfs = build_vfs("hf_buckets", {
-        "bucket": "acme/bkt",
-        "endpoint": hub.url,
-        **config
-    })
+    vfs = build_vfs(
+        "hf_buckets", {"bucket": "acme/bkt", "endpoint": hub.url, **config}
+    )
     # Its reads refuse into `reach`, so a stat or read that fell back to
     # opendal fails loudly rather than answering from the same dict.
-    op = FakeAsyncOperator(files=hub.repos[BUCKET],
-                           root=vfs.accessor._root() or "",
-                           reach=[])
+    op = FakeAsyncOperator(
+        files=hub.repos[BUCKET], root=vfs.accessor._root() or "", reach=[]
+    )
     vfs.accessor.operator = lambda: op
     return vfs
 
 
 def _ws(vfs, policy: ReadPolicy = ReadPolicy.FRESH) -> Workspace:
-    return Workspace({
-        "/m":
-        Mount(vfs=vfs, mode=MountMode.WRITE, read=ReadSpec(policy=policy)),
-        "/r": (RAMVFS(), MountMode.WRITE),
-    })
+    return Workspace(
+        {
+            "/m": Mount(
+                vfs=vfs, mode=MountMode.WRITE, read=ReadSpec(policy=policy)
+            ),
+            "/r": (RAMVFS(), MountMode.WRITE),
+        }
+    )
 
 
 async def _out(ws: Workspace, line: str, stdin: bytes | None = None) -> bytes:
@@ -85,7 +86,8 @@ async def test_a_written_path_carries_no_token_then_heals_in_one_read():
         try:
             await _out(ws, "tee /m/w.txt", stdin=b"hi\n")
             writes = [
-                r.fingerprint for r in ws.vfs.network_records
+                r.fingerprint
+                for r in ws.vfs.network_records
                 if r.op == "write"
             ]
             assert writes == [None]
@@ -93,8 +95,8 @@ async def test_a_written_path_carries_no_token_then_heals_in_one_read():
             # check that only compared it with the xet hash.
             assert ws.cache._entries["/m/w.txt"].fingerprint is None
             assert not await ws.cache.is_fresh(
-                "/m/w.txt",
-                hashlib.md5(b"hi\n").hexdigest())
+                "/m/w.txt", hashlib.md5(b"hi\n").hexdigest()
+            )
             before = hub.count("bucket_resolve")
             assert await _out(ws, "cat /m/w.txt") == b"hi\n"
             assert hub.count("bucket_resolve") == before + 1
@@ -105,10 +107,13 @@ async def test_a_written_path_carries_no_token_then_heals_in_one_read():
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("route,status,code", [
-    ("bucket_paths_info", 401, ""),
-    ("bucket_paths_info", 404, "RepoNotFound"),
-])
+@pytest.mark.parametrize(
+    "route,status,code",
+    [
+        ("bucket_paths_info", 401, ""),
+        ("bucket_paths_info", 404, "RepoNotFound"),
+    ],
+)
 async def test_a_refused_probe_keeps_the_overlay(route, status, code):
     with serve(_hub({"a.txt": OLD})) as hub:
         ws = _ws(_vfs(hub))
@@ -141,8 +146,10 @@ async def test_a_download_404_that_is_not_entry_not_found_keeps_the_overlay():
             # the raw Hub error, not "No such file".
             hub.fail["bucket_resolve"] = (404, "")
             cp = await ws.shell("cp /m/a.txt /r/x")
-            assert (cp.exit_code, await
-                    cp.stderr_str()) == (1, "fake bucket_resolve refused\n")
+            assert (cp.exit_code, await cp.stderr_str()) == (
+                1,
+                "fake bucket_resolve refused\n",
+            )
             meta = ws.namespace.meta_for("/m/a.txt")
             assert meta is not None and meta.mode == 0o600
         finally:
@@ -153,10 +160,12 @@ async def test_a_download_404_that_is_not_entry_not_found_keeps_the_overlay():
 async def test_a_gated_bucket_does_not_hide_the_other_mounts():
     with serve(_hub({"a.txt": b"needle\n"})) as hub:
         hub.fail["bucket_resolve"] = (403, "")
-        ws = Workspace({
-            "/m": (_vfs(hub), MountMode.READ),
-            "/r": (RAMVFS(), MountMode.WRITE),
-        })
+        ws = Workspace(
+            {
+                "/m": (_vfs(hub), MountMode.READ),
+                "/r": (RAMVFS(), MountMode.WRITE),
+            }
+        )
         try:
             await _out(ws, "tee /r/n.txt", stdin=b"needle\n")
             grep = await ws.shell("grep -r needle /")
@@ -164,8 +173,9 @@ async def test_a_gated_bucket_does_not_hide_the_other_mounts():
             assert "Permission denied" in await grep.stderr_str()
             cat = await ws.shell("cat /m/a.txt")
             assert cat.exit_code == 1
-            assert await cat.stderr_str(
-            ) == "cat: /m/a.txt: Permission denied\n"
+            assert (
+                await cat.stderr_str() == "cat: /m/a.txt: Permission denied\n"
+            )
         finally:
             await ws.close()
 
@@ -186,9 +196,12 @@ async def test_listing_a_refused_bucket_is_never_absent():
             # The raw refusal, never "No such file"; pinned on the first
             # green run.
             assert (result.exit_code, await result.stderr_str()) == (
-                1, "ls: fake bucket_paths_info refused\n")
-            assert (await
-                    ws.mount("/m").index_store.get("/m/a.txt")).entry is None
+                1,
+                "ls: fake bucket_paths_info refused\n",
+            )
+            assert (
+                await ws.mount("/m").index_store.get("/m/a.txt")
+            ).entry is None
         finally:
             await ws.close()
 
@@ -198,17 +211,15 @@ async def test_a_probe_leaves_find_its_whole_prefixed_listing():
     # A fresh probe stats through a throwaway index and writes nothing back,
     # so a find after a warm read still lists the whole prefixed subtree.
     with serve(
-            _hub({
-                "pfx/a.txt": OLD,
-                "pfx/sub/b.txt": NEW,
-                "a.txt": b"decoy\n"
-            })) as hub:
+        _hub({"pfx/a.txt": OLD, "pfx/sub/b.txt": NEW, "a.txt": b"decoy\n"})
+    ) as hub:
         ws = _ws(_vfs(hub, key_prefix="pfx/"))
         try:
             assert await _out(ws, "cat /m/a.txt") == OLD
             assert await _out(ws, "cat /m/a.txt") == OLD
-            assert await _out(
-                ws, "find /m") == (b"/m\n/m/a.txt\n/m/sub\n/m/sub/b.txt\n")
+            assert await _out(ws, "find /m") == (
+                b"/m\n/m/a.txt\n/m/sub\n/m/sub/b.txt\n"
+            )
         finally:
             await ws.close()
 
@@ -228,7 +239,8 @@ WARM = [
 @pytest.mark.asyncio
 @pytest.mark.parametrize("prep,line,posts", WARM)
 async def test_a_warm_fresh_read_costs_paths_info_and_no_download(
-        prep, line, posts):
+    prep, line, posts
+):
     with serve(_hub({"a.txt": OLD})) as hub:
         ws = _ws(_vfs(hub))
         try:
@@ -237,8 +249,10 @@ async def test_a_warm_fresh_read_costs_paths_info_and_no_download(
                 await _out(ws, prep)
             hub.log.clear()
             await _out(ws, line)
-            counted = (hub.count("bucket_paths_info"),
-                       hub.count("bucket_resolve"))
+            counted = (
+                hub.count("bucket_paths_info"),
+                hub.count("bucket_resolve"),
+            )
             assert counted == (posts, 0)
         finally:
             await ws.close()
@@ -299,8 +313,10 @@ async def test_an_unchanged_file_loads_on_one_paths_info():
         state = await _pinned_state(hub)
         hub.log.clear()
         await _load(state, _vfs(hub), line="true")
-        assert (hub.count("bucket_paths_info"),
-                hub.count("bucket_resolve")) == (1, 0)
+        assert (
+            hub.count("bucket_paths_info"),
+            hub.count("bucket_resolve"),
+        ) == (1, 0)
 
 
 @pytest.mark.asyncio
@@ -314,10 +330,12 @@ async def test_a_file_deleted_upstream_drifts_to_nothing():
 
 
 def _spec(path: str) -> PathSpec:
-    return PathSpec(virtual="/m/" + path,
-                    directory="/m/",
-                    vfs_path=path,
-                    raw_path="/m/" + path)
+    return PathSpec(
+        virtual="/m/" + path,
+        directory="/m/",
+        vfs_path=path,
+        raw_path="/m/" + path,
+    )
 
 
 @pytest.mark.asyncio
@@ -333,9 +351,14 @@ async def test_a_window_past_eof_is_empty_on_every_door():
                 "/m/a.txt",
                 index=RAMIndexCacheStore(),
                 offset=99,
-                size=5)
+                size=5,
+            )
             assert via_op == b""
-            assert await IO.read_range(vfs.accessor, _spec("a.txt"),
-                                       RAMIndexCacheStore(), 99, 5) == b""
+            assert (
+                await IO.read_range(
+                    vfs.accessor, _spec("a.txt"), RAMIndexCacheStore(), 99, 5
+                )
+                == b""
+            )
         finally:
             await ws.close()

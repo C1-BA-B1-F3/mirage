@@ -16,8 +16,12 @@ from typing import Any
 
 from mirage.accessor.s3 import S3Accessor
 from mirage.cache.index import NULL_INDEX, IndexCacheStore
-from mirage.core.s3.client import (_client_kwargs, _key, async_session,
-                                   closing_body)
+from mirage.core.s3.client import (
+    _client_kwargs,
+    _key,
+    async_session,
+    closing_body,
+)
 from mirage.observe.context import record, revision_for, start_op
 from mirage.types import PathSpec
 from mirage.utils.errors import enoent
@@ -25,7 +29,8 @@ from mirage.utils.ranges import range_header
 
 
 def _fp_rev_from_response(
-        resp: dict[str, Any]) -> tuple[str | None, str | None]:
+    resp: dict[str, Any],
+) -> tuple[str | None, str | None]:
     """Extract ``(fingerprint, revision)`` from a boto GET response.
 
     Args:
@@ -44,11 +49,13 @@ def _fp_rev_from_response(
     return etag, vid
 
 
-async def read_bytes(accessor: S3Accessor,
-                     path_spec: PathSpec,
-                     index: IndexCacheStore = NULL_INDEX,
-                     offset: int = 0,
-                     size: int | None = None) -> bytes:
+async def read_bytes(
+    accessor: S3Accessor,
+    path_spec: PathSpec,
+    index: IndexCacheStore = NULL_INDEX,
+    offset: int = 0,
+    size: int | None = None,
+) -> bytes:
     """Read bytes from S3, with optional range read.
 
     Args:
@@ -73,23 +80,28 @@ async def read_bytes(accessor: S3Accessor,
     # ~160ms against ~2ms for a reused one, so a read-heavy battery paid the
     # client rather than the request.
     client = await accessor.cached_client(
-        lambda: async_session(config).client(**_client_kwargs(config)))
+        lambda: async_session(config).client(**_client_kwargs(config))
+    )
     timer = start_op()
     try:
         resp = await client.get_object(**kwargs)
         async with closing_body(resp["Body"]) as body:
             data = await body.read()
         fingerprint, revision = _fp_rev_from_response(resp)
-        record("read",
-               virtual,
-               "s3",
-               len(data),
-               timer,
-               fingerprint=fingerprint,
-               revision=revision)
+        record(
+            "read",
+            virtual,
+            "s3",
+            len(data),
+            timer,
+            fingerprint=fingerprint,
+            revision=revision,
+        )
         return data
     except Exception as exc:
-        if (hasattr(exc, "response")
-                and exc.response.get("Error", {}).get("Code") == "NoSuchKey"):
+        if (
+            hasattr(exc, "response")
+            and exc.response.get("Error", {}).get("Code") == "NoSuchKey"
+        ):
             raise enoent(virtual)
         raise

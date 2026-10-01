@@ -14,7 +14,8 @@ async def test_read_file(accessor, files, remote_root):
     files.downloads[f"{remote_root}/reports/latest.md"] = b"hello"
     path = PathSpec.from_str_path(
         "/volume/reports/latest.md",
-        mount_key("/volume/reports/latest.md", "/volume"))
+        mount_key("/volume/reports/latest.md", "/volume"),
+    )
     result = await read_bytes(accessor, path)
     assert result == b"hello"
     assert files.download_calls == [f"{remote_root}/reports/latest.md"]
@@ -22,8 +23,9 @@ async def test_read_file(accessor, files, remote_root):
 
 @pytest.mark.asyncio
 async def test_read_file_not_found(accessor):
-    path = PathSpec.from_str_path("/volume/missing.md",
-                                  mount_key("/volume/missing.md", "/volume"))
+    path = PathSpec.from_str_path(
+        "/volume/missing.md", mount_key("/volume/missing.md", "/volume")
+    )
     with pytest.raises(FileNotFoundError):
         await read_bytes(accessor, path)
 
@@ -33,7 +35,8 @@ async def test_read_slice(accessor, files, remote_root):
     files.downloads[f"{remote_root}/reports/latest.md"] = b"abcdef"
     path = PathSpec.from_str_path(
         "/volume/reports/latest.md",
-        mount_key("/volume/reports/latest.md", "/volume"))
+        mount_key("/volume/reports/latest.md", "/volume"),
+    )
     result = await read_bytes(accessor, path, offset=1, size=3)
     assert result == b"bcd"
 
@@ -50,7 +53,8 @@ async def test_read_file_runs_blocking_download_off_event_loop(
     files.downloads[f"{remote_root}/reports/latest.md"] = b"hello"
     path = PathSpec.from_str_path(
         "/volume/reports/latest.md",
-        mount_key("/volume/reports/latest.md", "/volume"))
+        mount_key("/volume/reports/latest.md", "/volume"),
+    )
 
     result = await read_bytes(accessor, path)
 
@@ -67,14 +71,16 @@ async def test_read_slice_uses_databricks_range_request(
     files.downloads[f"{remote_root}/reports/latest.md"] = b"abcdef"
     path = PathSpec.from_str_path(
         "/volume/reports/latest.md",
-        mount_key("/volume/reports/latest.md", "/volume"))
+        mount_key("/volume/reports/latest.md", "/volume"),
+    )
 
     result = await read_bytes(accessor, path, offset=1, size=3)
 
     assert result == b"bcd"
     assert files.download_calls == []
     assert accessor.client.api_client.do_calls[0]["headers"]["Range"] == (
-        "bytes=1-3")
+        "bytes=1-3"
+    )
     assert accessor.client.api_client.do_calls[0]["raw"] is True
 
 
@@ -87,14 +93,16 @@ async def test_read_from_offset_uses_open_ended_range(
     files.downloads[f"{remote_root}/reports/latest.md"] = b"abcdef"
     path = PathSpec.from_str_path(
         "/volume/reports/latest.md",
-        mount_key("/volume/reports/latest.md", "/volume"))
+        mount_key("/volume/reports/latest.md", "/volume"),
+    )
 
     result = await read_bytes(accessor, path, offset=3)
 
     assert result == b"def"
     assert files.download_calls == []
     assert accessor.client.api_client.do_calls[0]["headers"]["Range"] == (
-        "bytes=3-")
+        "bytes=3-"
+    )
 
 
 @pytest.mark.asyncio
@@ -106,7 +114,8 @@ async def test_read_zero_size_returns_empty_without_network(
     files.downloads[f"{remote_root}/reports/latest.md"] = b"abcdef"
     path = PathSpec.from_str_path(
         "/volume/reports/latest.md",
-        mount_key("/volume/reports/latest.md", "/volume"))
+        mount_key("/volume/reports/latest.md", "/volume"),
+    )
 
     result = await read_bytes(accessor, path, size=0)
 
@@ -117,7 +126,8 @@ async def test_read_zero_size_returns_empty_without_network(
 
 @pytest.mark.asyncio
 async def test_a_gateway_that_ignores_the_range_is_sliced_locally(
-        accessor, files, remote_root):
+    accessor, files, remote_root
+):
     """A Range is a request, not an instruction: the Files API may sit
     behind a gateway that answers with the whole object. Before this was
     handled the caller got every byte for what it asked to be a window."""
@@ -125,7 +135,8 @@ async def test_a_gateway_that_ignores_the_range_is_sliced_locally(
     accessor.client.api_client.ignore_range = True
     path = PathSpec.from_str_path(
         "/volume/reports/latest.md",
-        mount_key("/volume/reports/latest.md", "/volume"))
+        mount_key("/volume/reports/latest.md", "/volume"),
+    )
 
     result = await read_bytes(accessor, path, offset=1, size=3)
 

@@ -23,20 +23,20 @@ from mirage.core.sharepoint.resolve import resolve_item
 from mirage.types import PathSpec
 
 
-async def _create_dir(accessor: SharePointAccessor, drive_id: str,
-                      path: str) -> None:
-    url = item_url(accessor.config,
-                   drive_id,
-                   posixpath.dirname(path),
-                   action="/children")
-    await create_child_folder(accessor.config,
-                              url,
-                              posixpath.basename(path),
-                              session=accessor.pool)
+async def _create_dir(
+    accessor: SharePointAccessor, drive_id: str, path: str
+) -> None:
+    url = item_url(
+        accessor.config, drive_id, posixpath.dirname(path), action="/children"
+    )
+    await create_child_folder(
+        accessor.config, url, posixpath.basename(path), session=accessor.pool
+    )
 
 
-async def _create_chain(accessor: SharePointAccessor, drive_id: str,
-                        item_path: str) -> None:
+async def _create_chain(
+    accessor: SharePointAccessor, drive_id: str, item_path: str
+) -> None:
     """Create every level of a drive path, from the drive root down.
 
     Args:
@@ -46,7 +46,7 @@ async def _create_chain(accessor: SharePointAccessor, drive_id: str,
     """
     parts = item_path.split("/")
     for i in range(len(parts)):
-        await _create_dir(accessor, drive_id, "/".join(parts[:i + 1]))
+        await _create_dir(accessor, drive_id, "/".join(parts[: i + 1]))
 
 
 def _scoped_prefix(accessor: SharePointAccessor) -> str:
@@ -66,9 +66,9 @@ def _scoped_prefix(accessor: SharePointAccessor) -> str:
     return (config.key_prefix or "").strip("/")
 
 
-async def mkdir(accessor: SharePointAccessor,
-                path: PathSpec,
-                parents: bool = False) -> None:
+async def mkdir(
+    accessor: SharePointAccessor, path: PathSpec, parents: bool = False
+) -> None:
     if not path.vfs_path:
         return
     resolved = await resolve_item(accessor, path)
@@ -81,8 +81,11 @@ async def mkdir(accessor: SharePointAccessor,
             await _create_dir(accessor, drive_id, item_path)
         except GraphError as exc:
             prefix = _scoped_prefix(accessor)
-            missing_root = (exc.status == 404 and prefix
-                            and posixpath.dirname(item_path) == prefix)
+            missing_root = (
+                exc.status == 404
+                and prefix
+                and posixpath.dirname(item_path) == prefix
+            )
             if not missing_root:
                 raise
             await _create_chain(accessor, drive_id, item_path)

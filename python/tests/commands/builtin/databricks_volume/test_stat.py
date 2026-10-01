@@ -27,8 +27,9 @@ async def test_stat_default_format(databricks_text_workspace):
 
 @pytest.mark.asyncio
 async def test_stat_custom_format(databricks_text_workspace):
-    io = await databricks_text_workspace.shell("stat -c '%n %s' /dbx/words.txt"
-                                               )
+    io = await databricks_text_workspace.shell(
+        "stat -c '%n %s' /dbx/words.txt"
+    )
 
     assert io.exit_code == 0
     assert io.stdout.decode().strip() == "/dbx/words.txt 17"

@@ -15,7 +15,8 @@
 
 def test_basename(env):
     assert env.mirage("basename /foo/bar/baz.txt") == env.native(
-        "basename /foo/bar/baz.txt")
+        "basename /foo/bar/baz.txt"
+    )
 
 
 def test_basename_multiple_suffix_and_zero(env):

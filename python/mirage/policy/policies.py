@@ -23,15 +23,29 @@ from mirage.policy.base import Policy
 from mirage.policy.constants import POLICY_DENIED_EXIT
 from mirage.policy.errors import PolicyDenied, PolicyError
 from mirage.policy.mixin import SessionScopedMixin
-from mirage.policy.types import (VALIDITY, Ask, CommandContext, Deny,
-                                 DenyScope, ExecuteResultContext, OpsContext,
-                                 OpsResultContext, Pending, SessionContext)
+from mirage.policy.types import (
+    VALIDITY,
+    Ask,
+    CommandContext,
+    Deny,
+    DenyScope,
+    ExecuteResultContext,
+    OpsContext,
+    OpsResultContext,
+    Pending,
+    SessionContext,
+)
 from mirage.types import Limit, PathSpec, Refusal
 
 logger = logging.getLogger(__name__)
 
-HookContext = (CommandContext | OpsContext | OpsResultContext
-               | ExecuteResultContext | SessionContext)
+HookContext = (
+    CommandContext
+    | OpsContext
+    | OpsResultContext
+    | ExecuteResultContext
+    | SessionContext
+)
 
 
 def render_deny(subject: str, deny: Deny) -> tuple[bytes, int]:
@@ -50,8 +64,10 @@ def render_deny(subject: str, deny: Deny) -> tuple[bytes, int]:
         deny (Deny): the action.
     """
     if deny.scope is DenyScope.OPERAND:
-        return (f"{subject}: {deny.reason}\n".encode(),
-                operand_exit_code(subject))
+        return (
+            f"{subject}: {deny.reason}\n".encode(),
+            operand_exit_code(subject),
+        )
     return f"{subject}: Permission denied\n".encode(), POLICY_DENIED_EXIT
 
 
@@ -80,7 +96,8 @@ def refusal_of(action: Deny | Pending) -> Refusal:
         kind="failed" if action.failed else "deny",
         reason=action.reason,
         policy=action.policy,
-        scope=("operand" if action.scope is DenyScope.OPERAND else "command"))
+        scope=("operand" if action.scope is DenyScope.OPERAND else "command"),
+    )
 
 
 def describe_refusal(refusal: Refusal) -> str:
@@ -122,12 +139,14 @@ def says_why(text: str, refusal: Refusal) -> bool:
     return any(line.endswith(tail) for line in text.split("\n"))
 
 
-async def pre_ops_gate(policies: "Policies",
-                       op: str,
-                       path: PathSpec,
-                       write: bool,
-                       prefix: str,
-                       session_id: str = "") -> None:
+async def pre_ops_gate(
+    policies: "Policies",
+    op: str,
+    path: PathSpec,
+    write: bool,
+    prefix: str,
+    session_id: str = "",
+) -> None:
     """Fire pre_ops at an op door; a Deny becomes EACCES.
 
     The one seam helper both doors (the ops facade and the dispatcher)
@@ -148,17 +167,22 @@ async def pre_ops_gate(policies: "Policies",
     if not policies.wants("pre_ops"):
         return
     deny = await policies.pre_ops(
-        OpsContext(op=op,
-                   path=path,
-                   write=write,
-                   prefix=prefix,
-                   session_id=session_id))
+        OpsContext(
+            op=op, path=path, write=write, prefix=prefix, session_id=session_id
+        )
+    )
     if deny is not None:
         raise PolicyDenied(errno.EACCES, deny.reason, path.virtual)
 
 
-async def post_ops_gate(policies: "Policies", op: str, path: PathSpec,
-                        write: bool, prefix: str, result: Any) -> Limit | None:
+async def post_ops_gate(
+    policies: "Policies",
+    op: str,
+    path: PathSpec,
+    write: bool,
+    prefix: str,
+    result: Any,
+) -> Limit | None:
     """Fire post_ops at an op door; a Deny suppresses the result.
 
     Returns the merged Limit bound (tightest per field across every
@@ -176,18 +200,18 @@ async def post_ops_gate(policies: "Policies", op: str, path: PathSpec,
     if not policies.wants("post_ops"):
         return None
     deny, bound = await policies.post_ops(
-        OpsResultContext(op=op,
-                         path=path,
-                         write=write,
-                         prefix=prefix,
-                         result=result))
+        OpsResultContext(
+            op=op, path=path, write=write, prefix=prefix, result=result
+        )
+    )
     if deny is not None:
         raise PolicyDenied(errno.EACCES, deny.reason, path.virtual)
     return bound
 
 
-async def pre_session_gate(policies: "Policies | None",
-                           ctx: SessionContext) -> None:
+async def pre_session_gate(
+    policies: "Policies | None", ctx: SessionContext
+) -> None:
     """Fire pre_session on the session plane; a Deny becomes EACCES.
 
     The one seam helper the session plane's door calls, so a refusal
@@ -209,8 +233,8 @@ async def pre_session_gate(policies: "Policies | None",
 
 
 async def post_execute_gate(
-        policies: "Policies",
-        ctx: ExecuteResultContext) -> tuple[Deny | None, Limit | None]:
+    policies: "Policies", ctx: ExecuteResultContext
+) -> tuple[Deny | None, Limit | None]:
     """Fire post_execute at the workspace boundary.
 
     Returns the fail-closed Deny (a raising policy) if any, and the
@@ -347,8 +371,8 @@ class Policies:
         self._wanted = frozenset(wanted)
 
     async def _fire(
-            self, hook: str,
-            ctx: HookContext) -> tuple[Deny | Ask | None, Limit | None]:
+        self, hook: str, ctx: HookContext
+    ) -> tuple[Deny | Ask | None, Limit | None]:
         """One loop for every hook: first Deny wins, Limits merge.
 
         A refusal short-circuits (limits are moot once the result is
@@ -391,8 +415,10 @@ class Policies:
             if isinstance(action, Limit) and Limit.kind in legal:
                 limits.append(action)
                 continue
-            raise PolicyError(f"{hook} of {name} returned {action!r}; "
-                              f"legal kinds here: {sorted(legal)}")
+            raise PolicyError(
+                f"{hook} of {name} returned {action!r}; "
+                f"legal kinds here: {sorted(legal)}"
+            )
         return asked, Limit.aggr(limits)
 
     async def pre_command(self, ctx: CommandContext) -> Deny | Ask | None:
@@ -424,7 +450,8 @@ class Policies:
         return _deny_only("pre_session", action)
 
     async def post_ops(
-            self, ctx: OpsResultContext) -> tuple[Deny | None, Limit | None]:
+        self, ctx: OpsResultContext
+    ) -> tuple[Deny | None, Limit | None]:
         """Fire post_ops; a Deny suppresses the result, Limits merge.
 
         Args:
@@ -434,8 +461,8 @@ class Policies:
         return _deny_only("post_ops", action), limit
 
     async def post_execute(
-            self,
-            ctx: ExecuteResultContext) -> tuple[Deny | None, Limit | None]:
+        self, ctx: ExecuteResultContext
+    ) -> tuple[Deny | None, Limit | None]:
         """Fire post_execute; Limits merge to the boundary bound.
 
         Args:

@@ -15,10 +15,14 @@
 from functools import partial
 
 from mirage.accessor.github import GitHubAccessor
-from mirage.commands.builtin.generic.find import (find_generic,
-                                                  find_walk_generic)
-from mirage.commands.builtin.generic_bind.adapter import (with_path_guards,
-                                                          with_policy_guard)
+from mirage.commands.builtin.generic.find import (
+    find_generic,
+    find_walk_generic,
+)
+from mirage.commands.builtin.generic_bind.adapter import (
+    with_path_guards,
+    with_policy_guard,
+)
 from mirage.commands.builtin.github.io import IO, resolve_glob
 from mirage.commands.config import CommandOpts, command
 from mirage.commands.spec import SPECS
@@ -49,18 +53,22 @@ async def find(
     # readdir/stat, the same fork the factory builder takes (rung 0).
     # A truncated tree names only some paths and is never refetched, so it
     # takes the same folder-by-folder walk, which readdir answers per folder.
-    if (accessor.truncated or path_rules_active()
-            or any(hidden_paths_intersect(p.virtual) for p in paths)):
-        return await find_walk_generic(paths,
-                                       list(texts),
-                                       opts,
-                                       readdir=partial(_WALK_IO.readdir,
-                                                       accessor),
-                                       stat=partial(_WALK_IO.stat, accessor))
-    return await find_generic(paths,
-                              texts,
-                              opts,
-                              find_core=partial(find_core, accessor),
-                              stat=partial(stat_core,
-                                           accessor,
-                                           index=opts.index))
+    if (
+        accessor.truncated
+        or path_rules_active()
+        or any(hidden_paths_intersect(p.virtual) for p in paths)
+    ):
+        return await find_walk_generic(
+            paths,
+            list(texts),
+            opts,
+            readdir=partial(_WALK_IO.readdir, accessor),
+            stat=partial(_WALK_IO.stat, accessor),
+        )
+    return await find_generic(
+        paths,
+        texts,
+        opts,
+        find_core=partial(find_core, accessor),
+        stat=partial(stat_core, accessor, index=opts.index),
+    )

@@ -41,7 +41,8 @@ async def stat_zzz_disk(
     paths = await resolve_glob(accessor, paths, index)
     raw = await read_bytes(accessor, paths[0])
     return b"CUSTOM DISK STAT %d\n" % len(raw), IOResult(
-        reads={paths[0].mount_path: raw}, cache=[paths[0].mount_path])
+        reads={paths[0].mount_path: raw}, cache=[paths[0].mount_path]
+    )
 
 
 @pytest.mark.asyncio
@@ -75,7 +76,8 @@ async def test_warm_read_stays_on_real_mount(tmp_path):
     assert "CUSTOM DISK STAT" in (await first.stdout_str())
     assert "CUSTOM DISK STAT" in (await second.stdout_str()), (
         "warm read lost the real mount's custom handler; read-through should "
-        "keep the command on the real mount")
+        "keep the command on the real mount"
+    )
 
 
 @pytest.mark.asyncio
@@ -88,18 +90,18 @@ async def test_cross_mount_read_serves_cache(tmp_path):
     (tmp_path / "a.txt").write_bytes(b"v1\n")
     disk = DiskVFS(root=str(tmp_path))
     disk.caches_reads = True
-    ws = Workspace({
-        "/d/": disk,
-        "/r/": RAMVFS()
-    },
-                   mode=MountMode.WRITE,
-                   read=ReadSpec(policy=ReadPolicy.BOUNDED))
+    ws = Workspace(
+        {"/d/": disk, "/r/": RAMVFS()},
+        mode=MountMode.WRITE,
+        read=ReadSpec(policy=ReadPolicy.BOUNDED),
+    )
     await ws.shell("echo hi > /r/b.txt")
     await (await ws.shell("cat /d/a.txt")).stdout_str()
     (tmp_path / "a.txt").write_bytes(b"v2\n")
     out = await (await ws.shell("cat /d/a.txt /r/b.txt")).stdout_str()
     assert "v1" in out and "v2" not in out, (
-        f"cross-mount read did not serve the warm operand from cache: {out!r}")
+        f"cross-mount read did not serve the warm operand from cache: {out!r}"
+    )
 
 
 def _stat_scope(path):
@@ -118,9 +120,11 @@ async def test_stat_gcs_orphaned_overlay_under_fresh():
     ram = RAMVFS()
     ram.caches_reads = True
     ram.read_revalidatable = True
-    ws = Workspace({"/data/": ram},
-                   mode=MountMode.WRITE,
-                   read=ReadSpec(policy=ReadPolicy.FRESH))
+    ws = Workspace(
+        {"/data/": ram},
+        mode=MountMode.WRITE,
+        read=ReadSpec(policy=ReadPolicy.FRESH),
+    )
     await ws.namespace.ensure_loaded()
     await ws.namespace.set_attrs("/data/gone.txt", mode=0o600)
     assert ws.namespace.meta_for("/data/gone.txt") is not None
@@ -139,9 +143,11 @@ async def test_shell_stat_gcs_orphan_under_fresh():
     ram = RAMVFS()
     ram.caches_reads = True
     ram.read_revalidatable = True
-    ws = Workspace({"/r/": ram},
-                   mode=MountMode.WRITE,
-                   read=ReadSpec(policy=ReadPolicy.FRESH))
+    ws = Workspace(
+        {"/r/": ram},
+        mode=MountMode.WRITE,
+        read=ReadSpec(policy=ReadPolicy.FRESH),
+    )
     await ws.namespace.ensure_loaded()
     await ws.namespace.set_attrs("/r/gone.txt", mode=0o600)
     assert ws.namespace.meta_for("/r/gone.txt") is not None
@@ -154,9 +160,11 @@ async def test_shell_stat_gcs_orphan_under_fresh():
 @pytest.mark.asyncio
 async def test_stat_keeps_overlay_under_bounded():
     """Under ``read: bounded`` the overlay is left in place."""
-    ws = Workspace({"/data/": RAMVFS()},
-                   mode=MountMode.WRITE,
-                   read=ReadSpec(policy=ReadPolicy.BOUNDED))
+    ws = Workspace(
+        {"/data/": RAMVFS()},
+        mode=MountMode.WRITE,
+        read=ReadSpec(policy=ReadPolicy.BOUNDED),
+    )
     await ws.namespace.ensure_loaded()
     await ws.namespace.set_attrs("/data/gone.txt", mode=0o600)
 
@@ -181,23 +189,29 @@ async def test_a_guarded_cp_leaves_the_entry_it_read_past(tmp_path):
     (tmp_path / "dir" / "a.txt").write_bytes(b"v1\n")
     disk = DiskVFS(root=str(tmp_path))
     disk.caches_reads = True
-    ws = Workspace({"/": disk},
-                   mode=MountMode.WRITE,
-                   read=ReadSpec(policy=ReadPolicy.BOUNDED))
+    ws = Workspace(
+        {"/": disk},
+        mode=MountMode.WRITE,
+        read=ReadSpec(policy=ReadPolicy.BOUNDED),
+    )
     ws.create_session("agent", profile={"paths": {"hide": ["/dir/.secret"]}})
 
-    cold = await (await ws.shell("cat /dir/a.txt",
-                                 session_id="agent")).stdout_str()
+    cold = await (
+        await ws.shell("cat /dir/a.txt", session_id="agent")
+    ).stdout_str()
     assert cold == "v1\n"
 
     (tmp_path / "dir" / "a.txt").write_bytes(b"v2\n")
     copied = await ws.shell("cp -r /dir /copy", session_id="agent")
     assert copied.exit_code == 0
 
-    made = await (await ws.shell("cat /copy/a.txt",
-                                 session_id="agent")).stdout_str()
+    made = await (
+        await ws.shell("cat /copy/a.txt", session_id="agent")
+    ).stdout_str()
     assert made == "v2\n", "the copy has to hold the bytes the walk read"
-    served = await (await ws.shell("cat /dir/a.txt",
-                                   session_id="agent")).stdout_str()
-    assert served == "v1\n", ("the guarded walk overwrote the entry it read "
-                              "past")
+    served = await (
+        await ws.shell("cat /dir/a.txt", session_id="agent")
+    ).stdout_str()
+    assert served == "v1\n", (
+        "the guarded walk overwrote the entry it read past"
+    )

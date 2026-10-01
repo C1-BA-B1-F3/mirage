@@ -24,32 +24,58 @@ from dulwich.repo import BaseRepo
 from mirage.commands.cli.builtin.git.commit import identity
 from mirage.commands.cli.builtin.git.constants import HEAD
 from mirage.commands.cli.builtin.git.dates import date_clock
-from mirage.commands.cli.builtin.git.errors import GitError  # yapf: disable
-from mirage.commands.cli.builtin.git.errors import (  # yapf: disable
-    IncompatibleOptionsError, InvalidTagNameError, ListModeOnlyError,
-    MissingTagMessageError, NoWorkspaceError, RefLockError,
-    RefUpdateConflictError, TagExistsError, TagNotFoundError, TagUsageError,
-    TooManyArgumentsError, UnknownSwitchError, UnresolvedRefError)
+from mirage.commands.cli.builtin.git.errors import (
+    GitError,
+    IncompatibleOptionsError,
+    InvalidTagNameError,
+    ListModeOnlyError,
+    MissingTagMessageError,
+    NoWorkspaceError,
+    RefLockError,
+    RefUpdateConflictError,
+    TagExistsError,
+    TagNotFoundError,
+    TagUsageError,
+    TooManyArgumentsError,
+    UnknownSwitchError,
+    UnresolvedRefError,
+)
 from mirage.commands.cli.builtin.git.format import short
 from mirage.commands.cli.builtin.git.objects import abbrev_for
-from mirage.commands.cli.builtin.git.ref_filter import (filter_words,
-                                                        list_mode_option,
-                                                        ref_filter,
-                                                        without_filter_values)
-from mirage.commands.cli.builtin.git.ref_format import (format_refs,
-                                                        listing_format,
-                                                        used_fields)
-from mirage.commands.cli.builtin.git.ref_list import (configured_sort,
-                                                      listing_result,
-                                                      match_short, read_config,
-                                                      ref_listing, sort_keys)
-from mirage.commands.cli.builtin.git.refs import (TAG_PREFIX, blocking_ref,
-                                                  delete_ref, valid_ref_name,
-                                                  write_ref)
+from mirage.commands.cli.builtin.git.ref_filter import (
+    filter_words,
+    list_mode_option,
+    ref_filter,
+    without_filter_values,
+)
+from mirage.commands.cli.builtin.git.ref_format import (
+    format_refs,
+    listing_format,
+    used_fields,
+)
+from mirage.commands.cli.builtin.git.ref_list import (
+    configured_sort,
+    listing_result,
+    match_short,
+    read_config,
+    ref_listing,
+    sort_keys,
+)
+from mirage.commands.cli.builtin.git.refs import (
+    TAG_PREFIX,
+    blocking_ref,
+    delete_ref,
+    valid_ref_name,
+    write_ref,
+)
 from mirage.commands.cli.builtin.git.revparse import resolve_object
 from mirage.commands.cli.builtin.git.session import opened
-from mirage.commands.cli.builtin.git.util import (  # yapf: disable
-    check_operands, escaped, fatal, switches)
+from mirage.commands.cli.builtin.git.util import (
+    check_operands,
+    escaped,
+    fatal,
+    switches,
+)
 from mirage.commands.cli.types import CLIDoors, CLIInvocation
 from mirage.commands.spec.flag_view import FlagView
 from mirage.io.stream import yield_bytes
@@ -76,6 +102,7 @@ class TagFlags:
             print per tag when listing; None when ``-n`` was not given,
             which ``-n-1`` also means.
     """
+
     listing: bool
     delete: bool
     annotate: bool
@@ -106,12 +133,14 @@ def parse_flags(fl: FlagView) -> TagFlags:
     # Several -m are several paragraphs, joined the way git joins them.
     paragraphs = fl.as_list("message")
     message = "\n\n".join(paragraphs) if paragraphs else None
-    return TagFlags(listing=fl.as_bool("list"),
-                    delete=fl.as_bool("delete"),
-                    annotate=fl.as_bool("annotate") or message is not None,
-                    message=message,
-                    force=fl.as_bool("force"),
-                    lines=lines)
+    return TagFlags(
+        listing=fl.as_bool("list"),
+        delete=fl.as_bool("delete"),
+        annotate=fl.as_bool("annotate") or message is not None,
+        message=message,
+        force=fl.as_bool("force"),
+        lines=lines,
+    )
 
 
 def resolve_target(repo: BaseRepo, known: set[Ref], revision: str) -> ShaFile:
@@ -138,8 +167,14 @@ def resolve_target(repo: BaseRepo, known: set[Ref], revision: str) -> ShaFile:
         raise UnresolvedRefError(revision) from exc
 
 
-def build_tag(repo: BaseRepo, name: str, target: ShaFile, message: str,
-              tagger: bytes, when: int) -> Tag:
+def build_tag(
+    repo: BaseRepo,
+    name: str,
+    target: ShaFile,
+    message: str,
+    tagger: bytes,
+    when: int,
+) -> Tag:
     """Write an annotated tag object and return it.
 
     Synchronous, and called on a worker thread: the object goes back
@@ -192,8 +227,9 @@ async def tag(inv: CLIInvocation[None]) -> tuple[ByteSource | None, IOResult]:
     try:
         if dispatch is None:
             raise NoWorkspaceError()
-        check_operands(texts, UnknownSwitchError, escaped(inv.argv),
-                       switches(inv))
+        check_operands(
+            texts, UnknownSwitchError, escaped(inv.argv), switches(inv)
+        )
         flags = parse_flags(fl)
         if flags.listing and flags.delete:
             raise IncompatibleOptionsError("-l", "-d")
@@ -203,8 +239,13 @@ async def tag(inv: CLIInvocation[None]) -> tuple[ByteSource | None, IOResult]:
         # and exits 0. No operand at all is a listing, which is why it
         # counts here too.
         creating = flags.annotate or flags.force
-        reading = (flags.listing or flags.delete or flags.lines is not None
-                   or filtered or not texts)
+        reading = (
+            flags.listing
+            or flags.delete
+            or flags.lines is not None
+            or filtered
+            or not texts
+        )
         if creating and reading:
             raise TagUsageError()
         # After the two usage refusals above, which git reaches first:
@@ -241,34 +282,49 @@ async def tag(inv: CLIInvocation[None]) -> tuple[ByteSource | None, IOResult]:
             if repeated:
                 blamed = RefUpdateConflictError(repeated[0].decode())
                 err.append(f"error: {blamed}\n")
-                return None, IOResult(exit_code=1,
-                                      stderr="".join(err).encode())
+                return None, IOResult(
+                    exit_code=1, stderr="".join(err).encode()
+                )
             for name, ref in doomed:
                 sha = repo.refs[ref]
                 await delete_ref(dispatch, location.commondir, ref.decode())
-                out.append(f"Deleted tag '{name}' "
-                           f"(was {short(sha, abbrev_for(repo))})\n")
+                out.append(
+                    f"Deleted tag '{name}' "
+                    f"(was {short(sha, abbrev_for(repo))})\n"
+                )
             return yield_bytes("".join(out).encode()), IOResult(
-                exit_code=1 if err else 0, stderr="".join(err).encode())
-        if (flags.listing or flags.lines is not None or filtered or not texts):
+                exit_code=1 if err else 0, stderr="".join(err).encode()
+            )
+        if flags.listing or flags.lines is not None or filtered or not texts:
             # git reads a -n count while building the format it lists
             # with, so a count below -1 is refused as the format's own
             # (after both usage refusals above, and in a repository
             # holding no tags), and --format drops -n altogether.
             template = fl.as_str("format")
             if template is None:
-                template = (LINES_FORMAT.format(flags.lines)
-                            if flags.lines else NAME_FORMAT)
+                template = (
+                    LINES_FORMAT.format(flags.lines)
+                    if flags.lines
+                    else NAME_FORMAT
+                )
             fmt = listing_format(template)
             icase = fl.as_bool("ignore_case")
 
             def wanted(name: str) -> bool:
                 return name.startswith(TAG_PREFIX) and match_short(
-                    name, texts, icase)
+                    name, texts, icase
+                )
 
             items, ctx, errors = await ref_listing(
-                dispatch, repo, location, cfg, used_fields(fmt, keys or ()),
-                wanted, filt, date_clock(inv.env))
+                dispatch,
+                repo,
+                location,
+                cfg,
+                used_fields(fmt, keys or ()),
+                wanted,
+                filt,
+                date_clock(inv.env),
+            )
             rows, stopped = format_refs(
                 fmt,
                 items,
@@ -277,7 +333,8 @@ async def tag(inv: CLIInvocation[None]) -> tuple[ByteSource | None, IOResult]:
                 omit_empty=fl.as_bool("omit_empty"),
                 icase=icase,
                 stream=filt is None
-                or (filt.merged is None and filt.no_merged is None))
+                or (filt.merged is None and filt.no_merged is None),
+            )
             return listing_result(rows, errors, stopped)
         if len(texts) > 2:
             raise TooManyArgumentsError()
@@ -289,13 +346,19 @@ async def tag(inv: CLIInvocation[None]) -> tuple[ByteSource | None, IOResult]:
             raise TagExistsError(name)
         if flags.annotate and flags.message is None:
             raise MissingTagMessageError()
-        target = resolve_target(repo, known,
-                                texts[1] if len(texts) > 1 else HEAD)
+        target = resolve_target(
+            repo, known, texts[1] if len(texts) > 1 else HEAD
+        )
         if flags.annotate:
-            written = await asyncio.to_thread(build_tag, repo, name, target,
-                                              flags.message or "",
-                                              identity(fl, doors.session_view),
-                                              int(time.time()))
+            written = await asyncio.to_thread(
+                build_tag,
+                repo,
+                name,
+                target,
+                flags.message or "",
+                identity(fl, doors.session_view),
+                int(time.time()),
+            )
             pointed = written.id
         else:
             pointed = target.id
@@ -312,5 +375,5 @@ async def tag(inv: CLIInvocation[None]) -> tuple[ByteSource | None, IOResult]:
     if was is None:
         return None, IOResult()
     return yield_bytes(
-        f"Updated tag '{name}' "
-        f"(was {short(was, abbrev_for(repo))})\n".encode()), IOResult()
+        f"Updated tag '{name}' (was {short(was, abbrev_for(repo))})\n".encode()
+    ), IOResult()

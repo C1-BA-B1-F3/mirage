@@ -25,22 +25,26 @@ from mirage.types import PathSpec
 
 @pytest.mark.asyncio
 async def test_find_root_returns_sorted_entries(make_acc):
-    acc = make_acc({
-        "a.json": b"a",
-        "b.json": b"b",
-        "data/c.json": b"c",
-    })
+    acc = make_acc(
+        {
+            "a.json": b"a",
+            "b.json": b"b",
+            "data/c.json": b"c",
+        }
+    )
     out = await find(acc, PathSpec.from_str_path("/"))
     assert out == ["/", "/a.json", "/b.json", "/data", "/data/c.json"]
 
 
 @pytest.mark.asyncio
 async def test_find_subdir_scopes_results(make_acc):
-    acc = make_acc({
-        "data/a.json": b"a",
-        "data/sub/b.json": b"b",
-        "other.txt": b"o",
-    })
+    acc = make_acc(
+        {
+            "data/a.json": b"a",
+            "data/sub/b.json": b"b",
+            "other.txt": b"o",
+        }
+    )
     out = await find(acc, PathSpec.from_str_path("/data"))
     assert out == ["/data", "/data/a.json", "/data/sub", "/data/sub/b.json"]
 
@@ -54,21 +58,25 @@ async def test_find_missing_returns_empty(make_acc):
 
 @pytest.mark.asyncio
 async def test_find_name_filter(make_acc):
-    acc = make_acc({
-        "a.json": b"a",
-        "b.txt": b"b",
-        "data/c.json": b"c",
-    })
+    acc = make_acc(
+        {
+            "a.json": b"a",
+            "b.txt": b"b",
+            "data/c.json": b"c",
+        }
+    )
     out = await find(acc, PathSpec.from_str_path("/"), name="*.json")
     assert out == ["/a.json", "/data/c.json"]
 
 
 @pytest.mark.asyncio
 async def test_find_type_filter(make_acc):
-    acc = make_acc({
-        "a.json": b"a",
-        "data/c.json": b"c",
-    })
+    acc = make_acc(
+        {
+            "a.json": b"a",
+            "data/c.json": b"c",
+        }
+    )
     files = await find(acc, PathSpec.from_str_path("/"), type="f")
     dirs = await find(acc, PathSpec.from_str_path("/"), type="d")
     assert files == ["/a.json", "/data/c.json"]
@@ -77,11 +85,13 @@ async def test_find_type_filter(make_acc):
 
 @pytest.mark.asyncio
 async def test_find_maxdepth(make_acc):
-    acc = make_acc({
-        "a.json": b"a",
-        "data/c.json": b"c",
-        "data/sub/d.json": b"d",
-    })
+    acc = make_acc(
+        {
+            "a.json": b"a",
+            "data/c.json": b"c",
+            "data/sub/d.json": b"d",
+        }
+    )
     out = await find(acc, PathSpec.from_str_path("/"), maxdepth=1)
     assert out == ["/", "/a.json", "/data"]
 
@@ -113,8 +123,9 @@ async def test_recursive_warmup_preserves_modification_times(make_acc, warmup):
         cached = await index.get(path.virtual)
         assert cached.entry is not None
         assert cached.entry.remote_time == when.isoformat()
-        assert (await stat(acc, path,
-                           index=index)).modified == when.isoformat()
+        assert (
+            await stat(acc, path, index=index)
+        ).modified == when.isoformat()
 
 
 @pytest.mark.asyncio
@@ -140,6 +151,7 @@ async def test_find_under_a_key_prefix_names_paths_mount_relative(make_acc):
             "a.txt": b"decoy",
             "other/c.txt": b"c",
         },
-        key_prefix="pfx/")
+        key_prefix="pfx/",
+    )
     out = await find(acc, PathSpec.from_str_path("/"))
     assert out == ["/", "/a.txt", "/sub", "/sub/b.txt"]

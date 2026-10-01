@@ -25,6 +25,7 @@ from mirage.secrets.types import ResolvedSecret, ResolvedSource, SecretFetchFn
 
 class SourceEntry(NamedTuple):
     """One resolvable source: its config model and its fetch function."""
+
     config_model: type[BaseModel]
     fetch: SecretFetchFn
 
@@ -32,8 +33,9 @@ class SourceEntry(NamedTuple):
 _CUSTOM: dict[str, SourceEntry] = {}
 
 
-def register_secrets(name: str, config_model: type[BaseModel],
-                     fetch: SecretFetchFn) -> None:
+def register_secrets(
+    name: str, config_model: type[BaseModel], fetch: SecretFetchFn
+) -> None:
     """Register a secrets source under a name.
 
     Host-side only, like ``register_cli``: the embedding program calls
@@ -76,7 +78,8 @@ def source_for(name: str) -> SourceEntry:
     builtin = BUILTINS.get(name)
     if builtin is None:
         raise SecretsError(
-            f"unknown secrets source {name!r}; known: {known_sources()}")
+            f"unknown secrets source {name!r}; known: {known_sources()}"
+        )
     config_model, fetch_path = builtin
     module_name, _, attr = fetch_path.partition(":")
     try:
@@ -84,14 +87,14 @@ def source_for(name: str) -> SourceEntry:
     except ModuleNotFoundError as exc:
         raise SecretsError(
             f"the {name!r} source needs its optional dependency "
-            f"({exc.name}): pip install 'mirage-ai[{name}]'") from exc
+            f"({exc.name}): pip install 'mirage-ai[{name}]'"
+        ) from exc
     return SourceEntry(config_model, getattr(module, attr))
 
 
 async def fetch_secret(
-        source: str,
-        ref: str,
-        sources: Mapping[str, ResolvedSource] | None = None) -> ResolvedSecret:
+    source: str, ref: str, sources: Mapping[str, ResolvedSource] | None = None
+) -> ResolvedSecret:
     """Fetch one secret from a named source.
 
     The whole call path: resolve the source, take its config, run its

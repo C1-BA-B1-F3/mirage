@@ -18,16 +18,23 @@ from collections.abc import Mapping
 from typing import Any
 
 from mirage.policy.profile import CompiledProfile
-from mirage.policy.types import (AdmissionRules, Decision, HideReason,
-                                 ProfileScript)
+from mirage.policy.types import (
+    AdmissionRules,
+    Decision,
+    HideReason,
+    ProfileScript,
+)
 from mirage.secrets.config import EnvVar
 from mirage.shell.variable import ShellVar
 from mirage.types import MountMode
 from mirage.workspace.record.types import CAS_MAX_RETRIES, generation_of
 from mirage.workspace.session.ram import RAMSessionStore
 from mirage.workspace.session.resolve import apply_profile, narrow
-from mirage.workspace.session.session import (SessionState, vars_from_entries,
-                                              vars_from_env)
+from mirage.workspace.session.session import (
+    SessionState,
+    vars_from_entries,
+    vars_from_env,
+)
 from mirage.workspace.session.shell_dirs import set_cwd
 from mirage.workspace.session.store import SessionFields, SessionStore
 
@@ -41,8 +48,9 @@ def _holds_managed(session: SessionState) -> bool:
     return any(var.managed is not None for var in session.vars.values())
 
 
-def _merge_seed_vars(session: SessionState,
-                     seed_vars: Mapping[str, ShellVar]) -> None:
+def _merge_seed_vars(
+    session: SessionState, seed_vars: Mapping[str, ShellVar]
+) -> None:
     """Fill in template names a stored record predates.
 
     A record written before the workspace's env block gained an entry
@@ -73,10 +81,12 @@ class SessionManager:
     while process shutdown leaves stored sessions in place.
     """
 
-    def __init__(self,
-                 default_session_id: str,
-                 store: SessionStore | None = None,
-                 seed_vars: dict[str, ShellVar] | None = None) -> None:
+    def __init__(
+        self,
+        default_session_id: str,
+        store: SessionStore | None = None,
+        seed_vars: dict[str, ShellVar] | None = None,
+    ) -> None:
         self._default_id = default_session_id
         self._store = store if store is not None else RAMSessionStore()
         self._sessions: dict[str, SessionState] = {}
@@ -91,10 +101,12 @@ class SessionManager:
         # its template. The records are frozen, so sharing them across
         # sessions is safe; each session gets its own dict.
         self._seed_vars = dict(seed_vars) if seed_vars else {}
-        self._has_managed = any(var.managed is not None
-                                for var in self._seed_vars.values())
+        self._has_managed = any(
+            var.managed is not None for var in self._seed_vars.values()
+        )
         self._sessions[default_session_id] = SessionState(
-            session_id=default_session_id, vars=dict(self._seed_vars))
+            session_id=default_session_id, vars=dict(self._seed_vars)
+        )
         self._locks[default_session_id] = asyncio.Lock()
         self._loaded = False
         self._load_lock = asyncio.Lock()
@@ -131,7 +143,8 @@ class SessionManager:
         """
         self._seed_vars = dict(seed_vars)
         self._has_managed = self._has_managed or any(
-            var.managed is not None for var in self._seed_vars.values())
+            var.managed is not None for var in self._seed_vars.values()
+        )
 
     @property
     def default_profile(self) -> CompiledProfile | None:
@@ -172,8 +185,11 @@ class SessionManager:
         """
         session = self._sessions.get(session_id)
         if session is None:
-            return (self._default_profile.commands
-                    if self._default_profile is not None else None)
+            return (
+                self._default_profile.commands
+                if self._default_profile is not None
+                else None
+            )
         return session.commands
 
     def script_of(self, session_id: str) -> ProfileScript | None:
@@ -190,8 +206,11 @@ class SessionManager:
         """
         session = self._sessions.get(session_id)
         if session is None:
-            return (self._default_profile.script
-                    if self._default_profile is not None else None)
+            return (
+                self._default_profile.script
+                if self._default_profile is not None
+                else None
+            )
         return session.script
 
     def hide_reasons_of(self, session_id: str) -> tuple[HideReason, ...]:
@@ -208,8 +227,11 @@ class SessionManager:
         """
         session = self._sessions.get(session_id)
         if session is None:
-            return (self._default_profile.hide_reasons
-                    if self._default_profile is not None else ())
+            return (
+                self._default_profile.hide_reasons
+                if self._default_profile is not None
+                else ()
+            )
         return session.hide_reasons
 
     def decision_sessions(self) -> tuple[str, ...]:
@@ -229,8 +251,9 @@ class SessionManager:
         """
         return self.get(session_id).decisions
 
-    def set_decisions(self, session_id: str, records: tuple[Decision,
-                                                            ...]) -> None:
+    def set_decisions(
+        self, session_id: str, records: tuple[Decision, ...]
+    ) -> None:
         """Replace one session's ledger records
         (SessionDecisionsQuery); durable at the next flush.
 
@@ -344,8 +367,9 @@ class SessionManager:
                     # Same order for the same reason: an env entry the
                     # record predates lands durably on the next flush.
                     _merge_seed_vars(default, self._seed_vars)
-                    self._has_managed = (self._has_managed
-                                         or _holds_managed(default))
+                    self._has_managed = self._has_managed or _holds_managed(
+                        default
+                    )
                     continue
                 if sid in self._sessions:
                     continue
@@ -354,8 +378,9 @@ class SessionManager:
                 self._locks[sid] = asyncio.Lock()
                 self._persisted[sid] = copy.deepcopy(session.to_dict())
                 _merge_seed_vars(session, self._seed_vars)
-                self._has_managed = (self._has_managed
-                                     or _holds_managed(session))
+                self._has_managed = self._has_managed or _holds_managed(
+                    session
+                )
             self._loaded = True
 
     async def flush(self) -> None:
@@ -413,10 +438,12 @@ class SessionManager:
             if stored is not None:
                 session.generation = generation_of(stored)
         raise RuntimeError(
-            f"session {sid!r} flush kept conflicting with another writer")
+            f"session {sid!r} flush kept conflicting with another writer"
+        )
 
-    async def replace_from_snapshot(self,
-                                    sessions: list[SessionState]) -> None:
+    async def replace_from_snapshot(
+        self, sessions: list[SessionState]
+    ) -> None:
         """Adopt a snapshot's session table and replace the store.
 
         The snapshot wins over prior store contents, mirroring
@@ -434,7 +461,7 @@ class SessionManager:
         self,
         session_id: str,
         mount_modes: dict[str, MountMode] | None = None,
-        env: Mapping[str, str | EnvVar | Mapping[str, Any]] | None = None
+        env: Mapping[str, str | EnvVar | Mapping[str, Any]] | None = None,
     ) -> SessionState:
         """Create a session, seeded with the workspace's env template.
 
@@ -450,9 +477,9 @@ class SessionManager:
         seeded = dict(self._seed_vars)
         if env is not None:
             seeded.update(vars_from_entries(env))
-        session = SessionState(session_id=session_id,
-                               mount_modes=mount_modes,
-                               vars=seeded)
+        session = SessionState(
+            session_id=session_id, mount_modes=mount_modes, vars=seeded
+        )
         self._has_managed = self._has_managed or _holds_managed(session)
         self._sessions[session_id] = session
         self._locks[session_id] = asyncio.Lock()
@@ -461,8 +488,9 @@ class SessionManager:
     def get(self, session_id: str) -> SessionState:
         return self._sessions[session_id]
 
-    async def set_profile(self, session_id: str,
-                          compiled: CompiledProfile) -> SessionState:
+    async def set_profile(
+        self, session_id: str, compiled: CompiledProfile
+    ) -> SessionState:
         """Replace restrictions without resetting the session's scratch state.
 
         Args:

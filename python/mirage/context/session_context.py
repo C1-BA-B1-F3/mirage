@@ -18,11 +18,23 @@ from contextvars import ContextVar, Token
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
-from mirage.types import (MOUNT_MODE_RANK, EntryGate, MountMode, PathSpec,
-                          WalkProbe, weaker_mode)
+from mirage.types import (
+    MOUNT_MODE_RANK,
+    EntryGate,
+    MountMode,
+    PathSpec,
+    WalkProbe,
+    weaker_mode,
+)
 from mirage.utils.errors import ReadOnlyError
-from mirage.utils.hidden import (anchor_depth, hides_intersect, is_glob,
-                                 path_visible, show_head, shown_mode)
+from mirage.utils.hidden import (
+    anchor_depth,
+    hides_intersect,
+    is_glob,
+    path_visible,
+    show_head,
+    shown_mode,
+)
 from mirage.utils.path import parent
 
 if TYPE_CHECKING:
@@ -41,6 +53,7 @@ class SessionBinding:
             belongs to, which is one per workspace. None when the
             binder did not name one.
     """
+
     session: "SessionState | None"
     owner: "SessionManager | None"
 
@@ -51,8 +64,9 @@ _current_session: ContextVar[SessionBinding | None] = ContextVar(
 )
 
 
-def set_current_session(session: "SessionState | None",
-                        owner: "SessionManager | None" = None) -> Token[Any]:
+def set_current_session(
+    session: "SessionState | None", owner: "SessionManager | None" = None
+) -> Token[Any]:
     """Bind ``session`` to the current async context.
 
     Args:
@@ -96,7 +110,8 @@ def get_current_session_for(owner: "SessionManager") -> "SessionState | None":
 
 
 def get_current_session_unless_foreign(
-        owner: "SessionManager") -> "SessionState | None":
+    owner: "SessionManager",
+) -> "SessionState | None":
     """The bound session, unless another owner published it.
 
     An op door keeps the session it is reached under, so it never
@@ -112,8 +127,9 @@ def get_current_session_unless_foreign(
         owner (SessionManager): the asking workspace's session manager.
     """
     binding = _current_session.get()
-    if binding is None or (binding.owner is not None
-                           and binding.owner is not owner):
+    if binding is None or (
+        binding.owner is not None and binding.owner is not owner
+    ):
         return None
     return binding.session
 
@@ -261,8 +277,9 @@ def hidden_refusal(virtual: str, create: bool) -> OSError:
             rename or copy destination is one.
     """
     if create and path_allowed(parent(virtual.rstrip("/") or "/")):
-        return PermissionError(errno.EACCES, os.strerror(errno.EACCES),
-                               virtual)
+        return PermissionError(
+            errno.EACCES, os.strerror(errno.EACCES), virtual
+        )
     return FileNotFoundError(errno.ENOENT, os.strerror(errno.ENOENT), virtual)
 
 
@@ -417,13 +434,14 @@ def path_rules_active() -> bool:
     return gate is not None and gate.scoped
 
 
-_redirect_paths: ContextVar[tuple[int, tuple[PathSpec, ...]]
-                            | None] = (ContextVar("mirage_redirect_paths",
-                                                  default=None))
+_redirect_paths: ContextVar[tuple[int, tuple[PathSpec, ...]] | None] = (
+    ContextVar("mirage_redirect_paths", default=None)
+)
 
 
-def set_redirect_paths(node_id: int, paths: tuple[PathSpec,
-                                                  ...]) -> Token[Any]:
+def set_redirect_paths(
+    node_id: int, paths: tuple[PathSpec, ...]
+) -> Token[Any]:
     """Bind a statement's expanded redirect targets to the command node
     they belong to, for that node's run.
 
@@ -460,7 +478,8 @@ def redirect_paths_for(node_id: int) -> tuple[PathSpec, ...]:
 
 
 _program_invocation: ContextVar[int | None] = ContextVar(
-    "mirage_program_invocation", default=None)
+    "mirage_program_invocation", default=None
+)
 
 
 def set_program_invocation(session: "SessionState") -> Token[Any]:
@@ -520,8 +539,9 @@ def redirect_target_judged(virtual: str) -> bool:
     return bound is not None and any(p.virtual == virtual for p in bound[1])
 
 
-def effective_mount_mode(mount_prefix: str,
-                         mount_mode: MountMode) -> MountMode:
+def effective_mount_mode(
+    mount_prefix: str, mount_mode: MountMode
+) -> MountMode:
     """The mount mode after narrowing by the current session's cap.
 
     The mount's own mode is the strongest one available; a profile's mode
@@ -535,8 +555,9 @@ def effective_mount_mode(mount_prefix: str,
     return weaker_mode(mount_mode, _session_mode(mount_prefix))
 
 
-def effective_path_mode(virtual: str, mount_prefix: str,
-                        mount_mode: MountMode) -> MountMode:
+def effective_path_mode(
+    virtual: str, mount_prefix: str, mount_mode: MountMode
+) -> MountMode:
     """The mode in force at one path: the whole VFS axis on the one
     anchor-depth rule.
 
@@ -558,8 +579,9 @@ def effective_path_mode(virtual: str, mount_prefix: str,
     if sess is None:
         return mount_mode
     prefix = _norm_prefix(mount_prefix)
-    cap = (sess.mount_modes.get(prefix)
-           if sess.mount_modes is not None else None)
+    cap = (
+        sess.mount_modes.get(prefix) if sess.mount_modes is not None else None
+    )
     best_depth = anchor_depth(prefix) if cap is not None else None
     best_mode = cap
     deepest = shown_mode(sess.shown_paths, virtual)
@@ -583,12 +605,18 @@ def _reaches_under(head: str, prefix: str) -> bool:
         head (str): the show entry's anchor, normalized.
         prefix (str): the mount prefix, normalized.
     """
-    return (head == "/" or prefix == "/" or head == prefix
-            or head.startswith(prefix + "/") or prefix.startswith(head + "/"))
+    return (
+        head == "/"
+        or prefix == "/"
+        or head == prefix
+        or head.startswith(prefix + "/")
+        or prefix.startswith(head + "/")
+    )
 
 
-def strongest_mode_under(mount_prefix: str,
-                         mount_mode: MountMode) -> MountMode:
+def strongest_mode_under(
+    mount_prefix: str, mount_mode: MountMode
+) -> MountMode:
     """The strongest mode the current session reaches anywhere under a
     mount: its mount-wide effective mode, or a deeper show grant, still
     capped by the mount's configured mode.
@@ -617,8 +645,9 @@ def strongest_mode_under(mount_prefix: str,
     return best
 
 
-def readonly_below(virtual: str, mount_prefix: str,
-                   mount_mode: MountMode) -> str | None:
+def readonly_below(
+    virtual: str, mount_prefix: str, mount_mode: MountMode
+) -> str | None:
     """The path to blame when a subtree mutation reaches into a
     read-only region below its operand, None when nothing below is
     weaker.
@@ -647,24 +676,29 @@ def readonly_below(virtual: str, mount_prefix: str,
             continue
         if is_glob(entry.path):
             if entry.mode == MountMode.READ and _reaches_under(
-                    show_head(entry.path), v):
+                show_head(entry.path), v
+            ):
                 return virtual
             continue
         anchor = "/" + entry.path.strip("/")
         below = anchor != "/" if v == "/" else anchor.startswith(v + "/")
         if not below:
             continue
-        if effective_path_mode(anchor, mount_prefix,
-                               mount_mode) == MountMode.READ:
+        if (
+            effective_path_mode(anchor, mount_prefix, mount_mode)
+            == MountMode.READ
+        ):
             return anchor
     return None
 
 
-def require_paths_writable(paths: list[PathSpec],
-                           mount_prefix: str,
-                           mount_mode: MountMode,
-                           *,
-                           subtree: bool = False) -> None:
+def require_paths_writable(
+    paths: list[PathSpec],
+    mount_prefix: str,
+    mount_mode: MountMode,
+    *,
+    subtree: bool = False,
+) -> None:
     """Apply the same mode ceiling to command, dispatcher and namespace writes.
 
     Args:
@@ -674,16 +708,20 @@ def require_paths_writable(paths: list[PathSpec],
         subtree (bool): whether each endpoint's descendants are mutated.
     """
     for path in paths:
-        if effective_path_mode(path.virtual, mount_prefix,
-                               mount_mode) == MountMode.READ:
-            raise ReadOnlyError(errno.EROFS, "Read-only file system",
-                                path.virtual)
+        if (
+            effective_path_mode(path.virtual, mount_prefix, mount_mode)
+            == MountMode.READ
+        ):
+            raise ReadOnlyError(
+                errno.EROFS, "Read-only file system", path.virtual
+            )
     if subtree:
         for path in paths:
             blame = readonly_below(path.virtual, mount_prefix, mount_mode)
             if blame is not None:
-                raise ReadOnlyError(errno.EROFS, "Read-only file system",
-                                    blame)
+                raise ReadOnlyError(
+                    errno.EROFS, "Read-only file system", blame
+                )
 
 
 def require_mount_writable() -> None:

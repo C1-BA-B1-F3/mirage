@@ -30,8 +30,10 @@ def test_condition_adds_the_typed_scalar_a_segment_also_spells():
     assert _match_value(text) == "12"
     assert (typed.range.gte, typed.range.lte) == (12, 12)
     as_float = query._condition("k", "1.5")
-    assert (as_float.should[1].range.gte,
-            as_float.should[1].range.lte) == (1.5, 1.5)
+    assert (as_float.should[1].range.gte, as_float.should[1].range.lte) == (
+        1.5,
+        1.5,
+    )
 
 
 def test_condition_keeps_a_spelling_no_value_renders_as_a_string():
@@ -54,58 +56,53 @@ def test_candidate_ids_by_type():
 
 
 class _StrictClient:
-
     def __init__(self, holds) -> None:
         self._holds = holds
         self.points = [
-            SimpleNamespace(id=1, payload={
-                "code": "100",
-                "name": "a"
-            }),
-            SimpleNamespace(id=2, payload={
-                "code": "200",
-                "name": "b"
-            }),
+            SimpleNamespace(id=1, payload={"code": "100", "name": "a"}),
+            SimpleNamespace(id=2, payload={"code": "200", "name": "b"}),
         ]
         self.filtered_calls = 0
         self.index_calls = 0
         self._indexed = False
 
-    async def scroll(self,
-                     collection_name,
-                     scroll_filter=None,
-                     limit=10,
-                     offset=None,
-                     with_payload=True,
-                     with_vectors=False):
+    async def scroll(
+        self,
+        collection_name,
+        scroll_filter=None,
+        limit=10,
+        offset=None,
+        with_payload=True,
+        with_vectors=False,
+    ):
         if scroll_filter is not None and not self._indexed:
             self.filtered_calls += 1
             raise UnexpectedResponse(
-                400, "Bad Request",
-                b'{"status":{"error":"Index required but not found"}}', {})
+                400,
+                "Bad Request",
+                b'{"status":{"error":"Index required but not found"}}',
+                {},
+            )
         pts = self.points
         if scroll_filter is not None:
             pts = [p for p in pts if self._holds(p, scroll_filter)]
         start = offset or 0
-        window = pts[start:start + limit]
+        window = pts[start : start + limit]
         nxt = start + limit if start + limit < len(pts) else None
         return window, nxt
 
-    async def create_payload_index(self,
-                                   collection_name,
-                                   field_name,
-                                   field_schema=None):
+    async def create_payload_index(
+        self, collection_name, field_name, field_schema=None
+    ):
         self.index_calls += 1
         self._indexed = True
 
 
 class _StrictAccessor:
-
     def __init__(self, client) -> None:
-        self.config = QdrantConfig(collection="c",
-                                   group_by=["code"],
-                                   id_field="id",
-                                   max_rows=1000)
+        self.config = QdrantConfig(
+            collection="c", group_by=["code"], id_field="id", max_rows=1000
+        )
         self._client = client
         self.indexes_ensured: set[str] = set()
 
@@ -144,11 +141,16 @@ async def test_resolve_group_finds_every_source_behind_one_basename(accessor):
         point.payload["source"] = "s3://one/report.pdf"
     client.points[3].payload["source"] = "s3://two/report.pdf"
 
-    both = await query.resolve_group(accessor, "animals", "source", {},
-                                     "report.pdf", True)
+    both = await query.resolve_group(
+        accessor, "animals", "source", {}, "report.pdf", True
+    )
     assert both == ["s3://one/report.pdf", "s3://two/report.pdf"]
-    assert await query.resolve_group(accessor, "animals", "source", {},
-                                     "other.pdf", True) == []
+    assert (
+        await query.resolve_group(
+            accessor, "animals", "source", {}, "other.pdf", True
+        )
+        == []
+    )
 
 
 @pytest.mark.asyncio
@@ -175,13 +177,16 @@ async def test_group_values_spell_a_non_string_as_its_json_does(accessor):
     client.points[1].payload["label"] = 1.0
     values = await query.distinct_values(accessor, "animals", "label", {}, 100)
     assert values == ["1", "dog", "true"]
-    assert await query.resolve_group(accessor, "animals", "label", {},
-                                     "true") == ["true"]
+    assert await query.resolve_group(
+        accessor, "animals", "label", {}, "true"
+    ) == ["true"]
     # Descending into the advertised directory filters for the typed
     # payload, not for the string the segment spells.
-    behind_true = await query.distinct_values(accessor, "animals", "kind",
-                                              {"label": "true"}, 100)
+    behind_true = await query.distinct_values(
+        accessor, "animals", "kind", {"label": "true"}, 100
+    )
     assert behind_true == [client.points[0].payload["kind"]]
-    behind_one = await query.distinct_values(accessor, "animals", "kind",
-                                             {"label": "1"}, 100)
+    behind_one = await query.distinct_values(
+        accessor, "animals", "kind", {"label": "1"}, 100
+    )
     assert behind_one == [client.points[1].payload["kind"]]

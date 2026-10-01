@@ -24,8 +24,9 @@ from mirage.types import JsonValue
 CHECKED = "✓"
 
 
-async def content_or_stdin(inline: str | None,
-                           stdin: ByteSource | None) -> str:
+async def content_or_stdin(
+    inline: str | None, stdin: ByteSource | None
+) -> str:
     """Resolve Markdown from `--content` or the pipe.
 
     The upstream CLI's third source is ``$EDITOR``, which a virtualized
@@ -72,10 +73,9 @@ def compact_json(value: JsonValue) -> bytes:
     Returns:
         bytes: the rendered JSON with its trailing newline.
     """
-    text = json.dumps(value,
-                      separators=(",", ":"),
-                      sort_keys=True,
-                      ensure_ascii=False)
+    text = json.dumps(
+        value, separators=(",", ":"), sort_keys=True, ensure_ascii=False
+    )
     return f"{text}\n".encode()
 
 
@@ -187,7 +187,8 @@ def property_cell(prop: JsonValue) -> str:
         if not isinstance(value, list):
             return ""
         return ", ".join(
-            str(one.get("name", "")) for one in value if isinstance(one, dict))
+            str(one.get("name", "")) for one in value if isinstance(one, dict)
+        )
     if isinstance(value, str):
         return value
     if isinstance(value, bool) or value is None:

@@ -20,23 +20,27 @@ def test_tr_basic(env):
 
 def test_tr_d(env):
     data = b"hello world\n"
-    assert env.mirage("tr -d aeiou", stdin=data) == env.native("tr -d aeiou",
-                                                               stdin=data)
+    assert env.mirage("tr -d aeiou", stdin=data) == env.native(
+        "tr -d aeiou", stdin=data
+    )
 
 
 def test_tr_s(env):
     data = b"baanaanaa\n"
-    assert env.mirage("tr -s a", stdin=data) == env.native("tr -s a",
-                                                           stdin=data)
+    assert env.mirage("tr -s a", stdin=data) == env.native(
+        "tr -s a", stdin=data
+    )
 
 
 def test_tr_range(env):
     data = b"hello\n"
-    assert env.mirage("tr a-z A-Z", stdin=data) == env.native("tr a-z A-Z",
-                                                              stdin=data)
+    assert env.mirage("tr a-z A-Z", stdin=data) == env.native(
+        "tr a-z A-Z", stdin=data
+    )
 
 
 def test_tr_cd(env):
     data = b"Hello World 123\n"
-    assert env.mirage("tr -cd a-z", stdin=data) == env.native("tr -cd a-z",
-                                                              stdin=data)
+    assert env.mirage("tr -cd a-z", stdin=data) == env.native(
+        "tr -cd a-z", stdin=data
+    )

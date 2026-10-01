@@ -21,8 +21,9 @@ async def look(
     fold_case: bool = False,
 ) -> tuple[ByteSource | None, IOResult]:
     if len(paths) > 1:
-        raise extra_operand_error(CommandName.LOOK, paths[1].raw_path
-                                  or paths[1].virtual)
+        raise extra_operand_error(
+            CommandName.LOOK, paths[1].raw_path or paths[1].virtual
+        )
     if paths:
         raw = await read_bytes(paths[0])
     else:
@@ -62,8 +63,10 @@ async def look_generic(
     if not texts:
         raise ValueError("look: missing prefix")
     parsed = parse_flags(opts.flags)
-    return await look(paths,
-                      texts[0],
-                      read_bytes=read_bytes,
-                      stdin=opts.stdin,
-                      fold_case=parsed.fold_case)
+    return await look(
+        paths,
+        texts[0],
+        read_bytes=read_bytes,
+        stdin=opts.stdin,
+        fold_case=parsed.fold_case,
+    )

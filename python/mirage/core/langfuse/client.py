@@ -97,7 +97,8 @@ async def fetch_traces(
         kwargs["order_by"] = order_by
     if from_timestamp:
         kwargs["from_timestamp"] = datetime.fromisoformat(
-            from_timestamp.replace("Z", "+00:00"))
+            from_timestamp.replace("Z", "+00:00")
+        )
     result = await api.trace.list(**kwargs)
     return [_to_dict(t) for t in result.data]
 

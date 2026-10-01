@@ -14,8 +14,11 @@
 
 from mirage.workspace.executor.builtins.exec.constants import CLOSED
 from mirage.workspace.executor.builtins.exec.exec import (
-    divert_statement, handle_exec_command, install_exec_redirects,
-    stdout_to_stderr)
+    divert_statement,
+    handle_exec_command,
+    install_exec_redirects,
+    stdout_to_stderr,
+)
 
 __all__ = [
     "CLOSED",

@@ -24,10 +24,11 @@ WHO = b"Test Author <test@example.com>"
 OLD = b"1" * 40
 NEW = b"2" * 40
 ENV = {
-    **os.environ, "LC_ALL": "C",
+    **os.environ,
+    "LC_ALL": "C",
     "LANG": "C",
     "GIT_CONFIG_GLOBAL": "/dev/null",
-    "GIT_CONFIG_NOSYSTEM": "1"
+    "GIT_CONFIG_NOSYSTEM": "1",
 }
 
 
@@ -64,10 +65,19 @@ def lines(repo_path: Path, *parts: str) -> list[bytes]:
 
 @pytest.mark.asyncio
 async def test_both_logs_gain_the_same_line_when_head_is_on_a_branch(
-        git_rw, repo_path: Path):
-    await record(git_rw.dispatch, "/repo/.git", "/repo/.git",
-                 "refs/heads/main", OLD, NEW, WHO, 1700000000,
-                 "commit: recorded")
+    git_rw, repo_path: Path
+):
+    await record(
+        git_rw.dispatch,
+        "/repo/.git",
+        "/repo/.git",
+        "refs/heads/main",
+        OLD,
+        NEW,
+        WHO,
+        1700000000,
+        "commit: recorded",
+    )
     head = lines(repo_path, "logs", "HEAD")
     branch = lines(repo_path, "logs", "refs", "heads", "main")
     assert head[-1] == branch[-1]
@@ -76,65 +86,120 @@ async def test_both_logs_gain_the_same_line_when_head_is_on_a_branch(
 
 @pytest.mark.asyncio
 async def test_a_detached_head_leaves_the_branch_log_alone(
-        git_rw, repo_path: Path):
+    git_rw, repo_path: Path
+):
     before = lines(repo_path, "logs", "refs", "heads", "main")
-    await record(git_rw.dispatch, "/repo/.git", "/repo/.git", None, OLD, NEW,
-                 WHO, 1700000000, "checkout: moving from main to abc1234")
+    await record(
+        git_rw.dispatch,
+        "/repo/.git",
+        "/repo/.git",
+        None,
+        OLD,
+        NEW,
+        WHO,
+        1700000000,
+        "checkout: moving from main to abc1234",
+    )
     assert lines(repo_path, "logs", "refs", "heads", "main") == before
-    assert lines(
-        repo_path, "logs",
-        "HEAD")[-1].endswith(b"\tcheckout: moving from main to abc1234")
+    assert lines(repo_path, "logs", "HEAD")[-1].endswith(
+        b"\tcheckout: moving from main to abc1234"
+    )
 
 
 @pytest.mark.asyncio
 async def test_entries_accumulate_rather_than_replace(git_rw, repo_path: Path):
     before = len(lines(repo_path, "logs", "HEAD"))
-    await record(git_rw.dispatch, "/repo/.git", "/repo/.git", None, OLD, NEW,
-                 WHO, 1700000000, "first")
-    await record(git_rw.dispatch, "/repo/.git", "/repo/.git", None, NEW, OLD,
-                 WHO, 1700000001, "second")
+    await record(
+        git_rw.dispatch,
+        "/repo/.git",
+        "/repo/.git",
+        None,
+        OLD,
+        NEW,
+        WHO,
+        1700000000,
+        "first",
+    )
+    await record(
+        git_rw.dispatch,
+        "/repo/.git",
+        "/repo/.git",
+        None,
+        NEW,
+        OLD,
+        WHO,
+        1700000001,
+        "second",
+    )
     assert len(lines(repo_path, "logs", "HEAD")) == before + 2
 
 
 @pytest.mark.asyncio
 async def test_a_linked_worktree_logs_its_branch_in_the_repository(
-        git_rw, repo_path: Path):
+    git_rw, repo_path: Path
+):
     # git keeps logs/HEAD per checkout and logs/refs in the common
     # directory, so `git reflog main` reads one log from every worktree.
-    await record(git_rw.dispatch, "/repo/.git/worktrees/wt", "/repo/.git",
-                 "refs/heads/main", OLD, NEW, WHO, 1700000000,
-                 "commit: from a worktree")
+    await record(
+        git_rw.dispatch,
+        "/repo/.git/worktrees/wt",
+        "/repo/.git",
+        "refs/heads/main",
+        OLD,
+        NEW,
+        WHO,
+        1700000000,
+        "commit: from a worktree",
+    )
     own = lines(repo_path, "worktrees", "wt", "logs", "HEAD")
     shared = lines(repo_path, "logs", "refs", "heads", "main")
     assert own == [shared[-1]]
-    assert not lines(repo_path, "worktrees", "wt", "logs", "refs", "heads",
-                     "main")
+    assert not lines(
+        repo_path, "worktrees", "wt", "logs", "refs", "heads", "main"
+    )
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("line", [
-    "reflog",
-    "reflog show -1",
-    "reflog main",
-    "reflog refs/heads/main",
-    "reflog origin/main",
-    "reflog refs/remotes/origin/main",
-    "reflog v1",
-])
+@pytest.mark.parametrize(
+    "line",
+    [
+        "reflog",
+        "reflog show -1",
+        "reflog main",
+        "reflog refs/heads/main",
+        "reflog origin/main",
+        "reflog refs/remotes/origin/main",
+        "reflog v1",
+    ],
+)
 async def test_rows_print_the_name_git_found_the_log_under(
-        git_ws, repo_path, line):
-    for args in ([
-            "update-ref", "--create-reflog", "-m", "fetch: fast-forward",
-            "refs/remotes/origin/main", "HEAD~1"
-    ], ["tag", "v1"]):
-        subprocess.run(["git", "-C", str(repo_path), *args],
-                       check=True,
-                       capture_output=True,
-                       env=ENV)
+    git_ws, repo_path, line
+):
+    for args in (
+        [
+            "update-ref",
+            "--create-reflog",
+            "-m",
+            "fetch: fast-forward",
+            "refs/remotes/origin/main",
+            "HEAD~1",
+        ],
+        ["tag", "v1"],
+    ):
+        subprocess.run(
+            ["git", "-C", str(repo_path), *args],
+            check=True,
+            capture_output=True,
+            env=ENV,
+        )
     native = subprocess.run(
         ["git", "-C", str(repo_path), *line.split()],
         capture_output=True,
-        env=ENV)
+        env=ENV,
+    )
     actual = await git_ws.shell(f"git -C /repo {line}")
-    assert (actual.exit_code, actual.stdout or b"", actual.stderr
-            or b"") == (native.returncode, native.stdout, native.stderr)
+    assert (actual.exit_code, actual.stdout or b"", actual.stderr or b"") == (
+        native.returncode,
+        native.stdout,
+        native.stderr,
+    )

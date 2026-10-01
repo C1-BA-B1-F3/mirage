@@ -72,8 +72,9 @@ def winning_pad(flags: str) -> str | None:
     return pad
 
 
-def pad_signed(sign: str, digits: str, pad: str | None,
-               width: int | None) -> str:
+def pad_signed(
+    sign: str, digits: str, pad: str | None, width: int | None
+) -> str:
     """Pad a signed number the way GNU date pads one: zeros go after the
     sign (``%3s`` of -1 is ``-01``, ``%8:z`` is ``+0005:30``), spaces
     before it (``%_3s`` is ``" -1"``), and ``-`` pads nothing.
@@ -91,8 +92,9 @@ def pad_signed(sign: str, digits: str, pad: str | None,
     return sign + digits.rjust(width, "0")
 
 
-def zone_offset(dt: datetime, colons: int, flags: str,
-                width: int | None) -> str:
+def zone_offset(
+    dt: datetime, colons: int, flags: str, width: int | None
+) -> str:
     """Render ``%z`` and its colon forms as GNU date does: ``%:z`` is
     ``+05:30``, ``%::z`` adds seconds, ``%:::z`` keeps only the parts
     that are not zero (``+05``, ``+05:30``). Under a colon the flags and
@@ -119,8 +121,9 @@ def zone_offset(dt: datetime, colons: int, flags: str,
     minutes, seconds = divmod(rest, 60)
     if colons == 0:
         digits = 4 if width is None else width - 1
-        return pad_signed(sign, str(hours * 100 + minutes), winning_pad(flags),
-                          digits)
+        return pad_signed(
+            sign, str(hours * 100 + minutes), winning_pad(flags), digits
+        )
     if colons == 1 or (colons == 3 and minutes and not seconds):
         tail = f":{minutes:02d}"
     elif colons == 2 or seconds:
@@ -147,8 +150,9 @@ def epoch_seconds(dt: datetime, flags: str, width: int | None) -> str:
     return pad_signed(sign, str(abs(value)), winning_pad(flags), digits)
 
 
-def pad_number(dt: datetime, directive: str, flags: str,
-               width: int | None) -> str:
+def pad_number(
+    dt: datetime, directive: str, flags: str, width: int | None
+) -> str:
     """Render a numeric directive under GNU's flags and width: the width
     replaces the default digits rather than adding to them (``%1d`` is
     ``3``, ``%3d`` is ``003``), ``_`` pads with spaces and ``-`` with
@@ -189,8 +193,9 @@ def pad_quarter(quarter: str, flags: str, width: int | None) -> str:
     return quarter.rjust(width, " " if pad == "_" else "0")
 
 
-def pad_composite(dt: datetime, directive: str, flags: str,
-                  width: int | None) -> str:
+def pad_composite(
+    dt: datetime, directive: str, flags: str, width: int | None
+) -> str:
     """Pad a composite directive (``%F``, ``%D``, ``%T``, ``%c`` and the
     rest of ``COMPOSITES``) the way GNU date does: the flags reach the
     parts, so ``-``, ``_`` and ``0`` alone change nothing, ``^`` upcases
@@ -252,8 +257,9 @@ def plus_year(dt: datetime, directive: str, width: int | None) -> str:
     return sign + str(value).rjust((width or 0) - len(sign), "0")
 
 
-def pad_text(dt: datetime, directive: str, flags: str,
-             width: int | None) -> str:
+def pad_text(
+    dt: datetime, directive: str, flags: str, width: int | None
+) -> str:
     """Render a textual directive (one of ``TEXTUAL``) under GNU's flags
     and width: ``#`` lowers ``%p`` and ``%Z`` and uppers the day and
     month names, outranking ``^``, which uppers anything; a width pads
@@ -334,16 +340,16 @@ def gnu_strftime(dt: datetime, fmt: str) -> str:
         while c < len(fmt) and fmt[c] == ":":
             c += 1
         if c >= len(fmt):
-            out.append("%%" + fmt[i + 1:])
+            out.append("%%" + fmt[i + 1 :])
             break
         width = int(fmt[j:k]) if k > j else None
-        flags = fmt[i + 1:j]
+        flags = fmt[i + 1 : j]
         pad = winning_pad(flags)
         directive = fmt[c]
         if directive == "z":
             out.append(zone_offset(dt, c - k, flags, width))
         elif c > k:
-            out.append("%%" + fmt[i + 1:c + 1])
+            out.append("%%" + fmt[i + 1 : c + 1])
         elif directive == "s":
             out.append(epoch_seconds(dt, flags, width))
         elif directive == "q":
@@ -356,15 +362,16 @@ def gnu_strftime(dt: datetime, fmt: str) -> str:
             out.append(plus_year(dt, directive, width))
         elif directive in COMPOSITES and (flags or width is not None):
             out.append(pad_composite(dt, directive, flags, width))
-        elif directive in NUMERIC_DIGITS and (width is not None
-                                              or pad is not None):
+        elif directive in NUMERIC_DIGITS and (
+            width is not None or pad is not None
+        ):
             out.append(pad_number(dt, directive, flags, width))
         elif directive in TEXTUAL and (flags or width is not None):
             out.append(pad_text(dt, directive, flags, width))
         elif "+" in flags:
             zero = "0" if pad == "+" else ""
-            out.append("%" + flags.replace("+", zero) + fmt[j:k + 1])
+            out.append("%" + flags.replace("+", zero) + fmt[j : k + 1])
         else:
-            out.append(fmt[i:k + 1])
+            out.append(fmt[i : k + 1])
         i = c + 1
     return dt.strftime("".join(out))

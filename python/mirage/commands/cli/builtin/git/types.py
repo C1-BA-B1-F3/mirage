@@ -35,6 +35,7 @@ class MailmapEntry:
         mapped_email (str | None): the canonical email, None to keep
             the recorded one.
     """
+
     email: str
     name: str | None
     mapped_name: str | None
@@ -65,6 +66,7 @@ class RepoLocation:
         mount_root (str): the mount prefix both live under, which
             bounded the discovery walk.
     """
+
     gitdir: str
     commondir: str
     worktree: str
@@ -83,6 +85,7 @@ class HeadRef:
         commit (str | None): the object id HEAD holds directly, set only
             on a detached HEAD.
     """
+
     branch: str | None
     ref: str | None
     commit: str | None
@@ -99,6 +102,7 @@ class Upstream:
         behind (int): commits on the upstream the branch lacks.
         gone (bool): the upstream ref is configured but missing.
     """
+
     label: str
     ahead: int
     behind: int
@@ -113,6 +117,7 @@ class Track(StrEnum):
     ``simple`` a remote one of the same name, ``inherit`` copies the
     start branch's own upstream, and ``false`` takes none.
     """
+
     OFF = "false"
     REMOTE = "true"
     ALWAYS = "always"
@@ -135,6 +140,7 @@ class HeadMove:
         warnings (str): the warning lines to write before the note,
             empty when there are none.
     """
+
     carried: dict[str, str]
     warnings: str
 
@@ -148,6 +154,7 @@ class AncestryStep:
             first parents), False for ``^n`` (take the n-th parent).
         count (int): the number after the suffix, 1 when it was bare.
     """
+
     first_parent: bool
     count: int
 
@@ -159,6 +166,7 @@ class PeelStep:
     Args:
         want (str): the type word inside the braces, empty for ``^{}``.
     """
+
     want: str
 
 
@@ -182,6 +190,7 @@ class IndexState:
         merging (bool): whether ``MERGE_HEAD`` is present, which is what
             distinguishes a merge in progress from its leftovers.
     """
+
     entries: dict[bytes, IndexEntry]
     conflicts: dict[bytes, ConflictedIndexEntry]
     merging: bool
@@ -204,6 +213,7 @@ class StatusEntry:
         original (str | None): the path renamed from, set only for
             ``R``.
     """
+
     path: str
     index_status: str
     tree_status: str
@@ -223,6 +233,7 @@ class WorkTree:
         untracked (list[str]): paths to report as untracked, already
             collapsed to ``dir/`` where git would collapse them.
     """
+
     files: dict[str, FileStat] = field(default_factory=dict)
     untracked: list[str] = field(default_factory=list)
     ignored: list[str] = field(default_factory=list)
@@ -230,6 +241,7 @@ class WorkTree:
 
 class DateKind(StrEnum):
     """One of git's date styles, spelled as ``--date`` names it."""
+
     NORMAL = "default"
     RELATIVE = "relative"
     SHORT = "short"
@@ -256,6 +268,7 @@ class DateMode:
         zone (tzinfo | None): the session's ``TZ``, None for the host's
             own zone, which is what a ``-local`` style shows.
     """
+
     kind: DateKind = DateKind.NORMAL
     local: bool = False
     strftime: str = ""
@@ -266,6 +279,7 @@ class DateMode:
 class FieldCompare(StrEnum):
     """How a ref field sorts, git's ``cmp_type``: as text, or by the
     number behind it."""
+
     TEXT = "text"
     NUMBER = "number"
     TIME = "time"
@@ -274,6 +288,7 @@ class FieldCompare(StrEnum):
 class FieldSource(StrEnum):
     """Where a ref field's value comes from, git's ``info_source``: the
     ref alone, the object's content, or its type and size."""
+
     REF = "ref"
     OBJECT = "object"
     OBJECT_INFO = "object-info"
@@ -282,6 +297,7 @@ class FieldSource(StrEnum):
 class QuoteStyle(StrEnum):
     """``--shell``, ``--perl``, ``--python`` and ``--tcl``: how each
     field is quoted in a listing."""
+
     NONE = "none"
     SHELL = "shell"
     PERL = "perl"
@@ -291,6 +307,7 @@ class QuoteStyle(StrEnum):
 
 class RefKind(StrEnum):
     """Which part of the namespace a listed ref lives in."""
+
     BRANCH = "branch"
     REMOTE = "remote"
     TAG = "tag"
@@ -320,6 +337,7 @@ class RefField:
             email's ``trim`` and ``mailmap``.
         text (str): an ``if`` comparand or an ``align`` position.
     """
+
     name: str
     field: str
     deref: bool
@@ -341,6 +359,7 @@ class RefFormat:
             already expanded, and fields, in order.
         quote (QuoteStyle): how each field is quoted.
     """
+
     pieces: tuple[str | RefField, ...]
     quote: QuoteStyle = QuoteStyle.NONE
 
@@ -354,6 +373,7 @@ class RefSortKey:
         reverse (bool): the leading ``-``.
         version (bool): the ``version:`` (``v:``) prefix.
     """
+
     field: RefField
     reverse: bool = False
     version: bool = False
@@ -368,6 +388,7 @@ class RefObject:
         type (str): ``commit``, ``tag``, ``tree`` or ``blob``.
         raw (bytes): the object's content, headers and all.
     """
+
     oid: str
     type: str
     raw: bytes
@@ -385,6 +406,7 @@ class RefUpstream:
         behind (int): commits on the upstream the branch lacks.
         gone (bool): the upstream ref does not exist.
     """
+
     ref: str
     remote: str
     merge: str
@@ -409,6 +431,7 @@ class RefItem:
             ``upstream`` field reads it.
         worktree (str): the worktree a branch is checked out in.
     """
+
     name: str
     oid: str
     kind: RefKind
@@ -440,6 +463,7 @@ class RefContext:
         date (DateMode): the clock date fields render by.
         suffixes (tuple[str, ...]): ``versionsort.suffix``.
     """
+
     known: frozenset[str] = frozenset()
     strict: bool = True
     head: str | None = None
@@ -459,6 +483,7 @@ class FieldValue:
         text (str): what it renders as.
         number (int): what it sorts by when it sorts as a number.
     """
+
     text: str
     number: int = 0
 
@@ -477,6 +502,7 @@ class FormatFrame:
         head (FormatFrame | None): for the ``%(else)`` half of an
             ``if``, the ``if`` it belongs to.
     """
+
     kind: str
     opener: RefField | None = None
     out: list[str] = field(default_factory=list)
@@ -495,6 +521,7 @@ class Refspec:
             FETCH_HEAD alone.
         force (bool): the leading ``+``, which allows a non-fast-forward.
     """
+
     src: str
     dst: str | None
     force: bool

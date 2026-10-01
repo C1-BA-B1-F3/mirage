@@ -40,9 +40,9 @@ class Engine(PythonRuntime, EvaluatorMixin):
     async def run(self, args: RunArgs) -> RunResult:
         self.entered.set()
         await self.release.wait()
-        return RunResult(stdout=f"{self.name}\n".encode(),
-                         stderr=None,
-                         exit_code=0)
+        return RunResult(
+            stdout=f"{self.name}\n".encode(), stderr=None, exit_code=0
+        )
 
     async def eval(self, code, *, inputs=None, session=None) -> EvalResult:
         self.entered.set()
@@ -57,7 +57,7 @@ class Engine(PythonRuntime, EvaluatorMixin):
 
 class Gate(Runtime, LineExecutorMixin):
     name = "gate"
-    captures = ("gate", )
+    captures = ("gate",)
 
     def __init__(self) -> None:
         super().__init__()
@@ -71,15 +71,18 @@ class Gate(Runtime, LineExecutorMixin):
 
 
 def workspace(*runtimes):
-    return Workspace({"/": RAMVFS()},
-                     mode=MountMode.EXEC,
-                     runtimes=[*runtimes, "workspace"])
+    return Workspace(
+        {"/": RAMVFS()}, mode=MountMode.EXEC, runtimes=[*runtimes, "workspace"]
+    )
 
 
 async def python3(ws, **kwargs):
     io = await ws.shell("python3 -c x", **kwargs)
-    return io.exit_code, await materialize(io.stdout
-                                           ), await materialize(io.stderr)
+    return (
+        io.exit_code,
+        await materialize(io.stdout),
+        await materialize(io.stderr),
+    )
 
 
 @pytest.mark.asyncio
@@ -123,15 +126,16 @@ async def test_a_line_routed_before_removal_is_refused_after_it():
     ws = workspace(gate, alpha)
     try:
         line = asyncio.create_task(
-            ws.shell("gate; python3 -c x", runtime="alpha"))
+            ws.shell("gate; python3 -c x", runtime="alpha")
+        )
         await gate.entered.wait()
         await ws.remove_runtime("alpha")
         gate.release.set()
         io = await line
         assert io.exit_code == 1
-        assert await materialize(
-            io.stderr
-        ) == (b"python3: alpha: runtime was removed from the workspace\n")
+        assert await materialize(io.stderr) == (
+            b"python3: alpha: runtime was removed from the workspace\n"
+        )
     finally:
         await ws.close()
 

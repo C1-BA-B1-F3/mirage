@@ -59,8 +59,9 @@ def _format_slack_error(method: str, data: dict[str, Any]) -> str:
     return f"{base} (needed: {needed}; provided: {provided})"
 
 
-def _error_of(resp: aiohttp.ClientResponse, text: str, *,
-              method: str) -> Exception:
+def _error_of(
+    resp: aiohttp.ClientResponse, text: str, *, method: str
+) -> Exception:
     # Slack reports failures as ok:false payloads, usually with a 200; a
     # non-2xx that still carries one keeps Slack's own wording.
     try:
@@ -79,29 +80,37 @@ def _checked(method: str, data: Any) -> dict[str, Any]:
     return payload
 
 
-async def slack_get(config: SlackConfig,
-                    method: str,
-                    params: dict[str, Any] | None = None,
-                    session: SessionArg = None) -> dict[str, Any]:
+async def slack_get(
+    config: SlackConfig,
+    method: str,
+    params: dict[str, Any] | None = None,
+    session: SessionArg = None,
+) -> dict[str, Any]:
     url = f"{config.base_url.rstrip('/')}/{method}"
-    data = await api_request("GET",
-                             url,
-                             error_of=partial(_error_of, method=method),
-                             headers=slack_headers(config, method),
-                             params=params,
-                             session=session)
+    data = await api_request(
+        "GET",
+        url,
+        error_of=partial(_error_of, method=method),
+        headers=slack_headers(config, method),
+        params=params,
+        session=session,
+    )
     return _checked(method, data)
 
 
-async def slack_post(config: SlackConfig,
-                     method: str,
-                     body: dict[str, Any] | None = None,
-                     session: SessionArg = None) -> dict[str, Any]:
+async def slack_post(
+    config: SlackConfig,
+    method: str,
+    body: dict[str, Any] | None = None,
+    session: SessionArg = None,
+) -> dict[str, Any]:
     url = f"{config.base_url.rstrip('/')}/{method}"
-    data = await api_request("POST",
-                             url,
-                             error_of=partial(_error_of, method=method),
-                             headers=slack_headers(config, method),
-                             json_body=body or {},
-                             session=session)
+    data = await api_request(
+        "POST",
+        url,
+        error_of=partial(_error_of, method=method),
+        headers=slack_headers(config, method),
+        json_body=body or {},
+        session=session,
+    )
     return _checked(method, data)

@@ -1,7 +1,10 @@
 import pytest
 
-from mirage.commands.builtin.generic.uniq import (_parse_count, parse_flags,
-                                                  uniq)
+from mirage.commands.builtin.generic.uniq import (
+    _parse_count,
+    parse_flags,
+    uniq,
+)
 from mirage.commands.errors import UsageError
 from mirage.types import PathSpec
 
@@ -138,7 +141,8 @@ def test_all_repeated_refusal_quotes_the_word(value, escaped):
     with pytest.raises(UsageError) as exc:
         parse_flags({"all_repeated": value})
     assert str(exc.value).startswith(
-        f"uniq: invalid argument '{escaped}' for '--all-repeated'\n")
+        f"uniq: invalid argument '{escaped}' for '--all-repeated'\n"
+    )
 
 
 @pytest.mark.parametrize("value,escaped", QUOTED_WORDS)
@@ -146,7 +150,8 @@ def test_group_refusal_quotes_the_word(value, escaped):
     with pytest.raises(UsageError) as exc:
         parse_flags({"group": value})
     assert str(exc.value).startswith(
-        f"uniq: invalid argument '{escaped}' for '--group'\n")
+        f"uniq: invalid argument '{escaped}' for '--group'\n"
+    )
 
 
 # Measured, coreutils 9.4: both refusals append gnulib's candidate list
@@ -156,11 +161,12 @@ def test_group_refusal_quotes_the_word(value, escaped):
 def test_all_repeated_refusal_carries_gnus_candidate_block():
     with pytest.raises(UsageError) as exc:
         parse_flags({"all_repeated": "x"})
-    assert str(
-        exc.value) == ("uniq: invalid argument 'x' for '--all-repeated'\n"
-                       "Valid arguments are:\n"
-                       "  - 'none'\n  - 'prepend'\n  - 'separate'\n"
-                       "Try 'uniq --help' for more information.")
+    assert str(exc.value) == (
+        "uniq: invalid argument 'x' for '--all-repeated'\n"
+        "Valid arguments are:\n"
+        "  - 'none'\n  - 'prepend'\n  - 'separate'\n"
+        "Try 'uniq --help' for more information."
+    )
     assert exc.value.exit_code == 1
 
 
@@ -171,20 +177,25 @@ def test_group_refusal_carries_gnus_candidate_block():
         "uniq: invalid argument 'x' for '--group'\n"
         "Valid arguments are:\n"
         "  - 'prepend'\n  - 'append'\n  - 'separate'\n  - 'both'\n"
-        "Try 'uniq --help' for more information.")
+        "Try 'uniq --help' for more information."
+    )
     assert exc.value.exit_code == 1
 
 
-@pytest.mark.parametrize("dest,option", [
-    ("all_repeated", "--all-repeated"),
-    ("group", "--group"),
-])
+@pytest.mark.parametrize(
+    "dest,option",
+    [
+        ("all_repeated", "--all-repeated"),
+        ("group", "--group"),
+    ],
+)
 def test_an_empty_argument_is_ambiguous(dest, option):
     """`uniq --all-repeated=` / `--group=` are `ambiguous argument ''`."""
     with pytest.raises(UsageError) as exc:
         parse_flags({dest: ""})
-    assert str(
-        exc.value).startswith(f"uniq: ambiguous argument '' for '{option}'\n")
+    assert str(exc.value).startswith(
+        f"uniq: ambiguous argument '' for '{option}'\n"
+    )
     assert exc.value.exit_code == 1
 
 
@@ -216,5 +227,6 @@ def test_group_and_all_repeated_accept_an_unambiguous_prefix():
 def test_group_still_refuses_an_unmatched_word():
     with pytest.raises(UsageError) as exc:
         parse_flags({"group": "pp"})
-    assert str(
-        exc.value).startswith("uniq: invalid argument 'pp' for '--group'\n")
+    assert str(exc.value).startswith(
+        "uniq: invalid argument 'pp' for '--group'\n"
+    )

@@ -87,6 +87,7 @@ async def test_rename_missing_src_raises(fake_drive, gdrive_accessor):
 @pytest.mark.asyncio
 async def test_rename_native_strips_suffix(fake_drive, gdrive_accessor):
     doc_id = fake_drive.add("Report", mime=DOC_MIME)
-    await rename(gdrive_accessor, spec("/Report.gdoc.json"),
-                 spec("/Plan.gdoc.json"))
+    await rename(
+        gdrive_accessor, spec("/Report.gdoc.json"), spec("/Plan.gdoc.json")
+    )
     assert fake_drive.items[doc_id]["name"] == "Plan"

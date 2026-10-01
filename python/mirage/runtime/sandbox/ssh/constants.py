@@ -14,8 +14,9 @@
 
 from mirage.utils.quote import single_quote
 
-ASYNCSSH_HINT = ("the ssh runtime needs asyncssh; install with: "
-                 "pip install mirage-ai[ssh]")
+ASYNCSSH_HINT = (
+    "the ssh runtime needs asyncssh; install with: pip install mirage-ai[ssh]"
+)
 
 
 def wrap_line(line: str, env: dict[str, str], cwd: str) -> str:

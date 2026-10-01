@@ -22,6 +22,15 @@ from mirage.ops.registry import RegisteredOp
 # "Operation not supported" where a read-only directory says EROFS.
 OPS = make_generic_ops("bin", IO) + [
     RegisteredOp(name=name, vfs="bin", filetype=None, fn=refuse, write=True)
-    for name in ("write", "append", "create", "mkdir", "unlink", "rmdir",
-                 "rename", "truncate", "setattr")
+    for name in (
+        "write",
+        "append",
+        "create",
+        "mkdir",
+        "unlink",
+        "rmdir",
+        "rename",
+        "truncate",
+        "setattr",
+    )
 ]

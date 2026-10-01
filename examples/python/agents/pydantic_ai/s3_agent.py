@@ -46,13 +46,16 @@ backend = PydanticAIWorkspace(ws)
 agent = Agent(
     "openai:gpt-4.1",
     system_prompt=build_system_prompt(
-        mount_info={"/s3/": "S3 bucket (CSV, Parquet, JSONL)"}),
+        mount_info={"/s3/": "S3 bucket (CSV, Parquet, JSONL)"}
+    ),
     deps_type=Deps,
     toolsets=[create_console_toolset()],
 )
 
-task = ("Explore and summarize the data in /s3/data/."
-        " Use head command for large files and do not write anything.")
+task = (
+    "Explore and summarize the data in /s3/data/."
+    " Use head command for large files and do not write anything."
+)
 result = agent.run_sync(task, deps=Deps(backend=backend))
 print(result.output)
 
@@ -61,5 +64,7 @@ if records:
     total = sum(r.bytes for r in records)
     print(f"\n--- {len(records)} ops, {total:,} bytes ---")
     for r in records:
-        print(f"  {r.op:<8} {r.source:<8} {r.bytes:>10,} B "
-              f"{r.duration_ms:>5} ms  {r.path}")
+        print(
+            f"  {r.op:<8} {r.source:<8} {r.bytes:>10,} B "
+            f"{r.duration_ms:>5} ms  {r.path}"
+        )

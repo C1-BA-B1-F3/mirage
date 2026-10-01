@@ -18,8 +18,14 @@ from unittest.mock import patch
 
 import pytest
 
-from mirage.core.hf_hub.commit import (Addition, LfsRequiredError, commit,
-                                       commit_url, payload, upload_modes)
+from mirage.core.hf_hub.commit import (
+    Addition,
+    LfsRequiredError,
+    commit,
+    commit_url,
+    payload,
+    upload_modes,
+)
 
 
 def _lines(raw: bytes):
@@ -34,18 +40,16 @@ def test_commit_url_targets_the_mount_revision(accessor):
 def test_commit_url_encodes_a_revision_holding_a_slash(accessor):
     """Unencoded, `feature/foo` names revision `feature` and a subtree,
     so the commit lands somewhere else or not at all."""
-    assert commit_url(accessor,
-                      "feature/foo").endswith("/commit/feature%2Ffoo")
+    assert commit_url(accessor, "feature/foo").endswith(
+        "/commit/feature%2Ffoo"
+    )
 
 
 def test_payload_puts_the_header_first():
     lines = _lines(payload([], [], [], "msg", "body"))
     assert lines[0] == {
         "key": "header",
-        "value": {
-            "summary": "msg",
-            "description": "body"
-        }
+        "value": {"summary": "msg", "description": "body"},
     }
 
 
@@ -83,12 +87,10 @@ def test_payload_is_newline_delimited():
 @pytest.mark.asyncio
 @patch("mirage.core.hf_hub.commit.hub_post")
 async def test_upload_modes_sends_a_sample_not_the_content(
-        mock_post, accessor):
+    mock_post, accessor
+):
     mock_post.return_value = {
-        "files": [{
-            "path": "a.txt",
-            "uploadMode": "regular"
-        }]
+        "files": [{"path": "a.txt", "uploadMode": "regular"}]
     }
     modes = await upload_modes(accessor, [Addition("a.txt", b"x" * 2000)])
     body = mock_post.await_args.args[2]
@@ -109,14 +111,12 @@ async def test_upload_modes_asks_nothing_for_no_additions(mock_post, accessor):
 @patch("mirage.core.hf_hub.commit.hub_post_ndjson")
 @patch("mirage.core.hf_hub.commit.hub_post")
 async def test_commit_refuses_a_file_the_hub_wants_via_lfs(
-        mock_post, mock_ndjson, accessor):
+    mock_post, mock_ndjson, accessor
+):
     """Committing it anyway would reference content the Hub never
     received: the file would appear in the tree and every read fail."""
     mock_post.return_value = {
-        "files": [{
-            "path": "big.bin",
-            "uploadMode": "lfs"
-        }]
+        "files": [{"path": "big.bin", "uploadMode": "lfs"}]
     }
     with pytest.raises(LfsRequiredError):
         await commit(accessor, additions=[Addition("big.bin", b"x")])
@@ -126,13 +126,11 @@ async def test_commit_refuses_a_file_the_hub_wants_via_lfs(
 @pytest.mark.asyncio
 @patch("mirage.core.hf_hub.commit.hub_post_ndjson")
 @patch("mirage.core.hf_hub.commit.hub_post")
-async def test_commit_posts_ndjson_for_a_regular_file(mock_post, mock_ndjson,
-                                                      accessor):
+async def test_commit_posts_ndjson_for_a_regular_file(
+    mock_post, mock_ndjson, accessor
+):
     mock_post.return_value = {
-        "files": [{
-            "path": "a.txt",
-            "uploadMode": "regular"
-        }]
+        "files": [{"path": "a.txt", "uploadMode": "regular"}]
     }
     mock_ndjson.return_value = {"commitOid": "abc"}
     result = await commit(accessor, additions=[Addition("a.txt", b"hi")])
@@ -143,8 +141,9 @@ async def test_commit_posts_ndjson_for_a_regular_file(mock_post, mock_ndjson,
 @pytest.mark.asyncio
 @patch("mirage.core.hf_hub.commit.hub_post_ndjson")
 @patch("mirage.core.hf_hub.commit.hub_post")
-async def test_commit_can_open_a_pull_request(mock_post, mock_ndjson,
-                                              accessor):
+async def test_commit_can_open_a_pull_request(
+    mock_post, mock_ndjson, accessor
+):
     mock_post.return_value = {"files": []}
     mock_ndjson.return_value = {}
     await commit(accessor, deletions=["a.txt"], create_pr=True)
@@ -155,7 +154,8 @@ async def test_commit_can_open_a_pull_request(mock_post, mock_ndjson,
 @patch("mirage.core.hf_hub.commit.hub_post_ndjson")
 @patch("mirage.core.hf_hub.commit.hub_post")
 async def test_a_delete_only_commit_skips_the_preupload_probe(
-        mock_post, mock_ndjson, accessor):
+    mock_post, mock_ndjson, accessor
+):
     mock_ndjson.return_value = {}
     await commit(accessor, deletions=["a.txt"])
     mock_post.assert_not_awaited()
@@ -164,7 +164,8 @@ async def test_a_delete_only_commit_skips_the_preupload_probe(
 @pytest.mark.asyncio
 @patch("mirage.core.hf_hub.commit.hub_post")
 async def test_upload_modes_encodes_a_revision_holding_a_slash(
-        mock_post, accessor):
+    mock_post, accessor
+):
     mock_post.return_value = {"files": []}
     await upload_modes(accessor, [Addition("a.txt", b"x")], "feature/foo")
     assert mock_post.await_args.args[1].endswith("/preupload/feature%2Ffoo")

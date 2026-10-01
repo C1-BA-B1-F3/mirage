@@ -40,33 +40,39 @@ def _mock_backend(data: bytes) -> S3VFS:
 
 def test_grep_file_uses_streaming():
     from mirage.commands.builtin.grep_scan import grep_lines
+
     data = b"hello world\nfoo bar\nhello again\n"
     compiled = re.compile("hello")
-    results = grep_lines("test.txt",
-                         data.decode(errors="replace").splitlines(),
-                         compiled,
-                         invert=False,
-                         line_numbers=False,
-                         count_only=False,
-                         files_only=False,
-                         only_matching=False,
-                         max_count=None)
+    results = grep_lines(
+        "test.txt",
+        data.decode(errors="replace").splitlines(),
+        compiled,
+        invert=False,
+        line_numbers=False,
+        count_only=False,
+        files_only=False,
+        only_matching=False,
+        max_count=None,
+    )
     assert len(results) == 2
     assert "hello world" in results[0]
 
 
 def test_grep_file_max_count():
     from mirage.commands.builtin.grep_scan import grep_lines
+
     lines = [f"match line {i}".encode() for i in range(100)]
     data = b"\n".join(lines) + b"\n"
     compiled = re.compile("match")
-    results = grep_lines("test.txt",
-                         data.decode(errors="replace").splitlines(),
-                         compiled,
-                         invert=False,
-                         line_numbers=False,
-                         count_only=False,
-                         files_only=False,
-                         only_matching=False,
-                         max_count=3)
+    results = grep_lines(
+        "test.txt",
+        data.decode(errors="replace").splitlines(),
+        compiled,
+        invert=False,
+        line_numbers=False,
+        count_only=False,
+        files_only=False,
+        only_matching=False,
+        max_count=3,
+    )
     assert len(results) == 3

@@ -20,11 +20,13 @@ from mirage.core.render.json import json_bytes
 def normalize_team(team: dict[str, Any]) -> dict[str, Any]:
     states = []
     for state in (team.get("states") or {}).get("nodes", []):
-        states.append({
-            "state_id": state.get("id"),
-            "state_name": state.get("name"),
-            "type": state.get("type"),
-        })
+        states.append(
+            {
+                "state_id": state.get("id"),
+                "state_name": state.get("name"),
+                "type": state.get("type"),
+            }
+        )
     return {
         "team_id": team.get("id"),
         "team_key": team.get("key"),
@@ -88,8 +90,9 @@ def normalize_issue(issue: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def normalize_comment(comment: dict[str, Any], *, issue_id: str,
-                      issue_key: str | None) -> dict[str, Any]:
+def normalize_comment(
+    comment: dict[str, Any], *, issue_id: str, issue_key: str | None
+) -> dict[str, Any]:
     user = comment.get("user") or {}
     return {
         "comment_id": comment.get("id"),
@@ -130,21 +133,24 @@ def normalize_project(
     }
 
 
-def project_issue_rows(issues: list[dict[str, Any]],
-                       project_id: str | None) -> list[dict[str, Any]]:
+def project_issue_rows(
+    issues: list[dict[str, Any]], project_id: str | None
+) -> list[dict[str, Any]]:
     rows = []
     for issue in issues:
         if (issue.get("project") or {}).get("id") != project_id:
             continue
         state = issue.get("state") or {}
-        rows.append({
-            "issue_id": issue.get("id"),
-            "issue_key": issue.get("identifier"),
-            "title": issue.get("title"),
-            "state_id": state.get("id"),
-            "state_name": state.get("name"),
-            "url": issue.get("url"),
-        })
+        rows.append(
+            {
+                "issue_id": issue.get("id"),
+                "issue_key": issue.get("identifier"),
+                "title": issue.get("title"),
+                "state_id": state.get("id"),
+                "state_name": state.get("name"),
+                "url": issue.get("url"),
+            }
+        )
     return rows
 
 

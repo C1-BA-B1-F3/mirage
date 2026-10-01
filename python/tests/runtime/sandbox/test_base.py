@@ -37,28 +37,32 @@ class RecordingSandbox(RemoteSandbox):
     async def connect(self) -> None:
         self.connected += 1
 
-    async def exec_line(self, line: str, stdin: bytes | None,
-                        env: dict[str, str], cwd: str) -> RunResult:
+    async def exec_line(
+        self, line: str, stdin: bytes | None, env: dict[str, str], cwd: str
+    ) -> RunResult:
         self.execs.append((line, stdin, cwd))
         self.exec_envs.append(dict(env))
-        return RunResult(stdout=b"ran:" + line.encode(),
-                         stderr=None,
-                         exit_code=0)
+        return RunResult(
+            stdout=b"ran:" + line.encode(), stderr=None, exit_code=0
+        )
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("line", [
-    "python3 --version",
-    "python -V",
-    "node --version",
-    "node -v",
-    "tsc --version",
-])
+@pytest.mark.parametrize(
+    "line",
+    [
+        "python3 --version",
+        "python -V",
+        "node --version",
+        "node -v",
+        "tsc --version",
+    ],
+)
 async def test_version_commands_reach_the_remote_environment(line):
-    box = RecordingSandbox(captures=(line.split()[0], ))
-    ws = Workspace({"/data": RAMVFS()},
-                   mode=MountMode.EXEC,
-                   runtimes=[box, "workspace"])
+    box = RecordingSandbox(captures=(line.split()[0],))
+    ws = Workspace(
+        {"/data": RAMVFS()}, mode=MountMode.EXEC, runtimes=[box, "workspace"]
+    )
     try:
         io = await ws.shell(line)
         assert io.exit_code == 0
@@ -70,10 +74,10 @@ async def test_version_commands_reach_the_remote_environment(line):
 
 @pytest.mark.asyncio
 async def test_first_line_connects_once():
-    box = RecordingSandbox(captures=("python3", ))
-    ws = Workspace({"/data": RAMVFS()},
-                   mode=MountMode.EXEC,
-                   runtimes=[box, "workspace"])
+    box = RecordingSandbox(captures=("python3",))
+    ws = Workspace(
+        {"/data": RAMVFS()}, mode=MountMode.EXEC, runtimes=[box, "workspace"]
+    )
     try:
         io = await ws.shell("python3 x")
         assert await materialize(io.stdout) == b"ran:python3 x"
@@ -89,16 +93,15 @@ async def test_first_line_connects_once():
 async def test_failed_connect_retries_on_the_next_line():
 
     class FlakyBox(RecordingSandbox):
-
         async def connect(self) -> None:
             await super().connect()
             if self.connected == 1:
                 raise RuntimeError("sandbox not running")
 
-    box = FlakyBox(captures=("python3", ))
-    ws = Workspace({"/data": RAMVFS()},
-                   mode=MountMode.EXEC,
-                   runtimes=[box, "workspace"])
+    box = FlakyBox(captures=("python3",))
+    ws = Workspace(
+        {"/data": RAMVFS()}, mode=MountMode.EXEC, runtimes=[box, "workspace"]
+    )
     try:
         io = await ws.shell("python3 x")
         assert io.exit_code != 0
@@ -112,9 +115,10 @@ async def test_failed_connect_retries_on_the_next_line():
 
 @pytest.mark.asyncio
 async def test_cwd_passes_through_verbatim_and_env_merges():
-    box = RecordingSandbox(captures=("*", ), config={"env": {"BASE": "1"}})
-    result = await box.run_line("nvidia-smi", None, {"LINE": "2"},
-                                "/data/deep")
+    box = RecordingSandbox(captures=("*",), config={"env": {"BASE": "1"}})
+    result = await box.run_line(
+        "nvidia-smi", None, {"LINE": "2"}, "/data/deep"
+    )
     assert result.exit_code == 0
     # The sandbox serves the workspace at the same prefixes as the
     # host, so nothing is rewritten.
@@ -125,10 +129,10 @@ async def test_cwd_passes_through_verbatim_and_env_merges():
 
 @pytest.mark.asyncio
 async def test_stdin_bytes_reach_exec_line():
-    box = RecordingSandbox(captures=("*", ))
-    ws = Workspace({"/data": RAMVFS()},
-                   mode=MountMode.EXEC,
-                   runtimes=[box, "workspace"])
+    box = RecordingSandbox(captures=("*",))
+    ws = Workspace(
+        {"/data": RAMVFS()}, mode=MountMode.EXEC, runtimes=[box, "workspace"]
+    )
     try:
         await ws.shell("wc -l", stdin=b"a\nb\n")
         assert box.execs[-1][1] == b"a\nb\n"
@@ -153,17 +157,19 @@ def test_config_dict_form_coerces():
 async def test_line_timeout_answers_124():
 
     class SlowBox(RecordingSandbox):
-
-        async def exec_line(self, line: str, stdin: bytes | None,
-                            env: dict[str, str], cwd: str) -> RunResult:
+        async def exec_line(
+            self, line: str, stdin: bytes | None, env: dict[str, str], cwd: str
+        ) -> RunResult:
             await asyncio.sleep(0.5)
             return await super().exec_line(line, stdin, env, cwd)
 
     guards = {"python3": Limit(timeout_seconds=0.05)}
-    box = SlowBox(captures=("python3", ))
-    ws = Workspace({"/data": (RAMVFS(), MountMode.EXEC, guards)},
-                   mode=MountMode.EXEC,
-                   runtimes=[box, "workspace"])
+    box = SlowBox(captures=("python3",))
+    ws = Workspace(
+        {"/data": (RAMVFS(), MountMode.EXEC, guards)},
+        mode=MountMode.EXEC,
+        runtimes=[box, "workspace"],
+    )
     try:
         # A captured line obeys the same command_limits as any
         # command: the mount's python3 timeout answers exit 124.
@@ -178,16 +184,18 @@ async def test_line_timeout_answers_124():
 async def test_line_output_caps_truncate_with_notice():
 
     class ChattyBox(RecordingSandbox):
-
-        async def exec_line(self, line: str, stdin: bytes | None,
-                            env: dict[str, str], cwd: str) -> RunResult:
+        async def exec_line(
+            self, line: str, stdin: bytes | None, env: dict[str, str], cwd: str
+        ) -> RunResult:
             return RunResult(stdout=b"a\nb\nc\n", stderr=None, exit_code=0)
 
     guards = {"python3": Limit(max_lines=2)}
-    box = ChattyBox(captures=("python3", ))
-    ws = Workspace({"/data": (RAMVFS(), MountMode.EXEC, guards)},
-                   mode=MountMode.EXEC,
-                   runtimes=[box, "workspace"])
+    box = ChattyBox(captures=("python3",))
+    ws = Workspace(
+        {"/data": (RAMVFS(), MountMode.EXEC, guards)},
+        mode=MountMode.EXEC,
+        runtimes=[box, "workspace"],
+    )
     try:
         io = await ws.shell("python3 train.py")
         assert io.exit_code == 0
@@ -199,10 +207,10 @@ async def test_line_output_caps_truncate_with_notice():
 
 @pytest.mark.asyncio
 async def test_remote_line_invalidates_local_read_caches():
-    box = RecordingSandbox(captures=("python3", ))
-    ws = Workspace({"/data": RAMVFS()},
-                   mode=MountMode.EXEC,
-                   runtimes=[box, "workspace"])
+    box = RecordingSandbox(captures=("python3",))
+    ws = Workspace(
+        {"/data": RAMVFS()}, mode=MountMode.EXEC, runtimes=[box, "workspace"]
+    )
     try:
         mount = next(m for m in ws._registry.mounts() if m.prefix == "/data/")
         stale = IndexEntry(id="stale", name="stale.txt", resource_type="ram")

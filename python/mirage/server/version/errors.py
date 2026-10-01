@@ -14,17 +14,18 @@
 
 
 class HeadMovedError(Exception):
-
     def __init__(self, branch: str) -> None:
         self.branch = branch
         super().__init__(
             f"branch {branch!r} moved since this commit was prepared; "
-            "refusing to overwrite (re-read the head and retry)")
+            "refusing to overwrite (re-read the head and retry)"
+        )
 
 
 class NoSuchBranchError(Exception):
-
     def __init__(self, branch: str) -> None:
         self.branch = branch
-        super().__init__(f"no branch {branch!r}; create it first with "
-                         "`mirage workspace branch`")
+        super().__init__(
+            f"no branch {branch!r}; create it first with "
+            "`mirage workspace branch`"
+        )

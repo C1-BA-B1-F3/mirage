@@ -17,7 +17,11 @@ from typing import Callable
 
 from mirage.commands.builtin.generic.crossmount.types import CrossResult
 from mirage.commands.builtin.generic.crossmount.utils import (
-    flat_scopes, relay, transfer_links, transfer_primitives)
+    flat_scopes,
+    relay,
+    transfer_links,
+    transfer_primitives,
+)
 from mirage.commands.builtin.generic.mv import mv as generic_mv
 from mirage.commands.builtin.generic.mv import parse_flags
 from mirage.commands.builtin.generic_bind.adapter import refuse_reveal
@@ -29,11 +33,13 @@ from mirage.runtime.types import DispatchFn
 from mirage.types import PathSpec, PrimitiveMove
 
 
-async def run_mv(scopes: list[PathSpec],
-                 flag_kwargs: dict[str, FlagValue],
-                 dispatch: DispatchFn,
-                 storage_key: Callable[[PathSpec], str] | None = None,
-                 ns: NamespaceView | None = None) -> CrossResult:
+async def run_mv(
+    scopes: list[PathSpec],
+    flag_kwargs: dict[str, FlagValue],
+    dispatch: DispatchFn,
+    storage_key: Callable[[PathSpec], str] | None = None,
+    ns: NamespaceView | None = None,
+) -> CrossResult:
     """Move operands that span mounts via the shared generic mv.
 
     Pure wiring: copy through the transfer primitives, then unlink the
@@ -55,14 +61,20 @@ async def run_mv(scopes: list[PathSpec],
     return await generic_mv(
         flat_scopes(scopes),
         stat=primitives["stat"],
-        strategy=PrimitiveMove(read_bytes=primitives["read_bytes"],
-                               write=primitives["write"],
-                               mkdir=primitives["mkdir"],
-                               readdir=primitives["readdir"],
-                               unlink=p(relay, dispatch, "unlink"),
-                               rmdir=p(relay, dispatch, "rmdir")),
+        strategy=PrimitiveMove(
+            read_bytes=primitives["read_bytes"],
+            write=primitives["write"],
+            mkdir=primitives["mkdir"],
+            readdir=primitives["readdir"],
+            unlink=p(relay, dispatch, "unlink"),
+            rmdir=p(relay, dispatch, "rmdir"),
+        ),
         flags=parse_flags(fl),
         backend_key=storage_key,
         guard=refuse_reveal,
-        copies=(transfer_links(ns.links, dispatch, "/")
-                if ns is not None and ns.links is not None else None))
+        copies=(
+            transfer_links(ns.links, dispatch, "/")
+            if ns is not None and ns.links is not None
+            else None
+        ),
+    )

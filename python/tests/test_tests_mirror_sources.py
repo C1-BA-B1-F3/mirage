@@ -26,25 +26,25 @@ IGNORED = {"__pycache__", ".pytest_cache"}
 # collected 24 suites for 19 sibling packages and made `mirage/vfs/s3/`
 # look untested.
 UNMIRRORED_DIRS = {
-    "commands/builtin/jq":
-    "the embedded jq engine spans generic/jq.py and its builder; the "
-    "suite is grouped per feature, not per module",
-    "commands/custom":
-    "exercises the public command-registration API, not a package",
-    "commands/native":
-    "the native-binary harness: each case runs a real coreutils binary "
-    "and diffs mirage against it",
-    "config":
-    "loader tests plus the bad-config YAML shared with the TypeScript tree",
-    "config/fixtures":
-    "the YAML files themselves",
-    "conformance":
-    "runs the cross-language cases under the top-level conformance/ tree",
-    "e2e":
-    "end-to-end suites that span the package, so no one source dir owns "
-    "them",
-    "fixtures":
-    "shared test doubles imported by suites elsewhere",
+    "commands/builtin/jq": (
+        "the embedded jq engine spans generic/jq.py and its builder; the "
+        "suite is grouped per feature, not per module"
+    ),
+    "commands/custom": "exercises the public command-registration API, not a package",
+    "commands/native": (
+        "the native-binary harness: each case runs a real coreutils binary "
+        "and diffs mirage against it"
+    ),
+    "config": "loader tests plus the bad-config YAML shared with the TypeScript tree",
+    "config/fixtures": "the YAML files themselves",
+    "conformance": (
+        "runs the cross-language cases under the top-level conformance/ tree"
+    ),
+    "e2e": (
+        "end-to-end suites that span the package, so no one source dir owns "
+        "them"
+    ),
+    "fixtures": "shared test doubles imported by suites elsewhere",
 }
 
 # A ratchet, not a target. It counts source modules with no `test_<name>.py`
@@ -66,14 +66,16 @@ MIRROR_BASELINE = 138
 
 def _test_dirs() -> list[pathlib.Path]:
     return [
-        d for d in sorted(TESTS.rglob("*"))
+        d
+        for d in sorted(TESTS.rglob("*"))
         if d.is_dir() and not IGNORED & set(d.parts)
     ]
 
 
 def _source_modules() -> list[pathlib.Path]:
     return [
-        p.relative_to(SOURCE) for p in sorted(SOURCE.rglob("*.py"))
+        p.relative_to(SOURCE)
+        for p in sorted(SOURCE.rglob("*.py"))
         if not IGNORED & set(p.parts) and p.name != "__init__.py"
     ]
 
@@ -87,22 +89,27 @@ def test_tests_declare_no_packages():
     outright, and without a check the count reached 87.
     """
     found = sorted(
-        str(p.relative_to(TESTS)) for p in TESTS.rglob("__init__.py")
-        if not IGNORED & set(p.parts))
-    assert not found, ("tests/ is a namespace tree -- delete these:\n" +
-                       "\n".join(found))
+        str(p.relative_to(TESTS))
+        for p in TESTS.rglob("__init__.py")
+        if not IGNORED & set(p.parts)
+    )
+    assert not found, (
+        "tests/ is a namespace tree -- delete these:\n" + "\n".join(found)
+    )
 
 
 def test_every_test_directory_mirrors_a_source_package():
     """Each test directory maps to a `mirage/` package, or is exempt above."""
     missing = [
-        rel for rel in (str(d.relative_to(TESTS)) for d in _test_dirs())
+        rel
+        for rel in (str(d.relative_to(TESTS)) for d in _test_dirs())
         if not (SOURCE / rel).is_dir() and rel not in UNMIRRORED_DIRS
     ]
     assert not missing, (
         "these test directories mirror no mirage/ package -- move them onto "
-        "the source layout, or add them to UNMIRRORED_DIRS with a reason:\n" +
-        "\n".join(f"  tests/{rel}" for rel in sorted(missing)))
+        "the source layout, or add them to UNMIRRORED_DIRS with a reason:\n"
+        + "\n".join(f"  tests/{rel}" for rel in sorted(missing))
+    )
 
 
 def test_no_stale_directory_exemption():
@@ -113,8 +120,9 @@ def test_no_stale_directory_exemption():
             stale.append(f"  {rel}: gone ({reason})")
         elif (SOURCE / rel).is_dir():
             stale.append(f"  {rel}: mirage/{rel} exists now ({reason})")
-    assert not stale, ("drop these entries from UNMIRRORED_DIRS:\n" +
-                       "\n".join(stale))
+    assert not stale, "drop these entries from UNMIRRORED_DIRS:\n" + "\n".join(
+        stale
+    )
 
 
 def test_module_mirror_coverage_holds_the_baseline():
@@ -129,7 +137,9 @@ def test_module_mirror_coverage_holds_the_baseline():
         raise AssertionError(
             f"{count} source modules have no test named for them, above the "
             f"baseline of {MIRROR_BASELINE}. Add `test_<module>.py` beside "
-            f"its source twin. Some of the modules counted:\n{added}")
+            f"its source twin. Some of the modules counted:\n{added}"
+        )
     assert count == MIRROR_BASELINE, (
         f"mirror coverage improved to {count}; lock it in by setting "
-        f"MIRROR_BASELINE = {count}")
+        f"MIRROR_BASELINE = {count}"
+    )

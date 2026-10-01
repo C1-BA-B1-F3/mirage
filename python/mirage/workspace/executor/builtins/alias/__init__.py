@@ -12,10 +12,12 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-from mirage.workspace.executor.builtins.alias.alias import (alias_command_text,
-                                                            alias_value,
-                                                            handle_alias,
-                                                            handle_unalias)
+from mirage.workspace.executor.builtins.alias.alias import (
+    alias_command_text,
+    alias_value,
+    handle_alias,
+    handle_unalias,
+)
 from mirage.workspace.executor.builtins.alias.types import AliasMark
 
 __all__ = [

@@ -44,24 +44,31 @@ def visible_collections(monkeypatch):
     # Every documents stream proves its collection through the entity
     # guard first; these tests are about rendering, so the catalog says
     # yes. The scope tests at the bottom replace it.
-    monkeypatch.setattr("mirage.core.mongodb.readdir.entity_exists",
-                        AsyncMock(return_value=True))
+    monkeypatch.setattr(
+        "mirage.core.mongodb.readdir.entity_exists",
+        AsyncMock(return_value=True),
+    )
 
 
 @pytest.fixture
 def accessor():
-    return MongoDBAccessor(config=MongoDBConfig(
-        uri="mongodb://localhost:27017"))
+    return MongoDBAccessor(
+        config=MongoDBConfig(uri="mongodb://localhost:27017")
+    )
 
 
 def _patched_iter(docs):
-    return patch("mirage.core.mongodb.stream.iter_documents",
-                 new=lambda *args, **kwargs: _gen(docs))
+    return patch(
+        "mirage.core.mongodb.stream.iter_documents",
+        new=lambda *args, **kwargs: _gen(docs),
+    )
 
 
 def _patched_watch(docs):
-    return patch("mirage.core.mongodb.stream.iter_inserts",
-                 new=lambda *args, **kwargs: _gen(docs))
+    return patch(
+        "mirage.core.mongodb.stream.iter_inserts",
+        new=lambda *args, **kwargs: _gen(docs),
+    )
 
 
 def _path(s: str) -> PathSpec:
@@ -90,15 +97,17 @@ async def test_read_stream_yields_one_jsonl_line_per_doc(accessor, index):
 
 @pytest.mark.asyncio
 async def test_read_stream_preserves_bson_types_via_extended_json(
-        accessor, index):
-    docs = [{
-        "_id":
-        ObjectId("65f0000000000000000000a1"),
-        "date":
-        dt.datetime(2026, 5, 15, 12, 30, 45, tzinfo=dt.timezone.utc),
-        "decimal":
-        Decimal128("123.456"),
-    }]
+    accessor, index
+):
+    docs = [
+        {
+            "_id": ObjectId("65f0000000000000000000a1"),
+            "date": dt.datetime(
+                2026, 5, 15, 12, 30, 45, tzinfo=dt.timezone.utc
+            ),
+            "decimal": Decimal128("123.456"),
+        }
+    ]
     with _patched_iter(docs):
         data = await _collect(read_stream(accessor, _path(DOCS_PATH), index))
     parsed = json.loads(data.decode().strip())
@@ -118,7 +127,8 @@ async def test_read_stream_empty_yields_nothing(accessor, index):
 
 @pytest.mark.asyncio
 async def test_read_stream_short_circuits_when_consumer_closes(
-        accessor, index):
+    accessor, index
+):
     consumed: list[int] = []
 
     async def _instrumented(*_args, **_kwargs):
@@ -139,7 +149,8 @@ async def test_read_stream_works_on_view_documents_path(accessor, index):
     docs = [{"_id": oid, "v": 1}]
     with _patched_iter(docs):
         data = await _collect(
-            read_stream(accessor, _path(VIEW_DOCS_PATH), index))
+            read_stream(accessor, _path(VIEW_DOCS_PATH), index)
+        )
     parsed = json.loads(data.decode().strip())
     assert parsed["v"] == 1
     assert parsed["_id"] == {"$oid": str(oid)}
@@ -158,8 +169,8 @@ async def test_read_stream_schema_json_path_raises(accessor, index):
     with _patched_iter([]):
         with pytest.raises(FileNotFoundError):
             async for _ in read_stream(
-                    accessor, _path("/db1/collections/coll1/schema.json"),
-                    index):
+                accessor, _path("/db1/collections/coll1/schema.json"), index
+            ):
                 pass
 
 
@@ -187,13 +198,15 @@ async def test_read_stream_elides_configured_nested_path(index):
         elide_fields={"db1.coll1": ["metadata.embedding"]},
     )
     acc = MongoDBAccessor(config=cfg)
-    docs = [{
-        "_id": ObjectId(),
-        "metadata": {
-            "tag": "alpha",
-            "embedding": [0.1] * 1024,
-        },
-    }]
+    docs = [
+        {
+            "_id": ObjectId(),
+            "metadata": {
+                "tag": "alpha",
+                "embedding": [0.1] * 1024,
+            },
+        }
+    ]
     with _patched_iter(docs):
         data = await _collect(read_stream(acc, _path(DOCS_PATH), index))
     parsed = json.loads(data.decode().strip())
@@ -229,14 +242,15 @@ async def test_watch_stream_yields_one_jsonl_line_per_insert(accessor, index):
 
 @pytest.mark.asyncio
 async def test_watch_stream_preserves_bson_types(accessor, index):
-    docs = [{
-        "_id":
-        ObjectId("65f0000000000000000000a1"),
-        "date":
-        dt.datetime(2026, 5, 15, 12, 30, 45, tzinfo=dt.timezone.utc),
-        "decimal":
-        Decimal128("123.456"),
-    }]
+    docs = [
+        {
+            "_id": ObjectId("65f0000000000000000000a1"),
+            "date": dt.datetime(
+                2026, 5, 15, 12, 30, 45, tzinfo=dt.timezone.utc
+            ),
+            "decimal": Decimal128("123.456"),
+        }
+    ]
     with _patched_watch(docs):
         data = await _collect(watch_stream(accessor, _path(DOCS_PATH), index))
     parsed = json.loads(data.decode().strip())
@@ -256,7 +270,8 @@ async def test_watch_stream_empty_yields_nothing(accessor, index):
 
 @pytest.mark.asyncio
 async def test_watch_stream_short_circuits_when_consumer_closes(
-        accessor, index):
+    accessor, index
+):
     consumed: list[int] = []
 
     async def _instrumented(*_args, **_kwargs):
@@ -283,9 +298,9 @@ async def test_watch_stream_directory_path_raises(accessor, index):
 async def test_read_tail_returns_docs_in_ascending_order(accessor):
     docs = [{"_id": 5, "name": "e"}, {"_id": 4, "name": "d"}]
     with patch(
-            "mirage.core.mongodb.stream.find_documents",
-            new_callable=AsyncMock,
-            return_value=list(docs),
+        "mirage.core.mongodb.stream.find_documents",
+        new_callable=AsyncMock,
+        return_value=list(docs),
     ) as fake:
         data, stopped = await read_tail(accessor, _path(DOCS_PATH), 2)
     assert not stopped
@@ -301,12 +316,17 @@ async def test_read_tail_returns_docs_in_ascending_order(accessor):
 async def test_read_tail_caps_limit_at_max_doc_limit(accessor):
     # A count past the ceiling fetches the ceiling; whether that stopped
     # the read short depends on how many documents there are.
-    with patch(
+    with (
+        patch(
             "mirage.core.mongodb.stream.find_documents",
             new_callable=AsyncMock,
             return_value=[],
-    ) as fake, patch("mirage.core.mongodb.stream.count_documents",
-                     new=AsyncMock(return_value=3)):
+        ) as fake,
+        patch(
+            "mirage.core.mongodb.stream.count_documents",
+            new=AsyncMock(return_value=3),
+        ),
+    ):
         data, stopped = await read_tail(accessor, _path(DOCS_PATH), 10**9)
     assert (data, stopped) == (b"", False)
     assert fake.await_args.kwargs["limit"] == accessor.config.max_doc_limit
@@ -318,12 +338,19 @@ async def test_read_tail_says_when_the_ceiling_stopped_it():
     say so: ``tail -n 6000`` of a larger collection printed 5000 lines
     and exited 0."""
     acc = MongoDBAccessor(
-        config=MongoDBConfig(uri="mongodb://localhost:27017", max_doc_limit=2))
+        config=MongoDBConfig(uri="mongodb://localhost:27017", max_doc_limit=2)
+    )
     docs = [{"_id": 9, "n": 9}, {"_id": 8, "n": 8}]
-    with patch("mirage.core.mongodb.stream.find_documents",
-               new=AsyncMock(return_value=list(docs))), \
-            patch("mirage.core.mongodb.stream.count_documents",
-                  new=AsyncMock(return_value=10)):
+    with (
+        patch(
+            "mirage.core.mongodb.stream.find_documents",
+            new=AsyncMock(return_value=list(docs)),
+        ),
+        patch(
+            "mirage.core.mongodb.stream.count_documents",
+            new=AsyncMock(return_value=10),
+        ),
+    ):
         data, stopped = await read_tail(acc, _path(DOCS_PATH), 5)
     assert stopped
     assert len(data.decode().splitlines()) == 2
@@ -338,9 +365,9 @@ async def test_read_tail_applies_elision(index):
     acc = MongoDBAccessor(config=cfg)
     docs = [{"_id": 1, "title": "hi", "vector": [0.1, 0.2]}]
     with patch(
-            "mirage.core.mongodb.stream.find_documents",
-            new_callable=AsyncMock,
-            return_value=docs,
+        "mirage.core.mongodb.stream.find_documents",
+        new_callable=AsyncMock,
+        return_value=docs,
     ):
         data, _ = await read_tail(acc, _path(DOCS_PATH), 1)
     parsed = json.loads(data.decode().strip())
@@ -351,8 +378,9 @@ async def test_read_tail_applies_elision(index):
 @pytest.mark.asyncio
 async def test_read_tail_rejects_non_documents_path(accessor):
     with pytest.raises(FileNotFoundError):
-        await read_tail(accessor, _path("/db1/collections/coll1/schema.json"),
-                        5)
+        await read_tail(
+            accessor, _path("/db1/collections/coll1/schema.json"), 5
+        )
 
 
 @pytest.mark.asyncio
@@ -375,19 +403,25 @@ async def test_watch_stream_applies_elision(index):
 @pytest.mark.asyncio
 @pytest.mark.parametrize("opener", ["read", "watch", "tail"])
 async def test_a_collection_outside_the_scope_is_enoent_to_every_stream(
-        monkeypatch, opener):
+    monkeypatch, opener
+):
     """The documents streams went straight to the collection the path
     names, so a database ``databases`` leaves out streamed while ``ls``
     and ``stat`` said it was not there."""
-    accessor = MongoDBAccessor(config=MongoDBConfig(
-        uri="mongodb://localhost:27017", databases=["db1"]))
+    accessor = MongoDBAccessor(
+        config=MongoDBConfig(
+            uri="mongodb://localhost:27017", databases=["db1"]
+        )
+    )
     exists = AsyncMock(return_value=False)
     monkeypatch.setattr("mirage.core.mongodb.readdir.entity_exists", exists)
     fetched = AsyncMock(side_effect=AssertionError("queried the collection"))
     path = _path("/secret/collections/coll1/documents.jsonl")
-    with patch("mirage.core.mongodb.stream.iter_documents", new=fetched), \
-            patch("mirage.core.mongodb.stream.iter_inserts", new=fetched), \
-            patch("mirage.core.mongodb.stream.find_documents", new=fetched):
+    with (
+        patch("mirage.core.mongodb.stream.iter_documents", new=fetched),
+        patch("mirage.core.mongodb.stream.iter_inserts", new=fetched),
+        patch("mirage.core.mongodb.stream.find_documents", new=fetched),
+    ):
         with pytest.raises(FileNotFoundError):
             if opener == "tail":
                 await read_tail(accessor, path, 5)

@@ -17,24 +17,27 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from mirage.core.dropbox import api
-from mirage.core.dropbox.api import (continue_folder, list_folder,
-                                     list_folder_state, search_files)
+from mirage.core.dropbox.api import (
+    continue_folder,
+    list_folder,
+    list_folder_state,
+    search_files,
+)
 from mirage.core.dropbox.client import DropboxTokenManager
 from mirage.vfs.dropbox.config import DropboxConfig
 
 TM = DropboxTokenManager(
-    DropboxConfig(client_id="c", client_secret="s", refresh_token="r"))
+    DropboxConfig(client_id="c", client_secret="s", refresh_token="r")
+)
 
 
 @pytest.mark.asyncio
 async def test_list_folder_normalizes_root_to_empty_path():
-    with patch("mirage.core.dropbox.api.dropbox_rpc",
-               new_callable=AsyncMock,
-               return_value={
-                   "entries": [],
-                   "cursor": "c0",
-                   "has_more": False
-               }) as rpc:
+    with patch(
+        "mirage.core.dropbox.api.dropbox_rpc",
+        new_callable=AsyncMock,
+        return_value={"entries": [], "cursor": "c0", "has_more": False},
+    ) as rpc:
         await list_folder(TM, "/")
     assert rpc.await_args.args[2]["path"] == ""
 
@@ -42,24 +45,14 @@ async def test_list_folder_normalizes_root_to_empty_path():
 @pytest.mark.asyncio
 async def test_list_folder_pages_through_continue():
     pages = [
-        {
-            "entries": [{
-                "name": "a"
-            }],
-            "cursor": "c1",
-            "has_more": True
-        },
-        {
-            "entries": [{
-                "name": "b"
-            }],
-            "cursor": "c2",
-            "has_more": False
-        },
+        {"entries": [{"name": "a"}], "cursor": "c1", "has_more": True},
+        {"entries": [{"name": "b"}], "cursor": "c2", "has_more": False},
     ]
-    with patch("mirage.core.dropbox.api.dropbox_rpc",
-               new_callable=AsyncMock,
-               side_effect=pages) as rpc:
+    with patch(
+        "mirage.core.dropbox.api.dropbox_rpc",
+        new_callable=AsyncMock,
+        side_effect=pages,
+    ) as rpc:
         out = await list_folder(TM, "/docs")
     assert [e["name"] for e in out] == ["a", "b"]
     continue_call = rpc.await_args_list[1]
@@ -70,24 +63,14 @@ async def test_list_folder_pages_through_continue():
 @pytest.mark.asyncio
 async def test_list_folder_state_keeps_the_last_cursor():
     pages = [
-        {
-            "entries": [{
-                "name": "a"
-            }],
-            "cursor": "c1",
-            "has_more": True
-        },
-        {
-            "entries": [{
-                "name": "b"
-            }],
-            "cursor": "c2",
-            "has_more": False
-        },
+        {"entries": [{"name": "a"}], "cursor": "c1", "has_more": True},
+        {"entries": [{"name": "b"}], "cursor": "c2", "has_more": False},
     ]
-    with patch("mirage.core.dropbox.api.dropbox_rpc",
-               new_callable=AsyncMock,
-               side_effect=pages):
+    with patch(
+        "mirage.core.dropbox.api.dropbox_rpc",
+        new_callable=AsyncMock,
+        side_effect=pages,
+    ):
         out, cursor = await list_folder_state(TM, "/docs")
     assert [e["name"] for e in out] == ["a", "b"]
     assert cursor == "c2"
@@ -96,24 +79,14 @@ async def test_list_folder_state_keeps_the_last_cursor():
 @pytest.mark.asyncio
 async def test_continue_folder_pages_through_continue():
     pages = [
-        {
-            "entries": [{
-                "name": "a"
-            }],
-            "cursor": "c1",
-            "has_more": True
-        },
-        {
-            "entries": [{
-                "name": "b"
-            }],
-            "cursor": "c2",
-            "has_more": False
-        },
+        {"entries": [{"name": "a"}], "cursor": "c1", "has_more": True},
+        {"entries": [{"name": "b"}], "cursor": "c2", "has_more": False},
     ]
-    with patch("mirage.core.dropbox.api.dropbox_rpc",
-               new_callable=AsyncMock,
-               side_effect=pages) as rpc:
+    with patch(
+        "mirage.core.dropbox.api.dropbox_rpc",
+        new_callable=AsyncMock,
+        side_effect=pages,
+    ) as rpc:
         out, cursor = await continue_folder(TM, "c0")
     assert [e["name"] for e in out] == ["a", "b"]
     assert cursor == "c2"
@@ -123,9 +96,7 @@ async def test_continue_folder_pages_through_continue():
 
 def _search_match(tag: str, lower: str, display: str) -> dict:
     return {
-        "match_type": {
-            ".tag": "filename"
-        },
+        "match_type": {".tag": "filename"},
         "metadata": {
             ".tag": "metadata",
             "metadata": {
@@ -145,23 +116,22 @@ async def test_search_files_pages_dedups_and_skips_folders():
                 _search_match("file", "/a.txt", "/A.txt"),
                 _search_match("folder", "/dir", "/Dir"),
             ],
-            "has_more":
-            True,
-            "cursor":
-            "c1",
+            "has_more": True,
+            "cursor": "c1",
         },
         {
             "matches": [
                 _search_match("file", "/a.txt", "/A.txt"),
                 _search_match("file", "/b.txt", "/B.txt"),
             ],
-            "has_more":
-            False,
+            "has_more": False,
         },
     ]
-    with patch("mirage.core.dropbox.api.dropbox_rpc",
-               new_callable=AsyncMock,
-               side_effect=pages) as rpc:
+    with patch(
+        "mirage.core.dropbox.api.dropbox_rpc",
+        new_callable=AsyncMock,
+        side_effect=pages,
+    ) as rpc:
         out, truncated = await search_files(TM, "needle", path="/docs")
     assert out == [("/a.txt", "/A.txt"), ("/b.txt", "/B.txt")]
     assert not truncated
@@ -181,12 +151,11 @@ async def test_search_files_pages_dedups_and_skips_folders():
 
 @pytest.mark.asyncio
 async def test_search_files_account_root_omits_path():
-    with patch("mirage.core.dropbox.api.dropbox_rpc",
-               new_callable=AsyncMock,
-               return_value={
-                   "matches": [],
-                   "has_more": False
-               }) as rpc:
+    with patch(
+        "mirage.core.dropbox.api.dropbox_rpc",
+        new_callable=AsyncMock,
+        return_value={"matches": [], "has_more": False},
+    ) as rpc:
         out, truncated = await search_files(TM, "needle")
     assert out == []
     assert not truncated
@@ -201,9 +170,11 @@ async def test_search_files_flags_the_match_ceiling(monkeypatch):
         "has_more": True,
         "cursor": "c1",
     }
-    with patch("mirage.core.dropbox.api.dropbox_rpc",
-               new_callable=AsyncMock,
-               return_value=page) as rpc:
+    with patch(
+        "mirage.core.dropbox.api.dropbox_rpc",
+        new_callable=AsyncMock,
+        return_value=page,
+    ) as rpc:
         out, truncated = await search_files(TM, "needle")
     assert out == [("/a.txt", "/A.txt")]
     assert truncated

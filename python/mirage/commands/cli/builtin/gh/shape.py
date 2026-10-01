@@ -15,8 +15,9 @@
 from dataclasses import dataclass
 from typing import Any, Literal, TypeAlias
 
-Primitive: TypeAlias = Literal["string", "int", "bool", "time", "raw",
-                               "author", "reactions", "owner"]
+Primitive: TypeAlias = Literal[
+    "string", "int", "bool", "time", "raw", "author", "reactions", "owner"
+]
 
 ZERO_TIME = "0001-01-01T00:00:00Z"
 
@@ -24,6 +25,7 @@ ZERO_TIME = "0001-01-01T00:00:00Z"
 @dataclass(frozen=True, slots=True)
 class Struct:
     """Ordered, zero-filled Go fields; nullable structs preserve null."""
+
     fields: tuple[tuple[str, "Shape", str | None], ...]
     nullable: bool
 
@@ -31,12 +33,14 @@ class Struct:
 @dataclass(frozen=True, slots=True)
 class ListOf:
     """A Go slice that preserves null when the answer carried none."""
+
     item: "Shape"
 
 
 @dataclass(frozen=True, slots=True)
 class OrNull:
     """A Go pointer to a shape that marshals itself."""
+
     item: "Shape"
 
 
@@ -57,15 +61,17 @@ Shape: TypeAlias = Primitive | Struct | ListOf | OrNull
 def struct(*fields: tuple[str, Shape] | tuple[str, Shape, str]) -> Struct:
     return Struct(
         tuple((f[0], f[1], f[2] if len(f) > 2 else None) for f in fields),
-        False)
+        False,
+    )
 
 
 def pointer(*fields: tuple[str, Shape]) -> Struct:
     return Struct(tuple((name, shape, None) for name, shape in fields), True)
 
 
-_REACTION = struct(("content", "string"),
-                   ("users", struct(("totalCount", "int"))))
+_REACTION = struct(
+    ("content", "string"), ("users", struct(("totalCount", "int")))
+)
 
 
 def _text(value: Any) -> str:
@@ -134,8 +140,11 @@ def exported(value: Any, shape: Shape) -> Any:
     if shape == "string":
         return value if isinstance(value, str) else ""
     if shape == "int":
-        return value if isinstance(value,
-                                   int) and not isinstance(value, bool) else 0
+        return (
+            value
+            if isinstance(value, int) and not isinstance(value, bool)
+            else 0
+        )
     if shape == "bool":
         return value if isinstance(value, bool) else False
     if shape == "time":
@@ -149,8 +158,11 @@ def exported(value: Any, shape: Shape) -> Any:
     if shape == "owner":
         return _owner(value)
     if isinstance(shape, ListOf):
-        return ([exported(item, shape.item)
-                 for item in value] if isinstance(value, list) else None)
+        return (
+            [exported(item, shape.item) for item in value]
+            if isinstance(value, list)
+            else None
+        )
     if isinstance(shape, OrNull):
         return None if value is None else exported(value, shape.item)
     assert isinstance(shape, Struct)

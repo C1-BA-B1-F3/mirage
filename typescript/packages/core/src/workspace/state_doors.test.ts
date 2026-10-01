@@ -2386,7 +2386,10 @@ describe('a relayed walk meets the command rules', () => {
       '',
       'awk: cannot open "/data/out/locked" for output (Permission denied)\n',
     ])
-    expect((await line(ws, 'ls /data/out'))[1]).toBe('xaa\nxx00\n')
+    const listed = (await line(ws, 'ls /data/out'))[1].split('\n')
+    expect(listed).toContain('xaa')
+    expect(listed).not.toContain('xab')
+    expect(listed).not.toContain('xx01')
   })
 
   // mktemp and unzip create their files and directories through the

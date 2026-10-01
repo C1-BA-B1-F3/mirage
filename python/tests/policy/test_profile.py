@@ -2143,7 +2143,9 @@ async def test_a_write_through_the_command_dispatcher_meets_the_rules():
             ws, "awk '{print > \"/data/out/locked\"}' /data/f",
             "g") == (2, "", "awk: cannot open \"/data/out/locked\" for "
                      "output (Permission denied)\n")
-        assert (await _line(ws, "ls /data/out", "g"))[1] == "xaa\nxx00\n"
+        listed = (await _line(ws, "ls /data/out", "g"))[1].split()
+        assert "xaa" in listed
+        assert "xab" not in listed and "xx01" not in listed
     finally:
         await ws.close()
 

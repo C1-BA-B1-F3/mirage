@@ -15,8 +15,8 @@
 from functools import partial
 
 from mirage.accessor.base import Accessor
-from mirage.commands.builtin.generic.crossmount.utils import \
-    transfer_primitives
+from mirage.commands.builtin.generic.crossmount.utils import (
+    relay, transfer_primitives)
 from mirage.commands.builtin.generic.csplit import csplit as generic_csplit
 from mirage.commands.builtin.generic_bind.adapter import (Builder, CommandIO,
                                                           Operation, bound_op,
@@ -36,16 +36,20 @@ async def csplit(ops: CommandIO, accessor: Accessor, paths: list[PathSpec],
     prefix_flag = fl.raw("prefix")
     prefix = prefix_flag if isinstance(prefix_flag, (str, PathSpec)) else "xx"
     # The pieces go to the prefix, or `xx` in the working directory, which
-    # need not be this mount, so a dispatcher routes each write to the
-    # mount that owns it.
-    write_bytes = (transfer_primitives(opts.dispatch)["write"]
-                   if opts.dispatch is not None else partial(
-                       ops.require(Operation.WRITE), accessor))
+    # need not be this mount, so a dispatcher routes each write, and the
+    # removal of a failed run's pieces, to the mount that owns it.
+    if opts.dispatch is not None:
+        write_bytes = transfer_primitives(opts.dispatch)["write"]
+        unlink = partial(relay, opts.dispatch, "unlink")
+    else:
+        write_bytes = partial(ops.require(Operation.WRITE), accessor)
+        unlink = partial(ops.require(Operation.UNLINK), accessor)
     return await generic_csplit(
         paths,
         texts,
         read_bytes=bound_op(ops.read_bytes, accessor, opts.index),
         write_bytes=write_bytes,
+        unlink=unlink,
         stdin=opts.stdin,
         prefix=prefix,
         mount_prefix=opts.mount_prefix,

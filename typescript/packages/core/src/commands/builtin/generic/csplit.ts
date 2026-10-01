@@ -58,10 +58,11 @@ function checkLineNumbers(patterns: readonly string[]): [string, boolean] {
 }
 
 /**
- * Cut `lines` into pieces, and name a line number past the input: line N
- * ends the piece before it, so N at the current line is an empty piece, and
- * a number with no such line takes the rest as its piece and is the run's
- * error. Mirrors Python's `_split_by_patterns`.
+ * Cut `lines` into pieces, and report the pattern the input ran out on: line
+ * N ends the piece before it, so N at the current line is an empty piece, and
+ * a number with no such line, or a regex with no match, takes the rest as its
+ * piece and is the run's error, returned as GNU's diagnostic. Mirrors
+ * Python's `_split_by_patterns`.
  */
 function splitByPatterns(
   lines: readonly string[],
@@ -73,18 +74,24 @@ function splitByPatterns(
   for (const pat of patterns) {
     if (isRegex(pat)) {
       const regex = new RegExp(pat.slice(1, -1))
+      let found = -1
       for (let idx = currentStart; idx < lines.length; idx++) {
         if (regex.test(lines[idx] ?? '')) {
-          parts.push(lines.slice(currentStart, idx))
-          currentStart = suppressMatched ? idx + 1 : idx
+          found = idx
           break
         }
       }
+      if (found === -1) {
+        parts.push(lines.slice(currentStart))
+        return [parts, `csplit: '${pat}': match not found\n`]
+      }
+      parts.push(lines.slice(currentStart, found))
+      currentStart = suppressMatched ? found + 1 : found
     } else {
       const splitAt = Number.parseInt(pat, 10) - 1
       if (splitAt >= lines.length) {
         parts.push(lines.slice(currentStart))
-        return [parts, pat]
+        return [parts, `csplit: '${pat}': line number out of range\n`]
       }
       parts.push(lines.slice(currentStart, splitAt))
       currentStart = splitAt
@@ -118,6 +125,7 @@ export async function csplitGeneric(
   opts: CommandOpts,
   stream: (p: PathSpec) => AsyncIterable<Uint8Array>,
   write: (p: PathSpec, data: Uint8Array) => Promise<void>,
+  unlink: (p: PathSpec) => Promise<void>,
   relay = false,
 ): Promise<CommandFnResult> {
   const fl = new FlagView(opts.flags, specOf('csplit'))
@@ -155,42 +163,44 @@ export async function csplitGeneric(
   }
   const text = DEC.decode(raw)
   const lines = splitLines(text)
-  const [parts, outOfRange] = splitByPatterns(lines, texts, suppressMatched)
-  // GNU writes every piece up to the bad line number, reports the sizes, then
-  // removes them unless -k keeps them: writing none is the same end.
-  const commit = outOfRange === null || keep
+  const [parts, splitError] = splitByPatterns(lines, texts, suppressMatched)
+  let error = splitError
   const writes: Record<string, Uint8Array> = {}
   const sizes: string[] = []
-  let failed = false
-  try {
-    for (const part of parts) {
-      if (elideEmpty && part.length === 0) continue
-      const name = formatSuffix(sizes.length, digits, suffixFormat)
-      const data = part.length > 0 ? ENC.encode(part.join('\n') + '\n') : new Uint8Array(0)
-      if (commit) {
-        const virtual = prefixVirtual + name
-        const spec = PathSpec.fromStrPath(virtual, mountKey(virtual, mountPrefix))
-        try {
-          await write(spec, data)
-        } catch (err) {
-          if (!isFsError(err)) throw err
-          diagnostics += `csplit: ${typedPrefix + name}: ${String(fsStrerror(err))}\n`
-          failed = true
-          break
-        }
-        // Relay writes land on whichever mount owns each path and invalidate
-        // through the dispatcher; keying them here would have the runner
-        // prefix them onto this mount.
-        if (!relay) writes[spec.mountPath] = data
-      }
-      sizes.push(String(data.byteLength))
+  const created: [string, PathSpec][] = []
+  for (const part of parts) {
+    if (elideEmpty && part.length === 0) continue
+    const suffix = formatSuffix(sizes.length, digits, suffixFormat)
+    const name = typedPrefix + suffix
+    const data = part.length > 0 ? ENC.encode(part.join('\n') + '\n') : new Uint8Array(0)
+    const virtual = prefixVirtual + suffix
+    const spec = PathSpec.fromStrPath(virtual, mountKey(virtual, mountPrefix))
+    try {
+      await write(spec, data)
+    } catch (err) {
+      if (!isFsError(err)) throw err
+      error = `csplit: ${name}: ${String(fsStrerror(err))}\n`
+      break
     }
-  } catch (err) {
-    if (!keep) throw err
+    created.push([name, spec])
+    // Relay writes land on whichever mount owns each path and invalidate
+    // through the dispatcher; keying them here would have the runner prefix
+    // them onto this mount.
+    if (!relay) writes[spec.mountPath] = data
+    sizes.push(String(data.byteLength))
   }
-  if (outOfRange !== null && !failed) {
-    diagnostics += `csplit: '${outOfRange}': line number out of range\n`
-    failed = true
+  if (error !== null) diagnostics += error
+  if (error !== null && !keep) {
+    // GNU removes every piece the failed run wrote unless -k keeps them, so
+    // an earlier run's piece of that name is gone too.
+    for (const [name, spec] of created) {
+      try {
+        await unlink(spec)
+      } catch (err) {
+        if (!isFsError(err)) throw err
+        diagnostics += `csplit: ${name}: ${String(fsStrerror(err))}\n`
+      }
+    }
   }
   const output = quiet || sizes.length === 0 ? '' : sizes.join('\n') + '\n'
   const result: ByteSource = ENC.encode(output)
@@ -199,7 +209,7 @@ export async function csplitGeneric(
     new IOResult({
       writes,
       ...(diagnostics !== '' ? { stderr: ENC.encode(diagnostics) } : {}),
-      ...(failed ? { exitCode: 1 } : {}),
+      ...(error !== null ? { exitCode: 1 } : {}),
     }),
   ]
 }

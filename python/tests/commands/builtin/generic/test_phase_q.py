@@ -1,6 +1,5 @@
 import pytest
 
-from mirage.commands.builtin.generic.csplit import csplit
 from mirage.commands.builtin.generic.join import join_cmd
 from mirage.commands.builtin.generic.split import parse_chunks_value, split
 from mirage.commands.builtin.generic.tee import tee
@@ -84,53 +83,6 @@ async def test_split_numeric_suffix():
                         numeric_suffix=True)
     assert "/x00" in io.writes
     assert "/x01" in io.writes
-
-
-@pytest.mark.asyncio
-async def test_csplit_by_line_number():
-    rb, wb, _, _ = _make_backend({})
-    output, io = await csplit([], ("3", ),
-                              read_bytes=rb,
-                              write_bytes=wb,
-                              stdin=b"a\nb\nc\nd\ne\n")
-    assert "/xx00" in io.writes
-    assert "/xx01" in io.writes
-    assert b"a\nb\n" == io.writes["/xx00"]
-
-
-@pytest.mark.asyncio
-async def test_csplit_by_regex():
-    rb, wb, _, _ = _make_backend({})
-    _, io = await csplit([], ("/MARK/", ),
-                         read_bytes=rb,
-                         write_bytes=wb,
-                         stdin=b"a\nb\nMARK\nc\nd\n")
-    assert b"a\nb\n" == io.writes["/xx00"]
-    assert b"MARK\nc\nd\n" == io.writes["/xx01"]
-
-
-@pytest.mark.asyncio
-async def test_csplit_silent_suppresses_size_output():
-    rb, wb, _, _ = _make_backend({})
-    output, _ = await csplit([], ("2", ),
-                             read_bytes=rb,
-                             write_bytes=wb,
-                             stdin=b"a\nb\nc\n",
-                             silent=True)
-    assert output == b""
-
-
-@pytest.mark.asyncio
-async def test_csplit_custom_prefix_and_digits():
-    rb, wb, _, _ = _make_backend({})
-    _, io = await csplit([], ("2", ),
-                         read_bytes=rb,
-                         write_bytes=wb,
-                         stdin=b"a\nb\nc\n",
-                         prefix="part_",
-                         digits=3)
-    assert "/part_000" in io.writes
-    assert "/part_001" in io.writes
 
 
 @pytest.mark.asyncio

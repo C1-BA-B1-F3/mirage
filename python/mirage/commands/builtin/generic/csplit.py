@@ -53,27 +53,30 @@ def _split_by_patterns(
     patterns: list[str],
     suppress_matched: bool,
 ) -> tuple[list[list[str]], str | None]:
-    """Cut *lines* into pieces, and name a line number past the input.
+    """Cut *lines* into pieces, and report the pattern the input ran out on.
 
     Line N ends the piece before it, so N at the current line is an empty
-    piece. A number with no such line takes the rest of the input as its
-    piece and is the run's error.
+    piece. A number with no such line, or a regex with no match, takes
+    the rest of the input as its piece and is the run's error, returned
+    as GNU's diagnostic.
     """
     parts: list[list[str]] = []
     current_start = 0
     for pat in patterns:
         if _is_regex(pat):
-            regex = pat[1:-1]
-            for idx in range(current_start, len(lines)):
-                if re.search(regex, lines[idx]):
-                    parts.append(lines[current_start:idx])
-                    current_start = idx + 1 if suppress_matched else idx
-                    break
+            regex = re.compile(pat[1:-1])
+            found = next((idx for idx in range(current_start, len(lines))
+                          if regex.search(lines[idx])), None)
+            if found is None:
+                parts.append(lines[current_start:])
+                return parts, f"csplit: '{pat}': match not found\n"
+            parts.append(lines[current_start:found])
+            current_start = found + 1 if suppress_matched else found
         else:
             split_at = int(pat) - 1
             if split_at >= len(lines):
                 parts.append(lines[current_start:])
-                return parts, pat
+                return parts, f"csplit: '{pat}': line number out of range\n"
             parts.append(lines[current_start:split_at])
             current_start = split_at
     if current_start < len(lines):
@@ -87,6 +90,7 @@ async def csplit(
     *,
     read_bytes: Callable[..., Awaitable[bytes]],
     write_bytes: Callable[..., Awaitable[None]],
+    unlink: Callable[..., Awaitable[None]],
     stdin: ByteSource | None = None,
     prefix: str | PathSpec = "xx",
     mount_prefix: str = "",
@@ -120,48 +124,45 @@ async def csplit(
         return b"", IOResult(stderr=diagnostics.encode(), exit_code=1)
     text = raw.decode(errors="replace")
     lines = split_lines(text)
-    parts, out_of_range = _split_by_patterns(lines, list(patterns),
-                                             suppress_matched)
-    # GNU writes every piece up to the bad line number, reports the sizes,
-    # then removes them unless -k keeps them: writing none is the same end.
-    commit = out_of_range is None or keep_on_error
+    parts, error = _split_by_patterns(lines, list(patterns), suppress_matched)
     writes: dict[str, ByteSource] = {}
     sizes: list[str] = []
-    failed = False
-    try:
-        for part in parts:
-            if elide_empty and not part:
-                continue
-            name = suffix_fmt % len(sizes)
-            data = ("\n".join(part) + "\n").encode() if part else b""
-            if commit:
-                virtual = prefix_virtual + name
-                spec = PathSpec.from_str_path(virtual,
-                                              mount_key(virtual, mount_prefix))
-                try:
-                    await write_bytes(spec, data)
-                except FS_ERRORS as exc:
-                    diagnostics += (f"csplit: {typed_prefix + name}: "
-                                    f"{fs_strerror(exc)}\n")
-                    failed = True
-                    break
-                if not relay:
-                    # Relay writes land on whichever mount owns each path
-                    # and invalidate through the dispatcher; keying them
-                    # here would have the runner prefix them onto this
-                    # mount.
-                    writes[spec.mount_path] = data
-            sizes.append(str(len(data)))
-    except Exception:
-        if not keep_on_error:
-            raise
-    if out_of_range is not None and not failed:
-        diagnostics += f"csplit: '{out_of_range}': line number out of range\n"
-        failed = True
+    created: list[tuple[str, PathSpec]] = []
+    for part in parts:
+        if elide_empty and not part:
+            continue
+        suffix = suffix_fmt % len(sizes)
+        name = typed_prefix + suffix
+        data = ("\n".join(part) + "\n").encode() if part else b""
+        virtual = prefix_virtual + suffix
+        spec = PathSpec.from_str_path(virtual,
+                                      mount_key(virtual, mount_prefix))
+        try:
+            await write_bytes(spec, data)
+        except FS_ERRORS as exc:
+            error = f"csplit: {name}: {fs_strerror(exc)}\n"
+            break
+        created.append((name, spec))
+        if not relay:
+            # Relay writes land on whichever mount owns each path and
+            # invalidate through the dispatcher; keying them here would
+            # have the runner prefix them onto this mount.
+            writes[spec.mount_path] = data
+        sizes.append(str(len(data)))
+    if error is not None:
+        diagnostics += error
+    if error is not None and not keep_on_error:
+        # GNU removes every piece the failed run wrote unless -k keeps
+        # them, so an earlier run's piece of that name is gone too.
+        for name, spec in created:
+            try:
+                await unlink(spec)
+            except FS_ERRORS as exc:
+                diagnostics += f"csplit: {name}: {fs_strerror(exc)}\n"
     output = "" if silent or not sizes else "\n".join(sizes) + "\n"
     return output.encode(), IOResult(writes=writes,
                                      stderr=diagnostics.encode() or None,
-                                     exit_code=1 if failed else 0)
+                                     exit_code=0 if error is None else 1)
 
 
 __all__ = ["csplit"]

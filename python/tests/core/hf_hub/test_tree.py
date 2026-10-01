@@ -291,11 +291,33 @@ def test_index_rows_keys_mount_absolute_under_a_prefix():
 
 
 def test_index_rows_implies_a_parent_a_page_boundary_split_off():
-    """A cursor can deliver a child before its own directory row."""
-    tree = {"d/a.txt": parse_entry(file_row("d/a.txt"))}
+    """A cursor can deliver a child before its own directory row.
+
+    The implied folder gets a row of its own and a place in its parent's
+    listing, so every listed path has an entry: a versioned listing on
+    Redis reads EXPIRED when one of its children has none.
+    """
+    tree = {"d/e/a.txt": parse_entry(file_row("d/e/a.txt"))}
+    entries, children = index_rows(tree, "/m")
+    assert children["/m/d/e"] == ["/m/d/e/a.txt"]
+    assert children["/m/d"] == ["/m/d/e"]
+    assert children["/m"] == ["/m/d"]
+    for key in ("/m/d", "/m/d/e"):
+        assert entries[key].resource_type == "folder"
+        assert entries[key].name == key.rsplit("/", 1)[1]
+    assert set(entries) == {
+        path for rows in children.values() for path in rows
+    }
+
+
+def test_index_rows_keeps_a_folders_own_row_over_an_implied_one():
+    tree = {
+        "d/a.txt": parse_entry(file_row("d/a.txt")),
+        "d": parse_entry(dir_row("d")),
+    }
     entries, children = index_rows(tree, "")
-    assert children["/d"] == ["/d/a.txt"]
-    assert "/d" not in entries
+    assert children["/"] == ["/d"]
+    assert entries["/d"].id == "tree-d"
 
 
 def test_index_rows_leaves_a_directory_size_unset():
@@ -455,8 +477,8 @@ async def test_refill_returns_the_snapshot_it_wrote(
     index = RAMIndexCacheStore()
     write = index.seed
 
-    def seed(*args):
-        write(*args)
+    def seed(*args, **kwargs):
+        write(*args, **kwargs)
         accessor.tree = {"other.txt": parse_entry(file_row("other.txt"))}
 
     monkeypatch.setattr(index, "seed", seed)
@@ -520,3 +542,68 @@ async def test_ensure_live_snapshot_refetches_a_dropped_index(
     # Live now: a second call must cost no request.
     assert await ensure_live_snapshot(accessor, index, "") is None
     assert mock_fetch.await_count == 1
+
+
+HEAD = "c" * 40
+
+
+# The refill walks the tree at the commit the head named, passed to the
+# walk rather than written to the accessor, and stamps every listing with it.
+@pytest.mark.asyncio
+@patch("mirage.core.hf_hub.tree.hub_get_response")
+async def test_a_refill_walks_and_stamps_the_head_it_resolved(
+    mock_get, accessor, head
+):
+    head.return_value = HEAD
+    mock_get.return_value = page(
+        [file_row("a.txt"), file_row("d/b.txt"), dir_row("d")]
+    )
+    index = RAMIndexCacheStore()
+    await refill_snapshot(accessor, index, "/m")
+    assert mock_get.await_args.args[1].endswith(f"/tree/{HEAD}")
+    assert accessor.revision == "main"
+    assert (await index.list_dir("/m")).version == HEAD
+    assert (await index.list_dir("/m/d")).version == HEAD
+
+
+# A head the Hub names as "" walks the tree at the branch and stores no
+# version, rather than asking for /tree/.
+@pytest.mark.asyncio
+@patch("mirage.core.hf_hub.tree.hub_get_response")
+async def test_a_refill_with_no_head_walks_the_branch_unversioned(
+    mock_get, accessor, head
+):
+    head.return_value = ""
+    mock_get.return_value = page([file_row("a.txt")])
+    index = RAMIndexCacheStore()
+    await refill_snapshot(accessor, index, "/m")
+    assert mock_get.await_args.args[1].endswith("/tree/main")
+    listing = await index.list_dir("/m")
+    assert listing.entries == ["/m/a.txt"]
+    assert listing.version is None
+
+
+# The head failing is the refill failing: a transient error is not
+# hidden behind a branch walk that would store rows of an unknown commit.
+@pytest.mark.asyncio
+@patch("mirage.core.hf_hub.tree.fetch_tree")
+async def test_a_refill_whose_head_fails_raises(mock_fetch, accessor, head):
+    head.side_effect = HfHubError("boom", 500)
+    with pytest.raises(HfHubError):
+        await refill_snapshot(accessor, RAMIndexCacheStore(), "/m")
+    mock_fetch.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@patch("mirage.core.hf_hub.tree.fetch_tree")
+async def test_a_refill_without_an_index_asks_no_head(
+    mock_fetch, accessor, head
+):
+    assert await refill_snapshot(accessor, NULL_INDEX, "") is None
+    head.assert_not_awaited()
+
+
+def test_tree_url_takes_the_revision_it_is_given(accessor, prefixed):
+    assert tree_url(accessor, HEAD).endswith(f"/tree/{HEAD}")
+    assert tree_url(accessor).endswith("/tree/main")
+    assert tree_url(prefixed, HEAD).endswith(f"/tree/{HEAD}/sub/dir")

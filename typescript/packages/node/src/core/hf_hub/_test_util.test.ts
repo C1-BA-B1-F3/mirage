@@ -167,3 +167,25 @@ describe('FakeHub revisions on the other routes', () => {
     expect([revision.status, revision.code]).toEqual([404, 'RevisionNotFound'])
   })
 })
+
+describe('FakeHub test hooks', () => {
+  it('reads a named branch as the current files, even a hex one', async () => {
+    const fake = await hub()
+    const branch = 'a'.repeat(40)
+    const refused = await call(fake, `${API}/tree/${branch}`)
+    expect([refused.status, refused.code]).toEqual([404, 'RevisionNotFound'])
+    fake.branches.add(branch)
+    expect(await head(fake, branch)).toBe(fake.head())
+    expect(await paths(fake, branch)).toEqual(await paths(fake, 'main'))
+  })
+
+  it('runs afterRevision once the answer is built', async () => {
+    const fake = await hub()
+    const before = fake.head()
+    fake.afterRevision = () => {
+      fake.files().set('late.txt', ENC.encode('late\n'))
+    }
+    expect(await head(fake)).toBe(before)
+    expect(fake.head()).not.toBe(before)
+  })
+})

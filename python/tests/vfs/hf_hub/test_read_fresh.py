@@ -117,11 +117,15 @@ async def test_a_probe_leaves_find_its_whole_listing():
             # seeded its one row as the mount's listing would leave find
             # seeing a single file, or walking again to recover.
             await _out(ws, "cat /m/a.txt")
-            walks = hub.count("tree")
+            walks, heads = hub.count("tree"), hub.count("revision")
             listed = await _out(ws, "find /m -type f")
             assert listed.decode().split() == ["/m/a.txt", "/m/d/b.txt"]
-            # find, a new command, re-checks the listing once under fresh.
-            assert hub.count("tree") == walks + 1
+            # find, a new command, re-checks the listing once under fresh:
+            # one head check against its version, and no walk (Task 1.3).
+            assert (
+                hub.count("revision") - heads,
+                hub.count("tree") - walks,
+            ) == (1, 0)
         finally:
             await ws.close()
 
@@ -288,18 +292,20 @@ async def test_a_drift_check_on_a_loaded_mount_asks_one_path():
 # stat and the cache door reuse the routing probe's answer. Cross-mount cp
 # skips routing's
 # probe, so only the cache door asks, and its stat re-checks the listing its
-# path resolves through, which fresh does once per command: one tree walk
-# (Task 1.3 makes it cheaper).
+# path resolves through, which fresh does once per command: one head check
+# against the listing's version, where it was a whole tree walk (Task 1.3).
 WARM = [
-    ("cat /m/a.txt", 1, 0),
-    ("cat /m/a.txt | head -c 1", 1, 0),
-    ("cp /m/a.txt /r/a.txt", 1, 1),
+    ("cat /m/a.txt", 1, 0, 0),
+    ("cat /m/a.txt | head -c 1", 1, 0, 0),
+    ("cp /m/a.txt /r/a.txt", 1, 0, 1),
 ]
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("line,posts,walks", WARM)
-async def test_a_warm_fresh_read_costs_one_path_per_probe(line, posts, walks):
+@pytest.mark.parametrize("line,posts,walks,heads", WARM)
+async def test_a_warm_fresh_read_costs_one_path_per_probe(
+    line, posts, walks, heads
+):
     with serve(_hub({"a.txt": OLD})) as hub:
         ws = _ws(_vfs(hub))
         try:
@@ -310,7 +316,8 @@ async def test_a_warm_fresh_read_costs_one_path_per_probe(line, posts, walks):
                 hub.count("paths_info"),
                 hub.count("tree"),
                 hub.count("resolve"),
-            ) == (posts, walks, 0)
+                hub.count("revision"),
+            ) == (posts, walks, 0, heads)
         finally:
             await ws.close()
 
@@ -323,7 +330,12 @@ async def test_a_new_mount_loads_its_tree_once_and_never_asks_one_path():
             await _out(ws, "stat -c %s /m/a.txt")
             await _out(ws, "stat -c %s /m/a.txt")
             await _out(ws, "ls /m")
-            assert (hub.count("tree"), hub.count("paths_info")) == (1, 0)
+            # The fill resolves the head it walks the tree at (Task 1.3).
+            assert (
+                hub.count("tree"),
+                hub.count("paths_info"),
+                hub.count("revision"),
+            ) == (1, 0, 1)
         finally:
             await ws.close()
 

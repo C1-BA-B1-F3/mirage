@@ -15,7 +15,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { HfHubAccessor } from '../../accessor/hf_hub.ts'
 import * as client from './client.ts'
-import { headCommit, revisionUrl } from './repo.ts'
+import { classifyAbsence, headCommit, revisionUrl } from './repo.ts'
 
 function accessor(config: Record<string, unknown> = {}): HfHubAccessor {
   return new HfHubAccessor({ repoId: 'acme/widget', ...config } as never)
@@ -39,6 +39,17 @@ describe('headCommit', () => {
     spy.mockRestore()
   })
 
+  // The head is asked trimmed to its sha, as a query param; the url itself is
+  // the one every not-found message names, so it carries no query.
+  it('asks only for the sha', async () => {
+    const spy = vi.spyOn(client, 'hubGet').mockResolvedValue({ sha: 'deadbeef' })
+    const acc = accessor()
+    await headCommit(acc)
+    expect(spy.mock.calls[0]?.[1]).toBe(revisionUrl(acc))
+    expect(spy.mock.calls[0]?.[2]).toEqual({ 'expand[]': 'sha' })
+    spy.mockRestore()
+  })
+
   it('is empty when the Hub reports none', async () => {
     const spy = vi.spyOn(client, 'hubGet').mockResolvedValue({})
     expect(await headCommit(accessor())).toBe('')
@@ -55,5 +66,17 @@ describe('headCommit', () => {
 describe('revisionUrl', () => {
   it('encodes a revision holding a slash', () => {
     expect(revisionUrl(accessor({ revision: 'feature/foo' }))).toMatch(/\/revision\/feature%2Ffoo$/)
+  })
+})
+
+describe('classifyAbsence', () => {
+  it('asks the bare revision url', async () => {
+    const spy = vi.spyOn(client, 'hubGet').mockResolvedValue({})
+    const acc = accessor()
+    await classifyAbsence(acc)
+    expect(spy.mock.calls[0]?.[1]).toBe(revisionUrl(acc))
+    expect(revisionUrl(acc)).not.toContain('?')
+    expect(spy.mock.calls[0]?.[2]).toBeUndefined()
+    spy.mockRestore()
   })
 })

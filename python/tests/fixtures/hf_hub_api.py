@@ -16,7 +16,7 @@ import asyncio
 import hashlib
 import json
 import threading
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from typing import Any
@@ -103,6 +103,10 @@ class FakeHub:
         log (list): ``(route, path, rev, query)`` for every Hub-facing
             request, rev and query "" where the route has none.
         history (dict): commit sha to the files it named.
+        branches (set): extra revision names, 40-hex or not, that read the
+            current files the way ``main`` does.
+        after_revision (Callable | None): run after each revision answer
+            is built, to land a commit between the head and the tree.
         posts (list): each paths-info request's content type and body.
         auth (dict): bucket route name to the ``Authorization`` header of
             each request it answered, "" when none was sent.
@@ -130,6 +134,8 @@ class FakeHub:
     auth: dict[str, list[str]] = field(default_factory=dict)
     statuses: list[tuple[str, int]] = field(default_factory=list)
     history: dict[str, dict[str, bytes]] = field(default_factory=dict)
+    branches: set[str] = field(default_factory=set)
+    after_revision: Callable[[], None] | None = None
     url: str = ""
 
     def count(self, route: str) -> int:
@@ -149,7 +155,7 @@ class FakeHub:
         current = dict(files)
         head = commit_sha(repo, current)
         self.history.setdefault(head, current)
-        if sha is None or sha == head:
+        if sha is None or sha == head or rev in self.branches:
             return current
         if sha in self.history:
             return self.history[sha]
@@ -260,6 +266,8 @@ class FakeHub:
             "sha": commit_sha((info["seg"], repo_id), files),
             "siblings": [{"rfilename": path} for path in sorted(files)],
         }
+        if self.after_revision is not None:
+            self.after_revision()
         expand = request.query.getall("expand[]", [])
         if not expand:
             return web.json_response(full)

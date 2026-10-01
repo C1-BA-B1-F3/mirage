@@ -25,6 +25,7 @@ import { Mount } from '@struktoai/mirage-core/workspace/mount/spec'
 import { Reconciler } from '@struktoai/mirage-core/workspace/reconcile'
 import { Workspace } from '@struktoai/mirage-core/workspace/workspace/workspace'
 import { Workspace as NodeWorkspace } from '../workspace.ts'
+import { FakeHub, serveHub } from '../core/hf_hub/_test_util.ts'
 import { InlineGitHub } from './fixtures/github.ts'
 import { buildVfs, knownVfsNames } from './registry.ts'
 
@@ -41,6 +42,7 @@ interface Harness {
   nested: string
   counts: () => [number, number]
   change: () => void
+  close?: () => Promise<void>
 }
 
 async function githubHarness(): Promise<Harness> {
@@ -67,10 +69,39 @@ async function githubHarness(): Promise<Harness> {
   }
 }
 
+function hfHarness(name: string, segment: string): () => Promise<Harness> {
+  return async () => {
+    const hub = new FakeHub()
+    const files = hub.files(segment)
+    files.set('docs/sub/a.txt', new TextEncoder().encode('a\n'))
+    files.set('top.txt', new TextEncoder().encode('t\n'))
+    await serveHub(hub)
+    const vfs = await buildVfs(name, { repo_id: 'acme/widget', endpoint: hub.url })
+    const ws = new NodeWorkspace({
+      '/m': new Mount(vfs, { mode: MountMode.READ, read: { policy: ReadPolicy.FRESH, ttl: 600 } }),
+    })
+    return {
+      ws,
+      key: '/m',
+      nested: '/m/docs/sub',
+      counts: () => [hub.count('revision'), hub.count('tree')],
+      change: () => {
+        files.set('docs/new.txt', new TextEncoder().encode('n\n'))
+      },
+      close: () => hub.close(),
+    }
+  }
+}
+
 // A declarer gets a harness proving that its check and its fill agree, so
 // the gate's stat and the stored version are one kind of token. Each
 // declaring backend adds its row with its declaration.
-const HARNESSES: Record<string, () => Promise<Harness>> = { github: githubHarness }
+const HARNESSES: Record<string, () => Promise<Harness>> = {
+  github: githubHarness,
+  hf_models: hfHarness('hf_models', 'models'),
+  hf_datasets: hfHarness('hf_datasets', 'datasets'),
+  hf_spaces: hfHarness('hf_spaces', 'spaces'),
+}
 
 async function shell(ws: NodeWorkspace, line: string): Promise<void> {
   const result = await ws.shell(line)
@@ -109,6 +140,7 @@ async function checkContract(name: string): Promise<void> {
     expect(moved.fingerprint).not.toBe(stored)
   } finally {
     await ws.close()
+    await harness.close?.()
   }
 }
 
@@ -146,7 +178,12 @@ describe('listing version declarations', () => {
   it('the harness roster is pinned', () => {
     // A literal, not the derived set: the expectation must not move with the
     // spec it checks.
-    expect(Object.keys(HARNESSES).sort()).toEqual(['github'])
+    expect(Object.keys(HARNESSES).sort()).toEqual([
+      'github',
+      'hf_datasets',
+      'hf_models',
+      'hf_spaces',
+    ])
   })
 
   const undeclared = (): string[] => {

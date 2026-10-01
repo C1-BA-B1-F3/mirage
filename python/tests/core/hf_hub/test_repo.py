@@ -16,7 +16,7 @@ from unittest.mock import patch
 
 import pytest
 
-from mirage.core.hf_hub.repo import head_commit
+from mirage.core.hf_hub.repo import classify_absence, head_commit, revision_url
 
 
 @pytest.mark.asyncio
@@ -54,3 +54,24 @@ async def test_head_commit_is_empty_when_the_hub_reports_none(
 ):
     mock_get.return_value = {}
     assert await head_commit(accessor) == ""
+
+
+# The head is asked trimmed to its sha, as a query param; the url itself is
+# the one every not-found message names, so it carries no query.
+@pytest.mark.asyncio
+@patch("mirage.core.hf_hub.repo.hub_get")
+async def test_head_commit_asks_only_for_the_sha(mock_get, accessor):
+    mock_get.return_value = {"sha": "deadbeef"}
+    await head_commit(accessor)
+    assert mock_get.await_args.args[1] == revision_url(accessor)
+    assert mock_get.await_args.args[2] == {"expand[]": "sha"}
+
+
+@pytest.mark.asyncio
+@patch("mirage.core.hf_hub.repo.hub_get")
+async def test_classify_absence_asks_the_bare_revision_url(mock_get, accessor):
+    mock_get.return_value = {}
+    await classify_absence(accessor)
+    assert mock_get.await_args.args[1] == revision_url(accessor)
+    assert "?" not in revision_url(accessor)
+    assert len(mock_get.await_args.args) == 2

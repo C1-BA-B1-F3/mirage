@@ -178,3 +178,25 @@ def test_the_revision_of_a_missing_repo_is_repo_not_found():
             404,
             "RepoNotFound",
         )
+
+
+def test_a_named_branch_reads_the_current_files_even_when_hex():
+    branch = "a" * 40
+    with serve(_hub()) as hub:
+        assert _call(hub, f"{API}/tree/{branch}")[::2] == (
+            404,
+            "RevisionNotFound",
+        )
+        hub.branches.add(branch)
+        assert _head(hub, branch) == hub.head(REPO)
+        assert _paths(hub, branch) == _paths(hub, "main")
+
+
+def test_after_revision_runs_once_the_answer_is_built():
+    with serve(_hub()) as hub:
+        before = hub.head(REPO)
+        hub.after_revision = lambda: hub.repos[REPO].__setitem__(
+            "late.txt", b"late\n"
+        )
+        assert _head(hub) == before
+        assert hub.head(REPO) != before

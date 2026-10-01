@@ -29,6 +29,8 @@ from mirage.workspace import Workspace
 from mirage.workspace.mount import Mount
 from mirage.workspace.reconcile import Reconciler
 from tests.fixtures.github_api import FakeGitHub, serve
+from tests.fixtures.hf_hub_api import FakeHub
+from tests.fixtures.hf_hub_api import serve as serve_hub
 from tests.fixtures.versioned_vfs import VersionedVFS
 
 
@@ -87,11 +89,51 @@ async def _github() -> AsyncIterator[Harness]:
             await ws.close()
 
 
+def _hf(name: str, segment: str) -> Callable[[], AsyncIterator[Harness]]:
+
+    @asynccontextmanager
+    async def harness() -> AsyncIterator[Harness]:
+        repo = (segment, "acme/widget")
+        hub = FakeHub(
+            repos={repo: {"docs/sub/a.txt": b"a\n", "top.txt": b"t\n"}}
+        )
+        with serve_hub(hub):
+            vfs = build_vfs(
+                name, {"repo_id": "acme/widget", "endpoint": hub.url}
+            )
+            ws = Workspace(
+                {
+                    "/m": Mount(
+                        vfs=vfs,
+                        mode=MountMode.READ,
+                        read=ReadSpec(policy=ReadPolicy.FRESH, ttl=600),
+                    )
+                }
+            )
+            try:
+                yield Harness(
+                    ws=ws,
+                    key="/m",
+                    nested="/m/docs/sub",
+                    counts=lambda: (hub.count("revision"), hub.count("tree")),
+                    change=lambda: hub.repos[repo].__setitem__(
+                        "docs/new.txt", b"n\n"
+                    ),
+                )
+            finally:
+                await ws.close()
+
+    return harness
+
+
 # A declarer gets a harness proving that its check and its fill agree, so
 # the gate's stat and the stored version are one kind of token. Each
 # declaring backend adds its row with its declaration.
 HARNESSES: dict[str, Callable[[], AsyncIterator[Harness]]] = {
     "github": _github,
+    "hf_models": _hf("hf_models", "models"),
+    "hf_datasets": _hf("hf_datasets", "datasets"),
+    "hf_spaces": _hf("hf_spaces", "spaces"),
 }
 
 
@@ -113,7 +155,12 @@ def test_every_declaring_backend_has_a_harness():
 def test_the_harness_roster_is_pinned():
     # A literal, not the derived set: the expectation must not move with
     # the registry it checks.
-    assert sorted(HARNESSES) == ["github"]
+    assert sorted(HARNESSES) == [
+        "github",
+        "hf_datasets",
+        "hf_models",
+        "hf_spaces",
+    ]
 
 
 def test_the_base_declares_no_version_and_no_pin():
@@ -201,3 +248,20 @@ async def test_the_contract_goes_red_on_github_seeding_a_tree_sha(monkeypatch):
     monkeypatch.setattr(RAMIndexCacheStore, "seed", seed)
     with pytest.raises(AssertionError):
         await _check_contract("github")
+
+
+@pytest.mark.asyncio
+async def test_the_contract_goes_red_on_hf_seeding_the_root_only(monkeypatch):
+    # hf made to stamp only the mount root's listing: the nested folder is
+    # stored unversioned, so it re-lists every command.
+    original = RAMIndexCacheStore.seed
+
+    def seed(self, entries, children, expires_at, *, version=None):
+        root = {k: v for k, v in children.items() if k == "/m"}
+        rest = {k: v for k, v in children.items() if k != "/m"}
+        original(self, entries, rest, expires_at, version=None)
+        original(self, {}, root, expires_at, version=version)
+
+    monkeypatch.setattr(RAMIndexCacheStore, "seed", seed)
+    with pytest.raises(AssertionError):
+        await _check_contract("hf_models")

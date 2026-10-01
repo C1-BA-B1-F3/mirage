@@ -119,6 +119,10 @@ export class FakeHub {
   readonly log: [string, string, string, string][] = []
   /** Commit sha to the files it named. */
   readonly history = new Map<string, Map<string, Uint8Array>>()
+  /** Extra revision names, 40-hex or not, that read the current files as `main` does. */
+  readonly branches = new Set<string>()
+  /** Run after each revision answer is built, to land a commit before the tree. */
+  afterRevision: (() => void) | null = null
   readonly posts: { contentType: string; body: string }[] = []
   /** Bucket route name to the `Authorization` header of each request, '' if none. */
   readonly auth = new Map<string, string[]>()
@@ -246,7 +250,7 @@ export class FakeHub {
     const head = commitSha(parts[1] ?? '', `${parts[2] ?? ''}/${parts[3] ?? ''}`, current)
     if (!this.history.has(head)) this.history.set(head, current)
     const sha = sha40(rev)
-    if (sha === null || sha === head) return current
+    if (sha === null || sha === head || this.branches.has(rev)) return current
     const old = this.history.get(sha)
     if (old !== undefined) return old
     error(res, 404, 'RevisionNotFound', `Invalid rev id: ${rev}`)
@@ -265,6 +269,7 @@ export class FakeHub {
       sha: commitSha(parts[1] ?? '', repoId, files),
       siblings: [...files.keys()].sort(compareCodePoints).map((rfilename) => ({ rfilename })),
     }
+    this.afterRevision?.()
     const expand = url.searchParams.getAll('expand[]')
     if (expand.length === 0) {
       json(res, 200, full)

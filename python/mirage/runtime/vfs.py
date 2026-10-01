@@ -168,7 +168,7 @@ class RuntimeVFS:
         that cannot serve `/` says so itself (pyodide refuses it,
         because Emscripten already owns that mountpoint) and a runtime
         with a build tree of its own keeps `/` out of its own claim
-        table (`WasmVFS._prefixes`). Deciding it here instead made
+        table (`WasmView._prefixes`). Deciding it here instead made
         `mount_of` answer None for a workspace whose only mount was the
         root one, so the routing table disagreed with the world.
         """
@@ -195,12 +195,13 @@ class RuntimeVFS:
     def serves(self, path: str) -> bool:
         """Whether the workspace answers for `path`.
 
-        A guest routes on this: a path the workspace does not serve is
-        the engine's own (monty's scratch tree). A mount serves what is
-        under it, and a namespace link serves what is reached through
-        it wherever it lives, because the dispatcher follows a link
-        outside every mount the same way. With no mounts wired there
-        is no scoping, and every path routes here.
+        A guest's content calls gate on this: monty refuses a path the
+        workspace does not serve, so it reads and writes only the view.
+        A mount serves what is under it, and a namespace link serves
+        what is reached through it wherever it lives, because the
+        dispatcher follows a link outside every mount the same way.
+        With no mounts wired there is no scoping, and every path routes
+        here.
 
         Args:
             path (str): guest-absolute virtual path.

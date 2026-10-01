@@ -17,7 +17,7 @@ import { normDir } from '../../../utils/slash.ts'
 import { parseMode } from '../../handles/mode.ts'
 import { applyOpen } from '../../open.ts'
 import type { RuntimeVFS } from '../../vfs.ts'
-import type { MontyBindingBits } from './binding.ts'
+import type { MontyFsBits } from './loader.ts'
 import { MAX_URANDOM_BYTES, NOT_A_LINK } from './constants.ts'
 import { asGuestError, guestError } from './errors.ts'
 import { childPaths } from './list.ts'
@@ -76,10 +76,10 @@ function timeZoneArg(value: unknown): TimeZoneMarker | null {
 }
 
 /**
- * The host clock as monty's DateTime marker, which the binding turns
+ * The host clock as monty's DateTime marker, which the engine turns
  * into a real guest `datetime`. No timezone argument means python's
  * naive local now; a TimeZone marker means an aware now in that
- * offset — both exactly what the python binding's default
+ * offset — both exactly what the python engine's default
  * `datetime_now(tz)` answers.
  */
 function dateTimeMarker(tz: TimeZoneMarker | null): Record<string, unknown> {
@@ -140,7 +140,7 @@ const CONTENT = new Set([
 /**
  * Monty's OS door: every path a guest names is the workspace's.
  *
- * This is monty's tier of the interception taxonomy: the binding calls
+ * This is monty's tier of the interception taxonomy: the engine calls
  * one host callback per operation and takes back a value (or a promise
  * of one) or NOT_HANDLED, which the sandbox raises as the call's
  * default refusal. Every path goes to the file door, and nothing is
@@ -157,24 +157,24 @@ const CONTENT = new Set([
  * write after it ships only its own bytes.
  *
  * Args:
- *   binding: the loaded binding's door pieces (NOT_HANDLED sentinel
+ *   bits: the loaded engine's door pieces (NOT_HANDLED sentinel
  *     and the MontyFileHandle an `open` answer must be).
  *   env: the run's environment, readable both ways python's monty
  *     spells it (`os.getenv` and `os.environ`).
  *   door: the execution's file door, or null outside a workspace,
  *     where every path is out of view.
  */
-export class MirageOSAccess {
-  private readonly bits: MontyBindingBits
+export class MontyFs {
+  private readonly bits: MontyFsBits
   private readonly notHandled: symbol
-  private readonly fileHandle: MontyBindingBits['MontyFileHandle']
+  private readonly fileHandle: MontyFsBits['MontyFileHandle']
   private readonly env: Record<string, string>
   private readonly door: RuntimeVFS | null
 
-  constructor(binding: MontyBindingBits, env: Record<string, string>, door: RuntimeVFS | null) {
-    this.bits = binding
-    this.notHandled = binding.NOT_HANDLED
-    this.fileHandle = binding.MontyFileHandle
+  constructor(bits: MontyFsBits, env: Record<string, string>, door: RuntimeVFS | null) {
+    this.bits = bits
+    this.notHandled = bits.NOT_HANDLED
+    this.fileHandle = bits.MontyFileHandle
     this.env = env
     this.door = door
   }
@@ -199,7 +199,7 @@ export class MirageOSAccess {
       // it cannot reach the session's own env.
       return { ...this.env }
     }
-    // The clock doors: python's binding defaults these to the host
+    // The clock doors: python's engine defaults these to the host
     // clock, so declining them (a guest RuntimeError) was a divergence
     // for any program that stamps its output.
     if (name === 'datetime.now') return dateTimeMarker(timeZoneArg(args[0]))
@@ -209,7 +209,7 @@ export class MirageOSAccess {
     const path = pathArg(args[0])
     if (path === null) return this.notHandled
     // Lexical questions need no mount: resolve() is absolute() and '/'
-    // is the working directory, which is also what python's binding
+    // is the working directory, which is also what python's engine
     // answers (a str, on both hosts).
     if (name === 'Path.resolve' || name === 'Path.absolute') {
       return path.startsWith('/') ? path : '/' + path
@@ -332,7 +332,7 @@ export class MirageOSAccess {
   }
 
   private async open(path: string, mode: string, door: RuntimeVFS): Promise<unknown> {
-    // Handle first, as monty's own binding does: a malformed mode must
+    // Handle first, as monty's own engine does: a malformed mode must
     // raise before any side effect lands on the mount.
     const handle = new this.fileHandle(path, mode)
     await applyOpen(door, path, parseMode(mode))

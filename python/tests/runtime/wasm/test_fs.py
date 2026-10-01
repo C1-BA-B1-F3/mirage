@@ -13,6 +13,7 @@
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import inspect
+import struct
 
 import pytest
 
@@ -20,25 +21,24 @@ pytest.importorskip("wasmtime")
 
 import wasmtime
 
-from mirage.runtime.wasm import host
-from mirage.runtime.wasm.abi import (
-    EINVAL,
-    EIO,
-    ENOENT,
+from mirage.runtime.wasm import fs
+from mirage.runtime.wasm.constants import (
     FST_ATIM,
     FST_ATIM_NOW,
     FST_MTIM,
     FST_MTIM_NOW,
 )
-from mirage.runtime.wasm.host import (
+from mirage.runtime.wasm.errors import EINVAL, EIO, ENOENT
+from mirage.runtime.wasm.execution import epoch_engine
+from mirage.runtime.wasm.fs import (
     WasiFs,
     _call_guarded,
     _spec,
     _stamp,
     install_wasi_fs,
+    unpack_iovs,
 )
-from mirage.runtime.wasm.runtime import epoch_engine
-from mirage.runtime.wasm.vfs import WasmVFS
+from mirage.runtime.wasm.view import WasmView
 
 # End-to-end host-function behavior (path_open buffering, fd table,
 # errno answers inside a real guest) is covered by the live wasi and
@@ -117,17 +117,20 @@ def test_install_wasi_fs_locks_the_callback_slab_before_its_funcs(monkeypatch):
     linker.define_wasi()
     store = wasmtime.Store(engine)
     order: list[str] = []
-    monkeypatch.setattr(
-        host, "install_slab_lock", lambda: order.append("lock")
-    )
-    real_func = host.Func
+    monkeypatch.setattr(fs, "install_slab_lock", lambda: order.append("lock"))
+    real_func = fs.Func
 
     def counting_func(*args, **kwargs):
         order.append("func")
         return real_func(*args, **kwargs)
 
-    monkeypatch.setattr(host, "Func", counting_func)
-    install_wasi_fs(linker, store, WasiFs(WasmVFS(), b""))
+    monkeypatch.setattr(fs, "Func", counting_func)
+    install_wasi_fs(linker, store, WasiFs(WasmView(), b""))
     assert order[0] == "lock"
     assert order.count("lock") == 1
     assert order.count("func") == len(_spec())
+
+
+def test_unpack_iovs_decodes_pointer_length_pairs():
+    raw = struct.pack("<IIII", 16, 128, 4096, 64)
+    assert unpack_iovs(raw, 2) == [(16, 128), (4096, 64)]

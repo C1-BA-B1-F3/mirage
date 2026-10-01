@@ -12,17 +12,19 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-from typing import Any
+import struct
 
-from mirage.runtime.python.monty.loader import StatResult
-from mirage.runtime.types import VFSStat
+from mirage.runtime.wasm.constants import FT_DIR, FT_REG
+from mirage.runtime.wasm.list import pack_dirent
 
 
-def stat_result(st: VFSStat) -> Any:
-    # 0 is the door's spelling of "no stamp", and monty reads a 0.0
-    # as epoch zero rather than substituting the host clock, so an
-    # unknown mtime stays unknown instead of becoming now.
-    mtime = st.mtime_ns / 1_000_000_000
-    if st.is_dir:
-        return StatResult.dir_stat(mode=st.mode, mtime=mtime)
-    return StatResult.file_stat(size=st.size, mode=st.mode, mtime=mtime)
+def test_dirent_record_is_the_preview1_layout_plus_the_name():
+    assert len(pack_dirent(0, b"abc", FT_DIR)) == 24 + 3
+
+
+def test_dirent_carries_cookie_name_and_type():
+    d_next, d_ino, namelen, ftype = struct.unpack_from(
+        "<QQIB", pack_dirent(4, b"f.txt", FT_REG)
+    )
+    assert (d_next, d_ino, namelen, ftype) == (5, 5, 5, FT_REG)
+    assert pack_dirent(4, b"f.txt", FT_REG)[24:] == b"f.txt"

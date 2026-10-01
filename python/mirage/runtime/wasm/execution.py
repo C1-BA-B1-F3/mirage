@@ -16,18 +16,10 @@ import asyncio
 import logging
 import threading
 from pathlib import Path
-from typing import Any
 
-from mirage.runtime.wasm.host import WasiFs, install_wasi_fs
-from mirage.runtime.wasm.vfs import WasmVFS
-
-wasmtime: Any
-try:
-    import wasmtime as _wasmtime
-except ImportError:
-    wasmtime = None
-else:
-    wasmtime = _wasmtime
+from mirage.runtime.wasm.fs import WasiFs, install_wasi_fs
+from mirage.runtime.wasm.loader import wasmtime
+from mirage.runtime.wasm.view import WasmView
 
 logger = logging.getLogger(__name__)
 
@@ -47,7 +39,7 @@ def epoch_engine() -> "wasmtime.Engine":
     return wasmtime.Engine(config)
 
 
-class WasmRuntime:
+class WasmExecution:
     """Compile-once, run-many WASI module under wasmtime, in-process.
 
     Shared machinery for the WASI-based runtimes (`wasi` CPython,
@@ -58,7 +50,7 @@ class WasmRuntime:
     epoch bump from reaching concurrent runs.
 
     Filesystem imports are intercepted: every fd_*/path_* call the guest
-    makes lands in WasiFs host functions backed by the caller's WasmVFS
+    makes lands in WasiFs host functions backed by the caller's WasmView
     router, so the run sees exactly what the router serves (interpreter
     build read-only, workspace mounts through dispatch) — no host
     filesystem, no network, only the passed environment.
@@ -119,7 +111,7 @@ class WasmRuntime:
         argv: list[str],
         stdin: bytes | None,
         env: list[tuple[str, str]],
-        fs: WasmVFS,
+        fs: WasmView,
     ) -> tuple[bytes, bytes | None, int]:
         """Run the module once and return (stdout, stderr, exit_code).
 
@@ -127,7 +119,7 @@ class WasmRuntime:
             argv (list[str]): full argv, including the program name.
             stdin (bytes | None): bytes fed to the run's stdin.
             env (list[tuple[str, str]]): environment as (name, value) pairs.
-            fs (WasmVFS): path router serving the run's filesystem.
+            fs (WasmView): path router serving the run's filesystem.
         """
         serialized = await asyncio.to_thread(self._ensure_serialized)
         engine = epoch_engine()
@@ -149,7 +141,7 @@ class WasmRuntime:
         argv: list[str],
         stdin: bytes | None,
         env: list[tuple[str, str]],
-        fs: WasmVFS,
+        fs: WasmView,
     ) -> tuple[bytes, bytes | None, int]:
         module = wasmtime.Module.deserialize(engine, serialized)
         linker = wasmtime.Linker(engine)

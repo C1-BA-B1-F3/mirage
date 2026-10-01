@@ -12,6 +12,22 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-export { MontyUnavailableError } from './errors.ts'
-export { MontyFs } from './fs.ts'
-export { MontyRuntime } from './runtime.ts'
+import type { QuickJSAsyncWASMModule } from 'quickjs-emscripten'
+import { QuickJsUnavailableError } from './errors.ts'
+
+export type NewAsyncModule = () => Promise<QuickJSAsyncWASMModule>
+
+/** Import the optional engine package, failing loud when it is absent. */
+export async function loadQuickJsModule(): Promise<NewAsyncModule> {
+  try {
+    const mod = (await import('quickjs-emscripten')) as unknown as {
+      newQuickJSAsyncWASMModule: NewAsyncModule
+    }
+    return mod.newQuickJSAsyncWASMModule
+  } catch (err) {
+    throw new QuickJsUnavailableError(
+      "the quickjs runtime requires the 'quickjs-emscripten' package — install it to run `node`/`js`",
+      { cause: err },
+    )
+  }
+}

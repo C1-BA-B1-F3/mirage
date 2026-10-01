@@ -16,14 +16,14 @@ import { describe, expect, it, vi, type Mock } from 'vitest'
 import type { BridgeDispatchFn } from '../../types.ts'
 import { ContentType, FileStat, FileType } from '../../../types.ts'
 import { RuntimeVFS } from '../../vfs.ts'
-import { MirageOSAccess } from './index.ts'
+import { MontyFs } from './index.ts'
 import type { GuestStat } from './stat.ts'
 import { PrefixResolver } from '../../resolver.ts'
 import { MAX_URANDOM_BYTES } from './constants.ts'
 
 const NOT_HANDLED = Symbol('NOT_HANDLED')
 
-// Stands in for the binding's MontyFileHandle: the door only needs a
+// Stands in for the engine's MontyFileHandle: the door only needs a
 // constructible class whose instances it can hand back from `open`.
 class FakeHandle {
   constructor(
@@ -32,7 +32,7 @@ class FakeHandle {
   ) {}
 }
 
-// Stands in for the binding's ClassInstance wrapper, which carries a
+// Stands in for the engine's ClassInstance wrapper, which carries a
 // host object into the guest as a class instance rather than a dict.
 // The fake keeps the wrapped object reachable so a test can read the
 // stat fields the real wrapper would send.
@@ -50,8 +50,8 @@ function accessOn(
   env: Record<string, string> = {},
   mounts: string[] = ['/ram'],
   links: string[] = [],
-): MirageOSAccess {
-  return new MirageOSAccess(
+): MontyFs {
+  return new MontyFs(
     BITS,
     env,
     new RuntimeVFS(
@@ -124,7 +124,7 @@ const noop = vi.fn<BridgeDispatchFn>((op, path) =>
     : Promise.resolve(undefined),
 )
 
-describe('MirageOSAccess environment', () => {
+describe('MontyFs environment', () => {
   it('answers os.getenv from the run environment, with the caller default on a miss', () => {
     const access = accessOn(noop, { HOME: '/root' })
     expect(access.handle('os.getenv', ['HOME'])).toBe('/root')
@@ -146,7 +146,7 @@ describe('MirageOSAccess environment', () => {
   })
 
   it('answers the environment doors even with no workspace attached', () => {
-    const access = new MirageOSAccess(BITS, { A: '1' }, null)
+    const access = new MontyFs(BITS, { A: '1' }, null)
     expect(access.handle('os.getenv', ['A'])).toBe('1')
     // With no workspace every path is out of view and refused with a
     // typed FileNotFoundError; declining instead raised PermissionError
@@ -155,9 +155,9 @@ describe('MirageOSAccess environment', () => {
   })
 })
 
-describe('MirageOSAccess entropy', () => {
+describe('MontyFs entropy', () => {
   it('fills large requests in Web Crypto chunks and supports empty requests', () => {
-    const access = new MirageOSAccess(BITS, {}, null)
+    const access = new MontyFs(BITS, {}, null)
     const random = vi.spyOn(globalThis.crypto, 'getRandomValues').mockImplementation((array) => {
       if (!(array instanceof Uint8Array)) throw new TypeError('expected bytes')
       expect(array.length).toBeLessThanOrEqual(65_536)
@@ -181,7 +181,7 @@ describe('MirageOSAccess entropy', () => {
   })
 
   it('rejects requests above the Python cap before requesting entropy', () => {
-    const access = new MirageOSAccess(BITS, {}, null)
+    const access = new MontyFs(BITS, {}, null)
     const random = vi.spyOn(globalThis.crypto, 'getRandomValues')
     try {
       expect(() => access.handle('os.urandom', [MAX_URANDOM_BYTES + 1])).toThrow(
@@ -199,7 +199,7 @@ describe('MirageOSAccess entropy', () => {
 
 // The only filesystem a guest sees is the workspace's: a path outside
 // the runtime's view is refused, never kept aside in a scratch tree.
-describe('MirageOSAccess outside the view', () => {
+describe('MontyFs outside the view', () => {
   it('answers the probes false and refuses content without reaching the bridge', async () => {
     const seen: string[] = []
     const bridge = vi.fn<BridgeDispatchFn>((op, path) => {
@@ -227,7 +227,7 @@ describe('MirageOSAccess outside the view', () => {
   })
 
   it('refuses every path with no workspace attached', () => {
-    const access = new MirageOSAccess(BITS, {}, null)
+    const access = new MontyFs(BITS, {}, null)
     expect(access.handle('Path.exists', ['/ram/x'])).toBe(false)
     expect(() => access.handle('open', ['/ram/x', 'r'])).toThrow(
       '[Errno 2] No such file or directory',
@@ -240,7 +240,7 @@ describe('MirageOSAccess outside the view', () => {
   })
 })
 
-describe('MirageOSAccess declining', () => {
+describe('MontyFs declining', () => {
   it('declines an operation it does not implement', () => {
     expect(accessOn(noop).handle('Path.chmod', ['/ram/x'])).toBe(NOT_HANDLED)
   })
@@ -260,7 +260,7 @@ describe('MirageOSAccess declining', () => {
   })
 })
 
-describe('MirageOSAccess stat', () => {
+describe('MontyFs stat', () => {
   it("answers a mounted path from the mount's own row", async () => {
     const access = accessOn(listing(['/ram/x'], []))
     const wrapped = (await access.handle('Path.stat', ['/ram/x'])) as FakeClassInstance
@@ -364,7 +364,7 @@ describe('MirageOSAccess stat', () => {
   })
 })
 
-describe('MirageOSAccess clock and lexical doors', () => {
+describe('MontyFs clock and lexical doors', () => {
   it('serves datetime.now from the host clock as a DateTime marker', () => {
     const naive = accessOn(noop).handle('datetime.now', [null]) as Record<string, unknown>
     expect(naive.__monty_type__).toBe('DateTime')
@@ -392,7 +392,7 @@ describe('MirageOSAccess clock and lexical doors', () => {
   })
 })
 
-describe('MirageOSAccess mounted open and append', () => {
+describe('MontyFs mounted open and append', () => {
   function establishing(seed: string[]): {
     dispatch: Mock<BridgeDispatchFn>
     created: string[]
@@ -541,7 +541,7 @@ describe('MirageOSAccess mounted open and append', () => {
   })
 })
 
-describe('MirageOSAccess path operations', () => {
+describe('MontyFs path operations', () => {
   it('decodes read_text and leaves read_bytes raw', async () => {
     const dispatch = vi.fn<BridgeDispatchFn>(() => Promise.resolve(new TextEncoder().encode('hi')))
     const access = accessOn(dispatch)

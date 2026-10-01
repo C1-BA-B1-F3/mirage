@@ -16,7 +16,7 @@ import { WorkspaceBinding } from '../../binding.ts'
 import { afterAll, describe, expect, it, vi } from 'vitest'
 import type { BridgeDispatchFn } from '../../types.ts'
 import { MontyRuntime } from './index.ts'
-import { MontyUnavailableError } from './binding.ts'
+import { MontyUnavailableError } from './errors.ts'
 import { PyodideRuntime } from '../pyodide/runtime.ts'
 import { buildRuntime } from '../../table.ts'
 import { getTestParser } from '../../../workspace/fixtures/workspace_fixture.ts'
@@ -770,7 +770,7 @@ describe('MontyRuntime', () => {
 
   it('a dead worker maps to exit 1 with a note, and eval propagates it', async () => {
     // python's MontyCrashedError cannot be constructed from python
-    // (the binding seals it), so this mapping is pinned here only; the
+    // (the engine seals it), so this mapping is pinned here only; the
     // JS class is public and a fake pool injects the rejection.
     const monty = (await import('@pydantic/monty')) as unknown as {
       MontyCrashedError: new (message: string, options?: { timedOut?: boolean }) => Error

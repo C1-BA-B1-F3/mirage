@@ -15,6 +15,7 @@
 import functools
 import logging
 import posixpath
+import struct
 import time
 from dataclasses import dataclass
 from typing import Any, Callable, Literal
@@ -24,12 +25,7 @@ from mirage.runtime.handles import FileHandle, FileTable
 from mirage.runtime.handles.mode import OpenMode
 from mirage.runtime.open import apply_open
 from mirage.runtime.types import VFSStat
-from mirage.runtime.wasm.abi import (
-    EBADF,
-    EINVAL,
-    EIO,
-    ENOENT,
-    ENOTDIR,
+from mirage.runtime.wasm.constants import (
     FDFLAG_APPEND,
     FST_ATIM,
     FST_ATIM_NOW,
@@ -38,50 +34,56 @@ from mirage.runtime.wasm.abi import (
     FT_CHR,
     FT_DIR,
     FT_REG,
-    LINK_REFUSAL,
     LOOKUP_SYMLINK_FOLLOW,
     OFLAG_CREAT,
     OFLAG_DIRECTORY,
     OFLAG_EXCL,
     OFLAG_TRUNC,
-    OK,
     RIGHT_FD_WRITE,
+)
+from mirage.runtime.wasm.errors import (
+    EBADF,
+    EINVAL,
+    EIO,
+    ENOENT,
+    ENOTDIR,
+    LINK_REFUSAL,
+    OK,
     errno_for,
-    pack_dirent,
+)
+from mirage.runtime.wasm.list import pack_dirent
+from mirage.runtime.wasm.loader import Func, FuncType, ValType, wasmtime
+from mirage.runtime.wasm.slab import install_slab_lock
+from mirage.runtime.wasm.stat import (
+    filetype_of,
     pack_fdstat,
     pack_filestat,
     pack_prestat,
-    pack_u32,
-    pack_u64,
-    unpack_iovs,
 )
-from mirage.runtime.wasm.slab import install_slab_lock
-from mirage.runtime.wasm.vfs import WasmVFS, filetype_of
+from mirage.runtime.wasm.view import WasmView
 from mirage.utils.dates import timestamp_iso
 
 logger = logging.getLogger(__name__)
 
 FdKind = Literal["stdin", "stdout", "stderr", "dir", "file"]
 
-wasmtime: Any
-Func: Any
-FuncType: Any
-ValType: Any
-try:
-    import wasmtime as _wasmtime
-    from wasmtime import Func as _Func
-    from wasmtime import FuncType as _FuncType
-    from wasmtime import ValType as _ValType
-except ImportError:
-    wasmtime = None
-    Func = None
-    FuncType = None
-    ValType = None
-else:
-    wasmtime = _wasmtime
-    Func = _Func
-    FuncType = _FuncType
-    ValType = _ValType
+
+def unpack_iovs(raw: bytes, count: int) -> list[tuple[int, int]]:
+    """Decode an iovec array into (pointer, length) pairs.
+
+    Args:
+        raw (bytes): the iovec array bytes read from guest memory.
+        count (int): number of iovec records.
+    """
+    return [struct.unpack_from("<II", raw, i * 8) for i in range(count)]
+
+
+def pack_u32(value: int) -> bytes:
+    return struct.pack("<I", value)
+
+
+def pack_u64(value: int) -> bytes:
+    return struct.pack("<Q", value)
 
 
 def _stamp(
@@ -116,7 +118,7 @@ def _call_guarded(
     backend's upstream error on one record most often, is EIO: a
     syscall has no other channel to say it failed, and trapping instead
     killed the whole run over one file the guest could have skipped.
-    The TypeScript hosts answer the same (quickjs's ``wasiErrno``,
+    The TypeScript hosts answer the same (quickjs's ``errnoFor``,
     pyodide's read-through) and so does the FUSE classifier.
 
     Args:
@@ -181,7 +183,7 @@ class FdEntry:
 
 
 class WasiFs:
-    """Preview1 filesystem host functions over a WasmVFS router.
+    """Preview1 filesystem host functions over a WasmView router.
 
     One instance per run: owns the guest fd table (stdin/stdout/stderr
     plus one preopen at "/"), buffers whole files between open and
@@ -191,7 +193,7 @@ class WasiFs:
     stay native.
     """
 
-    def __init__(self, fs: WasmVFS, stdin: bytes) -> None:
+    def __init__(self, fs: WasmView, stdin: bytes) -> None:
         self._fs = fs
         self.stdout = bytearray()
         self.stderr = bytearray()
@@ -462,7 +464,7 @@ class WasiFs:
         h = self._handle(fd)
         if h is None:
             return EBADF
-        # abi WHENCE_* numbering is POSIX's 0/1/2, which seek speaks.
+        # preview1's WHENCE_* numbering is POSIX's 0/1/2, which seek speaks.
         pos = h.seek(offset, whence)
         if pos is None:
             return EINVAL
@@ -709,8 +711,8 @@ class WasiFs:
         new_length: int,
     ) -> int:
         # A hard link is a second name for one inode, and nothing above
-        # a mount holds that. Which refusal that is comes from the verb
-        # table, not from this surface; see abi.LINK_REFUSAL.
+        # a mount holds that. Which refusal that is is decided once for
+        # every surface, not here; see errors.LINK_REFUSAL.
         return LINK_REFUSAL
 
     def path_symlink(

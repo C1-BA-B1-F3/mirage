@@ -35,15 +35,8 @@ from mirage.runtime.types import (
     ScriptSource,
 )
 from mirage.runtime.vfs import RuntimeVFS
-from mirage.runtime.wasm import WasmRuntime, WasmVFS
-
-wasmtime: Any
-try:
-    import wasmtime as _wasmtime
-except ImportError:
-    wasmtime = None
-else:
-    wasmtime = _wasmtime
+from mirage.runtime.wasm import WasmExecution, WasmView
+from mirage.runtime.wasm.loader import wasmtime
 
 QUICKJS_HOME_ENV = "MIRAGE_QUICKJS_HOME"
 
@@ -129,11 +122,11 @@ class QuickJsRuntime(JsRuntime, EvaluatorMixin):
             raise FileNotFoundError(
                 f"no {_WASM_NAME} under {root}; {_BUILD_HINT}"
             )
-        self._runtime = WasmRuntime(self._wasm, "js")
+        self._execution = WasmExecution(self._wasm, "js")
 
     async def version(self, env: dict[str, str]) -> RunResult:
-        stdout, stderr, exit_code = await self._runtime.run(
-            ["qjs", "--version"], None, list(env.items()), WasmVFS()
+        stdout, stderr, exit_code = await self._execution.run(
+            ["qjs", "--version"], None, list(env.items()), WasmView()
         )
         if exit_code == 0:
             version = stdout.decode().strip()
@@ -177,10 +170,10 @@ class QuickJsRuntime(JsRuntime, EvaluatorMixin):
                 source = f"std.evalScript({json.dumps(source)});"
             source = cwd_preamble(cwd) + source
         argv += ["-e", source, "--", *named, *args.args]
-        fs = WasmVFS(
+        fs = WasmView(
             core=RuntimeVFS.of(context) if context is not None else None
         )
-        stdout, stderr, exit_code = await self._runtime.run(
+        stdout, stderr, exit_code = await self._execution.run(
             argv=argv,
             stdin=args.stdin,
             env=list(args.env.items()),

@@ -20,7 +20,7 @@ import pytest
 
 from mirage import MountMode, Workspace
 from mirage.runtime.python import WasiRuntime
-from mirage.runtime.python.wasi import WASI_HOME_ENV
+from mirage.runtime.python.wasi.runtime import WASI_HOME_ENV
 from mirage.runtime.types import RunArgs
 from mirage.types import PathSpec
 from mirage.vfs.ram import RAMVFS

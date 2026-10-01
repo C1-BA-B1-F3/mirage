@@ -13,11 +13,10 @@
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import errno as host_errno
-import struct
 
 from mirage.errors import FsCondition
 from mirage.runtime.constants import HARD_LINK_REFUSAL
-from mirage.runtime.wasm.abi import (
+from mirage.runtime.wasm.errors import (
     EACCES,
     EEXIST,
     EINVAL,
@@ -27,22 +26,9 @@ from mirage.runtime.wasm.abi import (
     ENOTDIR,
     ENOTSUP,
     EXDEV,
-    FST_ATIM,
-    FST_ATIM_NOW,
-    FST_MTIM,
-    FST_MTIM_NOW,
-    FT_DIR,
-    FT_REG,
-    FT_SYMLINK,
     LINK_REFUSAL,
-    LOOKUP_SYMLINK_FOLLOW,
     WASI,
     errno_for,
-    pack_dirent,
-    pack_fdstat,
-    pack_filestat,
-    pack_prestat,
-    unpack_iovs,
     wasi_errno,
 )
 from mirage.utils.errors import no_mount
@@ -129,38 +115,9 @@ def test_cross_mount_is_deliberately_noent_on_this_wire():
     assert wasi_errno(FsCondition.CROSS_MOUNT) != wasi_errno(FsCondition.EXDEV)
 
 
-def test_record_sizes_match_the_preview1_layouts():
-    assert len(pack_prestat(1)) == 8
-    assert len(pack_fdstat(FT_REG)) == 24
-    assert len(pack_filestat(0, 0, FT_REG, 0)) == 64
-    assert len(pack_dirent(0, b"abc", FT_DIR)) == 24 + 3
-
-
-def test_dirent_carries_cookie_name_and_type():
-    d_next, d_ino, namelen, ftype = struct.unpack_from(
-        "<QQIB", pack_dirent(4, b"f.txt", FT_REG)
-    )
-    assert (d_next, d_ino, namelen, ftype) == (5, 5, 5, FT_REG)
-    assert pack_dirent(4, b"f.txt", FT_REG)[24:] == b"f.txt"
-
-
-def test_unpack_iovs_decodes_pointer_length_pairs():
-    raw = struct.pack("<IIII", 16, 128, 4096, 64)
-    assert unpack_iovs(raw, 2) == [(16, 128), (4096, 64)]
-
-
-def test_link_refusal_comes_from_the_verb_table():
-    # The surface renders the refusal, the table decides it: pinning the
-    # translation rather than the number is what keeps a change to the
-    # table from silently leaving preview1 behind.
+def test_link_refusal_is_the_shared_decision_in_preview1_numbers():
+    # The surface renders the refusal, the shared constant decides it:
+    # pinning the translation rather than the number is what keeps a
+    # change to that decision from silently leaving preview1 behind.
     assert LINK_REFUSAL == wasi_errno(HARD_LINK_REFUSAL)
     assert LINK_REFUSAL == WASI[FsCondition.EPERM]
-
-
-def test_symlink_filetype_is_the_preview1_number():
-    assert FT_SYMLINK == 7
-
-
-def test_lookup_and_fst_flag_bits_are_the_preview1_numbers():
-    assert LOOKUP_SYMLINK_FOLLOW == 1
-    assert (FST_ATIM, FST_ATIM_NOW, FST_MTIM, FST_MTIM_NOW) == (1, 2, 4, 8)

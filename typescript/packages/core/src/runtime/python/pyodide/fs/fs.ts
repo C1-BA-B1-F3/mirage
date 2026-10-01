@@ -21,8 +21,8 @@ import { classify } from '../../../../errors/index.ts'
 import { isMissingPath } from '../../../../utils/errors.ts'
 import { isUnclassified, type VFSEntry, type VFSStat } from '../../../vfs.ts'
 import type { MutationJournal } from './journal.ts'
-import type { MirageFsSeed } from './seed.ts'
-import { NodeTree } from './tree.ts'
+import type { PyodideFsSeed } from './seed.ts'
+import { NodeTable } from './nodes.ts'
 import type {
   ErrnoCodes,
   FSAttr,
@@ -66,7 +66,7 @@ const EOF_ON_READ_RDEV: ReadonlySet<number> = new Set([NULL_RDEV, ...STD_STREAM_
  *   seed: the tree collected from the mounts before the run.
  *   path: guest-absolute path to check.
  */
-function seedHolds(seed: MirageFsSeed, path: string): boolean {
+function seedHolds(seed: PyodideFsSeed, path: string): boolean {
   return (
     seed.files.has(path) ||
     seed.devices.has(path) ||
@@ -91,7 +91,7 @@ function isCharDevice(mode: number): boolean {
  * coalesce. Comparing against the node costs one read.
  *
  * The one case comparing cannot catch is a create, whose finalizing
- * chmod does lower a real mode; `MirageFs.fresh` is what suppresses
+ * chmod does lower a real mode; `PyodideFs.fresh` is what suppresses
  * that one.
  *
  * `ctime` is never included: no POSIX call sets it directly, so a mount
@@ -130,7 +130,7 @@ export function changedAttrs(node: FSNode, attr: SetAttr): SetAttrFields | null 
  * seed collected before execution. Writes enter the journal and flush
  * before a lazy backend read or after the run, preserving guest order.
  *
- * The node table lives in `NodeTree` and the flush decision in
+ * The node table lives in `NodeTable` and the flush decision in
  * `planFlush`; what is left here is one method per Emscripten callback,
  * plus the errno translation only this layer performs.
  */
@@ -149,12 +149,12 @@ function ownRow(sync: SyncVFS, path: string, entry: VFSEntry): VFSEntry | VFSSta
   }
 }
 
-export class MirageFs {
+export class PyodideFs {
   readonly type: FSType
   private readonly host: FSHost
   private readonly errno: ErrnoCodes
   private readonly journal: MutationJournal
-  private readonly tree: NodeTree
+  private readonly nodes: NodeTable
   private readonly mountOf: (path: string) => string | null
   private readonly prefix: string
   // The file node FS.open just created, whose finalizing chmod is the
@@ -205,24 +205,24 @@ export class MirageFs {
       write: this.streamWrite.bind(this),
       llseek: this.llseek.bind(this),
     }
-    this.tree = new NodeTree(host, prefix, nodeOps, streamOps)
-    this.type = { mount: this.tree.mount.bind(this.tree) }
+    this.nodes = new NodeTable(host, prefix, nodeOps, streamOps)
+    this.type = { mount: this.nodes.mount.bind(this.nodes) }
   }
 
   /**
-   * Populate the tree. Must run after `FS.mount`; see `NodeTree.seed`.
+   * Populate the tree. Must run after `FS.mount`; see `NodeTable.seed`.
    *
    * Args:
    *   seed: tree collected from the mounts before the run.
    */
-  seed(seed: MirageFsSeed): void {
+  seed(seed: PyodideFsSeed): void {
     // Only when this shim is what /dev resolves to. The mount's own listing
     // is untouched: these nodes live in this tree, which is what the
     // interpreter reads, not what `ls /dev` on the mount reports.
     if (this.prefix === '/dev' && this.sync === undefined) {
       for (const [name, rdev] of STD_STREAM_RDEV) {
         const path = `/dev/${name}`
-        // Only where the mount itself has nothing by that name. `NodeTree.seed`
+        // Only where the mount itself has nothing by that name. `NodeTable.seed`
         // places devices after files, directories and links, so injecting one
         // blindly would overwrite a real entry the mount is serving and hand
         // the guest an empty device instead of its content.
@@ -234,7 +234,7 @@ export class MirageFs {
         seed.charDevice(path, S_IFCHR | 0o666, rdev)
       }
     }
-    this.tree.seed(seed)
+    this.nodes.seed(seed)
   }
 
   private getattr(node: FSNode): FSAttr {
@@ -285,7 +285,7 @@ export class MirageFs {
       // A link's own attrs go to the link, since the tree resolved to
       // the link node itself and the target's row is not what changed.
       if (this.host.isLink(node.mode)) fields.nofollow = true
-      this.journal.markSetattr(this.tree.pathOf(node), fields)
+      this.journal.markSetattr(this.nodes.pathOf(node), fields)
     }
     if (attr.size === undefined || isDevice) return
     if (attr.size > 0) this.loadContents(node)
@@ -298,26 +298,26 @@ export class MirageFs {
     // A resize rewrites history, so it can only ship whole. Recording here
     // rather than at close is what makes a bare `os.truncate(path, n)`,
     // which opens no handle at all, reach the mount.
-    this.journal.markWrite(this.tree.pathOf(node), next)
+    this.journal.markWrite(this.nodes.pathOf(node), next)
   }
 
   private lookup(parent: FSNode, name: string): FSNode {
     const sync = this.sync
-    let found = this.tree.childOf(parent, name)
+    let found = this.nodes.childOf(parent, name)
     if (found === undefined && sync !== undefined) {
       found = this.readThrough(() => {
-        const path = this.tree.pathOf(parent) + '/' + name
+        const path = this.nodes.pathOf(parent) + '/' + name
         let stat: VFSStat
         try {
           stat = sync.stat(path)
         } catch (error) {
           const rdev = STD_STREAM_RDEV.get(name)
           if (
-            this.tree.pathOf(parent) === '/dev' &&
+            this.nodes.pathOf(parent) === '/dev' &&
             rdev !== undefined &&
             classify(error) === 'ENOENT'
           ) {
-            return this.tree.makeNode(parent, name, S_IFCHR | 0o666, rdev)
+            return this.nodes.makeNode(parent, name, S_IFCHR | 0o666, rdev)
           }
           throw error
         }
@@ -331,7 +331,7 @@ export class MirageFs {
   }
 
   private mknod(parent: FSNode, name: string, mode: number, rdev: number): FSNode {
-    const node = this.tree.makeNode(parent, name, mode)
+    const node = this.nodes.makeNode(parent, name, mode)
     node.rdev = rdev
     // A character device is not mount content. pyodide makes one of its own
     // at runtime -- `API.capture_stderr` calls FS.createDevice, which lands
@@ -339,7 +339,7 @@ export class MirageFs {
     // against the real mount, which then failed on replay. Devices live in
     // this tree only.
     if (isCharDevice(mode)) return node
-    const path = this.tree.pathOf(node)
+    const path = this.nodes.pathOf(node)
     if (this.host.isDir(mode)) this.journal.markMkdir(path)
     else {
       // An empty write is what carries a file that is created and never
@@ -356,8 +356,8 @@ export class MirageFs {
   }
 
   private rename(node: FSNode, newDir: FSNode, newName: string): void {
-    const from = this.tree.pathOf(node)
-    const to = this.tree.pathOf(newDir) + '/' + newName
+    const from = this.nodes.pathOf(node)
+    const to = this.nodes.pathOf(newDir) + '/' + newName
     // A nested mirage mount is served through this same mountpoint, so
     // Emscripten's kernel cannot see the boundary; refuse the crossing
     // here, before the tree moves and the journal records a rename the
@@ -365,13 +365,13 @@ export class MirageFs {
     if (this.mountOf(from) !== this.mountOf(to)) {
       throw errnoError(this.host, this.errno, 'EXDEV')
     }
-    this.tree.move(node, newDir, newName)
+    this.nodes.move(node, newDir, newName)
     this.journal.markRename(from, to)
   }
 
   private unlink(parent: FSNode, name: string): void {
-    const path = this.tree.pathOf(parent) + '/' + name
-    this.tree.detach(parent, name)
+    const path = this.nodes.pathOf(parent) + '/' + name
+    this.nodes.detach(parent, name)
     this.journal.markUnlink(path)
   }
 
@@ -379,8 +379,8 @@ export class MirageFs {
     if (this.sync !== undefined && this.readdir(this.lookup(parent, name)).length > 2) {
       throw errnoError(this.host, this.errno, 'ENOTEMPTY')
     }
-    const path = this.tree.pathOf(parent) + '/' + name
-    this.tree.detach(parent, name)
+    const path = this.nodes.pathOf(parent) + '/' + name
+    this.nodes.detach(parent, name)
     this.journal.markRmdir(path)
   }
 
@@ -396,21 +396,21 @@ export class MirageFs {
     const sync = this.sync
     if (sync !== undefined) {
       this.readThrough(() => {
-        const dir = this.tree.pathOf(node) + '/'
+        const dir = this.nodes.pathOf(node) + '/'
         const again = node.listed === true
         for (const entry of sync.readdir(dir, !again)) {
           const name = entry.path.replace(/\/$/, '').split('/').pop() ?? ''
-          if (this.tree.childOf(node, name) !== undefined) continue
+          if (this.nodes.childOf(node, name) !== undefined) continue
           this.placeEntry(node, name, again ? ownRow(sync, dir + name, entry) : entry)
         }
         node.listed = true
       })
     }
-    return ['.', '..', ...this.tree.childNames(node)]
+    return ['.', '..', ...this.nodes.childNames(node)]
   }
 
   invalidate(): void {
-    this.tree.invalidate()
+    this.nodes.invalidate()
   }
 
   private readThrough<T>(read: () => T): T {
@@ -425,10 +425,10 @@ export class MirageFs {
   private placeEntry(parent: FSNode, name: string, stat: VFSStat | VFSEntry): FSNode {
     const target =
       stat.isLink && this.sync !== undefined
-        ? this.sync.readlink(this.tree.pathOf(parent) + '/' + name)
+        ? this.sync.readlink(this.nodes.pathOf(parent) + '/' + name)
         : undefined
     const mode = stat.isLink ? LINK_MODE : (stat.mode ?? (stat.isDir ? 0o40755 : 0o100644))
-    const node = this.tree.makeNode(parent, name, mode, stat.rdev ?? 0)
+    const node = this.nodes.makeNode(parent, name, mode, stat.rdev ?? 0)
     node.usedBytes = stat.size
     if (stat.mtimeMs !== undefined) node.atime = node.mtime = node.ctime = stat.mtimeMs
     if (target !== undefined) node.link = target
@@ -457,9 +457,9 @@ export class MirageFs {
   private classifyNode(node: FSNode): void {
     const sync = this.sync
     if (sync === undefined) throw errnoError(this.host, this.errno, 'EIO')
-    const stat = this.readThrough(() => sync.stat(this.tree.pathOf(node)))
+    const stat = this.readThrough(() => sync.stat(this.nodes.pathOf(node)))
     node.unclassified = false
-    this.tree.retype(node, stat.mode)
+    this.nodes.retype(node, stat.mode)
     node.rdev = stat.rdev ?? 0
     node.atime = node.mtime = node.ctime = stat.mtimeMs
     if (this.host.isFile(stat.mode) && node.loaded === false) node.usedBytes = stat.size
@@ -468,7 +468,7 @@ export class MirageFs {
   private loadContents(node: FSNode): void {
     const sync = this.sync
     if (node.loaded !== false || sync === undefined) return
-    const bytes = this.readThrough(() => sync.read(this.tree.pathOf(node)))
+    const bytes = this.readThrough(() => sync.read(this.nodes.pathOf(node)))
     node.contents = bytes
     node.usedBytes = bytes.length
     node.loaded = true
@@ -488,9 +488,9 @@ export class MirageFs {
    *   target: what it points at, verbatim.
    */
   private symlink(parent: FSNode, name: string, target: string): FSNode {
-    const node = this.tree.makeNode(parent, name, LINK_MODE)
+    const node = this.nodes.makeNode(parent, name, LINK_MODE)
     node.link = target
-    this.journal.markSymlink(this.tree.pathOf(node), target)
+    this.journal.markSymlink(this.nodes.pathOf(node), target)
     return node
   }
 
@@ -556,7 +556,7 @@ export class MirageFs {
     node.usedBytes = Math.max(node.usedBytes ?? 0, need)
     node.mtime = node.ctime = Date.now()
     const [kind, bytes] = planFlush(baseLen, position, contents.subarray(0, node.usedBytes))
-    const path = this.tree.pathOf(node)
+    const path = this.nodes.pathOf(node)
     if (kind === 'append') this.journal.markAppend(path, bytes)
     else this.journal.markWrite(path, bytes)
     return length

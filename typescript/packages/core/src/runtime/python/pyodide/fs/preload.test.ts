@@ -19,7 +19,7 @@ import { ContentType, DEVICE_NUMBERS_KEY, FileStat, FileType } from '../../../..
 import { CHAR_MODE } from '../../../../utils/stat_view.ts'
 import type { BridgeDispatchFn } from '../../../types.ts'
 import { PrefixResolver } from '../../../resolver.ts'
-import { MirageFsSeed } from './seed.ts'
+import { PyodideFsSeed } from './seed.ts'
 import { LISTING_ENTRY_CONCURRENCY } from '../../../constants.ts'
 
 interface FakeFS {
@@ -109,7 +109,7 @@ describe('preloadInto', () => {
       }
       return Promise.reject(new Error(`unexpected ${op} ${path}`))
     })
-    const seed = new MirageFsSeed()
+    const seed = new PyodideFsSeed()
     await preloadInto(seed, new RuntimeVFS(dispatch), '/dev/')
     expect(seed.devices.get('/dev/zero')).toEqual({ mode: CHAR_MODE, rdev: 0x105 })
     expect(dispatch.mock.calls.every(([op]) => op !== 'read')).toBe(true)
@@ -133,7 +133,7 @@ describe('preloadInto', () => {
       if (op === 'read' && path === '/ram/a.txt') return Promise.resolve(new Uint8Array([1]))
       return Promise.reject(new Error(`unexpected ${op} ${path}`))
     })
-    const seed = new MirageFsSeed()
+    const seed = new PyodideFsSeed()
     await preloadInto(seed, new RuntimeVFS(dispatch), '/ram/')
     expect(seed.modes.get('/ram/a.txt')).toBe(0o100600)
     expect(seed.stamps.get('/ram/a.txt')).toEqual({
@@ -150,7 +150,7 @@ describe('preloadInto', () => {
       if (op === 'readdir' && path === '/ram/sub/') return Promise.resolve([])
       return Promise.reject(new Error(`unexpected ${op} ${path}`))
     })
-    const seed = new MirageFsSeed()
+    const seed = new PyodideFsSeed()
     await preloadInto(seed, new RuntimeVFS(dispatch), '/ram/')
     expect(seed.dirs).toContain('/ram/sub/')
     expect(seed.modes.size).toBe(0)
@@ -249,7 +249,7 @@ describe('preloadInto', () => {
       if (op === 'read' && path === '/ram/ok.txt') return Promise.resolve(new Uint8Array([7]))
       return Promise.reject(new Error(`unexpected ${op} ${path}`))
     })
-    const seed = new MirageFsSeed()
+    const seed = new PyodideFsSeed()
     await preloadInto(seed, new RuntimeVFS(dispatch), '/ram/')
     expect([...seed.unclassified]).toEqual(['/ram/bad.json'])
     expect(seed.files.has('/ram/bad.json')).toBe(false)
@@ -267,7 +267,7 @@ describe('preloadInto', () => {
       if (op === 'stat') return Promise.reject(Object.assign(new Error('gone'), { code: 'ENOENT' }))
       return Promise.reject(new Error(`unexpected ${op} ${path}`))
     })
-    const seed = new MirageFsSeed()
+    const seed = new PyodideFsSeed()
     await preloadInto(seed, new RuntimeVFS(dispatch), '/ram/')
     expect(seed.unclassified.size).toBe(0)
     expect(seed.unreadable.size).toBe(0)
@@ -298,7 +298,7 @@ describe('preloadInto', () => {
       if (op === 'read') return track(op, new Uint8Array([1]))
       return Promise.reject(new Error(`unexpected ${op} ${path}`))
     })
-    const seed = new MirageFsSeed()
+    const seed = new PyodideFsSeed()
     await preloadInto(seed, new RuntimeVFS(dispatch), '/ram/')
     expect(seed.files.size).toBe(400)
     expect(peak).toBe(LISTING_ENTRY_CONCURRENCY)

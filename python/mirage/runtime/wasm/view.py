@@ -14,42 +14,19 @@
 
 import errno as host_errno
 from pathlib import Path
-from stat import S_ISCHR
 from typing import Any
 
 from mirage.runtime.constants import ABSENT_PATH
 from mirage.runtime.types import VFSEntry, VFSStat
 from mirage.runtime.vfs import RuntimeVFS
-from mirage.runtime.wasm.abi import (
-    FT_CHR,
-    FT_DIR,
-    FT_REG,
-    FT_SYMLINK,
-    FT_UNKNOWN,
-)
 from mirage.runtime.wasm.build import BuildDir
 from mirage.runtime.wasm.config import WasmFsConfig
 from mirage.runtime.wasm.constants import READONLY_HINT
+from mirage.runtime.wasm.stat import filetype_of
 from mirage.utils.path import owner_prefix
 
 
-def filetype_of(row: VFSStat | VFSEntry) -> int:
-    """The preview1 filetype for one stat or listing row.
-
-    Args:
-        row (VFSStat | VFSEntry): the row to classify; a listing row
-            with no mode is one the door could not classify.
-    """
-    if row.is_link:
-        return FT_SYMLINK
-    if row.is_dir:
-        return FT_DIR
-    if row.mode is None:
-        return FT_UNKNOWN
-    return FT_CHR if S_ISCHR(row.mode) else FT_REG
-
-
-class WasmVFS:
+class WasmView:
     """The filesystem a wasm guest sees, over two sources.
 
     Routing is the wasm tier's own problem: a guest here is a whole

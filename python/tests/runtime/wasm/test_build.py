@@ -14,8 +14,8 @@
 
 import pytest
 
-from mirage.runtime.wasm.abi import FT_DIR, FT_REG
 from mirage.runtime.wasm.build import BuildDir
+from mirage.runtime.wasm.constants import FT_DIR, FT_REG
 
 
 def test_target_maps_guest_paths_onto_the_root(tmp_path):

@@ -13,7 +13,7 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import type { VFSStat } from '../../vfs.ts'
-import type { MontyBindingBits } from './binding.ts'
+import type { MontyFsBits } from './loader.ts'
 
 const S_IFREG = 0o100000
 const S_IFDIR = 0o40000
@@ -107,7 +107,7 @@ export function statFields(st: VFSStat): GuestStat {
 /**
  * The guest-side `os.stat_result` for one row.
  *
- * Wrapped in the binding's `ClassInstance` rather than returned bare:
+ * Wrapped in the engine's `ClassInstance` rather than returned bare:
  * a plain object converts structurally and arrives as a dict, so
  * `st.st_size` raised AttributeError. The wrapper (new in
  * @pydantic/monty 0.0.22) sends the object as a class instance with
@@ -115,14 +115,14 @@ export function statFields(st: VFSStat): GuestStat {
  * The sequence half of a real `stat_result` does not cross: the guest
  * cannot subscript, iterate or take `len` of the answer, because the
  * JS input encoder cannot construct a NamedTuple node. The protocol
- * supports it, and Python sends a real `StatResult`; the JS binding
+ * supports it, and Python sends a real `StatResult`; the JS engine
  * cannot send that value back. This also prevents `os.chdir()`, which
  * requires a native NamedTuple stat result to validate the directory.
  *
  * Args:
- *   bits: the loaded binding's door pieces.
+ *   bits: the loaded engine's door pieces.
  *   st: the mount's row for the path.
  */
-export function statResult(bits: MontyBindingBits, st: VFSStat): object {
+export function statResult(bits: MontyFsBits, st: VFSStat): object {
   return new bits.ClassInstance(statFields(st), { name: 'stat_result', eagerAttrs: 'all' })
 }

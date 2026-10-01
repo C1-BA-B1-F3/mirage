@@ -24,7 +24,7 @@ from mirage.runtime.errors import EvalError
 from mirage.runtime.js import QuickJsRuntime
 from mirage.runtime.js.quickjs import QUICKJS_HOME_ENV
 from mirage.runtime.types import RunArgs
-from mirage.runtime.wasm import WasmVFS
+from mirage.runtime.wasm import WasmView
 from mirage.types import PathSpec
 from mirage.vfs.ram import RAMVFS
 
@@ -68,7 +68,7 @@ def _spied_runtime() -> QuickJsRuntime:
     # everywhere; the @live tests below need the build.
     rt = object.__new__(QuickJsRuntime)
     rt._binding = None
-    rt._runtime = _ArgvSpy()
+    rt._execution = _ArgvSpy()
     return rt
 
 
@@ -81,7 +81,7 @@ async def test_program_args_ride_behind_the_end_of_options_marker():
     # scriptArgs as a global and never had the hole.
     rt = _spied_runtime()
     await rt.run(RunArgs(code="CODE", args=["-e", "PROG", "-m"]))
-    assert rt._runtime.argv == [
+    assert rt._execution.argv == [
         "qjs",
         "--std",
         "-e",
@@ -97,7 +97,7 @@ async def test_program_args_ride_behind_the_end_of_options_marker():
 async def test_named_program_still_takes_the_first_arg_slot():
     rt = _spied_runtime()
     await rt.run(RunArgs(code="CODE", prog="tool", args=["-m"]))
-    assert rt._runtime.argv == [
+    assert rt._execution.argv == [
         "qjs",
         "--std",
         "-e",
@@ -112,15 +112,15 @@ async def test_named_program_still_takes_the_first_arg_slot():
 async def test_module_mode_is_still_the_interpreters_own_switch():
     rt = _spied_runtime()
     await rt.run(RunArgs(code="CODE", flags={"module": True}))
-    assert rt._runtime.argv == ["qjs", "--std", "-m", "-e", "CODE", "--"]
+    assert rt._execution.argv == ["qjs", "--std", "-m", "-e", "CODE", "--"]
 
 
 @live
 @pytest.mark.asyncio
 async def test_version_commands_report_the_quickjs_engine():
     runtime = QuickJsRuntime()
-    raw, _, code = await runtime._runtime.run(
-        argv=["qjs", "--version"], stdin=None, env=[], fs=WasmVFS()
+    raw, _, code = await runtime._execution.run(
+        argv=["qjs", "--version"], stdin=None, env=[], fs=WasmView()
     )
     assert code == 0
     ws = Workspace({"/": RAMVFS()}, runtimes=[runtime, "workspace"])

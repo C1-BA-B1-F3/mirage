@@ -30,15 +30,8 @@ from mirage.runtime.types import (
     ScriptSource,
 )
 from mirage.runtime.vfs import RuntimeVFS
-from mirage.runtime.wasm import WasmFsConfig, WasmRuntime, WasmVFS
-
-wasmtime: Any
-try:
-    import wasmtime as _wasmtime
-except ImportError:
-    wasmtime = None
-else:
-    wasmtime = _wasmtime
+from mirage.runtime.wasm import WasmExecution, WasmFsConfig, WasmView
+from mirage.runtime.wasm.loader import wasmtime
 
 WASI_HOME_ENV = "MIRAGE_WASI_HOME"
 
@@ -80,7 +73,7 @@ class WasiRuntime(PythonRuntime):
     version_suffix = " (wasi)"
     # Guest file I/O can only travel the workspace bridge; the one
     # host surface is the interpreter's own build directory, served
-    # read-only (mutations raise PermissionError in WasmVFS), so
+    # read-only (mutations raise PermissionError in WasmView), so
     # nothing goes around the gate.
     reach: RuntimeReach = "workspace"
     filesystem: ClassVar[tuple[FilesystemOperation, ...]] = (
@@ -120,7 +113,7 @@ class WasiRuntime(PythonRuntime):
                 f"no lib/python3.* under {self._root}; {_BUILD_HINT}"
             )
         self._pythonhome = f"/lib/{stdlibs[-1].name}"
-        self._runtime = WasmRuntime(self._root / "python.wasm", "python3")
+        self._execution = WasmExecution(self._root / "python.wasm", "python3")
 
     async def _execute_code(
         self, args: RunArgs, context: RuntimeContext | None
@@ -134,7 +127,7 @@ class WasiRuntime(PythonRuntime):
         # Mount prefixes route to the workspace bridge; everything else
         # is served from the build directory, so a mount at "/" never
         # collides with the interpreter's own files.
-        fs = WasmVFS(
+        fs = WasmView(
             WasmFsConfig(host_root=str(self._root)),
             RuntimeVFS.of(context) if context is not None else None,
         )
@@ -148,7 +141,7 @@ class WasiRuntime(PythonRuntime):
                 f"exec(compile({source!r}, '<string>', 'exec'), globals())"
             )
         # sys.argv becomes [prog, *args.args], matching the local runtime.
-        stdout, stderr, exit_code = await self._runtime.run(
+        stdout, stderr, exit_code = await self._execution.run(
             argv=["python", *init_argv(args.flags), "-c", source, *args.args],
             stdin=args.stdin,
             env=[

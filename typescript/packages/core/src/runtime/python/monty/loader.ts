@@ -13,13 +13,7 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import { MISSING_PACKAGE_HINT } from './constants.ts'
-
-export class MontyUnavailableError extends Error {
-  constructor(message: string, options?: { cause?: unknown }) {
-    super(message, options)
-    this.name = 'MontyUnavailableError'
-  }
-}
+import { MontyUnavailableError } from './errors.ts'
 
 // Structural views of @pydantic/monty so its types never leak into our
 // public .d.ts (the package is an optional peer dependency). Python
@@ -43,14 +37,14 @@ export interface MontyClassInstanceOptions {
 }
 
 /**
- * The three door pieces `MirageOSAccess` needs from the binding: the
- * decline sentinel, the handle class an `open` answer must be an
- * instance of (the binding wraps it into the guest's `_io.*` object),
+ * The three door pieces `MontyFs` needs from the engine: the decline
+ * sentinel, the handle class an `open` answer must be an instance of
+ * (the engine wraps it into the guest's `_io.*` object),
  * and the wrapper that carries a host object into the guest as a class
  * instance rather than a dict, which is what lets a stat answer arrive
  * with `st_size` on it.
  */
-export interface MontyBindingBits {
+export interface MontyFsBits {
   NOT_HANDLED: symbol
   MontyFileHandle: new (path: string, mode: string) => unknown
   ClassInstance: new (instance: object, options?: MontyClassInstanceOptions) => object
@@ -61,18 +55,14 @@ export interface MontyCrashedLike extends Error {
   timedOut: boolean
 }
 
-export interface MontyModuleLike extends MontyBindingBits {
+export interface MontyModuleLike extends MontyFsBits {
   Monty: { create(options?: Record<string, unknown>): Promise<MontyPoolLike> }
   MontySyntaxError: new (...args: never[]) => Error
   MontyRuntimeError: new (...args: never[]) => Error
   MontyCrashedError: new (...args: never[]) => MontyCrashedLike
 }
 
-export interface MontyDisplayableError extends Error {
-  display?: (format?: string) => string
-}
-
-/** Import the optional binding, failing loud when it is absent. */
+/** Import the optional engine package, failing loud when it is absent. */
 export async function loadMontyModule(): Promise<MontyModuleLike> {
   try {
     return (await import('@pydantic/monty')) as unknown as MontyModuleLike

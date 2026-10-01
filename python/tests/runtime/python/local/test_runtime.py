@@ -39,7 +39,7 @@ async def test_filesystem_operations(tmp_path, operation, expected):
     (tmp_path / "sub").mkdir()
     (tmp_path / "sub" / "inner.txt").write_text("inner\n")
     fixture = (
-        Path(__file__).resolve().parents[4]
+        Path(__file__).resolve().parents[5]
         / "integ"
         / "fixtures"
         / "runtime"
@@ -238,7 +238,7 @@ def test_reach_is_process():
 
 TRACEBACK_CASES = json.loads(
     (
-        Path(__file__).resolve().parents[4]
+        Path(__file__).resolve().parents[5]
         / "integ/fixtures/runtime/python_errors.json"
     ).read_text()
 )

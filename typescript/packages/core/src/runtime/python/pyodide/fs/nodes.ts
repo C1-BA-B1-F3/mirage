@@ -14,7 +14,7 @@
 
 import { DIR_MODE, FILE_MODE, LINK_MODE } from './constants.ts'
 import { fsError } from './errors.ts'
-import type { MirageFsSeed } from './seed.ts'
+import type { PyodideFsSeed } from './seed.ts'
 import type { FSNode, NodeHost, NodeOps, StreamOps } from './types.ts'
 import { rstripSlash } from '../../../../utils/slash.ts'
 
@@ -27,7 +27,7 @@ import { rstripSlash } from '../../../../utils/slash.ts'
  * mutations and reports no errno, so the filesystem above it is left with
  * only the semantics of each call.
  */
-export class NodeTree {
+export class NodeTable {
   private readonly host: NodeHost
   private readonly nodeOps: NodeOps
   private readonly streamOps: StreamOps
@@ -67,7 +67,7 @@ export class NodeTree {
    * Args:
    *   seed: tree collected from the bridge before the run.
    */
-  seed(seed: MirageFsSeed): void {
+  seed(seed: PyodideFsSeed): void {
     for (const dir of seed.dirs) {
       const rel = this.relative(dir)
       if (rel !== null) this.stamp(seed, dir, this.ensureDir(rel))
@@ -117,7 +117,7 @@ export class NodeTree {
    *   path: guest-absolute path of the node.
    *   node: the node just placed for it.
    */
-  private stamp(seed: MirageFsSeed, path: string, node: FSNode): void {
+  private stamp(seed: PyodideFsSeed, path: string, node: FSNode): void {
     const mode = seed.modes.get(path)
     // Permission bits only: the kind is the tree's own decision, and a
     // row that disagreed would otherwise turn a file into a directory.

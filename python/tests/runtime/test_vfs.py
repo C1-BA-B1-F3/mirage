@@ -133,7 +133,7 @@ def test_mount_of_takes_the_longest_prefix():
 def test_a_root_mount_is_a_prefix_like_any_other():
     # It claims every path, which is what mounting at `/` means. The
     # one place that cannot live with an exclusive root claim excludes
-    # it itself (WasmVFS._prefixes), because only it has a build tree
+    # it itself (WasmView._prefixes), because only it has a build tree
     # to protect.
     vfs = RecordingVFS(prefixes=["/"])
     assert vfs.prefixes() == ["/"]

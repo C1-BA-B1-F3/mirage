@@ -14,8 +14,7 @@
 
 import { resolvePath } from '../../../utils/path.ts'
 import { PathSpec } from '../../../types.ts'
-import { WASI } from './wasi.ts'
-import { wasiErrno } from './errors.ts'
+import { WASI, errnoFor } from './errors.ts'
 import { readdir } from './list.ts'
 import { stat } from './stat.ts'
 import { epochToIso } from '../../../utils/dates.ts'
@@ -28,9 +27,9 @@ const ENC = new TextEncoder()
 const DEC = new TextDecoder('utf-8', { fatal: false })
 
 // WASI preview1 errnos this shim answers with directly. The numbering
-// lives beside this shim (wasi.ts, the same numbers python's abi.py
-// keeps): guests compare against these, so host errno numbering must
-// not leak.
+// lives beside this shim (errors.ts, the same numbers python's
+// wasm/errors.py keeps): guests compare against these, so host errno
+// numbering must not leak.
 const ENOENT = WASI.ENOENT
 
 /**
@@ -44,7 +43,7 @@ const ENOENT = WASI.ENOENT
  * @param ctx - the asyncified quickjs context
  * @param vfs - the runtime's mount vocabulary, or null when no mounts are wired
  */
-export function installMirageFs(ctx: QuickJSAsyncContext, vfs: RuntimeVFS | null): void {
+export function installQuickJsFs(ctx: QuickJSAsyncContext, vfs: RuntimeVFS | null): void {
   const table = new FileTable<FileHandle>()
   let cwd = PathSpec.fromStrPath('/')
   const absolute = (handle: QuickJSHandle): string => {
@@ -78,7 +77,7 @@ export function installMirageFs(ctx: QuickJSAsyncContext, vfs: RuntimeVFS | null
         if (st === null) return ctx.newNumber(-ENOENT)
         if (!st.isDir) return ctx.newNumber(-WASI.ENOTDIR)
       } catch (err) {
-        return ctx.newNumber(-wasiErrno(err))
+        return ctx.newNumber(-errnoFor(err))
       }
     }
     cwd = PathSpec.fromStrPath(path)
@@ -187,7 +186,7 @@ export function installMirageFs(ctx: QuickJSAsyncContext, vfs: RuntimeVFS | null
       }
       return ctx.newNumber(0)
     } catch (err) {
-      return ctx.newNumber(-wasiErrno(err))
+      return ctx.newNumber(-errnoFor(err))
     }
   })
 
@@ -198,7 +197,7 @@ export function installMirageFs(ctx: QuickJSAsyncContext, vfs: RuntimeVFS | null
       await vfs.mkdir(path)
       return ctx.newNumber(0)
     } catch (err) {
-      return ctx.newNumber(-wasiErrno(err))
+      return ctx.newNumber(-errnoFor(err))
     }
   })
 
@@ -213,7 +212,7 @@ export function installMirageFs(ctx: QuickJSAsyncContext, vfs: RuntimeVFS | null
       await vfs.setattr(path, { atime, mtime })
       return ctx.newNumber(0)
     } catch (err) {
-      return ctx.newNumber(-wasiErrno(err))
+      return ctx.newNumber(-errnoFor(err))
     }
   })
 
@@ -228,7 +227,7 @@ export function installMirageFs(ctx: QuickJSAsyncContext, vfs: RuntimeVFS | null
       await vfs.rename(src, dst)
       return ctx.newNumber(0)
     } catch (err) {
-      return ctx.newNumber(-wasiErrno(err))
+      return ctx.newNumber(-errnoFor(err))
     }
   })
 

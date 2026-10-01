@@ -20,8 +20,8 @@ import { join } from 'node:path'
 import { buildRuntime } from '@struktoai/mirage-core/runtime/table'
 import { RAMVFS } from '@struktoai/mirage-core/vfs/ram/ram'
 import { MountMode, PathSpec } from '@struktoai/mirage-core/types'
-import { Workspace } from '../../workspace.ts'
-import { LocalRuntime } from './local.ts'
+import { Workspace } from '../../../workspace.ts'
+import { LocalRuntime } from './runtime.ts'
 
 const DEC = new TextDecoder()
 
@@ -38,7 +38,10 @@ describe('LocalRuntime', () => {
       await mkdir(join(dir, 'sub'))
       await writeFile(join(dir, 'sub/inner.txt'), 'inner\n')
       const code = await readFile(
-        new URL(`../../../../../../integ/fixtures/runtime/fs/py/${operation}.py`, import.meta.url),
+        new URL(
+          `../../../../../../../integ/fixtures/runtime/fs/py/${operation}.py`,
+          import.meta.url,
+        ),
         'utf8',
       )
       const result = await rt.run({ code, args: [], env: { MIRAGE_TEST_ROOT: dir }, stdin: null })

@@ -202,12 +202,12 @@ export class RuntimeVFS {
   /**
    * Whether the workspace answers for `path`.
    *
-   * A guest routes on this: a path the workspace does not serve is the
-   * engine's own (monty's scratch tree). A mount serves what is under
-   * it, and a namespace link serves what is reached through it wherever
-   * it lives, because the dispatcher follows a link outside every mount
-   * the same way. With no mounts wired there is no scoping, and every
-   * path routes here.
+   * A guest's content calls gate on this: monty and quickjs refuse a
+   * path the workspace does not serve, so they read and write only the
+   * view. A mount serves what is under it, and a namespace link serves
+   * what is reached through it wherever it lives, because the
+   * dispatcher follows a link outside every mount the same way. With no
+   * mounts wired there is no scoping, and every path routes here.
    */
   serves(path: string): boolean {
     if (this.prefixes().length === 0 || this.mountOf(path) !== null) return true

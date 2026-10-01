@@ -21,23 +21,19 @@ import pytest
 
 from mirage.ops.namespace_view import merge_readdir
 from mirage.runtime.resolver import PrefixResolver
-from mirage.runtime.types import VFSEntry, VFSStat
+from mirage.runtime.types import VFSStat
 from mirage.runtime.vfs import RuntimeVFS
-from mirage.runtime.wasm.abi import (
-    FT_CHR,
+from mirage.runtime.wasm.config import WasmFsConfig
+from mirage.runtime.wasm.constants import (
     FT_DIR,
     FT_REG,
     FT_SYMLINK,
     FT_UNKNOWN,
 )
-from mirage.runtime.wasm.config import WasmFsConfig
-from mirage.runtime.wasm.vfs import WasmVFS, filetype_of
+from mirage.runtime.wasm.view import WasmView
 from mirage.types import ContentType, FileStat, FileType
 from mirage.utils.stat_view import (
-    CHAR_MODE,
-    DIR_MODE,
     FILE_MODE,
-    LINK_MODE,
     mtime_ns,
 )
 
@@ -196,7 +192,7 @@ def test_mount_prefix_routes_to_bridge_even_when_host_file_exists(tmp_path):
     bridge = FakeVFS(
         files={"/data/f.txt": b"bridge-side"}, prefixes=["/data/"]
     )
-    fs = WasmVFS(WasmFsConfig(host_root=str(tmp_path)), bridge)
+    fs = WasmView(WasmFsConfig(host_root=str(tmp_path)), bridge)
     assert fs.read("/data/f.txt") == b"bridge-side"
 
 
@@ -204,14 +200,14 @@ def test_host_serves_paths_outside_mounts(tmp_path):
     (tmp_path / "lib").mkdir()
     (tmp_path / "lib" / "os.py").write_text("stdlib")
     bridge = FakeVFS(prefixes=["/data/"])
-    fs = WasmVFS(WasmFsConfig(host_root=str(tmp_path)), bridge)
+    fs = WasmView(WasmFsConfig(host_root=str(tmp_path)), bridge)
     assert fs.read("/lib/os.py") == b"stdlib"
     assert bridge.calls == []
 
 
 def test_missing_host_path_falls_through_to_bridge(tmp_path):
     bridge = FakeVFS(files={"/new.txt": b"ram-root"})
-    fs = WasmVFS(WasmFsConfig(host_root=str(tmp_path)), bridge)
+    fs = WasmView(WasmFsConfig(host_root=str(tmp_path)), bridge)
     assert fs.read("/new.txt") == b"ram-root"
     fs.write("/created.txt", b"x")
     assert bridge.files["/created.txt"] == b"x"
@@ -219,7 +215,7 @@ def test_missing_host_path_falls_through_to_bridge(tmp_path):
 
 def test_host_paths_are_read_only(tmp_path):
     (tmp_path / "python.wasm").write_bytes(b"\0asm")
-    fs = WasmVFS(WasmFsConfig(host_root=str(tmp_path)), FakeVFS())
+    fs = WasmView(WasmFsConfig(host_root=str(tmp_path)), FakeVFS())
     with pytest.raises(PermissionError, match="read-only"):
         fs.write("/python.wasm", b"clobber")
     with pytest.raises(PermissionError, match="read-only"):
@@ -228,7 +224,7 @@ def test_host_paths_are_read_only(tmp_path):
 
 
 def test_no_host_no_bridge_sees_empty_filesystem():
-    fs = WasmVFS()
+    fs = WasmView()
     with pytest.raises(FileNotFoundError):
         fs.stat("/anything")
 
@@ -239,7 +235,7 @@ def test_stat_maps_filestat_fields():
         dirs={"/data/sub"},
         prefixes=["/data/"],
     )
-    fs = WasmVFS(core=bridge)
+    fs = WasmView(core=bridge)
     st = fs.stat("/data/f.txt")
     assert (
         st
@@ -257,7 +253,7 @@ def test_readdir_bridge_resolves_kind_from_slash_or_stat():
     bridge = FakeVFS(
         files={"/data/f.txt": b""}, dirs={"/data/sub"}, prefixes=["/data/"]
     )
-    fs = WasmVFS(core=bridge)
+    fs = WasmView(core=bridge)
     assert fs.readdir("/data") == [("f.txt", FT_REG), ("sub", FT_DIR)]
 
 
@@ -270,7 +266,7 @@ def test_readdir_reports_an_entry_it_could_not_stat_as_unknown():
         files={"/data/f.txt": b"", "/data/bad.txt": b""},
         prefixes=["/data/"],
     )
-    fs = WasmVFS(core=bridge)
+    fs = WasmView(core=bridge)
     assert fs.readdir("/data") == [("bad.txt", FT_UNKNOWN), ("f.txt", FT_REG)]
     with pytest.raises(OSError):
         fs.stat("/data/bad.txt")
@@ -286,7 +282,7 @@ def test_readdir_reports_a_link_as_a_link():
         links={"/data/l": "/data/f.txt"},
         prefixes=["/data/"],
     )
-    fs = WasmVFS(core=bridge)
+    fs = WasmView(core=bridge)
     assert fs.readdir("/data") == [("f.txt", FT_REG), ("l", FT_SYMLINK)]
 
 
@@ -298,7 +294,7 @@ def test_readdir_reports_a_link_to_a_directory_as_a_link():
         links={"/data/dl": "/data/sub"},
         prefixes=["/data/"],
     )
-    fs = WasmVFS(core=bridge)
+    fs = WasmView(core=bridge)
     assert fs.readdir("/data") == [("dl", FT_SYMLINK), ("sub", FT_DIR)]
 
 
@@ -306,7 +302,7 @@ def test_readdir_root_merges_host_bridge_and_mounts(tmp_path):
     (tmp_path / "lib").mkdir()
     (tmp_path / "python.wasm").write_bytes(b"\0asm")
     bridge = FakeVFS(files={"/root.txt": b""}, prefixes=["/data/", "/logs/"])
-    fs = WasmVFS(WasmFsConfig(host_root=str(tmp_path)), bridge)
+    fs = WasmView(WasmFsConfig(host_root=str(tmp_path)), bridge)
     # Mount entries arrive through the core readdir (the door merges
     # them) and resolve as directories through the door's stat, which
     # answers for a structure-only path.
@@ -334,7 +330,7 @@ def test_a_root_mount_does_not_shadow_the_build_directory(tmp_path):
         files={"/lib/os.py": b"mount-side", "/mine.txt": b"root-side"},
         prefixes=["/"],
     )
-    fs = WasmVFS(WasmFsConfig(host_root=str(tmp_path)), bridge)
+    fs = WasmView(WasmFsConfig(host_root=str(tmp_path)), bridge)
     assert fs.read("/lib/os.py") == b"stdlib"
     assert fs.read("/mine.txt") == b"root-side"
     # An empty name would be the root prefix mistaken for a directory.
@@ -344,7 +340,7 @@ def test_a_root_mount_does_not_shadow_the_build_directory(tmp_path):
 def test_rename_within_bridge_and_across_routes(tmp_path):
     (tmp_path / "host.txt").write_text("x")
     bridge = FakeVFS(files={"/data/a.txt": b"move-me"}, prefixes=["/data/"])
-    fs = WasmVFS(WasmFsConfig(host_root=str(tmp_path)), bridge)
+    fs = WasmView(WasmFsConfig(host_root=str(tmp_path)), bridge)
     fs.rename("/data/a.txt", "/data/b.txt")
     assert bridge.files == {"/data/b.txt": b"move-me"}
     with pytest.raises(OSError) as exc:
@@ -372,8 +368,8 @@ def test_stat_reads_offsetless_stamps_as_utc():
             prefixes=["/data/"],
             modified="2026-01-02T03:04:05+00:00",
         )
-        got_naive = WasmVFS(core=naive).stat("/data/f.txt").mtime_ns
-        got_aware = WasmVFS(core=aware).stat("/data/f.txt").mtime_ns
+        got_naive = WasmView(core=naive).stat("/data/f.txt").mtime_ns
+        got_aware = WasmView(core=aware).stat("/data/f.txt").mtime_ns
         assert got_naive == got_aware
         assert got_naive == mtime_ns(
             FileStat(
@@ -397,7 +393,7 @@ def test_lstat_reports_a_link_as_a_link_sized_by_its_target():
         links={"/data/l": "t.txt"},
         prefixes=["/data/"],
     )
-    fs = WasmVFS(None, bridge)
+    fs = WasmView(None, bridge)
     st = fs.lstat("/data/l")
     assert st.is_link is True
     assert st.is_dir is False
@@ -414,7 +410,7 @@ def test_lstat_reports_a_link_as_a_link_sized_by_its_target():
 
 def test_lstat_of_a_plain_path_answers_exactly_as_stat():
     bridge = FakeVFS(files={"/data/f.txt": b"1234"}, prefixes=["/data/"])
-    fs = WasmVFS(None, bridge)
+    fs = WasmView(None, bridge)
     assert fs.lstat("/data/f.txt") == fs.stat("/data/f.txt")
 
 
@@ -422,7 +418,7 @@ def test_stat_follows_a_link_because_the_door_resolves_it():
     # The dispatcher resolves link prefixes for a following op, so the
     # core never sees the link path: `stat` is the target's row.
     bridge = FakeVFS(files={"/data/l": b"target-bytes"}, prefixes=["/data/"])
-    fs = WasmVFS(None, bridge)
+    fs = WasmView(None, bridge)
     st = fs.stat("/data/l")
     assert st.is_link is False
     assert st.size == len(b"target-bytes")
@@ -430,7 +426,7 @@ def test_stat_follows_a_link_because_the_door_resolves_it():
 
 def test_symlink_and_readlink_round_trip_the_target_verbatim():
     bridge = FakeVFS(prefixes=["/data/"])
-    fs = WasmVFS(None, bridge)
+    fs = WasmView(None, bridge)
     fs.symlink("/data/l", "../up/t.txt")
     assert bridge.links == {"/data/l": "../up/t.txt"}
     assert fs.readlink("/data/l") == "../up/t.txt"
@@ -438,7 +434,7 @@ def test_symlink_and_readlink_round_trip_the_target_verbatim():
 
 def test_readlink_of_a_plain_path_is_einval():
     bridge = FakeVFS(files={"/data/f.txt": b"x"}, prefixes=["/data/"])
-    fs = WasmVFS(None, bridge)
+    fs = WasmView(None, bridge)
     with pytest.raises(OSError) as caught:
         fs.readlink("/data/f.txt")
     assert caught.value.errno == host_errno.EINVAL
@@ -449,7 +445,7 @@ def test_readlink_on_a_build_path_is_einval_not_read_only(tmp_path):
     # holds no links, so the refusal is readlink's own.
     (tmp_path / "lib").mkdir()
     (tmp_path / "lib" / "os.py").write_text("stdlib")
-    fs = WasmVFS(WasmFsConfig(host_root=str(tmp_path)), FakeVFS())
+    fs = WasmView(WasmFsConfig(host_root=str(tmp_path)), FakeVFS())
     with pytest.raises(OSError) as caught:
         fs.readlink("/lib/os.py")
     assert caught.value.errno == host_errno.EINVAL
@@ -457,7 +453,7 @@ def test_readlink_on_a_build_path_is_einval_not_read_only(tmp_path):
 
 def test_setattr_passes_every_field_including_nofollow():
     bridge = FakeVFS(files={"/data/f.txt": b"x"}, prefixes=["/data/"])
-    fs = WasmVFS(None, bridge)
+    fs = WasmView(None, bridge)
     fs.setattr(
         "/data/f.txt",
         atime="1970-01-01T00:01:40+00:00",
@@ -484,42 +480,8 @@ def test_a_mutation_of_a_build_file_stays_refused(tmp_path):
     # the build tree routes to the bridge, exactly as a new file does.
     (tmp_path / "lib").mkdir()
     (tmp_path / "lib" / "os.py").write_text("stdlib")
-    fs = WasmVFS(WasmFsConfig(host_root=str(tmp_path)), FakeVFS())
+    fs = WasmView(WasmFsConfig(host_root=str(tmp_path)), FakeVFS())
     with pytest.raises(PermissionError):
         fs.symlink("/lib/os.py", "elsewhere.py")
     with pytest.raises(PermissionError):
         fs.setattr("/lib/os.py", atime=None, mtime="x", nofollow=False)
-
-
-def test_filetype_of_answers_a_stat_and_a_listing_row_alike():
-    # One table for path_filestat_get and fd_readdir, so d_type never
-    # disagrees with the stat: a character device lists as one.
-    assert (
-        filetype_of(
-            VFSStat(
-                size=3, is_dir=False, mode=LINK_MODE, mtime_ns=0, is_link=True
-            )
-        )
-        == FT_SYMLINK
-    )
-    assert (
-        filetype_of(VFSStat(size=0, is_dir=True, mode=DIR_MODE, mtime_ns=0))
-        == FT_DIR
-    )
-    assert (
-        filetype_of(VFSStat(size=1, is_dir=False, mode=FILE_MODE, mtime_ns=0))
-        == FT_REG
-    )
-    assert (
-        filetype_of(
-            VFSEntry(path="/dev/null", size=0, is_dir=False, mode=CHAR_MODE)
-        )
-        == FT_CHR
-    )
-    assert (
-        filetype_of(VFSEntry(path="/data/sub/", size=0, is_dir=True)) == FT_DIR
-    )
-    assert (
-        filetype_of(VFSEntry(path="/data/bad", size=0, is_dir=False))
-        == FT_UNKNOWN
-    )

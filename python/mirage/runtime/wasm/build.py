@@ -16,7 +16,7 @@ import os
 from pathlib import Path
 
 from mirage.runtime.types import VFSStat
-from mirage.runtime.wasm.abi import FT_DIR, FT_REG
+from mirage.runtime.wasm.constants import FT_DIR, FT_REG
 
 
 class BuildDir:

@@ -14,8 +14,7 @@
 
 import type { QuickJSAsyncContext, QuickJSHandle } from 'quickjs-emscripten'
 import type { RuntimeVFS } from '../../vfs.ts'
-import { WASI } from './wasi.ts'
-import { wasiErrno } from './errors.ts'
+import { WASI, errnoFor } from './errors.ts'
 import { compareCodePoints } from '../../../utils/sort.ts'
 
 export async function readdir(
@@ -36,7 +35,7 @@ export async function readdir(
       }
       names.sort(compareCodePoints)
     } catch (err) {
-      errno = wasiErrno(err)
+      errno = errnoFor(err)
     }
   }
   const namesArr = ctx.newArray()

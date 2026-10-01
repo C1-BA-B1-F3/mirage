@@ -12,17 +12,20 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-from typing import Any
+from mirage.runtime.wasm.constants import (
+    FST_ATIM,
+    FST_ATIM_NOW,
+    FST_MTIM,
+    FST_MTIM_NOW,
+    FT_SYMLINK,
+    LOOKUP_SYMLINK_FOLLOW,
+)
 
-from mirage.runtime.python.monty.loader import StatResult
-from mirage.runtime.types import VFSStat
+
+def test_symlink_filetype_is_the_preview1_number():
+    assert FT_SYMLINK == 7
 
 
-def stat_result(st: VFSStat) -> Any:
-    # 0 is the door's spelling of "no stamp", and monty reads a 0.0
-    # as epoch zero rather than substituting the host clock, so an
-    # unknown mtime stays unknown instead of becoming now.
-    mtime = st.mtime_ns / 1_000_000_000
-    if st.is_dir:
-        return StatResult.dir_stat(mode=st.mode, mtime=mtime)
-    return StatResult.file_stat(size=st.size, mode=st.mode, mtime=mtime)
+def test_lookup_and_fst_flag_bits_are_the_preview1_numbers():
+    assert LOOKUP_SYMLINK_FOLLOW == 1
+    assert (FST_ATIM, FST_ATIM_NOW, FST_MTIM, FST_MTIM_NOW) == (1, 2, 4, 8)

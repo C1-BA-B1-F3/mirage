@@ -21,7 +21,7 @@ from mirage import MountMode, Workspace
 from mirage.fuse.core import MountCore
 from mirage.io.types import materialize
 from mirage.runtime.js.quickjs import QUICKJS_HOME_ENV
-from mirage.runtime.python.wasi import WASI_HOME_ENV
+from mirage.runtime.python.wasi.runtime import WASI_HOME_ENV
 from mirage.vfs.ram import RAMVFS
 
 

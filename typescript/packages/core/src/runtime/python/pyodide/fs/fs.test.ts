@@ -18,8 +18,8 @@ import { PrefixResolver } from '../../../resolver.ts'
 import { RuntimeVFS } from '../../../vfs.ts'
 import { applyMutation, createJournal, type MutationJournal } from './journal.ts'
 import { preloadInto } from './preload.ts'
-import { changedAttrs, MirageFs } from './vfs.ts'
-import { MirageFsSeed } from './seed.ts'
+import { changedAttrs, PyodideFs } from './fs.ts'
+import { PyodideFsSeed } from './seed.ts'
 import type { BridgeDispatchFn } from '../../../types.ts'
 import type { VFSEntry, VFSStat } from '../../../vfs.ts'
 import { DIR_MODE, FILE_MODE } from './constants.ts'
@@ -40,7 +40,7 @@ interface Call {
   bytes?: Uint8Array
 }
 
-describe('MirageFs', () => {
+describe('PyodideFs', () => {
   let py: PyodideInterface
   let vfs: RuntimeVFS
   let journal: MutationJournal
@@ -63,10 +63,12 @@ describe('MirageFs', () => {
   // and Emscripten assigns the root's only once type.mount() returned).
   async function mountPrefix(prefix: string): Promise<void> {
     mounts.push(prefix)
-    const seed = new MirageFsSeed()
+    const seed = new PyodideFsSeed()
     await preloadInto(seed, vfs, prefix)
     const mountpoint = prefix.slice(0, -1)
-    const fs = new MirageFs(py.FS, py.ERRNO_CODES, journal, mountpoint, (path) => vfs.mountOf(path))
+    const fs = new PyodideFs(py.FS, py.ERRNO_CODES, journal, mountpoint, (path) =>
+      vfs.mountOf(path),
+    )
     py.FS.mkdirTree(mountpoint)
     py.FS.mount(fs.type, {}, mountpoint)
     fs.seed(seed)
@@ -75,10 +77,10 @@ describe('MirageFs', () => {
   // The worker shape: nothing is seeded, and every lookup, listing and
   // read goes through a synchronous channel, here a double over the rows
   // and stats a test hands it.
-  function mountOver(prefix: string, sync: SyncVFS): MirageFs {
+  function mountOver(prefix: string, sync: SyncVFS): PyodideFs {
     mounts.push(prefix)
     const mountpoint = prefix.slice(0, -1)
-    const fs = new MirageFs(
+    const fs = new PyodideFs(
       py.FS,
       py.ERRNO_CODES,
       journal,

@@ -18,10 +18,10 @@ import type { FSLike } from './preload.ts'
  * A mount's tree, collected in memory so it can be served synchronously.
  *
  * `preloadInto` walks the bridge and writes through this interface; the
- * result seeds a `NodeTree` once its filesystem has mounted. The split
+ * result seeds a `NodeTable` once its filesystem has mounted. The split
  * exists because fetching is async and every filesystem callback is not.
  */
-export class MirageFsSeed implements FSLike {
+export class PyodideFsSeed implements FSLike {
   readonly dirs: string[] = []
   readonly files = new Map<string, Uint8Array>()
   readonly devices = new Map<string, { mode: number; rdev: number }>()
@@ -58,7 +58,7 @@ export class MirageFsSeed implements FSLike {
    * Note the mount's permission bits for a path.
    *
    * Recorded rather than applied: the node it belongs to does not exist
-   * until `NodeTree.seed` places it.
+   * until `NodeTable.seed` places it.
    *
    * Args:
    *   path: guest-absolute path.

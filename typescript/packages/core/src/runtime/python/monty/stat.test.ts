@@ -16,7 +16,7 @@ import { describe, expect, it } from 'vitest'
 import { statFields, statResult, type GuestStat } from './stat.ts'
 
 // The numbers below are pydantic_monty's own StatResult constructors,
-// read off the python binding: file_stat(size=5, mode=0o100644,
+// read off the python engine: file_stat(size=5, mode=0o100644,
 // mtime=1.5) and dir_stat(mode=0o40755, mtime=2). This file is what
 // keeps the JS side reproducing them by hand.
 describe('statFields', () => {

@@ -21,17 +21,17 @@ from typing import Any
 from mirage.errors import FsCondition, classify
 from mirage.runtime.handles import parse_mode
 from mirage.runtime.open import apply_open
-from mirage.runtime.python.monty.binding import (
-    AbstractOS,
-    MontyFileHandle,
-    path_from_arg,
-)
 from mirage.runtime.python.monty.constants import (
     MAX_URANDOM_BYTES,
     NOT_A_LINK,
 )
 from mirage.runtime.python.monty.errors import guest_error
 from mirage.runtime.python.monty.list import child_paths
+from mirage.runtime.python.monty.loader import (
+    AbstractOS,
+    MontyFileHandle,
+    path_from_arg,
+)
 from mirage.runtime.python.monty.stat import stat_result
 from mirage.runtime.types import VFSStat
 from mirage.runtime.vfs import RuntimeVFS
@@ -59,10 +59,10 @@ def _as_guest(path: str, target: str | None = None) -> Iterator[None]:
         raise guest_error(condition, path, target) from exc
 
 
-class MirageOSAccess(AbstractOS):
+class MontyFs(AbstractOS):
     """Monty's OS door: every path a guest names is the workspace's.
 
-    This is monty's tier of the interception taxonomy: the binding hands
+    This is monty's tier of the interception taxonomy: the engine hands
     the interpreter a host OS object and calls its methods, so mirage
     implements that object rather than hooking a syscall layer. Every
     path goes to the file door, and nothing is kept aside: structure is
@@ -70,14 +70,14 @@ class MirageOSAccess(AbstractOS):
     content goes only through the runtime's view (``RuntimeVFS.serves``:
     the announced mounts and what a link reaches), so a guest lists what
     a shell lists and reads and writes nothing the view withholds. The
-    environment, the clocks and ``urandom`` are the binding's own.
+    environment, the clocks and ``urandom`` are the engine's own.
 
     Monty hands the door whole-file calls: an open, then reads of the
     whole file and appends of each new write. So an open applies its
     mode's effect on the mount (``apply_open``) and nothing else, and
     each write after it ships only its own bytes.
 
-    The bridge uses synchronous callbacks, so the core's hop parks the
+    The door uses synchronous callbacks, so the core's hop parks the
     tokio worker for the whole I/O wait. That caps concurrent
     I/O-waiting runs at Monty's worker pool size, which is the core
     count by default; TOKIO_WORKER_THREADS raises it, and parked
@@ -152,7 +152,7 @@ class MirageOSAccess(AbstractOS):
     def path_is_symlink(self, path: PurePosixPath) -> bool:
         """Whether the name plane holds a symlink at `path`, via readlink.
 
-        Creation stays out of reach, because the binding has no symlink
+        Creation stays out of reach, because the engine has no symlink
         verb to serve.
 
         Args:

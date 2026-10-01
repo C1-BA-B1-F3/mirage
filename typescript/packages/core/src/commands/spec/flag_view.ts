@@ -39,6 +39,35 @@ export function flagOccurrences(flags: Record<string, FlagValue>): [string, Pars
 }
 
 /**
+ * The flags with each operand's tape entry spread over its words.
+ *
+ * The parse runs before a glob expands, so the tape holds an operand as it
+ * was typed. A program that reads its operands in order (join) needs each
+ * match where the glob stood, as its argv would hold them. A tape that does
+ * not place exactly these operands is kept as it is. Mirrors Python's
+ * `spread_operands`.
+ */
+export function spreadOperands(
+  flags: Record<string, FlagValue>,
+  groups: readonly (readonly string[])[],
+): Record<string, FlagValue> {
+  const out = { ...flags }
+  const tape = flagOccurrences(flags)
+  const placed = tape.filter(([name]) => name === OPERAND).length
+  const words = groups[Symbol.iterator]()
+  flagOccurrences(out).push(
+    ...(placed !== groups.length
+      ? tape
+      : tape.flatMap(([name, value]): [string, ParsedFlagValue][] =>
+          name === OPERAND
+            ? (words.next().value ?? []).map((word): [string, ParsedFlagValue] => [OPERAND, word])
+            : [[name, value]],
+        )),
+  )
+  return out
+}
+
+/**
  * Collect the kwarg names a spec's options can produce.
  *
  * One name per option: the long spelling when an option declares both,

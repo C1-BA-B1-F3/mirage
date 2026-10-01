@@ -30,10 +30,12 @@ import { compareCodePoints } from '../../../utils/sort.ts'
 const resolveGlob = resolveGlobOf(GITHUB_IO)
 
 /**
- * Every sized entry at or under `path`, in mount-relative space, and their sum.
+ * Every blob at or under `path`, in mount-relative space, and their sum.
  *
  * Read off the git tree rather than the index: the tree is keyed
- * repo-relative, which is the space these comparisons are in.
+ * repo-relative, which is the space these comparisons are in. A directory
+ * row is du's to derive, and a blob of unknown size counts 0, as the walked
+ * du counts any file.
  */
 function subtree(accessor: GitHubAccessor, path: PathSpec): DuEntries {
   const key = stripSlash(path.vfsPath)
@@ -41,9 +43,9 @@ function subtree(accessor: GitHubAccessor, path: PathSpec): DuEntries {
   const found: [string, number][] = []
   let total = 0
   for (const [p, entry] of Object.entries(accessor.tree)) {
-    if ((p !== key && !p.startsWith(prefix)) || entry.size === null) continue
-    found.push([`/${p}`, entry.size])
-    total += entry.size
+    if ((p !== key && !p.startsWith(prefix)) || entry.type !== 'blob') continue
+    found.push([`/${p}`, entry.size ?? 0])
+    total += entry.size ?? 0
   }
   found.sort((a, b) => compareCodePoints(a[0], b[0]))
   return [found, total]

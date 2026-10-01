@@ -12,7 +12,7 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from typing import Generic, TypeVar
 
 from mirage.commands.spec.constants import (
@@ -48,6 +48,38 @@ class FlagBag(dict[str, T], Generic[T]):
         self.occurrences: list[tuple[str, str | bool | int]] = (
             list(values.occurrences) if isinstance(values, FlagBag) else []
         )
+
+
+def spread_operands(
+    flags: Mapping[str, FlagValue], groups: Sequence[Sequence[str]]
+) -> FlagBag[FlagValue]:
+    """The flags with each operand's tape entry spread over its words.
+
+    The parse runs before a glob expands, so the tape holds an operand
+    as it was typed. A program that reads its operands in order (join)
+    needs each match where the glob stood, as its argv would hold them.
+    A tape that does not place exactly these operands is kept as it is.
+
+    Args:
+        flags (Mapping[str, FlagValue]): parsed flags and their tape.
+        groups (Sequence[Sequence[str]]): each operand's words, in order,
+            a glob's matches in its place.
+    """
+    bag = FlagBag(flags)
+    placed = [name for name, _ in bag.occurrences if name == OPERAND]
+    if len(placed) != len(groups):
+        return bag
+    words = iter(groups)
+    bag.occurrences = [
+        entry
+        for name, value in bag.occurrences
+        for entry in (
+            [(OPERAND, word) for word in next(words)]
+            if name == OPERAND
+            else [(name, value)]
+        )
+    ]
+    return bag
 
 
 class FlagView:

@@ -38,11 +38,12 @@ from mirage.types import PathSpec
 def _subtree(
     accessor: GitHubAccessor, path: PathSpec
 ) -> list[tuple[str, int]]:
-    """Every sized entry at or under ``path``, in mount-relative space.
+    """Every blob at or under ``path``, in mount-relative space.
 
     Read off the git tree rather than the index, mirroring TypeScript's
     du: the tree is keyed repo-relative, which is the space these
-    comparisons are in.
+    comparisons are in. A directory row is du's to derive, and a blob of
+    unknown size counts 0, as the walked du counts any file.
 
     Args:
         accessor (GitHubAccessor): backend handle holding the tree.
@@ -51,9 +52,9 @@ def _subtree(
     key = path.vfs_path.strip("/")
     prefix = key + "/" if key else ""
     found = [
-        ("/" + p, entry.size)
+        ("/" + p, entry.size or 0)
         for p, entry in accessor.tree.items()
-        if (p == key or p.startswith(prefix)) and entry.size is not None
+        if (p == key or p.startswith(prefix)) and entry.type == "blob"
     ]
     found.sort()
     return found

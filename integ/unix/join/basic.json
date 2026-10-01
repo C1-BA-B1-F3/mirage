@@ -92,10 +92,10 @@
         "gdrive-folder",
         "box"
       ],
-      "command": "mkdir -p /data/qjoin && printf '1 a\\n2 b\\n3 c\\n' > /data/qjoin/j1 && printf '1 x\\n3 z\\n' > /data/qjoin/j2 && join /data/qjoin/j1 /data/qjoin/j2 && printf '\\n' > /data/qjoin/e && join /data/qjoin/e /data/qjoin/e && join -v1 /data/qjoin/e /data/qjoin/j2 && printf 'a\\n' > /data/qjoin/s && join -1 2 -2 2 /data/qjoin/s /data/qjoin/s && (cd /data/qjoin && join -j1 1 j1 j2 && join -o 1.1 2.2 j1 j2; join j1 j2 j1 -a 3; echo rc=$?; join -j1 j1 j2 -1 2; echo rc=$?)",
+      "command": "mkdir -p /data/qjoin && printf '1 a\\n2 b\\n3 c\\n' > /data/qjoin/j1 && printf '1 x\\n3 z\\n' > /data/qjoin/j2 && join /data/qjoin/j1 /data/qjoin/j2 && printf '\\n' > /data/qjoin/e && join /data/qjoin/e /data/qjoin/e && join -v1 /data/qjoin/e /data/qjoin/j2 && printf 'a\\n' > /data/qjoin/s && join -1 2 -2 2 /data/qjoin/s /data/qjoin/s && join -j1 1 /data/qjoin/j? && (cd /data/qjoin && join -j1 1 j1 j2 && join -o 1.1 2.2 j1 j2 && join -o 1.1 2.2 j?; join j1 j2 j1 -a 3; echo rc=$?; join -j1 j1 j2 -1 2; echo rc=$?)",
       "expect": {
         "exit": 0,
-        "stdout": "1 a x\n3 c z\n\n\n a a\n1 a x\n3 c z\n1 x\n3 z\nrc=1\nrc=1\n",
+        "stdout": "1 a x\n3 c z\n\n\n a a\n1 a x\n3 c z\n1 a x\n3 c z\n1 x\n3 z\n1 x\n3 z\nrc=1\nrc=1\n",
         "stderr": "join: extra operand 'j1'\nTry 'join --help' for more information.\njoin: incompatible join fields 1, 0\n"
       },
       "flags": [

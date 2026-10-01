@@ -9,7 +9,7 @@ from mirage.commands.errors import UsageError
 from mirage.commands.quote import quote_text
 from mirage.commands.spec import SPECS
 from mirage.commands.spec.constants import OPERAND, SPELLED
-from mirage.commands.spec.flag_view import FlagView
+from mirage.commands.spec.flag_view import FlagView, spread_operands
 from mirage.commands.spec.types import CommandName, FlagValue
 from mirage.commands.spec.usage import (
     extra_operand_error,
@@ -378,14 +378,15 @@ def parse_flags(
     first is GNU's refusal. The operands are read there too, as join's
     RETURN_IN_ORDER getopt hands them over: a third one is refused where
     it stands, or turns an earlier one into the value of an obsolete
-    ``-j1 FIELD``, ``-j2 FIELD`` or ``-o LIST...``. Operands the tape
-    does not place, from a call that never went through the shell or a
-    word a glob grew into several, follow the options, as after ``--``.
+    ``-j1 FIELD``, ``-j2 FIELD`` or ``-o LIST...``. A glob's matches
+    stand where it was typed once ``spread_operands`` has put them on the
+    tape. Operands the tape does not place, from a call that never went
+    through the shell, follow the options, as after ``--``.
 
     Args:
         flags (Mapping[str, FlagValue]): flags parsed against join's spec.
-        operands (Sequence[str] | None): the operands as typed, or None to
-            read the options alone.
+        operands (Sequence[str] | None): the operands, or None to read the
+            options alone.
         argv (Sequence[str]): the line's words, for the usage error.
     """
     options = _Options()
@@ -694,6 +695,10 @@ async def join(
         stdin (ByteSource | None): the line's input.
         flags (JoinFlags): the options, from ``parse_flags``.
     """
+    if len(paths) <= max(flags.files):
+        raise missing_operand_error(
+            CommandName.JOIN, _operand_word(paths[-1]) if paths else None
+        )
     file1, file2 = (paths[index] for index in flags.files)
     if file1.raw_path == "-" and file2.raw_path == "-":
         return None, IOResult(
@@ -715,22 +720,33 @@ async def join_generic(
     paths: list[PathSpec],
     texts: list[str],
     opts: CommandOpts,
+    resolve_glob: Callable[[list[PathSpec]], Awaitable[list[PathSpec]]],
     read_bytes: Callable[..., Awaitable[bytes]],
 ) -> tuple[ByteSource | None, IOResult]:
     """The builder's door: parse the line's flags, then ``join``.
 
+    Each operand's glob expands on its own, so the option loop sees its
+    matches where the word was typed (``join -j1 2 *.txt``).
+
     Args:
-        paths (list[PathSpec]): the operands.
+        paths (list[PathSpec]): the operands, unresolved.
         texts (list[str]): unused; join takes no text operands.
         opts (CommandOpts): the line's flags, stdin and words.
+        resolve_glob (Callable): expands globs against the backend.
         read_bytes (Callable): reads one operand's bytes.
     """
+    groups = [await resolve_glob([path]) for path in paths]
+    resolved = [path for group in groups for path in group]
+    flags = spread_operands(
+        opts.flags,
+        [[_operand_word(path) for path in group] for group in groups],
+    )
     return await join(
-        paths,
+        resolved,
         read_bytes=read_bytes,
         stdin=opts.stdin,
         flags=parse_flags(
-            opts.flags, [_operand_word(path) for path in paths], opts.argv
+            flags, [_operand_word(path) for path in resolved], opts.argv
         ),
     )
 

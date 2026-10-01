@@ -14,7 +14,7 @@
 
 import { specOf } from '../../spec/builtins.ts'
 import { OPERAND, SPELLED } from '../../spec/constants.ts'
-import { FlagView } from '../../spec/flag_view.ts'
+import { FlagView, spreadOperands } from '../../spec/flag_view.ts'
 import { IOResult, materialize, type ByteSource } from '../../../io/types.ts'
 import type { PathSpec } from '../../../types.ts'
 import type { CommandFnResult, CommandOpts } from '../../config.ts'
@@ -326,9 +326,10 @@ class Options {
  * refusal. The operands are read there too, as join's RETURN_IN_ORDER getopt
  * hands them over: a third one is refused where it stands, or turns an
  * earlier one into the value of an obsolete `-j1 FIELD`, `-j2 FIELD` or
- * `-o LIST...`. Operands the tape does not place, from a call that never
- * went through the shell or a word a glob grew into several, follow the
- * options, as after `--`. `operands` null reads the options alone.
+ * `-o LIST...`. A glob's matches stand where it was typed once
+ * `spreadOperands` has put them on the tape. Operands the tape does not
+ * place, from a call that never went through the shell, follow the options,
+ * as after `--`. `operands` null reads the options alone.
  * Mirrors parse_flags in join.py.
  */
 export function parseJoinFlags(
@@ -615,18 +616,30 @@ export async function join(paths: PathSpec[], io: JoinIO): Promise<[ByteSource |
   return merge.result()
 }
 
-/** The builder's door: parse the line's flags, then `join`. Mirrors join_generic in join.py. */
+/**
+ * The builder's door: parse the line's flags, then `join`. Each operand's
+ * glob expands on its own, so the option loop sees its matches where the
+ * word was typed (`join -j1 2 *.txt`). Mirrors join_generic in join.py.
+ */
 export async function joinGeneric(
   paths: PathSpec[],
   opts: CommandOpts,
+  resolveGlob: (targets: PathSpec[]) => Promise<PathSpec[]>,
   read: (p: PathSpec) => AsyncIterable<Uint8Array>,
 ): Promise<CommandFnResult> {
-  return join(paths, {
+  const groups: PathSpec[][] = []
+  for (const path of paths) groups.push(await resolveGlob([path]))
+  const resolved = groups.flat()
+  const flags = spreadOperands(
+    opts.flags,
+    groups.map((group) => group.map((path) => path.rawPath)),
+  )
+  return join(resolved, {
     read,
     stdin: opts.stdin,
     flags: parseJoinFlags(
-      opts.flags,
-      paths.map((path) => path.rawPath),
+      flags,
+      resolved.map((path) => path.rawPath),
       opts.argv ?? [],
     ),
   })

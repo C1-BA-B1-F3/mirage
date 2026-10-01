@@ -34,6 +34,7 @@ const TREE: Record<string, TreeEntry> = {
   docs: { path: 'docs', type: 'tree', sha: 's1', size: null },
   'docs/a.md': { path: 'docs/a.md', type: 'blob', sha: 's2', size: 100 },
   'docs/b.md': { path: 'docs/b.md', type: 'blob', sha: 's3', size: 50 },
+  'docs/c.md': { path: 'docs/c.md', type: 'blob', sha: 's5', size: null },
   'readme.txt': { path: 'readme.txt', type: 'blob', sha: 's4', size: 7 },
 }
 
@@ -62,7 +63,7 @@ it.each([
   [
     '/',
     { a: true },
-    '2\t/Banana.md\n100\t/docs/a.md\n50\t/docs/b.md\n150\t/docs\n7\t/readme.txt\n159\t/\n',
+    '2\t/Banana.md\n100\t/docs/a.md\n50\t/docs/b.md\n0\t/docs/c.md\n150\t/docs\n7\t/readme.txt\n159\t/\n',
   ],
   ['/docs', { s: true }, '150\t/docs\n'],
   ['/readme.txt', { a: true }, '7\t/readme.txt\n'],

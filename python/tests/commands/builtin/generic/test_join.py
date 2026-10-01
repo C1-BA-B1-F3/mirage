@@ -3,8 +3,10 @@ import pytest
 from mirage.commands.builtin.generic.join import (
     CheckOrder,
     JoinFlags,
+    join,
     parse_flags,
 )
+from mirage.commands.errors import UsageError
 from mirage.core.ram.write import write_bytes
 from mirage.types import MountMode, PathSpec
 from mirage.vfs.ram import RAMVFS
@@ -374,6 +376,26 @@ GNU = [
         b"",
     ),
     (
+        "o_words_glob",
+        b"1 a\n2 b\n3 c\n",
+        b"1 x\n3 z\n4 w\n",
+        "join -o 1.1 2.2 ?",
+        b"",
+        0,
+        b"1 x\n3 z\n",
+        b"",
+    ),
+    (
+        "j1_takes_a_field_glob",
+        b"1 a\n2 b\n3 c\n",
+        b"1 x\n3 z\n4 w\n",
+        "join -j1 1 [ab]",
+        b"",
+        0,
+        b"1 a x\n3 c z\n",
+        b"",
+    ),
+    (
         "j1_takes_a_field",
         b"1 a\n2 b\n3 c\n",
         b"1 x\n3 z\n4 w\n",
@@ -584,3 +606,9 @@ async def test_cross_mount_relay_reads_every_flag():
         0,
         b"B 2 y\nC - z\nx 1 -\n",
     )
+
+
+@pytest.mark.asyncio
+async def test_join_refuses_a_missing_file():
+    with pytest.raises(UsageError, match="missing operand after '/a'"):
+        await join([PathSpec.from_str_path("/a")], read_bytes=_drain)

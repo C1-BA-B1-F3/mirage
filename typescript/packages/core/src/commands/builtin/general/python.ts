@@ -13,26 +13,104 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import type { Accessor } from '../../../accessor/base.ts'
-import { IOResult, materialize } from '../../../io/types.ts'
+import { type ByteSource, IOResult, materialize } from '../../../io/types.ts'
 import { PathSpec } from '../../../types.ts'
-import { handlePython } from '../../../workspace/executor/python/handle.ts'
+import type { ExecutionNode } from '../../../workspace/types.ts'
 import { command, type CommandFnResult, type CommandOpts } from '../../config.ts'
 import { LanguageRuntime } from '../../../runtime/language.ts'
 import { specOf } from '../../spec/builtins.ts'
 import { resolveScript } from '../utils/operands.ts'
 import { FlagView } from '../../spec/flag_view.ts'
 import {
+  makeInterpreterHandler,
   moduleSource,
   runtimeVersion,
+  skipFirstLine,
   PAYLOAD_ARGV0,
   STDIN_ARGV0,
   STDIN_OPERAND,
   type SourceMode,
 } from './interpreter.ts'
+import { PythonRuntime } from '../../../runtime/python/base.ts'
 import type { InitFlags } from '../../../runtime/python/flags.ts'
+import { MontyUnavailableError } from '../../../runtime/python/monty/index.ts'
+import { PyodideUnavailableError } from '../../../runtime/python/pyodide/errors.ts'
+import type { DispatchFn } from '../../../runtime/types.ts'
 
 const ENC = new TextEncoder()
 const DEC = new TextDecoder('utf-8', { fatal: false })
+
+type Result = [ByteSource | null, IOResult, ExecutionNode]
+
+export interface HandlePythonDeps {
+  runtime: LanguageRuntime
+}
+
+const runPython = makeInterpreterHandler({
+  label: 'python3',
+  payloadFlag: '-c',
+  isUnavailable: (err: unknown) =>
+    err instanceof PyodideUnavailableError || err instanceof MontyUnavailableError,
+})
+
+// `-m` against a runtime that cannot run modules. Exit 1 is CPython's code
+// for a `-m` that could not run, but not its "No module named" wording:
+// nothing was searched for, so naming the runtime is the honest report.
+function moduleRefusal(
+  mode: SourceMode | undefined,
+  runtime: LanguageRuntime,
+  label: string,
+): string | null {
+  if (mode !== 'module') return null
+  if (!(runtime instanceof PythonRuntime) || runtime.runsModules) return null
+  return `${label}: -m is not supported by the '${runtime.name}' runtime\n`
+}
+
+export async function handlePython(
+  dispatch: DispatchFn,
+  pathScope: PathSpec | null,
+  args: string[],
+  opts: {
+    command?: string
+    stdin: ByteSource | null
+    env: Record<string, string>
+    cwd?: PathSpec
+    code: string | null
+    // argv[0], derived from which door the source came through; '' is
+    // CPython's own answer for a program piped in with no operand, so a
+    // runtime must not treat it as absent.
+    prog?: string
+    mode?: SourceMode
+    // CPython's -x. File mode only, which is CPython's own scope: -c,
+    // -m and stdin are unaffected.
+    skipFirstLine?: boolean
+    initFlags?: InitFlags
+    signal?: AbortSignal
+    timeoutSeconds?: number
+  },
+  deps: HandlePythonDeps,
+): Promise<Result> {
+  return runPython(
+    dispatch,
+    pathScope,
+    args,
+    {
+      command: opts.command ?? 'python3',
+      stdin: opts.stdin,
+      env: opts.env,
+      ...(opts.cwd !== undefined ? { cwd: opts.cwd } : {}),
+      code: opts.code,
+      refuse: (runtime: LanguageRuntime) =>
+        moduleRefusal(opts.mode, runtime, opts.command ?? 'python3'),
+      ...(opts.prog !== undefined ? { prog: opts.prog } : {}),
+      ...(opts.initFlags !== undefined ? { flags: opts.initFlags as Record<string, unknown> } : {}),
+      ...(opts.skipFirstLine === true ? { transformSource: skipFirstLine } : {}),
+      ...(opts.signal !== undefined ? { signal: opts.signal } : {}),
+      ...(opts.timeoutSeconds !== undefined ? { timeoutSeconds: opts.timeoutSeconds } : {}),
+    },
+    deps,
+  )
+}
 
 // Keyed by CPython's own letter, which is how runtime/python/flags reads
 // them; the one long switch is keyed by its canonical spelling, having

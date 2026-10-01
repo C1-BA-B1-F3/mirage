@@ -18,9 +18,9 @@ import asyncssh
 import pytest
 
 from mirage.accessor.ssh import SSHAccessor
-from mirage.core.ssh.config import SSHConfig
 from mirage.core.ssh.rmdir import rmdir
 from mirage.types import PathSpec
+from mirage.vfs.ssh.config import SSHConfig
 
 
 class _FakeSFTP:

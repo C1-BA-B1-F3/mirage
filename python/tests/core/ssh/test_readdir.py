@@ -19,11 +19,11 @@ import pytest
 
 from mirage.accessor.ssh import SSHAccessor
 from mirage.cache.index.ram import RAMIndexCacheStore
-from mirage.core.ssh.config import SSHConfig
 from mirage.core.ssh.read import read_bytes
 from mirage.core.ssh.readdir import readdir
 from mirage.core.ssh.stat import stat
 from mirage.types import FileType, PathSpec
+from mirage.vfs.ssh.config import SSHConfig
 
 _MTIME = 1_750_000_000
 

@@ -12,7 +12,7 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-from mirage.accessor.hf_hub import HfHubAccessor, HfRepoConfig
+from mirage.accessor.hf_hub import HfHubAccessor
 from mirage.commands.cli.types import CLIInvocation
 from mirage.commands.errors import UsageError
 from mirage.commands.spec.flag_view import FlagView
@@ -20,6 +20,7 @@ from mirage.core.hf_hub.config import HfConfig
 from mirage.core.hf_hub.constants import API_SEGMENTS, DEFAULT_REVISION
 from mirage.io.stream import yield_bytes
 from mirage.io.types import ByteSource, IOResult
+from mirage.vfs.hf_buckets.config import HfRepoConfig
 
 DEFAULT_REPO_TYPE = "model"
 

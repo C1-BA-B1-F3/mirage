@@ -13,7 +13,7 @@
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 from mirage.accessor.ssh import _connect_kwargs
-from mirage.core.ssh.config import SSHConfig
+from mirage.vfs.ssh.config import SSHConfig
 
 
 def test_connect_kwargs_overrides():

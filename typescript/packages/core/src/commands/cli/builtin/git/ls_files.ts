@@ -23,7 +23,8 @@ import { GitError } from './errors.ts'
 import { readIndex } from './index_file.ts'
 import { repoRelative, under } from './pathspec.ts'
 import { quotePath, relativePath } from './render.ts'
-import { configBool, opened } from './repo.ts'
+import { configBool } from './repo.ts'
+import { opened } from './session.ts'
 import { fatal, startPoint } from './util.ts'
 
 /**

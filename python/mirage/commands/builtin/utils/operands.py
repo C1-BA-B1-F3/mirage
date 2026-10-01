@@ -18,6 +18,7 @@ from dataclasses import dataclass
 from functools import partial
 
 from mirage.commands.spec.usage import read_fail_exit
+from mirage.io.stream import ensure_stream
 from mirage.io.types import ByteSource, IOResult, materialize
 from mirage.ops.types import LinkView, MountView, StatPath
 from mirage.types import (
@@ -29,7 +30,6 @@ from mirage.types import (
     StatFn,
 )
 from mirage.utils.errors import FS_ERRORS, DotWalkError, eisdir, fs_error_line
-from mirage.utils.stream import ensure_stream
 
 
 def operand_name(path: PathSpec) -> str:

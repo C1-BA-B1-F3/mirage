@@ -18,8 +18,8 @@ from typing import Any
 import asyncssh
 
 from mirage.accessor.base import Accessor
-from mirage.core.ssh.config import SSHConfig
 from mirage.vfs.secrets import reveal_secret
+from mirage.vfs.ssh.config import SSHConfig
 
 
 def _connect_kwargs(config: SSHConfig) -> dict[str, Any]:

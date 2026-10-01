@@ -265,6 +265,19 @@ async def read_names(dispatch: DispatchFn, path: str) -> list[str]:
     return list(entries or [])
 
 
+def basename(entry: str) -> str:
+    """The final segment of a readdir entry, directory marker stripped.
+
+    A backend may report a bare name or a whole path, and may or may not
+    mark a directory with a trailing slash; every caller here wants the
+    name.
+
+    Args:
+        entry (str): one entry as the backend reported it.
+    """
+    return entry.rstrip("/").rsplit("/", 1)[-1]
+
+
 async def ensure_dir(dispatch: DispatchFn, path: str) -> None:
     """Create a directory and every missing directory above it.
 
@@ -539,7 +552,7 @@ async def remove_tree(
     for entry in await read_names(dispatch, path):
         # A listing answers in whole paths, so the child is rebuilt from
         # the basename the way every other walk here does.
-        name = entry.rstrip("/").rsplit("/", 1)[-1]
+        name = basename(entry)
         if not name:
             continue
         child = posixpath.join(path, name)

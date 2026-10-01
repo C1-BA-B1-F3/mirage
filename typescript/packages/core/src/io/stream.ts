@@ -30,9 +30,7 @@ export class SharedStdin implements AsyncIterable<Uint8Array> {
   private readonly lock = new KeyLock()
 
   constructor(source: ByteSource) {
-    this.chunks = (source instanceof Uint8Array ? yieldBytes(source) : source)[
-      Symbol.asyncIterator
-    ]()
+    this.chunks = ensureStream(source)[Symbol.asyncIterator]()
   }
 
   [Symbol.asyncIterator](): AsyncIterator<Uint8Array, undefined> {
@@ -148,4 +146,12 @@ export async function* asyncChain(streams: Iterable<ByteSource | null>): AsyncIt
 export async function* yieldBytes(data: Uint8Array): AsyncIterable<Uint8Array> {
   await Promise.resolve()
   yield data
+}
+
+/**
+ * Present a byte source as a stream. An iterable is returned as itself, so
+ * closing the consumer closes its source; bytes become a one-chunk stream.
+ */
+export function ensureStream(src: ByteSource): AsyncIterable<Uint8Array> {
+  return src instanceof Uint8Array ? yieldBytes(src) : src
 }

@@ -14,7 +14,7 @@
 
 from mirage.accessor.ram import RAMAccessor
 from mirage.core.dev.device import active_device
-from mirage.vfs.dev.dev import DevStore
+from mirage.vfs.dev.store import DevStore
 from mirage.vfs.ram.store import RAMStore
 
 

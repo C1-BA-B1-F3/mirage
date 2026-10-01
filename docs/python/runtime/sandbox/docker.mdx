@@ -28,8 +28,7 @@ networks, volumes, and bind mounts belong on your own `docker run` command.
 
 ```python
 from mirage import MountMode, Workspace
-from mirage.accessor.s3 import S3Config
-from mirage.vfs.s3.s3 import S3VFS
+from mirage.vfs.s3 import S3VFS, S3Config
 from mirage.runtime.sandbox.docker import DockerRuntime
 
 runtime = DockerRuntime(captures=["python3"],

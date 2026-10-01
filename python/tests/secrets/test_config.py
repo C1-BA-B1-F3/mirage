@@ -15,7 +15,6 @@
 import pytest
 from pydantic import SecretStr, ValidationError
 
-from mirage.accessor.s3 import S3Config
 from mirage.secrets.config import (
     AWSAuth,
     AWSSMConfig,
@@ -25,6 +24,7 @@ from mirage.secrets.config import (
     SecretRef,
     SecretSource,
 )
+from mirage.vfs.s3.config import S3Config
 
 AUTH_KWARGS = {
     "region": "us-east-1",

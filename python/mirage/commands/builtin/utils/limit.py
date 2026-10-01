@@ -18,10 +18,9 @@ import time
 from collections.abc import AsyncIterator
 
 from mirage.commands.errors import CommandTimeoutError, LimitExceededError
-from mirage.io.stream import close_quietly
+from mirage.io.stream import close_quietly, ensure_stream
 from mirage.io.types import ByteSource, IOResult, materialize
 from mirage.types import Limit, OnExceed
-from mirage.utils.stream import ensure_stream
 
 logger = logging.getLogger(__name__)
 

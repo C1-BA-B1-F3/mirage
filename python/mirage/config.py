@@ -28,7 +28,6 @@ from pydantic import (
     model_validator,
 )
 
-from mirage.accessor.s3 import S3Config
 from mirage.cache.file.config import CacheConfig, RedisCacheConfig
 from mirage.cache.index.config import IndexConfig, RedisIndexConfig
 from mirage.commands.cli.types import CLISpec
@@ -54,6 +53,7 @@ from mirage.types import (
 )
 from mirage.vfs.loader import load_attr
 from mirage.vfs.registry import build_vfs
+from mirage.vfs.s3.config import S3Config
 from mirage.workspace.mount.read_policy import (
     coerce_read_policy,
     coerce_read_ttl,

@@ -17,7 +17,7 @@ from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from typing import Any
 
-from mirage.accessor.s3 import S3Accessor, S3Config
+from mirage.accessor.s3 import S3Accessor
 from mirage.core.object_store.driver import (
     ChildEntry,
     ObjectMeta,
@@ -32,6 +32,7 @@ from mirage.core.s3.client import (
 )
 from mirage.core.s3.constants import SCOPE_ERROR
 from mirage.utils.dates import to_iso_z
+from mirage.vfs.s3.config import S3Config
 
 DELETE_BATCH = 1000
 

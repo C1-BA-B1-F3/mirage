@@ -16,7 +16,7 @@ import asyncio
 
 import pytest
 
-from mirage.accessor.s3 import S3Config
+from mirage.vfs.s3.config import S3Config
 from mirage.workspace.store.ram import RAMWorkspaceStateStore
 from mirage.workspace.store.s3 import S3WorkspaceStateStore
 from tests.workspace.s3_fake import FakeConditionalS3Client, patch_record_s3

@@ -43,7 +43,7 @@ from mirage.commands.cli.builtin.git.revparse import (
     resolve_commit,
 )
 from mirage.commands.cli.builtin.git.session import opened
-from mirage.commands.cli.builtin.git.summary import tree_entries
+from mirage.commands.cli.builtin.git.tree import tree_entries
 from mirage.commands.cli.builtin.git.types import IndexState
 from mirage.commands.cli.builtin.git.util import check_operands, escaped, fatal
 from mirage.commands.cli.types import CLIDoors, CLIInvocation

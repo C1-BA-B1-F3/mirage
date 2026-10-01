@@ -15,7 +15,7 @@
 import { describe, expect, it } from 'vitest'
 import { DISK_IO } from './disk/io.ts'
 import { GRIDFS_IO } from './gridfs/io.ts'
-import { HF_IO } from './hf/io.ts'
+import { HF_BUCKETS_IO } from './hf_buckets/io.ts'
 import { NEXTCLOUD_IO } from './nextcloud/io.ts'
 import { SSH_IO } from './ssh/io.ts'
 import { EMAIL_IO } from './email/io.ts'
@@ -25,7 +25,7 @@ import { EMAIL_IO } from './email/io.ts'
 const NATIVE = {
   disk: DISK_IO,
   gridfs: GRIDFS_IO,
-  hf: HF_IO,
+  hf_buckets: HF_BUCKETS_IO,
   nextcloud: NEXTCLOUD_IO,
   ssh: SSH_IO,
 }

@@ -29,23 +29,19 @@ import { HF_HUB_OPS } from '../../ops/hf_hub/index.ts'
 /**
  * The shared body of the three Hub *repository* VFS.
  *
- * Separate from `HfVFS` (VFS/hf_buckets/base.ts) on purpose: that
- * one drives OpenDAL against Hugging Face Buckets, which is a different
+ * Separate from `HfBucketsVFS` (vfs/hf_buckets/hf_buckets.ts) on purpose:
+ * that one drives OpenDAL against Hugging Face Buckets, which is a different
  * product -- Xet-backed mutable object storage with no commits and no
  * revisions. These three are git repositories, read through the Hub's own
  * tree API and written as commits.
- *
- * Python has no twin of this file: its three VFS each spell their own
- * body, the way its four hf VFS always have. The asymmetry is recorded
- * in spec/layout_exceptions.json.
  */
 
 export abstract class HfHubVFS extends BaseVFS {
   abstract override readonly prompt: string
   abstract override readonly accessor: HfHubAccessor
-  // Abstract for the same reason the bucket base narrows it: all three carry
-  // a config and so owe their own redaction, and inheriting BaseVFS's
-  // bare `{type}` would drop it and read back as an empty mount.
+  // Narrowed back to abstract: all three carry a config and so owe their own
+  // redaction, and inheriting BaseVFS's bare `{type}` would drop it and read
+  // back as an empty mount.
   abstract override getState(): Promise<VFSStateBase>
   override readonly cachesReads: boolean = true
   // The Hub tree reports every file's exact byte size, and for an LFS file

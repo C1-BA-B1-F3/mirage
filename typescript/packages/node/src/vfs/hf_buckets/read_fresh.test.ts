@@ -22,10 +22,10 @@ import { Mount } from '@struktoai/mirage-core/workspace/mount/spec'
 import { ContentDriftError } from '@struktoai/mirage-core/workspace/snapshot/drift'
 import { toStateDict } from '@struktoai/mirage-core/workspace/snapshot/state'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import type { HfBucketsAccessor } from '../../accessor/hf.ts'
-import { HF_IO } from '../../commands/builtin/hf/io.ts'
+import type { HfBucketsAccessor } from '../../accessor/hf_buckets.ts'
+import { HF_BUCKETS_IO } from '../../commands/builtin/hf_buckets/io.ts'
 import { FakeHub, serveHub, xetHash } from '../../core/hf_hub/_test_util.ts'
-import { type FakeHfOperator, fakeHfOperator } from '../../core/hf/mock.ts'
+import { type FakeHfOperator, fakeHfOperator } from '../../core/hf_buckets/mock.ts'
 import { Workspace } from '../../workspace.ts'
 import { buildVfs } from '../registry.ts'
 
@@ -328,7 +328,7 @@ describe('hf_buckets past EOF', () => {
         size: 5,
       })) as Uint8Array
       expect(viaOp.byteLength).toBe(0)
-      const direct = await HF_IO.readRange?.(accessor, spec, undefined, 99, 5)
+      const direct = await HF_BUCKETS_IO.readRange?.(accessor, spec, undefined, 99, 5)
       expect(direct?.byteLength).toBe(0)
     } finally {
       await w.close()

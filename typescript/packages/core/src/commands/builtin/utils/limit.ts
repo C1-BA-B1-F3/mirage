@@ -14,7 +14,7 @@
 
 import { concat } from '../../../io/cachable_iterator.ts'
 import { chunks } from '../../../io/cooperative.ts'
-import { yieldBytes } from '../../../io/stream.ts'
+import { ensureStream } from '../../../io/stream.ts'
 import { type ByteSource, IOResult, materialize } from '../../../io/types.ts'
 import { type Limit, OnExceed } from '../../../types.ts'
 import { CommandTimeoutError, LimitExceededError } from '../../errors.ts'
@@ -59,7 +59,7 @@ export async function* noteAfter(
   io: IOResult,
   notices: readonly Uint8Array[],
 ): AsyncIterable<Uint8Array> {
-  yield* src instanceof Uint8Array ? yieldBytes(src) : src
+  yield* ensureStream(src)
   if (notices.length === 0) return
   const existing = io.stderr !== null ? await materialize(io.stderr) : new Uint8Array()
   const total = notices.reduce((n, notice) => n + notice.byteLength, existing.byteLength)
@@ -97,7 +97,7 @@ async function* withTimeout(
   seconds: number,
   command: string,
 ): AsyncIterableIterator<Uint8Array> {
-  const iterable: AsyncIterable<Uint8Array> = src instanceof Uint8Array ? yieldBytes(src) : src
+  const iterable = ensureStream(src)
   const iterator = iterable[Symbol.asyncIterator]()
   const deadline = performance.now() + seconds * 1000
   for (;;) {
@@ -148,7 +148,7 @@ export async function* truncateStream(
   limit: Limit,
 ): AsyncIterable<Uint8Array> {
   const maxBytes = limit.maxBytes
-  const iterable: AsyncIterable<Uint8Array> = src instanceof Uint8Array ? yieldBytes(src) : src
+  const iterable = ensureStream(src)
   if (maxBytes === null) {
     yield* iterable
     return
@@ -181,7 +181,7 @@ async function* boundedStream(
 ): AsyncIterable<Uint8Array> {
   let total = 0
   let lines = 0
-  const iterable = src instanceof Uint8Array ? yieldBytes(src) : src
+  const iterable = ensureStream(src)
   for await (const chunk of iterable) {
     let end =
       limit.maxBytes === null

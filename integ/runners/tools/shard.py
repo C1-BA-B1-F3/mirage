@@ -114,6 +114,28 @@ def work_items(
     return [(ids, sum(counts[i] for i in ids)) for ids in lanes.values()]
 
 
+def idle_facets(
+    manifest: dict, facets: list[str], items: list[tuple[list[str], int]]
+) -> list[str]:
+    """The requested facets that put no target into the split.
+
+    A misspelled or emptied facet would otherwise drop out in silence while
+    the others run, which reads as that facet passing.
+
+    Args:
+        manifest (dict): targets.json.
+        facets (list[str]): the facets asked for.
+        items (list[tuple[list[str], int]]): what work_items returned.
+    """
+    by_id = {target["id"]: target for target in manifest["targets"]}
+    seen = {
+        by_id[target_id].get("facet", "core")
+        for ids, _ in items
+        for target_id in ids
+    }
+    return sorted(set(facets) - seen)
+
+
 def split(
     items: list[tuple[list[str], int]], shards: int
 ) -> list[list[tuple[list[str], int]]]:
@@ -181,9 +203,14 @@ def main() -> None:
     unknown = skip - set(manifest.get("services", {}))
     if unknown:
         parser.error(f"--allow-skip names no service: {', '.join(unknown)}")
-    items = work_items(
-        manifest, args.facets or ["core"], args.host, skip, case_counts(INTEG)
-    )
+    facets = args.facets or ["core"]
+    items = work_items(manifest, facets, args.host, skip, case_counts(INTEG))
+    idle = idle_facets(manifest, facets, items)
+    if idle:
+        parser.error(
+            f"--facet puts no {args.host} target in the split: "
+            f"{', '.join(idle)}"
+        )
     mine = split(items, args.shards)[args.shard]
     if not mine:
         print(

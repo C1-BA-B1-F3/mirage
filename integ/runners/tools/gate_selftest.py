@@ -25,6 +25,7 @@ import tempfile
 from pathlib import Path
 
 import check_case_targets as case_targets
+import shard
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "python"))
 
@@ -1259,6 +1260,73 @@ def selftest_typescript_gates(require: bool) -> None:
     )
 
 
+def selftest_shard() -> None:
+    """The shard jobs run every target of their facets once, and nothing
+    else: a facet that puts no target into the split, a target the host
+    cannot run, or a service another job provisions must not ride it."""
+    manifest = json.loads((ROOT / "targets.json").read_text())
+    counts = shard.case_counts(ROOT)
+    by_id = {target["id"]: target for target in manifest["targets"]}
+    skip = {"nextcloud", "notion"}
+    for host in ("python", "typescript"):
+        items = shard.work_items(
+            manifest, ["core", "http"], host, skip, counts
+        )
+        ran = [target_id for ids, _ in items for target_id in ids]
+        want = sorted(
+            target["id"]
+            for target in manifest["targets"]
+            if target.get("facet", "core") in ("core", "http")
+            and shard.runs_on(target, host)
+            and target.get("service") not in skip
+        )
+        check(
+            f"shard ({host}): the split holds each eligible target once",
+            sorted(ran) == want,
+            f"{sorted(set(ran) ^ set(want))}",
+        )
+        parts = shard.split(items, 2)
+        spread = [
+            target_id for part in parts for ids, _ in part for target_id in ids
+        ]
+        check(
+            f"shard ({host}): the shards partition the split",
+            sorted(spread) == sorted(ran),
+            f"{len(spread)} vs {len(ran)}",
+        )
+        check(
+            f"shard ({host}): no skipped service and no foreign host",
+            all(
+                by_id[target_id].get("service") not in skip
+                and shard.runs_on(by_id[target_id], host)
+                for target_id in ran
+            ),
+            f"{ran}",
+        )
+        check(
+            f"shard ({host}): core and http both put work in the split",
+            shard.idle_facets(manifest, ["core", "http"], items) == [],
+            f"{shard.idle_facets(manifest, ['core', 'http'], items)}",
+        )
+        check(
+            f"shard ({host}): a misspelled facet is reported idle",
+            shard.idle_facets(manifest, ["core", "htpp"], items) == ["htpp"],
+            f"{shard.idle_facets(manifest, ['core', 'htpp'], items)}",
+        )
+    check(
+        "shard: a browser-only target is not split onto the python host",
+        "opfs"
+        not in [
+            target_id
+            for ids, _ in shard.work_items(
+                manifest, ["core"], "python", set(), counts
+            )
+            for target_id in ids
+        ],
+        "opfs scheduled on python",
+    )
+
+
 def main() -> None:
     selftest_services_table()
     selftest_case_validation()
@@ -1269,6 +1337,7 @@ def main() -> None:
     selftest_target_pool()
     selftest_pool_runtime()
     selftest_case_targets()
+    selftest_shard()
     selftest_typescript_gates("--require-ts" in sys.argv)
     print()
     if FAILURES:

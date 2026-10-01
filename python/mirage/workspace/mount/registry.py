@@ -24,8 +24,11 @@ from mirage.cache.index.config import Evicted
 from mirage.cache.index.factory import build_index
 from mirage.cache.manager import CacheManager
 from mirage.commands.builtin.general import COMMANDS as GENERAL_COMMANDS
-from mirage.context import (effective_path_mode, get_admission,
-                            strongest_mode_under)
+from mirage.context import (
+    effective_path_mode,
+    get_admission,
+    strongest_mode_under,
+)
 from mirage.ops.config import OpsMount
 from mirage.policy import Decisions, MountRootPolicy, OutputCapPolicy, Policies
 from mirage.process.types import ProcessView

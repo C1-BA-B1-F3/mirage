@@ -2036,60 +2036,76 @@ async def test_a_walk_below_the_operand_meets_the_rule_guard():
 
 
 RELAY_DOC = {
-    "paths": {
-        "hide": ["/data/r/ghost", "/data/hd"]
-    },
+    "paths": {"hide": ["/data/r/ghost", "/data/hd"]},
     "commands": {
         "allow": [
-            "mkdir", "echo", "cat", "cp", "tar", "find", "split", "ls", "awk",
-            "csplit", "mktemp", "unzip", "sed"
+            "mkdir",
+            "echo",
+            "cat",
+            "cp",
+            "tar",
+            "find",
+            "split",
+            "ls",
+            "awk",
+            "csplit",
+            "mktemp",
+            "unzip",
+            "sed",
         ],
-        "deny": [{
-            "reason": "cut",
-            "commands": {
-                "split": ["/data/out/xab"],
-                "csplit": ["/data/out/xx01"],
-                "awk": ["/data/out/locked"],
-                "mktemp": ["/data/tmpd/*"],
-                "unzip": ["/data/uz/*"],
-                "sed": ["/data/hd/x"]
-            }
-        }, {
-            "reason": "tarred",
-            "commands": {
-                "tar": ["/data/r/sec", "/data/r/ghost"]
-            }
-        }, {
-            "reason": "copied",
-            "commands": {
-                "cp": ["/data/r/sec", "/data/dst/sec", "/data/r/ghost"]
-            }
-        }],
-    }
+        "deny": [
+            {
+                "reason": "cut",
+                "commands": {
+                    "split": ["/data/out/xab"],
+                    "csplit": ["/data/out/xx01"],
+                    "awk": ["/data/out/locked"],
+                    "mktemp": ["/data/tmpd/*"],
+                    "unzip": ["/data/uz/*"],
+                    "sed": ["/data/hd/x"],
+                },
+            },
+            {
+                "reason": "tarred",
+                "commands": {"tar": ["/data/r/sec", "/data/r/ghost"]},
+            },
+            {
+                "reason": "copied",
+                "commands": {
+                    "cp": ["/data/r/sec", "/data/dst/sec", "/data/r/ghost"]
+                },
+            },
+        ],
+    },
 }
 
-TAR_SEC_REFUSED = ("tar: Removing leading `/' from member names\n"
-                   "tar: /data/r/sec: Cannot open: Permission denied\n"
-                   "tar: Exiting with failure status due to previous "
-                   "errors\n")
+TAR_SEC_REFUSED = (
+    "tar: Removing leading `/' from member names\n"
+    "tar: /data/r/sec: Cannot open: Permission denied\n"
+    "tar: Exiting with failure status due to previous "
+    "errors\n"
+)
 
 
 def _relay_ws() -> Workspace:
     ws = Workspace(
         {
             "/data/": (RAMVFS(), MountMode.WRITE),
-            "/other/": (RAMVFS(), MountMode.WRITE)
+            "/other/": (RAMVFS(), MountMode.WRITE),
         },
         mode=MountMode.WRITE,
-        profiles={"relayed": RELAY_DOC})
+        profiles={"relayed": RELAY_DOC},
+    )
     ws.create_session("g", profile="relayed")
     return ws
 
 
 async def _seed_relay_tree(ws: Workspace) -> None:
-    await ws.shell("mkdir -p /data/r /other/src && echo s > /data/r/sec && "
-                   "echo o > /data/r/open && echo g > /data/r/ghost && "
-                   "echo s > /other/src/sec && echo o > /other/src/open")
+    await ws.shell(
+        "mkdir -p /data/r /other/src && echo s > /data/r/sec && "
+        "echo o > /data/r/open && echo g > /data/r/ghost && "
+        "echo s > /other/src/sec && echo o > /other/src/open"
+    )
 
 
 @pytest.mark.asyncio
@@ -2101,25 +2117,36 @@ async def test_a_relayed_walk_meets_the_command_rules():
     ws = _relay_ws()
     try:
         await _seed_relay_tree(ws)
-        assert await _line(ws, "tar -cf - /data/r | tar -tf -",
-                           "g") == (0, "data/r/\ndata/r/open\n",
-                                    TAR_SEC_REFUSED)
-        assert await _line(ws, "tar -cf /other/y.tar /data/r",
-                           "g") == (2, "", TAR_SEC_REFUSED)
-        assert (await _line(ws, "tar -tf /other/y.tar",
-                            "g"))[1] == "data/r/\ndata/r/open\n"
-        assert await _line(
-            ws, "cp -r /data/r /other/r",
-            "g") == (1, "", "cp: cannot open '/data/r/sec' for reading: "
-                     "Permission denied\n")
-        assert (await _line(ws, "find /other/r",
-                            "g"))[1] == "/other/r\n/other/r/open\n"
-        assert await _line(
-            ws, "cp -r /other/src /data/dst",
-            "g") == (1, "", "cp: cannot create regular file '/data/dst/sec': "
-                     "Permission denied\n")
-        assert (await _line(ws, "find /data/dst",
-                            "g"))[1] == "/data/dst\n/data/dst/open\n"
+        assert await _line(ws, "tar -cf - /data/r | tar -tf -", "g") == (
+            0,
+            "data/r/\ndata/r/open\n",
+            TAR_SEC_REFUSED,
+        )
+        assert await _line(ws, "tar -cf /other/y.tar /data/r", "g") == (
+            2,
+            "",
+            TAR_SEC_REFUSED,
+        )
+        assert (await _line(ws, "tar -tf /other/y.tar", "g"))[
+            1
+        ] == "data/r/\ndata/r/open\n"
+        assert await _line(ws, "cp -r /data/r /other/r", "g") == (
+            1,
+            "",
+            "cp: cannot open '/data/r/sec' for reading: Permission denied\n",
+        )
+        assert (await _line(ws, "find /other/r", "g"))[
+            1
+        ] == "/other/r\n/other/r/open\n"
+        assert await _line(ws, "cp -r /other/src /data/dst", "g") == (
+            1,
+            "",
+            "cp: cannot create regular file '/data/dst/sec': "
+            "Permission denied\n",
+        )
+        assert (await _line(ws, "find /data/dst", "g"))[
+            1
+        ] == "/data/dst\n/data/dst/open\n"
     finally:
         await ws.close()
 
@@ -2131,18 +2158,28 @@ async def test_a_write_through_the_command_dispatcher_meets_the_rules():
     # output it cannot open: the pieces before it stay, the run fails.
     ws = _relay_ws()
     try:
-        await ws.shell("mkdir -p /data/out && echo a > /data/f && "
-                       "echo b >> /data/f && echo c >> /data/f")
+        await ws.shell(
+            "mkdir -p /data/out && echo a > /data/f && "
+            "echo b >> /data/f && echo c >> /data/f"
+        )
+        assert await _line(ws, "split -l 1 /data/f /data/out/x", "g") == (
+            1,
+            "",
+            "split: /data/out/xab: Permission denied\n",
+        )
+        assert await _line(ws, "csplit -f /data/out/xx /data/f 2", "g") == (
+            1,
+            "2\n",
+            "csplit: /data/out/xx01: Permission denied\n",
+        )
         assert await _line(
-            ws, "split -l 1 /data/f /data/out/x",
-            "g") == (1, "", "split: /data/out/xab: Permission denied\n")
-        assert await _line(
-            ws, "csplit -f /data/out/xx /data/f 2",
-            "g") == (1, "2\n", "csplit: /data/out/xx01: Permission denied\n")
-        assert await _line(
-            ws, "awk '{print > \"/data/out/locked\"}' /data/f",
-            "g") == (2, "", "awk: cannot open \"/data/out/locked\" for "
-                     "output (Permission denied)\n")
+            ws, "awk '{print > \"/data/out/locked\"}' /data/f", "g"
+        ) == (
+            2,
+            "",
+            'awk: cannot open "/data/out/locked" for '
+            "output (Permission denied)\n",
+        )
         listed = (await _line(ws, "ls /data/out", "g"))[1].split()
         assert "xaa" in listed
         assert "xab" not in listed and "xx01" not in listed
@@ -2151,28 +2188,30 @@ async def test_a_write_through_the_command_dispatcher_meets_the_rules():
 
 
 WARM_DOC = {
-    "paths": {
-        "hide": ["/data/w/h.txt"]
-    },
+    "paths": {"hide": ["/data/w/h.txt"]},
     "commands": {
         "allow": ["cat", "grep", "rg", "cp", "tar", "find", "echo"],
-        "deny": [{
-            "reason": "sealed",
-            "commands": {
-                name: ["/data/w/a.txt"]
-                for name in ("grep", "rg", "cat", "cp", "tar")
-            }
-        }, {
-            "reason": "walled",
-            "paths": ["/data/w/p.txt"]
-        }],
-    }
+        "deny": [
+            {
+                "reason": "sealed",
+                "commands": {
+                    name: ["/data/w/a.txt"]
+                    for name in ("grep", "rg", "cat", "cp", "tar")
+                },
+            },
+            {"reason": "walled", "paths": ["/data/w/p.txt"]},
+        ],
+    },
 }
 
-WARM_LINES = ("grep -r secret /data/w", "rg secret /data/w", "cat /data/w/*",
-              "cp -r /data/w /data/c; echo $?; find /data/c",
-              "tar -cf /data/x.tar /data/w; echo $?; tar -tf /data/x.tar",
-              "tar -cf - /data/w | tar -tf -")
+WARM_LINES = (
+    "grep -r secret /data/w",
+    "rg secret /data/w",
+    "cat /data/w/*",
+    "cp -r /data/w /data/c; echo $?; find /data/c",
+    "tar -cf /data/x.tar /data/w; echo $?; tar -tf /data/x.tar",
+    "tar -cf - /data/w | tar -tf -",
+)
 
 
 async def _warm_ws(warm: bool) -> tuple[Workspace, RAMVFS]:
@@ -2180,17 +2219,23 @@ async def _warm_ws(warm: bool) -> tuple[Workspace, RAMVFS]:
     # unrestricted default session, whose reads fill the shared cache.
     ram = RAMVFS()
     ram.caches_reads = True
-    ws = Workspace({"/data/": (ram, MountMode.WRITE)},
-                   mode=MountMode.WRITE,
-                   profiles={"limited": WARM_DOC})
+    ws = Workspace(
+        {"/data/": (ram, MountMode.WRITE)},
+        mode=MountMode.WRITE,
+        profiles={"limited": WARM_DOC},
+    )
     ws.create_session("g", profile="limited")
-    await ws.shell("mkdir -p /data/w && echo 'secret a' > /data/w/a.txt && "
-                   "echo 'secret p' > /data/w/p.txt && "
-                   "echo 'secret h' > /data/w/h.txt && "
-                   "echo 'secret open' > /data/w/b.txt")
+    await ws.shell(
+        "mkdir -p /data/w && echo 'secret a' > /data/w/a.txt && "
+        "echo 'secret p' > /data/w/p.txt && "
+        "echo 'secret h' > /data/w/h.txt && "
+        "echo 'secret open' > /data/w/b.txt"
+    )
     if warm:
-        await ws.shell("cat /data/w/a.txt /data/w/p.txt /data/w/h.txt "
-                       "/data/w/b.txt > /dev/null")
+        await ws.shell(
+            "cat /data/w/a.txt /data/w/p.txt /data/w/h.txt "
+            "/data/w/b.txt > /dev/null"
+        )
     return ws, ram
 
 
@@ -2213,10 +2258,12 @@ async def test_a_warm_walk_is_refused_as_the_cold_walk_is():
     assert differs == []
     ws, _ = await _warm_ws(True)
     try:
-        assert await _line(ws, "grep -r secret /data/w",
-                           "g") == (2, "/data/w/b.txt:secret open\n",
-                                    "grep: /data/w/a.txt: Permission denied\n"
-                                    "grep: /data/w/p.txt: Permission denied\n")
+        assert await _line(ws, "grep -r secret /data/w", "g") == (
+            2,
+            "/data/w/b.txt:secret open\n",
+            "grep: /data/w/a.txt: Permission denied\n"
+            "grep: /data/w/p.txt: Permission denied\n",
+        )
     finally:
         await ws.close()
 
@@ -2238,14 +2285,16 @@ async def test_a_warm_entry_no_rule_refuses_is_still_served_from_cache():
 FANOUT_DOC = {
     "commands": {
         "allow": ["rg", "find", "tree", "ls", "mkdir", "echo"],
-        "deny": [{
-            "reason": "sealed",
-            "commands": {
-                "rg": ["/data/w/a.txt"],
-                "find": ["/data/w/a.txt"],
-                "tree": ["/data/sub/x"]
+        "deny": [
+            {
+                "reason": "sealed",
+                "commands": {
+                    "rg": ["/data/w/a.txt"],
+                    "find": ["/data/w/a.txt"],
+                    "tree": ["/data/sub/x"],
+                },
             }
-        }],
+        ],
     }
 }
 
@@ -2256,13 +2305,16 @@ async def _fanout_ws() -> Workspace:
     ws = Workspace(
         {
             "/data/": (RAMVFS(), MountMode.WRITE),
-            "/data/sub/": (RAMVFS(), MountMode.WRITE)
+            "/data/sub/": (RAMVFS(), MountMode.WRITE),
         },
         mode=MountMode.WRITE,
-        profiles={"limited": FANOUT_DOC})
+        profiles={"limited": FANOUT_DOC},
+    )
     ws.create_session("g", profile="limited")
-    await ws.shell("mkdir -p /data/w && echo 'secret a' > /data/w/a.txt && "
-                   "echo 'secret b' > /data/w/b.txt")
+    await ws.shell(
+        "mkdir -p /data/w && echo 'secret a' > /data/w/a.txt && "
+        "echo 'secret b' > /data/w/b.txt"
+    )
     return ws
 
 
@@ -2272,8 +2324,11 @@ async def test_an_ordered_rg_across_mounts_meets_the_command_rules():
     # pass; the entry the rule names is refused as the plain walk does.
     ws = await _fanout_ws()
     try:
-        expected = (2, "/data/w/b.txt:secret b\n",
-                    "rg: /data/w/a.txt: Permission denied (os error 13)\n")
+        expected = (
+            2,
+            "/data/w/b.txt:secret b\n",
+            "rg: /data/w/a.txt: Permission denied (os error 13)\n",
+        )
         assert await _line(ws, "rg secret /data", "g") == expected
         assert await _line(ws, "rg --sort path secret /data", "g") == expected
     finally:
@@ -2288,8 +2343,11 @@ async def test_tree_across_mounts_marks_the_directory_it_may_not_open():
     try:
         await ws.shell("mkdir -p /data/sub/x && echo s > /data/sub/x/k")
         assert await _line(ws, "tree /data", "g") == (
-            2, "/data\n|-- sub\n|   `-- x  [error opening dir]\n`-- w\n"
-            "    |-- a.txt\n    `-- b.txt\n\n4 directories, 2 files\n", "")
+            2,
+            "/data\n|-- sub\n|   `-- x  [error opening dir]\n`-- w\n"
+            "    |-- a.txt\n    `-- b.txt\n\n4 directories, 2 files\n",
+            "",
+        )
     finally:
         await ws.close()
 
@@ -2301,9 +2359,11 @@ async def test_find_delete_meets_the_command_rules():
     # op door already is.
     ws = await _fanout_ws()
     try:
-        assert await _line(
-            ws, "find /data/w -name a.txt -delete",
-            "g") == (1, "", "find: cannot delete '/data/w/a.txt': sealed\n")
+        assert await _line(ws, "find /data/w -name a.txt -delete", "g") == (
+            1,
+            "",
+            "find: cannot delete '/data/w/a.txt': sealed\n",
+        )
         assert (await _line(ws, "ls /data/w", "g"))[1] == "a.txt\nb.txt\n"
     finally:
         await ws.close()
@@ -2317,24 +2377,36 @@ async def test_a_create_through_the_command_dispatcher_meets_the_rules():
     ws = _relay_ws()
     try:
         await _seed_relay_tree(ws)
-        await ws.shell("mkdir -p /data/tmpd /data/uz && cd /other && "
-                       "zip -r /other/z.zip src > /dev/null")
-        assert await _line(
-            ws, "mktemp -d -p /data/tmpd",
-            "g") == (1, "", "mktemp: failed to create directory via template "
-                     "'/data/tmpd/tmp.XXXXXXXXXX': Permission denied\n")
-        assert await _line(
-            ws, "mktemp -p /data/tmpd",
-            "g") == (1, "", "mktemp: failed to create file via template "
-                     "'/data/tmpd/tmp.XXXXXXXXXX': Permission denied\n")
-        refused = "".join("checkdir error:  cannot create /data/uz/src\n"
-                          "                 Permission denied\n"
-                          f"                 unable to process src/{name}.\n"
-                          for name in ("", "open", "sec"))
-        assert await _line(ws, "unzip -q -d /data/uz /other/z.zip",
-                           "g") == (50, "", refused)
-        assert (await _line(ws, "find /data/tmpd /data/uz",
-                            "g"))[1] == "/data/tmpd\n/data/uz\n"
+        await ws.shell(
+            "mkdir -p /data/tmpd /data/uz && cd /other && "
+            "zip -r /other/z.zip src > /dev/null"
+        )
+        assert await _line(ws, "mktemp -d -p /data/tmpd", "g") == (
+            1,
+            "",
+            "mktemp: failed to create directory via template "
+            "'/data/tmpd/tmp.XXXXXXXXXX': Permission denied\n",
+        )
+        assert await _line(ws, "mktemp -p /data/tmpd", "g") == (
+            1,
+            "",
+            "mktemp: failed to create file via template "
+            "'/data/tmpd/tmp.XXXXXXXXXX': Permission denied\n",
+        )
+        refused = "".join(
+            "checkdir error:  cannot create /data/uz/src\n"
+            "                 Permission denied\n"
+            f"                 unable to process src/{name}.\n"
+            for name in ("", "open", "sec")
+        )
+        assert await _line(ws, "unzip -q -d /data/uz /other/z.zip", "g") == (
+            50,
+            "",
+            refused,
+        )
+        assert (await _line(ws, "find /data/tmpd /data/uz", "g"))[
+            1
+        ] == "/data/tmpd\n/data/uz\n"
     finally:
         await ws.close()
 
@@ -2348,10 +2420,11 @@ async def test_a_write_through_the_dispatcher_never_names_a_hidden_entry():
     try:
         await _seed_relay_tree(ws)
         await ws.shell("mkdir -p /data/hd")
-        assert await _line(ws, "sed -n 'w /data/hd/x' /data/r/open",
-                           "g") == (4, "",
-                                    "sed: couldn't open file /data/hd/x: "
-                                    "No such file or directory\n")
+        assert await _line(ws, "sed -n 'w /data/hd/x' /data/r/open", "g") == (
+            4,
+            "",
+            "sed: couldn't open file /data/hd/x: No such file or directory\n",
+        )
     finally:
         await ws.close()
 

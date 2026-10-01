@@ -405,8 +405,10 @@ async def test_rule_guard_asks_the_bound_gate_and_leaves_stat_alone():
 
 @pytest.mark.asyncio
 async def test_dispatch_rule_guard_asks_the_bound_gate_before_the_door():
-    from mirage.commands.builtin.generic_bind.adapter import \
-        with_dispatch_rule_guard
+    from mirage.commands.builtin.generic_bind.adapter import (
+        with_dispatch_rule_guard,
+    )
+
     calls: list[tuple[str, str]] = []
 
     async def door(op, path, **kwargs):
@@ -418,23 +420,27 @@ async def test_dispatch_rule_guard_asks_the_bound_gate_before_the_door():
     await dispatch("read", _spec("/data/locked/y"))
     gate = _Gate(refused="/data/locked/y")
     token = set_admission(gate)
-    session = SessionState(session_id="relay-hidden",
-                           hidden_paths=HiddenPaths(paths=("/data/hidden", )))
+    session = SessionState(
+        session_id="relay-hidden",
+        hidden_paths=HiddenPaths(paths=("/data/hidden",)),
+    )
     st = set_current_session(session)
     try:
         with pytest.raises(PermissionError):
             await dispatch("read", _spec("/data/locked/y"))
         # A destination passed by keyword is as refused as the subject.
         with pytest.raises(PermissionError):
-            await dispatch("rename",
-                           _spec("/data/a"),
-                           dst=_spec("/data/locked/y"))
+            await dispatch(
+                "rename", _spec("/data/a"), dst=_spec("/data/locked/y")
+            )
         # Every PathSpec the op carries is asked, not only the first.
         with pytest.raises(PermissionError):
-            await dispatch("copy",
-                           _spec("/data/a"),
-                           src=_spec("/data/b"),
-                           dst=_spec("/data/locked/y"))
+            await dispatch(
+                "copy",
+                _spec("/data/a"),
+                src=_spec("/data/b"),
+                dst=_spec("/data/locked/y"),
+            )
         # A listing asks about the directory it lists.
         with pytest.raises(PermissionError):
             await dispatch("readdir", _spec("/data/locked/y"))
@@ -447,11 +453,20 @@ async def test_dispatch_rule_guard_asks_the_bound_gate_before_the_door():
     finally:
         reset_current_session(st)
         reset_admission(token)
-    assert calls == [("read", "/data/locked/y"), ("stat", "/data/locked/y"),
-                     ("exists", "/data/locked/y"), ("read", "/data/hidden/k")]
+    assert calls == [
+        ("read", "/data/locked/y"),
+        ("stat", "/data/locked/y"),
+        ("exists", "/data/locked/y"),
+        ("read", "/data/hidden/k"),
+    ]
     assert gate.asked == [
-        "/data/locked/y", "/data/a", "/data/locked/y", "/data/a", "/data/b",
-        "/data/locked/y", "/data/locked/y"
+        "/data/locked/y",
+        "/data/a",
+        "/data/locked/y",
+        "/data/a",
+        "/data/b",
+        "/data/locked/y",
+        "/data/locked/y",
     ]
 
 

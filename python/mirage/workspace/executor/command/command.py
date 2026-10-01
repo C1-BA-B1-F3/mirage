@@ -29,7 +29,9 @@ from mirage.commands.builtin.generic.program import (
     prepare_program,
     program_files,
 )
-from mirage.commands.builtin.generic_bind.adapter import with_dispatch_rule_guard
+from mirage.commands.builtin.generic_bind.adapter import (
+    with_dispatch_rule_guard,
+)
 from mirage.commands.builtin.utils.identity import identity_from
 from mirage.commands.builtin.utils.limit import maybe_with_timeout
 from mirage.commands.errors import FindParseError

@@ -46,7 +46,9 @@ from mirage.commands.builtin.generic.rg import (
     rg,
     walks_descendant_mounts,
 )
-from mirage.commands.builtin.generic_bind.adapter import with_dispatch_rule_guard
+from mirage.commands.builtin.generic_bind.adapter import (
+    with_dispatch_rule_guard,
+)
 from mirage.commands.config import CommandOpts, ExecContext
 from mirage.commands.errors import (
     CommandTimeoutError,

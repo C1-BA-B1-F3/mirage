@@ -1033,8 +1033,9 @@ def with_dispatch_rule_guard(dispatch: DispatchFn) -> DispatchFn:
         dispatch (DispatchFn): the workspace op dispatcher.
     """
 
-    async def guarded(op: str, path: PathSpec,
-                      **kwargs: Any) -> tuple[Any, IOResult]:
+    async def guarded(
+        op: str, path: PathSpec, **kwargs: Any
+    ) -> tuple[Any, IOResult]:
         gate = get_admission()
         if gate is not None and op not in METADATA_OPS:
             for spec in (path, *kwargs.values()):

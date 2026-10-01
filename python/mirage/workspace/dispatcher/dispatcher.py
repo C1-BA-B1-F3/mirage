@@ -26,6 +26,7 @@ from mirage.cache.file import io as cache_io
 from mirage.cache.manager import CacheManager
 from mirage.commands.builtin.utils.limit import apply_op_limit
 from mirage.commands.builtin.utils.paths import dot_refusal, walk_spelling
+from mirage.commands.resolve import get_extension
 from mirage.context import (
     get_current_session,
     hidden_paths_intersect,
@@ -505,14 +506,24 @@ class Dispatcher:
             )
         await mount.ensure_ready()
         caches_reads = mount.vfs.caches_reads
-        # The file cache is keyed on the path alone, and what a command
-        # put there is the rendered read. A raw read asks for a
-        # different value under the same key, so it must not be served
-        # from that cache; nothing populates it from here, so skipping
-        # the probe is the whole fix.
+        # The file cache holds what commands read, keyed on the path
+        # alone. A raw read, or a read through a renderer added beside the
+        # VFS, asks for a different value under the same key, so it must
+        # not be served from that cache; nothing populates it from here,
+        # so skipping the probe is the whole fix.
         raw = "filetype" in kwargs and kwargs["filetype"] is None
+        renders = mount.renders_user_read(
+            kwargs["filetype"]
+            if "filetype" in kwargs
+            else get_extension(path.virtual)
+        )
 
-        if caches_reads and not raw and op in DISPATCH_READ_OPS:
+        if (
+            caches_reads
+            and not raw
+            and not renders
+            and op in DISPATCH_READ_OPS
+        ):
             cached = await self._cache.get(path.virtual)
             if (
                 cached is not None

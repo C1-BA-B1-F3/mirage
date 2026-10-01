@@ -352,7 +352,7 @@ export class MyVFS extends BaseVFS {
 
 The mount registers both arrays when the driver is placed; a driver never registers anything onto itself.
 
-Set `cachesReads` true only for stable, read-mostly content. `BaseVFS` supplies a no-op `loadState()` and a 600 s `indexTtl`, so declare one only to change it. A mount's read `ttl` caps listing lifetimes. Override `getState()` to carry the (redacted) config, and `close()` to release any client handles, calling `super.close()`. The index store is the mount's, built when the driver is placed, so a driver never sees or closes one.
+Set `cachesReads` true only for stable, read-mostly content. A filetype `read` op you ship in `ops()` has to return what your command reads return for that path, because the file cache serves it as such. `BaseVFS` supplies a no-op `loadState()` and a 600 s `indexTtl`, so declare one only to change it. A mount's read `ttl` caps listing lifetimes. Override `getState()` to carry the (redacted) config, and `close()` to release any client handles, calling `super.close()`. The index store is the mount's, built when the driver is placed, so a driver never sees or closes one.
 
 A backend whose content lives in a remote service keeps `needs_override: true` in that state. Both loaders refuse a missing live override; neither substitutes an empty RAM mount. A backend that owns portable content can implement `getState` and `loadState` and register a factory so snapshots rebuild it, as shown above.
 

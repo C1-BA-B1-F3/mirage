@@ -381,7 +381,7 @@ class MyVFS(BaseVFS):
 
 The mount registers both tables when the driver is placed; a driver never registers anything onto itself.
 
-Set `caches_reads=True` only for stable, read-mostly content. Implement `get_state()` with credentials redacted (`self.config_state(self.config)`) and close any network clients in `close()`.
+Set `caches_reads=True` only for stable, read-mostly content. A filetype `read` op you ship in `ops()` has to return what your command reads return for that path, because the file cache serves it as such. Implement `get_state()` with credentials redacted (`self.config_state(self.config)`) and close any network clients in `close()`.
 
 ## 6. Snapshot Support
 

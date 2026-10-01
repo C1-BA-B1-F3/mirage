@@ -357,7 +357,7 @@ class MountRegistry:
         m.register_fns(vfs.commands())
         for cmd in GENERAL_COMMANDS:
             m.register_general(cmd)
-        m.register_fns(vfs.ops())
+        m.register_vfs_ops(vfs.ops())
         if self._file_cache is not None:
             self._attach_manager(m)
         self._mounts.append(m)

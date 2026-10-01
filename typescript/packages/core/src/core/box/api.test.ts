@@ -17,12 +17,25 @@ import type * as ClientModule from './client.ts'
 
 vi.mock('./client.ts', async () => {
   const actual = await vi.importActual<typeof ClientModule>('./client.ts')
-  return { ...actual, boxGet: vi.fn(), boxOptions: vi.fn() }
+  return {
+    ...actual,
+    boxGet: vi.fn(),
+    boxOptions: vi.fn(),
+    boxPostJson: vi.fn(),
+    boxUploadMultipart: vi.fn(),
+  }
 })
 
 import * as client from './client.ts'
-import type { BoxTokenManager } from './client.ts'
-import { eventsNow, eventsSince, realtimeServer } from './api.ts'
+import { BoxTokenManager } from './client.ts'
+import {
+  createFolder,
+  eventsNow,
+  eventsSince,
+  realtimeServer,
+  uploadFileVersion,
+  uploadNewFile,
+} from './api.ts'
 
 const TM = { apiBase: 'https://api.box.com/2.0' } as BoxTokenManager
 
@@ -108,5 +121,37 @@ describe('box events api', () => {
   it('refuses an OPTIONS answer without a realtime server', async () => {
     vi.mocked(client.boxOptions).mockResolvedValueOnce({ chunk_size: 0 })
     await expect(realtimeServer(TM)).rejects.toThrow('realtime server')
+  })
+})
+
+async function uploadUrls(tm: BoxTokenManager): Promise<unknown[]> {
+  vi.mocked(client.boxUploadMultipart).mockResolvedValue({})
+  await uploadNewFile(tm, '0', 'a.txt', new Uint8Array([97]))
+  await uploadFileVersion(tm, '7', 'a.txt', new Uint8Array([98]))
+  return vi.mocked(client.boxUploadMultipart).mock.calls.map((c) => c[1])
+}
+
+describe('box upload host', () => {
+  it('sends uploads to the upload host', async () => {
+    expect(await uploadUrls(new BoxTokenManager({ accessToken: 'tok' }))).toEqual([
+      'https://upload.box.com/api/2.0/files/content',
+      'https://upload.box.com/api/2.0/files/7/content',
+    ])
+  })
+
+  it('keeps folder calls on the api host', async () => {
+    vi.mocked(client.boxPostJson).mockResolvedValue({})
+    await createFolder(new BoxTokenManager({ accessToken: 'tok' }), '0', 'd')
+    expect(vi.mocked(client.boxPostJson).mock.calls[0]?.[1]).toBe(
+      'https://api.box.com/2.0/folders',
+    )
+  })
+
+  it('sends uploads to an endpoint override', async () => {
+    const tm = new BoxTokenManager({ accessToken: 'tok', endpoint: 'http://127.0.0.1:5096/' })
+    expect(await uploadUrls(tm)).toEqual([
+      'http://127.0.0.1:5096/2.0/files/content',
+      'http://127.0.0.1:5096/2.0/files/7/content',
+    ])
   })
 })

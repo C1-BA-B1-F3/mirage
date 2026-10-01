@@ -21,6 +21,7 @@ import { RedisIndexCacheStore } from '@struktoai/mirage-core/cache/index/redis'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { HfHubAccessor } from '../../accessor/hf_hub.ts'
 import * as client from './client.ts'
+import * as repo from './repo.ts'
 import { ExpiredOnArrival, FakeHub, serveHub } from './_test_util.ts'
 import { exists as pathExists } from './exists.ts'
 import { dirStatEntry, keyOf, lookup, probeDir, probeFile } from './lookup.ts'
@@ -62,6 +63,17 @@ function loaded(): HfHubAccessor {
   return accessor
 }
 
+// Most accessors here point at the real Hub, so the head a refill asks for
+// before its walk is answered locally: '' walks the branch and stores no
+// version, the way a mocked tree page alone used to behave.
+function stubHead(): void {
+  vi.spyOn(repo, 'headCommit').mockResolvedValue('')
+}
+
+beforeEach(() => {
+  stubHead()
+})
+
 describe('keyOf', () => {
   it.each([
     ['', 'a.txt', '/a.txt'],
@@ -80,14 +92,16 @@ describe('lookup', () => {
     expect(found.entry?.size).toBe(7)
   })
 
-  it('reports a directory with no row of its own', async () => {
+  // A directory the tree only implies gets a folder row of its own, so its
+  // parent lists it and every listed path has an entry (Task 1.3).
+  it('gives a directory with no tree row a folder row', async () => {
     const accessor = new HfHubAccessor({ repoId: 'acme/widget' } as never)
     accessor.tree = new Map([
       ['d/b.txt', parseEntry({ type: 'file', oid: 'o', size: 1, path: 'd/b.txt' })],
     ])
     accessor.treeLoaded = true
     const found = await lookup(accessor, undefined, '', '/d')
-    expect(found.entry).toBeNull()
+    expect([found.entry?.resourceType, found.entry?.id]).toEqual(['folder', ''])
     expect(found.children).toEqual(['/d/b.txt'])
   })
 
@@ -172,6 +186,7 @@ describe('stat', () => {
 describe('read', () => {
   beforeEach(() => {
     vi.restoreAllMocks()
+    stubHead()
   })
 
   it('never reaches the network for a path the listing knows is absent', async () => {
@@ -218,6 +233,7 @@ for (const backend of ['ram', 'redis']) {
     () => {
       beforeEach(() => {
         vi.restoreAllMocks()
+        stubHead()
       })
 
       function indexForTest(): RAMIndexCacheStore | RedisIndexCacheStore {
@@ -418,6 +434,7 @@ function page(rows: unknown[]) {
 describe('stat on an index that holds no tree', () => {
   beforeEach(() => {
     vi.restoreAllMocks()
+    stubHead()
     // No test here may reach the real Hub: a walk nobody expected answers an
     // empty tree, which the assertions then catch.
     vi.spyOn(client, 'hubGetResponse').mockResolvedValue(page([]))
@@ -593,6 +610,7 @@ class ClearedMidLookup extends RAMIndexCacheStore {
 describe('a lookup the index is cleared under', () => {
   beforeEach(() => {
     vi.restoreAllMocks()
+    stubHead()
   })
 
   it('retries at the read door', async () => {
@@ -662,6 +680,7 @@ class ClearedAndReseeded extends RAMIndexCacheStore {
 describe('a lookup a reseed hides the clear from', () => {
   beforeEach(() => {
     vi.restoreAllMocks()
+    stubHead()
   })
 
   it('retries at the read door', async () => {

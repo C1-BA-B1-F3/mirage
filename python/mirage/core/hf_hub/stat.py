@@ -15,7 +15,13 @@
 import logging
 
 from mirage.accessor.hf_hub import HfHubAccessor
-from mirage.cache.index import NULL_INDEX, IndexCacheStore, IndexEntry
+from mirage.cache.index import (
+    NULL_INDEX,
+    IndexCacheStore,
+    IndexEntry,
+    LookupStatus,
+)
+from mirage.core.hf_hub.client import HfHubError
 from mirage.core.hf_hub.lookup import (
     dir_stat_entry,
     key_of,
@@ -23,6 +29,7 @@ from mirage.core.hf_hub.lookup import (
     point_lookup,
     refusals_denied,
 )
+from mirage.core.hf_hub.repo import head_commit
 from mirage.types import FileStat, FileType, PathSpec
 from mirage.utils.errors import enoent
 from mirage.utils.filetype import content_type_for_path
@@ -92,7 +99,11 @@ async def stat(
     prefix = mount_prefix_of(path_spec.virtual, path_spec.vfs_path)
     rel = path_spec.mount_path.strip("/")
     if not rel:
-        return FileStat(name="/", type=FileType.DIRECTORY)
+        return FileStat(
+            name="/",
+            type=FileType.DIRECTORY,
+            fingerprint=await _root_version(accessor, index, prefix),
+        )
     key = key_of(prefix, rel)
     # A probe through a throwaway index asks for this one path; everything
     # else answers from the mount's listing, loading it if need be.
@@ -107,3 +118,38 @@ async def stat(
     if found.children is not None:
         return stat_of(dir_stat_entry(key))
     raise enoent(path_spec.virtual)
+
+
+async def _root_version(
+    accessor: HfHubAccessor,
+    index: IndexCacheStore,
+    prefix: str,
+) -> str | None:
+    """The version of the whole mount: the head commit its revision is at.
+
+    A live root listing answers with the head it was stored at, read past
+    the listing gate, so a getattr of the root never pays a check. An
+    index with no root listing (a throwaway one, the null index, a mount
+    that has not listed yet) asks the head with one small request. An
+    expired listing names no version. Nothing here refills the index or
+    loads the tree: a refused head names no version rather than falling
+    into a lookup.
+
+    Args:
+        accessor (HfHubAccessor): the mount's accessor.
+        index (IndexCacheStore): the index to read the root listing from.
+        prefix (str): the mount prefix the index keys are built against.
+
+    Returns:
+        str | None: the head commit sha, or None when it is not known.
+    """
+    listing = await index.peek_dir(key_of(prefix, ""))
+    if listing.entries is not None:
+        return listing.version
+    if listing.status is not LookupStatus.NOT_FOUND:
+        return None
+    try:
+        return await head_commit(accessor) or None
+    except HfHubError as exc:
+        log.debug("head of %s not answered: %s", accessor.repo_id, exc)
+        return None

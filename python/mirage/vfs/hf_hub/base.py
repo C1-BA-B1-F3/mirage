@@ -17,9 +17,11 @@ from typing import Any, Generic, TypeVar
 from mirage.accessor.hf_hub import HfHubAccessor
 from mirage.commands.builtin.hf_hub import COMMANDS as HF_COMMANDS
 from mirage.commands.config import RegisteredCommand, registered_commands
+from mirage.core.hf_hub.constants import COMMIT_SHA
 from mirage.core.hf_hub.watch import build_delta_hook
 from mirage.ops.hf_hub import OPS as HF_OPS
 from mirage.ops.registry import RegisteredOp
+from mirage.types import ListingVersion
 from mirage.vfs.base import BaseVFS
 from mirage.watch.base import DeltaHook
 
@@ -28,6 +30,21 @@ from mirage.watch.base import DeltaHook
 # allows; python attributes are invariant, so the same narrowing has to be a
 # type parameter or mypy reads every subclass as an illegal override.
 A = TypeVar("A", bound=HfHubAccessor)
+
+
+def _pin_of(revision: str) -> str | None:
+    """The commit a revision pins every listing at, when it names one.
+
+    Only a full 40- or 64-hex string can be a commit. The Hub answers shas
+    in lowercase, so the pin is lowercased to compare with what it stores.
+    A branch that happens to look like one is still safe: its listings are
+    stored at the head its revision answered, which never equals its name.
+
+    Args:
+        revision (str): the mount's effective revision.
+    """
+    lowered = revision.lower()
+    return lowered if COMMIT_SHA.fullmatch(lowered) else None
 
 
 class HfHubVFS(BaseVFS, Generic[A]):
@@ -55,11 +72,16 @@ class HfHubVFS(BaseVFS, Generic[A]):
     index_ttl: float = 86_400
     supports_snapshot: bool = True
     read_revalidatable: bool = True
+    # One version covers every listing: the head commit the revision
+    # resolves to, asked with `revision/{rev}?expand[]=sha`, and the tree
+    # is walked at that commit so the rows and the version agree.
+    listing_version: ListingVersion = ListingVersion.MOUNT
 
     def __init__(self, config: Any) -> None:
         super().__init__()
         self.config = config
         self.accessor = self.ACCESSOR(self.config)
+        self.listings_pin = _pin_of(self.accessor.revision)
 
     def ops(self) -> list[RegisteredOp]:
         return HF_OPS

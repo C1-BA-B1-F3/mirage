@@ -318,6 +318,7 @@ SHA = "0123456789abcdef0123456789abcdef01234567"
 
 
 def test_the_pin_is_the_effective_revision_lowercased():
+
     def pin(**kwargs):
         return HfModelsVFS(
             HfRepoConfig(repo_id="acme/widget", **kwargs)
@@ -367,7 +368,11 @@ async def test_a_pinned_mount_never_serves_another_revisions_listing():
         try:
             hub.log.clear()
             assert await _out(pinned, "ls /m/docs/sub") == LISTED
-            assert hub.count("revision") >= 1
+            # The check answers the pin, not main's head: a refill at it.
+            assert _counts(hub) == (2, 1, 0, 0)
+            hub.log.clear()
+            assert await _out(pinned, "ls /m/docs/sub") == LISTED
+            assert _counts(hub) == (0, 0, 0, 0)
         finally:
             await pinned.close()
 

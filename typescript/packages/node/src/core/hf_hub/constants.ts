@@ -20,6 +20,10 @@ export const API_BASE = 'https://huggingface.co'
 // resolves without a round trip.
 export const DEFAULT_REVISION = 'main'
 
+// A full commit sha, SHA-1 or SHA-256, as the Hub answers it (lowercase). A
+// mount whose revision matches is pinned to a commit that cannot move.
+export const COMMIT_SHA = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/
+
 export const SCOPE_ERROR = 5000
 
 // The tree endpoint's page size, and the reason there are two of them.

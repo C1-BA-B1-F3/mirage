@@ -12,7 +12,7 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { RAMFileCacheStore } from '@struktoai/mirage-core/cache/file/ram'
 import type { Evicted } from '@struktoai/mirage-core/cache/index/config'
 import { RAMIndexCacheStore } from '@struktoai/mirage-core/cache/index/ram'
@@ -452,6 +452,10 @@ describe('refillSnapshot reports what left the repository', () => {
 const HEAD = 'c'.repeat(40)
 
 describe('refillSnapshot at the head', () => {
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
   // The refill walks the tree at the commit the head named, passed to the walk
   // rather than written to the accessor, and stamps every folder with it.
   it('walks and stamps the head it resolved', async () => {

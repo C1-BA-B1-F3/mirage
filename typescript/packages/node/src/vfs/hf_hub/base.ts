@@ -12,6 +12,7 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import { ListingVersion } from '@struktoai/mirage-core/types'
 import { BaseVFS } from '@struktoai/mirage-core/vfs/base'
 
 import type { RegisteredCommand } from '@struktoai/mirage-core/commands/config'
@@ -23,6 +24,7 @@ import type { DeltaHook } from '@struktoai/mirage-core/watch/index'
 import type { HfHubAccessor } from '../../accessor/hf_hub.ts'
 import { HF_HUB_COMMANDS } from '../../commands/builtin/hf_hub/index.ts'
 
+import { COMMIT_SHA } from '../../core/hf_hub/constants.ts'
 import { buildDeltaHook } from '../../core/hf_hub/watch.ts'
 import { HF_HUB_OPS } from '../../ops/hf_hub/index.ts'
 
@@ -35,6 +37,20 @@ import { HF_HUB_OPS } from '../../ops/hf_hub/index.ts'
  * revisions. These three are git repositories, read through the Hub's own
  * tree API and written as commits.
  */
+
+/**
+ * The commit a revision pins every listing at, when it names one outright.
+ * Only a full 40- or 64-hex string can be a commit; the Hub answers shas
+ * lowercase, so the pin is lowercased to compare with what it stores. A
+ * branch that happens to look like one is still safe: its listings are
+ * stored at the head its revision answered, which never equals its name.
+ * Each of the three VFS sets its own `listingsPin` from its accessor's
+ * effective revision with this.
+ */
+export function hfListingsPin(revision: string): string | null {
+  const lowered = revision.toLowerCase()
+  return COMMIT_SHA.test(lowered) ? lowered : null
+}
 
 export abstract class HfHubVFS extends BaseVFS {
   abstract override readonly prompt: string
@@ -50,6 +66,10 @@ export abstract class HfHubVFS extends BaseVFS {
   override readonly sizesAlwaysKnown: boolean = true
   override readonly supportsSnapshot: boolean = true
   override readonly readRevalidatable: boolean = true
+  // One version covers every listing: the head commit the revision resolves
+  // to, asked with `revision/{rev}?expand[]=sha`, and the tree is walked at
+  // that commit so the rows and the version agree.
+  override readonly listingVersion: ListingVersion = ListingVersion.MOUNT
   // The index is not a cache in front of a listing, it IS the listing: one
   // recursive fetch seeds it whole. A long TTL therefore spares the Hub a
   // full re-walk rather than risking a stale row.

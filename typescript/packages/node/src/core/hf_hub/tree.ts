@@ -21,6 +21,7 @@ import * as kp from '@struktoai/mirage-core/utils/key_prefix'
 import type { HfHubAccessor, RowTables } from '../../accessor/hf_hub.ts'
 import { HfHubError, apiUrl, hubGetResponse, hubPost, revSegment } from './client.ts'
 import { MAX_TREE_PAGES, TREE_PAGE_SIZE, TREE_PAGE_SIZE_EXPANDED } from './constants.ts'
+import { headCommit } from './repo.ts'
 import type { TreeEntry } from './tree_entry.ts'
 import { isDirEntry } from './tree_entry.ts'
 import { compareCodePoints } from '@struktoai/mirage-core/utils/sort'
@@ -80,9 +81,13 @@ export function pageParams(expand: boolean): Record<string, string> {
   }
 }
 
-/** The tree endpoint for the mount's revision and key prefix. */
-export function treeUrl(accessor: HfHubAccessor): string {
-  let suffix = `/tree/${revSegment(accessor.revision)}`
+/**
+ * The tree endpoint for a revision and the mount's key prefix: the mount's
+ * own revision unless one is given. A refill passes the commit its head
+ * resolved to, so the rows it stores are the ones that version names.
+ */
+export function treeUrl(accessor: HfHubAccessor, revision?: string): string {
+  let suffix = `/tree/${revSegment(revision ?? accessor.revision)}`
   // The prefix is normalized with a trailing slash, which the tree endpoint
   // reads as a path segment of its own.
   const stem = stripSlash(accessor.keyPrefix)
@@ -227,8 +232,11 @@ export async function walkPages(
  * answer and the mtimes came free. Only a repository too big for one page
  * falls back to the bare walk, and pays one wasted request for the attempt.
  */
-export async function fetchTree(accessor: HfHubAccessor): Promise<Map<string, TreeEntry>> {
-  const url = treeUrl(accessor)
+export async function fetchTree(
+  accessor: HfHubAccessor,
+  revision?: string,
+): Promise<Map<string, TreeEntry>> {
+  const url = treeUrl(accessor, revision)
   const expand = accessor.expandCommits
   let result = new Map<string, TreeEntry>()
   if (expand !== false) {
@@ -303,7 +311,31 @@ export function indexDirs(
       head = up === -1 ? '' : head.slice(0, up)
     }
   }
+  listImplied(dirs, stem === '' ? '/' : stem)
   return dirs
+}
+
+/**
+ * Give every directory the tree only implies a row in its parent.
+ *
+ * A directory seen only as some path's parent has a listing of its own but no
+ * row naming it, so its parent would not list it and a stat of it would find
+ * no entry. Every listed path must have a row: a versioned listing on Redis
+ * reads EXPIRED when one of its children has none.
+ */
+function listImplied(dirs: Map<string, [string, IndexEntry][]>, root: string): void {
+  const named = new Set<string>()
+  for (const [parent, rows] of dirs) {
+    const base = rstripSlash(parent)
+    for (const [name] of rows) named.add(`${base}/${name}`)
+  }
+  for (const key of [...dirs.keys()].sort(compareCodePoints)) {
+    if (key === root || named.has(key)) continue
+    const cut = key.lastIndexOf('/')
+    const name = key.slice(cut + 1)
+    const parent = dirs.get(key.slice(0, cut) || '/')
+    parent?.push([name, new IndexEntry({ id: '', name, resourceType: 'folder' })])
+  }
 }
 
 /** The entry and children tables a no-index mount reads, from the buckets. */
@@ -335,10 +367,15 @@ export async function seedIndex(
   accessor: HfHubAccessor,
   index: IndexCacheStore,
   prefix: string,
+  version: string | null = null,
 ): Promise<RowTables> {
   const dirs = indexDirs(accessor.tree, prefix)
   const expires = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000)
-  await Promise.all([...dirs].map(([parent, rows]) => index.setDir(parent, rows, expires)))
+  // Every folder carries the head the tree was walked at, not just the root:
+  // a nested listing is served on that version as much as the root is.
+  await Promise.all(
+    [...dirs].map(([parent, rows]) => index.setDir(parent, rows, expires, { version })),
+  )
   return rowsOf(dirs)
 }
 
@@ -370,14 +407,22 @@ export async function refillSnapshot(
   prefix: string,
 ): Promise<IndexSnapshot> {
   const previous = accessor.treeLoaded ? new Map(accessor.tree) : null
-  const tree = await fetchTree(accessor)
+  // The head first, pinned or not, and the tree walked at the commit it
+  // names: the version stored is then the one these rows are at, never a
+  // later one a commit landing between the two requests would give. A pinned
+  // mount's version still comes from a response, so a 40-hex branch name is
+  // never mistaken for its own commit. The head failing is the refill
+  // failing. '' (a Hub that names none) walks the branch and stores no
+  // version. Mirrors Python's `refill_snapshot`.
+  const head = (await headCommit(accessor)) || null
+  const tree = await fetchTree(accessor, head ?? undefined)
   accessor.tree = tree
   accessor.treeLoaded = true
   accessor.rowsCache = null
   accessor.refills += 1
   // Refilling replaces the snapshot; merging would retain deleted paths.
   await index.invalidatePrefix(rstripSlash(prefix) || '/')
-  const snapshot = await seedIndex(accessor, index, prefix)
+  const snapshot = await seedIndex(accessor, index, prefix, head)
   if (previous !== null) await index.reportGone(departed(previous, tree.keys(), prefix, isDirEntry))
   return snapshot
 }

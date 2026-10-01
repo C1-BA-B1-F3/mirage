@@ -47,8 +47,15 @@ async def head_commit(accessor: HfHubAccessor) -> str:
     Returns:
         str: the commit sha, or "" when the Hub reported none.
     """
+    # Only the sha is read, so only the sha is asked for: the bare object
+    # lists every file (1.5 MB on a large dataset), the trimmed one is about
+    # 110 bytes. A param, never part of revision_url, which every not-found
+    # message names verbatim.
     data: JsonValue = await hub_get(
-        accessor.token, revision_url(accessor), session=accessor.pool
+        accessor.token,
+        revision_url(accessor),
+        {"expand[]": "sha"},
+        session=accessor.pool,
     )
     if not isinstance(data, dict):
         return ""

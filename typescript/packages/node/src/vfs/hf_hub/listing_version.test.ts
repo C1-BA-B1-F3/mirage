@@ -16,13 +16,8 @@ import { LISTING_TRUST_WINDOW } from '@struktoai/mirage-core/cache/index/constan
 import { RAMIndexCacheStore } from '@struktoai/mirage-core/cache/index/ram'
 import { runInCommandScope } from '@struktoai/mirage-core/cache/index/scope'
 import type { IndexCacheStore } from '@struktoai/mirage-core/cache/index/store'
-import {
-  FileStat,
-  ListingVersion,
-  MountMode,
-  PathSpec,
-  ReadPolicy,
-} from '@struktoai/mirage-core/types'
+import type { FileStat } from '@struktoai/mirage-core/types'
+import { ListingVersion, MountMode, PathSpec, ReadPolicy } from '@struktoai/mirage-core/types'
 import type { BaseVFS } from '@struktoai/mirage-core/vfs/base'
 import { RAMVFS } from '@struktoai/mirage-core/vfs/ram/ram'
 import { Mount } from '@struktoai/mirage-core/workspace/mount/spec'
@@ -396,7 +391,11 @@ describe('hf_hub versions a listing by its head commit', () => {
     try {
       fake.log.length = 0
       expect(await out(pinned, 'ls /m/docs/sub')).toBe(LISTED)
-      expect(fake.count('revision')).toBeGreaterThanOrEqual(1)
+      // The check answers the pin, not main's head: a refill at it.
+      expect(counts(fake)).toEqual([2, 1, 0, 0])
+      fake.log.length = 0
+      expect(await out(pinned, 'ls /m/docs/sub')).toBe(LISTED)
+      expect(counts(fake)).toEqual([0, 0, 0, 0])
     } finally {
       await pinned.close()
     }

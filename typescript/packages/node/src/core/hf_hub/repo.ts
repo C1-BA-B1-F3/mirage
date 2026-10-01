@@ -29,7 +29,16 @@ import { apiUrl, HfHubError, hubGet, revSegment } from './client.ts'
  * finds the snapshot already there and serves dev's bytes.
  */
 export async function headCommit(accessor: HfHubAccessor): Promise<string> {
-  const data = await hubGet(accessor.token, revisionUrl(accessor), undefined, accessor.timeoutMs)
+  // Only the sha is read, so only the sha is asked for: the bare object lists
+  // every file (1.5 MB on a large dataset), the trimmed one is about 110
+  // bytes. A param, never part of revisionUrl, which every not-found message
+  // names verbatim.
+  const data = await hubGet(
+    accessor.token,
+    revisionUrl(accessor),
+    { 'expand[]': 'sha' },
+    accessor.timeoutMs,
+  )
   if (data === null || typeof data !== 'object' || Array.isArray(data)) return ''
   const sha = (data as Record<string, unknown>).sha
   return typeof sha === 'string' ? sha : ''

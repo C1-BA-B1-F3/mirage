@@ -71,11 +71,16 @@ async def test_lookup_and_the_index_agree(loaded):
 
 
 @pytest.mark.asyncio
-async def test_lookup_reports_a_directory_with_no_row_of_its_own(accessor):
+async def test_lookup_gives_a_directory_with_no_tree_row_a_folder_row(
+    accessor,
+):
+    # A directory the tree only implies gets a folder row of its own, so
+    # its parent lists it and every listed path has an entry (Task 1.3).
     seed(accessor, file_row("d/b.txt"))
     found = await lookup(accessor, NULL_INDEX, "", "/d")
     assert found.is_dir is True
-    assert found.entry is None
+    assert found.entry is not None
+    assert (found.entry.resource_type, found.entry.id) == ("folder", "")
     assert found.exists is True
 
 

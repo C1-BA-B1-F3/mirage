@@ -12,6 +12,8 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import re
+
 API_BASE = "https://huggingface.co"
 
 # The Hub's default branch. Unlike GitHub, where the default is per
@@ -19,6 +21,10 @@ API_BASE = "https://huggingface.co"
 # `main` and the API offers no way to change it, so an unpinned mount
 # resolves without a round trip.
 DEFAULT_REVISION = "main"
+
+# A full commit sha, SHA-1 or SHA-256, as the Hub answers it (lowercase). A
+# mount whose revision matches is pinned to a commit that cannot move.
+COMMIT_SHA = re.compile(r"[0-9a-f]{40}|[0-9a-f]{64}")
 
 SCOPE_ERROR = 5000
 

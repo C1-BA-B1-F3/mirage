@@ -15,10 +15,11 @@
 import asyncio
 from functools import partial
 
-from mirage.accessor.s3 import S3Accessor, S3Config
+from mirage.accessor.s3 import S3Accessor
 from mirage.core.s3 import driver as s3_driver
 from mirage.core.s3.find import find
 from mirage.types import PathSpec
+from mirage.vfs.s3.config import S3Config
 
 
 async def _pages_gen(pages):

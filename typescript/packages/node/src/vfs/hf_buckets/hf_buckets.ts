@@ -12,10 +12,18 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import { BaseVFS } from '@struktoai/mirage-core/vfs/base'
+
+import type { RegisteredCommand } from '@struktoai/mirage-core/commands/config'
+import type { RegisteredOp } from '@struktoai/mirage-core/ops/registry'
+
 import { normalizeKeyPrefix } from '@struktoai/mirage-core/vfs/s3/config'
 import { VFSName } from '@struktoai/mirage-core/types'
-import { HfBucketsAccessor } from '../../accessor/hf.ts'
-import { HfVFS } from './base.ts'
+import { type DeltaHook } from '@struktoai/mirage-core/watch/index'
+import { HfBucketsAccessor } from '../../accessor/hf_buckets.ts'
+import { HF_BUCKETS_COMMANDS } from '../../commands/builtin/hf_buckets/index.ts'
+import { buildDeltaHook } from '../../core/hf_buckets/watch.ts'
+import { HF_BUCKETS_OPS } from '../../ops/hf_buckets/index.ts'
 import {
   assertHfRepoId,
   type HfBucketsConfig,
@@ -29,11 +37,21 @@ export interface HfBucketsVFSState {
   config: HfBucketsConfigRedacted
 }
 
-export class HfBucketsVFS extends HfVFS {
+export class HfBucketsVFS extends BaseVFS {
   override readonly name: string = VFSName.HF_BUCKETS
-  readonly prompt: string = HF_BUCKETS_PROMPT
+  override readonly prompt: string = HF_BUCKETS_PROMPT
+  override readonly cachesReads: boolean = true
+  // The Hub tree API reports each file's exact byte size (the LFS
+  // object size for LFS files); readdir backfills any lister-omitted
+  // size with one stat.
+  override readonly sizesAlwaysKnown: boolean = true
+  override readonly supportsSnapshot: boolean = true
+  // stat stamps the paths-info xet hash and a read stamps its download's
+  // strong ETag, which is that same hash, so a `fresh` probe compares like
+  // with like.
+  override readonly readRevalidatable: boolean = true
   readonly config: HfBucketsConfig
-  readonly accessor: HfBucketsAccessor
+  override readonly accessor: HfBucketsAccessor
 
   constructor(config: HfBucketsConfig) {
     super()
@@ -49,7 +67,19 @@ export class HfBucketsVFS extends HfVFS {
     this.accessor = new HfBucketsAccessor(this.config)
   }
 
-  getState(): Promise<HfBucketsVFSState> {
+  override commands(): readonly RegisteredCommand[] {
+    return HF_BUCKETS_COMMANDS
+  }
+
+  override ops(): readonly RegisteredOp[] {
+    return HF_BUCKETS_OPS
+  }
+
+  override deltaHook(): DeltaHook {
+    return buildDeltaHook(this.accessor)
+  }
+
+  override getState(): Promise<HfBucketsVFSState> {
     return Promise.resolve({
       type: this.name,
       config: redactHfBucketsConfig(this.config),

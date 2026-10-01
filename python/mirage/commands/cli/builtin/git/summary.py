@@ -15,7 +15,7 @@
 from dataclasses import dataclass
 from difflib import SequenceMatcher
 
-from dulwich.object_store import BaseObjectStore, iter_tree_contents
+from dulwich.object_store import BaseObjectStore
 from dulwich.objects import Blob, Commit, ObjectID
 
 from mirage.commands.cli.builtin.git.format import short
@@ -49,24 +49,6 @@ class FileStat:
     binary: bool
     old_size: int
     new_size: int
-
-
-def tree_entries(
-    store: BaseObjectStore, tree: bytes | None
-) -> dict[bytes, tuple[int, bytes]]:
-    """Every blob a tree holds, keyed by repository-relative path.
-
-    Args:
-        store (BaseObjectStore): the object database.
-        tree (bytes | None): the tree id, None for the empty tree a
-            root commit diffs against.
-    """
-    if tree is None:
-        return {}
-    return {
-        entry.path: (entry.mode, entry.sha)
-        for entry in iter_tree_contents(store, ObjectID(tree))
-    }
 
 
 def _blob_data(store: BaseObjectStore, sha: bytes | None) -> bytes:

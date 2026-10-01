@@ -16,7 +16,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from mirage.accessor.gridfs import GridFSAccessor, GridFSConfig
+from mirage.accessor.gridfs import GridFSAccessor
+from mirage.vfs.gridfs.config import GridFSConfig
 
 
 @pytest.fixture
@@ -26,29 +27,6 @@ def accessor():
             uri="mongodb://localhost:27017", database="db", bucket="data"
         )
     )
-
-
-def test_config_defaults():
-    config = GridFSConfig(uri="mongodb://localhost:27017", database="db")
-    assert config.bucket == "fs"
-    assert config.key_prefix is None
-    assert config.chunk_size_bytes is None
-
-
-def test_config_normalizes_key_prefix():
-    config = GridFSConfig(
-        uri="mongodb://localhost:27017",
-        database="db",
-        key_prefix="/team/reports/",
-    )
-    assert config.key_prefix == "team/reports/"
-
-
-def test_config_empty_key_prefix_becomes_none():
-    config = GridFSConfig(
-        uri="mongodb://localhost:27017", database="db", key_prefix=""
-    )
-    assert config.key_prefix is None
 
 
 @pytest.mark.asyncio

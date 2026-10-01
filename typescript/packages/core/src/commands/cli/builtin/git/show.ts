@@ -39,7 +39,8 @@ import {
   renamesEnabled,
   type DiffFlags,
 } from './diff_output.ts'
-import { commitFacts, configBool, opened, repoArgs } from './repo.ts'
+import { commitFacts, configBool, repoArgs } from './repo.ts'
+import { opened } from './session.ts'
 import { resolveCommit, resolveObject } from './revparse.ts'
 import { checkOperands, escaped, fatal, revisionArg } from './util.ts'
 import { encodeText } from '../../../../shell/bytes.ts'

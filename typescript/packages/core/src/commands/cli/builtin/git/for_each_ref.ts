@@ -21,7 +21,7 @@ import { FormatUsageError, GitError, UnknownSwitchError } from './errors.ts'
 import { filterWords, refFilter, withoutFilterValues } from './ref_filter.ts'
 import { formatRefs, parseFormat, usedFields } from './ref_format.ts'
 import { isRootRef, listingResult, matchAsPath, refListing, sortKeys } from './ref_list.ts'
-import { opened } from './repo.ts'
+import { opened } from './session.ts'
 import { QuoteStyle, RefKind } from './types.ts'
 import { checkOperands, escaped, fatal, switches } from './util.ts'
 

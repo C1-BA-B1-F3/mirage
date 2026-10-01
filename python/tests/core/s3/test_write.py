@@ -15,11 +15,12 @@
 import asyncio
 import hashlib
 
-from mirage.accessor.s3 import S3Accessor, S3Config
+from mirage.accessor.s3 import S3Accessor
 from mirage.cache.context import push_cache_manager
 from mirage.core.s3 import driver as s3_driver
 from mirage.core.s3.write import write_bytes
 from mirage.types import PathSpec
+from mirage.vfs.s3.config import S3Config
 
 
 class _FakeManager:

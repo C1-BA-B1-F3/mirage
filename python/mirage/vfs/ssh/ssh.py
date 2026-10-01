@@ -17,12 +17,12 @@ from typing import Any
 from mirage.accessor.ssh import SSHAccessor
 from mirage.commands.builtin.ssh import COMMANDS as SSH_COMMANDS
 from mirage.commands.config import RegisteredCommand, registered_commands
-from mirage.core.ssh.config import SSHConfig
 from mirage.core.ssh.watch import build_delta_hook
 from mirage.ops.registry import RegisteredOp
 from mirage.ops.ssh import OPS as SSH_OPS
 from mirage.types import VFSName
 from mirage.vfs.base import BaseVFS
+from mirage.vfs.ssh.config import SSHConfig
 from mirage.vfs.ssh.prompt import PROMPT
 from mirage.watch.base import DeltaHook
 

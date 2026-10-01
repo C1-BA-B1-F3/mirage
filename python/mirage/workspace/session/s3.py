@@ -15,7 +15,7 @@
 import asyncio
 from collections.abc import Iterable
 
-from mirage.accessor.s3 import S3Config
+from mirage.vfs.s3.config import S3Config
 from mirage.workspace.record.s3 import S3RecordClient
 from mirage.workspace.session.store import SessionFields, SessionStore
 

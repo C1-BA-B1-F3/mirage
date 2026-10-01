@@ -12,7 +12,19 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-from mirage.accessor.gridfs import GridFSConfig
-from mirage.vfs.gridfs.gridfs import GridFSVFS
+from typing import TYPE_CHECKING
 
-__all__ = ["GridFSVFS", "GridFSConfig"]
+from mirage.vfs.gridfs.config import GridFSConfig
+
+if TYPE_CHECKING:
+    from mirage.vfs.gridfs.gridfs import GridFSVFS
+
+__all__ = ["GridFSConfig", "GridFSVFS"]
+
+
+def __getattr__(name: str) -> "type[GridFSVFS]":
+    if name == "GridFSVFS":
+        from mirage.vfs.gridfs.gridfs import GridFSVFS
+
+        return GridFSVFS
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

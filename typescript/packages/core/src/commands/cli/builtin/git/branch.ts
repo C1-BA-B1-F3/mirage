@@ -48,7 +48,8 @@ import {
   refListing,
   sortKeys,
 } from './ref_list.ts'
-import { commitFacts, opened, repoArgs, type Repo } from './repo.ts'
+import { commitFacts, repoArgs, type Repo } from './repo.ts'
+import { opened } from './session.ts'
 import { resolveCommit } from './revparse.ts'
 import {
   RefKind,

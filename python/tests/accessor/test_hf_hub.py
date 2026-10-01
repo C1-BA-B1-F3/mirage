@@ -14,34 +14,34 @@
 
 import pytest
 
-from mirage.accessor.hf_hub import HfHubAccessor, HfRepoConfig
+from mirage.accessor.hf_hub import (
+    HfDatasetsAccessor,
+    HfModelsAccessor,
+    HfSpacesAccessor,
+)
 from mirage.core.hf_hub.client import stall_timeout
-
-
-class ModelAccessor(HfHubAccessor):
-    REPO_TYPE = "model"
-    VFS_NAME = "hf_models"
+from mirage.vfs.hf_buckets.config import HfRepoConfig
 
 
 def test_revision_defaults_to_main_without_a_request():
     """Unlike GitHub's default branch, the Hub creates every repository
     with `main` and offers no way to change which branch is default, so
     naming no revision costs nothing to resolve."""
-    assert ModelAccessor(HfRepoConfig(repo_id="a/b")).revision == "main"
+    assert HfModelsAccessor(HfRepoConfig(repo_id="a/b")).revision == "main"
 
 
 def test_revision_honours_an_explicit_pin():
-    acc = ModelAccessor(HfRepoConfig(repo_id="a/b", revision="v2"))
+    acc = HfModelsAccessor(HfRepoConfig(repo_id="a/b", revision="v2"))
     assert acc.revision == "v2"
 
 
 def test_key_prefix_is_normalized_with_a_trailing_slash():
-    acc = ModelAccessor(HfRepoConfig(repo_id="a/b", key_prefix="/sub/dir"))
+    acc = HfModelsAccessor(HfRepoConfig(repo_id="a/b", key_prefix="/sub/dir"))
     assert acc.key_prefix == "sub/dir/"
 
 
 def test_key_prefix_is_empty_when_unset():
-    assert ModelAccessor(HfRepoConfig(repo_id="a/b")).key_prefix == ""
+    assert HfModelsAccessor(HfRepoConfig(repo_id="a/b")).key_prefix == ""
 
 
 @pytest.mark.parametrize(
@@ -57,25 +57,40 @@ def test_key_prefix_is_empty_when_unset():
 def test_repo_path_joins_the_prefix_exactly_once(prefix, local, expected):
     """The prefix is normalized with a trailing slash, so a hand-written
     join produced `sub/dir//a.txt` and 404'd every prefixed read."""
-    acc = ModelAccessor(HfRepoConfig(repo_id="a/b", key_prefix=prefix))
+    acc = HfModelsAccessor(HfRepoConfig(repo_id="a/b", key_prefix=prefix))
     assert acc.repo_path(local) == expected
 
 
 def test_expand_commits_defaults_to_deciding_by_size():
-    assert ModelAccessor(HfRepoConfig(repo_id="a/b")).expand_commits is None
+    assert HfModelsAccessor(HfRepoConfig(repo_id="a/b")).expand_commits is None
 
 
 def test_a_fresh_accessor_has_hydrated_nothing():
-    acc = ModelAccessor(HfRepoConfig(repo_id="a/b"))
+    acc = HfModelsAccessor(HfRepoConfig(repo_id="a/b"))
     assert acc.tree == {}
     assert acc.tree_loaded is False
     assert acc.rows_cache is None
 
 
 def test_the_pool_waits_the_configured_timeout_without_progress():
-    assert ModelAccessor(
+    assert HfModelsAccessor(
         HfRepoConfig(repo_id="a/b")
     ).pool._timeout == stall_timeout(30)
-    assert ModelAccessor(
+    assert HfModelsAccessor(
         HfRepoConfig(repo_id="a/b", timeout=5)
     ).pool._timeout == stall_timeout(5)
+
+
+@pytest.mark.parametrize(
+    "accessor_cls,repo_type,uri",
+    [
+        (HfModelsAccessor, "model", "hf://models/org/repo"),
+        (HfDatasetsAccessor, "dataset", "hf://datasets/org/repo"),
+        (HfSpacesAccessor, "space", "hf://spaces/org/repo"),
+    ],
+)
+def test_each_repo_kind_sends_its_own_type(accessor_cls, repo_type, uri):
+    acc = accessor_cls(HfRepoConfig(repo_id="org/repo"))
+    assert acc.REPO_TYPE == repo_type
+    assert acc.repo_type == repo_type
+    assert acc.bucket_uri == uri

@@ -168,6 +168,7 @@
   "log --format=%s --stat -2 quoted",
   "diff-tree -r quoted",
   "diff --name-status quoted~1 quoted",
+  "show --format= -p quoted",
   "show --format= --first-parent -p evil",
   "show --raw -p --format= evil",
   "show --raw --format= HEAD",

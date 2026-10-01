@@ -16,6 +16,7 @@ import pytest
 
 from mirage.commands.cli.builtin.git.errors import MountInWayError
 from mirage.commands.cli.builtin.git.io import (
+    basename,
     blocking_ancestor,
     read_file,
     read_names,
@@ -26,6 +27,13 @@ from mirage.commands.cli.builtin.git.io import (
 )
 from mirage.ops.types import MountView
 from mirage.types import FileStat, FileType
+
+
+@pytest.mark.parametrize(
+    "entry", ["pack", "pack/", "/repo/.git/objects/pack", "objects/pack//"]
+)
+def test_basename_is_the_final_segment_of_any_entry_spelling(entry):
+    assert basename(entry) == "pack"
 
 
 @pytest.mark.asyncio

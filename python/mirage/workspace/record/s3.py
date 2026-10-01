@@ -17,8 +17,8 @@ import json
 from collections.abc import Iterable
 from typing import Any
 
-from mirage.accessor.s3 import S3Config
 from mirage.core.s3.client import _client_kwargs, async_session, is_not_found
+from mirage.vfs.s3.config import S3Config
 from mirage.workspace.record.types import generation_of
 
 

@@ -13,8 +13,8 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import { compareCodePoints } from '../../../../utils/sort.ts'
-import { basename } from './path.ts'
 import {
+  basename,
   isDirectory,
   readFile,
   readNames,

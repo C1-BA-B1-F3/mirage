@@ -30,10 +30,9 @@ import {
   UnknownSwitchError,
 } from './errors.ts'
 import { readIndex, updateIndex, type StagedEntry } from './index_file.ts'
-import { removeFile, renamePath, under } from './io.ts'
-import { basename } from './path.ts'
+import { basename, removeFile, renamePath, under } from './io.ts'
 import { repoRelative, under as inside } from './pathspec.ts'
-import { opened } from './repo.ts'
+import { opened } from './session.ts'
 import type { Dispatch, IndexEntry, RepoLocation } from './types.ts'
 import { checkOperands, escaped, fatal, startPoint, switches } from './util.ts'
 import { compareCodePoints } from '../../../../utils/sort.ts'

@@ -24,11 +24,11 @@ from mirage.commands.builtin.find_eval import (
     keep,
     start_basename,
 )
-from mirage.core.ssh.config import SSHConfig
 from mirage.core.ssh.utils import join_root
 from mirage.types import PathSpec
 from mirage.utils.dates import in_mtime_window
 from mirage.utils.stat_view import DIR_SIZE
+from mirage.vfs.ssh.config import SSHConfig
 
 
 async def find(

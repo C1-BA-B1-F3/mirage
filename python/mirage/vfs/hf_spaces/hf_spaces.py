@@ -12,9 +12,10 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-from mirage.accessor.hf_spaces import HfSpacesAccessor, HfSpacesConfig
+from mirage.accessor.hf_hub import HfSpacesAccessor
 from mirage.types import VFSName
 from mirage.vfs.hf_hub.base import HfHubVFS
+from mirage.vfs.hf_spaces.config import HfSpacesConfig
 from mirage.vfs.hf_spaces.prompt import PROMPT
 
 

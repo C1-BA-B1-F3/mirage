@@ -45,7 +45,8 @@ import {
   type LogFlags,
   type Walk,
 } from './history.ts'
-import { configBool, opened, type Repo } from './repo.ts'
+import { configBool, type Repo } from './repo.ts'
+import { opened } from './session.ts'
 import { splitRevisions } from './revparse.ts'
 import { checkOperands, escaped, fatal } from './util.ts'
 import { HEAD } from './constants.ts'

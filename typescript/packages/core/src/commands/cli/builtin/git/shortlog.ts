@@ -7,7 +7,7 @@ import type { CLIInvocation } from '../../types.ts'
 import { GitError } from './errors.ts'
 import { subject } from './format.ts'
 import { parseFlags, refCommits, select } from './history.ts'
-import { opened } from './repo.ts'
+import { opened } from './session.ts'
 import { splitRevisions } from './revparse.ts'
 import { checkOperands, escaped, fatal } from './util.ts'
 

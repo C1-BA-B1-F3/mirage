@@ -18,7 +18,8 @@ from datetime import datetime
 from opendal.exceptions import NotFound
 from opendal.types import EntryMode
 
-from mirage.accessor.hf_buckets import HfBucketsAccessor, HfBucketsConfig
+from mirage.accessor.hf_buckets import HfBucketsAccessor
+from mirage.vfs.hf_buckets.config import HfBucketsConfig
 from tests.fixtures.hf_hub_api import FakeHub
 
 BUCKET = "o/b"

@@ -14,7 +14,7 @@
 
 from typing import Any
 
-from mirage.accessor.gridfs import GridFSAccessor, GridFSConfig
+from mirage.accessor.gridfs import GridFSAccessor
 from mirage.commands.builtin.gridfs import COMMANDS as GRIDFS_COMMANDS
 from mirage.commands.config import RegisteredCommand, registered_commands
 from mirage.core.gridfs.watch import build_delta_hook
@@ -22,6 +22,7 @@ from mirage.ops.gridfs import OPS as GRIDFS_OPS
 from mirage.ops.registry import RegisteredOp
 from mirage.types import VFSName
 from mirage.vfs.base import BaseVFS
+from mirage.vfs.gridfs.config import GridFSConfig
 from mirage.vfs.gridfs.prompt import PROMPT
 from mirage.watch.base import DeltaHook
 

@@ -18,7 +18,7 @@ from unittest.mock import AsyncMock, Mock
 import pytest
 
 from mirage.accessor.ssh import SSHAccessor, _connect_kwargs
-from mirage.core.ssh.config import SSHConfig
+from mirage.vfs.ssh.config import SSHConfig
 
 
 def test_connect_kwargs_overrides():

@@ -14,6 +14,7 @@ permissions:
       - typescript/**
       - .github/workflows/test_integ.yml
       - .github/actions/setup-node-pnpm/action.yml
+      - .github/actions/setup-uv/action.yml
       - .github/actions/integ-battery-setup/action.yml
       - .github/actions/nextcloud-tune/action.yml
   pull_request:
@@ -58,12 +59,14 @@ jobs:
               - 'python/**'
               - '.github/workflows/test_integ.yml'
               - '.github/actions/setup-node-pnpm/action.yml'
+              - '.github/actions/setup-uv/action.yml'
               - '.github/actions/integ-battery-setup/action.yml'
             ts:
               - 'integ/**'
               - 'typescript/**'
               - '.github/workflows/test_integ.yml'
               - '.github/actions/setup-node-pnpm/action.yml'
+              - '.github/actions/setup-uv/action.yml'
               - '.github/actions/integ-battery-setup/action.yml'
               - '.github/actions/nextcloud-tune/action.yml'
             database:
@@ -96,6 +99,7 @@ jobs:
               - 'typescript/**'
               - '.github/workflows/test_integ.yml'
               - '.github/actions/setup-node-pnpm/action.yml'
+              - '.github/actions/setup-uv/action.yml'
               - '.github/actions/integ-battery-setup/action.yml'
             data:
               - 'integ/**'
@@ -103,6 +107,7 @@ jobs:
               - 'typescript/**'
               - '.github/workflows/test_integ.yml'
               - '.github/actions/setup-node-pnpm/action.yml'
+              - '.github/actions/setup-uv/action.yml'
               - '.github/actions/integ-battery-setup/action.yml'
               - '.github/actions/nextcloud-tune/action.yml'
             observability:
@@ -128,6 +133,7 @@ jobs:
               - 'typescript/packages/node/src/vfs/jaeger/**'
               - '.github/workflows/test_integ.yml'
               - '.github/actions/setup-node-pnpm/action.yml'
+              - '.github/actions/setup-uv/action.yml'
             fuse:
               - 'integ/fuse/**'
               - 'integ/check_json.py'
@@ -139,6 +145,7 @@ jobs:
               - 'typescript/packages/node/src/workspace.ts'
               - '.github/workflows/test_integ.yml'
               - '.github/actions/setup-node-pnpm/action.yml'
+              - '.github/actions/setup-uv/action.yml'
               - '.github/actions/integ-battery-setup/action.yml'
             # integ-runtime runs every case through the python and typescript
             # hosts, so a '!' rule may drop only a module that nothing those
@@ -161,6 +168,7 @@ jobs:
               - 'typescript/**'
               - '.github/workflows/test_integ.yml'
               - '.github/actions/setup-node-pnpm/action.yml'
+              - '.github/actions/setup-uv/action.yml'
               - '!**/*.md'
               - '!python/tests/**'
               - '!typescript/**/*.test.ts'
@@ -225,11 +233,7 @@ jobs:
           python-version: "3.12"
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v7
-        with:
-          version: "0.12.9"
-          enable-cache: true
-          prune-cache: false
+        uses: ./.github/actions/setup-uv
 
       - name: Install Python dependencies
         working-directory: python
@@ -817,11 +821,7 @@ jobs:
           python-version: "3.12"
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v7
-        with:
-          version: "0.12.9"
-          enable-cache: true
-          prune-cache: false
+        uses: ./.github/actions/setup-uv
 
       - name: Install Python dependencies
         working-directory: python
@@ -919,11 +919,7 @@ jobs:
           python-version: "3.12"
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v7
-        with:
-          version: "0.12.9"
-          enable-cache: true
-          prune-cache: false
+        uses: ./.github/actions/setup-uv
 
       - name: Install Python dependencies
         working-directory: python
@@ -1168,11 +1164,7 @@ jobs:
           python-version: "3.12"
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v7
-        with:
-          version: "0.12.9"
-          enable-cache: true
-          prune-cache: false
+        uses: ./.github/actions/setup-uv
 
       - name: Install Python dependencies
         working-directory: python
@@ -1251,11 +1243,9 @@ jobs:
           python-version: "3.12"
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v7
+        uses: ./.github/actions/setup-uv
         with:
-          version: "0.12.9"
-          enable-cache: true
-          prune-cache: false
+          save-cache: "false"
 
       - name: Install Python dependencies (base + fuse only)
         working-directory: python
@@ -1324,11 +1314,9 @@ jobs:
           python-version: "3.12"
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v7
+        uses: ./.github/actions/setup-uv
         with:
-          version: "0.12.9"
-          enable-cache: true
-          prune-cache: false
+          save-cache: "false"
 
       - name: Install Python dependencies (base + fuse only)
         working-directory: python
@@ -1505,11 +1493,7 @@ jobs:
           python-version: "3.12"
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v7
-        with:
-          version: "0.12.9"
-          enable-cache: true
-          prune-cache: false
+        uses: ./.github/actions/setup-uv
 
       - name: Install Python dependencies
         working-directory: python
@@ -1638,11 +1622,7 @@ jobs:
           python-version: "3.12"
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v7
-        with:
-          version: "0.12.9"
-          enable-cache: true
-          prune-cache: false
+        uses: ./.github/actions/setup-uv
 
       - name: Install Python dependencies
         working-directory: python
@@ -1734,11 +1714,7 @@ jobs:
           python-version: "3.12"
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v7
-        with:
-          version: "0.12.9"
-          enable-cache: true
-          prune-cache: false
+        uses: ./.github/actions/setup-uv
 
       - name: Install Python dependencies
         working-directory: python
@@ -1913,16 +1889,14 @@ jobs:
       - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
-      # Its own cache: this job syncs without extras and adds the W&B SDK
-      # wheels the conformance step installs, so sharing the battery jobs'
-      # key would let whichever job saves first hand the others the wrong
-      # set of wheels.
-      - uses: astral-sh/setup-uv@v7
+      # Its own entry: the conformance run installs both W&B SDKs from
+      # their requirements files, which the lock does not hold.
+      - uses: ./.github/actions/setup-uv
         with:
-          version: "0.12.9"
-          enable-cache: true
-          prune-cache: false
           cache-suffix: wandb
+          cache-dependency-glob: |
+            python/uv.lock
+            integ/wandb/requirements-*.txt
       - name: Install Python dependencies
         working-directory: python
         run: uv sync --locked

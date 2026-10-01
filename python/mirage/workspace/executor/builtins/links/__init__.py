@@ -18,10 +18,6 @@ from mirage.workspace.executor.builtins.links.links import (  # isort: skip
 from mirage.workspace.executor.builtins.links.ln import handle_ln
 from mirage.workspace.executor.builtins.links.readlink import handle_readlink
 
-from mirage.workspace.executor.builtins.links.probe import (  # isort: skip
-    link_target_stat, path_exists, path_readdir, path_stat, resolve_link,
-    resolve_path_stat)
-
 __all__ = [
     "accepts_line",
     "follow_directory_links",
@@ -29,13 +25,7 @@ __all__ = [
     "follow_paths",
     "handle_ln",
     "handle_readlink",
-    "link_target_stat",
-    "path_exists",
-    "path_readdir",
-    "path_stat",
     "prepare_mv",
-    "resolve_link",
-    "resolve_path_stat",
     "settle_moves",
     "strip_link_operands",
 ]

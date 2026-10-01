@@ -129,8 +129,6 @@ export class MontyRuntime extends PythonRuntime implements Evaluator {
   }
 
   private perRunVfs(context?: RuntimeContext): MontyVFS | null {
-    return context === undefined
-      ? null
-      : new MontyVFS(new RuntimeVFS(context.dispatch, context.resolver))
+    return context === undefined ? null : new MontyVFS(RuntimeVFS.of(context))
   }
 }

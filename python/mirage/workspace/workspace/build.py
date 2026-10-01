@@ -17,7 +17,6 @@ from dataclasses import dataclass
 from mirage.observe.store import ObserverStore
 from mirage.runtime.base import Runtime
 from mirage.runtime.binding import WorkspaceBinding
-from mirage.runtime.table import WorkspaceRuntime, bind_commands
 from mirage.workspace.mount import MountRegistry
 from mirage.workspace.mount.namespace.store import NamespaceStore
 from mirage.workspace.session import SessionStore
@@ -94,11 +93,4 @@ def wire_runtime_world(
     """
     runtimes = Runtimes(registry, binding)
     runtimes.resolve(entries)
-    router = Router(registry, runtimes, binding.resolver)
-    registry.runtime_bindings = bind_commands(runtimes.entries)
-    registry.runtime_entries = runtimes.entries
-    registry.workspace_runtime = next(
-        (entry
-         for entry in runtimes.entries if isinstance(entry, WorkspaceRuntime)),
-        None)
-    return runtimes, router
+    return runtimes, Router(registry, runtimes, binding.resolver)

@@ -95,17 +95,17 @@ class MountRegistry:
             WeakValueDictionary())
         self._root: MountEntry | None = None
         # Workspace-level command -> runtime bindings (first listed
-        # capturer wins), set by Workspace after construction (same
-        # vehicle as is_exec_allowed()). The dispatcher injects the
+        # capturer wins). The three runtime fields below are written
+        # only by the workspace's Runtimes, on construction and on every
+        # add_runtime/remove_runtime. The dispatcher injects the
         # bound runtime only for commands that have one, so it cannot
         # tell python3 from grep.
         self.runtime_bindings: dict[str, Runtime] = {}
-        # The world's workspace runtime, set by Workspace after construction.
-        # Catch-all when its captures are empty; explicit captures make
-        # unclaimed commands an admission failure (126).
+        # The world's workspace runtime. Catch-all when its captures are
+        # empty; explicit captures make unclaimed commands an admission
+        # failure (126).
         self.workspace_runtime: WorkspaceRuntime | None = None
-        # The ordered runtime world, set by Workspace after
-        # construction and refreshed on add(). The CLI script arm
+        # The ordered runtime world. The CLI script arm
         # selects an interpreter from it (a runtime: pin or the
         # script's language), which the bindings dict cannot answer:
         # an entry behind another capturer never binds a command.

@@ -12,7 +12,6 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import asyncio
 import errno
 from pathlib import PurePosixPath
 from stat import S_ISDIR, S_ISREG
@@ -28,8 +27,6 @@ from mirage.runtime.python.monty.constants import (EXDEV_MESSAGE,
 from mirage.runtime.python.monty.list import merge_entries
 from mirage.runtime.python.monty.stat import stat_result
 from mirage.runtime.python.monty.vfs import MontyVFS
-from mirage.runtime.resolver import MountResolver
-from mirage.runtime.types import DispatchFn
 from mirage.runtime.vfs import RuntimeVFS
 
 
@@ -52,24 +49,16 @@ class MirageOSAccess(OSAccess):
     1s-I/O runs finish in ~2s at 64 workers versus ~8s at 14).
 
     Args:
-        loop (asyncio.AbstractEventLoop): the workspace's event loop.
-        dispatch (Callable | None): the workspace dispatch coroutine
-            function, None outside a workspace.
+        core (RuntimeVFS | None): the execution's file door, built with
+            ``RuntimeVFS.of(context)``; None outside a workspace.
         environ (dict[str, str]): the guest's environment.
-        resolver (MountResolver | None): the workspace mount routing
-            table, None outside a workspace.
     """
 
-    def __init__(self,
-                 loop: asyncio.AbstractEventLoop,
-                 dispatch: DispatchFn | None,
-                 environ: dict[str, str],
-                 resolver: MountResolver | None = None) -> None:
+    def __init__(self, core: RuntimeVFS | None, environ: dict[str,
+                                                              str]) -> None:
         super().__init__([],
                          environ=dict(environ),
                          max_urandom_bytes=MAX_URANDOM_BYTES)
-        core = (RuntimeVFS(dispatch, loop, resolver)
-                if dispatch is not None else None)
         self._vfs = MontyVFS(core)
 
     def _fetch(self, virtual: str) -> bytes | None:

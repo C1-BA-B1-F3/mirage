@@ -18,7 +18,7 @@ import { describe, expect, it } from 'vitest'
 import { ContentType, FileStat, FileType, PathSpec } from '../../../types.ts'
 import { type CommandIO, requireOp } from './adapter.ts'
 import { BUILDERS } from './builders/index.ts'
-import { makeGenericCommands, withReadCache, withSlashGuard } from './factory.ts'
+import { makeGenericCommands, withProbeAnswers, withReadCache, withSlashGuard } from './factory.ts'
 import { runWithCacheManager } from '../../../cache/context.ts'
 import { RAMFileCacheStore } from '../../../cache/file/ram.ts'
 import { runInCommandScope } from '../../../cache/index/scope.ts'
@@ -233,13 +233,15 @@ describe('a command stat after the freshness probe', () => {
   function counting(answer: FileStat): { calls: number; ops: CommandIO } {
     const counter = { calls: 0, ops: makeOps() }
     counter.ops = withReadCache(
-      makeOps({
-        local: false,
-        stat: () => {
-          counter.calls += 1
-          return Promise.resolve(answer)
-        },
-      }),
+      withProbeAnswers(
+        makeOps({
+          local: false,
+          stat: () => {
+            counter.calls += 1
+            return Promise.resolve(answer)
+          },
+        }),
+      ),
     )
     return counter
   }

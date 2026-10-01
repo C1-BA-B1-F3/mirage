@@ -24,8 +24,8 @@ from mirage.cache.manager import CacheManager
 from mirage.commands.builtin.generic_bind.adapter import CommandIO
 from mirage.commands.builtin.generic_bind.builders import BUILDERS
 from mirage.commands.builtin.generic_bind.factory import (
-    _run_with_namespace_globs, make_generic_commands, with_read_cache,
-    with_slash_guard)
+    _run_with_namespace_globs, make_generic_commands, with_probe_answers,
+    with_read_cache, with_slash_guard)
 from mirage.commands.config import CommandOpts
 from mirage.ops.types import LinkView, NamespaceView
 from mirage.types import FileStat, FileType, PathSpec
@@ -312,7 +312,7 @@ async def test_a_command_stat_serves_what_its_probe_saw():
     # again resolves through a listing fresh has not re-checked yet.
     stat = _CountingStat(_BACKEND)
     manager = CacheManager(RAMFileCacheStore(), None, "/s3/", True)
-    ops = with_read_cache(_stat_ops(stat))
+    ops = with_read_cache(with_probe_answers(_stat_ops(stat)))
     prev = push_cache_manager(manager)
     try:
         async with command_scope():
@@ -328,7 +328,7 @@ async def test_a_write_after_the_probe_sends_the_stat_to_the_backend():
     stat = _CountingStat(_BACKEND)
     manager = CacheManager(RAMFileCacheStore(), RAMIndexCacheStore(), "/s3/",
                            True)
-    ops = with_read_cache(_stat_ops(stat))
+    ops = with_read_cache(with_probe_answers(_stat_ops(stat)))
     prev = push_cache_manager(manager)
     try:
         async with command_scope():
@@ -348,7 +348,7 @@ async def test_a_probed_stat_without_a_size_still_gets_the_cached_length():
     cache = RAMFileCacheStore()
     await cache.set("/s3/a.txt", b"rendered!!")
     manager = CacheManager(cache, None, "/s3/", True)
-    ops = with_read_cache(_stat_ops(stat))
+    ops = with_read_cache(with_probe_answers(_stat_ops(stat)))
     prev = push_cache_manager(manager)
     try:
         async with command_scope():

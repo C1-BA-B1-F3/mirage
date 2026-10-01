@@ -185,6 +185,24 @@ export function wholeWordLiteral(
 // so a candidate with one is dropped rather than downloaded. The result may
 // be empty, which a caller must not hand to grep as its operand list: no
 // operands means standard input.
+/**
+ * Whether a grep's output needs files a content narrowing drops: a narrowing
+ * holds only files matching the searched literal, so -v, -c and -L also
+ * print from the rest, -f adds patterns the search never saw, and --text or
+ * --binary-files=text read what the walk skips. Mirrors Python's
+ * `grep_needs_every_file`.
+ */
+export function grepNeedsEveryFile(fl: FlagView): boolean {
+  return (
+    fl.asBool('v') ||
+    fl.asBool('c') ||
+    fl.asBool('files_without_match') ||
+    Boolean(fl.raw('file')) ||
+    fl.asBool('text') ||
+    fl.asStr('binary_files') === 'text'
+  )
+}
+
 export function textCandidates(paths: readonly PathSpec[]): PathSpec[] {
   return paths.filter((p) => !BINARY_EXTENSIONS.has(getExtension(p.virtual) ?? ''))
 }

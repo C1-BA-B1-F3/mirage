@@ -12,15 +12,15 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import type { BoxAccessor } from '../../../accessor/box.ts'
-import type { IndexCacheStore } from '../../../cache/index/store.ts'
-import type { PathSpec } from '../../../types.ts'
-import { walkSize } from './walk.ts'
+import type { BoxAccessor } from '../../accessor/box.ts'
+import type { PathSpec } from '../../types.ts'
+import { pathParts, resolveItem } from './resolve.ts'
+import { write } from './write.ts'
 
-export async function size(
-  accessor: BoxAccessor,
-  path: PathSpec,
-  index?: IndexCacheStore,
-): Promise<number> {
-  return walkSize(accessor, path, index, null)
+export async function create(accessor: BoxAccessor, path: PathSpec): Promise<void> {
+  // touch: create an empty file when absent. Box has no mtime-only API, so
+  // touching an existing file is a no-op rather than a truncation.
+  const existing = await resolveItem(accessor, pathParts(path))
+  if (existing !== null) return
+  await write(accessor, path, new Uint8Array(0))
 }

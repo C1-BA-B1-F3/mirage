@@ -20,7 +20,7 @@ from mirage.core.box.api import (SEARCH_FIELDS, absent_on_404, events_now,
                                  events_since, list_folder_items,
                                  realtime_server, search_content)
 from mirage.core.box.client import BoxApiError, BoxTokenManager
-from mirage.core.box.config import BoxConfig
+from mirage.vfs.box.config import BoxConfig
 
 
 @pytest.fixture

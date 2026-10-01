@@ -16,22 +16,9 @@ import type { DropboxAccessor } from '../../../accessor/dropbox.ts'
 import { VFSName } from '../../../types.ts'
 import type { RegisteredCommand } from '../../config.ts'
 import { makeGenericCommands } from '../generic_bind/index.ts'
-import { DROPBOX_GREP } from './grep.ts'
 import { DROPBOX_IO } from './io.ts'
-import { DROPBOX_RG } from './rg.ts'
-import { withDefaultProvisions } from '../generic_bind/provision.ts'
-import { resolveGlobOf } from '../generic_bind/adapter.ts'
 
-const DROPBOX_OVERRIDES = new Set(['grep', 'rg'])
-
-export const DROPBOX_COMMANDS: readonly RegisteredCommand[] = [
-  ...makeGenericCommands<DropboxAccessor>(VFSName.DROPBOX, DROPBOX_IO, {
-    overrides: DROPBOX_OVERRIDES,
-  }),
-  ...withDefaultProvisions(
-    [...DROPBOX_GREP, ...DROPBOX_RG],
-    DROPBOX_IO.stat,
-    resolveGlobOf(DROPBOX_IO),
-    DROPBOX_IO.readdir,
-  ),
-]
+export const DROPBOX_COMMANDS: readonly RegisteredCommand[] = makeGenericCommands<DropboxAccessor>(
+  VFSName.DROPBOX,
+  DROPBOX_IO,
+)

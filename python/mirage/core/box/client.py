@@ -21,10 +21,10 @@ import aiohttp
 
 from mirage.core.api.client import api_request
 from mirage.core.api.oauth import TokenManager as OAuthTokenManager
-from mirage.core.box.config import BoxConfig
 from mirage.core.box.constants import (BOX_API_BASE, BOX_TOKEN_URL,
                                        TOKEN_BUFFER_SECONDS)
 from mirage.utils.ranges import ByteWindow
+from mirage.vfs.box.config import BoxConfig
 from mirage.vfs.secrets import reveal_secret
 
 

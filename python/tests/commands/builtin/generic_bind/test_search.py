@@ -15,12 +15,14 @@
 import asyncio
 from dataclasses import replace
 from functools import partial
+from unittest.mock import AsyncMock
 
 import pytest
 
 from mirage.cache.index import NULL_INDEX
 from mirage.commands.builtin.generic_bind.adapter import CommandIO
-from mirage.commands.builtin.generic_bind.search import run_search
+from mirage.commands.builtin.generic_bind.search import (narrow_scope,
+                                                         run_search)
 from mirage.commands.builtin.utils.wrap import stream_from_bytes
 from mirage.commands.config import CommandOpts
 from mirage.core.hierarchy.scope import ScopeMatch
@@ -28,7 +30,7 @@ from mirage.core.hierarchy.search import make_search_op
 from mirage.io.types import ByteSource
 from mirage.types import ContentType, FileStat, FileType, PathSpec
 from mirage.utils.errors import efbig, enoent
-from mirage.vfs.types import SearchOps, SearchQuery
+from mirage.vfs.types import ContentSearchOps, SearchOps, SearchQuery
 from tests.core.hierarchy.conftest import FakeAccessor, detect_scope, spec
 
 CONTENT = b"x ada\ny\n"
@@ -268,3 +270,94 @@ def test_stdin_operand_reads_the_pipe_not_the_backend():
                        ["ada"], CommandOpts(stdin=b"x ada\n")))
         assert (asyncio.run(_drain(out)), result.exit_code) == (b"x ada\n", 0)
     assert asked == []
+
+
+DIRECTORY = FileStat(name="data", type=FileType.DIRECTORY)
+
+
+def _scope() -> PathSpec:
+    return PathSpec(vfs_path="", virtual="/data", directory="/data")
+
+
+def _hit(virtual: str) -> PathSpec:
+    return PathSpec(vfs_path=virtual.removeprefix("/data/"),
+                    virtual=virtual,
+                    directory="",
+                    resolved=True)
+
+
+HITS = [_hit("/data/a.txt")]
+
+
+def _narrowing(stat=None, answer=HITS, enabled=True):
+    stat_op = stat or AsyncMock(return_value=DIRECTORY)
+    narrow = AsyncMock(return_value=answer)
+    io = replace(IO,
+                 stat=stat_op,
+                 content_search=ContentSearchOps(narrow_paths=narrow,
+                                                 enabled=lambda a: enabled))
+    return io, narrow
+
+
+def _narrow(io, **gates):
+    flags = {
+        "fixed_string": False,
+        "recursive": True,
+        "whole_word": True,
+        "exact_file_set": False,
+        **gates
+    }
+    return asyncio.run(
+        narrow_scope(io, FakeAccessor(), NULL_INDEX, [_scope()], "needle",
+                     **flags))
+
+
+def test_a_recursive_whole_word_literal_narrows_to_candidates():
+    io, narrow = _narrowing()
+    resolved, used = _narrow(io)
+    assert used
+    assert [p.virtual for p in resolved] == ["/data/a.txt"]
+    narrow.assert_awaited_once()
+
+
+@pytest.mark.parametrize("gates", [{
+    "recursive": False
+}, {
+    "exact_file_set": True
+}, {
+    "whole_word": False
+}])
+def test_a_failed_gate_scans_every_file(gates):
+    io, narrow = _narrowing()
+    assert _narrow(io, **gates) == ([_scope()], False)
+    narrow.assert_not_awaited()
+
+
+def test_a_mount_that_did_not_opt_in_scans_every_file():
+    io, narrow = _narrowing(enabled=False)
+    assert _narrow(io) == ([_scope()], False)
+    narrow.assert_not_awaited()
+
+
+@pytest.mark.parametrize("stat", [
+    AsyncMock(return_value=FileStat(name="x.txt", type=FileType.FILE)),
+    AsyncMock(side_effect=FileNotFoundError("/data")),
+])
+def test_a_file_or_missing_operand_scans_every_file(stat):
+    io, narrow = _narrowing(stat=stat)
+    assert _narrow(io) == ([_scope()], False)
+    narrow.assert_not_awaited()
+
+
+@pytest.mark.parametrize("answer", [None, []])
+def test_an_unusable_or_empty_answer_scans_every_file(answer):
+    io, _ = _narrowing(answer=answer)
+    assert _narrow(io) == ([_scope()], False)
+
+
+def test_binary_candidates_are_dropped_and_may_leave_none():
+    io, _ = _narrowing(answer=[_hit("/data/a.parquet"), _hit("/data/a.txt")])
+    resolved, used = _narrow(io)
+    assert (used, [p.virtual for p in resolved]) == (True, ["/data/a.txt"])
+    io, _ = _narrowing(answer=[_hit("/data/a.parquet")])
+    assert _narrow(io) == ([], True)

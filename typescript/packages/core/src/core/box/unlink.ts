@@ -12,17 +12,17 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import type { BoxAccessor } from '../../../accessor/box.ts'
-import type { IndexCacheStore } from '../../../cache/index/store.ts'
-import type { PathSpec } from '../../../types.ts'
-import { walkSize } from './walk.ts'
+import type { BoxAccessor } from '../../accessor/box.ts'
+import { invalidateAfterUnlink } from '../../cache/context.ts'
+import type { PathSpec } from '../../types.ts'
+import { eisdir, enoent } from '../../utils/errors.ts'
+import { deleteFile } from './api.ts'
+import { pathParts, resolveItem } from './resolve.ts'
 
-export async function entries(
-  accessor: BoxAccessor,
-  path: PathSpec,
-  index?: IndexCacheStore,
-): Promise<[[string, number][], number]> {
-  const entries: [string, number][] = []
-  const total = await walkSize(accessor, path, index, entries)
-  return [entries, total]
+export async function unlink(accessor: BoxAccessor, path: PathSpec): Promise<void> {
+  const item = await resolveItem(accessor, pathParts(path))
+  if (item === null) throw enoent(path.virtual)
+  if (item.type === 'folder') throw eisdir(path.virtual)
+  await deleteFile(accessor.tokenManager, item.id)
+  await invalidateAfterUnlink(path)
 }

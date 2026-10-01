@@ -12,7 +12,18 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-from mirage.core.box.config import BoxConfig
-from mirage.vfs.box.box import BoxVFS
+from typing import TYPE_CHECKING
+
+from mirage.vfs.box.config import BoxConfig
+
+if TYPE_CHECKING:
+    from mirage.vfs.box.box import BoxVFS
 
 __all__ = ["BoxConfig", "BoxVFS"]
+
+
+def __getattr__(name: str) -> "type[BoxVFS]":
+    if name == "BoxVFS":
+        from mirage.vfs.box.box import BoxVFS
+        return BoxVFS
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

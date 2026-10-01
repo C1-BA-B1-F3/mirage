@@ -210,6 +210,21 @@ def whole_word_literal(pattern: str | None, fixed_string: bool,
     return pattern if is_literal_pattern(pattern, fixed_string) else None
 
 
+def grep_needs_every_file(fl: FlagView) -> bool:
+    """Whether a grep's output needs files a content narrowing drops.
+
+    A narrowing holds only files matching the searched literal: -v, -c
+    and -L also print from the rest, -f adds patterns the search never
+    saw, and --text or --binary-files=text read what the walk skips.
+
+    Args:
+        fl (FlagView): the invocation's grep flags.
+    """
+    return (fl.as_bool("v") or fl.as_bool("c")
+            or fl.as_bool("files_without_match") or bool(fl.raw("file"))
+            or fl.as_bool("text") or fl.as_str("binary_files") == "text")
+
+
 def text_candidates(paths: list[PathSpec]) -> list[PathSpec]:
     """Drop the candidates a recursive walk would never have read.
 

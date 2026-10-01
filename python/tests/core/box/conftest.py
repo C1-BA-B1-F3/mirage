@@ -17,7 +17,7 @@ import pytest
 from mirage.accessor.box import BoxAccessor
 from mirage.cache.index.ram import RAMIndexCacheStore
 from mirage.core.box.client import BoxTokenManager
-from mirage.core.box.config import BoxConfig
+from mirage.vfs.box.config import BoxConfig
 
 
 @pytest.fixture

@@ -7,8 +7,9 @@ from mirage.commands.builtin.generic_bind.adapter import CommandIO
 from mirage.commands.builtin.utils.wrap import stream_from_bytes
 from mirage.types import PathSpec
 from mirage.utils.glob_walk import DEFAULT_MAX_GLOB_MATCHES
-from mirage.vfs.types import (IsMountedOp, NativeReadOps, ReadBytesOp, ReadOps,
-                              SearchOps, StatOp, WriteOp, WriteOps)
+from mirage.vfs.types import (ContentSearchOps, IsMountedOp, NativeReadOps,
+                              ReadBytesOp, ReadOps, SearchOps, StatOp, WriteOp,
+                              WriteOps)
 
 
 def _mounted(accessor: Accessor) -> bool:
@@ -33,6 +34,8 @@ class VFSAdapter:
             existence checks otherwise derive from the required reads.
         writes (WriteOps): independent mutations, absent by default.
         search (SearchOps | None): optional native text search.
+        content_search (ContentSearchOps | None): optional index that
+            narrows a recursive grep/rg to candidate files.
         local (bool): whether data lives on the host filesystem.
         is_mounted (IsMountedOp): optional backend availability check.
         max_glob_matches (int | None): glob expansion ceiling.
@@ -43,6 +46,7 @@ class VFSAdapter:
     native: NativeReadOps = field(default_factory=NativeReadOps)
     writes: WriteOps = field(default_factory=WriteOps)
     search: SearchOps | None = None
+    content_search: ContentSearchOps | None = None
     local: bool = False
     is_mounted: IsMountedOp = _mounted
     max_glob_matches: int | None = DEFAULT_MAX_GLOB_MATCHES
@@ -74,6 +78,7 @@ class VFSAdapter:
             truncate=self.writes.truncate,
             set_attrs=self.writes.set_attrs,
             search=self.search,
+            content_search=self.content_search,
             local=self.local,
             is_mounted=self.is_mounted,
             max_glob_matches=self.max_glob_matches,

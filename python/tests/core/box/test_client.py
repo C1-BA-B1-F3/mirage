@@ -20,9 +20,9 @@ from yarl import URL
 
 from mirage.core.box.client import (BoxTokenManager, api_base_of,
                                     box_get_bytes, token_url_of)
-from mirage.core.box.config import BoxConfig
 from mirage.core.box.constants import BOX_API_BASE, BOX_TOKEN_URL
 from mirage.utils.ranges import ByteWindow
+from mirage.vfs.box.config import BoxConfig
 
 
 def test_urls_default_to_real_box():

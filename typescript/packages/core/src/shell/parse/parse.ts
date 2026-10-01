@@ -94,13 +94,29 @@ function isArithmetic(parser: Parser, command: string, start: number): boolean {
  * verify every node's span. If shielding or reuse fails, keep the original
  * parse so structural errors still reach syntax validation.
  */
+function readwriteSource(text: string, root: Node): string {
+  const shielded = text.split('')
+  const stack = [root]
+  while (stack.length > 0) {
+    const node = stack.pop()
+    if (node === undefined) break
+    if (['test_command', 'arithmetic_expansion', 'string', 'raw_string'].includes(node.type))
+      continue
+    if (node.type === '<' && text.slice(node.startIndex, node.startIndex + 2) === '<>')
+      shielded[node.startIndex] = '>'
+    stack.push(...node.children)
+  }
+  return shielded.join('')
+}
+
 function parseProtected(parser: Parser, text: string): Node {
   const tree = parser.parse(text)
   if (tree === null) throw new Error('shell parse returned null')
-  const shieldedText = expansionSource(
+  let shieldedText = expansionSource(
     (text.includes('<<') ? protectedSource(text, tree.rootNode) : null) ?? text,
     tree.rootNode,
   )
+  shieldedText = readwriteSource(shieldedText, tree.rootNode)
   if (shieldedText === text) return tree.rootNode
   const shielded = parser.parse(shieldedText)
   if (shielded === null || shielded.rootNode.hasError) return tree.rootNode
@@ -424,7 +440,7 @@ export async function createShellParser(config: ShellParserConfig): Promise<Shel
           : dropSourceChars(lowered, continuationIndices(parser, lowered.source))
       let input = heredocs?.source ?? joinContinuations(parser, command)
       let timingMarks: readonly TimingMark[] = []
-      if (input.includes('time')) {
+      if (input.includes('time') || input.includes('!')) {
         heredocs ??= {
           original: input,
           source: input,

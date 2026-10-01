@@ -197,8 +197,8 @@ export async function readReply(
  * variables, with bash's option surface. `-r` turns off backslash
  * processing; `-d C` reads to `C`; `-n N`/`-N N` bound the read; `-a
  * NAME` stores fields in an array; `-t` accepts a timeout (0 answers
- * whether a source is present); `-p -s -e -i` are non-tty no-ops; `-u
- * 0` is this shell's input and any other descriptor is refused. The
+ * whether a source is present); `-p -s -e -i` are non-tty no-ops; `-u FD`
+ * reads an open descriptor, sharing its cursor with aliases. The
  * status is 1 when end of input ended the read.
  */
 export async function handleRead(
@@ -252,7 +252,10 @@ export async function handleRead(
     }
   }
   if (typeof flags.u === 'string' && flags.u !== '0') {
-    return readRefusal(`bash: read: ${flags.u}: invalid file descriptor: Bad file descriptor\n`)
+    const descriptor = /^\d+$/.test(flags.u) ? session.descriptors.get(Number(flags.u)) : undefined
+    if (descriptor?.source == null)
+      return readRefusal(`bash: read: ${flags.u}: invalid file descriptor: Bad file descriptor\n`)
+    stdin = descriptor.source
   }
   const arrayName = typeof flags.a === 'string' ? flags.a : null
   if (arrayName !== null && !isValidName(arrayName)) {

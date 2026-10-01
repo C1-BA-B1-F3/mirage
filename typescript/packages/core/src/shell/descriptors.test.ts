@@ -75,7 +75,7 @@ describe('unsupportedDescriptor', () => {
     }
   })
 
-  it('names the first descriptor above 2, claimed or duplicated from', async () => {
+  it('accepts numbered descriptors for ordered runtime binding', async () => {
     for (const [line, fd] of [
       ['echo x 3> f', 3],
       ['echo x 3< f', 3],
@@ -86,7 +86,10 @@ describe('unsupportedDescriptor', () => {
       ['echo x 3>&-', 3],
       ['echo x > f 4>&1', 4],
     ] as [string, number][]) {
-      expect(unsupportedDescriptor(await redirects(line))).toBe(fd)
+      expect(unsupportedDescriptor(await redirects(line))).toBeNull()
+      expect(new TextDecoder().decode(badDescriptorLine(fd))).toBe(
+        `${String(fd)}: Bad file descriptor\n`,
+      )
     }
     expect(new TextDecoder().decode(badDescriptorLine(3))).toBe('3: Bad file descriptor\n')
   })

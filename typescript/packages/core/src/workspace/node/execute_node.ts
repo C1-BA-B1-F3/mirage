@@ -564,7 +564,7 @@ async function runRedirected(
   // command. `exec cmd > file` still has a command and falls through
   // to the ordinary path, which refuses the command form.
   if (isBareExec(command)) {
-    return await installExecRedirects(dispatch, session, expandedRedirects)
+    return await installExecRedirects(dispatch, session, expandedRedirects, stdin)
   }
   // A heredoc's operator line reads the routed stdout, so then it is
   // returned rather than written.

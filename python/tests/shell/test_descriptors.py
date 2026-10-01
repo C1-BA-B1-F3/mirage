@@ -77,6 +77,6 @@ def test_shell_descriptors_are_supported(line):
     ("echo x 3>&-", 3),
     ("echo x > f 4>&1", 4),
 ])
-def test_descriptors_above_two_are_refused(line, fd):
-    assert unsupported_descriptor(_redirects(line)) == fd
+def test_descriptors_above_two_are_supported(line, fd):
+    assert unsupported_descriptor(_redirects(line)) is None
     assert bad_descriptor_line(fd) == f"{fd}: Bad file descriptor\n".encode()

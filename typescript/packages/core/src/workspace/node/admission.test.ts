@@ -382,18 +382,26 @@ describe('admission', () => {
     'echo a && cat < /data/secret | cat',
   ]
 
-  it.each(HOISTED)('admitLine binds a hoisted redirect to its command: %s', async (text) => {
-    const w = await ws()
-    const parser = await getTestParser()
-    const session = w.sessionManager.get(w.sessionManager.defaultId)
-    const refusal = await admitLine(parser.parse(text), session, w.registry, w.namespace, '', (t) =>
-      parser.parse(t),
-    )
-    expect(refusal === null ? null : [refusal.exitCode, voicedStderr(refusal)]).toEqual([
-      1,
-      'cat: /data/secret: sealed\n',
-    ])
-  })
+  it.each([...HOISTED, 'time cat < /data/secret', '! { time cat < /data/secret; }'])(
+    'admitLine binds a hoisted redirect to its command: %s',
+    async (text) => {
+      const w = await ws()
+      const parser = await getTestParser()
+      const session = w.sessionManager.get(w.sessionManager.defaultId)
+      const refusal = await admitLine(
+        parser.parse(text),
+        session,
+        w.registry,
+        w.namespace,
+        '',
+        (t) => parser.parse(t),
+      )
+      expect(refusal === null ? null : [refusal.exitCode, voicedStderr(refusal)]).toEqual([
+        1,
+        'cat: /data/secret: sealed\n',
+      ])
+    },
+  )
 
   it.each(HOISTED)('the run judges a hoisted redirect with its command: %s', async (text) => {
     // The run hands a redirect's targets to the gate of the node it runs

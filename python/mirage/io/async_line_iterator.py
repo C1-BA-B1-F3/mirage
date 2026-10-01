@@ -48,11 +48,21 @@ class AsyncLineIterator:
         self._source = chunks(source)
         self._budget = YieldBudget()
         self._buf = b""
+        self._loaded = 0
         self._exhausted = False
         self._view: bytes | None = None
         self._view_key: tuple[tuple[bytes, ...], bool] = ((), False)
         self._hits: list[int] = []
         self._unskipped = 0
+
+    @property
+    def position(self) -> int:
+        return self._loaded - len(self._buf)
+
+    async def _next_chunk(self) -> bytes:
+        data = await self._source.__anext__()
+        self._loaded += len(data)
+        return data
 
     def __aiter__(self) -> "AsyncLineIterator":
         return self
@@ -154,7 +164,7 @@ class AsyncLineIterator:
                 parts.append(self._buf[:split])
                 self._buf = self._buf[split:]
                 try:
-                    self._buf += await self._source.__anext__()
+                    self._buf += await self._next_chunk()
                     self._view = None
                 except StopAsyncIteration:
                     self._exhausted = True
@@ -180,7 +190,7 @@ class AsyncLineIterator:
             return None
         try:
             await self._budget.run()
-            return await self._source.__anext__()
+            return await self._next_chunk()
         except StopAsyncIteration:
             self._exhausted = True
             return None
@@ -235,7 +245,7 @@ class AsyncLineIterator:
                 # could be before reading its first byte as a whole one.
                 if len(self._buf) < need and not self._exhausted:
                     try:
-                        self._buf += await self._source.__anext__()
+                        self._buf += await self._next_chunk()
                         self._view = None
                     except StopAsyncIteration:
                         self._exhausted = True

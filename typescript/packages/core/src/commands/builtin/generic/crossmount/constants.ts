@@ -22,8 +22,6 @@ export const STREAM_COMMANDS: ReadonlySet<string> = new Set([Cmd.CAT, Cmd.NL, Cm
 export const LINE_STREAM_COMMANDS: ReadonlySet<string> = new Set([Cmd.NL, Cmd.CUT])
 const FANOUT_COMMANDS: ReadonlySet<string> = new Set([
   Cmd.REV,
-  Cmd.GREP,
-  Cmd.RG,
   Cmd.HEAD,
   Cmd.TAIL,
   Cmd.DU,
@@ -62,6 +60,8 @@ export const RELAY_COMMANDS: ReadonlySet<string> = new Set([
   Cmd.AWK,
   Cmd.SED,
   Cmd.REALPATH,
+  Cmd.GREP,
+  Cmd.RG,
 ])
 export const CROSS_MOUNT_COMMANDS: ReadonlySet<string> = new Set([
   ...STREAM_COMMANDS,

@@ -101,6 +101,21 @@ def _is_arithmetic(data: bytes, start: int) -> bool:
     return not TS_PARSER.parse(data[start:end]).root_node.has_error
 
 
+def _readwrite_source(data: bytes, root: tree_sitter.Node) -> bytes:
+    shielded = bytearray(data)
+    stack = [root]
+    while stack:
+        node = stack.pop()
+        if node.type in ("test_command", "arithmetic_expansion", "string",
+                         "raw_string"):
+            continue
+        if node.type == "<" and data[node.start_byte:node.start_byte +
+                                     2] == b"<>":
+            shielded[node.start_byte] = ord(">")
+        stack.extend(node.children)
+    return bytes(shielded)
+
+
 def _parse_bytes(data: bytes) -> tree_sitter.Node:
     """Parse structure using same-width lexical shields.
 
@@ -117,6 +132,7 @@ def _parse_bytes(data: bytes) -> tree_sitter.Node:
     shielded_data = (protected_source(data, tree.root_node)
                      if b"<<" in data else None) or data
     shielded_data = expansion_source(shielded_data, tree.root_node)
+    shielded_data = _readwrite_source(shielded_data, tree.root_node)
     if shielded_data == data:
         return tree.root_node
     shielded = TS_PARSER.parse(shielded_data)
@@ -447,8 +463,8 @@ def parse(command: str) -> TSNodeLike:
         source = drop_source_bytes(source, continuation_bytes(source.source))
     data = (source.source
             if source is not None else join_continuations(command).encode())
-    timing_marks: list[tuple[int, bool, int, int]] = []
-    if b"time" in data:
+    timing_marks: list[tuple[int, str, bool, int, int]] = []
+    if b"time" in data or b"!" in data:
         if source is None:
             source = HeredocSource(data, data, tuple(range(len(data) + 1)), ())
         source, timing_marks = lower_timing(TS_PARSER, source)

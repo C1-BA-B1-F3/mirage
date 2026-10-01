@@ -1,3 +1,4 @@
+import type { Descriptor } from '../../shell/descriptors.ts'
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -72,6 +73,7 @@ export interface ChildShellState {
   shopts: Record<string, boolean>
   aliases: Record<string, string>
   umask: number
+  descriptors: Map<number, Descriptor>
   execStdout: string | null
   execStdoutAppend: boolean
   execStdoutInput: SharedInput | null
@@ -500,6 +502,7 @@ export class SessionState {
   // shell, which shares it as bash's fork shares fd 0. `execStdoutInput`
   // and `execStderrInput` are the read end a stream holds after `exec
   // 1<f` or `exec 1<&0`, which a dup shares the offset of.
+  descriptors = new Map<number, Descriptor>()
   execStdout: string | null = null
   execStdoutAppend = false
   execStdoutInput: SharedInput | null = null
@@ -651,6 +654,7 @@ export class SessionState {
     forked.aliases = { ...this.aliases }
     forked.aliasMarks = new Map(this.aliasMarks)
     forked.umask = this.umask
+    forked.descriptors = new Map(this.descriptors)
     forked.execStdout = this.execStdout
     forked.execStdoutAppend = this.execStdoutAppend
     forked.execStdoutInput = this.execStdoutInput
@@ -744,6 +748,7 @@ export class SessionState {
       shopts: { ...this.shopts },
       aliases: { ...this.aliases },
       umask: this.umask,
+      descriptors: new Map(this.descriptors),
       execStdout: this.execStdout,
       execStdoutAppend: this.execStdoutAppend,
       execStdoutInput: this.execStdoutInput,
@@ -791,6 +796,7 @@ export class SessionState {
     this.shopts = state.shopts
     this.aliases = state.aliases
     this.umask = state.umask
+    this.descriptors = state.descriptors
     this.execStdout = state.execStdout
     this.execStdoutAppend = state.execStdoutAppend
     this.execStdoutInput = state.execStdoutInput

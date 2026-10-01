@@ -26,6 +26,7 @@ from mirage.secrets.config import EnvVar
 from mirage.shell.array import ShellArray
 from mirage.shell.constants import (BIN_PREFIX, IFS_DEFAULT, RANDOM,
                                     RANDOM_UNSET, SHELL_ARGV0)
+from mirage.shell.descriptors import Descriptor
 from mirage.shell.types import FunctionBody
 from mirage.shell.variable import (ManagedRef, ShellVar, VarAttr,
                                    attrs_from_letters, stored_attrs,
@@ -376,6 +377,7 @@ class SessionState:
     # `exec_stdout_input` and `exec_stderr_input` are the read end a
     # stream holds after `exec 1<f` or `exec 1<&0`, which a dup shares
     # the offset of.
+    descriptors: dict[int, Descriptor] = field(default_factory=dict)
     exec_stdout: str | None = None
     exec_stdout_append: bool = False
     exec_stdout_input: SharedInput | None = None

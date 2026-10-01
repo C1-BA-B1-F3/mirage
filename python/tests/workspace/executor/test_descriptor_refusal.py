@@ -25,14 +25,11 @@ async def _ws() -> Workspace:
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("line", [
-    "echo x 3>/data/f",
     "echo x >&3",
     "echo x 2>&3",
     "cat <&3",
-    "exec 3>/data/g",
-    "exec 3>&-",
 ])
-async def test_descriptor_above_two_is_refused_and_touches_nothing(line):
+async def test_unopened_descriptor_is_refused_and_touches_nothing(line):
     ws = await _ws()
     io = await ws.shell(f"{line}; echo code=$?")
     assert await io.stderr_str() == "3: Bad file descriptor\n"
@@ -49,7 +46,7 @@ async def test_bad_descriptor_short_circuits_like_a_shell_error():
 
 
 @pytest.mark.asyncio
-async def test_exec_redirect_refusal_leaves_the_shell_streams_alone():
+async def test_exec_closes_only_the_numbered_descriptor():
     ws = await _ws()
     ws.create_session("s")
     await ws.shell("exec 3>&-", session_id="s")

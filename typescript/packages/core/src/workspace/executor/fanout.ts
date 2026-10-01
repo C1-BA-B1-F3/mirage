@@ -1,3 +1,5 @@
+import { DISPATCH_BUILDERS } from '../../commands/builtin/generic/crossmount/relay/relay.ts'
+import { runDispatch } from '../../commands/builtin/generic_bind/dispatch.ts'
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -35,14 +37,7 @@ import { parseFindExpression, type FindExpr } from '../../commands/builtin/find_
 import { CommandTimeoutError, FindParseError, UsageError } from '../../commands/errors.ts'
 import type { FlagValue } from '../../commands/spec/types.ts'
 import type { Cmd, DispatchFn, RunSingle } from '../../commands/builtin/generic/crossmount/types.ts'
-import {
-  crossOpts,
-  flatten,
-  readdirOp,
-  statOp,
-  streamOp,
-  runSeparator,
-} from '../../commands/builtin/generic/crossmount/utils.ts'
+import { crossOpts, runSeparator } from '../../commands/builtin/generic/crossmount/utils.ts'
 import type { NamespaceView, StatPath } from '../../ops/types.ts'
 import { inMtimeWindow } from '../../utils/dates.ts'
 import { modifiedTs } from '../../core/generic/find.ts'
@@ -51,7 +46,7 @@ import { joinRuns, runFanout } from '../../commands/builtin/generic/crossmount/f
 import { mergeDuBlocks } from '../../commands/builtin/generic/crossmount/fanout/du.ts'
 import { compareCodePoints } from '../../utils/sort.ts'
 import { filenameMode } from '../../commands/builtin/generic/grep.ts'
-import { labelFlags, rgGeneric, walksDescendantMounts } from '../../commands/builtin/generic/rg.ts'
+import { labelFlags, walksDescendantMounts } from '../../commands/builtin/generic/rg.ts'
 import { FlagView, flagOccurrences } from '../../commands/spec/flag_view.ts'
 import { specOf } from '../../commands/spec/builtins.ts'
 
@@ -457,37 +452,27 @@ export async function fanOutTraversal(
   dispatch?: DispatchFn,
 ): Promise<Result> {
   signal?.throwIfAborted()
-  if (
-    cmdName === 'rg' &&
-    dispatch !== undefined &&
-    ['max_depth', 'sort', 'sortr', 'sort_files'].some(
-      (name) => new FlagView(flagKwargs, specOf('rg')).raw(name) !== undefined,
-    )
-  ) {
+  const dispatchBuilder = DISPATCH_BUILDERS.get(cmdName as Cmd)
+  if (dispatchBuilder !== undefined && dispatch !== undefined) {
     let stdout: ByteSource | null = null
     let io = new IOResult()
     try {
-      const result = await rgGeneric(
-        flatten([...paths]),
+      const result = await runDispatch(
+        dispatchBuilder,
+        [...paths],
         [...texts],
         {
           ...crossOpts(flagKwargs),
           cwd,
           stdin,
-          ...(signal !== undefined ? { signal } : {}),
-          // The dispatcher's walk crosses every mount itself, so it is
-          // offered no boundary to stop at.
-          ...(ns?.links === undefined ? {} : { ns: { links: ns.links } }),
           dispatch,
+          ...(signal !== undefined ? { signal } : {}),
+          ...(ns === undefined ? {} : { ns }),
         },
-        statOp(dispatch),
-        readdirOp(dispatch),
-        streamOp(dispatch),
+        dispatch,
       )
-      if (result !== null) {
-        io = result[1]
-        stdout = await materialize(result[0])
-      }
+      io = result[1]
+      stdout = await materialize(result[0])
     } catch (err) {
       if (!(err instanceof UsageError)) throw err
       io = new IOResult({
@@ -497,9 +482,14 @@ export async function fanOutTraversal(
     }
     io.producer = {
       command: cmdName,
-      prefixes: [primaryMount, ...allowedDescendants(registry, paths[0]?.virtual ?? cwd)].map(
-        (m) => m.prefix,
-      ),
+      prefixes: [
+        ...new Set([
+          primaryMount.prefix,
+          ...paths
+            .filter((p) => p.walkError === null)
+            .flatMap((p) => allowedDescendants(registry, p.virtual).map((m) => m.prefix)),
+        ]),
+      ],
       declared: null,
     }
     return [

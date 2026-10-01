@@ -505,7 +505,7 @@ function parseFileRedirect(child: TSNodeLike, claimed: number | null = null): Re
     if (c.type === NT.FILE_DESCRIPTOR) {
       fd = parseInt(getText(c), 10)
     } else if (REDIRECT_OPERATORS.has(c.type)) {
-      op = c.type
+      op = getText(c) === '<>' ? '<>' : c.type
     } else if (c.type === NT.NUMBER) {
       dupFd = parseInt(getText(c), 10)
     }
@@ -519,6 +519,8 @@ function parseFileRedirect(child: TSNodeLike, claimed: number | null = null): Re
     }
   }
 
+  if (/^\d*<<</.test(getText(child)))
+    return new Redirect({ fd: fd ?? 0, target, targetNode, kind: RedirectKind.HERESTRING })
   if (child.heredoc !== undefined) {
     return new Redirect({
       fd: fd ?? 0,
@@ -548,13 +550,14 @@ function parseFileRedirect(child: TSNodeLike, claimed: number | null = null): Re
     })
   }
 
-  const input = op !== null && INPUT_OPERATORS.has(op)
+  const input = op === '<>' || (op !== null && INPUT_OPERATORS.has(op))
   fd ??= input ? FD_STDIN : FD_STDOUT
   if (op !== null && CLOSE_OPERATORS.has(op)) target = FD_CLOSE
   else if (op !== null && DUP_OPERATORS.has(op) && dupFd !== null) target = dupFd
 
   let kind: RedirectKind
-  if (input) kind = RedirectKind.STDIN
+  if (op === '<>') kind = RedirectKind.READWRITE
+  else if (input) kind = RedirectKind.STDIN
   else if (fd === FD_STDERR && target === FD_STDOUT && op === NT.REDIRECT_STDERR) {
     kind = RedirectKind.STDERR_TO_STDOUT
   } else if (fd === FD_STDERR) kind = RedirectKind.STDERR

@@ -549,7 +549,7 @@ async def _run_redirected(
     # through to the ordinary path, which refuses the command form.
     if _is_bare_exec(command):
         return await install_exec_redirects(dispatch, session,
-                                            expanded_redirects)
+                                            expanded_redirects, stdin)
     # A heredoc's operator line reads the routed stdout, so then it is
     # returned rather than written.
     stdout, io, exec_node = await handle_redirect(

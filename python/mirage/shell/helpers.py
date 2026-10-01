@@ -532,7 +532,7 @@ def _parse_file_redirect(child: TSNodeLike, fd: int | None = None) -> Redirect:
         if c.type == NT.FILE_DESCRIPTOR:
             fd = int(get_text(c))
         elif c.type in _REDIRECT_OPERATORS:
-            op = c.type
+            op = "<>" if get_text(c) == "<>" else c.type
         elif c.type == NT.NUMBER:
             dup_fd = int(get_text(c))
 
@@ -542,6 +542,11 @@ def _parse_file_redirect(child: TSNodeLike, fd: int | None = None) -> Redirect:
             target_node = c
             break
 
+    if re.match(r"^\d*<<<", get_text(child)):
+        return Redirect(fd=0 if fd is None else fd,
+                        target=target,
+                        target_node=target_node,
+                        kind=RedirectKind.HERESTRING)
     document = getattr(child, "heredoc", None)
     if document is not None:
         return Redirect(fd=0 if fd is None else fd,
@@ -571,13 +576,15 @@ def _parse_file_redirect(child: TSNodeLike, fd: int | None = None) -> Redirect:
                         append=op == NT.REDIRECT_BOTH_APPEND)
 
     if fd is None:
-        fd = FD_STDIN if op in _INPUT_OPERATORS else FD_STDOUT
+        fd = FD_STDIN if op in _INPUT_OPERATORS or op == "<>" else FD_STDOUT
     if op in _CLOSE_OPERATORS:
         target = FD_CLOSE
     elif op in _DUP_OPERATORS and dup_fd is not None:
         target = dup_fd
 
-    if op in _INPUT_OPERATORS:
+    if op == "<>":
+        kind = RedirectKind.READWRITE
+    elif op in _INPUT_OPERATORS:
         kind = RedirectKind.STDIN
     elif fd == FD_STDERR and target == FD_STDOUT and op == NT.REDIRECT_STDERR:
         kind = RedirectKind.STDERR_TO_STDOUT
@@ -788,7 +795,7 @@ def get_list_parts(node: TSNodeLike, ) -> tuple[TSNodeLike, str, TSNodeLike]:
     op = None
     for c in node.children:
         if c.type in (NT.AND, NT.OR, NT.SEMI):
-            op = c.type
+            op = "<>" if get_text(c) == "<>" else c.type
             break
     assert op is not None
     return left, op, right

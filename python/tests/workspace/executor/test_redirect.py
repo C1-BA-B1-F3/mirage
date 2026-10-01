@@ -12,6 +12,9 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import json
+from pathlib import Path
+
 import pytest
 
 from mirage import RAMVFS, MountMode, Workspace
@@ -622,3 +625,27 @@ async def test_stdin_from_a_character_device_leaves_rg_the_cwd():
     io = await ws.shell("cd /data && rg hit < /data/e")
     assert (io.stdout or b"", io.exit_code) == (b"", 1)
     assert await _out(ws, "cat < /dev/null") == ""
+
+
+_DESCRIPTOR_CASES = [
+    case for case in json.loads(
+        (Path(__file__).parents[4] /
+         "integ/bash/redirect/descriptors.json").read_text())["cases"]
+    if case["id"].startswith("shared_fd_")
+] + [
+    case for case in json.loads((Path(__file__).parents[4] /
+                                 "integ/bash/setopt/errexit.json").read_text())
+    ["cases"] if "after_negation" in case["id"]
+]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("case",
+                         _DESCRIPTOR_CASES,
+                         ids=lambda case: case["id"])
+async def test_shared_descriptors_and_reserved_prefixes(case):
+    ws = await _workspace()
+    io = await ws.shell(case["command"])
+    assert io.exit_code == case["expect"]["exit"]
+    assert (io.stdout or b"").decode() == case["expect"]["stdout"]
+    assert (io.stderr or b"").decode() == case["expect"]["stderr"]

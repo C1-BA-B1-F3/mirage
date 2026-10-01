@@ -12,6 +12,8 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import descriptorCases from '../../../../../../integ/bash/redirect/descriptors.json' with { type: 'json' }
+import errexitCases from '../../../../../../integ/bash/setopt/errexit.json' with { type: 'json' }
 import { describe, expect, it, vi } from 'vitest'
 import { DeviceInput, IOResult } from '../../io/types.ts'
 import { Redirect, RedirectKind } from '../../shell/types.ts'
@@ -1001,4 +1003,16 @@ describe('stdin from a character device end-to-end', () => {
       await ws.close()
     }
   })
+})
+
+it.each([
+  ...descriptorCases.cases.filter((case_) => case_.id.startsWith('shared_fd_')),
+  ...errexitCases.cases.filter((case_) => case_.id.includes('after_negation')),
+])('$id', async (case_) => {
+  const { ws } = await makeIntegrationWS()
+  expect(await runResult(ws, case_.command)).toEqual([
+    case_.expect.exit,
+    case_.expect.stdout,
+    case_.expect.stderr,
+  ])
 })

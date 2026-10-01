@@ -27,13 +27,14 @@ from mirage.commands.builtin.generic.crossmount.fanout.du import \
 from mirage.commands.builtin.generic.crossmount.fanout.exit import \
     combined_exit
 from mirage.commands.builtin.generic.crossmount.fanout.fanout import run_fanout
+from mirage.commands.builtin.generic.crossmount.relay.relay import \
+    DISPATCH_BUILDERS
 from mirage.commands.builtin.generic.crossmount.types import RunSingle
-from mirage.commands.builtin.generic.crossmount.utils import (flat_scopes,
-                                                              relay,
-                                                              run_separator)
+from mirage.commands.builtin.generic.crossmount.utils import run_separator
 from mirage.commands.builtin.generic.grep import filename_mode
-from mirage.commands.builtin.generic.rg import (label_flags, rg,
+from mirage.commands.builtin.generic.rg import (label_flags,
                                                 walks_descendant_mounts)
+from mirage.commands.builtin.generic_bind.dispatch import run_dispatch
 from mirage.commands.config import CommandOpts, ExecContext
 from mirage.commands.errors import (CommandTimeoutError, FindParseError,
                                     UsageError)
@@ -557,35 +558,29 @@ async def _fan_out_traversal(
     never receives them reports a tree with every link missing, and a
     nested mount is not a reason for ``find`` to stop seeing one.
     """
-    if cmd_name == "rg" and dispatch is not None and any(
-            FlagView(flag_kwargs, spec=SPECS["rg"]).raw(name) is not None
-            for name in ("max_depth", "sort", "sortr", "sort_files")):
+    if cmd_name in DISPATCH_BUILDERS and dispatch is not None:
         try:
-            stdout, io = await rg(
-                flat_scopes(paths),
-                texts,
+            stdout, io = await run_dispatch(
+                DISPATCH_BUILDERS[cmd_name], paths, texts,
                 CommandOpts(flags=flag_kwargs,
+                            stdin=stdin,
                             cwd=PathSpec(virtual=cwd,
                                          directory=cwd,
                                          vfs_path=cwd.strip("/")),
-                            ns=NamespaceView(
-                                links=ns.links) if ns is not None else None,
-                            dispatch=dispatch),
-                readdir=functools.partial(relay, dispatch, "readdir"),
-                stat=functools.partial(relay, dispatch, "stat"),
-                read_bytes=functools.partial(relay, dispatch, "read"),
-                read_stream=None,
-                stdin=stdin)
+                            ns=ns,
+                            dispatch=dispatch), dispatch)
             stdout = await materialize(stdout)
         except UsageError as exc:
             stdout = None
             io = IOResult(exit_code=exc.exit_code, stderr=f"{exc}\n".encode())
         io.producer = Producer(
             command=cmd_name,
-            prefixes=tuple(m.prefix for m in [
-                primary_mount,
-                *_allowed_descendants(registry, paths[0].virtual)
-            ]))
+            prefixes=tuple(
+                dict.fromkeys([
+                    primary_mount.prefix,
+                    *(m.prefix for path in paths if path.walk_error is None
+                      for m in _allowed_descendants(registry, path.virtual))
+                ])))
         return stdout, io, ExecutionNode(command=cmd_str,
                                          exit_code=io.exit_code,
                                          stderr=await materialize(io.stderr))

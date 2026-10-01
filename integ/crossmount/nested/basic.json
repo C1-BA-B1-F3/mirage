@@ -1016,6 +1016,20 @@
         "stdout": "/data\n/data/inner\n/data/inner/leaf.txt\n/data/top.txt\n",
         "stderr": "find: '': No such file or directory\n"
       }
+    },
+    {
+      "id": "nest_rg_sort_explicit_mount_operands",
+      "seq": 950084,
+      "targets": [
+        "ram-nested"
+      ],
+      "command": "rg --files --sortr path /data/inner/leaf.txt /data/top.txt; rg --sortr path -l -e top -e deep /data/inner/leaf.txt /data/top.txt; rg --sort modified -l -e top -e deep /data/inner/leaf.txt /data/top.txt; rg --sortr modified -l -e top -e deep /data/top.txt /data/inner/leaf.txt",
+      "expect": {
+        "exit": 0,
+        "stdout": "/data/top.txt\n/data/inner/leaf.txt\n/data/top.txt\n/data/inner/leaf.txt\n/data/top.txt\n/data/inner/leaf.txt\n/data/inner/leaf.txt\n/data/top.txt\n",
+        "stderr": ""
+      },
+      "note": "One invocation sorts across explicit operands owned by different mounts; timestamps established by nest_rg_time_sort_spans_mounts."
     }
   ]
 }

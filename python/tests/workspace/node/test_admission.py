@@ -371,7 +371,8 @@ HOISTED = [
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("text", HOISTED)
+@pytest.mark.parametrize("text", [*HOISTED, "time cat < /data/secret",
+    "! { time cat < /data/secret; }"])
 async def test_admit_line_binds_a_hoisted_redirect_to_its_command(text):
     ws = _ws()
     try:

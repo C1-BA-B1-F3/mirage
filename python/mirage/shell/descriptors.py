@@ -13,16 +13,18 @@
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import errno
-from collections.abc import AsyncIterator, Iterable
+from collections.abc import AsyncIterator, Awaitable, Callable, Iterable
+from dataclasses import dataclass
 
-from mirage.shell.constants import FD_BOTH, FD_CLOSE, SHELL_FDS
+from mirage.io.async_line_iterator import SharedInput
+from mirage.shell.constants import FD_BOTH, FD_CLOSE
 from mirage.shell.types import Redirect, RedirectKind
+from mirage.types import PathSpec
 from mirage.utils.errors import BadDescriptorError
 
 
 def unsupported_descriptor(redirects: Iterable[Redirect]) -> int | None:
-    """The first descriptor a redirect list names that the shell has no
-    table for, or None when every one is 0, 1 or 2.
+    """The first descriptor outside the signed 32-bit range, or None.
 
     Both slots count: the descriptor a redirect claims (`3>f`, `3<f`,
     `3>&1`, `3>&-`) and the one it duplicates from (`>&3`, `<&3`,
@@ -39,21 +41,16 @@ def unsupported_descriptor(redirects: Iterable[Redirect]) -> int | None:
     for r in redirects:
         if r.kind == RedirectKind.AMBIGUOUS:
             continue
-        if r.fd not in SHELL_FDS and r.fd != FD_BOTH:
+        if not 0 <= r.fd < 2**31 and r.fd != FD_BOTH:
             return r.fd
-        if (isinstance(r.target, int) and r.target not in SHELL_FDS
+        if (isinstance(r.target, int) and not 0 <= r.target < 2**31
                 and r.target != FD_CLOSE):
             return r.target
     return None
 
 
 def bad_descriptor_line(fd: int) -> bytes:
-    """bash's line for a descriptor that is not open: `3: Bad file
-    descriptor`. mirage has descriptors 0, 1 and 2 and can never open
-    another, so a redirect that claims one bash would open (`3>f`) is
-    refused with the same words as one bash would refuse (`>&3`): in
-    both cases nothing here backs fd 3. The `bash: line N:` prefix is
-    dropped, the house style every shell-attributed error follows.
+    """Bash's error for a closed descriptor, without the line-number prefix.
 
     Args:
         fd (int): the descriptor that was named.
@@ -73,3 +70,31 @@ async def unreadable_stdin() -> AsyncIterator[bytes]:
     """
     raise BadDescriptorError(errno.EBADF, "Bad file descriptor", "-")
     yield b""  # pragma: no cover - makes this an async generator
+
+
+class FileInput(SharedInput):
+
+    def __init__(self, description: "FileDescription", data: bytes) -> None:
+        super().__init__(data)
+        self.description = description
+
+    def dup(self) -> "FileInput":
+        return self
+
+
+@dataclass
+class FileDescription:
+    scope: PathSpec
+    append: bool = False
+    opened: bool = False
+    offset: int = 0
+    source: FileInput | None = None
+    emit: Callable[[bytes], Awaitable[None]] | None = None
+
+
+@dataclass(frozen=True)
+class Descriptor:
+    identity: str
+    append: bool = False
+    source: SharedInput | None = None
+    file: FileDescription | None = None

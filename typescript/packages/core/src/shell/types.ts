@@ -191,6 +191,7 @@ export const RedirectKind = Object.freeze({
   STDOUT: 'stdout',
   STDERR: 'stderr',
   STDIN: 'stdin',
+  READWRITE: 'readwrite',
   STDERR_TO_STDOUT: 'stderr_to_stdout',
   HEREDOC: 'heredoc',
   HERESTRING: 'herestring',

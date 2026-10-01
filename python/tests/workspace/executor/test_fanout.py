@@ -825,9 +825,9 @@ def test_context_across_a_nested_mount_is_separated(line):
     as one run does: ripgrep 14.1.1 and GNU grep 3.11 both separate one
     file's context from the next file's."""
     io = asyncio.run(_context_workspace().shell(line))
-    assert _stdout(io) == ("/base/top.txt:hit\n/base/top.txt-y\n--\n"
-                           "/base/inner/real.txt:hit\n"
-                           "/base/inner/real.txt-z\n")
+    assert _stdout(io) == ("/base/inner/real.txt:hit\n"
+                           "/base/inner/real.txt-z\n--\n"
+                           "/base/top.txt:hit\n/base/top.txt-y\n")
 
 
 @pytest.mark.parametrize("options, expected", [
@@ -839,13 +839,14 @@ def test_context_across_a_nested_mount_is_separated(line):
     ("--sort path --heading",
      "/base/inner/real.txt\nhit\n\n/base/top.txt\nhit\n"),
     ("--sort path -A1",
-     "/base/inner/real.txt:hit\n/base/inner/real.txt-z\n--\n/base/top.txt:hit\n/base/top.txt-y\n"
+     "/base/inner/real.txt:hit\n/base/inner/real.txt-z\n--\n"
+     "/base/top.txt:hit\n/base/top.txt-y\n"
      ),
     ("--type-add 'foo:*.txt' --type-clear foo --type-add 'foo:*.py' -t foo -l",
      ""),
     ("-t txt -T txt -t txt --sort path -l",
      "/base/inner/real.txt\n/base/top.txt\n"),
-    ("-t txt -T txt -t txt -l", "/base/top.txt\n/base/inner/real.txt\n"),
+    ("-t txt -T txt -t txt -l", "/base/inner/real.txt\n/base/top.txt\n"),
 ])
 def test_rg_options_across_nested_mounts(options, expected):
     io = asyncio.run(_context_workspace().shell(f"rg {options} hit /base"))
@@ -886,8 +887,8 @@ def test_the_empty_name_does_not_fan_out():
      "/base\n/base/inner\n/base/inner/real.txt\n/base/loop\n/base/top.txt\n",
      1),
     ("du -s", "18\t/base\n", 1),
-    ("grep -rl hit", "/base/top.txt\n/base/inner/real.txt\n", 2),
-    ("rg -l hit", "/base/top.txt\n/base/inner/real.txt\n", 2),
+    ("grep -rl hit", "/base/inner/real.txt\n/base/top.txt\n", 2),
+    ("rg -l hit", "/base/inner/real.txt\n/base/top.txt\n", 2),
 ])
 def test_refused_operand_does_not_hide_nested_mounts(operands, command,
                                                      expected, error):
@@ -950,3 +951,12 @@ def test_rg_follows_links_in_a_walk_that_spans_mounts_only_under_dash_upper_l(
     io = asyncio.run(_linked_tree().shell(line))
     assert (_stdout(io), io.stderr
             or b"", io.exit_code) == (stdout, stderr, code)
+
+
+@pytest.mark.parametrize("flags",
+                         ["--files --sortr path", "--sortr path -l hit"])
+def test_global_sort_across_explicit_mount_operands(flags):
+    io = asyncio.run(_context_workspace().shell(
+        f"rg {flags} /base/inner/real.txt /base/top.txt"))
+    assert io.exit_code == 0
+    assert _stdout(io) == "/base/top.txt\n/base/inner/real.txt\n"

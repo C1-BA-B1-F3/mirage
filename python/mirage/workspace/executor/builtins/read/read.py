@@ -281,9 +281,9 @@ async def handle_read(
     whether input is already buffered and is otherwise accepted as
     written, since a buffered source is never going to arrive later;
     `-p`, `-s`, `-e` and `-i` are accepted and do nothing, which is
-    what bash itself does when the input is not a terminal; `-u 0` is
-    the input this shell has and any other descriptor is refused as
-    bash refuses one it never opened. The status is 1 when end of input
+    what bash itself does when the input is not a terminal; `-u FD`
+    reads an open descriptor, sharing its cursor with aliases.
+    The status is 1 when end of input
     ended the read, whatever was assigned along the way.
 
     Args:
@@ -333,8 +333,12 @@ async def handle_read(
             return _read_refusal(
                 f"bash: read: {flags['t']}: invalid timeout specification\n")
     if "u" in flags and str(flags["u"]) != "0":
-        return _read_refusal(f"bash: read: {flags['u']}: invalid file "
-                             "descriptor: Bad file descriptor\n")
+        fd = str(flags["u"])
+        descriptor = session.descriptors.get(int(fd)) if fd.isdigit() else None
+        if descriptor is None or descriptor.source is None:
+            return _read_refusal(f"bash: read: {fd}: invalid file "
+                                 "descriptor: Bad file descriptor\n")
+        stdin = descriptor.source
     array_name = str(flags["a"]) if "a" in flags else None
     if array_name is not None and not is_valid_name(array_name):
         return _read_refusal(

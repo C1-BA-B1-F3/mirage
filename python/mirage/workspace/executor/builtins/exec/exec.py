@@ -16,13 +16,14 @@ import logging
 from typing import Any
 
 from mirage.io import IOResult
-from mirage.io.async_line_iterator import SharedInput
+from mirage.io.async_line_iterator import SharedInput, share
 from mirage.io.stream import materialize
 from mirage.io.types import ByteSource
 from mirage.runtime.types import DispatchFn
 from mirage.shell.constants import (FD_BOTH, FD_CLOSE, FD_STDERR, FD_STDIN,
                                     FD_STDOUT)
-from mirage.shell.descriptors import (bad_descriptor_line,
+from mirage.shell.descriptors import (Descriptor, FileDescription, FileInput,
+                                      bad_descriptor_line,
                                       unsupported_descriptor)
 from mirage.shell.helpers import get_redirects
 from mirage.shell.types import NodeType as NT
@@ -34,7 +35,7 @@ from mirage.workspace.executor.builtins.exec.constants import (
     TO_STDOUT)
 from mirage.workspace.executor.builtins.scope import _to_scope
 from mirage.workspace.executor.builtins.types import BuiltinCall, Result
-from mirage.workspace.executor.create import create_file
+from mirage.workspace.executor.create import create_file, write_description
 from mirage.workspace.session import SessionState
 from mirage.workspace.types import ExecutionNode
 
@@ -73,6 +74,7 @@ async def install_exec_redirects(
     dispatch: DispatchFn,
     session: SessionState,
     redirects: list[Redirect],
+    stdin: ByteSource | None = None,
 ) -> tuple[ByteSource | None, IOResult, ExecutionNode]:
     """Point the shell's own streams at files for the rest of the shell.
 
@@ -85,138 +87,91 @@ async def install_exec_redirects(
     leaves an empty `f` even if nothing is written afterwards. A target
     that cannot be opened is bash's shell-attributed error and leaves
     the redirects unchanged, every earlier one on the line included
-    (`_roll_back`). So is a descriptor above 2 (`exec 3>f`,
-    `exec 3>&-`): the shell has no descriptor table, so the line is
-    refused with `3: Bad file descriptor` rather than aliased onto
-    stdout, which is what `exec 3>&-` used to close.
+    (`_roll_back`). Numbered descriptors use the same bindings and
+    share open file descriptions when duplicated.
 
     Args:
         dispatch (DispatchFn): op dispatcher.
         session (SessionState): shell session state.
         redirects (list[Redirect]): the expanded redirects.
+        stdin (ByteSource | None): current input for duplication.
     """
     bad_fd = unsupported_descriptor(redirects)
     if bad_fd is not None:
         return _exec_failure(bad_descriptor_line(bad_fd))
     saved = {name: getattr(session, name) for name in EXEC_STREAM_FIELDS}
-    err = await _install(dispatch, session, redirects)
+    saved["descriptors"] = dict(session.descriptors)
+    err = await _install(dispatch, session, redirects, stdin)
     if err is None:
         return None, IOResult(), ExecutionNode(command="exec", exit_code=0)
     return await _roll_back(dispatch, session, saved, err)
 
 
 async def _install(dispatch: DispatchFn, session: SessionState,
-                   redirects: list[Redirect]) -> bytes | None:
-    """Bind the redirects onto the session's streams, in line order.
+                   redirects: list[Redirect],
+                   stdin: ByteSource | None) -> bytes | None:
+    for redirect in redirects:
+        error = await _install_descriptor(dispatch, session, redirect, stdin)
+        if error is not None:
+            return error
+    return None
 
-    Returns the diagnostic of the first redirect that fails, with every
-    earlier one still bound, which is the state bash reports from.
 
-    Args:
-        dispatch (DispatchFn): op dispatcher.
-        session (SessionState): shell session state.
-        redirects (list[Redirect]): the expanded redirects.
-    """
-    for r in redirects:
-        if r.kind == RedirectKind.AMBIGUOUS:
-            word = (r.target.raw_path
-                    if isinstance(r.target, PathSpec) else str(r.target))
-            return f"{word}: ambiguous redirect\n".encode()
-        if isinstance(r.target, int):
-            # Keyed on the descriptor claimed, not the operator's
-            # direction: `2<&-` closes stderr and `0>&-` stdin, as in
-            # bash.
-            if r.fd == FD_STDIN:
-                # A closed stdin, or a writing stream dup'd onto it
-                # (`0<&1`), has nothing to read: the next reader gets
-                # EBADF, as bash's does, until `exec < file` binds a
-                # file again. A dup of stdin onto itself keeps the file
-                # an earlier `exec <f` bound, and a dup from a
-                # descriptor that holds a read end (`exec 1<&0; exec
-                # 0<&1`) takes that end, offset and all, whatever fd 0
-                # was bound to in between.
-                if r.target == FD_CLOSE:
-                    session.exec_stdin = None
-                    session.exec_stdin_unreadable = True
-                    session.exec_stdin_identity = CLOSED
-                    continue
-                if r.target == FD_STDIN:
-                    # A dup onto itself changes nothing, a closed
-                    # descriptor's included (`exec 0<&-; exec 0<&0`).
-                    continue
-                source = _identity(session, r.target)[0]
-                if source == CLOSED:
-                    return bad_descriptor_line(r.target)
-                if source == TO_STDIN:
-                    session.exec_stdin = None
-                    session.exec_stdin_unreadable = False
-                    session.exec_stdin_identity = None
-                elif source.startswith(OPEN_FOR_READING):
-                    session.exec_stdin = _read_end(session, r.target)
-                    session.exec_stdin_unreadable = False
-                    session.exec_stdin_identity = source
-                else:
-                    session.exec_stdin = None
-                    session.exec_stdin_unreadable = True
-                    session.exec_stdin_identity = source
-                continue
-            if r.target == FD_CLOSE:
-                _bind(session, r.fd, CLOSED, False)
-                continue
-            if r.target == r.fd:
-                # `exec 1>&1` on a closed fd 1 is bash's no-op too.
-                continue
-            identity, append = _identity(session, r.target)
-            if identity == CLOSED:
-                # A dup from a closed descriptor is refused, as bash's
-                # `exec 0<&-; exec 1<&0` is with `0: Bad file descriptor`.
-                return bad_descriptor_line(r.target)
-            _bind(session, r.fd, identity, append,
-                  _read_end(session, r.target))
-            continue
-        scope = _to_scope(r.target) if isinstance(r.target, str) else r.target
-        if r.kind == RedirectKind.STDIN:
+async def _install_descriptor(dispatch: DispatchFn, session: SessionState,
+                              redirect: Redirect,
+                              stdin: ByteSource | None) -> bytes | None:
+    fd = redirect.fd
+    target = redirect.target
+    if redirect.kind == RedirectKind.AMBIGUOUS:
+        word = target.raw_path if isinstance(target, PathSpec) else str(target)
+        return f"{word}: ambiguous redirect\n".encode()
+    if redirect.kind in (RedirectKind.HEREDOC, RedirectKind.HERESTRING):
+        text = str(target) + ("\n" if redirect.kind == RedirectKind.HERESTRING
+                              else "")
+        _bind(session, fd, OPEN_FOR_READING, False, SharedInput(text.encode()))
+        return None
+    if isinstance(target, int):
+        if target == fd:
+            return None
+        identity, append = (CLOSED,
+                            False) if target == FD_CLOSE else _identity(
+                                session, target)
+        if identity == CLOSED and target != FD_CLOSE:
+            return bad_descriptor_line(target)
+        # Copies share the open description, including its offset.
+        source = _read_end(session, target, stdin)
+        original = session.descriptors.get(target)
+        _bind(session, fd, identity, append, source,
+              original.file if original is not None else None)
+        return None
+    scope = _to_scope(target) if isinstance(target, str) else target
+    try:
+        if redirect.kind in (RedirectKind.STDIN, RedirectKind.READWRITE):
             try:
                 data, _ = await dispatch("read", scope)
-            except FS_ERRORS as exc:
-                return _error_line(scope.raw_path, exc)
-            if r.fd != FD_STDIN:
-                # `exec 1<f`: the stream holds the file's read end, so a
-                # write to it fails as one to stdin's end does
-                # (`echo: write error: Bad file descriptor`), a dup onto
-                # fd 0 (`exec 0<&1`) reads the file, and so does a
-                # transient `<&1`.
-                _bind(session, r.fd, OPEN_FOR_READING + scope.virtual, False,
+            except FileNotFoundError:
+                if redirect.kind != RedirectKind.READWRITE:
+                    raise
+                data = b""
+            if redirect.kind == RedirectKind.READWRITE:
+                await create_file(dispatch, session, scope, b"", append=True)
+                file = FileDescription(scope, opened=True)
+                file.source = FileInput(file, await materialize(data) or b"")
+                _bind(session, fd, "<>" + scope.virtual, False, file.source)
+            else:
+                _bind(session, fd, OPEN_FOR_READING + scope.virtual, False,
                       SharedInput(await materialize(data) or b""))
-                continue
-            # fd 0 holds the file's read end, and says so: a dup from it
-            # (`exec 1<&0`) keeps the file even after `exec 0<&-`, as
-            # bash's copied descriptor does. Each open is a descriptor
-            # of its own, so a reopen reads from the start.
-            session.exec_stdin = SharedInput(await materialize(data) or b"")
-            session.exec_stdin_unreadable = False
-            session.exec_stdin_identity = OPEN_FOR_READING + scope.virtual
-            continue
-        path = scope.virtual
-        try:
-            if await _open_target(dispatch, session, scope, r.append):
-                session._exec_opened.add(path)
-        except FS_ERRORS as exc:
-            return _error_line(scope.raw_path, exc)
-        if r.fd == FD_STDIN:
-            # `exec 0>f`: fd 0 holds the file's write end, so a read
-            # fails with EBADF, a later dup from it (`exec 1>&0`) writes
-            # there, and so does a transient `>&0`.
-            session.exec_stdin = None
-            session.exec_stdin_unreadable = True
-            session.exec_stdin_identity = path
-            continue
-        streams = ((["stderr"] if r.fd == FD_STDERR else ["stdout"])
-                   if r.fd != FD_BOTH else ["stdout", "stderr"])
-        for stream in streams:
-            setattr(session, f"exec_{stream}", path)
-            setattr(session, f"exec_{stream}_append", r.append)
-            setattr(session, f"exec_{stream}_input", None)
+        else:
+            await _open_target(dispatch, session, scope, redirect.append)
+            file = FileDescription(scope, append=redirect.append, opened=True)
+            for claimed in ([1, 2] if fd == FD_BOTH else [fd]):
+                _bind(session,
+                      claimed,
+                      scope.virtual,
+                      redirect.append,
+                      file=file)
+    except FS_ERRORS as exc:
+        return _error_line(scope.raw_path, exc)
     return None
 
 
@@ -317,6 +272,10 @@ def _identity(session: SessionState, fd: int) -> tuple[str, bool]:
         session (SessionState): shell session state.
         fd (int): the descriptor being copied.
     """
+    if fd > FD_STDERR:
+        descriptor = session.descriptors.get(fd)
+        return (descriptor.identity,
+                descriptor.append) if descriptor else (CLOSED, False)
     if fd == FD_STDIN:
         # fd 0 is its own read end unless an `exec` rebound it: closed,
         # or a writing stream's identity (`exec 0<&1`), which a later dup
@@ -330,7 +289,9 @@ def _identity(session: SessionState, fd: int) -> tuple[str, bool]:
             session.exec_stdout_append)
 
 
-def _read_end(session: SessionState, fd: int) -> SharedInput | None:
+def _read_end(session: SessionState,
+              fd: int,
+              stdin: ByteSource | None = None) -> SharedInput | None:
     """A new descriptor on the read end a descriptor holds, as a dup
     makes one: it shares the offset, so a read through either moves
     both. None when the descriptor holds no file's read end.
@@ -339,6 +300,12 @@ def _read_end(session: SessionState, fd: int) -> SharedInput | None:
         session (SessionState): shell session state.
         fd (int): the descriptor being copied.
     """
+    if fd == FD_STDIN and stdin is not None:
+        source = share(stdin)
+        return source if isinstance(source, SharedInput) else None
+    if fd > FD_STDERR:
+        descriptor = session.descriptors.get(fd)
+        return descriptor.source if descriptor else None
     held = (session.exec_stdin if fd == FD_STDIN else session.exec_stderr_input
             if fd == FD_STDERR else session.exec_stdout_input)
     return held.dup() if held is not None else None
@@ -348,7 +315,8 @@ def _bind(session: SessionState,
           fd: int,
           identity: str,
           append: bool,
-          read_end: SharedInput | None = None) -> None:
+          read_end: SharedInput | None = None,
+          file: FileDescription | None = None) -> None:
     """Point a writing stream at an identity.
 
     A stream on its own terminal end is stored as None, the undiverted
@@ -362,7 +330,18 @@ def _bind(session: SessionState,
         read_end (SharedInput | None): the file's read end, for an
             `OPEN_FOR_READING` identity.
     """
-    if fd == FD_STDERR:
+    session.descriptors[fd] = Descriptor(
+        identity, append, read_end,
+        read_end.description if isinstance(read_end, FileInput) else file)
+    if fd > FD_STDERR:
+        return
+    if fd == FD_STDIN:
+        session.exec_stdin = read_end
+        session.exec_stdin_identity = (None
+                                       if identity == TO_STDIN else identity)
+        session.exec_stdin_unreadable = (read_end is None
+                                         and identity != TO_STDIN)
+    elif fd == FD_STDERR:
         session.exec_stderr = None if identity == TO_STDERR else identity
         session.exec_stderr_append = append
         session.exec_stderr_input = read_end
@@ -395,6 +374,18 @@ async def _route(
         own (str): the stream's own terminal end, used when undiverted.
     """
     target = own if binding is None else binding
+    descriptor = session.descriptors.get(1 if own == TO_STDOUT else 2)
+    if (descriptor is not None and descriptor.file is not None
+            and descriptor.identity == target):
+        await write_description(dispatch, session, descriptor.file, data)
+        return None, None, False
+    if target.startswith("<>"):
+        source = (session.exec_stdout_input
+                  if own == TO_STDOUT else session.exec_stderr_input)
+        if isinstance(source, FileInput):
+            await write_description(dispatch, session, source.description,
+                                    data)
+            return None, None, False
     if target == TO_STDOUT:
         return data, None, False
     if target == TO_STDERR:

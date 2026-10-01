@@ -12,20 +12,25 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import { SharedInput } from '../../../../io/async_line_iterator.ts'
+import { SharedInput, share } from '../../../../io/async_line_iterator.ts'
 import { IOResult, materialize } from '../../../../io/types.ts'
 import type { ByteSource } from '../../../../io/types.ts'
 import type { DispatchFn } from '../../../../runtime/types.ts'
 import { FD_BOTH, FD_CLOSE, FD_STDERR, FD_STDIN, FD_STDOUT } from '../../../../shell/constants.ts'
-import { badDescriptorLine, unsupportedDescriptor } from '../../../../shell/descriptors.ts'
+import {
+  FileDescription,
+  FileInput,
+  badDescriptorLine,
+  unsupportedDescriptor,
+} from '../../../../shell/descriptors.ts'
 import { type Redirect, RedirectKind } from '../../../../shell/types.ts'
-import { fsStrerror, isFsError } from '../../../../utils/errors.ts'
+import { fsStrerror, isFsError, isMissingPath } from '../../../../utils/errors.ts'
 import { PathSpec } from '../../../../types.ts'
 import { getRedirects } from '../../../../shell/helpers.ts'
 import { NodeType as NT, type TSNodeLike } from '../../../../shell/types.ts'
 import type { SessionState } from '../../../session/session.ts'
 import { ExecutionNode } from '../../../types.ts'
-import { createFile } from '../../create.ts'
+import { createFile, writeDescription } from '../../create.ts'
 import { toScope } from '../scope.ts'
 import type { EXEC_STREAM_FIELDS } from './constants.ts'
 import { CLOSED, OPEN_FOR_READING, TO_STDERR, TO_STDIN, TO_STDOUT } from './constants.ts'
@@ -80,6 +85,10 @@ function identity(session: SessionState, fd: number): [string, boolean] {
   // fd 0 is its own read end unless an `exec` rebound it: closed, or a
   // writing stream's identity (`exec 0<&1`), which a later dup from fd 0
   // copies as bash's does.
+  if (fd > FD_STDERR) {
+    const descriptor = session.descriptors.get(fd)
+    return descriptor === undefined ? [CLOSED, false] : [descriptor.identity, descriptor.append]
+  }
   if (fd === FD_STDIN) return [session.execStdinIdentity ?? TO_STDIN, false]
   if (fd === FD_STDERR) return [session.execStderr ?? TO_STDERR, session.execStderrAppend]
   return [session.execStdout ?? TO_STDOUT, session.execStdoutAppend]
@@ -88,7 +97,16 @@ function identity(session: SessionState, fd: number): [string, boolean] {
 /** A new descriptor on the read end a descriptor holds, as a dup makes
  * one: it shares the offset, so a read through either moves both. Null
  * when the descriptor holds no file's read end. */
-function readEnd(session: SessionState, fd: number): SharedInput | null {
+function readEnd(
+  session: SessionState,
+  fd: number,
+  stdin: ByteSource | null = null,
+): SharedInput | null {
+  if (fd === FD_STDIN && stdin !== null) {
+    const source = share(stdin)
+    return source instanceof SharedInput ? source : null
+  }
+  if (fd > FD_STDERR) return session.descriptors.get(fd)?.source ?? null
   const held =
     fd === FD_STDIN
       ? session.execStdin
@@ -108,8 +126,20 @@ function bind(
   id: string,
   append: boolean,
   input: SharedInput | null = null,
+  file: FileDescription | null = null,
 ): void {
-  if (fd === FD_STDERR) {
+  session.descriptors.set(fd, {
+    identity: id,
+    append,
+    source: input,
+    file: input instanceof FileInput ? input.description : file,
+  })
+  if (fd > FD_STDERR) return
+  if (fd === FD_STDIN) {
+    session.execStdin = input
+    session.execStdinIdentity = id === TO_STDIN ? null : id
+    session.execStdinUnreadable = input === null && id !== TO_STDIN
+  } else if (fd === FD_STDERR) {
     session.execStderr = id === TO_STDERR ? null : id
     session.execStderrAppend = append
     session.execStderrInput = input
@@ -135,6 +165,18 @@ async function route(
   own: string,
 ): Promise<[Uint8Array | null, Uint8Array | null, boolean]> {
   const target = binding ?? own
+  const descriptor = session.descriptors.get(own === TO_STDOUT ? 1 : 2)
+  if (descriptor?.file != null && descriptor.identity === target) {
+    await writeDescription(dispatch, session, descriptor.file, data)
+    return [null, null, false]
+  }
+  if (target.startsWith('<>')) {
+    const source = own === TO_STDOUT ? session.execStdoutInput : session.execStderrInput
+    if (source instanceof FileInput) {
+      await writeDescription(dispatch, session, source.description, data)
+      return [null, null, false]
+    }
+  }
   if (target === TO_STDOUT) return [data, null, false]
   if (target === TO_STDERR) return [null, data, false]
   if (target === TO_STDIN || target.startsWith(OPEN_FOR_READING)) return [null, null, true]
@@ -142,10 +184,11 @@ async function route(
   return [null, null, false]
 }
 
-type StreamBindings = Pick<SessionState, (typeof EXEC_STREAM_FIELDS)[number]>
+type StreamBindings = Pick<SessionState, (typeof EXEC_STREAM_FIELDS)[number] | 'descriptors'>
 
 function bindingsOf(session: SessionState): StreamBindings {
   return {
+    descriptors: new Map(session.descriptors),
     execStdout: session.execStdout,
     execStdoutAppend: session.execStdoutAppend,
     execStdoutInput: session.execStdoutInput,
@@ -187,20 +230,19 @@ function scopeOf(target: unknown): PathSpec {
  * Point the shell's own streams at files for the rest of the shell. `exec
  * > file` diverts later stdout, `2> file` stderr, `< file` stdin, `>>`
  * appends; `2>&1`/`>&2` copy one target onto the other; `>&-` closes.
- * The output file is opened now, as bash opens it at exec time. A
- * descriptor above 2 (`exec 3>f`, `exec 3>&-`) is refused with `3: Bad
- * file descriptor`: the shell has no descriptor table, and the old
- * fall-through aliased it onto stdout, which is what `exec 3>&-` closed.
+ * The output file is opened now, as bash opens it at exec time. Numbered
+ * descriptors use the same bindings and share open descriptions when duplicated.
  */
 export async function installExecRedirects(
   dispatch: DispatchFn,
   session: SessionState,
   redirects: Redirect[],
+  stdin: ByteSource | null = null,
 ): Promise<Result> {
   const badFd = unsupportedDescriptor(redirects)
   if (badFd !== null) return execFailure(badDescriptorLine(badFd))
   const saved = bindingsOf(session)
-  const err = await install(dispatch, session, redirects)
+  const err = await install(dispatch, session, redirects, stdin)
   if (err === null)
     return [null, new IOResult(), new ExecutionNode({ command: 'exec', exitCode: 0 })]
   return rollBack(dispatch, session, saved, err)
@@ -212,125 +254,75 @@ export async function installExecRedirects(
 async function install(
   dispatch: DispatchFn,
   session: SessionState,
-  redirects: Redirect[],
+  redirects: readonly Redirect[],
+  stdin: ByteSource | null,
 ): Promise<Uint8Array | null> {
-  for (const r of redirects) {
-    if (r.kind === RedirectKind.AMBIGUOUS) {
-      const word = r.target instanceof PathSpec ? r.target.rawPath : String(r.target)
-      return new TextEncoder().encode(`${word}: ambiguous redirect\n`)
-    }
-    if (typeof r.target === 'number') {
-      // Keyed on the descriptor claimed, not the operator's direction:
-      // `2<&-` closes stderr and `0>&-` stdin, as in bash. A dup of a
-      // descriptor onto itself changes nothing, so `0<&0` keeps the file
-      // an earlier `exec <f` bound; another descriptor onto stdin
-      // restores the ambient input.
-      if (r.fd === FD_STDIN) {
-        // A closed stdin, or a writing stream dup'd onto it (`0<&1`), has
-        // nothing to read: the next reader gets EBADF, as bash's does,
-        // until `exec < file` binds a file again. A dup of stdin onto
-        // itself keeps the file an earlier `exec <f` bound, and a dup from
-        // a descriptor that holds a read end (`exec 1<&0; exec 0<&1`)
-        // takes that end, offset and all, whatever fd 0 was bound to in
-        // between.
-        if (r.target === FD_CLOSE) {
-          session.execStdin = null
-          session.execStdinUnreadable = true
-          session.execStdinIdentity = CLOSED
-          continue
-        }
-        // A dup onto itself changes nothing, a closed descriptor's
-        // included (`exec 0<&-; exec 0<&0`).
-        if (r.target === FD_STDIN) continue
-        const source = identity(session, r.target)[0]
-        if (source === CLOSED) return badDescriptorLine(r.target)
-        if (source === TO_STDIN) {
-          session.execStdin = null
-          session.execStdinUnreadable = false
-          session.execStdinIdentity = null
-        } else if (source.startsWith(OPEN_FOR_READING)) {
-          session.execStdin = readEnd(session, r.target)
-          session.execStdinUnreadable = false
-          session.execStdinIdentity = source
-        } else {
-          session.execStdin = null
-          session.execStdinUnreadable = true
-          session.execStdinIdentity = source
-        }
-      } else if (r.target === FD_CLOSE) {
-        bind(session, r.fd, CLOSED, false)
-      } else if (r.target === r.fd) {
-        // `exec 1>&1` on a closed fd 1 is bash's no-op too.
-      } else {
-        const [id, append] = identity(session, r.target)
-        // A dup from a closed descriptor is refused, as bash's `exec 0<&-;
-        // exec 1<&0` is with `0: Bad file descriptor`.
-        if (id === CLOSED) return badDescriptorLine(r.target)
-        bind(session, r.fd, id, append, readEnd(session, r.target))
-      }
-      continue
-    }
-    const scope = scopeOf(r.target)
-    if (r.kind === RedirectKind.STDIN) {
-      let data: unknown
+  for (const redirect of redirects) {
+    const error = await installDescriptor(dispatch, session, redirect, stdin)
+    if (error !== null) return error
+  }
+  return null
+}
+
+async function installDescriptor(
+  dispatch: DispatchFn,
+  session: SessionState,
+  redirect: Redirect,
+  stdin: ByteSource | null,
+): Promise<Uint8Array | null> {
+  const { fd, target } = redirect
+  if (redirect.kind === RedirectKind.AMBIGUOUS) {
+    const word = target instanceof PathSpec ? target.rawPath : String(target)
+    return new TextEncoder().encode(`${word}: ambiguous redirect\n`)
+  }
+  if (redirect.kind === RedirectKind.HEREDOC || redirect.kind === RedirectKind.HERESTRING) {
+    const data = String(target) + (redirect.kind === RedirectKind.HERESTRING ? '\n' : '')
+    bind(session, fd, OPEN_FOR_READING, false, new SharedInput(new TextEncoder().encode(data)))
+    return null
+  }
+  if (typeof target === 'number') {
+    if (target === fd) return null
+    const [id, append] =
+      target === FD_CLOSE ? ([CLOSED, false] as const) : identity(session, target)
+    if (id === CLOSED && target !== FD_CLOSE) return badDescriptorLine(target)
+    bind(
+      session,
+      fd,
+      id,
+      append,
+      readEnd(session, target, stdin),
+      session.descriptors.get(target)?.file ?? null,
+    )
+    return null
+  }
+  const scope = scopeOf(target)
+  try {
+    if (redirect.kind === RedirectKind.STDIN || redirect.kind === RedirectKind.READWRITE) {
+      let data: ByteSource | null
       try {
-        ;[data] = await dispatch('read', scope)
-      } catch (err) {
-        if (!isFsError(err)) throw err
-        return errorLine(scope.rawPath, err)
+        data = (await dispatch('read', scope))[0] as ByteSource | null
+      } catch (error) {
+        if (redirect.kind !== RedirectKind.READWRITE || !isMissingPath(error)) throw error
+        data = new Uint8Array()
       }
-      if (r.fd !== FD_STDIN) {
-        // `exec 1<f`: the stream holds the file's read end, so a write to
-        // it fails as one to stdin's end does (`echo: write error: Bad
-        // file descriptor`), a dup onto fd 0 (`exec 0<&1`) reads the
-        // file, and so does a transient `<&1`.
-        bind(
-          session,
-          r.fd,
-          OPEN_FOR_READING + scope.virtual,
-          false,
-          new SharedInput(await materialize(data as ByteSource)),
-        )
-        continue
-      }
-      // fd 0 holds the file's read end, and says so: a dup from it (`exec
-      // 1<&0`) keeps the file even after `exec 0<&-`, as bash's copied
-      // descriptor does. Each open is a descriptor of its own, so a
-      // reopen reads from the start.
-      session.execStdin = new SharedInput(await materialize(data as ByteSource))
-      session.execStdinUnreadable = false
-      session.execStdinIdentity = OPEN_FOR_READING + scope.virtual
-      continue
+      const bytes = (await materialize(data)) ?? new Uint8Array()
+      if (redirect.kind === RedirectKind.READWRITE) {
+        await createFile(dispatch, session, scope, new Uint8Array(), true)
+        const file = new FileDescription(scope)
+        file.opened = true
+        file.source = new FileInput(file, bytes)
+        bind(session, fd, '<>' + scope.virtual, false, file.source)
+      } else bind(session, fd, OPEN_FOR_READING + scope.virtual, false, new SharedInput(bytes))
+    } else {
+      await openTarget(dispatch, session, scope, redirect.append)
+      const file = new FileDescription(scope, redirect.append)
+      file.opened = true
+      for (const claimed of fd === FD_BOTH ? [1, 2] : [fd])
+        bind(session, claimed, scope.virtual, redirect.append, null, file)
     }
-    const path = scope.virtual
-    try {
-      if (await openTarget(dispatch, session, scope, r.append)) session.execOpened.add(path)
-    } catch (err) {
-      if (!isFsError(err)) throw err
-      return errorLine(scope.rawPath, err)
-    }
-    if (r.fd === FD_STDIN) {
-      // `exec 0>f`: fd 0 holds the file's write end, so a read fails with
-      // EBADF, a later dup from it (`exec 1>&0`) writes there, and so does
-      // a transient `>&0`.
-      session.execStdin = null
-      session.execStdinUnreadable = true
-      session.execStdinIdentity = path
-      continue
-    }
-    const streams =
-      r.fd === FD_BOTH ? ['stdout', 'stderr'] : r.fd === FD_STDERR ? ['stderr'] : ['stdout']
-    for (const stream of streams) {
-      if (stream === 'stderr') {
-        session.execStderr = path
-        session.execStderrAppend = r.append
-        session.execStderrInput = null
-      } else {
-        session.execStdout = path
-        session.execStdoutAppend = r.append
-        session.execStdoutInput = null
-      }
-    }
+  } catch (error) {
+    if (!isFsError(error)) throw error
+    return errorLine(scope.rawPath, error)
   }
   return null
 }

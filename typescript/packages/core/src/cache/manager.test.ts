@@ -19,7 +19,7 @@ import { FileStat, FileType, PathSpec } from '../types.ts'
 import { withCacheMutation } from './file/io.ts'
 import { RAMFileCacheStore } from './file/ram.ts'
 import { IndexEntry } from './index/config.ts'
-import { LISTING_TRUST_WINDOW } from './index/constants.ts'
+import { LISTING_TRUST_WINDOW, PROBED_LIMIT } from './index/constants.ts'
 import { RAMIndexCacheStore } from './index/ram.ts'
 import { runInCommandScope } from './index/scope.ts'
 import { IndexView } from './index/view.ts'
@@ -499,21 +499,58 @@ describe('what a probe saw this command', () => {
     })
   })
 
-  // Any write the command makes, to any path, retires what its probes saw:
-  // coarser than per path, never a stale answer.
-  for (const invalidate of [
-    'invalidateAfterWrite',
-    'invalidateAfterUnlink',
-    'invalidateSubtree',
-  ] as const) {
-    it(`is dropped by ${invalidate} in the same command`, async () => {
+  // Every door that drops cached state: a write the command makes, a clear
+  // after native code ran (an external program, a remote runtime line), a
+  // path-less CLI mutation, and a re-list that found the file gone. Each one
+  // means the backend may no longer match what the probe saw.
+  const DROPS: [string, (manager: CacheManager, index: RAMIndexCacheStore) => Promise<void>][] = [
+    ['a write', (m) => m.invalidateAfterWrite(PathSpec.fromStrPath('/data/elsewhere'))],
+    ['an unlink', (m) => m.invalidateAfterUnlink(PathSpec.fromStrPath('/data/elsewhere'))],
+    ['a subtree drop', (m) => m.invalidateSubtree(PathSpec.fromStrPath('/data/elsewhere'))],
+    ['an external clear', (m, index) => m.clearIndex(index)],
+    ['a path-less drop', (m) => m.dropPrefix()],
+    [
+      'a re-list that found it gone',
+      async (m, index) => {
+        const view = m.scopeIndex(index)
+        await view.setDir('/data/arch', [
+          ['h.txt', new IndexEntry({ id: 'h', name: 'h.txt', resourceType: 'file' })],
+        ])
+        await view.setDir('/data/arch', [])
+      },
+    ],
+  ]
+  for (const [name, drop] of DROPS) {
+    it(`is retired by ${name} in the same command`, async () => {
       const index = new RAMIndexCacheStore({ ttl: 600 })
       const manager = new CacheManager(new RAMFileCacheStore(), index, '/data/', true)
       await runInCommandScope(async () => {
         manager.noteProbed(path, probed())
-        await manager[invalidate](PathSpec.fromStrPath('/data/elsewhere'))
+        expect(manager.probedStat(path)).not.toBeNull()
+        await drop(manager, index)
         expect(manager.probedStat(path)).toBeNull()
       })
     })
   }
+
+  // Only the probing command is ever served an answer, so once the map is
+  // full the other commands' entries are dead weight; dropping one costs at
+  // most a backend stat, never a wrong answer.
+  it('drops finished commands past the bound', async () => {
+    const index = new RAMIndexCacheStore({ ttl: 600 })
+    const manager = new CacheManager(new RAMFileCacheStore(), index, '/data/', true)
+    for (let n = 0; n < PROBED_LIMIT; n++) {
+      await runInCommandScope(() => {
+        manager.noteProbed(PathSpec.fromStrPath(`/data/old${String(n)}`), probed())
+        return Promise.resolve()
+      })
+    }
+    await runInCommandScope(() => {
+      const mine = PathSpec.fromStrPath('/data/mine')
+      manager.noteProbed(mine, probed())
+      expect(manager.probedStat(mine)).not.toBeNull()
+      expect((manager as unknown as { probed: Map<string, unknown> }).probed.size).toBe(1)
+      return Promise.resolve()
+    })
+  })
 })

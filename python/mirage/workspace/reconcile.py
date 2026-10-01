@@ -59,7 +59,8 @@ class Reconciler:
     command. The first probe's backend answer is kept on the mount's
     ``CacheManager`` for the rest of the command, so the gate, and the
     command's own stat of the operand, reuse it instead of asking again. A
-    write in the command retires it, and a read outside any command (FUSE,
+    write in the command, the clear after an external program, or a re-list
+    that finds the path gone retires it, and a read outside any command (FUSE,
     the op door) never sees it.
     """
 

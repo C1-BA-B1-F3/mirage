@@ -19,7 +19,7 @@ from contextlib import asynccontextmanager
 from mirage.cache.file.io import latest_fingerprint, mutation_lock
 from mirage.cache.file.mixin import FileCacheMixin
 from mirage.cache.index.config import Evicted
-from mirage.cache.index.constants import LISTING_TRUST_WINDOW
+from mirage.cache.index.constants import LISTING_TRUST_WINDOW, PROBED_LIMIT
 from mirage.cache.index.scope import command_started, tick
 from mirage.cache.index.store import IndexCacheStore
 from mirage.cache.index.view import IndexView
@@ -123,8 +123,14 @@ class CacheManager:
             yield
 
     async def clear_index(self, index: IndexCacheStore) -> None:
-        """Clear the whole backend index while this mount still owns it."""
+        """Clear the whole backend index while this mount still owns it.
+
+        The clear that follows native code (an external program, a remote
+        runtime line) that may have changed the mount, so it also retires
+        what the running command's probes saw.
+        """
         async with self.mutation():
+            self._retire()
             if self._owns_path(self._prefix or "/"):
                 await index.clear()
 
@@ -153,9 +159,27 @@ class CacheManager:
 
     async def _cleanup(self, gone: list[Evicted]) -> None:
         async with self.mutation():
-            owned = [child for child in gone if self._owns_path(child.path)]
-            if owned and self._on_gone is not None:
-                await self._on_gone(owned)
+            await self._gone_locked(
+                [child for child in gone if self._owns_path(child.path)])
+
+    async def _gone_locked(self, gone: list[Evicted]) -> None:
+        if not gone:
+            return
+        # A re-list found children gone: the backend changed under the
+        # command, so nothing its probes saw is safe to serve.
+        self._retire()
+        if self._on_gone is not None:
+            await self._on_gone(gone)
+
+    def _retire(self) -> None:
+        """Retire every in-flight read and every remembered probe answer.
+
+        The one step every cache drop takes: a read that began before it
+        must not stamp the cache after it, and a probe answer from before
+        it must not be served after it.
+        """
+        self._read_generation += 1
+        self._probed.clear()
 
     def _note_written(self, folder: str) -> None:
         self._written[folder] = (tick(), _now())
@@ -204,9 +228,17 @@ class CacheManager:
             stat (FileStat): the backend's answer.
         """
         started = command_started()
-        if started is not None:
-            self._probed[self._cache_key(path)] = (started,
-                                                   self._read_generation, stat)
+        if started is None:
+            return
+        if len(self._probed) >= PROBED_LIMIT:
+            # Only the probing command is ever served an answer, so the
+            # other commands' entries are dead weight here.
+            self._probed = {
+                key: probed
+                for key, probed in self._probed.items() if probed[0] == started
+            }
+        self._probed[self._cache_key(path)] = (started, self._read_generation,
+                                               stat)
 
     def probed_stat(self, path: PathSpec) -> FileStat | None:
         """The backend's answer for ``path`` from this command's probe.
@@ -215,9 +247,10 @@ class CacheManager:
         the backend; under fresh, asking again resolves through listings the
         command has not re-checked, and re-lists every folder on the path.
         The answer is served only inside the command that probed, and only
-        while no write has landed since: every invalidation bumps the read
-        generation, so ``sed -i`` or ``> f`` in the same command sends the
-        next stat back to the backend.
+        while no cache drop has landed since: a write in the command
+        (``sed -i``, ``> f``), the clear after an external program, and a
+        re-list that found the path gone all retire it (``_retire``), so the
+        next stat goes back to the backend.
 
         Args:
             path (PathSpec): the path to look up; only ``virtual`` is read.
@@ -255,7 +288,7 @@ class CacheManager:
                          self._owns_path,
                          locked=True,
                          read_ttl=self._read_ttl,
-                         on_gone=self._on_gone,
+                         on_gone=self._gone_locked,
                          excluded_prefixes=self._excluded_prefixes,
                          may_serve_listing=self._may_serve_listing,
                          note_written=self._note_written)
@@ -402,7 +435,7 @@ class CacheManager:
             path (PathSpec): Path that was written; only ``virtual`` is
                 read.
         """
-        self._read_generation += 1
+        self._retire()
         key = self._cache_key(path)
         if self._caches_reads and self._file_cache is not None:
             await self._file_cache.remove(key)
@@ -415,7 +448,7 @@ class CacheManager:
             path (PathSpec): Path that was removed; only ``virtual`` is
                 read.
         """
-        self._read_generation += 1
+        self._retire()
         key = self._cache_key(path)
         if self._caches_reads and self._file_cache is not None:
             await self._file_cache.remove(key)
@@ -438,7 +471,7 @@ class CacheManager:
             path (PathSpec): Root of the stale subtree; only ``virtual``
                 is read.
         """
-        self._read_generation += 1
+        self._retire()
         key = self._cache_key(path)
         if self._caches_reads and self._file_cache is not None:
             await self._file_cache.remove(key)
@@ -479,7 +512,7 @@ class CacheManager:
         beneath it, since keys are compared by prefix. That costs a
         refetch, which is the safe direction to be wrong in.
         """
-        self._read_generation += 1
+        self._retire()
         if not self._caches_reads or self._file_cache is None:
             return
         await self._file_cache.evict_prefix(self._prefix + "/")

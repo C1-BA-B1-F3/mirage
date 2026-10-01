@@ -20,7 +20,7 @@ import { rstripSlash } from '../utils/slash.ts'
 import type { FileCache } from './file/mixin.ts'
 import type { IndexCacheStore } from './index/store.ts'
 import type { Evicted } from './index/config.ts'
-import { LISTING_TRUST_WINDOW } from './index/constants.ts'
+import { LISTING_TRUST_WINDOW, PROBED_LIMIT } from './index/constants.ts'
 import { commandStarted, tick } from './index/scope.ts'
 import { IndexView } from './index/view.ts'
 import { withCacheMutation, latestFingerprint } from './file/io.ts'
@@ -93,11 +93,38 @@ export class CacheManager {
     return this.fileCache === null ? call() : withCacheMutation(this.fileCache, call)
   }
 
-  /** Clear the whole backend index while this mount still owns it. */
+  /**
+   * Clear the whole backend index while this mount still owns it.
+   *
+   * The clear that follows native code (an external program, a remote runtime
+   * line) that may have changed the mount, so it also retires what the
+   * running command's probes saw.
+   */
   clearIndex(index: IndexCacheStore | undefined): Promise<void> {
     return this.withMutation(async () => {
+      this.retire()
       if (this.ownsPath(this.prefix || '/')) await index?.clear()
     })
+  }
+
+  /**
+   * Retire every in-flight read and every remembered probe answer.
+   *
+   * The one step every cache drop takes: a read that began before it must not
+   * stamp the cache after it, and a probe answer from before it must not be
+   * served after it.
+   */
+  private retire(): void {
+    this.readGeneration += 1
+    this.probed.clear()
+  }
+
+  // A re-list found children gone: the backend changed under the command, so
+  // nothing its probes saw is safe to serve.
+  private async goneLocked(gone: readonly Evicted[]): Promise<void> {
+    if (gone.length === 0) return
+    this.retire()
+    await this.onGone?.(gone)
   }
 
   /**
@@ -130,17 +157,10 @@ export class CacheManager {
     return {
       readTtl: this.readTtl,
       excludedPrefixes: this.excludedPrefixes,
-      ...(this.onGone === undefined
-        ? {}
-        : {
-            onGone: locked
-              ? this.onGone
-              : (gone: readonly Evicted[]) =>
-                  this.withMutation(async () => {
-                    const owned = gone.filter((child) => this.ownsPath(child.path))
-                    if (owned.length > 0) await this.onGone?.(owned)
-                  }),
-          }),
+      onGone: locked
+        ? (gone: readonly Evicted[]) => this.goneLocked(gone)
+        : (gone: readonly Evicted[]) =>
+            this.withMutation(() => this.goneLocked(gone.filter((c) => this.ownsPath(c.path)))),
       ...(this.mayServeListing === undefined ? {} : { mayServeListing: this.mayServeListing }),
       noteWritten: (folder) => {
         this.noteWritten(folder)
@@ -186,9 +206,15 @@ export class CacheManager {
    */
   noteProbed(path: PathSpec, stat: FileStat): void {
     const started = commandStarted()
-    if (started !== null) {
-      this.probed.set(this.cacheKey(path), [started, this.readGeneration, stat])
+    if (started === null) return
+    if (this.probed.size >= PROBED_LIMIT) {
+      // Only the probing command is ever served an answer, so the other
+      // commands' entries are dead weight here.
+      for (const [key, [stamp]] of this.probed) {
+        if (stamp !== started) this.probed.delete(key)
+      }
     }
+    this.probed.set(this.cacheKey(path), [started, this.readGeneration, stat])
   }
 
   /** Mutation generation, captured before a freshness probe starts. */
@@ -350,7 +376,7 @@ export class CacheManager {
 
   /** Invalidate caches after a write to `path`; only `virtual` is read. */
   async invalidateAfterWrite(path: string | PathSpec): Promise<void> {
-    this.readGeneration += 1
+    this.retire()
     const key = this.cacheKey(path)
     if (this.cachesReads && this.fileCache !== null) {
       await this.fileCache.remove(key)
@@ -360,7 +386,7 @@ export class CacheManager {
 
   /** Invalidate caches after a deletion of `path`; only `virtual` is read. */
   async invalidateAfterUnlink(path: string | PathSpec): Promise<void> {
-    this.readGeneration += 1
+    this.retire()
     const key = this.cacheKey(path)
     if (this.cachesReads && this.fileCache !== null) {
       await this.fileCache.remove(key)
@@ -383,7 +409,7 @@ export class CacheManager {
    * Mirrors Python `CacheManager.invalidate_subtree`.
    */
   async invalidateSubtree(path: string | PathSpec): Promise<void> {
-    this.readGeneration += 1
+    this.retire()
     const key = this.cacheKey(path)
     if (this.cachesReads && this.fileCache !== null) {
       await this.fileCache.remove(key)
@@ -427,7 +453,7 @@ export class CacheManager {
    * direction to be wrong in.
    */
   async dropPrefix(): Promise<void> {
-    this.readGeneration += 1
+    this.retire()
     if (!this.cachesReads || this.fileCache === null) return
     await this.fileCache.evictPrefix(this.prefix + '/')
   }

@@ -27,3 +27,8 @@ GENERATION_KEY = "mirage:idx:generation"
 # How long, in seconds, a read that belongs to no shell command trusts a
 # listing under `read: fresh`. One FUSE `ls -l` is a burst of such reads.
 LISTING_TRUST_WINDOW = 1.0
+
+# How many remembered probe answers a mount keeps before it drops those of
+# commands other than the running one. Only the probing command is ever
+# served an answer, so a dropped entry costs at most one backend stat.
+PROBED_LIMIT = 4096

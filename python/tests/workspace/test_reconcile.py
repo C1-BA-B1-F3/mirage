@@ -774,6 +774,23 @@ async def test_the_gate_asks_the_backend_after_a_write_in_the_command():
 
 
 @pytest.mark.asyncio
+async def test_the_gate_asks_the_backend_after_an_external_clear():
+    # Native code (an external program, a remote runtime line) may have
+    # changed the mount mid-command; the clear that follows it must retire
+    # what routing saw, as a write in the command does.
+    ws, mount, stat, rec = await _gated()
+    try:
+        async with command_scope():
+            await rec.reconcile_read(mount, "/data/f.txt")
+            await ws.namespace.registry.invalidate_after_external()
+            await ws.cache.set("/data/f.txt", b"v1", fingerprint="fp1")
+            await rec.may_serve_cached(mount, "/data/f.txt")
+        assert stat.calls == 2
+    finally:
+        await ws.close()
+
+
+@pytest.mark.asyncio
 async def test_the_gate_asks_the_backend_outside_a_command():
     # FUSE and the op door belong to no command, so nothing a command's
     # probe saw is reused for them.

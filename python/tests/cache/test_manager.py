@@ -633,21 +633,76 @@ async def test_a_probe_outside_a_command_is_never_served():
     assert manager.probed_stat(path) is None
 
 
+async def _write(manager: CacheManager, index) -> None:
+    await manager.invalidate_after_write(
+        PathSpec.from_str_path("/data/elsewhere"))
+
+
+async def _unlink(manager: CacheManager, index) -> None:
+    await manager.invalidate_after_unlink(
+        PathSpec.from_str_path("/data/elsewhere"))
+
+
+async def _subtree(manager: CacheManager, index) -> None:
+    await manager.invalidate_subtree(PathSpec.from_str_path("/data/elsewhere"))
+
+
+async def _external(manager: CacheManager, index) -> None:
+    await manager.clear_index(index)
+
+
+async def _prefix(manager: CacheManager, index) -> None:
+    await manager.drop_prefix()
+
+
+async def _relisted_gone(manager: CacheManager, index) -> None:
+    view = manager.scope_index(index)
+    await view.set_dir("/data/arch", [
+        ("h.txt", IndexEntry(id="h", name="h.txt", resource_type="file")),
+    ])
+    await view.set_dir("/data/arch", [])
+
+
+# Every door that drops cached state: a write the command makes, a clear
+# after native code ran (an external program, a remote runtime line), a
+# path-less CLI mutation, and a re-list that found the file gone. Each one
+# means the backend may no longer match what the probe saw.
 @pytest.mark.asyncio
-@pytest.mark.parametrize("invalidate", [
-    "invalidate_after_write", "invalidate_after_unlink", "invalidate_subtree"
-])
-async def test_a_write_in_the_command_drops_its_probed_stats(invalidate):
-    # Any write the command makes, to any path, retires what its probes saw:
-    # coarser than per path, never a stale answer.
+@pytest.mark.parametrize(
+    "drop", [_write, _unlink, _subtree, _external, _prefix, _relisted_gone])
+async def test_every_cache_drop_in_the_command_retires_its_probed_stats(drop):
     cache, index = _stores()
-    manager = CacheManager(cache, index, "/data/", True)
+    manager = CacheManager(cache, index, "/data/", True, on_gone=_ignore_gone)
     path = PathSpec.from_str_path("/data/arch/h.txt")
     async with command_scope():
         manager.note_probed(path, _probed())
-        await getattr(manager,
-                      invalidate)(PathSpec.from_str_path("/data/elsewhere"))
+        assert manager.probed_stat(path) is not None
+        await drop(manager, index)
         assert manager.probed_stat(path) is None
+
+
+async def _ignore_gone(_gone) -> None:
+    return None
+
+
+@pytest.mark.asyncio
+async def test_probed_stats_of_finished_commands_are_dropped_past_the_bound(
+        monkeypatch):
+    # Only the probing command can be served an answer, so once the map is
+    # full the other commands' entries are dead weight; dropping one costs at
+    # most a backend stat, never a wrong answer.
+    monkeypatch.setattr("mirage.cache.manager.PROBED_LIMIT", 4)
+    cache, index = _stores()
+    manager = CacheManager(cache, index, "/data/", True)
+    for n in range(4):
+        async with command_scope():
+            manager.note_probed(PathSpec.from_str_path(f"/data/old{n}"),
+                                _probed())
+    async with command_scope():
+        mine = PathSpec.from_str_path("/data/mine")
+        manager.note_probed(mine, _probed())
+        assert manager.probed_stat(mine) is not None
+        assert len(manager._probed) == 1
 
 
 @pytest.mark.asyncio

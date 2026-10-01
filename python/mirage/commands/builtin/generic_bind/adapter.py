@@ -1510,7 +1510,6 @@ _SETTLED = (
     ("rmdir", "rmdir", 1),
     ("rm_r", "rmdir", 1),
     ("copy", "write", 2),
-    ("dir_copy", "dir_copy", 2),
 )
 
 

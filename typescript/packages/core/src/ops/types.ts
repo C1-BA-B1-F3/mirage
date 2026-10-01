@@ -46,7 +46,7 @@ export type ChildMounts = (parent: string) => string[]
 // dispatcher settles its own ops, so a write drops a stale `touch -d` time
 // and a removal its mode whichever door it came through: `(op, path,
 // parents)`, `op` named the way the dispatcher names it (`write`, `mkdir`,
-// `unlink`, `rmdir`) or `dir_copy` for a native directory copy.
+// `unlink`, `rmdir`).
 export type SettleWrite = (op: string, path: string, parents?: boolean) => Promise<void>
 
 // Whether the attr overlay holds a time at or under a path, which a

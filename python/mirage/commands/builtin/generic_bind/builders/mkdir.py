@@ -21,6 +21,7 @@ from mirage.commands.builtin.generic_bind.adapter import (
     Builder,
     CommandIO,
     Operation,
+    bound_op,
 )
 from mirage.commands.builtin.utils.paths import descendant_path, entry_kind
 from mirage.commands.builtin.utils.slash_links import mkdir_link_refusal
@@ -30,7 +31,7 @@ from mirage.commands.spec.flag_view import FlagView
 from mirage.context import DEFAULT_UMASK, get_walk_probe, session_umask
 from mirage.io.types import ByteSource, IOResult
 from mirage.ops.types import LinkView
-from mirage.types import FileType, PathSpec
+from mirage.types import FileType, PathSpec, StatFn
 from mirage.utils.errors import (
     ELOOP_STRERROR,
     FS_ERRORS,
@@ -59,6 +60,7 @@ async def mkdir(
         raise ValueError("mkdir: missing operand")
     mode = mkdir_mode(ops, opts, mode_text)
     mkdir_fn = ops.require(Operation.MKDIR)
+    stat = bound_op(ops.stat, accessor, opts.index)
     paths = await ops.resolve_glob(accessor, paths, opts.index)
     lines: list[str] = []
     errors: list[str] = []
@@ -70,7 +72,7 @@ async def mkdir(
                 errors.append(refusal)
             continue
         made, failed = await make_directory(
-            mkdir_fn, accessor, path, parents, links
+            mkdir_fn, accessor, path, parents, links, stat
         )
         if failed is not None:
             errors.append(failed)
@@ -163,6 +165,7 @@ async def make_directory(
     path: PathSpec,
     parents: bool,
     links: LinkView | None = None,
+    stat: StatFn | None = None,
 ) -> tuple[bool, str | None]:
     """Make one mkdir operand: whether it was made, and the line GNU
     reports when it cannot be.
@@ -170,10 +173,12 @@ async def make_directory(
     One unusable operand is not an aborted command: GNU reports it and
     still makes the remaining directories. The error names the path to
     quote: usually the operand, but ``mkdir -p`` blames the component of
-    the chain it tripped on. ``mkdir -p`` leaves a directory already
-    there alone, so it gets no new time, no ``-m`` mode and no ``-v``
-    line (GNU). Every mkdir makes its operands here, a keyed store's
-    override included, so they report alike.
+    the chain it tripped on. ``mkdir -p`` leaves a directory the
+    backend already holds alone, so it gets no new time, no ``-m`` mode
+    and no ``-v`` line (GNU); the backend's own stat says so, since the
+    workspace also shows a directory a nested mount implies. Every mkdir
+    makes its operands here, a keyed store's override included, so they
+    report alike.
 
     Args:
         mkdir_fn (OperationFn): the guarded backend mkdir.
@@ -181,6 +186,7 @@ async def make_directory(
         path (PathSpec): the operand.
         parents (bool): whether ``-p`` makes the missing ancestors.
         links (LinkView | None): the namespace's symlink facts.
+        stat (StatFn | None): the backend's stat, None to always make.
     """
     # -p enters the names in front of the operand one at a time, so a
     # dot among them, or a link loop the walk refused the operand for,
@@ -196,11 +202,8 @@ async def make_directory(
         # would ask a store that shows no empty directory (hf) for one the
         # walk just made.
         path = replace(path, dotted=None)
-    probe = get_walk_probe() if parents and path.walk_error is None else None
-    if probe is not None:
-        exists, is_dir = await entry_kind(
-            probe.stat, PathSpec.from_str_path(path.virtual)
-        )
+    if parents and stat is not None and path.walk_error is None:
+        exists, is_dir = await entry_kind(stat, path)
         if exists and is_dir:
             return False, None
     try:

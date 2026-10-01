@@ -14,7 +14,7 @@
 
 import type { Accessor } from '../../../accessor/base.ts'
 import { IOResult, type ByteSource } from '../../../io/types.ts'
-import type { PathSpec } from '../../../types.ts'
+import type { PathSpec, StatFn } from '../../../types.ts'
 import { command, type CommandFnResult, type CommandOpts } from '../../config.ts'
 import type { RegisteredCommand } from '../../config.ts'
 import { specOf } from '../../spec/builtins.ts'
@@ -42,6 +42,7 @@ export function makeMkdir<A extends Accessor>(
     }
     const io = ioFor(opts)
     const mkdirImpl = requireOp(io.mkdir, 'mkdir')
+    const stat: StatFn = (at: PathSpec) => io.stat(accessor, at, opts.index ?? undefined)
     const fl = new FlagView(opts.flags, specOf('mkdir'))
     const verbose = fl.asBool('verbose')
     const parents = fl.asBool('parents')
@@ -59,7 +60,7 @@ export function makeMkdir<A extends Accessor>(
         if (collision.message !== null) errors.push(collision.message)
         continue
       }
-      const [made, failed] = await makeDirectory(mkdirImpl, accessor, path, parents, links)
+      const [made, failed] = await makeDirectory(mkdirImpl, accessor, path, parents, links, stat)
       if (failed !== null) errors.push(failed)
       if (!made) continue
       writes[path.mountPath] = new Uint8Array()

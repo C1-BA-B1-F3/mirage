@@ -65,8 +65,7 @@ ChildMounts = Callable[[str], list[str]]
 # the dispatcher settles its own ops, so a write drops a stale
 # ``touch -d`` time and a removal its mode whichever door it came
 # through: ``(op, path, parents)``, ``op`` named the way the dispatcher
-# names it (``write``, ``mkdir``, ``unlink``, ``rmdir``) or
-# ``dir_copy`` for a native directory copy.
+# names it (``write``, ``mkdir``, ``unlink``, ``rmdir``).
 SettleWrite = Callable[[str, str, bool], Awaitable[None]]
 # Whether the attr overlay holds a time at or under a path, which a
 # backend's native find cannot see.

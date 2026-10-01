@@ -245,20 +245,6 @@ async def test_settle_write_stamps_the_untimed_mkdir_p_chain(namespace):
 
 
 @pytest.mark.asyncio
-async def test_settle_write_dir_copy_drops_times_below_and_keeps_modes(
-    namespace,
-):
-    await namespace.set_attrs("/data/d/f.txt", mode=0o600, mtime=1.0)
-    await namespace.set_attrs("/data/d/g.txt", mtime=1.0)
-    await namespace.set_attrs("/data/dd", mtime=1.0)
-    await namespace.settle_write("dir_copy", "/data/d", None)
-    assert namespace.meta_for("/data/d/f.txt").mode == 0o600
-    assert namespace.meta_for("/data/d/f.txt").mtime is None
-    assert namespace.meta_for("/data/d/g.txt") is None
-    assert namespace.meta_for("/data/dd").mtime == 1.0
-
-
-@pytest.mark.asyncio
 async def test_unlink_glob_matches_segment_wise(namespace):
     await namespace.set_attrs("/data/a.log", mode=0o600)
     await namespace.set_attrs("/data/sub/b.log", mode=0o600)

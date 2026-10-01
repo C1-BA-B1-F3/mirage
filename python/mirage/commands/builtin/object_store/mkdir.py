@@ -16,7 +16,11 @@ from collections.abc import Callable
 from typing import Any
 
 from mirage.accessor.base import Accessor
-from mirage.commands.builtin.generic_bind.adapter import CommandIO, Operation
+from mirage.commands.builtin.generic_bind.adapter import (
+    CommandIO,
+    Operation,
+    bound_op,
+)
 from mirage.commands.builtin.generic_bind.builders.mkdir import (
     apply_mode,
     make_directory,
@@ -54,6 +58,7 @@ def make_mkdir(
             raise ValueError("mkdir: missing operand")
         io = io_for(opts)
         mkdir_impl = io.require(Operation.MKDIR)
+        stat = bound_op(io.stat, accessor, opts.index)
         mode = mkdir_mode(io, opts, fl.as_str("mode"))
         paths = await io.resolve_glob(accessor, paths, opts.index)
         lines: list[str] = []
@@ -71,7 +76,7 @@ def make_mkdir(
                     errors.append(refusal)
                 continue
             made, failed = await make_directory(
-                mkdir_impl, accessor, path, parents, links
+                mkdir_impl, accessor, path, parents, links, stat
             )
             if failed is not None:
                 errors.append(failed)

@@ -28,7 +28,7 @@ import { mkdirLinkRefusal } from '../../utils/slash_links.ts'
 import { descendantPath, entryKind } from '../../utils/paths.ts'
 import type { Accessor } from '../../../../accessor/base.ts'
 import type { LinkView } from '../../../../ops/types.ts'
-import { FileType, PathSpec } from '../../../../types.ts'
+import { FileType, PathSpec, type StatFn } from '../../../../types.ts'
 import { mountPrefixOf } from '../../../../utils/key_prefix.ts'
 import { CycleError, walkNodes } from '../../../../utils/path.ts'
 import { rstripSlash } from '../../../../utils/slash.ts'
@@ -115,10 +115,11 @@ async function makeWalked<A extends Accessor>(
  * One unusable operand is not an aborted command: GNU reports it and still
  * makes the remaining directories. The error names the path to quote:
  * usually the operand, but `mkdir -p` blames the component of the chain it
- * tripped on. `mkdir -p` leaves a directory already there alone, so it gets
- * no new time, no `-m` mode and no `-v` line (GNU). Every mkdir makes its
- * operands here, a keyed store's override included, so they report alike.
- * Mirrors Python's make_directory.
+ * tripped on. `mkdir -p` leaves a directory the backend already holds alone,
+ * so it gets no new time, no `-m` mode and no `-v` line (GNU); the backend's
+ * own stat says so, since the workspace also shows a directory a nested mount
+ * implies. Every mkdir makes its operands here, a keyed store's override
+ * included, so they report alike. Mirrors Python's make_directory.
  */
 export async function makeDirectory<A extends Accessor>(
   mkdir: MkdirOp<A>,
@@ -126,6 +127,7 @@ export async function makeDirectory<A extends Accessor>(
   path: PathSpec,
   parents: boolean,
   links: LinkView | null = null,
+  stat: StatFn | null = null,
 ): Promise<[boolean, string | null]> {
   let target = path
   // -p enters the names in front of the operand one at a time, so a dot
@@ -147,9 +149,8 @@ export async function makeDirectory<A extends Accessor>(
       walkError: path.walkError,
     })
   }
-  const probe = parents && path.walkError === null ? walkProbeFor(path.virtual) : null
-  if (probe !== null) {
-    const { exists, isDir } = await entryKind(probe.stat, PathSpec.fromStrPath(path.virtual))
+  if (parents && stat !== null && path.walkError === null) {
+    const { exists, isDir } = await entryKind(stat, path)
     if (exists && isDir) return [false, null]
   }
   try {
@@ -229,6 +230,7 @@ export const MKDIR_BUILDER: Builder = {
     }
     const idx = opts.index ?? undefined
     const mkdir = requireOp(ops.mkdir, 'mkdir')
+    const stat: StatFn = (at: PathSpec) => ops.stat(accessor, at, idx)
     const [mode, applyMode] = mkdirMode(ops, accessor, opts, modeText)
     const resolved = await resolveGlobOf(ops)(accessor, paths, idx)
     const lines: string[] = []
@@ -240,7 +242,7 @@ export const MKDIR_BUILDER: Builder = {
         if (collision.message !== null) errors.push(collision.message)
         continue
       }
-      const [made, failed] = await makeDirectory(mkdir, accessor, p, parents, links)
+      const [made, failed] = await makeDirectory(mkdir, accessor, p, parents, links, stat)
       if (failed !== null) errors.push(failed)
       if (!made) continue
       // -m applies to the named directory only; any parents made by -p keep

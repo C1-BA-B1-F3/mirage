@@ -51,7 +51,8 @@ def _seed_file(files, path: str, data: bytes) -> None:
                 "is_directory": False,
                 "file_size": len(data),
             },
-        )())
+        )()
+    )
 
 
 @pytest.mark.asyncio
@@ -65,8 +66,9 @@ async def test_write_new_file(accessor, files, remote_root, index):
 
 
 @pytest.mark.asyncio
-async def test_write_overwrites_existing_file(accessor, files, remote_root,
-                                              index):
+async def test_write_overwrites_existing_file(
+    accessor, files, remote_root, index
+):
     _seed_directory(files, remote_root)
     _seed_file(files, f"{remote_root}/new.txt", b"old")
 
@@ -77,8 +79,9 @@ async def test_write_overwrites_existing_file(accessor, files, remote_root,
 
 
 @pytest.mark.asyncio
-async def test_write_fails_when_parent_is_missing(accessor, files, remote_root,
-                                                  index):
+async def test_write_fails_when_parent_is_missing(
+    accessor, files, remote_root, index
+):
     _seed_directory(files, remote_root)
 
     with pytest.raises(FileNotFoundError):
@@ -86,14 +89,16 @@ async def test_write_fails_when_parent_is_missing(accessor, files, remote_root,
 
 
 @pytest.mark.asyncio
-async def test_write_fails_when_parent_is_file(accessor, files, remote_root,
-                                               index):
+async def test_write_fails_when_parent_is_file(
+    accessor, files, remote_root, index
+):
     _seed_directory(files, remote_root)
     _seed_file(files, f"{remote_root}/parent.txt", b"file")
 
     with pytest.raises(NotADirectoryError):
-        await write_bytes(accessor, _path("/dbx/parent.txt/new.txt"), b"x",
-                          index)
+        await write_bytes(
+            accessor, _path("/dbx/parent.txt/new.txt"), b"x", index
+        )
 
 
 @pytest.mark.asyncio
@@ -106,8 +111,9 @@ async def test_create_empty_file(accessor, files, remote_root, index):
 
 
 @pytest.mark.asyncio
-async def test_create_fails_when_parent_is_missing(accessor, files,
-                                                   remote_root, index):
+async def test_create_fails_when_parent_is_missing(
+    accessor, files, remote_root, index
+):
     _seed_directory(files, remote_root)
 
     with pytest.raises(FileNotFoundError):
@@ -127,7 +133,8 @@ async def test_unlink_file(accessor, files, remote_root, index):
 
 @pytest.mark.asyncio
 async def test_unlink_missing_file_raises_file_not_found(
-        accessor, files, remote_root, index):
+    accessor, files, remote_root, index
+):
     _seed_directory(files, remote_root)
 
     with pytest.raises(FileNotFoundError):
@@ -135,8 +142,9 @@ async def test_unlink_missing_file_raises_file_not_found(
 
 
 @pytest.mark.asyncio
-async def test_unlink_directory_raises_is_a_directory(accessor, files,
-                                                      remote_root, index):
+async def test_unlink_directory_raises_is_a_directory(
+    accessor, files, remote_root, index
+):
     _seed_directory(files, remote_root)
     _seed_directory(files, f"{remote_root}/dir")
 
@@ -145,8 +153,9 @@ async def test_unlink_directory_raises_is_a_directory(accessor, files,
 
 
 @pytest.mark.asyncio
-async def test_file_mutation_paths_cannot_escape_root(accessor, files,
-                                                      remote_root, index):
+async def test_file_mutation_paths_cannot_escape_root(
+    accessor, files, remote_root, index
+):
     _seed_directory(files, remote_root)
     escaping = _path("/dbx/../escape.txt")
 

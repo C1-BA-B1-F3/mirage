@@ -17,35 +17,40 @@ def test_comm_default(env):
     env.create_file("a.txt", b"a\nb\nc\n")
     env.create_file("b.txt", b"b\nc\nd\n")
     assert env.mirage("comm /data/a.txt /data/b.txt") == env.native(
-        "comm a.txt b.txt")
+        "comm a.txt b.txt"
+    )
 
 
 def test_comm_1(env):
     env.create_file("a.txt", b"a\nb\nc\n")
     env.create_file("b.txt", b"b\nc\nd\n")
     assert env.mirage("comm -1 /data/a.txt /data/b.txt") == env.native(
-        "comm -1 a.txt b.txt")
+        "comm -1 a.txt b.txt"
+    )
 
 
 def test_comm_23(env):
     env.create_file("a.txt", b"a\nb\nc\n")
     env.create_file("b.txt", b"b\nc\nd\n")
     assert env.mirage("comm -23 /data/a.txt /data/b.txt") == env.native(
-        "comm -23 a.txt b.txt")
+        "comm -23 a.txt b.txt"
+    )
 
 
 def test_comm_nocheck_order(env):
     env.create_file("a.txt", b"a\nb\nc\n")
     env.create_file("b.txt", b"b\nc\nd\n")
-    assert env.mirage("comm --nocheck-order /data/a.txt /data/b.txt"
-                      ) == env.mirage("comm /data/a.txt /data/b.txt")
+    assert env.mirage(
+        "comm --nocheck-order /data/a.txt /data/b.txt"
+    ) == env.mirage("comm /data/a.txt /data/b.txt")
 
 
 def test_comm_3(env):
     env.create_file("a.txt", b"a\nb\nc\n")
     env.create_file("b.txt", b"b\nc\nd\n")
     assert env.mirage("comm -3 /data/a.txt /data/b.txt") == env.native(
-        "comm -3 a.txt b.txt")
+        "comm -3 a.txt b.txt"
+    )
 
 
 def test_comm_check_order(env):

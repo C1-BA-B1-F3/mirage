@@ -31,32 +31,48 @@ SRC = pathlib.Path(__file__).resolve().parents[2] / "mirage"
 _DECLARE = "mirage/workspace/executor/builtins/declare"
 
 ALLOWED = {
-    (f"{_DECLARE}/declare.py", "store_staged_arrays"):
-    "the `await view.set(name, base)` immediately above stores this "
+    (
+        f"{_DECLARE}/declare.py",
+        "store_staged_arrays",
+    ): "the `await view.set(name, base)` immediately above stores this "
     "same name through the gate",
-    (f"{_DECLARE}/export.py", "handle_export"):
-    "the `=` branch only; `await view.set(key, val)` runs first and "
+    (
+        f"{_DECLARE}/export.py",
+        "handle_export",
+    ): "the `=` branch only; `await view.set(key, val)` runs first and "
     "the bare form uses `view.mark`",
-    (f"{_DECLARE}/readonly.py", "handle_readonly"):
-    "the `=` branch only; `await view.set(key, val)` runs first and "
+    (
+        f"{_DECLARE}/readonly.py",
+        "handle_readonly",
+    ): "the `=` branch only; `await view.set(key, val)` runs first and "
     "the bare form uses `view.mark`",
-    ("mirage/workspace/node/declaration.py", "_stamp_export"):
-    "the `covered` branch only, which is the names that carried a "
+    (
+        "mirage/workspace/node/declaration.py",
+        "_stamp_export",
+    ): "the `covered` branch only, which is the names that carried a "
     "value or a staged array literal; a bare name has no gated write "
     "to ride on and goes through `view.mark`",
-    ("mirage/workspace/node/command_dispatch.py", "execute_command"):
-    "the prefix-assignment loop calls `pre_session_gate` explicitly "
+    (
+        "mirage/workspace/node/command_dispatch.py",
+        "execute_command",
+    ): "the prefix-assignment loop calls `pre_session_gate` explicitly "
     "before seeding, since `seed_var` is the ungated door",
-    ("mirage/workspace/node/command_dispatch.py", "seed_prefix"):
-    "execute_command's seeding, run once the command's words are "
+    (
+        "mirage/workspace/node/command_dispatch.py",
+        "seed_prefix",
+    ): "execute_command's seeding, run once the command's words are "
     "expanded, of values its `pre_session_gate` loop already admitted",
-    ("mirage/workspace/session/shell_dirs.py", "change_dir"):
-    "the shell's own bookkeeping for the two fixed names PWD and "
+    (
+        "mirage/workspace/session/shell_dirs.py",
+        "change_dir",
+    ): "the shell's own bookkeeping for the two fixed names PWD and "
     "OLDPWD as part of a cd the router already authorized, not a "
     "name the agent chose; an agent-typed `PWD=x` is an ordinary "
     "assignment and goes through the door",
-    ("mirage/workspace/session/state.py", "mark_var"):
-    "this is the gated door itself: the write lands after "
+    (
+        "mirage/workspace/session/state.py",
+        "mark_var",
+    ): "this is the gated door itself: the write lands after "
     "`ensure_var_visible` and `pre_session_gate`",
 }
 
@@ -77,9 +93,11 @@ def _call_sites() -> set[tuple[str, str]]:
             if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
                 continue
             for sub in ast.walk(node):
-                if (isinstance(sub, ast.Call)
-                        and isinstance(sub.func, ast.Name)
-                        and sub.func.id == "set_attr"):
+                if (
+                    isinstance(sub, ast.Call)
+                    and isinstance(sub.func, ast.Name)
+                    and sub.func.id == "set_attr"
+                ):
                     found.add((rel, node.name))
     return found
 
@@ -91,10 +109,12 @@ def test_every_ungated_attribute_write_is_accounted_for():
         "ungated set_attr call site with no stated reason: "
         f"{sorted(new)}. Either name the gated write that covers this "
         "operand and add it to ALLOWED, or route the mark through "
-        "`view.mark` so `pre_session` sees it.")
+        "`view.mark` so `pre_session` sees it."
+    )
 
 
 def test_no_stale_entries():
     stale = set(ALLOWED) - _call_sites()
     assert not stale, (
-        f"ALLOWED names a call site that is gone: {sorted(stale)}")
+        f"ALLOWED names a call site that is gone: {sorted(stale)}"
+    )

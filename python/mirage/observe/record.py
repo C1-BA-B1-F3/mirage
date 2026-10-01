@@ -50,7 +50,8 @@ WRITE_FINGERPRINT_OPS = frozenset({"write"})
 STAMP_FINGERPRINT_OPS = frozenset({"read", "write", "create", "truncate"})
 CONTENT_CHANGING_OPS = frozenset({"write", "create", "truncate", "append"})
 RETRACT_FINGERPRINT_OPS = frozenset(
-    {"unlink", "rm_r", "rmdir", "rename", "rename_prefix", "copy"})
+    {"unlink", "rm_r", "rmdir", "rename", "rename_prefix", "copy"}
+)
 # The subset that moved a whole prefix, and so takes every pin beneath
 # it. Membership is what the op *did*, never what it could have done:
 # rename has two code paths and only one of them is a prefix walk, so it

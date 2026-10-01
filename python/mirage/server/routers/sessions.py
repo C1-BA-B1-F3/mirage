@@ -47,19 +47,22 @@ def _require_entry(request: Request, workspace_id: str):
 
 
 @router.post("", response_model=SessionResponse, status_code=201)
-async def create_session(workspace_id: str, req: CreateSessionRequest,
-                         request: Request) -> SessionResponse:
+async def create_session(
+    workspace_id: str, req: CreateSessionRequest, request: Request
+) -> SessionResponse:
     import secrets
+
     entry = _require_entry(request, workspace_id)
     sid = req.session_id or f"sess_{secrets.token_hex(6)}"
     await entry.runner.call(entry.runner.ws.ensure_sessions_loaded())
     if any(s.session_id == sid for s in entry.runner.ws.list_sessions()):
-        raise HTTPException(status_code=409,
-                            detail=f"session id already exists: {sid!r}")
+        raise HTTPException(
+            status_code=409, detail=f"session id already exists: {sid!r}"
+        )
     try:
-        sess = entry.runner.ws.create_session(sid,
-                                              mounts=req.mounts or None,
-                                              profile=req.profile)
+        sess = entry.runner.ws.create_session(
+            sid, mounts=req.mounts or None, profile=req.profile
+        )
     except (ValueError, PolicyError) as exc:
         # An unknown profile name and a refused inline document are
         # both the caller's mistake, and PolicyError is not a
@@ -71,8 +74,9 @@ async def create_session(workspace_id: str, req: CreateSessionRequest,
 
 
 @router.get("", response_model=list[SessionResponse])
-async def list_sessions(workspace_id: str,
-                        request: Request) -> list[SessionResponse]:
+async def list_sessions(
+    workspace_id: str, request: Request
+) -> list[SessionResponse]:
     entry = _require_entry(request, workspace_id)
     await entry.runner.call(entry.runner.ws.ensure_sessions_loaded())
     return [
@@ -82,11 +86,13 @@ async def list_sessions(workspace_id: str,
 
 
 @router.delete("/{session_id}", response_model=DeleteSessionResponse)
-async def delete_session(workspace_id: str, session_id: str,
-                         request: Request) -> DeleteSessionResponse:
+async def delete_session(
+    workspace_id: str, session_id: str, request: Request
+) -> DeleteSessionResponse:
     entry = _require_entry(request, workspace_id)
-    if not any(s.session_id == session_id
-               for s in entry.runner.ws.list_sessions()):
+    if not any(
+        s.session_id == session_id for s in entry.runner.ws.list_sessions()
+    ):
         raise HTTPException(status_code=404, detail="session not found")
     await entry.runner.call(entry.runner.ws.close_session(session_id))
     return DeleteSessionResponse(session_id=session_id)

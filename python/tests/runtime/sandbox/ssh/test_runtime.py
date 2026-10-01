@@ -22,7 +22,6 @@ from mirage.runtime.sandbox.ssh import SSHRuntime, sdk
 
 
 class FakeSSHRuntime(SSHRuntime):
-
     def __init__(self, **options):
         super().__init__(**options)
         self.calls: list[tuple[str, bytes | None]] = []
@@ -33,7 +32,6 @@ class FakeSSHRuntime(SSHRuntime):
 
 
 class FakeConn:
-
     def __init__(self) -> None:
         self.closed = False
 
@@ -58,7 +56,8 @@ def test_connect_kwargs_map_the_config():
             "username": "deploy",
             "identity_file": "~/.ssh/id_ed25519",
             "timeout": 5,
-        })
+        }
+    )
     kwargs = runtime._connect_kwargs()
     assert kwargs["host"] == "10.0.0.5"
     assert kwargs["port"] == 2222
@@ -120,7 +119,6 @@ async def test_close_ends_the_connection():
 
 
 class NoAuthServer(asyncssh.SSHServer):
-
     def begin_auth(self, username):
         return False
 
@@ -135,20 +133,25 @@ async def echo_input(process):
 @pytest.mark.parametrize("data", [None, b"", bytes(range(256))])
 async def test_real_ssh_stdin_always_reaches_eof(data):
     key = asyncssh.generate_private_key("ssh-ed25519")
-    async with asyncssh.listen("127.0.0.1",
-                               0,
-                               server_factory=NoAuthServer,
-                               server_host_keys=[key],
-                               process_factory=echo_input,
-                               encoding=None) as server:
-        runtime = SSHRuntime(config={
-            "host": "127.0.0.1",
-            "port": server.get_port(),
-            "username": "test"
-        })
+    async with asyncssh.listen(
+        "127.0.0.1",
+        0,
+        server_factory=NoAuthServer,
+        server_host_keys=[key],
+        process_factory=echo_input,
+        encoding=None,
+    ) as server:
+        runtime = SSHRuntime(
+            config={
+                "host": "127.0.0.1",
+                "port": server.get_port(),
+                "username": "test",
+            }
+        )
         try:
             result = await asyncio.wait_for(
-                runtime.run_line("cat", data, {}, "/"), 5)
+                runtime.run_line("cat", data, {}, "/"), 5
+            )
             assert result.stdout == (data or b"").hex().encode()
             assert result.exit_code == 0
         finally:

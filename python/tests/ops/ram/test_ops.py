@@ -40,10 +40,9 @@ truncate = _op("truncate")
 
 
 def _scope(path: str) -> PathSpec:
-    return PathSpec(vfs_path=(path).strip("/"),
-                    virtual=path,
-                    directory=path,
-                    resolved=True)
+    return PathSpec(
+        vfs_path=(path).strip("/"), virtual=path, directory=path, resolved=True
+    )
 
 
 @pytest.fixture
@@ -139,7 +138,8 @@ async def test_op_unlink_not_found(accessor):
 async def test_op_rmdir(accessor, store):
     await mkdir(
         accessor,
-        PathSpec(vfs_path="empty", virtual="/empty", directory="/empty"))
+        PathSpec(vfs_path="empty", virtual="/empty", directory="/empty"),
+    )
     await rmdir(accessor, _scope("/empty"))
     assert "/empty" not in store.dirs
 

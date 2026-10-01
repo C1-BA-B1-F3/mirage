@@ -18,8 +18,10 @@ from mirage.io.types import materialize
 from mirage.ops.types import SessionView
 from mirage.shell.call_stack import CallStack
 from mirage.shell.errors import ExitSignal
-from mirage.shell.helpers import (get_process_sub_body,
-                                  get_process_sub_direction)
+from mirage.shell.helpers import (
+    get_process_sub_body,
+    get_process_sub_direction,
+)
 from mirage.shell.types import NodeType as NT
 from mirage.shell.types import ProcessSubDirection, Redirect, RedirectKind
 from mirage.workspace.expand.classify import classify_bare_path
@@ -60,79 +62,92 @@ async def expand_redirects(
         if r.kind in (RedirectKind.HEREDOC, RedirectKind.HERESTRING):
             body = r.target
             if r.target_node is not None and r.expand_vars:
-                body = await expand_node(r.target_node,
-                                         session,
-                                         execute_fn,
-                                         call_stack,
-                                         view=view)
+                body = await expand_node(
+                    r.target_node, session, execute_fn, call_stack, view=view
+                )
             elif isinstance(body, str) and r.expand_vars:
                 for var, val in visible_env(session).items():
                     body = body.replace("$" + var, val)
             expanded.append(
-                Redirect(fd=r.fd,
-                         target=body,
-                         target_node=r.target_node,
-                         kind=r.kind,
-                         append=r.append,
-                         clobber=r.clobber,
-                         pipeline=r.pipeline,
-                         expand_vars=r.expand_vars,
-                         continuation=r.continuation))
+                Redirect(
+                    fd=r.fd,
+                    target=body,
+                    target_node=r.target_node,
+                    kind=r.kind,
+                    append=r.append,
+                    clobber=r.clobber,
+                    pipeline=r.pipeline,
+                    expand_vars=r.expand_vars,
+                    continuation=r.continuation,
+                )
+            )
             continue
         if isinstance(r.target, int):
             expanded.append(r)
             continue
-        if (r.target_node is not None
-                and r.target_node.type == NT.PROCESS_SUBSTITUTION):
-            if (r.kind == RedirectKind.STDIN and get_process_sub_direction(
-                    r.target_node) == ProcessSubDirection.INPUT):
+        if (
+            r.target_node is not None
+            and r.target_node.type == NT.PROCESS_SUBSTITUTION
+        ):
+            if (
+                r.kind == RedirectKind.STDIN
+                and get_process_sub_direction(r.target_node)
+                == ProcessSubDirection.INPUT
+            ):
                 # `cmd < <(inner)` — run the inner command and feed its
                 # stdout as stdin, reusing the heredoc delivery path.
                 inner = get_process_sub_body(r.target_node)
                 inner_data = b""
                 if inner:
-                    io_ps = await child_line(session, execute_fn, inner,
-                                             r.target_node)
+                    io_ps = await child_line(
+                        session, execute_fn, inner, r.target_node
+                    )
                     inner_data = await materialize(io_ps.stdout)
-                    session._diagnostics.append(await
-                                                io_ps.materialize_stderr())
+                    session._diagnostics.append(
+                        await io_ps.materialize_stderr()
+                    )
                 expanded.append(
-                    Redirect(fd=r.fd,
-                             target=inner_data,
-                             kind=RedirectKind.HEREDOC,
-                             expand_vars=False))
+                    Redirect(
+                        fd=r.fd,
+                        target=inner_data,
+                        kind=RedirectKind.HEREDOC,
+                        expand_vars=False,
+                    )
+                )
                 continue
             # `> >(cmd)` and friends would otherwise classify the
             # procsub text as a literal filename and write silently
             # wrong state; fail loudly like the argv-position check.
             raise ExitSignal(
                 2,
-                stderr=b"mirage: unsupported: process substitution "
-                b">(...)\n",
-                contained_code=2)
+                stderr=b"mirage: unsupported: process substitution >(...)\n",
+                contained_code=2,
+            )
         target_node = r.target_node
         if target_node is not None:
-            target_str = await expand_node(target_node,
-                                           session,
-                                           execute_fn,
-                                           call_stack,
-                                           view=view)
+            target_str = await expand_node(
+                target_node, session, execute_fn, call_stack, view=view
+            )
             # A redirect target is a path by definition (the operator is
             # the context), so force classification like a PATH-kind word;
             # classify_word alone leaves extensionless relative targets as
             # text. Mirrors the TS classifyBarePath call.
-            target_scope = classify_bare_path(target_str, registry,
-                                              session.cwd)
+            target_scope = classify_bare_path(
+                target_str, registry, session.cwd
+            )
         else:
             target_scope = r.target
         expanded.append(
-            Redirect(fd=r.fd,
-                     target=target_scope,
-                     target_node=r.target_node,
-                     kind=r.kind,
-                     append=r.append,
-                     clobber=r.clobber,
-                     pipeline=r.pipeline))
+            Redirect(
+                fd=r.fd,
+                target=target_scope,
+                target_node=r.target_node,
+                kind=r.kind,
+                append=r.append,
+                clobber=r.clobber,
+                pipeline=r.pipeline,
+            )
+        )
     pipe_node = None
     for r in expanded:
         if r.pipeline is not None:

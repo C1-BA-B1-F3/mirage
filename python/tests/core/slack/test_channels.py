@@ -28,26 +28,17 @@ def config():
 @pytest.mark.asyncio
 async def test_list_channels(config):
     mock_data = {
-        "ok":
-        True,
+        "ok": True,
         "channels": [
-            {
-                "id": "C001",
-                "name": "general"
-            },
-            {
-                "id": "C002",
-                "name": "random"
-            },
+            {"id": "C001", "name": "general"},
+            {"id": "C002", "name": "random"},
         ],
-        "response_metadata": {
-            "next_cursor": ""
-        },
+        "response_metadata": {"next_cursor": ""},
     }
     with patch(
-            "mirage.core.slack.paginate.slack_get",
-            new_callable=AsyncMock,
-            return_value=mock_data,
+        "mirage.core.slack.paginate.slack_get",
+        new_callable=AsyncMock,
+        return_value=mock_data,
     ) as mock_get:
         result = await list_channels(config)
 
@@ -56,36 +47,28 @@ async def test_list_channels(config):
     assert result[1]["id"] == "C002"
     mock_get.assert_called_once()
     call_kwargs = mock_get.call_args
-    assert call_kwargs.kwargs["params"]["types"] == \
-        "public_channel,private_channel"
+    assert (
+        call_kwargs.kwargs["params"]["types"]
+        == "public_channel,private_channel"
+    )
 
 
 @pytest.mark.asyncio
 async def test_list_channels_pagination(config):
     page1 = {
         "ok": True,
-        "channels": [{
-            "id": "C001",
-            "name": "general"
-        }],
-        "response_metadata": {
-            "next_cursor": "cursor_abc"
-        },
+        "channels": [{"id": "C001", "name": "general"}],
+        "response_metadata": {"next_cursor": "cursor_abc"},
     }
     page2 = {
         "ok": True,
-        "channels": [{
-            "id": "C002",
-            "name": "random"
-        }],
-        "response_metadata": {
-            "next_cursor": ""
-        },
+        "channels": [{"id": "C002", "name": "random"}],
+        "response_metadata": {"next_cursor": ""},
     }
     with patch(
-            "mirage.core.slack.paginate.slack_get",
-            new_callable=AsyncMock,
-            side_effect=[page1, page2],
+        "mirage.core.slack.paginate.slack_get",
+        new_callable=AsyncMock,
+        side_effect=[page1, page2],
     ) as mock_get:
         result = await list_channels(config)
 
@@ -99,18 +82,13 @@ async def test_list_channels_pagination(config):
 async def test_list_dms(config):
     mock_data = {
         "ok": True,
-        "channels": [{
-            "id": "D001",
-            "user": "U001"
-        }],
-        "response_metadata": {
-            "next_cursor": ""
-        },
+        "channels": [{"id": "D001", "user": "U001"}],
+        "response_metadata": {"next_cursor": ""},
     }
     with patch(
-            "mirage.core.slack.paginate.slack_get",
-            new_callable=AsyncMock,
-            return_value=mock_data,
+        "mirage.core.slack.paginate.slack_get",
+        new_callable=AsyncMock,
+        return_value=mock_data,
     ) as mock_get:
         result = await list_dms(config)
 

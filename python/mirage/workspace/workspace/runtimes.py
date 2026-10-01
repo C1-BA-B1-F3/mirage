@@ -19,9 +19,14 @@ from mirage.runtime.base import Runtime
 from mirage.runtime.binding import WorkspaceBinding
 from mirage.runtime.mixin import LineExecutorMixin
 from mirage.runtime.routing import RouteDecision
-from mirage.runtime.table import (DEFAULT_ENTRIES, NAMED, WorkspaceRuntime,
-                                  bind_commands, build_runtime,
-                                  whole_line_runtime)
+from mirage.runtime.table import (
+    DEFAULT_ENTRIES,
+    NAMED,
+    WorkspaceRuntime,
+    bind_commands,
+    build_runtime,
+    whole_line_runtime,
+)
 from mirage.workspace.mount import MountRegistry
 from mirage.workspace.workspace.guard import reject_config_script
 
@@ -41,8 +46,9 @@ class Runtimes:
             by every runtime entry.
     """
 
-    def __init__(self, registry: MountRegistry,
-                 binding: WorkspaceBinding) -> None:
+    def __init__(
+        self, registry: MountRegistry, binding: WorkspaceBinding
+    ) -> None:
         self._registry = registry
         self._binding = binding
         self._entries: list[Runtime] = []
@@ -80,17 +86,20 @@ class Runtimes:
                     # with the install hint instead of a blank refusal.
                     for cmd in NAMED[name].captures:
                         self._registry.runtime_unavailable.setdefault(
-                            cmd, str(exc))
+                            cmd, str(exc)
+                        )
                     continue
         else:
             for entry in runtimes:
                 entries.append(
-                    build_runtime(entry) if isinstance(entry, str) else entry)
+                    build_runtime(entry) if isinstance(entry, str) else entry
+                )
         if not any(entry.name == WorkspaceRuntime.name for entry in entries):
             entries.append(WorkspaceRuntime())
         for entry in entries:
-            reject_config_script(f"runtime {entry.name!r} script",
-                                 entry.script)
+            reject_config_script(
+                f"runtime {entry.name!r} script", entry.script
+            )
         bindings = bind_commands(entries)
         for entry in entries:
             entry.bind(self._binding)
@@ -112,8 +121,7 @@ class Runtimes:
         Raises:
             ValueError: unknown name or duplicate entry.
         """
-        entry = (build_runtime(runtime)
-                 if isinstance(runtime, str) else runtime)
+        entry = build_runtime(runtime) if isinstance(runtime, str) else runtime
         reject_config_script(f"runtime {entry.name!r} script", entry.script)
         candidate = [*self._entries, entry]
         bindings = bind_commands(candidate)
@@ -133,7 +141,8 @@ class Runtimes:
         if name == WorkspaceRuntime.name:
             raise ValueError(
                 "cannot remove the workspace runtime: it serves every "
-                "command no other runtime captures")
+                "command no other runtime captures"
+            )
         entry = next((e for e in self._entries if e.name == name), None)
         if entry is None:
             raise ValueError(f"no runtime entry: {name!r}")
@@ -150,28 +159,37 @@ class Runtimes:
 
     async def close(self) -> None:
         """Close every entry, including the ones still being removed."""
-        results = await asyncio.gather(*(entry.close()
-                                         for entry in self._entries),
-                                       *(asyncio.shield(task)
-                                         for task in self._retiring.values()),
-                                       return_exceptions=True)
+        results = await asyncio.gather(
+            *(entry.close() for entry in self._entries),
+            *(asyncio.shield(task) for task in self._retiring.values()),
+            return_exceptions=True,
+        )
         failures = [r for r in results if isinstance(r, BaseException)]
         if failures:
-            raise (failures[0] if len(failures) == 1 else BaseExceptionGroup(
-                "runtime close failed", failures))
+            raise (
+                failures[0]
+                if len(failures) == 1
+                else BaseExceptionGroup("runtime close failed", failures)
+            )
 
-    def _install(self, entries: list[Runtime],
-                 bindings: dict[str, Runtime]) -> None:
+    def _install(
+        self, entries: list[Runtime], bindings: dict[str, Runtime]
+    ) -> None:
         self._entries = entries
         self._registry.runtime_entries = entries
         self._registry.runtime_bindings = bindings
         self._registry.workspace_runtime = next(
-            (entry
-             for entry in entries if isinstance(entry, WorkspaceRuntime)),
-            None)
+            (
+                entry
+                for entry in entries
+                if isinstance(entry, WorkspaceRuntime)
+            ),
+            None,
+        )
 
-    def whole_line(self,
-                   decision: RouteDecision | None) -> LineExecutorMixin | None:
+    def whole_line(
+        self, decision: RouteDecision | None
+    ) -> LineExecutorMixin | None:
         """The entry taking this whole line, None for the executor.
 
         An entry inheriting LineExecutorMixin takes the raw line when
@@ -184,12 +202,14 @@ class Runtimes:
                 None when only static bindings apply.
         """
         if not any(
-                isinstance(entry, LineExecutorMixin)
-                for entry in self._entries):
+            isinstance(entry, LineExecutorMixin) for entry in self._entries
+        ):
             return None
-        bindings: Mapping[str, Runtime
-                          | None] = (decision.bindings if decision is not None
-                                     else self._registry.runtime_bindings)
+        bindings: Mapping[str, Runtime | None] = (
+            decision.bindings
+            if decision is not None
+            else self._registry.runtime_bindings
+        )
         return whole_line_runtime(bindings)
 
 

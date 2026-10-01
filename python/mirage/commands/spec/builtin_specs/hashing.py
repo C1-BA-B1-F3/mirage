@@ -15,10 +15,8 @@
 from mirage.commands.spec.types import CommandSpec, Operand, Option
 
 SPECS: dict[str, CommandSpec] = {
-    'md5':
-    CommandSpec(rest=Operand(type="path")),
-    'diff':
-    CommandSpec(
+    "md5": CommandSpec(rest=Operand(type="path")),
+    "diff": CommandSpec(
         options=(
             Option(short="-i"),
             Option(short="-w"),
@@ -35,18 +33,16 @@ SPECS: dict[str, CommandSpec] = {
             Operand(type="path"),
         ),
     ),
-    'base64':
-    CommandSpec(
+    "base64": CommandSpec(
         options=(
             Option(short="-d", long="--decode"),
             Option(short="-D"),
             Option(short="-w", long="--wrap", type="str"),
             Option(short="-i", long="--ignore-garbage"),
         ),
-        positional=(Operand(type="path"), ),
+        positional=(Operand(type="path"),),
     ),
-    'md5sum':
-    CommandSpec(
+    "md5sum": CommandSpec(
         options=(
             Option(short="-c", long="--check"),
             Option(short="-b", long="--binary"),
@@ -61,8 +57,7 @@ SPECS: dict[str, CommandSpec] = {
         ),
         rest=Operand(type="path"),
     ),
-    'sha1sum':
-    CommandSpec(
+    "sha1sum": CommandSpec(
         options=(
             Option(short="-c", long="--check"),
             Option(short="-b", long="--binary"),
@@ -77,8 +72,7 @@ SPECS: dict[str, CommandSpec] = {
         ),
         rest=Operand(type="path"),
     ),
-    'sha256sum':
-    CommandSpec(
+    "sha256sum": CommandSpec(
         options=(
             Option(short="-c", long="--check"),
             Option(short="-b", long="--binary"),
@@ -93,8 +87,7 @@ SPECS: dict[str, CommandSpec] = {
         ),
         rest=Operand(type="path"),
     ),
-    'sha384sum':
-    CommandSpec(
+    "sha384sum": CommandSpec(
         options=(
             Option(short="-c", long="--check"),
             Option(short="-b", long="--binary"),
@@ -109,8 +102,7 @@ SPECS: dict[str, CommandSpec] = {
         ),
         rest=Operand(type="path"),
     ),
-    'sha512sum':
-    CommandSpec(
+    "sha512sum": CommandSpec(
         options=(
             Option(short="-c", long="--check"),
             Option(short="-b", long="--binary"),
@@ -125,8 +117,7 @@ SPECS: dict[str, CommandSpec] = {
         ),
         rest=Operand(type="path"),
     ),
-    'xxd':
-    CommandSpec(
+    "xxd": CommandSpec(
         options=(
             Option(short="-r"),
             Option(short="-p"),
@@ -141,8 +132,7 @@ SPECS: dict[str, CommandSpec] = {
             Operand(type="path"),
         ),
     ),
-    'patch':
-    CommandSpec(
+    "patch": CommandSpec(
         options=(
             Option(short="-p", type="str"),
             Option(short="-R"),
@@ -154,8 +144,7 @@ SPECS: dict[str, CommandSpec] = {
             Operand(type="path"),
         ),
     ),
-    'cmp':
-    CommandSpec(
+    "cmp": CommandSpec(
         options=(
             Option(short="-l", long="--verbose"),
             Option(short="-s", long="--quiet"),
@@ -173,8 +162,7 @@ SPECS: dict[str, CommandSpec] = {
             Operand(type="str"),
         ),
     ),
-    'iconv':
-    CommandSpec(
+    "iconv": CommandSpec(
         options=(
             Option(short="-f", type="str"),
             Option(short="-t", type="str"),

@@ -24,8 +24,9 @@ if TYPE_CHECKING:
     from mirage.accessor.mongodb import MongoDBAccessor
 
 
-async def list_databases(client: AsyncMongoClient[Any],
-                         config: MongoDBConfig) -> list[str]:
+async def list_databases(
+    client: AsyncMongoClient[Any], config: MongoDBConfig
+) -> list[str]:
     all_dbs = await client.list_database_names()
     system_dbs = {"admin", "local", "config"}
     dbs = [d for d in all_dbs if d not in system_dbs]

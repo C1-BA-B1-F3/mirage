@@ -19,11 +19,13 @@ from mirage.core.sharepoint.resolve import drive_loc, resolve_item
 from mirage.types import PathSpec
 
 
-async def read_bytes(accessor: SharePointAccessor,
-                     path: PathSpec,
-                     index: IndexCacheStore = NULL_INDEX,
-                     offset: int = 0,
-                     size: int | None = None) -> bytes:
+async def read_bytes(
+    accessor: SharePointAccessor,
+    path: PathSpec,
+    index: IndexCacheStore = NULL_INDEX,
+    offset: int = 0,
+    size: int | None = None,
+) -> bytes:
     """Read a file, optionally only a byte range of it.
 
     Args:
@@ -35,10 +37,12 @@ async def read_bytes(accessor: SharePointAccessor,
         size (int | None): window length, or None for the rest.
     """
     resolved = await resolve_item(accessor, path)
-    return await read_item(accessor.config,
-                           drive_loc(accessor.config, resolved, path.vfs_path),
-                           path.virtual,
-                           "sharepoint",
-                           offset=offset,
-                           size=size,
-                           session=accessor.pool)
+    return await read_item(
+        accessor.config,
+        drive_loc(accessor.config, resolved, path.vfs_path),
+        path.virtual,
+        "sharepoint",
+        offset=offset,
+        size=size,
+        session=accessor.pool,
+    )

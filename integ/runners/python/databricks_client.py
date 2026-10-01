@@ -27,7 +27,6 @@ from urllib.parse import quote, urlencode
 # with the fake, because the fake is a TypeScript kit service now and this is
 # the one piece of the old databricks_server.py that was never a server.
 class DatabricksNotFound(Exception):
-
     def __init__(self, message: str) -> None:
         super().__init__(message)
         self.status_code = 404
@@ -52,25 +51,26 @@ def _http_request(
 
 
 class _HttpFiles:
-
     def __init__(self, client: "HttpFilesClient") -> None:
         self._client = client
 
-    def upload(self,
-               file_path: str,
-               contents: Any,
-               overwrite: bool = False) -> None:
+    def upload(
+        self, file_path: str, contents: Any, overwrite: bool = False
+    ) -> None:
         query = {"overwrite": "true"} if overwrite else None
         url = self._client.files_url(file_path, query)
         headers = self._client.auth(
-            {"Content-Type": "application/octet-stream"})
+            {"Content-Type": "application/octet-stream"}
+        )
         _http_request("PUT", url, headers, contents.read()).close()
 
     def download(self, file_path: str) -> SimpleNamespace:
         url = self._client.files_url(file_path)
         response = _http_request(
-            "GET", url,
-            self._client.auth({"Accept": "application/octet-stream"}))
+            "GET",
+            url,
+            self._client.auth({"Accept": "application/octet-stream"}),
+        )
         data = response.read()
         response.close()
         return SimpleNamespace(contents=BytesIO(data))
@@ -84,7 +84,8 @@ class _HttpFiles:
         return SimpleNamespace(
             content_length=int(length) if length is not None else None,
             last_modified=modified,
-            is_directory=False)
+            is_directory=False,
+        )
 
     def get_directory_metadata(self, directory_path: str) -> SimpleNamespace:
         url = self._client.dirs_url(directory_path)
@@ -114,17 +115,18 @@ class _HttpFiles:
         payload = json.loads(response.read())
         response.close()
         return [
-            SimpleNamespace(path=entry["path"],
-                            name=entry.get("name"),
-                            file_size=entry.get("file_size"),
-                            is_directory=entry.get("is_directory", False),
-                            last_modified=entry.get("last_modified"))
+            SimpleNamespace(
+                path=entry["path"],
+                name=entry.get("name"),
+                file_size=entry.get("file_size"),
+                is_directory=entry.get("is_directory", False),
+                last_modified=entry.get("last_modified"),
+            )
             for entry in payload.get("contents", [])
         ]
 
 
 class _HttpApiClient:
-
     def __init__(self, client: "HttpFilesClient") -> None:
         self._client = client
         self._cfg = SimpleNamespace(workspace_id=None)
@@ -145,7 +147,6 @@ class _HttpApiClient:
 
 
 class HttpFilesClient:
-
     def __init__(self, host: str, token: str) -> None:
         self.host = host.rstrip("/")
         self.token = token
@@ -158,17 +159,17 @@ class HttpFilesClient:
             headers.update(extra)
         return headers
 
-    def files_url(self,
-                  remote_path: str,
-                  query: dict[str, str] | None = None) -> str:
+    def files_url(
+        self, remote_path: str, query: dict[str, str] | None = None
+    ) -> str:
         url = f"{self.host}/api/2.0/fs/files{quote(remote_path)}"
         if query:
             url += "?" + urlencode(query)
         return url
 
-    def dirs_url(self,
-                 remote_path: str,
-                 query: dict[str, str] | None = None) -> str:
+    def dirs_url(
+        self, remote_path: str, query: dict[str, str] | None = None
+    ) -> str:
         url = f"{self.host}/api/2.0/fs/directories{quote(remote_path)}"
         if query:
             url += "?" + urlencode(query)

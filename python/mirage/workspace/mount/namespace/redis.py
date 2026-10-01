@@ -43,13 +43,16 @@ class RedisNamespaceStore(NamespaceStore):
         self._user_key = f"{key_prefix}user"
 
     async def load(self) -> dict[str, NodeFields]:
-        raw = await cast("Awaitable[dict[bytes, bytes]]",
-                         self._client.hgetall(self._key))
+        raw = await cast(
+            "Awaitable[dict[bytes, bytes]]", self._client.hgetall(self._key)
+        )
         return {key.decode(): json.loads(value) for key, value in raw.items()}
 
     async def set(self, path: str, fields: NodeFields) -> None:
-        await cast("Awaitable[int]",
-                   self._client.hset(self._key, path, json.dumps(fields)))
+        await cast(
+            "Awaitable[int]",
+            self._client.hset(self._key, path, json.dumps(fields)),
+        )
 
     async def delete(self, paths: Iterable[str]) -> None:
         doomed = list(paths)
@@ -60,16 +63,19 @@ class RedisNamespaceStore(NamespaceStore):
         pipe = self._client.pipeline()
         pipe.delete(self._key)
         if entries:
-            pipe.hset(self._key,
-                      mapping={
-                          path: json.dumps(fields)
-                          for path, fields in entries.items()
-                      })
+            pipe.hset(
+                self._key,
+                mapping={
+                    path: json.dumps(fields)
+                    for path, fields in entries.items()
+                },
+            )
         await pipe.execute()
 
     async def load_user(self) -> str | None:
-        raw = await cast("Awaitable[bytes | None]",
-                         self._client.get(self._user_key))
+        raw = await cast(
+            "Awaitable[bytes | None]", self._client.get(self._user_key)
+        )
         return raw.decode() if raw is not None else None
 
     async def set_user(self, user: str) -> None:

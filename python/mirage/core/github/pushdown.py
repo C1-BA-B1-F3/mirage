@@ -32,7 +32,7 @@ def scope_relative_key(path: PathSpec) -> str:
     prefix = mount_prefix_of(path.virtual, path.vfs_path)
     key = path.virtual
     if prefix and key.startswith(prefix):
-        key = key[len(prefix):] or "/"
+        key = key[len(prefix) :] or "/"
     return key
 
 
@@ -64,8 +64,9 @@ def is_directory_key(tree: dict[str, TreeEntry], key: str) -> bool:
     return entry is not None and entry.type == "tree"
 
 
-def scope_blobs(tree: dict[str, TreeEntry],
-                key: str) -> list[tuple[str, TreeEntry]]:
+def scope_blobs(
+    tree: dict[str, TreeEntry], key: str
+) -> list[tuple[str, TreeEntry]]:
     """The file entries at or below a repo-relative scope key.
 
     Read off the git tree rather than the index, mirroring TypeScript's:
@@ -84,7 +85,8 @@ def scope_blobs(tree: dict[str, TreeEntry],
     norm = key.strip("/")
     prefix = norm + "/"
     return [
-        (p, e) for p, e in tree.items()
+        (p, e)
+        for p, e in tree.items()
         if e.type == "blob" and (not norm or p == norm or p.startswith(prefix))
     ]
 
@@ -115,8 +117,10 @@ def should_use_search(
     return recursive and on_default_branch
 
 
-_NARROWING = re.compile(r'[:"]|(?:^|[^A-Za-z0-9_])-'
-                        r'|(?:^|[^A-Za-z0-9_])NOT(?:[^A-Za-z0-9_]|$)')
+_NARROWING = re.compile(
+    r'[:"]|(?:^|[^A-Za-z0-9_])-'
+    r"|(?:^|[^A-Za-z0-9_])NOT(?:[^A-Za-z0-9_]|$)"
+)
 _WORD = re.compile(r"[A-Za-z0-9_]")
 
 
@@ -155,5 +159,8 @@ def unsearchable_keys(tree: dict[str, TreeEntry], key: str) -> list[str]:
     Returns:
         list[str]: Sorted repo-relative keys of those files.
     """
-    return sorted(p for p, e in scope_blobs(tree, key)
-                  if e.size is None or e.size >= CODE_SEARCH_SIZE_LIMIT)
+    return sorted(
+        p
+        for p, e in scope_blobs(tree, key)
+        if e.size is None or e.size >= CODE_SEARCH_SIZE_LIMIT
+    )

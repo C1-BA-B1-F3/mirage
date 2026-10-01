@@ -21,11 +21,12 @@ from mirage.core.slack.config import SlackConfig
 
 
 async def cursor_pages(
-        config: SlackConfig,
-        endpoint: str,
-        base_params: dict[str, Any],
-        items_key: str,
-        session: SessionArg = None) -> AsyncIterator[list[dict[str, Any]]]:
+    config: SlackConfig,
+    endpoint: str,
+    base_params: dict[str, Any],
+    items_key: str,
+    session: SessionArg = None,
+) -> AsyncIterator[list[dict[str, Any]]]:
     """Walk a cursor-paginated Slack endpoint, one page per round-trip.
 
     Args:
@@ -44,10 +45,9 @@ async def cursor_pages(
         params = dict(base_params)
         if cursor:
             params["cursor"] = cursor
-        data = await slack_get(config,
-                               endpoint,
-                               params=params,
-                               session=session)
+        data = await slack_get(
+            config, endpoint, params=params, session=session
+        )
         yield data.get(items_key, []) or []
         cursor = data.get("response_metadata", {}).get("next_cursor") or None
         if cursor is None:

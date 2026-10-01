@@ -37,8 +37,9 @@ def _spying_stream(real_stream, pulled: list[str]):
     return factory
 
 
-async def _spy_iter(source: AsyncIterator[bytes], name: str,
-                    pulled: list[str]) -> AsyncIterator[bytes]:
+async def _spy_iter(
+    source: AsyncIterator[bytes], name: str, pulled: list[str]
+) -> AsyncIterator[bytes]:
     first = True
     async for chunk in source:
         if first:

@@ -16,18 +16,26 @@ from mirage.accessor.mongodb import MongoDBAccessor
 from mirage.cache.index import IndexEntry
 from mirage.core.hierarchy.readdir import make_readdir
 from mirage.core.hierarchy.scope import ScopeMatch
-from mirage.core.mongodb.client import (database_exists, entity_exists,
-                                        list_collections, list_databases)
+from mirage.core.mongodb.client import (
+    database_exists,
+    entity_exists,
+    list_collections,
+    list_databases,
+)
 from mirage.core.mongodb.scope import detect_scope, entity_kind
-from mirage.core.mongodb.types import (KIND_TO_DIR, KIND_TO_RESOURCE_TYPE,
-                                       RESOURCE_TYPE_DATABASE)
+from mirage.core.mongodb.types import (
+    KIND_TO_DIR,
+    KIND_TO_RESOURCE_TYPE,
+    RESOURCE_TYPE_DATABASE,
+)
 from mirage.utils.errors import enoent
 
 ENTITY_FILES = ("schema.json", "documents.jsonl")
 
 
-async def database_guard(accessor: MongoDBAccessor, match: ScopeMatch,
-                         virtual: str) -> None:
+async def database_guard(
+    accessor: MongoDBAccessor, match: ScopeMatch, virtual: str
+) -> None:
     """ENOENT unless the slotted database exists.
 
     Args:
@@ -35,13 +43,15 @@ async def database_guard(accessor: MongoDBAccessor, match: ScopeMatch,
         match (ScopeMatch): a match whose slots hold ``database``.
         virtual (str): virtual path for the error.
     """
-    if not await database_exists(accessor.client, accessor.config,
-                                 match.slots["database"], accessor):
+    if not await database_exists(
+        accessor.client, accessor.config, match.slots["database"], accessor
+    ):
         raise enoent(virtual)
 
 
-async def entity_guard(accessor: MongoDBAccessor, match: ScopeMatch,
-                       virtual: str) -> None:
+async def entity_guard(
+    accessor: MongoDBAccessor, match: ScopeMatch, virtual: str
+) -> None:
     """ENOENT unless the slotted collection or view exists.
 
     Args:
@@ -50,14 +60,20 @@ async def entity_guard(accessor: MongoDBAccessor, match: ScopeMatch,
             ``kind`` and ``name``.
         virtual (str): virtual path for the error.
     """
-    if not await entity_exists(accessor.client, accessor.config,
-                               match.slots["database"], match.slots["name"],
-                               entity_kind(match), accessor):
+    if not await entity_exists(
+        accessor.client,
+        accessor.config,
+        match.slots["database"],
+        match.slots["name"],
+        entity_kind(match),
+        accessor,
+    ):
         raise enoent(virtual)
 
 
-async def documents_exist(accessor: MongoDBAccessor, match: ScopeMatch,
-                          virtual: str) -> bool:
+async def documents_exist(
+    accessor: MongoDBAccessor, match: ScopeMatch, virtual: str
+) -> bool:
     """Whether ``entity_guard`` admits the collection a match names.
 
     For the bespoke fast paths (``tail`` and ``wc -l`` on
@@ -81,49 +97,80 @@ async def documents_exist(accessor: MongoDBAccessor, match: ScopeMatch,
     return True
 
 
-async def _list_root(accessor: MongoDBAccessor,
-                     match: ScopeMatch) -> list[tuple[str, IndexEntry]]:
+async def _list_root(
+    accessor: MongoDBAccessor, match: ScopeMatch
+) -> list[tuple[str, IndexEntry]]:
     dbs = await list_databases(accessor.client, accessor.config)
-    return [(db_name,
-             IndexEntry(id=db_name,
-                        name=db_name,
-                        resource_type=RESOURCE_TYPE_DATABASE,
-                        vfs_name=db_name)) for db_name in dbs]
+    return [
+        (
+            db_name,
+            IndexEntry(
+                id=db_name,
+                name=db_name,
+                resource_type=RESOURCE_TYPE_DATABASE,
+                vfs_name=db_name,
+            ),
+        )
+        for db_name in dbs
+    ]
 
 
-async def _list_database(accessor: MongoDBAccessor,
-                         match: ScopeMatch) -> list[tuple[str, IndexEntry]]:
+async def _list_database(
+    accessor: MongoDBAccessor, match: ScopeMatch
+) -> list[tuple[str, IndexEntry]]:
     # database.json, collections/ and views/ exist by construction under
     # every database that exists at all (the guard has already run).
-    names = ("database.json", ) + tuple(KIND_TO_DIR.values())
-    return [(name,
-             IndexEntry(id=name,
-                        name=name,
-                        resource_type="mongodb/database_entry",
-                        vfs_name=name)) for name in names]
+    names = ("database.json",) + tuple(KIND_TO_DIR.values())
+    return [
+        (
+            name,
+            IndexEntry(
+                id=name,
+                name=name,
+                resource_type="mongodb/database_entry",
+                vfs_name=name,
+            ),
+        )
+        for name in names
+    ]
 
 
-async def _list_kind_dir(accessor: MongoDBAccessor,
-                         match: ScopeMatch) -> list[tuple[str, IndexEntry]]:
+async def _list_kind_dir(
+    accessor: MongoDBAccessor, match: ScopeMatch
+) -> list[tuple[str, IndexEntry]]:
     kind = entity_kind(match)
-    names = await list_collections(accessor.client,
-                                   match.slots["database"],
-                                   kind=kind)
-    return [(name,
-             IndexEntry(id=name,
-                        name=name,
-                        resource_type=KIND_TO_RESOURCE_TYPE[kind],
-                        vfs_name=name)) for name in names]
+    names = await list_collections(
+        accessor.client, match.slots["database"], kind=kind
+    )
+    return [
+        (
+            name,
+            IndexEntry(
+                id=name,
+                name=name,
+                resource_type=KIND_TO_RESOURCE_TYPE[kind],
+                vfs_name=name,
+            ),
+        )
+        for name in names
+    ]
 
 
 async def _list_entity_files(
-        accessor: MongoDBAccessor,
-        match: ScopeMatch) -> list[tuple[str, IndexEntry]]:
-    return [(name,
-             IndexEntry(id=name,
-                        name=name,
-                        resource_type="mongodb/entity_file",
-                        vfs_name=name)) for name in ENTITY_FILES]
+    accessor: MongoDBAccessor, match: ScopeMatch
+) -> list[tuple[str, IndexEntry]]:
+    return [
+        (
+            name,
+            IndexEntry(
+                id=name,
+                name=name,
+                resource_type="mongodb/entity_file",
+                vfs_name=name,
+            ),
+        )
+        for name in ENTITY_FILES
+    ]
 
 
 readdir = make_readdir(

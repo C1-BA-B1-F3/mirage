@@ -34,13 +34,16 @@ async def main() -> None:
     ws.register_cli("linear", LINEAR, config.model_dump())
 
     print("=== not-found errors show the full virtual path ===")
-    for cmd in ("cat /linear/__nf_missing__.txt",
-                "head /linear/__nf_missing__.txt",
-                "stat /linear/__nf_missing__.txt"):
+    for cmd in (
+        "cat /linear/__nf_missing__.txt",
+        "head /linear/__nf_missing__.txt",
+        "stat /linear/__nf_missing__.txt",
+    ):
         result = await ws.shell(cmd)
         print(f"$ {cmd}")
-        print(f"  exit={result.exit_code}  "
-              f"{(await result.stderr_str()).strip()}")
+        print(
+            f"  exit={result.exit_code}  {(await result.stderr_str()).strip()}"
+        )
 
     print("=== ls /linear/teams/ ===")
     result = await ws.shell("ls /linear/teams/")
@@ -50,8 +53,11 @@ async def main() -> None:
     long_result = await ws.shell("ls -l /linear/teams/")
     print(await long_result.stdout_str())
 
-    first_team = (await result.stdout_str()).strip().splitlines()[0] if (
-        await result.stdout_str()).strip() else ""
+    first_team = (
+        (await result.stdout_str()).strip().splitlines()[0]
+        if (await result.stdout_str()).strip()
+        else ""
+    )
     if not first_team:
         print("No teams available")
         return
@@ -77,13 +83,16 @@ async def main() -> None:
     meta_res = await ws.shell(
         f'chmod 640 "/linear/teams/{first_team}/team.json"'
         f' && chown 500:dev "/linear/teams/{first_team}/team.json"'
-        f' && touch -t 202601021530 "/linear/teams/{first_team}/team.json"')
+        f' && touch -t 202601021530 "/linear/teams/{first_team}/team.json"'
+    )
     print(f"  chmod/chown/touch exit={meta_res.exit_code}")
     meta_st, _ = await ws.dispatch(
-        "stat",
-        PathSpec.from_str_path(f"/linear/teams/{first_team}/team.json"))
-    print(f"  dispatch stat: mode={oct(meta_st.mode)[2:]} uid={meta_st.uid} "
-          f"gid={meta_st.gid} mtime={meta_st.modified}")
+        "stat", PathSpec.from_str_path(f"/linear/teams/{first_team}/team.json")
+    )
+    print(
+        f"  dispatch stat: mode={oct(meta_st.mode)[2:]} uid={meta_st.uid} "
+        f"gid={meta_st.gid} mtime={meta_st.modified}"
+    )
 
     print(f"=== ls /linear/teams/{first_team}/issues/ ===")
     issue_result = await ws.shell(f"ls /linear/teams/{first_team}/issues/")
@@ -103,21 +112,26 @@ async def main() -> None:
             f"=== cat /linear/teams/{first_team}/projects/{mirage_project} ==="
         )
         result = await ws.shell(
-            f"cat /linear/teams/{first_team}/projects/{mirage_project}")
+            f"cat /linear/teams/{first_team}/projects/{mirage_project}"
+        )
         print(await result.stdout_str())
 
         project_payload = json.loads(await result.stdout_str())
         print("=== issues in Mirage project ===")
         for issue in project_payload.get("issues", []):
-            print(f"{issue['issue_key']}: "
-                  f"{issue['title']} "
-                  f"[{issue['state_name']}]")
+            print(
+                f"{issue['issue_key']}: "
+                f"{issue['title']} "
+                f"[{issue['state_name']}]"
+            )
     else:
         print("Mirage project not found in first team")
 
-    first_issue = (await
-                   issue_result.stdout_str()).strip().splitlines()[0] if (
-                       await issue_result.stdout_str()).strip() else ""
+    first_issue = (
+        (await issue_result.stdout_str()).strip().splitlines()[0]
+        if (await issue_result.stdout_str()).strip()
+        else ""
+    )
     if not first_issue:
         print("No issues available in first team")
         return
@@ -171,25 +185,28 @@ async def main() -> None:
 
     print("=== find issues -name '*.json' ===")
     result = await ws.shell(
-        f'find /linear/teams/{first_team}/issues/ -name "*.json"'
-        " | head -n 5")
+        f'find /linear/teams/{first_team}/issues/ -name "*.json" | head -n 5'
+    )
     print(await result.stdout_str())
 
     print("=== find teams -type d (directory filter) ===")
-    result = await ws.shell(f"find /linear/teams/{first_team}/ -type d"
-                            " | head -n 5")
+    result = await ws.shell(
+        f"find /linear/teams/{first_team}/ -type d | head -n 5"
+    )
     print(await result.stdout_str())
 
     # -path matches the display path; -size counts dirs and sizeless
     # rendered files as 0 (so +0c drops them, -1k keeps them).
     print("=== find team -path '*issues*' ===")
-    result = await ws.shell(f'find /linear/teams/{first_team}/'
-                            f' -path "*issues*" | head -n 5')
+    result = await ws.shell(
+        f'find /linear/teams/{first_team}/ -path "*issues*" | head -n 5'
+    )
     print(await result.stdout_str())
 
     print("=== find team -maxdepth 1 -size +0c (dirs drop out) ===")
     result = await ws.shell(
-        f"find /linear/teams/{first_team}/ -maxdepth 1 -size +0c")
+        f"find /linear/teams/{first_team}/ -maxdepth 1 -size +0c"
+    )
     print(f"  exit={result.exit_code}")
     print(await result.stdout_str())
 
@@ -198,7 +215,7 @@ async def main() -> None:
     print(await result.stdout_str())
 
     print("=== grep Mirage issue.json ===")
-    result = await ws.shell(f'grep Mirage {issue_path}/issue.json')
+    result = await ws.shell(f"grep Mirage {issue_path}/issue.json")
     print(await result.stdout_str())
 
     print("=== rg Backlog team.json ===")
@@ -221,8 +238,9 @@ async def main() -> None:
     print(f"  {out[:200]}")
 
     print(f"\n=== for f in {issues_dir}/* (glob loop) ===")
-    r = await ws.shell(f"for f in {issues_dir}/*; do echo found:$f; done"
-                       " | head -n 3")
+    r = await ws.shell(
+        f"for f in {issues_dir}/*; do echo found:$f; done | head -n 3"
+    )
     out = (await r.stdout_str()).strip()
     for line in out.splitlines():
         print(f"  {line[:120]}")

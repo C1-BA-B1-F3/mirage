@@ -26,5 +26,6 @@ __all__ = ["GSlidesConfig", "SlideEntry", "GSlidesVFS"]
 def __getattr__(name: str) -> "type[GSlidesVFS]":
     if name == "GSlidesVFS":
         from mirage.vfs.gslides.gslides import GSlidesVFS
+
         return GSlidesVFS
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

@@ -12,12 +12,14 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-from mirage.core.notion.render import (_block_to_md, _rich_text_to_md,
-                                       blocks_to_markdown)
+from mirage.core.notion.render import (
+    _block_to_md,
+    _rich_text_to_md,
+    blocks_to_markdown,
+)
 
 
 class TestRichTextToMd:
-
     def test_plain(self):
         rt = [{"plain_text": "hello", "annotations": {}}]
         assert _rich_text_to_md(rt) == "hello"
@@ -35,40 +37,30 @@ class TestRichTextToMd:
         assert _rich_text_to_md(rt) == "`x`"
 
     def test_link(self):
-        rt = [{
-            "plain_text": "click",
-            "annotations": {},
-            "href": "https://example.com"
-        }]
+        rt = [
+            {
+                "plain_text": "click",
+                "annotations": {},
+                "href": "https://example.com",
+            }
+        ]
         assert _rich_text_to_md(rt) == "[click](https://example.com)"
 
     def test_multiple(self):
         rt = [
-            {
-                "plain_text": "a ",
-                "annotations": {}
-            },
-            {
-                "plain_text": "b",
-                "annotations": {
-                    "bold": True
-                }
-            },
+            {"plain_text": "a ", "annotations": {}},
+            {"plain_text": "b", "annotations": {"bold": True}},
         ]
         assert _rich_text_to_md(rt) == "a **b**"
 
 
 class TestBlockToMd:
-
     def test_paragraph(self):
         block = {
             "type": "paragraph",
             "paragraph": {
-                "rich_text": [{
-                    "plain_text": "hi",
-                    "annotations": {}
-                }]
-            }
+                "rich_text": [{"plain_text": "hi", "annotations": {}}]
+            },
         }
         assert _block_to_md(block) == "hi"
 
@@ -76,11 +68,8 @@ class TestBlockToMd:
         block = {
             "type": "heading_1",
             "heading_1": {
-                "rich_text": [{
-                    "plain_text": "Title",
-                    "annotations": {}
-                }]
-            }
+                "rich_text": [{"plain_text": "Title", "annotations": {}}]
+            },
         }
         assert _block_to_md(block) == "# Title"
 
@@ -88,11 +77,8 @@ class TestBlockToMd:
         block = {
             "type": "heading_2",
             "heading_2": {
-                "rich_text": [{
-                    "plain_text": "Sub",
-                    "annotations": {}
-                }]
-            }
+                "rich_text": [{"plain_text": "Sub", "annotations": {}}]
+            },
         }
         assert _block_to_md(block) == "## Sub"
 
@@ -100,11 +86,8 @@ class TestBlockToMd:
         block = {
             "type": "bulleted_list_item",
             "bulleted_list_item": {
-                "rich_text": [{
-                    "plain_text": "item",
-                    "annotations": {}
-                }]
-            }
+                "rich_text": [{"plain_text": "item", "annotations": {}}]
+            },
         }
         assert _block_to_md(block) == "- item"
 
@@ -112,12 +95,9 @@ class TestBlockToMd:
         block = {
             "type": "to_do",
             "to_do": {
-                "rich_text": [{
-                    "plain_text": "done",
-                    "annotations": {}
-                }],
-                "checked": True
-            }
+                "rich_text": [{"plain_text": "done", "annotations": {}}],
+                "checked": True,
+            },
         }
         assert _block_to_md(block) == "- [x] done"
 
@@ -125,12 +105,9 @@ class TestBlockToMd:
         block = {
             "type": "code",
             "code": {
-                "rich_text": [{
-                    "plain_text": "print(1)",
-                    "annotations": {}
-                }],
-                "language": "python"
-            }
+                "rich_text": [{"plain_text": "print(1)", "annotations": {}}],
+                "language": "python",
+            },
         }
         assert _block_to_md(block) == "```python\nprint(1)\n```"
 
@@ -144,26 +121,19 @@ class TestBlockToMd:
 
 
 class TestBlocksToMarkdown:
-
     def test_multiple_blocks(self):
         blocks = [
             {
                 "type": "heading_1",
                 "heading_1": {
-                    "rich_text": [{
-                        "plain_text": "Title",
-                        "annotations": {}
-                    }]
-                }
+                    "rich_text": [{"plain_text": "Title", "annotations": {}}]
+                },
             },
             {
                 "type": "paragraph",
                 "paragraph": {
-                    "rich_text": [{
-                        "plain_text": "body",
-                        "annotations": {}
-                    }]
-                }
+                    "rich_text": [{"plain_text": "body", "annotations": {}}]
+                },
             },
         ]
         result = blocks_to_markdown(blocks)
@@ -175,22 +145,17 @@ class TestBlocksToMarkdown:
     def test_nested_children_indent(self):
         blocks = [
             {
-                "type":
-                "bulleted_list_item",
+                "type": "bulleted_list_item",
                 "bulleted_list_item": {
-                    "rich_text": [{
-                        "plain_text": "parent",
-                        "annotations": {}
-                    }]
+                    "rich_text": [{"plain_text": "parent", "annotations": {}}]
                 },
                 "children": [
                     {
                         "type": "bulleted_list_item",
                         "bulleted_list_item": {
-                            "rich_text": [{
-                                "plain_text": "child",
-                                "annotations": {}
-                            }]
+                            "rich_text": [
+                                {"plain_text": "child", "annotations": {}}
+                            ]
                         },
                     },
                 ],

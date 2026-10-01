@@ -28,12 +28,14 @@ def _spec(path: str) -> PathSpec:
 @pytest.mark.asyncio
 async def test_set_attrs_fields_reported_by_stat(store):
     await store.store.set_file("/f.txt", b"hello")
-    await set_attrs(store,
-                    _spec("/f.txt"),
-                    mode=0o601,
-                    uid=500,
-                    gid="dev",
-                    atime="2026-01-02T00:00:00+00:00")
+    await set_attrs(
+        store,
+        _spec("/f.txt"),
+        mode=0o601,
+        uid=500,
+        gid="dev",
+        atime="2026-01-02T00:00:00+00:00",
+    )
     result = await stat(store, _spec("/f.txt"))
     assert result.mode == 0o601
     assert result.uid == 500

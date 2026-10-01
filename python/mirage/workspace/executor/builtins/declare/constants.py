@@ -17,7 +17,8 @@ import re
 EXPORT_USAGE = "export: usage: export [-fn] [name[=value] ...] or export -p\n"
 
 READONLY_USAGE = (
-    "readonly: usage: readonly [-aAf] [name[=value] ...] or readonly -p\n")
+    "readonly: usage: readonly [-aAf] [name[=value] ...] or readonly -p\n"
+)
 
 EXPORT_FLAGS = frozenset("fnp")
 

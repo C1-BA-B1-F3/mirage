@@ -15,9 +15,14 @@
 import pytest
 
 from mirage.context import reset_current_session, set_current_session
-from mirage.ops.namespace_view import (child_mount_names, merge_readdir,
-                                       namespace_listing, namespace_names,
-                                       namespace_stat, visible_child_segments)
+from mirage.ops.namespace_view import (
+    child_mount_names,
+    merge_readdir,
+    namespace_listing,
+    namespace_names,
+    namespace_stat,
+    visible_child_segments,
+)
 from mirage.types import FileType, HiddenPaths
 from mirage.workspace.session import SessionState
 
@@ -42,9 +47,10 @@ def scoped_session():
     role narrows their modes and never decides whether they exist, so
     only a hide keeps a name out of a listing.
     """
-    session = SessionState(session_id="agent",
-                           hidden_paths=HiddenPaths(paths=("/other",
-                                                           "/top/secret")))
+    session = SessionState(
+        session_id="agent",
+        hidden_paths=HiddenPaths(paths=("/other", "/top/secret")),
+    )
     token = set_current_session(session)
     yield session
     reset_current_session(token)
@@ -93,8 +99,9 @@ def test_structure_listing_answers_only_when_something_is_below():
     assert namespace_listing(PREFIXES, None, "/base/ghost") is None
     assert namespace_listing(PREFIXES, None, "/base") == ["/base/inner"]
     links = _Links({"/base/ghost/lnk": "/base"})
-    assert namespace_listing(PREFIXES, links,
-                             "/base/ghost") == ["/base/ghost/lnk"]
+    assert namespace_listing(PREFIXES, links, "/base/ghost") == [
+        "/base/ghost/lnk"
+    ]
 
 
 def test_link_ancestors_synthesize_like_mount_prefixes():
@@ -136,7 +143,8 @@ def test_link_names_filter_by_owning_mount(scoped_session):
     links = _Links({"/other/leak": "/tgt", "/base/inner/ok": "/tgt"})
     assert namespace_names(PREFIXES, links, "/") == ["base"]
     assert namespace_listing(PREFIXES, links, "/base/inner") == [
-        "/base/inner/deep", "/base/inner/ok"
+        "/base/inner/deep",
+        "/base/inner/ok",
     ]
 
 
@@ -145,8 +153,10 @@ def test_link_above_every_mount_stays_visible(scoped_session):
     # hidden path, so a scoped session still sees the chain (it may
     # have created the link itself at a structure-only path).
     links = _Links({"/ghost/deep/lnk": "/base/inner"})
-    assert namespace_listing(["/base/inner/"], links,
-                             "/") == ["/base", "/ghost"]
+    assert namespace_listing(["/base/inner/"], links, "/") == [
+        "/base",
+        "/ghost",
+    ]
 
 
 @pytest.fixture
@@ -157,20 +167,23 @@ def hidden_mount_session():
     and every verb applied to it answers ENOENT, so a listing must not
     hand back its name either.
     """
-    session = SessionState(session_id="blind",
-                           hidden_paths=HiddenPaths(paths=("/ghost/deep", )))
+    session = SessionState(
+        session_id="blind", hidden_paths=HiddenPaths(paths=("/ghost/deep",))
+    )
     token = set_current_session(session)
     yield session
     reset_current_session(token)
 
 
 def test_visible_child_segments_tests_the_path_not_the_segment(
-        hidden_mount_session):
+    hidden_mount_session,
+):
     assert visible_child_segments(["/data", "/ghost/deep"], "/") == ["data"]
 
 
 def test_visible_child_segments_keeps_a_segment_one_visible_path_owes(
-        hidden_mount_session):
+    hidden_mount_session,
+):
     # Any allowed path through the segment is enough, so a parent holding
     # one hidden mount and one visible mount still lists.
     got = visible_child_segments(["/ghost/deep", "/ghost/seen"], "/")
@@ -178,18 +191,22 @@ def test_visible_child_segments_keeps_a_segment_one_visible_path_owes(
 
 
 def test_child_mount_names_withholds_a_hidden_mounts_only_ancestor(
-        hidden_mount_session):
+    hidden_mount_session,
+):
     assert child_mount_names(["/data", "/ghost/deep"], "/") == ["data"]
     assert child_mount_names(["/data", "/ghost/deep"], "/ghost") == []
 
 
 def test_child_mount_names_unfiltered_without_a_session():
-    assert child_mount_names(["/data", "/ghost/deep"],
-                             "/") == ["data", "ghost"]
+    assert child_mount_names(["/data", "/ghost/deep"], "/") == [
+        "data",
+        "ghost",
+    ]
 
 
 def test_link_names_withhold_a_hidden_links_only_ancestor(
-        hidden_mount_session):
+    hidden_mount_session,
+):
     # The link half of the same predicate: `ln` may put a link below a
     # directory chain no backend serves, and hiding the link has to take
     # the synthesized ancestor with it.

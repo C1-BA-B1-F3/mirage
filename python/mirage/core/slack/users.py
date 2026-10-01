@@ -23,14 +23,16 @@ from mirage.core.slack.paginate import cursor_pages
 
 
 def _is_real_user(m: dict[str, Any]) -> bool:
-    return (not m.get("deleted") and not m.get("is_bot")
-            and m.get("id") != "USLACKBOT")
+    return (
+        not m.get("deleted")
+        and not m.get("is_bot")
+        and m.get("id") != "USLACKBOT"
+    )
 
 
 async def list_users_stream(
-        config: SlackConfig,
-        limit: int = 200,
-        session: SessionArg = None) -> AsyncIterator[list[dict[str, Any]]]:
+    config: SlackConfig, limit: int = 200, session: SessionArg = None
+) -> AsyncIterator[list[dict[str, Any]]]:
     """Page-streaming user list; yields filtered humans per page.
 
     Args:
@@ -42,17 +44,19 @@ async def list_users_stream(
         list[dict]: real users in one Slack page (bots, deleted, and
         slackbot are filtered out before yielding).
     """
-    async for page in cursor_pages(config,
-                                   "users.list",
-                                   base_params={"limit": limit},
-                                   items_key="members",
-                                   session=session):
+    async for page in cursor_pages(
+        config,
+        "users.list",
+        base_params={"limit": limit},
+        items_key="members",
+        session=session,
+    ):
         yield [m for m in page if _is_real_user(m)]
 
 
-async def list_users(config: SlackConfig,
-                     limit: int = 200,
-                     session: SessionArg = None) -> list[dict[str, Any]]:
+async def list_users(
+    config: SlackConfig, limit: int = 200, session: SessionArg = None
+) -> list[dict[str, Any]]:
     """List workspace users (eager; collects all pages).
 
     Args:
@@ -91,9 +95,9 @@ def user_json_bytes(user: dict[str, Any]) -> bytes:
     return compact_json_bytes(user)
 
 
-async def get_user_profile(config: SlackConfig,
-                           user_id: str,
-                           session: SessionArg = None) -> dict[str, Any]:
+async def get_user_profile(
+    config: SlackConfig, user_id: str, session: SessionArg = None
+) -> dict[str, Any]:
     """Get a single user's profile.
 
     Args:
@@ -104,17 +108,18 @@ async def get_user_profile(config: SlackConfig,
     Returns:
         dict: user info.
     """
-    data = await slack_get(config,
-                           "users.info",
-                           params={"user": user_id},
-                           session=session)
+    data = await slack_get(
+        config, "users.info", params={"user": user_id}, session=session
+    )
     return data.get("user", {})
 
 
-async def search_users(config: SlackConfig,
-                       query: str,
-                       limit: int = 200,
-                       session: SessionArg = None) -> list[dict[str, Any]]:
+async def search_users(
+    config: SlackConfig,
+    query: str,
+    limit: int = 200,
+    session: SessionArg = None,
+) -> list[dict[str, Any]]:
     """Search users by name, real name, or email.
 
     Args:
@@ -129,7 +134,9 @@ async def search_users(config: SlackConfig,
     all_users = await list_users(config, limit=limit, session=session)
     q = query.lower()
     return [
-        u for u in all_users
-        if q in u.get("name", "").lower() or q in u.get("real_name", "").lower(
-        ) or q in u.get("profile", {}).get("email", "").lower()
+        u
+        for u in all_users
+        if q in u.get("name", "").lower()
+        or q in u.get("real_name", "").lower()
+        or q in u.get("profile", {}).get("email", "").lower()
     ]

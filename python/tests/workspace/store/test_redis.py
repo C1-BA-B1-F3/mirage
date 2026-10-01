@@ -26,8 +26,9 @@ from mirage.workspace.store.redis import RedisWorkspaceStateStore
 
 REDIS_URL = os.environ.get("REDIS_URL")
 
-pytestmark = pytest.mark.skipif(REDIS_URL is None,
-                                reason="REDIS_URL not configured")
+pytestmark = pytest.mark.skipif(
+    REDIS_URL is None, reason="REDIS_URL not configured"
+)
 
 
 @pytest.fixture
@@ -62,10 +63,9 @@ async def test_key_layout_scoped_by_workspace(prefix, store):
 
 @pytest.mark.asyncio
 async def test_meta_visible_across_providers(prefix, store):
-    await store.set_meta("ws1", {
-        "workspace_id": "ws1",
-        "default_session_id": "default"
-    })
+    await store.set_meta(
+        "ws1", {"workspace_id": "ws1", "default_session_id": "default"}
+    )
     sibling = RedisWorkspaceStateStore(url=REDIS_URL, key_prefix=prefix)
     try:
         meta = await sibling.load_meta("ws1")
@@ -85,12 +85,12 @@ async def test_cas_set_meta_create_race_one_winner(prefix, store):
         mine = {
             "workspace_id": "ws1",
             "default_session_id": "a",
-            "generation": 1
+            "generation": 1,
         }
         theirs = {
             "workspace_id": "ws1",
             "default_session_id": "b",
-            "generation": 1
+            "generation": 1,
         }
         assert await store.cas_set_meta("ws1", mine, 0) is True
         assert await sibling.cas_set_meta("ws1", theirs, 0) is False
@@ -114,12 +114,14 @@ async def test_cas_set_meta_stale_generation_conflicts(store):
 @pytest.mark.asyncio
 async def test_replace_meta_serializes_over_the_wire(store):
     await store.set_meta(
-        "ws1", {
+        "ws1",
+        {
             "workspace_id": "ws1",
             "default_session_id": "old",
             "created_at": 1.0,
             "generation": 4,
-        })
+        },
+    )
     written = await store.replace_meta("ws1", {"default_session_id": "new"})
     assert written["generation"] == 5
     assert written["created_at"] == 1.0
@@ -133,10 +135,12 @@ async def test_workspace_discovery_and_session_sharing(prefix):
     with only the store config + workspace id finds its default
     session and reads its session table."""
     store_a = RedisWorkspaceStateStore(url=REDIS_URL, key_prefix=prefix)
-    ws = Workspace({"/data": RAMVFS()},
-                   mode=MountMode.EXEC,
-                   workspace_id="agent-ws",
-                   store=store_a)
+    ws = Workspace(
+        {"/data": RAMVFS()},
+        mode=MountMode.EXEC,
+        workspace_id="agent-ws",
+        store=store_a,
+    )
     store_b = RedisWorkspaceStateStore(url=REDIS_URL, key_prefix=prefix)
     try:
         ws.create_session("narrow", mounts={"/data": "read"})

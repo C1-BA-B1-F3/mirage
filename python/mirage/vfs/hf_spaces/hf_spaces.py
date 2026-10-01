@@ -19,7 +19,6 @@ from mirage.vfs.hf_spaces.prompt import PROMPT
 
 
 class HfSpacesVFS(HfHubVFS[HfSpacesAccessor]):
-
     ACCESSOR = HfSpacesAccessor
     name: str = VFSName.HF_SPACES
     prompt: str = PROMPT

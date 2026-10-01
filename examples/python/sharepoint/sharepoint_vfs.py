@@ -16,7 +16,8 @@ token = os.environ["MS_GRAPH_DRIVE_TOKEN"]
 async def _pick_site_and_drive(ws: Workspace) -> tuple[str, str]:
     r = await ws.shell("ls /sharepoint/")
     sites = [
-        s.strip() for s in (await r.stdout_str()).strip().splitlines()
+        s.strip()
+        for s in (await r.stdout_str()).strip().splitlines()
         if s.strip()
     ]
     if not sites:
@@ -24,7 +25,8 @@ async def _pick_site_and_drive(ws: Workspace) -> tuple[str, str]:
     site = sites[0]
     r = await ws.shell(f'ls "/sharepoint/{site}/"')
     drives = [
-        d.strip() for d in (await r.stdout_str()).strip().splitlines()
+        d.strip()
+        for d in (await r.stdout_str()).strip().splitlines()
         if d.strip()
     ]
     if not drives:
@@ -35,8 +37,9 @@ async def _pick_site_and_drive(ws: Workspace) -> tuple[str, str]:
 DIFF_EXIT1_OK = {"diff different", "comm"}
 
 
-async def run_test(ws: Workspace, name: str,
-                   cmd: str) -> tuple[str, str, bool, str, str]:
+async def run_test(
+    ws: Workspace, name: str, cmd: str
+) -> tuple[str, str, bool, str, str]:
     try:
         r = await ws.shell(cmd)
         stdout = (await r.stdout_str()) or ""
@@ -80,8 +83,10 @@ def write_report(site, drive, all_sections):
     all_results = [r for section in all_sections for r in section[1]]
     total = len(all_results)
     passed = sum(1 for *_, ok, _, _ in all_results if ok)
-    lines.append(f"**Total: {passed} passed, {total - passed} failed,"
-                 f" {total} total ({passed/total*100:.1f}%)**\n")
+    lines.append(
+        f"**Total: {passed} passed, {total - passed} failed,"
+        f" {total} total ({passed / total * 100:.1f}%)**\n"
+    )
 
     for section_name, results in all_sections:
         lines.append(f"\n## {section_name}\n")
@@ -90,9 +95,11 @@ def write_report(site, drive, all_sections):
         for i, (name, cmd, ok, stdout, stderr) in enumerate(results, 1):
             status = "✅" if ok else "❌"
             detail = escape_md(stdout) if ok else escape_md(stderr or stdout)
-            lines.append(f"| {i} | {escape_md(name)} "
-                         f"| `{escape_md(cmd)}` "
-                         f"| {status} | {detail} |")
+            lines.append(
+                f"| {i} | {escape_md(name)} "
+                f"| `{escape_md(cmd)}` "
+                f"| {status} | {detail} |"
+            )
         sec_passed = sum(1 for *_, ok, _, _ in results if ok)
         lines.append(f"\n**{sec_passed}/{len(results)} passed**\n")
 
@@ -120,10 +127,15 @@ async def main():
     # --- Setup ---
     setup = [
         ("mkdir", f'mkdir "{d}"'),
-        ("write f1",
-         f'echo "hello world\nfoo bar\nhello again\napple\nbanana" > "{f1}"'),
-        ("write f2", f'echo "line1\nline2\nline3\nline4\nline5'
-         f'\nline6\nline7\nline8\nline9\nline10" > "{f2}"'),
+        (
+            "write f1",
+            f'echo "hello world\nfoo bar\nhello again\napple\nbanana" > "{f1}"',
+        ),
+        (
+            "write f2",
+            f'echo "line1\nline2\nline3\nline4\nline5'
+            f'\nline6\nline7\nline8\nline9\nline10" > "{f2}"',
+        ),
     ]
     setup_results = await run_section(ws, setup, "Setup")
 
@@ -253,22 +265,30 @@ async def main():
 
     # --- Shell features ---
     shell_cmds = [
-        ("variable", 'X=sharepoint; echo $X'),
-        ("arithmetic", 'echo $((10 * 3 + 2))'),
+        ("variable", "X=sharepoint; echo $X"),
+        ("arithmetic", "echo $((10 * 3 + 2))"),
         ("cmd subst", f'echo $(wc -l < "{f1}") lines'),
-        ("if file exists",
-         f'if [ -f "{f1}" ]; then echo yes; else echo no; fi'),
-        ("if file missing",
-         'if [ -f "/sharepoint/x/y/z" ]; then echo yes; else echo no; fi'),
-        ("for loop", 'for i in a b c; do echo $i; done'),
+        (
+            "if file exists",
+            f'if [ -f "{f1}" ]; then echo yes; else echo no; fi',
+        ),
+        (
+            "if file missing",
+            'if [ -f "/sharepoint/x/y/z" ]; then echo yes; else echo no; fi',
+        ),
+        ("for loop", "for i in a b c; do echo $i; done"),
         ("while read", 'echo "1\n2\n3" | while read x; do echo got_$x; done'),
-        ("function def", 'add() { echo $(($1 + $2)); }; add 3 4'),
-        ("nested for",
-         'for i in 1 2; do for j in x y; do echo $i$j; done; done'),
-        ("error suppress", 'cat /nonexistent 2>/dev/null; echo ok'),
+        ("function def", "add() { echo $(($1 + $2)); }; add 3 4"),
+        (
+            "nested for",
+            "for i in 1 2; do for j in x y; do echo $i$j; done; done",
+        ),
+        ("error suppress", "cat /nonexistent 2>/dev/null; echo ok"),
         ("string ops", 'S="hello world"; echo ${#S}'),
-        ("multiline",
-         f'cat "{f1}" | while read line; do echo ">>$line"; done'),
+        (
+            "multiline",
+            f'cat "{f1}" | while read line; do echo ">>$line"; done',
+        ),
     ]
     shell_results = await run_section(ws, shell_cmds, "Shell Features")
 
@@ -303,7 +323,7 @@ async def main():
     all_results = [r for section in all_sections for r in section[1]]
     total = len(all_results)
     passed = sum(1 for *_, ok, _, _ in all_results if ok)
-    print(f"\n✓ {passed}/{total} tests passed ({passed/total*100:.1f}%)")
+    print(f"\n✓ {passed}/{total} tests passed ({passed / total * 100:.1f}%)")
 
 
 asyncio.run(main())

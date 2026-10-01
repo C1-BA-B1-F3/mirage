@@ -18,7 +18,10 @@ class TimeRangeConfig(BaseModel):
 
     @model_validator(mode="after")
     def ordered_times(self) -> Self:
-        if (self.start_time is not None and self.end_time is not None
-                and parse_time(self.start_time) >= parse_time(self.end_time)):
+        if (
+            self.start_time is not None
+            and self.end_time is not None
+            and parse_time(self.start_time) >= parse_time(self.end_time)
+        ):
             raise ValueError("start_time must be earlier than end_time")
         return self

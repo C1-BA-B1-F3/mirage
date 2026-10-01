@@ -23,8 +23,9 @@ def test_virtual_of_empty_relative_is_the_mount_root():
 
 
 def test_virtual_of_recovers_the_prefix_from_a_nested_root():
-    assert virtual_of(_root("/d/day", "day"), "other/b.txt") == \
-        "/d/other/b.txt"
+    assert (
+        virtual_of(_root("/d/day", "day"), "other/b.txt") == "/d/other/b.txt"
+    )
 
 
 def test_event_at_frames_both_halves_of_the_path():
@@ -36,8 +37,9 @@ def test_event_at_frames_both_halves_of_the_path():
 
 
 def test_event_at_frames_a_previous_path_for_a_move():
-    event = event_at(_root("/d", ""), "day/new.txt", FileChangeKind.MOVE,
-                     "day/old.txt")
+    event = event_at(
+        _root("/d", ""), "day/new.txt", FileChangeKind.MOVE, "day/old.txt"
+    )
     assert event.previous_path is not None
     assert event.previous_path.virtual == "/d/day/old.txt"
     assert event.previous_path.vfs_path == "day/old.txt"

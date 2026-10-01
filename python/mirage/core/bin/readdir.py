@@ -18,9 +18,9 @@ from mirage.types import PathSpec
 from mirage.utils.errors import enoent, enotdir
 
 
-async def readdir(accessor: BinAccessor,
-                  path: PathSpec,
-                  index: IndexCacheStore = NULL_INDEX) -> list[str]:
+async def readdir(
+    accessor: BinAccessor, path: PathSpec, index: IndexCacheStore = NULL_INDEX
+) -> list[str]:
     """List one file per program the session can run.
 
     Args:

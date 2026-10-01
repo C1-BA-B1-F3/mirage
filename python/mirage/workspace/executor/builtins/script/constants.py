@@ -14,8 +14,9 @@
 
 # GNU prints the refusal and the usage line together, both under the
 # builtin's own name, and exits 2 without ending the script.
-SOURCE_USAGE = ("filename argument required\n"
-                "source: usage: source filename [arguments]")
+SOURCE_USAGE = (
+    "filename argument required\nsource: usage: source filename [arguments]"
+)
 
 # Startup letters bash has that `set` does not. `c` takes the program
 # text from the next word and `s` reads it from stdin; the rest have

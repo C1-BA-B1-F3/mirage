@@ -17,12 +17,16 @@ from typing import Any
 import pytest
 
 from mirage.core.api.errors import PaginationStalledError
-from mirage.core.api.paginate import (HAS_MORE_PAGES, PageShape, cursor_items,
-                                      has_more_cursor, offset_cursor)
+from mirage.core.api.paginate import (
+    HAS_MORE_PAGES,
+    PageShape,
+    cursor_items,
+    has_more_cursor,
+    offset_cursor,
+)
 
 
 class _Pager:
-
     def __init__(self, pages: list[dict[str, Any]]) -> None:
         self.pages = list(pages)
         self.cursors: list[str | None] = []
@@ -34,23 +38,19 @@ class _Pager:
 
 @pytest.mark.asyncio
 async def test_collects_across_pages_and_threads_the_cursor():
-    pager = _Pager([
-        {
-            "results": [{
-                "n": 1
-            }, {
-                "n": 2
-            }],
-            "has_more": True,
-            "next_cursor": "c1",
-        },
-        {
-            "results": [{
-                "n": 3
-            }],
-            "has_more": False,
-        },
-    ])
+    pager = _Pager(
+        [
+            {
+                "results": [{"n": 1}, {"n": 2}],
+                "has_more": True,
+                "next_cursor": "c1",
+            },
+            {
+                "results": [{"n": 3}],
+                "has_more": False,
+            },
+        ]
+    )
     items = await cursor_items(pager.fetch)
     assert [item["n"] for item in items] == [1, 2, 3]
     assert pager.cursors == [None, "c1"]
@@ -58,26 +58,20 @@ async def test_collects_across_pages_and_threads_the_cursor():
 
 @pytest.mark.asyncio
 async def test_max_results_slices_the_last_page():
-    pager = _Pager([
-        {
-            "results": [{
-                "n": 1
-            }, {
-                "n": 2
-            }],
-            "has_more": True,
-            "next_cursor": "c1",
-        },
-        {
-            "results": [{
-                "n": 3
-            }, {
-                "n": 4
-            }],
-            "has_more": True,
-            "next_cursor": "c2",
-        },
-    ])
+    pager = _Pager(
+        [
+            {
+                "results": [{"n": 1}, {"n": 2}],
+                "has_more": True,
+                "next_cursor": "c1",
+            },
+            {
+                "results": [{"n": 3}, {"n": 4}],
+                "has_more": True,
+                "next_cursor": "c2",
+            },
+        ]
+    )
     items = await cursor_items(pager.fetch, max_results=3)
     assert [item["n"] for item in items] == [1, 2, 3]
     assert len(pager.cursors) == 2
@@ -88,13 +82,15 @@ async def test_has_more_without_a_usable_cursor_stops():
     pager = _Pager([{"results": [{"n": 1}], "has_more": True}])
     assert await cursor_items(pager.fetch) == [{"n": 1}]
 
-    pager = _Pager([{
-        "results": [{
-            "n": 1
-        }],
-        "has_more": True,
-        "next_cursor": "",
-    }])
+    pager = _Pager(
+        [
+            {
+                "results": [{"n": 1}],
+                "has_more": True,
+                "next_cursor": "",
+            }
+        ]
+    )
     assert await cursor_items(pager.fetch) == [{"n": 1}]
 
 
@@ -107,19 +103,12 @@ async def test_a_non_list_results_field_contributes_nothing():
 @pytest.mark.asyncio
 async def test_an_offset_shape_reads_its_own_items_and_cursor():
     shape = PageShape(items_key="records", next_cursor=offset_cursor)
-    pager = _Pager([
-        {
-            "records": [{
-                "n": 1
-            }],
-            "offset": "itr1/rec1"
-        },
-        {
-            "records": [{
-                "n": 2
-            }]
-        },
-    ])
+    pager = _Pager(
+        [
+            {"records": [{"n": 1}], "offset": "itr1/rec1"},
+            {"records": [{"n": 2}]},
+        ]
+    )
     items = await cursor_items(pager.fetch, shape=shape)
     assert [item["n"] for item in items] == [1, 2]
     assert pager.cursors == [None, "itr1/rec1"]
@@ -135,22 +124,12 @@ async def test_a_null_offset_ends_the_walk():
 
 @pytest.mark.asyncio
 async def test_a_repeated_cursor_fails_instead_of_looping():
-    pager = _Pager([
-        {
-            "results": [{
-                "n": 1
-            }],
-            "has_more": True,
-            "next_cursor": "c1"
-        },
-        {
-            "results": [{
-                "n": 2
-            }],
-            "has_more": True,
-            "next_cursor": "c1"
-        },
-    ])
+    pager = _Pager(
+        [
+            {"results": [{"n": 1}], "has_more": True, "next_cursor": "c1"},
+            {"results": [{"n": 2}], "has_more": True, "next_cursor": "c1"},
+        ]
+    )
     with pytest.raises(PaginationStalledError) as exc:
         await cursor_items(pager.fetch)
     assert exc.value.cursor == "c1"

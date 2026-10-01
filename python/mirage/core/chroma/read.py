@@ -25,5 +25,6 @@ async def read_stream(
 ) -> AsyncIterator[bytes]:
     entry = await file_entry(CHROMA_TREE, accessor, path, index)
     async for chunk in join_lines(
-            iter_page_chunks(accessor, entry.extra["slug"])):
+        iter_page_chunks(accessor, entry.extra["slug"])
+    ):
         yield chunk

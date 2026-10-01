@@ -19,9 +19,9 @@ from mirage.core.ssh.stat import stat
 from mirage.types import FileType, PathSpec
 
 
-async def size(accessor: SSHAccessor,
-               path: PathSpec,
-               index: IndexCacheStore = NULL_INDEX) -> int:
+async def size(
+    accessor: SSHAccessor, path: PathSpec, index: IndexCacheStore = NULL_INDEX
+) -> int:
     """Recursive byte size of everything under a path.
 
     Args:

@@ -15,10 +15,12 @@
 import pytest
 
 from mirage import MountMode, Workspace
-from tests.vfs.databricks_volume.test_databricks_volume import (FakeFiles,
-                                                                make_vfs,
-                                                                seed_directory,
-                                                                seed_file)
+from tests.vfs.databricks_volume.test_databricks_volume import (
+    FakeFiles,
+    make_vfs,
+    seed_directory,
+    seed_file,
+)
 
 ROOT = "/Volumes/main/default/agent_files/root"
 
@@ -73,14 +75,17 @@ async def test_cp_read_only_mount_rejected(read_ws, dbx_files):
     io = await read_ws.shell("cp /dbx/src.txt /dbx/dst.txt")
 
     assert io.exit_code != 0
-    assert io.stderr == (b"cp: cannot create regular file '/dbx/dst.txt': "
-                         b"Read-only file system\n")
+    assert io.stderr == (
+        b"cp: cannot create regular file '/dbx/dst.txt': "
+        b"Read-only file system\n"
+    )
     assert f"{ROOT}/dst.txt" not in dbx_files.downloads
 
 
 @pytest.mark.asyncio
 async def test_cp_onto_same_path_errors_and_preserves_file(
-        write_ws, dbx_files):
+    write_ws, dbx_files
+):
     io = await write_ws.shell("cp /dbx/src.txt /dbx/src.txt")
 
     assert io.exit_code != 0
@@ -114,7 +119,8 @@ async def test_cp_missing_source_reports_cannot_stat(write_ws, dbx_files):
 
 @pytest.mark.asyncio
 async def test_cp_recursive_into_itself_errors_and_preserves_tree(
-        write_ws, dbx_files):
+    write_ws, dbx_files
+):
     seed_directory(dbx_files, f"{ROOT}/d")
     seed_file(dbx_files, f"{ROOT}/d/a.txt", b"aaa")
 

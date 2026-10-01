@@ -26,9 +26,11 @@ grep = _email_grep.grep
 
 
 def _folder(name: str = "INBOX") -> PathSpec:
-    return PathSpec(vfs_path=mount_key(f"/email/{name}", "/email"),
-                    virtual=f"/email/{name}",
-                    directory=f"/email/{name}")
+    return PathSpec(
+        vfs_path=mount_key(f"/email/{name}", "/email"),
+        virtual=f"/email/{name}",
+        directory=f"/email/{name}",
+    )
 
 
 @pytest.mark.asyncio
@@ -39,15 +41,17 @@ async def test_grep_server_side_matches_real_lines():
         ("/email/INBOX/msg2.email.json", "bar\nbaz\n"),
     ]
     with patch(
-            "mirage.commands.builtin.email.grep.search_and_format",
-            new=AsyncMock(return_value=pairs),
+        "mirage.commands.builtin.email.grep.search_and_format",
+        new=AsyncMock(return_value=pairs),
     ):
-        stdout, io = await _grep_server_side(accessor, "INBOX", "foo", "foo",
-                                             _folder())
+        stdout, io = await _grep_server_side(
+            accessor, "INBOX", "foo", "foo", _folder()
+        )
     # Both matching lines of msg1; msg2 contains no "foo" at all.
     assert await materialize(stdout) == (
         b"/email/INBOX/msg1.email.json:foo foo\n"
-        b"/email/INBOX/msg1.email.json:foo bar\n")
+        b"/email/INBOX/msg1.email.json:foo bar\n"
+    )
     assert io.exit_code == 0
 
 
@@ -57,21 +61,26 @@ async def test_grep_count_flag_defers_to_generic():
     # IMAP search did not return simply had no row — where GNU prints
     # `path:0` for it. Only the generic scan sees every message.
     accessor = SimpleNamespace(config=SimpleNamespace(max_messages=10))
-    with patch(
+    with (
+        patch(
             "mirage.commands.builtin.email.grep.search_and_format",
             new=AsyncMock(return_value=[]),
-    ) as search, patch(
+        ) as search,
+        patch(
             "mirage.commands.builtin.email.grep.resolve_glob",
             new=AsyncMock(return_value=[]),
-    ), patch(
+        ),
+        patch(
             "mirage.commands.builtin.email.grep.generic_grep",
             new=AsyncMock(return_value=(b"", IOResult())),
-    ) as generic:
-        await grep(accessor, [_folder()], ["foo"],
-                   CommandOpts(flags={
-                       "r": True,
-                       "c": True
-                   }))
+        ) as generic,
+    ):
+        await grep(
+            accessor,
+            [_folder()],
+            ["foo"],
+            CommandOpts(flags={"r": True, "c": True}),
+        )
     search.assert_not_awaited()
     generic.assert_awaited_once()
 
@@ -81,21 +90,26 @@ async def test_grep_invert_flag_defers_to_generic():
     # -v reports the lines that do NOT match, so it needs every message —
     # the candidate list is exactly the messages that DO contain the text.
     accessor = SimpleNamespace(config=SimpleNamespace(max_messages=10))
-    with patch(
+    with (
+        patch(
             "mirage.commands.builtin.email.grep.search_and_format",
             new=AsyncMock(return_value=[]),
-    ) as search, patch(
+        ) as search,
+        patch(
             "mirage.commands.builtin.email.grep.resolve_glob",
             new=AsyncMock(return_value=[]),
-    ), patch(
+        ),
+        patch(
             "mirage.commands.builtin.email.grep.generic_grep",
             new=AsyncMock(return_value=(b"", IOResult())),
-    ) as generic:
-        await grep(accessor, [_folder()], ["foo"],
-                   CommandOpts(flags={
-                       "r": True,
-                       "v": True
-                   }))
+        ) as generic,
+    ):
+        await grep(
+            accessor,
+            [_folder()],
+            ["foo"],
+            CommandOpts(flags={"r": True, "v": True}),
+        )
     search.assert_not_awaited()
     generic.assert_awaited_once()
 
@@ -105,19 +119,26 @@ async def test_grep_second_folder_operand_defers_to_generic():
     # The push-down answers for one folder, so the second operand used to be
     # dropped in silence: this line reported INBOX and never mentioned Sent.
     accessor = SimpleNamespace(config=SimpleNamespace(max_messages=10))
-    with patch(
+    with (
+        patch(
             "mirage.commands.builtin.email.grep.search_and_format",
             new=AsyncMock(return_value=[]),
-    ) as search, patch(
+        ) as search,
+        patch(
             "mirage.commands.builtin.email.grep.resolve_glob",
             new=AsyncMock(return_value=[]),
-    ), patch(
+        ),
+        patch(
             "mirage.commands.builtin.email.grep.generic_grep",
             new=AsyncMock(return_value=(b"", IOResult())),
-    ) as generic:
-        await grep(accessor,
-                   [_folder("INBOX"), _folder("Sent")], ["foo"],
-                   CommandOpts(flags={"r": True}))
+        ) as generic,
+    ):
+        await grep(
+            accessor,
+            [_folder("INBOX"), _folder("Sent")],
+            ["foo"],
+            CommandOpts(flags={"r": True}),
+        )
     search.assert_not_awaited()
     generic.assert_awaited_once()
 
@@ -128,16 +149,20 @@ async def test_grep_mount_root_defers_to_generic():
     # scan rather than answering for whatever folder came first.
     accessor = SimpleNamespace(config=SimpleNamespace(max_messages=10))
     root = PathSpec(vfs_path="", virtual="/email", directory="/email")
-    with patch(
+    with (
+        patch(
             "mirage.commands.builtin.email.grep.search_and_format",
             new=AsyncMock(return_value=[]),
-    ) as search, patch(
+        ) as search,
+        patch(
             "mirage.commands.builtin.email.grep.resolve_glob",
             new=AsyncMock(return_value=[]),
-    ), patch(
+        ),
+        patch(
             "mirage.commands.builtin.email.grep.generic_grep",
             new=AsyncMock(return_value=(b"", IOResult())),
-    ) as generic:
+        ) as generic,
+    ):
         await grep(accessor, [root], ["foo"], CommandOpts(flags={"r": True}))
     search.assert_not_awaited()
     generic.assert_awaited_once()
@@ -151,21 +176,26 @@ async def test_grep_alternation_defers_to_generic():
     # no literal every match must contain, only the generic scan is
     # faithful (#1067).
     accessor = SimpleNamespace(config=SimpleNamespace(max_messages=10))
-    with patch(
+    with (
+        patch(
             "mirage.commands.builtin.email.grep.search_and_format",
             new=AsyncMock(return_value=[]),
-    ) as search, patch(
+        ) as search,
+        patch(
             "mirage.commands.builtin.email.grep.resolve_glob",
             new=AsyncMock(return_value=[]),
-    ), patch(
+        ),
+        patch(
             "mirage.commands.builtin.email.grep.generic_grep",
             new=AsyncMock(return_value=(b"", IOResult())),
-    ) as generic:
-        await grep(accessor, [_folder()], ["parser|percent"],
-                   CommandOpts(flags={
-                       "r": True,
-                       "E": True
-                   }))
+        ) as generic,
+    ):
+        await grep(
+            accessor,
+            [_folder()],
+            ["parser|percent"],
+            CommandOpts(flags={"r": True, "E": True}),
+        )
     search.assert_not_awaited()
     generic.assert_awaited_once()
 
@@ -182,13 +212,20 @@ async def test_grep_regex_narrows_on_its_required_literal():
         ("/email/INBOX/b.email.json", "Q2 Budget Review"),
     ]
     search = AsyncMock(return_value=pairs)
-    with patch("mirage.commands.builtin.email.grep.search_and_format",
-               new=search):
-        stdout, io = await grep(accessor, [_folder()], ['budget[^"<]*'],
-                                CommandOpts(flags={"r": True}))
+    with patch(
+        "mirage.commands.builtin.email.grep.search_and_format", new=search
+    ):
+        stdout, io = await grep(
+            accessor,
+            [_folder()],
+            ['budget[^"<]*'],
+            CommandOpts(flags={"r": True}),
+        )
     assert search.await_args.args[2] == "budget"
-    assert await materialize(
-        stdout) == b"/email/INBOX/a.email.json:the budget attached\n"
+    assert (
+        await materialize(stdout)
+        == b"/email/INBOX/a.email.json:the budget attached\n"
+    )
     assert io.exit_code == 0
 
 
@@ -199,16 +236,20 @@ async def test_grep_optional_group_narrows_on_the_run_it_requires():
     accessor = SimpleNamespace(config=SimpleNamespace(max_messages=10))
     pairs = [("/email/INBOX/a.email.json", "disk usage at 91 percent")]
     search = AsyncMock(return_value=pairs)
-    with patch("mirage.commands.builtin.email.grep.search_and_format",
-               new=search):
-        stdout, io = await grep(accessor, [_folder()], ["(forecast)?percent"],
-                                CommandOpts(flags={
-                                    "r": True,
-                                    "E": True
-                                }))
+    with patch(
+        "mirage.commands.builtin.email.grep.search_and_format", new=search
+    ):
+        stdout, io = await grep(
+            accessor,
+            [_folder()],
+            ["(forecast)?percent"],
+            CommandOpts(flags={"r": True, "E": True}),
+        )
     assert search.await_args.args[2] == "percent"
-    assert await materialize(
-        stdout) == b"/email/INBOX/a.email.json:disk usage at 91 percent\n"
+    assert (
+        await materialize(stdout)
+        == b"/email/INBOX/a.email.json:disk usage at 91 percent\n"
+    )
     assert io.exit_code == 0
 
 
@@ -219,12 +260,18 @@ async def test_grep_reads_a_basic_expression_before_narrowing():
     accessor = SimpleNamespace(config=SimpleNamespace(max_messages=10))
     pairs = [("/email/INBOX/a.email.json", "yesterday shipped the parser")]
     search = AsyncMock(return_value=pairs)
-    with patch("mirage.commands.builtin.email.grep.search_and_format",
-               new=search):
-        stdout, io = await grep(accessor, [_folder()],
-                                [r"the \(brand-new tokenizer or \)\?parser"],
-                                CommandOpts(flags={"r": True}))
+    with patch(
+        "mirage.commands.builtin.email.grep.search_and_format", new=search
+    ):
+        stdout, io = await grep(
+            accessor,
+            [_folder()],
+            [r"the \(brand-new tokenizer or \)\?parser"],
+            CommandOpts(flags={"r": True}),
+        )
     assert search.await_args.args[2] == "parser"
-    assert await materialize(
-        stdout) == b"/email/INBOX/a.email.json:yesterday shipped the parser\n"
+    assert (
+        await materialize(stdout)
+        == b"/email/INBOX/a.email.json:yesterday shipped the parser\n"
+    )
     assert io.exit_code == 0

@@ -46,21 +46,32 @@ async def _fake_collections(client, database, kind=None):
 
 @pytest.fixture
 def catalog():
-    with patch("mirage.core.mongodb.search.read_stream", new=_fake_stream), \
-            patch("mirage.core.mongodb.search.list_collections",
-                  new=_fake_collections), \
-            patch("mirage.core.mongodb.search.list_databases",
-                  new=AsyncMock(return_value=["app"])), \
-            patch("mirage.core.mongodb.search.build_collection_schema_json",
-                  new=AsyncMock(return_value={"fields": {"year": "int"}})), \
-            patch("mirage.core.mongodb.search.build_database_json",
-                  new=AsyncMock(return_value={"database": "app"})):
+    with (
+        patch("mirage.core.mongodb.search.read_stream", new=_fake_stream),
+        patch(
+            "mirage.core.mongodb.search.list_collections",
+            new=_fake_collections,
+        ),
+        patch(
+            "mirage.core.mongodb.search.list_databases",
+            new=AsyncMock(return_value=["app"]),
+        ),
+        patch(
+            "mirage.core.mongodb.search.build_collection_schema_json",
+            new=AsyncMock(return_value={"fields": {"year": "int"}}),
+        ),
+        patch(
+            "mirage.core.mongodb.search.build_database_json",
+            new=AsyncMock(return_value={"database": "app"}),
+        ),
+    ):
         yield
 
 
 def _accessor() -> MongoDBAccessor:
-    return MongoDBAccessor(config=MongoDBConfig(
-        uri="mongodb://localhost:27017"))
+    return MongoDBAccessor(
+        config=MongoDBConfig(uri="mongodb://localhost:27017")
+    )
 
 
 def _match(path: str) -> ScopeMatch:
@@ -69,16 +80,16 @@ def _match(path: str) -> ScopeMatch:
 
 async def _search(path: str, pattern: str, **flags) -> list[str]:
     match = _match(path)
-    return await SEARCHERS[match.kind](_accessor(), match,
-                                       SearchQuery(query=pattern,
-                                                   options={
-                                                       "grep": {
-                                                           "syntax": "basic",
-                                                           "fixed_string":
-                                                           False,
-                                                           **flags
-                                                       }
-                                                   }))
+    return await SEARCHERS[match.kind](
+        _accessor(),
+        match,
+        SearchQuery(
+            query=pattern,
+            options={
+                "grep": {"syntax": "basic", "fixed_string": False, **flags}
+            },
+        ),
+    )
 
 
 @pytest.mark.asyncio
@@ -123,9 +134,13 @@ async def test_there_is_no_result_cap():
         ("app", "books"): [f'{{"_id": {i}, "n": "x"}}' for i in range(150)]
     }
     search = "mirage.core.mongodb.search"
-    with patch.dict(DOCS, many), \
-            patch(f"{search}.read_stream", new=_fake_stream), \
-            patch(f"{search}.build_collection_schema_json",
-                  new=AsyncMock(return_value={})):
+    with (
+        patch.dict(DOCS, many),
+        patch(f"{search}.read_stream", new=_fake_stream),
+        patch(
+            f"{search}.build_collection_schema_json",
+            new=AsyncMock(return_value={}),
+        ),
+    ):
         lines = await _search("/app/collections/books", '"x"')
     assert len(lines) == 150

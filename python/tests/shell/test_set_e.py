@@ -39,8 +39,10 @@ def test_set_e_allows_if_condition(shell):
 
 
 def test_set_e_allows_while_condition(shell):
-    out = shell.mirage("set -e; X=0; while [ $X -lt 2 ]; do echo $X; "
-                       "X=$((X+1)); done; echo done")
+    out = shell.mirage(
+        "set -e; X=0; while [ $X -lt 2 ]; do echo $X; "
+        "X=$((X+1)); done; echo done"
+    )
     assert out == "0\n1\ndone\n"
 
 

@@ -23,8 +23,9 @@ from mirage.runtime.python.monty.execution import MontyExecution
 async def test_concurrent_first_use_shares_one_pool():
     execution = MontyExecution()
     try:
-        pools = await asyncio.gather(*(execution._ensure_pool()
-                                       for _ in range(3)))
+        pools = await asyncio.gather(
+            *(execution._ensure_pool() for _ in range(3))
+        )
         assert len({id(pool) for pool in pools}) == 1
     finally:
         await execution.close()

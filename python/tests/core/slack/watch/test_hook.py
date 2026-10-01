@@ -40,7 +40,8 @@ def test_a_message_updates_that_days_transcript(monkeypatch):
     assert len(events) == 1
     assert events[0].kind is FileChangeKind.UPDATE
     assert events[0].path.virtual == (
-        "/s/channels/general__C0288/2025-08-15/chat.jsonl")
+        "/s/channels/general__C0288/2025-08-15/chat.jsonl"
+    )
 
 
 def test_a_late_evening_message_lands_in_the_next_utc_day(monkeypatch):
@@ -49,35 +50,37 @@ def test_a_late_evening_message_lands_in_the_next_utc_day(monkeypatch):
     hook, _ = _hook(monkeypatch, {"id": "C0288", "name": "general"})
     events = _map(hook, "message", {"channel": "C0288", "ts": LATE})
     assert events[0].path.virtual == (
-        "/s/channels/general__C0288/2025-08-16/chat.jsonl")
+        "/s/channels/general__C0288/2025-08-16/chat.jsonl"
+    )
 
 
 def test_a_deletion_refreshes_the_day_it_happened_on(monkeypatch):
     hook, _ = _hook(monkeypatch, {"id": "C0288", "name": "general"})
     events = _map(
-        hook, "message", {
+        hook,
+        "message",
+        {
             "channel": "C0288",
             "subtype": "message_deleted",
             "ts": LATE,
             "deleted_ts": TS,
-        })
+        },
+    )
     assert events[0].path.virtual == (
-        "/s/channels/general__C0288/2025-08-15/chat.jsonl")
+        "/s/channels/general__C0288/2025-08-15/chat.jsonl"
+    )
 
 
 def test_a_dm_is_named_after_the_other_person(monkeypatch):
     hook, _ = _hook(
         monkeypatch,
-        {
-            "id": "D0777",
-            "is_im": True,
-            "user": "U0431"
-        },
+        {"id": "D0777", "is_im": True, "user": "U0431"},
         user={"name": "ada"},
     )
     events = _map(hook, "message", {"channel": "D0777", "ts": TS})
     assert events[0].path.virtual == (
-        "/s/dms/ada__D0777/2025-08-15/chat.jsonl")
+        "/s/dms/ada__D0777/2025-08-15/chat.jsonl"
+    )
 
 
 def test_a_channel_name_is_resolved_once(monkeypatch):
@@ -89,14 +92,13 @@ def test_a_channel_name_is_resolved_once(monkeypatch):
 
 def test_a_reaction_updates_the_transcript_it_annotates(monkeypatch):
     hook, _ = _hook(monkeypatch, {"id": "C0288", "name": "general"})
-    events = _map(hook, "reaction_added",
-                  {"item": {
-                      "channel": "C0288",
-                      "ts": TS
-                  }})
+    events = _map(
+        hook, "reaction_added", {"item": {"channel": "C0288", "ts": TS}}
+    )
     assert events[0].kind is FileChangeKind.UPDATE
     assert events[0].path.virtual == (
-        "/s/channels/general__C0288/2025-08-15/chat.jsonl")
+        "/s/channels/general__C0288/2025-08-15/chat.jsonl"
+    )
 
 
 def test_a_pin_updates_the_transcript(monkeypatch):
@@ -109,14 +111,15 @@ def test_a_shared_file_re_inventories_that_days_attachments(monkeypatch):
     # The rendered name comes from file_blob_name over metadata the
     # notification does not carry, so the directory is the honest answer.
     hook, _ = _hook(monkeypatch, {"id": "C0288", "name": "general"})
-    events = _map(hook, "file_shared", {
-        "file_id": "F1",
-        "channel_id": "C0288",
-        "event_ts": TS
-    })
+    events = _map(
+        hook,
+        "file_shared",
+        {"file_id": "F1", "channel_id": "C0288", "event_ts": TS},
+    )
     assert events[0].kind is FileChangeKind.UNKNOWN
     assert events[0].path.virtual == (
-        "/s/channels/general__C0288/2025-08-15/files")
+        "/s/channels/general__C0288/2025-08-15/files"
+    )
 
 
 def test_a_channel_listing_change_re_inventories_channels(monkeypatch):
@@ -132,8 +135,10 @@ def test_a_rename_drops_the_memoized_directory(monkeypatch):
     _map(hook, "message", {"channel": "C0288", "ts": TS})
     _map(hook, "channel_rename", {"channel": {"id": "C0288", "name": "eng"}})
     _map(hook, "message", {"channel": "C0288", "ts": TS})
-    assert [m
-            for m, _ in calls] == ["conversations.info", "conversations.info"]
+    assert [m for m, _ in calls] == [
+        "conversations.info",
+        "conversations.info",
+    ]
 
 
 def test_a_deleted_channel_names_the_id_as_a_string(monkeypatch):

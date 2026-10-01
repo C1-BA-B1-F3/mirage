@@ -150,23 +150,30 @@ def rename_flags_check(new_exists: bool, flags: int) -> int | None:
     return None
 
 
-def _marshal_setattr_x(self: Any, path: bytes,
-                       attr: "ctypes._Pointer[SetattrX]") -> int:
-    return self.operations.setattr_x(path.decode(self.encoding),
-                                     changes_from_setattr(attr.contents))
+def _marshal_setattr_x(
+    self: Any, path: bytes, attr: "ctypes._Pointer[SetattrX]"
+) -> int:
+    return self.operations.setattr_x(
+        path.decode(self.encoding), changes_from_setattr(attr.contents)
+    )
 
 
-def _marshal_fsetattr_x(self: Any, path: bytes,
-                        attr: "ctypes._Pointer[SetattrX]",
-                        fip: "ctypes._Pointer[ctypes.Structure]") -> int:
+def _marshal_fsetattr_x(
+    self: Any,
+    path: bytes,
+    attr: "ctypes._Pointer[SetattrX]",
+    fip: "ctypes._Pointer[ctypes.Structure]",
+) -> int:
     fh = fip.contents.fh if fip else None
-    return self.operations.fsetattr_x(path.decode(self.encoding),
-                                      changes_from_setattr(attr.contents), fh)
+    return self.operations.fsetattr_x(
+        path.decode(self.encoding), changes_from_setattr(attr.contents), fh
+    )
 
 
 def _marshal_renamex(self: Any, old: bytes, new: bytes, flags: int) -> int:
-    return self.operations.renamex(old.decode(self.encoding),
-                                   new.decode(self.encoding), flags)
+    return self.operations.renamex(
+        old.decode(self.encoding), new.decode(self.encoding), flags
+    )
 
 
 def install_macfuse_extensions(mfusepy: Any) -> None:
@@ -197,7 +204,8 @@ def install_macfuse_extensions(mfusepy: Any) -> None:
     if any(name not in names for name in _REPLACED):
         logger.warning(
             "mfusepy fuse_operations layout changed; macFUSE extensions "
-            "not installed")
+            "not installed"
+        )
         return
     base = [
         f for f in mfusepy.fuse_operations._fields_ if f[0] not in _REPLACED
@@ -215,18 +223,26 @@ def install_macfuse_extensions(mfusepy: Any) -> None:
         ("setcrtime", ctypes.c_void_p),
         ("chflags", ctypes.c_void_p),
         ("setattr_x", CFUNCTYPE(c_int, c_char_p, POINTER(SetattrX))),
-        ("fsetattr_x",
-         CFUNCTYPE(c_int, c_char_p, POINTER(SetattrX),
-                   POINTER(mfusepy.fuse_file_info))),
+        (
+            "fsetattr_x",
+            CFUNCTYPE(
+                c_int,
+                c_char_p,
+                POINTER(SetattrX),
+                POINTER(mfusepy.fuse_file_info),
+            ),
+        ),
     ]
 
     class fuse_operations_apple(ctypes.Structure):
         _fields_ = base + apple_tail
 
     if ctypes.sizeof(fuse_operations_apple) != ctypes.sizeof(
-            mfusepy.fuse_operations):
+        mfusepy.fuse_operations
+    ):
         logger.warning(
-            "macFUSE extension layout mismatch; leaving mfusepy untouched")
+            "macFUSE extension layout mismatch; leaving mfusepy untouched"
+        )
         return
     mfusepy.fuse_operations = fuse_operations_apple
     mfusepy.FUSE.setattr_x = _marshal_setattr_x

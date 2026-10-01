@@ -19,23 +19,27 @@ from mirage.core.postgres import client
 
 SAMPLE_VALUES_LIMIT = 10
 
-TIME_TYPES = frozenset({
-    "date",
-    "time without time zone",
-    "time with time zone",
-    "timestamp without time zone",
-    "timestamp with time zone",
-})
+TIME_TYPES = frozenset(
+    {
+        "date",
+        "time without time zone",
+        "time with time zone",
+        "timestamp without time zone",
+        "timestamp with time zone",
+    }
+)
 
-NUMERIC_TYPES = frozenset({
-    "bigint",
-    "double precision",
-    "integer",
-    "money",
-    "numeric",
-    "real",
-    "smallint",
-})
+NUMERIC_TYPES = frozenset(
+    {
+        "bigint",
+        "double precision",
+        "integer",
+        "money",
+        "numeric",
+        "real",
+        "smallint",
+    }
+)
 
 
 def classify_column(name: str, data_type: str, key_columns: set[str]) -> str:
@@ -59,9 +63,12 @@ def classify_column(name: str, data_type: str, key_columns: set[str]) -> str:
     return "dimensions"
 
 
-def build_column_entry(column: dict[str, Any], comment: str | None,
-                       enum: dict[str, Any] | None,
-                       stats: dict[str, Any] | None) -> dict[str, Any]:
+def build_column_entry(
+    column: dict[str, Any],
+    comment: str | None,
+    enum: dict[str, Any] | None,
+    stats: dict[str, Any] | None,
+) -> dict[str, Any]:
     """Render one column in the semantic vocabulary.
 
     Empty fields are omitted rather than emitted as null. The whole point
@@ -88,13 +95,15 @@ def build_column_entry(column: dict[str, Any], comment: str | None,
     elif stats and stats["most_common_vals"]:
         # most_common_vals is null for high-cardinality columns, so this
         # self-selects the ones where example values actually help.
-        entry["sample_values"] = (
-            stats["most_common_vals"][:SAMPLE_VALUES_LIMIT])
+        entry["sample_values"] = stats["most_common_vals"][
+            :SAMPLE_VALUES_LIMIT
+        ]
     return entry
 
 
-def build_relationships(foreign_keys: list[dict[str, Any]], schema: str,
-                        name: str) -> list[dict[str, Any]]:
+def build_relationships(
+    foreign_keys: list[dict[str, Any]], schema: str, name: str
+) -> list[dict[str, Any]]:
     """Render foreign keys as semantic relationships.
 
     Args:
@@ -105,21 +114,25 @@ def build_relationships(foreign_keys: list[dict[str, Any]], schema: str,
     relationships: list[dict[str, Any]] = []
     for fk in foreign_keys:
         ref = fk["references"]
-        relationships.append({
-            "left_table":
-            f"{schema}.{name}",
-            "right_table":
-            f"{ref['schema']}.{ref['table']}",
-            "relationship_columns": [{
-                "left_column": left,
-                "right_column": right,
-            } for left, right in zip(fk["columns"], ref["columns"])],
-        })
+        relationships.append(
+            {
+                "left_table": f"{schema}.{name}",
+                "right_table": f"{ref['schema']}.{ref['table']}",
+                "relationship_columns": [
+                    {
+                        "left_column": left,
+                        "right_column": right,
+                    }
+                    for left, right in zip(fk["columns"], ref["columns"])
+                ],
+            }
+        )
     return relationships
 
 
-async def build_entity_semantic_json(accessor: PostgresAccessor, schema: str,
-                                     name: str, kind: str) -> dict[str, Any]:
+async def build_entity_semantic_json(
+    accessor: PostgresAccessor, schema: str, name: str, kind: str
+) -> dict[str, Any]:
     """Build the derived semantic model for one entity.
 
     Uses the Snowflake semantic view field vocabulary so the artifact is
@@ -155,9 +168,13 @@ async def build_entity_semantic_json(accessor: PostgresAccessor, schema: str,
     for column in columns:
         role = classify_column(column["name"], column["type"], key_columns)
         buckets[role].append(
-            build_column_entry(column, comments.get(column["name"]),
-                               enums.get(column["name"]),
-                               stats.get(column["name"])))
+            build_column_entry(
+                column,
+                comments.get(column["name"]),
+                enums.get(column["name"]),
+                stats.get(column["name"]),
+            )
+        )
 
     doc: dict[str, Any] = {
         "name": name,

@@ -27,8 +27,9 @@ MEMBERS = ("follow", "is_link", "readlink", "link_stat_at", "symlink_targets")
 
 
 def _declared() -> tuple[str, ...]:
-    return tuple(name for name in vars(NamespaceLinks)
-                 if not name.startswith("_"))
+    return tuple(
+        name for name in vars(NamespaceLinks) if not name.startswith("_")
+    )
 
 
 def test_members_and_declaration_order():
@@ -51,7 +52,8 @@ def test_every_member_is_a_plain_read():
     # mutator cannot reach this seam without arriving as a coroutine
     # member. No member being one is the read-only property itself.
     assert not [
-        name for name in MEMBERS
+        name
+        for name in MEMBERS
         if inspect.iscoroutinefunction(getattr(NamespaceLinks, name))
     ]
 
@@ -70,7 +72,11 @@ def test_link_entry_ops_never_follow():
     # lstat semantics: the operand names the link itself, so no stat
     # surface may rewrite it through the table.
     assert set(NO_FOLLOW_OPS) == {
-        "unlink", "rename", "rmdir", "symlink", "readlink"
+        "unlink",
+        "rename",
+        "rmdir",
+        "symlink",
+        "readlink",
     }
 
 

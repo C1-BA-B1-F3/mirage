@@ -19,10 +19,9 @@ from mirage.core.ssh.stat import stat
 from mirage.types import FileType, PathSpec
 
 
-async def entries(accessor: SSHAccessor,
-                  path: PathSpec,
-                  index: IndexCacheStore = NULL_INDEX
-                  ) -> tuple[list[tuple[str, int]], int]:
+async def entries(
+    accessor: SSHAccessor, path: PathSpec, index: IndexCacheStore = NULL_INDEX
+) -> tuple[list[tuple[str, int]], int]:
     """Per-file sizes under a path plus their total.
 
     Args:

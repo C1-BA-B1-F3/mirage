@@ -22,9 +22,11 @@ from mirage.types import FileStat, FileType, PathSpec
 from mirage.utils.errors import enoent
 
 
-async def stat(accessor: SharePointAccessor,
-               path: PathSpec,
-               index: IndexCacheStore = NULL_INDEX) -> FileStat:
+async def stat(
+    accessor: SharePointAccessor,
+    path: PathSpec,
+    index: IndexCacheStore = NULL_INDEX,
+) -> FileStat:
     if not path.vfs_path:
         return FileStat(name="/", type=FileType.DIRECTORY)
     resolved = await resolve(accessor, path)
@@ -35,12 +37,15 @@ async def stat(accessor: SharePointAccessor,
     if resolved.level == "drive":
         if resolved.drive_id is None:
             raise enoent(path)
-        return FileStat(name=posixpath.basename(path.vfs_path),
-                        type=FileType.DIRECTORY)
+        return FileStat(
+            name=posixpath.basename(path.vfs_path), type=FileType.DIRECTORY
+        )
     require_item(path, resolved)
-    return await stat_item(accessor.config,
-                           drive_loc(accessor.config, resolved, path.vfs_path),
-                           path.virtual,
-                           virtual_key(path),
-                           index,
-                           session=accessor.pool)
+    return await stat_item(
+        accessor.config,
+        drive_loc(accessor.config, resolved, path.vfs_path),
+        path.virtual,
+        virtual_key(path),
+        index,
+        session=accessor.pool,
+    )

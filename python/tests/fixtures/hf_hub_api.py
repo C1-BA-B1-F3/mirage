@@ -91,8 +91,9 @@ class FakeHub:
     verbatim, and ``NO_ETAG`` omits the header.
     """
 
-    repos: dict[tuple[str, str], dict[str,
-                                      bytes]] = field(default_factory=dict)
+    repos: dict[tuple[str, str], dict[str, bytes]] = field(
+        default_factory=dict
+    )
     xet: bool = True
     listed: dict[str, bytes] = field(default_factory=dict)
     etags: dict[str, str] = field(default_factory=dict)
@@ -118,7 +119,7 @@ class FakeHub:
             row["lfs"] = {
                 "oid": lfs_oid(data),
                 "size": len(data),
-                "pointerSize": 134
+                "pointerSize": 134,
             }
             row["xetHash"] = xet_hash(data)
         return row
@@ -152,12 +153,16 @@ class FakeHub:
             self.row(p, d) for p, d in files.items() if p.startswith(under)
         ]
         if prefix and not rows:
-            return _error(404, "EntryNotFound",
-                          f"{prefix} does not exist on \"main\"")
-        dirs = sorted({
-            p.rsplit("/", 1)[0]
-            for p in files if p.startswith(under) and "/" in p[len(under):]
-        })
+            return _error(
+                404, "EntryNotFound", f'{prefix} does not exist on "main"'
+            )
+        dirs = sorted(
+            {
+                p.rsplit("/", 1)[0]
+                for p in files
+                if p.startswith(under) and "/" in p[len(under) :]
+            }
+        )
         rows = [_dir_row(d) for d in dirs] + rows
         return web.json_response(rows)
 
@@ -197,12 +202,18 @@ class FakeHub:
         # Only ever a path on this same server, built from a known segment
         # and the quoted names of a repo and file that exist.
         segment = info["seg"] if info["seg"] in SEGMENTS else "models"
-        target = "/cdn/" + "/".join(
-            quote(part, safe="")
-            for part in (segment, info["ns"],
-                         info["name"])) + "/" + quote(path)
+        target = (
+            "/cdn/"
+            + "/".join(
+                quote(part, safe="")
+                for part in (segment, info["ns"], info["name"])
+            )
+            + "/"
+            + quote(path)
+        )
         raise web.HTTPFound(
-            target, headers={"X-Linked-Etag": f'"{lfs_oid(files[path])}"'})
+            target, headers={"X-Linked-Etag": f'"{lfs_oid(files[path])}"'}
+        )
 
     def _bucket(self, request: web.Request) -> dict[str, bytes] | None:
         info = request.match_info
@@ -210,7 +221,8 @@ class FakeHub:
 
     def _heard(self, route: str, request: web.Request) -> None:
         self.auth.setdefault(route, []).append(
-            request.headers.get("Authorization", ""))
+            request.headers.get("Authorization", "")
+        )
 
     async def bucket_paths_info(self, request: web.Request) -> web.Response:
         body = await request.read()
@@ -226,13 +238,17 @@ class FakeHub:
         files = self._bucket(request)
         if files is None:
             return _error(404, "RepoNotFound", "Repository not found")
-        rows = [{
-            "type": "file",
-            "path": path,
-            "size": len(files[path]),
-            "xetHash": xet_hash(files[path]),
-            "uploadedAt": UPLOADED_AT,
-        } for path in json.loads(body).get("paths", []) if path in files]
+        rows = [
+            {
+                "type": "file",
+                "path": path,
+                "size": len(files[path]),
+                "xetHash": xet_hash(files[path]),
+                "uploadedAt": UPLOADED_AT,
+            }
+            for path in json.loads(body).get("paths", [])
+            if path in files
+        ]
         return web.json_response(rows)
 
     async def bucket_resolve(self, request: web.Request) -> web.Response:
@@ -248,12 +264,18 @@ class FakeHub:
             return _error(404, "EntryNotFound", "File not found")
         # Only ever a path on this same server, built from the quoted names
         # of a bucket and file that exist.
-        target = "/cdn/" + "/".join(
-            quote(part, safe="")
-            for part in (BUCKETS, info["ns"],
-                         info["name"])) + "/" + quote(path)
+        target = (
+            "/cdn/"
+            + "/".join(
+                quote(part, safe="")
+                for part in (BUCKETS, info["ns"], info["name"])
+            )
+            + "/"
+            + quote(path)
+        )
         raise web.HTTPFound(
-            target, headers={"X-Linked-Etag": f'"{xet_hash(files[path])}"'})
+            target, headers={"X-Linked-Etag": f'"{xet_hash(files[path])}"'}
+        )
 
     def _bucket_cdn(self, request: web.Request, data: bytes) -> web.Response:
         path = request.match_info["path"]
@@ -261,34 +283,35 @@ class FakeHub:
         headers = {} if etag == NO_ETAG else {"ETag": etag}
         span = request.headers.get("Range", "")
         if span.startswith("bytes="):
-            first, _, last = span[len("bytes="):].partition("-")
+            first, _, last = span[len("bytes=") :].partition("-")
             start = int(first)
             if start >= len(data):
                 self.statuses.append(("bucket_cdn", 416))
                 return web.Response(status=416)
             end = min(int(last) + 1 if last else len(data), len(data))
             self.statuses.append(("bucket_cdn", 206))
-            return web.Response(status=206,
-                                body=data[start:end],
-                                headers=headers)
+            return web.Response(
+                status=206, body=data[start:end], headers=headers
+            )
         self.statuses.append(("bucket_cdn", 200))
         return web.Response(body=data, headers=headers)
 
     async def cdn(self, request: web.Request) -> web.Response:
         files = self._files(request)
         if request.match_info["seg"] == BUCKETS:
-            return self._bucket_cdn(request,
-                                    (files or {})[request.match_info["path"]])
+            return self._bucket_cdn(
+                request, (files or {})[request.match_info["path"]]
+            )
         path = request.match_info["path"]
         data = (files or {})[path]
         headers = {"ETag": f'"{self.etag(path, data)}"'}
         span = request.headers.get("Range", "")
         if span.startswith("bytes="):
-            first, _, last = span[len("bytes="):].partition("-")
+            first, _, last = span[len("bytes=") :].partition("-")
             end = int(last) + 1 if last else len(data)
-            return web.Response(status=206,
-                                body=data[int(first):end],
-                                headers=headers)
+            return web.Response(
+                status=206, body=data[int(first) : end], headers=headers
+            )
         return web.Response(body=data, headers=headers)
 
 
@@ -296,9 +319,9 @@ def _error(status: int, code: str, message: str) -> web.Response:
     headers = {"X-Error-Message": message}
     if code:
         headers["X-Error-Code"] = code
-    return web.json_response({"error": message},
-                             status=status,
-                             headers=headers)
+    return web.json_response(
+        {"error": message}, status=status, headers=headers
+    )
 
 
 def _dir_row(path: str) -> dict[str, Any]:
@@ -318,12 +341,14 @@ def _app(hub: FakeHub) -> web.Application:
             request.match_info["seg"] = seg
             return await hub.resolve(request)
 
-        app.router.add_get("/" + route + "{ns}/{name}/resolve/{rev}/{path:.*}",
-                           resolve)
+        app.router.add_get(
+            "/" + route + "{ns}/{name}/resolve/{rev}/{path:.*}", resolve
+        )
     bucket = "/api/buckets/{ns}/{name}"
     app.router.add_post(bucket + "/paths-info", hub.bucket_paths_info)
-    app.router.add_get("/buckets/{ns}/{name}/resolve/{path:.*}",
-                       hub.bucket_resolve)
+    app.router.add_get(
+        "/buckets/{ns}/{name}/resolve/{path:.*}", hub.bucket_resolve
+    )
     return app
 
 

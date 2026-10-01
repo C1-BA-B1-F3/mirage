@@ -37,9 +37,9 @@ def _expand_ranges(s: str) -> str:
     result: list[str] = []
     i = 0
     while i < len(s):
-        if s.startswith("[:", i) and ":]" in s[i + 2:]:
+        if s.startswith("[:", i) and ":]" in s[i + 2 :]:
             end = s.index(":]", i + 2)
-            result.append(class_characters(s[i + 2:end]))
+            result.append(class_characters(s[i + 2 : end]))
             i = end + 2
         elif i + 2 < len(s) and s[i + 1] == "-":
             start, end = ord(s[i]), ord(s[i + 2])
@@ -60,8 +60,9 @@ async def _tr_stream(
     table: dict[int, int] | None,
 ) -> AsyncIterator[bytes]:
     prev_char = ""
-    squeeze_set = set(set2) if squeeze and set2 else set(
-        set1) if squeeze else set()
+    squeeze_set = (
+        set(set2) if squeeze and set2 else set(set1) if squeeze else set()
+    )
     async for chunk in source:
         text = chunk.decode(errors="replace")
         if delete:
@@ -102,27 +103,30 @@ async def tr(
             raise ValueError(
                 f"tr: extra operand '{quote_text(texts[1])}'\n"
                 "Only one string may be given when deleting without "
-                "squeezing repeats." + _TRY_HELP)
+                "squeezing repeats." + _TRY_HELP
+            )
         raise extra_operand_error(CommandName.TR, texts[max_operands])
     set1 = _expand_ranges(interpret_escapes(texts[0]))
     if parsed.complement:
         all_chars = "".join(chr(i) for i in range(128))
         set1 = "".join(ch for ch in all_chars if ch not in set1)
-    set2 = _expand_ranges(interpret_escapes(
-        texts[1])) if len(texts) >= 2 else ""
+    set2 = (
+        _expand_ranges(interpret_escapes(texts[1])) if len(texts) >= 2 else ""
+    )
 
     if set2 and parsed.truncate_set1:
-        set1 = set1[:len(set2)]
+        set1 = set1[: len(set2)]
     elif set2 and len(set2) < len(set1):
         set2 = set2 + set2[-1] * (len(set1) - len(set2))
 
     table: dict[int, int] | None = None
     if not parsed.delete and set2:
-        table = str.maketrans(set1, set2[:len(set1)])
+        table = str.maketrans(set1, set2[: len(set1)])
     elif not parsed.delete and not set2 and not parsed.squeeze:
         raise ValueError(
             f"tr: missing operand after '{quote_text(texts[0])}'\n"
-            "Two strings must be given when translating." + _TRY_HELP)
+            "Two strings must be given when translating." + _TRY_HELP
+        )
 
     cache: list[str] = []
     if paths:
@@ -131,12 +135,14 @@ async def tr(
     else:
         source = resolve_source(stdin)
 
-    return _tr_stream(source,
-                      set1,
-                      set2,
-                      delete=parsed.delete,
-                      squeeze=parsed.squeeze,
-                      table=table), IOResult(cache=cache)
+    return _tr_stream(
+        source,
+        set1,
+        set2,
+        delete=parsed.delete,
+        squeeze=parsed.squeeze,
+        table=table,
+    ), IOResult(cache=cache)
 
 
 __all__ = ["tr"]

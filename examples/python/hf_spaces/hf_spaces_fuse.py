@@ -28,7 +28,8 @@ config = HfSpacesConfig(
 vfs = HfSpacesVFS(config)
 
 with Workspace(
-    {"/s/": Mount(vfs, mode=MountMode.READ, backend=MountBackend.FUSE)}) as ws:
+    {"/s/": Mount(vfs, mode=MountMode.READ, backend=MountBackend.FUSE)}
+) as ws:
     mp = ws.fuse_mountpoint
     print(f"=== FUSE: mounted at {mp} ===\n")
 

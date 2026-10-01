@@ -16,5 +16,4 @@ from mirage.vfs.s3_alias import RegionEndpointConfig
 
 
 class DigitalOceanConfig(RegionEndpointConfig):
-
     ENDPOINT = "https://{region}.digitaloceanspaces.com"

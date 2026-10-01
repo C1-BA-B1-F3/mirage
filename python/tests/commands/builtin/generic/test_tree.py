@@ -11,10 +11,9 @@ def _spec(path: str) -> PathSpec:
 
 
 def _file(name: str, size: int = 0) -> FileStat:
-    return FileStat(name=name,
-                    size=size,
-                    type=FileType.FILE,
-                    content=ContentType.TEXT)
+    return FileStat(
+        name=name, size=size, type=FileType.FILE, content=ContentType.TEXT
+    )
 
 
 def _dir(name: str) -> FileStat:
@@ -39,7 +38,7 @@ def _make_backend(tree_map: dict[str, FileStat]):
             if key == p.virtual:
                 continue
             if key.startswith(prefix):
-                remainder = key[len(prefix):]
+                remainder = key[len(prefix) :]
                 if "/" not in remainder:
                     children.append(key)
         return sorted(children)
@@ -59,7 +58,11 @@ async def test_tree_flat_dir():
     output, io = await tree(_spec("/r"), readdir=readdir, stat=stat)
     lines = output.decode().splitlines()
     assert lines == [
-        "/r", "|-- a.txt", "`-- b.txt", "", "1 directory, 2 files"
+        "/r",
+        "|-- a.txt",
+        "`-- b.txt",
+        "",
+        "1 directory, 2 files",
     ]
     assert io.exit_code == 0
 
@@ -77,8 +80,12 @@ async def test_tree_nested_dir_uses_vertical_continuation():
     output, _ = await tree(_spec("/r"), readdir=readdir, stat=stat)
     lines = output.decode().splitlines()
     assert lines == [
-        "/r", "|-- d1", "|   `-- x.txt", "`-- z.txt", "",
-        "2 directories, 2 files"
+        "/r",
+        "|-- d1",
+        "|   `-- x.txt",
+        "`-- z.txt",
+        "",
+        "2 directories, 2 files",
     ]
 
 
@@ -94,7 +101,11 @@ async def test_tree_last_dir_uses_indent_continuation():
     output, _ = await tree(_spec("/r"), readdir=readdir, stat=stat)
     lines = output.decode().splitlines()
     assert lines == [
-        "/r", "`-- d1", "    `-- x.txt", "", "2 directories, 1 file"
+        "/r",
+        "`-- d1",
+        "    `-- x.txt",
+        "",
+        "2 directories, 1 file",
     ]
 
 
@@ -107,10 +118,9 @@ async def test_tree_max_depth_limits_recursion():
         "/r/d1/d2/deep.txt": _file("deep.txt"),
     }
     readdir, stat = _make_backend(tree_map)
-    output, _ = await tree(_spec("/r"),
-                           readdir=readdir,
-                           stat=stat,
-                           max_depth=1)
+    output, _ = await tree(
+        _spec("/r"), readdir=readdir, stat=stat, max_depth=1
+    )
     decoded = output.decode()
     assert "d1" in decoded
     assert "d2" not in decoded
@@ -139,10 +149,9 @@ async def test_tree_show_hidden_includes_dotfiles():
         "/r/visible.txt": _file("visible.txt"),
     }
     readdir, stat = _make_backend(tree_map)
-    output, _ = await tree(_spec("/r"),
-                           readdir=readdir,
-                           stat=stat,
-                           show_hidden=True)
+    output, _ = await tree(
+        _spec("/r"), readdir=readdir, stat=stat, show_hidden=True
+    )
     assert ".hidden" in output.decode()
 
 
@@ -154,10 +163,9 @@ async def test_tree_ignore_pattern_drops_matches():
         "/r/b.py": _file("b.py"),
     }
     readdir, stat = _make_backend(tree_map)
-    output, _ = await tree(_spec("/r"),
-                           readdir=readdir,
-                           stat=stat,
-                           ignore_pattern="*.pyc")
+    output, _ = await tree(
+        _spec("/r"), readdir=readdir, stat=stat, ignore_pattern="*.pyc"
+    )
     decoded = output.decode()
     assert "a.pyc" not in decoded
     assert "b.py" in decoded
@@ -171,10 +179,9 @@ async def test_tree_dirs_only_drops_files():
         "/r/a.txt": _file("a.txt"),
     }
     readdir, stat = _make_backend(tree_map)
-    output, _ = await tree(_spec("/r"),
-                           readdir=readdir,
-                           stat=stat,
-                           dirs_only=True)
+    output, _ = await tree(
+        _spec("/r"), readdir=readdir, stat=stat, dirs_only=True
+    )
     decoded = output.decode()
     assert "d1" in decoded
     assert "a.txt" not in decoded
@@ -191,10 +198,9 @@ async def test_tree_match_pattern_only_applies_to_files():
         "/r/top.py": _file("top.py"),
     }
     readdir, stat = _make_backend(tree_map)
-    output, _ = await tree(_spec("/r"),
-                           readdir=readdir,
-                           stat=stat,
-                           match_pattern="*.py")
+    output, _ = await tree(
+        _spec("/r"), readdir=readdir, stat=stat, match_pattern="*.py"
+    )
     decoded = output.decode()
     assert "d1" in decoded
     assert "match.py" in decoded
@@ -208,7 +214,9 @@ async def test_tree_missing_path_marks_error_and_exits_2():
     output, io = await tree(_spec("/nowhere"), readdir=readdir, stat=stat)
     lines = output.decode().splitlines()
     assert lines == [
-        "/nowhere  [error opening dir]", "", "0 directories, 0 files"
+        "/nowhere  [error opening dir]",
+        "",
+        "0 directories, 0 files",
     ]
     assert io.exit_code == 2
     # GNU signals this with the inline marker and exit 2 and writes nothing to
@@ -240,7 +248,9 @@ async def test_tree_not_a_directory_matches_the_missing_path_shape():
     output, io = await tree(_spec("/a.txt/x"), readdir=readdir, stat=stat)
     lines = output.decode().splitlines()
     assert lines == [
-        "/a.txt/x  [error opening dir]", "", "0 directories, 0 files"
+        "/a.txt/x  [error opening dir]",
+        "",
+        "0 directories, 0 files",
     ]
     assert io.exit_code == 2
 
@@ -278,8 +288,9 @@ async def test_tree_file_operand_is_counted_and_exits_zero():
         stat_path=_stat_path(_file("a.txt", 6)),
     )
     assert io.exit_code == 0
-    assert output == (b"/r/a.txt  [error opening dir]\n\n"
-                      b"0 directories, 1 file\n")
+    assert output == (
+        b"/r/a.txt  [error opening dir]\n\n0 directories, 1 file\n"
+    )
 
 
 @pytest.mark.asyncio
@@ -314,8 +325,9 @@ async def test_tree_unstattable_operand_still_walks():
         stat_path=_stat_path(None),
     )
     assert io.exit_code == 2
-    assert output == (b"/r/nope  [error opening dir]\n\n"
-                      b"0 directories, 0 files\n")
+    assert output == (
+        b"/r/nope  [error opening dir]\n\n0 directories, 0 files\n"
+    )
 
 
 def _dispatch_pair(parent: dict, child: dict, root: str):
@@ -344,7 +356,8 @@ def _dispatch_pair(parent: dict, child: dict, root: str):
 
 def _under(roots: list[str], path: str) -> list[str]:
     return [
-        r for r in roots
+        r
+        for r in roots
         if r.startswith(path.rstrip("/") + "/") and r != path.rstrip("/")
     ]
 
@@ -352,11 +365,14 @@ def _under(roots: list[str], path: str) -> list[str]:
 def _mounts_view(roots: list[str], hidden: tuple[str, ...] = ()):
     """A MountView double: `roots` are the mounts, `hidden` the ones
     this session may not be told about."""
-    return SimpleNamespace(descendants=lambda path: _under(roots, path),
-                           visible_descendants=lambda path:
-                           [r for r in _under(roots, path) if r not in hidden],
-                           is_root=lambda path: path.rstrip("/") in roots,
-                           root_of=lambda path: "/")
+    return SimpleNamespace(
+        descendants=lambda path: _under(roots, path),
+        visible_descendants=lambda path: [
+            r for r in _under(roots, path) if r not in hidden
+        ],
+        is_root=lambda path: path.rstrip("/") in roots,
+        root_of=lambda path: "/",
+    )
 
 
 @pytest.mark.asyncio
@@ -376,7 +392,7 @@ async def test_tree_never_draws_a_mount_the_session_cannot_see():
         _spec("/base"),
         readdir=readdir,
         stat=stat,
-        mounts=_mounts_view(["/base/inner"], hidden=("/base/inner", )),
+        mounts=_mounts_view(["/base/inner"], hidden=("/base/inner",)),
         readdir_path=readdir_path,
         stat_path=stat_path,
     )
@@ -464,29 +480,22 @@ async def test_tree_draws_a_mount_point_the_parent_never_listed():
 async def test_tree_marks_a_subdirectory_it_may_not_open_and_exits_2():
     # GNU's inline marker on the directory's own line, nothing on
     # stderr, the directory still counted, exit 2.
-    readdir, stat = _make_backend({
-        "/r":
-        FileStat(name="r", type=FileType.DIRECTORY),
-        "/r/a":
-        FileStat(name="a",
-                 type=FileType.FILE,
-                 content=ContentType.TEXT,
-                 size=1),
-        "/r/locked":
-        FileStat(name="locked", type=FileType.DIRECTORY),
-        "/r/locked/y":
-        FileStat(name="y",
-                 type=FileType.FILE,
-                 content=ContentType.TEXT,
-                 size=1),
-        "/r/sub":
-        FileStat(name="sub", type=FileType.DIRECTORY),
-        "/r/sub/y":
-        FileStat(name="y",
-                 type=FileType.FILE,
-                 content=ContentType.TEXT,
-                 size=1),
-    })
+    readdir, stat = _make_backend(
+        {
+            "/r": FileStat(name="r", type=FileType.DIRECTORY),
+            "/r/a": FileStat(
+                name="a", type=FileType.FILE, content=ContentType.TEXT, size=1
+            ),
+            "/r/locked": FileStat(name="locked", type=FileType.DIRECTORY),
+            "/r/locked/y": FileStat(
+                name="y", type=FileType.FILE, content=ContentType.TEXT, size=1
+            ),
+            "/r/sub": FileStat(name="sub", type=FileType.DIRECTORY),
+            "/r/sub/y": FileStat(
+                name="y", type=FileType.FILE, content=ContentType.TEXT, size=1
+            ),
+        }
+    )
 
     async def guarded(p: PathSpec, index=None) -> list[str]:
         if p.virtual == "/r/locked":
@@ -496,10 +505,12 @@ async def test_tree_marks_a_subdirectory_it_may_not_open_and_exits_2():
     output, io = await tree(_spec("/r"), readdir=guarded, stat=stat)
     assert io.exit_code == 2
     assert io.stderr in (None, b"")
-    assert output == (b"/r\n"
-                      b"|-- a\n"
-                      b"|-- locked  [error opening dir]\n"
-                      b"`-- sub\n"
-                      b"    `-- y\n"
-                      b"\n"
-                      b"3 directories, 2 files\n")
+    assert output == (
+        b"/r\n"
+        b"|-- a\n"
+        b"|-- locked  [error opening dir]\n"
+        b"`-- sub\n"
+        b"    `-- y\n"
+        b"\n"
+        b"3 directories, 2 files\n"
+    )

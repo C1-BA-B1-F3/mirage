@@ -148,8 +148,9 @@ def test_bc_a_non_integer_exponent_is_truncated_with_a_warning():
     # operand's scale, not its fraction.
     stdout, io = _out("bc", b"2^1.5\n")
     assert stdout == b"2\n"
-    assert _stderr_text(io) == ("Runtime warning (func=(main), adr=3): "
-                                "non-zero scale in exponent\n")
+    assert _stderr_text(io) == (
+        "Runtime warning (func=(main), adr=3): non-zero scale in exponent\n"
+    )
     stdout, io = _out("bc", b"2^1.0\n")
     assert stdout == b"2\n"
     assert "non-zero scale in exponent" in _stderr_text(io)
@@ -167,7 +168,8 @@ def test_bc_zero_to_a_negative_power_is_a_lowercase_divide_by_zero():
     stdout, io = _out("bc", b"0^-1\n")
     assert stdout == b""
     assert _stderr_text(io) == (
-        "Runtime error (func=(main), adr=3): divide by zero\n")
+        "Runtime error (func=(main), adr=3): divide by zero\n"
+    )
     assert io.exit_code == 0
     # The exponent warning is reported before the refusal.
     stdout, io = _out("bc", b"0^-1.5\n")
@@ -175,7 +177,8 @@ def test_bc_zero_to_a_negative_power_is_a_lowercase_divide_by_zero():
     assert _stderr_text(io) == (
         "Runtime warning (func=(main), adr=3): "
         "non-zero scale in exponent\n"
-        "Runtime error (func=(main), adr=3): divide by zero\n")
+        "Runtime error (func=(main), adr=3): divide by zero\n"
+    )
 
 
 def test_bc_sqrt_needs_no_math_library():
@@ -228,8 +231,10 @@ def test_bc_sqrt_of_a_negative_number_is_refused():
     # the file-wide `RUNTIME_ERROR_ADDR` divergence (GNU says 4 here).
     stdout, io = _out("bc", b"sqrt(-1)\n")
     assert stdout == b""
-    assert _stderr_text(io) == ("Runtime error (func=(main), adr=3): "
-                                "Square root of a negative number\n")
+    assert _stderr_text(io) == (
+        "Runtime error (func=(main), adr=3): "
+        "Square root of a negative number\n"
+    )
     assert io.exit_code == 0
     # Inside a larger expression it abandons the rest of its line.
     assert _out("bc", b"1+sqrt(-1)\n")[0] == b""
@@ -245,18 +250,21 @@ def test_bc_sqrt_of_a_negative_number_is_refused():
 # value is one float64 carries exactly, so none of it is confounded by
 # the precision gap.
 
-POWER_300 = (b"2037035976334486086268445688409378161051468393665936250636"
-             b"1404493543"
-             b"\\\n"
-             b"81299763336706183397376\n")
+POWER_300 = (
+    b"2037035976334486086268445688409378161051468393665936250636"
+    b"1404493543"
+    b"\\\n"
+    b"81299763336706183397376\n"
+)
 UNFOLDED_300 = POWER_300.replace(b"\\\n", b"")
 
 
 def test_bc_a_long_value_folds_at_sixty_eight_characters():
     # 2^300 is 91 digits: 68 of them, a backslash, then the other 23.
     assert _out("bc", b"2^300\n")[0] == POWER_300
-    assert _out("bc", b"obase=2; 2^100\n")[0] == (b"1" + b"0" * 67 + b"\\\n" +
-                                                  b"0" * 33 + b"\n")
+    assert _out("bc", b"obase=2; 2^100\n")[0] == (
+        b"1" + b"0" * 67 + b"\\\n" + b"0" * 33 + b"\n"
+    )
 
 
 def test_bc_the_fold_boundary_is_sixty_eight_characters_of_value():
@@ -265,10 +273,12 @@ def test_bc_the_fold_boundary_is_sixty_eight_characters_of_value():
     # powers of two, so their expansions are exact at these scales.
     assert _out("bc", b"scale=67; 2^-67\n")[0] == (
         b".00000000000000000000677626357803440271254658000543713569641113"
-        b"28125\n")
+        b"28125\n"
+    )
     assert _out("bc", b"scale=68; 2^-68\n")[0] == (
         b".00000000000000000000338813178901720135627329000271856784820556"
-        b"64062\\\n5\n")
+        b"64062\\\n5\n"
+    )
 
 
 def test_bc_the_fold_column_is_counted_per_value():
@@ -282,8 +292,10 @@ def test_bc_a_long_diagnostic_does_not_fold():
     # the output stream's.
     stdout, io = _out("bc", b"f" * 60 + b"(1)\n")
     assert stdout == b""
-    assert _stderr_text(io) == ("Runtime error (func=(main), adr=3): "
-                                "Function " + "f" * 60 + " not defined.\n")
+    assert _stderr_text(io) == (
+        "Runtime error (func=(main), adr=3): "
+        "Function " + "f" * 60 + " not defined.\n"
+    )
 
 
 def test_bc_line_length_sets_the_fold_width():
@@ -291,9 +303,11 @@ def test_bc_line_length_sets_the_fold_width():
     # puts `width - 2` characters on a line. Measured against GNU.
     assert _out("BC_LINE_LENGTH=0 bc", b"2^300\n")[0] == UNFOLDED_300
     digits = UNFOLDED_300.rstrip(b"\n")
-    chunks = [digits[at:at + 8] for at in range(0, len(digits), 8)]
-    assert _out("BC_LINE_LENGTH=10 bc",
-                b"2^300\n")[0] == b"\\\n".join(chunks) + b"\n"
+    chunks = [digits[at : at + 8] for at in range(0, len(digits), 8)]
+    assert (
+        _out("BC_LINE_LENGTH=10 bc", b"2^300\n")[0]
+        == b"\\\n".join(chunks) + b"\n"
+    )
 
 
 def test_bc_line_length_is_read_the_way_c_reads_it():
@@ -302,13 +316,20 @@ def test_bc_line_length_is_read_the_way_c_reads_it():
     # width below 3 that is not 0 falls back to the default, and the
     # value is truncated to a C `int`, which is why 4294967296 reads as
     # 0 and 2147483648 does not. Every row measured against GNU.
-    for value, want in (("abc", UNFOLDED_300), ("0x46", UNFOLDED_300),
-                        ("", UNFOLDED_300), ("4294967296", UNFOLDED_300),
-                        ("70", POWER_300), ("+70", POWER_300),
-                        ("-1", POWER_300), ("1e3", POWER_300),
-                        ("2", POWER_300), ("2147483648", POWER_300),
-                        ("9223372036854775808",
-                         POWER_300), ("99999999999999999999", POWER_300)):
+    for value, want in (
+        ("abc", UNFOLDED_300),
+        ("0x46", UNFOLDED_300),
+        ("", UNFOLDED_300),
+        ("4294967296", UNFOLDED_300),
+        ("70", POWER_300),
+        ("+70", POWER_300),
+        ("-1", POWER_300),
+        ("1e3", POWER_300),
+        ("2", POWER_300),
+        ("2147483648", POWER_300),
+        ("9223372036854775808", POWER_300),
+        ("99999999999999999999", POWER_300),
+    ):
         line = f"BC_LINE_LENGTH={value} bc"
         assert _out(line, b"2^300\n")[0] == want, value
 
@@ -319,7 +340,8 @@ def test_bc_divide_by_zero_is_non_fatal_and_keeps_evaluating():
     stdout, io = _out("bc", b"1/0\n2+2\n")
     assert stdout == b"4\n"
     assert _stderr_text(io) == (
-        "Runtime error (func=(main), adr=3): Divide by zero\n")
+        "Runtime error (func=(main), adr=3): Divide by zero\n"
+    )
     assert io.exit_code == 0
 
 
@@ -327,7 +349,8 @@ def test_bc_divide_by_zero_alone_prints_nothing_on_stdout():
     stdout, io = _out("bc", b"1/0\n")
     assert stdout == b""
     assert _stderr_text(io) == (
-        "Runtime error (func=(main), adr=3): Divide by zero\n")
+        "Runtime error (func=(main), adr=3): Divide by zero\n"
+    )
     assert io.exit_code == 0
 
 
@@ -335,7 +358,8 @@ def test_bc_modulo_by_zero_has_its_own_wording():
     stdout, io = _out("bc", b"1%0\n")
     assert stdout == b""
     assert _stderr_text(io) == (
-        "Runtime error (func=(main), adr=3): Modulo by zero\n")
+        "Runtime error (func=(main), adr=3): Modulo by zero\n"
+    )
     assert io.exit_code == 0
 
 
@@ -448,7 +472,8 @@ def test_bc_math_function_without_the_library_is_undefined():
     stdout, io = _out("bc", b"s(0)\n")
     assert stdout == b""
     assert _stderr_text(io) == (
-        "Runtime error (func=(main), adr=3): Function s not defined.\n")
+        "Runtime error (func=(main), adr=3): Function s not defined.\n"
+    )
     assert io.exit_code == 0
 
 
@@ -516,9 +541,9 @@ def test_bc_the_hundredth_digit_is_truncated_not_rounded():
     # line at after 68 characters of value.
     head = "3944304526105059027058642826413931148"
     tail = "366032175545115023851394653320312"
-    assert _out(
-        "bc", b"scale=100; 2^-101\n")[0] == (b"." + b"0" * 30 + head.encode() +
-                                             b"\\\n" + tail.encode() + b"\n")
+    assert _out("bc", b"scale=100; 2^-101\n")[0] == (
+        b"." + b"0" * 30 + head.encode() + b"\\\n" + tail.encode() + b"\n"
+    )
 
 
 def test_bc_power_and_function_results_truncate_too():
@@ -644,8 +669,18 @@ def test_bc_a_leading_underscore_is_an_illegal_character():
 
 
 def test_bc_reserved_words_are_not_names():
-    for word in (b"length", b"if", b"print", b"sqrt", b"define", b"while",
-                 b"for", b"auto", b"read", b"halt"):
+    for word in (
+        b"length",
+        b"if",
+        b"print",
+        b"sqrt",
+        b"define",
+        b"while",
+        b"for",
+        b"auto",
+        b"read",
+        b"halt",
+    ):
         stdout, io = _out("bc", word + b"=1\n")
         assert stdout == b"", word
         assert _stderr_text(io) == "(standard_in) 1: syntax error\n", word
@@ -663,7 +698,8 @@ def test_bc_an_unknown_function_is_a_runtime_error():
     stdout, io = _out("bc", b"foo(1)\n")
     assert stdout == b""
     assert _stderr_text(io) == (
-        "Runtime error (func=(main), adr=3): Function foo not defined.\n")
+        "Runtime error (func=(main), adr=3): Function foo not defined.\n"
+    )
     assert io.exit_code == 0
 
 
@@ -710,12 +746,14 @@ def test_bc_a_clamped_register_warns_and_still_exits_zero():
     stdout, io = _out("bc", b"ibase=1; ibase\n")
     assert stdout == b"2\n"
     assert _stderr_text(io) == (
-        "Runtime warning (func=(main), adr=3): ibase too small, set to 2\n")
+        "Runtime warning (func=(main), adr=3): ibase too small, set to 2\n"
+    )
     assert io.exit_code == 0
     stdout, io = _out("bc", b"obase=0; 5\n")
     assert stdout == b"101\n"
     assert _stderr_text(io) == (
-        "Runtime warning (func=(main), adr=3): obase too small, set to 2\n")
+        "Runtime warning (func=(main), adr=3): obase too small, set to 2\n"
+    )
     assert io.exit_code == 0
     # GNU reports adr=4 for this one; the address is an internal bytecode
     # offset and is documented as not worth matching on, so both hosts
@@ -723,7 +761,8 @@ def test_bc_a_clamped_register_warns_and_still_exits_zero():
     stdout, io = _out("bc", b"scale=-1; scale\n")
     assert stdout == b"0\n"
     assert _stderr_text(io) == (
-        "Runtime warning (func=(main), adr=3): negative scale, set to 0\n")
+        "Runtime warning (func=(main), adr=3): negative scale, set to 0\n"
+    )
     assert io.exit_code == 0
 
 
@@ -737,10 +776,12 @@ def test_bc_an_incomplete_construct_is_charged_to_the_next_line():
     assert stdout == b""
     assert _stderr_text(io) == "(standard_in) 2: syntax error\n"
     assert io.exit_code == 0
-    assert _stderr_text(_out(
-        "bc", b"1+\n")[1]) == ("(standard_in) 2: syntax error\n")
-    assert _stderr_text(_out(
-        "bc", b"scale=\n")[1]) == ("(standard_in) 2: syntax error\n")
+    assert _stderr_text(_out("bc", b"1+\n")[1]) == (
+        "(standard_in) 2: syntax error\n"
+    )
+    assert _stderr_text(_out("bc", b"scale=\n")[1]) == (
+        "(standard_in) 2: syntax error\n"
+    )
 
 
 def test_bc_an_unexpected_token_is_charged_to_its_own_line():
@@ -776,8 +817,9 @@ def test_bc_line_numbers_are_absolute_within_the_invocation():
     assert io.exit_code == 0
     stdout, io = _out("bc", b"1 2\n3 4\n9+9\n")
     assert stdout == b"18\n"
-    assert _stderr_text(io) == ("(standard_in) 1: syntax error\n"
-                                "(standard_in) 2: syntax error\n")
+    assert _stderr_text(io) == (
+        "(standard_in) 1: syntax error\n(standard_in) 2: syntax error\n"
+    )
     assert io.exit_code == 0
 
 
@@ -805,12 +847,14 @@ def test_bc_a_comment_line_still_advances_the_line_counter():
     # second illegal character to line 3, not line 2.
     stdout, io = _out("bc", b"@\n#nope\n$\n")
     assert stdout == b""
-    assert _stderr_text(io) == ("(standard_in) 1: illegal character: @\n"
-                                "(standard_in) 3: illegal character: $\n")
+    assert _stderr_text(io) == (
+        "(standard_in) 1: illegal character: @\n"
+        "(standard_in) 3: illegal character: $\n"
+    )
     assert io.exit_code == 0
-    assert _stderr_text(
-        _out("bc",
-             b"1+1 #c\n@\n")[1]) == ("(standard_in) 2: illegal character: @\n")
+    assert _stderr_text(_out("bc", b"1+1 #c\n@\n")[1]) == (
+        "(standard_in) 2: illegal character: @\n"
+    )
 
 
 def test_bc_block_comments_separate_tokens_rather_than_vanishing():
@@ -833,9 +877,9 @@ def test_bc_a_block_comment_spanning_lines_advances_the_counter():
     assert io.exit_code == 0
     # The illegal character sits on line 2 although its statement starts
     # on line 1, which is why the diagnostic maps an offset to a line.
-    assert _stderr_text(_out(
-        "bc",
-        b"1+1/*\n*/ @\n")[1]) == ("(standard_in) 2: illegal character: @\n")
+    assert _stderr_text(_out("bc", b"1+1/*\n*/ @\n")[1]) == (
+        "(standard_in) 2: illegal character: @\n"
+    )
 
 
 def test_bc_an_unterminated_block_comment_has_its_own_wording():
@@ -964,8 +1008,9 @@ def test_bc_a_builtin_needs_its_argument_and_only_one():
     # `scale` stays a readable register when no `(` follows it.
     assert _out("bc", b"scale\n")[0] == b"0\n"
     assert _out("bc", b"length=2\n")[0] == b""
-    assert _stderr_text(_out(
-        "bc", b"length=2\n")[1]) == ("(standard_in) 1: syntax error\n")
+    assert _stderr_text(_out("bc", b"length=2\n")[1]) == (
+        "(standard_in) 1: syntax error\n"
+    )
 
 
 def test_bc_a_builtin_without_its_paren_is_an_incomplete_construct():
@@ -981,8 +1026,15 @@ def test_bc_a_builtin_without_its_paren_is_an_incomplete_construct():
 def test_bc_double_signs_are_one_token_each():
     # GNU's lexer reads `++` and `--` as single tokens, so `1++2` is a
     # syntax error rather than `1 + (+2)`.
-    for text in (b"1++2\n", b"1--2\n", b"1+++2\n", b"1---2\n", b"1++\n",
-                 b"5++2\n", b"5++\n"):
+    for text in (
+        b"1++2\n",
+        b"1--2\n",
+        b"1+++2\n",
+        b"1---2\n",
+        b"1++\n",
+        b"5++2\n",
+        b"5++\n",
+    ):
         stdout, io = _out("bc", text)
         assert stdout == b"", text
         assert _stderr_text(io) == "(standard_in) 1: syntax error\n", text
@@ -990,8 +1042,9 @@ def test_bc_double_signs_are_one_token_each():
     # A separated sign is not the doubled token, and `-` is the only
     # unary sign there is, so `1- -2` works where `1+ +2` does not.
     assert _out("bc", b"1- -2\n")[0] == b"3\n"
-    assert _stderr_text(_out(
-        "bc", b"1+ +2\n")[1]) == ("(standard_in) 1: syntax error\n")
+    assert _stderr_text(_out("bc", b"1+ +2\n")[1]) == (
+        "(standard_in) 1: syntax error\n"
+    )
     # A postfix step still binds to its name, so these keep working.
     assert _out("bc", b"x=5; x++ + 1\n")[0] == b"6\n"
     assert _out("bc", b"x=5;x+++1;x\n")[0] == b"6\n6\n"
@@ -1011,10 +1064,12 @@ def test_bc_there_is_no_unary_plus():
 def test_bc_a_bare_sign_charges_the_two_to_different_lines():
     # `+` cannot start an expression at all, so it is charged to its own
     # line; `-` is a legal prefix, so it is charged to the next one.
-    assert _stderr_text(_out("bc",
-                             b"+\n")[1]) == ("(standard_in) 1: syntax error\n")
-    assert _stderr_text(_out("bc",
-                             b"-\n")[1]) == ("(standard_in) 2: syntax error\n")
+    assert _stderr_text(_out("bc", b"+\n")[1]) == (
+        "(standard_in) 1: syntax error\n"
+    )
+    assert _stderr_text(_out("bc", b"-\n")[1]) == (
+        "(standard_in) 2: syntax error\n"
+    )
 
 
 def test_bc_prefix_and_postfix_steps_on_an_undefined_name():
@@ -1031,8 +1086,12 @@ def test_bc_prefix_and_postfix_steps_on_an_undefined_name():
 
 
 def test_bc_a_parse_error_discards_the_whole_line():
-    for text in (b"1 2;5+5\n", b"5+5;1 2\n", b"x=5;1 2;x\n",
-                 b"scale=2;7/2;1 2\n"):
+    for text in (
+        b"1 2;5+5\n",
+        b"5+5;1 2\n",
+        b"x=5;1 2;x\n",
+        b"scale=2;7/2;1 2\n",
+    ):
         stdout, io = _out("bc", text)
         assert stdout == b"", text
         assert _stderr_text(io) == "(standard_in) 1: syntax error\n", text
@@ -1051,13 +1110,15 @@ def test_bc_each_bad_statement_on_a_line_still_reports():
     # one line are two syntax errors, both charged to that line.
     stdout, io = _out("bc", b"1 2;3 4\n")
     assert stdout == b""
-    assert _stderr_text(io) == ("(standard_in) 1: syntax error\n"
-                                "(standard_in) 1: syntax error\n")
+    assert _stderr_text(io) == (
+        "(standard_in) 1: syntax error\n(standard_in) 1: syntax error\n"
+    )
     assert io.exit_code == 0
-    assert _stderr_text(_out(
-        "bc", b"1 2;3 4;5 6\n")[1]) == ("(standard_in) 1: syntax error\n"
-                                        "(standard_in) 1: syntax error\n"
-                                        "(standard_in) 1: syntax error\n")
+    assert _stderr_text(_out("bc", b"1 2;3 4;5 6\n")[1]) == (
+        "(standard_in) 1: syntax error\n"
+        "(standard_in) 1: syntax error\n"
+        "(standard_in) 1: syntax error\n"
+    )
 
 
 def test_bc_a_discarded_line_rolls_back_every_write():
@@ -1075,8 +1136,13 @@ def test_bc_a_discarded_line_rolls_back_every_write():
 def test_bc_a_discarded_line_suppresses_its_runtime_diagnostics():
     # The line never ran, so its divide by zero, its unknown function and
     # its clamped register never happened either.
-    for text in (b"1/0;1 2\n", b"1 2;1/0\n", b"foo(1);1 2\n", b"1 2;foo(1)\n",
-                 b"ibase=1;1 2\n"):
+    for text in (
+        b"1/0;1 2\n",
+        b"1 2;1/0\n",
+        b"foo(1);1 2\n",
+        b"1 2;foo(1)\n",
+        b"ibase=1;1 2\n",
+    ):
         stdout, io = _out("bc", text)
         assert stdout == b"", text
         assert _stderr_text(io) == "(standard_in) 1: syntax error\n", text
@@ -1090,7 +1156,8 @@ def test_bc_a_runtime_error_alone_discards_nothing():
     stdout, io = _out("bc", b"2+2;1/0\n")
     assert stdout == b"4\n"
     assert _stderr_text(io) == (
-        "Runtime error (func=(main), adr=3): Divide by zero\n")
+        "Runtime error (func=(main), adr=3): Divide by zero\n"
+    )
     assert io.exit_code == 0
     assert _out("bc", b"x=5;1/0\nx\n")[0] == b"5\n"
     assert _out("bc", b"ibase=1;1+1;ibase\n")[0] == b"2\n2\n"
@@ -1142,7 +1209,8 @@ def test_bc_a_runtime_error_abandons_the_rest_of_its_line():
     stdout, io = _out("bc", b"1/0;2+2\n")
     assert stdout == b""
     assert _stderr_text(io) == (
-        "Runtime error (func=(main), adr=3): Divide by zero\n")
+        "Runtime error (func=(main), adr=3): Divide by zero\n"
+    )
     assert io.exit_code == 0
     # Non-fatal across lines, as before: the next line still runs.
     assert _out("bc", b"1/0;2+2\n3+3\n")[0] == b"6\n"
@@ -1164,7 +1232,8 @@ def test_bc_an_undefined_function_abandons_the_line_the_same_way():
     stdout, io = _out("bc", b"1+1;foo(1);2+2\n")
     assert stdout == b"2\n"
     assert _stderr_text(io) == (
-        "Runtime error (func=(main), adr=3): Function foo not defined.\n")
+        "Runtime error (func=(main), adr=3): Function foo not defined.\n"
+    )
     assert io.exit_code == 0
     assert _out("bc", b"s(0);2+2\n")[0] == b""
 
@@ -1174,7 +1243,8 @@ def test_bc_a_runtime_warning_is_not_an_error_and_abandons_nothing():
     stdout, io = _out("bc", b"ibase=1;2+2\n")
     assert stdout == b"4\n"
     assert _stderr_text(io) == (
-        "Runtime warning (func=(main), adr=3): ibase too small, set to 2\n")
+        "Runtime warning (func=(main), adr=3): ibase too small, set to 2\n"
+    )
     assert io.exit_code == 0
     assert _out("bc", b"ibase=1;1+1;ibase\n")[0] == b"2\n2\n"
 
@@ -1209,9 +1279,19 @@ def test_bc_an_incomplete_construct_followed_by_a_semicolon():
     # GNU's parser fails on whichever token arrives next. A `;` sits on
     # the current line, so the diagnostic does too -- where a newline has
     # already moved the counter on.
-    for text in (b"(1+;x=5\n", b"1+;2\n", b"scale=;x\n", b"1+;\n", b"1+;;\n",
-                 b"sqrt;1\n", b"length;1\n", b"-;1\n", b"1+ ;2\n",
-                 b"x=5;1+;y=6\n", b"(1+2;3\n"):
+    for text in (
+        b"(1+;x=5\n",
+        b"1+;2\n",
+        b"scale=;x\n",
+        b"1+;\n",
+        b"1+;;\n",
+        b"sqrt;1\n",
+        b"length;1\n",
+        b"-;1\n",
+        b"1+ ;2\n",
+        b"x=5;1+;y=6\n",
+        b"(1+2;3\n",
+    ):
         stdout, io = _out("bc", text)
         assert stdout == b"", text
         assert _stderr_text(io) == "(standard_in) 1: syntax error\n", text
@@ -1223,8 +1303,14 @@ def test_bc_an_incomplete_construct_followed_by_a_semicolon():
 def test_bc_the_last_statement_of_a_line_is_still_charged_to_the_next():
     # The control rows: nothing follows, so the newline is the token that
     # fails and it has already moved the counter on.
-    for text in (b"x=5;(1+\n", b"1+\n", b"scale=\n", b"(1+2\n", b"x=5;-\n",
-                 b"-\n"):
+    for text in (
+        b"x=5;(1+\n",
+        b"1+\n",
+        b"scale=\n",
+        b"(1+2\n",
+        b"x=5;-\n",
+        b"-\n",
+    ):
         stdout, io = _out("bc", text)
         assert stdout == b"", text
         assert _stderr_text(io) == "(standard_in) 2: syntax error\n", text
@@ -1242,8 +1328,10 @@ def test_bc_the_terminating_semicolon_carries_its_own_line():
     # and both diagnostics land on line 1.
     stdout, io = _out("bc", b"1+;@\n")
     assert stdout == b""
-    assert _stderr_text(io) == ("(standard_in) 1: syntax error\n"
-                                "(standard_in) 1: illegal character: @\n")
+    assert _stderr_text(io) == (
+        "(standard_in) 1: syntax error\n"
+        "(standard_in) 1: illegal character: @\n"
+    )
     assert io.exit_code == 0
 
 
@@ -1315,7 +1403,7 @@ def test_bc_print_element_is_a_whole_expression():
     # where the statement `x=5` prints nothing.
     assert _out("bc", b"print x=5\nx\n")[0] == b"55\n"
     assert _out("bc", b"print (x=5); x\n")[0] == b"55\n"
-    assert _out("bc", b"x=1; print x++, x, \"\\n\"\n")[0] == b"12\n"
+    assert _out("bc", b'x=1; print x++, x, "\\n"\n')[0] == b"12\n"
     assert _out("bc", b'print sqrt(4), "\\n"\n')[0] == b"2\n"
     assert _out("bc", b'obase=16\nprint 255, "\\n"\n')[0] == b"FF\n"
 
@@ -1323,13 +1411,18 @@ def test_bc_print_element_is_a_whole_expression():
 def test_bc_print_expands_the_escapes_gnu_has_a_rule_for():
     # `\a \b \f \n \q \r \t \\`, and `\q` is the double quote.
     assert _out("bc", b'print "A\\aB\\bC\\fD\\nE\\qF\\rG\\tH\\\\I"\n')[0] == (
-        b'A\x07B\x08C\x0cD\nE"F\rG\tH\\I')
+        b'A\x07B\x08C\x0cD\nE"F\rG\tH\\I'
+    )
 
 
 def test_bc_print_writes_nothing_for_an_escape_it_has_no_rule_for():
     # Both characters vanish, digits and a trailing backslash included.
-    for text in (b'print "x\\zy"\n', b'print "a\\0b\\1c"\n',
-                 b'print "a\\eb\\vc"\n', b'print "a\\Nb\\Tc"\n'):
+    for text in (
+        b'print "x\\zy"\n',
+        b'print "a\\0b\\1c"\n',
+        b'print "a\\eb\\vc"\n',
+        b'print "a\\Nb\\Tc"\n',
+    ):
         assert _out("bc", text)[0] in (b"xy", b"abc"), text
     assert _out("bc", b'print "ab\\\\"\n')[0] == b"ab\\"
     # A lone backslash before the closing quote: the quote still closes
@@ -1347,8 +1440,13 @@ def test_bc_a_bare_string_is_a_statement_written_raw():
 
 
 def test_bc_a_string_is_never_an_expression():
-    for text in (b'1+"a"\n', b'"a"1\n', b'print "a" "b"\n', b'print "a" 1\n',
-                 b'print , "a"\n'):
+    for text in (
+        b'1+"a"\n',
+        b'"a"1\n',
+        b'print "a" "b"\n',
+        b'print "a" 1\n',
+        b'print , "a"\n',
+    ):
         stdout, io = _out("bc", text)
         assert stdout == b"", text
         assert _stderr_text(io) == "(standard_in) 1: syntax error\n", text
@@ -1414,8 +1512,9 @@ def test_bc_an_unclosed_quote_is_an_illegal_character():
     for text in (b'"abc\n', b'print "abc\n', b'1+"abc\n'):
         stdout, io = _out("bc", text)
         assert stdout == b"", text
-        assert _stderr_text(
-            io) == '(standard_in) 1: illegal character: "\n', text
+        assert _stderr_text(io) == '(standard_in) 1: illegal character: "\n', (
+            text
+        )
         assert io.exit_code == 0, text
     stdout, io = _out("bc", b'"abc\n1+1\n')
     assert stdout == b"2\n"
@@ -1424,8 +1523,10 @@ def test_bc_an_unclosed_quote_is_an_illegal_character():
     # statement and reports separately.
     stdout, io = _out("bc", b'"abc; 1 2\n')
     assert stdout == b""
-    assert _stderr_text(io) == ('(standard_in) 1: illegal character: "\n'
-                                "(standard_in) 1: syntax error\n")
+    assert _stderr_text(io) == (
+        '(standard_in) 1: illegal character: "\n'
+        "(standard_in) 1: syntax error\n"
+    )
     # Two quotes on different lines are one token, so nothing is illegal:
     # the `def` after it is simply a name in the wrong place.
     stdout, io = _out("bc", b'"abc\n"def\n')
@@ -1447,7 +1548,8 @@ def test_bc_a_runtime_error_keeps_what_the_statement_already_wrote():
     stdout, io = _out("bc", b'print "a", 1/0, "z"\n')
     assert stdout == b"a"
     assert _stderr_text(io) == (
-        "Runtime error (func=(main), adr=3): Divide by zero\n")
+        "Runtime error (func=(main), adr=3): Divide by zero\n"
+    )
     assert _out("bc", b'print "x", 1/0\n2+2\n')[0] == b"x4\n"
 
 
@@ -1467,67 +1569,80 @@ def test_bc_the_fold_column_carries_across_a_print():
     # the line two characters in folds the value that follows two
     # characters early: 66 digits here rather than 68.
     digits = UNFOLDED_300.rstrip(b"\n")
-    assert _out("bc",
-                b'print "ab"; 2^300\n')[0] == (b"ab" + digits[:66] + b"\\\n" +
-                                               digits[66:] + b"\n")
+    assert _out("bc", b'print "ab"; 2^300\n')[0] == (
+        b"ab" + digits[:66] + b"\\\n" + digits[66:] + b"\n"
+    )
     # And a `print`ed value leaves the column where it ended, so the next
     # statement's value continues the same line.
-    assert _out("bc", b"print 2^300; 1+1\n")[0] == (digits[:68] + b"\\\n" +
-                                                    digits[68:] + b"2\n")
+    assert _out("bc", b"print 2^300; 1+1\n")[0] == (
+        digits[:68] + b"\\\n" + digits[68:] + b"2\n"
+    )
 
 
 def test_bc_a_printed_string_folds_and_counts_like_a_value():
-    assert _out("bc", b'print "' + b"x" * 100 +
-                b'"\n')[0] == (b"x" * 68 + b"\\\n" + b"x" * 32)
+    assert _out("bc", b'print "' + b"x" * 100 + b'"\n')[0] == (
+        b"x" * 68 + b"\\\n" + b"x" * 32
+    )
     # A bare string counts too.
-    assert _out("bc", b'"' + b"x" * 100 + b'"\n')[0] == (b"x" * 68 + b"\\\n" +
-                                                         b"x" * 32)
+    assert _out("bc", b'"' + b"x" * 100 + b'"\n')[0] == (
+        b"x" * 68 + b"\\\n" + b"x" * 32
+    )
     # Two statements share the counter: 60 then 20 folds inside the 20.
-    assert _out("bc", b'print "' + b"x" * 60 + b'"; print "' + b"y" * 20 +
-                b'"\n')[0] == (b"x" * 60 + b"y" * 8 + b"\\\n" + b"y" * 12)
+    assert _out(
+        "bc", b'print "' + b"x" * 60 + b'"; print "' + b"y" * 20 + b'"\n'
+    )[0] == (b"x" * 60 + b"y" * 8 + b"\\\n" + b"y" * 12)
     # Across input lines as well.
-    assert _out("bc", b'print "' + b"x" * 60 + b'"\nprint "' + b"y" * 20 +
-                b'"\n')[0] == (b"x" * 60 + b"y" * 8 + b"\\\n" + b"y" * 12)
+    assert _out(
+        "bc", b'print "' + b"x" * 60 + b'"\nprint "' + b"y" * 20 + b'"\n'
+    )[0] == (b"x" * 60 + b"y" * 8 + b"\\\n" + b"y" * 12)
 
 
 def test_bc_a_newline_anywhere_starts_the_column_over():
-    assert _out("bc", b'print "' + b"x" * 60 + b'\\n"; print "' + b"y" * 20 +
-                b'"\n')[0] == (b"x" * 60 + b"\n" + b"y" * 20)
+    assert _out(
+        "bc", b'print "' + b"x" * 60 + b'\\n"; print "' + b"y" * 20 + b'"\n'
+    )[0] == (b"x" * 60 + b"\n" + b"y" * 20)
     # An expanded escape is one column, not its source width: 66 x's, a
     # tab and a `y` fill the line, so the second `y` folds.
-    assert _out("bc", b'print "' + b"x" * 66 + b'\\tyy"\n')[0] == (b"x" * 66 +
-                                                                   b"\ty\\\ny")
+    assert _out("bc", b'print "' + b"x" * 66 + b'\\tyy"\n')[0] == (
+        b"x" * 66 + b"\ty\\\ny"
+    )
 
 
 def test_bc_a_discarded_line_rolls_the_column_back():
     # The line never ran, so its `print` never moved the counter and the
     # 20 characters after it do not fold.
     stdout, io = _out(
-        "bc", b'print "' + b"x" * 60 + b'"; 1 2\nprint "' + b"y" * 20 + b'"\n')
+        "bc", b'print "' + b"x" * 60 + b'"; 1 2\nprint "' + b"y" * 20 + b'"\n'
+    )
     assert stdout == b"y" * 20
     assert _stderr_text(io) == "(standard_in) 1: syntax error\n"
     # A runtime error does not roll it back: the 60 characters stand.
     stdout, io = _out(
-        "bc", b'print "' + b"x" * 60 + b'", 1/0\nprint "' + b"y" * 20 + b'"\n')
+        "bc", b'print "' + b"x" * 60 + b'", 1/0\nprint "' + b"y" * 20 + b'"\n'
+    )
     assert stdout == b"x" * 60 + b"y" * 8 + b"\\\n" + b"y" * 12
 
 
 def test_bc_line_length_bounds_a_printed_string_too():
-    assert _out("BC_LINE_LENGTH=10 bc",
-                b'print "abcdefghijklmno"\n')[0] == b"abcdefgh\\\nijklmno"
-    assert _out("BC_LINE_LENGTH=3 bc",
-                b'print "abcdef"\n')[0] == b"a\\\nb\\\nc\\\nd\\\ne\\\nf"
-    assert _out("BC_LINE_LENGTH=0 bc",
-                b'print "' + b"x" * 100 + b'"\n')[0] == b"x" * 100
+    assert (
+        _out("BC_LINE_LENGTH=10 bc", b'print "abcdefghijklmno"\n')[0]
+        == b"abcdefgh\\\nijklmno"
+    )
+    assert (
+        _out("BC_LINE_LENGTH=3 bc", b'print "abcdef"\n')[0]
+        == b"a\\\nb\\\nc\\\nd\\\ne\\\nf"
+    )
+    assert (
+        _out("BC_LINE_LENGTH=0 bc", b'print "' + b"x" * 100 + b'"\n')[0]
+        == b"x" * 100
+    )
 
 
 def test_bc_the_issue_1156_program():
     # The report's own heredoc. GNU prints `a=50.204700469970704`; the
     # last digits differ because bc's values are float64 here, which is
     # the separate gap tracked in #1119.
-    program = (b"scale=15\n"
-               b"a=7*7.172100067138672\n"
-               b'print "a="; a; print "\\n"\n')
+    program = b'scale=15\na=7*7.172100067138672\nprint "a="; a; print "\\n"\n'
     assert _out("bc -l", program)[0] == b"a=50.204700469970700\n\n"
 
 
@@ -1535,17 +1650,19 @@ def test_bc_the_fold_column_counts_utf8_bytes():
     # GNU counts the bytes it writes, not the characters, so a four-byte
     # character fills the 68-column line seventeen at a time.
     globe = "\N{EARTH GLOBE EUROPE-AFRICA}"
-    assert _out(
-        "bc",
-        f'print "{globe * 80}"\n'.encode())[0] == ((globe * 17 + "\\\n") * 4 +
-                                                   globe * 12).encode()
+    assert (
+        _out("bc", f'print "{globe * 80}"\n'.encode())[0]
+        == ((globe * 17 + "\\\n") * 4 + globe * 12).encode()
+    )
     # A two-byte one moves it two: 66 x's and one `é` fill the line.
-    assert _out("bc", f'print "{"x" * 66}éé"\n'.encode())[0] == ("x" * 66 +
-                                                                 "é" + "\\\n" +
-                                                                 "é").encode()
+    assert (
+        _out("bc", f'print "{"x" * 66}éé"\n'.encode())[0]
+        == ("x" * 66 + "é" + "\\\n" + "é").encode()
+    )
     # Where GNU would split a character across the fold it is moved whole
     # instead, so the output stays UTF-8: 67 x's leave one column and the
     # `é` needs two.
-    assert _out("bc",
-                f'print "{"x" * 67}éé"\n'.encode())[0] == ("x" * 67 + "\\\n" +
-                                                           "éé").encode()
+    assert (
+        _out("bc", f'print "{"x" * 67}éé"\n'.encode())[0]
+        == ("x" * 67 + "\\\n" + "éé").encode()
+    )

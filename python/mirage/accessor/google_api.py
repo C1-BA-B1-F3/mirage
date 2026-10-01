@@ -18,8 +18,8 @@ from mirage.core.google.config import GoogleConfig
 
 
 class GoogleApiAccessor(Accessor):
-
-    def __init__(self, config: GoogleConfig,
-                 token_manager: TokenManager) -> None:
+    def __init__(
+        self, config: GoogleConfig, token_manager: TokenManager
+    ) -> None:
         self.config = config
         self.token_manager = token_manager

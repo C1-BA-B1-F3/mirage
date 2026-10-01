@@ -19,21 +19,42 @@ import time
 from dataclasses import dataclass
 from typing import Any, Callable, Literal
 
-# yapf: disable
 from mirage.runtime.errors import CrossMountError
 from mirage.runtime.handles import FileHandle, FileTable
 from mirage.runtime.types import VFSStat
-from mirage.runtime.wasm.abi import (EBADF, EEXIST, EINVAL, EIO, EISDIR,
-                                     ENOENT, ENOTDIR, FDFLAG_APPEND, FST_ATIM,
-                                     FST_ATIM_NOW, FST_MTIM, FST_MTIM_NOW,
-                                     FT_CHR, FT_DIR, FT_REG, LINK_REFUSAL,
-                                     LOOKUP_SYMLINK_FOLLOW, OFLAG_CREAT,
-                                     OFLAG_DIRECTORY, OFLAG_EXCL, OFLAG_TRUNC,
-                                     OK, RIGHT_FD_WRITE, errno_for,
-                                     pack_dirent, pack_fdstat, pack_filestat,
-                                     pack_prestat, pack_u32, pack_u64,
-                                     unpack_iovs)
-# yapf: enable
+from mirage.runtime.wasm.abi import (
+    EBADF,
+    EEXIST,
+    EINVAL,
+    EIO,
+    EISDIR,
+    ENOENT,
+    ENOTDIR,
+    FDFLAG_APPEND,
+    FST_ATIM,
+    FST_ATIM_NOW,
+    FST_MTIM,
+    FST_MTIM_NOW,
+    FT_CHR,
+    FT_DIR,
+    FT_REG,
+    LINK_REFUSAL,
+    LOOKUP_SYMLINK_FOLLOW,
+    OFLAG_CREAT,
+    OFLAG_DIRECTORY,
+    OFLAG_EXCL,
+    OFLAG_TRUNC,
+    OK,
+    RIGHT_FD_WRITE,
+    errno_for,
+    pack_dirent,
+    pack_fdstat,
+    pack_filestat,
+    pack_prestat,
+    pack_u32,
+    pack_u64,
+    unpack_iovs,
+)
 from mirage.runtime.wasm.slab import install_slab_lock
 from mirage.runtime.wasm.vfs import WasmVFS, filetype_of
 from mirage.utils.dates import timestamp_iso
@@ -63,8 +84,9 @@ else:
     ValType = _ValType
 
 
-def _stamp(fst_flags: int, set_bit: int, now_bit: int, value: int,
-           now: float) -> str | None:
+def _stamp(
+    fst_flags: int, set_bit: int, now_bit: int, value: int, now: float
+) -> str | None:
     """One utimensat stamp as ISO text, None when the call omits it.
 
     preview1 splits each of the two stamps into "write the argument" and
@@ -85,8 +107,9 @@ def _stamp(fst_flags: int, set_bit: int, now_bit: int, value: int,
     return None
 
 
-def _call_guarded(fn: Callable[..., Any], caller: "wasmtime.Caller", *args:
-                  int) -> int:
+def _call_guarded(
+    fn: Callable[..., Any], caller: "wasmtime.Caller", *args: int
+) -> int:
     """Run a preview1 host function, mapping every failure to a guest errno.
 
     Filesystem-shaped exceptions get their own errno. Anything else, a
@@ -151,8 +174,10 @@ class WasiFs:
         self._fds: FileTable[FdEntry] = FileTable(first_id=4)
         self._fds.set(
             0,
-            FdEntry(kind="stdin",
-                    handle=FileHandle(path="", buf=bytearray(stdin))))
+            FdEntry(
+                kind="stdin", handle=FileHandle(path="", buf=bytearray(stdin))
+            ),
+        )
         self._fds.set(1, FdEntry(kind="stdout"))
         self._fds.set(2, FdEntry(kind="stderr"))
         self._fds.set(3, FdEntry(kind="dir", path="/", preopen=True))
@@ -173,12 +198,14 @@ class WasiFs:
     def _store(self, caller: "wasmtime.Caller", ptr: int, data: bytes) -> None:
         self._mem(caller).write(caller, data, ptr)
 
-    def _iovs(self, caller: "wasmtime.Caller", ptr: int,
-              count: int) -> list[tuple[int, int]]:
+    def _iovs(
+        self, caller: "wasmtime.Caller", ptr: int, count: int
+    ) -> list[tuple[int, int]]:
         return unpack_iovs(self._load(caller, ptr, count * 8), count)
 
-    def _path_arg(self, caller: "wasmtime.Caller", dirfd: int, ptr: int,
-                  length: int) -> str | None:
+    def _path_arg(
+        self, caller: "wasmtime.Caller", dirfd: int, ptr: int, length: int
+    ) -> str | None:
         entry = self._fds.get(dirfd)
         if entry is None or entry.kind != "dir":
             return None
@@ -216,16 +243,18 @@ class WasiFs:
 
     # -- prestat ----------------------------------------------------------
 
-    def fd_prestat_get(self, caller: "wasmtime.Caller", fd: int,
-                       buf: int) -> int:
+    def fd_prestat_get(
+        self, caller: "wasmtime.Caller", fd: int, buf: int
+    ) -> int:
         entry = self._fds.get(fd)
         if entry is None or not entry.preopen:
             return EBADF
         self._store(caller, buf, pack_prestat(len(entry.path.encode())))
         return OK
 
-    def fd_prestat_dir_name(self, caller: "wasmtime.Caller", fd: int, ptr: int,
-                            length: int) -> int:
+    def fd_prestat_dir_name(
+        self, caller: "wasmtime.Caller", fd: int, ptr: int, length: int
+    ) -> int:
         entry = self._fds.get(fd)
         if entry is None or not entry.preopen:
             return EBADF
@@ -234,15 +263,26 @@ class WasiFs:
 
     # -- open/close -------------------------------------------------------
 
-    def path_open(self, caller: "wasmtime.Caller", dirfd: int, dirflags: int,
-                  ptr: int, length: int, oflags: int, rights_base: int,
-                  rights_inherit: int, fdflags: int, out: int) -> int:
+    def path_open(
+        self,
+        caller: "wasmtime.Caller",
+        dirfd: int,
+        dirflags: int,
+        ptr: int,
+        length: int,
+        oflags: int,
+        rights_base: int,
+        rights_inherit: int,
+        fdflags: int,
+        out: int,
+    ) -> int:
         path = self._path_arg(caller, dirfd, ptr, length)
         if path is None:
             return EBADF
         st = self._fs.stat_or_none(path)
-        if oflags & OFLAG_DIRECTORY or (st is not None and st.is_dir
-                                        and not oflags & OFLAG_CREAT):
+        if oflags & OFLAG_DIRECTORY or (
+            st is not None and st.is_dir and not oflags & OFLAG_CREAT
+        ):
             if st is None:
                 return ENOENT
             if not st.is_dir:
@@ -256,9 +296,11 @@ class WasiFs:
             return EEXIST
         if st is None and not oflags & OFLAG_CREAT:
             return ENOENT
-        writable = (bool(oflags & (OFLAG_CREAT | OFLAG_TRUNC))
-                    or bool(rights_base & RIGHT_FD_WRITE)
-                    or bool(fdflags & FDFLAG_APPEND))
+        writable = (
+            bool(oflags & (OFLAG_CREAT | OFLAG_TRUNC))
+            or bool(rights_base & RIGHT_FD_WRITE)
+            or bool(fdflags & FDFLAG_APPEND)
+        )
         if st is None:
             # Created through the workspace now, so write modes and a
             # missing parent answer at open time, not at close.
@@ -269,12 +311,12 @@ class WasiFs:
             data = b""
         else:
             data = self._fs.read(path)
-        handle = FileHandle.opened(path,
-                                   data,
-                                   writable=writable,
-                                   append=bool(fdflags & FDFLAG_APPEND))
+        handle = FileHandle.opened(
+            path, data, writable=writable, append=bool(fdflags & FDFLAG_APPEND)
+        )
         fd = self._fds.add(
-            FdEntry(kind="file", handle=handle, path=path, stat=st))
+            FdEntry(kind="file", handle=handle, path=path, stat=st)
+        )
         self._store(caller, out, pack_u32(fd))
         return OK
 
@@ -299,8 +341,14 @@ class WasiFs:
 
     # -- read/write/seek --------------------------------------------------
 
-    def fd_read(self, caller: "wasmtime.Caller", fd: int, iovs: int,
-                count: int, nread: int) -> int:
+    def fd_read(
+        self,
+        caller: "wasmtime.Caller",
+        fd: int,
+        iovs: int,
+        count: int,
+        nread: int,
+    ) -> int:
         h = self._handle(fd)
         if h is None:
             return EBADF
@@ -315,8 +363,15 @@ class WasiFs:
         self._store(caller, nread, pack_u32(total))
         return OK
 
-    def fd_pread(self, caller: "wasmtime.Caller", fd: int, iovs: int,
-                 count: int, offset: int, nread: int) -> int:
+    def fd_pread(
+        self,
+        caller: "wasmtime.Caller",
+        fd: int,
+        iovs: int,
+        count: int,
+        offset: int,
+        nread: int,
+    ) -> int:
         h = self._file_handle(fd)
         if h is None:
             return EBADF
@@ -332,8 +387,14 @@ class WasiFs:
         self._store(caller, nread, pack_u32(total))
         return OK
 
-    def fd_write(self, caller: "wasmtime.Caller", fd: int, iovs: int,
-                 count: int, nwritten: int) -> int:
+    def fd_write(
+        self,
+        caller: "wasmtime.Caller",
+        fd: int,
+        iovs: int,
+        count: int,
+        nwritten: int,
+    ) -> int:
         entry = self._fds.get(fd)
         if entry is None:
             return EBADF
@@ -354,8 +415,15 @@ class WasiFs:
         self._store(caller, nwritten, pack_u32(total))
         return OK
 
-    def fd_pwrite(self, caller: "wasmtime.Caller", fd: int, iovs: int,
-                  count: int, offset: int, nwritten: int) -> int:
+    def fd_pwrite(
+        self,
+        caller: "wasmtime.Caller",
+        fd: int,
+        iovs: int,
+        count: int,
+        offset: int,
+        nwritten: int,
+    ) -> int:
         h = self._file_handle(fd)
         if h is None or not h.writable:
             return EBADF
@@ -368,8 +436,14 @@ class WasiFs:
         self._store(caller, nwritten, pack_u32(total))
         return OK
 
-    def fd_seek(self, caller: "wasmtime.Caller", fd: int, offset: int,
-                whence: int, out: int) -> int:
+    def fd_seek(
+        self,
+        caller: "wasmtime.Caller",
+        fd: int,
+        offset: int,
+        whence: int,
+        out: int,
+    ) -> int:
         h = self._handle(fd)
         if h is None:
             return EBADF
@@ -389,8 +463,9 @@ class WasiFs:
 
     # -- stat -------------------------------------------------------------
 
-    def fd_fdstat_get(self, caller: "wasmtime.Caller", fd: int,
-                      buf: int) -> int:
+    def fd_fdstat_get(
+        self, caller: "wasmtime.Caller", fd: int, buf: int
+    ) -> int:
         entry = self._fds.get(fd)
         if entry is None:
             return EBADF
@@ -398,26 +473,36 @@ class WasiFs:
         self._store(caller, buf, pack_fdstat(filetype))
         return OK
 
-    def fd_filestat_get(self, caller: "wasmtime.Caller", fd: int,
-                        buf: int) -> int:
+    def fd_filestat_get(
+        self, caller: "wasmtime.Caller", fd: int, buf: int
+    ) -> int:
         entry = self._fds.get(fd)
         if entry is None:
             return EBADF
         if entry.kind == "file" and entry.handle is not None:
             mtime = entry.stat.mtime_ns if entry.stat is not None else 0
-            packed = pack_filestat(len(entry.handle.buf), mtime, FT_REG,
-                                   self._ino(entry.path))
+            packed = pack_filestat(
+                len(entry.handle.buf), mtime, FT_REG, self._ino(entry.path)
+            )
         elif entry.kind == "dir":
             st = self._fs.stat(entry.path)
-            packed = pack_filestat(st.size, st.mtime_ns, FT_DIR,
-                                   self._ino(entry.path))
+            packed = pack_filestat(
+                st.size, st.mtime_ns, FT_DIR, self._ino(entry.path)
+            )
         else:
             packed = pack_filestat(0, 0, FT_CHR, fd)
         self._store(caller, buf, packed)
         return OK
 
-    def path_filestat_get(self, caller: "wasmtime.Caller", dirfd: int,
-                          flags: int, ptr: int, length: int, buf: int) -> int:
+    def path_filestat_get(
+        self,
+        caller: "wasmtime.Caller",
+        dirfd: int,
+        flags: int,
+        ptr: int,
+        length: int,
+        buf: int,
+    ) -> int:
         path = self._path_arg(caller, dirfd, ptr, length)
         if path is None:
             return EBADF
@@ -426,13 +511,15 @@ class WasiFs:
         # its target and os.path.islink was always False.
         follow = bool(flags & LOOKUP_SYMLINK_FOLLOW)
         st = self._fs.stat(path) if follow else self._fs.lstat(path)
-        packed = pack_filestat(st.size, st.mtime_ns, filetype_of(st),
-                               self._ino(path))
+        packed = pack_filestat(
+            st.size, st.mtime_ns, filetype_of(st), self._ino(path)
+        )
         self._store(caller, buf, packed)
         return OK
 
-    def fd_filestat_set_size(self, caller: "wasmtime.Caller", fd: int,
-                             size: int) -> int:
+    def fd_filestat_set_size(
+        self, caller: "wasmtime.Caller", fd: int, size: int
+    ) -> int:
         h = self._file_handle(fd)
         if h is None or not h.writable:
             return EBADF
@@ -441,8 +528,15 @@ class WasiFs:
 
     # -- readdir ----------------------------------------------------------
 
-    def fd_readdir(self, caller: "wasmtime.Caller", fd: int, buf: int,
-                   buf_len: int, cookie: int, used: int) -> int:
+    def fd_readdir(
+        self,
+        caller: "wasmtime.Caller",
+        fd: int,
+        buf: int,
+        buf_len: int,
+        cookie: int,
+        used: int,
+    ) -> int:
         entry = self._fds.get(fd)
         if entry is None or entry.kind != "dir":
             return EBADF
@@ -453,7 +547,7 @@ class WasiFs:
         while i < len(entry.dirents) and len(out) < buf_len:
             name, filetype = entry.dirents[i]
             record = pack_dirent(i, name.encode(), filetype)
-            out += record[:buf_len - len(out)]
+            out += record[: buf_len - len(out)]
             i += 1
         self._store(caller, buf, bytes(out))
         self._store(caller, used, pack_u32(len(out)))
@@ -461,33 +555,43 @@ class WasiFs:
 
     # -- fs mutation ------------------------------------------------------
 
-    def path_unlink_file(self, caller: "wasmtime.Caller", dirfd: int, ptr: int,
-                         length: int) -> int:
+    def path_unlink_file(
+        self, caller: "wasmtime.Caller", dirfd: int, ptr: int, length: int
+    ) -> int:
         path = self._path_arg(caller, dirfd, ptr, length)
         if path is None:
             return EBADF
         self._fs.unlink(path)
         return OK
 
-    def path_create_directory(self, caller: "wasmtime.Caller", dirfd: int,
-                              ptr: int, length: int) -> int:
+    def path_create_directory(
+        self, caller: "wasmtime.Caller", dirfd: int, ptr: int, length: int
+    ) -> int:
         path = self._path_arg(caller, dirfd, ptr, length)
         if path is None:
             return EBADF
         self._fs.mkdir(path)
         return OK
 
-    def path_remove_directory(self, caller: "wasmtime.Caller", dirfd: int,
-                              ptr: int, length: int) -> int:
+    def path_remove_directory(
+        self, caller: "wasmtime.Caller", dirfd: int, ptr: int, length: int
+    ) -> int:
         path = self._path_arg(caller, dirfd, ptr, length)
         if path is None:
             return EBADF
         self._fs.rmdir(path)
         return OK
 
-    def path_rename(self, caller: "wasmtime.Caller", dirfd: int, ptr: int,
-                    length: int, dst_dirfd: int, dst_ptr: int,
-                    dst_length: int) -> int:
+    def path_rename(
+        self,
+        caller: "wasmtime.Caller",
+        dirfd: int,
+        ptr: int,
+        length: int,
+        dst_dirfd: int,
+        dst_ptr: int,
+        dst_length: int,
+    ) -> int:
         src = self._path_arg(caller, dirfd, ptr, length)
         dst = self._path_arg(caller, dst_dirfd, dst_ptr, dst_length)
         if src is None or dst is None:
@@ -497,8 +601,14 @@ class WasiFs:
 
     # -- stubs and no-ops -------------------------------------------------
 
-    def fd_advise(self, caller: "wasmtime.Caller", fd: int, offset: int,
-                  length: int, advice: int) -> int:
+    def fd_advise(
+        self,
+        caller: "wasmtime.Caller",
+        fd: int,
+        offset: int,
+        length: int,
+        advice: int,
+    ) -> int:
         return OK
 
     def fd_datasync(self, caller: "wasmtime.Caller", fd: int) -> int:
@@ -507,17 +617,32 @@ class WasiFs:
     def fd_sync(self, caller: "wasmtime.Caller", fd: int) -> int:
         return OK
 
-    def fd_fdstat_set_flags(self, caller: "wasmtime.Caller", fd: int,
-                            flags: int) -> int:
+    def fd_fdstat_set_flags(
+        self, caller: "wasmtime.Caller", fd: int, flags: int
+    ) -> int:
         return OK
 
-    def fd_filestat_set_times(self, caller: "wasmtime.Caller", fd: int,
-                              atim: int, mtim: int, flags: int) -> int:
+    def fd_filestat_set_times(
+        self,
+        caller: "wasmtime.Caller",
+        fd: int,
+        atim: int,
+        mtim: int,
+        flags: int,
+    ) -> int:
         return OK
 
-    def path_filestat_set_times(self, caller: "wasmtime.Caller", dirfd: int,
-                                flags: int, ptr: int, length: int, atim: int,
-                                mtim: int, fst_flags: int) -> int:
+    def path_filestat_set_times(
+        self,
+        caller: "wasmtime.Caller",
+        dirfd: int,
+        flags: int,
+        ptr: int,
+        length: int,
+        atim: int,
+        mtim: int,
+        fst_flags: int,
+    ) -> int:
         path = self._path_arg(caller, dirfd, ptr, length)
         if path is None:
             return EBADF
@@ -528,14 +653,24 @@ class WasiFs:
             # No stamp selected is a no-op, not an error: utimensat(2)
             # with two UTIME_OMIT values does nothing and succeeds.
             return OK
-        self._fs.setattr(path,
-                         atime=atime,
-                         mtime=mtime,
-                         nofollow=not (flags & LOOKUP_SYMLINK_FOLLOW))
+        self._fs.setattr(
+            path,
+            atime=atime,
+            mtime=mtime,
+            nofollow=not (flags & LOOKUP_SYMLINK_FOLLOW),
+        )
         return OK
 
-    def path_readlink(self, caller: "wasmtime.Caller", dirfd: int, ptr: int,
-                      length: int, buf: int, buf_len: int, used: int) -> int:
+    def path_readlink(
+        self,
+        caller: "wasmtime.Caller",
+        dirfd: int,
+        ptr: int,
+        length: int,
+        buf: int,
+        buf_len: int,
+        used: int,
+    ) -> int:
         path = self._path_arg(caller, dirfd, ptr, length)
         if path is None:
             return EBADF
@@ -547,17 +682,31 @@ class WasiFs:
         self._store(caller, used, pack_u32(len(raw)))
         return OK
 
-    def path_link(self, caller: "wasmtime.Caller", old_dirfd: int,
-                  old_flags: int, old_ptr: int, old_length: int,
-                  new_dirfd: int, new_ptr: int, new_length: int) -> int:
+    def path_link(
+        self,
+        caller: "wasmtime.Caller",
+        old_dirfd: int,
+        old_flags: int,
+        old_ptr: int,
+        old_length: int,
+        new_dirfd: int,
+        new_ptr: int,
+        new_length: int,
+    ) -> int:
         # A hard link is a second name for one inode, and nothing above
         # a mount holds that. Which refusal that is comes from the verb
         # table, not from this surface; see abi.LINK_REFUSAL.
         return LINK_REFUSAL
 
-    def path_symlink(self, caller: "wasmtime.Caller", old_ptr: int,
-                     old_length: int, dirfd: int, new_ptr: int,
-                     new_length: int) -> int:
+    def path_symlink(
+        self,
+        caller: "wasmtime.Caller",
+        old_ptr: int,
+        old_length: int,
+        dirfd: int,
+        new_ptr: int,
+        new_length: int,
+    ) -> int:
         # The old_* pair is the target string, not a path to resolve:
         # a link stores what was typed, so it is read straight out of
         # guest memory and never joined against a preopen.
@@ -593,8 +742,10 @@ def _spec() -> dict[str, tuple[list[Any], list[Any]]]:
         "fd_write": ([i32, i32, i32, i32], [i32]),
         "path_create_directory": ([i32, i32, i32], [i32]),
         "path_filestat_get": ([i32, i32, i32, i32, i32], [i32]),
-        "path_filestat_set_times": ([i32, i32, i32, i32, i64, i64,
-                                     i32], [i32]),
+        "path_filestat_set_times": (
+            [i32, i32, i32, i32, i64, i64, i32],
+            [i32],
+        ),
         "path_link": ([i32, i32, i32, i32, i32, i32, i32], [i32]),
         "path_open": ([i32, i32, i32, i32, i32, i64, i64, i32, i32], [i32]),
         "path_readlink": ([i32, i32, i32, i32, i32, i32], [i32]),
@@ -605,8 +756,9 @@ def _spec() -> dict[str, tuple[list[Any], list[Any]]]:
     }
 
 
-def install_wasi_fs(linker: "wasmtime.Linker", store: "wasmtime.Store",
-                    wasi_fs: WasiFs) -> None:
+def install_wasi_fs(
+    linker: "wasmtime.Linker", store: "wasmtime.Store", wasi_fs: WasiFs
+) -> None:
     """Shadow the linker's native preview1 filesystem imports.
 
     Every fd_*/path_* import routes to the WasiFs host functions;
@@ -624,8 +776,13 @@ def install_wasi_fs(linker: "wasmtime.Linker", store: "wasmtime.Store",
     for name, (params, results) in _spec().items():
         method = getattr(wasi_fs, name)
         linker.define(
-            store, "wasi_snapshot_preview1", name,
-            Func(store,
-                 FuncType(params, results),
-                 functools.partial(_call_guarded, method),
-                 access_caller=True))
+            store,
+            "wasi_snapshot_preview1",
+            name,
+            Func(
+                store,
+                FuncType(params, results),
+                functools.partial(_call_guarded, method),
+                access_caller=True,
+            ),
+        )

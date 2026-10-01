@@ -16,11 +16,24 @@ from collections.abc import AsyncIterator, Awaitable, Callable, Iterable
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum, StrEnum
-from typing import (TYPE_CHECKING, Annotated, Any, ClassVar, Literal, Protocol,
-                    TypeAlias)
+from typing import (
+    TYPE_CHECKING,
+    Annotated,
+    Any,
+    ClassVar,
+    Literal,
+    Protocol,
+    TypeAlias,
+)
 
-from pydantic import (BaseModel, ConfigDict, Field, NonNegativeFloat,
-                      NonNegativeInt, model_validator)
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    NonNegativeFloat,
+    NonNegativeInt,
+    model_validator,
+)
 
 if TYPE_CHECKING:
     import aiohttp
@@ -52,6 +65,7 @@ def _min_positive(values: Iterable[float | int | None]) -> float | int | None:
 
 class FindType(str, Enum):
     """POSIX `find -type` flag values (`-type d`, `-type f`)."""
+
     DIRECTORY = "d"
     FILE = "f"
 
@@ -59,6 +73,7 @@ class FindType(str, Enum):
 class LsSortBy(str, Enum):
     """`ls` sort keys: NAME is the default, TIME `-t`, SIZE `-S`, VERSION
     `-v`, EXTENSION `-X`, WIDTH `--sort=width`, and NONE `-U`."""
+
     NAME = "name"
     TIME = "time"
     SIZE = "size"
@@ -71,6 +86,7 @@ class LsSortBy(str, Enum):
 class LsTimeKind(str, Enum):
     """Which timestamp `ls` shows and sorts by: `-u`/`--time=atime`,
     `-c`/`--time=ctime`, `--time=birth`, else the modification time."""
+
     MTIME = "mtime"
     ATIME = "atime"
     CTIME = "ctime"
@@ -80,6 +96,7 @@ class LsTimeKind(str, Enum):
 class LsIndicator(str, Enum):
     """The mark `ls` appends to a name, `--indicator-style`'s words: `-p`
     is `slash`, `--file-type` is `file-type` and `-F` is `classify`."""
+
     NONE = "none"
     SLASH = "slash"
     FILE_TYPE = "file-type"
@@ -90,6 +107,7 @@ class CopyDeref(str, Enum):
     """Which symlinks `cp` follows: every one (`-L`), only the command
     line's (`-H`), or none, copying each link as a link (`-P`, `-d`,
     `-a`, and a recursive copy's default)."""
+
     ALWAYS = "always"
     COMMAND_LINE = "command_line"
     NEVER = "never"
@@ -99,6 +117,7 @@ class LsLinkMode(str, Enum):
     """Which command-line symlinks `ls` resolves before it lists them:
     every one (`-L`, `-H`), only one leading to a directory (the
     default), or none (`-d`, a long format, `-F`)."""
+
     ALL = "all"
     DIRECTORY = "directory"
     NONE = "none"
@@ -119,6 +138,7 @@ class FileType(str, Enum):
     bits, ls char) grow a row for one the moment a backend starts
     producing it.
     """
+
     DIRECTORY = "directory"
     FILE = "file"
     SYMLINK = "symlink"
@@ -134,6 +154,7 @@ class ContentType(str, Enum):
     Only meaningful for a FILE; a directory or symlink carries none. Not
     a node kind -- nothing branches control flow on it.
     """
+
     TEXT = "text"
     BINARY = "binary"
     JSON = "json"
@@ -180,8 +201,10 @@ class FileStat(BaseModel):
         # content is a FILE's rendering hint; a directory or symlink has
         # none. None on a FILE means "unknown", which is allowed.
         if self.type is not FileType.FILE and self.content is not None:
-            raise ValueError(f"content must be None for {self.type.value}, "
-                             f"got {self.content.value}")
+            raise ValueError(
+                f"content must be None for {self.type.value}, "
+                f"got {self.content.value}"
+            )
         return self
 
 
@@ -192,8 +215,9 @@ class FileStat(BaseModel):
 # to the same set. Spelled as a string because a recursive alias needs
 # a forward reference until the floor is 3.12 (PEP 695 `type`), so a
 # union with it has to be quoted too: `Awaitable["JsonValue | X"]`.
-JsonValue: TypeAlias = ("None | bool | int | float | str | list[JsonValue]"
-                        " | dict[str, JsonValue]")
+JsonValue: TypeAlias = (
+    "None | bool | int | float | str | list[JsonValue] | dict[str, JsonValue]"
+)
 
 # How a >= 400 API response and its body text become the backend's own
 # exception; core/api/client.py's engine calls it, each backend supplies
@@ -208,8 +232,9 @@ ReadStreamFn: TypeAlias = Callable[..., AsyncIterator[bytes]]
 # A "polymorphic" reader is the loose `read` contract head/tail/wc
 # accept: a backend may hand back materialized bytes, an awaitable of
 # bytes, or an async byte stream; ensure_stream normalizes downstream.
-PolymorphicReadResult: TypeAlias = (bytes | AsyncIterator[bytes]
-                                    | Awaitable[bytes | AsyncIterator[bytes]])
+PolymorphicReadResult: TypeAlias = (
+    bytes | AsyncIterator[bytes] | Awaitable[bytes | AsyncIterator[bytes]]
+)
 PolymorphicReadFn: TypeAlias = Callable[..., PolymorphicReadResult]
 CopyFn: TypeAlias = Callable[..., Awaitable[None]]
 MoveFn: TypeAlias = Callable[..., Awaitable[None]]
@@ -234,6 +259,7 @@ class WalkProbe:
             namespace's links (open(2) semantics), None while it holds
             none.
     """
+
     stat: StatFn
     follow: Callable[[str], str] | None = None
 
@@ -249,6 +275,7 @@ class CapacityState(StrEnum):
     or simply not reported yet. df renders real numbers for QUOTA and a
     literal ``-`` for the rest — never a fabricated total.
     """
+
     QUOTA = "quota"
     ELASTIC = "elastic"
     NA = "na"
@@ -269,6 +296,7 @@ class CapacityResult:
         inodes_used (int | None): used inodes.
         inodes_free (int | None): free inodes.
     """
+
     state: CapacityState
     total: int | None = None
     used: int | None = None
@@ -350,7 +378,8 @@ class MountBackend(StrEnum):
 
 # Backends that register a real mountpoint with the kernel.
 KERNEL_BACKENDS: frozenset[MountBackend] = frozenset(
-    {MountBackend.FUSE, MountBackend.FSKIT})
+    {MountBackend.FUSE, MountBackend.FSKIT}
+)
 
 
 class ReadPolicy(str, Enum):
@@ -533,12 +562,10 @@ class EntryGate(Protocol):
     """
 
     @property
-    def scoped(self) -> bool:
-        ...
+    def scoped(self) -> bool: ...
 
     @property
-    def granted(self) -> "tuple[CommandRule, ...]":
-        ...
+    def granted(self) -> "tuple[CommandRule, ...]": ...
 
     def check(self, virtual: str) -> None:
         """Raise when a rule in force refuses this entry for the running
@@ -580,8 +607,11 @@ class OnExceed(str, Enum):
 
 
 def _prefer_error(values: Iterable["OnExceed"]) -> "OnExceed":
-    return (OnExceed.ERROR if any(v is OnExceed.ERROR
-                                  for v in values) else OnExceed.TRUNCATE)
+    return (
+        OnExceed.ERROR
+        if any(v is OnExceed.ERROR for v in values)
+        else OnExceed.TRUNCATE
+    )
 
 
 def _min_bound(values: Iterable[int | None]) -> int | None:
@@ -604,9 +634,11 @@ class Limit(BaseModel):
 
     max_bytes: Annotated[NonNegativeInt | None, Aggr(_min_bound)] = None
     max_lines: Annotated[NonNegativeInt | None, Aggr(_min_bound)] = None
-    timeout_seconds: Annotated[NonNegativeFloat | None,
-                               Field(allow_inf_nan=False),
-                               Aggr(_min_positive)] = None
+    timeout_seconds: Annotated[
+        NonNegativeFloat | None,
+        Field(allow_inf_nan=False),
+        Aggr(_min_positive),
+    ] = None
     on_exceed: Annotated[OnExceed, Aggr(_prefer_error)] = OnExceed.TRUNCATE
 
     @classmethod
@@ -629,11 +661,13 @@ class Limit(BaseModel):
             return None
         kwargs: dict[str, Any] = {}
         for name, info in cls.model_fields.items():
-            rule = next((m for m in info.metadata if isinstance(m, Aggr)),
-                        None)
+            rule = next(
+                (m for m in info.metadata if isinstance(m, Aggr)), None
+            )
             values = [getattr(s, name) for s in present]
-            kwargs[name] = rule.reduce(
-                values) if rule is not None else values[0]
+            kwargs[name] = (
+                rule.reduce(values) if rule is not None else values[0]
+            )
         return cls(**kwargs)
 
 
@@ -805,8 +839,9 @@ class PathSpec:
         object.__setattr__(self, "vfs_path", vfs_path)
         object.__setattr__(self, "pattern", pattern)
         object.__setattr__(self, "resolved", resolved)
-        object.__setattr__(self, "raw_path",
-                           virtual if raw_path is None else raw_path)
+        object.__setattr__(
+            self, "raw_path", virtual if raw_path is None else raw_path
+        )
         object.__setattr__(self, "dotted", dotted)
         object.__setattr__(self, "walk_error", walk_error)
 
@@ -850,7 +885,7 @@ class PathSpec:
         """
         return PathSpec(
             virtual=path,
-            directory=path[:path.rfind("/") + 1] or "/",
+            directory=path[: path.rfind("/") + 1] or "/",
             vfs_path=(path.strip("/") if vfs_path is None else vfs_path),
         )
 
@@ -886,6 +921,7 @@ class FileChangeKind(StrEnum):
         UNKNOWN: precision was lost (queue overflow, checkpoint reset);
             everything under the path must be re-inventoried.
     """
+
     CREATE = "create"
     UPDATE = "update"
     DELETE = "delete"
@@ -911,6 +947,7 @@ class FileMetadata:
         size (int | None): Content size in bytes after the change.
         modified (str | None): Last-modified stamp after the change.
     """
+
     fingerprint: str | None = None
     size: int | None = None
     modified: str | None = None
@@ -935,6 +972,7 @@ class FileEvent:
         metadata (FileMetadata | None): Post-change metadata when the
             source carries it; None otherwise.
     """
+
     kind: FileChangeKind
     path: PathSpec
     timestamp: datetime
@@ -952,6 +990,7 @@ class Delta:
         checkpoint (str | None): Opaque serialized state to pass to the
             next pull.
     """
+
     changes: tuple[FileEvent, ...]
     checkpoint: str | None
 
@@ -971,6 +1010,7 @@ class WalkEntry:
         modified (str | None): Last-modified stamp, when the listing
             carries it.
     """
+
     virtual: str
     is_dir: bool
     fingerprint: str | None
@@ -991,6 +1031,7 @@ class OverflowPolicy(StrEnum):
         DROP_OLDEST: evict the oldest pending entry.
         ERROR: surface QueueOverflowError to the consumer iterator.
     """
+
     COLLAPSE = "collapse"
     DROP_OLDEST = "drop_oldest"
     ERROR = "error"
@@ -1004,5 +1045,6 @@ class DriftPolicy(StrEnum):
         STRICT: raise ContentDriftError on mismatch (default).
         OFF: skip drift checks entirely.
     """
+
     STRICT = "strict"
     OFF = "off"

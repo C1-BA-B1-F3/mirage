@@ -21,8 +21,13 @@ from typing import Any
 import pytest
 
 from mirage.accessor.base import Accessor
-from mirage.core.object_store.driver import (ChildEntry, FindHints, ObjectMeta,
-                                             ObjectStoreDriver, TreeEntry)
+from mirage.core.object_store.driver import (
+    ChildEntry,
+    FindHints,
+    ObjectMeta,
+    ObjectStoreDriver,
+    TreeEntry,
+)
 from mirage.types import PathSpec
 
 MODIFIED = "2026-01-01T00:00:00Z"
@@ -39,14 +44,15 @@ def fake_meta(key: str, data: bytes) -> ObjectMeta:
         key (str): the backend key.
         data (bytes): the object's bytes.
     """
-    return ObjectMeta(size=len(data),
-                      fingerprint=f"fp-{key}",
-                      revision=f"rev-{key}",
-                      extra={"etag": f"fp-{key}"})
+    return ObjectMeta(
+        size=len(data),
+        fingerprint=f"fp-{key}",
+        revision=f"rev-{key}",
+        extra={"etag": f"fp-{key}"},
+    )
 
 
 class FakeAccessor(Accessor):
-
     def __init__(self, key_prefix: str = "") -> None:
         self.key_prefix = key_prefix
 
@@ -66,14 +72,15 @@ class FakeStore:
 
 def spec(mount_path: str) -> PathSpec:
     key = mount_path.strip("/")
-    return PathSpec(virtual="/mnt" + mount_path if key else "/mnt",
-                    directory="/mnt/",
-                    vfs_path=key)
+    return PathSpec(
+        virtual="/mnt" + mount_path if key else "/mnt",
+        directory="/mnt/",
+        vfs_path=key,
+    )
 
 
 def make_driver(
-    store: FakeStore,
-    find_narrowing: bool = False
+    store: FakeStore, find_narrowing: bool = False
 ) -> ObjectStoreDriver[FakeAccessor, FakeStore]:
 
     def key_prefix_of(accessor: FakeAccessor) -> str:
@@ -84,19 +91,22 @@ def make_driver(
         store.connects += 1
         yield store
 
-    async def list_children(conn: FakeStore,
-                            pfx: str) -> AsyncIterator[ChildEntry]:
+    async def list_children(
+        conn: FakeStore, pfx: str
+    ) -> AsyncIterator[ChildEntry]:
         for key in conn.under(pfx):
             if key == pfx:
                 yield ChildEntry(key=key, kind="marker")
                 continue
-            relative = key[len(pfx):].rstrip("/")
+            relative = key[len(pfx) :].rstrip("/")
             slash = relative.find("/")
             if slash == -1 and not key.endswith("/"):
-                yield ChildEntry(key=key,
-                                 kind="f",
-                                 size=len(conn.objects[key]),
-                                 modified=MODIFIED)
+                yield ChildEntry(
+                    key=key,
+                    kind="f",
+                    size=len(conn.objects[key]),
+                    modified=MODIFIED,
+                )
             else:
                 child = pfx + (relative[:slash] if slash != -1 else relative)
                 yield ChildEntry(key=child, kind="d")
@@ -105,8 +115,9 @@ def make_driver(
         for key in conn.under(pfx):
             yield TreeEntry(key=key, size=len(conn.objects[key]))
 
-    async def list_subtree(conn: FakeStore,
-                           stem: str) -> AsyncIterator[TreeEntry]:
+    async def list_subtree(
+        conn: FakeStore, stem: str
+    ) -> AsyncIterator[TreeEntry]:
         for key in conn.under(""):
             if not stem or key == stem or key.startswith(stem + "/"):
                 yield TreeEntry(key=key, size=len(conn.objects[key]))
@@ -144,7 +155,7 @@ def make_driver(
         if not keys:
             return False
         for key in keys:
-            conn.objects[dst_pfx + key[len(src_pfx):]] = conn.objects.pop(key)
+            conn.objects[dst_pfx + key[len(src_pfx) :]] = conn.objects.pop(key)
         return True
 
     async def copy_file(conn: FakeStore, src_key: str, dst_key: str) -> bool:
@@ -159,16 +170,23 @@ def make_driver(
     def is_not_found(exc: Exception) -> bool:
         return isinstance(exc, KeyError)
 
-    def find_tree(conn: FakeStore, pfx: str,
-                  hints: FindHints) -> tuple[AsyncIterator[TreeEntry], bool]:
+    def find_tree(
+        conn: FakeStore, pfx: str, hints: FindHints
+    ) -> tuple[AsyncIterator[TreeEntry], bool]:
         if not (hints.pushdown and hints.name is not None):
             return list_tree(conn, pfx), False
-        rx = re.compile("^" + re.escape(pfx) + "(.*/)?" +
-                        hints.name.replace("*", "[^/]*") + "$")
+        rx = re.compile(
+            "^"
+            + re.escape(pfx)
+            + "(.*/)?"
+            + hints.name.replace("*", "[^/]*")
+            + "$"
+        )
         return _narrowed(conn, pfx, rx), True
 
-    async def _narrowed(conn: FakeStore, pfx: str,
-                        rx: "re.Pattern[str]") -> AsyncIterator[TreeEntry]:
+    async def _narrowed(
+        conn: FakeStore, pfx: str, rx: "re.Pattern[str]"
+    ) -> AsyncIterator[TreeEntry]:
         for key in conn.under(pfx):
             if rx.match(key):
                 yield TreeEntry(key=key, size=len(conn.objects[key]))
@@ -196,7 +214,6 @@ def make_driver(
 
 
 class FakeManager:
-
     def listing_trusted(self, _folder: str) -> bool:
         return False
 

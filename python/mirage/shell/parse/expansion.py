@@ -28,12 +28,15 @@ def expansion_source(data: bytes, root: TSNodeLike) -> bytes:
         for index, child in enumerate(children):
             if child.type != "${":
                 continue
-            tail = list(children[index + 1:])
+            tail = list(children[index + 1 :])
             if tail and tail[0].type == "!":
                 tail.pop(0)
-            if (len(tail) < 2 or tail[0].type
-                    not in ("variable_name", "special_variable_name",
-                            "subscript") or tail[1].type != ":"):
+            if (
+                len(tail) < 2
+                or tail[0].type
+                not in ("variable_name", "special_variable_name", "subscript")
+                or tail[1].type != ":"
+            ):
                 continue
             if construct_end(data, child.start_byte, ord("}")) is not None:
                 out[tail[1].start_byte] = ord("-")

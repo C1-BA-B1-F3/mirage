@@ -23,8 +23,10 @@ from tests.fixtures.driver_ops import ops
 def _ws() -> Workspace:
     mem = RAMVFS()
     asyncio.run(
-        ops(mem).write(PathSpec.from_str_path("/hello.txt"),
-                       data=b"hello\nworld\nfoo\n"))
+        ops(mem).write(
+            PathSpec.from_str_path("/hello.txt"), data=b"hello\nworld\nfoo\n"
+        )
+    )
     return Workspace(
         {"/data": (mem, MountMode.WRITE)},
         mode=MountMode.WRITE,
@@ -149,18 +151,18 @@ def test_uniq_stdin_count():
 
 def test_grep_stdin():
     ws = _ws()
-    stdout, _ = _run_raw(ws,
-                         "grep hello",
-                         stdin=b"hello world\nfoo bar\nhello again\n")
+    stdout, _ = _run_raw(
+        ws, "grep hello", stdin=b"hello world\nfoo bar\nhello again\n"
+    )
     lines = _str(stdout).strip().splitlines()
     assert len(lines) == 2
 
 
 def test_grep_stdin_ignore_case():
     ws = _ws()
-    stdout, _ = _run_raw(ws,
-                         "grep -i HELLO",
-                         stdin=b"Hello world\nfoo\nhello again\n")
+    stdout, _ = _run_raw(
+        ws, "grep -i HELLO", stdin=b"Hello world\nfoo\nhello again\n"
+    )
     lines = _str(stdout).strip().splitlines()
     assert len(lines) == 2
 
@@ -209,9 +211,9 @@ def test_grep_stdin_max_count():
 
 def test_rg_stdin():
     ws = _ws()
-    stdout, _ = _run_raw(ws,
-                         "rg hello",
-                         stdin=b"hello world\nfoo bar\nhello again\n")
+    stdout, _ = _run_raw(
+        ws, "rg hello", stdin=b"hello world\nfoo bar\nhello again\n"
+    )
     lines = _str(stdout).strip().splitlines()
     assert len(lines) == 2
 
@@ -256,9 +258,9 @@ def test_sed_no_global_replaces_first_only():
 
 def test_sed_ignore_case_flag():
     ws = _ws()
-    stdout, _ = _run_raw(ws,
-                         "sed s/hello/bye/gi",
-                         stdin=b"Hello HELLO hello\n")
+    stdout, _ = _run_raw(
+        ws, "sed s/hello/bye/gi", stdin=b"Hello HELLO hello\n"
+    )
     assert _str(stdout) == "bye bye bye\n"
 
 
@@ -285,18 +287,18 @@ def test_file_arg_takes_priority_over_stdin():
 
 def test_head_file_arg_takes_priority():
     ws = _ws()
-    stdout, _ = _run_raw(ws,
-                         "head -n 1 /data/hello.txt",
-                         stdin=b"stdin line\n")
+    stdout, _ = _run_raw(
+        ws, "head -n 1 /data/hello.txt", stdin=b"stdin line\n"
+    )
     assert "hello" in _str(stdout)
     assert "stdin" not in _str(stdout)
 
 
 def test_grep_file_arg_takes_priority():
     ws = _ws()
-    stdout, _ = _run_raw(ws,
-                         "grep hello /data/hello.txt",
-                         stdin=b"stdin content\n")
+    stdout, _ = _run_raw(
+        ws, "grep hello /data/hello.txt", stdin=b"stdin content\n"
+    )
     assert "hello" in _str(stdout)
     assert "stdin" not in _str(stdout)
 
@@ -390,15 +392,17 @@ def test_cut_field_range_and_single():
 
 def test_nl_body_numbering_regex():
     ws = _ws()
-    stdout, _ = _run_raw(ws,
-                         "nl -b pfoo",
-                         stdin=b"foo line\nbar line\nfoo again\n")
+    stdout, _ = _run_raw(
+        ws, "nl -b pfoo", stdin=b"foo line\nbar line\nfoo again\n"
+    )
     out = _str(stdout)
     lines = out.strip().splitlines()
     assert "1" in lines[0] and "foo line" in lines[0]
     assert "bar line" in lines[1]
-    assert "1" not in lines[1].split("\t")[0].strip() or lines[1].split(
-        "\t")[0].strip() == ""
+    assert (
+        "1" not in lines[1].split("\t")[0].strip()
+        or lines[1].split("\t")[0].strip() == ""
+    )
     assert "2" in lines[2] and "foo again" in lines[2]
 
 

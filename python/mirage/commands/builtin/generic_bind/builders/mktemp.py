@@ -16,8 +16,11 @@ from functools import partial
 
 from mirage.accessor.base import Accessor
 from mirage.commands.builtin.generic.mktemp import mktemp_generic
-from mirage.commands.builtin.generic_bind.adapter import (Builder, CommandIO,
-                                                          Operation)
+from mirage.commands.builtin.generic_bind.adapter import (
+    Builder,
+    CommandIO,
+    Operation,
+)
 from mirage.commands.builtin.utils.copy import path_exists
 from mirage.commands.config import CommandOpts
 from mirage.io.types import ByteSource, IOResult
@@ -25,9 +28,13 @@ from mirage.types import PathSpec
 from mirage.utils.key_prefix import mount_key
 
 
-async def mktemp(ops: CommandIO, accessor: Accessor, paths: list[PathSpec],
-                 texts: list[str],
-                 opts: CommandOpts) -> tuple[ByteSource | None, IOResult]:
+async def mktemp(
+    ops: CommandIO,
+    accessor: Accessor,
+    paths: list[PathSpec],
+    texts: list[str],
+    opts: CommandOpts,
+) -> tuple[ByteSource | None, IOResult]:
     # The name a pathless mktemp creates is under $TMPDIR or /tmp, which
     # the working directory's mount rarely owns, so the create goes
     # through the dispatcher to whichever mount does. Only a generic run
@@ -37,7 +44,8 @@ async def mktemp(ops: CommandIO, accessor: Accessor, paths: list[PathSpec],
 
     def local(path: PathSpec) -> PathSpec:
         return PathSpec.from_str_path(
-            path.virtual, mount_key(path.virtual, opts.mount_prefix or ""))
+            path.virtual, mount_key(path.virtual, opts.mount_prefix or "")
+        )
 
     async def mkdir(path: PathSpec) -> None:
         if dispatch is not None:
@@ -59,4 +67,4 @@ async def mktemp(ops: CommandIO, accessor: Accessor, paths: list[PathSpec],
     return await mktemp_generic(paths, list(texts), opts, mkdir, write, exists)
 
 
-BUILDER = Builder('mktemp', mktemp, write=True)
+BUILDER = Builder("mktemp", mktemp, write=True)

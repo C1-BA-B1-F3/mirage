@@ -19,8 +19,11 @@ from mirage.io.types import ByteSource
 from mirage.shell.join import shell_join
 from mirage.utils.quote import single_quote
 from mirage.workspace.executor.builtins.getopt import last_of, scan_options
-from mirage.workspace.executor.builtins.lookup import (classify, describe,
-                                                       program_file)
+from mirage.workspace.executor.builtins.lookup import (
+    classify,
+    describe,
+    program_file,
+)
 from mirage.workspace.executor.builtins.lookup.types import NameKind
 from mirage.workspace.executor.builtins.shared import ok, result
 from mirage.workspace.executor.builtins.types import BuiltinCall, Result
@@ -32,8 +35,12 @@ _USAGE = "command: usage: command [-pVv] command [arg ...]\n"
 _OPTIONS = "pvV"
 
 
-def _probe(mode: str, rest: Sequence[str], session: SessionState,
-           registry: MountRegistry) -> Result:
+def _probe(
+    mode: str,
+    rest: Sequence[str],
+    session: SessionState,
+    registry: MountRegistry,
+) -> Result:
     """Run the ``-v``/``-V`` introspection modes.
 
     The exit status is 0 when no names are given, otherwise 0 if any name
@@ -75,10 +82,9 @@ def _probe(mode: str, rest: Sequence[str], session: SessionState,
     # `command: nope: not found` for a missing name and still exits 0
     # when another name resolved.
     code = 0 if (not rest or any_found) else 1
-    return result("command",
-                  out=out,
-                  exit_code=code,
-                  stderr="".join(err_lines))
+    return result(
+        "command", out=out, exit_code=code, stderr="".join(err_lines)
+    )
 
 
 async def handle_command_builtin(
@@ -108,9 +114,11 @@ async def handle_command_builtin(
     """
     scan = scan_options(args, _OPTIONS)
     if scan.bad is not None:
-        return result("command",
-                      exit_code=2,
-                      stderr=f"command: {scan.bad}: invalid option\n{_USAGE}")
+        return result(
+            "command",
+            exit_code=2,
+            stderr=f"command: {scan.bad}: invalid option\n{_USAGE}",
+        )
     mode = last_of(scan.letters, "vV")
     rest = scan.operands
     if mode is not None:
@@ -128,16 +136,19 @@ async def handle_command_builtin(
     saved_fn = session.functions.pop(inner_name, None)
     saved_alias = session.aliases.pop(inner_name, None)
     try:
-        io = await execute_fn(inner,
-                              session_id=session.session_id,
-                              stdin=stdin)
+        io = await execute_fn(
+            inner, session_id=session.session_id, stdin=stdin
+        )
     finally:
         if saved_fn is not None:
             session.functions[inner_name] = saved_fn
         if saved_alias is not None:
             session.aliases[inner_name] = saved_alias
-    return io.stdout, io, ExecutionNode(command="command",
-                                        exit_code=io.exit_code)
+    return (
+        io.stdout,
+        io,
+        ExecutionNode(command="command", exit_code=io.exit_code),
+    )
 
 
 async def command_builtin(call: BuiltinCall) -> Result:
@@ -146,6 +157,10 @@ async def command_builtin(call: BuiltinCall) -> Result:
     Args:
         call (BuiltinCall): the invocation.
     """
-    return await handle_command_builtin(call.execute_fn, list(call.argv.args),
-                                        call.session, call.registry,
-                                        call.stdin)
+    return await handle_command_builtin(
+        call.execute_fn,
+        list(call.argv.args),
+        call.session,
+        call.registry,
+        call.stdin,
+    )

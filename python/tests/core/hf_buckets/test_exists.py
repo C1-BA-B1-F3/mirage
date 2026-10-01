@@ -32,8 +32,9 @@ async def test_exists_false_for_missing(make_acc):
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("status,code", [(401, ""), (404, "RepoNotFound")])
-async def test_exists_raises_on_a_refused_bucket(make_acc, fake_hub, status,
-                                                 code):
+async def test_exists_raises_on_a_refused_bucket(
+    make_acc, fake_hub, status, code
+):
     # A bucket the Hub will not show is not a missing file: False here
     # would let a caller conclude it can create the path.
     acc = make_acc({"a.txt": b"x"})

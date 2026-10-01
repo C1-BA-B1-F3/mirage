@@ -18,8 +18,11 @@ import logging
 import pytest
 
 from mirage.workspace import abort as abort_module
-from mirage.workspace.abort import (ABORT_JOIN_SECONDS, MirageAbortError,
-                                    run_cancellable)
+from mirage.workspace.abort import (
+    ABORT_JOIN_SECONDS,
+    MirageAbortError,
+    run_cancellable,
+)
 
 
 @pytest.mark.asyncio
@@ -128,7 +131,8 @@ async def test_an_externally_cancelled_caller_gets_the_same_grace():
 
 @pytest.mark.asyncio
 async def test_a_body_that_swallows_both_cancels_is_joined_and_warned(
-        monkeypatch, caplog):
+    monkeypatch, caplog
+):
     # Neither cancel can be forced through a body that swallows them,
     # which is asyncio's own limit too. The caller waits for the body to
     # return, and the wait is named in the log rather than silent.
@@ -151,5 +155,7 @@ async def test_a_body_that_swallows_both_cancels_is_joined_and_warned(
         with pytest.raises(MirageAbortError):
             await run_cancellable(body(), cancel)
     assert steps == ["returned"]
-    assert any("not letting CancelledError propagate" in r.getMessage()
-               for r in caplog.records)
+    assert any(
+        "not letting CancelledError propagate" in r.getMessage()
+        for r in caplog.records
+    )

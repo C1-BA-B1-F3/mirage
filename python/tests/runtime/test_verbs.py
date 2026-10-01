@@ -16,42 +16,126 @@ import inspect
 import os
 
 from mirage.errors import FsCondition
-from mirage.runtime.verbs import (CLASSIFIED_VERBS, PASSTHROUGH_VERBS,
-                                  REFUSED_VERBS, ROUTED_VERBS, refusal_of)
+from mirage.runtime.verbs import (
+    CLASSIFIED_VERBS,
+    PASSTHROUGH_VERBS,
+    REFUSED_VERBS,
+    ROUTED_VERBS,
+    refusal_of,
+)
 
 # Parameter names CPython's os module gives an argument that can carry a
 # path. `utime` is probed separately because its C signature is not
 # introspectable, so the sweep below cannot see it.
-PATH_PARAMS = frozenset({
-    "path", "src", "dst", "top", "source", "target", "link", "old", "new",
-    "filename", "file", "name", "paths", "entry", "dirname"
-})
+PATH_PARAMS = frozenset(
+    {
+        "path",
+        "src",
+        "dst",
+        "top",
+        "source",
+        "target",
+        "link",
+        "old",
+        "new",
+        "filename",
+        "file",
+        "name",
+        "paths",
+        "entry",
+        "dirname",
+    }
+)
 UNINTROSPECTABLE = frozenset({"utime"})
 
 # Names one platform has and another does not, so the existence check
 # below cannot demand them. The BSD flag verbs and `lchmod` are macOS
 # only; the xattr family, `memfd_create`, `splice` and
 # `copy_file_range` are linux only.
-PLATFORM_SPECIFIC = frozenset({
-    "chflags", "copy_file_range", "getxattr", "lchflags", "lchmod",
-    "listxattr", "memfd_create", "removexattr", "setxattr", "splice"
-})
+PLATFORM_SPECIFIC = frozenset(
+    {
+        "chflags",
+        "copy_file_range",
+        "getxattr",
+        "lchflags",
+        "lchmod",
+        "listxattr",
+        "memfd_create",
+        "removexattr",
+        "setxattr",
+        "splice",
+    }
+)
 
 # What the sweep below reports on linux, which is what CI runs. Frozen
 # here so a macOS run catches a linux-only gap; regenerate with the
 # sweep under `docker run --rm python:3.12-slim`.
-LINUX_PATH_TAKING = frozenset({
-    "access", "chdir", "chmod", "chown", "chroot", "confstr",
-    "copy_file_range", "execl", "execle", "execlp", "execlpe", "execv",
-    "execve", "execvp", "execvpe", "fpathconf", "fsdecode", "fsencode",
-    "fspath", "fwalk", "getxattr", "lchown", "link", "listdir", "listxattr",
-    "lstat", "makedirs", "memfd_create", "mkdir", "mkfifo", "mknod", "open",
-    "pathconf", "putenv", "readlink", "remove", "removedirs", "removexattr",
-    "rename", "renames", "replace", "rmdir", "scandir", "setxattr", "spawnl",
-    "spawnle", "spawnlp", "spawnlpe", "spawnv", "spawnve", "spawnvp",
-    "spawnvpe", "splice", "stat", "statvfs", "symlink", "sysconf", "truncate",
-    "unlink", "unsetenv", "utime", "walk"
-})
+LINUX_PATH_TAKING = frozenset(
+    {
+        "access",
+        "chdir",
+        "chmod",
+        "chown",
+        "chroot",
+        "confstr",
+        "copy_file_range",
+        "execl",
+        "execle",
+        "execlp",
+        "execlpe",
+        "execv",
+        "execve",
+        "execvp",
+        "execvpe",
+        "fpathconf",
+        "fsdecode",
+        "fsencode",
+        "fspath",
+        "fwalk",
+        "getxattr",
+        "lchown",
+        "link",
+        "listdir",
+        "listxattr",
+        "lstat",
+        "makedirs",
+        "memfd_create",
+        "mkdir",
+        "mkfifo",
+        "mknod",
+        "open",
+        "pathconf",
+        "putenv",
+        "readlink",
+        "remove",
+        "removedirs",
+        "removexattr",
+        "rename",
+        "renames",
+        "replace",
+        "rmdir",
+        "scandir",
+        "setxattr",
+        "spawnl",
+        "spawnle",
+        "spawnlp",
+        "spawnlpe",
+        "spawnv",
+        "spawnve",
+        "spawnvp",
+        "spawnvpe",
+        "splice",
+        "stat",
+        "statvfs",
+        "symlink",
+        "sysconf",
+        "truncate",
+        "unlink",
+        "unsetenv",
+        "utime",
+        "walk",
+    }
+)
 
 
 def _path_taking_os_names() -> set[str]:
@@ -72,7 +156,6 @@ def _path_taking_os_names() -> set[str]:
 
 
 class TestVerbCoverage:
-
     def test_every_path_taking_os_name_is_classified(self):
         # Default-deny means an unclassified name is refused, so this
         # failing is not a silent hole; it is a name whose answer nobody
@@ -94,14 +177,14 @@ class TestVerbCoverage:
         # A typo'd row would classify a verb no guest can ever spell,
         # leaving the real one to the default-deny path.
         missing = [
-            n for n in CLASSIFIED_VERBS - PLATFORM_SPECIFIC
+            n
+            for n in CLASSIFIED_VERBS - PLATFORM_SPECIFIC
             if not hasattr(os, n)
         ]
         assert sorted(missing) == []
 
 
 class TestRefusalOf:
-
     def test_routed_verb_is_served(self):
         assert refusal_of("symlink") is None
 

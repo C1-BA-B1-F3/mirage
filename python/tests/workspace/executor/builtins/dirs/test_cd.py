@@ -28,9 +28,11 @@ def dispatcher(dirs=(), files=()):
         if scope.virtual in dirs:
             return FileStat(name=scope.virtual, type=FileType.DIRECTORY), None
         if scope.virtual in files:
-            return FileStat(name=scope.virtual,
-                            type=FileType.FILE,
-                            content=ContentType.TEXT), None
+            return FileStat(
+                name=scope.virtual,
+                type=FileType.FILE,
+                content=ContentType.TEXT,
+            ), None
         raise FileNotFoundError(scope.virtual)
 
     return dispatch, seen
@@ -69,11 +71,9 @@ async def test_cd_to_root_never_consults_the_backend():
 @pytest.mark.asyncio
 async def test_cd_prints_the_destination_when_asked():
     dispatch, _ = dispatcher(dirs={"/data"})
-    stdout, io, _ = await handle_cd(dispatch,
-                                    no_mount_root,
-                                    "/data",
-                                    session(),
-                                    print_path=True)
+    stdout, io, _ = await handle_cd(
+        dispatch, no_mount_root, "/data", session(), print_path=True
+    )
     assert io.exit_code == 0
     assert stdout == b"/data\n"
 
@@ -112,11 +112,9 @@ async def test_cd_accepts_a_mount_root_the_backend_cannot_stat():
 async def test_cd_searches_cdpath_before_the_cwd_relative_candidate():
     dispatch, seen = dispatcher(dirs={"/opt/sub"})
     sess = session(cwd="/data", CDPATH="/opt")
-    stdout, io, _ = await handle_cd(dispatch,
-                                    no_mount_root,
-                                    "sub",
-                                    sess,
-                                    cdpath_target="sub")
+    stdout, io, _ = await handle_cd(
+        dispatch, no_mount_root, "sub", sess, cdpath_target="sub"
+    )
     assert io.exit_code == 0
     assert sess.cwd == "/opt/sub"
     assert seen == ["/opt/sub"]
@@ -127,11 +125,9 @@ async def test_cd_searches_cdpath_before_the_cwd_relative_candidate():
 async def test_cd_falls_back_to_the_cwd_when_no_cdpath_entry_matches():
     dispatch, seen = dispatcher(dirs={"/data/sub"})
     sess = session(cwd="/data", CDPATH="/opt")
-    stdout, io, _ = await handle_cd(dispatch,
-                                    no_mount_root,
-                                    "sub",
-                                    sess,
-                                    cdpath_target="sub")
+    stdout, io, _ = await handle_cd(
+        dispatch, no_mount_root, "sub", sess, cdpath_target="sub"
+    )
     assert io.exit_code == 0
     assert sess.cwd == "/data/sub"
     assert seen == ["/opt/sub", "/data/sub"]
@@ -142,11 +138,9 @@ async def test_cd_falls_back_to_the_cwd_when_no_cdpath_entry_matches():
 async def test_cd_skips_the_cdpath_search_for_an_explicitly_relative_operand():
     dispatch, seen = dispatcher(dirs={"/data/sub"})
     sess = session(cwd="/data", CDPATH="/opt")
-    _, io, _ = await handle_cd(dispatch,
-                               no_mount_root,
-                               "./sub",
-                               sess,
-                               cdpath_target="./sub")
+    _, io, _ = await handle_cd(
+        dispatch, no_mount_root, "./sub", sess, cdpath_target="./sub"
+    )
     assert io.exit_code == 0
     assert seen == ["/data/sub"]
 
@@ -155,11 +149,9 @@ async def test_cd_skips_the_cdpath_search_for_an_explicitly_relative_operand():
 async def test_cd_follows_a_symlink_to_its_target():
     dispatch, _ = dispatcher(dirs={"/real"})
     sess = session()
-    _, io, _ = await handle_cd(dispatch,
-                               no_mount_root,
-                               "/link",
-                               sess,
-                               links={"/link": "/real"})
+    _, io, _ = await handle_cd(
+        dispatch, no_mount_root, "/link", sess, links={"/link": "/real"}
+    )
     assert io.exit_code == 0
     assert sess.cwd == "/real"
 
@@ -168,11 +160,9 @@ async def test_cd_follows_a_symlink_to_its_target():
 async def test_cd_follows_a_symlink_that_is_only_a_prefix_of_the_operand():
     dispatch, _ = dispatcher(dirs={"/real/sub"})
     sess = session()
-    _, io, _ = await handle_cd(dispatch,
-                               no_mount_root,
-                               "/link/sub",
-                               sess,
-                               links={"/link": "/real"})
+    _, io, _ = await handle_cd(
+        dispatch, no_mount_root, "/link/sub", sess, links={"/link": "/real"}
+    )
     assert io.exit_code == 0
     assert sess.cwd == "/real/sub"
 
@@ -181,14 +171,9 @@ async def test_cd_follows_a_symlink_that_is_only_a_prefix_of_the_operand():
 async def test_cd_follows_a_chain_of_symlinks_to_the_final_target():
     dispatch, _ = dispatcher(dirs={"/real"})
     sess = session()
-    _, io, _ = await handle_cd(dispatch,
-                               no_mount_root,
-                               "/a",
-                               sess,
-                               links={
-                                   "/a": "/b",
-                                   "/b": "/real"
-                               })
+    _, io, _ = await handle_cd(
+        dispatch, no_mount_root, "/a", sess, links={"/a": "/b", "/b": "/real"}
+    )
     assert io.exit_code == 0
     assert sess.cwd == "/real"
 
@@ -206,11 +191,13 @@ async def test_cd_follows_a_chain_of_symlinks_to_the_final_target():
 async def test_cd_logical_mode_simplifies_dotdot_before_following_links():
     dispatch, _ = dispatcher(dirs={"/deep", "/deep/real"})
     sess = session()
-    _, io, _ = await handle_cd(dispatch,
-                               no_mount_root,
-                               "/link/..",
-                               sess,
-                               links={"/link": "/deep/real"})
+    _, io, _ = await handle_cd(
+        dispatch,
+        no_mount_root,
+        "/link/..",
+        sess,
+        links={"/link": "/deep/real"},
+    )
     assert io.exit_code == 0
     assert sess.cwd == "/"
 
@@ -219,12 +206,14 @@ async def test_cd_logical_mode_simplifies_dotdot_before_following_links():
 async def test_cd_physical_mode_applies_dotdot_to_the_link_target():
     dispatch, _ = dispatcher(dirs={"/deep", "/deep/real"})
     sess = session()
-    _, io, _ = await handle_cd(dispatch,
-                               no_mount_root,
-                               "/link/..",
-                               sess,
-                               links={"/link": "/deep/real"},
-                               physical=True)
+    _, io, _ = await handle_cd(
+        dispatch,
+        no_mount_root,
+        "/link/..",
+        sess,
+        links={"/link": "/deep/real"},
+        physical=True,
+    )
     assert io.exit_code == 0
     assert sess.cwd == "/deep"
 
@@ -233,33 +222,35 @@ async def test_cd_physical_mode_applies_dotdot_to_the_link_target():
 async def test_cd_physical_mode_resolves_a_link_in_the_middle_of_the_path():
     dispatch, _ = dispatcher(dirs={"/deep/real", "/deep/real/sub"})
     sess = session()
-    _, io, _ = await handle_cd(dispatch,
-                               no_mount_root,
-                               "/link/sub/..",
-                               sess,
-                               links={"/link": "/deep/real"},
-                               physical=True)
+    _, io, _ = await handle_cd(
+        dispatch,
+        no_mount_root,
+        "/link/sub/..",
+        sess,
+        links={"/link": "/deep/real"},
+        physical=True,
+    )
     assert io.exit_code == 0
     assert sess.cwd == "/deep/real"
 
 
 @pytest.mark.asyncio
-async def test_cd_physical_mode_reads_dotdot_off_a_relative_operands_spelling(
-):
+async def test_cd_physical_mode_reads_dotdot_off_a_relative_operands_spelling():
     # A relative operand reaches cd as a PathSpec whose `virtual` was
     # already normalized against cwd, so -P has to read `raw_path`.
     dispatch, _ = dispatcher(dirs={"/deep/real"})
     sess = session(cwd="/link/sub")
-    operand = PathSpec(virtual="/link",
-                       directory="/link/",
-                       vfs_path="",
-                       raw_path="..")
-    _, io, _ = await handle_cd(dispatch,
-                               no_mount_root,
-                               operand,
-                               sess,
-                               links={"/link": "/deep/real"},
-                               physical=True)
+    operand = PathSpec(
+        virtual="/link", directory="/link/", vfs_path="", raw_path=".."
+    )
+    _, io, _ = await handle_cd(
+        dispatch,
+        no_mount_root,
+        operand,
+        sess,
+        links={"/link": "/deep/real"},
+        physical=True,
+    )
     assert io.exit_code == 0
     assert sess.cwd == "/deep/real"
 
@@ -278,14 +269,9 @@ async def test_cd_normalizes_dotdot_when_the_workspace_has_no_symlinks():
 async def test_cd_reports_eloop_on_a_symlink_cycle():
     dispatch, _ = dispatcher()
     sess = session(cwd="/data")
-    _, io, _ = await handle_cd(dispatch,
-                               no_mount_root,
-                               "/a",
-                               sess,
-                               links={
-                                   "/a": "/b",
-                                   "/b": "/a"
-                               })
+    _, io, _ = await handle_cd(
+        dispatch, no_mount_root, "/a", sess, links={"/a": "/b", "/b": "/a"}
+    )
     assert io.exit_code == 1
     assert io.stderr == b"cd: /a: Too many levels of symbolic links\n"
     assert sess.cwd == "/data"

@@ -33,7 +33,8 @@ def cli(tmp_path, monkeypatch):
         f"#!{sys.executable}\n" + "import json, os, sys, time\n"
         "if sys.argv[-1] == 'wait': time.sleep(60)\n"
         "print(json.dumps(dict(argv=sys.argv[1:], env=dict(os.environ), "
-        "cwd=os.getcwd(), stdin=sys.stdin.read())))\n")
+        "cwd=os.getcwd(), stdin=sys.stdin.read())))\n"
+    )
     binary.chmod(0o755)
     monkeypatch.setenv("PATH", str(tmp_path))
     return tmp_path
@@ -44,29 +45,27 @@ async def test_argv_environment_cwd_and_stdin_reach_cli(cli, monkeypatch):
     monkeypatch.setenv("MIRAGE_HOST_ONLY", "must-not-inherit")
     runtime = SandlockRuntime(
         config={
-            "env": {
-                "E": "config",
-                "BASE": "yes"
-            },
-            "fs_readable": ("/data", ),
-            "fs_writable": ("/work", ),
-            "max_memory": "512M"
-        })
+            "env": {"E": "config", "BASE": "yes"},
+            "fs_readable": ("/data",),
+            "fs_writable": ("/work",),
+            "max_memory": "512M",
+        }
+    )
     argv = ("node", "a b", "$(echo literal)", "", "--flag")
     result = await runtime.execute(
-        ProcessExecution(argv=argv,
-                         cwd=PathSpec.from_str_path(str(cli)),
-                         stdin=b"input\n",
-                         env={
-                             "E": "request",
-                             "LD_PRELOAD": "/guest-only.so"
-                         }))
+        ProcessExecution(
+            argv=argv,
+            cwd=PathSpec.from_str_path(str(cli)),
+            stdin=b"input\n",
+            env={"E": "request", "LD_PRELOAD": "/guest-only.so"},
+        )
+    )
     assert result.exit_code == 0
     data = json.loads(result.stdout)
     args = data["argv"]
-    assert args[args.index("--") + 1:] == list(argv)
+    assert args[args.index("--") + 1 :] == list(argv)
     assert args[:1] == ["run"]
-    assert args[1:1 + len(runtime.policy_argv())] == runtime.policy_argv()
+    assert args[1 : 1 + len(runtime.policy_argv())] == runtime.policy_argv()
     assert "--clean-env" in args
     assert "E=request" in args and "E=config" not in args
     assert "BASE=yes" in args and "LD_PRELOAD=/guest-only.so" in args
@@ -91,11 +90,10 @@ async def test_workspace_routes_named_programs_as_argv(cli):
         await ws.close()
 
 
-def test_registry_declares_process_and_shell_without_language_or_workspace_fs(
-):
+def test_registry_declares_process_and_shell_without_language_or_workspace_fs():
     runtime = build_runtime("sandlock")
     assert isinstance(runtime, SandlockRuntime)
-    assert runtime.captures == ("@external", )
+    assert runtime.captures == ("@external",)
     assert runtime.capabilities.process and runtime.capabilities.shell
     assert runtime.capabilities.languages == ()
     assert runtime.capabilities.filesystem == ()
@@ -109,14 +107,16 @@ async def test_missing_cli_fails_loud(tmp_path, monkeypatch):
     monkeypatch.setenv("PATH", str(tmp_path))
     with pytest.raises(FileNotFoundError, match="sandlock CLI on PATH"):
         await SandlockRuntime().execute(
-            ProcessExecution(argv=("node", ), cwd=PathSpec.from_str_path("/")))
+            ProcessExecution(argv=("node",), cwd=PathSpec.from_str_path("/"))
+        )
 
 
 @pytest.mark.asyncio
 async def test_empty_argv_is_refused():
     with pytest.raises(ValueError, match="argv must not be empty"):
         await SandlockRuntime().execute(
-            ProcessExecution(argv=(), cwd=PathSpec.from_str_path("/")))
+            ProcessExecution(argv=(), cwd=PathSpec.from_str_path("/"))
+        )
 
 
 @pytest.mark.asyncio
@@ -125,8 +125,12 @@ async def test_cancellation_reaps_the_cli(cli):
     with pytest.raises(asyncio.TimeoutError):
         await asyncio.wait_for(
             runtime.execute(
-                ProcessExecution(argv=("wait", ),
-                                 cwd=PathSpec.from_str_path(str(cli)))), 0.1)
+                ProcessExecution(
+                    argv=("wait",), cwd=PathSpec.from_str_path(str(cli))
+                )
+            ),
+            0.1,
+        )
     assert not runtime._children
 
 
@@ -135,8 +139,11 @@ async def test_close_reaps_an_active_cli(cli):
     runtime = SandlockRuntime()
     task = asyncio.create_task(
         runtime.execute(
-            ProcessExecution(argv=("wait", ),
-                             cwd=PathSpec.from_str_path(str(cli)))))
+            ProcessExecution(
+                argv=("wait",), cwd=PathSpec.from_str_path(str(cli))
+            )
+        )
+    )
     async with asyncio.timeout(2):
         while not runtime._children:
             await asyncio.sleep(0.01)

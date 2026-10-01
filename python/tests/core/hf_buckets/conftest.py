@@ -18,14 +18,21 @@ import pytest
 import pytest_asyncio
 
 from mirage.accessor.hf_buckets import HfBucketsAccessor
-from tests.fixtures.hf_buckets_opendal import (BUCKET, FakeAsyncOperator,
-                                               _FakeEntry, _FakeMetadata,
-                                               make_accessor)
+from tests.fixtures.hf_buckets_opendal import (
+    BUCKET,
+    FakeAsyncOperator,
+    _FakeEntry,
+    _FakeMetadata,
+    make_accessor,
+)
 from tests.fixtures.hf_hub_api import FakeHub, serve
 
 __all__ = [
-    "BUCKET", "FakeAsyncOperator", "_FakeEntry", "_FakeMetadata",
-    "make_accessor"
+    "BUCKET",
+    "FakeAsyncOperator",
+    "_FakeEntry",
+    "_FakeMetadata",
+    "make_accessor",
 ]
 
 
@@ -37,7 +44,8 @@ def fake_hub() -> Iterator[FakeHub]:
 
 @pytest_asyncio.fixture
 async def make_acc(
-        fake_hub: FakeHub) -> AsyncIterator[Callable[..., HfBucketsAccessor]]:
+    fake_hub: FakeHub,
+) -> AsyncIterator[Callable[..., HfBucketsAccessor]]:
     # Each accessor owns an HTTP pool; close them on the loop that opened
     # them, so no session outlives its test.
     made: list[HfBucketsAccessor] = []

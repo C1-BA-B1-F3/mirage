@@ -21,8 +21,9 @@ from mirage.core.slug_tree.types import A
 from mirage.types import PathSpec
 
 
-async def file_entry(tree: SlugTree[A], accessor: A, path: PathSpec,
-                     index: IndexCacheStore) -> IndexEntry:
+async def file_entry(
+    tree: SlugTree[A], accessor: A, path: PathSpec, index: IndexCacheStore
+) -> IndexEntry:
     """The index entry of a file path; a folder is EISDIR.
 
     Args:

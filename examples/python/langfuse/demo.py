@@ -61,13 +61,16 @@ async def main():
     ws = Workspace({"/langfuse": vfs}, mode=MountMode.READ)
 
     print("=== not-found errors show the full virtual path ===")
-    for cmd in ("cat /langfuse/__nf_missing__.txt",
-                "head /langfuse/__nf_missing__.txt",
-                "stat /langfuse/__nf_missing__.txt"):
+    for cmd in (
+        "cat /langfuse/__nf_missing__.txt",
+        "head /langfuse/__nf_missing__.txt",
+        "stat /langfuse/__nf_missing__.txt",
+    ):
         result = await ws.shell(cmd)
         print(f"$ {cmd}")
-        print(f"  exit={result.exit_code}  "
-              f"{(await result.stderr_str()).strip()}")
+        print(
+            f"  exit={result.exit_code}  {(await result.stderr_str()).strip()}"
+        )
 
     print("=" * 60)
     print("LS across all directories")
@@ -134,8 +137,7 @@ async def main():
 
     await _run(
         ws,
-        'jq ".input" '
-        '"/langfuse/datasets/qa-eval/items.jsonl"',
+        'jq ".input" "/langfuse/datasets/qa-eval/items.jsonl"',
     )
     await _run(
         ws,
@@ -149,7 +151,9 @@ async def main():
 
     await _run(ws, "ls /langfuse/sessions/chat-session-001/")
 
-    r = await ws.shell("ls /langfuse/sessions/chat-session-001/", )
+    r = await ws.shell(
+        "ls /langfuse/sessions/chat-session-001/",
+    )
     session_traces = (await r.stdout_str()).strip().splitlines()
     if session_traces:
         st = session_traces[0].strip()
@@ -174,12 +178,16 @@ async def main():
     meta_res = await ws.shell(
         'chmod 640 "/langfuse/prompts/summarize"'
         ' && chown 500:dev "/langfuse/prompts/summarize"'
-        ' && touch -t 202601021530 "/langfuse/prompts/summarize"')
+        ' && touch -t 202601021530 "/langfuse/prompts/summarize"'
+    )
     print(f"  chmod/chown/touch exit={meta_res.exit_code}")
     meta_st, _ = await ws.dispatch(
-        "stat", PathSpec.from_str_path("/langfuse/prompts/summarize"))
-    print(f"  dispatch stat: mode={oct(meta_st.mode)[2:]} uid={meta_st.uid} "
-          f"gid={meta_st.gid} mtime={meta_st.modified}")
+        "stat", PathSpec.from_str_path("/langfuse/prompts/summarize")
+    )
+    print(
+        f"  dispatch stat: mode={oct(meta_st.mode)[2:]} uid={meta_st.uid} "
+        f"gid={meta_st.gid} mtime={meta_st.modified}"
+    )
 
     print("\n" + "=" * 60)
     print("TREE, FIND, NAVIGATION")
@@ -217,9 +225,12 @@ async def main():
         print(
             f"  cold cat={cold_ms:.0f}ms  warm cat={warm_ms:.0f}ms  "
             f"grep={grep_ms:.0f}ms head={head_ms:.0f}ms tail={tail_ms:.0f}ms "
-            f"wc={wc_ms:.0f}ms")
-        print(f"  served_from_cache={warm_ms < cold_ms / 5} "
-              f"(warm speedup {cold_ms / max(warm_ms, 0.001):.0f}x)")
+            f"wc={wc_ms:.0f}ms"
+        )
+        print(
+            f"  served_from_cache={warm_ms < cold_ms / 5} "
+            f"(warm speedup {cold_ms / max(warm_ms, 0.001):.0f}x)"
+        )
 
     print("\n" + "=" * 60)
     print("GLOB: mid-path patterns walk segment by segment")
@@ -233,8 +244,9 @@ async def main():
     # command reports it like GNU coreutils.
     r = await ws.shell("cat /langfuse/zz-none-*/x.json")
     err = (await r.stderr_str()).strip()
-    print(f"  cat /langfuse/zz-none-*/x.json -> exit={r.exit_code} "
-          f"{err[:120]}")
+    print(
+        f"  cat /langfuse/zz-none-*/x.json -> exit={r.exit_code} {err[:120]}"
+    )
     assert r.exit_code == 1 and "zz-none-*" in err
 
 

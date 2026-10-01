@@ -25,8 +25,15 @@ CONFIG = {"api_key": "secret"}
 # Verbs the official CLI ships that a virtualized CLI deliberately does
 # not: two are interactive browser flows, two manage the binary or a
 # deploy target, and one uploads local files a session does not have.
-OUT_OF_SCOPE = ("login", "logout", "update", "workers", "notion-as-code",
-                "doctor", "files")
+OUT_OF_SCOPE = (
+    "login",
+    "logout",
+    "update",
+    "workers",
+    "notion-as-code",
+    "doctor",
+    "files",
+)
 
 
 def leaf(*path: str):
@@ -53,12 +60,23 @@ def verb(*path: str):
 def test_tree_shape_matches_the_official_grammar():
     assert NTN.name == "ntn"
     assert NTN.config_model is NotionConfig
-    assert [g.name for g in NTN.subcommands
-            ] == ["api", "auth", "datasources", "pages", "whoami"]
-    assert [v.name for v in leaf("pages").subcommands
-            ] == ["get", "create", "edit", "trash"]
-    assert [v.name
-            for v in leaf("datasources").subcommands] == ["query", "resolve"]
+    assert [g.name for g in NTN.subcommands] == [
+        "api",
+        "auth",
+        "datasources",
+        "pages",
+        "whoami",
+    ]
+    assert [v.name for v in leaf("pages").subcommands] == [
+        "get",
+        "create",
+        "edit",
+        "trash",
+    ]
+    assert [v.name for v in leaf("datasources").subcommands] == [
+        "query",
+        "resolve",
+    ]
     assert [v.name for v in leaf("auth").subcommands] == ["token"]
 
 
@@ -104,9 +122,12 @@ def test_api_path_is_optional():
 def test_notion_version_is_env_backed():
     # Declared once on the shared option, so every verb that carries it
     # honors NOTION_API_VERSION identically.
-    for path in (("pages", "get"), ("datasources", "query"), ("whoami", )):
-        option = next(opt for opt in leaf(*path).options
-                      if opt.long == "--notion-version")
+    for path in (("pages", "get"), ("datasources", "query"), ("whoami",)):
+        option = next(
+            opt
+            for opt in leaf(*path).options
+            if opt.long == "--notion-version"
+        )
         assert option.env == "NOTION_API_VERSION", path
         assert option.metavar == "VERSION", path
 
@@ -127,8 +148,9 @@ async def test_installed_tree_dispatches_pages_create(monkeypatch):
     async def fake_create(config, body):
         return {"id": "P1", "object": "page", "parent": body["parent"]}
 
-    monkeypatch.setitem(pages_create.create.__globals__, "create_page",
-                        fake_create)
+    monkeypatch.setitem(
+        pages_create.create.__globals__, "create_page", fake_create
+    )
     ws = Workspace({})
     ws.register_cli("ntn", NTN, CONFIG)
     io = await ws.shell("ntn pages create --content '# Hi' --parent page:root")
@@ -146,7 +168,8 @@ async def test_page_id_is_taken_from_the_operand(monkeypatch):
         return {"id": page_id}
 
     monkeypatch.setitem(
-        verb("pages", "trash").__globals__, "update_page", fake_update)
+        verb("pages", "trash").__globals__, "update_page", fake_update
+    )
     ws = Workspace({})
     ws.register_cli("ntn", NTN, CONFIG)
     io = await ws.shell("ntn pages trash P9 --yes")

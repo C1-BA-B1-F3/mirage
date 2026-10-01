@@ -15,9 +15,11 @@
 import pytest
 
 from mirage import MountMode, Workspace
-from tests.vfs.databricks_volume.test_databricks_volume import (FakeFiles,
-                                                                make_vfs,
-                                                                seed_directory)
+from tests.vfs.databricks_volume.test_databricks_volume import (
+    FakeFiles,
+    make_vfs,
+    seed_directory,
+)
 
 ROOT = "/Volumes/main/default/agent_files/root"
 
@@ -77,8 +79,10 @@ async def test_mkdir_read_only_mount_rejected(read_ws, dbx_files):
     io = await read_ws.shell("mkdir /dbx/newdir")
 
     assert io.exit_code != 0
-    assert io.stderr == (b"mkdir: cannot create directory '/dbx/newdir': "
-                         b"Read-only file system\n")
+    assert io.stderr == (
+        b"mkdir: cannot create directory '/dbx/newdir': "
+        b"Read-only file system\n"
+    )
     assert dbx_files.create_directory_calls == []
 
 

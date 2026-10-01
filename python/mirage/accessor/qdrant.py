@@ -28,10 +28,10 @@ from mirage.vfs.secrets import reveal_secret
 @asynccontextmanager
 async def _open(config: QdrantConfig) -> AsyncIterator[AsyncQdrantClient]:
     kwargs: dict[str, Any] = {
-        "api_key":
-        reveal_secret(config.api_key) if config.api_key is not None else None,
-        "cloud_inference":
-        config.cloud_inference,
+        "api_key": reveal_secret(config.api_key)
+        if config.api_key is not None
+        else None,
+        "cloud_inference": config.cloud_inference,
     }
     if config.url:
         kwargs["url"] = config.url
@@ -47,18 +47,19 @@ async def _open(config: QdrantConfig) -> AsyncIterator[AsyncQdrantClient]:
 
 
 class QdrantAccessor(Accessor):
-
     def __init__(self, config: QdrantConfig) -> None:
         self.config = config
         self._clients = LoopClientCache("qdrant")
-        self.search_cache: dict[tuple[str, str, int], list[dict[str,
-                                                                Any]]] = {}
+        self.search_cache: dict[
+            tuple[str, str, int], list[dict[str, Any]]
+        ] = {}
         self.indexes_ensured: set[str] = set()
 
     async def client(self) -> AsyncQdrantClient:
         """Return this loop's client, opening one when there is none."""
         client: AsyncQdrantClient = await self._clients.get(
-            partial(_open, self.config))
+            partial(_open, self.config)
+        )
         return client
 
     async def close(self) -> None:

@@ -65,8 +65,10 @@ ARGS_VAR = f"__mirage_jq_args_{_TOKEN}"
 
 # The error no `try` inside the program caught: whether it was a string,
 # and its text as jq prints it.
-_ERROR_MARK = ('{"' + ERROR_KEY + '": [(type == "string"), '
-               '(if type == "string" then . else tojson end)]}')
+_ERROR_MARK = (
+    '{"' + ERROR_KEY + '": [(type == "string"), '
+    '(if type == "string" then . else tojson end)]}'
+)
 _CATCH = f" catch {_ERROR_MARK}"
 _DONE = ', {"' + DONE_KEY + '": true}'
 # A run that hands its outputs back as text pipes every one, stops and
@@ -91,24 +93,36 @@ _DUMP = f"| {_DUMPER}"
 # things still get past that: a `try` that swallows one halt unseen before
 # the program reaches another, and a halt whose message or choice rests on
 # `now`, which the rerun reads again.
-_HALT_MARK = ('{"' + HALT_KEY + '": [$code, (if . == null then null '
-              'elif type == "string" then . else tojson end), '
-              '(type == "string")]}')
-_BUILTINS = ("def __mirage_jq_halt: halt; "
-             "def __mirage_jq_halt_error($code): halt_error($code); ")
-_RAISE = (_BUILTINS + 'def halt: error({"' + HALT_KEY +
-          '": [null, null, false]}); '
-          'def halt_error($code): if ($code | type) == "number" then '
-          f"error({_HALT_MARK}) else __mirage_jq_halt_error($code) end; "
-          "def halt_error: halt_error(5); ")
-_RAISED = (' catch (if type == "object" and has("' + HALT_KEY +
-           f'") then . else {_ERROR_MARK} end)')
-_PRINT = (_BUILTINS + 'def halt: {"' + HALT_KEY +
-          '": [null, null, false]}, __mirage_jq_halt; '
-          'def halt_error($code): if ($code | type) == "number" then '
-          f"{_HALT_MARK}, __mirage_jq_halt_error($code) "
-          "else __mirage_jq_halt_error($code) end; "
-          "def halt_error: halt_error(5); ")
+_HALT_MARK = (
+    '{"' + HALT_KEY + '": [$code, (if . == null then null '
+    'elif type == "string" then . else tojson end), '
+    '(type == "string")]}'
+)
+_BUILTINS = (
+    "def __mirage_jq_halt: halt; "
+    "def __mirage_jq_halt_error($code): halt_error($code); "
+)
+_RAISE = (
+    _BUILTINS + 'def halt: error({"' + HALT_KEY + '": [null, null, false]}); '
+    'def halt_error($code): if ($code | type) == "number" then '
+    f"error({_HALT_MARK}) else __mirage_jq_halt_error($code) end; "
+    "def halt_error: halt_error(5); "
+)
+_RAISED = (
+    ' catch (if type == "object" and has("'
+    + HALT_KEY
+    + f'") then . else {_ERROR_MARK} end)'
+)
+_PRINT = (
+    _BUILTINS
+    + 'def halt: {"'
+    + HALT_KEY
+    + '": [null, null, false]}, __mirage_jq_halt; '
+    'def halt_error($code): if ($code | type) == "number" then '
+    f"{_HALT_MARK}, __mirage_jq_halt_error($code) "
+    "else __mirage_jq_halt_error($code) end; "
+    "def halt_error: halt_error(5); "
+)
 
 # Whether the program's own `error` raised the error a run stopped at comes
 # from running it again with every `error` it spells renamed to _RAISER, so
@@ -124,15 +138,23 @@ _PRINT = (_BUILTINS + 'def halt: {"' + HALT_KEY +
 WRAP_KEY = f"__mirage_jq_wrap_{_TOKEN}"
 RAISED_KEY = f"__mirage_jq_raised_{_TOKEN}"
 _RAISER = "__mirage_jq_raise"
-_RAISED_MARK = ('{"' + RAISED_KEY + '": [(type == "string"), '
-                '(if type == "string" then . else tojson end)]}')
-_WRAP = (f'def {_RAISER}: if type == "object" and has("{WRAP_KEY}") '
-         f'then error else error({{"{WRAP_KEY}": .}}) end; '
-         f"def {_RAISER}(msg): msg | {_RAISER}; ")
-_UNWRAP = (f' catch (if type == "object" and has("{WRAP_KEY}") '
-           f'then .["{WRAP_KEY}"] | {_RAISED_MARK} else {_ERROR_MARK} end)')
-_MARK = (f"def {_RAISER}: {_RAISED_MARK}, error; "
-         f"def {_RAISER}(msg): msg | {_RAISER}; ")
+_RAISED_MARK = (
+    '{"' + RAISED_KEY + '": [(type == "string"), '
+    '(if type == "string" then . else tojson end)]}'
+)
+_WRAP = (
+    f'def {_RAISER}: if type == "object" and has("{WRAP_KEY}") '
+    f'then error else error({{"{WRAP_KEY}": .}}) end; '
+    f"def {_RAISER}(msg): msg | {_RAISER}; "
+)
+_UNWRAP = (
+    f' catch (if type == "object" and has("{WRAP_KEY}") '
+    f'then .["{WRAP_KEY}"] | {_RAISED_MARK} else {_ERROR_MARK} end)'
+)
+_MARK = (
+    f"def {_RAISER}: {_RAISED_MARK}, error; "
+    f"def {_RAISER}(msg): msg | {_RAISER}; "
+)
 
 
 def code_only(expr: str) -> str:
@@ -220,8 +242,9 @@ def args_text(opts: JqOptions) -> str:
         opts (JqOptions): resolved options carrying both binding kinds.
     """
     positional = ",".join(opts.positional_args)
-    named = ",".join(f"{string_text(name)}:{text}"
-                     for name, text in opts.named_args.items())
+    named = ",".join(
+        f"{string_text(name)}:{text}" for name, text in opts.named_args.items()
+    )
     return f'{{"positional":[{positional}],"named":{{{named}}}}}'
 
 
@@ -270,8 +293,10 @@ def _stream_defs(expr: str, failed: bool) -> str:
     rest = f"{docs}[1:]" if stream_reads(expr).input else docs
     end = f"error(${INPUTS_ERROR_VAR})" if failed else 'error("break")'
     tail = f", error(${INPUTS_ERROR_VAR})" if failed else ""
-    return (f"def input: if ({docs} | length) > 0 then {docs}[0] "
-            f"else {end} end; def inputs: {rest}[]{tail};")
+    return (
+        f"def input: if ({docs} | length) > 0 then {docs}[0] "
+        f"else {end} end; def inputs: {rest}[]{tail};"
+    )
 
 
 def _unshifted(message: str, shift: int) -> str:
@@ -284,8 +309,8 @@ def _unshifted(message: str, shift: int) -> str:
     if shift == 0:
         return message
     return TOP_LEVEL_LINE.sub(
-        lambda match: f"{match.group(1)}{int(match.group(2)) - shift}",
-        message)
+        lambda match: f"{match.group(1)}{int(match.group(2)) - shift}", message
+    )
 
 
 def _balanced(code: str) -> bool:
@@ -301,8 +326,9 @@ def _balanced(code: str) -> bool:
     for ch in code:
         if ch in OPENERS:
             stack.append(ch)
-        elif ch in CLOSERS and (not stack
-                                or OPENERS[CLOSERS.index(ch)] != stack.pop()):
+        elif ch in CLOSERS and (
+            not stack or OPENERS[CLOSERS.index(ch)] != stack.pop()
+        ):
             return False
     return not stack
 
@@ -329,8 +355,9 @@ def _stop_of(value: JsonValue) -> JqError | JqHalt | None:
     return None
 
 
-def _collected(results: Iterable[JsonValue],
-               dumped: bool = False) -> tuple[JqRun[JsonValue], bool]:
+def _collected(
+    results: Iterable[JsonValue], dumped: bool = False
+) -> tuple[JqRun[JsonValue], bool]:
     """A run's outputs, up to the stop the prelude hands back, and whether
     the run ended by itself rather than stopping at a halt: it reached the
     sentinel, handed back a stop, or failed.
@@ -412,18 +439,22 @@ def _bound(
         f". as [${VALUE_VAR}, ${NAMED_VAR}, ${INPUTS_VAR}, ${ARGS_VAR}, "
         f"${INPUTS_ERROR_VAR}] |"
     ]
-    steps.extend(f"${NAMED_VAR}[{string_text(name)}] as ${name} |"
-                 for name in names)
+    steps.extend(
+        f"${NAMED_VAR}[{string_text(name)}] as ${name} |" for name in names
+    )
     if inputs is not None:
         steps.append(_stream_defs(expr, inputs_error is not None))
     if args is not None:
         steps.append(f"${ARGS_VAR} as $ARGS |")
     steps.append(f"${VALUE_VAR} |")
-    carried = ",".join(f"{string_text(name)}:{text}"
-                       for name, text in named.items())
+    carried = ",".join(
+        f"{string_text(name)}:{text}" for name, text in named.items()
+    )
     error = "null" if inputs_error is None else string_text(inputs_error)
-    stdin = (f"[{doc},{{{carried}}},[{','.join(inputs or ())}],"
-             f"{args or 'null'},{error}]")
+    stdin = (
+        f"[{doc},{{{carried}}},[{','.join(inputs or ())}],"
+        f"{args or 'null'},{error}]"
+    )
     return _Bound(tuple(steps), stdin, doc)
 
 
@@ -441,8 +472,9 @@ def _compile(program: str) -> _libjq._Program:
     return _libjq.compile(program)
 
 
-def _typed(expr: str, bound: _Bound,
-           dump: bool) -> tuple[_libjq._Program, str, bool]:
+def _typed(
+    expr: str, bound: _Bound, dump: bool
+) -> tuple[_libjq._Program, str, bool]:
     """The program compiled as typed, behind the definitions that print a
     halt just before it: the way a program runs when its code cannot sit
     whole inside the prelude's parentheses. Returns it with the input it
@@ -482,8 +514,9 @@ def _typed(expr: str, bound: _Bound,
         return compiled, stdin, False
 
 
-def _wrapped(expr: str, bound: _Bound, stops: str,
-             tail: str) -> _libjq._Program | None:
+def _wrapped(
+    expr: str, bound: _Bound, stops: str, tail: str
+) -> _libjq._Program | None:
     """The program compiled inside the prelude (see jq_run), or None when
     its code cannot sit whole inside the prelude's parentheses.
 
@@ -544,7 +577,7 @@ def _renamed(expr: str) -> str:
     parts: list[str] = []
     last = 0
     for match in ERROR_CALL.finditer(code_only(expr)):
-        parts.append(expr[last:match.start()])
+        parts.append(expr[last : match.start()])
         parts.append(_RAISER)
         last = match.end()
     parts.append(expr[last:])
@@ -566,8 +599,9 @@ def _raised_mark(value: JsonValue) -> JqError | None:
     return None
 
 
-def _wrapped_verdict(results: Iterable[JsonValue],
-                     run: JqRun[JsonValue]) -> bool | None:
+def _wrapped_verdict(
+    results: Iterable[JsonValue], run: JqRun[JsonValue]
+) -> bool | None:
     """What the rerun that wraps the program's own errors says of the one
     a run stopped at: raised by the program when it hands that error back
     under RAISED_KEY, by a builtin when it stops at it as it was, and
@@ -596,8 +630,9 @@ def _wrapped_verdict(results: Iterable[JsonValue],
     return None
 
 
-def _marked_verdict(results: Iterable[JsonValue],
-                    run: JqRun[JsonValue]) -> bool | None:
+def _marked_verdict(
+    results: Iterable[JsonValue], run: JqRun[JsonValue]
+) -> bool | None:
     """Whether the rerun that prints each of the program's own errors just
     before raising it shows the program raised the one a run stopped at:
     it printed as many outputs as the run did, and that error's mark last.
@@ -657,10 +692,11 @@ def _value_bound(
         args_value (Mapping[str, JsonValue] | None): the value of `$ARGS`.
         inputs_error (str | None): the parse error the stream ends in.
     """
-    named = ({
-        name: _value_text(value)
-        for name, value in named_args.items()
-    } if named_args else None)
+    named = (
+        {name: _value_text(value) for name, value in named_args.items()}
+        if named_args
+        else None
+    )
     docs = None if inputs is None else [_value_text(doc) for doc in inputs]
     args = None if args_value is None else _value_text(dict(args_value))
     return _bound(_value_text(obj), expr, named, docs, args, inputs_error)
@@ -687,10 +723,13 @@ def _run(expr: str, bound: _Bound, dump: bool) -> JqRun[JsonValue]:
             return run
         # The last resort of a program that refused the dump: its values,
         # written back as JSON.
-        return JqRun([
-            json.dumps(value, ensure_ascii=False, separators=(",", ":"))
-            for value in run.outputs
-        ], run.stop)
+        return JqRun(
+            [
+                json.dumps(value, ensure_ascii=False, separators=(",", ":"))
+                for value in run.outputs
+            ],
+            run.stop,
+        )
     run, ended = _collected(compiled.input_text(bound.stdin), dump)
     if ended:
         return run
@@ -745,8 +784,9 @@ def jq_run(
         JqCompileError: libjq's refusal of the program, its compile
             errors numbered by the program's own lines.
     """
-    bound = _value_bound(obj, expr, named_args, inputs, args_value,
-                         inputs_error)
+    bound = _value_bound(
+        obj, expr, named_args, inputs, args_value, inputs_error
+    )
     return _run(expr, bound, False)
 
 
@@ -776,8 +816,9 @@ def jq_run_texts(
         JqCompileError: libjq's refusal of the program, its compile
             errors numbered by the program's own lines.
     """
-    run = _run(expr, _bound(doc, expr, named, inputs, args, inputs_error),
-               True)
+    run = _run(
+        expr, _bound(doc, expr, named, inputs, args, inputs_error), True
+    )
     # A dumped run hands back strings only (see _collected).
     return cast("JqRun[str]", run)
 

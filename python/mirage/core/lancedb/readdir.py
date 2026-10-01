@@ -19,9 +19,13 @@ from mirage.cache.index import IndexEntry
 from mirage.core.hierarchy.codec import PATH_SAFE
 from mirage.core.hierarchy.readdir import DirListing, Listed
 from mirage.core.hierarchy.scope import ScopeMatch
-from mirage.core.lancedb.query import (ValueTest, distinct_values,
-                                       rows_matching, table_columns,
-                                       table_exists)
+from mirage.core.lancedb.query import (
+    ValueTest,
+    distinct_values,
+    rows_matching,
+    table_columns,
+    table_exists,
+)
 from mirage.core.lancedb.render import cell_text, render_card
 from mirage.core.vector.readdir import dir_entry
 from mirage.core.vector.scope import filters_of, table_of
@@ -29,31 +33,40 @@ from mirage.utils.glob_walk import glob_prefix, glob_stem_prefix
 from mirage.vfs.lancedb.config import LanceDBConfig
 
 
-def _row_entries(rows: list[dict[str, Any]],
-                 config: LanceDBConfig) -> list[tuple[str, IndexEntry]]:
+def _row_entries(
+    rows: list[dict[str, Any]], config: LanceDBConfig
+) -> list[tuple[str, IndexEntry]]:
     # The widened select carries every rendered column, so each card's exact
     # size is free here; blob values are deliberately not fetched at listing
     # time, so blob entries stay size-unknown and stat renders them itself.
     entries: list[tuple[str, IndexEntry]] = []
     for row in rows:
         rid = cell_text(row[config.id_column])
-        entries.append((f"{rid}.md",
-                        IndexEntry(
-                            id=rid,
-                            name=f"{rid}.md",
-                            resource_type="lancedb/row_card",
-                            vfs_name=f"{rid}.md",
-                            size=len(render_card(row, config)),
-                        )))
+        entries.append(
+            (
+                f"{rid}.md",
+                IndexEntry(
+                    id=rid,
+                    name=f"{rid}.md",
+                    resource_type="lancedb/row_card",
+                    vfs_name=f"{rid}.md",
+                    size=len(render_card(row, config)),
+                ),
+            )
+        )
         if config.blob_column:
             blob_name = f"{rid}.{config.blob_ext}"
-            entries.append((blob_name,
-                            IndexEntry(
-                                id=rid,
-                                name=blob_name,
-                                resource_type="lancedb/row_blob",
-                                vfs_name=blob_name,
-                            )))
+            entries.append(
+                (
+                    blob_name,
+                    IndexEntry(
+                        id=rid,
+                        name=blob_name,
+                        resource_type="lancedb/row_blob",
+                        vfs_name=blob_name,
+                    ),
+                )
+            )
     return entries
 
 
@@ -86,8 +99,9 @@ def _row_prefix(pattern: str | None, config: LanceDBConfig) -> str:
     return glob_stem_prefix(pattern, suffixes)
 
 
-async def children(accessor: LanceDBAccessor,
-                   match: ScopeMatch) -> Listed | None:
+async def children(
+    accessor: LanceDBAccessor, match: ScopeMatch
+) -> Listed | None:
     """The entries under a table or a group.
 
     Args:
@@ -109,27 +123,41 @@ async def children(accessor: LanceDBAccessor,
         # with the head, so a head no value prefix spells (the escape lead
         # alone) still reaches past the rows at the head of the table.
         values = await distinct_values(
-            accessor, table, config.group_by[depth], filters, config.max_rows,
+            accessor,
+            table,
+            config.group_by[depth],
+            filters,
+            config.max_rows,
             PATH_SAFE.prefix_value(display_prefix),
-            _rendered_prefix_test(display_prefix) if display_prefix else None)
+            _rendered_prefix_test(display_prefix) if display_prefix else None,
+        )
         names = sorted(map(PATH_SAFE.encode, values))
-        return DirListing(entries=[(name, dir_entry("lancedb", name))
-                                   for name in names],
-                          partial=bool(display_prefix),
-                          window=True)
+        return DirListing(
+            entries=[(name, dir_entry("lancedb", name)) for name in names],
+            partial=bool(display_prefix),
+            window=True,
+        )
     # Select every column except the vector and blob ones (schema order, so
     # the projected rows render byte-identically to the full rows read()
     # fetches). Still one data query; the schema lookup is local metadata on
     # the already-opened table.
     columns = [
-        c for c in await table_columns(accessor, table)
+        c
+        for c in await table_columns(accessor, table)
         if c != config.vector_column and c != config.blob_column
     ]
     prefix = _row_prefix(pattern, config)
-    rows = await rows_matching(accessor, table, filters, columns,
-                               config.max_rows, config.id_column, prefix)
+    rows = await rows_matching(
+        accessor,
+        table,
+        filters,
+        columns,
+        config.max_rows,
+        config.id_column,
+        prefix,
+    )
     # Read up to max_rows, so a row outside the head of the table is not
     # gone because a listing no longer names it.
-    return DirListing(entries=_row_entries(rows, config),
-                      partial=bool(prefix),
-                      window=True)
+    return DirListing(
+        entries=_row_entries(rows, config), partial=bool(prefix), window=True
+    )

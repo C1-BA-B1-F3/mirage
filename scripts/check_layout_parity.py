@@ -55,9 +55,11 @@ class Findings:
         # so counting the directory too would double-count it. Counting
         # directories *instead* of their modules is what made the ratchet blind
         # to new modules added under a directory already in the baseline.
-        return (sum(len(v) for v in self.python_only.values()) +
-                sum(len(v) for v in self.typescript_only.values()) +
-                sum(len(v) for v in self.renamed.values()))
+        return (
+            sum(len(v) for v in self.python_only.values())
+            + sum(len(v) for v in self.typescript_only.values())
+            + sum(len(v) for v in self.renamed.values())
+        )
 
 
 def canonical(name: str) -> str:
@@ -143,8 +145,9 @@ def typescript_modules() -> dict[str, dict[str, str]]:
     return dict(out)
 
 
-def collect(py: dict[str, dict[str, str]],
-            ts: dict[str, dict[str, str]]) -> Findings:
+def collect(
+    py: dict[str, dict[str, str]], ts: dict[str, dict[str, str]]
+) -> Findings:
     """Diff the two module maps.
 
     Args:
@@ -189,8 +192,9 @@ def load_exceptions() -> dict[str, object]:
     return loaded
 
 
-def excuse(found: Findings,
-           exceptions: dict[str, object]) -> tuple[Findings, list[str]]:
+def excuse(
+    found: Findings, exceptions: dict[str, object]
+) -> tuple[Findings, list[str]]:
     """Drop excused findings and name any exception that no longer applies.
 
     A stale entry is the failure mode every hand-maintained allowlist in
@@ -213,13 +217,18 @@ def excuse(found: Findings,
     # module under `agents/agno` or `core/opfs` is expected growth, not drift.
     excused_dirs: dict[str, set[str]] = {"renamed": set()}
 
-    for key, bucket in (("python_only", found.python_only_dirs),
-                        ("typescript_only", found.typescript_only_dirs)):
+    for key, bucket in (
+        ("python_only", found.python_only_dirs),
+        ("typescript_only", found.typescript_only_dirs),
+    ):
         allowed = directories.get(key, {})
         assert isinstance(allowed, dict)
         excused_dirs[key] = set(allowed)
-        target = (remaining.python_only_dirs
-                  if key == "python_only" else remaining.typescript_only_dirs)
+        target = (
+            remaining.python_only_dirs
+            if key == "python_only"
+            else remaining.typescript_only_dirs
+        )
         for rel in bucket:
             if rel not in allowed:
                 target[rel] = None
@@ -246,7 +255,8 @@ def excuse(found: Findings,
             assert isinstance(allowed_names, dict)
             live = set(actual.get(rel, []))
             stale += [
-                f"modules.{rel}.{key}.{name}" for name in allowed_names
+                f"modules.{rel}.{key}.{name}"
+                for name in allowed_names
                 if name not in live
             ]
     return remaining, sorted(set(stale))
@@ -260,8 +270,9 @@ def report(remaining: Findings, stale: list[str], baseline: int) -> None:
         print(f"  python-only directory: mirage/{rel} ({len(names)} modules)")
     for rel in remaining.typescript_only_dirs:
         names = remaining.typescript_only.get(rel, [])
-        print(f"  typescript-only directory: */src/{rel} "
-              f"({len(names)} modules)")
+        print(
+            f"  typescript-only directory: */src/{rel} ({len(names)} modules)"
+        )
     for rel, names in sorted(remaining.renamed.items()):
         for pair in names:
             py_name, ts_name = pair.split(":", 1)
@@ -282,7 +293,8 @@ def report(remaining: Findings, stale: list[str], baseline: int) -> None:
 
 def main() -> int:
     parser = argparse.ArgumentParser(
-        description="Diff the python and typescript module layouts.")
+        description="Diff the python and typescript module layouts."
+    )
     # Advisory by default because 200-odd divergences predate the gate and
     # each needs its own decision. --strict does not demand zero: it fails
     # only when the count rises above the committed baseline, so new drift
@@ -306,32 +318,40 @@ def main() -> int:
                     "stale": stale,
                     "python_only_dirs": sorted(remaining.python_only_dirs),
                     "typescript_only_dirs": sorted(
-                        remaining.typescript_only_dirs),
+                        remaining.typescript_only_dirs
+                    ),
                     "renamed": remaining.renamed,
                     "python_only": remaining.python_only,
                     "typescript_only": remaining.typescript_only,
                 },
                 indent=2,
                 sort_keys=True,
-            ))
+            )
+        )
     else:
         report(remaining, stale, baseline)
 
     if not args.strict:
         return 0
     if stale:
-        print(f"\nFAIL: {len(stale)} stale entries in {EXCEPTIONS.name}; "
-              "delete them or restore the divergence they describe.")
+        print(
+            f"\nFAIL: {len(stale)} stale entries in {EXCEPTIONS.name}; "
+            "delete them or restore the divergence they describe."
+        )
         return 1
     if remaining.total() > baseline:
-        print(f"\nFAIL: layout divergence rose from {baseline} to "
-              f"{remaining.total()}. Mirror the module, or add it to "
-              f"{EXCEPTIONS.name} with a reason.")
+        print(
+            f"\nFAIL: layout divergence rose from {baseline} to "
+            f"{remaining.total()}. Mirror the module, or add it to "
+            f"{EXCEPTIONS.name} with a reason."
+        )
         return 1
     if remaining.total() < baseline:
-        print(f"\nFAIL: layout divergence fell from {baseline} to "
-              f"{remaining.total()}. Lower the baseline in "
-              f"{EXCEPTIONS.name} to lock the improvement in.")
+        print(
+            f"\nFAIL: layout divergence fell from {baseline} to "
+            f"{remaining.total()}. Lower the baseline in "
+            f"{EXCEPTIONS.name} to lock the improvement in."
+        )
         return 1
     return 0
 

@@ -115,8 +115,9 @@ def parse_touch_stamp(t: str | None, d: str | None) -> str | None:
             raw = f"{datetime.now(timezone.utc).year:04d}{raw}"
         try:
             dt = datetime.strptime(raw, _TOUCH_STAMP_FMT[len(raw)])
-            dt = dt.replace(second=int(seconds) if seconds else 0,
-                            tzinfo=timezone.utc)
+            dt = dt.replace(
+                second=int(seconds) if seconds else 0, tzinfo=timezone.utc
+            )
         except ValueError:
             raise ValueError(t) from None
         return dt.isoformat()
@@ -132,8 +133,9 @@ def now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-def permission_error(cmd: str, action: str, path: PathSpec,
-                     exc: PermissionError) -> str:
+def permission_error(
+    cmd: str, action: str, path: PathSpec, exc: PermissionError
+) -> str:
     """Render a metadata-write PermissionError.
 
     A read-only region renders GNU's per-operand line, ``<cmd>: <action>
@@ -180,13 +182,9 @@ async def setattr_via(
         atime (str | None): ISO access time.
         mtime (str | None): ISO modification time.
     """
-    await dispatch("setattr",
-                   path,
-                   mode=mode,
-                   uid=uid,
-                   gid=gid,
-                   atime=atime,
-                   mtime=mtime)
+    await dispatch(
+        "setattr", path, mode=mode, uid=uid, gid=gid, atime=atime, mtime=mtime
+    )
 
 
 async def apply_link_attrs(
@@ -215,12 +213,9 @@ async def apply_link_attrs(
         mtime (str | None): ISO modification time.
     """
     try:
-        await dispatch("setattr",
-                       path,
-                       uid=uid,
-                       gid=gid,
-                       mtime=mtime,
-                       nofollow=True)
+        await dispatch(
+            "setattr", path, uid=uid, gid=gid, mtime=mtime, nofollow=True
+        )
     except PermissionError as exc:
         errors.append(permission_error(cmd, ATTR_ACTIONS[cmd], path, exc))
 
@@ -245,8 +240,10 @@ def follow_operand(
     try:
         virtual = namespace.follow(target.virtual)
     except CycleError:
-        errors.append(f"{cmd}: {action} '{target.raw_path}': "
-                      f"Too many levels of symbolic links\n")
+        errors.append(
+            f"{cmd}: {action} '{target.raw_path}': "
+            f"Too many levels of symbolic links\n"
+        )
         return None
     return PathSpec.from_str_path(virtual)
 
@@ -267,12 +264,18 @@ async def resolve_operand(
         target (PathSpec): the operand as typed.
         errors (list[str]): per-operand error accumulator.
     """
-    refusal = (walk_refusal(target)
-               if target.walk_error is not None else await dot_refusal(
-                   partial(dispatch_stat, dispatch), target, namespace.follow))
+    refusal = (
+        walk_refusal(target)
+        if target.walk_error is not None
+        else await dot_refusal(
+            partial(dispatch_stat, dispatch), target, namespace.follow
+        )
+    )
     if refusal is not None:
-        errors.append(f"{cmd}: cannot access '{target.raw_path}': "
-                      f"{fs_strerror(refusal)}\n")
+        errors.append(
+            f"{cmd}: cannot access '{target.raw_path}': "
+            f"{fs_strerror(refusal)}\n"
+        )
         return None
     resolved = follow_operand(namespace, cmd, "cannot access", target, errors)
     if resolved is None:
@@ -280,8 +283,9 @@ async def resolve_operand(
     try:
         stat, _ = await dispatch("stat", resolved)
     except (FileNotFoundError, NotADirectoryError) as exc:
-        errors.append(f"{cmd}: cannot access '{target.raw_path}': "
-                      f"{fs_strerror(exc)}\n")
+        errors.append(
+            f"{cmd}: cannot access '{target.raw_path}': {fs_strerror(exc)}\n"
+        )
         return None
     return resolved, stat
 

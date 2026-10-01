@@ -21,7 +21,6 @@ from mirage.core.api.client import SessionPool
 
 
 class Accessor:
-
     async def close(self) -> None:
         return None
 
@@ -50,9 +49,12 @@ class SessionAccessor(Accessor):
     async def __aenter__(self) -> Self:
         return self
 
-    async def __aexit__(self, exc_type: type[BaseException] | None,
-                        exc: BaseException | None,
-                        tb: TracebackType | None) -> None:
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        tb: TracebackType | None,
+    ) -> None:
         await self.close()
 
 

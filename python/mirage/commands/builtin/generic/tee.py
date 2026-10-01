@@ -25,8 +25,10 @@ def parse_flags(flags: Mapping[str, FlagValue]) -> TeeFlags:
     # A bare --output-error means warn (GNU 9.7).
     fl = FlagView(flags, spec=SPECS["tee"])
     mode = fl.as_str("output_error")
-    return TeeFlags(append=fl.as_bool("append"),
-                    stop_on_error=mode in ("exit", "exit-nopipe"))
+    return TeeFlags(
+        append=fl.as_bool("append"),
+        stop_on_error=mode in ("exit", "exit-nopipe"),
+    )
 
 
 def error_line(path: PathSpec, exc: Exception) -> bytes:
@@ -134,8 +136,9 @@ async def write_output(
     errors: list[bytes] = []
     for path in paths:
         try:
-            data = await write_one(path, raw, parsed, read_stream, write_bytes,
-                                   append_bytes)
+            data = await write_one(
+                path, raw, parsed, read_stream, write_bytes, append_bytes
+            )
         except Exception as exc:
             errors.append(error_line(path, exc))
             if parsed.stop_on_error:
@@ -145,10 +148,9 @@ async def write_output(
         if data is not None:
             cache.append(path.mount_path)
     if errors:
-        return raw, IOResult(exit_code=1,
-                             stderr=b"".join(errors),
-                             writes=writes,
-                             cache=cache)
+        return raw, IOResult(
+            exit_code=1, stderr=b"".join(errors), writes=writes, cache=cache
+        )
     return raw, IOResult(writes=writes, cache=cache)
 
 
@@ -168,10 +170,16 @@ async def tee(
         raw = (" ".join(texts)).encode() if texts else b""
     if not paths:
         return raw, IOResult()
-    return await write_output(paths, raw, parsed, read_stream, write_bytes,
-                              append_bytes)
+    return await write_output(
+        paths, raw, parsed, read_stream, write_bytes, append_bytes
+    )
 
 
 __all__ = [
-    "tee", "parse_flags", "TeeFlags", "write_output", "write_one", "error_line"
+    "tee",
+    "parse_flags",
+    "TeeFlags",
+    "write_output",
+    "write_one",
+    "error_line",
 ]

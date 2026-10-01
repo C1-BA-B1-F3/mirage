@@ -18,11 +18,10 @@ from mirage.types import PathSpec
 def _to_scope(path: str) -> PathSpec:
     """Wrap a resolved path string as PathSpec."""
     last_slash = path.rfind("/")
-    directory = path[:last_slash + 1] if last_slash >= 0 else "/"
-    return PathSpec(virtual=path,
-                    directory=directory,
-                    vfs_path="",
-                    resolved=True)
+    directory = path[: last_slash + 1] if last_slash >= 0 else "/"
+    return PathSpec(
+        virtual=path, directory=directory, vfs_path="", resolved=True
+    )
 
 
 def _scope_path(val) -> str:

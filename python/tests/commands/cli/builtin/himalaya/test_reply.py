@@ -25,21 +25,14 @@ from mirage.commands.cli.types import CLIInvocation
 from mirage.core.email.config import EmailConfig
 from mirage.io.types import materialize
 
-CONFIG = EmailConfig(imap_host="h",
-                     smtp_host="h",
-                     username="me@example.com",
-                     password="p")
+CONFIG = EmailConfig(
+    imap_host="h", smtp_host="h", username="me@example.com", password="p"
+)
 
 ORIGINAL = {
     "subject": "Quarterly numbers",
-    "from": {
-        "name": "Alice",
-        "email": "alice@example.com"
-    },
-    "cc": [{
-        "name": "",
-        "email": "bob@example.com"
-    }],
+    "from": {"name": "Alice", "email": "alice@example.com"},
+    "cc": [{"name": "", "email": "bob@example.com"}],
     "message_id": "<m1@example.com>",
     "references": [],
     "body_text": "the numbers",
@@ -73,7 +66,7 @@ def parse(raw: bytes):
 
 @pytest.mark.asyncio
 async def test_reply_takes_the_id_positionally_and_defaults_to_inbox(patched):
-    await reply(CLIInvocation(CONFIG, texts=("7", ), flags={"body": "thanks"}))
+    await reply(CLIInvocation(CONFIG, texts=("7",), flags={"body": "thanks"}))
     assert patched["args"] == ("INBOX", "7")
     assert patched["closed"] is True
 
@@ -81,7 +74,8 @@ async def test_reply_takes_the_id_positionally_and_defaults_to_inbox(patched):
 @pytest.mark.asyncio
 async def test_reply_writes_mime_to_stdout_without_send(patched):
     out, io = await reply(
-        CLIInvocation(CONFIG, texts=("7", ), flags={"body": "thanks"}))
+        CLIInvocation(CONFIG, texts=("7",), flags={"body": "thanks"})
+    )
     assert io.exit_code == 0
     assert "raw" not in patched
     message = parse(await materialize(out))
@@ -94,12 +88,12 @@ async def test_reply_writes_mime_to_stdout_without_send(patched):
 @pytest.mark.asyncio
 async def test_reply_all_is_spelled_by_naming_the_other_recipients(patched):
     out, _ = await reply(
-        CLIInvocation(CONFIG,
-                      texts=("7", ),
-                      flags={
-                          "body": "thanks",
-                          "cc": "bob@example.com"
-                      }))
+        CLIInvocation(
+            CONFIG,
+            texts=("7",),
+            flags={"body": "thanks", "cc": "bob@example.com"},
+        )
+    )
     message = parse(await materialize(out))
     assert message["To"] == "Alice <alice@example.com>"
     assert message["Cc"] == "bob@example.com"
@@ -108,27 +102,29 @@ async def test_reply_all_is_spelled_by_naming_the_other_recipients(patched):
 @pytest.mark.asyncio
 async def test_bottom_posting_puts_the_quote_first(patched):
     out, _ = await reply(
-        CLIInvocation(CONFIG,
-                      texts=("7", ),
-                      flags={
-                          "body": "thanks",
-                          "posting_style": "bottom",
-                          "quote_headline": "Alice wrote:"
-                      }))
+        CLIInvocation(
+            CONFIG,
+            texts=("7",),
+            flags={
+                "body": "thanks",
+                "posting_style": "bottom",
+                "quote_headline": "Alice wrote:",
+            },
+        )
+    )
     message = parse(await materialize(out))
     assert message.get_content() == (
-        "Alice wrote:\r\n> the numbers\r\n\r\nthanks\r\n")
+        "Alice wrote:\r\n> the numbers\r\n\r\nthanks\r\n"
+    )
 
 
 @pytest.mark.asyncio
 async def test_send_flag_pushes_through_smtp_and_reports_json(patched):
     out, io = await reply(
-        CLIInvocation(CONFIG,
-                      texts=("7", ),
-                      flags={
-                          "body": "thanks",
-                          "send": True
-                      }))
+        CLIInvocation(
+            CONFIG, texts=("7",), flags={"body": "thanks", "send": True}
+        )
+    )
     assert io.exit_code == 0
     assert b"Re: Quarterly numbers" in patched["raw"]
     assert json.loads(await materialize(out)) == {

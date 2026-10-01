@@ -24,16 +24,22 @@ from mirage.types import FileStat, FileType, PathSpec
 from mirage.utils.errors import FS_ERRORS, fs_strerror
 from mirage.utils.path import CycleError, dotted_spelling, resolve_path
 from mirage.workspace.executor.builtins.dirs.constants import CD_USAGE
-from mirage.workspace.executor.builtins.dirs.dirs import (join_raw, norm,
-                                                          resolve_target,
-                                                          split_mode_options,
-                                                          typed_path)
+from mirage.workspace.executor.builtins.dirs.dirs import (
+    join_raw,
+    norm,
+    resolve_target,
+    split_mode_options,
+    typed_path,
+)
 from mirage.workspace.executor.builtins.scope import _scope_path, _to_scope
 from mirage.workspace.executor.builtins.types import BuiltinCall, Result
 from mirage.workspace.expand.classify import classify_bare_path
 from mirage.workspace.session import SessionState
-from mirage.workspace.session.shell_dirs import (change_dir, home_dir,
-                                                 logical_cwd)
+from mirage.workspace.session.shell_dirs import (
+    change_dir,
+    home_dir,
+    logical_cwd,
+)
 from mirage.workspace.types import ExecutionNode
 
 
@@ -76,20 +82,29 @@ def _cd_candidates(
     """
     fallback = (join_raw(raw, cwd), False, dotted_spelling(raw, cwd))
     cdpath = session.env.get("CDPATH")
-    if (not cdpath or not cdpath_target
-            or not _cdpath_searchable(cdpath_target)):
+    if (
+        not cdpath
+        or not cdpath_target
+        or not _cdpath_searchable(cdpath_target)
+    ):
         return [fallback]
     out: list[tuple[str, bool, str | None]] = []
     for entry in cdpath.split(":"):
         base = resolve_path(entry, cwd) if entry else cwd
-        out.append((join_raw(cdpath_target, base), entry
-                    != "", dotted_spelling(cdpath_target, base)))
+        out.append(
+            (
+                join_raw(cdpath_target, base),
+                entry != "",
+                dotted_spelling(cdpath_target, base),
+            )
+        )
     out.append(fallback)
     return out
 
 
-async def _linked_stat(dispatch: DispatchFn, links: dict[str, str],
-                       path: PathSpec) -> FileStat:
+async def _linked_stat(
+    dispatch: DispatchFn, links: dict[str, str], path: PathSpec
+) -> FileStat:
     """Stat a name the way ``cd`` resolves one, through its link table.
 
     The walk that proves a name in front of ``..`` a directory has to
@@ -100,8 +115,9 @@ async def _linked_stat(dispatch: DispatchFn, links: dict[str, str],
         links (dict[str, str]): the symlink table cd resolves with.
         path (PathSpec): the name to stat.
     """
-    target = resolve_target(path.virtual, links,
-                            True) if links else path.virtual
+    target = (
+        resolve_target(path.virtual, links, True) if links else path.virtual
+    )
     return await dispatch_stat(dispatch, PathSpec.from_str_path(target))
 
 
@@ -134,7 +150,8 @@ async def handle_cd(
             try:
                 refusal = await dot_refusal(
                     partial(_linked_stat, dispatch, table),
-                    replace(walk, dotted=dotted))
+                    replace(walk, dotted=dotted),
+                )
             except CycleError:
                 error = f"cd: {named}: Too many levels of symbolic links\n"
                 continue
@@ -157,8 +174,9 @@ async def handle_cd(
         if physical:
             logical = resolved
         if resolved == "/":
-            return _cd_success(session, "/", logical, spelled, raw, print_path
-                               or announce)
+            return _cd_success(
+                session, "/", logical, spelled, raw, print_path or announce
+            )
         scope = _to_scope(resolved)
         s = None
         not_found = False
@@ -174,20 +192,28 @@ async def handle_cd(
             continue
         if s is None or not_found:
             if is_mount_root(resolved):
-                return _cd_success(session, resolved, logical, spelled, raw,
-                                   print_path or announce)
+                return _cd_success(
+                    session,
+                    resolved,
+                    logical,
+                    spelled,
+                    raw,
+                    print_path or announce,
+                )
             error = f"cd: {named}: No such file or directory\n"
             continue
         if s.type != FileType.DIRECTORY:
             error = f"cd: {named}: Not a directory\n"
             continue
-        return _cd_success(session, resolved, logical, spelled, raw, print_path
-                           or announce)
+        return _cd_success(
+            session, resolved, logical, spelled, raw, print_path or announce
+        )
     err = (error or f"cd: {named}: No such file or directory\n").encode()
-    return None, IOResult(exit_code=1,
-                          stderr=err), ExecutionNode(command=f"cd {raw}",
-                                                     exit_code=1,
-                                                     stderr=err)
+    return (
+        None,
+        IOResult(exit_code=1, stderr=err),
+        ExecutionNode(command=f"cd {raw}", exit_code=1, stderr=err),
+    )
 
 
 def _cd_success(
@@ -232,52 +258,60 @@ async def cd_builtin(call: BuiltinCall) -> Result:
     registry = call.registry
     namespace = call.namespace
     shell_physical = bool(session.shell_options.get("physical"))
-    cd_operands, bad_opt, physical = split_mode_options(list(
-        call.argv.operands),
-                                                        default=shell_physical)
+    cd_operands, bad_opt, physical = split_mode_options(
+        list(call.argv.operands), default=shell_physical
+    )
     if bad_opt is not None:
         err = f"cd: -{bad_opt}: invalid option\n{CD_USAGE}".encode()
-        return None, IOResult(exit_code=2,
-                              stderr=err), ExecutionNode(command="cd",
-                                                         exit_code=2,
-                                                         stderr=err)
+        return (
+            None,
+            IOResult(exit_code=2, stderr=err),
+            ExecutionNode(command="cd", exit_code=2, stderr=err),
+        )
     if len(cd_operands) > 1:
         err = b"cd: too many arguments\n"
-        return None, IOResult(exit_code=1,
-                              stderr=err), ExecutionNode(command="cd",
-                                                         exit_code=1,
-                                                         stderr=err)
+        return (
+            None,
+            IOResult(exit_code=1, stderr=err),
+            ExecutionNode(command="cd", exit_code=1, stderr=err),
+        )
     if not cd_operands:
         home = home_dir(session)
         if home is None:
             err = b"cd: HOME not set\n"
-            return None, IOResult(exit_code=1,
-                                  stderr=err), ExecutionNode(command="cd",
-                                                             exit_code=1,
-                                                             stderr=err)
-        return await handle_cd(dispatch,
-                               registry.is_mount_root,
-                               home,
-                               session,
-                               links=namespace.symlink_targets(),
-                               physical=physical)
+            return (
+                None,
+                IOResult(exit_code=1, stderr=err),
+                ExecutionNode(command="cd", exit_code=1, stderr=err),
+            )
+        return await handle_cd(
+            dispatch,
+            registry.is_mount_root,
+            home,
+            session,
+            links=namespace.symlink_targets(),
+            physical=physical,
+        )
     raw = cd_operands[0]
     raw_str = raw.virtual if isinstance(raw, PathSpec) else str(raw)
     if raw_str == "-":
         old = session.env.get("OLDPWD")
         if not old:
             err = b"cd: OLDPWD not set\n"
-            return None, IOResult(exit_code=1,
-                                  stderr=err), ExecutionNode(command="cd -",
-                                                             exit_code=1,
-                                                             stderr=err)
-        return await handle_cd(dispatch,
-                               registry.is_mount_root,
-                               old,
-                               session,
-                               print_path=True,
-                               links=namespace.symlink_targets(),
-                               physical=physical)
+            return (
+                None,
+                IOResult(exit_code=1, stderr=err),
+                ExecutionNode(command="cd -", exit_code=1, stderr=err),
+            )
+        return await handle_cd(
+            dispatch,
+            registry.is_mount_root,
+            old,
+            session,
+            print_path=True,
+            links=namespace.symlink_targets(),
+            physical=physical,
+        )
     path: str | PathSpec
     if isinstance(raw, PathSpec):
         path = raw
@@ -288,10 +322,12 @@ async def cd_builtin(call: BuiltinCall) -> Result:
     else:
         path = classify_bare_path(raw_str, registry, session.cwd)
         cdpath_target = raw_str
-    return await handle_cd(dispatch,
-                           registry.is_mount_root,
-                           path,
-                           session,
-                           cdpath_target=cdpath_target,
-                           links=namespace.symlink_targets(),
-                           physical=physical)
+    return await handle_cd(
+        dispatch,
+        registry.is_mount_root,
+        path,
+        session,
+        cdpath_target=cdpath_target,
+        links=namespace.symlink_targets(),
+        physical=physical,
+    )

@@ -65,11 +65,13 @@ async def iconv_generic(
     write_bytes: Callable[..., Awaitable[None]],
 ) -> tuple[ByteSource | None, IOResult]:
     parsed = parse_flags(opts.flags)
-    return await iconv(paths,
-                       read_bytes=read_bytes,
-                       write_bytes=write_bytes,
-                       stdin=opts.stdin,
-                       from_enc=parsed.from_enc,
-                       to_enc=parsed.to_enc,
-                       ignore_errors=parsed.ignore_errors,
-                       output_path=parsed.output_path)
+    return await iconv(
+        paths,
+        read_bytes=read_bytes,
+        write_bytes=write_bytes,
+        stdin=opts.stdin,
+        from_enc=parsed.from_enc,
+        to_enc=parsed.to_enc,
+        ignore_errors=parsed.ignore_errors,
+        output_path=parsed.output_path,
+    )

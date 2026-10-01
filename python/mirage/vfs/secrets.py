@@ -51,12 +51,14 @@ def _base_dump(config: BaseModel) -> dict[str, Any]:
     Returns:
         dict[str, Any]: the JSON-mode dump, minus the secret fields.
     """
-    return config.model_dump(mode="json",
-                             exclude=set(secret_field_names(config)))
+    return config.model_dump(
+        mode="json", exclude=set(secret_field_names(config))
+    )
 
 
-def _walk_config_dump(config: BaseModel, data: dict[str, Any],
-                      redact: bool) -> dict[str, Any]:
+def _walk_config_dump(
+    config: BaseModel, data: dict[str, Any], redact: bool
+) -> dict[str, Any]:
     # Nested models carry their own secret annotations, so the walk
     # recurses instead of trusting the top-level field list: a missed
     # nested SecretStr would serialize as pydantic's mask, which reads
@@ -80,14 +82,16 @@ def _walk_config_dump(config: BaseModel, data: dict[str, Any],
                 # at load.
                 data[name] = REDACTED_SECRET
             else:
-                data[name] = REDACTED_SECRET if redact else reveal_secret(
-                    value)
+                data[name] = (
+                    REDACTED_SECRET if redact else reveal_secret(value)
+                )
         elif isinstance(value, BaseModel):
             data[name] = _walk_config_dump(value, data[name], redact)
         elif isinstance(value, (list, tuple)):
             data[name] = [
-                _walk_config_dump(item, dumped, redact) if isinstance(
-                    item, BaseModel) else dumped
+                _walk_config_dump(item, dumped, redact)
+                if isinstance(item, BaseModel)
+                else dumped
                 for item, dumped in zip(value, data[name])
             ]
     return data
@@ -97,7 +101,8 @@ def secret_field_names(config: type[BaseModel] | BaseModel) -> list[str]:
     model = config if isinstance(config, type) else type(config)
     fields = model.model_fields
     return [
-        name for name, field in fields.items()
+        name
+        for name, field in fields.items()
         if _is_secret_annotation(field.annotation)
     ]
 

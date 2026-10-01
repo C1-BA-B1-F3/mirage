@@ -28,15 +28,16 @@ class MountArgs:
     Workspace.load uses this to instantiate a fresh Workspace; snapshot
     code never constructs Workspace itself.
     """
+
     mount_args: dict[str, Any]
     default_session_id: str
     default_agent_id: str | None
     clis: dict[str, tuple[str | CLISpec, dict[str, Any] | None]] | None = None
 
 
-def index_config_dump(config: IndexConfig | None,
-                      *,
-                      reveal: bool = False) -> dict[str, Any] | None:
+def index_config_dump(
+    config: IndexConfig | None, *, reveal: bool = False
+) -> dict[str, Any] | None:
     """Serialize index placement without exposing URL credentials.
 
     Args:
@@ -53,9 +54,9 @@ def index_config_dump(config: IndexConfig | None,
     return data
 
 
-def restore_index_config(data: dict[str, Any] | None,
-                         override: IndexConfig | None,
-                         prefix: str) -> IndexConfig | None:
+def restore_index_config(
+    data: dict[str, Any] | None, override: IndexConfig | None, prefix: str
+) -> IndexConfig | None:
     """Restore index settings, requiring fresh credentials when redacted.
 
     Args:
@@ -68,8 +69,13 @@ def restore_index_config(data: dict[str, Any] | None,
     if data is None:
         return None
     if has_redacted_secret(data):
-        raise ValueError(f"Workspace.load: mount {prefix!r} needs a Mount "
-                         "override with fresh index credentials")
-    model = (RedisIndexConfig
-             if data.get("type") == IndexType.REDIS else IndexConfig)
+        raise ValueError(
+            f"Workspace.load: mount {prefix!r} needs a Mount "
+            "override with fresh index credentials"
+        )
+    model = (
+        RedisIndexConfig
+        if data.get("type") == IndexType.REDIS
+        else IndexConfig
+    )
     return model.model_validate(data)

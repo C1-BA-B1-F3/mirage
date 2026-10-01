@@ -21,8 +21,12 @@ from mirage.io.types import ByteSource, CommandOutput, IOResult
 from mirage.runtime.base import Runtime
 from mirage.runtime.language import LanguageRuntime
 from mirage.runtime.python.base import PythonRuntime
-from mirage.runtime.types import (CodeExecution, DispatchFn, ExecPathFn,
-                                  RunResult)
+from mirage.runtime.types import (
+    CodeExecution,
+    DispatchFn,
+    ExecPathFn,
+    RunResult,
+)
 from mirage.types import PathSpec
 
 
@@ -43,13 +47,17 @@ def run_output(result: RunResult) -> CommandOutput:
     )
 
 
-async def runtime_version(label: str, runtime: Runtime | None,
-                          env: dict[str, str] | None,
-                          unavailable: str | None) -> CommandOutput:
+async def runtime_version(
+    label: str,
+    runtime: Runtime | None,
+    env: dict[str, str] | None,
+    unavailable: str | None,
+) -> CommandOutput:
     if not isinstance(runtime, LanguageRuntime):
         hint = unavailable or "command not found"
-        return None, IOResult(exit_code=127,
-                              stderr=f"{label}: {hint}\n".encode())
+        return None, IOResult(
+            exit_code=127, stderr=f"{label}: {hint}\n".encode()
+        )
     return run_output(await runtime.version(env or {}))
 
 
@@ -107,10 +115,9 @@ class Argv0Rules:
 
 
 # CPython's own four answers, pinned on 3.12.13/3.13.7.
-CPYTHON_ARGV0 = Argv0Rules(payload="-c",
-                           stdin_operand="-",
-                           bare_stdin="",
-                           names_file=True)
+CPYTHON_ARGV0 = Argv0Rules(
+    payload="-c", stdin_operand="-", bare_stdin="", names_file=True
+)
 
 # `-m` is runpy's job on any real CPython: run_module finds the module,
 # runs it under __main__, and alter_sys rewrites sys.argv[0] to the
@@ -137,7 +144,8 @@ MODULE_SOURCE = (
     "if not _found:\n"
     "    sys.stderr.write(_label + ': No module named ' + _name + chr(10))\n"
     "    raise SystemExit(1)\n"
-    "runpy.run_module(_name, run_name='__main__', alter_sys=True)\n")
+    "runpy.run_module(_name, run_name='__main__', alter_sys=True)\n"
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -263,8 +271,11 @@ async def resolve_source(
         argv0 = argv0_rules.bare_stdin
 
     if mode == "file" and script_path is not None:
-        allowed = (exec_path_allowed(script_path.virtual)
-                   if exec_path_allowed is not None else exec_allowed)
+        allowed = (
+            exec_path_allowed(script_path.virtual)
+            if exec_path_allowed is not None
+            else exec_allowed
+        )
         if not allowed:
             display = script_path.raw_path or script_path.virtual
             err = f"{label}: {display}: not in EXEC mode\n".encode()
@@ -295,12 +306,14 @@ async def resolve_source(
             err = f"{label}: no input\n".encode()
             return (None, IOResult(exit_code=1, stderr=err)), None
 
-    return None, Source(code=code,
-                        args=arg_strs,
-                        stdin=stdin_data,
-                        script_path=script_path,
-                        mode=mode,
-                        argv0=argv0)
+    return None, Source(
+        code=code,
+        args=arg_strs,
+        stdin=stdin_data,
+        script_path=script_path,
+        mode=mode,
+        argv0=argv0,
+    )
 
 
 async def run_code(
@@ -342,24 +355,32 @@ async def run_code(
         # entry without the interpreter door (not a LanguageRuntime) is
         # refused the same way: there is nothing to run code on.
         hint = unavailable or "command not found"
-        return None, IOResult(exit_code=127,
-                              stderr=f"{label}: {hint}\n".encode())
-    if (prepared.mode == "module" and isinstance(runtime, PythonRuntime)
-            and not runtime.runs_modules):
+        return None, IOResult(
+            exit_code=127, stderr=f"{label}: {hint}\n".encode()
+        )
+    if (
+        prepared.mode == "module"
+        and isinstance(runtime, PythonRuntime)
+        and not runtime.runs_modules
+    ):
         # Exit 1, CPython's code for a `-m` that could not run, but not
         # its "No module named" wording: nothing was searched for, so
         # naming the runtime is the honest report.
-        err = (f"{label}: -m is not supported by the {runtime.name!r} "
-               f"runtime\n").encode()
+        err = (
+            f"{label}: -m is not supported by the {runtime.name!r} runtime\n"
+        ).encode()
         return None, IOResult(exit_code=1, stderr=err)
     result = await runtime.execute(
-        CodeExecution(language=runtime.language,
-                      code=prepared.code,
-                      args=prepared.args,
-                      prog=prepared.argv0,
-                      env=env or {},
-                      stdin=prepared.stdin,
-                      flags=flags,
-                      cwd=cwd,
-                      script_path=prepared.script_path))
+        CodeExecution(
+            language=runtime.language,
+            code=prepared.code,
+            args=prepared.args,
+            prog=prepared.argv0,
+            env=env or {},
+            stdin=prepared.stdin,
+            flags=flags,
+            cwd=cwd,
+            script_path=prepared.script_path,
+        )
+    )
     return run_output(result)

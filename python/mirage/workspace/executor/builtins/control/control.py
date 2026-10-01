@@ -46,8 +46,11 @@ async def handle_colon() -> tuple[ByteSource | None, IOResult, ExecutionNode]:
 
 async def handle_false() -> tuple[ByteSource | None, IOResult, ExecutionNode]:
     """``false``: fail with 1 and print nothing."""
-    return None, IOResult(exit_code=1), ExecutionNode(command="false",
-                                                      exit_code=1)
+    return (
+        None,
+        IOResult(exit_code=1),
+        ExecutionNode(command="false", exit_code=1),
+    )
 
 
 async def handle_return(
@@ -69,23 +72,25 @@ async def handle_return(
     if not in_function and session.source_depth == 0:
         # bash prints the diagnostic, sets $? to 2, and carries on with
         # the rest of the line.
-        err = (b"return: can only `return' from a function "
-               b"or sourced script\n")
-        return None, IOResult(exit_code=2,
-                              stderr=err), ExecutionNode(command="return",
-                                                         exit_code=2,
-                                                         stderr=err)
+        err = b"return: can only `return' from a function or sourced script\n"
+        return (
+            None,
+            IOResult(exit_code=2, stderr=err),
+            ExecutionNode(command="return", exit_code=2, stderr=err),
+        )
     if args and not is_count_word(args[0]):
         # bash prints the error and the function returns 2.
         raise ReturnSignal(
             2,
-            stderr=f"return: {args[0]}: numeric argument required\n".encode())
+            stderr=f"return: {args[0]}: numeric argument required\n".encode(),
+        )
     if len(args) > 1:
         err = b"return: too many arguments\n"
-        return None, IOResult(exit_code=1,
-                              stderr=err), ExecutionNode(command="return",
-                                                         exit_code=1,
-                                                         stderr=err)
+        return (
+            None,
+            IOResult(exit_code=1, stderr=err),
+            ExecutionNode(command="return", exit_code=1, stderr=err),
+        )
     # A bare return propagates the status of the last command executed.
     raise ReturnSignal(int(args[0]) % 256 if args else session.last_exit_code)
 
@@ -105,14 +110,16 @@ async def handle_exit(
     if args and not is_count_word(args[0]):
         # bash exits with 2 after the diagnostic.
         raise ExitSignal(
-            2, stderr=f"exit: {args[0]}: numeric argument required\n".encode())
+            2, stderr=f"exit: {args[0]}: numeric argument required\n".encode()
+        )
     if len(args) > 1:
         # bash refuses to exit and the command fails with 1.
         err = b"exit: too many arguments\n"
-        return None, IOResult(exit_code=1,
-                              stderr=err), ExecutionNode(command="exit",
-                                                         exit_code=1,
-                                                         stderr=err)
+        return (
+            None,
+            IOResult(exit_code=1, stderr=err),
+            ExecutionNode(command="exit", exit_code=1, stderr=err),
+        )
     code = int(args[0]) if args else session.last_exit_code
     raise ExitSignal(code % 256)
 
@@ -150,8 +157,9 @@ async def return_builtin(call: BuiltinCall) -> Result:
     Args:
         call (BuiltinCall): the invocation.
     """
-    return await handle_return(list(call.argv.args), call.session,
-                               call.call_stack)
+    return await handle_return(
+        list(call.argv.args), call.session, call.call_stack
+    )
 
 
 async def exit_builtin(call: BuiltinCall) -> Result:

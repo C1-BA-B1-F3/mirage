@@ -24,37 +24,48 @@ from mirage.vfs.dropbox.config import DropboxConfig
 
 
 def make_accessor(root_path: str = "/") -> DropboxAccessor:
-    config = DropboxConfig(client_id="c",
-                           client_secret="s",
-                           refresh_token="r",
-                           root_path=root_path)
+    config = DropboxConfig(
+        client_id="c",
+        client_secret="s",
+        refresh_token="r",
+        root_path=root_path,
+    )
     return DropboxAccessor(config, DropboxTokenManager(config))
 
 
 @pytest.mark.asyncio
 async def test_copy_maps_paths_under_mount_root():
-    with patch("mirage.core.dropbox.copy.copy_path",
-               new_callable=AsyncMock) as copied:
-        await copy(make_accessor("/Team"), PathSpec.from_str_path("/a.txt"),
-                   PathSpec.from_str_path("/b.txt"))
+    with patch(
+        "mirage.core.dropbox.copy.copy_path", new_callable=AsyncMock
+    ) as copied:
+        await copy(
+            make_accessor("/Team"),
+            PathSpec.from_str_path("/a.txt"),
+            PathSpec.from_str_path("/b.txt"),
+        )
     assert copied.await_args.args[1:] == ("/Team/a.txt", "/Team/b.txt")
 
 
 @pytest.mark.asyncio
 async def test_copy_replaces_existing_destination_file():
     conflict = DropboxApiError("conflict", 409, "to/conflict/file/...")
-    with patch("mirage.core.dropbox.copy.copy_path",
-               new_callable=AsyncMock,
-               side_effect=[conflict, None]) as copied:
-        with patch("mirage.core.dropbox.copy.get_metadata",
-                   new_callable=AsyncMock,
-                   return_value={
-                       ".tag": "file",
-                       "name": "b.txt"
-                   }):
-            with patch("mirage.core.dropbox.copy.delete_path",
-                       new_callable=AsyncMock) as deleted:
-                await copy(make_accessor(), PathSpec.from_str_path("/a.txt"),
-                           PathSpec.from_str_path("/b.txt"))
+    with patch(
+        "mirage.core.dropbox.copy.copy_path",
+        new_callable=AsyncMock,
+        side_effect=[conflict, None],
+    ) as copied:
+        with patch(
+            "mirage.core.dropbox.copy.get_metadata",
+            new_callable=AsyncMock,
+            return_value={".tag": "file", "name": "b.txt"},
+        ):
+            with patch(
+                "mirage.core.dropbox.copy.delete_path", new_callable=AsyncMock
+            ) as deleted:
+                await copy(
+                    make_accessor(),
+                    PathSpec.from_str_path("/a.txt"),
+                    PathSpec.from_str_path("/b.txt"),
+                )
     assert deleted.await_args.args[1] == "/b.txt"
     assert copied.await_count == 2

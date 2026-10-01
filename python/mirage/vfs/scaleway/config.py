@@ -16,5 +16,4 @@ from mirage.vfs.s3_alias import RegionEndpointConfig
 
 
 class ScalewayConfig(RegionEndpointConfig):
-
     ENDPOINT = "https://s3.{region}.scw.cloud"

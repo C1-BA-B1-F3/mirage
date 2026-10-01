@@ -15,12 +15,14 @@
 
 def test_patch_N(env):
     env.create_file("f.txt", b"hello\nworld\n")
-    patch_content = (b"--- a/f.txt\n"
-                     b"+++ b/f.txt\n"
-                     b"@@ -1,2 +1,2 @@\n"
-                     b"-hello\n"
-                     b"+goodbye\n"
-                     b" world\n")
+    patch_content = (
+        b"--- a/f.txt\n"
+        b"+++ b/f.txt\n"
+        b"@@ -1,2 +1,2 @@\n"
+        b"-hello\n"
+        b"+goodbye\n"
+        b" world\n"
+    )
     env.create_file("fix.patch", patch_content)
     env.mirage("patch -N -p1 -i /data/fix.patch")
     result = env.mirage("cat /data/f.txt")
@@ -29,12 +31,14 @@ def test_patch_N(env):
 
 def test_patch_R(env):
     env.create_file("f.txt", b"goodbye\nworld\n")
-    patch_content = (b"--- a/f.txt\n"
-                     b"+++ b/f.txt\n"
-                     b"@@ -1,2 +1,2 @@\n"
-                     b"-hello\n"
-                     b"+goodbye\n"
-                     b" world\n")
+    patch_content = (
+        b"--- a/f.txt\n"
+        b"+++ b/f.txt\n"
+        b"@@ -1,2 +1,2 @@\n"
+        b"-hello\n"
+        b"+goodbye\n"
+        b" world\n"
+    )
     env.create_file("fix.patch", patch_content)
     env.mirage("patch -R -p1 -i /data/fix.patch")
     result = env.mirage("cat /data/f.txt")

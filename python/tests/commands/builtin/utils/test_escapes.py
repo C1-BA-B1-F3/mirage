@@ -17,16 +17,19 @@ import pytest
 from mirage.commands.builtin.utils.escapes import interpret_escapes
 
 
-@pytest.mark.parametrize(("text", "expected"), [
-    ("\\n", "\n"),
-    ("\\t", "\t"),
-    ("\\r", "\r"),
-    ("\\a", "\a"),
-    ("\\b", "\b"),
-    ("\\f", "\f"),
-    ("\\v", "\v"),
-    ("a\\\\b", "a\\b"),
-])
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        ("\\n", "\n"),
+        ("\\t", "\t"),
+        ("\\r", "\r"),
+        ("\\a", "\a"),
+        ("\\b", "\b"),
+        ("\\f", "\f"),
+        ("\\v", "\v"),
+        ("a\\\\b", "a\\b"),
+    ],
+)
 def test_named_escapes(text: str, expected: str) -> None:
     assert interpret_escapes(text) == expected
 
@@ -58,12 +61,15 @@ def test_out_of_range_octal_backs_off_to_two_digits() -> None:
     assert interpret_escapes("\\400") == " 0"
 
 
-@pytest.mark.parametrize(("text", "expected"), [
-    ("\\z", "z"),
-    ("\\e", "e"),
-    ("\\8", "8"),
-    ("\\9", "9"),
-])
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        ("\\z", "z"),
+        ("\\e", "e"),
+        ("\\8", "8"),
+        ("\\9", "9"),
+    ],
+)
 def test_unknown_escape_drops_the_backslash(text: str, expected: str) -> None:
     assert interpret_escapes(text) == expected
 
@@ -81,11 +87,14 @@ def test_trailing_backslash_is_literal() -> None:
     assert interpret_escapes("end\\") == "end\\"
 
 
-@pytest.mark.parametrize(("text", "expected"), [
-    ("", ""),
-    ("hello world", "hello world"),
-    ("a-z", "a-z"),
-])
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        ("", ""),
+        ("hello world", "hello world"),
+        ("a-z", "a-z"),
+    ],
+)
 def test_plain_text_is_untouched(text: str, expected: str) -> None:
     assert interpret_escapes(text) == expected
 

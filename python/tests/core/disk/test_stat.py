@@ -30,9 +30,13 @@ async def test_stat_file(tmp_path):
     index = RAMIndexCacheStore(ttl=0)
     result = await stat(
         accessor,
-        PathSpec(vfs_path=mount_key("/hello.txt", "/disk"),
-                 virtual="/hello.txt",
-                 directory="/hello.txt"), index)
+        PathSpec(
+            vfs_path=mount_key("/hello.txt", "/disk"),
+            virtual="/hello.txt",
+            directory="/hello.txt",
+        ),
+        index,
+    )
     assert result.name == "hello.txt"
     assert result.size == 5
     assert result.modified is not None
@@ -47,8 +51,10 @@ async def test_stat_directory(tmp_path):
     accessor = DiskAccessor(tmp_path)
     index = RAMIndexCacheStore(ttl=0)
     result = await stat(
-        accessor, PathSpec(vfs_path="sub", virtual="/sub", directory="/sub"),
-        index)
+        accessor,
+        PathSpec(vfs_path="sub", virtual="/sub", directory="/sub"),
+        index,
+    )
     assert result.type == FileType.DIRECTORY
     assert result.size is None
 
@@ -60,9 +66,13 @@ async def test_stat_file_not_found(tmp_path):
     with pytest.raises(FileNotFoundError):
         await stat(
             accessor,
-            PathSpec(vfs_path="missing.txt",
-                     virtual="/missing.txt",
-                     directory="/missing.txt"), index)
+            PathSpec(
+                vfs_path="missing.txt",
+                virtual="/missing.txt",
+                directory="/missing.txt",
+            ),
+            index,
+        )
 
 
 @pytest.mark.asyncio
@@ -70,9 +80,11 @@ async def test_stat_with_glob_scope(tmp_path):
     (tmp_path / "a.txt").write_text("data")
     accessor = DiskAccessor(tmp_path)
     index = RAMIndexCacheStore(ttl=0)
-    scope = PathSpec(vfs_path=mount_key("/disk/a.txt", "/disk"),
-                     virtual="/disk/a.txt",
-                     directory="/disk/")
+    scope = PathSpec(
+        vfs_path=mount_key("/disk/a.txt", "/disk"),
+        virtual="/disk/a.txt",
+        directory="/disk/",
+    )
     result = await stat(accessor, scope, index)
     assert result.name == "a.txt"
     assert result.size == 4
@@ -85,9 +97,13 @@ async def test_stat_with_prefix(tmp_path):
     index = RAMIndexCacheStore(ttl=0)
     result = await stat(
         accessor,
-        PathSpec(vfs_path=mount_key("/disk/a.txt", "/disk"),
-                 virtual="/disk/a.txt",
-                 directory="/disk/a.txt"), index)
+        PathSpec(
+            vfs_path=mount_key("/disk/a.txt", "/disk"),
+            virtual="/disk/a.txt",
+            directory="/disk/a.txt",
+        ),
+        index,
+    )
     assert result.name == "a.txt"
     assert result.size == 4
 
@@ -97,9 +113,9 @@ async def test_stat_with_prefix(tmp_path):
 @pytest.mark.asyncio
 async def test_stat_under_a_plain_file_is_not_a_directory(tmp_path):
     (tmp_path / "a.txt").write_text("a")
-    spec = PathSpec(vfs_path="a.txt/x",
-                    virtual="/a.txt/x",
-                    directory="/a.txt/")
+    spec = PathSpec(
+        vfs_path="a.txt/x", virtual="/a.txt/x", directory="/a.txt/"
+    )
     with pytest.raises(NotADirectoryError) as exc:
         await stat(DiskAccessor(tmp_path), spec, RAMIndexCacheStore(ttl=0))
     assert exc.value.filename == "/a.txt/x"
@@ -113,8 +129,10 @@ async def test_stat_keeps_the_fraction_of_a_second(tmp_path):
     os.utime(target, ns=(1_704_067_200_250_000_000, 1_704_067_200_500_000_000))
     result = await stat(
         DiskAccessor(tmp_path),
-        PathSpec(vfs_path="half.txt",
-                 virtual="/half.txt",
-                 directory="/half.txt"), RAMIndexCacheStore(ttl=0))
+        PathSpec(
+            vfs_path="half.txt", virtual="/half.txt", directory="/half.txt"
+        ),
+        RAMIndexCacheStore(ttl=0),
+    )
     assert result.modified == "2024-01-01T00:00:00.500Z"
     assert result.atime == "2024-01-01T00:00:00.250Z"

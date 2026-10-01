@@ -16,8 +16,12 @@ import re
 from collections.abc import Callable
 from dataclasses import dataclass
 
-from mirage.utils.sanitize import (ESCAPE_LEAD, SAFE_SLASH, is_blank,
-                                   path_safe_name)
+from mirage.utils.sanitize import (
+    ESCAPE_LEAD,
+    SAFE_SLASH,
+    is_blank,
+    path_safe_name,
+)
 
 _ASCII_DIGITS = re.compile(r"^[0-9]+$")
 _ISO_DATE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
@@ -122,6 +126,7 @@ class Codec:
             (qdrant, lancedb) are this shape: a segment there becomes
             an equality filter, so it has to name exactly one value.
     """
+
     suffix: str = ""
     validate: Callable[[str], bool] | None = None
     path_safe: bool = False
@@ -135,7 +140,7 @@ class Codec:
         if self.suffix:
             if not text.endswith(self.suffix):
                 return None
-            text = text[:-len(self.suffix)]
+            text = text[: -len(self.suffix)]
         if not text:
             return None
         if self.path_safe:

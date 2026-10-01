@@ -64,10 +64,12 @@ class BuildDir:
         """
         host = self.target(path)
         st = os.stat(host)
-        return VFSStat(size=st.st_size,
-                       is_dir=host.is_dir(),
-                       mode=st.st_mode,
-                       mtime_ns=st.st_mtime_ns)
+        return VFSStat(
+            size=st.st_size,
+            is_dir=host.is_dir(),
+            mode=st.st_mode,
+            mtime_ns=st.st_mtime_ns,
+        )
 
     def read(self, path: str) -> bytes:
         """Read a build file.

@@ -18,9 +18,10 @@ from mirage.shell.parse import parse
 
 def test_parsed_commands_parse_pipes_and_lists():
     commands = parsed_commands(
-        parse("cat /a/big.csv | python3 /r/x.py 1 && nope"))
+        parse("cat /a/big.csv | python3 /r/x.py 1 && nope")
+    )
     assert [c.command for c in commands] == ["cat", "python3", "nope"]
-    assert commands[0].paths == ("/a/big.csv", )
+    assert commands[0].paths == ("/a/big.csv",)
     assert commands[1].words == ("python3", "/r/x.py", "1")
     assert commands[0].builtin and commands[1].builtin
     assert not commands[2].builtin
@@ -28,8 +29,9 @@ def test_parsed_commands_parse_pipes_and_lists():
 
 
 def test_parsed_commands_tag_installed_cli_heads():
-    commands = parsed_commands(parse("slack send hi | cat /x/slack"),
-                               clis={"slack"})
+    commands = parsed_commands(
+        parse("slack send hi | cat /x/slack"), clis={"slack"}
+    )
     assert commands[0].cli == "slack"
     # Only the head word tags: `slack` as an operand stays untagged.
     assert commands[1].cli is None

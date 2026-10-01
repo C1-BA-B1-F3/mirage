@@ -30,8 +30,9 @@ def test_drive_base_uses_group_drive():
 
 def test_drive_base_uses_user_drive():
     base = drive_base(_cfg(user_id="usr@example.com"))
-    assert base == ("https://graph.microsoft.com/v1.0/users/"
-                    "usr%40example.com/drive")
+    assert base == (
+        "https://graph.microsoft.com/v1.0/users/usr%40example.com/drive"
+    )
 
 
 def test_drive_base_escapes_a_guest_upn():
@@ -39,8 +40,10 @@ def test_drive_base_escapes_a_guest_upn():
     # URL fragment, so Graph receives `/users/guest_contoso.com` and
     # answers 404 for a user that exists.
     base = drive_base(_cfg(user_id="guest_contoso.com#EXT#@fabrikam.com"))
-    assert base == ("https://graph.microsoft.com/v1.0/users/"
-                    "guest_contoso.com%23EXT%23%40fabrikam.com/drive")
+    assert base == (
+        "https://graph.microsoft.com/v1.0/users/"
+        "guest_contoso.com%23EXT%23%40fabrikam.com/drive"
+    )
 
 
 def test_drive_base_leaves_a_drive_id_bang_alone():
@@ -78,34 +81,42 @@ def test_item_url_root_children():
 def test_item_url_nested_metadata_no_action():
     url = item_url(_cfg(), "/Docs/report.docx")
     assert url == (
-        "https://graph.microsoft.com/v1.0/me/drive/root:/Docs/report.docx")
+        "https://graph.microsoft.com/v1.0/me/drive/root:/Docs/report.docx"
+    )
 
 
 def test_item_url_nested_content():
     url = item_url(_cfg(), "/Docs/report.docx", action="/content")
-    assert url == ("https://graph.microsoft.com/v1.0/me/drive"
-                   "/root:/Docs/report.docx:/content")
+    assert url == (
+        "https://graph.microsoft.com/v1.0/me/drive"
+        "/root:/Docs/report.docx:/content"
+    )
 
 
 def test_item_url_nested_children():
     url = item_url(_cfg(), "/Docs", action="/children")
     assert url == (
-        "https://graph.microsoft.com/v1.0/me/drive/root:/Docs:/children")
+        "https://graph.microsoft.com/v1.0/me/drive/root:/Docs:/children"
+    )
 
 
 def test_item_url_applies_key_prefix():
     url = item_url(_cfg(key_prefix="team/files"), "/a.txt", action="/content")
-    assert url == ("https://graph.microsoft.com/v1.0/me/drive"
-                   "/root:/team/files/a.txt:/content")
+    assert url == (
+        "https://graph.microsoft.com/v1.0/me/drive"
+        "/root:/team/files/a.txt:/content"
+    )
 
 
 def test_item_url_quotes_spaces():
     url = item_url(_cfg(), "/My Folder/a b.txt")
-    assert url == ("https://graph.microsoft.com/v1.0/me/drive"
-                   "/root:/My%20Folder/a%20b.txt")
+    assert url == (
+        "https://graph.microsoft.com/v1.0/me/drive/root:/My%20Folder/a%20b.txt"
+    )
 
 
 def test_item_url_escapes_each_segment_like_encode_uri_component():
     url = item_url(_cfg(), "/a(1)/b!*'.txt")
-    assert url == ("https://graph.microsoft.com/v1.0/me/drive"
-                   "/root:/a(1)/b!*'.txt")
+    assert url == (
+        "https://graph.microsoft.com/v1.0/me/drive/root:/a(1)/b!*'.txt"
+    )

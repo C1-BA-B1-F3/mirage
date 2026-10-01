@@ -78,8 +78,10 @@ async def main():
         # The patch is process-wide, so the disk VFS's own os calls
         # pass through it too; they name host paths under the VFS
         # root, which no mount owns, and reach the real filesystem.
-        print(f"  host copy readable: "
-              f"{Path(tmp, 'files', 'example.json').is_file()}")
+        print(
+            f"  host copy readable: "
+            f"{Path(tmp, 'files', 'example.json').is_file()}"
+        )
 
         records = ws.vfs.records
         total = sum(r.bytes for r in records)

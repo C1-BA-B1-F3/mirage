@@ -16,8 +16,13 @@ import logging
 
 from mirage.accessor.hf_hub import HfHubAccessor
 from mirage.cache.index import NULL_INDEX, IndexCacheStore, IndexEntry
-from mirage.core.hf_hub.lookup import (dir_stat_entry, key_of, lookup_retrying,
-                                       point_lookup, refusals_denied)
+from mirage.core.hf_hub.lookup import (
+    dir_stat_entry,
+    key_of,
+    lookup_retrying,
+    point_lookup,
+    refusals_denied,
+)
 from mirage.types import FileStat, FileType, PathSpec
 from mirage.utils.errors import enoent
 from mirage.utils.filetype import content_type_for_path
@@ -46,9 +51,11 @@ def stat_of(entry: IndexEntry) -> FileStat:
         FileStat: the rendered stat.
     """
     if entry.resource_type == "folder":
-        return FileStat(name=entry.name,
-                        type=FileType.DIRECTORY,
-                        modified=entry.remote_time or None)
+        return FileStat(
+            name=entry.name,
+            type=FileType.DIRECTORY,
+            modified=entry.remote_time or None,
+        )
     return FileStat(
         name=entry.name,
         size=entry.size,

@@ -18,8 +18,10 @@ from io import BytesIO
 from mirage.accessor.databricks_volume import DatabricksVolumeAccessor
 from mirage.cache.context import invalidate_after_write
 from mirage.cache.index import NULL_INDEX, IndexCacheStore
-from mirage.core.databricks_volume._helpers import (is_directory_metadata,
-                                                    parent_path)
+from mirage.core.databricks_volume._helpers import (
+    is_directory_metadata,
+    parent_path,
+)
 from mirage.core.databricks_volume.errors import is_not_found
 from mirage.core.databricks_volume.path import backend_path
 from mirage.observe.context import record, start_op
@@ -75,8 +77,9 @@ async def write_bytes(
         path.virtual,
     )
     try:
-        await asyncio.to_thread(_upload_bytes_sync, accessor, remote_path,
-                                data)
+        await asyncio.to_thread(
+            _upload_bytes_sync, accessor, remote_path, data
+        )
     except Exception as exc:
         if is_not_found(exc):
             raise enoent(path) from exc

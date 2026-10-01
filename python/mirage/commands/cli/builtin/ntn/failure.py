@@ -19,16 +19,20 @@ from mirage.core.notion.client import NotionAPIError
 from mirage.core.notion.config import NotionConfig
 from mirage.io.types import ByteSource, IOResult
 
-VerbFn = Callable[[CLIInvocation[NotionConfig]],
-                  Awaitable[tuple[ByteSource | None, IOResult]]]
+VerbFn = Callable[
+    [CLIInvocation[NotionConfig]],
+    Awaitable[tuple[ByteSource | None, IOResult]],
+]
 
 FAILED = "error: Public API request failed"
 # 401 is the one status upstream does not itemize: it drops the
 # parenthesis entirely and answers with an actionable hint and its own
 # exit code, because a token problem is the user's to fix and naming
 # `unauthorized` twice would not help them do it.
-UNAUTHORIZED_HINT = ("  hint: Set NOTION_API_TOKEN, or run `ntn login` to "
-                     "reuse a saved workspace token.\n")
+UNAUTHORIZED_HINT = (
+    "  hint: Set NOTION_API_TOKEN, or run `ntn login` to "
+    "reuse a saved workspace token.\n"
+)
 API_ERROR_EXIT = 5
 UNAUTHORIZED_EXIT = 4
 UNAUTHORIZED = 401
@@ -77,9 +81,11 @@ def source_hint(ref: str) -> str:
     Returns:
         str: the complete hint line, newline included.
     """
-    return (f"  hint: Could not find a data source or database with ID "
-            f"`{ref}`. Check that the ID or URL points to a data source or "
-            f"database shared with your integration.\n")
+    return (
+        f"  hint: Could not find a data source or database with ID "
+        f"`{ref}`. Check that the ID or URL points to a data source or "
+        f"database shared with your integration.\n"
+    )
 
 
 def api_failure(exc: NotionAPIError) -> tuple[str, int]:
@@ -107,7 +113,7 @@ def api_failure(exc: NotionAPIError) -> tuple[str, int]:
 
 
 async def guarded(
-        fn: VerbFn, inv: CLIInvocation[NotionConfig]
+    fn: VerbFn, inv: CLIInvocation[NotionConfig]
 ) -> tuple[ByteSource | None, IOResult]:
     """Run one ntn verb, answering an API failure in upstream's voice.
 

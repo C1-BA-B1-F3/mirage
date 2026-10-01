@@ -29,7 +29,6 @@ from mirage.watch.base import DeltaHook
 
 
 class DropboxVFS(BaseVFS):
-
     accessor: DropboxAccessor
     name: str = VFSName.DROPBOX
     caches_reads: bool = True

@@ -65,7 +65,8 @@ def test_ceph_resource_uses_s3_resource_type():
             endpoint_url="https://ceph.example.com",
             access_key_id="k",
             secret_access_key="s",
-        ))
+        )
+    )
     assert vfs.name == VFSName.S3
     assert isinstance(vfs.config, S3Config)
     assert vfs.alias_config.endpoint_url == "https://ceph.example.com"

@@ -52,6 +52,7 @@ def test_option_terminator_ends_the_scan():
         # Ambiguous in tar's own table, so no mode at all.
         (["--c", "-f", "a.tar"], False),
         (["--get", "-f", "a.tar"], False),
-    ])
+    ],
+)
 def test_a_long_word_reads_as_tars_getopt_long_reads_it(argv, create):
     assert is_create_mode(argv) is create

@@ -27,8 +27,9 @@ async def test_a_supplied_token_skips_the_refresh_grant(monkeypatch):
     async def _boom(config):
         raise AssertionError("refresh grant must not run")
 
-    monkeypatch.setattr("mirage.core.google.client.refresh_access_token",
-                        _boom)
+    monkeypatch.setattr(
+        "mirage.core.google.client.refresh_access_token", _boom
+    )
     config = GoogleConfig(access_token=SecretStr("sa-token"))
     assert await TokenManager(config).get_token() == "sa-token"
 
@@ -39,14 +40,18 @@ async def test_a_provider_is_called_every_request():
     # outlive the rotation it just performed.
     tokens = iter(["tok-1", "tok-2", "tok-3"])
     manager = TokenManager(GoogleConfig(access_token=lambda: next(tokens)))
-    assert [await manager.get_token()
-            for _ in range(3)] == ["tok-1", "tok-2", "tok-3"]
+    assert [await manager.get_token() for _ in range(3)] == [
+        "tok-1",
+        "tok-2",
+        "tok-3",
+    ]
 
 
 @pytest.mark.asyncio
 async def test_a_provider_may_answer_with_a_secret():
     manager = TokenManager(
-        GoogleConfig(access_token=lambda: SecretStr("wrapped")))
+        GoogleConfig(access_token=lambda: SecretStr("wrapped"))
+    )
     assert await manager.get_token() == "wrapped"
 
 

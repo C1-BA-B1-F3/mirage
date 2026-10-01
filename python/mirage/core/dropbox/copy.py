@@ -22,8 +22,9 @@ from mirage.types import PathSpec
 from mirage.utils.errors import enoent
 
 
-async def copy(accessor: DropboxAccessor, src: PathSpec,
-               dst: PathSpec) -> None:
+async def copy(
+    accessor: DropboxAccessor, src: PathSpec, dst: PathSpec
+) -> None:
     """copy_v2 copies files and folder subtrees server-side; an existing
     destination FILE is replaced like GNU cp (delete + retry).
 

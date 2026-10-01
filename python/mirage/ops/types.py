@@ -79,19 +79,18 @@ EnvSnapshot = Callable[[], dict[str, str]]
 class EnvSet(Protocol):
     """Store one variable through the session plane."""
 
-    def __call__(self,
-                 name: str,
-                 value: ShellValue,
-                 follow_ref: bool = True) -> Awaitable[None]:
-        ...
+    def __call__(
+        self, name: str, value: ShellValue, follow_ref: bool = True
+    ) -> Awaitable[None]: ...
 
 
 class EnvUnset(Protocol):
     """Drop one variable through the session plane; a missing name is
     quiet."""
 
-    def __call__(self, name: str, follow_ref: bool = True) -> Awaitable[None]:
-        ...
+    def __call__(
+        self, name: str, follow_ref: bool = True
+    ) -> Awaitable[None]: ...
 
 
 # Turn one attribute on or off through the session plane, or with a None
@@ -255,5 +254,6 @@ class NamespaceView:
 # naming the workspace's default session as it is when the op runs. The
 # workspace supplies it, so the facade binds the session the way a
 # shell line does without holding the session manager itself.
-SessionBind = Callable[[str | None, Callable[[], Awaitable[Any]]],
-                       Awaitable[Any]]
+SessionBind = Callable[
+    [str | None, Callable[[], Awaitable[Any]]], Awaitable[Any]
+]

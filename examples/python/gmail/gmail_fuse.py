@@ -30,8 +30,8 @@ config = GmailConfig(
 vfs = GmailVFS(config=config)
 
 with Workspace(
-    {"/gmail/": Mount(vfs, mode=MountMode.READ,
-                      backend=MountBackend.FUSE)}) as ws:
+    {"/gmail/": Mount(vfs, mode=MountMode.READ, backend=MountBackend.FUSE)}
+) as ws:
     mp = ws.fuse_mountpoint
 
     print(f"=== FUSE MODE: mounted at {mp} ===\n")

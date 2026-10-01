@@ -15,8 +15,14 @@
 from collections.abc import Mapping
 from typing import Any, Literal
 
-from pydantic import (BaseModel, ConfigDict, Field, SecretStr, field_validator,
-                      model_validator)
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    SecretStr,
+    field_validator,
+    model_validator,
+)
 
 # The sources a source's own config may read from: those that take no
 # config themselves, so the table bottoms out instead of needing a
@@ -53,9 +59,10 @@ class EnvVar(BaseModel):
         fetch (Literal["lazy", "eager"]): eager joins every line's
             fetch set instead of waiting for a reference.
     """
-    model_config = ConfigDict(frozen=True,
-                              extra="forbid",
-                              populate_by_name=True)
+
+    model_config = ConfigDict(
+        frozen=True, extra="forbid", populate_by_name=True
+    )
 
     value: str | None = None
     readonly: bool = False
@@ -82,11 +89,14 @@ class EnvVar(BaseModel):
             raise ValueError("an env entry needs 'value' or 'from'")
         if self.provider is not None:
             if not self.export:
-                raise ValueError("'export' is for literal entries; a managed "
-                                 "variable is always exported")
+                raise ValueError(
+                    "'export' is for literal entries; a managed "
+                    "variable is always exported"
+                )
         elif self.ref or self.key is not None or self.fetch != "lazy":
             raise ValueError(
-                "'ref', 'key' and 'fetch' are for managed entries ('from')")
+                "'ref', 'key' and 'fetch' are for managed entries ('from')"
+            )
         return self
 
 
@@ -98,6 +108,7 @@ class AWSAuth(BaseModel):
     No `model_config` here on purpose: each subclass decides its own
     frozen/extra policy.
     """
+
     region: str | None = None
     aws_access_key_id: SecretStr | None = None
     aws_secret_access_key: SecretStr | None = None
@@ -111,6 +122,7 @@ class AWSSMConfig(AWSAuth):
     The `ref` of a managed entry is the SecretId; it rides the fetch
     call, not this config.
     """
+
     model_config = ConfigDict(frozen=True, extra="forbid")
 
 
@@ -121,6 +133,7 @@ class DotenvConfig(BaseModel):
         path (str): default file when a managed entry's `ref` is empty;
             a non-empty `ref` is itself the host filesystem path.
     """
+
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     path: str = ".env"
@@ -132,6 +145,7 @@ class EnvConfig(BaseModel):
     The host process env has no sub-address, so a managed entry using
     this source must leave `ref` empty.
     """
+
     model_config = ConfigDict(frozen=True, extra="forbid")
 
 
@@ -146,6 +160,7 @@ class OnePasswordConfig(BaseModel):
             all -- the same shape `aws-sm` has, where an empty config
             reads the ambient AWS settings.
     """
+
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     token: SecretStr | None = None
@@ -171,9 +186,10 @@ class SecretRef(BaseModel):
         ref (str): the source's address, a file path for `dotenv`.
         key (str): which of the secret's fields holds the value.
     """
-    model_config = ConfigDict(frozen=True,
-                              extra="forbid",
-                              populate_by_name=True)
+
+    model_config = ConfigDict(
+        frozen=True, extra="forbid", populate_by_name=True
+    )
 
     provider: str = Field(alias="from")
     ref: str = ""
@@ -201,6 +217,7 @@ class SecretSource(BaseModel):
         config (dict[str, Any]): the source's own config fields; a
             value may be a literal or a `SecretRef`.
     """
+
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     source: str
@@ -226,6 +243,7 @@ class SecretSource(BaseModel):
                 raise ValueError(
                     f"{name}: a source config reads from {known}, not "
                     f"{ref.provider!r}; only a source that needs no config "
-                    "of its own can bootstrap another")
+                    "of its own can bootstrap another"
+                )
             out[name] = ref
         return out

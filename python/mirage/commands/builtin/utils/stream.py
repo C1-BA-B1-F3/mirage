@@ -151,8 +151,8 @@ def stdin_stream(
 
 
 def stdin_bytes(
-        read: Callable[..., Awaitable[bytes]],
-        stdin: ByteSource | None) -> Callable[[PathSpec], Awaitable[bytes]]:
+    read: Callable[..., Awaitable[bytes]], stdin: ByteSource | None
+) -> Callable[[PathSpec], Awaitable[bytes]]:
     stream = stdin_stream(read, stdin)
 
     async def read_bytes(path: PathSpec) -> bytes:

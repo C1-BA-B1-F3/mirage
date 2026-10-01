@@ -38,8 +38,11 @@ def team_dirname(team: dict[str, Any]) -> str:
 
 def member_filename(user: dict[str, Any]) -> str:
     label = sanitize_name(
-        user.get("displayName") or user.get("name") or user.get("email")
-        or "user")
+        user.get("displayName")
+        or user.get("name")
+        or user.get("email")
+        or "user"
+    )
     return fit_id_name(label, user["id"], ".json")
 
 

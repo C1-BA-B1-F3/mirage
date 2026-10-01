@@ -3,10 +3,15 @@ from dataclasses import dataclass
 from enum import Enum
 
 from mirage.commands.builtin.errors import SortKeyError
-from mirage.commands.builtin.sort_keys import (KeyMods, SortConfig,
-                                               build_config, compare_lines,
-                                               merge_lines, parse_keydef,
-                                               sort_lines)
+from mirage.commands.builtin.sort_keys import (
+    KeyMods,
+    SortConfig,
+    build_config,
+    compare_lines,
+    merge_lines,
+    parse_keydef,
+    sort_lines,
+)
 from mirage.commands.builtin.utils.lines import split_lines
 from mirage.commands.builtin.utils.stream import read_stdin_async, stdin_bytes
 from mirage.commands.errors import UsageError
@@ -17,13 +22,17 @@ from mirage.commands.spec.types import FlagValue
 from mirage.commands.spec.usage import argmatch_error
 from mirage.io.types import ByteSource, IOResult
 from mirage.types import PathSpec
-from mirage.utils.errors import (FS_ERRORS, BadDescriptorError,
-                                 FileTooLargeError, fs_strerror)
+from mirage.utils.errors import (
+    FS_ERRORS,
+    BadDescriptorError,
+    FileTooLargeError,
+    fs_strerror,
+)
 from mirage.utils.quote import shell_quote
 
 # `check_args` as gnulib's `argmatch_valid` prints it: `quiet` and
 # `silent` map to the same value, so they share one `  - ` line.
-CHECK_ARGS = (("quiet", "silent"), ("diagnose-first", ))
+CHECK_ARGS = (("quiet", "silent"), ("diagnose-first",))
 
 MULTIPLE_OUTPUTS = "sort: multiple output files specified"
 
@@ -97,8 +106,9 @@ def _stage_verb(stage: InputStage, checking: bool) -> str:
     return OPEN_FAILED if checking else CANNOT_READ
 
 
-def _earliest(refused: tuple[InputStage, bytes] | None, stage: InputStage,
-              line: bytes) -> tuple[InputStage, bytes]:
+def _earliest(
+    refused: tuple[InputStage, bytes] | None, stage: InputStage, line: bytes
+) -> tuple[InputStage, bytes]:
     if refused is None or stage.value < refused[0].value:
         return stage, line
     return refused
@@ -148,8 +158,9 @@ def _check_mode(raw: FlagValue, dest: str) -> str:
     word = str(raw)
     match = argmatch(word, CHECK_ARGS)
     if not isinstance(match, ArgmatchMatch):
-        raise argmatch_error("sort", "--check", word, CHECK_ARGS, 1,
-                             match.kind)
+        raise argmatch_error(
+            "sort", "--check", word, CHECK_ARGS, 1, match.kind
+        )
     # The canonical word of the ('quiet', 'silent') value is `quiet`, so
     # `--check=s` and `--check=silent` both land here.
     return "C" if match.word == "quiet" else "c"
@@ -183,8 +194,15 @@ def parse_flags(flags: Mapping[str, FlagValue]) -> SortFlags:
             parse_keydef(value, KeyMods(), False)
         elif dest == "output":
             spelled = next(typed, None)
-            path = spelled if spelled is not None else (value if isinstance(
-                value, PathSpec) else PathSpec.from_str_path(str(value)))
+            path = (
+                spelled
+                if spelled is not None
+                else (
+                    value
+                    if isinstance(value, PathSpec)
+                    else PathSpec.from_str_path(str(value))
+                )
+            )
             if output is not None and path.raw_path != output.raw_path:
                 raise UsageError(MULTIPLE_OUTPUTS)
             output = path
@@ -244,8 +262,9 @@ def _refusal(exc: ValueError) -> IOResult:
     return IOResult(stderr=f"sort: {exc}\n".encode(), exit_code=2)
 
 
-def operand_refusal(paths: list[PathSpec],
-                    parsed: SortFlags) -> IOResult | None:
+def operand_refusal(
+    paths: list[PathSpec], parsed: SortFlags
+) -> IOResult | None:
     """What ``-c`` refuses in its operands, which GNU checks before reading.
 
     A second operand outranks an ``-o``, and both name the check mode by
@@ -261,8 +280,9 @@ def operand_refusal(paths: list[PathSpec],
     if len(paths) > 1:
         label = paths[1].raw_path
         return IOResult(
-            stderr=(f"sort: extra operand '{label}' not allowed with "
-                    f"-{mode}\n").encode(),
+            stderr=(
+                f"sort: extra operand '{label}' not allowed with -{mode}\n"
+            ).encode(),
             exit_code=2,
         )
     if parsed.output is not None:
@@ -325,8 +345,9 @@ async def _read_runs(
             strerror = fs_strerror(exc) or str(exc)
             stage = input_stage(strerror, sorting)
             verb = _stage_verb(stage, parsed.check)
-            refused = _earliest(refused, stage,
-                                sort_die(verb, _label(path), strerror))
+            refused = _earliest(
+                refused, stage, sort_die(verb, _label(path), strerror)
+            )
             if stage is InputStage.ACCESS:
                 break
             continue
@@ -376,18 +397,22 @@ async def sort(
             None takes the keyword options instead.
     """
     try:
-        parsed = parse_flags(flags) if flags is not None else SortFlags(
-            reverse=reverse,
-            numeric=numeric,
-            unique=unique,
-            fold_case=fold_case,
-            key_defs=tuple(key_defs or ()),
-            field_separator=field_separator,
-            human_numeric=human_numeric,
-            version_sort=version_sort,
-            month_sort=month_sort,
-            ignore_blanks=ignore_blanks,
-            stable=stable,
+        parsed = (
+            parse_flags(flags)
+            if flags is not None
+            else SortFlags(
+                reverse=reverse,
+                numeric=numeric,
+                unique=unique,
+                fold_case=fold_case,
+                key_defs=tuple(key_defs or ()),
+                field_separator=field_separator,
+                human_numeric=human_numeric,
+                version_sort=version_sort,
+                month_sort=month_sort,
+                ignore_blanks=ignore_blanks,
+                stable=stable,
+            )
         )
         cfg = _config(parsed)
     except (UsageError, SortKeyError, ValueError) as exc:
@@ -396,8 +421,9 @@ async def sort(
     refusal = operand_refusal(paths, parsed)
     if refusal is not None:
         return b"", refusal
-    runs = await _read_runs(paths, stdin_bytes(read_bytes, stdin), stdin,
-                            parsed)
+    runs = await _read_runs(
+        paths, stdin_bytes(read_bytes, stdin), stdin, parsed
+    )
     if isinstance(runs, bytes):
         return b"", IOResult(stderr=runs, exit_code=2)
 
@@ -409,8 +435,9 @@ async def sort(
                 if parsed.check_quiet:
                     return b"", IOResult(exit_code=1)
                 label = _label(paths[0] if paths else None)
-                error = (f"sort: {label}:{index + 1}: disorder: "
-                         f"{records[index]}\n")
+                error = (
+                    f"sort: {label}:{index + 1}: disorder: {records[index]}\n"
+                )
                 return b"", IOResult(stderr=error.encode(), exit_code=1)
         return b"", IOResult()
 
@@ -432,12 +459,14 @@ async def sort(
             await write_bytes(parsed.output, output)
         except FS_ERRORS as exc:
             strerror = fs_strerror(exc) or str(exc)
-            return b"", IOResult(stderr=sort_die(OPEN_FAILED,
-                                                 parsed.output.raw_path,
-                                                 strerror),
-                                 exit_code=2)
-        return b"", IOResult(writes={parsed.output.mount_path: output},
-                             cache=[parsed.output.mount_path])
+            return b"", IOResult(
+                stderr=sort_die(OPEN_FAILED, parsed.output.raw_path, strerror),
+                exit_code=2,
+            )
+        return b"", IOResult(
+            writes={parsed.output.mount_path: output},
+            cache=[parsed.output.mount_path],
+        )
     return output, IOResult()
 
 

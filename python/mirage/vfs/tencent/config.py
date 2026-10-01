@@ -16,5 +16,4 @@ from mirage.vfs.s3_alias import RegionEndpointConfig
 
 
 class TencentConfig(RegionEndpointConfig):
-
     ENDPOINT = "https://cos.{region}.myqcloud.com"

@@ -22,9 +22,9 @@ from mirage.types import PathSpec
 
 
 async def entries(
-        accessor: DiskAccessor,
-        path_spec: PathSpec,
-        index: IndexCacheStore = NULL_INDEX
+    accessor: DiskAccessor,
+    path_spec: PathSpec,
+    index: IndexCacheStore = NULL_INDEX,
 ) -> tuple[list[tuple[str, int]], int]:
     """Per-file sizes under a path plus their total.
 

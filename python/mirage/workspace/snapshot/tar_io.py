@@ -26,15 +26,17 @@ _COMPRESS_MODES: dict[str | None, Literal["w", "w:gz", "w:bz2", "w:xz"]] = {
     None: "w",
     "gz": "w:gz",
     "bz2": "w:bz2",
-    "xz": "w:xz"
+    "xz": "w:xz",
 }
 
 
-def write_tar(target,
-              manifest: dict[str, Any],
-              blobs: dict[str, bytes],
-              *,
-              compress: str | None = None) -> None:
+def write_tar(
+    target,
+    manifest: dict[str, Any],
+    blobs: dict[str, bytes],
+    *,
+    compress: str | None = None,
+) -> None:
     """Write manifest + blobs as a tar.
 
     Args:
@@ -47,15 +49,17 @@ def write_tar(target,
     if compress not in _COMPRESS_MODES:
         raise ValueError(
             f"Unknown compress mode: {compress!r}. "
-            f"Use one of: {sorted(k for k in _COMPRESS_MODES if k)}")
+            f"Use one of: {sorted(k for k in _COMPRESS_MODES if k)}"
+        )
     mode = _COMPRESS_MODES[compress]
     if hasattr(target, "write"):
         tar = tarfile.open(fileobj=target, mode=mode)
     else:
         tar = tarfile.open(str(target), mode)
     with tar:
-        manifest_bytes = json.dumps(manifest, indent=2,
-                                    default=_json_default).encode("utf-8")
+        manifest_bytes = json.dumps(
+            manifest, indent=2, default=_json_default
+        ).encode("utf-8")
         _add(tar, _MANIFEST_NAME, manifest_bytes)
         for tar_path, data in blobs.items():
             _add(tar, tar_path, data)
@@ -90,7 +94,8 @@ def _make_reader(tar):
             member = tar.getmember(blob_path)
         except KeyError as exc:
             raise ValueError(
-                f"Manifest references missing blob: {blob_path!r}") from exc
+                f"Manifest references missing blob: {blob_path!r}"
+            ) from exc
         f = tar.extractfile(member)
         if f is None:
             raise ValueError(f"Blob unreadable: {blob_path!r}")
@@ -114,6 +119,8 @@ def _json_default(obj):
     if isinstance(obj, bytes):
         raise TypeError(
             "Bytes leftover in manifest — split_manifest_and_blobs "
-            "must replace every bytes value with a blob ref")
+            "must replace every bytes value with a blob ref"
+        )
     raise TypeError(
-        f"Object of type {type(obj).__name__} not JSON serializable")
+        f"Object of type {type(obj).__name__} not JSON serializable"
+    )

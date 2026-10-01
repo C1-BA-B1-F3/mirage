@@ -34,11 +34,13 @@ class KernelMounts:
         self._mountpoints: dict[str, str] = {}
         self._managers: dict[str, FuseManager] = {}
 
-    def add(self,
-            prefix: str,
-            mountpoint: str | None = None,
-            session_id: str | None = None,
-            backend: str | MountBackend = MountBackend.FUSE) -> str:
+    def add(
+        self,
+        prefix: str,
+        mountpoint: str | None = None,
+        session_id: str | None = None,
+        backend: str | MountBackend = MountBackend.FUSE,
+    ) -> str:
         """Expose ``prefix`` at a real mountpoint and return its path.
 
         A session-bound mount runs every op under that session's mount
@@ -56,19 +58,18 @@ class KernelMounts:
         """
         # Register a pinned path BEFORE mounting so a collision is
         # rejected without leaving a partial mount.
-        session = (self._sessions.get(session_id)
-                   if session_id is not None else None)
+        session = (
+            self._sessions.get(session_id) if session_id is not None else None
+        )
         key = prefix if session_id is None else f"{prefix}@{session_id}"
         if mountpoint is not None:
             self._register(key, mountpoint)
         manager = FuseManager()
         self._managers[key] = manager
         try:
-            resolved = manager.setup(self._ops,
-                                     prefix,
-                                     mountpoint,
-                                     session=session,
-                                     backend=backend)
+            resolved = manager.setup(
+                self._ops, prefix, mountpoint, session=session, backend=backend
+            )
         except Exception:
             # The mount never came up; drop the manager and any
             # registered path so mountpoints does not misreport it.
@@ -111,7 +112,8 @@ class KernelMounts:
         if len(self._mountpoints) > 1:
             raise RuntimeError(
                 "multiple FUSE mounts active; use fuse_mountpoints to "
-                "select one by prefix")
+                "select one by prefix"
+            )
         return next(iter(self._mountpoints.values()))
 
     @property
@@ -123,5 +125,6 @@ class KernelMounts:
             if other_mountpoint == mountpoint and other_key != key:
                 raise ValueError(
                     f"FUSE mountpoint {mountpoint!r} already used by "
-                    f"prefix {other_key!r}; mounts need distinct paths")
+                    f"prefix {other_key!r}; mounts need distinct paths"
+                )
         self._mountpoints[key] = mountpoint

@@ -18,10 +18,16 @@ from mirage.commands.spec import SPECS
 from mirage.runtime.routing.types import ParsedCommand
 from mirage.shell.types import NodeType, TSNodeLike
 
-_WORD_TYPES = (NodeType.COMMAND_NAME, NodeType.WORD, NodeType.STRING,
-               NodeType.RAW_STRING, NodeType.ANSI_C_STRING,
-               NodeType.TRANSLATED_STRING, NodeType.NUMBER,
-               NodeType.CONCATENATION)
+_WORD_TYPES = (
+    NodeType.COMMAND_NAME,
+    NodeType.WORD,
+    NodeType.STRING,
+    NodeType.RAW_STRING,
+    NodeType.ANSI_C_STRING,
+    NodeType.TRANSLATED_STRING,
+    NodeType.NUMBER,
+    NodeType.CONCATENATION,
+)
 
 
 def command_nodes(ast: TSNodeLike) -> Iterator[TSNodeLike]:
@@ -56,19 +62,27 @@ def parsed_commands(
     """
     commands: list[ParsedCommand] = []
     for node in command_nodes(ast):
-        words = tuple(child.text.decode() for child in node.children
-                      if child.type in _WORD_TYPES and child.text is not None)
+        words = tuple(
+            child.text.decode()
+            for child in node.children
+            if child.type in _WORD_TYPES and child.text is not None
+        )
         if words:
-            consumed = match_command_prefix(
-                list(words)) if match_command_prefix else 1
+            consumed = (
+                match_command_prefix(list(words))
+                if match_command_prefix
+                else 1
+            )
             name = " ".join(words[:consumed])
             commands.append(
                 ParsedCommand(
                     command=name,
                     words=words,
                     builtin=name in SPECS,
-                    paths=tuple(w for w in words[consumed:]
-                                if w.startswith("/")),
+                    paths=tuple(
+                        w for w in words[consumed:] if w.startswith("/")
+                    ),
                     cli=words[0] if words[0] in clis else None,
-                ))
+                )
+            )
     return tuple(commands)

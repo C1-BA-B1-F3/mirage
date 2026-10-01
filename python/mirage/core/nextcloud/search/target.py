@@ -16,9 +16,11 @@ def search_target(url: str) -> SearchTarget | None:
     if len(parts) < 2 or parts[0] != "files":
         return None
     endpoint = urlunsplit(
-        (parsed.scheme, parsed.netloc, parsed.path[:dav_end], "", ""))
-    return SearchTarget(endpoint=endpoint,
-                        vfs_scope=unquote("/" + "/".join(parts)))
+        (parsed.scheme, parsed.netloc, parsed.path[:dav_end], "", "")
+    )
+    return SearchTarget(
+        endpoint=endpoint, vfs_scope=unquote("/" + "/".join(parts))
+    )
 
 
 def scope_path(target: SearchTarget, path: PathSpec) -> str:
@@ -32,7 +34,7 @@ def strip_scope(path: str, scope: str) -> str | None:
     if path == scope:
         return ""
     prefix = scope.rstrip("/") + "/"
-    return path[len(prefix):] if path.startswith(prefix) else None
+    return path[len(prefix) :] if path.startswith(prefix) else None
 
 
 def relative_path(href: str, target: SearchTarget) -> str:
@@ -44,5 +46,6 @@ def relative_path(href: str, target: SearchTarget) -> str:
         relative = strip_scope(href_path, dav_root + vfs_scope)
     if relative is None:
         raise ValueError(
-            f"Nextcloud Files Search returned an out-of-scope href: {href}")
+            f"Nextcloud Files Search returned an out-of-scope href: {href}"
+        )
     return "/" + relative if relative else "/"

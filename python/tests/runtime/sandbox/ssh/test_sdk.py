@@ -17,7 +17,7 @@ import sys
 
 from mirage.runtime.sandbox.ssh import sdk
 
-NAMES = ("connect", )
+NAMES = ("connect",)
 
 
 def test_the_extra_resolves_as_a_unit():

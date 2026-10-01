@@ -94,13 +94,17 @@ def ranges_of(predicate: Callable[[int], bool]) -> list[list[int]]:
 def rows(ranges: list[list[int]], per_row: int, indent: str, fmt: str) -> str:
     lines = []
     for i in range(0, len(ranges), per_row):
-        chunk = ranges[i:i + per_row]
+        chunk = ranges[i : i + per_row]
         lines.append(indent + " ".join(fmt.format(lo, hi) for lo, hi in chunk))
     return "\n".join(lines)
 
 
-def render_py(zero: list[list[int]], wide: list[list[int]],
-              space: list[list[int]], version: str) -> str:
+def render_py(
+    zero: list[list[int]],
+    wide: list[list[int]],
+    space: list[list[int]],
+    version: str,
+) -> str:
     head = "\n".join(LICENSE_PY)
     return f"""{head}
 
@@ -121,8 +125,12 @@ WHITESPACE: tuple[tuple[int, int], ...] = (
 """
 
 
-def render_ts(zero: list[list[int]], wide: list[list[int]],
-              space: list[list[int]], version: str) -> str:
+def render_ts(
+    zero: list[list[int]],
+    wide: list[list[int]],
+    space: list[list[int]],
+    version: str,
+) -> str:
     head = "\n".join("//" + line[1:] for line in LICENSE_PY)
     return f"""{head}
 
@@ -164,9 +172,13 @@ def main() -> int:
                 "whitespace": space,
             },
             indent=2,
-        ) + "\n")
-    print(f"unicode {version}: {len(zero)} zero-width, {len(wide)} wide, "
-          f"{len(space)} whitespace ranges")
+        )
+        + "\n"
+    )
+    print(
+        f"unicode {version}: {len(zero)} zero-width, {len(wide)} wide, "
+        f"{len(space)} whitespace ranges"
+    )
     return 0
 
 

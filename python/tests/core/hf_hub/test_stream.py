@@ -63,12 +63,9 @@ def _answering(etag: str, *payload: bytes):
     """A hub_stream stand-in that reports its headers the way the real one
     does: once, before the first chunk."""
 
-    async def fake(_token,
-                   _url,
-                   _chunk_size,
-                   *,
-                   session=None,
-                   on_response=None):
+    async def fake(
+        _token, _url, _chunk_size, *, session=None, on_response=None
+    ):
         if on_response is not None:
             on_response({"etag": etag})
         for item in payload:
@@ -79,10 +76,13 @@ def _answering(etag: str, *payload: bytes):
 
 @pytest.mark.asyncio
 async def test_stream_stamps_the_oid_when_the_etag_names_the_row(
-        accessor, monkeypatch):
+    accessor, monkeypatch
+):
     seed(accessor, file_row("a.txt", 4))
-    monkeypatch.setattr("mirage.core.hf_hub.stream.hub_stream",
-                        _answering('"oid-a.txt"', b"ab", b"cd"))
+    monkeypatch.setattr(
+        "mirage.core.hf_hub.stream.hub_stream",
+        _answering('"oid-a.txt"', b"ab", b"cd"),
+    )
     scope = RecordingScope()
     try:
         stream = read_stream(accessor, ps("a.txt"))
@@ -98,10 +98,13 @@ async def test_stream_stamps_the_oid_when_the_etag_names_the_row(
 
 @pytest.mark.asyncio
 async def test_stream_stamps_nothing_when_the_bytes_are_another_version(
-        accessor, monkeypatch):
+    accessor, monkeypatch
+):
     seed(accessor, file_row("a.txt", 4))
-    monkeypatch.setattr("mirage.core.hf_hub.stream.hub_stream",
-                        _answering('"another-version"', b"newr"))
+    monkeypatch.setattr(
+        "mirage.core.hf_hub.stream.hub_stream",
+        _answering('"another-version"', b"newr"),
+    )
     scope = RecordingScope()
     try:
         [c async for c in read_stream(accessor, ps("a.txt"))]
@@ -113,19 +116,18 @@ async def test_stream_stamps_nothing_when_the_bytes_are_another_version(
 @pytest.mark.asyncio
 async def test_stream_with_no_recorder_still_reads(accessor, monkeypatch):
     seed(accessor, file_row("a.txt", 4))
-    monkeypatch.setattr("mirage.core.hf_hub.stream.hub_stream",
-                        _answering('"oid-a.txt"', b"ab"))
+    monkeypatch.setattr(
+        "mirage.core.hf_hub.stream.hub_stream",
+        _answering('"oid-a.txt"', b"ab"),
+    )
     assert [c async for c in read_stream(accessor, ps("a.txt"))] == [b"ab"]
 
 
 def _refusing(status: int):
 
-    async def fake(_token,
-                   _url,
-                   _chunk_size,
-                   *,
-                   session=None,
-                   on_response=None):
+    async def fake(
+        _token, _url, _chunk_size, *, session=None, on_response=None
+    ):
         raise HfHubError("gated", status)
         yield b""
 
@@ -134,7 +136,8 @@ def _refusing(status: int):
 
 @pytest.mark.asyncio
 async def test_a_stream_the_hub_refuses_is_permission_denied(
-        loaded, monkeypatch):
+    loaded, monkeypatch
+):
     monkeypatch.setattr("mirage.core.hf_hub.stream.hub_stream", _refusing(403))
     with pytest.raises(PermissionError):
         [c async for c in read_stream(loaded, ps("a.txt"))]

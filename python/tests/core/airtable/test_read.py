@@ -31,9 +31,11 @@ DONE = f"{TABLE}/views/Done_shipped__viwDone0000000001.jsonl"
 
 
 def _spec(virtual: str) -> PathSpec:
-    return PathSpec(virtual=virtual,
-                    directory=virtual.rsplit("/", 1)[0],
-                    vfs_path=mount_key(virtual, ROOT))
+    return PathSpec(
+        virtual=virtual,
+        directory=virtual.rsplit("/", 1)[0],
+        vfs_path=mount_key(virtual, ROOT),
+    )
 
 
 def _ids(body: bytes) -> list[str]:
@@ -48,20 +50,15 @@ async def test_records_render_every_record_across_pages(airtable_api):
     assert first == {
         "record_id": "rec00000000000001",
         "created_time": "2026-01-01T09:00:00.000Z",
-        "fields": {
-            "Name": "Feature 1",
-            "Priority": 1,
-            "Status": "Done"
-        },
+        "fields": {"Name": "Feature 1", "Priority": 1, "Status": "Done"},
     }
 
 
 @pytest.mark.asyncio
 async def test_a_limit_fetches_only_that_many_records(airtable_api):
-    body = await read(make_accessor(),
-                      _spec(RECORDS),
-                      RAMIndexCacheStore(),
-                      limit=2)
+    body = await read(
+        make_accessor(), _spec(RECORDS), RAMIndexCacheStore(), limit=2
+    )
     assert _ids(body) == ["rec00000000000001", "rec00000000000002"]
     calls = airtable_api.record_calls()
     assert len(calls) == 1 and calls[0]["maxRecords"] == "2"
@@ -88,29 +85,35 @@ async def test_a_full_read_past_the_cap_is_refused(airtable_api):
 
 @pytest.mark.asyncio
 async def test_a_window_past_the_cap_on_a_small_view_reads(airtable_api):
-    body = await read(make_accessor(max_read_records=5),
-                      _spec(DONE),
-                      RAMIndexCacheStore(),
-                      limit=50)
+    body = await read(
+        make_accessor(max_read_records=5),
+        _spec(DONE),
+        RAMIndexCacheStore(),
+        limit=50,
+    )
     assert len(_ids(body)) == 4
 
 
 @pytest.mark.asyncio
 async def test_an_offset_skips_records(airtable_api):
-    body = await read(make_accessor(),
-                      _spec(RECORDS),
-                      RAMIndexCacheStore(),
-                      limit=2,
-                      offset=3)
+    body = await read(
+        make_accessor(),
+        _spec(RECORDS),
+        RAMIndexCacheStore(),
+        limit=2,
+        offset=3,
+    )
     assert _ids(body) == ["rec00000000000004", "rec00000000000005"]
 
 
 @pytest.mark.asyncio
 async def test_missing_tables_and_views_read_as_enoent(airtable_api):
     accessor = make_accessor()
-    for path in (f"{BASE}/Gone__tblGone0000000001/records.jsonl",
-                 f"{TABLE}/views/Gone__viwGone0000000001.jsonl",
-                 f"{BASE}/Gone__tblGone0000000001/table.json"):
+    for path in (
+        f"{BASE}/Gone__tblGone0000000001/records.jsonl",
+        f"{TABLE}/views/Gone__viwGone0000000001.jsonl",
+        f"{BASE}/Gone__tblGone0000000001/table.json",
+    ):
         with pytest.raises(FileNotFoundError):
             await read(accessor, _spec(path), RAMIndexCacheStore())
 
@@ -128,12 +131,14 @@ async def test_a_base_outside_base_ids_is_enoent_on_read(airtable_api):
 async def test_a_name_the_listing_does_not_hold_is_enoent(airtable_api):
     accessor = make_accessor()
     ops = f"{ROOT}/bases/Ops_Finance__appOpsFinance0001"
-    for path in (f"{ROOT}/bases/Wrong__appRoadmapBase001/base.json",
-                 f"{BASE}/Wrong__tblFeatures000001/table.json",
-                 f"{BASE}/Wrong__tblFeatures000001/records.jsonl",
-                 f"{TABLE}/views/Wrong__viwDone0000000001.jsonl",
-                 f"{ops}/Q3_Budget__tblBudget00000001/views/"
-                 "Grid_view__viwGrid0000000001.jsonl"):
+    for path in (
+        f"{ROOT}/bases/Wrong__appRoadmapBase001/base.json",
+        f"{BASE}/Wrong__tblFeatures000001/table.json",
+        f"{BASE}/Wrong__tblFeatures000001/records.jsonl",
+        f"{TABLE}/views/Wrong__viwDone0000000001.jsonl",
+        f"{ops}/Q3_Budget__tblBudget00000001/views/"
+        "Grid_view__viwGrid0000000001.jsonl",
+    ):
         with pytest.raises(FileNotFoundError):
             await read(accessor, _spec(path), RAMIndexCacheStore())
     # the ids resolve at the API; only the listing knows the names
@@ -145,8 +150,10 @@ async def test_a_read_without_an_index_still_proves_the_path(airtable_api):
     body = await read(make_accessor(), _spec(DONE))
     assert len(_ids(body)) == 4
     with pytest.raises(FileNotFoundError):
-        await read(make_accessor(),
-                   _spec(f"{BASE}/Wrong__tblFeatures000001/records.jsonl"))
+        await read(
+            make_accessor(),
+            _spec(f"{BASE}/Wrong__tblFeatures000001/records.jsonl"),
+        )
 
 
 @pytest.mark.asyncio

@@ -13,7 +13,6 @@ from mirage.watch.base import DeltaHook
 
 
 class SharePointVFS(BaseVFS):
-
     accessor: SharePointAccessor
     name: str = VFSName.SHAREPOINT
     caches_reads: bool = True

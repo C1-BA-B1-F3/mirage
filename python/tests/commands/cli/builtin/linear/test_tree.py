@@ -55,8 +55,11 @@ def test_tree_shape_keeps_the_mount_grammar():
         "set-project",
         "add-label",
     ]
-    assert [v.name
-            for v in leaf("comment").subcommands] == ["list", "add", "update"]
+    assert [v.name for v in leaf("comment").subcommands] == [
+        "list",
+        "add",
+        "update",
+    ]
 
 
 def test_write_classification():

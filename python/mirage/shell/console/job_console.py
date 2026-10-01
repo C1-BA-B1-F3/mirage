@@ -35,9 +35,9 @@ class JobConsole:
             rebuilding a finished console from a snapshot.
     """
 
-    def __init__(self,
-                 store: ConsoleStore | None = None,
-                 finished: bool = False) -> None:
+    def __init__(
+        self, store: ConsoleStore | None = None, finished: bool = False
+    ) -> None:
         self._store = store if store is not None else RAMConsoleStore()
         self._finished = finished
 
@@ -94,9 +94,9 @@ class JobConsole:
             return
         await self._store.append(Channel.CONTROL, outcome.encode())
 
-    async def read_from(self,
-                        seq: int,
-                        limit: int | None = None) -> ReadResult:
+    async def read_from(
+        self, seq: int, limit: int | None = None
+    ) -> ReadResult:
         """Read chunks at or after a cursor.
 
         Args:
@@ -154,8 +154,9 @@ class JobConsole:
         """
         chunks, _, _ = await self._store.read_from(0)
         if channel is None:
-            return b"".join(c.data for c in chunks
-                            if c.channel != Channel.CONTROL)
+            return b"".join(
+                c.data for c in chunks if c.channel != Channel.CONTROL
+            )
         return b"".join(c.data for c in chunks if c.channel == channel)
 
     async def close(self) -> None:

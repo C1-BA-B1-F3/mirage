@@ -191,13 +191,15 @@ def test_dynamic_reader_is_asked_first_and_told_of_every_write():
     def wrote(name: str, value: str) -> None:
         events.append((name, value))
 
-    result = evaluate_arith("D=42, x=D, y", {"y": "D+1"},
-                            read_var=read,
-                            wrote_var=wrote)
+    result = evaluate_arith(
+        "D=42, x=D, y", {"y": "D+1"}, read_var=read, wrote_var=wrote
+    )
     assert result.value == 8
     assert events == [("D", "42"), ("x", "7")]
-    assert [(w.name, w.value) for w in result.writes] == [("D", "42"),
-                                                          ("x", "7")]
+    assert [(w.name, w.value) for w in result.writes] == [
+        ("D", "42"),
+        ("x", "7"),
+    ]
 
 
 def test_compound_assignment_reads_the_target_before_the_right_side():
@@ -225,8 +227,9 @@ def test_an_indexed_subscript_evaluates_in_the_expression_record():
     # recorded with it.
     result = evaluate_arith("arr[x=1] + x", {}, elements=_fake_elements())
     assert result.value == 21
-    assert [(w.name, w.key, w.value)
-            for w in result.writes] == [("x", None, "1")]
+    assert [(w.name, w.key, w.value) for w in result.writes] == [
+        ("x", None, "1")
+    ]
     # An associative subscript stays a key, never an expression.
     result = evaluate_arith("m[a] + 1", {}, elements=_fake_elements())
     assert result.value == 8 and result.writes == ()
@@ -236,14 +239,15 @@ def test_an_indexed_subscript_evaluates_in_the_expression_record():
 # unset name is fatal, an empty one is 0, an assignment target and a
 # short-circuited operand are never read, and an array name is set
 # whatever its element 0 holds.
-@pytest.mark.parametrize("expr,env", [
-    ("v + 1", {}),
-    ("v++", {}),
-    ("v += 1", {}),
-    ("w", {
-        "w": "v"
-    }),
-])
+@pytest.mark.parametrize(
+    "expr,env",
+    [
+        ("v + 1", {}),
+        ("v++", {}),
+        ("v += 1", {}),
+        ("w", {"w": "v"}),
+    ],
+)
 def test_nounset_refuses_a_name_no_variable_holds(expr, env):
     with pytest.raises(UnboundVariable) as info:
         evaluate_arith(expr, env, nounset=True)
@@ -258,12 +262,15 @@ def test_nounset_reads_what_is_set_and_skips_what_is_never_read():
     assert evaluate_arith("0 && v", {}, nounset=True).value == 0
     assert evaluate_arith("1 ? 2 : v", {}, nounset=True).value == 2
     base = _fake_elements()
-    ops = ElementOps(resolve=base.resolve,
-                     read=base.read,
-                     is_assoc=base.is_assoc,
-                     holds_array=lambda name: name == "holes")
-    assert evaluate_arith("holes + 1", {}, elements=ops,
-                          nounset=True).value == 1
+    ops = ElementOps(
+        resolve=base.resolve,
+        read=base.read,
+        is_assoc=base.is_assoc,
+        holds_array=lambda name: name == "holes",
+    )
+    assert (
+        evaluate_arith("holes + 1", {}, elements=ops, nounset=True).value == 1
+    )
 
 
 def test_without_nounset_an_unset_name_reads_0():

@@ -21,10 +21,12 @@ from mirage.types import PathSpec
 
 
 def _scope(virtual: str) -> PathSpec:
-    return PathSpec(virtual=virtual,
-                    directory=virtual[:virtual.rfind("/") + 1],
-                    vfs_path="",
-                    resolved=True)
+    return PathSpec(
+        virtual=virtual,
+        directory=virtual[: virtual.rfind("/") + 1],
+        vfs_path="",
+        resolved=True,
+    )
 
 
 class FakeRunSingle:
@@ -35,28 +37,35 @@ class FakeRunSingle:
         self.calls: list[dict] = []
         self.final_stdin: bytes | None = None
 
-    async def __call__(self,
-                       cmd_name,
-                       paths,
-                       texts,
-                       flag_kwargs,
-                       stdin=None,
-                       resolve_hint=None):
+    async def __call__(
+        self,
+        cmd_name,
+        paths,
+        texts,
+        flag_kwargs,
+        stdin=None,
+        resolve_hint=None,
+    ):
         self.calls.append(
-            dict(cmd=cmd_name,
-                 paths=[p.virtual for p in paths],
-                 texts=list(texts),
-                 flags=dict(flag_kwargs),
-                 resolve_hint=resolve_hint.virtual
-                 if resolve_hint is not None else None))
+            dict(
+                cmd=cmd_name,
+                paths=[p.virtual for p in paths],
+                texts=list(texts),
+                flags=dict(flag_kwargs),
+                resolve_hint=resolve_hint.virtual
+                if resolve_hint is not None
+                else None,
+            )
+        )
         if cmd_name == "cat" and paths:
             data = self.files.get(paths[0].virtual)
             if data is None:
                 err = f"cat: {paths[0].virtual}: No such file\n".encode()
                 return None, IOResult(exit_code=1, stderr=err)
             return data, IOResult()
-        self.final_stdin = await materialize(stdin) if stdin is not None \
-            else None
+        self.final_stdin = (
+            await materialize(stdin) if stdin is not None else None
+        )
         return b"FINAL:" + (self.final_stdin or b""), IOResult()
 
 
@@ -67,7 +76,8 @@ def _run(coro):
 def test_plain_cat_skips_the_final_run():
     rs = FakeRunSingle({"/a/x": b"1\n", "/b/y": b"2\n"})
     out, io = _run(
-        run_stream("cat", [_scope("/a/x"), _scope("/b/y")], [], {}, rs))
+        run_stream("cat", [_scope("/a/x"), _scope("/b/y")], [], {}, rs)
+    )
     assert _run(materialize(out)) == b"1\n2\n"
     assert io.exit_code == 0
     assert [c["cmd"] for c in rs.calls] == ["cat", "cat"]
@@ -76,8 +86,10 @@ def test_plain_cat_skips_the_final_run():
 def test_flagged_command_runs_once_on_the_merged_stream():
     rs = FakeRunSingle({"/a/x": b"1", "/b/y": b"2\n"})
     out, io = _run(
-        run_stream("cut", [_scope("/a/x"), _scope("/b/y")], [], {"r": True},
-                   rs))
+        run_stream(
+            "cut", [_scope("/a/x"), _scope("/b/y")], [], {"r": True}, rs
+        )
+    )
     assert _run(materialize(out)) == b"FINAL:1\n2\n"
     assert io.exit_code == 0
     final = rs.calls[-1]
@@ -91,8 +103,10 @@ def test_flagged_command_runs_once_on_the_merged_stream():
 def test_cat_with_flags_reapplies_cat_on_the_merged_stream():
     rs = FakeRunSingle({"/a/x": b"1", "/b/y": b"2\n"})
     out, _ = _run(
-        run_stream("cat", [_scope("/a/x"), _scope("/b/y")], [], {"n": True},
-                   rs))
+        run_stream(
+            "cat", [_scope("/a/x"), _scope("/b/y")], [], {"n": True}, rs
+        )
+    )
     assert _run(materialize(out)) == b"FINAL:12\n"
     assert rs.calls[-1]["cmd"] == "cat"
     assert rs.calls[-1]["flags"] == {"n": True}
@@ -101,8 +115,8 @@ def test_cat_with_flags_reapplies_cat_on_the_merged_stream():
 def test_failed_operand_is_skipped_and_fails_the_command():
     rs = FakeRunSingle({"/b/y": b"2\n"})
     out, io = _run(
-        run_stream("cat",
-                   [_scope("/a/missing"), _scope("/b/y")], [], {}, rs))
+        run_stream("cat", [_scope("/a/missing"), _scope("/b/y")], [], {}, rs)
+    )
     assert _run(materialize(out)) == b"2\n"
     assert io.exit_code == 1
     assert b"No such file" in (io.stderr or b"")

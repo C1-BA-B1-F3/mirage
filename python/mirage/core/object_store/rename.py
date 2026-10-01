@@ -13,16 +13,22 @@
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 from mirage.cache.context import invalidate_ancestors, invalidate_subtree
-from mirage.core.object_store.driver import (A, C, ExistsFn, ObjectStoreDriver,
-                                             PairFn)
+from mirage.core.object_store.driver import (
+    A,
+    C,
+    ExistsFn,
+    ObjectStoreDriver,
+    PairFn,
+)
 from mirage.observe.context import record, start_op
 from mirage.types import PathSpec
 from mirage.utils import key_prefix as kp
 from mirage.utils.errors import enoent
 
 
-def make_rename(driver: ObjectStoreDriver[A, C],
-                exists: ExistsFn[A]) -> PairFn[A]:
+def make_rename(
+    driver: ObjectStoreDriver[A, C], exists: ExistsFn[A]
+) -> PairFn[A]:
     """Build file-or-prefix relocation over one driver.
 
     A single object moves with the driver's native file move. A
@@ -41,10 +47,12 @@ def make_rename(driver: ObjectStoreDriver[A, C],
     if move_file is None or move_prefix is None:
         raise ValueError(
             f"{driver.vfs} driver has no native move; leave rename "
-            "unwired instead of building it")
+            "unwired instead of building it"
+        )
 
-    async def rename(accessor: A, src_spec: PathSpec,
-                     dst_spec: PathSpec) -> None:
+    async def rename(
+        accessor: A, src_spec: PathSpec, dst_spec: PathSpec
+    ) -> None:
         src = src_spec.mount_path
         dst = dst_spec.mount_path
         kpfx = driver.key_prefix_of(accessor)
@@ -78,8 +86,9 @@ def make_rename(driver: ObjectStoreDriver[A, C],
                     # skips the record it is in `finally` for.
                     moved = None
                     op = "rename_prefix"
-                    moved = await move_prefix(conn, kp.apply_dir(kpfx, src),
-                                              kp.apply_dir(kpfx, dst))
+                    moved = await move_prefix(
+                        conn, kp.apply_dir(kpfx, src), kp.apply_dir(kpfx, dst)
+                    )
             finally:
                 if moved is not False:
                     # Two records for one op, because a move invalidates

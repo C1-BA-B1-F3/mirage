@@ -15,8 +15,11 @@
 from typing import Any
 
 from mirage.accessor.email import EmailAccessor
-from mirage.core.email.client import (fetch_message, list_message_uids,
-                                      quote_string)
+from mirage.core.email.client import (
+    fetch_message,
+    list_message_uids,
+    quote_string,
+)
 from mirage.core.email.readdir import _date_bucket, _msg_filename
 from mirage.core.email.render import message_json_text
 
@@ -88,10 +91,9 @@ async def search_messages(
         before=before,
         unseen=unseen,
     )
-    return await list_message_uids(accessor,
-                                   folder,
-                                   criteria,
-                                   max_results=max_results)
+    return await list_message_uids(
+        accessor, folder, criteria, max_results=max_results
+    )
 
 
 def _build_vfs_path(prefix: str, folder: str, msg: dict[str, Any]) -> str:
@@ -129,10 +131,9 @@ async def search_and_format(
     """
     if not folder:
         return []
-    uids = await search_messages(accessor,
-                                 folder,
-                                 text=query,
-                                 max_results=max_results)
+    uids = await search_messages(
+        accessor, folder, text=query, max_results=max_results
+    )
     pairs: list[tuple[str, str]] = []
     for uid in uids:
         msg = await fetch_message(accessor, folder, uid)

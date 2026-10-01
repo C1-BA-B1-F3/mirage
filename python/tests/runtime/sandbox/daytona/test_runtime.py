@@ -19,7 +19,6 @@ from mirage.runtime.sandbox.daytona import DaytonaRuntime, sdk
 
 
 class FakeProcess:
-
     def __init__(self) -> None:
         self.calls: list[tuple[str, str | None, dict | None]] = []
 
@@ -34,7 +33,6 @@ class FakeProcess:
 
 
 class FakeFs:
-
     def __init__(self) -> None:
         self.files: dict[str, bytes] = {}
         self.folders: list[str] = []
@@ -97,15 +95,16 @@ def test_sandbox_id_is_required():
 async def test_api_key_reaches_the_client(monkeypatch):
 
     class FakeSdkConfig:
-
         def __init__(self, api_key=None) -> None:
             self.api_key = api_key
 
     monkeypatch.setattr(sdk, "DaytonaConfig", FakeSdkConfig)
-    runtime = DaytonaRuntime(config={
-        "sandbox_id": "sb-live",
-        "api_key": "k-123",
-    })
+    runtime = DaytonaRuntime(
+        config={
+            "sandbox_id": "sb-live",
+            "api_key": "k-123",
+        }
+    )
     await runtime.connect()
     assert FakeClient.configs[0].api_key == "k-123"
 
@@ -114,8 +113,9 @@ async def test_api_key_reaches_the_client(monkeypatch):
 async def test_exec_line_redirects_stdin_through_a_file():
     runtime = DaytonaRuntime(config={"sandbox_id": "sb-live"})
     await runtime.connect()
-    result = await runtime.exec_line("wc -l", b"a\nb\n", {"E": "1"},
-                                     "/workspace")
+    result = await runtime.exec_line(
+        "wc -l", b"a\nb\n", {"E": "1"}, "/workspace"
+    )
     assert result.exit_code == 0
     assert result.stderr is None
     sandbox = FakeClient.last

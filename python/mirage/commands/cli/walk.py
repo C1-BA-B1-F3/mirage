@@ -17,11 +17,17 @@ from dataclasses import replace
 
 from mirage.commands.cli.constants import CLAP_EXIT, USAGE_EXIT
 from mirage.commands.cli.types import CLISpec, WalkFlagBag, WalkResult
-from mirage.commands.spec.compile import (CompiledSpec, compile_spec,
-                                          expand_long)
+from mirage.commands.spec.compile import (
+    CompiledSpec,
+    compile_spec,
+    expand_long,
+)
 from mirage.commands.spec.constants import FLOAT_VALUE, HELP_OPTION, INT_VALUE
-from mirage.commands.spec.help import (clap_group_refusal,
-                                       clap_unexpected_argument, render_help)
+from mirage.commands.spec.help import (
+    clap_group_refusal,
+    clap_unexpected_argument,
+    render_help,
+)
 from mirage.commands.spec.types import UsageStyle
 from mirage.utils.path import resolve_path
 
@@ -46,11 +52,13 @@ def find_child(node: CLISpec, word: str) -> CLISpec | None:
     """
     return next(
         (c for c in node.subcommands if word == c.name or word in c.aliases),
-        None)
+        None,
+    )
 
 
-def find_node(spec: CLISpec,
-              verbs: Sequence[str]) -> tuple[CLISpec, tuple[str, ...]] | None:
+def find_node(
+    spec: CLISpec, verbs: Sequence[str]
+) -> tuple[CLISpec, tuple[str, ...]] | None:
     """Descend a tree by verb words, None if a word names no subcommand.
 
     Returns the node and its canonical path, so an alias renders under
@@ -70,7 +78,7 @@ def find_node(spec: CLISpec,
         if child is None:
             return None
         node = child
-        path = path + (child.name, )
+        path = path + (child.name,)
     return node, path
 
 
@@ -90,8 +98,9 @@ def env_names(node: CLISpec) -> frozenset[str]:
     return frozenset(out)
 
 
-def invoked_env_names(spec: CLISpec,
-                      words: frozenset[str] | None) -> frozenset[str]:
+def invoked_env_names(
+    spec: CLISpec, words: frozenset[str] | None
+) -> frozenset[str]:
     """Env names on the verb paths the line's words could select.
 
     The words prune the tree: a subcommand joins only when some word
@@ -111,14 +120,16 @@ def invoked_env_names(spec: CLISpec,
         return env_names(spec)
     out = {opt.env for opt in spec.options if opt.env is not None}
     for child in spec.subcommands:
-        if child.name in words or any(alias in words
-                                      for alias in child.aliases):
+        if child.name in words or any(
+            alias in words for alias in child.aliases
+        ):
             out |= invoked_env_names(child, words)
     return frozenset(out)
 
 
-def _supplied_option(cs: CompiledSpec, token: str,
-                     has_next: bool) -> tuple[str, int] | None:
+def _supplied_option(
+    cs: CompiledSpec, token: str, has_next: bool
+) -> tuple[str, int] | None:
     """The spelling one dash token certainly supplies, and its width.
 
     Mirrors the exact-token arms the walk and the flat parser share --
@@ -156,8 +167,9 @@ def _supplied_option(cs: CompiledSpec, token: str,
     return None
 
 
-def _claimed(carriers: Sequence[Mapping[str, str]],
-             supplied: set[tuple[int, str]]) -> frozenset[str]:
+def _claimed(
+    carriers: Sequence[Mapping[str, str]], supplied: set[tuple[int, str]]
+) -> frozenset[str]:
     """Variables every visited reader of which was supplied.
 
     Args:
@@ -254,14 +266,20 @@ def owns_argv(node: CLISpec) -> bool:
     Args:
         node (CLISpec): the node whose line is about to be parsed.
     """
-    return (node.script is not None and not node.options
-            and not node.positional and node.rest is None)
+    return (
+        node.script is not None
+        and not node.options
+        and not node.positional
+        and node.rest is None
+    )
 
 
-def node_help(name: str,
-              node: CLISpec,
-              style: UsageStyle = UsageStyle.ARGPARSE,
-              visible: Callable[[str], bool] | None = None) -> str:
+def node_help(
+    name: str,
+    node: CLISpec,
+    style: UsageStyle = UsageStyle.ARGPARSE,
+    visible: Callable[[str], bool] | None = None,
+) -> str:
     """A group node's help: the ordinary command help plus Commands rows.
 
     One renderer serves leaves and groups (a group is a spec whose
@@ -283,15 +301,14 @@ def node_help(name: str,
             reaches ``--help`` or the bare-group refusal was admitted
             whole, so there is nothing left to filter there.
     """
-    return render_help(name,
-                       _listed(node),
-                       subcommands=_rows(node, visible),
-                       style=style)
+    return render_help(
+        name, _listed(node), subcommands=_rows(node, visible), style=style
+    )
 
 
 def _rows(
-        node: CLISpec,
-        visible: Callable[[str], bool] | None = None) -> list[tuple[str, str]]:
+    node: CLISpec, visible: Callable[[str], bool] | None = None
+) -> list[tuple[str, str]]:
     """The node's child rows, as the renderer lists them.
 
     Args:
@@ -299,9 +316,11 @@ def _rows(
         visible (Callable[[str], bool] | None): filter on a child's
             canonical name, None to list every child.
     """
-    return [(_verb_display(child), child.description or "")
-            for child in node.subcommands
-            if visible is None or visible(child.name)]
+    return [
+        (_verb_display(child), child.description or "")
+        for child in node.subcommands
+        if visible is None or visible(child.name)
+    ]
 
 
 def _listed(node: CLISpec) -> CLISpec:
@@ -317,17 +336,20 @@ def _listed(node: CLISpec) -> CLISpec:
     Args:
         node (CLISpec): the group node.
     """
-    if any(option.long == "--help"
-           for option in node.options) or owns_argv(node):
+    if any(option.long == "--help" for option in node.options) or owns_argv(
+        node
+    ):
         return node
-    return replace(node, options=node.options + (HELP_OPTION, ))
+    return replace(node, options=node.options + (HELP_OPTION,))
 
 
-def _usage_error(name: str,
-                 node: CLISpec,
-                 message: str,
-                 style: UsageStyle,
-                 token: str | None = None) -> WalkResult:
+def _usage_error(
+    name: str,
+    node: CLISpec,
+    message: str,
+    style: UsageStyle,
+    token: str | None = None,
+) -> WalkResult:
     """Group-level option refusal, in the dialect the CLI declares.
 
     git answers with the message and the whole usage listing and exits
@@ -348,16 +370,18 @@ def _usage_error(name: str,
             the refusals whose wording both dialects share.
     """
     if style is UsageStyle.CLAP:
-        first = (clap_unexpected_argument(token)
-                 if token is not None else message)
-        return WalkResult(output=clap_group_refusal(name, _listed(node),
-                                                    _rows(node), first),
-                          stream="stderr",
-                          exit_code=CLAP_EXIT)
+        first = (
+            clap_unexpected_argument(token) if token is not None else message
+        )
+        return WalkResult(
+            output=clap_group_refusal(name, _listed(node), _rows(node), first),
+            stream="stderr",
+            exit_code=CLAP_EXIT,
+        )
     text = f"{message}\n\n{node_help(name, node, style)}"
-    return WalkResult(output=text.encode(),
-                      stream="stderr",
-                      exit_code=USAGE_EXIT)
+    return WalkResult(
+        output=text.encode(), stream="stderr", exit_code=USAGE_EXIT
+    )
 
 
 def _unknown_verb(head: str, name: str, word: str) -> WalkResult:
@@ -368,8 +392,7 @@ def _unknown_verb(head: str, name: str, word: str) -> WalkResult:
         name (str): display path walked so far ("gws gmail").
         word (str): the word that matched no subcommand.
     """
-    text = (f"{head}: '{word}' is not a {name} command. "
-            f"See '{name} --help'.\n")
+    text = f"{head}: '{word}' is not a {name} command. See '{name} --help'.\n"
     return WalkResult(output=text.encode(), stream="stderr", exit_code=1)
 
 
@@ -389,8 +412,9 @@ def _record_bool(flags: WalkFlagBag, cs: CompiledSpec, spelling: str) -> None:
         flags[dest] = True
 
 
-def _record_value(flags: WalkFlagBag, cs: CompiledSpec, spelling: str,
-                  value: str) -> None:
+def _record_value(
+    flags: WalkFlagBag, cs: CompiledSpec, spelling: str, value: str
+) -> None:
     """Record a value occurrence under its canonical dashed spelling.
 
     The node's ``operand_base`` option moves the way a chdir does, as the
@@ -419,9 +443,15 @@ def _record_value(flags: WalkFlagBag, cs: CompiledSpec, spelling: str,
         flags[dest] = value
 
 
-def _match_short(name: str, node: CLISpec, cs: CompiledSpec,
-                 flags: WalkFlagBag, token: str, next_token: str | None,
-                 style: UsageStyle) -> tuple[int, WalkResult | None] | None:
+def _match_short(
+    name: str,
+    node: CLISpec,
+    cs: CompiledSpec,
+    flags: WalkFlagBag,
+    token: str,
+    next_token: str | None,
+    style: UsageStyle,
+) -> tuple[int, WalkResult | None] | None:
     """Match a whole short token against declared spellings.
 
     Mirrors the flat parser's precedence before cluster splitting:
@@ -442,19 +472,24 @@ def _match_short(name: str, node: CLISpec, cs: CompiledSpec,
     """
     for vf in cs.attach_spellings:
         if token.startswith(vf) and len(token) > len(vf):
-            _record_value(flags, cs, vf, token[len(vf):])
+            _record_value(flags, cs, vf, token[len(vf) :])
             return (1, None)
     for vf in cs.value_spellings:
         if token == vf:
             if next_token is None:
-                return (0,
-                        _usage_error(name, node,
-                                     f"error: option '{vf}' requires a value",
-                                     style))
+                return (
+                    0,
+                    _usage_error(
+                        name,
+                        node,
+                        f"error: option '{vf}' requires a value",
+                        style,
+                    ),
+                )
             _record_value(flags, cs, vf, next_token)
             return (2, None)
         if token.startswith(vf) and len(token) > len(vf):
-            _record_value(flags, cs, vf, token[len(vf):])
+            _record_value(flags, cs, vf, token[len(vf) :])
             return (1, None)
     if token in cs.bool_spellings:
         _record_bool(flags, cs, token)
@@ -462,8 +497,9 @@ def _match_short(name: str, node: CLISpec, cs: CompiledSpec,
     return None
 
 
-def _expand_group_long(node: CLISpec, cs: CompiledSpec,
-                       spelling: str) -> tuple[str, ...]:
+def _expand_group_long(
+    node: CLISpec, cs: CompiledSpec, spelling: str
+) -> tuple[str, ...]:
     """Prefix-expand a long spelling at a group level.
 
     The declared tables match first; the injected ``--help`` joins the
@@ -477,15 +513,19 @@ def _expand_group_long(node: CLISpec, cs: CompiledSpec,
         spelling (str): the typed long spelling, without any ``=value``.
     """
     candidates = expand_long(cs, spelling)
-    if ("--help".startswith(spelling) and len(spelling) > 2
-            and "--help" not in candidates
-            and not any(option.long == "--help" for option in node.options)):
-        candidates = candidates + ("--help", )
+    if (
+        "--help".startswith(spelling)
+        and len(spelling) > 2
+        and "--help" not in candidates
+        and not any(option.long == "--help" for option in node.options)
+    ):
+        candidates = candidates + ("--help",)
     return candidates
 
 
-def _resolve_group_paths(cs: CompiledSpec, flags: WalkFlagBag,
-                         cwd: str) -> None:
+def _resolve_group_paths(
+    cs: CompiledSpec, flags: WalkFlagBag, cwd: str
+) -> None:
     """Resolve PATH-typed group values against the working directory.
 
     A group option declared ``type="path"`` has to mean what it means on
@@ -514,13 +554,15 @@ def _resolve_group_paths(cs: CompiledSpec, flags: WalkFlagBag,
             flags[dest] = resolve_path(value, cwd)
 
 
-def _finish_node(name: str,
-                 node: CLISpec,
-                 cs: CompiledSpec,
-                 flags: WalkFlagBag,
-                 cwd: str,
-                 style: UsageStyle,
-                 env: Mapping[str, str] | None = None) -> WalkResult | None:
+def _finish_node(
+    name: str,
+    node: CLISpec,
+    cs: CompiledSpec,
+    flags: WalkFlagBag,
+    cwd: str,
+    style: UsageStyle,
+    env: Mapping[str, str] | None = None,
+) -> WalkResult | None:
     """Apply a node's declarative option rules after its scan.
 
     The environment lands first, then defaults, then PATH values
@@ -561,39 +603,55 @@ def _finish_node(name: str,
     # Numeric-typed values before choices, argparse's order; wording is
     # git's parse-options refusal (`--depth` on a non-integer), one
     # phrase for int and float alike.
-    for dests, pattern in ((cs.int_dests, INT_VALUE), (cs.float_dests,
-                                                       FLOAT_VALUE)):
+    for dests, pattern in (
+        (cs.int_dests, INT_VALUE),
+        (cs.float_dests, FLOAT_VALUE),
+    ):
         for dest in dests:
             value = flags.get(dest)
-            candidates = value if isinstance(
-                value, list) else ([value] if isinstance(value, str) else [])
+            candidates = (
+                value
+                if isinstance(value, list)
+                else ([value] if isinstance(value, str) else [])
+            )
             for part in candidates:
                 if not pattern.match(part):
                     return _usage_error(
-                        name, node,
+                        name,
+                        node,
                         f"error: option '{dest}' expects a numerical value",
-                        style)
+                        style,
+                    )
     for dest, allowed in cs.choices_by_dest.items():
         value = flags.get(dest)
-        candidates = value if isinstance(
-            value, list) else ([value] if isinstance(value, str) else [])
+        candidates = (
+            value
+            if isinstance(value, list)
+            else ([value] if isinstance(value, str) else [])
+        )
         for part in candidates:
             if part not in allowed:
                 return _usage_error(
-                    name, node,
-                    f"error: invalid argument '{part}' for '{dest}'", style)
+                    name,
+                    node,
+                    f"error: invalid argument '{part}' for '{dest}'",
+                    style,
+                )
     for dest in cs.required_dests:
         if dest not in flags:
-            return _usage_error(name, node,
-                                f"error: option '{dest}' is required", style)
+            return _usage_error(
+                name, node, f"error: option '{dest}' is required", style
+            )
     return None
 
 
-def walk(head: str,
-         spec: CLISpec,
-         argv: Sequence[str],
-         cwd: str = "/",
-         env: Mapping[str, str] | None = None) -> WalkResult:
+def walk(
+    head: str,
+    spec: CLISpec,
+    argv: Sequence[str],
+    cwd: str = "/",
+    env: Mapping[str, str] | None = None,
+) -> WalkResult:
     """Resolve one command line against a CLI tree.
 
     Each level consumes its own options in POSIX order (stop at the
@@ -628,32 +686,39 @@ def walk(head: str,
         # its remaining argv rides the ordinary spec machinery for
         # validation, then passes to the program verbatim.
         if node.fn is not None or node.script is not None:
-            return WalkResult(leaf=node,
-                              path=path,
-                              group_flags=flags,
-                              argv=tuple(argv[i:]))
-        name = " ".join((head, ) + path)
+            return WalkResult(
+                leaf=node, path=path, group_flags=flags, argv=tuple(argv[i:])
+            )
+        name = " ".join((head,) + path)
         cs = compile_spec(node)
         descended = False
         options_ended = False
         while i < len(argv):
             token = argv[i]
-            alias = find_child(node, token) if (
-                not options_ended and token.startswith('-')
-                and token not in cs.dest and token != '--help') else None
+            alias = (
+                find_child(node, token)
+                if (
+                    not options_ended
+                    and token.startswith("-")
+                    and token not in cs.dest
+                    and token != "--help"
+                )
+                else None
+            )
             if alias is not None and token in alias.aliases:
                 refused = _finish_node(name, node, cs, flags, cwd, style, env)
                 if refused is not None:
                     return refused
                 node = alias
-                path = path + (alias.name, )
+                path = path + (alias.name,)
                 i += 1
                 descended = True
                 break
             if not options_ended and token == "--":
                 if style is UsageStyle.GIT and not path:
-                    return _usage_error(name, node, "unknown option: --",
-                                        style)
+                    return _usage_error(
+                        name, node, "unknown option: --", style
+                    )
                 options_ended = True
                 i += 1
                 continue
@@ -669,9 +734,12 @@ def walk(head: str,
                     elif len(candidates) > 1:
                         possible = " or ".join(candidates)
                         return _usage_error(
-                            name, node,
+                            name,
+                            node,
                             f"error: ambiguous option: {spelling[2:]} "
-                            f"(could be {possible})", style)
+                            f"(could be {possible})",
+                            style,
+                        )
                 # Optional-value longs sit in BOTH long_bool_spellings and
                 # long_optional_spellings, so the optional test runs first
                 # or --color=auto would be refused as taking no value.
@@ -683,9 +751,11 @@ def walk(head: str,
                 elif spelling in cs.long_bool_spellings:
                     if eq:
                         return _usage_error(
-                            name, node,
+                            name,
+                            node,
                             f"error: option '{spelling}' takes no value",
-                            style)
+                            style,
+                        )
                     _record_bool(flags, cs, spelling)
                 elif spelling in cs.long_value_spellings:
                     if eq:
@@ -695,23 +765,30 @@ def walk(head: str,
                         _record_value(flags, cs, spelling, argv[i])
                     else:
                         return _usage_error(
-                            name, node,
+                            name,
+                            node,
                             f"error: option '{spelling}' requires a value",
-                            style)
+                            style,
+                        )
                 elif spelling == "--help":
                     if eq:
                         return _usage_error(
-                            name, node,
+                            name,
+                            node,
                             f"error: option '{spelling}' takes no value",
-                            style)
+                            style,
+                        )
                     return WalkResult(
-                        output=node_help(name, node, style).encode())
+                        output=node_help(name, node, style).encode()
+                    )
                 else:
-                    return _usage_error(name,
-                                        node,
-                                        f"unknown option: {spelling}",
-                                        style,
-                                        token=spelling)
+                    return _usage_error(
+                        name,
+                        node,
+                        f"unknown option: {spelling}",
+                        style,
+                        token=spelling,
+                    )
                 i += 1
                 continue
             if not options_ended and token.startswith("-") and token != "-":
@@ -719,8 +796,14 @@ def walk(head: str,
                 # whole token before any cluster splitting, longest first,
                 # the same precedence the flat parser uses.
                 whole = _match_short(
-                    name, node, cs, flags, token,
-                    argv[i + 1] if i + 1 < len(argv) else None, style)
+                    name,
+                    node,
+                    cs,
+                    flags,
+                    token,
+                    argv[i + 1] if i + 1 < len(argv) else None,
+                    style,
+                )
                 if whole is not None:
                     consumed, refused = whole
                     if refused is not None:
@@ -736,26 +819,25 @@ def walk(head: str,
                         _record_bool(flags, cs, spelling)
                         j += 1
                     elif spelling in cs.dest:
-                        rest = token[j + 1:]
+                        rest = token[j + 1 :]
                         if rest:
                             _record_value(flags, cs, spelling, rest)
                         elif i + 1 < len(argv):
                             i += 1
                             _record_value(flags, cs, spelling, argv[i])
                         else:
-                            error = (f"error: option '{spelling}' "
-                                     f"requires a value")
+                            error = (
+                                f"error: option '{spelling}' requires a value"
+                            )
                         break
                     else:
                         error = f"unknown option: {spelling}"
                         unknown = spelling
                         break
                 if error is not None:
-                    return _usage_error(name,
-                                        node,
-                                        error,
-                                        style,
-                                        token=unknown)
+                    return _usage_error(
+                        name, node, error, style, token=unknown
+                    )
                 i += 1
                 continue
             refused = _finish_node(name, node, cs, flags, cwd, style, env)
@@ -768,7 +850,7 @@ def walk(head: str,
             if child is None:
                 return _unknown_verb(head, name, token)
             node = child
-            path = path + (child.name, )
+            path = path + (child.name,)
             i += 1
             descended = True
             break
@@ -777,6 +859,8 @@ def walk(head: str,
         refused = _finish_node(name, node, cs, flags, cwd, style, env)
         if refused is not None:
             return refused
-        return WalkResult(output=node_help(name, node, style).encode(),
-                          stream="stdout",
-                          exit_code=1)
+        return WalkResult(
+            output=node_help(name, node, style).encode(),
+            stream="stdout",
+            exit_code=1,
+        )

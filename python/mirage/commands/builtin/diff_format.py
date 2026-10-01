@@ -61,20 +61,24 @@ def normal_diff(a_lines: list[str], b_lines: list[str]) -> list[str]:
         if tag == DiffOpTag.DELETE:
             out.append(f"{_addr(i1, i2)}d{j1}\n")
             for line in a_lines[i1:i2]:
-                out.append("< " +
-                           (line if line.endswith("\n") else line + "\n"))
+                out.append(
+                    "< " + (line if line.endswith("\n") else line + "\n")
+                )
         elif tag == DiffOpTag.INSERT:
             out.append(f"{i1}a{_addr_b(j1, j2)}\n")
             for line in b_lines[j1:j2]:
-                out.append("> " +
-                           (line if line.endswith("\n") else line + "\n"))
+                out.append(
+                    "> " + (line if line.endswith("\n") else line + "\n")
+                )
         elif tag == DiffOpTag.REPLACE:
             out.append(f"{_addr(i1, i2)}c{_addr_b(j1, j2)}\n")
             for line in a_lines[i1:i2]:
-                out.append("< " +
-                           (line if line.endswith("\n") else line + "\n"))
+                out.append(
+                    "< " + (line if line.endswith("\n") else line + "\n")
+                )
             out.append("---\n")
             for line in b_lines[j1:j2]:
-                out.append("> " +
-                           (line if line.endswith("\n") else line + "\n"))
+                out.append(
+                    "> " + (line if line.endswith("\n") else line + "\n")
+                )
     return out

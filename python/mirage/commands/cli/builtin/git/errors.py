@@ -25,13 +25,18 @@ OPTION_EXIT = 129
 # git closes each of these with a line naming the config knob that
 # turns it off. Kept verbatim so the advice reads the same whether an
 # agent hit real git or this one.
-ADVICE_IGNORED = ('hint: Disable this message with "git config set '
-                  'advice.addIgnoredFile false"')
-ADVICE_EMPTY_PATHSPEC = ('hint: Disable this message with "git config '
-                         'set advice.addEmptyPathspec false"')
+ADVICE_IGNORED = (
+    'hint: Disable this message with "git config set '
+    'advice.addIgnoredFile false"'
+)
+ADVICE_EMPTY_PATHSPEC = (
+    'hint: Disable this message with "git config '
+    'set advice.addEmptyPathspec false"'
+)
 ADVICE_REF_FORMAT = "hint: See `man git check-ref-format`"
-ADVICE_REF_SYNTAX = ('hint: Disable this message with "git config set '
-                     'advice.refSyntax false"')
+ADVICE_REF_SYNTAX = (
+    'hint: Disable this message with "git config set advice.refSyntax false"'
+)
 
 
 class GitError(Exception):
@@ -71,8 +76,9 @@ class NotARepositoryError(GitError):
 
     def __init__(self, gitdir: str | None = None, quoted: bool = True) -> None:
         if gitdir is None:
-            super().__init__("not a git repository (or any of the parent "
-                             "directories): .git")
+            super().__init__(
+                "not a git repository (or any of the parent directories): .git"
+            )
         elif quoted:
             super().__init__(f"not a git repository: '{gitdir}'")
         else:
@@ -107,7 +113,8 @@ class AmbiguousArgumentError(GitError):
             f"ambiguous argument '{revision}': unknown revision or path "
             f"not in the working tree.\n"
             f"Use '--' to separate paths from revisions, like this:\n"
-            f"'git <command> [<revision>...] -- [<file>...]'")
+            f"'git <command> [<revision>...] -- [<file>...]'"
+        )
 
 
 class BadRevisionError(GitError):
@@ -162,8 +169,10 @@ class BadDateError(GitError):
     """
 
     def __init__(self, flag: str, value: str) -> None:
-        super().__init__(f"invalid date format for {flag}: {value} "
-                         f"(expected ISO-8601 or an epoch second)")
+        super().__init__(
+            f"invalid date format for {flag}: {value} "
+            f"(expected ISO-8601 or an epoch second)"
+        )
 
 
 class NoWorkspaceError(GitError):
@@ -207,9 +216,9 @@ class WorkTreeChdirError(GitError):
         reason (str): the strerror git names, absence by default.
     """
 
-    def __init__(self,
-                 path: str,
-                 reason: str = "No such file or directory") -> None:
+    def __init__(
+        self, path: str, reason: str = "No such file or directory"
+    ) -> None:
         super().__init__(f"cannot chdir to '{path}': {reason}")
 
 
@@ -227,9 +236,9 @@ class NoWorkingDirectoryError(GitError):
         reason (str): the strerror git names, absence by default.
     """
 
-    def __init__(self,
-                 path: str,
-                 reason: str = "No such file or directory") -> None:
+    def __init__(
+        self, path: str, reason: str = "No such file or directory"
+    ) -> None:
         super().__init__(f"cannot change to '{path}': {reason}")
 
 
@@ -246,8 +255,10 @@ class BadStartPointError(GitError):
     """
 
     def __init__(self, start: str, name: str) -> None:
-        super().__init__(f"'{start}' is not a commit and a branch '{name}' "
-                         f"cannot be created from it")
+        super().__init__(
+            f"'{start}' is not a commit and a branch '{name}' "
+            f"cannot be created from it"
+        )
 
 
 class RevisionResetError(GitError):
@@ -265,8 +276,10 @@ class RevisionResetError(GitError):
     """
 
     def __init__(self, revision: str) -> None:
-        super().__init__(f"cannot reset to '{revision}': this build resets "
-                         f"the index from HEAD only")
+        super().__init__(
+            f"cannot reset to '{revision}': this build resets "
+            f"the index from HEAD only"
+        )
 
 
 class AllWithPathsError(GitError):
@@ -296,8 +309,10 @@ class PartialCommitError(GitError):
     """
 
     def __init__(self, path: str) -> None:
-        super().__init__(f"cannot commit '{path}' alone: this build commits "
-                         f"the whole index; stage it and commit without paths")
+        super().__init__(
+            f"cannot commit '{path}' alone: this build commits "
+            f"the whole index; stage it and commit without paths"
+        )
 
 
 class BadPrettyError(GitError):
@@ -329,7 +344,8 @@ class UnsupportedPrettyError(GitError):
         super().__init__(
             f"unsupported --pretty format: {value} (this build implements "
             f"oneline, short, medium, full, fuller, raw and format:/tformat: "
-            f"strings)")
+            f"strings)"
+        )
 
 
 class UnrecognizedArgumentError(GitError):
@@ -361,8 +377,9 @@ class OutsideRepositoryError(GitError):
     """
 
     def __init__(self, operand: str, root: str) -> None:
-        super().__init__(f"{operand}: '{operand}' is outside repository at "
-                         f"'{root}'")
+        super().__init__(
+            f"{operand}: '{operand}' is outside repository at '{root}'"
+        )
 
 
 class PathspecError(GitError):
@@ -394,9 +411,11 @@ class IgnoredPathsError(GitError):
 
     def __init__(self, paths: list[str]) -> None:
         listed = "\n".join(sorted(paths))
-        super().__init__(f"The following paths are ignored by one of your "
-                         f".gitignore files:\n{listed}\nhint: Use -f if you "
-                         f"really want to add them.\n{ADVICE_IGNORED}")
+        super().__init__(
+            f"The following paths are ignored by one of your "
+            f".gitignore files:\n{listed}\nhint: Use -f if you "
+            f"really want to add them.\n{ADVICE_IGNORED}"
+        )
 
 
 class NothingSpecifiedError(GitError):
@@ -410,9 +429,11 @@ class NothingSpecifiedError(GitError):
     code = 0
 
     def __init__(self) -> None:
-        super().__init__("Nothing specified, nothing added.\nhint: Maybe "
-                         "you wanted to say 'git add .'?\n"
-                         f"{ADVICE_EMPTY_PATHSPEC}")
+        super().__init__(
+            "Nothing specified, nothing added.\nhint: Maybe "
+            "you wanted to say 'git add .'?\n"
+            f"{ADVICE_EMPTY_PATHSPEC}"
+        )
 
 
 class NothingToCommitError(GitError):
@@ -443,8 +464,10 @@ class MissingMessageError(GitError):
     """
 
     def __init__(self) -> None:
-        super().__init__("no commit message supplied (mirage has no editor "
-                         "to open; pass -m)")
+        super().__init__(
+            "no commit message supplied (mirage has no editor "
+            "to open; pass -m)"
+        )
 
 
 class UnmergedIndexError(GitError):
@@ -484,8 +507,10 @@ class InvalidBranchNameError(GitError):
     """
 
     def __init__(self, name: str) -> None:
-        super().__init__(f"'{name}' is not a valid branch name\n"
-                         f"{ADVICE_REF_FORMAT}\n{ADVICE_REF_SYNTAX}")
+        super().__init__(
+            f"'{name}' is not a valid branch name\n"
+            f"{ADVICE_REF_FORMAT}\n{ADVICE_REF_SYNTAX}"
+        )
 
 
 class BranchNameRequiredError(GitError):
@@ -512,8 +537,9 @@ class CheckedOutBranchError(GitError):
     code = 1
 
     def __init__(self, name: str, worktree: str) -> None:
-        super().__init__(f"cannot delete branch '{name}' used by worktree at "
-                         f"'{worktree}'")
+        super().__init__(
+            f"cannot delete branch '{name}' used by worktree at '{worktree}'"
+        )
 
 
 class UnmergedBranchError(GitError):
@@ -537,9 +563,11 @@ class UnmergedBranchError(GitError):
     code = 1
 
     def __init__(self, name: str) -> None:
-        super().__init__(f"the branch '{name}' is not fully merged\n"
-                         f"hint: If you are sure you want to delete it, run "
-                         f"'git branch -D {name}'")
+        super().__init__(
+            f"the branch '{name}' is not fully merged\n"
+            f"hint: If you are sure you want to delete it, run "
+            f"'git branch -D {name}'"
+        )
 
 
 class NoBranchError(GitError):
@@ -573,8 +601,9 @@ class UnknownPathspecError(GitError):
 
     def __init__(self, target: str, fatal: bool = False) -> None:
         self.code = FATAL_EXIT if fatal else 1
-        super().__init__(f"pathspec '{target}' did not match any file(s) "
-                         f"known to git")
+        super().__init__(
+            f"pathspec '{target}' did not match any file(s) known to git"
+        )
 
 
 def _conflict_block(header: str, paths: list[str], advice: str = "") -> str:
@@ -619,29 +648,40 @@ class CheckoutConflictError(GitError):
     prefix = "error"
     code = 1
 
-    def __init__(self,
-                 local: list[str],
-                 untracked: list[str],
-                 directories: list[str] | None = None) -> None:
+    def __init__(
+        self,
+        local: list[str],
+        untracked: list[str],
+        directories: list[str] | None = None,
+    ) -> None:
         blocks: list[str] = []
         if local:
             blocks.append(
                 _conflict_block(
                     "Your local changes to the following files would be "
-                    "overwritten by checkout:", local,
+                    "overwritten by checkout:",
+                    local,
                     "Please commit your changes or stash them before you "
-                    "switch branches."))
+                    "switch branches.",
+                )
+            )
         if directories:
             blocks.append(
                 _conflict_block(
                     "Updating the following directories would lose "
-                    "untracked files in them:", directories))
+                    "untracked files in them:",
+                    directories,
+                )
+            )
         if untracked:
             blocks.append(
                 _conflict_block(
                     "The following untracked working tree files would be "
-                    "overwritten by checkout:", untracked,
-                    "Please move or remove them before you switch branches."))
+                    "overwritten by checkout:",
+                    untracked,
+                    "Please move or remove them before you switch branches.",
+                )
+            )
         # git emits each paragraph as its own error, so the second one
         # carries the prefix inline: the renderer only writes the first.
         joined = "error: ".join(f"{block}\n" for block in blocks)
@@ -670,8 +710,9 @@ class ResolveIndexError(GitError):
     code = 1
 
     def __init__(self, paths: list[str]) -> None:
-        self.report = "".join(f"{path}: needs merge\n"
-                              for path in sorted(paths))
+        self.report = "".join(
+            f"{path}: needs merge\n" for path in sorted(paths)
+        )
         super().__init__("you need to resolve your current index first")
 
 
@@ -697,8 +738,11 @@ class UnmergedPathError(GitError):
     def __init__(self, paths: list[str]) -> None:
         # git emits each path as its own error, so every line after the
         # first carries the prefix inline: the renderer writes one.
-        super().__init__("\nerror: ".join(f"path '{path}' is unmerged"
-                                          for path in sorted(paths)))
+        super().__init__(
+            "\nerror: ".join(
+                f"path '{path}' is unmerged" for path in sorted(paths)
+            )
+        )
 
 
 class UnknownSwitchError(GitError):
@@ -767,16 +811,23 @@ class NotRecursiveError(GitError):
 # prints them: a path whose staged content matches neither the file
 # nor HEAD, a path with a staged change, a path with an unstaged edit.
 # Each header comes in a singular and a plural form.
-STAGED_BOTH = ("the following file has staged content different from "
-               "both the\nfile and the HEAD:",
-               "the following files have staged content different from "
-               "both the\nfile and the HEAD:", "(use -f to force removal)")
-STAGED_INDEX = ("the following file has changes staged in the index:",
-                "the following files have changes staged in the index:",
-                "(use --cached to keep the file, or -f to force removal)")
-LOCAL_CHANGES = ("the following file has local modifications:",
-                 "the following files have local modifications:",
-                 "(use --cached to keep the file, or -f to force removal)")
+STAGED_BOTH = (
+    "the following file has staged content different from "
+    "both the\nfile and the HEAD:",
+    "the following files have staged content different from "
+    "both the\nfile and the HEAD:",
+    "(use -f to force removal)",
+)
+STAGED_INDEX = (
+    "the following file has changes staged in the index:",
+    "the following files have changes staged in the index:",
+    "(use --cached to keep the file, or -f to force removal)",
+)
+LOCAL_CHANGES = (
+    "the following file has local modifications:",
+    "the following files have local modifications:",
+    "(use --cached to keep the file, or -f to force removal)",
+)
 
 
 def _removal_block(wording: tuple[str, str, str], paths: list[str]) -> str:
@@ -809,12 +860,17 @@ class RemovalRefusedError(GitError):
     prefix = "error"
     code = 1
 
-    def __init__(self, both: list[str], staged: list[str],
-                 local: list[str]) -> None:
+    def __init__(
+        self, both: list[str], staged: list[str], local: list[str]
+    ) -> None:
         blocks = [
             _removal_block(wording, paths)
-            for wording, paths in ((STAGED_BOTH, both), (STAGED_INDEX, staged),
-                                   (LOCAL_CHANGES, local)) if paths
+            for wording, paths in (
+                (STAGED_BOTH, both),
+                (STAGED_INDEX, staged),
+                (LOCAL_CHANGES, local),
+            )
+            if paths
         ]
         # git emits each paragraph as its own error, so the second one
         # carries the prefix inline: the renderer only writes the first.
@@ -839,10 +895,9 @@ class RemovePathError(GitError):
         reason (str): the strerror to name.
     """
 
-    def __init__(self,
-                 path: str,
-                 report: str = "",
-                 reason: str = "Is a directory") -> None:
+    def __init__(
+        self, path: str, report: str = "", reason: str = "Is a directory"
+    ) -> None:
         super().__init__(f"git rm: '{path}': {reason}")
         self.report = report
 
@@ -894,9 +949,11 @@ class MoveUsageError(GitError):
     code = OPTION_EXIT
 
     def __init__(self) -> None:
-        super().__init__("usage: git mv [-v] [-f] [-n] [-k] <source> "
-                         "<destination>\n   or: git mv [-v] [-f] [-n] [-k] "
-                         "<source>... <destination-directory>")
+        super().__init__(
+            "usage: git mv [-v] [-f] [-n] [-k] <source> "
+            "<destination>\n   or: git mv [-v] [-f] [-n] [-k] "
+            "<source>... <destination-directory>"
+        )
 
 
 class MoveRefusedError(GitError):
@@ -910,8 +967,9 @@ class MoveRefusedError(GitError):
     """
 
     def __init__(self, reason: str, source: str, destination: str) -> None:
-        super().__init__(f"{reason}, source={source}, "
-                         f"destination={destination}")
+        super().__init__(
+            f"{reason}, source={source}, destination={destination}"
+        )
 
 
 class MoveOverlapError(GitError):
@@ -929,8 +987,9 @@ class MoveOverlapError(GitError):
     """
 
     def __init__(self, child: str, parent: str) -> None:
-        super().__init__(f"cannot move both '{child}' and its parent "
-                         f"directory '{parent}'")
+        super().__init__(
+            f"cannot move both '{child}' and its parent directory '{parent}'"
+        )
 
 
 class NotADirectoryDestinationError(GitError):
@@ -956,9 +1015,9 @@ class RenameFailedError(GitError):
         reason (str): the strerror to name.
     """
 
-    def __init__(self,
-                 source: str,
-                 reason: str = "No such file or directory") -> None:
+    def __init__(
+        self, source: str, reason: str = "No such file or directory"
+    ) -> None:
         super().__init__(f"renaming '{source}' failed: {reason}")
 
 
@@ -1028,9 +1087,11 @@ class BranchExpectedError(GitError):
     """
 
     def __init__(self, kind: str, name: str) -> None:
-        super().__init__(f"a branch is expected, got {kind} '{name}'\n"
-                         f"hint: If you want to detach HEAD at the commit, "
-                         f"try again with the --detach option.")
+        super().__init__(
+            f"a branch is expected, got {kind} '{name}'\n"
+            f"hint: If you want to detach HEAD at the commit, "
+            f"try again with the --detach option."
+        )
 
 
 class MissingBranchArgumentError(GitError):
@@ -1136,8 +1197,10 @@ class RefUpdateConflictError(GitError):
     code = 1
 
     def __init__(self, ref: str) -> None:
-        super().__init__("could not delete references: multiple updates "
-                         f"for ref '{ref}' not allowed")
+        super().__init__(
+            "could not delete references: multiple updates "
+            f"for ref '{ref}' not allowed"
+        )
 
 
 class RefLockError(GitError):
@@ -1154,8 +1217,9 @@ class RefLockError(GitError):
     """
 
     def __init__(self, ref: str, held: str) -> None:
-        super().__init__(f"cannot lock ref '{ref}': '{held}' exists; "
-                         f"cannot create '{ref}'")
+        super().__init__(
+            f"cannot lock ref '{ref}': '{held}' exists; cannot create '{ref}'"
+        )
 
 
 class InvalidTagNameError(GitError):
@@ -1200,10 +1264,12 @@ class TagUsageError(GitError):
     code = OPTION_EXIT
 
     def __init__(self) -> None:
-        super().__init__("usage: git tag [-a] [-f] [-m <msg>] <tagname> "
-                         "[<commit> | <object>]\n"
-                         "   or: git tag -d <tagname>...\n"
-                         "   or: git tag [-n[<num>]] -l [<pattern>...]")
+        super().__init__(
+            "usage: git tag [-a] [-f] [-m <msg>] <tagname> "
+            "[<commit> | <object>]\n"
+            "   or: git tag -d <tagname>...\n"
+            "   or: git tag [-n[<num>]] -l [<pattern>...]"
+        )
 
 
 class TooManyArgumentsError(GitError):
@@ -1229,8 +1295,9 @@ class MissingTagMessageError(GitError):
     """
 
     def __init__(self) -> None:
-        super().__init__("no tag message supplied (mirage has no editor to "
-                         "open; pass -m)")
+        super().__init__(
+            "no tag message supplied (mirage has no editor to open; pass -m)"
+        )
 
 
 class IncompatibleOptionsError(GitError):
@@ -1245,8 +1312,9 @@ class IncompatibleOptionsError(GitError):
     code = OPTION_EXIT
 
     def __init__(self, first: str, second: str) -> None:
-        super().__init__(f"options '{first}' and '{second}' cannot be used "
-                         f"together")
+        super().__init__(
+            f"options '{first}' and '{second}' cannot be used together"
+        )
 
 
 class IncompatibleLogOptionsError(GitError):
@@ -1263,8 +1331,9 @@ class IncompatibleLogOptionsError(GitError):
     """
 
     def __init__(self, first: str, second: str) -> None:
-        super().__init__(f"options '{first}' and '{second}' cannot be used "
-                         f"together")
+        super().__init__(
+            f"options '{first}' and '{second}' cannot be used together"
+        )
 
 
 class MalformedObjectError(GitError):
@@ -1323,7 +1392,8 @@ class NotACommitError(GitError):
 
     def __init__(self, sha: str, kind: str, reason: str) -> None:
         super().__init__(
-            f"object {sha} is a {kind}, not a commit\nerror: {reason}")
+            f"object {sha} is a {kind}, not a commit\nerror: {reason}"
+        )
 
 
 class BranchUsageError(GitError):
@@ -1348,7 +1418,8 @@ class BranchUsageError(GitError):
             "   or: git branch [<options>] <branch-name> [<start-point>]\n"
             "   or: git branch [<options>] [-l] [<pattern>...]\n"
             "   or: git branch [<options>] [-r] (-d | -D) <branch-name>...\n"
-            "   or: git branch [<options>] [-r | -a] [--points-at]")
+            "   or: git branch [<options>] [-r | -a] [--points-at]"
+        )
 
 
 class MissingRepositoryError(GitError):
@@ -1400,8 +1471,9 @@ class UnsupportedFieldError(GitError):
     """
 
     def __init__(self, name: str) -> None:
-        super().__init__(f"unsupported field name: {name} (this build does "
-                         f"not render it)")
+        super().__init__(
+            f"unsupported field name: {name} (this build does not render it)"
+        )
 
 
 class FormatUsageError(GitError):
@@ -1432,5 +1504,7 @@ class UnparsableFormatError(GitError):
     prefix = "error"
 
     def __init__(self, rest: str) -> None:
-        super().__init__(f"malformed format string {rest}\n"
-                         "fatal: unable to parse format string")
+        super().__init__(
+            f"malformed format string {rest}\n"
+            "fatal: unable to parse format string"
+        )

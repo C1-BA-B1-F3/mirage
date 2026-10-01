@@ -24,33 +24,43 @@ CONFIG = SlackConfig(token="xoxb-test")
 
 @pytest.mark.asyncio
 async def test_add_reaction_posts_reactions_add():
-    with patch("mirage.core.slack.react.slack_post",
-               new_callable=AsyncMock,
-               return_value={"ok": True}) as post:
+    with patch(
+        "mirage.core.slack.react.slack_post",
+        new_callable=AsyncMock,
+        return_value={"ok": True},
+    ) as post:
         await add_reaction(CONFIG, "C001", "111.222", "shipit")
-    post.assert_awaited_once_with(CONFIG,
-                                  "reactions.add", {
-                                      "channel": "C001",
-                                      "timestamp": "111.222",
-                                      "name": "shipit",
-                                  },
-                                  session=None)
+    post.assert_awaited_once_with(
+        CONFIG,
+        "reactions.add",
+        {
+            "channel": "C001",
+            "timestamp": "111.222",
+            "name": "shipit",
+        },
+        session=None,
+    )
 
 
 @pytest.mark.asyncio
 async def test_get_reactions_returns_the_message_item():
     message = {"ts": "111.222", "reactions": [{"name": "shipit", "count": 2}]}
-    with patch("mirage.core.slack.react.slack_get",
-               new_callable=AsyncMock,
-               return_value={
-                   "ok": True,
-                   "message": message,
-               }) as get:
+    with patch(
+        "mirage.core.slack.react.slack_get",
+        new_callable=AsyncMock,
+        return_value={
+            "ok": True,
+            "message": message,
+        },
+    ) as get:
         result = await get_reactions(CONFIG, "C001", "111.222")
-    get.assert_awaited_once_with(CONFIG,
-                                 "reactions.get", {
-                                     "channel": "C001",
-                                     "timestamp": "111.222",
-                                 },
-                                 session=None)
+    get.assert_awaited_once_with(
+        CONFIG,
+        "reactions.get",
+        {
+            "channel": "C001",
+            "timestamp": "111.222",
+        },
+        session=None,
+    )
     assert result == message

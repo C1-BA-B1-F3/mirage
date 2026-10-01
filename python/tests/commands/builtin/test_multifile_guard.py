@@ -17,8 +17,12 @@ import pathlib
 
 import pytest
 
-BUILTIN = pathlib.Path(
-    __file__).resolve().parents[3] / "mirage" / "commands" / "builtin"
+BUILTIN = (
+    pathlib.Path(__file__).resolve().parents[3]
+    / "mirage"
+    / "commands"
+    / "builtin"
+)
 
 GUARDED_COMMANDS = ("cat", "head", "tail", "wc", "du", "file", "nl", "md5")
 
@@ -55,9 +59,11 @@ def _calls_resolve_glob(func: ast.AST) -> bool:
 
 def _indexes_first(func: ast.AST) -> bool:
     for node in ast.walk(func):
-        if (isinstance(node, ast.Subscript)
-                and isinstance(node.value, ast.Name)
-                and node.value.id in ("paths", "resolved")):
+        if (
+            isinstance(node, ast.Subscript)
+            and isinstance(node.value, ast.Name)
+            and node.value.id in ("paths", "resolved")
+        ):
             idx = node.slice
             if isinstance(idx, ast.Constant) and idx.value == 0:
                 return True
@@ -66,24 +72,43 @@ def _indexes_first(func: ast.AST) -> bool:
 
 def _loops_paths(func: ast.AST) -> bool:
     for node in ast.walk(func):
-        if isinstance(node, (ast.For, ast.AsyncFor)) and isinstance(
-                node.iter, ast.Name) and node.iter.id in ("paths", "resolved"):
+        if (
+            isinstance(node, (ast.For, ast.AsyncFor))
+            and isinstance(node.iter, ast.Name)
+            and node.iter.id in ("paths", "resolved")
+        ):
             return True
         # comprehension form: {... for p in paths}
-        for comp in ast.walk(node) if isinstance(node,
-                                                 (ast.DictComp, ast.ListComp,
-                                                  ast.SetComp,
-                                                  ast.GeneratorExp)) else []:
-            if isinstance(comp, ast.comprehension) and isinstance(
-                    comp.iter,
-                    ast.Name) and comp.iter.id in ("paths", "resolved"):
+        for comp in (
+            ast.walk(node)
+            if isinstance(
+                node,
+                (ast.DictComp, ast.ListComp, ast.SetComp, ast.GeneratorExp),
+            )
+            else []
+        ):
+            if (
+                isinstance(comp, ast.comprehension)
+                and isinstance(comp.iter, ast.Name)
+                and comp.iter.id in ("paths", "resolved")
+            ):
                 return True
     return False
 
 
-_MULTI_HELPERS = ("format_multi", "generic_grep", "generic_rg", "grep", "rg",
-                  "generic_du", "generic_file", "file_cmd", "du_multi",
-                  "generic_nl", "generic_md5")
+_MULTI_HELPERS = (
+    "format_multi",
+    "generic_grep",
+    "generic_rg",
+    "grep",
+    "rg",
+    "generic_du",
+    "generic_file",
+    "file_cmd",
+    "du_multi",
+    "generic_nl",
+    "generic_md5",
+)
 
 
 def _passes_full_list(func: ast.AST) -> bool:
@@ -101,8 +126,10 @@ def _passes_full_list(func: ast.AST) -> bool:
         name = getattr(target, "id", getattr(target, "attr", "")) or ""
         if name.endswith("_multi") or name in _MULTI_HELPERS:
             for arg in node.args:
-                if isinstance(arg,
-                              ast.Name) and arg.id in ("paths", "resolved"):
+                if isinstance(arg, ast.Name) and arg.id in (
+                    "paths",
+                    "resolved",
+                ):
                     return True
     return False
 
@@ -139,4 +166,5 @@ def test_command_handles_multiple_files(cmd, backend, path):
                 f"every file after the first (the multi-file bug). Loop all "
                 f"paths or delegate to a *_multi helper. If this backend is "
                 f"genuinely single-VFS, add it to ALLOWLIST with a "
-                f"reason.")
+                f"reason."
+            )

@@ -23,14 +23,15 @@ from mirage.io.types import ByteSource, IOResult
 
 
 async def create(
-        inv: CLIInvocation[LinearConfig]
+    inv: CLIInvocation[LinearConfig],
 ) -> tuple[ByteSource | None, IOResult]:
     fl = FlagView(inv.flags)
     team = await resolve_team(inv.config, fl.as_str("team") or "")
     description = None
     if fl.as_str("description") is not None or inv.stdin is not None:
-        description = await text_or_stdin(fl.as_str("description"), inv.stdin,
-                                          "description is required")
+        description = await text_or_stdin(
+            fl.as_str("description"), inv.stdin, "description is required"
+        )
     issue = await issue_create(
         inv.config,
         team_id=team["id"],

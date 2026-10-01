@@ -13,8 +13,11 @@
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 from mirage.commands.spec.builtin_specs import SPECS
-from mirage.commands.spec.builtins import (help_spec, is_builtin_grammar,
-                                           registered_spec)
+from mirage.commands.spec.builtins import (
+    help_spec,
+    is_builtin_grammar,
+    registered_spec,
+)
 from mirage.commands.spec.constants import HELP_OPTION, VERSION_OPTION
 from mirage.commands.spec.types import CommandSpec, Operand, Option
 
@@ -28,14 +31,15 @@ def test_help_spec_appends_the_two_standard_options():
 
 def test_help_spec_leaves_a_declared_option_alone():
     own = Option(long="--version", description="mine")
-    spec = CommandSpec(options=(own, ))
+    spec = CommandSpec(options=(own,))
     enriched = help_spec(spec)
     assert enriched.options == (own, HELP_OPTION)
 
 
 def test_help_spec_returns_the_same_spec_when_both_are_declared():
-    spec = CommandSpec(options=(Option(long="--help"),
-                                Option(long="--version")))
+    spec = CommandSpec(
+        options=(Option(long="--help"), Option(long="--version"))
+    )
     assert help_spec(spec) is spec
 
 
@@ -61,14 +65,16 @@ def test_a_builtin_grammar_is_recognized_declared_or_registered():
 # command under a builtin's name and nothing refuses it, so the measured
 # per-program rules must not follow the name.
 def test_a_borrowed_name_is_not_the_builtin_grammar():
-    spec = CommandSpec(options=(Option(long="--mode", type="str"), ),
-                       rest=Operand(type="str"))
+    spec = CommandSpec(
+        options=(Option(long="--mode", type="str"),), rest=Operand(type="str")
+    )
     assert not is_builtin_grammar("expr", spec)
     assert not is_builtin_grammar("expr", registered_spec("expr", spec))
     # A spec that reproduces expr's field for field is still its own
     # object: CommandSpec is a frozen dataclass, so `==` would say yes.
-    twin = CommandSpec(description=SPECS["expr"].description,
-                       rest=Operand(type="str"))
+    twin = CommandSpec(
+        description=SPECS["expr"].description, rest=Operand(type="str")
+    )
     assert twin == SPECS["expr"]
     assert not is_builtin_grammar("expr", twin)
 

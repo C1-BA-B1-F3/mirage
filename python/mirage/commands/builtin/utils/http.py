@@ -77,12 +77,14 @@ def _endpoint(url: str) -> tuple[str, int]:
 
 
 def _hop(resp: Any) -> HttpResponse:
-    return HttpResponse(status=resp.status_code,
-                        reason=resp.reason_phrase,
-                        body=resp.content,
-                        url=str(resp.url),
-                        headers=tuple(resp.headers.multi_items()),
-                        method=resp.request.method)
+    return HttpResponse(
+        status=resp.status_code,
+        reason=resp.reason_phrase,
+        body=resp.content,
+        url=str(resp.url),
+        headers=tuple(resp.headers.multi_items()),
+        method=resp.request.method,
+    )
 
 
 def _response(resp: Any) -> HttpResponse:
@@ -91,8 +93,9 @@ def _response(resp: Any) -> HttpResponse:
 
 def _timeout(url: str, started: float) -> HttpTimeoutError:
     host, port = _endpoint(url)
-    return HttpTimeoutError(host, port, int(
-        (time.monotonic() - started) * 1000))
+    return HttpTimeoutError(
+        host, port, int((time.monotonic() - started) * 1000)
+    )
 
 
 def http_request(
@@ -110,14 +113,13 @@ def http_request(
     if httpx is None:
         raise ImportError(MISSING_HTTPX)
     started = time.monotonic()
-    with httpx.Client(timeout=timeout,
-                      follow_redirects=follow_redirects,
-                      verify=verify) as client:
+    with httpx.Client(
+        timeout=timeout, follow_redirects=follow_redirects, verify=verify
+    ) as client:
         try:
-            resp = client.request(method,
-                                  url,
-                                  headers=_with_default_ua(headers),
-                                  content=data)
+            resp = client.request(
+                method, url, headers=_with_default_ua(headers), content=data
+            )
         # A timeout is a transport error too, so it is told apart first:
         # curl answers it with its own code (28), not the connect one.
         except httpx.TimeoutException as exc:
@@ -140,14 +142,16 @@ def http_form_request(
     if httpx is None:
         raise ImportError(MISSING_HTTPX)
     started = time.monotonic()
-    with httpx.Client(timeout=timeout,
-                      follow_redirects=follow_redirects,
-                      verify=verify) as client:
+    with httpx.Client(
+        timeout=timeout, follow_redirects=follow_redirects, verify=verify
+    ) as client:
         try:
-            resp = client.request(method,
-                                  url,
-                                  data=form_data or {},
-                                  headers=_with_default_ua(headers))
+            resp = client.request(
+                method,
+                url,
+                data=form_data or {},
+                headers=_with_default_ua(headers),
+            )
         except httpx.TimeoutException as exc:
             raise _timeout(url, started) from exc
         except httpx.TransportError as exc:
@@ -162,8 +166,10 @@ def http_get(
     timeout: float | None = 30,
     follow_redirects: bool = True,
 ) -> HttpResponse:
-    return http_request(url,
-                        method="GET",
-                        headers=headers,
-                        timeout=timeout,
-                        follow_redirects=follow_redirects)
+    return http_request(
+        url,
+        method="GET",
+        headers=headers,
+        timeout=timeout,
+        follow_redirects=follow_redirects,
+    )

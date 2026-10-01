@@ -31,8 +31,9 @@ def test_head_c5(env):
 
 def test_head_stdin(env):
     data = b"a\nb\nc\nd\ne\nf\n"
-    assert env.mirage("head -n 3", stdin=data) == env.native("head -n 3",
-                                                             stdin=data)
+    assert env.mirage("head -n 3", stdin=data) == env.native(
+        "head -n 3", stdin=data
+    )
 
 
 def test_head_fewer_lines(env):

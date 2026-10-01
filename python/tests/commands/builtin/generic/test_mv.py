@@ -15,8 +15,14 @@
 import pytest
 
 from mirage.commands.builtin.generic.mv import MvFlags, mv
-from mirage.types import (ContentType, FileStat, FileType, NativeMove,
-                          PathSpec, PrimitiveMove)
+from mirage.types import (
+    ContentType,
+    FileStat,
+    FileType,
+    NativeMove,
+    PathSpec,
+    PrimitiveMove,
+)
 from mirage.utils.errors import enoent, enotdir, enotsup
 
 
@@ -28,9 +34,11 @@ def _key(p) -> str:
     return (p.virtual if isinstance(p, PathSpec) else p).rstrip("/")
 
 
-def _make_backend(files: dict[str, bytes],
-                  dirs: set[str],
-                  mtimes: dict[str, str] | None = None):
+def _make_backend(
+    files: dict[str, bytes],
+    dirs: set[str],
+    mtimes: dict[str, str] | None = None,
+):
     stamps = mtimes or {}
 
     async def stat(p) -> FileStat:
@@ -38,10 +46,12 @@ def _make_backend(files: dict[str, bytes],
         if k in dirs:
             return FileStat(name=k.rsplit("/", 1)[-1], type=FileType.DIRECTORY)
         if k in files:
-            return FileStat(name=k.rsplit("/", 1)[-1],
-                            type=FileType.FILE,
-                            content=ContentType.TEXT,
-                            modified=stamps.get(k))
+            return FileStat(
+                name=k.rsplit("/", 1)[-1],
+                type=FileType.FILE,
+                content=ContentType.TEXT,
+                modified=stamps.get(k),
+            )
         raise FileNotFoundError(k)
 
     async def rename(src, dst) -> None:
@@ -52,14 +62,17 @@ def _make_backend(files: dict[str, bytes],
 
 async def _run(files, dirs, paths, *, readdir=None, mtimes=None, **kw):
     stat, rename = _make_backend(files, dirs, mtimes)
-    flags = kw.pop("flags", None) or MvFlags(no_clobber=kw.get(
-        "no_clobber", False),
-                                             verbose=kw.get("verbose", False))
-    return await mv([_spec(p) for p in paths],
-                    strategy=NativeMove(rename=rename),
-                    stat=stat,
-                    flags=flags,
-                    readdir=readdir)
+    flags = kw.pop("flags", None) or MvFlags(
+        no_clobber=kw.get("no_clobber", False),
+        verbose=kw.get("verbose", False),
+    )
+    return await mv(
+        [_spec(p) for p in paths],
+        strategy=NativeMove(rename=rename),
+        stat=stat,
+        flags=flags,
+        readdir=readdir,
+    )
 
 
 @pytest.mark.asyncio
@@ -88,13 +101,17 @@ async def test_refusing_backend_rename_reports_cannot_move():
     async def rename(src, dst) -> None:
         raise enoent(dst)
 
-    _, io = await mv([_spec(p) for p in ["/a.txt", "/missing/a.txt"]],
-                     strategy=NativeMove(rename=rename),
-                     stat=stat,
-                     flags=MvFlags())
+    _, io = await mv(
+        [_spec(p) for p in ["/a.txt", "/missing/a.txt"]],
+        strategy=NativeMove(rename=rename),
+        stat=stat,
+        flags=MvFlags(),
+    )
     assert io.exit_code == 1
-    assert io.stderr == (b"mv: cannot move '/a.txt' to '/missing/a.txt': "
-                         b"No such file or directory\n")
+    assert io.stderr == (
+        b"mv: cannot move '/a.txt' to '/missing/a.txt': "
+        b"No such file or directory\n"
+    )
     assert files["/a.txt"] == b"AAA"
 
 
@@ -106,13 +123,16 @@ async def test_rename_onto_nondir_parent_reports_not_a_directory():
     async def rename(src, dst) -> None:
         raise enotdir(dst)
 
-    _, io = await mv([_spec(p) for p in ["/a.txt", "/plain/c.txt"]],
-                     strategy=NativeMove(rename=rename),
-                     stat=stat,
-                     flags=MvFlags())
+    _, io = await mv(
+        [_spec(p) for p in ["/a.txt", "/plain/c.txt"]],
+        strategy=NativeMove(rename=rename),
+        stat=stat,
+        flags=MvFlags(),
+    )
     assert io.exit_code == 1
-    assert io.stderr == (b"mv: cannot move '/a.txt' to '/plain/c.txt': "
-                         b"Not a directory\n")
+    assert io.stderr == (
+        b"mv: cannot move '/a.txt' to '/plain/c.txt': Not a directory\n"
+    )
 
 
 @pytest.mark.asyncio
@@ -125,10 +145,12 @@ async def test_rename_failure_keeps_moving_remaining_sources():
             raise enoent(dst)
         await real_rename(src, dst)
 
-    _, io = await mv([_spec(p) for p in ["/a.txt", "/b.txt", "/d"]],
-                     strategy=NativeMove(rename=rename),
-                     stat=stat,
-                     flags=MvFlags())
+    _, io = await mv(
+        [_spec(p) for p in ["/a.txt", "/b.txt", "/d"]],
+        strategy=NativeMove(rename=rename),
+        stat=stat,
+        flags=MvFlags(),
+    )
     assert io.exit_code == 1
     assert b"mv: cannot move '/a.txt' to '/d/a.txt'" in io.stderr
     assert files["/d/b.txt"] == b"BBB"
@@ -205,13 +227,15 @@ async def test_into_own_subtree_refused():
     assert files["/d/a.txt"] == b"AAA"
 
 
-def _make_primitive(files: dict[str, bytes],
-                    dirs: set[str],
-                    *,
-                    read_fails: dict | None = None,
-                    write_fails: dict | None = None,
-                    unlink_fails: dict | None = None,
-                    rmdir_fails: dict | None = None):
+def _make_primitive(
+    files: dict[str, bytes],
+    dirs: set[str],
+    *,
+    read_fails: dict | None = None,
+    write_fails: dict | None = None,
+    unlink_fails: dict | None = None,
+    rmdir_fails: dict | None = None,
+):
     stat, _ = _make_backend(files, dirs)
     read_err = read_fails or {}
     write_err = write_fails or {}
@@ -234,8 +258,9 @@ def _make_primitive(files: dict[str, bytes],
     async def readdir(p) -> list[str]:
         base = _key(p) + "/"
         children = {
-            base + k[len(base):].split("/", 1)[0]
-            for k in set(files) | dirs if k.startswith(base)
+            base + k[len(base) :].split("/", 1)[0]
+            for k in set(files) | dirs
+            if k.startswith(base)
         }
         return sorted(children)
 
@@ -249,27 +274,27 @@ def _make_primitive(files: dict[str, bytes],
             raise rmdir_err[_key(p)]
         dirs.discard(_key(p))
 
-    strategy = PrimitiveMove(read_bytes=read_bytes,
-                             write=write,
-                             mkdir=mkdir,
-                             readdir=readdir,
-                             unlink=unlink,
-                             rmdir=rmdir)
+    strategy = PrimitiveMove(
+        read_bytes=read_bytes,
+        write=write,
+        mkdir=mkdir,
+        readdir=readdir,
+        unlink=unlink,
+        rmdir=rmdir,
+    )
     return stat, strategy
 
 
-async def _run_primitive(files,
-                         dirs,
-                         paths,
-                         *,
-                         verbose=False,
-                         flags=None,
-                         **fail_kw):
+async def _run_primitive(
+    files, dirs, paths, *, verbose=False, flags=None, **fail_kw
+):
     stat, strategy = _make_primitive(files, dirs, **fail_kw)
-    return await mv([_spec(p) for p in paths],
-                    strategy=strategy,
-                    stat=stat,
-                    flags=flags or MvFlags(verbose=verbose))
+    return await mv(
+        [_spec(p) for p in paths],
+        strategy=strategy,
+        stat=stat,
+        flags=flags or MvFlags(verbose=verbose),
+    )
 
 
 @pytest.mark.asyncio
@@ -288,11 +313,15 @@ async def test_primitive_unlink_unsupported_keeps_destination():
     # copy stays in place and the failure is reported per entry.
     files = {"/src/a.txt": b"AAA", "/d/keep": b"K"}
     _, io = await _run_primitive(
-        files, {"/src", "/d"}, ["/src/a.txt", "/d"],
-        unlink_fails={"/src/a.txt": enotsup("email", "unlink", "/src/a.txt")})
+        files,
+        {"/src", "/d"},
+        ["/src/a.txt", "/d"],
+        unlink_fails={"/src/a.txt": enotsup("email", "unlink", "/src/a.txt")},
+    )
     assert io.exit_code == 1
-    assert io.stderr == (b"mv: cannot remove '/src/a.txt': "
-                         b"Operation not supported\n")
+    assert io.stderr == (
+        b"mv: cannot remove '/src/a.txt': Operation not supported\n"
+    )
     assert files["/d/a.txt"] == b"AAA"
     assert files["/src/a.txt"] == b"AAA"
     assert set(io.writes) == {"/d/a.txt"}
@@ -302,8 +331,11 @@ async def test_primitive_unlink_unsupported_keeps_destination():
 async def test_primitive_unlink_failure_continues_remaining_sources():
     files = {"/src/a.txt": b"AAA", "/src/b.txt": b"BBB", "/d/keep": b"K"}
     _, io = await _run_primitive(
-        files, {"/src", "/d"}, ["/src/a.txt", "/src/b.txt", "/d"],
-        unlink_fails={"/src/a.txt": PermissionError("/src/a.txt")})
+        files,
+        {"/src", "/d"},
+        ["/src/a.txt", "/src/b.txt", "/d"],
+        unlink_fails={"/src/a.txt": PermissionError("/src/a.txt")},
+    )
     assert io.exit_code == 1
     assert io.stderr == b"mv: cannot remove '/src/a.txt': Permission denied\n"
     assert files["/d/a.txt"] == b"AAA"
@@ -315,11 +347,15 @@ async def test_primitive_unlink_failure_continues_remaining_sources():
 async def test_primitive_read_failure_reports_cannot_open():
     files = {"/src/a.txt": b"AAA", "/d/keep": b"K"}
     _, io = await _run_primitive(
-        files, {"/src", "/d"}, ["/src/a.txt", "/d"],
-        read_fails={"/src/a.txt": PermissionError("/src/a.txt")})
+        files,
+        {"/src", "/d"},
+        ["/src/a.txt", "/d"],
+        read_fails={"/src/a.txt": PermissionError("/src/a.txt")},
+    )
     assert io.exit_code == 1
-    assert io.stderr == (b"mv: cannot open '/src/a.txt' for reading: "
-                         b"Permission denied\n")
+    assert io.stderr == (
+        b"mv: cannot open '/src/a.txt' for reading: Permission denied\n"
+    )
     assert "/d/a.txt" not in files
     assert files["/src/a.txt"] == b"AAA"
     assert io.writes == {}
@@ -329,11 +365,15 @@ async def test_primitive_read_failure_reports_cannot_open():
 async def test_primitive_write_failure_reports_cannot_create():
     files = {"/src/a.txt": b"AAA", "/d/keep": b"K"}
     _, io = await _run_primitive(
-        files, {"/src", "/d"}, ["/src/a.txt", "/d"],
-        write_fails={"/d/a.txt": enotsup("notion", "write", "/d/a.txt")})
+        files,
+        {"/src", "/d"},
+        ["/src/a.txt", "/d"],
+        write_fails={"/d/a.txt": enotsup("notion", "write", "/d/a.txt")},
+    )
     assert io.exit_code == 1
-    assert io.stderr == (b"mv: cannot create regular file '/d/a.txt': "
-                         b"Operation not supported\n")
+    assert io.stderr == (
+        b"mv: cannot create regular file '/d/a.txt': Operation not supported\n"
+    )
     assert files["/src/a.txt"] == b"AAA"
 
 
@@ -347,19 +387,21 @@ async def test_primitive_tree_unlink_failure_reports_files_not_dirs():
         "/src/t/a.txt": enotsup("email", "unlink", "/src/t/a.txt"),
         "/src/t/sub/b.txt": enotsup("email", "unlink", "/src/t/sub/b.txt"),
     }
-    _, io = await _run_primitive(files,
-                                 dirs, ["/src/t", "/d/t"],
-                                 unlink_fails=err,
-                                 rmdir_fails={
-                                     "/src/t":
-                                     enotsup("email", "rmdir", "/src/t"),
-                                     "/src/t/sub":
-                                     enotsup("email", "rmdir", "/src/t/sub"),
-                                 })
+    _, io = await _run_primitive(
+        files,
+        dirs,
+        ["/src/t", "/d/t"],
+        unlink_fails=err,
+        rmdir_fails={
+            "/src/t": enotsup("email", "rmdir", "/src/t"),
+            "/src/t/sub": enotsup("email", "rmdir", "/src/t/sub"),
+        },
+    )
     assert io.exit_code == 1
     assert io.stderr == (
         b"mv: cannot remove '/src/t/sub/b.txt': Operation not supported\n"
-        b"mv: cannot remove '/src/t/a.txt': Operation not supported\n")
+        b"mv: cannot remove '/src/t/a.txt': Operation not supported\n"
+    )
     assert files["/d/t/a.txt"] == b"A"
     assert files["/d/t/sub/b.txt"] == b"B"
     assert files["/src/t/a.txt"] == b"A"
@@ -373,11 +415,14 @@ async def test_primitive_tree_copy_failure_skips_removal():
     dirs = {"/src", "/src/t", "/d"}
     _, io = await _run_primitive(
         files,
-        dirs, ["/src/t", "/d/t"],
-        read_fails={"/src/t/nr.txt": PermissionError("/src/t/nr.txt")})
+        dirs,
+        ["/src/t", "/d/t"],
+        read_fails={"/src/t/nr.txt": PermissionError("/src/t/nr.txt")},
+    )
     assert io.exit_code == 1
-    assert io.stderr == (b"mv: cannot open '/src/t/nr.txt' for reading: "
-                         b"Permission denied\n")
+    assert io.stderr == (
+        b"mv: cannot open '/src/t/nr.txt' for reading: Permission denied\n"
+    )
     assert files["/d/t/a.txt"] == b"A"
     assert files["/src/t/a.txt"] == b"A"
     assert files["/src/t/nr.txt"] == b"NR"
@@ -387,9 +432,12 @@ async def test_primitive_tree_copy_failure_skips_removal():
 async def test_primitive_verbose_skips_failed_moves():
     files = {"/src/a.txt": b"AAA", "/src/b.txt": b"BBB", "/d/keep": b"K"}
     out, _ = await _run_primitive(
-        files, {"/src", "/d"}, ["/src/a.txt", "/src/b.txt", "/d"],
+        files,
+        {"/src", "/d"},
+        ["/src/a.txt", "/src/b.txt", "/d"],
         verbose=True,
-        unlink_fails={"/src/a.txt": PermissionError("/src/a.txt")})
+        unlink_fails={"/src/a.txt": PermissionError("/src/a.txt")},
+    )
     assert out == b"renamed '/src/b.txt' -> '/d/b.txt'\n"
 
 
@@ -400,8 +448,11 @@ async def test_primitive_rmdir_unsupported_empty_dir_not_an_error():
     # longer lists anything is a completed removal, not an error.
     files = {"/src/t/x.txt": b"X", "/d/keep": b"K"}
     _, io = await _run_primitive(
-        files, {"/src", "/src/t", "/d"}, ["/src/t", "/d"],
-        rmdir_fails={"/src/t": enotsup("hf", "rmdir", "/src/t")})
+        files,
+        {"/src", "/src/t", "/d"},
+        ["/src/t", "/d"],
+        rmdir_fails={"/src/t": enotsup("hf", "rmdir", "/src/t")},
+    )
     assert io.exit_code == 0
     assert io.stderr is None
     assert files["/d/t/x.txt"] == b"X"
@@ -417,8 +468,9 @@ def _dir_readdir(files, dirs):
     async def readdir(p) -> list[str]:
         base = _key(p) + "/" if _key(p) != "/" else "/"
         children = {
-            base + k[len(base):].split("/", 1)[0]
-            for k in set(files) | dirs if k.startswith(base) and k != _key(p)
+            base + k[len(base) :].split("/", 1)[0]
+            for k in set(files) | dirs
+            if k.startswith(base) and k != _key(p)
         }
         return sorted(children)
 
@@ -428,13 +480,13 @@ def _dir_readdir(files, dirs):
 @pytest.mark.asyncio
 async def test_update_older_skips_newer_dest_and_keeps_source():
     files = {"/a.txt": b"SRC", "/b.txt": b"DST"}
-    _, io = await _run(files,
-                       set(), ["/a.txt", "/b.txt"],
-                       mtimes={
-                           "/a.txt": _OLD,
-                           "/b.txt": _NEW
-                       },
-                       flags=MvFlags(update="older"))
+    _, io = await _run(
+        files,
+        set(),
+        ["/a.txt", "/b.txt"],
+        mtimes={"/a.txt": _OLD, "/b.txt": _NEW},
+        flags=MvFlags(update="older"),
+    )
     assert io.exit_code == 0
     assert files["/a.txt"] == b"SRC"
     assert files["/b.txt"] == b"DST"
@@ -443,13 +495,13 @@ async def test_update_older_skips_newer_dest_and_keeps_source():
 @pytest.mark.asyncio
 async def test_update_older_replaces_older_dest():
     files = {"/a.txt": b"SRC", "/b.txt": b"DST"}
-    await _run(files,
-               set(), ["/a.txt", "/b.txt"],
-               mtimes={
-                   "/a.txt": _NEW,
-                   "/b.txt": _OLD
-               },
-               flags=MvFlags(update="older"))
+    await _run(
+        files,
+        set(),
+        ["/a.txt", "/b.txt"],
+        mtimes={"/a.txt": _NEW, "/b.txt": _OLD},
+        flags=MvFlags(update="older"),
+    )
     assert files["/b.txt"] == b"SRC"
     assert "/a.txt" not in files
 
@@ -457,9 +509,9 @@ async def test_update_older_replaces_older_dest():
 @pytest.mark.asyncio
 async def test_update_none_fail_reports_not_replacing():
     files = {"/a.txt": b"SRC", "/b.txt": b"DST"}
-    _, io = await _run(files,
-                       set(), ["/a.txt", "/b.txt"],
-                       flags=MvFlags(update="none-fail"))
+    _, io = await _run(
+        files, set(), ["/a.txt", "/b.txt"], flags=MvFlags(update="none-fail")
+    )
     assert io.exit_code == 1
     assert io.stderr == b"mv: not replacing '/b.txt'\n"
     assert files["/a.txt"] == b"SRC"
@@ -468,9 +520,9 @@ async def test_update_none_fail_reports_not_replacing():
 @pytest.mark.asyncio
 async def test_backup_renames_dest_away():
     files = {"/a.txt": b"SRC", "/b.txt": b"DST"}
-    _, io = await _run(files,
-                       set(), ["/a.txt", "/b.txt"],
-                       flags=MvFlags(backup="simple"))
+    _, io = await _run(
+        files, set(), ["/a.txt", "/b.txt"], flags=MvFlags(backup="simple")
+    )
     assert files["/b.txt"] == b"SRC"
     assert files["/b.txt~"] == b"DST"
     assert "/a.txt" not in files
@@ -480,18 +532,21 @@ async def test_backup_renames_dest_away():
 @pytest.mark.asyncio
 async def test_verbose_backup_annotation():
     files = {"/a.txt": b"SRC", "/b.txt": b"DST"}
-    out, _ = await _run(files,
-                        set(), ["/a.txt", "/b.txt"],
-                        flags=MvFlags(verbose=True, backup="simple"))
+    out, _ = await _run(
+        files,
+        set(),
+        ["/a.txt", "/b.txt"],
+        flags=MvFlags(verbose=True, backup="simple"),
+    )
     assert out == b"renamed '/a.txt' -> '/b.txt' (backup: '/b.txt~')\n"
 
 
 @pytest.mark.asyncio
 async def test_exchange_swaps_contents():
     files = {"/a.txt": b"AAA", "/b.txt": b"BBB"}
-    _, io = await _run(files,
-                       set(), ["/a.txt", "/b.txt"],
-                       flags=MvFlags(exchange=True))
+    _, io = await _run(
+        files, set(), ["/a.txt", "/b.txt"], flags=MvFlags(exchange=True)
+    )
     assert io.exit_code == 0
     assert files["/a.txt"] == b"BBB"
     assert files["/b.txt"] == b"AAA"
@@ -501,9 +556,12 @@ async def test_exchange_swaps_contents():
 @pytest.mark.asyncio
 async def test_exchange_verbose_line():
     files = {"/a.txt": b"AAA", "/b.txt": b"BBB"}
-    out, _ = await _run(files,
-                        set(), ["/a.txt", "/b.txt"],
-                        flags=MvFlags(exchange=True, verbose=True))
+    out, _ = await _run(
+        files,
+        set(),
+        ["/a.txt", "/b.txt"],
+        flags=MvFlags(exchange=True, verbose=True),
+    )
     assert out == b"exchanged '/a.txt' <-> '/b.txt'\n"
 
 
@@ -512,35 +570,48 @@ async def test_exchange_missing_target_errors():
     # Deliberate divergence: GNU's renameat2 probe reports the unhelpful
     # 'Unknown error -1' here; the honest errno text is used instead.
     files = {"/a.txt": b"AAA"}
-    _, io = await _run(files,
-                       set(), ["/a.txt", "/b.txt"],
-                       flags=MvFlags(exchange=True))
+    _, io = await _run(
+        files, set(), ["/a.txt", "/b.txt"], flags=MvFlags(exchange=True)
+    )
     assert io.exit_code == 1
-    assert io.stderr == (b"mv: cannot exchange '/a.txt' and '/b.txt': "
-                         b"No such file or directory\n")
+    assert io.stderr == (
+        b"mv: cannot exchange '/a.txt' and '/b.txt': "
+        b"No such file or directory\n"
+    )
     assert files["/a.txt"] == b"AAA"
 
 
 @pytest.mark.asyncio
 async def test_exchange_cross_mount_refused():
     files = {"/src/a.txt": b"AAA", "/d/b.txt": b"BBB"}
-    _, io = await _run_primitive(files, {"/src", "/d"},
-                                 ["/src/a.txt", "/d/b.txt"],
-                                 flags=MvFlags(exchange=True))
+    _, io = await _run_primitive(
+        files,
+        {"/src", "/d"},
+        ["/src/a.txt", "/d/b.txt"],
+        flags=MvFlags(exchange=True),
+    )
     assert io.exit_code == 1
-    assert io.stderr == (b"mv: cannot exchange '/src/a.txt' and "
-                         b"'/d/b.txt': Invalid cross-device link\n")
+    assert io.stderr == (
+        b"mv: cannot exchange '/src/a.txt' and "
+        b"'/d/b.txt': Invalid cross-device link\n"
+    )
     assert files["/src/a.txt"] == b"AAA"
 
 
 @pytest.mark.asyncio
 async def test_no_copy_refuses_cross_mount_move():
     files = {"/src/a.txt": b"AAA", "/d/keep": b"K"}
-    _, io = await _run_primitive(files, {"/src", "/d"}, ["/src/a.txt", "/d"],
-                                 flags=MvFlags(no_copy=True))
+    _, io = await _run_primitive(
+        files,
+        {"/src", "/d"},
+        ["/src/a.txt", "/d"],
+        flags=MvFlags(no_copy=True),
+    )
     assert io.exit_code == 1
-    assert io.stderr == (b"mv: cannot move '/src/a.txt' to '/d/a.txt': "
-                         b"Invalid cross-device link\n")
+    assert io.stderr == (
+        b"mv: cannot move '/src/a.txt' to '/d/a.txt': "
+        b"Invalid cross-device link\n"
+    )
     assert files["/src/a.txt"] == b"AAA"
     assert "/d/a.txt" not in files
 
@@ -548,9 +619,9 @@ async def test_no_copy_refuses_cross_mount_move():
 @pytest.mark.asyncio
 async def test_no_copy_native_rename_unaffected():
     files = {"/a.txt": b"AAA"}
-    _, io = await _run(files,
-                       set(), ["/a.txt", "/b.txt"],
-                       flags=MvFlags(no_copy=True))
+    _, io = await _run(
+        files, set(), ["/a.txt", "/b.txt"], flags=MvFlags(no_copy=True)
+    )
     assert io.exit_code == 0
     assert files["/b.txt"] == b"AAA"
 
@@ -559,10 +630,13 @@ async def test_no_copy_native_rename_unaffected():
 async def test_no_target_dir_refuses_nonempty_dir_dest():
     files = {"/d1/x.txt": b"X", "/d2/y.txt": b"Y"}
     dirs = {"/d1", "/d2"}
-    _, io = await _run(files,
-                       dirs, ["/d1", "/d2"],
-                       readdir=_dir_readdir(files, dirs),
-                       flags=MvFlags(no_target_dir=True))
+    _, io = await _run(
+        files,
+        dirs,
+        ["/d1", "/d2"],
+        readdir=_dir_readdir(files, dirs),
+        flags=MvFlags(no_target_dir=True),
+    )
     assert io.exit_code == 1
     assert io.stderr == b"mv: cannot overwrite '/d2': Directory not empty\n"
 
@@ -572,25 +646,29 @@ async def test_overwrite_nondir_with_dir_refused():
     files = {"/f.txt": b"F", "/d/x.txt": b"X"}
     _, io = await _run(files, {"/d"}, ["/d", "/f.txt"])
     assert io.exit_code == 1
-    assert io.stderr == (b"mv: cannot overwrite non-directory '/f.txt' "
-                         b"with directory '/d'\n")
+    assert io.stderr == (
+        b"mv: cannot overwrite non-directory '/f.txt' with directory '/d'\n"
+    )
 
 
 @pytest.mark.asyncio
 async def test_no_target_dir_refuses_dir_dest_for_file():
     files = {"/a.txt": b"AAA", "/d/keep": b"K"}
-    _, io = await _run(files, {"/d"}, ["/a.txt", "/d"],
-                       flags=MvFlags(no_target_dir=True))
+    _, io = await _run(
+        files, {"/d"}, ["/a.txt", "/d"], flags=MvFlags(no_target_dir=True)
+    )
     assert io.exit_code == 1
-    assert io.stderr == (b"mv: cannot overwrite directory '/d' with "
-                         b"non-directory '/a.txt'\n")
+    assert io.stderr == (
+        b"mv: cannot overwrite directory '/d' with non-directory '/a.txt'\n"
+    )
 
 
 @pytest.mark.asyncio
 async def test_target_dir_moves_into():
     files = {"/a.txt": b"AAA", "/d/keep": b"K"}
-    _, io = await _run(files, {"/d"}, ["/a.txt"],
-                       flags=MvFlags(target_dir="/d"))
+    _, io = await _run(
+        files, {"/d"}, ["/a.txt"], flags=MvFlags(target_dir="/d")
+    )
     assert io.exit_code == 0
     assert files["/d/a.txt"] == b"AAA"
     assert "/a.txt" not in files
@@ -599,12 +677,13 @@ async def test_target_dir_moves_into():
 @pytest.mark.asyncio
 async def test_target_dir_missing_fails_whole_command():
     files = {"/a.txt": b"AAA"}
-    _, io = await _run(files,
-                       set(), ["/a.txt"],
-                       flags=MvFlags(target_dir="/nosuch"))
+    _, io = await _run(
+        files, set(), ["/a.txt"], flags=MvFlags(target_dir="/nosuch")
+    )
     assert io.exit_code == 1
-    assert io.stderr == (b"mv: target directory '/nosuch': "
-                         b"No such file or directory\n")
+    assert io.stderr == (
+        b"mv: target directory '/nosuch': No such file or directory\n"
+    )
     assert files["/a.txt"] == b"AAA"
 
 
@@ -619,17 +698,17 @@ def test_parse_mv_flags_conflicts_and_grammar():
 
     with pytest.raises(UsageError) as exc:
         parse_flags(view({"backup": True, "exchange": True}))
-    assert "mv: cannot combine --backup with --exchange, -n, or " \
-           "--update=none-fail" in str(exc.value)
+    assert (
+        "mv: cannot combine --backup with --exchange, -n, or "
+        "--update=none-fail" in str(exc.value)
+    )
     with pytest.raises(UsageError) as exc:
         parse_flags(view({"backup": True, "no_clobber": True}))
     assert "cannot combine --backup" in str(exc.value)
     with pytest.raises(UsageError) as exc:
         parse_flags(
-            view({
-                "target_directory": "/d",
-                "no_target_directory": True
-            }))
+            view({"target_directory": "/d", "no_target_directory": True})
+        )
     assert "cannot combine --target-directory" in str(exc.value)
     parsed = parse_flags(view({"update": True, "exchange": True}))
     assert parsed.update == "older"
@@ -649,10 +728,10 @@ def _tree_rename(files: dict[str, bytes], dirs: set[str]):
             dirs.discard(s)
             dirs.add(d)
             for k in [k for k in files if k.startswith(s + "/")]:
-                files[d + k[len(s):]] = files.pop(k)
+                files[d + k[len(s) :]] = files.pop(k)
             for k in [k for k in dirs if k.startswith(s + "/")]:
                 dirs.discard(k)
-                dirs.add(d + k[len(s):])
+                dirs.add(d + k[len(s) :])
             return
         files[d] = files.pop(s)
 
@@ -664,9 +743,9 @@ async def test_exchange_never_clobbers_an_existing_holding_name():
     # GNU's renameat2(RENAME_EXCHANGE) is atomic and touches nothing else,
     # so a real file already sitting at the staging name must survive.
     files = {"/a.txt": b"A", "/b.txt": b"B", "/b.txt.~xchg~": b"PRECIOUS"}
-    _, io = await _run(files,
-                       set(), ["/a.txt", "/b.txt"],
-                       flags=MvFlags(exchange=True))
+    _, io = await _run(
+        files, set(), ["/a.txt", "/b.txt"], flags=MvFlags(exchange=True)
+    )
     assert io.exit_code == 0
     assert files["/a.txt"] == b"B"
     assert files["/b.txt"] == b"A"
@@ -685,10 +764,12 @@ async def test_exchange_rolls_back_when_second_rename_fails():
             raise PermissionError("boom")
         await rename(src, dst)
 
-    _, io = await mv([_spec(p) for p in ["/a.txt", "/b.txt"]],
-                     strategy=NativeMove(rename=flaky_rename),
-                     stat=stat,
-                     flags=MvFlags(exchange=True))
+    _, io = await mv(
+        [_spec(p) for p in ["/a.txt", "/b.txt"]],
+        strategy=NativeMove(rename=flaky_rename),
+        stat=stat,
+        flags=MvFlags(exchange=True),
+    )
     assert io.exit_code == 1
     # Both operands are back where they started, and no staging file leaks.
     assert files == {"/a.txt": b"A", "/b.txt": b"B"}
@@ -708,10 +789,12 @@ async def test_exchange_reports_leftover_when_rollback_also_fails():
             raise PermissionError("boom")
         await rename(src, dst)
 
-    _, io = await mv([_spec(p) for p in ["/a.txt", "/b.txt"]],
-                     strategy=NativeMove(rename=flaky_rename),
-                     stat=stat,
-                     flags=MvFlags(exchange=True))
+    _, io = await mv(
+        [_spec(p) for p in ["/a.txt", "/b.txt"]],
+        strategy=NativeMove(rename=flaky_rename),
+        stat=stat,
+        flags=MvFlags(exchange=True),
+    )
     assert io.exit_code == 1
     stderr = bytes(io.stderr or b"")
     assert b"cannot exchange" in stderr
@@ -726,11 +809,13 @@ async def test_no_target_dir_backup_displaces_nonempty_dir_dest():
     files = {"/d1/x.txt": b"X", "/d2/y.txt": b"Y"}
     dirs = {"/d1", "/d2"}
     stat, _ = _make_backend(files, dirs)
-    _, io = await mv([_spec(p) for p in ["/d1", "/d2"]],
-                     strategy=NativeMove(rename=_tree_rename(files, dirs)),
-                     stat=stat,
-                     flags=MvFlags(no_target_dir=True, backup="simple"),
-                     readdir=_dir_readdir(files, dirs))
+    _, io = await mv(
+        [_spec(p) for p in ["/d1", "/d2"]],
+        strategy=NativeMove(rename=_tree_rename(files, dirs)),
+        stat=stat,
+        flags=MvFlags(no_target_dir=True, backup="simple"),
+        readdir=_dir_readdir(files, dirs),
+    )
     assert io.exit_code == 0
     assert io.stderr is None
     assert files["/d2/x.txt"] == b"X"
@@ -742,10 +827,13 @@ async def test_no_target_dir_backup_none_still_refuses_nonempty():
     # --backup=none displaces nothing, so the refusal must still apply.
     files = {"/d1/x.txt": b"X", "/d2/y.txt": b"Y"}
     dirs = {"/d1", "/d2"}
-    _, io = await _run(files,
-                       dirs, ["/d1", "/d2"],
-                       readdir=_dir_readdir(files, dirs),
-                       flags=MvFlags(no_target_dir=True, backup="none"))
+    _, io = await _run(
+        files,
+        dirs,
+        ["/d1", "/d2"],
+        readdir=_dir_readdir(files, dirs),
+        flags=MvFlags(no_target_dir=True, backup="none"),
+    )
     assert io.exit_code == 1
     assert io.stderr == b"mv: cannot overwrite '/d2': Directory not empty\n"
 
@@ -760,13 +848,17 @@ async def test_no_target_dir_reports_failed_emptiness_probe():
     async def failing_readdir(p) -> list[str]:
         raise enotsup("ram", "readdir", p)
 
-    _, io = await _run(files,
-                       dirs, ["/d1", "/d2"],
-                       readdir=failing_readdir,
-                       flags=MvFlags(no_target_dir=True))
+    _, io = await _run(
+        files,
+        dirs,
+        ["/d1", "/d2"],
+        readdir=failing_readdir,
+        flags=MvFlags(no_target_dir=True),
+    )
     assert io.exit_code == 1
-    assert io.stderr == (b"mv: cannot overwrite '/d2': "
-                         b"Operation not supported\n")
+    assert io.stderr == (
+        b"mv: cannot overwrite '/d2': Operation not supported\n"
+    )
     assert files["/d2/y.txt"] == b"Y"
 
 
@@ -776,10 +868,12 @@ async def test_primitive_directory_target_backup_transfers_the_tree():
     # it, so the backup walks the tree entry by entry.
     files = {"/src/x.txt": b"X", "/d/y.txt": b"Y", "/d/sub/z.txt": b"Z"}
     dirs = {"/src", "/d", "/d/sub"}
-    _, io = await _run_primitive(files,
-                                 dirs, ["/src", "/d"],
-                                 flags=MvFlags(no_target_dir=True,
-                                               backup="simple"))
+    _, io = await _run_primitive(
+        files,
+        dirs,
+        ["/src", "/d"],
+        flags=MvFlags(no_target_dir=True, backup="simple"),
+    )
     assert io.exit_code == 0
     assert io.stderr is None
     assert files["/d~/y.txt"] == b"Y"
@@ -790,10 +884,12 @@ async def test_primitive_directory_target_backup_transfers_the_tree():
 def _slashed(path: str) -> PathSpec:
     # The operand as the shell classifies `path/`: a normalized virtual
     # path with the typed spelling, slash included, kept in raw_path.
-    return PathSpec(virtual=path,
-                    directory=path.rsplit("/", 1)[0] or "/",
-                    vfs_path=path.strip("/"),
-                    raw_path=path + "/")
+    return PathSpec(
+        virtual=path,
+        directory=path.rsplit("/", 1)[0] or "/",
+        vfs_path=path.strip("/"),
+        raw_path=path + "/",
+    )
 
 
 @pytest.mark.asyncio
@@ -803,13 +899,16 @@ async def test_slashed_missing_destination_refuses_a_file_source():
     # appears (issue #1142 renamed the file to it).
     files = {"/a.txt": b"AAA"}
     stat, rename = _make_backend(files, set())
-    _, io = await mv([_spec("/a.txt"), _slashed("/missing")],
-                     strategy=NativeMove(rename=rename),
-                     stat=stat,
-                     flags=MvFlags())
+    _, io = await mv(
+        [_spec("/a.txt"), _slashed("/missing")],
+        strategy=NativeMove(rename=rename),
+        stat=stat,
+        flags=MvFlags(),
+    )
     assert io.exit_code == 1
-    assert io.stderr == (b"mv: cannot move '/a.txt' to '/missing/': "
-                         b"Not a directory\n")
+    assert io.stderr == (
+        b"mv: cannot move '/a.txt' to '/missing/': Not a directory\n"
+    )
     assert files == {"/a.txt": b"AAA"}
 
 
@@ -821,19 +920,19 @@ async def test_many_sources_to_a_slashed_file_report_not_a_directory():
     files = {"/a.txt": b"AAA", "/b.txt": b"BBB", "/reg": b"R"}
     stat, rename = _make_backend(files, set())
     with pytest.raises(NotADirectoryError, match="target '/reg/'"):
-        await mv([_spec("/a.txt"),
-                  _spec("/b.txt"),
-                  _slashed("/reg")],
-                 strategy=NativeMove(rename=rename),
-                 stat=stat,
-                 flags=MvFlags())
+        await mv(
+            [_spec("/a.txt"), _spec("/b.txt"), _slashed("/reg")],
+            strategy=NativeMove(rename=rename),
+            stat=stat,
+            flags=MvFlags(),
+        )
     with pytest.raises(FileNotFoundError, match="target '/missing/'"):
-        await mv([_spec("/a.txt"),
-                  _spec("/b.txt"),
-                  _slashed("/missing")],
-                 strategy=NativeMove(rename=rename),
-                 stat=stat,
-                 flags=MvFlags())
+        await mv(
+            [_spec("/a.txt"), _spec("/b.txt"), _slashed("/missing")],
+            strategy=NativeMove(rename=rename),
+            stat=stat,
+            flags=MvFlags(),
+        )
     assert files == {"/a.txt": b"AAA", "/b.txt": b"BBB", "/reg": b"R"}
 
 
@@ -841,13 +940,16 @@ async def test_many_sources_to_a_slashed_file_report_not_a_directory():
 async def test_slashed_missing_destination_refuses_under_t_too():
     files = {"/a.txt": b"AAA"}
     stat, rename = _make_backend(files, set())
-    _, io = await mv([_spec("/a.txt"), _slashed("/missing")],
-                     strategy=NativeMove(rename=rename),
-                     stat=stat,
-                     flags=MvFlags(no_target_dir=True))
+    _, io = await mv(
+        [_spec("/a.txt"), _slashed("/missing")],
+        strategy=NativeMove(rename=rename),
+        stat=stat,
+        flags=MvFlags(no_target_dir=True),
+    )
     assert io.exit_code == 1
-    assert io.stderr == (b"mv: cannot move '/a.txt' to '/missing/': "
-                         b"Not a directory\n")
+    assert io.stderr == (
+        b"mv: cannot move '/a.txt' to '/missing/': Not a directory\n"
+    )
     assert files == {"/a.txt": b"AAA"}
 
 
@@ -861,10 +963,12 @@ async def test_slashed_missing_destination_takes_a_directory_source():
     async def rename(src, dst) -> None:
         renamed.append((src.virtual, dst.virtual))
 
-    _, io = await mv([_spec("/d"), _slashed("/missing")],
-                     strategy=NativeMove(rename=rename),
-                     stat=stat,
-                     flags=MvFlags())
+    _, io = await mv(
+        [_spec("/d"), _slashed("/missing")],
+        strategy=NativeMove(rename=rename),
+        stat=stat,
+        flags=MvFlags(),
+    )
     assert io.exit_code == 0
     assert renamed == [("/d", "/missing")]
 
@@ -879,10 +983,13 @@ async def test_slashed_destination_under_missing_parent_keeps_enoent():
         [_spec("/a.txt"), _slashed("/deep/missing")],
         strategy=NativeMove(rename=rename),
         stat=stat,
-        flags=MvFlags())
+        flags=MvFlags(),
+    )
     assert io.exit_code == 1
-    assert io.stderr == (b"mv: cannot move '/a.txt' to '/deep/missing/': "
-                         b"No such file or directory\n")
+    assert io.stderr == (
+        b"mv: cannot move '/a.txt' to '/deep/missing/': "
+        b"No such file or directory\n"
+    )
     assert files == {"/a.txt": b"AAA"}
 
 
@@ -892,10 +999,12 @@ async def test_slashed_file_destination_reports_cannot_stat():
     # itself decides here whether or not the backend's is slash-aware.
     files = {"/a.txt": b"AAA", "/reg": b"R"}
     stat, rename = _make_backend(files, set())
-    _, io = await mv([_spec("/a.txt"), _slashed("/reg")],
-                     strategy=NativeMove(rename=rename),
-                     stat=stat,
-                     flags=MvFlags())
+    _, io = await mv(
+        [_spec("/a.txt"), _slashed("/reg")],
+        strategy=NativeMove(rename=rename),
+        stat=stat,
+        flags=MvFlags(),
+    )
     assert io.exit_code == 1
     assert io.stderr == b"mv: cannot stat '/reg/': Not a directory\n"
     assert files == {"/a.txt": b"AAA", "/reg": b"R"}
@@ -905,10 +1014,12 @@ async def test_slashed_file_destination_reports_cannot_stat():
 async def test_slashed_file_source_reports_cannot_stat():
     files = {"/reg": b"R"}
     stat, rename = _make_backend(files, set())
-    _, io = await mv([_slashed("/reg"), _spec("/x")],
-                     strategy=NativeMove(rename=rename),
-                     stat=stat,
-                     flags=MvFlags())
+    _, io = await mv(
+        [_slashed("/reg"), _spec("/x")],
+        strategy=NativeMove(rename=rename),
+        stat=stat,
+        flags=MvFlags(),
+    )
     assert io.exit_code == 1
     assert io.stderr == b"mv: cannot stat '/reg/': Not a directory\n"
     assert files == {"/reg": b"R"}
@@ -920,10 +1031,12 @@ async def test_destination_under_a_file_reports_cannot_stat():
     # `cannot stat 'plain/c.txt': Not a directory`, before any rename.
     files = {"/a.txt": b"AAA", "/plain": b"P"}
     stat, rename = _make_backend(files, set())
-    _, io = await mv([_spec("/a.txt"), _spec("/plain/c.txt")],
-                     strategy=NativeMove(rename=rename),
-                     stat=stat,
-                     flags=MvFlags())
+    _, io = await mv(
+        [_spec("/a.txt"), _spec("/plain/c.txt")],
+        strategy=NativeMove(rename=rename),
+        stat=stat,
+        flags=MvFlags(),
+    )
     assert io.exit_code == 1
     assert io.stderr == b"mv: cannot stat '/plain/c.txt': Not a directory\n"
     assert files == {"/a.txt": b"AAA", "/plain": b"P"}

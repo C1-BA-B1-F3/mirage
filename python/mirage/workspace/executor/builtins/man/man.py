@@ -78,8 +78,9 @@ def _builtin_entry(name: str) -> ManEntry | None:
     return ManEntry(name=name, spec=spec)
 
 
-def _command_entries(registry: MountRegistry,
-                     session: SessionState) -> list[ManEntry]:
+def _command_entries(
+    registry: MountRegistry, session: SessionState
+) -> list[ManEntry]:
     """One entry per name registered on any mount that the session can
     see, first registration wins.
 
@@ -97,8 +98,9 @@ def _command_entries(registry: MountRegistry,
     return list(seen.values())
 
 
-def _cli_entries(registry: MountRegistry,
-                 session: SessionState) -> list[ManEntry]:
+def _cli_entries(
+    registry: MountRegistry, session: SessionState
+) -> list[ManEntry]:
     """One entry per installed CLI head word the session can see.
 
     Args:
@@ -158,8 +160,9 @@ def _render_section(title: str, entries: Sequence[ManEntry]) -> str:
     return "\n".join(lines)
 
 
-def _child_visible(head: str, path: tuple[str, ...], session: SessionState,
-                   verb: str) -> bool:
+def _child_visible(
+    head: str, path: tuple[str, ...], session: SessionState, verb: str
+) -> bool:
     """Whether the session can see one child of the node being rendered.
 
     Args:
@@ -171,8 +174,9 @@ def _child_visible(head: str, path: tuple[str, ...], session: SessionState,
     return verb_visible(head, (*path, verb), session)
 
 
-def _render_cli_entry(head: str, verbs: Sequence[str], spec: CLISpec,
-                      session: SessionState) -> str | None:
+def _render_cli_entry(
+    head: str, verbs: Sequence[str], spec: CLISpec, session: SessionState
+) -> str | None:
     """The page for one node of an installed CLI, None when verbs miss
     or the session cannot see the node they name.
 
@@ -202,10 +206,12 @@ def _render_cli_entry(head: str, verbs: Sequence[str], spec: CLISpec,
         return None
     # The root's dialect, so a manual page reads exactly like the
     # --help it renders from.
-    return node_help(" ".join((head, ) + path),
-                     node,
-                     spec.usage_style,
-                     visible=partial(_child_visible, head, path, session))
+    return node_help(
+        " ".join((head,) + path),
+        node,
+        spec.usage_style,
+        visible=partial(_child_visible, head, path, session),
+    )
 
 
 def _render_man_index(registry: MountRegistry, session: SessionState) -> str:
@@ -229,8 +235,11 @@ def _render_man_index(registry: MountRegistry, session: SessionState) -> str:
 
 
 def _cli_man(
-    install: CLIInstall, verbs: Sequence[str], cmd_str: str,
-    registry: MountRegistry, session: SessionState
+    install: CLIInstall,
+    verbs: Sequence[str],
+    cmd_str: str,
+    registry: MountRegistry,
+    session: SessionState,
 ) -> tuple[ByteSource | None, IOResult, ExecutionNode]:
     """The page (or pages) for an installed head word.
 
@@ -251,10 +260,11 @@ def _cli_man(
     if entry is None:
         typed = " ".join([head, *verbs])
         err = f"man: no entry for {typed}\n".encode()
-        return None, IOResult(exit_code=1,
-                              stderr=err), ExecutionNode(command=cmd_str,
-                                                         exit_code=1,
-                                                         stderr=err)
+        return (
+            None,
+            IOResult(exit_code=1, stderr=err),
+            ExecutionNode(command=cmd_str, exit_code=1, stderr=err),
+        )
     sections = [entry]
     command = _command_entry(head, registry) if not verbs else None
     if command is not None:
@@ -284,10 +294,11 @@ async def handle_man(
         entry = _command_entry(name, registry) or _builtin_entry(name)
     if entry is None:
         err = f"man: no entry for {name}\n".encode()
-        return None, IOResult(exit_code=1,
-                              stderr=err), ExecutionNode(command=cmd_str,
-                                                         exit_code=1,
-                                                         stderr=err)
+        return (
+            None,
+            IOResult(exit_code=1, stderr=err),
+            ExecutionNode(command=cmd_str, exit_code=1, stderr=err),
+        )
     out = _render_page(entry).encode()
     return out, IOResult(), ExecutionNode(command=cmd_str, exit_code=0)
 

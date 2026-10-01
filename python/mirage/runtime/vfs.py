@@ -27,8 +27,14 @@ from mirage.types import FileStat, PathSpec
 from mirage.utils.context_scope import ContextScope
 from mirage.utils.errors import OperationNotSupportedError
 from mirage.utils.path import norm
-from mirage.utils.stat_view import (content_size, device_rdev, is_dir, is_link,
-                                    mtime_ns, posix_mode)
+from mirage.utils.stat_view import (
+    content_size,
+    device_rdev,
+    is_dir,
+    is_link,
+    mtime_ns,
+    posix_mode,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -84,10 +90,12 @@ class RuntimeVFS:
             table; None means routing questions answer None.
     """
 
-    def __init__(self,
-                 dispatch: DispatchFn,
-                 loop: asyncio.AbstractEventLoop,
-                 resolver: MountResolver | None = None) -> None:
+    def __init__(
+        self,
+        dispatch: DispatchFn,
+        loop: asyncio.AbstractEventLoop,
+        resolver: MountResolver | None = None,
+    ) -> None:
         self._dispatch = ContextScope().wrap_async(dispatch)
         self._loop = loop
         self._resolver = resolver
@@ -101,13 +109,15 @@ class RuntimeVFS:
         Args:
             context (RuntimeContext): the execution's captured doors.
         """
-        return cls(context.dispatch, asyncio.get_running_loop(),
-                   context.resolver)
+        return cls(
+            context.dispatch, asyncio.get_running_loop(), context.resolver
+        )
 
     async def _op(self, op: str, path: str, **kwargs: Any) -> Any:
         async with self._limiter.acquire():
-            result, _ = await self._dispatch(op, PathSpec.from_str_path(path),
-                                             **kwargs)
+            result, _ = await self._dispatch(
+                op, PathSpec.from_str_path(path), **kwargs
+            )
         return result
 
     def _wait(self, pending: Coroutine[Any, Any, T]) -> T:
@@ -200,12 +210,14 @@ class RuntimeVFS:
         ns = mtime_ns(fs)
         # A guest wire has no validity channel for a timestamp, so an
         # unknown mtime and epoch zero both encode as 0 from here on.
-        return VFSStat(size=content_size(fs),
-                       is_dir=is_dir(fs),
-                       mode=posix_mode(fs),
-                       mtime_ns=0 if ns is None else ns,
-                       is_link=is_link(fs),
-                       rdev=device_rdev(fs))
+        return VFSStat(
+            size=content_size(fs),
+            is_dir=is_dir(fs),
+            mode=posix_mode(fs),
+            mtime_ns=0 if ns is None else ns,
+            is_link=is_link(fs),
+            rdev=device_rdev(fs),
+        )
 
     def readdir(self, path: str, *, classify: bool = True) -> list[VFSEntry]:
         """List a directory as resolved entries (the TS door's shape).
@@ -260,45 +272,64 @@ class RuntimeVFS:
         # After the listing, not before: a directory that will not list
         # (ENOENT, or a link cycle the namespace refuses to resolve)
         # must fail as readdir, not as the mark read.
-        links = (self._resolver.link_children(path)
-                 if self._resolver is not None else set())
+        links = (
+            self._resolver.link_children(path)
+            if self._resolver is not None
+            else set()
+        )
         rows = [_listed(raw, links) for raw in listing]
         if classify:
             # A fixed set of workers, not a task per entry, so a wide
             # directory costs the cap's worth of tasks, never its width.
-            pending = [(i, row) for i, row in enumerate(rows)
-                       if not row.is_dir]
+            pending = [
+                (i, row) for i, row in enumerate(rows) if not row.is_dir
+            ]
             queue = iter(pending)
             workers = min(LISTING_ENTRY_CONCURRENCY, len(pending))
-            await asyncio.gather(*(self._classify(path, rows, queue)
-                                   for _ in range(workers)))
+            await asyncio.gather(
+                *(self._classify(path, rows, queue) for _ in range(workers))
+            )
         return rows
 
-    async def _classify(self, directory: str, rows: list[VFSEntry],
-                        queue: Iterator[tuple[int, VFSEntry]]) -> None:
+    async def _classify(
+        self,
+        directory: str,
+        rows: list[VFSEntry],
+        queue: Iterator[tuple[int, VFSEntry]],
+    ) -> None:
         for index, row in queue:
             rows[index] = await self._classified(directory, row)
 
     async def _classified(self, directory: str, row: VFSEntry) -> VFSEntry:
         try:
-            st = self._row(await self._op("stat",
-                                          row.path,
-                                          nofollow=row.is_link))
+            st = self._row(
+                await self._op("stat", row.path, nofollow=row.is_link)
+            )
         except (FileNotFoundError, NotADirectoryError) as exc:
-            logger.debug("runtime vfs: readdir %s: stat %s: %s", directory,
-                         row.path, exc)
+            logger.debug(
+                "runtime vfs: readdir %s: stat %s: %s",
+                directory,
+                row.path,
+                exc,
+            )
             return row
         except Exception as exc:
-            logger.warning("runtime vfs: readdir %s: stat %s: %s", directory,
-                           row.path, exc)
+            logger.warning(
+                "runtime vfs: readdir %s: stat %s: %s",
+                directory,
+                row.path,
+                exc,
+            )
             return row
-        return VFSEntry(path=row.path,
-                        size=st.size,
-                        is_dir=st.is_dir,
-                        is_link=row.is_link,
-                        mode=st.mode,
-                        mtime_ns=st.mtime_ns,
-                        rdev=st.rdev)
+        return VFSEntry(
+            path=row.path,
+            size=st.size,
+            is_dir=st.is_dir,
+            is_link=row.is_link,
+            mode=st.mode,
+            mtime_ns=st.mtime_ns,
+            rdev=st.rdev,
+        )
 
     def create(self, path: str) -> None:
         self.call("create", path)
@@ -359,15 +390,17 @@ class RuntimeVFS:
         """
         return str(self.call("readlink", path))
 
-    def setattr(self,
-                path: str,
-                *,
-                mode: int | None = None,
-                uid: int | str | None = None,
-                gid: int | str | None = None,
-                atime: str | None = None,
-                mtime: str | None = None,
-                nofollow: bool = False) -> None:
+    def setattr(
+        self,
+        path: str,
+        *,
+        mode: int | None = None,
+        uid: int | str | None = None,
+        gid: int | str | None = None,
+        atime: str | None = None,
+        mtime: str | None = None,
+        nofollow: bool = False,
+    ) -> None:
         """Write metadata fields, natively where the backend can hold them.
 
         Every field is passed, unset ones as None, because the door
@@ -387,14 +420,16 @@ class RuntimeVFS:
             nofollow (bool): write the link entry's own attrs rather
                 than its target's (a guest's AT_SYMLINK_NOFOLLOW).
         """
-        self.call("setattr",
-                  path,
-                  mode=mode,
-                  uid=uid,
-                  gid=gid,
-                  atime=atime,
-                  mtime=mtime,
-                  nofollow=nofollow)
+        self.call(
+            "setattr",
+            path,
+            mode=mode,
+            uid=uid,
+            gid=gid,
+            atime=atime,
+            mtime=mtime,
+            nofollow=nofollow,
+        )
 
     def append(self, path: str, data: bytes, whole: bytes) -> None:
         """Extend `path` by `data`, falling back to writing `whole`.
@@ -424,8 +459,9 @@ class RuntimeVFS:
             return False
         return True
 
-    def flush(self, path: str, base_len: int, low_write: int,
-              buf: bytes | bytearray) -> None:
+    def flush(
+        self, path: str, base_len: int, low_write: int, buf: bytes | bytearray
+    ) -> None:
         """Send a closing handle's buffer as a delta when it can be one.
 
         Args:

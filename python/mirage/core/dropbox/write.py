@@ -20,8 +20,9 @@ from mirage.observe.context import record, start_op
 from mirage.types import PathSpec
 
 
-async def write_bytes(accessor: DropboxAccessor, path: PathSpec,
-                      data: bytes) -> None:
+async def write_bytes(
+    accessor: DropboxAccessor, path: PathSpec, data: bytes
+) -> None:
     """Upload in a single call; Dropbox caps it at ~150 MB (larger files
     need upload sessions, not supported here).
 
@@ -31,8 +32,9 @@ async def write_bytes(accessor: DropboxAccessor, path: PathSpec,
         data (bytes): file content.
     """
     timer = start_op()
-    await dropbox_upload(accessor.token_manager,
-                         dropbox_path_of(accessor, path), data)
+    await dropbox_upload(
+        accessor.token_manager, dropbox_path_of(accessor, path), data
+    )
     record("write", path.virtual, "dropbox", len(data), timer)
     await invalidate_after_write(path)
     await invalidate_ancestors(path)

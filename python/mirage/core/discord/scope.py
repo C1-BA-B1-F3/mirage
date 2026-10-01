@@ -16,9 +16,9 @@ from mirage.core.hierarchy.codec import DATE, JSON_NAME
 from mirage.core.hierarchy.scope import Scope, Slot, make_detect_scope
 from mirage.types import ContentType
 
-_GUILD = (Slot("guild", id_key="guild_id"), )
+_GUILD = (Slot("guild", id_key="guild_id"),)
 _CHANNEL = _GUILD + ("channels", Slot("channel", id_key="channel_id"))
-_DAY = _CHANNEL + (Slot("day", DATE), )
+_DAY = _CHANNEL + (Slot("day", DATE),)
 
 # One description of the tree: readdir, stat, read and the search
 # push-down all classify through it, so the file surface and the command
@@ -27,22 +27,27 @@ _DAY = _CHANNEL + (Slot("day", DATE), )
 # the path and detection needs no index or network round-trip.
 SCOPES = (
     Scope(kind="guild", segments=_GUILD),
-    Scope(kind="channels_dir", segments=_GUILD + ("channels", )),
-    Scope(kind="members_dir", segments=_GUILD + ("members", )),
+    Scope(kind="channels_dir", segments=_GUILD + ("channels",)),
+    Scope(kind="members_dir", segments=_GUILD + ("members",)),
     Scope(kind="channel", segments=_CHANNEL),
-    Scope(kind="member",
-          segments=_GUILD +
-          ("members", Slot("member", JSON_NAME, id_key="user_id")),
-          leaf=True,
-          filetype=ContentType.JSON),
+    Scope(
+        kind="member",
+        segments=_GUILD
+        + ("members", Slot("member", JSON_NAME, id_key="user_id")),
+        leaf=True,
+        filetype=ContentType.JSON,
+    ),
     Scope(kind="day", segments=_DAY),
-    Scope(kind="messages",
-          segments=_DAY + ("chat.jsonl", ),
-          leaf=True,
-          filetype=ContentType.TEXT),
-    Scope(kind="files", segments=_DAY + ("files", )),
-    Scope(kind="file_blob", segments=_DAY + ("files", Slot("blob")),
-          leaf=True),
+    Scope(
+        kind="messages",
+        segments=_DAY + ("chat.jsonl",),
+        leaf=True,
+        filetype=ContentType.TEXT,
+    ),
+    Scope(kind="files", segments=_DAY + ("files",)),
+    Scope(
+        kind="file_blob", segments=_DAY + ("files", Slot("blob")), leaf=True
+    ),
 )
 
 detect_scope = make_detect_scope(SCOPES)

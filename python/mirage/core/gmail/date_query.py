@@ -17,8 +17,8 @@ from datetime import date, datetime, timedelta, timezone
 
 def _epoch(day: date) -> int:
     return int(
-        datetime(day.year, day.month, day.day,
-                 tzinfo=timezone.utc).timestamp())
+        datetime(day.year, day.month, day.day, tzinfo=timezone.utc).timestamp()
+    )
 
 
 def span_to_gmail_query(start: date, end: date) -> str:

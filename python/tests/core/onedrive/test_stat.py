@@ -14,24 +14,23 @@ def _accessor(**kw) -> OneDriveAccessor:
     return OneDriveAccessor(OneDriveConfig(access_token="tok", **kw))
 
 
-_FILE_URL = ("https://graph.microsoft.com/v1.0/me/drive"
-             "/root:/Docs/report.docx")
+_FILE_URL = "https://graph.microsoft.com/v1.0/me/drive/root:/Docs/report.docx"
 _DIR_URL = "https://graph.microsoft.com/v1.0/me/drive/root:/Docs"
 
 
 @pytest.mark.asyncio
 async def test_stat_root_is_directory():
     with aioresponses() as m:
-        m.get("https://graph.microsoft.com/v1.0/me/drive/root",
-              payload={
-                  "id": "01ROOT",
-                  "name": "root",
-                  "size": 4096,
-                  "folder": {
-                      "childCount": 2
-                  },
-                  "lastModifiedDateTime": "2026-05-01T10:00:00Z",
-              })
+        m.get(
+            "https://graph.microsoft.com/v1.0/me/drive/root",
+            payload={
+                "id": "01ROOT",
+                "name": "root",
+                "size": 4096,
+                "folder": {"childCount": 2},
+                "lastModifiedDateTime": "2026-05-01T10:00:00Z",
+            },
+        )
         result = await stat(_accessor(), PathSpec.from_str_path("/"))
     assert result.type == FileType.DIRECTORY
     assert result.name == "/"
@@ -46,20 +45,21 @@ async def test_stat_root_is_directory():
 @pytest.mark.asyncio
 async def test_stat_file_carries_size_and_ctag_fingerprint():
     with aioresponses() as m:
-        m.get(_FILE_URL,
-              payload={
-                  "id": "01ITEM",
-                  "name": "report.docx",
-                  "size": 1234,
-                  "lastModifiedDateTime": "2026-05-01T10:00:00Z",
-                  "cTag": "ctag-abc",
-                  "eTag": "etag-xyz",
-                  "file": {
-                      "mimeType": "application/vnd.openxml"
-                  },
-              })
-        result = await stat(_accessor(),
-                            PathSpec.from_str_path("/Docs/report.docx"))
+        m.get(
+            _FILE_URL,
+            payload={
+                "id": "01ITEM",
+                "name": "report.docx",
+                "size": 1234,
+                "lastModifiedDateTime": "2026-05-01T10:00:00Z",
+                "cTag": "ctag-abc",
+                "eTag": "etag-xyz",
+                "file": {"mimeType": "application/vnd.openxml"},
+            },
+        )
+        result = await stat(
+            _accessor(), PathSpec.from_str_path("/Docs/report.docx")
+        )
     assert result.name == "report.docx"
     assert result.size == 1234
     assert result.fingerprint == "ctag-abc"
@@ -69,16 +69,16 @@ async def test_stat_file_carries_size_and_ctag_fingerprint():
 @pytest.mark.asyncio
 async def test_stat_folder_is_directory():
     with aioresponses() as m:
-        m.get(_DIR_URL,
-              payload={
-                  "id": "01FOLDER",
-                  "name": "Docs",
-                  "size": 4096,
-                  "lastModifiedDateTime": "2026-05-01T10:00:00Z",
-                  "folder": {
-                      "childCount": 2
-                  },
-              })
+        m.get(
+            _DIR_URL,
+            payload={
+                "id": "01FOLDER",
+                "name": "Docs",
+                "size": 4096,
+                "lastModifiedDateTime": "2026-05-01T10:00:00Z",
+                "folder": {"childCount": 2},
+            },
+        )
         result = await stat(_accessor(), PathSpec.from_str_path("/Docs"))
     assert result.type == FileType.DIRECTORY
     assert result.name == "Docs"
@@ -91,18 +91,19 @@ async def test_stat_folder_is_directory():
 @pytest.mark.asyncio
 async def test_stat_missing_raises_file_not_found():
     with aioresponses() as m:
-        m.get(_FILE_URL,
-              status=404,
-              payload={"error": {
-                  "code": "itemNotFound",
-                  "message": "no"
-              }})
+        m.get(
+            _FILE_URL,
+            status=404,
+            payload={"error": {"code": "itemNotFound", "message": "no"}},
+        )
         with pytest.raises(FileNotFoundError) as exc:
             await stat(
                 _accessor(),
                 PathSpec.from_str_path(
                     "/od/Docs/report.docx",
-                    mount_key("/od/Docs/report.docx", "/od")))
+                    mount_key("/od/Docs/report.docx", "/od"),
+                ),
+            )
     assert str(exc.value) == "/od/Docs/report.docx"
 
 
@@ -110,19 +111,24 @@ async def test_stat_missing_raises_file_not_found():
 async def test_stat_from_index_returns_modified():
     index = RAMIndexCacheStore()
     with aioresponses() as m:
-        m.get("https://graph.microsoft.com/v1.0/me/drive/root/children",
-              payload={
-                  "value": [{
-                      "id": "1",
-                      "name": "notes.txt",
-                      "size": 42,
-                      "file": {},
-                      "lastModifiedDateTime": "2026-06-19T09:28:00Z",
-                  }]
-              })
+        m.get(
+            "https://graph.microsoft.com/v1.0/me/drive/root/children",
+            payload={
+                "value": [
+                    {
+                        "id": "1",
+                        "name": "notes.txt",
+                        "size": 42,
+                        "file": {},
+                        "lastModifiedDateTime": "2026-06-19T09:28:00Z",
+                    }
+                ]
+            },
+        )
         await readdir(_accessor(), PathSpec.from_str_path("/"), index)
-    result = await stat(_accessor(), PathSpec.from_str_path("/notes.txt"),
-                        index)
+    result = await stat(
+        _accessor(), PathSpec.from_str_path("/notes.txt"), index
+    )
     assert result.name == "notes.txt"
     assert result.size == 42
     assert result.modified == "2026-06-19T09:28:00Z"
@@ -135,21 +141,26 @@ async def test_stat_from_index_carries_the_ctag():
     # way and fingerprints on what it returns.
     index = RAMIndexCacheStore()
     with aioresponses() as m:
-        m.get("https://graph.microsoft.com/v1.0/me/drive/root/children",
-              payload={
-                  "value": [{
-                      "id": "1",
-                      "name": "notes.txt",
-                      "size": 42,
-                      "file": {},
-                      "cTag": "c1",
-                      "eTag": "e1",
-                      "lastModifiedDateTime": "2026-06-19T09:28:00Z",
-                  }]
-              })
+        m.get(
+            "https://graph.microsoft.com/v1.0/me/drive/root/children",
+            payload={
+                "value": [
+                    {
+                        "id": "1",
+                        "name": "notes.txt",
+                        "size": 42,
+                        "file": {},
+                        "cTag": "c1",
+                        "eTag": "e1",
+                        "lastModifiedDateTime": "2026-06-19T09:28:00Z",
+                    }
+                ]
+            },
+        )
         await readdir(_accessor(), PathSpec.from_str_path("/"), index)
-    result = await stat(_accessor(), PathSpec.from_str_path("/notes.txt"),
-                        index)
+    result = await stat(
+        _accessor(), PathSpec.from_str_path("/notes.txt"), index
+    )
     assert result.fingerprint == "c1"
     assert (result.extra["ctag"], result.extra["etag"]) == ("c1", "e1")
 
@@ -160,19 +171,21 @@ async def test_stat_folder_from_index_has_no_fingerprint():
     # gives a folder none either.
     index = RAMIndexCacheStore()
     with aioresponses() as m:
-        m.get("https://graph.microsoft.com/v1.0/me/drive/root/children",
-              payload={
-                  "value": [{
-                      "id": "2",
-                      "name": "Docs",
-                      "folder": {
-                          "childCount": 1
-                      },
-                      "cTag": "cf",
-                      "eTag": "ef",
-                      "lastModifiedDateTime": "2026-06-19T09:28:00Z",
-                  }]
-              })
+        m.get(
+            "https://graph.microsoft.com/v1.0/me/drive/root/children",
+            payload={
+                "value": [
+                    {
+                        "id": "2",
+                        "name": "Docs",
+                        "folder": {"childCount": 1},
+                        "cTag": "cf",
+                        "eTag": "ef",
+                        "lastModifiedDateTime": "2026-06-19T09:28:00Z",
+                    }
+                ]
+            },
+        )
         await readdir(_accessor(), PathSpec.from_str_path("/"), index)
     result = await stat(_accessor(), PathSpec.from_str_path("/Docs"), index)
     assert result.type == FileType.DIRECTORY
@@ -193,64 +206,74 @@ async def test_stat_size_matches_read_for_every_file():
     index = RAMIndexCacheStore()
     accessor = _accessor()
     with aioresponses() as m:
-        m.get(base + "/root/children",
-              payload={
-                  "value": [
-                      {
-                          "id": "1",
-                          "name": "notes.txt",
-                          "size": len(contents["/notes.txt"]),
-                          "file": {},
-                          "lastModifiedDateTime": "2026-06-19T09:28:00Z",
-                      },
-                      {
-                          "id": "2",
-                          "name": "Docs",
-                          "size": 9000,
-                          "folder": {
-                              "childCount": 2
-                          },
-                          "lastModifiedDateTime": "2026-06-19T09:28:00Z",
-                      },
-                  ]
-              })
-        m.get(base + "/root:/Docs:/children",
-              payload={
-                  "value": [{
-                      "id": "3",
-                      "name": "empty.bin",
-                      "size": 0,
-                      "file": {},
-                      "lastModifiedDateTime": "2026-06-19T09:28:00Z",
-                  }, {
-                      "id": "4",
-                      "name": "report.docx",
-                      "size": len(contents["/Docs/report.docx"]),
-                      "file": {},
-                      "lastModifiedDateTime": "2026-06-19T09:28:00Z",
-                  }]
-              })
+        m.get(
+            base + "/root/children",
+            payload={
+                "value": [
+                    {
+                        "id": "1",
+                        "name": "notes.txt",
+                        "size": len(contents["/notes.txt"]),
+                        "file": {},
+                        "lastModifiedDateTime": "2026-06-19T09:28:00Z",
+                    },
+                    {
+                        "id": "2",
+                        "name": "Docs",
+                        "size": 9000,
+                        "folder": {"childCount": 2},
+                        "lastModifiedDateTime": "2026-06-19T09:28:00Z",
+                    },
+                ]
+            },
+        )
+        m.get(
+            base + "/root:/Docs:/children",
+            payload={
+                "value": [
+                    {
+                        "id": "3",
+                        "name": "empty.bin",
+                        "size": 0,
+                        "file": {},
+                        "lastModifiedDateTime": "2026-06-19T09:28:00Z",
+                    },
+                    {
+                        "id": "4",
+                        "name": "report.docx",
+                        "size": len(contents["/Docs/report.docx"]),
+                        "file": {},
+                        "lastModifiedDateTime": "2026-06-19T09:28:00Z",
+                    },
+                ]
+            },
+        )
         for path, body in contents.items():
             download = f"https://download.example{path}"
-            m.get(base + f"/root:{path}",
-                  payload={"@microsoft.graph.downloadUrl": download})
+            m.get(
+                base + f"/root:{path}",
+                payload={"@microsoft.graph.downloadUrl": download},
+            )
             m.get(download, body=body)
         files: list[str] = []
         stack = ["/"]
         while stack:
             current = stack.pop()
-            listing = await readdir(accessor, PathSpec.from_str_path(current),
-                                    index)
+            listing = await readdir(
+                accessor, PathSpec.from_str_path(current), index
+            )
             for child in listing:
-                info = await stat(accessor, PathSpec.from_str_path(child),
-                                  index)
+                info = await stat(
+                    accessor, PathSpec.from_str_path(child), index
+                )
                 if info.type == FileType.DIRECTORY:
                     stack.append(child)
                 else:
                     assert info.size is not None, child
                     files.append(child)
-                    body = await read_bytes(accessor,
-                                            PathSpec.from_str_path(child))
+                    body = await read_bytes(
+                        accessor, PathSpec.from_str_path(child)
+                    )
                     assert info.size == len(body), child
     assert sorted(files) == sorted(contents)
 
@@ -259,18 +282,20 @@ async def test_stat_size_matches_read_for_every_file():
 async def test_stat_from_index_folder_returns_modified():
     index = RAMIndexCacheStore()
     with aioresponses() as m:
-        m.get("https://graph.microsoft.com/v1.0/me/drive/root/children",
-              payload={
-                  "value": [{
-                      "id": "2",
-                      "name": "Docs",
-                      "folder": {
-                          "childCount": 5
-                      },
-                      "size": 9000,
-                      "lastModifiedDateTime": "2026-05-28T02:10:00Z",
-                  }]
-              })
+        m.get(
+            "https://graph.microsoft.com/v1.0/me/drive/root/children",
+            payload={
+                "value": [
+                    {
+                        "id": "2",
+                        "name": "Docs",
+                        "folder": {"childCount": 5},
+                        "size": 9000,
+                        "lastModifiedDateTime": "2026-05-28T02:10:00Z",
+                    }
+                ]
+            },
+        )
         await readdir(_accessor(), PathSpec.from_str_path("/"), index)
     result = await stat(_accessor(), PathSpec.from_str_path("/Docs"), index)
     assert result.type == FileType.DIRECTORY

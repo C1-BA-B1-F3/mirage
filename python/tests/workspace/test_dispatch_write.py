@@ -41,7 +41,8 @@ def test_redirect_write_overrides_cached_read():
     asyncio.run(run())
     assert vfs._store.files["/file.txt"] == b"NEW", (
         "redirect-write should reach the backend even when the path was "
-        "previously cached by a read")
+        "previously cached by a read"
+    )
 
 
 def test_redirect_append_after_cached_read():
@@ -54,7 +55,8 @@ def test_redirect_append_after_cached_read():
     asyncio.run(run())
     assert vfs._store.files["/file.txt"] == b"OLDMORE", (
         "redirect-append should reach the backend even when the path was "
-        "previously cached by a read")
+        "previously cached by a read"
+    )
 
 
 def test_dispatch_rename_addresses_dst_against_the_source_mount():
@@ -75,9 +77,11 @@ def test_dispatch_rename_addresses_dst_against_the_source_mount():
     async def run() -> None:
         await ws.shell("echo moved-bytes > /a/x.txt")
         with pytest.raises(FileNotFoundError):
-            await ws.dispatch("rename",
-                              PathSpec.from_str_path("/a/x.txt"),
-                              dst=PathSpec.from_str_path("/b/y.txt"))
+            await ws.dispatch(
+                "rename",
+                PathSpec.from_str_path("/a/x.txt"),
+                dst=PathSpec.from_str_path("/b/y.txt"),
+            )
         assert (await ws.shell("cat /a/x.txt")).stdout == b"moved-bytes\n"
         assert (await ws.shell("cat /a/b/y.txt")).exit_code != 0
         assert (await ws.shell("cat /b/y.txt")).exit_code != 0

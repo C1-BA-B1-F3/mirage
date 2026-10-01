@@ -1,28 +1,48 @@
 import re
-from collections.abc import (AsyncGenerator, AsyncIterator, Awaitable,
-                             Callable, Sequence)
+from collections.abc import (
+    AsyncGenerator,
+    AsyncIterator,
+    Awaitable,
+    Callable,
+    Sequence,
+)
 from contextlib import aclosing
 from dataclasses import replace
 from functools import partial
 
-from mirage.cache.read_through import (cache_aware_bound_bytes,
-                                       cache_aware_bound_stream)
+from mirage.cache.read_through import (
+    cache_aware_bound_bytes,
+    cache_aware_bound_stream,
+)
 from mirage.commands.builtin.constants import BINARY_EXTENSIONS
 from mirage.commands.builtin.grep_binary import GrepFlags, grep_input
-from mirage.commands.builtin.grep_pattern import (NEVER_MATCH, compile_pattern,
-                                                  matcher_syntax,
-                                                  pattern_warnings,
-                                                  resolve_pattern)
+from mirage.commands.builtin.grep_pattern import (
+    NEVER_MATCH,
+    compile_pattern,
+    matcher_syntax,
+    pattern_warnings,
+    resolve_pattern,
+)
 from mirage.commands.builtin.grep_scan import exit_code_for
-from mirage.commands.builtin.grep_select import (WalkFilters, dir_admitted,
-                                                 file_admitted,
-                                                 parse_file_globs)
-from mirage.commands.builtin.utils.stream import (is_stdin, operand_label,
-                                                  resolve_source, stdin_stream)
-from mirage.commands.builtin.utils.wrap import (call_read_bytes, call_readdir,
-                                                call_stat,
-                                                mount_parent_readdir,
-                                                mount_parent_stat)
+from mirage.commands.builtin.grep_select import (
+    WalkFilters,
+    dir_admitted,
+    file_admitted,
+    parse_file_globs,
+)
+from mirage.commands.builtin.utils.stream import (
+    is_stdin,
+    operand_label,
+    resolve_source,
+    stdin_stream,
+)
+from mirage.commands.builtin.utils.wrap import (
+    call_read_bytes,
+    call_readdir,
+    call_stat,
+    mount_parent_readdir,
+    mount_parent_stat,
+)
 from mirage.commands.config import CommandOpts
 from mirage.commands.errors import UsageError
 from mirage.commands.resolve import get_extension
@@ -68,7 +88,8 @@ def context_length(fl: FlagView, name: str) -> int | None:
         value = fl.as_int(name)
     except ValueError as exc:
         raise UsageError(
-            f"grep: {raw}: invalid context length argument") from exc
+            f"grep: {raw}: invalid context length argument"
+        ) from exc
     if value is not None and value < 0:
         shown = raw if raw is not None else str(value)
         raise UsageError(f"grep: {shown}: invalid context length argument")
@@ -163,9 +184,11 @@ def parse_flags(fl: FlagView, never_match: bool) -> GrepFlags:
         after_context=a_ctx if a_ctx is not None else (c_ctx or 0),
         before_context=b_ctx if b_ctx is not None else (c_ctx or 0),
         binary_mode=mode,
-        filters=WalkFilters(file_globs=parse_file_globs(fl),
-                            exclude_dir=tuple(fl.as_list("exclude_dir")),
-                            text=mode == "text"),
+        filters=WalkFilters(
+            file_globs=parse_file_globs(fl),
+            exclude_dir=tuple(fl.as_list("exclude_dir")),
+            text=mode == "text",
+        ),
     )
 
 
@@ -198,53 +221,85 @@ async def grep(
     if read_stream is not None:
         read_stream = cache_aware_bound_stream(read_stream)
     operand_stream = stdin_stream(
-        read_stream if read_stream is not None else read_bytes, stdin)
+        read_stream if read_stream is not None else read_bytes, stdin
+    )
     fl = FlagView(opts.flags, spec=SPECS["grep"])
-    pattern, never_match = await resolve_pattern(texts, fl, read_bytes,
-                                                 GREP_NO_PATTERN, "file")
+    pattern, never_match = await resolve_pattern(
+        texts, fl, read_bytes, GREP_NO_PATTERN, "file"
+    )
     f = parse_flags(fl, never_match)
-    pat = (re.compile(NEVER_MATCH) if never_match else compile_pattern(
-        pattern, f.ignore_case, f.fixed_string, f.whole_word, f.syntax))
-    warning = b"" if never_match or f.fixed_string else pattern_warnings(
-        pattern, f.syntax)
+    pat = (
+        re.compile(NEVER_MATCH)
+        if never_match
+        else compile_pattern(
+            pattern, f.ignore_case, f.fixed_string, f.whole_word, f.syntax
+        )
+    )
+    warning = (
+        b""
+        if never_match or f.fixed_string
+        else pattern_warnings(pattern, f.syntax)
+    )
     io = IOResult(exit_code=1, stderr=warning or None)
     if not paths:
         source = resolve_source(stdin, GREP_NO_PATTERN, error_cls=UsageError)
-        return grep_input(source, pat, f, "(standard input)", f.with_filename
-                          and not f.no_filename, io), io
+        return grep_input(
+            source,
+            pat,
+            f,
+            "(standard input)",
+            f.with_filename and not f.no_filename,
+            io,
+        ), io
 
     mounts = opts.ns.mounts if opts.ns is not None else None
     prefix = mount_prefix_of(paths[0].virtual, paths[0].vfs_path)
-    rd = mount_parent_readdir(partial(call_readdir, readdir, prefix=prefix),
-                              mounts)
+    rd = mount_parent_readdir(
+        partial(call_readdir, readdir, prefix=prefix), mounts
+    )
     st = mount_parent_stat(partial(call_stat, stat, prefix=prefix), mounts)
     rb = partial(call_read_bytes, read_bytes, prefix=prefix)
-    if not f.recursive and len(paths) == 1 and not (f.files_only or f.quiet
-                                                    or f.files_without_match):
+    if (
+        not f.recursive
+        and len(paths) == 1
+        and not (f.files_only or f.quiet or f.files_without_match)
+    ):
         p = paths[0]
         try:
             if p.walk_error is not None:
                 raise walk_refusal(p)
-            info = FileStat(name="-",
-                            type=FileType.FIFO) if is_stdin(p) else await st(
-                                p.virtual)
+            info = (
+                FileStat(name="-", type=FileType.FIFO)
+                if is_stdin(p)
+                else await st(p.virtual)
+            )
             if info.type == FileType.DIRECTORY:
                 return b"", IOResult(
                     exit_code=2,
-                    stderr=f"grep: {p.raw_path}: Is a directory\n".encode())
+                    stderr=f"grep: {p.raw_path}: Is a directory\n".encode(),
+                )
             if not file_admitted(p.virtual, f.filters):
                 return b"", io
             # Start the reader while the mount's cache context is still active.
-            source = (operand_stream(p) if is_stdin(p) or read_stream
-                      is not None else wrap_bytes(await rb(p.virtual)))
+            source = (
+                operand_stream(p)
+                if is_stdin(p) or read_stream is not None
+                else wrap_bytes(await rb(p.virtual))
+            )
         except WALK_ERRORS as exc:
             return b"", IOResult(
                 exit_code=2,
-                stderr=f"grep: {p.raw_path}: {fs_strerror(exc) or exc}\n".
-                encode())
+                stderr=f"grep: {p.raw_path}: {fs_strerror(exc) or exc}\n".encode(),
+            )
         io = IOResult(stderr=warning or None)
-        return grep_input(source, pat, f, operand_label(p, "(standard input)"),
-                          f.with_filename and not f.no_filename, io), io
+        return grep_input(
+            source,
+            pat,
+            f,
+            operand_label(p, "(standard input)"),
+            f.with_filename and not f.no_filename,
+            io,
+        ), io
     warnings: list[str] = []
     diagnostics: list[bytes] = [warning] if warning else []
     matched = False
@@ -254,17 +309,20 @@ async def grep(
         warnings.append(message)
         diagnostics.append((message + "\n").encode())
 
-    async def scan(p: PathSpec,
-                   walked: bool = False) -> AsyncGenerator[bytes, None]:
+    async def scan(
+        p: PathSpec, walked: bool = False
+    ) -> AsyncGenerator[bytes, None]:
         nonlocal matched, printed
         try:
             # The probes below go by `virtual`, which cannot carry the
             # walk's verdict on an operand it refused.
             if p.walk_error is not None:
                 raise walk_refusal(p)
-            info = FileStat(name="-",
-                            type=FileType.FIFO) if is_stdin(p) else await st(
-                                p.virtual)
+            info = (
+                FileStat(name="-", type=FileType.FIFO)
+                if is_stdin(p)
+                else await st(p.virtual)
+            )
             if info.type == FileType.DIRECTORY:
                 if not f.recursive:
                     warn(f"grep: {p.raw_path}: Is a directory")
@@ -275,18 +333,21 @@ async def grep(
                         yield p.raw_path.encode() + b"\n"
                     return
                 for entry in await rd(p.virtual):
-                    child = PathSpec(virtual=entry,
-                                     directory=entry,
-                                     vfs_path=mount_key(entry, prefix),
-                                     raw_path=respell_one(
-                                         entry, p.virtual, p.raw_path))
+                    child = PathSpec(
+                        virtual=entry,
+                        directory=entry,
+                        vfs_path=mount_key(entry, prefix),
+                        raw_path=respell_one(entry, p.virtual, p.raw_path),
+                    )
                     if not dir_admitted(entry, f.filters):
                         try:
                             if (await st(entry)).type == FileType.DIRECTORY:
                                 continue
                         except WALK_ERRORS as exc:
-                            warn(f"grep: {child.raw_path}: "
-                                 f"{fs_strerror(exc) or exc}")
+                            warn(
+                                f"grep: {child.raw_path}: "
+                                f"{fs_strerror(exc) or exc}"
+                            )
                             continue
                     async with aclosing(scan(child, True)) as child_stream:
                         async for chunk in child_stream:
@@ -296,20 +357,34 @@ async def grep(
                 return
             if walked and info.type != FileType.FILE:
                 return
-            if walked and not f.filters.text and get_extension(
-                    p.virtual) in BINARY_EXTENSIONS:
+            if (
+                walked
+                and not f.filters.text
+                and get_extension(p.virtual) in BINARY_EXTENSIONS
+            ):
                 return
             if not file_admitted(p.virtual, f.filters):
                 return
-            source = (operand_stream(p) if is_stdin(p) or read_stream
-                      is not None else wrap_bytes(await rb(p.virtual)))
+            source = (
+                operand_stream(p)
+                if is_stdin(p) or read_stream is not None
+                else wrap_bytes(await rb(p.virtual))
+            )
             file_io = IOResult(exit_code=1)
-            show = not f.no_filename and (f.with_filename or walked
-                                          or len(paths) > 1)
+            show = not f.no_filename and (
+                f.with_filename or walked or len(paths) > 1
+            )
             async with aclosing(
-                    grep_input(source, pat, f,
-                               operand_label(p, "(standard input)"), show,
-                               file_io, printed)) as output:
+                grep_input(
+                    source,
+                    pat,
+                    f,
+                    operand_label(p, "(standard input)"),
+                    show,
+                    file_io,
+                    printed,
+                )
+            ) as output:
                 async for chunk in output:
                     printed = True
                     yield chunk

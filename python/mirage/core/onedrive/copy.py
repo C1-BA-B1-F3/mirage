@@ -19,8 +19,9 @@ from mirage.core.onedrive.client import drive_loc
 from mirage.types import PathSpec
 
 
-async def copy(accessor: OneDriveAccessor, src: PathSpec,
-               dst: PathSpec) -> None:
+async def copy(
+    accessor: OneDriveAccessor, src: PathSpec, dst: PathSpec
+) -> None:
     """Copy a file or folder server-side.
 
     The whole destination subtree is invalidated here, under its own
@@ -37,7 +38,10 @@ async def copy(accessor: OneDriveAccessor, src: PathSpec,
     config = accessor.config
     await invalidate_subtree_after(
         dst,
-        copy_tree(config,
-                  drive_loc(config, src.vfs_path),
-                  drive_loc(config, dst.vfs_path),
-                  session=accessor.pool))
+        copy_tree(
+            config,
+            drive_loc(config, src.vfs_path),
+            drive_loc(config, dst.vfs_path),
+            session=accessor.pool,
+        ),
+    )

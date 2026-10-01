@@ -25,43 +25,55 @@ from mirage.types import ContentType
 _PAGE = Slot("page", id_key="page_id", variadic=True)
 _ROW = Slot("row", id_key="row_id")
 _DB = ("databases", Slot("database", id_key="database_id"))
-_DS = _DB + (Slot("data_source", id_key="data_source_id"), )
+_DS = _DB + (Slot("data_source", id_key="data_source_id"),)
 
 # One description of the tree: readdir, stat and read all classify
 # through it, so the file surface cannot disagree with itself about what
 # a path means. The `page` and `page_json` kinds are declared twice, once
 # per root, because a page behaves identically wherever it hangs.
 SCOPES = (
-    Scope(kind="pages", segments=("pages", ), probed=False),
-    Scope(kind="databases", segments=("databases", ), probed=False),
-    Scope(kind="page_json",
-          segments=("pages", _PAGE, "page.json"),
-          leaf=True,
-          filetype=ContentType.JSON),
+    Scope(kind="pages", segments=("pages",), probed=False),
+    Scope(kind="databases", segments=("databases",), probed=False),
+    Scope(
+        kind="page_json",
+        segments=("pages", _PAGE, "page.json"),
+        leaf=True,
+        filetype=ContentType.JSON,
+    ),
     Scope(kind="page", segments=("pages", _PAGE)),
-    Scope(kind="database_json",
-          segments=_DB + ("database.json", ),
-          leaf=True,
-          filetype=ContentType.JSON),
+    Scope(
+        kind="database_json",
+        segments=_DB + ("database.json",),
+        leaf=True,
+        filetype=ContentType.JSON,
+    ),
     Scope(kind="database", segments=_DB),
-    Scope(kind="data_source_json",
-          segments=_DS + ("data_source.json", ),
-          leaf=True,
-          filetype=ContentType.JSON),
-    Scope(kind="rows_jsonl",
-          segments=_DS + ("rows.jsonl", ),
-          leaf=True,
-          filetype=ContentType.TEXT),
+    Scope(
+        kind="data_source_json",
+        segments=_DS + ("data_source.json",),
+        leaf=True,
+        filetype=ContentType.JSON,
+    ),
+    Scope(
+        kind="rows_jsonl",
+        segments=_DS + ("rows.jsonl",),
+        leaf=True,
+        filetype=ContentType.TEXT,
+    ),
     Scope(kind="data_source", segments=_DS),
-    Scope(kind="row_json",
-          segments=_DS + (_ROW, "page.json"),
-          leaf=True,
-          filetype=ContentType.JSON),
-    Scope(kind="row", segments=_DS + (_ROW, )),
-    Scope(kind="page_json",
-          segments=_DS + (_ROW, _PAGE, "page.json"),
-          leaf=True,
-          filetype=ContentType.JSON),
+    Scope(
+        kind="row_json",
+        segments=_DS + (_ROW, "page.json"),
+        leaf=True,
+        filetype=ContentType.JSON,
+    ),
+    Scope(kind="row", segments=_DS + (_ROW,)),
+    Scope(
+        kind="page_json",
+        segments=_DS + (_ROW, _PAGE, "page.json"),
+        leaf=True,
+        filetype=ContentType.JSON,
+    ),
     Scope(kind="page", segments=_DS + (_ROW, _PAGE)),
 )
 

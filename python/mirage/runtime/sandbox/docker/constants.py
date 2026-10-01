@@ -12,5 +12,7 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-DOCKER_CLI_HINT = ("the docker runtime needs the docker CLI on PATH "
-                   "(Docker Desktop, colima, or a podman alias)")
+DOCKER_CLI_HINT = (
+    "the docker runtime needs the docker CLI on PATH "
+    "(Docker Desktop, colima, or a podman alias)"
+)

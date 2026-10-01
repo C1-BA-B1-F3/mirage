@@ -78,9 +78,9 @@ class OpReport:
     source: str | None = None
     bytes: int | None = None
 
-    def served(self,
-               source: str | None = None,
-               moved: int | None = None) -> None:
+    def served(
+        self, source: str | None = None, moved: int | None = None
+    ) -> None:
         """Stamp the report at the moment an op completes.
 
         Args:
@@ -145,25 +145,28 @@ class IOResult:
             the producer.
     """
 
-    def __init__(self,
-                 stdout: ByteSource | None = None,
-                 stderr: ByteSource | None = None,
-                 exit_code: int = 0,
-                 reads: dict[str, ByteSource] | None = None,
-                 writes: dict[str, ByteSource] | None = None,
-                 cache: list[str] | None = None,
-                 producer: Producer | None = None,
-                 refusal: Refusal | None = None,
-                 matched_runs: list[list[PathSpec]] | None = None,
-                 renames: list[tuple[str, str]] | None = None) -> None:
+    def __init__(
+        self,
+        stdout: ByteSource | None = None,
+        stderr: ByteSource | None = None,
+        exit_code: int = 0,
+        reads: dict[str, ByteSource] | None = None,
+        writes: dict[str, ByteSource] | None = None,
+        cache: list[str] | None = None,
+        producer: Producer | None = None,
+        refusal: Refusal | None = None,
+        matched_runs: list[list[PathSpec]] | None = None,
+        renames: list[tuple[str, str]] | None = None,
+    ) -> None:
         self.renames = renames if renames is not None else []
         self.stdout = stdout
         self.matched_runs = matched_runs
         self.stderr = stderr
         self._exit_code = exit_code
         self.reads: dict[str, ByteSource] = reads if reads is not None else {}
-        self.writes: dict[str,
-                          ByteSource] = writes if writes is not None else {}
+        self.writes: dict[str, ByteSource] = (
+            writes if writes is not None else {}
+        )
         self.cache: list[str] = cache if cache is not None else []
         self.output_finalized = False
         self.producer = producer
@@ -209,19 +212,14 @@ class IOResult:
             stdout=other.stdout,
             matched_runs=other.matched_runs,
             stderr=merged_stderr,
-            reads={
-                **self.reads,
-                **other.reads
-            },
-            writes={
-                **self.writes,
-                **other.writes
-            },
+            reads={**self.reads, **other.reads},
+            writes={**self.writes, **other.writes},
             cache=self.cache + other.cache,
             renames=self.renames + other.renames,
             producer=other.producer,
-            refusal=(other.refusal
-                     if other.refusal is not None else self.refusal),
+            refusal=(
+                other.refusal if other.refusal is not None else self.refusal
+            ),
         )
         result.output_finalized = other.output_finalized
         result._stream_source = other

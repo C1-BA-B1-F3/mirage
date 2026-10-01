@@ -48,10 +48,12 @@ def _page_fields(page: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def normalize_page(page: dict[str, Any],
-                   blocks: list[dict[str, Any]]) -> dict[str, Any]:
+def normalize_page(
+    page: dict[str, Any], blocks: list[dict[str, Any]]
+) -> dict[str, Any]:
     content_blocks = [
-        b for b in blocks
+        b
+        for b in blocks
         if b.get("type") not in ("child_page", "child_database")
     ]
     return {
@@ -108,8 +110,9 @@ def normalize_data_source(data_source: dict[str, Any]) -> dict[str, Any]:
         "created_time": data_source.get("created_time", ""),
         "last_edited_time": data_source.get("last_edited_time", ""),
         "database_parent": data_source.get("database_parent", {}),
-        "archived": data_source.get("archived",
-                                    data_source.get("in_trash", False)),
+        "archived": data_source.get(
+            "archived", data_source.get("in_trash", False)
+        ),
         "properties": data_source.get("properties", {}),
     }
 

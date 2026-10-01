@@ -18,13 +18,22 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 
 from mirage.accessor.hf_hub import HfHubAccessor
-from mirage.cache.index import (NULL_INDEX, IndexCacheStore, IndexEntry,
-                                LookupStatus)
+from mirage.cache.index import (
+    NULL_INDEX,
+    IndexCacheStore,
+    IndexEntry,
+    LookupStatus,
+)
 from mirage.cache.index.lock import index_lock
 from mirage.core.hf_hub.client import HfHubError
 from mirage.core.hf_hub.constants import ABSENT_STATUSES
-from mirage.core.hf_hub.tree import (ensure_live_snapshot, fetch_path,
-                                     index_rows, local_rows, refill_snapshot)
+from mirage.core.hf_hub.tree import (
+    ensure_live_snapshot,
+    fetch_path,
+    index_rows,
+    local_rows,
+    refill_snapshot,
+)
 from mirage.types import PathSpec
 from mirage.utils.errors import eacces
 
@@ -96,20 +105,27 @@ async def lookup(
         # so an *expired* answer means the tree aged out, not that the path
         # is gone. Refetch once and ask again; a miss against a live index is
         # a real absence and must not cost a tree fetch.
-        if refilled is None and LookupStatus.EXPIRED in (parent.status,
-                                                         listing.status):
+        if refilled is None and LookupStatus.EXPIRED in (
+            parent.status,
+            listing.status,
+        ):
             refilled = await refill_snapshot(accessor, index, prefix)
             result = await index.get(key)
             listing = await index.list_dir(key)
-            parent = listing if key == root else await index.list_dir(
-                parent_key)
+            parent = (
+                listing if key == root else await index.list_dir(parent_key)
+            )
         # A lock wait can outlast the TTL; use this refill only on EXPIRED.
-        if refilled is not None and LookupStatus.EXPIRED in (parent.status,
-                                                             listing.status):
+        if refilled is not None and LookupStatus.EXPIRED in (
+            parent.status,
+            listing.status,
+        ):
             refilled = index.scope_snapshot(refilled)
             rows = refilled.children.get(key)
-            return Found(entry=refilled.entries.get(key),
-                         children=None if rows is None else list(rows))
+            return Found(
+                entry=refilled.entries.get(key),
+                children=None if rows is None else list(rows),
+            )
         return Found(entry=result.entry, children=listing.entries)
 
 
@@ -143,8 +159,10 @@ async def lookup_retrying(
     if found.exists or index is NULL_INDEX:
         return found
     root = await index.list_dir(key_of(prefix, ""))
-    if (root.status is not LookupStatus.NOT_FOUND
-            and accessor.refills == refills):
+    if (
+        root.status is not LookupStatus.NOT_FOUND
+        and accessor.refills == refills
+    ):
         return found
     return await lookup(accessor, index, prefix, key)
 
@@ -188,8 +206,8 @@ async def point_lookup(
 
 @contextmanager
 def refusals_denied(
-        path_spec: PathSpec,
-        statuses: frozenset[int] = ABSENT_STATUSES) -> Iterator[None]:
+    path_spec: PathSpec, statuses: frozenset[int] = ABSENT_STATUSES
+) -> Iterator[None]:
     """Report a repository the Hub will not show as permission denied.
 
     A 401, 403 or 404 for the repository or revision is the Hub declining
@@ -229,15 +247,17 @@ def key_of(prefix: str, local: str) -> str:
     return f"{stem}/{rel}" if stem else f"/{rel}"
 
 
-async def probe_file(accessor: HfHubAccessor, index: IndexCacheStore,
-                     prefix: str, local: str) -> bool:
+async def probe_file(
+    accessor: HfHubAccessor, index: IndexCacheStore, prefix: str, local: str
+) -> bool:
     """Whether a mount-local path exists as a non-directory."""
     found = await lookup(accessor, index, prefix, key_of(prefix, local))
     return found.exists and not found.is_dir
 
 
-async def probe_dir(accessor: HfHubAccessor, index: IndexCacheStore,
-                    prefix: str, local: str) -> bool:
+async def probe_dir(
+    accessor: HfHubAccessor, index: IndexCacheStore, prefix: str, local: str
+) -> bool:
     """Whether a mount-local path exists as a directory."""
     found = await lookup(accessor, index, prefix, key_of(prefix, local))
     return found.is_dir
@@ -252,6 +272,8 @@ def dir_stat_entry(key: str) -> IndexEntry:
     Returns:
         IndexEntry: a folder row named after the key's last segment.
     """
-    return IndexEntry(id="",
-                      name=key.rstrip("/").rsplit("/", 1)[-1] or "/",
-                      resource_type="folder")
+    return IndexEntry(
+        id="",
+        name=key.rstrip("/").rsplit("/", 1)[-1] or "/",
+        resource_type="folder",
+    )

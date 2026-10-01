@@ -15,24 +15,39 @@
 import pytest
 
 from mirage.core.hierarchy.codec import Codec
-from mirage.core.hierarchy.scope import (Scope, Slot, make_detect_scope,
-                                         match_scope)
+from mirage.core.hierarchy.scope import (
+    Scope,
+    Slot,
+    make_detect_scope,
+    match_scope,
+)
 from tests.core.hierarchy.conftest import SCOPES, detect_scope, spec
 
-ID_SCOPES = (Scope(kind="file",
-                   segments=("owned",
-                             Slot("name",
-                                  Codec(suffix=".json"),
-                                  id_key="file_id")),
-                   leaf=True), )
+ID_SCOPES = (
+    Scope(
+        kind="file",
+        segments=(
+            "owned",
+            Slot("name", Codec(suffix=".json"), id_key="file_id"),
+        ),
+        leaf=True,
+    ),
+)
 
 VARIADIC_SCOPES = (
-    Scope(kind="page_json",
-          segments=("pages", Slot("page", id_key="page_id",
-                                  variadic=True), "page.json"),
-          leaf=True),
-    Scope(kind="page",
-          segments=("pages", Slot("page", id_key="page_id", variadic=True))),
+    Scope(
+        kind="page_json",
+        segments=(
+            "pages",
+            Slot("page", id_key="page_id", variadic=True),
+            "page.json",
+        ),
+        leaf=True,
+    ),
+    Scope(
+        kind="page",
+        segments=("pages", Slot("page", id_key="page_id", variadic=True)),
+    ),
 )
 
 
@@ -89,8 +104,9 @@ def test_variadic_run_stores_the_deepest_segment():
 
 
 def test_variadic_tail_literal_anchors_at_the_end():
-    matched = match_scope(VARIADIC_SCOPES,
-                          ["pages", "a__1", "b__2", "page.json"])
+    matched = match_scope(
+        VARIADIC_SCOPES, ["pages", "a__1", "b__2", "page.json"]
+    )
     assert matched is not None
     assert matched[0].kind == "page_json"
     assert matched[1] == {"page": "b", "page_id": "2"}
@@ -99,14 +115,19 @@ def test_variadic_tail_literal_anchors_at_the_end():
 
 
 def test_variadic_run_requires_every_segment_to_decode():
-    assert match_scope(VARIADIC_SCOPES,
-                       ["pages", "a__1", "plain", "c__3"]) is None
+    assert (
+        match_scope(VARIADIC_SCOPES, ["pages", "a__1", "plain", "c__3"])
+        is None
+    )
 
 
 def test_two_variadic_slots_fail_loud():
-    bad = (Scope(kind="broken",
-                 segments=(Slot("a", variadic=True), Slot("b",
-                                                          variadic=True))), )
+    bad = (
+        Scope(
+            kind="broken",
+            segments=(Slot("a", variadic=True), Slot("b", variadic=True)),
+        ),
+    )
     with pytest.raises(ValueError):
         make_detect_scope(bad)
 

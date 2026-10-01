@@ -24,11 +24,12 @@ from mirage.io.types import ByteSource, IOResult
 
 
 async def read(
-        inv: CLIInvocation[GoogleConfig]
+    inv: CLIInvocation[GoogleConfig],
 ) -> tuple[ByteSource | None, IOResult]:
     fl = FlagView(inv.flags)
     async with TokenManager(inv.config) as tm:
         processed = await get_message_processed(tm, fl.as_str("id") or "")
-    out = json.dumps(processed, ensure_ascii=False,
-                     separators=(",", ":")).encode()
+    out = json.dumps(
+        processed, ensure_ascii=False, separators=(",", ":")
+    ).encode()
     return yield_bytes(out), IOResult()

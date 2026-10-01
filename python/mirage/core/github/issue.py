@@ -33,50 +33,57 @@ def _only_issue(value: JsonValue, number: int) -> JsonValue:
     return value
 
 
-async def list_issues(config: GhConfig, ref: RepoRef, params: dict[str, str],
-                      limit: int) -> list[dict[str, Any]]:
-    return await github_pages(config,
-                              _path(ref),
-                              params=params,
-                              limit=limit,
-                              include=lambda row: "pull_request" not in row)
+async def list_issues(
+    config: GhConfig, ref: RepoRef, params: dict[str, str], limit: int
+) -> list[dict[str, Any]]:
+    return await github_pages(
+        config,
+        _path(ref),
+        params=params,
+        limit=limit,
+        include=lambda row: "pull_request" not in row,
+    )
 
 
 async def get_issue(config: GhConfig, ref: RepoRef, number: int) -> JsonValue:
-    value = await github_request(config.token,
-                                 "GET",
-                                 _path(ref, f"/{number}"),
-                                 base_url=config.base_url)
+    value = await github_request(
+        config.token, "GET", _path(ref, f"/{number}"), base_url=config.base_url
+    )
     return _only_issue(value, number)
 
 
-async def create_issue(config: GhConfig, ref: RepoRef,
-                       body: dict[str, JsonValue]) -> JsonValue:
-    return await github_request(config.token,
-                                "POST",
-                                _path(ref),
-                                body,
-                                base_url=config.base_url)
+async def create_issue(
+    config: GhConfig, ref: RepoRef, body: dict[str, JsonValue]
+) -> JsonValue:
+    return await github_request(
+        config.token, "POST", _path(ref), body, base_url=config.base_url
+    )
 
 
-async def edit_issue(config: GhConfig, ref: RepoRef, number: int,
-                     body: dict[str, JsonValue]) -> JsonValue:
+async def edit_issue(
+    config: GhConfig, ref: RepoRef, number: int, body: dict[str, JsonValue]
+) -> JsonValue:
     await get_issue(config, ref, number)
-    return await github_request(config.token,
-                                "PATCH",
-                                _path(ref, f"/{number}"),
-                                body,
-                                base_url=config.base_url)
+    return await github_request(
+        config.token,
+        "PATCH",
+        _path(ref, f"/{number}"),
+        body,
+        base_url=config.base_url,
+    )
 
 
-async def comment_issue(config: GhConfig, ref: RepoRef, number: int,
-                        body: str) -> JsonValue:
+async def comment_issue(
+    config: GhConfig, ref: RepoRef, number: int, body: str
+) -> JsonValue:
     await get_issue(config, ref, number)
-    return await github_request(config.token,
-                                "POST",
-                                _path(ref, f"/{number}/comments"),
-                                {"body": body},
-                                base_url=config.base_url)
+    return await github_request(
+        config.token,
+        "POST",
+        _path(ref, f"/{number}/comments"),
+        {"body": body},
+        base_url=config.base_url,
+    )
 
 
 COMMENTS_QUERY = """
@@ -114,34 +121,40 @@ fragment CommentFields on IssueComment {
 """
 
 
-async def issue_comments(config: GhConfig, ref: RepoRef,
-                         number: int) -> list[dict[str, Any]]:
+async def issue_comments(
+    config: GhConfig, ref: RepoRef, number: int
+) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
     cursor: str | None = None
     while True:
-        response = await github_request(config.token,
-                                        "POST",
-                                        GRAPHQL_PATH, {
-                                            "query": COMMENTS_QUERY,
-                                            "variables": {
-                                                "owner": ref.owner,
-                                                "repo": ref.repo,
-                                                "number": number,
-                                                "cursor": cursor
-                                            }
-                                        },
-                                        base_url=config.base_url)
+        response = await github_request(
+            config.token,
+            "POST",
+            GRAPHQL_PATH,
+            {
+                "query": COMMENTS_QUERY,
+                "variables": {
+                    "owner": ref.owner,
+                    "repo": ref.repo,
+                    "number": number,
+                    "cursor": cursor,
+                },
+            },
+            base_url=config.base_url,
+        )
         if not isinstance(response, dict):
             raise ValueError("Invalid GitHub comments response")
         payload = cast(dict[str, Any], response)
         if payload.get("errors"):
-            raise ValueError("; ".join(e["message"]
-                                       for e in payload["errors"]))
+            raise ValueError(
+                "; ".join(e["message"] for e in payload["errors"])
+            )
         repo = (payload.get("data") or {}).get("repository") or {}
         comments = (repo.get("issueOrPullRequest") or {}).get("comments")
         if comments is None:
             raise ValueError(
-                "Could not resolve comments for this issue or pull request")
+                "Could not resolve comments for this issue or pull request"
+            )
         rows.extend(comments["nodes"])
         page = comments["pageInfo"]
         if not page["hasNextPage"]:
@@ -161,15 +174,18 @@ class IssueSelections:
         issue (str): what to read of an issue.
         pull (str): what to read of a pull request.
     """
+
     issue: str
     pull: str
 
 
-async def issue_fields(config: GhConfig,
-                       ref: RepoRef,
-                       number: int,
-                       selections: IssueSelections,
-                       end_cursor: str | None = None) -> dict[str, Any]:
+async def issue_fields(
+    config: GhConfig,
+    ref: RepoRef,
+    number: int,
+    selections: IssueSelections,
+    end_cursor: str | None = None,
+) -> dict[str, Any]:
     """The selected fields of one issue, over GraphQL, as gh's
     IssueByNumber asks for them for ``issue view --json``: the number read
     as an issue or as a pull request, each half with its own selection. A
@@ -195,17 +211,25 @@ async def issue_fields(config: GhConfig,
     if end_cursor is not None:
         variables["endCursor"] = end_cursor
     cursor = "" if end_cursor is None else ", $endCursor: String"
-    halves = ((f"\n        ...on Issue{{{selections.issue}}}"
-               if selections.issue else "") +
-              (f"\n        ...on PullRequest{{{selections.pull}}}"
-               if selections.pull else ""))
+    halves = (
+        f"\n        ...on Issue{{{selections.issue}}}"
+        if selections.issue
+        else ""
+    ) + (
+        f"\n        ...on PullRequest{{{selections.pull}}}"
+        if selections.pull
+        else ""
+    )
     data = await graphql_data(
-        config, "query IssueByNumber($owner: String!, $repo: String!, "
+        config,
+        "query IssueByNumber($owner: String!, $repo: String!, "
         f"$number: Int!{cursor}) {{\n"
         "    repository(owner: $owner, name: $repo) {\n"
         "      hasIssuesEnabled\n"
         "      issue: issueOrPullRequest(number: $number) {\n"
-        f"        __typename{halves}\n      }}\n    }}\n  }}", variables)
+        f"        __typename{halves}\n      }}\n    }}\n  }}",
+        variables,
+    )
     repository = data.get("repository")
     repository = repository if isinstance(repository, dict) else {}
     issue = repository.get("issue")
@@ -213,7 +237,8 @@ async def issue_fields(config: GhConfig,
         return issue
     if repository.get("hasIssuesEnabled") is False:
         raise ValueError(
-            f"the '{ref.owner}/{ref.repo}' repository has disabled issues")
+            f"the '{ref.owner}/{ref.repo}' repository has disabled issues"
+        )
     raise ValueError("issue was not found but GraphQL reported no error")
 
 
@@ -227,6 +252,7 @@ class IssueListFilter:
         author (str | None): the author, or any.
         labels (tuple[str, ...]): labels an issue must all carry.
     """
+
     states: tuple[str, ...]
     assignee: str | None = None
     author: str | None = None
@@ -244,12 +270,17 @@ _ISSUE_LIST = (
     "labels: $labels}) {\n\t\t\t\ttotalCount\n\t\t\t\tnodes {\n"
     "\t\t\t\t\t...issue\n\t\t\t\t}\n\t\t\t\tpageInfo {\n"
     "\t\t\t\t\thasNextPage\n\t\t\t\t\tendCursor\n\t\t\t\t}\n"
-    "\t\t\t}\n\t\t}\n\t}\n\t")
+    "\t\t\t}\n\t\t}\n\t}\n\t"
+)
 
 
-async def list_issue_fields(config: GhConfig, ref: RepoRef,
-                            filter_: IssueListFilter, limit: int,
-                            selection: str) -> list[dict[str, Any]]:
+async def list_issue_fields(
+    config: GhConfig,
+    ref: RepoRef,
+    filter_: IssueListFilter,
+    limit: int,
+    selection: str,
+) -> list[dict[str, Any]]:
     """The selected fields of a repository's issues, over GraphQL, as gh's
     IssueList asks for them for ``issue list --json``: newest first, a
     page of up to 100 at a time until ``limit``. gh reaches for search to
@@ -290,7 +321,8 @@ async def list_issue_fields(config: GhConfig, ref: RepoRef,
         repository = data.get("repository") or {}
         if repository.get("hasIssuesEnabled") is False:
             raise ValueError(
-                f"the '{ref.owner}/{ref.repo}' repository has disabled issues")
+                f"the '{ref.owner}/{ref.repo}' repository has disabled issues"
+            )
         page = repository.get("issues") or {}
         for node in page.get("nodes") or []:
             rows.append(node)

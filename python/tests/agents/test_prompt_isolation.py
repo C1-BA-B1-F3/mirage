@@ -19,7 +19,6 @@ import pytest
 
 
 class _BlockDeepagents:
-
     def find_spec(self, name, path=None, target=None):
         if name == "deepagents" or name.startswith("deepagents."):
             raise ModuleNotFoundError(f"blocked import of {name}")
@@ -28,9 +27,12 @@ class _BlockDeepagents:
 
 def _evict_agents_and_deepagents(saved):
     for name in list(sys.modules):
-        if (name == "deepagents" or name.startswith("deepagents.")
-                or name == "mirage.agents"
-                or name.startswith("mirage.agents.")):
+        if (
+            name == "deepagents"
+            or name.startswith("deepagents.")
+            or name == "mirage.agents"
+            or name.startswith("mirage.agents.")
+        ):
             saved[name] = sys.modules.pop(name)
 
 
@@ -50,9 +52,12 @@ def deepagents_blocked():
     finally:
         sys.meta_path.remove(blocker)
         for name in list(sys.modules):
-            if (name == "deepagents" or name.startswith("deepagents.")
-                    or name == "mirage.agents"
-                    or name.startswith("mirage.agents.")):
+            if (
+                name == "deepagents"
+                or name.startswith("deepagents.")
+                or name == "mirage.agents"
+                or name.startswith("mirage.agents.")
+            ):
                 del sys.modules[name]
         sys.modules.update(saved)
 

@@ -15,8 +15,12 @@
 from functools import partial
 
 from mirage.accessor.ram import RAMAccessor
-from mirage.cache.index import (NULL_INDEX, IndexCacheStore, IndexEntry,
-                                ResourceType)
+from mirage.cache.index import (
+    NULL_INDEX,
+    IndexCacheStore,
+    IndexEntry,
+    ResourceType,
+)
 from mirage.types import PathSpec
 from mirage.utils.errors import readdir_error
 from mirage.utils.key_prefix import mount_prefix_of
@@ -32,9 +36,9 @@ async def _is_dir(store: RAMStore, key: str) -> bool:
     return key in store.dirs
 
 
-async def readdir(accessor: RAMAccessor,
-                  path: PathSpec,
-                  index: IndexCacheStore = NULL_INDEX) -> list[str]:
+async def readdir(
+    accessor: RAMAccessor, path: PathSpec, index: IndexCacheStore = NULL_INDEX
+) -> list[str]:
     target = path.dir if path.pattern else path
     prefix = mount_prefix_of(target.virtual, target.vfs_path)
     # Canonical key: no trailing slash (except root), or the same dir
@@ -46,25 +50,33 @@ async def readdir(accessor: RAMAccessor,
         return listing.entries
     p = norm(target.vfs_path)
     if p not in store.dirs:
-        raise await readdir_error(path, p, partial(_is_file, store),
-                                  partial(_is_dir, store))
+        raise await readdir_error(
+            path, p, partial(_is_file, store), partial(_is_dir, store)
+        )
     dir_prefix = p.rstrip("/") + "/"
     seen: set[str] = set()
     for key in list(store.files) + list(store.dirs):
         if key == p:
             continue
         if key.startswith(dir_prefix):
-            remainder = key[len(dir_prefix):]
+            remainder = key[len(dir_prefix) :]
             child = remainder.split("/")[0]
             if child:
                 seen.add(dir_prefix + child)
     entries = sorted(seen)
     virtual_entries = sorted((prefix + e if prefix else e) for e in entries)
-    index_entries = [(e.rsplit("/", 1)[-1],
-                      IndexEntry(id=e,
-                                 name=e.rsplit("/", 1)[-1],
-                                 resource_type=ResourceType.FILE
-                                 if e in store.files else ResourceType.FOLDER))
-                     for e in entries]
+    index_entries = [
+        (
+            e.rsplit("/", 1)[-1],
+            IndexEntry(
+                id=e,
+                name=e.rsplit("/", 1)[-1],
+                resource_type=ResourceType.FILE
+                if e in store.files
+                else ResourceType.FOLDER,
+            ),
+        )
+        for e in entries
+    ]
     await index.set_dir(virtual_key, index_entries)
     return virtual_entries

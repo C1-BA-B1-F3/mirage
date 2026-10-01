@@ -40,5 +40,6 @@ async def test_rm_without_operands_answers_like_gnu(mode):
     bare = await ws.shell("cd /m && rm")
     assert (forced.exit_code, forced.stdout, forced.stderr) == (0, b"", None)
     assert bare.exit_code == 1
-    assert bare.stderr == (b"rm: missing operand\n"
-                           b"Try 'rm --help' for more information.\n")
+    assert bare.stderr == (
+        b"rm: missing operand\nTry 'rm --help' for more information.\n"
+    )

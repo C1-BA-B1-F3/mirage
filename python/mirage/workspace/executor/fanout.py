@@ -18,25 +18,40 @@ import logging
 from collections.abc import Sequence
 from dataclasses import dataclass
 
-from mirage.commands.builtin.find_eval import (FindEntry, PredNode, bind_tree,
-                                               drop_pruned, keep,
-                                               settle_prunes)
+from mirage.commands.builtin.find_eval import (
+    FindEntry,
+    PredNode,
+    bind_tree,
+    drop_pruned,
+    keep,
+    settle_prunes,
+)
 from mirage.commands.builtin.find_parse import parse_find_expression
-from mirage.commands.builtin.generic.crossmount.fanout.du import \
-    merge_du_blocks
-from mirage.commands.builtin.generic.crossmount.fanout.exit import \
-    combined_exit
+from mirage.commands.builtin.generic.crossmount.fanout.du import (
+    merge_du_blocks,
+)
+from mirage.commands.builtin.generic.crossmount.fanout.exit import (
+    combined_exit,
+)
 from mirage.commands.builtin.generic.crossmount.fanout.fanout import run_fanout
 from mirage.commands.builtin.generic.crossmount.types import RunSingle
-from mirage.commands.builtin.generic.crossmount.utils import (flat_scopes,
-                                                              relay,
-                                                              run_separator)
+from mirage.commands.builtin.generic.crossmount.utils import (
+    flat_scopes,
+    relay,
+    run_separator,
+)
 from mirage.commands.builtin.generic.grep import filename_mode
-from mirage.commands.builtin.generic.rg import (label_flags, rg,
-                                                walks_descendant_mounts)
+from mirage.commands.builtin.generic.rg import (
+    label_flags,
+    rg,
+    walks_descendant_mounts,
+)
 from mirage.commands.config import CommandOpts, ExecContext
-from mirage.commands.errors import (CommandTimeoutError, FindParseError,
-                                    UsageError)
+from mirage.commands.errors import (
+    CommandTimeoutError,
+    FindParseError,
+    UsageError,
+)
 from mirage.commands.spec import SPECS
 from mirage.commands.spec.flag_view import FlagBag, FlagView
 from mirage.commands.spec.types import FlagValue
@@ -51,8 +66,11 @@ from mirage.types import FileType, PathSpec, Producer
 from mirage.utils.dates import in_mtime_window, iso_timestamp
 from mirage.utils.errors import FS_ERRORS, format_fs_error, fs_strerror
 from mirage.utils.path import respell_one
-from mirage.workspace.mount import (MountCommandUnsupported, MountEntry,
-                                    MountRegistry)
+from mirage.workspace.mount import (
+    MountCommandUnsupported,
+    MountEntry,
+    MountRegistry,
+)
 from mirage.workspace.types import ExecutionNode
 
 logger = logging.getLogger(__name__)
@@ -77,8 +95,9 @@ def _path_segments(path: str) -> list[str]:
     return [s for s in path.strip("/").split("/") if s]
 
 
-async def _mount_dirs(descendants: Sequence[MountEntry],
-                      stat_path: StatPath | None) -> list[str]:
+async def _mount_dirs(
+    descendants: Sequence[MountEntry], stat_path: StatPath | None
+) -> list[str]:
     """The descendant mount roots that are directories.
 
     A mount root is not always one: `/.bash_history` is a whole mount
@@ -110,7 +129,7 @@ async def _mount_dirs(descendants: Sequence[MountEntry],
 
 
 async def _empty_dirs(
-        blocks: Sequence[bytes], stat_path: StatPath | None
+    blocks: Sequence[bytes], stat_path: StatPath | None
 ) -> tuple[list[str], list[tuple[str, OSError]]]:
     """The ``0`` rows of per-mount du blocks that are empty directories.
 
@@ -149,8 +168,9 @@ async def _empty_dirs(
     return out, refused
 
 
-async def _ls_block_mounts(descendants: Sequence[MountEntry],
-                           stat_path: StatPath | None) -> list[MountEntry]:
+async def _ls_block_mounts(
+    descendants: Sequence[MountEntry], stat_path: StatPath | None
+) -> list[MountEntry]:
     """The descendants `ls -R` should render a block for.
 
     A mount root is not always a directory (`/.bash_history` is a whole
@@ -180,8 +200,9 @@ async def _ls_block_mounts(descendants: Sequence[MountEntry],
     return kept
 
 
-def _allowed_descendants(registry: MountRegistry,
-                         path: str) -> list[MountEntry]:
+def _allowed_descendants(
+    registry: MountRegistry, path: str
+) -> list[MountEntry]:
     """Descendant mounts the current session may see.
 
     A fan-out rooted above a session boundary must not walk into an
@@ -195,7 +216,8 @@ def _allowed_descendants(registry: MountRegistry,
         path (str): parent path to scan beneath.
     """
     return [
-        m for m in registry.descendant_mounts(path)
+        m
+        for m in registry.descendant_mounts(path)
         if path_allowed("/" + m.prefix.strip("/"))
     ]
 
@@ -227,14 +249,19 @@ def _should_fan_out(
     # Use the raw mount table: hidden descendants still shadow backend keys.
     # Refused operands name nothing. Every other operand can own nested
     # mounts, regardless of where it appears in the command line.
-    if not any(p.walk_error is None and registry.descendant_mounts(p.virtual)
-               for p in paths):
+    if not any(
+        p.walk_error is None and registry.descendant_mounts(p.virtual)
+        for p in paths
+    ):
         return False
     if cmd_name in _TRAVERSAL_CMDS:
         return True
     if cmd_name == "grep":
-        return (flag_kwargs.get("r") is True or flag_kwargs.get("R") is True
-                or flag_kwargs.get("recursive") is True)
+        return (
+            flag_kwargs.get("r") is True
+            or flag_kwargs.get("R") is True
+            or flag_kwargs.get("recursive") is True
+        )
     if cmd_name == "rg":
         # ripgrep recurses directories by default.
         return walks_descendant_mounts(flag_kwargs)
@@ -290,7 +317,8 @@ def _adjust_depth_texts(
         mount_prefix (str): the child mount prefix being descended into.
     """
     delta = len(_path_segments(mount_prefix)) - len(
-        _path_segments(parent_path))
+        _path_segments(parent_path)
+    )
     if delta == 0:
         return list(texts)
     out = list(texts)
@@ -314,11 +342,13 @@ def _adjust_depth_texts(
 
 
 def _dir_entry(path: str, depth: int, mtime: float | None = None) -> FindEntry:
-    return FindEntry(key=path,
-                     name=path.rsplit("/", 1)[-1] or path,
-                     kind="d",
-                     depth=depth,
-                     mtime=mtime)
+    return FindEntry(
+        key=path,
+        name=path.rsplit("/", 1)[-1] or path,
+        kind="d",
+        depth=depth,
+        mtime=mtime,
+    )
 
 
 def _pruned_away(path: str, tree: PredNode | None) -> bool:
@@ -423,23 +453,29 @@ async def _synthesize_find_mount_entries(
             mtime = await mtime_of(candidate)
             if not keep(_dir_entry(candidate, depth, mtime), tree, min_depth):
                 continue
-            if windowed and stat_path is not None and not in_mtime_window(
-                    mtime, expr.mtime_min, expr.mtime_max):
+            if (
+                windowed
+                and stat_path is not None
+                and not in_mtime_window(mtime, expr.mtime_min, expr.mtime_max)
+            ):
                 continue
             kept.append(candidate)
     settle_prunes(tree, learned)
     return [
-        PathSpec(virtual=candidate,
-                 directory=candidate,
-                 vfs_path="",
-                 resolved=True,
-                 raw_path=respell_one(candidate, target_path, raw))
+        PathSpec(
+            virtual=candidate,
+            directory=candidate,
+            vfs_path="",
+            resolved=True,
+            raw_path=respell_one(candidate, target_path, raw),
+        )
         for candidate in drop_pruned(kept, tree)
     ], tree
 
 
-def _drop_shadowed_ls_groups(text: str,
-                             descendant_prefixes: list[str]) -> list[str]:
+def _drop_shadowed_ls_groups(
+    text: str, descendant_prefixes: list[str]
+) -> list[str]:
     """Drop whole ``ls -R`` groups whose header names a nested mount.
 
     ``ls -R`` renders ``PATH:``, then that directory's bare names, with a
@@ -458,8 +494,10 @@ def _drop_shadowed_ls_groups(text: str,
     for line in text.split("\n"):
         header = line[:-1] if line.endswith(":") else None
         if header is not None and header.startswith("/"):
-            skipping = any(header == pre or header.startswith(pre + "/")
-                           for pre in descendant_prefixes)
+            skipping = any(
+                header == pre or header.startswith(pre + "/")
+                for pre in descendant_prefixes
+            )
             if skipping:
                 # The blank line ahead of a dropped group would otherwise
                 # be left dangling at the end of the block.
@@ -556,37 +594,55 @@ async def _fan_out_traversal(
     never receives them reports a tree with every link missing, and a
     nested mount is not a reason for ``find`` to stop seeing one.
     """
-    if cmd_name == "rg" and dispatch is not None and any(
+    if (
+        cmd_name == "rg"
+        and dispatch is not None
+        and any(
             FlagView(flag_kwargs, spec=SPECS["rg"]).raw(name) is not None
-            for name in ("max_depth", "sort", "sortr", "sort_files")):
+            for name in ("max_depth", "sort", "sortr", "sort_files")
+        )
+    ):
         try:
             stdout, io = await rg(
                 flat_scopes(paths),
                 texts,
-                CommandOpts(flags=flag_kwargs,
-                            cwd=PathSpec(virtual=cwd,
-                                         directory=cwd,
-                                         vfs_path=cwd.strip("/")),
-                            ns=ns,
-                            dispatch=dispatch),
+                CommandOpts(
+                    flags=flag_kwargs,
+                    cwd=PathSpec(
+                        virtual=cwd, directory=cwd, vfs_path=cwd.strip("/")
+                    ),
+                    ns=ns,
+                    dispatch=dispatch,
+                ),
                 readdir=functools.partial(relay, dispatch, "readdir"),
                 stat=functools.partial(relay, dispatch, "stat"),
                 read_bytes=functools.partial(relay, dispatch, "read"),
                 read_stream=None,
-                stdin=stdin)
+                stdin=stdin,
+            )
             stdout = await materialize(stdout)
         except UsageError as exc:
             stdout = None
             io = IOResult(exit_code=exc.exit_code, stderr=f"{exc}\n".encode())
         io.producer = Producer(
             command=cmd_name,
-            prefixes=tuple(m.prefix for m in [
-                primary_mount,
-                *_allowed_descendants(registry, paths[0].virtual)
-            ]))
-        return stdout, io, ExecutionNode(command=cmd_str,
-                                         exit_code=io.exit_code,
-                                         stderr=await materialize(io.stderr))
+            prefixes=tuple(
+                m.prefix
+                for m in [
+                    primary_mount,
+                    *_allowed_descendants(registry, paths[0].virtual),
+                ]
+            ),
+        )
+        return (
+            stdout,
+            io,
+            ExecutionNode(
+                command=cmd_str,
+                exit_code=io.exit_code,
+                stderr=await materialize(io.stderr),
+            ),
+        )
     if len(paths) > 1:
 
         async def run_single(
@@ -596,34 +652,55 @@ async def _fan_out_traversal(
             flags: dict[str, FlagValue],
             *,
             stdin: ByteSource | None = None,
-            resolve_hint: PathSpec | None = None
+            resolve_hint: PathSpec | None = None,
         ) -> tuple[ByteSource | None, IOResult]:
             return await primary_mount.execute_cmd(
-                name, operands, words, flags,
-                ExecContext(stdin=stdin,
-                            cwd=cwd,
-                            ns=ns,
-                            stat_path=stat_path,
-                            dispatch=dispatch))
+                name,
+                operands,
+                words,
+                flags,
+                ExecContext(
+                    stdin=stdin,
+                    cwd=cwd,
+                    ns=ns,
+                    stat_path=stat_path,
+                    dispatch=dispatch,
+                ),
+            )
 
-        run_operand = functools.partial(run_with_fanout,
-                                        run_single,
-                                        registry,
-                                        cwd,
-                                        ns,
-                                        stat_path,
-                                        dispatch=dispatch)
-        stdout, io = await run_fanout(cmd_name, paths, texts, flag_kwargs,
-                                      run_operand, stdin)
-        prefixes = dict.fromkeys([
-            primary_mount.prefix,
-            *(m.prefix for path in paths if path.walk_error is None
-              for m in _allowed_descendants(registry, path.virtual))
-        ])
+        run_operand = functools.partial(
+            run_with_fanout,
+            run_single,
+            registry,
+            cwd,
+            ns,
+            stat_path,
+            dispatch=dispatch,
+        )
+        stdout, io = await run_fanout(
+            cmd_name, paths, texts, flag_kwargs, run_operand, stdin
+        )
+        prefixes = dict.fromkeys(
+            [
+                primary_mount.prefix,
+                *(
+                    m.prefix
+                    for path in paths
+                    if path.walk_error is None
+                    for m in _allowed_descendants(registry, path.virtual)
+                ),
+            ]
+        )
         io.producer = Producer(command=cmd_name, prefixes=tuple(prefixes))
-        return stdout, io, ExecutionNode(command=cmd_str,
-                                         exit_code=io.exit_code,
-                                         stderr=await materialize(io.stderr))
+        return (
+            stdout,
+            io,
+            ExecutionNode(
+                command=cmd_str,
+                exit_code=io.exit_code,
+                stderr=await materialize(io.stderr),
+            ),
+        )
     target_path = paths[0].virtual
     descendants = _allowed_descendants(registry, target_path)
     if cmd_name == "ls":
@@ -643,21 +720,22 @@ async def _fan_out_traversal(
     # prune them, and humanized sizes cannot be re-summed. Every one of
     # those is then applied once, centrally.
     du_merge = cmd_name == "du"
-    du_flags = _DuFanFlags(a=flag_kwargs.get("a") is True,
-                           s=flag_kwargs.get("s") is True,
-                           c=flag_kwargs.get("c") is True,
-                           human=flag_kwargs.get("h") is True,
-                           max_depth=_depth_flag_value(
-                               flag_kwargs.get("max_depth")),
-                           separate_dirs=flag_kwargs.get("separate_dirs")
-                           is True)
+    du_flags = _DuFanFlags(
+        a=flag_kwargs.get("a") is True,
+        s=flag_kwargs.get("s") is True,
+        c=flag_kwargs.get("c") is True,
+        human=flag_kwargs.get("h") is True,
+        max_depth=_depth_flag_value(flag_kwargs.get("max_depth")),
+        separate_dirs=flag_kwargs.get("separate_dirs") is True,
+    )
     if du_merge:
         flag_kwargs = {
-            **flag_kwargs, "a": True,
+            **flag_kwargs,
+            "a": True,
             "s": False,
             "c": False,
             "h": False,
-            "separate_dirs": False
+            "separate_dirs": False,
         }
         flag_kwargs.pop("max_depth", None)
 
@@ -665,7 +743,8 @@ async def _fan_out_traversal(
     tree: PredNode | None = None
     if cmd_name == "find":
         synthetic, tree = await _synthesize_find_mount_entries(
-            target_path, descendants, texts, paths[0].raw_path, stat_path)
+            target_path, descendants, texts, paths[0].raw_path, stat_path
+        )
 
     all_stdout: list[bytes] = []
     find_matches: list[list[PathSpec]] = []
@@ -679,15 +758,21 @@ async def _fan_out_traversal(
             # absolute virtual paths: a relative operand would otherwise
             # come back already spelled and could not be rebased onto the
             # tree the rollup builds.
-            sub_paths = [
-                dataclasses.replace(paths[0], raw_path=target_path), *paths[1:]
-            ] if du_merge else list(paths)
+            sub_paths = (
+                [
+                    dataclasses.replace(paths[0], raw_path=target_path),
+                    *paths[1:],
+                ]
+                if du_merge
+                else list(paths)
+            )
             sub_flags: dict[str, FlagValue] = FlagBag(flag_kwargs)
             sub_texts = list(texts)
         else:
             mount_root = mount.prefix.rstrip("/") or "/"
-            adjusted = _adjust_depth_flags(flag_kwargs, target_path,
-                                           mount.prefix)
+            adjusted = _adjust_depth_flags(
+                flag_kwargs, target_path, mount.prefix
+            )
             if adjusted is None or _pruned_away(mount_root, tree):
                 continue
             sub_flags = adjusted
@@ -696,8 +781,11 @@ async def _fan_out_traversal(
             # without the inherited -H.
             if cmd_name == "rg":
                 sub_flags = label_flags(sub_flags)
-            elif cmd_name == "grep" and filename_mode(
-                    FlagView(sub_flags, spec=SPECS["grep"])) is None:
+            elif (
+                cmd_name == "grep"
+                and filename_mode(FlagView(sub_flags, spec=SPECS["grep"]))
+                is None
+            ):
                 sub_flags["H"] = True
             sub_texts = _adjust_depth_texts(texts, target_path, mount.prefix)
             # The descendant operand keeps the traversal root's typed
@@ -705,31 +793,44 @@ async def _fan_out_traversal(
             # no-operand form -> ram/...); an absolute root leaves it
             # absolute, the pre-existing output shape.
             sub_paths = [
-                PathSpec(virtual=mount_root,
-                         directory=mount_root,
-                         vfs_path="",
-                         resolved=True,
-                         raw_path=mount_root if du_merge else respell_one(
-                             mount_root, target_path, paths[0].raw_path))
+                PathSpec(
+                    virtual=mount_root,
+                    directory=mount_root,
+                    vfs_path="",
+                    resolved=True,
+                    raw_path=mount_root
+                    if du_merge
+                    else respell_one(
+                        mount_root, target_path, paths[0].raw_path
+                    ),
+                )
             ]
         try:
             stdout, io = await mount.execute_cmd(
-                cmd_name, sub_paths, sub_texts, sub_flags,
-                ExecContext(stdin=stdin,
-                            cwd=cwd,
-                            ns=ns,
-                            stat_path=stat_path,
-                            dispatch=dispatch))
+                cmd_name,
+                sub_paths,
+                sub_texts,
+                sub_flags,
+                ExecContext(
+                    stdin=stdin,
+                    cwd=cwd,
+                    ns=ns,
+                    stat_path=stat_path,
+                    dispatch=dispatch,
+                ),
+            )
         except UsageError as exc:
             # A usage error belongs to the line, not to one mount: the
             # single-mount path reports it once as the command's result
             # (#452), and so does the walk, rather than aborting the line.
             usage = f"{exc}\n".encode()
-            return None, IOResult(exit_code=exc.exit_code,
-                                  stderr=usage), ExecutionNode(
-                                      command=cmd_str,
-                                      exit_code=exc.exit_code,
-                                      stderr=usage)
+            return (
+                None,
+                IOResult(exit_code=exc.exit_code, stderr=usage),
+                ExecutionNode(
+                    command=cmd_str, exit_code=exc.exit_code, stderr=usage
+                ),
+            )
         except CommandTimeoutError:
             raise
         except Exception as exc:
@@ -738,8 +839,10 @@ async def _fan_out_traversal(
             # the remaining mounts still run and the status carries it.
             logger.debug("%s traversal failed", cmd_name, exc_info=True)
             stdout = None
-            io = IOResult(exit_code=read_fail_exit(cmd_name, exc),
-                          stderr=format_fs_error(cmd_name, exc, sub_paths))
+            io = IOResult(
+                exit_code=read_fail_exit(cmd_name, exc),
+                stderr=format_fs_error(cmd_name, exc, sub_paths),
+            )
 
         if mount is not primary_mount and io.exit_code == 127:
             # A descendant that does not serve this command contributes
@@ -751,16 +854,24 @@ async def _fan_out_traversal(
             if mount is primary_mount:
                 # One run per operand, minus the rows a descendant
                 # mount answers for.
-                find_matches.extend([
-                    p for p in run if not any(
-                        p.virtual == pre or p.virtual.startswith(pre + "/")
-                        for pre in descendant_prefixes)
-                ] for run in io.matched_runs)
+                find_matches.extend(
+                    [
+                        p
+                        for p in run
+                        if not any(
+                            p.virtual == pre or p.virtual.startswith(pre + "/")
+                            for pre in descendant_prefixes
+                        )
+                    ]
+                    for run in io.matched_runs
+                )
             else:
                 # A descendant walks under the first operand, so its
                 # rows join that operand's run.
                 rows = [
-                    p for run in io.matched_runs for p in run
+                    p
+                    for run in io.matched_runs
+                    for p in run
                     if p.virtual != mount.prefix.rstrip("/")
                 ]
                 if find_matches:
@@ -769,8 +880,9 @@ async def _fan_out_traversal(
                     find_matches.append(rows)
             stdout = None
         elif mount is primary_mount and descendant_prefixes and stdout:
-            stdout = await _filter_under_prefixes(stdout, descendant_prefixes,
-                                                  cmd_name)
+            stdout = await _filter_under_prefixes(
+                stdout, descendant_prefixes, cmd_name
+            )
 
         if stdout is not None:
             data = await materialize(stdout)
@@ -793,8 +905,11 @@ async def _fan_out_traversal(
                 find_matches.append(synthetic)
         all_rows = [p for run in find_matches for p in run]
         if not find_matches_complete and all_rows:
-            all_stdout.append(("\n".join(p.raw_path or p.virtual
-                                         for p in all_rows) + "\n").encode())
+            all_stdout.append(
+                (
+                    "\n".join(p.raw_path or p.virtual for p in all_rows) + "\n"
+                ).encode()
+            )
 
     combined: ByteSource | None
     if du_merge and all_stdout:
@@ -806,57 +921,73 @@ async def _fan_out_traversal(
                 notes = "".join(
                     f"du: cannot access "
                     f"'{respell_one(row, target_path, paths[0].raw_path)}': "
-                    f"{fs_strerror(exc)}\n" for row, exc in refused)
+                    f"{fs_strerror(exc)}\n"
+                    for row, exc in refused
+                )
                 merged_io = await merged_io.merge(
-                    IOResult(exit_code=1, stderr=notes.encode()))
+                    IOResult(exit_code=1, stderr=notes.encode())
+                )
                 exit_codes.append(1)
                 errored.append(True)
-        combined = merge_du_blocks(all_stdout,
-                                   target_path,
-                                   paths[0].raw_path,
-                                   a=du_flags.a,
-                                   s=du_flags.s,
-                                   c=du_flags.c,
-                                   human=du_flags.human,
-                                   max_depth=du_flags.max_depth,
-                                   separate_dirs=du_flags.separate_dirs,
-                                   dirs=dirs)
+        combined = merge_du_blocks(
+            all_stdout,
+            target_path,
+            paths[0].raw_path,
+            a=du_flags.a,
+            s=du_flags.s,
+            c=du_flags.c,
+            human=du_flags.human,
+            max_depth=du_flags.max_depth,
+            separate_dirs=du_flags.separate_dirs,
+            dirs=dirs,
+        )
     elif cmd_name == "find" and all_rows and find_matches_complete:
         if len(paths) == 1:
             unique = {p.virtual: p for p in all_rows}
             find_matches = [sorted(unique.values(), key=lambda p: p.raw_path)]
             all_rows = find_matches[0]
-        combined = ("\n".join(p.raw_path or p.virtual
-                              for p in all_rows) + "\n").encode("utf-8")
+        combined = (
+            "\n".join(p.raw_path or p.virtual for p in all_rows) + "\n"
+        ).encode("utf-8")
     elif all_stdout:
         # `ls -R` separates directory groups with a blank line, and a
         # per-mount block is one more group; grep and rg put `--` between
         # one file's context and the next file's; every other format is a
         # plain line stream.
-        sep = b"\n\n" if cmd_name == "ls" else b"\n" + run_separator(
-            cmd_name, flag_kwargs)
+        sep = (
+            b"\n\n"
+            if cmd_name == "ls"
+            else b"\n" + run_separator(cmd_name, flag_kwargs)
+        )
         combined = sep.join(b.rstrip(b"\n") for b in all_stdout) + b"\n"
     else:
         combined = None
-    quiet = (cmd_name == "grep"
-             and FlagView(flag_kwargs, spec=SPECS["grep"]).as_bool("q")) or (
-                 cmd_name == "rg"
-                 and FlagView(flag_kwargs, spec=SPECS["rg"]).as_bool("quiet"))
+    quiet = (
+        cmd_name == "grep"
+        and FlagView(flag_kwargs, spec=SPECS["grep"]).as_bool("q")
+    ) or (
+        cmd_name == "rg"
+        and FlagView(flag_kwargs, spec=SPECS["rg"]).as_bool("quiet")
+    )
     final_io_exit = combined_exit(cmd_name, exit_codes, errored, quiet)
 
     if cmd_name == "find":
         # The structured rows ride out for the command boundary, which
         # applies find's actions once over every operand's matches.
-        merged_io.matched_runs = (find_matches
-                                  if find_matches_complete else None)
+        merged_io.matched_runs = (
+            find_matches if find_matches_complete else None
+        )
 
     merged_io.exit_code = final_io_exit
     merged_io.producer = Producer(
         command=cmd_name,
-        prefixes=tuple(m.prefix for m in [primary_mount, *descendants]))
-    exec_node = ExecutionNode(command=cmd_str,
-                              exit_code=final_io_exit,
-                              stderr=await materialize(merged_io.stderr))
+        prefixes=tuple(m.prefix for m in [primary_mount, *descendants]),
+    )
+    exec_node = ExecutionNode(
+        command=cmd_str,
+        exit_code=final_io_exit,
+        stderr=await materialize(merged_io.stderr),
+    )
     return combined, merged_io, exec_node
 
 
@@ -904,12 +1035,14 @@ async def run_with_fanout(
             native run over the merged bytes).
     """
     if not _should_fan_out(cmd_name, paths, flag_kwargs, registry):
-        return await run_single(cmd_name,
-                                paths,
-                                texts,
-                                flag_kwargs,
-                                stdin=stdin,
-                                resolve_hint=resolve_hint)
+        return await run_single(
+            cmd_name,
+            paths,
+            texts,
+            flag_kwargs,
+            stdin=stdin,
+            resolve_hint=resolve_hint,
+        )
     try:
         mount = await registry.resolve_mount(cmd_name, paths, cwd)
     except MountCommandUnsupported:
@@ -917,22 +1050,26 @@ async def run_with_fanout(
         # mount does not serve, so let it report rather than re-raising.
         mount = None
     if mount is None:
-        return await run_single(cmd_name,
-                                paths,
-                                texts,
-                                flag_kwargs,
-                                stdin=stdin,
-                                resolve_hint=resolve_hint)
-    stdout, io, _ = await _fan_out_traversal(cmd_name,
-                                             paths,
-                                             texts,
-                                             flag_kwargs,
-                                             registry,
-                                             mount,
-                                             cwd,
-                                             cmd_name,
-                                             stdin,
-                                             ns=ns,
-                                             stat_path=stat_path,
-                                             dispatch=dispatch)
+        return await run_single(
+            cmd_name,
+            paths,
+            texts,
+            flag_kwargs,
+            stdin=stdin,
+            resolve_hint=resolve_hint,
+        )
+    stdout, io, _ = await _fan_out_traversal(
+        cmd_name,
+        paths,
+        texts,
+        flag_kwargs,
+        registry,
+        mount,
+        cwd,
+        cmd_name,
+        stdin,
+        ns=ns,
+        stat_path=stat_path,
+        dispatch=dispatch,
+    )
     return stdout, io

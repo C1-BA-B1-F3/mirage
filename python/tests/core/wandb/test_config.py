@@ -6,29 +6,38 @@ from mirage.vfs.registry import build_vfs
 from mirage.vfs.wandb import WandbConfig
 
 
-@pytest.mark.parametrize("config", [{
-    "entities": []
-}, {
-    "entities": ["a/b"]
-}, {
-    "entities": ["a"],
-    "page_size": 0
-}, {
-    "entities": ["a"],
-    "max_pages": 0
-}, {
-    "entities": ["a"],
-    "typo": True
-}])
+@pytest.mark.parametrize(
+    "config",
+    [
+        {"entities": []},
+        {"entities": ["a/b"]},
+        {"entities": ["a"], "page_size": 0},
+        {"entities": ["a"], "max_pages": 0},
+        {"entities": ["a"], "typo": True},
+    ],
+)
 def test_invalid_config(config: dict) -> None:
     with pytest.raises(ValidationError):
         WandbConfig(**config)
 
 
-@pytest.mark.parametrize("name", [
-    "", ".", "..", "\x00", "a\x00b", "a/b", "a\\b", "lab", ".lab", "a..b",
-    "...", "café"
-])
+@pytest.mark.parametrize(
+    "name",
+    [
+        "",
+        ".",
+        "..",
+        "\x00",
+        "a\x00b",
+        "a/b",
+        "a\\b",
+        "lab",
+        ".lab",
+        "a..b",
+        "...",
+        "café",
+    ],
+)
 def test_entities_match_filesystem_names(name: str) -> None:
     if safe_name(name):
         assert WandbConfig(entities=[name]).entities == [name]

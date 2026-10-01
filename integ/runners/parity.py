@@ -34,21 +34,32 @@ def load(path: str) -> dict[tuple[str, str], dict]:
 
 
 def emit_python(out: str, target_args: list[str]) -> None:
-    subprocess.run([
-        sys.executable,
-        str(INTEG / "runners" / "python" / "main.py"), "--emit", out,
-        *target_args
-    ],
-                   check=True)
+    subprocess.run(
+        [
+            sys.executable,
+            str(INTEG / "runners" / "python" / "main.py"),
+            "--emit",
+            out,
+            *target_args,
+        ],
+        check=True,
+    )
 
 
 def emit_typescript(out: str, target_args: list[str]) -> None:
-    subprocess.run([
-        "pnpm", "exec", "tsx", "runners/typescript/main.ts", "--emit", out,
-        *target_args
-    ],
-                   cwd=INTEG,
-                   check=True)
+    subprocess.run(
+        [
+            "pnpm",
+            "exec",
+            "tsx",
+            "runners/typescript/main.ts",
+            "--emit",
+            out,
+            *target_args,
+        ],
+        cwd=INTEG,
+        check=True,
+    )
 
 
 def diff_row(a: dict, b: dict) -> list[str]:
@@ -103,8 +114,10 @@ def main() -> None:
             print(f"DIFF [{target}] {case_id}: {'; '.join(diffs)}")
 
     compared = len(py.keys() & ts.keys())
-    print(f"\n{compared} case/target pairs compared, {mismatches} mismatch(es)"
-          f" across targets: {', '.join(targets)}")
+    print(
+        f"\n{compared} case/target pairs compared, {mismatches} mismatch(es)"
+        f" across targets: {', '.join(targets)}"
+    )
     # Both emit runs skip a target whose service never came up, and a run
     # that compared nothing agrees with itself trivially. Zero pairs is a
     # broken run, never a clean one.

@@ -29,7 +29,6 @@ from mirage.watch.base import DeltaHook
 
 
 class GoogleDriveVFS(BaseVFS):
-
     accessor: GDriveAccessor
     name: str = VFSName.GDRIVE
     caches_reads: bool = True

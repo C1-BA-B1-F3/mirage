@@ -35,7 +35,8 @@ def _build_dir() -> str | None:
 
 live = pytest.mark.skipif(
     _build_dir() is None,
-    reason=f"{WASI_HOME_ENV} does not point at a CPython WASI build")
+    reason=f"{WASI_HOME_ENV} does not point at a CPython WASI build",
+)
 
 
 def test_missing_build_dir_raises_hint(monkeypatch):
@@ -68,16 +69,22 @@ def test_wasi_runs_full_cpython():
 @live
 def test_wasi_argv_stdin_env():
     rt = WasiRuntime()
-    code = ("import os, sys\n"
-            "print(sys.argv[1:])\n"
-            "print(sys.stdin.read().strip().upper())\n"
-            "print(os.environ['GREETING'])")
+    code = (
+        "import os, sys\n"
+        "print(sys.argv[1:])\n"
+        "print(sys.stdin.read().strip().upper())\n"
+        "print(os.environ['GREETING'])"
+    )
     result = asyncio.run(
         rt.run(
-            RunArgs(code=code,
-                    args=["a1", "a2"],
-                    env={"GREETING": "hi-wasi"},
-                    stdin=b"piped\n")))
+            RunArgs(
+                code=code,
+                args=["a1", "a2"],
+                env={"GREETING": "hi-wasi"},
+                stdin=b"piped\n",
+            )
+        )
+    )
     assert result.exit_code == 0
     assert result.stdout == b"['a1', 'a2']\nPIPED\nhi-wasi\n"
 
@@ -98,8 +105,9 @@ def test_wasi_host_fs_and_network_invisible():
     result = asyncio.run(rt.run(RunArgs(code="open('/etc/passwd')")))
     assert result.exit_code == 1
     assert b"FileNotFoundError" in (result.stderr or b"")
-    result = asyncio.run(rt.run(
-        RunArgs(code="import socket; socket.socket()")))
+    result = asyncio.run(
+        rt.run(RunArgs(code="import socket; socket.socket()"))
+    )
     assert result.exit_code == 1
     assert b"OSError" in (result.stderr or b"")
 
@@ -108,8 +116,7 @@ def test_wasi_host_fs_and_network_invisible():
 @pytest.mark.asyncio
 async def test_wasi_python3_command_end_to_end():
     ram = RAMVFS()
-    ram._store.files["/calc.py"] = (b"import sys\n"
-                                    b"print(int(sys.argv[1]) * 6)\n")
+    ram._store.files["/calc.py"] = b"import sys\nprint(int(sys.argv[1]) * 6)\n"
     ws = Workspace({"/ram": ram}, mode=MountMode.EXEC, runtimes=["wasi"])
     r = await ws.shell("python3 -c \"print('wasi says', 6 * 7)\"")
     assert r.exit_code == 0
@@ -157,14 +164,15 @@ async def test_wasi_mounts_read_write_listdir():
     # shell writes, guest writes land in the mount, listdir lists it.
     ws = Workspace({"/data": RAMVFS()}, mode=MountMode.EXEC, runtimes=["wasi"])
     await ws.shell("echo hello-mount > /data/in.txt")
-    code = ("import os\n"
-            "print(open('/data/in.txt').read().strip())\n"
-            "open('/data/out.txt', 'w').write('from-wasi\\n')\n"
-            "print(sorted(os.listdir('/data')))\n")
+    code = (
+        "import os\n"
+        "print(open('/data/in.txt').read().strip())\n"
+        "open('/data/out.txt', 'w').write('from-wasi\\n')\n"
+        "print(sorted(os.listdir('/data')))\n"
+    )
     r = await ws.shell(f'python3 -c "{code}"')
     assert r.exit_code == 0
-    assert (await r.stdout_str()) == ("hello-mount\n"
-                                      "['in.txt', 'out.txt']\n")
+    assert (await r.stdout_str()) == ("hello-mount\n['in.txt', 'out.txt']\n")
     r = await ws.shell("cat /data/out.txt")
     assert (await r.stdout_str()) == "from-wasi\n"
     await ws.close()
@@ -177,9 +185,11 @@ async def test_wasi_root_mount_coexists_with_the_build():
     # from the build directory, so a root mount and the stdlib coexist.
     ws = Workspace({"/": RAMVFS()}, mode=MountMode.EXEC, runtimes=["wasi"])
     await ws.shell("echo root-mount > /f.txt")
-    code = ("import sys\n"
-            "print(open('/f.txt').read().strip())\n"
-            "print('stdlib', sys.version_info[0])\n")
+    code = (
+        "import sys\n"
+        "print(open('/f.txt').read().strip())\n"
+        "print('stdlib', sys.version_info[0])\n"
+    )
     r = await ws.shell(f'python3 -c "{code}"')
     assert r.exit_code == 0
     assert (await r.stdout_str()) == "root-mount\nstdlib 3\n"
@@ -198,10 +208,12 @@ def test_wasi_without_dispatch_sees_no_mounts():
 @live
 def test_wasi_build_directory_is_read_only():
     rt = WasiRuntime()
-    code = ("\ntry:\n"
-            "    open('/python.wasm', 'w')\n"
-            "except PermissionError:\n"
-            "    print('denied')\n")
+    code = (
+        "\ntry:\n"
+        "    open('/python.wasm', 'w')\n"
+        "except PermissionError:\n"
+        "    print('denied')\n"
+    )
     result = asyncio.run(rt.run(RunArgs(code=code)))
     assert result.exit_code == 0
     assert result.stdout == b"denied\n"
@@ -215,16 +227,19 @@ async def test_wasi_session_narrowing_reaches_the_guest():
     ws = Workspace({"/data": RAMVFS()}, mode=MountMode.EXEC, runtimes=["wasi"])
     await ws.shell("echo seeded > /data/f0.txt")
     ws.create_session("narrow", {"/data": "read"})
-    code = ("\ntry:\n"
-            "    open('/data/f.txt', 'w')\n"
-            "except PermissionError:\n"
-            "    print('denied')\n")
+    code = (
+        "\ntry:\n"
+        "    open('/data/f.txt', 'w')\n"
+        "except PermissionError:\n"
+        "    print('denied')\n"
+    )
     r = await ws.shell(f'python3 -c "{code}"', session_id="narrow")
     assert r.exit_code == 0
     assert (await r.stdout_str()) == "denied\n"
     r = await ws.shell(
         "python3 -c \"print(open('/data/f0.txt').read().strip())\"",
-        session_id="narrow")
+        session_id="narrow",
+    )
     assert (await r.stdout_str()) == "seeded\n"
     r = await ws.shell(f'python3 -c "{code}"')
     assert (await r.stdout_str()) == ""
@@ -239,23 +254,32 @@ def test_reach_is_vfs():
 @pytest.mark.asyncio
 async def test_cwd_inherits_context_and_explicit_cwd_wins():
     runtime = WasiRuntime()
-    ws = Workspace({"/data": RAMVFS()},
-                   mode=MountMode.EXEC,
-                   runtimes=[runtime, "workspace"])
+    ws = Workspace(
+        {"/data": RAMVFS()},
+        mode=MountMode.EXEC,
+        runtimes=[runtime, "workspace"],
+    )
     try:
         assert (
-            await
-            ws.shell("mkdir /data/sub; echo child > /data/sub/item; cd /data")
+            await ws.shell(
+                "mkdir /data/sub; echo child > /data/sub/item; cd /data"
+            )
         ).exit_code == 0
         code = "import os; print(os.getcwd())"
         assert (await runtime.run(RunArgs(code=code))).stdout == b"/data\n"
         explicit = await runtime.run(
-            RunArgs(code="print(open('item').read(), end='')",
-                    cwd=PathSpec.from_str_path("/data/sub")))
+            RunArgs(
+                code="print(open('item').read(), end='')",
+                cwd=PathSpec.from_str_path("/data/sub"),
+            )
+        )
         assert explicit.stdout == b"child\n"
         bad = await runtime.run(
-            RunArgs(code="print('must not run')",
-                    cwd=PathSpec.from_str_path("/missing")))
+            RunArgs(
+                code="print('must not run')",
+                cwd=PathSpec.from_str_path("/missing"),
+            )
+        )
         assert bad.exit_code == 1
         assert bad.stdout == b""
         assert b"FileNotFoundError" in bad.stderr

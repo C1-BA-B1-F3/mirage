@@ -27,7 +27,6 @@ from mirage.watch.base import DeltaHook
 
 
 class S3VFS(BaseVFS):
-
     accessor: S3Accessor
     name: str = VFSName.S3
     # byte store: stat() sizes every file from metadata

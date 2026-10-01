@@ -20,8 +20,9 @@ def test_expand_default(env):
 
 def test_expand_t(env):
     data = b"hello\tworld\n"
-    assert env.mirage("expand -t 4", stdin=data) == env.native("expand -t 4",
-                                                               stdin=data)
+    assert env.mirage("expand -t 4", stdin=data) == env.native(
+        "expand -t 4", stdin=data
+    )
 
 
 def test_expand_file(env):

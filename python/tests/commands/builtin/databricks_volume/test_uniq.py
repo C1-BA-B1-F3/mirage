@@ -17,7 +17,8 @@ import pytest
 
 @pytest.mark.asyncio
 async def test_workspace_execute_databricks_volume_uniq(
-        databricks_text_workspace):
+    databricks_text_workspace,
+):
     io = await databricks_text_workspace.shell("uniq /dbx/words.txt")
 
     assert io.exit_code == 0

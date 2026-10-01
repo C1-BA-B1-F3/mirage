@@ -25,21 +25,25 @@ import pytest
 
 from mirage.commands.cli.builtin.git import GIT
 from mirage.commands.cli.builtin.git.errors import GitError
-from mirage.commands.cli.builtin.git.transport import (display_url,
-                                                       extra_headers,
-                                                       parse_advertisement,
-                                                       pkt_line, pkt_lines)
+from mirage.commands.cli.builtin.git.transport import (
+    display_url,
+    extra_headers,
+    parse_advertisement,
+    pkt_line,
+    pkt_lines,
+)
 from mirage.types import MountMode
 from mirage.vfs.ram import RAMVFS
 from mirage.workspace import Workspace
 
 ENV = {
-    **os.environ, "GIT_CONFIG_GLOBAL": "/dev/null",
+    **os.environ,
+    "GIT_CONFIG_GLOBAL": "/dev/null",
     "GIT_CONFIG_NOSYSTEM": "1",
     "GIT_AUTHOR_NAME": "A",
     "GIT_AUTHOR_EMAIL": "a@example.com",
     "GIT_COMMITTER_NAME": "A",
-    "GIT_COMMITTER_EMAIL": "a@example.com"
+    "GIT_COMMITTER_EMAIL": "a@example.com",
 }
 INFO_REFS = "/repo.git/info/refs?service=git-upload-pack"
 
@@ -58,14 +62,16 @@ def test_an_advertisement_reads_refs_peeled_tags_and_the_head_symref():
     oid, tag, peeled = "a" * 40, "b" * 40, "c" * 40
     lines = [
         f"{oid} HEAD\0side-band-64k symref=HEAD:refs/heads/main\n".encode(),
-        f"{oid} refs/heads/main\n".encode(), f"{tag} refs/tags/v1\n".encode(),
-        f"{peeled} refs/tags/v1^{{}}\n".encode(), None
+        f"{oid} refs/heads/main\n".encode(),
+        f"{tag} refs/tags/v1\n".encode(),
+        f"{peeled} refs/tags/v1^{{}}\n".encode(),
+        None,
     ]
     adv = parse_advertisement(iter(lines))
     assert adv.refs == {
         "HEAD": oid,
         "refs/heads/main": oid,
-        "refs/tags/v1": tag
+        "refs/tags/v1": tag,
     }
     assert adv.peeled == {"refs/tags/v1": peeled}
     assert adv.head == "refs/heads/main"
@@ -77,30 +83,34 @@ def test_an_empty_repository_advertises_nothing():
     assert parse_advertisement(iter([line, None])).refs == {}
 
 
-@pytest.mark.parametrize("url,expected", [
-    ("https://user:token@github.com/o/r.git", "https://github.com/o/r"),
-    ("https://github.com/o/r/", "https://github.com/o/r"),
-    ("/w/src/.git", "/w/src/"),
-    ("../src", "../src"),
-])
+@pytest.mark.parametrize(
+    "url,expected",
+    [
+        ("https://user:token@github.com/o/r.git", "https://github.com/o/r"),
+        ("https://github.com/o/r/", "https://github.com/o/r"),
+        ("/w/src/.git", "/w/src/"),
+        ("../src", "../src"),
+    ],
+)
 def test_a_url_is_displayed_without_credentials_or_git_suffix(url, expected):
     assert display_url(url) == expected
 
 
 def test_extra_headers_split_name_and_value_later_ones_winning():
-    assert extra_headers([
-        b"Authorization: Bearer a", b"X-A:1", b"Authorization: Bearer b",
-        b"broken"
-    ]) == {
-        "Authorization": "Bearer b",
-        "X-A": "1"
-    }
+    assert extra_headers(
+        [
+            b"Authorization: Bearer a",
+            b"X-A:1",
+            b"Authorization: Bearer b",
+            b"broken",
+        ]
+    ) == {"Authorization": "Bearer b", "X-A": "1"}
 
 
 def _backend(
-        root: Path,
-        renames: tuple[tuple[bytes, bytes], ...] = (),
-        seen: list[tuple[str, str | None]] | None = None
+    root: Path,
+    renames: tuple[tuple[bytes, bytes], ...] = (),
+    seen: list[tuple[str, str | None]] | None = None,
 ) -> ThreadingHTTPServer:
     """git's own smart HTTP server, as a CGI behind a local listener.
 
@@ -114,7 +124,6 @@ def _backend(
     """
 
     class Handler(BaseHTTPRequestHandler):
-
         def _cgi(self) -> None:
             if seen is not None:
                 seen.append((self.command, self.headers.get("Authorization")))
@@ -122,19 +131,22 @@ def _backend(
             size = int(self.headers.get("Content-Length") or 0)
             body = self.rfile.read(size)
             env = {
-                **ENV, "GIT_PROJECT_ROOT": str(root),
+                **ENV,
+                "GIT_PROJECT_ROOT": str(root),
                 "GIT_HTTP_EXPORT_ALL": "1",
                 "PATH_INFO": parts.path,
                 "QUERY_STRING": parts.query,
                 "REQUEST_METHOD": self.command,
                 "CONTENT_TYPE": self.headers.get("Content-Type", ""),
                 "CONTENT_LENGTH": str(len(body)),
-                "REMOTE_ADDR": "127.0.0.1"
+                "REMOTE_ADDR": "127.0.0.1",
             }
-            out = subprocess.run(["git", "http-backend"],
-                                 input=body,
-                                 env=env,
-                                 capture_output=True).stdout
+            out = subprocess.run(
+                ["git", "http-backend"],
+                input=body,
+                env=env,
+                capture_output=True,
+            ).stdout
             head, _, payload = out.partition(b"\r\n\r\n")
             status, headers = 200, []
             for line in head.decode().split("\r\n"):
@@ -174,7 +186,6 @@ def _redirector(target: str) -> ThreadingHTTPServer:
     """
 
     class Handler(BaseHTTPRequestHandler):
-
         def do_GET(self) -> None:
             known = self.path == INFO_REFS
             self.send_response(302 if known else 404)
@@ -196,15 +207,19 @@ def repos(tmp_path) -> tuple[Path, Path]:
     if shutil.which("git") is None:
         pytest.skip("git is not installed")
     work, root = tmp_path / "work", tmp_path / "srv"
-    subprocess.run([
-        "bash", "-ec", f"git init -q -b main {work} && cd {work} && "
-        "echo one > a && git add a && git commit -qm first && "
-        "git tag -a -m t v1 && echo two > a && git commit -qam second && "
-        f"git clone -q --bare {work} {root}/repo.git"
-    ],
-                   check=True,
-                   capture_output=True,
-                   env=ENV)
+    subprocess.run(
+        [
+            "bash",
+            "-ec",
+            f"git init -q -b main {work} && cd {work} && "
+            "echo one > a && git add a && git commit -qm first && "
+            "git tag -a -m t v1 && echo two > a && git commit -qam second && "
+            f"git clone -q --bare {work} {root}/repo.git",
+        ],
+        check=True,
+        capture_output=True,
+        env=ENV,
+    )
     return work, root
 
 
@@ -223,28 +238,38 @@ async def test_clone_and_fetch_over_smart_http(served):
     with Workspace({"/w/": RAMVFS()}, mode=MountMode.WRITE) as ws:
         ws.register_cli("git", GIT)
         result = await ws.shell(f"cd /w && git clone {url} c")
-        assert (result.exit_code, result.stderr) == (0,
-                                                     b"Cloning into 'c'...\n")
+        assert (result.exit_code, result.stderr) == (
+            0,
+            b"Cloning into 'c'...\n",
+        )
         result = await ws.shell("cd /w/c && git log --oneline --format=%s")
         assert result.stdout == b"second\nfirst\n"
         result = await ws.shell(
-            "cd /w/c && git for-each-ref --format='%(refname)'")
-        assert result.stdout == (b"refs/heads/main\nrefs/remotes/origin/HEAD\n"
-                                 b"refs/remotes/origin/main\nrefs/tags/v1\n")
-        subprocess.run([
-            "bash", "-ec", "echo three > a && git commit -qam third && "
-            "git tag v2 && git push -q ../srv/repo.git main v2"
-        ],
-                       cwd=work,
-                       check=True,
-                       capture_output=True,
-                       env=ENV)
+            "cd /w/c && git for-each-ref --format='%(refname)'"
+        )
+        assert result.stdout == (
+            b"refs/heads/main\nrefs/remotes/origin/HEAD\n"
+            b"refs/remotes/origin/main\nrefs/tags/v1\n"
+        )
+        subprocess.run(
+            [
+                "bash",
+                "-ec",
+                "echo three > a && git commit -qam third && "
+                "git tag v2 && git push -q ../srv/repo.git main v2",
+            ],
+            cwd=work,
+            check=True,
+            capture_output=True,
+            env=ENV,
+        )
         result = await ws.shell("cd /w/c && git fetch")
         lines = (result.stderr or b"").decode().splitlines()
         assert lines[0] == f"From {display_url(url)}"
         assert lines[2] == " * [new tag]         v2         -> v2"
-        result = await ws.shell("cd /w/c && git log -1 --format=%s origin/main"
-                                )
+        result = await ws.shell(
+            "cd /w/c && git log -1 --format=%s origin/main"
+        )
         assert result.stdout == b"third\n"
 
 
@@ -257,8 +282,13 @@ async def test_a_missing_http_repository_is_not_found(served):
         result = await ws.shell(f"cd /w && git clone {url}/nope.git m")
         left = await ws.shell("test -e /w/m || echo removed")
     assert result.exit_code == 128
-    assert result.stderr == (f"Cloning into 'm'...\nfatal: repository "
-                             f"'{url}/nope.git/' not found\n").encode()
+    assert (
+        result.stderr
+        == (
+            f"Cloning into 'm'...\nfatal: repository "
+            f"'{url}/nope.git/' not found\n"
+        ).encode()
+    )
     assert left.stdout == b"removed\n"
 
 
@@ -266,16 +296,24 @@ async def test_a_missing_http_repository_is_not_found(served):
 async def test_a_ref_named_outside_the_repository_is_ignored(repos):
     pytest.importorskip("httpx")
     _, root = repos
-    subprocess.run([
-        "bash", "-ec", "git tag abcdefghijklmnop main && git branch wxyz main"
-    ],
-                   cwd=root / "repo.git",
-                   check=True,
-                   capture_output=True,
-                   env=ENV)
+    subprocess.run(
+        [
+            "bash",
+            "-ec",
+            "git tag abcdefghijklmnop main && git branch wxyz main",
+        ],
+        cwd=root / "repo.git",
+        check=True,
+        capture_output=True,
+        env=ENV,
+    )
     server = _backend(
-        root, ((b"refs/tags/abcdefghijklmnop", b"refs/tags/../../../../outs"),
-               (b"refs/heads/wxyz", b"refs/heads/..yz")))
+        root,
+        (
+            (b"refs/tags/abcdefghijklmnop", b"refs/tags/../../../../outs"),
+            (b"refs/heads/wxyz", b"refs/heads/..yz"),
+        ),
+    )
     url = f"http://127.0.0.1:{server.server_address[1]}/repo.git"
     try:
         with Workspace({"/w/": RAMVFS()}, mode=MountMode.WRITE) as ws:
@@ -283,18 +321,27 @@ async def test_a_ref_named_outside_the_repository_is_ignored(repos):
             cloned = await ws.shell(f"cd /w && git clone {url} c")
             fetched = await ws.shell("cd /w/c && git fetch")
             refs = await ws.shell(
-                "cd /w/c && git for-each-ref --format='%(refname)'")
+                "cd /w/c && git for-each-ref --format='%(refname)'"
+            )
             outside = await ws.shell("test -e /w/outs || echo absent")
     finally:
         server.shutdown()
-    assert (cloned.exit_code, cloned.stderr) == (0, (
-        b"Cloning into 'c'...\n"
-        b"error: * Ignoring funny ref 'refs/remotes/origin/..yz' locally\n"
-        b"error: * Ignoring funny ref 'refs/tags/../../../../outs' locally\n"))
+    assert (cloned.exit_code, cloned.stderr) == (
+        0,
+        (
+            b"Cloning into 'c'...\n"
+            b"error: * Ignoring funny ref 'refs/remotes/origin/..yz' locally\n"
+            b"error: * Ignoring funny ref 'refs/tags/../../../../outs' locally\n"
+        ),
+    )
     assert (fetched.exit_code, fetched.stderr) == (
-        0, b"error: * Ignoring funny ref 'refs/remotes/origin/..yz' locally\n")
-    assert refs.stdout == (b"refs/heads/main\nrefs/remotes/origin/HEAD\n"
-                           b"refs/remotes/origin/main\nrefs/tags/v1\n")
+        0,
+        b"error: * Ignoring funny ref 'refs/remotes/origin/..yz' locally\n",
+    )
+    assert refs.stdout == (
+        b"refs/heads/main\nrefs/remotes/origin/HEAD\n"
+        b"refs/remotes/origin/main\nrefs/tags/v1\n"
+    )
     assert outside.stdout == b"absent\n"
 
 

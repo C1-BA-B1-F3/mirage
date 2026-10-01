@@ -17,10 +17,9 @@ async def zcat(
     read_bytes: Callable[..., Awaitable[bytes]],
     stdin: ByteSource | None = None,
 ) -> tuple[ByteSource | None, IOResult]:
-    return await decompress_inputs(paths,
-                                   read=read_bytes,
-                                   stdin=stdin,
-                                   to_stdout=True)
+    return await decompress_inputs(
+        paths, read=read_bytes, stdin=stdin, to_stdout=True
+    )
 
 
 async def zcat_generic(
@@ -61,7 +60,8 @@ async def zcat_generic(
         force=fl.as_bool("f"),
         quiet=fl.as_bool("q"),
         suffix=GZIP_SUFFIX if suffix is None else suffix,
-        door=link_door(opts))
+        door=link_door(opts),
+    )
 
 
 __all__ = ["zcat", "zcat_generic"]

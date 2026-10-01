@@ -15,48 +15,52 @@ _BASE = "https://graph.microsoft.com/v1.0/me/drive"
 
 
 def _tree(m):
-    m.get(_BASE + "/root/children",
-          payload={
-              "value": [
-                  {
-                      "id": "1",
-                      "name": "a.txt",
-                      "size": 3,
-                      "lastModifiedDateTime": "2026-07-15T12:00:00Z",
-                      "file": {}
-                  },
-                  {
-                      "id": "2",
-                      "name": "sub",
-                      "lastModifiedDateTime": "2026-07-14T12:00:00Z",
-                      "folder": {
-                          "childCount": 1
-                      }
-                  },
-              ]
-          })
-    m.get(_BASE + "/root:/sub:/children",
-          payload={
-              "value": [{
-                  "id": "3",
-                  "name": "b.txt",
-                  "size": 5,
-                  "lastModifiedDateTime": "2026-07-13T12:00:00Z",
-                  "file": {}
-              }]
-          })
+    m.get(
+        _BASE + "/root/children",
+        payload={
+            "value": [
+                {
+                    "id": "1",
+                    "name": "a.txt",
+                    "size": 3,
+                    "lastModifiedDateTime": "2026-07-15T12:00:00Z",
+                    "file": {},
+                },
+                {
+                    "id": "2",
+                    "name": "sub",
+                    "lastModifiedDateTime": "2026-07-14T12:00:00Z",
+                    "folder": {"childCount": 1},
+                },
+            ]
+        },
+    )
+    m.get(
+        _BASE + "/root:/sub:/children",
+        payload={
+            "value": [
+                {
+                    "id": "3",
+                    "name": "b.txt",
+                    "size": 5,
+                    "lastModifiedDateTime": "2026-07-13T12:00:00Z",
+                    "file": {},
+                }
+            ]
+        },
+    )
 
 
 def _root(m):
-    m.get(_BASE + "/root",
-          payload={
-              "id": "root",
-              "name": "root",
-              "lastModifiedDateTime": "2026-07-14T12:00:00Z",
-              "folder": {
-                  "childCount": 2
-              }
-          })
+    m.get(
+        _BASE + "/root",
+        payload={
+            "id": "root",
+            "name": "root",
+            "lastModifiedDateTime": "2026-07-14T12:00:00Z",
+            "folder": {"childCount": 2},
+        },
+    )
 
 
 @pytest.mark.asyncio
@@ -105,45 +109,26 @@ async def test_find_honors_or_tree():
 @pytest.mark.asyncio
 async def test_find_empty_matches_childless_folder():
     with aioresponses() as m:
-        m.get(_BASE + "/root/children",
-              payload={
-                  "value": [
-                      {
-                          "id": "1",
-                          "name": "a.txt",
-                          "size": 3,
-                          "file": {}
-                      },
-                      {
-                          "id": "2",
-                          "name": "hollow",
-                          "folder": {
-                              "childCount": 0
-                          }
-                      },
-                      {
-                          "id": "3",
-                          "name": "full",
-                          "folder": {
-                              "childCount": 1
-                          }
-                      },
-                  ]
-              })
+        m.get(
+            _BASE + "/root/children",
+            payload={
+                "value": [
+                    {"id": "1", "name": "a.txt", "size": 3, "file": {}},
+                    {"id": "2", "name": "hollow", "folder": {"childCount": 0}},
+                    {"id": "3", "name": "full", "folder": {"childCount": 1}},
+                ]
+            },
+        )
         m.get(_BASE + "/root:/hollow:/children", payload={"value": []})
-        m.get(_BASE + "/root:/full:/children",
-              payload={
-                  "value": [{
-                      "id": "4",
-                      "name": "c.txt",
-                      "size": 1,
-                      "file": {}
-                  }]
-              })
-        out = await find(_accessor(),
-                         PathSpec.from_str_path("/"),
-                         type="d",
-                         empty=True)
+        m.get(
+            _BASE + "/root:/full:/children",
+            payload={
+                "value": [{"id": "4", "name": "c.txt", "size": 1, "file": {}}]
+            },
+        )
+        out = await find(
+            _accessor(), PathSpec.from_str_path("/"), type="d", empty=True
+        )
     assert out == ["/hollow"]
 
 
@@ -151,15 +136,11 @@ async def test_find_empty_matches_childless_folder():
 async def test_find_empty_folder_emits_start_path():
     with aioresponses() as m:
         m.get(_BASE + "/root:/empty:/children", payload={"value": []})
-        m.get(_BASE + "/root:/empty",
-              payload={
-                  "id": "9",
-                  "name": "empty",
-                  "folder": {
-                      "childCount": 0
-                  }
-              })
-        out = await find(_accessor(),
-                         PathSpec.from_str_path("/empty"),
-                         type="d")
+        m.get(
+            _BASE + "/root:/empty",
+            payload={"id": "9", "name": "empty", "folder": {"childCount": 0}},
+        )
+        out = await find(
+            _accessor(), PathSpec.from_str_path("/empty"), type="d"
+        )
     assert out == ["/empty"]

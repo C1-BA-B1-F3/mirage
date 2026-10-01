@@ -7,8 +7,11 @@ from typing import Any, Callable
 from mirage.cache.read_through import cache_aware_read
 from mirage.commands.builtin.utils.operands import operands_io
 from mirage.commands.builtin.utils.output import format_records
-from mirage.commands.builtin.utils.stream import (is_stdin, resolve_source,
-                                                  stdin_stream)
+from mirage.commands.builtin.utils.stream import (
+    is_stdin,
+    resolve_source,
+    stdin_stream,
+)
 from mirage.commands.config import CommandOpts
 from mirage.commands.errors import UsageError
 from mirage.commands.spec import SPECS
@@ -48,8 +51,9 @@ def parse_flags(flags: Mapping[str, FlagValue]) -> WCFlags:
     word = "auto" if raw_total is None else raw_total
     match = argmatch(word, TOTAL_ARGS)
     if not isinstance(match, ArgmatchMatch):
-        raise argmatch_error("wc", "--total", word, TOTAL_ARGS, None,
-                             match.kind)
+        raise argmatch_error(
+            "wc", "--total", word, TOTAL_ARGS, None, match.kind
+        )
     total = match.word
     return WCFlags(
         lines=fl.as_bool("lines"),
@@ -121,11 +125,14 @@ def _scan_text(
     return words_added, column, max_len, in_word
 
 
-async def wc(src: bytes | AsyncIterator[bytes],
-             *,
-             flags: WCFlags | None = None) -> WCCounts:
-    if (flags is not None and (flags.lines or flags.bytes_)
-            and not (flags.words or flags.chars or flags.max_line_length)):
+async def wc(
+    src: bytes | AsyncIterator[bytes], *, flags: WCFlags | None = None
+) -> WCCounts:
+    if (
+        flags is not None
+        and (flags.lines or flags.bytes_)
+        and not (flags.words or flags.chars or flags.max_line_length)
+    ):
         counts = WCCounts()
         async for chunk in chunks(src):
             counts.bytes_ += len(chunk)
@@ -146,14 +153,16 @@ async def wc(src: bytes | AsyncIterator[bytes],
         lines += chunk.count(b"\n")
         text = decoder.decode(chunk)
         chars += len(text)
-        added, column, max_len, in_word = _scan_text(text, in_word, column,
-                                                     max_len)
+        added, column, max_len, in_word = _scan_text(
+            text, in_word, column, max_len
+        )
         words += added
 
     final_text = decoder.decode(b"", final=True)
     chars += len(final_text)
-    added, column, max_len, in_word = _scan_text(final_text, in_word, column,
-                                                 max_len)
+    added, column, max_len, in_word = _scan_text(
+        final_text, in_word, column, max_len
+    )
     words += added
 
     if in_word:
@@ -261,13 +270,20 @@ def format_wc_lines(
         width (int | None): The column width, or None to size by the
             printed numbers.
     """
-    values = [(_selected_values(counts,
-                                lines=lines,
-                                words=words,
-                                bytes_=bytes_,
-                                chars=chars,
-                                max_line_length=max_line_length), label)
-              for counts, label in rows]
+    values = [
+        (
+            _selected_values(
+                counts,
+                lines=lines,
+                words=words,
+                bytes_=bytes_,
+                chars=chars,
+                max_line_length=max_line_length,
+            ),
+            label,
+        )
+        for counts, label in rows
+    ]
     if width is None and len(values) == 1 and len(values[0][0]) == 1:
         nums, label = values[0]
         body = str(nums[0])
@@ -275,8 +291,9 @@ def format_wc_lines(
     if width is None and len(values) == 1 and values[0][1] is None:
         width = 7
     if width is None:
-        width = max((len(str(n)) for nums, _ in values for n in nums),
-                    default=1)
+        width = max(
+            (len(str(n)) for nums, _ in values for n in nums), default=1
+        )
     out: list[str] = []
     for nums, label in values:
         body = " ".join(str(n).rjust(width) for n in nums)
@@ -292,26 +309,32 @@ def format_count_rows(
     width: int | None = None,
 ) -> bytes:
     if flags.total == "only":
-        values = _selected_values(totals,
-                                  lines=flags.lines,
-                                  words=flags.words,
-                                  bytes_=flags.bytes_,
-                                  chars=flags.chars,
-                                  max_line_length=flags.max_line_length)
+        values = _selected_values(
+            totals,
+            lines=flags.lines,
+            words=flags.words,
+            bytes_=flags.bytes_,
+            chars=flags.chars,
+            max_line_length=flags.max_line_length,
+        )
         return (" ".join(str(value) for value in values) + "\n").encode()
     output_rows = list(rows)
-    include_total = (flags.total == "always"
-                     or (flags.total == "auto" and operand_count > 1))
+    include_total = flags.total == "always" or (
+        flags.total == "auto" and operand_count > 1
+    )
     if include_total:
         output_rows.append((totals, "total"))
     return format_records(
-        format_wc_lines(output_rows,
-                        lines=flags.lines,
-                        words=flags.words,
-                        bytes_=flags.bytes_,
-                        chars=flags.chars,
-                        max_line_length=flags.max_line_length,
-                        width=width))
+        format_wc_lines(
+            output_rows,
+            lines=flags.lines,
+            words=flags.words,
+            bytes_=flags.bytes_,
+            chars=flags.chars,
+            max_line_length=flags.max_line_length,
+            width=width,
+        )
+    )
 
 
 def shown_counts(flags: WCFlags) -> int:
@@ -321,12 +344,15 @@ def shown_counts(flags: WCFlags) -> int:
         flags (WCFlags): The parsed flags.
     """
     return len(
-        _selected_values(WCCounts(),
-                         lines=flags.lines,
-                         words=flags.words,
-                         bytes_=flags.bytes_,
-                         chars=flags.chars,
-                         max_line_length=flags.max_line_length))
+        _selected_values(
+            WCCounts(),
+            lines=flags.lines,
+            words=flags.words,
+            bytes_=flags.bytes_,
+            chars=flags.chars,
+            max_line_length=flags.max_line_length,
+        )
+    )
 
 
 async def format_multi(
@@ -359,12 +385,14 @@ async def format_multi(
         tuple[bytes, bytes]: Encoded wc output (``b""`` when nothing prints)
         and concatenated stderr lines for failed operands (``b""`` if none).
     """
-    flags = WCFlags(lines=lines,
-                    words=words,
-                    bytes_=bytes_,
-                    chars=chars,
-                    max_line_length=max_line_length,
-                    total=total)
+    flags = WCFlags(
+        lines=lines,
+        words=words,
+        bytes_=bytes_,
+        chars=chars,
+        max_line_length=max_line_length,
+        total=total,
+    )
     cached = cache_aware_read(read)
     rows: list[tuple[WCCounts, str | None]] = []
     sizes: list[int | None] = []
@@ -418,20 +446,23 @@ async def wc_generic(
     try:
         parsed = parse_flags(opts.flags)
     except UsageError as exc:
-        return None, IOResult(exit_code=exc.exit_code,
-                              stderr=(str(exc) + "\n").encode())
+        return None, IOResult(
+            exit_code=exc.exit_code, stderr=(str(exc) + "\n").encode()
+        )
     except ValueError as exc:
         return None, IOResult(exit_code=1, stderr=(str(exc) + "\n").encode())
     stream = stdin_stream(stream, opts.stdin)
     if paths:
-        body, err = await format_multi(paths,
-                                       read=stream,
-                                       lines=parsed.lines,
-                                       words=parsed.words,
-                                       bytes_=parsed.bytes_,
-                                       chars=parsed.chars,
-                                       max_line_length=parsed.max_line_length,
-                                       total=parsed.total)
+        body, err = await format_multi(
+            paths,
+            read=stream,
+            lines=parsed.lines,
+            words=parsed.words,
+            bytes_=parsed.bytes_,
+            chars=parsed.chars,
+            max_line_length=parsed.max_line_length,
+            total=parsed.total,
+        )
         return body, operands_io(err)
     source = resolve_source(opts.stdin, "wc: missing operand")
     counts = await wc(source, flags=parsed)
@@ -440,21 +471,26 @@ async def wc_generic(
 
 def format_stdin(counts: WCCounts, flags: WCFlags) -> bytes:
     if flags.total == "only":
-        values = _selected_values(counts,
-                                  lines=flags.lines,
-                                  words=flags.words,
-                                  bytes_=flags.bytes_,
-                                  chars=flags.chars,
-                                  max_line_length=flags.max_line_length)
+        values = _selected_values(
+            counts,
+            lines=flags.lines,
+            words=flags.words,
+            bytes_=flags.bytes_,
+            chars=flags.chars,
+            max_line_length=flags.max_line_length,
+        )
         return (" ".join(str(value) for value in values) + "\n").encode()
     rows: list[tuple[WCCounts, str | None]] = [(counts, None)]
     if flags.total == "always":
         rows.append((counts, "total"))
     return format_records(
-        format_wc_lines(rows,
-                        lines=flags.lines,
-                        words=flags.words,
-                        bytes_=flags.bytes_,
-                        chars=flags.chars,
-                        max_line_length=flags.max_line_length,
-                        width=number_width([None], 1, shown_counts(flags))))
+        format_wc_lines(
+            rows,
+            lines=flags.lines,
+            words=flags.words,
+            bytes_=flags.bytes_,
+            chars=flags.chars,
+            max_line_length=flags.max_line_length,
+            width=number_width([None], 1, shown_counts(flags)),
+        )
+    )

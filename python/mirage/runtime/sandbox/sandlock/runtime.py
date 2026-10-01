@@ -23,8 +23,10 @@ from mirage.runtime.config import RuntimeConfig
 from mirage.runtime.constants import EXTERNAL_COMMANDS
 from mirage.runtime.mixin import LineExecutorMixin, ProcessExecutorMixin
 from mirage.runtime.sandbox.sandlock.config import SandlockConfig
-from mirage.runtime.sandbox.sandlock.constants import (SANDLOCK_CLI_HINT,
-                                                       SYSTEM_READABLE)
+from mirage.runtime.sandbox.sandlock.constants import (
+    SANDLOCK_CLI_HINT,
+    SYSTEM_READABLE,
+)
 from mirage.runtime.types import ProcessExecution, RunResult, ScriptSource
 from mirage.types import PathSpec
 
@@ -37,22 +39,24 @@ class SandlockRuntime(Runtime, LineExecutorMixin, ProcessExecutorMixin):
     """
 
     name = "sandlock"
-    captures = (EXTERNAL_COMMANDS, )
+    captures = (EXTERNAL_COMMANDS,)
     config_cls = SandlockConfig
     config: SandlockConfig
 
     def __init__(
-            self,
-            captures: Sequence[str] | None = None,
-            config: RuntimeConfig | dict[str, Any] | None = None,
-            script: Callable[..., Any] | ScriptSource | None = None) -> None:
+        self,
+        captures: Sequence[str] | None = None,
+        config: RuntimeConfig | dict[str, Any] | None = None,
+        script: Callable[..., Any] | ScriptSource | None = None,
+    ) -> None:
         super().__init__(captures, config, script)
         self._children: set[asyncio.subprocess.Process] = set()
 
     def policy_argv(self) -> list[str]:
         argv: list[str] = []
-        system = tuple(path for path in SYSTEM_READABLE
-                       if os.path.exists(path))
+        system = tuple(
+            path for path in SYSTEM_READABLE if os.path.exists(path)
+        )
         for path in (*system, *self.config.fs_readable):
             argv += ["-r", path]
         for path in self.config.fs_writable:
@@ -61,13 +65,17 @@ class SandlockRuntime(Runtime, LineExecutorMixin, ProcessExecutorMixin):
             argv += ["-m", self.config.max_memory]
         return argv
 
-    async def run_line(self, line: str, stdin: bytes | None,
-                       env: dict[str, str], cwd: str) -> RunResult:
+    async def run_line(
+        self, line: str, stdin: bytes | None, env: dict[str, str], cwd: str
+    ) -> RunResult:
         return await self.run_process(
-            ProcessExecution(argv=("/bin/sh", "-c", line),
-                             cwd=PathSpec.from_str_path(cwd),
-                             env=env,
-                             stdin=stdin))
+            ProcessExecution(
+                argv=("/bin/sh", "-c", line),
+                cwd=PathSpec.from_str_path(cwd),
+                env=env,
+                stdin=stdin,
+            )
+        )
 
     async def run_process(self, request: ProcessExecution) -> RunResult:
         if not request.argv:
@@ -88,7 +96,8 @@ class SandlockRuntime(Runtime, LineExecutorMixin, ProcessExecutorMixin):
             env={},
             stdin=asyncio.subprocess.PIPE,
             stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE)
+            stderr=asyncio.subprocess.PIPE,
+        )
         self._children.add(proc)
         try:
             stdout, stderr = await proc.communicate(request.stdin)
@@ -102,7 +111,8 @@ class SandlockRuntime(Runtime, LineExecutorMixin, ProcessExecutorMixin):
         return RunResult(
             stdout=stdout,
             stderr=stderr or None,
-            exit_code=proc.returncode if proc.returncode is not None else 1)
+            exit_code=proc.returncode if proc.returncode is not None else 1,
+        )
 
     async def close(self) -> None:
         children = tuple(self._children)

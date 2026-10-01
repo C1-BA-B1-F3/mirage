@@ -24,32 +24,38 @@ from mirage.utils.errors import enotsup, no_mount
 from mirage.utils.path import CycleError
 
 
-@pytest.mark.parametrize("exc,expected", [
-    (CycleError("/a"), FsCondition.ELOOP),
-    (CrossMountError("/a/x", "/b/x"), FsCondition.CROSS_MOUNT),
-    (FileNotFoundError("/x"), FsCondition.ENOENT),
-    (NotADirectoryError("/x"), FsCondition.ENOTDIR),
-    (IsADirectoryError("/x"), FsCondition.EISDIR),
-    (FileExistsError("/x"), FsCondition.EEXIST),
-    (PermissionError("/x"), FsCondition.EACCES),
-    (enotsup("ram", "unlink", "/x"), FsCondition.ENOTSUP),
-    (NotImplementedError("append"), FsCondition.ENOTSUP),
-    (no_mount("/x"), FsCondition.ENOENT),
-])
+@pytest.mark.parametrize(
+    "exc,expected",
+    [
+        (CycleError("/a"), FsCondition.ELOOP),
+        (CrossMountError("/a/x", "/b/x"), FsCondition.CROSS_MOUNT),
+        (FileNotFoundError("/x"), FsCondition.ENOENT),
+        (NotADirectoryError("/x"), FsCondition.ENOTDIR),
+        (IsADirectoryError("/x"), FsCondition.EISDIR),
+        (FileExistsError("/x"), FsCondition.EEXIST),
+        (PermissionError("/x"), FsCondition.EACCES),
+        (enotsup("ram", "unlink", "/x"), FsCondition.ENOTSUP),
+        (NotImplementedError("append"), FsCondition.ENOTSUP),
+        (no_mount("/x"), FsCondition.ENOENT),
+    ],
+)
 def test_class_arms(exc, expected):
     assert classify(exc) is expected
 
 
-@pytest.mark.parametrize("code,expected", [
-    (errno.ENOTEMPTY, FsCondition.ENOTEMPTY),
-    (errno.EXDEV, FsCondition.EXDEV),
-    (errno.ELOOP, FsCondition.ELOOP),
-    (errno.EPERM, FsCondition.EPERM),
-    (errno.EBUSY, FsCondition.EBUSY),
-    (errno.EROFS, FsCondition.EROFS),
-    (errno.EINVAL, FsCondition.EINVAL),
-    (errno.EIO, FsCondition.EIO),
-])
+@pytest.mark.parametrize(
+    "code,expected",
+    [
+        (errno.ENOTEMPTY, FsCondition.ENOTEMPTY),
+        (errno.EXDEV, FsCondition.EXDEV),
+        (errno.ELOOP, FsCondition.ELOOP),
+        (errno.EPERM, FsCondition.EPERM),
+        (errno.EBUSY, FsCondition.EBUSY),
+        (errno.EROFS, FsCondition.EROFS),
+        (errno.EINVAL, FsCondition.EINVAL),
+        (errno.EIO, FsCondition.EIO),
+    ],
+)
 def test_errno_carrying_oserror_arms(code, expected):
     assert classify(OSError(code, "x")) is expected
 
@@ -77,7 +83,8 @@ def test_a_subclass_wins_over_its_stamped_errno():
         # rename into the source's own subtree): only the registry's typed
         # miss reads as ENOENT.
         ValueError("row too large to render"),
-    ])
+    ],
+)
 def test_unnamed_conditions_answer_none(exc):
     # None means "no named condition": the caller keeps its own fallback (FUSE
     # passes a raw OSError errno through, wasi answers EIO/EINVAL).

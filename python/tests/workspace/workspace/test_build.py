@@ -41,6 +41,7 @@ def test_owns_store_claims_a_passed_provider():
 def test_plane_overrides_win_over_the_provider():
     provider = RAMWorkspaceStateStore()
     observe = provider.observer("other")
-    stores = resolve_control_stores("ws1", provider, False, observe, None,
-                                    None)
+    stores = resolve_control_stores(
+        "ws1", provider, False, observe, None, None
+    )
     assert stores.observe is observe

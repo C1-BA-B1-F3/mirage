@@ -82,12 +82,16 @@ class _DevFiles(dict[str, bytes]):
         return True
 
     def _synthetic_active(self, name: str) -> bool:
-        return (name in _DEV_NAMES and name not in self._tombstones
-                and not dict.__contains__(self, "/" + name))
+        return (
+            name in _DEV_NAMES
+            and name not in self._tombstones
+            and not dict.__contains__(self, "/" + name)
+        )
 
     def _synthetic_names(self) -> list[str]:
         return [
-            "/" + name for name in ("null", "zero")
+            "/" + name
+            for name in ("null", "zero")
             if self._synthetic_active(name)
         ]
 
@@ -147,16 +151,13 @@ class _DevFiles(dict[str, bytes]):
         raise KeyError(key)
 
     @overload
-    def pop(self, key: str, /) -> bytes:
-        ...
+    def pop(self, key: str, /) -> bytes: ...
 
     @overload
-    def pop(self, key: str, default: bytes, /) -> bytes:
-        ...
+    def pop(self, key: str, default: bytes, /) -> bytes: ...
 
     @overload
-    def pop(self, key: str, default: _T, /) -> bytes | _T:
-        ...
+    def pop(self, key: str, default: _T, /) -> bytes | _T: ...
 
     def pop(self, key: str, default: object = _POP_MISSING, /) -> object:
         if key not in self:
@@ -184,8 +185,9 @@ class _DevFiles(dict[str, bytes]):
 
     def keys(self):
         return [
-            *self._synthetic_names(), *dict.keys(self),
-            *self._visible_inputs()
+            *self._synthetic_names(),
+            *dict.keys(self),
+            *self._visible_inputs(),
         ]
 
 
@@ -216,7 +218,6 @@ class _DevDirs(set[str]):
 
 
 class DevStore(RAMStore):
-
     files: _DevFiles
 
     def __init__(self) -> None:
@@ -227,7 +228,6 @@ class DevStore(RAMStore):
 
 
 class DevVFS(BaseVFS):
-
     accessor: RAMAccessor
     name: str = VFSName.RAM
     # Device metadata is synthetic and needs no content fetch.

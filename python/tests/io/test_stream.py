@@ -17,8 +17,14 @@ import asyncio
 import pytest
 
 from mirage.io.async_line_iterator import SharedInput
-from mirage.io.stream import (SharedStdin, async_chain, close_quietly,
-                              discard_streams, drain, exit_on_empty)
+from mirage.io.stream import (
+    SharedStdin,
+    async_chain,
+    close_quietly,
+    discard_streams,
+    drain,
+    exit_on_empty,
+)
 from mirage.io.types import IOResult
 
 
@@ -141,6 +147,7 @@ def test_async_chain_empty():
 def test_close_quietly_fires_finally():
     """Explicit aclose runs the producer's finally promptly."""
     from mirage.io.stream import close_quietly
+
     closed = []
 
     async def producer():
@@ -177,7 +184,6 @@ def test_close_quietly_swallows_exceptions():
     from mirage.io.stream import close_quietly
 
     class Bad:
-
         async def aclose(self):
             raise RuntimeError("boom")
 

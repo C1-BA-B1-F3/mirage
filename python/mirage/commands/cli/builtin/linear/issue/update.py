@@ -12,8 +12,11 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-from mirage.commands.cli.builtin.linear.util import (first_text, resolve_issue,
-                                                     text_or_stdin)
+from mirage.commands.cli.builtin.linear.util import (
+    first_text,
+    resolve_issue,
+    text_or_stdin,
+)
 from mirage.commands.cli.types import CLIInvocation
 from mirage.commands.spec.flag_view import FlagView
 from mirage.core.linear.client import issue_update
@@ -24,17 +27,21 @@ from mirage.io.types import ByteSource, IOResult
 
 
 async def update(
-        inv: CLIInvocation[LinearConfig]
+    inv: CLIInvocation[LinearConfig],
 ) -> tuple[ByteSource | None, IOResult]:
     fl = FlagView(inv.flags)
-    issue_id = await resolve_issue(inv.config,
-                                   first_text(inv.texts, "issue key"))
+    issue_id = await resolve_issue(
+        inv.config, first_text(inv.texts, "issue key")
+    )
     description = None
     if fl.as_str("description") is not None or inv.stdin is not None:
-        description = await text_or_stdin(fl.as_str("description"), inv.stdin,
-                                          "description is required")
-    issue = await issue_update(inv.config,
-                               issue_id=issue_id,
-                               title=fl.as_str("title"),
-                               description=description)
+        description = await text_or_stdin(
+            fl.as_str("description"), inv.stdin, "description is required"
+        )
+    issue = await issue_update(
+        inv.config,
+        issue_id=issue_id,
+        title=fl.as_str("title"),
+        description=description,
+    )
     return yield_bytes(to_json_bytes(normalize_issue(issue))), IOResult()

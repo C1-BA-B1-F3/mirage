@@ -17,7 +17,8 @@ def test_cmp_identical(env):
     env.create_file("a.txt", b"same\n")
     env.create_file("b.txt", b"same\n")
     assert env.mirage("cmp /data/a.txt /data/b.txt") == env.native(
-        "cmp a.txt b.txt")
+        "cmp a.txt b.txt"
+    )
 
 
 def test_cmp_s(env):

@@ -152,10 +152,13 @@ class CommandFn(Protocol):
     is registered.
     """
 
-    def __call__(self, accessor: Accessor, paths: list[PathSpec],
-                 texts: list[str],
-                 opts: CommandOpts) -> Awaitable[CommandFnResult]:
-        ...
+    def __call__(
+        self,
+        accessor: Accessor,
+        paths: list[PathSpec],
+        texts: list[str],
+        opts: CommandOpts,
+    ) -> Awaitable[CommandFnResult]: ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -199,8 +202,8 @@ class RegisteredCommand:
 
 
 def _answer_standard_options(
-        name: str, spec: CommandSpec,
-        fn: Callable[..., Any]) -> tuple[CommandSpec, CommandFn]:
+    name: str, spec: CommandSpec, fn: Callable[..., Any]
+) -> tuple[CommandSpec, CommandFn]:
     """Add ``--help`` and ``--version`` to a command, as GNU tools have.
 
     Either one prints to stdout and exits 0 without running the
@@ -223,8 +226,12 @@ def _answer_standard_options(
     version_text = version_line(name)
 
     @functools.wraps(fn)
-    async def wrapper(accessor: Accessor, paths: list[PathSpec],
-                      texts: list[str], opts: CommandOpts) -> CommandFnResult:
+    async def wrapper(
+        accessor: Accessor,
+        paths: list[PathSpec],
+        texts: list[str],
+        opts: CommandOpts,
+    ) -> CommandFnResult:
         if not own_help and opts.flags.get("help") is True:
             return yield_bytes(help_text), IOResult()
         if not own_version and opts.flags.get("version") is True:
@@ -269,7 +276,7 @@ def command(
         # functools.wraps shares the wrapped function's attribute list,
         # so copy it: wrapping a builtin must not add to its registrations.
         registrations = list(getattr(wrapped, "_registered_commands", []))
-        for vfs_name in (vfs if isinstance(vfs, list) else [vfs]):
+        for vfs_name in vfs if isinstance(vfs, list) else [vfs]:
             registrations.append(
                 RegisteredCommand(
                     name=name,
@@ -281,7 +288,8 @@ def command(
                     write=write,
                     limit=limit,
                     path_guarded=path_guarded,
-                ))
+                )
+            )
         setattr(wrapped, "_registered_commands", registrations)
         return wrapped
 
@@ -292,7 +300,8 @@ CommandSource: TypeAlias = RegisteredCommand | Callable[..., Any]
 
 
 def registered_commands(
-        items: Iterable[CommandSource]) -> list[RegisteredCommand]:
+    items: Iterable[CommandSource],
+) -> list[RegisteredCommand]:
     """The registrations of *items*, in order.
 
     Args:
@@ -309,9 +318,12 @@ def registered_commands(
             continue
         registrations = getattr(item, "_registered_commands", None)
         if registrations is None or not all(
-                isinstance(r, RegisteredCommand) for r in registrations):
-            raise TypeError("a command catalog takes RegisteredCommand values "
-                            "and @command-decorated functions")
+            isinstance(r, RegisteredCommand) for r in registrations
+        ):
+            raise TypeError(
+                "a command catalog takes RegisteredCommand values "
+                "and @command-decorated functions"
+            )
         values.extend(registrations)
     return values
 
@@ -335,31 +347,31 @@ class CommandCatalog(Sequence[RegisteredCommand]):
         return len(self._items)
 
     @overload
-    def __getitem__(self, index: int) -> RegisteredCommand:
-        ...
+    def __getitem__(self, index: int) -> RegisteredCommand: ...
 
     @overload
-    def __getitem__(self, index: slice) -> Sequence[RegisteredCommand]:
-        ...
+    def __getitem__(self, index: slice) -> Sequence[RegisteredCommand]: ...
 
     def __getitem__(
-            self, index: int | slice
+        self, index: int | slice
     ) -> RegisteredCommand | Sequence[RegisteredCommand]:
         return self._items[index]
 
     def __iter__(self) -> Iterator[RegisteredCommand]:
         return iter(self._items)
 
-    def get(self,
-            name: str,
-            filetype: str | None = None) -> RegisteredCommand | None:
+    def get(
+        self, name: str, filetype: str | None = None
+    ) -> RegisteredCommand | None:
         return self._by_key.get((name, filetype))
 
-    def require(self,
-                name: str,
-                filetype: str | None = None) -> RegisteredCommand:
+    def require(
+        self, name: str, filetype: str | None = None
+    ) -> RegisteredCommand:
         found = self.get(name, filetype)
         if found is None:
-            raise KeyError(f"command {name!r} with filetype {filetype!r} "
-                           "is not registered")
+            raise KeyError(
+                f"command {name!r} with filetype {filetype!r} "
+                "is not registered"
+            )
         return found

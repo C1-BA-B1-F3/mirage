@@ -27,19 +27,9 @@ def test_extract_text_from_blocks():
 
     class Msg:
         content = [
-            {
-                "type": "text",
-                "text": "hello"
-            },
-            {
-                "type": "tool_use",
-                "name": "ls",
-                "input": {}
-            },
-            {
-                "type": "text",
-                "text": "goodbye"
-            },
+            {"type": "text", "text": "hello"},
+            {"type": "tool_use", "name": "ls", "input": {}},
+            {"type": "text", "text": "goodbye"},
         ]
 
     assert extract_text([Msg()]) == ["hello", "goodbye"]
@@ -49,14 +39,8 @@ def test_extract_text_skips_empty():
 
     class Msg:
         content = [
-            {
-                "type": "text",
-                "text": "  "
-            },
-            {
-                "type": "text",
-                "text": "real"
-            },
+            {"type": "text", "text": "  "},
+            {"type": "text", "text": "real"},
         ]
 
     assert extract_text([Msg()]) == ["real"]

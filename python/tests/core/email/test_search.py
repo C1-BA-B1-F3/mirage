@@ -27,7 +27,7 @@ def test_a_hit_names_the_file_readdir_created():
     msg = {
         "subject": CJK_SUBJECT,
         "uid": "7",
-        "date": "Mon, 5 Jan 2026 10:00:00 +0000"
+        "date": "Mon, 5 Jan 2026 10:00:00 +0000",
     }
     path = _build_vfs_path("/mail", "INBOX", msg)
     assert path.endswith("/" + _msg_filename(CJK_SUBJECT, "7"))
@@ -37,7 +37,7 @@ def test_a_hits_filename_fits_name_max():
     msg = {
         "subject": CJK_SUBJECT,
         "uid": "7",
-        "date": "Mon, 5 Jan 2026 10:00:00 +0000"
+        "date": "Mon, 5 Jan 2026 10:00:00 +0000",
     }
     name = _build_vfs_path("/mail", "INBOX", msg).rsplit("/", 1)[-1]
     assert byte_len(name) <= NAME_MAX_BYTES
@@ -49,20 +49,27 @@ def test_search_criteria_escape_quotes_and_backslashes():
     # the rest of the pattern was read as IMAP search keys (#1067).
     assert build_search_criteria(text='say "hi"') == 'TEXT "say \\"hi\\""'
     assert build_search_criteria(subject="a\\b") == 'SUBJECT "a\\\\b"'
-    assert build_search_criteria(
-        from_addr='"Al" <a@x>') == 'FROM "\\"Al\\" <a@x>"'
+    assert (
+        build_search_criteria(from_addr='"Al" <a@x>')
+        == 'FROM "\\"Al\\" <a@x>"'
+    )
     assert build_search_criteria(to_addr='x"y') == 'TO "x\\"y"'
 
 
 def test_search_criteria_keep_spaces_and_unicode():
-    assert build_search_criteria(
-        text="quarterly review") == 'TEXT "quarterly review"'
+    assert (
+        build_search_criteria(text="quarterly review")
+        == 'TEXT "quarterly review"'
+    )
     cjk = "会議の記録"
     assert build_search_criteria(subject=cjk) == f'SUBJECT "{cjk}"'
 
 
 def test_search_criteria_join_keys_and_leave_dates_bare():
     assert build_search_criteria() == "ALL"
-    assert build_search_criteria(
-        unseen=True, since="05-Jan-2026",
-        before="07-Jan-2026") == "UNSEEN SINCE 05-Jan-2026 BEFORE 07-Jan-2026"
+    assert (
+        build_search_criteria(
+            unseen=True, since="05-Jan-2026", before="07-Jan-2026"
+        )
+        == "UNSEEN SINCE 05-Jan-2026 BEFORE 07-Jan-2026"
+    )

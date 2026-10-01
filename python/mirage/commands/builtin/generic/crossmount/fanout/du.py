@@ -58,23 +58,28 @@ def _leaves(
     """
     paths = {path.rstrip("/") for path, _ in rows}
     known = {root.rstrip("/") for root in dirs}
-    return [(path, size) for path, size in rows
-            if path.rstrip("/") not in known and not any(
-                other.startswith(path.rstrip("/") + "/") for other in paths)]
+    return [
+        (path, size)
+        for path, size in rows
+        if path.rstrip("/") not in known
+        and not any(
+            other.startswith(path.rstrip("/") + "/") for other in paths
+        )
+    ]
 
 
 def merge_du_blocks(
-        blocks: Sequence[bytes],
-        root: str,
-        label: str,
-        *,
-        a: bool,
-        s: bool,
-        c: bool,
-        human: bool,
-        max_depth: int | None,
-        separate_dirs: bool = False,
-        dirs: Sequence[str] = (),
+    blocks: Sequence[bytes],
+    root: str,
+    label: str,
+    *,
+    a: bool,
+    s: bool,
+    c: bool,
+    human: bool,
+    max_depth: int | None,
+    separate_dirs: bool = False,
+    dirs: Sequence[str] = (),
 ) -> bytes:
     """Fold per-mount du blocks into one tree, GNU's way.
 
@@ -117,12 +122,14 @@ def merge_du_blocks(
     own = separate_total(leaves, root) if separate_dirs else total
     lines: list[str] = []
     if not s:
-        rows = rollup(leaves,
-                      root,
-                      a=a,
-                      max_depth=max_depth,
-                      dirs=dirs,
-                      separate_dirs=separate_dirs)
+        rows = rollup(
+            leaves,
+            root,
+            a=a,
+            max_depth=max_depth,
+            dirs=dirs,
+            separate_dirs=separate_dirs,
+        )
         shown = respell_raw([node for node, _ in rows], root, label)
         lines = [
             _format_size(size, human) + "\t" + name

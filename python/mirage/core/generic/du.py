@@ -44,12 +44,15 @@ async def walk(
     total = 0
     for child in children:
         trimmed = child.rstrip("/")
-        child_spec = PathSpec(virtual=trimmed,
-                              directory=trimmed,
-                              resolved=False,
-                              vfs_path=mount_key(trimmed, prefix))
-        total += await walk(stat, readdir, accessor, child_spec, index,
-                            results)
+        child_spec = PathSpec(
+            virtual=trimmed,
+            directory=trimmed,
+            resolved=False,
+            vfs_path=mount_key(trimmed, prefix),
+        )
+        total += await walk(
+            stat, readdir, accessor, child_spec, index, results
+        )
     return total
 
 
@@ -61,14 +64,14 @@ def make_walked_du(stat: StatOp, readdir: ReaddirOp) -> DuOps:
         readdir (ReaddirOp): the backend's readdir.
     """
 
-    async def size(accessor: Accessor,
-                   path: PathSpec,
-                   index: IndexCacheStore = NULL_INDEX) -> int:
+    async def size(
+        accessor: Accessor, path: PathSpec, index: IndexCacheStore = NULL_INDEX
+    ) -> int:
         return await walk(stat, readdir, accessor, path, index, None)
 
-    async def entries(accessor: Accessor,
-                      path: PathSpec,
-                      index: IndexCacheStore = NULL_INDEX) -> DuEntries:
+    async def entries(
+        accessor: Accessor, path: PathSpec, index: IndexCacheStore = NULL_INDEX
+    ) -> DuEntries:
         try:
             info = await stat(accessor, path, index)
         except FileNotFoundError:

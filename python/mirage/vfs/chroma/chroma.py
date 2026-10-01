@@ -12,7 +12,6 @@ from mirage.vfs.chroma.prompt import PROMPT
 
 
 class ChromaVFS(BaseVFS):
-
     accessor: ChromaAccessor
     name: str = VFSName.CHROMA
     caches_reads: bool = False

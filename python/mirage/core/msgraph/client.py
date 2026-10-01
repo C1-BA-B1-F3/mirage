@@ -22,8 +22,14 @@ from urllib.parse import quote
 
 import aiohttp
 
-from mirage.core.api.client import (RetryPolicy, SessionArg, SessionPool,
-                                    api_request, header_delay, resolve_session)
+from mirage.core.api.client import (
+    RetryPolicy,
+    SessionArg,
+    SessionPool,
+    api_request,
+    header_delay,
+    resolve_session,
+)
 from mirage.core.msgraph.config import MsGraphConfig
 from mirage.core.msgraph.constants import MAX_BACKOFF, RETRY_STATUSES
 from mirage.utils.ranges import ByteWindow
@@ -64,7 +70,6 @@ def encoded_path(path: str) -> str:
 
 
 class GraphError(RuntimeError):
-
     def __init__(self, status: int, code: str, message: str) -> None:
         self.status = status
         self.code = code
@@ -95,7 +100,7 @@ def new_session(config: MsGraphConfig) -> aiohttp.ClientSession:
 
 @asynccontextmanager
 async def session_scope(
-        config: MsGraphConfig, session: SessionArg
+    config: MsGraphConfig, session: SessionArg
 ) -> AsyncIterator[aiohttp.ClientSession | SessionPool]:
     """A borrowed session or pool as-is, or an owned session closed on exit.
 
@@ -115,20 +120,26 @@ async def session_scope(
 
 
 def _policy(config: MsGraphConfig) -> RetryPolicy:
-    return RetryPolicy(statuses=RETRY_STATUSES,
-                       max_retries=config.max_retries,
-                       max_backoff=MAX_BACKOFF)
+    return RetryPolicy(
+        statuses=RETRY_STATUSES,
+        max_retries=config.max_retries,
+        max_backoff=MAX_BACKOFF,
+    )
 
 
-def _error_of(resp: aiohttp.ClientResponse, text: str, *, method: str,
-              url: str) -> Exception:
+def _error_of(
+    resp: aiohttp.ClientResponse, text: str, *, method: str, url: str
+) -> Exception:
     try:
         data = json.loads(text)
         err = data.get("error", {}) if isinstance(data, dict) else {}
     except ValueError:
         err = {}
-    return GraphError(resp.status, err.get("code", "unknownError"),
-                      err.get("message", f"{method} {url}"))
+    return GraphError(
+        resp.status,
+        err.get("code", "unknownError"),
+        err.get("message", f"{method} {url}"),
+    )
 
 
 def _lenient_json(text: str) -> Any:
@@ -142,18 +153,20 @@ def _lenient_json(text: str) -> Any:
         return {}
 
 
-async def _request(config: MsGraphConfig,
-                   method: str,
-                   url: str,
-                   *,
-                   session: SessionArg = None,
-                   params: dict[str, Any] | None = None,
-                   json_body: dict[str, Any] | None = None,
-                   data: bytes | None = None,
-                   extra_headers: dict[str, Any] | None = None,
-                   auth: bool = True,
-                   read: Literal["json", "bytes", "none", "location"] = "json",
-                   window: ByteWindow | None = None) -> Any:
+async def _request(
+    config: MsGraphConfig,
+    method: str,
+    url: str,
+    *,
+    session: SessionArg = None,
+    params: dict[str, Any] | None = None,
+    json_body: dict[str, Any] | None = None,
+    data: bytes | None = None,
+    extra_headers: dict[str, Any] | None = None,
+    auth: bool = True,
+    read: Literal["json", "bytes", "none", "location"] = "json",
+    window: ByteWindow | None = None,
+) -> Any:
     refreshed = False
     while True:
         hdrs = headers(config) if auth else {}
@@ -177,8 +190,12 @@ async def _request(config: MsGraphConfig,
         except GraphError as err:
             # a 401 under a token provider means the token aged out
             # mid-flight: mint a fresh one and replay the call once
-            if (err.status == 401 and auth and not refreshed
-                    and callable(config.access_token)):
+            if (
+                err.status == 401
+                and auth
+                and not refreshed
+                and callable(config.access_token)
+            ):
                 refreshed = True
                 continue
             raise
@@ -187,33 +204,33 @@ async def _request(config: MsGraphConfig,
         return result
 
 
-async def graph_get(config: MsGraphConfig,
-                    url: str,
-                    params: dict[str, Any] | None = None,
-                    session: SessionArg = None) -> dict[str, Any]:
-    data: dict[str, Any] = await _request(config,
-                                          "GET",
-                                          url,
-                                          params=params,
-                                          session=session)
+async def graph_get(
+    config: MsGraphConfig,
+    url: str,
+    params: dict[str, Any] | None = None,
+    session: SessionArg = None,
+) -> dict[str, Any]:
+    data: dict[str, Any] = await _request(
+        config, "GET", url, params=params, session=session
+    )
     return data
 
 
-async def graph_list(config: MsGraphConfig,
-                     url: str,
-                     params: dict[str, Any] | None = None,
-                     session: SessionArg = None) -> list[dict[str, Any]]:
+async def graph_list(
+    config: MsGraphConfig,
+    url: str,
+    params: dict[str, Any] | None = None,
+    session: SessionArg = None,
+) -> list[dict[str, Any]]:
     items: list[dict[str, Any]] = []
     next_url: str | None = url
     next_params = params
     sess, own = resolve_session(session, timeout=_timeout(config))
     try:
         while next_url:
-            data = await _request(config,
-                                  "GET",
-                                  next_url,
-                                  params=next_params,
-                                  session=sess)
+            data = await _request(
+                config, "GET", next_url, params=next_params, session=sess
+            )
             items.extend(data.get("value", []))
             next_url = data.get("@odata.nextLink")
             next_params = None
@@ -223,26 +240,32 @@ async def graph_list(config: MsGraphConfig,
     return items
 
 
-async def graph_get_bytes(config: MsGraphConfig,
-                          url: str,
-                          window: ByteWindow | None = None,
-                          session: SessionArg = None,
-                          auth: bool = True) -> bytes:
-    data: bytes = await _request(config,
-                                 "GET",
-                                 url,
-                                 session=session,
-                                 auth=auth,
-                                 read="bytes",
-                                 window=window)
+async def graph_get_bytes(
+    config: MsGraphConfig,
+    url: str,
+    window: ByteWindow | None = None,
+    session: SessionArg = None,
+    auth: bool = True,
+) -> bytes:
+    data: bytes = await _request(
+        config,
+        "GET",
+        url,
+        session=session,
+        auth=auth,
+        read="bytes",
+        window=window,
+    )
     return data
 
 
-async def graph_stream(config: MsGraphConfig,
-                       url: str,
-                       chunk_size: int = 8192,
-                       session: SessionArg = None,
-                       auth: bool = True) -> AsyncIterator[bytes]:
+async def graph_stream(
+    config: MsGraphConfig,
+    url: str,
+    chunk_size: int = 8192,
+    session: SessionArg = None,
+    auth: bool = True,
+) -> AsyncIterator[bytes]:
     # A chunked generator cannot ride api_request: the body outlives the
     # call, so the response must stay open while the caller consumes it.
     sess, own = resolve_session(session, timeout=_timeout(config))
@@ -252,21 +275,27 @@ async def graph_stream(config: MsGraphConfig,
         while True:
             hdrs = headers(config) if auth else {}
             async with sess.get(url, headers=hdrs) as resp:
-                if (resp.status in RETRY_STATUSES
-                        and attempt < config.max_retries):
+                if (
+                    resp.status in RETRY_STATUSES
+                    and attempt < config.max_retries
+                ):
                     await asyncio.sleep(
-                        header_delay(resp, attempt, _policy(config)))
+                        header_delay(resp, attempt, _policy(config))
+                    )
                     attempt += 1
                     continue
-                if (resp.status == 401 and auth and not refreshed
-                        and callable(config.access_token)):
+                if (
+                    resp.status == 401
+                    and auth
+                    and not refreshed
+                    and callable(config.access_token)
+                ):
                     refreshed = True
                     continue
                 if resp.status >= 400:
-                    raise _error_of(resp,
-                                    await resp.text(),
-                                    method="GET",
-                                    url=url)
+                    raise _error_of(
+                        resp, await resp.text(), method="GET", url=url
+                    )
                 async for chunk in resp.content.iter_chunked(chunk_size):
                     yield chunk
                 return
@@ -275,92 +304,109 @@ async def graph_stream(config: MsGraphConfig,
             await sess.close()
 
 
-async def graph_post(config: MsGraphConfig,
-                     url: str,
-                     body: dict[str, Any] | None = None,
-                     session: SessionArg = None) -> dict[str, Any]:
-    data: dict[str, Any] = await _request(config,
-                                          "POST",
-                                          url,
-                                          json_body=body or {},
-                                          session=session)
+async def graph_post(
+    config: MsGraphConfig,
+    url: str,
+    body: dict[str, Any] | None = None,
+    session: SessionArg = None,
+) -> dict[str, Any]:
+    data: dict[str, Any] = await _request(
+        config, "POST", url, json_body=body or {}, session=session
+    )
     return data
 
 
-async def graph_post_monitor(config: MsGraphConfig,
-                             url: str,
-                             body: dict[str, Any] | None = None,
-                             session: SessionArg = None) -> str:
-    location = await _request(config,
-                              "POST",
-                              url,
-                              json_body=body or {},
-                              session=session,
-                              read="location")
+async def graph_post_monitor(
+    config: MsGraphConfig,
+    url: str,
+    body: dict[str, Any] | None = None,
+    session: SessionArg = None,
+) -> str:
+    location = await _request(
+        config,
+        "POST",
+        url,
+        json_body=body or {},
+        session=session,
+        read="location",
+    )
     if not isinstance(location, str) or not location:
-        raise GraphError(502, "missingMonitor",
-                         f"POST {url} did not return a Location header")
+        raise GraphError(
+            502,
+            "missingMonitor",
+            f"POST {url} did not return a Location header",
+        )
     return location
 
 
-async def graph_patch(config: MsGraphConfig,
-                      url: str,
-                      body: dict[str, Any],
-                      session: SessionArg = None) -> dict[str, Any]:
-    data: dict[str, Any] = await _request(config,
-                                          "PATCH",
-                                          url,
-                                          json_body=body,
-                                          session=session)
+async def graph_patch(
+    config: MsGraphConfig,
+    url: str,
+    body: dict[str, Any],
+    session: SessionArg = None,
+) -> dict[str, Any]:
+    data: dict[str, Any] = await _request(
+        config, "PATCH", url, json_body=body, session=session
+    )
     return data
 
 
-async def graph_delete(config: MsGraphConfig,
-                       url: str,
-                       session: SessionArg = None) -> None:
+async def graph_delete(
+    config: MsGraphConfig, url: str, session: SessionArg = None
+) -> None:
     await _request(config, "DELETE", url, session=session, read="none")
 
 
-async def graph_put_bytes(config: MsGraphConfig,
-                          url: str,
-                          data: bytes,
-                          content_type: str = "application/octet-stream",
-                          session: SessionArg = None) -> dict[str, Any]:
+async def graph_put_bytes(
+    config: MsGraphConfig,
+    url: str,
+    data: bytes,
+    content_type: str = "application/octet-stream",
+    session: SessionArg = None,
+) -> dict[str, Any]:
     payload: dict[str, Any] = await _request(
         config,
         "PUT",
         url,
         data=data,
         extra_headers={"Content-Type": content_type},
-        session=session)
+        session=session,
+    )
     return payload
 
 
-def _monitor_error(resp: aiohttp.ClientResponse, text: str, *,
-                   url: str) -> Exception:
+def _monitor_error(
+    resp: aiohttp.ClientResponse, text: str, *, url: str
+) -> Exception:
     return GraphError(resp.status, "monitorError", f"GET {url}")
 
 
-async def poll_monitor(url: str,
-                       timeout: float,
-                       interval: float = 1.0,
-                       session: SessionArg = None) -> dict[str, Any]:
+async def poll_monitor(
+    url: str, timeout: float, interval: float = 1.0, session: SessionArg = None
+) -> dict[str, Any]:
     waited = 0.0
     sess, own = resolve_session(session)
     try:
         while True:
-            payload = await api_request("GET",
-                                        url,
-                                        error_of=partial(_monitor_error,
-                                                         url=url),
-                                        session=sess)
+            payload = await api_request(
+                "GET",
+                url,
+                error_of=partial(_monitor_error, url=url),
+                session=sess,
+            )
             if not isinstance(payload, dict):
-                raise GraphError(502, "invalidMonitorResponse",
-                                 f"GET {url} did not return an object")
+                raise GraphError(
+                    502,
+                    "invalidMonitorResponse",
+                    f"GET {url} did not return an object",
+                )
             status = payload.get("status")
             if not isinstance(status, str) or not status:
-                raise GraphError(502, "invalidMonitorResponse",
-                                 f"GET {url} did not return a status")
+                raise GraphError(
+                    502,
+                    "invalidMonitorResponse",
+                    f"GET {url} did not return a status",
+                )
             if status in ("completed", "failed"):
                 return payload
             if waited >= timeout:
@@ -372,12 +418,14 @@ async def poll_monitor(url: str,
             await sess.close()
 
 
-async def upload_chunk(config: MsGraphConfig,
-                       upload_url: str,
-                       data: bytes,
-                       start: int,
-                       total: int,
-                       session: SessionArg = None) -> dict[str, Any]:
+async def upload_chunk(
+    config: MsGraphConfig,
+    upload_url: str,
+    data: bytes,
+    start: int,
+    total: int,
+    session: SessionArg = None,
+) -> dict[str, Any]:
     end = start + len(data) - 1
     hdrs = {"Content-Range": f"bytes {start}-{end}/{total}"}
     text = await api_request(
@@ -389,6 +437,7 @@ async def upload_chunk(config: MsGraphConfig,
         retry=_policy(config),
         read="text",
         session=session,
-        timeout=None if session is not None else _timeout(config))
+        timeout=None if session is not None else _timeout(config),
+    )
     payload: dict[str, Any] = _lenient_json(text)
     return payload

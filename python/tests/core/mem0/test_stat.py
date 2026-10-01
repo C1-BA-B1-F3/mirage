@@ -11,22 +11,21 @@ from mirage.vfs.mem0.config import Mem0Config
 
 
 class FakeClient:
-
     def __init__(self):
         self.get_calls = 0
 
     async def get_all(self, options=None):
         return {
-            "count":
-            1,
-            "next":
-            None,
-            "results": [{
-                "id": "aaa",
-                "memory": "x",
-                "created_at": "2026-06-15T00:34:18-07:00",
-                "updated_at": "2026-06-15T00:34:22-07:00"
-            }]
+            "count": 1,
+            "next": None,
+            "results": [
+                {
+                    "id": "aaa",
+                    "memory": "x",
+                    "created_at": "2026-06-15T00:34:18-07:00",
+                    "updated_at": "2026-06-15T00:34:22-07:00",
+                }
+            ],
         }
 
     async def get(self, memory_id):
@@ -35,24 +34,23 @@ class FakeClient:
             "id": memory_id,
             "memory": "x",
             "created_at": "2026-06-15T00:00:00-07:00",
-            "updated_at": "2026-06-15T09:00:00-07:00"
+            "updated_at": "2026-06-15T09:00:00-07:00",
         }
 
 
 class CreatedOnlyClient(FakeClient):
-
     async def get_all(self, options=None):
         return {
-            "count":
-            1,
-            "next":
-            None,
-            "results": [{
-                "id": "aaa",
-                "memory": "x",
-                "created_at": "2026-06-15T00:00:00-07:00",
-                "updated_at": None,
-            }]
+            "count": 1,
+            "next": None,
+            "results": [
+                {
+                    "id": "aaa",
+                    "memory": "x",
+                    "created_at": "2026-06-15T00:00:00-07:00",
+                    "updated_at": None,
+                }
+            ],
         }
 
 
@@ -64,8 +62,9 @@ def _accessor():
 
 @pytest.mark.asyncio
 async def test_stat_root_is_dir():
-    s = await stat(_accessor(),
-                   PathSpec(virtual="/mem", directory="/mem", vfs_path=""))
+    s = await stat(
+        _accessor(), PathSpec(virtual="/mem", directory="/mem", vfs_path="")
+    )
     assert s.type == FileType.DIRECTORY
 
 
@@ -75,9 +74,9 @@ async def test_stat_memory_from_cache_has_times():
     index = RAMIndexCacheStore()
     root = PathSpec(virtual="/mem", directory="/mem", vfs_path="")
     await readdir(acc, root, index)
-    fpath = PathSpec(virtual="/mem/aaa.json",
-                     directory="/mem",
-                     vfs_path="aaa.json")
+    fpath = PathSpec(
+        virtual="/mem/aaa.json", directory="/mem", vfs_path="aaa.json"
+    )
     s = await stat(acc, fpath, index)
     assert s.content == ContentType.JSON
     assert s.name == "aaa.json"
@@ -92,9 +91,9 @@ async def test_stat_of_a_memory_outside_the_scope_is_enoent():
     # The scoped listing is the proof, as it is for read: a by-id fetch
     # answered for another user's memory the listing never showed.
     acc = _accessor()
-    fpath = PathSpec(virtual="/mem/zzz.json",
-                     directory="/mem",
-                     vfs_path="zzz.json")
+    fpath = PathSpec(
+        virtual="/mem/zzz.json", directory="/mem", vfs_path="zzz.json"
+    )
     with pytest.raises(FileNotFoundError):
         await stat(acc, fpath, RAMIndexCacheStore())
     assert acc._client.get_calls == 0
@@ -104,9 +103,9 @@ async def test_stat_of_a_memory_outside_the_scope_is_enoent():
 async def test_stat_falls_back_to_created_at():
     acc = _accessor()
     acc._client = CreatedOnlyClient()
-    fpath = PathSpec(virtual="/mem/aaa.json",
-                     directory="/mem",
-                     vfs_path="aaa.json")
+    fpath = PathSpec(
+        virtual="/mem/aaa.json", directory="/mem", vfs_path="aaa.json"
+    )
     s = await stat(acc, fpath, RAMIndexCacheStore())
     assert s.modified == "2026-06-15T00:00:00-07:00"
 
@@ -116,7 +115,8 @@ async def test_stat_invalid_enoent():
     with pytest.raises(FileNotFoundError):
         await stat(
             _accessor(),
-            PathSpec(virtual="/mem/.x", directory="/mem", vfs_path=".x"))
+            PathSpec(virtual="/mem/.x", directory="/mem", vfs_path=".x"),
+        )
 
 
 @pytest.mark.asyncio

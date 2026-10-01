@@ -25,9 +25,13 @@ from dulwich.repo import BaseRepo
 
 from mirage.bridge.sync import run_async_from_sync
 from mirage.commands.cli.builtin.git.format import abbrev_length
-from mirage.commands.cli.builtin.git.io import (file_size, read_file,
-                                                read_names, read_optional,
-                                                write_once)
+from mirage.commands.cli.builtin.git.io import (
+    file_size,
+    read_file,
+    read_names,
+    read_optional,
+    write_once,
+)
 from mirage.commands.cli.builtin.git.lazyfile import LazyFile
 from mirage.runtime.types import DispatchFn
 
@@ -63,12 +67,14 @@ def loose_path(commondir: str, oid: ObjectID) -> str:
         oid (ObjectID): hex object id.
     """
     name = oid.decode()
-    return posixpath.join(commondir, OBJECTS_DIR, name[:FANOUT_LEN],
-                          name[FANOUT_LEN:])
+    return posixpath.join(
+        commondir, OBJECTS_DIR, name[:FANOUT_LEN], name[FANOUT_LEN:]
+    )
 
 
-async def store_blob(dispatch: DispatchFn, commondir: str,
-                     data: bytes) -> ObjectID:
+async def store_blob(
+    dispatch: DispatchFn, commondir: str, data: bytes
+) -> ObjectID:
     """Write file contents into the object database as a blob.
 
     Written straight through the dispatcher rather than through the
@@ -84,8 +90,9 @@ async def store_blob(dispatch: DispatchFn, commondir: str,
         data (bytes): the file's contents.
     """
     blob = Blob.from_string(data)
-    await write_once(dispatch, loose_path(commondir, blob.id),
-                     blob.as_legacy_object())
+    await write_once(
+        dispatch, loose_path(commondir, blob.id), blob.as_legacy_object()
+    )
     return blob.id
 
 
@@ -103,8 +110,12 @@ class LooseObjects:
         loop (asyncio.AbstractEventLoop): the loop serving the mount.
     """
 
-    def __init__(self, dispatch: DispatchFn, gitdir: str,
-                 loop: asyncio.AbstractEventLoop) -> None:
+    def __init__(
+        self,
+        dispatch: DispatchFn,
+        gitdir: str,
+        loop: asyncio.AbstractEventLoop,
+    ) -> None:
         self._dispatch = dispatch
         self._gitdir = gitdir
         self._root = posixpath.join(gitdir, OBJECTS_DIR)
@@ -128,7 +139,8 @@ class LooseObjects:
         if oid in self._cache:
             return self._cache[oid]
         data = run_async_from_sync(
-            read_optional(self._dispatch, self._path(oid)), self._loop)
+            read_optional(self._dispatch, self._path(oid)), self._loop
+        )
         obj = None if data is None else ShaFile.from_file(BytesIO(data))
         self._cache[oid] = obj
         return obj
@@ -141,7 +153,8 @@ class LooseObjects:
         """
         names = run_async_from_sync(
             read_names(self._dispatch, posixpath.join(self._root, fanout)),
-            self._loop)
+            self._loop,
+        )
         found = []
         for entry in names:
             rest = _basename(entry)
@@ -152,7 +165,8 @@ class LooseObjects:
     def ids(self) -> Iterator[ObjectID]:
         """Every loose id, walking the fanout directories by name."""
         for entry in run_async_from_sync(
-                read_names(self._dispatch, self._root), self._loop):
+            read_names(self._dispatch, self._root), self._loop
+        ):
             fanout = _basename(entry)
             if len(fanout) == FANOUT_LEN:
                 yield from self.ids_under(fanout)
@@ -169,8 +183,11 @@ class LooseObjects:
         """
         oid = obj.id
         run_async_from_sync(
-            write_once(self._dispatch, self._path(oid),
-                       obj.as_legacy_object()), self._loop)
+            write_once(
+                self._dispatch, self._path(oid), obj.as_legacy_object()
+            ),
+            self._loop,
+        )
         self._cache[oid] = obj
 
 
@@ -334,8 +351,9 @@ class VfsObjectStore(PackCapableObjectStore):
         raise NotImplementedError("VfsObjectStore writes loose objects only")
 
 
-async def load_packs(dispatch: DispatchFn, gitdir: str,
-                     loop: asyncio.AbstractEventLoop) -> list[Pack]:
+async def load_packs(
+    dispatch: DispatchFn, gitdir: str, loop: asyncio.AbstractEventLoop
+) -> list[Pack]:
     """Open every packfile under ``.git/objects/pack``.
 
     The index is read whole, because dulwich unpacks it through the
@@ -356,7 +374,7 @@ async def load_packs(dispatch: DispatchFn, gitdir: str,
         name = _basename(entry)
         if not name.endswith(IDX_SUFFIX):
             continue
-        stem = name[:-len(IDX_SUFFIX)]
+        stem = name[: -len(IDX_SUFFIX)]
         idx_bytes = await read_file(dispatch, posixpath.join(root, name))
         index = load_pack_index_file(name, BytesIO(idx_bytes), SHA1)
         pack_path = posixpath.join(root, f"{stem}{PACK_SUFFIX}")
@@ -375,8 +393,9 @@ async def load_packs(dispatch: DispatchFn, gitdir: str,
     return packs
 
 
-async def load_object_store(dispatch: DispatchFn,
-                            gitdir: str) -> VfsObjectStore:
+async def load_object_store(
+    dispatch: DispatchFn, gitdir: str
+) -> VfsObjectStore:
     """Assemble the object database for one repository.
 
     Args:
@@ -384,8 +403,10 @@ async def load_object_store(dispatch: DispatchFn,
         gitdir (str): absolute virtual path of the ``.git`` directory.
     """
     loop = asyncio.get_running_loop()
-    return VfsObjectStore(LooseObjects(dispatch, gitdir, loop), await
-                          load_packs(dispatch, gitdir, loop))
+    return VfsObjectStore(
+        LooseObjects(dispatch, gitdir, loop),
+        await load_packs(dispatch, gitdir, loop),
+    )
 
 
 def _index_pack(data: bytes) -> tuple[bytes, bytes]:
@@ -401,8 +422,9 @@ def _index_pack(data: bytes) -> tuple[bytes, bytes]:
     return out.getvalue(), checksum
 
 
-async def store_pack(dispatch: DispatchFn, commondir: str,
-                     data: bytes) -> None:
+async def store_pack(
+    dispatch: DispatchFn, commondir: str, data: bytes
+) -> None:
     """Keep a fetched pack whole, beside the index git reads it through.
 
     Named by the pack's own checksum, as git names one it receives, and

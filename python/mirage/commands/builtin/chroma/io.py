@@ -24,11 +24,10 @@ from mirage.vfs.types import NativeReadOps, ReadOps, SearchOps
 # search pushes down to the Chroma query API, so the two stay bespoke.
 # Chroma is read-only, so the generic byte-mutation commands are
 # intentionally absent (no write op wired).
-IO = VFSAdapter(search=SearchOps(search=search_resource,
-                                 search_many=search_many),
-                read=ReadOps(readdir=CHROMA_TREE.readdir,
-                             read_bytes=_read,
-                             stat=_stat),
-                native=NativeReadOps(read_stream=_read_stream),
-                is_mounted=lambda a: True,
-                local=False).to_command_io()
+IO = VFSAdapter(
+    search=SearchOps(search=search_resource, search_many=search_many),
+    read=ReadOps(readdir=CHROMA_TREE.readdir, read_bytes=_read, stat=_stat),
+    native=NativeReadOps(read_stream=_read_stream),
+    is_mounted=lambda a: True,
+    local=False,
+).to_command_io()

@@ -17,12 +17,13 @@ def entry(name: str, directory: bool, size: int | None = None) -> IndexEntry:
         name=name,
         vfs_name=name,
         resource_type="wandb/directory" if directory else "wandb/file",
-        size=0 if directory else size)
+        size=0 if directory else size,
+    )
 
 
 def file_tree(
-    files: Sequence[Mapping[str,
-                            Any]]) -> dict[str, list[tuple[str, IndexEntry]]]:
+    files: Sequence[Mapping[str, Any]],
+) -> dict[str, list[tuple[str, IndexEntry]]]:
     directories: dict[str, dict[str, IndexEntry]] = {"": {}}
     for file in files:
         segments = file["name"].split("/")
@@ -44,19 +45,23 @@ def file_tree(
     }
 
 
-def file_entries(files: Sequence[Mapping[str, Any]],
-                 prefix: str) -> list[tuple[str, IndexEntry]]:
+def file_entries(
+    files: Sequence[Mapping[str, Any]], prefix: str
+) -> list[tuple[str, IndexEntry]]:
     return file_tree(files).get(prefix.rstrip("/"), [])
 
 
 async def listing(
-        accessor: WandbAccessor,
-        path: PathSpec,
-        index: IndexCacheStore = NULL_INDEX) -> list[tuple[str, IndexEntry]]:
+    accessor: WandbAccessor,
+    path: PathSpec,
+    index: IndexCacheStore = NULL_INDEX,
+) -> list[tuple[str, IndexEntry]]:
     ps = parts(accessor, path)
     if not ps:
-        return [(e, entry(e, True))
-                for e in dict.fromkeys(accessor.config.entities)]
+        return [
+            (e, entry(e, True))
+            for e in dict.fromkeys(accessor.config.entities)
+        ]
     if len(ps) == 1:
         nodes = await accessor.client.projects(ps[0])
     elif len(ps) == 2:
@@ -65,11 +70,15 @@ async def listing(
         key = path.virtual.rstrip("/")
         parent = key.rsplit("/", 1)[0] or "/"
         cached = await index.list_dir(parent) if index is not None else None
-        if (cached is None or cached.entries is None
-                or key not in cached.entries):
+        if (
+            cached is None
+            or cached.entries is None
+            or key not in cached.entries
+        ):
             await accessor.client.run(run_vars(ps), RUN_EXISTS)
-        return [(n, entry(n, False))
-                for n in LEAVES] + [("files", entry("files", True))]
+        return [(n, entry(n, False)) for n in LEAVES] + [
+            ("files", entry("files", True))
+        ]
     elif ps[3] == "files":
         files = await accessor.client.files(run_vars(ps))
         prefix = "/".join(ps[4:])
@@ -79,15 +88,19 @@ async def listing(
         if prefix not in tree:
             raise enoent(path)
         if index is not None:
-            root = mount_prefix_of(path.virtual,
-                                   path.vfs_path) + "/" + "/".join(ps[:4])
+            root = (
+                mount_prefix_of(path.virtual, path.vfs_path)
+                + "/"
+                + "/".join(ps[:4])
+            )
             # No wipe first: each complete set_dir drops what it no longer
             # names, a dropped folder takes its subtree, and the old lists
             # are what tells cleanup which files went away.
             await index.put(root, entry("files", True))
             for directory, entries in tree.items():
                 await index.set_dir(
-                    root + "/" + directory if directory else root, entries)
+                    root + "/" + directory if directory else root, entries
+                )
         return tree[prefix]
     elif ps[3] in LEAVES:
         raise enotdir(path)
@@ -102,9 +115,11 @@ async def listing(
     return result
 
 
-async def readdir(accessor: WandbAccessor,
-                  path_spec: PathSpec,
-                  index: IndexCacheStore = NULL_INDEX) -> list[str]:
+async def readdir(
+    accessor: WandbAccessor,
+    path_spec: PathSpec,
+    index: IndexCacheStore = NULL_INDEX,
+) -> list[str]:
     path = path_spec.dir if path_spec.pattern else path_spec
     parts(accessor, path)
     key = path.virtual.rstrip("/") or "/"

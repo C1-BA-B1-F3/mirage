@@ -20,13 +20,11 @@ if TYPE_CHECKING:
     from mirage.server.registry import WorkspaceRegistry
 
 _EXPORTS: dict[str, tuple[str, ...]] = {
-    "mirage.server.app": ("build_app", ),
-    "mirage.server.registry": ("WorkspaceRegistry", ),
+    "mirage.server.app": ("build_app",),
+    "mirage.server.registry": ("WorkspaceRegistry",),
 }
 _MODULE_OF = {
-    name: module
-    for module, names in _EXPORTS.items()
-    for name in names
+    name: module for module, names in _EXPORTS.items() for name in names
 }
 
 __all__ = ["WorkspaceRegistry", "build_app"]

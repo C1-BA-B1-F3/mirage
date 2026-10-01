@@ -27,7 +27,6 @@ from mirage.vfs.discord.prompt import PROMPT, WRITE_PROMPT
 
 
 class DiscordVFS(BaseVFS):
-
     accessor: DiscordAccessor
     name: str = VFSName.DISCORD
     caches_reads: bool = True
@@ -43,7 +42,8 @@ class DiscordVFS(BaseVFS):
         self.config = config
         self.accessor = DiscordAccessor(
             self.config,
-            TimeRange.from_strings(config.start_time, config.end_time))
+            TimeRange.from_strings(config.start_time, config.end_time),
+        )
         self.prompt = PROMPT + self.accessor.time_range.prompt()
 
     def ops(self) -> list[RegisteredOp]:

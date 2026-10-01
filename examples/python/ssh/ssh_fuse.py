@@ -32,8 +32,8 @@ config = SSHConfig(
 vfs = SSHVFS(config)
 
 with Workspace(
-    {"/ssh/": Mount(vfs, mode=MountMode.WRITE,
-                    backend=MountBackend.FUSE)}) as ws:
+    {"/ssh/": Mount(vfs, mode=MountMode.WRITE, backend=MountBackend.FUSE)}
+) as ws:
     mp = ws.fuse_mountpoint
 
     print(f"=== FUSE MODE: mounted at {mp} ===\n")
@@ -77,5 +77,4 @@ with Workspace(
 
     records = ws.vfs.records
     total = sum(r.bytes for r in records)
-    print(f"\nStats: {len(records)} ops, "
-          f"{total} bytes transferred")
+    print(f"\nStats: {len(records)} ops, {total} bytes transferred")

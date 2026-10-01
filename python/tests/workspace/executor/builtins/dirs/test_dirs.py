@@ -2,10 +2,13 @@ import pytest
 
 from mirage.types import PathSpec
 from mirage.utils.path import CycleError
-from mirage.workspace.executor.builtins.dirs.dirs import (join_raw, norm,
-                                                          resolve_target,
-                                                          split_mode_options,
-                                                          typed_path)
+from mirage.workspace.executor.builtins.dirs.dirs import (
+    join_raw,
+    norm,
+    resolve_target,
+    split_mode_options,
+    typed_path,
+)
 
 
 def test_split_mode_options_cluster_and_last_wins():

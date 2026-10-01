@@ -44,8 +44,9 @@ def value_piece(text: str, quoted: bool) -> Piece:
     return Piece(mark_globs(text), False) if quoted else Piece(text, True)
 
 
-def splat_chunks(elements: Sequence[str], joiner: str,
-                 quoted: bool) -> list[Chunk]:
+def splat_chunks(
+    elements: Sequence[str], joiner: str, quoted: bool
+) -> list[Chunk]:
     """The elements of a splat, a field boundary between each two.
 
     Args:
@@ -70,8 +71,9 @@ def join_chunks(chunks: Iterable[Chunk]) -> str:
     Args:
         chunks (Iterable[Chunk]): the word's pieces.
     """
-    return "".join(c.text if isinstance(c, Piece) else c.joiner
-                   for c in chunks)
+    return "".join(
+        c.text if isinstance(c, Piece) else c.joiner for c in chunks
+    )
 
 
 def chunks_text(chunks: Iterable[Chunk]) -> str:

@@ -37,12 +37,14 @@ def accessor():
 
 @pytest.mark.asyncio
 async def test_set_attrs_fields_reported_by_stat(accessor):
-    await set_attrs(accessor,
-                    _spec("/f.txt"),
-                    mode=0o601,
-                    uid=500,
-                    gid="dev",
-                    atime="2026-01-02T00:00:00+00:00")
+    await set_attrs(
+        accessor,
+        _spec("/f.txt"),
+        mode=0o601,
+        uid=500,
+        gid="dev",
+        atime="2026-01-02T00:00:00+00:00",
+    )
     result = await stat(accessor, _spec("/f.txt"))
     assert result.mode == 0o601
     assert result.uid == 500
@@ -62,9 +64,9 @@ async def test_set_attrs_partial_update_keeps_other_fields(accessor):
 
 @pytest.mark.asyncio
 async def test_set_attrs_mtime_updates_modified(accessor):
-    await set_attrs(accessor,
-                    _spec("/f.txt"),
-                    mtime="2026-03-04T12:00:00+00:00")
+    await set_attrs(
+        accessor, _spec("/f.txt"), mtime="2026-03-04T12:00:00+00:00"
+    )
     assert accessor.store.modified["/f.txt"] == "2026-03-04T12:00:00+00:00"
 
 

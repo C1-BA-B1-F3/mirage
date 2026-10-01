@@ -23,7 +23,7 @@ from mirage.io.types import ByteSource, IOResult
 
 
 async def read(
-        inv: CLIInvocation[DiscordConfig]
+    inv: CLIInvocation[DiscordConfig],
 ) -> tuple[ByteSource | None, IOResult]:
     fl = FlagView(inv.flags)
     messages = await fetch_recent_messages(
@@ -31,6 +31,7 @@ async def read(
         fl.as_str("channel") or "",
         fl.as_int("limit") or 20,
     )
-    out = json.dumps(messages, ensure_ascii=False,
-                     separators=(",", ":")).encode()
+    out = json.dumps(
+        messages, ensure_ascii=False, separators=(",", ":")
+    ).encode()
     return yield_bytes(out), IOResult()

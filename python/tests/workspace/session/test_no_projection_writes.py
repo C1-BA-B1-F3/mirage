@@ -58,8 +58,13 @@ ALLOWED = {
     "typescript/packages/core/src/workspace/state_doors.test.ts",
 }
 
-SEARCH_ROOTS = ("python/mirage", "python/tests", "integ", "examples",
-                "typescript/packages")
+SEARCH_ROOTS = (
+    "python/mirage",
+    "python/tests",
+    "integ",
+    "examples",
+    "typescript/packages",
+)
 
 
 def _sources() -> list[Path]:
@@ -88,6 +93,8 @@ def test_no_writes_into_the_read_only_projections() -> None:
         for i, line in enumerate(path.read_text().splitlines(), 1):
             if any(p.search(line) for p in patterns):
                 offenders.append(f"{rel}:{i}: {line.strip()}")
-    assert not offenders, ("write into a read-only session projection; use "
-                           "seed_var/seedVar, set_attr/setAttr or the `env` "
-                           "setter instead:\n" + "\n".join(offenders))
+    assert not offenders, (
+        "write into a read-only session projection; use "
+        "seed_var/seedVar, set_attr/setAttr or the `env` "
+        "setter instead:\n" + "\n".join(offenders)
+    )

@@ -27,7 +27,6 @@ from mirage.vfs.gdocs.prompt import PROMPT, WRITE_PROMPT
 
 
 class GDocsVFS(BaseVFS):
-
     accessor: GDocsAccessor
     name: str = VFSName.GDOCS
     caches_reads: bool = True

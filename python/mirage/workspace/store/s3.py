@@ -38,8 +38,9 @@ class S3WorkspaceStateStore(WorkspaceStateStore):
     ``workspace`` group override of a RAM or Redis default store.
     """
 
-    def __init__(self, config: S3Config,
-                 **overrides: "WorkspaceStateStore | None") -> None:
+    def __init__(
+        self, config: S3Config, **overrides: "WorkspaceStateStore | None"
+    ) -> None:
         super().__init__(**overrides)
         self._config = config
         self._prefix = config.key_prefix or ""
@@ -50,18 +51,21 @@ class S3WorkspaceStateStore(WorkspaceStateStore):
         raise RuntimeError(
             "The s3 store hosts only the sessions+meta group; keep the "
             "namespace plane on ram or redis and pass the s3 store as "
-            "the 'workspace' group override.")
+            "the 'workspace' group override."
+        )
 
     def _make_observer(self, workspace_id: str) -> ObserverStore:
         raise RuntimeError(
             "The s3 store hosts only the sessions+meta group; keep the "
             "observer plane on ram or redis and pass the s3 store as "
-            "the 'workspace' group override.")
+            "the 'workspace' group override."
+        )
 
     def _make_sessions(self, workspace_id: str) -> SessionStore:
         if workspace_id not in self._sessions:
             scoped = self._config.model_copy(
-                update={"key_prefix": f"{self._prefix}{workspace_id}/"})
+                update={"key_prefix": f"{self._prefix}{workspace_id}/"}
+            )
             self._sessions[workspace_id] = S3SessionStore(scoped)
         return self._sessions[workspace_id]
 
@@ -69,14 +73,20 @@ class S3WorkspaceStateStore(WorkspaceStateStore):
         fields, _ = await self._meta.get(workspace_id)
         return fields
 
-    async def _set_meta(self, workspace_id: str,
-                        fields: WorkspaceFields) -> None:
+    async def _set_meta(
+        self, workspace_id: str, fields: WorkspaceFields
+    ) -> None:
         await self._meta.put(workspace_id, fields)
 
-    async def _cas_set_meta(self, workspace_id: str, fields: WorkspaceFields,
-                            expected_generation: int) -> bool:
-        return await self._meta.cas_put(workspace_id, fields,
-                                        expected_generation)
+    async def _cas_set_meta(
+        self,
+        workspace_id: str,
+        fields: WorkspaceFields,
+        expected_generation: int,
+    ) -> bool:
+        return await self._meta.cas_put(
+            workspace_id, fields, expected_generation
+        )
 
     async def _close(self) -> None:
         for sess in self._sessions.values():

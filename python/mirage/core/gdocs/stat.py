@@ -24,10 +24,21 @@ from mirage.types import ContentType, FileStat, FileType, PathSpec
 from mirage.vfs.gdocs.doc_entry import make_filename
 
 
-async def _file_stat(accessor: GDocsAccessor, match: ScopeMatch,
-                     path: PathSpec, index: IndexCacheStore) -> FileStat:
-    entry = await resolve_app_entry(accessor.token_manager, match, path, index,
-                                    MIME, "gdocs/file", make_filename)
+async def _file_stat(
+    accessor: GDocsAccessor,
+    match: ScopeMatch,
+    path: PathSpec,
+    index: IndexCacheStore,
+) -> FileStat:
+    entry = await resolve_app_entry(
+        accessor.token_manager,
+        match,
+        path,
+        index,
+        MIME,
+        "gdocs/file",
+        make_filename,
+    )
     return FileStat(
         name=entry.vfs_name,
         type=FileType.FILE,

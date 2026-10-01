@@ -59,16 +59,20 @@ def check_vfs(prefix: str, vfs: BaseVFS) -> None:
         raise TypeError(
             f"mount {prefix!r}: got a coroutine, not a VFS. "
             "build_vfs() is synchronous; if you wrote "
-            "`await build_vfs(...)` against 0.0.5, drop the await.")
+            "`await build_vfs(...)` against 0.0.5, drop the await."
+        )
     if not isinstance(vfs, BaseVFS):
-        raise TypeError(f"mount {prefix!r}: expected a BaseVFS, got "
-                        f"{type(vfs).__name__}")
+        raise TypeError(
+            f"mount {prefix!r}: expected a BaseVFS, got {type(vfs).__name__}"
+        )
 
 
-def normalize_mounts(mounts: dict[str, VFSMount],
-                     default_mode: MountMode,
-                     default_read: ReadSpec,
-                     index: IndexConfig | None = None) -> list[MountSpec]:
+def normalize_mounts(
+    mounts: dict[str, VFSMount],
+    default_mode: MountMode,
+    default_read: ReadSpec,
+    index: IndexConfig | None = None,
+) -> list[MountSpec]:
     """Narrow every accepted ``mounts`` spelling to one shape.
 
     Every spelling converges here, which is why this is where a mount's
@@ -97,56 +101,77 @@ def normalize_mounts(mounts: dict[str, VFSMount],
                     prefix=prefix,
                     vfs=value.vfs,
                     mode=value.mode
-                    if value.mode is not None else default_mode,
+                    if value.mode is not None
+                    else default_mode,
                     backend=value.backend,
                     mountpoint=value.mountpoint,
                     command_limits=dict(value.command_limits or {}),
                     vfs_ref=value.vfs_ref,
                     index=value.index,
                     read=value.read
-                    if value.read is not None else default_read,
-                ))
+                    if value.read is not None
+                    else default_read,
+                )
+            )
         elif isinstance(value, tuple):
             if len(value) not in (2, 3):
-                raise TypeError("VFS tuples must be (VFS, mode) or "
-                                "(VFS, mode, command_limits)")
-            command_limits = dict(
-                value[2]) if len(value) == 3 and value[2] else {}
+                raise TypeError(
+                    "VFS tuples must be (VFS, mode) or "
+                    "(VFS, mode, command_limits)"
+                )
+            command_limits = (
+                dict(value[2]) if len(value) == 3 and value[2] else {}
+            )
             specs.append(
-                MountSpec(prefix=prefix,
-                          vfs=value[0],
-                          mode=value[1],
-                          command_limits=command_limits,
-                          read=default_read))
+                MountSpec(
+                    prefix=prefix,
+                    vfs=value[0],
+                    mode=value[1],
+                    command_limits=command_limits,
+                    read=default_read,
+                )
+            )
         else:
             specs.append(
-                MountSpec(prefix=prefix,
-                          vfs=value,
-                          mode=default_mode,
-                          read=default_read))
+                MountSpec(
+                    prefix=prefix,
+                    vfs=value,
+                    mode=default_mode,
+                    read=default_read,
+                )
+            )
     indexes: dict[int, IndexConfig | None] = {}
     for spec in specs:
         check_vfs(spec.prefix, spec.vfs)
         effective = indexes.setdefault(
-            id(spec.vfs), spec.index if spec.index is not None else index)
+            id(spec.vfs), spec.index if spec.index is not None else index
+        )
         check_read_capability(spec.prefix, spec.vfs, spec.read, effective)
     return specs
 
 
 def kernel_targets(
-        specs: list[MountSpec]) -> list[tuple[str, MountBackend, str | None]]:
+    specs: list[MountSpec],
+) -> list[tuple[str, MountBackend, str | None]]:
     """Entries that also want a real mountpoint, in declaration order.
 
     Args:
         specs (list[MountSpec]): the normalized mount specs.
     """
-    return [(s.prefix, s.backend, s.mountpoint) for s in specs
-            if s.backend in KERNEL_BACKENDS]
+    return [
+        (s.prefix, s.backend, s.mountpoint)
+        for s in specs
+        if s.backend in KERNEL_BACKENDS
+    ]
 
 
-def install_mounts(registry: MountRegistry, specs: list[MountSpec],
-                   index: IndexConfig | None, default_mode: MountMode,
-                   default_read: ReadSpec) -> bool:
+def install_mounts(
+    registry: MountRegistry,
+    specs: list[MountSpec],
+    index: IndexConfig | None,
+    default_mode: MountMode,
+    default_read: ReadSpec,
+) -> bool:
     """Mount every spec, adding an implicit scratch root if none claims /.
 
     A workspace-level ``index`` builds every mount's store, its TTL
@@ -177,7 +202,8 @@ def install_mounts(registry: MountRegistry, specs: list[MountSpec],
             spec.mode,
             spec.read,
             index=spec.index if spec.index is not None else index,
-            vfs_ref=spec.vfs_ref)
+            vfs_ref=spec.vfs_ref,
+        )
         if spec.command_limits:
             entry.command_limits.update(spec.command_limits)
     implicit_root = registry.root_mount is None
@@ -192,8 +218,9 @@ def install_mounts(registry: MountRegistry, specs: list[MountSpec],
     return implicit_root
 
 
-async def clear_mount_cache(cache: FileCacheMixin | None, prefix: str,
-                            indices: list[IndexCacheStore]) -> None:
+async def clear_mount_cache(
+    cache: FileCacheMixin | None, prefix: str, indices: list[IndexCacheStore]
+) -> None:
     """Drop a mount's cache state atomically with deferred file-cache fills."""
 
     async def clear_indices() -> None:
@@ -209,19 +236,26 @@ async def clear_mount_cache(cache: FileCacheMixin | None, prefix: str,
         await clear_indices()
 
 
-def prepare_added_mount(registry: MountRegistry, entry: MountEntry,
-                        previous: list[MountEntry]) -> None:
+def prepare_added_mount(
+    registry: MountRegistry, entry: MountEntry, previous: list[MountEntry]
+) -> None:
     """Keep synchronous registration; I/O awaits removal of shadowed state."""
     indices = [entry.index_store]
-    indices.extend(m.index_store for m in previous
-                   if entry.prefix.startswith(m.prefix))
-    entry.before_use = partial(clear_mount_cache, registry.file_cache,
-                               entry.prefix, indices)
+    indices.extend(
+        m.index_store for m in previous if entry.prefix.startswith(m.prefix)
+    )
+    entry.before_use = partial(
+        clear_mount_cache, registry.file_cache, entry.prefix, indices
+    )
 
 
-async def unmount(registry: MountRegistry, ops: Ops, prefix: str,
-                  is_shutting_down: Callable[[], bool],
-                  shared_mounts: set[int]) -> None:
+async def unmount(
+    registry: MountRegistry,
+    ops: Ops,
+    prefix: str,
+    is_shutting_down: Callable[[], bool],
+    shared_mounts: set[int],
+) -> None:
     """Remove one mount, closing its VFS if nothing else uses it.
 
     The virtual root, the device mount, and the history view are
@@ -242,7 +276,7 @@ async def unmount(registry: MountRegistry, ops: Ops, prefix: str,
         ValueError: the prefix names a permanent mount.
     """
     stripped = prefix.strip("/")
-    norm = ("/" + stripped + "/" if stripped else "/")
+    norm = "/" + stripped + "/" if stripped else "/"
     if norm == "/":
         raise ValueError(f"cannot unmount the virtual root: {prefix!r}")
     if norm == "/dev/":
@@ -292,8 +326,9 @@ async def _close_vfs(entry: MountEntry, shared: bool) -> None:
         await entry.index_store.close()
 
 
-def _release_vfs(registry: MountRegistry, identity: int,
-                 closing: asyncio.Task[None]) -> None:
+def _release_vfs(
+    registry: MountRegistry, identity: int, closing: asyncio.Task[None]
+) -> None:
     registry.retiring_mounts.pop(identity, None)
     # The caller may have been cancelled while shield kept cleanup alive.
     if not closing.cancelled():

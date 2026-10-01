@@ -11,7 +11,8 @@ LONGEST = 1 << 18
 UNICODE_FOLDED = frozenset("iks")
 QUANTIFIER = re.compile(r"[*+?]|\{(?P<least>[0-9]+)(?:,[0-9]*)?\}")
 GROUP = re.compile(
-    r"\?(?:(?P<look>=|!|<=|<!)|[:>]|P?<[A-Za-z_$][A-Za-z0-9_$]*>)")
+    r"\?(?:(?P<look>=|!|<=|<!)|[:>]|P?<[A-Za-z_$][A-Za-z0-9_$]*>)"
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -19,6 +20,7 @@ class Required:
     """What every match of a subexpression consumes: ``literal`` when the
     text is fixed, and ``needles``, one of which it always contains (none
     known when empty)."""
+
     literal: str | None
     needles: tuple[str, ...]
 
@@ -28,7 +30,7 @@ EMPTY = Required("", ())
 
 
 def literal(text: str) -> Required:
-    return Required(text, (text, ) if text else ())
+    return Required(text, (text,) if text else ())
 
 
 def strength(part: Required) -> int:
@@ -63,7 +65,7 @@ class RequiredLiterals:
         self.valid = True
 
     def peek(self) -> str:
-        return self.source[self.at:self.at + 1]
+        return self.source[self.at : self.at + 1]
 
     def needles(self) -> tuple[str, ...]:
         required = self.alternation(0)
@@ -89,8 +91,9 @@ class RequiredLiterals:
             if atom.literal is not None:
                 run.append(atom.literal)
             else:
-                required = sequence(sequence(required, literal("".join(run))),
-                                    atom)
+                required = sequence(
+                    sequence(required, literal("".join(run))), atom
+                )
                 run = []
         return sequence(required, literal("".join(run)))
 
@@ -199,13 +202,17 @@ def required_needles(pat: re.Pattern[str]) -> tuple[bytes, ...] | None:
         pat (re.Pattern[str]): the compiled line matcher.
     """
     fold = bool(pat.flags & re.IGNORECASE)
-    if (pat.flags & re.VERBOSE or len(pat.pattern) > LONGEST
-            or any(not " " <= char <= "~" for char in pat.pattern)):
+    if (
+        pat.flags & re.VERBOSE
+        or len(pat.pattern) > LONGEST
+        or any(not " " <= char <= "~" for char in pat.pattern)
+    ):
         return None
     needles = RequiredLiterals(pat.pattern).needles()
     if fold:
         needles = tuple(dict.fromkeys(needle.lower() for needle in needles))
-        if not pat.flags & re.ASCII and any(UNICODE_FOLDED & set(needle)
-                                            for needle in needles):
+        if not pat.flags & re.ASCII and any(
+            UNICODE_FOLDED & set(needle) for needle in needles
+        ):
             return None
     return tuple(needle.encode("ascii") for needle in needles) or None

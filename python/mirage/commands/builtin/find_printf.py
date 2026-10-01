@@ -15,12 +15,20 @@
 from datetime import datetime, timezone
 from stat import filemode
 
-from mirage.commands.builtin.utils.identity import (Identity, group_name,
-                                                    owner_name)
+from mirage.commands.builtin.utils.identity import (
+    Identity,
+    group_name,
+    owner_name,
+)
 from mirage.types import FileStat, FileType, PathSpec
 from mirage.utils.dates import iso_timestamp
-from mirage.utils.stat_view import (CHAR_MODE, DIR_MODE, FILE_MODE, LINK_MODE,
-                                    content_size)
+from mirage.utils.stat_view import (
+    CHAR_MODE,
+    DIR_MODE,
+    FILE_MODE,
+    LINK_MODE,
+    content_size,
+)
 
 _PRINTF_ESCAPES = {
     "n": "\n",
@@ -76,7 +84,7 @@ def _relative_part(row: str, search: PathSpec) -> str:
         return ""
     stem = base if base.endswith("/") else base + "/"
     if row.startswith(stem):
-        return row[len(stem):]
+        return row[len(stem) :]
     return row
 
 
@@ -86,8 +94,9 @@ def _mtime_epoch(st: FileStat | None) -> float:
     return iso_timestamp(st.modified) or 0.0
 
 
-def _expand_time(letter: str, ts: float, directive_src: str,
-                 warnings: list[str]) -> str:
+def _expand_time(
+    letter: str, ts: float, directive_src: str, warnings: list[str]
+) -> str:
     if letter == "@":
         return f"{ts:.10f}"
     dt = datetime.fromtimestamp(ts, timezone.utc)
@@ -129,13 +138,15 @@ def _mode_bits(st: FileStat | None, kind: str) -> int:
     return (base & ~0o7777) | (st.mode & 0o7777)
 
 
-def expand_printf(fmt: str,
-                  row: str,
-                  search: PathSpec,
-                  st: FileStat | None,
-                  warnings: list[str],
-                  target: FileStat | None = None,
-                  identity: Identity | None = None) -> str:
+def expand_printf(
+    fmt: str,
+    row: str,
+    search: PathSpec,
+    st: FileStat | None,
+    warnings: list[str],
+    target: FileStat | None = None,
+    identity: Identity | None = None,
+) -> str:
     """Expand one -printf format against one result row.
 
     Directives cover what GNU's find agents actually use: the path family
@@ -173,7 +184,7 @@ def expand_printf(fmt: str,
                 out.append(_PRINTF_ESCAPES[nxt])
             else:
                 _warn_unrecognized(f"\\{nxt}", warnings)
-                out.append(fmt[i:i + 2])
+                out.append(fmt[i : i + 2])
             i += 2
             continue
         if ch != "%" or i + 1 >= n:
@@ -213,11 +224,13 @@ def expand_printf(fmt: str,
             else:
                 out.append(kind)
         elif code in ("u", "U"):
-            out.append(owner_name(st.uid if st is not None else None,
-                                  identity))
+            out.append(
+                owner_name(st.uid if st is not None else None, identity)
+            )
         elif code in ("g", "G"):
-            out.append(group_name(st.gid if st is not None else None,
-                                  identity))
+            out.append(
+                group_name(st.gid if st is not None else None, identity)
+            )
         elif code == "m":
             out.append(format(_mode_bits(st, kind) & 0o7777, "o"))
         elif code == "M":
@@ -226,8 +239,8 @@ def expand_printf(fmt: str,
             letter = fmt[i]
             i += 1
             out.append(
-                _expand_time(letter, _mtime_epoch(st), f"%T{letter}",
-                             warnings))
+                _expand_time(letter, _mtime_epoch(st), f"%T{letter}", warnings)
+            )
         else:
             _warn_unrecognized(f"%{code}", warnings)
             out.append(f"%{code}")

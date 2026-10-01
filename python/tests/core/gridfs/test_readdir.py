@@ -29,8 +29,11 @@ _UPLOAD = datetime(2026, 1, 1, tzinfo=timezone.utc)
 
 @pytest.fixture
 def accessor():
-    return GridFSAccessor(config=GridFSConfig(
-        uri="mongodb://localhost:27017", database="db", bucket="data"))
+    return GridFSAccessor(
+        config=GridFSConfig(
+            uri="mongodb://localhost:27017", database="db", bucket="data"
+        )
+    )
 
 
 def _doc(filename: str, length: int = 0) -> dict:
@@ -95,7 +98,6 @@ async def test_readdir_populates_index(accessor):
 
 
 class _FakeColl:
-
     def __init__(self, names: list[str]) -> None:
         self._names = names
 
@@ -182,10 +184,13 @@ async def test_readdir_below_a_file_doc_is_enotdir(accessor):
 @pytest.mark.asyncio
 async def test_readdir_missing_path_under_a_key_prefix_is_enoent():
     prefixed = GridFSAccessor(
-        config=GridFSConfig(uri="mongodb://localhost:27017",
-                            database="db",
-                            bucket="data",
-                            key_prefix="team"))
+        config=GridFSConfig(
+            uri="mongodb://localhost:27017",
+            database="db",
+            bucket="data",
+            key_prefix="team",
+        )
+    )
     with _bucket(["team/dir/f.txt"]), pytest.raises(FileNotFoundError):
         await readdir(prefixed, _path("/never.txt"))
 

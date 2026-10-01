@@ -1,9 +1,24 @@
 import pytest
 
 from mirage.core.awk.errors import AwkSyntaxError
-from mirage.core.awk.nodes import (Assign, Binary, Block, Compare, Concat, For,
-                                   ForIn, Getline, GetlineKind, Print,
-                                   RedirKind, RuleKind, Str, Unary, Var, While)
+from mirage.core.awk.nodes import (
+    Assign,
+    Binary,
+    Block,
+    Compare,
+    Concat,
+    For,
+    ForIn,
+    Getline,
+    GetlineKind,
+    Print,
+    RedirKind,
+    RuleKind,
+    Str,
+    Unary,
+    Var,
+    While,
+)
 from mirage.core.awk.parser import parse
 
 
@@ -16,14 +31,17 @@ def first_stmt(src: str):
 def test_rule_kinds():
     rules = parse("BEGIN{}\n/a/\nNR==1,NR==2{print}\n{print}\nEND{}").rules
     assert [r.kind for r in rules] == [
-        RuleKind.BEGIN, RuleKind.PATTERN, RuleKind.RANGE, RuleKind.ALWAYS,
-        RuleKind.END
+        RuleKind.BEGIN,
+        RuleKind.PATTERN,
+        RuleKind.RANGE,
+        RuleKind.ALWAYS,
+        RuleKind.END,
     ]
     assert rules[1].action is None
 
 
 def test_for_header_keeps_its_semicolons():
-    stmt = first_stmt("{for(i=1;i<NF;i++)x=x\"  \"}")
+    stmt = first_stmt('{for(i=1;i<NF;i++)x=x"  "}')
     assert isinstance(stmt, For)
     assert isinstance(stmt.cond, Compare)
 
@@ -36,7 +54,7 @@ def test_for_in_and_while_with_an_empty_body():
 
 
 def test_concatenation_binds_looser_than_arithmetic():
-    expr = first_stmt("{x = 1 \" \" 2+3}").expr
+    expr = first_stmt('{x = 1 " " 2+3}').expr
     assert isinstance(expr, Assign)
     assert isinstance(expr.value, Concat)
     assert isinstance(expr.value.right, Binary)
@@ -62,15 +80,18 @@ def test_functions_are_collected():
     assert program.functions["f"].params == ("a", "b")
 
 
-@pytest.mark.parametrize("src", [
-    "{print $(}",
-    "{if x print}",
-    "{break}",
-    "{return 1}",
-    "{print",
-    "/[/",
-    "{x = }",
-])
+@pytest.mark.parametrize(
+    "src",
+    [
+        "{print $(}",
+        "{if x print}",
+        "{break}",
+        "{return 1}",
+        "{print",
+        "/[/",
+        "{x = }",
+    ],
+)
 def test_syntax_errors(src):
     with pytest.raises(AwkSyntaxError):
         parse(src)
@@ -85,7 +106,7 @@ def test_getline_file_is_a_primary():
 
 
 def test_getline_file_result_compares_unparenthesised():
-    loop = first_stmt('{while (getline line < f > 0) n++}')
+    loop = first_stmt("{while (getline line < f > 0) n++}")
     assert isinstance(loop.cond, Compare)
     assert isinstance(loop.cond.left, Getline)
     assert loop.cond.left.target == Var("line")

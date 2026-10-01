@@ -22,35 +22,39 @@ from mirage.types import MountMode, PathSpec
 from mirage.vfs.ram import RAMVFS
 from mirage.workspace import Workspace
 from mirage.workspace.executor.command import routing
-from mirage.workspace.executor.command.routing import (default_cwd_operand,
-                                                       merge_scopes,
-                                                       path_flag_scopes,
-                                                       program_tokens,
-                                                       routable_scopes)
+from mirage.workspace.executor.command.routing import (
+    default_cwd_operand,
+    merge_scopes,
+    path_flag_scopes,
+    program_tokens,
+    routable_scopes,
+)
 
 
 def _path(virtual: str) -> PathSpec:
-    return PathSpec(virtual=virtual,
-                    directory=virtual,
-                    vfs_path="",
-                    resolved=True)
+    return PathSpec(
+        virtual=virtual, directory=virtual, vfs_path="", resolved=True
+    )
 
 
-@pytest.mark.parametrize("argv, expected", [
-    (["--version", ".", "/a", "/b"], True),
-    ([".", "/a", "/b", "-V"], True),
-    (["--help", ".", "/a", "/b"], True),
-    (["--bogus", ".", "/a", "/b"], True),
-    ([".", "--", "--version", "/a", "/b"], False),
-    (["--arg", "x", "--version", ".", "/a", "/b"], False),
-    ([".", "/a", "/b"], False),
-])
+@pytest.mark.parametrize(
+    "argv, expected",
+    [
+        (["--version", ".", "/a", "/b"], True),
+        ([".", "/a", "/b", "-V"], True),
+        (["--help", ".", "/a", "/b"], True),
+        (["--bogus", ".", "/a", "/b"], True),
+        ([".", "--", "--version", "/a", "/b"], False),
+        (["--arg", "x", "--version", ".", "/a", "/b"], False),
+        ([".", "/a", "/b"], False),
+    ],
+)
 def test_option_loop_exits_only_for_a_parsed_early_answer(argv, expected):
     assert routing.option_loop_exits("jq", SPECS["jq"], argv, "/") is expected
 
 
 def test_option_loop_exit_rules_do_not_apply_to_custom_grammars():
-    spec = CommandSpec(options=(Option(long="--version"), ))
+    spec = CommandSpec(options=(Option(long="--version"),))
     assert not routing.option_loop_exits("jq", spec, ["--version"], "/")
     assert not routing.option_loop_exits("jq", None, ["--version"], "/")
 
@@ -64,11 +68,13 @@ def test_merge_scopes_keeps_operand_order_and_dedupes():
 
 def test_routable_scopes_drop_awk_assignment_operands():
     a, assign, b = _path("/m/a"), _path("/x=1"), _path("/m/b")
-    assign = PathSpec(virtual="/x=1",
-                      directory="/",
-                      vfs_path="",
-                      resolved=True,
-                      raw_path="x=1")
+    assign = PathSpec(
+        virtual="/x=1",
+        directory="/",
+        vfs_path="",
+        resolved=True,
+        raw_path="x=1",
+    )
     routed = routable_scopes("awk", [a, assign, b])
     assert [p.virtual for p in routed] == ["/m/a", "/m/b"]
     assert routable_scopes("cat", [a, assign, b]) == [a, assign, b]
@@ -94,9 +100,17 @@ def test_path_flag_scopes_unknown_command_is_empty():
     assert path_flag_scopes("nosuchcmd", ["-x", "/a"], "/") == []
 
 
-@pytest.mark.parametrize("cmd, flag", [("grep", "-f"), ("rg", "-f"),
-                                       ("zgrep", "-f"), ("sed", "-f"),
-                                       ("awk", "-f"), ("jq", "--from-file")])
+@pytest.mark.parametrize(
+    "cmd, flag",
+    [
+        ("grep", "-f"),
+        ("rg", "-f"),
+        ("zgrep", "-f"),
+        ("sed", "-f"),
+        ("awk", "-f"),
+        ("jq", "--from-file"),
+    ],
+)
 def test_path_flag_scopes_leaves_a_program_file_out(cmd: str, flag: str):
     # The program file is read before routing, so a pattern file on
     # another mount does not make the line cross-mount, for every command
@@ -104,15 +118,34 @@ def test_path_flag_scopes_leaves_a_program_file_out(cmd: str, flag: str):
     assert path_flag_scopes(cmd, [flag, "/other/p", "/data/in"], "/") == []
 
 
-@pytest.mark.parametrize("cmd, argv", [
-    ("curl", ["-o", "/other/body", "-D", "/data/h", "http://x.test/"]),
-    ("curl",
-     ["--dump-header", "-", "--output", "/other/body", "http://x.test/"]),
-    ("jq", [
-        "--slurpfile", "s", "/other/s.json", "--rawfile", "r", "/dev/fd/63",
-        "."
-    ]),
-])
+@pytest.mark.parametrize(
+    "cmd, argv",
+    [
+        ("curl", ["-o", "/other/body", "-D", "/data/h", "http://x.test/"]),
+        (
+            "curl",
+            [
+                "--dump-header",
+                "-",
+                "--output",
+                "/other/body",
+                "http://x.test/",
+            ],
+        ),
+        (
+            "jq",
+            [
+                "--slurpfile",
+                "s",
+                "/other/s.json",
+                "--rawfile",
+                "r",
+                "/dev/fd/63",
+                ".",
+            ],
+        ),
+    ],
+)
 def test_path_flag_scopes_leaves_door_files_out(cmd: str, argv: list[str]):
     # The handler reaches them through the dispatcher, so they name no
     # mount the line has to run on (DOOR_FLAG_KEYS).
@@ -126,21 +159,27 @@ def test_program_tokens_walks_a_cli_verb_path_and_keeps_the_rest_raw():
         reg = ws._registry
         # Options before the verb are not the verb; an alias reads as
         # its canonical name; the leaf's own words follow untouched.
-        assert program_tokens(reg, "git",
-                              ["-C", "/r", "reset", "--hard", "HEAD"],
-                              "/") == (("git", "reset", "--hard", "HEAD"),
-                                       ("git", "reset"))
-        assert program_tokens(reg, "git", ["log", "-1"],
-                              "/") == (("git", "log", "-1"), ("git", "log"))
+        assert program_tokens(
+            reg, "git", ["-C", "/r", "reset", "--hard", "HEAD"], "/"
+        ) == (("git", "reset", "--hard", "HEAD"), ("git", "reset"))
+        assert program_tokens(reg, "git", ["log", "-1"], "/") == (
+            ("git", "log", "-1"),
+            ("git", "log"),
+        )
         # A walk the tree refuses (unknown verb, bare head) reads raw.
-        assert program_tokens(reg, "git", ["frobnicate", "x"],
-                              "/") == (("git", "frobnicate", "x"), ("git", ))
-        assert program_tokens(reg, "git", [], "/") == (("git", ), ("git", ))
+        assert program_tokens(reg, "git", ["frobnicate", "x"], "/") == (
+            ("git", "frobnicate", "x"),
+            ("git",),
+        )
+        assert program_tokens(reg, "git", [], "/") == (("git",), ("git",))
         # Anything else is the name and the raw argv.
-        assert program_tokens(reg, "rm", ["-rf", "/x"],
-                              "/") == (("rm", "-rf", "/x"), ("rm", ))
+        assert program_tokens(reg, "rm", ["-rf", "/x"], "/") == (
+            ("rm", "-rf", "/x"),
+            ("rm",),
+        )
     finally:
         import asyncio
+
         asyncio.run(ws.close())
 
 
@@ -152,18 +191,26 @@ async def test_rg_searches_the_cwd_once_dash_f_takes_stdin():
     ws = Workspace(mounts={"/ram": (RAMVFS(), MountMode.WRITE)})
     try:
         reg = ws._registry
-        dash = PathSpec(virtual="/ram/-",
-                        directory="/ram/",
-                        vfs_path="",
-                        resolved=True,
-                        raw_path="-")
-        operand = default_cwd_operand(["rg", "-f", dash], "rg", reg, "/ram",
-                                      b"a\n")
+        dash = PathSpec(
+            virtual="/ram/-",
+            directory="/ram/",
+            vfs_path="",
+            resolved=True,
+            raw_path="-",
+        )
+        operand = default_cwd_operand(
+            ["rg", "-f", dash], "rg", reg, "/ram", b"a\n"
+        )
         assert operand is not None and operand.raw_path == ""
-        assert default_cwd_operand(["rg", "-f", _path("/ram/p")], "rg", reg,
-                                   "/ram", b"a\n") is None
-        assert default_cwd_operand(["rg", "a"], "rg", reg, "/ram",
-                                   b"a\n") is None
+        assert (
+            default_cwd_operand(
+                ["rg", "-f", _path("/ram/p")], "rg", reg, "/ram", b"a\n"
+            )
+            is None
+        )
+        assert (
+            default_cwd_operand(["rg", "a"], "rg", reg, "/ram", b"a\n") is None
+        )
     finally:
         await ws.close()
 
@@ -176,8 +223,9 @@ async def test_rg_searches_the_cwd_when_stdin_is_a_device():
     ws = Workspace(mounts={"/ram": (RAMVFS(), MountMode.WRITE)})
     try:
         reg = ws._registry
-        operand = default_cwd_operand(["rg", "a"], "rg", reg, "/ram",
-                                      DeviceInput())
+        operand = default_cwd_operand(
+            ["rg", "a"], "rg", reg, "/ram", DeviceInput()
+        )
         assert operand is not None and operand.raw_path == ""
         assert default_cwd_operand(["rg", "a"], "rg", reg, "/ram", b"") is None
     finally:

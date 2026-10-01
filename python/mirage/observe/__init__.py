@@ -18,5 +18,9 @@ from mirage.observe.record import OpRecord
 from mirage.observe.store import ObserverStore, RAMObserverStore
 
 __all__ = [
-    "LogEntry", "Observer", "ObserverStore", "OpRecord", "RAMObserverStore"
+    "LogEntry",
+    "Observer",
+    "ObserverStore",
+    "OpRecord",
+    "RAMObserverStore",
 ]

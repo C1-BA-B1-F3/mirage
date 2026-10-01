@@ -21,8 +21,16 @@ import pytest
 from mirage.workspace.snapshot import keys
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
-KEYS_TS = (REPO_ROOT / "typescript" / "packages" / "core" / "src" /
-           "workspace" / "snapshot" / "keys.ts")
+KEYS_TS = (
+    REPO_ROOT
+    / "typescript"
+    / "packages"
+    / "core"
+    / "src"
+    / "workspace"
+    / "snapshot"
+    / "keys.ts"
+)
 
 # These five have a typescript twin in `keys.ts`; the rest of the module
 # is spelled as literals over there, so only these can be diffed.
@@ -48,8 +56,11 @@ def test_shared_tables_match_typescript(name: str):
 
 def test_every_key_is_a_lowercase_wire_name():
     enums = [
-        value for value in vars(keys).values() if isinstance(value, type)
-        and issubclass(value, StrEnum) and value is not StrEnum
+        value
+        for value in vars(keys).values()
+        if isinstance(value, type)
+        and issubclass(value, StrEnum)
+        and value is not StrEnum
     ]
     assert len(enums) == 9
     for enum in enums:

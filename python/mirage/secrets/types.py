@@ -30,6 +30,7 @@ class ResolvedSecret:
             are stale, None when the source does not expire (all of
             v1's sources; expiry arrives with auth0 as a per-var fact).
     """
+
     fields: dict[str, str]
     expires_at: float | None = None
 
@@ -58,6 +59,7 @@ class ResolvedSource:
         config (BaseModel): the source's own config, already built.
         fetch (SecretFetchFn): the source's fetch function.
     """
+
     source: str
     config: BaseModel
     fetch: SecretFetchFn

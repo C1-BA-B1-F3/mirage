@@ -17,18 +17,22 @@ from mirage.types import PathSpec
 
 
 def _spec(path: str) -> PathSpec:
-    return PathSpec(vfs_path=(path).strip("/"),
-                    virtual=path,
-                    directory=path,
-                    resolved=True)
+    return PathSpec(
+        vfs_path=(path).strip("/"), virtual=path, directory=path, resolved=True
+    )
 
 
 def _make_backend(files: dict[str, bytes]):
     store = dict(files)
 
     async def read_bytes(path):
-        spec = path if isinstance(path, PathSpec) else PathSpec(
-            vfs_path=(path).strip("/"), virtual=path, directory=path)
+        spec = (
+            path
+            if isinstance(path, PathSpec)
+            else PathSpec(
+                vfs_path=(path).strip("/"), virtual=path, directory=path
+            )
+        )
         key = spec.virtual if isinstance(spec, PathSpec) else path
         if key not in store:
             raise FileNotFoundError(key)
@@ -41,8 +45,13 @@ def _make_backend(files: dict[str, bytes]):
             store[path] = data
 
     async def read_stream(path):
-        spec = path if isinstance(path, PathSpec) else PathSpec(
-            vfs_path=(path).strip("/"), virtual=path, directory=path)
+        spec = (
+            path
+            if isinstance(path, PathSpec)
+            else PathSpec(
+                vfs_path=(path).strip("/"), virtual=path, directory=path
+            )
+        )
         if spec.virtual not in store:
             raise FileNotFoundError(spec.virtual)
         yield store[spec.virtual]
@@ -68,11 +77,13 @@ async def test_fold_breaks_long_lines():
 @pytest.mark.asyncio
 async def test_fold_break_spaces_avoids_mid_word():
     rb, _, _, _ = _make_backend({})
-    output, _ = await fold([],
-                           read_bytes=rb,
-                           stdin=b"the quick brown fox\n",
-                           width=10,
-                           break_spaces=True)
+    output, _ = await fold(
+        [],
+        read_bytes=rb,
+        stdin=b"the quick brown fox\n",
+        width=10,
+        break_spaces=True,
+    )
     decoded = output.decode().splitlines()
     for ln in decoded:
         if ln:
@@ -89,10 +100,9 @@ async def test_expand_default():
 @pytest.mark.asyncio
 async def test_expand_initial_only():
     rb, _, _, _ = _make_backend({})
-    output, _ = await expand([],
-                             read_bytes=rb,
-                             stdin=b"\tab\tcd\n",
-                             initial_only=True)
+    output, _ = await expand(
+        [], read_bytes=rb, stdin=b"\tab\tcd\n", initial_only=True
+    )
     decoded = output.decode()
     assert decoded.startswith("        ")
     assert "\t" in decoded
@@ -101,20 +111,18 @@ async def test_expand_initial_only():
 @pytest.mark.asyncio
 async def test_unexpand_leading():
     rb, _, _, _ = _make_backend({})
-    output, _ = await unexpand([],
-                               read_bytes=rb,
-                               stdin=b"        x\n",
-                               tabsize=8)
+    output, _ = await unexpand(
+        [], read_bytes=rb, stdin=b"        x\n", tabsize=8
+    )
     assert output == b"\tx\n"
 
 
 @pytest.mark.asyncio
 async def test_fmt_reflows():
     rb, _, _, _ = _make_backend({})
-    output, _ = await fmt([],
-                          read_bytes=rb,
-                          stdin=b"alpha beta gamma delta\n",
-                          width=10)
+    output, _ = await fmt(
+        [], read_bytes=rb, stdin=b"alpha beta gamma delta\n", width=10
+    )
     assert output.decode().splitlines()[0].strip().startswith("alpha")
 
 
@@ -128,9 +136,9 @@ async def test_paste_joins_columns():
 @pytest.mark.asyncio
 async def test_paste_serial_mode():
     rb, _, _, _ = _make_backend({"/a.txt": b"a1\na2\n", "/b.txt": b"b1\nb2\n"})
-    output, _ = await paste([_spec("/a.txt"), _spec("/b.txt")],
-                            read_bytes=rb,
-                            serial=True)
+    output, _ = await paste(
+        [_spec("/a.txt"), _spec("/b.txt")], read_bytes=rb, serial=True
+    )
     decoded = output.decode().splitlines()
     assert decoded == ["a1\ta2", "b1\tb2"]
 
@@ -138,18 +146,20 @@ async def test_paste_serial_mode():
 @pytest.mark.asyncio
 async def test_paste_custom_delimiter():
     rb, _, _, _ = _make_backend({"/a.txt": b"a\n", "/b.txt": b"b\n"})
-    output, _ = await paste([_spec("/a.txt"), _spec("/b.txt")],
-                            read_bytes=rb,
-                            delimiter=",")
+    output, _ = await paste(
+        [_spec("/a.txt"), _spec("/b.txt")], read_bytes=rb, delimiter=","
+    )
     assert output == b"a,b\n"
 
 
 @pytest.mark.asyncio
 async def test_comm_basic_three_columns():
-    rb, _, _, _ = _make_backend({
-        "/a.txt": b"a\nb\nc\n",
-        "/b.txt": b"b\nc\nd\n",
-    })
+    rb, _, _, _ = _make_backend(
+        {
+            "/a.txt": b"a\nb\nc\n",
+            "/b.txt": b"b\nc\nd\n",
+        }
+    )
     output, _ = await comm([_spec("/a.txt"), _spec("/b.txt")], read_bytes=rb)
     decoded = output.decode()
     assert "a" in decoded
@@ -159,13 +169,15 @@ async def test_comm_basic_three_columns():
 
 @pytest.mark.asyncio
 async def test_comm_suppress1():
-    rb, _, _, _ = _make_backend({
-        "/a.txt": b"a\nb\n",
-        "/b.txt": b"b\nc\n",
-    })
-    output, _ = await comm([_spec("/a.txt"), _spec("/b.txt")],
-                           read_bytes=rb,
-                           suppress1=True)
+    rb, _, _, _ = _make_backend(
+        {
+            "/a.txt": b"a\nb\n",
+            "/b.txt": b"b\nc\n",
+        }
+    )
+    output, _ = await comm(
+        [_spec("/a.txt"), _spec("/b.txt")], read_bytes=rb, suppress1=True
+    )
     decoded = output.decode().splitlines()
     assert all("a" not in ln or "\tb" in ln or "\tc" in ln for ln in decoded)
 
@@ -180,10 +192,9 @@ async def test_comm_requires_two_paths():
 @pytest.mark.asyncio
 async def test_column_table_format():
     rb, _, _, _ = _make_backend({})
-    output, _ = await column([],
-                             read_bytes=rb,
-                             stdin=b"abc def\nxx yyyy\n",
-                             table=True)
+    output, _ = await column(
+        [], read_bytes=rb, stdin=b"abc def\nxx yyyy\n", table=True
+    )
     lines = output.decode().splitlines()
     assert lines[0].startswith("abc")
     assert "def" in lines[0]
@@ -230,11 +241,9 @@ async def test_xxd_reverse_round_trip():
     _, _, rs, _ = _make_backend({})
     forward, _ = await xxd([], read_stream=rs, stdin=b"hello world")
     forward_bytes = await _drain(forward)
-    reverse_out, _ = await xxd([],
-                               read_stream=rs,
-                               stdin=forward_bytes,
-                               reverse=False,
-                               plain=False)
+    reverse_out, _ = await xxd(
+        [], read_stream=rs, stdin=forward_bytes, reverse=False, plain=False
+    )
     assert b"hello world" in await _drain(reverse_out) or True
 
 
@@ -253,10 +262,9 @@ async def test_base64_encode_decode_round_trip():
     encoded = await _drain(encoded_iter)
     assert b"aGVsbG8K" in encoded
 
-    decoded_iter, _ = await base64_cmd([],
-                                       read_stream=rs,
-                                       stdin=encoded,
-                                       decode=True)
+    decoded_iter, _ = await base64_cmd(
+        [], read_stream=rs, stdin=encoded, decode=True
+    )
     decoded = await _drain(decoded_iter)
     assert decoded == b"hello\n"
 
@@ -264,26 +272,30 @@ async def test_base64_encode_decode_round_trip():
 @pytest.mark.asyncio
 async def test_iconv_encoding_conversion():
     rb, wb, _, _ = _make_backend({})
-    output, _ = await iconv([],
-                            read_bytes=rb,
-                            write_bytes=wb,
-                            stdin="café".encode(),
-                            from_enc="utf-8",
-                            to_enc="ascii",
-                            ignore_errors=True)
+    output, _ = await iconv(
+        [],
+        read_bytes=rb,
+        write_bytes=wb,
+        stdin="café".encode(),
+        from_enc="utf-8",
+        to_enc="ascii",
+        ignore_errors=True,
+    )
     assert output == b"caf"
 
 
 @pytest.mark.asyncio
 async def test_iconv_writes_to_output_path():
     rb, wb, _, store = _make_backend({})
-    output, io = await iconv([],
-                             read_bytes=rb,
-                             write_bytes=wb,
-                             stdin=b"hello",
-                             from_enc="utf-8",
-                             to_enc="utf-8",
-                             output_path=_spec("/out.txt"))
+    output, io = await iconv(
+        [],
+        read_bytes=rb,
+        write_bytes=wb,
+        stdin=b"hello",
+        from_enc="utf-8",
+        to_enc="utf-8",
+        output_path=_spec("/out.txt"),
+    )
     assert output is None
     assert store["/out.txt"] == b"hello"
     assert io.writes == {"/out.txt": b"hello"}
@@ -292,9 +304,9 @@ async def test_iconv_writes_to_output_path():
 @pytest.mark.asyncio
 async def test_shuf_preserves_all_lines():
     rb, _, _, _ = _make_backend({})
-    output, _ = await shuf([], ("a", "b", "c"),
-                           read_bytes=rb,
-                           stdin=b"a\nb\nc\nd\n")
+    output, _ = await shuf(
+        [], ("a", "b", "c"), read_bytes=rb, stdin=b"a\nb\nc\nd\n"
+    )
     lines = sorted(output.decode().rstrip("\n").split("\n"))
     assert lines == ["a", "b", "c", "d"]
 
@@ -302,9 +314,9 @@ async def test_shuf_preserves_all_lines():
 @pytest.mark.asyncio
 async def test_shuf_echo_mode():
     rb, _, _, _ = _make_backend({})
-    output, _ = await shuf([], ("apple", "banana", "cherry"),
-                           read_bytes=rb,
-                           echo=True)
+    output, _ = await shuf(
+        [], ("apple", "banana", "cherry"), read_bytes=rb, echo=True
+    )
     items = output.decode().rstrip("\n").split("\n")
     assert sorted(items) == ["apple", "banana", "cherry"]
 
@@ -312,10 +324,9 @@ async def test_shuf_echo_mode():
 @pytest.mark.asyncio
 async def test_shuf_count_limits():
     rb, _, _, _ = _make_backend({})
-    output, _ = await shuf([], (),
-                           read_bytes=rb,
-                           stdin=b"a\nb\nc\nd\ne\n",
-                           count=2)
+    output, _ = await shuf(
+        [], (), read_bytes=rb, stdin=b"a\nb\nc\nd\ne\n", count=2
+    )
     items = [x for x in output.decode().rstrip("\n").split("\n") if x]
     assert len(items) == 2
 
@@ -323,10 +334,9 @@ async def test_shuf_count_limits():
 @pytest.mark.asyncio
 async def test_look_finds_prefix():
     rb, _, _, _ = _make_backend({})
-    output, _ = await look([],
-                           "ap",
-                           read_bytes=rb,
-                           stdin=b"apple\napricot\nbanana\n")
+    output, _ = await look(
+        [], "ap", read_bytes=rb, stdin=b"apple\napricot\nbanana\n"
+    )
     decoded = output.decode()
     assert "apple" in decoded
     assert "apricot" in decoded
@@ -344,11 +354,13 @@ async def test_look_no_match_returns_exit_1():
 @pytest.mark.asyncio
 async def test_look_fold_case():
     rb, _, _, _ = _make_backend({})
-    output, _ = await look([],
-                           "AP",
-                           read_bytes=rb,
-                           stdin=b"apple\nApricot\nbanana\n",
-                           fold_case=True)
+    output, _ = await look(
+        [],
+        "AP",
+        read_bytes=rb,
+        stdin=b"apple\nApricot\nbanana\n",
+        fold_case=True,
+    )
     decoded = output.decode()
     assert "apple" in decoded
     assert "Apricot" in decoded

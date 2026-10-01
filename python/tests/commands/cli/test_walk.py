@@ -17,9 +17,15 @@ from dataclasses import replace
 import pytest
 
 from mirage.commands.cli import CLISpec, walk
-from mirage.commands.cli.walk import (env_names, find_child, find_node,
-                                      invoked_env_names, node_help, owns_argv,
-                                      supplied_env_names)
+from mirage.commands.cli.walk import (
+    env_names,
+    find_child,
+    find_node,
+    invoked_env_names,
+    node_help,
+    owns_argv,
+    supplied_env_names,
+)
 from mirage.commands.spec.types import Option, UsageStyle
 from mirage.runtime.types import ScriptSource
 
@@ -33,26 +39,36 @@ def _tree() -> CLISpec:
         name="gws",
         description="Google Workspace",
         options=(
-            Option(short="-C",
-                   long="--cwd",
-                   type="str",
-                   description="run as if started there"),
+            Option(
+                short="-C",
+                long="--cwd",
+                type="str",
+                description="run as if started there",
+            ),
             Option(short="-v", long="--verbose", count=True),
         ),
         subcommands=(
-            CLISpec(name="gmail",
-                    description="Gmail messages",
-                    options=(Option(long="--account",
-                                    type="str",
-                                    default="primary",
-                                    choices=("primary", "work")), ),
-                    subcommands=(
-                        CLISpec(name="send", fn=_verb, write=True),
-                        CLISpec(name="list", fn=_verb),
-                    )),
-            CLISpec(name="docs",
-                    description="Google Docs",
-                    subcommands=(CLISpec(name="cat", fn=_verb), )),
+            CLISpec(
+                name="gmail",
+                description="Gmail messages",
+                options=(
+                    Option(
+                        long="--account",
+                        type="str",
+                        default="primary",
+                        choices=("primary", "work"),
+                    ),
+                ),
+                subcommands=(
+                    CLISpec(name="send", fn=_verb, write=True),
+                    CLISpec(name="list", fn=_verb),
+                ),
+            ),
+            CLISpec(
+                name="docs",
+                description="Google Docs",
+                subcommands=(CLISpec(name="cat", fn=_verb),),
+            ),
         ),
     )
 
@@ -68,15 +84,17 @@ def test_resolves_a_leaf_and_keeps_its_argv():
 
 def test_group_options_collect_per_level():
     result = walk(
-        "gws", _tree(),
-        ["-C", "/tmp", "-vv", "gmail", "--account=work", "send", "x"])
+        "gws",
+        _tree(),
+        ["-C", "/tmp", "-vv", "gmail", "--account=work", "send", "x"],
+    )
     assert result.leaf is not None
     assert result.group_flags == {
         "--cwd": "/tmp",
         "--verbose": 2,
         "--account": "work",
     }
-    assert result.argv == ("x", )
+    assert result.argv == ("x",)
 
 
 def test_group_defaults_land_as_if_typed():
@@ -91,7 +109,8 @@ def test_bare_root_prints_usage_to_stdout_exit_1():
     assert result.stream == "stdout"
     assert result.exit_code == 1
     assert result.output.startswith(
-        b"gws: Google Workspace\n\nUsage: gws [flags] <command> [<args>]")
+        b"gws: Google Workspace\n\nUsage: gws [flags] <command> [<args>]"
+    )
     assert b"Commands:" in result.output
 
 
@@ -108,27 +127,32 @@ def test_nested_group_help_names_the_path():
     assert result.exit_code == 0
     assert result.output.startswith(
         b"gws gmail: Gmail messages\n\n"
-        b"Usage: gws gmail [flags] <command> [<args>]")
+        b"Usage: gws gmail [flags] <command> [<args>]"
+    )
 
 
 def test_unknown_verb_matches_git_wording():
     result = walk("gws", _tree(), ["bogus"])
     assert result.stream == "stderr"
     assert result.exit_code == 1
-    assert result.output == (b"gws: 'bogus' is not a gws command. "
-                             b"See 'gws --help'.\n")
+    assert result.output == (
+        b"gws: 'bogus' is not a gws command. See 'gws --help'.\n"
+    )
 
 
 def test_unknown_nested_verb_names_the_group_path():
     result = walk("gws", _tree(), ["gmail", "bogus"])
-    assert result.output == (b"gws: 'bogus' is not a gws gmail command. "
-                             b"See 'gws gmail --help'.\n")
+    assert result.output == (
+        b"gws: 'bogus' is not a gws gmail command. See 'gws gmail --help'.\n"
+    )
 
 
 def test_installed_head_renders_in_messages():
     result = walk("gws-work", _tree(), ["bogus"])
-    assert result.output == (b"gws-work: 'bogus' is not a gws-work command. "
-                             b"See 'gws-work --help'.\n")
+    assert result.output == (
+        b"gws-work: 'bogus' is not a gws-work command. "
+        b"See 'gws-work --help'.\n"
+    )
 
 
 def test_unknown_group_option_exits_129_with_usage():
@@ -136,7 +160,8 @@ def test_unknown_group_option_exits_129_with_usage():
     assert result.stream == "stderr"
     assert result.exit_code == 129
     assert result.output.startswith(
-        b"unknown option: --zzz\n\ngws: Google Workspace")
+        b"unknown option: --zzz\n\ngws: Google Workspace"
+    )
 
 
 def test_a_clap_group_refusal_uses_claps_words_and_exit():
@@ -151,7 +176,8 @@ def test_a_clap_group_refusal_uses_claps_words_and_exit():
     assert result.output.decode() == (
         "error: unexpected argument '--zzz' found\n\n"
         "Usage: gws [OPTIONS] <COMMAND>\n\n"
-        "For more information, try '--help'.\n")
+        "For more information, try '--help'.\n"
+    )
 
 
 def test_a_clap_group_refusal_names_a_short_token_the_same_way():
@@ -161,7 +187,8 @@ def test_a_clap_group_refusal_names_a_short_token_the_same_way():
     result = walk("gws", tree, ["-Z"])
     assert result.exit_code == 2
     assert result.output.decode().splitlines()[0] == (
-        "error: unexpected argument '-Z' found")
+        "error: unexpected argument '-Z' found"
+    )
 
 
 def test_starved_group_value_exits_129():
@@ -174,14 +201,16 @@ def test_bool_long_with_value_refused():
     result = walk("gws", _tree(), ["--verbose=3", "gmail", "list"])
     assert result.exit_code == 129
     assert result.output.startswith(
-        b"error: option '--verbose' takes no value")
+        b"error: option '--verbose' takes no value"
+    )
 
 
 def test_invalid_group_choice_exits_129():
     result = walk("gws", _tree(), ["gmail", "--account=other", "list"])
     assert result.exit_code == 129
     assert result.output.startswith(
-        b"error: invalid argument 'other' for '--account'")
+        b"error: invalid argument 'other' for '--account'"
+    )
 
 
 def test_attached_short_value_and_cluster():
@@ -217,8 +246,8 @@ def test_leaf_root_passes_argv_through():
 def test_required_group_option_missing_exits_129():
     tree = CLISpec(
         name="tool",
-        options=(Option(long="--token", type="str", required=True), ),
-        subcommands=(CLISpec(name="run", fn=_verb), ),
+        options=(Option(long="--token", type="str", required=True),),
+        subcommands=(CLISpec(name="run", fn=_verb),),
     )
     result = walk("tool", tree, ["run"])
     assert result.exit_code == 129
@@ -237,8 +266,8 @@ def test_group_help_lists_the_injected_help_flag():
 def test_optional_value_long_at_group_level():
     tree = CLISpec(
         name="tool",
-        options=(Option(long="--color", type="str", value_optional=True), ),
-        subcommands=(CLISpec(name="run", fn=_verb), ),
+        options=(Option(long="--color", type="str", value_optional=True),),
+        subcommands=(CLISpec(name="run", fn=_verb),),
     )
     attached = walk("tool", tree, ["--color=auto", "run"])
     assert attached.leaf is not None
@@ -251,8 +280,8 @@ def test_optional_value_long_at_group_level():
 def test_multichar_short_at_group_level():
     tree = CLISpec(
         name="tool",
-        options=(Option(short="-name", type="str"), ),
-        subcommands=(CLISpec(name="run", fn=_verb), ),
+        options=(Option(short="-name", type="str"),),
+        subcommands=(CLISpec(name="run", fn=_verb),),
     )
     detached = walk("tool", tree, ["-name", "foo", "run"])
     assert detached.leaf is not None
@@ -268,24 +297,32 @@ def test_multichar_short_at_group_level():
 def test_alias_resolves_to_the_canonical_verb():
     tree = CLISpec(
         name="tool",
-        subcommands=(CLISpec(name="checkout",
-                             aliases=("co", ),
-                             description="Switch branches",
-                             fn=_verb), ),
+        subcommands=(
+            CLISpec(
+                name="checkout",
+                aliases=("co",),
+                description="Switch branches",
+                fn=_verb,
+            ),
+        ),
     )
     result = walk("tool", tree, ["co", "x"])
     assert result.leaf is not None
-    assert result.path == ("checkout", )
-    assert result.argv == ("x", )
+    assert result.path == ("checkout",)
+    assert result.argv == ("x",)
 
 
 def test_alias_renders_beside_the_canonical_name():
     tree = CLISpec(
         name="tool",
-        subcommands=(CLISpec(name="checkout",
-                             aliases=("co", "cout"),
-                             description="Switch branches",
-                             fn=_verb), ),
+        subcommands=(
+            CLISpec(
+                name="checkout",
+                aliases=("co", "cout"),
+                description="Switch branches",
+                fn=_verb,
+            ),
+        ),
     )
     listing = walk("tool", tree, [])
     assert b"  checkout (co, cout)  Switch branches" in listing.output
@@ -301,12 +338,13 @@ def test_group_ambiguous_prefix_uses_git_wording():
     tree = CLISpec(
         name="tool",
         options=(Option(long="--context", type="str"), Option(long="--count")),
-        subcommands=(CLISpec(name="run", fn=_verb), ),
+        subcommands=(CLISpec(name="run", fn=_verb),),
     )
     result = walk("tool", tree, ["--co", "run"])
     assert result.exit_code == 129
     assert result.output.startswith(
-        b"error: ambiguous option: co (could be --context or --count)")
+        b"error: ambiguous option: co (could be --context or --count)"
+    )
 
 
 def test_help_prefix_reaches_the_injected_help():
@@ -319,13 +357,14 @@ def test_help_prefix_reaches_the_injected_help():
 def test_int_typed_group_option_uses_git_wording():
     tree = CLISpec(
         name="tool",
-        options=(Option(long="--depth", type="int"), ),
-        subcommands=(CLISpec(name="run", fn=_verb), ),
+        options=(Option(long="--depth", type="int"),),
+        subcommands=(CLISpec(name="run", fn=_verb),),
     )
     bad = walk("tool", tree, ["--depth", "x", "run"])
     assert bad.exit_code == 129
     assert bad.output.startswith(
-        b"error: option '--depth' expects a numerical value")
+        b"error: option '--depth' expects a numerical value"
+    )
     ok = walk("tool", tree, ["--depth", "-3", "run"])
     assert ok.leaf is not None
     assert ok.group_flags == {"--depth": "-3"}
@@ -334,23 +373,24 @@ def test_int_typed_group_option_uses_git_wording():
 def test_float_typed_group_option_uses_git_wording():
     tree = CLISpec(
         name="tool",
-        options=(Option(long="--ratio", type="float"), ),
-        subcommands=(CLISpec(name="run", fn=_verb), ),
+        options=(Option(long="--ratio", type="float"),),
+        subcommands=(CLISpec(name="run", fn=_verb),),
     )
     bad = walk("tool", tree, ["--ratio", "5x", "run"])
     assert bad.exit_code == 129
     assert bad.output.startswith(
-        b"error: option '--ratio' expects a numerical value")
+        b"error: option '--ratio' expects a numerical value"
+    )
     ok = walk("tool", tree, ["--ratio", "2.5", "run"])
     assert ok.leaf is not None
     assert ok.group_flags == {"--ratio": "2.5"}
 
 
 def test_find_child_matches_name_or_alias():
-    tree = CLISpec(name="gws",
-                   subcommands=(CLISpec(name="checkout",
-                                        aliases=("co", ),
-                                        fn=_verb), ))
+    tree = CLISpec(
+        name="gws",
+        subcommands=(CLISpec(name="checkout", aliases=("co",), fn=_verb),),
+    )
     assert find_child(tree, "checkout").name == "checkout"
     assert find_child(tree, "co").name == "checkout"
     assert find_child(tree, "nope") is None
@@ -388,9 +428,11 @@ def test_script_root_terminates_the_walk_with_argv_verbatim():
 def test_owns_argv_only_for_a_grammarless_script_root():
     source = ScriptSource("print('hi')")
     assert owns_argv(CLISpec(name="pager", script=source))
-    declared = CLISpec(name="pager",
-                       script=source,
-                       options=(Option(long="--width", type="int"), ))
+    declared = CLISpec(
+        name="pager",
+        script=source,
+        options=(Option(long="--width", type="int"),),
+    )
     assert not owns_argv(declared)
     assert not owns_argv(CLISpec(name="prog", fn=_verb))
 
@@ -398,8 +440,9 @@ def test_owns_argv_only_for_a_grammarless_script_root():
 def test_manual_of_a_grammarless_script_omits_the_help_row():
     # man renders from the spec, so it must not advertise a --help the
     # program answers itself.
-    text = node_help("pager",
-                     CLISpec(name="pager", script=ScriptSource("print(1)")))
+    text = node_help(
+        "pager", CLISpec(name="pager", script=ScriptSource("print(1)"))
+    )
     assert text.startswith("pager\n")
     assert "--help" not in text
 
@@ -409,8 +452,8 @@ def test_path_typed_group_option_resolves_against_cwd():
     # leaf, or the type is a lie at exactly one level of the tree.
     tree = CLISpec(
         name="tool",
-        options=(Option(short="-C", type="path"), ),
-        subcommands=(CLISpec(name="run", fn=_verb), ),
+        options=(Option(short="-C", type="path"),),
+        subcommands=(CLISpec(name="run", fn=_verb),),
     )
     relative = walk("tool", tree, ["-C", "build", "run"], "/repo/src")
     assert relative.group_flags == {"-C": "/repo/src/build"}
@@ -421,8 +464,8 @@ def test_path_typed_group_option_resolves_against_cwd():
 def test_path_typed_group_default_lands_as_the_cwd():
     tree = CLISpec(
         name="tool",
-        options=(Option(short="-C", type="path", default="."), ),
-        subcommands=(CLISpec(name="run", fn=_verb), ),
+        options=(Option(short="-C", type="path", default="."),),
+        subcommands=(CLISpec(name="run", fn=_verb),),
     )
     assert walk("tool", tree, ["run"], "/repo/src").group_flags == {
         "-C": "/repo/src"
@@ -432,8 +475,8 @@ def test_path_typed_group_default_lands_as_the_cwd():
 def test_repeated_path_group_option_resolves_every_value():
     tree = CLISpec(
         name="tool",
-        options=(Option(long="--dir", type="path", multiple=True), ),
-        subcommands=(CLISpec(name="run", fn=_verb), ),
+        options=(Option(long="--dir", type="path", multiple=True),),
+        subcommands=(CLISpec(name="run", fn=_verb),),
     )
     result = walk("tool", tree, ["--dir", "a", "--dir", "/b", "run"], "/w")
     assert result.group_flags == {"--dir": ["/w/a", "/b"]}
@@ -442,19 +485,27 @@ def test_repeated_path_group_option_resolves_every_value():
 def _env_tree() -> CLISpec:
     return CLISpec(
         name="tool",
-        options=(Option(long="--token", type="str", env="ROOT_T"), ),
+        options=(Option(long="--token", type="str", env="ROOT_T"),),
         subcommands=(
-            CLISpec(name="alpha",
-                    options=(Option(long="--a", type="str", env="ALPHA_T"), ),
-                    subcommands=(CLISpec(name="deep",
-                                         fn=_verb,
-                                         options=(Option(long="--d",
-                                                         type="str",
-                                                         env="DEEP_T"), )), )),
-            CLISpec(name="beta",
-                    fn=_verb,
-                    aliases=("b", ),
-                    options=(Option(long="--b", type="str", env="BETA_T"), )),
+            CLISpec(
+                name="alpha",
+                options=(Option(long="--a", type="str", env="ALPHA_T"),),
+                subcommands=(
+                    CLISpec(
+                        name="deep",
+                        fn=_verb,
+                        options=(
+                            Option(long="--d", type="str", env="DEEP_T"),
+                        ),
+                    ),
+                ),
+            ),
+            CLISpec(
+                name="beta",
+                fn=_verb,
+                aliases=("b",),
+                options=(Option(long="--b", type="str", env="BETA_T"),),
+            ),
         ),
     )
 
@@ -466,11 +517,15 @@ def test_env_names_covers_the_whole_tree():
 def test_invoked_env_names_prunes_to_the_selected_path():
     tree = _env_tree()
     assert invoked_env_names(tree, frozenset()) == {"ROOT_T"}
-    assert invoked_env_names(tree,
-                             frozenset({"alpha"})) == {"ROOT_T", "ALPHA_T"}
-    assert invoked_env_names(tree,
-                             frozenset({"alpha", "deep"
-                                        })) == {"ROOT_T", "ALPHA_T", "DEEP_T"}
+    assert invoked_env_names(tree, frozenset({"alpha"})) == {
+        "ROOT_T",
+        "ALPHA_T",
+    }
+    assert invoked_env_names(tree, frozenset({"alpha", "deep"})) == {
+        "ROOT_T",
+        "ALPHA_T",
+        "DEEP_T",
+    }
     # A verb word selects its node wherever it sits in the line, and an
     # alias selects the same node its canonical name does.
     assert invoked_env_names(tree, frozenset({"b"})) == {"ROOT_T", "BETA_T"}
@@ -480,17 +535,25 @@ def test_invoked_env_names_prunes_to_the_selected_path():
 
 
 def test_group_env_fills_at_its_own_level():
-    result = walk("tool", _env_tree(), ["alpha", "deep"], "/", {
-        "ROOT_T": "rv",
-        "ALPHA_T": "av"
-    })
+    result = walk(
+        "tool",
+        _env_tree(),
+        ["alpha", "deep"],
+        "/",
+        {"ROOT_T": "rv", "ALPHA_T": "av"},
+    )
     assert result.leaf is not None
     assert result.group_flags == {"--token": "rv", "--a": "av"}
 
 
 def test_group_env_yields_to_the_typed_value():
-    result = walk("tool", _env_tree(), ["--token", "typed", "alpha", "deep"],
-                  "/", {"ROOT_T": "rv"})
+    result = walk(
+        "tool",
+        _env_tree(),
+        ["--token", "typed", "alpha", "deep"],
+        "/",
+        {"ROOT_T": "rv"},
+    )
     assert result.leaf is not None
     assert result.group_flags == {"--token": "typed"}
 
@@ -498,12 +561,14 @@ def test_group_env_yields_to_the_typed_value():
 def _shared_env_tree() -> CLISpec:
     return CLISpec(
         name="tool",
-        options=(Option(long="--token", type="str", env="SHARED"), ),
-        subcommands=(CLISpec(name="alpha",
-                             fn=_verb,
-                             options=(Option(long="--a",
-                                             type="str",
-                                             env="SHARED"), )), ),
+        options=(Option(long="--token", type="str", env="SHARED"),),
+        subcommands=(
+            CLISpec(
+                name="alpha",
+                fn=_verb,
+                options=(Option(long="--a", type="str", env="SHARED"),),
+            ),
+        ),
     )
 
 
@@ -513,32 +578,38 @@ def test_supplied_env_names_tracks_destinations_not_names():
     # variable, so it stays a read.
     assert supplied_env_names(tree, ["--token", "x", "alpha"]) == frozenset()
     # Every reader on the path supplied: nothing consults it.
-    assert supplied_env_names(
-        tree, ["--token", "x", "alpha", "--a", "y"]) == {"SHARED"}
+    assert supplied_env_names(tree, ["--token", "x", "alpha", "--a", "y"]) == {
+        "SHARED"
+    }
 
 
 def test_supplied_env_names_double_dash_keeps_descendants_readable():
     # The walk keeps descending after --, so a variable a subcommand
     # can still read is never claimed ...
-    assert supplied_env_names(_shared_env_tree(),
-                              ["--token", "x", "--"]) == frozenset()
+    assert (
+        supplied_env_names(_shared_env_tree(), ["--token", "x", "--"])
+        == frozenset()
+    )
     # ... while one with no reader below the group stays claimed.
-    assert supplied_env_names(_env_tree(),
-                              ["--token", "x", "--"]) == {"ROOT_T"}
+    assert supplied_env_names(_env_tree(), ["--token", "x", "--"]) == {
+        "ROOT_T"
+    }
 
 
 def test_option_shaped_alias_uses_the_declared_leaf():
     leaf = CLISpec(name="version", aliases=("--version", "-v"), fn=_verb)
-    spec = CLISpec(name="tool",
-                   options=(Option(short="-C", type="path", default="."), ),
-                   subcommands=(leaf, ))
+    spec = CLISpec(
+        name="tool",
+        options=(Option(short="-C", type="path", default="."),),
+        subcommands=(leaf,),
+    )
     result = walk("tool", spec, ["--version"], cwd="/work")
     assert result.leaf is leaf
-    assert result.path == ("version", )
+    assert result.path == ("version",)
     assert result.group_flags["-C"] == "/work"
     assert result.argv == ()
     # A real option keeps its meaning even if a child also declares that alias.
-    spec = replace(spec, options=(Option(short="-v"), ))
+    spec = replace(spec, options=(Option(short="-v"),))
     result = walk("tool", spec, ["-v", "version"])
     assert result.leaf is leaf
     assert result.group_flags["-v"] is True
@@ -546,44 +617,59 @@ def test_option_shaped_alias_uses_the_declared_leaf():
 
 def test_option_shaped_alias_is_an_operand_after_double_dash():
     leaf = CLISpec(name="version", aliases=("--version", "-v"), fn=_verb)
-    spec = CLISpec(name="tool", subcommands=(leaf, ))
+    spec = CLISpec(name="tool", subcommands=(leaf,))
     for word in ("--version", "-v"):
         result = walk("tool", spec, ["--", word])
         assert result.leaf is None
         assert result.exit_code == 1
-        assert result.output == (f"tool: '{word}' is not a tool command. "
-                                 "See 'tool --help'.\n").encode()
+        assert (
+            result.output
+            == (
+                f"tool: '{word}' is not a tool command. See 'tool --help'.\n"
+            ).encode()
+        )
     assert walk("tool", spec, ["--", "version"]).leaf is leaf
 
 
 def test_git_root_refuses_double_dash_like_an_unknown_option():
     leaf = CLISpec(name="status", fn=_verb)
-    inner = CLISpec(name="remote", subcommands=(leaf, ))
-    spec = CLISpec(name="git",
-                   usage_style=UsageStyle.GIT,
-                   subcommands=(leaf, inner))
+    inner = CLISpec(name="remote", subcommands=(leaf,))
+    spec = CLISpec(
+        name="git", usage_style=UsageStyle.GIT, subcommands=(leaf, inner)
+    )
     for argv in (["--", "status"], ["--"]):
         result = walk("git", spec, argv)
         assert result.leaf is None
         assert result.exit_code == 129
         assert result.output.startswith(b"unknown option: --\n")
     assert walk("git", spec, ["remote", "--", "status"]).leaf is leaf
-    assert walk("git", replace(spec, usage_style=UsageStyle.ARGPARSE),
-                ["--", "status"]).leaf is leaf
+    assert (
+        walk(
+            "git",
+            replace(spec, usage_style=UsageStyle.ARGPARSE),
+            ["--", "status"],
+        ).leaf
+        is leaf
+    )
 
 
-@pytest.mark.parametrize("argv,expected", [
-    (["-C", "/repo", "-C", "docs"], "/repo/docs"),
-    (["-C", "/repo", "-C", "/other"], "/other"),
-    (["-C", "a", "-C", "../b"], "/work/b"),
-    (["-C", "", "-C", "docs"], "/work/docs"),
-    (["-C", "docs", "-C", ""], "/work/docs"),
-    ([], "/work"),
-])
+@pytest.mark.parametrize(
+    "argv,expected",
+    [
+        (["-C", "/repo", "-C", "docs"], "/repo/docs"),
+        (["-C", "/repo", "-C", "/other"], "/other"),
+        (["-C", "a", "-C", "../b"], "/work/b"),
+        (["-C", "", "-C", "docs"], "/work/docs"),
+        (["-C", "docs", "-C", ""], "/work/docs"),
+        ([], "/work"),
+    ],
+)
 def test_an_operand_base_moves_like_a_chdir(argv, expected):
-    tree = CLISpec(name="git",
-                   operand_base="-C",
-                   options=(Option(short="-C", type="path", default="."), ),
-                   subcommands=(CLISpec(name="status", fn=_verb), ))
+    tree = CLISpec(
+        name="git",
+        operand_base="-C",
+        options=(Option(short="-C", type="path", default="."),),
+        subcommands=(CLISpec(name="status", fn=_verb),),
+    )
     result = walk("git", tree, [*argv, "status"], cwd="/work")
     assert result.group_flags["-C"] == expected

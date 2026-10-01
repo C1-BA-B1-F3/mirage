@@ -20,11 +20,18 @@ import aiohttp
 from mirage.core.api.client import api_request
 from mirage.core.api.oauth import TokenManager as OAuthTokenManager
 from mirage.core.google.config import GoogleConfig
-from mirage.core.google.constants import (CALENDAR_API_BASE, DOCS_API_BASE,
-                                          DRIVE_API_BASE, DRIVE_UPLOAD_BASE,
-                                          FORMS_API_BASE, GMAIL_API_BASE,
-                                          SHEETS_API_BASE, SLIDES_API_BASE,
-                                          TOKEN_BUFFER_SECONDS, TOKEN_URL)
+from mirage.core.google.constants import (
+    CALENDAR_API_BASE,
+    DOCS_API_BASE,
+    DRIVE_API_BASE,
+    DRIVE_UPLOAD_BASE,
+    FORMS_API_BASE,
+    GMAIL_API_BASE,
+    SHEETS_API_BASE,
+    SLIDES_API_BASE,
+    TOKEN_BUFFER_SECONDS,
+    TOKEN_URL,
+)
 from mirage.utils.ranges import ByteWindow
 from mirage.vfs.secrets import reveal_secret
 
@@ -118,7 +125,9 @@ def forms_base(token_manager: "TokenManager") -> str:
     return f"{base}/v1" if base else FORMS_API_BASE
 
 
-async def refresh_access_token(config: GoogleConfig, ) -> tuple[str, int]:
+async def refresh_access_token(
+    config: GoogleConfig,
+) -> tuple[str, int]:
     """Exchange refresh token for a new access token.
 
     Args:
@@ -130,7 +139,8 @@ async def refresh_access_token(config: GoogleConfig, ) -> tuple[str, int]:
     if config.client_id is None or config.refresh_token is None:
         raise ValueError(
             "refresh_access_token needs client_id and refresh_token; this "
-            "config authenticates with a pre-minted access_token")
+            "config authenticates with a pre-minted access_token"
+        )
     data = {
         "client_id": config.client_id,
         "refresh_token": reveal_secret(config.refresh_token),
@@ -139,10 +149,9 @@ async def refresh_access_token(config: GoogleConfig, ) -> tuple[str, int]:
     client_secret = reveal_secret(config.client_secret)
     if client_secret:
         data["client_secret"] = client_secret
-    body = await api_request("POST",
-                             token_url(config),
-                             error_of=_error_of,
-                             data=data)
+    body = await api_request(
+        "POST", token_url(config), error_of=_error_of, data=data
+    )
     return body["access_token"], body["expires_in"]
 
 
@@ -165,12 +174,15 @@ class TokenManager(OAuthTokenManager):
         supplied = self.config.access_token
         if supplied is not None:
             token: str = reveal_secret(
-                supplied() if callable(supplied) else supplied)
+                supplied() if callable(supplied) else supplied
+            )
             return token
         return await super().get_token()
 
 
-async def google_headers(token_manager: TokenManager, ) -> dict[str, str]:
+async def google_headers(
+    token_manager: TokenManager,
+) -> dict[str, str]:
     token = await token_manager.get_token()
     return {"Authorization": f"Bearer {token}"}
 
@@ -180,13 +192,14 @@ async def google_get(
     url: str,
     params: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    data: dict[str, Any] = await api_request("GET",
-                                             url,
-                                             error_of=_error_of,
-                                             headers=await
-                                             google_headers(token_manager),
-                                             params=params,
-                                             session=token_manager.pool)
+    data: dict[str, Any] = await api_request(
+        "GET",
+        url,
+        error_of=_error_of,
+        headers=await google_headers(token_manager),
+        params=params,
+        session=token_manager.pool,
+    )
     return data
 
 
@@ -195,13 +208,14 @@ async def google_post(
     url: str,
     json: dict[str, Any],
 ) -> dict[str, Any]:
-    data: dict[str, Any] = await api_request("POST",
-                                             url,
-                                             error_of=_error_of,
-                                             headers=await
-                                             google_headers(token_manager),
-                                             json_body=json,
-                                             session=token_manager.pool)
+    data: dict[str, Any] = await api_request(
+        "POST",
+        url,
+        error_of=_error_of,
+        headers=await google_headers(token_manager),
+        json_body=json,
+        session=token_manager.pool,
+    )
     return data
 
 
@@ -211,14 +225,15 @@ async def google_patch(
     json: dict[str, Any],
     params: dict[str, str] | None = None,
 ) -> dict[str, Any]:
-    data: dict[str, Any] = await api_request("PATCH",
-                                             url,
-                                             error_of=_error_of,
-                                             headers=await
-                                             google_headers(token_manager),
-                                             params=params,
-                                             json_body=json,
-                                             session=token_manager.pool)
+    data: dict[str, Any] = await api_request(
+        "PATCH",
+        url,
+        error_of=_error_of,
+        headers=await google_headers(token_manager),
+        params=params,
+        json_body=json,
+        session=token_manager.pool,
+    )
     return data
 
 
@@ -242,13 +257,15 @@ async def google_send_bytes(
     """
     headers = await google_headers(token_manager)
     headers["Content-Type"] = content_type
-    payload: dict[str, Any] = await api_request(method,
-                                                url,
-                                                error_of=_error_of,
-                                                headers=headers,
-                                                params=params,
-                                                data=data,
-                                                session=token_manager.pool)
+    payload: dict[str, Any] = await api_request(
+        method,
+        url,
+        error_of=_error_of,
+        headers=headers,
+        params=params,
+        data=data,
+        session=token_manager.pool,
+    )
     return payload
 
 
@@ -256,12 +273,14 @@ async def google_delete(
     token_manager: TokenManager,
     url: str,
 ) -> None:
-    await api_request("DELETE",
-                      url,
-                      error_of=_error_of,
-                      headers=await google_headers(token_manager),
-                      read="none",
-                      session=token_manager.pool)
+    await api_request(
+        "DELETE",
+        url,
+        error_of=_error_of,
+        headers=await google_headers(token_manager),
+        read="none",
+        session=token_manager.pool,
+    )
 
 
 async def google_get_bytes(
@@ -277,12 +296,13 @@ async def google_get_bytes(
         window (ByteWindow | None): the byte window, or None for the
             whole body.
     """
-    data: bytes = await api_request("GET",
-                                    url,
-                                    error_of=_error_of,
-                                    headers=await
-                                    google_headers(token_manager),
-                                    read="bytes",
-                                    window=window,
-                                    session=token_manager.pool)
+    data: bytes = await api_request(
+        "GET",
+        url,
+        error_of=_error_of,
+        headers=await google_headers(token_manager),
+        read="bytes",
+        window=window,
+        session=token_manager.pool,
+    )
     return data

@@ -22,17 +22,16 @@ def test_find_ls_and_ls_show_the_year_for_an_old_or_future_time():
     # GNU: a time older than the recent window, or in the future, shows
     # `Mon DD  YYYY` in place of `HH:MM`. findutils' window is 180 days
     # back and an hour ahead; ls's is half a year back and never ahead.
-    old = FileStat(name="old",
-                   size=1,
-                   modified="2020-01-02T03:04:00Z",
-                   type=FileType.FILE)
-    assert formatting.format_find_ls(
-        old, None).endswith("        1 Jan  2  2020 old")
+    old = FileStat(
+        name="old", size=1, modified="2020-01-02T03:04:00Z", type=FileType.FILE
+    )
+    assert formatting.format_find_ls(old, None).endswith(
+        "        1 Jan  2  2020 old"
+    )
     assert formatting.format_ls_long([old])[0].endswith(" 1 Jan  2  2020 old")
-    far = FileStat(name="far",
-                   size=1,
-                   modified="2999-09-06T04:49:00Z",
-                   type=FileType.FILE)
+    far = FileStat(
+        name="far", size=1, modified="2999-09-06T04:49:00Z", type=FileType.FILE
+    )
     assert formatting.format_find_ls(far, None).endswith(" Sep  6  2999 far")
     assert formatting.format_ls_long([far])[0].endswith(" Sep  6  2999 far")
 
@@ -88,37 +87,55 @@ def test_find_ls_and_ls_show_the_year_for_an_old_or_future_time():
         ("Y", formatting.BlockSizeRefusal.TOO_LARGE),
         ("16E", formatting.BlockSizeRefusal.TOO_LARGE),
         ("18446744073709551616", formatting.BlockSizeRefusal.TOO_LARGE),
-        ("18446744073709551615", formatting.BlockSize(18446744073709551615,
-                                                      "")),
-    ])
+        (
+            "18446744073709551615",
+            formatting.BlockSize(18446744073709551615, ""),
+        ),
+    ],
+)
 def test_parse_block_size_reads_gnu_units(text, expected):
     assert formatting.parse_block_size(text) == expected
 
 
 def test_scaled_size_rounds_up_like_gnu():
     # `ls -l --block-size=K` on 6 bytes prints 1K; =4 on 10 bytes prints 3.
-    assert formatting.scaled_size(6, formatting.BlockSize(1024, "K"),
-                                  False) == "1K"
-    assert formatting.scaled_size(10, formatting.BlockSize(4, ""),
-                                  False) == "3"
-    assert formatting.scaled_size(10, formatting.BlockSize(1000, "kB"),
-                                  False) == "1kB"
-    assert formatting.scaled_size(1500, formatting.BlockSize(1000, "", 1000),
-                                  False) == "1.5k"
-    assert formatting.scaled_size(1500, formatting.BlockSize(1024, "", 1024),
-                                  False) == "1.5K"
+    assert (
+        formatting.scaled_size(6, formatting.BlockSize(1024, "K"), False)
+        == "1K"
+    )
+    assert (
+        formatting.scaled_size(10, formatting.BlockSize(4, ""), False) == "3"
+    )
+    assert (
+        formatting.scaled_size(10, formatting.BlockSize(1000, "kB"), False)
+        == "1kB"
+    )
+    assert (
+        formatting.scaled_size(
+            1500, formatting.BlockSize(1000, "", 1000), False
+        )
+        == "1.5k"
+    )
+    assert (
+        formatting.scaled_size(
+            1500, formatting.BlockSize(1024, "", 1024), False
+        )
+        == "1.5K"
+    )
     assert formatting.scaled_size(1500, None, True) == "1.5K"
     assert formatting.scaled_size(1500, None, False) == "1500"
 
 
-@pytest.mark.parametrize("size,modified,expected", [
-    (None, "2020-01-02T03:04:00Z", "- Jan  2  2020"),
-    (0, None, "0 -"),
-    (None, None, "- -"),
-])
+@pytest.mark.parametrize(
+    "size,modified,expected",
+    [
+        (None, "2020-01-02T03:04:00Z", "- Jan  2  2020"),
+        (0, None, "0 -"),
+        (None, None, "- -"),
+    ],
+)
 def test_size_and_time_are_independently_unknown(size, modified, expected):
-    row = FileStat(name="file",
-                   type=FileType.FILE,
-                   size=size,
-                   modified=modified)
+    row = FileStat(
+        name="file", type=FileType.FILE, size=size, modified=modified
+    )
     assert formatting.format_ls_long([row])[0].endswith(expected + " file")

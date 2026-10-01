@@ -26,7 +26,6 @@ from mirage.vfs.mem0.prompt import PROMPT
 
 
 class Mem0VFS(BaseVFS):
-
     accessor: Mem0Accessor
     name: str = VFSName.MEM0
     caches_reads: bool = True

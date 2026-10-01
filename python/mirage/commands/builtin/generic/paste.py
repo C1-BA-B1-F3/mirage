@@ -24,8 +24,11 @@ def _decode_delimiters(value: str) -> list[str]:
     index = 0
     while index < len(value):
         char = value[index]
-        if char == "\\" and index + 1 < len(value) and value[index +
-                                                             1] in _ESCAPES:
+        if (
+            char == "\\"
+            and index + 1 < len(value)
+            and value[index + 1] in _ESCAPES
+        ):
             chars.append(_ESCAPES[value[index + 1]])
             index += 2
             continue
@@ -34,8 +37,9 @@ def _decode_delimiters(value: str) -> list[str]:
     return chars or [""]
 
 
-def _join_fields(fields: tuple[str, ...] | list[str],
-                 delimiter_chars: list[str]) -> str:
+def _join_fields(
+    fields: tuple[str, ...] | list[str], delimiter_chars: list[str]
+) -> str:
     chars = cycle(delimiter_chars)
     result = fields[0] if fields else ""
     for field in fields[1:]:
@@ -64,20 +68,24 @@ async def paste(
         else:
             data = (await read_bytes(p)).decode(errors="replace")
         file_lines.append(
-            data.rstrip("\0").
-            split("\0") if zero_terminated else split_lines(data))
+            data.rstrip("\0").split("\0")
+            if zero_terminated
+            else split_lines(data)
+        )
 
     if not serial and len(stdin_slots) > 1:
         records = file_lines[stdin_slots[0]]
         for column, slot in enumerate(stdin_slots):
-            file_lines[slot] = records[column::len(stdin_slots)]
+            file_lines[slot] = records[column :: len(stdin_slots)]
 
     if not file_lines:
         raw = await read_stdin_async(remaining_stdin)
         data = raw.decode(errors="replace") if raw is not None else ""
         file_lines.append(
-            data.rstrip("\0").
-            split("\0") if zero_terminated else split_lines(data))
+            data.rstrip("\0").split("\0")
+            if zero_terminated
+            else split_lines(data)
+        )
 
     delimiter_sequence = delimiter if delimiter is not None else delimiters
     delimiter_chars = _decode_delimiters(delimiter_sequence)
@@ -92,8 +100,9 @@ async def paste(
             for row in zip_longest(*file_lines, fillvalue="")
         ]
     separator = "\0" if zero_terminated else "\n"
-    output = (separator.join(out_lines) +
-              separator).encode() if out_lines else b""
+    output = (
+        (separator.join(out_lines) + separator).encode() if out_lines else b""
+    )
     return output, IOResult()
 
 

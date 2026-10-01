@@ -30,14 +30,12 @@ from mirage.workspace.session.store import SessionFields
 
 
 class _StalledSessionStore(RAMSessionStore):
-
     async def load(self) -> dict[str, SessionFields]:
         await asyncio.Event().wait()
         return {}
 
 
 class _StallableSessionStore(RAMSessionStore):
-
     def __init__(self) -> None:
         super().__init__()
         self.stall = False
@@ -49,7 +47,6 @@ class _StallableSessionStore(RAMSessionStore):
 
 
 class _StalledObserverStore(RAMObserverStore):
-
     async def append(self, path, data) -> None:
         await asyncio.Event().wait()
 
@@ -76,10 +73,7 @@ def _two_mounts() -> Workspace:
     b._store.dirs.add("/")
     b._store.files["/y.txt"] = b"secret\n"
     return Workspace(
-        {
-            "/a": (a, MountMode.WRITE),
-            "/b": (b, MountMode.WRITE)
-        },
+        {"/a": (a, MountMode.WRITE), "/b": (b, MountMode.WRITE)},
         mode=MountMode.WRITE,
     )
 
@@ -247,7 +241,6 @@ async def test_policy_reads_the_ambient_sessions_cwd():
 
 
 class _DenySecret(Policy):
-
     async def pre_command(self, ctx: CommandContext) -> Action | None:
         if ctx.command == "echo" and "secret" in ctx.argv:
             return Deny(reason="secrets stay put")
@@ -257,9 +250,9 @@ class _DenySecret(Policy):
 def _policed_ws() -> Workspace:
     vfs = RAMVFS()
     vfs._store.dirs.add("/")
-    return Workspace({"/ram/": vfs},
-                     mode=MountMode.WRITE,
-                     policies=[_DenySecret()])
+    return Workspace(
+        {"/ram/": vfs}, mode=MountMode.WRITE, policies=[_DenySecret()]
+    )
 
 
 # A nested line ($(), eval, `command NAME`) re-enters execute; the
@@ -331,9 +324,11 @@ async def test_a_negated_pipeline_keeps_its_refusal():
 async def test_cancel_releases_a_line_stalled_before_it_runs():
     # The session store never answers its load, so the line is stuck
     # before its first gate; the caller's event still has to release it.
-    ws = Workspace({"/": RAMVFS()},
-                   mode=MountMode.WRITE,
-                   session_store=_StalledSessionStore())
+    ws = Workspace(
+        {"/": RAMVFS()},
+        mode=MountMode.WRITE,
+        session_store=_StalledSessionStore(),
+    )
     cancel = asyncio.Event()
     timer = asyncio.get_running_loop().call_later(0.05, cancel.set)
     try:
@@ -348,9 +343,11 @@ async def test_abort_during_preflight_is_not_recorded():
     # A line is recorded once it has been parsed; one that never got past
     # the loading of workspace state leaves no history entry, as in
     # TypeScript.
-    ws = Workspace({"/": RAMVFS()},
-                   mode=MountMode.WRITE,
-                   session_store=_StalledSessionStore())
+    ws = Workspace(
+        {"/": RAMVFS()},
+        mode=MountMode.WRITE,
+        session_store=_StalledSessionStore(),
+    )
     cancel = asyncio.Event()
     timer = asyncio.get_running_loop().call_later(0.05, cancel.set)
     try:
@@ -387,9 +384,9 @@ async def test_abort_on_the_flush_restores_status():
 
 @pytest.mark.asyncio
 async def test_abort_on_the_history_record_restores_status():
-    ws = Workspace({"/": RAMVFS()},
-                   mode=MountMode.WRITE,
-                   observe=_StalledObserverStore())
+    ws = Workspace(
+        {"/": RAMVFS()}, mode=MountMode.WRITE, observe=_StalledObserverStore()
+    )
     session = ws._session_mgr.get(ws._session_mgr.default_id)
     session.last_exit_code = 7
     cancel = asyncio.Event()
@@ -407,9 +404,9 @@ async def test_abort_of_a_running_line_is_not_held_by_a_dead_history_store():
     # The cancel lands on the body (`sleep`), and the line's finally then
     # records into a store that never answers. The caller is released
     # after the grace all the same, with the abort and `$?` restored.
-    ws = Workspace({"/": RAMVFS()},
-                   mode=MountMode.WRITE,
-                   observe=_StalledObserverStore())
+    ws = Workspace(
+        {"/": RAMVFS()}, mode=MountMode.WRITE, observe=_StalledObserverStore()
+    )
     session = ws._session_mgr.get(ws._session_mgr.default_id)
     session.last_exit_code = 7
     cancel = asyncio.Event()
@@ -428,15 +425,16 @@ async def test_a_wait_for_timeout_is_not_held_by_a_dead_history_store():
     # wait_for. The line still gets both cancels and the grace between
     # them, so the dead store does not hold the caller, and `$?` is what
     # the line found rather than what it stamped.
-    ws = Workspace({"/": RAMVFS()},
-                   mode=MountMode.WRITE,
-                   observe=_StalledObserverStore())
+    ws = Workspace(
+        {"/": RAMVFS()}, mode=MountMode.WRITE, observe=_StalledObserverStore()
+    )
     session = ws._session_mgr.get(ws._session_mgr.default_id)
     session.last_exit_code = 7
     started = asyncio.get_running_loop().time()
     with pytest.raises(asyncio.TimeoutError):
         await asyncio.wait_for(
-            ws.shell("false; echo hi", cancel=asyncio.Event()), 0.05)
+            ws.shell("false; echo hi", cancel=asyncio.Event()), 0.05
+        )
     elapsed = asyncio.get_running_loop().time() - started
     assert elapsed < ABORT_JOIN_SECONDS + 1
     assert session.last_exit_code == 7
@@ -454,7 +452,8 @@ async def test_abort_of_a_running_line_is_not_held_by_a_dead_session_store():
     try:
         with pytest.raises(MirageAbortError):
             await asyncio.wait_for(
-                ws.shell("export MARK=1; sleep 5", cancel=cancel), 2)
+                ws.shell("export MARK=1; sleep 5", cancel=cancel), 2
+            )
     finally:
         timer.cancel()
     assert session.last_exit_code == 1
@@ -484,8 +483,10 @@ async def test_two_sessions_each_keep_their_own_loop_values():
     ws.create_session("one")
     ws.create_session("two")
     try:
-        a, b = await asyncio.gather(ws.shell(_LOOP_A, session_id="one"),
-                                    ws.shell(_LOOP_B, session_id="two"))
+        a, b = await asyncio.gather(
+            ws.shell(_LOOP_A, session_id="one"),
+            ws.shell(_LOOP_B, session_id="two"),
+        )
         assert a.stdout == b"A:A1\nA:A2\nA:A3\n"
         assert b.stdout == b"B:B1\nB:B2\nB:B3\n"
     finally:
@@ -570,7 +571,8 @@ async def test_a_caller_that_aborts_while_queued_never_runs_its_line():
         try:
             with pytest.raises(MirageAbortError):
                 await asyncio.wait_for(
-                    ws.shell("echo ran > /ram/mark", cancel=queued_cancel), 2)
+                    ws.shell("echo ran > /ram/mark", cancel=queued_cancel), 2
+                )
         finally:
             timer.cancel()
         cancel.set()
@@ -583,7 +585,8 @@ async def test_a_caller_that_aborts_while_queued_never_runs_its_line():
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    "line", ["again", "printf a | xargs -P2 -I{} again", "again | cat"])
+    "line", ["again", "printf a | xargs -P2 -I{} again", "again | cat"]
+)
 async def test_invocation_shell_reenters_exact_session_and_expires(line):
     ws = _make_ws()
     saved = []
@@ -598,9 +601,9 @@ async def test_invocation_shell_reenters_exact_session_and_expires(line):
     try:
         io = await ws.shell(line)
         assert io.stdout == b"inner\n"
-        assert ws.get_session(
-            ws.default_session_id).env.get("Z") == ("inner" if line == "again"
-                                                    else None)
+        assert ws.get_session(ws.default_session_id).env.get("Z") == (
+            "inner" if line == "again" else None
+        )
         with pytest.raises(RuntimeError, match="no longer active"):
             await saved[0]("Z=leaked")
     finally:
@@ -626,7 +629,8 @@ async def test_invocation_shell_does_not_admit_unrelated_calls(named):
         await entered.wait()
         options = {"session_id": ws.default_session_id} if named else {}
         unrelated = asyncio.create_task(
-            ws.shell('echo "$X"; X=other', **options))
+            ws.shell('echo "$X"; X=other', **options)
+        )
         await asyncio.sleep(0.02)
         assert not unrelated.done()
         held.set()

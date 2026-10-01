@@ -23,8 +23,11 @@ COMMANDS = Path(__file__).resolve().parents[2] / "mirage" / "commands"
 # `config.py` is spec-layer too: the @command wrapper answers --help and
 # --version off the bag before the command it wraps ever sees it.
 EXEMPT = {
-    "spec/parser.py", "spec/shell.py", "spec/flag_view.py", "cli/walk.py",
-    "config.py"
+    "spec/parser.py",
+    "spec/shell.py",
+    "spec/flag_view.py",
+    "cli/walk.py",
+    "config.py",
 }
 # Assignment is fine: crossmount fanout builds a bag to hand to the
 # sub-commands it dispatches. Only reads have to go through the view.
@@ -32,8 +35,10 @@ EXEMPT = {
 # `**kwargs`/`**_extra` a wrapper collects it into -- and a raw read is
 # equally blind under all three. `(?<![\w.])` keeps an attribute of the
 # same name out (FileStat.extra is not a flag bag).
-RAW_READ = re.compile(r"(?<![\w.])(?:flags|kwargs|_extra)"
-                      r"(?:\.get\(|\[[^\]]*\](?!\s*=[^=]))")
+RAW_READ = re.compile(
+    r"(?<![\w.])(?:flags|kwargs|_extra)"
+    r"(?:\.get\(|\[[^\]]*\](?!\s*=[^=]))"
+)
 
 
 def test_commands_never_read_the_flag_bag_directly():
@@ -54,4 +59,5 @@ def test_commands_never_read_the_flag_bag_directly():
                 offenders.append(f"{rel}:{number}: {line.strip()}")
     assert not offenders, (
         "read flags through FlagView(flags, spec=SPECS[...]) "
-        "or a typed parameter:\n" + "\n".join(offenders))
+        "or a typed parameter:\n" + "\n".join(offenders)
+    )

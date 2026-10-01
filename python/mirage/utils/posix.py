@@ -49,14 +49,14 @@ def translate_bracket(pattern: str, start: int, out: list[str]) -> int:
                 out.append("\\[")
                 idx += 1
                 continue
-            name = pattern[idx + 2:close]
+            name = pattern[idx + 2 : close]
             if name not in POSIX_CLASSES:
                 raise re.error("Invalid character class name")
             out.append(POSIX_CLASSES[name])
             idx = close + 2
             continue
         if ch == "\\" and idx + 1 < len(pattern):
-            out.append(pattern[idx:idx + 2])
+            out.append(pattern[idx : idx + 2])
             idx += 2
             continue
         if ch == "[":

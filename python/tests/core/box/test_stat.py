@@ -27,16 +27,13 @@ from mirage.types import ContentType, FileType, PathSpec
 @pytest.mark.asyncio
 async def test_stat_root_fetches_folder_info(accessor, index):
     with patch(
-            "mirage.core.box.stat.get_folder_info",
-            new_callable=AsyncMock,
-            return_value={
-                "id": "0",
-                "modified_at": "2026-04-01T00:00:00+00:00"
-            },
+        "mirage.core.box.stat.get_folder_info",
+        new_callable=AsyncMock,
+        return_value={"id": "0", "modified_at": "2026-04-01T00:00:00+00:00"},
     ) as mock_info:
-        info = await stat(accessor,
-                          PathSpec(vfs_path="", virtual="/", directory="/"),
-                          index)
+        info = await stat(
+            accessor, PathSpec(vfs_path="", virtual="/", directory="/"), index
+        )
     assert info.type == FileType.DIRECTORY
     assert info.name == "/"
     assert info.modified == "2026-04-01T00:00:00+00:00"
@@ -47,17 +44,25 @@ async def test_stat_root_fetches_folder_info(accessor, index):
 async def test_stat_file_carries_box_metadata(accessor, index):
     await index.set_dir(
         "/",
-        [("a.txt",
-          IndexEntry(id="200",
-                     name="a.txt",
-                     resource_type="box/file",
-                     remote_time="2026-04-01T00:00:00+00:00",
-                     vfs_name="a.txt",
-                     size=5))],
+        [
+            (
+                "a.txt",
+                IndexEntry(
+                    id="200",
+                    name="a.txt",
+                    resource_type="box/file",
+                    remote_time="2026-04-01T00:00:00+00:00",
+                    vfs_name="a.txt",
+                    size=5,
+                ),
+            )
+        ],
     )
     info = await stat(
-        accessor, PathSpec(vfs_path="a.txt", virtual="/a.txt", directory="/"),
-        index)
+        accessor,
+        PathSpec(vfs_path="a.txt", virtual="/a.txt", directory="/"),
+        index,
+    )
     assert info.content == ContentType.TEXT
     assert info.size == 5
     assert info.modified == "2026-04-01T00:00:00+00:00"
@@ -70,56 +75,72 @@ async def test_stat_file_carries_box_metadata(accessor, index):
 async def test_stat_folder_is_directory(accessor, index):
     await index.set_dir(
         "/",
-        [("docs",
-          IndexEntry(id="100",
-                     name="docs",
-                     resource_type="box/folder",
-                     remote_time="2026-04-01T00:00:00+00:00",
-                     vfs_name="docs"))],
+        [
+            (
+                "docs",
+                IndexEntry(
+                    id="100",
+                    name="docs",
+                    resource_type="box/folder",
+                    remote_time="2026-04-01T00:00:00+00:00",
+                    vfs_name="docs",
+                ),
+            )
+        ],
     )
     info = await stat(
-        accessor, PathSpec(vfs_path="docs", virtual="/docs", directory="/"),
-        index)
+        accessor,
+        PathSpec(vfs_path="docs", virtual="/docs", directory="/"),
+        index,
+    )
     assert info.type == FileType.DIRECTORY
     assert info.extra["box_id"] == "100"
 
 
 @pytest.mark.asyncio
 async def test_stat_populates_via_parent_readdir(accessor, index):
-    items = [{
-        "id": "200",
-        "name": "a.txt",
-        "type": "file",
-        "size": 5,
-        "modified_at": "2026-04-01T00:00:00+00:00",
-    }]
+    items = [
+        {
+            "id": "200",
+            "name": "a.txt",
+            "type": "file",
+            "size": 5,
+            "modified_at": "2026-04-01T00:00:00+00:00",
+        }
+    ]
     with patch(
-            "mirage.core.box.readdir.list_folder_items",
-            new_callable=AsyncMock,
-            return_value=items,
+        "mirage.core.box.readdir.list_folder_items",
+        new_callable=AsyncMock,
+        return_value=items,
     ):
         info = await stat(
             accessor,
-            PathSpec(vfs_path="a.txt", virtual="/a.txt", directory="/"), index)
+            PathSpec(vfs_path="a.txt", virtual="/a.txt", directory="/"),
+            index,
+        )
     assert info.size == 5
 
 
 @pytest.mark.asyncio
 async def test_stat_missing_raises(accessor, index):
-    with patch(
+    with (
+        patch(
             "mirage.core.box.readdir.list_folder_items",
             new_callable=AsyncMock,
             return_value=[],
-    ), patch(
+        ),
+        patch(
             "mirage.core.box.resolve.list_folder_items",
             new_callable=AsyncMock,
             return_value=[],
+        ),
     ):
         with pytest.raises(FileNotFoundError):
             await stat(
                 accessor,
                 PathSpec(vfs_path="ghost", virtual="/ghost", directory="/"),
-                index)
+                index,
+            )
 
 
 @pytest.mark.asyncio
@@ -161,13 +182,15 @@ async def test_stat_size_matches_read_for_every_file(accessor, index):
                 "modified_at": "2026-04-01T00:00:00+00:00",
             },
         ],
-        "100": [{
-            "id": "400",
-            "name": "b.bin",
-            "type": "file",
-            "size": 3,
-            "modified_at": "2026-04-01T00:00:00+00:00",
-        }],
+        "100": [
+            {
+                "id": "400",
+                "name": "b.bin",
+                "type": "file",
+                "size": 3,
+                "modified_at": "2026-04-01T00:00:00+00:00",
+            }
+        ],
     }
 
     async def _list(_tm, folder_id):
@@ -177,25 +200,28 @@ async def test_stat_size_matches_read_for_every_file(accessor, index):
         return contents[file_id]
 
     files: list[str] = []
-    with patch("mirage.core.box.readdir.list_folder_items",
-               side_effect=_list), \
-         patch("mirage.core.box.read.download_file",
-               side_effect=_download):
+    with (
+        patch("mirage.core.box.readdir.list_folder_items", side_effect=_list),
+        patch("mirage.core.box.read.download_file", side_effect=_download),
+    ):
         stack = ["/"]
         while stack:
             current = stack.pop()
-            listing = await readdir(accessor, PathSpec.from_str_path(current),
-                                    index)
+            listing = await readdir(
+                accessor, PathSpec.from_str_path(current), index
+            )
             for child in listing:
                 trimmed = child.rstrip("/")
-                info = await stat(accessor, PathSpec.from_str_path(trimmed),
-                                  index)
+                info = await stat(
+                    accessor, PathSpec.from_str_path(trimmed), index
+                )
                 if info.type == FileType.DIRECTORY:
                     stack.append(trimmed)
                     continue
                 assert info.size is not None, trimmed
-                body = await read(accessor, PathSpec.from_str_path(trimmed),
-                                  index)
+                body = await read(
+                    accessor, PathSpec.from_str_path(trimmed), index
+                )
                 assert info.size == len(body), trimmed
                 files.append(trimmed)
     assert sorted(files) == ["/a.txt", "/docs/b.bin", "/empty.txt"]
@@ -211,46 +237,54 @@ async def test_stat_direct_resolve_hides_weblinks(accessor, index):
         "type": "web_link",
         "modified_at": "2026-04-01T00:00:00+00:00",
     }
-    with patch(
+    with (
+        patch(
             "mirage.core.box.readdir.list_folder_items",
             new_callable=AsyncMock,
             return_value=[weblink],
-    ), patch(
+        ),
+        patch(
             "mirage.core.box.resolve.list_folder_items",
             new_callable=AsyncMock,
             return_value=[weblink],
+        ),
     ):
         with pytest.raises(FileNotFoundError):
             await stat(
                 accessor,
-                PathSpec(vfs_path="homepage",
-                         virtual="/homepage",
-                         directory="/"), index)
+                PathSpec(
+                    vfs_path="homepage", virtual="/homepage", directory="/"
+                ),
+                index,
+            )
 
 
 @pytest.mark.asyncio
 async def test_stat_root_reads_a_404_as_absence(accessor, index):
     with patch(
-            "mirage.core.box.stat.get_folder_info",
-            new_callable=AsyncMock,
-            side_effect=BoxApiError("Box GET /folders/0 -> 404 not_found",
-                                    404),
+        "mirage.core.box.stat.get_folder_info",
+        new_callable=AsyncMock,
+        side_effect=BoxApiError("Box GET /folders/0 -> 404 not_found", 404),
     ):
         with pytest.raises(FileNotFoundError):
-            await stat(accessor,
-                       PathSpec(vfs_path="", virtual="/", directory="/"),
-                       index)
+            await stat(
+                accessor,
+                PathSpec(vfs_path="", virtual="/", directory="/"),
+                index,
+            )
 
 
 @pytest.mark.asyncio
 async def test_stat_root_keeps_a_server_error_a_failure(accessor, index):
     with patch(
-            "mirage.core.box.stat.get_folder_info",
-            new_callable=AsyncMock,
-            side_effect=BoxApiError("Box GET /folders/0 -> 500 internal", 500),
+        "mirage.core.box.stat.get_folder_info",
+        new_callable=AsyncMock,
+        side_effect=BoxApiError("Box GET /folders/0 -> 500 internal", 500),
     ):
         with pytest.raises(BoxApiError) as caught:
-            await stat(accessor,
-                       PathSpec(vfs_path="", virtual="/", directory="/"),
-                       index)
+            await stat(
+                accessor,
+                PathSpec(vfs_path="", virtual="/", directory="/"),
+                index,
+            )
     assert caught.value.status == 500

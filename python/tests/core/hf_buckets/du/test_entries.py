@@ -20,10 +20,12 @@ from mirage.types import PathSpec
 
 @pytest.mark.asyncio
 async def test_entries_returns_per_file_with_total(make_acc):
-    acc = make_acc({
-        "data/a.json": b"12345",
-        "data/b.json": b"67",
-    })
+    acc = make_acc(
+        {
+            "data/a.json": b"12345",
+            "data/b.json": b"67",
+        }
+    )
     found, total = await entries(acc, PathSpec.from_str_path("/data"))
     assert total == 7
     assert found == [("/data/a.json", 5), ("/data/b.json", 2)]
@@ -35,6 +37,7 @@ async def test_entries_of_file_pins_the_stem(make_acc):
     # list_subtree contract); du_generic renders that identically to
     # the old empty-list shape.
     acc = make_acc({"data/a.json": b"12345"})
-    assert await entries(acc, PathSpec.from_str_path("/data/a.json")) == ([
-        ("/data/a.json", 5)
-    ], 5)
+    assert await entries(acc, PathSpec.from_str_path("/data/a.json")) == (
+        [("/data/a.json", 5)],
+        5,
+    )

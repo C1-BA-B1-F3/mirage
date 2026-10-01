@@ -18,12 +18,23 @@ import pytest
 
 from mirage.policy.match import Outcome
 from mirage.policy.profile import CompiledProfile
-from mirage.policy.types import (AdmissionRules, CommandRule, Decision,
-                                 HideReason, ProfileScript, Scope)
+from mirage.policy.types import (
+    AdmissionRules,
+    CommandRule,
+    Decision,
+    HideReason,
+    ProfileScript,
+    Scope,
+)
 from mirage.runtime.types import ScriptSource
 from mirage.shell.variable import ShellVar
-from mirage.types import (HiddenPaths, HiddenVars, MountMode, ShowEntry,
-                          ShownPaths)
+from mirage.types import (
+    HiddenPaths,
+    HiddenVars,
+    MountMode,
+    ShowEntry,
+    ShownPaths,
+)
 from mirage.vfs.ram import RAMVFS
 from mirage.workspace import Workspace
 from mirage.workspace.session import RAMSessionStore, SessionManager
@@ -155,17 +166,15 @@ def test_manager_create_default_unrestricted():
 async def test_manager_hydrates_from_store():
     store = RAMSessionStore()
     await store.set(
-        "restored", {
+        "restored",
+        {
             "session_id": "restored",
             "cwd": "/w",
-            "env": {
-                "K": "v"
-            },
+            "env": {"K": "v"},
             "created_at": 1.0,
-            "mount_modes": {
-                "/data": "read"
-            }
-        })
+            "mount_modes": {"/data": "read"},
+        },
+    )
     mgr = SessionManager("default", store=store)
     await mgr.ensure_loaded()
     s = mgr.get("restored")
@@ -188,13 +197,9 @@ async def test_manager_hydration_local_wins():
 @pytest.mark.asyncio
 async def test_manager_default_adopts_stored_fields():
     store = RAMSessionStore()
-    await store.set("default", {
-        "session_id": "default",
-        "cwd": "/w",
-        "env": {
-            "A": "1"
-        }
-    })
+    await store.set(
+        "default", {"session_id": "default", "cwd": "/w", "env": {"A": "1"}}
+    )
     mgr = SessionManager("default", store=store)
     await mgr.ensure_loaded()
     assert mgr.cwd == "/w"
@@ -202,7 +207,7 @@ async def test_manager_default_adopts_stored_fields():
         "A": "1",
         "PWD": "/w",
         "PATH": "/usr/bin",
-        "IFS": " \t\n"
+        "IFS": " \t\n",
     }
 
 
@@ -214,7 +219,8 @@ async def test_manager_default_adopts_stored_hidden_specs():
     # the spec hides and the next flush erases the restriction.
     store = RAMSessionStore()
     await store.set(
-        "default", {
+        "default",
+        {
             "session_id": "default",
             "cwd": "/w",
             "env": {},
@@ -226,13 +232,15 @@ async def test_manager_default_adopts_stored_hidden_specs():
                 "names": ["SLACK_TOKEN"],
                 "patterns": [],
             },
-        })
+        },
+    )
     mgr = SessionManager("default", store=store)
     await mgr.ensure_loaded()
     default = mgr.get("default")
-    assert default.hidden_paths == HiddenPaths(paths=("/s3/secrets", ),
-                                               patterns=("*.key", ))
-    assert default.hidden_vars == HiddenVars(names=("SLACK_TOKEN", ))
+    assert default.hidden_paths == HiddenPaths(
+        paths=("/s3/secrets",), patterns=("*.key",)
+    )
+    assert default.hidden_vars == HiddenVars(names=("SLACK_TOKEN",))
 
 
 @pytest.mark.asyncio
@@ -243,38 +251,41 @@ async def test_manager_default_adopts_stored_path_axis():
     # flush would erase both from the store.
     store = RAMSessionStore()
     await store.set(
-        "default", {
-            "session_id":
-            "default",
-            "cwd":
-            "/w",
+        "default",
+        {
+            "session_id": "default",
+            "cwd": "/w",
             "env": {},
             "hidden_paths": {
                 "paths": ["/repo"],
                 "patterns": [],
             },
             "shown_paths": {
-                "entries": [{
-                    "path": "/repo/public",
-                    "mode": "read"
-                }, {
-                    "path": "/repo/notes"
-                }],
+                "entries": [
+                    {"path": "/repo/public", "mode": "read"},
+                    {"path": "/repo/notes"},
+                ],
             },
-            "hide_reasons": [{
-                "patterns": ["/repo"],
-                "reason": "keep the bulk out of context",
-            }],
-        })
+            "hide_reasons": [
+                {
+                    "patterns": ["/repo"],
+                    "reason": "keep the bulk out of context",
+                }
+            ],
+        },
+    )
     mgr = SessionManager("default", store=store)
     await mgr.ensure_loaded()
     default = mgr.get("default")
-    assert default.shown_paths == ShownPaths(entries=(
-        ShowEntry("/repo/public", MountMode.READ),
-        ShowEntry("/repo/notes", None),
-    ))
-    assert default.hide_reasons == (HideReason(
-        patterns=("/repo", ), reason="keep the bulk out of context"), )
+    assert default.shown_paths == ShownPaths(
+        entries=(
+            ShowEntry("/repo/public", MountMode.READ),
+            ShowEntry("/repo/notes", None),
+        )
+    )
+    assert default.hide_reasons == (
+        HideReason(patterns=("/repo",), reason="keep the bulk out of context"),
+    )
     assert mgr.hide_reasons_of("default") == default.hide_reasons
     # An id this manager does not know reads the default profile's
     # table, the same fallback commands_of makes.
@@ -289,7 +300,8 @@ async def test_manager_default_adopts_stored_script():
     # next flush must not erase the script from the record.
     store = RAMSessionStore()
     await store.set(
-        "default", {
+        "default",
+        {
             "session_id": "default",
             "cwd": "/w",
             "env": {},
@@ -299,12 +311,15 @@ async def test_manager_default_adopts_stored_script():
                 "source": "None",
                 "runtime": "monty",
             },
-        })
+        },
+    )
     mgr = SessionManager("default", store=store)
     await mgr.ensure_loaded()
-    expected = ProfileScript(profile="judge",
-                             script=ScriptSource("None", language="python"),
-                             runtime="monty")
+    expected = ProfileScript(
+        profile="judge",
+        script=ScriptSource("None", language="python"),
+        runtime="monty",
+    )
     assert mgr.get("default").script == expected
     assert mgr.script_of("default") == expected
 
@@ -313,14 +328,15 @@ def test_manager_default_profile_shapes_the_default_session():
     mgr = SessionManager("default")
     mgr.default_profile = CompiledProfile(
         mount_modes={"/s3": MountMode.READ},
-        hidden_paths=HiddenPaths(paths=("/s3/secrets", )),
-        hidden_vars=HiddenVars(names=("SLACK_TOKEN", )),
+        hidden_paths=HiddenPaths(paths=("/s3/secrets",)),
+        hidden_vars=HiddenVars(names=("SLACK_TOKEN",)),
         env={"PAGER": "cat"},
-        cwd="/s3")
+        cwd="/s3",
+    )
     default = mgr.get("default")
     assert default.mount_modes == {"/s3": MountMode.READ}
-    assert default.hidden_paths == HiddenPaths(paths=("/s3/secrets", ))
-    assert default.hidden_vars == HiddenVars(names=("SLACK_TOKEN", ))
+    assert default.hidden_paths == HiddenPaths(paths=("/s3/secrets",))
+    assert default.hidden_vars == HiddenVars(names=("SLACK_TOKEN",))
     assert default.env["PAGER"] == "cat"
     assert default.cwd == "/s3"
     # None is "no default profile", not "clear the session".
@@ -336,30 +352,28 @@ async def test_manager_default_profile_outranks_a_stale_record():
     # scratch state (cwd, env), and the next flush rewrites the record.
     store = RAMSessionStore()
     await store.set(
-        "default", {
+        "default",
+        {
             "session_id": "default",
             "cwd": "/w",
-            "env": {
-                "A": "1"
-            },
-            "mount_modes": {
-                "/s3": "write",
-                "/other": "write"
-            },
-        })
+            "env": {"A": "1"},
+            "mount_modes": {"/s3": "write", "/other": "write"},
+        },
+    )
     mgr = SessionManager("default", store=store)
     mgr.default_profile = CompiledProfile(
         mount_modes={"/s3": MountMode.READ},
-        hidden_paths=HiddenPaths(paths=("/s3/secrets", )),
+        hidden_paths=HiddenPaths(paths=("/s3/secrets",)),
         hidden_vars=None,
         env=None,
-        cwd="/s3")
+        cwd="/s3",
+    )
     await mgr.ensure_loaded()
     default = mgr.get("default")
     assert default.cwd == "/w"
     assert default.env["A"] == "1"
     assert default.mount_modes == {"/s3": MountMode.READ}
-    assert default.hidden_paths == HiddenPaths(paths=("/s3/secrets", ))
+    assert default.hidden_paths == HiddenPaths(paths=("/s3/secrets",))
     await mgr.flush()
     stored = (await store.load())["default"]
     assert stored["mount_modes"] == {"/s3": "read"}
@@ -397,13 +411,13 @@ async def test_sessions_persist_across_workspaces_on_shared_store():
     await ws_a.flush_sessions()
 
     ws_b = Workspace({"/data": ram}, mode=MountMode.EXEC, session_store=store)
-    result = await ws_b.shell("echo blocked > /data/x.txt",
-                              session_id="narrow")
+    result = await ws_b.shell(
+        "echo blocked > /data/x.txt", session_id="narrow"
+    )
     assert result.exit_code != 0
 
 
 class CountingStore(RAMSessionStore):
-
     def __init__(self) -> None:
         super().__init__()
         self.cas_calls = 0
@@ -443,12 +457,15 @@ def test_flush_conflict_adopts_stored_generation_and_retries():
     # Another writer already advanced the record to generation 5.
     _run(
         store.set(
-            "default", {
+            "default",
+            {
                 "session_id": "default",
                 "cwd": "/theirs",
                 "env": {},
                 "generation": 5,
-            }))
+            },
+        )
+    )
     mgr.get("default").cwd = "/ours"
     _run(mgr.flush())
     entries = _run(store.load())
@@ -460,7 +477,6 @@ def test_flush_conflict_adopts_stored_generation_and_retries():
 def test_flush_exhausted_retries_raise():
 
     class AlwaysConflict(RAMSessionStore):
-
         async def cas_set(self, session_id, fields, expected_generation):
             return False
 
@@ -496,7 +512,7 @@ def test_hydrated_sessions_start_clean():
 def test_commands_of_answers_the_sessions_own_rules():
     mgr = SessionManager("default")
     early = mgr.create("early")
-    own = AdmissionRules(allow=("ls", ))
+    own = AdmissionRules(allow=("ls",))
     late = mgr.create("late")
     late.commands = own
     assert mgr.commands_of("late") is own
@@ -515,18 +531,22 @@ def test_commands_of_answers_the_sessions_own_rules():
         hidden_vars=None,
         env=None,
         cwd=None,
-        commands=AdmissionRules(allow=("cat", )))
-    assert mgr.commands_of("nobody") == AdmissionRules(allow=("cat", ))
-    assert mgr.commands_of("") == AdmissionRules(allow=("cat", ))
+        commands=AdmissionRules(allow=("cat",)),
+    )
+    assert mgr.commands_of("nobody") == AdmissionRules(allow=("cat",))
+    assert mgr.commands_of("") == AdmissionRules(allow=("cat",))
 
 
 @pytest.mark.asyncio
 async def test_manager_admission_rules_ride_the_session_record():
     store = RAMSessionStore()
-    own = AdmissionRules(allow=("ls", "git log"),
-                         deny=(CommandRule(reason="no", commands=("rm", )), ))
+    own = AdmissionRules(
+        allow=("ls", "git log"),
+        deny=(CommandRule(reason="no", commands=("rm",)),),
+    )
     await store.set(
-        "restored", {
+        "restored",
+        {
             "session_id": "restored",
             "cwd": "/w",
             "env": {},
@@ -534,32 +554,27 @@ async def test_manager_admission_rules_ride_the_session_record():
             "commands": {
                 "allow": ["ls", "git log"],
                 "ask": [],
-                "deny": [{
-                    "reason": "no",
-                    "commands": ["rm"],
-                    "paths": []
-                }],
+                "deny": [{"reason": "no", "commands": ["rm"], "paths": []}],
             },
-        })
+        },
+    )
     await store.set(
-        "default", {
+        "default",
+        {
             "session_id": "default",
             "cwd": "/w",
             "env": {},
             "created_at": 1.0,
-            "commands": {
-                "allow": ["cat"],
-                "ask": [],
-                "deny": []
-            },
-        })
+            "commands": {"allow": ["cat"], "ask": [], "deny": []},
+        },
+    )
     mgr = SessionManager("default", store=store)
     await mgr.ensure_loaded()
     restored = mgr.get("restored")
     assert restored.commands == own
     assert mgr.commands_of("restored") is restored.commands
     # The default session adopts its stored rules like its hidden paths.
-    assert mgr.get("default").commands == AdmissionRules(allow=("cat", ))
+    assert mgr.get("default").commands == AdmissionRules(allow=("cat",))
     await mgr.flush()
     stored = await store.load()
     assert stored["restored"]["commands"]["allow"] == ["ls", "git log"]
@@ -573,33 +588,35 @@ async def test_manager_decisions_live_on_the_registered_session_and_persist():
     await mgr.ensure_loaded()
     live = mgr.create("agent")
     assert mgr.decisions_of("agent") == ()
-    rule = CommandRule(reason="sign-off", commands=("git push", ))
-    grant = Decision(id="d1",
-                     session_id="agent",
-                     agent_id="",
-                     command="git",
-                     argv=("push", ),
-                     cwd="/repo",
-                     paths=(),
-                     reason="r",
-                     rule=rule,
-                     outcome=Outcome.ALLOW,
-                     scope=Scope.SESSION)
+    rule = CommandRule(reason="sign-off", commands=("git push",))
+    grant = Decision(
+        id="d1",
+        session_id="agent",
+        agent_id="",
+        command="git",
+        argv=("push",),
+        cwd="/repo",
+        paths=(),
+        reason="r",
+        rule=rule,
+        outcome=Outcome.ALLOW,
+        scope=Scope.SESSION,
+    )
     # Written by id onto the registered session, so a fork made before
     # or after reads the same answers through the manager, whatever
     # its own copy holds; durable at the next flush.
     fork = live.fork()
-    mgr.set_decisions("agent", (grant, ))
-    assert live.decisions == (grant, )
+    mgr.set_decisions("agent", (grant,))
+    assert live.decisions == (grant,)
     assert fork.decisions == ()
-    assert mgr.decisions_of(fork.session_id) == (grant, )
+    assert mgr.decisions_of(fork.session_id) == (grant,)
     await mgr.flush()
     stored = (await store.load())["agent"]
     assert stored["decisions"][0]["scope"] == "session"
     # A manager reading that record back holds the grant.
     again = SessionManager("default", store=store)
     await again.ensure_loaded()
-    assert again.decisions_of("agent") == (grant, )
+    assert again.decisions_of("agent") == (grant,)
     with pytest.raises(KeyError):
         mgr.decisions_of("nobody")
 
@@ -609,41 +626,43 @@ async def test_manager_default_session_hydrates_its_decisions():
     store = RAMSessionStore()
     mgr = SessionManager("default", store=store)
     await mgr.ensure_loaded()
-    rule = CommandRule(reason="sign-off", commands=("git push", ))
-    grant = Decision(id="d1",
-                     session_id="agent",
-                     agent_id="",
-                     command="git",
-                     argv=("push", ),
-                     cwd="/repo",
-                     paths=(),
-                     reason="r",
-                     rule=rule,
-                     outcome=Outcome.ALLOW,
-                     scope=Scope.SESSION)
-    mgr.set_decisions("default", (grant, ))
+    rule = CommandRule(reason="sign-off", commands=("git push",))
+    grant = Decision(
+        id="d1",
+        session_id="agent",
+        agent_id="",
+        command="git",
+        argv=("push",),
+        cwd="/repo",
+        paths=(),
+        reason="r",
+        rule=rule,
+        outcome=Outcome.ALLOW,
+        scope=Scope.SESSION,
+    )
+    mgr.set_decisions("default", (grant,))
     await mgr.flush()
     # The default session takes the stored durable fields on reopen;
     # the grants are among them, so an approved line does not ask
     # again after a restart and the next flush keeps the grant.
     again = SessionManager("default", store=store)
     await again.ensure_loaded()
-    assert again.decisions_of("default") == (grant, )
+    assert again.decisions_of("default") == (grant,)
     await again.flush()
-    assert (await
-            store.load())["default"]["decisions"][0]["scope"] == ("session")
+    assert (await store.load())["default"]["decisions"][0]["scope"] == (
+        "session"
+    )
 
 
 def test_restore_seed_templates_later_sessions():
     mgr = SessionManager("default")
     assert not mgr.has_managed_env
-    seed = vars_from_entries({
-        "TOKEN": {
-            "from": "aws-sm",
-            "ref": "prod"
-        },
-        "MODE": "x",
-    })
+    seed = vars_from_entries(
+        {
+            "TOKEN": {"from": "aws-sm", "ref": "prod"},
+            "MODE": "x",
+        }
+    )
     mgr.restore_seed(seed)
     assert mgr.has_managed_env
     created = mgr.create("later")
@@ -664,13 +683,12 @@ def test_hydration_merges_env_entries_the_record_predates():
         old.get("agent").vars["KEPT"] = ShellVar(value="agent")
         await old.ensure_loaded()
         await old.flush()
-        seeds = vars_from_entries({
-            "TOKEN": {
-                "from": "aws-sm",
-                "ref": "prod"
-            },
-            "KEPT": "seeded",
-        })
+        seeds = vars_from_entries(
+            {
+                "TOKEN": {"from": "aws-sm", "ref": "prod"},
+                "KEPT": "seeded",
+            }
+        )
         fresh = SessionManager("default", store=store, seed_vars=dict(seeds))
         await fresh.ensure_loaded()
         return fresh
@@ -705,19 +723,22 @@ def test_merged_seed_lands_durably_on_the_next_flush():
 @pytest.mark.asyncio
 @pytest.mark.parametrize("failure", [False, True])
 async def test_profile_changes_publish_only_after_persistence(
-        monkeypatch, failure):
+    monkeypatch, failure
+):
     store = RAMSessionStore()
     mgr = SessionManager("default", store=store)
     original = CompiledProfile(
         mount_modes={"/data": MountMode.READ},
-        hidden_paths=HiddenPaths(paths=("/data/secret", )),
-        hidden_vars=HiddenVars(names=("TOKEN", )),
+        hidden_paths=HiddenPaths(paths=("/data/secret",)),
+        hidden_vars=HiddenVars(names=("TOKEN",)),
         env=None,
         cwd=None,
-        commands=AdmissionRules(allow=("cat", )),
-        script=ProfileScript(profile="judge",
-                             script=ScriptSource("None", language="python"),
-                             runtime="monty"),
+        commands=AdmissionRules(allow=("cat",)),
+        script=ProfileScript(
+            profile="judge",
+            script=ScriptSource("None", language="python"),
+            runtime="monty",
+        ),
     )
     mgr.default_profile = original
     await mgr.flush()
@@ -735,12 +756,14 @@ async def test_profile_changes_publish_only_after_persistence(
         return await cas_set(*args)
 
     monkeypatch.setattr(store, "cas_set", delayed_write)
-    cleared = CompiledProfile(mount_modes=None,
-                              hidden_paths=None,
-                              hidden_vars=None,
-                              env=None,
-                              cwd=None,
-                              commands=None)
+    cleared = CompiledProfile(
+        mount_modes=None,
+        hidden_paths=None,
+        hidden_vars=None,
+        env=None,
+        cwd=None,
+        commands=None,
+    )
     updating = asyncio.create_task(mgr.set_profile("default", cleared))
     try:
         await asyncio.wait_for(entered.wait(), 5)
@@ -775,7 +798,8 @@ async def test_profile_changes_publish_only_after_persistence(
 @pytest.mark.asyncio
 @pytest.mark.parametrize("failure", [False, True])
 async def test_session_close_waits_for_profile_persistence(
-        monkeypatch, failure):
+    monkeypatch, failure
+):
     store = RAMSessionStore()
     mgr = SessionManager("default", store=store)
     mgr.create("agent")
@@ -790,12 +814,14 @@ async def test_session_close_waits_for_profile_persistence(
         return await cas_set(*args)
 
     monkeypatch.setattr(store, "cas_set", delayed_write)
-    cleared = CompiledProfile(mount_modes=None,
-                              hidden_paths=None,
-                              hidden_vars=None,
-                              env=None,
-                              cwd=None,
-                              commands=None)
+    cleared = CompiledProfile(
+        mount_modes=None,
+        hidden_paths=None,
+        hidden_vars=None,
+        env=None,
+        cwd=None,
+        commands=None,
+    )
     updating = asyncio.create_task(mgr.set_profile("agent", cleared))
     closing = None
     try:
@@ -817,7 +843,6 @@ async def test_session_close_waits_for_profile_persistence(
 
 
 class _StallableStore(RAMSessionStore):
-
     def __init__(self) -> None:
         super().__init__()
         self.stall = False

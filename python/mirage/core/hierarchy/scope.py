@@ -43,6 +43,7 @@ class Slot:
             ``page=b, page_id=2`` because the innermost page is the one
             the path addresses. At most one variadic slot per scope.
     """
+
     name: str
     codec: Codec = RAW
     id_key: str | None = None
@@ -69,6 +70,7 @@ class Scope:
             by default); False for positions that exist by construction,
             like the top-level directories.
     """
+
     kind: str
     segments: tuple[Segment, ...]
     leaf: bool = False
@@ -97,6 +99,7 @@ class ScopeMatch:
             the way a command ignores the ``CommandOpts`` facts it does
             not read.
     """
+
     kind: str
     vfs_path: str
     slots: dict[str, str] = field(default_factory=dict)
@@ -137,8 +140,9 @@ def variadic_slot(segments: tuple[Segment, ...]) -> tuple[int, Slot] | None:
     return found
 
 
-def _match_run(segments: tuple[Segment, ...],
-               parts: list[str]) -> dict[str, str] | None:
+def _match_run(
+    segments: tuple[Segment, ...], parts: list[str]
+) -> dict[str, str] | None:
     slots: dict[str, str] = {}
     for segment, part in zip(segments, parts):
         if isinstance(segment, str):
@@ -152,8 +156,9 @@ def _match_run(segments: tuple[Segment, ...],
     return slots
 
 
-def _match_segments(segments: tuple[Segment, ...],
-                    parts: list[str]) -> dict[str, str] | None:
+def _match_segments(
+    segments: tuple[Segment, ...], parts: list[str]
+) -> dict[str, str] | None:
     found = variadic_slot(segments)
     if found is None:
         if len(segments) != len(parts):
@@ -166,11 +171,11 @@ def _match_segments(segments: tuple[Segment, ...],
     head = _match_run(segments[:at], parts[:at])
     if head is None:
         return None
-    tail = _match_run(segments[at + 1:], parts[len(parts) - tail_len:])
+    tail = _match_run(segments[at + 1 :], parts[len(parts) - tail_len :])
     if tail is None:
         return None
     values: dict[str, str] | None = None
-    for part in parts[at:len(parts) - tail_len]:
+    for part in parts[at : len(parts) - tail_len]:
         values = decode_slot(slot, part)
         if values is None:
             return None
@@ -179,8 +184,9 @@ def _match_segments(segments: tuple[Segment, ...],
     return {**head, **values, **tail}
 
 
-def match_scope(scopes: tuple[Scope, ...],
-                parts: list[str]) -> tuple[Scope, dict[str, str]] | None:
+def match_scope(
+    scopes: tuple[Scope, ...], parts: list[str]
+) -> tuple[Scope, dict[str, str]] | None:
     """Match path segments against the table, first declared scope wins.
 
     Args:
@@ -236,9 +242,8 @@ def make_detect_scope(scopes: tuple[Scope, ...]) -> DetectFn:
         if matched is None:
             return ScopeMatch(kind=INVALID, vfs_path=raw)
         scope, slots = matched
-        return ScopeMatch(kind=scope.kind,
-                          vfs_path=raw,
-                          slots=slots,
-                          scope=scope)
+        return ScopeMatch(
+            kind=scope.kind, vfs_path=raw, slots=slots, scope=scope
+        )
 
     return detect_scope

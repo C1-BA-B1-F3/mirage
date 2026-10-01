@@ -65,10 +65,15 @@ def make_search(
             raise UsageError("search: query is required")
         fl = FlagView(opts.flags, spec=SPECS["search"])
         output = await search_resources(
-            capability, accessor, default_paths(paths, opts.cwd),
-            SearchQuery(texts[0], options=options(fl)), opts.index)
+            capability,
+            accessor,
+            default_paths(paths, opts.cwd),
+            SearchQuery(texts[0], options=options(fl)),
+            opts.index,
+        )
         return output, IOResult()
 
-    wrapped: Callable[..., Any] = command(name, vfs=vfs,
-                                          spec=SPECS["search"])(search)
+    wrapped: Callable[..., Any] = command(name, vfs=vfs, spec=SPECS["search"])(
+        search
+    )
     return wrapped

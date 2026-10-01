@@ -24,14 +24,25 @@ from dulwich.objects import Commit, ObjectID, Tag
 from dulwich.refs import HEADREF, LOCAL_BRANCH_PREFIX, LOCAL_TAG_PREFIX
 from dulwich.repo import BaseRepo
 
-from mirage.commands.builtin.utils.bre import (BreError, PosixSyntax,
-                                               search_bre, translate_ere)
+from mirage.commands.builtin.utils.bre import (
+    BreError,
+    PosixSyntax,
+    search_bre,
+    translate_ere,
+)
 from mirage.commands.cli.builtin.git.dates import date_clock, parse_date_mode
-from mirage.commands.cli.builtin.git.errors import (  # yapf: disable
-    BadDateError, GitError, IncompatibleLogOptionsError,
-    UnrecognizedArgumentError)
-from mirage.commands.cli.builtin.git.format import (DEFAULT_DATE, MEDIUM,
-                                                    LogFormat, parse_pretty)
+from mirage.commands.cli.builtin.git.errors import (
+    BadDateError,
+    GitError,
+    IncompatibleLogOptionsError,
+    UnrecognizedArgumentError,
+)
+from mirage.commands.cli.builtin.git.format import (
+    DEFAULT_DATE,
+    MEDIUM,
+    LogFormat,
+    parse_pretty,
+)
 from mirage.commands.cli.builtin.git.mailmap import mapped_identity
 from mirage.commands.cli.builtin.git.pickaxe import touches
 from mirage.commands.cli.builtin.git.types import DateMode, MailmapEntry
@@ -87,6 +98,7 @@ class LogFlags:
             ``topo`` (``--topo-order``, which ``--graph`` implies) or
             ``date`` (``--date-order``).
     """
+
     max_count: int | None
     oneline: bool
     reverse: bool
@@ -121,6 +133,7 @@ class WalkStep:
         commit (Commit): the commit.
         shown (bool): whether the log prints it.
     """
+
     commit: Commit
     shown: bool
 
@@ -136,6 +149,7 @@ class Walk:
             filter leaves out, which is what makes it a parent
             ``--graph`` draws a line to. Filled only for an ordered walk.
     """
+
     steps: tuple[WalkStep, ...]
     interesting: frozenset[bytes]
 
@@ -187,8 +201,9 @@ def pretty_format(fl: FlagView) -> LogFormat:
     return pretty
 
 
-def _pattern(value: str, syntax: str, ignore_case: bool,
-             origin: str) -> re.Pattern[str]:
+def _pattern(
+    value: str, syntax: str, ignore_case: bool, origin: str
+) -> re.Pattern[str]:
     """One ``--grep``, ``--author`` or ``--committer`` pattern, compiled.
 
     ``-P`` goes to the ``regex`` engine, whose syntax is PCRE's where
@@ -207,21 +222,24 @@ def _pattern(value: str, syntax: str, ignore_case: bool,
     try:
         if syntax == PERL_REGEXP:
             perl: re.Pattern[str] = regex.compile(
-                value, regex.ASCII | (regex.IGNORECASE if ignore_case else 0))
+                value, regex.ASCII | (regex.IGNORECASE if ignore_case else 0)
+            )
             return perl
         fold = re.IGNORECASE if ignore_case else 0
         if syntax == FIXED_STRINGS:
             return compile_posix_regex(re.escape(value), fold)
         if syntax == EXTENDED_REGEXP:
             return compile_posix_regex(
-                translate_ere(value, PosixSyntax.EXTENDED)[0], fold)
+                translate_ere(value, PosixSyntax.EXTENDED)[0], fold
+            )
         return search_bre(value, ignore_case)
     except (BreError, re.error, regex.error) as exc:
         raise GitError(f"{origin}, '{value}': {exc}") from exc
 
 
-def parse_flags(fl: FlagView,
-                env: Mapping[str, str] | None = None) -> LogFlags:
+def parse_flags(
+    fl: FlagView, env: Mapping[str, str] | None = None
+) -> LogFlags:
     """Read the raw log flag kwargs into a frozen struct.
 
     Args:
@@ -245,13 +263,17 @@ def parse_flags(fl: FlagView,
         syntax = key
     committers = tuple(
         _pattern(value, syntax, ignore_case, HEADER_ORIGIN)
-        for value in fl.as_list("committer"))
+        for value in fl.as_list("committer")
+    )
     authors = tuple(
         _pattern(value, syntax, ignore_case, HEADER_ORIGIN)
-        for value in fl.as_list("author"))
+        for value in fl.as_list("author")
+    )
     greps = tuple(
         _pattern(value, syntax, ignore_case, COMMAND_LINE_ORIGIN)
-        for values in fl.as_list("grep") for value in values.split("\n"))
+        for values in fl.as_list("grep")
+        for value in values.split("\n")
+    )
     max_count = fl.as_int("max_count")
     return LogFlags(
         authors=authors,
@@ -262,7 +284,8 @@ def parse_flags(fl: FlagView,
         decorate=fl.as_bool("decorate"),
         # git reads a negative count as no limit at all.
         max_count=None
-        if max_count is not None and max_count < 0 else max_count,
+        if max_count is not None and max_count < 0
+        else max_count,
         min_parents=2 if fl.as_bool("merges") else fl.as_int("min_parents"),
         max_parents=1 if fl.as_bool("no_merges") else fl.as_int("max_parents"),
         first_parent=fl.as_bool("first_parent"),
@@ -348,11 +371,11 @@ def _ref_label(name: bytes) -> str:
     """
     text = name.decode("utf-8", errors="replace")
     if name.startswith(LOCAL_TAG_PREFIX):
-        return f"tag: {text[len(LOCAL_TAG_PREFIX):]}"
+        return f"tag: {text[len(LOCAL_TAG_PREFIX) :]}"
     if name.startswith(LOCAL_BRANCH_PREFIX):
-        return text[len(LOCAL_BRANCH_PREFIX):]
+        return text[len(LOCAL_BRANCH_PREFIX) :]
     if name.startswith(REMOTE_PREFIX):
-        return text[len(REMOTE_PREFIX):]
+        return text[len(REMOTE_PREFIX) :]
     return text
 
 
@@ -391,13 +414,18 @@ def _load_commit(repo: BaseRepo, sha: bytes) -> Commit:
     """
     obj = repo.object_store[ObjectID(sha)]
     if not isinstance(obj, Commit):
-        raise TypeError(f"{sha.decode()} is a {obj.type_name.decode()}, "
-                        "not a commit")
+        raise TypeError(
+            f"{sha.decode()} is a {obj.type_name.decode()}, not a commit"
+        )
     return obj
 
 
-def _walk_history(repo: BaseRepo, starts: list[Commit], first_parent: bool,
-                  hidden: tuple[Commit, ...]) -> Iterator[Commit]:
+def _walk_history(
+    repo: BaseRepo,
+    starts: list[Commit],
+    first_parent: bool,
+    hidden: tuple[Commit, ...],
+) -> Iterator[Commit]:
     """Walk history from a set of commits, newest first, along every
     parent.
 
@@ -464,8 +492,9 @@ def _walk_history(repo: BaseRepo, starts: list[Commit], first_parent: bool,
             if not queue:
                 break
             newest = max(queued.commit_time for queued in queue)
-            if date <= newest or any(queued.id not in excluded
-                                     for queued in queue):
+            if date <= newest or any(
+                queued.id not in excluded for queued in queue
+            ):
                 slop = SLOP
             else:
                 slop -= 1
@@ -484,8 +513,9 @@ def _walk_history(repo: BaseRepo, starts: list[Commit], first_parent: bool,
     yield from (commit for commit in held if commit.id not in excluded)
 
 
-def _sort_commits(commits: list[Commit],
-                  order: Literal["topo", "date"]) -> list[Commit]:
+def _sort_commits(
+    commits: list[Commit], order: Literal["topo", "date"]
+) -> list[Commit]:
     """Order a walk's commits so no parent comes before any of its
     children.
 
@@ -557,8 +587,9 @@ def _in_window(commit: Commit, flags: LogFlags) -> bool:
     return flags.until is None or commit.commit_time <= flags.until
 
 
-def _message_matches(message: bytes, greps: tuple[re.Pattern[str],
-                                                  ...]) -> bool:
+def _message_matches(
+    message: bytes, greps: tuple[re.Pattern[str], ...]
+) -> bool:
     """Whether a ``--grep`` pattern matches the message.
 
     git searches the message a line at a time, so ``^`` and ``$`` anchor
@@ -572,8 +603,11 @@ def _message_matches(message: bytes, greps: tuple[re.Pattern[str],
     return any(pattern.search(line) for pattern in greps for line in lines)
 
 
-def _ident_matches(ident: bytes, patterns: tuple[re.Pattern[str], ...],
-                   mailmap: tuple[MailmapEntry, ...]) -> bool:
+def _ident_matches(
+    ident: bytes,
+    patterns: tuple[re.Pattern[str], ...],
+    mailmap: tuple[MailmapEntry, ...],
+) -> bool:
     """Whether an ``--author`` or ``--committer`` pattern matches.
 
     Args:
@@ -598,8 +632,10 @@ def _filters_pass(commit: Commit, flags: LogFlags) -> bool:
         flags (LogFlags): the parsed invocation.
     """
     mailmap = flags.mailmap if flags.use_mailmap else ()
-    for ident, patterns in ((commit.author, flags.authors),
-                            (commit.committer, flags.committers)):
+    for ident, patterns in (
+        (commit.author, flags.authors),
+        (commit.committer, flags.committers),
+    ):
         if patterns and not _ident_matches(ident, patterns, mailmap):
             return False
     if flags.greps and not _message_matches(commit.message, flags.greps):
@@ -607,14 +643,19 @@ def _filters_pass(commit: Commit, flags: LogFlags) -> bool:
     count = len(commit.parents)
     if flags.min_parents is not None and count < flags.min_parents:
         return False
-    return not (flags.max_parents is not None and flags.max_parents >= 0
-                and count > flags.max_parents)
+    return not (
+        flags.max_parents is not None
+        and flags.max_parents >= 0
+        and count > flags.max_parents
+    )
 
 
-def walked(repo: BaseRepo,
-           starts: list[Commit],
-           flags: LogFlags,
-           hidden: tuple[Commit, ...] = ()) -> Walk:
+def walked(
+    repo: BaseRepo,
+    starts: list[Commit],
+    flags: LogFlags,
+    hidden: tuple[Commit, ...] = (),
+) -> Walk:
     """The commits a log walks, in the order it walks them.
 
     Order of operations is git's: walk history, drop what the filters
@@ -644,20 +685,23 @@ def walked(repo: BaseRepo,
     source: Iterator[Commit] = (
         commit
         for commit in _walk_history(repo, starts, flags.first_parent, hidden)
-        if _in_window(commit, flags))
+        if _in_window(commit, flags)
+    )
     interesting: frozenset[bytes] = frozenset()
     if flags.order != "default":
         window = list(source)
-        interesting = frozenset(commit.id for commit in window
-                                if _filters_pass(commit, flags))
+        interesting = frozenset(
+            commit.id for commit in window if _filters_pass(commit, flags)
+        )
         source = iter(_sort_commits(window, flags.order))
     steps: list[WalkStep] = []
     printed = 0
     for commit in source:
         if not _filters_pass(commit, flags):
             continue
-        shown = needle is None or touches(store, commit, needle,
-                                          flags.ignore_case)
+        shown = needle is None or touches(
+            store, commit, needle, flags.ignore_case
+        )
         steps.append(WalkStep(commit, shown))
         printed += shown
         if flags.max_count is not None and printed >= flags.max_count:
@@ -665,10 +709,12 @@ def walked(repo: BaseRepo,
     return Walk(tuple(steps), interesting)
 
 
-def select(repo: BaseRepo,
-           starts: list[Commit],
-           flags: LogFlags,
-           hidden: tuple[Commit, ...] = ()) -> list[Commit]:
+def select(
+    repo: BaseRepo,
+    starts: list[Commit],
+    flags: LogFlags,
+    hidden: tuple[Commit, ...] = (),
+) -> list[Commit]:
     """The commits a log invocation prints, in the order it prints them.
 
     The walk's printed commits, reversed last when asked: reversing
@@ -684,7 +730,8 @@ def select(repo: BaseRepo,
             left out, the ``A`` of ``A..B``.
     """
     selected = [
-        step.commit for step in walked(repo, starts, flags, hidden).steps
+        step.commit
+        for step in walked(repo, starts, flags, hidden).steps
         if step.shown
     ]
     if flags.reverse:

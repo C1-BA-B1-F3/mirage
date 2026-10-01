@@ -36,21 +36,34 @@ def index():
 
 @pytest.mark.asyncio
 async def test_unlink_calls_delete_with_doc_id(accessor, index):
-    await index.set_dir("/gdocs/owned", [
-        ("Foo__doc1.gdoc.json",
-         IndexEntry(id="doc1",
+    await index.set_dir(
+        "/gdocs/owned",
+        [
+            (
+                "Foo__doc1.gdoc.json",
+                IndexEntry(
+                    id="doc1",
                     name="Foo",
                     resource_type="gdocs/file",
-                    vfs_name="Foo__doc1.gdoc.json")),
-    ])
-    with patch("mirage.core.gdocs.unlink.delete_file",
-               new_callable=AsyncMock) as mock_delete:
+                    vfs_name="Foo__doc1.gdoc.json",
+                ),
+            ),
+        ],
+    )
+    with patch(
+        "mirage.core.gdocs.unlink.delete_file", new_callable=AsyncMock
+    ) as mock_delete:
         await unlink(
             accessor,
-            PathSpec(vfs_path=mount_key("/gdocs/owned/Foo__doc1.gdoc.json",
-                                        "/gdocs"),
-                     virtual="/gdocs/owned/Foo__doc1.gdoc.json",
-                     directory="/gdocs/owned/Foo__doc1.gdoc.json"), index)
+            PathSpec(
+                vfs_path=mount_key(
+                    "/gdocs/owned/Foo__doc1.gdoc.json", "/gdocs"
+                ),
+                virtual="/gdocs/owned/Foo__doc1.gdoc.json",
+                directory="/gdocs/owned/Foo__doc1.gdoc.json",
+            ),
+            index,
+        )
         mock_delete.assert_awaited_once()
         assert mock_delete.await_args.args[1] == "doc1"
     listing = await index.list_dir("/gdocs/owned")
@@ -62,21 +75,32 @@ async def test_unlink_virtual_dir_raises(accessor, index):
     with pytest.raises(IsADirectoryError):
         await unlink(
             accessor,
-            PathSpec(vfs_path=mount_key("/gdocs/owned", "/gdocs"),
-                     virtual="/gdocs/owned",
-                     directory="/gdocs/owned"), index)
+            PathSpec(
+                vfs_path=mount_key("/gdocs/owned", "/gdocs"),
+                virtual="/gdocs/owned",
+                directory="/gdocs/owned",
+            ),
+            index,
+        )
 
 
 @pytest.mark.asyncio
 async def test_unlink_missing_raises(accessor, index):
     files = []
-    with patch("mirage.core.google.readdir.list_all_files",
-               new_callable=AsyncMock,
-               return_value=(files, True)):
+    with patch(
+        "mirage.core.google.readdir.list_all_files",
+        new_callable=AsyncMock,
+        return_value=(files, True),
+    ):
         with pytest.raises(FileNotFoundError):
             await unlink(
                 accessor,
-                PathSpec(vfs_path=mount_key(
-                    "/gdocs/owned/Nope__doc9.gdoc.json", "/gdocs"),
-                         virtual="/gdocs/owned/Nope__doc9.gdoc.json",
-                         directory="/gdocs/owned/Nope__doc9.gdoc.json"), index)
+                PathSpec(
+                    vfs_path=mount_key(
+                        "/gdocs/owned/Nope__doc9.gdoc.json", "/gdocs"
+                    ),
+                    virtual="/gdocs/owned/Nope__doc9.gdoc.json",
+                    directory="/gdocs/owned/Nope__doc9.gdoc.json",
+                ),
+                index,
+            )

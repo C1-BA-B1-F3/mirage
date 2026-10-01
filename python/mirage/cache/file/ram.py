@@ -64,11 +64,13 @@ class RAMFileCacheStore(RAMVFS, FileCacheMixin, KeyLockMixin):
             self._entries.move_to_end(key)
             return self._store.files.get(key)
 
-    async def set(self,
-                  key: str,
-                  data: bytes,
-                  fingerprint: str | None = None,
-                  ttl: int | None = None) -> None:
+    async def set(
+        self,
+        key: str,
+        data: bytes,
+        fingerprint: str | None = None,
+        ttl: int | None = None,
+    ) -> None:
         # Stamped before waiting on the lock: bytes read before an
         # invalidation are stale even when the lock was granted after it.
         stamp = self._invalidation.enter(key)
@@ -92,11 +94,13 @@ class RAMFileCacheStore(RAMVFS, FileCacheMixin, KeyLockMixin):
             self._invalidation.leave(key)
         await self._evict()
 
-    async def add(self,
-                  key: str,
-                  data: bytes,
-                  fingerprint: str | None = None,
-                  ttl: int | None = None) -> bool:
+    async def add(
+        self,
+        key: str,
+        data: bytes,
+        fingerprint: str | None = None,
+        ttl: int | None = None,
+    ) -> bool:
         stamp = self._invalidation.enter(key)
         try:
             async with self._lock_for(key):
@@ -153,8 +157,10 @@ class RAMFileCacheStore(RAMVFS, FileCacheMixin, KeyLockMixin):
         # no remote token compares None to None and is told the copy is
         # fresh; the redis store, whose meta key is simply absent, would
         # answer False for the same pair.
-        return (entry.fingerprint is not None
-                and entry.fingerprint == remote_fingerprint)
+        return (
+            entry.fingerprint is not None
+            and entry.fingerprint == remote_fingerprint
+        )
 
     async def is_unbounded(self, key: str) -> bool:
         entry = self._entries.get(key)
@@ -171,18 +177,19 @@ class RAMFileCacheStore(RAMVFS, FileCacheMixin, KeyLockMixin):
             self._cache_size = 0
             self._clear_locks()
 
-    async def evict_prefix(self,
-                           prefix: str,
-                           *,
-                           excluded: tuple[str, ...] = ()) -> None:
+    async def evict_prefix(
+        self, prefix: str, *, excluded: tuple[str, ...] = ()
+    ) -> None:
         # Store-wide: a fill in flight under the prefix has no entry yet,
         # so its key cannot be enumerated below.
         self._invalidation.invalidate_all()
         # A pending fill may not have installed an entry yet.
         keys = self._entries.keys() | self._drain_tasks.keys()
         for key in [
-                k for k in keys if k.startswith(prefix) and not any(
-                    under_path(k, p) for p in excluded)
+            k
+            for k in keys
+            if k.startswith(prefix)
+            and not any(under_path(k, p) for p in excluded)
         ]:
             await self.remove(key)
 

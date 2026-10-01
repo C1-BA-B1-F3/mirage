@@ -19,8 +19,9 @@ from mirage.observe.context import record, start_op
 from mirage.types import PathSpec
 
 
-async def write_bytes(accessor: SSHAccessor, path_spec: PathSpec,
-                      data: bytes) -> None:
+async def write_bytes(
+    accessor: SSHAccessor, path_spec: PathSpec, data: bytes
+) -> None:
     path = path_spec.mount_path
     config = accessor.config
     sftp = await accessor.sftp()

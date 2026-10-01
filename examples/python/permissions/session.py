@@ -36,17 +36,15 @@ from mirage.workspace import Session
 # naming a profile for a session that already exists is refused.
 
 PROFILES = {
-    "reviewer": {
-        "paths": {
-            "hide": ["/repo/secrets"]
-        }
-    },
+    "reviewer": {"paths": {"hide": ["/repo/secrets"]}},
     "editor": {
         "commands": {
-            "deny": [{
-                "reason": "keys are never read by hand",
-                "paths": ["/repo/secrets/*"],
-            }]
+            "deny": [
+                {
+                    "reason": "keys are never read by hand",
+                    "paths": ["/repo/secrets/*"],
+                }
+            ]
         }
     },
 }
@@ -85,8 +83,9 @@ def show(role: str, door: str, call: str, answer: str, note: str) -> None:
     print(f"{'':9} {'':9} {'':34} {note}")
 
 
-async def line(role: str, handle: Session | Workspace, cmd: str,
-               note: str) -> None:
+async def line(
+    role: str, handle: Session | Workspace, cmd: str, note: str
+) -> None:
     """Run one shell line through a session's shell door and print it.
 
     Args:
@@ -97,15 +96,22 @@ async def line(role: str, handle: Session | Workspace, cmd: str,
         note (str): why it matters.
     """
     res = await handle.shell(cmd)
-    show(role, "shell", cmd,
-         shell(res.stdout or b"", res.stderr or b"", res.exit_code), note)
+    show(
+        role,
+        "shell",
+        cmd,
+        shell(res.stdout or b"", res.stderr or b"", res.exit_code),
+        note,
+    )
 
 
-async def read(role: str,
-               handle: Session | Workspace,
-               path: str,
-               note: str,
-               session_id: str | None = None) -> None:
+async def read(
+    role: str,
+    handle: Session | Workspace,
+    path: str,
+    note: str,
+    session_id: str | None = None,
+) -> None:
     """Read one path through a session's op door and print the answer.
 
     Args:
@@ -125,8 +131,9 @@ async def read(role: str,
         show(role, "vfs.read", call, data.decode().strip(), note)
 
 
-async def write(role: str, handle: Session | Workspace, path: str,
-                note: str) -> None:
+async def write(
+    role: str, handle: Session | Workspace, path: str, note: str
+) -> None:
     """Write one path through a session's op door and print the answer.
 
     Args:
@@ -144,58 +151,109 @@ async def write(role: str, handle: Session | Workspace, path: str,
 
 
 async def main() -> None:
-    ws = Workspace({"/repo/": RAMVFS()},
-                   mode=MountMode.WRITE,
-                   profiles=PROFILES)
+    ws = Workspace(
+        {"/repo/": RAMVFS()}, mode=MountMode.WRITE, profiles=PROFILES
+    )
     for seed in SEED:
         await ws.shell(seed)
 
-    reviewer = await ws.session("reviewer",
-                                profile="reviewer",
-                                mounts={"/repo": "read"})
+    reviewer = await ws.session(
+        "reviewer", profile="reviewer", mounts={"/repo": "read"}
+    )
     editor = await ws.session("editor", profile="editor")
 
-    await line("reviewer", reviewer, "cat /repo/README.md",
-               "the shell door, as the reviewer")
-    await line("reviewer", reviewer, "cat /repo/secrets/key.pem",
-               "the reviewer's profile hides the directory")
-    await line("editor", editor, "cat /repo/secrets/key.pem",
-               "the editor's rule denies the file by name")
-    await read("reviewer", reviewer, "/repo/secrets/key.pem",
-               "the op door, the same hide, the same answer")
-    await read("editor", editor, "/repo/secrets/key.pem",
-               "the op door, the same rule, the same answer")
-    await read("host", ws, "/repo/secrets/key.pem",
-               "no default profile: the workspace's own door sees it")
-    await read("host",
-               ws,
-               "/repo/secrets/key.pem",
-               "the same door, named per call: the reviewer's hide",
-               session_id="reviewer")
-    await read("host",
-               ws,
-               "/repo/secrets/key.pem",
-               "and the editor's own rule, from the same call site",
-               session_id="editor")
+    await line(
+        "reviewer",
+        reviewer,
+        "cat /repo/README.md",
+        "the shell door, as the reviewer",
+    )
+    await line(
+        "reviewer",
+        reviewer,
+        "cat /repo/secrets/key.pem",
+        "the reviewer's profile hides the directory",
+    )
+    await line(
+        "editor",
+        editor,
+        "cat /repo/secrets/key.pem",
+        "the editor's rule denies the file by name",
+    )
+    await read(
+        "reviewer",
+        reviewer,
+        "/repo/secrets/key.pem",
+        "the op door, the same hide, the same answer",
+    )
+    await read(
+        "editor",
+        editor,
+        "/repo/secrets/key.pem",
+        "the op door, the same rule, the same answer",
+    )
+    await read(
+        "host",
+        ws,
+        "/repo/secrets/key.pem",
+        "no default profile: the workspace's own door sees it",
+    )
+    await read(
+        "host",
+        ws,
+        "/repo/secrets/key.pem",
+        "the same door, named per call: the reviewer's hide",
+        session_id="reviewer",
+    )
+    await read(
+        "host",
+        ws,
+        "/repo/secrets/key.pem",
+        "and the editor's own rule, from the same call site",
+        session_id="editor",
+    )
 
-    await write("reviewer", reviewer, "/repo/new.txt",
-                "the reviewer's handle caps /repo at read")
+    await write(
+        "reviewer",
+        reviewer,
+        "/repo/new.txt",
+        "the reviewer's handle caps /repo at read",
+    )
     await write("editor", editor, "/repo/new.txt", "the editor may write")
-    await read("reviewer", reviewer, "/repo/new.txt",
-               "one world: the reviewer reads what the editor wrote")
-    await line("reviewer", reviewer, "echo x > /repo/new.txt",
-               "the shell door reads the same cap")
-    await line("editor", editor, "echo x > /repo/new.txt",
-               "and the same grant")
+    await read(
+        "reviewer",
+        reviewer,
+        "/repo/new.txt",
+        "one world: the reviewer reads what the editor wrote",
+    )
+    await line(
+        "reviewer",
+        reviewer,
+        "echo x > /repo/new.txt",
+        "the shell door reads the same cap",
+    )
+    await line(
+        "editor", editor, "echo x > /repo/new.txt", "and the same grant"
+    )
 
     again = await ws.session("reviewer")
-    show("reviewer", "session", "ws.session('reviewer')", again.session_id,
-         "an existing session is adopted as is")
+    show(
+        "reviewer",
+        "session",
+        "ws.session('reviewer')",
+        again.session_id,
+        "an existing session is adopted as is",
+    )
     try:
         await ws.session("reviewer", profile="editor")
     except ValueError as exc:
-        show("reviewer", "session", "ws.session('reviewer', profile=...)",
-             f"refused: {exc}", "a profile is set once, at creation")
+        show(
+            "reviewer",
+            "session",
+            "ws.session('reviewer', profile=...)",
+            f"refused: {exc}",
+            "a profile is set once, at creation",
+        )
 
 
 if __name__ == "__main__":

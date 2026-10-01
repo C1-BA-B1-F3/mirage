@@ -22,13 +22,14 @@ from mirage.workspace.workspace import Workspace
 
 
 def _fake_mount(monkeypatch):
-    monkeypatch.setattr("mirage.workspace.fuse.mount_background",
-                        lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(
+        "mirage.workspace.fuse.mount_background",
+        lambda *_args, **_kwargs: None,
+    )
     monkeypatch.setattr(subprocess, "run", lambda *_args, **_kwargs: None)
 
 
 class TestFuseManager:
-
     def test_initial_state(self):
         fm = FuseManager()
         assert fm.mountpoint is None
@@ -58,8 +59,9 @@ class TestFuseManager:
         generated = tmp_path / "mirage-generated"
         generated.mkdir()
         _fake_mount(monkeypatch)
-        monkeypatch.setattr(tempfile, "mkdtemp",
-                            lambda *_args, **_kwargs: str(generated))
+        monkeypatch.setattr(
+            tempfile, "mkdtemp", lambda *_args, **_kwargs: str(generated)
+        )
 
         ws = Workspace({"/a/": RAMVFS()}, mode=MountMode.WRITE)
         fm = FuseManager()

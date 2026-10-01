@@ -22,10 +22,13 @@ from mirage.vfs.registry import build_vfs
 
 def make_vfs(**overrides) -> DropboxVFS:
     return DropboxVFS(
-        DropboxConfig(client_id="c",
-                      client_secret="sekret",
-                      refresh_token="refresh-sekret",
-                      **overrides))
+        DropboxConfig(
+            client_id="c",
+            client_secret="sekret",
+            refresh_token="refresh-sekret",
+            **overrides,
+        )
+    )
 
 
 def test_registers_read_write_op_surface():
@@ -61,12 +64,14 @@ def test_state_does_not_leak_secrets():
 @pytest.mark.asyncio
 async def test_registry_builds_dropbox():
     vfs = build_vfs(
-        "dropbox", {
+        "dropbox",
+        {
             "client_id": "c",
             "client_secret": "s",
             "refresh_token": "r",
             "root_path": "/Team",
-        })
+        },
+    )
     assert isinstance(vfs, DropboxVFS)
     assert vfs.accessor.root_path == "/Team"
 

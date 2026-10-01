@@ -23,7 +23,8 @@ PUBLIC_HUB = "https://huggingface.co"
 
 
 async def whoami_cmd(
-        inv: CLIInvocation[HfConfig]) -> tuple[ByteSource | None, IOResult]:
+    inv: CLIInvocation[HfConfig],
+) -> tuple[ByteSource | None, IOResult]:
     """Print the account the configured token belongs to."""
     require_token(inv, "auth whoami")
     account = await whoami(inv.config)
@@ -43,7 +44,8 @@ async def whoami_cmd(
     # are a terminal's, not the command's, and NO_COLOR strips them there
     # too; what has to match is the word.
     members = [
-        str(org["name"]) for org in (orgs if isinstance(orgs, list) else [])
+        str(org["name"])
+        for org in (orgs if isinstance(orgs, list) else [])
         if isinstance(org, dict) and isinstance(org.get("name"), str)
     ]
     if members:
@@ -57,7 +59,8 @@ async def whoami_cmd(
 
 
 async def list_cmd(
-        inv: CLIInvocation[HfConfig]) -> tuple[ByteSource | None, IOResult]:
+    inv: CLIInvocation[HfConfig],
+) -> tuple[ByteSource | None, IOResult]:
     """List the stored access tokens.
 
     A workspace has no token store: an install carries exactly one
@@ -69,6 +72,9 @@ async def list_cmd(
     if inv.config.token is not None:
         account = await whoami(inv.config)
         name = account.get("name")
-        rows.append("{:<20} {}".format(
-            str(name) if isinstance(name, str) else "install", "*" * 8))
+        rows.append(
+            "{:<20} {}".format(
+                str(name) if isinstance(name, str) else "install", "*" * 8
+            )
+        )
     return text_out("\n".join(rows) + "\n")

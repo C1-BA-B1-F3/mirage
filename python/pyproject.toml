@@ -139,9 +139,6 @@ chroma   = ["chromadb-client>=1.0.0"]
 # --- qdrant ---
 qdrant   = ["qdrant-client[fastembed]>=1.18.0"]
 
-# --- anthropic ---
-anthropic   = ["anthropic>=0.88"]
-
 # --- openai ---
 openai      = ["openai>=2.46.0", "openai-agents>=0.18.3"]
 
@@ -206,7 +203,6 @@ all = [
     "mirage-ai[mem0]",
     "mirage-ai[chroma]",
     "mirage-ai[qdrant]",
-    "mirage-ai[anthropic]",
     "mirage-ai[openai]",
     "mirage-ai[pydantic-ai]",
     "mirage-ai[deepagents]",
@@ -270,13 +266,10 @@ conflicts = [
 dev = [
     "aioresponses>=0.7.6",
     "python-dotenv>=1.2.2",
-    "grpcio>=1.78.0",
-    "grpcio-tools>=1.78.0",
     "moto[s3,server]>=5.1.22",
     "pre-commit",
     "pytest",
     "pytest-asyncio>=0.24.0",
-    "pytest-cov>=7.0.0",
     "pytest-httpx>=0.36.0",
     "pytest-xdist>=3.8.0",
     "mypy>=2.3.0",

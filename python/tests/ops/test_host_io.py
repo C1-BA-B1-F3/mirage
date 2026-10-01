@@ -65,7 +65,6 @@ async def chunks(seen: list[bool]) -> AsyncIterator[bytes]:
 
 
 class TestDepth:
-
     def test_nothing_is_serving_by_default(self):
         assert in_host_io() is False
 
@@ -91,7 +90,6 @@ class TestDepth:
 
 
 class TestDoors:
-
     def test_the_patched_doors_answer_nothing_while_a_backend_serves(self):
         ws = Workspace({"/mem/": RAMVFS()}, mode=MountMode.WRITE)
         run(ws.vfs.mkdir("/mem/dir"))
@@ -109,10 +107,12 @@ class TestDoors:
             assert os.path.exists("/mem/dir/a.txt") is True
 
     def test_a_disk_root_at_its_own_prefix_does_not_re_enter(self):
-        proc = subprocess.run([sys.executable, "-c", COLLIDING_ROOT],
-                              capture_output=True,
-                              text=True,
-                              timeout=90)
+        proc = subprocess.run(
+            [sys.executable, "-c", COLLIDING_ROOT],
+            capture_output=True,
+            text=True,
+            timeout=90,
+        )
         assert proc.returncode == 0, proc.stderr
         assert proc.stdout.splitlines() == [
             "listdir ['a.txt']",
@@ -123,7 +123,6 @@ class TestDoors:
 
 
 class TestStreams:
-
     def test_a_wrapped_stream_serves_each_chunk_inside_the_bypass(self):
 
         async def drain():

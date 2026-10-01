@@ -15,7 +15,8 @@
 
 def test_semicolon(shell):
     assert shell.mirage("echo hello; echo world") == shell.native(
-        "echo hello; echo world")
+        "echo hello; echo world"
+    )
 
 
 def test_and_success(shell):
@@ -24,32 +25,38 @@ def test_and_success(shell):
 
 def test_and_failure(shell):
     assert shell.mirage("false && echo yes") == shell.native(
-        "false && echo yes")
+        "false && echo yes"
+    )
 
 
 def test_or_success(shell):
     assert shell.mirage("true || echo fallback") == shell.native(
-        "true || echo fallback")
+        "true || echo fallback"
+    )
 
 
 def test_or_failure(shell):
     assert shell.mirage("false || echo fallback") == shell.native(
-        "false || echo fallback")
+        "false || echo fallback"
+    )
 
 
 def test_and_or_chain(shell):
     assert shell.mirage("true && echo a || echo b") == shell.native(
-        "true && echo a || echo b")
+        "true && echo a || echo b"
+    )
 
 
 def test_and_or_chain_fail(shell):
     assert shell.mirage("false && echo a || echo b") == shell.native(
-        "false && echo a || echo b")
+        "false && echo a || echo b"
+    )
 
 
 def test_semicolon_continues_after_failure(shell):
     assert shell.mirage("false; echo still") == shell.native(
-        "false; echo still")
+        "false; echo still"
+    )
 
 
 def test_exit_code_true(shell):

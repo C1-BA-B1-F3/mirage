@@ -54,12 +54,17 @@ def event_at(
         kind (FileChangeKind): What happened to it.
         previous (str | None): Mount-relative prior path, for a MOVE.
     """
-    prior = (spec_for(root, virtual_of(root, previous))
-             if previous is not None else None)
-    return FileEvent(kind=kind,
-                     path=spec_for(root, virtual_of(root, relative)),
-                     timestamp=datetime.now(timezone.utc),
-                     previous_path=prior)
+    prior = (
+        spec_for(root, virtual_of(root, previous))
+        if previous is not None
+        else None
+    )
+    return FileEvent(
+        kind=kind,
+        path=spec_for(root, virtual_of(root, relative)),
+        timestamp=datetime.now(timezone.utc),
+        previous_path=prior,
+    )
 
 
 def field(payload: JsonValue, name: str) -> JsonValue:

@@ -14,29 +14,44 @@
 
 import pytest
 
-from mirage.core.hf_hub.cache import (blob_path, cache_root, etag_of,
-                                      link_target, ref_path, repo_folder_name,
-                                      snapshot_dir, snapshot_path)
+from mirage.core.hf_hub.cache import (
+    blob_path,
+    cache_root,
+    etag_of,
+    link_target,
+    ref_path,
+    repo_folder_name,
+    snapshot_dir,
+    snapshot_path,
+)
 from mirage.core.hf_hub.tree_entry import TreeEntry
 
 
 def entry(path: str, oid: str = "oid1", lfs: str = "") -> TreeEntry:
-    return TreeEntry(path=path,
-                     type="file",
-                     oid=oid,
-                     size=3,
-                     last_modified="",
-                     last_commit="",
-                     lfs_oid=lfs,
-                     xet_hash="")
+    return TreeEntry(
+        path=path,
+        type="file",
+        oid=oid,
+        size=3,
+        last_modified="",
+        last_commit="",
+        lfs_oid=lfs,
+        xet_hash="",
+    )
 
 
-@pytest.mark.parametrize("repo_id,repo_type,expected", [
-    ("julien-c/EsperBERTo-small", "model",
-     "models--julien-c--EsperBERTo-small"),
-    ("acme/rows", "dataset", "datasets--acme--rows"),
-    ("acme/demo", "space", "spaces--acme--demo"),
-])
+@pytest.mark.parametrize(
+    "repo_id,repo_type,expected",
+    [
+        (
+            "julien-c/EsperBERTo-small",
+            "model",
+            "models--julien-c--EsperBERTo-small",
+        ),
+        ("acme/rows", "dataset", "datasets--acme--rows"),
+        ("acme/demo", "space", "spaces--acme--demo"),
+    ],
+)
 def test_repo_folder_name_matches_upstream(repo_id, repo_type, expected):
     """Upstream's own spelling: the plural kind and the id's halves
     joined by `--`, flattened so a namespace cannot nest and two repos
@@ -55,18 +70,22 @@ def test_layout_paths():
     folder = repo_folder_name("acme/w", "model")
     assert blob_path("/c", folder, "e1") == "/c/models--acme--w/blobs/e1"
     assert ref_path("/c", folder, "main") == "/c/models--acme--w/refs/main"
-    assert snapshot_dir("/c", folder,
-                        "sha") == "/c/models--acme--w/snapshots/sha"
-    assert snapshot_path(
-        "/c", folder, "sha",
-        "sub/b.json") == ("/c/models--acme--w/snapshots/sha/sub/b.json")
+    assert (
+        snapshot_dir("/c", folder, "sha") == "/c/models--acme--w/snapshots/sha"
+    )
+    assert snapshot_path("/c", folder, "sha", "sub/b.json") == (
+        "/c/models--acme--w/snapshots/sha/sub/b.json"
+    )
 
 
-@pytest.mark.parametrize("repo_path,expected", [
-    ("a.txt", "../../blobs/e1"),
-    ("sub/b.json", "../../../blobs/e1"),
-    ("sub/deep/c.bin", "../../../../blobs/e1"),
-])
+@pytest.mark.parametrize(
+    "repo_path,expected",
+    [
+        ("a.txt", "../../blobs/e1"),
+        ("sub/b.json", "../../../blobs/e1"),
+        ("sub/deep/c.bin", "../../../../blobs/e1"),
+    ],
+)
 def test_link_target_is_relative_to_the_entry(repo_path, expected):
     """Relative because upstream's cache is relocatable: the whole
     directory can be moved and every link still resolves."""

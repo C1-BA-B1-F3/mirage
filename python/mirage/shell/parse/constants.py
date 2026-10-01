@@ -20,35 +20,39 @@ QUOTES = (b"'", b'"')
 # is text rather than a line continuation.
 VERBATIM_TYPES = frozenset({"raw_string", "ansi_c_string", "comment"})
 
-BASH_KEYWORDS = frozenset({
-    "if",
-    "then",
-    "else",
-    "elif",
-    "fi",
-    "for",
-    "while",
-    "until",
-    "do",
-    "done",
-    "case",
-    "esac",
-    "in",
-    "function",
-    "select",
-})
+BASH_KEYWORDS = frozenset(
+    {
+        "if",
+        "then",
+        "else",
+        "elif",
+        "fi",
+        "for",
+        "while",
+        "until",
+        "do",
+        "done",
+        "case",
+        "esac",
+        "in",
+        "function",
+        "select",
+    }
+)
 
-STRUCTURAL_TOKENS = frozenset({
-    "(",
-    ")",
-    "{",
-    "}",
-    "[",
-    "]",
-    '"',
-    "'",
-    "`",
-})
+STRUCTURAL_TOKENS = frozenset(
+    {
+        "(",
+        ")",
+        "{",
+        "}",
+        "[",
+        "]",
+        '"',
+        "'",
+        "`",
+    }
+)
 
 # Statement separators. One that lands inside an ERROR node has nothing
 # to separate (a line starting with `;`, `| s`, `a ; ; b`, `a &; b`), and

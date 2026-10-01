@@ -21,7 +21,11 @@ from mirage.commands.spec.parser import parse_to_kwargs
 from mirage.runtime.types import DispatchFn
 from mirage.types import PathSpec, word_text
 from mirage.workspace.executor.builtins.metadata.xattr import (
-    SETFATTR_USAGE, attr_error, attr_operands, attr_usage_refusal)
+    SETFATTR_USAGE,
+    attr_error,
+    attr_operands,
+    attr_usage_refusal,
+)
 from mirage.workspace.executor.builtins.shared import finish, result
 from mirage.workspace.executor.builtins.types import Result
 from mirage.workspace.session import SessionState
@@ -57,13 +61,13 @@ def decode_value(text: str) -> bytes | None:
     i = 0
     while i < len(raw):
         if raw[i] == 0x5C:
-            digits = raw[i + 1:i + 4]
+            digits = raw[i + 1 : i + 4]
             if len(digits) == 3 and all(b in _OCTAL for b in digits):
                 out.append(int(digits, 8) & 0xFF)
                 i += 4
                 continue
-            if raw[i + 1:i + 2] in (b"\\", b'"'):
-                out += raw[i + 1:i + 2]
+            if raw[i + 1 : i + 2] in (b"\\", b'"'):
+                out += raw[i + 1 : i + 2]
                 i += 2
                 continue
         out.append(raw[i])
@@ -94,8 +98,9 @@ async def handle_setfattr(
         args (list[str | PathSpec]): the words after the command name.
     """
     spec = SPECS["setfattr"]
-    parsed = parse_command(spec, [word_text(a) for a in args], session.cwd,
-                           "setfattr")
+    parsed = parse_command(
+        spec, [word_text(a) for a in args], session.cwd, "setfattr"
+    )
     refused = attr_usage_refusal("setfattr", parsed, SETFATTR_USAGE)
     if refused is not None:
         return refused
@@ -104,8 +109,11 @@ async def handle_setfattr(
     remove = fl.as_str("remove")
     typed = fl.as_str("value")
     targets = attr_operands(parsed)
-    if ((name is None) == (remove is None)
-            or (remove is not None and typed is not None) or not targets):
+    if (
+        (name is None) == (remove is None)
+        or (remove is not None and typed is not None)
+        or not targets
+    ):
         return result("setfattr", exit_code=2, stderr=SETFATTR_USAGE)
     value = decode_value(typed) if typed is not None else b""
     if value is None:
@@ -115,16 +123,17 @@ async def handle_setfattr(
     for target in targets:
         try:
             if name is not None:
-                await dispatch("setxattr",
-                               target,
-                               name=name,
-                               value=value,
-                               nofollow=nofollow)
+                await dispatch(
+                    "setxattr",
+                    target,
+                    name=name,
+                    value=value,
+                    nofollow=nofollow,
+                )
             else:
-                await dispatch("removexattr",
-                               target,
-                               name=remove,
-                               nofollow=nofollow)
+                await dispatch(
+                    "removexattr", target, name=remove, nofollow=nofollow
+                )
         except OSError as exc:
             shown = target.raw_path or target.virtual
             errors.append(f"setfattr: {shown}: {attr_error(exc)}\n")

@@ -14,9 +14,14 @@
 
 import pytest
 
-from mirage.commands.cli.builtin.airtable.util import (find_table, json_object,
-                                                       one_operand, parse_json,
-                                                       scoped_base, stdin_text)
+from mirage.commands.cli.builtin.airtable.util import (
+    find_table,
+    json_object,
+    one_operand,
+    parse_json,
+    scoped_base,
+    stdin_text,
+)
 from mirage.commands.errors import UsageError
 from mirage.core.airtable.config import AirtableConfig
 
@@ -49,7 +54,7 @@ def test_json_is_strict_about_non_finite_numbers():
 
 
 def test_one_operand_words_its_refusals_like_argparse():
-    assert one_operand(("x", ), "BASE") == "x"
+    assert one_operand(("x",), "BASE") == "x"
     with pytest.raises(UsageError, match="are required: BASE"):
         one_operand((), "BASE")
     with pytest.raises(UsageError, match="unrecognized arguments: y z"):

@@ -24,8 +24,9 @@ from mirage.core.disk.utils import resolve_inside
 from mirage.types import PathSpec
 
 
-async def copy(accessor: DiskAccessor, src_spec: PathSpec,
-               dst_spec: PathSpec) -> None:
+async def copy(
+    accessor: DiskAccessor, src_spec: PathSpec, dst_spec: PathSpec
+) -> None:
     root = accessor.root
     s = await resolve_inside(root, src_spec)
     d = await resolve_inside(root, dst_spec)
@@ -37,8 +38,9 @@ async def copy(accessor: DiskAccessor, src_spec: PathSpec,
         # destination parent, so the operand to blame is only knowable
         # after the failure: probe the source to tell them apart. Either
         # way the host path never reaches the message.
-        blame_src = (isinstance(exc, FileNotFoundError)
-                     and not await aiofiles.os.path.exists(s))
+        blame_src = isinstance(
+            exc, FileNotFoundError
+        ) and not await aiofiles.os.path.exists(s)
         spec = src_spec if blame_src else dst_spec
         raise disk_error(exc, spec.virtual) from exc
     await invalidate_after_write(dst_spec)

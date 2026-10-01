@@ -14,10 +14,15 @@
 
 import pytest
 
-from mirage.core.trello.pathing import (board_dirname, card_dirname,
-                                        label_filename, list_dirname,
-                                        member_filename, split_suffix_id,
-                                        workspace_dirname)
+from mirage.core.trello.pathing import (
+    board_dirname,
+    card_dirname,
+    label_filename,
+    list_dirname,
+    member_filename,
+    split_suffix_id,
+    workspace_dirname,
+)
 from mirage.utils.sanitize import NAME_MAX_BYTES, byte_len
 
 
@@ -79,18 +84,19 @@ HEX24 = "5f2a9b1c3d4e5f6a7b8c9d0e"
 # Every builder, the record fields it reads for the label, and the suffix it
 # appends.
 NAME_CASES = [
-    (workspace_dirname, ("displayName", ), ""),
-    (board_dirname, ("name", ), ""),
-    (list_dirname, ("name", ), ""),
-    (card_dirname, ("name", ), ""),
-    (member_filename, ("fullName", ), ".json"),
-    (label_filename, ("name", ), ".json"),
+    (workspace_dirname, ("displayName",), ""),
+    (board_dirname, ("name",), ""),
+    (list_dirname, ("name",), ""),
+    (card_dirname, ("name",), ""),
+    (member_filename, ("fullName",), ".json"),
+    (label_filename, ("name",), ".json"),
 ]
 
 
 @pytest.mark.parametrize("build,fields,suffix", NAME_CASES)
 def test_a_cjk_label_fits_name_max_and_still_addresses_the_id(
-        build, fields, suffix):
+    build, fields, suffix
+):
     # These composed `<label>__<id>` by hand, so the 100-character cap in
     # sanitize_name let a CJK name render 326-331 bytes against a 255-byte
     # NAME_MAX. They route through fit_id_name now.

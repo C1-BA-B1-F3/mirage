@@ -15,7 +15,11 @@
 from mirage.shell.bytes import byte_char
 from mirage.shell.escapes import code_point_text
 from mirage.workspace.executor.builtins.echo.constants import (
-    HEX, HEX_ESCAPE_DIGITS, OCT, SIMPLE_ESCAPES)
+    HEX,
+    HEX_ESCAPE_DIGITS,
+    OCT,
+    SIMPLE_ESCAPES,
+)
 
 
 def interpret_escapes(text: str) -> tuple[str, bool]:
@@ -56,7 +60,8 @@ def interpret_escapes(text: str) -> tuple[str, bool]:
             if digits:
                 value = int("".join(digits), 16)
                 out.append(
-                    byte_char(value) if ch == "x" else code_point_text(value))
+                    byte_char(value) if ch == "x" else code_point_text(value)
+                )
                 i = j
             else:
                 out.append("\\" + ch)

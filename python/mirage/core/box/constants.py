@@ -28,13 +28,15 @@ EVENT_STREAM = "changes"
 # of order can leave the snapshot wrong.
 EVENT_REPLAY_DAYS = 14
 # Events that put an item at the path its ``source`` names.
-PLACE_EVENTS = frozenset({
-    "ITEM_CREATE",
-    "ITEM_UPLOAD",
-    "ITEM_COPY",
-    "ITEM_MOVE",
-    "ITEM_RENAME",
-    "ITEM_UNDELETE_VIA_TRASH",
-    "ITEM_MAKE_CURRENT_VERSION",
-})
+PLACE_EVENTS = frozenset(
+    {
+        "ITEM_CREATE",
+        "ITEM_UPLOAD",
+        "ITEM_COPY",
+        "ITEM_MOVE",
+        "ITEM_RENAME",
+        "ITEM_UNDELETE_VIA_TRASH",
+        "ITEM_MAKE_CURRENT_VERSION",
+    }
+)
 TRASH_EVENTS = frozenset({"ITEM_TRASH"})

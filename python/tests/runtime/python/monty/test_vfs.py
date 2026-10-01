@@ -30,13 +30,15 @@ class CountingCore(RuntimeVFS):
         files (dict[str, bytes]): the paths the mount holds.
     """
 
-    def __init__(self,
-                 files: dict[str, bytes],
-                 links: dict[str, str] | None = None,
-                 dirs: set[str] | None = None) -> None:
-        super().__init__(dispatch=None,
-                         loop=None,
-                         resolver=PrefixResolver(lambda: []))
+    def __init__(
+        self,
+        files: dict[str, bytes],
+        links: dict[str, str] | None = None,
+        dirs: set[str] | None = None,
+    ) -> None:
+        super().__init__(
+            dispatch=None, loop=None, resolver=PrefixResolver(lambda: [])
+        )
         self.files = files
         self.links = dict(links or {})
         # A directory stats but does not read, which is the shape a
@@ -56,22 +58,24 @@ class CountingCore(RuntimeVFS):
             return self.files[path]
         if op == "stat":
             if path in self.dirs:
-                return FileStat(name=path,
-                                size=0,
-                                type=FileType.DIRECTORY,
-                                content=None)
+                return FileStat(
+                    name=path, size=0, type=FileType.DIRECTORY, content=None
+                )
             if path not in self.files:
                 raise FileNotFoundError(path)
-            return FileStat(name=path,
-                            size=len(self.files[path]),
-                            type=FileType.FILE,
-                            content=ContentType.TEXT)
+            return FileStat(
+                name=path,
+                size=len(self.files[path]),
+                type=FileType.FILE,
+                content=ContentType.TEXT,
+            )
         if op == "readdir":
             # Full virtual paths, the door's own shape.
             prefix = path.rstrip("/") + "/"
             names = {
-                prefix + p[len(prefix):].split("/")[0]
-                for p in self.files if p.startswith(prefix)
+                prefix + p[len(prefix) :].split("/")[0]
+                for p in self.files
+                if p.startswith(prefix)
             }
             if not names:
                 raise FileNotFoundError(path)

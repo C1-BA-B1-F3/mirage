@@ -23,9 +23,14 @@ from mirage.cache.index.view import IndexView
 from mirage.core.hierarchy.readdir import DirListing, make_readdir
 from mirage.core.hierarchy.scope import ScopeMatch
 from mirage.types import PathSpec
-from tests.core.hierarchy.conftest import (FakeAccessor, detect_scope,
-                                           list_notes, list_rooms, room_guard,
-                                           spec)
+from tests.core.hierarchy.conftest import (
+    FakeAccessor,
+    detect_scope,
+    list_notes,
+    list_rooms,
+    room_guard,
+    spec,
+)
 
 READDIR = make_readdir(
     detect_scope,
@@ -33,7 +38,7 @@ READDIR = make_readdir(
         "rooms": list_rooms,
         "room": list_notes,
     },
-    static_root=("rooms", ),
+    static_root=("rooms",),
     guards={"room": room_guard},
 )
 
@@ -84,9 +89,9 @@ def test_dot_prefixed_names_are_dropped_from_listings(accessor):
         rooms = await list_rooms(a, match)
         return [(".secret", rooms[0][1]), *rooms]
 
-    readdir = make_readdir(detect_scope,
-                           listers={"rooms": hidden_rooms},
-                           static_root=("rooms", ))
+    readdir = make_readdir(
+        detect_scope, listers={"rooms": hidden_rooms}, static_root=("rooms",)
+    )
     index = RAMIndexCacheStore()
     out = asyncio.run(readdir(accessor, spec("/rooms"), index=index))
     assert out == ["/h/rooms/red", "/h/rooms/blue"]
@@ -95,30 +100,39 @@ def test_dot_prefixed_names_are_dropped_from_listings(accessor):
 
 
 def test_leaf_error_can_be_enotdir(accessor):
-    readdir = make_readdir(detect_scope,
-                           listers={"rooms": list_rooms},
-                           static_root=("rooms", ),
-                           leaf_error="enotdir")
+    readdir = make_readdir(
+        detect_scope,
+        listers={"rooms": list_rooms},
+        static_root=("rooms",),
+        leaf_error="enotdir",
+    )
     with pytest.raises(NotADirectoryError):
         asyncio.run(readdir(accessor, spec("/rooms/red/a.json")))
 
 
-async def _entry_notes(accessor: FakeAccessor, match: ScopeMatch,
-                       entry: IndexEntry) -> list[tuple[str, IndexEntry]]:
+async def _entry_notes(
+    accessor: FakeAccessor, match: ScopeMatch, entry: IndexEntry
+) -> list[tuple[str, IndexEntry]]:
     accessor.calls.append(f"entry-notes:{entry.id}")
-    return [("note.json",
-             IndexEntry(id=entry.id,
-                        name="note.json",
-                        resource_type="fake/note",
-                        vfs_name="note.json",
-                        size=entry.extra.get("json_size")))]
+    return [
+        (
+            "note.json",
+            IndexEntry(
+                id=entry.id,
+                name="note.json",
+                resource_type="fake/note",
+                vfs_name="note.json",
+                size=entry.extra.get("json_size"),
+            ),
+        )
+    ]
 
 
 ENTRY_READDIR = make_readdir(
     detect_scope,
     listers={"rooms": list_rooms},
     entry_listers={"room": _entry_notes},
-    static_root=("rooms", ),
+    static_root=("rooms",),
 )
 
 
@@ -149,32 +163,38 @@ def test_entry_lister_works_without_an_index(accessor):
 
 def test_a_kind_in_both_lister_tables_fails_at_build():
     with pytest.raises(ValueError):
-        make_readdir(detect_scope,
-                     listers={"room": list_notes},
-                     entry_listers={"room": _entry_notes},
-                     static_root=("rooms", ))
+        make_readdir(
+            detect_scope,
+            listers={"room": list_notes},
+            entry_listers={"room": _entry_notes},
+            static_root=("rooms",),
+        )
 
 
 def _room_entry(room: str) -> IndexEntry:
-    return IndexEntry(id=room,
-                      name=room,
-                      resource_type="fake/room",
-                      vfs_name=room)
+    return IndexEntry(
+        id=room, name=room, resource_type="fake/room", vfs_name=room
+    )
 
 
 async def _seeding_notes(accessor, match, own):
     accessor.calls.append(f"seed-notes:{match.slots['room']}")
-    atts = IndexEntry(id=f"{own.id}:atts",
-                      name="atts",
-                      resource_type="fake/atts",
-                      vfs_name="atts")
-    blob = IndexEntry(id="x",
-                      name="x.bin",
-                      resource_type="fake/blob",
-                      vfs_name="x.bin",
-                      size=3)
-    return DirListing(entries=[("atts", atts)],
-                      seeds={"atts": [("x.bin", blob)]})
+    atts = IndexEntry(
+        id=f"{own.id}:atts",
+        name="atts",
+        resource_type="fake/atts",
+        vfs_name="atts",
+    )
+    blob = IndexEntry(
+        id="x",
+        name="x.bin",
+        resource_type="fake/blob",
+        vfs_name="x.bin",
+        size=3,
+    )
+    return DirListing(
+        entries=[("atts", atts)], seeds={"atts": [("x.bin", blob)]}
+    )
 
 
 async def _atts_fallback(accessor, match, own):
@@ -189,7 +209,7 @@ SEEDED_READDIR = make_readdir(
         "room": _seeding_notes,
         "room_atts": _atts_fallback,
     },
-    static_root=("rooms", ),
+    static_root=("rooms",),
 )
 
 
@@ -197,7 +217,8 @@ def test_seeds_serve_the_child_listing_without_a_second_fetch(accessor):
     index = RAMIndexCacheStore()
     asyncio.run(SEEDED_READDIR(accessor, spec("/rooms/red"), index=index))
     out = asyncio.run(
-        SEEDED_READDIR(accessor, spec("/rooms/red/atts"), index=index))
+        SEEDED_READDIR(accessor, spec("/rooms/red/atts"), index=index)
+    )
     assert out == ["/h/rooms/red/atts/x.bin"]
     # One fetch answered both directories; the atts lister never ran.
     assert accessor.calls == ["rooms", "seed-notes:red"]
@@ -215,11 +236,17 @@ def test_entry_branch_rechecks_the_listing_after_resolving(accessor):
 async def _days_by_room(accessor, match, room_entry):
     accessor.calls.append(f"days:{room_entry.id}:{match.slots['day']}")
     day = match.slots["day"]
-    return [(f"{day}.txt",
-             IndexEntry(id=f"{room_entry.id}:{day}",
-                        name=f"{day}.txt",
-                        resource_type="fake/day_note",
-                        vfs_name=f"{day}.txt"))]
+    return [
+        (
+            f"{day}.txt",
+            IndexEntry(
+                id=f"{room_entry.id}:{day}",
+                name=f"{day}.txt",
+                resource_type="fake/day_note",
+                vfs_name=f"{day}.txt",
+            ),
+        )
+    ]
 
 
 PARENT_READDIR = make_readdir(
@@ -227,7 +254,7 @@ PARENT_READDIR = make_readdir(
     listers={"rooms": list_rooms},
     entry_listers={"room": _entry_notes},
     parent_entry_listers={"room_day": _days_by_room},
-    static_root=("rooms", ),
+    static_root=("rooms",),
 )
 
 
@@ -247,26 +274,30 @@ def test_parent_entry_lister_bogus_parent_is_enoent(accessor):
 
 def test_a_kind_in_several_lister_tables_fails_at_build():
     with pytest.raises(ValueError):
-        make_readdir(detect_scope,
-                     listers={"rooms": list_rooms},
-                     entry_listers={"room_day": _atts_fallback},
-                     parent_entry_listers={"room_day": _days_by_room},
-                     static_root=("rooms", ))
+        make_readdir(
+            detect_scope,
+            listers={"rooms": list_rooms},
+            entry_listers={"room_day": _atts_fallback},
+            parent_entry_listers={"room_day": _days_by_room},
+            static_root=("rooms",),
+        )
 
 
 def _any_pattern(pattern: str) -> bool:
     return True
 
 
-async def _list_windowed(accessor: FakeAccessor,
-                         match: ScopeMatch) -> DirListing:
+async def _list_windowed(
+    accessor: FakeAccessor, match: ScopeMatch
+) -> DirListing:
     # Stands in for a bounded listing: without a glob it reports the tail
     # of the tree, with one it reports exactly what the glob asked for.
     accessor.calls.append(f"window:{match.pattern}")
     names = ["c.json"] if match.pattern is None else [match.pattern]
-    entries = [(n,
-                IndexEntry(id=n, name=n, resource_type="fake/note",
-                           vfs_name=n)) for n in names]
+    entries = [
+        (n, IndexEntry(id=n, name=n, resource_type="fake/note", vfs_name=n))
+        for n in names
+    ]
     return DirListing(entries=entries, partial=match.pattern is not None)
 
 
@@ -276,33 +307,35 @@ WINDOW_READDIR = make_readdir(
         "rooms": list_rooms,
         "room": _list_windowed,
     },
-    static_root=("rooms", ),
+    static_root=("rooms",),
     pattern_kinds={"room": _any_pattern},
 )
 
 
 def _globbed(mount_path: str, pattern: str) -> PathSpec:
     base = spec(mount_path)
-    return PathSpec(virtual=base.virtual + "/" + pattern,
-                    directory=base.virtual + "/",
-                    vfs_path=base.vfs_path + "/" + pattern,
-                    pattern=pattern)
+    return PathSpec(
+        virtual=base.virtual + "/" + pattern,
+        directory=base.virtual + "/",
+        vfs_path=base.vfs_path + "/" + pattern,
+        pattern=pattern,
+    )
 
 
 def test_a_pattern_kind_hands_the_glob_to_its_lister(accessor):
     out = asyncio.run(
-        WINDOW_READDIR(accessor, _globbed("/rooms/red", "z.json")))
+        WINDOW_READDIR(accessor, _globbed("/rooms/red", "z.json"))
+    )
     assert out == ["/h/rooms/red/z.json"]
     assert accessor.calls == ["window:z.json"]
 
 
 def test_an_undeclared_kind_never_sees_a_pattern(accessor):
-    plain = make_readdir(detect_scope,
-                         listers={
-                             "rooms": list_rooms,
-                             "room": _list_windowed
-                         },
-                         static_root=("rooms", ))
+    plain = make_readdir(
+        detect_scope,
+        listers={"rooms": list_rooms, "room": _list_windowed},
+        static_root=("rooms",),
+    )
     out = asyncio.run(plain(accessor, _globbed("/rooms/red", "z.json")))
     assert out == ["/h/rooms/red/c.json"]
     assert accessor.calls == ["window:None"]
@@ -311,14 +344,15 @@ def test_an_undeclared_kind_never_sees_a_pattern(accessor):
 def test_a_partial_listing_is_not_cached_as_the_directory(accessor):
     index = RAMIndexCacheStore()
     asyncio.run(
-        WINDOW_READDIR(accessor, _globbed("/rooms/red", "z.json"),
-                       index=index))
+        WINDOW_READDIR(accessor, _globbed("/rooms/red", "z.json"), index=index)
+    )
     # The entries are real, so they are cached one by one; the directory
     # is not, so a bare listing still asks the backend.
     assert asyncio.run(index.get("/h/rooms/red/z.json")).entry is not None
     assert asyncio.run(index.list_dir("/h/rooms/red")).entries is None
-    out = asyncio.run(WINDOW_READDIR(accessor, spec("/rooms/red"),
-                                     index=index))
+    out = asyncio.run(
+        WINDOW_READDIR(accessor, spec("/rooms/red"), index=index)
+    )
     assert out == ["/h/rooms/red/c.json"]
     assert accessor.calls == ["window:z.json", "window:None"]
 
@@ -329,8 +363,8 @@ def test_a_globbed_listing_does_not_read_a_warm_window(accessor):
     index = RAMIndexCacheStore()
     asyncio.run(WINDOW_READDIR(accessor, spec("/rooms/red"), index=index))
     out = asyncio.run(
-        WINDOW_READDIR(accessor, _globbed("/rooms/red", "z.json"),
-                       index=index))
+        WINDOW_READDIR(accessor, _globbed("/rooms/red", "z.json"), index=index)
+    )
     assert out == ["/h/rooms/red/z.json"]
     assert accessor.calls == ["window:None", "window:z.json"]
 
@@ -346,19 +380,22 @@ def _sliding(window: bool, partial: bool = False):
 
     async def lister(a, match):
         names = pages.pop(0)
-        return DirListing(entries=[_room(n) for n in names],
-                          seeds={names[0]: [_room(f"{names[0]}-a")]},
-                          window=window,
-                          partial=partial)
+        return DirListing(
+            entries=[_room(n) for n in names],
+            seeds={names[0]: [_room(f"{names[0]}-a")]},
+            window=window,
+            partial=partial,
+        )
 
-    return make_readdir(detect_scope,
-                        listers={"rooms": lister},
-                        static_root=("rooms", ))
+    return make_readdir(
+        detect_scope, listers={"rooms": lister}, static_root=("rooms",)
+    )
 
 
 @pytest.mark.parametrize("window, survives", [(True, True), (False, False)])
-def test_a_window_slide_keeps_the_row_that_slid_out(accessor, window,
-                                                    survives):
+def test_a_window_slide_keeps_the_row_that_slid_out(
+    accessor, window, survives
+):
     # The same slide without the flag evicts red, which is what shows the
     # fixture can tell a window from a complete listing.
     readdir = _sliding(window)
@@ -369,7 +406,8 @@ def test_a_window_slide_keeps_the_row_that_slid_out(accessor, window,
     red = asyncio.run(index.get("/h/rooms/red")).entry
     assert (red is not None) is survives
     assert asyncio.run(index.list_dir("/h/rooms")).entries == [
-        "/h/rooms/blue", "/h/rooms/green"
+        "/h/rooms/blue",
+        "/h/rooms/green",
     ]
 
 
@@ -379,14 +417,16 @@ def test_a_windowed_listing_seeds_windows_too(accessor):
     readdir = make_readdir(
         detect_scope,
         listers={
-            "rooms":
-            lambda a, match: _seed_once(["/h/rooms/red-a", "/h/rooms/red-b"],
-                                        window=True)
+            "rooms": lambda a, match: _seed_once(
+                ["/h/rooms/red-a", "/h/rooms/red-b"], window=True
+            )
         },
-        static_root=("rooms", ))
+        static_root=("rooms",),
+    )
     index = RAMIndexCacheStore()
-    asyncio.run(index.set_dir("/h/rooms/red",
-                              [_room("red-a"), _room("red-b")]))
+    asyncio.run(
+        index.set_dir("/h/rooms/red", [_room("red-a"), _room("red-b")])
+    )
     asyncio.run(readdir(accessor, spec("/rooms"), index=index))
     assert asyncio.run(index.get("/h/rooms/red/red-b")).entry is not None
 
@@ -394,25 +434,29 @@ def test_a_windowed_listing_seeds_windows_too(accessor):
 def test_a_partial_window_stays_partial_and_seeds_windows(accessor):
     readdir = _sliding(window=True, partial=True)
     index = RAMIndexCacheStore()
-    asyncio.run(index.set_dir("/h/rooms/red",
-                              [_room("red-a"), _room("red-z")]))
+    asyncio.run(
+        index.set_dir("/h/rooms/red", [_room("red-a"), _room("red-z")])
+    )
     asyncio.run(readdir(accessor, spec("/rooms"), index=index))
     assert asyncio.run(index.list_dir("/h/rooms")).entries is None
     assert asyncio.run(index.get("/h/rooms/red/red-z")).entry is not None
 
 
 async def _seed_once(_names: list[str], window: bool) -> DirListing:
-    return DirListing(entries=[_room("red")],
-                      seeds={"red": [_room("red-a")]},
-                      window=window)
+    return DirListing(
+        entries=[_room("red")], seeds={"red": [_room("red-a")]}, window=window
+    )
 
 
 async def _unchanged_listing(a, match):
     return DirListing(
-        entries=[(".secret", _room(".secret")[1]),
-                 _room("red"),
-                 _room("blue")],
-        seeds={"red": [_room("red-a"), (".hidden", _room(".hidden")[1])]})
+        entries=[
+            (".secret", _room(".secret")[1]),
+            _room("red"),
+            _room("blue"),
+        ],
+        seeds={"red": [_room("red-a"), (".hidden", _room(".hidden")[1])]},
+    )
 
 
 def test_relisting_an_unchanged_backend_hands_nothing_to_cleanup(accessor):
@@ -424,15 +468,15 @@ def test_relisting_an_unchanged_backend_hands_nothing_to_cleanup(accessor):
     async def on_gone(children: list[Evicted]) -> None:
         gone.extend(children)
 
-    readdir = make_readdir(detect_scope,
-                           listers={"rooms": _unchanged_listing},
-                           static_root=("rooms", ))
+    readdir = make_readdir(
+        detect_scope,
+        listers={"rooms": _unchanged_listing},
+        static_root=("rooms",),
+    )
     store = RAMIndexCacheStore()
-    index = IndexView(store,
-                      RAMFileCacheStore(),
-                      "/h",
-                      lambda _key: True,
-                      on_gone=on_gone)
+    index = IndexView(
+        store, RAMFileCacheStore(), "/h", lambda _key: True, on_gone=on_gone
+    )
     asyncio.run(readdir(accessor, spec("/rooms"), index=index))
     asyncio.run(store.invalidate())
     asyncio.run(readdir(accessor, spec("/rooms"), index=index))

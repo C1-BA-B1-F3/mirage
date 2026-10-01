@@ -22,10 +22,18 @@ import asyncssh
 import pytest
 
 from mirage.server.ssh.constants import LISTING_CONCURRENCY
-from mirage.server.ssh.sftp import (MirageSFTPServer, filetype, listing,
-                                    to_attrs)
-from tests.server.ssh.conftest import (bind_key, start_harness, stop_harness,
-                                       vault_workspace)
+from mirage.server.ssh.sftp import (
+    MirageSFTPServer,
+    filetype,
+    listing,
+    to_attrs,
+)
+from tests.server.ssh.conftest import (
+    bind_key,
+    start_harness,
+    stop_harness,
+    vault_workspace,
+)
 
 # The base-class members that never touch the host filesystem: accessors
 # and formatting helpers. Every other method of asyncssh.SFTPServer serves
@@ -59,7 +67,8 @@ def test_every_host_reaching_method_is_overridden():
     exposed = sorted(base - HOST_SAFE - set(vars(MirageSFTPServer)))
     assert not exposed, (
         "asyncssh.SFTPServer serves the host filesystem from these; "
-        f"override them on MirageSFTPServer: {exposed}")
+        f"override them on MirageSFTPServer: {exposed}"
+    )
 
 
 def test_attrs_carry_type_mode_size_and_split_times():
@@ -209,8 +218,10 @@ async def test_statvfs_answers(ssh):
 
 @pytest.mark.asyncio
 async def test_a_read_only_mount_refuses_writes(ssh_readonly):
-    async with ssh_readonly.connect() as conn, conn.start_sftp_client(
-    ) as sftp:
+    async with (
+        ssh_readonly.connect() as conn,
+        conn.start_sftp_client() as sftp,
+    ):
         with pytest.raises(asyncssh.SFTPPermissionDenied):
             async with sftp.open("/nope", "w") as f:
                 await f.write("x")
@@ -218,8 +229,10 @@ async def test_a_read_only_mount_refuses_writes(ssh_readonly):
 
 @pytest.mark.asyncio
 async def test_unknown_workspace_serves_nothing(ssh):
-    async with ssh.connect(
-            username="nope") as conn, conn.start_sftp_client() as sftp:
+    async with (
+        ssh.connect(username="nope") as conn,
+        conn.start_sftp_client() as sftp,
+    ):
         with pytest.raises(asyncssh.SFTPNoSuchFile, match="nope"):
             await sftp.stat("/")
 

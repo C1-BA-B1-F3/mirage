@@ -40,10 +40,12 @@ def file_blob_name(att: dict[str, Any]) -> str:
     return fit_id_name(path_safe_name(raw_name), aid)
 
 
-async def download_file(url: str,
-                        offset: int = 0,
-                        size: int | None = None,
-                        session: SessionArg = None) -> bytes:
+async def download_file(
+    url: str,
+    offset: int = 0,
+    size: int | None = None,
+    session: SessionArg = None,
+) -> bytes:
     """Download a Discord-hosted file blob, optionally only a byte range.
 
     Discord CDN URLs (``cdn.discordapp.com`` for ``url``,
@@ -63,10 +65,12 @@ async def download_file(url: str,
     Returns:
         bytes: raw file content.
     """
-    data: bytes = await api_request("GET",
-                                    url,
-                                    error_of=status_error,
-                                    read="bytes",
-                                    window=window_for(offset, size),
-                                    session=session)
+    data: bytes = await api_request(
+        "GET",
+        url,
+        error_of=status_error,
+        read="bytes",
+        window=window_for(offset, size),
+        session=session,
+    )
     return data

@@ -26,8 +26,12 @@ from dulwich.repo import BaseRepo
 from mirage.commands.cli.builtin.git.constants import GITLINK, HEAD_REF
 from mirage.commands.cli.builtin.git.index_file import read_index
 from mirage.commands.cli.builtin.git.io import entry_bytes
-from mirage.commands.cli.builtin.git.types import (IndexState, RepoLocation,
-                                                   StatusEntry, WorkTree)
+from mirage.commands.cli.builtin.git.types import (
+    IndexState,
+    RepoLocation,
+    StatusEntry,
+    WorkTree,
+)
 from mirage.commands.cli.builtin.git.worktree import scan
 from mirage.ops.types import LinkView, StatPath
 from mirage.runtime.types import DispatchFn
@@ -88,8 +92,12 @@ def head_entries(repo: BaseRepo) -> dict[bytes, tuple[int, bytes]] | None:
     }
 
 
-def _exact_renames(adds: list[str], deletes: list[str], shas: dict[str, bytes],
-                   kinds: dict[str, int]) -> list[tuple[str, str]]:
+def _exact_renames(
+    adds: list[str],
+    deletes: list[str],
+    shas: dict[str, bytes],
+    kinds: dict[str, int],
+) -> list[tuple[str, str]]:
     """Pair an add with a delete holding byte-identical content.
 
     Costs a dictionary rather than a read, so it runs first and takes
@@ -119,11 +127,12 @@ def _exact_renames(adds: list[str], deletes: list[str], shas: dict[str, bytes],
 
 
 def _content_renames(
-        store: BaseObjectStore,
-        adds: list[str],
-        deletes: list[str],
-        shas: dict[str, bytes],
-        threshold: int = RENAME_THRESHOLD) -> list[tuple[str, str]]:
+    store: BaseObjectStore,
+    adds: list[str],
+    deletes: list[str],
+    shas: dict[str, bytes],
+    threshold: int = RENAME_THRESHOLD,
+) -> list[tuple[str, str]]:
     """Pair the rest by how much content they still have in common.
 
     This is what makes a move that also edited the file read as one
@@ -140,16 +149,20 @@ def _content_renames(
             not.
         shas (dict[str, bytes]): blob id of each.
     """
-    if not adds or not deletes or len(adds) * len(
-            deletes) > MAX_RENAME_FILES**2:
+    if (
+        not adds
+        or not deletes
+        or len(adds) * len(deletes) > MAX_RENAME_FILES**2
+    ):
         return []
     cache: dict[ObjectID, dict[int, int]] = {}
     candidates = []
     for old in deletes:
         source = store[ObjectID(shas[old])]
         for new in adds:
-            score = _similarity_score(source, store[ObjectID(shas[new])],
-                                      cache)
+            score = _similarity_score(
+                source, store[ObjectID(shas[new])], cache
+            )
             if score >= threshold:
                 # Negative score so the strongest pair sorts first while
                 # paths still tie-break in ascending order, which is what
@@ -170,11 +183,11 @@ def _content_renames(
 
 
 def pair_renames(
-        store: BaseObjectStore,
-        staged: dict[str, str],
-        shas: dict[str, bytes],
-        kinds: dict[str, int],
-        threshold: int = RENAME_THRESHOLD
+    store: BaseObjectStore,
+    staged: dict[str, str],
+    shas: dict[str, bytes],
+    kinds: dict[str, int],
+    threshold: int = RENAME_THRESHOLD,
 ) -> dict[str, tuple[str, str | None]]:
     """Fold an add and a delete of the same file into one rename.
 
@@ -191,30 +204,44 @@ def pair_renames(
             the added and deleted paths only.
         kinds (dict[str, int]): the file-type bits of each.
     """
-    adds = sorted(path for path, letter in staged.items()
-                  if letter == ADDED and path in kinds)
-    deletes = sorted(path for path, letter in staged.items()
-                     if letter == DELETED and path in kinds)
+    adds = sorted(
+        path
+        for path, letter in staged.items()
+        if letter == ADDED and path in kinds
+    )
+    deletes = sorted(
+        path
+        for path, letter in staged.items()
+        if letter == DELETED and path in kinds
+    )
     pairs = _exact_renames(adds, deletes, shas, kinds)
     matched_new = {new for new, _old in pairs}
     matched_old = {old for _new, old in pairs}
-    scored = [[p for p in side if kinds[p] == S_IFREG]
-              for side in ([p for p in adds if p not in matched_new],
-                           [p for p in deletes if p not in matched_old])]
-    pairs.extend(_content_renames(store, scored[0], scored[1], shas,
-                                  threshold))
+    scored = [
+        [p for p in side if kinds[p] == S_IFREG]
+        for side in (
+            [p for p in adds if p not in matched_new],
+            [p for p in deletes if p not in matched_old],
+        )
+    ]
+    pairs.extend(
+        _content_renames(store, scored[0], scored[1], shas, threshold)
+    )
     paired = {new: (RENAMED, old) for new, old in pairs}
     consumed = {old for _new, old in pairs}
     return {
         path: paired.get(path, (letter, None))
-        for path, letter in staged.items() if path not in consumed
+        for path, letter in staged.items()
+        if path not in consumed
     }
 
 
-def stage_changes(store: BaseObjectStore,
-                  head: dict[bytes, tuple[int, bytes]] | None,
-                  entries: dict[bytes, IndexEntry],
-                  conflicts: set[bytes]) -> dict[str, tuple[str, str | None]]:
+def stage_changes(
+    store: BaseObjectStore,
+    head: dict[bytes, tuple[int, bytes]] | None,
+    entries: dict[bytes, IndexEntry],
+    conflicts: set[bytes],
+) -> dict[str, tuple[str, str | None]]:
     """Compare HEAD's tree with the index: what a commit would record.
 
     Conflicted paths are excluded rather than compared. An unmerged path
@@ -252,7 +279,7 @@ def stage_changes(store: BaseObjectStore,
 
 
 def staged_state(
-        repo: BaseRepo, entries: dict[bytes, IndexEntry], conflicts: set[bytes]
+    repo: BaseRepo, entries: dict[bytes, IndexEntry], conflicts: set[bytes]
 ) -> tuple[dict[str, tuple[str, str | None]], bool]:
     """Everything HEAD-against-index, computed off the event loop.
 
@@ -272,7 +299,8 @@ def staged_state(
 
 
 def conflict_codes(
-        conflicts: dict[bytes, ConflictedIndexEntry]) -> dict[str, str]:
+    conflicts: dict[bytes, ConflictedIndexEntry],
+) -> dict[str, str]:
     """The two-letter code for each unmerged path.
 
     Args:
@@ -281,8 +309,11 @@ def conflict_codes(
     codes: dict[str, str] = {}
     for path, entry in conflicts.items():
         name = path.decode("utf-8", errors="replace")
-        stages = (entry.ancestor is not None, entry.this
-                  is not None, entry.other is not None)
+        stages = (
+            entry.ancestor is not None,
+            entry.this is not None,
+            entry.other is not None,
+        )
         codes[name] = CONFLICT_CODES.get(stages, "UU")
     return codes
 
@@ -305,8 +336,13 @@ def _mode_differs(entry: IndexEntry, info: FileStat) -> bool:
     return bool(entry.mode & S_IXUSR) != bool(info.mode & S_IXUSR)
 
 
-async def _differs(dispatch: DispatchFn, worktree: str, path: str,
-                   entry: IndexEntry, info: FileStat) -> bool:
+async def _differs(
+    dispatch: DispatchFn,
+    worktree: str,
+    path: str,
+    entry: IndexEntry,
+    info: FileStat,
+) -> bool:
     """Whether a working-tree file differs from what the index staged.
 
     A size the mount already reported settles most of it for free, since
@@ -337,16 +373,20 @@ async def _differs(dispatch: DispatchFn, worktree: str, path: str,
     if info.size is not None and entry.size and info.size != entry.size:
         return True
     try:
-        data = await entry_bytes(dispatch, posixpath.join(worktree, path),
-                                 info)
+        data = await entry_bytes(
+            dispatch, posixpath.join(worktree, path), info
+        )
     except MISS_ERRORS:
         return True
     return Blob.from_string(data).id != entry.sha
 
 
-async def work_changes(dispatch: DispatchFn, worktree: str,
-                       entries: dict[bytes, IndexEntry],
-                       found: WorkTree) -> dict[str, str]:
+async def work_changes(
+    dispatch: DispatchFn,
+    worktree: str,
+    entries: dict[bytes, IndexEntry],
+    found: WorkTree,
+) -> dict[str, str]:
     """Compare the index with the working tree: what is not staged yet.
 
     Args:
@@ -370,15 +410,19 @@ async def work_changes(dispatch: DispatchFn, worktree: str,
             continue
         if name not in found.files:
             changes[name] = DELETED
-        elif await _differs(dispatch, worktree, name, entry,
-                            found.files[name]):
+        elif await _differs(
+            dispatch, worktree, name, entry, found.files[name]
+        ):
             changes[name] = MODIFIED
     return changes
 
 
-def merge(staged: dict[str, tuple[str, str | None]], unstaged: dict[str, str],
-          conflicts: dict[str,
-                          str], untracked: list[str]) -> list[StatusEntry]:
+def merge(
+    staged: dict[str, tuple[str, str | None]],
+    unstaged: dict[str, str],
+    conflicts: dict[str, str],
+    untracked: list[str],
+) -> list[StatusEntry]:
     """Assemble one row per path from the three comparisons.
 
     A path can appear in both the staged and unstaged mappings, and that
@@ -405,20 +449,21 @@ def merge(staged: dict[str, tuple[str, str | None]], unstaged: dict[str, str],
             continue
         letter, origin = staged.get(path, (UNCHANGED, None))
         rows.append(
-            StatusEntry(path, letter, unstaged.get(path, UNCHANGED), origin))
+            StatusEntry(path, letter, unstaged.get(path, UNCHANGED), origin)
+        )
     for path in sorted(untracked):
         rows.append(StatusEntry(path, UNTRACKED, UNTRACKED))
     return rows
 
 
 async def collect(
-        dispatch: DispatchFn,
-        stat_path: StatPath,
-        repo: BaseRepo,
-        location: RepoLocation,
-        mode: str,
-        links: LinkView | None = None,
-        show_ignored: bool = False
+    dispatch: DispatchFn,
+    stat_path: StatPath,
+    repo: BaseRepo,
+    location: RepoLocation,
+    mode: str,
+    links: LinkView | None = None,
+    show_ignored: bool = False,
 ) -> tuple[list[StatusEntry], IndexState, bool]:
     """Everything ``status`` reports, in one pass over the three sources.
 
@@ -430,18 +475,21 @@ async def collect(
         mode (str): which untracked files to report.
     """
     state = await read_index(dispatch, location.gitdir)
-    staged, no_commits = await asyncio.to_thread(staged_state, repo,
-                                                 state.entries,
-                                                 set(state.conflicts))
+    staged, no_commits = await asyncio.to_thread(
+        staged_state, repo, state.entries, set(state.conflicts)
+    )
     tracked = {
         path.decode("utf-8", errors="replace")
         for path in (set(state.entries) | set(state.conflicts))
     }
-    found = await scan(dispatch, stat_path, location, tracked, mode, links,
-                       show_ignored)
-    unstaged = await work_changes(dispatch, location.worktree, state.entries,
-                                  found)
-    rows = merge(staged, unstaged, conflict_codes(state.conflicts),
-                 found.untracked)
+    found = await scan(
+        dispatch, stat_path, location, tracked, mode, links, show_ignored
+    )
+    unstaged = await work_changes(
+        dispatch, location.worktree, state.entries, found
+    )
+    rows = merge(
+        staged, unstaged, conflict_codes(state.conflicts), found.untracked
+    )
     rows.extend(StatusEntry(path, "!", "!") for path in sorted(found.ignored))
     return rows, state, no_commits

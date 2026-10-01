@@ -14,8 +14,10 @@
 
 from dulwich.repo import BaseRepo
 
-from mirage.commands.cli.builtin.git.discover import (discover,
-                                                      require_work_tree)
+from mirage.commands.cli.builtin.git.discover import (
+    discover,
+    require_work_tree,
+)
 from mirage.commands.cli.builtin.git.errors import NoWorkspaceError
 from mirage.commands.cli.builtin.git.repo import open_repo
 from mirage.commands.cli.builtin.git.types import RepoLocation
@@ -24,9 +26,9 @@ from mirage.commands.cli.types import CLIDoors
 from mirage.commands.spec.flag_view import FlagView
 
 
-async def opened(fl: FlagView,
-                 doors: CLIDoors,
-                 work_tree: bool = False) -> tuple[BaseRepo, RepoLocation]:
+async def opened(
+    fl: FlagView, doors: CLIDoors, work_tree: bool = False
+) -> tuple[BaseRepo, RepoLocation]:
     """Discover and open the repository a verb was invoked against.
 
     Every verb starts the same way: honor ``-C``, walk up to the mount
@@ -74,5 +76,11 @@ async def located(fl: FlagView, doors: CLIDoors) -> RepoLocation:
     if stat_path is None or mounts is None or dispatch is None:
         raise NoWorkspaceError()
     chosen = fl.as_str("work_tree")
-    return await discover(dispatch, stat_path, mounts.root_of, start_point(fl),
-                          fl.as_str("git_dir"), chosen)
+    return await discover(
+        dispatch,
+        stat_path,
+        mounts.root_of,
+        start_point(fl),
+        fl.as_str("git_dir"),
+        chosen,
+    )

@@ -82,9 +82,9 @@ def typed(value: str) -> JsonValue:
     return value
 
 
-def split(pair: str,
-          *,
-          empty_array: bool = False) -> tuple[str, str | _EmptyArray]:
+def split(
+    pair: str, *, empty_array: bool = False
+) -> tuple[str, str | _EmptyArray]:
     """Split one field, optionally accepting gh's empty `key[]` form."""
     key, sep, value = pair.partition("=")
     if sep:
@@ -99,8 +99,10 @@ def _key_parts(key: str) -> list[str | None]:
     if match is None:
         raise ValueError(f'invalid field key: "{key}"')
     parts: list[str | None] = [match.group(1)]
-    parts.extend(value or None
-                 for value in re.findall(r"\[([^\[\]]*)\]", match.group(2)))
+    parts.extend(
+        value or None
+        for value in re.findall(r"\[([^\[\]]*)\]", match.group(2))
+    )
     return parts
 
 
@@ -150,16 +152,20 @@ async def _field_value(inv: CLIInvocation[GhConfig], value: str) -> JsonValue:
     return typed(expanded)
 
 
-async def _fields(inv: CLIInvocation[GhConfig],
-                  fl: FlagView) -> dict[str, Any]:
+async def _fields(
+    inv: CLIInvocation[GhConfig], fl: FlagView
+) -> dict[str, Any]:
     fields: dict[str, Any] = {}
     for pair in fl.as_list("raw_field"):
         key, value = split(pair)
         _set_field(fields, key, value)
     for pair in fl.as_list("field"):
         key, value = split(pair, empty_array=True)
-        landed = (value if value is _EMPTY_ARRAY else await _field_value(
-            inv, str(value)))
+        landed = (
+            value
+            if value is _EMPTY_ARRAY
+            else await _field_value(inv, str(value))
+        )
         _set_field(fields, key, landed)
     return fields
 
@@ -174,8 +180,9 @@ def _headers(fl: FlagView) -> dict[str, str]:
     return headers
 
 
-async def _input(inv: CLIInvocation[GhConfig],
-                 fl: FlagView) -> "JsonValue | None":
+async def _input(
+    inv: CLIInvocation[GhConfig], fl: FlagView
+) -> "JsonValue | None":
     raw = fl.raw("input")
     if raw is None:
         return None
@@ -183,7 +190,8 @@ async def _input(inv: CLIInvocation[GhConfig],
     try:
         return cast(
             JsonValue,
-            json.loads((await read_cli_file(inv, raw, "--input")).decode()))
+            json.loads((await read_cli_file(inv, raw, "--input")).decode()),
+        )
     except json.JSONDecodeError as exc:
         raise ValueError(f"invalid JSON in {path}: {exc.msg}") from None
 
@@ -213,15 +221,17 @@ def _next_path(link: str | None, base_url: str | None) -> str | None:
         query = parsed.query if parsed.scheme else target.partition("?")[2]
         path = path if path.startswith("/") else f"/{path}"
         base_path = urlsplit(base_url or "").path.rstrip("/")
-        if base_path and (path == base_path
-                          or path.startswith(f"{base_path}/")):
-            path = path[len(base_path):] or "/"
+        if base_path and (
+            path == base_path or path.startswith(f"{base_path}/")
+        ):
+            path = path[len(base_path) :] or "/"
         return path + (f"?{query}" if query else "")
     return None
 
 
 async def api(
-        inv: CLIInvocation[GhConfig]) -> tuple[ByteSource | None, IOResult]:
+    inv: CLIInvocation[GhConfig],
+) -> tuple[ByteSource | None, IOResult]:
     """Execute the supported, noninteractive `gh api` surface."""
     fl = FlagView(inv.flags)
     endpoint = inv.texts[0] if inv.texts else ""
@@ -261,7 +271,8 @@ async def api(
                     body,
                     request_params,
                     base_url=inv.config.base_url,
-                    headers=_headers(fl) or None)
+                    headers=_headers(fl) or None,
+                )
             else:
                 response = await github_request_response(
                     inv.config.token,
@@ -269,26 +280,38 @@ async def api(
                     current,
                     params=request_params,
                     base_url=inv.config.base_url,
-                    headers=_headers(fl) or None)
+                    headers=_headers(fl) or None,
+                )
         except GitHubApiError as exc:
             head = _response_head(exc.status, exc.headers) if include else ""
             return _failed(
-                pages, fl, _Failure(exc.body, head),
-                _server_error(exc.data, exc.status) or f"HTTP {exc.status}")
-        head = (_response_head(response.status, dict(response.headers))
-                if include else "")
+                pages,
+                fl,
+                _Failure(exc.body, head),
+                _server_error(exc.data, exc.status) or f"HTTP {exc.status}",
+            )
+        head = (
+            _response_head(response.status, dict(response.headers))
+            if include
+            else ""
+        )
         if endpoint == "graphql":
             diagnostic = _server_error(response.data, response.status)
             if diagnostic:
                 text = _body_text(response.data)
-                body = (text.decode("utf-8", "replace") if isinstance(
-                    text, bytes) else text)
+                body = (
+                    text.decode("utf-8", "replace")
+                    if isinstance(text, bytes)
+                    else text
+                )
                 return _failed(pages, fl, _Failure(body, head), diagnostic)
         pages.append(_Printed(response.data, head))
         first = False
-        current = (_next_path(response.headers.get("link"),
-                              inv.config.base_url)
-                   if fl.as_bool("paginate") else None)
+        current = (
+            _next_path(response.headers.get("link"), inv.config.base_url)
+            if fl.as_bool("paginate")
+            else None
+        )
 
     return _render_pages(pages, fl), IOResult()
 
@@ -300,8 +323,9 @@ def _canonical(name: str) -> str:
     Args:
         name (str): the header's name as it arrived.
     """
-    return "-".join(word[:1].upper() + word[1:]
-                    for word in name.lower().split("-"))
+    return "-".join(
+        word[:1].upper() + word[1:] for word in name.lower().split("-")
+    )
 
 
 def _response_head(status: int, headers: dict[str, str]) -> str:
@@ -320,11 +344,14 @@ def _response_head(status: int, headers: dict[str, str]) -> str:
         headers (dict[str, str]): the response's headers, lowercased.
     """
     decoded = "content-encoding" in headers
-    dropped = {"Status"} | ({"Content-Encoding", "Content-Length"}
-                            if decoded else set())
-    lines = sorted((_canonical(name), value)
-                   for name, value in headers.items()
-                   if _canonical(name) not in dropped)
+    dropped = {"Status"} | (
+        {"Content-Encoding", "Content-Length"} if decoded else set()
+    )
+    lines = sorted(
+        (_canonical(name), value)
+        for name, value in headers.items()
+        if _canonical(name) not in dropped
+    )
     rows = "".join(f"{name}: {value}\r\n" for name, value in lines)
     return f"HTTP/1.1 {status} {HTTP_REASONS.get(status, '')}\n{rows}\r\n"
 
@@ -361,10 +388,12 @@ def _server_error(data: JsonValue, status: int) -> str:
     return "\n".join(lines)
 
 
-def _failed(pages: list[_Printed], fl: FlagView, failure: _Failure,
-            diagnostic: str) -> tuple[ByteSource | None, IOResult]:
+def _failed(
+    pages: list[_Printed], fl: FlagView, failure: _Failure, diagnostic: str
+) -> tuple[ByteSource | None, IOResult]:
     return _render_pages(pages, fl, failure), IOResult(
-        exit_code=1, stderr=f"gh: {diagnostic}\n".encode())
+        exit_code=1, stderr=f"gh: {diagnostic}\n".encode()
+    )
 
 
 def _body_text(page: Any) -> str | bytes:
@@ -387,8 +416,9 @@ def _body_text(page: Any) -> str | bytes:
 
 
 def _bytes_of(parts: list[str | bytes]) -> bytes:
-    return b"".join(part.encode() if isinstance(part, str) else part
-                    for part in parts)
+    return b"".join(
+        part.encode() if isinstance(part, str) else part for part in parts
+    )
 
 
 def _joined(parts: list[list[str | bytes]], between: str) -> list[str | bytes]:
@@ -422,8 +452,11 @@ def _joined_pages(pages: list[Any], more: bool) -> list[str | bytes]:
     texts: list[str | bytes] = []
     for index, page in enumerate(pages):
         text = _body_text(page)
-        if (page is not None and not isinstance(page, (str, bytes))
-                and isinstance(text, str)):
+        if (
+            page is not None
+            and not isinstance(page, (str, bytes))
+            and isinstance(text, str)
+        ):
             if index > 0 and text.startswith("["):
                 text = (" " if text.startswith("[]") else ",") + text[1:]
             if (more or index < len(pages) - 1) and text.endswith("]"):
@@ -432,9 +465,9 @@ def _joined_pages(pages: list[Any], more: bool) -> list[str | bytes]:
     return texts
 
 
-def _render_pages(pages: list[_Printed],
-                  fl: FlagView,
-                  failure: _Failure | None = None) -> bytes:
+def _render_pages(
+    pages: list[_Printed], fl: FlagView, failure: _Failure | None = None
+) -> bytes:
     """Render the completed pages, then a failing response's body.
 
     gh copies the failing body out verbatim, past ``--jq``. Under
@@ -456,15 +489,16 @@ def _render_pages(pages: list[_Printed],
     include = fl.as_bool("include")
     between = "\n" if include else ""
     heads = [page.head for page in pages]
-    failed: list[list[str | bytes]] = ([] if failure is None else
-                                       [[failure.head, failure.body]])
+    failed: list[list[str | bytes]] = (
+        [] if failure is None else [[failure.head, failure.body]]
+    )
     if fl.as_bool("silent"):
         every = heads + ([] if failure is None else [failure.head])
         return _bytes_of(_joined([[head] for head in every], between))
     slurp = fl.as_bool("slurp")
-    printed: list[list[str | bytes]] = [[page.head,
-                                         _body_text(page.data)]
-                                        for page in pages]
+    printed: list[list[str | bytes]] = [
+        [page.head, _body_text(page.data)] for page in pages
+    ]
     # gh's jsonArrayWriter: every body in one array, a comma between each.
     if slurp and failure is not None:
         return _bytes_of(["[", *_joined(printed + failed, between + ","), "]"])
@@ -472,11 +506,13 @@ def _render_pages(pages: list[_Printed],
     if program:
         if not include or slurp:
             data = [page.data for page in pages]
-            return _bytes_of([
-                *_joined([[head] for head in heads], between),
-                jq_lines([data] if slurp else data, program),
-                "" if failure is None else failure.body
-            ])
+            return _bytes_of(
+                [
+                    *_joined([[head] for head in heads], between),
+                    jq_lines([data] if slurp else data, program),
+                    "" if failure is None else failure.body,
+                ]
+            )
         parts: list[list[str | bytes]] = []
         for page in pages:
             try:
@@ -489,7 +525,9 @@ def _render_pages(pages: list[_Printed],
         return _bytes_of(["[", *_joined(printed, between + ","), "]"])
     if include:
         return _bytes_of(_joined(printed + failed, between))
-    return _bytes_of([
-        *_joined_pages([page.data for page in pages], failure is not None),
-        "" if failure is None else failure.body
-    ])
+    return _bytes_of(
+        [
+            *_joined_pages([page.data for page in pages], failure is not None),
+            "" if failure is None else failure.body,
+        ]
+    )

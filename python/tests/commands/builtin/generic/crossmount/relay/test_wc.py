@@ -14,8 +14,10 @@
 
 import pytest
 
-from mirage.commands.builtin.generic.crossmount.relay.wc import (parse_row,
-                                                                 run_wc)
+from mirage.commands.builtin.generic.crossmount.relay.wc import (
+    parse_row,
+    run_wc,
+)
 from mirage.commands.builtin.generic.wc import WCCounts
 from mirage.io.types import IOResult, materialize
 from mirage.types import FileStat, FileType, PathSpec
@@ -35,7 +37,6 @@ SIZES = {"/b/name with spaces": 6, "/b/x": 120, "/pg/rows": None, "/a/n\nq": 4}
 
 
 class Mounts:
-
     def __init__(self) -> None:
         self.runs: list[tuple[str, list[str], dict]] = []
         self.ops: list[str] = []
@@ -49,11 +50,12 @@ class Mounts:
         self.ops.append(op)
         if path.virtual == "/gone":
             raise enoent(path)
-        kind = (FileType.DIRECTORY
-                if path.virtual == "/a/dir" else FileType.FILE)
-        return FileStat(name=path.virtual,
-                        type=kind,
-                        size=SIZES.get(path.virtual)), IOResult()
+        kind = (
+            FileType.DIRECTORY if path.virtual == "/a/dir" else FileType.FILE
+        )
+        return FileStat(
+            name=path.virtual, type=kind, size=SIZES.get(path.virtual)
+        ), IOResult()
 
 
 def specs(*paths: str) -> list[PathSpec]:
@@ -61,31 +63,32 @@ def specs(*paths: str) -> list[PathSpec]:
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("flags,expected", [
-    ({
-        "lines": True
-    }, b"      0 /a/dir\n      1 /b/name with spaces\n      1 total\n"),
-    ({
-        "lines": True,
-        "total": "only"
-    }, b"1\n"),
-    ({
-        "lines": True,
-        "total": "never"
-    }, b"      0 /a/dir\n      1 /b/name with spaces\n"),
-])
+@pytest.mark.parametrize(
+    "flags,expected",
+    [
+        (
+            {"lines": True},
+            b"      0 /a/dir\n      1 /b/name with spaces\n      1 total\n",
+        ),
+        ({"lines": True, "total": "only"}, b"1\n"),
+        (
+            {"lines": True, "total": "never"},
+            b"      0 /a/dir\n      1 /b/name with spaces\n",
+        ),
+    ],
+)
 async def test_each_mount_counts_its_operand(flags, expected):
     mounts = Mounts()
-    body, io = await run_wc(specs("/a/dir", "/b/name with spaces"), flags,
-                            mounts.dispatch, mounts.run_single)
+    body, io = await run_wc(
+        specs("/a/dir", "/b/name with spaces"),
+        flags,
+        mounts.dispatch,
+        mounts.run_single,
+    )
     assert await materialize(body) == expected
     assert mounts.runs == [
-        ("wc", ["/a/dir"], {
-            **flags, "total": "never"
-        }),
-        ("wc", ["/b/name with spaces"], {
-            **flags, "total": "never"
-        }),
+        ("wc", ["/a/dir"], {**flags, "total": "never"}),
+        ("wc", ["/b/name with spaces"], {**flags, "total": "never"}),
     ]
     assert "read" not in mounts.ops
     assert io.exit_code == 1
@@ -93,14 +96,18 @@ async def test_each_mount_counts_its_operand(flags, expected):
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("paths,expected", [
-    (("/pg/rows", "/pg2/rows"), b"5 /pg/rows\n3 /pg2/rows\n8 total\n"),
-    (("/pg/rows", "/b/x"), b"  5 /pg/rows\n  1 /b/x\n  6 total\n"),
-])
+@pytest.mark.parametrize(
+    "paths,expected",
+    [
+        (("/pg/rows", "/pg2/rows"), b"5 /pg/rows\n3 /pg2/rows\n8 total\n"),
+        (("/pg/rows", "/b/x"), b"  5 /pg/rows\n  1 /b/x\n  6 total\n"),
+    ],
+)
 async def test_an_unsized_file_pads_to_its_count(paths, expected):
     mounts = Mounts()
-    body, io = await run_wc(specs(*paths), {"lines": True}, mounts.dispatch,
-                            mounts.run_single)
+    body, io = await run_wc(
+        specs(*paths), {"lines": True}, mounts.dispatch, mounts.run_single
+    )
     assert await materialize(body) == expected
     assert io.exit_code == 0
 
@@ -110,17 +117,26 @@ async def test_a_name_holding_a_newline_is_one_quoted_row():
     # One operand's run is one row, whatever its name holds; the report
     # quotes that name as GNU wc does, so no row spans two lines.
     mounts = Mounts()
-    body, _ = await run_wc(specs("/a/n\nq", "/b/x"), {"lines": True},
-                           mounts.dispatch, mounts.run_single)
-    assert await materialize(body) == (b"  2 '/a/n'$'\\n''q'\n"
-                                       b"  1 /b/x\n  3 total\n")
+    body, _ = await run_wc(
+        specs("/a/n\nq", "/b/x"),
+        {"lines": True},
+        mounts.dispatch,
+        mounts.run_single,
+    )
+    assert await materialize(body) == (
+        b"  2 '/a/n'$'\\n''q'\n  1 /b/x\n  3 total\n"
+    )
 
 
 @pytest.mark.asyncio
 async def test_a_file_gone_before_sizing_keeps_every_count():
     mounts = Mounts()
-    body, io = await run_wc(specs("/gone", "/b/x"), {"lines": True},
-                            mounts.dispatch, mounts.run_single)
+    body, io = await run_wc(
+        specs("/gone", "/b/x"),
+        {"lines": True},
+        mounts.dispatch,
+        mounts.run_single,
+    )
     assert await materialize(body) == b"  4 /gone\n  1 /b/x\n  5 total\n"
     assert io.exit_code == 0
 
@@ -128,19 +144,29 @@ async def test_a_file_gone_before_sizing_keeps_every_count():
 @pytest.mark.asyncio
 async def test_invalid_total_fails_before_any_mount_runs():
     mounts = Mounts()
-    _, io = await run_wc(specs("/a/x", "/b/x"), {"total": "bogus"},
-                         mounts.dispatch, mounts.run_single)
+    _, io = await run_wc(
+        specs("/a/x", "/b/x"),
+        {"total": "bogus"},
+        mounts.dispatch,
+        mounts.run_single,
+    )
     assert io.exit_code == 1
     assert b"invalid argument 'bogus'" in io.stderr
     assert mounts.runs == []
     assert mounts.ops == []
 
 
-@pytest.mark.parametrize("line,columns,expected", [
-    ("5   x", ["lines"], (WCCounts(lines=5), "  x")),
-    ("  5  57 447 /m/d", ["lines", "words", "bytes_"],
-     (WCCounts(lines=5, words=57, bytes_=447), "/m/d")),
-    ("      8", ["lines"], (WCCounts(lines=8), None)),
-])
+@pytest.mark.parametrize(
+    "line,columns,expected",
+    [
+        ("5   x", ["lines"], (WCCounts(lines=5), "  x")),
+        (
+            "  5  57 447 /m/d",
+            ["lines", "words", "bytes_"],
+            (WCCounts(lines=5, words=57, bytes_=447), "/m/d"),
+        ),
+        ("      8", ["lines"], (WCCounts(lines=8), None)),
+    ],
+)
 def test_parse_row_keeps_the_label_whole(line, columns, expected):
     assert parse_row(line, columns) == expected

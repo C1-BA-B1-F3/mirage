@@ -11,8 +11,11 @@ from mirage.commands.errors import UsageError
 from mirage.commands.quote import quote_text
 from mirage.commands.spec import SPECS
 from mirage.commands.spec.flag_view import FlagView
-from mirage.context import (hidden_paths_intersect, path_allowed,
-                            path_rules_active)
+from mirage.context import (
+    hidden_paths_intersect,
+    path_allowed,
+    path_rules_active,
+)
 from mirage.io.types import IOResult
 from mirage.ops.types import LinkView, MountView, StatPath
 from mirage.types import FileStat, PathSpec
@@ -99,13 +102,15 @@ def parse_depth(text: str) -> int | None:
     return None
 
 
-def parse_flags(*,
-                s: bool,
-                a: bool,
-                h: bool,
-                c: bool,
-                max_depth: str | None,
-                separate_dirs: bool = False) -> DuFlags:
+def parse_flags(
+    *,
+    s: bool,
+    a: bool,
+    h: bool,
+    c: bool,
+    max_depth: str | None,
+    separate_dirs: bool = False,
+) -> DuFlags:
     """Validate a ``du`` command line the way GNU does, before any I/O.
 
     GNU parses ``--max-depth`` as each option is read, so a bad depth is
@@ -129,10 +134,13 @@ def parse_flags(*,
         if depth is None:
             raise UsageError(
                 f"du: invalid maximum depth '{quote_text(max_depth)}'\n"
-                f"{USAGE_HINT}", 1)
+                f"{USAGE_HINT}",
+                1,
+            )
     if s and a:
         raise UsageError(
-            f"du: cannot both summarize and show all entries\n{USAGE_HINT}", 1)
+            f"du: cannot both summarize and show all entries\n{USAGE_HINT}", 1
+        )
     warning: str | None = None
     if s and depth is not None:
         # GNU treats -s and --max-depth=0 as the same request, so it warns
@@ -140,16 +148,13 @@ def parse_flags(*,
         if depth != 0:
             raise UsageError(
                 "du: warning: summarizing conflicts with "
-                f"--max-depth={depth}\n{USAGE_HINT}", 1)
-        warning = ("du: warning: summarizing is the same as using "
-                   "--max-depth=0")
-    return DuFlags(s=s,
-                   a=a,
-                   h=h,
-                   c=c,
-                   S=separate_dirs,
-                   max_depth=depth,
-                   warning=warning)
+                f"--max-depth={depth}\n{USAGE_HINT}",
+                1,
+            )
+        warning = "du: warning: summarizing is the same as using --max-depth=0"
+    return DuFlags(
+        s=s, a=a, h=h, c=c, S=separate_dirs, max_depth=depth, warning=warning
+    )
 
 
 def cwd_spec(cwd: PathSpec | str) -> PathSpec:
@@ -160,10 +165,9 @@ def cwd_spec(cwd: PathSpec | str) -> PathSpec:
     """
     if isinstance(cwd, PathSpec):
         return cwd
-    return PathSpec(virtual=cwd,
-                    directory=cwd,
-                    resolved=False,
-                    vfs_path=cwd.strip("/"))
+    return PathSpec(
+        virtual=cwd, directory=cwd, resolved=False, vfs_path=cwd.strip("/")
+    )
 
 
 ENOENT_TEXT = "No such file or directory"
@@ -245,17 +249,21 @@ async def du_operands(
             continue
         except (FileNotFoundError, ValueError):
             stattable = False
-        if not await du_operand_exists(path, stattable, has_content,
-                                       stat_path):
+        if not await du_operand_exists(
+            path, stattable, has_content, stat_path
+        ):
             missing.append((path.raw_path, ENOENT_TEXT))
             continue
         present.append(path)
     return present, missing
 
 
-async def du_operand_exists(path: PathSpec, stattable: bool,
-                            has_content: Callable[[PathSpec], Awaitable[bool]]
-                            | None, stat_path: StatPath | None) -> bool:
+async def du_operand_exists(
+    path: PathSpec,
+    stattable: bool,
+    has_content: Callable[[PathSpec], Awaitable[bool]] | None,
+    stat_path: StatPath | None,
+) -> bool:
     """Whether one operand is there at all, before anything is measured.
 
     A point lookup alone cannot decide, so this asks both channels a
@@ -286,8 +294,9 @@ async def du_operand_exists(path: PathSpec, stattable: bool,
     return has_content is not None and await has_content(path)
 
 
-async def du_has_content(compute_entries: ComputeEntries,
-                         path: PathSpec) -> bool:
+async def du_has_content(
+    compute_entries: ComputeEntries, path: PathSpec
+) -> bool:
     """Whether an operand holds anything the session may see.
 
     The visibility filter is what makes this safe to ask after the
@@ -332,14 +341,15 @@ def _parent(path: str) -> str:
 
 def _depth(entry_path: str, base_path: str) -> int:
     base = base_path.rstrip("/")
-    rel = entry_path.rstrip("/")[len(base):]
+    rel = entry_path.rstrip("/")[len(base) :]
     if not rel:
         return 0
     return rel.strip("/").count("/") + 1
 
 
-def to_virtual(entries: Sequence[tuple[str, int]],
-               path: PathSpec) -> list[tuple[str, int]]:
+def to_virtual(
+    entries: Sequence[tuple[str, int]], path: PathSpec
+) -> list[tuple[str, int]]:
     """Lift mount-relative walk entries onto absolute virtual paths.
 
     Backends walk their own key space and report mount-relative paths, so
@@ -357,8 +367,9 @@ def to_virtual(entries: Sequence[tuple[str, int]],
     prefix = mount_prefix_of(path.virtual, path.vfs_path)
     if not prefix:
         return list(entries)
-    return [(prefix + "/" + entry.lstrip("/"), size)
-            for entry, size in entries]
+    return [
+        (prefix + "/" + entry.lstrip("/"), size) for entry, size in entries
+    ]
 
 
 def separate_total(entries: Sequence[tuple[str, int]], root: str) -> int:
@@ -373,8 +384,9 @@ def separate_total(entries: Sequence[tuple[str, int]], root: str) -> int:
         root (str): the operand's absolute virtual path.
     """
     root_key = _norm(root)
-    return sum(size for leaf, size in entries
-               if _parent(_norm(leaf)) == root_key)
+    return sum(
+        size for leaf, size in entries if _parent(_norm(leaf)) == root_key
+    )
 
 
 def rollup(
@@ -472,8 +484,9 @@ def rollup(
     return order
 
 
-def drop_shadowed(entries: Sequence[tuple[str, int]],
-                  roots: Sequence[str]) -> list[tuple[str, int]]:
+def drop_shadowed(
+    entries: Sequence[tuple[str, int]], roots: Sequence[str]
+) -> list[tuple[str, int]]:
     """Drop leaves that fall under a descendant mount's root.
 
     The parent backend's keys under a nested mount are shadowed: no read
@@ -543,9 +556,13 @@ async def _du_one(
         leaves = drop_shadowed(leaves, roots)
     link_total = sum(size for _, size in leaves)
 
-    if (flags.s and not flags.S and not roots
-            and not hidden_paths_intersect(path.virtual)
-            and not path_rules_active()):
+    if (
+        flags.s
+        and not flags.S
+        and not roots
+        and not hidden_paths_intersect(path.virtual)
+        and not path_rules_active()
+    ):
         # The one-total fast path trusts the backend's own sum, which a
         # session hiding paths under this operand cannot: hidden leaves
         # would be counted into a total their names never justify, so
@@ -560,9 +577,13 @@ async def _du_one(
     root_key = _norm(path.virtual)
     under = root_key.rstrip("/") + "/"
     dirs = [
-        d for d in (directories() if directories is not None else ())
-        if _norm(d).startswith(under) and path_allowed(d) and not any(
-            _norm(d) == r or _norm(d).startswith(r + "/") for r in roots)
+        d
+        for d in (directories() if directories is not None else ())
+        if _norm(d).startswith(under)
+        and path_allowed(d)
+        and not any(
+            _norm(d) == r or _norm(d).startswith(r + "/") for r in roots
+        )
     ]
     if not entries and not leaves and not dirs:
         # A backend that can only produce a size degrades to one total;
@@ -595,12 +616,14 @@ async def _du_one(
     if flags.s:
         return [_line(own, flags.h, label)], total
 
-    rows = rollup(virtual,
-                  path.virtual,
-                  a=flags.a,
-                  max_depth=flags.max_depth,
-                  dirs=dirs,
-                  separate_dirs=flags.S)
+    rows = rollup(
+        virtual,
+        path.virtual,
+        a=flags.a,
+        max_depth=flags.max_depth,
+        dirs=dirs,
+        separate_dirs=flags.S,
+    )
     shown = respell_raw([node for node, _ in rows], path.virtual, label)
     lines = [
         _line(size, flags.h, name) for name, (_, size) in zip(shown, rows)
@@ -665,30 +688,30 @@ async def run_du(
     Raises:
         UsageError: on a bad depth or a conflicting flag combination.
     """
-    flags = parse_flags(s=s,
-                        a=a,
-                        h=h,
-                        c=c,
-                        max_depth=max_depth,
-                        separate_dirs=separate_dirs)
-    present, missing = await du_operands(paths,
-                                         cwd,
-                                         resolve_glob,
-                                         stat,
-                                         partial(du_has_content,
-                                                 compute_entries),
-                                         links=links,
-                                         stat_path=stat_path)
-    return await du(present,
-                    compute_size=compute_size,
-                    compute_entries=compute_entries,
-                    flags=flags,
-                    missing=missing,
-                    truncated=truncated,
-                    unreadable=unreadable,
-                    directories=directories,
-                    links=links,
-                    mounts=mounts)
+    flags = parse_flags(
+        s=s, a=a, h=h, c=c, max_depth=max_depth, separate_dirs=separate_dirs
+    )
+    present, missing = await du_operands(
+        paths,
+        cwd,
+        resolve_glob,
+        stat,
+        partial(du_has_content, compute_entries),
+        links=links,
+        stat_path=stat_path,
+    )
+    return await du(
+        present,
+        compute_size=compute_size,
+        compute_entries=compute_entries,
+        flags=flags,
+        missing=missing,
+        truncated=truncated,
+        unreadable=unreadable,
+        directories=directories,
+        links=links,
+        mounts=mounts,
+    )
 
 
 async def du(
@@ -737,8 +760,15 @@ async def du(
     lines: list[str] = []
     totals: list[int] = []
     for path in paths:
-        block, total = await _du_one(path, compute_size, compute_entries,
-                                     flags, links, mounts, directories)
+        block, total = await _du_one(
+            path,
+            compute_size,
+            compute_entries,
+            flags,
+            links,
+            mounts,
+            directories,
+        )
         lines.extend(block)
         totals.append(total)
     # GNU still prints the grand total when every operand failed ("0
@@ -747,17 +777,23 @@ async def du(
         lines.append(_line(sum(totals), flags.h, "total"))
 
     notes = [flags.warning] if flags.warning else []
-    notes.extend(f"du: {ZERO_LENGTH_NAME}" if raw ==
-                 "" else f"du: cannot access '{raw}': {detail}"
-                 for raw, detail in missing)
+    notes.extend(
+        f"du: {ZERO_LENGTH_NAME}"
+        if raw == ""
+        else f"du: cannot access '{raw}': {detail}"
+        for raw, detail in missing
+    )
     exit_code = 1 if missing else 0
-    for virtual in (unreadable() if unreadable is not None else ()):
-        notes.append(f"du: cannot read directory "
-                     f"'{_respell_under(virtual, paths)}': Permission denied")
+    for virtual in unreadable() if unreadable is not None else ():
+        notes.append(
+            f"du: cannot read directory "
+            f"'{_respell_under(virtual, paths)}': Permission denied"
+        )
         exit_code = 1
     if truncated is not None and truncated():
-        notes.append("du: walk stopped early: the reported sizes are "
-                     "incomplete")
+        notes.append(
+            "du: walk stopped early: the reported sizes are incomplete"
+        )
         exit_code = 1
     stderr = ("\n".join(notes) + "\n").encode() if notes else b""
     return DuOutput(format_records(lines), stderr, exit_code)
@@ -830,8 +866,13 @@ async def du_generic(
         truncated=truncated,
         unreadable=unreadable,
         directories=directories,
-        links=(None if fl.as_bool("L") else
-               opts.ns.links if opts.ns is not None else None),
+        links=(
+            None
+            if fl.as_bool("L")
+            else opts.ns.links
+            if opts.ns is not None
+            else None
+        ),
         mounts=opts.ns.mounts if opts.ns is not None else None,
         stat_path=opts.stat_path,
     )

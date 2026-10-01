@@ -55,7 +55,8 @@ def test_date_utc_format():
 def test_date_relative_from_iso_base():
     ws, _ = _ws()
     stdout, io = _run_raw(
-        ws, "date -u -d '2026-08-16 12:00:00 24 hours ago' '+%F %T'")
+        ws, "date -u -d '2026-08-16 12:00:00 24 hours ago' '+%F %T'"
+    )
     assert _bytes(stdout).decode() == "2026-08-15 12:00:00\n"
     assert io.exit_code == 0
 

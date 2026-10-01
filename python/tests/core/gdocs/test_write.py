@@ -43,18 +43,22 @@ def _location(mock_post) -> dict:
 async def test_append_text_without_a_tab_names_none(token_manager):
     # No tabId is Google's "first tab", so the request must not invent
     # one: an empty string is a real tab id slot, not an absent one.
-    with patch("mirage.core.gdocs.write.google_post",
-               new_callable=AsyncMock,
-               return_value={"documentId": "d1"}) as mock_post:
+    with patch(
+        "mirage.core.gdocs.write.google_post",
+        new_callable=AsyncMock,
+        return_value={"documentId": "d1"},
+    ) as mock_post:
         await append_text(token_manager, "d1", "hello")
         assert _location(mock_post) == {"segmentId": ""}
 
 
 @pytest.mark.asyncio
 async def test_append_text_targets_the_named_tab(token_manager):
-    with patch("mirage.core.gdocs.write.google_post",
-               new_callable=AsyncMock,
-               return_value={"documentId": "d1"}) as mock_post:
+    with patch(
+        "mirage.core.gdocs.write.google_post",
+        new_callable=AsyncMock,
+        return_value={"documentId": "d1"},
+    ) as mock_post:
         await append_text(token_manager, "d1", "hello", "t.7")
         assert _location(mock_post) == {"segmentId": "", "tabId": "t.7"}
 
@@ -63,18 +67,23 @@ async def test_append_text_targets_the_named_tab(token_manager):
 async def test_append_text_treats_an_empty_tab_as_unnamed(token_manager):
     # The CLI hands through whatever --tab held, and "" means the flag
     # was absent; forwarding it would name a tab that cannot exist.
-    with patch("mirage.core.gdocs.write.google_post",
-               new_callable=AsyncMock,
-               return_value={"documentId": "d1"}) as mock_post:
+    with patch(
+        "mirage.core.gdocs.write.google_post",
+        new_callable=AsyncMock,
+        return_value={"documentId": "d1"},
+    ) as mock_post:
         await append_text(token_manager, "d1", "hello", "")
         assert _location(mock_post) == {"segmentId": ""}
 
 
 @pytest.mark.asyncio
 async def test_append_text_posts_to_the_batch_update_url(token_manager):
-    with patch("mirage.core.gdocs.write.google_post",
-               new_callable=AsyncMock,
-               return_value={"documentId": "d1"}) as mock_post:
+    with patch(
+        "mirage.core.gdocs.write.google_post",
+        new_callable=AsyncMock,
+        return_value={"documentId": "d1"},
+    ) as mock_post:
         await append_text(token_manager, "d1", "hello")
         assert mock_post.call_args.args[1] == (
-            "https://docs.googleapis.com/v1/documents/d1:batchUpdate")
+            "https://docs.googleapis.com/v1/documents/d1:batchUpdate"
+        )

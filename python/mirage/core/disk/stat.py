@@ -25,9 +25,11 @@ from mirage.utils.dates import ns_to_iso
 from mirage.utils.filetype import content_type_for_path
 
 
-async def stat(accessor: DiskAccessor,
-               path_spec: PathSpec,
-               index: IndexCacheStore = NULL_INDEX) -> FileStat:
+async def stat(
+    accessor: DiskAccessor,
+    path_spec: PathSpec,
+    index: IndexCacheStore = NULL_INDEX,
+) -> FileStat:
     virtual = path_spec.virtual
     root = accessor.root
     p = await resolve_inside(root, path_spec)
@@ -47,21 +49,25 @@ async def stat(accessor: DiskAccessor,
     # in the namespace overlay, merged at the stat-merge layer; host
     # uid/gid numbers would also be machine-dependent noise.
     if S_ISDIR(st.st_mode):
-        return FileStat(name=p.name,
-                        size=None,
-                        modified=modified,
-                        type=FileType.DIRECTORY,
-                        mode=st.st_mode & 0o7777,
-                        atime=ns_to_iso(st.st_atime_ns),
-                        ctime=ns_to_iso(st.st_ctime_ns),
-                        birthtime=birthtime)
-    return FileStat(name=p.name,
-                    size=st.st_size,
-                    modified=modified,
-                    fingerprint=modified,
-                    type=FileType.FILE,
-                    content=content_type_for_path(p.name),
-                    mode=st.st_mode & 0o7777,
-                    atime=ns_to_iso(st.st_atime_ns),
-                    ctime=ns_to_iso(st.st_ctime_ns),
-                    birthtime=birthtime)
+        return FileStat(
+            name=p.name,
+            size=None,
+            modified=modified,
+            type=FileType.DIRECTORY,
+            mode=st.st_mode & 0o7777,
+            atime=ns_to_iso(st.st_atime_ns),
+            ctime=ns_to_iso(st.st_ctime_ns),
+            birthtime=birthtime,
+        )
+    return FileStat(
+        name=p.name,
+        size=st.st_size,
+        modified=modified,
+        fingerprint=modified,
+        type=FileType.FILE,
+        content=content_type_for_path(p.name),
+        mode=st.st_mode & 0o7777,
+        atime=ns_to_iso(st.st_atime_ns),
+        ctime=ns_to_iso(st.st_ctime_ns),
+        birthtime=birthtime,
+    )

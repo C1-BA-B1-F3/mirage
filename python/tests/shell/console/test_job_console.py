@@ -180,7 +180,8 @@ async def test_wait_finished_returns_once_the_job_ends(console):
 
 @pytest.mark.asyncio
 async def test_wait_finished_returns_immediately_when_already_finished(
-        console):
+    console,
+):
     await console.finish(exit_outcome(0))
 
     await asyncio.wait_for(console.wait_finished(), timeout=1)

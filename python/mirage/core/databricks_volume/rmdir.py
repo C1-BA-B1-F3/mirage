@@ -49,8 +49,9 @@ async def rmdir(
         raise enotdir(path)
     remote_path = backend_path(accessor.config, path)
     try:
-        entries = await asyncio.to_thread(_list_directory_sync, accessor,
-                                          remote_path)
+        entries = await asyncio.to_thread(
+            _list_directory_sync, accessor, remote_path
+        )
     except Exception as exc:
         if is_not_found(exc):
             raise enoent(path) from exc

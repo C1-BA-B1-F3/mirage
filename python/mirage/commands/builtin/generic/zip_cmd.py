@@ -4,9 +4,12 @@ from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass
 
 from mirage.commands.builtin.generic.archive.types import MemberKind
-from mirage.commands.builtin.generic.archive.walk import (OTHER_FILESYSTEM,
-                                                          StatFn, WalkFn,
-                                                          scan_operand)
+from mirage.commands.builtin.generic.archive.walk import (
+    OTHER_FILESYSTEM,
+    StatFn,
+    WalkFn,
+    scan_operand,
+)
 from mirage.commands.config import CommandOpts
 from mirage.commands.spec import SPECS
 from mirage.commands.spec.flag_view import FlagView
@@ -31,15 +34,18 @@ NOTHING_TO_DO_EXIT = 12
 # check_dup, ZE_PARMS). -q silences the warning, not the error, and the
 # warning's later lines are indented with spaces under its first.
 REPEATED_EXIT = 16
-REPEATED_ERROR = ("\nzip error: Invalid command arguments "
-                  "(cannot repeat names in zip file)\n")
+REPEATED_ERROR = (
+    "\nzip error: Invalid command arguments "
+    "(cannot repeat names in zip file)\n"
+)
 REPEATED_INDENT = " " * 21
 # An archive zip cannot create ends the run before any member is added,
 # -q or not (Info-ZIP's ZE_CREAT, exit 15). Info-ZIP prints it on stdout
 # like every diagnostic; mirage keeps it on stderr with the rest.
 CREATE_EXIT = 15
-CREATE_ERROR = ("zip I/O error: {0}\n"
-                "zip error: Could not create output file ({1})\n")
+CREATE_ERROR = (
+    "zip I/O error: {0}\nzip error: Could not create output file ({1})\n"
+)
 # Info-ZIP has no mount boundaries to describe, so this borrows GNU
 # tar's --one-file-system wording rather than inventing a second one.
 CROSSING_REASON = OTHER_FILESYSTEM
@@ -125,7 +131,7 @@ def member_name(spelled: str, kind: MemberKind, junk: bool) -> str:
         junk (bool): ``-j``, store the basename only.
     """
     name = _relative(_full_name(spelled, kind))
-    return name[name.rfind("/") + 1:] if junk else name
+    return name[name.rfind("/") + 1 :] if junk else name
 
 
 def excluded(name: str, patterns: list[str]) -> bool:
@@ -162,9 +168,11 @@ def _repeated(formed: dict[str, list[str]], junk: bool) -> str:
         return ""
     name = clashes[0]
     first, second = sorted(formed[name])[:2]
-    warning = (f"  first full name: {first}\n"
-               f"{REPEATED_INDENT} second full name: {second}\n"
-               f"{REPEATED_INDENT}name in zip file repeated: {name}")
+    warning = (
+        f"  first full name: {first}\n"
+        f"{REPEATED_INDENT} second full name: {second}\n"
+        f"{REPEATED_INDENT}name in zip file repeated: {name}"
+    )
     if junk:
         warning += f"\n{REPEATED_INDENT}this may be a result of using -j"
     return warning
@@ -219,13 +227,15 @@ async def plan_zip(
         # Info-ZIP walks a bare `.` with an empty prefix, so what it finds
         # there is named bare: `zip -r out.zip . a.txt` names a.txt once.
         spelling = "" if raw == "." else raw
-        scan = await scan_operand(path,
-                                  stat=stat,
-                                  walk=walk,
-                                  links=links,
-                                  mounts=mounts,
-                                  dereference=not store_links,
-                                  recurse=recurse)
+        scan = await scan_operand(
+            path,
+            stat=stat,
+            walk=walk,
+            links=links,
+            mounts=mounts,
+            dereference=not store_links,
+            recurse=recurse,
+        )
         for problem in scan.problems:
             if problem.unreadable:
                 # Info-ZIP stores the directory it could not open and
@@ -261,14 +271,19 @@ async def plan_zip(
             if len(fulls) > 1:
                 continue
             members.append(
-                ZipMember(name=name,
-                          kind=entry.kind,
-                          path=entry.read,
-                          target=entry.target))
-    return ZipPlan(members=tuple(members),
-                   warnings=tuple(warnings),
-                   write=bool(members),
-                   repeated=_repeated(formed, junk))
+                ZipMember(
+                    name=name,
+                    kind=entry.kind,
+                    path=entry.read,
+                    target=entry.target,
+                )
+            )
+    return ZipPlan(
+        members=tuple(members),
+        warnings=tuple(warnings),
+        write=bool(members),
+        repeated=_repeated(formed, junk),
+    )
 
 
 def _info(member: ZipMember, size: int) -> zipfile.ZipInfo:
@@ -310,28 +325,32 @@ async def zip_cmd(
     if not paths:
         raise ValueError("zip: usage: zip archive.zip file1 [file2 ...]")
     archive_path = paths[0]
-    plan = await plan_zip(paths[1:],
-                          archive=archive_path,
-                          stat=stat,
-                          walk=walk,
-                          recurse=r,
-                          junk=j,
-                          store_links=y,
-                          exclude=x or [],
-                          links=links,
-                          mounts=mounts)
+    plan = await plan_zip(
+        paths[1:],
+        archive=archive_path,
+        stat=stat,
+        walk=walk,
+        recurse=r,
+        junk=j,
+        store_links=y,
+        exclude=x or [],
+        links=links,
+        mounts=mounts,
+    )
     if plan.repeated:
-        return None, IOResult(exit_code=REPEATED_EXIT,
-                              stderr=_stderr(
-                                  (*plan.warnings, plan.repeated), q) +
-                              REPEATED_ERROR.encode())
+        return None, IOResult(
+            exit_code=REPEATED_EXIT,
+            stderr=_stderr((*plan.warnings, plan.repeated), q)
+            + REPEATED_ERROR.encode(),
+        )
     if not plan.write:
         # Info-ZIP writes no archive when nothing matched, and the error
         # is not a warning: -q does not silence it.
         nothing = f"\nzip error: Nothing to do! ({archive_path.raw_path})\n"
-        return None, IOResult(exit_code=NOTHING_TO_DO_EXIT,
-                              stderr=_stderr(plan.warnings, q) +
-                              nothing.encode())
+        return None, IOResult(
+            exit_code=NOTHING_TO_DO_EXIT,
+            stderr=_stderr(plan.warnings, q) + nothing.encode(),
+        )
     buf = io.BytesIO()
     output_lines: list[str] = []
     # A member the session may not read (a rule refused it below the
@@ -355,11 +374,16 @@ async def zip_cmd(
     except FS_ERRORS as exc:
         return None, IOResult(
             exit_code=CREATE_EXIT,
-            stderr=_stderr(plan.warnings, q) + CREATE_ERROR.format(
-                fs_strerror(exc), archive_path.raw_path).encode())
+            stderr=_stderr(plan.warnings, q)
+            + CREATE_ERROR.format(
+                fs_strerror(exc), archive_path.raw_path
+            ).encode(),
+        )
     stdout = ("\n".join(output_lines) + "\n").encode() if not q else None
-    return stdout, IOResult(writes={archive_path.mount_path: archive},
-                            stderr=_stderr(plan.warnings, q))
+    return stdout, IOResult(
+        writes={archive_path.mount_path: archive},
+        stderr=_stderr(plan.warnings, q),
+    )
 
 
 __all__ = ["plan_zip", "zip_cmd"]
@@ -407,4 +431,5 @@ async def zip_generic(
         y=parsed.store_links,
         x=list(parsed.exclude) or None,
         links=opts.ns.links if opts.ns is not None else None,
-        mounts=opts.ns.mounts if opts.ns is not None else None)
+        mounts=opts.ns.mounts if opts.ns is not None else None,
+    )

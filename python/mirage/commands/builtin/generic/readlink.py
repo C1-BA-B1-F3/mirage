@@ -62,8 +62,10 @@ async def readlink_generic(
     if not paths:
         raise ValueError("readlink: missing operand")
     parsed = parse_flags(opts.flags)
-    return await readlink(paths,
-                          f=parsed.canonicalize,
-                          e=parsed.canonicalize_existing,
-                          m=parsed.canonicalize_missing,
-                          n=parsed.no_newline)
+    return await readlink(
+        paths,
+        f=parsed.canonicalize,
+        e=parsed.canonicalize_existing,
+        m=parsed.canonicalize_missing,
+        n=parsed.no_newline,
+    )

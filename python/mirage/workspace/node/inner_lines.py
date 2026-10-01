@@ -83,7 +83,7 @@ _ENV_FLAGS = frozenset({"-i", "--ignore-environment", "-0", "--null", "-"})
 
 
 def _tail(args: Sequence[Word], count: int) -> tuple[Word, ...]:
-    return tuple(args[len(args) - count:]) if count else ()
+    return tuple(args[len(args) - count :]) if count else ()
 
 
 def _command_inner(args: Sequence[Word]) -> list[InnerLine]:
@@ -134,8 +134,11 @@ def _env_inner(args: Sequence[Word]) -> list[InnerLine]:
             i += 2 if word.endswith("u") else 1
             continue
         break
-    while i < len(args) and "=" in args[
-            i].value and not args[i].value.startswith("="):
+    while (
+        i < len(args)
+        and "=" in args[i].value
+        and not args[i].value.startswith("=")
+    ):
         i += 1
     rest = tuple(args[i:])
     return [InnerLine(argv=rest)] if rest else []
@@ -145,8 +148,11 @@ def _spec_operands(name: str, args: Sequence[Word]) -> tuple[Word, ...] | None:
     """The operands of a shell builtin with a spec, as Words; None
     when the line fails its own option parse."""
     parsed = parse_shell_options(SHELL_SPECS[name], [w.value for w in args])
-    if (parsed.invalid is not None or parsed.needs_value is not None
-            or parsed.unexpected_value is not None):
+    if (
+        parsed.invalid is not None
+        or parsed.needs_value is not None
+        or parsed.unexpected_value is not None
+    ):
         return None
     return _tail(args, len(parsed.operands))
 
@@ -157,8 +163,9 @@ def _timeout_inner(args: Sequence[Word]) -> list[InnerLine]:
     if operands is None or len(operands) < 2:
         return []
     return [
-        InnerLine(argv=operands[1:],
-                  missing=timeout_missing(operands[1].value))
+        InnerLine(
+            argv=operands[1:], missing=timeout_missing(operands[1].value)
+        )
     ]
 
 
@@ -168,7 +175,7 @@ def _xargs_inner(args: Sequence[Word]) -> list[InnerLine]:
     operands = _spec_operands("xargs", args)
     if operands is None:
         return []
-    argv = operands or (Word("echo", "echo"), )
+    argv = operands or (Word("echo", "echo"),)
     return [
         InnerLine(argv=argv, open=True, missing=xargs_missing(argv[0].value))
     ]
@@ -176,11 +183,15 @@ def _xargs_inner(args: Sequence[Word]) -> list[InnerLine]:
 
 def _mapfile_inner(args: Sequence[Word]) -> list[InnerLine]:
     """``mapfile -C callback``: the callback is evaluated per quantum."""
-    parsed = parse_shell_options(SHELL_SPECS["mapfile"],
-                                 [w.value for w in args])
+    parsed = parse_shell_options(
+        SHELL_SPECS["mapfile"], [w.value for w in args]
+    )
     callback = parsed.flags.get("C")
-    return [InnerLine(line=callback, open=True)] if isinstance(callback,
-                                                               str) else []
+    return (
+        [InnerLine(line=callback, open=True)]
+        if isinstance(callback, str)
+        else []
+    )
 
 
 def _find_inner(args: Sequence[Word]) -> list[InnerLine]:
@@ -272,8 +283,9 @@ def inner_lines(head: str, args: Sequence[Word]) -> list[InnerLine]:
     if "/" in head:
         return [InnerLine()]
     if head == "eval":
-        return [InnerLine(line=" ".join(w.value
-                                        for w in args))] if args else []
+        return (
+            [InnerLine(line=" ".join(w.value for w in args))] if args else []
+        )
     if head in ("source", "."):
         return [InnerLine()] if args else []
     if head in ("sh", "bash"):

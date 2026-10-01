@@ -19,73 +19,55 @@ from typing import Any, Protocol, TypeAlias
 
 
 class TSNodeLike(Protocol):
+    @property
+    def type(self) -> str: ...
 
     @property
-    def type(self) -> str:
-        ...
+    def text(self) -> bytes | None: ...
 
     @property
-    def text(self) -> bytes | None:
-        ...
+    def id(self) -> int: ...
 
     @property
-    def id(self) -> int:
-        ...
+    def start_byte(self) -> int: ...
 
     @property
-    def start_byte(self) -> int:
-        ...
+    def end_byte(self) -> int: ...
 
     @property
-    def end_byte(self) -> int:
-        ...
+    def start_point(self) -> tuple[int, int]: ...
 
     @property
-    def start_point(self) -> tuple[int, int]:
-        ...
+    def end_point(self) -> tuple[int, int]: ...
 
     @property
-    def end_point(self) -> tuple[int, int]:
-        ...
+    def children(self) -> Sequence["TSNodeLike"]: ...
 
     @property
-    def children(self) -> Sequence["TSNodeLike"]:
-        ...
+    def named_children(self) -> Sequence["TSNodeLike"]: ...
 
     @property
-    def named_children(self) -> Sequence["TSNodeLike"]:
-        ...
+    def parent(self) -> "TSNodeLike | None": ...
 
     @property
-    def parent(self) -> "TSNodeLike | None":
-        ...
+    def prev_sibling(self) -> "TSNodeLike | None": ...
 
     @property
-    def prev_sibling(self) -> "TSNodeLike | None":
-        ...
+    def next_sibling(self) -> "TSNodeLike | None": ...
 
     @property
-    def next_sibling(self) -> "TSNodeLike | None":
-        ...
+    def child_count(self) -> int: ...
 
     @property
-    def child_count(self) -> int:
-        ...
+    def is_named(self) -> bool: ...
 
     @property
-    def is_named(self) -> bool:
-        ...
+    def is_missing(self) -> bool: ...
 
     @property
-    def is_missing(self) -> bool:
-        ...
+    def has_error(self) -> bool: ...
 
-    @property
-    def has_error(self) -> bool:
-        ...
-
-    def child_by_field_name(self, name: str) -> "TSNodeLike | None":
-        ...
+    def child_by_field_name(self, name: str) -> "TSNodeLike | None": ...
 
 
 FunctionBody: TypeAlias = list[TSNodeLike]
@@ -118,6 +100,7 @@ class ElementOps:
         holds_array (Callable[[str], bool] | None): whether a name holds
             an array, indexed or associative, empty or not.
     """
+
     resolve: Callable[[str, str, Mapping[str, str]], str]
     read: Callable[[str, str], str | None]
     is_assoc: Callable[[str], bool] | None = None
@@ -135,6 +118,7 @@ class ArithWrite:
             an array, or the scalar itself).
         value (str): the stored decimal text.
     """
+
     name: str
     key: str | None
     value: str
@@ -153,12 +137,14 @@ class ArithResult:
             name aliases element 0 and ``((a[0]=1, a=2))`` has to
             leave 2.
     """
+
     value: int
     writes: tuple[ArithWrite, ...] = ()
 
 
 class NodeType(StrEnum):
     """Tree-sitter-bash node types."""
+
     TIMED_STATEMENT = "timed_statement"
     COMMAND = "command"
     PIPELINE = "pipeline"
@@ -281,6 +267,7 @@ class OptionWord:
             out of them and refuses the rest.
         consumed (int): words the option took, 2 for the `-o NAME` form.
     """
+
     settings: tuple[tuple[str, bool], ...] = ()
     other: str = ""
     consumed: int = 1
@@ -324,6 +311,7 @@ class Redirect:
             heredoc_redirect node, so it is detached here and applied
             by the executor around the whole statement.
     """
+
     fd: int
     target: Any
     target_node: Any = None
@@ -354,6 +342,7 @@ class PipelineStages:
             runs at all; its right operand is where the pipeline starts
             and stands for it in the connection.
     """
+
     commands: tuple[Any, ...]
     stderr_flags: tuple[bool, ...]
     redirects: tuple[tuple[Redirect, ...], ...]
@@ -367,6 +356,7 @@ class ProcessSubDirection(StrEnum):
     `<(cmd)` is INPUT (the inner command's stdout feeds our stdin),
     `>(cmd)` is OUTPUT (our stdout feeds the inner command's stdin).
     """
+
     INPUT = "input"
     OUTPUT = "output"
 
@@ -379,6 +369,7 @@ class ShellBuiltin(StrEnum):
     to mounts. Listed by tier and group (``BUILTIN_GROUP``
     below is the source of truth).
     """
+
     # grammar: the shell's own language
     # -- working directory
     PWD = "pwd"
@@ -472,6 +463,7 @@ class BuiltinTier(StrEnum):
     builtin is a subject of a command allowlist exactly like an
     installed command, and both tiers are deniable by name.
     """
+
     GRAMMAR = "grammar"
     TOOL = "tool"
 
@@ -484,6 +476,7 @@ class BuiltinGroup(StrEnum):
     row per word. A listing (bare ``man``) or a rule can name a group
     where it would otherwise have to spell out the words.
     """
+
     # grammar
     WORKING_DIRECTORY = "working-directory"
     VARIABLES = "variables"

@@ -74,10 +74,9 @@ def test_blob_size_leaves_undecodable_values_unknown():
 
 
 def _globbed(path: str, pattern: str) -> PathSpec:
-    return PathSpec(virtual=path,
-                    directory=path,
-                    vfs_path=path.strip("/"),
-                    pattern=pattern)
+    return PathSpec(
+        virtual=path, directory=path, vfs_path=path.strip("/"), pattern=pattern
+    )
 
 
 def _ids(paths: list[str]) -> set[str]:
@@ -125,7 +124,8 @@ async def test_a_narrowed_listing_is_not_cached_as_the_directory(capped):
 
 @pytest.mark.asyncio
 async def test_document_lineage_uses_nested_fields_and_source_basename(
-        lineage):
+    lineage,
+):
     root = await readdir(lineage, _ps("/"))
     assert _names(root) == {"refund-2026.pdf"}
     document = await readdir(lineage, _ps("/refund-2026.pdf"))
@@ -134,7 +134,8 @@ async def test_document_lineage_uses_nested_fields_and_source_basename(
 
 @pytest.mark.asyncio
 async def test_a_value_holding_the_division_slash_keeps_its_own_directory(
-        slashed):
+    slashed,
+):
     root = await readdir(slashed, _ps("/"))
     assert _names(root) == {"a∕b", "a⁄∕b"}
     assert _ids(await readdir(slashed, _ps("/a∕b"))) == {"1"}
@@ -153,7 +154,8 @@ async def test_blank_and_dot_led_values_list_and_open(edged):
 
 @pytest.mark.asyncio
 async def test_a_basename_collision_past_the_cap_is_refused(
-        basename_collision_capped):
+    basename_collision_capped,
+):
     # The capped listing sees one source. Opening the directory must not
     # settle for it: the scan runs past the cap until the second source
     # with that basename shows up, and refuses rather than picking one.
@@ -171,10 +173,10 @@ async def test_basename_collision_is_refused(lineage):
     client = await lineage.client()
     client.points[0].payload["metadata"]["source"] = "s3://a/report.pdf"
     client.points.append(
-        SimpleNamespace(id=2,
-                        payload={"metadata": {
-                            "source": "s3://b/report.pdf"
-                        }}))
+        SimpleNamespace(
+            id=2, payload={"metadata": {"source": "s3://b/report.pdf"}}
+        )
+    )
 
     with pytest.raises(ValueError, match="path collision"):
         await readdir(lineage, _ps("/"))
@@ -182,7 +184,8 @@ async def test_basename_collision_is_refused(lineage):
 
 @pytest.mark.asyncio
 async def test_a_basename_past_name_max_lists_within_it_and_opens(
-        long_basename):
+    long_basename,
+):
     # The rows under a leaf longer than NAME_MAX were unreachable over a
     # FUSE mount, which refuses the name. The directory is cut to fit, and
     # two leaves the cut would merge keep their own directories and rows.

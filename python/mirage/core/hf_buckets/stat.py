@@ -22,9 +22,11 @@ from mirage.types import FileStat, PathSpec
 _stat = make_stat(DRIVER)
 
 
-async def stat(accessor: HfBucketsAccessor,
-               path_spec: PathSpec,
-               index: IndexCacheStore = NULL_INDEX) -> FileStat:
+async def stat(
+    accessor: HfBucketsAccessor,
+    path_spec: PathSpec,
+    index: IndexCacheStore = NULL_INDEX,
+) -> FileStat:
     """Stat one path, a refused bucket reading as permission denied.
 
     paths-info answers a missing path with an empty list, never an error,

@@ -14,8 +14,12 @@
 
 import re
 
-from mirage.core.linear.client import (list_team_labels, list_team_projects,
-                                       list_teams, resolve_issue_id)
+from mirage.core.linear.client import (
+    list_team_labels,
+    list_team_projects,
+    list_teams,
+    resolve_issue_id,
+)
 from mirage.core.linear.config import LinearConfig
 from mirage.io.types import ByteSource
 

@@ -16,12 +16,20 @@ from mirage.policy import HandOff, Occurrence
 from mirage.runtime.routing import command_nodes
 from mirage.shell import parse
 from mirage.shell.types import NodeType
-from mirage.workspace.node.occurrence import (Frame, argv_frame, body_frame,
-                                              claimant_for, evaluated_from,
-                                              line_frame, occurrence_in,
-                                              occurrence_of, part_of,
-                                              root_frame, segment_frames,
-                                              whole_occurrence)
+from mirage.workspace.node.occurrence import (
+    Frame,
+    argv_frame,
+    body_frame,
+    claimant_for,
+    evaluated_from,
+    line_frame,
+    occurrence_in,
+    occurrence_of,
+    part_of,
+    root_frame,
+    segment_frames,
+    whole_occurrence,
+)
 
 
 def _first(node, kind: str):
@@ -56,8 +64,9 @@ def test_the_gate_and_the_pass_compute_one_occurrence():
     ast = parse("cat /data/secret.txt")
     node = list(command_nodes(ast))[0]
     handed = HandOff()
-    assert occurrence_of(node,
-                         handed) == occurrence_in(node, root_frame(ast, None))
+    assert occurrence_of(node, handed) == occurrence_in(
+        node, root_frame(ast, None)
+    )
     assert claimant_for(node, None) is None
     claimant = claimant_for(node, handed)
     assert claimant is not None
@@ -90,8 +99,10 @@ def test_a_substitution_body_is_read_as_the_nested_line_parses_it():
     assert body.text == "cat /data/secret.txt"
     assert body.parent == occurrence_in(sub, frame)
     inner = next(
-        c for c in command_nodes(ast)
-        if c.start_byte > sub.start_byte and c.end_byte <= sub.end_byte)
+        c
+        for c in command_nodes(ast)
+        if c.start_byte > sub.start_byte and c.end_byte <= sub.end_byte
+    )
     walked = occurrence_in(inner, body)
     # What the nested line computes when it parses the body alone.
     nested = HandOff(origin=occurrence_in(sub, frame))
@@ -114,7 +125,7 @@ def test_a_backtick_region_is_one_line_per_pair():
     for inner in (first, second):
         assert inner.base == 0
         assert inner.parent is not None
-        assert line[inner.parent.start:inner.parent.end] == inner.text
+        assert line[inner.parent.start : inner.parent.end] == inner.text
     # What the nested line computes when expansion hands the executor
     # the pair's span within the node.
     assert occurrence_of(sub, HandOff(), (1, 21)) == first.parent
@@ -126,10 +137,10 @@ def test_a_folded_prefix_is_set_aside_before_a_region_is_split():
     ast = parse(line)
     frame = root_frame(ast, None)
     sub = _first(ast, NodeType.COMMAND_SUBSTITUTION)
-    inner, = segment_frames(sub, frame)
+    (inner,) = segment_frames(sub, frame)
     assert inner.text == "cat /data/secret.txt"
     assert inner.parent is not None
-    assert line[inner.parent.start:inner.parent.end] == inner.text
+    assert line[inner.parent.start : inner.parent.end] == inner.text
 
 
 def test_a_node_that_is_no_substitution_has_no_body_frame():
@@ -179,7 +190,9 @@ def test_a_pair_after_a_multibyte_character_stands_at_its_bytes():
     raw = line.encode()
     for inner in (first, second):
         assert inner.parent is not None
-        assert raw[inner.parent.start:inner.parent.end].decode() == inner.text
+        assert (
+            raw[inner.parent.start : inner.parent.end].decode() == inner.text
+        )
 
 
 def test_a_line_read_from_a_node_stands_under_it():

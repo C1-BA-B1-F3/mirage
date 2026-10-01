@@ -29,8 +29,8 @@ config = TrelloConfig(
 vfs = TrelloVFS(config=config)
 
 with Workspace(
-    {"/trello/": Mount(vfs, mode=MountMode.READ,
-                       backend=MountBackend.FUSE)}) as ws:
+    {"/trello/": Mount(vfs, mode=MountMode.READ, backend=MountBackend.FUSE)}
+) as ws:
     mp = ws.fuse_mountpoint
 
     print(f"=== FUSE MODE: mounted at {mp} ===\n")

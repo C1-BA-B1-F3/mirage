@@ -60,8 +60,10 @@ def _like(column: str, prefix: str) -> str:
     escaped = prefix
     for ch in ("\\", "%", "_"):
         escaped = escaped.replace(ch, "\\" + ch)
-    return (f"CAST({_column(column)} AS STRING) LIKE '{_quote(escaped)}%' "
-            "ESCAPE '\\'")
+    return (
+        f"CAST({_column(column)} AS STRING) LIKE '{_quote(escaped)}%' "
+        "ESCAPE '\\'"
+    )
 
 
 def _predicate(column: str, filters: dict[str, str], prefix: str) -> str:
@@ -96,8 +98,9 @@ async def table_exists(accessor: LanceDBAccessor, name: str) -> bool:
     return name in await list_tables(accessor)
 
 
-async def _kept_texts(query: AsyncQuery, column: str, limit: int,
-                      keep: ValueTest) -> list[str]:
+async def _kept_texts(
+    query: AsyncQuery, column: str, limit: int, keep: ValueTest
+) -> list[str]:
     """The first ``limit`` values of ``column`` that pass ``keep``.
 
     Streams the unbounded query batch by batch and stops at the cap, so
@@ -123,13 +126,15 @@ async def _kept_texts(query: AsyncQuery, column: str, limit: int,
     return texts
 
 
-async def distinct_values(accessor: LanceDBAccessor,
-                          table: str,
-                          column: str,
-                          filters: dict[str, str],
-                          limit: int,
-                          prefix: str = "",
-                          keep: ValueTest | None = None) -> list[str]:
+async def distinct_values(
+    accessor: LanceDBAccessor,
+    table: str,
+    column: str,
+    filters: dict[str, str],
+    limit: int,
+    prefix: str = "",
+    keep: ValueTest | None = None,
+) -> list[str]:
     """The distinct values of one group column, as text.
 
     Without a test the limit bounds the rows, which is the ordinary
@@ -161,7 +166,8 @@ async def distinct_values(accessor: LanceDBAccessor,
     if keep is None:
         rows = await query.limit(limit).to_list()
         texts = [
-            cell_text(row[column]) for row in rows
+            cell_text(row[column])
+            for row in rows
             if row.get(column) is not None
         ]
     else:
@@ -175,13 +181,15 @@ async def table_columns(accessor: LanceDBAccessor, table: str) -> list[str]:
     return list(schema.names)
 
 
-async def rows_matching(accessor: LanceDBAccessor,
-                        table: str,
-                        filters: dict[str, str],
-                        columns: list[str],
-                        limit: int,
-                        id_column: str = "",
-                        prefix: str = "") -> list[dict[str, Any]]:
+async def rows_matching(
+    accessor: LanceDBAccessor,
+    table: str,
+    filters: dict[str, str],
+    columns: list[str],
+    limit: int,
+    id_column: str = "",
+    prefix: str = "",
+) -> list[dict[str, Any]]:
     tbl = await accessor.table(table)
     query = tbl.query().select(columns).limit(limit)
     clause = _predicate(id_column, filters, prefix)
@@ -190,15 +198,17 @@ async def rows_matching(accessor: LanceDBAccessor,
     return await query.to_list()
 
 
-async def row_record(accessor: LanceDBAccessor, table: str, id_column: str,
-                     row_id: str) -> dict[str, Any] | None:
+async def row_record(
+    accessor: LanceDBAccessor, table: str, id_column: str, row_id: str
+) -> dict[str, Any] | None:
     tbl = await accessor.table(table)
     rows = await tbl.query().where(_eq(id_column, row_id)).limit(1).to_list()
     return rows[0] if rows else None
 
 
-async def search_rows(accessor: LanceDBAccessor, table: str, query_text: str,
-                      limit: int) -> list[dict[str, Any]]:
+async def search_rows(
+    accessor: LanceDBAccessor, table: str, query_text: str, limit: int
+) -> list[dict[str, Any]]:
     key = (table, query_text, limit)
     cached = accessor.search_cache.get(key)
     if cached is not None:

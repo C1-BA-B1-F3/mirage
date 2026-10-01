@@ -20,15 +20,26 @@ from dulwich.repo import BaseRepo
 
 from mirage.commands.cli.builtin.git.changes import head_entries, work_changes
 from mirage.commands.cli.builtin.git.discover import is_bare, require_work_tree
-from mirage.commands.cli.builtin.git.errors import (  # yapf: disable
-    AmbiguousArgumentError, BareResetError, GitError, NoWorkspaceError,
-    RevisionResetError, UnknownSwitchError)
+from mirage.commands.cli.builtin.git.errors import (
+    AmbiguousArgumentError,
+    BareResetError,
+    GitError,
+    NoWorkspaceError,
+    RevisionResetError,
+    UnknownSwitchError,
+)
 from mirage.commands.cli.builtin.git.index_file import read_index, write_index
 from mirage.commands.cli.builtin.git.pathspec import matched, repo_relative
 from mirage.commands.cli.builtin.git.revparse import resolve_commit
 from mirage.commands.cli.builtin.git.session import opened
-from mirage.commands.cli.builtin.git.util import (  # yapf: disable
-    check_operands, escaped, fatal, links_of, start_point, switches)
+from mirage.commands.cli.builtin.git.util import (
+    check_operands,
+    escaped,
+    fatal,
+    links_of,
+    start_point,
+    switches,
+)
 from mirage.commands.cli.builtin.git.worktree import UNTRACKED_NO, scan
 from mirage.commands.cli.types import CLIDoors, CLIInvocation
 from mirage.commands.spec.flag_view import FlagView
@@ -71,19 +82,22 @@ def restored(sha: ObjectID, mode: int) -> IndexEntry:
         sha (bytes): the blob id HEAD holds for the path.
         mode (int): the mode HEAD holds for it.
     """
-    return IndexEntry(ctime=0,
-                      mtime=0,
-                      dev=0,
-                      ino=0,
-                      mode=mode,
-                      uid=0,
-                      gid=0,
-                      size=0,
-                      sha=sha)
+    return IndexEntry(
+        ctime=0,
+        mtime=0,
+        dev=0,
+        ino=0,
+        mode=mode,
+        uid=0,
+        gid=0,
+        size=0,
+        sha=sha,
+    )
 
 
 async def reset(
-        inv: CLIInvocation[None]) -> tuple[ByteSource | None, IOResult]:
+    inv: CLIInvocation[None],
+) -> tuple[ByteSource | None, IOResult]:
     """Put the index back to what HEAD records, staging nothing.
 
     The working tree is never touched: this is ``git reset`` in its
@@ -109,8 +123,9 @@ async def reset(
     try:
         if dispatch is None or stat_path is None:
             raise NoWorkspaceError()
-        check_operands(texts, UnknownSwitchError, escaped(inv.argv),
-                       switches(inv))
+        check_operands(
+            texts, UnknownSwitchError, escaped(inv.argv), switches(inv)
+        )
         repo, location = await opened(fl, doors)
         named = fl.as_str("work_tree") is not None
         if not named and await is_bare(dispatch, location):
@@ -121,8 +136,7 @@ async def reset(
         start = start_point(fl)
         names = {path.decode("utf-8", errors="replace") for path in tree}
         names |= {
-            path.decode("utf-8", errors="replace")
-            for path in state.entries
+            path.decode("utf-8", errors="replace") for path in state.entries
         }
         if texts:
             selected: set[str] = set()
@@ -139,23 +153,31 @@ async def reset(
             if recorded is None:
                 state.entries.pop(key, None)
             else:
-                state.entries[key] = restored(ObjectID(recorded[1]),
-                                              recorded[0])
+                state.entries[key] = restored(
+                    ObjectID(recorded[1]), recorded[0]
+                )
         if not texts:
             state.conflicts.clear()
         await write_index(dispatch, location.gitdir, state)
         found = await scan(
-            dispatch, stat_path, location,
-            {path.decode("utf-8", errors="replace")
-             for path in state.entries}, UNTRACKED_NO, links_of(doors))
-        unstaged = await work_changes(dispatch, location.worktree,
-                                      state.entries, found)
+            dispatch,
+            stat_path,
+            location,
+            {path.decode("utf-8", errors="replace") for path in state.entries},
+            UNTRACKED_NO,
+            links_of(doors),
+        )
+        unstaged = await work_changes(
+            dispatch, location.worktree, state.entries, found
+        )
     except GitError as exc:
         return fatal(exc)
     if not unstaged or fl.as_bool("quiet"):
         return None, IOResult()
     lines = [UNSTAGED_HEADER]
-    lines.extend(f"{letter}\t{path}"
-                 for path, letter in sorted(unstaged.items()))
-    return yield_bytes("".join(f"{line}\n"
-                               for line in lines).encode()), IOResult()
+    lines.extend(
+        f"{letter}\t{path}" for path, letter in sorted(unstaged.items())
+    )
+    return yield_bytes(
+        "".join(f"{line}\n" for line in lines).encode()
+    ), IOResult()

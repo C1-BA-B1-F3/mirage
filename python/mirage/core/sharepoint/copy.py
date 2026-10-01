@@ -19,8 +19,9 @@ from mirage.core.sharepoint.resolve import drive_loc, resolve_item
 from mirage.types import PathSpec
 
 
-async def copy(accessor: SharePointAccessor, src: PathSpec,
-               dst: PathSpec) -> None:
+async def copy(
+    accessor: SharePointAccessor, src: PathSpec, dst: PathSpec
+) -> None:
     """Copy a file or folder server-side, across drives when they differ.
 
     The whole destination subtree is invalidated here, under its own
@@ -39,7 +40,10 @@ async def copy(accessor: SharePointAccessor, src: PathSpec,
     dst_resolved = await resolve_item(accessor, dst)
     await invalidate_subtree_after(
         dst,
-        copy_tree(config,
-                  drive_loc(config, src_resolved, src.vfs_path),
-                  drive_loc(config, dst_resolved, dst.vfs_path),
-                  session=accessor.pool))
+        copy_tree(
+            config,
+            drive_loc(config, src_resolved, src.vfs_path),
+            drive_loc(config, dst_resolved, dst.vfs_path),
+            session=accessor.pool,
+        ),
+    )

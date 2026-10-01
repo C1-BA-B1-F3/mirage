@@ -21,8 +21,9 @@ from mirage.utils.dates import now_iso
 from mirage.utils.path import norm
 
 
-async def write_bytes(accessor: RAMAccessor, path_spec: PathSpec,
-                      data: bytes) -> None:
+async def write_bytes(
+    accessor: RAMAccessor, path_spec: PathSpec, data: bytes
+) -> None:
     path = path_spec.mount_path
     store = accessor.store
     timer = start_op()

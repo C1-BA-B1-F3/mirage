@@ -47,7 +47,9 @@ def _ram_ws():
     p._store.files["/data.csv"] = b"name,age\nalice,30\nbob,25\n"
     p._store.dirs.add("/sub")
     p._store.files["/sub/nested.txt"] = b"nested content\n"
-    ws = Workspace(mounts={"/ram/": (p, MountMode.WRITE)}, )
+    ws = Workspace(
+        mounts={"/ram/": (p, MountMode.WRITE)},
+    )
     ws.get_session(ws.default_session_id).cwd = "/ram"
     return ws
 
@@ -129,7 +131,9 @@ def disk_ws(tmp_path):
     (sub / "nested.txt").write_bytes(b"nested\n")
 
     p = DiskVFS(root=str(data_dir))
-    ws = Workspace(mounts={"/disk/": (p, MountMode.WRITE)}, )
+    ws = Workspace(
+        mounts={"/disk/": (p, MountMode.WRITE)},
+    )
     ws.get_session(ws.default_session_id).cwd = "/disk"
     return ws
 
@@ -209,10 +213,12 @@ def multi_ws(tmp_path):
 
     disk = DiskVFS(root=str(data_dir))
 
-    ws = Workspace(mounts={
-        "/ram/": (ram, MountMode.WRITE),
-        "/disk/": (disk, MountMode.WRITE),
-    }, )
+    ws = Workspace(
+        mounts={
+            "/ram/": (ram, MountMode.WRITE),
+            "/disk/": (disk, MountMode.WRITE),
+        },
+    )
     ws.get_session(ws.default_session_id).cwd = "/ram"
     return ws
 
@@ -231,7 +237,9 @@ def test_cross_pipeline(multi_ws):
     """Read from RAM, pipe through commands, write to Disk."""
     _run(
         multi_ws.shell(
-            "cat /ram/ram_file.txt | tr 'a-z' 'A-Z' > /disk/upper.txt"))
+            "cat /ram/ram_file.txt | tr 'a-z' 'A-Z' > /disk/upper.txt"
+        )
+    )
     io = _run(multi_ws.shell("cat /disk/upper.txt"))
     assert b"FROM RAM" in _stdout(io)
 
@@ -239,8 +247,10 @@ def test_cross_pipeline(multi_ws):
 def test_cross_for_loop(multi_ws):
     """for loop across mounts."""
     _run(
-        multi_ws.shell("for f in /ram/ram_file.txt /disk/disk_file.txt; do "
-                       "cat $f; done"))
+        multi_ws.shell(
+            "for f in /ram/ram_file.txt /disk/disk_file.txt; do cat $f; done"
+        )
+    )
 
 
 def test_cross_redirect(multi_ws):

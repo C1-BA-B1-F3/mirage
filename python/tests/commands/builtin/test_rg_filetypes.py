@@ -14,10 +14,13 @@
 
 import pytest
 
-from mirage.commands.builtin.rg_filetypes import (DEFAULT_TYPES,
-                                                  INVALID_DEFINITION,
-                                                  FileTypes, add_definition,
-                                                  type_listing)
+from mirage.commands.builtin.rg_filetypes import (
+    DEFAULT_TYPES,
+    INVALID_DEFINITION,
+    FileTypes,
+    add_definition,
+    type_listing,
+)
 from mirage.commands.builtin.rg_glob import Verdict
 from mirage.commands.errors import UsageError
 
@@ -37,9 +40,10 @@ def test_a_negated_type_drops_only_its_files():
 
 def test_the_last_matching_selection_decides():
     # `-t py -T py` drops every .py file.
-    assert FileTypes([], [("py", False),
-                          ("py", True)]).verdict("a.py",
-                                                 False) is Verdict.IGNORE
+    assert (
+        FileTypes([], [("py", False), ("py", True)]).verdict("a.py", False)
+        is Verdict.IGNORE
+    )
 
 
 def test_a_type_never_speaks_for_a_directory():
@@ -71,24 +75,32 @@ def test_type_clear_empties_a_type_before_it_is_selected():
         FileTypes([("clear", "py")], [("py", False)])
 
 
-@pytest.mark.parametrize("definition", [
-    "nocolon", "foo:", ":*.x", "all:*.x", "a-b:*.x", "foo:bad:py",
-    "foo:include:nosuch"
-])
+@pytest.mark.parametrize(
+    "definition",
+    [
+        "nocolon",
+        "foo:",
+        ":*.x",
+        "all:*.x",
+        "a-b:*.x",
+        "foo:bad:py",
+        "foo:include:nosuch",
+    ],
+)
 def test_a_malformed_definition_is_refused_in_ripgreps_words(definition):
     with pytest.raises(UsageError) as info:
-        add_definition({
-            name: list(g)
-            for name, g in DEFAULT_TYPES.items()
-        }, definition)
+        add_definition(
+            {name: list(g) for name, g in DEFAULT_TYPES.items()}, definition
+        )
     assert str(info.value) == INVALID_DEFINITION
 
 
 def test_type_listing_sorts_names_and_globs():
     # ripgrep 14.1.1: `--type-add 'zz:*.zz' --type-add 'zz:*.yy'` lists
     # `zz: *.yy, *.zz`, and an added glob joins a built-in type.
-    types = FileTypes([("add", "zz:*.zz"), ("add", "zz:*.yy"),
-                       ("add", "py:*.zz")], [])
+    types = FileTypes(
+        [("add", "zz:*.zz"), ("add", "zz:*.yy"), ("add", "py:*.zz")], []
+    )
     listing = type_listing(types.definitions)
     assert "zz: *.yy, *.zz" in listing
     assert "py: *.py, *.pyi, *.zz" in listing

@@ -205,10 +205,9 @@ class BcParseError(Exception):
             later input line, so the offset is what names the line.
     """
 
-    def __init__(self,
-                 text: str,
-                 incomplete: bool = False,
-                 pos: int = -1) -> None:
+    def __init__(
+        self, text: str, incomplete: bool = False, pos: int = -1
+    ) -> None:
         super().__init__(text)
         self.text = text
         self.incomplete = incomplete
@@ -674,7 +673,8 @@ LAST_NAME = "last"
 LAST_ALIAS = "."
 
 REGISTERS = frozenset(
-    {SCALE_NAME, IBASE_NAME, OBASE_NAME, LAST_NAME, LAST_ALIAS})
+    {SCALE_NAME, IBASE_NAME, OBASE_NAME, LAST_NAME, LAST_ALIAS}
+)
 
 # The builtins that take one parenthesised argument and need no `-l`.
 # `scale` doubles as a register, so it is only a call when a `(` follows
@@ -684,29 +684,31 @@ BUILTIN_CALLS = frozenset({SQRT_NAME, LENGTH_NAME, SCALE_NAME})
 
 # A reserved word is a syntax error where a name is expected, never a
 # variable: `length=2` and `if=1` do not assign.
-RESERVED_WORDS = frozenset({
-    SCALE_NAME,
-    IBASE_NAME,
-    OBASE_NAME,
-    LAST_NAME,
-    SQRT_NAME,
-    "length",
-    "read",
-    "define",
-    "auto",
-    "return",
-    "if",
-    "else",
-    "while",
-    "for",
-    "break",
-    "continue",
-    "halt",
-    "quit",
-    "print",
-    "limits",
-    "warranty",
-})
+RESERVED_WORDS = frozenset(
+    {
+        SCALE_NAME,
+        IBASE_NAME,
+        OBASE_NAME,
+        LAST_NAME,
+        SQRT_NAME,
+        "length",
+        "read",
+        "define",
+        "auto",
+        "return",
+        "if",
+        "else",
+        "while",
+        "for",
+        "break",
+        "continue",
+        "halt",
+        "quit",
+        "print",
+        "limits",
+        "warranty",
+    }
+)
 
 # `A` to `Z` are digits worth 10 to 35, so `X` is the number 33 and
 # `X=5` assigns to a constant, which is a syntax error.
@@ -723,8 +725,12 @@ NAME_CHARS = NAME_START | DECIMAL_DIGITS | {"_"}
 # Every character GNU's lexer has a rule for. One outside this set is
 # reported as an illegal character rather than a syntax error, which is
 # why `@` and a stray `_` read differently from `)`.
-LEGAL_CHARS = (DIGIT_CHARS | NAME_START | frozenset(".+-*/%^=<>!()[]{},;")
-               | frozenset('"\\# \t'))
+LEGAL_CHARS = (
+    DIGIT_CHARS
+    | NAME_START
+    | frozenset(".+-*/%^=<>!()[]{},;")
+    | frozenset('"\\# \t')
+)
 COMPOUND_OPS = "+-*/%^"
 STATEMENT_SEPARATOR = ";"
 LINE_COMMENT = "#"
@@ -791,7 +797,7 @@ def unescape(text: str) -> str:
             out.append(char)
             pos += 1
             continue
-        out.append(PRINT_ESCAPES.get(text[pos + 1:pos + 2], ""))
+        out.append(PRINT_ESCAPES.get(text[pos + 1 : pos + 2], ""))
         pos += 2
     return "".join(out)
 
@@ -1188,8 +1194,11 @@ class OutputColumn:
             # whenever a character does not straddle it, which is every
             # ASCII one. The `col != 0` guard keeps a character wider
             # than the whole line from folding forever.
-            if (self.line_size != 0 and self.col != 0
-                    and self.col + width > self.line_size - 2):
+            if (
+                self.line_size != 0
+                and self.col != 0
+                and self.col + width > self.line_size - 2
+            ):
                 out.append("\\\n")
                 self.col = 0
             out.append(char)
@@ -1321,8 +1330,9 @@ def divide(a: BcNumber, b: BcNumber, scale: int) -> BcNumber:
     """
     if b.value == 0:
         raise BcRuntimeError(DIVIDE_BY_ZERO)
-    return BcNumber(truncate_to_scale(a.value / b.value, scale),
-                    clamp_scale(scale))
+    return BcNumber(
+        truncate_to_scale(a.value / b.value, scale), clamp_scale(scale)
+    )
 
 
 def modulo(a: BcNumber, b: BcNumber, scale: int) -> BcNumber:
@@ -1344,12 +1354,15 @@ def modulo(a: BcNumber, b: BcNumber, scale: int) -> BcNumber:
     if b.value == 0:
         raise BcRuntimeError(MODULO_BY_ZERO)
     quotient = truncate_to_scale(a.value / b.value, scale)
-    return BcNumber(a.value - quotient * b.value,
-                    clamp_scale(max(scale + b.scale, a.scale)))
+    return BcNumber(
+        a.value - quotient * b.value,
+        clamp_scale(max(scale + b.scale, a.scale)),
+    )
 
 
-def apply_binary(op: str, a: BcNumber, b: BcNumber,
-                 state: BcState) -> BcNumber:
+def apply_binary(
+    op: str, a: BcNumber, b: BcNumber, state: BcState
+) -> BcNumber:
     """Apply one arithmetic operator, scale rules included.
 
     The whole state rather than just the scale, because `^` warns: GNU
@@ -1381,8 +1394,9 @@ def apply_binary(op: str, a: BcNumber, b: BcNumber,
         # Before the refusal a zero base raises, which is the order GNU
         # reports the two in for `0^-1.5`.
         state.warnings.append(runtime_warning_line(NONZERO_EXPONENT_SCALE))
-    return BcNumber(float_pow(a.value, exponent),
-                    pow_scale(a, exponent, scale))
+    return BcNumber(
+        float_pow(a.value, exponent), pow_scale(a, exponent, scale)
+    )
 
 
 def call_function(name: str, arg: BcNumber, scale: int) -> BcNumber:
@@ -1527,25 +1541,30 @@ class Parser:
 
     def _read_number(self) -> BcNumber:
         start = self._pos
-        while (self._pos < len(self._src)
-               and self._src[self._pos] in NUMBER_CHARS):
+        while (
+            self._pos < len(self._src) and self._src[self._pos] in NUMBER_CHARS
+        ):
             self._pos += 1
         try:
-            return read_base_number(self._src[start:self._pos],
-                                    self._state.ibase)
+            return read_base_number(
+                self._src[start : self._pos], self._state.ibase
+            )
         except BcParseError as exc:
             raise BcParseError(exc.text, exc.incomplete, start) from exc
 
     def _read_identifier(self) -> str:
-        if (self._pos >= len(self._src)
-                or self._src[self._pos] not in NAME_START):
+        if (
+            self._pos >= len(self._src)
+            or self._src[self._pos] not in NAME_START
+        ):
             return ""
         start = self._pos
         self._pos += 1
-        while (self._pos < len(self._src)
-               and self._src[self._pos] in NAME_CHARS):
+        while (
+            self._pos < len(self._src) and self._src[self._pos] in NAME_CHARS
+        ):
             self._pos += 1
-        return self._src[start:self._pos]
+        return self._src[start : self._pos]
 
     def _emit(self, num: BcNumber) -> str:
         """Render one value the moment the statement reaches it.
@@ -1572,15 +1591,18 @@ class Parser:
         if end < 0:
             raise self.unexpected()
         self._pos = end
-        return self._src[start + 1:end - 1]
+        return self._src[start + 1 : end - 1]
 
     def _read_target(self) -> str:
         self._skip_blanks()
         name = self._read_identifier()
         if name != "":
             return name
-        if (self._pos < len(self._src) and self._src[self._pos] == LAST_ALIAS
-                and self._src[self._pos + 1:self._pos + 2] not in DIGIT_CHARS):
+        if (
+            self._pos < len(self._src)
+            and self._src[self._pos] == LAST_ALIAS
+            and self._src[self._pos + 1 : self._pos + 2] not in DIGIT_CHARS
+        ):
             self._pos += 1
             return LAST_ALIAS
         return ""
@@ -1655,7 +1677,7 @@ class Parser:
             self._pos = mark
             return None
         self._skip_blanks()
-        rest = self._src[self._pos:]
+        rest = self._src[self._pos :]
         for op in COMPOUND_OPS:
             if rest.startswith(f"{op}="):
                 self._pos += 2
@@ -1698,12 +1720,14 @@ class Parser:
             state.scale = clamp_scale(requested)
             return
         if name == IBASE_NAME:
-            state.ibase = self._clamp_base(requested, MAX_IBASE,
-                                           IBASE_TOO_SMALL)
+            state.ibase = self._clamp_base(
+                requested, MAX_IBASE, IBASE_TOO_SMALL
+            )
             return
         if name == OBASE_NAME:
-            state.obase = self._clamp_base(requested, MAX_OBASE,
-                                           OBASE_TOO_SMALL)
+            state.obase = self._clamp_base(
+                requested, MAX_OBASE, OBASE_TOO_SMALL
+            )
             return
         # The stored value is already truncated, so raising `scale`
         # afterwards cannot recover digits a narrower scale dropped.
@@ -1797,7 +1821,7 @@ class Parser:
                 raise self.unexpected()
             return value
         if char == LAST_ALIAS:
-            if self._src[self._pos + 1:self._pos + 2] in DIGIT_CHARS:
+            if self._src[self._pos + 1 : self._pos + 2] in DIGIT_CHARS:
                 return self._read_number()
             return self._parse_name()
         if char in DIGIT_CHARS:
@@ -1818,9 +1842,9 @@ class Parser:
             # A builtin with no `(` is a legal prefix, so GNU charges the
             # failure to the line after it: bare `length` and bare `sqrt`
             # report the next line where `length=2` reports their own.
-            raise BcParseError(SYNTAX_ERROR,
-                               incomplete=self._peek() == "",
-                               pos=start)
+            raise BcParseError(
+                SYNTAX_ERROR, incomplete=self._peek() == "", pos=start
+            )
         if name in REGISTERS:
             return self._parse_postfix(name)
         if name in RESERVED_WORDS:
@@ -1979,8 +2003,9 @@ def cut_at_quit(text: str, lines: list[int]) -> tuple[str, list[int], bool]:
     return text[:end], lines[:end], True
 
 
-def line_statements(text: str, lines: list[int],
-                    end_line: int) -> tuple[list[BcStatement], bool]:
+def line_statements(
+    text: str, lines: list[int], end_line: int
+) -> tuple[list[BcStatement], bool]:
     """Split one input line into statements.
 
     Args:
@@ -2014,9 +2039,10 @@ def line_statements(text: str, lines: list[int],
             # The token that follows decides where an incomplete
             # construct is charged: a `;` sits on the current line, while
             # a newline has already moved the counter on.
-            incomplete = (lines[index] if index < len(text) else end_line + 1)
+            incomplete = lines[index] if index < len(text) else end_line + 1
             out.append(
-                BcStatement(piece, tuple(piece_lines), incomplete, not quits))
+                BcStatement(piece, tuple(piece_lines), incomplete, not quits)
+            )
         start = index + 1
         index += 1
     return out, quits
@@ -2121,12 +2147,14 @@ def snapshot_state(state: BcState) -> BcState:
             warnings list is not copied, because a line's warnings are
             buffered by the caller rather than kept on the state.
     """
-    return BcState(scale=state.scale,
-                   math_mode=state.math_mode,
-                   ibase=state.ibase,
-                   obase=state.obase,
-                   last=state.last,
-                   variables=dict(state.variables))
+    return BcState(
+        scale=state.scale,
+        math_mode=state.math_mode,
+        ibase=state.ibase,
+        obase=state.obase,
+        last=state.last,
+        variables=dict(state.variables),
+    )
 
 
 def restore_state(state: BcState, saved: BcState) -> None:
@@ -2175,8 +2203,9 @@ async def bc(
     raw = await read_stdin_async(opts.stdin)
     if raw is None:
         raw = b""
-    state = BcState(scale=MATH_LIBRARY_SCALE if use_math else 0,
-                    math_mode=use_math)
+    state = BcState(
+        scale=MATH_LIBRARY_SCALE if use_math else 0, math_mode=use_math
+    )
     folder = OutputColumn(output_line_size(opts.env))
     results: list[str] = []
     errors: list[str] = []
@@ -2217,7 +2246,8 @@ async def bc(
                 eval_statement(statement.text, target, writes)
             except BcParseError as exc:
                 parse_errors.append(
-                    parse_error_line(error_line(statement, exc), exc.text))
+                    parse_error_line(error_line(statement, exc), exc.text)
+                )
             except BcRuntimeError as exc:
                 # Reported unless the line turns out to be discarded,
                 # which is why it is buffered: `1/0;2+2` reports the

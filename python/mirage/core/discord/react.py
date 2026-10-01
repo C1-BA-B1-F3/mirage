@@ -19,11 +19,13 @@ from mirage.core.discord.client import discord_put
 from mirage.core.discord.config import DiscordConfig
 
 
-async def add_reaction(config: DiscordConfig,
-                       channel_id: str,
-                       message_id: str,
-                       emoji: str,
-                       session: SessionArg = None) -> None:
+async def add_reaction(
+    config: DiscordConfig,
+    channel_id: str,
+    message_id: str,
+    emoji: str,
+    session: SessionArg = None,
+) -> None:
     """Add a reaction to a message.
 
     Args:
@@ -34,6 +36,9 @@ async def add_reaction(config: DiscordConfig,
         session (SessionArg): pool or live session to ride.
     """
     encoded = quote(emoji, safe="")
-    await discord_put(config, f"/channels/{channel_id}/messages"
-                      f"/{message_id}/reactions/{encoded}/@me",
-                      session=session)
+    await discord_put(
+        config,
+        f"/channels/{channel_id}/messages"
+        f"/{message_id}/reactions/{encoded}/@me",
+        session=session,
+    )

@@ -23,9 +23,9 @@ EVENT = "/primary/2026-08-11/aaaa1__0900-1030_PhD_Defense.gcal.json"
 
 
 def spec(virtual: str) -> PathSpec:
-    return PathSpec(virtual=virtual,
-                    directory=virtual,
-                    vfs_path=virtual.lstrip("/"))
+    return PathSpec(
+        virtual=virtual, directory=virtual, vfs_path=virtual.lstrip("/")
+    )
 
 
 async def test_unlink_deletes_the_event_the_name_carries(api, accessor, index):
@@ -49,8 +49,10 @@ async def test_unlink_refuses_a_directory(api, accessor, index):
 
 
 async def test_unlink_refuses_a_read_only_calendar(api, accessor, index):
-    path = ("/Engineering__team@group.calendar.google.com/2026-08-11/"
-            "aaaa1__0900-1030_PhD_Defense.gcal.json")
+    path = (
+        "/Engineering__team@group.calendar.google.com/2026-08-11/"
+        "aaaa1__0900-1030_PhD_Defense.gcal.json"
+    )
     # accessRole reader: refuse at the mount rather than surfacing a 403
     # from inside the API after the call has already gone out.
     with pytest.raises(PermissionError):
@@ -59,8 +61,10 @@ async def test_unlink_refuses_a_read_only_calendar(api, accessor, index):
 
 
 async def test_unlink_refuses_a_free_busy_calendar(api, accessor, index):
-    path = ("/Exec__busy@group.calendar.google.com/2026-08-11/"
-            "aaaa1__0900-1030_busy.gcal.json")
+    path = (
+        "/Exec__busy@group.calendar.google.com/2026-08-11/"
+        "aaaa1__0900-1030_busy.gcal.json"
+    )
     with pytest.raises(PermissionError):
         await unlink(accessor, spec(path), index)
     assert api.deleted == []
@@ -68,6 +72,8 @@ async def test_unlink_refuses_a_free_busy_calendar(api, accessor, index):
 
 async def test_unlink_on_an_unknown_calendar_is_enoent(api, accessor, index):
     with pytest.raises(FileNotFoundError):
-        await unlink(accessor,
-                     spec("/nope/2026-08-11/aaaa1__0900-1030_X.gcal.json"),
-                     index)
+        await unlink(
+            accessor,
+            spec("/nope/2026-08-11/aaaa1__0900-1030_X.gcal.json"),
+            index,
+        )

@@ -29,10 +29,12 @@ async def main() -> None:
     print("=== tee (create files) ===")
     await ws.shell('echo "hello world" | tee /data/hello.txt')
     await ws.shell(
-        'echo \'{"name": "alice", "age": 30}\' | tee /data/user.json')
+        'echo \'{"name": "alice", "age": 30}\' | tee /data/user.json'
+    )
     await ws.shell("mkdir /data/reports")
-    await ws.shell('echo "revenue,100\\nexpense,80" | tee /data/reports/q1.csv'
-                   )
+    await ws.shell(
+        'echo "revenue,100\\nexpense,80" | tee /data/reports/q1.csv'
+    )
 
     print("=== ls /data/ ===")
     result = await ws.shell("ls /data/")
@@ -170,12 +172,16 @@ async def main() -> None:
     print(await result.stdout_str())
 
     print("=== not-found errors show the full virtual path ===")
-    for cmd in ("cat /data/missing.txt", "head /data/missing.txt",
-                "stat /data/missing.txt"):
+    for cmd in (
+        "cat /data/missing.txt",
+        "head /data/missing.txt",
+        "stat /data/missing.txt",
+    ):
         result = await ws.shell(cmd)
         print(f"$ {cmd}")
-        print(f"  exit={result.exit_code}  "
-              f"{(await result.stderr_str()).strip()}")
+        print(
+            f"  exit={result.exit_code}  {(await result.stderr_str()).strip()}"
+        )
 
     print("=== history (last 5) ===")
     result = await ws.shell("history 5")
@@ -221,11 +227,15 @@ async def main() -> None:
         r_orig = await ws.shell("cat /data/hello.txt")
         r_cp = await cp.shell("cat /data/hello.txt")
         print(f"  original:  {(await r_orig.stdout_str()).strip()!r}")
-        print(f"  copy:      {(await r_cp.stdout_str()).strip()!r}  "
-              "(local backend → independent)")
+        print(
+            f"  copy:      {(await r_cp.stdout_str()).strip()!r}  "
+            "(local backend → independent)"
+        )
 
-        for op_name, op in (("deepcopy", _copy.deepcopy), ("shallow copy",
-                                                           _copy.copy)):
+        for op_name, op in (
+            ("deepcopy", _copy.deepcopy),
+            ("shallow copy", _copy.copy),
+        ):
             try:
                 op(ws)
                 print(f"  ✗ {op_name} should have raised")

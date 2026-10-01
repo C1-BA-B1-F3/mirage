@@ -124,6 +124,7 @@ class PosixSyntax(Enum):
     ``regcomp(REG_EXTENDED)`` reads (bash's ``[[ =~ ]]``): both of those
     are refusals there.
     """
+
     BASIC = "basic"
     EGREP = "egrep"
     EXTENDED = "extended"
@@ -212,12 +213,12 @@ def bracket_item(src: str, i: int) -> tuple[int, str, str]:
         BreError: an unterminated construct, a class name that is not a
             POSIX one, or a collating element the C locale has not got.
     """
-    after = src[i + 1:i + 2]
+    after = src[i + 1 : i + 2]
     if src[i] == "[" and after in (":", ".", "="):
         close = src.find(after + "]", i + 2)
         if close < 0:
             raise BreError(UNMATCHED_BRACKET)
-        name = src[i + 2:close]
+        name = src[i + 2 : close]
         if after == ":":
             expansion = POSIX_CLASSES.get(name)
             if expansion is None:
@@ -242,10 +243,12 @@ class BreTranslator:
     cannot drift apart.
     """
 
-    def __init__(self,
-                 pattern: str,
-                 refuse_inverted_range: bool,
-                 syntax: PosixSyntax = PosixSyntax.BASIC) -> None:
+    def __init__(
+        self,
+        pattern: str,
+        refuse_inverted_range: bool,
+        syntax: PosixSyntax = PosixSyntax.BASIC,
+    ) -> None:
         self.src = pattern
         self.refuse_inverted_range = refuse_inverted_range
         self.syntax = syntax
@@ -321,8 +324,12 @@ class BreTranslator:
             elif self.extended and ch == "(":
                 self.pos += 1
                 self.open_group()
-            elif (self.extended and ch == ")" and self.open_groups
-                  and not dropped):
+            elif (
+                self.extended
+                and ch == ")"
+                and self.open_groups
+                and not dropped
+            ):
                 self.pos += 1
                 self.close_group()
             elif self.extended and ch == "|":
@@ -362,7 +369,7 @@ class BreTranslator:
         """
         if self.pos >= len(self.src):
             return True
-        return self.src[self.pos:self.pos + 2] in ("\\)", "\\|")
+        return self.src[self.pos : self.pos + 2] in ("\\)", "\\|")
 
     def atom(self, text: str) -> None:
         """Emit one repeatable atom.
@@ -457,7 +464,7 @@ class BreTranslator:
                 follows no longer has to hold.
         """
         if optional and self.anchor_at is not None:
-            del self.out[self.anchor_at:]
+            del self.out[self.anchor_at :]
         self.anchor_at = None
         self.dropped = True
 
@@ -568,7 +575,7 @@ class BreTranslator:
         close = self.src.find("\\}", self.pos)
         if close < 0:
             raise BreError(UNMATCHED_BRACE)
-        body = self.src[self.pos:close]
+        body = self.src[self.pos : close]
         self.pos = close + 2
         self.repeat(interval_token(body), "{")
 
@@ -636,8 +643,9 @@ class BreTranslator:
         if low == -2 or high == -2:
             if self.syntax is PosixSyntax.EGREP:
                 return None, start
-            raise BreError(UNMATCHED_BRACE if term ==
-                           "" else BAD_BRACE_CONTENT)
+            raise BreError(
+                UNMATCHED_BRACE if term == "" else BAD_BRACE_CONTENT
+            )
         if (high != -1 and low > high) or term != "}":
             raise BreError(BAD_BRACE_CONTENT)
         if (low if high == -1 else high) > RE_DUP_MAX:
@@ -732,7 +740,7 @@ class BreTranslator:
                 break
             first = False
             i, kind, value = bracket_item(src, i)
-            if src[i:i + 1] != "-" or src[i + 1:i + 2] in ("", "]"):
+            if src[i : i + 1] != "-" or src[i + 1 : i + 2] in ("", "]"):
                 members.append(value if kind == ":" else escape_inside(value))
                 continue
             if kind not in RANGE_KINDS:
@@ -742,13 +750,14 @@ class BreTranslator:
                 raise BreError(BAD_RANGE)
             if high >= value:
                 members.append(
-                    escape_inside(value) + "-" + escape_inside(high))
+                    escape_inside(value) + "-" + escape_inside(high)
+                )
             elif self.refuse_inverted_range:
                 raise BreError(BAD_RANGE)
             # A `-` straight after a closed range is a second range end,
             # which glibc refuses: `[a-c-e]` is `Invalid range end` while
             # `[a-c-]` and `[a-cd-f]` both compile.
-            if src[i:i + 1] == "-" and src[i + 1:i + 2] not in ("", "]"):
+            if src[i : i + 1] == "-" and src[i + 1 : i + 2] not in ("", "]"):
                 raise BreError(BAD_RANGE)
         self.pos = i
         if not members:
@@ -757,8 +766,9 @@ class BreTranslator:
         self.atom("[" + ("^" if negated else "") + "".join(members) + "]")
 
 
-def translate_bre(pattern: str,
-                  refuse_inverted_range: bool = False) -> tuple[str, int]:
+def translate_bre(
+    pattern: str, refuse_inverted_range: bool = False
+) -> tuple[str, int]:
     """Translate a POSIX BRE into this host's regex dialect.
 
     The raw entry point, for a caller that needs the source text rather
@@ -874,6 +884,7 @@ def search_bre(pattern: str, ignore_case: bool = False) -> re.Pattern[str]:
     source, _ = translate_bre(pattern)
     try:
         return compile_posix_regex(
-            source, re.DOTALL | (re.IGNORECASE if ignore_case else 0))
+            source, re.DOTALL | (re.IGNORECASE if ignore_case else 0)
+        )
     except re.error as exc:
         raise BreError(INVALID_PATTERN) from exc

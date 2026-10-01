@@ -42,11 +42,13 @@ def file_blob_name(file_meta: dict[str, Any]) -> str:
     return fit_id_name(path_safe_name(raw_name), fid)
 
 
-async def download_file(config: SlackConfig,
-                        url: str,
-                        offset: int = 0,
-                        size: int | None = None,
-                        session: SessionArg = None) -> bytes:
+async def download_file(
+    config: SlackConfig,
+    url: str,
+    offset: int = 0,
+    size: int | None = None,
+    session: SessionArg = None,
+) -> bytes:
     """Download a Slack-hosted file blob, optionally only a byte range.
 
     Takes the window rather than a prepared header so the answer can be
@@ -65,11 +67,13 @@ async def download_file(config: SlackConfig,
         bytes: raw file content.
     """
     headers = {"Authorization": f"Bearer {reveal_secret(config.token)}"}
-    data: bytes = await api_request("GET",
-                                    url,
-                                    error_of=status_error,
-                                    headers=headers,
-                                    read="bytes",
-                                    window=window_for(offset, size),
-                                    session=session)
+    data: bytes = await api_request(
+        "GET",
+        url,
+        error_of=status_error,
+        headers=headers,
+        read="bytes",
+        window=window_for(offset, size),
+        session=session,
+    )
     return data

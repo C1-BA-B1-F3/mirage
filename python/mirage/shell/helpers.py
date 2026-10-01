@@ -16,16 +16,32 @@ import shlex
 from collections.abc import Iterator, Sequence
 from dataclasses import replace
 
-from mirage.shell.constants import (FD_BOTH, FD_CLOSE, FD_STDERR, FD_STDIN,
-                                    FD_STDOUT)
-from mirage.shell.escapes import (decode_ansi_c, unescape_dquoted,
-                                  unescape_unquoted)
-from mirage.shell.parse.heredoc import (body_prefix, clean_delimiter,
-                                        delimiter_quoted)
-from mirage.shell.types import FunctionBody
+from mirage.shell.constants import (
+    FD_BOTH,
+    FD_CLOSE,
+    FD_STDERR,
+    FD_STDIN,
+    FD_STDOUT,
+)
+from mirage.shell.escapes import (
+    decode_ansi_c,
+    unescape_dquoted,
+    unescape_unquoted,
+)
+from mirage.shell.parse.heredoc import (
+    body_prefix,
+    clean_delimiter,
+    delimiter_quoted,
+)
+from mirage.shell.types import (
+    FunctionBody,
+    PipelineStages,
+    ProcessSubDirection,
+    Redirect,
+    RedirectKind,
+    TSNodeLike,
+)
 from mirage.shell.types import NodeType as NT
-from mirage.shell.types import (PipelineStages, ProcessSubDirection, Redirect,
-                                RedirectKind, TSNodeLike)
 from mirage.utils.path import expand_tilde
 
 
@@ -51,8 +67,9 @@ def source_parts(node: TSNodeLike) -> Iterator[str | TSNodeLike]:
     end = node.start_byte
     for child in node.children:
         if child.start_byte > end:
-            yield source[end - node.start_byte:child.start_byte -
-                         node.start_byte].decode()
+            yield source[
+                end - node.start_byte : child.start_byte - node.start_byte
+            ].decode()
         end = child.end_byte
         yield child
 
@@ -118,13 +135,15 @@ def claimed_descriptor(command: TSNodeLike, last: TSNodeLike) -> int | None:
         command (TSNodeLike): the command node the number is in.
         last (TSNodeLike): the command's last child.
     """
-    if (last.type == NT.COMMAND_NAME and len(last.named_children) == 1):
+    if last.type == NT.COMMAND_NAME and len(last.named_children) == 1:
         last = last.named_children[0]
     if last.type != NT.NUMBER or command.parent is None:
         return None
     for sibling in command.parent.named_children:
-        if (sibling.type == NT.FILE_REDIRECT
-                and sibling.start_byte == last.end_byte):
+        if (
+            sibling.type == NT.FILE_REDIRECT
+            and sibling.start_byte == last.end_byte
+        ):
             return int(get_text(last))
     return None
 
@@ -144,15 +163,23 @@ def get_parts(node: TSNodeLike) -> list[TSNodeLike]:
     parts: list[TSNodeLike] = []
     for position, c in enumerate(children):
         if c.is_named and c.type not in _SKIP:
-            if position == len(children) - 1 and claimed_descriptor(
-                    node, c) is not None:
+            if (
+                position == len(children) - 1
+                and claimed_descriptor(node, c) is not None
+            ):
                 continue
             parts.append(c)
         elif c.type == "$":
-            nxt = children[position +
-                           1] if position + 1 < len(children) else None
-            if (nxt is None or nxt.type != NT.STRING
-                    or nxt.start_byte != c.end_byte):
+            nxt = (
+                children[position + 1]
+                if position + 1 < len(children)
+                else None
+            )
+            if (
+                nxt is None
+                or nxt.type != NT.STRING
+                or nxt.start_byte != c.end_byte
+            ):
                 parts.append(c)
     return parts
 
@@ -169,7 +196,7 @@ def brace_expands(text: str) -> bool:
         if char == "{":
             start = position
         elif char == "}" and start >= 0:
-            body = text[start + 1:position]
+            body = text[start + 1 : position]
             if "," in body or ".." in body:
                 return True
             start = -1
@@ -198,7 +225,8 @@ def literal_word(node: TSNodeLike, home: str | None = None) -> str | None:
         named = node.named_children
         return literal_word(named[0], home) if named else get_text(node)
     if ntype in (NT.WORD, NT.NUMBER, NT.CONCATENATION) and brace_expands(
-            get_text(node)):
+        get_text(node)
+    ):
         return None
     if ntype in (NT.WORD, NT.NUMBER):
         return expand_tilde(unescape_unquoted(get_text(node)), home)
@@ -226,8 +254,11 @@ def literal_word(node: TSNodeLike, home: str | None = None) -> str | None:
         children = node.children
         for position, child in enumerate(children):
             # The `$` of a `$"..."` is the translation marker, not text.
-            if (child.type == "$" and position + 1 < len(children)
-                    and children[position + 1].type == NT.STRING):
+            if (
+                child.type == "$"
+                and position + 1 < len(children)
+                and children[position + 1].type == NT.STRING
+            ):
                 continue
             # Only a leading unquoted piece carries a tilde prefix.
             piece = literal_word(child, home if not pieces else None)
@@ -241,7 +272,8 @@ def literal_word(node: TSNodeLike, home: str | None = None) -> str | None:
 
 
 def split_env_prefix(
-    parts: list[TSNodeLike], ) -> tuple[list[TSNodeLike], list[TSNodeLike]]:
+    parts: list[TSNodeLike],
+) -> tuple[list[TSNodeLike], list[TSNodeLike]]:
     """Split FOO=1 BAR=2 cmd parts into (assignments, remaining).
 
     The single structural rule for env-prefixed commands.
@@ -261,7 +293,7 @@ def split_env_prefix(
 
 def get_pipeline_commands(
     node: TSNodeLike,
-) -> tuple[list[TSNodeLike], list[bool]]:  # noqa: E125,E501
+) -> tuple[list[TSNodeLike], list[bool]]:
     """Get (commands, stderr_flags) from pipeline.
 
     Uses node.children for pipe token detection.
@@ -277,8 +309,8 @@ def get_pipeline_commands(
 
 
 def get_pipeline_stages(
-        node: TSNodeLike,
-        redirects: Sequence[Redirect] = (),
+    node: TSNodeLike,
+    redirects: Sequence[Redirect] = (),
 ) -> PipelineStages:
     """A pipeline's stages as bash reads them, whatever shape the parse
     gave them.
@@ -307,12 +339,14 @@ def get_pipeline_stages(
         stderr_flags=head.stderr_flags + tuple(stderr_flags),
         redirects=head.redirects + tuple(() for _ in commands[1:]),
         negated=head.negated,
-        lead=head.lead)
+        lead=head.lead,
+    )
     return _bind_last(stages, redirects)
 
 
-def _bind_last(stages: PipelineStages,
-               redirects: Sequence[Redirect]) -> PipelineStages:
+def _bind_last(
+    stages: PipelineStages, redirects: Sequence[Redirect]
+) -> PipelineStages:
     """``stages`` with ``redirects`` bound to the last stage, after any it
     already carries (the inner ones come first in the source).
 
@@ -323,7 +357,7 @@ def _bind_last(stages: PipelineStages,
     if not redirects:
         return stages
     last = stages.redirects[-1] + tuple(redirects)
-    return replace(stages, redirects=stages.redirects[:-1] + (last, ))
+    return replace(stages, redirects=stages.redirects[:-1] + (last,))
 
 
 def _pipeline_head(stage: TSNodeLike) -> PipelineStages:
@@ -336,9 +370,9 @@ def _pipeline_head(stage: TSNodeLike) -> PipelineStages:
     Args:
         stage (TSNodeLike): the pipeline's first element.
     """
-    single = PipelineStages(commands=(stage, ),
-                            stderr_flags=(),
-                            redirects=((), ))
+    single = PipelineStages(
+        commands=(stage,), stderr_flags=(), redirects=((),)
+    )
     body = stage
     hoisted: tuple[Redirect, ...] = ()
     if stage.type == NT.REDIRECTED_STATEMENT:
@@ -349,25 +383,31 @@ def _pipeline_head(stage: TSNodeLike) -> PipelineStages:
             return single
         body, hoisted = found, tuple(parsed)
     if body.type == NT.NEGATED_COMMAND:
-        return PipelineStages(commands=(get_negated_command(body), ),
-                              stderr_flags=(),
-                              redirects=(hoisted, ),
-                              negated=True)
+        return PipelineStages(
+            commands=(get_negated_command(body),),
+            stderr_flags=(),
+            redirects=(hoisted,),
+            negated=True,
+        )
     if not hoisted:
         return single
     if body.type == NT.PIPELINE:
         return get_pipeline_stages(body, hoisted)
     if body.type == NT.LIST:
         left, op, right = get_list_parts(body)
-        inner = (get_pipeline_stages(right, hoisted)
-                 if right.type == NT.PIPELINE else _bind_last(
-                     _pipeline_head(right), hoisted))
+        inner = (
+            get_pipeline_stages(right, hoisted)
+            if right.type == NT.PIPELINE
+            else _bind_last(_pipeline_head(right), hoisted)
+        )
         if inner.lead is None:
             return replace(inner, lead=(left, op, right))
     return single
 
 
-def get_while_parts(node: TSNodeLike, ) -> tuple[TSNodeLike, list[TSNodeLike]]:
+def get_while_parts(
+    node: TSNodeLike,
+) -> tuple[TSNodeLike, list[TSNodeLike]]:
     """Get (condition, body_commands) from while/until.
 
     Returns the do_group's children list so multi-statement
@@ -380,7 +420,8 @@ def get_while_parts(node: TSNodeLike, ) -> tuple[TSNodeLike, list[TSNodeLike]]:
 
 
 def get_for_parts(
-    node: TSNodeLike, ) -> tuple[str, list[TSNodeLike], list[TSNodeLike]]:
+    node: TSNodeLike,
+) -> tuple[str, list[TSNodeLike], list[TSNodeLike]]:
     """Get (variable, values, body_commands) from for/select.
 
     Returns the do_group's children list so multi-statement
@@ -394,7 +435,8 @@ def get_for_parts(
 
 
 def get_cfor_parts(
-    node: TSNodeLike, ) -> tuple[list[list[TSNodeLike]], list[TSNodeLike]]:
+    node: TSNodeLike,
+) -> tuple[list[list[TSNodeLike]], list[TSNodeLike]]:
     """Get ([init, cond, update], body_commands) from a C-style for.
 
     The expression slots are positional between the (( )) delimiters,
@@ -446,39 +488,47 @@ def is_backgrounded(node: TSNodeLike) -> bool:
     return sibling is not None and sibling.type == NT.BACKGROUND
 
 
-REDIRECT_NODE_TYPES = frozenset({
-    NT.FILE_REDIRECT,
-    NT.HEREDOC_REDIRECT,
-    NT.HERESTRING_REDIRECT,
-})
+REDIRECT_NODE_TYPES = frozenset(
+    {
+        NT.FILE_REDIRECT,
+        NT.HEREDOC_REDIRECT,
+        NT.HERESTRING_REDIRECT,
+    }
+)
 
 # RAW_STRING (single quotes) belongs here alongside STRING (double
 # quotes): quoting a redirect target is purely syntactic in bash, so
 # `> 'f'`, `> "f"` and `> f` name the same file. Omitting it left
 # target_node None and target "", which silently redirected every
 # single-quoted target to one phantom empty path instead of the file.
-_TARGET_TYPES = frozenset({
-    NT.WORD,
-    NT.CONCATENATION,
-    NT.SIMPLE_EXPANSION,
-    NT.EXPANSION,
-    NT.COMMAND_SUBSTITUTION,
-    NT.STRING,
-    NT.RAW_STRING,
-    NT.ANSI_C_STRING,
-    NT.TRANSLATED_STRING,
-    NT.PROCESS_SUBSTITUTION,
-})
+_TARGET_TYPES = frozenset(
+    {
+        NT.WORD,
+        NT.CONCATENATION,
+        NT.SIMPLE_EXPANSION,
+        NT.EXPANSION,
+        NT.COMMAND_SUBSTITUTION,
+        NT.STRING,
+        NT.RAW_STRING,
+        NT.ANSI_C_STRING,
+        NT.TRANSLATED_STRING,
+        NT.PROCESS_SUBSTITUTION,
+    }
+)
 
 _INPUT_OPERATORS = frozenset(
-    {NT.REDIRECT_IN, NT.REDIRECT_DUP_IN, NT.REDIRECT_CLOSE_IN})
+    {NT.REDIRECT_IN, NT.REDIRECT_DUP_IN, NT.REDIRECT_CLOSE_IN}
+)
 _CLOSE_OPERATORS = frozenset({NT.REDIRECT_CLOSE_OUT, NT.REDIRECT_CLOSE_IN})
 _DUP_OPERATORS = frozenset({NT.REDIRECT_STDERR, NT.REDIRECT_DUP_IN})
 _BOTH_OPERATORS = frozenset({NT.REDIRECT_BOTH, NT.REDIRECT_BOTH_APPEND})
 _REDIRECT_OPERATORS = (
-    _INPUT_OPERATORS | _CLOSE_OPERATORS | _DUP_OPERATORS
+    _INPUT_OPERATORS
+    | _CLOSE_OPERATORS
+    | _DUP_OPERATORS
     | _BOTH_OPERATORS
-    | frozenset({NT.REDIRECT_OUT, NT.REDIRECT_CLOBBER, NT.REDIRECT_APPEND}))
+    | frozenset({NT.REDIRECT_OUT, NT.REDIRECT_CLOBBER, NT.REDIRECT_APPEND})
+)
 
 
 def _parse_file_redirect(child: TSNodeLike, fd: int | None = None) -> Redirect:
@@ -517,11 +567,13 @@ def _parse_file_redirect(child: TSNodeLike, fd: int | None = None) -> Redirect:
 
     document = getattr(child, "heredoc", None)
     if document is not None:
-        return Redirect(fd=0 if fd is None else fd,
-                        target=document.body.decode(),
-                        target_node=target_node,
-                        kind=RedirectKind.HEREDOC,
-                        expand_vars=not document.quoted)
+        return Redirect(
+            fd=0 if fd is None else fd,
+            target=document.body.decode(),
+            target_node=target_node,
+            kind=RedirectKind.HEREDOC,
+            expand_vars=not document.quoted,
+        )
 
     # `>&word` with a word rather than a number is bash's other spelling
     # of `&>word`, bare or on descriptor 1 (`1>&word` sends both streams
@@ -529,19 +581,24 @@ def _parse_file_redirect(child: TSNodeLike, fd: int | None = None) -> Redirect:
     # refuses it as `word: ambiguous redirect`, before the command runs
     # and before any file opens, so the parse keeps the word for the
     # message rather than turning `3>&foo` into a both-streams file.
-    word_dup = (op == NT.REDIRECT_STDERR and dup_fd is None
-                and target_node is not None)
+    word_dup = (
+        op == NT.REDIRECT_STDERR and dup_fd is None and target_node is not None
+    )
     if word_dup and fd is not None and fd != FD_STDOUT:
-        return Redirect(fd=fd,
-                        target=target,
-                        target_node=target_node,
-                        kind=RedirectKind.AMBIGUOUS)
+        return Redirect(
+            fd=fd,
+            target=target,
+            target_node=target_node,
+            kind=RedirectKind.AMBIGUOUS,
+        )
     if op in _BOTH_OPERATORS or word_dup:
-        return Redirect(fd=FD_BOTH,
-                        target=target,
-                        target_node=target_node,
-                        kind=RedirectKind.STDOUT,
-                        append=op == NT.REDIRECT_BOTH_APPEND)
+        return Redirect(
+            fd=FD_BOTH,
+            target=target,
+            target_node=target_node,
+            kind=RedirectKind.STDOUT,
+            append=op == NT.REDIRECT_BOTH_APPEND,
+        )
 
     if fd is None:
         fd = FD_STDIN if op in _INPUT_OPERATORS else FD_STDOUT
@@ -559,12 +616,14 @@ def _parse_file_redirect(child: TSNodeLike, fd: int | None = None) -> Redirect:
     else:
         kind = RedirectKind.STDOUT
 
-    return Redirect(fd=fd,
-                    target=target,
-                    target_node=target_node,
-                    kind=kind,
-                    append=op == NT.REDIRECT_APPEND,
-                    clobber=op == NT.REDIRECT_CLOBBER)
+    return Redirect(
+        fd=fd,
+        target=target,
+        target_node=target_node,
+        kind=kind,
+        append=op == NT.REDIRECT_APPEND,
+        clobber=op == NT.REDIRECT_CLOBBER,
+    )
 
 
 def _parse_herestring_redirect(child: TSNodeLike) -> Redirect:
@@ -575,14 +634,16 @@ def _parse_herestring_redirect(child: TSNodeLike) -> Redirect:
             content = get_text(candidate)
             target_node = candidate
             break
-    return Redirect(fd=0,
-                    target=content,
-                    target_node=target_node,
-                    kind=RedirectKind.HERESTRING)
+    return Redirect(
+        fd=0,
+        target=content,
+        target_node=target_node,
+        kind=RedirectKind.HERESTRING,
+    )
 
 
 def list_spine(
-        node: TSNodeLike
+    node: TSNodeLike,
 ) -> tuple[TSNodeLike, tuple[tuple[str, TSNodeLike], ...]]:
     """The leftmost operand of a ``&&``/``||`` list and the steps after it.
 
@@ -608,7 +669,7 @@ def list_spine(
 
 
 def heredoc_tail(
-    redirect_node: TSNodeLike
+    redirect_node: TSNodeLike,
 ) -> tuple[TSNodeLike | None, tuple[tuple[str, TSNodeLike], ...]]:
     """What the operator line carries past a heredoc's delimiter word.
 
@@ -646,8 +707,11 @@ def heredoc_tail(
                 steps.extend(spine)
             else:
                 pipe_node = child
-        elif (child.type in (NT.AND, NT.OR) and index + 1 < len(children)
-              and children[index + 1].is_named):
+        elif (
+            child.type in (NT.AND, NT.OR)
+            and index + 1 < len(children)
+            and children[index + 1].is_named
+        ):
             right, spine = list_spine(children[index + 1])
             steps.append((child.type, right))
             steps.extend(spine)
@@ -657,7 +721,8 @@ def heredoc_tail(
 
 
 def take_continuation(
-        redirects: list[Redirect]) -> tuple[tuple[str, TSNodeLike], ...]:
+    redirects: list[Redirect],
+) -> tuple[tuple[str, TSNodeLike], ...]:
     """Detach the ``&&``/``||`` steps a heredoc's operator line carried.
 
     The steps apply to the whole redirected statement, so the executor
@@ -680,7 +745,7 @@ def take_continuation(
 
 
 def get_redirects(
-        node: TSNodeLike,  # noqa: E125
+    node: TSNodeLike,
 ) -> tuple[TSNodeLike | None, list[Redirect]]:
     """Parse all redirects from a redirected_statement.
 
@@ -710,13 +775,16 @@ def get_redirects(
             body, _, quoted = get_heredoc_meta(child)
             pipe_node, continuation = heredoc_tail(child)
             redirects.append(
-                Redirect(fd=0,
-                         target=body,
-                         target_node=child,
-                         kind=RedirectKind.HEREDOC,
-                         pipeline=pipe_node,
-                         expand_vars=not quoted,
-                         continuation=continuation))
+                Redirect(
+                    fd=0,
+                    target=body,
+                    target_node=child,
+                    kind=RedirectKind.HEREDOC,
+                    pipeline=pipe_node,
+                    expand_vars=not quoted,
+                    continuation=continuation,
+                )
+            )
             # A file redirect written before the heredoc body starts
             # (`cat <<END > out.txt`) parses INSIDE the
             # heredoc_redirect node; hoist it to a sibling.
@@ -742,13 +810,18 @@ def get_redirects(
             redirects.append(_parse_file_redirect(child, fd))
         recover_herestring = False
 
-    if command is not None and command.type == NT.COMMAND and not get_parts(
-            command):
+    if (
+        command is not None
+        and command.type == NT.COMMAND
+        and not get_parts(command)
+    ):
         command = None
     return command, redirects
 
 
-def get_list_parts(node: TSNodeLike, ) -> tuple[TSNodeLike, str, TSNodeLike]:
+def get_list_parts(
+    node: TSNodeLike,
+) -> tuple[TSNodeLike, str, TSNodeLike]:
     """Get (left, op, right) from list node."""
     left = node.named_children[0]
     right = node.named_children[1]
@@ -804,7 +877,7 @@ def get_case_word(node: TSNodeLike) -> TSNodeLike:
 
 def get_case_items(
     node: TSNodeLike,
-) -> list[tuple[list[TSNodeLike], list[TSNodeLike], str]]:  # noqa: E125,E501
+) -> list[tuple[list[TSNodeLike], list[TSNodeLike], str]]:
     """Get (pattern_nodes, body_statements, terminator) triples from case.
 
     Patterns are every named child before the arm's ``)``, kept as
@@ -914,7 +987,7 @@ def normalize_heredoc_body(body: str, delimiter: str) -> str:
     clean = clean_delimiter(delimiter)
     suffix = clean + "\n"
     if body.endswith(suffix):
-        head = body[:-len(suffix)]
+        head = body[: -len(suffix)]
         if not head or head.endswith("\n"):
             body = head
     if body and not body.endswith("\n"):
@@ -963,8 +1036,11 @@ def input_substitution_redirect(node: TSNodeLike) -> Redirect | None:
     if command is not None or len(redirects) != 1:
         return None
     redirect = redirects[0]
-    if (redirect.kind != RedirectKind.STDIN or redirect.fd != 0
-            or isinstance(redirect.target, int)):
+    if (
+        redirect.kind != RedirectKind.STDIN
+        or redirect.fd != 0
+        or isinstance(redirect.target, int)
+    ):
         return None
     return redirect
 

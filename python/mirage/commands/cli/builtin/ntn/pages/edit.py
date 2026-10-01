@@ -12,8 +12,12 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-from mirage.commands.cli.builtin.ntn.util import (content_or_stdin, first_text,
-                                                  notion_config, pretty_json)
+from mirage.commands.cli.builtin.ntn.util import (
+    content_or_stdin,
+    first_text,
+    notion_config,
+    pretty_json,
+)
 from mirage.commands.cli.types import CLIInvocation
 from mirage.commands.spec.flag_view import FlagView
 from mirage.core.notion.config import NotionConfig
@@ -23,7 +27,7 @@ from mirage.io.types import ByteSource, IOResult
 
 
 async def edit(
-        inv: CLIInvocation[NotionConfig]
+    inv: CLIInvocation[NotionConfig],
 ) -> tuple[ByteSource | None, IOResult]:
     fl = FlagView(inv.flags)
     page_id = first_text(inv.texts, "page id")

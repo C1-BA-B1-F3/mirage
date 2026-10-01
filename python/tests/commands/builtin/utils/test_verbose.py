@@ -21,8 +21,11 @@ def _p(virtual: str) -> PathSpec:
 
 
 def test_removal_lines_chain_children_first():
-    entries = [(_p("/data/lin"), True), (_p("/data/lin/sub"), True),
-               (_p("/data/lin/sub/z.txt"), False)]
+    entries = [
+        (_p("/data/lin"), True),
+        (_p("/data/lin/sub"), True),
+        (_p("/data/lin/sub/z.txt"), False),
+    ]
     assert removal_lines(entries) == [
         "removed '/data/lin/sub/z.txt'",
         "removed directory '/data/lin/sub'",
@@ -31,8 +34,11 @@ def test_removal_lines_chain_children_first():
 
 
 def test_removal_lines_deterministic_regardless_of_input_order():
-    entries = [(_p("/data/t"), True), (_p("/data/t/b.txt"), False),
-               (_p("/data/t/a.txt"), False)]
+    entries = [
+        (_p("/data/t"), True),
+        (_p("/data/t/b.txt"), False),
+        (_p("/data/t/a.txt"), False),
+    ]
     assert removal_lines(entries) == [
         "removed '/data/t/b.txt'",
         "removed '/data/t/a.txt'",
@@ -41,8 +47,9 @@ def test_removal_lines_deterministic_regardless_of_input_order():
 
 
 def test_removal_lines_single_file():
-    assert removal_lines([(_p("/data/f.txt"), False)
-                          ]) == ["removed '/data/f.txt'"]
+    assert removal_lines([(_p("/data/f.txt"), False)]) == [
+        "removed '/data/f.txt'"
+    ]
 
 
 def test_removal_lines_empty():

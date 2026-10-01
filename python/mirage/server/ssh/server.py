@@ -55,16 +55,21 @@ class MirageSSHServer(asyncssh.SSHServer):
         try:
             self._conn.set_authorized_keys(str(self._keys_file))
         except (OSError, ValueError) as exc:
-            logger.warning("ssh: refusing %r, cannot read %s: %s", username,
-                           self._keys_file, exc)
+            logger.warning(
+                "ssh: refusing %r, cannot read %s: %s",
+                username,
+                self._keys_file,
+                exc,
+            )
         return True
 
     def password_auth_supported(self) -> bool:
         return False
 
 
-async def serve_channel(registry: WorkspaceRegistry,
-                        process: asyncssh.SSHServerProcess[str]) -> None:
+async def serve_channel(
+    registry: WorkspaceRegistry, process: asyncssh.SSHServerProcess[str]
+) -> None:
     """Route a session channel: Codex's subsystem to its door, anything
     else to the shell.
 
@@ -78,8 +83,9 @@ async def serve_channel(registry: WorkspaceRegistry,
     await handle_process(registry, process)
 
 
-async def start_ssh_server(registry: WorkspaceRegistry,
-                           config: SSHConfig) -> asyncssh.SSHAcceptor:
+async def start_ssh_server(
+    registry: WorkspaceRegistry, config: SSHConfig
+) -> asyncssh.SSHAcceptor:
     """Listen for SSH on the daemon's loop, serving its workspaces.
 
     ``ssh <workspace-id>@host`` opens a shell in that workspace,
@@ -99,13 +105,16 @@ async def start_ssh_server(registry: WorkspaceRegistry,
     if not config.authorized_keys_file.exists():
         logger.warning(
             "ssh: %s does not exist; every login will be refused until "
-            "it holds a public key", config.authorized_keys_file)
+            "it holds a public key",
+            config.authorized_keys_file,
+        )
     acceptor = await asyncssh.listen(
         config.host,
         config.port,
         server_host_keys=[load_host_key(config.host_key_file)],
-        server_factory=functools.partial(MirageSSHServer,
-                                         config.authorized_keys_file),
+        server_factory=functools.partial(
+            MirageSSHServer, config.authorized_keys_file
+        ),
         process_factory=functools.partial(serve_channel, registry),
         sftp_factory=functools.partial(MirageSFTPServer, registry),
         allow_scp=True,

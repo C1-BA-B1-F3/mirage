@@ -15,17 +15,20 @@
 
 def test_fold_w(env):
     data = b"abcdefghijklmnopqrstuvwxyz\n"
-    assert env.mirage("fold -w 10", stdin=data) == env.native("fold -w 10",
-                                                              stdin=data)
+    assert env.mirage("fold -w 10", stdin=data) == env.native(
+        "fold -w 10", stdin=data
+    )
 
 
 def test_fold_file(env):
     env.create_file("f.txt", b"abcdefghijklmnopqrstuvwxyz\n")
     assert env.mirage("fold -w 10 /data/f.txt") == env.native(
-        "fold -w 10 f.txt")
+        "fold -w 10 f.txt"
+    )
 
 
 def test_fold_s(env):
     data = b"hello world this is a test\n"
-    assert env.mirage("fold -w 12 -s",
-                      stdin=data) == env.native("fold -w 12 -s", stdin=data)
+    assert env.mirage("fold -w 12 -s", stdin=data) == env.native(
+        "fold -w 12 -s", stdin=data
+    )

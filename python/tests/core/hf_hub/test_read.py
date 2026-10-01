@@ -48,17 +48,20 @@ async def test_read_bytes_passes_a_byte_window(mock_bytes, loaded):
 async def test_read_bytes_prefixes_the_repo_path(mock_bytes, prefixed):
     """A prefix normalized with a trailing slash must not double up."""
     from tests.core.hf_hub.conftest import file_row, seed
+
     seed(prefixed, file_row("a.txt"))
     mock_bytes.return_value = (b"", "")
     await read_bytes(prefixed, ps("a.txt"))
     assert mock_bytes.await_args.args[1].endswith(
-        "/resolve/main/sub/dir/a.txt")
+        "/resolve/main/sub/dir/a.txt"
+    )
 
 
 @pytest.mark.asyncio
 @patch("mirage.core.hf_hub.read.hub_bytes_tagged")
 async def test_read_of_a_missing_path_never_reaches_the_network(
-        mock_bytes, loaded):
+    mock_bytes, loaded
+):
     with pytest.raises(FileNotFoundError):
         await read_bytes(loaded, ps("nope"))
     mock_bytes.assert_not_awaited()
@@ -79,6 +82,7 @@ async def test_read_of_the_mount_root_is_eisdir(loaded):
 @pytest.mark.asyncio
 async def test_resolve_entry_returns_the_row(loaded):
     from mirage.cache.index import NULL_INDEX
+
     entry = await resolve_entry(loaded, ps("a.txt"), NULL_INDEX)
     assert entry.size == 7
 
@@ -100,63 +104,61 @@ async def test_read_records_the_virtual_path(mock_bytes, accessor):
 
 # One row whose four ids all differ, and none is a hash of the content, so
 # every accepted ETag is distinguishable from every other and from a guess.
-ROW = IndexEntry(id="O",
-                 name="f.bin",
-                 resource_type="file",
-                 extra={
-                     "oid": "O",
-                     "lfs_oid": "L",
-                     "xet_hash": "X",
-                     "last_commit": "C"
-                 })
+ROW = IndexEntry(
+    id="O",
+    name="f.bin",
+    resource_type="file",
+    extra={"oid": "O", "lfs_oid": "L", "xet_hash": "X", "last_commit": "C"},
+)
 # The common case: a plain git file carries its oid and nothing else.
-PLAIN = IndexEntry(id="P",
-                   name="a.txt",
-                   resource_type="file",
-                   extra={"oid": "P"})
+PLAIN = IndexEntry(
+    id="P", name="a.txt", resource_type="file", extra={"oid": "P"}
+)
 # A row that carries the LFS and Xet keys empty: a missing ETag must not match
 # one of them.
-BLANK = IndexEntry(id="P",
-                   name="a.txt",
-                   resource_type="file",
-                   extra={
-                       "oid": "P",
-                       "lfs_oid": "",
-                       "xet_hash": ""
-                   })
+BLANK = IndexEntry(
+    id="P",
+    name="a.txt",
+    resource_type="file",
+    extra={"oid": "P", "lfs_oid": "", "xet_hash": ""},
+)
 
 
-@pytest.mark.parametrize("entry,etag,expected", [
-    (ROW, '"O"', "O"),
-    (ROW, "L", "O"),
-    (ROW, 'W/"X"', "O"),
-    (ROW, '"Z"', None),
-    (ROW, "", None),
-    (ROW, '"C"', None),
-    (PLAIN, '"P"', "P"),
-    (PLAIN, "", None),
-    (PLAIN, '"Z"', None),
-    (BLANK, "", None),
-])
+@pytest.mark.parametrize(
+    "entry,etag,expected",
+    [
+        (ROW, '"O"', "O"),
+        (ROW, "L", "O"),
+        (ROW, 'W/"X"', "O"),
+        (ROW, '"Z"', None),
+        (ROW, "", None),
+        (ROW, '"C"', None),
+        (PLAIN, '"P"', "P"),
+        (PLAIN, "", None),
+        (PLAIN, '"Z"', None),
+        (BLANK, "", None),
+    ],
+)
 def test_row_token_stamps_the_oid_only_when_the_etag_names_the_row(
-        entry, etag, expected):
+    entry, etag, expected
+):
     assert row_token(entry, etag) == expected
 
 
 def test_row_token_never_stamps_an_empty_id():
     # The ETag matches, so this takes the match branch; an empty id must
     # still come back as no token rather than "".
-    entry = IndexEntry(id="",
-                       name="f",
-                       resource_type="file",
-                       extra={"lfs_oid": "L"})
+    entry = IndexEntry(
+        id="", name="f", resource_type="file", extra={"lfs_oid": "L"}
+    )
     assert row_token(entry, '"L"') is None
 
 
 @pytest.mark.asyncio
 @patch("mirage.core.hf_hub.read.hub_bytes_tagged")
 async def test_read_stamps_the_oid_when_the_etag_names_the_row(
-        mock_bytes, accessor):
+    mock_bytes, accessor
+):
     seed(accessor, file_row("a.txt", 5))
     mock_bytes.return_value = (b"hello", '"oid-a.txt"')
     scope = RecordingScope()
@@ -170,7 +172,8 @@ async def test_read_stamps_the_oid_when_the_etag_names_the_row(
 @pytest.mark.asyncio
 @patch("mirage.core.hf_hub.read.hub_bytes_tagged")
 async def test_read_stamps_nothing_when_the_bytes_are_another_version(
-        mock_bytes, accessor):
+    mock_bytes, accessor
+):
     # The listing says oid-a.txt, the download is a newer version: labelling
     # those bytes with the listing's oid is how a later revert would pass
     # them off as fresh.

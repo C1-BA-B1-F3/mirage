@@ -42,7 +42,8 @@ BUILTIN = Path(mirage.commands.builtin.__file__).resolve().parent
 # Slots holding a configuration value rather than an operation. Everything
 # else on the adapter is a wired operation, reported by name.
 IO_VALUE_FIELDS = frozenset(
-    {"local", "streams_bytes", "max_glob_matches", "max_du_entries"})
+    {"local", "streams_bytes", "max_glob_matches", "max_du_entries"}
+)
 
 
 def _walk_pkg(pkg: Any) -> list[str]:
@@ -57,8 +58,9 @@ def _walk_pkg(pkg: Any) -> list[str]:
         pkg (Any): the package to walk.
     """
     failed: list[str] = []
-    for _finder, name, _ispkg in pkgutil.walk_packages(pkg.__path__,
-                                                       pkg.__name__ + "."):
+    for _finder, name, _ispkg in pkgutil.walk_packages(
+        pkg.__path__, pkg.__name__ + "."
+    ):
         try:
             importlib.import_module(name)
         except ImportError as e:
@@ -81,8 +83,11 @@ def _collect_registrations() -> dict[str, list[RegisteredCommand]]:
             if id(attr) in seen:
                 continue
             seen.add(id(attr))
-            rcs = ([attr] if isinstance(attr, RegisteredCommand) else getattr(
-                attr, "_registered_commands", None))
+            rcs = (
+                [attr]
+                if isinstance(attr, RegisteredCommand)
+                else getattr(attr, "_registered_commands", None)
+            )
             if not rcs:
                 continue
             for rc in rcs:
@@ -103,11 +108,14 @@ def _by_vfs(rcs: list[RegisteredCommand]) -> dict[str, Any]:
     """
     out: dict[str, Any] = {}
     for rc in rcs:
-        entry = out.setdefault(rc.vfs if rc.vfs is not None else "", {
-            "has_aggregate": False,
-            "has_write": False,
-            "filetypes": set(),
-        })
+        entry = out.setdefault(
+            rc.vfs if rc.vfs is not None else "",
+            {
+                "has_aggregate": False,
+                "has_write": False,
+                "filetypes": set(),
+            },
+        )
         entry["has_aggregate"] |= rc.aggregate is not None
         entry["has_write"] |= bool(rc.write)
         if rc.filetype is not None:
@@ -180,15 +188,15 @@ def _spec_payload(spec: Any) -> dict[str, Any]:
     return payload
 
 
-def _emit_one(name: str,
-              spec: Any,
-              rcs: list[RegisteredCommand],
-              out: Path = OUT) -> None:
+def _emit_one(
+    name: str, spec: Any, rcs: list[RegisteredCommand], out: Path = OUT
+) -> None:
     payload = _spec_payload(spec)
     payload["_meta"] = _meta_for(rcs)
     path = out / f"{name.replace(' ', '_')}.json"
     path.write_text(
-        json.dumps(payload, indent=2, sort_keys=True, default=_default) + "\n")
+        json.dumps(payload, indent=2, sort_keys=True, default=_default) + "\n"
+    )
 
 
 def _emit_vfs_commands(registry: dict[str, list[RegisteredCommand]]) -> None:
@@ -212,14 +220,15 @@ def _emit_vfs_commands(registry: dict[str, list[RegisteredCommand]]) -> None:
     for name in names:
         rcs = registry[name]
         payloads = {
-            json.dumps(_spec_payload(rc.spec),
-                       sort_keys=True,
-                       default=_default)
+            json.dumps(
+                _spec_payload(rc.spec), sort_keys=True, default=_default
+            )
             for rc in rcs
         }
         if len(payloads) > 1:
-            raise SystemExit(f"{name!r} is registered with {len(payloads)} "
-                             "different specs")
+            raise SystemExit(
+                f"{name!r} is registered with {len(payloads)} different specs"
+            )
         _emit_one(name, rcs[0].spec, rcs, VFS_COMMANDS)
     print(f"emitted {len(names)} backend command specs to {VFS_COMMANDS}")
 
@@ -245,9 +254,11 @@ def _vfs_class(name: str, ref: str | type) -> type[BaseVFS]:
     """
     cls = resolve_class(ref)
     if not issubclass(cls, BaseVFS):
-        raise TypeError(f"{name}: {ref!r} resolves to {cls.__name__}, which "
-                        f"is not a BaseVFS; its capability slots would "
-                        f"read as defaults")
+        raise TypeError(
+            f"{name}: {ref!r} resolves to {cls.__name__}, which "
+            f"is not a BaseVFS; its capability slots would "
+            f"read as defaults"
+        )
     return cls
 
 
@@ -266,8 +277,10 @@ def _config_model(name: str, ref: str | type) -> type[BaseModel]:
     """
     cls = resolve_class(ref) if isinstance(ref, str) else ref
     if not isinstance(cls, type) or not issubclass(cls, BaseModel):
-        raise TypeError(f"{name}: {ref!r} does not resolve to a pydantic "
-                        f"model, so it declares no config fields to compare")
+        raise TypeError(
+            f"{name}: {ref!r} does not resolve to a pydantic "
+            f"model, so it declares no config fields to compare"
+        )
     return cls
 
 
@@ -319,9 +332,12 @@ def _command_io() -> dict[str, dict[str, Any]]:
         io = getattr(mod, "IO", None)
         if not isinstance(io, CommandIO):
             continue
-        slots = sorted(f.name for f in fields(CommandIO)
-                       if f.name not in IO_VALUE_FIELDS
-                       and getattr(io, f.name) is not None)
+        slots = sorted(
+            f.name
+            for f in fields(CommandIO)
+            if f.name not in IO_VALUE_FIELDS
+            and getattr(io, f.name) is not None
+        )
         out[backend] = {
             "slots": slots,
             "local": io.local,
@@ -362,9 +378,7 @@ def _configs() -> dict[str, dict[str, Any] | None]:
         model = _config_model(name, ref)
         out[name] = {
             "fields": {
-                (field.alias or fname): {
-                    "required": field.is_required()
-                }
+                (field.alias or fname): {"required": field.is_required()}
                 for fname, field in model.model_fields.items()
             }
         }
@@ -408,9 +422,11 @@ def main() -> None:
     if failed:
         raise SystemExit(
             "command modules failed to import, so their registrations would "
-            "be missing from the dump:\n  " + "\n  ".join(failed) +
-            "\n\nInstall the optional dependencies first:\n"
-            "  cd python && uv sync --all-extras --no-extra camel")
+            "be missing from the dump:\n  "
+            + "\n  ".join(failed)
+            + "\n\nInstall the optional dependencies first:\n"
+            "  cd python && uv sync --all-extras --no-extra camel"
+        )
     registry = _collect_registrations()
     OUT.mkdir(parents=True, exist_ok=True)
     for name, spec in sorted(SPECS.items()):

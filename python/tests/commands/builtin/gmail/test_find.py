@@ -28,25 +28,13 @@ RAW_MESSAGE = {
     "id": "m1",
     "internalDate": "1754300000000",
     "payload": {
-        "mimeType":
-        "multipart/mixed",
-        "headers": [{
-            "name": "Subject",
-            "value": "Report"
-        }],
+        "mimeType": "multipart/mixed",
+        "headers": [{"name": "Subject", "value": "Report"}],
         "parts": [
-            {
-                "mimeType": "text/plain",
-                "body": {
-                    "data": "text"
-                }
-            },
+            {"mimeType": "text/plain", "body": {"data": "text"}},
             {
                 "filename": "report.pdf",
-                "body": {
-                    "attachmentId": "att1",
-                    "size": 1024
-                },
+                "body": {"attachmentId": "att1", "size": 1024},
             },
         ],
     },
@@ -62,25 +50,36 @@ def _find_command():
 
 
 def _spec(virtual: str) -> PathSpec:
-    return PathSpec(virtual=virtual,
-                    directory=virtual,
-                    vfs_path=virtual.strip("/"))
+    return PathSpec(
+        virtual=virtual, directory=virtual, vfs_path=virtual.strip("/")
+    )
 
 
 async def _run(paths, *texts: str, **flags) -> list[str]:
     find = _find_command()
-    with patch("mirage.core.gmail.readdir.list_labels",
-               new_callable=AsyncMock,
-               return_value=LABELS), \
-         patch("mirage.core.gmail.readdir.list_messages",
-               new_callable=AsyncMock,
-               return_value=[{"id": "m1"}]), \
-         patch("mirage.core.gmail.readdir.get_message_raw",
-               new_callable=AsyncMock,
-               return_value=RAW_MESSAGE):
+    with (
+        patch(
+            "mirage.core.gmail.readdir.list_labels",
+            new_callable=AsyncMock,
+            return_value=LABELS,
+        ),
+        patch(
+            "mirage.core.gmail.readdir.list_messages",
+            new_callable=AsyncMock,
+            return_value=[{"id": "m1"}],
+        ),
+        patch(
+            "mirage.core.gmail.readdir.get_message_raw",
+            new_callable=AsyncMock,
+            return_value=RAW_MESSAGE,
+        ),
+    ):
         stdout, _io = await find(
-            AsyncMock(), paths, list(texts),
-            CommandOpts(index=RAMIndexCacheStore(), flags={**flags}))
+            AsyncMock(),
+            paths,
+            list(texts),
+            CommandOpts(index=RAMIndexCacheStore(), flags={**flags}),
+        )
         data = await materialize(stdout)
     return data.decode().splitlines()
 

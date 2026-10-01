@@ -17,8 +17,12 @@ from typing import Any
 
 import aiohttp
 
-from mirage.core.api.client import (RetryPolicy, SessionArg, api_request,
-                                    status_error)
+from mirage.core.api.client import (
+    RetryPolicy,
+    SessionArg,
+    api_request,
+    status_error,
+)
 from mirage.core.discord.config import DiscordConfig
 from mirage.core.discord.constants import DISCORD_API, MAX_RETRIES
 from mirage.vfs.secrets import reveal_secret
@@ -26,9 +30,9 @@ from mirage.vfs.secrets import reveal_secret
 # GET is the only verb that waits out a 429: reads are safe to repeat, and
 # the delay comes from the JSON body's retry_after (Discord's convention).
 # Mutations surface the 429 immediately so the caller decides.
-_RATE_LIMIT_RETRY = RetryPolicy(statuses=frozenset({429}),
-                                max_retries=MAX_RETRIES - 1,
-                                delay_source="body")
+_RATE_LIMIT_RETRY = RetryPolicy(
+    statuses=frozenset({429}), max_retries=MAX_RETRIES - 1, delay_source="body"
+)
 
 
 def discord_headers(config: DiscordConfig) -> dict[str, str]:
@@ -65,10 +69,11 @@ def _mutation_error(resp: aiohttp.ClientResponse, body: str) -> Exception:
 
 
 async def discord_get(
-        config: DiscordConfig,
-        endpoint: str,
-        params: dict[str, Any] | None = None,
-        session: SessionArg = None) -> dict[str, Any] | list[Any]:
+    config: DiscordConfig,
+    endpoint: str,
+    params: dict[str, Any] | None = None,
+    session: SessionArg = None,
+) -> dict[str, Any] | list[Any]:
     data: dict[str, Any] | list[Any] = await api_request(
         "GET",
         f"{discord_base(config)}{endpoint}",
@@ -76,55 +81,66 @@ async def discord_get(
         headers=discord_headers(config),
         params=params,
         retry=_RATE_LIMIT_RETRY,
-        session=session)
+        session=session,
+    )
     return data
 
 
-async def discord_post(config: DiscordConfig,
-                       endpoint: str,
-                       body: dict[str, Any] | None = None,
-                       session: SessionArg = None) -> dict[str, Any]:
-    data: dict[str,
-               Any] = await api_request("POST",
-                                        f"{discord_base(config)}{endpoint}",
-                                        error_of=_mutation_error,
-                                        headers=discord_headers(config),
-                                        json_body=body or {},
-                                        session=session)
+async def discord_post(
+    config: DiscordConfig,
+    endpoint: str,
+    body: dict[str, Any] | None = None,
+    session: SessionArg = None,
+) -> dict[str, Any]:
+    data: dict[str, Any] = await api_request(
+        "POST",
+        f"{discord_base(config)}{endpoint}",
+        error_of=_mutation_error,
+        headers=discord_headers(config),
+        json_body=body or {},
+        session=session,
+    )
     return data
 
 
-async def discord_put(config: DiscordConfig,
-                      endpoint: str,
-                      session: SessionArg = None) -> None:
-    await api_request("PUT",
-                      f"{discord_base(config)}{endpoint}",
-                      error_of=_mutation_error,
-                      headers=discord_headers(config),
-                      read="none",
-                      session=session)
+async def discord_put(
+    config: DiscordConfig, endpoint: str, session: SessionArg = None
+) -> None:
+    await api_request(
+        "PUT",
+        f"{discord_base(config)}{endpoint}",
+        error_of=_mutation_error,
+        headers=discord_headers(config),
+        read="none",
+        session=session,
+    )
 
 
-async def discord_patch(config: DiscordConfig,
-                        endpoint: str,
-                        body: dict[str, Any] | None = None,
-                        session: SessionArg = None) -> dict[str, Any]:
-    data: dict[str,
-               Any] = await api_request("PATCH",
-                                        f"{discord_base(config)}{endpoint}",
-                                        error_of=_mutation_error,
-                                        headers=discord_headers(config),
-                                        json_body=body or {},
-                                        session=session)
+async def discord_patch(
+    config: DiscordConfig,
+    endpoint: str,
+    body: dict[str, Any] | None = None,
+    session: SessionArg = None,
+) -> dict[str, Any]:
+    data: dict[str, Any] = await api_request(
+        "PATCH",
+        f"{discord_base(config)}{endpoint}",
+        error_of=_mutation_error,
+        headers=discord_headers(config),
+        json_body=body or {},
+        session=session,
+    )
     return data
 
 
-async def discord_delete(config: DiscordConfig,
-                         endpoint: str,
-                         session: SessionArg = None) -> None:
-    await api_request("DELETE",
-                      f"{discord_base(config)}{endpoint}",
-                      error_of=_mutation_error,
-                      headers=discord_headers(config),
-                      read="none",
-                      session=session)
+async def discord_delete(
+    config: DiscordConfig, endpoint: str, session: SessionArg = None
+) -> None:
+    await api_request(
+        "DELETE",
+        f"{discord_base(config)}{endpoint}",
+        error_of=_mutation_error,
+        headers=discord_headers(config),
+        read="none",
+        session=session,
+    )

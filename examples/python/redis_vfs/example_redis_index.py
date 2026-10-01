@@ -17,8 +17,11 @@ import os
 import time
 
 from mirage import Workspace
-from mirage.cache.index import (IndexEntry, RedisIndexCacheStore,
-                                RedisIndexConfig)
+from mirage.cache.index import (
+    IndexEntry,
+    RedisIndexCacheStore,
+    RedisIndexConfig,
+)
 from mirage.vfs.ram import RAMVFS
 
 REDIS_URL = os.environ.get("REDIS_URL", "redis://localhost:6379/0")
@@ -40,8 +43,10 @@ async def main() -> None:
     ram_a = RAMVFS()
     ws_a = Workspace({"/data": ram_a}, index=index_config)
     index_a = ws_a.mount("/data").index_store
-    print("index store A is redis-backed: "
-          f"{isinstance(index_a, RedisIndexCacheStore)}")
+    print(
+        "index store A is redis-backed: "
+        f"{isinstance(index_a, RedisIndexCacheStore)}"
+    )
 
     # Populate the shared Redis index through workspace A.
     await index_a.put("/data/hello.txt", _file("hello.txt"))

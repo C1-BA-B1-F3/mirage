@@ -54,9 +54,11 @@ from mirage.vfs.tencent.tencent import TencentVFS
 from mirage.vfs.wasabi.wasabi import WasabiVFS
 from mirage.workspace import Workspace
 from mirage.workspace.mount import Mount
-from mirage.workspace.mount.read_policy import (check_read_capability,
-                                                coerce_read_policy,
-                                                resolve_read_spec)
+from mirage.workspace.mount.read_policy import (
+    check_read_capability,
+    coerce_read_policy,
+    resolve_read_spec,
+)
 
 FRESH = ReadSpec(policy=ReadPolicy.FRESH)
 SPEC_ROOT = Path(__file__).parents[4] / "spec"
@@ -65,15 +67,27 @@ SPEC_ROOT = Path(__file__).parents[4] / "spec"
 # flag is declared once and inherited. Listing them is what catches a new
 # provider that stops inheriting.
 S3_ALIASES = [
-    AliyunVFS, BackblazeVFS, CephVFS, DigitalOceanVFS, GCSVFS, MinIOVFS,
-    OCIVFS, QingStorVFS, R2VFS, ScalewayVFS, SeaweedFSVFS, SupabaseVFS,
-    TencentVFS, WasabiVFS
+    AliyunVFS,
+    BackblazeVFS,
+    CephVFS,
+    DigitalOceanVFS,
+    GCSVFS,
+    MinIOVFS,
+    OCIVFS,
+    QingStorVFS,
+    R2VFS,
+    ScalewayVFS,
+    SeaweedFSVFS,
+    SupabaseVFS,
+    TencentVFS,
+    WasabiVFS,
 ]
 
 
 def test_absent_policy_is_bounded_at_the_default_bound():
-    assert resolve_read_spec(None, None) == ReadSpec(policy=ReadPolicy.BOUNDED,
-                                                     ttl=DEFAULT_READ_TTL)
+    assert resolve_read_spec(None, None) == ReadSpec(
+        policy=ReadPolicy.BOUNDED, ttl=DEFAULT_READ_TTL
+    )
 
 
 def test_empty_policy_reads_as_absent():
@@ -85,8 +99,9 @@ def test_an_already_coerced_policy_passes_through():
     # coercion of an already-coerced value would refuse it. The config
     # door validates the field and then builds the spec, so it happens.
     assert coerce_read_policy(ReadPolicy.FRESH) is ReadPolicy.FRESH
-    assert resolve_read_spec(ReadPolicy.BOUNDED,
-                             30) == ReadSpec(policy=ReadPolicy.BOUNDED, ttl=30)
+    assert resolve_read_spec(ReadPolicy.BOUNDED, 30) == ReadSpec(
+        policy=ReadPolicy.BOUNDED, ttl=30
+    )
 
 
 def test_policy_name_is_case_insensitive():
@@ -126,12 +141,15 @@ def test_unknown_policy_names_the_known_ones():
     assert "fresh, bounded, pinned" in str(exc.value)
 
 
-@pytest.mark.parametrize(("bad", "message"), [
-    (0, "at least 1 second"),
-    (-1, "at least 1 second"),
-    (1.5, "whole seconds"),
-    (True, "whole seconds"),
-])
+@pytest.mark.parametrize(
+    ("bad", "message"),
+    [
+        (0, "at least 1 second"),
+        (-1, "at least 1 second"),
+        (1.5, "whole seconds"),
+        (True, "whole seconds"),
+    ],
+)
 def test_the_verdict_refuses_a_bound_no_mount_could_use(bad, message):
     """The programmatic door bypasses ``resolve_read_spec`` entirely.
 
@@ -150,9 +168,11 @@ def test_the_verdict_refuses_a_bound_no_mount_could_use(bad, message):
 
 def test_a_bad_bound_is_refused_at_the_workspace_door_too():
     with pytest.raises(ValueError, match="at least 1 second"):
-        Workspace({"/d": RAMVFS()},
-                  mode=MountMode.WRITE,
-                  read=ReadSpec(policy=ReadPolicy.BOUNDED, ttl=0))
+        Workspace(
+            {"/d": RAMVFS()},
+            mode=MountMode.WRITE,
+            read=ReadSpec(policy=ReadPolicy.BOUNDED, ttl=0),
+        )
 
 
 @pytest.mark.parametrize("policy", ["fresh", "pinned"])
@@ -175,9 +195,11 @@ def test_a_mount_stores_the_coerced_policy_not_the_wire_string():
     # `is`, so the spec has to be normalized where it becomes live mount
     # state or a capable backend mounts `fresh` and behaves as bounded.
     vfs = S3VFS(S3Config(bucket="b"))
-    ws = Workspace({"/s3": vfs},
-                   mode=MountMode.WRITE,
-                   read=ReadSpec(policy="fresh", ttl=30))
+    ws = Workspace(
+        {"/s3": vfs},
+        mode=MountMode.WRITE,
+        read=ReadSpec(policy="fresh", ttl=30),
+    )
     mount = ws._registry.mount_for_prefix("/s3/")
     assert mount.read.policy is ReadPolicy.FRESH
 
@@ -206,8 +228,9 @@ def test_the_verdict_names_the_policy_before_the_bound():
 
 def test_pinned_is_refused_naming_the_missing_layer():
     with pytest.raises(ValueError) as exc:
-        check_read_capability("/d/", RAMVFS(),
-                              ReadSpec(policy=ReadPolicy.PINNED))
+        check_read_capability(
+            "/d/", RAMVFS(), ReadSpec(policy=ReadPolicy.PINNED)
+        )
     assert "needs a version layer to pin to" in str(exc.value)
     assert "use fresh or bounded" in str(exc.value)
 
@@ -219,11 +242,12 @@ def test_fresh_is_refused_on_ram_which_caches_nothing():
     assert "ram caches neither" in str(exc.value)
 
 
-@pytest.mark.parametrize("name, config", [
-    ("postgres", {
-        "dsn": "postgresql://x/y"
-    }),
-])
+@pytest.mark.parametrize(
+    "name, config",
+    [
+        ("postgres", {"dsn": "postgresql://x/y"}),
+    ],
+)
 def test_fresh_is_refused_where_listings_live_no_time(name, config):
     vfs = build_vfs(name, config)
     assert vfs.caches_reads is False
@@ -237,23 +261,18 @@ def test_fresh_is_allowed_on_disk_which_caches_listings(tmp_path):
     check_read_capability("/local/", vfs, FRESH)
 
 
-@pytest.mark.parametrize("name, config", [
-    ("chroma", {
-        "collection_name": "c"
-    }),
-    ("qdrant", {
-        "url": "http://localhost:6333",
-        "collection": "c"
-    }),
-    ("airtable", {
-        "token": "k"
-    }),
-    ("wandb", {
-        "entities": ["lab"]
-    }),
-])
+@pytest.mark.parametrize(
+    "name, config",
+    [
+        ("chroma", {"collection_name": "c"}),
+        ("qdrant", {"url": "http://localhost:6333", "collection": "c"}),
+        ("airtable", {"token": "k"}),
+        ("wandb", {"entities": ["lab"]}),
+    ],
+)
 def test_fresh_is_allowed_on_a_listing_cache_without_a_file_cache(
-        name, config):
+    name, config
+):
     # fresh has a listing to check here even though no file bytes are kept.
     vfs = build_vfs(name, config)
     assert vfs.caches_reads is False
@@ -264,7 +283,8 @@ def test_fresh_is_refused_on_a_backend_that_caches_but_stamps_nothing():
     # dropbox reaches the gate -- it caches reads -- but its read record
     # carries no fingerprint, so there is nothing to compare.
     vfs = DropboxVFS(
-        DropboxConfig(client_id="i", client_secret="s", refresh_token="r"))
+        DropboxConfig(client_id="i", client_secret="s", refresh_token="r")
+    )
     assert vfs.caches_reads is True
     with pytest.raises(ValueError) as exc:
         check_read_capability("/dbx/", vfs, FRESH)
@@ -290,7 +310,8 @@ def test_fresh_is_allowed_on_s3():
 
 def test_fresh_is_allowed_on_a_constructed_alias():
     vfs = MinIOVFS(
-        MinIOConfig(bucket="b", endpoint_url="http://127.0.0.1:9000"))
+        MinIOConfig(bucket="b", endpoint_url="http://127.0.0.1:9000")
+    )
     assert check_read_capability("/m/", vfs, FRESH) is None
 
 
@@ -306,8 +327,9 @@ def test_gridfs_is_allowed_fresh_on_a_constructed_instance():
     # `fresh`. The token behind the claim is pinned separately, in
     # tests/core/gridfs/test_read_fingerprint.py.
     assert GridFSVFS.read_revalidatable is True
-    vfs = GridFSVFS(GridFSConfig(uri="mongodb://127.0.0.1:27017",
-                                 database="d"))
+    vfs = GridFSVFS(
+        GridFSConfig(uri="mongodb://127.0.0.1:27017", database="d")
+    )
     assert vfs.caches_reads is True
     assert check_read_capability("/g/", vfs, FRESH) is None
 
@@ -319,14 +341,20 @@ def test_gdrive_is_allowed_fresh_on_a_constructed_instance():
     # tests/vfs/test_read_revalidatable.py.
     assert GoogleDriveVFS.read_revalidatable is True
     vfs = GoogleDriveVFS(
-        GoogleDriveConfig(client_id="c", client_secret="s", refresh_token="r"))
+        GoogleDriveConfig(client_id="c", client_secret="s", refresh_token="r")
+    )
     assert vfs.caches_reads is True
     assert check_read_capability("/gd/", vfs, FRESH) is None
 
 
-@pytest.mark.parametrize(("cls", "config"), [(GDocsVFS, GDocsConfig),
-                                             (GSheetsVFS, GSheetsConfig),
-                                             (GSlidesVFS, GSlidesConfig)])
+@pytest.mark.parametrize(
+    ("cls", "config"),
+    [
+        (GDocsVFS, GDocsConfig),
+        (GSheetsVFS, GSheetsConfig),
+        (GSlidesVFS, GSlidesConfig),
+    ],
+)
 def test_google_apps_are_allowed_fresh_on_a_constructed_instance(cls, config):
     # Each stamps the file's Drive modifiedTime on stat and read; the
     # read-token contract pins that the two agree.
@@ -357,11 +385,33 @@ def test_bounded_is_allowed_on_a_backend_that_cannot_revalidate():
 # backend claiming revalidation it cannot do refetches on every read
 # forever, and one that could but does not is refused for no reason.
 REVALIDATABLE = {
-    "s3", "aliyun", "backblaze", "ceph", "digitalocean", "gcs", "minio", "oci",
-    "qingstor", "r2", "scaleway", "seaweedfs", "supabase", "tencent", "wasabi",
-    "gridfs", "gdrive", "gdocs", "gsheets", "gslides", "hf_models",
-    "hf_datasets", "hf_spaces", "onedrive", "sharepoint", "hf_buckets",
-    "github"
+    "s3",
+    "aliyun",
+    "backblaze",
+    "ceph",
+    "digitalocean",
+    "gcs",
+    "minio",
+    "oci",
+    "qingstor",
+    "r2",
+    "scaleway",
+    "seaweedfs",
+    "supabase",
+    "tencent",
+    "wasabi",
+    "gridfs",
+    "gdrive",
+    "gdocs",
+    "gsheets",
+    "gslides",
+    "hf_models",
+    "hf_datasets",
+    "hf_spaces",
+    "onedrive",
+    "sharepoint",
+    "hf_buckets",
+    "github",
 }
 
 FRESH_BY_LISTING = {"disk", "chroma", "qdrant", "airtable", "wandb"}
@@ -398,18 +448,23 @@ def test_the_fresh_roster_is_the_revalidatable_ones_plus_listing_caches():
 async def test_a_workspace_index_is_what_fresh_is_judged_on(tmp_path):
     # RAMVFS declares no listing lifetime of its own, but a workspace index
     # gives it one; the verdict must read the index the mount will use.
-    ws = Workspace({"/r": (RAMVFS(), MountMode.WRITE)},
-                   read=FRESH,
-                   index=IndexConfig(ttl=600))
+    ws = Workspace(
+        {"/r": (RAMVFS(), MountMode.WRITE)},
+        read=FRESH,
+        index=IndexConfig(ttl=600),
+    )
     try:
         assert ws._registry.mount_for_prefix("/r/").read.policy is (
-            ReadPolicy.FRESH)
+            ReadPolicy.FRESH
+        )
     finally:
         await ws.close()
     with pytest.raises(ValueError, match="caches reads or listings"):
-        Workspace({"/l": DiskVFS(root=str(tmp_path))},
-                  read=FRESH,
-                  index=IndexConfig(ttl=0))
+        Workspace(
+            {"/l": DiskVFS(root=str(tmp_path))},
+            read=FRESH,
+            index=IndexConfig(ttl=0),
+        )
 
 
 @pytest.mark.asyncio
@@ -418,22 +473,27 @@ async def test_a_mount_index_is_what_fresh_is_judged_on(tmp_path):
     ws = Workspace(
         {
             "/r": Mount(
-                RAMVFS(), mode=MountMode.WRITE, index=IndexConfig(ttl=600))
+                RAMVFS(), mode=MountMode.WRITE, index=IndexConfig(ttl=600)
+            )
         },
-        read=FRESH)
+        read=FRESH,
+    )
     try:
         assert ws._registry.mount_for_prefix("/r/").read.policy is (
-            ReadPolicy.FRESH)
+            ReadPolicy.FRESH
+        )
     finally:
         await ws.close()
     with pytest.raises(ValueError, match="caches reads or listings"):
         Workspace(
             {
-                "/l": Mount(DiskVFS(root=str(tmp_path)),
-                            index=IndexConfig(ttl=0))
+                "/l": Mount(
+                    DiskVFS(root=str(tmp_path)), index=IndexConfig(ttl=0)
+                )
             },
             read=FRESH,
-            index=IndexConfig(ttl=600))
+            index=IndexConfig(ttl=600),
+        )
 
 
 @pytest.mark.asyncio
@@ -441,12 +501,15 @@ async def test_an_alias_is_judged_on_the_index_it_shares(tmp_path):
     # A second mount of one driver shares the first mount's store, so the
     # workspace index it would otherwise be given is not the one it runs.
     disk = DiskVFS(root=str(tmp_path))
-    ws = Workspace({"/a": Mount(disk, index=IndexConfig(ttl=600))},
-                   index=IndexConfig(ttl=0))
+    ws = Workspace(
+        {"/a": Mount(disk, index=IndexConfig(ttl=600))},
+        index=IndexConfig(ttl=0),
+    )
     try:
         ws.add_mount("/b", disk, read=FRESH)
         assert ws._registry.mount_for_prefix("/b/").read.policy is (
-            ReadPolicy.FRESH)
+            ReadPolicy.FRESH
+        )
     finally:
         await ws.close()
 
@@ -458,8 +521,9 @@ def test_fresh_is_refused_on_dev_which_keeps_no_listing():
 
 def test_a_bad_bound_is_named_before_the_listing_verdict():
     with pytest.raises(ValueError, match="ttl must be at least 1 second"):
-        check_read_capability("/d/", RAMVFS(),
-                              ReadSpec(policy=ReadPolicy.FRESH, ttl=0))
+        check_read_capability(
+            "/d/", RAMVFS(), ReadSpec(policy=ReadPolicy.FRESH, ttl=0)
+        )
 
 
 def test_the_revalidatable_roster_is_exactly_these_backends():
@@ -514,10 +578,12 @@ def test_lancedb_decides_per_config_not_per_class():
 @pytest.mark.asyncio
 async def test_constructor_alias_uses_first_mount_index():
     vfs = RAMVFS()
-    ws = Workspace({
-        "/first": Mount(vfs, index=IndexConfig(ttl=600)),
-        "/alias": Mount(vfs, index=IndexConfig(ttl=0), read=FRESH),
-    })
+    ws = Workspace(
+        {
+            "/first": Mount(vfs, index=IndexConfig(ttl=600)),
+            "/alias": Mount(vfs, index=IndexConfig(ttl=0), read=FRESH),
+        }
+    )
     try:
         assert ws.mount("/alias").index_store is ws.mount("/first").index_store
         assert ws.mount("/alias").index_store.ttl == 600
@@ -528,7 +594,9 @@ async def test_constructor_alias_uses_first_mount_index():
 def test_constructor_alias_cannot_enable_a_disabled_shared_index():
     vfs = RAMVFS()
     with pytest.raises(ValueError, match="caches reads or listings"):
-        Workspace({
-            "/first": Mount(vfs, index=IndexConfig(ttl=0)),
-            "/alias": Mount(vfs, index=IndexConfig(ttl=600), read=FRESH),
-        })
+        Workspace(
+            {
+                "/first": Mount(vfs, index=IndexConfig(ttl=0)),
+                "/alias": Mount(vfs, index=IndexConfig(ttl=600), read=FRESH),
+            }
+        )

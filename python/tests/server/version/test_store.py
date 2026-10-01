@@ -67,11 +67,13 @@ async def test_tree_nested_paths(tmp_path: Path):
     x = await store.write_blob(b"x")
     y = await store.write_blob(b"y")
     z = await store.write_blob(b"z")
-    tree = await store.write_tree({
-        "top.txt": x,
-        "d/one.txt": y,
-        "d/sub/two.txt": z,
-    })
+    tree = await store.write_tree(
+        {
+            "top.txt": x,
+            "d/one.txt": y,
+            "d/sub/two.txt": z,
+        }
+    )
     assert await store.read_tree(tree) == {
         "top.txt": x,
         "d/one.txt": y,
@@ -98,24 +100,27 @@ async def test_commit_advances_branch(tmp_path: Path):
 @pytest.mark.asyncio
 async def test_commit_rejects_stale_head(tmp_path: Path):
     store = await VersionStore.open(LocalBackend(tmp_path), "ws")
-    c1 = await store.commit(await store.write_tree(
-        {"a.txt": await store.write_blob(b"v1")}),
-                            parents=[],
-                            branch="main",
-                            message="first")
-    c2 = await store.commit(await store.write_tree(
-        {"a.txt": await store.write_blob(b"v2")}),
-                            parents=[c1],
-                            branch="main",
-                            message="second")
+    c1 = await store.commit(
+        await store.write_tree({"a.txt": await store.write_blob(b"v1")}),
+        parents=[],
+        branch="main",
+        message="first",
+    )
+    c2 = await store.commit(
+        await store.write_tree({"a.txt": await store.write_blob(b"v2")}),
+        parents=[c1],
+        branch="main",
+        message="second",
+    )
     assert await store.head("main") == c2
 
     with pytest.raises(HeadMovedError):
-        await store.commit(await store.write_tree(
-            {"a.txt": await store.write_blob(b"v3")}),
-                           parents=[c1],
-                           branch="main",
-                           message="stale")
+        await store.commit(
+            await store.write_tree({"a.txt": await store.write_blob(b"v3")}),
+            parents=[c1],
+            branch="main",
+            message="stale",
+        )
     assert await store.head("main") == c2
 
 
@@ -140,16 +145,20 @@ async def test_tree_diff(tmp_path: Path):
     gone = await store.write_blob(b"gone")
     new = await store.write_blob(b"new")
 
-    tree_a = await store.write_tree({
-        "keep.txt": keep,
-        "change.txt": before,
-        "gone.txt": gone,
-    })
-    tree_b = await store.write_tree({
-        "keep.txt": keep,
-        "change.txt": after,
-        "new.txt": new,
-    })
+    tree_a = await store.write_tree(
+        {
+            "keep.txt": keep,
+            "change.txt": before,
+            "gone.txt": gone,
+        }
+    )
+    tree_b = await store.write_tree(
+        {
+            "keep.txt": keep,
+            "change.txt": after,
+            "new.txt": new,
+        }
+    )
 
     assert await store.diff(tree_a, tree_b) == {
         "added": ["new.txt"],

@@ -17,10 +17,12 @@ import pytest
 from mirage.commands.cli.builtin.git.discover import discover
 from mirage.commands.cli.builtin.git.errors import AmbiguousArgumentError
 from mirage.commands.cli.builtin.git.repo import open_repo
-from mirage.commands.cli.builtin.git.revparse import (object_at,
-                                                      resolve_commit,
-                                                      resolve_object,
-                                                      split_operators)
+from mirage.commands.cli.builtin.git.revparse import (
+    object_at,
+    resolve_commit,
+    resolve_object,
+    split_operators,
+)
 from mirage.commands.cli.builtin.git.types import AncestryStep, PeelStep
 
 from .conftest import repo_facts
@@ -52,8 +54,9 @@ def test_unicode_digit_suffix_is_not_a_count():
         split_operators("main~٣")
 
 
-@pytest.mark.parametrize("revision",
-                         ["HEAD^x", "HEAD~x", "HEAD^-1", "HEAD~1z"])
+@pytest.mark.parametrize(
+    "revision", ["HEAD^x", "HEAD~x", "HEAD^-1", "HEAD~1z"]
+)
 def test_a_suffix_that_is_not_a_step_is_refused(revision: str):
     # Every character used to count as another first-parent hop, so
     # ``HEAD^x`` resolved to ``HEAD^^`` and a tag was written at a
@@ -63,8 +66,8 @@ def test_a_suffix_that_is_not_a_step_is_refused(revision: str):
 
 
 @pytest.mark.parametrize(
-    "revision",
-    ["HEAD^", "HEAD~", "HEAD^0", "HEAD^~", "HEAD~2^2~1", "HEAD^12"])
+    "revision", ["HEAD^", "HEAD~", "HEAD^0", "HEAD^~", "HEAD~2^2~1", "HEAD^12"]
+)
 def test_the_steps_git_does_take_still_parse(revision: str):
     split_operators(revision)
 
@@ -77,8 +80,11 @@ def test_parent_suffix_is_distinguished_from_ancestor():
 def test_suffixes_chain():
     base, steps = split_operators("HEAD~2^2~1")
     assert base == "HEAD"
-    assert [(s.first_parent, s.count)
-            for s in steps] == [(True, 2), (False, 2), (True, 1)]
+    assert [(s.first_parent, s.count) for s in steps] == [
+        (True, 2),
+        (False, 2),
+        (True, 1),
+    ]
 
 
 def test_a_bare_suffix_string_means_head():
@@ -110,7 +116,8 @@ async def test_walking_off_the_end_of_history_is_gits_fatal(workspace):
         resolve_commit(repo, "HEAD~99")
     assert str(excinfo.value).startswith(
         "ambiguous argument 'HEAD~99': unknown revision or path not in "
-        "the working tree.")
+        "the working tree."
+    )
 
 
 @pytest.mark.asyncio
@@ -130,32 +137,35 @@ async def test_second_parent_of_a_linear_commit_is_refused(workspace):
 
 
 def test_a_revision_with_no_peel_carries_only_its_steps():
-    assert split_operators("HEAD~2") == ("HEAD", (AncestryStep(True, 2), ))
+    assert split_operators("HEAD~2") == ("HEAD", (AncestryStep(True, 2),))
 
 
 def test_a_bare_peel_carries_an_empty_type():
-    assert split_operators("v1^{}") == ("v1", (PeelStep(""), ))
+    assert split_operators("v1^{}") == ("v1", (PeelStep(""),))
 
 
 def test_a_typed_peel_carries_its_word():
-    assert split_operators("HEAD^{tree}") == ("HEAD", (PeelStep("tree"), ))
+    assert split_operators("HEAD^{tree}") == ("HEAD", (PeelStep("tree"),))
 
 
 def test_a_peel_is_not_an_ancestry_step():
     # Read as one it is `^` with no digits, which means the first
     # parent: the caller was handed another commit without a word.
     _base, ops = split_operators("HEAD^{tree}")
-    assert ops == (PeelStep("tree"), )
+    assert ops == (PeelStep("tree"),)
 
 
 def test_a_peel_chains_with_the_steps_around_it():
     # git reads a revision left to right, so a peel is an operator like
     # any other rather than something that has to come last.
-    assert split_operators("HEAD^{commit}~1") == ("HEAD",
-                                                  (PeelStep("commit"),
-                                                   AncestryStep(True, 1)))
-    assert split_operators("v1~1^{tree}") == ("v1", (AncestryStep(True, 1),
-                                                     PeelStep("tree")))
+    assert split_operators("HEAD^{commit}~1") == (
+        "HEAD",
+        (PeelStep("commit"), AncestryStep(True, 1)),
+    )
+    assert split_operators("v1~1^{tree}") == (
+        "v1",
+        (AncestryStep(True, 1), PeelStep("tree")),
+    )
 
 
 def test_a_peel_that_is_never_closed_is_refused():
@@ -351,15 +361,18 @@ async def test_a_commit_ish_still_reads_an_object_peel(git_rw):
 
 @pytest.mark.asyncio
 async def test_a_peel_followed_by_a_step_walks_from_the_peeled_commit(
-        workspace):
+    workspace,
+):
     # A peel used to be read only at the end of a revision, so every
     # chain that went on after one was refused although git takes it.
     location = await discover(*repo_facts(workspace), "/repo")
     repo = await open_repo(workspace.dispatch, location)
     assert resolve_commit(repo, "HEAD^{commit}~1").message == b"second"
     assert resolve_commit(repo, "HEAD^{}^").message == b"second"
-    assert resolve_object(repo, "HEAD^{commit}~1").id == resolve_commit(
-        repo, "HEAD~1").id
+    assert (
+        resolve_object(repo, "HEAD^{commit}~1").id
+        == resolve_commit(repo, "HEAD~1").id
+    )
 
 
 @pytest.mark.asyncio

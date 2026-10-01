@@ -60,10 +60,9 @@ def test_connect_kwargs_defaults():
 def test_connect_kwargs_password_and_passphrase():
     # Both used to be dropped by pydantic's extra="ignore" without a word, so
     # a password-only host and an encrypted key were unreachable.
-    cfg = SSHConfig(host="dev",
-                    password="pw",
-                    identity_file="~/k",
-                    passphrase="pp")
+    cfg = SSHConfig(
+        host="dev", password="pw", identity_file="~/k", passphrase="pp"
+    )
     kw = _connect_kwargs(cfg)
     assert kw["password"] == "pw"
     assert kw["passphrase"] == "pp"

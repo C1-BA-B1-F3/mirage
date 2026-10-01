@@ -49,9 +49,9 @@ def test_read_bytes_with_key_prefix():
     with patch_s3_multi(store):
         config = _make_config(key_prefix="prod")
         accessor = S3Accessor(config)
-        path = PathSpec(vfs_path="hello.txt",
-                        virtual="/hello.txt",
-                        directory="/hello.txt")
+        path = PathSpec(
+            vfs_path="hello.txt", virtual="/hello.txt", directory="/hello.txt"
+        )
         data = asyncio.run(read_bytes(accessor, path))
     assert data == b"hello"
 

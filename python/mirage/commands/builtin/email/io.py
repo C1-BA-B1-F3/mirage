@@ -24,8 +24,10 @@ from mirage.vfs.types import ReadOps
 # CLI (commands/cli/builtin/himalaya) is the send/reply/forward/triage
 # surface; the generic byte-mutation commands are intentionally absent (no
 # write op wired).
-IO = VFSAdapter(read=ReadOps(readdir=_readdir, read_bytes=_read, stat=_stat),
-                is_mounted=lambda a: True,
-                local=False).to_command_io()
+IO = VFSAdapter(
+    read=ReadOps(readdir=_readdir, read_bytes=_read, stat=_stat),
+    is_mounted=lambda a: True,
+    local=False,
+).to_command_io()
 
 resolve_glob = IO.resolve_glob

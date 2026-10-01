@@ -27,7 +27,7 @@ def test_index_entry_extra_round_trip():
         resource_type="slack/file",
         extra={
             "url": "https://files.slack.com/x",
-            "mimetype": "application/pdf"
+            "mimetype": "application/pdf",
         },
     )
     assert entry.extra == {

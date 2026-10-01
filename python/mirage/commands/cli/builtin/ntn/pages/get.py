@@ -12,8 +12,11 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-from mirage.commands.cli.builtin.ntn.util import (first_text, notion_config,
-                                                  pretty_json)
+from mirage.commands.cli.builtin.ntn.util import (
+    first_text,
+    notion_config,
+    pretty_json,
+)
 from mirage.commands.cli.types import CLIInvocation
 from mirage.commands.spec.flag_view import FlagView
 from mirage.core.notion.config import NotionConfig
@@ -24,7 +27,7 @@ from mirage.io.types import ByteSource, IOResult
 
 
 async def get(
-        inv: CLIInvocation[NotionConfig]
+    inv: CLIInvocation[NotionConfig],
 ) -> tuple[ByteSource | None, IOResult]:
     fl = FlagView(inv.flags)
     page_id = first_text(inv.texts, "page id")
@@ -35,10 +38,9 @@ async def get(
     rendered = await get_page_markdown(config, page_id)
     page = await get_page(config, page_id)
     if fl.as_bool("json"):
-        return yield_bytes(pretty_json({
-            "markdown": rendered,
-            "page": page
-        })), IOResult()
+        return yield_bytes(
+            pretty_json({"markdown": rendered, "page": page})
+        ), IOResult()
     body = rendered.get("markdown", "")
     text = f"---\ntitle: {extract_title(page)}\n---\n\n{body}"
     return yield_bytes(text.encode()), IOResult()

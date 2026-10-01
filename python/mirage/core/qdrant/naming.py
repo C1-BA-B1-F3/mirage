@@ -51,8 +51,9 @@ def group_name(value: Any, *, basename: bool = False) -> str:
     segment = PATH_SAFE.encode(leaf or name)
     if byte_len(segment) <= NAME_MAX_BYTES:
         return segment
-    return fit_id_name(segment,
-                       hashlib.md5(segment.encode("utf-8")).hexdigest())
+    return fit_id_name(
+        segment, hashlib.md5(segment.encode("utf-8")).hexdigest()
+    )
 
 
 def row_stem(row: Mapping[str, Any], config: QdrantConfig) -> str:
@@ -76,9 +77,10 @@ def row_stem(row: Mapping[str, Any], config: QdrantConfig) -> str:
     if config.blob_field:
         suffixes.append(f".{config.blob_ext}")
     longest_suffix = max(suffixes, key=byte_len)
-    fitted = fit_id_name(path_safe_name(value_text(label)), point_id,
-                         longest_suffix)
-    return fitted[:-len(longest_suffix)]
+    fitted = fit_id_name(
+        path_safe_name(value_text(label)), point_id, longest_suffix
+    )
+    return fitted[: -len(longest_suffix)]
 
 
 def point_id_from_stem(stem: str, config: QdrantConfig) -> str:

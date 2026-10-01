@@ -29,25 +29,31 @@ async def main() -> None:
     # global; `sys.argv` exists under the `local` runtime.
     print("\n=== python3 -c with argv (flag-conditional) ===")
     r = await ws.shell('python3 -c "print(argv[1:])" alpha beta')
-    print(f"argv after -c: {(await r.stdout_str()).strip()}  "
-          f"(expected: ['alpha', 'beta'])")
+    print(
+        f"argv after -c: {(await r.stdout_str()).strip()}  "
+        f"(expected: ['alpha', 'beta'])"
+    )
 
     print("\n=== python3 /ram/script.py (abs path → dispatch read) ===")
     await ws.shell("echo 'print(\"hello from vfs\")' > /ram/h.py")
     r = await ws.shell("python3 /ram/h.py")
-    print(f"stdout: {(await r.stdout_str()).strip()}  "
-          f"(expected: hello from vfs)")
+    print(
+        f"stdout: {(await r.stdout_str()).strip()}  (expected: hello from vfs)"
+    )
 
     print("\n=== python3 /abs/script.py arg1 arg2 (script + argv) ===")
     await ws.shell("echo 'print(argv[1:])' > /ram/argv.py")
     r = await ws.shell("python3 /ram/argv.py one two")
-    print(f"argv after script: {(await r.stdout_str()).strip()}  "
-          f"(expected: ['one', 'two'])")
+    print(
+        f"argv after script: {(await r.stdout_str()).strip()}  "
+        f"(expected: ['one', 'two'])"
+    )
 
     print("\n=== python3 bare-name script via cwd ===")
     r = await ws.shell("cd /ram && python3 h.py")
-    print(f"stdout: {(await r.stdout_str()).strip()}  "
-          f"(expected: hello from vfs)")
+    print(
+        f"stdout: {(await r.stdout_str()).strip()}  (expected: hello from vfs)"
+    )
 
     print("\n=== echo code | python3 (stdin) ===")
     r = await ws.shell('echo "print(7*6)" | python3')
@@ -60,9 +66,11 @@ async def main() -> None:
     print("\n=== session env passthrough ===")
     await ws.shell("export GREETING=hello_mirage")
     r = await ws.shell(
-        "python3 -c \"import os; print(os.environ.get('GREETING','none'))\"")
+        "python3 -c \"import os; print(os.environ.get('GREETING','none'))\""
+    )
     print(
-        f"stdout: {(await r.stdout_str()).strip()}  (expected: hello_mirage)")
+        f"stdout: {(await r.stdout_str()).strip()}  (expected: hello_mirage)"
+    )
 
     await ws.close()
 

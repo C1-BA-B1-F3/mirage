@@ -40,16 +40,20 @@ model = ModelFactory.create(
 agent = ChatAgent(
     system_message=BaseMessage.make_assistant_message(
         role_name="Mirage Camel Agent",
-        content=("You operate over a Mirage virtual filesystem mounted at /. "
-                 "Use the file toolkit to write structured files and the "
-                 "terminal toolkit to run shell commands. Paths start at /."),
+        content=(
+            "You operate over a Mirage virtual filesystem mounted at /. "
+            "Use the file toolkit to write structured files and the "
+            "terminal toolkit to run shell commands. Paths start at /."
+        ),
     ),
     model=model,
     tools=[*terminal.get_tools(), *files.get_tools()],
 )
 
-task = ("Write a CSV at /data/numbers.csv with columns name,value and 3 rows. "
-        "Then list /data and read the file back.")
+task = (
+    "Write a CSV at /data/numbers.csv with columns name,value and 3 rows. "
+    "Then list /data and read the file back."
+)
 
 
 async def main():

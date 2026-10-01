@@ -26,7 +26,6 @@ from mirage.vfs.notion.prompt import PROMPT, WRITE_PROMPT
 
 
 class NotionVFS(BaseVFS):
-
     accessor: NotionAccessor
     name: str = VFSName.NOTION
     caches_reads: bool = True

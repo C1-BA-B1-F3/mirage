@@ -31,8 +31,9 @@ def index():
 
 @pytest.fixture
 def accessor():
-    return MongoDBAccessor(config=MongoDBConfig(
-        uri="mongodb://localhost:27017"))
+    return MongoDBAccessor(
+        config=MongoDBConfig(uri="mongodb://localhost:27017")
+    )
 
 
 def _path(s: str) -> PathSpec:
@@ -41,14 +42,17 @@ def _path(s: str) -> PathSpec:
 
 @pytest.fixture(autouse=True)
 def _stub_existence_checks():
-    with patch(
+    with (
+        patch(
             "mirage.core.mongodb.readdir.database_exists",
             new_callable=AsyncMock,
             return_value=True,
-    ), patch(
+        ),
+        patch(
             "mirage.core.mongodb.readdir.entity_exists",
             new_callable=AsyncMock,
             return_value=True,
+        ),
     ):
         yield
 
@@ -56,9 +60,9 @@ def _stub_existence_checks():
 @pytest.mark.asyncio
 async def test_readdir_root_lists_databases(accessor, index):
     with patch(
-            "mirage.core.mongodb.readdir.list_databases",
-            new_callable=AsyncMock,
-            return_value=["db1", "db2"],
+        "mirage.core.mongodb.readdir.list_databases",
+        new_callable=AsyncMock,
+        return_value=["db1", "db2"],
     ):
         result = await readdir(accessor, _path("/"), index)
     assert "/db1" in result
@@ -78,38 +82,41 @@ async def test_readdir_database_returns_fixed_children(accessor, index):
 @pytest.mark.asyncio
 async def test_readdir_collections_dir_lists_collections_only(accessor, index):
     with patch(
-            "mirage.core.mongodb.readdir.list_collections",
-            new_callable=AsyncMock,
-            return_value=["movies", "users"],
+        "mirage.core.mongodb.readdir.list_collections",
+        new_callable=AsyncMock,
+        return_value=["movies", "users"],
     ) as mock_list:
-        result = await readdir(accessor, _path("/sample_mflix/collections"),
-                               index)
+        result = await readdir(
+            accessor, _path("/sample_mflix/collections"), index
+        )
     assert "/sample_mflix/collections/movies" in result
     assert "/sample_mflix/collections/users" in result
-    mock_list.assert_awaited_once_with(accessor.client,
-                                       "sample_mflix",
-                                       kind="collection")
+    mock_list.assert_awaited_once_with(
+        accessor.client, "sample_mflix", kind="collection"
+    )
 
 
 @pytest.mark.asyncio
 async def test_readdir_views_dir_lists_views_only(accessor, index):
     with patch(
-            "mirage.core.mongodb.readdir.list_collections",
-            new_callable=AsyncMock,
-            return_value=["top_rated"],
+        "mirage.core.mongodb.readdir.list_collections",
+        new_callable=AsyncMock,
+        return_value=["top_rated"],
     ) as mock_list:
         result = await readdir(accessor, _path("/sample_mflix/views"), index)
     assert result == ["/sample_mflix/views/top_rated"]
-    mock_list.assert_awaited_once_with(accessor.client,
-                                       "sample_mflix",
-                                       kind="view")
+    mock_list.assert_awaited_once_with(
+        accessor.client, "sample_mflix", kind="view"
+    )
 
 
 @pytest.mark.asyncio
 async def test_readdir_collection_entity_lists_schema_and_documents(
-        accessor, index):
-    result = await readdir(accessor, _path("/sample_mflix/collections/movies"),
-                           index)
+    accessor, index
+):
+    result = await readdir(
+        accessor, _path("/sample_mflix/collections/movies"), index
+    )
     assert result == [
         "/sample_mflix/collections/movies/schema.json",
         "/sample_mflix/collections/movies/documents.jsonl",
@@ -118,8 +125,9 @@ async def test_readdir_collection_entity_lists_schema_and_documents(
 
 @pytest.mark.asyncio
 async def test_readdir_view_entity_lists_schema_and_documents(accessor, index):
-    result = await readdir(accessor, _path("/sample_mflix/views/top_rated"),
-                           index)
+    result = await readdir(
+        accessor, _path("/sample_mflix/views/top_rated"), index
+    )
     assert result == [
         "/sample_mflix/views/top_rated/schema.json",
         "/sample_mflix/views/top_rated/documents.jsonl",
@@ -145,9 +153,9 @@ async def test_readdir_root_index_caches_databases(accessor, index):
 @pytest.mark.asyncio
 async def test_readdir_database_raises_when_db_missing(accessor, index):
     with patch(
-            "mirage.core.mongodb.readdir.database_exists",
-            new_callable=AsyncMock,
-            return_value=False,
+        "mirage.core.mongodb.readdir.database_exists",
+        new_callable=AsyncMock,
+        return_value=False,
     ):
         with pytest.raises(FileNotFoundError):
             await readdir(accessor, _path("/ghost"), index)
@@ -156,20 +164,23 @@ async def test_readdir_database_raises_when_db_missing(accessor, index):
 @pytest.mark.asyncio
 async def test_readdir_entity_raises_when_collection_missing(accessor, index):
     with patch(
-            "mirage.core.mongodb.readdir.entity_exists",
-            new_callable=AsyncMock,
-            return_value=False,
+        "mirage.core.mongodb.readdir.entity_exists",
+        new_callable=AsyncMock,
+        return_value=False,
     ):
         with pytest.raises(FileNotFoundError):
-            await readdir(accessor, _path("/sample_mflix/collections/ghost"),
-                          index)
+            await readdir(
+                accessor, _path("/sample_mflix/collections/ghost"), index
+            )
 
 
 @pytest.mark.asyncio
 async def test_readdir_prefix_carries_through(accessor, index):
-    p = PathSpec(vfs_path=mount_key("/mongo/sample_mflix", "/mongo"),
-                 virtual="/mongo/sample_mflix",
-                 directory="/mongo/sample_mflix")
+    p = PathSpec(
+        vfs_path=mount_key("/mongo/sample_mflix", "/mongo"),
+        virtual="/mongo/sample_mflix",
+        directory="/mongo/sample_mflix",
+    )
     result = await readdir(accessor, p, index)
     assert result == [
         "/mongo/sample_mflix/database.json",

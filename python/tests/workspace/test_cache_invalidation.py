@@ -23,9 +23,11 @@ from mirage.types import MountMode
 from mirage.vfs.s3.s3 import S3VFS, S3Config
 from mirage.workspace import Workspace
 
-CREDS = dict(aws_access_key_id="testing",
-             aws_secret_access_key="testing",
-             region_name="us-east-1")
+CREDS = dict(
+    aws_access_key_id="testing",
+    aws_secret_access_key="testing",
+    region_name="us-east-1",
+)
 
 
 @pytest.fixture()
@@ -38,15 +40,19 @@ def s3_endpoint() -> Iterator[str]:
 
 
 def _s3_workspace(endpoint: str, bucket: str) -> Workspace:
-    boto3.client("s3", endpoint_url=endpoint,
-                 **CREDS).create_bucket(Bucket=bucket)
+    boto3.client("s3", endpoint_url=endpoint, **CREDS).create_bucket(
+        Bucket=bucket
+    )
     s3 = S3VFS(
-        S3Config(bucket=bucket,
-                 region="us-east-1",
-                 endpoint_url=endpoint,
-                 aws_access_key_id="testing",
-                 aws_secret_access_key="testing",
-                 path_style=True))
+        S3Config(
+            bucket=bucket,
+            region="us-east-1",
+            endpoint_url=endpoint,
+            aws_access_key_id="testing",
+            aws_secret_access_key="testing",
+            path_style=True,
+        )
+    )
     return Workspace({"/data": s3}, mode=MountMode.WRITE)
 
 
@@ -58,12 +64,15 @@ async def _exec(ws: Workspace, cmd: str) -> tuple[int, str, str]:
 
 
 async def _gzip_roundtrip_interleaved_ls(
-        ws: Workspace) -> tuple[int, str, str]:
-    cmd = ("echo two | tee /data/arch/h.txt > /dev/null"
-           " && gzip /data/arch/h.txt"
-           " && ls /data/arch"
-           " && gunzip /data/arch/h.txt.gz"
-           " && cat /data/arch/h.txt")
+    ws: Workspace,
+) -> tuple[int, str, str]:
+    cmd = (
+        "echo two | tee /data/arch/h.txt > /dev/null"
+        " && gzip /data/arch/h.txt"
+        " && ls /data/arch"
+        " && gunzip /data/arch/h.txt.gz"
+        " && cat /data/arch/h.txt"
+    )
     return await _exec(ws, cmd)
 
 
@@ -76,11 +85,12 @@ def test_gzip_roundtrip_with_interleaved_ls(s3_endpoint):
 
 async def _overwrite_then_ls(ws: Workspace) -> tuple[int, str, str]:
     setup = await _exec(
-        ws, "echo one | tee /data/arch/a.txt > /dev/null"
-        " && ls /data/arch")
+        ws, "echo one | tee /data/arch/a.txt > /dev/null && ls /data/arch"
+    )
     assert setup[0] == 0, setup
     code, out, err = await _exec(
-        ws, "echo two | tee /data/arch/b.txt > /dev/null && ls /data/arch")
+        ws, "echo two | tee /data/arch/b.txt > /dev/null && ls /data/arch"
+    )
     return code, out, err
 
 
@@ -96,10 +106,12 @@ async def _rm_then_stat(ws: Workspace) -> tuple[int, str, str]:
     # last file. A directory that was only ever implicit has no marker and
     # is gone once its keys are, which is what the test below pins.
     setup = await _exec(
-        ws, "mkdir -p /data/arch"
+        ws,
+        "mkdir -p /data/arch"
         " && echo gone | tee /data/arch/c.txt > /dev/null"
         " && echo stays | tee /data/arch/d.txt > /dev/null"
-        " && ls /data/arch")
+        " && ls /data/arch",
+    )
     assert setup[0] == 0, setup
     rm = await _exec(ws, "rm /data/arch/c.txt")
     assert rm[0] == 0, rm
@@ -116,7 +128,8 @@ def test_ls_does_not_show_removed_file(s3_endpoint):
 
 async def _rm_last_key_then_ls(ws: Workspace) -> tuple[int, str, str]:
     setup = await _exec(
-        ws, "echo gone | tee /data/imp/e.txt > /dev/null && ls /data/imp")
+        ws, "echo gone | tee /data/imp/e.txt > /dev/null && ls /data/imp"
+    )
     assert setup[0] == 0, setup
     rm = await _exec(ws, "rm /data/imp/e.txt")
     assert rm[0] == 0, rm
@@ -130,15 +143,18 @@ def test_ls_reports_enoent_for_an_emptied_implicit_directory(s3_endpoint):
     ws = _s3_workspace(s3_endpoint, "bucket-rm-implicit")
     code, out, err = asyncio.run(_rm_last_key_then_ls(ws))
     assert code == 2, f"exit {code}, stdout: {out!r}"
-    assert err == ("ls: cannot access '/data/imp': "
-                   "No such file or directory\n")
+    assert err == (
+        "ls: cannot access '/data/imp': No such file or directory\n"
+    )
 
 
 async def _rm_r_then_read_nested(ws: Workspace) -> tuple[int, str, str]:
     setup = await _exec(
-        ws, "mkdir -p /data/a/b"
+        ws,
+        "mkdir -p /data/a/b"
         " && echo hi | tee /data/a/b/f.txt > /dev/null"
-        " && ls /data/a/b")
+        " && ls /data/a/b",
+    )
     assert setup[0] == 0, setup
     rm = await _exec(ws, "rm -r /data/a")
     assert rm[0] == 0, rm
@@ -160,9 +176,11 @@ def test_cat_does_not_serve_a_file_from_a_removed_subtree(s3_endpoint):
 
 async def _rm_r_then_ls_nested(ws: Workspace) -> tuple[int, str, str]:
     setup = await _exec(
-        ws, "mkdir -p /data/x/y"
+        ws,
+        "mkdir -p /data/x/y"
         " && echo hi | tee /data/x/y/f.txt > /dev/null"
-        " && ls /data/x/y")
+        " && ls /data/x/y",
+    )
     assert setup[0] == 0, setup
     rm = await _exec(ws, "rm -r /data/x")
     assert rm[0] == 0, rm
@@ -170,9 +188,11 @@ async def _rm_r_then_ls_nested(ws: Workspace) -> tuple[int, str, str]:
 
 
 def test_ls_reports_enoent_for_a_directory_inside_a_removed_subtree(
-        s3_endpoint):
+    s3_endpoint,
+):
     ws = _s3_workspace(s3_endpoint, "bucket-rm-r-listing")
     code, out, err = asyncio.run(_rm_r_then_ls_nested(ws))
     assert code == 2, f"exit {code}, stdout: {out!r}"
-    assert err == ("ls: cannot access '/data/x/y': "
-                   "No such file or directory\n")
+    assert err == (
+        "ls: cannot access '/data/x/y': No such file or directory\n"
+    )

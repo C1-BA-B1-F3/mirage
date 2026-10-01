@@ -19,7 +19,6 @@ class Resolved:
 
 
 class Ops:
-
     def __init__(self, keys: list[str] | None = None) -> None:
         self.keys = KEYS if keys is None else keys
         self.walk_kwargs: dict[str, object] = {}
@@ -34,16 +33,19 @@ class Ops:
     async def resolve_path(self, accessor, spec, index):
         self.probes.append(spec)
         self.resolve_calls += 1
-        return Resolved(is_dir=spec.mount_path.rstrip("/") in
-                        {d.rstrip("/")
-                         for d in DIRS} or spec.mount_path == "/")
+        return Resolved(
+            is_dir=spec.mount_path.rstrip("/") in {d.rstrip("/") for d in DIRS}
+            or spec.mount_path == "/"
+        )
 
     async def stat(self, accessor, spec, index):
         self.probes.append(spec)
         self.stat_calls += 1
-        return FileStat(type=FileType.FILE,
-                        name=spec.mount_path.rsplit("/", 1)[-1],
-                        size=SIZES.get(spec.mount_path))
+        return FileStat(
+            type=FileType.FILE,
+            name=spec.mount_path.rsplit("/", 1)[-1],
+            size=SIZES.get(spec.mount_path),
+        )
 
 
 def build(ops: Ops):
@@ -57,17 +59,21 @@ ROOT = PathSpec.from_str_path("/", "")
 @pytest.mark.parametrize("prefix", ["", "/knowledge", "/api", "/nested/mount"])
 @pytest.mark.parametrize("root", ["/", "/api"])
 async def test_metadata_probes_preserve_both_paths(prefix, root):
-    keys = ["/", "/api", "/api/reference"
-            ] if root == "/" else ["/api", "/api/reference"]
+    keys = (
+        ["/", "/api", "/api/reference"]
+        if root == "/"
+        else ["/api", "/api/reference"]
+    )
     ops = Ops(keys=keys)
-    path = PathSpec.from_str_path((prefix + root).rstrip("/") or "/",
-                                  root.lstrip("/"))
-    assert await build(ops)(object(), path, type="f",
-                            min_size=1) == ["/api/reference"]
-    assert {(p.virtual, p.vfs_path)
-            for p in ops.probes} == {((prefix + key).rstrip("/")
-                                      or "/", key.lstrip("/"))
-                                     for key in keys}
+    path = PathSpec.from_str_path(
+        (prefix + root).rstrip("/") or "/", root.lstrip("/")
+    )
+    assert await build(ops)(object(), path, type="f", min_size=1) == [
+        "/api/reference"
+    ]
+    assert {(p.virtual, p.vfs_path) for p in ops.probes} == {
+        ((prefix + key).rstrip("/") or "/", key.lstrip("/")) for key in keys
+    }
 
 
 @pytest.mark.asyncio
@@ -110,8 +116,9 @@ async def test_a_plain_walk_needs_neither_resolve_nor_stat():
 async def test_size_bounds_keep_only_files_in_range():
     ops = Ops()
     find = build(ops)
-    assert await find(object(), ROOT, min_size=100,
-                      max_size=1000) == ["/api/reference"]
+    assert await find(object(), ROOT, min_size=100, max_size=1000) == [
+        "/api/reference"
+    ]
 
 
 @pytest.mark.asyncio
@@ -120,8 +127,9 @@ async def test_directories_count_as_dir_size():
     # directory and drops both files.
     ops = Ops()
     find = build(ops)
-    assert await find(object(), ROOT, min_size=DIR_SIZE,
-                      max_size=DIR_SIZE) == sorted(DIRS)
+    assert await find(
+        object(), ROOT, min_size=DIR_SIZE, max_size=DIR_SIZE
+    ) == sorted(DIRS)
 
 
 @pytest.mark.asyncio
@@ -159,13 +167,16 @@ async def test_empty_forces_the_kind_lookup_it_branches_on():
     assert ops.resolve_calls == 4
 
 
-@pytest.mark.parametrize("item,root,expected", [
-    ("/", "/", 0),
-    ("/guides", "/", 1),
-    ("/guides/quickstart", "/", 2),
-    ("/guides/", "/", 1),
-    ("/a/b/c", "/a", 2),
-    ("/a", "/a", 0),
-])
+@pytest.mark.parametrize(
+    "item,root,expected",
+    [
+        ("/", "/", 0),
+        ("/guides", "/", 1),
+        ("/guides/quickstart", "/", 2),
+        ("/guides/", "/", 1),
+        ("/a/b/c", "/a", 2),
+        ("/a", "/a", 0),
+    ],
+)
 def test_relative_depth(item, root, expected):
     assert relative_depth(item, root) == expected

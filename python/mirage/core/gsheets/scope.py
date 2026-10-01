@@ -21,12 +21,16 @@ from mirage.types import ContentType
 # through it, so the file surface and the write surface cannot disagree
 # about what a path means.
 SCOPES = (
-    Scope(kind="corpus", segments=(Slot("corpus", CORPUS), ), probed=False),
-    Scope(kind="file",
-          segments=(Slot("corpus",
-                         CORPUS), Slot("name", FILE_NAME, id_key="file_id")),
-          leaf=True,
-          filetype=ContentType.JSON),
+    Scope(kind="corpus", segments=(Slot("corpus", CORPUS),), probed=False),
+    Scope(
+        kind="file",
+        segments=(
+            Slot("corpus", CORPUS),
+            Slot("name", FILE_NAME, id_key="file_id"),
+        ),
+        leaf=True,
+        filetype=ContentType.JSON,
+    ),
 )
 
 detect_scope = make_detect_scope(SCOPES)

@@ -25,10 +25,11 @@ from tests.commands.cli.builtin.git.conftest import make_branch, mounted_rw
 
 REFS = Path(__file__).resolve().parents[6] / "integ/fixtures/git/refs.sh"
 ENV = {
-    **os.environ, "LC_ALL": "C",
+    **os.environ,
+    "LC_ALL": "C",
     "LANG": "C",
     "GIT_CONFIG_GLOBAL": "/dev/null",
-    "GIT_CONFIG_NOSYSTEM": "1"
+    "GIT_CONFIG_NOSYSTEM": "1",
 }
 
 
@@ -37,45 +38,56 @@ async def test_the_listing_is_sorted_and_formatted(git_ws, repo_path):
     make_branch(repo_path, "feat/git")
     result = await git_ws.shell(
         "git -C /repo for-each-ref --format='%(refname:short) %(objecttype)'"
-        " 'refs/*/*'")
+        " 'refs/*/*'"
+    )
     assert result.stdout == b"main commit\n"
-    result = await git_ws.shell("git -C /repo for-each-ref --count=1 "
-                                "--format='%(refname)%09%(subject)' refs/**")
+    result = await git_ws.shell(
+        "git -C /repo for-each-ref --count=1 "
+        "--format='%(refname)%09%(subject)' refs/**"
+    )
     assert result.stdout == b"refs/heads/feat/git\tthird\n"
 
 
 @pytest.mark.asyncio
 async def test_an_unknown_atom_is_fatal(git_ws):
-    result = await git_ws.shell("git -C /repo for-each-ref --format='%(bogus)'"
-                                )
-    assert (result.exit_code,
-            result.stderr) == (128, b"fatal: unknown field name: bogus\n")
+    result = await git_ws.shell(
+        "git -C /repo for-each-ref --format='%(bogus)'"
+    )
+    assert (result.exit_code, result.stderr) == (
+        128,
+        b"fatal: unknown field name: bogus\n",
+    )
 
 
 @pytest.fixture(scope="module")
 def refs_repo(tmp_path_factory):
     path = tmp_path_factory.mktemp("refs") / "repo"
-    subprocess.run(["bash", str(REFS), str(path)],
-                   check=True,
-                   capture_output=True,
-                   env=ENV)
+    subprocess.run(
+        ["bash", str(REFS), str(path)],
+        check=True,
+        capture_output=True,
+        env=ENV,
+    )
     return path
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("command",
-                         json.loads(REFS.with_suffix(".json").read_text()))
+@pytest.mark.parametrize(
+    "command", json.loads(REFS.with_suffix(".json").read_text())
+)
 async def test_ref_listings_match_git(refs_repo, command):
     native = await asyncio.to_thread(
         subprocess.run,
         ["git", "-C", str(refs_repo), *shlex.split(command)],
         capture_output=True,
-        env={
-            **ENV, "GIT_TEST_DATE_NOW": "1700000000",
-            "TZ": "UTC"
-        })
+        env={**ENV, "GIT_TEST_DATE_NOW": "1700000000", "TZ": "UTC"},
+    )
     with mounted_rw(refs_repo) as ws:
-        actual = await ws.shell("GIT_TEST_DATE_NOW=1700000000 TZ=UTC "
-                                "git -C /repo " + command)
-    assert (actual.exit_code, actual.stdout or b"", actual.stderr
-            or b"") == (native.returncode, native.stdout, native.stderr)
+        actual = await ws.shell(
+            "GIT_TEST_DATE_NOW=1700000000 TZ=UTC git -C /repo " + command
+        )
+    assert (actual.exit_code, actual.stdout or b"", actual.stderr or b"") == (
+        native.returncode,
+        native.stdout,
+        native.stderr,
+    )

@@ -18,21 +18,25 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     from mirage.commands.builtin.generic_bind.adapter import CommandIO
     from mirage.commands.builtin.generic_bind.factory import (
-        make_generic_commands, with_read_cache, with_stat_cache)
+        make_generic_commands,
+        with_read_cache,
+        with_stat_cache,
+    )
     from mirage.utils.glob_walk import make_resolve_glob
     from mirage.vfs.types import DuOps
 
 _EXPORTS: dict[str, tuple[str, ...]] = {
-    "mirage.commands.builtin.generic_bind.adapter": ("CommandIO", ),
-    "mirage.commands.builtin.generic_bind.factory":
-    ("make_generic_commands", "with_read_cache", "with_stat_cache"),
-    "mirage.utils.glob_walk": ("make_resolve_glob", ),
-    "mirage.vfs.types": ("DuOps", ),
+    "mirage.commands.builtin.generic_bind.adapter": ("CommandIO",),
+    "mirage.commands.builtin.generic_bind.factory": (
+        "make_generic_commands",
+        "with_read_cache",
+        "with_stat_cache",
+    ),
+    "mirage.utils.glob_walk": ("make_resolve_glob",),
+    "mirage.vfs.types": ("DuOps",),
 }
 _MODULE_OF = {
-    name: module
-    for module, names in _EXPORTS.items()
-    for name in names
+    name: module for module, names in _EXPORTS.items() for name in names
 }
 
 __all__ = [

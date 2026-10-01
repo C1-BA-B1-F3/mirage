@@ -19,9 +19,11 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from mirage.accessor.email import EmailAccessor
-from mirage.commands.cli.builtin.himalaya.deliver import (deliver,
-                                                          resolve_sent_folder,
-                                                          save_sent_copy)
+from mirage.commands.cli.builtin.himalaya.deliver import (
+    deliver,
+    resolve_sent_folder,
+    save_sent_copy,
+)
 from mirage.core.email.config import EmailConfig
 
 RAW = b"From: me@example.com\r\nTo: a@b.com\r\nSubject: Hi\r\n\r\nyo"
@@ -38,11 +40,9 @@ PLAIN_LINES = [
 
 
 def config(**overrides) -> EmailConfig:
-    return EmailConfig(imap_host="h",
-                       smtp_host="h",
-                       username="u",
-                       password="p",
-                       **overrides)
+    return EmailConfig(
+        imap_host="h", smtp_host="h", username="u", password="p", **overrides
+    )
 
 
 def fake_imap(lines: list[bytes], append_result: str = "OK"):
@@ -63,7 +63,8 @@ def imap(monkeypatch):
 
     async def fake_get_imap(self):
         client = state.setdefault(
-            "client", fake_imap(state["lines"], state["append_result"]))
+            "client", fake_imap(state["lines"], state["append_result"])
+        )
         return client
 
     async def fake_close(self):
@@ -120,7 +121,8 @@ async def test_the_copy_is_appended_seen_and_the_mailbox_is_quoted(imap):
     # A mailbox name holding a space is two arguments unless it is
     # quoted, and both Gmail's and Exchange's hold one.
     imap["client"].append.assert_awaited_once_with(
-        RAW, mailbox='"[Gmail]/Sent Mail"', flags="\\Seen")
+        RAW, mailbox='"[Gmail]/Sent Mail"', flags="\\Seen"
+    )
     assert imap["closed"] is True
 
 
@@ -164,7 +166,8 @@ async def test_a_failed_copy_warns_but_the_send_still_counts(imap, smtp):
 
 @pytest.mark.asyncio
 async def test_a_broken_connection_warns_rather_than_raising(
-        monkeypatch, smtp):
+    monkeypatch, smtp
+):
 
     async def fake_get_imap(self):
         raise ConnectionError("IMAP login failed for u on h")
@@ -175,17 +178,18 @@ async def test_a_broken_connection_warns_rather_than_raising(
     monkeypatch.setattr(EmailAccessor, "get_imap", fake_get_imap)
     monkeypatch.setattr(EmailAccessor, "close", fake_close)
     _, warning = await deliver(config(), RAW)
-    assert warning == ("himalaya: sent copy not saved: "
-                       "IMAP login failed for u on h\n")
+    assert warning == (
+        "himalaya: sent copy not saved: IMAP login failed for u on h\n"
+    )
 
 
 @pytest.mark.asyncio
 async def test_save_names_the_mailbox_and_skips_resolution(imap):
     imap["lines"] = GMAIL_LINES
     assert await save_sent_copy(config(), RAW, "Drafts") == "Drafts"
-    imap["client"].append.assert_awaited_once_with(RAW,
-                                                   mailbox='"Drafts"',
-                                                   flags="\\Seen")
+    imap["client"].append.assert_awaited_once_with(
+        RAW, mailbox='"Drafts"', flags="\\Seen"
+    )
     imap["client"].list.assert_not_awaited()
 
 
@@ -194,9 +198,9 @@ async def test_save_beats_the_accounts_own_sent_mailbox(imap, smtp):
     imap["lines"] = GMAIL_LINES
     _, warning = await deliver(config(), RAW, "Drafts")
     assert warning == ""
-    imap["client"].append.assert_awaited_once_with(RAW,
-                                                   mailbox='"Drafts"',
-                                                   flags="\\Seen")
+    imap["client"].append.assert_awaited_once_with(
+        RAW, mailbox='"Drafts"', flags="\\Seen"
+    )
 
 
 @pytest.mark.asyncio

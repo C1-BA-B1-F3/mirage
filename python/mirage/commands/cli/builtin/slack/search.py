@@ -20,7 +20,8 @@ from mirage.io.types import ByteSource, IOResult
 
 
 async def search(
-        inv: CLIInvocation[SlackConfig]) -> tuple[ByteSource | None, IOResult]:
+    inv: CLIInvocation[SlackConfig],
+) -> tuple[ByteSource | None, IOResult]:
     fl = FlagView(inv.flags)
     result = await search_messages(
         inv.config,

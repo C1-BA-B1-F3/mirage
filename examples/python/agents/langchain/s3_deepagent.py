@@ -19,8 +19,11 @@ from dotenv import load_dotenv
 from langchain_anthropic import ChatAnthropic
 
 from mirage import MountMode, Workspace
-from mirage.agents.langchain import (LangchainWorkspace, build_system_prompt,
-                                     extract_text)
+from mirage.agents.langchain import (
+    LangchainWorkspace,
+    build_system_prompt,
+    extract_text,
+)
 from mirage.vfs.s3 import S3VFS, S3Config
 
 load_dotenv(".env.development")
@@ -38,19 +41,21 @@ ws = Workspace({"/s3/": s3}, mode=MountMode.READ)
 agent = create_deep_agent(
     model=ChatAnthropic(model="claude-sonnet-4-6"),
     system_prompt=build_system_prompt(
-        mount_info={"/s3/": "S3 bucket (CSV, Parquet, ORC, HDF5, JSONL)"}, ),
+        mount_info={"/s3/": "S3 bucket (CSV, Parquet, ORC, HDF5, JSONL)"},
+    ),
     backend=LangchainWorkspace(ws),
 )
 
-task = ("Explore and summarize the data in /s3/data/."
-        " Use head command for large files.")
+task = (
+    "Explore and summarize the data in /s3/data/."
+    " Use head command for large files."
+)
 result = agent.invoke({"messages": [{"role": "user", "content": task}]})
 
 for text in extract_text(result["messages"][-1:]):
     print(text)
 
-task2 = ("How many rows are in the parquet, orc, and h5 files"
-         " under /s3/data/? ")
+task2 = "How many rows are in the parquet, orc, and h5 files under /s3/data/? "
 result2 = agent.invoke({"messages": [{"role": "user", "content": task2}]})
 
 for text in extract_text(result2["messages"][-1:]):
@@ -61,5 +66,7 @@ if records:
     total = sum(r.bytes for r in records)
     print(f"\n--- {len(records)} ops, {total:,} bytes ---")
     for r in records:
-        print(f"  {r.op:<8} {r.source:<8} {r.bytes:>10,} B "
-              f"{r.duration_ms:>5} ms  {r.path}")
+        print(
+            f"  {r.op:<8} {r.source:<8} {r.bytes:>10,} B "
+            f"{r.duration_ms:>5} ms  {r.path}"
+        )

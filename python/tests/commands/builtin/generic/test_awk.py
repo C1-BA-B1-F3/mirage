@@ -8,10 +8,9 @@ from mirage.types import PathSpec
 
 
 def _spec(path: str) -> PathSpec:
-    return PathSpec(vfs_path=(path).strip("/"),
-                    virtual=path,
-                    directory=path,
-                    resolved=True)
+    return PathSpec(
+        vfs_path=(path).strip("/"), virtual=path, directory=path, resolved=True
+    )
 
 
 def _make_backend(files: dict[str, bytes]):
@@ -45,7 +44,7 @@ async def test_awk_stdin_print_field():
     rb, rs = _make_backend({})
     output, _ = await awk(
         [],
-        ("{print $1}", ),
+        ("{print $1}",),
         None,
         read_bytes=rb,
         read_stream=rs,
@@ -59,7 +58,7 @@ async def test_awk_field_separator():
     rb, rs = _make_backend({})
     output, _ = await awk(
         [],
-        ("{print $2}", ),
+        ("{print $2}",),
         {"F": ","},
         read_bytes=rb,
         read_stream=rs,
@@ -73,7 +72,7 @@ async def test_awk_variable_assignment():
     rb, rs = _make_backend({})
     output, _ = await awk(
         [],
-        ("{print x}", ),
+        ("{print x}",),
         {"v": ["x=hello"]},
         read_bytes=rb,
         read_stream=rs,
@@ -87,7 +86,7 @@ async def test_awk_numeric_comparison():
     rb, rs = _make_backend({})
     output, _ = await awk(
         [],
-        ("$1 > 2 {print $1}", ),
+        ("$1 > 2 {print $1}",),
         None,
         read_bytes=rb,
         read_stream=rs,
@@ -101,7 +100,7 @@ async def test_awk_regex_condition():
     rb, rs = _make_backend({})
     output, _ = await awk(
         [],
-        ("/foo/ {print $0}", ),
+        ("/foo/ {print $0}",),
         None,
         read_bytes=rb,
         read_stream=rs,
@@ -116,7 +115,7 @@ async def test_awk_end_block_accumulator():
     rb, rs = _make_backend({})
     output, _ = await awk(
         [],
-        ("{sum += $1} END {print sum}", ),
+        ("{sum += $1} END {print sum}",),
         None,
         read_bytes=rb,
         read_stream=rs,
@@ -130,7 +129,7 @@ async def test_awk_reads_from_file():
     rb, rs = _make_backend({"/data.txt": b"hello world\n"})
     output, io = await awk(
         [_spec("/data.txt")],
-        ("{print $2}", ),
+        ("{print $2}",),
         None,
         read_bytes=rb,
         read_stream=rs,
@@ -141,10 +140,12 @@ async def test_awk_reads_from_file():
 
 @pytest.mark.asyncio
 async def test_awk_program_file_overrides_inline():
-    rb, rs = _make_backend({
-        "/prog.awk": b"{print $1}\n",
-        "/data.txt": b"alpha beta\n",
-    })
+    rb, rs = _make_backend(
+        {
+            "/prog.awk": b"{print $1}\n",
+            "/data.txt": b"alpha beta\n",
+        }
+    )
     output, _ = await awk(
         [_spec("/data.txt")],
         (),
@@ -167,7 +168,7 @@ async def test_awk_default_fs_collapses_whitespace():
     rb, rs = _make_backend({})
     output, _ = await awk(
         [],
-        ("{print $2}", ),
+        ("{print $2}",),
         None,
         read_bytes=rb,
         read_stream=rs,
@@ -181,7 +182,7 @@ async def test_awk_explicit_single_space_fs_collapses_whitespace():
     rb, rs = _make_backend({})
     output, _ = await awk(
         [],
-        ("{print $2}", ),
+        ("{print $2}",),
         {"F": " "},
         read_bytes=rb,
         read_stream=rs,
@@ -195,7 +196,7 @@ async def test_awk_empty_fs_splits_characters():
     rb, rs = _make_backend({})
     output, _ = await awk(
         [],
-        ("{print $2}", ),
+        ("{print $2}",),
         {"F": ""},
         read_bytes=rb,
         read_stream=rs,
@@ -206,13 +207,15 @@ async def test_awk_empty_fs_splits_characters():
 
 @pytest.mark.asyncio
 async def test_awk_processes_all_files_with_continuous_nr():
-    rb, rs = _make_backend({
-        "/a.txt": b"one\ntwo\n",
-        "/b.txt": b"three\n",
-    })
+    rb, rs = _make_backend(
+        {
+            "/a.txt": b"one\ntwo\n",
+            "/b.txt": b"three\n",
+        }
+    )
     output, io = await awk(
         [_spec("/a.txt"), _spec("/b.txt")],
-        ("{print NR, $1}", ),
+        ("{print NR, $1}",),
         None,
         read_bytes=rb,
         read_stream=rs,
@@ -223,13 +226,15 @@ async def test_awk_processes_all_files_with_continuous_nr():
 
 @pytest.mark.asyncio
 async def test_awk_multifile_no_trailing_newline_keeps_lines_separate():
-    rb, rs = _make_backend({
-        "/a.txt": b"one",
-        "/b.txt": b"two\n",
-    })
+    rb, rs = _make_backend(
+        {
+            "/a.txt": b"one",
+            "/b.txt": b"two\n",
+        }
+    )
     output, _ = await awk(
         [_spec("/a.txt"), _spec("/b.txt")],
-        ("{print NR, $1}", ),
+        ("{print NR, $1}",),
         None,
         read_bytes=rb,
         read_stream=rs,
@@ -242,7 +247,7 @@ async def test_awk_repeated_v_assignments():
     rb, rs = _make_backend({})
     output, _ = await awk(
         [],
-        ("{print a, b}", ),
+        ("{print a, b}",),
         {"v": ["a=1", "b=2"]},
         read_bytes=rb,
         read_stream=rs,
@@ -256,7 +261,7 @@ async def test_awk_v_value_containing_equals():
     rb, rs = _make_backend({})
     output, _ = await awk(
         [],
-        ("{print x}", ),
+        ("{print x}",),
         {"v": ["x=a=b"]},
         read_bytes=rb,
         read_stream=rs,
@@ -270,7 +275,7 @@ async def test_awk_print_empty_string_emits_blank_line():
     rb, rs = _make_backend({})
     output, _ = await awk(
         [],
-        ('{print ""}', ),
+        ('{print ""}',),
         None,
         read_bytes=rb,
         read_stream=rs,
@@ -284,7 +289,7 @@ async def test_awk_action_without_print_emits_nothing():
     rb, rs = _make_backend({})
     output, _ = await awk(
         [],
-        ("{x += 1}", ),
+        ("{x += 1}",),
         None,
         read_bytes=rb,
         read_stream=rs,
@@ -298,7 +303,7 @@ async def test_awk_brace_literal_in_print():
     rb, rs = _make_backend({})
     output, _ = await awk(
         [],
-        ('{print "}"}', ),
+        ('{print "}"}',),
         None,
         read_bytes=rb,
         read_stream=rs,
@@ -312,7 +317,7 @@ async def test_awk_accumulator_non_numeric_coerces():
     rb, rs = _make_backend({})
     output, _ = await awk(
         [],
-        ("{sum += $1} END {print sum}", ),
+        ("{sum += $1} END {print sum}",),
         None,
         read_bytes=rb,
         read_stream=rs,
@@ -336,11 +341,13 @@ async def test_awk_program_file_missing_raises_usage_error():
 
 @pytest.mark.asyncio
 async def test_awk_program_file_with_multiple_data_files():
-    rb, rs = _make_backend({
-        "/prog.awk": b"{print NR, $1}\n",
-        "/a.txt": b"one\n",
-        "/b.txt": b"two\n",
-    })
+    rb, rs = _make_backend(
+        {
+            "/prog.awk": b"{print NR, $1}\n",
+            "/a.txt": b"one\n",
+            "/b.txt": b"two\n",
+        }
+    )
     output, io = await awk(
         [_spec("/a.txt"), _spec("/b.txt")],
         (),
@@ -357,7 +364,7 @@ async def test_awk_begin_end_resolve_v_variables():
     rb, rs = _make_backend({})
     output, _ = await awk(
         [],
-        ("BEGIN {print x} END {print x}", ),
+        ("BEGIN {print x} END {print x}",),
         {"v": ["x=hi"]},
         read_bytes=rb,
         read_stream=rs,
@@ -371,7 +378,7 @@ async def test_awk_duplicate_v_last_wins():
     rb, rs = _make_backend({})
     output, _ = await awk(
         [],
-        ("{print x}", ),
+        ("{print x}",),
         {"v": ["x=first", "x=second"]},
         read_bytes=rb,
         read_stream=rs,
@@ -385,7 +392,7 @@ async def test_awk_begin_bare_print_emits_blank_line():
     rb, rs = _make_backend({})
     output, _ = await awk(
         [],
-        ('BEGIN {print} {print $1}', ),
+        ("BEGIN {print} {print $1}",),
         None,
         read_bytes=rb,
         read_stream=rs,
@@ -399,7 +406,7 @@ async def test_awk_brace_literal_with_condition():
     rb, rs = _make_backend({})
     output, _ = await awk(
         [],
-        ('/x/ {print "}"}', ),
+        ('/x/ {print "}"}',),
         None,
         read_bytes=rb,
         read_stream=rs,
@@ -410,11 +417,13 @@ async def test_awk_brace_literal_with_condition():
 
 @pytest.mark.asyncio
 async def test_awk_repeated_program_files_concatenate():
-    rb, rs = _make_backend({
-        "/p1.awk": b"{sum += $1}\n",
-        "/p2.awk": b"END {print sum}\n",
-        "/nums.txt": b"1\n2\n3\n",
-    })
+    rb, rs = _make_backend(
+        {
+            "/p1.awk": b"{sum += $1}\n",
+            "/p2.awk": b"END {print sum}\n",
+            "/nums.txt": b"1\n2\n3\n",
+        }
+    )
     output, _ = await awk(
         [_spec("/nums.txt")],
         (),
@@ -430,7 +439,7 @@ async def test_awk_simple_assignment_executes():
     rb, rs = _make_backend({})
     output, _ = await awk(
         [],
-        ("{x = 1; print x}", ),
+        ("{x = 1; print x}",),
         None,
         read_bytes=rb,
         read_stream=rs,
@@ -444,7 +453,7 @@ async def test_awk_assignment_from_field():
     rb, rs = _make_backend({})
     output, _ = await awk(
         [],
-        ("{x = $2; print x}", ),
+        ("{x = $2; print x}",),
         None,
         read_bytes=rb,
         read_stream=rs,
@@ -458,7 +467,7 @@ async def test_awk_ofs_joins_print_arguments():
     rb, rs = _make_backend({})
     output, _ = await awk(
         [],
-        ('BEGIN{OFS=":"} {print $1, $2}', ),
+        ('BEGIN{OFS=":"} {print $1, $2}',),
         None,
         read_bytes=rb,
         read_stream=rs,
@@ -481,7 +490,7 @@ async def test_awk_compound_statement_runs_its_body(program, expected):
     rb, rs = _make_backend({})
     output, _ = await awk(
         [],
-        (program, ),
+        (program,),
         None,
         read_bytes=rb,
         read_stream=rs,
@@ -495,7 +504,7 @@ async def test_awk_semicolon_inside_string_is_not_a_separator():
     rb, rs = _make_backend({})
     output, _ = await awk(
         [],
-        ('{print "a;b", $1}', ),
+        ('{print "a;b", $1}',),
         None,
         read_bytes=rb,
         read_stream=rs,
@@ -508,7 +517,7 @@ async def _run_stdin(program: str, stdin: bytes, flags=None) -> str:
     rb, rs = _make_backend({})
     output, _ = await awk(
         [],
-        (program, ),
+        (program,),
         flags,
         read_bytes=rb,
         read_stream=rs,
@@ -523,8 +532,11 @@ FIELDS = b"alice 30 engineer\nbob 25 designer\ncarol 40 manager\n"
 @pytest.mark.asyncio
 async def test_awk_tilde_matches_a_field_against_a_regex():
     # Issue #1065: the standard field-regex predicate.
-    out = await _run_stdin("$4 ~ /[Aa]pplication/ {print}",
-                           b"a|b|c|Application\nx|y|z|Other\n", {"F": "|"})
+    out = await _run_stdin(
+        "$4 ~ /[Aa]pplication/ {print}",
+        b"a|b|c|Application\nx|y|z|Other\n",
+        {"F": "|"},
+    )
     assert out == "a|b|c|Application\n"
 
 
@@ -574,8 +586,10 @@ async def test_awk_tilde_numeric_rhs_matches_as_text():
 
 @pytest.mark.asyncio
 async def test_awk_tilde_lhs_may_be_nf_field_or_builtin():
-    assert await _run_stdin("$NF ~ /^App/", b"x y Application\nx y Other\n") \
+    assert (
+        await _run_stdin("$NF ~ /^App/", b"x y Application\nx y Other\n")
         == "x y Application\n"
+    )
     assert await _run_stdin("NR ~ /[13]/", b"a\nb\nc\n") == "a\nc\n"
 
 
@@ -619,9 +633,11 @@ async def test_awk_negated_operand_tests_falsiness():
 @pytest.mark.asyncio
 async def test_awk_tilde_invalid_regex_is_usage_error():
     # Exit 2, like mawk and onetrueawk (gawk exits 1 here).
-    with pytest.raises(UsageError,
-                       match=r"awk: syntax error in regular expression "
-                       r"\(a at source line 1"):
+    with pytest.raises(
+        UsageError,
+        match=r"awk: syntax error in regular expression "
+        r"\(a at source line 1",
+    ):
         await _run_stdin("$1 ~ /(a/ {print}", b"a\n")
 
 
@@ -636,7 +652,7 @@ async def test_awk_unset_variable_prints_empty():
     rb, rs = _make_backend({})
     output, _ = await awk(
         [],
-        ("{print foo}", ),
+        ("{print foo}",),
         None,
         read_bytes=rb,
         read_stream=rs,
@@ -650,7 +666,7 @@ async def test_awk_out_of_range_field_prints_empty():
     rb, rs = _make_backend({})
     output, _ = await awk(
         [],
-        ("{print $5}", ),
+        ("{print $5}",),
         None,
         read_bytes=rb,
         read_stream=rs,
@@ -663,7 +679,7 @@ async def _run_io(program: str, stdin: bytes) -> tuple[str, int, bytes]:
     rb, rs = _make_backend({})
     output, io = await awk(
         [],
-        (program, ),
+        (program,),
         None,
         read_bytes=rb,
         read_stream=rs,
@@ -676,10 +692,12 @@ async def _run_io(program: str, stdin: bytes) -> tuple[str, int, bytes]:
 
 @pytest.mark.asyncio
 async def test_awk_for_loop_builds_an_indent():
-    program = ('{indent="";for(i=1;i<NF;i++)indent=indent"    ";'
-               'print indent $NF}')
-    out = await _run_stdin(program, b"School/Courses_Materials/notes.md\n",
-                           {"F": "/"})
+    program = (
+        '{indent="";for(i=1;i<NF;i++)indent=indent"    ";print indent $NF}'
+    )
+    out = await _run_stdin(
+        program, b"School/Courses_Materials/notes.md\n", {"F": "/"}
+    )
     assert out == "        notes.md\n"
 
 
@@ -694,7 +712,7 @@ async def test_awk_for_loop_builds_an_indent():
         ("NR % 2 == 0 {print}", b"a\nb\n", "b\n"),
         ('{gsub(/a/, "b"); print}', b"banana\n", "bbnbnb\n"),
         ("{while (i++ < 2) print i, $1}", b"x\n", "1 x\n2 x\n"),
-        ("{c[$1]++} END{print c[\"a\"], length(c)}", b"a\nb\na\n", "2 2\n"),
+        ('{c[$1]++} END{print c["a"], length(c)}', b"a\nb\na\n", "2 2\n"),
         ("function twice(n){return n*2} {print twice($1)}", b"21\n", "42\n"),
     ],
 )
@@ -720,8 +738,9 @@ async def test_awk_refuses_what_it_cannot_reach(program, message):
 
 @pytest.mark.asyncio
 async def test_awk_getline_reads_the_next_record():
-    out, code, err = await _run_io("NR==1{getline; print} {print NR}",
-                                   b"a\nb\nc\n")
+    out, code, err = await _run_io(
+        "NR==1{getline; print} {print NR}", b"a\nb\nc\n"
+    )
     assert (out, code, err) == ("b\n2\n3\n", 0, b"")
 
 
@@ -733,15 +752,17 @@ async def test_awk_runtime_error_keeps_earlier_output():
 
 @pytest.mark.asyncio
 async def test_awk_exit_code_and_end_still_runs():
-    out, code, err = await _run_io('NR==2{exit 3} {print} END{print "end"}',
-                                   b"a\nb\nc\n")
+    out, code, err = await _run_io(
+        'NR==2{exit 3} {print} END{print "end"}', b"a\nb\nc\n"
+    )
     assert (out, code, err) == ("a\nend\n", 3, b"")
 
 
 @pytest.mark.asyncio
 async def test_awk_dev_stderr_is_the_error_stream():
-    out, code, err = await _run_io('{print "warn" > "/dev/stderr"; print}',
-                                   b"a\n")
+    out, code, err = await _run_io(
+        '{print "warn" > "/dev/stderr"; print}', b"a\n"
+    )
     assert (out, code, err) == ("a\n", 0, b"warn\n")
 
 
@@ -755,21 +776,31 @@ async def test_awk_syntax_error_is_a_usage_error():
     "program,flags,stdin,expected",
     [
         ('BEGIN{RS=":"} {print NR": "$0}', None, b"a:b", "1: a\n2: b\n"),
-        ('{print NR": "$0}', {
-            "v": ["RS=:"]
-        }, b"a:b:\n", "1: a\n2: b\n3: \n\n"),
-        ('{print NR": "$0; RS="2"}', None, b"a\nb2c2d\n",
-         "1: a\n2: b\n3: c\n4: d\n\n"),
-        ('{print NF": "$0}', {
-            "v": ["RS="]
-        }, b"\n\na b\nc\n\n\nd\n", "3: a b\nc\n1: d\n"),
-        ("{print NF}", {
-            "v": ["RS="],
-            "F": ":"
-        }, b"a:b\nc\n\nd", "3\n1\n"),
-        ('{print NR": "$0}', {
-            "v": ["RS=[0-9]+"]
-        }, b"a12b345c", "1: a\n2: b\n3: c\n"),
+        (
+            '{print NR": "$0}',
+            {"v": ["RS=:"]},
+            b"a:b:\n",
+            "1: a\n2: b\n3: \n\n",
+        ),
+        (
+            '{print NR": "$0; RS="2"}',
+            None,
+            b"a\nb2c2d\n",
+            "1: a\n2: b\n3: c\n4: d\n\n",
+        ),
+        (
+            '{print NF": "$0}',
+            {"v": ["RS="]},
+            b"\n\na b\nc\n\n\nd\n",
+            "3: a b\nc\n1: d\n",
+        ),
+        ("{print NF}", {"v": ["RS="], "F": ":"}, b"a:b\nc\n\nd", "3\n1\n"),
+        (
+            '{print NR": "$0}',
+            {"v": ["RS=[0-9]+"]},
+            b"a12b345c",
+            "1: a\n2: b\n3: c\n",
+        ),
     ],
 )
 @pytest.mark.asyncio
@@ -796,7 +827,7 @@ async def test_awk_rs_holds_a_record_across_chunks(parts, rs, expected):
     rb, read_stream = _make_backend({})
     output, _ = await awk(
         [],
-        ('{printf "%s|", $0}', ),
+        ('{printf "%s|", $0}',),
         {"v": [f"RS={rs}"]},
         read_bytes=rb,
         read_stream=read_stream,
@@ -810,7 +841,7 @@ async def test_awk_rs_record_never_spans_two_files():
     rb, rs = _make_backend({"/a.txt": b"a:b", "/b.txt": b"c:d:"})
     output, _ = await awk(
         [_spec("/a.txt"), _spec("/b.txt")],
-        ("{print FNR, NR, $0}", ),
+        ("{print FNR, NR, $0}",),
         {"v": ["RS=:"]},
         read_bytes=rb,
         read_stream=rs,
@@ -823,7 +854,7 @@ async def test_awk_rs_paragraph_separator_is_the_whole_newline_run():
     rb, read_stream = _make_backend({})
     output, _ = await awk(
         [],
-        ('{printf "%s|", $0; RS="\\n"}', ),
+        ('{printf "%s|", $0; RS="\\n"}',),
         {"v": ["RS="]},
         read_bytes=rb,
         read_stream=read_stream,
@@ -836,5 +867,6 @@ async def test_awk_rs_paragraph_separator_is_the_whole_newline_run():
 async def test_awk_rs_bad_regex_is_fatal():
     out, code, err = await _run_io('BEGIN{RS="[a"} {print}', b"ab")
     assert (out, code) == ("", 2)
-    assert err == (b"awk: syntax error in regular expression [a "
-                   b"at source line 1\n")
+    assert err == (
+        b"awk: syntax error in regular expression [a at source line 1\n"
+    )

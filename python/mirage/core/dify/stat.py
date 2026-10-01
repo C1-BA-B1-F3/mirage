@@ -6,9 +6,9 @@ from mirage.core.slug_tree.stat import directory_stat
 from mirage.types import ContentType, FileStat, FileType, PathSpec
 
 
-async def stat_light(accessor: DifyAccessor,
-                     path: PathSpec,
-                     index: IndexCacheStore = NULL_INDEX) -> FileStat:
+async def stat_light(
+    accessor: DifyAccessor, path: PathSpec, index: IndexCacheStore = NULL_INDEX
+) -> FileStat:
     resolved = await DIFY_TREE.resolve(accessor, path, index)
     if resolved.is_dir:
         return directory_stat(resolved)
@@ -25,9 +25,9 @@ async def stat_light(accessor: DifyAccessor,
     )
 
 
-async def stat(accessor: DifyAccessor,
-               path: PathSpec,
-               index: IndexCacheStore = NULL_INDEX) -> FileStat:
+async def stat(
+    accessor: DifyAccessor, path: PathSpec, index: IndexCacheStore = NULL_INDEX
+) -> FileStat:
     resolved = await DIFY_TREE.resolve(accessor, path, index)
     if resolved.is_dir:
         return directory_stat(resolved)
@@ -41,8 +41,11 @@ async def stat(accessor: DifyAccessor,
         extra["tokens"] = detail.get("tokens")
     if "indexing_status" in detail:
         extra["indexing_status"] = detail.get("indexing_status")
-    created = (epoch_text(detail.get("created_at"))
-               or resolved.entry.remote_time or None)
+    created = (
+        epoch_text(detail.get("created_at"))
+        or resolved.entry.remote_time
+        or None
+    )
     return FileStat(
         name=resolved.entry.name,
         type=FileType.FILE,

@@ -20,8 +20,11 @@ from mirage.secrets.config import DotenvConfig, SecretSource
 from mirage.secrets.dotenv import fetch_dotenv
 from mirage.secrets.errors import SecretsError
 from mirage.secrets.registry import register_secrets
-from mirage.secrets.sources import (config_value, resolve_sources,
-                                    resolve_sources_for)
+from mirage.secrets.sources import (
+    config_value,
+    resolve_sources,
+    resolve_sources_for,
+)
 from mirage.secrets.types import ResolvedSecret
 
 
@@ -58,20 +61,20 @@ async def test_a_literal_config_reaches_the_source():
 async def test_a_pointer_config_reads_its_bootstrap_source(monkeypatch):
     monkeypatch.setenv("SOURCES_PROBE", "s3cr3t")
     built = await resolve_sources(
-        {"prod": block(token={
-            "from": "env",
-            "key": "SOURCES_PROBE"
-        })})
+        {"prod": block(token={"from": "env", "key": "SOURCES_PROBE"})}
+    )
     secret = await built["prod"].fetch(built["prod"].config, "r")
     assert secret.fields["credential"] == "default:s3cr3t"
 
 
 @pytest.mark.asyncio
 async def test_two_instances_of_one_source_keep_their_own_config():
-    built = await resolve_sources({
-        "prod": block(account="acct-prod"),
-        "test": block(account="acct-test"),
-    })
+    built = await resolve_sources(
+        {
+            "prod": block(account="acct-prod"),
+            "test": block(account="acct-test"),
+        }
+    )
     prod = await built["prod"].fetch(built["prod"].config, "r")
     test = await built["test"].fetch(built["test"].config, "r")
     assert prod.fields["credential"] == "acct-prod:none"
@@ -88,10 +91,8 @@ async def test_a_missing_bootstrap_field_names_the_field(monkeypatch):
     monkeypatch.delenv("SOURCES_ABSENT", raising=False)
     with pytest.raises(SecretsError) as caught:
         await resolve_sources(
-            {"prod": block(token={
-                "from": "env",
-                "key": "SOURCES_ABSENT"
-            })})
+            {"prod": block(token={"from": "env", "key": "SOURCES_ABSENT"})}
+        )
     assert "secrets.prod.config.token" in str(caught.value)
     assert "SOURCES_ABSENT" in str(caught.value)
 
@@ -115,14 +116,14 @@ async def test_config_the_source_refuses_reports_field_and_reason():
 async def test_a_refusal_never_carries_the_value(monkeypatch):
     monkeypatch.setenv("SOURCES_PROBE", "s3cr3t")
     with pytest.raises(SecretsError) as caught:
-        await resolve_sources({
-            "prod":
-            block(account={
-                "from": "env",
-                "key": "SOURCES_PROBE"
-            },
-                  nonesuch="x")
-        })
+        await resolve_sources(
+            {
+                "prod": block(
+                    account={"from": "env", "key": "SOURCES_PROBE"},
+                    nonesuch="x",
+                )
+            }
+        )
     assert "s3cr3t" not in str(caught.value)
 
 
@@ -140,19 +141,22 @@ async def test_a_failed_bootstrap_fetch_is_redacted(monkeypatch):
     the source chose must not survive the boundary."""
     register_secrets("dotenv", DotenvConfig, fetch_dotenv)
     with pytest.raises(SecretsError) as err:
-        await resolve_sources({
-            "prod":
-            SecretSource.model_validate({
-                "source": "demo",
-                "config": {
-                    "token": {
-                        "from": "dotenv",
-                        "ref": "/host/only/.env",
-                        "key": "TOKEN",
-                    },
-                },
-            })
-        })
+        await resolve_sources(
+            {
+                "prod": SecretSource.model_validate(
+                    {
+                        "source": "demo",
+                        "config": {
+                            "token": {
+                                "from": "dotenv",
+                                "ref": "/host/only/.env",
+                                "key": "TOKEN",
+                            },
+                        },
+                    }
+                )
+            }
+        )
     message = str(err.value)
     assert message == "secrets.prod.config.token: cannot fetch from dotenv"
     assert "/host/only/.env" not in message
@@ -187,18 +191,18 @@ async def test_a_model_refusal_reports_the_code_not_the_words(monkeypatch):
     monkeypatch.setenv("SOURCES_LOUD", "s3cr3t-value")
     register_secrets("loud", LoudConfig, fetch_demo)
     with pytest.raises(SecretsError) as caught:
-        await resolve_sources({
-            "prod":
-            SecretSource.model_validate({
-                "source": "loud",
-                "config": {
-                    "token": {
-                        "from": "env",
-                        "key": "SOURCES_LOUD"
-                    },
-                },
-            })
-        })
+        await resolve_sources(
+            {
+                "prod": SecretSource.model_validate(
+                    {
+                        "source": "loud",
+                        "config": {
+                            "token": {"from": "env", "key": "SOURCES_LOUD"},
+                        },
+                    }
+                )
+            }
+        )
     message = str(caught.value)
     assert message == "secrets.prod: token: value_error"
     assert "s3cr3t-value" not in message
@@ -215,24 +219,27 @@ async def test_one_bootstrap_secret_is_fetched_once():
         return ResolvedSecret(fields={"A": "a", "B": "b"})
 
     register_secrets("dotenv", DotenvConfig, counting)
-    built = await resolve_sources({
-        "prod":
-        SecretSource.model_validate({
-            "source": "demo",
-            "config": {
-                "account": {
-                    "from": "dotenv",
-                    "ref": "/one/file",
-                    "key": "A"
-                },
-                "token": {
-                    "from": "dotenv",
-                    "ref": "/one/file",
-                    "key": "B"
-                },
-            },
-        })
-    })
+    built = await resolve_sources(
+        {
+            "prod": SecretSource.model_validate(
+                {
+                    "source": "demo",
+                    "config": {
+                        "account": {
+                            "from": "dotenv",
+                            "ref": "/one/file",
+                            "key": "A",
+                        },
+                        "token": {
+                            "from": "dotenv",
+                            "ref": "/one/file",
+                            "key": "B",
+                        },
+                    },
+                }
+            )
+        }
+    )
     assert calls == ["/one/file"]
     secret = await built["prod"].fetch(built["prod"].config, "")
     assert secret.fields == {"credential": "a:b"}
@@ -256,18 +263,18 @@ async def test_a_validator_that_raises_is_redacted_too(monkeypatch):
     monkeypatch.setenv("SOURCES_THROWN", "s3cr3t-value")
     register_secrets("throwing", ThrowingConfig, fetch_demo)
     with pytest.raises(SecretsError) as caught:
-        await resolve_sources({
-            "prod":
-            SecretSource.model_validate({
-                "source": "throwing",
-                "config": {
-                    "token": {
-                        "from": "env",
-                        "key": "SOURCES_THROWN"
-                    },
-                },
-            })
-        })
+        await resolve_sources(
+            {
+                "prod": SecretSource.model_validate(
+                    {
+                        "source": "throwing",
+                        "config": {
+                            "token": {"from": "env", "key": "SOURCES_THROWN"},
+                        },
+                    }
+                )
+            }
+        )
     message = str(caught.value)
     assert message == "secrets.prod: config refused"
     assert "s3cr3t-value" not in message
@@ -279,19 +286,22 @@ async def test_a_bootstrap_field_named_after_a_dunder_is_absent(monkeypatch):
     since a plain object answers `constructor` from its prototype."""
     register_secrets("dotenv", DotenvConfig, counting_fields())
     with pytest.raises(SecretsError, match="wanted field 'constructor'"):
-        await resolve_sources({
-            "prod":
-            SecretSource.model_validate({
-                "source": "demo",
-                "config": {
-                    "token": {
-                        "from": "dotenv",
-                        "ref": "/f",
-                        "key": "constructor"
-                    },
-                },
-            })
-        })
+        await resolve_sources(
+            {
+                "prod": SecretSource.model_validate(
+                    {
+                        "source": "demo",
+                        "config": {
+                            "token": {
+                                "from": "dotenv",
+                                "ref": "/f",
+                                "key": "constructor",
+                            },
+                        },
+                    }
+                )
+            }
+        )
 
 
 def counting_fields():
@@ -312,7 +322,7 @@ def broken_bootstrap() -> dict[str, dict]:
                 "account": {
                     "from": "dotenv",
                     "ref": "/no/such/file",
-                    "key": "ACCOUNT"
+                    "key": "ACCOUNT",
                 }
             },
         }
@@ -325,9 +335,12 @@ async def test_resolve_sources_for_builds_nothing_when_no_config_points():
     is I/O; a door whose configs hold no pointer must not pay it, or a
     momentarily unreadable file fails a workspace that never needed
     the source."""
-    assert await resolve_sources_for(broken_bootstrap(), [{
-        "token": "literal"
-    }, {}]) is None
+    assert (
+        await resolve_sources_for(
+            broken_bootstrap(), [{"token": "literal"}, {}]
+        )
+        is None
+    )
 
 
 @pytest.mark.asyncio
@@ -336,16 +349,9 @@ async def test_resolve_sources_for_builds_when_a_config_points():
     with pytest.raises(SecretsError, match="secrets.prod.config.account"):
         await resolve_sources_for(broken_bootstrap(), [{"token": pointer}])
     built = await resolve_sources_for(
-        {"prod": {
-            "source": "demo",
-            "config": {
-                "account": "a1"
-            }
-        }}, [{
-            "inner": [{
-                "token": pointer
-            }]
-        }])
+        {"prod": {"source": "demo", "config": {"account": "a1"}}},
+        [{"inner": [{"token": pointer}]}],
+    )
     assert built is not None and built["prod"].source == "demo"
 
 
@@ -356,8 +362,10 @@ async def test_resolve_sources_for_leaves_a_bad_container_to_the_constructor():
     assert await resolve_sources_for({}, [{"token": pointer}]) is None
     # A list from an untyped REST override is not a mapping; the
     # constructor refuses it with the wording every door shares.
-    assert await resolve_sources_for(
-        [broken_bootstrap()],  # type: ignore[arg-type]
-        [{
-            "token": pointer
-        }]) is None
+    assert (
+        await resolve_sources_for(
+            [broken_bootstrap()],  # type: ignore[arg-type]
+            [{"token": pointer}],
+        )
+        is None
+    )

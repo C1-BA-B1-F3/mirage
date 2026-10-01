@@ -27,7 +27,6 @@ from mirage.watch.base import DeltaHook
 
 
 class OneDriveVFS(BaseVFS):
-
     accessor: OneDriveAccessor
     name: str = VFSName.ONEDRIVE
     caches_reads: bool = True

@@ -28,19 +28,13 @@ def config():
 @pytest.mark.asyncio
 async def test_list_guilds(config):
     mock_data = [
-        {
-            "id": "G001",
-            "name": "My Server"
-        },
-        {
-            "id": "G002",
-            "name": "Another Server"
-        },
+        {"id": "G001", "name": "My Server"},
+        {"id": "G002", "name": "Another Server"},
     ]
     with patch(
-            "mirage.core.discord.paginate.discord_get",
-            new_callable=AsyncMock,
-            return_value=mock_data,
+        "mirage.core.discord.paginate.discord_get",
+        new_callable=AsyncMock,
+        return_value=mock_data,
     ) as mock_get:
         result = await list_guilds(config)
 

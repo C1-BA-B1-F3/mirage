@@ -16,22 +16,33 @@ import re
 
 from mirage.ops.types import SessionView
 from mirage.policy import PolicyDenied
-from mirage.shell.array import (array_count, array_extent, array_get,
-                                array_has, array_with)
+from mirage.shell.array import (
+    array_count,
+    array_extent,
+    array_get,
+    array_has,
+    array_with,
+)
 from mirage.shell.variable import ShellValue
 from mirage.workspace.session.session import SessionState
-from mirage.workspace.session.state import (conversion_scalar, deref,
-                                            ensure_var_visible, env_get,
-                                            seed_var, strip_key_quotes,
-                                            subscript_index, visible_arrays,
-                                            visible_assocs)
+from mirage.workspace.session.state import (
+    conversion_scalar,
+    deref,
+    ensure_var_visible,
+    env_get,
+    seed_var,
+    strip_key_quotes,
+    subscript_index,
+    visible_arrays,
+    visible_assocs,
+)
 
 _ELEMENT_REF = re.compile(r"([A-Za-z_]\w*)(?:\[(.+)\])?\Z", re.DOTALL)
 
 
-async def element_is_set(session: SessionState,
-                         ref: str,
-                         view: SessionView | None = None) -> bool:
+async def element_is_set(
+    session: SessionState, ref: str, view: SessionView | None = None
+) -> bool:
     """Whether a ``name`` / ``name[sub]`` reference names a set value.
 
     What ``test -v`` asks. A bare name over an array checks element 0
@@ -84,12 +95,14 @@ async def element_is_set(session: SessionState,
     return array_has(held, idx)
 
 
-async def assign_element(session: SessionState,
-                         view: SessionView | None,
-                         name: str,
-                         subscript: str | None,
-                         value: str,
-                         append: bool = False) -> str:
+async def assign_element(
+    session: SessionState,
+    view: SessionView | None,
+    name: str,
+    subscript: str | None,
+    value: str,
+    append: bool = False,
+) -> str:
     """Assign one element (or a bare name resolved as element 0).
 
     The element mechanics are computed on a copy and the landing write
@@ -149,8 +162,11 @@ async def assign_element(session: SessionState,
                 # empty: bash resolves `x[-1]` against the length-1
                 # array that produces.
                 arr = [] if scalar is None else [scalar]
-            idx = (0 if subscript is None else await subscript_index(
-                session, subscript, view))
+            idx = (
+                0
+                if subscript is None
+                else await subscript_index(session, subscript, view)
+            )
             if idx < 0:
                 idx += array_extent(arr)
             if idx < 0:

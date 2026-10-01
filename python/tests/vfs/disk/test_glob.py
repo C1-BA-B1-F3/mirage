@@ -29,10 +29,9 @@ async def test_resolve_file_path(tmp_path):
     (tmp_path / "a.txt").write_text("a")
     accessor = DiskAccessor(tmp_path)
     index = RAMIndexCacheStore(ttl=0)
-    scope = PathSpec(vfs_path="a.txt",
-                     virtual="/a.txt",
-                     directory="/",
-                     resolved=True)
+    scope = PathSpec(
+        vfs_path="a.txt", virtual="/a.txt", directory="/", resolved=True
+    )
     result = await resolve_glob(accessor, [scope], index)
     assert len(result) == 1
     assert result[0].virtual == "/a.txt"
@@ -46,11 +45,13 @@ async def test_resolve_glob_pattern(tmp_path):
     (tmp_path / "c.py").write_text("c")
     accessor = DiskAccessor(tmp_path)
     index = RAMIndexCacheStore(ttl=0)
-    scope = PathSpec(vfs_path="*.txt",
-                     virtual="/*.txt",
-                     directory="/",
-                     pattern="*.txt",
-                     resolved=False)
+    scope = PathSpec(
+        vfs_path="*.txt",
+        virtual="/*.txt",
+        directory="/",
+        pattern="*.txt",
+        resolved=False,
+    )
     result = await resolve_glob(accessor, [scope], index)
     originals = sorted(r.virtual for r in result)
     assert originals == ["/a.txt", "/b.txt"]

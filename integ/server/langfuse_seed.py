@@ -40,16 +40,10 @@ TRACES = [
         "userId": "user-ana",
         "sessionId": "session-one",
         "timestamp": "2026-01-01T00:00:00.000Z",
-        "input": {
-            "cart": "two items"
-        },
-        "output": {
-            "status": "confirmed"
-        },
+        "input": {"cart": "two items"},
+        "output": {"status": "confirmed"},
         "tags": ["checkout", "prod"],
-        "metadata": {
-            "region": "eu-west"
-        },
+        "metadata": {"region": "eu-west"},
     },
     {
         "event_id": "22222222-2222-4222-8222-222222222222",
@@ -58,16 +52,10 @@ TRACES = [
         "userId": "user-bo",
         "sessionId": "session-one",
         "timestamp": "2026-01-01T00:05:00.000Z",
-        "input": {
-            "query": "running shoes"
-        },
-        "output": {
-            "hits": 12
-        },
+        "input": {"query": "running shoes"},
+        "output": {"hits": 12},
         "tags": ["search"],
-        "metadata": {
-            "region": "us-east"
-        },
+        "metadata": {"region": "us-east"},
     },
     {
         "event_id": "33333333-3333-4333-8333-333333333333",
@@ -76,16 +64,10 @@ TRACES = [
         "userId": "user-ana",
         "sessionId": "session-two",
         "timestamp": "2026-01-01T00:10:00.000Z",
-        "input": {
-            "doc": "quarterly report"
-        },
-        "output": {
-            "summary": "revenue grew"
-        },
+        "input": {"doc": "quarterly report"},
+        "output": {"summary": "revenue grew"},
         "tags": ["summarize", "prod"],
-        "metadata": {
-            "region": "eu-west"
-        },
+        "metadata": {"region": "eu-west"},
     },
 ]
 
@@ -103,12 +85,8 @@ OBSERVATIONS = [
             "name": "validate-cart",
             "startTime": "2026-01-01T00:00:01.000Z",
             "endTime": "2026-01-01T00:00:02.000Z",
-            "input": {
-                "items": 2
-            },
-            "output": {
-                "valid": True
-            },
+            "input": {"items": 2},
+            "output": {"valid": True},
             "level": "DEFAULT",
         },
     },
@@ -124,13 +102,8 @@ OBSERVATIONS = [
             "startTime": "2026-01-01T00:00:01.200Z",
             "endTime": "2026-01-01T00:00:01.800Z",
             "model": "gpt-4o-mini",
-            "input": [{
-                "role": "user",
-                "content": "describe the order"
-            }],
-            "output": {
-                "content": "two items, confirmed"
-            },
+            "input": [{"role": "user", "content": "describe the order"}],
+            "output": {"content": "two items, confirmed"},
             "level": "DEFAULT",
         },
     },
@@ -167,23 +140,14 @@ PROMPTS = [
         "version": 2,
     },
     {
-        "name":
-        "qa-template",
-        "type":
-        "chat",
+        "name": "qa-template",
+        "type": "chat",
         "prompt": [
-            {
-                "role": "system",
-                "content": "Answer briefly."
-            },
-            {
-                "role": "user",
-                "content": "{{question}}"
-            },
+            {"role": "system", "content": "Answer briefly."},
+            {"role": "user", "content": "{{question}}"},
         ],
         "labels": ["production"],
-        "version":
-        1,
+        "version": 1,
     },
 ]
 
@@ -193,22 +157,14 @@ DATASET_ITEMS = [
     {
         "id": "item-one",
         "datasetName": "eval-basic",
-        "input": {
-            "question": "capital of france"
-        },
-        "expectedOutput": {
-            "answer": "paris"
-        },
+        "input": {"question": "capital of france"},
+        "expectedOutput": {"answer": "paris"},
     },
     {
         "id": "item-two",
         "datasetName": "eval-basic",
-        "input": {
-            "question": "capital of japan"
-        },
-        "expectedOutput": {
-            "answer": "tokyo"
-        },
+        "input": {"question": "capital of japan"},
+        "expectedOutput": {"answer": "tokyo"},
     },
 ]
 
@@ -255,11 +211,11 @@ async def request(
     """
     url = f"{host.rstrip('/')}{path}"
     async with session.request(
-            method,
-            url,
-            json=payload,
-            params=params,
-            headers=auth_header(),
+        method,
+        url,
+        json=payload,
+        params=params,
+        headers=auth_header(),
     ) as response:
         text = await response.text()
         try:
@@ -281,8 +237,9 @@ async def wait_healthy(session: aiohttp.ClientSession, host: str) -> None:
     """
     for _ in range(POLL_ATTEMPTS):
         try:
-            status, _body = await request(session, host, "GET",
-                                          "/api/public/health")
+            status, _body = await request(
+                session, host, "GET", "/api/public/health"
+            )
             if status == 200:
                 return
         except aiohttp.ClientError as exc:
@@ -291,8 +248,9 @@ async def wait_healthy(session: aiohttp.ClientSession, host: str) -> None:
     raise RuntimeError("langfuse did not become healthy in time")
 
 
-async def existing_prompt_versions(session: aiohttp.ClientSession, host: str,
-                                   name: str) -> set[int]:
+async def existing_prompt_versions(
+    session: aiohttp.ClientSession, host: str, name: str
+) -> set[int]:
     """List prompt versions already stored for a prompt name.
 
     Args:
@@ -303,11 +261,14 @@ async def existing_prompt_versions(session: aiohttp.ClientSession, host: str,
     Returns:
         set[int]: versions present on the server.
     """
-    status, body = await request(session, host, "GET",
-                                 "/api/public/v2/prompts", None, {
-                                     "name": name,
-                                     "limit": "100"
-                                 })
+    status, body = await request(
+        session,
+        host,
+        "GET",
+        "/api/public/v2/prompts",
+        None,
+        {"name": name, "limit": "100"},
+    )
     if status != 200 or not isinstance(body, dict):
         return set()
     # The list endpoint returns PromptMeta rows, which carry every version in a
@@ -346,8 +307,9 @@ async def seed_prompts(session: aiohttp.ClientSession, host: str) -> None:
             "prompt": spec["prompt"],
             "labels": spec["labels"],
         }
-        status, body = await request(session, host, "POST",
-                                     "/api/public/v2/prompts", payload)
+        status, body = await request(
+            session, host, "POST", "/api/public/v2/prompts", payload
+        )
         if status not in (200, 201):
             raise RuntimeError(f"prompt {name} create failed: {status} {body}")
         seen[name].add(int(spec["version"]))
@@ -364,15 +326,18 @@ async def seed_datasets(session: aiohttp.ClientSession, host: str) -> None:
         RuntimeError: the server rejected a dataset creation.
     """
     for name in DATASETS:
-        status, body = await request(session, host, "POST",
-                                     "/api/public/v2/datasets", {"name": name})
+        status, body = await request(
+            session, host, "POST", "/api/public/v2/datasets", {"name": name}
+        )
         if status not in (200, 201, 409):
             raise RuntimeError(
-                f"dataset {name} create failed: {status} {body}")
+                f"dataset {name} create failed: {status} {body}"
+            )
 
 
-async def seed_dataset_items(session: aiohttp.ClientSession,
-                             host: str) -> None:
+async def seed_dataset_items(
+    session: aiohttp.ClientSession, host: str
+) -> None:
     """Upsert the fixture dataset items by their client-chosen ids.
 
     Args:
@@ -383,11 +348,13 @@ async def seed_dataset_items(session: aiohttp.ClientSession,
         RuntimeError: the server rejected a dataset item.
     """
     for item in DATASET_ITEMS:
-        status, body = await request(session, host, "POST",
-                                     "/api/public/dataset-items", item)
+        status, body = await request(
+            session, host, "POST", "/api/public/dataset-items", item
+        )
         if status not in (200, 201):
             raise RuntimeError(
-                f"dataset item {item['id']} failed: {status} {body}")
+                f"dataset item {item['id']} failed: {status} {body}"
+            )
 
 
 async def ingest_traces(session: aiohttp.ClientSession, host: str) -> None:
@@ -403,21 +370,26 @@ async def ingest_traces(session: aiohttp.ClientSession, host: str) -> None:
     batch = []
     for spec in TRACES:
         body = {k: v for k, v in spec.items() if k != "event_id"}
-        batch.append({
-            "id": spec["event_id"],
-            "type": "trace-create",
-            "timestamp": spec["timestamp"],
-            "body": body,
-        })
+        batch.append(
+            {
+                "id": spec["event_id"],
+                "type": "trace-create",
+                "timestamp": spec["timestamp"],
+                "body": body,
+            }
+        )
     for extra in (*OBSERVATIONS, *SCORES):
-        batch.append({
-            "id": extra["event_id"],
-            "type": extra["type"],
-            "timestamp": "2026-01-01T00:00:00.000Z",
-            "body": extra["body"],
-        })
-    status, body = await request(session, host, "POST",
-                                 "/api/public/ingestion", {"batch": batch})
+        batch.append(
+            {
+                "id": extra["event_id"],
+                "type": extra["type"],
+                "timestamp": "2026-01-01T00:00:00.000Z",
+                "body": extra["body"],
+            }
+        )
+    status, body = await request(
+        session, host, "POST", "/api/public/ingestion", {"batch": batch}
+    )
     if status not in (200, 201, 207):
         raise RuntimeError(f"ingestion failed: {status} {body}")
     if isinstance(body, dict) and body.get("errors"):
@@ -439,9 +411,9 @@ async def wait_for_traces(session: aiohttp.ClientSession, host: str) -> None:
     """
     wanted = {str(spec["id"]) for spec in TRACES}
     for _ in range(POLL_ATTEMPTS):
-        status, body = await request(session, host, "GET",
-                                     "/api/public/traces", None,
-                                     {"limit": "100"})
+        status, body = await request(
+            session, host, "GET", "/api/public/traces", None, {"limit": "100"}
+        )
         if status == 200 and isinstance(body, dict):
             have = {row.get("id") for row in body.get("data", [])}
             missing = wanted - have
@@ -452,8 +424,9 @@ async def wait_for_traces(session: aiohttp.ClientSession, host: str) -> None:
     raise RuntimeError("ingested traces never became queryable")
 
 
-async def wait_for_observations(session: aiohttp.ClientSession,
-                                host: str) -> None:
+async def wait_for_observations(
+    session: aiohttp.ClientSession, host: str
+) -> None:
     """Poll until the ingested observations and score reach the trace.
 
     Observations travel the same async queue as traces but are joined onto the
@@ -469,8 +442,9 @@ async def wait_for_observations(session: aiohttp.ClientSession,
     """
     wanted = {str(o["body"]["id"]) for o in OBSERVATIONS}
     for _ in range(POLL_ATTEMPTS):
-        status, body = await request(session, host, "GET",
-                                     "/api/public/traces/trace-alpha")
+        status, body = await request(
+            session, host, "GET", "/api/public/traces/trace-alpha"
+        )
         if status == 200 and isinstance(body, dict):
             have = {
                 row.get("id")
@@ -479,8 +453,10 @@ async def wait_for_observations(session: aiohttp.ClientSession,
             }
             if wanted <= have and body.get("scores"):
                 return
-            print(f"waiting for observations: {sorted(wanted - have)}",
-                  file=sys.stderr)
+            print(
+                f"waiting for observations: {sorted(wanted - have)}",
+                file=sys.stderr,
+            )
         await asyncio.sleep(POLL_DELAY)
     raise RuntimeError("ingested observations never reached the trace")
 
@@ -496,11 +472,16 @@ async def seed_dataset_run(session: aiohttp.ClientSession, host: str) -> None:
         RuntimeError: the server rejected the dataset run item.
     """
     status, body = await request(
-        session, host, "POST", "/api/public/dataset-run-items", {
+        session,
+        host,
+        "POST",
+        "/api/public/dataset-run-items",
+        {
             "runName": RUN_NAME,
             "datasetItemId": RUN_ITEM_ID,
             "traceId": RUN_TRACE_ID,
-        })
+        },
+    )
     if status not in (200, 201):
         raise RuntimeError(f"dataset run item failed: {status} {body}")
 
@@ -517,8 +498,9 @@ async def wait_for_run(session: aiohttp.ClientSession, host: str) -> None:
     """
     path = f"/api/public/datasets/{RUN_DATASET}/runs"
     for _ in range(POLL_ATTEMPTS):
-        status, body = await request(session, host, "GET", path, None,
-                                     {"limit": "100"})
+        status, body = await request(
+            session, host, "GET", path, None, {"limit": "100"}
+        )
         if status == 200 and isinstance(body, dict):
             names = {row.get("name") for row in body.get("data", [])}
             if RUN_NAME in names:

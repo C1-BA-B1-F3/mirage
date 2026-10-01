@@ -39,10 +39,14 @@ async def _resolve_entry(
         raise IsADirectoryError(virtual)
     virtual_key = prefix + "/" + key if prefix else "/" + key
     parent_key = posixpath.dirname(virtual_key) or "/"
-    parent_path = PathSpec.from_str_path(parent_key,
-                                         mount_key(parent_key, prefix))
-    warm = (partial(readdir, accessor, parent_path, index)
-            if parent_key != virtual_key else None)
+    parent_path = PathSpec.from_str_path(
+        parent_key, mount_key(parent_key, prefix)
+    )
+    warm = (
+        partial(readdir, accessor, parent_path, index)
+        if parent_key != virtual_key
+        else None
+    )
     entry = await entry_or_warm(index, virtual_key, warm)
     if entry is None:
         raise enoent(virtual)
@@ -68,8 +72,9 @@ async def read(
         size (int | None): how many bytes, or None for the rest.
     """
     entry = await _resolve_entry(accessor, path, index)
-    return await download_file(accessor.token_manager, entry.id,
-                               window_for(offset, size))
+    return await download_file(
+        accessor.token_manager, entry.id, window_for(offset, size)
+    )
 
 
 async def stream(

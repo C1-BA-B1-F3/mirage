@@ -19,8 +19,11 @@ from dataclasses import dataclass
 
 from mirage.commands.builtin.grep_offsets import decode_line, encode_line
 from mirage.commands.builtin.grep_prefilter import required_needles
-from mirage.commands.builtin.utils.pcre import (match_start, match_text,
-                                                user_groups)
+from mirage.commands.builtin.utils.pcre import (
+    match_start,
+    match_text,
+    user_groups,
+)
 from mirage.io.async_line_iterator import AsyncLineIterator
 from mirage.io.stream import discard_streams
 from mirage.io.yield_budget import YieldBudget
@@ -112,8 +115,14 @@ def prints_context(f: RgFlags) -> bool:
     Args:
         f (RgFlags): the parsed flags.
     """
-    if (f.count_only or f.count_matches or f.files_only
-            or f.files_without_match or f.quiet or f.passthru):
+    if (
+        f.count_only
+        or f.count_matches
+        or f.files_only
+        or f.files_without_match
+        or f.quiet
+        or f.passthru
+    ):
         return False
     return bool(f.context_before or f.context_after)
 
@@ -218,8 +227,9 @@ def expand(template: str, m: re.Match[str]) -> str:
         i = j + length
 
 
-def replace_all(pat: re.Pattern[str], text: str,
-                template: str) -> tuple[str, list[tuple[int, int]]]:
+def replace_all(
+    pat: re.Pattern[str], text: str, template: str
+) -> tuple[str, list[tuple[int, int]]]:
     """The line with every match replaced, and where each replacement
     landed in it (character spans), which --vimgrep's columns and -M's
     preview count read.
@@ -234,7 +244,7 @@ def replace_all(pat: re.Pattern[str], text: str,
     last = 0
     length = 0
     for m in rust_matches(pat, text):
-        before = text[last:match_start(m)]
+        before = text[last : match_start(m)]
         pieces.append(before)
         length += len(before)
         replaced = expand(template, m)
@@ -264,10 +274,10 @@ def _escape_literal(pattern: str, i: int) -> tuple[str | None, int]:
     if nxt == "x":
         if i + 2 < len(pattern) and pattern[i + 2] == "{":
             close = pattern.find("}", i + 3)
-            digits = pattern[i + 3:close] if close != -1 else ""
+            digits = pattern[i + 3 : close] if close != -1 else ""
             end = len(pattern) if close == -1 else close + 1
         else:
-            digits = pattern[i + 2:i + 4]
+            digits = pattern[i + 2 : i + 4]
             end = i + 4
         try:
             return chr(int(digits, 16)), end
@@ -319,9 +329,10 @@ def _regex_literals(pattern: str) -> Iterator[str]:
             continue
         if pattern.startswith("(?", i):
             j = i + 2
-            if pattern.startswith("P<", j) or (pattern.startswith("<", j)
-                                               and not pattern.startswith(
-                                                   ("<=", "<!"), j)):
+            if pattern.startswith("P<", j) or (
+                pattern.startswith("<", j)
+                and not pattern.startswith(("<=", "<!"), j)
+            ):
                 close = pattern.find(">", j)
                 i = len(pattern) if close == -1 else close + 1
                 continue
@@ -349,7 +360,7 @@ def smart_case_folds(pattern: str, fixed_string: bool) -> bool:
     """
     found = False
     for part in pattern.split("\n"):
-        for ch in (part if fixed_string else _regex_literals(part)):
+        for ch in part if fixed_string else _regex_literals(part):
             found = True
             if ch.isupper():
                 return False
@@ -381,7 +392,7 @@ class ByteCursor:
         Args:
             index (int): a code-point index into the line.
         """
-        self._offset += _byte_len(self._text[self._index:index])
+        self._offset += _byte_len(self._text[self._index : index])
         self._index = index
         return self._offset
 
@@ -409,15 +420,17 @@ class RgPrinter:
             --heading that already named the file).
     """
 
-    def __init__(self, f: RgFlags, pat: re.Pattern[str],
-                 label: str | None) -> None:
+    def __init__(
+        self, f: RgFlags, pat: re.Pattern[str], label: str | None
+    ) -> None:
         self._f = f
         self._pat = pat
         self._label = label
         # ripgrep tracks each match of a line only when something needs
         # it, and -M words its refusal from whether it did.
-        self._granular = (f.column or f.vimgrep or f.replace is not None
-                          or f.only_matching)
+        self._granular = (
+            f.column or f.vimgrep or f.replace is not None or f.only_matching
+        )
 
     def context(self, index: int, start: int, text: str) -> list[bytes]:
         """The records one context line prints: the line, or under -o each
@@ -430,8 +443,14 @@ class RgPrinter:
         """
         if self._f.only_matching:
             return list(
-                self._pieces(index, start, text,
-                             list(rust_matches(self._pat, text)), False))
+                self._pieces(
+                    index,
+                    start,
+                    text,
+                    list(rust_matches(self._pat, text)),
+                    False,
+                )
+            )
         return [self._record(index, None, start, text, [], False, True, 0)]
 
     def selected(self, index: int, start: int, text: str) -> Iterator[bytes]:
@@ -444,8 +463,11 @@ class RgPrinter:
             text (str): the line, from ``decode_line``.
         """
         f = self._f
-        matches = ([] if f.invert or not self._granular else list(
-            rust_matches(self._pat, text)))
+        matches = (
+            []
+            if f.invert or not self._granular
+            else list(rust_matches(self._pat, text))
+        )
         if f.only_matching:
             yield from self._pieces(index, start, text, matches, True)
             return
@@ -462,18 +484,32 @@ class RgPrinter:
             cursor = ByteCursor(shown)
             for s, _ in spans:
                 column = 1 + cursor.at(s) if f.column else None
-                yield self._record(index, column, start, shown, spans, True,
-                                   terminated, len(matches))
+                yield self._record(
+                    index,
+                    column,
+                    start,
+                    shown,
+                    spans,
+                    True,
+                    terminated,
+                    len(matches),
+                )
             return
         column = None
         if f.column and spans:
             column = 1 + byte_offset(shown, spans[0][0])
-        yield self._record(index, column, start, shown, spans, True,
-                           terminated, len(matches))
+        yield self._record(
+            index, column, start, shown, spans, True, terminated, len(matches)
+        )
 
-    def _pieces(self, index: int, start: int, text: str,
-                matches: list[re.Match[str]],
-                is_match: bool) -> Iterator[bytes]:
+    def _pieces(
+        self,
+        index: int,
+        start: int,
+        text: str,
+        matches: list[re.Match[str]],
+        is_match: bool,
+    ) -> Iterator[bytes]:
         """-o's records for one line: every match, an empty one included,
         each at its own offset, or the whole line when nothing in it
         matches, which is how ripgrep 14.1.1 prints an inverted selection
@@ -497,12 +533,28 @@ class RgPrinter:
                 piece = expand(f.replace, m)
             offset = cursor.at(match_start(m))
             column = 1 + offset if f.column and is_match else None
-            yield self._record(index, column, start + offset, piece,
-                               [(0, len(piece))], is_match, False, 1)
+            yield self._record(
+                index,
+                column,
+                start + offset,
+                piece,
+                [(0, len(piece))],
+                is_match,
+                False,
+                1,
+            )
 
-    def _record(self, index: int, column: int | None, offset: int, text: str,
-                spans: list[tuple[int, int]], is_match: bool, terminated: bool,
-                count: int) -> bytes:
+    def _record(
+        self,
+        index: int,
+        column: int | None,
+        offset: int,
+        text: str,
+        spans: list[tuple[int, int]],
+        is_match: bool,
+        terminated: bool,
+        count: int,
+    ) -> bytes:
         """One printed record.
 
         Args:
@@ -518,8 +570,9 @@ class RgPrinter:
             count (int): the line's match count -M reports.
         """
         f = self._f
-        sep = (f.field_match_separator
-               if is_match else f.field_context_separator)
+        sep = (
+            f.field_match_separator if is_match else f.field_context_separator
+        )
         head = ""
         if self._label is not None:
             head = self._label + ("\0" if f.null else sep)
@@ -534,13 +587,19 @@ class RgPrinter:
             body = text.lstrip(ASCII_SPACE)
             cut = len(text) - len(body)
             spans = [(s - cut, e - cut) for s, e in spans if s >= cut]
-        if f.max_columns and (_byte_len(body) + int(terminated)
-                              > f.max_columns):
+        if f.max_columns and (
+            _byte_len(body) + int(terminated) > f.max_columns
+        ):
             body = self._exceeded(body, spans, is_match, count)
         return encode_line(f"{head}{body}") + (b"\0" if f.null_data else b"\n")
 
-    def _exceeded(self, body: str, spans: list[tuple[int, int]],
-                  is_match: bool, count: int) -> str:
+    def _exceeded(
+        self,
+        body: str,
+        spans: list[tuple[int, int]],
+        is_match: bool,
+        count: int,
+    ) -> str:
         """What -M prints for a line longer than its limit.
 
         Args:
@@ -615,8 +674,8 @@ def nonmatch_stop(f: RgFlags) -> NonmatchStop:
 
 
 async def _records(
-        lines: AsyncLineIterator, f: RgFlags,
-        pat: re.Pattern[str]) -> AsyncIterator[tuple[bytes, int, int]]:
+    lines: AsyncLineIterator, f: RgFlags, pat: re.Pattern[str]
+) -> AsyncIterator[tuple[bytes, int, int]]:
     """Read records through the delimiter selected by rg, each with the
     records and bytes skipped before it.
 
@@ -629,21 +688,28 @@ async def _records(
         f (RgFlags): The parsed flags.
         pat (re.Pattern[str]): The compiled line matcher.
     """
-    needles = (None if f.invert or f.stop_on_nonmatch or f.passthru
-               or prints_context(f) else required_needles(pat))
+    needles = (
+        None
+        if f.invert or f.stop_on_nonmatch or f.passthru or prints_context(f)
+        else required_needles(pat)
+    )
     fold = bool(pat.flags & re.IGNORECASE)
     delimiter = b"\0" if f.null_data else b"\n"
     while True:
-        skipped, size = (lines.skip_nonmatching_lines(needles, fold, delimiter)
-                         if needles is not None else (0, 0))
+        skipped, size = (
+            lines.skip_nonmatching_lines(needles, fold, delimiter)
+            if needles is not None
+            else (0, 0)
+        )
         raw, terminated = await lines.read_until(delimiter)
         if not terminated and not raw:
             return
         yield raw, skipped, size
 
 
-async def _listing(lines: AsyncLineIterator, pat: re.Pattern[str], f: RgFlags,
-                   tally: Tally) -> None:
+async def _listing(
+    lines: AsyncLineIterator, pat: re.Pattern[str], f: RgFlags, tally: Tally
+) -> None:
     """Read no further than the first selected line (-q, -l and
     --files-without-match need only that one bit).
 
@@ -659,8 +725,9 @@ async def _listing(lines: AsyncLineIterator, pat: re.Pattern[str], f: RgFlags,
             return
 
 
-async def _count(lines: AsyncLineIterator, pat: re.Pattern[str], f: RgFlags,
-                 tally: Tally) -> int:
+async def _count(
+    lines: AsyncLineIterator, pat: re.Pattern[str], f: RgFlags, tally: Tally
+) -> int:
     """-c's selected lines, or --count-matches' matches, up to -m.
 
     Args:
@@ -696,9 +763,13 @@ async def _count(lines: AsyncLineIterator, pat: re.Pattern[str], f: RgFlags,
     return count
 
 
-async def _lines(lines: AsyncLineIterator, printer: RgPrinter,
-                 pat: re.Pattern[str], f: RgFlags,
-                 tally: Tally) -> AsyncIterator[bytes]:
+async def _lines(
+    lines: AsyncLineIterator,
+    printer: RgPrinter,
+    pat: re.Pattern[str],
+    f: RgFlags,
+    tally: Tally,
+) -> AsyncIterator[bytes]:
     """The printed lines of one haystack, context and all.
 
     Selected lines and their context, grouped the way ripgrep groups
@@ -718,8 +789,9 @@ async def _lines(lines: AsyncLineIterator, printer: RgPrinter,
         tally (Tally): receives the selection.
     """
     context = prints_context(f)
-    held: deque[tuple[int, int,
-                      str]] = deque(maxlen=f.context_before if context else 0)
+    held: deque[tuple[int, int, str]] = deque(
+        maxlen=f.context_before if context else 0
+    )
     budget = YieldBudget()
     index = -1
     position = 0
@@ -754,10 +826,14 @@ async def _lines(lines: AsyncLineIterator, printer: RgPrinter,
             tally.selected = True
             if context:
                 first = held[0][0] if held else index
-                if (last_printed >= 0 and first > last_printed + 1
-                        and f.context_separator is not None):
+                if (
+                    last_printed >= 0
+                    and first > last_printed + 1
+                    and f.context_separator is not None
+                ):
                     yield encode_line(f.context_separator) + (
-                        b"\0" if f.null_data else b"\n")
+                        b"\0" if f.null_data else b"\n"
+                    )
                 for i, s, t in held:
                     for chunk in printer.context(i, s, t):
                         yield chunk
@@ -771,8 +847,11 @@ async def _lines(lines: AsyncLineIterator, printer: RgPrinter,
             records = printer.context(index, start, text)
             last_printed = index
         elif after_left > 0:
-            records = (printer.selected(index, start, text)
-                       if hit else printer.context(index, start, text))
+            records = (
+                printer.selected(index, start, text)
+                if hit
+                else printer.context(index, start, text)
+            )
             after_left -= 1
             last_printed = index
         elif context:
@@ -781,14 +860,22 @@ async def _lines(lines: AsyncLineIterator, printer: RgPrinter,
             yield chunk
             await budget.run()
         await budget.run()
-        if (f.max_count is not None and selected >= f.max_count
-                and after_left == 0):
+        if (
+            f.max_count is not None
+            and selected >= f.max_count
+            and after_left == 0
+        ):
             return
 
 
-async def search_haystack(source: AsyncIterator[bytes], pat: re.Pattern[str],
-                          f: RgFlags, name: str, label: str | None,
-                          tally: Tally) -> AsyncIterator[bytes]:
+async def search_haystack(
+    source: AsyncIterator[bytes],
+    pat: re.Pattern[str],
+    f: RgFlags,
+    name: str,
+    label: str | None,
+    tally: Tally,
+) -> AsyncIterator[bytes]:
     """One haystack's output as ripgrep prints it, read no further than
     the answer needs: -q, -l and --files-without-match stop at the first
     selected line, and -m at its last one and that line's trailing
@@ -813,8 +900,9 @@ async def search_haystack(source: AsyncIterator[bytes], pat: re.Pattern[str],
         if f.quiet or f.files_only or f.files_without_match:
             await _listing(lines, pat, f, tally)
             if not f.quiet and tally.selected == f.files_only:
-                yield encode_line(name) + (b"\0"
-                                           if f.null or f.null_data else b"\n")
+                yield encode_line(name) + (
+                    b"\0" if f.null or f.null_data else b"\n"
+                )
             return
         if f.count_only or f.count_matches:
             count = await _count(lines, pat, f, tally)
@@ -822,8 +910,11 @@ async def search_haystack(source: AsyncIterator[bytes], pat: re.Pattern[str],
                 head = b""
                 if label is not None:
                     head = encode_line(label) + (b"\0" if f.null else b":")
-                yield head + str(count).encode() + (b"\0"
-                                                    if f.null_data else b"\n")
+                yield (
+                    head
+                    + str(count).encode()
+                    + (b"\0" if f.null_data else b"\n")
+                )
             return
         printer = RgPrinter(f, pat, None if f.heading else label)
         async for chunk in _lines(lines, printer, pat, f, tally):

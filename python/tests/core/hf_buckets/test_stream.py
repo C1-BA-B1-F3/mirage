@@ -27,8 +27,9 @@ BIG = (b"x" * 1023 + b"\n") * 300
 async def test_read_stream_yields_chunks(make_acc):
     acc = make_acc({"x": b"abcdefgh"})
     chunks = []
-    async for c in read_stream(acc, PathSpec.from_str_path("/x"),
-                               chunk_size=3):
+    async for c in read_stream(
+        acc, PathSpec.from_str_path("/x"), chunk_size=3
+    ):
         chunks.append(c)
     assert b"".join(chunks) == b"abcdefgh"
     assert len(chunks) >= 2
@@ -47,9 +48,9 @@ async def test_read_stream_handles_empty_file(make_acc):
 async def test_stream_records_the_virtual_path(make_acc):
     # A key named like its mount: neither m/k.txt nor /m/k.txt is virtual.
     acc = make_acc({"m/k.txt": b"hello"})
-    spec = PathSpec(virtual="/m/m/k.txt",
-                    directory="/m/m/",
-                    vfs_path="m/k.txt")
+    spec = PathSpec(
+        virtual="/m/m/k.txt", directory="/m/m/", vfs_path="m/k.txt"
+    )
     scope = RecordingScope()
     try:
         chunks = [c async for c in read_stream(acc, spec)]
@@ -65,9 +66,9 @@ async def test_a_stream_is_stamped_before_its_first_chunk(make_acc):
     acc._fake.reach = []
     scope = RecordingScope()
     try:
-        chunks = read_stream(acc,
-                             PathSpec.from_str_path("/big.bin"),
-                             chunk_size=1024)
+        chunks = read_stream(
+            acc, PathSpec.from_str_path("/big.bin"), chunk_size=1024
+        )
         first = await anext(chunks)
         # Stamped while suspended at the first yield: a consumer that stops
         # here (head -c) still leaves a record that names the bytes.
@@ -96,15 +97,19 @@ async def test_an_empty_stream_is_still_stamped(make_acc):
 async def test_a_stream_with_no_recorder_does_not_crash(make_acc):
     acc = make_acc({"x": b"abc"})
     assert active_recorder() is None
-    assert b"".join([
-        c async for c in read_stream(acc, PathSpec.from_str_path("/x"))
-    ]) == b"abc"
+    assert (
+        b"".join(
+            [c async for c in read_stream(acc, PathSpec.from_str_path("/x"))]
+        )
+        == b"abc"
+    )
 
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("served", ['W/"abc"', NO_ETAG])
 async def test_a_stream_without_a_strong_etag_stamps_nothing(
-        make_acc, fake_hub, served):
+    make_acc, fake_hub, served
+):
     fake_hub.etags["x"] = served
     acc = make_acc({"x": b"abc"})
     scope = RecordingScope()
@@ -116,23 +121,30 @@ async def test_a_stream_without_a_strong_etag_stamps_nothing(
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("status,code,raised", [
-    (404, "EntryNotFound", FileNotFoundError),
-    (404, "", HfHubError),
-    (401, "", PermissionError),
-    (403, "", PermissionError),
-    (400, "", HfHubError),
-])
+@pytest.mark.parametrize(
+    "status,code,raised",
+    [
+        (404, "EntryNotFound", FileNotFoundError),
+        (404, "", HfHubError),
+        (401, "", PermissionError),
+        (403, "", PermissionError),
+        (400, "", HfHubError),
+    ],
+)
 async def test_a_stream_is_absent_only_for_a_missing_entry(
-        make_acc, fake_hub, status, code, raised):
+    make_acc, fake_hub, status, code, raised
+):
     acc = make_acc({"a.txt": b"abc"})
     fake_hub.fail["bucket_resolve"] = (status, code)
     with pytest.raises(raised) as info:
         _ = [
             c async for c in read_stream(acc, PathSpec.from_str_path("/a.txt"))
         ]
-    assert not isinstance(info.value, OSError) if raised is HfHubError \
+    assert (
+        not isinstance(info.value, OSError)
+        if raised is HfHubError
         else type(info.value) is raised
+    )
 
 
 @pytest.mark.asyncio
@@ -145,11 +157,17 @@ async def test_a_stream_of_the_mount_root_is_a_directory(make_acc, fake_hub):
 
 @pytest.mark.asyncio
 async def test_a_prefixed_stream_serves_the_prefixed_object(make_acc):
-    acc = make_acc({
-        "pfx/a.txt": b"seed",
-        "a.txt": b"decoy"
-    },
-                   key_prefix="pfx/")
-    assert b"".join([
-        c async for c in read_stream(acc, PathSpec.from_str_path("/a.txt"))
-    ]) == b"seed"
+    acc = make_acc(
+        {"pfx/a.txt": b"seed", "a.txt": b"decoy"}, key_prefix="pfx/"
+    )
+    assert (
+        b"".join(
+            [
+                c
+                async for c in read_stream(
+                    acc, PathSpec.from_str_path("/a.txt")
+                )
+            ]
+        )
+        == b"seed"
+    )

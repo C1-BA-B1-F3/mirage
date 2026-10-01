@@ -18,33 +18,35 @@ from mirage.core.lancedb.query import _predicate, distinct_values
 
 
 def test_narrows_on_a_name_prefix_with_a_cast():
-    assert _predicate(
-        "id", {},
-        "doc-1") == ("CAST(`id` AS STRING) LIKE 'doc-1%' ESCAPE '\\'")
+    assert _predicate("id", {}, "doc-1") == (
+        "CAST(`id` AS STRING) LIKE 'doc-1%' ESCAPE '\\'"
+    )
 
 
 def test_escapes_like_metacharacters_in_the_prefix():
     # An unescaped `_` is LIKE's single-character wildcard, so docX1 would
     # ride along and could crowd a real match out of the row cap.
-    assert _predicate(
-        "id", {},
-        "doc_") == ("CAST(`id` AS STRING) LIKE 'doc\\_%' ESCAPE '\\'")
-    assert _predicate(
-        "id", {}, "a%") == ("CAST(`id` AS STRING) LIKE 'a\\%%' ESCAPE '\\'")
+    assert _predicate("id", {}, "doc_") == (
+        "CAST(`id` AS STRING) LIKE 'doc\\_%' ESCAPE '\\'"
+    )
+    assert _predicate("id", {}, "a%") == (
+        "CAST(`id` AS STRING) LIKE 'a\\%%' ESCAPE '\\'"
+    )
 
 
 def test_ands_the_group_filters_with_the_prefix():
     assert _predicate("id", {"label": "cat"}, "doc-1") == (
-        "`label` = 'cat' AND CAST(`id` AS STRING) LIKE 'doc-1%' ESCAPE '\\'")
+        "`label` = 'cat' AND CAST(`id` AS STRING) LIKE 'doc-1%' ESCAPE '\\'"
+    )
 
 
 def test_quotes_a_column_name_a_bare_word_could_not_spell():
     # A space or a reserved word only parses quoted, and lance reads a
     # double-quoted word as a string literal, so the quotes are backticks.
-    assert _predicate(
-        "document id", {"select": "cat"},
-        "doc-1") == ("`select` = 'cat' AND "
-                     "CAST(`document id` AS STRING) LIKE 'doc-1%' ESCAPE '\\'")
+    assert _predicate("document id", {"select": "cat"}, "doc-1") == (
+        "`select` = 'cat' AND "
+        "CAST(`document id` AS STRING) LIKE 'doc-1%' ESCAPE '\\'"
+    )
 
 
 def test_is_the_filters_alone_with_no_prefix_and_empty_with_neither():
@@ -53,13 +55,16 @@ def test_is_the_filters_alone_with_no_prefix_and_empty_with_neither():
     assert _predicate("", {}, "doc-1") == ""
 
 
-@pytest.mark.parametrize("value,clause", [
-    ("42", "`n` = 42"),
-    ("-5", "`n` = -5"),
-    ("--5", "`n` = '--5'"),
-    ("\u0663", "`n` = '\u0663'"),
-    ("4\n", "`n` = '4\n'"),
-])
+@pytest.mark.parametrize(
+    "value,clause",
+    [
+        ("42", "`n` = 42"),
+        ("-5", "`n` = -5"),
+        ("--5", "`n` = '--5'"),
+        ("\u0663", "`n` = '\u0663'"),
+        ("4\n", "`n` = '4\n'"),
+    ],
+)
 def test_only_an_ascii_integer_compares_unquoted(value, clause):
     assert _predicate("id", {"n": value}, "") == clause
 
@@ -68,10 +73,9 @@ def test_only_an_ascii_integer_compares_unquoted(value, clause):
 async def test_a_kept_test_bounds_the_cap_by_matches(accessor):
     # Without a test the cap is a window over the table head; with one it
     # counts the values the test keeps, so a value past the head still lists.
-    assert await distinct_values(accessor, "animals", "label", {},
-                                 1) == ["cat"]
-    assert await distinct_values(accessor,
-                                 "animals",
-                                 "label", {},
-                                 1,
-                                 keep=lambda value: value == "dog") == ["dog"]
+    assert await distinct_values(accessor, "animals", "label", {}, 1) == [
+        "cat"
+    ]
+    assert await distinct_values(
+        accessor, "animals", "label", {}, 1, keep=lambda value: value == "dog"
+    ) == ["dog"]

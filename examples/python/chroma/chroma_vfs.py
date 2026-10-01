@@ -37,8 +37,9 @@ def build_vfs() -> ChromaVFS:
         ssl=bool_env("CHROMA_SSL", False),
         collection_name=require_env("CHROMA_COLLECTION"),
         slug_field=os.environ.get("CHROMA_SLUG_FIELD", "page_slug"),
-        chunk_index_field=os.environ.get("CHROMA_CHUNK_INDEX_FIELD",
-                                         "chunk_index"),
+        chunk_index_field=os.environ.get(
+            "CHROMA_CHUNK_INDEX_FIELD", "chunk_index"
+        ),
     )
     return ChromaVFS(config=config)
 

@@ -21,8 +21,9 @@ from dulwich.objects import Commit
 # the one before it never finished), PRE_COMMIT (room for an octopus),
 # COMMIT, POST_MERGE (a merge's edges), COLLAPSING (branch lines moving
 # left) and PADDING, the resting state between commits.
-GraphState: TypeAlias = Literal["padding", "skip", "preCommit", "commit",
-                                "postMerge", "collapsing"]
+GraphState: TypeAlias = Literal[
+    "padding", "skip", "preCommit", "commit", "postMerge", "collapsing"
+]
 
 MERGE_CHARS = ("/", "|", "\\")
 
@@ -48,8 +49,9 @@ class CommitGraph:
             first parent alone.
     """
 
-    def __init__(self, interesting: Callable[[bytes], bool],
-                 first_parent_only: bool) -> None:
+    def __init__(
+        self, interesting: Callable[[bytes], bool], first_parent_only: bool
+    ) -> None:
         self._interesting = interesting
         self._first_parent_only = first_parent_only
         self._commit: bytes = b""
@@ -84,7 +86,8 @@ class CommitGraph:
             ]
         else:
             self._parents = [
-                parent for parent in commit.parents
+                parent
+                for parent in commit.parents
                 if self._interesting(parent)
             ]
         self._prev_commit_index = self._commit_index
@@ -199,9 +202,11 @@ class CommitGraph:
     def _needs_pre_commit_line(self) -> bool:
         """Two rows of room for each dashed parent, while there is a
         column to its right."""
-        return (len(self._parents) >= 3
-                and self._commit_index < len(self._columns) - 1
-                and self._expansion_row < self._dashed_parents() * 2)
+        return (
+            len(self._parents) >= 3
+            and self._commit_index < len(self._columns) - 1
+            and self._expansion_row < self._dashed_parents() * 2
+        )
 
     def _is_mapping_correct(self) -> bool:
         for i in range(self._mapping_size):
@@ -239,8 +244,10 @@ class CommitGraph:
                     self._width += 2
             else:
                 self._insert_column(column, -1)
-        while (self._mapping_size > 1
-               and self._mapping[self._mapping_size - 1] < 0):
+        while (
+            self._mapping_size > 1
+            and self._mapping[self._mapping_size - 1] < 0
+        ):
             self._mapping_size -= 1
 
     def _insert_column(self, sha: bytes, index: int) -> None:
@@ -271,8 +278,11 @@ class CommitGraph:
             self._edges_added = len(self._parents) + self._merge_layout - 2
             at = self._width + (self._merge_layout - 1) * shift
             self._width += 2 * self._merge_layout
-        elif (self._edges_added > 0 and self._width >= 2
-              and i == self._mapping[self._width - 2]):
+        elif (
+            self._edges_added > 0
+            and self._width >= 2
+            and i == self._mapping[self._width - 2]
+        ):
             at = self._width - 2
             self._edges_added = -1
         else:
@@ -287,7 +297,8 @@ class CommitGraph:
 
     def _skip_line(self) -> str:
         self._update_state(
-            "preCommit" if self._needs_pre_commit_line() else "commit")
+            "preCommit" if self._needs_pre_commit_line() else "commit"
+        )
         return "..."
 
     def _pre_commit_line(self) -> str:
@@ -299,8 +310,12 @@ class CommitGraph:
                 seen_this = True
                 line += "|" + " " * self._expansion_row
             elif seen_this and self._expansion_row == 0:
-                line += ("\\" if self._prev_state == "postMerge"
-                         and self._prev_commit_index < i else "|")
+                line += (
+                    "\\"
+                    if self._prev_state == "postMerge"
+                    and self._prev_commit_index < i
+                    else "|"
+                )
             elif seen_this and self._expansion_row > 0:
                 line += "\\"
             else:
@@ -329,12 +344,18 @@ class CommitGraph:
             elif seen_this and self._edges_added > 1:
                 line += "\\"
             elif seen_this and self._edges_added == 1:
-                line += ("\\" if self._prev_state == "postMerge"
-                         and self._prev_edges_added > 0
-                         and self._prev_commit_index < i else "|")
-            elif (self._prev_state == "collapsing"
-                  and _at(self._old_mapping, 2 * i + 1) == i
-                  and _at(self._mapping, 2 * i) < i):
+                line += (
+                    "\\"
+                    if self._prev_state == "postMerge"
+                    and self._prev_edges_added > 0
+                    and self._prev_commit_index < i
+                    else "|"
+                )
+            elif (
+                self._prev_state == "collapsing"
+                and _at(self._old_mapping, 2 * i + 1) == i
+                and _at(self._mapping, 2 * i) < i
+            ):
                 line += "/"
             else:
                 line += "|"
@@ -349,8 +370,9 @@ class CommitGraph:
 
     def _octopus_dashes(self) -> str:
         dashed = self._dashed_parents()
-        return "".join("-." if i == dashed - 1 else "--"
-                       for i in range(dashed))
+        return "".join(
+            "-." if i == dashed - 1 else "--" for i in range(dashed)
+        )
 
     def _post_merge_line(self) -> str:
         first_parent = self._parents[0] if self._parents else None
@@ -385,7 +407,8 @@ class CommitGraph:
             if column == first_parent:
                 parent_seen = True
         self._update_state(
-            "padding" if self._is_mapping_correct() else "collapsing")
+            "padding" if self._is_mapping_correct() else "collapsing"
+        )
         return line
 
     def _collapsing_line(self) -> str:

@@ -7,8 +7,12 @@ from mirage.cache.index.config import Evicted
 T = TypeVar("T")
 
 
-def departed(previous: Iterable[tuple[str, T]], current: Iterable[str],
-             prefix: str, is_folder: Callable[[T], bool]) -> list[Evicted]:
+def departed(
+    previous: Iterable[tuple[str, T]],
+    current: Iterable[str],
+    prefix: str,
+    is_folder: Callable[[T], bool],
+) -> list[Evicted]:
     """Return topmost paths absent from a replacement tree.
 
     Args:
@@ -20,7 +24,8 @@ def departed(previous: Iterable[tuple[str, T]], current: Iterable[str],
     present = set(current)
     gone = sorted(
         ((path, entry) for path, entry in previous if path not in present),
-        key=itemgetter(0))
+        key=itemgetter(0),
+    )
     top: list[str] = []
     result: list[Evicted] = []
     stem = prefix.rstrip("/")

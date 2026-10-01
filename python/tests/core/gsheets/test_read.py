@@ -39,31 +39,32 @@ def index():
 
 @pytest.mark.asyncio
 async def test_read_auto_bootstraps_from_empty_index(accessor, index):
-    files = [{
-        "mimeType": "application/vnd.google-apps.spreadsheet",
-        "id": "sheet1",
-        "name": "Budget",
-        "modifiedTime": "2026-04-01T00:00:00.000Z",
-        "owners": [{
-            "me": True
-        }],
-    }]
+    files = [
+        {
+            "mimeType": "application/vnd.google-apps.spreadsheet",
+            "id": "sheet1",
+            "name": "Budget",
+            "modifiedTime": "2026-04-01T00:00:00.000Z",
+            "owners": [{"me": True}],
+        }
+    ]
     with (
-            patch(
-                "mirage.core.google.entry.get_file",
-                new_callable=AsyncMock,
-                return_value=files[0],
-            ),
-            patch(
-                "mirage.core.gsheets.read.read_spreadsheet",
-                new_callable=AsyncMock,
-                return_value=b'{"spreadsheetId":"sheet1"}',
-            ),
+        patch(
+            "mirage.core.google.entry.get_file",
+            new_callable=AsyncMock,
+            return_value=files[0],
+        ),
+        patch(
+            "mirage.core.gsheets.read.read_spreadsheet",
+            new_callable=AsyncMock,
+            return_value=b'{"spreadsheetId":"sheet1"}',
+        ),
     ):
         path = PathSpec(
             vfs_path=mount_key(
                 "/gsheets/owned/2026-04-01_Budget__sheet1.gsheet.json",
-                "/gsheets"),
+                "/gsheets",
+            ),
             virtual="/gsheets/owned/2026-04-01_Budget__sheet1.gsheet.json",
             directory="/gsheets/owned/2026-04-01_Budget__sheet1.gsheet.json",
         )
@@ -74,20 +75,21 @@ async def test_read_auto_bootstraps_from_empty_index(accessor, index):
 @pytest.mark.asyncio
 async def test_read_missing_file_raises_by_id(accessor, index):
     with (
-            patch(
-                "mirage.core.google.entry.get_file",
-                new_callable=AsyncMock,
-                side_effect=FileNotFoundError("missing"),
-            ),
-            patch(
-                "mirage.core.gsheets.read.read_spreadsheet",
-                new_callable=AsyncMock,
-                side_effect=AssertionError("should not call read_spreadsheet"),
-            ),
+        patch(
+            "mirage.core.google.entry.get_file",
+            new_callable=AsyncMock,
+            side_effect=FileNotFoundError("missing"),
+        ),
+        patch(
+            "mirage.core.gsheets.read.read_spreadsheet",
+            new_callable=AsyncMock,
+            side_effect=AssertionError("should not call read_spreadsheet"),
+        ),
     ):
         path = PathSpec(
-            vfs_path=mount_key("/gsheets/owned/Missing__xyz.gsheet.json",
-                               "/gsheets"),
+            vfs_path=mount_key(
+                "/gsheets/owned/Missing__xyz.gsheet.json", "/gsheets"
+            ),
             virtual="/gsheets/owned/Missing__xyz.gsheet.json",
             directory="/gsheets/owned/Missing__xyz.gsheet.json",
         )
@@ -101,9 +103,9 @@ async def test_read_spreadsheet_asks_for_grid_data():
     # rendered .gsheet.json would be tab metadata without this.
     token_manager = SimpleNamespace(config=SimpleNamespace(api_base=""))
     with patch(
-            "mirage.core.gsheets.read.google_get",
-            new_callable=AsyncMock,
-            return_value={"spreadsheetId": "s1"},
+        "mirage.core.gsheets.read.google_get",
+        new_callable=AsyncMock,
+        return_value={"spreadsheetId": "s1"},
     ) as get:
         await read_spreadsheet(token_manager, "s1")
     assert get.await_args.args[1].endswith("/spreadsheets/s1")
@@ -113,29 +115,42 @@ async def test_read_spreadsheet_asks_for_grid_data():
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     ("stamp", "token"),
-    [("2026-04-01T00:00:00.000Z", "2026-04-01T00:00:00.000Z"), ("", None)])
-async def test_read_records_the_token_stat_reports(accessor, index, stamp,
-                                                   token):
+    [("2026-04-01T00:00:00.000Z", "2026-04-01T00:00:00.000Z"), ("", None)],
+)
+async def test_read_records_the_token_stat_reports(
+    accessor, index, stamp, token
+):
     # read: fresh compares this record with stat's fingerprint, so both take
     # the entry's modified stamp, and an entry without one stamps nothing.
     name = "2026-04-01_My_Sheet__s1.gsheet.json"
     target = "/gsheets/owned/" + name
-    await index.set_dir("/gsheets/owned", [
-        (name,
-         IndexEntry(id="s1",
+    await index.set_dir(
+        "/gsheets/owned",
+        [
+            (
+                name,
+                IndexEntry(
+                    id="s1",
                     name="My Sheet",
                     resource_type="gsheets/file",
                     remote_time=stamp,
-                    vfs_name=name)),
-    ])
-    path = PathSpec(vfs_path=mount_key(target, "/gsheets"),
-                    virtual=target,
-                    directory=target)
+                    vfs_name=name,
+                ),
+            ),
+        ],
+    )
+    path = PathSpec(
+        vfs_path=mount_key(target, "/gsheets"),
+        virtual=target,
+        directory=target,
+    )
     scope = RecordingScope()
     try:
-        with patch("mirage.core.gsheets.read.read_spreadsheet",
-                   new_callable=AsyncMock,
-                   return_value=b'{"spreadsheetId":"s1"}'):
+        with patch(
+            "mirage.core.gsheets.read.read_spreadsheet",
+            new_callable=AsyncMock,
+            return_value=b'{"spreadsheetId":"s1"}',
+        ):
             data = await read(accessor, path, index)
     finally:
         scope.close()

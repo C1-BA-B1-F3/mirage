@@ -66,14 +66,21 @@ async def history_cmd(
             return None, _out_of_range(d)
         await observer.log_delete(session=session, offset=offset)
     if s and texts:
-        await observer.log_command_text(" ".join(texts),
-                                        session=session,
-                                        cwd=opts.cwd.virtual)
+        await observer.log_command_text(
+            " ".join(texts), session=session, cwd=opts.cwd.virtual
+        )
     if p and not s:
         out = "\n".join(texts) + "\n" if texts else ""
         return out.encode(), IOResult()
-    if (c or d is not None or s or fl.as_bool("a") or fl.as_bool("r")
-            or fl.as_bool("w") or fl.as_bool("n")):
+    if (
+        c
+        or d is not None
+        or s
+        or fl.as_bool("a")
+        or fl.as_bool("r")
+        or fl.as_bool("w")
+        or fl.as_bool("n")
+    ):
         return None, IOResult()
     if len(texts) > 1:
         err = b"history: too many arguments\n"

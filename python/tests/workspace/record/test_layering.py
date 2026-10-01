@@ -15,13 +15,17 @@
 import ast
 import pathlib
 
-RECORD = pathlib.Path(
-    __file__).resolve().parents[3] / "mirage/workspace/record"
+RECORD = (
+    pathlib.Path(__file__).resolve().parents[3] / "mirage/workspace/record"
+)
 # The tiers that persist through the record client. Any of them appearing
 # in an import here means the substrate has grown a dependency on one of
 # its own consumers.
-CONSUMERS = ("mirage.workspace.session", "mirage.workspace.store",
-             "mirage.workspace.mount")
+CONSUMERS = (
+    "mirage.workspace.session",
+    "mirage.workspace.store",
+    "mirage.workspace.mount",
+)
 
 
 def imported_modules(path: pathlib.Path) -> list[str]:
@@ -50,5 +54,7 @@ def test_the_record_tier_imports_none_of_its_consumers():
         for name in imported_modules(path):
             if name.startswith(CONSUMERS):
                 offenders.append(f"{path.name} imports {name}")
-    assert not offenders, ("the record tier must not import a tier that "
-                           f"persists through it: {offenders}")
+    assert not offenders, (
+        "the record tier must not import a tier that "
+        f"persists through it: {offenders}"
+    )

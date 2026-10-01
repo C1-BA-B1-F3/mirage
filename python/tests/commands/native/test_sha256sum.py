@@ -22,6 +22,7 @@ def test_sha256sum_c(env):
 
 
 def test_sha256sum_tag_and_zero(env):
-    assert env.mirage("sha256sum --tag",
-                      stdin=b"abc").startswith("SHA256 (-) = ")
+    assert env.mirage("sha256sum --tag", stdin=b"abc").startswith(
+        "SHA256 (-) = "
+    )
     assert env.mirage("sha256sum -b -z", stdin=b"abc").endswith(" *-\0")

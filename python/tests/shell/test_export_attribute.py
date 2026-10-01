@@ -30,15 +30,16 @@ ENV_CASES = [
     # `export -n` keeps the value and drops the name from the env.
     ('export Y=world; export -n Y; env | grep -c "^Y="', "0\n"),
     # `set -a` marks what is assigned *while it is on*, and nothing else.
-    ("B=1; set -a; C=2; set +a; D=3;"
-     ' env | grep -cE "^(B|C|D)="', "1\n"),
+    ('B=1; set -a; C=2; set +a; D=3; env | grep -cE "^(B|C|D)="', "1\n"),
     ("set -a; A=auto; env | grep '^A='", "A=auto\n"),
 ]
 
 DECLARE_CASES = [
     # `--` for a plain scalar, `-x` once exported.
-    ("X=hello; export Y=world; declare -p X Y",
-     'declare -- X="hello"\ndeclare -x Y="world"\n'),
+    (
+        "X=hello; export Y=world; declare -p X Y",
+        'declare -- X="hello"\ndeclare -x Y="world"\n',
+    ),
     # The declared-but-unset third state prints bare, with no `=`.
     ("export Z; declare -p Z", "declare -x Z\n"),
     # `declare -x` on an existing name keeps the value and adds the mark.
@@ -46,23 +47,29 @@ DECLARE_CASES = [
     # `export -n` is the off direction and leaves an ordinary variable.
     ("export Y=world; export -n Y; declare -p Y", 'declare -- Y="world"\n'),
     # Never exported, so `-n` is a no-op rather than an error.
-    ("P=plain; export -n P; echo rc=$?; declare -p P",
-     'rc=0\ndeclare -- P="plain"\n'),
+    (
+        "P=plain; export -n P; echo rc=$?; declare -p P",
+        'rc=0\ndeclare -- P="plain"\n',
+    ),
     # Two attributes print in bash's own order (`r` before `x`), which
     # is `attr_letters`' order and not the order they were set in.
     ("export RO=v; readonly RO; declare -p RO", 'declare -rx RO="v"\n'),
     # `set -a` again, read through declare rather than env.
-    ("B=1; set -a; C=2; set +a; D=3; declare -p B C D",
-     'declare -- B="1"\ndeclare -x C="2"\ndeclare -- D="3"\n'),
+    (
+        "B=1; set -a; C=2; set +a; D=3; declare -p B C D",
+        'declare -- B="1"\ndeclare -x C="2"\ndeclare -- D="3"\n',
+    ),
 ]
 
 EXPORT_P_CASES = [
     # Only exported names, and the unset one prints without a value.
     # Grepped to the three names under test because a real shell (and a
     # mirage session, which exports PWD) carries plenty of others.
-    ("X=hello; export Y=world; export Z;"
-     ' export -p | grep -E "^declare -x (X|Y|Z)"',
-     'declare -x Y="world"\ndeclare -x Z\n'),
+    (
+        "X=hello; export Y=world; export Z;"
+        ' export -p | grep -E "^declare -x (X|Y|Z)"',
+        'declare -x Y="world"\ndeclare -x Z\n',
+    ),
     # `export -n` removes it from the listing entirely.
     ('export Q; export -n Q; export -p | grep -c "declare -x Q"', "0\n"),
 ]
@@ -112,10 +119,10 @@ def test_cd_exports_pwd_and_oldpwd(shell):
     # $OLDPWD is created by the first `cd`, so it is marked there; $PWD
     # keeps the mark it was seeded with because `seed_var` replaces the
     # value rather than the record.
-    out = shell.mirage("mkdir -p /data/d; cd /data/d; cd /data;"
-                       " declare -p PWD OLDPWD")
-    assert out == ('declare -x PWD="/data"\n'
-                   'declare -x OLDPWD="/data/d"\n')
+    out = shell.mirage(
+        "mkdir -p /data/d; cd /data/d; cd /data; declare -p PWD OLDPWD"
+    )
+    assert out == ('declare -x PWD="/data"\ndeclare -x OLDPWD="/data/d"\n')
     env = shell.mirage('env | grep -E "^(PWD|OLDPWD)=" | sort')
     assert env == "OLDPWD=/data/d\nPWD=/data\n"
 
@@ -140,24 +147,34 @@ def test_a_plain_variable_still_expands_and_lists(shell):
 # `export -p` prints the whole cluster, not just `-x`, and an array is
 # exportable like anything else. Pinned on bash 5.2.37.
 ARRAY_EXPORT_CASES = [
-    ("export ARR=(a b); declare -p ARR",
-     'declare -ax ARR=([0]="a" [1]="b")\n'),
-    ("declare -x ARR=(a b); declare -p ARR",
-     'declare -ax ARR=([0]="a" [1]="b")\n'),
-    ("ARR=(a b); export ARR; declare -p ARR",
-     'declare -ax ARR=([0]="a" [1]="b")\n'),
+    (
+        "export ARR=(a b); declare -p ARR",
+        'declare -ax ARR=([0]="a" [1]="b")\n',
+    ),
+    (
+        "declare -x ARR=(a b); declare -p ARR",
+        'declare -ax ARR=([0]="a" [1]="b")\n',
+    ),
+    (
+        "ARR=(a b); export ARR; declare -p ARR",
+        'declare -ax ARR=([0]="a" [1]="b")\n',
+    ),
     ("readonly R=1; export R; export -p | grep ' R='", 'declare -rx R="1"\n'),
-    ("export ARR=(a b); export -p | grep ARR",
-     'declare -ax ARR=([0]="a" [1]="b")\n'),
+    (
+        "export ARR=(a b); export -p | grep ARR",
+        'declare -ax ARR=([0]="a" [1]="b")\n',
+    ),
     # `-n` is the off direction for an array literal too. The store keeps
     # whatever attributes the name already carried, so an unapplied mark
     # left the array exported and GNU's `declare -a` came out
     # `declare -ax`.
-    ("declare -x ARR=(a); export -n ARR=(b); declare -p ARR",
-     'declare -a ARR=([0]="b")\n'),
+    (
+        "declare -x ARR=(a); export -n ARR=(b); declare -p ARR",
+        'declare -a ARR=([0]="b")\n',
+    ),
     # Both attributes at once: readonly answers first and still owes the
     # export mark.
-    ('declare -rx X=1; declare -p X', 'declare -rx X="1"\n'),
+    ("declare -rx X=1; declare -p X", 'declare -rx X="1"\n'),
 ]
 
 
@@ -177,9 +194,11 @@ def test_a_bare_local_declares_without_assigning(shell):
     # still expands to `d` and `declare -p` prints no `=`. Writing `""`
     # here was the invented-empty-string bug the mark door exists to fix.
     assert shell.mirage('f() { local L; echo "[${L-UNSET}]"; }; f') == (
-        "[UNSET]\n")
+        "[UNSET]\n"
+    )
     assert shell.mirage("f() { local L; declare -p L; }; f") == (
-        "declare -- L\n")
+        "declare -- L\n"
+    )
     assert shell.mirage("declare D; declare -p D") == "declare -- D\n"
     # An explicit empty value is a value, and prints as one.
     assert shell.mirage('f() { local L=; echo "[${L-UNSET}]"; }; f') == "[]\n"
@@ -199,7 +218,7 @@ PREFIX_CASES = [
     ("TOKEN=x printenv TOKEN", "x\n"),
     ("TOKEN=x env | grep '^TOKEN='", "TOKEN=x\n"),
     # And only for that command: the shell is unchanged afterwards.
-    ("TOKEN=x true; echo \"[${TOKEN-unset}]\"", "[unset]\n"),
+    ('TOKEN=x true; echo "[${TOKEN-unset}]"', "[unset]\n"),
     # A plain assignment is still a shell variable, not an exported one.
     ("T2=y; env | grep -c '^T2=' || true", "0\n"),
 ]

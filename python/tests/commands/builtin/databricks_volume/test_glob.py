@@ -8,8 +8,9 @@ from tests.core.databricks_volume.conftest import file_entry
 
 @pytest.mark.asyncio
 async def test_resolve_file_path(accessor, index):
-    scope = PathSpec.from_str_path("/volume/readme.md",
-                                   mount_key("/volume/readme.md", "/volume"))
+    scope = PathSpec.from_str_path(
+        "/volume/readme.md", mount_key("/volume/readme.md", "/volume")
+    )
     result = await resolve_glob(accessor, [scope], index)
     assert result == [scope]
 

@@ -42,6 +42,7 @@ class FileStat:
         old_size (int): byte length of the old blob, 0 when created.
         new_size (int): byte length of the new blob, 0 when deleted.
     """
+
     path: str
     insertions: int
     deletions: int
@@ -50,8 +51,9 @@ class FileStat:
     new_size: int
 
 
-def tree_entries(store: BaseObjectStore,
-                 tree: bytes | None) -> dict[bytes, tuple[int, bytes]]:
+def tree_entries(
+    store: BaseObjectStore, tree: bytes | None
+) -> dict[bytes, tuple[int, bytes]]:
     """Every blob a tree holds, keyed by repository-relative path.
 
     Args:
@@ -95,9 +97,11 @@ def _count_lines(old_data: bytes, new_data: bytes) -> tuple[int, int]:
         old_data (bytes): the old side's bytes.
         new_data (bytes): the new side's bytes.
     """
-    matcher = SequenceMatcher(a=old_data.splitlines(keepends=True),
-                              b=new_data.splitlines(keepends=True),
-                              autojunk=False)
+    matcher = SequenceMatcher(
+        a=old_data.splitlines(keepends=True),
+        b=new_data.splitlines(keepends=True),
+        autojunk=False,
+    )
     insertions = 0
     deletions = 0
     for tag, i1, i2, j1, j2 in matcher.get_opcodes():
@@ -108,8 +112,11 @@ def _count_lines(old_data: bytes, new_data: bytes) -> tuple[int, int]:
     return insertions, deletions
 
 
-def diffstat(store: BaseObjectStore, before: dict[bytes, tuple[int, bytes]],
-             after: dict[bytes, tuple[int, bytes]]) -> list[FileStat]:
+def diffstat(
+    store: BaseObjectStore,
+    before: dict[bytes, tuple[int, bytes]],
+    after: dict[bytes, tuple[int, bytes]],
+) -> list[FileStat]:
     """Per-path change counts between two trees, in path order.
 
     A binary file (NUL in the first 8000 bytes of either side, git's
@@ -131,19 +138,24 @@ def diffstat(store: BaseObjectStore, before: dict[bytes, tuple[int, bytes]],
         new_sha = None if new is None else new[1]
         old_data = _blob_data(store, old_sha)
         new_data = _blob_data(store, new_sha)
-        binary = (b"\0" in old_data[:BINARY_SNIFF]
-                  or b"\0" in new_data[:BINARY_SNIFF])
+        binary = (
+            b"\0" in old_data[:BINARY_SNIFF]
+            or b"\0" in new_data[:BINARY_SNIFF]
+        )
         if binary or old_sha == new_sha:
             insertions, deletions = 0, 0
         else:
             insertions, deletions = _count_lines(old_data, new_data)
         stats.append(
-            FileStat(path=path.decode("utf-8", errors="replace"),
-                     insertions=insertions,
-                     deletions=deletions,
-                     binary=binary,
-                     old_size=len(old_data),
-                     new_size=len(new_data)))
+            FileStat(
+                path=path.decode("utf-8", errors="replace"),
+                insertions=insertions,
+                deletions=deletions,
+                binary=binary,
+                old_size=len(old_data),
+                new_size=len(new_data),
+            )
+        )
     return stats
 
 
@@ -172,7 +184,7 @@ def _stat_name(path: str, name_width: int) -> str:
     """
     if len(path) <= name_width:
         return path
-    tail = path[-(name_width - len(ELLIPSIS)):]
+    tail = path[-(name_width - len(ELLIPSIS)) :]
     slash = tail.find("/")
     if slash != -1:
         tail = tail[slash:]
@@ -194,15 +206,26 @@ def stat_table(stats: list[FileStat], width: int = STAT_WIDTH) -> list[str]:
     if not stats:
         return []
     max_len = max(len(stat.path) for stat in stats)
-    max_change = max((stat.insertions + stat.deletions
-                      for stat in stats if not stat.binary),
-                     default=0)
+    max_change = max(
+        (
+            stat.insertions + stat.deletions
+            for stat in stats
+            if not stat.binary
+        ),
+        default=0,
+    )
     number_width = max(
         len(str(max_change)) if max_change else 1,
-        3 if any(stat.binary for stat in stats) else 1)
-    bin_width = max((len(f"Bin {stat.old_size} -> {stat.new_size} bytes") - 4
-                     for stat in stats if stat.binary),
-                    default=0)
+        3 if any(stat.binary for stat in stats) else 1,
+    )
+    bin_width = max(
+        (
+            len(f"Bin {stat.old_size} -> {stat.new_size} bytes") - 4
+            for stat in stats
+            if stat.binary
+        ),
+        default=0,
+    )
     width = max(width, 16 + 6 + number_width)
     graph_width = max_change if max_change > bin_width else bin_width
     name_width = max_len
@@ -220,8 +243,10 @@ def stat_table(stats: list[FileStat], width: int = STAT_WIDTH) -> list[str]:
     for stat in stats:
         name = _stat_name(stat.path, name_width)
         if stat.binary:
-            lines.append(f" {name:<{name_width}} | "
-                         f"Bin {stat.old_size} -> {stat.new_size} bytes")
+            lines.append(
+                f" {name:<{name_width}} | "
+                f"Bin {stat.old_size} -> {stat.new_size} bytes"
+            )
             continue
         total_insertions += stat.insertions
         total_deletions += stat.deletions
@@ -239,7 +264,8 @@ def stat_table(stats: list[FileStat], width: int = STAT_WIDTH) -> list[str]:
                 added = total - removed
         graph = f" {'+' * added}{'-' * removed}" if change else ""
         lines.append(
-            f" {name:<{name_width}} | {change:>{number_width}}{graph}")
+            f" {name:<{name_width}} | {change:>{number_width}}{graph}"
+        )
     lines.append(stat_line(len(stats), total_insertions, total_deletions))
     return lines
 
@@ -276,8 +302,9 @@ def stat_line(files: int, insertions: int, deletions: int) -> str:
     return ", ".join(parts)
 
 
-def report(commit: Commit, branch: str | None, changes: bytes, width: int,
-           root: bool) -> bytes:
+def report(
+    commit: Commit, branch: str | None, changes: bytes, width: int, root: bool
+) -> bytes:
     """What ``git commit`` prints once the commit exists.
 
     The title line, then the counts and ``--summary`` lines that
@@ -294,5 +321,7 @@ def report(commit: Commit, branch: str | None, changes: bytes, width: int,
     title = commit.message.decode("utf-8", errors="replace").split("\n")[0]
     where = branch if branch is not None else "detached HEAD"
     marker = ROOT_COMMIT if root else ""
-    return (f"[{where} {marker}{short(commit.id, width)}] {title}\n".encode() +
-            changes)
+    return (
+        f"[{where} {marker}{short(commit.id, width)}] {title}\n".encode()
+        + changes
+    )

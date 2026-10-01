@@ -22,8 +22,9 @@ from mirage.io.types import ByteSource, IOResult
 from mirage.types import PathSpec
 
 
-def _seq_generate(texts: list[str], separator: str, width: bool,
-                  fmt: str | None) -> str:
+def _seq_generate(
+    texts: list[str], separator: str, width: bool, fmt: str | None
+) -> str:
     nums = [float(t) for t in texts]
     if len(nums) == 1:
         first, step, last = 1, 1, int(nums[0])

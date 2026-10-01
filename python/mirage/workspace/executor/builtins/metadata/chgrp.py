@@ -15,10 +15,19 @@
 from mirage.runtime.types import DispatchFn
 from mirage.types import PathSpec
 from mirage.workspace.executor.builtins.metadata.metadata import (
-    apply_attrs, apply_link_attrs, parse_group, resolve_operand, walk_owned)
-from mirage.workspace.executor.builtins.shared import (expand_operands, fail,
-                                                       finish, operand_text,
-                                                       split_value_flags)
+    apply_attrs,
+    apply_link_attrs,
+    parse_group,
+    resolve_operand,
+    walk_owned,
+)
+from mirage.workspace.executor.builtins.shared import (
+    expand_operands,
+    fail,
+    finish,
+    operand_text,
+    split_value_flags,
+)
 from mirage.workspace.executor.builtins.types import Result
 from mirage.workspace.mount.namespace import Namespace
 
@@ -58,22 +67,26 @@ async def handle_chgrp(
         if no_deref and namespace.is_link(target.virtual):
             await apply_link_attrs(dispatch, "chgrp", target, errors, gid=gid)
             continue
-        found = await resolve_operand(namespace, dispatch, "chgrp", target,
-                                      errors)
+        found = await resolve_operand(
+            namespace, dispatch, "chgrp", target, errors
+        )
         if found is None:
             continue
         resolved, stat = found
         if recursive:
-            paths, links = await walk_owned(namespace, dispatch, resolved,
-                                            stat)
+            paths, links = await walk_owned(
+                namespace, dispatch, resolved, stat
+            )
         else:
             paths, links = [resolved], []
         for path in paths:
             await apply_attrs(dispatch, "chgrp", path, errors, gid=gid)
         for link in links:
-            await apply_link_attrs(dispatch,
-                                   "chgrp",
-                                   PathSpec.from_str_path(link),
-                                   errors,
-                                   gid=gid)
+            await apply_link_attrs(
+                dispatch,
+                "chgrp",
+                PathSpec.from_str_path(link),
+                errors,
+                gid=gid,
+            )
     return finish("chgrp", errors)

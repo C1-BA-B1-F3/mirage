@@ -25,5 +25,6 @@ __all__ = ["SlackConfig", "SlackVFS"]
 def __getattr__(name: str) -> "type[SlackVFS]":
     if name == "SlackVFS":
         from mirage.vfs.slack.slack import SlackVFS
+
         return SlackVFS
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

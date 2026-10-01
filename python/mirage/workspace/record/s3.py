@@ -27,8 +27,12 @@ def _is_condition_lost(exc: Exception) -> bool:
     read (412) or a concurrent conditional write is in flight (409)."""
     if hasattr(exc, "response"):
         code = exc.response.get("Error", {}).get("Code")
-        return code in ("412", "PreconditionFailed", "409",
-                        "ConditionalRequestConflict")
+        return code in (
+            "412",
+            "PreconditionFailed",
+            "409",
+            "ConditionalRequestConflict",
+        )
     return False
 
 
@@ -55,7 +59,8 @@ class S3RecordClient:
             if self._client is None:
                 session = async_session(self._config)
                 self._client_cm = session.client(
-                    **_client_kwargs(self._config))
+                    **_client_kwargs(self._config)
+                )
                 self._client = await self._client_cm.__aenter__()
         return self._client
 
@@ -66,8 +71,9 @@ class S3RecordClient:
         """Read one record; ``(fields, etag)``, ``(None, "")`` when absent."""
         client = await self.client()
         try:
-            resp = await client.get_object(Bucket=self._config.bucket,
-                                           Key=self.key(name))
+            resp = await client.get_object(
+                Bucket=self._config.bucket, Key=self.key(name)
+            )
         except Exception as exc:
             if is_not_found(exc):
                 return None, ""
@@ -77,12 +83,15 @@ class S3RecordClient:
 
     async def put(self, name: str, fields: dict[str, Any]) -> None:
         client = await self.client()
-        await client.put_object(Bucket=self._config.bucket,
-                                Key=self.key(name),
-                                Body=json.dumps(fields).encode())
+        await client.put_object(
+            Bucket=self._config.bucket,
+            Key=self.key(name),
+            Body=json.dumps(fields).encode(),
+        )
 
-    async def cas_put(self, name: str, fields: dict[str, Any],
-                      expected_generation: int) -> bool:
+    async def cas_put(
+        self, name: str, fields: dict[str, Any], expected_generation: int
+    ) -> bool:
         """Write one record iff its stored generation matches.
 
         Compare-read the record, check the generation client-side, then
@@ -95,16 +104,16 @@ class S3RecordClient:
         if generation_of(stored) != expected_generation:
             return False
         client = await self.client()
-        condition = ({
-            "IfNoneMatch": "*"
-        } if stored is None else {
-            "IfMatch": etag
-        })
+        condition = (
+            {"IfNoneMatch": "*"} if stored is None else {"IfMatch": etag}
+        )
         try:
-            await client.put_object(Bucket=self._config.bucket,
-                                    Key=self.key(name),
-                                    Body=json.dumps(fields).encode(),
-                                    **condition)
+            await client.put_object(
+                Bucket=self._config.bucket,
+                Key=self.key(name),
+                Body=json.dumps(fields).encode(),
+                **condition,
+            )
         except Exception as exc:
             if _is_condition_lost(exc):
                 return False
@@ -115,10 +124,11 @@ class S3RecordClient:
         client = await self.client()
         names: list[str] = []
         paginator = client.get_paginator("list_objects_v2")
-        async for page in paginator.paginate(Bucket=self._config.bucket,
-                                             Prefix=self._prefix):
+        async for page in paginator.paginate(
+            Bucket=self._config.bucket, Prefix=self._prefix
+        ):
             for entry in page.get("Contents", []):
-                key = entry["Key"][len(self._prefix):]
+                key = entry["Key"][len(self._prefix) :]
                 if key.endswith(".json"):
                     names.append(key.removesuffix(".json"))
         return names
@@ -130,7 +140,8 @@ class S3RecordClient:
         records = await asyncio.gather(*(self.get(name) for name in names))
         return {
             name: fields
-            for name, (fields, _) in zip(names, records) if fields is not None
+            for name, (fields, _) in zip(names, records)
+            if fields is not None
         }
 
     async def delete(self, names: Iterable[str]) -> None:
@@ -138,8 +149,9 @@ class S3RecordClient:
         if not ids:
             return
         client = await self.client()
-        await client.delete_objects(Bucket=self._config.bucket,
-                                    Delete={"Objects": ids})
+        await client.delete_objects(
+            Bucket=self._config.bucket, Delete={"Objects": ids}
+        )
 
     async def clear(self) -> None:
         await self.delete(await self.list_names())

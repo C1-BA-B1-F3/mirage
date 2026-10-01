@@ -37,12 +37,15 @@ def _expand(snippet: str, env: dict[str, str] | None = None) -> str:
     return asyncio.run(expand_pattern(patterns[0], session, _fail_exec))
 
 
-@pytest.mark.parametrize("text,expected", [
-    ("plain", "plain"),
-    ("a*b", "a[*]b"),
-    ("?x[", "[?]x[[]"),
-    ("]", "]"),
-])
+@pytest.mark.parametrize(
+    "text,expected",
+    [
+        ("plain", "plain"),
+        ("a*b", "a[*]b"),
+        ("?x[", "[?]x[[]"),
+        ("]", "]"),
+    ],
+)
 def test_escape_glob_wraps_specials_in_classes(text, expected):
     assert escape_glob(text) == expected
 
@@ -54,12 +57,15 @@ def test_escaped_text_matches_itself_and_nothing_else():
     assert not fnmatch("b", escape_glob("[^a]"))
 
 
-@pytest.mark.parametrize("text,expected", [
-    ("a*", "a*"),
-    (r"a\*b", "a[*]b"),
-    (r"\?", "[?]"),
-    ("a\\", "a\\"),
-])
+@pytest.mark.parametrize(
+    "text,expected",
+    [
+        ("a*", "a*"),
+        (r"a\*b", "a[*]b"),
+        (r"\?", "[?]"),
+        ("a\\", "a\\"),
+    ],
+)
 def test_unquoted_pattern_backslash_escapes(text, expected):
     assert _unquoted_pattern(text) == expected
 

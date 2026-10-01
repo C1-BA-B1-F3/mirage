@@ -22,20 +22,26 @@ from mirage.types import PathSpec
 
 
 def _script(raw: str, virtual: str) -> PathSpec:
-    return PathSpec(virtual=virtual,
-                    directory=virtual.rsplit("/", 1)[0] + "/",
-                    vfs_path=virtual.strip("/"),
-                    raw_path=raw)
+    return PathSpec(
+        virtual=virtual,
+        directory=virtual.rsplit("/", 1)[0] + "/",
+        vfs_path=virtual.strip("/"),
+        raw_path=raw,
+    )
 
 
-def _run(code: str = "print(1)",
-         prog: str | None = None,
-         script: PathSpec | None = None,
-         cwd: str | None = None) -> RunArgs:
-    return RunArgs(code=code,
-                   prog=prog,
-                   script_path=script,
-                   cwd=None if cwd is None else PathSpec.from_str_path(cwd))
+def _run(
+    code: str = "print(1)",
+    prog: str | None = None,
+    script: PathSpec | None = None,
+    cwd: str | None = None,
+) -> RunArgs:
+    return RunArgs(
+        code=code,
+        prog=prog,
+        script_path=script,
+        cwd=None if cwd is None else PathSpec.from_str_path(cwd),
+    )
 
 
 @pytest.mark.parametrize("prog", [None, "-c"])
@@ -43,13 +49,16 @@ def test_a_payload_passes_through_untouched(prog):
     assert prepare_source(_run(prog=prog)) == "print(1)"
 
 
-@pytest.mark.parametrize("raw, cwd, name", [
-    ("/w/s.py", "/", "/w/s.py"),
-    ("s.py", "/w", "/w/s.py"),
-    ("./app/s.py", "/w", "/w/./app/s.py"),
-    ("../w/s.py", "/w", "/w/../w/s.py"),
-    ("w/s.py", "/", "/w/s.py"),
-])
+@pytest.mark.parametrize(
+    "raw, cwd, name",
+    [
+        ("/w/s.py", "/", "/w/s.py"),
+        ("s.py", "/w", "/w/s.py"),
+        ("./app/s.py", "/w", "/w/./app/s.py"),
+        ("../w/s.py", "/w", "/w/../w/s.py"),
+        ("w/s.py", "/", "/w/s.py"),
+    ],
+)
 def test_a_script_is_named_as_typed_against_the_cwd(raw, cwd, name):
     # CPython 3.13.5: absolute against the working directory, never
     # normalized, whatever the spelling.
@@ -82,8 +91,9 @@ def test_a_module_names_no_file():
 def test_the_preamble_binds_only_what_the_file_door_binds():
     ns: dict[str, Any] = {}
     script = _script("/s.py", "/s.py")
-    exec(prepare_source(_run("names = sorted(globals())", "/s.py", script)),
-         ns)
+    exec(
+        prepare_source(_run("names = sorted(globals())", "/s.py", script)), ns
+    )
     # Read at the program's first statement, so it is what the program
     # starts with: the preamble imported sys without binding it.
     assert ns["names"] == ["__builtins__", "__cached__", "__file__"]
@@ -95,12 +105,13 @@ def test_the_script_directory_heads_sys_path_only_when_asked():
     run = _run(prog="/w/app/s.py", script=script)
     assert "sys').path[0]" not in prepare_source(run)
     assert "safe_path" in prepare_source(run, search_path=True)
-    assert "sys').path[0]" not in prepare_source(_run(prog="-"),
-                                                 search_path=True)
+    assert "sys').path[0]" not in prepare_source(
+        _run(prog="-"), search_path=True
+    )
 
 
 def test_a_quote_in_the_program_survives_the_round_trip():
     ns: dict[str, Any] = {}
     script = _script("/s.py", "/s.py")
     exec(prepare_source(_run("v = 'it\\'s \"quoted\"'", "/s.py", script)), ns)
-    assert ns["v"] == "it's \"quoted\""
+    assert ns["v"] == 'it\'s "quoted"'

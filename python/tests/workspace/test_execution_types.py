@@ -29,9 +29,9 @@ def test_execution_node_pipe():
         stderr=b"",
         exit_code=0,
         children=[
-            ExecutionNode(command="grep foo file",
-                          stderr=b"warning",
-                          exit_code=0),
+            ExecutionNode(
+                command="grep foo file", stderr=b"warning", exit_code=0
+            ),
             ExecutionNode(command="sort", stderr=b"", exit_code=0),
         ],
     )
@@ -52,9 +52,9 @@ def test_execution_node_nested_tree():
                 stderr=b"",
                 exit_code=0,
                 children=[
-                    ExecutionNode(command="grep foo file",
-                                  stderr=b"",
-                                  exit_code=1),
+                    ExecutionNode(
+                        command="grep foo file", stderr=b"", exit_code=1
+                    ),
                     ExecutionNode(command="sort", stderr=b"", exit_code=0),
                 ],
             ),

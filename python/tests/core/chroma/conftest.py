@@ -10,7 +10,6 @@ from mirage.utils.key_prefix import mount_key
 
 
 class FakeCollection:
-
     def __init__(self) -> None:
         self.documents: dict[str, str] = {}
         self.chunks: dict[str, list[dict]] = {}
@@ -40,7 +39,7 @@ class FakeCollection:
             offset = kwargs.get("offset") or 0
             limit = kwargs.get("limit")
             if limit is not None:
-                chunks = chunks[offset:offset + limit]
+                chunks = chunks[offset : offset + limit]
             elif offset:
                 chunks = chunks[offset:]
             return {
@@ -54,28 +53,31 @@ class FakeCollection:
         self.queries.append(kwargs)
         return {
             "documents": [["quickstart chunk", "api chunk"]],
-            "metadatas": [[{
-                "page_slug": "guides/quickstart"
-            }, {
-                "page_slug": "api/reference"
-            }]],
+            "metadatas": [
+                [
+                    {"page_slug": "guides/quickstart"},
+                    {"page_slug": "api/reference"},
+                ]
+            ],
             "distances": [[0.1, 0.25]],
         }
 
 
 def path_tree_document() -> str:
-    return json.dumps({
-        "guides/quickstart": {
-            "size": 12,
-            "created_at": "2026-01-01T00:00:00Z",
-            "updated_at": "2026-02-01T00:00:00Z",
-        },
-        "api/reference": {
-            "size": None,
-            "created_at": None,
-            "updated_at": None,
-        },
-    })
+    return json.dumps(
+        {
+            "guides/quickstart": {
+                "size": 12,
+                "created_at": "2026-01-01T00:00:00Z",
+                "updated_at": "2026-02-01T00:00:00Z",
+            },
+            "api/reference": {
+                "size": None,
+                "created_at": None,
+                "updated_at": None,
+            },
+        }
+    )
 
 
 def seeded_collection() -> FakeCollection:
@@ -97,13 +99,15 @@ def seeded_collection() -> FakeCollection:
             },
         },
     ]
-    collection.chunks["api/reference"] = [{
-        "document": "api",
-        "metadata": {
-            "page_slug": "api/reference",
-            "chunk_index": 0,
-        },
-    }]
+    collection.chunks["api/reference"] = [
+        {
+            "document": "api",
+            "metadata": {
+                "page_slug": "api/reference",
+                "chunk_index": 0,
+            },
+        }
+    ]
     return collection
 
 
@@ -112,10 +116,13 @@ async def _get_collection(collection):
 
 
 def accessor_for(collection: FakeCollection) -> SimpleNamespace:
-    return SimpleNamespace(config=SimpleNamespace(
-        slug_field="page_slug", chunk_index_field="chunk_index"),
-                           collection=collection,
-                           get_collection=partial(_get_collection, collection))
+    return SimpleNamespace(
+        config=SimpleNamespace(
+            slug_field="page_slug", chunk_index_field="chunk_index"
+        ),
+        collection=collection,
+        get_collection=partial(_get_collection, collection),
+    )
 
 
 @pytest.fixture
@@ -135,13 +142,16 @@ def chroma_index() -> RAMIndexCacheStore:
 
 @pytest.fixture
 def knowledge_root() -> PathSpec:
-    return PathSpec(vfs_path=mount_key("/knowledge", "/knowledge"),
-                    virtual="/knowledge",
-                    directory="/knowledge")
+    return PathSpec(
+        vfs_path=mount_key("/knowledge", "/knowledge"),
+        virtual="/knowledge",
+        directory="/knowledge",
+    )
 
 
 @pytest.fixture
 def quickstart_path() -> PathSpec:
     return PathSpec.from_str_path(
         "/knowledge/guides/quickstart",
-        mount_key("/knowledge/guides/quickstart", "/knowledge"))
+        mount_key("/knowledge/guides/quickstart", "/knowledge"),
+    )

@@ -1,8 +1,12 @@
 from collections.abc import Awaitable, Callable
 
-from mirage.commands.builtin.generic.archive.types import (Entry, MemberKind,
-                                                           Problem, Scan,
-                                                           Walked)
+from mirage.commands.builtin.generic.archive.types import (
+    Entry,
+    MemberKind,
+    Problem,
+    Scan,
+    Walked,
+)
 from mirage.ops.types import LinkView, MountView
 from mirage.types import LINK_TARGET_KEY, FileStat, FileType, PathSpec
 from mirage.utils.key_prefix import mount_key
@@ -47,10 +51,12 @@ def _child_spec(virtual: str, root: PathSpec) -> PathSpec:
     """
     cut = len(root.virtual.rstrip("/")) - len(root.vfs_path.strip("/"))
     prefix = root.virtual[:cut].rstrip("/")
-    return PathSpec(virtual=virtual,
-                    directory=virtual[:virtual.rfind("/") + 1] or "/",
-                    vfs_path=mount_key(virtual, prefix),
-                    raw_path=virtual)
+    return PathSpec(
+        virtual=virtual,
+        directory=virtual[: virtual.rfind("/") + 1] or "/",
+        vfs_path=mount_key(virtual, prefix),
+        raw_path=virtual,
+    )
 
 
 def _same_mount(mounts: MountView | None, one: str, other: str) -> bool:
@@ -112,7 +118,7 @@ async def _subtree(
     # Named under name_base like the entries, once each (both listings
     # meet the same closed door).
     unreadable = [
-        name_base.rstrip("/") + u.rstrip("/")[len(base.rstrip("/")):]
+        name_base.rstrip("/") + u.rstrip("/")[len(base.rstrip("/")) :]
         for u in dict.fromkeys((*dirs.unreadable, *files.unreadable))
     ]
     if links is not None:
@@ -124,8 +130,9 @@ async def _subtree(
     # about become a member and a "different filesystem" warning, since
     # both hand back the name a hide exists to withhold.
     crossings = mounts.descendants(base) if mounts is not None else []
-    visible_crossings = (mounts.visible_descendants(base)
-                         if mounts is not None else [])
+    visible_crossings = (
+        mounts.visible_descendants(base) if mounts is not None else []
+    )
     for crossing in visible_crossings:
         # The mountpoint itself is still an entry, exactly as GNU's
         # --one-file-system keeps the directory and drops its contents.
@@ -135,12 +142,15 @@ async def _subtree(
     for virtual, (kind, target) in found.items():
         if any(virtual.startswith(c) for c in below):
             continue
-        named = name_base.rstrip("/") + virtual[len(base.rstrip("/")):]
+        named = name_base.rstrip("/") + virtual[len(base.rstrip("/")) :]
         entries.append(
-            Entry(name_path=named,
-                  kind=kind,
-                  target=target,
-                  read=_child_spec(virtual, root) if kind == "file" else None))
+            Entry(
+                name_path=named,
+                kind=kind,
+                target=target,
+                read=_child_spec(virtual, root) if kind == "file" else None,
+            )
+        )
     entries.sort(key=lambda entry: entry.name_path)
     return entries, [c.rstrip("/") for c in visible_crossings], unreadable
 
@@ -196,11 +206,16 @@ async def _follow(
         return [Entry(name_path=virtual, kind="file", read=spec)], [], "", []
     if not recurse:
         return [Entry(name_path=virtual, kind="dir")], [], "", []
-    entries, crossings, unreadable = await _subtree(root, target, virtual,
-                                                    walk, links, mounts)
+    entries, crossings, unreadable = await _subtree(
+        root, target, virtual, walk, links, mounts
+    )
     reasons = [OTHER_FILESYSTEM] * len(crossings)
-    return ([Entry(name_path=virtual, kind="dir"),
-             *entries], reasons, "", unreadable)
+    return (
+        [Entry(name_path=virtual, kind="dir"), *entries],
+        reasons,
+        "",
+        unreadable,
+    )
 
 
 def _unreadable_problems(closed: list[str]) -> list[Problem]:
@@ -253,15 +268,17 @@ async def scan_operand(
     link_stat = links.stat_at(path.virtual) if links is not None else None
     if link_stat is not None and not dereference:
         entries.append(
-            Entry(name_path=base, kind="link", target=_link_target(link_stat)))
+            Entry(name_path=base, kind="link", target=_link_target(link_stat))
+        )
     elif link_stat is not None:
         followed, why, unreachable, closed = await _follow(
-            base, path, stat, walk, links, mounts, recurse)
+            base, path, stat, walk, links, mounts, recurse
+        )
         if unreachable:
-            return Scan(problems=(Problem(path=base,
-                                          reason=unreachable,
-                                          fatal=True), ),
-                        missing=True)
+            return Scan(
+                problems=(Problem(path=base, reason=unreachable, fatal=True),),
+                missing=True,
+            )
         entries.extend(followed)
         problems.extend(Problem(path=base, reason=reason) for reason in why)
         problems.extend(_unreadable_problems(closed))
@@ -269,18 +286,21 @@ async def scan_operand(
         try:
             root_stat = await stat(path)
         except (FileNotFoundError, NotADirectoryError, ValueError) as exc:
-            reason = (_NOT_DIR
-                      if isinstance(exc, NotADirectoryError) else _NO_SUCH)
-            return Scan(problems=(Problem(path=base, reason=reason,
-                                          fatal=True), ),
-                        missing=True)
+            reason = (
+                _NOT_DIR if isinstance(exc, NotADirectoryError) else _NO_SUCH
+            )
+            return Scan(
+                problems=(Problem(path=base, reason=reason, fatal=True),),
+                missing=True,
+            )
         if root_stat.type != FileType.DIRECTORY:
             entries.append(Entry(name_path=base, kind="file", read=path))
         else:
             entries.append(Entry(name_path=base, kind="dir"))
             if recurse:
                 below, crossings, closed = await _subtree(
-                    path, base, base, walk, links, mounts)
+                    path, base, base, walk, links, mounts
+                )
                 entries.extend(below)
                 problems.extend(_unreadable_problems(closed))
     if dereference and links is not None:
@@ -290,18 +310,23 @@ async def scan_operand(
                 expanded.append(entry)
                 continue
             followed, why, unreachable, closed = await _follow(
-                entry.name_path, path, stat, walk, links, mounts, recurse)
+                entry.name_path, path, stat, walk, links, mounts, recurse
+            )
             if unreachable:
                 problems.append(
-                    Problem(path=entry.name_path,
-                            reason=unreachable,
-                            fatal=True))
+                    Problem(
+                        path=entry.name_path, reason=unreachable, fatal=True
+                    )
+                )
                 continue
             expanded.extend(followed)
             problems.extend(
-                Problem(path=entry.name_path, reason=reason) for reason in why)
+                Problem(path=entry.name_path, reason=reason) for reason in why
+            )
             problems.extend(_unreadable_problems(closed))
         entries = expanded
-    return Scan(entries=tuple(entries),
-                crossings=tuple(crossings),
-                problems=tuple(problems))
+    return Scan(
+        entries=tuple(entries),
+        crossings=tuple(crossings),
+        problems=tuple(problems),
+    )

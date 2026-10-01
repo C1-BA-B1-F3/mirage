@@ -22,8 +22,9 @@ from mirage.observe.context import record, start_op
 from mirage.types import PathSpec
 
 
-async def write_bytes(accessor: DiskAccessor, path_spec: PathSpec,
-                      data: bytes) -> None:
+async def write_bytes(
+    accessor: DiskAccessor, path_spec: PathSpec, data: bytes
+) -> None:
     root = accessor.root
     timer = start_op()
     p = await resolve_inside(root, path_spec)

@@ -49,20 +49,20 @@ class RAMWatchQueue:
     """
 
     def __init__(
-            self,
-            roots: PathSpec | Sequence[PathSpec],
-            max_pending: int = DEFAULT_MAX_PENDING,
-            on_overflow: OverflowPolicy = OverflowPolicy.COLLAPSE) -> None:
+        self,
+        roots: PathSpec | Sequence[PathSpec],
+        max_pending: int = DEFAULT_MAX_PENDING,
+        on_overflow: OverflowPolicy = OverflowPolicy.COLLAPSE,
+    ) -> None:
         """Args:
-            roots (PathSpec | Sequence[PathSpec]): Watch root or roots,
-                used as the paths of the collapse UNKNOWN changes (one
-                per root).
-            max_pending (int): Cap on distinct pending paths.
-            on_overflow (OverflowPolicy): Behaviour when the cap is
-                exceeded.
+        roots (PathSpec | Sequence[PathSpec]): Watch root or roots,
+            used as the paths of the collapse UNKNOWN changes (one
+            per root).
+        max_pending (int): Cap on distinct pending paths.
+        on_overflow (OverflowPolicy): Behaviour when the cap is
+            exceeded.
         """
-        self._roots = (roots, ) if isinstance(roots, PathSpec) \
-            else tuple(roots)
+        self._roots = (roots,) if isinstance(roots, PathSpec) else tuple(roots)
         self._label = ", ".join(r.virtual for r in self._roots)
         self._max_pending = max_pending
         self._on_overflow = on_overflow
@@ -71,8 +71,9 @@ class RAMWatchQueue:
         self._closed = False
         self._ready = asyncio.Event()
 
-    def _merge(self, old: FileEvent | None,
-               new: FileEvent) -> FileEvent | None:
+    def _merge(
+        self, old: FileEvent | None, new: FileEvent
+    ) -> FileEvent | None:
         """Level-triggered merge of a pending change with a new one.
 
         Args:
@@ -90,25 +91,35 @@ class RAMWatchQueue:
         if old.kind is FileChangeKind.CREATE:
             if new.kind is FileChangeKind.DELETE:
                 return None
-            return FileEvent(kind=FileChangeKind.CREATE,
-                             path=new.path,
-                             timestamp=new.timestamp,
-                             previous_path=new.previous_path,
-                             metadata=new.metadata)
-        if old.kind is FileChangeKind.MOVE \
-                and new.kind is not FileChangeKind.DELETE:
-            return FileEvent(kind=FileChangeKind.MOVE,
-                             path=new.path,
-                             timestamp=new.timestamp,
-                             previous_path=old.previous_path,
-                             metadata=new.metadata)
-        if old.kind is FileChangeKind.DELETE \
-                and new.kind is FileChangeKind.CREATE:
-            return FileEvent(kind=FileChangeKind.UPDATE,
-                             path=new.path,
-                             timestamp=new.timestamp,
-                             previous_path=new.previous_path,
-                             metadata=new.metadata)
+            return FileEvent(
+                kind=FileChangeKind.CREATE,
+                path=new.path,
+                timestamp=new.timestamp,
+                previous_path=new.previous_path,
+                metadata=new.metadata,
+            )
+        if (
+            old.kind is FileChangeKind.MOVE
+            and new.kind is not FileChangeKind.DELETE
+        ):
+            return FileEvent(
+                kind=FileChangeKind.MOVE,
+                path=new.path,
+                timestamp=new.timestamp,
+                previous_path=old.previous_path,
+                metadata=new.metadata,
+            )
+        if (
+            old.kind is FileChangeKind.DELETE
+            and new.kind is FileChangeKind.CREATE
+        ):
+            return FileEvent(
+                kind=FileChangeKind.UPDATE,
+                path=new.path,
+                timestamp=new.timestamp,
+                previous_path=new.previous_path,
+                metadata=new.metadata,
+            )
         return new
 
     def _absorb_source(self, change: FileEvent) -> FileEvent:
@@ -122,25 +133,33 @@ class RAMWatchQueue:
             when the source's pending state changes what the consumer
             should be told.
         """
-        if change.kind is not FileChangeKind.MOVE \
-                or change.previous_path is None:
+        if (
+            change.kind is not FileChangeKind.MOVE
+            or change.previous_path is None
+        ):
             return change
         source = self._pending.get(change.previous_path.virtual)
         if source is None or source.kind is FileChangeKind.UNKNOWN:
             return change
         del self._pending[change.previous_path.virtual]
         if source.kind is FileChangeKind.CREATE:
-            return FileEvent(kind=FileChangeKind.CREATE,
-                             path=change.path,
-                             timestamp=change.timestamp,
-                             metadata=change.metadata)
-        if source.kind is FileChangeKind.MOVE \
-                and source.previous_path is not None:
-            return FileEvent(kind=FileChangeKind.MOVE,
-                             path=change.path,
-                             timestamp=change.timestamp,
-                             previous_path=source.previous_path,
-                             metadata=change.metadata)
+            return FileEvent(
+                kind=FileChangeKind.CREATE,
+                path=change.path,
+                timestamp=change.timestamp,
+                metadata=change.metadata,
+            )
+        if (
+            source.kind is FileChangeKind.MOVE
+            and source.previous_path is not None
+        ):
+            return FileEvent(
+                kind=FileChangeKind.MOVE,
+                path=change.path,
+                timestamp=change.timestamp,
+                previous_path=source.previous_path,
+                metadata=change.metadata,
+            )
         return change
 
     async def push(self, change: FileEvent) -> None:
@@ -155,14 +174,19 @@ class RAMWatchQueue:
         event = self._absorb_source(change)
         key = event.path.virtual
         old = self._pending.pop(key, None)
-        if old is not None and old.kind is FileChangeKind.MOVE \
-                and old.previous_path is not None \
-                and event.kind is FileChangeKind.DELETE:
+        if (
+            old is not None
+            and old.kind is FileChangeKind.MOVE
+            and old.previous_path is not None
+            and event.kind is FileChangeKind.DELETE
+        ):
             source = old.previous_path.virtual
             if source not in self._pending:
-                self._pending[source] = FileEvent(kind=FileChangeKind.DELETE,
-                                                  path=old.previous_path,
-                                                  timestamp=event.timestamp)
+                self._pending[source] = FileEvent(
+                    kind=FileChangeKind.DELETE,
+                    path=old.previous_path,
+                    timestamp=event.timestamp,
+                )
         else:
             merged = self._merge(old, event)
             if merged is not None:
@@ -179,7 +203,8 @@ class RAMWatchQueue:
                 now = datetime.now(timezone.utc)
                 for root in self._roots:
                     self._pending[root.virtual] = FileEvent(
-                        kind=FileChangeKind.UNKNOWN, path=root, timestamp=now)
+                        kind=FileChangeKind.UNKNOWN, path=root, timestamp=now
+                    )
         if self._pending or self._overflowed:
             self._ready.set()
 
@@ -203,7 +228,8 @@ class RAMWatchQueue:
                     self._ready.clear()
                 raise QueueOverflowError(
                     f"watch queue for {self._label} exceeded "
-                    f"{self._max_pending} pending changes")
+                    f"{self._max_pending} pending changes"
+                )
             if self._pending:
                 key = next(iter(self._pending))
                 change = self._pending.pop(key)

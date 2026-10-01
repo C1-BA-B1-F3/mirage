@@ -2,9 +2,11 @@ import json
 import re
 from typing import Any
 
-from mirage.commands.cli.builtin.gh.constants import (TEMPLATE_ACTION,
-                                                      TEMPLATE_DECLARATION,
-                                                      TEMPLATE_TOKEN)
+from mirage.commands.cli.builtin.gh.constants import (
+    TEMPLATE_ACTION,
+    TEMPLATE_DECLARATION,
+    TEMPLATE_TOKEN,
+)
 
 Variables = dict[str, list[Any]]
 
@@ -17,19 +19,22 @@ def _text(value: Any) -> str:
     if isinstance(value, list):
         return "[" + " ".join(_text(item) for item in value) + "]"
     if isinstance(value, dict):
-        return "map[" + " ".join(f"{k}:{_text(value[k])}"
-                                 for k in sorted(value)) + "]"
+        return (
+            "map["
+            + " ".join(f"{k}:{_text(value[k])}" for k in sorted(value))
+            + "]"
+        )
     return str(value)
 
 
 def _value(token: str, dot: Any, root: Any, variables: Variables) -> Any:
     if token.startswith('"'):
         return json.loads(token)
-    if token.startswith('`'):
+    if token.startswith("`"):
         return token[1:-1]
     if token in ("true", "false"):
         return token == "true"
-    if re.fullmatch(r'-?\d+', token):
+    if re.fullmatch(r"-?\d+", token):
         return int(token)
     if token == ".":
         return dot
@@ -56,7 +61,8 @@ def _call(name: str, args: list[Any]) -> Any:
         return [row.get(args[0]) for row in args[1]]
     if name in ("print", "println"):
         return (" " if name == "println" else "").join(
-            _text(x) for x in args) + ("\n" if name == "println" else "")
+            _text(x) for x in args
+        ) + ("\n" if name == "println" else "")
     if name == "printf":
         values = iter(args[1:])
 
@@ -89,8 +95,9 @@ def _call(name: str, args: list[Any]) -> Any:
         return args[-1]
     if name == "truncate":
         n, text = int(args[0]), _text(args[1])
-        return text if len(text) <= n else text[:max(0, n -
-                                                     3)] + "." * min(n, 3)
+        return (
+            text if len(text) <= n else text[: max(0, n - 3)] + "." * min(n, 3)
+        )
     if name == "contains":
         return args[0] in args[1]
     if name == "hasPrefix":
@@ -115,11 +122,17 @@ def _eval(expression: str, dot: Any, root: Any, variables: Variables) -> Any:
         args = [_value(token, dot, root, variables) for token in part[1:]]
         if i:
             args.append(value)
-        value = _value(
-            part[0], dot, root, variables) if len(part) == 1 and not i and (
-                part[0].startswith(
-                    ('.', '$', '"', '`')) or part[0] in ('true', 'false')
-                or re.fullmatch(r'-?\d+', part[0])) else _call(part[0], args)
+        value = (
+            _value(part[0], dot, root, variables)
+            if len(part) == 1
+            and not i
+            and (
+                part[0].startswith((".", "$", '"', "`"))
+                or part[0] in ("true", "false")
+                or re.fullmatch(r"-?\d+", part[0])
+            )
+            else _call(part[0], args)
+        )
     return value
 
 
@@ -127,8 +140,11 @@ def _declaration(expression: str) -> tuple[list[str], str, bool]:
     match = TEMPLATE_DECLARATION.fullmatch(expression)
     if match is None:
         return [], expression, False
-    return [name for name in match.group(1, 2)
-            if name], match[4], match[3] == "="
+    return (
+        [name for name in match.group(1, 2) if name],
+        match[4],
+        match[3] == "=",
+    )
 
 
 def render_template(template: str, value: Any) -> str:
@@ -142,7 +158,7 @@ def render_template(template: str, value: Any) -> str:
     end = 0
     trim = False
     for match in TEMPLATE_ACTION.finditer(template):
-        text = template[end:match.start()]
+        text = template[end : match.start()]
         if trim:
             text = text.lstrip()
         if match[1]:
@@ -152,7 +168,8 @@ def render_template(template: str, value: Any) -> str:
         trim = bool(match[3])
         end = match.end()
     tokens.append(
-        ("text", template[end:].lstrip() if trim else template[end:]))
+        ("text", template[end:].lstrip() if trim else template[end:])
+    )
 
     def render(start: int, stop: int, dot: Any, variables: Variables) -> str:
         output = []
@@ -183,16 +200,19 @@ def render_template(template: str, value: Any) -> str:
                 names, pipeline, _ = _declaration(expression)
                 if len(names) > 1 and command != "range":
                     raise ValueError(
-                        f"template: too many declarations in {command}")
+                        f"template: too many declarations in {command}"
+                    )
                 resolved = _eval(pipeline, dot, value, variables)
                 body_end = alternate if alternate is not None else cursor
                 scope = dict(variables)
                 if names and command != "range":
                     scope[names[0]] = [resolved]
                 if command == "range" and resolved:
-                    entries = [
-                        (k, resolved[k]) for k in sorted(resolved)
-                    ] if isinstance(resolved, dict) else enumerate(resolved)
+                    entries = (
+                        [(k, resolved[k]) for k in sorted(resolved)]
+                        if isinstance(resolved, dict)
+                        else enumerate(resolved)
+                    )
                     for key, item in entries:
                         bound = dict(variables)
                         if len(names) == 2:
@@ -202,8 +222,13 @@ def render_template(template: str, value: Any) -> str:
                         output.append(render(i, body_end, item, bound))
                 elif resolved:
                     output.append(
-                        render(i, body_end,
-                               resolved if command == "with" else dot, scope))
+                        render(
+                            i,
+                            body_end,
+                            resolved if command == "with" else dot,
+                            scope,
+                        )
+                    )
                 elif alternate is not None:
                     output.append(render(alternate + 1, cursor, dot, scope))
                 i = cursor + 1
@@ -220,7 +245,8 @@ def render_template(template: str, value: Any) -> str:
                     variables[names[0]][0] = result
                 else:
                     raise ValueError(
-                        f'template: undefined variable "{names[0]}"')
+                        f'template: undefined variable "{names[0]}"'
+                    )
         return "".join(output)
 
     return render(0, len(tokens), value, {})

@@ -39,8 +39,9 @@ def _slack_modified(remote_time: str) -> str | None:
     return epoch_to_iso(ts)
 
 
-def _channel_stat(match: ScopeMatch, path: PathSpec,
-                  entry: IndexEntry) -> FileStat:
+def _channel_stat(
+    match: ScopeMatch, path: PathSpec, entry: IndexEntry
+) -> FileStat:
     return FileStat(
         name=entry.vfs_name or entry.name,
         type=FileType.DIRECTORY,
@@ -49,8 +50,9 @@ def _channel_stat(match: ScopeMatch, path: PathSpec,
     )
 
 
-def _user_stat(match: ScopeMatch, path: PathSpec,
-               entry: IndexEntry) -> FileStat:
+def _user_stat(
+    match: ScopeMatch, path: PathSpec, entry: IndexEntry
+) -> FileStat:
     return FileStat(
         name=entry.vfs_name or entry.name,
         type=FileType.FILE,
@@ -60,13 +62,15 @@ def _user_stat(match: ScopeMatch, path: PathSpec,
     )
 
 
-def _dir_stat(match: ScopeMatch, path: PathSpec,
-              entry: IndexEntry) -> FileStat:
+def _dir_stat(
+    match: ScopeMatch, path: PathSpec, entry: IndexEntry
+) -> FileStat:
     return FileStat(name=entry.vfs_name, type=FileType.DIRECTORY)
 
 
-def _file_blob_stat(match: ScopeMatch, path: PathSpec,
-                    entry: IndexEntry) -> FileStat:
+def _file_blob_stat(
+    match: ScopeMatch, path: PathSpec, entry: IndexEntry
+) -> FileStat:
     mimetype = entry.extra.get("mimetype", "")
     return FileStat(
         name=entry.vfs_name or entry.name,
@@ -78,8 +82,9 @@ def _file_blob_stat(match: ScopeMatch, path: PathSpec,
     )
 
 
-async def _channel_proven(accessor: SlackAccessor, path: PathSpec,
-                          index: IndexCacheStore, up: int) -> None:
+async def _channel_proven(
+    accessor: SlackAccessor, path: PathSpec, index: IndexCacheStore, up: int
+) -> None:
     """Raise ENOENT unless the path's channel ancestor exists.
 
     Args:
@@ -93,15 +98,19 @@ async def _channel_proven(accessor: SlackAccessor, path: PathSpec,
     for _ in range(up):
         virtual = virtual.rsplit("/", 1)[0]
     prefix = mount_prefix_of(path.virtual, path.vfs_path)
-    spec = PathSpec(virtual=virtual,
-                    directory=virtual,
-                    vfs_path=mount_key(virtual, prefix))
+    spec = PathSpec(
+        virtual=virtual, directory=virtual, vfs_path=mount_key(virtual, prefix)
+    )
     if await resolve_entry(readdir, accessor, spec, index) is None:
         raise enoent(path.virtual)
 
 
-async def _stat_day(accessor: SlackAccessor, match: ScopeMatch, path: PathSpec,
-                    index: IndexCacheStore) -> FileStat:
+async def _stat_day(
+    accessor: SlackAccessor,
+    match: ScopeMatch,
+    path: PathSpec,
+    index: IndexCacheStore,
+) -> FileStat:
     """Stat a day directory, which resolves beyond the listed window.
 
     The channel listing synthesizes a bounded window of recent days,
@@ -124,22 +133,24 @@ async def _stat_day(accessor: SlackAccessor, match: ScopeMatch, path: PathSpec,
     return FileStat(name=match.slots["day"], type=FileType.DIRECTORY)
 
 
-def _chat_stat(match: ScopeMatch, path: PathSpec,
-               entry: IndexEntry) -> FileStat:
+def _chat_stat(
+    match: ScopeMatch, path: PathSpec, entry: IndexEntry
+) -> FileStat:
     # A denied or empty day lists no chat.jsonl, and the kit reports the
     # absent entry as ENOENT: slack does not fabricate a sizeless file
     # for a sealed day (discord deliberately does; see its override).
-    return FileStat(name="chat.jsonl",
-                    type=FileType.FILE,
-                    content=ContentType.TEXT,
-                    size=entry.size)
+    return FileStat(
+        name="chat.jsonl",
+        type=FileType.FILE,
+        content=ContentType.TEXT,
+        size=entry.size,
+    )
 
 
 stat = make_stat(
     detect_scope,
     readdir,
-    guards={kind: guard_day
-            for kind in ("messages", "files", "file_blob")},
+    guards={kind: guard_day for kind in ("messages", "files", "file_blob")},
     entry_stats={
         "channel": _channel_stat,
         "user": _user_stat,

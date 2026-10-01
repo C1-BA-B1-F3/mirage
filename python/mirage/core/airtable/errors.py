@@ -27,11 +27,13 @@ class AirtableAPIError(RuntimeError):
             (``AUTHENTICATION_REQUIRED``, ``NOT_FOUND``, ...).
     """
 
-    def __init__(self,
-                 message: str,
-                 *,
-                 status: int | None = None,
-                 error_type: str | None = None) -> None:
+    def __init__(
+        self,
+        message: str,
+        *,
+        status: int | None = None,
+        error_type: str | None = None,
+    ) -> None:
         super().__init__(message)
         self.status = status
         self.error_type = error_type
@@ -44,7 +46,7 @@ class AirtableAPIError(RuntimeError):
         not a 404: the permission and the existence checks share one
         answer so a token cannot probe for bases it was not granted.
         """
-        return (self.status == 404 or self.error_type in NOT_FOUND_TYPES)
+        return self.status == 404 or self.error_type in NOT_FOUND_TYPES
 
 
 def error_parts(text: str) -> tuple[str | None, str | None]:
@@ -69,6 +71,8 @@ def error_parts(text: str) -> tuple[str | None, str | None]:
     if isinstance(error, dict):
         kind = error.get("type")
         message = error.get("message")
-        return (kind if isinstance(kind, str) else None,
-                message if isinstance(message, str) else None)
+        return (
+            kind if isinstance(kind, str) else None,
+            message if isinstance(message, str) else None,
+        )
     return None, None

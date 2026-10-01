@@ -15,23 +15,30 @@
 import pytest
 
 from mirage.commands.builtin.utils.charset import CharSet
-from mirage.commands.builtin.utils.unicode_tables import (canonical_category,
-                                                          category, fold,
-                                                          fold_orbits,
-                                                          pcre_word, rust_word,
-                                                          unicode_property)
+from mirage.commands.builtin.utils.unicode_tables import (
+    canonical_category,
+    category,
+    fold,
+    fold_orbits,
+    pcre_word,
+    rust_word,
+    unicode_property,
+)
 
 
-@pytest.mark.parametrize("name,short", [
-    ("L", "L"),
-    ("Lu", "Lu"),
-    ("letter", "L"),
-    ("Decimal_Number", "Nd"),
-    ("decimal number", "Nd"),
-    ("gc=Nd", "Nd"),
-    ("General_Category=Lu", "Lu"),
-    ("Greek", None),
-])
+@pytest.mark.parametrize(
+    "name,short",
+    [
+        ("L", "L"),
+        ("Lu", "Lu"),
+        ("letter", "L"),
+        ("Decimal_Number", "Nd"),
+        ("decimal number", "Nd"),
+        ("gc=Nd", "Nd"),
+        ("General_Category=Lu", "Lu"),
+        ("Greek", None),
+    ],
+)
 def test_canonical_category(name, short):
     assert canonical_category(name) == short
 
@@ -52,17 +59,20 @@ def test_properties_both_dialects_spell_alike():
 
 # Measured with ripgrep 14.1.1 and PCRE2 10.43 (`rg -o '\w+'` and
 # `rg -oP '\w+'`): the two engines disagree about ², ZWNJ and Ⓐ.
-@pytest.mark.parametrize("ch,rust,pcre", [
-    ("é", True, True),
-    ("١", True, True),
-    (chr(0x301), True, True),
-    ("‿", True, True),
-    ("²", False, True),
-    ("Ⅰ", True, True),
-    ("Ⓐ", True, False),
-    (chr(0x200C), True, False),
-    (" ", False, False),
-])
+@pytest.mark.parametrize(
+    "ch,rust,pcre",
+    [
+        ("é", True, True),
+        ("١", True, True),
+        (chr(0x301), True, True),
+        ("‿", True, True),
+        ("²", False, True),
+        ("Ⅰ", True, True),
+        ("Ⓐ", True, False),
+        (chr(0x200C), True, False),
+        (" ", False, False),
+    ],
+)
 def test_word_classes(ch, rust, pcre):
     assert rust_word().contains(ord(ch)) is rust
     assert pcre_word().contains(ord(ch)) is pcre
@@ -74,6 +84,7 @@ def test_simple_case_folding():
     assert orbits[ord("s")] == (ord("S"), ord("s"), 0x17F)
     assert ord("ı") not in orbits
     assert orbits[ord("ß")] == (ord("ß"), 0x1E9E)
-    assert fold(CharSet.chars(ord("k")),
-                True) == CharSet.chars(ord("K"), ord("k"))
+    assert fold(CharSet.chars(ord("k")), True) == CharSet.chars(
+        ord("K"), ord("k")
+    )
     assert fold(CharSet.of((ord("a"), ord("c"))), False).contains(ord("B"))

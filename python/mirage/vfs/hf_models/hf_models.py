@@ -19,7 +19,6 @@ from mirage.vfs.hf_models.prompt import PROMPT
 
 
 class HfModelsVFS(HfHubVFS[HfModelsAccessor]):
-
     ACCESSOR = HfModelsAccessor
     name: str = VFSName.HF_MODELS
     prompt: str = PROMPT

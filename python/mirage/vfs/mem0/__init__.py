@@ -25,5 +25,6 @@ __all__ = ["Mem0Config", "Mem0VFS"]
 def __getattr__(name: str) -> "type[Mem0VFS]":
     if name == "Mem0VFS":
         from mirage.vfs.mem0.mem0 import Mem0VFS
+
         return Mem0VFS
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

@@ -29,7 +29,7 @@ async def readdir(
     prefix = mount_prefix_of(path_spec.virtual, path_spec.vfs_path)
     path = path_spec.directory if path_spec.pattern else path_spec.virtual
     if prefix and path.startswith(prefix):
-        rest = path[len(prefix):]
+        rest = path[len(prefix) :]
         if prefix.endswith("/") or rest == "" or rest.startswith("/"):
             path = rest or "/"
     store = accessor.store
@@ -51,19 +51,22 @@ async def readdir(
         if key == p:
             continue
         if key.startswith(dir_prefix):
-            remainder = key[len(dir_prefix):]
+            remainder = key[len(dir_prefix) :]
             child = remainder.split("/")[0]
             if child:
                 seen.add(dir_prefix + child)
     entries = sorted(seen)
     virtual_entries = sorted((prefix + e if prefix else e) for e in entries)
-    index_entries = [(
-        e.rsplit("/", 1)[-1],
-        IndexEntry(
-            id=e,
-            name=e.rsplit("/", 1)[-1],
-            resource_type="file",
-        ),
-    ) for e in entries]
+    index_entries = [
+        (
+            e.rsplit("/", 1)[-1],
+            IndexEntry(
+                id=e,
+                name=e.rsplit("/", 1)[-1],
+                resource_type="file",
+            ),
+        )
+        for e in entries
+    ]
     await index.set_dir(virtual_key, index_entries)
     return virtual_entries

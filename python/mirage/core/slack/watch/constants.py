@@ -15,21 +15,24 @@
 CHAT_FILE = "chat.jsonl"
 FILES_DIR = "files"
 
-CHANNEL_LIST_EVENTS = frozenset({
-    "channel_created",
-    "channel_deleted",
-    "channel_rename",
-    "channel_archive",
-    "channel_unarchive",
-    "group_deleted",
-    "group_rename",
-    "group_archive",
-    "group_unarchive",
-})
+CHANNEL_LIST_EVENTS = frozenset(
+    {
+        "channel_created",
+        "channel_deleted",
+        "channel_rename",
+        "channel_archive",
+        "channel_unarchive",
+        "group_deleted",
+        "group_rename",
+        "group_archive",
+        "group_unarchive",
+    }
+)
 
 DM_LIST_EVENTS = frozenset({"im_created"})
 
 USER_LIST_EVENTS = frozenset({"user_change", "team_join"})
 
 ITEM_EVENTS = frozenset(
-    {"reaction_added", "reaction_removed", "pin_added", "pin_removed"})
+    {"reaction_added", "reaction_removed", "pin_added", "pin_removed"}
+)

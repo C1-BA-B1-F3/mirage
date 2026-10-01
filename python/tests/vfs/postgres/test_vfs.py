@@ -33,8 +33,17 @@ def test_vfs_registers_commands():
     res = PostgresVFS(PostgresConfig(dsn="postgres://localhost/db"))
     cmd_names = {rc.name for rc in res.commands()}
     expected = {
-        "cat", "find", "head", "jq", "ls", "stat", "tail", "tree", "wc",
-        "grep", "rg"
+        "cat",
+        "find",
+        "head",
+        "jq",
+        "ls",
+        "stat",
+        "tail",
+        "tree",
+        "wc",
+        "grep",
+        "rg",
     }
     assert expected <= cmd_names
 

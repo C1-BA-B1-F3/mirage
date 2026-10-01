@@ -19,8 +19,13 @@ from typing import Any
 
 from mirage.runtime.types import VFSEntry, VFSStat
 from mirage.runtime.vfs import RuntimeVFS
-from mirage.runtime.wasm.abi import (FT_CHR, FT_DIR, FT_REG, FT_SYMLINK,
-                                     FT_UNKNOWN)
+from mirage.runtime.wasm.abi import (
+    FT_CHR,
+    FT_DIR,
+    FT_REG,
+    FT_SYMLINK,
+    FT_UNKNOWN,
+)
 from mirage.runtime.wasm.build import BuildDir
 from mirage.runtime.wasm.config import WasmFsConfig
 from mirage.runtime.wasm.constants import READONLY_HINT
@@ -275,8 +280,14 @@ class WasmVFS:
             raise OSError(host_errno.EINVAL, "not a symbolic link", path)
         return str(self._core_call("readlink", path))
 
-    def setattr(self, path: str, *, atime: str | None, mtime: str | None,
-                nofollow: bool) -> None:
+    def setattr(
+        self,
+        path: str,
+        *,
+        atime: str | None,
+        mtime: str | None,
+        nofollow: bool,
+    ) -> None:
         """Write timestamps, in the namespace overlay where needed.
 
         Times are the only attributes preview1 can express: it has no
@@ -291,13 +302,13 @@ class WasmVFS:
             nofollow (bool): stamp the link itself, not its target.
         """
         self._deny_build(path)
-        self._require_core().setattr(path,
-                                     atime=atime,
-                                     mtime=mtime,
-                                     nofollow=nofollow)
+        self._require_core().setattr(
+            path, atime=atime, mtime=mtime, nofollow=nofollow
+        )
 
-    def flush(self, path: str, base_len: int, low_write: int,
-              buf: bytes | bytearray) -> None:
+    def flush(
+        self, path: str, base_len: int, low_write: int, buf: bytes | bytearray
+    ) -> None:
         """Send a closing handle's buffer, as a delta when it can be one.
 
         Args:

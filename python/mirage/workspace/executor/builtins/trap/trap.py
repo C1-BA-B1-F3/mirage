@@ -20,7 +20,7 @@ from mirage.workspace.types import ExecutionNode
 
 
 async def handle_trap(
-        session: SessionState,  # noqa: E125
+    session: SessionState,
 ) -> tuple[ByteSource | None, IOResult, ExecutionNode]:
     return None, IOResult(), ExecutionNode(command="trap", exit_code=0)
 

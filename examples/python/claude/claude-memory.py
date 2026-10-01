@@ -36,16 +36,18 @@ from mirage.workspace import Workspace
 
 def unmount(mountpoint: str) -> None:
     if sys.platform == "darwin":
-        subprocess.run(["diskutil", "unmount", "force", mountpoint],
-                       capture_output=True)
+        subprocess.run(
+            ["diskutil", "unmount", "force", mountpoint], capture_output=True
+        )
     else:
         subprocess.run(["fusermount", "-u", mountpoint], capture_output=True)
 
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--prompt",
-                        default="write a hello world script in /hello.py")
+    parser.add_argument(
+        "--prompt", default="write a hello world script in /hello.py"
+    )
     args = parser.parse_args()
 
     ws = Workspace({"/": RAMVFS()}, mode=MountMode.WRITE)

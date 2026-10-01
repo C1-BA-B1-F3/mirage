@@ -25,14 +25,8 @@ async def test_set_load_roundtrip():
     await store.set("/data/link", {"target": "/t1", "mtime": 1.0})
     entries = await store.load()
     assert entries == {
-        "/data/f.txt": {
-            "mode": 0o601,
-            "uid": 500
-        },
-        "/data/link": {
-            "target": "/t1",
-            "mtime": 1.0
-        },
+        "/data/f.txt": {"mode": 0o601, "uid": 500},
+        "/data/link": {"target": "/t1", "mtime": 1.0},
     }
 
 

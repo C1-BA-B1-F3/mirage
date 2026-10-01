@@ -48,7 +48,7 @@ def visible_child_segments(paths: Iterable[str], parent: str) -> list[str]:
     for path in paths:
         if not path.startswith(norm):
             continue
-        name = path[len(norm):].split("/", 1)[0]
+        name = path[len(norm) :].split("/", 1)[0]
         if not name or name in out or not path_allowed(path):
             continue
         out.add(name)
@@ -71,7 +71,8 @@ def child_mount_names(prefixes: Iterable[str], parent: str) -> list[str]:
     """
     norm = norm_dir(parent)
     below = [
-        norm_dir(prefix).rstrip("/") for prefix in prefixes
+        norm_dir(prefix).rstrip("/")
+        for prefix in prefixes
         if norm_dir(prefix) != norm and norm_dir(prefix).startswith(norm)
     ]
     return visible_child_segments(below, parent)
@@ -98,8 +99,9 @@ def _link_names(links: NamespaceLinks | None, parent: str) -> list[str]:
     return visible_child_segments(links.symlink_targets(), parent)
 
 
-def namespace_names(prefixes: Iterable[str], links: NamespaceLinks | None,
-                    parent: str) -> list[str]:
+def namespace_names(
+    prefixes: Iterable[str], links: NamespaceLinks | None, parent: str
+) -> list[str]:
     """Every child segment the namespace owes ``parent``: mounts + links.
 
     The one union both consumers derive from: the door merges these
@@ -113,11 +115,16 @@ def namespace_names(prefixes: Iterable[str], links: NamespaceLinks | None,
     """
     return sorted(
         set(child_mount_names(prefixes, parent))
-        | set(_link_names(links, parent)))
+        | set(_link_names(links, parent))
+    )
 
 
-def merge_readdir(entries: list[str], prefixes: Iterable[str],
-                  links: NamespaceLinks | None, parent: str) -> list[str]:
+def merge_readdir(
+    entries: list[str],
+    prefixes: Iterable[str],
+    links: NamespaceLinks | None,
+    parent: str,
+) -> list[str]:
     """Merge namespace structure into a backend readdir listing.
 
     Child mounts and symlinks are namespace state no backend can see,
@@ -144,8 +151,9 @@ def merge_readdir(entries: list[str], prefixes: Iterable[str],
     return merged
 
 
-def namespace_listing(prefixes: Iterable[str], links: NamespaceLinks | None,
-                      parent: str) -> list[str] | None:
+def namespace_listing(
+    prefixes: Iterable[str], links: NamespaceLinks | None, parent: str
+) -> list[str] | None:
     """A listing for a directory that exists only as namespace structure.
 
     ``/data/x`` exists when a mount sits at ``/data/x/y`` or a link
@@ -163,8 +171,9 @@ def namespace_listing(prefixes: Iterable[str], links: NamespaceLinks | None,
     return merge_readdir([], prefixes, links, parent)
 
 
-def namespace_stat(prefixes: Iterable[str], links: NamespaceLinks | None,
-                   path: str) -> FileStat | None:
+def namespace_stat(
+    prefixes: Iterable[str], links: NamespaceLinks | None, path: str
+) -> FileStat | None:
     """A directory stat for a path that exists only as namespace structure.
 
     The listing and the stat must agree: a directory ``readdir`` can

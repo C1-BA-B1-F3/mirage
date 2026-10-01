@@ -33,9 +33,11 @@ read = _op("read")
 
 
 def _scope(path: str, prefix: str = "") -> PathSpec:
-    return PathSpec(vfs_path=mount_key(path, prefix),
-                    virtual=path,
-                    directory=path.rsplit("/", 1)[0] or "/")
+    return PathSpec(
+        vfs_path=mount_key(path, prefix),
+        virtual=path,
+        directory=path.rsplit("/", 1)[0] or "/",
+    )
 
 
 @pytest.fixture
@@ -50,23 +52,30 @@ def index():
 
 @pytest.mark.asyncio
 async def test_read_gdoc_renders_doc_json(accessor, index):
-    await index.set_dir('/docs', [('report.gdoc.json',
-                                   IndexEntry(
-                                       id="doc123",
-                                       name="Report",
-                                       resource_type="gdrive/gdoc",
-                                       remote_time="2026-04-01T00:00:00Z",
-                                       vfs_name="report.gdoc.json",
-                                   ))])
+    await index.set_dir(
+        "/docs",
+        [
+            (
+                "report.gdoc.json",
+                IndexEntry(
+                    id="doc123",
+                    name="Report",
+                    resource_type="gdrive/gdoc",
+                    remote_time="2026-04-01T00:00:00Z",
+                    vfs_name="report.gdoc.json",
+                ),
+            )
+        ],
+    )
     doc_json = json.dumps({"documentId": "doc123"}).encode()
     with patch(
-            "mirage.core.gdrive.read.read_doc",
-            new_callable=AsyncMock,
-            return_value=doc_json,
+        "mirage.core.gdrive.read.read_doc",
+        new_callable=AsyncMock,
+        return_value=doc_json,
     ) as mock:
-        result = await read(accessor,
-                            _scope("/docs/report.gdoc.json"),
-                            index=index)
+        result = await read(
+            accessor, _scope("/docs/report.gdoc.json"), index=index
+        )
         mock.assert_called_once_with(accessor.token_manager, "doc123")
         assert json.loads(result)["documentId"] == "doc123"
 

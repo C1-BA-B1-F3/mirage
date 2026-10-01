@@ -28,8 +28,12 @@ VERBS = {
     "comment": ["list", "add"],
 }
 
-WRITES = {("record", "create"), ("record", "update"), ("record", "delete"),
-          ("comment", "add")}
+WRITES = {
+    ("record", "create"),
+    ("record", "update"),
+    ("record", "delete"),
+    ("comment", "add"),
+}
 
 HELP = """\
 airtable: Airtable Web API client
@@ -59,8 +63,7 @@ def test_the_tree_is_registered_under_its_name():
     assert AIRTABLE.config_model is AirtableConfig
     assert AIRTABLE.usage_style is UsageStyle.ARGPARSE
     assert {
-        g.name: [v.name for v in g.subcommands]
-        for g in AIRTABLE.subcommands
+        g.name: [v.name for v in g.subcommands] for g in AIRTABLE.subcommands
     } == VERBS
 
 
@@ -71,9 +74,10 @@ def test_only_the_writers_are_classified_as_writes():
 
 
 def test_every_verb_below_base_names_its_base_and_table():
-    for noun, verb in [("record", v)
-                       for v in VERBS["record"]] + [("comment", "list"),
-                                                    ("comment", "add")]:
+    for noun, verb in [("record", v) for v in VERBS["record"]] + [
+        ("comment", "list"),
+        ("comment", "add"),
+    ]:
         spelled = {o.long for o in leaf(noun, verb).options if o.required}
         assert spelled == {"--base", "--table"}
     assert [o.long for o in leaf("table", "get").options] == ["--base"]
@@ -94,28 +98,39 @@ async def test_a_missing_base_is_the_parsers_refusal(airtable_ws):
     assert io.exit_code == 2
     assert await io.stderr_str() == (
         "airtable record list: option '--base' is required\n"
-        "Try 'airtable record list --help' for more information.\n")
+        "Try 'airtable record list --help' for more information.\n"
+    )
 
 
 @pytest.mark.asyncio
 async def test_a_second_install_answers_under_its_own_name(airtable_ws):
     ws = airtable_ws()
-    ws.register_cli("work", AIRTABLE, {
-        "token": TOKEN,
-        "base_ids": [ROADMAP],
-        "requests_per_second": 10_000.0,
-    })
+    ws.register_cli(
+        "work",
+        AIRTABLE,
+        {
+            "token": TOKEN,
+            "base_ids": [ROADMAP],
+            "requests_per_second": 10_000.0,
+        },
+    )
     refused = await ws.shell(f"work base get {OPS}")
     assert refused.exit_code == 1
     assert await refused.stderr_str() == (
-        f"work base get: {OPS}: Permission denied\n")
-    usage = await ws.shell(f"work record get --base {ROADMAP} "
-                           f"--table {FEATURES}")
+        f"work base get: {OPS}: Permission denied\n"
+    )
+    usage = await ws.shell(
+        f"work record get --base {ROADMAP} --table {FEATURES}"
+    )
     assert usage.exit_code == 2
     assert await usage.stderr_str() == (
-        "the following arguments are required: RECORD\n")
-    missing = await ws.shell(f"work record get --base {ROADMAP} "
-                             f"--table {FEATURES} recZZZZZZZZZZZZZZ")
+        "the following arguments are required: RECORD\n"
+    )
+    missing = await ws.shell(
+        f"work record get --base {ROADMAP} "
+        f"--table {FEATURES} recZZZZZZZZZZZZZZ"
+    )
     assert missing.exit_code == 1
     assert (await missing.stderr_str()).startswith(
-        f"work record get: Airtable API error (GET /{ROADMAP}/")
+        f"work record get: Airtable API error (GET /{ROADMAP}/"
+    )

@@ -61,36 +61,15 @@ repos:
         name: Upgrade Python syntax
         args: [--py38-plus]
 
-  - repo: https://github.com/google/yapf
-    rev: v0.43.0
-    hooks:
-      - id: yapf
-        name: Format code
-        additional_dependencies: [toml]
-        # Generated tables are laid out by their generator, which packs
-        # ranges several to a line so 349 of them stay reviewable.
-        # Reformatting them here would fight scripts/gen_width_table.py on
-        # every run, the same way typescript/.prettierignore already exempts
-        # `**/generated/**`.
-        exclude: |
-          (?x)^(
-              python/mirage/utils/generated/.*
-          )$
-
-  - repo: https://github.com/pycqa/isort
-    rev: 7.0.0
-    hooks:
-      - id: isort
-        name: Sort imports
-        exclude: |
-          (?x)^(
-              python/mirage/utils/generated/.*
-          )$
-
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.14.3
+    rev: v0.16.9
     hooks:
-      - id: ruff
+      - id: ruff-format
+        name: Format code
+        # Python only: this hook also takes Markdown, where it would reformat
+        # the code blocks in 15 READMEs and docs pages.
+        types_or: [python, pyi]
+      - id: ruff-check
         name: Lint and fix Python
         args: [--fix, --exit-non-zero-on-fix]
 
@@ -118,12 +97,14 @@ repos:
 
   - repo: local
     hooks:
-      - id: ts-prettier
-        name: Prettier (typescript)
-        entry: typescript/scripts/precommit-run.sh prettier --write
+      - id: ts-format
+        name: Format (typescript)
+        entry: typescript/scripts/precommit-run.sh oxfmt --write
         language: system
         files: ^typescript/.*\.(ts|tsx|js|mjs|cjs|json|md|yaml|yml)$
         pass_filenames: true
+        # oxfmt already spreads one call over every core.
+        require_serial: true
       - id: ts-eslint
         name: ESLint (typescript)
         entry: typescript/scripts/precommit-run.sh eslint --fix --no-warn-ignored
@@ -138,12 +119,13 @@ repos:
         language: system
         files: ^typescript/.*\.(ts|tsx|js|mjs|cjs|json)$
         pass_filenames: false
-      - id: integ-prettier
-        name: Prettier (integ)
-        entry: integ/scripts/precommit-run.sh prettier --write
+      - id: integ-format
+        name: Format (integ)
+        entry: integ/scripts/precommit-run.sh oxfmt --write
         language: system
         files: ^integ/.*\.(ts|mts|js|mjs|cjs)$
         pass_filenames: true
+        require_serial: true
       - id: integ-eslint
         name: ESLint (integ)
         entry: integ/scripts/precommit-run.sh eslint --fix --no-warn-ignored

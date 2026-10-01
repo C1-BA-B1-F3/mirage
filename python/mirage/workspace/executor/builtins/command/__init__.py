@@ -12,8 +12,9 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-from mirage.workspace.executor.builtins.command.command import \
-    handle_command_builtin
+from mirage.workspace.executor.builtins.command.command import (
+    handle_command_builtin,
+)
 
 __all__ = [
     "handle_command_builtin",

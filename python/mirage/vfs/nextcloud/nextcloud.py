@@ -25,7 +25,6 @@ class NextcloudConfig(BaseModel):
 
 
 class NextcloudVFS(BaseVFS):
-
     accessor: NextcloudAccessor
     name: str = VFSName.NEXTCLOUD
     caches_reads: bool = True

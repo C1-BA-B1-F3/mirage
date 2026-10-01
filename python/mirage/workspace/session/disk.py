@@ -37,10 +37,12 @@ class DiskSessionStore(SessionStore):
     async def set(self, session_id: str, fields: SessionFields) -> None:
         await self._records.put(session_id, fields)
 
-    async def cas_set(self, session_id: str, fields: SessionFields,
-                      expected_generation: int) -> bool:
-        return await self._records.cas_put(session_id, fields,
-                                           expected_generation)
+    async def cas_set(
+        self, session_id: str, fields: SessionFields, expected_generation: int
+    ) -> bool:
+        return await self._records.cas_put(
+            session_id, fields, expected_generation
+        )
 
     async def delete(self, session_ids: Iterable[str]) -> None:
         await self._records.delete(session_ids)
@@ -48,8 +50,12 @@ class DiskSessionStore(SessionStore):
     async def replace_all(self, entries: dict[str, SessionFields]) -> None:
         stale = set(await self._records.list_names()) - set(entries)
         await self._records.delete(stale)
-        await asyncio.gather(*(self._records.put(sid, fields)
-                               for sid, fields in entries.items()))
+        await asyncio.gather(
+            *(
+                self._records.put(sid, fields)
+                for sid, fields in entries.items()
+            )
+        )
 
     async def clear(self) -> None:
         await self._records.clear()

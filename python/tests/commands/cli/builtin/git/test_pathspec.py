@@ -15,15 +15,20 @@
 import pytest
 
 from mirage.commands.cli.builtin.git.errors import OutsideRepositoryError
-from mirage.commands.cli.builtin.git.pathspec import (absolute_operand,
-                                                      matched, repo_relative,
-                                                      under)
+from mirage.commands.cli.builtin.git.pathspec import (
+    absolute_operand,
+    matched,
+    repo_relative,
+    under,
+)
 from mirage.commands.cli.builtin.git.types import RepoLocation
 
-LOCATION = RepoLocation(gitdir="/repo/.git",
-                        commondir="/repo/.git",
-                        worktree="/repo",
-                        mount_root="/repo/")
+LOCATION = RepoLocation(
+    gitdir="/repo/.git",
+    commondir="/repo/.git",
+    worktree="/repo",
+    mount_root="/repo/",
+)
 
 
 def test_a_relative_operand_resolves_against_the_run_directory():
@@ -41,8 +46,7 @@ def test_dot_segments_are_flattened():
 
 
 def test_a_path_inside_the_tree_becomes_relative():
-    assert repo_relative(LOCATION, "/repo", "docs/notes.md") == \
-        "docs/notes.md"
+    assert repo_relative(LOCATION, "/repo", "docs/notes.md") == "docs/notes.md"
 
 
 def test_the_tree_root_itself_is_the_empty_path():
@@ -56,8 +60,7 @@ def test_a_path_outside_the_tree_is_refused():
 
 
 def test_a_run_directory_below_the_root_still_resolves():
-    assert repo_relative(LOCATION, "/repo/docs", "notes.md") == \
-        "docs/notes.md"
+    assert repo_relative(LOCATION, "/repo/docs", "notes.md") == "docs/notes.md"
 
 
 def test_everything_is_under_the_root():

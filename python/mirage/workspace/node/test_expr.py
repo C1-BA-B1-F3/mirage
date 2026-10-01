@@ -18,28 +18,34 @@ from mirage.ops.types import SessionView
 from mirage.shell.types import NodeType as NT
 from mirage.types import PathSpec
 from mirage.utils.glob_walk import unmark_globs
-from mirage.workspace.executor.builtins.condition import (CondAnd, CondBinary,
-                                                          CondNode, CondNot,
-                                                          CondOr, CondUnary,
-                                                          CondWord)
+from mirage.workspace.executor.builtins.condition import (
+    CondAnd,
+    CondBinary,
+    CondNode,
+    CondNot,
+    CondOr,
+    CondUnary,
+    CondWord,
+)
 from mirage.workspace.expand import expand_node
 from mirage.workspace.expand.fields import split_fields
 from mirage.workspace.expand.node import expand_chunks
 from mirage.workspace.expand.pattern import expand_pattern
 from mirage.workspace.expand.variable import ifs_value
 
-_CONTAINER_TYPES = (NT.BINARY_EXPRESSION, NT.UNARY_EXPRESSION,
-                    NT.NEGATION_EXPRESSION, NT.PARENTHESIZED_EXPRESSION)
+_CONTAINER_TYPES = (
+    NT.BINARY_EXPRESSION,
+    NT.UNARY_EXPRESSION,
+    NT.NEGATION_EXPRESSION,
+    NT.PARENTHESIZED_EXPRESSION,
+)
 _FLAT_OP_TOKENS = frozenset({"=", "==", "!=", "<", ">", "!", "(", ")"})
 _COND_OP_TOKENS = frozenset({"=", "==", "!=", "=~", "<", ">", "&&", "||"})
 
 
-async def expand_test_expr(node,
-                           session,
-                           execute_fn,
-                           cs,
-                           view: SessionView | None = None
-                           ) -> list[str | PathSpec]:
+async def expand_test_expr(
+    node, session, execute_fn, cs, view: SessionView | None = None
+) -> list[str | PathSpec]:
     """Expand a test_command ``[ ... ]`` into flat argv, tokens in
     source order.
 
@@ -59,12 +65,14 @@ async def expand_test_expr(node,
     return result
 
 
-async def _flatten(node,
-                   out: list[str | PathSpec],
-                   session,
-                   execute_fn,
-                   cs,
-                   view: SessionView | None = None) -> bool:
+async def _flatten(
+    node,
+    out: list[str | PathSpec],
+    session,
+    execute_fn,
+    cs,
+    view: SessionView | None = None,
+) -> bool:
     """Append the flat tokens of one test-expression node to ``out``.
 
     Returns False when a statement separator surfaced inside an ERROR
@@ -86,7 +94,8 @@ async def _flatten(node,
             if any(not g.is_named and g.type == ";" for g in child.children):
                 return False
             if not await _flatten(
-                    child, out, session, execute_fn, cs, view=view):
+                child, out, session, execute_fn, cs, view=view
+            ):
                 return False
             continue
         if not child.is_named:
@@ -96,15 +105,14 @@ async def _flatten(node,
         if ctype in _CONTAINER_TYPES:
             negative = _negative_number_child(child)
             if negative is not None:
-                expanded = await expand_node(negative,
-                                             session,
-                                             execute_fn,
-                                             cs,
-                                             view=view)
+                expanded = await expand_node(
+                    negative, session, execute_fn, cs, view=view
+                )
                 out.append("-" + expanded)
                 continue
             if not await _flatten(
-                    child, out, session, execute_fn, cs, view=view):
+                child, out, session, execute_fn, cs, view=view
+            ):
                 return False
             continue
         if ctype == NT.TEST_OPERATOR:
@@ -113,7 +121,8 @@ async def _flatten(node,
         chunks = await expand_chunks(child, session, execute_fn, cs, view=view)
         out.extend(
             unmark_globs(word)
-            for word in split_fields(chunks, ifs_value(session, cs)))
+            for word in split_fields(chunks, ifs_value(session, cs))
+        )
     return True
 
 
@@ -129,18 +138,20 @@ def _negative_number_child(node):
     if node.type != NT.UNARY_EXPRESSION:
         return None
     children = list(node.children)
-    if (len(children) == 2 and not children[0].is_named
-            and children[0].type == "-" and children[1].is_named
-            and children[1].type != NT.TEST_OPERATOR):
+    if (
+        len(children) == 2
+        and not children[0].is_named
+        and children[0].type == "-"
+        and children[1].is_named
+        and children[1].type != NT.TEST_OPERATOR
+    ):
         return children[1]
     return None
 
 
-async def expand_double_bracket(node,
-                                session,
-                                execute_fn,
-                                cs,
-                                view: SessionView | None = None) -> CondNode:
+async def expand_double_bracket(
+    node, session, execute_fn, cs, view: SessionView | None = None
+) -> CondNode:
     """Build a structured condition tree from a ``[[ ... ]]`` node.
 
     Args:
@@ -155,11 +166,9 @@ async def expand_double_bracket(node,
     return await _build_cond(exprs[0], session, execute_fn, cs, view=view)
 
 
-async def _build_cond(node,
-                      session,
-                      execute_fn,
-                      cs,
-                      view: SessionView | None = None) -> CondNode:
+async def _build_cond(
+    node, session, execute_fn, cs, view: SessionView | None = None
+) -> CondNode:
     """Recursively translate one expression node into a CondNode.
 
     Args:
@@ -182,11 +191,9 @@ async def _build_cond(node,
     return CondWord(value)
 
 
-async def _build_unary(node,
-                       session,
-                       execute_fn,
-                       cs,
-                       view: SessionView | None = None) -> CondNode:
+async def _build_unary(
+    node, session, execute_fn, cs, view: SessionView | None = None
+) -> CondNode:
     """Translate a unary/negation expression node.
 
     Args:
@@ -204,38 +211,30 @@ async def _build_unary(node,
         elif child.is_named:
             operand_node = child
     if op is None and operand_node is not None and negated:
-        inner = await _build_cond(operand_node,
-                                  session,
-                                  execute_fn,
-                                  cs,
-                                  view=view)
+        inner = await _build_cond(
+            operand_node, session, execute_fn, cs, view=view
+        )
         return CondNot(inner)
     if op is None:
         value = ""
         if operand_node is not None:
-            value = await expand_node(operand_node,
-                                      session,
-                                      execute_fn,
-                                      cs,
-                                      view=view)
+            value = await expand_node(
+                operand_node, session, execute_fn, cs, view=view
+            )
         result: CondNode = CondWord(value)
         return CondNot(result) if negated else result
     operand = ""
     if operand_node is not None:
-        operand = await expand_node(operand_node,
-                                    session,
-                                    execute_fn,
-                                    cs,
-                                    view=view)
+        operand = await expand_node(
+            operand_node, session, execute_fn, cs, view=view
+        )
     unary: CondNode = CondUnary(op=op, operand=operand)
     return CondNot(unary) if negated else unary
 
 
-async def _build_binary(node,
-                        session,
-                        execute_fn,
-                        cs,
-                        view: SessionView | None = None) -> CondNode:
+async def _build_binary(
+    node, session, execute_fn, cs, view: SessionView | None = None
+) -> CondNode:
     """Translate a binary expression node (logical or comparison).
 
     Args:
@@ -256,45 +255,35 @@ async def _build_binary(node,
             continue
         operands.append(child)
     if op in ("&&", "||") and len(operands) == 2:
-        left = await _build_cond(operands[0],
-                                 session,
-                                 execute_fn,
-                                 cs,
-                                 view=view)
-        right = await _build_cond(operands[1],
-                                  session,
-                                  execute_fn,
-                                  cs,
-                                  view=view)
+        left = await _build_cond(
+            operands[0], session, execute_fn, cs, view=view
+        )
+        right = await _build_cond(
+            operands[1], session, execute_fn, cs, view=view
+        )
         return CondAnd(left, right) if op == "&&" else CondOr(left, right)
     if op is None or len(operands) != 2:
         text_parts = []
         for operand in operands:
-            text_parts.append(await expand_node(operand,
-                                                session,
-                                                execute_fn,
-                                                cs,
-                                                view=view))
+            text_parts.append(
+                await expand_node(operand, session, execute_fn, cs, view=view)
+            )
         return CondWord(" ".join(text_parts))
-    left_text = await expand_node(operands[0],
-                                  session,
-                                  execute_fn,
-                                  cs,
-                                  view=view)
+    left_text = await expand_node(
+        operands[0], session, execute_fn, cs, view=view
+    )
     right_node = operands[1]
     if op == "=~" and right_node.type == NT.REGEX:
         raw = right_node.text.decode()
         # After =~ tree-sitter lexes even a quoted operand as one regex
         # token; quoted means bash matches it literally.
         if len(raw) >= 2 and raw[0] == raw[-1] and raw[0] in "'\"":
-            return CondBinary(left=left_text,
-                              op=op,
-                              right=raw[1:-1],
-                              right_literal=True)
-        return CondBinary(left=left_text,
-                          op=op,
-                          right=raw,
-                          right_literal=False)
+            return CondBinary(
+                left=left_text, op=op, right=raw[1:-1], right_literal=True
+            )
+        return CondBinary(
+            left=left_text, op=op, right=raw, right_literal=False
+        )
     if op in ("=", "==", "!="):
         # The right side of a glob comparison is a pattern word; the
         # shared expander renders its quoting into the matcher's
@@ -302,21 +291,15 @@ async def _build_binary(node,
         # the evaluator fnmatches unconditionally. A wholly-literal
         # pattern matches exactly itself, which is what the equality
         # the old whole-node boolean spelled out reduced to.
-        pattern = await expand_pattern(right_node,
-                                       session,
-                                       execute_fn,
-                                       cs,
-                                       view=view)
-        return CondBinary(left=left_text,
-                          op=op,
-                          right=pattern,
-                          right_literal=False)
-    right_text = await expand_node(right_node,
-                                   session,
-                                   execute_fn,
-                                   cs,
-                                   view=view)
-    return CondBinary(left=left_text,
-                      op=op,
-                      right=right_text,
-                      right_literal=False)
+        pattern = await expand_pattern(
+            right_node, session, execute_fn, cs, view=view
+        )
+        return CondBinary(
+            left=left_text, op=op, right=pattern, right_literal=False
+        )
+    right_text = await expand_node(
+        right_node, session, execute_fn, cs, view=view
+    )
+    return CondBinary(
+        left=left_text, op=op, right=right_text, right_literal=False
+    )

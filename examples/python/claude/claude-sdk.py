@@ -42,8 +42,9 @@ from mirage.workspace import Workspace
 
 def unmount(mountpoint: str) -> None:
     if sys.platform == "darwin":
-        subprocess.run(["diskutil", "unmount", "force", mountpoint],
-                       capture_output=True)
+        subprocess.run(
+            ["diskutil", "unmount", "force", mountpoint], capture_output=True
+        )
     else:
         subprocess.run(["fusermount", "-u", mountpoint], capture_output=True)
 
@@ -83,7 +84,8 @@ def main() -> None:
         default=(
             "Create a file called /hello.py that prints 'Hello from Mirage!' "
             "and a file called /utils.py with a function"
-            " that reverses a string."),
+            " that reverses a string."
+        ),
     )
     args = parser.parse_args()
 

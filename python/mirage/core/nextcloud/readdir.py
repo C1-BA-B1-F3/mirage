@@ -5,8 +5,12 @@ from opendal.exceptions import NotFound
 from opendal.types import EntryMode
 
 from mirage.accessor.nextcloud import NextcloudAccessor
-from mirage.cache.index import (NULL_INDEX, IndexCacheStore, IndexEntry,
-                                ResourceType)
+from mirage.cache.index import (
+    NULL_INDEX,
+    IndexCacheStore,
+    IndexEntry,
+    ResourceType,
+)
 from mirage.core.nextcloud.constants import SCOPE_ERROR
 from mirage.types import PathSpec
 from mirage.utils.errors import enoent, enotdir, listing_error
@@ -31,13 +35,15 @@ async def _is_dir(accessor: NextcloudAccessor, key: str) -> bool:
     return md.mode == EntryMode.Dir
 
 
-async def readdir(accessor: NextcloudAccessor,
-                  path: PathSpec,
-                  index: IndexCacheStore = NULL_INDEX) -> list[str]:
+async def readdir(
+    accessor: NextcloudAccessor,
+    path: PathSpec,
+    index: IndexCacheStore = NULL_INDEX,
+) -> list[str]:
     prefix = mount_prefix_of(path.virtual, path.vfs_path)
     target = path.directory if path.pattern else path.virtual
     if prefix and target.startswith(prefix):
-        rest = target[len(prefix):]
+        rest = target[len(prefix) :]
         if prefix.endswith("/") or rest == "" or rest.startswith("/"):
             target = rest or "/"
     virtual_key = (prefix + target if prefix else target).rstrip("/") or "/"
@@ -77,8 +83,12 @@ async def readdir(accessor: NextcloudAccessor,
         # rather than raising, so without this `ls /nextcloud/never`
         # rendered an empty directory and exited 0. The mount root is
         # exempt: it exists because it is mounted.
-        raise await listing_error(path, target, partial(_is_file, accessor),
-                                  partial(_is_dir, accessor))
+        raise await listing_error(
+            path,
+            target,
+            partial(_is_file, accessor),
+            partial(_is_dir, accessor),
+        )
     # PROPFIND normally carries getcontentlength for every file; when the
     # lister omits the metadata, one stat per affected file fills the gap
     # so the index never caches an unknown size.
@@ -106,16 +116,20 @@ async def readdir(accessor: NextcloudAccessor,
     for e in names:
         name = e.rsplit("/", 1)[-1]
         if e in dir_keys:
-            entry_obj = IndexEntry(id=e,
-                                   name=name,
-                                   resource_type=ResourceType.FOLDER,
-                                   remote_time=times.get(e, ""))
+            entry_obj = IndexEntry(
+                id=e,
+                name=name,
+                resource_type=ResourceType.FOLDER,
+                remote_time=times.get(e, ""),
+            )
         else:
-            entry_obj = IndexEntry(id=e,
-                                   name=name,
-                                   resource_type=ResourceType.FILE,
-                                   size=sizes.get(e),
-                                   remote_time=times.get(e, ""))
+            entry_obj = IndexEntry(
+                id=e,
+                name=name,
+                resource_type=ResourceType.FILE,
+                size=sizes.get(e),
+                remote_time=times.get(e, ""),
+            )
         index_entries.append((name, entry_obj))
     await index.set_dir(virtual_key, index_entries)
     return virtual_entries

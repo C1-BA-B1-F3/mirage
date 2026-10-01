@@ -24,10 +24,12 @@ from mirage.vfs.types import NativeReadOps, ReadOps
 # classifying via stat); grep/rg are bespoke (search-API push-down) and
 # writes go through the slack_* commands, so the generic byte-mutation
 # commands are absent.
-IO = VFSAdapter(read=ReadOps(readdir=_readdir, read_bytes=_read, stat=_stat),
-                native=NativeReadOps(read_range=_read_range),
-                is_mounted=lambda a: True,
-                local=False,
-                max_du_entries=DU_MAX_ENTRIES).to_command_io()
+IO = VFSAdapter(
+    read=ReadOps(readdir=_readdir, read_bytes=_read, stat=_stat),
+    native=NativeReadOps(read_range=_read_range),
+    is_mounted=lambda a: True,
+    local=False,
+    max_du_entries=DU_MAX_ENTRIES,
+).to_command_io()
 
 resolve_glob = IO.resolve_glob

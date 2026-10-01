@@ -16,10 +16,12 @@ from mirage.types import ContentType, FileStat, FileType
 
 
 def test_file_stat_has_fingerprint_field():
-    st = FileStat(name="x",
-                  type=FileType.FILE,
-                  content=ContentType.TEXT,
-                  fingerprint="abc123")
+    st = FileStat(
+        name="x",
+        type=FileType.FILE,
+        content=ContentType.TEXT,
+        fingerprint="abc123",
+    )
     assert st.fingerprint == "abc123"
 
 

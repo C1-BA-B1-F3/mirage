@@ -24,22 +24,31 @@ from mirage.utils.ranges import ByteWindow
 
 
 def _spec(virtual: str) -> PathSpec:
-    return PathSpec(vfs_path=virtual.strip("/"),
-                    virtual=virtual,
-                    directory=virtual)
+    return PathSpec(
+        vfs_path=virtual.strip("/"), virtual=virtual, directory=virtual
+    )
 
 
 @pytest.mark.asyncio
 async def test_read_plain_file_downloads_by_id(accessor, index):
-    await index.set_dir('/', [('a.txt',
-                               IndexEntry(id="200",
-                                          name="a.txt",
-                                          resource_type="box/file",
-                                          vfs_name="a.txt"))])
+    await index.set_dir(
+        "/",
+        [
+            (
+                "a.txt",
+                IndexEntry(
+                    id="200",
+                    name="a.txt",
+                    resource_type="box/file",
+                    vfs_name="a.txt",
+                ),
+            )
+        ],
+    )
     with patch(
-            "mirage.core.box.read.download_file",
-            new_callable=AsyncMock,
-            return_value=b"hello",
+        "mirage.core.box.read.download_file",
+        new_callable=AsyncMock,
+        return_value=b"hello",
     ) as mock_dl:
         assert await read(accessor, _spec("/a.txt"), index) == b"hello"
     mock_dl.assert_awaited_once_with(accessor.token_manager, "200", None)
@@ -47,51 +56,80 @@ async def test_read_plain_file_downloads_by_id(accessor, index):
 
 @pytest.mark.asyncio
 async def test_a_ranged_read_asks_box_for_the_range(accessor, index):
-    await index.set_dir('/', [('a.txt',
-                               IndexEntry(id="200",
-                                          name="a.txt",
-                                          resource_type="box/file",
-                                          vfs_name="a.txt"))])
+    await index.set_dir(
+        "/",
+        [
+            (
+                "a.txt",
+                IndexEntry(
+                    id="200",
+                    name="a.txt",
+                    resource_type="box/file",
+                    vfs_name="a.txt",
+                ),
+            )
+        ],
+    )
     with patch(
-            "mirage.core.box.read.download_file",
-            new_callable=AsyncMock,
-            return_value=b"ell",
+        "mirage.core.box.read.download_file",
+        new_callable=AsyncMock,
+        return_value=b"ell",
     ) as mock_dl:
         got = await read(accessor, _spec("/a.txt"), index, offset=1, size=3)
     assert got == b"ell"
-    mock_dl.assert_awaited_once_with(accessor.token_manager, "200",
-                                     ByteWindow(1, 3))
+    mock_dl.assert_awaited_once_with(
+        accessor.token_manager, "200", ByteWindow(1, 3)
+    )
 
 
 @pytest.mark.asyncio
 async def test_a_read_to_the_end_leaves_the_range_open(accessor, index):
-    await index.set_dir('/', [('a.txt',
-                               IndexEntry(id="200",
-                                          name="a.txt",
-                                          resource_type="box/file",
-                                          vfs_name="a.txt"))])
+    await index.set_dir(
+        "/",
+        [
+            (
+                "a.txt",
+                IndexEntry(
+                    id="200",
+                    name="a.txt",
+                    resource_type="box/file",
+                    vfs_name="a.txt",
+                ),
+            )
+        ],
+    )
     with patch(
-            "mirage.core.box.read.download_file",
-            new_callable=AsyncMock,
-            return_value=b"llo",
+        "mirage.core.box.read.download_file",
+        new_callable=AsyncMock,
+        return_value=b"llo",
     ) as mock_dl:
         assert await read(accessor, _spec("/a.txt"), index, offset=2) == b"llo"
-    mock_dl.assert_awaited_once_with(accessor.token_manager, "200",
-                                     ByteWindow(2, None))
+    mock_dl.assert_awaited_once_with(
+        accessor.token_manager, "200", ByteWindow(2, None)
+    )
 
 
 @pytest.mark.asyncio
 async def test_read_box_native_file_returns_raw_bytes(accessor, index):
-    await index.set_dir('/', [('n.boxnote',
-                               IndexEntry(id="300",
-                                          name="n.boxnote",
-                                          resource_type="box/file",
-                                          vfs_name="n.boxnote"))])
+    await index.set_dir(
+        "/",
+        [
+            (
+                "n.boxnote",
+                IndexEntry(
+                    id="300",
+                    name="n.boxnote",
+                    resource_type="box/file",
+                    vfs_name="n.boxnote",
+                ),
+            )
+        ],
+    )
     raw = json.dumps({"doc": {"content": []}}).encode()
     with patch(
-            "mirage.core.box.read.download_file",
-            new_callable=AsyncMock,
-            return_value=raw,
+        "mirage.core.box.read.download_file",
+        new_callable=AsyncMock,
+        return_value=raw,
     ):
         out = await read(accessor, _spec("/n.boxnote"), index)
     assert out == raw
@@ -99,11 +137,20 @@ async def test_read_box_native_file_returns_raw_bytes(accessor, index):
 
 @pytest.mark.asyncio
 async def test_read_folder_raises_eisdir(accessor, index):
-    await index.set_dir('/', [('docs',
-                               IndexEntry(id="100",
-                                          name="docs",
-                                          resource_type="box/folder",
-                                          vfs_name="docs"))])
+    await index.set_dir(
+        "/",
+        [
+            (
+                "docs",
+                IndexEntry(
+                    id="100",
+                    name="docs",
+                    resource_type="box/folder",
+                    vfs_name="docs",
+                ),
+            )
+        ],
+    )
     with pytest.raises(IsADirectoryError):
         await read(accessor, _spec("/docs"), index)
 
@@ -111,9 +158,9 @@ async def test_read_folder_raises_eisdir(accessor, index):
 @pytest.mark.asyncio
 async def test_read_missing_populates_parent_then_raises(accessor, index):
     with patch(
-            "mirage.core.box.readdir.list_folder_items",
-            new_callable=AsyncMock,
-            return_value=[],
+        "mirage.core.box.readdir.list_folder_items",
+        new_callable=AsyncMock,
+        return_value=[],
     ):
         with pytest.raises(FileNotFoundError):
             await read(accessor, _spec("/ghost.txt"), index)
@@ -121,11 +168,20 @@ async def test_read_missing_populates_parent_then_raises(accessor, index):
 
 @pytest.mark.asyncio
 async def test_stream_plain_file_chunks(accessor, index):
-    await index.set_dir('/', [('a.txt',
-                               IndexEntry(id="200",
-                                          name="a.txt",
-                                          resource_type="box/file",
-                                          vfs_name="a.txt"))])
+    await index.set_dir(
+        "/",
+        [
+            (
+                "a.txt",
+                IndexEntry(
+                    id="200",
+                    name="a.txt",
+                    resource_type="box/file",
+                    vfs_name="a.txt",
+                ),
+            )
+        ],
+    )
 
     async def fake_stream(_tm, _fid):
         yield b"he"

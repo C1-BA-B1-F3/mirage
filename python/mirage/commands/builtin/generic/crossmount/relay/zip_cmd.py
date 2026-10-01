@@ -14,7 +14,9 @@
 
 from mirage.commands.builtin.generic.crossmount.types import CrossResult
 from mirage.commands.builtin.generic.crossmount.utils import (
-    flat_scopes, transfer_primitives)
+    flat_scopes,
+    transfer_primitives,
+)
 from mirage.commands.builtin.generic.zip_cmd import parse_flags, zip_cmd
 from mirage.commands.builtin.generic_bind.archive_io import relay_walk_of
 from mirage.commands.spec.types import FlagValue
@@ -23,9 +25,12 @@ from mirage.runtime.types import DispatchFn
 from mirage.types import PathSpec
 
 
-async def run_zip(scopes: list[PathSpec], flag_kwargs: dict[str, FlagValue],
-                  dispatch: DispatchFn,
-                  ns: NamespaceView | None) -> CrossResult:
+async def run_zip(
+    scopes: list[PathSpec],
+    flag_kwargs: dict[str, FlagValue],
+    dispatch: DispatchFn,
+    ns: NamespaceView | None,
+) -> CrossResult:
     """Run a zip whose archive and operands span mounts.
 
     Pure wiring: the shared generic plans on dispatch-relayed doors, so
@@ -43,17 +48,19 @@ async def run_zip(scopes: list[PathSpec], flag_kwargs: dict[str, FlagValue],
     """
     parsed = parse_flags(flag_kwargs)
     prim = transfer_primitives(dispatch)
-    return await zip_cmd(flat_scopes(scopes),
-                         read_bytes=prim["read_bytes"],
-                         write_bytes=prim["write"],
-                         stat=prim["stat"],
-                         walk=relay_walk_of(
-                             dispatch,
-                             ns.child_mounts if ns is not None else None),
-                         r=parsed.recursive,
-                         j=parsed.junk_paths,
-                         q=parsed.quiet,
-                         y=parsed.store_links,
-                         x=list(parsed.exclude) or None,
-                         links=ns.links if ns is not None else None,
-                         mounts=ns.mounts if ns is not None else None)
+    return await zip_cmd(
+        flat_scopes(scopes),
+        read_bytes=prim["read_bytes"],
+        write_bytes=prim["write"],
+        stat=prim["stat"],
+        walk=relay_walk_of(
+            dispatch, ns.child_mounts if ns is not None else None
+        ),
+        r=parsed.recursive,
+        j=parsed.junk_paths,
+        q=parsed.quiet,
+        y=parsed.store_links,
+        x=list(parsed.exclude) or None,
+        links=ns.links if ns is not None else None,
+        mounts=ns.mounts if ns is not None else None,
+    )

@@ -19,9 +19,11 @@ from mirage.core.gdrive.tree import iter_tree
 from mirage.types import FileType, PathSpec
 
 
-async def size(accessor: GDriveAccessor,
-               path: PathSpec,
-               index: IndexCacheStore = NULL_INDEX) -> int:
+async def size(
+    accessor: GDriveAccessor,
+    path: PathSpec,
+    index: IndexCacheStore = NULL_INDEX,
+) -> int:
     """Recursive byte size of everything under a path.
 
     A file resolves from its own stat; a directory sums its walked

@@ -23,9 +23,9 @@ from mirage.types import PathSpec
 from mirage.utils.path import norm
 
 
-async def mkdir(accessor: DiskAccessor,
-                path_spec: PathSpec,
-                parents: bool = False) -> None:
+async def mkdir(
+    accessor: DiskAccessor, path_spec: PathSpec, parents: bool = False
+) -> None:
     path = path_spec.mount_path
     root = accessor.root
     p = await resolve_inside(root, path_spec, path)

@@ -22,7 +22,8 @@ split_suffix_id = parse_id_name
 
 def workspace_dirname(workspace: dict[str, Any]) -> str:
     label = sanitize_name(
-        workspace.get("displayName") or workspace.get("name") or "workspace")
+        workspace.get("displayName") or workspace.get("name") or "workspace"
+    )
     return fit_id_name(label, workspace["id"])
 
 
@@ -43,7 +44,8 @@ def card_dirname(card: dict[str, Any]) -> str:
 
 def member_filename(member: dict[str, Any]) -> str:
     label = sanitize_name(
-        member.get("fullName") or member.get("username") or "member")
+        member.get("fullName") or member.get("username") or "member"
+    )
     return fit_id_name(label, member["id"], ".json")
 
 

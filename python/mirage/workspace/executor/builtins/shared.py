@@ -118,8 +118,13 @@ def split_flags(
         if parsing and s == "--":
             parsing = False
             continue
-        if (parsing and s != "-" and len(s) >= 2 and s.startswith("-")
-                and all(c in known for c in s[1:])):
+        if (
+            parsing
+            and s != "-"
+            and len(s) >= 2
+            and s.startswith("-")
+            and all(c in known for c in s[1:])
+        ):
             flags.update(s[1:])
             continue
         parsing = False
@@ -155,8 +160,13 @@ def split_value_flags(
             parsing = False
             i += 1
             continue
-        if parsing and s != "-" and len(s) >= 2 and s.startswith(
-                "-") and not s.startswith("--"):
+        if (
+            parsing
+            and s != "-"
+            and len(s) >= 2
+            and s.startswith("-")
+            and not s.startswith("--")
+        ):
             body = s[1:]
             for j, c in enumerate(body):
                 if c in boolean:
@@ -166,7 +176,7 @@ def split_value_flags(
                     return flags, values, operands, c
                 # A valued flag consumes the rest of the token (-tSTAMP)
                 # or the next argument (-t STAMP).
-                rest = body[j + 1:]
+                rest = body[j + 1 :]
                 if rest:
                     values[c] = rest
                 elif i + 1 < len(args):
@@ -193,12 +203,16 @@ async def expand_operands(
     """
     out: list[PathSpec] = []
     for item in operands:
-        spec = item if isinstance(item, PathSpec) else PathSpec.from_str_path(
-            str(item))
+        spec = (
+            item
+            if isinstance(item, PathSpec)
+            else PathSpec.from_str_path(str(item))
+        )
         if spec.pattern:
             mount = namespace.mount_for(spec.virtual)
-            expanded = await mount.expand_glob([spec],
-                                               mount.prefix.rstrip("/"))
+            expanded = await mount.expand_glob(
+                [spec], mount.prefix.rstrip("/")
+            )
             out.extend(p for p in expanded if isinstance(p, PathSpec))
             continue
         out.append(spec)
@@ -223,7 +237,8 @@ def require_view(state: SessionView | None) -> SessionView:
     if state is None:
         raise RuntimeError(
             "builtin reached a session write without the workspace's gated "
-            "session view; thread state= from the executor arm")
+            "session view; thread state= from the executor arm"
+        )
     return state
 
 
@@ -235,9 +250,11 @@ def refusal(cmd: str, exc: PolicyDenied) -> Result:
         exc (PolicyDenied): the gate's refusal.
     """
     err = f"{exc.strerror}\n".encode()
-    return None, IOResult(exit_code=1, stderr=err), ExecutionNode(command=cmd,
-                                                                  exit_code=1,
-                                                                  stderr=err)
+    return (
+        None,
+        IOResult(exit_code=1, stderr=err),
+        ExecutionNode(command=cmd, exit_code=1, stderr=err),
+    )
 
 
 def readonly_refusal(cmd: str, name: str) -> Result:
@@ -248,9 +265,11 @@ def readonly_refusal(cmd: str, name: str) -> Result:
         name (str): the frozen variable.
     """
     err = f"bash: {name}: readonly variable\n".encode()
-    return None, IOResult(exit_code=1, stderr=err), ExecutionNode(command=cmd,
-                                                                  exit_code=1,
-                                                                  stderr=err)
+    return (
+        None,
+        IOResult(exit_code=1, stderr=err),
+        ExecutionNode(command=cmd, exit_code=1, stderr=err),
+    )
 
 
 def arith_refusal(cmd: str, exc: ArithError) -> Result:
@@ -268,9 +287,11 @@ def arith_refusal(cmd: str, exc: ArithError) -> Result:
         exc (ArithError): the evaluator's refusal, text already led.
     """
     err = f"bash: {cmd}: {exc}\n".encode()
-    return None, IOResult(exit_code=1, stderr=err), ExecutionNode(command=cmd,
-                                                                  exit_code=1,
-                                                                  stderr=err)
+    return (
+        None,
+        IOResult(exit_code=1, stderr=err),
+        ExecutionNode(command=cmd, exit_code=1, stderr=err),
+    )
 
 
 def is_valid_name(name: str) -> bool:

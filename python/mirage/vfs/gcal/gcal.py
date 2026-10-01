@@ -27,7 +27,6 @@ from mirage.vfs.gcal.prompt import PROMPT, WRITE_PROMPT
 
 
 class GCalVFS(BaseVFS):
-
     accessor: GCalAccessor
     name: str = VFSName.GCAL
     caches_reads: bool = True

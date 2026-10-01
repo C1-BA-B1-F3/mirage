@@ -16,8 +16,12 @@ import dataclasses
 
 import pytest
 
-from mirage.core.object_store.driver import (ChildEntry, FindHints, ObjectMeta,
-                                             TreeEntry)
+from mirage.core.object_store.driver import (
+    ChildEntry,
+    FindHints,
+    ObjectMeta,
+    TreeEntry,
+)
 from tests.core.object_store.conftest import FakeStore, make_driver
 
 
@@ -37,8 +41,9 @@ def test_entry_defaults():
     assert TreeEntry(key="k").size == 0
     meta = ObjectMeta(size=1)
     assert meta.extra == {}
-    assert FindHints(name=None,
-                     iname=None,
-                     min_size=None,
-                     max_size=None,
-                     pushdown=False).pushdown is False
+    assert (
+        FindHints(
+            name=None, iname=None, min_size=None, max_size=None, pushdown=False
+        ).pushdown
+        is False
+    )

@@ -54,8 +54,9 @@ async def test_export_bare_prints_like_p():
     out, io, _ = await handle_export([], session)
     assert io.exit_code == 0
     # `$PWD` is exported like any other variable, so bash lists it too.
-    assert await materialize(out) == (b'declare -x FOO="bar"\n'
-                                      b'declare -x PWD="/"\n')
+    assert await materialize(out) == (
+        b'declare -x FOO="bar"\ndeclare -x PWD="/"\n'
+    )
 
 
 @pytest.mark.asyncio
@@ -82,9 +83,9 @@ async def test_export_write_requires_a_threaded_view():
 async def test_export_p_with_name_does_not_print():
     session = make_session()
     seed_var(session, "KEEP", "1")
-    out, io, _ = await handle_export(["-p", "FOO=bar"],
-                                     session,
-                                     state=session_view(session))
+    out, io, _ = await handle_export(
+        ["-p", "FOO=bar"], session, state=session_view(session)
+    )
     assert io.exit_code == 0
     assert out is None
     assert session.env["FOO"] == "bar"
@@ -93,7 +94,7 @@ async def test_export_p_with_name_does_not_print():
 @pytest.mark.asyncio
 async def test_export_p_via_workspace():
     ws = Workspace({"/": RAMVFS()}, mode=MountMode.WRITE)
-    io = await ws.shell('export ZEP1=v1; export -p | grep ZEP1')
+    io = await ws.shell("export ZEP1=v1; export -p | grep ZEP1")
     assert io.exit_code == 0
     assert (io.stdout or b"") == b'declare -x ZEP1="v1"\n'
 
@@ -159,6 +160,6 @@ async def test_export_reports_first_invalid_option():
 @pytest.mark.asyncio
 async def test_export_p_terminator_via_workspace():
     ws = Workspace({"/": RAMVFS()}, mode=MountMode.WRITE)
-    io = await ws.shell('export ZEP5=v5; export -p -- | grep ZEP5')
+    io = await ws.shell("export ZEP5=v5; export -p -- | grep ZEP5")
     assert io.exit_code == 0
     assert (io.stdout or b"") == b'declare -x ZEP5="v5"\n'

@@ -14,9 +14,14 @@
 
 import pytest
 
-from mirage.utils.quote import (SHELL_QUOTED_COMMANDS, escape_name,
-                                needs_shell_quote, quotes_operands,
-                                shell_quote, shell_quote_always)
+from mirage.utils.quote import (
+    SHELL_QUOTED_COMMANDS,
+    escape_name,
+    needs_shell_quote,
+    quotes_operands,
+    shell_quote,
+    shell_quote_always,
+)
 
 # Every printable ASCII character, classified by whether GNU coreutils 9.7
 # quotes a name holding it. Probed one byte at a time on debian:stable-slim
@@ -96,13 +101,16 @@ def test_empty_name_is_reported_as_empty_quotes():
     assert shell_quote_always("") == "''"
 
 
-@pytest.mark.parametrize("char", [
-    "\u00a0",
-    "\u00ad",
-    "\u200b",
-    "\ufeff",
-    "\U0001f600",
-])
+@pytest.mark.parametrize(
+    "char",
+    [
+        "\u00a0",
+        "\u00ad",
+        "\u200b",
+        "\ufeff",
+        "\U0001f600",
+    ],
+)
 def test_printable_non_ascii_is_ordinary(char):
     # Deliberate divergence from GNU in the C locale, which renders every
     # byte in octal; this is GNU under a UTF-8 locale, which mirage models
@@ -118,13 +126,16 @@ def test_printable_non_ascii_never_forces_quotes():
     assert shell_quote("a'b\u4e2d") == '"a\'b\u4e2d"'
 
 
-@pytest.mark.parametrize("char,octal", [
-    ("\u0080", "\\302\\200"),
-    ("\u0085", "\\302\\205"),
-    ("\u009f", "\\302\\237"),
-    ("\u2028", "\\342\\200\\250"),
-    ("\u2029", "\\342\\200\\251"),
-])
+@pytest.mark.parametrize(
+    "char,octal",
+    [
+        ("\u0080", "\\302\\200"),
+        ("\u0085", "\\302\\205"),
+        ("\u009f", "\\302\\237"),
+        ("\u2028", "\\342\\200\\250"),
+        ("\u2029", "\\342\\200\\251"),
+    ],
+)
 def test_non_printing_unicode_escapes_its_utf8_bytes(char, octal):
     # The C1 controls and the two line/paragraph separators are what
     # glibc's iswprint refuses in a UTF-8 locale, and GNU escapes bytes,
@@ -156,16 +167,36 @@ def test_never_quoting_commands_stay_out_of_the_table():
     # GNU prints these operands bare: grep/sed/cmp/diff have their own
     # diagnostics, rev is util-linux, md5 is BSD and zcat is gzip. The rest
     # are nobody's coreutils and keep their own original's wording.
-    for name in ("grep", "sed", "cmp", "diff", "rev", "md5", "zcat", "awk",
-                 "column", "file", "iconv", "jq", "look", "xxd"):
+    for name in (
+        "grep",
+        "sed",
+        "cmp",
+        "diff",
+        "rev",
+        "md5",
+        "zcat",
+        "awk",
+        "column",
+        "file",
+        "iconv",
+        "jq",
+        "look",
+        "xxd",
+    ):
         assert name not in SHELL_QUOTED_COMMANDS
 
 
 @pytest.mark.parametrize(
     "name,expected",
-    [('a b', 'a\\ b'), ('back\\slash', 'back\\\\slash'),
-     ('\x07\x08\t\n\x0b\x0c\r\x1b\x7f', '\\a\\b\\t\\n\\v\\f\\r\\033\\177'),
-     ('\x85\u2028', '\\302\\205\\342\\200\\250'), ('é🌍\xa0', 'é🌍\xa0'),
-     ('quote\'"', 'quote\'"'), ('\udcff', '\\377')])
+    [
+        ("a b", "a\\ b"),
+        ("back\\slash", "back\\\\slash"),
+        ("\x07\x08\t\n\x0b\x0c\r\x1b\x7f", "\\a\\b\\t\\n\\v\\f\\r\\033\\177"),
+        ("\x85\u2028", "\\302\\205\\342\\200\\250"),
+        ("é🌍\xa0", "é🌍\xa0"),
+        ("quote'\"", "quote'\""),
+        ("\udcff", "\\377"),
+    ],
+)
 def test_ls_escape_names(name, expected):
     assert escape_name(name) == expected

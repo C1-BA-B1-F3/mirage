@@ -22,26 +22,55 @@ from dulwich.objects import Commit, ObjectID
 from dulwich.repo import BaseRepo
 
 from mirage.commands.cli.builtin.git.changes import head_entries
-from mirage.commands.cli.builtin.git.checkout import (Tree, contents,
-                                                      flat_tree, tree_of)
+from mirage.commands.cli.builtin.git.checkout import (
+    Tree,
+    contents,
+    flat_tree,
+    tree_of,
+)
 from mirage.commands.cli.builtin.git.constants import GITLINK, HEAD
-from mirage.commands.cli.builtin.git.errors import GitError  # yapf: disable
-from mirage.commands.cli.builtin.git.errors import (  # yapf: disable
-    NoRestorePathsError, NoWorkspaceError, UnknownPathspecError,
-    UnknownSwitchError, UnmergedPathError, UnreadableTreeError,
-    UnresolvableSourceError)
+from mirage.commands.cli.builtin.git.errors import (
+    GitError,
+    NoRestorePathsError,
+    NoWorkspaceError,
+    UnknownPathspecError,
+    UnknownSwitchError,
+    UnmergedPathError,
+    UnreadableTreeError,
+    UnresolvableSourceError,
+)
 from mirage.commands.cli.builtin.git.index_file import read_index, write_index
-from mirage.commands.cli.builtin.git.io import (  # yapf: disable
-    blocking_ancestor, drop_gitlink, keep_gitlink, refuse_replaced_mounts,
-    remove_empty_parents, remove_file, remove_tree, restore_entry)
-from mirage.commands.cli.builtin.git.pathspec import (matched, repo_relative,
-                                                      under)
+from mirage.commands.cli.builtin.git.io import (
+    blocking_ancestor,
+    drop_gitlink,
+    keep_gitlink,
+    refuse_replaced_mounts,
+    remove_empty_parents,
+    remove_file,
+    remove_tree,
+    restore_entry,
+)
+from mirage.commands.cli.builtin.git.pathspec import (
+    matched,
+    repo_relative,
+    under,
+)
 from mirage.commands.cli.builtin.git.reset import restored
-from mirage.commands.cli.builtin.git.revparse import (TREE, resolve_object,
-                                                      unwrapped)
+from mirage.commands.cli.builtin.git.revparse import (
+    TREE,
+    resolve_object,
+    unwrapped,
+)
 from mirage.commands.cli.builtin.git.session import opened
-from mirage.commands.cli.builtin.git.util import (  # yapf: disable
-    check_operands, escaped, fatal, links_of, mounts_of, start_point, switches)
+from mirage.commands.cli.builtin.git.util import (
+    check_operands,
+    escaped,
+    fatal,
+    links_of,
+    mounts_of,
+    start_point,
+    switches,
+)
 from mirage.commands.cli.types import CLIDoors, CLIInvocation
 from mirage.commands.spec.flag_view import FlagView
 from mirage.io.types import ByteSource, IOResult
@@ -60,6 +89,7 @@ class RestoreFlags:
             None means the index for the working tree and HEAD for the
             index.
     """
+
     staged: bool
     worktree: bool
     source: str | None
@@ -72,9 +102,11 @@ def parse_flags(fl: FlagView) -> RestoreFlags:
         fl (FlagView): spec-validated view over the raw flag kwargs.
     """
     staged = fl.as_bool("staged")
-    return RestoreFlags(staged=staged,
-                        worktree=fl.as_bool("worktree") or not staged,
-                        source=fl.as_str("source"))
+    return RestoreFlags(
+        staged=staged,
+        worktree=fl.as_bool("worktree") or not staged,
+        source=fl.as_str("source"),
+    )
 
 
 def index_tree(entries: dict[bytes, IndexEntry]) -> Tree:
@@ -131,7 +163,8 @@ def source_tree(repo: BaseRepo, revision: str) -> Tree:
 
 
 async def restore(
-        inv: CLIInvocation[None]) -> tuple[ByteSource | None, IOResult]:
+    inv: CLIInvocation[None],
+) -> tuple[ByteSource | None, IOResult]:
     """Put paths back to what a source records.
 
     Two targets and one source, git's own model. ``--staged`` restores
@@ -157,8 +190,9 @@ async def restore(
     try:
         if dispatch is None or stat_path is None:
             raise NoWorkspaceError()
-        check_operands(texts, UnknownSwitchError, escaped(inv.argv),
-                       switches(inv))
+        check_operands(
+            texts, UnknownSwitchError, escaped(inv.argv), switches(inv)
+        )
         if not texts:
             raise NoRestorePathsError()
         flags = parse_flags(fl)
@@ -167,7 +201,8 @@ async def restore(
         held = index_tree(state.entries)
         if flags.source is not None:
             source: Tree | None = await asyncio.to_thread(
-                source_tree, repo, flags.source)
+                source_tree, repo, flags.source
+            )
         elif flags.staged:
             # Before the first commit there is no HEAD to restore the
             # index from, and reading that as an empty tree unstaged
@@ -220,8 +255,9 @@ async def restore(
         # is neither read as a blob nor allowed to clear what stands at
         # the name; keep_gitlink is the whole of what the entry asks
         # for, and the preflight has nothing to say about it either.
-        replacing = sorted(name for name in present
-                           if tree[name.encode()][0] != GITLINK)
+        replacing = sorted(
+            name for name in present if tree[name.encode()][0] != GITLINK
+        )
         # A gitlink's directory is not this verb's to empty either. The
         # entry is a placeholder for a repository mirage cannot read, so
         # git writes the directory and leaves every path under it alone:
@@ -232,11 +268,15 @@ async def restore(
         linked = [
             name for name in present if tree[name.encode()][0] == GITLINK
         ]
-        dropped = sorted(name for name in absent
-                         if not any(under(name, root) for root in linked))
+        dropped = sorted(
+            name
+            for name in absent
+            if not any(under(name, root) for root in linked)
+        )
         if flags.worktree:
-            await refuse_replaced_mounts(stat_path, location.worktree,
-                                         replacing, links, mounts)
+            await refuse_replaced_mounts(
+                stat_path, location.worktree, replacing, links, mounts
+            )
         if flags.staged:
             for name in present:
                 mode, sha = tree[name.encode()]
@@ -252,7 +292,8 @@ async def restore(
             await write_index(dispatch, location.gitdir, state)
         if flags.worktree:
             blobs = await asyncio.to_thread(
-                contents, repo, [tree[name.encode()][1] for name in replacing])
+                contents, repo, [tree[name.encode()][1] for name in replacing]
+            )
             # Removals first, because the two sets can name the same
             # place: restoring a directory over a file writes
             # ``slot/child`` where the file ``slot`` still sits, and the
@@ -267,22 +308,25 @@ async def restore(
                 # at, which no branch named. git checks the leading
                 # path and removes nothing when it finds one, so
                 # neither does this.
-                if await blocking_ancestor(stat_path, location.worktree, name,
-                                           links):
+                if await blocking_ancestor(
+                    stat_path, location.worktree, name, links
+                ):
                     continue
                 # What stands at a gitlink is a directory, so taking it
                 # away is an rmdir that may legitimately fail: unlink
                 # died on it with the index already written, which is
                 # the half-restore this verb has no wording for.
                 if held.get(name.encode(), (0, b""))[0] == GITLINK:
-                    warned = await drop_gitlink(dispatch, stat_path, path,
-                                                name, links)
+                    warned = await drop_gitlink(
+                        dispatch, stat_path, path, name, links
+                    )
                     if warned is not None:
                         notes.append(warned)
                 else:
                     await remove_file(dispatch, path)
-                await remove_empty_parents(dispatch, path, location.worktree,
-                                           mounts)
+                await remove_empty_parents(
+                    dispatch, path, location.worktree, mounts
+                )
             for name in sorted(present):
                 mode, sha = tree[name.encode()]
                 where = posixpath.join(location.worktree, name)
@@ -296,8 +340,9 @@ async def restore(
                 # exactly as it was, and an untracked file standing
                 # there is replaced in silence, which is what git's
                 # create_directories does to any leading non-directory.
-                above = await blocking_ancestor(stat_path, location.worktree,
-                                                name, links)
+                above = await blocking_ancestor(
+                    stat_path, location.worktree, name, links
+                )
                 if above is not None:
                     await remove_file(dispatch, above)
                 # A directory can still stand here after the loop

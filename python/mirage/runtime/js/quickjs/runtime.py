@@ -24,9 +24,16 @@ from mirage.runtime.errors import EvalError
 from mirage.runtime.js.base import JsRuntime
 from mirage.runtime.js.quickjs.execution import cwd_preamble
 from mirage.runtime.mixin import EvaluatorMixin
-from mirage.runtime.types import (EvalResult, EvalValue, FilesystemOperation,
-                                  RunArgs, RunResult, RuntimeContext,
-                                  RuntimeReach, ScriptSource)
+from mirage.runtime.types import (
+    EvalResult,
+    EvalValue,
+    FilesystemOperation,
+    RunArgs,
+    RunResult,
+    RuntimeContext,
+    RuntimeReach,
+    ScriptSource,
+)
 from mirage.runtime.vfs import RuntimeVFS
 from mirage.runtime.wasm import WasmRuntime, WasmVFS
 
@@ -48,7 +55,8 @@ _BUILD_HINT = (
     "https://github.com/quickjs-ng/quickjs/releases, and point the runtime "
     "entry's config `home` (yaml `runtimes: [{name: quickjs, config: "
     f"{{home: ...}}}}]`) or the {QUICKJS_HOME_ENV} environment variable at "
-    "the directory containing it")
+    "the directory containing it"
+)
 
 # The one-shot eval harness: inputs bind as globals, the source runs
 # through indirect eval (global scope, completion value = the LAST
@@ -57,8 +65,9 @@ _BUILD_HINT = (
 # quickjs evaluator semantics; the JSON shapes match EvalValue.
 EVAL_SENTINEL = "__MIRAGE_EVAL__"
 
-_EVAL_SOURCE = files(__package__).joinpath("js/eval.js").read_text(
-    encoding="utf8")
+_EVAL_SOURCE = (
+    files(__package__).joinpath("js/eval.js").read_text(encoding="utf8")
+)
 
 
 class QuickJsRuntime(JsRuntime, EvaluatorMixin):
@@ -89,22 +98,28 @@ class QuickJsRuntime(JsRuntime, EvaluatorMixin):
     # The engine is a WASI guest whose `std.open`/`os.readdir` suspend
     # into the workspace bridge: guest I/O has no door around the gate.
     reach: RuntimeReach = "workspace"
-    filesystem: ClassVar[tuple[FilesystemOperation,
-                               ...]] = ('read', 'write', 'list', 'stat')
+    filesystem: ClassVar[tuple[FilesystemOperation, ...]] = (
+        "read",
+        "write",
+        "list",
+        "stat",
+    )
 
     config_cls: ClassVar[type[RuntimeConfig]] = HomeConfig
     config: HomeConfig
 
     def __init__(
-            self,
-            captures: Sequence[str] | None = None,
-            config: HomeConfig | dict[str, Any] | None = None,
-            script: Callable[..., Any] | ScriptSource | None = None) -> None:
+        self,
+        captures: Sequence[str] | None = None,
+        config: HomeConfig | dict[str, Any] | None = None,
+        script: Callable[..., Any] | ScriptSource | None = None,
+    ) -> None:
         if wasmtime is None:
             raise ImportError(
                 "the quickjs runtime requires the 'quickjs' extra. Install "
                 "with: pip install mirage-ai[quickjs], or select another "
-                "runtime")
+                "runtime"
+            )
         super().__init__(captures, config, script)
         root = self.config.home or os.environ.get(QUICKJS_HOME_ENV)
         if not root:
@@ -112,24 +127,27 @@ class QuickJsRuntime(JsRuntime, EvaluatorMixin):
         self._wasm = Path(root) / _WASM_NAME
         if not self._wasm.is_file():
             raise FileNotFoundError(
-                f"no {_WASM_NAME} under {root}; {_BUILD_HINT}")
+                f"no {_WASM_NAME} under {root}; {_BUILD_HINT}"
+            )
         self._runtime = WasmRuntime(self._wasm, "js")
 
     async def version(self, env: dict[str, str]) -> RunResult:
         stdout, stderr, exit_code = await self._runtime.run(
-            ["qjs", "--version"], None, list(env.items()), WasmVFS())
+            ["qjs", "--version"], None, list(env.items()), WasmVFS()
+        )
         if exit_code == 0:
             version = stdout.decode().strip()
             stdout = f"JavaScript (quickjs-ng {version})\n".encode()
         return RunResult(stdout=stdout, stderr=stderr, exit_code=exit_code)
 
-    async def _execute_code(self, args: RunArgs,
-                            context: RuntimeContext | None) -> RunResult:
+    async def _execute_code(
+        self, args: RunArgs, context: RuntimeContext | None
+    ) -> RunResult:
         return await self.run(args, context)
 
-    async def run(self,
-                  args: RunArgs,
-                  context: RuntimeContext | None = None) -> RunResult:
+    async def run(
+        self, args: RunArgs, context: RuntimeContext | None = None
+    ) -> RunResult:
         context = context or self._capture_context()
         # --std exposes the std/os globals (stdin via std.in); -m selects
         # ES-module mode for .mjs sources. Trailing args become scriptArgs.
@@ -160,7 +178,8 @@ class QuickJsRuntime(JsRuntime, EvaluatorMixin):
             source = cwd_preamble(cwd) + source
         argv += ["-e", source, "--", *named, *args.args]
         fs = WasmVFS(
-            core=RuntimeVFS.of(context) if context is not None else None)
+            core=RuntimeVFS.of(context) if context is not None else None
+        )
         stdout, stderr, exit_code = await self._runtime.run(
             argv=argv,
             stdin=args.stdin,
@@ -169,11 +188,13 @@ class QuickJsRuntime(JsRuntime, EvaluatorMixin):
         )
         return RunResult(stdout=stdout, stderr=stderr, exit_code=exit_code)
 
-    async def eval(self,
-                   code: str,
-                   *,
-                   inputs: dict[str, EvalValue] | None = None,
-                   session: str | None = None) -> EvalResult:
+    async def eval(
+        self,
+        code: str,
+        *,
+        inputs: dict[str, EvalValue] | None = None,
+        session: str | None = None,
+    ) -> EvalResult:
         """Evaluate one JS program; the completion value is the value.
 
         Inputs bind as globals and the source runs at global scope via
@@ -194,24 +215,30 @@ class QuickJsRuntime(JsRuntime, EvaluatorMixin):
         if session is not None:
             raise EvalError(
                 "the quickjs evaluator is one-shot only: each eval is a "
-                "fresh wasi engine, so console sessions are unsupported")
+                "fresh wasi engine, so console sessions are unsupported"
+            )
         request = json.dumps({"inputs": inputs or {}, "code": code})
         result = await self.run(
-            RunArgs(code=_EVAL_SOURCE, args=[request, EVAL_SENTINEL]))
+            RunArgs(code=_EVAL_SOURCE, args=[request, EVAL_SENTINEL])
+        )
         stdout = (result.stdout or b"").decode(errors="replace")
         marker = f"\n{EVAL_SENTINEL}"
         head, sep, tail = stdout.rpartition(marker)
         if not sep:
             stderr_text = (result.stderr or b"").decode(errors="replace")
-            raise EvalError(f"quickjs eval produced no value: "
-                            f"{stderr_text.strip() or 'engine failed'}")
+            raise EvalError(
+                f"quickjs eval produced no value: "
+                f"{stderr_text.strip() or 'engine failed'}"
+            )
         payload = json.loads(tail.strip() or "{}")
         if "error" in payload:
             name = str(payload["error"].get("name", "Error"))
             message = str(payload["error"].get("message", ""))
             raise EvalError(f"{name}: {message}", syntax=name == "SyntaxError")
-        return EvalResult(value=payload.get("value"),
-                          stdout=head.encode(),
-                          stderr=result.stderr,
-                          exit_code=0,
-                          status="complete")
+        return EvalResult(
+            value=payload.get("value"),
+            stdout=head.encode(),
+            stderr=result.stderr,
+            exit_code=0,
+            status="complete",
+        )

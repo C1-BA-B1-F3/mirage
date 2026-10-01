@@ -23,16 +23,22 @@ from typing import Any, Literal
 
 import aiohttp
 from aiohttp.payload import JsonPayload
-from tenacity import (AsyncRetrying, RetryCallState, before_sleep_log,
-                      retry_if_exception_type, stop_after_attempt)
+from tenacity import (
+    AsyncRetrying,
+    RetryCallState,
+    before_sleep_log,
+    retry_if_exception_type,
+    stop_after_attempt,
+)
 
 from mirage.types import ErrorOf, JsonValue
 from mirage.utils.ranges import ByteWindow, range_header, window_of
 
 logger = logging.getLogger(__name__)
 
-ReadMode = Literal["json", "none", "bytes", "bytes_response", "text",
-                   "location", "response"]
+ReadMode = Literal[
+    "json", "none", "bytes", "bytes_response", "text", "location", "response"
+]
 
 
 @dataclass(frozen=True, slots=True)
@@ -120,8 +126,11 @@ class SessionPool:
         loop = asyncio.get_running_loop()
         stale = self._session
         if stale is not None and (stale.closed or self._loop is not loop):
-            if (not stale.closed and self._loop is not None
-                    and not self._loop.is_closed()):
+            if (
+                not stale.closed
+                and self._loop is not None
+                and not self._loop.is_closed()
+            ):
                 asyncio.run_coroutine_threadsafe(stale.close(), self._loop)
             self._session = None
         if self._session is None:
@@ -141,8 +150,7 @@ SessionArg = aiohttp.ClientSession | SessionPool | None
 
 
 def resolve_session(
-    session: SessionArg,
-    timeout: aiohttp.ClientTimeout | None = None
+    session: SessionArg, timeout: aiohttp.ClientTimeout | None = None
 ) -> tuple[aiohttp.ClientSession, bool]:
     """The live session for one request, plus whether the caller owns it.
 
@@ -195,11 +203,13 @@ def status_error(resp: aiohttp.ClientResponse, text: str) -> Exception:
         text (str): the response body, ignored.
     """
     del text
-    return aiohttp.ClientResponseError(resp.request_info,
-                                       resp.history,
-                                       status=resp.status,
-                                       message=resp.reason or "",
-                                       headers=resp.headers)
+    return aiohttp.ClientResponseError(
+        resp.request_info,
+        resp.history,
+        status=resp.status,
+        message=resp.reason or "",
+        headers=resp.headers,
+    )
 
 
 def _usable_delay(value: float) -> bool:
@@ -215,8 +225,9 @@ def _usable_delay(value: float) -> bool:
     return math.isfinite(value) and value >= 0.0
 
 
-def header_delay(resp: aiohttp.ClientResponse, attempt: int,
-                 retry: RetryPolicy) -> float:
+def header_delay(
+    resp: aiohttp.ClientResponse, attempt: int, retry: RetryPolicy
+) -> float:
     """The wait a response's Retry-After asks for, or exponential backoff.
 
     Args:
@@ -257,7 +268,7 @@ def _retry_delay(retry_state: RetryCallState, retry: RetryPolicy) -> float:
     error = outcome.exception() if outcome is not None else None
     if not isinstance(error, _RetryableStatus):
         # a transport failure carries no response to read a delay from
-        return min(2.0**(retry_state.attempt_number - 1), retry.max_backoff)
+        return min(2.0 ** (retry_state.attempt_number - 1), retry.max_backoff)
     if retry.delay_source == "body":
         delay = _body_delay(error.text, retry)
     else:
@@ -285,13 +296,18 @@ def _retry_condition(retry: RetryPolicy) -> Any:
         # asyncio.TimeoutError, not a ClientConnectionError): response-mapped
         # errors raised by error_of must never come back for another attempt
         return retry_if_exception_type(
-            (_RetryableStatus, aiohttp.ClientConnectionError,
-             asyncio.TimeoutError))
+            (
+                _RetryableStatus,
+                aiohttp.ClientConnectionError,
+                asyncio.TimeoutError,
+            )
+        )
     return retry_if_exception_type(_RetryableStatus)
 
 
-def _merged_headers(headers: Mapping[str, str] | None,
-                    window: ByteWindow | None) -> Mapping[str, str] | None:
+def _merged_headers(
+    headers: Mapping[str, str] | None, window: ByteWindow | None
+) -> Mapping[str, str] | None:
     if window is None:
         return headers
     header = range_header(window.offset, window.size)
@@ -315,24 +331,30 @@ async def _attempt(
     window: ByteWindow | None,
 ) -> Any:
     if json_body_present and json_body is None:
-        request = session.request(method,
-                                  url,
-                                  headers=_merged_headers(headers, window),
-                                  params=params,
-                                  data=JsonPayload(None))
+        request = session.request(
+            method,
+            url,
+            headers=_merged_headers(headers, window),
+            params=params,
+            data=JsonPayload(None),
+        )
     elif json_body_present:
-        request = session.request(method,
-                                  url,
-                                  headers=_merged_headers(headers, window),
-                                  params=params,
-                                  json=json_body,
-                                  data=data)
+        request = session.request(
+            method,
+            url,
+            headers=_merged_headers(headers, window),
+            params=params,
+            json=json_body,
+            data=data,
+        )
     else:
-        request = session.request(method,
-                                  url,
-                                  headers=_merged_headers(headers, window),
-                                  params=params,
-                                  data=data)
+        request = session.request(
+            method,
+            url,
+            headers=_merged_headers(headers, window),
+            params=params,
+            data=data,
+        )
     async with request as resp:
         if resp.status in retry.statuses:
             text = await resp.text()
@@ -349,11 +371,13 @@ async def _attempt(
             # A repeated header is joined the way fetch joins it, so a
             # response carrying two ETags reads as neither on both hosts.
             return ApiResponse(
-                window_of(await resp.read(), resp.status, window), resp.status,
+                window_of(await resp.read(), resp.status, window),
+                resp.status,
                 {
                     key.lower(): ", ".join(resp.headers.getall(key))
                     for key in resp.headers.keys()
-                })
+                },
+            )
         if read == "text":
             return await resp.text()
         if read == "location":
@@ -371,10 +395,11 @@ async def _attempt(
         else:
             data = json.loads(text)
         if read == "response":
-            return ApiResponse(data, resp.status, {
-                key.lower(): value
-                for key, value in resp.headers.items()
-            })
+            return ApiResponse(
+                data,
+                resp.status,
+                {key.lower(): value for key, value in resp.headers.items()},
+            )
         return data
 
 
@@ -441,11 +466,26 @@ async def api_request(
     sess, own = resolve_session(session, timeout=timeout)
     try:
         try:
-            present = (json_body is not None
-                       if json_body_present is None else json_body_present)
-            return await retrying(_attempt, sess, method, url, error_of,
-                                  headers, params, json_body, present, data,
-                                  retry, read, window)
+            present = (
+                json_body is not None
+                if json_body_present is None
+                else json_body_present
+            )
+            return await retrying(
+                _attempt,
+                sess,
+                method,
+                url,
+                error_of,
+                headers,
+                params,
+                json_body,
+                present,
+                data,
+                retry,
+                read,
+                window,
+            )
         except _RetryableStatus as exhausted:
             # retries ran dry: the final retryable response maps through
             # the same hook a plain error status does

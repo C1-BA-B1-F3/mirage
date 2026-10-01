@@ -19,9 +19,9 @@ from mirage.types import PathSpec
 from mirage.utils.errors import eisdir, enoent
 
 
-async def read(accessor: BinAccessor,
-               path: PathSpec,
-               index: IndexCacheStore = NULL_INDEX) -> bytes:
+async def read(
+    accessor: BinAccessor, path: PathSpec, index: IndexCacheStore = NULL_INDEX
+) -> bytes:
     """Render one program's file.
 
     Args:

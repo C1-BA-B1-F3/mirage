@@ -33,20 +33,25 @@ google_kwargs = dict(
     refresh_token=os.environ["GOOGLE_REFRESH_TOKEN"],
 )
 
-s3 = S3VFS(config=S3Config(
-    bucket=os.environ["AWS_S3_BUCKET"],
-    region=os.environ.get("AWS_DEFAULT_REGION", "us-east-1"),
-    aws_access_key_id=os.environ["AWS_ACCESS_KEY_ID"],
-    aws_secret_access_key=os.environ["AWS_SECRET_ACCESS_KEY"],
-))
+s3 = S3VFS(
+    config=S3Config(
+        bucket=os.environ["AWS_S3_BUCKET"],
+        region=os.environ.get("AWS_DEFAULT_REGION", "us-east-1"),
+        aws_access_key_id=os.environ["AWS_ACCESS_KEY_ID"],
+        aws_secret_access_key=os.environ["AWS_SECRET_ACCESS_KEY"],
+    )
+)
 gdrive = GoogleDriveVFS(config=GoogleDriveConfig(**google_kwargs))
 gmail = GmailVFS(config=GmailConfig(**google_kwargs))
-slack = SlackVFS(config=SlackConfig(
-    token=os.environ["SLACK_BOT_TOKEN"],
-    search_token=os.environ.get("SLACK_USER_TOKEN"),
-))
-discord = DiscordVFS(config=DiscordConfig(
-    token=os.environ["DISCORD_BOT_TOKEN"]))
+slack = SlackVFS(
+    config=SlackConfig(
+        token=os.environ["SLACK_BOT_TOKEN"],
+        search_token=os.environ.get("SLACK_USER_TOKEN"),
+    )
+)
+discord = DiscordVFS(
+    config=DiscordConfig(token=os.environ["DISCORD_BOT_TOKEN"])
+)
 
 # Stable path that both scripts agree on. Override with the env var
 # MIRAGE_CROSS_DIR if you want a different location.
@@ -57,8 +62,8 @@ EXPECTED_JSON = os.path.join(SNAPSHOT_DIR, "expected.json")
 # Read-only commands whose output is deterministic between runs.
 # The loader script reruns the same commands and asserts identical output.
 _FINGERPRINT_COMMANDS = [
-    'head -n 1 /s3/data/example.jsonl',
-    'cat /s3/data/example.jsonl | wc -l',
+    "head -n 1 /s3/data/example.jsonl",
+    "cat /s3/data/example.jsonl | wc -l",
     'grep -c "mirage" /s3/data/example.jsonl',
     'head -n 1 "/gdrive/AWS CDK.gdoc.json"',
     'wc -l "/gdrive/AWS CDK.gdoc.json"',
@@ -125,11 +130,14 @@ async def main():
         )
 
     print("\n=== saved ===")
-    print(f"  tar:      {SNAPSHOT_TAR} "
-          f"({os.path.getsize(SNAPSHOT_TAR)} bytes)")
+    print(
+        f"  tar:      {SNAPSHOT_TAR} ({os.path.getsize(SNAPSHOT_TAR)} bytes)"
+    )
     print(f"  expected: {EXPECTED_JSON}")
-    print("\nNow run: ./python/.venv/bin/python "
-          "examples/python/cross/load_check.py")
+    print(
+        "\nNow run: ./python/.venv/bin/python "
+        "examples/python/cross/load_check.py"
+    )
 
 
 if __name__ == "__main__":

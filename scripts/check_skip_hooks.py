@@ -30,8 +30,10 @@ SETTER = ".github/workflows/pre-commit.yml"
 # neither a comment quoting it nor a step parked in `audit` runs it.
 REPLACEMENTS = {
     "py-mypy": (".github/workflows/test_python.yml", "uv run mypy"),
-    "integ-typecheck":
-    (".github/workflows/test_typescript.yml", "pnpm -r --no-bail typecheck"),
+    "integ-typecheck": (
+        ".github/workflows/test_typescript.yml",
+        "pnpm -r --no-bail typecheck",
+    ),
     "ts-knip": (".github/workflows/test_typescript.yml", "pnpm exec knip"),
 }
 
@@ -59,7 +61,8 @@ def declared_ids(path: Path) -> set[str]:
     return {
         hook["id"]
         for repo in config.get("repos", [])
-        for hook in repo.get("hooks", []) if "id" in hook
+        for hook in repo.get("hooks", [])
+        if "id" in hook
     }
 
 
@@ -86,8 +89,11 @@ def runs_command(step: dict[str, Any], command: str) -> bool:
     script = step.get("run")
     if not isinstance(script, str):
         return False
-    return any(line.lstrip().startswith(command) for line in script.split("\n")
-               if not line.lstrip().startswith("#"))
+    return any(
+        line.lstrip().startswith(command)
+        for line in script.split("\n")
+        if not line.lstrip().startswith("#")
+    )
 
 
 def covering_job(path: Path, command: str) -> str | None:
@@ -134,25 +140,33 @@ def missing_replacement(hook_id: str) -> str | None:
     if hook_id in NO_REPLACEMENT:
         return None
     if hook_id not in REPLACEMENTS:
-        return (f"is skipped but named in neither REPLACEMENTS nor "
-                f"NO_REPLACEMENT in {Path(__file__).name}. Say which "
-                f"workflow runs it instead, or why nothing needs to.")
+        return (
+            f"is skipped but named in neither REPLACEMENTS nor "
+            f"NO_REPLACEMENT in {Path(__file__).name}. Say which "
+            f"workflow runs it instead, or why nothing needs to."
+        )
     workflow, command = REPLACEMENTS[hook_id]
     path = ROOT / workflow
     if not path.exists():
         return f"is skipped for {workflow}, which no longer exists"
     job = covering_job(path, command)
     if job is None:
-        return (f"is skipped because {workflow} runs {command!r}, and no "
-                f"step there runs it any more")
+        return (
+            f"is skipped because {workflow} runs {command!r}, and no "
+            f"step there runs it any more"
+        )
     gated = gated_jobs(path)
     if not gated:
-        return (f"is skipped for {workflow}, which no longer has a gate job "
-                f"naming what it requires, so nothing there blocks a merge")
+        return (
+            f"is skipped for {workflow}, which no longer has a gate job "
+            f"naming what it requires, so nothing there blocks a merge"
+        )
     if job not in gated:
-        return (f"is skipped because {workflow} runs {command!r}, which now "
-                f"sits in job {job!r} -- a job that workflow's gate does not "
-                f"require, so a failure there no longer blocks a merge")
+        return (
+            f"is skipped because {workflow} runs {command!r}, which now "
+            f"sits in job {job!r} -- a job that workflow's gate does not "
+            f"require, so a failure there no longer blocks a merge"
+        )
     return None
 
 
@@ -170,9 +184,11 @@ def main() -> int:
     named = [s.strip() for s in os.environ.get("SKIP", "").split(",")]
     named = [s for s in named if s]
     if not named:
-        print(f"SKIP hooks check FAILED\n\nSKIP is empty or unset. {SETTER} "
-              "sets it to the hooks other workflows already run; an empty "
-              "value means that list was lost, not that nothing is skipped.")
+        print(
+            f"SKIP hooks check FAILED\n\nSKIP is empty or unset. {SETTER} "
+            "sets it to the hooks other workflows already run; an empty "
+            "value means that list was lost, not that nothing is skipped."
+        )
         return 1
 
     skipped = set(named)
@@ -182,17 +198,20 @@ def main() -> int:
         for hook_id in sorted(skipped - declared)
     ]
     problems += [
-        f"{hook_id!r} {reason}" for hook_id in sorted(skipped & declared)
+        f"{hook_id!r} {reason}"
+        for hook_id in sorted(skipped & declared)
         if (reason := missing_replacement(hook_id)) is not None
     ]
     if problems:
         print("SKIP hooks check FAILED\n")
         for problem in problems:
             print(problem)
-        print(f"\nSKIP is set in {SETTER}; ids are declared in "
-              f"{CONFIG.relative_to(ROOT)}. A hook skipped here is a promise "
-              f"that another workflow still runs it -- keep both sides, or "
-              f"drop the skip.")
+        print(
+            f"\nSKIP is set in {SETTER}; ids are declared in "
+            f"{CONFIG.relative_to(ROOT)}. A hook skipped here is a promise "
+            f"that another workflow still runs it -- keep both sides, or "
+            f"drop the skip."
+        )
         return 1
 
     print(f"SKIP hooks OK: {len(skipped)} skipped id(s) declared and covered")

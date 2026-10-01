@@ -7,9 +7,11 @@ from mirage.types import PathSpec
 from mirage.utils.errors import enoent, enotempty
 
 
-async def rmdir(accessor: NextcloudAccessor,
-                path: PathSpec,
-                index: IndexCacheStore = NULL_INDEX) -> None:
+async def rmdir(
+    accessor: NextcloudAccessor,
+    path: PathSpec,
+    index: IndexCacheStore = NULL_INDEX,
+) -> None:
     """Remove an empty collection.
 
     WebDAV DELETE on a collection is recursive (RFC 4918 9.6.1), so this

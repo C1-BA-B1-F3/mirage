@@ -87,9 +87,11 @@ def index():
 async def test_stat_mount_root_is_directory(dropbox_accessor, index):
     rpc = FakeDropboxRpc()
     with patch(RPC, new=rpc):
-        out = await stat(dropbox_accessor,
-                         PathSpec(vfs_path="", virtual="/", directory="/"),
-                         index)
+        out = await stat(
+            dropbox_accessor,
+            PathSpec(vfs_path="", virtual="/", directory="/"),
+            index,
+        )
     assert out.type == FileType.DIRECTORY
     assert out.name == "/"
     assert rpc.list_requests == 0
@@ -143,49 +145,87 @@ async def test_stat_null_index_non_409_propagates(dropbox_accessor):
 
 
 _FALLBACK_CASES = [
-    ({
-        ".tag": "file",
-        "id": "id:x",
-        "name": "f.txt",
-        "client_modified": "2026-01-02T00:00:00Z",
-        "size": 3,
-    }, "id:x", 3, "2026-01-02T00:00:00Z", "2026-01-02T00:00:00Z"),
-    ({
-        ".tag": "file",
-        "id": "id:x",
-        "name": "f.txt",
-        "size": 3,
-    }, "id:x", 3, "", None),
-    ({
-        ".tag": "file",
-        "name": "f.txt",
-        "path_display": "/d/f.txt",
-        "size": 3,
-    }, "/d/f.txt", 3, "", None),
-    ({
-        ".tag": "file",
-        "name": "f.txt",
-        "size": 3,
-    }, "f.txt", 3, "", None),
-    ({
-        ".tag": "file",
-        "id": "id:x",
-        "name": "f.txt",
-    }, "id:x", None, "", None),
-    ({
-        ".tag": "file",
-        "id": "id:x",
-        "name": "f.txt",
-        "size": "big",
-    }, "id:x", None, "", None),
+    (
+        {
+            ".tag": "file",
+            "id": "id:x",
+            "name": "f.txt",
+            "client_modified": "2026-01-02T00:00:00Z",
+            "size": 3,
+        },
+        "id:x",
+        3,
+        "2026-01-02T00:00:00Z",
+        "2026-01-02T00:00:00Z",
+    ),
+    (
+        {
+            ".tag": "file",
+            "id": "id:x",
+            "name": "f.txt",
+            "size": 3,
+        },
+        "id:x",
+        3,
+        "",
+        None,
+    ),
+    (
+        {
+            ".tag": "file",
+            "name": "f.txt",
+            "path_display": "/d/f.txt",
+            "size": 3,
+        },
+        "/d/f.txt",
+        3,
+        "",
+        None,
+    ),
+    (
+        {
+            ".tag": "file",
+            "name": "f.txt",
+            "size": 3,
+        },
+        "f.txt",
+        3,
+        "",
+        None,
+    ),
+    (
+        {
+            ".tag": "file",
+            "id": "id:x",
+            "name": "f.txt",
+        },
+        "id:x",
+        None,
+        "",
+        None,
+    ),
+    (
+        {
+            ".tag": "file",
+            "id": "id:x",
+            "name": "f.txt",
+            "size": "big",
+        },
+        "id:x",
+        None,
+        "",
+        None,
+    ),
 ]
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("entry, dropbox_id, size, modified, fingerprint",
-                         _FALLBACK_CASES)
-async def test_stat_entry_field_fallbacks(dropbox_accessor, entry, dropbox_id,
-                                          size, modified, fingerprint):
+@pytest.mark.parametrize(
+    "entry, dropbox_id, size, modified, fingerprint", _FALLBACK_CASES
+)
+async def test_stat_entry_field_fallbacks(
+    dropbox_accessor, entry, dropbox_id, size, modified, fingerprint
+):
     # _stat_from_entry's fallbacks: server_modified→client_modified→"",
     # id→path_display→name, and a non-int/absent size renders as None
     # (the unknown-size machinery, never a fabricated number).
@@ -204,7 +244,9 @@ async def test_stat_populates_from_parent_listing(dropbox_accessor, index):
     with patch(RPC, new=rpc):
         out = await stat(
             dropbox_accessor,
-            PathSpec(vfs_path="a.txt", virtual="/a.txt", directory="/"), index)
+            PathSpec(vfs_path="a.txt", virtual="/a.txt", directory="/"),
+            index,
+        )
     assert out.type == FileType.FILE
     assert out.name == "a.txt"
     assert out.size == 5
@@ -218,7 +260,8 @@ async def test_stat_populates_from_parent_listing(dropbox_accessor, index):
 
 @pytest.mark.asyncio
 async def test_stat_serves_index_hit_without_second_call(
-        dropbox_accessor, index):
+    dropbox_accessor, index
+):
     # The reason the index exists: once a parent listing populates it, a
     # stat of any sibling serves from cache. `metadata=None` makes a stray
     # get_metadata blow up as a 409, so a single list request proves both
@@ -227,10 +270,14 @@ async def test_stat_serves_index_hit_without_second_call(
     with patch(RPC, new=rpc):
         file_out = await stat(
             dropbox_accessor,
-            PathSpec(vfs_path="a.txt", virtual="/a.txt", directory="/"), index)
+            PathSpec(vfs_path="a.txt", virtual="/a.txt", directory="/"),
+            index,
+        )
         dir_out = await stat(
             dropbox_accessor,
-            PathSpec(vfs_path="docs", virtual="/docs", directory="/"), index)
+            PathSpec(vfs_path="docs", virtual="/docs", directory="/"),
+            index,
+        )
     assert file_out.type == FileType.FILE
     assert dir_out.type == FileType.DIRECTORY
     assert dir_out.extra["dropbox_id"] == "id:docs"
@@ -253,9 +300,11 @@ async def test_stat_miss_after_populate_is_enoent(dropbox_accessor, index):
         with pytest.raises(FileNotFoundError) as excinfo:
             await stat(
                 dropbox_accessor,
-                PathSpec(vfs_path="note.txt",
-                         virtual="/note.txt",
-                         directory="/"), index)
+                PathSpec(
+                    vfs_path="note.txt", virtual="/note.txt", directory="/"
+                ),
+                index,
+            )
     assert str(excinfo.value) == "/note.txt"
     assert rpc.list_requests == 1
 
@@ -268,9 +317,13 @@ async def test_stat_under_mount_prefix(dropbox_accessor, index):
     with patch(RPC, new=rpc):
         out = await stat(
             dropbox_accessor,
-            PathSpec(virtual="/dropbox/a.txt",
-                     directory="/dropbox",
-                     vfs_path=mount_key("/dropbox/a.txt", "/dropbox")), index)
+            PathSpec(
+                virtual="/dropbox/a.txt",
+                directory="/dropbox",
+                vfs_path=mount_key("/dropbox/a.txt", "/dropbox"),
+            ),
+            index,
+        )
     assert out.type == FileType.FILE
     assert out.name == "a.txt"
     assert out.size == 5
@@ -285,9 +338,13 @@ async def test_stat_failed_populate_is_enoent(dropbox_accessor, index):
         with pytest.raises(FileNotFoundError) as excinfo:
             await stat(
                 dropbox_accessor,
-                PathSpec(vfs_path="ghost/missing.txt",
-                         virtual="/ghost/missing.txt",
-                         directory="/ghost"), index)
+                PathSpec(
+                    vfs_path="ghost/missing.txt",
+                    virtual="/ghost/missing.txt",
+                    directory="/ghost",
+                ),
+                index,
+            )
     assert str(excinfo.value) == "/ghost/missing.txt"
 
 
@@ -300,9 +357,13 @@ async def test_stat_populate_server_error_propagates(dropbox_accessor, index):
         with pytest.raises(DropboxApiError) as excinfo:
             await stat(
                 dropbox_accessor,
-                PathSpec(vfs_path="ghost/missing.txt",
-                         virtual="/ghost/missing.txt",
-                         directory="/ghost"), index)
+                PathSpec(
+                    vfs_path="ghost/missing.txt",
+                    virtual="/ghost/missing.txt",
+                    directory="/ghost",
+                ),
+                index,
+            )
     assert excinfo.value.status == 500
 
 
@@ -314,9 +375,11 @@ async def test_stat_enotdir_from_populate_propagates(dropbox_accessor, index):
         with pytest.raises(NotADirectoryError):
             await stat(
                 dropbox_accessor,
-                PathSpec(vfs_path="a.txt/x",
-                         virtual="/a.txt/x",
-                         directory="/a.txt"), index)
+                PathSpec(
+                    vfs_path="a.txt/x", virtual="/a.txt/x", directory="/a.txt"
+                ),
+                index,
+            )
 
 
 @pytest.mark.asyncio
@@ -356,14 +419,16 @@ async def test_stat_size_matches_read_for_every_file(dropbox_accessor, index):
                 "server_modified": "2026-04-01T00:00:00Z",
             },
         ],
-        "/docs": [{
-            ".tag": "file",
-            "id": "id:b",
-            "name": "b.bin",
-            "path_display": "/docs/b.bin",
-            "size": 3,
-            "server_modified": "2026-04-01T00:00:00Z",
-        }],
+        "/docs": [
+            {
+                ".tag": "file",
+                "id": "id:b",
+                "name": "b.bin",
+                "path_display": "/docs/b.bin",
+                "size": 3,
+                "server_modified": "2026-04-01T00:00:00Z",
+            }
+        ],
     }
 
     async def _rpc(_tm, endpoint, body):
@@ -379,24 +444,30 @@ async def test_stat_size_matches_read_for_every_file(dropbox_accessor, index):
         return contents[path]
 
     files: list[str] = []
-    with patch(RPC, new=_rpc), \
-         patch("mirage.core.dropbox.read.dropbox_download",
-               side_effect=_download):
+    with (
+        patch(RPC, new=_rpc),
+        patch(
+            "mirage.core.dropbox.read.dropbox_download", side_effect=_download
+        ),
+    ):
         stack = ["/"]
         while stack:
             current = stack.pop()
-            listing = await readdir(dropbox_accessor,
-                                    PathSpec.from_str_path(current), index)
+            listing = await readdir(
+                dropbox_accessor, PathSpec.from_str_path(current), index
+            )
             for child in listing:
                 trimmed = child.rstrip("/")
-                info = await stat(dropbox_accessor,
-                                  PathSpec.from_str_path(trimmed), index)
+                info = await stat(
+                    dropbox_accessor, PathSpec.from_str_path(trimmed), index
+                )
                 if info.type == FileType.DIRECTORY:
                     stack.append(trimmed)
                     continue
                 assert info.size is not None, trimmed
-                body = await read(dropbox_accessor,
-                                  PathSpec.from_str_path(trimmed), index)
+                body = await read(
+                    dropbox_accessor, PathSpec.from_str_path(trimmed), index
+                )
                 assert info.size == len(body), trimmed
                 files.append(trimmed)
     assert sorted(files) == ["/a.txt", "/docs/b.bin", "/empty.txt"]

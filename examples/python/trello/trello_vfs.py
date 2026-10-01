@@ -86,8 +86,10 @@ async def main():
                             cards_path = f"{list_dir}/cards"
                             if os.path.isdir(cards_path):
                                 cards = os.listdir(cards_path)
-                                msg = (f"\n--- os.listdir() "
-                                       f"cards ({len(cards)}) ---")
+                                msg = (
+                                    f"\n--- os.listdir() "
+                                    f"cards ({len(cards)}) ---"
+                                )
                                 print(msg)
                                 for cd in cards[:5]:
                                     print(f"  {cd}")
@@ -98,7 +100,8 @@ async def main():
                                     with open(f"{card_dir}/card.json") as f:
                                         data = json.loads(f.read())
                                         print(
-                                            f"  name: {data.get('card_name')}")
+                                            f"  name: {data.get('card_name')}"
+                                        )
                                         print(f"  id: {data.get('card_id')}")
                                         print(
                                             f"  list_id: {data.get('list_id')}"

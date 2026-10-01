@@ -44,20 +44,17 @@ async def collision_documents(config):
 async def invalid_documents(config):
     return [
         document("doc-1", "valid", slug="valid"),
-        {
-            "id": "doc-2"
-        },
+        {"id": "doc-2"},
         document("doc-3", "bad", slug="../bad"),
         document("", "missing-id", slug="missing-id"),
-        {
-            **document("doc-4", "unnamed"), "name": None
-        },
+        {**document("doc-4", "unnamed"), "name": None},
     ]
 
 
 @pytest.mark.asyncio
 async def test_ensure_tree_keeps_the_source_size_in_extra(
-        monkeypatch, dify_accessor, dify_index):
+    monkeypatch, dify_accessor, dify_index
+):
     tree_calls["documents"] = 0
     monkeypatch.setattr(tree, "list_all_documents", counted_documents)
 
@@ -86,8 +83,9 @@ async def test_ensure_tree_keeps_the_source_size_in_extra(
 
 
 @pytest.mark.asyncio
-async def test_ensure_tree_skips_duplicate_slug(monkeypatch, caplog,
-                                                dify_accessor, dify_index):
+async def test_ensure_tree_skips_duplicate_slug(
+    monkeypatch, caplog, dify_accessor, dify_index
+):
     monkeypatch.setattr(tree, "list_all_documents", duplicate_documents)
 
     await tree.DIFY_TREE.ensure(dify_accessor, dify_index, "")
@@ -100,8 +98,9 @@ async def test_ensure_tree_skips_duplicate_slug(monkeypatch, caplog,
 
 
 @pytest.mark.asyncio
-async def test_ensure_tree_skips_path_collision(monkeypatch, caplog,
-                                                dify_accessor, dify_index):
+async def test_ensure_tree_skips_path_collision(
+    monkeypatch, caplog, dify_accessor, dify_index
+):
     monkeypatch.setattr(tree, "list_all_documents", collision_documents)
 
     await tree.DIFY_TREE.ensure(dify_accessor, dify_index, "")
@@ -116,8 +115,9 @@ async def test_ensure_tree_skips_path_collision(monkeypatch, caplog,
 
 
 @pytest.mark.asyncio
-async def test_ensure_tree_skips_invalid_documents(monkeypatch, caplog,
-                                                   dify_accessor, dify_index):
+async def test_ensure_tree_skips_invalid_documents(
+    monkeypatch, caplog, dify_accessor, dify_index
+):
     monkeypatch.setattr(tree, "list_all_documents", invalid_documents)
 
     await tree.DIFY_TREE.ensure(dify_accessor, dify_index, "")
@@ -128,33 +128,25 @@ async def test_ensure_tree_skips_invalid_documents(monkeypatch, caplog,
 
 
 def test_tree_slug_and_timestamp_helpers():
-    assert tree.extract_slug({
-        "doc_metadata": {
-            "slug": "a/b"
+    assert tree.extract_slug(
+        {"doc_metadata": {"slug": "a/b"}, "name": "fallback"}
+    ) == ("a/b", True)
+    assert tree.extract_slug(
+        {
+            "doc_metadata": [{"name": "path", "value": "docs/start"}],
+            "name": "fallback",
         },
-        "name": "fallback"
-    }) == ("a/b", True)
+        "path",
+    ) == ("docs/start", True)
     assert tree.extract_slug(
-        {
-            "doc_metadata": [{
-                "name": "path",
-                "value": "docs/start"
-            }],
-            "name": "fallback"
-        }, "path") == ("docs/start", True)
-    assert tree.extract_slug(
-        {
-            "doc_metadata": {
-                "path": "docs/map"
-            },
-            "name": "fallback"
-        }, "path") == ("docs/map", True)
-    assert tree.extract_document_size(
-        {"data_source_info": {
-            "upload_file": {
-                "size": 7
-            }
-        }}) == 7
+        {"doc_metadata": {"path": "docs/map"}, "name": "fallback"}, "path"
+    ) == ("docs/map", True)
+    assert (
+        tree.extract_document_size(
+            {"data_source_info": {"upload_file": {"size": 7}}}
+        )
+        == 7
+    )
     assert tree.epoch_text(1716282000) == "2024-05-21T09:00:00Z"
     assert tree.epoch_text("2026-01-01T00:00:00Z") == "2026-01-01T00:00:00Z"
     assert tree.epoch_text(None) is None

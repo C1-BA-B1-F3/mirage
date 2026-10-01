@@ -24,13 +24,15 @@ def io_to_execute_response(io: IOResult) -> ExecuteResponse:
     output = stdout
     if stderr:
         output = f"{stdout}\n{stderr}" if stdout else stderr
-    return ExecuteResponse(output=with_refusal(output, io.refusal),
-                           exit_code=io.exit_code)
+    return ExecuteResponse(
+        output=with_refusal(output, io.refusal), exit_code=io.exit_code
+    )
 
 
 def io_to_grep_matches(io: IOResult) -> list[GrepMatch]:
     stdout = decode(
-        io.stdout if isinstance(io.stdout, bytes) else None).strip()
+        io.stdout if isinstance(io.stdout, bytes) else None
+    ).strip()
     if not stdout:
         return []
     matches: list[GrepMatch] = []
@@ -42,13 +44,15 @@ def io_to_grep_matches(io: IOResult) -> list[GrepMatch]:
             except ValueError:
                 continue
             matches.append(
-                GrepMatch(path=parts[0], line_number=line_num, line=parts[2]))
+                GrepMatch(path=parts[0], line_number=line_num, line=parts[2])
+            )
     return matches
 
 
 def io_to_file_infos(io: IOResult) -> list[FileInfo]:
     stdout = decode(
-        io.stdout if isinstance(io.stdout, bytes) else None).strip()
+        io.stdout if isinstance(io.stdout, bytes) else None
+    ).strip()
     if not stdout:
         return []
     infos: list[FileInfo] = []

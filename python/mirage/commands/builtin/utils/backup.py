@@ -23,14 +23,19 @@ from mirage.utils.key_prefix import rekey
 # value on one line, which is how gnulib's `argmatch_valid` prints
 # `backup_args` and, since the canonical word of each class is the
 # control itself, the only table this needs.
-BACKUP_ARGS = (("none", "off"), ("simple", "never"), ("existing", "nil"),
-               ("numbered", "t"))
+BACKUP_ARGS = (
+    ("none", "off"),
+    ("simple", "never"),
+    ("existing", "nil"),
+    ("numbered", "t"),
+)
 
 _NUMBERED_SUFFIX = re.compile(r"^\.~([0-9]+)~$")
 
 
-def backup_control(cmd_name: str, value: str | bool | None,
-                   suffix: str | None) -> str | None:
+def backup_control(
+    cmd_name: str, value: str | bool | None, suffix: str | None
+) -> str | None:
     """Resolve ``-b``/``--backup[=CONTROL]``/``-S`` into a backup control.
 
     Deliberate divergence from GNU: the ``VERSION_CONTROL`` and
@@ -65,8 +70,9 @@ def backup_control(cmd_name: str, value: str | bool | None,
         # and is ambiguous (both measured on coreutils 9.4).
         match = argmatch(value, BACKUP_ARGS)
         if not isinstance(match, ArgmatchMatch):
-            raise argmatch_error(cmd_name, "backup type", value, BACKUP_ARGS,
-                                 1, match.kind)
+            raise argmatch_error(
+                cmd_name, "backup type", value, BACKUP_ARGS, 1, match.kind
+            )
         return match.word
     return "existing"
 
@@ -79,8 +85,9 @@ def sibling_path(path: PathSpec, appended: str) -> PathSpec:
         appended (str): Text appended to the full name (e.g. ``~``).
     """
     virtual = path.virtual.rstrip("/") + appended
-    return PathSpec.from_str_path(virtual,
-                                  rekey(path.virtual, path.vfs_path, virtual))
+    return PathSpec.from_str_path(
+        virtual, rekey(path.virtual, path.vfs_path, virtual)
+    )
 
 
 def parent_path(path: PathSpec) -> PathSpec:
@@ -90,13 +97,17 @@ def parent_path(path: PathSpec) -> PathSpec:
         path (PathSpec): Any non-root path.
     """
     virtual = path.virtual.rstrip("/").rsplit("/", 1)[0] or "/"
-    vfs = path.vfs_path.rstrip("/").rsplit("/", 1)[0] \
-        if "/" in path.vfs_path.rstrip("/") else ""
+    vfs = (
+        path.vfs_path.rstrip("/").rsplit("/", 1)[0]
+        if "/" in path.vfs_path.rstrip("/")
+        else ""
+    )
     return PathSpec.from_str_path(virtual, vfs)
 
 
-async def _numbered_versions(readdir: ReaddirFn | None,
-                             target: PathSpec) -> list[int]:
+async def _numbered_versions(
+    readdir: ReaddirFn | None, target: PathSpec
+) -> list[int]:
     """Existing numbered-backup versions (``name.~N~``) next to a target.
 
     A listing failure propagates: reading it as "no numbered backups" would
@@ -117,14 +128,15 @@ async def _numbered_versions(readdir: ReaddirFn | None,
         name = child.rstrip("/").rsplit("/", 1)[-1]
         if not name.startswith(base):
             continue
-        match = _NUMBERED_SUFFIX.match(name[len(base):])
+        match = _NUMBERED_SUFFIX.match(name[len(base) :])
         if match:
             versions.append(int(match.group(1)))
     return versions
 
 
-async def backup_target(readdir: ReaddirFn | None, target: PathSpec,
-                        control: str, suffix: str) -> PathSpec | None:
+async def backup_target(
+    readdir: ReaddirFn | None, target: PathSpec, control: str, suffix: str
+) -> PathSpec | None:
     """Pick the backup path for a target about to be overwritten.
 
     GNU naming: ``simple`` appends the suffix, ``numbered`` appends

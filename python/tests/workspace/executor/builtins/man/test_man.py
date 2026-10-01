@@ -20,9 +20,13 @@ from mirage.commands.config import RegisteredCommand
 from mirage.commands.spec.types import CommandSpec, Option
 from mirage.policy.types import AdmissionRules
 from mirage.workspace.cli.registry import CLIRegistry
-from mirage.workspace.executor.builtins.man import (ManEntry, _command_entry,
-                                                    _render_man_index,
-                                                    _render_page, handle_man)
+from mirage.workspace.executor.builtins.man import (
+    ManEntry,
+    _command_entry,
+    _render_man_index,
+    _render_page,
+    handle_man,
+)
 from mirage.workspace.session import SessionState
 
 
@@ -98,9 +102,9 @@ def test_command_entry_is_the_first_registration_found():
     parquet = _mk_cmd("cat", spec, filetype=".parquet")
     m1 = _mk_mount("/a/", "ram", cmds={"cat": plain})
     m2 = _mk_mount("/b/", "s3", cmds={"cat": parquet})
-    assert _command_entry("cat", _mk_registry([m1,
-                                               m2])) == ManEntry(name="cat",
-                                                                 spec=spec)
+    assert _command_entry("cat", _mk_registry([m1, m2])) == ManEntry(
+        name="cat", spec=spec
+    )
     assert _command_entry("nope", _mk_registry([m1, m2])) is None
 
 
@@ -147,21 +151,24 @@ def test_handle_man_page_carries_no_vfs():
     m1 = _mk_mount("/a/", "ram", cmds={"cat": cat})
     m2 = _mk_mount("/b/", "s3", cmds={"cat": cat})
     out, io, _node = asyncio.run(
-        handle_man(["cat"], _mk_registry([m1, m2]), _SESSION))
+        handle_man(["cat"], _mk_registry([m1, m2]), _SESSION)
+    )
     assert io.exit_code == 0
     assert out.decode() == "# cat\n\ncat files\n"
 
 
 def test_handle_man_documents_bash_and_sh_from_the_bash_spec():
     out, io, _node = asyncio.run(
-        handle_man(["bash"], _mk_registry([]), _SESSION))
+        handle_man(["bash"], _mk_registry([]), _SESSION)
+    )
     assert io.exit_code == 0
     text = out.decode()
     assert text.startswith("# bash\n")
     assert "-c" in text
     assert "RESOURCES" not in text
-    sh, io2, _node = asyncio.run(handle_man(["sh"], _mk_registry([]),
-                                            _SESSION))
+    sh, io2, _node = asyncio.run(
+        handle_man(["sh"], _mk_registry([]), _SESSION)
+    )
     assert io2.exit_code == 0
     assert sh.decode().startswith("# sh\n")
 
@@ -176,10 +183,12 @@ def test_render_man_index_lists_every_name_once_sorted():
     m1 = _mk_mount("/a/", "ram", cmds={"ls": ls}, general={"bc": bc})
     m2 = _mk_mount("/b/", "s3", cmds={"cat": cat}, general={"bc": bc})
     text = _render_man_index(_mk_registry([m1, m2]), _SESSION)
-    assert text == ("# commands\n\n"
-                    "- bc \u2014 bc desc\n"
-                    "- cat \u2014 cat files\n"
-                    "- ls \u2014 ls files\n")
+    assert text == (
+        "# commands\n\n"
+        "- bc \u2014 bc desc\n"
+        "- cat \u2014 cat files\n"
+        "- ls \u2014 ls files\n"
+    )
     assert "ram" not in text and "s3" not in text
 
 
@@ -195,12 +204,18 @@ def _cli_tree() -> CLISpec:
         name="linear",
         description="Linear API client",
         subcommands=(
-            CLISpec(name="issue",
-                    description="Manage issues",
-                    aliases=("i", ),
-                    subcommands=(CLISpec(name="create",
-                                         description="Create one",
-                                         fn=lambda: None), )),
+            CLISpec(
+                name="issue",
+                description="Manage issues",
+                aliases=("i",),
+                subcommands=(
+                    CLISpec(
+                        name="create",
+                        description="Create one",
+                        fn=lambda: None,
+                    ),
+                ),
+            ),
             CLISpec(name="team", description="Manage one", fn=lambda: None),
         ),
     )
@@ -220,7 +235,8 @@ def _cli_registry(mounts=None):
 
 def test_handle_man_renders_an_installed_cli():
     out, io, _node = asyncio.run(
-        handle_man(["linear"], _cli_registry(), _SESSION))
+        handle_man(["linear"], _cli_registry(), _SESSION)
+    )
     assert io.exit_code == 0
     text = out.decode()
     assert "Usage: linear" in text
@@ -229,11 +245,13 @@ def test_handle_man_renders_an_installed_cli():
 
 def test_handle_man_descends_a_verb_path_and_resolves_aliases():
     reg = _cli_registry()
-    text = asyncio.run(handle_man(["linear", "issue", "create"], reg,
-                                  _SESSION))[0].decode()
+    text = asyncio.run(
+        handle_man(["linear", "issue", "create"], reg, _SESSION)
+    )[0].decode()
     assert "Usage: linear issue create" in text
-    aliased = asyncio.run(handle_man(["linear", "i", "create"], reg,
-                                     _SESSION))[0].decode()
+    aliased = asyncio.run(
+        handle_man(["linear", "i", "create"], reg, _SESSION)
+    )[0].decode()
     assert aliased == text
 
 
@@ -245,8 +263,9 @@ def test_handle_man_lists_only_the_verbs_the_allow_list_reaches():
     assert "team" not in top
     # The same narrowing one level down, where the pattern names the
     # only leaf the profile holds.
-    inner = asyncio.run(handle_man(["linear", "issue"], reg,
-                                   session))[0].decode()
+    inner = asyncio.run(handle_man(["linear", "issue"], reg, session))[
+        0
+    ].decode()
     assert "create" in inner
     # A verb no pattern reaches has no page, in man's own words.
     out, io, node = asyncio.run(handle_man(["linear", "team"], reg, session))
@@ -256,13 +275,16 @@ def test_handle_man_lists_only_the_verbs_the_allow_list_reaches():
     assert node.exit_code == 1
     # A session with no list still reads the whole tree, and so does the
     # head word for the narrowed one: some line of it runs.
-    assert "team" in asyncio.run(handle_man(["linear"], reg,
-                                            _SESSION))[0].decode()
+    assert (
+        "team"
+        in asyncio.run(handle_man(["linear"], reg, _SESSION))[0].decode()
+    )
 
 
 def test_handle_man_unknown_verb_names_the_whole_line():
     out, io, node = asyncio.run(
-        handle_man(["linear", "bogus"], _cli_registry(), _SESSION))
+        handle_man(["linear", "bogus"], _cli_registry(), _SESSION)
+    )
     assert out is None
     assert io.exit_code == 1
     assert io.stderr == b"man: no entry for linear bogus\n"
@@ -281,8 +303,10 @@ def test_render_man_index_lists_installed_clis_after_commands():
     cat = _mk_cmd("cat", CommandSpec(description="cat files"))
     mount = _mk_mount("/ram/", "ram", cmds={"cat": cat})
     text = _render_man_index(_cli_registry([mount]), _SESSION)
-    assert text == ("# commands\n\n- cat \u2014 cat files\n\n"
-                    "# clis\n\n- linear \u2014 Linear API client\n")
+    assert text == (
+        "# commands\n\n- cat \u2014 cat files\n\n"
+        "# clis\n\n- linear \u2014 Linear API client\n"
+    )
 
 
 def test_render_man_index_omits_the_cli_section_when_none_installed():

@@ -36,39 +36,41 @@ def index():
 
 @pytest.mark.asyncio
 async def test_read_message(accessor, index):
-    await index.set_dir("/gmail/INBOX/2026-04-12", [
-        ("Test_Email__msg1.gmail.json",
-         IndexEntry(
-             id="msg1",
-             name="Test Email",
-             resource_type="gmail/message",
-             vfs_name="Test_Email__msg1.gmail.json",
-         )),
-    ])
+    await index.set_dir(
+        "/gmail/INBOX/2026-04-12",
+        [
+            (
+                "Test_Email__msg1.gmail.json",
+                IndexEntry(
+                    id="msg1",
+                    name="Test Email",
+                    resource_type="gmail/message",
+                    vfs_name="Test_Email__msg1.gmail.json",
+                ),
+            ),
+        ],
+    )
     raw_msg = {
         "id": "msg1",
         "threadId": "t1",
         "snippet": "Hello!",
         "payload": {
-            "headers": [{
-                "name": "Subject",
-                "value": "Test Email"
-            }],
+            "headers": [{"name": "Subject", "value": "Test Email"}],
         },
     }
     with patch(
-            "mirage.core.gmail.read.get_message_raw",
-            new_callable=AsyncMock,
-            return_value=raw_msg,
+        "mirage.core.gmail.read.get_message_raw",
+        new_callable=AsyncMock,
+        return_value=raw_msg,
     ):
         result = await read(
             accessor,
             PathSpec(
                 vfs_path=mount_key(
-                    "/gmail/INBOX/2026-04-12"
-                    "/Test_Email__msg1.gmail.json", "/gmail"),
-                virtual="/gmail/INBOX/2026-04-12"
-                "/Test_Email__msg1.gmail.json",
+                    "/gmail/INBOX/2026-04-12/Test_Email__msg1.gmail.json",
+                    "/gmail",
+                ),
+                virtual="/gmail/INBOX/2026-04-12/Test_Email__msg1.gmail.json",
                 directory="/gmail/INBOX/2026-04-12"
                 "/Test_Email__msg1.gmail.json",
             ),
@@ -84,34 +86,44 @@ async def test_read_not_found(accessor, index):
     with pytest.raises(FileNotFoundError):
         await read(
             accessor,
-            PathSpec(vfs_path=mount_key("/gmail/INBOX/nonexistent.gmail.json",
-                                        "/gmail"),
-                     virtual="/gmail/INBOX/nonexistent.gmail.json",
-                     directory="/gmail/INBOX/nonexistent.gmail.json"),
+            PathSpec(
+                vfs_path=mount_key(
+                    "/gmail/INBOX/nonexistent.gmail.json", "/gmail"
+                ),
+                virtual="/gmail/INBOX/nonexistent.gmail.json",
+                directory="/gmail/INBOX/nonexistent.gmail.json",
+            ),
             index,
         )
 
 
 @pytest.mark.asyncio
 async def test_read_is_directory(accessor, index):
-    await index.set_dir("/gmail", [
-        ("INBOX",
-         IndexEntry(
-             id="INBOX",
-             name="INBOX",
-             resource_type="gmail/label",
-             vfs_name="INBOX",
-         )),
-    ])
+    await index.set_dir(
+        "/gmail",
+        [
+            (
+                "INBOX",
+                IndexEntry(
+                    id="INBOX",
+                    name="INBOX",
+                    resource_type="gmail/label",
+                    vfs_name="INBOX",
+                ),
+            ),
+        ],
+    )
     # A directory kind has no reader, and a matched shape alone is no
     # existence proof, so the kit answers "No such file" (the same rule
     # gcal, notion and the database mounts pin).
     with pytest.raises(FileNotFoundError):
         await read(
             accessor,
-            PathSpec(vfs_path=mount_key("/gmail/INBOX", "/gmail"),
-                     virtual="/gmail/INBOX",
-                     directory="/gmail/INBOX"),
+            PathSpec(
+                vfs_path=mount_key("/gmail/INBOX", "/gmail"),
+                virtual="/gmail/INBOX",
+                directory="/gmail/INBOX",
+            ),
             index,
         )
 
@@ -126,47 +138,38 @@ async def test_read_auto_bootstraps_from_empty_index(accessor, index):
         "labelIds": ["INBOX"],
         "snippet": "hello",
         "payload": {
-            "headers": [{
-                "name": "Subject",
-                "value": "Hello World"
-            }],
+            "headers": [{"name": "Subject", "value": "Hello World"}],
         },
     }
     with (
-            patch(
-                "mirage.core.gmail.readdir.list_labels",
-                new_callable=AsyncMock,
-                return_value=[{
-                    "id": "INBOX",
-                    "name": "INBOX",
-                    "type": "system"
-                }],
-            ),
-            patch(
-                "mirage.core.gmail.readdir.list_messages",
-                new_callable=AsyncMock,
-                return_value=[{
-                    "id": "msg-1",
-                    "threadId": "t-1"
-                }],
-            ),
-            patch(
-                "mirage.core.gmail.readdir.get_message_raw",
-                new_callable=AsyncMock,
-                return_value=raw_msg,
-            ),
-            patch(
-                "mirage.core.gmail.read.get_message_raw",
-                new_callable=AsyncMock,
-                return_value=raw_msg,
-            ),
+        patch(
+            "mirage.core.gmail.readdir.list_labels",
+            new_callable=AsyncMock,
+            return_value=[{"id": "INBOX", "name": "INBOX", "type": "system"}],
+        ),
+        patch(
+            "mirage.core.gmail.readdir.list_messages",
+            new_callable=AsyncMock,
+            return_value=[{"id": "msg-1", "threadId": "t-1"}],
+        ),
+        patch(
+            "mirage.core.gmail.readdir.get_message_raw",
+            new_callable=AsyncMock,
+            return_value=raw_msg,
+        ),
+        patch(
+            "mirage.core.gmail.read.get_message_raw",
+            new_callable=AsyncMock,
+            return_value=raw_msg,
+        ),
     ):
         result = await read(
             accessor,
             PathSpec(
                 vfs_path=mount_key(
-                    "/gmail/INBOX/2026-04-27"
-                    "/Hello_World__msg-1.gmail.json", "/gmail"),
+                    "/gmail/INBOX/2026-04-27/Hello_World__msg-1.gmail.json",
+                    "/gmail",
+                ),
                 virtual="/gmail/INBOX/2026-04-27"
                 "/Hello_World__msg-1.gmail.json",
                 directory="/gmail/INBOX/2026-04-27"
@@ -180,46 +183,56 @@ async def test_read_auto_bootstraps_from_empty_index(accessor, index):
 
 @pytest.mark.asyncio
 async def test_read_attachment(accessor, index):
-    await index.set_dir("/gmail/INBOX/2026-04-12", [
-        ("Meeting__msg1.gmail.json",
-         IndexEntry(
-             id="msg1",
-             name="Meeting",
-             resource_type="gmail/message",
-             vfs_name="Meeting__msg1.gmail.json",
-         )),
-        ("Meeting__msg1",
-         IndexEntry(
-             id="msg1",
-             name="Meeting__msg1",
-             resource_type="gmail/attachment_dir",
-             vfs_name="Meeting__msg1",
-         )),
-    ])
+    await index.set_dir(
+        "/gmail/INBOX/2026-04-12",
+        [
+            (
+                "Meeting__msg1.gmail.json",
+                IndexEntry(
+                    id="msg1",
+                    name="Meeting",
+                    resource_type="gmail/message",
+                    vfs_name="Meeting__msg1.gmail.json",
+                ),
+            ),
+            (
+                "Meeting__msg1",
+                IndexEntry(
+                    id="msg1",
+                    name="Meeting__msg1",
+                    resource_type="gmail/attachment_dir",
+                    vfs_name="Meeting__msg1",
+                ),
+            ),
+        ],
+    )
     await index.set_dir(
         "/gmail/INBOX/2026-04-12/Meeting__msg1",
         [
-            ("report.pdf",
-             IndexEntry(
-                 id="att1",
-                 name="report.pdf",
-                 resource_type="gmail/attachment",
-                 vfs_name="report.pdf",
-                 size=1024,
-             )),
+            (
+                "report.pdf",
+                IndexEntry(
+                    id="att1",
+                    name="report.pdf",
+                    resource_type="gmail/attachment",
+                    vfs_name="report.pdf",
+                    size=1024,
+                ),
+            ),
         ],
     )
     with patch(
-            "mirage.core.gmail.read.get_attachment",
-            new_callable=AsyncMock,
-            return_value=b"pdf-bytes",
+        "mirage.core.gmail.read.get_attachment",
+        new_callable=AsyncMock,
+        return_value=b"pdf-bytes",
     ):
         result = await read(
             accessor,
             PathSpec(
                 vfs_path=mount_key(
                     "/gmail/INBOX/2026-04-12/Meeting__msg1/report.pdf",
-                    "/gmail"),
+                    "/gmail",
+                ),
                 virtual="/gmail/INBOX/2026-04-12/Meeting__msg1/report.pdf",
                 directory="/gmail/INBOX/2026-04-12/Meeting__msg1/report.pdf",
             ),

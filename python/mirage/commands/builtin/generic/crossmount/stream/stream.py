@@ -14,10 +14,14 @@
 
 from collections.abc import AsyncIterator
 
-from mirage.commands.builtin.generic.crossmount.constants import \
-    LINE_STREAM_COMMANDS
-from mirage.commands.builtin.generic.crossmount.types import (Cmd, CrossResult,
-                                                              RunSingle)
+from mirage.commands.builtin.generic.crossmount.constants import (
+    LINE_STREAM_COMMANDS,
+)
+from mirage.commands.builtin.generic.crossmount.types import (
+    Cmd,
+    CrossResult,
+    RunSingle,
+)
 from mirage.commands.spec.types import FlagValue
 from mirage.commands.spec.usage import read_fail_exit_line
 from mirage.io import IOResult
@@ -50,8 +54,9 @@ async def _line_ended(source: ByteSource) -> AsyncIterator[bytes]:
         yield b"\n"
 
 
-def _respell_fetch_stderr(stderr: bytes, cmd_name: str,
-                          scope: PathSpec) -> bytes:
+def _respell_fetch_stderr(
+    stderr: bytes, cmd_name: str, scope: PathSpec
+) -> bytes:
     # The per-operand fetch is a native Cmd.CAT sub-run, so its error lines
     # carry the fetch command's voice; each is said again in the real
     # command's (its prefix, its quoting, the step it names) so the
@@ -59,12 +64,17 @@ def _respell_fetch_stderr(stderr: bytes, cmd_name: str,
     text = stderr.decode("utf-8", "surrogateescape")
     return "\n".join(
         revoice_fs_error_line(line, Cmd.CAT, cmd_name, scope)
-        for line in text.split("\n")).encode("utf-8", "surrogateescape")
+        for line in text.split("\n")
+    ).encode("utf-8", "surrogateescape")
 
 
-async def run_stream(cmd_name: str, scopes: list[PathSpec],
-                     text_args: list[str], flag_kwargs: dict[str, FlagValue],
-                     run_single: RunSingle) -> CrossResult:
+async def run_stream(
+    cmd_name: str,
+    scopes: list[PathSpec],
+    text_args: list[str],
+    flag_kwargs: dict[str, FlagValue],
+    run_single: RunSingle,
+) -> CrossResult:
     """Run a stream command (``cmd files...`` == ``cat files... | cmd``).
 
     Each operand's raw bytes come from a native flagless ``cat`` on its
@@ -100,8 +110,9 @@ async def run_stream(cmd_name: str, scopes: list[PathSpec],
                 if cmd_name != Cmd.CAT:
                     rendered = _respell_fetch_stderr(rendered, cmd_name, scope)
                     io.stderr = rendered
-                fail_code = max(fail_code,
-                                read_fail_exit_line(cmd_name, rendered))
+                fail_code = max(
+                    fail_code, read_fail_exit_line(cmd_name, rendered)
+                )
             # The fetch ran as cat, so its exit code is cat's whatever
             # went wrong. fail_code already carries the real command's,
             # and merging cat's over it would win the `or` below.
@@ -127,11 +138,14 @@ async def run_stream(cmd_name: str, scopes: list[PathSpec],
             merged_io.exit_code = merged_io.exit_code or fail_code or 1
         return body, merged_io
 
-    out, io = await run_single(cmd_name, [],
-                               list(text_args),
-                               flag_kwargs,
-                               stdin=body,
-                               resolve_hint=scopes[0])
+    out, io = await run_single(
+        cmd_name,
+        [],
+        list(text_args),
+        flag_kwargs,
+        stdin=body,
+        resolve_hint=scopes[0],
+    )
     merged_io = await merged_io.merge(io)
     if failed:
         merged_io.exit_code = merged_io.exit_code or fail_code or 1

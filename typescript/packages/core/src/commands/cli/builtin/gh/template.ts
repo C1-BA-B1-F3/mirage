@@ -148,7 +148,7 @@ export function renderTemplate(template: string, value: Value): string {
   tokens.push(['text', trim ? template.slice(end).trimStart() : template.slice(end)])
   function render(start: number, stop: number, dot: Value, variables: Variables): string {
     const output: string[] = []
-    for (let i = start; i < stop; ) {
+    for (let i = start; i < stop;) {
       const [tag, action] = tokens[i++] ?? ['', '']
       if (tag === 'text') {
         output.push(action)

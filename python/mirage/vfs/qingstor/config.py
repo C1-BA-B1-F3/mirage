@@ -16,5 +16,4 @@ from mirage.vfs.s3_alias import RegionEndpointConfig
 
 
 class QingStorConfig(RegionEndpointConfig):
-
     ENDPOINT = "https://s3.{region}.qingstor.com"

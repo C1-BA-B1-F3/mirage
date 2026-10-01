@@ -28,24 +28,33 @@ SNAPSHOT_NAME = "mirage-fuse"
 
 MIRAGE_GIT_SPEC = (
     "mirage-ai[s3,fuse] @ "
-    "git+https://github.com/strukto-ai/mirage.git#subdirectory=python")
+    "git+https://github.com/strukto-ai/mirage.git#subdirectory=python"
+)
 
 
 async def main() -> None:
     client = AsyncDaytona()
-    image = (Image.debian_slim("3.12").run_commands(
-        "apt-get update "
-        "&& apt-get install -y --no-install-recommends "
-        "    git fuse3 libfuse3-dev "
-        "&& sed -i 's/^#user_allow_other/user_allow_other/' /etc/fuse.conf "
-        "&& rm -rf /var/lib/apt/lists/*").pip_install(MIRAGE_GIT_SPEC))
+    image = (
+        Image.debian_slim("3.12")
+        .run_commands(
+            "apt-get update "
+            "&& apt-get install -y --no-install-recommends "
+            "    git fuse3 libfuse3-dev "
+            "&& sed -i 's/^#user_allow_other/user_allow_other/' /etc/fuse.conf "
+            "&& rm -rf /var/lib/apt/lists/*"
+        )
+        .pip_install(MIRAGE_GIT_SPEC)
+    )
     try:
         snapshot = await client.snapshot.create(
-            CreateSnapshotParams(name=SNAPSHOT_NAME,
-                                 image=image,
-                                 resources=Resources(cpu=1, memory=1, disk=3)),
+            CreateSnapshotParams(
+                name=SNAPSHOT_NAME,
+                image=image,
+                resources=Resources(cpu=1, memory=1, disk=3),
+            ),
             on_logs=lambda line: print(f"  build: {line}"),
-            timeout=0)
+            timeout=0,
+        )
         print(f"snapshot ready: {snapshot.name}")
     finally:
         await client.close()

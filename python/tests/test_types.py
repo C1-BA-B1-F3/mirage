@@ -17,9 +17,21 @@ from dataclasses import FrozenInstanceError
 import pytest
 from pydantic import ValidationError
 
-from mirage.types import (DEFAULT_READ_TTL, Aggr, CacheFacts, FileStat,
-                          FileType, Limit, MountMode, OnExceed, PathSpec,
-                          ReadPolicy, ReadSpec, parse_mount_mode, word_text)
+from mirage.types import (
+    DEFAULT_READ_TTL,
+    Aggr,
+    CacheFacts,
+    FileStat,
+    FileType,
+    Limit,
+    MountMode,
+    OnExceed,
+    PathSpec,
+    ReadPolicy,
+    ReadSpec,
+    parse_mount_mode,
+    word_text,
+)
 
 
 def test_filestat_defaults():
@@ -86,9 +98,9 @@ def test_aggr_all_truncate_stays_truncate():
 
 def test_every_field_declares_an_aggr_rule():
     for name, field in Limit.model_fields.items():
-        assert any(
-            isinstance(m, Aggr)
-            for m in field.metadata), (f"field {name!r} has no Aggr rule")
+        assert any(isinstance(m, Aggr) for m in field.metadata), (
+            f"field {name!r} has no Aggr rule"
+        )
 
 
 def test_pathspec_requires_vfs_path():
@@ -97,10 +109,12 @@ def test_pathspec_requires_vfs_path():
 
 
 def test_pathspec_raw_path_kept_when_given():
-    p = PathSpec(virtual="/data/a.txt",
-                 directory="/data/",
-                 vfs_path="a.txt",
-                 raw_path="../a.txt")
+    p = PathSpec(
+        virtual="/data/a.txt",
+        directory="/data/",
+        vfs_path="a.txt",
+        raw_path="../a.txt",
+    )
     assert p.raw_path == "../a.txt"
 
 
@@ -114,18 +128,22 @@ def test_word_text_passes_strings_through():
 
 
 def test_word_text_renders_paths_as_typed():
-    p = PathSpec(virtual="/data/a.txt",
-                 directory="/data/",
-                 vfs_path="a.txt",
-                 raw_path="a.txt")
+    p = PathSpec(
+        virtual="/data/a.txt",
+        directory="/data/",
+        vfs_path="a.txt",
+        raw_path="a.txt",
+    )
     assert word_text(p) == "a.txt"
 
 
 def test_pathspec_dir_trims_vfs_path():
-    p = PathSpec(virtual="/data/sub/x.txt",
-                 directory="/data/sub/",
-                 vfs_path="sub/x.txt",
-                 pattern="*.txt")
+    p = PathSpec(
+        virtual="/data/sub/x.txt",
+        directory="/data/sub/",
+        vfs_path="sub/x.txt",
+        pattern="*.txt",
+    )
     d = p.dir
     assert d.virtual == "/data/sub/"
     assert d.vfs_path == "sub"

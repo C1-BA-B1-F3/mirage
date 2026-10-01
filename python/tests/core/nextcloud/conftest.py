@@ -44,10 +44,10 @@ class _FakeFile:
 
     async def read(self, size: int | None = None) -> bytes:
         if size is None:
-            out = self.data[self.pos:]
+            out = self.data[self.pos :]
             self.pos = len(self.data)
         else:
-            out = self.data[self.pos:self.pos + size]
+            out = self.data[self.pos : self.pos + size]
             self.pos += len(out)
         return out
 
@@ -88,7 +88,8 @@ class FakeAsyncOperator:
         k = key.rstrip("/")
         if key.endswith("/"):
             if k + "/" in self.dirs or any(
-                    f.startswith(k + "/") for f in self.files):
+                f.startswith(k + "/") for f in self.files
+            ):
                 return _FakeMetadata(content_length=0, mode=EntryMode.Dir)
             raise NotFound("path not found", key)
         if k in self.files:
@@ -128,7 +129,7 @@ class FakeAsyncOperator:
     async def remove_all(self, prefix: str) -> None:
         pfx = prefix.rstrip("/")
         for f in [
-                f for f in self.files if f == pfx or f.startswith(pfx + "/")
+            f for f in self.files if f == pfx or f.startswith(pfx + "/")
         ]:
             self.files.pop(f, None)
             self.metas.pop(f, None)
@@ -141,19 +142,21 @@ class FakeAsyncOperator:
             for f in self.files:
                 if not f.startswith(pfx):
                     continue
-                rest = f[len(pfx):]
+                rest = f[len(pfx) :]
                 parts = rest.split("/")
                 for i in range(len(parts) - 1):
-                    dkey = pfx + "/".join(parts[:i + 1]) + "/"
+                    dkey = pfx + "/".join(parts[: i + 1]) + "/"
                     if dkey not in seen:
                         seen.add(dkey)
                         recursive_entries.append(
                             _FakeEntry(
                                 path=dkey,
                                 metadata=_FakeMetadata(mode=EntryMode.Dir),
-                            ))
+                            )
+                        )
                 recursive_entries.append(
-                    _FakeEntry(path=f, metadata=self.metas[f]))
+                    _FakeEntry(path=f, metadata=self.metas[f])
+                )
 
             async def _iter_recursive():
                 for e in recursive_entries:
@@ -166,19 +169,24 @@ class FakeAsyncOperator:
         if key in self.files:
             # WebDAV PROPFIND on a file returns the file itself.
             entries.append(_FakeEntry(path=key, metadata=self.metas[key]))
-        elif pfx == "" or pfx in self.dirs or any(
-                f.startswith(pfx) for f in self.files):
+        elif (
+            pfx == ""
+            or pfx in self.dirs
+            or any(f.startswith(pfx) for f in self.files)
+        ):
             # PROPFIND on a collection lists the collection itself, so an
             # empty directory yields one entry where a missing path yields
             # none. Probed against Nextcloud 30: op.list("emptydir/")
             # answers ["emptydir/"] and op.list("never/") answers [].
             entries.append(
-                _FakeEntry(path=pfx,
-                           metadata=_FakeMetadata(mode=EntryMode.Dir)))
+                _FakeEntry(
+                    path=pfx, metadata=_FakeMetadata(mode=EntryMode.Dir)
+                )
+            )
         for f in self.files:
             if not f.startswith(pfx):
                 continue
-            rest = f[len(pfx):]
+            rest = f[len(pfx) :]
             if "/" in rest:
                 subdir = rest.split("/", 1)[0]
                 dkey = pfx + subdir + "/"
@@ -188,7 +196,8 @@ class FakeAsyncOperator:
                         _FakeEntry(
                             path=dkey,
                             metadata=_FakeMetadata(mode=EntryMode.Dir),
-                        ))
+                        )
+                    )
             else:
                 entries.append(_FakeEntry(path=f, metadata=self.metas[f]))
 
@@ -201,7 +210,8 @@ class FakeAsyncOperator:
     async def scan(self, path: str):
         pfx = path.lstrip("/")
         entries = [
-            _FakeEntry(path=f, metadata=self.metas[f]) for f in self.files
+            _FakeEntry(path=f, metadata=self.metas[f])
+            for f in self.files
             if f.startswith(pfx)
         ]
 

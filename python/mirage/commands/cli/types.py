@@ -19,8 +19,12 @@ from typing import Any, Callable, Generic, Literal, TypeVar
 from pydantic import BaseModel
 
 from mirage.commands.cli.compile import validate_cli
-from mirage.commands.spec.types import (CommandSpec, FlagValue,
-                                        ParsedFlagValue, UsageStyle)
+from mirage.commands.spec.types import (
+    CommandSpec,
+    FlagValue,
+    ParsedFlagValue,
+    UsageStyle,
+)
 from mirage.io.types import ByteSource, IOResult
 from mirage.ops.types import NamespaceView, SessionView, StatPath
 from mirage.process.types import ProcessView
@@ -77,6 +81,7 @@ class CLIDoors:
             is not a mount, so an account CLI may read it without
             breaking the tier rule.
     """
+
     dispatch: DispatchFn | None = None
     stat_path: StatPath | None = None
     ns: NamespaceView | None = None
@@ -130,6 +135,7 @@ class CLIInvocation(Generic[ConfigT]):
             restates the options declared one level up. None where no
             executor built the record.
     """
+
     config: ConfigT
     argv: tuple[str, ...] = ()
     paths: tuple[PathSpec, ...] = ()
@@ -201,6 +207,7 @@ class CLISpec(CommandSpec):
             message and the exit code sees what it would from the real
             one.
     """
+
     name: str = ""
     aliases: tuple[str, ...] = ()
     # Any callable is valid, including stateful callable objects whose
@@ -246,6 +253,7 @@ class WalkResult:
         stream (Literal["stdout", "stderr"]): where ``output`` goes.
         exit_code (int): exit status for a rendered outcome.
     """
+
     leaf: "CLISpec | None" = None
     path: tuple[str, ...] = ()
     group_flags: WalkFlagBag = field(default_factory=dict)

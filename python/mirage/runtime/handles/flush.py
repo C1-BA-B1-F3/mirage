@@ -22,8 +22,9 @@ FlushKind = Literal["append", "write"]
 NO_WRITE = 2**63 - 1
 
 
-def plan_flush(base_len: int, low_write: int,
-               buf: bytes | bytearray) -> tuple[FlushKind, bytes]:
+def plan_flush(
+    base_len: int, low_write: int, buf: bytes | bytearray
+) -> tuple[FlushKind, bytes]:
     """Decide what a closing whole-file buffer owes the mount.
 
     Every encoder buffers a whole file and has to answer the same

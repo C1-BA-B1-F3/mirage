@@ -73,8 +73,10 @@ async def test_raw_read_is_not_served_from_the_file_cache():
     # Distinct from the filetype op's own bytes, so a warm hit is
     # distinguishable from the op running again.
     await ws.apply_io(
-        IOResult(reads={"/data/books.tally": b"CACHED"},
-                 cache=["/data/books.tally"]))
+        IOResult(
+            reads={"/data/books.tally": b"CACHED"}, cache=["/data/books.tally"]
+        )
+    )
     assert await ws.vfs.read("/data/books.tally") == b"CACHED"
     assert await ws.vfs.read("/data/books.tally", raw=True) == b"STORED"
 
@@ -88,7 +90,8 @@ async def test_a_warm_cache_still_answers_a_ranged_read_with_the_window():
     ws = _workspace(_CachingRAM())
     await ws.vfs.write("/data/f.bin", b"0123456789")
     await ws.apply_io(
-        IOResult(reads={"/data/f.bin": b"0123456789"}, cache=["/data/f.bin"]))
+        IOResult(reads={"/data/f.bin": b"0123456789"}, cache=["/data/f.bin"])
+    )
     assert await ws.vfs.read("/data/f.bin", 2, 3) == b"234"
     assert await ws.vfs.read("/data/f.bin") == b"0123456789"
     assert await ws.vfs.read("/data/f.bin", 7) == b"789"
@@ -102,5 +105,6 @@ async def test_a_cold_and_a_warm_ranged_read_agree():
     await ws.vfs.write("/data/f.bin", b"0123456789")
     cold = await ws.vfs.read("/data/f.bin", 2, 3)
     await ws.apply_io(
-        IOResult(reads={"/data/f.bin": b"0123456789"}, cache=["/data/f.bin"]))
+        IOResult(reads={"/data/f.bin": b"0123456789"}, cache=["/data/f.bin"])
+    )
     assert await ws.vfs.read("/data/f.bin", 2, 3) == cold

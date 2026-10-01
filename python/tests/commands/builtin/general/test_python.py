@@ -31,35 +31,35 @@ async def ws():
 
 @pytest_asyncio.fixture
 async def ws_cpython():
-    workspace = Workspace({"/": RAMVFS()},
-                          mode=MountMode.EXEC,
-                          runtimes=[LocalRuntime()])
+    workspace = Workspace(
+        {"/": RAMVFS()}, mode=MountMode.EXEC, runtimes=[LocalRuntime()]
+    )
     yield workspace
     await workspace.close()
 
 
 GUARDED = {
     "commands": {
-        "deny": [{
-            "reason": "protected",
-            "commands": {
-                "python3": ["/secret.py"]
-            }
-        }]
+        "deny": [
+            {"reason": "protected", "commands": {"python3": ["/secret.py"]}}
+        ]
     }
 }
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("line, shown", [
-    ("python3 secret.py", "secret.py"),
-    ("python3 ./secret.py", "./secret.py"),
-    ("python3 -u -- secret.py", "secret.py"),
-])
+@pytest.mark.parametrize(
+    "line, shown",
+    [
+        ("python3 secret.py", "secret.py"),
+        ("python3 ./secret.py", "./secret.py"),
+        ("python3 -u -- secret.py", "secret.py"),
+    ],
+)
 async def test_a_rule_on_the_script_reads_it_however_it_is_typed(line, shown):
-    ws = Workspace({"/": RAMVFS()},
-                   mode=MountMode.EXEC,
-                   profiles={"guarded": GUARDED})
+    ws = Workspace(
+        {"/": RAMVFS()}, mode=MountMode.EXEC, profiles={"guarded": GUARDED}
+    )
     try:
         await ws.shell("printf 'print(1)\\n' > /secret.py")
         agent = await ws.session("agent", profile="guarded")
@@ -72,15 +72,18 @@ async def test_a_rule_on_the_script_reads_it_however_it_is_typed(line, shown):
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("line", [
-    "python3 s.py secret.py",
-    "python3 -c 'print(argv[1:])' secret.py",
-    "echo 'print(argv[1:])' | python3 - secret.py",
-])
+@pytest.mark.parametrize(
+    "line",
+    [
+        "python3 s.py secret.py",
+        "python3 -c 'print(argv[1:])' secret.py",
+        "echo 'print(argv[1:])' | python3 - secret.py",
+    ],
+)
 async def test_the_words_after_the_script_stay_its_argv(line):
-    ws = Workspace({"/": RAMVFS()},
-                   mode=MountMode.EXEC,
-                   profiles={"guarded": GUARDED})
+    ws = Workspace(
+        {"/": RAMVFS()}, mode=MountMode.EXEC, profiles={"guarded": GUARDED}
+    )
     try:
         await ws.shell("printf 'print(argv[1:])\\n' > /s.py")
         agent = await ws.session("agent", profile="guarded")
@@ -93,11 +96,9 @@ async def test_the_words_after_the_script_stay_its_argv(line):
 
 @pytest_asyncio.fixture
 async def two_mounts():
-    workspace = Workspace({
-        "/w": RAMVFS(),
-        "/t": RAMVFS()
-    },
-                          mode=MountMode.EXEC)
+    workspace = Workspace(
+        {"/w": RAMVFS(), "/t": RAMVFS()}, mode=MountMode.EXEC
+    )
     await workspace.shell("mkdir -p /w/data")
     await workspace.shell("printf 'print(argv[1:])\\n' > /w/s.py")
     await workspace.shell("echo x > /w/data/in.csv")
@@ -107,21 +108,36 @@ async def two_mounts():
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("line, argv", [
-    ("cd /w && python3 s.py data/in.csv data/in ./data/in.csv /w/data/",
-     "['data/in.csv', 'data/in', './data/in.csv', '/w/data/']"),
-    ("cd /w && python3 -c 'print(argv[1:])' data/in.csv", "['data/in.csv']"),
-    ("cd /w && python3 s.py data/*.csv 'data/*.csv'",
-     "['data/in.csv', 'data/*.csv']"),
-    ("python3 /w/s.py /t/q.txt", "['/t/q.txt']"),
-    ("python3 /w/s.py /t/new.csv", "['/t/new.csv']"),
-    ("python3 -c 'print(argv[1:])' /t/q.txt /w/data/in.csv",
-     "['/t/q.txt', '/w/data/in.csv']"),
-    ("cd /t && python3 /w/s.py --input /t/q.txt --out=/t/o.csv",
-     "['--input', '/t/q.txt', '--out=/t/o.csv']"),
-])
+@pytest.mark.parametrize(
+    "line, argv",
+    [
+        (
+            "cd /w && python3 s.py data/in.csv data/in ./data/in.csv /w/data/",
+            "['data/in.csv', 'data/in', './data/in.csv', '/w/data/']",
+        ),
+        (
+            "cd /w && python3 -c 'print(argv[1:])' data/in.csv",
+            "['data/in.csv']",
+        ),
+        (
+            "cd /w && python3 s.py data/*.csv 'data/*.csv'",
+            "['data/in.csv', 'data/*.csv']",
+        ),
+        ("python3 /w/s.py /t/q.txt", "['/t/q.txt']"),
+        ("python3 /w/s.py /t/new.csv", "['/t/new.csv']"),
+        (
+            "python3 -c 'print(argv[1:])' /t/q.txt /w/data/in.csv",
+            "['/t/q.txt', '/w/data/in.csv']",
+        ),
+        (
+            "cd /t && python3 /w/s.py --input /t/q.txt --out=/t/o.csv",
+            "['--input', '/t/q.txt', '--out=/t/o.csv']",
+        ),
+    ],
+)
 async def test_a_path_shaped_word_is_the_programs_argv_as_typed(
-        two_mounts, line, argv):
+    two_mounts, line, argv
+):
     # bash hands the words over as typed, globs expanded, and the
     # program opens what it likes: a word naming another mount is no
     # second mount for the line.
@@ -140,15 +156,19 @@ async def test_monty_names_a_script_run_from_its_directory(ws):
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("line, file", [
-    ("python3 /w/s.py", "/w/s.py"),
-    ("cd /w && python3 s.py", "/w/s.py"),
-    ("cd /w && python3 ./s.py", "/w/./s.py"),
-    ("cd /w && cat s.py | python3 -", "<stdin>"),
-    ("cd /w && cat s.py | python3", "<stdin>"),
-])
+@pytest.mark.parametrize(
+    "line, file",
+    [
+        ("python3 /w/s.py", "/w/s.py"),
+        ("cd /w && python3 s.py", "/w/s.py"),
+        ("cd /w && python3 ./s.py", "/w/./s.py"),
+        ("cd /w && cat s.py | python3 -", "<stdin>"),
+        ("cd /w && cat s.py | python3", "<stdin>"),
+    ],
+)
 async def test_the_file_door_binds_file_on_a_cpython_runtime(
-        ws_cpython, line, file):
+    ws_cpython, line, file
+):
     # CPython 3.13.5: the operand made absolute as typed, never
     # normalized, and <stdin> for a program piped in.
     await ws_cpython.shell("mkdir /w && printf 'print(__file__)\\n' > /w/s.py")
@@ -161,8 +181,9 @@ async def test_the_file_door_binds_file_on_a_cpython_runtime(
 async def test_a_payload_binds_no_file_on_a_cpython_runtime(ws_cpython):
     io = await ws_cpython.shell("python3 -c 'print(__file__)'")
     assert io.exit_code == 1
-    assert "NameError: name '__file__' is not defined" in (await
-                                                           io.stderr_str())
+    assert "NameError: name '__file__' is not defined" in (
+        await io.stderr_str()
+    )
 
 
 @pytest.mark.asyncio
@@ -210,16 +231,21 @@ async def test_version_reports_the_monty_guest(ws, name, flag):
 async def test_version_reports_the_local_interpreter(ws_cpython):
     io = await ws_cpython.shell("python3 --version")
     assert io.exit_code == 0
-    assert await materialize(
-        io.stdout) == f"Python {sys.version.split()[0]}\n".encode()
+    assert (
+        await materialize(io.stdout)
+        == f"Python {sys.version.split()[0]}\n".encode()
+    )
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("line", [
-    "python3 -c 'print(argv[-1])' --version",
-    "python3 /version.py --version",
-    "echo 'print(argv[-1])' | python3 - --version",
-])
+@pytest.mark.parametrize(
+    "line",
+    [
+        "python3 -c 'print(argv[-1])' --version",
+        "python3 /version.py --version",
+        "echo 'print(argv[-1])' | python3 - --version",
+    ],
+)
 async def test_program_version_operand_is_not_intercepted(ws, line):
     await ws.shell("echo 'print(argv[-1])' > /version.py")
     io = await ws.shell(line)
@@ -235,8 +261,10 @@ async def test_version_without_a_runtime_uses_the_invoked_name(name):
         io = await ws.shell(f"{name} --version")
         assert io.exit_code == 127
         assert await materialize(io.stdout) == b""
-        assert await materialize(io.stderr
-                                 ) == f"{name}: command not found\n".encode()
+        assert (
+            await materialize(io.stderr)
+            == f"{name}: command not found\n".encode()
+        )
     finally:
         await ws.close()
 
@@ -313,7 +341,8 @@ async def test_dash_m_missing_module_is_one_line_not_a_traceback(ws_cpython):
 @pytest.mark.asyncio
 async def test_dash_o_strips_asserts_on_a_cpython_runtime(ws_cpython):
     io = await ws_cpython.shell(
-        "python3 -O -c 'assert False, \"boom\"; print(\"ok\")'")
+        'python3 -O -c \'assert False, "boom"; print("ok")\''
+    )
     assert io.exit_code == 0
     assert await materialize(io.stdout) == b"ok\n"
 
@@ -337,7 +366,8 @@ async def test_ignored_by_design_flags_do_not_warn(ws):
 @pytest.mark.asyncio
 async def test_argv0_on_a_cpython_runtime_is_the_script_not_dash_c(ws_cpython):
     await ws_cpython.shell(
-        "printf 'import sys\\nprint(sys.argv[0])\\n' > /s.py")
+        "printf 'import sys\\nprint(sys.argv[0])\\n' > /s.py"
+    )
     io = await ws_cpython.shell("python3 /s.py")
     assert io.exit_code == 0
     assert await materialize(io.stdout) == b"/s.py\n"
@@ -346,7 +376,8 @@ async def test_argv0_on_a_cpython_runtime_is_the_script_not_dash_c(ws_cpython):
 @pytest.mark.asyncio
 async def test_argv0_on_a_cpython_runtime_under_dash_operand(ws_cpython):
     io = await ws_cpython.shell(
-        "echo 'import sys; print(sys.argv[0])' | python3 - a")
+        "echo 'import sys; print(sys.argv[0])' | python3 - a"
+    )
     assert io.exit_code == 0
     assert await materialize(io.stdout) == b"-\n"
 
@@ -365,19 +396,21 @@ async def test_a_shadowing_function_receives_the_words_as_typed(ws):
     # has no CPython option table, so the `--` the interpreter's handoff
     # would need must not be inserted into its arguments.
     await ws.shell('python3() { echo "$@"; }')
-    io = await ws.shell('python3 -c payload -u x')
+    io = await ws.shell("python3 -c payload -u x")
     assert io.exit_code == 0
     assert await materialize(io.stdout) == b"-c payload -u x\n"
 
 
 @pytest.mark.asyncio
 async def test_command_bypasses_the_function_and_restores_the_handoff(
-        ws_cpython):
+    ws_cpython,
+):
     # `command` masks the function for its inner run, so the interpreter
     # is what runs and -u belongs to the program again.
     await ws_cpython.shell('python3() { echo "$@"; }')
     io = await ws_cpython.shell(
-        'command python3 -c "import sys; print(sys.argv)" -u x')
+        'command python3 -c "import sys; print(sys.argv)" -u x'
+    )
     assert io.exit_code == 0
     assert await materialize(io.stdout) == b"['-c', '-u', 'x']\n"
 
@@ -385,8 +418,9 @@ async def test_command_bypasses_the_function_and_restores_the_handoff(
 @pytest.mark.asyncio
 async def test_unsetting_the_function_restores_the_handoff(ws_cpython):
     await ws_cpython.shell('python3() { echo "$@"; }')
-    await ws_cpython.shell('unset -f python3')
-    io = await ws_cpython.shell('python3 -c "import sys; print(sys.argv)" -u x'
-                                )
+    await ws_cpython.shell("unset -f python3")
+    io = await ws_cpython.shell(
+        'python3 -c "import sys; print(sys.argv)" -u x'
+    )
     assert io.exit_code == 0
     assert await materialize(io.stdout) == b"['-c', '-u', 'x']\n"

@@ -38,9 +38,9 @@ def test_workspace_custom_observe_store():
 
 def test_logs_populated_after_execute():
     obs_store = RAMObserverStore()
-    ws = Workspace({"/data/": RAMVFS()},
-                   mode=MountMode.WRITE,
-                   observe=obs_store)
+    ws = Workspace(
+        {"/data/": RAMVFS()}, mode=MountMode.WRITE, observe=obs_store
+    )
     asyncio.run(ws.shell("echo hello > /data/test.txt"))
     session_files = [k for k in obs_store.files if k.endswith(".jsonl")]
     assert len(session_files) >= 1
@@ -53,9 +53,9 @@ def test_logs_populated_after_execute():
 
 def test_logs_contain_op_records():
     obs_store = RAMObserverStore()
-    ws = Workspace({"/data/": RAMVFS()},
-                   mode=MountMode.WRITE,
-                   observe=obs_store)
+    ws = Workspace(
+        {"/data/": RAMVFS()}, mode=MountMode.WRITE, observe=obs_store
+    )
     asyncio.run(ws.shell("echo hello > /data/test.txt"))
     asyncio.run(ws.shell("cat /data/test.txt"))
     session_files = [k for k in obs_store.files if k.endswith(".jsonl")]
@@ -103,9 +103,13 @@ def test_execute_records_op_source():
 
 def test_execute_records_op_path_per_mount():
     ws = Workspace({"/s3/": RAMVFS(), "/db/": RAMVFS()}, mode=MountMode.WRITE)
-    for line in ("echo one > /s3/report.json", "echo two > /db/report.json",
-                 "cat /s3/report.json", "cat /db/report.json",
-                 "cp /s3/report.json /db/copy.json"):
+    for line in (
+        "echo one > /s3/report.json",
+        "echo two > /db/report.json",
+        "cat /s3/report.json",
+        "cat /db/report.json",
+        "cp /s3/report.json /db/copy.json",
+    ):
         asyncio.run(ws.shell(line))
     events = asyncio.run(ws.observer.events())
     ops = [(e["op"], e["path"]) for e in events if e["type"] == "op"]

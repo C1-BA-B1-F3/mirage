@@ -22,9 +22,11 @@ from mirage.cache.context import CacheInvalidator, active_cache_manager
 from mirage.types import PathSpec, PolymorphicReadFn, ReadBytesFn, ReadStreamFn
 
 
-async def _serve_stream(manager: CacheInvalidator | None,
-                        start: Callable[[], AsyncIterator[bytes]],
-                        path: PathSpec) -> AsyncIterator[bytes]:
+async def _serve_stream(
+    manager: CacheInvalidator | None,
+    start: Callable[[], AsyncIterator[bytes]],
+    path: PathSpec,
+) -> AsyncIterator[bytes]:
     # `start` defers the backend call so a warm hit never opens a stream.
     if manager is not None:
         cached = await manager.cached_bytes(path)
@@ -61,12 +63,13 @@ def cache_aware_read_stream(raw: ReadStreamFn) -> ReadStreamFn:
         raw (ReadStreamFn): the backend ``read_stream`` op.
     """
 
-    def reader(accessor: Accessor | None, path: PathSpec, *args: Any,
-               **kwargs: Any) -> AsyncIterator[bytes]:
+    def reader(
+        accessor: Accessor | None, path: PathSpec, *args: Any, **kwargs: Any
+    ) -> AsyncIterator[bytes]:
         manager = active_cache_manager()
-        return _serve_stream(manager,
-                             partial(raw, accessor, path, *args, **kwargs),
-                             path)
+        return _serve_stream(
+            manager, partial(raw, accessor, path, *args, **kwargs), path
+        )
 
     return reader
 
@@ -82,11 +85,13 @@ def cache_aware_bound_stream(raw: ReadStreamFn) -> ReadStreamFn:
         raw (ReadStreamFn): a bound ``read_stream`` reader.
     """
 
-    def reader(path: PathSpec, *args: Any,
-               **kwargs: Any) -> AsyncIterator[bytes]:
+    def reader(
+        path: PathSpec, *args: Any, **kwargs: Any
+    ) -> AsyncIterator[bytes]:
         manager = active_cache_manager()
-        return _serve_stream(manager, partial(raw, path, *args, **kwargs),
-                             path)
+        return _serve_stream(
+            manager, partial(raw, path, *args, **kwargs), path
+        )
 
     return reader
 
@@ -105,12 +110,14 @@ def cache_aware_read_bytes(raw: ReadBytesFn) -> ReadBytesFn:
 
     bound = active_cache_manager()
 
-    async def reader(accessor: Accessor | None, path: PathSpec, *args: Any,
-                     **kwargs: Any) -> bytes:
+    async def reader(
+        accessor: Accessor | None, path: PathSpec, *args: Any, **kwargs: Any
+    ) -> bytes:
         manager = bound or active_cache_manager()
         if manager is not None:
             return await manager.read_through(
-                path, partial(raw, accessor, path, *args, **kwargs))
+                path, partial(raw, accessor, path, *args, **kwargs)
+            )
         return await raw(accessor, path, *args, **kwargs)
 
     return reader
@@ -163,8 +170,9 @@ def cache_aware_read(raw: PolymorphicReadFn) -> PolymorphicReadFn:
     """
     manager = active_cache_manager()
 
-    async def reader(path: PathSpec, *args: Any,
-                     **kwargs: Any) -> bytes | AsyncIterator[bytes]:
+    async def reader(
+        path: PathSpec, *args: Any, **kwargs: Any
+    ) -> bytes | AsyncIterator[bytes]:
         if manager is not None:
             cached = await manager.cached_bytes(path)
             if cached is not None:

@@ -17,13 +17,16 @@ The mask prints octal by default and symbolically under ``-S``, applies
 to files a redirect, ``touch`` or ``mkdir`` create, and is refused for a
 bad mode with the mask left unchanged.
 """
+
 import pytest
 
 from mirage.types import MountMode
 from mirage.vfs.ram import RAMVFS
 from mirage.workspace import Workspace
-from mirage.workspace.executor.builtins.umask.umask import (parse_umask,
-                                                            symbolic_umask)
+from mirage.workspace.executor.builtins.umask.umask import (
+    parse_umask,
+    symbolic_umask,
+)
 
 
 def _ws() -> Workspace:
@@ -78,8 +81,9 @@ async def test_mask_applies_to_new_entries():
 @pytest.mark.asyncio
 async def test_mkdir_m_ignores_the_mask():
     ws = _ws()
-    out, _ = await _run(ws,
-                        "umask 077; mkdir -m 755 /data/d; stat -c %a /data/d")
+    out, _ = await _run(
+        ws, "umask 077; mkdir -m 755 /data/d; stat -c %a /data/d"
+    )
     assert out == "755\n"
     await ws.close()
 

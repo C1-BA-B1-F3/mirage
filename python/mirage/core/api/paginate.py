@@ -56,6 +56,7 @@ class PageShape:
         next_cursor (Callable[[Mapping[str, Any]], str | None]): reads
             the resume cursor off a reply; None ends the walk.
     """
+
     items_key: str = "results"
     next_cursor: Callable[[Mapping[str, Any]], str | None] = has_more_cursor
 
@@ -63,10 +64,12 @@ class PageShape:
 HAS_MORE_PAGES = PageShape()
 
 
-async def cursor_items(fetch_page: PageFetch,
-                       max_results: int | None = None,
-                       *,
-                       shape: PageShape = HAS_MORE_PAGES) -> list[Any]:
+async def cursor_items(
+    fetch_page: PageFetch,
+    max_results: int | None = None,
+    *,
+    shape: PageShape = HAS_MORE_PAGES,
+) -> list[Any]:
     """Collect every item from a cursor-paginated endpoint.
 
     The default reply protocol is the ``results`` / ``has_more`` /

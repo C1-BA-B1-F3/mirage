@@ -18,9 +18,27 @@ from lancedb.embeddings import EmbeddingFunction, get_registry
 from lancedb.pydantic import LanceModel, Vector
 
 FASHION_VOCAB = [
-    "men", "women", "tshirt", "shirt", "jeans", "shoes", "sneakers", "heels",
-    "jacket", "dress", "blue", "red", "black", "white", "green", "running",
-    "casual", "formal", "sports", "summer", "winter"
+    "men",
+    "women",
+    "tshirt",
+    "shirt",
+    "jeans",
+    "shoes",
+    "sneakers",
+    "heels",
+    "jacket",
+    "dress",
+    "blue",
+    "red",
+    "black",
+    "white",
+    "green",
+    "running",
+    "casual",
+    "formal",
+    "sports",
+    "summer",
+    "winter",
 ]
 _INDEX = {token: i for i, token in enumerate(FASHION_VOCAB)}
 
@@ -48,13 +66,12 @@ def _embed(text: str) -> list[float]:
         idx = _INDEX.get(token)
         if idx is not None:
             vector[idx] = 1.0
-    norm = sum(value * value for value in vector)**0.5 or 1.0
+    norm = sum(value * value for value in vector) ** 0.5 or 1.0
     return [value / norm for value in vector]
 
 
 @get_registry().register("fashion-keyword")
 class KeywordEmbedding(EmbeddingFunction):
-
     def ndims(self) -> int:
         return len(FASHION_VOCAB)
 
@@ -64,8 +81,9 @@ class KeywordEmbedding(EmbeddingFunction):
         return [_embed(str(item)) for item in query]
 
     def compute_source_embeddings(self, texts, *args, **kwargs):
-        items = texts.to_pylist() if isinstance(texts,
-                                                pa.Array) else list(texts)
+        items = (
+            texts.to_pylist() if isinstance(texts, pa.Array) else list(texts)
+        )
         return [_embed(str(item)) for item in items]
 
 
@@ -87,12 +105,14 @@ def build_table(uri: str, table_name: str = "fashion") -> None:
     table = db.create_table(table_name, schema=Product)
     rows = []
     for idx, (gender, article, colour, name) in enumerate(_PRODUCTS, start=1):
-        rows.append({
-            "id": idx,
-            "gender": gender,
-            "articleType": article,
-            "baseColour": colour,
-            "productDisplayName": name,
-            "image_bytes": b"\xff\xd8\xff" + name.encode(),
-        })
+        rows.append(
+            {
+                "id": idx,
+                "gender": gender,
+                "articleType": article,
+                "baseColour": colour,
+                "productDisplayName": name,
+                "image_bytes": b"\xff\xd8\xff" + name.encode(),
+            }
+        )
     table.add(rows)

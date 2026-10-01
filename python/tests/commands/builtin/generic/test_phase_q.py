@@ -6,10 +6,9 @@ from mirage.types import PathSpec
 
 
 def _spec(path: str) -> PathSpec:
-    return PathSpec(vfs_path=(path).strip("/"),
-                    virtual=path,
-                    directory=path,
-                    resolved=True)
+    return PathSpec(
+        vfs_path=(path).strip("/"), virtual=path, directory=path, resolved=True
+    )
 
 
 def _make_backend(files: dict[str, bytes]):
@@ -37,11 +36,13 @@ def _make_backend(files: dict[str, bytes]):
 @pytest.mark.asyncio
 async def test_split_by_lines_default():
     _, wb, rs, _ = _make_backend({})
-    _, io = await split([],
-                        read_stream=rs,
-                        write_bytes=wb,
-                        stdin=b"a\nb\nc\nd\ne\n",
-                        lines_per_file=2)
+    _, io = await split(
+        [],
+        read_stream=rs,
+        write_bytes=wb,
+        stdin=b"a\nb\nc\nd\ne\n",
+        lines_per_file=2,
+    )
     assert len(io.writes) == 3
     assert b"a\nb\n" in io.writes["/xaa"]
     assert b"c\nd\n" in io.writes["/xab"]
@@ -50,11 +51,9 @@ async def test_split_by_lines_default():
 @pytest.mark.asyncio
 async def test_split_by_bytes():
     _, wb, rs, _ = _make_backend({})
-    _, io = await split([],
-                        read_stream=rs,
-                        write_bytes=wb,
-                        stdin=b"abcdefghij",
-                        byte_limit=4)
+    _, io = await split(
+        [], read_stream=rs, write_bytes=wb, stdin=b"abcdefghij", byte_limit=4
+    )
     assert io.writes["/xaa"] == b"abcd"
     assert io.writes["/xab"] == b"efgh"
     assert io.writes["/xac"] == b"ij"
@@ -63,23 +62,27 @@ async def test_split_by_bytes():
 @pytest.mark.asyncio
 async def test_split_n_chunks():
     _, wb, rs, _ = _make_backend({})
-    _, io = await split([],
-                        read_stream=rs,
-                        write_bytes=wb,
-                        stdin=b"aaaabbbbcc",
-                        chunks=parse_chunks_value("3"))
+    _, io = await split(
+        [],
+        read_stream=rs,
+        write_bytes=wb,
+        stdin=b"aaaabbbbcc",
+        chunks=parse_chunks_value("3"),
+    )
     assert len(io.writes) == 3
 
 
 @pytest.mark.asyncio
 async def test_split_numeric_suffix():
     _, wb, rs, _ = _make_backend({})
-    _, io = await split([],
-                        read_stream=rs,
-                        write_bytes=wb,
-                        stdin=b"a\nb\n",
-                        lines_per_file=1,
-                        numeric_suffix=True)
+    _, io = await split(
+        [],
+        read_stream=rs,
+        write_bytes=wb,
+        stdin=b"a\nb\n",
+        lines_per_file=1,
+        numeric_suffix=True,
+    )
     assert "/x00" in io.writes
     assert "/x01" in io.writes
 
@@ -87,10 +90,13 @@ async def test_split_numeric_suffix():
 @pytest.mark.asyncio
 async def test_tee_writes_to_file_and_passes_through():
     _, wb, rs, store = _make_backend({})
-    output, io = await tee([_spec("/out.txt")], (),
-                           read_stream=rs,
-                           write_bytes=wb,
-                           stdin=b"hello tee")
+    output, io = await tee(
+        [_spec("/out.txt")],
+        (),
+        read_stream=rs,
+        write_bytes=wb,
+        stdin=b"hello tee",
+    )
     assert output == b"hello tee"
     assert store["/out.txt"] == b"hello tee"
     assert io.writes == {"/out.txt": b"hello tee"}
@@ -99,11 +105,14 @@ async def test_tee_writes_to_file_and_passes_through():
 @pytest.mark.asyncio
 async def test_tee_append_concatenates():
     _, wb, rs, store = _make_backend({"/out.txt": b"existing\n"})
-    output, _ = await tee([_spec("/out.txt")], (),
-                          read_stream=rs,
-                          write_bytes=wb,
-                          stdin=b"new",
-                          flags={"append": True})
+    output, _ = await tee(
+        [_spec("/out.txt")],
+        (),
+        read_stream=rs,
+        write_bytes=wb,
+        stdin=b"new",
+        flags={"append": True},
+    )
     assert store["/out.txt"] == b"existing\nnew"
     assert output == b"new"
 
@@ -111,9 +120,8 @@ async def test_tee_append_concatenates():
 @pytest.mark.asyncio
 async def test_tee_without_a_path_copies_stdin():
     _, wb, rs, store = _make_backend({})
-    output, io = await tee([], (),
-                           read_stream=rs,
-                           write_bytes=wb,
-                           stdin=b"data")
+    output, io = await tee(
+        [], (), read_stream=rs, write_bytes=wb, stdin=b"data"
+    )
     assert (output, io.exit_code) == (b"data", 0)
     assert store == {}

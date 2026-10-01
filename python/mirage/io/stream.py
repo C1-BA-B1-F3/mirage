@@ -56,7 +56,7 @@ class SharedStdin:
                     self._chunks = None
                     raise
                 self._pos = 0
-            chunk = self._buffer[self._pos:self._pos + 1]
+            chunk = self._buffer[self._pos : self._pos + 1]
             self._pos += 1
             return chunk
 
@@ -68,7 +68,8 @@ def wrap_cachable_streams(
     for path in io.cache:
         stream = io.reads.get(path) or io.writes.get(path)
         if stream is not None and not isinstance(
-                stream, (bytes, CachableAsyncIterator)):
+            stream, (bytes, CachableAsyncIterator)
+        ):
             ci = CachableAsyncIterator(stream)
             if path in io.reads:
                 io.reads[path] = ci
@@ -131,12 +132,14 @@ async def discard_streams(*streams: ByteSource | None) -> None:
 
 
 async def discard_io(io: IOResult) -> None:
-    await discard_streams(*io.reads.values(), *io.writes.values(), io.stdout,
-                          io.stderr)
+    await discard_streams(
+        *io.reads.values(), *io.writes.values(), io.stdout, io.stderr
+    )
 
 
 async def async_chain(
-        streams: Iterable[ByteSource | None]) -> AsyncIterator[bytes]:
+    streams: Iterable[ByteSource | None],
+) -> AsyncIterator[bytes]:
     for stream in streams:
         if stream is None:
             continue
@@ -149,7 +152,8 @@ async def async_chain(
 
 
 async def chain_cachables(
-        *iters: CachableAsyncIterator) -> AsyncIterator[bytes]:
+    *iters: CachableAsyncIterator,
+) -> AsyncIterator[bytes]:
     """Chain cachable iterators, replaying already-buffered chunks.
 
     Pulls each iterator live so a downstream early exit (e.g. head)

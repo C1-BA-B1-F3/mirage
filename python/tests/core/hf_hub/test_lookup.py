@@ -24,8 +24,13 @@ from mirage.cache.index import NULL_INDEX, IndexEntry
 from mirage.cache.index.ram import RAMIndexCacheStore
 from mirage.cache.index.redis import RedisIndexCacheStore
 from mirage.cache.index.view import IndexView
-from mirage.core.hf_hub.lookup import (dir_stat_entry, key_of, lookup,
-                                       probe_dir, probe_file)
+from mirage.core.hf_hub.lookup import (
+    dir_stat_entry,
+    key_of,
+    lookup,
+    probe_dir,
+    probe_file,
+)
 from mirage.core.hf_hub.read import read_bytes, resolve_entry
 from mirage.core.hf_hub.stat import stat
 from mirage.core.hf_hub.tree import parse_entry, refill_index, seed_index
@@ -33,13 +38,16 @@ from tests.core.hf_hub.conftest import file_row, ps, seed
 from tests.fixtures.github_api import expired_on_arrival
 
 
-@pytest.mark.parametrize("prefix,local,expected", [
-    ("", "a.txt", "/a.txt"),
-    ("", "", "/"),
-    ("/m", "a.txt", "/m/a.txt"),
-    ("/m", "", "/m"),
-    ("/m", "/d/a.txt", "/m/d/a.txt"),
-])
+@pytest.mark.parametrize(
+    "prefix,local,expected",
+    [
+        ("", "a.txt", "/a.txt"),
+        ("", "", "/"),
+        ("/m", "a.txt", "/m/a.txt"),
+        ("/m", "", "/m"),
+        ("/m", "/d/a.txt", "/m/d/a.txt"),
+    ],
+)
 def test_key_of_builds_a_mount_absolute_key(prefix, local, expected):
     assert key_of(prefix, local) == expected
 
@@ -98,10 +106,14 @@ def test_dir_stat_entry_names_the_last_segment():
 @pytest.mark.parametrize("changed", ["a.txt", "d/b.txt", "d"])
 @pytest.mark.parametrize("deleted", [True, False])
 async def test_direct_lookup_refreshes_invalidated_snapshot(
-        loaded, backend, changed, deleted, monkeypatch):
+    loaded, backend, changed, deleted, monkeypatch
+):
     client = FakeRedis()
-    index = RAMIndexCacheStore() if backend == "ram" else RedisIndexCacheStore(
-        client=client)
+    index = (
+        RAMIndexCacheStore()
+        if backend == "ram"
+        else RedisIndexCacheStore(client=client)
+    )
     tree = dict(loaded.tree)
     for key in list(tree):
         if key == changed or key.startswith(changed + "/"):
@@ -112,9 +124,15 @@ async def test_direct_lookup_refreshes_invalidated_snapshot(
     monkeypatch.setattr("mirage.core.hf_hub.tree.fetch_tree", fetch)
     try:
         seed_index(loaded, index, "/m")
-        await index.set_dir("/other", [
-            ("keep", IndexEntry(id="keep", name="keep", resource_type="file"))
-        ])
+        await index.set_dir(
+            "/other",
+            [
+                (
+                    "keep",
+                    IndexEntry(id="keep", name="keep", resource_type="file"),
+                )
+            ],
+        )
         await index.invalidate()
         path = ps(changed, "/m")
         for _ in range(2):
@@ -138,10 +156,14 @@ async def test_direct_lookup_refreshes_invalidated_snapshot(
 @pytest.mark.asyncio
 @pytest.mark.parametrize("backend", ["ram", "redis"])
 async def test_parallel_snapshot_readers_share_one_replacement(
-        loaded, backend, monkeypatch):
+    loaded, backend, monkeypatch
+):
     client = FakeRedis()
-    index = RAMIndexCacheStore() if backend == "ram" else RedisIndexCacheStore(
-        client=client)
+    index = (
+        RAMIndexCacheStore()
+        if backend == "ram"
+        else RedisIndexCacheStore(client=client)
+    )
     fresh = {"a.txt": parse_entry(file_row("a.txt", 42, oid="new"))}
 
     async def fetch(*args):
@@ -154,8 +176,9 @@ async def test_parallel_snapshot_readers_share_one_replacement(
         seed_index(loaded, index, "/m")
         await index.invalidate()
         keys = ["/m/a.txt", "/m"] * 4
-        results = await asyncio.gather(*(lookup(loaded, index, "/m", key)
-                                         for key in keys))
+        results = await asyncio.gather(
+            *(lookup(loaded, index, "/m", key) for key in keys)
+        )
         assert all(row.exists for row in results)
         assert [row.entry.id for row in results[::2]] == ["new"] * 4
         assert [row.children for row in results[1::2]] == [["/m/a.txt"]] * 4
@@ -169,7 +192,6 @@ async def test_parallel_snapshot_readers_share_one_replacement(
 # first get clears the store, as a reconcile verdict landing in that window
 # would, and then answers from the now-empty store.
 class _ClearedMidLookup(RAMIndexCacheStore):
-
     def __init__(self) -> None:
         super().__init__(ttl=600)
         self.gets = 0
@@ -189,7 +211,8 @@ def _tree(*rows):
 
 @pytest.mark.asyncio
 async def test_a_read_retries_when_the_index_is_cleared_under_it(
-        accessor, monkeypatch):
+    accessor, monkeypatch
+):
     fetch = AsyncMock(return_value=_tree(file_row("a.txt", 7)))
     monkeypatch.setattr("mirage.core.hf_hub.tree.fetch_tree", fetch)
     index = _ClearedMidLookup()
@@ -202,7 +225,8 @@ async def test_a_read_retries_when_the_index_is_cleared_under_it(
 
 @pytest.mark.asyncio
 async def test_a_stat_retries_when_the_index_is_cleared_under_it(
-        accessor, monkeypatch):
+    accessor, monkeypatch
+):
     fetch = AsyncMock(return_value=_tree(file_row("a.txt", 7)))
     monkeypatch.setattr("mirage.core.hf_hub.tree.fetch_tree", fetch)
     index = _ClearedMidLookup()
@@ -248,7 +272,6 @@ async def test_a_miss_without_an_index_is_not_retried(accessor, monkeypatch):
 
 
 class _ClearedAndReseeded(RAMIndexCacheStore):
-
     def __init__(self, accessor) -> None:
         super().__init__(ttl=600)
         self.accessor = accessor
@@ -268,7 +291,8 @@ class _ClearedAndReseeded(RAMIndexCacheStore):
 
 @pytest.mark.asyncio
 async def test_a_read_retries_when_a_reseed_hides_the_clear(
-        accessor, monkeypatch):
+    accessor, monkeypatch
+):
     fetch = AsyncMock(return_value=_tree(file_row("a.txt", 7)))
     monkeypatch.setattr("mirage.core.hf_hub.tree.fetch_tree", fetch)
     index = _ClearedAndReseeded(accessor)
@@ -278,7 +302,8 @@ async def test_a_read_retries_when_a_reseed_hides_the_clear(
 
 @pytest.mark.asyncio
 async def test_lookup_answers_from_the_refill_it_just_made(
-        loaded, monkeypatch):
+    loaded, monkeypatch
+):
     fetch = AsyncMock(return_value=dict(loaded.tree))
     monkeypatch.setattr("mirage.core.hf_hub.tree.fetch_tree", fetch)
     refills = loaded.refills
@@ -290,7 +315,8 @@ async def test_lookup_answers_from_the_refill_it_just_made(
 
 @pytest.mark.asyncio
 async def test_lookup_of_an_expired_folder_under_a_live_root_refills_it(
-        loaded, monkeypatch):
+    loaded, monkeypatch
+):
     index = expired_on_arrival("/m")
     seed_index(loaded, index, "/m")
     fetch = AsyncMock(return_value=dict(loaded.tree))
@@ -305,11 +331,16 @@ async def test_lookup_of_an_expired_folder_under_a_live_root_refills_it(
 @pytest.mark.asyncio
 @pytest.mark.parametrize("key", ["/m/d", "/m/d/b.txt"])
 async def test_refill_snapshot_respects_child_ownership(
-        loaded, monkeypatch, key):
+    loaded, monkeypatch, key
+):
     fetch = AsyncMock(return_value=dict(loaded.tree))
     monkeypatch.setattr("mirage.core.hf_hub.tree.fetch_tree", fetch)
-    view = IndexView(expired_on_arrival(), RAMFileCacheStore(), "/m",
-                     lambda path: path != "/m/d/b.txt")
+    view = IndexView(
+        expired_on_arrival(),
+        RAMFileCacheStore(),
+        "/m",
+        lambda path: path != "/m/d/b.txt",
+    )
     found = await lookup(loaded, view, "/m", key)
     if key == "/m/d":
         assert found.entry.id == "tree-d"

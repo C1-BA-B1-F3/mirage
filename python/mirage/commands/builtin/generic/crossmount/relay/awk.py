@@ -12,8 +12,11 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-from mirage.commands.builtin.generic.crossmount.types import (Cmd, CrossResult,
-                                                              RunSingle)
+from mirage.commands.builtin.generic.crossmount.types import (
+    Cmd,
+    CrossResult,
+    RunSingle,
+)
 from mirage.commands.builtin.utils.stream import is_stdin
 from mirage.commands.spec.types import FlagValue
 from mirage.core.awk.builtins import split_assignment
@@ -28,15 +31,22 @@ def home_operand(scopes: list[PathSpec]) -> PathSpec:
         scopes (list[PathSpec]): The operands in command-line order.
     """
     for scope in scopes:
-        if (scope.raw_path != "" and not is_stdin(scope)
-                and split_assignment(scope.raw_path) is None):
+        if (
+            scope.raw_path != ""
+            and not is_stdin(scope)
+            and split_assignment(scope.raw_path) is None
+        ):
             return scope
     return scopes[0]
 
 
-async def run_awk(scopes: list[PathSpec], text_args: list[str],
-                  flag_kwargs: dict[str, FlagValue], run_single: RunSingle,
-                  stdin: ByteSource | None) -> CrossResult:
+async def run_awk(
+    scopes: list[PathSpec],
+    text_args: list[str],
+    flag_kwargs: dict[str, FlagValue],
+    run_single: RunSingle,
+    stdin: ByteSource | None,
+) -> CrossResult:
     """Run one awk over operands that span mounts, ARGV intact.
 
     awk tells its operands apart: FILENAME, FNR, ARGV, nextfile and a
@@ -53,12 +63,14 @@ async def run_awk(scopes: list[PathSpec], text_args: list[str],
         run_single (RunSingle): Single-mount runner.
         stdin (ByteSource | None): The line's input.
     """
-    return await run_single(Cmd.AWK,
-                            scopes,
-                            text_args,
-                            flag_kwargs,
-                            stdin=stdin,
-                            resolve_hint=home_operand(scopes))
+    return await run_single(
+        Cmd.AWK,
+        scopes,
+        text_args,
+        flag_kwargs,
+        stdin=stdin,
+        resolve_hint=home_operand(scopes),
+    )
 
 
 __all__ = ["run_awk"]

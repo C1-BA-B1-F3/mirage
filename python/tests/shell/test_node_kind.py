@@ -67,11 +67,19 @@ def test_node_kind_classifies(kind):
 
 
 def test_select_and_until_disambiguate():
-    assert node_kind(_first_statement("select x in a; do true; done")) \
+    assert (
+        node_kind(_first_statement("select x in a; do true; done"))
         == NodeKind.SELECT
-    assert node_kind(_first_statement("for i in a; do true; done")) \
+    )
+    assert (
+        node_kind(_first_statement("for i in a; do true; done"))
         == NodeKind.FOR
-    assert node_kind(_first_statement("until false; do true; done")) \
+    )
+    assert (
+        node_kind(_first_statement("until false; do true; done"))
         == NodeKind.UNTIL
-    assert node_kind(_first_statement("while true; do false; done")) \
+    )
+    assert (
+        node_kind(_first_statement("while true; do false; done"))
         == NodeKind.WHILE
+    )

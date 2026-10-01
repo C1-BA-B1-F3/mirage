@@ -18,18 +18,32 @@ from dataclasses import dataclass
 from typing import Any
 
 from mirage.accessor.trello import TrelloAccessor
-from mirage.commands.builtin.trello._scope import (require_board, require_card,
-                                                   require_list)
+from mirage.commands.builtin.trello._scope import (
+    require_board,
+    require_card,
+    require_list,
+)
 from mirage.commands.config import CommandOpts, command
 from mirage.commands.spec.flag_view import FlagView
 from mirage.commands.spec.types import CommandSpec, Operand
-from mirage.core.trello.client import (get_board, get_card, list_board_labels,
-                                       list_board_lists, list_board_members,
-                                       list_card_comments, list_list_cards)
-from mirage.core.trello.normalize import (normalize_board, normalize_card,
-                                          normalize_comment, normalize_label,
-                                          normalize_list, normalize_member,
-                                          to_json_bytes)
+from mirage.core.trello.client import (
+    get_board,
+    get_card,
+    list_board_labels,
+    list_board_lists,
+    list_board_members,
+    list_card_comments,
+    list_list_cards,
+)
+from mirage.core.trello.normalize import (
+    normalize_board,
+    normalize_card,
+    normalize_comment,
+    normalize_label,
+    normalize_list,
+    normalize_member,
+    to_json_bytes,
+)
 from mirage.core.trello.readdir import filtered_boards, filtered_workspaces
 from mirage.io.stream import yield_bytes
 from mirage.io.types import ByteSource, IOResult
@@ -55,8 +69,9 @@ def _first(texts: list[str], label: str) -> str:
     return texts[0]
 
 
-async def _run_board_list(accessor: TrelloAccessor, texts: list[str],
-                          fl: FlagView) -> bytes:
+async def _run_board_list(
+    accessor: TrelloAccessor, texts: list[str], fl: FlagView
+) -> bytes:
     boards: list[dict[str, JsonValue]] = []
     for workspace in await filtered_workspaces(accessor):
         for board in await filtered_boards(accessor, workspace["id"]):
@@ -64,16 +79,18 @@ async def _run_board_list(accessor: TrelloAccessor, texts: list[str],
     return to_json_bytes(boards)
 
 
-async def _run_board_show(accessor: TrelloAccessor, texts: list[str],
-                          fl: FlagView) -> bytes:
+async def _run_board_show(
+    accessor: TrelloAccessor, texts: list[str], fl: FlagView
+) -> bytes:
     board_id = _first(texts, "board id")
     await require_board(accessor, board_id)
     board = await get_board(accessor.config, board_id, session=accessor.pool)
     return to_json_bytes(normalize_board(board))
 
 
-async def _run_board_members(accessor: TrelloAccessor, texts: list[str],
-                             fl: FlagView) -> bytes:
+async def _run_board_members(
+    accessor: TrelloAccessor, texts: list[str], fl: FlagView
+) -> bytes:
     config = accessor.config
     board_id = _first(texts, "board id")
     await require_board(accessor, board_id)
@@ -81,8 +98,9 @@ async def _run_board_members(accessor: TrelloAccessor, texts: list[str],
     return to_json_bytes([normalize_member(member) for member in members])
 
 
-async def _run_list_list(accessor: TrelloAccessor, texts: list[str],
-                         fl: FlagView) -> bytes:
+async def _run_list_list(
+    accessor: TrelloAccessor, texts: list[str], fl: FlagView
+) -> bytes:
     config = accessor.config
     board_id = _first(texts, "board id")
     await require_board(accessor, board_id)
@@ -90,8 +108,9 @@ async def _run_list_list(accessor: TrelloAccessor, texts: list[str],
     return to_json_bytes([normalize_list(lst) for lst in lists])
 
 
-async def _run_label_list(accessor: TrelloAccessor, texts: list[str],
-                          fl: FlagView) -> bytes:
+async def _run_label_list(
+    accessor: TrelloAccessor, texts: list[str], fl: FlagView
+) -> bytes:
     config = accessor.config
     board_id = _first(texts, "board id")
     await require_board(accessor, board_id)
@@ -99,8 +118,9 @@ async def _run_label_list(accessor: TrelloAccessor, texts: list[str],
     return to_json_bytes([normalize_label(label) for label in labels])
 
 
-async def _run_card_list(accessor: TrelloAccessor, texts: list[str],
-                         fl: FlagView) -> bytes:
+async def _run_card_list(
+    accessor: TrelloAccessor, texts: list[str], fl: FlagView
+) -> bytes:
     config = accessor.config
     list_id = _first(texts, "list id")
     await require_list(accessor, list_id)
@@ -108,22 +128,25 @@ async def _run_card_list(accessor: TrelloAccessor, texts: list[str],
     return to_json_bytes([normalize_card(card) for card in cards])
 
 
-async def _run_card_show(accessor: TrelloAccessor, texts: list[str],
-                         fl: FlagView) -> bytes:
+async def _run_card_show(
+    accessor: TrelloAccessor, texts: list[str], fl: FlagView
+) -> bytes:
     card_id = _first(texts, "card id")
     await require_card(accessor, card_id)
     card = await get_card(accessor.config, card_id, session=accessor.pool)
     return to_json_bytes(normalize_card(card))
 
 
-async def _run_card_comments(accessor: TrelloAccessor, texts: list[str],
-                             fl: FlagView) -> bytes:
+async def _run_card_comments(
+    accessor: TrelloAccessor, texts: list[str], fl: FlagView
+) -> bytes:
     config = accessor.config
     card_id = _first(texts, "card id")
     await require_card(accessor, card_id)
     comments = await list_card_comments(config, card_id, session=accessor.pool)
     return to_json_bytes(
-        [normalize_comment(comment, card_id=card_id) for comment in comments])
+        [normalize_comment(comment, card_id=card_id) for comment in comments]
+    )
 
 
 TRELLO_READS: tuple[TrelloRead, ...] = (
@@ -138,9 +161,13 @@ TRELLO_READS: tuple[TrelloRead, ...] = (
 )
 
 
-async def _dispatch(entry: TrelloRead, accessor: TrelloAccessor,
-                    paths: list[PathSpec], texts: list[str],
-                    opts: CommandOpts) -> tuple[ByteSource | None, IOResult]:
+async def _dispatch(
+    entry: TrelloRead,
+    accessor: TrelloAccessor,
+    paths: list[PathSpec],
+    texts: list[str],
+    opts: CommandOpts,
+) -> tuple[ByteSource | None, IOResult]:
     fl = FlagView(opts.flags, spec=entry.spec)
     data = await entry.runner(accessor, list(texts), fl)
     return yield_bytes(data), IOResult()
@@ -150,6 +177,8 @@ def make_trello_read_commands() -> list[Callable[..., Any]]:
     commands: list[Callable[..., Any]] = []
     for entry in TRELLO_READS:
         commands.append(
-            command(entry.name, vfs="trello",
-                    spec=entry.spec)(functools.partial(_dispatch, entry)))
+            command(entry.name, vfs="trello", spec=entry.spec)(
+                functools.partial(_dispatch, entry)
+            )
+        )
     return commands

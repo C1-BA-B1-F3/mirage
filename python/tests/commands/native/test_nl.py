@@ -20,8 +20,9 @@ def test_nl_default(env):
 
 def test_nl_ba(env):
     data = b"hello\n\nworld\n"
-    assert env.mirage("nl -b a", stdin=data) == env.native("nl -b a",
-                                                           stdin=data)
+    assert env.mirage("nl -b a", stdin=data) == env.native(
+        "nl -b a", stdin=data
+    )
 
 
 def test_nl_file(env):

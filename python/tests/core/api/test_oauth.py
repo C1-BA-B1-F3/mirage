@@ -20,7 +20,6 @@ from mirage.core.api.oauth import TokenManager
 
 
 class _FakeManager(TokenManager):
-
     def __init__(self, expires_in: float, buffer_seconds: float) -> None:
         super().__init__(buffer_seconds)
         self.expires_in = expires_in
@@ -52,8 +51,9 @@ async def test_the_buffer_refreshes_early():
 @pytest.mark.asyncio
 async def test_concurrent_callers_share_one_refresh():
     tm = _FakeManager(expires_in=3600, buffer_seconds=300)
-    tokens = await asyncio.gather(tm.get_token(), tm.get_token(),
-                                  tm.get_token())
+    tokens = await asyncio.gather(
+        tm.get_token(), tm.get_token(), tm.get_token()
+    )
     assert tokens == ["tok1", "tok1", "tok1"]
     assert tm.calls == 1
 

@@ -18,9 +18,11 @@ from mirage.core.nextcloud.stat import stat
 from mirage.types import FileStat, PathSpec
 
 
-async def stat_or_null(accessor: NextcloudAccessor,
-                       path: PathSpec,
-                       index: IndexCacheStore = NULL_INDEX) -> FileStat | None:
+async def stat_or_null(
+    accessor: NextcloudAccessor,
+    path: PathSpec,
+    index: IndexCacheStore = NULL_INDEX,
+) -> FileStat | None:
     """The path's row, or None when nothing is there.
 
     A du walk starts from a path it cannot assume exists, and both

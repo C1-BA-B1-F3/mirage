@@ -17,7 +17,6 @@ from mirage.vfs.trello.config import TrelloConfig
 
 
 class TrelloAccessor(SessionAccessor):
-
     def __init__(self, config: TrelloConfig) -> None:
         super().__init__()
         self.config = config

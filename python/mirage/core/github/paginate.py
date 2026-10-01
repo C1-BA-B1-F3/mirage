@@ -26,8 +26,7 @@ async def github_pages(
     params: dict[str, str] | None = None,
     limit: int = 30,
     key: str | None = None,
-    include: Callable[[dict[str, Any]], bool]
-    | None = None
+    include: Callable[[dict[str, Any]], bool] | None = None,
 ) -> list[dict[str, Any]]:
     """Fetch a bounded REST list using GitHub's page/per_page contract."""
     if limit < 1:
@@ -37,17 +36,17 @@ async def github_pages(
     size = min(100, limit)
     while len(rows) < limit:
         query = {**(params or {}), "per_page": str(size), "page": str(page)}
-        data = await github_request(config.token,
-                                    "GET",
-                                    path,
-                                    params=query,
-                                    base_url=config.base_url)
-        payload: Any = data.get(key,
-                                []) if key and isinstance(data, dict) else data
+        data = await github_request(
+            config.token, "GET", path, params=query, base_url=config.base_url
+        )
+        payload: Any = (
+            data.get(key, []) if key and isinstance(data, dict) else data
+        )
         batch = payload if isinstance(payload, list) else []
         candidates = (item for item in batch if isinstance(item, dict))
-        rows.extend(item for item in candidates
-                    if include is None or include(item))
+        rows.extend(
+            item for item in candidates if include is None or include(item)
+        )
         if len(batch) < size:
             break
         page += 1

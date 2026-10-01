@@ -16,10 +16,18 @@ import pytest
 
 from mirage.policy import Action, Deny, Policy, PolicyDenied
 from mirage.policy.types import SessionContext
-from mirage.server.version.api import (branch, checkout, commit, commit_state,
-                                       diff_live_vs_ref, read_version,
-                                       resolve_ref, status_state, version_diff,
-                                       version_log)
+from mirage.server.version.api import (
+    branch,
+    checkout,
+    commit,
+    commit_state,
+    diff_live_vs_ref,
+    read_version,
+    resolve_ref,
+    status_state,
+    version_diff,
+    version_log,
+)
 from mirage.server.version.backend import LocalBackend
 from mirage.server.version.errors import NoSuchBranchError
 from mirage.server.version.state_tree import META_PATH
@@ -66,7 +74,7 @@ async def test_checkout_restores_the_whole_world(tmp_path):
     assert restored.mount_modes is not None
     assert restored.mount_modes["/m"] == MountMode.READ
     result = await ws.shell("history")
-    history = (await result.stdout_str())
+    history = await result.stdout_str()
     assert "echo original > /m/a.txt" in history
     assert "echo mutated > /m/a.txt" not in history
 
@@ -233,10 +241,9 @@ async def test_commit_state_creates_version_from_state(tmp_path):
     store = await VersionStore.open(LocalBackend(tmp_path), "ws")
     await ws.shell("echo hi > /m/a.txt")
 
-    version = await commit_state(store,
-                                 await to_state_dict(ws),
-                                 branch="main",
-                                 message="from state")
+    version = await commit_state(
+        store, await to_state_dict(ws), branch="main", message="from state"
+    )
 
     entries, _ = await read_version(store, version)
     assert entries["m/a.txt"] == b"hi\n"

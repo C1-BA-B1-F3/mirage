@@ -18,21 +18,39 @@ from dataclasses import dataclass
 
 from dulwich.index import IndexEntry
 
-from mirage.commands.cli.builtin.git.changes import (DELETED, MODIFIED,
-                                                     head_entries,
-                                                     work_changes)
-from mirage.commands.cli.builtin.git.errors import GitError  # yapf: disable
-from mirage.commands.cli.builtin.git.errors import (  # yapf: disable
-    NoPathspecRemoveError, NotRecursiveError, NoWorkspaceError, PathspecError,
-    RemovalRefusedError, RemovePathError, UnknownSwitchError)
+from mirage.commands.cli.builtin.git.changes import (
+    DELETED,
+    MODIFIED,
+    head_entries,
+    work_changes,
+)
+from mirage.commands.cli.builtin.git.errors import (
+    GitError,
+    NoPathspecRemoveError,
+    NotRecursiveError,
+    NoWorkspaceError,
+    PathspecError,
+    RemovalRefusedError,
+    RemovePathError,
+    UnknownSwitchError,
+)
 from mirage.commands.cli.builtin.git.index_file import read_index, write_index
-from mirage.commands.cli.builtin.git.io import (remove_empty_parents,
-                                                remove_file)
+from mirage.commands.cli.builtin.git.io import (
+    remove_empty_parents,
+    remove_file,
+)
 from mirage.commands.cli.builtin.git.pathspec import matched, repo_relative
 from mirage.commands.cli.builtin.git.session import opened
 from mirage.commands.cli.builtin.git.types import RepoLocation, WorkTree
-from mirage.commands.cli.builtin.git.util import (  # yapf: disable
-    check_operands, escaped, fatal, links_of, mounts_of, start_point, switches)
+from mirage.commands.cli.builtin.git.util import (
+    check_operands,
+    escaped,
+    fatal,
+    links_of,
+    mounts_of,
+    start_point,
+    switches,
+)
 from mirage.commands.cli.builtin.git.worktree import UNTRACKED_NO, scan
 from mirage.commands.cli.types import CLIDoors, CLIInvocation
 from mirage.commands.spec.flag_view import FlagView
@@ -57,6 +75,7 @@ class RmFlags:
         ignore_unmatch (bool): ``--ignore-unmatch``, an operand naming
             nothing is not an error.
     """
+
     recursive: bool
     cached: bool
     force: bool
@@ -70,15 +89,22 @@ def parse_flags(fl: FlagView) -> RmFlags:
     Args:
         fl (FlagView): spec-validated view over the raw flag kwargs.
     """
-    return RmFlags(recursive=fl.as_bool("r"),
-                   cached=fl.as_bool("cached"),
-                   force=fl.as_bool("force"),
-                   quiet=fl.as_bool("quiet"),
-                   ignore_unmatch=fl.as_bool("ignore_unmatch"))
+    return RmFlags(
+        recursive=fl.as_bool("r"),
+        cached=fl.as_bool("cached"),
+        force=fl.as_bool("force"),
+        quiet=fl.as_bool("quiet"),
+        ignore_unmatch=fl.as_bool("ignore_unmatch"),
+    )
 
 
-def select(location: RepoLocation, start: str, operands: tuple[str, ...],
-           tracked: set[str], flags: RmFlags) -> list[str]:
+def select(
+    location: RepoLocation,
+    start: str,
+    operands: tuple[str, ...],
+    tracked: set[str],
+    flags: RmFlags,
+) -> list[str]:
     """Which tracked paths the operands remove, in index order.
 
     Every operand is checked before anything is removed, which is git's
@@ -112,8 +138,12 @@ def select(location: RepoLocation, start: str, operands: tuple[str, ...],
     return sorted(selected)
 
 
-async def shadowed(links: LinkView | None, worktree: str, paths: list[str],
-                   missing: dict[str, str]) -> set[str]:
+async def shadowed(
+    links: LinkView | None,
+    worktree: str,
+    paths: list[str],
+    missing: dict[str, str],
+) -> set[str]:
     """Which absent paths a link above them is only hiding.
 
     git lstats a tracked path to decide whether it still has local work
@@ -148,10 +178,16 @@ async def shadowed(links: LinkView | None, worktree: str, paths: list[str],
     return found
 
 
-async def refuse_lost_work(dispatch: DispatchFn, location: RepoLocation,
-                           tree: Tree, entries: dict[bytes, IndexEntry],
-                           found: WorkTree, paths: list[str], cached: bool,
-                           links: LinkView | None) -> None:
+async def refuse_lost_work(
+    dispatch: DispatchFn,
+    location: RepoLocation,
+    tree: Tree,
+    entries: dict[bytes, IndexEntry],
+    found: WorkTree,
+    paths: list[str],
+    cached: bool,
+    links: LinkView | None,
+) -> None:
     """Refuse a removal that would throw away uncommitted work.
 
     git's own three-way test per path: whether the index differs from
@@ -182,8 +218,11 @@ async def refuse_lost_work(dispatch: DispatchFn, location: RepoLocation,
     for path in paths:
         entry = chosen[path.encode()]
         recorded = tree.get(path.encode())
-        staged_changes = (recorded is None or recorded[1] != entry.sha
-                          or recorded[0] != entry.mode)
+        staged_changes = (
+            recorded is None
+            or recorded[1] != entry.sha
+            or recorded[0] != entry.mode
+        )
         local_changes = unstaged.get(path) == MODIFIED or path in hidden
         if local_changes and staged_changes:
             both.append(path)
@@ -196,10 +235,15 @@ async def refuse_lost_work(dispatch: DispatchFn, location: RepoLocation,
         raise RemovalRefusedError(both, staged, local)
 
 
-async def clear_worktree(dispatch: DispatchFn, stat_path: StatPath,
-                         location: RepoLocation, selected: list[str],
-                         lines: str, links: LinkView | None,
-                         mounts: MountView | None) -> None:
+async def clear_worktree(
+    dispatch: DispatchFn,
+    stat_path: StatPath,
+    location: RepoLocation,
+    selected: list[str],
+    lines: str,
+    links: LinkView | None,
+    mounts: MountView | None,
+) -> None:
     """Delete every selected path from the working tree.
 
     A directory standing where a tracked file was is the one deletion a
@@ -239,8 +283,9 @@ async def clear_worktree(dispatch: DispatchFn, stat_path: StatPath,
                     raise RemovePathError(path, lines)
                 continue
         await remove_file(dispatch, absolute)
-        await remove_empty_parents(dispatch, absolute, location.worktree,
-                                   mounts)
+        await remove_empty_parents(
+            dispatch, absolute, location.worktree, mounts
+        )
         removed = True
 
 
@@ -266,8 +311,9 @@ async def rm(inv: CLIInvocation[None]) -> tuple[ByteSource | None, IOResult]:
     try:
         if dispatch is None or stat_path is None:
             raise NoWorkspaceError()
-        check_operands(texts, UnknownSwitchError, escaped(inv.argv),
-                       switches(inv))
+        check_operands(
+            texts, UnknownSwitchError, escaped(inv.argv), switches(inv)
+        )
         flags = parse_flags(fl)
         if not texts:
             raise NoPathspecRemoveError()
@@ -282,17 +328,40 @@ async def rm(inv: CLIInvocation[None]) -> tuple[ByteSource | None, IOResult]:
             checkable = [
                 path for path in selected if path.encode() in state.entries
             ]
-            found = await scan(dispatch, stat_path, location, tracked,
-                               UNTRACKED_NO, links_of(doors))
+            found = await scan(
+                dispatch,
+                stat_path,
+                location,
+                tracked,
+                UNTRACKED_NO,
+                links_of(doors),
+            )
             tree = await asyncio.to_thread(head_entries, repo) or {}
-            await refuse_lost_work(dispatch, location, tree, state.entries,
-                                   found, checkable, flags.cached,
-                                   links_of(doors))
-        lines = "" if flags.quiet else "".join(f"rm '{path}'\n"
-                                               for path in selected)
+            await refuse_lost_work(
+                dispatch,
+                location,
+                tree,
+                state.entries,
+                found,
+                checkable,
+                flags.cached,
+                links_of(doors),
+            )
+        lines = (
+            ""
+            if flags.quiet
+            else "".join(f"rm '{path}'\n" for path in selected)
+        )
         if not flags.cached:
-            await clear_worktree(dispatch, stat_path, location, selected,
-                                 lines, links_of(doors), mounts_of(doors))
+            await clear_worktree(
+                dispatch,
+                stat_path,
+                location,
+                selected,
+                lines,
+                links_of(doors),
+                mounts_of(doors),
+            )
         # Last, because the deletions above can fail: git writes the
         # index only once the working tree is done with, so a refused
         # deletion leaves the entry staged exactly as it stood rather

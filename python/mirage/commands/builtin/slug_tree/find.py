@@ -19,11 +19,15 @@ from typing import Any, cast
 
 from mirage.commands.builtin.find_eval import tree_has_mtime
 from mirage.commands.builtin.find_parse import FindExpr, parse_find_expression
-from mirage.commands.builtin.generic.find import (find_generic,
-                                                  find_walk_generic)
-from mirage.commands.builtin.generic_bind.adapter import (CommandIO,
-                                                          with_path_guards,
-                                                          with_policy_guard)
+from mirage.commands.builtin.generic.find import (
+    find_generic,
+    find_walk_generic,
+)
+from mirage.commands.builtin.generic_bind.adapter import (
+    CommandIO,
+    with_path_guards,
+    with_policy_guard,
+)
 from mirage.commands.builtin.utils.output import format_records
 from mirage.commands.builtin.utils.paths import default_paths
 from mirage.commands.config import CommandOpts, command
@@ -56,8 +60,11 @@ def reads_sizes(expr: FindExpr) -> bool:
     Args:
         expr (FindExpr): the parsed expression.
     """
-    return (expr.min_size is not None or expr.max_size is not None
-            or expr.uses_empty)
+    return (
+        expr.min_size is not None
+        or expr.max_size is not None
+        or expr.uses_empty
+    )
 
 
 def _flags_test(fl: FlagView) -> bool:
@@ -67,13 +74,19 @@ def _flags_test(fl: FlagView) -> bool:
     Args:
         fl (FlagView): the find flags.
     """
-    return (fl.as_str("size") is not None or fl.as_str("mtime") is not None
-            or fl.as_bool("empty"))
+    return (
+        fl.as_str("size") is not None
+        or fl.as_str("mtime") is not None
+        or fl.as_bool("empty")
+    )
 
 
 def _is_bare_name(texts: list[str]) -> bool:
-    return bool(texts) and not texts[0].startswith("-") and texts[0] not in (
-        "(", ")", "!")
+    return (
+        bool(texts)
+        and not texts[0].startswith("-")
+        and texts[0] not in ("(", ")", "!")
+    )
 
 
 def _default_name(name: str | None, texts: list[str]) -> str | None:
@@ -97,16 +110,23 @@ async def _normalize_find_output(
     if stdout is None:
         return None
     data = await materialize(stdout)
-    root = mount_prefix_of(search_path.virtual,
-                           search_path.vfs_path).rstrip("/") or "/"
+    root = (
+        mount_prefix_of(search_path.virtual, search_path.vfs_path).rstrip("/")
+        or "/"
+    )
     lines = data.decode().splitlines()
     normalized = [root if line == root + "/" else line for line in lines]
     return format_records(normalized)
 
 
-def make_find(vfs: str, io: CommandIO, tree: SlugTree[A], stat: StatOp,
-              stat_light: StatOp,
-              needs_full: Callable[[FindExpr], bool]) -> Callable[..., Any]:
+def make_find(
+    vfs: str,
+    io: CommandIO,
+    tree: SlugTree[A],
+    stat: StatOp,
+    stat_light: StatOp,
+    needs_full: Callable[[FindExpr], bool],
+) -> Callable[..., Any]:
     """Build ``find`` for a slug-tree backend, filtered over one tree walk.
 
     Args:
@@ -125,7 +145,8 @@ def make_find(vfs: str, io: CommandIO, tree: SlugTree[A], stat: StatOp,
     find_light = make_search_backed_find(tree.resolve, stat_light, tree.walk)
     walk_full = with_policy_guard(with_path_guards(io))
     walk_light = with_policy_guard(
-        with_path_guards(replace(io, stat=stat_light)))
+        with_path_guards(replace(io, stat=stat_light))
+    )
 
     @command("find", vfs=vfs, spec=SPECS["find"])
     async def find(
@@ -146,32 +167,38 @@ def make_find(vfs: str, io: CommandIO, tree: SlugTree[A], stat: StatOp,
         if default_name is not None:
             bag["name"] = default_name
         words = _expr_texts(texts)
-        full = (needs_full(parse_find_expression(words))
-                if words else _flags_test(fl))
+        full = (
+            needs_full(parse_find_expression(words))
+            if words
+            else _flags_test(fl)
+        )
         # A native find op classifies on the raw backend tree, so under
         # hidden paths or a path rule it would answer for entries the
         # session cannot see; the walk classifies through the guarded
         # readdir/stat, the same fork the factory builder takes (rung 0).
-        if (path_rules_active()
-                or any(hidden_paths_intersect(p.virtual) for p in paths)):
+        if path_rules_active() or any(
+            hidden_paths_intersect(p.virtual) for p in paths
+        ):
             walk_io = walk_full if full else walk_light
             stdout, result = await find_walk_generic(
                 paths,
                 words,
                 replace(opts, flags=bag),
                 readdir=partial(walk_io.readdir, accessor),
-                stat=partial(walk_io.stat, accessor))
+                stat=partial(walk_io.stat, accessor),
+            )
             return await _normalize_find_output(stdout, search_path), result
         stdout, result = await find_generic(
             paths,
             words,
             replace(opts, flags=bag),
-            find_core=partial(find_full if full else find_light,
-                              accessor,
-                              index=opts.index),
-            stat=partial(stat if full else stat_light,
-                         accessor,
-                         index=opts.index))
+            find_core=partial(
+                find_full if full else find_light, accessor, index=opts.index
+            ),
+            stat=partial(
+                stat if full else stat_light, accessor, index=opts.index
+            ),
+        )
         return await _normalize_find_output(stdout, search_path), result
 
     return cast(Callable[..., Any], find)

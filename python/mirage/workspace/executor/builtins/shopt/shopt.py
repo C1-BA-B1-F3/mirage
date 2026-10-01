@@ -14,8 +14,12 @@
 
 from mirage.io import IOResult
 from mirage.io.types import ByteSource
-from mirage.shell.constants import (SET_OPTION_DEFAULTS, SET_OPTION_NAMES,
-                                    SHOPT_DEFAULTS, SHOPT_UNSUPPORTED)
+from mirage.shell.constants import (
+    SET_OPTION_DEFAULTS,
+    SET_OPTION_NAMES,
+    SHOPT_DEFAULTS,
+    SHOPT_UNSUPPORTED,
+)
 from mirage.workspace.executor.builtins.getopt import last_of, scan_options
 from mirage.workspace.executor.builtins.shared import fail
 from mirage.workspace.executor.builtins.types import BuiltinCall, Result
@@ -73,12 +77,15 @@ async def handle_shopt(
     """
     scan = scan_options(args, "pqosu")
     if scan.bad is not None:
-        return fail("shopt",
-                    f"bash: shopt: {scan.bad}: invalid option\n{_USAGE}\n", 2)
+        return fail(
+            "shopt", f"bash: shopt: {scan.bad}: invalid option\n{_USAGE}\n", 2
+        )
     if "s" in scan.letters and "u" in scan.letters:
         return fail(
-            "shopt", "bash: shopt: cannot set and unset shell options "
-            "simultaneously\n", 1)
+            "shopt",
+            "bash: shopt: cannot set and unset shell options simultaneously\n",
+            1,
+        )
     reusable = "p" in scan.letters
     quiet = "q" in scan.letters
     set_o = "o" in scan.letters
@@ -121,10 +128,11 @@ async def handle_shopt(
         store[name] = setting
     out = ("\n".join(lines) + "\n").encode() if lines else None
     err = ("\n".join(errors) + "\n").encode() if errors else None
-    return out, IOResult(exit_code=status, stderr=err
-                         or b""), ExecutionNode(command="shopt",
-                                                exit_code=status,
-                                                stderr=err or b"")
+    return (
+        out,
+        IOResult(exit_code=status, stderr=err or b""),
+        ExecutionNode(command="shopt", exit_code=status, stderr=err or b""),
+    )
 
 
 async def shopt_builtin(call: BuiltinCall) -> Result:

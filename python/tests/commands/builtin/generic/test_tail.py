@@ -304,12 +304,13 @@ QUOTED_WORDS = [
 def test_follow_refusal_quotes_the_word(value, escaped):
     with pytest.raises(UsageError) as exc:
         parse_flags({"follow": value})
-    assert str(
-        exc.value) == (f"tail: invalid argument '{escaped}' for '--follow'\n"
-                       "Valid arguments are:\n"
-                       "  - 'descriptor'\n"
-                       "  - 'name'\n"
-                       "Try 'tail --help' for more information.")
+    assert str(exc.value) == (
+        f"tail: invalid argument '{escaped}' for '--follow'\n"
+        "Valid arguments are:\n"
+        "  - 'descriptor'\n"
+        "  - 'name'\n"
+        "Try 'tail --help' for more information."
+    )
     assert exc.value.exit_code == 1
 
 
@@ -317,8 +318,9 @@ def test_an_empty_follow_is_ambiguous():
     """`tail --follow=` is `ambiguous argument ''`, exit 1 (measured)."""
     with pytest.raises(UsageError) as exc:
         parse_flags({"follow": ""})
-    assert str(
-        exc.value).startswith("tail: ambiguous argument '' for '--follow'\n")
+    assert str(exc.value).startswith(
+        "tail: ambiguous argument '' for '--follow'\n"
+    )
     assert exc.value.exit_code == 1
 
 
@@ -326,8 +328,9 @@ def test_an_empty_follow_is_ambiguous():
 def test_sleep_interval_refusal_quotes_the_word(value, escaped):
     with pytest.raises(ValueError) as exc:
         parse_flags({"sleep_interval": f"1{value}"})
-    assert str(
-        exc.value) == (f"tail: invalid number of seconds: '1{escaped}'\n")
+    assert str(exc.value) == (
+        f"tail: invalid number of seconds: '1{escaped}'\n"
+    )
 
 
 def test_sleep_interval_refusal_quotes_an_empty_word():
@@ -339,49 +342,55 @@ def test_sleep_interval_refusal_quotes_an_empty_word():
 # `-s` is `xstrtod` plus `0 <= s`, and the two halves answer separately.
 # Every row measured on GNU coreutils 9.4 with a raw `bytes` argv
 # (`tail -s <v> f`). Mirrored in tail.test.ts.
-@pytest.mark.parametrize("value", [
-    " 1",
-    "\r1",
-    "\t1",
-    "+1",
-    ".5",
-    "1.",
-    "1e2",
-    "+.5e1",
-    "0x10",
-    "0x1p4",
-    "0x.8p1",
-    "0x10.8",
-    "inf",
-    "infinity",
-    "INF",
-    "00",
-])
+@pytest.mark.parametrize(
+    "value",
+    [
+        " 1",
+        "\r1",
+        "\t1",
+        "+1",
+        ".5",
+        "1.",
+        "1e2",
+        "+.5e1",
+        "0x10",
+        "0x1p4",
+        "0x.8p1",
+        "0x10.8",
+        "inf",
+        "infinity",
+        "INF",
+        "00",
+    ],
+)
 def test_sleep_interval_accepts_every_strtod_spelling(value):
     """strtod takes LEADING whitespace, hex floats and `inf` (exit 0)."""
     assert parse_flags({"sleep_interval": value}).interval >= 0
 
 
-@pytest.mark.parametrize("value", [
-    "1\r",
-    "1 ",
-    "1\t",
-    "",
-    "1_0",
-    "1x",
-    "0x",
-    "1e",
-    "1e+",
-    "1,5",
-    ".",
-    "1.5.5",
-    "0xp1",
-    "inf inity",
-    "-1",
-    "nan",
-    "NAN",
-    "nan(x)",
-])
+@pytest.mark.parametrize(
+    "value",
+    [
+        "1\r",
+        "1 ",
+        "1\t",
+        "",
+        "1_0",
+        "1x",
+        "0x",
+        "1e",
+        "1e+",
+        "1,5",
+        ".",
+        "1.5.5",
+        "0xp1",
+        "inf inity",
+        "-1",
+        "nan",
+        "NAN",
+        "nan(x)",
+    ],
+)
 def test_sleep_interval_refuses_what_gnu_refuses(value):
     """TRAILING whitespace is not strtod's, and `0 <= nan` is false.
 
@@ -409,5 +418,6 @@ def test_follow_accepts_an_unambiguous_prefix():
 def test_follow_still_refuses_an_unmatched_word():
     with pytest.raises(UsageError) as exc:
         parse_flags({"follow": "nn"})
-    assert str(
-        exc.value).startswith("tail: invalid argument 'nn' for '--follow'\n")
+    assert str(exc.value).startswith(
+        "tail: invalid argument 'nn' for '--follow'\n"
+    )

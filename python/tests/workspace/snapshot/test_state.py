@@ -20,9 +20,19 @@ from pathlib import Path
 import pytest
 from pydantic import BaseModel, ConfigDict
 
-from mirage import (NULL_INDEX, Accessor, BaseVFS, CommandIO, FileStat,
-                    IndexCacheStore, Mount, MountMode, PathSpec, Workspace,
-                    stream_from_bytes)
+from mirage import (
+    NULL_INDEX,
+    Accessor,
+    BaseVFS,
+    CommandIO,
+    FileStat,
+    IndexCacheStore,
+    Mount,
+    MountMode,
+    PathSpec,
+    Workspace,
+    stream_from_bytes,
+)
 from mirage.cache.file.config import RedisCacheConfig
 from mirage.cache.index import IndexConfig, RedisIndexConfig
 from mirage.policy import Action, Deny, Policy, PolicyDenied
@@ -37,12 +47,18 @@ from mirage.vfs.minio import MinIOConfig, MinIOVFS
 from mirage.vfs.ram import RAMVFS
 from mirage.vfs.registry import build_vfs, register_vfs
 from mirage.vfs.secrets import REDACTED_SECRET
-from mirage.workspace.snapshot.keys import (CacheKey, MountKey, StateKey,
-                                            VFSStateKey)
-from mirage.workspace.snapshot.state import (apply_state_dict,
-                                             build_mount_args,
-                                             requires_vfs_override,
-                                             to_state_dict)
+from mirage.workspace.snapshot.keys import (
+    CacheKey,
+    MountKey,
+    StateKey,
+    VFSStateKey,
+)
+from mirage.workspace.snapshot.state import (
+    apply_state_dict,
+    build_mount_args,
+    requires_vfs_override,
+    to_state_dict,
+)
 
 
 @pytest.mark.asyncio
@@ -52,9 +68,10 @@ async def test_snapshot_preserves_effective_index_config_and_aliases():
         {
             "/first": Mount(driver, index=IndexConfig(ttl=37)),
             "/alias": Mount(driver, index=IndexConfig(ttl=99)),
-            "/default": RAMVFS()
+            "/default": RAMVFS(),
         },
-        index=IndexConfig(ttl=73))
+        index=IndexConfig(ttl=73),
+    )
     try:
         restored = await Workspace._from_state(await to_state_dict(ws))
         try:
@@ -71,21 +88,23 @@ async def test_snapshot_preserves_effective_index_config_and_aliases():
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    "url",
-    ["redis://localhost:6379/2", "redis://user:secret@localhost:6379/2"])
+    "url", ["redis://localhost:6379/2", "redis://user:secret@localhost:6379/2"]
+)
 async def test_snapshot_preserves_redis_index_with_credential_override(url):
     config = RedisIndexConfig(url=url, key_prefix="test:index:", ttl=91)
     ws = Workspace({"/data": Mount(RAMVFS(), index=config)})
     try:
         state = await to_state_dict(ws)
-        saved = next(m for m in state[StateKey.MOUNTS]
-                     if m[MountKey.PREFIX] == "/data/")
+        saved = next(
+            m for m in state[StateKey.MOUNTS] if m[MountKey.PREFIX] == "/data/"
+        )
         if "secret" in url:
             assert saved[MountKey.INDEX_CONFIG]["url"] == REDACTED_SECRET
             with pytest.raises(ValueError, match="fresh index credentials"):
                 build_mount_args(state)
-            args = build_mount_args(state,
-                                    {"/data": Mount(RAMVFS(), index=config)})
+            args = build_mount_args(
+                state, {"/data": Mount(RAMVFS(), index=config)}
+            )
         else:
             args = build_mount_args(state)
         assert args.mount_args["/data/"].index == config
@@ -120,15 +139,11 @@ async def _fetch(config: FakeConfig, ref: str) -> ResolvedSecret:
 @pytest.mark.asyncio
 async def test_state_env_template_holds_the_pointer_never_a_value():
     register_secrets("fake", FakeConfig, _fetch)
-    ws = Workspace({"/": RAMVFS()},
-                   mode=MountMode.WRITE,
-                   env={
-                       "TOKEN": {
-                           "from": "fake",
-                           "ref": "r"
-                       },
-                       "MODE": "m"
-                   })
+    ws = Workspace(
+        {"/": RAMVFS()},
+        mode=MountMode.WRITE,
+        env={"TOKEN": {"from": "fake", "ref": "r"}, "MODE": "m"},
+    )
     try:
         # Fetched into the session, so the template writer has to keep
         # writing the declaration rather than the live var.
@@ -139,56 +154,65 @@ async def test_state_env_template_holds_the_pointer_never_a_value():
         assert env["managed"]["TOKEN"] == {
             "from": "fake",
             "ref": "r",
-            "key": "TOKEN"
+            "key": "TOKEN",
         }
     finally:
         await ws.close()
 
 
 class NotesAccessor(Accessor):
-
     def __init__(self, pages: dict[str, str]) -> None:
         self.pages = pages
 
 
-async def _notes_readdir(accessor: NotesAccessor,
-                         path: PathSpec,
-                         index: IndexCacheStore = NULL_INDEX) -> list[str]:
+async def _notes_readdir(
+    accessor: NotesAccessor,
+    path: PathSpec,
+    index: IndexCacheStore = NULL_INDEX,
+) -> list[str]:
     parent = path.virtual.rstrip("/")
     return [f"{parent}/{name}" for name in sorted(accessor.pages)]
 
 
-async def _notes_read(accessor: NotesAccessor,
-                      path: PathSpec,
-                      index: IndexCacheStore = NULL_INDEX) -> bytes:
+async def _notes_read(
+    accessor: NotesAccessor,
+    path: PathSpec,
+    index: IndexCacheStore = NULL_INDEX,
+) -> bytes:
     key = path.vfs_path.strip("/")
     if key not in accessor.pages:
         raise FileNotFoundError(path.virtual)
     return accessor.pages[key].encode()
 
 
-async def _notes_stat(accessor: NotesAccessor,
-                      path: PathSpec,
-                      index: IndexCacheStore = NULL_INDEX) -> FileStat:
+async def _notes_stat(
+    accessor: NotesAccessor,
+    path: PathSpec,
+    index: IndexCacheStore = NULL_INDEX,
+) -> FileStat:
     key = path.vfs_path.strip("/")
     name = path.virtual.rstrip("/").rsplit("/", 1)[-1] or "/"
     if not key:
         return FileStat(name=name, size=None, type=FileType.DIRECTORY)
     if key not in accessor.pages:
         raise FileNotFoundError(path.virtual)
-    return FileStat(name=name,
-                    size=len(accessor.pages[key].encode()),
-                    type=FileType.FILE,
-                    content=ContentType.TEXT)
+    return FileStat(
+        name=name,
+        size=len(accessor.pages[key].encode()),
+        type=FileType.FILE,
+        content=ContentType.TEXT,
+    )
 
 
 def _notes_io() -> CommandIO:
-    return CommandIO(readdir=_notes_readdir,
-                     read_bytes=_notes_read,
-                     read_stream=partial(stream_from_bytes, _notes_read),
-                     stat=_notes_stat,
-                     is_mounted=lambda a: True,
-                     local=False)
+    return CommandIO(
+        readdir=_notes_readdir,
+        read_bytes=_notes_read,
+        read_stream=partial(stream_from_bytes, _notes_read),
+        stat=_notes_stat,
+        is_mounted=lambda a: True,
+        local=False,
+    )
 
 
 class Notes(BaseVFS):
@@ -209,9 +233,9 @@ class Bare(BaseVFS):
     """Keeps the default state, so it has to be handed back live."""
 
     def __init__(self) -> None:
-        super().__init__(name="bare",
-                         accessor=NotesAccessor({}),
-                         io=_notes_io())
+        super().__init__(
+            name="bare", accessor=NotesAccessor({}), io=_notes_io()
+        )
 
 
 @pytest.mark.asyncio
@@ -225,9 +249,7 @@ async def test_registered_content_vfs_rebuilds_without_override():
     mount = state[StateKey.MOUNTS][0]
     assert mount[MountKey.VFS_STATE] == {
         "type": "notes",
-        "pages": {
-            "a.md": "one\n"
-        }
+        "pages": {"a.md": "one\n"},
     }
     # Constructed in code, so no registry reference was stamped: the
     # loader reaches the class through the registered name alone.
@@ -245,7 +267,8 @@ async def test_registered_content_vfs_rebuilds_without_override():
 @pytest.mark.asyncio
 @pytest.mark.parametrize("registered", [False, True])
 async def test_typescript_kind_locator_restores_without_a_python_class(
-        registered):
+    registered,
+):
     vfs = build_vfs("ram", {}) if registered else RAMVFS()
     ws = Workspace({"/ram/": vfs}, mode=MountMode.WRITE)
     try:
@@ -286,7 +309,7 @@ async def test_a_generic_vfs_keeping_the_default_state_needs_an_override():
         await ws.close()
     assert state[StateKey.MOUNTS][0][MountKey.VFS_STATE] == {
         "type": "bare",
-        "needs_override": True
+        "needs_override": True,
     }
     # The flag means the same thing in both languages now: hand me back.
     with pytest.raises(ValueError, match="mounts= must include") as exc:
@@ -349,16 +372,20 @@ class Tagged(BaseVFS):
 
 @pytest.mark.asyncio
 async def test_a_colon_reference_rebuilds_through_the_recorded_ref(
-        tmp_path: Path):
+    tmp_path: Path,
+):
     module = tmp_path / "tagged_backend.py"
     module.write_text(TAGGED_MODULE)
     ref = f"{module}:Tagged"
-    ws = Workspace({
-        "/t/":
-        Mount(vfs=build_vfs(ref, {"label": "x"}),
-              mode=MountMode.READ,
-              vfs_ref=ref)
-    })
+    ws = Workspace(
+        {
+            "/t/": Mount(
+                vfs=build_vfs(ref, {"label": "x"}),
+                mode=MountMode.READ,
+                vfs_ref=ref,
+            )
+        }
+    )
     try:
         state = await to_state_dict(ws)
     finally:
@@ -380,7 +407,8 @@ async def test_a_colon_reference_rebuilds_through_the_recorded_ref(
 
 @pytest.mark.asyncio
 async def test_a_script_class_with_no_reference_asks_for_an_override(
-        tmp_path: Path):
+    tmp_path: Path,
+):
     module = tmp_path / "tagged_backend.py"
     module.write_text(TAGGED_MODULE)
     cls = load_backend_class(f"{module}:Tagged")
@@ -401,22 +429,25 @@ class SeededRAM(RAMVFS):
     """Inherits ``name``, so its state reports the builtin's ``ram`` type."""
 
 
-SEEDED_MODULE = '''
+SEEDED_MODULE = """
 from mirage.vfs.ram import RAMVFS
 
 
 class SeededRAM(RAMVFS):
     pass
-'''
+"""
 
 
 @pytest.mark.asyncio
 async def test_an_alias_over_a_builtin_rebuilds_through_its_ref_not_its_type():
     register_vfs("seeded", SeededRAM)
-    ws = Workspace({
-        "/s/":
-        Mount(vfs=build_vfs("seeded"), mode=MountMode.WRITE, vfs_ref="seeded")
-    })
+    ws = Workspace(
+        {
+            "/s/": Mount(
+                vfs=build_vfs("seeded"), mode=MountMode.WRITE, vfs_ref="seeded"
+            )
+        }
+    )
     try:
         await ws.shell("echo one > /s/a.txt")
         state = await to_state_dict(ws)
@@ -440,12 +471,14 @@ async def test_an_alias_over_a_builtin_rebuilds_through_its_ref_not_its_type():
 
 @pytest.mark.asyncio
 async def test_a_colon_reference_subclassing_a_builtin_keeps_the_subclass(
-        tmp_path: Path):
+    tmp_path: Path,
+):
     module = tmp_path / "seeded_backend.py"
     module.write_text(SEEDED_MODULE)
     ref = f"{module}:SeededRAM"
     ws = Workspace(
-        {"/s/": Mount(vfs=build_vfs(ref), mode=MountMode.READ, vfs_ref=ref)})
+        {"/s/": Mount(vfs=build_vfs(ref), mode=MountMode.READ, vfs_ref=ref)}
+    )
     try:
         state = await to_state_dict(ws)
     finally:
@@ -457,8 +490,7 @@ async def test_a_colon_reference_subclassing_a_builtin_keeps_the_subclass(
 
 
 @pytest.mark.asyncio
-async def test_a_ref_this_process_cannot_resolve_is_not_guessed_from_the_type(
-):
+async def test_a_ref_this_process_cannot_resolve_is_not_guessed_from_the_type():
     ws = Workspace({"/s/": RAMVFS()}, mode=MountMode.READ)
     try:
         state = await to_state_dict(ws)
@@ -495,9 +527,9 @@ async def test_a_restored_variable_clears_the_session_gate():
         state = await to_state_dict(source)
     finally:
         await source.close()
-    target = Workspace({"/": RAMVFS()},
-                       mode=MountMode.WRITE,
-                       policies=[DenyGate()])
+    target = Workspace(
+        {"/": RAMVFS()}, mode=MountMode.WRITE, policies=[DenyGate()]
+    )
     try:
         with pytest.raises(PolicyDenied):
             await apply_state_dict(target, state)
@@ -514,9 +546,9 @@ async def test_a_restore_the_gate_allows_lands_every_variable():
         state = await to_state_dict(source)
     finally:
         await source.close()
-    target = Workspace({"/": RAMVFS()},
-                       mode=MountMode.WRITE,
-                       policies=[DenyGate()])
+    target = Workspace(
+        {"/": RAMVFS()}, mode=MountMode.WRITE, policies=[DenyGate()]
+    )
     try:
         await apply_state_dict(target, state)
         assert target.env.get("PUBLIC_X") == "1"
@@ -536,15 +568,18 @@ async def test_a_refused_session_table_leaves_the_workspace_untouched():
         assert (await source.shell("echo restored > /f.txt")).exit_code == 0
         assert (await source.shell("export PUBLIC_A=1")).exit_code == 0
         source.create_session("s2")
-        assert (await source.shell("export GATE_X=1",
-                                   session_id="s2")).exit_code == 0
+        assert (
+            await source.shell("export GATE_X=1", session_id="s2")
+        ).exit_code == 0
         state = await to_state_dict(source)
     finally:
         await source.close()
-    target = Workspace({"/": RAMVFS()},
-                       mode=MountMode.WRITE,
-                       session_id="tgt",
-                       policies=[DenyGate()])
+    target = Workspace(
+        {"/": RAMVFS()},
+        mode=MountMode.WRITE,
+        session_id="tgt",
+        policies=[DenyGate()],
+    )
     try:
         assert (await target.shell("export KEEP=1")).exit_code == 0
         with pytest.raises(PolicyDenied):
@@ -561,18 +596,19 @@ async def test_a_refused_session_table_leaves_the_workspace_untouched():
 # lands no session either.
 @pytest.mark.asyncio
 async def test_a_refused_env_template_lands_no_session():
-    source = Workspace({"/": RAMVFS()},
-                       mode=MountMode.WRITE,
-                       env={"GATE_X": "1"})
+    source = Workspace(
+        {"/": RAMVFS()}, mode=MountMode.WRITE, env={"GATE_X": "1"}
+    )
     try:
-        assert (await
-                source.shell("unset GATE_X; export PUBLIC_A=1")).exit_code == 0
+        assert (
+            await source.shell("unset GATE_X; export PUBLIC_A=1")
+        ).exit_code == 0
         state = await to_state_dict(source)
     finally:
         await source.close()
-    target = Workspace({"/": RAMVFS()},
-                       mode=MountMode.WRITE,
-                       policies=[DenyGate()])
+    target = Workspace(
+        {"/": RAMVFS()}, mode=MountMode.WRITE, policies=[DenyGate()]
+    )
     try:
         with pytest.raises(PolicyDenied):
             await apply_state_dict(target, state)
@@ -593,18 +629,17 @@ async def test_a_session_the_restore_creates_runs_under_the_default_profile():
     try:
         assert (await source.shell("echo kept > /f.txt")).exit_code == 0
         source.create_session("s2")
-        assert (await source.shell("export PUBLIC_A=1",
-                                   session_id="s2")).exit_code == 0
+        assert (
+            await source.shell("export PUBLIC_A=1", session_id="s2")
+        ).exit_code == 0
         state = await to_state_dict(source)
     finally:
         await source.close()
-    target = Workspace({"/": RAMVFS()},
-                       mode=MountMode.WRITE,
-                       profiles={"default": {
-                           "commands": {
-                               "deny": ["rm"]
-                           }
-                       }})
+    target = Workspace(
+        {"/": RAMVFS()},
+        mode=MountMode.WRITE,
+        profiles={"default": {"commands": {"deny": ["rm"]}}},
+    )
     try:
         await apply_state_dict(target, state)
         compiled = target._session_mgr.default_profile
@@ -635,8 +670,9 @@ async def test_a_snapshot_mount_with_no_matching_prefix_is_reported(caplog):
         await source.close()
     target = Workspace({"/b": RAMVFS()}, mode=MountMode.WRITE)
     try:
-        with caplog.at_level(logging.WARNING,
-                             logger="mirage.workspace.snapshot.state"):
+        with caplog.at_level(
+            logging.WARNING, logger="mirage.workspace.snapshot.state"
+        ):
             await apply_state_dict(target, state)
     finally:
         await target.close()
@@ -651,17 +687,23 @@ async def test_a_snapshot_mount_with_no_matching_prefix_is_reported(caplog):
 @pytest.mark.asyncio
 async def test_an_alias_saved_with_redacted_creds_requires_an_override():
     minio = MinIOVFS(
-        MinIOConfig(bucket="b",
-                    endpoint_url="http://localhost:9000",
-                    access_key_id="k",
-                    secret_access_key="s"))
+        MinIOConfig(
+            bucket="b",
+            endpoint_url="http://localhost:9000",
+            access_key_id="k",
+            secret_access_key="s",
+        )
+    )
     ws = Workspace({"/s3": minio}, mode=MountMode.READ)
     try:
         state = await to_state_dict(ws)
     finally:
         await ws.close()
-    (mount, ) = (m for m in state[StateKey.MOUNTS]
-                 if m[MountKey.PREFIX].rstrip("/") == "/s3")
+    (mount,) = (
+        m
+        for m in state[StateKey.MOUNTS]
+        if m[MountKey.PREFIX].rstrip("/") == "/s3"
+    )
     assert mount[MountKey.VFS_STATE][VFSStateKey.TYPE] == "s3"
     assert requires_vfs_override(mount)
     with pytest.raises(ValueError, match="/s3"):
@@ -682,8 +724,11 @@ async def test_an_alias_built_in_code_rebuilds_as_itself():
         state = await to_state_dict(ws)
     finally:
         await ws.close()
-    (mount, ) = (m for m in state[StateKey.MOUNTS]
-                 if m[MountKey.PREFIX].rstrip("/") == "/s3")
+    (mount,) = (
+        m
+        for m in state[StateKey.MOUNTS]
+        if m[MountKey.PREFIX].rstrip("/") == "/s3"
+    )
     assert mount[MountKey.VFS_REF] is None
     assert not requires_vfs_override(mount)
     rebuilt = build_mount_args(state, None, None).mount_args["/s3/"].vfs
@@ -694,14 +739,18 @@ async def test_an_alias_built_in_code_rebuilds_as_itself():
 # The capture side used to read `cache._entries` unconditionally, which
 # only a RAM cache has, so `Workspace.snapshot()` raised AttributeError
 # under a Redis cache while the restore side already skipped it.
-@pytest.mark.skipif(not os.environ.get("REDIS_URL"),
-                    reason="REDIS_URL not set")
+@pytest.mark.skipif(
+    not os.environ.get("REDIS_URL"), reason="REDIS_URL not set"
+)
 @pytest.mark.asyncio
 async def test_to_state_dict_carries_no_entries_for_a_redis_cache():
-    ws = Workspace({"/r": RAMVFS()},
-                   mode=MountMode.WRITE,
-                   cache=RedisCacheConfig(url=os.environ["REDIS_URL"],
-                                          key_prefix="test-snapshot:"))
+    ws = Workspace(
+        {"/r": RAMVFS()},
+        mode=MountMode.WRITE,
+        cache=RedisCacheConfig(
+            url=os.environ["REDIS_URL"], key_prefix="test-snapshot:"
+        ),
+    )
     try:
         state = await to_state_dict(ws)
         assert state[StateKey.CACHE][CacheKey.ENTRIES] == []
@@ -720,9 +769,11 @@ async def test_the_read_policy_survives_a_snapshot_round_trip():
     saved policy still describes what is being mounted.
     """
     vfs = RAMVFS()
-    ws = Workspace({"/d/": vfs},
-                   mode=MountMode.WRITE,
-                   read=ReadSpec(policy=ReadPolicy.BOUNDED, ttl=45))
+    ws = Workspace(
+        {"/d/": vfs},
+        mode=MountMode.WRITE,
+        read=ReadSpec(policy=ReadPolicy.BOUNDED, ttl=45),
+    )
     try:
         state = await to_state_dict(ws)
     finally:
@@ -787,7 +838,8 @@ async def test_an_unversioned_state_dict_is_refused_not_keyerrored():
 @pytest.mark.asyncio
 @pytest.mark.parametrize("key", [MountKey.READ, MountKey.TTL])
 async def test_a_v4_entry_missing_the_read_key_raises_rather_than_defaulting(
-        key):
+    key,
+):
     """Required, never `.get(default)`, and named rather than subscripted.
 
     A dict labelled v4 with the key missing would otherwise install a
@@ -848,13 +900,18 @@ async def test_an_overridden_mount_takes_the_default_read_spec():
     S3 mount overridden with a RAMVFS is exactly that case.
     """
     minio = MinIOVFS(
-        MinIOConfig(bucket="b",
-                    endpoint_url="http://localhost:9000",
-                    access_key_id="k",
-                    secret_access_key="s"))
-    ws = Workspace({"/s3/": minio},
-                   mode=MountMode.WRITE,
-                   read=ReadSpec(policy=ReadPolicy.FRESH))
+        MinIOConfig(
+            bucket="b",
+            endpoint_url="http://localhost:9000",
+            access_key_id="k",
+            secret_access_key="s",
+        )
+    )
+    ws = Workspace(
+        {"/s3/": minio},
+        mode=MountMode.WRITE,
+        read=ReadSpec(policy=ReadPolicy.FRESH),
+    )
     try:
         state = await to_state_dict(ws)
     finally:
@@ -870,12 +927,16 @@ async def test_an_overridden_mount_takes_the_default_read_spec():
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize(("key", "value", "message"), [
-    (MountKey.READ, "banana", "fresh, bounded, pinned"),
-    (MountKey.TTL, 0, "at least 1 second"),
-])
+@pytest.mark.parametrize(
+    ("key", "value", "message"),
+    [
+        (MountKey.READ, "banana", "fresh, bounded, pinned"),
+        (MountKey.TTL, 0, "at least 1 second"),
+    ],
+)
 async def test_a_saved_spec_is_coerced_even_on_an_overridden_mount(
-        key, value, message):
+    key, value, message
+):
     """The coercion runs before the override resets the spec.
 
     ``docs/home/yaml.mdx`` states this ("a snapshot naming an unknown
@@ -903,18 +964,22 @@ async def test_a_restore_into_a_live_workspace_keeps_the_live_read_policy():
     Written down here because the saved keys are right there in the
     state dict and the omission otherwise reads as an oversight.
     """
-    source = Workspace({"/d/": RAMVFS()},
-                       mode=MountMode.WRITE,
-                       read=ReadSpec(policy=ReadPolicy.BOUNDED, ttl=45))
+    source = Workspace(
+        {"/d/": RAMVFS()},
+        mode=MountMode.WRITE,
+        read=ReadSpec(policy=ReadPolicy.BOUNDED, ttl=45),
+    )
     try:
         state = await to_state_dict(source)
     finally:
         await source.close()
     assert state[StateKey.MOUNTS][0][MountKey.TTL] == 45
 
-    target = Workspace({"/d/": RAMVFS()},
-                       mode=MountMode.WRITE,
-                       read=ReadSpec(policy=ReadPolicy.BOUNDED, ttl=90))
+    target = Workspace(
+        {"/d/": RAMVFS()},
+        mode=MountMode.WRITE,
+        read=ReadSpec(policy=ReadPolicy.BOUNDED, ttl=90),
+    )
     try:
         await apply_state_dict(target, state)
         assert target._registry.mount_for_prefix("/d/").read.ttl == 90

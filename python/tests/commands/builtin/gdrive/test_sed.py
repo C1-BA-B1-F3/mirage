@@ -68,32 +68,42 @@ sed = _sed_command()
 
 
 def _scope(path: str, prefix: str = "") -> PathSpec:
-    return PathSpec(vfs_path=mount_key(path, prefix),
-                    virtual=path,
-                    directory=path.rsplit("/", 1)[0] or "/")
+    return PathSpec(
+        vfs_path=mount_key(path, prefix),
+        virtual=path,
+        directory=path.rsplit("/", 1)[0] or "/",
+    )
 
 
 @pytest.mark.asyncio
 async def test_sed_simple_substitution(accessor, index):
     await index.set_dir(
         "/test",
-        [("file.txt",
-          IndexEntry(
-              id="file123",
-              name="file.txt",
-              resource_type="gdrive/file",
-              remote_time="2026-01-01T00:00:00Z",
-              vfs_name="file.txt",
-              size=100,
-          ))],
+        [
+            (
+                "file.txt",
+                IndexEntry(
+                    id="file123",
+                    name="file.txt",
+                    resource_type="gdrive/file",
+                    remote_time="2026-01-01T00:00:00Z",
+                    vfs_name="file.txt",
+                    size=100,
+                ),
+            )
+        ],
     )
     with patch(
-            "mirage.core.google.drive.google_get_bytes",
-            new_callable=AsyncMock,
-            return_value=b"hello world\nhello again\n",
+        "mirage.core.google.drive.google_get_bytes",
+        new_callable=AsyncMock,
+        return_value=b"hello world\nhello again\n",
     ):
-        result, io = await sed(accessor, [_scope('/test/file.txt')],
-                               ['s/hello/bye/g'], CommandOpts(index=index))
+        result, io = await sed(
+            accessor,
+            [_scope("/test/file.txt")],
+            ["s/hello/bye/g"],
+            CommandOpts(index=index),
+        )
         data = await materialize(result)
         assert data == b"bye world\nbye again\n"
         assert io.exit_code == 0
@@ -103,23 +113,31 @@ async def test_sed_simple_substitution(accessor, index):
 async def test_sed_print_program(accessor, index):
     await index.set_dir(
         "/test",
-        [("file.txt",
-          IndexEntry(
-              id="file123",
-              name="file.txt",
-              resource_type="gdrive/file",
-              remote_time="2026-01-01T00:00:00Z",
-              vfs_name="file.txt",
-              size=100,
-          ))],
+        [
+            (
+                "file.txt",
+                IndexEntry(
+                    id="file123",
+                    name="file.txt",
+                    resource_type="gdrive/file",
+                    remote_time="2026-01-01T00:00:00Z",
+                    vfs_name="file.txt",
+                    size=100,
+                ),
+            )
+        ],
     )
     with patch(
-            "mirage.core.google.drive.google_get_bytes",
-            new_callable=AsyncMock,
-            return_value=b"one\ntwo\nthree\n",
+        "mirage.core.google.drive.google_get_bytes",
+        new_callable=AsyncMock,
+        return_value=b"one\ntwo\nthree\n",
     ):
-        result, io = await sed(accessor, [_scope('/test/file.txt')], ['2p'],
-                               CommandOpts(index=index, flags={'n': True}))
+        result, io = await sed(
+            accessor,
+            [_scope("/test/file.txt")],
+            ["2p"],
+            CommandOpts(index=index, flags={"n": True}),
+        )
         data = await materialize(result)
         assert data == b"two\n"
         assert io.exit_code == 0
@@ -127,8 +145,9 @@ async def test_sed_print_program(accessor, index):
 
 @pytest.mark.asyncio
 async def test_sed_stdin(accessor, index):
-    result, io = await sed(accessor, [], ['s/a/b/g'],
-                           CommandOpts(stdin=b'banana\n', index=index))
+    result, io = await sed(
+        accessor, [], ["s/a/b/g"], CommandOpts(stdin=b"banana\n", index=index)
+    )
     data = await materialize(result)
     assert data == b"bbnbnb\n"
     assert io.exit_code == 0
@@ -138,32 +157,43 @@ async def test_sed_stdin(accessor, index):
 async def test_sed_in_place_writes_back(accessor, index):
     await index.set_dir(
         "/test",
-        [("file.txt",
-          IndexEntry(
-              id="file123",
-              name="file.txt",
-              resource_type="gdrive/file",
-              remote_time="2026-01-01T00:00:00Z",
-              vfs_name="file.txt",
-              size=100,
-          ))],
+        [
+            (
+                "file.txt",
+                IndexEntry(
+                    id="file123",
+                    name="file.txt",
+                    resource_type="gdrive/file",
+                    remote_time="2026-01-01T00:00:00Z",
+                    vfs_name="file.txt",
+                    size=100,
+                ),
+            )
+        ],
     )
     node = DriveNode(id="file123", name="file.txt", mime_type="text/plain")
-    with patch(
+    with (
+        patch(
             "mirage.core.google.drive.google_get_bytes",
             new_callable=AsyncMock,
             return_value=b"hello world\n",
-    ), patch(
+        ),
+        patch(
             "mirage.core.gdrive.write.resolve_key",
             new_callable=AsyncMock,
             return_value=node,
-    ), patch(
+        ),
+        patch(
             "mirage.core.gdrive.write.update_file_content",
             new_callable=AsyncMock,
-    ) as update:
-        _result, io = await sed(accessor, [_scope('/test/file.txt')],
-                                ['s/hello/bye/'],
-                                CommandOpts(index=index, flags={'i': True}))
+        ) as update,
+    ):
+        _result, io = await sed(
+            accessor,
+            [_scope("/test/file.txt")],
+            ["s/hello/bye/"],
+            CommandOpts(index=index, flags={"i": True}),
+        )
         assert io.exit_code == 0
         update.assert_awaited_once()
         assert update.await_args.args[1] == "file123"

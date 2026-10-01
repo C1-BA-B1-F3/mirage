@@ -57,9 +57,11 @@ def chunks_coll(accessor: GridFSAccessor) -> AsyncCollection[dict[str, Any]]:
 def bucket(accessor: GridFSAccessor) -> AsyncGridFSBucket:
     config = accessor.config
     if config.chunk_size_bytes is not None:
-        return AsyncGridFSBucket(database(accessor),
-                                 bucket_name=config.bucket,
-                                 chunk_size_bytes=config.chunk_size_bytes)
+        return AsyncGridFSBucket(
+            database(accessor),
+            bucket_name=config.bucket,
+            chunk_size_bytes=config.chunk_size_bytes,
+        )
     return AsyncGridFSBucket(database(accessor), bucket_name=config.bucket)
 
 
@@ -69,14 +71,17 @@ def prefix_query(pfx: str) -> dict[str, Any]:
     return {"filename": {"$regex": "^" + re.escape(pfx)}}
 
 
-async def latest_file(accessor: GridFSAccessor,
-                      key: str) -> dict[str, Any] | None:
-    return await files_coll(accessor).find_one({"filename": key},
-                                               sort=LATEST_SORT)
+async def latest_file(
+    accessor: GridFSAccessor, key: str
+) -> dict[str, Any] | None:
+    return await files_coll(accessor).find_one(
+        {"filename": key}, sort=LATEST_SORT
+    )
 
 
-async def iter_latest(accessor: GridFSAccessor,
-                      query: dict[str, Any]) -> AsyncIterator[dict[str, Any]]:
+async def iter_latest(
+    accessor: GridFSAccessor, query: dict[str, Any]
+) -> AsyncIterator[dict[str, Any]]:
     """Yield the newest revision of each filename matching a query.
 
     Args:
@@ -88,35 +93,17 @@ async def iter_latest(accessor: GridFSAccessor,
         the newest revision per filename, sorted by filename.
     """
     pipeline: list[dict[str, Any]] = [
-        {
-            "$match": query
-        },
-        {
-            "$sort": {
-                "filename": 1,
-                "uploadDate": -1,
-                "_id": -1
-            }
-        },
+        {"$match": query},
+        {"$sort": {"filename": 1, "uploadDate": -1, "_id": -1}},
         {
             "$group": {
                 "_id": "$filename",
-                "fid": {
-                    "$first": "$_id"
-                },
-                "length": {
-                    "$first": "$length"
-                },
-                "uploadDate": {
-                    "$first": "$uploadDate"
-                },
+                "fid": {"$first": "$_id"},
+                "length": {"$first": "$length"},
+                "uploadDate": {"$first": "$uploadDate"},
             }
         },
-        {
-            "$sort": {
-                "_id": 1
-            }
-        },
+        {"$sort": {"_id": 1}},
     ]
     cursor = await files_coll(accessor).aggregate(pipeline)
     async for doc in cursor:
@@ -141,6 +128,6 @@ async def delete_all(accessor: GridFSAccessor, query: dict[str, Any]) -> None:
     async for doc in files.find(query, projection={"_id": 1}):
         ids.append(doc["_id"])
     for i in range(0, len(ids), _BATCH):
-        batch = ids[i:i + _BATCH]
+        batch = ids[i : i + _BATCH]
         await chunks.delete_many({"files_id": {"$in": batch}})
         await files.delete_many({"_id": {"$in": batch}})

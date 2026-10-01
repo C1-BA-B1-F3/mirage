@@ -29,14 +29,13 @@ def cursor_of(checkpoint: str | None) -> str | None:
     return data["c"] or None
 
 
-async def longpoll(client: aiohttp.ClientSession,
-                   cursor: str) -> tuple[bool, float]:
+async def longpoll(
+    client: aiohttp.ClientSession, cursor: str
+) -> tuple[bool, float]:
     # This endpoint takes NO Authorization header; the cursor is sufficient.
-    async with client.post(LONGPOLL_URL,
-                           json={
-                               "cursor": cursor,
-                               "timeout": TIMEOUT
-                           }) as response:
+    async with client.post(
+        LONGPOLL_URL, json={"cursor": cursor, "timeout": TIMEOUT}
+    ) as response:
         if response.status == 409:
             failure = await response.json()
             if failure.get("error", {}).get(".tag") == "reset":
@@ -84,17 +83,22 @@ async def main() -> None:
             client_secret=os.environ["DROPBOX_APP_SECRET"],
             refresh_token=os.environ["DROPBOX_REFRESH_TOKEN"],
             root_path=os.environ.get("DROPBOX_ROOT_PATH") or "/",
-        ))
+        )
+    )
     ws = Workspace({MOUNT: vfs})
     try:
         # Leave headroom for the server's jitter; never reuse an authenticated
         # API session for the notification host.
-        async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(
-                total=TIMEOUT + 100)) as client:
+        async with aiohttp.ClientSession(
+            timeout=aiohttp.ClientTimeout(total=TIMEOUT + 100)
+        ) as client:
             print(f"Watching {MOUNT}; edit files in Dropbox (Ctrl-C to stop)")
-            await run_longpoll(vfs.delta_hook(),
-                               PathSpec.from_str_path(MOUNT, ""),
-                               partial(publish, ws), partial(longpoll, client))
+            await run_longpoll(
+                vfs.delta_hook(),
+                PathSpec.from_str_path(MOUNT, ""),
+                partial(publish, ws),
+                partial(longpoll, client),
+            )
     finally:
         await ws.close()
 

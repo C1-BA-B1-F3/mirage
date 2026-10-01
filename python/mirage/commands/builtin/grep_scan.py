@@ -14,9 +14,13 @@
 
 import re
 
-from mirage.commands.builtin.grep_offsets import (MatchOffsets, line_offsets,
-                                                  prefix_of, rg_pieces,
-                                                  rust_matches)
+from mirage.commands.builtin.grep_offsets import (
+    MatchOffsets,
+    line_offsets,
+    prefix_of,
+    rg_pieces,
+    rust_matches,
+)
 from mirage.commands.builtin.utils.pcre import match_start, match_text
 from mirage.io.types import IOResult
 
@@ -100,14 +104,17 @@ def grep_lines(
             matches += len(rust_matches(compiled, line))
         if not count_only and not files_only:
             if rg_only:
-                piece_offsets = MatchOffsets(start,
-                                             line) if byte_offsets else None
+                piece_offsets = (
+                    MatchOffsets(start, line) if byte_offsets else None
+                )
                 for at, text in rg_pieces(compiled, line):
                     results.append(
                         prefix_of(
                             i if line_numbers else None,
-                            piece_offsets.at(at) if piece_offsets else None) +
-                        text)
+                            piece_offsets.at(at) if piece_offsets else None,
+                        )
+                        + text
+                    )
             elif only_matching:
                 # GNU -o prints every match on the line, one per line, and
                 # prints nothing at all for an empty match nor for an
@@ -117,8 +124,9 @@ def grep_lines(
                 # is already incremented above and -c, -l and the exit
                 # status see it.
                 if not invert:
-                    match_offsets = MatchOffsets(
-                        start, line) if byte_offsets else None
+                    match_offsets = (
+                        MatchOffsets(start, line) if byte_offsets else None
+                    )
                     for found in compiled.finditer(line):
                         text = match_text(found)
                         if not text:
@@ -127,11 +135,19 @@ def grep_lines(
                             prefix_of(
                                 i if line_numbers else None,
                                 match_offsets.at(match_start(found))
-                                if match_offsets else None) + text)
+                                if match_offsets
+                                else None,
+                            )
+                            + text
+                        )
             else:
                 results.append(
-                    prefix_of(i if line_numbers else None,
-                              start if byte_offsets else None) + line)
+                    prefix_of(
+                        i if line_numbers else None,
+                        start if byte_offsets else None,
+                    )
+                    + line
+                )
         if max_count is not None and count >= max_count:
             break
     if count_only:

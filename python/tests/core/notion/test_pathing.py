@@ -17,14 +17,17 @@ import json
 import pytest
 
 from mirage.core.notion.normalize import normalize_page, to_json_bytes
-from mirage.core.notion.pathing import (data_source_dirname, database_dirname,
-                                        format_segment, page_dirname,
-                                        split_suffix_id)
+from mirage.core.notion.pathing import (
+    data_source_dirname,
+    database_dirname,
+    format_segment,
+    page_dirname,
+    split_suffix_id,
+)
 from mirage.utils.sanitize import NAME_MAX_BYTES, byte_len
 
 
 class TestSplitSuffixId:
-
     def test_basic(self):
         label, oid = split_suffix_id("my-page__abc123")
         assert label == "my-page"
@@ -45,16 +48,13 @@ class TestSplitSuffixId:
 
 
 class TestPageDirname:
-
     def test_with_title(self):
         page = {
             "id": "abc-123",
             "properties": {
                 "title": {
                     "type": "title",
-                    "title": [{
-                        "plain_text": "Hello World"
-                    }],
+                    "title": [{"plain_text": "Hello World"}],
                 },
             },
         }
@@ -69,49 +69,28 @@ class TestPageDirname:
 
 
 class TestNormalizePage:
-
     def test_basic(self):
         page = {
             "id": "abc-123",
             "url": "https://notion.so/abc123",
             "created_time": "2026-01-01T00:00:00.000Z",
             "last_edited_time": "2026-04-15T00:00:00.000Z",
-            "parent": {
-                "type": "workspace",
-                "workspace": True
-            },
+            "parent": {"type": "workspace", "workspace": True},
             "archived": False,
-            "created_by": {
-                "id": "user1"
-            },
-            "last_edited_by": {
-                "id": "user2"
-            },
+            "created_by": {"id": "user1"},
+            "last_edited_by": {"id": "user2"},
             "properties": {
-                "title": {
-                    "type": "title",
-                    "title": [{
-                        "plain_text": "Test"
-                    }]
-                },
+                "title": {"type": "title", "title": [{"plain_text": "Test"}]},
             },
         }
         blocks = [
             {
                 "type": "paragraph",
                 "paragraph": {
-                    "rich_text": [{
-                        "plain_text": "Hello",
-                        "annotations": {}
-                    }]
-                }
+                    "rich_text": [{"plain_text": "Hello", "annotations": {}}]
+                },
             },
-            {
-                "type": "child_page",
-                "child_page": {
-                    "title": "Sub"
-                }
-            },
+            {"type": "child_page", "child_page": {"title": "Sub"}},
         ]
         result = normalize_page(page, blocks)
         assert result["page_id"] == "abc-123"
@@ -134,9 +113,7 @@ class TestNormalizePage:
                 "Name": {
                     "id": "title",
                     "type": "title",
-                    "title": [{
-                        "plain_text": "Write spec"
-                    }],
+                    "title": [{"plain_text": "Write spec"}],
                 },
                 "Priority": {
                     "id": "pri",
@@ -179,29 +156,28 @@ def test_a_long_title_fits_name_max_and_still_addresses_the_id():
     assert "\ufffd" not in name
 
 
-@pytest.mark.parametrize("build,record", [
-    (page_dirname, {
-        "id": OBJ_ID,
-        "properties": {
-            "title": {
-                "type": "title",
-                "title": [{
-                    "plain_text": CJK_TITLE
-                }],
-            }
-        },
-    }),
-    (database_dirname, {
-        "id": OBJ_ID,
-        "title": [{
-            "plain_text": CJK_TITLE
-        }]
-    }),
-    (data_source_dirname, {
-        "id": OBJ_ID,
-        "name": CJK_TITLE
-    }),
-])
+@pytest.mark.parametrize(
+    "build,record",
+    [
+        (
+            page_dirname,
+            {
+                "id": OBJ_ID,
+                "properties": {
+                    "title": {
+                        "type": "title",
+                        "title": [{"plain_text": CJK_TITLE}],
+                    }
+                },
+            },
+        ),
+        (
+            database_dirname,
+            {"id": OBJ_ID, "title": [{"plain_text": CJK_TITLE}]},
+        ),
+        (data_source_dirname, {"id": OBJ_ID, "name": CJK_TITLE}),
+    ],
+)
 def test_every_dirname_routes_through_the_budgeted_segment(build, record):
     """Each composed the pair itself; a second spelling drifts on trim."""
     assert build(record) == format_segment(CJK_TITLE, OBJ_ID)

@@ -65,30 +65,35 @@ async def main():
     print("--- cat example.jsonl | python3 -c (single line) ---")
     result = await ws.shell(
         'cat /s3/data/example.jsonl | python3 -c "import sys; '
-        "print(f'lines: {sum(1 for _ in sys.stdin)}')\"")
+        "print(f'lines: {sum(1 for _ in sys.stdin)}')\""
+    )
     print(await result.stdout_str())
     print(f"Exit code: {result.exit_code}")
     print(f"Stats: {ops_summary()}\n")
 
     print("--- head -n 3 example.jsonl | python3 -c (multiline) ---")
-    result = await ws.shell('head -n 3 /s3/data/example.jsonl | '
-                            'python3 -c "import sys, json\n'
-                            'for line in sys.stdin:\n'
-                            '    rec = json.loads(line)\n'
-                            "    print(rec.get('type', 'unknown'))\n"
-                            '"')
+    result = await ws.shell(
+        "head -n 3 /s3/data/example.jsonl | "
+        'python3 -c "import sys, json\n'
+        "for line in sys.stdin:\n"
+        "    rec = json.loads(line)\n"
+        "    print(rec.get('type', 'unknown'))\n"
+        '"'
+    )
     print(await result.stdout_str())
     print(f"Exit code: {result.exit_code}")
     print(f"Stats: {ops_summary()}\n")
 
     print("=== pipe S3 data into python3 -c (extract + head) ===\n")
 
-    result = await ws.shell('cat /s3/data/example.jsonl | '
-                            'python3 -c "import sys, json\n'
-                            'for line in sys.stdin:\n'
-                            '    rec = json.loads(line)\n'
-                            '    print(json.dumps(rec)[:80])\n'
-                            '" | head -n 3')
+    result = await ws.shell(
+        "cat /s3/data/example.jsonl | "
+        'python3 -c "import sys, json\n'
+        "for line in sys.stdin:\n"
+        "    rec = json.loads(line)\n"
+        "    print(json.dumps(rec)[:80])\n"
+        '" | head -n 3'
+    )
     print(await result.stdout_str())
     print(f"Exit code: {result.exit_code}")
     print(f"Stats: {ops_summary()}\n")
@@ -99,8 +104,10 @@ async def main():
     await ws.shell(f"echo '{STDIN_SCRIPT}' > /work/scripts/parse_stdin.py")
 
     print("--- head -n 5 example.jsonl | python3 parse_stdin.py ---")
-    result = await ws.shell("head -n 5 /s3/data/example.jsonl"
-                            " | python3 /work/scripts/parse_stdin.py")
+    result = await ws.shell(
+        "head -n 5 /s3/data/example.jsonl"
+        " | python3 /work/scripts/parse_stdin.py"
+    )
     print(await result.stdout_str())
     if result.stderr:
         print("STDERR:", await result.stderr_str())
@@ -109,16 +116,18 @@ async def main():
 
     print("=== python3 -c: count + aggregate ===\n")
 
-    result = await ws.shell('cat /s3/data/example.jsonl | '
-                            'python3 -c "import sys, json\n'
-                            'from collections import Counter\n'
-                            'counts = Counter()\n'
-                            'for line in sys.stdin:\n'
-                            '    rec = json.loads(line)\n'
-                            "    counts[rec.get('type', 'unknown')] += 1\n"
-                            'for k, v in counts.most_common(5):\n'
-                            "    print(f'{k}: {v}')\n"
-                            '"')
+    result = await ws.shell(
+        "cat /s3/data/example.jsonl | "
+        'python3 -c "import sys, json\n'
+        "from collections import Counter\n"
+        "counts = Counter()\n"
+        "for line in sys.stdin:\n"
+        "    rec = json.loads(line)\n"
+        "    counts[rec.get('type', 'unknown')] += 1\n"
+        "for k, v in counts.most_common(5):\n"
+        "    print(f'{k}: {v}')\n"
+        '"'
+    )
     print(await result.stdout_str())
     print(f"Exit code: {result.exit_code}")
     print(f"Stats: {ops_summary()}\n")
@@ -127,7 +136,7 @@ async def main():
 
     await ws.shell("export GREETING=hello_from_mirage")
     result = await ws.shell(
-        'python3 -c "import os; print(os.environ.get(\'GREETING\', \'none\'))"'
+        "python3 -c \"import os; print(os.environ.get('GREETING', 'none'))\""
     )
     print(await result.stdout_str())
     print(f"Exit code: {result.exit_code}")
@@ -138,33 +147,37 @@ async def main():
 
     print("\n=== python3 << 'PYEOF' (quoted: $X stays literal) ===")
     await ws.shell("export X=shellval")
-    result = await ws.shell("python3 << 'PYEOF'\n"
-                            "x = '$X'  # literal, no shell expansion\n"
-                            "print(x)\n"
-                            "PYEOF")
-    print(f"  stdout: {(await result.stdout_str()).strip()} "
-          f"(expect '$X')")
+    result = await ws.shell(
+        "python3 << 'PYEOF'\n"
+        "x = '$X'  # literal, no shell expansion\n"
+        "print(x)\n"
+        "PYEOF"
+    )
+    print(f"  stdout: {(await result.stdout_str()).strip()} (expect '$X')")
 
     print("\n=== python3 << PYEOF (unquoted: $X expanded) ===")
-    result = await ws.shell("python3 << PYEOF\n"
-                            "print('$X')\n"
-                            "PYEOF")
-    print(f"  stdout: {(await result.stdout_str()).strip()} "
-          f"(expect 'shellval')")
+    result = await ws.shell("python3 << PYEOF\nprint('$X')\nPYEOF")
+    print(
+        f"  stdout: {(await result.stdout_str()).strip()} (expect 'shellval')"
+    )
 
     print("\n=== python3 <<-PYEOF (dash: tabs stripped, indented body) ===")
-    result = await ws.shell("python3 <<-PYEOF\n"
-                            "\tfor i in range(3):\n"
-                            "\t    print(f'item-{i}')\n"
-                            "\tPYEOF")
+    result = await ws.shell(
+        "python3 <<-PYEOF\n"
+        "\tfor i in range(3):\n"
+        "\t    print(f'item-{i}')\n"
+        "\tPYEOF"
+    )
     out = (await result.stdout_str()).strip()
     print(f"  stdout: {out!r} (expect 3 items)")
 
     print("\n=== python3 << EOF | grep keep (heredoc + pipe) ===")
-    result = await ws.shell("python3 << EOF | grep keep\n"
-                            "for i in range(5):\n"
-                            "    print('keep' if i % 2 else 'drop', i)\n"
-                            "EOF")
+    result = await ws.shell(
+        "python3 << EOF | grep keep\n"
+        "for i in range(5):\n"
+        "    print('keep' if i % 2 else 'drop', i)\n"
+        "EOF"
+    )
     out = (await result.stdout_str()).strip()
     print(f"  filtered: {out.splitlines()}")
 
@@ -174,7 +187,8 @@ async def main():
         "\tname = '$name'\n"
         "\tprint(f'hello, {name}!')\n"
         "\tPYEOF\n"
-        "done")
+        "done"
+    )
     for line in (await result.stdout_str()).strip().splitlines():
         print(f"  {line}")
 

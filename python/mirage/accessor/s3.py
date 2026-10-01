@@ -39,7 +39,6 @@ class S3Config(AWSAuth):
 
 
 class S3Accessor(Accessor):
-
     def __init__(self, config: S3Config) -> None:
         self.config = config
         # One live client per event loop, the way GridFSAccessor keeps its

@@ -59,12 +59,18 @@ async def test_opens_a_packed_repository(repo_path, workspace):
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("command", [
-    "rev-list --all --count", "log --all --format=%H",
-    "show --stat --format=%s HEAD~1", "diff HEAD~2 HEAD~1"
-])
+@pytest.mark.parametrize(
+    "command",
+    [
+        "rev-list --all --count",
+        "log --all --format=%H",
+        "show --stat --format=%s HEAD~1",
+        "diff HEAD~2 HEAD~1",
+    ],
+)
 async def test_reads_each_pack_and_index_once_per_invocation(
-        repo_path, monkeypatch, command):
+    repo_path, monkeypatch, command
+):
     pack_everything(repo_path)
     with mounted(repo_path) as ws:
         ws.register_cli("git", GIT)

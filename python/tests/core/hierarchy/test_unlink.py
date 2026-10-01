@@ -23,8 +23,13 @@ from mirage.core.hierarchy.readdir import make_readdir
 from mirage.core.hierarchy.scope import ScopeMatch
 from mirage.core.hierarchy.unlink import make_unlink
 from mirage.utils.errors import enoent
-from tests.core.hierarchy.conftest import (FakeAccessor, detect_scope,
-                                           list_notes, list_rooms, spec)
+from tests.core.hierarchy.conftest import (
+    FakeAccessor,
+    detect_scope,
+    list_notes,
+    list_rooms,
+    spec,
+)
 
 READDIR = make_readdir(
     detect_scope,
@@ -32,12 +37,13 @@ READDIR = make_readdir(
         "rooms": list_rooms,
         "room": list_notes,
     },
-    static_root=("rooms", ),
+    static_root=("rooms",),
 )
 
 
-async def _delete(accessor: FakeAccessor, match: ScopeMatch,
-                  entry: IndexEntry) -> None:
+async def _delete(
+    accessor: FakeAccessor, match: ScopeMatch, entry: IndexEntry
+) -> None:
     accessor.calls.append(f"delete:{entry.id}")
 
 
@@ -83,13 +89,14 @@ def test_unlink_propagates_parent_refresh_failure(accessor):
     unlink = make_unlink(detect_scope, readdir, deleters={"note": _delete})
     with pytest.raises(RuntimeError, match="backend unavailable"):
         asyncio.run(
-            unlink(accessor, spec("/rooms/red/a.json"), RAMIndexCacheStore()))
+            unlink(accessor, spec("/rooms/red/a.json"), RAMIndexCacheStore())
+        )
 
 
 def test_unlink_names_the_operand_when_the_parent_is_absent(accessor):
-    unlink = make_unlink(detect_scope,
-                         readdir_absent,
-                         deleters={"note": _delete})
+    unlink = make_unlink(
+        detect_scope, readdir_absent, deleters={"note": _delete}
+    )
     path = spec("/rooms/red/a.json")
     with pytest.raises(FileNotFoundError) as excinfo:
         asyncio.run(unlink(accessor, path, RAMIndexCacheStore()))

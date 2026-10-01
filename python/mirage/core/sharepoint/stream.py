@@ -28,11 +28,12 @@ async def read_stream(
     chunk_size: int = 8192,
 ) -> AsyncIterator[bytes]:
     resolved = await resolve_item(accessor, path)
-    async for chunk in stream_item(accessor.config,
-                                   drive_loc(accessor.config, resolved,
-                                             path.vfs_path),
-                                   path.virtual,
-                                   "sharepoint",
-                                   chunk_size,
-                                   session=accessor.pool):
+    async for chunk in stream_item(
+        accessor.config,
+        drive_loc(accessor.config, resolved, path.vfs_path),
+        path.virtual,
+        "sharepoint",
+        chunk_size,
+        session=accessor.pool,
+    ):
         yield chunk

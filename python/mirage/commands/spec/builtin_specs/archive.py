@@ -15,8 +15,7 @@
 from mirage.commands.spec.types import CommandSpec, Operand, Option
 
 SPECS: dict[str, CommandSpec] = {
-    'tar':
-    CommandSpec(
+    "tar": CommandSpec(
         # Each option under GNU tar's own long name. Its aliases (--get,
         # --gunzip, --ungzip) and every abbreviation resolve through
         # LONG_OPTION_TABLES, tar's whole table, which also knows the
@@ -52,8 +51,7 @@ SPECS: dict[str, CommandSpec] = {
         # reads once: `tar -cf a.tar -C d x` archives d/x as `x`.
         operand_base="-C",
     ),
-    'gzip':
-    CommandSpec(
+    "gzip": CommandSpec(
         options=(
             Option(short="-d"),
             Option(short="-k"),
@@ -73,8 +71,7 @@ SPECS: dict[str, CommandSpec] = {
         ),
         rest=Operand(type="path"),
     ),
-    'gunzip':
-    CommandSpec(
+    "gunzip": CommandSpec(
         options=(
             Option(short="-k"),
             Option(short="-f"),
@@ -85,8 +82,7 @@ SPECS: dict[str, CommandSpec] = {
         ),
         rest=Operand(type="path"),
     ),
-    'zip':
-    CommandSpec(
+    "zip": CommandSpec(
         options=(
             Option(short="-r"),
             Option(short="-j"),
@@ -101,8 +97,7 @@ SPECS: dict[str, CommandSpec] = {
         ),
         rest=Operand(type="path"),
     ),
-    'unzip':
-    CommandSpec(
+    "unzip": CommandSpec(
         options=(
             Option(short="-o"),
             Option(short="-l"),
@@ -135,13 +130,12 @@ SPECS: dict[str, CommandSpec] = {
         # The archive is the only path operand; everything after it is an
         # Info-ZIP member pattern matched against archive entry names,
         # never a filesystem path.
-        positional=(Operand(type="path"), ),
+        positional=(Operand(type="path"),),
         rest=Operand(type="str"),
     ),
     # zcat is `gzip -cd`: -f copies input that is not gzip, -q drops
     # the warnings, and -S names the suffix a missing name is retried with.
-    'zcat':
-    CommandSpec(
+    "zcat": CommandSpec(
         options=(
             Option(short="-f"),
             Option(short="-q"),

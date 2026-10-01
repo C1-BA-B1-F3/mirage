@@ -15,11 +15,26 @@
 import shlex
 from typing import Any
 
-from constants import (BAD_PACKAGE, CLOSURE_FILTER, DOUBLE_CLAIM,
-                       DOUBLE_FILTER, FALSY_GATE, FILTER, JOB_MAY_FAIL,
-                       LEG_PREFIX, NO_LEG_SCRIPT, NO_LIVE_STEP, NO_TEST_SCRIPT,
-                       NO_TEST_WHY, SCRIPT_UNUSED, STRAY_INCLUDE, UNCLAIMED,
-                       UNKNOWN_WHY, UNSET_GATE, WRONG_VERB)
+from constants import (
+    BAD_PACKAGE,
+    CLOSURE_FILTER,
+    DOUBLE_CLAIM,
+    DOUBLE_FILTER,
+    FALSY_GATE,
+    FILTER,
+    JOB_MAY_FAIL,
+    LEG_PREFIX,
+    NO_LEG_SCRIPT,
+    NO_LIVE_STEP,
+    NO_TEST_SCRIPT,
+    NO_TEST_WHY,
+    SCRIPT_UNUSED,
+    STRAY_INCLUDE,
+    UNCLAIMED,
+    UNKNOWN_WHY,
+    UNSET_GATE,
+    WRONG_VERB,
+)
 
 
 def package_of(token: str) -> str:
@@ -57,7 +72,7 @@ def invoked_script(body: str) -> str | None:
         return None
     words = shlex.split(body)
     if "run" in words:
-        rest = words[words.index("run") + 1:]
+        rest = words[words.index("run") + 1 :]
         return rest[0] if rest else None
     return words[-1] if words else None
 
@@ -76,7 +91,8 @@ def audit_packages(members: dict[str, bool]) -> list[str]:
     """
     return [
         NO_TEST_SCRIPT.format(name=name)
-        for name, has_test in sorted(members.items()) if not has_test
+        for name, has_test in sorted(members.items())
+        if not has_test
     ]
 
 
@@ -132,8 +148,9 @@ def audit_invocation(job: dict[str, Any]) -> list[str]:
     return problems
 
 
-def audit_gates(matrix: dict[str, Any], gated: dict[str,
-                                                    list[str]]) -> list[str]:
+def audit_gates(
+    matrix: dict[str, Any], gated: dict[str, list[str]]
+) -> list[str]:
     """Check every `if: matrix.<key>` step against the include rows.
 
     Bare truthiness on an absent key is false everywhere, so mistyping
@@ -155,21 +172,26 @@ def audit_gates(matrix: dict[str, Any], gated: dict[str,
         leg = row.get("leg")
         if leg is not None and leg not in declared:
             problems.append(
-                STRAY_INCLUDE.format(leg=leg,
-                                     legs=", ".join(matrix["leg"]),
-                                     lost=", ".join(sorted(set(row) - {"leg"}))
-                                     or "nothing"))
+                STRAY_INCLUDE.format(
+                    leg=leg,
+                    legs=", ".join(matrix["leg"]),
+                    lost=", ".join(sorted(set(row) - {"leg"})) or "nothing",
+                )
+            )
         for key, value in row.items():
             if key in dims:
                 continue
             if not value:
                 problems.append(
-                    FALSY_GATE.format(key=key,
-                                      value=value,
-                                      where=f"leg {leg}"
-                                      if leg is not None else "every leg"))
-            provided.setdefault(
-                key, []).append(str(leg) if leg is not None else "all")
+                    FALSY_GATE.format(
+                        key=key,
+                        value=value,
+                        where=f"leg {leg}" if leg is not None else "every leg",
+                    )
+                )
+            provided.setdefault(key, []).append(
+                str(leg) if leg is not None else "all"
+            )
 
     for key, steps in sorted(gated.items()):
         if key in dims or key in provided:
@@ -178,8 +200,12 @@ def audit_gates(matrix: dict[str, Any], gated: dict[str,
     return problems
 
 
-def audit(scripts: dict[str, str], declared: list[str], packages: set[str],
-          known: set[str]) -> list[str]:
+def audit(
+    scripts: dict[str, str],
+    declared: list[str],
+    packages: set[str],
+    known: set[str],
+) -> list[str]:
     """Compare the two halves of the leg table against the workspace.
 
     Args:
@@ -205,7 +231,9 @@ def audit(scripts: dict[str, str], declared: list[str], packages: set[str],
                 WRONG_VERB.format(
                     prefix=LEG_PREFIX,
                     leg=leg,
-                    ran=ran or "no single script (the body chains commands)"))
+                    ran=ran or "no single script (the body chains commands)",
+                )
+            )
     for leg in scripts:
         if leg not in declared:
             problems.append(SCRIPT_UNUSED.format(prefix=LEG_PREFIX, leg=leg))
@@ -229,10 +257,13 @@ def audit(scripts: dict[str, str], declared: list[str], packages: set[str],
                 BAD_PACKAGE.format(
                     legs=", ".join(sorted(legs)),
                     name=name,
-                    why=NO_TEST_WHY if name in known else UNKNOWN_WHY))
+                    why=NO_TEST_WHY if name in known else UNKNOWN_WHY,
+                )
+            )
         elif len(legs) > 1:
             problems.append(
-                DOUBLE_CLAIM.format(name=name, legs=", ".join(sorted(legs))))
+                DOUBLE_CLAIM.format(name=name, legs=", ".join(sorted(legs)))
+            )
     for name in sorted(packages - set(claims)):
         problems.append(UNCLAIMED.format(name=name))
     return problems

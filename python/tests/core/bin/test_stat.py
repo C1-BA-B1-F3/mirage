@@ -22,14 +22,15 @@ from mirage.types import FileType, PathSpec
 
 def _accessor() -> BinAccessor:
     return BinAccessor(
-        lambda: ["ls"], lambda n: "ls is built into mirage."
-        if n == "ls" else None)
+        lambda: ["ls"],
+        lambda n: "ls is built into mirage." if n == "ls" else None,
+    )
 
 
 def _spec(path: str) -> PathSpec:
-    return PathSpec(virtual=path,
-                    directory=path,
-                    vfs_path=path.removeprefix("/usr/bin"))
+    return PathSpec(
+        virtual=path, directory=path, vfs_path=path.removeprefix("/usr/bin")
+    )
 
 
 @pytest.mark.asyncio
@@ -42,7 +43,8 @@ async def test_stat_a_program_is_an_executable_file_sized_to_its_stub():
 
 @pytest.mark.asyncio
 async def test_stat_the_view_root_is_a_directory_and_a_miss_is_enoent():
-    assert (await stat(_accessor(),
-                       _spec("/usr/bin"))).type is FileType.DIRECTORY
+    assert (
+        await stat(_accessor(), _spec("/usr/bin"))
+    ).type is FileType.DIRECTORY
     with pytest.raises(FileNotFoundError):
         await stat(_accessor(), _spec("/usr/bin/cd"))

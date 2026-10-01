@@ -31,7 +31,7 @@ _SOLO_SPECIAL = frozenset({"{", "}"})
 # Narrower than the trigger set: a space and a ``:`` are harmless inside
 # double quotes, while the four conditional characters above lose their
 # position rule and always rule it out.
-_DQ_BLOCKERS = frozenset("!\"#$&()*;<=>?[\\^`{|}~")
+_DQ_BLOCKERS = frozenset('!"#$&()*;<=>?[\\^`{|}~')
 
 _NAMED_ESCAPES = {
     "\a": "a",
@@ -59,36 +59,38 @@ _NAMED_ESCAPES = {
 # sed, cmp, diff, rev (util-linux), md5 (BSD) and zcat (gzip). And the
 # tools that are nobody's coreutils -- awk, column, file, iconv, jq, look,
 # xxd -- keep their own original's diagnostic, which is not this one.
-SHELL_QUOTED_COMMANDS: frozenset[str] = frozenset({
-    "base64",
-    "cat",
-    "comm",
-    "csplit",
-    "cut",
-    "df",
-    "expand",
-    "fmt",
-    "fold",
-    "join",
-    "md5sum",
-    "nl",
-    "od",
-    "paste",
-    "realpath",
-    "sha1sum",
-    "sha256sum",
-    "sha384sum",
-    "sha512sum",
-    "shuf",
-    "sort",
-    "split",
-    "strings",
-    "tee",
-    "tsort",
-    "unexpand",
-    "uniq",
-    "wc",
-})
+SHELL_QUOTED_COMMANDS: frozenset[str] = frozenset(
+    {
+        "base64",
+        "cat",
+        "comm",
+        "csplit",
+        "cut",
+        "df",
+        "expand",
+        "fmt",
+        "fold",
+        "join",
+        "md5sum",
+        "nl",
+        "od",
+        "paste",
+        "realpath",
+        "sha1sum",
+        "sha256sum",
+        "sha384sum",
+        "sha512sum",
+        "shuf",
+        "sort",
+        "split",
+        "strings",
+        "tee",
+        "tsort",
+        "unexpand",
+        "uniq",
+        "wc",
+    }
+)
 
 
 def _needs_escape(char: str) -> bool:
@@ -179,8 +181,9 @@ def shell_quote_always(name: str) -> str:
     Args:
         name (str): The name to wrap.
     """
-    if "'" in name and not any(char in _DQ_BLOCKERS or _needs_escape(char)
-                               for char in name):
+    if "'" in name and not any(
+        char in _DQ_BLOCKERS or _needs_escape(char) for char in name
+    ):
         return f'"{name}"'
     parts = ["'"]
     in_escape = False

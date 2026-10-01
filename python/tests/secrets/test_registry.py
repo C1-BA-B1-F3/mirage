@@ -22,8 +22,12 @@ from mirage.secrets import registry
 from mirage.secrets.config import AWSSMConfig, DotenvConfig, EnvConfig
 from mirage.secrets.constants import BUILTINS
 from mirage.secrets.errors import SecretsError
-from mirage.secrets.registry import (fetch_secret, known_sources,
-                                     register_secrets, source_for)
+from mirage.secrets.registry import (
+    fetch_secret,
+    known_sources,
+    register_secrets,
+    source_for,
+)
 from mirage.secrets.types import ResolvedSecret, ResolvedSource
 
 
@@ -79,21 +83,26 @@ def test_builtin_resolves_lazily_through_the_table(monkeypatch):
     module = types.ModuleType("fake_secrets_source")
     module.fetch = fetch_vault
     monkeypatch.setitem(sys.modules, "fake_secrets_source", module)
-    monkeypatch.setitem(BUILTINS, "dotenv",
-                        (DotenvConfig, "fake_secrets_source:fetch"))
+    monkeypatch.setitem(
+        BUILTINS, "dotenv", (DotenvConfig, "fake_secrets_source:fetch")
+    )
     assert source_for("dotenv") == (DotenvConfig, fetch_vault)
 
 
 def test_missing_optional_dependency_names_the_extra(monkeypatch):
-    monkeypatch.setitem(BUILTINS, "dotenv",
-                        (DotenvConfig, "mirage_no_such_module:fetch"))
+    monkeypatch.setitem(
+        BUILTINS, "dotenv", (DotenvConfig, "mirage_no_such_module:fetch")
+    )
     with pytest.raises(SecretsError, match=r"mirage-ai\[dotenv\]"):
         source_for("dotenv")
 
 
 def test_builtin_table_resolves_the_real_fetchers():
-    for name, config_model in (("env", EnvConfig), ("dotenv", DotenvConfig),
-                               ("aws-sm", AWSSMConfig)):
+    for name, config_model in (
+        ("env", EnvConfig),
+        ("dotenv", DotenvConfig),
+        ("aws-sm", AWSSMConfig),
+    ):
         resolved_model, fetch = source_for(name)
         assert resolved_model is config_model, name
         assert callable(fetch), name
@@ -129,9 +138,9 @@ async def test_fetch_secret_prefers_a_declared_instance():
 
     register_secrets("vault", VaultConfig, fetch_vault)
     sources = {
-        "prod": ResolvedSource(source="vault",
-                               config=VaultConfig(),
-                               fetch=fetch)
+        "prod": ResolvedSource(
+            source="vault", config=VaultConfig(), fetch=fetch
+        )
     }
     secret = await fetch_secret("prod", "r", sources)
     assert secret.fields == {"token": "instance"}
@@ -142,10 +151,9 @@ async def test_fetch_secret_prefers_a_declared_instance():
 async def test_fetch_secret_falls_back_to_the_source_of_that_name():
     register_secrets("vault", VaultConfig, fetch_vault)
     sources = {
-        "prod":
-        ResolvedSource(source="vault",
-                       config=VaultConfig(),
-                       fetch=fetch_override)
+        "prod": ResolvedSource(
+            source="vault", config=VaultConfig(), fetch=fetch_override
+        )
     }
     secret = await fetch_secret("vault", "r", sources)
     assert secret.fields == {"token": "t"}

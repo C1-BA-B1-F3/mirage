@@ -23,7 +23,7 @@ from mirage.io.types import ByteSource, IOResult
 
 
 async def members(
-        inv: CLIInvocation[DiscordConfig]
+    inv: CLIInvocation[DiscordConfig],
 ) -> tuple[ByteSource | None, IOResult]:
     fl = FlagView(inv.flags)
     guild = fl.as_str("guild") or ""
@@ -32,6 +32,7 @@ async def members(
         result = await search_members(inv.config, guild, query)
     else:
         result = await list_members(inv.config, guild)
-    out = json.dumps(result, ensure_ascii=False,
-                     separators=(",", ":")).encode()
+    out = json.dumps(
+        result, ensure_ascii=False, separators=(",", ":")
+    ).encode()
     return yield_bytes(out), IOResult()

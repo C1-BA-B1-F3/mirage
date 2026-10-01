@@ -35,40 +35,53 @@ def make_accessor() -> DropboxAccessor:
 
 @pytest.mark.asyncio
 async def test_rmdir_nonempty_raises_enotempty_without_deleting():
-    with patch("mirage.core.dropbox.rmdir.get_metadata",
-               new_callable=AsyncMock,
-               return_value=FOLDER):
-        with patch("mirage.core.dropbox.rmdir.list_folder",
-                   new_callable=AsyncMock,
-                   return_value=[FILE]):
-            with patch("mirage.core.dropbox.rmdir.delete_path",
-                       new_callable=AsyncMock) as deleted:
+    with patch(
+        "mirage.core.dropbox.rmdir.get_metadata",
+        new_callable=AsyncMock,
+        return_value=FOLDER,
+    ):
+        with patch(
+            "mirage.core.dropbox.rmdir.list_folder",
+            new_callable=AsyncMock,
+            return_value=[FILE],
+        ):
+            with patch(
+                "mirage.core.dropbox.rmdir.delete_path", new_callable=AsyncMock
+            ) as deleted:
                 with pytest.raises(OSError) as excinfo:
-                    await rmdir(make_accessor(),
-                                PathSpec.from_str_path("/docs"))
+                    await rmdir(
+                        make_accessor(), PathSpec.from_str_path("/docs")
+                    )
     assert excinfo.value.errno == errno.ENOTEMPTY
     deleted.assert_not_awaited()
 
 
 @pytest.mark.asyncio
 async def test_rmdir_removes_empty_folder():
-    with patch("mirage.core.dropbox.rmdir.get_metadata",
-               new_callable=AsyncMock,
-               return_value=FOLDER):
-        with patch("mirage.core.dropbox.rmdir.list_folder",
-                   new_callable=AsyncMock,
-                   return_value=[]):
-            with patch("mirage.core.dropbox.rmdir.delete_path",
-                       new_callable=AsyncMock) as deleted:
+    with patch(
+        "mirage.core.dropbox.rmdir.get_metadata",
+        new_callable=AsyncMock,
+        return_value=FOLDER,
+    ):
+        with patch(
+            "mirage.core.dropbox.rmdir.list_folder",
+            new_callable=AsyncMock,
+            return_value=[],
+        ):
+            with patch(
+                "mirage.core.dropbox.rmdir.delete_path", new_callable=AsyncMock
+            ) as deleted:
                 await rmdir(make_accessor(), PathSpec.from_str_path("/docs"))
     assert deleted.await_args.args[1] == "/docs"
 
 
 @pytest.mark.asyncio
 async def test_rmdir_file_raises_enotdir():
-    with patch("mirage.core.dropbox.rmdir.get_metadata",
-               new_callable=AsyncMock,
-               return_value=FILE):
+    with patch(
+        "mirage.core.dropbox.rmdir.get_metadata",
+        new_callable=AsyncMock,
+        return_value=FILE,
+    ):
         with pytest.raises(NotADirectoryError):
             await rmdir(make_accessor(), PathSpec.from_str_path("/a.txt"))
 

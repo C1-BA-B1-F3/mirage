@@ -19,10 +19,12 @@ from mirage.core.slack.client import slack_get, slack_post
 from mirage.core.slack.config import SlackConfig
 
 
-async def pin_message(config: SlackConfig,
-                      channel_id: str,
-                      timestamp: str,
-                      session: SessionArg = None) -> dict[str, Any]:
+async def pin_message(
+    config: SlackConfig,
+    channel_id: str,
+    timestamp: str,
+    session: SessionArg = None,
+) -> dict[str, Any]:
     """Pin a message to its channel.
 
     Args:
@@ -34,18 +36,23 @@ async def pin_message(config: SlackConfig,
     Returns:
         dict: API response.
     """
-    return await slack_post(config,
-                            "pins.add", {
-                                "channel": channel_id,
-                                "timestamp": timestamp,
-                            },
-                            session=session)
+    return await slack_post(
+        config,
+        "pins.add",
+        {
+            "channel": channel_id,
+            "timestamp": timestamp,
+        },
+        session=session,
+    )
 
 
-async def unpin_message(config: SlackConfig,
-                        channel_id: str,
-                        timestamp: str,
-                        session: SessionArg = None) -> dict[str, Any]:
+async def unpin_message(
+    config: SlackConfig,
+    channel_id: str,
+    timestamp: str,
+    session: SessionArg = None,
+) -> dict[str, Any]:
     """Remove a pin from a message.
 
     Args:
@@ -57,17 +64,20 @@ async def unpin_message(config: SlackConfig,
     Returns:
         dict: API response.
     """
-    return await slack_post(config,
-                            "pins.remove", {
-                                "channel": channel_id,
-                                "timestamp": timestamp,
-                            },
-                            session=session)
+    return await slack_post(
+        config,
+        "pins.remove",
+        {
+            "channel": channel_id,
+            "timestamp": timestamp,
+        },
+        session=session,
+    )
 
 
-async def list_pins(config: SlackConfig,
-                    channel_id: str,
-                    session: SessionArg = None) -> list[dict[str, Any]]:
+async def list_pins(
+    config: SlackConfig, channel_id: str, session: SessionArg = None
+) -> list[dict[str, Any]]:
     """List the pinned items of a channel.
 
     Args:
@@ -78,8 +88,8 @@ async def list_pins(config: SlackConfig,
     Returns:
         list[dict]: pinned items as the API reports them.
     """
-    data = await slack_get(config,
-                           "pins.list", {"channel": channel_id},
-                           session=session)
+    data = await slack_get(
+        config, "pins.list", {"channel": channel_id}, session=session
+    )
     items = data.get("items")
     return items if isinstance(items, list) else []

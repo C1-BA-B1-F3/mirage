@@ -29,8 +29,8 @@ shutil.copytree(DATA_DIR, Path(tmp) / "files", dirs_exist_ok=True)
 vfs = DiskVFS(root=tmp + "/files")
 
 with Workspace(
-    {"/data/": Mount(vfs, mode=MountMode.READ,
-                     backend=MountBackend.FUSE)}) as ws:
+    {"/data/": Mount(vfs, mode=MountMode.READ, backend=MountBackend.FUSE)}
+) as ws:
     mp = ws.fuse_mountpoint
 
     print(f"=== FUSE MODE: mounted at {mp} ===\n")

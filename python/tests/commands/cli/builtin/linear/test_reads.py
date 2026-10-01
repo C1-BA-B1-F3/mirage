@@ -60,11 +60,14 @@ async def test_issue_get_resolves_issue_keys(monkeypatch):
     def fake_normalize(issue):
         return {"issue_id": issue["id"]}
 
-    monkeypatch.setitem(reads.__dict__["resolve_issue"].__globals__,
-                        "resolve_issue_id", fake_resolve)
+    monkeypatch.setitem(
+        reads.__dict__["resolve_issue"].__globals__,
+        "resolve_issue_id",
+        fake_resolve,
+    )
     monkeypatch.setitem(reads.__dict__, "get_issue", fake_get_issue)
     monkeypatch.setitem(reads.__dict__, "normalize_issue", fake_normalize)
-    out, _io = await reads.issue_get(CLIInvocation(CONFIG, texts=("ENG-42", )))
+    out, _io = await reads.issue_get(CLIInvocation(CONFIG, texts=("ENG-42",)))
     assert calls == ["ENG-42"]
     assert (await _json(out))["issue_id"] == "issue-uuid"
 
@@ -84,7 +87,7 @@ async def test_search_takes_flag_or_operand(monkeypatch):
         return [{"issue_key": "ENG-1"}]
 
     monkeypatch.setitem(reads.__dict__, "search_issues", fake_search)
-    await reads.search(CLIInvocation(CONFIG, texts=("login bug", )))
+    await reads.search(CLIInvocation(CONFIG, texts=("login bug",)))
     await reads.search(CLIInvocation(CONFIG, flags={"query": "crash"}))
     assert queries == ["login bug", "crash"]
     with pytest.raises(ValueError, match="query is required"):

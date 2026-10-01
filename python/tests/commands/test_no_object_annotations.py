@@ -53,7 +53,8 @@ def _mentions_object(node: ast.AST | None) -> bool:
         return False
     return any(
         isinstance(child, ast.Name) and child.id == "object"
-        for child in ast.walk(node))
+        for child in ast.walk(node)
+    )
 
 
 def _target_name(node: ast.AnnAssign) -> str:
@@ -87,7 +88,8 @@ def test_annotations_name_a_real_type():
             if isinstance(node, ast.AnnAssign):
                 name = _target_name(node)
                 if (rel, name) not in ALLOWED and _mentions_object(
-                        node.annotation):
+                    node.annotation
+                ):
                     offenders.append(f"{rel}: {name}")
                 continue
             if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
@@ -96,14 +98,19 @@ def test_annotations_name_a_real_type():
                 continue
             args = node.args
             annotated = [
-                *args.posonlyargs, *args.args, *args.kwonlyargs, args.vararg,
-                args.kwarg
+                *args.posonlyargs,
+                *args.args,
+                *args.kwonlyargs,
+                args.vararg,
+                args.kwarg,
             ]
-            named = [arg.annotation
-                     for arg in annotated if arg is not None] + [node.returns]
+            named = [
+                arg.annotation for arg in annotated if arg is not None
+            ] + [node.returns]
             if any(_mentions_object(item) for item in named):
                 offenders.append(f"{rel}: {node.name}")
     assert not offenders, (
         "annotate the real type (FlagValue for a parsed flag, JsonValue "
-        "for a decoded payload, PathSpec for a path), not `object`:\n" +
-        "\n".join(offenders))
+        "for a decoded payload, PathSpec for a path), not `object`:\n"
+        + "\n".join(offenders)
+    )

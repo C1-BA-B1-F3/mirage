@@ -37,8 +37,9 @@ def _registered() -> tuple[list[RegisteredCommand], list[str]]:
     found: list[RegisteredCommand] = []
     failed: list[str] = []
     seen: set[int] = set()
-    for info in pkgutil.walk_packages(builtin.__path__,
-                                      builtin.__name__ + "."):
+    for info in pkgutil.walk_packages(
+        builtin.__path__, builtin.__name__ + "."
+    ):
         try:
             module = importlib.import_module(info.name)
         except ImportError as exc:
@@ -58,14 +59,15 @@ def test_the_chokepoints_read_the_gate():
     deleting a read is how the guard silently dies, so each is pinned
     the way test_links_optin pins ``opts.ns.links``."""
     for module_name in (
-            "mirage.commands.builtin.generic_bind.builders.find",
-            "mirage.commands.builtin.generic_bind.search",
-            "mirage.commands.builtin.generic.du",
+        "mirage.commands.builtin.generic_bind.builders.find",
+        "mirage.commands.builtin.generic_bind.search",
+        "mirage.commands.builtin.generic.du",
     ):
         module = importlib.import_module(module_name)
         assert GATE in inspect.getsource(module), (
             f"{module_name} no longer consults {GATE}; its native fast "
-            "path would answer for entries the session hides")
+            "path would answer for entries the session hides"
+        )
 
 
 def test_every_wired_find_core_forks_to_the_guarded_walk():
@@ -91,7 +93,8 @@ def test_every_wired_find_core_forks_to_the_guarded_walk():
             offenders.append(f"{cmd.vfs}/{cmd.name} ({source_file})")
     assert not offenders, (
         "these find wrappers wire a native core without forking to the "
-        f"guarded walk under {GATE}: {offenders}")
+        f"guarded walk under {GATE}: {offenders}"
+    )
 
 
 def test_every_native_search_routes_through_the_gated_factory():
@@ -114,4 +117,5 @@ def test_every_native_search_routes_through_the_gated_factory():
             offenders.append(f"{cmd.vfs}/{cmd.name} ({source_file})")
     assert not offenders, (
         "these search wrappers wire native searchers around the gated "
-        f"make_search chokepoint: {offenders}")
+        f"make_search chokepoint: {offenders}"
+    )

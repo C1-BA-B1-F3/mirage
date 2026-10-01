@@ -31,32 +31,39 @@ def _accessor() -> GitHubAccessor:
     which is the space find compares in.
     """
     tree = {
-        "src":
-        TreeEntry(path="src", type="tree", sha="a", size=None),
-        "src/main.py":
-        TreeEntry(path="src/main.py", type="blob", sha="b", size=120),
-        "src/utils":
-        TreeEntry(path="src/utils", type="tree", sha="c", size=None),
-        "src/utils/helpers.py":
-        TreeEntry(path="src/utils/helpers.py", type="blob", sha="d", size=80),
-        "README.md":
-        TreeEntry(path="README.md", type="blob", sha="e", size=50),
+        "src": TreeEntry(path="src", type="tree", sha="a", size=None),
+        "src/main.py": TreeEntry(
+            path="src/main.py", type="blob", sha="b", size=120
+        ),
+        "src/utils": TreeEntry(
+            path="src/utils", type="tree", sha="c", size=None
+        ),
+        "src/utils/helpers.py": TreeEntry(
+            path="src/utils/helpers.py", type="blob", sha="d", size=80
+        ),
+        "README.md": TreeEntry(
+            path="README.md", type="blob", sha="e", size=50
+        ),
     }
     return GitHubAccessor(None, "acme", "proj", "main", "main", tree=tree)
 
 
 def _spec(path: str, prefix: str = "") -> PathSpec:
-    return PathSpec(vfs_path=mount_key(path, prefix),
-                    virtual=path,
-                    directory=path)
+    return PathSpec(
+        vfs_path=mount_key(path, prefix), virtual=path, directory=path
+    )
 
 
 @pytest.mark.asyncio
 async def test_find_all_from_root():
     results = await find(_accessor(), _spec("/"))
     assert results == [
-        "/", "/README.md", "/src", "/src/main.py", "/src/utils",
-        "/src/utils/helpers.py"
+        "/",
+        "/README.md",
+        "/src",
+        "/src/main.py",
+        "/src/utils",
+        "/src/utils/helpers.py",
     ]
 
 
@@ -92,9 +99,9 @@ async def test_find_mindepth():
 
 @pytest.mark.asyncio
 async def test_find_strips_mount_prefix():
-    results = await find(_accessor(),
-                         _spec("/github/src", prefix="/github"),
-                         type="f")
+    results = await find(
+        _accessor(), _spec("/github/src", prefix="/github"), type="f"
+    )
     assert results == ["/src/main.py", "/src/utils/helpers.py"]
 
 
@@ -102,10 +109,9 @@ async def test_find_strips_mount_prefix():
 async def test_find_size_filters():
     # A directory is DIR_SIZE bytes for -size, so a window below it keeps
     # only the files in range.
-    results = await find(_accessor(),
-                         _spec("/"),
-                         min_size=100,
-                         max_size=DIR_SIZE - 1)
+    results = await find(
+        _accessor(), _spec("/"), min_size=100, max_size=DIR_SIZE - 1
+    )
     assert results == ["/src/main.py"]
 
 
@@ -141,14 +147,12 @@ async def test_find_mtime_excludes_every_entry_a_git_tree_has_no_times():
 @pytest.mark.asyncio
 async def test_find_empty_matches_empty_files_and_directories():
     accessor = _accessor()
-    accessor.tree["empty.txt"] = TreeEntry(path="empty.txt",
-                                           type="blob",
-                                           sha="empty-file",
-                                           size=0)
-    accessor.tree["empty-dir"] = TreeEntry(path="empty-dir",
-                                           type="tree",
-                                           sha="empty-dir",
-                                           size=None)
+    accessor.tree["empty.txt"] = TreeEntry(
+        path="empty.txt", type="blob", sha="empty-file", size=0
+    )
+    accessor.tree["empty-dir"] = TreeEntry(
+        path="empty-dir", type="tree", sha="empty-dir", size=None
+    )
 
     results = await find(accessor, _spec("/"), empty=True)
 

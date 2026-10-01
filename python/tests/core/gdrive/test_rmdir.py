@@ -45,8 +45,9 @@ async def test_rmdir_file_raises(fake_drive, gdrive_accessor):
 
 
 @pytest.mark.asyncio
-async def test_rmdir_refuses_a_folder_holding_a_file(fake_drive,
-                                                     gdrive_accessor):
+async def test_rmdir_refuses_a_folder_holding_a_file(
+    fake_drive, gdrive_accessor
+):
     folder = fake_drive.folder("d")
     fake_drive.add("a.txt", parent=folder, content=b"a")
     with pytest.raises(OSError) as excinfo:
@@ -58,7 +59,8 @@ async def test_rmdir_refuses_a_folder_holding_a_file(fake_drive,
 
 @pytest.mark.asyncio
 async def test_rmdir_refuses_a_folder_holding_a_subfolder(
-        fake_drive, gdrive_accessor):
+    fake_drive, gdrive_accessor
+):
     folder = fake_drive.folder("d")
     fake_drive.folder("sub", parent=folder)
     with pytest.raises(OSError) as excinfo:

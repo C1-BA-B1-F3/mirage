@@ -23,15 +23,16 @@ ws = Workspace(
 
 ws.dispatch("mkdir", "/data/logs")
 ws.dispatch("mkdir", "/data/src")
-APP_LOG = (b"INFO  server started\nERROR disk full\n"
-           b"INFO  request ok\nERROR timeout\n")
+APP_LOG = (
+    b"INFO  server started\nERROR disk full\nINFO  request ok\nERROR timeout\n"
+)
 ws.dispatch("tee", "/data/logs/app.log", data=APP_LOG)
-ws.dispatch("tee",
-            "/data/src/main.py",
-            data=b'def main():\n    print("hello")\n')
-ws.dispatch("tee",
-            "/data/src/utils.py",
-            data=b"def add(a, b):\n    return a + b\n")
+ws.dispatch(
+    "tee", "/data/src/main.py", data=b'def main():\n    print("hello")\n'
+)
+ws.dispatch(
+    "tee", "/data/src/utils.py", data=b"def add(a, b):\n    return a + b\n"
+)
 ws.dispatch("tee", "/data/notes.txt", data=b"line one\nline two\nline three\n")
 
 
@@ -87,33 +88,43 @@ async def main():
 
     # ── && chain: first fails → second skipped ──────────────────────────
     io = await ws.shell(
-        "cat /data/nonexistent.txt && echo 'this should not print'")
-    await log_result("cat /data/nonexistent.txt && echo 'should not print'",
-                     io)
+        "cat /data/nonexistent.txt && echo 'this should not print'"
+    )
+    await log_result(
+        "cat /data/nonexistent.txt && echo 'should not print'", io
+    )
 
     # ── || chain: first fails → fallback runs ────────────────────────────
-    io = await ws.shell("cat /data/nonexistent.txt || echo 'fallback executed'"
-                        )
-    await log_result("cat /data/nonexistent.txt || echo 'fallback executed'",
-                     io)
+    io = await ws.shell(
+        "cat /data/nonexistent.txt || echo 'fallback executed'"
+    )
+    await log_result(
+        "cat /data/nonexistent.txt || echo 'fallback executed'", io
+    )
 
     # ── complex: (grep | sort) && echo ok || echo fail ───────────────────
     io = await ws.shell(
-        "(grep ERROR /data/logs/app.log | sort) && echo ok || echo fail")
+        "(grep ERROR /data/logs/app.log | sort) && echo ok || echo fail"
+    )
     await log_result(
-        "(grep ERROR /data/logs/app.log | sort) && echo ok || echo fail", io)
+        "(grep ERROR /data/logs/app.log | sort) && echo ok || echo fail", io
+    )
 
     # ── complex: same but grep finds nothing → fail path ─────────────────
     io = await ws.shell(
-        "(grep ZZZZZ /data/logs/app.log | sort) && echo ok || echo fail")
+        "(grep ZZZZZ /data/logs/app.log | sort) && echo ok || echo fail"
+    )
     await log_result(
-        "(grep ZZZZZ /data/logs/app.log | sort) && echo ok || echo fail", io)
+        "(grep ZZZZZ /data/logs/app.log | sort) && echo ok || echo fail", io
+    )
 
     # ── semicolon: independent commands, first fails ─────────────────────
     io = await ws.shell(
-        "cat /data/nonexistent.txt ; cat /data/notes.txt | head -n 1")
+        "cat /data/nonexistent.txt ; cat /data/notes.txt | head -n 1"
+    )
     await log_result(
-        "cat /data/nonexistent.txt ; cat /data/notes.txt | head -n 1", io)
+        "cat /data/nonexistent.txt ; cat /data/notes.txt | head -n 1", io
+    )
 
     # ── rm missing file (no -f) vs rm -f ────────────────────────────────
     io = await ws.shell("rm /data/nonexistent.txt")

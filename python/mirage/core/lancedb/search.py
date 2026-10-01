@@ -27,8 +27,11 @@ def hit(accessor: LanceDBAccessor, row: Row) -> tuple[list[str], bytes]:
     """
     config = accessor.config
     segments = [
-        PATH_SAFE.encode(cell_text(row[column])) for column in config.group_by
+        PATH_SAFE.encode(cell_text(row[column]))
+        for column in config.group_by
         if row.get(column) is not None
     ]
-    return (segments + [f"{cell_text(row[config.id_column])}.md"],
-            render_card(row, config))
+    return (
+        segments + [f"{cell_text(row[config.id_column])}.md"],
+        render_card(row, config),
+    )

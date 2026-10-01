@@ -34,9 +34,13 @@ def index():
 
 @pytest.mark.asyncio
 async def test_resolve_glob_files_pdf(accessor, index):
-    await index.set_dir("/channels/general__C001/2026-04-10/files", [
-        ("a__F1.pdf",
-         IndexEntry(id="F1",
+    await index.set_dir(
+        "/channels/general__C001/2026-04-10/files",
+        [
+            (
+                "a__F1.pdf",
+                IndexEntry(
+                    id="F1",
                     name="a",
                     resource_type="slack/file",
                     vfs_name="a__F1.pdf",
@@ -44,10 +48,14 @@ async def test_resolve_glob_files_pdf(accessor, index):
                         "mimetype": "application/pdf",
                         "url_private_download": "u",
                         "channel_id": "C001",
-                        "date": "2026-04-10"
-                    })),
-        ("b__F2.txt",
-         IndexEntry(id="F2",
+                        "date": "2026-04-10",
+                    },
+                ),
+            ),
+            (
+                "b__F2.txt",
+                IndexEntry(
+                    id="F2",
                     name="b",
                     resource_type="slack/file",
                     vfs_name="b__F2.txt",
@@ -55,12 +63,16 @@ async def test_resolve_glob_files_pdf(accessor, index):
                         "mimetype": "text/plain",
                         "url_private_download": "u",
                         "channel_id": "C001",
-                        "date": "2026-04-10"
-                    })),
-    ])
+                        "date": "2026-04-10",
+                    },
+                ),
+            ),
+        ],
+    )
     spec = PathSpec(
-        vfs_path=mount_key("/channels/general__C001/2026-04-10/files/*.pdf",
-                           ""),
+        vfs_path=mount_key(
+            "/channels/general__C001/2026-04-10/files/*.pdf", ""
+        ),
         virtual="/channels/general__C001/2026-04-10/files/*.pdf",
         directory="/channels/general__C001/2026-04-10/files/",
         pattern="*.pdf",

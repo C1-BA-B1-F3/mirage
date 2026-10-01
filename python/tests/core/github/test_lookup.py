@@ -40,21 +40,23 @@ FILES = {
 
 
 def _accessor(gh: FakeGitHub, **kwargs) -> GitHubAccessor:
-    return GitHubAccessor(GitHubConfig(token="t", base_url=gh.url), "o", "r",
-                          "main", **kwargs)
+    return GitHubAccessor(
+        GitHubConfig(token="t", base_url=gh.url), "o", "r", "main", **kwargs
+    )
 
 
 def _spec(rel: str, prefix: str = "/gh") -> PathSpec:
     virtual = prefix + "/" + rel
-    return PathSpec(virtual=virtual,
-                    directory=virtual.rsplit("/", 1)[0],
-                    vfs_path=rel)
+    return PathSpec(
+        virtual=virtual, directory=virtual.rsplit("/", 1)[0], vfs_path=rel
+    )
 
 
 @pytest.fixture
 def gh():
-    with serve(FakeGitHub(files=dict(FILES),
-                          symlinks={"docs/link.txt"})) as hub:
+    with serve(
+        FakeGitHub(files=dict(FILES), symlinks={"docs/link.txt"})
+    ) as hub:
         yield hub
 
 
@@ -108,7 +110,8 @@ async def test_a_live_index_answers_without_a_request(gh, backend):
 @pytest.mark.asyncio
 @pytest.mark.parametrize("backend", ["ram", "redis"])
 async def test_an_expired_index_refills_rather_than_asking_one_directory(
-        gh, backend):
+    gh, backend
+):
     index, client = await _store(backend)
     try:
         accessor = await _listed(gh, index)
@@ -150,13 +153,13 @@ async def test_the_gate_keys_on_the_root_listing_not_on_emptiness(gh):
     index = RAMIndexCacheStore()
     await index.set_dir(
         "/gh/other",
-        [("x", IndexEntry(id="x", name="x", resource_type="file", size=1))])
+        [("x", IndexEntry(id="x", name="x", resource_type="file", size=1))],
+    )
     await stat(accessor, _spec("docs/a.txt"), index)
     assert gh.counts() == (1, 0, 0)
 
 
 class _OrderedIndex(RAMIndexCacheStore):
-
     def __init__(self, order: list[str]) -> None:
         super().__init__()
         self.order = order
@@ -177,8 +180,9 @@ async def test_a_live_root_answers_before_any_request(gh):
     assert await point_lookup(accessor, live, "/gh", "docs/a.txt") is None
     assert order == ["list:/gh"]
     assert gh.counts() == (0, 0, 0)
-    found = await point_lookup(accessor, _OrderedIndex(order), "/gh",
-                               "docs/a.txt")
+    found = await point_lookup(
+        accessor, _OrderedIndex(order), "/gh", "docs/a.txt"
+    )
     assert found is not None and found.entry is not None
     assert gh.counts() == (1, 0, 0)
 
@@ -200,23 +204,26 @@ async def test_a_point_stat_writes_nothing(gh):
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("rel", [
-    "README.md", "docs/a.txt", "docs/sub/b.txt", "docs/link.txt", "docs",
-    "docs/sub"
-])
+@pytest.mark.parametrize(
+    "rel",
+    [
+        "README.md",
+        "docs/a.txt",
+        "docs/sub/b.txt",
+        "docs/link.txt",
+        "docs",
+        "docs/sub",
+    ],
+)
 async def test_the_point_row_renders_as_the_tree_row(gh, rel):
     listed = await _listed(gh, RAMIndexCacheStore())
     by_point = await stat(listed, _spec(rel), RAMIndexCacheStore())
     assert gh.counts() == (1, 0, 0)
     by_tree = await stat(_accessor(gh), _spec(rel), RAMIndexCacheStore())
     fields = ("name", "type", "size", "fingerprint", "content")
-    assert ({
-        f: getattr(by_point, f)
-        for f in fields
-    } == {
-        f: getattr(by_tree, f)
-        for f in fields
-    })
+    assert {f: getattr(by_point, f) for f in fields} == {
+        f: getattr(by_tree, f) for f in fields
+    }
     if rel == "docs/link.txt":
         # A symlink row is the link's own blob: its sha and the length of
         # its text, which is what a read of it returns.
@@ -288,7 +295,8 @@ async def test_a_stat_retries_when_the_index_changes_under_it(gh, kind):
 
 @pytest.mark.asyncio
 async def test_a_genuine_miss_is_asked_twice_without_a_request(
-        gh, monkeypatch):
+    gh, monkeypatch
+):
     index = RAMIndexCacheStore()
     accessor = await _listed(gh, index)
     calls: list[str] = []
@@ -298,8 +306,9 @@ async def test_a_genuine_miss_is_asked_twice_without_a_request(
         calls.append(args[3])
         return await real(*args, **kwargs)
 
-    monkeypatch.setitem(lookup_mod.lookup_retrying.__globals__, "lookup",
-                        counting)
+    monkeypatch.setitem(
+        lookup_mod.lookup_retrying.__globals__, "lookup", counting
+    )
     with pytest.raises(FileNotFoundError):
         await stat(accessor, _spec("docs/sub/nope.txt"), index)
     # The first lookup left the listing that answers the second.
@@ -317,18 +326,22 @@ async def test_a_miss_without_an_index_is_not_retried(gh, monkeypatch):
         calls.append(args[3])
         return await real(*args, **kwargs)
 
-    monkeypatch.setitem(lookup_mod.lookup_retrying.__globals__, "lookup",
-                        counting)
+    monkeypatch.setitem(
+        lookup_mod.lookup_retrying.__globals__, "lookup", counting
+    )
     with pytest.raises(FileNotFoundError):
         await stat(accessor, _spec("docs/sub/b.txt"), NULL_INDEX)
     assert len(calls) == 1
 
 
-@pytest.mark.parametrize("prefix,rel,key", [
-    ("/gh", "docs/a.txt", "/gh/docs/a.txt"),
-    ("/gh", "README.md", "/gh/README.md"),
-    ("", "docs/a.txt", "/docs/a.txt"),
-])
+@pytest.mark.parametrize(
+    "prefix,rel,key",
+    [
+        ("/gh", "docs/a.txt", "/gh/docs/a.txt"),
+        ("/gh", "README.md", "/gh/README.md"),
+        ("", "docs/a.txt", "/docs/a.txt"),
+    ],
+)
 def test_locate_names_the_prefix_the_path_and_its_key(prefix, rel, key):
     assert locate(_spec(rel, prefix)) == (prefix, rel, key)
 

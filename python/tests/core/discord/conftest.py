@@ -31,30 +31,16 @@ CHANNELS = [
         "type": 0,
         "last_message_id": date_to_snowflake("2024-01-15"),
     },
-    {
-        "id": "C002",
-        "name": "random",
-        "type": 0
-    },
+    {"id": "C002", "name": "random", "type": 0},
 ]
 MEMBERS = [{"user": {"id": "U001", "username": "alice"}, "nick": "al"}]
 
 MESSAGES = [
+    {"id": "1", "content": "hello", "author": {"username": "alice"}},
     {
-        "id": "1",
-        "content": "hello",
-        "author": {
-            "username": "alice"
-        }
-    },
-    {
-        "id":
-        "2",
-        "content":
-        "files",
-        "author": {
-            "username": "bob"
-        },
+        "id": "2",
+        "content": "files",
+        "author": {"username": "bob"},
         "attachments": [
             {
                 "id": "A1",
@@ -90,11 +76,11 @@ def _http_error(status: int) -> aiohttp.ClientResponseError:
     return aiohttp.ClientResponseError(
         request_info=None,  # type: ignore[arg-type]
         history=(),
-        status=status)
+        status=status,
+    )
 
 
 class FakeDiscordApi:
-
     def __init__(self) -> None:
         self.day_fetches: list[tuple[str, str]] = []
         self.downloads: list[tuple[str, int, int | None]] = []
@@ -110,12 +96,9 @@ class FakeDiscordApi:
         assert guild_id == GUILD["id"]
         return [dict(m) for m in MEMBERS]
 
-    async def list_messages_for_day(self,
-                                    config,
-                                    channel_id,
-                                    date_str,
-                                    scope,
-                                    session=None):
+    async def list_messages_for_day(
+        self, config, channel_id, date_str, scope, session=None
+    ):
         self.day_fetches.append((channel_id, date_str))
         if date_str == SEALED_DAY:
             raise _http_error(403)
@@ -125,14 +108,14 @@ class FakeDiscordApi:
             return [dict(m) for m in MESSAGES]
         return []
 
-    async def get_history_jsonl(self,
-                                config,
-                                channel_id,
-                                date_str,
-                                scope,
-                                session=None):
-        return history_jsonl_bytes(await self.list_messages_for_day(
-            config, channel_id, date_str, scope))
+    async def get_history_jsonl(
+        self, config, channel_id, date_str, scope, session=None
+    ):
+        return history_jsonl_bytes(
+            await self.list_messages_for_day(
+                config, channel_id, date_str, scope
+            )
+        )
 
     async def download_file(self, url, offset=0, size=None, session=None):
         self.downloads.append((url, offset, size))
@@ -147,8 +130,9 @@ def api(monkeypatch):
     monkeypatch.setattr(readdir_mod, "list_guilds", fake.list_guilds)
     monkeypatch.setattr(readdir_mod, "list_channels", fake.list_channels)
     monkeypatch.setattr(readdir_mod, "list_members", fake.list_members)
-    monkeypatch.setattr(readdir_mod, "list_messages_for_day",
-                        fake.list_messages_for_day)
+    monkeypatch.setattr(
+        readdir_mod, "list_messages_for_day", fake.list_messages_for_day
+    )
     monkeypatch.setattr(read_mod, "get_history_jsonl", fake.get_history_jsonl)
     monkeypatch.setattr(read_mod, "list_members", fake.list_members)
     monkeypatch.setattr(read_mod, "download_file", fake.download_file)

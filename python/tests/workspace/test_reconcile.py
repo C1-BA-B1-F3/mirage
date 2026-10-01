@@ -22,8 +22,12 @@ from uuid import uuid4
 import pytest
 
 from mirage import MountMode, Workspace
-from mirage.cache.index.config import (Evicted, IndexConfig, IndexEntry,
-                                       RedisIndexConfig)
+from mirage.cache.index.config import (
+    Evicted,
+    IndexConfig,
+    IndexEntry,
+    RedisIndexConfig,
+)
 from mirage.cache.index.constants import LISTING_TRUST_WINDOW
 from mirage.cache.index.scope import command_scope
 from mirage.types import FileStat, FileType, PathSpec, ReadPolicy, ReadSpec
@@ -139,7 +143,8 @@ async def test_may_serve_listing_trusts_the_index_under_bounded():
 
 @pytest.mark.asyncio
 async def test_may_serve_listing_under_fresh_trusts_only_this_commands_writes(
-        monkeypatch):
+    monkeypatch,
+):
     # fresh re-lists anything listed before the command started; a listing
     # the command itself refreshed is served, so one ls costs one re-list.
     # Outside any command a listing is trusted only for the window.
@@ -217,8 +222,11 @@ async def test_may_serve_cached_serves_a_fingerprinted_live_only_backend():
 
         async def fingerprinted(op, path, **kwargs):
             stat = await real(op, path, **kwargs)
-            return (stat.model_copy(update={"fingerprint": "fp1"})
-                    if op == "stat" and stat is not None else stat)
+            return (
+                stat.model_copy(update={"fingerprint": "fp1"})
+                if op == "stat" and stat is not None
+                else stat
+            )
 
         mount.execute_op = fingerprinted
         await ws.cache.set("/data/f.txt", b"v1", fingerprint="fp1")
@@ -290,8 +298,9 @@ async def test_an_unverifiable_probe_drops_the_entry(caplog, failure):
         mount.execute_op = failing
         await ws.cache.set("/data/f.txt", b"v1", fingerprint="fp1")
         rec = Reconciler(ws.cache, ws.namespace)
-        with caplog.at_level(logging.WARNING,
-                             logger="mirage.workspace.reconcile"):
+        with caplog.at_level(
+            logging.WARNING, logger="mirage.workspace.reconcile"
+        ):
             assert await rec.may_serve_cached(mount, "/data/f.txt") is False
         assert not await ws.cache.exists("/data/f.txt")
         # The capture collects every logger, so filter to ours first.
@@ -307,8 +316,9 @@ async def test_an_unverifiable_probe_drops_the_entry(caplog, failure):
 @pytest.mark.parametrize("index_type", ["ram", "redis"])
 @pytest.mark.parametrize("surface", ["shell", "fs"])
 @pytest.mark.parametrize("change", ["overwrite", "delete"])
-async def test_always_probes_live_s3_with_warm_index(index_type, surface,
-                                                     change):
+async def test_always_probes_live_s3_with_warm_index(
+    index_type, surface, change
+):
     index = None
     if index_type == "redis":
         url = os.environ.get("REDIS_URL")
@@ -317,14 +327,17 @@ async def test_always_probes_live_s3_with_warm_index(index_type, surface,
         index = RedisIndexConfig(url=url, key_prefix=f"reconcile:{uuid4()}:")
     objects = {"f.txt": b"v1"}
     vfs = S3VFS(
-        S3Config(bucket="test-bucket",
-                 region="us-east-1",
-                 aws_access_key_id="fake",
-                 aws_secret_access_key="fake"))
+        S3Config(
+            bucket="test-bucket",
+            region="us-east-1",
+            aws_access_key_id="fake",
+            aws_secret_access_key="fake",
+        )
+    )
     with patch_s3_multi({"test-bucket": objects}):
-        ws = Workspace({"/s3": vfs},
-                       index=index,
-                       read=ReadSpec(policy=ReadPolicy.FRESH))
+        ws = Workspace(
+            {"/s3": vfs}, index=index, read=ReadSpec(policy=ReadPolicy.FRESH)
+        )
         store = ws.mount("/s3").index_store
         try:
             assert (await ws.shell("ls /s3/")).exit_code == 0
@@ -337,8 +350,9 @@ async def test_always_probes_live_s3_with_warm_index(index_type, surface,
                 del objects["f.txt"]
             if surface == "shell":
                 result = await ws.shell("cat /s3/f.txt")
-                assert result.stdout == (b"v2"
-                                         if change == "overwrite" else b"")
+                assert result.stdout == (
+                    b"v2" if change == "overwrite" else b""
+                )
                 assert result.exit_code == (0 if change == "overwrite" else 1)
             elif change == "overwrite":
                 assert await ws.vfs.read("/s3/f.txt") == b"v2"
@@ -354,7 +368,8 @@ async def test_always_probes_live_s3_with_warm_index(index_type, surface,
 @pytest.mark.parametrize("probe", ["unknown", "none", "failed", "fresh"])
 @pytest.mark.parametrize("surface", ["shell", "gate"])
 async def test_unverified_probe_cannot_serve_cached_bytes(
-        monkeypatch, probe, surface):
+    monkeypatch, probe, surface
+):
     ws = Workspace({"/data": RAMVFS()})
     try:
         mount = ws.namespace.mount_for("/data/f.txt")
@@ -367,9 +382,11 @@ async def test_unverified_probe_cannot_serve_cached_bytes(
                 raise OSError("probe unavailable")
             if probe == "none":
                 return None
-            return FileStat(name="f.txt",
-                            type=FileType.FILE,
-                            fingerprint="fp1" if probe == "fresh" else None)
+            return FileStat(
+                name="f.txt",
+                type=FileType.FILE,
+                fingerprint="fp1" if probe == "fresh" else None,
+            )
 
         monkeypatch.setattr(mount, "execute_op", stat)
         rec = Reconciler(ws.cache, ws.namespace)
@@ -387,8 +404,9 @@ async def test_unverified_probe_cannot_serve_cached_bytes(
             assert await rec.may_serve_cached(mount, "/data/f.txt") is False
             assert not await ws.cache.exists("/data/f.txt")
         else:
-            assert await rec.may_serve_cached(
-                mount, "/data/f.txt") == (probe == "fresh")
+            assert await rec.may_serve_cached(mount, "/data/f.txt") == (
+                probe == "fresh"
+            )
             assert await ws.cache.exists("/data/f.txt") == (probe == "fresh")
     finally:
         await ws.close()
@@ -452,12 +470,14 @@ async def test_bounded_removes_a_bound_less_entry_and_the_refill_stamps():
         rec = Reconciler(ws.cache, ws.namespace)
         assert await rec.may_serve_cached(mount, "/data/f.txt") is False
         assert not await ws.cache.exists("/data/f.txt"), (
-            "the bound-less entry must be removed, not just refused")
+            "the bound-less entry must be removed, not just refused"
+        )
 
         assert (await ws.shell("cat /data/f.txt")).stdout == b"v1"
         assert await ws.cache.is_unbounded("/data/f.txt") is False, (
             "the cold read must re-stamp the bound, or the drop repeats "
-            "on every read forever")
+            "on every read forever"
+        )
     finally:
         await ws.close()
 
@@ -483,10 +503,13 @@ async def test_bounded_serves_an_entry_that_carries_a_bound():
 async def test_fresh_s3_relist_keeps_deletion_baseline_after_stat():
     objects = {"sub/a": b"a", "sub/b": b"b"}
     vfs = S3VFS(
-        S3Config(bucket="test-bucket",
-                 region="us-east-1",
-                 aws_access_key_id="fake",
-                 aws_secret_access_key="fake"))
+        S3Config(
+            bucket="test-bucket",
+            region="us-east-1",
+            aws_access_key_id="fake",
+            aws_secret_access_key="fake",
+        )
+    )
     with patch_s3_multi({"test-bucket": objects}):
         ws = Workspace({"/s3": vfs}, read=ReadSpec(policy=ReadPolicy.FRESH))
         try:
@@ -507,8 +530,9 @@ async def test_fresh_s3_relist_keeps_deletion_baseline_after_stat():
 @pytest.mark.parametrize("shared", [False, True])
 @pytest.mark.parametrize("redis", [False, True])
 @pytest.mark.parametrize("replacement", [False, True])
-async def test_relist_preserves_nested_mount_subtree(shared, redis,
-                                                     replacement):
+async def test_relist_preserves_nested_mount_subtree(
+    shared, redis, replacement
+):
     config = IndexConfig(ttl=600)
     if redis:
         url = os.environ.get("REDIS_URL")
@@ -517,21 +541,31 @@ async def test_relist_preserves_nested_mount_subtree(shared, redis,
         config = RedisIndexConfig(url=url, key_prefix=f"nested:{uuid4()}:")
     parent = RAMVFS()
     ws = Workspace(
-        {
-            "/data": parent,
-            "/data/sub/nested": parent if shared else RAMVFS()
-        },
-        index=config)
+        {"/data": parent, "/data/sub/nested": parent if shared else RAMVFS()},
+        index=config,
+    )
     try:
         await ws.namespace.ensure_loaded()
         index = ws.mount("/data").index
         nested = ws.mount("/data/sub/nested").index
-        await index.set_dir("/data", [
-            ("sub", IndexEntry(id="sub", name="sub", resource_type="folder"))
-        ])
-        await nested.set_dir("/data/sub/nested", [
-            ("file", IndexEntry(id="file", name="file", resource_type="file"))
-        ])
+        await index.set_dir(
+            "/data",
+            [
+                (
+                    "sub",
+                    IndexEntry(id="sub", name="sub", resource_type="folder"),
+                )
+            ],
+        )
+        await nested.set_dir(
+            "/data/sub/nested",
+            [
+                (
+                    "file",
+                    IndexEntry(id="file", name="file", resource_type="file"),
+                )
+            ],
+        )
         await ws.cache.set("/data/sub/old", b"old")
         await ws.cache.set("/data/sub/nested/file", b"keep")
         await ws.namespace.set_attrs("/data/sub/old", mode=0o600)
@@ -539,8 +573,8 @@ async def test_relist_preserves_nested_mount_subtree(shared, redis,
         rows = []
         if replacement:
             rows.append(
-                ("sub", IndexEntry(id="new", name="sub",
-                                   resource_type="file")))
+                ("sub", IndexEntry(id="new", name="sub", resource_type="file"))
+            )
         await index.set_dir("/data", rows)
         if replacement:
             assert (await index.get("/data/sub")).entry.id == "new"
@@ -572,9 +606,13 @@ async def test_relist_batches_a_thousand_vanished_children():
     try:
         await ws.namespace.ensure_loaded()
         mount = ws.mount("/data")
-        rows = [(f"file-{i}",
-                 IndexEntry(id=str(i), name=f"file-{i}", resource_type="file"))
-                for i in range(1000)]
+        rows = [
+            (
+                f"file-{i}",
+                IndexEntry(id=str(i), name=f"file-{i}", resource_type="file"),
+            )
+            for i in range(1000)
+        ]
         await mount.index.set_dir("/data", rows)
         for name, _ in rows:
             await ws.cache.set(f"/data/{name}", b"stale")
@@ -598,13 +636,11 @@ async def test_relist_batches_a_thousand_vanished_children():
 
 
 @pytest.mark.asyncio
-async def test_cleanup_batches_overlapping_folders_and_protects_nested_mounts(
-):
-    ws = Workspace({
-        "/data": RAMVFS(),
-        "/data/tree/nested": RAMVFS()
-    },
-                   index=IndexConfig(ttl=600))
+async def test_cleanup_batches_overlapping_folders_and_protects_nested_mounts():
+    ws = Workspace(
+        {"/data": RAMVFS(), "/data/tree/nested": RAMVFS()},
+        index=IndexConfig(ttl=600),
+    )
     try:
         await ws.namespace.ensure_loaded()
         removed = ["/data/tree", "/data/tree/sub/old", "/data/tree2/old"]
@@ -613,21 +649,24 @@ async def test_cleanup_batches_overlapping_folders_and_protects_nested_mounts(
             await ws.cache.set(path, b"data")
             await ws.namespace.set_attrs(path, mode=0o600)
         await ws.namespace.symlink("/data/tree/link", "/data/target", 1)
-        with patch.object(ws.cache,
-                          "evict_prefix",
-                          wraps=ws.cache.evict_prefix) as evict:
-            await ws.mount("/data").index.report_gone([
-                Evicted("/data/tree/sub", folder=True),
-                Evicted("/data/tree/sub/old", folder=False),
-                Evicted("/data/tree/", folder=True),
-                Evicted("/data/tree", folder=True),
-                Evicted("/data/tree2", folder=True),
-                Evicted("/data/tree/nested/keep", folder=False),
-            ])
+        with patch.object(
+            ws.cache, "evict_prefix", wraps=ws.cache.evict_prefix
+        ) as evict:
+            await ws.mount("/data").index.report_gone(
+                [
+                    Evicted("/data/tree/sub", folder=True),
+                    Evicted("/data/tree/sub/old", folder=False),
+                    Evicted("/data/tree/", folder=True),
+                    Evicted("/data/tree", folder=True),
+                    Evicted("/data/tree2", folder=True),
+                    Evicted("/data/tree/nested/keep", folder=False),
+                ]
+            )
         assert evict.call_count == 2
-        assert {call.args[0]
-                for call in evict.call_args_list
-                } == {"/data/tree/", "/data/tree2/"}
+        assert {call.args[0] for call in evict.call_args_list} == {
+            "/data/tree/",
+            "/data/tree2/",
+        }
         for path in removed:
             assert not await ws.cache.exists(path)
             assert ws.namespace.meta_for(path) is None
@@ -660,7 +699,8 @@ async def test_a_write_in_the_command_sends_the_next_probe_to_the_backend():
             assert probed is not None and probed.size == 2
             del resource._store.files["/f.txt"]
             await mount.cache_manager.invalidate_after_write(
-                PathSpec.from_str_path("/data/g.txt"))
+                PathSpec.from_str_path("/data/g.txt")
+            )
             await ws.cache.set("/data/f.txt", b"v1", fingerprint="fp1")
             with pytest.raises(FileNotFoundError):
                 await rec.may_serve_cached(mount, "/data/f.txt")
@@ -669,17 +709,18 @@ async def test_a_write_in_the_command_sends_the_next_probe_to_the_backend():
 
 
 class _CountingStat:
-
     def __init__(self, fingerprint: str) -> None:
         self.fingerprint = fingerprint
         self.calls = 0
 
     async def __call__(self, op, path, **kwargs):
         self.calls += 1
-        return FileStat(name="f.txt",
-                        size=2,
-                        type=FileType.FILE,
-                        fingerprint=self.fingerprint)
+        return FileStat(
+            name="f.txt",
+            size=2,
+            type=FileType.FILE,
+            fingerprint=self.fingerprint,
+        )
 
 
 async def _gated(fingerprint: str = "fp1"):
@@ -725,10 +766,12 @@ async def test_a_write_during_a_probe_prevents_reusing_its_answer():
     try:
         async with command_scope():
             probing = asyncio.create_task(
-                rec.reconcile_read(mount, "/data/f.txt"))
+                rec.reconcile_read(mount, "/data/f.txt")
+            )
             await captured.wait()
             await mount.cache_manager.invalidate_after_write(
-                PathSpec.from_str_path("/data/g.txt"))
+                PathSpec.from_str_path("/data/g.txt")
+            )
             stat.fingerprint = "fp2"
             release.set()
             await probing
@@ -748,10 +791,10 @@ async def test_the_gate_still_compares_a_reused_answer_with_the_cache():
         async with command_scope():
             mount.cache_manager.note_probed(
                 PathSpec.from_str_path("/data/f.txt"),
-                FileStat(name="f.txt",
-                         size=2,
-                         type=FileType.FILE,
-                         fingerprint="fp2"))
+                FileStat(
+                    name="f.txt", size=2, type=FileType.FILE, fingerprint="fp2"
+                ),
+            )
             assert await rec.may_serve_cached(mount, "/data/f.txt") is False
         assert not await ws.cache.exists("/data/f.txt")
         assert stat.calls == 0
@@ -766,7 +809,8 @@ async def test_the_gate_asks_the_backend_after_a_write_in_the_command():
         async with command_scope():
             await rec.reconcile_read(mount, "/data/f.txt")
             await mount.cache_manager.invalidate_after_write(
-                PathSpec.from_str_path("/data/g.txt"))
+                PathSpec.from_str_path("/data/g.txt")
+            )
             await rec.may_serve_cached(mount, "/data/f.txt")
         assert stat.calls == 2
     finally:

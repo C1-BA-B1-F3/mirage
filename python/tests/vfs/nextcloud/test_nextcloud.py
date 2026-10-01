@@ -6,7 +6,8 @@ from mirage.vfs.nextcloud import NextcloudConfig, NextcloudVFS
 
 def test_nextcloudconfig_defaults():
     c = NextcloudConfig(
-        url="https://cloud.example.com/remote.php/dav/files/user/")
+        url="https://cloud.example.com/remote.php/dav/files/user/"
+    )
     assert c.username is None
     assert c.password is None
     assert c.verify_ssl is True
@@ -15,7 +16,8 @@ def test_nextcloudconfig_defaults():
 
 def test_nextcloudconfig_immutable():
     c = NextcloudConfig(
-        url="https://cloud.example.com/remote.php/dav/files/user/")
+        url="https://cloud.example.com/remote.php/dav/files/user/"
+    )
     with pytest.raises(ValidationError):
         c.url = "https://other.example.com/"
 
@@ -34,10 +36,28 @@ def test_nextcloudconfig_with_credentials():
 
 def test_nextcloud_write_commands_tagged():
     from mirage.commands.builtin.nextcloud import COMMANDS
+
     write_names = {
-        "cp", "csplit", "gunzip", "gzip", "iconv", "ln", "mkdir", "mktemp",
-        "mv", "patch", "rm", "rmdir", "split", "tar", "tee", "touch", "unlink",
-        "truncate", "unzip", "zip"
+        "cp",
+        "csplit",
+        "gunzip",
+        "gzip",
+        "iconv",
+        "ln",
+        "mkdir",
+        "mktemp",
+        "mv",
+        "patch",
+        "rm",
+        "rmdir",
+        "split",
+        "tar",
+        "tee",
+        "touch",
+        "unlink",
+        "truncate",
+        "unzip",
+        "zip",
     }
     for fn in COMMANDS:
         for rc in fn._registered_commands:
@@ -49,9 +69,16 @@ def test_nextcloud_write_commands_tagged():
 
 def test_nextcloud_write_ops_tagged():
     from mirage.ops.nextcloud import OPS
+
     write_op_names = {
-        "write", "append", "unlink", "rmdir", "mkdir", "create", "truncate",
-        "rename"
+        "write",
+        "append",
+        "unlink",
+        "rmdir",
+        "mkdir",
+        "create",
+        "truncate",
+        "rename",
     }
     for ro in OPS:
         if ro.name in write_op_names:
@@ -62,7 +89,8 @@ def test_nextcloud_write_ops_tagged():
 
 def test_nextcloud_vfs_registers_commands():
     config = NextcloudConfig(
-        url="https://cloud.example.com/remote.php/dav/files/user/")
+        url="https://cloud.example.com/remote.php/dav/files/user/"
+    )
     vfs = NextcloudVFS(config)
     command_names = {rc.name for rc in vfs.commands()}
     assert "ls" in command_names
@@ -85,5 +113,7 @@ def test_nextcloud_vfs_get_state():
     assert state["needs_override"] is True
     assert state["config"]["password"] == "<REDACTED>"
     assert state["config"]["username"] == "alice"
-    assert state["config"][
-        "url"] == "https://cloud.example.com/remote.php/dav/files/user/"
+    assert (
+        state["config"]["url"]
+        == "https://cloud.example.com/remote.php/dav/files/user/"
+    )

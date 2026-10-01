@@ -15,10 +15,12 @@
 import pytest
 
 from mirage import MountMode, Workspace
-from tests.vfs.databricks_volume.test_databricks_volume import (FakeFiles,
-                                                                make_vfs,
-                                                                seed_directory,
-                                                                seed_file)
+from tests.vfs.databricks_volume.test_databricks_volume import (
+    FakeFiles,
+    make_vfs,
+    seed_directory,
+    seed_file,
+)
 
 ROOT = "/Volumes/main/default/agent_files/root"
 
@@ -77,8 +79,10 @@ async def test_mv_read_only_mount_rejected(read_ws, dbx_files):
     io = await read_ws.shell("mv /dbx/src.txt /dbx/dst.txt")
 
     assert io.exit_code != 0
-    assert io.stderr == (b"mv: cannot move '/dbx/src.txt' to '/dbx/dst.txt': "
-                         b"Read-only file system\n")
+    assert io.stderr == (
+        b"mv: cannot move '/dbx/src.txt' to '/dbx/dst.txt': "
+        b"Read-only file system\n"
+    )
     assert dbx_files.downloads[f"{ROOT}/src.txt"] == b"data"
 
 
@@ -92,7 +96,8 @@ async def test_ops_rename(write_ws, dbx_files):
 
 @pytest.mark.asyncio
 async def test_mv_onto_same_path_errors_and_preserves_file(
-        write_ws, dbx_files):
+    write_ws, dbx_files
+):
     io = await write_ws.shell("mv /dbx/src.txt /dbx/src.txt")
 
     assert io.exit_code != 0
@@ -103,7 +108,8 @@ async def test_mv_onto_same_path_errors_and_preserves_file(
 
 @pytest.mark.asyncio
 async def test_mv_into_dir_where_file_already_lives_errors_and_preserves_file(
-        write_ws, dbx_files):
+    write_ws, dbx_files
+):
     io = await write_ws.shell("mv /dbx/src.txt /dbx/")
 
     assert io.exit_code != 0

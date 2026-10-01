@@ -20,13 +20,30 @@ from dataclasses import dataclass, field
 from datetime import timezone
 
 from mirage.commands.builtin import constants
-from mirage.commands.builtin.find_eval import (Action, ActionKind, And, Empty,
-                                               Mtime, Name, Not, Or, Path,
-                                               PredNode, Prune, TrueNode, Type,
-                                               tree_has_action, tree_has_prune,
-                                               without_prune)
-from mirage.commands.builtin.types import (ExecAction, FindAction,
-                                           PrintfAction, RowAction)
+from mirage.commands.builtin.find_eval import (
+    Action,
+    ActionKind,
+    And,
+    Empty,
+    Mtime,
+    Name,
+    Not,
+    Or,
+    Path,
+    PredNode,
+    Prune,
+    TrueNode,
+    Type,
+    tree_has_action,
+    tree_has_prune,
+    without_prune,
+)
+from mirage.commands.builtin.types import (
+    ExecAction,
+    FindAction,
+    PrintfAction,
+    RowAction,
+)
 from mirage.commands.errors import FindParseError
 from mirage.utils.dates import parse_date_expr
 
@@ -42,7 +59,8 @@ def parse_depth(value: str, flag: str) -> int:
         return int(value)
     except ValueError:
         raise FindParseError(
-            f"find: invalid argument '{value}' to '{flag}'") from None
+            f"find: invalid argument '{value}' to '{flag}'"
+        ) from None
 
 
 def parse_size(spec: str) -> tuple[int | None, int | None]:
@@ -70,9 +88,11 @@ def parse_size(spec: str) -> tuple[int | None, int | None]:
     else:
         raise FindParseError(f"find: invalid -size type `{spec[-1]}'")
     sign = body[:1] if body.startswith(("+", "-")) else ""
-    number = body[len(sign):]
-    if (not re.fullmatch(rf"{constants.C_SPACE}\+?[0-9]+", number)
-            or int(number) > constants.UINTMAX):
+    number = body[len(sign) :]
+    if (
+        not re.fullmatch(rf"{constants.C_SPACE}\+?[0-9]+", number)
+        or int(number) > constants.UINTMAX
+    ):
         raise FindParseError(f"find: Invalid argument `{spec}' to -size")
     n = int(number)
     if sign == "+":
@@ -94,7 +114,8 @@ def parse_mtime(spec: str) -> tuple[float | None, float | None]:
         n = int(spec.lstrip("+-"))
     except ValueError:
         raise FindParseError(
-            f"find: invalid argument '{spec}' to '-mtime'") from None
+            f"find: invalid argument '{spec}' to '-mtime'"
+        ) from None
     if spec.startswith("+"):
         return None, now - n * day
     if spec.startswith("-"):
@@ -117,6 +138,7 @@ class FindExpr:
     against the dispatcher into ``-newermt`` bounds before any backend
     sees the expression.
     """
+
     tree: PredNode
     maxdepth: int | None = None
     mindepth: int | None = None
@@ -179,17 +201,31 @@ def _merge_window(state: _State, lo: float | None, hi: float | None) -> None:
         state.mtime_seen = True
         return
     if state.nested == 0 and not state.in_or:
-        state.expr.mtime_min = (lo if state.expr.mtime_min is None else
-                                state.expr.mtime_min if lo is None else max(
-                                    state.expr.mtime_min, lo))
-        state.expr.mtime_max = (hi if state.expr.mtime_max is None else
-                                state.expr.mtime_max if hi is None else min(
-                                    state.expr.mtime_max, hi))
+        state.expr.mtime_min = (
+            lo
+            if state.expr.mtime_min is None
+            else state.expr.mtime_min
+            if lo is None
+            else max(state.expr.mtime_min, lo)
+        )
+        state.expr.mtime_max = (
+            hi
+            if state.expr.mtime_max is None
+            else state.expr.mtime_max
+            if hi is None
+            else min(state.expr.mtime_max, hi)
+        )
         return
-    state.expr.mtime_min = (None if state.expr.mtime_min is None or lo is None
-                            else min(state.expr.mtime_min, lo))
-    state.expr.mtime_max = (None if state.expr.mtime_max is None or hi is None
-                            else max(state.expr.mtime_max, hi))
+    state.expr.mtime_min = (
+        None
+        if state.expr.mtime_min is None or lo is None
+        else min(state.expr.mtime_min, lo)
+    )
+    state.expr.mtime_max = (
+        None
+        if state.expr.mtime_max is None or hi is None
+        else max(state.expr.mtime_max, hi)
+    )
 
 
 def strictly_after(timestamp: float) -> float:
@@ -217,8 +253,10 @@ def parse_newermt(value: str) -> float:
     except (ValueError, OverflowError, OSError):
         ts = None
     if ts is None:
-        raise FindParseError("find: I cannot figure out how to interpret "
-                             f"'{value}' as a date or time")
+        raise FindParseError(
+            "find: I cannot figure out how to interpret "
+            f"'{value}' as a date or time"
+        )
     return ts.timestamp()
 
 
@@ -241,8 +279,11 @@ def _parse_exec(state: _State) -> ExecAction:
             raise FindParseError("find: missing argument to `-exec'")
         if tok == constants.EXEC_END:
             break
-        if (tok == constants.EXEC_BATCH_END and argv
-                and constants.EXEC_PLACEHOLDER in argv[-1]):
+        if (
+            tok == constants.EXEC_BATCH_END
+            and argv
+            and constants.EXEC_PLACEHOLDER in argv[-1]
+        ):
             batch = True
             break
         argv.append(tok)
@@ -250,14 +291,18 @@ def _parse_exec(state: _State) -> ExecAction:
         raise FindParseError("find: missing argument to `-exec'")
     if batch:
         for word in argv:
-            if (constants.EXEC_PLACEHOLDER in word
-                    and word != constants.EXEC_PLACEHOLDER):
+            if (
+                constants.EXEC_PLACEHOLDER in word
+                and word != constants.EXEC_PLACEHOLDER
+            ):
                 raise FindParseError(
                     "find: In '-exec ... {} +' the '{}' must appear by "
-                    f"itself, but you specified '{word}'")
+                    f"itself, but you specified '{word}'"
+                )
         if argv.count(constants.EXEC_PLACEHOLDER) > 1:
-            raise FindParseError("find: Only one instance of {} is supported "
-                                 "with -exec ... +")
+            raise FindParseError(
+                "find: Only one instance of {} is supported with -exec ... +"
+            )
     return ExecAction(argv=tuple(argv), batch=batch)
 
 
@@ -265,12 +310,13 @@ def _check_window_placement(state: _State, token: str) -> None:
     if state.nested > 0 or state.in_or:
         raise FindParseError(
             f"find: {token} is supported only in a top-level -a chain, "
-            "not under -o, ! or parentheses")
+            "not under -o, ! or parentheses"
+        )
 
 
-def _action_node(state: _State,
-                 kind: ActionKind,
-                 batch: bool = False) -> Action:
+def _action_node(
+    state: _State, kind: ActionKind, batch: bool = False
+) -> Action:
     """The tree node for an action just parsed.
 
     An action inside parentheses or under ``!`` makes the expression
@@ -308,14 +354,16 @@ def _check_positional(node: PredNode) -> None:
     if isinstance(node, Not):
         if tree_has_action(node.kid):
             raise FindParseError(
-                f"find: {_first_action(node.kid)} is not supported under !")
+                f"find: {_first_action(node.kid)} is not supported under !"
+            )
         _check_positional(node.kid)
     elif isinstance(node, And):
         for kid in node.kids[:-1]:
             if tree_has_action(kid):
                 raise FindParseError(
                     f"find: {_first_action(kid)} must end its -a chain "
-                    f"{_POSITIONAL}")
+                    f"{_POSITIONAL}"
+                )
         for kid in node.kids:
             _check_positional(kid)
     elif isinstance(node, Or):
@@ -352,7 +400,8 @@ def _check_exec_result(node: PredNode) -> None:
         for kid in node.kids[:-1]:
             if _holds_exec_result(kid):
                 raise FindParseError(
-                    f"find: -exec must end the expression {_POSITIONAL}")
+                    f"find: -exec must end the expression {_POSITIONAL}"
+                )
     if isinstance(node, Not):
         _check_exec_result(node.kid)
     elif isinstance(node, (And, Or)):
@@ -396,14 +445,19 @@ def _settle_actions(state: _State) -> None:
         first, second = distinct[0], distinct[1]
         if isinstance(first, ExecAction) and isinstance(second, ExecAction):
             raise FindParseError(
-                f"find: -exec may run only one command {_POSITIONAL}")
+                f"find: -exec may run only one command {_POSITIONAL}"
+            )
         if isinstance(first, PrintfAction) and isinstance(
-                second, PrintfAction):
+            second, PrintfAction
+        ):
             raise FindParseError(
-                f"find: -printf may print only one format {_POSITIONAL}")
-        raise FindParseError(f"find: {_action_word(first)} and "
-                             f"{_action_word(second)} cannot be combined "
-                             f"{_POSITIONAL}")
+                f"find: -printf may print only one format {_POSITIONAL}"
+            )
+        raise FindParseError(
+            f"find: {_action_word(first)} and "
+            f"{_action_word(second)} cannot be combined "
+            f"{_POSITIONAL}"
+        )
     _check_exec_result(state.expr.tree)
     state.expr.actions = distinct
 
@@ -416,10 +470,12 @@ def _action_word(action: FindAction) -> str:
     return f"-{action.kind}"
 
 
-_DELETE_PRUNE = ("find: The -delete action automatically turns on -depth, "
-                 "but -prune does nothing when -depth is in effect.  If you "
-                 "want to carry on anyway, just explicitly use the -depth "
-                 "option.")
+_DELETE_PRUNE = (
+    "find: The -delete action automatically turns on -depth, "
+    "but -prune does nothing when -depth is in effect.  If you "
+    "want to carry on anyway, just explicitly use the -depth "
+    "option."
+)
 
 
 def _peek(state: _State) -> str | None:
@@ -450,7 +506,8 @@ def _after_operator(state: _State, op: str) -> None:
         raise FindParseError(f"find: expected an expression after '{op}'")
     if tok == ")":
         raise FindParseError(
-            f"find: expected an expression between '{op}' and ')'")
+            f"find: expected an expression between '{op}' and ')'"
+        )
 
 
 def _type_node(value: str) -> Type:
@@ -468,23 +525,32 @@ def _mtime_arg(value: str) -> tuple[float | None, float | None]:
         return parse_mtime(value)
     except (ValueError, IndexError) as exc:
         raise FindParseError(
-            f"find: invalid argument '{value}' to '-mtime'") from exc
+            f"find: invalid argument '{value}' to '-mtime'"
+        ) from exc
 
 
 def _parse_primary(state: _State) -> PredNode:
     tok = _advance(state)
     if tok is None:
         raise FindParseError("find: expected predicate")
-    if (state.expr.actions and state.nested == 0 and not state.in_or
-            and (tok in ("-empty", "-prune")
-                 or tok in constants.FIND_VALUE_PREDICATES -
-                 {"-printf", "-maxdepth", "-mindepth"})):
+    if (
+        state.expr.actions
+        and state.nested == 0
+        and not state.in_or
+        and (
+            tok in ("-empty", "-prune")
+            or tok
+            in constants.FIND_VALUE_PREDICATES
+            - {"-printf", "-maxdepth", "-mindepth"}
+        )
+    ):
         # Along a top-level -a chain the actions run in order on every
         # row the tree kept, so a test after one would apply to the
         # actions before it too. Elsewhere the tree itself decides
         # (`_check_positional`).
         raise FindParseError(
-            f"find: {tok}: tests after actions are not supported")
+            f"find: {tok}: tests after actions are not supported"
+        )
     if tok in constants.FIND_VALUE_PREDICATES:
         value = _advance(state)
         if value is None:
@@ -629,8 +695,9 @@ def find_expr_tail(raw_argv: list[str]) -> list[str]:
         start += 1
     for i in range(start, len(raw_argv)):
         tok = raw_argv[i]
-        if tok in constants.FIND_EXPRESSION_TOKENS or (tok.startswith("-")
-                                                       and len(tok) > 1):
+        if tok in constants.FIND_EXPRESSION_TOKENS or (
+            tok.startswith("-") and len(tok) > 1
+        ):
             return raw_argv[i:]
     return []
 
@@ -657,8 +724,10 @@ def exec_spans(argv: list[str]) -> list[tuple[int, int]]:
         while i < len(argv):
             tok = argv[i]
             if tok == constants.EXEC_END or (
-                    tok == constants.EXEC_BATCH_END and i > start + 1
-                    and constants.EXEC_PLACEHOLDER in argv[i - 1]):
+                tok == constants.EXEC_BATCH_END
+                and i > start + 1
+                and constants.EXEC_PLACEHOLDER in argv[i - 1]
+            ):
                 break
             i += 1
         spans.append((start, min(i, len(argv) - 1)))

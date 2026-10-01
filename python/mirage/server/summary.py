@@ -14,9 +14,13 @@
 
 from mirage import Workspace
 from mirage.server.registry import WorkspaceEntry
-from mirage.server.schemas import (MountSummary, SessionSummary,
-                                   WorkspaceBrief, WorkspaceDetail,
-                                   WorkspaceInternals)
+from mirage.server.schemas import (
+    MountSummary,
+    SessionSummary,
+    WorkspaceBrief,
+    WorkspaceDetail,
+    WorkspaceInternals,
+)
 from mirage.shell.constants import BIN_PREFIX
 from mirage.vfs.base import BaseVFS
 from mirage.vfs.history import HISTORY_PREFIX
@@ -25,7 +29,7 @@ from mirage.workspace.snapshot.utils import norm_mount_prefix
 _AUTO_PREFIXES = {
     "/dev/",
     norm_mount_prefix(HISTORY_PREFIX),
-    norm_mount_prefix(BIN_PREFIX)
+    norm_mount_prefix(BIN_PREFIX),
 }
 _DESCRIPTION_MAX = 120
 
@@ -38,7 +42,7 @@ def _mount_description(vfs: BaseVFS) -> str:
     raw = vfs.prompt
     if len(raw) <= _DESCRIPTION_MAX:
         return raw
-    return raw[:_DESCRIPTION_MAX - 1].rstrip() + "\u2026"
+    return raw[: _DESCRIPTION_MAX - 1].rstrip() + "\u2026"
 
 
 def _user_mounts(ws: Workspace):
@@ -59,7 +63,7 @@ async def _build_internals(ws: Workspace) -> WorkspaceInternals:
 def make_brief(entry: WorkspaceEntry) -> WorkspaceBrief:
     ws = entry.runner.ws
     user_mounts = _user_mounts(ws)
-    workspace_mode = (user_mounts[0].mode.value if user_mounts else "read")
+    workspace_mode = user_mounts[0].mode.value if user_mounts else "read"
     return WorkspaceBrief(
         id=entry.id,
         mode=workspace_mode,
@@ -69,18 +73,20 @@ def make_brief(entry: WorkspaceEntry) -> WorkspaceBrief:
     )
 
 
-async def make_detail(entry: WorkspaceEntry,
-                      verbose: bool = False) -> WorkspaceDetail:
+async def make_detail(
+    entry: WorkspaceEntry, verbose: bool = False
+) -> WorkspaceDetail:
     ws = entry.runner.ws
     user_mounts = _user_mounts(ws)
-    workspace_mode = (user_mounts[0].mode.value if user_mounts else "read")
+    workspace_mode = user_mounts[0].mode.value if user_mounts else "read"
     mounts = [
         MountSummary(
             prefix=m.prefix,
             vfs=m.vfs.name,
             mode=m.mode.value,
             description=_mount_description(m.vfs),
-        ) for m in user_mounts
+        )
+        for m in user_mounts
     ]
     sessions = [
         SessionSummary(session_id=s.session_id, cwd=s.cwd)

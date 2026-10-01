@@ -65,16 +65,19 @@ class ExitSignal(Exception):
             ``exit N`` uses N in both positions (the default).
     """
 
-    def __init__(self,
-                 exit_code: int = 0,
-                 stderr: bytes = b"",
-                 stdout: bytes | None = None,
-                 contained_code: int | None = None) -> None:
+    def __init__(
+        self,
+        exit_code: int = 0,
+        stderr: bytes = b"",
+        stdout: bytes | None = None,
+        contained_code: int | None = None,
+    ) -> None:
         self.exit_code = exit_code
         self.stderr = stderr
         self.stdout = stdout
-        self.contained_code = (contained_code
-                               if contained_code is not None else exit_code)
+        self.contained_code = (
+            contained_code if contained_code is not None else exit_code
+        )
 
 
 class UnboundVariable(ExitSignal):
@@ -90,13 +93,14 @@ class UnboundVariable(ExitSignal):
     """
 
     def __init__(self, name: str) -> None:
-        super().__init__(127,
-                         stderr=f"bash: {name}: unbound variable\n".encode(),
-                         contained_code=1)
+        super().__init__(
+            127,
+            stderr=f"bash: {name}: unbound variable\n".encode(),
+            contained_code=1,
+        )
 
 
 class ReturnSignal(Exception):
-
     def __init__(self, exit_code: int = 0, stderr: bytes = b"") -> None:
         self.exit_code = exit_code
         self.stderr = stderr

@@ -18,13 +18,13 @@ from mirage.runtime.sandbox.daytona import DaytonaConfig
 
 
 def test_coerce_dict_covers_all_fields():
-    config = DaytonaConfig.coerce({
-        "sandbox_id": "sb-live",
-        "api_key": "k-123",
-        "env": {
-            "A": "1"
-        },
-    })
+    config = DaytonaConfig.coerce(
+        {
+            "sandbox_id": "sb-live",
+            "api_key": "k-123",
+            "env": {"A": "1"},
+        }
+    )
     assert config.sandbox_id == "sb-live"
     assert config.api_key == "k-123"
     assert config.env == {"A": "1"}

@@ -28,8 +28,8 @@ config = HfBucketsConfig(
 vfs = HfBucketsVFS(config)
 
 with Workspace(
-    {"/hf/": Mount(vfs, mode=MountMode.READ,
-                   backend=MountBackend.FUSE)}) as ws:
+    {"/hf/": Mount(vfs, mode=MountMode.READ, backend=MountBackend.FUSE)}
+) as ws:
     mp = ws.fuse_mountpoint
 
     print(f"=== FUSE MODE: mounted at {mp} ===\n")

@@ -17,18 +17,24 @@ from pathlib import Path
 
 import typer
 
-from mirage.server.workspace_config import (build_workspace_from_config,
-                                            resolve_workspace_config)
+from mirage.server.workspace_config import (
+    build_workspace_from_config,
+    resolve_workspace_config,
+)
 
 MCP_ENV_NAMES = ("MIRAGE_MCP_CONFIG", "MIRAGE_CONFIG")
 
-app = typer.Typer(invoke_without_command=True,
-                  help="Serve a Mirage workspace as MCP tools over stdio.")
+app = typer.Typer(
+    invoke_without_command=True,
+    help="Serve a Mirage workspace as MCP tools over stdio.",
+)
 
 
-def resolve_mcp_config(config: str | None = None,
-                       cwd: str | Path | None = None,
-                       env: dict[str, str] | None = None) -> Path:
+def resolve_mcp_config(
+    config: str | None = None,
+    cwd: str | Path | None = None,
+    env: dict[str, str] | None = None,
+) -> Path:
     """Find the config `mirage mcp` should serve.
 
     Args:
@@ -39,14 +45,14 @@ def resolve_mcp_config(config: str | None = None,
     Returns:
         Path: the resolved config path.
     """
-    return resolve_workspace_config(config,
-                                    cwd=cwd,
-                                    env=env,
-                                    env_names=MCP_ENV_NAMES)
+    return resolve_workspace_config(
+        config, cwd=cwd, env=env, env_names=MCP_ENV_NAMES
+    )
 
 
-async def run_mcp_server(config: str | None,
-                         stale_write_protection: bool) -> None:
+async def run_mcp_server(
+    config: str | None, stale_write_protection: bool
+) -> None:
     """Build the workspace and serve it until the client disconnects.
 
     Args:
@@ -68,12 +74,14 @@ async def run_mcp_server(config: str | None,
 
 @app.callback(invoke_without_command=True)
 def mcp_cmd(
-    config: str | None = typer.Argument(None,
-                                        help="Mirage workspace YAML config."),
+    config: str | None = typer.Argument(
+        None, help="Mirage workspace YAML config."
+    ),
     stale_write_protection: bool = typer.Option(
         True,
         "--stale-write-protection/--no-stale-write-protection",
-        help="Refuse an edit when the file changed since it was read."),
+        help="Refuse an edit when the file changed since it was read.",
+    ),
 ) -> None:
     """Serve a Mirage workspace as MCP tools over stdio."""
     try:

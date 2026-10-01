@@ -18,14 +18,19 @@ from typing import Callable
 
 from mirage.commands.builtin.utils.backup import backup_control, backup_target
 from mirage.commands.builtin.utils.constants import DEFAULT_BACKUP_SUFFIX
-from mirage.commands.builtin.utils.copy import (STAT_REFUSALS,
-                                                backend_key_default,
-                                                copy_targets, is_directory,
-                                                path_exists)
+from mirage.commands.builtin.utils.copy import (
+    STAT_REFUSALS,
+    backend_key_default,
+    copy_targets,
+    is_directory,
+    path_exists,
+)
 from mirage.commands.builtin.utils.links import typed_link
-from mirage.commands.builtin.utils.paths import (absent_dest_strerror,
-                                                 descendant_path,
-                                                 nearest_ancestor)
+from mirage.commands.builtin.utils.paths import (
+    absent_dest_strerror,
+    descendant_path,
+    nearest_ancestor,
+)
 from mirage.commands.errors import UsageError
 from mirage.commands.spec.argmatch import ArgmatchMatch, argmatch
 from mirage.commands.spec.flag_view import FlagView
@@ -35,12 +40,28 @@ from mirage.context import path_allowed
 from mirage.io.types import ByteSource, IOResult
 from mirage.ops.types import LinkView
 from mirage.runtime.types import DispatchFn
-from mirage.types import (LINK_TARGET_KEY, CopyDeref, CopyStrategy, FileStat,
-                          FileType, NativeCopy, NativeMove, PathSpec,
-                          PrimitiveCopy, PrimitiveMove, ReaddirFn, StatFn)
+from mirage.types import (
+    LINK_TARGET_KEY,
+    CopyDeref,
+    CopyStrategy,
+    FileStat,
+    FileType,
+    NativeCopy,
+    NativeMove,
+    PathSpec,
+    PrimitiveCopy,
+    PrimitiveMove,
+    ReaddirFn,
+    StatFn,
+)
 from mirage.utils.dates import iso_timestamp
-from mirage.utils.errors import (ELOOP_STRERROR, FS_ERRORS, DotWalkLoop,
-                                 DotWalkMissing, fs_strerror)
+from mirage.utils.errors import (
+    ELOOP_STRERROR,
+    FS_ERRORS,
+    DotWalkLoop,
+    DotWalkMissing,
+    fs_strerror,
+)
 from mirage.utils.key_prefix import mounted_path, rekey
 from mirage.utils.path import CycleError, resolve_path
 
@@ -107,6 +128,7 @@ class TransferPolicy:
         backup (str | None): Canonical backup control, or None.
         suffix (str): Simple-backup suffix.
     """
+
     cmd_name: str
     no_clobber: bool = False
     update: str | None = None
@@ -153,8 +175,9 @@ def update_mode(cmd_name: str, fl: FlagView) -> str | None:
     match = argmatch(word, UPDATE_MODES)
     if isinstance(match, ArgmatchMatch):
         return match.word
-    raise argmatch_error(cmd_name, "--update", word, UPDATE_MODES, 1,
-                         match.kind)
+    raise argmatch_error(
+        cmd_name, "--update", word, UPDATE_MODES, 1, match.kind
+    )
 
 
 def backup_raw(fl: FlagView) -> str | bool | None:
@@ -184,8 +207,9 @@ def suffix_flag(fl: FlagView) -> str | None:
     return fl.as_str("suffix") or None
 
 
-def target_flags(cmd_name: str,
-                 fl: FlagView) -> tuple[PathSpec | str | None, bool]:
+def target_flags(
+    cmd_name: str, fl: FlagView
+) -> tuple[PathSpec | str | None, bool]:
     """Resolve ``-t``/``--target-directory`` and ``-T``, rejecting both.
 
     Args:
@@ -199,7 +223,9 @@ def target_flags(cmd_name: str,
     if target_dir is not None and no_target:
         raise UsageError(
             f"{cmd_name}: cannot combine --target-directory (-t) and "
-            "--no-target-directory (-T)", 1)
+            "--no-target-directory (-T)",
+            1,
+        )
     return target_dir, no_target
 
 
@@ -218,19 +244,30 @@ def parse_flags(fl: FlagView) -> CpFlags:
     suffix = suffix_flag(fl)
     control = backup_control("cp", backup_raw(fl), suffix)
     no_clobber = fl.as_bool("no_clobber")
-    if control is not None and control != "none" and (no_clobber or update
-                                                      == "none-fail"):
+    if (
+        control is not None
+        and control != "none"
+        and (no_clobber or update == "none-fail")
+    ):
         raise UsageError(
             "cp: --backup is mutually exclusive with -n or "
-            "--update=none-fail\nTry 'cp --help' for more information.", 1)
+            "--update=none-fail\nTry 'cp --help' for more information.",
+            1,
+        )
     target_dir, no_target = target_flags("cp", fl)
-    recursive = (fl.as_bool("r") or fl.as_bool("recursive")
-                 or fl.as_bool("archive"))
+    recursive = (
+        fl.as_bool("r") or fl.as_bool("recursive") or fl.as_bool("archive")
+    )
     typed = fl.typed_order(*_DEREF_OPTIONS)
     # With no link option a recursive copy copies links as links and any
     # other copy follows them (cp.c's DEREF_UNDEFINED default).
-    dereference = (_DEREF_OPTIONS[typed[-1]] if typed else
-                   CopyDeref.NEVER if recursive else CopyDeref.ALWAYS)
+    dereference = (
+        _DEREF_OPTIONS[typed[-1]]
+        if typed
+        else CopyDeref.NEVER
+        if recursive
+        else CopyDeref.ALWAYS
+    )
     return CpFlags(
         recursive=recursive,
         no_clobber=no_clobber,
@@ -269,8 +306,9 @@ async def link_stat(copies: TransferLinks, path: PathSpec) -> FileStat:
     return copies.links.stat_at(path.virtual) or await copies.relay_stat(path)
 
 
-async def rename_link(copies: TransferLinks, src: PathSpec,
-                      target: PathSpec) -> None:
+async def rename_link(
+    copies: TransferLinks, src: PathSpec, target: PathSpec
+) -> None:
     """Rename through the namespace door, including its admission checks.
 
     Args:
@@ -281,10 +319,16 @@ async def rename_link(copies: TransferLinks, src: PathSpec,
     await copies.dispatch("rename", src, dst=target)
 
 
-async def make_link(copies: TransferLinks, src: PathSpec, target: PathSpec,
-                    text: str, policy: TransferPolicy,
-                    writes: dict[str, ByteSource], errors: list[str],
-                    lines: list[str] | None) -> bool:
+async def make_link(
+    copies: TransferLinks,
+    src: PathSpec,
+    target: PathSpec,
+    text: str,
+    policy: TransferPolicy,
+    writes: dict[str, ByteSource],
+    errors: list[str],
+    lines: list[str] | None,
+) -> bool:
     """Copy a symlink through the shared overwrite and backup policy.
 
     Args:
@@ -304,16 +348,28 @@ async def make_link(copies: TransferLinks, src: PathSpec, target: PathSpec,
     target_link = copies.links.stat_at(target.virtual)
     there = target_link or await _entry_at(copies.dispatch, target)
     if there is not None and there.type == FileType.DIRECTORY:
-        errors.append(f"{policy.cmd_name}: cannot overwrite directory "
-                      f"'{target.raw_path}' with non-directory")
+        errors.append(
+            f"{policy.cmd_name}: cannot overwrite directory "
+            f"'{target.raw_path}' with non-directory"
+        )
         return False
     if not await overwrite_gate(policy, stat, src, target, errors):
         return False
-    backup_strategy = (NativeMove(rename=partial(rename_link, copies))
-                       if target_link is not None else copies.relay)
-    backup, ok = await make_backup(policy, backup_strategy, stat,
-                                   copies.relay.readdir, target, writes,
-                                   errors, copies)
+    backup_strategy = (
+        NativeMove(rename=partial(rename_link, copies))
+        if target_link is not None
+        else copies.relay
+    )
+    backup, ok = await make_backup(
+        policy,
+        backup_strategy,
+        stat,
+        copies.relay.readdir,
+        target,
+        writes,
+        errors,
+        copies,
+    )
     if not ok:
         return False
     try:
@@ -321,8 +377,10 @@ async def make_link(copies: TransferLinks, src: PathSpec, target: PathSpec,
             await copies.dispatch("unlink", target)
         await copies.dispatch("symlink", target, target=text)
     except FS_ERRORS as exc:
-        errors.append(f"{policy.cmd_name}: cannot create symbolic link "
-                      f"'{target.raw_path}': {fs_strerror(exc)}")
+        errors.append(
+            f"{policy.cmd_name}: cannot create symbolic link "
+            f"'{target.raw_path}': {fs_strerror(exc)}"
+        )
         return False
     writes[target.mount_path] = b""
     if lines is not None:
@@ -340,7 +398,8 @@ async def copy_tree_links(
     policy: TransferPolicy,
     writes: dict[str, ByteSource],
     reads: dict[str, ByteSource],
-    seen: tuple[str, ...] = ()) -> None:
+    seen: tuple[str, ...] = (),
+) -> None:
     """Recreate the links below a copied directory, which its copy could
     not see.
 
@@ -373,17 +432,24 @@ async def copy_tree_links(
     for virtual, row in below:
         if not path_allowed(virtual):
             continue
-        rel = virtual[len(base.rstrip("/")) + 1:]
+        rel = virtual[len(base.rstrip("/")) + 1 :]
         landing = f"{dst_base}/{rel}"
         shown = f"{shown_src}/{rel}"
         if deref is not CopyDeref.ALWAYS:
             text = str(row.extra.get(LINK_TARGET_KEY) or "")
             await make_link(
-                copies, replace(PathSpec.from_str_path(virtual),
-                                raw_path=shown),
-                replace(PathSpec.from_str_path(landing),
-                        raw_path=f"{shown_dst}/{rel}"), text, policy, writes,
-                errors, lines)
+                copies,
+                replace(PathSpec.from_str_path(virtual), raw_path=shown),
+                replace(
+                    PathSpec.from_str_path(landing),
+                    raw_path=f"{shown_dst}/{rel}",
+                ),
+                text,
+                policy,
+                writes,
+                errors,
+                lines,
+            )
             continue
         try:
             resolved = copies.links.resolve(virtual)
@@ -392,55 +458,77 @@ async def copy_tree_links(
             continue
         leads = await copies.links.target_stat(virtual)
         if leads is None:
-            errors.append(f"cp: cannot stat '{shown}': "
-                          "No such file or directory")
+            errors.append(
+                f"cp: cannot stat '{shown}': No such file or directory"
+            )
             continue
         if leads.type != FileType.DIRECTORY:
-            await copy_entries("cp",
-                               copies.relay,
-                               copies.relay_stat,
-                               replace(PathSpec.from_str_path(resolved),
-                                       raw_path=shown),
-                               PathSpec.from_str_path(landing),
-                               [(PathSpec.from_str_path(resolved), False)],
-                               errors,
-                               policy=policy,
-                               writes=writes,
-                               reads=reads,
-                               lines=lines,
-                               copies=copies)
+            await copy_entries(
+                "cp",
+                copies.relay,
+                copies.relay_stat,
+                replace(PathSpec.from_str_path(resolved), raw_path=shown),
+                PathSpec.from_str_path(landing),
+                [(PathSpec.from_str_path(resolved), False)],
+                errors,
+                policy=policy,
+                writes=writes,
+                reads=reads,
+                lines=lines,
+                copies=copies,
+            )
             continue
         inside = resolved.rstrip("/") or "/"
-        if any(inside == d or d.startswith(inside.rstrip("/") + "/")
-               for d in (*seen, base)):
+        if any(
+            inside == d or d.startswith(inside.rstrip("/") + "/")
+            for d in (*seen, base)
+        ):
             errors.append(f"cp: cannot copy cyclic symbolic link '{shown}'")
             continue
         followed = PathSpec.from_str_path(inside)
         placed = PathSpec.from_str_path(landing)
-        entries = await walk(copies.relay.readdir, copies.relay_stat, followed,
-                             "cp", errors, copies.links)
-        await copy_entries("cp",
-                           copies.relay,
-                           copies.relay_stat,
-                           followed,
-                           placed,
-                           entries,
-                           errors,
-                           policy=policy,
-                           writes=writes,
-                           reads=reads,
-                           lines=lines,
-                           copies=copies)
-        await copy_tree_links(copies, deref, replace(followed, raw_path=shown),
-                              replace(placed,
-                                      raw_path=f"{shown_dst}/{rel}"), errors,
-                              lines, policy, writes, reads, (*seen, base))
+        entries = await walk(
+            copies.relay.readdir,
+            copies.relay_stat,
+            followed,
+            "cp",
+            errors,
+            copies.links,
+        )
+        await copy_entries(
+            "cp",
+            copies.relay,
+            copies.relay_stat,
+            followed,
+            placed,
+            entries,
+            errors,
+            policy=policy,
+            writes=writes,
+            reads=reads,
+            lines=lines,
+            copies=copies,
+        )
+        await copy_tree_links(
+            copies,
+            deref,
+            replace(followed, raw_path=shown),
+            replace(placed, raw_path=f"{shown_dst}/{rel}"),
+            errors,
+            lines,
+            policy,
+            writes,
+            reads,
+            (*seen, base),
+        )
 
 
 def split_operands(
-        cmd_name: str, paths: list[PathSpec],
-        target_dir: PathSpec | str | None,
-        no_target_dir: bool) -> tuple[list[PathSpec], PathSpec | None]:
+    cmd_name: str,
+    paths: list[PathSpec],
+    target_dir: PathSpec | str | None,
+    no_target_dir: bool,
+) -> tuple[list[PathSpec], PathSpec | None]:
     """Split operands into sources and destination, GNU arity errors.
 
     With ``-t`` every operand is a source and the returned destination is
@@ -461,7 +549,9 @@ def split_operands(
     if len(paths) == 1:
         raise UsageError(
             f"{cmd_name}: missing destination file operand after "
-            f"'{paths[0].raw_path}'\n{hint}", 1)
+            f"'{paths[0].raw_path}'\n{hint}",
+            1,
+        )
     if no_target_dir and len(paths) > 2:
         raise extra_operand_error(cmd_name, paths[2].raw_path)
     return list(paths[:-1]), paths[-1]
@@ -474,12 +564,14 @@ def wrap_target_dir(ref: PathSpec, virtual: str) -> PathSpec:
         ref (PathSpec): Any operand on the destination's mount.
         virtual (str): Resolved virtual path of the target directory.
     """
-    return PathSpec.from_str_path(virtual,
-                                  rekey(ref.virtual, ref.vfs_path, virtual))
+    return PathSpec.from_str_path(
+        virtual, rekey(ref.virtual, ref.vfs_path, virtual)
+    )
 
 
-async def target_dir_error(cmd_name: str, stat: StatFn,
-                           target: PathSpec) -> str | None:
+async def target_dir_error(
+    cmd_name: str, stat: StatFn, target: PathSpec
+) -> str | None:
     """GNU error line when a ``-t`` operand is missing or not a directory.
 
     Args:
@@ -490,22 +582,31 @@ async def target_dir_error(cmd_name: str, stat: StatFn,
     try:
         info = await stat(target)
     except NotADirectoryError:
-        return (f"{cmd_name}: target directory '{target.raw_path}': "
-                "Not a directory")
+        return (
+            f"{cmd_name}: target directory '{target.raw_path}': "
+            "Not a directory"
+        )
     except DotWalkLoop as exc:
-        return (f"{cmd_name}: target directory '{target.raw_path}': "
-                f"{fs_strerror(exc)}")
+        return (
+            f"{cmd_name}: target directory '{target.raw_path}': "
+            f"{fs_strerror(exc)}"
+        )
     except (FileNotFoundError, ValueError):
-        return (f"{cmd_name}: target directory '{target.raw_path}': "
-                "No such file or directory")
+        return (
+            f"{cmd_name}: target directory '{target.raw_path}': "
+            "No such file or directory"
+        )
     if info.type != FileType.DIRECTORY:
-        return (f"{cmd_name}: target directory '{target.raw_path}': "
-                "Not a directory")
+        return (
+            f"{cmd_name}: target directory '{target.raw_path}': "
+            "Not a directory"
+        )
     return None
 
 
-def _slash_aware_kind(path: PathSpec,
-                      info: FileStat) -> tuple[bool, bool, str | None]:
+def _slash_aware_kind(
+    path: PathSpec, info: FileStat
+) -> tuple[bool, bool, str | None]:
     """``(exists, is_dir, strerror)`` for an operand whose stat answered.
 
     POSIX reads ``x/`` as ``x/.``, so a slashed operand over anything
@@ -524,8 +625,9 @@ def _slash_aware_kind(path: PathSpec,
     return True, is_dir, None
 
 
-async def dest_kind(stat: StatFn,
-                    target: PathSpec) -> tuple[bool, bool, str | None]:
+async def dest_kind(
+    stat: StatFn, target: PathSpec
+) -> tuple[bool, bool, str | None]:
     """Probe a destination for ``(exists, is_dir, strerror)``.
 
     ``cp`` and ``mv`` are not ``mkdir -p``: neither creates the
@@ -571,8 +673,9 @@ async def dest_kind(stat: StatFn,
     return False, False, await absent_dest_strerror(stat, target)
 
 
-def slash_refuses_file(target: PathSpec, target_exists: bool,
-                       src_is_dir: bool) -> bool:
+def slash_refuses_file(
+    target: PathSpec, target_exists: bool, src_is_dir: bool
+) -> bool:
     """Whether a slash-terminated destination refuses a non-directory.
 
     POSIX resolves ``missing/`` as ``missing/.``, so the name may only
@@ -590,12 +693,14 @@ def slash_refuses_file(target: PathSpec, target_exists: bool,
         target_exists (bool): Whether the destination exists.
         src_is_dir (bool): Whether the source is a directory.
     """
-    return (not target_exists and target.raw_path.endswith("/")
-            and not src_is_dir)
+    return (
+        not target_exists and target.raw_path.endswith("/") and not src_is_dir
+    )
 
 
-async def source_kind(stat: StatFn,
-                      path: PathSpec) -> tuple[bool, bool, str | None]:
+async def source_kind(
+    stat: StatFn, path: PathSpec
+) -> tuple[bool, bool, str | None]:
     """Probe a source operand for ``(exists, is_dir, strerror)``.
 
     A source keeps the errno GNU reports: ``cp /plain/child /dst`` is
@@ -628,13 +733,21 @@ async def source_kind(stat: StatFn,
     else:
         return _slash_aware_kind(path, info)
     _, is_dir = await nearest_ancestor(stat, path)
-    return False, False, ("No such file or directory"
-                          if is_dir else "Not a directory")
+    return (
+        False,
+        False,
+        ("No such file or directory" if is_dir else "Not a directory"),
+    )
 
 
-def overwrite_type_error(cmd_name: str, src: PathSpec, src_is_dir: bool,
-                         target: PathSpec, target_exists: bool,
-                         target_is_dir: bool) -> str | None:
+def overwrite_type_error(
+    cmd_name: str,
+    src: PathSpec,
+    src_is_dir: bool,
+    target: PathSpec,
+    target_exists: bool,
+    target_is_dir: bool,
+) -> str | None:
     """GNU dir/non-dir overwrite mismatch line, or None when compatible.
 
     Args:
@@ -648,16 +761,25 @@ def overwrite_type_error(cmd_name: str, src: PathSpec, src_is_dir: bool,
     if not target_exists:
         return None
     if src_is_dir and not target_is_dir:
-        return (f"{cmd_name}: cannot overwrite non-directory "
-                f"'{target.virtual}' with directory '{src.virtual}'")
+        return (
+            f"{cmd_name}: cannot overwrite non-directory "
+            f"'{target.virtual}' with directory '{src.virtual}'"
+        )
     if not src_is_dir and target_is_dir:
-        return (f"{cmd_name}: cannot overwrite directory "
-                f"'{target.virtual}' with non-directory '{src.virtual}'")
+        return (
+            f"{cmd_name}: cannot overwrite directory "
+            f"'{target.virtual}' with non-directory '{src.virtual}'"
+        )
     return None
 
 
-async def overwrite_gate(policy: TransferPolicy, stat: StatFn, src: PathSpec,
-                         target: PathSpec, errors: list[str]) -> bool:
+async def overwrite_gate(
+    policy: TransferPolicy,
+    stat: StatFn,
+    src: PathSpec,
+    target: PathSpec,
+    errors: list[str],
+) -> bool:
     """Decide whether an existing target may be replaced.
 
     ``-n`` and ``--update=none`` skip silently; ``--update=none-fail``
@@ -695,8 +817,11 @@ async def overwrite_gate(policy: TransferPolicy, stat: StatFn, src: PathSpec,
             return True
         src_ts = iso_timestamp(src_info.modified)
         target_ts = iso_timestamp(target_info.modified)
-        if src_ts is not None and target_ts is not None \
-                and src_ts <= target_ts:
+        if (
+            src_ts is not None
+            and target_ts is not None
+            and src_ts <= target_ts
+        ):
             return False
     return True
 
@@ -737,23 +862,30 @@ async def _duplicate_for_backup(
             await strategy.write(backup, data=data)
             return True
         entries = await walk(strategy.readdir, stat, target)
-        copied_all, _ = await copy_entries(cmd_name, strategy, stat, target,
-                                           backup, entries, errors)
+        copied_all, _ = await copy_entries(
+            cmd_name, strategy, stat, target, backup, entries, errors
+        )
         return copied_all
     if not target_is_dir:
         await strategy.copy(target, backup)
         return True
     if strategy.dir_copy is None:
-        errors.append(f"{cmd_name}: cannot backup '{target.virtual}': "
-                      "Operation not supported")
+        errors.append(
+            f"{cmd_name}: cannot backup '{target.virtual}': "
+            "Operation not supported"
+        )
         return False
     await strategy.dir_copy(target, backup)
     return True
 
 
-async def _restore_backup_link(copies: TransferLinks, backup: PathSpec,
-                               link: FileStat, cmd_name: str,
-                               errors: list[str]) -> None:
+async def _restore_backup_link(
+    copies: TransferLinks,
+    backup: PathSpec,
+    link: FileStat,
+    cmd_name: str,
+    errors: list[str],
+) -> None:
     """Restore a displaced backup link, removing any partial copy first.
 
     Args:
@@ -766,13 +898,16 @@ async def _restore_backup_link(copies: TransferLinks, backup: PathSpec,
     try:
         if await path_exists(partial(link_stat, copies), backup):
             await copies.dispatch("unlink", backup)
-        await copies.dispatch("symlink",
-                              backup,
-                              target=str(
-                                  link.extra.get(LINK_TARGET_KEY) or ""))
+        await copies.dispatch(
+            "symlink",
+            backup,
+            target=str(link.extra.get(LINK_TARGET_KEY) or ""),
+        )
     except FS_ERRORS as exc:
-        errors.append(f"{cmd_name}: cannot restore backup "
-                      f"'{backup.virtual}': {fs_strerror(exc)}")
+        errors.append(
+            f"{cmd_name}: cannot restore backup "
+            f"'{backup.virtual}': {fs_strerror(exc)}"
+        )
 
 
 async def make_backup(
@@ -809,41 +944,58 @@ async def make_backup(
         # A failed version scan must not degrade to ".~1~"/the simple
         # suffix: that would overwrite existing backup history.
         backup = await backup_target(
-            copies.relay.readdir if copies is not None else readdir, target,
-            policy.backup, policy.suffix)
+            copies.relay.readdir if copies is not None else readdir,
+            target,
+            policy.backup,
+            policy.suffix,
+        )
     except FS_ERRORS as exc:
-        errors.append(f"{policy.cmd_name}: cannot backup "
-                      f"'{target.virtual}': {fs_strerror(exc)}")
+        errors.append(
+            f"{policy.cmd_name}: cannot backup "
+            f"'{target.virtual}': {fs_strerror(exc)}"
+        )
         return None, False
     if backup is None:
         return None, True
-    backup_link = (copies.links.stat_at(backup.virtual) if copies is not None
-                   and not isinstance(strategy, NativeMove) else None)
+    backup_link = (
+        copies.links.stat_at(backup.virtual)
+        if copies is not None and not isinstance(strategy, NativeMove)
+        else None
+    )
     removed_link = False
     made = False
     try:
         if copies is not None and backup_link is not None:
             await copies.dispatch("unlink", backup)
             removed_link = True
-        made = await _duplicate_for_backup(strategy, stat, target, backup,
-                                           errors, policy.cmd_name)
+        made = await _duplicate_for_backup(
+            strategy, stat, target, backup, errors, policy.cmd_name
+        )
     except FS_ERRORS as exc:
-        errors.append(f"{policy.cmd_name}: cannot backup "
-                      f"'{target.virtual}': {fs_strerror(exc)}")
+        errors.append(
+            f"{policy.cmd_name}: cannot backup "
+            f"'{target.virtual}': {fs_strerror(exc)}"
+        )
         return None, False
     finally:
-        if removed_link and not made and copies is not None \
-                and backup_link is not None:
-            await _restore_backup_link(copies, backup, backup_link,
-                                       policy.cmd_name, errors)
+        if (
+            removed_link
+            and not made
+            and copies is not None
+            and backup_link is not None
+        ):
+            await _restore_backup_link(
+                copies, backup, backup_link, policy.cmd_name, errors
+            )
     if not made:
         return None, False
     writes[backup.mount_path] = b""
     return backup, True
 
 
-def transfer_line(src: PathSpec, target: PathSpec,
-                  backup: PathSpec | None) -> str:
+def transfer_line(
+    src: PathSpec, target: PathSpec, backup: PathSpec | None
+) -> str:
     """The cp verbose line, with GNU's backup annotation when one exists.
 
     Args:
@@ -857,8 +1009,13 @@ def transfer_line(src: PathSpec, target: PathSpec,
     return line
 
 
-async def _tree_lines(strategy: NativeCopy, src: PathSpec, target: PathSpec,
-                      src_base: str, dst_base: str) -> list[str]:
+async def _tree_lines(
+    strategy: NativeCopy,
+    src: PathSpec,
+    target: PathSpec,
+    src_base: str,
+    dst_base: str,
+) -> list[str]:
     """GNU ``-v`` lines for a natively copied tree, parents first.
 
     GNU ``cp -rv`` reports directories as well as files, including the
@@ -880,8 +1037,9 @@ async def _tree_lines(strategy: NativeCopy, src: PathSpec, target: PathSpec,
     lines: list[str] = []
     for entry_mount in sorted({src_base, *dirs, *files}):
         entry = mounted_path(src, entry_mount)
-        entry_dst = mounted_path(target,
-                                 dst_base + entry_mount[len(src_base):])
+        entry_dst = mounted_path(
+            target, dst_base + entry_mount[len(src_base) :]
+        )
         lines.append(f"'{entry.virtual}' -> '{entry_dst.virtual}'")
     return lines
 
@@ -936,8 +1094,9 @@ async def _mirror_dirs(
     # used to come out in a different order run to run -- and in a different
     # order from TypeScript, whose Set keeps insertion order.
     for entry_mount in sorted(set(mounts), key=lambda p: (len(p), p)):
-        entry_dst = mounted_path(target,
-                                 dst_base + entry_mount[len(src_base):])
+        entry_dst = mounted_path(
+            target, dst_base + entry_mount[len(src_base) :]
+        )
         if lines is not None:
             entry = mounted_path(src, entry_mount)
             lines.append(f"'{entry.virtual}' -> '{entry_dst.virtual}'")
@@ -946,8 +1105,10 @@ async def _mirror_dirs(
         try:
             await strategy.mkdir(entry_dst)
         except FS_ERRORS as exc:
-            errors.append(f"cp: cannot create directory "
-                          f"'{entry_dst.virtual}': {fs_strerror(exc)}")
+            errors.append(
+                f"cp: cannot create directory "
+                f"'{entry_dst.virtual}': {fs_strerror(exc)}"
+            )
             return False
         writes[entry_dst.mount_path] = b""
     return True
@@ -995,8 +1156,10 @@ async def walk(
         except PermissionError as exc:
             if errors is None:
                 raise
-            errors.append(f"{cmd_name}: cannot access '{directory.virtual}': "
-                          f"{fs_strerror(exc)}")
+            errors.append(
+                f"{cmd_name}: cannot access '{directory.virtual}': "
+                f"{fs_strerror(exc)}"
+            )
             continue
         for child_virtual in children:
             child = descendant_path(root, child_virtual)
@@ -1007,8 +1170,10 @@ async def walk(
             except PermissionError as exc:
                 if errors is None:
                     raise
-                errors.append(f"{cmd_name}: cannot stat '{child.virtual}': "
-                              f"{fs_strerror(exc)}")
+                errors.append(
+                    f"{cmd_name}: cannot stat '{child.virtual}': "
+                    f"{fs_strerror(exc)}"
+                )
                 continue
             is_dir = child_info.type == FileType.DIRECTORY
             entries.append((child, is_dir))
@@ -1073,8 +1238,8 @@ async def copy_entries(
     for entry, is_dir in entries:
         entry_dst = descendant_path(
             target,
-            target.virtual.rstrip("/") +
-            entry.virtual[len(src.virtual.rstrip("/")):],
+            target.virtual.rstrip("/")
+            + entry.virtual[len(src.virtual.rstrip("/")) :],
         )
         if is_dir:
             try:
@@ -1084,52 +1249,73 @@ async def copy_entries(
                     if writes is not None:
                         writes[entry_dst.mount_path] = b""
                     if lines is not None:
-                        lines.append(f"'{entry.virtual}' -> "
-                                     f"'{entry_dst.virtual}'")
+                        lines.append(
+                            f"'{entry.virtual}' -> '{entry_dst.virtual}'"
+                        )
             except FS_ERRORS as exc:
                 # GNU stops this source: the children of a directory it
                 # could not create cannot land.
-                errors.append(f"{cmd_name}: cannot create directory "
-                              f"'{entry_dst.virtual}': {fs_strerror(exc)}")
+                errors.append(
+                    f"{cmd_name}: cannot create directory "
+                    f"'{entry_dst.virtual}': {fs_strerror(exc)}"
+                )
                 return False, wrote_any
             continue
-        link = copies.links.stat_at(
-            entry.virtual) if copies is not None else None
+        link = (
+            copies.links.stat_at(entry.virtual) if copies is not None else None
+        )
         if copies is not None and link is not None:
             error_count = len(errors)
-            made = await make_link(copies, entry, entry_dst,
-                                   str(link.extra.get(LINK_TARGET_KEY) or ""),
-                                   policy or TransferPolicy(cmd_name=cmd_name),
-                                   writes if writes is not None else {},
-                                   errors, lines)
+            made = await make_link(
+                copies,
+                entry,
+                entry_dst,
+                str(link.extra.get(LINK_TARGET_KEY) or ""),
+                policy or TransferPolicy(cmd_name=cmd_name),
+                writes if writes is not None else {},
+                errors,
+                lines,
+            )
             wrote_any = wrote_any or made
             if len(errors) > error_count:
                 copied_all = False
             continue
         backup: PathSpec | None = None
         if policy is not None:
-            if not await overwrite_gate(policy, stat, entry, entry_dst,
-                                        errors):
+            if not await overwrite_gate(
+                policy, stat, entry, entry_dst, errors
+            ):
                 continue
             backup, ok = await make_backup(
-                policy, strategy, stat, strategy.readdir, entry_dst,
-                writes if writes is not None else {}, errors, copies)
+                policy,
+                strategy,
+                stat,
+                strategy.readdir,
+                entry_dst,
+                writes if writes is not None else {},
+                errors,
+                copies,
+            )
             if not ok:
                 copied_all = False
                 continue
         try:
             data = await strategy.read_bytes(entry)
         except FS_ERRORS as exc:
-            errors.append(f"{cmd_name}: cannot open '{entry.virtual}' "
-                          f"for reading: {fs_strerror(exc)}")
+            errors.append(
+                f"{cmd_name}: cannot open '{entry.virtual}' "
+                f"for reading: {fs_strerror(exc)}"
+            )
             copied_all = False
             continue
         try:
             # write takes bytes, not a stream: file materialized here.
             await strategy.write(entry_dst, data=data)
         except FS_ERRORS as exc:
-            errors.append(f"{cmd_name}: cannot create regular file "
-                          f"'{entry_dst.virtual}': {fs_strerror(exc)}")
+            errors.append(
+                f"{cmd_name}: cannot create regular file "
+                f"'{entry_dst.virtual}': {fs_strerror(exc)}"
+            )
             copied_all = False
             continue
         wrote_any = True
@@ -1188,11 +1374,15 @@ async def cp(
         when any source failed.
     """
     key_of = backend_key if backend_key is not None else backend_key_default
-    sources, dst = split_operands("cp", paths, flags.target_dir,
-                                  flags.no_target_dir)
+    sources, dst = split_operands(
+        "cp", paths, flags.target_dir, flags.no_target_dir
+    )
     if dst is None:
-        dst = (flags.target_dir if isinstance(flags.target_dir, PathSpec) else
-               wrap_target_dir(sources[0], str(flags.target_dir)))
+        dst = (
+            flags.target_dir
+            if isinstance(flags.target_dir, PathSpec)
+            else wrap_target_dir(sources[0], str(flags.target_dir))
+        )
         err = await target_dir_error("cp", stat, dst)
         if err is not None:
             return None, IOResult(stderr=f"{err}\n".encode(), exit_code=1)
@@ -1207,76 +1397,107 @@ async def cp(
         dst_exists, dst_is_dir, dst_err = await dest_kind(stat, dst)
     if readdir is None and isinstance(strategy, PrimitiveCopy):
         readdir = strategy.readdir
-    policy = TransferPolicy(cmd_name="cp",
-                            no_clobber=flags.no_clobber,
-                            update=flags.update,
-                            backup=flags.backup,
-                            suffix=flags.suffix)
-    per_entry_native = flags.no_clobber or update_gates(flags.update) \
+    policy = TransferPolicy(
+        cmd_name="cp",
+        no_clobber=flags.no_clobber,
+        update=flags.update,
+        backup=flags.backup,
+        suffix=flags.suffix,
+    )
+    per_entry_native = (
+        flags.no_clobber
+        or update_gates(flags.update)
         or backup_displaces(flags.backup)
+    )
     writes: dict[str, ByteSource] = {}
     reads: dict[str, ByteSource] = {}
     lines: list[str] = []
     errors: list[str] = []
-    for src, target in copy_targets(sources, dst, dst_is_dir, dst_exists,
-                                    dst_err):
-        link = (typed_link(copies.links, src, copies.cwd) if copies is not None
-                and flags.dereference is CopyDeref.NEVER else None)
+    for src, target in copy_targets(
+        sources, dst, dst_is_dir, dst_exists, dst_err
+    ):
+        link = (
+            typed_link(copies.links, src, copies.cwd)
+            if copies is not None and flags.dereference is CopyDeref.NEVER
+            else None
+        )
         if copies is not None and link is not None:
             # The router followed the operand, but the policy copies the
             # link itself, whatever it leads to (coreutils 9.7). Onto a
             # destination that is no directory the link replaces the name
             # as typed, never what a link standing there leads to.
             named = resolve_path(src.raw_path or src.virtual, copies.cwd)
-            landing = (target.virtual if target is not dst else resolve_path(
-                dst.raw_path or dst.virtual, copies.cwd))
+            landing = (
+                target.virtual
+                if target is not dst
+                else resolve_path(dst.raw_path or dst.virtual, copies.cwd)
+            )
             if named == landing:
-                errors.append(f"cp: '{named}' and '{landing}' "
-                              "are the same file")
+                errors.append(
+                    f"cp: '{named}' and '{landing}' are the same file"
+                )
                 continue
             await make_link(
                 copies,
                 replace(PathSpec.from_str_path(named), raw_path=src.raw_path),
-                replace(PathSpec.from_str_path(landing),
-                        raw_path=target.raw_path),
-                str(link.extra.get(LINK_TARGET_KEY) or ""), policy, writes,
-                errors, lines if flags.verbose else None)
+                replace(
+                    PathSpec.from_str_path(landing), raw_path=target.raw_path
+                ),
+                str(link.extra.get(LINK_TARGET_KEY) or ""),
+                policy,
+                writes,
+                errors,
+                lines if flags.verbose else None,
+            )
             continue
         src_exists, src_is_dir, src_err = await source_kind(stat, src)
         if not src_exists:
             errors.append(f"cp: cannot stat '{src.raw_path}': {src_err}")
             continue
-        if (flags.no_target_dir and not src_is_dir
-                and target.walk_error is not None and target.raw_path == ""):
+        if (
+            flags.no_target_dir
+            and not src_is_dir
+            and target.walk_error is not None
+            and target.raw_path == ""
+        ):
             # Under -T, GNU stats an empty destination as the directory it
             # is typed in, which a file cannot overwrite (coreutils 9.7).
             # A directory source it merges into the working directory;
             # mirage refuses that at the create, since reading the empty
             # name as the working directory is what `walk_error` is for.
-            errors.append("cp: cannot overwrite directory '' with "
-                          f"non-directory '{src.raw_path}'")
+            errors.append(
+                "cp: cannot overwrite directory '' with "
+                f"non-directory '{src.raw_path}'"
+            )
             continue
         if key_of(src) == key_of(target):
-            errors.append(f"cp: '{src.virtual}' and '{target.virtual}' "
-                          "are the same file")
+            errors.append(
+                f"cp: '{src.virtual}' and '{target.virtual}' are the same file"
+            )
             continue
         if flags.recursive and key_of(target).startswith(key_of(src) + "/"):
-            errors.append(f"cp: cannot copy a directory, '{src.virtual}', "
-                          f"into itself, '{target.virtual}'")
+            errors.append(
+                f"cp: cannot copy a directory, '{src.virtual}', "
+                f"into itself, '{target.virtual}'"
+            )
             continue
         if not flags.recursive and src_is_dir:
-            errors.append("cp: -r not specified; omitting directory "
-                          f"'{src.virtual}'")
+            errors.append(
+                f"cp: -r not specified; omitting directory '{src.virtual}'"
+            )
             continue
         if not flags.no_target_dir and target.virtual == dst.virtual:
-            target_exists, target_is_dir, target_err = (dst_exists, dst_is_dir,
-                                                        dst_err)
+            target_exists, target_is_dir, target_err = (
+                dst_exists,
+                dst_is_dir,
+                dst_err,
+            )
         else:
             target_exists, target_is_dir, target_err = await dest_kind(
-                stat, target)
+                stat, target
+            )
         if target_err in STAT_REFUSALS:
-            errors.append(f"cp: cannot stat '{target.raw_path}': "
-                          f"{target_err}")
+            errors.append(f"cp: cannot stat '{target.raw_path}': {target_err}")
             continue
         # The create fails on the absent parent before the slash matters,
         # so a chain verdict keeps its ENOENT (`cp f deep/missing/`).
@@ -1284,86 +1505,136 @@ async def cp(
             target_err = target_err or "Not a directory"
         if target_err is not None:
             noun = "directory" if src_is_dir else "regular file"
-            errors.append(f"cp: cannot create {noun} '{target.raw_path}': "
-                          f"{target_err}")
+            errors.append(
+                f"cp: cannot create {noun} '{target.raw_path}': {target_err}"
+            )
             continue
-        mismatch = overwrite_type_error("cp", src, src_is_dir, target,
-                                        target_exists, target_is_dir)
+        mismatch = overwrite_type_error(
+            "cp", src, src_is_dir, target, target_exists, target_is_dir
+        )
         if mismatch is not None:
             errors.append(mismatch)
             continue
-        if (not target_exists and link_at is not None
-                and link_at(target) is not None):
+        if (
+            not target_exists
+            and link_at is not None
+            and link_at(target) is not None
+        ):
             # A dangling link: the stat followed it to nothing, but the
             # name is taken. GNU will not create the file it points at
             # (POSIX would), and the link is a non-directory to a tree.
             if src_is_dir:
-                errors.append(f"cp: cannot overwrite non-directory "
-                              f"'{target.raw_path}' with directory "
-                              f"'{src.raw_path}'")
+                errors.append(
+                    f"cp: cannot overwrite non-directory "
+                    f"'{target.raw_path}' with directory "
+                    f"'{src.raw_path}'"
+                )
                 continue
             if flags.verbose:
                 lines.append(transfer_line(src, target, None))
-            errors.append("cp: not writing through dangling symlink "
-                          f"'{target.raw_path}'")
+            errors.append(
+                f"cp: not writing through dangling symlink '{target.raw_path}'"
+            )
             continue
         if flags.recursive and src_is_dir:
             src_base = src.mount_path.rstrip("/")
             dst_base = target.mount_path.rstrip("/")
             if isinstance(strategy, PrimitiveCopy):
                 entries = await walk(
-                    strategy.readdir, stat, src, "cp", errors,
-                    copies.links if copies is not None else None)
-                await copy_entries("cp",
-                                   strategy,
-                                   stat,
-                                   src,
-                                   target,
-                                   entries,
-                                   errors,
-                                   policy=policy,
-                                   writes=writes,
-                                   reads=reads,
-                                   lines=lines if flags.verbose else None,
-                                   copies=copies)
+                    strategy.readdir,
+                    stat,
+                    src,
+                    "cp",
+                    errors,
+                    copies.links if copies is not None else None,
+                )
+                await copy_entries(
+                    "cp",
+                    strategy,
+                    stat,
+                    src,
+                    target,
+                    entries,
+                    errors,
+                    policy=policy,
+                    writes=writes,
+                    reads=reads,
+                    lines=lines if flags.verbose else None,
+                    copies=copies,
+                )
                 if copies is not None:
-                    await copy_tree_links(copies, flags.dereference, src,
-                                          target, errors,
-                                          lines if flags.verbose else None,
-                                          policy, writes, reads)
+                    await copy_tree_links(
+                        copies,
+                        flags.dereference,
+                        src,
+                        target,
+                        errors,
+                        lines if flags.verbose else None,
+                        policy,
+                        writes,
+                        reads,
+                    )
                 continue
             if strategy.dir_copy is not None and not per_entry_native:
                 await strategy.dir_copy(src, target)
                 for entry_mount in await strategy.find(src, type="f"):
                     entry_dst = mounted_path(
-                        target, dst_base + entry_mount[len(src_base):])
+                        target, dst_base + entry_mount[len(src_base) :]
+                    )
                     writes[entry_dst.mount_path] = b""
                 if flags.verbose:
-                    lines.extend(await _tree_lines(strategy, src, target,
-                                                   src_base, dst_base))
+                    lines.extend(
+                        await _tree_lines(
+                            strategy, src, target, src_base, dst_base
+                        )
+                    )
                 if copies is not None:
-                    await copy_tree_links(copies, flags.dereference, src,
-                                          target, errors,
-                                          lines if flags.verbose else None,
-                                          policy, writes, reads)
+                    await copy_tree_links(
+                        copies,
+                        flags.dereference,
+                        src,
+                        target,
+                        errors,
+                        lines if flags.verbose else None,
+                        policy,
+                        writes,
+                        reads,
+                    )
                 continue
             # Per-entry policy forfeits dir_copy, so the tree's directories
             # are recreated here: a files-only pass would drop every
             # directory that holds no files (GNU keeps them).
-            if not await _mirror_dirs(strategy, stat, src, target, src_base,
-                                      dst_base, writes, errors,
-                                      lines if flags.verbose else None):
+            if not await _mirror_dirs(
+                strategy,
+                stat,
+                src,
+                target,
+                src_base,
+                dst_base,
+                writes,
+                errors,
+                lines if flags.verbose else None,
+            ):
                 continue
             for entry_mount in await strategy.find(src, type="f"):
                 entry = mounted_path(src, entry_mount)
                 entry_dst = mounted_path(
-                    target, dst_base + entry_mount[len(src_base):])
-                if not await overwrite_gate(policy, stat, entry, entry_dst,
-                                            errors):
+                    target, dst_base + entry_mount[len(src_base) :]
+                )
+                if not await overwrite_gate(
+                    policy, stat, entry, entry_dst, errors
+                ):
                     continue
-                backup, ok = await make_backup(policy, strategy, stat, readdir,
-                                               entry_dst, writes, errors,
-                                               copies)
+                backup, ok = await make_backup(
+                    policy,
+                    strategy,
+                    stat,
+                    readdir,
+                    entry_dst,
+                    writes,
+                    errors,
+                    copies,
+                )
                 if not ok:
                     continue
                 await strategy.copy(entry, entry_dst)
@@ -1371,14 +1642,23 @@ async def cp(
                 if flags.verbose:
                     lines.append(transfer_line(entry, entry_dst, backup))
             if copies is not None:
-                await copy_tree_links(copies, flags.dereference, src, target,
-                                      errors, lines if flags.verbose else None,
-                                      policy, writes, reads)
+                await copy_tree_links(
+                    copies,
+                    flags.dereference,
+                    src,
+                    target,
+                    errors,
+                    lines if flags.verbose else None,
+                    policy,
+                    writes,
+                    reads,
+                )
             continue
         if not await overwrite_gate(policy, stat, src, target, errors):
             continue
-        backup, ok = await make_backup(policy, strategy, stat, readdir, target,
-                                       writes, errors, copies)
+        backup, ok = await make_backup(
+            policy, strategy, stat, readdir, target, writes, errors, copies
+        )
         if not ok:
             continue
         if isinstance(strategy, PrimitiveCopy):
@@ -1387,22 +1667,28 @@ async def cp(
                 # materialized here.
                 data = await strategy.read_bytes(src)
             except FS_ERRORS as exc:
-                errors.append(f"cp: cannot open '{src.virtual}' "
-                              f"for reading: {fs_strerror(exc)}")
+                errors.append(
+                    f"cp: cannot open '{src.virtual}' "
+                    f"for reading: {fs_strerror(exc)}"
+                )
                 continue
             try:
                 await strategy.write(target, data=data)
             except FS_ERRORS as exc:
-                errors.append(f"cp: cannot create regular file "
-                              f"'{target.virtual}': {fs_strerror(exc)}")
+                errors.append(
+                    f"cp: cannot create regular file "
+                    f"'{target.virtual}': {fs_strerror(exc)}"
+                )
                 continue
             reads[src.virtual] = data
         else:
             try:
                 await strategy.copy(src, target)
             except FS_ERRORS as exc:
-                errors.append(f"cp: cannot create regular file "
-                              f"'{target.virtual}': {fs_strerror(exc)}")
+                errors.append(
+                    f"cp: cannot create regular file "
+                    f"'{target.virtual}': {fs_strerror(exc)}"
+                )
                 continue
         writes[target.mount_path] = b""
         if flags.verbose:

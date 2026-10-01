@@ -41,15 +41,22 @@ async def _fake_stat(accessor, path, index=None):
     key = path.virtual if isinstance(path, PathSpec) else path
     key = "/" + key.strip("/") if key.strip("/") else "/"
     if key in _DIRS:
-        return FileStat(name=key.rsplit("/", 1)[-1] or "/",
-                        type=FileType.DIRECTORY,
-                        modified="2026-07-14T12:00:00Z")
-    return FileStat(name=key.rsplit("/", 1)[-1],
-                    type=FileType.FILE,
-                    content=ContentType.TEXT,
-                    size=_FILES.get(key),
-                    modified=("2026-07-15T12:00:00Z" if key == "/db/page1.md"
-                              else "2026-07-13T12:00:00Z"))
+        return FileStat(
+            name=key.rsplit("/", 1)[-1] or "/",
+            type=FileType.DIRECTORY,
+            modified="2026-07-14T12:00:00Z",
+        )
+    return FileStat(
+        name=key.rsplit("/", 1)[-1],
+        type=FileType.FILE,
+        content=ContentType.TEXT,
+        size=_FILES.get(key),
+        modified=(
+            "2026-07-15T12:00:00Z"
+            if key == "/db/page1.md"
+            else "2026-07-13T12:00:00Z"
+        ),
+    )
 
 
 @pytest.fixture(autouse=True)
@@ -66,9 +73,9 @@ async def test_find_all():
 
 @pytest.mark.asyncio
 async def test_find_name_matches_mount_root_start_path():
-    spec = PathSpec(vfs_path=mount_key("/db", "/db"),
-                    virtual="/db",
-                    directory="/db")
+    spec = PathSpec(
+        vfs_path=mount_key("/db", "/db"), virtual="/db", directory="/db"
+    )
     out = await find_mod.find(None, spec, name="db")
     assert out == ["/"]
 
@@ -105,10 +112,9 @@ async def test_find_mindepth():
 
 @pytest.mark.asyncio
 async def test_find_min_size():
-    out = await find_mod.find(None,
-                              PathSpec.from_str_path("/db"),
-                              type="f",
-                              min_size=15)
+    out = await find_mod.find(
+        None, PathSpec.from_str_path("/db"), type="f", min_size=15
+    )
     assert out == ["/db/sub/page2.md"]
 
 

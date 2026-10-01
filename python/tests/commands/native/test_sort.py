@@ -41,7 +41,8 @@ def test_sort_nr(env):
 def test_sort_k_t(env):
     env.create_file("f.txt", b"b,3\na,1\nc,2\n")
     assert env.mirage("sort -t , -k 2 -n /data/f.txt") == env.native(
-        "sort -t , -k 2 -n f.txt")
+        "sort -t , -k 2 -n f.txt"
+    )
 
 
 def test_sort_stdin(env):
@@ -61,8 +62,9 @@ def test_sort_hr(env):
 
 def test_sort_h_stdin(env):
     data = b"1G\n500M\n2T\n100K\n"
-    assert env.mirage("sort -h", stdin=data) == env.native("sort -h",
-                                                           stdin=data)
+    assert env.mirage("sort -h", stdin=data) == env.native(
+        "sort -h", stdin=data
+    )
 
 
 def test_sort_V(env):
@@ -77,21 +79,23 @@ def test_sort_Vr(env):
 
 def test_sort_V_stdin(env):
     data = b"lib-2.1\nlib-1.10\nlib-1.2\nlib-3.0\n"
-    assert env.mirage("sort -V", stdin=data) == env.native("sort -V",
-                                                           stdin=data)
+    assert env.mirage("sort -V", stdin=data) == env.native(
+        "sort -V", stdin=data
+    )
 
 
 def test_sort_s(env):
     env.create_file("f.txt", b"b 2\na 1\nc 1\na 2\n")
     assert env.mirage("sort -s -k 2 -t ' ' /data/f.txt") == env.native(
-        "sort -s -k 2 -t ' ' f.txt")
+        "sort -s -k 2 -t ' ' f.txt"
+    )
 
 
 def test_sort_s_stdin(env):
     data = b"b 2\na 1\nc 1\na 2\n"
-    assert env.mirage("sort -s -k 2 -t ' '",
-                      stdin=data) == env.native("sort -s -k 2 -t ' '",
-                                                stdin=data)
+    assert env.mirage("sort -s -k 2 -t ' '", stdin=data) == env.native(
+        "sort -s -k 2 -t ' '", stdin=data
+    )
 
 
 def test_sort_f(env):
@@ -105,8 +109,9 @@ def test_sort_f(env):
 # env.native).
 def test_sort_multi_key_with_per_key_modifiers(env):
     env.create_file("f.txt", b"a 2 z\nb 2 a\nc 1 m\n")
-    assert env.mirage("sort -k2,2n -k1,1r /data/f.txt") == \
-        "c 1 m\nb 2 a\na 2 z\n"
+    assert (
+        env.mirage("sort -k2,2n -k1,1r /data/f.txt") == "c 1 m\nb 2 a\na 2 z\n"
+    )
 
 
 def test_sort_combined_global_reverse_and_key(env):
@@ -122,8 +127,10 @@ def test_sort_field_to_eol_differs_from_range(env):
 
 def test_sort_char_offset_with_sep(env):
     env.create_file("f.txt", b"apple:12\nbee:3\ncat:100\n")
-    assert env.mirage("sort -t: -k1.2,1.3 /data/f.txt") == \
-        "cat:100\nbee:3\napple:12\n"
+    assert (
+        env.mirage("sort -t: -k1.2,1.3 /data/f.txt")
+        == "cat:100\nbee:3\napple:12\n"
+    )
 
 
 def test_sort_stable_keeps_input_order_on_ties(env):

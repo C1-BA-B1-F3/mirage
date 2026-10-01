@@ -21,10 +21,9 @@ from mirage.utils.dates import now_iso
 from mirage.utils.path import norm
 
 
-async def truncate(accessor: RAMAccessor,
-                   path: PathSpec,
-                   length: int,
-                   no_create: bool = False) -> None:
+async def truncate(
+    accessor: RAMAccessor, path: PathSpec, length: int, no_create: bool = False
+) -> None:
     store = accessor.store
     timer = start_op()
     p = norm(path.mount_path)

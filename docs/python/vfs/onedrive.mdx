@@ -129,7 +129,10 @@ This makes the OneDrive VFS `supports_snapshot = True`.
 ## Cache
 
 The OneDrive VFS caches directory listings via `IndexCacheStore` to reduce
-repeated Graph calls during traversal.
+repeated Graph calls during traversal. A write keeps no bytes in the file
+cache: a OneDrive for Business drive rewrites uploaded Office files
+(SharePoint property promotion), so the next read downloads what the drive
+stored.
 
 ## Example
 

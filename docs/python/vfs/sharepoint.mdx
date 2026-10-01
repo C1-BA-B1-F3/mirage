@@ -116,7 +116,10 @@ This makes the SharePoint VFS `supports_snapshot = True`.
 ## Cache
 
 The SharePoint VFS caches site, drive, and directory listings via
-`IndexCacheStore` to reduce repeated Graph calls during traversal.
+`IndexCacheStore` to reduce repeated Graph calls during traversal. A write
+keeps no bytes in the file cache: property promotion rewrites uploaded
+Office, `.eml`, `.msg` and `.tiff` files, so the next read downloads what the
+library stored.
 
 ## Example
 
